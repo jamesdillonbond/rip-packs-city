@@ -32,3 +32,95 @@ The TS wmc drain resolves each held moment to an `edition_key` (`setID:playID[::
 ## Revert path
 
 No code shipped by the sweep — this is a flag + handoff only. The two docs (`data-quality-sweep-2026-09-22.md`, this file) are additive; revert = delete them. Any fix Claude Code ships gets its own ledger entry + revert path.
+
+---
+
+# VERIFIED ON TREVOR'S BOX — 2026-09-22 (Claude Code)
+
+Re-derived every number above, then traced the writer. **The counts hold; the stated
+hypothesis does not.** Nothing shipped for this item — see "Why no fix shipped" below.
+
+## Re-derived (all still true)
+
+19,625 NULL-`edition_key` TS rows / 21 wallets / 19,624 distinct moments; **65 rows across
+the same 4 seeded wallets**. Newest `created_at` is **2026-09-17**, and **0 rows were
+created in the last 48h** — the population is frozen, not growing.
+
+## ⛔ The stated hypothesis is REFUTED
+
+The doc attributes this to "the TS wmc drain persisting a NULL row rather than
+resolve-or-skip". The drain is not the writer:
+
+- `runIdOnlyBackfill` (the `edition_key: null` writer in `wallet-backfill-helpers.ts`) is
+  documented in its own header as the runner **for non-Top-Shot collections**. It is not on
+  this path.
+- The Top Shot drain — `app/api/wallet-backfill/route.ts` — computes
+  `const editionKey = setID && playID ? \`${setID}:${playID}\` : ""`, i.e. an **empty
+  string** on failure, and `upsert_wmc_batch` writes `edition_key` **as sent** (no
+  `''`→NULL coercion; verified against `prosrc`). So that path would leave `''`, not NULL.
+- **The discriminator: there are ZERO empty-string rows in TS wmc** (1,492,289 base
+  `setID:playID` + 111,964 parallel `base::N` + 19,625 NULL + **0** `''`). The drain did
+  not write these.
+
+## ⭐ The actual writer
+
+**`app/api/wallet-search/route.ts`** (~L1064-1084). It deliberately splits its cache write
+in two so an unresolved row cannot clobber a previously-cached key:
+
+```ts
+const unresolvedRows = rows.filter(r => r.momentId && !r.editionKey).map(r => baseRow(r))
+```
+
+`baseRow()` has **no `edition_key` field at all**, so the insert omits the column and it
+lands NULL. This fits the observed profile exactly where a drain does not: wallet-search is
+the **on-demand, anonymous** paste surface, which is why the three large wallets are
+**non-seeded**, were written in one 11-minute window on 09-11, and were **never re-seen**.
+Someone pasted three big wallets into search. The scattered 50-row batches are later searches.
+
+## 🚨 The real defect is structural, and it is NOT the writer
+
+`rpc_wmc_selfheal_recent` — the mechanism this codebase relies on to fill metadata left
+NULL at write time — is keyed on the very column that is missing:
+
+```sql
+FROM public.editions e
+WHERE e.external_id = wmc.edition_key
+  AND wmc.edition_key IS NOT NULL
+```
+
+So it heals `tier` / `player_name` / `set_name` / `mint_count` / `team_name`, but **can
+never heal a NULL `edition_key`**. These rows are not "awaiting a retry" — they are
+**permanently orphaned by construction**. That is the missing re-check path, and it is the
+thing worth fixing.
+
+⛔ **Do NOT implement the doc's step 2 ("resolve-or-skip") as written.** Skipping would
+*delete a moment the wallet genuinely holds* from every holdings surface and from
+`cached_moment_count` — trading a nameless moment for an undercount, which is the worse
+honesty defect. The row should stay; what is missing is a way to name it later.
+
+**The fix that fits: a self-heal keyed on `moment_id`, not on `edition_key`** —
+`wallet_moments_cache.moment_id` → `moments.nft_id` → `moments.edition_id` →
+`editions.external_id`. That path is not used by any current healer, and **it resolves
+4,645 of the 19,625 today (23.7%), including 10 of the 65 seeded rows**. The remaining
+14,980 have no `moments` row at all and are genuinely unknown until the catalog covers them.
+
+## ⚠ Why no fix shipped (and what the next session must do FIRST)
+
+The backfill was **not** run, because its control is vacuous. The standard arithmetic
+detector for a mis-keyed TS row is `serial_number > circulation_count` — but
+**`serial_number` is NULL on all 4,645 candidates**, so the check returns
+`impossible=0, consistent=0`: it cannot see the property, and a probe that cannot see the
+property is not a measurement. The only other validating source is `moments` itself, which
+is the table the fill would be trusting — not an independent control. Given Top Shot has a
+**recorded mis-key incident** (a writer mis-keyed mint blocks), writing 4,645 unverifiable
+edition keys into a user-facing holdings cache is not a safe autonomous act.
+
+**Before filling: establish an independent control.** Options, cheapest first —
+(a) resolve a ~30-row sample's `moment_id` on-chain via the Cadence path the drain uses and
+compare to the proposed key; (b) fill only where `topshot_moment_subeditions` independently
+corroborates the nft→base key; (c) fill the **10 seeded rows** first (user-facing, small
+enough to eyeball on the live surface) and leave the 4,635 non-seeded until (a) passes.
+
+**Revert path for any fill:** capture the affected `wallet_moments_cache.id` list into a
+scratch table in the same migration; revert = `UPDATE ... SET edition_key = NULL WHERE id IN (<that list>)`.
+Do not rely on re-deriving the set afterwards — the fill destroys the predicate that defines it.
