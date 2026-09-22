@@ -11,6 +11,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-22 · 🔇 Zero-Yield arm: two correct zeros suppressed WITH on-chain positive controls; the two alert lanes left LOUD because their zero is a real product limit · Cowork cloud (daytime autonomous pass)
+
+**Shipped: migration `20260922194626`** (house-shape `pipeline_zero_yield_suppressions` rows, reason + re-check condition; file md5 = prod `572ffa73…`). `check_zero_yield_lanes()` offenders **4 → 2**.
+- **`golazos-listings-indexer` — CORRECT ZERO.** The reader is live (cursor +~1,125 blocks/tick, 200–300 storefront events seen per tick, none Golazos). ⭐ **Positive control taken ON CHAIN, not from our own tables:** Flow REST `/v1/events` over the same 5,000 blocks (~70 min) — `Golazos.Withdraw` **0**, `Golazos.Deposit` **0**, vs `TopShot.Withdraw` **1,084** and `AllDay.Withdraw` **113**. No Golazos NFT moved at all. (Golazos sales table: last sale 09-12; `edition_current_ask` Golazos newest 09-14 — both the same silent market, not a pipeline defect.)
+- **`wmc-fmv-populate-pgcron-backstop` — STOOD DOWN BY DESIGN.** Every run `verdict = http_caller_alive_stood_down`, `took_over = false`; the HTTP primary ran 1,554× today, 0 failures, 5,142 rows.
+- ⛔ **NOT suppressed: `alerts-send` / `alerts-dispatch` (0 deliveries since 09-14).** The 09-13 gate (`ask_is_alertable`: a Top Shot ask must be CONFIRMED inside 12 h) is correct, but only **1,485 of 13,154 TS asks (11 %)** are that fresh (median age **126 h**) — the dead `public-api.nbatopshot.com` host left the Atlas feed as the only TS ask confirmer. The only 2 active subscriptions are Trevor's own (Blazers rookie specials ≥25 % under FMV; Lillard Archive ≤ $0.60). **This is a product limit worth a decision, not a suppression** → handoff.
+**Revert:** `DELETE FROM public.pipeline_zero_yield_suppressions WHERE pipeline IN ('golazos-listings-indexer','wmc-fmv-populate-pgcron-backstop');`
+
 ### 2026-09-22 · 🧹 The pack-sales write amplification (#35's open half) is removed at the source — ~3.4 M identical row rewrites/day stop, and the visibility-map "de-tuning" R1/R2 is superseded · Cowork cloud (daytime autonomous pass)
 
 **Shipped: migration `20260922193435`** — `suppress_redundant_updates_trigger()` as a BEFORE UPDATE row trigger on `allday_pack_sales_history` and `topshot_pack_sales_history`. Repo file md5 = prod `md5(statements)` = `4b26f6c0…`.
