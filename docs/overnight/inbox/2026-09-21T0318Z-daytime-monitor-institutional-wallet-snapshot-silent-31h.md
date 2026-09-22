@@ -18,3 +18,7 @@
 - `pg_net_http_403` critical arm (7 `{"error":"forbidden"}` in 2h) — consistent with the **documented incomplete gate-key rotation** (7 of 14 crons still on burned keys, `compute-golazos-pack-ev` on the old key; ledger 2026-09-20), needs Trevor's fresh secrets. The bulk of last-2h 403s are Cloudflare "Just a moment…" Atlas upstream challenges (info, retry keeps up).
 - Cross-collection mats ~27h stale — one missed daily rebuild (both ccm jobs timed out at 10:02/10:35Z **during the pre-resize saturation**); next scheduled tick 09-21 10:02/10:35Z on LARGE should self-heal. Watch at tomorrow's first-tick pass.
 - pack-detail sub-read timeouts (`pack_lifecycle`/`pack_realized_ev` "read exceeded 5000ms") tailed ~3.5h past the resize (last 21:06Z), none in the last ~6h; chronic slow surface (cluster first-seen 08-23), not a new regression.
+
+## Drained 2026-09-22 — STALE BY THE SMALL→LARGE RESIZE — `snapshot-institutional-wallets` 2/2 ok in 24 h, last 5:41 AM PT 09-22.
+
+*(Per-item drained marker, the mechanism `docs/reference/autonomous-tasks.md` names as the unblock for archival. Re-derived live by the 2026-09-22 daytime Cowork pass; archiving remains Trevor's call.)*

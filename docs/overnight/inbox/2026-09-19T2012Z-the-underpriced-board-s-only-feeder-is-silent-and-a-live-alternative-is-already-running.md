@@ -150,3 +150,7 @@ long-term answer, but this table is not it on today's evidence.
 Nothing was shipped. The two live causes need Trevor's box (Task Scheduler is UIPI-blocked from
 here), and repointing a public pricing board's data source is a design decision with a measured
 precedent for going wrong. Filing beats guessing.
+
+## Drained 2026-09-22 — RESOLVED (currently) — `topshot-active-listings-ingest` ran 11:16 AM PT 09-22, browser mode, 0 skipped, 393 active listings 0.5 h old. Still a single feeder (Trevor's laptop).
+
+*(Per-item drained marker, the mechanism `docs/reference/autonomous-tasks.md` names as the unblock for archival. Re-derived live by the 2026-09-22 daytime Cowork pass; archiving remains Trevor's call.)*

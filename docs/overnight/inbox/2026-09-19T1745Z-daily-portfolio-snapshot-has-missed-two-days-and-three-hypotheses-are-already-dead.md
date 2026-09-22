@@ -104,3 +104,7 @@ so the slowness is current and not an artifact of the 07:05Z runs.
 **0 rows on every single day from 09-05 to 09-19 except 09-15 (1 row)**. It is a near-zero-yield
 lane, so its failure costs nothing measurable. ⚠ Worth asking whether it should run at all, which
 is the `Zero-Yield Lanes` arm's question, not this one's.
+
+## Drained 2026-09-22 — RESOLVED — the gap was never real: `portfolio_snapshots` holds rows for 09-18 → 09-22 (jobid 490 fills a day when the route dies, ledger 2026-09-20); only 09-12 is missing.
+
+*(Per-item drained marker, the mechanism `docs/reference/autonomous-tasks.md` names as the unblock for archival. Re-derived live by the 2026-09-22 daytime Cowork pass; archiving remains Trevor's call.)*

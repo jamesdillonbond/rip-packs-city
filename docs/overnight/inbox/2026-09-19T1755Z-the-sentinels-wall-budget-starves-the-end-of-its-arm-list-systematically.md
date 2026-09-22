@@ -60,3 +60,7 @@ It is *also* that, and the IO work is the deeper fix. But two things are true in
 `Ops Probe Cost`'s refusal share has fallen while total sweep duration is unchanged, the reorder
 worked; if sweep duration fell too, the box got quieter and the change is unproven — **split on the
 change point, do not pool across it.**
+
+## Drained 2026-09-22 — RESOLVED in code — tail rotation in `lib/sentinel/tail-rotation.ts` (ledger 2026-09-19); sentinel 30/30 ok in 24 h. Refusal counts on Large not yet re-measured.
+
+*(Per-item drained marker, the mechanism `docs/reference/autonomous-tasks.md` names as the unblock for archival. Re-derived live by the 2026-09-22 daytime Cowork pass; archiving remains Trevor's call.)*

@@ -28,3 +28,7 @@ Two watched pipelines are flagged by `detect_stalled_pipelines()` with classific
 
 ## Health summary (this run)
 Security **clean** (RLS-off tables [], anon-write holes []). Vercel deploys **clean** (latest `775535e` READY; a concurrent session shipped R118 timeout-handler work this morning). Snapshot **timed out (spell)**; trust-health / cross-collection deep-verify / artifact payload validation **DEFERRED** this run per Section 1c (heavy payload queries stack IO onto a live spell and return uninterpretable timeouts).
+
+## Drained 2026-09-22 — STALE BY THE SMALL→LARGE RESIZE — pinnacle-metadata-backfill and classify-acquisitions-multicollection both 24/24 ok in 24 h (09-22).
+
+*(Per-item drained marker, the mechanism `docs/reference/autonomous-tasks.md` names as the unblock for archival. Re-derived live by the 2026-09-22 daytime Cowork pass; archiving remains Trevor's call.)*

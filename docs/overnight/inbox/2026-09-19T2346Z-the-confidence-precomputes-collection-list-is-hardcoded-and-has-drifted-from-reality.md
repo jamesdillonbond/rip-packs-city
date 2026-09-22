@@ -79,3 +79,7 @@ Candy has **6,994 snapshots over 125 distinct editions**, and the distribution t
 - 📏 **Falsifier for the whole change:** after it ships, `fmv_confidence_precompute` should hold **six** rows, Candy's HIGH+MEDIUM should read ~62% and Pinnacle's ~28%, and **both should track `metrics-latest.json` within a couple of points** — the independent control that already works today.
 
 **Not-candidates:** the other three arms (`nfl_all_day`, `laliga_golazos`, `ufc_strike`) are correctly listed and correctly sourced — verified against the same `GROUP BY`, no action.
+
+## Drained 2026-09-22 — RESOLVED — `refresh_fmv_confidence_precompute` derives its collection list (R116): six rows incl. Candy, Pinnacle from `pinnacle_fmv_history`.
+
+*(Per-item drained marker, the mechanism `docs/reference/autonomous-tasks.md` names as the unblock for archival. Re-derived live by the 2026-09-22 daytime Cowork pass; archiving remains Trevor's call.)*

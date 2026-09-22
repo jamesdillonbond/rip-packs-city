@@ -25,3 +25,7 @@ Re-derive the full TS confidence mix (LOW/MEDIUM/HIGH/ASK_ONLY/STALE/NO_DATA) at
 
 ## Source
 `rpc_ops_snapshot()` @ 2026-09-21T00:05Z vs `docs/overnight/metrics-latest.json` (08:10Z). Not in a spell at read time (pg_stat_activity io_wait=1, active=1; postmaster start 17:39Z = the 10:39 AM PT Small->LARGE resize, no new restart).
+
+## Drained 2026-09-22 — RESOLVED, BENIGN — a tier reshuffle, not a loss: live Top Shot HIGH+MED 7,767 (1,353 + 6,414) > the 7,241 baseline (ledger 2026-09-21).
+
+*(Per-item drained marker, the mechanism `docs/reference/autonomous-tasks.md` names as the unblock for archival. Re-derived live by the 2026-09-22 daytime Cowork pass; archiving remains Trevor's call.)*

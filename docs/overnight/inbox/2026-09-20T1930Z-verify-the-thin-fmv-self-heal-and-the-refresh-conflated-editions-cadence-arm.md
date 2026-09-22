@@ -64,3 +64,7 @@ signal this row exists for, and it means Check 1 failed too.
   pin that. If a `lanes_failed` array shows up in `pipeline_runs.extra`, it is working as intended.
 - ⛔ Every duration in the older thin-FMV material is a **SMALL-tier** sample; the instance moved to
   **Large at 2026-09-20 10:39:57 AM PT**. Re-derive, do not quote.
+
+## Drained 2026-09-22 — RESOLVED — job 63 completed in 7 s on Large (was 601–604 s timeouts on Small); `refresh-conflated-editions` ok 8:17 AM PT 09-22 (ledger 2026-09-21).
+
+*(Per-item drained marker, the mechanism `docs/reference/autonomous-tasks.md` names as the unblock for archival. Re-derived live by the 2026-09-22 daytime Cowork pass; archiving remains Trevor's call.)*

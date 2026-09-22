@@ -160,3 +160,7 @@ cheapest to stop.
 succeeded on its last three runs (349 / 281 / 361 rows). **Neither is a false alarm exactly — each
 is a population whose shape the threshold was not chosen for.** Cheap to fix (scale the run-count
 floor by the lane's cadence rather than using a constant); not shipped here.
+
+## Drained 2026-09-22 — RESOLVED — the `edge_lane_watch` registry + `check_edge_lane_observability()` (ledger 2026-09-19, R110 exit). Live 2026-09-22: 12 lanes inspected, 0 unregistered, 0 stale, 2 unchecked by design.
+
+*(Per-item drained marker, the mechanism `docs/reference/autonomous-tasks.md` names as the unblock for archival. Re-derived live by the 2026-09-22 daytime Cowork pass; archiving remains Trevor's call.)*

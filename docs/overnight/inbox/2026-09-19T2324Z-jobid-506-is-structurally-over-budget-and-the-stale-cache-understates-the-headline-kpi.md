@@ -104,3 +104,7 @@ The 0 reads above were measured immediately after a full scan had warmed the cac
 - ⚠ **Whatever ships, watch Top Shot's `duration_ms`, not the function total** — the total hides which arm moved.
 
 **Not-candidates (recorded so they are not re-raised):** `disney_pinnacle` counts `{}` with `duration_ms: 5` is **not** an error — Pinnacle FMV is keyed on the (`character_name`,`set_name`,`variant_type`) triple and has no `fmv_snapshots` rows under this collection_id; it is a genuine absence, though ⚠ `coalesce(…, '{}')` means a real read failure would be indistinguishable from it, which is worth its own look. `detect_stalled_pipelines()` read **[]** at 23:20Z — no stalled pipelines estate-wide.
+
+## Drained 2026-09-22 — RESOLVED — the precompute reads `edition_fmv_current` with a 1/64 drift sample (migrations `20260920054402` + follow-up); last four ticks succeeded, Top Shot arm 20 ms.
+
+*(Per-item drained marker, the mechanism `docs/reference/autonomous-tasks.md` names as the unblock for archival. Re-derived live by the 2026-09-22 daytime Cowork pass; archiving remains Trevor's call.)*

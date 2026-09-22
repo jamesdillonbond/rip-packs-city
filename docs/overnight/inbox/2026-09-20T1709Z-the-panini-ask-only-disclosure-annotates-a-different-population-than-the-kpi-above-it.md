@@ -112,3 +112,7 @@ not worth the burst — re-measure before shipping.
 **aggregate composition disclosure is DONE** (`20260919181331` + `:367-376`). The only genuinely
 missing piece is the hc scoping and the tile promotion. An earlier draft of this note proposed
 building the disclosure from scratch; it already existed.
+
+## Drained 2026-09-22 — RESOLVED — migration `20260920175228` + `PaniniSqueezeClient.tsx` now reads the `_hc` fields (verified in the file 2026-09-22).
+
+*(Per-item drained marker, the mechanism `docs/reference/autonomous-tasks.md` names as the unblock for archival. Re-derived live by the 2026-09-22 daytime Cowork pass; archiving remains Trevor's call.)*

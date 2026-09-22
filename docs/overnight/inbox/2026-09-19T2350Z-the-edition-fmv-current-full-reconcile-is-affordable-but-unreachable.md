@@ -45,3 +45,7 @@ The expensive half of the full branch, run as a bare `SELECT` so nothing was wri
 4. 📏 **Falsifier, already runnable today:** re-run the audit behind the column comment — of 14,016 Top Shot rows, the 527 that name a `(edition_id, computed_at)` pair which no longer exists, and the 26 that disagree on `fmv_usd`, **should both go to ~0** after one full reconcile. If they do not, the drift has a second mechanism and the watermark was never the whole story.
 
 ⚠ **Not attempted, deliberately:** I did **not** run the full reconcile for real. It writes to a table eleven boards read, the prune in that branch would delete rows on a table whose pruning has never run, and **a first-ever prune is exactly the operation that should not happen unsupervised.**
+
+## Drained 2026-09-22 — RESOLVED — reachable via `refresh_edition_fmv_current(true)` on jobid 539 (`20260920095145`); succeeded 2:36 AM PT 09-22 (ledger R107).
+
+*(Per-item drained marker, the mechanism `docs/reference/autonomous-tasks.md` names as the unblock for archival. Re-derived live by the 2026-09-22 daytime Cowork pass; archiving remains Trevor's call.)*
