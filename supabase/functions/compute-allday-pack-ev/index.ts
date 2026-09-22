@@ -45,6 +45,7 @@ if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required"
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const GQL_ENDPOINT = "https://api.production.studio-platform.dapperlabs.com/graphql"
 const EXTERNAL_ID_CHUNK = 500
+const FMV_ID_CHUNK = 500 // get_fmv_for_editions: one row per id, so 500 ids can never reach PostgREST max-rows (1000)
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -156,7 +157,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: false, error: `gql: ${gqlRes.error}`,
-        extra: { elapsed_ms: Date.now() - started, function_version: 9 },
+        extra: { elapsed_ms: Date.now() - started, function_version: 10 },
         cursorBefore: cursor,
       })
       return
@@ -175,7 +176,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { message: "empty page", elapsed_ms: Date.now() - started, function_version: 9, has_next_page: false },
+        extra: { message: "empty page", elapsed_ms: Date.now() - started, function_version: 10, has_next_page: false },
         cursorBefore: cursor, cursorAfter: endCursor,
       })
       return
@@ -203,10 +204,18 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
 
     const editionUuids = Array.from(editionByExternalId.values()).map(v => v.id)
     const fmvByEditionId = new Map<string, number>()
-    if (editionUuids.length > 0) {
+    // 2026-09-22 (v10): CHUNKED. get_fmv_for_editions is a set-returning RPC, and
+    // PostgREST clamps every RPC result to max-rows = 1000. One call over the whole
+    // page's editions (1,488 on 09-22) silently returned exactly 1,000 rows, so ~460
+    // priced editions read as "no FMV": 82 of 144 runs over 3 days logged
+    // editions_with_fmv = 1000 exactly, and whole distributions fell into
+    // nodes_no_fmv_coverage (no EV written) or got an EV over a partial pool.
+    // The function returns at most one row per edition id, so a 500-id chunk can
+    // never reach the cap.
+    for (let i = 0; i < editionUuids.length; i += FMV_ID_CHUNK) {
       const { data: fmvRows, error: fmvErr } = await supabase.rpc("get_fmv_for_editions", {
         p_collection_id: ALLDAY_COLLECTION_ID,
-        p_edition_ids: editionUuids,
+        p_edition_ids: editionUuids.slice(i, i + FMV_ID_CHUNK),
       })
       if (fmvErr) throw new Error(`get_fmv_for_editions: ${fmvErr.message}`)
       // deno-lint-ignore no-explicit-any
@@ -221,6 +230,8 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       pool_rows_written: 0, pool_write_errors: 0, ev_rows_written: 0, single_edition_packs: 0,
       rpc_not_ok: 0, rpc_errors: 0, weighted_count: 0,
     }
+    // One stamp for every pool row this run writes — the prune in Phase 3 keys on it.
+    const runStamp = new Date().toISOString()
     const poolRowsByDist: Record<string, Array<Record<string, unknown>>> = {}
     const distMeta: Record<string, { node: DistNode; editionsWithFmv: number; editionCount: number }> = {}
 
@@ -262,7 +273,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
           edition_id: p.edition_id,
           edition_flow_id: p.external_id,
           drop_weight: w, orig_drop_weight: w, slot_name: "default", pool_source: "gql",
-          last_refreshed_at: new Date().toISOString(),
+          last_refreshed_at: runStamp,
         }
       })
     }
@@ -288,11 +299,15 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         counters.pool_rows_written += chunk.length
       }
       if (distFailed) continue
-      const keep = rows.map(r => `"${String(r.edition_id)}"`).join(",")
-      let prune = supabase.from("pack_drop_pool").delete()
+      // 2026-09-22 (v10): prune by the RUN STAMP, not by a NOT IN (<every kept id>)
+      // list. That list rides in the URL, and a 779-edition pool (dist 5349) made the
+      // DELETE request too long — "Bad Request" on every run since R123, 75 of 97
+      // runs failed. Every row this run wrote carries last_refreshed_at = runStamp
+      // (the upsert overwrites it), so "older than runStamp" is exactly "not written
+      // this run", in a constant-size request.
+      const { error: de } = await supabase.from("pack_drop_pool").delete()
         .eq("collection_id", ALLDAY_COLLECTION_ID).eq("dist_id", distId)
-      if (keep) prune = prune.not("edition_id", "in", `(${keep})`)
-      const { error: de } = await prune
+        .lt("last_refreshed_at", runStamp)
       if (de) poolWriteErrors.push(`pool prune ${distId}: ${de.message}`)
     }
     counters.pool_write_errors = poolWriteErrors.length
@@ -354,7 +369,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         await logPipelineRun({
           startedAt: startedAtIso, rowsFound: nodes.length, rowsWritten: 0, rowsSkipped: nodes.length,
           ok: false, error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, elapsed_ms: Date.now() - started, function_version: 9 },
+          extra: { counters, elapsed_ms: Date.now() - started, function_version: 10 },
           cursorBefore: cursor, cursorAfter: endCursor,
         })
         return
@@ -375,7 +390,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         editions_with_fmv: fmvByEditionId.size,
         editions_requested: allExternalIds.size,
         elapsed_ms: elapsed,
-        function_version: 9,
+        function_version: 10,
         ev_method: "circulation_weighted",
         has_next_page: hasNextPage,
       },
@@ -387,7 +402,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { elapsed_ms: Date.now() - started, function_version: 9 },
+      extra: { elapsed_ms: Date.now() - started, function_version: 10 },
       cursorBefore: cursor,
     })
   }
