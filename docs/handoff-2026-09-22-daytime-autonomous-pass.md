@@ -33,7 +33,7 @@
 
 ## Watch items for the next pass
 
-- **W1 (24 h exit of #3):** `n_tup_upd` on both pack-sales tables < 10 % of pre-ship; `n_tup_ins` keeps pace; `relallvisible/relpages` > 80 % after the next autovacuum. Falsifier: inserts stall ⇒ drop the triggers.
+- **W1 (24 h exit of #3):** maps were reset to **100 %** at 1:06–1:07 PM PT by two one-off `VACUUM (ANALYZE)` jobs (5.6 s / 6.0 s, unscheduled after). Then: `n_tup_upd` on both pack-sales tables < 10 % of pre-ship; `n_tup_ins` keeps pace; `relallvisible/relpages` > 80 % after the next autovacuum. Falsifier: inserts stall ⇒ drop the triggers.
 - **W2:** `get_pack_sales_history` baseline is **mean 195 ms, 141 blocks/call** (pgss, cumulative). Re-read after the visibility maps recover. The pack-detail 5 s timeouts may ease with them.
 - **W3:** pg_net shows 55 s **DNS-resolution hangs** at 2–6 an hour since ~8 AM PT (the #122 class, low rate).
 - **W4:** the AllDay pack-EV cursor must keep advancing, with distinct dists per hour well above 18.

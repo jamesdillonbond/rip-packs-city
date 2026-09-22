@@ -1,5 +1,11 @@
 # Handoff — `compute-allday-pack-ev` fails every run: `pool prune 5349: Bad Request`
 
+> ✅ **SUPERSEDED — DONE 2026-09-22 11:34 AM PT, no action needed.** Deployed as `compute-allday-pack-ev` v59 (v10 source) by the
+> Cowork daytime pass, reconciled into `main` by `ef84e5d64`, verified on the real caller (first run 11:37 AM PT ok=true,
+> editions_with_fmv 1,000 → 1,463, cursor advancing). v10 also fixes a second bug this handoff did not name (the
+> PostgREST 1,000-row cap on `get_fmv_for_editions`). See ledger 2026-09-22 and `docs/handoff-2026-09-22-daytime-autonomous-pass.md`.
+> ⚠ The "PAT in `remote.origin.pushurl`" scope line below is itself stale — that route is dead.
+
 **For Claude Code on Trevor's box.** One item. Edge-function fix (`supabase/functions/compute-allday-pack-ev/index.ts`) — must be committed to `main` **and** redeployed.
 
 > This blocker is specific to the Cowork cloud session that wrote this (no git credentials). Trevor's machine and Claude Code push normally via the PAT in `remote.origin.pushurl`. Commit these files as usual.
