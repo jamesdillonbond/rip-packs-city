@@ -1,4 +1,4 @@
-# Inbox index — 541 live filings
+# Inbox index — 542 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-09-21 — 2 filings
+## 2026-09-21 — 3 filings
+
+- [🔴 **Daytime monitor — `compute-allday-pack-ev` fails EVERY run on `pool prune 5349: Bad Request` (post-R123)**](2026-09-21T1813Z-daytime-monitor-compute-allday-pack-ev-pool-prune-5349-400.md) — *(rpc-daytime-monitor, ~11:1x AM PT 09-21. **READ-ONLY, nothing shipped.**)* 27 of the last 60 runs (30h) failed, **100% of failures identical**: `1 pool write error(s): pool prune 5349: Bad Request`, same pool every run. Clean onset `2026-09-21 05:07:04Z`, last OK run `04:37:03Z` — **~9.5h AFTER R123 went green**, so a regression, not a pre-existing condition. ⭐ **Positive control taken at file time**: `pg_stat_activity` 1 active / 1 IO-wait — instance CALM, so the deterministic HTTP-400 is a real fault and safe to attribute, not a saturation artifact. Both same-day migrations predate onset by ~4h. Blast radius contained (trust-health AllDay arms all ok; the per-dist loop `continue`s). Fix is edge-fn code → Claude Code handoff.
 
 - [⚠ **Daytime monitor — `snapshot-institutional-wallets` silent ~31h, known chronic class, hand-dispatch not re-investigate**](2026-09-21T0318Z-daytime-monitor-institutional-wallet-snapshot-silent-31h.md) — *(rpc-daytime-monitor, ~8:18 PM PT 09-20 / 03:18Z 09-21. **READ-ONLY, nothing shipped.**)* `rpc_ops_snapshot()` flags the daily lane silent 1,857 min (>1,800 threshold, severity high, `classification: no_marker`); last run 2026-09-19 20:09:31Z. Matches the chronic "dies mid-run in the night spell, no terminal row" class already tracked (M11/#42/#73/#84) — **not on the "Declined — do not re-suggest" list**, low risk, but needs the route's own 202 hand-dispatch path (last proven remedy: ok, 257 pages, 74s), which this session couldn't call. ⭐ One fresh angle: the instance moved Small→Large at 09-20 17:39Z, so a recurrence **after** the resize would point at the lane's own paging cost rather than IO saturation — do not raise a ceiling if so. Lane is content-drifted (#23/R63): hand-dispatch, not a redeploy. Checked four other live signals against the ledger and declined to re-file all four as known/false-positive (weekly reindex false-positive, sports-proxy #8, gate-key-rotation 403s, cross-collection mats pre-resize timeout).
 
