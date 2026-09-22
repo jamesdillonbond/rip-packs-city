@@ -5,7 +5,7 @@ description: Use when packaging Rip Packs City work for Claude Code to ship — 
 
 # RPC Claude Code handoff packager
 
-Cowork can ship DB migrations and Supabase edge functions live, but it has no git credentials, so **route code, `.tsx`, and `workers/*` changes must be handed to Claude Code on Trevor's machine.** This skill produces that handoff in the exact format that has proven to work.
+Cowork can ship DB migrations and Supabase edge functions live, and it CAN push when a push path is up (laptop VM `device_bash` + `.rpc-git-cred`; a cloud session with the repo attached; or the `cowork-push` queue — see `docs/reference/tooling-gotchas.md`). **Hand off to Claude Code on Trevor's machine when no push path works, or when the change needs a local test/render run Cowork cannot do** (route code, `.tsx`, `workers/*`). Test the push path first (`git push --dry-run origin main`) — never assume. This skill produces that handoff in the exact format that has proven to work.
 
 ## Output rules
 
@@ -60,7 +60,8 @@ now ship a `git format-patch` set, and every one of these rules cost real rework
    against the number of commits you expected.
 
 ⛔ **Scope every no-push note.** Write: *"This blocker is specific to this cloud session. Trevor's
-machine and Claude Code push normally via the PAT in `remote.origin.pushurl`. Commit these files as
+machine and Claude Code push normally via Git Credential Manager / `gh auth setup-git` — ⛔ never
+write "the PAT in `remote.origin.pushurl`": that route is DEAD (PAT burned + removed 2026-08-16). Commit these files as
 usual."* Omitting it once left two applied migrations uncommitted for ~18 hours.
 
 ## Before writing

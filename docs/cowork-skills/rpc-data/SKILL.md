@@ -8,7 +8,9 @@ description: Rip Packs City data-warehouse context — load when querying or ana
 Postgres on Supabase, project `bxcqstmqfzmuolpuynti`. Read via `execute_sql` (one statement per call). Pair with the `data` plugin's analyze / write-query skills. Always confirm columns with `information_schema.columns` before a non-trivial query.
 
 <!-- retired-rule:allow limit-10000-lifts-the-postgrest-cap -->
-🚨 **THE 1000-ROW CAP IS NOT LIFTED BY A BIGGER `LIMIT` (corrected 2026-08-24; this line used to say "use `LIMIT`").** PostgREST caps reads at 1000 rows and **CLAMPS an explicit `.limit()` above that** — so a `.limit(10000)` hands back 1000 rows to a caller who believes they have 10,000, which is a partial read rendering as a complete one. **For a TOTAL, read the returned `count` (`head: true`), never `rows.length`.** Aggregate in SQL, or paginate. ⚠ **Any `.range()` pagination MUST carry a deterministic `.order()` on a UNIQUE key**, or it reads the right *number* of rows and the wrong *rows* — the duplicates and omissions CANCEL, so every count-based check passes and only a DISTINCT count or a set comparison sees it.
+⚠ **Compute is LARGE since 2026-09-20** — 8 GB RAM, `shared_buffers` 2 GB, sustained disk **79 MB/s / 3,600 IOPS** (was Small: 22 MB/s / 1,000 IOPS, measured pinned at 93%). **Any cost, duration, "heavy", or "not possible on this instance" claim dated before 2026-09-20 was measured on the old tier — re-measure before citing it.**
+
+🚨 **THE 1000-ROW CAP IS NOT LIFTED BY A BIGGER `LIMIT` (corrected 2026-08-24; this line used to say "use `LIMIT`").** PostgREST caps reads at 1000 rows and **CLAMPS an explicit `.limit()` above that** — so a `.limit(10000)` hands back 1000 rows to a caller who believes they have 10,000, which is a partial read rendering as a complete one. **For a TOTAL, read the returned `count` (`head: true`), never `rows.length`.** Aggregate in SQL, or paginate. 🚨 **The clamp ALSO applies to a SET-RETURNING RPC's result, silently** — `get_fmv_for_editions` over 1,488 ids returned exactly 1,000 rows for weeks (AllDay pack EV, fixed 2026-09-22). Pass id lists in ≤500-id slices; `__tests__/get-fmv-for-editions-is-chunked-under-max-rows.test.ts` pins it for that RPC. The tell is a counter sitting at exactly 1000. ⚠ **Any `.range()` pagination MUST carry a deterministic `.order()` on a UNIQUE key**, or it reads the right *number* of rows and the wrong *rows* — the duplicates and omissions CANCEL, so every count-based check passes and only a DISTINCT count or a set comparison sees it.
 
 ## Collections — two vocabularies (critical)
 
@@ -19,7 +21,7 @@ Postgres on Supabase, project `bxcqstmqfzmuolpuynti`. Read via `execute_sql` (on
 
 ⚠ **Because only `flowty_transactions` is CHECK-constrained, a wrong value fails LOUDLY there and persists SILENTLY in the other two, where it never matches** (verified against `pg_constraint` 2026-08-24). Bridge long→short with the `analytics_sales` view's CASE.
 
-**Collection UUIDs — there are SEVEN, not five.** Read them from the live-derived table in `docs/reference/schema-truth.md` rather than a hardcoded list here (re-verified against `public.collections` 2026-08-24, zero drift). The five published Flow collections are joined by **`candy_mlb` (`solana`)** and **`panini_blockchain` (`ethereum`)**, both `is_active=false` — ⚠ **but `is_active` is NOT the public-visibility switch**: both have public insights boards, so a "how many" query that stops at the five silently undercounts. Every dependent row reaches chain via `collection_id` FK; `collection_chains` view is the canonical join.
+**Collection UUIDs — there are SEVEN, not five.** Read them from the live-derived table in `docs/reference/schema-truth.md` rather than a hardcoded list here (re-verified against `public.collections` 2026-08-24, zero drift). The five published Flow collections are joined by **`candy_mlb` (`solana`)** and **`panini_blockchain` (`ethereum`)**, **`candy_mlb` is `is_active=true` since 2026-09-06 (#63); `panini_blockchain` is the ONLY inactive row** (re-verified live 2026-09-22) — ⚠ **and `is_active` is NOT the public-visibility switch**: Panini still has public insights boards, so a "how many" query that stops at the five silently undercounts. Every dependent row reaches chain via `collection_id` FK; `collection_chains` view is the canonical join.
 
 ## Key tables
 
@@ -39,7 +41,7 @@ Postgres on Supabase, project `bxcqstmqfzmuolpuynti`. Read via `execute_sql` (on
 
 - Latest FMV per edition: `SELECT DISTINCT ON (edition_id) edition_id, fmv_usd, confidence FROM fmv_snapshots WHERE collection_id = '<uuid>' ORDER BY edition_id, computed_at DESC` — then join editions and filter canonical for TS.
 - Pipeline health (48h): `SELECT pipeline, count(*), count(*) FILTER (WHERE NOT ok) AS fails, max(finished_at) FROM pipeline_runs WHERE started_at > now()-interval '48 hours' GROUP BY 1`.
-- **Health fns return a SINGLE jsonb row** — `detect_stalled_pipelines()`, `get_pipeline_alerts()`, `check_secdef_anon_execute_violations()`, `check_public_security_invariants()`: read the VALUE (`[]` = clean); `count(*)` always returns 1 and is a false finding.
+- **Health fns return a SINGLE jsonb row** — `detect_stalled_pipelines()`, `get_pipeline_alerts()`, `check_secdef_anon_execute_violations()`: read the VALUE (`[]` = clean); `count(*)` always returns 1 and is a false finding. ⚠ **EXCEPTION: `check_public_security_invariants()` and `check_anon_write_surface()` are set-returning `TABLE(...)` — clean = 0 ROWS.** Check `pg_get_function_result()` before choosing the reader.
 - Enum filters use `=` / `.eq`, never `ilike`.
 
 ## Pitfalls

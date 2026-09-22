@@ -13,6 +13,32 @@ Read §1 before touching anything.
 
 ---
 
+## 0. ⭐ READ FIRST — the rotation mechanism changed 2026-09-20/21, and §2's copy-out step is SUPERSEDED
+
+**The operator only ever WRITES a fresh secret; nothing ever reads one.** `rotate_cron_gate_key(p_jobids int[], p_new_key text)`
+(SECDEF, service_role only, migration `20260921004437`) rewrites only the `?key=` of the named jobs. A short-lived,
+token-gated rotator edge function reads the secret **by an allow-listed name** from its own env, checks it structurally
+(`len ≥ 24`, `^rpc_pls_`, `^[A-Za-z0-9_-]+$` — **refuses on failure**), and hands it straight to that function; the
+caller gets back only a SHA-256 prefix. Tombstone the rotator (410) immediately after use. Full recipe:
+Project doc `claude/handoff-2026-09-21-golazos-rotation-closed.md` / ledger 2026-09-20 entries.
+
+- ⛔ **§2's "set the secret to the value cron already sends" / "operator copies it out of `cron.job`" is the leak
+  vector** — it is how nine keys leaked at once on 2026-08-18. Use it only if the rotator path is unavailable AND
+  service is down, and treat the result as a burned key to rotate immediately.
+- ⛔ **A gate key is `rpc_pls_` + 32 hex** — PowerShell `"rpc_pls_" + [guid]::NewGuid().ToString("N")`. **Never a
+  password-manager generator:** characters outside `[A-Za-z0-9_-]` break the `?key=` URL (`&` ends it, `#` truncates it)
+  — that caused the 6 h 38 m Pinnacle outage on 09-20.
+- 🔎 **The 403 instrument is `net._http_response.status_code` + `content`** — a 403'd function writes NO
+  `pipeline_runs` row and `cron.job_run_details` still says `succeeded`.
+- 📌 **Deploy the lane with the FASTEST tick first** (e.g. a `*/2` job): the feedback loop is the cost of being wrong.
+- ✅ **Verify without waiting for a tick:** fire the job's own command so the key is never echoed —
+  `do $$ declare c text; begin select command into c from cron.job where jobid = <j>; execute c; end $$;` — then read
+  `pipeline_runs`.
+- 📋 **State (re-derive before quoting):** 9 of 13 gate-keyed jobs rotated as of 2026-09-21 (15, 16, 42, 26, 20, 56, 83,
+  84, 44). Jobs **22 / 25 / 27 / 29** hold LITERAL keys in deployed source with no repo source and no matching secret —
+  they need the de-literalise path (redacted source → `_GATE_KEY` + `_OLD` → deploy → operator sets secret → commit).
+  ⚠ **25 and 29 share one key across two functions — they must move together.** Tombstone `zz-gate-diag` when done.
+
 ## 1. ⛔ A deploy of a gate-keyed function is a TWO-PART change
 
 Shipping the code without the secret **looks like success in the deploy log** and fails
@@ -36,7 +62,7 @@ cadence) — if the deployed build still carries a hardcoded key, the secret is 
 deploy is not yours to make unattended.
 
 **Order, always:**
-1. **Set the secret first** — to the value cron already sends (see §2). Dashboard →
+1. **Set the secret first** — a FRESH `rpc_pls_` key the operator generates, then rotate cron onto it with §0's rotator (the old "value cron already sends" route is §2's emergency-only fallback). Dashboard →
    Edge Functions → Secrets. ⚠ **The Supabase MCP has no secrets verb; this is
    dashboard-only and can never be completed by an agent session.** (Re-verified 2026-09-20:
    the laptop VM has no `SUPABASE_ACCESS_TOKEN` either — `npx supabase secrets list` asks for
@@ -90,6 +116,8 @@ length, prefix and character class are safe to read and are exactly what catches
 truncation and trailing whitespace.
 
 ### The instruction itself
+
+⛔ **EMERGENCY-ONLY since 2026-09-21 — see §0.** This copies a live, usually BURNED key through a human. Prefer §0.
 
 **Set `<NAME>_GATE_KEY` to the value cron already sends** (once the precondition passes).
 Works whether or not the deployed build carries the dual-accept code, needs no cron repoint and
