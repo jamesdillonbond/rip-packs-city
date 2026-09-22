@@ -63,6 +63,10 @@ Work through every applicable item before applying, and the verification items a
 - ⚠ **The MCP client caps a statement at 60 s** — an in-migration A/B or a 4-scan set-diff will not fit. Hand A/B with literal `ARRAY[...]::uuid[]`; set-diff via `WITH a AS MATERIALIZED, b AS MATERIALIZED`. A jsonb literal inside a DO block needs quotes (`'{…}'::jsonb`).
 - ⭐ **The DB-invariant suite runs locally** (throwaway Postgres 16 on :5433 — recipe in `docs/reference/tooling-gotchas.md`): `DATABASE_URL=… bash scripts/run-db-tests.sh`, one pin with `psql -v ON_ERROR_STOP=1 -q "$DATABASE_URL" -f supabase/tests/<fn>.sql`, and `bash scripts/check-migration-sql-parses.sh`. Run them before the push, not after CI does.
 
+## Trap added 2026-09-22 (the ghost-listing refresher)
+
+- 🚨 **An `INSERT … SELECT` (and any data-modifying statement) plans SERIALLY. Measure it with `SET max_parallel_workers_per_gather = 0`, or EXPLAIN the INSERT itself, never the bare SELECT.** A parallel `SELECT … WHERE EXISTS (… sales …)` measured 1.75 s. The same predicate inside the INSERT was a serial Hash Semi Join over all ~804k All Day sales: **757k buffers and 18–25 s per pg_cron run.** Inlining a plpgsql variable as a literal did NOT fix it. `CROSS JOIN LATERAL (… LIMIT 1)` forces the per-row index probe, with run-time partition pruning (0.3–0.6 s). Confirm from `cron.job_run_details` duration, because a warm manual call can mislead.
+
 ## After applying
 
 17. **Verify, then write conclusions in a SEPARATE step.** Never fire the migration and the verifying query (or a doc capturing the result) in the same batch — the doc captures the assumed result, not the actual output. Run → read → then record.
