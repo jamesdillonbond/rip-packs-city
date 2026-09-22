@@ -2,7 +2,7 @@
   "generated_at_pt": "2026-09-22 ~2:30 PM PT",
   "generated_at_utc": "2026-09-22T21:30Z",
   "pass": "daytime autonomous pass (Cowork cloud build/test + laptop-VM push via .rpc-git-cred). Cloud container itself cannot push (repo not in session's authorized set).",
-  "shipped": 8,
+  "shipped": 9,
   "reverted": 0,
   "verdict": "GREEN. Two real defects found and fixed: (1) AllDay pack EV ran on a PostgREST-truncated price list and its prune 400'd for ~37h (fixed v10, class closed at 4 call sites + guard). (2) All Day FMV was capped by ghost floor listings (NFT sold after listing): with Trevor's approval allday_edition_floor_ask now excludes them (migrations 20260922205752 + 20260922210944, pg_cron job 596); on 83 re-priced editions FMV/last-7-median went 0.667 -> 1.017 and below-all-recent-sales 59 -> 6. #35 write amplification removed; two zero-yield lanes suppressed with positive controls; skills/CLAUDE.md refreshed.",
   "health": {
@@ -23,7 +23,7 @@
     "golazos_pack_ev": "v3 ok at 11:37 AM PT",
     "pack_sales_history_updates": "n_tup_upd +0 on both tables for 20+ min post-trigger (pre ~1,000-1,400/min)",
     "exits_owed": "W1 24h trigger exit; W2 get_pack_sales_history 195ms/141 blks baseline; W3 pg_net DNS hangs; W4 AllDay cursor; W5 ghost-set job + full-walk FMV ratio + honest HIGH/MED drop",
-    "allday_ghost_floor_fix": "paired n=83: ratio 0.667->1.017, below-all 59->6; confidence MED->LOW 42 vs LOW->MED 20 on 336 re-priced (control 11/12) — ghost asks had been corroborating; job 596 1.2s, 0 new ghosts in first 3 runs (set 17,578)"
+    "allday_ghost_floor_fix": "paired n=83: ratio 0.667->1.017, below-all 59->6; confidence MED->LOW 42 vs LOW->MED 20 on 336 re-priced (control 11/12) — ghost asks had been corroborating; job 596 manual 330-465ms after 20260922214635 (cron runs were 18-25s, 757k blk/call before it); positive control 5/5; 0 organic new ghosts so far (set 17,578)"
   },
   "needs_trevor": [
     "All Day HIGH+MED will drift DOWN after the ghost-floor fix (ghost asks were corroborating LOW->MED) — honest, but it moves the headline KPI",
