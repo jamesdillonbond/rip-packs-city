@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-22 · ⚡ Follow-up: the ghost-listing refresher's first cron run took 18.5 s; inlining the collection literal cuts it to 1.2 s · Cowork cloud (daytime autonomous pass)
+
+**Shipped:** migration `20260922210944_audit_20260922_ghost_listings_refresh_inlines_the_collection_literal`. `refresh_allday_listings_sold_after_listing()` has the same body with `'dee28451-…'::uuid` inlined in place of the plpgsql variable `v_coll`. **Measured:** job 596's first run (2:07 PM PT) took **18.5 s** and a manual call **8.5 s**. The same insert-select as a literal took **1.75 s** under EXPLAIN ANALYZE, and the replaced function took **1,167 ms**. The parameter hid the constant from the planner at the partitioned `sales` probe. ACL re-stated (anon EXECUTE false, asserted). **Revert:** re-apply the body from `20260922205752`, which is correct, only slower.
+
 ### 2026-09-22 · 🩹 SHIPPED (Trevor-approved) — the All Day floor view stops offering listings whose NFT already SOLD; 2,619 floors rise (median ×2.52), and the fmv-recalc ask-ceiling stops pinning FMV to ghosts · Cowork cloud (daytime autonomous pass)
 
 **Shipped (migration `20260922205752_audit_20260922_allday_floor_ask_excludes_listings_whose_nft_sold_after_listing`, repo file md5 = `schema_migrations` md5 `c912304e…`):** new `public.allday_listings_sold_after_listing` (PK `listing_resource_id, source`; RLS on, `service_role_all`, anon/auth SELECT only, like `cached_listings_v2`), filled by `refresh_allday_listings_sold_after_listing()` (INVOKER, EXECUTE revoked from PUBLIC/anon/authenticated) on pg_cron **job 596 `rpc-allday-ghost-listings-refresh` `7,22,37,52 * * * *`** as `postgres`; `allday_edition_floor_ask` gains `AND NOT EXISTS (… ghost set by PK)`, `security_invoker=on` re-applied and asserted. Trevor approved "ship the view fix" at ~1:50 PM PT, which lifts the pricing-logic bar on this item only.
