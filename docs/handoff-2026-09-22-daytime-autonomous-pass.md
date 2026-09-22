@@ -2,7 +2,7 @@
 
 **Push status:** every commit this pass landed on `main` through the laptop VM (`$HOME` clone + the `.rpc-git-cred` store helper), built and tested in the cloud clone first. ⚠ The cloud container itself cannot push — *"not in this session's authorized repository set"* — which is specific to **this cloud session**. Trevor's machine and Claude Code push normally via Git Credential Manager. **Commit files as usual.**
 
-## Health verdict: GREEN, with one defect found and fixed
+## Health verdict: GREEN, with two defects found and fixed
 
 - Cron fleet on LARGE: 24 h `cron.job_run_details` **9,481 / 9,481 succeeded, 0 startup timeouts**; 6 h failure rate 0 / 2,359.
 - Security: `check_public_security_invariants` 0 rows, anon-write surface 0, secdef drift `[]`, search_path drift `[]`, R118 blind handlers 0.
@@ -20,17 +20,29 @@
 | 4 | Zero-Yield: 2 correct zeros suppressed with on-chain positive controls | migration `20260922194626` | offenders 4 → 2 (the two alert lanes stay loud on purpose) | `DELETE … WHERE pipeline IN (…)` |
 | 5 | Five Cowork skills refreshed; `rpc-surface-qa` brought into the repo + bundle guard; CLAUDE.md "Supabase (Pro, Small)" → Large | `docs/cowork-skills/*`, `CLAUDE.md` | bundles 11/11, docs-guard 157 files green, CLAUDE.md 39,952 chars | `git revert` |
 | 6 | Ledger backfill: the 09-21 Small→Large verdict and the 09-20 job-44 rotation (both lived only in Project docs) | `docs/overnight/ledger.md` | swallowed-headings 3, future-dated 0 | — |
+| 7 | **All Day floor view excludes listings whose NFT sold after listing (Trevor-approved)** | migration `20260922205752`, table `allday_listings_sold_after_listing`, pg_cron job 596 | floors 4,543 → 4,381, full read 5,127 → 5,274 buffers, invariants 0 | in the migration header (unschedule, old view body, drop fn and table) |
 
 ⚠ **I broke CI once and fixed it:** `9e17d91e6` (docs-only) moved a paragraph between a `<!-- retired-rule:allow -->` marker and the line it allows → "Docs-guard tests" red. Fixed in `06500b3a5`. After that I ran the docs-guard set locally before every docs push.
 
 ## Needs Trevor (decisions, not code)
 
-0. 🔴 **NEW, most important for the accuracy gate: All Day FMV is capped by stale floor listings.** 55 % of All Day HIGH and 44 % of MEDIUM editions (7+ sales in 30 days) have an FMV **below every one of their last 7 sales**, while Top Shot is symmetric at 1.00. 180 of those 184 have FMV exactly equal to `allday_edition_floor_ask` (median listing age 36 days), which the fmv-recalc ask-ceiling reads with no age gate. The dollars are small (cheap commons) but the errors run 25–50 % on rows the KPI counts as confident. Full write-up, three fix shapes and a falsifier: `docs/overnight/inbox/2026-09-22T2045Z-allday-fmv-is-capped-by-month-old-floor-listings-the-market-clears-above.md`. Not shipped, because pricing logic is off-limits.
+0. ✅ **SHIPPED on your approval (~2:00 PM PT): All Day FMV was capped by ghost floor listings.** 55 % of All Day HIGH and 44 % of MEDIUM editions (7+ sales in 30 days) had an FMV **below every one of their last 7 sales**, while Top Shot is symmetric at 1.00. 180 of those 184 had FMV exactly equal to `allday_edition_floor_ask`, and 722 of 740 contradicted floors were NFTs that had **sold after the listing was created**, so the listings were dead. The fix is migration `20260922205752`:
+   - `allday_edition_floor_ask` now excludes those listings via a small set table, which pg_cron job 596 refreshes every 15 min.
+   - An inline anti-join would have cost 27× buffers on every full read, so the probe runs in the job instead. Full reads are +3 %.
+   - Floors went 4,543 → 4,381.
+   - This also corrects the All Day deal board and badge low-ask, which read the same view.
+   - The FMV before/after is in "All Day before/after" below.
+   - Write-up: `docs/overnight/inbox/2026-09-22T2045Z-…`.
+   - The route-level alternative (skip the cap when ≥3 sales cleared above the ask) was built and tested but **not committed**. It is redundant with the source fix, and it would be FMV route logic.
 1. **Deal alerts are nearly unable to fire on Top Shot.** Your two active subscriptions (Blazers rookie specials ≥25 % under FMV; Lillard Archive ≤ $0.60) have delivered nothing since 09-14. The gate is correct (an ask must be confirmed within 12 h), but only **1,485 of 13,154 Top Shot asks (11 %)** are that fresh. The median ask is **126 h old**, because Atlas is the only thing confirming Top Shot asks since `public-api.nbatopshot.com` died. The choice is widening Top Shot ask confirmation (more Atlas coverage) or accepting that alerts only cover about 11 % of editions.
 2. **Candy MLB confidence fell from 78 to 27 HIGH+MEDIUM** (of 125 editions) between 09-19 and 09-22, while sales **rose** (87 / 154 / 60 a day). 90 of the 98 LOW editions have ≥7 sales in 30 days. They are LOW because of the **dispersion gate**: median CV is 0.50 and prices vary about 16× within an edition. The 09-19/20 flood of cheap sales (average $1.31) widened the price ranges. That is the gate working as written. ⚠ **Follow-up measurement (1:30 PM PT), which refutes my first guess:** the dispersion is not just a 30-day trend artefact, because the **last 7 sales alone have a median CV of 0.53** (only 8 of 90 editions would clear the MEDIUM bar on them). So LOW is honest. What IS worth a look: on those 90 editions **FMV sits a median 18 % above the median of their last 7 sales**. Example: Corbin Carroll COMMON /250 has an FMV of $0.96, and its sales slid from $1.44–1.48 in late August to $0.50–0.93 by 09-16…09-20. That is lag in a falling market, which bears directly on the accuracy gate. I didn't ship anything here because pricing logic is off-limits to autonomous passes.
 3. **Scheduled tasks.** The two disabled every-2-hours passes (`trig_018Ay…`, `trig_01AZz…`, disabled since 09-01, #55) should be deleted or re-enabled. They're dead weight as they are. The nightly pass is still running cloud-only without the repo attached: the 09-22 overnight flags only reached `main` because you landed them by hand. Recreating it device-bound, or with the repo attached, would let it push.
 4. **Eleven legacy desktop-only Cowork dashboards** (the KPI ones `rpc-tracked-fmv-confidence` and `rpc-traction`, plus `rpc-live-health`, `rpc-qa-scorecard` and seven others last touched June–August). They can't be updated from a cloud session. The offer: consolidate them into one published "RPC Gate Board" (accuracy KPI + WAU + health) and retire the rest.
 5. Still open from 09-21: jobs 22 / 25 / 27 / 29 hold literal keys (25 and 29 share one), and they need the de-literalise path.
+
+## All Day before/after
+
+_Pending: fmv-recalc must first walk the All Day editions._
 
 ## Watch items for the next pass
 

@@ -1,5 +1,7 @@
 # All Day FMV is capped by month-old floor listings that the market keeps clearing ABOVE — 55 % of HIGH editions sit below every one of their last 7 sales
 
+> ✅ **SHIPPED 2026-09-22 ~2:00 PM PT (Trevor-approved), fix shape 3 ("fix the source"):** migration `20260922205752`. `allday_edition_floor_ask` now excludes open listings whose NFT sold after `listed_at`, via the set table `allday_listings_sold_after_listing`, which pg_cron job 596 refreshes every 15 min. Floors 4,543 → 4,381; 2,619 floors rise. The ledger entry of the same date carries the revert, and the FMV before/after is in `docs/handoff-2026-09-22-daytime-autonomous-pass.md`.
+
 **Filed 2026-09-22 ~1:45 PM PT (Cowork cloud, daytime autonomous pass). READ-ONLY. Nothing shipped:** pricing logic (`app/api/fmv-recalc`) is off-limits to autonomous passes. This bears directly on the headline KPI, because the rows it affects are **counted as HIGH/MEDIUM**.
 
 ## The measurement (DB 1:35–1:45 PM PT, 30-day sales, editions with ≥ 7 sales)
