@@ -21,6 +21,7 @@
 | 5 | Five Cowork skills refreshed; `rpc-surface-qa` brought into the repo + bundle guard; CLAUDE.md "Supabase (Pro, Small)" → Large | `docs/cowork-skills/*`, `CLAUDE.md` | bundles 11/11, docs-guard 157 files green, CLAUDE.md 39,952 chars | `git revert` |
 | 6 | Ledger backfill: the 09-21 Small→Large verdict and the 09-20 job-44 rotation (both lived only in Project docs) | `docs/overnight/ledger.md` | swallowed-headings 3, future-dated 0 | — |
 | 7 | **All Day floor view excludes listings whose NFT sold after listing (Trevor-approved)** | migration `20260922205752`, table `allday_listings_sold_after_listing`, pg_cron job 596 | floors 4,543 → 4,381, full read 5,127 → 5,274 buffers, invariants 0 | in the migration header (unschedule, old view body, drop fn and table) |
+| 8 | Follow-up: the refresher's first cron run took 18.5 s because a plpgsql variable hid the collection constant from the planner; the id is now an inlined literal | migration `20260922210944` | 1,167 ms per call | re-apply the `20260922205752` body |
 
 ⚠ **I broke CI once and fixed it:** `9e17d91e6` (docs-only) moved a paragraph between a `<!-- retired-rule:allow -->` marker and the line it allows → "Docs-guard tests" red. Fixed in `06500b3a5`. After that I ran the docs-guard set locally before every docs push.
 
@@ -42,7 +43,19 @@
 
 ## All Day before/after
 
-_Pending: fmv-recalc must first walk the All Day editions._
+Measured at 2:25 PM PT, about 25 min after the fix, from `fmv_snapshots`. `edition_fmv_current` lags the snapshots, so it was not used.
+
+**Paired test on the same editions.** These are the 83 All Day editions with ≥7 sales in 30 days that fmv-recalc re-priced after the fix. Each one's last pre-fix snapshot is compared with its latest post-fix snapshot, against a last-7 median that uses only sales from before the fix:
+
+| | pre-fix | post-fix |
+|---|---|---|
+| median FMV ÷ last-7-sale median | **0.667** | **1.017** |
+| FMV below ALL of the last 7 sales | **59** of 83 | **6** of 83 |
+| FMV above ALL of the last 7 sales | 0 | 2 |
+
+The Top Shot control on the same instrument sits at 1.000. All Day now looks the same: centred, with errors on both sides. Across those 83 editions FMV rose $9.63 in total (these are cheap commons).
+
+⚠ **The price of that accuracy is confidence, and you should know it.** Across all 336 All Day editions re-priced so far, **42 went MEDIUM → LOW and 20 went LOW → MEDIUM, a net loss of 22 HIGH/MEDIUM editions.** In the two pre-fix hours the same measurement showed 11 down and 12 up, so the loss comes from the fix and is not normal churn. The mechanism: All Day ask-corroboration (09-09, `lib/fmv-confidence.ts` `escalateConfidence`) lifts LOW → MEDIUM when a live ask agrees with the sales median. The ghost floors "agreed" because FMV had been capped *to* them. So those MEDIUMs rested on a listing that could not be bought, and LOW is the honest reading. Expect the All Day HIGH+MEDIUM count to drift down as the walk completes. **That is the KPI getting more truthful, not less accurate.** Separately, 162 editions had only ghost listings, so they now have no floor: 50 of them are MEDIUM, 58 LOW and **54 ASK_ONLY**. Those 54 were priced from a dead listing (floor × 0.90), and what fmv-recalc does with them on its next pass is worth one look.
 
 ## Watch items for the next pass
 
@@ -50,6 +63,7 @@ _Pending: fmv-recalc must first walk the All Day editions._
 - **W2:** `get_pack_sales_history` baseline is **mean 195 ms, 141 blocks/call** (pgss, cumulative). Re-read after the visibility maps recover. The pack-detail 5 s timeouts may ease with them.
 - **W3:** pg_net shows 55 s **DNS-resolution hangs** at 2–6 an hour since ~8 AM PT (the #122 class, low rate).
 - **W4:** the AllDay pack-EV cursor must keep advancing, with distinct dists per hour well above 18.
+- **W5 (the ghost-floor fix):** job 596 `rpc-allday-ghost-listings-refresh` should run in about 1–2 s (1,167 ms after the literal-inline follow-up, `20260922210944`). Its first three runs inserted **0** new ghosts on a set of 17,578, so the 17.6k look historical and the live listings lane may already close sold listings. If `inserted` stays 0 for a week, the set is a one-time cleanup and the job can move to hourly. Re-run the paired FMV ratio once the All Day walk completes: the target is a median near 1.0 with both tails populated. Also watch the All Day HIGH+MEDIUM count: an honest drop is expected (see "All Day before/after").
 - R1/R2 (autovacuum 0.1 → 0.02 on the pack-sales tables) are **withdrawn**. #3 removes the churn that made them look necessary. R3/R4 are still candidates.
 
 ## Triage of the 14 inbox filings from 09-19 to 09-21

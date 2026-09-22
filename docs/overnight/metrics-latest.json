@@ -1,10 +1,10 @@
 {
-  "generated_at_pt": "2026-09-22 ~1:05 PM PT",
-  "generated_at_utc": "2026-09-22T20:05Z",
+  "generated_at_pt": "2026-09-22 ~2:30 PM PT",
+  "generated_at_utc": "2026-09-22T21:30Z",
   "pass": "daytime autonomous pass (Cowork cloud build/test + laptop-VM push via .rpc-git-cred). Cloud container itself cannot push (repo not in session's authorized set).",
-  "shipped": 6,
+  "shipped": 8,
   "reverted": 0,
-  "verdict": "GREEN. One real defect found and fixed: AllDay pack EV ran on a PostgREST-truncated price list (1,000 of ~1,460 FMVs) and its R123 prune 400'd every run for ~37h, freezing the page cursor on page 1. Fixed (v10), class closed at 4 call sites + guard. #35 write amplification removed by a suppress-redundant-updates trigger. Two zero-yield lanes suppressed with on-chain positive controls. Skills/CLAUDE.md refreshed.",
+  "verdict": "GREEN. Two real defects found and fixed: (1) AllDay pack EV ran on a PostgREST-truncated price list and its prune 400'd for ~37h (fixed v10, class closed at 4 call sites + guard). (2) All Day FMV was capped by ghost floor listings (NFT sold after listing): with Trevor's approval allday_edition_floor_ask now excludes them (migrations 20260922205752 + 20260922210944, pg_cron job 596); on 83 re-priced editions FMV/last-7-median went 0.667 -> 1.017 and below-all-recent-sales 59 -> 6. #35 write amplification removed; two zero-yield lanes suppressed with positive controls; skills/CLAUDE.md refreshed.",
   "health": {
     "cron_24h": "9,481/9,481 succeeded, 0 startup timeouts (LARGE)",
     "security_invariants": "clean (0 rows; anon write 0; secdef/search_path drift [])",
@@ -22,9 +22,11 @@
     "allday_pack_ev": "v10 runs ok; editions_with_fmv 1000->1463; cursor advancing; distinct dists/h 18->48",
     "golazos_pack_ev": "v3 ok at 11:37 AM PT",
     "pack_sales_history_updates": "n_tup_upd +0 on both tables for 20+ min post-trigger (pre ~1,000-1,400/min)",
-    "exits_owed": "W1 24h trigger exit; W2 get_pack_sales_history 195ms/141 blks baseline; W3 pg_net DNS hangs; W4 AllDay cursor"
+    "exits_owed": "W1 24h trigger exit; W2 get_pack_sales_history 195ms/141 blks baseline; W3 pg_net DNS hangs; W4 AllDay cursor; W5 ghost-set job + full-walk FMV ratio + honest HIGH/MED drop",
+    "allday_ghost_floor_fix": "paired n=83: ratio 0.667->1.017, below-all 59->6; confidence MED->LOW 42 vs LOW->MED 20 on 336 re-priced (control 11/12) — ghost asks had been corroborating; job 596 1.2s, 0 new ghosts in first 3 runs (set 17,578)"
   },
   "needs_trevor": [
+    "All Day HIGH+MED will drift DOWN after the ghost-floor fix (ghost asks were corroborating LOW->MED) — honest, but it moves the headline KPI",
     "Deal alerts: only 11% of Top Shot asks are confirmed within the 12h alert gate (median age 126h) — widen confirmation or accept",
     "Candy MLB HIGH+MED fell 78->27 via the dispersion gate while sales rose — check edition population mixing",
     "Delete or re-enable the two disabled 2h Routines (#55); recreate the nightly with push capability",
