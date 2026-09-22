@@ -1,0 +1,31 @@
+-- audit_20260922_wmc_edition_key_reconciler_was_left_anon_executable
+--
+-- 20260922190822 revoked EXECUTE on reconcile_wmc_edition_key_from_moments FROM
+-- anon, authenticated -- but NOT from PUBLIC. Functions are granted EXECUTE to PUBLIC
+-- by default, and anon/authenticated inherit it, so the live ACL read
+--     {=X/postgres, postgres=X/postgres, service_role=X/postgres}
+-- (the leading `=X` IS the PUBLIC grant) and has_function_privilege('anon', ..., 'EXECUTE')
+-- was TRUE. A SECURITY DEFINER function that WRITES wallet_moments_cache was reachable
+-- by an anonymous caller. The sibling reconcile_wmc_metadata_from_editions is correct
+-- ({postgres=X, service_role=X, cron_heavy=X}, anon FALSE) -- this one was the outlier.
+--
+-- The revoke must name all three roles in one statement: a PUBLIC-only revoke leaves the
+-- explicit anon/authenticated rows this project grants via ALTER DEFAULT PRIVILEGES, and
+-- an anon/authenticated-only revoke (what 190822 did) leaves PUBLIC. Either alone is a gap.
+--
+-- ⚠ Worth keeping: __tests__/migration-new-function-states-its-anon-exec-decision.test.ts
+-- did NOT flag 190822 -- its regex is satisfied by a revoke naming the function and the
+-- anon role, which 190822 had. It flagged the SIBLING file (190912), and chasing that
+-- flag is what surfaced this live ACL gap. The guard states the PUBLIC-plus-anon rule in
+-- its header but cannot enforce the PUBLIC half; verify the ACL, do not trust the green.
+--
+-- Does NOT orphan the scheduled caller: cron.job 587 runs as `postgres`, which owns the
+-- function and keeps EXECUTE as owner regardless of the PUBLIC grant. Verified after apply:
+--     {postgres=X/postgres, service_role=X/postgres}  anon FALSE, authenticated FALSE,
+--     postgres TRUE, service_role TRUE.
+--
+-- REVERT: GRANT EXECUTE ON FUNCTION public.reconcile_wmc_edition_key_from_moments(integer, integer) TO PUBLIC;
+--   (there is no reason to want this.)
+
+REVOKE EXECUTE ON FUNCTION public.reconcile_wmc_edition_key_from_moments(integer, integer)
+  FROM PUBLIC, anon, authenticated;
