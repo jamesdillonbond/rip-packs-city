@@ -22,3 +22,7 @@
 2. Read `compute-allday-pack-ev`'s prune payload construction for pool 5349 — the 400 is the edge fn's own upstream/PostgREST reply, so capture the exact rejected body from `topshot_*`/pool write error detail before editing.
 3. Confirm the run's OTHER dists still write when 5349 400s (upsert-then-prune should be per-pool, not all-or-nothing) — if the whole run aborts, AllDay pack-EV is silently going stale and this escalates.
 4. Fix = a code/edge-fn change → Claude Code handoff (Cowork cannot push route/worker/edge code); the daytime pass only senses.
+
+## Drained 2026-09-22 — RESOLVED: `compute-allday-pack-ev` v10 (deployed v59 11:34 AM PT, reconciled into main `ef84e5d64`) prunes by run stamp; first run 11:37 AM PT ok=true, pool_write_errors 0, cursor advancing again. v10 also fixed the PostgREST 1,000-row FMV truncation found alongside it (ledger 2026-09-22).
+
+*(Per-item drained marker; archiving remains Trevor's call.)*

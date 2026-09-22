@@ -1,4 +1,4 @@
-# Inbox index — 542 live filings
+# Inbox index — 543 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -29,6 +29,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-09-22 — 1 filing
+
+- [🔴 **All Day FMV is capped by month-old floor listings the market keeps clearing ABOVE — 55 % of HIGH editions sit below every one of their last 7 sales**](2026-09-22T2045Z-allday-fmv-is-capped-by-month-old-floor-listings-the-market-clears-above.md) — *(Cowork cloud, daytime pass, ~1:45 PM PT. **READ-ONLY — FMV logic, off-limits.**)* FMV ÷ median of the last 7 sales: Top Shot HIGH/MED **1.000** and symmetric; All Day HIGH **0.740** / MED **0.682** with **0** editions above their recent range. **180 of 184** All Day HIGH/MED editions below every recent sale have FMV **exactly equal** to `allday_edition_floor_ask.floor_ask`, which the fmv-recalc ask-ceiling reads with no age gate; those floor listings are a median **36 days** old. Three fix shapes ranked, plus a falsifier (check whether the floor listings are purchasable).
 
 ## 2026-09-21 — 3 filings
 

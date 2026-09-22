@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-22 · 🔎 FLAG (read-only, filed not shipped) — All Day FMV sits BELOW every recent sale on 55 % of HIGH editions, because the fmv-recalc ask-ceiling trusts month-old floor listings · Cowork cloud (daytime autonomous pass)
+
+FMV ÷ median of the last 7 sales (editions with ≥ 7 sales in 30 d): Top Shot HIGH/MED **1.000**, symmetric (1 %/4 % below the whole recent range, 67/79 above). All Day HIGH **0.740** (41 of 74 below every recent sale, **0** above), MEDIUM **0.682** (142 of 326 below, 0 above). **180 of those 184** have FMV **exactly equal** to `allday_edition_floor_ask.floor_ask`, the view `capFmvAtCheapestAsk` reads for All Day with no age or verification gate; those floor listings are a median **36 days** old (144 > 30 d). Filed with three fix shapes + a falsifier: `inbox/2026-09-22T2045Z-…`. **Not shipped — FMV logic is off-limits to autonomous passes;** it is the most KPI-relevant open finding of the day. Also: drained-marker added to `inbox/2026-09-21T1813Z` (the prune-5349 monitor filing, resolved by v10).
+**Revert:** docs only.
+
 ### 2026-09-22 · 🧽 Visibility-map sweep on Large: seven rotten maps reset to 100 % in 1–6 s each, zero collateral — and 12 inbox filings get the per-item DRAINED marker that unblocks archival · Cowork cloud (daytime autonomous pass)
 
 **Shipped (prod state, no migration — one-off pg_cron jobs, all unscheduled after, 0 `tmp-vacuum-%` left):** single-statement `VACUUM (ANALYZE)` as `postgres`, one per minute, 1:06–1:20 PM PT — the shape proven 2026-09-19 (memory `vacuum-is-unreachable-on-this-instance`, "second exception"). Found by the sweep `relpages > 5000 AND relallvisible/relpages < 0.8`:
