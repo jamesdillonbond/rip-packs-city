@@ -69,7 +69,7 @@ The Top Shot control on the same instrument sits at 1.000. All Day now looks the
   - The walk then restarts from the head, where new sales land.
   - So a new Top Shot pack sale waits for the whole sweep (~7.5 h) plus 30 min before ingest.
   
-  **Falsifier for the next pass:** rows with `ingested_at` after ~4:35 PM PT and `block_time` after 8:10 AM PT. This is the open "pack-sales head-check" filing, now with the mechanism measured. A head-first page on every run, before the sweep page, would cut the lag to about 3 min.
+  ✅ **Confirmed at 4:36 PM PT:** the unlatch reset the cursor at 4:33 (`reset:1`), and **103 new rows** landed at 4:35, with the newest `block_time` at 3:51 PM PT. Inserts pass through the trigger normally. This is the open "pack-sales head-check" filing, now with the mechanism measured. A head-first page on every run, before the sweep page, would cut the lag to about 3 min.
 - **W1 (24 h exit of #3):** maps were reset to **100 %** at 1:06–1:07 PM PT by two one-off `VACUUM (ANALYZE)` jobs (5.6 s / 6.0 s, unscheduled after). Then: `n_tup_upd` on both pack-sales tables < 10 % of pre-ship; `n_tup_ins` keeps pace; `relallvisible/relpages` > 80 % after the next autovacuum. Falsifier: inserts stall ⇒ drop the triggers.
 - **W2:** `get_pack_sales_history` baseline is **mean 195 ms, 141 blocks/call** (pgss, cumulative). Re-read after the visibility maps recover. The pack-detail 5 s timeouts may ease with them.
 - **W3:** pg_net shows 55 s **DNS-resolution hangs** at 2–6 an hour since ~8 AM PT (the #122 class, low rate).
