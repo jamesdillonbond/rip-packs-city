@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🔎 SHIPPED — the Market tab's Set / Series / Player / Min-price filters now work on Top Shot and All Day, applied inside the RPC before its LIMIT (known-issues #129 closed) · Claude Code (cloud)
+
+Until now the four filters were parsed by `/api/market` and then **dropped** for the two RPC-served collections, while the chip still showed as active. Production proof (09-20): `set=Base Set` returned "WNBA Base Set" and "Archive Set 2014-19".
+- **Migration `20260923234631`:** `get_topshot_sniper_deals` and `get_allday_market_editions` gain `p_sets text[]`, `p_series text[]`, `p_player text` and `p_min_price numeric`, all defaulted. The filters apply before the LIMIT. The 6-arg versions were DROPPED and re-created by guarded splice of the live `pg_get_functiondef()`, so there is no overload (42725) and the bodies were never retyped. ACL restored (postgres + service_role; anon/auth EXECUTE false).
+- **Route:** `rpcBrowseFilterArgs()` sends a key only when that filter is set, so an unfiltered call is unchanged.
+- **Verified:** a rolled-back dry run on prod before applying. After: 10-arg functions only; legacy 6-named-arg calls return 50 / 500; secdef drift `[]`; file md5 equals `schema_migrations` (`997e67c1…`). New test file (6 cases): with the arg-passing removed, 4 went red and the 2 no-change controls stayed green. tsc 0, ratchet 710 = baseline, 423 market/sniper/warm tests pass.
+- **Watch:** the Market tab with a Set chip on Top Shot should list only that set.
+
+**Revert:** code: `git revert` the code commit (callers then stop sending the params). DB: inverse splice per the migration header (DROP the 10-arg versions, re-create the 6-arg ones, restore the ACL).
+
 ### 2026-09-23 · 🏷 SHIPPED — the Candy MLB "treasury" is the wallet holding the sealed packs, not the one with the most moments; the holder board had started ranking the pack custodian as its #1 collector · Claude Code (cloud)
 
 **Found by `check_candy_treasury_divergence()` → `diverged: true`.** That check is not wired into alerts, so nothing paged. The treasury was the moment-count argmax in three places: `refresh_candy_treasury_wallet()` and an inline copy in each of `mv_candy_holder_board` and `mv_candy_scarcity_board`. `1BWutmTv…DNix` (1,789 moments, 15 packs) overtook `BhA2Bfd8…APe2` (1,714 moments, **2,332 of 2,501 sealed packs = 93 %**), and the label flipped at the 3:39 PM PT refresh:
