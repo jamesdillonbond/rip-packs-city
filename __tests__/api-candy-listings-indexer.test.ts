@@ -622,3 +622,83 @@ describe("candy-listings-indexer — a failed active_before count is reported as
     expect((spy.writes.candy_listings ?? []).filter((w) => w.method === "update")).toHaveLength(1)
   })
 })
+
+// Superseded listings (known-issues #131, ingest half, 2026-09-23). A Candy card
+// is a 1-of-1 token, so a listing this sweep SAW and WROTE for a mint is positive
+// evidence that any older active row for that mint is dead — the token moved or
+// was relisted under a new account. The activities feed had missed exactly that
+// for 3 mints, each still carrying a July ask from a different seller at a
+// fraction of the live price (a phantom floor on the boards).
+describe("candy-listings-indexer — superseded listings", () => {
+  const oneAsk: MeListing[] = [
+    { pdaAddress: "pdaNew", tokenMint: "mint1", price: 0.5, seller: "0xnew", auctionHouse: "ah", tokenSize: 1, expiry: 0 },
+  ]
+  const resolvable = {
+    wallet_moments_cache: { data: [{ moment_id: "mint1", edition_key: "candy-mlb:trout" }], error: null },
+    editions: { data: [{ id: "ed-trout", external_id: "candy-mlb:trout" }], error: null },
+  }
+  const updates = (spy: ReturnType<typeof install>) =>
+    (spy.writes.candy_listings ?? []).filter((w) => w.method === "update")
+
+  it("retires an older active row for a mint whose current listing this sweep wrote, and reports it", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", oneAsk), jsonRoute("/activities", [])])
+    const spy = install({
+      ...resolvable,
+      candy_listings: [
+        { error: null }, // upsert pdaNew
+        { data: null, error: null, count: 30 }, // active-book count
+        { data: [] }, // expiry
+        { data: [{ pda_address: "pdaOld" }] }, // supersede
+      ],
+    })
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.superseded).toBe(1)
+    expect(extra.deactivated).toBe(1)
+    expect(updates(spy).at(-1)?.rows[0]).toEqual({ is_active: false })
+  })
+
+  it("a mint whose upsert FAILED supersedes nothing (its old last_seen_at would read as stale)", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", oneAsk), jsonRoute("/activities", [])])
+    const spy = install({
+      ...resolvable,
+      candy_listings: [
+        { data: null, error: { message: "upsert boom" } },
+        { data: null, error: null, count: 30 },
+        { data: [] }, // expiry
+        { data: [{ pda_address: "SHOULD-NOT-BE-REACHED" }] },
+      ],
+    })
+    await POST(req())
+    await runDeferred()
+
+    const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.superseded).toBe(0)
+    expect(extra.deactivated).toBe(0)
+    expect(updates(spy)).toHaveLength(1) // the expiry update only
+  })
+
+  it("a FAILED supersede reports superseded: null (not 0) and fails the run", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", oneAsk), jsonRoute("/activities", [])])
+    const spy = install({
+      ...resolvable,
+      candy_listings: [
+        { error: null },
+        { data: null, error: null, count: 30 },
+        { data: [] },
+        { data: null, error: { message: "supersede boom" } },
+      ],
+    })
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("candy_listings supersede: supersede boom")
+    expect((log?.p_extra as Record<string, unknown>).superseded).toBeNull()
+  })
+})

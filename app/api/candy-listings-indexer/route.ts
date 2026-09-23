@@ -303,6 +303,8 @@ async function handleSweep(req: NextRequest) {
     // to skip the deactivations that follow).
     const writeErrors: string[] = []
     let packDeactivated = 0
+    // null until the superseded pass runs (a killed/errored tick never reached it).
+    let superseded: number | null = null
     let sweepComplete = false
     try {
       const rate = await solUsd()
@@ -526,6 +528,10 @@ async function handleSweep(req: NextRequest) {
       }
 
       // Upsert active listings.
+      // Mints whose CURRENT listing this sweep saw AND wrote. Only these can
+      // supersede an older listing (see the superseded pass below): a mint whose
+      // batch failed keeps its old last_seen_at, so it must not qualify.
+      const liveMints = new Set<string>()
       for (let i = 0; i < rows.length; i += 100) {
         const batch = rows.slice(i, i + 100)
         const { error } = await (supabaseAdmin as any)
@@ -537,6 +543,9 @@ async function handleSweep(req: NextRequest) {
           skipped += batch.length
         } else {
           written += batch.length
+          for (const r of batch) {
+            if (typeof r.token_mint === "string" && r.token_size === 1) liveMints.add(r.token_mint)
+          }
         }
       }
 
@@ -630,6 +639,43 @@ async function handleSweep(req: NextRequest) {
       if (expiredErr) writeErrors.push(`candy_listings expire: ${expiredErr.message}`)
       else deactivated += (expired ?? []).length
 
+      // SUPERSEDED listings (known-issues #131, ingest half). A Candy card is a
+      // 1-of-1 token (token_size 1 on every row), so it can carry ONE live
+      // listing. When this sweep saw and wrote a listing for a mint, any OTHER
+      // active row for that mint that this sweep did NOT see is dead: the token
+      // moved, or was relisted under a new listing account. That is POSITIVE
+      // evidence — the current listing — not absence, so it keeps the rule above.
+      // It closes the hole the activities feed leaves: a delist/fill it never
+      // reported. Measured 2026-09-23: 3 mints each held a second active row last
+      // seen 2026-07-29, a DIFFERENT seller at $1.75 / $2.88 / $7.36 against live
+      // asks of $114.36 / $24.73 / $5.72. The boards would have shown a phantom floor.
+      // `.lt(last_seen_at, start)` spares every row this sweep wrote.
+      let supersededCount = 0
+      let supersedeFailed = false
+      const liveMintList = [...liveMints]
+      for (let i = 0; i < liveMintList.length; i += 200) {
+        const slice = liveMintList.slice(i, i + 200)
+        const { data: sup, error: supErr } = await (supabaseAdmin as any)
+          .from("candy_listings")
+          .update({ is_active: false })
+          .eq("is_active", true)
+          .eq("token_size", 1)
+          .in("token_mint", slice)
+          .lt("last_seen_at", startedAtIso)
+          .select("pda_address")
+        if (supErr) {
+          writeErrors.push(`candy_listings supersede: ${supErr.message}`)
+          supersedeFailed = true
+          break
+        }
+        supersededCount += (sup ?? []).length
+      }
+      // Rows actually retired always count toward `deactivated`; `superseded`
+      // itself reads null when the pass did not finish, so a partial number is
+      // never published as the whole pass.
+      deactivated += supersededCount
+      superseded = supersedeFailed ? null : supersededCount
+
       // A short listings answer is no longer dangerous — it just refreshes
       // fewer prices — so it is reported as a metric, not a failure.
       // null = UNKNOWN (the baseline count failed), never false: "not truncated"
@@ -657,6 +703,9 @@ async function handleSweep(req: NextRequest) {
         pack_asks_deactivated: packDeactivated,
         skipped,
         deactivated,
+        // Subset of `deactivated`: rows retired because this sweep saw a newer
+        // listing for the same 1-of-1 mint. null = the pass failed or never ran.
+        superseded,
         sweep_complete: sweepComplete,
         // Distinguishes "the book ended" from "we ran out of time". Without it a
         // budget-truncated sweep and a genuinely short book both read as
