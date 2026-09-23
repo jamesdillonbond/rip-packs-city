@@ -15,6 +15,7 @@ push path on 2026-09-12; re-derive any NUMBER before quoting it — recipes age 
 
 - Read `docs/audits/deep-audit-register.md` OPEN rows + top of `docs/overnight/ledger.md` FIRST.
   Re-derive an item's evidence before acting — severities/rates/liveness go stale; mechanisms hold.
+- ⛔ **Fetch `origin/main` IMMEDIATELY before starting each item, not once per session — and read what landed.** `git fetch && git log --format='%h %an %ad %s' origin/main -8` plus a grep of the new commits for the file, function or finding you are about to touch. On 2026-09-23 a Cowork pass built, tested (full suite, 17,977 tests) and committed a Step 5b ask-ceiling fix while Claude Code on Trevor's box shipped a strictly better one to `main` 40 min earlier; it was caught only at push time and thrown away. **Filing a finding in the inbox is an invitation for the other session to take it** — re-check `main` before implementing anything you filed yourself. Re-fetch again right before committing, and if the target moved, diff before rebasing.
 - Ownership: ship what you have tools for; **decisions stay Trevor's unless he is present and answers**
   (AskUserQuestion). "Do what you think is best" = decide, and write the displacement/cost argument
   into the ledger so the decision is re-litigable.
