@@ -49,3 +49,10 @@ Retire the RPC call from the three listing-cache routes, or scope it to editions
 - `refresh_edition_fmv_current` run afterwards, because the snapshot is not the surface.
 
 **Falsifier:** after the change, `fmv_snapshots` gets no new `ask_only_v2` rows in 24 h, and no current All Day row has FMV above `allday_edition_floor_ask.floor_ask`.
+
+## Falsifier read, 2026-09-23 ~2:10 PM PT (Claude Code, Windows box)
+
+- ✅ **Clause 1 holds:** 0 new `ask_only_v2` rows since the 20:58Z apply, in any collection. 0 All Day surface rows carry a ≥ $1M floor.
+- ⚠ **Clause 2 as written does NOT hold, and it is not this writer:** 73 current All Day rows sit above `allday_edition_floor_ask.floor_ask`, and **none** of them is `ask_only_v2`. By latest writer: MEDIUM `1.7.0` 24 (avg 1.26×, max 1.84×), LOW `1.7.0` 22 (avg 7.4×, **max 22.6×**), ASK_ONLY `cold-tail-1.0` 14, ASK_ONLY `1.7.0` 7, ASK_ONLY `allday-listing-ask-v1` 4, one each `ask_only_v2_p90clamp` / `1.7.0_p90clamp`.
+- The 26 ASK_ONLY rows are **8 h to 7 days old** (median ~110 h): each was set from an ask that a later listing undercut. That is STALENESS, not fabrication. Job 19 rescues only STALE/NO_DATA, so an ASK_ONLY price never gets re-capped when the floor drops. A sales-derived MED above today's ask can be legitimate. **The 22 LOW rows at up to 22.6× are the ones worth a look.**
+- **Not shipped:** this is pricing logic across four writers, and a session was mid-turn on this exact function when I measured. Candidate follow-up: re-cap ASK_ONLY at the current ghost-filtered floor on each job-19 tick, then decide separately whether LOW gets the ask ceiling.

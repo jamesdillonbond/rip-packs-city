@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🧹 Tree cleaned + the ASK_ONLY falsifier read: the fixed writer is clean, 73 other All Day rows still sit above the live floor · Claude Code (Windows box)
+
+**Landed the 09-23 daytime Cowork pass outputs** (`e1698e57`: handoff, ledger entry, metrics, ecosystem watch), which were written in a sandbox that could not push. ⚠ gh auth on this box has EXPIRED (`gh auth status` fails), so pushes went through the approved `.rpc-git-cred` store; Trevor should run `gh auth login` to restore the normal path. **Did not duplicate Cowork’s `fmv_from_cached_listings` fix**: its migration was applied 1 min before I looked and its file landed at 2:04 PM PT. The falsifier read is appended to the inbox filing: 0 new `ask_only_v2` rows and 0 $1M floors. But 73 All Day surface rows exceed the ghost-filtered floor, all from OTHER writers: 26 stale ASK_ONLY (8 h–7 d old) and 22 LOW at up to 22.6×. Queued, not shipped (pricing logic).
+**Revert:** docs only.
+
 ### 2026-09-23 · 🩹 SHIPPED ("do what you think is best") — the fourth All Day ASK_ONLY writer stops pricing All Day, caps at the cheapest ask, stops writing $1M troll floors, and stops deleting sales-backed LOW rows · Cowork cloud
 
 **Shipped:** migration `20260923205831_audit_20260923_fmv_from_cached_listings_skips_allday_and_caps_at_ask`. The repo file matches the `schema_migrations` md5 (`c6bfedc2…`). The pin `supabase/tests/fmv_from_cached_listings.sql` is re-pinned with four new fixtures (E5–E8) and its drift-guard registration now points at this migration.
