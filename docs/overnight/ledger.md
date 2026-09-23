@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🧹 SHIPPED — the Candy listings indexer retires a listing SUPERSEDED by a newer one for the same 1-of-1 mint (known-issues #131 ingest half) · Claude Code (cloud)
+
+Re-measured before fixing: **3 mints** each held a second active `candy_listings` row. Each was a different seller's ask last seen **2026-07-29**, priced at $1.75 / $2.88 / $7.36 against live asks of $114.36 / $24.73 / $5.72, so the boards could show a phantom floor. The activities feed never reported the delist or fill. New pass: for every mint whose current listing this sweep saw and wrote (`token_size = 1` on all 7,483 rows), any other active row with `last_seen_at < sweep start` is retired. That is positive evidence, so the evidence-not-absence rule holds. A mint whose upsert failed never qualifies. New `extra.superseded` (null = pass failed), also counted toward `deactivated`. +3 tests; the planted defect went red 2/3. tsc 0, ratchet = baseline, 319 related tests pass.
+**Exit:** after the next run, active mints with >1 active row = **0** and `superseded` ≥ 3.
+**Revert:** `git revert` the code commit (the retired rows are ordinary `is_active=false` rows; nothing to undo).
+
 ### 2026-09-23 · 🔎 SHIPPED — the Market tab's Set / Series / Player / Min-price filters now work on Top Shot and All Day, applied inside the RPC before its LIMIT (known-issues #129 closed) · Claude Code (cloud)
 
 Until now the four filters were parsed by `/api/market` and then **dropped** for the two RPC-served collections, while the chip still showed as active. Production proof (09-20): `set=Base Set` returned "WNBA Base Set" and "Archive Set 2014-19".
