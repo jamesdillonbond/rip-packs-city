@@ -11,6 +11,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🏷 SHIPPED — the Candy MLB "treasury" is the wallet holding the sealed packs, not the one with the most moments; the holder board had started ranking the pack custodian as its #1 collector · Claude Code (cloud)
+
+**Found by `check_candy_treasury_divergence()` → `diverged: true`.** That check is not wired into alerts, so nothing paged. The treasury was the moment-count argmax in three places: `refresh_candy_treasury_wallet()` and an inline copy in each of `mv_candy_holder_board` and `mv_candy_scarcity_board`. `1BWutmTv…DNix` (1,789 moments, 15 packs) overtook `BhA2Bfd8…APe2` (1,714 moments, **2,332 of 2,501 sealed packs = 93 %**), and the label flipped at the 3:39 PM PT refresh:
+- the **public holder board** ranked the pack custodian as the **#1 collector**;
+- the scarcity board swapped which wallet's moments count as "sealed".
+
+Neither wallet has any marketplace activity, so custody is the only discriminator.
+
+**Migration `20260923233939`:** all three places now use the sealed-pack argmax, falling back to the moment argmax only when no pack has an owner (so the exclusion can never become `<> NULL` and empty the board). The MVs were dropped and re-created with bodies unchanged except `treas`, plus their unique indexes (needed by the CONCURRENTLY refresh in jobs 248 and 436) and identical ACLs. The thin views were re-created with `security_invoker=on`.
+
+**Verified live:** the label is `BhA2…`; the holder board top is `1BWut…` 1,789 · `2srd…` 1,072 · `BSDH…` 585, the same as before today's flip. The scarcity board has 125 editions, sealed 1,714. ACLs compared equal, security invariants `[]`, secdef drift `[]`, and the file md5 equals `schema_migrations` (`c803e8a6…`).
+
+⚠ **Open, not decided here:** `1BWut…` has zero market activity, and it may itself be a house wallet. If so it should also be excluded. That is a labelling call for Trevor.
+
+**Revert:** re-create both MVs from `20260802145536` / `20260903221326` in the same DROP/CREATE shape. Re-apply the old moment-argmax body of `refresh_candy_treasury_wallet()` (in this file's header history), then `SELECT public.refresh_candy_treasury_wallet();`.
+
 ### 2026-09-23 · 📏 SHIPPED — `alerts-dispatch` logs the pool sizes beside its "unconfirmed" counts, and stops dropping a failed log write · Claude Code (cloud)
 
 This acts on the gap inbox `2026-09-23T0155Z` named: *"the route logs the unconfirmed counts but not `serial_pool_size`, which the RPC does return"*. So `unconfirmed_serial: 0` could not tell "the gate held nothing back" from "the pool was empty", and settling it took a hand query against the board. `pipeline_runs.extra` now also carries `pool_deal`, `pool_price`, `pool_serial`, `subscriptions_scanned` and `enqueued_serial`, plus `deal_skipped` when the RPC's no-subscriptions early return reported zero pools it never built. A key the RPC did not return is **omitted, never defaulted to 0**. This replaces the old `?? 0` on the three `unconfirmed_*` counts, whose names are unchanged. `log_pipeline_run` was awaited without destructuring, so a returned `{ error }` vanished; it now reaches `console.error`.
