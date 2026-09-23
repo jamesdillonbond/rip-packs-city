@@ -11,6 +11,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-22 · 🔐 All 13 pg_cron gate keys moved out of `cron.job.command` into Supabase Vault · Claude Code (Windows box)
+
+**The handoff named 4 jobs; the population is 13.** Re-derived from `cron.job`: 15, 16, 20, 22, 25, 26, 27, 29, 42, 44, 56, 83, 84 carried a literal `?key=rpc_pls_…`, across **10 distinct keys** and 11 edge functions. Fixing the named four would have left nine live literals and read as done.
+
+Shipped:
+- `20260923005906` — `public.cron_gate_key(p_fn text)`, SECDEF/STABLE, reads `vault.decrypted_secrets` by the edge-function name. **RAISES** on a missing secret rather than returning NULL, so a mis-keyed lane fails loudly instead of issuing an unauthenticated call. Revoked from PUBLIC/anon/authenticated, granted back to `postgres` in the same migration (all 13 jobs run as `postgres`).
+- 11 vault secrets `cron_gate_key__<fn>`, seeded server-side from the live literals. No key was echoed at any point.
+- `20260923010107` — tree-walk rewrite of every command matching `rpc_pls_` to call the accessor. Job 84 (`*/2`) was migrated by hand first and verified before the other twelve.
+
+Verified: accessor round-trips to the live literal on 13/13 jobs; negative control (unknown fn) raises; job 84 ran 18:00 PT post-rewrite `succeeded`, no 401 in `net._http_response`, 200s continuing. After: `literals_left 0`, `using_accessor 13`.
+
+⚠ The equivalence guard in `rotate_cron_gate_key` (collapse `key=[^&']+` on both sides) is correct there but **WRONG** for this rewrite — the injected text contains a single quote, so the class stops early and every valid rewrite reads as tampering. The migration uses an exact known-span check instead.
+
+**REVERT:** revert `20260923010107` first (restore literals from `vault.decrypted_secrets`, name `cron_gate_key__<fn>`, via `cron.alter_job`), only then drop the accessor. Dropping the accessor first breaks all 13 lanes.
+
 ### 2026-09-22 · ⚡ Second follow-up: the ghost-listing refresher really was hashing all ~804k All Day sales; a LATERAL … LIMIT 1 probe takes it to ~0.3–0.5 s · Cowork cloud (daytime autonomous pass)
 
 **Shipped:** migration `20260922214635_audit_20260922_ghost_listings_refresh_probes_per_listing_via_lateral_limit`. ⚠ **The previous entry's "18.5 s → 1.2 s" was wrong.** Job 596 still ran **20 s (2:22 PM PT) and 25 s (2:37 PM PT)**, and `pg_stat_statements` showed **757,388 buffers per call**. An `INSERT` cannot use a parallel plan, and the SERIAL plan for `EXISTS (… sales …)` is a Hash Semi Join over every All Day sale. My 1.75 s "control" was a parallel `SELECT`, which is not the production shape, so the probe's harness differed from production in exactly the dimension that mattered. The literal-inline change was harmless but was not the fix. **Fix:** the sales probe is now `CROSS JOIN LATERAL (… LIMIT 1)`, a per-listing nft_id index probe with run-time partition pruning. Already-flagged listings are fenced out before the probe (`OFFSET 0`). **Measured:** manual calls take 465 / 329 / 332 ms. **Positive control:** I deleted 5 known ghost rows, and the next call re-found exactly **5** (`inserted:5`, total back to 17,578). **Revert:** re-apply the `20260922210944` body, which is correct but slow.
