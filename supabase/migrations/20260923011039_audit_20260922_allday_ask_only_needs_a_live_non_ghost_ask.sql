@@ -46,6 +46,14 @@
 -- (identical minus the NOT EXISTS block and the v_ghost_skip counter), then
 -- DELETE FROM fmv_snapshots WHERE algo_version = 'allday-ask-retired-v1', then
 -- SELECT public.refresh_edition_fmv_current(false).
+--
+-- anon-exec: intentional — refresh_allday_ask_fmv_from_listings keeps the ACL it
+-- already has. This is a CREATE OR REPLACE snapshot, and CREATE OR REPLACE does
+-- NOT reset a function ACL, so adding a REVOKE here would be a production change
+-- this migration does not intend to make. Verified live against the database
+-- immediately before shipping: has_function_privilege reads anon=false,
+-- authenticated=false, service_role=true, postgres=true. It is an internal
+-- writer driven by pg_cron job 19; no client role should reach it.
 
 CREATE OR REPLACE FUNCTION public.refresh_allday_ask_fmv_from_listings()
 RETURNS TABLE(rescued integer, considered integer)
