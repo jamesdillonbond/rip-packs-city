@@ -11,6 +11,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🔔 SHIPPED — the failure-rate alarm stops paging a lane for ~3 days after it is fixed: it now also splits at the lane's LAST FAILURE, not only at an instance restart · Claude Code (cloud)
+
+**Migration `20260923231922`.** It applies R124's own "what this does NOT cover" line: the restart split could not see a deploy or migration as a change point. Live case: `compute-allday-pack-ev` has been fixed since **09-22 11:07 AM PT** and has run 58/58 ok since. The arm still paged it **HIGH, "75/133 (56.4%)"**, and would have until ~09-24 5 PM PT. Every pass in between re-diagnosed it as benign.
+- `v_pipeline_failure_rates` gains **appended** columns: `last_fail_at`, `ok_runs_since_last_fail`, `notok_runs_since_last_fail`, `latest_error` and `cleared_by_streak`. A lane is cleared when its last failure is visible in run grain, is ≥ 12 h old, and has been followed by ≥ 20 runs that were all ok (a NULL-ok run blocks it). The floor is 20, not the restart split's 10, because the change point is picked FROM the data (0.75²⁰ = 0.3 %).
+- A cleared row is emitted at **`info`** with both halves spelled out, never dropped. The restart split keeps precedence.
+- **The `last_error` fix (same migration):** the pooled `max(d.last_error)` is lexicographic, so the arm now prefers the newest failing run's error.
+- **Verified live:** the row now reads `info`, *"0/58 runs failed since the last failure at Sep 22 11:07 PT (29 h ago) — CLEARED BY THE STREAK SPLIT…"*. **Positive control (rolled back):** one synthetic failed run → the row went back to **`high`**, `cleared_by_streak=f` and `latest_error` = the synthetic error. 0 rows were left behind.
+- The file md5 equals `schema_migrations` (`7b97ebfa…`). `security_invoker=on` is kept, anon EXECUTE is false, view cost is ~4 ms / ~1k buffers, and full vitest passes (1578 files).
+
+**Revert:** `DROP VIEW public.v_pipeline_failure_rates` and re-create it from `20260921004921` in the same transaction. Then re-splice the arm by swapping the `$new$` block in `20260923231922` back for its `$old$` block.
+
 ### 2026-09-23 · 🩹 SHIPPED — no All Day LOW or ASK_ONLY price sits above a live buy-it-now any more: Step 5b gets the ask-ceiling, job 19 re-caps stale ASK_ONLY, 47 live prices corrected · Claude Code (Windows box)
 
 **Follows the falsifier read below.** 73 All Day surface rows sat above the ghost-filtered floor, all from writers other than the one Cowork fixed. Two causes, two fixes:

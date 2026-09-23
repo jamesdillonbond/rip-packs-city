@@ -2857,6 +2857,8 @@ Still binding; CLAUDE.md carries a pointer.
 
 ⛔ **WHAT THIS DOES NOT COVER, stated so nobody reads it as more than it is: `pg_postmaster_start_time()` sees INSTANCE RESTARTS ONLY.** A deploy, a migration, an index build or an upstream change is just as much a change point and this arm is still blind to all of them. The general discipline — list what landed in your window before quoting a rate across it — is not replaced by this fix.
 
+✅ **PARTLY CLOSED 2026-09-23 (PT), `20260923231922`: the arm now ALSO splits at the lane's LAST FAILURE**, which covers a deploy, migration or upstream fix without having to see it. It clears to `info` (never dropped) when the last failure is ≥ 12 h old and ≥ 20 runs since have ALL been ok. The floor is 20, not 10, because that change point is picked FROM the data. The next failure re-arms it at full severity (proven by a rolled-back control). ⚠ **A lane with fewer than 20 runs in 3 days (daily and 6-hourly lanes) still cannot clear this way**, so the discipline above still applies to them. Case: `compute-allday-pack-ev`, HIGH for 29 h after its fix.
+
 📌 **Verified live at 5:52 PM PT on the real function, not a probe:** `lock-check-batch` → `info`, *"0/14 runs failed (0.0%) SINCE THE INSTANCE RESTART at Sep 20 10:39 PT — CLEARED BY THE SPLIT… The pooled figure is 42/94 (44.7%)… and it STRADDLES that restart, so it describes a box that no longer exists. Last error (PRE-RESTART — nothing has failed since)"*; `backfill-pack-rip-metadata` still **high** on 7 post-restart runs, carrying the straddle warning. **The detector got a truthful denominator; it did not get quieter.**
 
 ---
