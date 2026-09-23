@@ -24,6 +24,20 @@ const supabaseAdmin = createClient(
 
 const PIPELINE_NAME = "alerts-dispatch";
 
+// dispatch_due_deal_alerts' verdict keys → the pipeline_runs.extra keys they
+// are logged under. The `unconfirmed_*` names predate the pool sizes and are
+// kept, since readers already key on them.
+const DEAL_VERDICT_KEYS: ReadonlyArray<readonly [string, string]> = [
+  ["subscriptions_scanned", "subscriptions_scanned"],
+  ["serial_enqueued", "enqueued_serial"],
+  ["deal_pool_size", "pool_deal"],
+  ["price_pool_size", "pool_price"],
+  ["serial_pool_size", "pool_serial"],
+  ["deal_pool_unconfirmed", "unconfirmed_deal"],
+  ["price_pool_unconfirmed", "unconfirmed_price"],
+  ["serial_pool_unconfirmed", "unconfirmed_serial"],
+];
+
 function authed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization");
   return (
@@ -45,10 +59,18 @@ async function run(req: NextRequest) {
     let errMsg: string | null = null;
     let enqueuedDeal = 0;
     let enqueuedFmv = 0;
-    // How many candidate rows the freshness gate held back this tick. Null until
-    // a successful deal dispatch reports them — an absent count must not read as
-    // a measured zero (audit_20260912).
-    let unconfirmed: { deal: number; price: number; serial: number } | null = null;
+    // How many candidate rows the freshness gate held back this tick, and how
+    // many were in each pool to begin with. Null until a successful deal
+    // dispatch reports them — an absent count must not read as a measured zero
+    // (audit_20260912).
+    //
+    // ⚠ THE POOL SIZES ARE THE DENOMINATOR, and without them `unconfirmed_serial: 0`
+    // is ambiguous: `count(*) FILTER (WHERE NOT alertable)` over an EMPTY pool is
+    // also 0. The RPC has always returned `*_pool_size`; this route dropped it, so
+    // telling "the gate held nothing back" from "there was nothing to gate" took a
+    // hand query against the board (inbox 2026-09-23T0155Z). A key the RPC did not
+    // return is OMITTED, never defaulted to 0.
+    let dealVerdict: Record<string, number | string> | null = null;
 
     try {
       const deal = await dispatchDueDealAlerts(1000);
@@ -57,11 +79,15 @@ async function run(req: NextRequest) {
         errMsg = `deal: ${deal.error}`;
       } else {
         enqueuedDeal = deal.enqueued ?? 0;
-        unconfirmed = {
-          deal: deal.deal_pool_unconfirmed ?? 0,
-          price: deal.price_pool_unconfirmed ?? 0,
-          serial: deal.serial_pool_unconfirmed ?? 0,
-        };
+        dealVerdict = {};
+        for (const [from, to] of DEAL_VERDICT_KEYS) {
+          const v = (deal as Record<string, unknown>)[from];
+          if (typeof v === "number" && Number.isFinite(v)) dealVerdict[to] = v;
+        }
+        // The RPC's early return for "no active subscriptions" reports every pool
+        // as 0 without building one. Carry its reason so those zeros are read as
+        // NOT MEASURED rather than as empty pools.
+        if (typeof deal.skipped === "string") dealVerdict.deal_skipped = deal.skipped;
       }
     } catch (e) {
       ok = false;
@@ -82,7 +108,9 @@ async function run(req: NextRequest) {
     }
 
     try {
-      await supabaseAdmin.rpc("log_pipeline_run", {
+      // supabase-js RESOLVES with { error } rather than throwing, so an
+      // un-destructured await dropped a failed log write without a trace.
+      const { error: logError } = await supabaseAdmin.rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
         p_started_at: startedAt,
         p_rows_found: enqueuedDeal + enqueuedFmv,
@@ -94,17 +122,14 @@ async function run(req: NextRequest) {
           enqueued_deal: enqueuedDeal,
           enqueued_fmv: enqueuedFmv,
           // Spread, so a run that never got a verdict carries NO key rather than
-          // three zeroes that read as "nothing was suppressed".
-          ...(unconfirmed
-            ? {
-                unconfirmed_deal: unconfirmed.deal,
-                unconfirmed_price: unconfirmed.price,
-                unconfirmed_serial: unconfirmed.serial,
-              }
-            : {}),
+          // zeroes that read as "nothing was suppressed".
+          ...(dealVerdict ?? {}),
           duration_ms: Date.now() - startedMs,
         },
       });
+      if (logError) {
+        console.error(`[${PIPELINE_NAME}] log_pipeline_run error: ${logError.message}`);
+      }
     } catch (logErr) {
       console.log(
         `[${PIPELINE_NAME}] log_pipeline_run err: ${logErr instanceof Error ? logErr.message : String(logErr)}`

@@ -134,6 +134,89 @@ describe("/api/cron/alerts-dispatch — deferred dispatch body", () => {
     expect(p.p_extra.enqueued_fmv).toBe(0)
   })
 
+  // ── The pool sizes are the DENOMINATOR for the unconfirmed counts ─────────
+  // `unconfirmed_serial: 0` over an EMPTY serial pool and over a pool the gate
+  // fully admitted read identically without the size beside it (inbox
+  // 2026-09-23T0155Z needed a hand query against the board to tell them apart).
+  it("logs each pool's size beside its unconfirmed count, keeping a REPORTED 0", async () => {
+    dealMock.mockResolvedValue({
+      subscriptions_scanned: 2,
+      enqueued: 0,
+      serial_enqueued: 0,
+      deal_pool_size: 140,
+      price_pool_size: 13160,
+      serial_pool_size: 17,
+      deal_pool_unconfirmed: 64,
+      price_pool_unconfirmed: 2480,
+      serial_pool_unconfirmed: 0,
+    })
+    fmvMock.mockResolvedValue({ enqueued: 0 })
+
+    const p = await drive()
+
+    expect(p.p_extra).toMatchObject({
+      subscriptions_scanned: 2,
+      enqueued_serial: 0,
+      pool_deal: 140,
+      pool_price: 13160,
+      pool_serial: 17,
+      unconfirmed_deal: 64,
+      unconfirmed_price: 2480,
+      unconfirmed_serial: 0,
+    })
+  })
+
+  it("a verdict key the RPC did NOT return is OMITTED, never logged as a measured 0", async () => {
+    // An older RPC body with no pool sizes and no serial count.
+    dealMock.mockResolvedValue({ enqueued: 1, deal_pool_unconfirmed: 5, price_pool_unconfirmed: 7 })
+    fmvMock.mockResolvedValue({ enqueued: 0 })
+
+    const p = await drive()
+
+    expect(p.p_extra.unconfirmed_deal).toBe(5)
+    expect(p.p_extra.unconfirmed_price).toBe(7)
+    for (const k of ["unconfirmed_serial", "pool_deal", "pool_price", "pool_serial", "subscriptions_scanned"]) {
+      expect(p.p_extra).not.toHaveProperty(k)
+    }
+  })
+
+  it("a failed deal dispatch carries NO verdict keys at all", async () => {
+    dealMock.mockResolvedValue({ error: "timeout" })
+    fmvMock.mockResolvedValue({ enqueued: 0 })
+
+    const p = await drive()
+
+    for (const k of ["unconfirmed_deal", "pool_price", "pool_serial", "deal_skipped"]) {
+      expect(p.p_extra).not.toHaveProperty(k)
+    }
+  })
+
+  it("the RPC's no-subscriptions early return is labelled, so its zero pools read as NOT BUILT", async () => {
+    dealMock.mockResolvedValue({
+      subscriptions_scanned: 0, enqueued: 0, deal_pool_size: 0, price_pool_size: 0, serial_pool_size: 0,
+      skipped: "no_active_subscriptions",
+    })
+    fmvMock.mockResolvedValue({ enqueued: 0 })
+
+    const p = await drive()
+
+    expect(p.p_extra.deal_skipped).toBe("no_active_subscriptions")
+  })
+
+  it("log_pipeline_run RESOLVING with { error } is surfaced, not dropped", async () => {
+    dealMock.mockResolvedValue({ enqueued: 1 })
+    fmvMock.mockResolvedValue({ enqueued: 0 })
+    rpcMock.mockResolvedValue({ data: null, error: { message: "permission denied for function log_pipeline_run" } })
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    try {
+      await drive()
+      expect(spy.mock.calls.flat().join(" ")).toMatch(/log_pipeline_run error: permission denied/)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it("log_pipeline_run throwing is swallowed — the deferred callback never rejects", async () => {
     dealMock.mockResolvedValue({ enqueued: 1 })
     fmvMock.mockResolvedValue({ enqueued: 1 })

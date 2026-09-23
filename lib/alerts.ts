@@ -164,6 +164,11 @@ export async function dispatchDueDealAlerts(max = 1000) {
   return data as {
     subscriptions_scanned: number;
     enqueued: number;
+    serial_enqueued?: number;
+    deal_pool_size?: number;
+    price_pool_size?: number;
+    serial_pool_size?: number;
+    skipped?: string;
     deal_pool_unconfirmed?: number;
     price_pool_unconfirmed?: number;
     serial_pool_unconfirmed?: number;
