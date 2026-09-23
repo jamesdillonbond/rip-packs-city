@@ -353,7 +353,10 @@ async function fetchPinnacleModernListings(
 // in-route would miss floors for ~90% of editions). editionKey = external_id
 // (the canonical wmc edition_key shape for AllDay).
 async function fetchAllDayMarketEditions(
-  filters: { tier: string; team: string; maxPrice: number; sortBy: string; limit: number },
+  filters: {
+    tier: string; team: string; maxPrice: number; sortBy: string; limit: number
+    sets: string[]; seriesList: string[]; player: string; minPrice: number
+  },
 ): Promise<any[]> {
   let rpcSort: string
   if (filters.sortBy === "recent" || filters.sortBy === "listed_desc") rpcSort = "listed_desc"
@@ -369,6 +372,7 @@ async function fetchAllDayMarketEditions(
     p_team: filters.team && filters.team !== "all" ? filters.team : "all",
     p_sort_by: rpcSort,
     p_limit: Math.max(filters.limit, 500),
+    ...rpcBrowseFilterArgs(filters),
   }), "api/market/get_allday_market_editions")
   if (error) {
     console.log("[/api/market] allday editions fetch err:", error.message)
@@ -404,6 +408,26 @@ async function fetchAllDayMarketEditions(
     cached_at: r.last_listed_at ?? null,
     collection_id: ALLDAY_COLLECTION_ID_FOR_DISPATCH,
   }))
+}
+
+/** The browse filters as RPC arguments, for the two arms served by an RPC
+ *  (`get_topshot_sniper_deals`, `get_allday_market_editions`, migration
+ *  `audit_20260923_market_rpcs_take_the_browse_filters`). The RPC applies them
+ *  BEFORE its LIMIT, which is the only place they can be honest (register #129).
+ *
+ * ⚠ A key is sent ONLY when its filter is set, so an unfiltered request makes
+ * exactly the call it always made — nothing new can fail on the default path.
+ * Sets are sent trimmed; the RPC compares them to a trimmed `set_name`. */
+function rpcBrowseFilterArgs(f: {
+  sets: string[]; seriesList: string[]; player: string; minPrice: number
+}): Record<string, unknown> {
+  const args: Record<string, unknown> = {}
+  const sets = f.sets.map((x) => x.trim()).filter(Boolean)
+  if (sets.length > 0) args.p_sets = sets
+  if (f.seriesList.length > 0) args.p_series = f.seriesList
+  if (f.player) args.p_player = f.player
+  if (f.minPrice > 0) args.p_min_price = f.minPrice
+  return args
 }
 
 /** The browse filters the modern arms used to DROP (register #129), applied to a
@@ -551,11 +575,11 @@ async function fetchModernListings(
   collectionId: string,
   filters: {
     tier: string; team: string; maxPrice: number; minDiscount: number; sortBy: string; limit: number
-    // ⚠ Carried for the arms that can honour them. The Top Shot and All Day
-    // arms are RPCs and still drop these — see known-issues; do NOT "fix" those
-    // by filtering their rows in memory, which would apply a filter to an
-    // already-truncated window and turn "filter ignored" into a confident
-    // "no listings in this set".
+    // Every modern arm honours these AT THE SOURCE (register #129): Pinnacle and
+    // Candy in their PostgREST query, Top Shot and All Day as RPC parameters
+    // (`rpcBrowseFilterArgs`). ⛔ Never by filtering an RPC's rows in memory —
+    // its output is an already-truncated window, so that would turn "filter
+    // ignored" into a confident "no listings in this set".
     sets: string[]; seriesList: string[]; player: string; minPrice: number
   }
 ): Promise<any[] | null> {
@@ -577,6 +601,7 @@ async function fetchModernListings(
   if (collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH) {
     return fetchAllDayMarketEditions({
       tier: filters.tier, team: filters.team, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
+      sets: filters.sets, seriesList: filters.seriesList, player: filters.player, minPrice: filters.minPrice,
     })
   }
   let rpcName: string | null = null
@@ -605,6 +630,7 @@ async function fetchModernListings(
     p_team: filters.team && filters.team !== "all" ? filters.team : "all",
     p_sort_by: rpcSort,
     p_limit: Math.max(filters.limit, 500), // pull enough so downstream pagination has headroom
+    ...rpcBrowseFilterArgs(filters),
   }), `api/market/${rpcName}`)
   if (error) {
     console.log(`[/api/market] modern fetch err (${rpcName}):`, error.message)
