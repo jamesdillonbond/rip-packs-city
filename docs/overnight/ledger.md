@@ -23,6 +23,8 @@ Migration `20260923011039`:
 
 All Day ASK_ONLY 1,304 → 1,249.
 
+⚠ **It took two red CI runs to land, both guards correct.** (1) `db-pin-points-at-the-newest-defining-migration` — the function was still pinned to `20260711185416`; re-pinned, and the fixture now EXERCISES the new property rather than just tracking it (`eMixed` has a cheaper ghost at 10 beside a real ask at 70 and must price off 70 → 63.00). ⛔ Assert on the ABSENCE OF THE ASK_ONLY ROW, not on "no row dated today": a ghost-only edition keeps its today-dated STALE row, because a non-target is never deleted — the obvious `NOT EXISTS` would have failed against CORRECT behaviour. (2) `migration-new-function-states-its-anon-exec-decision` — used the marker, not a REVOKE, since `CREATE OR REPLACE` does not reset an ACL (verified live: anon=false, authenticated=false). ⚠ **The marker must carry the function name on the SAME LINE as `anon-exec:`** — the guard matches per line, and a name three lines below failed identically. `DB invariants (SQL)` is BLOCKING and this box has no Postgres, so CI is the first place the fixture runs: it passed on 108520eec.
+
 **REVERT:** re-apply the prior function body (identical minus the NOT EXISTS block and `v_ghost_skip`), `DELETE FROM fmv_snapshots WHERE algo_version = 'allday-ask-retired-v1'`, then `SELECT public.refresh_edition_fmv_current(false)`.
 
 ### 2026-09-22 · 🔐 All 13 pg_cron gate keys moved out of `cron.job.command` into Supabase Vault · Claude Code (Windows box)
