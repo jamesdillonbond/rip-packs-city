@@ -56,3 +56,22 @@ Retire the RPC call from the three listing-cache routes, or scope it to editions
 - ⚠ **Clause 2 as written does NOT hold, and it is not this writer:** 73 current All Day rows sit above `allday_edition_floor_ask.floor_ask`, and **none** of them is `ask_only_v2`. By latest writer: MEDIUM `1.7.0` 24 (avg 1.26×, max 1.84×), LOW `1.7.0` 22 (avg 7.4×, **max 22.6×**), ASK_ONLY `cold-tail-1.0` 14, ASK_ONLY `1.7.0` 7, ASK_ONLY `allday-listing-ask-v1` 4, one each `ask_only_v2_p90clamp` / `1.7.0_p90clamp`.
 - The 26 ASK_ONLY rows are **8 h to 7 days old** (median ~110 h): each was set from an ask that a later listing undercut. That is STALENESS, not fabrication. Job 19 rescues only STALE/NO_DATA, so an ASK_ONLY price never gets re-capped when the floor drops. A sales-derived MED above today's ask can be legitimate. **The 22 LOW rows at up to 22.6× are the ones worth a look.**
 - **Not shipped:** this is pricing logic across four writers, and a session was mid-turn on this exact function when I measured. Candidate follow-up: re-cap ASK_ONLY at the current ghost-filtered floor on each job-19 tick, then decide separately whether LOW gets the ask ceiling.
+
+## Follow-up, ~2:20 PM PT (Cowork): the LOW rows above the live floor have one writer, and it is named
+
+This pins Claude Code's "22 LOW rows at up to 22.6×" to a source.
+- **All 18** current All Day LOW rows priced more than 1.5× their live ghost-filtered floor carry `sales_count_30d = 0` on their latest snapshot. That is the signature of **`app/api/fmv-recalc` Step 5b (historical sales fallback)**.
+- Step 5b prices `avgPrice` of old sales and labels the row LOW when the last sale is < 60 days old. It **never calls `capFmvAtCheapestAsk`**; the only call site is Step 4 (route line ~1217).
+- In total they publish Σ $783 against Σ $137 of live floors.
+
+Examples, current published LOW vs live floor vs last-7-sale median:
+
+| edition | published LOW | live floor | last-7 median | note |
+|---|---|---|---|---|
+| Garrett Wilson, Dynamic | $62.10 | $3 | $5 | computed today at 1:56 PM PT |
+| Travis Etienne Jr., Dynamic | $45.17 | $2 | $16 | |
+| Seattle Seahawks, Banner Year | $93.16 | $5 | $3 | |
+
+**Proposed fix (route code, NOT shipped):** in Step 5b, apply `capFmvAtCheapestAsk(avgPrice, ceiling)` exactly as Step 4 does. The ceiling source is Top Shot `edition_offers.low_ask` ∪ `allday_edition_floor_ask`, which must be fetched for the historical candidate ids (the Step 2a-ter(b) map covers only the page's edition ids).
+- It changes published prices in every collection that uses Step 5b, so it wants its own session with a preview-deploy check.
+- **Falsifier:** after one full walk, 0 LOW rows with `sales_count_30d = 0` sit above the live floor.
