@@ -11,6 +11,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🩹 SHIPPED ("do what you think is best") — the fourth All Day ASK_ONLY writer stops pricing All Day, caps at the cheapest ask, stops writing $1M troll floors, and stops deleting sales-backed LOW rows · Cowork cloud
+
+**Shipped:** migration `20260923205831_audit_20260923_fmv_from_cached_listings_skips_allday_and_caps_at_ask`. The repo file matches the `schema_migrations` md5 (`c6bfedc2…`). The pin `supabase/tests/fmv_from_cached_listings.sql` is re-pinned with four new fixtures (E5–E8) and its drift-guard registration now points at this migration.
+
+`fmv_from_cached_listings` is called every 20 min by the All Day, Golazos and UFC listing-cache routes. It changes in five ways:
+1. It returns 0 for NFL All Day, whose ASK_ONLY lane is owned by the two ghost-aware writers.
+2. FMV is `LEAST(Flowty valuation, cheapest ask ≤ $5,000)`.
+3. No floor, `flowty_ask` or `cross_market_ask` is recorded above $5,000.
+4. The DELETE touches ASK_ONLY only; it used to delete LOW rows too.
+5. The skip guard now also protects editions with a LOW row.
+
+The 10 All Day editions whose current row was `ask_only_v2` were retired to NO_DATA (`allday-ask-retired-v1`). Job 19's rescuer then ran (`rescued 16`), followed by `refresh_edition_fmv_current(false)` (9,759 upserted, 233 ms).
+
+**Verified live, 1:59 PM PT.** The filing's examples now read:
+
+| edition | before | after |
+|---|---|---|
+| Jer'Zhan Newton | $60.39 | **$2.70** (live ask $3 × 0.90) |
+| Jordan Addison | $433.23 | **$292.50** |
+| Isaac Bruce | $50.14 | **$3.60** |
+| Xavier Worthy | $202.76 | **$41.40** |
+| Mark Andrews | $11.77 | **NO_DATA** (no live ask) |
+
+- Current All Day rows with a floor ≥ $999,999: **0**.
+- Security invariants: 0 rows.
+- Golazos was measured before choosing the shape: 0 of its 67 `ask_only_v2` rows sat above their Flowty min ask, so the cap is a guard there, not a repricing.
+- Positive control: with the old body substituted, the pin fixture reds (`got [5], want [4]`).
+- The full local DB-invariant suite (195 files, Postgres 16) passes, as do the drift guard, the migration guards and the three listing-cache route tests.
+
+**Residual, not this lane:** 26 All Day ASK_ONLY rows sit a median 1.08–1.13× above a live floor that has since dropped, and 3 have no live floor. They are `cold-tail-1.0`, `1.7.0` and `allday-listing-ask-v1` rows up to 7 days old — the normal ASK_ONLY re-price cycle (W6), not ghosts.
+
+**Revert:** re-apply the body from `20260711185416`, then `DELETE FROM fmv_snapshots WHERE algo_version='allday-ask-retired-v1' AND computed_at >= '2026-09-23 20:58Z'`, then `refresh_edition_fmv_current(false)`.
+
 ### 2026-09-23 · 🔎 QUEUED (monitor-mode, no-push) — a fourth ASK_ONLY writer (`fmv_from_cached_listings`) publishes Flowty valuations up to 20× above the live floor on the surface; carried to Trevor · Cowork cloud (daytime/off-hours pass)
 
 **Off-hours (12 PM PT) + no-push pass: shipped 0, reverted 0. Health GREEN, no regression.** Post-ship watch clean on all recent ships: All Day ghost-floor/ASK_ONLY fixes (trust arms ok, HIGH+MED 1,779→1,747 honest drift), 13-lane Vault gate-key rotation (falsifier = 0×401 over 12h), compute-allday-pack-ev v10 (09-23 0 fails/39 runs; the HIGH `failure_rate` alert is R124 pooling across the 09-22 18:07Z fix — benign). Security 4/4 `[]`, trust-health 0 breaches, pg_cron `[]`, all structural-drift arms `[]`, Sentry 0-new PAIRED with Vercel 0 new error classes. Prod READY at `108520ee` (docs-only tips after correctly CANCELED). DB 23.4 GB (was 21).

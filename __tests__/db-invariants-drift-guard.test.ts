@@ -311,7 +311,7 @@ const PINS = [
   {
     fn: "fmv_from_cached_listings",
     test: "supabase/tests/fmv_from_cached_listings.sql",
-    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+    migration: "supabase/migrations/20260923205831_audit_20260923_fmv_from_cached_listings_skips_allday_and_caps_at_ask.sql",
   },
   {
     fn: "apply_fmv_thin_sales_guard",

@@ -1,5 +1,7 @@
 # A fourth ASK_ONLY writer, `fmv_from_cached_listings`, republishes Flowty's valuation as RPC's FMV, over $1,000,000 troll floors. It re-created a retired price within four hours.
 
+> ✅ **SHIPPED 2026-09-23 ~2:00 PM PT (Trevor: "do what you think is best").** Migration `20260923205831` makes four changes: no All Day pricing here, FMV capped at the cheapest ask ≤ $5k, no floor recorded above $5k, and an ASK_ONLY-only DELETE. The 10 All Day rows were retired, then job 19 re-priced from live asks: Newton $2.70, Addison $292.50, Bruce $3.60, Worthy $41.40, Andrews NO_DATA. The same-dated ledger entry carries the revert.
+
 **Filed 2026-09-22 ~10:10 PM PT (Cowork cloud). READ-ONLY. Nothing shipped:** this is pricing logic.
 
 ## What I verified in Claude Code's 09-22 evening report
