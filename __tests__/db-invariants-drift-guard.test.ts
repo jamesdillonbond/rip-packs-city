@@ -227,7 +227,12 @@ const PINS = [
   {
     fn: "refresh_allday_ask_fmv_from_listings",
     test: "supabase/tests/refresh_allday_ask_fmv_from_listings.sql",
-    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+    // Re-pointed 2026-09-22: the rescuer read cached_listings_v2 directly, so it
+    // kept pricing editions off listings whose NFT had already sold -- the exact
+    // rows the floor view had just been taught to exclude. It now anti-joins
+    // allday_listings_sold_after_listing and counts what it declines to price.
+    migration:
+      "supabase/migrations/20260923011039_audit_20260922_allday_ask_only_needs_a_live_non_ghost_ask.sql",
   },
   {
     fn: "backfill_wmc_metadata_from_editions",

@@ -8,9 +8,20 @@
 -- fmv is a 10% haircut off that ask, and it delete-then-inserts TODAY only. It
 -- logs a pipeline_runs row and returns (rescued, considered).
 --
+-- 🚨 AND SINCE 2026-09-22, A GHOST LISTING IS NOT A LIVE ASK. `completed_at IS
+-- NULL` does NOT mean the NFT is still for sale: All Day leaves the listing row
+-- open when the underlying NFT sells elsewhere, so 3,000 AllDay editions carried
+-- at least one listing whose NFT had already sold, and 182 had ONLY such
+-- listings. The floor view learned to exclude them that afternoon
+-- (20260922205752) — but THIS function read `cached_listings_v2` directly and
+-- so went on pricing editions off dead listings every 6 hours, re-creating from
+-- the write side exactly what the read side had just fixed. It now anti-joins
+-- `allday_listings_sold_after_listing`, the single source of ghost truth, and
+-- reports `ghost_only_editions_skipped` so the editions it REFUSES to price are
+-- counted rather than silent.
+--
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql),
--- verified byte-identical to live prod via pg_get_functiondef on 2026-07-31.
+-- (supabase/migrations/20260923011039_audit_20260922_allday_ask_only_needs_a_live_non_ghost_ask.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -21,11 +32,19 @@ CREATE TYPE public.fmv_confidence AS ENUM
   ('HIGH','MEDIUM','LOW','NO_DATA','ASK_ONLY','SALES_ONLY','STALE');
 
 CREATE TABLE public.cached_listings_v2 (
-  edition_id    uuid,
-  collection_id uuid,
-  price_usd     numeric,
-  completed_at  timestamptz,
-  expiry_at     timestamptz
+  edition_id          uuid,
+  collection_id       uuid,
+  price_usd           numeric,
+  completed_at        timestamptz,
+  expiry_at           timestamptz,
+  listing_resource_id text,
+  source              text
+);
+-- The ghost set: listings whose NFT sold AFTER the listing was created. Refreshed
+-- in prod by pg_cron job 596; here it is just a set the function must subtract.
+CREATE TABLE public.allday_listings_sold_after_listing (
+  listing_resource_id text,
+  source              text
 );
 CREATE TABLE public.fmv_snapshots (
   edition_id       uuid,
@@ -53,11 +72,11 @@ CREATE TABLE public.pipeline_runs (
 
 -- >>> BEGIN verbatim refresh_allday_ask_fmv_from_listings (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.refresh_allday_ask_fmv_from_listings()
- RETURNS TABLE(rescued integer, considered integer)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_temp'
-AS $function$
+RETURNS TABLE(rescued integer, considered integer)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $fn$
 DECLARE
   v_coll        uuid := 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid;
   v_ceiling     numeric := 10000;
@@ -65,9 +84,9 @@ DECLARE
   v_today_end   timestamptz := date_trunc('day', now()) + interval '1 day';
   v_rescued     int := 0;
   v_considered  int := 0;
+  v_ghost_skip  int := 0;
   v_started     timestamptz := clock_timestamp();
 BEGIN
-  -- per-edition floor ask from the live AllDay listings indexer
   DROP TABLE IF EXISTS _ad_ask;
   CREATE TEMP TABLE _ad_ask ON COMMIT DROP AS
   SELECT cl.edition_id, MIN(cl.price_usd) AS low_ask
@@ -76,11 +95,23 @@ BEGIN
     AND cl.price_usd IS NOT NULL AND cl.price_usd > 0 AND cl.price_usd <= v_ceiling
     AND cl.completed_at IS NULL
     AND (cl.expiry_at IS NULL OR cl.expiry_at > now())
+    AND NOT EXISTS (
+      SELECT 1 FROM allday_listings_sold_after_listing g
+      WHERE g.listing_resource_id = cl.listing_resource_id
+        AND g.source = cl.source
+    )
   GROUP BY cl.edition_id;
 
-  -- restrict to editions whose LATEST FMV is STALE or NO_DATA — the genuine
-  -- rescue set. Never touch HIGH/MEDIUM/LOW/ASK_ONLY/SALES_ONLY (don't clobber a
-  -- usable confidence or churn an existing ask floor).
+  SELECT count(DISTINCT cl.edition_id) INTO v_ghost_skip
+  FROM cached_listings_v2 cl
+  JOIN allday_listings_sold_after_listing g
+    ON g.listing_resource_id = cl.listing_resource_id AND g.source = cl.source
+  WHERE cl.collection_id = v_coll
+    AND cl.price_usd IS NOT NULL AND cl.price_usd > 0 AND cl.price_usd <= v_ceiling
+    AND cl.completed_at IS NULL
+    AND (cl.expiry_at IS NULL OR cl.expiry_at > now())
+    AND NOT EXISTS (SELECT 1 FROM _ad_ask a WHERE a.edition_id = cl.edition_id);
+
   DROP TABLE IF EXISTS _ad_targets;
   CREATE TEMP TABLE _ad_targets ON COMMIT DROP AS
   SELECT a.edition_id, a.low_ask
@@ -97,7 +128,6 @@ BEGIN
   v_considered := (SELECT count(*) FROM _ad_targets);
 
   IF v_considered > 0 THEN
-    -- FMV write pattern: delete-then-insert for today, never upsert
     DELETE FROM fmv_snapshots fs
     USING _ad_targets t
     WHERE fs.edition_id   = t.edition_id
@@ -123,11 +153,13 @@ BEGIN
 
   INSERT INTO pipeline_runs (pipeline, ok, started_at, finished_at, extra)
   VALUES ('allday-listing-ask-fmv', true, v_started, clock_timestamp(),
-          jsonb_build_object('rescued', v_rescued, 'considered', v_considered));
+          jsonb_build_object('rescued', v_rescued, 'considered', v_considered,
+                             'ghost_only_editions_skipped', v_ghost_skip));
 
   RETURN QUERY SELECT v_rescued, v_considered;
 END;
-$function$;
+$fn$;
+
 -- <<< END verbatim refresh_allday_ask_fmv_from_listings <<<
 
 \set ad '''dee28451-5d62-409e-a1ad-a83f763ac070'''
@@ -136,16 +168,30 @@ $function$;
 \set eHigh    '''e0000000-0000-0000-0000-0000000000a3'''
 \set eCeiling '''e0000000-0000-0000-0000-0000000000a4'''
 \set eDone    '''e0000000-0000-0000-0000-0000000000a5'''
+\set eGhost   '''e0000000-0000-0000-0000-0000000000a6'''
+\set eMixed   '''e0000000-0000-0000-0000-0000000000a7'''
 
 -- Listings: eStale has two (MIN 100 wins), eNoData one (50), eHigh one (60),
 -- eCeiling one ABOVE the $10k ceiling (ignored), eDone one but completed (ignored).
-INSERT INTO public.cached_listings_v2 (edition_id, collection_id, price_usd, completed_at, expiry_at) VALUES
-  (:eStale::uuid,   :ad::uuid, 200, NULL, NULL),
-  (:eStale::uuid,   :ad::uuid, 100, NULL, now() + interval '1 day'),
-  (:eNoData::uuid,  :ad::uuid,  50, NULL, NULL),
-  (:eHigh::uuid,    :ad::uuid,  60, NULL, NULL),
-  (:eCeiling::uuid, :ad::uuid, 20000, NULL, NULL),
-  (:eDone::uuid,    :ad::uuid,  40, now(), NULL);   -- completed → excluded
+-- eGhost's ONLY listing is a ghost (its NFT already sold) - it must not be priced.
+-- eMixed has a CHEAPER ghost (10) and a real ask (70): the ghost must not set the
+-- floor, which is the whole point - a ghost is how an edition gets a price below
+-- everything the market actually clears at.
+INSERT INTO public.cached_listings_v2
+  (edition_id, collection_id, price_usd, completed_at, expiry_at, listing_resource_id, source) VALUES
+  (:eStale::uuid,   :ad::uuid,   200, NULL,  NULL,                      'L1', 'dapper'),
+  (:eStale::uuid,   :ad::uuid,   100, NULL,  now() + interval '1 day',  'L2', 'dapper'),
+  (:eNoData::uuid,  :ad::uuid,    50, NULL,  NULL,                      'L3', 'dapper'),
+  (:eHigh::uuid,    :ad::uuid,    60, NULL,  NULL,                      'L4', 'dapper'),
+  (:eCeiling::uuid, :ad::uuid, 20000, NULL,  NULL,                      'L5', 'dapper'),
+  (:eDone::uuid,    :ad::uuid,    40, now(), NULL,                      'L6', 'dapper'),
+  (:eGhost::uuid,   :ad::uuid,    30, NULL,  NULL,                      'L7', 'dapper'),
+  (:eMixed::uuid,   :ad::uuid,    10, NULL,  NULL,                      'L8', 'dapper'),
+  (:eMixed::uuid,   :ad::uuid,    70, NULL,  NULL,                      'L9', 'dapper');
+
+INSERT INTO public.allday_listings_sold_after_listing (listing_resource_id, source) VALUES
+  ('L7', 'dapper'),   -- eGhost's only listing
+  ('L8', 'dapper');   -- eMixed's CHEAPER listing
 
 -- Latest snapshot per edition sets the rescue gate. eStale also has a YESTERDAY
 -- row that must survive the today-only delete.
@@ -154,15 +200,17 @@ INSERT INTO public.fmv_snapshots (edition_id, collection_id, confidence, compute
   (:eStale::uuid,   :ad::uuid, 'ASK_ONLY',date_trunc('day', now()) - interval '3 hours', 'nfl_all_day'),
   (:eNoData::uuid,  :ad::uuid, 'NO_DATA', date_trunc('day', now()) + interval '1 hour', 'nfl_all_day'),
   (:eHigh::uuid,    :ad::uuid, 'HIGH',    date_trunc('day', now()) + interval '1 hour', 'nfl_all_day'),
-  (:eCeiling::uuid, :ad::uuid, 'STALE',   date_trunc('day', now()) + interval '1 hour', 'nfl_all_day');
+  (:eCeiling::uuid, :ad::uuid, 'STALE',   date_trunc('day', now()) + interval '1 hour', 'nfl_all_day'),
+  (:eGhost::uuid,   :ad::uuid, 'STALE',   date_trunc('day', now()) + interval '1 hour', 'nfl_all_day'),
+  (:eMixed::uuid,   :ad::uuid, 'STALE',   date_trunc('day', now()) + interval '1 hour', 'nfl_all_day');
 
 CREATE TEMP TABLE _r AS SELECT * FROM public.refresh_allday_ask_fmv_from_listings();
 
--- ── Return tuple (rescued, considered) = (2, 2): only eStale + eNoData ───────
-SELECT _assert_eq((SELECT rescued::text FROM _r),    '2', 'rescued = eStale + eNoData (STALE/NO_DATA with a live ask)');
-SELECT _assert_eq((SELECT considered::text FROM _r), '2', 'considered = the same two — HIGH/ceiling/completed never enter');
+-- -- Return tuple (rescued, considered) = (3, 3): eStale + eNoData + eMixed ----
+SELECT _assert_eq((SELECT rescued::text FROM _r),    '3', 'rescued = eStale + eNoData + eMixed (STALE/NO_DATA with a live NON-GHOST ask)');
+SELECT _assert_eq((SELECT considered::text FROM _r), '3', 'considered = the same three - HIGH/ceiling/completed/ghost-only never enter');
 
--- ── eStale: ASK_ONLY written, fmv = MIN ask (100) * 0.90 = 90, floor = 100 ───
+-- -- eStale: ASK_ONLY written, fmv = MIN ask (100) * 0.90 = 90, floor = 100 ----
 SELECT _assert_eq((SELECT fmv_usd::text FROM public.fmv_snapshots
   WHERE edition_id=:eStale::uuid AND computed_at >= date_trunc('day', now())), '90.00',
   'fmv is a 10%% haircut off the MIN live ask (min(100,200)=100 -> 90.00)');
@@ -173,27 +221,53 @@ SELECT _assert_eq((SELECT confidence::text FROM public.fmv_snapshots
   WHERE edition_id=:eStale::uuid AND computed_at >= date_trunc('day', now())), 'ASK_ONLY',
   'a listing-derived rescue is graded ASK_ONLY');
 
--- ── delete-then-insert TODAY only: eStale keeps its yesterday row (2 total) ──
+-- -- A GHOST CANNOT SET THE FLOOR. eMixed prices off the REAL 70, not the dead
+--    10 - this is the assertion that fails if the anti-join is ever removed. ---
+SELECT _assert_eq((SELECT floor_price_usd::text FROM public.fmv_snapshots
+  WHERE edition_id=:eMixed::uuid AND computed_at >= date_trunc('day', now())), '70.00',
+  'a cheaper listing whose NFT already sold does NOT become the floor');
+SELECT _assert_eq((SELECT fmv_usd::text FROM public.fmv_snapshots
+  WHERE edition_id=:eMixed::uuid AND computed_at >= date_trunc('day', now())), '63.00',
+  'fmv follows the real ask (70 -> 63.00), not the ghost (10 -> 9.00)');
+
+-- -- An edition whose ONLY listing is a ghost gets NO price at all ------------
+-- NB: assert on the ABSENCE OF THE ASK_ONLY ROW, not on "no row dated today".
+-- eGhost is seeded with a STALE snapshot dated today (that is what makes it a
+-- rescue candidate in the first place) and the function never deletes it,
+-- because a non-target's rows are left alone. A today-dated NOT EXISTS here
+-- would fail against correct behaviour.
+SELECT _assert_eq((SELECT count(*)::text FROM public.fmv_snapshots
+  WHERE edition_id=:eGhost::uuid AND confidence='ASK_ONLY'), '0',
+  'a ghost-only edition gets no ASK_ONLY row - publishing nothing beats publishing a dead listing');
+SELECT _assert_eq((SELECT count(*)::text FROM public.fmv_snapshots WHERE edition_id=:eGhost::uuid), '1',
+  'and its existing STALE row is left untouched - it is skipped, not rewritten');
+
+-- -- and it is COUNTED, not silent -------------------------------------------
+SELECT _assert_eq((SELECT (extra->>'ghost_only_editions_skipped') FROM public.pipeline_runs
+  WHERE pipeline='allday-listing-ask-fmv'), '1',
+  'the edition it refused to price is reported, so a rising skip count is visible');
+
+-- -- delete-then-insert TODAY only: eStale keeps its yesterday row (2 total) --
 SELECT _assert_eq((SELECT count(*)::text FROM public.fmv_snapshots WHERE edition_id=:eStale::uuid), '2',
   'the pre-today snapshot survives; only today was replaced');
 
--- ── eHigh is never touched (the rescue gate is STALE/NO_DATA only) ───────────
+-- -- eHigh is never touched (the rescue gate is STALE/NO_DATA only) -----------
 SELECT _assert_eq((SELECT count(*)::text FROM public.fmv_snapshots WHERE edition_id=:eHigh::uuid), '1',
   'a HIGH edition gets no ASK_ONLY rescue row');
 
--- ── ceiling + completed editions never get a snapshot ───────────────────────
+-- -- ceiling + completed editions never get a snapshot -----------------------
 SELECT _assert_eq((SELECT count(*)::text FROM public.fmv_snapshots
   WHERE edition_id=:eCeiling::uuid AND confidence='ASK_ONLY'), '0',
-  'an ask above the $10k ceiling is ignored — no rescue');
+  'an ask above the $10k ceiling is ignored - no rescue');
 SELECT _assert(
   NOT EXISTS (SELECT 1 FROM public.fmv_snapshots WHERE edition_id=:eDone::uuid),
   'a completed listing yields no ask and no rescue');
 
--- ── the pipeline_runs audit row is written with the counts ──────────────────
+-- -- the pipeline_runs audit row is written with the counts ------------------
 SELECT _assert_eq((SELECT count(*)::text FROM public.pipeline_runs
   WHERE pipeline='allday-listing-ask-fmv' AND ok
-    AND (extra->>'rescued')='2' AND (extra->>'considered')='2'), '1',
+    AND (extra->>'rescued')='3' AND (extra->>'considered')='3'), '1',
   'a pipeline_runs audit row records rescued/considered');
 
-SELECT '✓ refresh_allday_ask_fmv_from_listings invariants pass' AS result;
+SELECT 'OK refresh_allday_ask_fmv_from_listings invariants pass' AS result;
 ROLLBACK;
