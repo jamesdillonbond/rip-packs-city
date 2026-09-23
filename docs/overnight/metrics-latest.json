@@ -1,6 +1,6 @@
 {
-  "generated_at_pt": "2026-09-22 ~4:20 PM PT",
-  "generated_at_utc": "2026-09-22T23:20Z",
+  "generated_at_pt": "2026-09-22 ~5:45 PM PT",
+  "generated_at_utc": "2026-09-23T00:45Z",
   "pass": "daytime autonomous pass (Cowork cloud build/test + laptop-VM push via .rpc-git-cred). Cloud container itself cannot push (repo not in session's authorized set).",
   "shipped": 9,
   "reverted": 0,
@@ -23,7 +23,8 @@
     "golazos_pack_ev": "v3 ok at 11:37 AM PT",
     "pack_sales_history_updates": "n_tup_upd flat since trigger; n_tup_ins flat is the walker cycle (full 594k sweep ~7.5h + 30min latch), not the trigger — Top Shot pack sales ingest ~8h late; reset expected ~4:33 PM PT",
     "exits_owed": "W1 24h trigger exit; W2 get_pack_sales_history 195ms/141 blks baseline; W3 pg_net DNS hangs; W4 AllDay cursor; W5 ghost-set job + full-walk FMV ratio + honest HIGH/MED drop",
-    "allday_ghost_floor_fix": "paired n=177 (3:40 PM PT): ratio 0.650->1.030, below-all 121->10, above-all 0->3, HIGH/MED 129->128 on >=7-sale editions; thinner editions lose ghost-corroborated MEDIUM (42 down/20 up on first 336). Job 596 cron 0.61s after 20260922214635 (was 18-25s); positive control 5/5."
+    "allday_ghost_floor_fix": "paired n=177 (3:40 PM PT): ratio 0.650->1.030, below-all 121->10, above-all 0->3, HIGH/MED 129->128 on >=7-sale editions; thinner editions lose ghost-corroborated MEDIUM (42 down/20 up on first 336). Job 596 cron 0.61s after 20260922214635 (was 18-25s); positive control 5/5.",
+    "allday_confidence_effect": "5:40 PM PT: 2,685 re-priced; ghost-bearing 1,462->1,317 H/M (-145), no-ghost control 79->79; by 30d sales 0-2: 641->529, 3-6: 547->529, 7+: 353->338; estate All Day H+M 1,921 (31.0%, 06:35 precompute) -> 1,779 (28.7%). Mechanism = ask-corroboration moved (ghost asks sat within +/-25% of sales median more often than live floors)."
   },
   "needs_trevor": [
     "All Day HIGH+MED will drift DOWN after the ghost-floor fix (ghost asks were corroborating LOW->MED) — honest, but it moves the headline KPI",

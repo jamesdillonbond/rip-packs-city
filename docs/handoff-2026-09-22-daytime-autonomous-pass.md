@@ -60,8 +60,50 @@ The Top Shot control on the same instrument sits at 1.000. All Day now looks the
 
 ⚠ **The price of that accuracy is confidence, and you should know it.** Across all 336 All Day editions re-priced so far, **42 went MEDIUM → LOW and 20 went LOW → MEDIUM, a net loss of 22 HIGH/MEDIUM editions.** In the two pre-fix hours the same measurement showed 11 down and 12 up, so the loss comes from the fix and is not normal churn. The mechanism: All Day ask-corroboration (09-09, `lib/fmv-confidence.ts` `escalateConfidence`) lifts LOW → MEDIUM when a live ask agrees with the sales median. The ghost floors "agreed" because FMV had been capped *to* them. So those MEDIUMs rested on a listing that could not be bought, and LOW is the honest reading. Expect the All Day HIGH+MEDIUM count to drift down as the walk completes. **That is the KPI getting more truthful, not less accurate.** Separately, 162 editions had only ghost listings, so they now have no floor: 50 of them are MEDIUM, 58 LOW and **54 ASK_ONLY**. Those 54 were priced from a dead listing (floor × 0.90), and what fmv-recalc does with them on its next pass is worth one look.
 
+**Evening re-measure (5:40 PM PT), with a control and a corrected mechanism.** By now 2,685 All Day editions have been re-priced since the fix.
+
+Split by whether the edition had any ghost listing:
+
+| | editions | HIGH+MEDIUM before | HIGH+MEDIUM after |
+|---|---|---|---|
+| **had a ghost listing** | 2,335 | 1,462 | **1,317 (−145)** |
+| **no ghost listing (control)** | 350 | 79 | **79 (0)** |
+
+The no-change control holds (1 MEDIUM → LOW, 1 LOW → MEDIUM), so the fix causes the drop; it is not background churn.
+
+Split by recent volume (sales in the last 30 days):
+
+| sales in 30 days | editions | HIGH+MEDIUM before | HIGH+MEDIUM after |
+|---|---|---|---|
+| 0–2 (priced off the 90-day window) | 1,465 | 641 | 529 (−112) |
+| 3–6 | 772 | 547 | 529 (−18) |
+| 7+ | 448 | 353 | 338 (−15) |
+
+Estate-wide, All Day HIGH+MEDIUM was 1,921 of 6,190 (31.0 %) at the 6:35 AM PT precompute and is **1,779 (28.7 %)** now.
+
+⚠ **Correction to my first explanation above:** ask-corroboration compares the live ask with the **sales median**, not with the capped FMV. With the ghosts gone, the corroborating ask moved in both directions:
+- **Gained a live ask that agrees:** 154 editions went LOW → MEDIUM; for 95 of them the new floor sits within ±25 % of the median.
+- **Lost an agreeing ghost ask:** 300 went MEDIUM → LOW; the old ghost-inclusive floor agreed for 112 of those.
+
+Both columns are approximate: they use the 30-day all-sales median and today's open listings, not the route's exact inputs. The live floors are typically higher (median ×2.52), so they sit inside ±25 % less often. The cheap end of each edition is swept by buyers, and what remains is dearer than recent clearing prices.
+
 ## Watch items for the next pass
 
+- **W6 (All Day ASK_ONLY):**
+  - The 1,306 ASK_ONLY editions re-price on a roughly 7-day cycle; they are exempt from the 24 h re-stamp, and their computed_at dates span 09-15 → 09-22.
+  - 171 still sit below the new, higher live floor ×0.90 and should catch up by ~09-29.
+  - 57 have no live floor any more; 54 of those had only ghost listings. Expected: they fall to NO_DATA on their next pass.
+  - Falsifier: any of the 57 re-stamped ASK_ONLY after 09-29.
+- **R123 re-verified (5:30 PM PT, redacted drift check, 14 functions):**
+  - 9 deployed == repo.
+  - 2 differ by a comment only (`backfill-topshot-pack-supply`, `resolve-allday-rip-dist-api`).
+  - 5 carry un-deployed R123 fixes: `topshot-insider-detect-patterns`, `special-serial-sweep`/`-delta`, `seed-allday-pack-distributions`, `backfill-topshot-base-parallel-probe`.
+  - All five have **0 invocations in 24 h** (`function_edge_logs`; siblings show 24–3,130), so the gap is latent, not live.
+  - No deployed file carries a credential-shaped literal.
+  - Not deployed from here: each is a 300+ line hand transcription through the MCP, for code nothing calls.
+- **Pinnacle has the same ghost class, small:** 303 of 28,107 open Pinnacle listings (1.1 %) are NFTs that sold in `pinnacle_sales` after listing. Nothing caps Pinnacle FMV at a listing floor, so this is not user-visible pricing today.
+  - ⚠ Probing `sales` instead reads 0, because Pinnacle sales live in `pinnacle_sales`. That was a false negative I nearly filed.
+  - Golazos: 0 of 514 (234 have any sale at all, so the instrument can see them).
 - **W1 note (checked 3:40–4:15 PM PT). Top Shot pack sales lag ~8 h by design; the trigger is not the cause.** `n_tup_ins` on both pack-sales tables was flat all afternoon, and the newest Top Shot pack sale ingested at 8:40 AM PT. The trigger shipped ~12:35 PM, after that, and it only suppresses no-op UPDATEs. The cause is the walker's cycle, observed end to end:
   - Job 29 pages the entire 594k-row history at 4,000 rows per 3 min (`total_api` 42,624 → 2,621).
   - It hit `hasNext:false` at 3:58 PM and then answers `{"done":true}`.
