@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🔧 SHIPPED — `check_candy_treasury_divergence()` now checks the PUBLISHED label against the pack custodian, so the treasury fix above does not leave it permanently red · Claude Code (cloud)
+
+**Migration `20260923235630`.** After `20260923233939` the old comparison (moment argmax vs pack argmax) would read `diverged: true` forever, while the label is correct. Now:
+- `diverged` = the label the boards use ≠ the current pack custodian;
+- new `packs_stale` = `candy_packs` not walked in 48 h. All 2,501 rows carried today's `last_seen_at`, so the table is a refreshed census and that freshness is what makes it sound; `is_burnt` is never set;
+- `moment_argmax_differs` is informational only.
+
+Live: `diverged: false`, `packs_stale: false`, `moment_argmax_differs: true`. md5 equals the file (`b59f84a5…`); anon EXECUTE false.
+**Revert:** re-apply the body from `20260812032227`.
+
 ### 2026-09-23 · 🎯 SHIPPED — `drain_fmv_cold_tail` prices All Day off the live, ghost-filtered floor, the last All Day ASK_ONLY writer still reading `badge_editions` · Claude Code (cloud)
 
 This closes the **Open:** line on the Step 5b entry below ("next writer to re-point"). **Migration `20260923235425`** is a guarded splice of the live body. For All Day only, the ASK_ONLY branch reads `allday_edition_floor_ask` with the same $0–$10k bounds. With no live, non-ghost ask the edition falls through to STALE / NO_DATA, never a price from a gone ask (the 09-22 rule). Other collections are unchanged.
