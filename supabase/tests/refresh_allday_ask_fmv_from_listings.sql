@@ -180,8 +180,8 @@ $fn$;
 \set eDone    '''e0000000-0000-0000-0000-0000000000a5'''
 \set eGhost   '''e0000000-0000-0000-0000-0000000000a6'''
 \set eMixed   '''e0000000-0000-0000-0000-0000000000a7'''
-set eAskHigh '''e0000000-0000-0000-0000-0000000000a8'''
-set eAskOk   '''e0000000-0000-0000-0000-0000000000a9'''
+\set eAskHigh '''e0000000-0000-0000-0000-0000000000a8'''
+\set eAskOk   '''e0000000-0000-0000-0000-0000000000a9'''
 
 -- Listings: eStale has two (MIN 100 wins), eNoData one (50), eHigh one (60),
 -- eCeiling one ABOVE the $10k ceiling (ignored), eDone one but completed (ignored).
