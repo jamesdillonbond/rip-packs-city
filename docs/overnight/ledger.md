@@ -22,6 +22,8 @@ Shipped:
 
 Verified: accessor round-trips to the live literal on 13/13 jobs; negative control (unknown fn) raises; job 84 ran 18:00 PT post-rewrite `succeeded`, no 401 in `net._http_response`, 200s continuing. After: `literals_left 0`, `using_accessor 13`.
 
+⚠ **VERIFICATION SCOPE: 4 of 13 lanes observed live** — jobs 25, 27, 29, 84 each ran post-rewrite with 0 failures (41 `net._http_response` rows, all 200, plus one NULL of the pre-existing DNS-hang class). The other nine are hourly/daily and had not ticked when this was written; the accessor was proved equal to the live literal on **13/13** before any rewrite, so the residual risk is low but not zero. **Falsifier for the next pass: any 401 in `net._http_response`, or a non-succeeded run on jobids 15, 16, 20, 22, 26, 42, 44, 56, 83.**
+
 ⚠ The equivalence guard in `rotate_cron_gate_key` (collapse `key=[^&']+` on both sides) is correct there but **WRONG** for this rewrite — the injected text contains a single quote, so the class stops early and every valid rewrite reads as tampering. The migration uses an exact known-span check instead.
 
 **REVERT:** revert `20260923010107` first (restore literals from `vault.decrypted_secrets`, name `cron_gate_key__<fn>`, via `cron.alter_job`), only then drop the accessor. Dropping the accessor first breaks all 13 lanes.
