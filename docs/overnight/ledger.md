@@ -11,6 +11,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-22 · 🚨 The All Day ghost-listing fix had a second writer re-creating it; 55 ASK_ONLY prices with no ask retired to NO_DATA · Claude Code (Windows box)
+
+**Acting on W6 turned up a live gap in the afternoon's ghost fix.** `refresh_allday_ask_fmv_from_listings` (pg_cron job 19, every 6 h) rescues STALE/NO_DATA editions into ASK_ONLY at `low_ask * 0.90` and reads **`cached_listings_v2` directly**, not the ghost-filtered `allday_edition_floor_ask`. It ran at **17:40 PT, after the 13:57 floor fix**, and rescued 12 editions. 3,000 All Day editions carry a ghost listing in the population it reads; **182 have only ghosts**. CLAUDE.md's rule applies verbatim: a read-layer fix does not close a fabrication the write layer can re-create — grep the column's WRITERS.
+
+Migration `20260923011039`:
+- **Part A** — the rescuer anti-joins `allday_listings_sold_after_listing` (same single source of ghost truth as the view) and reports `ghost_only_editions_skipped` in `pipeline_runs.extra`, so what it refuses to price is counted rather than silent. First run after: **rescued 10, considered 10, skipped 182** — still rescues from genuine live asks (positive control), now declines the ghosts.
+- **Part B** — Trevor's call: an ASK_ONLY price whose only input is gone publishes nothing. **55 editions retired to NO_DATA with `fmv_usd NULL`** (up to $292.50; $1,527.46 total). Not a new rule — `lib/analytics/methodology.ts` already states "an ask we have not re-confirmed in over a week no longer corroborates a price at all"; the code just did not do it.
+
+⚠ **The snapshot fix was not the surface fix.** `edition_fmv_current` is the cache the surfaces read and still priced all 55 until `refresh_edition_fmv_current(false)` ran (117 ms, 7,622 upserted). Now 0. Anything similar here must refresh the cache or the fix is invisible.
+
+All Day ASK_ONLY 1,304 → 1,249.
+
+**REVERT:** re-apply the prior function body (identical minus the NOT EXISTS block and `v_ghost_skip`), `DELETE FROM fmv_snapshots WHERE algo_version = 'allday-ask-retired-v1'`, then `SELECT public.refresh_edition_fmv_current(false)`.
+
 ### 2026-09-22 · 🔐 All 13 pg_cron gate keys moved out of `cron.job.command` into Supabase Vault · Claude Code (Windows box)
 
 **The handoff named 4 jobs; the population is 13.** Re-derived from `cron.job`: 15, 16, 20, 22, 25, 26, 27, 29, 42, 44, 56, 83, 84 carried a literal `?key=rpc_pls_…`, across **10 distinct keys** and 11 edge functions. Fixing the named four would have left nine live literals and read as done.
