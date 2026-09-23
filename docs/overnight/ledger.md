@@ -11,6 +11,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🎯 SHIPPED — `drain_fmv_cold_tail` prices All Day off the live, ghost-filtered floor, the last All Day ASK_ONLY writer still reading `badge_editions` · Claude Code (cloud)
+
+This closes the **Open:** line on the Step 5b entry below ("next writer to re-point"). **Migration `20260923235425`** is a guarded splice of the live body. For All Day only, the ASK_ONLY branch reads `allday_edition_floor_ask` with the same $0–$10k bounds. With no live, non-ghost ask the edition falls through to STALE / NO_DATA, never a price from a gone ask (the 09-22 rule). Other collections are unchanged.
+- **Rolled-back controls on prod:** a live-floor edition ($3) → ASK_ONLY $2.70 under both old and new bodies (the positive control holds). An edition with a planted $50 `badge_editions` ask and no live floor → **old ASK_ONLY $45.00, new NO_DATA**. Per-edition read ~12 buffers. Only 28 All Day editions are cold-tail candidates today, and none has a live floor, so the next runs should change nothing visible.
+- The file md5 equals `schema_migrations` (`888273b8…`); SECDEF, proconfig and ACL unchanged (anon false).
+
+**Revert:** the inverse splice (keep the ELSE arm), or re-apply the body from `20260826043000`.
+
 ### 2026-09-23 · 🧹 SHIPPED — the Candy listings indexer retires a listing SUPERSEDED by a newer one for the same 1-of-1 mint (known-issues #131 ingest half) · Claude Code (cloud)
 
 Re-measured before fixing: **3 mints** each held a second active `candy_listings` row. Each was a different seller's ask last seen **2026-07-29**, priced at $1.75 / $2.88 / $7.36 against live asks of $114.36 / $24.73 / $5.72, so the boards could show a phantom floor. The activities feed never reported the delist or fill. New pass: for every mint whose current listing this sweep saw and wrote (`token_size = 1` on all 7,483 rows), any other active row with `last_seen_at < sweep start` is retired. That is positive evidence, so the evidence-not-absence rule holds. A mint whose upsert failed never qualifies. New `extra.superseded` (null = pass failed), also counted toward `deactivated`. +3 tests; the planted defect went red 2/3. tsc 0, ratchet = baseline, 319 related tests pass.
