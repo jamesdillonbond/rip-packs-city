@@ -1,4 +1,4 @@
-# Inbox index — 544 live filings
+# Inbox index — 545 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-09-23 — 1 filing
+## 2026-09-23 — 2 filings
+
+- [🔴 **A fourth ASK_ONLY writer, `fmv_from_cached_listings`, republishes Flowty's valuation as RPC FMV over $1,000,000 troll floors, and re-created a retired All Day price within 4 h**](2026-09-23T0510Z-a-fourth-ask-only-writer-republishes-third-party-valuations-over-troll-floors.md) — *(Cowork cloud, ~10:10 PM PT 09-22. **READ-ONLY — pricing logic.**)* The `ask_only_v2` literal is in `proargdefaults`, not `prosrc`, so a prosrc grep misses it. It is called by the All Day, Golazos and UFC listing-cache routes every 20 min. It reads legacy `cached_listings`, which the ghost fix never touches, and publishes `AVG(Flowty blended valuation)` as ASK_ONLY. Its undated DELETE can replace sales-derived LOW rows. Examples: FMV above the live floor, e.g. Jer'Zhan Newton **$60.39 vs $3 live**, Xavier Worthy $202.76 vs $46. Scale: Golazos 67 editions / ≈$14.3k, All Day 10 / ≈$1.4k.
 
 - [🔴 **Deal alerts are NOT blocked by ask freshness — both subscriptions refuted, and the proposed Atlas widening buys nothing**](2026-09-23T0155Z-deal-alerts-are-not-blocked-by-ask-freshness-both-subscriptions-refuted.md) — *(Claude Code, Windows box, ~6:00 PM PT 09-22. **READ-ONLY — no subscription edited.**)* Refutes handoff item 1. The 11 % figure is real (1,770 of 13,160, median 127.6 h) but the conclusion does not follow. **Blazers sub is `serial_only`** and the dispatcher reports `unconfirmed_serial 0` — verified NOT an empty-pool artifact: the pool holds **17 rows, all 17 alertable**, 12 of them ≥25 % off, none a Blazers rookie. **Lillard sub is blocked by its own `set_names: ["Archive"]`** — one such edition exists, asking **$50** against a $0.60 cap; drop that filter and 14 editions qualify, **2 alertable right now**. Control: a `ts_listings` arm adds only **356** editions and the two floor sources disagree on **12 of 2,971**, all DEARER, 0 cheaper. ⛔ My first pass said 1,241/1,409 — that join merged parallels into their base (the `b22eedbed` trap). **Do not buy Atlas coverage for this.**
 
