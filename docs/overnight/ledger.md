@@ -11,6 +11,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 📏 SHIPPED — `alerts-dispatch` logs the pool sizes beside its "unconfirmed" counts, and stops dropping a failed log write · Claude Code (cloud)
+
+This acts on the gap inbox `2026-09-23T0155Z` named: *"the route logs the unconfirmed counts but not `serial_pool_size`, which the RPC does return"*. So `unconfirmed_serial: 0` could not tell "the gate held nothing back" from "the pool was empty", and settling it took a hand query against the board. `pipeline_runs.extra` now also carries `pool_deal`, `pool_price`, `pool_serial`, `subscriptions_scanned` and `enqueued_serial`, plus `deal_skipped` when the RPC's no-subscriptions early return reported zero pools it never built. A key the RPC did not return is **omitted, never defaulted to 0**. This replaces the old `?? 0` on the three `unconfirmed_*` counts, whose names are unchanged. `log_pipeline_run` was awaited without destructuring, so a returned `{ error }` vanished; it now reaches `console.error`.
+- +5 deferred-body tests. Each was proven by a planted defect (absent → 0 defaulting; log-error check removed): 1 red each. tsc 0, `lint:ratchet` 710 = baseline, and 1,494 related tests pass.
+- **Watch:** the next `alerts-dispatch` row's `extra` should show `pool_serial` ≈ 17 and `pool_price` ≈ 13k.
+
+**Revert:** `git revert` the code commit. It is route logging only; no DB change.
+
 ### 2026-09-23 · 🔔 SHIPPED — the failure-rate alarm stops paging a lane for ~3 days after it is fixed: it now also splits at the lane's LAST FAILURE, not only at an instance restart · Claude Code (cloud)
 
 **Migration `20260923231922`.** It applies R124's own "what this does NOT cover" line: the restart split could not see a deploy or migration as a change point. Live case: `compute-allday-pack-ev` has been fixed since **09-22 11:07 AM PT** and has run 58/58 ok since. The arm still paged it **HIGH, "75/133 (56.4%)"**, and would have until ~09-24 5 PM PT. Every pass in between re-diagnosed it as benign.
