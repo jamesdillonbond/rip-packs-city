@@ -231,8 +231,10 @@ const PINS = [
     // kept pricing editions off listings whose NFT had already sold -- the exact
     // rows the floor view had just been taught to exclude. It now anti-joins
     // allday_listings_sold_after_listing and counts what it declines to price.
+    // Re-pointed 2026-09-23: it also re-caps an ASK_ONLY price that sits above
+    // today's live ask (nothing revisited one after a cheaper listing arrived).
     migration:
-      "supabase/migrations/20260923011039_audit_20260922_allday_ask_only_needs_a_live_non_ghost_ask.sql",
+      "supabase/migrations/20260923220355_audit_20260923_allday_ask_only_recaps_when_the_live_ask_drops.sql",
   },
   {
     fn: "backfill_wmc_metadata_from_editions",

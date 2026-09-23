@@ -1521,6 +1521,45 @@ export async function POST(req: NextRequest) {
         if (rows.length > 0) {
           console.log(`[FMV-RECALC] Historical fallback: ${rows.length} editions with sales but no snapshot`)
 
+          // Ask-ceiling for THIS step (2026-09-23). Step 4 caps every sales-derived
+          // base FMV at the cheapest current ask; this step never did, so an average
+          // of old sales published above a live buy-it-now. Measured the day it was
+          // fixed: 20 All Day LOW rows carrying this step's signature
+          // (sales_count_30d = 0, days_since_sale 7–59) sat above the ghost-filtered
+          // floor, e.g. Garrett Wilson Dynamic $62.10 against a $3 ask.
+          // editionCeilingAskById only covers the PAGE's edition ids, and these
+          // candidates come from a different query, so fetch the All Day floor for
+          // them here. The TS ask the RPC already returns (badge_editions.low_ask)
+          // joins the same min(). A failed fetch leaves an edition uncapped — the
+          // pre-existing behaviour — and never removes a row.
+          const histCeilingById = new Map<string, number>()
+          const addHistCeiling = (edId: string, ask: number) => {
+            if (!(ask > 0)) return
+            const prior = histCeilingById.get(edId)
+            histCeilingById.set(edId, prior != null ? Math.min(prior, ask) : ask)
+          }
+          for (const row of rows) {
+            const pageCeiling = editionCeilingAskById.get(row.edition_id)
+            if (pageCeiling != null) addHistCeiling(row.edition_id, pageCeiling)
+            if (row.low_ask != null) addHistCeiling(row.edition_id, Number(row.low_ask))
+          }
+          try {
+            const { data: histFloorRows, error: histFloorErr } = await supabaseAdmin
+              .from("allday_edition_floor_ask")
+              .select("edition_id, floor_ask")
+              .in("edition_id", rows.map((r) => r.edition_id))
+              .gt("floor_ask", 0)
+            if (histFloorErr) {
+              console.warn("[FMV-RECALC] Historical fallback floor-ask ceiling error:", histFloorErr.message)
+            } else {
+              for (const fr of histFloorRows ?? []) {
+                addHistCeiling(String((fr as any).edition_id), Number((fr as any).floor_ask))
+              }
+            }
+          } catch (err) {
+            console.warn("[FMV-RECALC] Historical fallback floor-ask ceiling fetch failed (non-fatal):", err instanceof Error ? err.message : err)
+          }
+
           const histInsert = rows.map((row) => {
             const avgPrice = Number(row.avg_price)
             const daysSinceSale = Math.round(
@@ -1573,10 +1612,14 @@ export async function POST(req: NextRequest) {
               ? (Number(row.sales_count) >= MIN_SALES_30D_MEDIUM ? "SALES_ONLY" : "STALE")
               : (daysSinceSale >= 60 ? "STALE" : "LOW")
 
+            // asp_* stay the raw sales average (that IS what sold); only the
+            // published FMV is capped at buy-it-now, as in Step 4.
+            const histFmv = capFmvAtCheapestAsk(avgPrice, histCeilingById.get(row.edition_id) ?? null)
+
             return applyAllFmvGuards({
               edition_id: row.edition_id,
               collection_id: row.collection_id,
-              fmv_usd: Number(avgPrice.toFixed(2)),
+              fmv_usd: Number(histFmv.toFixed(2)),
               floor_price_usd: Number(Number(row.min_price).toFixed(2)),
               asp_usd: Number(avgPrice.toFixed(2)),
               asp_without_outliers: Number(avgPrice.toFixed(2)),

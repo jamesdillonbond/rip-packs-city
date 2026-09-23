@@ -2,11 +2,17 @@
 -- RESCUE writer. For AllDay editions whose latest FMV is STALE or NO_DATA (i.e. no
 -- usable sales-derived price), it derives an ASK_ONLY placeholder from the live
 -- listing floor so the edition shows *something* instead of "no data". The gates:
--- only STALE/NO_DATA editions are rescued (a HIGH/MEDIUM/LOW/ASK_ONLY value is
--- never touched), only live listings count (price>0, <= $10,000 ceiling, not
+-- only STALE/NO_DATA editions are rescued (a HIGH/MEDIUM/LOW value is never
+-- touched; an ASK_ONLY one only when it sits above the live ask, see below), only live listings count (price>0, <= $10,000 ceiling, not
 -- completed, not expired), the low ask is the MIN across listings, the written
 -- fmv is a 10% haircut off that ask, and it delete-then-inserts TODAY only. It
 -- logs a pipeline_runs row and returns (rescued, considered).
+--
+-- ⚠ AND SINCE 2026-09-23, an ASK_ONLY price above today's live ask is re-capped.
+-- An ASK_ONLY row is ask * 0.90 when written and nothing revisited it, so when a
+-- cheaper listing arrived the published FMV sat above buy-it-now (26 All Day
+-- editions, 8 h to 7 days old). The gate is now STALE/NO_DATA, OR ASK_ONLY with
+-- fmv_usd > the live ask; an ASK_ONLY at or under the ask is left alone.
 --
 -- 🚨 AND SINCE 2026-09-22, A GHOST LISTING IS NOT A LIVE ASK. `completed_at IS
 -- NULL` does NOT mean the NFT is still for sale: All Day leaves the listing row
@@ -21,7 +27,7 @@
 -- counted rather than silent.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260923011039_audit_20260922_allday_ask_only_needs_a_live_non_ghost_ask.sql).
+-- (supabase/migrations/20260923220355_audit_20260923_allday_ask_only_recaps_when_the_live_ask_drops.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -84,6 +90,7 @@ DECLARE
   v_today_end   timestamptz := date_trunc('day', now()) + interval '1 day';
   v_rescued     int := 0;
   v_considered  int := 0;
+  v_recapped    int := 0;
   v_ghost_skip  int := 0;
   v_started     timestamptz := clock_timestamp();
 BEGIN
@@ -114,18 +121,20 @@ BEGIN
 
   DROP TABLE IF EXISTS _ad_targets;
   CREATE TEMP TABLE _ad_targets ON COMMIT DROP AS
-  SELECT a.edition_id, a.low_ask
+  SELECT a.edition_id, a.low_ask, latest.conf
   FROM _ad_ask a
   JOIN LATERAL (
-    SELECT fs.confidence::text AS conf
+    SELECT fs.confidence::text AS conf, fs.fmv_usd AS fmv
     FROM fmv_snapshots fs
     WHERE fs.edition_id = a.edition_id
     ORDER BY fs.computed_at DESC
     LIMIT 1
   ) latest ON true
-  WHERE latest.conf IN ('STALE','NO_DATA');
+  WHERE latest.conf IN ('STALE','NO_DATA')
+     OR (latest.conf = 'ASK_ONLY' AND latest.fmv > a.low_ask);
 
   v_considered := (SELECT count(*) FROM _ad_targets);
+  v_recapped   := (SELECT count(*) FROM _ad_targets WHERE conf = 'ASK_ONLY');
 
   IF v_considered > 0 THEN
     DELETE FROM fmv_snapshots fs
@@ -154,6 +163,7 @@ BEGIN
   INSERT INTO pipeline_runs (pipeline, ok, started_at, finished_at, extra)
   VALUES ('allday-listing-ask-fmv', true, v_started, clock_timestamp(),
           jsonb_build_object('rescued', v_rescued, 'considered', v_considered,
+                             'recapped_above_live_ask', v_recapped,
                              'ghost_only_editions_skipped', v_ghost_skip));
 
   RETURN QUERY SELECT v_rescued, v_considered;
@@ -170,6 +180,8 @@ $fn$;
 \set eDone    '''e0000000-0000-0000-0000-0000000000a5'''
 \set eGhost   '''e0000000-0000-0000-0000-0000000000a6'''
 \set eMixed   '''e0000000-0000-0000-0000-0000000000a7'''
+set eAskHigh '''e0000000-0000-0000-0000-0000000000a8'''
+set eAskOk   '''e0000000-0000-0000-0000-0000000000a9'''
 
 -- Listings: eStale has two (MIN 100 wins), eNoData one (50), eHigh one (60),
 -- eCeiling one ABOVE the $10k ceiling (ignored), eDone one but completed (ignored).
@@ -187,7 +199,9 @@ INSERT INTO public.cached_listings_v2
   (:eDone::uuid,    :ad::uuid,    40, now(), NULL,                      'L6', 'dapper'),
   (:eGhost::uuid,   :ad::uuid,    30, NULL,  NULL,                      'L7', 'dapper'),
   (:eMixed::uuid,   :ad::uuid,    10, NULL,  NULL,                      'L8', 'dapper'),
-  (:eMixed::uuid,   :ad::uuid,    70, NULL,  NULL,                      'L9', 'dapper');
+  (:eMixed::uuid,   :ad::uuid,    70, NULL,  NULL,                      'L9', 'dapper'),
+  (:eAskHigh::uuid, :ad::uuid,    50, NULL,  NULL,                      'L10', 'dapper'),
+  (:eAskOk::uuid,   :ad::uuid,    50, NULL,  NULL,                      'L11', 'dapper');
 
 INSERT INTO public.allday_listings_sold_after_listing (listing_resource_id, source) VALUES
   ('L7', 'dapper'),   -- eGhost's only listing
@@ -204,11 +218,31 @@ INSERT INTO public.fmv_snapshots (edition_id, collection_id, confidence, compute
   (:eGhost::uuid,   :ad::uuid, 'STALE',   date_trunc('day', now()) + interval '1 hour', 'nfl_all_day'),
   (:eMixed::uuid,   :ad::uuid, 'STALE',   date_trunc('day', now()) + interval '1 hour', 'nfl_all_day');
 
+-- eAskHigh: an ASK_ONLY price of 90 written days ago, and the live ask is now 50.
+-- It must be re-capped to 45. eAskOk: ASK_ONLY 40 under a live 50 - left alone.
+INSERT INTO public.fmv_snapshots (edition_id, collection_id, fmv_usd, confidence, computed_at, collection) VALUES
+  (:eAskHigh::uuid, :ad::uuid, 90, 'ASK_ONLY', date_trunc('day', now()) - interval '3 days', 'nfl_all_day'),
+  (:eAskOk::uuid,   :ad::uuid, 40, 'ASK_ONLY', date_trunc('day', now()) - interval '3 days', 'nfl_all_day');
+
 CREATE TEMP TABLE _r AS SELECT * FROM public.refresh_allday_ask_fmv_from_listings();
 
--- -- Return tuple (rescued, considered) = (3, 3): eStale + eNoData + eMixed ----
-SELECT _assert_eq((SELECT rescued::text FROM _r),    '3', 'rescued = eStale + eNoData + eMixed (STALE/NO_DATA with a live NON-GHOST ask)');
-SELECT _assert_eq((SELECT considered::text FROM _r), '3', 'considered = the same three - HIGH/ceiling/completed/ghost-only never enter');
+-- -- Return tuple (rescued, considered) = (4, 4): eStale + eNoData + eMixed + eAskHigh
+SELECT _assert_eq((SELECT rescued::text FROM _r),    '4', 'rescued = eStale + eNoData + eMixed (STALE/NO_DATA with a live NON-GHOST ask) + eAskHigh (ASK_ONLY above it)');
+SELECT _assert_eq((SELECT considered::text FROM _r), '4', 'considered = the same four - HIGH/ceiling/completed/ghost-only/at-or-under-ask never enter');
+
+-- -- AN ASK_ONLY PRICE ABOVE THE LIVE ASK IS RE-CAPPED (90 over a live 50 -> 45) ---
+SELECT _assert_eq((SELECT fmv_usd::text FROM public.fmv_snapshots
+  WHERE edition_id=:eAskHigh::uuid AND computed_at >= date_trunc('day', now())), '45.00',
+  'an ASK_ONLY price above buy-it-now is re-priced at the live ask * 0.90');
+SELECT _assert_eq((SELECT fmv_usd::text FROM public.fmv_snapshots
+  WHERE edition_id=:eAskHigh::uuid ORDER BY computed_at DESC LIMIT 1), '45.00',
+  'and the re-capped row is the LATEST one, which is what the surface publishes');
+-- -- ...but one at or under the ask is left alone (no churn) -----------------
+SELECT _assert_eq((SELECT count(*)::text FROM public.fmv_snapshots WHERE edition_id=:eAskOk::uuid), '1',
+  'an ASK_ONLY price at or under the live ask gets no new row');
+SELECT _assert_eq((SELECT (extra->>'recapped_above_live_ask') FROM public.pipeline_runs
+  WHERE pipeline='allday-listing-ask-fmv'), '1',
+  'the re-capped editions are counted separately from rescues');
 
 -- -- eStale: ASK_ONLY written, fmv = MIN ask (100) * 0.90 = 90, floor = 100 ----
 SELECT _assert_eq((SELECT fmv_usd::text FROM public.fmv_snapshots
@@ -266,7 +300,7 @@ SELECT _assert(
 -- -- the pipeline_runs audit row is written with the counts ------------------
 SELECT _assert_eq((SELECT count(*)::text FROM public.pipeline_runs
   WHERE pipeline='allday-listing-ask-fmv' AND ok
-    AND (extra->>'rescued')='3' AND (extra->>'considered')='3'), '1',
+    AND (extra->>'rescued')='4' AND (extra->>'considered')='4'), '1',
   'a pipeline_runs audit row records rescued/considered');
 
 SELECT 'OK refresh_allday_ask_fmv_from_listings invariants pass' AS result;

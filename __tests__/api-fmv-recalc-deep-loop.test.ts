@@ -642,6 +642,76 @@ describe("fmv-recalc ASK-fallback + backfill steps", () => {
     expect(Number(hist[0].fmv_usd)).toBeGreaterThan(0)
   })
 
+  // 2026-09-23: Step 5b priced an average of old sales with no ask-ceiling, so it
+  // published All Day LOW prices above a live buy-it-now (Garrett Wilson Dynamic
+  // $62.10 vs a $3 floor). These pin that the PUBLISHED price never exceeds the
+  // live floor, while the sales evidence (asp) is kept as-is.
+  const ALLDAY_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
+  const histCandidate = (over: Record<string, unknown> = {}) => ({
+    edition_id: "ed-hist-ad",
+    collection_id: ALLDAY_ID,
+    avg_price: "62.10",
+    min_price: "40.00",
+    sales_count: 2,
+    latest_sold_at: daysAgo(20),
+    prev_confidence: "LOW",
+    low_ask: null,
+    ...over,
+  })
+
+  it("never publishes a historical-fallback FMV above the live All Day floor", async () => {
+    const { inserted } = instrument({
+      ...fallbackFixtures(QS({})),
+      // Sequence: the FIRST read is Step 2a-ter(b)'s page-scoped ceiling map, which
+      // does not contain this candidate. Only Step 5b's own fetch (the second read)
+      // sees the floor, so this passes only if that fetch exists and is applied.
+      allday_edition_floor_ask: [
+        { data: [], error: null },
+        { data: [{ edition_id: "ed-hist-ad", floor_ask: 3 }], error: null },
+      ],
+      "rpc:fmv_recalc_historical_candidates": { data: [histCandidate()], error: null },
+    })
+    await POST(req())
+    await runDeferred()
+
+    const hist = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-hist-ad")
+    expect(hist).toHaveLength(1)
+    expect(Number(hist[0].fmv_usd)).toBe(3)
+    expect(Number(hist[0].asp_usd)).toBe(62.1)
+  })
+
+  it("caps a historical-fallback FMV at the TS ask the candidate RPC returns", async () => {
+    // daysSinceSale < 30, so the ASK_ONLY branch does not take it: the sales
+    // branch must still respect the ask.
+    const { inserted } = instrument({
+      ...fallbackFixtures(QS({})),
+      "rpc:fmv_recalc_historical_candidates": {
+        data: [histCandidate({ edition_id: "ed-hist-ts", collection_id: TOPSHOT, low_ask: "12.50" })],
+        error: null,
+      },
+    })
+    await POST(req())
+    await runDeferred()
+
+    const hist = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-hist-ts")
+    expect(hist).toHaveLength(1)
+    expect(Number(hist[0].fmv_usd)).toBe(12.5)
+  })
+
+  it("leaves a historical-fallback FMV uncapped (not dropped) when the floor read fails", async () => {
+    const { inserted } = instrument({
+      ...fallbackFixtures(QS({})),
+      allday_edition_floor_ask: { data: null, error: { message: "floor view timed out" } },
+      "rpc:fmv_recalc_historical_candidates": { data: [histCandidate()], error: null },
+    })
+    await POST(req())
+    await runDeferred()
+
+    const hist = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-hist-ad")
+    expect(hist).toHaveLength(1)
+    expect(Number(hist[0].fmv_usd)).toBe(62.1)
+  })
+
   it("writes the edition_offers ASK floor for zero-sales NO_DATA editions", async () => {
     const { inserted } = instrument(
       fallbackFixtures(
