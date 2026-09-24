@@ -578,6 +578,35 @@ describe("candy-sales-indexer — sealed-pack sales", () => {
     // consume the per-tick asset budget again.
     expect(extra.drain_attempted).toBe(0)
   })
+
+  // 2026-09-23: the candy_pack_sales write error used to be console.log'd and the
+  // sale closed out as terminal `pack_asset` anyway — the ONLY record of that pack
+  // price lost, and the run still reporting it "seen" with ok=true.
+  it("a FAILED pack-sale write is parked for retry, not closed, and fails the run", async () => {
+    const acts: Act[] = [
+      { signature: "sPackF", type: "buyNow", tokenMint: "mPackF", price: 0.4, blockTime: 1_700_002_100 },
+    ]
+    state.assets = { mPackF: { key: "", serial: null, pack: true } }
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({
+      sales: [{ data: [], error: null }],
+      candy_pack_sales: [{ data: null, error: { message: "permission denied" } }],
+      candy_sales_unresolved: [{ data: [], error: null }, { data: null, error: null, count: 0 }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const park = spy.rpcCalls.find((c) => c.name === "candy_park_unresolved_sale")
+    expect(park?.args).toMatchObject({ p_signature: "sPackF", p_skip_reason: "pack_sale_write_failed" })
+    const close = (spy.writes.candy_sales_unresolved ?? []).find((w) => w.method === "update")
+    expect(close).toBeUndefined()
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.pack_sales_seen).toBe(0)
+    expect(extra.pack_sales_write_errors).toBe(1)
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

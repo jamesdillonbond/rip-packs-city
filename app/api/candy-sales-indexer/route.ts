@@ -71,6 +71,11 @@ const MAX_PARK_ATTEMPTS = 25
 // not editions). Parked and closed in the same breath: the row is kept as the
 // only record RPC has of Candy pack secondary pricing, but never retried.
 const PACK_SKIP = "pack_asset"
+// 2026-09-23: a pack sale whose candy_pack_sales write FAILED is not closed out
+// as PACK_SKIP (which is terminal — the sale would be lost with the run still
+// reporting it "seen"). It parks under this NON-terminal reason so the dead-
+// letter drain retries the write, and the run reports the failure.
+const PACK_WRITE_FAILED_SKIP = "pack_sale_write_failed"
 const DUST_SKIP = "dust_price_rounds_to_zero"
 // Skips that can NEVER succeed on a retry: the input itself is terminal, not
 // missing. Parked, then closed in the same pass so they don't burn drain budget
@@ -214,6 +219,7 @@ async function handleIndex(req: NextRequest) {
     let skipped = 0
     let assetFetches = 0
     let packSales = 0
+    let packWriteErrors = 0
     let cursorAfter: string | null = null
     try {
       // Incremental high-water mark: the most recent Candy sale we already have.
@@ -351,7 +357,11 @@ async function handleIndex(req: NextRequest) {
               },
               { onConflict: "transaction_hash,token_mint" }
             )
-          if (pe) console.log(`[${PIPELINE_NAME}] candy_pack_sales upsert err: ${pe.message}`)
+          if (pe) {
+            console.log(`[${PIPELINE_NAME}] candy_pack_sales upsert err: ${pe.message}`)
+            packWriteErrors++
+            return { skip: PACK_WRITE_FAILED_SKIP }
+          }
           return { skip: PACK_SKIP }
         }
 
@@ -611,7 +621,9 @@ async function handleIndex(req: NextRequest) {
         ? "sweep budget exhausted before the activities walk completed — no upstream claim implied"
         : activitiesSeen === 0
           ? "ME activities feed returned 0 rows — upstream fault, not a quiet market"
-          : null
+          : packWriteErrors > 0
+            ? `${packWriteErrors} Candy pack sale write(s) failed — parked for retry, see logs`
+            : null
 
       await logRun(startedAtIso, found, written, skipped, feedErr === null, feedErr, cursorBefore, cursorAfter, {
         sales_found: found,
@@ -623,6 +635,7 @@ async function handleIndex(req: NextRequest) {
         budget_exhausted: budgetExhausted,
         parked: parked.length,
         pack_sales_seen: packSales,
+        pack_sales_write_errors: packWriteErrors,
         drain_attempted: drainAttempted,
         drain_resolved: drainResolved,
         // null, never 0 — see the count read above.
