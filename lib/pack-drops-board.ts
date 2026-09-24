@@ -150,20 +150,45 @@ export type ScoredDrop = {
   rows: ScoredEdition[]
 }
 
-async function fetchJson<T>(url: string, revalidateSec: number): Promise<T | null> {
+// Three outcomes, never two: the upstream ANSWERED (ok), it answered that the
+// thing does not exist (missing: HTTP 404), or the read FAILED (timeout, 5xx,
+// network, bad JSON). ⚠ Folding "failed" into "missing" is the defect this type
+// exists to prevent: after the 5 s timeout landed (#33), a slow composition read
+// became indistinguishable from a drop with no Top Shot assets, so the drop
+// silently vanished from a board that still reported success — and if every read
+// timed out, the board published `[]` as "no live drops".
+type FetchResult<T> = { kind: "ok"; data: T } | { kind: "missing" } | { kind: "failed"; reason: string }
+
+async function fetchJsonResult<T>(url: string, revalidateSec: number): Promise<FetchResult<T>> {
   try {
     const r = await fetch(url, {
       next: { revalidate: revalidateSec },
       headers: { Accept: "application/json" },
       // A hung upstream must not hold the whole board past the page's 8 s budget
-      // (BOARD_LIVE_TIMEOUT_MS). A timeout lands in the catch below exactly like
-      // any other failed fetch.
+      // (BOARD_LIVE_TIMEOUT_MS). A timeout is a FAILED read, not a missing one.
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     })
-    if (!r.ok) return null
-    return (await r.json()) as T
-  } catch {
-    return null
+    if (r.status === 404) return { kind: "missing" }
+    if (!r.ok) return { kind: "failed", reason: `HTTP ${r.status}` }
+    return { kind: "ok", data: (await r.json()) as T }
+  } catch (e) {
+    return { kind: "failed", reason: e instanceof Error ? e.name || e.message : String(e) }
+  }
+}
+
+// Best-effort variant for DECORATION reads (FX rate, odds, sale-state) whose
+// absence the board already renders as unknown. ⛔ Never use it for a read whose
+// absence would change WHICH drops the board lists — use fetchJsonResult.
+async function fetchJson<T>(url: string, revalidateSec: number): Promise<T | null> {
+  const r = await fetchJsonResult<T>(url, revalidateSec)
+  return r.kind === "ok" ? r.data : null
+}
+
+/** A drop-list or composition read failed, so the board cannot say which drops exist. */
+export class PackDropsIncompleteError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "PackDropsIncompleteError"
   }
 }
 
@@ -181,7 +206,8 @@ export async function fetchFlowUsd(): Promise<number | null> {
 // Discover live drops. Primary: the /api/drops list endpoint (gives the FLOW
 // listingPrice too). Fallback: probe ids 1..N until composition 404s.
 export async function discoverDropIds(): Promise<{ ids: number[]; list: VaultopolisDropListItem[] }> {
-  const listed = await fetchJson<{ drops?: VaultopolisDropListItem[] }>(VAULTOPOLIS_BASE, 900)
+  const listedRes = await fetchJsonResult<{ drops?: VaultopolisDropListItem[] }>(VAULTOPOLIS_BASE, 900)
+  const listed = listedRes.kind === "ok" ? listedRes.data : null
   if (listed?.drops && Array.isArray(listed.drops) && listed.drops.length > 0) {
     const list = listed.drops
     const ids = list.map((d) => d.dropId).filter((n) => Number.isFinite(n))
@@ -190,8 +216,15 @@ export async function discoverDropIds(): Promise<{ ids: number[]; list: Vaultopo
   // Fallback probe: composition exists ⇒ keep going; first 404 stops us.
   const ids: number[] = []
   for (let id = 1; id <= MAX_PROBE_IDS; id++) {
-    const comp = await fetchJson<VaultopolisComposition>(`${VAULTOPOLIS_BASE}/${id}/composition`, 900)
-    if (!comp || !comp.assets) break
+    const res = await fetchJsonResult<VaultopolisComposition>(`${VAULTOPOLIS_BASE}/${id}/composition`, 900)
+    // Only a real 404 (or an answer with no assets) ends the probe. A FAILED read
+    // cannot tell us where the list ends, so it is not an answer.
+    if (res.kind === "failed") {
+      throw new PackDropsIncompleteError(
+        `drop discovery failed: list ${listedRes.kind === "failed" ? listedRes.reason : "empty"}, probe of drop ${id} ${res.reason}`,
+      )
+    }
+    if (res.kind === "missing" || !res.data.assets) break
     ids.push(id)
   }
   return { ids, list: [] }
@@ -421,11 +454,19 @@ export async function fetchScoredDrops(sb: SupabaseClient): Promise<ScoredDrop[]
       const li = listById.get(id) ?? null
       // Skip drops that are cancelled or have no packs — nothing to score.
       if (li && li.status === "cancelled") return null
-      const [comp, odds, saleState] = await Promise.all([
-        fetchJson<VaultopolisComposition>(`${VAULTOPOLIS_BASE}/${id}/composition`, 900),
+      const [compRes, odds, saleState] = await Promise.all([
+        fetchJsonResult<VaultopolisComposition>(`${VAULTOPOLIS_BASE}/${id}/composition`, 900),
         fetchJson<VaultopolisOdds>(`${VAULTOPOLIS_BASE}/${id}/odds`, 900),
         fetchJson<VaultopolisSaleState>(`${VAULTOPOLIS_BASE}/${id}/sale-state`, 900),
       ])
+      // A FAILED composition read means we do not know whether this drop belongs on
+      // the board, so the board is not complete: throw, and both callers render
+      // their honest degraded state (page notice, API boardUnavailable) instead of
+      // a shorter list presented as the whole market.
+      if (compRes.kind === "failed") {
+        throw new PackDropsIncompleteError(`composition for drop ${id} failed: ${compRes.reason}`)
+      }
+      const comp = compRes.kind === "ok" ? compRes.data : null
       if (!comp || !comp.assets?.TopShot || comp.assets.TopShot.length === 0) return null
       const s = await scoreDrop(sb, comp, li, flowUsd)
       s.odds = odds

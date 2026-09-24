@@ -235,3 +235,53 @@ describe("fetchScoredDrops", () => {
     expect(signals.every((sig) => sig instanceof AbortSignal), "an upstream fetch has no timeout").toBe(true)
   })
 })
+
+// A FAILED read is not a MISSING drop (2026-09-24). After #33 added a 5 s upstream
+// timeout, a slow composition read became indistinguishable from a drop with no
+// Top Shot assets: the drop vanished from a board that still reported success, and
+// an all-timeout world published `[]` — rendered as "No live re-pack drops to score
+// right now". A failed read must now REJECT, so both callers show their honest
+// degraded state. The 404 cases above are the no-change controls.
+describe("fetchScoredDrops / discoverDropIds — a failed read is not a missing drop", () => {
+  const sb = { rpc: vi.fn(async () => ({ data: [], error: null })) } as never
+  const comp = (dropId: number) => ({
+    dropId, name: `Drop ${dropId}`, displayName: `Drop ${dropId}`, description: "",
+    packCount: 10, nftsPerPack: 5, totalNfts: 50, openedCount: 0, status: "live",
+    assets: { TopShot: [{ nftId: 1, valueTier: "Common", playerName: "Dame", setName: "Base Set",
+      serialNumber: 1, momentCount: 1, series: 4, tier: "common", estimatedValue: 10, floorPrice: null }] },
+  })
+
+  it("rejects — never returns a shorter board — when one drop's composition answers 5xx", async () => {
+    installFetch([
+      { match: (u) => u === BASE, respond: () => ({ json: { drops: [{ dropId: 1 }, { dropId: 2 }] } }) },
+      { match: (u) => u.includes("/1/composition"), respond: () => ({ status: 503 }) },
+      { match: (u) => u.includes("/2/composition"), respond: () => ({ json: comp(2) }) },
+    ])
+    await expect(fetchScoredDrops(sb)).rejects.toThrow(/composition for drop 1 failed: HTTP 503/)
+  })
+
+  it("rejects when a composition read times out (the fetch throws)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown) => {
+        const url = String(input)
+        if (url === BASE) return { ok: true, status: 200, json: async () => ({ drops: [{ dropId: 7 }] }) } as unknown as Response
+        if (url.includes("/composition")) {
+          const e = new Error("The operation was aborted due to timeout")
+          e.name = "TimeoutError"
+          throw e
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as unknown as Response
+      }),
+    )
+    await expect(fetchScoredDrops(sb)).rejects.toThrow(/composition for drop 7 failed: TimeoutError/)
+  })
+
+  it("discovery rejects when the list fails AND the fallback probe fails — it does not answer []", async () => {
+    installFetch([
+      { match: (u) => u === BASE, respond: () => ({ status: 500 }) },
+      { match: (u) => u.includes("/composition"), respond: () => ({ status: 502 }) },
+    ])
+    await expect(discoverDropIds()).rejects.toThrow(/drop discovery failed: list HTTP 500, probe of drop 1 HTTP 502/)
+  })
+})
