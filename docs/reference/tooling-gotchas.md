@@ -1958,4 +1958,4 @@ In one thread the auto-mode classifier refused, at different times:
 
 Other writes of the same shape went through, such as the #56 alert-function migration.
 
-⚠ **An `apply_migration` that succeeds and a push that is then refused leaves prod AHEAD of the repo, and migration-parity goes red.** Push the migration file in the same breath as the apply. If the push is refused, queue a standalone task that recovers the file from `supabase_migrations.schema_migrations` (the parity script's own recipe) rather than trying to route around the refusal.
+⚠ **An `apply_migration` that succeeds and a push that is then refused leaves prod AHEAD of the repo, and migration-parity goes red.** Push the migration file in the same breath as the apply. If the push is refused, queue a standalone task that recovers the file from `supabase_migrations.schema_migrations` (the parity script's own recipe) rather than trying to route around the refusal. (On 09-24 a later push, bundled with docs, landed, and the queued task was withdrawn.)
