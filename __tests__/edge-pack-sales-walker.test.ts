@@ -39,7 +39,7 @@ function fakeApi(history: PackSaleRow[], size = 3) {
 function fakeStore(initial: PackSaleRow[], cursor: { after: string | null; done: boolean }) {
   const stored = new Map(initial.map((r) => [r.tx_hash + "|" + r.pack_nft_id, r]))
   const state = { cursor: { ...cursor }, cursorWrites: 0 }
-  const deps: Omit<WalkerDeps, "fetchPage"> = {
+  const deps: Omit<WalkerDeps, "fetchPage" | "keyOf" | "timeOf"> = {
     existingKeys: async (rows) => ({ keys: new Set(rows.map((r) => r.tx_hash + "|" + r.pack_nft_id).filter((k) => stored.has(k))), error: null }),
     upsert: async (rows) => { for (const r of rows) stored.set(r.tx_hash + "|" + r.pack_nft_id, r); return null },
     readCursor: async () => ({ ...state.cursor, error: null }),
