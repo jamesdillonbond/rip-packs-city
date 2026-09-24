@@ -41,8 +41,6 @@ const PROTECTED = [
   "app/profile/edit/page.tsx",
   // Phase 2 — Batch 2 (onboarding / paywall / pro / profile modals)
   "components/onboarding/FirstRunTour.tsx",
-  "components/PaywallModal.tsx",
-  "components/UpgradePrompt.tsx",
   "components/auth/ProBadge.tsx",
   "components/pricing/StripeSubscribeButton.tsx",
   "components/ExplainButton.tsx",
