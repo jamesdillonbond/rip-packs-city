@@ -17,6 +17,13 @@
 //   fails the run and reports the cursor where it WAS (R123).
 // * A walk that stops on an error sets `partial` — the rows stored so far are a
 //   partial page set, never presented as a complete one.
+// * `head_budget_exhausted` (#135, 2026-09-24): the head used all `headPages`
+//   and its last page was ALL new rows (it never reached a stored one), so rows between the head budget
+//   and what an earlier run stored may be missing. When the sweep is latched
+//   `done`, nothing else would ever walk that gap, so the walker unlatches it
+//   (cursor → start, done=false) and the NEXT run's sweep re-walks from the
+//   head (`sweep_unlatched`). Mid-sweep it is reported only: resetting there
+//   would throw away sweep progress, and the lane's timer unlatch covers it.
 
 export type Page<T> = {
   totalCount: number | null
@@ -59,6 +66,10 @@ export type HeadSweepResult = {
   total_api: number | null
   /** true when a walk stopped on an error: the rows stored so far are a PARTIAL page set. */
   partial: boolean
+  /** The head spent its whole page budget without reaching a stored row (a gap may exist behind it). */
+  head_budget_exhausted: boolean
+  /** A latched sweep was reset because the head budget ran out; the next run re-walks from the head. */
+  sweep_unlatched: boolean
 }
 
 /**
@@ -93,7 +104,7 @@ export async function runHeadSweepWalk<T>(
     ok: false, error: null, head_pages: 0, head_new: 0, sweep_pages: 0, sweep_new: 0,
     sweep_skipped_done: false, rows_found: 0, rows_written: 0, newest_block_time: null,
     oldest_sweep_block_time: null, cursor_before: null, cursor_after: null, sweep_has_next: null,
-    total_api: null, partial: false,
+    total_api: null, partial: false, head_budget_exhausted: false, sweep_unlatched: false,
   }
 
   // ── 1. HEAD: newest first, until a page brings nothing new ──────────────
@@ -109,6 +120,12 @@ export async function runHeadSweepWalk<T>(
     res.rows_found += r.page.rows.length
     res.head_new += s.newCount
     if (!shouldContinueHead(s.newCount, r.page.rows.length, r.page.hasNextPage)) break
+    // Last page of the budget and not one of its rows was already stored: the
+    // head never reached earlier-run territory, so a gap may sit behind it.
+    if (i === opts.headPages - 1) {
+      res.head_budget_exhausted = s.newCount === r.page.rows.length
+      break
+    }
     headAfter = r.page.endCursor
     await sleep(120)
   }
@@ -122,6 +139,15 @@ export async function runHeadSweepWalk<T>(
       res.sweep_skipped_done = true
       res.cursor_before = c.after
       res.cursor_after = c.after
+      if (res.head_budget_exhausted) {
+        const wErr = await deps.writeCursor(null, false, res.total_api)
+        if (wErr) {
+          res.error = "cursor unlatch: " + wErr // the cursor is where it WAS (still latched)
+        } else {
+          res.sweep_unlatched = true
+          res.cursor_after = null
+        }
+      }
     } else {
       let after: string | null = opts.reset ? null : c.after
       res.cursor_before = after
@@ -184,7 +210,8 @@ export async function logHeadSweep(
       head_pages: r.head_pages, head_new: r.head_new, sweep_pages: r.sweep_pages, sweep_new: r.sweep_new,
       sweep_skipped_done: r.sweep_skipped_done, sweep_has_next: r.sweep_has_next,
       newest_block_time: r.newest_block_time, oldest_sweep_block_time: r.oldest_sweep_block_time,
-      total_api: r.total_api, partial: r.partial, ...extra,
+      total_api: r.total_api, partial: r.partial,
+      head_budget_exhausted: r.head_budget_exhausted, sweep_unlatched: r.sweep_unlatched, ...extra,
     },
   })
   return error ? error.message : null

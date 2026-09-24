@@ -166,6 +166,61 @@ describe("runPackSalesWalk", () => {
     expect(r.error).toMatch(/HTTP 503/)
   })
 
+  // #135: a latched lane could never recover a gap larger than one head budget.
+  it("a gap larger than the head budget is REPORTED and the latched sweep is unlatched, then healed next run", async () => {
+    const history = Array.from({ length: 30 }, (_, i) => sale(i))
+    // Stored: only the oldest 12. The 18 newest arrived during an outage; head budget = 2 pages × 3 = 6.
+    const s = fakeStore(history.slice(18), { after: "30", done: true })
+    const api = fakeApi(history)
+    const r1 = await runPackSalesWalk({ ...s.deps, fetchPage: api.fetchPage }, { headPages: 2, totalPages: 2, reset: false })
+    expect(r1.ok).toBe(true)
+    expect(r1.head_new).toBe(6)
+    expect(r1.head_budget_exhausted).toBe(true)
+    expect(r1.sweep_unlatched).toBe(true)
+    expect(s.state.cursor).toEqual({ after: null, done: false })
+    expect(r1.cursor_after).toBeNull()
+    expect(s.stored.size).toBe(18) // 12 missing rows sit behind the head
+
+    // Without the unlatch every later run stops at a known first page and the 12 are never stored.
+    for (let i = 0; i < 3 && s.stored.size < 30; i++) {
+      await runPackSalesWalk({ ...s.deps, fetchPage: api.fetchPage }, { headPages: 2, totalPages: 5, reset: false })
+    }
+    expect(s.stored.size).toBe(30)
+  })
+
+  it("does not claim an exhausted head when the head reached a stored row on its last page", async () => {
+    const history = Array.from({ length: 12 }, (_, i) => sale(i))
+    const s = fakeStore(history.slice(5), { after: "12", done: true }) // page 2 = 2 new + 1 known
+    const r = await runPackSalesWalk({ ...s.deps, fetchPage: fakeApi(history).fetchPage }, { headPages: 2, totalPages: 2, reset: false })
+    expect(r.head_new).toBe(5)
+    expect(r.head_budget_exhausted).toBe(false)
+    expect(r.sweep_unlatched).toBe(false)
+    expect(s.state.cursor).toEqual({ after: "12", done: true })
+    expect(s.state.cursorWrites).toBe(0)
+  })
+
+  it("mid-sweep, an exhausted head is reported but the sweep cursor is NOT reset (its progress is kept)", async () => {
+    const history = Array.from({ length: 30 }, (_, i) => sale(i))
+    const s = fakeStore([], { after: "21", done: false })
+    const r = await runPackSalesWalk({ ...s.deps, fetchPage: fakeApi(history).fetchPage }, { headPages: 1, totalPages: 2, reset: false })
+    expect(r.head_budget_exhausted).toBe(true)
+    expect(r.sweep_unlatched).toBe(false)
+    expect(s.state.cursor).toEqual({ after: "24", done: false })
+  })
+
+  it("a failed unlatch write fails the run and reports the cursor still latched", async () => {
+    const history = Array.from({ length: 30 }, (_, i) => sale(i))
+    const s = fakeStore(history.slice(18), { after: "30", done: true })
+    const r = await runPackSalesWalk(
+      { ...s.deps, writeCursor: async () => "timeout", fetchPage: fakeApi(history).fetchPage },
+      { headPages: 2, totalPages: 2, reset: false },
+    )
+    expect(r.ok).toBe(false)
+    expect(r.error).toMatch(/cursor unlatch: timeout/)
+    expect(r.sweep_unlatched).toBe(false)
+    expect(r.cursor_after).toBe("30")
+  })
+
   it("reset=1 restarts the sweep from the head even when latched", async () => {
     const history = Array.from({ length: 9 }, (_, i) => sale(i))
     const s = fakeStore(history, { after: "9", done: true })
