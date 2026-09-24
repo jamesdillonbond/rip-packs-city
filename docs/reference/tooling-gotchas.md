@@ -1959,3 +1959,5 @@ In one thread the auto-mode classifier refused, at different times:
 Other writes of the same shape went through, such as the #56 alert-function migration.
 
 ⚠ **An `apply_migration` that succeeds and a push that is then refused leaves prod AHEAD of the repo, and migration-parity goes red.** Push the migration file in the same breath as the apply. If the push is refused, queue a standalone task that recovers the file from `supabase_migrations.schema_migrations` (the parity script's own recipe) rather than trying to route around the refusal. (On 09-24 a later push, bundled with docs, landed, and the queued task was withdrawn.)
+
+⛔ **A ledger `###` HEADING IS IMMUTABLE once pushed. Correct it in the entry's BODY.** The no-clobber guard compares the heading set of HEAD~1 and HEAD, so renaming a heading reads as a DELETED entry and reds CI, even when nothing was lost (909 → 909 on 09-24, `16671ef7e`). ⚠ **Do not "fix" such a red by renaming it back:** the new name is now in HEAD~1, so the revert is a second rename. Push any commit that leaves every heading unchanged and the tip goes green.
