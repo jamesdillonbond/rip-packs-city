@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 💲 APPLIED (file push refused, see the queued task) — the Top Shot packs board stops ranking sold-out packs on their RETAIL price: Got Game S1 was #1 at 6.28× when its live ask made it 0.23× (#50) · Claude Code (cloud)
+
+`pack_table_rows` took `value_ratio` / `is_positive_ev` / `pack_ev` / `ev_margin_pct` from `mv_pack_ev_latest`. For rows from job 71 `backfill_topshot_historical_pack_ev` (`price_source` NULL), those are measured against the RETAIL price of a sold-out pack. The default `value_ratio_desc` sort therefore headlined Got Game S1 Drops 2/3/4 at 6.28× / 5.28× / 3.05×, while the only way to buy them is the secondary market at $250 / $250 / $249.
+- **Migration `20260924230603` (applied ~4:05 PM PT):** those Top Shot rows are rebased on the row's live ask, and NULLed without one. Dry run: 97 rows change, 0 outside scope, 6,004 rows before and after, Top Shot +EV 32 → 27. Post-apply: Got Game 0.11–0.23×; top 6 all live-priced; reloptions NULL and ACL unchanged (allow-listed definer view); security invariants all [].
+- ⚠ **Repo drift:** the permission policy refused the push of the migration file, so migration-parity is RED until it is committed. A queued task recovers it byte-exactly from `schema_migrations` and adds the `definer-view: intentional` marker the view guard requires.
+- **Revert:** re-apply the `pack_table_rows` body from `20260924043211`.
+
 ### 2026-09-24 · 🧹 DOCS — biweekly context hygiene: ledger rolled (entries 2026-08-10 → 09-09, 1,534 headings, 41,018 lines) + 39 handoffs archived · Cowork (scheduled `rpc-context-hygiene`, pushed via `.rpc-git-cred`)
 
 - **Ledger:** `docs/overnight/ledger.md` 55,933 → 14,915 lines. The block from the first entry dated before 2026-09-10 up to `## Declined — do not re-suggest` was appended to `ledger-archive-2026-H2.md` unchanged (scripted, checked: archive = old archive + exact block). The Declined / legacy Shipped / Queued-ARCHIVE sections are untouched. Swallowed headings **3 → 0** (the three 2026-08-11 splices are now in the archive); CLAUDE.md's "must print 3" line changed to 0 to match. Future-dated 0.
