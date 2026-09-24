@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 📉 Panini deal board: 74% of "deals" with recent market evidence were FMV artifacts — second gate against recent sales · Cowork (cloud + laptop VM)
+
+Measured at 3:35 PM PT. Among deals on editions **with** non-special sales in the last 30 days, **53 of 72 (74%)** were not at least 15% under the median of those sales. The published FMV on those editions (a lifetime average) ran a **median 1.81×** recent sales. The board selects exactly where FMV is most overstated. Migration `20260924223606` adds the gate (the ask must also be ≥15% under the recent-sales median × the serial premium, where one exists) and adds `recent_sales_median_usd`, `recent_sales_n` and `deal_basis` columns. The board went from **385 to 332** rows: 19 with recent-sales support and 313 with no recent market evidence at all (`fmv_only_no_recent_sales`). The board is unpublished. Also measured: serial paging has grown the serial universe from 114,188 to **145,110** since 09-23, and unconfirmed serial asks are down from 48.4% to **43.5%**.
+**Revert:** re-apply the `panini_deal_board` body from `20260924035329`.
+
 ### 2026-09-24 · 👁 SHIPPED — the watchlist checks fall back to the daily rollup, so a WEEKLY lane is watchable at last; the silently failed wmc reindex verify gets a watch (#56) · Claude Code (cloud)
 
 `detect_stalled_pipelines()` and `detect_pipelines_without_success()` read only `pipeline_runs` (~73 h), so any lane with a longer period read `last_run IS NULL` → STALLED ~4 days in 7. A watchlist row for a weekly job was a false alarm by construction, and the weekly `wmc-reindex-verify` FAILED on 09-19 PT with no alert. **Migration `20260924182358`:** both checks fall back to `pipeline_runs_daily` only when the raw table holds no row for the lane, so raw stays the authority and a daily lane's same-day failure is never masked. It also adds a watchlist row for `wmc-reindex-verify` (8-day thresholds, info; arms in 8 days by the grace clause).
