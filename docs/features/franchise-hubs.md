@@ -27,15 +27,35 @@ The goal from the thread that started this: the **Blazers** hub shows Top Shot +
 
 RPC's Panini data is **100% FIFA World Cup 2026 soccer** (Prizm World Cup, `setId 2332`, walked from `marketplace/nfts.html?sport=Soccer`). There are no Panini NBA or MLB cards in the database, so no Panini panel can exist yet. Measured 2026-09-23: `panini_editions` has 5,090 rows across 62 soccer sets; its only people columns are `player_name` and `nation`.
 
-Panini's marketplace **does** carry live Basketball and Baseball NFTs (verified in Chrome 2026-09-23: LeBron James, Wembanyama, Ohtani listings), and the runner's grid response (`getMarketPlaceList` → `products.items[]`) carries a **`team`** field — for soccer it holds the nation, which is where `nation` comes from (`nationByPsku` in `scripts/ingest-panini-runner.mjs`). For NBA/MLB cards that field is the expected source of the club. ⚠ Unverified for those sports until the first capture.
+Panini's marketplace **does** carry live Basketball and Baseball NFTs (verified in Chrome 2026-09-23: LeBron James, Wembanyama, Ohtani listings), and the runner's grid response (`getMarketPlaceList` → `products.items[]`) carries a **`team`** field — for soccer it holds the nation, which is where `nation` comes from (`nationByPsku` in `scripts/ingest-panini-runner.mjs`). The first capture (below) confirmed it: full club names for NBA, city only for MLB.
 
-## Follow-up: Panini NBA + MLB (scoped, not built)
+## Follow-up: Panini NBA + MLB — first capture (2026-09-24, measured)
 
-1. **Capture first.** Point the runner at `?sport=Basketball` / `?sport=Baseball` once and read what `team` holds and which setIds/products appear. Do not design from the soccer shape.
-2. **Ingest** those products into `panini_editions` (+ the bridge into `editions`) with `team_name` = the club as the grid reports it, mapped to `teams_master.team_name` spelling.
-3. **Map but hide:** insert `league_collections` rows `('NBA', <panini id>, 2, enabled=false)` and `('MLB', <panini id>, 2, enabled=false)`.
-4. **Accuracy gate:** Panini NBA/MLB pricing must clear the same bar as the rest of RPC before the rows flip to `enabled=true`. Flipping is a data change — no deploy — and the hubs that gain a second panel become indexable automatically.
-5. ⚠ Once one Panini collection id carries three sports, its team reads should scope by league as well as team name. Full team names do not collide across NBA/MLB/NFL today (checked 2026-09-23: 0 slugified collisions in `teams_master`), but the Panini collection would be the first place two leagues share one `collection_id`.
+**How it was read.** Panini signs every `/onepanini` request, so replaying the API is off the table. The grid's items live in the page's React state after the SPA fetches them; a read-only walk of the fiber tree (Claude in Chrome, Trevor's logged-in Chrome) returns the same `products.items[]` objects the soccer runner intercepts — ~137 fields each, including `team`, `athlete`, `cardset`, `genesis_year`, `nft_type`, `end_seq`, `buy_now_price`. Paging is `nfts.html?sport=<Sport>&p=<N>`, 30 items a page; a page past the end renders empty. Sample: 11 Basketball pages spread from p1,000 to p5,000 plus p20–p500 (286 distinct pskus) and 7 Baseball pages from p1 to p1,000 (169 pskus); p1,500+ Baseball and p100,000 Basketball render empty.
+
+| | Basketball (NBA) | Baseball (MLB) |
+|---|---|---|
+| Grid depth | ~4,800 pages ≈ **140k listed NFTs** | ~1,000–1,500 pages ≈ 30–45k |
+| `team` populated | 286 / 286 pskus (100 %) | 169 / 169 (100 %) |
+| What `team` holds | **Full club name** ("Portland Trail Blazers") | **City only** ("Los Angeles", "New York", "Chicago") — Panini's MLB cards carry no club names |
+| Matches `teams_master` spelling | All but one: Panini "Los Angeles Clippers" vs ours "LA Clippers" | n/a — needs resolution |
+| Multi-team cards | 10 / 286 (3.5 %) as "A \| B" | 1 / 169 |
+| Former franchises | "Seattle SuperSonics", "New Jersey Nets", "New Orleans Hornets" | "Oakland" |
+| Years (`genesis_year`) | 2020–2025 | 2020–2022 only |
+| Set ids (psku prefix) | ~20+ (`packcard-1783`, `-1602`, `-1587`, …) | 4 main (`packcard-1661`, `-1608`, `-1574`, `-1583`) |
+
+Examples: **Blazers** — Scoot Henderson, Donovan Clingan, Toumani Camara, Carmelo Anthony (2020-21 Prizm) … 8 in the sample. **Tigers** — Javier Báez, Akil Baddoo, Casey Mize (all 2022; "Detroit" is unambiguous).
+
+**What that means.**
+
+1. **NBA is clean enough to build on.** Map `team` through `teams_master` with a small alias table (Clippers; the three former franchises → their current `teams_master` row; see decision below). Split "A | B" cards into one row per team so a two-team card shows on both hubs.
+2. **MLB is not a string match.** "Los Angeles" is Dodgers *or* Angels, "New York" Yankees *or* Mets, "Chicago" Cubs *or* White Sox — 56 of 169 sampled pskus (33 %) are one of those three cities. Resolving them needs player + year → club (Ohtani 2022 "Los Angeles" = Angels; Judge "New York" = Yankees, Alonso = Mets). Every other MLB city is a single club. And the product stops at 2022.
+3. **Scale.** ~140k listed NBA NFTs against the 5,090 soccer editions the runner walks today — at least an order of magnitude more. Enumeration must come from the grid (one read per 30 cards), not per-card detail pages. Pricing — the accuracy gate — still needs per-card sale history, which is the expensive signed walk; that is the real cost of this follow-up.
+4. **The grid is LISTINGS**, same coverage caveat as soccer: an edition with no live listing does not appear. Fine for "what can I buy for my team", not a full checklist.
+
+**Recommended order:** NBA first (full names, larger market, Blazers). MLB second, behind a player→club resolver for the three shared cities.
+
+**Open decision (Trevor):** a card printed for a former franchise — does it belong on the current franchise's hub? Proposed default: yes for relocations/renames (SuperSonics → Thunder, New Jersey Nets → Brooklyn Nets, Oakland → Athletics), and New Orleans Hornets (2002–13) → Pelicans, per the NBA's official franchise history.
 
 ## Revert
 
