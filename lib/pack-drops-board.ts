@@ -31,6 +31,10 @@ const VAULTOPOLIS_BASE = "https://data.vaultopolis.com/api/drops"
 // The list endpoint (/api/drops) is the primary discovery path; this is the
 // fallback "probe 1..N until composition 404s" the handoff describes.
 const MAX_PROBE_IDS = 30
+// Per-request ceiling on a Vaultopolis/CoinGecko call. Each one measured ~0.7 s
+// warm (2026-09-24); 5 s is several times that and still leaves the page budget
+// room for the pricing RPC.
+const UPSTREAM_TIMEOUT_MS = 5_000
 
 export type VaultopolisAsset = {
   nftId: number
@@ -151,6 +155,10 @@ async function fetchJson<T>(url: string, revalidateSec: number): Promise<T | nul
     const r = await fetch(url, {
       next: { revalidate: revalidateSec },
       headers: { Accept: "application/json" },
+      // A hung upstream must not hold the whole board past the page's 8 s budget
+      // (BOARD_LIVE_TIMEOUT_MS). A timeout lands in the catch below exactly like
+      // any other failed fetch.
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     })
     if (!r.ok) return null
     return (await r.json()) as T
@@ -402,22 +410,30 @@ export async function fetchScoredDrops(sb: SupabaseClient): Promise<ScoredDrop[]
   const listById = new Map<number, VaultopolisDropListItem>()
   for (const d of list) listById.set(d.dropId, d)
 
-  const scored: ScoredDrop[] = []
-  for (const id of ids) {
-    const li = listById.get(id) ?? null
-    // Skip drops that are cancelled or have no packs — nothing to score.
-    if (li && li.status === "cancelled") continue
-    const [comp, odds, saleState] = await Promise.all([
-      fetchJson<VaultopolisComposition>(`${VAULTOPOLIS_BASE}/${id}/composition`, 900),
-      fetchJson<VaultopolisOdds>(`${VAULTOPOLIS_BASE}/${id}/odds`, 900),
-      fetchJson<VaultopolisSaleState>(`${VAULTOPOLIS_BASE}/${id}/sale-state`, 900),
-    ])
-    if (!comp || !comp.assets?.TopShot || comp.assets.TopShot.length === 0) continue
-    const s = await scoreDrop(sb, comp, li, flowUsd)
-    s.odds = odds
-    s.sale_state = saleState
-    scored.push(s)
-  }
+  // ⚠ Drops are scored CONCURRENTLY (known-issues #33, 2026-09-24). This loop used
+  // to await each drop in turn — three upstream calls plus one pricing RPC apiece —
+  // and a cold read measured 13,670 ms for 6 drops, over the page's 8 s
+  // BOARD_LIVE_TIMEOUT_MS. So every cold ISR regeneration failed and ISR then
+  // served that failure for the whole 15-minute window. Six concurrent drops
+  // cost one drop's latency, not six. Order is restored by the sort below.
+  const perDrop = await Promise.all(
+    ids.map(async (id): Promise<ScoredDrop | null> => {
+      const li = listById.get(id) ?? null
+      // Skip drops that are cancelled or have no packs — nothing to score.
+      if (li && li.status === "cancelled") return null
+      const [comp, odds, saleState] = await Promise.all([
+        fetchJson<VaultopolisComposition>(`${VAULTOPOLIS_BASE}/${id}/composition`, 900),
+        fetchJson<VaultopolisOdds>(`${VAULTOPOLIS_BASE}/${id}/odds`, 900),
+        fetchJson<VaultopolisSaleState>(`${VAULTOPOLIS_BASE}/${id}/sale-state`, 900),
+      ])
+      if (!comp || !comp.assets?.TopShot || comp.assets.TopShot.length === 0) return null
+      const s = await scoreDrop(sb, comp, li, flowUsd)
+      s.odds = odds
+      s.sale_state = saleState
+      return s
+    }),
+  )
+  const scored: ScoredDrop[] = perDrop.filter((s): s is ScoredDrop => s !== null)
 
   // Live / sale-open drops first, then by newest drop id.
   scored.sort((a, b) => {

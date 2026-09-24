@@ -200,4 +200,38 @@ describe("fetchScoredDrops", () => {
     ])
     expect(await fetchScoredDrops(sb)).toEqual([])
   })
+
+  // #33 (2026-09-24): the orchestrator scored drops one at a time, so a cold read of
+  // 6 drops took 13.7 s against the page's 8 s budget and every cold ISR
+  // regeneration baked a failure into 15 minutes of HTML. Drops must be in flight
+  // TOGETHER, and every upstream call must carry an abort signal.
+  it("scores drops concurrently, and every upstream call carries a timeout signal", async () => {
+    let inFlight = 0
+    let maxInFlight = 0
+    const signals: unknown[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown, init?: { signal?: unknown }) => {
+        const url = String(input)
+        signals.push(init?.signal)
+        const reply = (json: unknown) => ({ ok: true, status: 200, json: async () => json }) as unknown as Response
+        if (url.includes("coingecko")) return reply({ flow: { usd: 0.5 } })
+        if (url === BASE) return reply({ drops: [{ dropId: 1 }, { dropId: 2 }, { dropId: 3 }] })
+        if (url.includes("/composition")) {
+          inFlight++
+          maxInFlight = Math.max(maxInFlight, inFlight)
+          await new Promise((r) => setTimeout(r, 20))
+          inFlight--
+          const id = Number(url.match(/drops\/(\d+)\//)?.[1])
+          return reply(composition(id, [asset()]))
+        }
+        return reply({})
+      }),
+    )
+    const scored = await fetchScoredDrops(sb)
+    expect(scored.map((d) => d.drop_id).sort()).toEqual([1, 2, 3])
+    expect(maxInFlight, "drops were fetched one at a time").toBe(3)
+    expect(signals.length).toBeGreaterThan(0)
+    expect(signals.every((sig) => sig instanceof AbortSignal), "an upstream fetch has no timeout").toBe(true)
+  })
 })
