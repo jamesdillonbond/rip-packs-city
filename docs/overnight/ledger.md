@@ -11,6 +11,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🔎 Panini SERIAL grain: a 30-row page cap behind 41% of sales dropped + 48% of serial asks unconfirmed; sale-feed instrument was publishing a false "dead" for 58 days · Cowork (cloud + laptop VM)
+
+Measured ~8:45 PM PT. **Edition grain is healthy** — `panini_coverage_summary`: 5,090 editions, **0 stale 45d, 100% walked 7d, p50 61.9 h, p90 86.3 h** (the 09-20 falsifier "p90 < ~120 h by 09-23" PASSES). The 09-20 "3 orphans that are never walked" were walked 09-20 10:15 AM / 2:11 PM PT — that finding was wrong (written an hour before the walk that reached them).
+
+**Serial grain is not.** The runner reads `getPskuTotalCardsList` with `p: 1 l: 30 sortBy=new` and never page 2, so a walk re-reads at most **30 serials per edition** (max captured-in-latest-walk = 30 exactly, 1,847 editions at the cap). Result: 19,265 serials (16.9%) and **15,774 of 32,576 serial asks (48.4%)** not re-read in 7 days (median ~28 d); for editions with >120 pulled we hold only **25%** of serials; and over ~80 h of `pipeline_runs`, **`sales_missed` = 11,442 of 27,797 sold serials (41%)** — realized sales dropped because the serial was never discovered. Edition FMV and `serial_low_ask_usd` are unaffected (edition-level payload).
+
+Shipped (migration `20260924035329_audit_20260923_panini_serial_page_cap_freshness_and_live_sale_feed`):
+- **`panini_serial_freshness`** (new, service_role only) — the serial-grain instrument; `max_serials_per_edition_walk` pinned at 30 is the cap's signature.
+- **`panini_deal_board`** — an ask must have been re-read in 7 days to count as a deal; appends `ask_confirmed_at`. 696 → **383** rows (312 were unconfirmed, incl. 124 of 230 at ≥50% off). Unpublished board — no reader in app/lib.
+- **`panini_special_serials_board`** — appends `ask_confirmed_at`, `ask_unconfirmed` (187 flagged).
+- **`panini_sale_feed_status`** — measured the dead `brought_at_price`, so read `feed_ok=false / 58 days` and `/api/public/insights/panini-squeeze` told the public "no new ones can arrive" while nftSalesData was recording ~17 serial sales/day. Now measures `last_sale_at`: **feed_ok=true**, newest sale 09-22 9:46 PM PT. Route notes rewritten; test pins the ABSENCE of the "cannot arrive" claim (planted-defect: 2 fail against the old route).
+
+⚠ **Walk cadence halved since 09-21**: 12 enum ticks in 80 h vs 6/day scheduled — the 10 PM / 2 AM / 6 AM ticks mostly missing (laptop asleep overnight). Distinct editions/day ~1,500 → ~890; p90 will drift up if it persists. Trevor's machine, not code.
+
+**Next (not done):** runner pages the serial list (rotate `p` per walk for editions at the cap, or paginate) — needs a live probe that page 2 comes back signed/200 before shipping.
+**Revert:** view bodies in `20260801020000` (sale feed) + live defs pre-09-23 (deal/special — DROP+CREATE to remove appended cols); `DROP VIEW public.panini_serial_freshness`; `git revert` the route/test commit.
+
 ### 2026-09-23 · ✅ #133 CLOSED — the "stolen" filter pills were below the fold behind the fixed mobile nav, not covered by anything · Claude Code (Windows box)
 
 The evening handoff's "needs a real browser" item, run from the Windows box with Playwright against the live site (iPhone 13). A probe that NAMES the covering element found every stolen pill hitting `nav.rpc-mobile-nav`: set-squeeze 6/12 and offer-spread 2/9, at y 583–679 on first load. **Control: scrolled to mid-viewport, 0/21 are covered**; body padding-bottom = nav height (60 px); desktop 0/21. The original "0 on every other page" control was vacuous, because those pages have 0 pills. The committed `e2e/mobile-layout.spec.ts` does not share the flaw. Recorded as the third `elementFromPoint` false positive in testing-and-ci.md. Applied on top of Cowork's same-evening re-audit, which listed #133 as an open work item awaiting exactly this probe. Index regenerated and diffed (one row flipped, none lost): **23 → 22 open** (41 partial · 68 closed).
