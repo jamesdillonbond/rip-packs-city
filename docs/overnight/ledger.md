@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 📝 Pack-metrics thread closed: packs.md § Pack sales sources, register #134, rpc-data skill, session log · Cowork cloud
+
+Docs only. `docs/reference/packs.md` gains *Pack sales sources*: which table means what, the Top Shot shop rows, and the dist-authority order: `pack_nft_identity`, then the studio `dist_id` (Claude Code's `20260924141424` relabel), then the fill-only pool vote. It also carries a caveat on the old "escrow seller = peer sale" line. Register **#134 (partial)**: shop sales are still labelled `secondary_sale` at ingest and need a `wrangler deploy`; the index was regenerated and the change is additive only. The `rpc-data` skill's `pack_purchases` bullet was rewritten and the bundle repacked; its "~20 % named" figure was stale. The session log is in `docs/sessions/2026-09.md`.
+Verified at close: 0 rips disagree with `pack_nft_identity` (149 new since the fix); the cache refresh cron runs 300 dists in 0.7 s.
+**Revert:** `git revert` this commit.
+
 ### 2026-09-24 · ✅ Thread close: #25's exit met (edge-fn drift 9 → 1), VM push helper documented, memory updated · Cowork (cloud + laptop VM)
 
 - **#25 exit met.** A `workflow_dispatch` run of `edge-fn-drift` at 7:14 AM PT reads `CONTENT drift — 1: enrich-ufc-wallet`, with 43 bodies read and 42 matched. The one left is deliberately deferred to a Supabase CLI deploy (Trevor).
