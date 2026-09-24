@@ -649,6 +649,22 @@ function buildMeta(opts: {
   }
 }
 
+/**
+ * Franchise hub (`/teams/<league>/<slug>`). A hub spans every collection carrying
+ * the team, so there is no per-collection OG card to point at; the default card is
+ * used, but the share block carries the HUB's own title, description and URL.
+ * Without this the page set only title/description/alternates, so `openGraph` and
+ * `twitter` fell through to the ROOT metadata and a shared hub link unfurled as
+ * the homepage (no og:url, homepage copy).
+ */
+export function franchiseHubMetadata(opts: { name: string; description: string; canonical: string }): Metadata {
+  // The brand is appended HERE, as an absolute title, never passed in from the
+  // page: a page-level `title` literal carrying the brand is what the
+  // double-suffix guard bans.
+  const title = `${opts.name} | Rip Packs City`
+  return buildMeta({ title, description: opts.description, canonical: opts.canonical, image: null })
+}
+
 // Top Shot on-chain series number (UInt32) -> display name, per the series map
 // in CLAUDE.md. get_edition_detail returns series_label as the bare on-chain
 // number (e.g. "7"), so a naked "7." in a meta description reads as a dangling

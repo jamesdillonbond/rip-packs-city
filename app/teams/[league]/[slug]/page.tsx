@@ -20,7 +20,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
-import { NOT_FOUND_METADATA } from "@/lib/seo"
+import { NOT_FOUND_METADATA, franchiseHubMetadata } from "@/lib/seo"
 import { LEAGUES } from "@/lib/teams"
 import {
   fetchFranchiseHub,
@@ -69,9 +69,13 @@ export async function generateMetadata(props: { params: Promise<{ league: string
   if (!hub) return NOT_FOUND_METADATA
   const canonical = `${SITE}${franchiseHubPath(hub.league, hub.team_slug)}`
   return {
-    title: { absolute: `${hub.team_name} Collectibles Hub | ${leagueLabel(hub.league)} | Rip Packs City` },
-    description: `Every ${hub.team_name} digital collectible Rip Packs City tracks, gathered in one place — editions, fair market value and 30-day market activity per collection.`,
-    alternates: { canonical },
+    // openGraph/twitter via the shared builder: a route that sets neither falls
+    // through to the ROOT metadata and unfurls as the homepage.
+    ...franchiseHubMetadata({
+      name: `${hub.team_name} Collectibles Hub | ${leagueLabel(hub.league)}`,
+      description: `Every ${hub.team_name} digital collectible Rip Packs City tracks, gathered in one place — editions, fair market value and 30-day market activity per collection.`,
+      canonical,
+    }),
     robots: hubIsIndexable(hub) ? { index: true, follow: true } : { index: false, follow: true },
   }
 }
