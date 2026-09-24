@@ -11,6 +11,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · ⛔ CORRECTION to the 5:40 AM entry below + 🔧 FIXED 6,274 rips / 3,368 pack purchases labelled with the WRONG distribution · Cowork cloud
+
+**The entry below is wrong in its headline.** The studio index did NOT miss 58% of Top Shot pack *secondary* sales. The missing rows (`custom_id 'nba'`, 34,062 all-time) all come from ONE storefront and ONE seller at ONE fixed price per dist (125 of 139 dists) — **Top Shot's own shop**, which `pack_purchases` classes as `secondary_sale`. For `DAPPER_MARKETPLACE` (the collector market) the studio index was complete (373/373 on the settled day). So for ~40 minutes this morning the pack page, both pack-market boards and `get_pack_metrics` counted shop sales as secondary sales. Example: dist 8642 showed a $5.00 median, the shop's price, against a real $5.40.
+
+- `20260924123305` — `pack_market_sales_stats` and `get_pack_metrics` exclude `custom_id 'nba'`; cache fully recomputed and both MVs refreshed. Top Shot secondary sales: **508/24h**, ingest lag 7.7 min. What the on-chain source still adds is real: timestamps at the SALE (the studio row carries the listing's), freshness in minutes instead of ~80, and correct dists where the studio index has none (dist 8552: **4,133** real secondary sales vs 75 in the studio index).
+- Still open: `pack_purchases` labels shop sales `secondary_sale`, and other readers of that column may inherit it. Filed, not changed here.
+
+**Second defect, found while reconciling the two sources:** `backfill_pack_rip_metadata()` infers a rip's dist by a `pack_drop_pool` full-match vote, and wrote `COALESCE(bd.dist_id, pr.dist_id)`. So the inference overwrote the dist that came from Dapper's own index. Packs from new September dists (8776/8777/8778, no pool yet) got relabelled to old dists (5353, 8597, 8616…), and the propagate trigger copied the wrong dist into `pack_purchases`. **6,274 rips and 3,368 purchases** disagreed with `pack_nft_identity`; studio agreed with identity on every checked case.
+- `20260924123824` — the vote now FILLS a NULL and never overwrites (`COALESCE(pr.dist_id, bd.dist_id)`). Pin `supabase/tests/backfill_pack_rip_metadata.sql` property 8 is proven red by the reverted body and green by the fix, on a local Postgres; the drift-guard registration was re-pointed. The pin's normalised md5 matches live (`c5cc24e3…`).
+- One-off relabel of all disagreeing rows to the identity dist, audit table `audit_20260924_pack_dist_relabel`. 0 disagreements left.
+- Not shipped: making `name_packs_from_identity` correct disagreements. It measured 6.3 s / 612k buffers per 5-min tick, against 41 ms for the NULL-only leg.
+
+**Revert:** SQL in each migration header; the relabel reverts from the audit table.
+**Watch:** rips sealed after this whose dist disagrees with identity. **Falsifier:** > 0.5 % in a day → add the bounded correction job.
+
 ### 2026-09-24 · 🔧 FIXED — pack sale stats on pack pages + both pack-market boards counted only 42% of Top Shot pack sales (dist 8552: 75 shown vs 8,956 real, median $17 vs $9) · Cowork cloud
 
 **Found ~5:20 AM PT.** Dapper's studio pack-sales index (`topshot_pack_sales_history` / `allday_pack_sales_history`) holds ONLY `custom_id = 'DAPPER_MARKETPLACE'` sales. On a settled day (5–6 days ago) it had 373 of 894 on-chain Top Shot pack sales; all 521 missing ones carry `custom_id 'nba'`. Its `block_time`/`tx_hash` are the **listing's**, not the sale's (300/300 matched `pack_purchases` on listing id + price; the chain sale is a median 9 min later). Every pack-sales surface read it: `get_pack_market_row` (pack pages), `mv_topshot_pack_sales_agg` / `mv_allday_pack_sales_agg` → `/insights/topshot-pack-market` and `/insights/allday-pack-market`, and `get_pack_metrics`.
