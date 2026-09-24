@@ -150,6 +150,34 @@ export async function POST(req: NextRequest) {
     }
     const projByPlayer = new Map<string, any>(projRows.map(r => [r.nba_player_id, r]))
 
+    // ── Is an empty lineup OUR data or the user's roster? (known-issues #8) ──
+    // Both NBA feeds (`sync-nba-games`, `sync-nba-projections`) have been dead since
+    // 2026-08-04 and no paid provider is bought before revenue. With them down, the
+    // reply used to be `consideredCount: 0`, which the client renders as "None of
+    // your eligible players are on tonight's slate" — a claim about the USER'S
+    // roster produced by OUR missing data. Three states, never two:
+    //   • slate_unavailable       — the run is live today but we hold no games for
+    //                               it. A Fast Break run only spans game days, so an
+    //                               empty slate inside one is our feed, not the NBA.
+    //   • projections_unavailable — games exist but not ONE player on the whole
+    //                               slate has a projection. A roster cannot cause
+    //                               that; a dead feed can.
+    //   • no_games                — no games AND today is outside the run's window:
+    //                               a fact from fast_break_runs, not from the feed.
+    //   • ok                      — the data answered; the roster copy is earned.
+    const day = (v: unknown) => (typeof v === "string" ? v.slice(0, 10) : null)
+    const runStart = day((run as any).start_date)
+    const runEnd = day((run as any).end_date)
+    const runLiveToday = runStart != null && runEnd != null && runStart <= gameDate && gameDate <= runEnd
+    const dataStatus: "ok" | "no_games" | "slate_unavailable" | "projections_unavailable" =
+      gameIds.length === 0
+        ? runLiveToday
+          ? "slate_unavailable"
+          : "no_games"
+        : projRows.length === 0
+          ? "projections_unavailable"
+          : "ok"
+
     // Inner-join eligibility × projections. Skip rows missing a projection
     // (player owns moments but team isn't playing tonight) and rows without
     // a usable proj_fp_dk (DK occasionally lists pool entries with null FP).
@@ -277,6 +305,7 @@ export async function POST(req: NextRequest) {
         lineupSize,
         eligibleCount: eligible.length,
         consideredCount: projected.length,
+        dataStatus,
         lineup,
         alternates,
         missingPlayers,

@@ -131,6 +131,26 @@ describe("FastBreakClient", () => {
     expect(container.textContent).toContain("None of your eligible Top Shot players are on tonight's slate")
   })
 
+  // known-issues #8: a dead feed must not be rendered as a claim about the roster.
+  for (const dataStatus of ["slate_unavailable", "projections_unavailable"] as const) {
+    it(`dataStatus=${dataStatus}: says OUR data is down and never blames the roster`, () => {
+      setWarm({
+        "fb-optimize": {
+          data: {
+            walletAddr: props.walletAddr, runId: props.runId, gameDate: props.gameDate,
+            lineupSize: 2, eligibleCount: 3, consideredCount: 0, dataStatus,
+            lineup: null, alternates: [], missingPlayers: [],
+          },
+        },
+        "fb-uses": { data: { runId: props.runId, uses: [] } },
+      })
+      const { container } = render(<FastBreakClient {...props} />)
+      expect(container.textContent).toContain("our data being down, not your roster")
+      expect(container.textContent).not.toContain("on tonight's slate")
+      expect(container.textContent).not.toContain("current eligibility")
+    })
+  }
+
   it("renders the optimizer error state with a Retry button", () => {
     const refresh = vi.fn()
     // Override the mock's refresh for this render via a per-key entry.

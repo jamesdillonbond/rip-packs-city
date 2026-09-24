@@ -144,3 +144,58 @@ describe('"Not currently listed" is only earned by a query that came back empty'
     expect(m.listingUnknown).toBe(false)
   })
 })
+
+// ── known-issues #8 (2026-09-23): a DEAD FEED is not an empty roster ─────────
+// Both NBA feeds have been down since 08-04. An empty lineup used to reach the
+// client as `consideredCount: 0`, rendered "None of your eligible players are on
+// tonight's slate" — a claim about the USER built from OUR missing data. Each
+// case pairs the failure with its healthy twin.
+describe("an empty lineup says whose data is missing", () => {
+  const today = () => {
+    const f = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" })
+    const p = Object.fromEntries(f.formatToParts(new Date()).map((x) => [x.type, x.value]))
+    return `${p.year}-${p.month}-${p.day}`
+  }
+  const runSpanning = (live: boolean) => {
+    const t = today()
+    state.tables.fast_break_runs = {
+      single: {
+        data: live
+          ? { id: RUN_ID, lineup_size: 1, has_captain: false, start_date: "2000-01-01", end_date: "2999-12-31" }
+          : { id: RUN_ID, lineup_size: 1, has_captain: false, start_date: "2000-01-01", end_date: "2000-01-02" },
+        error: null,
+      },
+    }
+    return t
+  }
+
+  it("run live today + no games held → slate_unavailable (our feed, not the NBA)", async () => {
+    seedHealthyRun()
+    runSpanning(true)
+    state.tables.nba_games = { list: { data: [], error: null } }
+    const body = await (await POST(req())).json()
+    expect(body.dataStatus).toBe("slate_unavailable")
+    expect(body.lineup).toBeNull()
+  })
+
+  it("control: run NOT live today + no games → no_games", async () => {
+    seedHealthyRun()
+    runSpanning(false)
+    state.tables.nba_games = { list: { data: [], error: null } }
+    const body = await (await POST(req())).json()
+    expect(body.dataStatus).toBe("no_games")
+  })
+
+  it("games exist but not one projection on the slate → projections_unavailable", async () => {
+    seedHealthyRun()
+    state.tables.nba_player_projections = { list: { data: [], error: null } }
+    const body = await (await POST(req())).json()
+    expect(body.dataStatus).toBe("projections_unavailable")
+  })
+
+  it("control: games and projections present → ok", async () => {
+    seedHealthyRun()
+    const body = await (await POST(req())).json()
+    expect(body.dataStatus).toBe("ok")
+  })
+})

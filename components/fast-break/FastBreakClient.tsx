@@ -65,6 +65,11 @@ interface OptimizeResponse {
   lineupSize: number
   eligibleCount: number
   consideredCount: number
+  /**
+   * Whether an empty lineup is OUR missing data or the user's roster (#8).
+   * Optional so a cached payload from before this shipped renders as before.
+   */
+  dataStatus?: "ok" | "no_games" | "slate_unavailable" | "projections_unavailable"
   lineup: OptimizeLineup | null
   alternates: OptimizeLineup[]
   missingPlayers: MissingPlayer[]
@@ -341,9 +346,13 @@ export default function FastBreakClient({
           </div>
         ) : !lineup ? (
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
-            {optimize.data?.consideredCount === 0
-              ? "None of your eligible Top Shot players are on tonight's slate. Check back closer to tipoff."
-              : "Couldn't build a lineup with your current eligibility. Try adding a Common-tier player to your wallet."}
+            {optimize.data?.dataStatus === "slate_unavailable" || optimize.data?.dataStatus === "projections_unavailable"
+              ? "Our NBA schedule and projections feed is unavailable right now, so we can't build tonight's lineup. This is our data being down, not your roster."
+              : optimize.data?.dataStatus === "no_games"
+                ? "Tonight isn't one of this Fast Break run's game days, so there's no lineup to build."
+                : optimize.data?.consideredCount === 0
+                  ? "None of your eligible Top Shot players are on tonight's slate. Check back closer to tipoff."
+                  : "Couldn't build a lineup with your current eligibility. Try adding a Common-tier player to your wallet."}
           </div>
         ) : (
           <>
