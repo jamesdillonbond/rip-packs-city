@@ -11,6 +11,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · ✅ #8 honesty half: Fast Break no longer blames the user's roster for our dead NBA feed · Cowork (cloud + laptop VM)
+
+Both NBA feeds (`sync-nba-games`, `sync-nba-projections`) have been dead since 08-04, and no paid provider is bought before revenue (#8, decided earlier tonight). When the season starts, `/api/fast-break/optimize` would return `consideredCount: 0`, and the wallet panel renders that as *"None of your eligible Top Shot players are on tonight's slate"*. That is a claim about the user's roster, produced by our missing data.
+
+**Fix:** the route now returns `dataStatus`, which takes one of four values:
+- `slate_unavailable` — the run is live today, but no games are held. A run only spans game days, so the gap is the feed.
+- `projections_unavailable` — games exist, but not one player on the slate has a projection.
+- `no_games` — today is outside the run's window, a fact taken from `fast_break_runs`.
+- `ok`
+
+`components/fast-break/FastBreakClient.tsx` says *"…our data being down, not your roster"* for the first two, and keeps the old copy only for `ok`. Tests: 4 route cases (2 failures, 2 no-change controls) and 2 client cases asserting the roster claim is ABSENT. Suite, tsc and ratchet (709/709) all green.
+
+**Revert:** `git revert` this commit. The field is optional on the client, so older cached payloads render as before.
+
 ### 2026-09-23 · 📦 SHIPPED — pack metrics pass, part 1: pack-sales head-first (TS/All Day) + a new Golazos pack-sales lane, dist naming from pack_nft_identity, measured pack availability, head-first moment hydration + prompt rip pricing · Cowork cloud
 
 Trevor: "do all of these". Measured first (9:00–10:00 PM PT), then fixed at the mechanism:
