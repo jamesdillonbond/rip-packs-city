@@ -228,7 +228,8 @@ function classifyPackType(title: string | null | undefined, slots: number, retai
  * Returns one PackListing per dist_id (lowest collector ask + listing count),
  * sorted bundle-last / tier / lowest-ask. Memoized for 2 minutes per collection.
  *
- * Throws on a GraphQL error so the caller can surface it.
+ * Throws on ANY failed read (HTTP error, GraphQL error, missing connection) so
+ * the caller can surface it; only a real, possibly-empty connection returns.
  */
 export async function fetchLivePackListings(
   collection: ListingCollectionSlug,
@@ -259,10 +260,19 @@ export async function fetchLivePackListings(
       }),
     })
 
+    // ⚠ THROW ON EVERY FAILURE SHAPE, not only a GraphQL `errors` array. The
+    // pack-availability snapshot (20260924043146) stamps a walk as FRESH and
+    // COMPLETE whenever this returns, and pack_table_rows then reads every dist
+    // absent from it as "not listed" (and "retired" where primary is also off) for
+    // the next hour. An HTTP error whose body has no `errors` key, or a
+    // `{ data: null }` reply, used to fall through as an empty last page — a
+    // partial walk published as the whole market (2026-09-24 review).
+    if (!res.ok) throw new Error(`pack listings HTTP ${res.status}`)
     const json = (await res.json()) as GraphQLResponse
     if (json.errors) throw new Error(json.errors[0]?.message ?? "GraphQL error")
 
     const connection = json.data?.searchPackNftAggregation
+    if (!connection) throw new Error("pack listings response carried no searchPackNftAggregation")
     const edges = connection?.edges ?? []
     for (const edge of edges) {
       if (edge?.node) allNodes.push(edge.node)

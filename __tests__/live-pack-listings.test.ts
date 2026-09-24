@@ -207,8 +207,32 @@ describe("fetchLivePackListings — cache and errors", () => {
     expect(f).toHaveBeenCalledTimes(1)
   })
 
-  it("returns an empty list when the response has no connection object", async () => {
+  // INVERTED 2026-09-24. This used to assert `[]`, pinning the defect: the pack
+  // availability snapshot stamps any returned walk as fresh and complete, so an
+  // empty list from a reply with NO connection object published every dist as
+  // "not listed" for an hour. A missing connection is a failed read, not an empty
+  // market.
+  it("throws — never returns an empty list — when the response has no connection object", async () => {
     ;(fetch as any).mockResolvedValue({ ok: true, status: 200, json: async () => ({ data: {} }) })
+    await expect(fetchLivePackListings("nfl-all-day", { force: true })).rejects.toThrow(/no searchPackNftAggregation/)
+  })
+
+  it("throws on { data: null }", async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, status: 200, json: async () => ({ data: null }) })
+    await expect(fetchLivePackListings("nba-top-shot", { force: true })).rejects.toThrow(/no searchPackNftAggregation/)
+  })
+
+  it("throws on a non-2xx reply whose body carries no `errors` key", async () => {
+    ;(fetch as any).mockResolvedValue({ ok: false, status: 502, json: async () => ({ message: "bad gateway" }) })
+    await expect(fetchLivePackListings("nba-top-shot", { force: true })).rejects.toThrow("pack listings HTTP 502")
+  })
+
+  it("NO-CHANGE CONTROL: a real connection with zero edges is a genuinely empty market", async () => {
+    ;(fetch as any).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { searchPackNftAggregation: { edges: [], pageInfo: { hasNextPage: false } } } }),
+    })
     const { listings } = await fetchLivePackListings("nfl-all-day", { force: true })
     expect(listings).toEqual([])
   })
