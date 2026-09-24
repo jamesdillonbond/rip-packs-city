@@ -11,6 +11,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · ⚖️ The 11 NEEDS-TREVOR items decided under his delegation — 7 closed, 4 partial, 0 left waiting on him · Cowork (cloud + laptop VM)
+
+Trevor, ~8:30 PM PT: *"Make your own judgements on these based upon being financially responsible, the long term of RPC, and for our users."* Each item was re-measured before it was decided.
+
+- **#109 RESOLVED (prod DB).** Built `idx_sales_{2023,2024,2025}_claimable_soldat` CONCURRENTLY via `execute_sql`. Large compute had 1 active backend, so each build finished inside the 60 s client cap. All three are `indisvalid`: 11 MB / 48 kB / 32 kB. The claim body at a 2025 cursor now plans at **188 buffers / 3 ms**, against 61,320 / 13.7 s on 09-13. Migration `20260924035412` records the indexes and returns `floor_sold_at` to 2023-11-08 with `exhausted_at` cleared. The lane resumed at once: three ticks wrote 54, 102 and 95 rows, and the cursor is now in 2025. **Revert:** `UPDATE public.sales_counterparty_backfill_state SET floor_sold_at='2026-01-01T00:00:00Z' WHERE id=1;`.
+- **#61 PARTLY (code).** `scripts/vercel-ignore-build.sh` now also skips `supabase/migrations/**`, `supabase/tests/**` and `.github/**`. None of them is part of the Next build: no `.ts`, and no app/lib/components import them. The base is `VERCEL_GIT_PREVIOUS_SHA`, so nothing underneath a skipped push is lost. CI still runs its code jobs on those paths. The agreement test pins that one asymmetry by name, plus four guards: each subtree really skipped, CI never skips them, no buildable file inside, no deployable import. It was proven with a planted defect, and a simulated gate run showed a migration-only push skips (exit 0) while a later code push builds (exit 1). **Observability kept:** at $1.60 it was the largest line of a $5.59 day (09-20), but it is the only server-side error instrument while Sentry is out of the tree. **Revert:** drop the second pathspec line and `DEPLOY_ONLY_EXCLUSIONS`.
+- **#55 RESOLVED (account).** Deleted the two disabled Routines, `trig_01AZzLzkTPp5xbSjK1EFmeCw` and `trig_018AyNcnbCZuYb1Ztts6rbBR`, both off since 09-01. `delete_trigger` echoed their full config first. No revert is needed; the desktop-local task replaced them.
+- **#21 RESOLVED IN REPO.** Removed the `[triggers] crons` block from `workers/topshot-moments-hydrator/wrangler.toml` and added a RETIRED / do-not-deploy note. Keeping the block meant a deploy would re-create a schedule racing the DB lanes, which ran 432 times in 24 h. **Revert:** restore the block from git.
+- **#8 SHELVED:** no paid provider before revenue. Nothing stale is served. Owed before NBA tip-off (~10-21): Fast Break must say *projections unavailable*.
+- **#50 PARTLY:** the honest empty state stays. Atlas prices packs hourly, but every row has NULL depletion, and full-pool EV overstates old drops. Next build: depletion from our own pack-opens ingest.
+- **#58 SHELVED:** Panini is inactive and the key is still absent (env names only, no values read).
+- **#60 CLOSED, risk accepted.** Control: `check_secdef_anon_exec_drift()` = `[]`.
+- **#81 RETIRED:** the lanes were already off. pg_cron 15 stays as the free daily probe.
+- **#123 PARTLY:** no dashboard hand-deploy, because users are already covered by the RPC union and no Cloudflare credential exists here.
+- **#132 CLOSED, accepted:** AA 24 px is met, and bigger rows would cost scroll.
+
+CLAUDE.md: two stale lines updated (the deploy-gate base; #55 no longer waits on Trevor). The register index is regenerated.
+
 ### 2026-09-23 · 🔧 Panini runner pages the serial list (30 → full print run per card) + walk budget 50 → 75 min · Cowork (cloud + laptop VM) · ⚠ takes effect on the laptop's next `git pull`
 
 Follow-up to the serial page-cap entry below. **Probed live first** (Claude in Chrome, 2 cards): the detail page's serial table is an infinite scroll — scrolling the WINDOW to the bottom makes the SPA request `p:2…N` and sign them itself. Cristiano Ronaldo Silver: 30 → 259 serials; Maradona Silver: 30 → 259 in 8 pages / 16 s, stopping on the short final page. `loadAllSerialPages()` runs that per card before the SALES HISTORY click; the existing response listener already captures every page. Cost: ~6,900 extra page loads per full rotation (~27% more time per card), so `PANINI_WALK_BUDGET_MIN` default 50 → 75 (4 h ticks; ends ~95 min in). Kill switch `PANINI_SERIAL_PAGES=0`. Pinned by `__tests__/panini-runner-serial-paging.test.ts` (3 fail against the old runner).

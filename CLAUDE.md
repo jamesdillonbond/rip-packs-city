@@ -194,7 +194,7 @@ Full detail: [docs/reference/database.md](docs/reference/database.md).
 ### Vercel
 
 - 🚨 **A GREEN DEPLOY IS NOT PROOF A CSS CHANGE SHIPPED** — 3 of 6 CSS-only commits hit READY with the rule ABSENT from the served chunk (2 byte-identical; `Restored build cache`). **Grep the deployed chunk for the DECLARATION**; `@media` counts lie (Lightning CSS merges blocks): scripts/qa/README.md.
-- **A docs-only TIP can NEVER force a rebuild** — `ignoreCommand` diffs `HEAD^..HEAD`; ⚠ the v13 POST does NOT override it. Touch a non-docs file.
+- **A docs-only push never rebuilds** — `ignoreCommand` diffs vs the LAST DEPLOY and also skips migrations/tests/`.github` (#61); ⚠ the v13 POST does NOT override it. Touch a non-docs file.
 - **Pro Lambda `maxDuration` hard cap is 800s.** Higher sends the deploy to ERROR *invisibly*.
 - 🚨 **A GREEN SUITE IS NOT A DEPLOY GATE FOR SEGMENT SEMANTICS** — `DYNAMIC_SERVER_USAGE` lives only in a real render, so `tsc`/vitest/lint and even a guard pinning the CALL are blind; it 500'd a live route (09-20). **Verify `revalidate`/`connection()`/`dynamic` on a PREVIEW deploy.**
 - ⚠ **`get_deployment.state` LAGS** — corroborate with `ready` vs `buildingAt`, `lambdaRuntimeStats`; **check state PER COMMIT** (an ERRORed deploy is superseded by the next push). 🚨 **After a ROLLBACK the alias fields LIE** — probe the public domain on a value the two builds DISAGREE on.
@@ -266,7 +266,7 @@ Flow CLI hot wallet `0x3aa11c84d776838f`. ⛔ **Signing MUST be ECDSA_secp256k1 
 
 **The canonical forward plan is [docs/strategy/roadmap-2026-08-03.md](docs/strategy/roadmap-2026-08-03.md).** Thesis: **accuracy is the GATE, not a phase** — growth tactics stay removed until the data beats the sites collectors already use; headline metric is the share of prices at HIGH/MEDIUM confidence. Still binding: **intelligence-first**; Cart / Trade Hub / gifting removed (**read-only product**); **monetization tabled until 50+ weekly active users**; no infra spend pre-revenue.
 
-**Open items** — dated snapshot moved to [roadmap-status.md](docs/reference/roadmap-status.md) 2026-09-19 (status data; goes stale by nature). ⚠ **Two need TREVOR, not code:** the credential-purge residue (#22) and both 2-hourly Routines still disabled (#55).
+**Open items** — dated snapshot moved to [roadmap-status.md](docs/reference/roadmap-status.md) 2026-09-19 (status data; goes stale by nature). ⚠ **Needs TREVOR, not code:** the credential-purge residue (#22).
 
 Full status + accuracy measurements: [docs/reference/roadmap-status.md](docs/reference/roadmap-status.md). Issue register: [docs/reference/known-issues.md](docs/reference/known-issues.md).
 
