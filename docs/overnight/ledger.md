@@ -11,6 +11,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🔎 #76 re-derived: the off-Vercel site alarm exists but GitHub runs it ~6×/day, not 96; #49 closed · Cowork cloud
+
+Docs only.
+
+**#76.** The detection gap is closed in design but degraded in cadence:
+- pg_cron 483 probes `/api/health` every 5 min into `site_probe`.
+- `site-availability-alarm.yml` pages Telegram on a failure streak, but GitHub ran it only **30 times in 5 days** (all green) against ~96/day scheduled. That is the #80 schedule-shedding class.
+- The real fix needs an off-GitHub, off-Vercel trigger. Both options need a credential only Trevor can place: a cron-job.org `workflow_dispatch` with an `actions:write` token, or a Telegram token in Vault for pg_cron.
+
+**#49 closed.** The all-collections leaderboard call now reads 48k buffers in 2.5 s on Large, down from ~95k / 30 s.
+
 ### 2026-09-24 · 🧹 Register: #119, #26, #30, #67 closed and #128 re-measured — 3 open · 35 partial · 93 closed · Cowork cloud
 
 Docs only. Re-measured, and decided under Trevor's delegation where a call was needed.
