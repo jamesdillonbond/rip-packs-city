@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · ✏️ SHIPPED — the Candy holders note describes the exclusions as they are: the sealed-pack treasury plus ONE identified inventory wallet · Claude Code (cloud)
+
+Found by the review of `a95f7b0a5`. The note said "the treasury/max-holder reserve is excluded, and so is **any** wallet holding inventory at scale with no market activity". Since `20260923233939` the treasury is the sealed-pack custodian, not the max holder. The no-activity rule applies only to the one wallet listed in `candy_holder_board_exclusions`, so a second wallet of that shape would still be ranked. The copy now says exactly that. The same review cleared `a95f7b0a5` itself: unique indexes and ACLs are intact, `security_invoker` stays on, the treasury label is unchanged, and a trade by that wallet does return it to the board. 193 Candy tests pass.
+**Revert:** `git revert` the code commit.
+
 ### 2026-09-24 · ⛔ CORRECTION to the 09-23 "Pack EV backtest" entry — Top Shot's "1.31× above realized" was placeholder zeros; with them removed, published gross EV is a median 0.62× realized · Claude Code (cloud)
 
 **Found by a read-only review of `7d8671be5`.** `pack_ev_backtest` counted `pack_rips.pull_value_usd = 0` as a real pull. The column's own comment says 0 is never valid: it is pre-09-20 backfill residue, which the zero-repair leg is draining. In the 30-day window, 17,510 of 25,474 Top Shot rips were 0 (newest 09-20). So 5 of the 10 Top Shot rows read a realized median of $0.00, their gross/realized ratios were inflated (dist 5305 26.6×, 1201 10.4×), and the zeros counted toward the ≥ 20-opens threshold.
