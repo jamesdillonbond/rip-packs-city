@@ -63,7 +63,7 @@ Examples: **Blazers** — Scoot Henderson, Donovan Clingan, Toumani Camara, Carm
 
 **Where it runs — measured, not assumed.** A headless walk from the Cowork cloud sandbox works anonymously. The same script on **GitHub Actions got HTTP 403 with Cloudflare's 1000-series error box** on page 1 of both targets (run 2026-09-24 7:32 AM PT) — the Atlas story again. So the walk runs on **Trevor's box**, from `scripts/panini-run.bat`, right after the soccer runner, in the same debug Chrome (`PANINI_CDP_URL`), posting to `/api/cron/panini-team-walk` with `INGEST_SECRET_TOKEN`. At most one full pass a day (`%USERPROFILE%\panini-team-walk.stamp`, written only when every target completed). The GitHub Actions workflow was removed the same hour.
 
-⚠ **It starts on the laptop's next `git pull`** — `panini-run.bat` runs from Trevor's checkout.
+**First laptop runs (2026-09-24, measured).** The 2 PM PT pass walked Detroit completely, but **Blazers died at p15**: two back-to-back products answers that were HTML, not JSON. Then the process **never exited**. Over CDP the script skipped `browser.close()`, the websocket kept node alive, and Task Scheduler's 2 h limit killed the whole task at 4:00 PM (`LastTaskResult 267014`). Both are fixed. The walk now retries a page up to 4 times with 20 s / 60 s / 120 s backoff, logs the products call's OWN status, always disconnects and exits explicitly. The 4:04 PM re-run completed both: **Blazers 203 pages / 6,031 listings / 1,068 editions in 15.9 min; Detroit 35 / 1,020 / 172 in 2.9 min.** On it, Detroit p28 answered **HTTP 429, Cloudflare "Just a moment…"**, and the 20 s backoff recovered it. That throttle is the Blazers p15 cause.
 
 | Piece | What |
 |---|---|
@@ -78,7 +78,7 @@ All service-role only; **nothing on the site reads it**. `pipeline_runs`: `panin
 
 **Not done, on purpose:** no `league_collections` row for Panini yet (a hub panel reads `get_team_detail`, and Panini NBA/MLB is not in `editions`); no pricing (listings are asks, not FMV); no other teams (widen `PANINI_TEAM_TARGETS` once the pilot's numbers are read).
 
-**Next:** read the first laptop runs → widen to every NBA team (~30 × 150–250 pages ≈ 4–6 h/day, so rotate a few teams per day) → decide how Panini NBA prices are judged against the accuracy gate → bridge into `editions` and flip `league_collections`.
+**Next:** read two or three more daily runs (watch for backoff lines and any `after 4 attempts` failure) → widen. **Sizing (measured, not guessed):** Blazers-sized teams take ~16 min, so all 30 NBA teams ≈ 8 h. The walk shares `RPC Panini Ingest`'s **2 h ExecutionTimeLimit** with the ~75 min soccer runner, so ≈ 2 teams fit per daily pass. Widening beyond that wants either a rotation (a few teams/day off a cursor) or its OWN scheduled task at an hour the soccer runner is idle (both drive the same debug Chrome, so never overlapping) → decide how Panini NBA prices are judged against the accuracy gate → bridge into `editions` and flip `league_collections`.
 
 ## Revert
 
