@@ -11,6 +11,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🧽 #83: 9,758 All Day sales stopped naming the Dapper custodian as their buyer; #71 and #99 closed · Cowork cloud
+
+- **Prod data (#83).** Migration `20260924140351` sets `sales.buyer_address = NULL` on the 9,758 All Day rows naming `0xddfbe848a81b2236`. That is All Day's re-forwarding custodian, which the repo decided in writing on 07-19 is never a buyer. NULL means "unknown", which is true.
+  - Backup: `audit_20260924_allday_custodian_buyer_backup` (RLS on, revoked from anon/authenticated; drop after 10-24).
+  - Scoped to `nfl_all_day`. The 41 Top Shot rows naming the same address are left, as an unexplained separate population.
+  - The migration asserts 0 left and ≥9,000 backed up; `check_public_security_invariants()` = `[]`.
+  - ⚠ 44 custodian rows arrived AFTER the 09-11 forward fix (09-12→09-18) from a second write path, then stopped.
+  - **Falsifier:** any new All Day row naming the custodian.
+  - **Revert:** `UPDATE public.sales s SET buyer_address = b.buyer_address FROM public.audit_20260924_allday_custodian_buyer_backup b WHERE s.id = b.id;`
+- **#71 closed.** The one remaining above-cap read is the labelled exception in DORMANT `compute-topshot-pack-ev`.
+- **#99 closed.** The walk reached a genuine exhaustion at 2024-04-19, with 0 eligible rows below.
+
 ### 2026-09-24 · ⚖️ Three more delegated decisions: #43 timeout policy, #90 caches retired, #108 retry left armed-off · Cowork cloud
 
 Docs only, with no prod change. Decided under Trevor's delegation.
