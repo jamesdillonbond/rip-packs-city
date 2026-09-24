@@ -11,6 +11,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🔧 Panini runner reads RECENT sales (it only ever read the 20 highest-priced sales per card) — FMV engine switch approved but HELD until the data under it is clean · Cowork (cloud + laptop VM) · ⚠ takes effect on the laptop's next `git pull`
+
+**Serial paging verified live overnight:** `panini_serial_freshness.max_serials_per_edition_walk` 30 → **259**; serials 114,188 → 115,733; the 10 PM and 2 AM PT walks ran 83–86 min over 425–431 editions.
+
+**New defect, found while wiring the approved FMV switch:** the SALES HISTORY tab opens on **"TOP SALES / ALL TIME"** (`nftSalesData sale_type:"top" pageSize:20`), the 20 *highest-priced* sales ever, and that is the only list the runner read. Probed live on Maradona Base Prizms Silver: RECENT SALES shows eight sales on 09-05..09-15 at $14–$25, and **none of them is in the DB** (newest recorded 07-20); TOP SALES runs $55–$650; our published FMV is **$40.93 HIGH**. So `last_sale_*` is a price-sorted sample for any card with >20 lifetime sales, and the 09-23 backtest's ground truth shares that bias. `openRecentSales()` flips the dropdown to RECENT SALES after the tab opens (probed: one more signed `nftSalesData`, parsed by the existing listener; the route's monotonic `last_sale_at` guard keeps an older TOP record from overwriting a newer one). Kill switch `PANINI_SALES_RECENT=0`. Pinned by `__tests__/panini-runner-recent-sales.test.ts` (3 fail against the old runner); `panini-runner-psku` sales-tab pin re-pinned to the property (awaited inside the rendered-card branch).
+
+**FMV engine (panini-1.1.0, Trevor approved 09-23): HELD, not wired.** `panini_recent_sales_fmv(text[])` exists (service_role, unused); the backtest view's comment now carries the ground-truth caveat. Re-read `panini_fmv_backtest` after one rotation of recent-sales data (~09-30) and ship only if the candidate still wins.
+**Revert:** `git revert` this commit or `PANINI_SALES_RECENT=0`; `DROP FUNCTION public.panini_recent_sales_fmv(text[]);`; comments: re-apply `20260924045351`'s.
+
 ### 2026-09-23 · 📏 Pack EV backtest: published gross EV runs 1.31× (Top Shot) / 2.70× (All Day) above what packs actually pulled in 30 days · EV method NOT changed · Cowork cloud
 
 New view `pack_ev_backtest` (migration `20260924054525`, service_role only): per dist with ≥ 20 priced opens in 30 days, realized mean/median pull value vs the latest published `gross_ev` / `typical_ev`. First read ~10:50 PM PT: Top Shot 11 dists, gross a median **1.31×** realized mean, typical **1.00×** realized median; All Day 4 dists, **2.70×** / **1.42×**. Golazos + Pinnacle have no dist with 20 priced opens in 30 days yet.
