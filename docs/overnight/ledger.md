@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🔧 Pack page "recent sales" no longer lists Top Shot's own shop sales as collector resales · Cowork cloud
+
+`get_pack_sales_history` (the pack page's top/recent sale lists) read every `pack_purchases` row labelled `secondary_sale`, and the ingest gives that label to Top Shot's own shop sales too (`custom_id 'nba'`, one storefront, a fixed price per dist). On a shop-sold dist the recent list was mostly the shop price. Example, dist 8642 over 14 days: 350 shop sales at $5.00 against 103 collector resales at a $5.74 median. Both arms now exclude `custom_id 'nba'`, the same rule as `pack_market_sales_stats` / `get_pack_metrics`. After the fix, 8642's recent list shows $5.69 resales. anon EXECUTE is still false.
+
+Migration `20260924140433`. **Revert:** re-run its CREATE OR REPLACE without the two `custom_id` lines.
+**Still open (needs a `wrangler deploy`, Trevor):** `workers/pack-events-ingest` writes shop sales as `event_kind 'secondary_sale'`. `get_wallet_pack_summary` therefore counts a wallet's shop buys as secondary spend. The dollar total is right; only the primary/secondary split is off.
+
 ### 2026-09-24 · 🟢 Overnight pass (~1:10 AM PT): GREEN, shipped 0, NO-PUSH · Cowork cloud (landed by Claude Code, Windows box)
 
 > Written by the Cowork overnight pass into the mounted tree, APPENDED AT THE FILE'S END (not spliced at the top), and unpushed. Moved here verbatim by Claude Code at ~7 AM PT. ⚠ Its Q0 (`fmv_from_cached_listings`) was already SHIPPED on 09-23 at ~2 PM PT (`20260923205831`), and its follow-ups at ~3 PM PT (`8f747fd`, `20260923220355`). Treat Q0 as closed.
