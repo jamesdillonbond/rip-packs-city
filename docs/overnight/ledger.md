@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🧹 Register: #119, #26, #30, #67 closed and #128 re-measured — 3 open · 35 partial · 93 closed · Cowork cloud
+
+Docs only. Re-measured, and decided under Trevor's delegation where a call was needed.
+
+- **#119 resolved.** `snapshot-institutional-wallets` v44 (deployed this morning) carries `shouldPersistSnapshot()`, so two independent layers now refuse a partial whale snapshot. **Exit:** tonight's 11 PM PT run is ok.
+- **#26 resolved.** `/api/ready` returned 5/5 × 200 in 0.37–1.08 s on Large. The payload nulls were checked and are honest by design.
+- **#30 accepted.** The laptop-browser lane (forced there by Cloudflare) runs 2–3×/day with every run ok. The bar is re-set from 6/day to ≥2/day.
+- **#67 decided.** No ~14K-request historical Atlas walk. The ten-day hole ages out of 30-day FMV around 10-06, and the 90-day undercount is disclosed.
+- **#128 re-measured.** The fabricated-zero drain went 82,864 → 53,134 in 4 days (~6× the forecast), clearing around 10-01. The disclosure is deferred until then.
+
 ### 2026-09-24 · 🔧 Pack page "recent sales" no longer lists Top Shot's own shop sales as collector resales · Cowork cloud
 
 `get_pack_sales_history` (the pack page's top/recent sale lists) read every `pack_purchases` row labelled `secondary_sale`, and the ingest gives that label to Top Shot's own shop sales too (`custom_id 'nba'`, one storefront, a fixed price per dist). On a shop-sold dist the recent list was mostly the shop price. Example, dist 8642 over 14 days: 350 shop sales at $5.00 against 103 collector resales at a $5.74 median. Both arms now exclude `custom_id 'nba'`, the same rule as `pack_market_sales_stats` / `get_pack_metrics`. After the fix, 8642's recent list shows $5.69 resales. anon EXECUTE is still false.
