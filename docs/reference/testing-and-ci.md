@@ -1492,12 +1492,20 @@ cannot be measured from there at all; dispatch the workflow instead.
 ⚠ **A local dev build runs with non-working Supabase credentials**, so data-driven controls are absent.
 A clean local result means "the chrome and the empty-state layout are clean", never "the page is clean".
 
-### Two `elementFromPoint` false positives that cost a wrong reading
+### Three `elementFromPoint` false positives that cost a wrong reading
 
 1. It returns **null for any coordinate outside the VIEWPORT**. The collection tab bar and the switcher
    row are `overflow-x: auto`, so a control scrolled out of view read as a broken hit area.
 2. **`NEXTJS-PORTAL`** — the DEV error-overlay root, absent in production — intercepts points and reads
    as click theft.
+3. **The FIXED mobile bottom nav (`nav.rpc-mobile-nav`, 60 px) covers whatever sits in the bottom 60 px
+   of the viewport at load time**, so a control that is merely below the fold reads as stolen. That
+   produced known-issues #133, filed as "undiagnosed" and open for 3 days (closed 2026-09-23).
+   ⭐ **Discriminator: `scrollIntoView({block: "center"})` first, then hit-test.** A real overlay still
+   steals at mid-viewport; the nav does not (0 of 21 there). **Print WHAT the hit landed on, never
+   only a count** — one line naming `nav.rpc-mobile-nav` diagnosed in a minute what a bare
+   `stolen=2` hid for 3 days. ⚠ The "reads 0 on every other page" control was vacuous: those pages
+   had 0 matching elements. Report `checked` beside every zero.
 
 ---
 

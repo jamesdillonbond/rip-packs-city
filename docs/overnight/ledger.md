@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · ✅ #133 CLOSED — the "stolen" filter pills were below the fold behind the fixed mobile nav, not covered by anything · Claude Code (Windows box)
+
+The evening handoff's "needs a real browser" item, run from the Windows box with Playwright against the live site (iPhone 13). A probe that NAMES the covering element found every stolen pill hitting `nav.rpc-mobile-nav`: set-squeeze 6/12 and offer-spread 2/9, at y 583–679 on first load. **Control: scrolled to mid-viewport, 0/21 are covered**; body padding-bottom = nav height (60 px); desktop 0/21. The original "0 on every other page" control was vacuous, because those pages have 0 pills. The committed `e2e/mobile-layout.spec.ts` does not share the flaw. Recorded as the third `elementFromPoint` false positive in testing-and-ci.md. Applied on top of Cowork's same-evening re-audit, which listed #133 as an open work item awaiting exactly this probe. Index regenerated and diffed (one row flipped, none lost): **23 → 22 open** (41 partial · 68 closed).
+**Revert:** docs only.
+
 ### 2026-09-23 · 🧹 known-issues register hygiene, part 2: the remaining 38 open items re-audited — 7 closed, 19 partial, 12 kept open; the index now reads 23 open (11 waiting on Trevor) · Cowork cloud
 
 Same method as part 1: each item was read to its end and its own exit condition tested read-only. The verdict now leads each item, followed by `ⓘ Original opening follows.`. The index was regenerated with a balanced diff (38 rows out, 38 in), `--check` exits 0, and the docs-guard set is green.
