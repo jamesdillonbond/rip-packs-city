@@ -11,6 +11,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🧹 known-issues register hygiene, part 2: the remaining 38 open items re-audited — 7 closed, 19 partial, 12 kept open; the index now reads 23 open (11 waiting on Trevor) · Cowork cloud
+
+Same method as part 1: each item was read to its end and its own exit condition tested read-only. The verdict now leads each item, followed by `ⓘ Original opening follows.`. The index was regenerated with a balanced diff (38 rows out, 38 in), `--check` exits 0, and the docs-guard set is green.
+
+- **Closed:**
+  - #29: premise gone, jobid 55 unscheduled 09-04; restoring it lives in #102(a).
+  - #42: 0 failed pg_cron runs of 27,262 since 09-21 on Large (spot-checked).
+  - #48: wallet backfill 1,042 of 1,042 complete.
+  - #54: the input gate makes the job a 26–283 ms no-op.
+  - #62: a reference note.
+  - #77: email and Telegram deliver on 88 of 88 sentinel runs (spot-checked).
+- **Moved to partial:** #11 #17 #18 #30 #43 #67 #70 #71 #72 #73 #79 #84 #88 #90 #94 #108.
+- **Still open, waiting on Trevor:** #8 #21 #50 #55 #58 #60 #61 #81 #109 #123 #132.
+- **Still open, work items:** #10 #14 #22 #33 #39 #64 #91 #98 #104 #116 #127 #133.
+
+**Findings worth reading in the items themselves:**
+- #21: `wrangler.toml` now DOES declare a cron, so a deploy would re-create the retired hydrator's schedule.
+- #30: Top Shot active listings run 2–3 times a day against a 6/day bar; the laptop task appears to miss ticks.
+- #109: the claimable indexes could now be retried on Large.
+- #127: stale wallet caches are growing, 53 pairs, worst 69.6 days.
+
+**Revert:** docs only (`git revert`).
+
 ### 2026-09-23 · 🧹 known-issues register hygiene: 16 "shipped/decided" items re-audited against live state — 6 closed, 7 partial, 3 kept open (2 need Trevor); open count 59 → 46 · Cowork cloud
 
 This acts on the evening health-pass handoff's "Needs Trevor #3". Each item was read to its end and its own exit condition tested read-only (SQL + repo). The verdict now leads each item as a new bold phrase, followed by `ⓘ Original opening follows.` with the original text kept verbatim. The index was regenerated: the diff is balanced, `--check` exits 0, and the docs-guard set is green. I spot-checked the subagent evidence myself: `portfolio_snapshots` holds 11 of 11 days, and fmv-recalc shows 449 heartbeats = 449 ok terminal rows in 72 h.
