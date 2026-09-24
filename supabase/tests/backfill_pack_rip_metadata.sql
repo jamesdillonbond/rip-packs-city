@@ -81,7 +81,8 @@
 --
 -- ⚠ NOT ASSERTED HERE, and named rather than left implied:
 --   · The dist_id vote (`pack_drop_pool` full-match) is exercised only far enough
---     to prove it does not interfere; it has no dedicated arm. A separate pin
+--     to prove it does not interfere, plus property 8 (2026-09-24): it FILLS a NULL
+--     dist and never overwrites a stored one. A separate pin
 --     covers attribute_topshot_rips_empirical.
 --   · ~~The All Day arm has NO whole-pack check~~ — CLOSED 2026-09-20 in
 --     20260920230950, both writers together, and BOTH arms are asserted here (the
@@ -397,7 +398,12 @@ BEGIN
   ),
   upd AS (
     UPDATE public.pack_rips pr
-    SET dist_id              = COALESCE(bd.dist_id, pr.dist_id),
+    -- ⚠ FILL-ONLY (2026-09-24). An existing dist came from Dapper's own index
+    -- (upsert_pack_rips_from_api / name_packs_from_identity); the pool vote is
+    -- an INFERENCE and picked an OLD dist whose pool happens to contain every
+    -- pulled edition when the pack's real (new) dist had no pool yet —
+    -- 6,274 rips / 3,368 purchases disagreed with pack_nft_identity.
+    SET dist_id              = COALESCE(pr.dist_id, bd.dist_id),
         -- ⚠ A ZERO IS CLEARED TO NULL; A POSITIVE VALUE IS PRESERVED. The
         -- asymmetry is deliberate. fmv_snapshots is written delete-then-insert,
         -- so "not priceable right now" can be a momentary absence rather than a
@@ -688,6 +694,43 @@ SELECT _assert_eq(
   (SELECT coalesce(pull_value_usd::text, 'NULL') FROM public.pack_rips WHERE pack_nft_id = 'P-AD-SHORT'),
   'NULL',
   'the ALL DAY arm also refuses a short pack -- both its pull rows are priced (30.00) but the rip yielded 3 moments'
+);
+
+-- ── Property 8: THE DIST VOTE FILLS, IT NEVER OVERWRITES (2026-09-24) ─────
+-- A rip's existing dist_id came from Dapper's own index; the pack_drop_pool
+-- full-match vote is an inference. The pre-09-24 body wrote
+-- `COALESCE(bd.dist_id, pr.dist_id)`, so a pack from a NEW dist (no pool yet)
+-- whose pulls all sit in an OLD dist's pool was relabelled to the old dist —
+-- 6,274 live rips disagreed with pack_nft_identity. P-DIST-KEEP is that shape;
+-- P-DIST-FILL is the no-change control (a NULL dist is still filled by the vote).
+DELETE FROM public.pack_rips;
+DELETE FROM public.moment_acquisitions;
+DELETE FROM public.pack_drop_pool;
+
+INSERT INTO public.pack_drop_pool (collection_id, edition_id, dist_id) VALUES
+  (:TS::uuid, :E1::uuid, 'D-VOTE');
+
+INSERT INTO public.pack_rips
+  (id, collection_id, pack_nft_id, dist_id, pull_value_usd, moments_pulled, sealed_at, metadata_updated_at) VALUES
+  ('ddddddd1-0000-0000-0000-000000000001'::uuid, :TS::uuid, 'P-DIST-KEEP', 'D-REAL', NULL, 1, '2026-06-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+  ('ddddddd1-0000-0000-0000-000000000002'::uuid, :TS::uuid, 'P-DIST-FILL', NULL,     NULL, 1, '2026-06-01T00:00:00Z', '2026-01-01T00:00:00Z');
+
+INSERT INTO public.moment_acquisitions (source_pack_rip_id, nft_id) VALUES
+  ('ddddddd1-0000-0000-0000-000000000001'::uuid, 'm1'),
+  ('ddddddd1-0000-0000-0000-000000000002'::uuid, 'm1');
+
+SELECT public.backfill_pack_rip_metadata(5000);
+
+SELECT _assert_eq(
+  (SELECT dist_id FROM public.pack_rips WHERE pack_nft_id = 'P-DIST-KEEP'),
+  'D-REAL',
+  'an existing dist_id is NOT overwritten by the pool vote -- the vote is an inference, the stored dist came from the index'
+);
+
+SELECT _assert_eq(
+  (SELECT coalesce(dist_id, 'NULL') FROM public.pack_rips WHERE pack_nft_id = 'P-DIST-FILL'),
+  'D-VOTE',
+  'and a NULL dist_id is still filled by a full-match vote'
 );
 
 -- ── The negative-LIMIT guard (20260920204628). Every other share has a

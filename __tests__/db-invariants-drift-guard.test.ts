@@ -1942,10 +1942,13 @@ const PINS = [
     // by my own correctness probe), and the repair is a PARTIAL INDEX plus the
     // matching predicate in the leg. That predicate is load-bearing, not
     // cosmetic: a partial index is unusable unless the query repeats it.
+    // ⚠ Re-pointed 2026-09-24 to 20260924123824: the dist vote FILLS a NULL and
+    // never overwrites a stored dist (property 8) — the overwrite had relabelled
+    // 6,274 rips to an old dist whose pool contained every pulled edition.
     fn: "backfill_pack_rip_metadata",
     test: "supabase/tests/backfill_pack_rip_metadata.sql",
     migration:
-      "supabase/migrations/20260920230950_audit_20260920_both_allday_pull_value_writers_gain_the_whole_pack_check_together.sql",
+      "supabase/migrations/20260924123824_audit_20260924_pack_dist_vote_fills_never_overwrites_and_identity_relabel.sql",
   },
   {
     // pg_cron `40 9 * * *`. Sets players.team from the catalogue.
