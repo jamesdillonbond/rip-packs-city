@@ -41,6 +41,17 @@ import { pathToFileURL } from "node:url"
 export const BASE = "https://nft.paniniamerica.net/marketplace/nfts.html"
 export const DEFAULT_TARGETS = "Basketball:Portland Trail Blazers;Baseball:Detroit"
 const FLUSH_EVERY_PAGES = 10
+export const MAX_PAGE_ATTEMPTS = 4
+
+/**
+ * Pause before attempt N of one page. The first laptop run lost Blazers at p15 to two
+ * BACK-TO-BACK non-JSON answers that were readable minutes later — a transient throttle
+ * an immediate retry cannot outlast. Worst case adds ~3.3 min to one page; a page that
+ * still fails after that ends the walk INCOMPLETE (nothing retired), as before.
+ */
+export function retryBackoffMs(attempt) {
+  return [0, 0, 20_000, 60_000, 120_000][attempt] ?? 120_000
+}
 
 /** "Sport:Team;Sport:Team" -> [{ sport, team }]. Throws on a malformed entry. */
 export function parseTargets(raw) {
@@ -103,10 +114,26 @@ async function walkTarget(page, target, { maxPages, delayMs, onFlush, log }) {
   let error = null
   for (let p = 1; p <= maxPages; p++) {
     let items = null
-    for (let attempt = 1; attempt <= 2 && items == null; attempt++) {
+    for (let attempt = 1; attempt <= MAX_PAGE_ATTEMPTS && items == null; attempt++) {
+      const backoff = retryBackoffMs(attempt)
+      if (backoff > 0) {
+        log(`  p${p}: backing off ${Math.round(backoff / 1000)}s before attempt ${attempt}`)
+        await page.waitForTimeout(backoff)
+      }
       const waitProducts = page
         .waitForResponse((r) => isProductsResponse(r.url(), r.request().postData()), { timeout: 45_000 })
-        .then(async (r) => (await r.json())?.data?.products?.items)
+        .then(async (r) => {
+          // Read TEXT first: a throttled products call answers HTML with a 200-series or
+          // 4xx status, and r.json() would hide which (measured 2026-09-24: Blazers p15
+          // returned "<!DOCTYPE" twice back-to-back, then JSON when re-read later).
+          const text = await r.text()
+          try {
+            return JSON.parse(text)?.data?.products?.items
+          } catch {
+            log(`  p${p} attempt ${attempt}: products answered non-JSON (status=${r.status()} ct=${r.headers()["content-type"] ?? "?"} body=${JSON.stringify(text.slice(0, 120).replace(/\s+/g, " "))})`)
+            return null
+          }
+        })
         .catch((e) => {
           log(`  p${p} attempt ${attempt}: no products response (${e.message.split("\n")[0]})`)
           return null
@@ -126,7 +153,7 @@ async function walkTarget(page, target, { maxPages, delayMs, onFlush, log }) {
       }
     }
     if (items == null) {
-      error = `page ${p}: no readable products response after 2 attempts`
+      error = `page ${p}: no readable products response after ${MAX_PAGE_ATTEMPTS} attempts`
       break
     }
     pages = p
@@ -262,8 +289,11 @@ async function main() {
     }
   } finally {
     await page.close().catch(() => {})
-    // Over CDP the browser is the runner's debug Chrome — disconnect, never close it.
-    if (!cdp) await browser.close().catch(() => {})
+    // Over CDP, browser.close() DISCONNECTS and leaves the runner's debug Chrome open
+    // (same call as ingest-panini-runner.mjs). Skipping it left the CDP websocket holding
+    // node alive: the first laptop run finished its writes at 3:22 PM PT and then idled
+    // until Task Scheduler's 2 h limit killed the whole task (LastTaskResult 267014).
+    await browser.close().catch(() => {})
   }
   if (dry) console.log(JSON.stringify({ dry_run: true, summary }, null, 2))
   if (!dry && !anyFailed && stampFile) fs.writeFileSync(stampFile, today)
@@ -271,7 +301,9 @@ async function main() {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
-  main().catch((e) => {
+  // Exit explicitly: a lingering handle must never turn a finished walk into a task the
+  // scheduler kills (which also swallows panini-run.bat's "run end" line).
+  main().then(() => process.exit(process.exitCode ?? 0), (e) => {
     console.error("[panini-team-walk] fatal:", e instanceof Error ? e.stack : e)
     process.exit(2)
   })

@@ -9,7 +9,29 @@
 //   - the row mapper (a malformed item is dropped, never written with a fabricated key).
 
 import { describe, expect, it } from "vitest"
-import { DEFAULT_TARGETS, isProductsResponse, pageUrl, parseTargets, toRow } from "../scripts/panini-team-walk.mjs"
+import {
+  DEFAULT_TARGETS,
+  MAX_PAGE_ATTEMPTS,
+  isProductsResponse,
+  pageUrl,
+  parseTargets,
+  retryBackoffMs,
+  toRow,
+} from "../scripts/panini-team-walk.mjs"
+
+describe("retryBackoffMs", () => {
+  // The first laptop run lost Blazers at p15 to two BACK-TO-BACK throttled answers.
+  it("does not wait before the first try, and waits longer before every later retry", () => {
+    expect(retryBackoffMs(1)).toBe(0)
+    let prev = 0
+    for (let a = 3; a <= MAX_PAGE_ATTEMPTS; a++) {
+      expect(retryBackoffMs(a)).toBeGreaterThan(prev)
+      prev = retryBackoffMs(a)
+    }
+    expect(MAX_PAGE_ATTEMPTS).toBeGreaterThanOrEqual(3)
+    expect(retryBackoffMs(3)).toBeGreaterThanOrEqual(15_000)
+  })
+})
 
 describe("parseTargets", () => {
   it("parses the default pilot targets", () => {
