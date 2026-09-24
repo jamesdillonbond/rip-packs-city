@@ -1871,3 +1871,50 @@ hint: Updates were rejected because the tip of your current branch is behind
 ```
 
 That is `(non-fast-forward)`, i.e. **rebase and retry**, not a credential problem. The push capability on this box is fine — `git push --dry-run origin main` is the one-command test, and its output distinguishes the two cases in the first line.
+
+## Windows box, 2026-09-23 — four things one session relearned
+
+### 1 · Run a changed `supabase/tests/*.sql` against REAL Postgres before pushing (no local Postgres here)
+
+This box has no Postgres, so CI's blocking **DB invariants** job is otherwise the first thing that ever
+executes a changed pin. vitest and `db-invariants-drift-guard` compare only the function BODY; they are
+green on a test file that is not even valid SQL. That happened on `8f747fd`.
+
+The recipe that works through the Supabase MCP `execute_sql`, leaving nothing behind:
+1. Translate the file: inline each psql `\set name '''value'''` as a literal, rename `public.` to a
+   scratch schema (`tjob19`), **and change the function's `SET search_path TO 'public'` to that schema
+   too**. Otherwise the function under test reads and writes the REAL tables.
+2. Wrap it: `BEGIN; CREATE SCHEMA tjob19; SET LOCAL search_path TO tjob19, pg_temp;` + the two
+   `_assert*` helpers from `supabase/tests/_helpers.sql` + the body + `SELECT 'OK'` + `ROLLBACK;`.
+3. A RAISE from an `_assert` comes back as the error; a clean run returns the `OK` row.
+4. **Confirm `select count(*) from pg_namespace where nspname='tjob19'` = 0 afterwards.**
+
+A translator that does steps 1–2 lived in the session scratchpad (`translate.cjs`). Rebuild it from
+this description rather than hunting for it.
+
+### 2 · A backslash inside `node -e '…'` is eaten, and GNU tools cannot check for it
+
+`"\\set …"` in an inline `node -e` edit wrote a bare `set …`: the escape is consumed between the shell and
+the JS string literal (backslash-s in a JS string is just `s`). This is the same trap class as CLAUDE.md's
+`\b`-in-a-template-literal case. The follow-up checks also lied: to GNU `grep`/`sed`, `\s` means whitespace.
+**Any edit that must write a backslash goes through the Edit/Write tool, or a script FILE using
+`String.fromCharCode(92)`. Verify with node `JSON.stringify(line)`, never grep.**
+
+### 3 · `could not read Username for 'https://github.com'` = the gh token expired
+
+`gh auth status` shows `X Failed to log in`. Git Credential Manager has no stored credential behind it
+either (the empty per-host helper resets the chain, so it is never consulted). The fix is Trevor
+running `gh auth login -h github.com` (HTTPS, web browser). Done 2026-09-23 evening.
+
+Until then, the Trevor-approved `.rpc-git-cred` store file at the repo root also works on this box:
+`git -c credential.helper= -c credential.https://github.com.helper= -c credential.helper="store --file=$PWD/.rpc-git-cred" push origin HEAD:refs/heads/main`.
+Pipe the output through a redacting `sed`, and never `cat` the file.
+
+### 4 · Live-site Playwright probes from Git Bash
+
+- **The script must live INSIDE the repo** (use the gitignored `_to_delete/`). ESM resolves `playwright`
+  from the script's own directory, so a scratchpad copy dies on `ERR_MODULE_NOT_FOUND`.
+- **Prefix `MSYS_NO_PATHCONV=1`.** Git Bash rewrites a `/insights/set-squeeze` argument into
+  `C:/Program Files/Git/insights/set-squeeze`, which surfaces as `net::ERR_NAME_NOT_RESOLVED`.
+- **Print WHAT a hit-test landed on**, not a count. See the third `elementFromPoint` false positive in
+  [testing-and-ci.md](testing-and-ci.md) (the fixed mobile nav, #133).

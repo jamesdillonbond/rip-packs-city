@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 📝 Wrap-up: the ASK_ONLY falsifiers read at ~9:50 PM PT (all met), and this session's lessons promoted · Claude Code (Windows box)
+
+**Falsifiers:** Step 5b wrote 104 rows over 41 post-deploy runs, **0** above the live floor, 0 errors. Job 19's 5:40 PM PT run re-capped 3 more. All 66 `ask_only_v2` rows since Cowork's fix are Golazos, 0 above their own floor. The 28 All Day surface rows still above the floor are lag: listings that arrived after pricing, and snapshots already capped whose `edition_fmv_current` has not refreshed. Recorded in the 0510Z inbox filing as "do not re-open for this shape". **Docs:** tooling-gotchas.md gains "Windows box, 2026-09-23" (a rolled-back scratch-schema run for a changed `supabase/tests` file · backslashes eaten by `node -e` · gh-token expiry · Playwright from Git Bash); session entry prepended to `docs/sessions/2026-09.md`.
+**Revert:** docs only.
+
 ### 2026-09-23 · ✅ #8 honesty half: Fast Break no longer blames the user's roster for our dead NBA feed · Cowork (cloud + laptop VM)
 
 Both NBA feeds (`sync-nba-games`, `sync-nba-projections`) have been dead since 08-04, and no paid provider is bought before revenue (#8, decided earlier tonight). When the season starts, `/api/fast-break/optimize` would return `consideredCount: 0`, and the wallet panel renders that as *"None of your eligible Top Shot players are on tonight's slate"*. That is a claim about the user's roster, produced by our missing data.

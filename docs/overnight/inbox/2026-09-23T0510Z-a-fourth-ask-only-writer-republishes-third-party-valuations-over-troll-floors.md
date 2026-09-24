@@ -75,3 +75,12 @@ Examples, current published LOW vs live floor vs last-7-sale median:
 **Proposed fix (route code, NOT shipped):** in Step 5b, apply `capFmvAtCheapestAsk(avgPrice, ceiling)` exactly as Step 4 does. The ceiling source is Top Shot `edition_offers.low_ask` ∪ `allday_edition_floor_ask`, which must be fetched for the historical candidate ids (the Step 2a-ter(b) map covers only the page's edition ids).
 - It changes published prices in every collection that uses Step 5b, so it wants its own session with a preview-deploy check.
 - **Falsifier:** after one full walk, 0 LOW rows with `sales_count_30d = 0` sit above the live floor.
+
+## ✅ Follow-ups SHIPPED 2026-09-23 ~3:05 PM PT (Claude Code, Windows box): both residual writers fixed. Falsifiers read at ~9:50 PM PT
+
+- **Step 5b** now caps at the cheapest ask (commit `8f747fd`; ledger entry "no All Day LOW or ASK_ONLY price sits above a live buy-it-now"). **Falsifier MET:** 41 production fmv-recalc runs after the deploy, 104 historical-fallback rows written, **0** above the live floor, 0 `historical_fallback_error`.
+- **Job 19** re-caps a stale ASK_ONLY price above the live ask (migration `20260923220355`). First run re-capped 26; the 5:40 PM PT run re-capped 3 more, as it should, since cheaper listings keep arriving.
+- **One-shot:** 21 existing Step-5b LOW rows capped at their floors (`algo_version = '1.7.0_askcap_20260923'`), Σ $837.57 → $215.92.
+- **This writer's own clause:** every `ask_only_v2` row since the 20:58Z apply (66) is Golazos, **0** carry FMV above their own floor, and **0** have a floor over $5k.
+- **Residual at ~9:50 PM PT: 28 All Day surface rows above the floor, and it is lag, not a writer.** Two kinds: rows priced before a cheaper listing arrived (job 19 or the next recalc re-prices them), and rows whose latest snapshot IS capped while `edition_fmv_current` has not refreshed yet (e.g. `1c5a684e` snapshot $0.15 = floor $0.15, surface still $0.16). ⚠ **Do not re-open this for a residual of that shape.** A defect would be a NEW snapshot above a floor that was listed BEFORE it was computed.
+- **The last carried item is closed too:** `drain_fmv_cold_tail` has since been re-pointed at the live floor by Cowork (migration `20260923235425`). Nothing in this filing remains open.
