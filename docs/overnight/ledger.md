@@ -11,6 +11,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · ⚖️ DECIDED (delegated) + SHIPPED — the no-activity inventory wallet `1BWutmTv…DNix` leaves the public Candy holder board while it never trades · Claude Code (Windows box)
+
+**The decision** (Trevor: "make that decision yourself based upon what's best for RPC and our users"), taken on measurement rather than on the heading's question of ownership:
+- **Zero on all five market instruments**: moment buys/sells, listings (incl. inactive), offers, pack trades. Every other top-12 holder shows 40–1,096 moment trades, so the instruments see collectors; this is not a coverage gap.
+- **Spread across editions shaped like the treasury, not a collector:** CV 0.548 vs treasury 0.538 vs #2 collector 1.334; all 125 editions held.
+- **Second-largest sealed-pack stash** after the treasury (38 on 08-10, 15 now; other top holders hold 0–1).
+- It was #1 with 1,768 serials / ~$17.3k, over 4× #2 by value. That is inventory, and a collector ranking should not lead with it.
+
+**Shipped:**
+- `20260924141150`: a new `candy_holder_board_exclusions` table (RLS on, no client grants) carries the wallet + evidence. `mv_candy_holder_board` is rebuilt (body verbatim + one `excluded` CTE) and drops a listed wallet **only while it has zero market activity**, re-derived on every hourly refresh (job 248). Positive control, in a rolled-back txn: one fake offer → the wallet is no longer excluded.
+- **Deliberately NOT claimed:** that it is Candy's wallet. It is not merged into the treasury label, and the scarcity board is unchanged.
+- ⚠ `20260924141217`: the re-created MV inherited DEFAULT PRIVILEGES (anon=rxm), and `check_public_security_invariants()` flagged `mv_anon_readable` within a minute. The prior ACL (anon/authenticated MAINTAIN only) was restored the same turn. Lesson: after DROP/CREATE, revoke anon/authenticated BY NAME and assert the ACL.
+- The Holders tab now discloses the rule and its lapse condition (test pinned, planted defect goes red).
+- **Verified:** board 421 → 420, new #1 `2srdg8…` (1,075 serials, a real trader); `REFRESH … CONCURRENTLY` works as job 248's role; all security arms clean; md5 file = `schema_migrations` for both.
+
+**Revert:** `DELETE FROM public.candy_holder_board_exclusions; REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_candy_holder_board;` restores the old board. Copy: `git revert` the code commit.
+
 ### 2026-09-24 · 📝 Pack-metrics thread closed: packs.md § Pack sales sources, register #134, rpc-data skill, session log · Cowork cloud
 
 Docs only. `docs/reference/packs.md` gains *Pack sales sources*: which table means what, the Top Shot shop rows, and the dist-authority order: `pack_nft_identity`, then the studio `dist_id` (Claude Code's `20260924141424` relabel), then the fill-only pool vote. It also carries a caveat on the old "escrow seller = peer sale" line. Register **#134 (partial)**: shop sales are still labelled `secondary_sale` at ingest and need a `wrangler deploy`; the index was regenerated and the change is additive only. The `rpc-data` skill's `pack_purchases` bullet was rewritten and the bundle repacked; its "~20 % named" figure was stale. The session log is in `docs/sessions/2026-09.md`.
