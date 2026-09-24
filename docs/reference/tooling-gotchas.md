@@ -337,6 +337,29 @@ test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1
 `npm ci` in that clone stalls for 30+ min on this VM (Node 22 vs the repo's `24.x` engine, native bindings); `npm i --no-save --ignore-scripts` finishes in ~2 min and is enough for vitest + `scripts/recover-fileless-migrations.mjs` (source `.env.local` from the mount with `set -a; . …; set +a` — never print it). The **cloud** Cowork session is still repo-set 403; this recipe is desktop-only.
 
 
+### ⭐ 2026-09-23/24 — a reusable VM push helper (`$HOME/rpcpush.sh`), used for ~12 cloud→VM pushes
+
+`$HOME` in the VM does not persist across sessions, so the helper is re-created per session:
+
+```bash
+# usage: rpcpush.sh "<substring of the expected tip subject>" <patch>...
+H="store --file=$HOME/mnt/rip-packs-city/.rpc-git-cred"; cd $HOME/rpcwork
+for a in 1 2 3; do
+  git -c credential.helper= -c credential.helper="$H" fetch -q origin main
+  git am --abort 2>/dev/null; git checkout -q -B main origin/main
+  git am -q --3way "$@" || { git am --abort; continue; }
+  git log -1 --format=%s | grep -qF "$SUBJ" || exit 3        # gate on the SUBJECT, not HEAD==remote
+  [ "$(awk -f scripts/find-swallowed-ledger-headings.awk docs/overnight/ledger.md)" = 3 ] || exit 4
+  git -c credential.helper= -c credential.helper="$H" push -q origin HEAD:refs/heads/main
+  [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$(git rev-parse HEAD)" ] && exit 0
+done; exit 1
+```
+
+- `git config user.name/email` must be set in `$HOME/rpcwork` first, or `am` dies on "Committer identity unknown" and leaves `.git/rebase-apply` behind.
+- ⭐ **When upstream moved, rebase in the CLOUD clone rather than resolving on the VM.** Re-splice your ledger entry into `git show :2:docs/overnight/ledger.md` at the first `^### `, `git add`, `GIT_EDITOR=true git rebase --continue`, then re-run `format-patch`.
+- After the push, `git reset --hard origin/main` in the cloud clone. The `am` rewrote the sha, so the stop hook reports "1 unpushed commit" that is already upstream. Check `git diff HEAD origin/main` is empty first.
+- The token in `.rpc-git-cred` also drives `api.github.com` from the VM: CI `check-runs`, job logs, and `workflow_dispatch` (HTTP 204). Extract it with `sed` into a variable; never print it.
+
 ### ✅ 2026-09-19 — THE VM IS BACK; path 1 pushes again, and here is the cloud-container + VM recipe (used for 8 commits, 8:28–10:15 AM PT)
 
 The Windows patch landed; `device_bash` runs again and `.rpc-git-cred` was intact. A Cowork session that is a **cloud container linked to the laptop** now has the simplest route of all, needing no clicks and no Trevor:

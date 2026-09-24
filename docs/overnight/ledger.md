@@ -11,6 +11,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · ✅ Thread close: #25's exit met (edge-fn drift 9 → 1), VM push helper documented, memory updated · Cowork (cloud + laptop VM)
+
+- **#25 exit met.** A `workflow_dispatch` run of `edge-fn-drift` at 7:14 AM PT reads `CONTENT drift — 1: enrich-ufc-wallet`, with 43 bodies read and 42 matched. The one left is deliberately deferred to a Supabase CLI deploy (Trevor).
+- **Watches re-read at 7:14 AM PT:**
+  - All Day custodian-as-buyer rows: 0 (#83 falsifier clean).
+  - `snapshot-institutional-wallets`: its last two runs (10:07Z, 12:46Z) predate v44, so v44's first run is tomorrow's.
+  - `sync-nba-projections`: still `all_upstreams_failed`, unchanged, as expected.
+  - Counterparty lane: re-armed and exhausted again, which is correct.
+  - CI green on every tip pushed this thread.
+- **Docs.** `docs/reference/tooling-gotchas.md` gains the `$HOME/rpcpush.sh` recipe, including rebasing in the cloud clone and the stop-hook false "unpushed" case.
+- **Project memory updated:**
+  - the `\uXXXX` deploy workaround;
+  - CIC via `execute_sql` finishing on Large;
+  - the push helper;
+  - `NOT IN`/NULL, per-contract NFT ids, cold cache-busted probes and GHA schedule shedding, as measurement traps;
+  - a new `areas/delegated-decisions-2026-09` index of this week's delegated calls.
+
 ### 2026-09-24 · 🔧 FIXED — Top Shot pack pages and the pack-market board were publishing one pack's sales under another pack's name; 34,540 purchases and 28,940 rips relabelled from Dapper's own index · Claude Code (cloud)
 
 **Found by a read-only review of this morning's pack-market commits (`2af427923`, `7cb143c8e`).** Per-dist stats now group by `pack_purchases.pack_dist_id`. On packs with no `pack_nft_identity` row, that label still carried the old pool vote's overwrite, and `20260924123824`'s relabel only reached packs that have an identity row. This was substitution: dist 7726 (Rookie Revelation Standard) showed 1,160 sales, while 3,495 of its sales sat under 7800 (Fast Break Classic), which showed 7,503.
