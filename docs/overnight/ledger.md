@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🔁 SHIPPED — the Top Shot rip pricer stops re-reading its own head (4 → 285 priced on the same state), and the pack-listing walk can no longer stamp a failed read as a complete market · Claude Code (cloud)
+
+Both came from a read-only review of `547ed1396` / `6a74fd67a`. Its clean areas included walker honesty, cursor continuity, slugs, and pack availability matching the walk.
+- **`price_recent_topshot_rips` (pg_cron 599). Migration `20260924144245`**, a guarded splice of the live body. It took the newest 1,500 unpriced rips every 10 min and never rotated: the last 12 runs priced 0–29, `still_null_14d` sat flat at ~4,860, and 366 of 800 sampled rips outside that window were priceable. Each tick now takes half its budget from the head and half as a random sample of the 14-day pool. The pricing rule is untouched. **Rolled-back dry run on the same state: old body priced 4, then the new body priced 285.** md5 equals `schema_migrations` (`b059212e…`); ACL unchanged, anon false. **WATCH:** `still_null_14d` in job 599's output should fall over 24 h. **Falsifier:** flat after 24 h.
+- **`fetchLivePackListings`** (`lib/packs/live-pack-listings.ts`) threw only on a GraphQL `errors` array. An HTTP error without one, or `{data: null}`, fell through as an empty last page. The availability snapshot then stamped it fresh and complete, and `pack_table_rows` read every missing dist as "not listed" (or "retired") for an hour. The function now throws on `!res.ok` and on a missing connection. The test that pinned `[]` for a missing connection was **inverted, not deleted**, plus `{data:null}`, non-2xx and a zero-edge no-change control. Planted defect red 3/3. Never observed live (905 walks in 4 days, none empty); this closes it before it happens.
+- **Filed, not shipped: known-issues #135.** Head-first lanes whose sweep has latched (`golazos_pack_sales_cursor`, `pinnacle_pack_opens_cursor`, and Golazos opens soon) cannot recover a gap bigger than one head budget, and report `ok=true`. The fix is a shared edge-helper change plus deploy. It also records an unconfirmed Golazos pack-sales completeness question (15,333 stored vs the API's `totalCount` of 31,846).
+- Gate: tsc 0; ratchet 709 = baseline; 43 listing/snapshot tests pass.
+
+**Revert:** DB: re-apply the body from `20260924043605`. Code: `git revert` the listing-guard commit.
+
 ### 2026-09-24 · 📝 Wrap-up: two lessons from the Candy holder-board ship promoted to reference docs · Claude Code (Windows box)
 
 `database.md` gains a third default-privileges case: re-creating a MATERIALIZED VIEW re-grants anon/authenticated, and every MV definition change is a re-create. The procedure is read `relacl` before, revoke by name after, and assert in the migration. `tooling-gotchas.md` "Windows box" gains §5: a commit with later pushes on top has no deployment of its own, so prove it shipped with `git merge-base --is-ancestor` against the newest READY build's SHA (and `list_deployments`' `sha` filter needs all 40 characters).
