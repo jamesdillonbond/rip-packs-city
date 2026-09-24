@@ -101,11 +101,19 @@ async function walkTarget(page, target, { maxPages, delayMs, onFlush, log }) {
           log(`  p${p} attempt ${attempt}: no products response (${e.message.split("\n")[0]})`)
           return null
         })
-      await page.goto(pageUrl(target.sport, target.team, p), { waitUntil: "domcontentloaded", timeout: 60_000 }).catch((e) => {
+      const resp = await page.goto(pageUrl(target.sport, target.team, p), { waitUntil: "domcontentloaded", timeout: 60_000 }).catch((e) => {
         log(`  p${p} attempt ${attempt}: goto failed (${e.message.split("\n")[0]})`)
+        return null
       })
       const got = await waitProducts
       items = Array.isArray(got) ? got : null
+      if (items == null) {
+        // Say WHAT came back, so a block (Cloudflare challenge, 403) is told apart from
+        // a slow page. Title + a body snippet only — never cookies or headers.
+        const title = await page.title().catch(() => "?")
+        const body = await page.evaluate(() => (document.body?.innerText || "").slice(0, 160)).catch(() => "?")
+        log(`  p${p} attempt ${attempt}: http=${resp ? resp.status() : "none"} title=${JSON.stringify(title)} body=${JSON.stringify(body.replace(/\s+/g, " "))}`)
+      }
     }
     if (items == null) {
       error = `page ${p}: no readable products response after 2 attempts`
