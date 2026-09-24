@@ -55,7 +55,26 @@ Examples: **Blazers** — Scoot Henderson, Donovan Clingan, Toumani Camara, Carm
 
 **Recommended order:** NBA first (full names, larger market, Blazers). MLB second, behind a player→club resolver for the three shared cities.
 
-**Open decision (Trevor):** a card printed for a former franchise — does it belong on the current franchise's hub? Proposed default: yes for relocations/renames (SuperSonics → Thunder, New Jersey Nets → Brooklyn Nets, Oakland → Athletics), and New Orleans Hornets (2002–13) → Pelicans, per the NBA's official franchise history.
+**Decided 2026-09-24 (Trevor: "do what you think is best"):** a card printed under a former franchise counts for the current franchise — SuperSonics → Thunder, New Jersey Nets → Nets, New Orleans Hornets (2002–13) → Pelicans, Charlotte Bobcats → Hornets, Vancouver Grizzlies → Grizzlies, Oakland → Athletics. Encoded in `panini_team_aliases`.
+
+## Team walk — pilot shipped (2026-09-24)
+
+**The lever that made it cheap:** the grid takes a **team filter** — `nfts.html?sport=Basketball&team=Portland%20Trail%20Blazers&p=N` returns only that team (measured: 26/26, 24/24, 29/29 Blazers). So a hub needs its own team's pages, not the whole 4,800-page sport: Blazers ≈ 150–250 pages, Detroit (MLB) ≈ 35. And it works **headless from a datacenter IP**, anonymously — no laptop, no login: Detroit walked 35 pages / 1,020 listings in ~3 min, ending on an empty page.
+
+| Piece | What |
+|---|---|
+| `scripts/panini-team-walk.mjs` | Playwright walk of one team's grid; reads the SPA's own `products` responses (never replays a signed request); flushes every 10 pages |
+| `.github/workflows/panini-team-walk.yml` | daily 10:37 UTC (3:37 AM PT) + manual dispatch (`targets`, `max_pages`, `dry_run`). Pilot targets: **Blazers + Detroit** |
+| `panini_team_listings` | staging, one row per listed NFT (sku); `franchise_keys` like `NBA:blazers`, `unmapped_teams` for what did not map (MLB LA/NY/Chicago) |
+| `panini_team_aliases` + `panini_resolve_team_keys` | Panini `team` → teams_master; two-team cards map to both |
+| `panini_team_listings_ingest` | upsert; retires listings a walk no longer saw **only when the walk was complete** (ended on an empty page and every flush landed) |
+| `panini_team_listing_franchise_summary` | operator read-back: active listings / editions / min ask per franchise |
+
+All service-role only; **nothing on the site reads it**. `pipeline_runs`: `panini-team-walk` (+ `-heartbeat` before each target); the job goes red on an incomplete walk or a write that did not land.
+
+**Not done, on purpose:** no `league_collections` row for Panini yet (a hub panel reads `get_team_detail`, and Panini NBA/MLB is not in `editions`); no pricing (listings are asks, not FMV); no other teams (widen `targets` once the pilot's numbers are read).
+
+**Next:** read two or three daily runs → widen to all NBA teams (~30 × ~150–250 pages ≈ 3–4 h/day of runner time, so split across days or jobs) → decide how Panini NBA prices are judged against the accuracy gate → bridge into `editions` and flip `league_collections`.
 
 ## Revert
 

@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🏀 SHIPPED — Panini team walk (staging): Blazers + Tigers listings via a headless, team-filtered grid walk on GitHub Actions; nothing on the site reads it · Cowork (cloud + laptop VM)
+
+Trevor: "do what you think is best" after the first NBA/MLB capture. Found the lever: Panini's grid takes `&team=` — a hub needs ~35–250 pages, not the 4,800-page sport — and it loads anonymously from a datacenter IP (Detroit dry run: 35 pages / 1,020 listings / ~3 min, ended on an empty page). **DB (applied, file committed, md5 = prod):** `panini_team_listings` (staging, sku-keyed), `panini_team_aliases` (former franchises → current, per the delegated decision; MLB cities, with LA/NY/Chicago deliberately unmapped), `panini_resolve_team_keys`, `panini_team_listings_ingest` (retires unseen listings only on a COMPLETE walk), `panini_team_listing_franchise_summary` — all service-role only, exercised on sentinel rows and cleaned up. **Code:** `scripts/panini-team-walk.mjs` + `.github/workflows/panini-team-walk.yml` (daily 3:37 AM PT, dispatchable; pilot targets Blazers + Detroit). No `league_collections` row, no pricing, no hub change.
+
+**Verify:** `select * from panini_team_listing_franchise_summary` → `NBA:blazers` and `MLB:tigers` rows after the first run; `pipeline_runs where pipeline='panini-team-walk'` ok=true, `extra.complete=true`.
+**Revert:** `git revert` the `feat(panini): team walk` commit; DB per the migration header (`DROP VIEW … ; DROP FUNCTION …; DROP TABLE panini_team_listings, panini_team_aliases`).
+
 ### 2026-09-24 · ⚖️ DECIDED (delegated) + SHIPPED — the no-activity inventory wallet `1BWutmTv…DNix` leaves the public Candy holder board while it never trades · Claude Code (Windows box)
 
 **The decision** (Trevor: "make that decision yourself based upon what's best for RPC and our users"), taken on measurement rather than on the heading's question of ownership:
