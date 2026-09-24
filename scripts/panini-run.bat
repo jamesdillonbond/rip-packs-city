@@ -70,5 +70,15 @@ if %ERRORLEVEL% NEQ 0 (
 :run
 node scripts\ingest-panini-runner.mjs >> "%PANINI_LOG%" 2>&1
 set "RC=%ERRORLEVEL%"
+
+REM 2026-09-24 — Panini NBA/MLB TEAM WALK (franchise-hub staging). Runs here, not on
+REM GitHub Actions, because Panini's Cloudflare 403s datacenter runners. Same debug
+REM Chrome, same INGEST_SECRET_TOKEN. At most one full pass per day (the stamp file);
+REM its exit code is logged but does NOT change this task's result, which stays the
+REM soccer runner's. Detail: docs/features/franchise-hubs.md.
+set "RPC_PANINI_TEAM_WALK_URL=https://www.rippackscity.com/api/cron/panini-team-walk"
+set "PANINI_TEAM_WALK_STAMP=%USERPROFILE%\panini-team-walk.stamp"
+node scripts\panini-team-walk.mjs >> "%PANINI_LOG%" 2>&1
+echo [panini-run] team walk rc=%ERRORLEVEL% >> "%PANINI_LOG%"
 echo ==== %DATE% %TIME% run end rc=%RC% ==== >> "%PANINI_LOG%"
 endlocal & exit /b %RC%
