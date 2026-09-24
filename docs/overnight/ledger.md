@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🏟 SHIPPED — franchise hubs foundation: `/teams/<league>/<slug>`, MLB as a league (30 clubs), and a league → collection map that can hold more than one collection · Cowork (cloud + laptop VM)
+
+Trevor: "Both, foundation first". A hub is one page per real-world team gathering every collection that carries it (Blazers = Top Shot + later Panini NBA; Tigers = Candy MLB + later Panini MLB). **DB (applied, files committed):** `league_t` += `MLB`; `teams_master` += 30 MLB clubs spelled as Candy's `team_name` (0 unmatched of 30, 0 slug collisions); new `league_collections` table replaces the hardcoded `CASE` in `get_my_fan_teams` / `get_teams_for_league`; new `get_franchise_hub` (service_role only). **App:** `app/teams/[league]/[slug]/page.tsx` + `lib/franchise-hub.ts` (three states per panel), `/my-teams` cards open the hub, MLB followable, and the bound wallet only reaches a checklist on the matching chain (a Flow wallet against Candy would have read "you own 0"). Every hub shows ONE panel today — RPC's Panini data is 100% World Cup soccer; the Panini NBA/MLB follow-up is scoped in `docs/features/franchise-hubs.md`. Hubs are `noindex` until they gather 2+ collections.
+
+**Verify:** `select get_franchise_hub('mlb','tigers')` → one `candy_mlb` collection; `/teams/mlb/tigers` renders a Candy MLB panel (4 editions); `/teams/nba/nope` → 404.
+**Revert:** `git revert` the `feat(teams): franchise hubs` commit; DB per `docs/features/franchise-hubs.md` § Revert (pre-image function bodies there).
+
 ### 2026-09-23 · 📏 Panini FMV out-of-sample backtest: published FMV misses realized sales by a median 35.9% (HIGH: 35.3%) and naive last-sale beats it · Cowork (cloud + laptop VM)
 
 New ops view `panini_fmv_backtest` (migration `20260924045351`, service_role only). For each of 4,432 realized non-special serial sales in the last 45 days it compares the price to the FMV we published **more than a day before** the sale. **Published: median abs error 35.9%, 38.1% within ±25%, biased HIGH (median ratio 1.106).** HIGH-confidence rows alone: 35.3% / 38.5%, so the label overclaims. Candidate "median of the edition's last 3 non-special sales in 30 days, else published": **25.0% / 50.5% / ratio 1.000**. By recency of the prior sale: <7 d 36.5% vs 21.4%; 7–30 d 28.6% vs 25.0%; >30 d published wins (40.0% vs 45.0%), hence the fallback. ASK_ONLY (floor × 0.9) sits at a median 1.8× the realized price.
