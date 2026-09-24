@@ -1950,3 +1950,12 @@ someone else's build. **Prove it, and never infer it:** find the newest READY pr
 `git merge-base --is-ancestor <your sha> <that deployment's githubCommitSha> && echo contained`. Then verify the
 change in the rendered DOM. Note that `list_deployments`' `sha` filter needs the full 40-character SHA; a short
 SHA also returns nothing.
+
+## The cloud session's permission policy can refuse production writes mid-thread (2026-09-24, PT)
+
+In one thread the auto-mode classifier refused, at different times:
+- an edge-function deploy, a verification subagent that read deployed source, a bulk `sales`/`moments` repair (twice), a view change, and finally a `git push` of an already-APPLIED migration.
+
+Other writes of the same shape went through, such as the #56 alert-function migration.
+
+⚠ **An `apply_migration` that succeeds and a push that is then refused leaves prod AHEAD of the repo, and migration-parity goes red.** Push the migration file in the same breath as the apply. If the push is refused, queue a standalone task that recovers the file from `supabase_migrations.schema_migrations` (the parity script's own recipe) rather than trying to route around the refusal.

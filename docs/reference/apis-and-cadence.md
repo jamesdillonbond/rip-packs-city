@@ -324,3 +324,27 @@ When onboarding a new collection or building the planned Pinnacle direct integra
 ### Cadence
 
 **Before modifying any `.cdc` file, Cadence string literal, or FCL `mutate`/`query`, fetch the deployed mainnet source via the Cadence MCP and verify the functions/fields/types exist** — training data is frequently wrong for Cadence 1.0. MCP is dev-time verification ONLY; production reads route through the proxy (egress blocked). Addresses (incl. the service payer wallet) + gotchas: **the Per-collection Cadence gotchas section above in this file**.
+
+## Dapper studio `searchPackMarketplaceHistory`: pass a UNIQUE sort tiebreak or bulk transactions lose rows (2026-09-24, PT)
+
+With no `sortBy`, the API orders by `created_at.block_time` alone. Its opaque cursor then resumes at "`ListingResourceID` < last seen" inside a tied `block_time`. Rows inside a tie do NOT come back in listing-id order, so **a page boundary inside a bulk transaction skips rows**.
+- Measured on Golazos (about 11 packs per tx): the same 200 rows, fetched in one call and then paged 100 + 100, came back with 72 of one 115-row tx missing. `totalCount` fell by 172 for 100 rows read.
+- Top Shot and All Day have one sale per tx, so they barely notice.
+
+**Fix (`9939bbac6`, `PACK_SALES_SORT`):** `sortBy: { created_at: { block_time: { direction: DESC, priority: 1 } }, listing_resource_id: { direction: DESC, priority: 2 } }`. The cursor then carries both fields, and the paged set equals the one-shot set.
+- An old-format cursor is still accepted.
+- Top Shot and All Day return the identical head set either way.
+
+⭐ **The cheap detector is `totalCount` itself:** it counts rows AFTER the cursor. A walk whose `totalCount` falls by more than the rows it read is skipping. Golazos pack sales went from 15,333 stored to exactly the API's 31,846 after one clean re-walk.
+⚠ The pack-OPENS index (`searchPackNft`) is not affected. Its cursor is a full `[block_height, id, type]` tiebreak, and stored equals the API total on both lanes.
+
+## Reading Top Shot NFT truth from the chain without the dead GraphQL host (2026-09-24, PT)
+
+`net.http_post` → `https://rest-mainnet.onflow.org/v1/scripts?block_height=sealed` with a base64 Cadence body, then decode the base64 JSON-Cadence response from `net._http_response`. Read the deployed source first (`/v1/accounts/0x0b2a3299cc857e29?expand=contracts`).
+- Contract-level views, no holder needed:
+  - `TopShot.getNumMomentsInEdition(setID, playID)`: minted count. Use it to test a `circulation_count`.
+  - `TopShot.getMomentsSubedition(nftID)`: nil for pre-subedition moments, 0 for base, N for a parallel.
+- Per moment you need the holder: `getAccount(addr).capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)?.borrowMoment(id: id)?.data` gives `{setID, playID, serialNumber}`.
+- Batch about 125 (id, holder) pairs per script. Candidate holders come from the latest `sales.buyer_address`, `topshot_ownership` and `moments.owner_address`.
+- A moment that has moved returns nothing: record "not held", never "wrong".
+- Used for #116: `docs/audits/i116-chain-adjudication-2026-09-24.md`.

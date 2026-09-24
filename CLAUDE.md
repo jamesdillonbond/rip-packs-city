@@ -87,7 +87,7 @@ Never omit `teamId` on a Vercel API/MCP call.
 **List moved to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-19** (package.json data). ⚠ **`npm ci` FIRST in a fresh sandbox**, or `npx vitest`/`tsc` die on `MODULE_NOT_FOUND … vitest.config.ts` — reads like a broken config. ⭐ **`tsc --noEmit` DOES run in the laptop VM** with `--max-old-space-size=3072`; it OOMs at the default heap, and writing that off as "CI will typecheck" put a compile error on `main` (09-19).
 
 
-⚠ **Exit-code traps — a pipe reports the LAST command's status (read `${PIPESTATUS[0]}`); `grep <log> && git push` gates on grep FINDING a line, not on the run PASSING; a background-task notification's `exit code 0` is the WRAPPER's** (verbatim: tooling-gotchas.md).
+⚠ **Exit-code traps** (pipe status, `grep && push`, a wrapper's `exit code 0`): verbatim in tooling-gotchas.md.
 
 ---
 
@@ -137,6 +137,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 - ⚠ **Tests that pin the defect they were named to prevent get INVERTED, never deleted** — a passing test asserting a promise is what holds that promise in place. **Pin the property, not the spelling**.
 - ⚠ **A not-vacuous check must be satisfiable at a population of ZERO**, or the guard punishes its own success; strip comments with `scripts/lib/strip-comments.mjs`, never a fresh copy: testing-and-ci.md.
 - ⚠ **FIXING A GUARD WITHOUT FIXING ITS RECORD leaves the incidence unmeasurable** — fix the guard AND the field an observer keys on (testing-and-ci.md).
+- ⚠ **A lane whose PERIOD exceeds its table's RETENTION cannot be watched** (#56): cron-and-schedulers.md.
 - ⚠ **A permanently-red or -zero instrument is indistinguishable from a broken one, and a CHECK THAT DIDN'T RUN from one that PASSED** (docs-only CI: testing-and-ci.md) — check the LOG, not the badge; **prove a watcher sees a FAILURE**. ⚠ **An ALARM SHARING ITS SUBJECT'S SCHEDULER is no alarm** — shed every tick 2.8h (#80).
 - ⚠ **Every CI `run:` block is `bash -e`: a fallible command in an ASSIGNMENT aborts the step there**, so a retry loop after it is DEAD CODE that reads as coverage. Write `X=$(…) || X=""`, then check — ⛔ `|| X="0"` is WORSE: it reports a clean read of what it never read. testing-and-ci.md.
 - ⚠ **An exclusion justified by ANOTHER instrument is a claim about it — check that one can SEE the property**, and know what NOTHING here measures — **the BUILT BUNDLE** (see Vercel). ⭐ LAYOUT now has one: `scripts/qa/mobile-sweep.mjs` 390+320, `e2e/mobile-layout.spec.ts`.
@@ -180,6 +181,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 - ⚠ **A `LIMIT` bounds a query's OUTPUT, not its COST — "lower the limit" is often not a lever.** Cut ITEMS per tick, not rows per item, and compare **BUFFERS**, never timings (66,499 → 741 on one `WHERE collection_id`: database.md). ⚠ **Scoping an aggregate is an EQUIVALENCE claim: PROVE it over the population.** ⭐ **A per-key `LATERAL` beats a table-streaming `DISTINCT ON` only if the index carries the aggregated column — and even then MEASURE: a blessed pattern whose precondition holds is not automatically an improvement** (#121: 3.1× faster, 24 % WORSE in buffers — not shipped; database.md)
 - ⚠ **`SET statement_timeout` on a function is INERT on pg_cron; via PostgREST only a HIGHER one applies (gateway cap ~120 s).** ⛔ Most are load-bearing — do NOT strip.
 - ⚠ **Displaced 09-20, verbatim at the end of the named file — all still binding.** [database.md](docs/reference/database.md): a DIFFERENTIAL UPSERT probes every offered row · `EXCEPTION WHEN OTHERS` does NOT catch a 57014 kill (R118) · every `.range()` needs a deterministic `.order()` on a UNIQUE key · a batch `.insert()` is ALL-OR-NOTHING. every `apply_migration` bursts user-facing `PGRST002` 500s for ~10–20 s (batch them). [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md): CADENCE AND BUDGET ARE ONE DECISION · a 600 s pg_cron reader wants an HOUR-SET before a minute (the READ is the lever).
+- ⚠ **Cursor paging needs a UNIQUE sort tiebreak**; `totalCount` falling faster than rows read is the skip tell: apis-and-cadence.md.
 - ⚠ **A LEG'S `ORDER BY` DECIDES WHETHER IT PROGRESSES AT ALL.** A walk starting at the top of what it resolves COMPOUNDS; one on an **IMMUTABLE** key re-reads its own head forever, so unresolvable rows pile up there and throughput decays to **ZERO with nothing reporting it** — a SHARED counter hid a leg at 0 (#128). **Order by a column the job WRITES, page a BOUNDED index slice behind a cursor, and INDEX that column** (28× buffers otherwise). [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
 - ⛔ **`last_vacuum` AND `last_autovacuum` both NULL = NEVER vacuumed** — heap fetches 46,674 → 19. ⚠ **A fresh stamp is not enough — read `relallvisible`/`relpages`:** a degraded visibility map turns an Index Only Scan into heap fetches, so *"not a missing index"* can be one word short (#121, 41× blocks/call). ⭐ **BLOCKS TOUCHED is the cache-independent discriminator.** ⭐ **SIZE an index build (640 kB = ms; 300 MB+ = spell).**
 - ⛔ **`CREATE OR REPLACE` IS A FULL-BODY WRITE — RE-READ THE LIVE OBJECT IMMEDIATELY BEFORE ONE.** A draft off a stale dump silently reverts another session's guard (nothing reds — you rewrite its pin too). ⭐ **Verify the base on `prosrc` (stored VERBATIM) against the migration's BODY — `pg_get_functiondef` REFORMATS THE HEADER, so diffing THAT against the file reads as drift that is not there.** ⚠ On a VIEW it also RESETS reloptions, stripping `security_invoker=on` and cannot rename/reorder columns (`42P16`). [database.md](docs/reference/database.md)
@@ -198,7 +200,7 @@ Full detail: [docs/reference/database.md](docs/reference/database.md).
 - **Pro Lambda `maxDuration` hard cap is 800s.** Higher sends the deploy to ERROR *invisibly*.
 - 🚨 **A GREEN SUITE IS NOT A DEPLOY GATE FOR SEGMENT SEMANTICS** — `DYNAMIC_SERVER_USAGE` lives only in a real render, so `tsc`/vitest/lint and even a guard pinning the CALL are blind; it 500'd a live route (09-20). **Verify `revalidate`/`connection()`/`dynamic` on a PREVIEW deploy.**
 - ⚠ **`get_deployment.state` LAGS** — corroborate with `ready` vs `buildingAt`, `lambdaRuntimeStats`; **check state PER COMMIT** (an ERRORed deploy is superseded by the next push). 🚨 **After a ROLLBACK the alias fields LIE** — probe the public domain on a value the two builds DISAGREE on.
-- ⚠ **A disk-IO spell can FAIL THE PRODUCTION BUILD** — displaced 09-20: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
+- ⚠ **A disk-IO spell can FAIL THE BUILD**: tooling-gotchas.md.
 
 ---
 

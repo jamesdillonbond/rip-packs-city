@@ -2424,3 +2424,13 @@ actually carry a value. ⛔ **It was defeated within weeks, because a fabricated
 leaving the `HAVING` in place changes nothing, because the `HAVING` already excludes every row the
 COALESCE could fire on. **The load-bearing half of the fix is the HAVING, not the removal of the
 COALESCE** — a reviewer reading only the diff would get that backwards.
+
+## A verdict measured against the WRONG PRICE BASIS is the substitution class (2026-09-24, PT)
+
+`pack_table_rows` published `value_ratio` / `is_positive_ev` from EV snapshots whose `pack_price` was the RETAIL price of a sold-out pack (job 71 `backfill_topshot_historical_pack_ev`, `price_source` NULL). The default-sorted Top Shot packs board therefore headlined Got Game S1 at 6.28× while its only purchasable price was a $250 secondary ask (0.23×).
+- Nothing failed. Every number was computed correctly, against a price no collector can pay.
+
+**Fix `20260924230603`:** rebase those rows on the live ask, or NULL them without one.
+
+⭐ **The tell is a NULL `price_source` (or any basis field) beside a published verdict:** a ratio is only a buy signal against a price that is actually on offer.
+⚠ The ranker (`mv_topshot_pack_reality_top_ev`) was already safe, because it excludes NULL-depletion rows. Always check EVERY reader of a shared EV source, not only the one the finding named.
