@@ -178,8 +178,22 @@ describe("GET /api/public/insights/panini-squeeze — sale-price feed disclosure
   it("says the feed is healthy when upstream is supplying again", async () => {
     state.feed = [{ ...FEED, feed_ok: true, days_since_last_supplied: 0 }]
     const body = await (await GET(req())).json()
-    expect(body.meta.sale_price_feed.note).toMatch(/supplying serial sale prices normally/i)
+    expect(body.meta.sale_price_feed.note).toMatch(/sales are being recorded/i)
     expect(body.meta.sale_price_feed.note).not.toMatch(/HISTORICAL count/i)
+    // 2026-09-23: even a live feed only prices serials we have DISCOVERED (one 30-row
+    // serial page per card), so the healthy note must still call the count a floor.
+    expect(body.meta.sale_price_feed.note).toMatch(/floor, not a census/i)
+  })
+
+  it("never asserts that new sale prices CANNOT arrive (the 58-day false claim)", async () => {
+    // For 58 days this note told the public "no new ones can arrive" while the
+    // replacement nftSalesData feed was recording ~17 serial sales/day. A dead reading
+    // means "none recorded lately", never "impossible" — assert the ABSENCE of the claim.
+    for (const feed_ok of [false, true]) {
+      state.feed = [{ ...FEED, feed_ok }]
+      const body = await (await GET(req())).json()
+      expect(body.meta.sale_price_feed.note).not.toMatch(/can(not|'t)? arrive|no new ones/i)
+    }
   })
 
   it("is FAIL-SOFT: a feed-status error nulls the block but still serves the board", async () => {

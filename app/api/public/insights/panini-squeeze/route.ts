@@ -112,13 +112,13 @@ export async function GET(req: NextRequest) {
     };
   }
 
-  // Second disclosure, same stance and same fail-soft shape as `coverage` above, but a
-  // DIFFERENT failure: upstream stopped supplying serial sale prices on 2026-07-29, so
-  // `serials_with_recorded_price` is a fossil count as of last_supplied_on. It is held
-  // rather than erased (trg_panini_preserve_sale_fields), but it cannot grow while the
-  // feed is out, so its ratio silently DECLINES as new serials are discovered — already
-  // ~17% -> ~8%. A consumer rendering it as current price coverage would overclaim.
-  // panini_sale_feed_status self-measures, so this can never go stale.
+  // Second disclosure, same stance and same fail-soft shape as `coverage` above.
+  // panini_sale_feed_status self-measures the SERIAL SALE feed. ⚠ 2026-09-23: it used to
+  // measure getPskuTotalCardsList.brought_at_price, which upstream nulled on 2026-07-29 and
+  // which the 2026-08-08 nftSalesData path REPLACED — so for 58 days this block told the
+  // public "no new ones can arrive" while ~17 serial sales/day were being recorded. The view
+  // now measures last_sale_at (what nftSalesData writes); feed_ok = a sale in the last 3 days.
+  // When it is false, serials_with_recorded_price is a fossil count and must read as one.
   let salePriceFeed: Record<string, unknown> | null = null;
   const { data: feed, error: feedErr } = await boundedRead((supabase as any)
     .from("panini_sale_feed_status")
@@ -132,13 +132,14 @@ export async function GET(req: NextRequest) {
     salePriceFeed = {
       ...feed[0],
       note: feed[0].feed_ok
-        ? "Upstream is supplying serial sale prices normally."
-        : "The Panini marketplace stopped supplying serial sale prices on last_supplied_on. " +
-          "serials_with_recorded_price on each row is a HISTORICAL count as of that date, not " +
-          "current price coverage: existing values are preserved but no new ones can arrive, so " +
-          "pct_serials_priced falls as new serials are indexed. Treat it as a floor. This does " +
-          "NOT affect fmv_usd / fmv confidence, which derive from a separate upstream feed that " +
-          "remains live.",
+        ? "Serial sales are being recorded (newest_sale_at). serials_with_recorded_price counts " +
+          "serials we have DISCOVERED with a recorded sale; discovery reads one page of serials per " +
+          "card, so it is a floor, not a census of every sale."
+        : "No serial sale has been recorded since last_supplied_on. serials_with_recorded_price on " +
+          "each row is a HISTORICAL count as of that date, not current price coverage: existing " +
+          "values are preserved but are not being refreshed, so pct_serials_priced falls as new " +
+          "serials are indexed. Treat it as a floor. This does NOT affect fmv_usd / fmv confidence, " +
+          "which derive from a separate upstream feed.",
     };
   }
 
