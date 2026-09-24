@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🚨 Sentinel gets its first Panini arm — "Panini Ingest" (walk age · rotation tail · serial paging · sale feed) · Cowork (cloud + laptop VM)
+
+Panini had **no server-side alarm**: the only one was the desktop `panini-freshness-check`, which never wrote a `pipeline_runs` row. New `sentinel_panini_health()` (migration `20260924140744`, service_role, one jsonb, ~70 ms) reads outcomes and the route adds a worst-of check: last walk ≥14 h warn / ≥26 h crit (`thr("Panini Ingest")`; overnight sleep produced a 14.4 h gap on 09-23), stalest edition ≥168 h / ≥336 h, max serials captured per edition in 26 h ≤30 → warn (serial paging regressed), newest recorded sale ≥72 h / ≥168 h. A read error only warns. Live values at 7:10 AM PT: walk 0.1 h, tail 88 h, paging 259, newest sale 21 h: **ok**. 5 new cases in `__tests__/api-sentinel-deep.test.ts`; 22 sentinel test files green, tsc clean, lint unchanged (route 71 → 71, test 6 → 6).
+
+Also: the laptop tree was fast-forwarded by another session to `c41ca47`, so the RECENT-sales runner is on disk for the 10 AM PT walk. My `pull-main-ff.cmd` (in `Rip Packs City\cowork-push\`) found that session mid-rebase with a ledger conflict and correctly refused; nothing changed.
+**Revert:** `git revert` this commit; `DROP FUNCTION public.sentinel_panini_health();`
+
 ### 2026-09-24 · 🩹 SHIPPED — three defects from a review of last night's code: pack-drops published a partial board as complete, Fast Break blamed our feed on NBA off-days, franchise hubs unfurled as the homepage · Claude Code (cloud)
 
 All three came from a read-only review of `c22ec4fe2`, `ecbaa6062` and `d2dd90a40`, and each was verified before it was fixed.
