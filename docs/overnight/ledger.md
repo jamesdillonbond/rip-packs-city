@@ -11,6 +11,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🧹 known-issues register hygiene: 16 "shipped/decided" items re-audited against live state — 6 closed, 7 partial, 3 kept open (2 need Trevor); open count 59 → 46 · Cowork cloud
+
+This acts on the evening health-pass handoff's "Needs Trevor #3". Each item was read to its end and its own exit condition tested read-only (SQL + repo). The verdict now leads each item as a new bold phrase, followed by `ⓘ Original opening follows.` with the original text kept verbatim. The index was regenerated: the diff is balanced, `--check` exits 0, and the docs-guard set is green. I spot-checked the subagent evidence myself: `portfolio_snapshots` holds 11 of 11 days, and fmv-recalc shows 449 heartbeats = 449 ok terminal rows in 72 h.
+
+- **Closed:** #63 (Candy live on four tabs), #82 (impossible parallel serials 0 daily 09-15→09-23), #100 (cron-job.org sentinel trigger at 29–31 sweeps/day), #103 (portfolio retry filled 09-18/19), #107 (0 wall kills, 449/449), #117 (withdrawn filing, hypothetical absent).
+- **Partial, with remainders named:** #25, #65, #99, #101, #102, #120, and #35, whose 24 h write-half exit is now MET (`n_tup_upd` +2 / +38 in 31 h against ~2 M/day before).
+- **Open:** #104 (re-measure on Large before deciding); #81 and #123 **need Trevor** (a successor host for the 530'ing tunnel lanes; `wrangler deploy` for the pack-events-ingest seller fix).
+- ⚠ **New lead, recorded in #110:** 3 of the 136 sales restored on 09-13 are back on their base edition through an unaudited writer (nft 43360324, 40066912, 46948215).
+
+**Revert:** docs only (`git revert`).
+
 ### 2026-09-23 · 🗑 SHIPPED — register R99's P2 dead modules deleted, one commit each: the Flow-wallet purchase template, `lib/logger.ts`, `PaywallModal` + `UpgradePrompt` · Claude Code (cloud)
 
 Each had 0 production importers, re-verified today by import specifier, not by identifier. All were kept alive only by their own tests, which are deleted with them. `PaywallModal`/`UpgradePrompt` came off `check-brand-tokens.mjs`'s `PROTECTED` list in the same commit, as R99 asked. The lint ratchet was re-baselined 710 → 709 (one fewer `no-unused-vars`), with `measuredAt` set to the PT date. **Not touched:** `profile/PriceAlertsCard` (R99: needs a product answer) and the Cadence templates still pinned by `cadence-transaction-templates.test.ts`. Full vitest 1,576 files green; tsc 0; brand guard clean.
