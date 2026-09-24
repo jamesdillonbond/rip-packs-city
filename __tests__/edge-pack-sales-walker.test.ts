@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, afterEach } from "vitest"
 import {
   mapEdgeToRow,
   parsePage,
   shouldContinueHead,
   runPackSalesWalk,
+  makeStudioFetch,
   type PackSaleRow,
   type PageResult,
   type WalkerDeps,
@@ -229,5 +230,24 @@ describe("runPackSalesWalk", () => {
     expect(r.sweep_skipped_done).toBe(false)
     expect(r.cursor_before).toBeNull()
     expect(api.calls).toEqual([null, null, "3"])
+  })
+})
+
+describe("makeStudioFetch", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  // #135: without a unique tiebreak in sortBy, a page boundary inside a bulk tx skipped rows (72 of 115 on Golazos).
+  it("asks for block_time DESC with listing_resource_id DESC as the tiebreak the cursor resumes on", async () => {
+    const bodies: any[] = []
+    vi.stubGlobal("fetch", vi.fn(async (_u: string, init: any) => {
+      bodies.push(JSON.parse(init.body))
+      return new Response(JSON.stringify({ data: { searchPackMarketplaceHistory: { totalCount: 0, pageInfo: { endCursor: null, hasNextPage: false }, edges: [] } } }), { status: 200 })
+    }))
+    const r = await makeStudioFetch("A.87ca73a41bb50ad5.PackNFT.NFT", {})("c1")
+    expect(r.ok).toBe(true)
+    const i = bodies[0].variables.i
+    expect(i.after).toBe("c1")
+    expect(i.sortBy.created_at.block_time).toEqual({ direction: "DESC", priority: 1 })
+    expect(i.sortBy.listing_resource_id).toEqual({ direction: "DESC", priority: 2 })
   })
 })

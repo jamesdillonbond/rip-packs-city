@@ -122,9 +122,26 @@ export function runPackSalesWalk(
   )
 }
 
+/**
+ * Explicit sort with a UNIQUE tiebreak (#135, 2026-09-24). With no sortBy the API
+ * orders by block_time alone, yet its cursor resumes at "listing_resource_id <
+ * last seen" inside a tied block_time. Rows inside a tie do not come back in that
+ * order, so a page boundary inside a bulk transaction SKIPS rows: measured on
+ * Golazos (≈11 packs per tx), one boundary inside a 115-row tx lost 72. With the
+ * listing id as priority 2 the tie order matches the cursor; the same 200 rows
+ * paged as 100+100 came back complete, and `totalCount` fell by exactly 100.
+ * Top Shot and All Day (one sale per tx) return the identical head set either way.
+ */
+export const PACK_SALES_SORT = {
+  created_at: { block_time: { direction: "DESC", priority: 1 } },
+  listing_resource_id: { direction: "DESC", priority: 2 },
+}
+
 export function makeStudioFetch(packType: string, headers: Record<string, string>) {
   return async (after: string | null): Promise<PageResult> => {
-    const variables = { i: { first: 100, after, filters: [{ base_filter: { nft_type: { eq: packType } } }] } }
+    const variables = {
+      i: { first: 100, after, sortBy: PACK_SALES_SORT, filters: [{ base_filter: { nft_type: { eq: packType } } }] },
+    }
     const r = await studioGql(PACK_SALES_QUERY, variables, headers)
     if (!r.ok) return r
     return { ok: true, page: parsePage(r.data?.searchPackMarketplaceHistory) }
