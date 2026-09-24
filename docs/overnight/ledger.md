@@ -11,6 +11,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🚀 8 edge functions deployed from the repo — the permanently red edge-fn-drift detector should drop to 1 · Cowork (cloud subagents + laptop VM)
+
+`edge-fn-drift` had been red on every daily run (#25), listing 9 functions whose deployed body ≠ repo.
+
+**Pre-check:** a redacted report classified all 9 as **REPO-AHEAD**, with no production-only logic to lose, identical env var names, and no credential literal in the deployed code.
+
+**Deployed via the MCP at 6:22 AM PT.** Each was boot-probed with an anonymous request (401, the handler's own gate) and byte round-tripped on readback:
+
+| function | old → new | note |
+|---|---|---|
+| special-serial-delta | v32 → v33 | dormant |
+| special-serial-sweep | v33 → v34 | dormant |
+| seed-allday-pack-distributions | v62 → v64 | v63 was off by one comment line, so redeployed |
+| backfill-topshot-base-parallel-probe | v32 → v33 | dormant |
+| topshot-insider-detect-patterns | v39 → v40 | dormant, `_shared` included |
+| compute-topshot-pack-ev | v71 → v72 | 500-id chunking; dormant |
+| sync-nba-projections | v51 → v53 | ⚠ v52 decoded `̀` in transit; v53 sent `\u0300` |
+| snapshot-institutional-wallets | v43 → v44 | the live partial-snapshot guard; next run 11 PM PT |
+
+**Held:** `enrich-ufc-wallet`. Its `DEPLOY_DEFERRED` entry forbids a transcribed deploy, because it carries hardcoded contract addresses on a user-triggered path. It needs the Supabase CLI.
+
+**Repo changes:**
+- The two cleared deferrals are removed from `scripts/check-edge-fn-drift.mjs`.
+- `__tests__/edge-fn-drift-checker.test.ts` is re-pinned to use `enrich-ufc-wallet` as the deferred example.
+- The deploy skill gets the `\uXXXX` transit-decoding trap and its workaround; its bundle is repacked.
+
+**Exit and falsifier:**
+- The next `edge-fn-drift` run lists exactly 1 drifted function.
+- Tonight's `snapshot-institutional-wallets` run is ok.
+- sync-nba-projections still fails with `all_upstreams_failed`, as it did before the deploy.
+
+**Revert:** redeploy the prior version (old column). The verbatim deployed sources are saved in the session scratchpad.
+
 ### 2026-09-24 · 🧹 Register down to 3 open: #10 closed on re-derivation, #14/#98 shelved, #104/#127 accepted on fresh measurement · Cowork cloud
 
 This continues the audit drain under Trevor's delegation. Docs only, with no prod change. Every item was re-measured before it was decided.
