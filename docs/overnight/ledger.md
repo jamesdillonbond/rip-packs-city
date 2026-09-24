@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🗑 SHIPPED — register R99's P2 dead modules deleted, one commit each: the Flow-wallet purchase template, `lib/logger.ts`, `PaywallModal` + `UpgradePrompt` · Claude Code (cloud)
+
+Each had 0 production importers, re-verified today by import specifier, not by identifier. All were kept alive only by their own tests, which are deleted with them. `PaywallModal`/`UpgradePrompt` came off `check-brand-tokens.mjs`'s `PROTECTED` list in the same commit, as R99 asked. The lint ratchet was re-baselined 710 → 709 (one fewer `no-unused-vars`), with `measuredAt` set to the PT date. **Not touched:** `profile/PriceAlertsCard` (R99: needs a product answer) and the Cadence templates still pinned by `cadence-transaction-templates.test.ts`. Full vitest 1,576 files green; tsc 0; brand guard clean.
+**Revert:** `git revert` the four commits (`0c89c855f`, `805b0777b`, `c2a15b941` and the ratchet commit).
+
 ### 2026-09-23 · 🔧 SHIPPED — `check_candy_treasury_divergence()` now checks the PUBLISHED label against the pack custodian, so the treasury fix above does not leave it permanently red · Claude Code (cloud)
 
 **Migration `20260923235630`.** After `20260923233939` the old comparison (moment argmax vs pack argmax) would read `diverged: true` forever, while the label is correct. Now:
