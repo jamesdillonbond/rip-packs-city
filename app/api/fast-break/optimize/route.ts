@@ -21,6 +21,12 @@ export const dynamic = "force-dynamic"
 const ROUTE_HEADERS: Record<string, string> = { "X-RPC-Route": "fast-break-optimize" }
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
+// The lane that writes nba_games, and how recently it must have succeeded for an
+// empty slate to be read as an NBA off-day rather than our feed being down.
+// 36 h spans one missed daily tick; pipeline_runs retains ~73 h.
+const NBA_FEED_PIPELINE = "sync-nba-projections"
+const NBA_FEED_FRESH_MS = 36 * 60 * 60 * 1000
+
 // Top Shot weights the Captain's points higher than the rest of the lineup.
 // The exact factor is set once observed Run scoring is regressed; until then the
 // env var is unset and the default 1.0 leaves scoring unweighted. Clamped to a
@@ -156,9 +162,12 @@ export async function POST(req: NextRequest) {
     // reply used to be `consideredCount: 0`, which the client renders as "None of
     // your eligible players are on tonight's slate" — a claim about the USER'S
     // roster produced by OUR missing data. Three states, never two:
-    //   • slate_unavailable       — the run is live today but we hold no games for
-    //                               it. A Fast Break run only spans game days, so an
-    //                               empty slate inside one is our feed, not the NBA.
+    //   • slate_unavailable       — the run is live today, we hold no games for
+    //                               today, AND the feed has not answered recently.
+    //                               ⚠ A run is a continuous DATE RANGE, not a list of
+    //                               game days (run de3864eb held 9 real playoff
+    //                               off-days), so an empty slate inside a live run is
+    //                               only our outage when the feed itself is down.
     //   • projections_unavailable — games exist but not ONE player on the whole
     //                               slate has a projection. A roster cannot cause
     //                               that; a dead feed can.
@@ -169,9 +178,29 @@ export async function POST(req: NextRequest) {
     const runStart = day((run as any).start_date)
     const runEnd = day((run as any).end_date)
     const runLiveToday = runStart != null && runEnd != null && runStart <= gameDate && gameDate <= runEnd
+
+    // Is the NBA feed ANSWERING? `sync-nba-projections` is the sole writer of
+    // nba_games, so a successful run of it inside the window means an empty slate
+    // today is the NBA's schedule (an off-day), not our outage. Only asked when it
+    // decides the answer. ⚠ A failed or unreadable check proves nothing about the
+    // feed, so it keeps the outage wording rather than asserting an off-day we
+    // could not confirm.
+    let feedAnsweredRecently = false
+    if (gameIds.length === 0 && runLiveToday) {
+      const since = new Date(Date.now() - NBA_FEED_FRESH_MS).toISOString()
+      const { count, error: feedErr } = await supabase
+        .from("pipeline_runs")
+        .select("id", { count: "exact", head: true })
+        .eq("pipeline", NBA_FEED_PIPELINE)
+        .eq("ok", true)
+        .gte("started_at", since)
+      if (feedErr) console.error("[fast-break-optimize] feed freshness:", feedErr.message)
+      feedAnsweredRecently = !feedErr && typeof count === "number" && count > 0
+    }
+
     const dataStatus: "ok" | "no_games" | "slate_unavailable" | "projections_unavailable" =
       gameIds.length === 0
-        ? runLiveToday
+        ? runLiveToday && !feedAnsweredRecently
           ? "slate_unavailable"
           : "no_games"
         : projRows.length === 0

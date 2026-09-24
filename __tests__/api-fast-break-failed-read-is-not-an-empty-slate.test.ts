@@ -178,6 +178,38 @@ describe("an empty lineup says whose data is missing", () => {
     expect(body.lineup).toBeNull()
   })
 
+  // A run is a date RANGE, not a list of game days: run de3864eb (05-21 → 06-26)
+  // held 9 genuine playoff off-days. On those, the feed was alive and the empty
+  // slate was the NBA's schedule — blaming our feed there is the mirror defect
+  // (an "unknown"/outage claim about something we actually know).
+  it("run live today + no games + the feed answered recently → no_games (a real off-day)", async () => {
+    seedHealthyRun()
+    runSpanning(true)
+    state.tables.nba_games = { list: { data: [], error: null } }
+    state.tables.pipeline_runs = { list: { data: null, count: 3, error: null } }
+    const body = await (await POST(req())).json()
+    expect(body.dataStatus).toBe("no_games")
+    expect(body.dataStatus).not.toBe("slate_unavailable")
+  })
+
+  it("run live today + no games + the feed has NOT answered → slate_unavailable", async () => {
+    seedHealthyRun()
+    runSpanning(true)
+    state.tables.nba_games = { list: { data: [], error: null } }
+    state.tables.pipeline_runs = { list: { data: null, count: 0, error: null } }
+    const body = await (await POST(req())).json()
+    expect(body.dataStatus).toBe("slate_unavailable")
+  })
+
+  it("an unreadable feed check does not assert an off-day it could not confirm", async () => {
+    seedHealthyRun()
+    runSpanning(true)
+    state.tables.nba_games = { list: { data: [], error: null } }
+    state.tables.pipeline_runs = { list: { data: null, count: null, error: { message: "timeout" } } }
+    const body = await (await POST(req())).json()
+    expect(body.dataStatus).toBe("slate_unavailable")
+  })
+
   it("control: run NOT live today + no games → no_games", async () => {
     seedHealthyRun()
     runSpanning(false)
