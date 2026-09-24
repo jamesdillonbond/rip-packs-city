@@ -962,6 +962,68 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     });
   }
 
+  // Panini Ingest (2026-09-24) — the ONLY Panini arm. The residential runner (Task Scheduler
+  // on Trevor's laptop, 4-hourly) had one alarm, the desktop `panini-freshness-check`, and it
+  // never wrote a single pipeline_runs row — i.e. nothing server-side was watching. This reads
+  // OUTCOMES via sentinel_panini_health() (one jsonb, ~70 ms), worst-of four legs:
+  //   walk age       newest panini_editions.last_seen_at — thr("Panini Ingest") 14 h / 26 h.
+  //                  Overnight sleep routinely skips the 10 PM/2 AM/6 AM ticks (a 14.4 h gap on
+  //                  09-23), so 14 h is "a full night plus a tick"; 26 h is a lost day.
+  //   rotation tail  edition_age_max_h >= 168 warn / 336 crit — the stalest-first order (R112)
+  //                  stopped reaching the tail even though walks fire.
+  //   serial paging  max serials captured for one edition in 26 h <= 30 while walks ran = the
+  //                  runner is back to reading one 30-row page (warn only).
+  //   sale feed      newest recorded sale >= 72 h warn / 168 h crit — nftSalesData stopped landing.
+  // Panini is an inactive collection, so nothing here is user-facing at critical; the walk leg
+  // still pages critical because a dead runner is invisible everywhere else.
+  try {
+    const { data, error } = await supabase.rpc("sentinel_panini_health");
+    if (error) {
+      const sat = isSaturationError(error.message);
+      checks.push({
+        name: "Panini Ingest",
+        status: "warn",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(error.message)}`,
+      });
+    } else if (!data || !data.newest_walk_at) {
+      checks.push({
+        name: "Panini Ingest",
+        status: "critical",
+        detail: "sentinel_panini_health returned no walk timestamp — panini_editions is empty or unreadable",
+      });
+    } else {
+      const hAgo = (iso: string | null) =>
+        iso ? (now.getTime() - new Date(iso).getTime()) / 3_600_000 : null;
+      const walkH = hAgo(data.newest_walk_at) as number;
+      const saleH = hAgo(data.newest_sale_at);
+      const tailH = Number(data.edition_age_max_h);
+      const maxSerials = Number(data.max_serials_per_edition_26h);
+      const walkWarn = thr("Panini Ingest", "warn_at", 14);
+      const walkCrit = thr("Panini Ingest", "crit_at", 26);
+      const legs: Array<{ s: "ok" | "warn" | "critical"; why: string }> = [];
+      legs.push({ s: walkH >= walkCrit ? "critical" : walkH >= walkWarn ? "warn" : "ok", why: `last walk ${walkH.toFixed(1)}h ago` });
+      legs.push({ s: tailH >= 336 ? "critical" : tailH >= 168 ? "warn" : "ok", why: `stalest edition ${tailH.toFixed(0)}h` });
+      if (walkH < 26) legs.push({ s: maxSerials <= 30 ? "warn" : "ok", why: `max serials/edition in 26h ${maxSerials}${maxSerials <= 30 ? " (serial paging regressed to one 30-row page)" : ""}` });
+      legs.push(saleH === null
+        ? { s: "warn", why: "no recorded sale at all" }
+        : { s: saleH >= 168 ? "critical" : saleH >= 72 ? "warn" : "ok", why: `newest recorded sale ${saleH.toFixed(0)}h ago` });
+      const rank = { ok: 0, warn: 1, critical: 2 } as const;
+      const worst = legs.reduce((a, l) => (rank[l.s] > rank[a] ? l.s : a), "ok" as "ok" | "warn" | "critical");
+      checks.push({
+        name: "Panini Ingest",
+        status: worst,
+        detail: legs.map((l) => (l.s === "ok" ? l.why : `${l.s.toUpperCase()}: ${l.why}`)).join(" · "),
+        value: `${walkH.toFixed(1)}h`,
+      });
+    }
+  } catch (e) {
+    checks.push({
+      name: "Panini Ingest",
+      status: "warn",
+      detail: exceptionDetail(e),
+    });
+  }
+
   // Ownership Index Freshness — an OUTCOME check on topshot_ownership (consumer:
   // lib/set-completers-board.ts, the rookie / set-completers surfaces).
   //

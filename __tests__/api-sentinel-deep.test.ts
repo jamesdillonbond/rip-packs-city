@@ -48,6 +48,17 @@ function greenFixtures(): Fixtures {
     sentinel_threshold_config: { data: [], error: null },
     sales: { count: 1500, error: null } as unknown as { data?: unknown; error?: unknown },
     fmv_snapshots: { data: [{ computed_at: new Date().toISOString() }], error: null },
+    // Panini Ingest (2026-09-24): walked 1 h ago, tail 90 h, paging live (259), sale 20 h ago.
+    "rpc:sentinel_panini_health": {
+      data: {
+        newest_walk_at: new Date(Date.now() - 3_600_000).toISOString(),
+        edition_age_max_h: 90,
+        editions: 5090,
+        max_serials_per_edition_26h: 259,
+        newest_sale_at: new Date(Date.now() - 20 * 3_600_000).toISOString(),
+      },
+      error: null,
+    },
     // Split by printing class: base HIGH+MED = 400/1000 = 40% >= 25 -> ok.
     "rpc:sentinel_fmv_confidence_canonical_ts_split": {
       data: [
@@ -467,6 +478,66 @@ describe("POST /api/sentinel — full battery", () => {
   // Ownership Index Freshness — the arm added after ownership-onchain-walk failed
   // two daily ticks (2026-08-15/16) with every cadence-shaped instrument reading
   // healthy, because the cron fired on time and a FAILING run still logs a row.
+  // Panini Ingest — the only server-side Panini alarm (the desktop freshness check never
+  // wrote a pipeline_runs row). Worst-of four OUTCOME legs from sentinel_panini_health().
+  describe("Panini Ingest", () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+    const panini = (over: Record<string, unknown>) => ({
+      ...greenFixtures(),
+      "rpc:sentinel_panini_health": {
+        data: {
+          newest_walk_at: hoursAgo(1), edition_age_max_h: 90, editions: 5090,
+          max_serials_per_edition_26h: 259, newest_sale_at: hoursAgo(20), ...over,
+        },
+        error: null,
+      },
+    })
+
+    it("is ok and quotes every leg on a healthy runner", async () => {
+      install(panini({}))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("last walk 1.0h ago")
+      expect(c.detail).toContain("max serials/edition in 26h 259")
+    })
+
+    it("warns after an overnight gap and pages after a lost day", async () => {
+      install(panini({ newest_walk_at: hoursAgo(15) }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("warn")
+      install(panini({ newest_walk_at: hoursAgo(30) }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("critical")
+    })
+
+    it("names a serial-paging regression (one 30-row page) as a warn", async () => {
+      install(panini({ max_serials_per_edition_26h: 30 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toMatch(/serial paging regressed/)
+    })
+
+    it("pages when the rotation tail or the sale feed goes stale", async () => {
+      install(panini({ edition_age_max_h: 400 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("critical")
+      install(panini({ newest_sale_at: hoursAgo(200) }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("critical")
+    })
+
+    it("a read error warns (never pages) and a missing walk stamp pages", async () => {
+      install({ ...greenFixtures(), "rpc:sentinel_panini_health": { data: null, error: { message: "canceling statement due to statement timeout" } } })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("warn")
+      install(panini({ newest_walk_at: null }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("critical")
+    })
+  })
+
   describe("Ownership Index Freshness", () => {
     const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
 
