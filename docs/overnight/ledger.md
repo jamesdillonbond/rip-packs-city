@@ -11,6 +11,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · ⛔ CORRECTION to the 09-23 "Pack EV backtest" entry — Top Shot's "1.31× above realized" was placeholder zeros; with them removed, published gross EV is a median 0.62× realized · Claude Code (cloud)
+
+**Found by a read-only review of `7d8671be5`.** `pack_ev_backtest` counted `pack_rips.pull_value_usd = 0` as a real pull. The column's own comment says 0 is never valid: it is pre-09-20 backfill residue, which the zero-repair leg is draining. In the 30-day window, 17,510 of 25,474 Top Shot rips were 0 (newest 09-20). So 5 of the 10 Top Shot rows read a realized median of $0.00, their gross/realized ratios were inflated (dist 5305 26.6×, 1201 10.4×), and the zeros counted toward the ≥ 20-opens threshold.
+
+**Migration `20260924143811`:** the `pack_rips` leg now requires `pull_value_usd > 0`. Golazos and Pinnacle had 0 zeros and are unchanged. The comment now says realized = CURRENT FMV (register #92), not "at pricing time". `security_invoker` was restated and verified, the ACL is unchanged (service_role only), and the md5 equals `schema_migrations` (`4c098693…`).
+
+**What the instrument now says (7:55 AM PT):**
+- **Top Shot:** 5 dists clear the 20-open bar, and published gross EV is a **median 0.62× realized**, not 1.31×. `typical_to_realized_median` is 0.71–1.04 on four of the five; dist 4184 reads 0.17 on 23 opens.
+- **All Day:** unchanged (4 dists, gross 2.6–3.2× on three), since it had no zeros.
+
+The 09-23 entry's decision to leave the EV method unchanged was taken on the contaminated read. The instrument now supports it more weakly for Top Shot (EV runs low, not high). ⚠ 5 dists is a thin sample; the population grows as the repair drains.
+
+**Revert:** re-apply the view body from `20260924054525`.
+
 ### 2026-09-24 · 🚨 Sentinel gets its first Panini arm — "Panini Ingest" (walk age · rotation tail · serial paging · sale feed) · Cowork (cloud + laptop VM)
 
 Panini had **no server-side alarm**: the only one was the desktop `panini-freshness-check`, which never wrote a `pipeline_runs` row. New `sentinel_panini_health()` (migration `20260924140744`, service_role, one jsonb, ~70 ms) reads outcomes and the route adds a worst-of check: last walk ≥14 h warn / ≥26 h crit (`thr("Panini Ingest")`; overnight sleep produced a 14.4 h gap on 09-23), stalest edition ≥168 h / ≥336 h, max serials captured per edition in 26 h ≤30 → warn (serial paging regressed), newest recorded sale ≥72 h / ≥168 h. A read error only warns. Live values at 7:10 AM PT: walk 0.1 h, tail 88 h, paging 259, newest sale 21 h: **ok**. 5 new cases in `__tests__/api-sentinel-deep.test.ts`; 22 sentinel test files green, tsc clean, lint unchanged (route 71 → 71, test 6 → 6).
@@ -252,6 +266,8 @@ Full suite 18,032 passed, tsc clean, ratchet 709/709.
 **Revert:** `git revert` this commit or `PANINI_SALES_RECENT=0`; `DROP FUNCTION public.panini_recent_sales_fmv(text[]);`; comments: re-apply `20260924045351`'s.
 
 ### 2026-09-23 · 📏 Pack EV backtest: published gross EV runs 1.31× (Top Shot) / 2.70× (All Day) above what packs actually pulled in 30 days · EV method NOT changed · Cowork cloud
+
+> ⛔ **CORRECTED 2026-09-24 (entry above, `20260924143811`):** the Top Shot 1.31× read counted 17,510 placeholder zero pull values; without them, Top Shot's published gross EV is a median 0.62× realized. All Day's 2.70× is unaffected.
 
 New view `pack_ev_backtest` (migration `20260924054525`, service_role only): per dist with ≥ 20 priced opens in 30 days, realized mean/median pull value vs the latest published `gross_ev` / `typical_ev`. First read ~10:50 PM PT: Top Shot 11 dists, gross a median **1.31×** realized mean, typical **1.00×** realized median; All Day 4 dists, **2.70×** / **1.42×**. Golazos + Pinnacle have no dist with 20 priced opens in 30 days yet.
 
