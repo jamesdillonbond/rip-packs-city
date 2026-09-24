@@ -215,6 +215,7 @@ Works when the CLI does not — different credential path.
   type error is caught before CI's `Edge functions (deno check + lint)` job, not by it.
 - ⚠ Once a function carries an `import_map_path`, **every later deploy must resupply
   `deno.json`** or it fails with a mangled concatenated path.
+- 🚨 **The MCP deploy DECODES `\uXXXX` escapes in transit** (proven 2026-09-24, `sync-nba-projections` v52). A regex like `[\u0300-\u036f]` shipped as two raw combining characters, and nothing errored. `grep -n '\\u[0-9a-fA-F]\{4\}'` every file before deploying. Send each escape as `\u005cuXXXX` (the extra decode restores `\uXXXX`), then confirm the escape survived with a byte round-trip (v53).
 - ⛔ **Commit the deployed source in the SAME turn you deploy** — prod ahead of `main` is drift another
   session will "reconcile" or, worse, overwrite with an older build (09-22: a concurrent Claude Code session
   had to pull a Cowork deploy back into the repo). Deploy from the repo file, round-trip the deployed

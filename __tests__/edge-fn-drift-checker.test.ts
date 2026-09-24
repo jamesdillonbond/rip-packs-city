@@ -632,14 +632,17 @@ describe("edge-fn drift: redeploy advice must exclude the gate-key-blocked funct
     // thing the decision says not to do yet. The assertion now pins the
     // three-way split. See DEPLOY_DEFERRED's header for why it is not simply a
     // second blocked list.
+    // ⚠ RE-PINNED 2026-09-24: compute-topshot-pack-ev's deferral was CLEARED by
+    // its v72 deploy, so the still-deferred enrich-ufc-wallet carries the DEFERRED
+    // arm now. The three-way split is the property; the slug is only the example.
     const { safe, mustNotDeploy, deferred } = partitionByDeploySafety([
-      "compute-topshot-pack-ev",
+      "enrich-ufc-wallet",
       "ingest-pinnacle-mints",
       "sales-serial-backfill",
       "compute-golazos-pack-ev",
     ])
     expect(mustNotDeploy).toEqual(["ingest-pinnacle-mints", "compute-golazos-pack-ev"])
-    expect(deferred).toEqual(["compute-topshot-pack-ev"])
+    expect(deferred).toEqual(["enrich-ufc-wallet"])
     expect(safe).toEqual(["sales-serial-backfill"])
   })
 
@@ -709,13 +712,14 @@ describe("edge-fn drift: redeploy advice must exclude the gate-key-blocked funct
       "a",
       "ingest-pinnacle-mints",
       "b",
-      "compute-topshot-pack-ev",
+      "enrich-ufc-wallet",
       "ingest-topshot-pack-opens-history",
       "c",
     ]
     const { safe, mustNotDeploy, deferred } = partitionByDeploySafety(input)
     expect([...safe, ...mustNotDeploy, ...deferred].sort()).toEqual([...input].sort())
     expect(safe).toEqual(["a", "b", "c"])
-    expect(deferred).toEqual(["compute-topshot-pack-ev"])
+    // re-pinned 2026-09-24 — compute-topshot-pack-ev's deferral cleared (v72)
+    expect(deferred).toEqual(["enrich-ufc-wallet"])
   })
 })
