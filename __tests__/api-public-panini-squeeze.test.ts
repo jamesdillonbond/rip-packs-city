@@ -180,8 +180,8 @@ describe("GET /api/public/insights/panini-squeeze — sale-price feed disclosure
     const body = await (await GET(req())).json()
     expect(body.meta.sale_price_feed.note).toMatch(/sales are being recorded/i)
     expect(body.meta.sale_price_feed.note).not.toMatch(/HISTORICAL count/i)
-    // 2026-09-23: even a live feed only prices serials we have DISCOVERED (one 30-row
-    // serial page per card), so the healthy note must still call the count a floor.
+    // 2026-09-23: even a live feed only prices serials we have DISCOVERED (41% of sold
+    // serials were unmatched that day), so the healthy note must still call the count a floor.
     expect(body.meta.sale_price_feed.note).toMatch(/floor, not a census/i)
   })
 

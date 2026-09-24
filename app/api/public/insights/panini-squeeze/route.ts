@@ -133,8 +133,8 @@ export async function GET(req: NextRequest) {
       ...feed[0],
       note: feed[0].feed_ok
         ? "Serial sales are being recorded (newest_sale_at). serials_with_recorded_price counts " +
-          "serials we have DISCOVERED with a recorded sale; discovery reads one page of serials per " +
-          "card, so it is a floor, not a census of every sale."
+          "serials we have DISCOVERED with a recorded sale; a sale on a serial we have not indexed " +
+          "yet is not counted, so it is a floor, not a census of every sale."
         : "No serial sale has been recorded since last_supplied_on. serials_with_recorded_price on " +
           "each row is a HISTORICAL count as of that date, not current price coverage: existing " +
           "values are preserved but are not being refreshed, so pct_serials_priced falls as new " +
