@@ -101,6 +101,18 @@ describe("CandyBoardClient — remaining tab branches", () => {
     expect(container.textContent).toMatch(/Holder concentration/i)
   })
 
+  it("discloses that a no-activity inventory wallet is excluded, and that trading restores it", () => {
+    // 2026-09-24: mv_candy_holder_board drops wallets in candy_holder_board_exclusions
+    // ONLY while they have zero market activity. An exclusion users cannot see would
+    // be a silent edit of a public ranking, so the Holders tab must state the rule
+    // AND the condition under which it lapses.
+    const { container } = mount()
+    fireEvent.click(tabButton(container, "Holders"))
+    const text = container.textContent ?? ""
+    expect(text).toMatch(/no market activity/i)
+    expect(text).toMatch(/returns to the ranking the moment it trades/i)
+  })
+
   it("renders the Players tab with the Core vs Rainbow rollup + premium multiple", () => {
     const { container } = mount()
     fireEvent.click(tabButton(container, "Players"))
