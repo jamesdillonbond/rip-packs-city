@@ -11,6 +11,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🧹 Register down to 3 open: #10 closed on re-derivation, #14/#98 shelved, #104/#127 accepted on fresh measurement · Cowork cloud
+
+This continues the audit drain under Trevor's delegation. Docs only, with no prod change. Every item was re-measured before it was decided.
+
+- **#10 RESOLVED:** the 09-23 re-audit line ("no token migration has started") was wrong. `DashboardClient.tsx` has 137 `var(--…)` uses and 13 literals. All 13 are alpha-suffix brand exceptions, shadows/scrims, or four near-token shades whose swap would change the rendered colour.
+- **#14 SHELVED:** no standalone monolith split before revenue. Files are split when they are touched for a real change, under that change's tests.
+- **#98 SHELVED:** it follows #81 (no successor host). Honest `changed` labels are already live. ⛔ A `low_ask_seen_at` column would cover ~22 % while reading as complete.
+- **#104 ACCEPTED:** sentinel 59/59 ok over 48 h, peak 25.2 s of 180 s.
+- **#127 ACCEPTED:** the one no-lookup public reader is `topshot_special_serial_owners`. 357 of its 9,621 rows (3.6 %) come from holders never scanned or unscanned for more than 7 days, and every row carries `holder_seen_at`.
+- **#33 exit read:** post-deploy `pack-drops` API 237–445 ms (MISS; Next data cache warm), and the page renders scored drops. The truly cold path is still to be read after the 15-min data cache expires.
+
+Register: **3 open** (#22 operator-only, #64 Panini bridge, #116 impossible serials).
+
 ### 2026-09-24 · ⚡ Pack Drops cold read 13.7 s → one drop's latency (#33); #39 and #91 closed on fresh cold measurements; #116 and #127 advanced · Cowork (cloud + laptop VM)
 
 This was an audit drain under Trevor's "keep going … until you've exhausted" direction. Each item was re-measured cold, from production, before it was decided.
