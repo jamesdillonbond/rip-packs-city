@@ -11,6 +11,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · ⚡ Pack Drops cold read 13.7 s → one drop's latency (#33); #39 and #91 closed on fresh cold measurements; #116 and #127 advanced · Cowork (cloud + laptop VM)
+
+This was an audit drain under Trevor's "keep going … until you've exhausted" direction. Each item was re-measured cold, from production, before it was decided.
+
+- **#33 (code).** A cold `GET /api/public/insights/pack-drops` measured **13,670 ms** at 5:17 AM PT against the page's 8 s budget. So every cold ISR regeneration failed, and the failure was served for 15 minutes. The cause was a sequential loop: `fetchScoredDrops` awaited each of the 6 drops in turn (3 Vaultopolis calls of ~0.7 s each, plus a ~0.7 s `get_pack_drop_pricing` RPC). Now:
+  - drops are scored concurrently;
+  - every upstream fetch carries a 5 s `AbortSignal.timeout`;
+  - a new test asserts all drops are in flight together and every fetch has a signal. It fails on the old loop (planted-defect check).
+  - **Exit:** the next cold `meta.elapsed_ms` is under ~4 s. **Falsifier:** still over 8 s. **Revert:** `git revert` the code commit.
+- **#39 CLOSED.** A cold underpriced-serials call inside the old unwarmed hole returned in **369 ms**, and `EXPLAIN` shows 164 ms / 4.8k buffers. Large compute plus the warmer closed it.
+- **#91 CLOSED, accepted.** 12 cold `/api/badge-image` fetches (edge MISS) took 0.24–0.64 s, against the 4 s budget. One Top Shot probe from the sandbox hung for 15 s, which is stated in the register and left unexplained. Vercel's log search timed out, so the production warning line could not be read.
+- **#116 advanced (measurement only).** 1,687 impossible base-edition sales, split by source. Only 36 rows can be adjudicated against chain-walked wmc scoped to Top Shot: 17 have the wrong edition, 11 the wrong serial, and 8 agree. ⛔ An unscoped `moment_id` join matched 69 moments from OTHER collections, because NFT ids are per-contract. No repair from a 36-row sample.
+- **#127 sized.** 1,352 anonymous wallets hold 142.5k of 2.17M wmc rows (6.6 %). No eviction. ⚠ `NOT IN` over a NULL-bearing list first read 0.
+
+Full suite 18,032 passed, tsc clean, ratchet 709/709.
+
 ### 2026-09-24 · ⛔ CORRECTION to the 5:40 AM entry below + 🔧 FIXED 6,274 rips / 3,368 pack purchases labelled with the WRONG distribution · Cowork cloud
 
 **The entry below is wrong in its headline.** The studio index did NOT miss 58% of Top Shot pack *secondary* sales. The missing rows (`custom_id 'nba'`, 34,062 all-time) all come from ONE storefront and ONE seller at ONE fixed price per dist (125 of 139 dists) — **Top Shot's own shop**, which `pack_purchases` classes as `secondary_sale`. For `DAPPER_MARKETPLACE` (the collector market) the studio index was complete (373/373 on the settled day). So for ~40 minutes this morning the pack page, both pack-market boards and `get_pack_metrics` counted shop sales as secondary sales. Example: dist 8642 showed a $5.00 median, the shop's price, against a real $5.40.
