@@ -378,6 +378,29 @@ async function main() {
     return false;
   }
 
+  // RECENT SALES (2026-09-24). The SALES HISTORY tab opens on "TOP SALES / ALL TIME" — the 20
+  // HIGHEST-PRICED sales ever (nftSalesData sale_type:"top", pageSize 20), NOT the latest. That was
+  // the only list this runner ever read, so last_sale_usd/_at were drawn from a price-sorted sample:
+  // probed live on Maradona Base Prizms Silver, the eight sales of 09-05..09-15 ($14-$25) were all
+  // absent from the DB (newest recorded: 07-20) while top sales ran $55-$650, and the edition's
+  // published FMV sat at $40.93. Switching the dropdown to RECENT SALES fires one more nftSalesData
+  // (the SPA signs it) that the response listener already parses. Fail-soft, never throws; the
+  // monotonic last_sale_at guard in the ingest route keeps an older TOP record from overwriting a
+  // newer RECENT one, whichever lands second. Kill switch PANINI_SALES_RECENT=0.
+  const SALES_RECENT = process.env.PANINI_SALES_RECENT !== "0";
+  let recentPages = 0, recentMissed = 0;
+  async function openRecentSales() {
+    if (!SALES_RECENT) return false;
+    const before = sales.length;
+    try {
+      await page.locator("button.dropdown-toggle").filter({ hasText: /^\s*top\s*sales\s*$/i }).first().click({ timeout: 2500 });
+      await page.locator("a.dropdown-item").filter({ hasText: /^\s*recent\s*sales\s*$/i }).first().click({ timeout: 2500 });
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline && sales.length === before) await page.waitForTimeout(150);
+      return sales.length > before;
+    } catch { return false; }
+  }
+
   // SERIAL PAGING (2026-09-23). getPskuTotalCardsList is paged at `l: 30` and the detail page
   // only requests page 1 on load, so without this every walk re-read at most 30 serials per
   // card: measured max(serials captured in an edition's latest walk) = 30 EXACTLY, 48% of serial
@@ -599,7 +622,10 @@ async function main() {
     // Serial pages 2..N first (the SALES HISTORY click may swap the panel), then realized sales —
     // both only worth doing on a page that actually rendered this card's data.
     if (got) await loadAllSerialPages();
-    if (got) { (await openSalesHistory()) ? salesPages++ : salesTabMissed++; }
+    if (got) {
+      if (await openSalesHistory()) { salesPages++; (await openRecentSales()) ? recentPages++ : recentMissed++; }
+      else salesTabMissed++;
+    }
     walked++; got ? captured++ : missed++;
     if (walked % 50 === 0) console.log(`[panini-runner] progress ${walked}/${pskus.length} captured=${captured} missed=${missed} sales_pages=${salesPages} sales_records=${salesRecords} ${Math.round((Date.now()-tWalk)/60000)}m`);
     if (cards.length + serials.length + sales.length >= BATCH) { await post({ cards, serials, sales }); cards = []; serials = []; sales = []; }
@@ -608,6 +634,7 @@ async function main() {
   // Sales coverage is reported as its own line because it is the ONE thing about this change that
   // could not be verified offline: if sales_pages is 0 while walked is large, the SALES HISTORY
   // locator ladder never matched and the tab label needs re-reading — not a data finding.
+  console.log(`[panini-runner] recent sales: opened=${recentPages} missed=${recentMissed}${SALES_RECENT ? "" : " (DISABLED via PANINI_SALES_RECENT=0)"}`);
   console.log(`[panini-runner] serial paging: cards_paged=${serialPagedCards} extra_pages=${serialExtraPages} stops=${JSON.stringify(serialStops)}${SERIAL_PAGES_MAX > 0 ? "" : " (DISABLED via PANINI_SERIAL_PAGES=0)"}`);
   console.log(`[panini-runner] sales capture: tab_opened=${salesPages} tab_missed=${salesTabMissed} records=${salesRecords}${SALES_HISTORY ? "" : " (DISABLED via PANINI_SALES_HISTORY=0)"}`);
   await post({ cards, packs, serials, sales });

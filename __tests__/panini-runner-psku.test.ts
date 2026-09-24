@@ -142,7 +142,9 @@ describe("panini-runner sales-capture source-drift guard", () => {
     // the walk. Drop the click and the capture silently returns nothing forever.
     expect(src).toMatch(/openSalesHistory/)
     expect(src).toMatch(/sales\\s\*history/i)
-    expect(src).toMatch(/if \(got\) \{ \(await openSalesHistory\(\)\)/)
+    // Re-pinned 2026-09-24 (recent-sales follow-up nests the call): the PROPERTY is that the
+    // click is awaited inside the rendered-card branch, not the exact one-line spelling.
+    expect(src).toMatch(/if \(got\) \{[\s\S]{0,60}await openSalesHistory\(\)/)
   })
 
   it("still posts the sales array and keeps a kill switch", () => {
