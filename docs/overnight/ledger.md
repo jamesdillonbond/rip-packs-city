@@ -11,6 +11,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🔓 SHIPPED — the Golazos and Pinnacle head-first cursors get an unlatch path (#135, partial) · Claude Code (cloud)
+
+- **Migration `20260924145014`** adds `unlatch_head_sweep_cursors(p_latched_minutes default 360)` and pg_cron `rpc-head-sweep-cursor-unlatch` (`29 * * * *`, minute 29 carried 1 job). It covers `golazos_pack_sales_cursor`, `golazos_pack_opens_cursor` and `pinnacle_pack_opens_cursor`, which is what `unlatch_pack_sales_cursors` (job 526) already does for Top Shot and All Day. A cursor latched `done` for more than 6 h is reset, so its sweep re-walks history and fills any gap bigger than one head budget. The latch age is 6 h, not 30 min, so these smaller lanes are not re-walked all the time. A re-walk writes only the rows that did not already exist. Each call is recorded as pipeline `head-sweep-cursor-unlatch`, with per-cursor `was_latched`/`reset` in `extra`.
+- **Verified by running it once (7:50 AM PT).** Positive control: Golazos sales had been latched since 10:38 PM PT and was reset (1). No-change control: Pinnacle opens had been latched only ~2.4 h and was left alone (0). Golazos opens was not latched and was untouched. anon EXECUTE is false, `check_secdef_anon_exec_drift` = 0, and the file md5 equals `schema_migrations` (`67d635b8…`).
+- **Still open on #135:** a `head_budget_exhausted` signal in the walker, so a gap becomes VISIBLE rather than only healed on a timer. Also the Golazos pack-sales `totalCount` question.
+- **WATCH:** job's `pipeline_runs` rows appear hourly; Golazos sales cursor `total_seen` climbs through a full pass, then re-latches. **Falsifier:** a reset cursor that never returns to `done` (sweep stuck), or a Pinnacle opens pass that times out its 55 s `net.http_get`.
+- **Revert:** `SELECT cron.unschedule('rpc-head-sweep-cursor-unlatch'); DROP FUNCTION public.unlatch_head_sweep_cursors(integer);`
+
 ### 2026-09-24 · 🔁 SHIPPED — the Top Shot rip pricer stops re-reading its own head (4 → 285 priced on the same state), and the pack-listing walk can no longer stamp a failed read as a complete market · Claude Code (cloud)
 
 Both came from a read-only review of `547ed1396` / `6a74fd67a`. Its clean areas included walker honesty, cursor continuity, slugs, and pack availability matching the walk.
