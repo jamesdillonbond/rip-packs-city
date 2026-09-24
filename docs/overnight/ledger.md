@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · ⚖️ Three more delegated decisions: #43 timeout policy, #90 caches retired, #108 retry left armed-off · Cowork cloud
+
+Docs only, with no prod change. Decided under Trevor's delegation.
+
+- **#43 policy:** the pg_cron ceiling is the ROLE setting (`cron_heavy` 600 s). Function-level `SET statement_timeout` clauses stay, because they are load-bearing for PostgREST callers. No per-job reconciliation. A job needing a tighter bound gets a single-statement wrapper, never a `SET …;` prefix.
+- **#90 retired:** no residential-IP writer is revived for the two harvest caches. Their reads are already demoted or fall through.
+- **#108 accepted:** step2 runs in 7.5–11.7 s on Large. Retry job 491 stays disabled as a one-call fallback: `cron.alter_job(491, active => true)`.
+
+Register: 3 open · 42 partial · 86 closed.
+
 ### 2026-09-24 · 🚀 8 edge functions deployed from the repo — the permanently red edge-fn-drift detector should drop to 1 · Cowork (cloud subagents + laptop VM)
 
 `edge-fn-drift` had been red on every daily run (#25), listing 9 functions whose deployed body ≠ repo.
