@@ -33,6 +33,20 @@
 # __tests__/deploy-and-ci-agree-on-what-docs-means.test.ts. If CI's set is WIDER,
 # a push skips its code jobs and still deploys — untested code in production.
 # Change both or neither.
+#
+# ── THE THREE NON-DEPLOYABLE SUBTREES (#61, decided 2026-09-23) ──────────────
+# `supabase/migrations/**`, `supabase/tests/**` and `.github/**` are excluded
+# HERE BUT NOT IN CI, on purpose. None of them is part of the Next.js build:
+# every file in them is .sql/.yml (no .ts for tsc or the bundler), and nothing
+# in app/, lib/, components/ or proxy.ts imports them (only comments name them).
+# A migration is applied to the DB by `apply_migration`, never by a Vercel build;
+# a workflow runs on GitHub. So a push touching only these changes NOTHING that
+# Vercel would ship — the rebuild was pure build-minutes.
+# ⭐ This is only safe BECAUSE the base is VERCEL_GIT_PREVIOUS_SHA: the next
+# push that does touch deployable code diffs against what is actually live, so
+# nothing underneath a skipped push is ever lost (the HEAD^ trap above).
+# CI must still RUN its code jobs on these paths (parity, DB-invariant suite,
+# workflow lint) — hence the asymmetry, which the agreement test pins by name.
 set -u
 
 # Dependabot previews are not worth a build.
@@ -47,4 +61,5 @@ if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
   base="HEAD^"
 fi
 
-git diff --quiet "$base" HEAD -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)*.mdx'
+git diff --quiet "$base" HEAD -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)*.mdx' \
+  ':(exclude)supabase/migrations/**' ':(exclude)supabase/tests/**' ':(exclude).github/**'

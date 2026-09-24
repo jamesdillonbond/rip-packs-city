@@ -7,7 +7,7 @@ import path from "node:path"
 // TWO FILES DECIDE "IS THIS PUSH JUST DOCS?", THEY DECIDE IT IN DIFFERENT
 // SYNTAXES, AND NOTHING TIED THEM TOGETHER UNTIL THIS TEST.
 //
-//   vercel.json   ignoreCommand → `git diff --quiet HEAD^ HEAD -- .
+//   vercel.json   ignoreCommand → scripts/vercel-ignore-build.sh → `git diff --quiet <base> HEAD -- .
 //                 ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)*.mdx'`
 //                 …decides whether PRODUCTION DEPLOYS.
 //   ci.yml        the `changes` job → `grep -vE '^docs/|\.md$|\.mdx$'`
@@ -89,6 +89,18 @@ function deployExcluded(): Set<string> {
   return new Set(tracked.filter((f) => !keptSet.has(f)))
 }
 
+/**
+ * ⭐ THE ONE PERMITTED ASYMMETRY (#61, decided 2026-09-23): subtrees the deploy
+ * gate skips but CI still TESTS. Safe in exactly this direction — "code jobs run,
+ * production doesn't rebuild" — because (a) nothing in them is part of the Next.js
+ * build (pinned below: no .ts/.tsx/.js in them, no app/lib/components import) and
+ * (b) the deploy base is VERCEL_GIT_PREVIOUS_SHA, so the next deployable push
+ * carries everything since what is live. The REVERSE direction (CI skips, deploy
+ * runs) stays forbidden for every path, these included.
+ */
+const DEPLOY_ONLY_EXCLUSIONS = ["supabase/migrations/", "supabase/tests/", ".github/"] as const
+const isDeployOnly = (f: string) => DEPLOY_ONLY_EXCLUSIONS.some((p) => f.startsWith(p))
+
 describe("the deploy gate and the CI classifier agree on what counts as docs", () => {
   it("NOT VACUOUS: both sides were really read, and both really exclude something", () => {
     expect(pathspecs.length, "no :(exclude) pathspecs parsed out of vercel.json").toBeGreaterThan(0)
@@ -114,6 +126,8 @@ describe("the deploy gate and the CI classifier agree on what counts as docs", (
     const excluded = deployExcluded()
     const disagreements = tracked
       .filter((f) => excluded.has(f) !== ciRe.test(f))
+      // the pinned asymmetry: deploy skips, CI still runs — and ONLY that direction
+      .filter((f) => !(isDeployOnly(f) && excluded.has(f) && !ciRe.test(f)))
       .map((f) => `${f}  [deploy-skips=${excluded.has(f)} ci-treats-as-docs=${ciRe.test(f)}]`)
 
     expect(
@@ -126,5 +140,42 @@ describe("the deploy gate and the CI classifier agree on what counts as docs", (
         "                                 untested code in production, the worse of the two.\n" +
         `Disagreeing paths (${disagreements.length} total, first 25):`,
     ).toEqual([])
+  })
+})
+
+describe("the deploy-only exclusions are real and stay non-deployable", () => {
+  it("NOT VACUOUS: each deploy-only subtree exists and the deploy gate really skips all of it", () => {
+    const excluded = deployExcluded()
+    for (const prefix of DEPLOY_ONLY_EXCLUSIONS) {
+      const files = tracked.filter((f) => f.startsWith(prefix))
+      expect(files.length, `${prefix} has no tracked files — drop it from DEPLOY_ONLY_EXCLUSIONS`).toBeGreaterThan(0)
+      const notSkipped = files.filter((f) => !excluded.has(f))
+      expect(notSkipped.slice(0, 10), `${prefix} is listed as deploy-only but the gate still builds on these`).toEqual([])
+    }
+  })
+
+  it("CI still RUNS its code jobs for them (the asymmetry never flips to 'CI skips')", () => {
+    const flipped = tracked.filter((f) => isDeployOnly(f) && ciRe.test(f) && !f.endsWith(".md") && !f.endsWith(".mdx"))
+    expect(flipped, "CI now treats a deploy-only path as docs — migrations/workflows would ship untested").toEqual([])
+  })
+
+  it("nothing in them is buildable source — no .ts/.tsx/.js/.mjs/.json the Next.js build could pull in", () => {
+    const buildable = tracked.filter((f) => isDeployOnly(f) && /\.(tsx?|jsx?|mjs|cjs|json)$/.test(f))
+    expect(buildable, "a buildable file landed in a deploy-only subtree — a push touching it would skip the deploy").toEqual([])
+  })
+
+  it("no deployable code imports them (a comment naming the path is fine)", () => {
+    const roots = ["app", "lib", "components"]
+    const src = execFileSync("git", ["ls-files", "--", ...roots, "proxy.ts", "next.config.*"], {
+      cwd: REPO,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    })
+      .split("\n")
+      .filter((f) => /\.(tsx?|jsx?|mjs)$/.test(f))
+    expect(src.length, "the deployable-source walk found nothing").toBeGreaterThan(200)
+    const importRe = /(?:from\s+|import\(\s*|require\(\s*|readFileSync\([^)]*)['"`][^'"`]*(?:supabase\/(?:migrations|tests)|\.github)\//
+    const offenders = src.filter((f) => importRe.test(readFileSync(path.join(REPO, f), "utf8")))
+    expect(offenders, "deployable code reads a deploy-only subtree — skipping the deploy on it would ship stale code").toEqual([])
   })
 })
