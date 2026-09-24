@@ -1,32 +1,32 @@
 {
-  "generated_at_pt": "2026-09-23 ~12:10 PM PT",
-  "generated_at_utc": "2026-09-23T19:10Z",
-  "pass": "daytime/off-hours autonomous pass (Cowork cloud). OFF-HOURS + NO-PUSH → monitor-mode: queued everything, shipped nothing. Outputs written to the mounted tree, UNPUSHED.",
+  "generated_at_pt": "2026-09-24 ~01:10 AM PT",
+  "generated_at_utc": "2026-09-24T08:10Z",
+  "pass": "overnight autonomous pass (Cowork cloud). GENUINE OVERNIGHT window (no clock skew) but NO-PUSH MODE (mount pushurl empty / no PAT) -> shipped nothing, queued code work, wrote outputs to the mounted tree UNPUSHED.",
   "shipped": 0,
   "reverted": 0,
-  "verdict": "GREEN / no regression. Security 4/4 []; trust-health 0 breaches (all 39 arms ok); stalled_pipelines [] and check_pgcron_recent_failures() []; all structural-drift arms []. Sentry 0-new/0-escalating PAIRED with Vercel 0 new-first-seen error classes (18 chronic groups). Prod READY at 108520ee. One HIGH pipeline alert (compute-allday-pack-ev failure_rate 56.4%/3d) investigated and BENIGN — R124 pooling across the 09-22 18:07Z v10 fix; 09-23 is 0 fails/39 runs. One live user-facing FMV defect queued to Trevor (fmv_from_cached_listings republishes Flowty valuations up to 20x above live floor).",
+  "verdict": "GREEN / no regression. Security 4/4 []; trust-health 0 breaches (all 39 arms ok); stalled_pipelines [] and all structural-drift arms []. 5 pipeline_alerts all severity=info and previously characterized benign. Sentry 0-new PAIRED with Vercel 0 new-first-seen error classes (12 chronic groups). Prod READY at 09ada9a5 (migration-only 7d8671be/023fe6ab correctly CANCELED). compute-allday-pack-ev now clearly recovered (0/76 since last failure 38h ago).",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
     "trust_health_breaches": 0,
     "stalled_pipelines": [],
-    "pgcron_recent_failures": [],
     "structural_drift_arms": "all [] (backward_cursor_rewinds, function_search_path_drift, procedure_txn_control_pins, cross_collection_mat_staleness, procedure_search_path_unpinned, suppression_parked_claim_drift)",
-    "sentry_24h": "0 new, 0 escalating",
-    "vercel_24h_error_groups": 18,
+    "pipeline_alerts_info": ["compute-allday-pack-ev 0/76 recovered", "unmapped-sales-nfl_all_day 9333 open ~5.4d", "atlas-editions-403 11.3% 0-sets-incomplete", "atlas-market-403 9.8% fresh 08:09Z", "flow-rest-moment-moved-400 designed"],
+    "pipeline_fails_24h": "low chronic, none stalled (atlas-market-feed 19, sync-nba-projections 8, wallet-backfill 7, others 1-4)",
+    "sentry_24h": "0 new, 0 escalating (SDK out of tree #34)",
+    "vercel_24h_error_groups": 12,
     "vercel_new_first_seen_24h": 0,
-    "prod_deploy": "READY at 108520ee (docs-only tips 77b7cd72/25d732d1/35296291 correctly CANCELED)",
-    "net_http_response_12h": "3607x200, 128x403 (Atlas upstream challenge), 83x null (DNS-hang) — 0x401 (gate-key falsifier clean)",
-    "db_size_mb": 23433
+    "prod_deploy": "READY at 09ada9a5 (migration-only 7d8671be/023fe6ab CANCELED)",
+    "db_size_mb": 24237
   },
   "fmv_high_med": {
-    "nba_top_shot": 7750,
-    "nfl_all_day": 1747,
-    "disney_pinnacle": 701,
-    "candy_mlb": 26,
+    "nba_top_shot": 7771,
+    "nfl_all_day": 1768,
+    "disney_pinnacle": 709,
+    "candy_mlb": 25,
     "laliga_golazos": 4
   },
   "editions_by_collection": {
-    "nba_top_shot": 14016,
+    "nba_top_shot": 14460,
     "nfl_all_day": 6190,
     "ufc_strike": 518,
     "laliga_golazos": 575,
@@ -36,20 +36,16 @@
     "sentinel_ts_uuid_editions_48h": 0,
     "unmapped_resolution_backlog_max": 2
   },
-  "post_ship_watch": {
-    "allday_ghost_floor_and_ask_only": "trust arms clean (allday_fmv_stale_hours 0.2, pct_stale_30d 0); HIGH+MED 1779->1747 honest by-design drift; no regression",
-    "vault_gate_key_rotation_13_lanes": "falsifier clean (0x401 in net._http_response/12h)",
-    "compute_allday_pack_ev_v10": "recovered: 09-23 0 fails/39 runs, last OK 19:07Z; HIGH alert is pooled-across-fix"
-  },
+  "deltas_vs_prev": "FMV HIGH+MED TopShot 7750->7771, AllDay 1747->1768, Pinnacle 701->709, Candy 26->25, Golazos 4->4. Editions TopShot 14016->14460 (+444 catalog ingest). DB 23433->24237 MB (+804). All healthy/flat.",
   "needs_trevor": [
-    "Q0 (NEW, HIGH, live): fmv_from_cached_listings republishes Flowty valuations as ASK_ONLY FMV up to 20x above the live floor on edition_fmv_current, with $1M troll floors and an unscoped DELETE — FMV route logic, off-limits to autonomous ships; ready-to-run fix in the 09-23 handoff. inbox/2026-09-23T0510Z",
-    "Q1 institutional-wallet snapshot silent (needs cron-job.org console)",
-    "Q2 two disabled 2h Routines (#55) — delete or re-enable",
-    "Q3 All Day HIGH+MED honest downward KPI drift from the ghost-floor fix — accept",
-    "Q4 Candy MLB HIGH+MED 78->27 via dispersion gate while sales rose — edition-population mixing check",
-    "Q5 consolidate the 11 legacy desktop dashboards",
-    "Q6 Top Shot pack-sales ingest ~8h late (walker sweeps full history first)"
+    "Q0 (HIGH, live, off-limits FMV route): fmv_from_cached_listings republishes Flowty valuations up to 20x over live floor on edition_fmv_current. Fix ready in 09-23 handoff / inbox 2026-09-23T0510Z.",
+    "Q1 institutional-wallet snapshot silent (cron-job.org console)",
+    "Q2 two disabled 2h Routines (#55) - delete or re-enable",
+    "Q3 All Day HIGH+MED honest downward KPI drift - accept",
+    "Q4 Candy MLB dispersion-gate question (stable at 25)",
+    "Q5 consolidate 11 legacy desktop dashboards",
+    "Q6 Top Shot pack-sales ingest ~8h late (head-first walker catching up)",
+    "OPS: autonomous pass NO-PUSH for consecutive runs - restore PAT in remote.origin.pushurl for nightly code-shipping"
   ],
-  "resolved_since_last": "All 13 pg_cron literal gate keys de-literalised into Vault (09-22 evening) — closes the prior Jobs 22/25/27/29 gate-key queue item.",
-  "housekeeping": "Inbox backlog 545 unarchived — append-only by rule (INDEX.md CI assertions + live citations), left intact. Handoff + ledger + this file UNPUSHED (no-push sandbox); mirrored to mount for the next push-capable session."
+  "housekeeping": "Inbox 545 unarchived (append-only by rule); left intact, no new candidates this run. Handoff + metrics + ledger UNPUSHED (no-push sandbox); mirrored to mount. CLAUDE.md Recent-sessions prepend deferred to next push-capable session (hot file)."
 }

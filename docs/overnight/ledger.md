@@ -11,6 +11,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🟢 Overnight pass (~1:10 AM PT): GREEN, shipped 0, NO-PUSH · Cowork cloud (landed by Claude Code, Windows box)
+
+> Written by the Cowork overnight pass into the mounted tree, APPENDED AT THE FILE'S END (not spliced at the top), and unpushed. Moved here verbatim by Claude Code at ~7 AM PT. ⚠ Its Q0 (`fmv_from_cached_listings`) was already SHIPPED on 09-23 at ~2 PM PT (`20260923205831`), and its follow-ups at ~3 PM PT (`8f747fd`, `20260923220355`). Treat Q0 as closed.
+
+- **Run:** np-20260924-6ef5993b. Genuine overnight window (no clock skew). **NO-PUSH MODE** (mount `remote.origin.pushurl` empty, no PAT/helper; `git push --dry-run` fails). Shipped 0, reverted 0.
+- **Health GREEN / no regression:** security 4/4 []; trust-health 0 breaches (39/39 ok); stalled_pipelines []; all structural-drift arms []. 5 pipeline_alerts all severity=info & previously benign (compute-allday-pack-ev 0/76 recovered; unmapped-nfl 9333 ~5.4d; atlas 403s self-healing & fresh; flow-moment-moved-400 designed). Sentry 0-new PAIRED Vercel 0 new-first-seen (12 chronic groups). Prod READY 09ada9a5 (migration-only 7d8671be/023fe6ab CANCELED).
+- **Deltas:** FMV HIGH+MED flat/up (TS 7750->7771, AD 1747->1768, Pin 701->709, Candy 26->25, Gol 4). Editions TS 14016->14460 (+444, Atlas catalog). DB 23433->24237 MB (+804).
+- **Post-ship watch:** no autonomous ship on 09-23 to re-measure; verified the 09-24 Claude Code ships (pack opens/metrics, franchise hubs, backtest views, fast-break) caused no regression — no new error class, trust arms clean, editions grew. Nothing to revert.
+- **Artifacts:** 11 legacy live artifacts enumerated; cannot be updated from this cloud session (logged); none monitor-flagged; 13 backing objects all exist.
+- **Shipped:** none (NO-PUSH + no safe/valuable additive migration or artifact repair; did not manufacture work).
+- **Queued (carried, no NEW):** Q0 fmv_from_cached_listings Flowty republish (HIGH, live, FMV-route off-limits); Q1 institutional-wallet snapshot; Q2 #55 Routines; Q3 AllDay KPI drift accept; Q4 Candy dispersion; Q5 11 dashboards; Q6 pack-sales lag. OPS: restore push PAT for nightly code-shipping.
+- **Outputs UNPUSHED** (mirrored to mount): handoff-2026-09-24-overnight-pass.md, metrics-latest.json, this ledger entry.
+
 ### 2026-09-24 · 🧽 #83: 9,758 All Day sales stopped naming the Dapper custodian as their buyer; #71 and #99 closed · Cowork cloud
 
 - **Prod data (#83).** Migration `20260924140351` sets `sales.buyer_address = NULL` on the 9,758 All Day rows naming `0xddfbe848a81b2236`. That is All Day's re-forwarding custodian, which the repo decided in writing on 07-19 is never a buyer. NULL means "unknown", which is true.
