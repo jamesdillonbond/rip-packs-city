@@ -25,7 +25,7 @@
 -- the output no matter what its markers say.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql).
+-- (supabase/migrations/20260924182358_audit_20260924_watchlist_checks_read_the_daily_rollup.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -51,6 +51,17 @@ CREATE TABLE public.pipeline_runs (
   pipeline   text,
   started_at timestamptz,
   ok         boolean
+);
+
+-- 2026-09-24: the daily rollup the function falls back to once pipeline_runs (~73 h) has purged a
+-- lane. Only the columns the function reads.
+CREATE TABLE public.pipeline_runs_daily (
+  pipeline     text,
+  day          date,
+  last_run_at  timestamptz,
+  first_run_at timestamptz,
+  ok_count     integer,
+  PRIMARY KEY (pipeline, day)
 );
 
 -- >>> BEGIN verbatim detect_stalled_pipelines (byte-identical to the migration) >>>
@@ -80,7 +91,12 @@ AS $function$
          ) ORDER BY (extract(epoch from (now()-lr.last_run))/60) DESC NULLS FIRST), '[]'::jsonb)
   FROM pipeline_cadence_watchlist w
   LEFT JOIN LATERAL (
-    SELECT max(started_at) AS last_run FROM pipeline_runs pr WHERE pr.pipeline = w.pipeline
+    -- 2026-09-24: pipeline_runs keeps ~73 h; a lane with no retained row falls back to the daily
+    -- rollup, so a weekly lane is not reported stalled merely because its rows were purged.
+    SELECT COALESCE(
+      (SELECT max(pr.started_at) FROM pipeline_runs pr WHERE pr.pipeline = w.pipeline),
+      (SELECT max(d.last_run_at) FROM pipeline_runs_daily d WHERE d.pipeline = w.pipeline)
+    ) AS last_run
   ) lr ON true
   LEFT JOIN LATERAL (
     SELECT max(h.started_at) AS last_hb
@@ -204,6 +220,30 @@ BEGIN
   v := public.detect_stalled_pipelines();
   PERFORM _assert(EXISTS (SELECT 1 FROM jsonb_array_elements(v) e WHERE e->>'pipeline' = 'brand-new'),
     'once older than its threshold with no run at all, the same row IS stalled — the grace is a delay, not an exemption');
+
+  -- ── daily-rollup fallback (2026-09-24, known-issues #56) ─────────────────
+  -- pipeline_runs keeps ~73 h, so a WEEKLY lane has no retained row for ~4 days in 7. Before the
+  -- fallback that read as last_run NULL => STALLED: a false alarm by construction.
+  INSERT INTO public.pipeline_cadence_watchlist (pipeline, max_silent_minutes, severity, notes, is_active) VALUES
+    ('weekly-purged', 11520, 'info', NULL, true),
+    ('weekly-dead',   11520, 'info', NULL, true),
+    ('raw-authority', 60,    'medium', NULL, true);
+  INSERT INTO public.pipeline_runs_daily (pipeline, day, last_run_at, first_run_at, ok_count) VALUES
+    ('weekly-purged', (now() - interval '6 days')::date, now() - interval '6 days', now() - interval '6 days', 1),
+    ('weekly-dead',   (now() - interval '9 days')::date, now() - interval '9 days', now() - interval '9 days', 1),
+    -- a rollup row FRESHER than the raw row must not mask a raw silence: raw is the authority
+    ('raw-authority', now()::date, now() - interval '1 minute', now() - interval '1 minute', 1);
+  INSERT INTO public.pipeline_runs (pipeline, started_at, ok) VALUES
+    ('raw-authority', now() - interval '10 hours', true);
+  v := public.detect_stalled_pipelines();
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) e WHERE e->>'pipeline' = 'weekly-purged'),
+    'a weekly lane whose raw rows were purged but whose daily rollup ran 6 days ago is NOT stalled');
+  SELECT e INTO o FROM jsonb_array_elements(v) e WHERE e->>'pipeline' = 'weekly-dead';
+  PERFORM _assert(o IS NOT NULL, 'a weekly lane last seen 9 days ago (daily rollup only) IS stalled');
+  PERFORM _assert((o->>'silent_minutes')::numeric BETWEEN 12950 AND 12970,
+    'weekly-dead: silent_minutes must come from the rollup (~12960), got ' || coalesce(o->>'silent_minutes','null'));
+  PERFORM _assert(EXISTS (SELECT 1 FROM jsonb_array_elements(v) e WHERE e->>'pipeline' = 'raw-authority'),
+    'when pipeline_runs HAS rows it is the authority: a fresher rollup row must not hide a 10 h raw silence');
 END $$;
 
 ROLLBACK;

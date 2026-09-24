@@ -87,7 +87,7 @@ const PINS = [
     fn: "detect_stalled_pipelines",
     test: "supabase/tests/detect_stalled_pipelines.sql",
     migration:
-      "supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
+      "supabase/migrations/20260924182358_audit_20260924_watchlist_checks_read_the_daily_rollup.sql",
   },
   {
     // Added 2026-08-20. A live deleter with THREE DELETE legs that had NO
