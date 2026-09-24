@@ -7,6 +7,7 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 ### `pack_purchases` architecture
 
 - `seller_address = 0x18eb4ee6b3c026d2` is the **NFTStorefrontV2 escrow contract**, NOT a TokenForwarding receiver. Rows with this seller are **secondary peer-to-peer sales**; the actual selling user is identified by `storefront_resource_id` (980+ distinct values observed).
+  - ⚠ **EXCEPT `custom_id = 'nba'` (2026-09-24): that is TOP SHOT'S OWN SHOP, not a peer.** 34,062 rows, ONE `storefront_resource_id` (250688653852667), a fixed price per dist on 125 of 139 dists — yet labelled `event_kind 'secondary_sale'` by the worker. Every collector-market reader must filter `custom_id IS DISTINCT FROM 'nba'` (see *Pack sales sources* below).
 - `seller_address` has a CHECK constraint requiring `NULL` or `^0x[0-9a-f]{16}$` format. **Do NOT overload with sentinel values like `'mint:<contract>'`** — use the `event_kind` column instead.
 - `event_kind` is the source-of-truth classifier with values:
   - `secondary_sale` — `NFTStorefrontV2.ListingCompleted`
@@ -95,6 +96,7 @@ On 2026-08-28 those agreed exactly — **`dists_ok` summed to 51 and TS dists-wi
 ⚠ And read the backlog as a STOCK: it fell 368 → 330 while 51 converted, because 13 new distributions
 arrived in the same window. A stock moving by less than the flow is not a stalled drain.
 
+
 ### Cron endpoints
 
 Both endpoints use admin-auth via `INGEST_SECRET_TOKEN`:
@@ -104,3 +106,20 @@ Both endpoints use admin-auth via `INGEST_SECRET_TOKEN`:
 
 Both routes match the data-integrity admin-auth pattern with auth header `Authorization: Bearer ${INGEST_SECRET_TOKEN}`. **The apex domain returns 308 → www, so cron-job.org URLs must use `www.rippackscity.com`.**
 
+## Pack sales sources — what each one is (2026-09-24)
+
+Measured 2026-09-24; re-derive before quoting any number.
+
+- **`pack_purchases` (on-chain, `workers/pack-events-ingest`)** — every `NFTStorefrontV2` sale, sale-timestamped (`sealed_at`), ingested a median ~7–10 min after the sale, complete and 100 % dist-named since 2026-04-10 (TS) / 2026-04-24 (AD).
+  - `custom_id 'DAPPER_MARKETPLACE'` is the collector market.
+  - `custom_id 'nba'` is Top Shot's shop, as above. It must be excluded from anything that means "secondary market".
+- **`topshot_pack_sales_history` / `allday_pack_sales_history` (Dapper studio `searchPackMarketplaceHistory`)** — carries ONLY `DAPPER_MARKETPLACE` sales and is complete for them (373/373 on a settled day).
+  - ⚠ Its `block_time` and `tx_hash` are the **LISTING's**, not the sale's. The chain sale follows a median 9 min later, p90 about 8 days. That is why the two tables never share a `tx_hash` (the "control that failed" in known-issues R21). It is also why an "ingest lag" of `ingested_at − block_time` measures listing age: the 09-23 "5.2 h lag" was mostly that.
+  - Value now: pre-April history, and a second dist source. Lanes run every 15 min (TS) / 30 min (AD).
+- **Where the collector-market numbers come from:** one function, `pack_market_sales_stats(collection, dist)` (on-chain minus shop, plus studio rows listed before the on-chain feed began).
+  - `pack_market_sales_cache` stores its results (cron 300 dists / 15 min).
+  - Its readers: `get_pack_market_row` (pack page), `mv_topshot_pack_sales_agg` / `mv_allday_pack_sales_agg` → `/insights/*-pack-market`, and `get_pack_metrics`.
+  - `get_pack_sales_history` (the pack page's sale lists) applies the same shop exclusion.
+- ⛔ **A rip's dist comes from Dapper's index; the `pack_drop_pool` vote only FILLS a NULL.** `backfill_pack_rip_metadata` used to overwrite (`COALESCE(bd.dist_id, pr.dist_id)`). A new dist with no pool yet was relabelled to an old dist whose pool contained every pulled edition: 6,274 rips / 3,368 purchases, relabelled to `pack_nft_identity` on 09-24 (`audit_20260924_pack_dist_relabel`). Pinned by `supabase/tests/backfill_pack_rip_metadata.sql` property 8. ⚠ **That relabel only reached packs WITH an identity row** — a Claude Code review the same morning found the rest and relabelled 34,540 purchases / 28,940 rips from the studio index's dist (which agrees with identity on 50,165 of 50,165 packs), migration `20260924141424`, audit `audit_20260924_pack_dist_relabel_studio`. **Dist authority order: `pack_nft_identity`, then the studio index's `dist_id`, then (fill-only) the pool vote.**
+- **Golazos pack sales** in Dapper's index end 2023-04-21, so that lane is history only. **Golazos / Pinnacle opens** come from `searchPackNft` (status Opened) → `golazos_pack_opens` / `pinnacle_pack_opens`. Pinnacle's opener is the custodial contract, so it is stored as NULL.
+- **Instruments:** `get_pack_metrics()` (7 collections), hourly `pack_metrics_snapshots`, and `pack_ev_backtest` (published EV vs realized pulls, 30 d; the gate for any EV-weighting change).
