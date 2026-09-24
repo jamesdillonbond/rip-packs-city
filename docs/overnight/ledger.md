@@ -11,6 +11,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🔧 FIXED — pack sale stats on pack pages + both pack-market boards counted only 42% of Top Shot pack sales (dist 8552: 75 shown vs 8,956 real, median $17 vs $9) · Cowork cloud
+
+**Found ~5:20 AM PT.** Dapper's studio pack-sales index (`topshot_pack_sales_history` / `allday_pack_sales_history`) holds ONLY `custom_id = 'DAPPER_MARKETPLACE'` sales. On a settled day (5–6 days ago) it had 373 of 894 on-chain Top Shot pack sales; all 521 missing ones carry `custom_id 'nba'`. Its `block_time`/`tx_hash` are the **listing's**, not the sale's (300/300 matched `pack_purchases` on listing id + price; the chain sale is a median 9 min later). Every pack-sales surface read it: `get_pack_market_row` (pack pages), `mv_topshot_pack_sales_agg` / `mv_allday_pack_sales_agg` → `/insights/topshot-pack-market` and `/insights/allday-pack-market`, and `get_pack_metrics`.
+
+**Correction to yesterday's part-1 entry:** the "5.2 h / 11.1 h behind the chain" pack-sales lag was mostly **how long packs sat listed**, not our ingest delay — the premise of the head-first rewrite was mis-measured. The head-first engine is still correct, but it fixed the wrong number.
+
+**Shipped (4 migrations):**
+- `20260924122325` — `pack_market_sales_stats(collection, dist)`: on-chain `pack_purchases` secondary sales (complete and 100% dist-named since 2026-04-10 TS / 04-24 AD, sale-timestamped) + studio rows listed before that date with no on-chain twin. `refresh_pack_market_sales_cache` and `get_pack_market_row`'s miss path call it. Busiest dist: 99.8 ms / 1,712 buffers.
+- `20260924122704` — both MVs now select from `pack_market_sales_cache` (+`first_sale_at`); views recreated verbatim with `security_invoker` and grants; 204 TS / 55 AD studio-only dists seeded into the roster; cache cron 60 → 300 dists / 15 min (~5 h full cycle).
+- `20260924122827` — `get_pack_metrics` TS/AD sales from `pack_purchases` (asserted in-DB replace): TS **1,287 sales/24h** (was 458), ingest lag **7.3 min** (was "168").
+- `20260924122931` — studio lanes 3 min → 15 min (TS) / 30 min (AD), 10 pages; watchlist bounds re-derived.
+
+**Verified:** cache fully recomputed by manual drain (0 queued, 0 missing `first_sale_at`); dist 8552 now 8,956 sales/90d, median $9.00, last sale 09-21; board views 1,876 TS / 1,167 AD rows (TS was 1,863). anon EXECUTE false on all three functions.
+**Revert:** each migration's header carries its revert; bodies before this are in `20260919180521` / `20260919180751` and the 09-23 MV definitions quoted in `20260924122704`.
+**Watch:** `pack-market-sales-cache-refresh` runs `ok` with `hit_soft_deadline` false at 300 dists; falsifier — any `n_sales_90d` in the cache below the dist's on-chain count.
+
 ### 2026-09-24 · 🔧 Panini runner reads RECENT sales (it only ever read the 20 highest-priced sales per card) — FMV engine switch approved but HELD until the data under it is clean · Cowork (cloud + laptop VM) · ⚠ takes effect on the laptop's next `git pull`
 
 **Serial paging verified live overnight:** `panini_serial_freshness.max_serials_per_edition_walk` 30 → **259**; serials 114,188 → 115,733; the 10 PM and 2 AM PT walks ran 83–86 min over 425–431 editions.
