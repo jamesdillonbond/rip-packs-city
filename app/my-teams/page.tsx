@@ -25,18 +25,21 @@ import {
 } from "@/lib/fan-teams/fetchers"
 import TeamLogo from "@/components/entity/TeamLogo"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
+import { franchiseHubPath } from "@/lib/franchise-hub"
+import { chainKindForDbChain, isValidAddressForChain } from "@/lib/address"
+import { getCollection } from "@/lib/collections"
 import type { CSSProperties, ReactNode } from "react"
 
 export const dynamic = "force-dynamic"
 
 export const metadata: Metadata = {
   title: "My Teams",
-  description: "Your followed teams across NBA Top Shot, WNBA, NFL All Day, and LaLiga Golazos — checklist completion, cost-to-complete, and market activity in one hub.",
+  description: "Your followed teams across NBA Top Shot, WNBA, NFL All Day, LaLiga Golazos, and Candy MLB — checklist completion, cost-to-complete, and market activity in one hub.",
   robots: { index: false, follow: false },
 }
 
-const LEAGUE_ORDER = ["NBA", "WNBA", "NFL", "LALIGA"]
-const LEAGUE_LABEL: Record<string, string> = { NBA: "NBA", WNBA: "WNBA", NFL: "NFL", LALIGA: "LaLiga" }
+const LEAGUE_ORDER = ["NBA", "WNBA", "NFL", "LALIGA", "MLB"]
+const LEAGUE_LABEL: Record<string, string> = { NBA: "NBA", WNBA: "WNBA", NFL: "NFL", LALIGA: "LaLiga", MLB: "MLB" }
 
 // fmtUsd/fmtCount/logoFor extracted to lib/fan-teams-format.ts (measured + tested).
 const fmtUsd = fmtTeamUsd
@@ -92,8 +95,22 @@ export default async function MyTeamsPage() {
     )
   }
 
-  const cards = await Promise.all(teams.map((t) => fetchTeamCard(t, wallet)))
-  const enriched = teams.map((team, i) => ({ team, ...cards[i] }))
+  // ⚠ CHAIN-SCOPED WALLET. The bound wallet is ONE address; a Candy MLB team
+  // lives on Solana. Handing a Flow address to a Solana collection's checklist
+  // reads as "you own 0 of N" — a measured zero about the reader's own holdings
+  // that we never measured. Pass the wallet only where its shape matches the
+  // team's collection chain; elsewhere the card shows the checklist size alone.
+  const walletFor = (team: FanTeam): string | null => {
+    if (!wallet || !team.collection_id) return null
+    const urlSlug = getCollectionByUuid(team.collection_id)?.urlSlug
+    const dbChain = urlSlug ? getCollection(urlSlug)?.dbChain : null
+    if (chainKindForDbChain(dbChain) === "solana") return isValidAddressForChain(wallet, "solana") ? wallet : null
+    // Flow collections keep today's behaviour: the saved wallet may be a Flow
+    // address OR a Top Shot username, and the checklist RPC resolves both.
+    return isValidAddressForChain(wallet, "solana") ? null : wallet
+  }
+  const cards = await Promise.all(teams.map((t) => fetchTeamCard(t, walletFor(t))))
+  const enriched = teams.map((team, i) => ({ team, hasWallet: walletFor(team) != null, ...cards[i] }))
 
   // Group by league in canonical order.
   const byLeague = LEAGUE_ORDER
@@ -132,8 +149,8 @@ export default async function MyTeamsPage() {
             {LEAGUE_LABEL[group.league] ?? group.league}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
-            {group.rows.map(({ team, detail, progress }) => (
-              <TeamCard key={`${team.league}:${team.route_slug}`} team={team} detail={detail} progress={progress} hasWallet={!!wallet} />
+            {group.rows.map(({ team, detail, progress, hasWallet }) => (
+              <TeamCard key={`${team.league}:${team.route_slug}`} team={team} detail={detail} progress={progress} hasWallet={hasWallet} />
             ))}
           </div>
         </section>
@@ -186,8 +203,7 @@ function TeamCard({
   progress: TeamProgress | null
   hasWallet: boolean
 }) {
-  const coll = getCollectionByUuid(team.collection_id)
-  const urlSlug = coll?.urlSlug ?? "nba-top-shot"
+  const coll = team.collection_id ? getCollectionByUuid(team.collection_id) : null
   // ⚠ THE DENYLIST IS ENFORCED AT THE DESTINATION, SO IT MUST BE ENFORCED HERE.
   // /[collection]/team/[slug] and its layout notFound() the 12 exhibition
   // rosters. This builder's slug comes from `teams_master` (97 curated league
@@ -195,9 +211,18 @@ function TeamCard({
   // denylisted href. That is a property of the DATA, not of the code, and a
   // single INSERT changes it silently. Gating here makes the property true by
   // construction instead, which is cheaper than maintaining the argument.
+  //
+  // The card opens the FRANCHISE hub (every collection carrying the team,
+  // /teams/<league>/<short slug>) when the row carries its teams_master short
+  // slug; otherwise the primary collection's team page, as before. No collection
+  // and no short slug = no destination, so the card renders as a non-link.
   const hubHref = isExhibitionTeamSlug(team.route_slug)
     ? null
-    : `/${urlSlug}/team/${team.route_slug}`
+    : team.team_slug
+      ? franchiseHubPath(team.league, team.team_slug)
+      : coll
+        ? `/${coll.urlSlug}/team/${team.route_slug}`
+        : null
 
   const primary = team.primary_color || "var(--rpc-surface)"
   const accent = team.secondary_color || "var(--rpc-red)"

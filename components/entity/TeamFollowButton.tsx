@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react"
 
 interface Props {
-  league: string          // NBA | WNBA | NFL | LALIGA
+  league: string          // NBA | WNBA | NFL | LALIGA | MLB
   teamShortSlug: string   // teams_master.slug, e.g. "lakers"
   teamPath: string        // /<collection>/team/<slug> — for the sign-in next param
   dark?: boolean          // true on the branded gradient (light text)

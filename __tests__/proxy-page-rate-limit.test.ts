@@ -43,6 +43,7 @@ const ROWS: Row[] = [
   ["/profile/0xbd94cade097e50ac", true, "the 0x… enumeration"],
   ["/moment/6bfd5eb2-3708-4f7c-94b4-ce84de8a84c6", true, "top-level, force-dynamic"],
   ["/special-serial-owners", true],
+  ["/teams/mlb/tigers", true, "franchise hub — one get_team_detail per collection"],
 
   // ── Unmetered: cheap, static, or funnel-critical ────────────────────────
   ["/", false, "marketing landing — never throttle the front door"],

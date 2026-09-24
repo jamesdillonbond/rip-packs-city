@@ -138,7 +138,7 @@ describe("/api/profile/teams", () => {
   })
 
   it("POST 400s on an invalid league", async () => {
-    const res = await POST(req("https://t/api/profile/teams", { ownerKey: "t", teams: [{ league: "MLB", team_slug: "x" }] }))
+    const res = await POST(req("https://t/api/profile/teams", { ownerKey: "t", teams: [{ league: "NHL", team_slug: "x" }] }))
     expect(res.status).toBe(400)
     expect((await res.json()).error).toContain("invalid league")
   })

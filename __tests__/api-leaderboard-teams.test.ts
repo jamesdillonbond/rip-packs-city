@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route integration test for /api/leaderboard/teams (GET).
-// Guard: ?league must satisfy isLeague (NBA/WNBA/NFL/LALIGA) else 400. Backed by
+// Guard: ?league must satisfy isLeague (NBA/WNBA/NFL/LALIGA/MLB) else 400. Backed by
 // the get_team_fan_leaderboard RPC. Pins the league 400, the happy path (RPC
 // rows sliced by limit), and the RPC-error 500.
 
@@ -27,7 +27,7 @@ describe("GET /api/leaderboard/teams", () => {
   })
 
   it("400s on an invalid league", async () => {
-    const res = await GET(req("https://t/api/leaderboard/teams?league=MLB"))
+    const res = await GET(req("https://t/api/leaderboard/teams?league=NHL"))
     expect(res.status).toBe(400)
   })
 

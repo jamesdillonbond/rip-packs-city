@@ -48,9 +48,16 @@ const TEAM_CARD_TIMEOUT_MS = 5_000
 
 export interface FanTeam {
   league: string
-  collection_slug: string
-  collection_id: string
+  /**
+   * The league's PRIMARY collection (lowest-display_order enabled
+   * league_collections row). NULL when no collection is enabled for the league —
+   * the card then renders with no stats rather than reading a guessed collection.
+   */
+  collection_slug: string | null
+  collection_id: string | null
   team_name: string
+  /** teams_master short slug — the franchise hub's URL key (/teams/<league>/<team_slug>). */
+  team_slug?: string | null
   route_slug: string
   primary_color: string | null
   secondary_color: string | null
@@ -179,6 +186,9 @@ export async function fetchTeamCard(
   wallet: string | null,
   db: RpcClient = supabaseAdmin as unknown as RpcClient,
 ): Promise<{ detail: TeamDetail | null; progress: TeamProgress | null }> {
+  // No enabled collection for this league: nothing to read. An omission, the
+  // same safe direction as a failed read below.
+  if (!team.collection_id) return { detail: null, progress: null }
   let detailRes: { data: unknown }
   let progressRes: { data: unknown }
   try {

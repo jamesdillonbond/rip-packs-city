@@ -215,6 +215,8 @@ const RATE_LIMITED_COLLECTION_PAGES = new Set([
 export function isRateLimitedPageRoute(pathname: string): boolean {
   if (pathname.startsWith("/profile/")) return true
   if (pathname.startsWith("/moment/")) return true
+  // Franchise hubs fan out one get_team_detail per collection — DB-backed, enumerable.
+  if (pathname.startsWith("/teams/")) return true
   if (pathname === "/special-serial-owners") return true
 
   const segments = pathname.split("/").filter(Boolean)
@@ -728,6 +730,10 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // table the /moment route reads). Linked from /insights/pinnacle-
   // scarcity per-row drill-downs. Same public-share rationale.
   if (pathname.startsWith("/pinnacle/moment/")) return true
+  // /teams/<league>/<slug> — franchise hub (2026-09-23): one public, read-only
+  // page per real-world team gathering every collection that carries it. The
+  // shape is exact (two segments) so /teams alone, or deeper paths, stay gated.
+  if (/^\/teams\/[a-z]+\/[^/]+\/?$/.test(pathname)) return true
 
   // ── Public entity detail pages ───────────────────────────────────────
   // /<collection>/{edition,set,player,team,series,pack}/<slug> — the

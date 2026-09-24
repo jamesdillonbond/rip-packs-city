@@ -164,6 +164,11 @@ const TABLE: Row[] = [
   ["/moment/12345", "GET", true],
   ["/api/moment/12345", "GET", true],
   ["/pinnacle/moment/GEN-DPIN-SIMB-S0", "GET", true],
+  // Franchise hubs (2026-09-23) — exactly /teams/<league>/<slug>.
+  ["/teams/nba/blazers", "GET", true],
+  ["/teams/mlb/tigers", "GET", true],
+  ["/teams", "GET", false, "no hub index — only the two-segment hub shape is public"],
+  ["/teams/nba/blazers/edit", "GET", false, "deeper paths are not hubs"],
 
   // ── Per-collection overview + its backing API ───────────────────────────────
   ["/nba-top-shot/overview", "GET", true],
