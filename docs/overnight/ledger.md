@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 🔧 Panini runner pages the serial list (30 → full print run per card) + walk budget 50 → 75 min · Cowork (cloud + laptop VM) · ⚠ takes effect on the laptop's next `git pull`
+
+Follow-up to the serial page-cap entry below. **Probed live first** (Claude in Chrome, 2 cards): the detail page's serial table is an infinite scroll — scrolling the WINDOW to the bottom makes the SPA request `p:2…N` and sign them itself. Cristiano Ronaldo Silver: 30 → 259 serials; Maradona Silver: 30 → 259 in 8 pages / 16 s, stopping on the short final page. `loadAllSerialPages()` runs that per card before the SALES HISTORY click; the existing response listener already captures every page. Cost: ~6,900 extra page loads per full rotation (~27% more time per card), so `PANINI_WALK_BUDGET_MIN` default 50 → 75 (4 h ticks; ends ~95 min in). Kill switch `PANINI_SERIAL_PAGES=0`. Pinned by `__tests__/panini-runner-serial-paging.test.ts` (3 fail against the old runner).
+
+**Verify (DB-side — the console is masked):** `select * from panini_serial_freshness` → `max_serials_per_edition_walk` > 30 after the first walk on the new code; `pct_serial_asks_unconfirmed_7d` falling from 48.4%; `sales_missed / sales_serials` in `pipeline_runs.extra` falling from 41%.
+**Revert:** `git revert` this commit, or set `PANINI_SERIAL_PAGES=0` (and `PANINI_WALK_BUDGET_MIN=50`) on the box.
+
 ### 2026-09-23 · 🔎 Panini SERIAL grain: a 30-row page cap behind 41% of sales dropped + 48% of serial asks unconfirmed; sale-feed instrument was publishing a false "dead" for 58 days · Cowork (cloud + laptop VM)
 
 Measured ~8:45 PM PT. **Edition grain is healthy** — `panini_coverage_summary`: 5,090 editions, **0 stale 45d, 100% walked 7d, p50 61.9 h, p90 86.3 h** (the 09-20 falsifier "p90 < ~120 h by 09-23" PASSES). The 09-20 "3 orphans that are never walked" were walked 09-20 10:15 AM / 2:11 PM PT — that finding was wrong (written an hour before the walk that reached them).
