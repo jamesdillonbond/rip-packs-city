@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
-import { fetchLivePackListings, SUPPORTED_PACK_COLLECTIONS } from "@/lib/packs/live-pack-listings"
+import { fetchLivePackListings, SNAPSHOT_PACK_COLLECTIONS } from "@/lib/packs/live-pack-listings"
 
 // Snapshots the live sealed-pack lowest-ask per dist into public.pack_ask_state
 // so the Pack Sniper can show a real "just listed / price dropped" recency
@@ -46,7 +46,7 @@ async function run(request: NextRequest) {
     let totalChanged = 0
     let totalDropped = 0
 
-    for (const collection of SUPPORTED_PACK_COLLECTIONS) {
+    for (const collection of SNAPSHOT_PACK_COLLECTIONS) {
       try {
         // force:true bypasses the 2-min in-lambda memo so each tick sees the
         // freshest upstream book (the public board's read path keeps the memo).

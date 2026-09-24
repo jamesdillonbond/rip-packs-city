@@ -13,6 +13,7 @@ import {
   fetchLivePackListings,
   isSupportedPackCollection,
   SUPPORTED_PACK_COLLECTIONS,
+  SNAPSHOT_PACK_COLLECTIONS,
 } from "@/lib/packs/live-pack-listings"
 
 // ── payload builders ──────────────────────────────────────────────────────────
@@ -76,6 +77,13 @@ describe("isSupportedPackCollection / SUPPORTED_PACK_COLLECTIONS", () => {
     expect(isSupportedPackCollection("disney-pinnacle")).toBe(false)
     expect(isSupportedPackCollection("")).toBe(false)
     expect(isSupportedPackCollection("topshot")).toBe(false)
+  })
+  it("walks Golazos for availability WITHOUT opening it to the public pack surfaces", () => {
+    // 2026-09-23: snapshot-pack-asks measures Golazos so pack_table_rows can say
+    // "not listed" instead of "unknown"; the sniper/deals map collections to
+    // nba/nfl and must not start serving Golazos by accident.
+    expect(SNAPSHOT_PACK_COLLECTIONS).toEqual(["nba-top-shot", "nfl-all-day", "laliga-golazos"])
+    expect(isSupportedPackCollection("laliga-golazos")).toBe(false)
   })
 })
 

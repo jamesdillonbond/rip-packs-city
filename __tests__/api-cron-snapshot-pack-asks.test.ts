@@ -20,7 +20,7 @@ vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { from: () => ({}), rpc: async () => ({ data: null, error: null }) },
 }))
 vi.mock("@/lib/packs/live-pack-listings", () => ({
-  SUPPORTED_PACK_COLLECTIONS: [],
+  SNAPSHOT_PACK_COLLECTIONS: [],
   fetchLivePackListings: async () => ({ listings: [] }),
 }))
 

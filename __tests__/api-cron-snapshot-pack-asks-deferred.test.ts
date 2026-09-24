@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { makeReq } from "./cron-req-helper"
 
 // Deep drive of /api/cron/snapshot-pack-asks' DEFERRED after() body (the sibling
-// test only pins auth + the 202 ack). This route loops SUPPORTED_PACK_COLLECTIONS,
+// test only pins auth + the 202 ack). This route loops SNAPSHOT_PACK_COLLECTIONS,
 // fetches the live pack book per collection, filters lowestAsk>0, upserts via
 // upsert_pack_ask_state, and accumulates totals into log_pipeline_run. The legs
 // worth pinning: per-collection error ISOLATION (one collection's fetch throw or
@@ -25,7 +25,7 @@ vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: (...a: any[]) => rpc(..
 
 const fetchImpl = vi.hoisted(() => ({ fn: async (_c: string, _o?: any): Promise<any> => ({ listings: [] }) }))
 vi.mock("@/lib/packs/live-pack-listings", () => ({
-  SUPPORTED_PACK_COLLECTIONS: ["topshot", "allday"],
+  SNAPSHOT_PACK_COLLECTIONS: ["topshot", "allday"],
   fetchLivePackListings: (c: string, o?: any) => fetchImpl.fn(c, o),
 }))
 

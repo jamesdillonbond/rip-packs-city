@@ -55,10 +55,18 @@ const PACK_LISTINGS_QUERY = `
   }
 `
 
+/** Collections the public pack surfaces (sniper, pack-listings, deals) serve. */
 export type PackCollectionSlug = "nba-top-shot" | "nfl-all-day"
+/**
+ * Collections whose listing index is WALKED into pack_ask_state by
+ * snapshot-pack-asks. A superset: Golazos is walked so its availability is
+ * measured (pack_table_rows), without opening a Golazos pack sniper — the deal
+ * and sniper code maps collections to nba/nfl and has never been reviewed for it.
+ */
+export type ListingCollectionSlug = PackCollectionSlug | "laliga-golazos"
 
 const COLLECTION_CONFIG: Record<
-  PackCollectionSlug,
+  ListingCollectionSlug,
   { typeName: string; reserveOwner: string; cacheKey: string }
 > = {
   "nba-top-shot": {
@@ -71,12 +79,23 @@ const COLLECTION_CONFIG: Record<
     reserveOwner: "e4cf4bdc1751c65d",
     cacheKey: "listings:nfl-all-day",
   },
+  // 2026-09-23: Golazos added so snapshot-pack-asks measures it too. Without a
+  // walk, pack_table_rows can only say "unknown" for all 224 Golazos dists; with
+  // one, "not listed" becomes a fact (1 dist was collector-listed at add time).
+  "laliga-golazos": {
+    typeName: "A.87ca73a41bb50ad5.PackNFT.NFT",
+    reserveOwner: "87ca73a41bb50ad5",
+    cacheKey: "listings:laliga-golazos",
+  },
 }
 
-export const SUPPORTED_PACK_COLLECTIONS = Object.keys(COLLECTION_CONFIG) as PackCollectionSlug[]
+export const SUPPORTED_PACK_COLLECTIONS: PackCollectionSlug[] = ["nba-top-shot", "nfl-all-day"]
+
+/** Every collection snapshot-pack-asks walks (see ListingCollectionSlug). */
+export const SNAPSHOT_PACK_COLLECTIONS = Object.keys(COLLECTION_CONFIG) as ListingCollectionSlug[]
 
 export function isSupportedPackCollection(slug: string): slug is PackCollectionSlug {
-  return slug in COLLECTION_CONFIG
+  return (SUPPORTED_PACK_COLLECTIONS as string[]).includes(slug)
 }
 
 function buildFilters(cfg: { typeName: string; reserveOwner: string }) {
@@ -212,7 +231,7 @@ function classifyPackType(title: string | null | undefined, slots: number, retai
  * Throws on a GraphQL error so the caller can surface it.
  */
 export async function fetchLivePackListings(
-  collection: PackCollectionSlug,
+  collection: ListingCollectionSlug,
   opts: { force?: boolean } = {},
 ): Promise<{ listings: PackListing[]; cached: boolean }> {
   const cfg = COLLECTION_CONFIG[collection]
