@@ -62,6 +62,12 @@ would return zero rows and render **"no buyer-resolved accumulation"** about a c
 distinct buyers. The route refuses it and a component arm asserts the panel is absent — **two
 instruments that have to agree, each stating the reason.**
 
+### ⭐ Substitution through a DERIVED LABEL: every row having a label ≠ the label being right (2026-09-24, PT)
+
+`pack_purchases.pack_dist_id` was **100 % populated**, so every coverage check passed. Its value came from a derivation (a vote over `pack_rips`, filled by a propagate trigger), and on **34,540 Top Shot purchases** it disagreed with Dapper's own studio index (`topshot_pack_sales_history`). Pack sales and EV were being published for a dist nobody bought, with nothing failing and nothing NULL. It is SUBSTITUTION at the row level: the subject was swapped by the join key, not by a fallback. Fixed by relabelling from the authority (`20260924141424`, with an audit table kept for the revert).
+- ⛔ **A fill-rate is not an accuracy measure.** For any DERIVED key column, compare a sample against an INDEPENDENT authority before trusting a board built on it. `count(col)` cannot see this class.
+- ⚠ **A fill-only trigger (writes when NULL) cannot correct a wrong value**, so the wrong label outlives the fix to its source. Relabel the backlog explicitly.
+
 ## ⭐ THE THIRTEENTH SHAPE (2026-09-20): A DISCLOSURE THAT DOES NOT SHARE ITS KPI'S DENOMINATOR — the honesty note itself carried the false claim
 
 ⭐ **The defect was INSIDE the fix for an earlier one.** `/insights/panini-squeeze` headlines

@@ -3431,3 +3431,16 @@ Condensed in CLAUDE.md to make room for the four rules above; kept here verbatim
 ## A rolled-back dry run proves only the branches its candidate set REACHES (2026-09-23, PT)
 
 ⚠ **Before trusting a "dry run was clean", check the changed branch actually executed.** Re-pointing `drain_fmv_cold_tail`'s All Day ask (`20260923235425`), the rolled-back run processed 25 and then all 28 live candidates, and **every one came out STALE under BOTH the old and the new body**. It looked like a pass and tested nothing, because no candidate had an ask, so the ASK_ONLY branch never ran. ⭐ **Construct the pair inside the same rolled-back transaction:** one row the change must leave alone (a live-floor edition, old = new = ASK_ONLY $2.70) and one it must change (a planted $50 `badge_editions` ask with no live floor, old ASK_ONLY $45.00 → new NO_DATA), running the OLD body first and the NEW body second on the same fixture. This is the positive-and-no-change-control rule applied to a migration's dry run rather than to a test.
+
+## ⭐ Review another session's overnight ships against LIVE DATA, not against their diff (2026-09-24, PT)
+
+A read-only review of one overnight Cowork pass (`547ed1396`, `6a74fd67a` and the pack-metrics ships) found **8 defects**. Every one was reached by querying what the ship PRODUCED, not by reading its code. Examples:
+- a dist label that disagreed with the studio index on 34,540 rows;
+- a backtest ratio (1.31×) that was placeholder zeros, really 0.62×;
+- a pricer that re-read its own head (4 priced a tick, when 285 was possible);
+- a latched cursor with no way back (#135).
+
+The diffs were clean, tested and honest by construction. The defects lived in the DATA each one selected.
+- ⭐ **Ask each ship "what did it write, and does an independent source agree?"** Its own report counts only rows it wrote; count rows that are CORRECT.
+- ⚠ **A headline number from a ship is a claim until re-derived.** The 1.31× went into a ledger entry and needed a CORRECTION entry of its own. Filing the correction under the original entry keeps the next reader from quoting the stale figure.
+
