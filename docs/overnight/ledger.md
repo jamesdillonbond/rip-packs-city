@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 📝 Wrap-up: two lessons from the Candy holder-board ship promoted to reference docs · Claude Code (Windows box)
+
+`database.md` gains a third default-privileges case: re-creating a MATERIALIZED VIEW re-grants anon/authenticated, and every MV definition change is a re-create. The procedure is read `relacl` before, revoke by name after, and assert in the migration. `tooling-gotchas.md` "Windows box" gains §5: a commit with later pushes on top has no deployment of its own, so prove it shipped with `git merge-base --is-ancestor` against the newest READY build's SHA (and `list_deployments`' `sha` filter needs all 40 characters).
+**Revert:** docs only.
+
 ### 2026-09-24 · ✏️ SHIPPED — the Candy holders note describes the exclusions as they are: the sealed-pack treasury plus ONE identified inventory wallet · Claude Code (cloud)
 
 Found by the review of `a95f7b0a5`. The note said "the treasury/max-holder reserve is excluded, and so is **any** wallet holding inventory at scale with no market activity". Since `20260923233939` the treasury is the sealed-pack custodian, not the max holder. The no-activity rule applies only to the one wallet listed in `candy_holder_board_exclusions`, so a second wallet of that shape would still be ranked. The copy now says exactly that. The same review cleared `a95f7b0a5` itself: unique indexes and ACLs are intact, `security_invoker` stays on, the treasury label is unchanged, and a trade by that wallet does return it to the board. 193 Candy tests pass.

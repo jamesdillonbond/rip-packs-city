@@ -1895,7 +1895,7 @@ hint: Updates were rejected because the tip of your current branch is behind
 
 That is `(non-fast-forward)`, i.e. **rebase and retry**, not a credential problem. The push capability on this box is fine — `git push --dry-run origin main` is the one-command test, and its output distinguishes the two cases in the first line.
 
-## Windows box, 2026-09-23 — four things one session relearned
+## Windows box, 2026-09-23 — five things relearned (§5 added 2026-09-24)
 
 ### 1 · Run a changed `supabase/tests/*.sql` against REAL Postgres before pushing (no local Postgres here)
 
@@ -1941,3 +1941,12 @@ Pipe the output through a redacting `sed`, and never `cat` the file.
   `C:/Program Files/Git/insights/set-squeeze`, which surfaces as `net::ERR_NAME_NOT_RESOLVED`.
 - **Print WHAT a hit-test landed on**, not a count. See the third `elementFromPoint` false positive in
   [testing-and-ci.md](testing-and-ci.md) (the fixed mobile nav, #133).
+
+### 5 · (2026-09-24) A commit with later pushes on top of it gets NO deployment of its own
+
+With several sessions pushing, Vercel builds only the branch tip it sees. `list_deployments` filtered to your SHA
+returns **nothing**, which reads like a failed or skipped deploy. It is neither: your commit shipped inside
+someone else's build. **Prove it, and never infer it:** find the newest READY production deployment, then
+`git merge-base --is-ancestor <your sha> <that deployment's githubCommitSha> && echo contained`. Then verify the
+change in the rendered DOM. Note that `list_deployments`' `sha` filter needs the full 40-character SHA; a short
+SHA also returns nothing.
