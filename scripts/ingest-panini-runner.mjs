@@ -393,8 +393,13 @@ async function main() {
     if (!SALES_RECENT) return false;
     const before = sales.length;
     try {
-      await page.locator("button.dropdown-toggle").filter({ hasText: /^\s*top\s*sales\s*$/i }).first().click({ timeout: 2500 });
-      await page.locator("a.dropdown-item").filter({ hasText: /^\s*recent\s*sales\s*$/i }).first().click({ timeout: 2500 });
+      // DOM click, not a Playwright pointer click: measured 2026-09-24 10 AM PT walk, the pointer
+      // path fired the RECENT request on 3 of ~300 cards (it dies on actionability/hit-testing in
+      // the CDP window), while the same two elements clicked via el.click() fire it every time —
+      // which is exactly how the switch was probed live before shipping.
+      await page.locator("button.dropdown-toggle").filter({ hasText: /^\s*top\s*sales\s*$/i }).first().evaluate((el) => el.click(), undefined, { timeout: 2500 });
+      await page.waitForTimeout(400);
+      await page.locator("a.dropdown-item").filter({ hasText: /^\s*recent\s*sales\s*$/i }).first().evaluate((el) => el.click(), undefined, { timeout: 2500 });
       const deadline = Date.now() + 5000;
       while (Date.now() < deadline && sales.length === before) await page.waitForTimeout(150);
       return sales.length > before;
