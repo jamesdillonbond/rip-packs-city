@@ -11,6 +11,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 📏 Pack EV backtest: published gross EV runs 1.31× (Top Shot) / 2.70× (All Day) above what packs actually pulled in 30 days · EV method NOT changed · Cowork cloud
+
+New view `pack_ev_backtest` (migration `20260924054525`, service_role only): per dist with ≥ 20 priced opens in 30 days, realized mean/median pull value vs the latest published `gross_ev` / `typical_ev`. First read ~10:50 PM PT: Top Shot 11 dists, gross a median **1.31×** realized mean, typical **1.00×** realized median; All Day 4 dists, **2.70×** / **1.42×**. Golazos + Pinnacle have no dist with 20 priced opens in 30 days yet.
+
+**Decision (task 7, "tier-scaled EV"):** an out-of-sample test of empirical pull weights for All Day (odds learned from opens older than 21 days, scored on the last 21) was mixed on the 4 dists with enough test opens (better on 2, equal on 1, far worse on 1). Not shipped; the view is the gate a weighting change must pass. The 30-day mean under-samples rare hits, so gross > realized mean is partly expected — typical vs median is the fairer read.
+
+Also: `backfill-{topshot,allday,golazos}-pack-sales` (v34/v35/v2) and `ingest-golazos-pack-opens` (v2) redeployed from the committed shared walker; every run since is `ok`. **Golazos pack sales in Dapper's index end 2023-04-21** — that lane is history, not a live feed.
+
+Pack Board artifact (private, reads `get_pack_metrics()`, `pack_metrics_snapshots`, `pack_ev_backtest` and lane health through Trevor's Supabase connector).
+**Revert:** `DROP VIEW public.pack_ev_backtest;` + `git revert` this commit.
+
 ### 2026-09-23 · 📦 SHIPPED — pack metrics pass, part 2: Golazos + Pinnacle pack OPENS lanes, a generic head-first walker, Top Shot catalog-from-Atlas, a 7-collection pack metrics function + hourly history, Panini pack-state history, Candy pack-sale write honesty · Cowork cloud
 
 Continues part 1 (below). Measured at ~10:15 PM PT, all lanes `ok`.
