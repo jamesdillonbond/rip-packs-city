@@ -40,7 +40,7 @@ Each DB change was dry-run first, inside a transaction that rolled back, with a 
   - After the 5:35 PM candy-listings tick: active mints with >1 active row = 0 and `extra.superseded ≥ 3`.
   - After the 5:39 PM job 404: `candy_treasury_wallet` = `BhA2…`.
   - After the 5:26 PM job 436: the scarcity MV refreshes CONCURRENTLY.
-  (Results are recorded in the session log.)
+  ✅ **All three passed at 5:41 PM PT:** `superseded: 3` with duplicate mints 3 → 0 (#131 closed); job 404 wrote `BhA2…` through the new function; job 436 refreshed the re-created scarcity MV (`succeeded`).
 - **#91 (official badge art loses the first cold render):** the 24 h sample holds ~75 OG renders and **0** fallback warnings. That is too thin to size a budget change, and Vercel full-text log search over >24 h times out. Leave it open; re-sample weekly.
 - **Not worth doing now, measured:**
   - `pack_ev_latest` (#118): 2.25 s / 59 MB sort per direct read. But only 3 direct reads ever; the MV serves the board. The 42 s mean for `refresh_mv_pack_ev_latest` in pgss is Small-tier history (pgss last reset 08-12); on Large, job 73 runs 4.5 s.
