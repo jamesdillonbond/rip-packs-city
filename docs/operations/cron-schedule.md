@@ -142,7 +142,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 
 ## pg_cron  ·  111 active at 2026-09-03 22:3xZ (was 108 active / 1 inactive at 2026-08-30 21:2xZ) — includes the 6 one-off `tmp-reindex-wmc-*` slots that self-unschedule 08-31 ~04:06Z (authoritative: `cron.job`; health: `check_pgcron_recent_failures()`)
 
-Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `allday/topshot-pack-sales-backfill` (3m), `allday-dist-opened-backfill` (4m), `backfill-pack-pool` (5m), `refresh-mv-pack-ev-latest` (10m). Weekly FMV compute cluster (7 jobs) Sun 11:00–12:00 UTC. Full functional grouping in `claude/scheduler-map-2026-07-20.md`.
+Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `allday/topshot-pack-sales-backfill` (3m until 2026-09-24; now 30m / 15m — on-chain `pack_purchases` is the live pack-sales feed), `allday-dist-opened-backfill` (4m), `backfill-pack-pool` (5m), `refresh-mv-pack-ev-latest` (10m). Weekly FMV compute cluster (7 jobs) Sun 11:00–12:00 UTC. Full functional grouping in `claude/scheduler-map-2026-07-20.md`.
 
 **`cron_heavy` maintenance jobs (2026-08-29/30).** `cron_heavy` carries `statement_timeout=600s` and MAINTAIN on `sales_2026`, `fmv_snapshots_2026`, `wallet_moments_cache`; `postgres` inherits the cluster 120 s and never finished a VACUUM (jobid 380, 0 completions). Jobs are keyed on (jobname, username): unschedule with `SET ROLE cron_heavy` first.
 
