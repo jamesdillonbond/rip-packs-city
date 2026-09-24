@@ -11,6 +11,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🔧 FIXED — Top Shot pack pages and the pack-market board were publishing one pack's sales under another pack's name; 34,540 purchases and 28,940 rips relabelled from Dapper's own index · Claude Code (cloud)
+
+**Found by a read-only review of this morning's pack-market commits (`2af427923`, `7cb143c8e`).** Per-dist stats now group by `pack_purchases.pack_dist_id`. On packs with no `pack_nft_identity` row, that label still carried the old pool vote's overwrite, and `20260924123824`'s relabel only reached packs that have an identity row. This was substitution: dist 7726 (Rookie Revelation Standard) showed 1,160 sales, while 3,495 of its sales sat under 7800 (Fast Break Classic), which showed 7,503.
+
+**Migration `20260924141424`.** The source was proven before use: `topshot_pack_sales_history` gives one dist per pack on all 553,615 packs, and agrees with identity on 50,165 of 50,165 (0 disagree). For every Top Shot pack with no usable identity row, `pack_purchases` (34,540 rows) and `pack_rips` (28,940 rows) were relabelled to the studio dist. Each change is recorded in `audit_20260924_pack_dist_relabel_studio`, and 738 cache dists were re-queued. Identity-covered packs were untouched. All Day was measured clean.
+- **Rolled-back dry run first:** 7726 1,160 → 4,880 (studio's own count: 4,897); 7800 7,503 → 414 (studio: 416).
+- After apply: the file md5 equals `schema_migrations` (`d223748b…`); security invariants `[]`.
+- **WATCH:** new Top Shot purchases whose `pack_dist_id` disagrees with the studio dist. **Falsifier:** > 0.5 % of studio-matched purchases sealed after 7:14 AM PT. A recurring correction is **not** built; it is needed only if the watch fires.
+
+**Revert:** `UPDATE pack_purchases p SET pack_dist_id = a.old_dist FROM audit_20260924_pack_dist_relabel_studio a WHERE a.tbl='pack_purchases' AND p.id=a.row_id;` then the same for `pack_rips.dist_id` (`tbl='pack_rips'`), then re-queue the cache (SQL in the migration).
+
 ### 2026-09-24 · 🔎 #76 re-derived: the off-Vercel site alarm exists but GitHub runs it ~6×/day, not 96; #49 closed · Cowork cloud
 
 Docs only.
