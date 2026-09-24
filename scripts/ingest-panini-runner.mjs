@@ -378,6 +378,53 @@ async function main() {
     return false;
   }
 
+  // SERIAL PAGING (2026-09-23). getPskuTotalCardsList is paged at `l: 30` and the detail page
+  // only requests page 1 on load, so without this every walk re-read at most 30 serials per
+  // card: measured max(serials captured in an edition's latest walk) = 30 EXACTLY, 48% of serial
+  // asks un-re-read for 7+ days, and 41% of sold serials unmatched (sales_missed) because the
+  // serial had never been discovered. The serial table is an infinite scroll: scrolling the
+  // WINDOW to the bottom makes the SPA request p:2, p:3, … and sign them natively (probed live
+  // 2026-09-23 on a 259-serial card: 30 -> 259 in 7 pages, ~1 s each). The response listener
+  // above already captures every getPskuTotalCardsList page, so this only has to scroll.
+  // Stops on a short page (rows % 30 != 0 means the last page arrived), on no growth within
+  // SERIAL_PAGE_WAIT_MS, or at SERIAL_PAGES_MAX extra pages. Never throws. Kill switch
+  // PANINI_SERIAL_PAGES=0. The signal it worked is DB-side, not console-side (the console is
+  // masked to Cowork): panini_serial_freshness.max_serials_per_edition_walk rises above 30.
+  const SERIAL_PAGES_MAX = Number(process.env.PANINI_SERIAL_PAGES ?? 12);
+  const SERIAL_PAGE_WAIT_MS = 2500;
+  let serialExtraPages = 0, serialPagedCards = 0;
+  const serialStops = {};
+  async function loadAllSerialPages() {
+    if (!(SERIAL_PAGES_MAX > 0)) return;
+    let r = null;
+    try {
+      r = await page.evaluate(async ({ max, wait }) => {
+        const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+        const tbl = [...document.querySelectorAll("table")].find((t) => /SERIAL\s*NO/i.test((t.innerText || "").slice(0, 80)));
+        if (!tbl) return { pages: 0, stop: "no-table" };
+        const rows = () => tbl.querySelectorAll("tbody tr").length;
+        let pages = 0, stop = "max";
+        for (let k = 0; k < max; k++) {
+          const before = rows();
+          if (before === 0 || before % 30 !== 0) { stop = "short-page"; break; }
+          window.scrollBy(0, -200);
+          await sleep(50);
+          window.scrollTo(0, document.body.scrollHeight);
+          window.dispatchEvent(new Event("scroll"));
+          const t0 = Date.now();
+          let n = before;
+          while (Date.now() - t0 < wait) { await sleep(100); n = rows(); if (n > before) break; }
+          if (n === before) { stop = "no-growth"; break; }
+          pages++;
+        }
+        window.scrollTo(0, 0);
+        return { pages, stop };
+      }, { max: SERIAL_PAGES_MAX, wait: SERIAL_PAGE_WAIT_MS });
+    } catch { r = { pages: 0, stop: "error" }; }
+    if (r.pages > 0) { serialExtraPages += r.pages; serialPagedCards++; await page.waitForTimeout(400); } // let the last response land in the listener
+    serialStops[r.stop] = (serialStops[r.stop] || 0) + 1;
+  }
+
   // --- 0. FIRST-RUN LOGIN GRACE: on a fresh profile you must sign in once. With
   //     PANINI_HEADLESS=false, open the site and pause so you can log into Panini in the
   //     window; the persistent profile keeps the session for all later headless runs. ---
@@ -525,7 +572,10 @@ async function main() {
   // "networkidle". The marketplace SPA polls in the background, so networkidle frequently never
   // settles and each page burned up to its 45s timeout — that is why long walks stalled before
   // finishing. domcontentloaded + a data-arrival wait cuts a typical page to ~1-2s.
-  const WALK_BUDGET_MS = Number(process.env.PANINI_WALK_BUDGET_MIN || 50) * 60000;
+  // 50 -> 75 min (2026-09-23): serial paging (loadAllSerialPages) adds ~6,900 page loads per full
+  // catalogue rotation (~2 s each, ~27% more time per card). Ticks are 4 h apart and enumeration
+  // takes <=10 min, so a 75 min walk (+ the observed <=10 min last-batch overrun) ends ~95 min in.
+  const WALK_BUDGET_MS = Number(process.env.PANINI_WALK_BUDGET_MIN || 75) * 60000;
   const tWalk = Date.now();
   let walked = 0, captured = 0, missed = 0;
   for (const psku of pskus) {
@@ -546,7 +596,9 @@ async function main() {
       // so we don't navigate away with only half this psku's data.
       if (got) await page.waitForTimeout(800);
     }
-    // Realized sales: only worth a click on a page that actually rendered this card's data.
+    // Serial pages 2..N first (the SALES HISTORY click may swap the panel), then realized sales —
+    // both only worth doing on a page that actually rendered this card's data.
+    if (got) await loadAllSerialPages();
     if (got) { (await openSalesHistory()) ? salesPages++ : salesTabMissed++; }
     walked++; got ? captured++ : missed++;
     if (walked % 50 === 0) console.log(`[panini-runner] progress ${walked}/${pskus.length} captured=${captured} missed=${missed} sales_pages=${salesPages} sales_records=${salesRecords} ${Math.round((Date.now()-tWalk)/60000)}m`);
@@ -556,6 +608,7 @@ async function main() {
   // Sales coverage is reported as its own line because it is the ONE thing about this change that
   // could not be verified offline: if sales_pages is 0 while walked is large, the SALES HISTORY
   // locator ladder never matched and the tab label needs re-reading — not a data finding.
+  console.log(`[panini-runner] serial paging: cards_paged=${serialPagedCards} extra_pages=${serialExtraPages} stops=${JSON.stringify(serialStops)}${SERIAL_PAGES_MAX > 0 ? "" : " (DISABLED via PANINI_SERIAL_PAGES=0)"}`);
   console.log(`[panini-runner] sales capture: tab_opened=${salesPages} tab_missed=${salesTabMissed} records=${salesRecords}${SALES_HISTORY ? "" : " (DISABLED via PANINI_SALES_HISTORY=0)"}`);
   await post({ cards, packs, serials, sales });
   if (CDP) { await browser.close().catch(() => {}); } // disconnects; leaves your Chrome open
