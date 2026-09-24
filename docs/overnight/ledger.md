@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-23 · 📏 Panini FMV out-of-sample backtest: published FMV misses realized sales by a median 35.9% (HIGH: 35.3%) and naive last-sale beats it · Cowork (cloud + laptop VM)
+
+New ops view `panini_fmv_backtest` (migration `20260924045351`, service_role only). For each of 4,432 realized non-special serial sales in the last 45 days it compares the price to the FMV we published **more than a day before** the sale. **Published: median abs error 35.9%, 38.1% within ±25%, biased HIGH (median ratio 1.106).** HIGH-confidence rows alone: 35.3% / 38.5%, so the label overclaims. Candidate "median of the edition's last 3 non-special sales in 30 days, else published": **25.0% / 50.5% / ratio 1.000**. By recency of the prior sale: <7 d 36.5% vs 21.4%; 7–30 d 28.6% vs 25.0%; >30 d published wins (40.0% vs 45.0%), hence the fallback. ASK_ONLY (floor × 0.9) sits at a median 1.8× the realized price.
+
+Nothing repriced: the public FMV method is unchanged. The candidate is proposed, not shipped.
+**Revert:** `DROP VIEW public.panini_fmv_backtest;`
+
 ### 2026-09-23 · 📝 Wrap-up: the ASK_ONLY falsifiers read at ~9:50 PM PT (all met), and this session's lessons promoted · Claude Code (Windows box)
 
 **Falsifiers:** Step 5b wrote 104 rows over 41 post-deploy runs, **0** above the live floor, 0 errors. Job 19's 5:40 PM PT run re-capped 3 more. All 66 `ask_only_v2` rows since Cowork's fix are Golazos, 0 above their own floor. The 28 All Day surface rows still above the floor are lag: listings that arrived after pricing, and snapshots already capped whose `edition_fmv_current` has not refreshed. Recorded in the 0510Z inbox filing as "do not re-open for this shape". **Docs:** tooling-gotchas.md gains "Windows box, 2026-09-23" (a rolled-back scratch-schema run for a changed `supabase/tests` file · backslashes eaten by `node -e` · gh-token expiry · Playwright from Git Bash); session entry prepended to `docs/sessions/2026-09.md`.
