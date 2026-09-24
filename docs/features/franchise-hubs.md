@@ -59,22 +59,26 @@ Examples: **Blazers** — Scoot Henderson, Donovan Clingan, Toumani Camara, Carm
 
 ## Team walk — pilot shipped (2026-09-24)
 
-**The lever that made it cheap:** the grid takes a **team filter** — `nfts.html?sport=Basketball&team=Portland%20Trail%20Blazers&p=N` returns only that team (measured: 26/26, 24/24, 29/29 Blazers). So a hub needs its own team's pages, not the whole 4,800-page sport: Blazers ≈ 150–250 pages, Detroit (MLB) ≈ 35. And it works **headless from a datacenter IP**, anonymously — no laptop, no login: Detroit walked 35 pages / 1,020 listings in ~3 min, ending on an empty page.
+**The lever that made it cheap:** the grid takes a **team filter** — `nfts.html?sport=Basketball&team=Portland%20Trail%20Blazers&p=N` returns only that team (measured: 26/26, 24/24, 29/29 Blazers). So a hub needs its own team's pages, not the whole 4,800-page sport: Blazers > 40 pages (1,200 listings in the first 40; ends somewhere in 150–250), Detroit (MLB) 35 pages / 1,020 listings in ~3 min, ending on an empty page.
+
+**Where it runs — measured, not assumed.** A headless walk from the Cowork cloud sandbox works anonymously. The same script on **GitHub Actions got HTTP 403 with Cloudflare's 1000-series error box** on page 1 of both targets (run 2026-09-24 7:32 AM PT) — the Atlas story again. So the walk runs on **Trevor's box**, from `scripts/panini-run.bat`, right after the soccer runner, in the same debug Chrome (`PANINI_CDP_URL`), posting to `/api/cron/panini-team-walk` with `INGEST_SECRET_TOKEN`. At most one full pass a day (`%USERPROFILE%\panini-team-walk.stamp`, written only when every target completed). The GitHub Actions workflow was removed the same hour.
+
+⚠ **It starts on the laptop's next `git pull`** — `panini-run.bat` runs from Trevor's checkout.
 
 | Piece | What |
 |---|---|
-| `scripts/panini-team-walk.mjs` | Playwright walk of one team's grid; reads the SPA's own `products` responses (never replays a signed request); flushes every 10 pages |
-| `.github/workflows/panini-team-walk.yml` | daily 10:37 UTC (3:37 AM PT) + manual dispatch (`targets`, `max_pages`, `dry_run`). Pilot targets: **Blazers + Detroit** |
+| `scripts/panini-team-walk.mjs` | Playwright walk of one team's grid; reads the SPA's own `products` responses (never replays a signed request); flushes every 10 pages; logs HTTP status + title when a page gives no products answer |
+| `app/api/cron/panini-team-walk` | bearer-guarded receiver: `heartbeat` / `ingest` / `finish`; a failed or count-less write is a non-2xx |
 | `panini_team_listings` | staging, one row per listed NFT (sku); `franchise_keys` like `NBA:blazers`, `unmapped_teams` for what did not map (MLB LA/NY/Chicago) |
 | `panini_team_aliases` + `panini_resolve_team_keys` | Panini `team` → teams_master; two-team cards map to both |
 | `panini_team_listings_ingest` | upsert; retires listings a walk no longer saw **only when the walk was complete** (ended on an empty page and every flush landed) |
 | `panini_team_listing_franchise_summary` | operator read-back: active listings / editions / min ask per franchise |
 
-All service-role only; **nothing on the site reads it**. `pipeline_runs`: `panini-team-walk` (+ `-heartbeat` before each target); the job goes red on an incomplete walk or a write that did not land.
+All service-role only; **nothing on the site reads it**. `pipeline_runs`: `panini-team-walk` (+ `-heartbeat` before each target). ⚠ The first two rows under that name (2026-09-24 7:32 AM PT, ok=false, "no readable products response") are the GitHub Actions attempt, not the laptop arm.
 
-**Not done, on purpose:** no `league_collections` row for Panini yet (a hub panel reads `get_team_detail`, and Panini NBA/MLB is not in `editions`); no pricing (listings are asks, not FMV); no other teams (widen `targets` once the pilot's numbers are read).
+**Not done, on purpose:** no `league_collections` row for Panini yet (a hub panel reads `get_team_detail`, and Panini NBA/MLB is not in `editions`); no pricing (listings are asks, not FMV); no other teams (widen `PANINI_TEAM_TARGETS` once the pilot's numbers are read).
 
-**Next:** read two or three daily runs → widen to all NBA teams (~30 × ~150–250 pages ≈ 3–4 h/day of runner time, so split across days or jobs) → decide how Panini NBA prices are judged against the accuracy gate → bridge into `editions` and flip `league_collections`.
+**Next:** read the first laptop runs → widen to every NBA team (~30 × 150–250 pages ≈ 4–6 h/day, so rotate a few teams per day) → decide how Panini NBA prices are judged against the accuracy gate → bridge into `editions` and flip `league_collections`.
 
 ## Revert
 

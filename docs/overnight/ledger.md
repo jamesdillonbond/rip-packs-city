@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🔧 Panini team walk moves to the laptop arm — GitHub Actions gets a Cloudflare 403 from Panini; new bearer-guarded receiver `/api/cron/panini-team-walk`; runs after the soccer runner, once a day · Cowork (cloud + laptop VM) · ⚠ takes effect on the laptop's next `git pull`
+
+The first dispatched run (7:32 AM PT) failed honestly on page 1 of both targets (`pipeline_runs` panini-team-walk ok=false ×2, nothing written, nothing retired); the diagnostic re-run showed why — **HTTP 403, Cloudflare 1000-series error box** for GitHub's runners (the cloud sandbox walks fine). So: workflow deleted; the script now posts to `/api/cron/panini-team-walk` (ops `heartbeat` / `ingest` / `finish`, `INGEST_SECRET_TOKEN`, each DB call bounded at 45 s, a failed or count-less write is a non-2xx so the walker withholds `complete`) and can drive the runner's debug Chrome over CDP; `scripts/panini-run.bat` calls it after the soccer runner with a daily stamp file, and its exit code does not change the task's result. Pilot targets unchanged (Blazers + Detroit). No DB change in this entry.
+
+**Verify (after Trevor pulls):** `%USERPROFILE%\panini-run.log` shows `[panini-team-walk] … "complete":true`; `select * from panini_team_listing_franchise_summary` has `NBA:blazers` and `MLB:tigers`.
+**Revert:** `git revert` this commit (restores nothing on GitHub Actions — the workflow was the failed path); or delete the three team-walk lines from `panini-run.bat`.
+
 ### 2026-09-24 · 🔓 SHIPPED — the Golazos and Pinnacle head-first cursors get an unlatch path (#135, partial) · Claude Code (cloud)
 
 - **Migration `20260924145014`** adds `unlatch_head_sweep_cursors(p_latched_minutes default 360)` and pg_cron `rpc-head-sweep-cursor-unlatch` (`29 * * * *`, minute 29 carried 1 job). It covers `golazos_pack_sales_cursor`, `golazos_pack_opens_cursor` and `pinnacle_pack_opens_cursor`, which is what `unlatch_pack_sales_cursors` (job 526) already does for Top Shot and All Day. A cursor latched `done` for more than 6 h is reset, so its sweep re-walks history and fills any gap bigger than one head budget. The latch age is 6 h, not 30 min, so these smaller lanes are not re-walked all the time. A re-walk writes only the rows that did not already exist. Each call is recorded as pipeline `head-sweep-cursor-unlatch`, with per-cursor `was_latched`/`reset` in `extra`.
