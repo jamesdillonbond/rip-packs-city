@@ -876,9 +876,10 @@ export default function CandyBoardClient({
       {tab === "holders" && (
         <>
           <div className="cdy-blurb">
-            <b>Holder concentration.</b> Collector wallets only — the treasury/max-holder reserve is excluded, and so
-            is any wallet holding inventory at scale with no market activity at all (it has never bought, sold, listed
-            or bid). A wallet like that returns to the ranking the moment it trades.{" "}
+            <b>Holder concentration.</b> Collector wallets only — Candy&apos;s treasury (the wallet holding the sealed
+            packs) is excluded, and so is one further wallet we have identified that holds inventory at scale with no
+            market activity at all (it has never bought, sold, listed or bid). That wallet returns to the ranking the
+            moment it trades.{" "}
             <b>Est. value</b> sums each held serial&apos;s edition FMV, which is as thin as every Candy price today.
           </div>
           {/* cap 250 -> 800: DataTable slices silently (r.slice(0, cap)) with no
