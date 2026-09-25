@@ -61,6 +61,13 @@ export type FmvDistributionResult =
       max_fmv: number
       sample_editions: DistributionalSampleEdition[]
       /**
+       * Every priced edition behind the percentiles (internal — never sent to the
+       * model). The concierge reads badge metadata across ALL of them so a badged
+       * edition (a rookie's Rookie Year moment) can be named even when the
+       * recency/max sample missed it.
+       */
+      priced_editions?: DistributionalSampleEdition[]
+      /**
        * Honesty fields. `count` is how many PRICED editions went into the
        * percentiles; `population_matched` is how many editions the filter
        * actually matched. When `truncated` is true they are different things
@@ -157,6 +164,7 @@ function buildDistribution(
     min_fmv: round2(fmvs[0]),
     max_fmv: round2(fmvs[fmvs.length - 1]),
     sample_editions: samples,
+    priced_editions: rows,
     ...(scan
       ? {
           population_matched: scan.populationMatched,

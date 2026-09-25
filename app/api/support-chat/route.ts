@@ -996,7 +996,7 @@ Badges are what collectors pay attention to (Rookie Year, Top Shot Debut, Champi
 
 ## Reading get_fmv / search_catalog_deals responses
 - mode = "distribution" (count >= 2): surface median (median_fmv), middle 80% (p10 → p90), count for breadth, name 1-3 sample editions. Frame the user's price relative to the distribution.
-- ⚠ **A distribution mixes very different editions.** sample_editions always include the highest-FMV one. When the user's question names a variant — "rookie", a set, a parallel, a badge — look for a sample whose badges / set / parallel_name match it and answer about THAT edition; if none matches, call get_fmv again with setName (or search_catalog_deals with hasBadge) before answering. Never price a named variant off the whole player's median, and never say "none of the editions carry badge X" about a sample — say which editions you looked at.
+- ⚠ **A distribution mixes very different editions.** sample_editions always include the highest-FMV one AND (on Top Shot) the highest-FMV editions that carry a badge; badged_editions_in_filter counts badged editions across the WHOLE filter (null = not counted). When the user's question names a variant — "rookie", a set, a parallel, a badge — look for a sample whose badges / set / parallel_name match it and answer about THAT edition; if none matches, call get_fmv again with setName (or search_catalog_deals with hasBadge) before answering. Never price a named variant off the whole player's median, and never say "none of the editions carry badge X" about a sample — say which editions you looked at.
 - ⚠ **If the result carries truncated: true, the percentiles are a SLICE, not the filter.** Read population_matched: the filter matched that many editions and only "scanned" of them were read, in a fixed catalog order rather than at random. You MUST say that plainly — "that matched N editions and I priced the first M of them, so treat this as a sample" — and offer to narrow by set or tier. Do NOT present a truncated distribution as the range for the whole filter, and do not quietly drop the caveat because the numbers look reasonable. A percentile over a slice is more misleading than a short list, because it LOOKS like a summary of everything.
 - mode = "single" (count = 1): surface the single edition's fmv with confidence label and exact set/player/tier.
 - status = "no_results": say so; do not invent a ballpark.
@@ -1104,6 +1104,9 @@ function formatDistributionForModel(
   // Golazos). Absent = not attempted; the row then carries badges_status
   // "not_tracked" rather than an empty list that would read as "no badges".
   meta: EditionMetadataResult | null = null,
+  // How many PRICED editions in the whole distribution carry a Top Shot badge.
+  // null = not counted (read failed, or badges are not tracked here) — never 0.
+  badgedCount: number | null = null,
 ): string {
   const collectionUuid = collectionId ? (COLLECTION_UUID_BY_SLUG[collectionId] ?? null) : null;
   const metaFor = (externalId: string | null | undefined) =>
@@ -1157,6 +1160,10 @@ function formatDistributionForModel(
       ...metaFor(s.external_id),
     })),
     badges_note: BADGES_NOTE,
+    // Counted across EVERY priced edition, not the sample. The highest-FMV badged
+    // editions are always among sample_editions, so a badged edition is never
+    // missing from the answer because the sample skipped it.
+    badged_editions_in_filter: badgedCount,
     // ⚠ `count` is how many PRICED editions went into the percentiles.
     // `population_matched` is how many the FILTER matched. When `truncated`
     // is true those are different things and the percentiles describe a
@@ -1180,11 +1187,27 @@ async function formatDistributionWithMetadata(
   collectionUuid: string | null,
 ): Promise<string> {
   if (result.status === "no_results") return formatDistributionForModel(result, collectionId);
-  const keys = result.mode === "single"
-    ? [result.edition.external_id]
-    : result.sample_editions.map((e) => e.external_id);
-  const meta = await fetchEditionMetadata(supabase, collectionUuid, keys);
-  return formatDistributionForModel(result, collectionId, meta);
+  if (result.mode === "single") {
+    const meta = await fetchEditionMetadata(supabase, collectionUuid, [result.edition.external_id]);
+    return formatDistributionForModel(result, collectionId, meta);
+  }
+  // 2026-09-25: read badges across EVERY priced edition, not just the sample, so
+  // a badged edition is named even when the recency/max sample missed it —
+  // Wembanyama's $155 Rookie Debut common was left out of a "rookie common"
+  // answer twice. Up to 3 of the highest-FMV badged editions join the sample.
+  const pool = result.priced_editions ?? result.sample_editions;
+  const meta = await fetchEditionMetadata(supabase, collectionUuid, pool.map((e) => e.external_id));
+  const tracked = meta.status === "ok" && collectionUuid === COLLECTION_UUID_BY_SLUG["nba-top-shot"];
+  let badgedCount: number | null = null;
+  let withBadged = result;
+  if (tracked) {
+    const badged = pool.filter((e) => (e.external_id ? meta.byKey.get(e.external_id)?.badges.length ?? 0 : 0) > 0);
+    badgedCount = badged.length;
+    const have = new Set(result.sample_editions.map((e) => e.edition_id));
+    const extra = [...badged].sort((a, b) => b.fmv_usd - a.fmv_usd).filter((e) => !have.has(e.edition_id)).slice(0, 3);
+    if (extra.length) withBadged = { ...result, sample_editions: [...result.sample_editions, ...extra] };
+  }
+  return formatDistributionForModel(withBadged, collectionId, meta, badgedCount);
 }
 
 // ── Beta-feedback log helper ──────────────────────────────────────────────────
