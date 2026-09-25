@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — six Top Shot editions take their team's canonical name (`20260925100907`): "Liberty", "Mercury", "Tempo", "Valkyries" ×2 and "Indiana Fever " each made a phantom one-edition team page; #137(g) closed; #137(c) drop list completed · Cowork (cloud + laptop VM)
+
+- Sweep #4 (898 URLs after batches 23–25: 897 × 200 + the parked 307, **0 pages without a canonical** — was 9 — 0 degraded / not-found copy, none over 8 s) left ONE team page without sales copy: `/nba-top-shot/team/liberty` — "Players 1 · Editions 1 · 30d Sales 0" — a fragment of "New York Liberty" (181 editions). Measured across every collection: five fragments, six editions, each matching exactly one canonical name with ≥5× the editions in the same collection; fill-only migration, pre-image in `audit_20260925_ts_team_name_backup`. Candy's short names (#137 f) have no long form to fold into and are untouched.
+- #137(g) closed by measurement: no edition anywhere carries an empty `set_name`; 0 of 30 LIVE `topshot_insider_alerts` carry the " ·  · " gap (31 expired rows are history).
+**Revert:** DB — `UPDATE editions e SET team_name = b.team_name FROM audit_20260925_ts_team_name_backup b WHERE b.id = e.id`.
+
 ### 2026-09-25 · 🧹 SHIPPED — #137(h) closed: the NULL-series writer is `catalog_topshot_from_atlas`; the 5 on-chain-keyed sets, their 154 editions and 2,268 cache rows take their series from `TopShot.getSetSeries`; a daily route keeps every future discovery filled · Cowork (cloud + laptop VM)
 
 - The writer inserts `sets.series` as NULL by construction (Atlas carries no series; badge_editions' `series_number` is read back FROM editions — circular). The chain knows: `getSetSeries(setID)` read through Flow REST — 140 → 6, 253 / 275 / 278 / 279 → 8, set 1 → 0, unknown → nil. ⚠ The DB stores the on-chain UInt32 VERBATIM (0 and 1 are both real values — the 0↔1 footgun stays the display map's business), so the fill remaps nothing. Migrations `20260925095358` (sets + editions; backup `audit_20260925_ts_set_series_backup`, drop after 10-01) and `20260925095428` (the cache rows under them). The 9 other NULL-series sets are empty legacy rows with no on-chain id — inert, untouched.
