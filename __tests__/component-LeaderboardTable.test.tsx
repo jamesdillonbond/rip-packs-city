@@ -68,4 +68,17 @@ describe("LeaderboardTable", () => {
     const { container } = render(<LeaderboardTable rows={rows} role="buyer" window="L7" />)
     expect(container.textContent).toContain("Repeat")
   })
+
+  it("scrolls sideways on a phone instead of crushing its seven columns (2026-09-25)", () => {
+    // Measured at 390 px by the true-mobile sweep: cells touched ("$1.7k$150.37—").
+    // jsdom has no layout; the pinned facts are the min table width and the
+    // container scrolling on BOTH axes.
+    const rows = [{ addr: "0x1111111111111111", rank: 1, username: "0x1111…1111", sale_count: 5, total_volume_usd: 2000 }] as any
+    const { container } = render(<LeaderboardTable rows={rows} role="buyer" window="L7" />)
+    const table = container.querySelector("table")!
+    expect(table.style.minWidth).toBe("640px")
+    const scroller = table.parentElement!
+    expect(scroller.className).toMatch(/\boverflow-auto\b/)
+    expect(scroller.className).not.toMatch(/overflow-y-auto/)
+  })
 })

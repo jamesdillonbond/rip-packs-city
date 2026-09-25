@@ -101,13 +101,17 @@ export default function LeaderboardTable({ rows, role, window }: LeaderboardTabl
           {BADGE[role]}
         </span>
       </div>
-      <div className="overflow-y-auto" style={{ maxHeight: 420 }}>
+      {/* 2026-09-25: overflow-auto (not -y only) + a min table width — at 390 px
+          the seven columns compressed until cells touched ("$1.7k$150.37—",
+          "314$994.24"; true-mobile sweep). A phone now scrolls the table
+          sideways instead of reading crushed columns. */}
+      <div className="overflow-auto" style={{ maxHeight: 420 }}>
         {rows.length === 0 ? (
           <div className="p-6 text-center text-sm text-[color:var(--rpc-text-muted)]">
             No {role} activity in this window yet.
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" style={{ minWidth: 640 }}>
             <thead className="sticky top-0 bg-[var(--rpc-surface)] backdrop-blur">
               <tr className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
                 <th className="py-2 px-3 text-left font-semibold w-8">#</th>
