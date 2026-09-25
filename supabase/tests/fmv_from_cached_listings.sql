@@ -5,9 +5,11 @@
 -- falls back to that ask when there is no FMV, records no floor above the ceiling
 -- (no $1M troll floors), replaces only its own ASK_ONLY rows, never touches an
 -- edition with a sales-backed row, and prices nothing for NFL All Day (owned by the
--- ghost-aware writers since 2026-09-23).
+-- ghost-aware writers since 2026-09-23). Since 2026-09-25 it prices only from listings
+-- the cache fetched within 2 hours, so a frozen cache (Flowty sweeps failing, prior
+-- cache preserved) is never re-stamped as fresh FMV.
 -- DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260923205831_audit_20260923_fmv_from_cached_listings_skips_allday_and_caps_at_ask.sql);
+-- (supabase/migrations/20260925152928_audit_20260925_fmv_from_cached_listings_prices_only_fresh_listings.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -28,7 +30,8 @@ CREATE TABLE editions (
   id uuid PRIMARY KEY, collection_id uuid, external_id text, player_name text, set_name text);
 CREATE TABLE cached_listings (
   id bigserial PRIMARY KEY, collection_id uuid, moment_id text,
-  player_name text, set_name text, ask_price numeric, fmv numeric);
+  player_name text, set_name text, ask_price numeric, fmv numeric,
+  cached_at timestamptz DEFAULT now());
 CREATE TABLE fmv_snapshots (
   id bigserial PRIMARY KEY, edition_id uuid, collection_id uuid, fmv_usd numeric,
   floor_price_usd numeric, asp_usd numeric, confidence fmv_confidence,
@@ -45,6 +48,14 @@ AS $function$
 DECLARE
   rows_inserted integer := 0;
   ask_price_ceiling numeric := 5000;
+  -- 2026-09-25: only listings the cache fetched within this window are priced. When
+  -- Flowty's API stops answering, every listing-cache sweep fails and the route keeps
+  -- its prior cache (right for a blip), so without this bound the lane re-stamped
+  -- those frozen asks as fresh ASK_ONLY rows (computed_at = NOW()) every 20 minutes
+  -- until the daily 48 h purge emptied the cache. A stale listing now neither deletes
+  -- nor re-writes: the edition keeps its last row, whose computed_at ages honestly.
+  -- 2 h = six missed 20-minute ticks, so a short upstream blip changes nothing.
+  listing_max_age interval := interval '2 hours';
 BEGIN
   -- 2026-09-23: NFL All Day is NOT priced here. Its ASK_ONLY lane is owned by
   -- fmv-recalc Step 5d and refresh_allday_ask_fmv_from_listings, both of which read
@@ -75,6 +86,7 @@ BEGIN
         )
       WHERE cl.collection_id = p_collection_id
         AND cl.ask_price > 0
+        AND cl.cached_at > NOW() - listing_max_age
         AND NOT EXISTS (
           SELECT 1 FROM fmv_snapshots f2
           WHERE f2.edition_id = e.id
@@ -131,6 +143,7 @@ BEGIN
     )
   WHERE cl.collection_id = p_collection_id
     AND cl.ask_price > 0
+    AND cl.cached_at > NOW() - listing_max_age
     AND NOT EXISTS (
       SELECT 1 FROM fmv_snapshots fs2
       WHERE fs2.edition_id = e.id
@@ -164,6 +177,8 @@ DECLARE
   e6 uuid := 'ed000006-0000-0000-0000-000000000006';
   e7 uuid := 'ed000007-0000-0000-0000-000000000007';
   e8 uuid := 'ed000008-0000-0000-0000-000000000008';
+  e9 uuid := 'ed000009-0000-0000-0000-000000000009';
+  e10 uuid := 'ed000010-0000-0000-0000-000000000010';
   ad uuid := 'dee28451-5d62-409e-a1ad-a83f763ac070'; -- nfl_all_day
 BEGIN
   INSERT INTO editions (id, collection_id, external_id, player_name, set_name) VALUES
@@ -212,12 +227,30 @@ BEGIN
     (ad,'M8','P8','S8',1000000,60);
   INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, confidence, algo_version)
     VALUES (e8,ad,NULL,'NO_DATA','allday-ask-retired-v1');
+
+  INSERT INTO editions (id, collection_id, external_id, player_name, set_name) VALUES
+    (e9,c,'M9','P9','S9'),(e10,c,'M10','P10','S10');
+
+  -- E9: only a STALE listing (cached 3 h ago — the frozen-cache shape once Flowty's
+  -- sweeps stop landing) and a prior ASK_ONLY row → the prior row is neither deleted
+  -- nor re-stamped; its computed_at keeps aging.
+  INSERT INTO cached_listings (collection_id, moment_id, player_name, set_name, ask_price, fmv, cached_at) VALUES
+    (c,'M9','P9','S9',9,9, now() - interval '3 hours');
+  INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, confidence, algo_version, computed_at)
+    VALUES (e9,c,42,'ASK_ONLY','ask_only_v2', '2026-01-01T12:00:00Z');
+
+  -- E10: one fresh listing (ask 8) and one stale cheaper one (ask 2) → the stale ask
+  -- neither caps the FMV nor becomes the floor.
+  INSERT INTO cached_listings (collection_id, moment_id, player_name, set_name, ask_price, fmv, cached_at) VALUES
+    (c,'M10','P10','S10',8,NULL, now()),
+    (c,'M10','P10','S10',2,NULL, now() - interval '3 hours');
 END $seed$;
 
--- Returns the count of ASK_ONLY rows written: E1 (replace) + E2 (ask fallback) + E6 + E7 = 4.
+-- Returns the count of ASK_ONLY rows written: E1 (replace) + E2 (ask fallback) + E6 + E7 + E10 = 5.
+-- E9 (stale listing only) is NOT among them.
 SELECT _assert_eq(
   (fmv_from_cached_listings('06248cc4-b85f-47cd-af67-1855d14acd75'::uuid))::text,
-  '4', 'writes 4 ASK_ONLY rows (E1 avg-FMV + E2 ask-fallback + E6 capped + E7 troll-floor)');
+  '5', 'writes 5 ASK_ONLY rows (E1 avg-FMV + E2 ask-fallback + E6 capped + E7 troll-floor + E10 fresh-only)');
 
 -- E1: exactly one ASK_ONLY row now, FMV = avg(10,20) = 15, floor = min(ask) = 30.
 SELECT _assert_eq((SELECT count(*)::text FROM fmv_snapshots WHERE edition_id = 'ed000001-0000-0000-0000-000000000001'),
@@ -260,6 +293,14 @@ SELECT _assert_eq((fmv_from_cached_listings('dee28451-5d62-409e-a1ad-a83f763ac07
   '0', 'All Day call writes nothing');
 SELECT _assert_eq((SELECT string_agg(confidence::text || ':' || algo_version, ',') FROM fmv_snapshots WHERE edition_id = 'ed000008-0000-0000-0000-000000000008'),
   'NO_DATA:allday-ask-retired-v1', 'E8 All Day retired row untouched');
+
+-- E9: a stale listing neither deletes nor re-stamps the edition's prior row.
+SELECT _assert_eq((SELECT string_agg(fmv_usd::text || '|' || computed_at::date::text, ',') FROM fmv_snapshots WHERE edition_id = 'ed000009-0000-0000-0000-000000000009'),
+  '42|2026-01-01', 'E9 prior ASK_ONLY row untouched: a frozen listing is not re-stamped as fresh FMV');
+
+-- E10: priced from the fresh listing only.
+SELECT _assert_eq((SELECT fmv_usd::text || '|' || floor_price_usd::text || '|' || listing_count::text FROM fmv_snapshots WHERE edition_id = 'ed000010-0000-0000-0000-000000000010'),
+  '8.00|8.00|1', 'E10 stale cheaper ask ignored: FMV and floor from the fresh listing only');
 
 SELECT '✓ fmv_from_cached_listings invariants pass' AS result;
 ROLLBACK;
