@@ -13,7 +13,7 @@ import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
-import { sectionRows, sectionRowsResult, structuralSection } from "@/lib/entity-section-rpc"
+import { sectionRowResult, sectionRows, sectionRowsResult, structuralSection } from "@/lib/entity-section-rpc"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { playerPageMetadata, playerJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -21,6 +21,8 @@ import { getEntityLabels } from "@/lib/entity-labels"
 import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import { buildPlayerSetCards } from "@/lib/player-page-view"
+import PlayerSeasonStats from "@/components/entity/PlayerSeasonStats"
+import type { SeasonStatsResult } from "@/lib/player-page-season-stats"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 export const revalidate = 600
@@ -252,6 +254,22 @@ async function TopCollectorsSection({ playerName }: { playerName: string }) {
   )
 }
 
+// Season stats from the ESPN feed, keyed through player_identities (batch 48,
+// 2026-09-25). Streamed independently. THREE states, none collapsed: a failed
+// read renders SectionUnavailable; a NULL (the feed cannot key this player —
+// no identity or no ESPN id, which is every collection but Top Shot and All
+// Day today) renders nothing; a keyed player with no rows yet says so.
+const SEASON_STATS_COLLECTIONS = new Set(["nfl_all_day", "nba_top_shot"])
+
+async function SeasonStatsSection({ playerId, playerName, collectionSlug }: { playerId: string; playerName: string; collectionSlug: string }) {
+  if (!SEASON_STATS_COLLECTIONS.has(collectionSlug)) return null
+  const { row, ok } = await sectionRowResult<SeasonStatsResult>("player season stats", "get_player_season_stats", {
+    p_player_id: playerId,
+    p_seasons: 3,
+  })
+  return <PlayerSeasonStats result={row} ok={ok} playerName={playerName} />
+}
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(props: { params: Promise<{ collection: string; slug: string }> }): Promise<Metadata> {
@@ -427,6 +445,11 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       {/* ── Top collectors (rookie ownership index) ──────────────────────── */}
       <Suspense fallback={null}>
         <TopCollectorsSection playerName={detail.name} />
+      </Suspense>
+
+      {/* ── Season stats (ESPN, through the league-id crosswalk) ─────────── */}
+      <Suspense fallback={null}>
+        <SeasonStatsSection playerId={detail.id} playerName={detail.name} collectionSlug={coll.dbSlug} />
       </Suspense>
 
       {/* ── Sets ─────────────────────────────────────────────────────────── */}
