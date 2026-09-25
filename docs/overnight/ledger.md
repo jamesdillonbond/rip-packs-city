@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 📱 SHIPPED — trophy case rows line up on mobile: every slab in a grid row is the same height, the label takes the slack, so the screens, FMV footers and caption boxes align; narrow labels always stack serial over tier (the tier had jumped to line 2 only on badged slabs) · Claude Code (web sandbox)
+- Trevor's second screenshot: Damian's and Amon-Ra's screens/captions sat ~30 px apart. Browser-measured after: label heights equal per row, screens at the same y (390 px and 1000 px).
+**Revert:** `git log --grep='trophy case rows line up'` → `git revert <sha>`. No DB state.
+
 ### 2026-09-25 · 🧹 SHIPPED — the live-stats feed: `player_season_stats` from ESPN's public JSON through the league-id crosswalk — a GitHub Actions runner fetches ESPN, a Bearer route owns the DB, the NBA half resolves its ESPN ids by name search, and `get_player_season_stats` reads three states (`20260925233446`) · Cowork (batch 47)
 
 **The third part of the plan Trevor approved ("Proceed with the all"), after the research verdict: ESPN's public JSON is the only free source with both leagues, player ids, and reachability from somewhere RPC runs code.** Measured again today from the cloud: `athletes/<espn_id>/stats` 200 for Mahomes (22.8 KB, categories passing/rushing/receiving/defensive/scoring per season since 2017) and LeBron (41.6 KB, averages/totals/misc per season); the name search returns `{id, displayName, league}` items.
