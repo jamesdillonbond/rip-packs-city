@@ -38,7 +38,6 @@ import {
   fetchParallels,
   fetchSubeditionSiblings,
   fetchBadges,
-  fetchSpecialSerialsForSerial,
   fetchEditionNotableSerials,
   fetchActiveListingAsk,
   type HighOffer,
@@ -49,6 +48,8 @@ import {
   type MomentBestOffer,
   type SubeditionSibling,
 } from "@/lib/moment-detail/fetchers"
+import { mapNotableTagsToSpecialSerials } from "@/lib/moment-special-serials"
+import { similarEditionParallelLabel } from "@/lib/moment-detail/similar-edition-label"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { seriesDisplay } from "@/lib/series-label"
@@ -221,6 +222,7 @@ interface RecentSale {
 
 interface SimilarEdition {
   id: string
+  external_id?: string | null
   player_name: string | null
   set_name: string | null
   tier: string | null
@@ -570,13 +572,17 @@ export default async function MomentPage(
   })
 
   // Parallel extras — all SECDEF RPCs, independent, fan out in one pass.
-  const [highOfferRes, parallelsRes, badgesRes, specialSerialsRes, momentBestOfferRes, notableSerialsRes, activeListingAskRes, subSiblingsRes] = await Promise.all([
+  // 2026-09-25: ONE get_edition_special_serials read per page. This serial's
+  // special-serial badges used to be a SECOND call to the same RPC with the
+  // same argument, made in the same Promise.all — so one page view cost the
+  // read twice, and when one of the two hit the 4 s budget the page said
+  // "1 of 6 sections could not be loaded (Special serials)" beside a Special
+  // serials table that had rendered fine from the other. The badges are now
+  // derived from the single read below (mapNotableTagsToSpecialSerials).
+  const [highOfferRes, parallelsRes, badgesRes, momentBestOfferRes, notableSerialsRes, activeListingAskRes, subSiblingsRes] = await Promise.all([
     fetchHighOffer(e.id),
     fetchParallels(e.id),
     fetchBadges(e.id),
-    r?.kind === "moment" && serial != null
-      ? fetchSpecialSerialsForSerial(e.id, serial)
-      : Promise.resolve({ rows: [] as SpecialSerialRow[], ok: true }),
     // Item 1: serial-aware best offer only for a concrete serial (kind='moment').
     // Edition-level pages stay edition-grain (highOffer below).
     r?.kind === "moment" && serial != null
@@ -599,9 +605,10 @@ export default async function MomentPage(
   const highOffer = highOfferRes.data
   const parallels = parallelsRes.rows
   const badges = badgesRes.rows
-  const specialSerials = specialSerialsRes.rows
   const momentBestOffer = momentBestOfferRes.data
   const notableSerials = notableSerialsRes.rows
+  const specialSerials: SpecialSerialRow[] =
+    r?.kind === "moment" && serial != null ? mapNotableTagsToSpecialSerials(notableSerials, serial) : []
   const activeListingAsk = activeListingAskRes.data
   const subSiblings = subSiblingsRes.rows
   // Every one of these panels SELF-HIDES when its data is absent, so a failed
@@ -614,7 +621,7 @@ export default async function MomentPage(
     boardStatus("Offers", highOfferRes.ok && momentBestOfferRes.ok),
     boardStatus("Parallels", parallelsRes.ok),
     boardStatus("Badges", badgesRes.ok),
-    boardStatus("Special serials", specialSerialsRes.ok && notableSerialsRes.ok),
+    boardStatus("Special serials", notableSerialsRes.ok),
     boardStatus("Live ask", activeListingAskRes.ok),
     boardStatus("Printing ladder", subSiblingsRes.ok),
   ])
@@ -1587,7 +1594,7 @@ export default async function MomentPage(
                       letterSpacing: "0.12em",
                     }}
                   >
-                    {(s.tier ?? "").toUpperCase()}{s.series != null ? " · " + seriesDisplay(s.series, e.collection_slug) : ""} · {s.set_name ?? "—"}
+                    {(s.tier ?? "").toUpperCase()}{s.series != null ? " · " + seriesDisplay(s.series, e.collection_slug) : ""} · {s.set_name ?? "—"}{similarEditionParallelLabel(s, subSiblings)}
                   </div>
                   <div
                     style={{
