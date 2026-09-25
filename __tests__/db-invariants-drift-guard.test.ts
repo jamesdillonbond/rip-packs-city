@@ -655,6 +655,14 @@ const PINS = [
     migration: "supabase/migrations/20260925232127_audit_20260925_name_writers_resolve_through_the_player_identity_crosswalk.sql",
   },
   {
+    // Added 2026-09-25 (batch 47). The player page's stats read: NULL for a
+    // player the feed cannot key (no identity / no espn_id), [] for one with
+    // no rows yet, else the latest N regular seasons newest first.
+    fn: "get_player_season_stats",
+    test: "supabase/tests/get_player_season_stats.sql",
+    migration: "supabase/migrations/20260925233446_audit_20260925_player_season_stats_espn_feed_table_and_sync_rpcs.sql",
+  },
+  {
     fn: "resolve_canonical_player",
     test: "supabase/tests/resolve_canonical_player.sql",
     migration: "supabase/migrations/20260925135939_audit_20260925_steph_curry_one_player_and_player_name_aliases.sql",

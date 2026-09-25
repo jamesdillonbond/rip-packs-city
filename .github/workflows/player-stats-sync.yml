@@ -1,0 +1,55 @@
+name: Player stats sync — ESPN season stats through the league-id crosswalk
+
+# 2026-09-25 (batch 47). Runs scripts/sync-player-stats.mjs on a GitHub Actions
+# runner (NOT Supabase edge, NOT a Vercel route): ESPN's public JSON 403s from
+# Supabase edge egress (#8, measured 2026-08-09) and answers 200 from a runner,
+# the cloud sandbox and the laptop. The runner fetches ESPN and does every DB
+# read and write through /api/cron/player-stats-sync (Bearer
+# INGEST_SECRET_TOKEN); the route writes the heartbeat (targets phase) and the
+# terminal pipeline_runs row (final phase), whose `ok` is derived from the
+# runner's own counts.
+#
+# Every 6 hours at :23 (off the :00/:30 anchors; daily-periodic so the
+# scheduler-liveness watchdog can size it). Each run refreshes up to LIMIT
+# players per league, stalest first, so the ~2,700 linked players cycle every
+# ~2 days at full delivery — GitHub sheds `schedule` events freely (8 % to 33 %
+# delivery measured on this repo), so expect the cycle to run longer; the
+# row's refreshed_at is the truth. Kill switch: disable this workflow.
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      leagues:
+        description: "comma list: nfl,nba"
+        type: string
+        default: "nfl,nba"
+      limit:
+        description: "players per league per run"
+        type: string
+        default: "300"
+      dry_run:
+        description: "fetch ESPN + report, write nothing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Sync player stats
+        env:
+          INGEST_SECRET_TOKEN: ${{ secrets.INGEST_SECRET_TOKEN }}
+          LEAGUES: ${{ github.event.inputs.leagues || 'nfl,nba' }}
+          LIMIT: ${{ github.event.inputs.limit || '300' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '' }}
+        run: node scripts/sync-player-stats.mjs
