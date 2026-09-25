@@ -67,5 +67,16 @@ export default defineConfig({
       : undefined,
     launchOptions: process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {},
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // ⚠ The UA SELF-IDENTIFIES as automated (2026-09-25). `devices["Desktop Chrome"]`
+  // ships a plain Chrome UA with no "Headless", so every smoke page view reached
+  // /api/track-funnel as bot_ua=false — counted as a human in the traction
+  // numbers. The suffix matches that route's BOT_UA (/playwright/), and nothing
+  // server-side renders differently by UA, so what the smoke sees is unchanged.
+  // This matters more now the smoke also runs after every production deploy.
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"], userAgent: `${devices["Desktop Chrome"].userAgent} RPC-E2E-Smoke (playwright)` },
+    },
+  ],
 })

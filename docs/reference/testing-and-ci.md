@@ -19,6 +19,13 @@ Two new `ci.yml` jobs close two gaps that nothing covered before.
 - Baseline was **zero** findings at that severity across 24 workflows. The only hits were 2 info-level SC2012 results, below the threshold. So it is a ban at zero.
 - Planted-defect proof: `needs.chnages.outputs.code` → `property "chnages" is not defined`, exit 1. Without this job, that typo evaluates to `''` and silently skips the job it gates.
 
+**Same day, second pass:**
+- **`deno lint` is a RATCHET** (`scripts/check-deno-lint-ratchet.mjs`, baseline `deno-lint-ratchet.json`, 17 findings keyed per rule+file). It used to run with `|| true` and so could never fail. The 17 findings are NOT fixed in bulk because they sit in deployed edge functions, and `edge:drift:check` compares the repo against the deployed copies, so a bulk fix means 13 redeploys. Fix one when you are already deploying that function, then run `--update`. Planted proof: a `let` that is never reassigned → `prefer-const|…: 0 → 1`, exit 1. ⚠ `no-unused-vars` ignores `_`-prefixed names, and my first planted defect used one, so it passed silently. **Plant a defect the rule actually flags.**
+- **The Playwright smoke runs after every successful Production deploy** (`deployment_status`, gated by `if:` to Production + success; a newer deploy cancels an in-flight smoke). `scheduler-liveness` counts only `event=schedule` runs, so its 4/day no-change control is unaffected. Every non-matching status still creates a SKIPPED run, which is expected.
+- ⭐ **The smoke's user agent now self-identifies** (`… RPC-E2E-Smoke (playwright)`). `devices["Desktop Chrome"]` ships a plain Chrome UA, so every smoke page view reached `/api/track-funnel` as `bot_ua=false`, counted as a HUMAN. That was 4 runs a day before this change and would have been roughly 10× more with per-deploy runs. Pinned against the route's own `isBotUserAgent`, with the bare device UA as the control.
+- Investigated but not changed: the six `/<c>/pack/dist/1` URLs take about 10 s with the DB down. That is `generateMetadata` running two sequential reads, each capped by a 5 s `withBoardBudget`, while supabase-js retries the refused connection. It is bounded and deliberate: the fallback read can still name the pack when the first read fails.
+- ⏳ **Still open:** the 86 login-gated URLs. Rendering them needs a signed session in CI, and auth verifies against Supabase, which this job deliberately cannot reach.
+
 ## 🚨🚨 A GUARD THAT CANNOT FAIL, AND THE ONLY REASON I KNOW IT: `\b` IN A JS TEMPLATE LITERAL IS **U+0008 BACKSPACE** (2026-09-20)
 
 Writing `__tests__/addresses-are-never-folded-and-prefixed.test.ts`, one arm re-derives the census

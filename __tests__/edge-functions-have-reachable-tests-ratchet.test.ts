@@ -5,7 +5,7 @@ import path from "node:path"
 // RATCHET: an edge function must have SOME behaviour a test can actually reach.
 //
 // ── WHY ────────────────────────────────────────────────────────────────────
-// CI's `edge-deno` job runs `deno check` + an informational `deno lint`. There is
+// CI's `edge-deno` job runs `deno check` + a ratcheted `deno lint`. There is
 // NO Deno test run, so nothing inside a `supabase/functions/*/index.ts` is ever
 // EXECUTED by a test. Behaviour is reachable in exactly two ways:
 //

@@ -1,0 +1,18 @@
+{
+  "no-empty|supabase/functions/pinnacle-nft-resolver/index.ts": 1,
+  "no-import-prefix|supabase/functions/resolve-allday-rip-dist-api/index.ts": 1,
+  "no-inner-declarations|supabase/functions/sales-serial-backfill/index.ts": 1,
+  "no-unused-vars|supabase/functions/hybrid-custody-events/index.ts": 1,
+  "no-unused-vars|supabase/functions/sync-nba-projections/index.ts": 1,
+  "prefer-const|supabase/functions/resolve-allday-rip-dist-api/index.ts": 1,
+  "require-await|supabase/functions/compute-pinnacle-pack-ev/index.ts": 1,
+  "require-await|supabase/functions/compute-topshot-pack-ev/index.ts": 1,
+  "require-await|supabase/functions/hybrid-custody-backfill/index.ts": 1,
+  "require-await|supabase/functions/match-topshot-players/index.ts": 1,
+  "require-await|supabase/functions/pinnacle-owner-discovery-forward/index.ts": 1,
+  "require-await|supabase/functions/snapshot-institutional-wallets/index.ts": 2,
+  "require-await|supabase/functions/special-serial-delta/index.ts": 1,
+  "require-await|supabase/functions/sync-nba-odds/index.ts": 1,
+  "require-await|supabase/functions/sync-nba-projections/index.ts": 1,
+  "require-await|supabase/functions/topshot-insider-detect-patterns/index.ts": 1
+}

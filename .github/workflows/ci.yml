@@ -1113,8 +1113,9 @@ jobs:
   # deno lint auto-discovers supabase/functions/deno.json (excludes the
   # deliberate no-explicit-any). The import-map refactor cleared ~60 import-style
   # findings; the ~15 residual style findings (require-await, no-unused-vars,
-  # no-empty, no-inner-declarations) are pre-existing and low-value, so lint is
-  # informational (|| true) and never gates.
+  # no-empty, no-inner-declarations) are pre-existing and low-value. They are
+  # pinned by a per-rule+file RATCHET (since 2026-09-25): new findings gate,
+  # existing ones are grandfathered. See the lint step below.
   # Tree-corruption guard — WIRED 2026-08-18, having previously been wired to
   # NOTHING. scripts/check-tree-corruption.mjs guards the documented
   # Windows<->sandbox mount failure (NUL injection, mid-file truncation). Its own
@@ -1188,13 +1189,18 @@ jobs:
       # __tests__/edge-function-deps-are-locked.test.ts.
       - name: deno check (type + import resolution)
         run: deno check --config supabase/functions/deno.json --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts
-      # ⚠ INFORMATIONAL, AND IT LOOKS LIKE IT IS NOT. `|| true` means this step
-      # cannot fail the job — but `denoland/setup-deno` registers a problem
-      # matcher, so every finding is re-emitted as a `##[error]` annotation on
-      # the run summary. 17 of them show on EVERY run, pass or fail (require-await
-      # on `Deno.serve(async …)` handlers, one no-unused-vars, one
-      # no-inner-declarations). They are not the reason a red edge-deno run is
-      # red — read the `deno check` step instead.
-      - name: deno lint (informational)
+      # RATCHET since 2026-09-25 (was `|| true`, which could never fail). The 17
+      # findings present that day live in DEPLOYED functions, and edge:drift:check
+      # compares the repo against the deployed copies, so they are pinned per
+      # rule+file in deno-lint-ratchet.json rather than fixed in bulk. A
+      # new finding reds; a fixed one asks for `--update` to lower the baseline.
+      # `--json` also ends the 17 `##[error]` annotations setup-deno's problem
+      # matcher used to paint on every run, pass or fail.
+      # ⚠ `|| true` on the lint itself is required: deno exits 1 whenever there
+      # is ANY finding, baseline included. The ratchet script is the gate, and
+      # it exits 2 on an unreadable or wrong-shaped report.
+      - name: deno lint (ratchet)
         if: always()
-        run: deno lint supabase/functions/ || true
+        run: |
+          deno lint --json supabase/functions/ > "$RUNNER_TEMP/deno-lint.json" || true
+          node scripts/check-deno-lint-ratchet.mjs "$RUNNER_TEMP/deno-lint.json"

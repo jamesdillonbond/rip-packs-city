@@ -12,9 +12,23 @@ name: E2E DOM Smoke
 # HTTP 200 streaming shell) with no error boundary — the "200-but-broken-DOM"
 # class the API smoke gate (smoke-tests.yml) structurally cannot see.
 #
-# Runs on a schedule + manual dispatch only, so a live-site hiccup never blocks a
-# merge. Point it at a preview by dispatching with a different SMOKE_BASE_URL.
+# Runs on a schedule, on manual dispatch, and (since 2026-09-25) after every
+# successful PRODUCTION deploy — never as a merge gate, so a live-site hiccup
+# never blocks a push. Point it at a preview by dispatching with a different
+# SMOKE_BASE_URL.
+#
+# ⚠ WHY ON DEPLOY. On the 6h schedule alone, a deploy that breaks a page was
+# first seen up to 6h later (the 09-20 Pinnacle 500 was found by real traffic).
+# Vercel reports each deploy to GitHub as a deployment; `deployment_status`
+# fires for every state, and the job's `if:` keeps only Production + success.
+# Every other status still creates a SKIPPED run — expected, not a fault.
+# ⚠ scheduler-liveness counts this workflow's runs with `event=schedule` only,
+# so deploy runs cannot inflate its 4/day no-change control.
+# ⚠ ~47 production deploys/day (measured 2026-09-25): the concurrency group
+# below cancels an in-flight deploy smoke when a newer deploy lands, so a burst
+# of pushes smokes only the build that is actually live.
 on:
+  deployment_status:
   schedule:
     - cron: '51 */6 * * *' # every 6h, off the top of the hour; :51 is free — :41 collided with ops-monitor's 06:41 data-integrity lambda (2026-09-04)
   workflow_dispatch:
@@ -27,9 +41,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: e2e-smoke-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'deployment_status' }}
+
 jobs:
   dom-smoke:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'deployment_status' ||
+      (github.event.deployment_status.state == 'success' &&
+       github.event.deployment.environment == 'Production')
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
