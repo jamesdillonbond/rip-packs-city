@@ -34,6 +34,11 @@
 //   RPC_QA_SETTLE_MS extra settle before measuring (default 8000; the sweep
 //                    already waits 20 s on collection/market/sniper paths)
 //   PLAYWRIGHT_BROWSERS_PATH / LD_LIBRARY_PATH as the VM recipe requires.
+//   RPC_QA_CHROME    an explicit Chromium binary (2026-09-25: the cloud sandbox
+//                    pre-installs /opt/pw-browsers/chromium-<rev>/chrome-linux/chrome
+//                    under a DIFFERENT revision than the repo's Playwright expects,
+//                    and `playwright install` is forbidden there — this is how the
+//                    sweep runs from the cloud at all).
 //
 // WHAT A RECORD CARRIES (all measured in the page, none inferred from HTTP):
 //   status · ms · iw/sw (sw > iw is a horizontal-overflow defect) · widest
@@ -79,7 +84,10 @@ const SETTLE = Math.max(0, Number(process.env.RPC_QA_SETTLE_MS) || 8000);
 const paths = fs.readFileSync(file, "utf8").split("\n").map((s) => s.trim()).filter((s) => s && !s.startsWith("#"));
 if (shotdir) fs.mkdirSync(shotdir, { recursive: true });
 
-const browser = await chromium.launch({ args: ["--no-sandbox"] });
+const browser = await chromium.launch({
+  args: ["--no-sandbox"],
+  ...(process.env.RPC_QA_CHROME ? { executablePath: process.env.RPC_QA_CHROME } : {}),
+});
 const ctx = await browser.newContext({
   ...(mode === "mobile"
     ? devices["iPhone 13"]

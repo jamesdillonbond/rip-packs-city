@@ -19,6 +19,25 @@ mkdir -p _to_delete/qa-shots-$(date +%m%d)
 node scripts/qa/mobile-sweep.mjs paths.txt _to_delete/qa-sweep.jsonl _to_delete/qa-shots-$(date +%m%d) mobile
 ```
 
+## Run it from the cloud sandbox (works since 2026-09-25)
+
+The cloud sandbox reaches prod today (the 09-06 TLS resets are gone), and it
+pre-installs a Chromium under `/opt/pw-browsers/chromium-<rev>/` — a DIFFERENT
+revision than the repo's Playwright expects, and `playwright install` is forbidden
+there. Point the sweep at the binary:
+
+```bash
+RPC_QA_CHROME=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome | head -1) \
+RPC_QA_SETTLE_MS=3000 RPC_QA_CONC=3 \
+node scripts/qa/mobile-sweep.mjs paths.txt /tmp/qa/out.jsonl /tmp/qa/shots mobile
+```
+
+and `Read` the PNGs directly. ⚠ The sandbox's egress proxy can answer a request
+with **502 Bad Gateway on its own** (a cut transfer) — 4 of 48 pages did on 09-25 while
+Vercel's runtime logs showed ZERO 5xx for the window. A 502 in a cloud sweep is a
+proxy reading until a re-probe (curl, or Vercel `get_runtime_logs statusCode=5xx`)
+agrees; do not file it as a site failure from one run.
+
 Then, from the Cowork session, `device_stage_files` the PNGs and view them with `Read` —
 that is what makes the mobile view *inspectable*, not just measured. Keep the run
 under `_to_delete/` (gitignored) so nothing lands in the tree.
