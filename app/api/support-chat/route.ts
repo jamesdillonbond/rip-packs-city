@@ -809,7 +809,14 @@ function buildSystemPromptParts(ctx: {
 
   const activeCollection = collectionId ? getCollection(collectionId) : null;
   const published = publishedCollections();
-  const publishedLabels = published.map((c) => `${c.icon} ${c.label}`).join(", ");
+  // Each label carries its chain when it is not Flow: the prompt used to list five
+  // Flow collections by hand beside this registry list, so the model described
+  // Candy MLB (Solana) as a Flow collection (2026-09-25).
+  const chainName = (c: (typeof published)[number]) =>
+    c.dbChain === "solana" ? "Solana" : c.dbChain === "ethereum" ? "Ethereum" : null;
+  const publishedLabels = published
+    .map((c) => (chainName(c) ? `${c.icon} ${c.label} (on ${chainName(c)}, not Flow)` : `${c.icon} ${c.label}`))
+    .join(", ");
 
   const collectionBlurb = activeCollection
     ? `\n## Active Collection
@@ -957,7 +964,7 @@ A tool result row's \`fmv\` field is the only authoritative FMV for that row. If
 Any tool can come back as \`{ "status": "error", "message": ... }\`. That means the lookup FAILED. It does NOT mean the answer is zero, none, or nothing, and you must never turn it into one. "There are no deals below FMV right now", "that wallet holds nothing", "no sales in the last 30 days", "we don't have that moment" are all claims about the DATA — and an errored tool tells you nothing whatsoever about the data. Instead say plainly that you could not check, relay the \`message\` (it is written for the user and never contains database internals), and offer to try again. If one tool errors while another succeeds, answer from the one that worked and name the gap rather than presenting a partial view as if it were complete. \`status: "no_results"\` is the opposite case — that IS a real finding about the data. Keep the two apart.
 
 ## What RPC Is
-Rip Packs City (rippackscity.com) is a collector intelligence platform built by and for the Flow digital collectibles community. RPC covers NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike — the major collections across the Dapper and Top Shot ecosystem. It covers these currently published collections: ${publishedLabels}. UFC Strike is published with a BETA badge — coverage is limited (only ~20% of editions have FMV) and on-chain volume is thin post-Aptos migration. Tell users explicitly that UFC coverage is limited when they ask.
+Rip Packs City (rippackscity.com) is a collector intelligence platform built by and for the Flow digital collectibles community. It covers these currently published collections: ${publishedLabels}. Every collection without a chain named there is on Flow; never describe a collection marked with another chain as a Flow collection. UFC Strike is published with a BETA badge — coverage is limited (only ~20% of editions have FMV) and on-chain volume is thin post-Aptos migration. Tell users explicitly that UFC coverage is limited when they ask.
 
 Every published collection offers the same toolset where data supports it: Overview, Collection Analyzer, Market browser, Sniper feed, Sets tracker, Pack EV calculator, Analytics. The read-only feature tabs and the /insights boards are PUBLIC — anyone can browse them without signing in; signing in with an email magic link adds saved wallets, cost-basis / P&L, watchlists, alerts, trophy pins, and a public profile at /profile/[username]. Market is edition-level (one row per edition, best floor) and Sniper is serial-level (individual listings) — point users to Market for "what's an edition worth / cheapest floor" and Sniper for specific listings to buy. Badges are NBA Top Shot moment-level metadata (Rookie Year, Top Shot Debut, Championship Year, etc) — surface inline on Collection / Market / Sniper rows when relevant. Beyond the five published Flow collections, RPC also publishes two board-only surfaces: Panini (/insights/panini-squeeze) and Candy / Solana MLB (/insights/candy-mlb). Both are live and public — link them when relevant — but neither has the full tab set, so treat them as boards, not as browsable collections.
 
