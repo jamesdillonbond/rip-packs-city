@@ -1,3 +1,6 @@
+import type { Metadata } from "next"
+import { getCollection } from "@/lib/collections"
+import { pageMetadata } from "@/lib/seo"
 import { Suspense } from "react"
 import PinnacleCollectionClient from "./PinnacleCollectionClient"
 
@@ -9,6 +12,16 @@ import PinnacleCollectionClient from "./PinnacleCollectionClient"
 // calls `useSearchParams`, which requires one — and leaving it inside would move the file
 // into the coverage gate without making it renderable by a test, i.e. measurement with no
 // assertions.
+// 2026-09-25 — this tab inherited the segment layout's generic title ("Disney
+// Pinnacle Analytics — Rip Packs City") and declared NO canonical, so the
+// collection and sniper tabs shared one <title> and neither told a crawler which
+// URL it was. Same builder the other collections' tabs use: the closed-market
+// copy for Pinnacle, and a self-canonical.
+export function generateMetadata(): Metadata {
+  const c = getCollection("disney-pinnacle")!
+  return pageMetadata("collection", c.label, c.id)
+}
+
 export default function PinnacleCollectionPage() {
   return (
     <Suspense fallback={null}>

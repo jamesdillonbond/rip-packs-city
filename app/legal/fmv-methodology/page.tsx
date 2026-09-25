@@ -11,6 +11,7 @@ export const revalidate = 86400
 
 export const metadata = {
   title: "FMV Methodology",
+  alternates: { canonical: "https://www.rippackscity.com/legal/fmv-methodology" },
   description:
     "How Rip Packs City calculates Fair Market Value: signals, confidence levels, and the explicit limits of what FMV does and doesn't account for.",
 }

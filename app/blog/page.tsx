@@ -12,6 +12,7 @@ export const revalidate = 86400
 
 export const metadata = {
   title: "Blog",
+  alternates: { canonical: "https://www.rippackscity.com/blog" },
   description:
     "Data-driven analysis of Flow blockchain collectibles: NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike.",
 }

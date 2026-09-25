@@ -14,6 +14,7 @@ export const revalidate = 86400
 
 export const metadata = {
   title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving",
+  alternates: { canonical: "https://www.rippackscity.com/blog/pinnacle-star-wars-day-2026" },
   description:
     "53 Star Wars editions, 14 sets, 408 historical sales. Where the Mandalorian peak buyers are now underwater, the only edition trading below FMV with HIGH confidence, and what we don't know yet.",
   openGraph: {

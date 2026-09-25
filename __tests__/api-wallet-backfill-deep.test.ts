@@ -73,6 +73,8 @@ vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
 vi.mock("@/lib/chains/flow/wallet-backfill-helpers", () => ({
   isStorageLimitError: (err: unknown) =>
     String(err instanceof Error ? err.message : err).includes("1106"),
+  isComputationLimitError: (err: unknown) =>
+    String(err instanceof Error ? err.message : err).includes("1110"),
   isNoCollectionCapabilityError: (err: unknown) =>
     String(err instanceof Error ? err.message : err).includes("could not borrow a reference"),
 }))
@@ -375,6 +377,25 @@ describe("wallet-backfill — lock + error reclassification", () => {
     const log = walkLog(spy.rpcCalls)
     expect(log).toMatchObject({ p_ok: true, p_rows_found: 0 })
     expect(log?.p_extra).toMatchObject({ terminated_reason: "skipped_db_saturated" })
+  })
+
+  // 2026-09-25 — the sharded-collection whale: `getIDs()` over 80k+ Moments
+  // trips the COMPUTATION limit (1110), which fell through to ok:false and was
+  // re-dispatched five times a day. Same permanent property as 1106.
+  it("Cadence 1110 computation-limit reclassifies as ok:true + sharded-scan flag, naming the limit", async () => {
+    state.ownedIdsError = new Error("[Error Code: 1110] computation limit exceeded (used: 100563, limit: 100000) --> ef4d8b44dd7f7ef6.TopShotShardedCollection:138:22")
+    const spy = install({})
+
+    await POST(post({ wallet: WALLET }))
+    await runDeferred()
+
+    const log = walkLog(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: true })
+    expect(log?.p_extra).toMatchObject({
+      terminated_reason: "computation_limit_exceeded",
+      flagged_for_sharded_scan: true,
+    })
+    expect(String((log?.p_extra as { error_excerpt?: string } | undefined)?.error_excerpt)).toMatch(/1110/)
   })
 
   it("Cadence 1106 storage-limit reclassifies as ok:true + sharded-scan flag (mega-wallet, not a failure)", async () => {

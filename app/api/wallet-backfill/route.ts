@@ -6,7 +6,7 @@ import {
   isWalletAddress,
   resolveTopShotUsernameCacheAware,
 } from "@/lib/chains/flow/topshot-username-resolve"
-import { isStorageLimitError, isNoCollectionCapabilityError } from "@/lib/chains/flow/wallet-backfill-helpers"
+import { isStorageLimitError, isComputationLimitError, isNoCollectionCapabilityError } from "@/lib/chains/flow/wallet-backfill-helpers"
 // Imported from its own module for the same reason as the chunk writer below:
 // this route's suite stubs wallet-backfill-helpers wholesale, and a delete
 // routed through that stub would never run on the Top Shot path.
@@ -514,7 +514,20 @@ async function runBackfill(
     // Cadence error 1106 ("max interaction with storage") is a permanent
     // property of mega-wallets — log as ok:true with a sharded-scan flag so
     // it stops counting as a pipeline failure. See lib/wallet-backfill-helpers.
-    if (isStorageLimitError(err)) {
+    //
+    // ⚠ 2026-09-25 — Cadence 1110 (COMPUTATION limit) is the same permanent
+    // property on this collection and was falling through to `ok:false`: the
+    // TopShotShardedCollection `getIDs()` concatenates every bucket, and two
+    // seeded wallets (TopShot_Buyback_2 0xe1f2a091f7bb5245, >80k Moments;
+    // 0x0d744d23165bfb6c, ~158k) crossed the 100k budget — 22 "failed" runs in
+    // 73 h, five re-dispatches a day, each a 5 s script that cannot succeed.
+    // MEASURED before this shipped: a `forEachID` page costs ~1 unit per id
+    // SKIPPED as well as read (offset 60k + 20k passed, offset 80k + 20k
+    // failed), so offset paging is O(N²) and no single script can enumerate a
+    // wallet past ~100k on the public access node. The classifier is the same
+    // one the Pinnacle / All Day walkers use; the reason names the limit.
+    if (isStorageLimitError(err) || isComputationLimitError(err)) {
+      const terminated = isStorageLimitError(err) ? "storage_limit_exceeded" : "computation_limit_exceeded"
       await logRun({
         startedAt: startedAtIso,
         wallet,
@@ -531,7 +544,7 @@ async function runBackfill(
           total_moments_seen: totalFetched,
           rows_to_write: totalRowsAttempted,
           ...chunkFailureExtra(chunkTally),
-          terminated_reason: "storage_limit_exceeded",
+          terminated_reason: terminated,
           flagged_for_sharded_scan: true,
           skip_cached: skipCached,
           elapsed_ms: elapsedMs,

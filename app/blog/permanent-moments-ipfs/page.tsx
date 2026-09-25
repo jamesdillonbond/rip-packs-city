@@ -14,6 +14,7 @@ export const revalidate = 86400
 
 export const metadata = {
   title: "Your Moments Just Became Permanent. Here's What That Actually Means.",
+  alternates: { canonical: "https://www.rippackscity.com/blog/permanent-moments-ipfs" },
   description:
     "Top Shot just pinned every Moment's video to IPFS. What content-addressing actually guarantees, how to verify a Moment yourself in 30 seconds, and what we built with the data.",
   openGraph: {
