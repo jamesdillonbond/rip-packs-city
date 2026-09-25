@@ -28,7 +28,7 @@ const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
 const ACCENT_RED = "var(--rpc-red, #E03A2F)"
 
-type Kind = "pack_buy" | "pack_open" | "moment_buy" | "moment_pull" | "moment_sell"
+type Kind = "pack_buy" | "pack_open" | "pack_sell" | "moment_buy" | "moment_pull" | "moment_sell"
 
 interface TxEvent {
   kind: Kind
@@ -78,6 +78,9 @@ const PAGE_SIZE = 50
 const KIND_META: Record<Kind, { verb: string; tint: string }> = {
   pack_buy: { verb: "Bought pack", tint: "#A855F7" },
   pack_open: { verb: "Opened pack", tint: "#3B82F6" },
+  // 2026-09-25: packs the wallet SOLD (on-chain seller rows + the Dapper
+  // marketplace index) — 502 of Trevor's 544 sells were packs and none showed.
+  pack_sell: { verb: "Sold pack", tint: "#34D399" },
   moment_buy: { verb: "Bought", tint: "#F59E0B" },
   moment_pull: { verb: "Pulled", tint: "#A855F7" },
   moment_sell: { verb: "Sold", tint: "#34D399" },
@@ -97,7 +100,7 @@ function urlSlug(dbSlug: string): string {
 }
 
 function eventHref(e: TxEvent): string | null {
-  if (e.kind === "pack_buy" || e.kind === "pack_open") {
+  if (e.kind === "pack_buy" || e.kind === "pack_open" || e.kind === "pack_sell") {
     return e.dist_id ? `/${urlSlug(e.collection_slug)}/packs/simulator/${encodeURIComponent(e.dist_id)}` : null
   }
   return e.nft_id ? `/moment/${encodeURIComponent(e.nft_id)}` : null
@@ -324,7 +327,7 @@ export default function TransactionHistoryClient() {
 
 function TimelineRow({ e }: { e: TxEvent }) {
   const meta = KIND_META[e.kind]
-  const isPack = e.kind === "pack_buy" || e.kind === "pack_open"
+  const isPack = e.kind === "pack_buy" || e.kind === "pack_open" || e.kind === "pack_sell"
   const href = eventHref(e)
 
   // Verb: moment_buy with a non-marketplace method reads its method label.
@@ -343,11 +346,11 @@ function TimelineRow({ e }: { e: TxEvent }) {
         : meta.verb
 
   // Amount tint: sells are proceeds (green); everything else neutral.
-  const amountTint = e.kind === "moment_sell" ? "#34D399" : "rgba(255,255,255,0.9)"
+  const amountTint = e.kind === "moment_sell" || e.kind === "pack_sell" ? "#34D399" : "rgba(255,255,255,0.9)"
   const amountText = e.amount_usd != null ? fmtUsd(e.amount_usd) + (e.currency ? " " + e.currency : "") : "—"
 
   const counterpartyLabel =
-    e.kind === "moment_sell" && e.counterparty
+    (e.kind === "moment_sell" || e.kind === "pack_sell") && e.counterparty
       ? "to " + truncAddr(e.counterparty)
       : isPrimaryPack
         ? "drop / reward"

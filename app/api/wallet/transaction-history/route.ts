@@ -15,6 +15,11 @@
 // `kind` accepts all | packs | buys | sells | pulls ("all"/empty → NULL on the
 // RPC). Note: "all" emits pack opens (summarized) but NOT individual pulls; the
 // "pulls" filter surfaces the per-moment pulls (avoids double-counting opens).
+// 2026-09-25: "sells" and "packs" also carry `pack_sell` rows (on-chain seller
+// rows plus the Dapper marketplace index, never both for one pack) and "packs"
+// carries the marketplace pack buys the on-chain table missed
+// (20260925143056) — the SELLS tab used to list 42 moment sells and none of
+// the 502 packs the wallet sold.
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
