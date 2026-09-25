@@ -19,7 +19,7 @@ Two scheduled Cowork tasks run autonomously against this repo. Any Claude Code o
 
 Shared state lives in `docs/overnight/`:
 - `ledger.md` — rolling record of queued / shipped / declined items, each shipped item with its revert path. The **"Declined — do not re-suggest"** heading is Trevor's: add an item there to stop the pass proposing it.
-- `inbox/` — monitor → night-pass handoff (archived to `inbox/archive/` after draining).
+- `inbox/` — monitor → night-pass handoff. ⛔ **APPEND-ONLY since 2026-08-17 — do NOT archive after draining** (it used to say so; see "The inbox-archival instruction conflicts with `INDEX.md`" below). Every new filing needs its `INDEX.md` entry in the same commit.
 
 ### ⚠ When the night pass CANNOT push (added 2026-08-25) — leave a COMMIT, not loose files
 

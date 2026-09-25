@@ -11,6 +11,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🗓 CONFIG (outside the repo) + DOCS — scheduled-task prompts updated to the working push route; five dead tasks deleted · Cowork (Trevor: "do it all" / "keep going")
+
+- **Why the nightly pass has been NO-PUSH:** its prompt harvested `remote.origin.pushurl`, which has been dead since 2026-08-16. The `rpc-nightly-autonomous-pass`, `rpc-daytime-monitor`, `rpc-context-hygiene` and `rpc-monthly-deep-audit` prompts now push with the `.rpc-git-cred` store file (the approved route in `tooling-gotchas.md`), never printing it.
+- **Also removed from the prompts, because each contradicts a CI guard or CLAUDE.md:** the nightly pass's "archive consumed inbox files" (inbox is append-only; the one time a pass did it, `main` went red); "prepend to CLAUDE.md Recent sessions" (session entries go in `docs/sessions/`); and the monitor's "commit ONLY the new inbox file" (every filing needs its `INDEX.md` entry, then `fix-inbox-index-counts.mjs`). Swallowed-heading expectations are now 0. `rpc-monthly-strategy-review` pointed at CLAUDE.md sections that no longer exist; it now reads the roadmap, roadmap-status and known-issues files.
+- **Deleted tasks** (their prompts stay on disk): `rpc-pat-expiry-reminder` (already fired), plus `rpc-rewards-weekly-pulse`, `rpc-trust-health-watch`, `rpc-cross-collection-refresh` and `ts-backfill-drain-serial-fmv-watch`, which other tasks absorbed. `rpc-autonomous-pass` was **kept**; it is a full prompt with a placeholder description, now filled in.
+- **Not changed:** the nightly pass, monitor and weekly watches are still disabled locally. A nightly run still fired at 1:11 AM PT 09-24, so another scheduler appears to hold them, and enabling the local copies would run each pass twice. That is Trevor's call.
+- Repo: `autonomous-tasks.md` line 22 no longer says inbox files are archived after draining.
+- **Revert:** repo half `git revert <this commit>`. The task-prompt edits were made through the scheduler; their previous text is in this session's history, and each deleted task's SKILL.md stays under `C:\Users\TDill\Claude\Scheduled\`.
+
 ### 2026-09-24 · 💲 SHIPPED — the All Day and Golazos packs boards stop ranking unbuyable / sold-out packs on their RETAIL price (#50, the two collections the 4:05 PM fix left out): a $1 trade-in reward pack was #1 on All Day at 15.75× · Cowork (cloud, no push — files in the handoff)
 
 The 4:05 PM PT migration `20260924230603` rebased Top Shot's retail-basis rows on the live ask and scoped itself to Top Shot. Measured at 7:55 PM PT, the other two collections had the same defect:
