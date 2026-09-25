@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the `/teams` tree gets a page frame: `app/teams/layout.tsx` (max-width 1200, 16 px gutters) — the hubs and the new directory rendered flush against the left edge on a phone and full-window on a desktop · Cowork (batch 39)
+
+**Found 11:12 AM PT** by the true-mobile instrument (`scripts/qa/mobile-sweep.mjs`, iPhone 13, run from the cloud with the pre-installed Chromium): `/teams` had no horizontal overflow (iw = sw = 390) but its breadcrumb, H1 and cards sat at x = 0. The hub pages (09-23) render a bare `<div>` under the root layout the same way; the per-collection pages get their frame from `app/(collections)/[collection]/layout.tsx` and `/moment/[id]` carries its own `<main>`. **What shipped:** one `<main>` for the `/teams` tree; `HubUnavailable` becomes a `<div>` so a failed hub no longer nests a `<main>` inside it. 48 app-walking guards + tsc green. Also observed during the sweep and not reproducible afterwards: one `502` on a `/nba-top-shot/sniper?_rsc=` prefetch while the batch-38 deploy was rolling (3/3 re-probes 200 in < 1 s).
+
+**Revert:** delete `app/teams/layout.tsx` and restore the `<main>` in `HubUnavailable`.
+
 ### 2026-09-25 · 🧹 SHIPPED — `/teams`, the directory of chain-agnostic team hubs: every registered franchise by league (127 — NBA, WNBA, NFL, LaLiga, MLB) linking to its hub; anon-public, canonical, in the sitemap and the rendered-DOM smoke · Cowork (batch 38)
 
 **Found 10:55 AM PT:** the franchise hubs (batch 2 / 09-23) were reachable only from a per-collection team page's "across every collection →" link; `/teams` itself was a 404 (a login redirect for an anonymous visitor under the fail-closed proxy). A collector had no way to browse "which teams does RPC cover".
