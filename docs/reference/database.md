@@ -837,6 +837,10 @@ the remaining iterations run unbounded. **That is the rule working, not an unfin
 described.
 
 🔎 **Instrument:** `check_when_others_timeout_blind()` — `[]` when clean (verified `[]` 2026-09-20).
+⭐ **Run it in the SAME turn you create any plpgsql function with a record-and-exit handler** — on
+2026-09-24 it caught a brand-new bounded batch walker (`backfill_wmc_series_batch`, one write + one
+`log_pipeline_run` after the catch) written on plain `WHEN OTHERS` an hour after it shipped
+(`20260925063955` fixed it). A new handler is the one place the 2026-09-20 sweep cannot have reached.
 ⚠ **It does NOT answer the question this section now turns on.** It finds handlers blind to a kill;
 it cannot find handlers that do **unbounded work after catching one**, which is the failure mode the
 conditional rule above exists to prevent. That one is still read by eye.

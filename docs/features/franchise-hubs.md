@@ -23,6 +23,17 @@ The goal from the thread that started this: the **Blazers** hub shows Top Shot +
 
 **Indexing.** A hub is `noindex, follow` until it gathers **2+** enabled collections (`hubIsIndexable`) — a one-collection hub is a near-duplicate of the per-collection team page. It is not in the sitemap yet for the same reason.
 
+## Panel extras (2026-09-24, QA pass batch 2)
+
+Every OK collection panel now carries two more sections, fetched per panel under the same
+`PANEL_TIMEOUT_MS` budget so a slow leg fails its own section, never the hub: **Top editions**
+(`get_team_top_editions`, paginated through `/api/entity/team-editions`, `HUB_TOP_EDITIONS = 6`) and
+**Recent sales** (`get_team_activity`, `HUB_RECENT_SALES = 6`). `fetchHubPanelExtras` in
+`lib/franchise-hub.ts` returns `{rows, ok}` per section — a thrown read is `ok:false` and renders the
+section's failed copy, not an empty grid. Every per-collection team page
+(`/<collection>/team/<slug>`) links its hub ("<Team> across every collection →") when the team has a
+`team_short_slug` and its league is a hub league (exhibition slugs excluded).
+
 ## Why every hub shows ONE panel today
 
 RPC's Panini data is **100% FIFA World Cup 2026 soccer** (Prizm World Cup, `setId 2332`, walked from `marketplace/nfts.html?sport=Soccer`). There are no Panini NBA or MLB cards in the database, so no Panini panel can exist yet. Measured 2026-09-23: `panini_editions` has 5,090 rows across 62 soccer sets; its only people columns are `player_name` and `nation`.
