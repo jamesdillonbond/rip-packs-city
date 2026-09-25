@@ -185,3 +185,32 @@ export function buildEditionImageCandidates(
   }
   return out
 }
+
+/**
+ * 2026-09-25: the PARALLEL a tile should name, or null.
+ *
+ * Top Shot carries it as `subedition_name` (projected by the entity edition
+ * RPCs since migration 20260925173217: "Hexwave", "Galactic"). Candy MLB has no
+ * subedition column — its parallel is the edition NAME's suffix ("Junior
+ * Caminero - BLUE" → "Blue"), the same derivation the collection tab uses
+ * (`parallelFromEditionName`). Without this the Rays team page showed five
+ * "Junior Caminero · LEGENDARY · Mint 15" tiles told apart by nothing.
+ * The name-suffix arm is Candy-only: Top Shot names use an em dash
+ * ("Player — Set") and no other collection encodes a parallel in the name.
+ */
+export function tileParallelLabel(
+  e: { subedition_name?: string | null; name?: string | null; player_name?: string | null },
+  collectionUrlSlug: string,
+): string | null {
+  const sub = e.subedition_name?.trim()
+  if (sub) return sub
+  if (collectionUrlSlug !== "candy-mlb") return null
+  const name = e.name?.trim()
+  const player = e.player_name?.trim()
+  if (!name || !player) return null
+  const prefix = `${player} - `
+  if (!name.startsWith(prefix)) return null
+  const suffix = name.slice(prefix.length).trim()
+  if (!suffix) return null
+  return suffix.charAt(0).toUpperCase() + suffix.slice(1).toLowerCase()
+}

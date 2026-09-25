@@ -53,6 +53,34 @@ describe("EditionsGridPaginated", () => {
     expect(chips.map((c) => c.textContent)).toEqual(["Hexwave"])
   })
 
+  it("names a Candy MLB parallel from the edition name's suffix, and only on Candy (2026-09-25)", () => {
+    // /candy-mlb/team/tampa-bay-rays: five "Junior Caminero · LEGENDARY · Mint 15"
+    // tiles — BLUE / GREEN / ORANGE / PINK / YELLOW live only in the edition name.
+    render(
+      <EditionsGridPaginated
+        collectionUrlSlug="candy-mlb"
+        fetchUrl="/api/x"
+        initial={[
+          tile("junior-caminero-blue", { player_name: "Junior Caminero", name: "Junior Caminero - BLUE" }),
+          tile("junior-caminero", { player_name: "Junior Caminero", name: "Junior Caminero" }),
+        ]}
+        pageSize={10}
+      />,
+    )
+    expect(screen.getAllByTestId("tile-parallel").map((c) => c.textContent)).toEqual(["Blue"])
+    cleanup()
+    // no-change control: the same name shape on Top Shot derives nothing.
+    render(
+      <EditionsGridPaginated
+        collectionUrlSlug="nba-top-shot"
+        fetchUrl="/api/x"
+        initial={[tile("x", { player_name: "Junior Caminero", name: "Junior Caminero - BLUE" })]}
+        pageSize={10}
+      />,
+    )
+    expect(screen.queryAllByTestId("tile-parallel")).toHaveLength(0)
+  })
+
   it("renders the empty state when there are no rows", () => {
     render(<EditionsGridPaginated collectionUrlSlug="nba-top-shot" fetchUrl="/api/x" initial={[]} pageSize={2} />)
     expect(screen.getByText(/No editions yet/i)).toBeTruthy()

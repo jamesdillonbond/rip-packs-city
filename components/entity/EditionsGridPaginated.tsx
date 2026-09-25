@@ -19,6 +19,7 @@ import {
   exhaustedCount as computeExhaustedCount,
   buildLoadMoreUrl,
   buildEditionImageCandidates,
+  tileParallelLabel,
 } from "@/lib/entity-editions-grid-format"
 
 export interface EditionTile {
@@ -284,14 +285,14 @@ function EditionTileCard({
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
         <TierBadge tier={e.tier} />
         {e.series_label && <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{tileSeriesLabel(e.series_label, collectionUrlSlug)}</span>}
-        {e.subedition_name?.trim() ? (
+        {tileParallelLabel(e, collectionUrlSlug) ? (
           <span
             className="rpc-mono"
             data-testid="tile-parallel"
             title="Parallel printing"
             style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.10em", textTransform: "uppercase", border: "1px solid var(--rpc-border-subtle)", borderRadius: 4, padding: "0 5px" }}
           >
-            {e.subedition_name.trim()}
+            {tileParallelLabel(e, collectionUrlSlug)}
           </span>
         ) : null}
       </div>

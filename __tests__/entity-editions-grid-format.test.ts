@@ -200,3 +200,16 @@ describe("tsSizedMomentImage", () => {
     expect(tsSizedMomentImage(undefined, "45663101", 144)).toBeNull()
   })
 })
+
+describe("tileParallelLabel (2026-09-25)", () => {
+  it("prefers the RPC's subedition_name, then Candy's name suffix, else null", async () => {
+    const { tileParallelLabel } = await import("@/lib/entity-editions-grid-format")
+    expect(tileParallelLabel({ subedition_name: " Hexwave " }, "nba-top-shot")).toBe("Hexwave")
+    expect(tileParallelLabel({ subedition_name: null, name: "Courtney Lee — Run It Back", player_name: "Courtney Lee" }, "nba-top-shot")).toBeNull()
+    expect(tileParallelLabel({ name: "Junior Caminero - ORANGE", player_name: "Junior Caminero" }, "candy-mlb")).toBe("Orange")
+    expect(tileParallelLabel({ name: "Junior Caminero", player_name: "Junior Caminero" }, "candy-mlb")).toBeNull()
+    expect(tileParallelLabel({ name: "Junior Caminero - ", player_name: "Junior Caminero" }, "candy-mlb")).toBeNull()
+    expect(tileParallelLabel({ name: "Junior Caminero - ORANGE", player_name: "Junior Caminero" }, "nfl-all-day")).toBeNull()
+    expect(tileParallelLabel({ name: null, player_name: null }, "candy-mlb")).toBeNull()
+  })
+})
