@@ -752,6 +752,12 @@ A dated snapshot. The item text in [known-issues.md](known-issues.md) wins over 
 - **#137 (c), after 10-01:** drop the `audit_20260924_*` / `audit_20260925_*` backup tables and the retired `wmc_series_backfill_state` + `backfill_wmc_series_batch`.
 - **#136:** closes once the Maradona Silver re-walk is verified. The week-one Panini review is scheduled for 09-30 9 AM PT.
 
+## LOW-label split — decided 2026-09-25 (Trevor: split; the per-edition badge half deferred, "do what you think is best")
+
+- **Shipped:** the public FMV methodology page states both meanings of LOW ("too few sales" / "sales disagree") with thresholds read from `lib/fmv-confidence.ts` (`7e0d670cb`). Public per-edition confidence chips stay banned (`invariants-no-confidence-chips`); busy LOW editions already show the cleaned 30d range there.
+- **Deferred — the per-edition "sales disagree" pill** on the two signed-in analytics tables (`EditionGrid` on `/analytics/sets/[set_id]`, the top-movers table on `/analytics/fmv`). Signed-in WAU is 0, so it serves nobody yet. **Revisit when the analytics area has weekly signed-in users, or if chips ever return publicly.**
+- ⛔ **How to build it when it is revisited: the WRITER must record the reason.** In `fmv-recalc` a LOW row is "sales disagree" exactly when `escalateConfidence` returned LOW with the gate's sample `>= MIN_SALES_30D_HIGH` (the only LOW path at that size). **No stored field recovers it:** the gate counts the cleaned, possibly 90d-widened sample while `sales_count_30d` is the true 30d count (34 LOW rows sit at 5–6), and Step 5b historical-fallback LOW rows carry a high `liquidity_rating` with 0 sales in 30 d. A proxy on either field labels some "too few sales" editions "sales disagree" — a false claim.
+
 ## Open items (moved verbatim from CLAUDE.md's "Prioritized next actions", 2026-09-19)
 
 **Open items, stated rather than quietly dropped:**
