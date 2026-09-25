@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 📝 DOCS — the migration-autorecover bot races a hand recovery; the 09-30 Panini check-in gains the pack-EV re-derive · Claude Code (Windows box)
+
+`tooling-gotchas.md`: `rpc-migration-autorecover[bot]` (~6 h schedule) committed the fileless `panini_team_walk_20260924_rotation_roster` (`1539f0974`) minutes before my md5-verified recovery, so my push was refused non-fast-forward and I dropped it. Fetch and compare `origin/main:<file>` before pushing a recovery. The session log is in `docs/sessions/2026-09.md`. Trigger `trig_01B41WN8HyCPvvUQ23vvg2gQ` (09-30 9 AM PT) prompt was extended with the pack-EV re-derive (report only) and a special-serial re-fit. **Revert:** revert this docs commit; for the trigger, `update` it with the prompt minus its "THEN (added 09-24 5:10 PM PT)" tail.
+
 ### 2026-09-24 · 🗓 CONFIG (outside the repo) + DOCS — scheduled-task prompts updated to the working push route; five dead tasks deleted · Cowork (Trevor: "do it all" / "keep going")
 
 - **Why the nightly pass has been NO-PUSH:** its prompt harvested `remote.origin.pushurl`, which has been dead since 2026-08-16. The `rpc-nightly-autonomous-pass`, `rpc-daytime-monitor`, `rpc-context-hygiene` and `rpc-monthly-deep-audit` prompts now push with the `.rpc-git-cred` store file (the approved route in `tooling-gotchas.md`), never printing it.
