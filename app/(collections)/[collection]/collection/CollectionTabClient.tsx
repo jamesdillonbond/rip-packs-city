@@ -26,6 +26,7 @@ import { pickLoading } from "@/lib/schonely"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import AutoSearchReader from "@/components/collection/AutoSearchReader"
 import PortfolioSummary from "@/components/collection/PortfolioSummary"
+import SaveWalletToProfileButton from "@/components/collection/SaveWalletToProfileButton"
 import CollectionRecentSales from "@/components/collection/CollectionRecentSales"
 import { useMobile } from "@/components/collection/use-mobile"
 import {
@@ -1241,6 +1242,17 @@ function WalletMomentsBody() {
               >
                 {copied ? "Link copied!" : "Share"}
               </button>
+            )}
+            {/* Candy (Solana) only: Flow wallets are saved through the
+                dashboard, which fans one Dapper wallet out across all five Flow
+                collections — a per-collection save here would save one of five. */}
+            {collectionObj?.dbChain === "solana" && collectionObj.supabaseCollectionId && activeWallet && rows.length > 0 && (
+              <SaveWalletToProfileButton
+                key={activeWallet}
+                wallet={activeWallet}
+                collectionUuid={collectionObj.supabaseCollectionId}
+                dbChain={collectionObj.dbChain}
+              />
             )}
           </div>
         </div>

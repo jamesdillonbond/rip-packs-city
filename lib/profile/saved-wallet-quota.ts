@@ -17,6 +17,8 @@
 // latter being the primary "Load my collection" path that had no cap check at
 // all and so bypassed the limit entirely.
 
+import { normalizeAddress } from "@/lib/address";
+
 /** Minimal shape needed to count distinct wallets. */
 export interface SavedWalletAddrRow {
   wallet_addr: string | null;
@@ -24,16 +26,21 @@ export interface SavedWalletAddrRow {
 
 /**
  * Distinct physical wallets in a set of saved_wallets rows.
- * Addresses are compared case-insensitively — the DB stores lower-case, but a
- * caller that skipped normalization must not be able to double-count `0xAB`
+ * Hex addresses are compared case-insensitively — the DB stores lower-case, but
+ * a caller that skipped normalization must not be able to double-count `0xAB`
  * and `0xab` and thereby inflate a user past their cap.
+ *
+ * ⚠ base58 (Candy/Solana) is NOT folded: two Solana addresses that differ only
+ * in case are two different wallets, and folding them UNDER-counted a user —
+ * the mirror of `walletAlreadySaved`'s bug. normalizeAddress folds hex exactly
+ * as `.toLowerCase()` did, so the Flow arm is byte-identical.
  */
 export function countDistinctWallets(rows: readonly SavedWalletAddrRow[] | null | undefined): number {
   if (!rows) return 0;
   const set = new Set<string>();
   for (const r of rows) {
     const addr = r?.wallet_addr;
-    if (typeof addr === "string" && addr.trim() !== "") set.add(addr.trim().toLowerCase());
+    if (typeof addr === "string" && addr.trim() !== "") set.add(normalizeAddress(addr));
   }
   return set.size;
 }
@@ -43,8 +50,6 @@ export function countDistinctWallets(rows: readonly SavedWalletAddrRow[] | null 
  * write is a RE-SAVE and must skip the cap (otherwise a user at their limit
  * could never refresh or re-associate the wallet they already own).
  */
-import { normalizeAddress } from "@/lib/address";
-
 export function walletAlreadySaved(
   rows: readonly SavedWalletAddrRow[] | null | undefined,
   candidate: string
@@ -70,9 +75,13 @@ export function walletAlreadySaved(
 export function evaluateSavedWalletCap(
   rows: readonly SavedWalletAddrRow[] | null | undefined,
   candidate: string,
-  maxAllowed: number | null
+  maxAllowed: number | null,
+  // Linked non-address identities (a Panini username, saved_collector_identities)
+  // count toward the same cap: Trevor 2026-09-25, "allow 5 wallets per user" —
+  // a username is a wallet as far as the collector is concerned.
+  linkedIdentityCount = 0
 ): { allowed: boolean; distinctCount: number; isReSave: boolean } {
-  const distinctCount = countDistinctWallets(rows);
+  const distinctCount = countDistinctWallets(rows) + Math.max(0, linkedIdentityCount);
   const isReSave = walletAlreadySaved(rows, candidate);
   if (isReSave || maxAllowed === null) {
     return { allowed: true, distinctCount, isReSave };

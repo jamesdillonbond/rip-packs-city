@@ -11,6 +11,7 @@ import FirstRunTourMount from "@/components/onboarding/FirstRunTourMount";
 import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
 import { trophyComparator, TROPHY_SORTS, tierRank, type TrophySortKey } from "@/lib/trophy-comparator";
+import PaniniUsernamesPanel from "@/components/profile/PaniniUsernamesPanel";
 import { sumMoments, sumFmv, sumStaleFmv, sumStaleCount, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
 import { publishedCollections, getCollection, getPublishedCollection } from "@/lib/collections";
 import { detectAddressChain, normalizeAddress } from "@/lib/address";
@@ -1356,6 +1357,11 @@ function ProfilePageInner() {
           )}
         </section>
 
+        {/* ── Panini username (2026-09-25) ── A Panini owner is a USERNAME, so
+            it has its own field: the one-field add above sends non-address
+            input to the Top Shot resolver. */}
+        <PaniniUsernamesPanel />
+
         {/* ── Favorite Collections + News Feed ── */}
         <section className="rpc-section">
           <div className="rpc-section-title">Favorite Collections</div>
@@ -1518,13 +1524,15 @@ function SignInBanner({
   saving: boolean;
   error: string | null;
 }) {
-  const paniniLive = !!getPublishedCollection("panini-blockchain");
   const candyLive = !!getPublishedCollection("candy-mlb");
 
+  // ⛔ NO Panini username here, published or not. This field sends any
+  // non-address string to the TOP SHOT resolver, so a Panini handle that
+  // matched a Top Shot handle would attach someone else's Flow wallet. Panini
+  // usernames link through PaniniUsernamesPanel (2026-09-25).
   const accepted = [
     "your Dapper wallet address (0x…)",
     "your Top Shot username",
-    paniniLive ? "your Panini username" : null,
     candyLive ? "your Candy wallet address" : null,
   ].filter(Boolean) as string[];
 

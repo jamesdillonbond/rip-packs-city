@@ -126,3 +126,42 @@ describe("walletAlreadySaved — base58 case is identity, not noise", () => {
     ).toBe(true)
   })
 })
+
+// ── 2026-09-25: five wallets per user, usernames included ──────────────────
+describe("countDistinctWallets — base58 is not folded", () => {
+  const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+  const CANDY_CASE_FLIP = CANDY.slice(0, -1) + "k" // a DIFFERENT wallet
+
+  it("counts two base58 wallets differing only in case as TWO", () => {
+    expect(countDistinctWallets([{ wallet_addr: CANDY }, { wallet_addr: CANDY_CASE_FLIP }])).toBe(2)
+  })
+
+  it("counts a Flow wallet plus a Candy wallet as two", () => {
+    expect(
+      countDistinctWallets([{ wallet_addr: "0xbd94cade097e50ac" }, { wallet_addr: CANDY }]),
+    ).toBe(2)
+  })
+})
+
+describe("evaluateSavedWalletCap — the 5-wallet free cap", () => {
+  const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+
+  it("REGRESSION: a free user with one Flow wallet can add a Candy wallet at cap 5", () => {
+    const r = evaluateSavedWalletCap([{ wallet_addr: "0xbd94cade097e50ac" }], CANDY, 5)
+    expect(r.allowed).toBe(true)
+    expect(r.distinctCount).toBe(1)
+  })
+
+  it("counts linked usernames toward the same cap", () => {
+    const four = ["0xa", "0xb", "0xc", "0xd"].map((wallet_addr) => ({ wallet_addr }))
+    expect(evaluateSavedWalletCap(four, "0xe", 5, 0).allowed).toBe(true)
+    const r = evaluateSavedWalletCap(four, "0xe", 5, 1)
+    expect(r.allowed).toBe(false)
+    expect(r.distinctCount).toBe(5)
+  })
+
+  it("a re-save still passes when usernames fill the cap", () => {
+    const four = ["0xa", "0xb", "0xc", "0xd"].map((wallet_addr) => ({ wallet_addr }))
+    expect(evaluateSavedWalletCap(four, "0xa", 5, 3).allowed).toBe(true)
+  })
+})

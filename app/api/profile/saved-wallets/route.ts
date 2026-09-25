@@ -11,6 +11,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { checkFeatureQuota } from "@/lib/pro-tier";
 import { evaluateSavedWalletCap } from "@/lib/profile/saved-wallet-quota";
+import { countLinkedIdentities } from "@/lib/profile/collector-identities";
 import { publishedCollections, getCollectionByUuid } from "@/lib/collections";
 import { warmWalletDeep } from "@/lib/profile/warm-wallet";
 // normalizeAddress, NOT `.toLowerCase()`. Base58 (Solana/Candy) is
@@ -251,12 +252,16 @@ export async function POST(req: NextRequest) {
 
     const quota = await checkFeatureQuota(walletAddr, "saved_wallets_max");
     const maxAllowed = quota.daily_limit; // null = unlimited per quota RPC contract
-    const { allowed, distinctCount } = evaluateSavedWalletCap(addrRows, walletAddr, maxAllowed);
+    // Linked usernames (a Panini handle) share the 5-per-user cap. An
+    // unreadable count is logged inside and treated as 0 — this check is
+    // fail-open by decision (2026-09-03).
+    const linkedIdentities = (await countLinkedIdentities(supabase, user.id)) ?? 0;
+    const { allowed, distinctCount } = evaluateSavedWalletCap(addrRows, walletAddr, maxAllowed, linkedIdentities);
     if (!allowed) {
       return NextResponse.json(
         {
           error: "plan_limit_reached",
-          message: `Free plan supports ${maxAllowed} saved wallet${maxAllowed === 1 ? "" : "s"}. Upgrade to RPC Pro for unlimited.`,
+          message: `Free plan supports ${maxAllowed} saved wallets and linked usernames. Upgrade to RPC Pro for unlimited.`,
           plan: quota.plan,
           saved_wallet_count: distinctCount,
           saved_wallet_limit: maxAllowed,
