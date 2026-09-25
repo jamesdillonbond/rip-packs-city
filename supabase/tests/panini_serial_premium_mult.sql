@@ -7,7 +7,7 @@
 -- misprice every special serial.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260725010500_audit_20260725_pin_panini_serial_premium_mult.sql);
+-- (supabase/migrations/20260925045149_audit_20260924_panini_premium_mult_stable_and_freshness_comment.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -24,7 +24,7 @@ INSERT INTO public.panini_serial_premium (flag, multiplier) VALUES
 CREATE OR REPLACE FUNCTION public.panini_serial_premium_mult(p_is_jersey boolean, p_is_perfect boolean, p_is_num1 boolean)
  RETURNS numeric
  LANGUAGE sql
- IMMUTABLE
+ STABLE
  SET search_path TO 'public', 'pg_temp'
 AS $function$
   select coalesce(

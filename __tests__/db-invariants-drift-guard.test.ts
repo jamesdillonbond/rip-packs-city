@@ -372,7 +372,8 @@ const PINS = [
   {
     fn: "panini_serial_premium_mult",
     test: "supabase/tests/panini_serial_premium_mult.sql",
-    migration: "supabase/migrations/20260725010500_audit_20260725_pin_panini_serial_premium_mult.sql",
+    // 2026-09-24: IMMUTABLE -> STABLE (it reads panini_serial_premium, refit that day); body unchanged.
+    migration: "supabase/migrations/20260925045149_audit_20260924_panini_premium_mult_stable_and_freshness_comment.sql",
   },
   {
     fn: "check_anon_write_surface",
