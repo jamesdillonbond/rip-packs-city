@@ -24,6 +24,8 @@ const st = vi.hoisted(() => ({
   runs: [] as any[],
   captured: null as null | (() => Promise<void>),
   throwInWalk: false,
+  recent: { data: [] as unknown[] | null, error: null as null | { message: string } },
+  recentCalls: [] as unknown[],
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -32,7 +34,12 @@ vi.mock("next/server", async (importOriginal) => {
 })
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
-    rpc: async (_n: string, args: any) => { st.runs.push(args); return { data: null, error: null } },
+    // panini_recent_sales_fmv (the 1.1.0 FMV input, 2026-09-24) is a READ, not a pipeline log —
+    // kept out of st.runs so every "st.runs[i] is a logRun" assertion below still holds.
+    rpc: async (n: string, args: unknown) => {
+      if (n === "panini_recent_sales_fmv") { st.recentCalls.push(args); return st.recent }
+      st.runs.push(args); return { data: null, error: null }
+    },
     from(table: string) {
       let isUpdate = false
       let isInsert = false
@@ -57,7 +64,8 @@ vi.mock("@/lib/supabase", () => ({
 }))
 vi.mock("@/lib/chains/panini/ingest-normalize", () => ({
   toEditionRow: (c: any) => { if (st.throwInWalk) throw new Error("normalize boom"); return { external_id: c.sku, collection_id: "p1" } },
-  toFmvRow: (c: any) => (c.fmv ? { edition_id: c.sku, fmv_usd: c.fmv } : null),
+  toFmvRow: (c: any) => (c.fmv ? { edition_id: c.sku, fmv_usd: c.fmv, algo_version: "panini-1.0.0" } : null),
+  toFmvRowV11: (c: { sku: string; fmv?: number }, _n: string, r?: { fmv_usd: number } | null) => (c.fmv ? { edition_id: c.sku, fmv_usd: r?.fmv_usd ?? c.fmv, algo_version: "panini-1.1.0" } : null),
   toPackRow: (p: any) => ({ id: p.pack_sku }),
   toSerialRow: (s: any) => ({ sku: s.sku, edition_external_id: s.ed }),
   // Reducer + filter guard are unit-tested for real in panini-ingest-normalize.test.ts; here they
@@ -79,6 +87,8 @@ beforeEach(() => {
   st.packUpsert = { data: [{ id: "p1" }], error: null }
   st.saleUpdate = {}; st.saleUpdateDefault = { data: [{ id: "u1" }], error: null }
   st.updates = []; st.runs = []; st.captured = null; st.throwInWalk = false
+  st.recent = { data: [], error: null }; st.recentCalls = []
+  delete process.env.PANINI_FMV_ENGINE
 })
 afterEach(() => { delete process.env.CRON_SECRET })
 
@@ -256,6 +266,31 @@ describe("panini-ingest — the after() walk", () => {
     expect(st.runs[0].p_extra.fmv).toBe(2)
     expect(st.runs[0].p_extra.fmv_offered).toBe(2)
     expect(st.runs[0].p_extra.fmv_error).toBeNull()
+  })
+
+  // FMV engine panini-1.1.0 (2026-09-24).
+  it("prices from the recent-sales read and reports the engine", async () => {
+    st.recent = { data: [{ edition_id: "c1", fmv_usd: 3, n_recent: 3 }], error: null }
+    await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
+    expect(st.recentCalls[0]).toEqual({ p_edition_ids: ["c1"] })
+    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.1.0")
+    expect(st.runs[0].p_extra.fmv_recent_hits).toBe(1)
+    expect(st.runs[0].p_ok).toBe(true)
+  })
+
+  it("a failed recent-sales read falls back to 1.0.0 AND fails the run (no silent downgrade)", async () => {
+    st.recent = { data: null, error: { message: "recent boom" } }
+    await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
+    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.0.0")
+    expect(st.runs[0].p_extra.fmv_recent_error).toBe("recent boom")
+    expect(st.runs[0].p_ok).toBe(false)
+  })
+
+  it("PANINI_FMV_ENGINE=1.0 is the kill switch: no recent read, 1.0.0 rows", async () => {
+    process.env.PANINI_FMV_ENGINE = "1.0"
+    await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
+    expect(st.recentCalls).toHaveLength(0)
+    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.0.0")
   })
 
   // R120 second pass. The pack-state upsert was the LAST write in this function with no error

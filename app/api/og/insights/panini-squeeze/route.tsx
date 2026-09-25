@@ -60,7 +60,7 @@ export async function GET(_req: NextRequest) {
         .from("panini_squeeze_board")
         // `fmv_confidence` added 2026-09-19: sorting by fmv_usd DESC makes this top-3 a
         // leaderboard of the HIGHEST prices on the board, and measured that day all three were
-        // ASK_ONLY — 0.90 x ONE seller's ask on a card with zero recorded sales (Dembele mint-12
+        // ASK_ONLY — PANINI_ASK_ONLY_MULT (0.90 until 2026-09-24, now 0.50) x ONE seller's ask on a card with zero recorded sales (Dembele mint-12
         // $900,000 from a $1,000,000 ask; Messi 1/1 $450,009 from $500,010; Mbappe 1/1 $144,000).
         // The most valuable edition in the set that has ACTUALLY traded is $59,276. So the card's
         // three headline rows were, by construction, the three most extreme unsold asks, printed
@@ -145,7 +145,7 @@ export async function GET(_req: NextRequest) {
               <div style={{ display: "flex", color: MUTED, width: 300 }}>{r.set_name || ""} /{r.mint_cap}</div>
               <div style={{ display: "flex", color: MUTED, width: 150 }}>{r.still_in_packs} in packs</div>
               <div style={{ display: "flex", color: INK, fontWeight: 800 }}>{usd(r.fmv_usd)}</div>
-              {/* An ASK_ONLY price is 0.90x one seller's ask on a card with no recorded sale. On a
+              {/* An ASK_ONLY price is PANINI_ASK_ONLY_MULT x one seller's ask on a card with no recorded sale. On a
                   card sorted by price DESC these rows are the norm, not the exception, so the
                   marker is the difference between a price and a hope. Absent confidence => no
                   marker, never a claim that it IS sale-backed. */}

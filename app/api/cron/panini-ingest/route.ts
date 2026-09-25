@@ -38,7 +38,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
-import { toEditionRow, toFmvRow, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc } from "@/lib/chains/panini/ingest-normalize";
+import { toEditionRow, toFmvRow, toFmvRowV11, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc } from "@/lib/chains/panini/ingest-normalize";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +60,13 @@ const CHUNK = 500;
 // Sale writes are per-sku UPDATEs (no batch form exists for row-varying values), so they run a
 // few at a time — enough to keep the after() short, low enough not to crowd the pooler.
 const SALES_CONCURRENCY = 8;
+
+type RecentFmvRpc = {
+  rpc: (fn: "panini_recent_sales_fmv", args: { p_edition_ids: string[] }) => Promise<{
+    data: Array<{ edition_id: string; fmv_usd: number | string; n_recent: number }> | null;
+    error: { message?: string } | null;
+  }>;
+};
 
 async function logRun(startedAtIso: string, found: number, written: number, ok: boolean, error: string | null, extra: any, pipeline: string = PIPELINE) {
   try {
@@ -143,25 +150,6 @@ export async function POST(req: NextRequest) {
         const { data, error } = await (supabaseAdmin as any).from("panini_editions").upsert(editionRows.slice(i, i + CHUNK), { onConflict: "external_id,collection_id" }).select("id");
         if (error) { editionsError = editionsError ?? error.message; console.log(`[${PIPELINE}] editions upsert: ${error.message}`); } else written += data?.length ?? 0;
       }
-      // fmv snapshots (delete-then-insert per edition; daily history intentional).
-      // R120: `fmv` used to report fmvRows.length — rows OFFERED, reported under a name that
-      // reads as rows written — and NEITHER the delete nor the insert had its error read at all.
-      // `edition_id` is the same upstream sku that keys panini_editions, so these writes sit
-      // behind the same FK that was aborting the editions upsert; a count that cannot go down
-      // when the write fails is not a measurement. `fmv` is now WRITTEN, `fmv_offered` is the
-      // batch size, and their disagreement is itself readable.
-      const fmvRows = cards.map((c) => toFmvRow(c, nowIso)).filter(Boolean) as any[];
-      if (fmvRows.length) {
-        const ids = [...new Set(fmvRows.map((f) => f.edition_id))];
-        for (let i = 0; i < ids.length; i += CHUNK) {
-          const { error } = await (supabaseAdmin as any).from("panini_fmv_snapshots").delete().in("edition_id", ids.slice(i, i + CHUNK)).gte("computed_at", nowIso.slice(0, 10));
-          if (error) { fmvError = fmvError ?? `delete: ${error.message}`; console.log(`[${PIPELINE}] fmv delete: ${error.message}`); }
-        }
-        for (let i = 0; i < fmvRows.length; i += CHUNK) {
-          const { data, error } = await (supabaseAdmin as any).from("panini_fmv_snapshots").insert(fmvRows.slice(i, i + CHUNK)).select("id");
-          if (error) { fmvError = fmvError ?? error.message; console.log(`[${PIPELINE}] fmv insert: ${error.message}`); } else fmvWritten += data?.length ?? 0;
-        }
-      }
       // pack state. R120 second pass: this was the last write in the function with NO error
       // binding at all — `await …upsert(...)` with nothing destructured, so the failure was
       // unreadable by construction rather than merely unlogged, and `packs` published
@@ -206,6 +194,43 @@ export async function POST(req: NextRequest) {
         }));
         for (const n of applied) { if (n > 0) salesApplied += n; else if (n === 0) salesMissed++; }
       }
+      // fmv snapshots (delete-then-insert per edition; daily history intentional).
+      // R120: `fmv` used to report fmvRows.length — rows OFFERED, reported under a name that
+      // reads as rows written — and NEITHER the delete nor the insert had its error read at all.
+      // `edition_id` is the same upstream sku that keys panini_editions, so these writes sit
+      // behind the same FK that was aborting the editions upsert; a count that cannot go down
+      // when the write fails is not a measurement. `fmv` is now WRITTEN, `fmv_offered` is the
+      // batch size, and their disagreement is itself readable.
+      // FMV ENGINE (2026-09-24): panini-1.1.0 prices from the edition's own RECENT realized sales
+      // (panini_recent_sales_fmv; see toFmvRowV11 for the measured case), so this block now runs AFTER
+      // the sales writes above — this batch's sales count. PANINI_FMV_ENGINE=1.0 reverts to the
+      // lifetime-average toFmvRow. If the recent-sales read fails the batch falls back to 1.0.0 rows,
+      // which say so in algo_version, AND the run reports fmv_recent_error (ok=false): a silent
+      // engine downgrade is exactly the failure a reader of these prices could not see.
+      const FMV_ENGINE = process.env.PANINI_FMV_ENGINE === "1.0" ? "1.0" : "1.1";
+      let fmvRecentError: string | null = null;
+      const recentByEdition = new Map<string, { fmv_usd: number; n_recent: number }>();
+      if (FMV_ENGINE === "1.1" && cards.length) {
+        const ids = [...new Set(cards.map((c) => String(c?.sku ?? c?.psku ?? "")).filter(Boolean))];
+        const { data: rec, error: recErr } = await (supabaseAdmin as unknown as RecentFmvRpc).rpc("panini_recent_sales_fmv", { p_edition_ids: ids });
+        if (recErr) { fmvRecentError = recErr.message ?? String(recErr); console.log(`[${PIPELINE}] recent-sales fmv: ${fmvRecentError}`); }
+        else for (const r of rec ?? []) recentByEdition.set(String(r.edition_id), { fmv_usd: Number(r.fmv_usd), n_recent: Number(r.n_recent) });
+      }
+      const useV11 = FMV_ENGINE === "1.1" && !fmvRecentError;
+      const fmvRows = cards
+        .map((c) => (useV11 ? toFmvRowV11(c, nowIso, recentByEdition.get(String(c?.sku ?? c?.psku ?? ""))) : toFmvRow(c, nowIso)))
+        .filter(Boolean) as any[];
+      if (fmvRows.length) {
+        const ids = [...new Set(fmvRows.map((f) => f.edition_id))];
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          const { error } = await (supabaseAdmin as any).from("panini_fmv_snapshots").delete().in("edition_id", ids.slice(i, i + CHUNK)).gte("computed_at", nowIso.slice(0, 10));
+          if (error) { fmvError = fmvError ?? `delete: ${error.message}`; console.log(`[${PIPELINE}] fmv delete: ${error.message}`); }
+        }
+        for (let i = 0; i < fmvRows.length; i += CHUNK) {
+          const { data, error } = await (supabaseAdmin as any).from("panini_fmv_snapshots").insert(fmvRows.slice(i, i + CHUNK)).select("id");
+          if (error) { fmvError = fmvError ?? error.message; console.log(`[${PIPELINE}] fmv insert: ${error.message}`); } else fmvWritten += data?.length ?? 0;
+        }
+      }
       // ok is now DERIVED from whether the writes actually landed, never asserted.
       // Each count is paired with its own _error field so a zero is readable: 0 with a
       // null error is "nothing to write", 0 with an error is "the write was rejected".
@@ -213,12 +238,14 @@ export async function POST(req: NextRequest) {
         editionsError ? `editions: ${editionsError}` : null,
         serialsError ? `serials: ${serialsError}` : null,
         fmvError ? `fmv: ${fmvError}` : null,
+        fmvRecentError ? `fmv_recent: ${fmvRecentError}` : null,
         packsError ? `packs: ${packsError}` : null,
         salesError ? `sales: ${salesError}` : null,
       ].filter(Boolean) as string[];
       await logRun(startedAtIso, found, written, writeErrors.length === 0, writeErrors.length ? writeErrors.join(" | ") : null, {
         editions: written, editions_error: editionsError,
         fmv: fmvWritten, fmv_offered: fmvRows.length, fmv_error: fmvError,
+        fmv_engine: useV11 ? "panini-1.1.0" : "panini-1.0.0", fmv_recent_error: fmvRecentError, fmv_recent_hits: recentByEdition.size,
         packs: packsWritten, packs_offered: packs.length, packs_error: packsError,
         serials: serialsWritten, serials_error: serialsError,
         sales_seen: sales.length, sales_serials: latestSales.length, sales_applied: salesApplied,

@@ -30,7 +30,7 @@ type Row = {
   // Only ever read through lib/fmv-basis.ts, which maps ASK_ONLY -> a plain-English
   // "from asks" marker and everything else -> null. The enum value itself must NOT
   // be rendered (standing no-confidence-UI policy); this column exists so an
-  // ask-derived FMV -- 0.90 x one seller's ask on a card that never traded -- stops
+  // ask-derived FMV -- PANINI_ASK_ONLY_MULT x one seller's ask on a card that never traded -- stops
   // looking identical to a sale-derived one.
   fmv_confidence: string | null;
 };
@@ -46,7 +46,7 @@ export type Totals = {
   sealed_fmv_exposure_usd_hc: number | null;
   sealed_copies_hc: number | null;
   pct_sealed_usd_from_biased_sets: number | null;
-  // Added 2026-09-19. What the headline is MADE OF. ASK_ONLY = 0.90 x one seller's ask on a card
+  // Added 2026-09-19. What the headline is MADE OF. ASK_ONLY = PANINI_ASK_ONLY_MULT x one seller's ask on a card
   // with NO recorded sale, so this is the share of the published total that no trade supports:
   // 52.4% on the day it was added, against 39.5% sale-backed. The board's own top row was a mint-12
   // card at $900,000 from a $1,000,000 ask with zero sales, while the most valuable edition that
@@ -244,7 +244,7 @@ export default function PaniniSqueezeClient({
 
   // Self-measuring, like the coverage banner: counted off the rows we actually fetched, so the
   // disclosure can never go stale the way a hardcoded figure would. These are the editions whose
-  // FMV is 0.90 x a single seller's ask because nothing has ever traded.
+  // FMV is PANINI_ASK_ONLY_MULT x a single seller's ask because nothing has ever traded.
   const askDerived = useMemo(
     () => initialRows.reduce((n, r) => n + (r.fmv_usd != null && fmvBasis(r.fmv_confidence) ? 1 : 0), 0),
     [initialRows]
@@ -468,7 +468,7 @@ export default function PaniniSqueezeClient({
                 <td className="n">{num(r.rip_pct, 1)}%</td>
                 <td className="n psq-exp">{usd(r.sealed_fmv_exposure_usd)}</td>
                 <td className="n">{usd(r.serial_low_ask_usd)}</td>
-                {/* FMV + basis. 727 editions on this board are priced at 0.90 x a single
+                {/* FMV + basis. 727 editions on this board are priced at PANINI_ASK_ONLY_MULT x a single
                     seller's ask because the card has never traded -- the top row by FMV was
                     one of them. Rendering that in the same typeface as a sale-derived price
                     is the overclaim this marker removes. Plain words only, never the

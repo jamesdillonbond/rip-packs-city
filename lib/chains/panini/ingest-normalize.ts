@@ -57,6 +57,34 @@ export function toFmvRow(c: any, nowIso: string) {
   return { edition_id: String(c?.sku ?? c?.psku), fmv_usd: fmv, confidence, algo_version: "panini-1.0.0", computed_at: nowIso };
 }
 
+// panini-1.1.0 (2026-09-24) — replaces toFmvRow in /api/cron/panini-ingest. Measured out of sample by
+// panini_fmv_backtest over 9,129 recorded non-special serial sales (45 d): the 1.0.0 FMV (LIFETIME
+// avg_sale, confidence from cumulative volume_txns) missed the next sale by a median 57.6% and ran a
+// median 1.53x HIGH in a falling market; the median of the edition's last <=3 non-special sales in 30
+// days scored 33.3% / ratio 1.06. `recent` is panini_recent_sales_fmv(ids) for this edition.
+//   recent n>=1 -> that median; HIGH at 3 sales, MEDIUM at 1-2 (confidence now means RECENT evidence)
+//   else sales ever (volume_txns>0) -> lifetime avg_sale, but only LOW (no sale in 30 d)
+//   else a floor ask -> floor x PANINI_ASK_ONLY_MULT, ASK_ONLY. 261 first sales on 206 ASK_ONLY
+//     editions (60 d) traded at a median 0.40x the prior floor (IQR 0.20-0.70); 0.50 minimises median
+//     error among 0.35-0.60 (50.0% vs 125% at the old 0.90). Still low-quality: ~24% within +/-25%.
+export const PANINI_ASK_ONLY_MULT = 0.5;
+type PaniniCardStats = { sku?: unknown; psku?: unknown; market_stats?: Record<string, unknown> } & Record<string, unknown>;
+export function toFmvRowV11(c: PaniniCardStats, nowIso: string, recent?: { fmv_usd: number; n_recent: number } | null) {
+  const ms: Record<string, unknown> = c?.market_stats ?? c ?? {};
+  const txns = Number(ms.volume_txns) || 0;
+  const recentSale = Number(ms.recent_sale), avgSale = Number(ms.avg_sale), floor = Number(ms.floor_price);
+  let fmv: number | null = null, confidence = "NO_DATA";
+  if (recent && recent.n_recent >= 1 && Number.isFinite(Number(recent.fmv_usd)) && Number(recent.fmv_usd) > 0) {
+    fmv = Number(recent.fmv_usd); confidence = recent.n_recent >= 3 ? "HIGH" : "MEDIUM";
+  } else if (txns > 0 && Number.isFinite(recentSale)) {
+    fmv = avgSale || recentSale; confidence = "LOW";
+  } else if (Number.isFinite(floor) && floor > 0) {
+    fmv = Math.round(floor * PANINI_ASK_ONLY_MULT * 100) / 100; confidence = "ASK_ONLY";
+  }
+  if (fmv == null) return null;
+  return { edition_id: String(c?.sku ?? c?.psku), fmv_usd: fmv, confidence, algo_version: "panini-1.1.0", computed_at: nowIso };
+}
+
 // getPackMarketStats.data -> panini_pack_state row. Pack id prefers the runner's __pack_id (parsed from
 // the pack URL) so FOTL 1039 doesn't collide with Hobby 1038. Secondary price captured for net rip-EV.
 export function toPackRow(p: any, nowIso: string) {

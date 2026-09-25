@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parallelFamily, toEditionRow, toFmvRow, toPackRow, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID } from "@/lib/chains/panini/ingest-normalize"
+import { parallelFamily, toEditionRow, toFmvRow, toFmvRowV11, PANINI_ASK_ONLY_MULT, toPackRow, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID } from "@/lib/chains/panini/ingest-normalize"
 
 const NOW = "2026-07-16T00:00:00.000Z"
 
@@ -61,6 +61,31 @@ describe("toFmvRow", () => {
     expect(ask.confidence).toBe("ASK_ONLY")
     expect(ask.fmv_usd).toBe(90)
     expect(toFmvRow({ psku: "p", market_stats: { volume_txns: 0, floor_price: 0 } }, NOW)).toBeNull()
+  })
+})
+
+// panini-1.1.0 (2026-09-24): priced from the edition's RECENT realized sales. The 1.0.0 lifetime
+// average missed the next sale by a median 57.6% and ran 1.53x high (panini_fmv_backtest, n=9,129).
+describe("toFmvRowV11", () => {
+  const card = (ms: any) => ({ sku: "p__1_10", psku: "p", market_stats: ms })
+  it("prices from recent sales and grades by how many there were", () => {
+    const lifetime = { volume_txns: 40, recent_sale: 20, avg_sale: 60 }
+    expect(toFmvRowV11(card(lifetime), NOW, { fmv_usd: 21, n_recent: 3 })).toMatchObject({ fmv_usd: 21, confidence: "HIGH", algo_version: "panini-1.1.0", edition_id: "p__1_10" })
+    expect(toFmvRowV11(card(lifetime), NOW, { fmv_usd: 21, n_recent: 2 })!.confidence).toBe("MEDIUM")
+    expect(toFmvRowV11(card(lifetime), NOW, { fmv_usd: 21, n_recent: 1 })!.confidence).toBe("MEDIUM")
+  })
+  it("never labels a lifetime average HIGH: with no sale in 30 days it is LOW, however many sales ever", () => {
+    const r = toFmvRowV11(card({ volume_txns: 400, recent_sale: 20, avg_sale: 60 }), NOW, null)!
+    expect(r).toMatchObject({ fmv_usd: 60, confidence: "LOW" })
+  })
+  it("ASK_ONLY uses the measured multiplier, not 0.9", () => {
+    expect(PANINI_ASK_ONLY_MULT).toBeLessThan(0.9)
+    const r = toFmvRowV11(card({ volume_txns: 0, floor_price: 100 }), NOW, undefined)!
+    expect(r).toMatchObject({ confidence: "ASK_ONLY", fmv_usd: 100 * PANINI_ASK_ONLY_MULT })
+    expect(toFmvRowV11(card({ volume_txns: 0, floor_price: 0 }), NOW, null)).toBeNull()
+  })
+  it("ignores an unusable recent row rather than publishing it", () => {
+    expect(toFmvRowV11(card({ volume_txns: 5, recent_sale: 9, avg_sale: 12 }), NOW, { fmv_usd: 0, n_recent: 3 })).toMatchObject({ fmv_usd: 12, confidence: "LOW" })
   })
 })
 
