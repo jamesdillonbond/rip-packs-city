@@ -36,6 +36,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ### 2026-09-25 · 📱 SHIPPED — trophy case slabs no longer clip the player name / team / set on mobile: the metallic label reflows on its own width (container query, ≤240px) so serial/tier/badges sit in a top row beside the ✕ and the text gets the full label width · Claude Code (web sandbox)
 - Trevor's phone screenshot: 2-up grid left the name column ~45px ("Donovan Clingan" clipped, "PORTLA…", "Series 2024-2…"). Desktop 3-up layout unchanged. Verified by rendering the component in Chromium at 390px.
+- Regression test `__tests__/component-TrophySlab.test.tsx` pins the size container + narrow rules (planted-defect verified: removing `column-reverse` reds it). Deploy `dpl_EVXWdJ8nxh54CPsTnAMFpYWUXHTz` READY.
 **Revert:** `git log --grep='trophy slab label reflows'` → `git revert <sha>`. No DB state.
 
 ### 2026-09-25 · 🧹 SHIPPED — the concierge reads Candy MLB listings: get_edition_listings had no Candy arm, so every Candy "is it listed / cheapest?" answer said "the live marketplace check couldn't be reached" about a book RPC holds · Claude Code (Trevor's box)

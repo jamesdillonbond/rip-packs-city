@@ -273,4 +273,29 @@ describe("TrophySlab", () => {
     const { container } = render(<TrophySlab slab={slab} slot={3} mode="public" />)
     expect(container.textContent).toContain("+3")
   })
+
+  // 2026-09-25 (Trevor's phone screenshot): in the 2-up mobile grid the label
+  // kept its side-by-side layout and the text column shrank to ~45px — the
+  // player name clipped, team/set cut to "PORTLA…" / "Series 2024-2…". The fix
+  // reflows the label on its OWN width via a container query. jsdom cannot
+  // evaluate @container, so this pins the two halves that make it work: the
+  // label sits inside a size container, and the narrow rule stacks the label
+  // and lets the team line wrap instead of ellipsizing.
+  it("reflows the label on narrow slabs instead of clipping the name/team/set", () => {
+    const { container } = render(<TrophySlab slab={base} slot={3} mode="owner" onRemove={() => {}} />)
+    const label = container.querySelector(".rpc-slab-label") as HTMLElement
+    expect(label).not.toBeNull()
+    expect((label.parentElement as HTMLElement).style.containerType).toBe("inline-size")
+    expect(label.getAttribute("data-reserve-corner")).toBe("1")
+
+    const css = Array.from(document.querySelectorAll("style"))
+      .map((el) => el.textContent ?? "")
+      .find((t) => t.includes("@container"))
+    expect(css).toBeDefined()
+    const narrow = css!.slice(css!.indexOf("@container"))
+    expect(narrow).toMatch(/\.rpc-slab-label\s*\{[^}]*flex-direction:\s*column-reverse/)
+    expect(narrow).toMatch(/\.rpc-slab-label-team\s*\{[^}]*white-space:\s*normal/)
+    // the ✕ reserve moves from the whole label to the top (meta) row only
+    expect(narrow).toMatch(/\.rpc-slab-label\[data-reserve-corner\]\s+\.rpc-slab-label-meta\s*\{[^}]*padding-right/)
+  })
 })
