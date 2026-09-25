@@ -361,7 +361,17 @@ function SlabLabel({
     : null;
 
   return (
+    // The wrapper is a size container so the label can reflow on its OWN width,
+    // not the viewport's: in a 2-up mobile grid the slab is ~150px wide, and the
+    // side-by-side layout (✕ reserve + 50px serial column) left the player name
+    // ~45px — "Donovan Clingan" clipped, team/set cut to "PORTLA…" / "Series
+    // 2024-2…". Below the breakpoint the serial/tier/badges move to a top row
+    // beside the ✕ and the name/team/set get the full label width.
+    <div style={{ containerType: "inline-size" }}>
+    <style href="rpc-slab-label" precedence="default">{SLAB_LABEL_CSS}</style>
     <div
+      className="rpc-slab-label"
+      data-reserve-corner={reserveCorner ? "1" : undefined}
       style={{
         background: LABEL_SILVER,
         borderRadius: 6,
@@ -376,7 +386,7 @@ function SlabLabel({
       }}
     >
       {/* Middle column — player + meta */}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
+      <div className="rpc-slab-label-main" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
         <div
           style={{
             fontFamily: "var(--font-display)",
@@ -395,6 +405,7 @@ function SlabLabel({
         </div>
         {slab.team_name && (
           <div
+            className="rpc-slab-label-team"
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: 8,
@@ -412,6 +423,7 @@ function SlabLabel({
         )}
         {setLine && (
           <div
+            className="rpc-slab-label-set"
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: 8,
@@ -432,6 +444,7 @@ function SlabLabel({
 
       {/* Right column — serial + tier */}
       <div
+        className="rpc-slab-label-meta"
         style={{
           textAlign: "right",
           display: "flex",
@@ -442,7 +455,7 @@ function SlabLabel({
           minWidth: 50,
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+        <div className="rpc-slab-label-serial" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
           {serial && (
             <div
               style={{
@@ -537,8 +550,25 @@ function SlabLabel({
         )}
       </div>
     </div>
+    </div>
   );
 }
+
+// Narrow-slab reflow for SlabLabel (see the container comment there). Inline
+// styles win over class rules, hence !important. 240px covers the 2-up mobile
+// grid (≈120–170px labels) while the 3-up desktop grid (≈280px+) keeps the
+// side-by-side layout.
+const SLAB_LABEL_CSS = `
+@container (max-width: 240px) {
+  .rpc-slab-label { flex-direction: column-reverse !important; padding-right: 8px !important; gap: 5px !important; }
+  .rpc-slab-label-meta { flex-direction: row !important; align-items: center !important; justify-content: space-between !important; min-width: 0 !important; min-height: 16px; }
+  .rpc-slab-label[data-reserve-corner] .rpc-slab-label-meta { padding-right: 24px; }
+  .rpc-slab-label-serial { flex-direction: row !important; align-items: baseline !important; gap: 6px; flex-wrap: wrap; }
+  .rpc-slab-label-serial > div { margin-top: 0 !important; }
+  .rpc-slab-label-team { white-space: normal !important; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .rpc-slab-label-set { -webkit-line-clamp: 3 !important; }
+}
+`;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Moment screen
