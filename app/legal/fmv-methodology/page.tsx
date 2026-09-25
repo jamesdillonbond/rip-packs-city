@@ -5,6 +5,12 @@
 // the inline FmvDisclaimer "How is FMV calculated?" link.
 
 import Link from "next/link"
+import {
+  ASK_CORROBORATION_BAND,
+  MIN_SALES_30D_HIGH,
+  MIN_SALES_30D_MEDIUM,
+  MIN_SALES_ASK_CORROBORATION,
+} from "@/lib/fmv-confidence"
 
 export const dynamic = "force-static"
 export const revalidate = 86400
@@ -130,22 +136,43 @@ export default function FmvMethodologyPage() {
 
       <h2 style={H2}>Confidence Levels</h2>
       <p style={P}>
-        Every FMV number we publish carries one of these confidence labels. Pay
-        attention to it — a HIGH confidence FMV is an order of magnitude more
-        reliable than an ASK_ONLY one.
+        Every FMV we compute is graded with one of these confidence levels. We use
+        the grade to decide how a price is shown — boards only surface deals on
+        well-supported prices, and an ask-based estimate is marked as one — rather
+        than printing a badge on every tile. The thresholds below are read from the
+        same code that grades the prices.
       </p>
       <ul style={UL}>
         <li>
-          <strong style={STRONG}>HIGH</strong> — 10+ recent sales, tight
-          distribution, low spread between asks and last sales.
+          <strong style={STRONG}>HIGH</strong> — {MIN_SALES_30D_HIGH}+ sales in the
+          last 30 days, and they agree closely once serial number is accounted
+          for.
         </li>
         <li>
-          <strong style={STRONG}>MEDIUM</strong> — 3–9 recent sales, or 10+ sales
-          with wider spread.
+          <strong style={STRONG}>MEDIUM</strong> — {MIN_SALES_30D_MEDIUM}+ recent
+          sales (from {MIN_SALES_30D_HIGH} on, their prices must also be reasonably
+          consistent); or at least{" "}
+          {MIN_SALES_ASK_CORROBORATION} sales whose median sits within ±
+          {Math.round(ASK_CORROBORATION_BAND * 100)}% of a current listing (a live ask
+          only ever raises confidence, never lowers a price).
         </li>
         <li>
-          <strong style={STRONG}>LOW</strong> — 1–2 recent sales. The number is
-          directional, not precise.
+          <strong style={STRONG}>LOW</strong> — directional, not precise. It
+          means one of two opposite things, and it matters which:
+          <ul style={UL}>
+            <li>
+              <strong style={STRONG}>Too few sales</strong> — fewer than{" "}
+              {MIN_SALES_30D_MEDIUM} recent sales to price from.
+            </li>
+            <li>
+              <strong style={STRONG}>Sales disagree</strong> — the edition trades
+              actively ({MIN_SALES_30D_HIGH}+ recent sales), but the prices are
+              spread too widely to call one number reliable: prices moving within
+              the month, or sales far below the rest. Where we show a 30-day price range beside the price
+              (for example <em>$4.00–$6.00 30d</em>, the typical spread of real
+              sales), that range is the better guide.
+            </li>
+          </ul>
         </li>
         <li>
           <strong style={STRONG}>SALES_ONLY</strong> — Sales-based estimate where
