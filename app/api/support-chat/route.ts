@@ -2616,6 +2616,46 @@ async function executeTool(
         // here would read as "zero listings" beside a real floor, so the count
         // stays null and listingsStatus resolves on the floor instead.
         listingsCount = 0;
+      } else if (slug === "candy-mlb") {
+        // 2026-09-25: Candy had no arm here, so every Candy listing question came
+        // back 'unavailable' and the model said "the live marketplace check
+        // couldn't be reached" — about a book RPC holds (candy_listings, the
+        // Magic Eden sweep every 3 h, ~1,800 asks re-seen per sweep). Only asks
+        // RE-SEEN within CANDY_ASK_FRESH_MS count: Magic Eden asks carry no
+        // expiry and deactivation is evidence-based, so an ask not re-seen for
+        // days can still read is_active (lib/market/ask-freshness.ts). And the
+        // book itself must be fresh — if no sweep landed inside the window,
+        // "no fresh ask for this edition" would be a stalled indexer, not an
+        // empty market, so the check is reported as unavailable instead.
+        const CANDY_ASK_FRESH_MS = 7 * 3600_000;
+        const since = new Date(Date.now() - CANDY_ASK_FRESH_MS).toISOString();
+        const [asks, head] = await Promise.all([
+          supabase
+            .from("candy_listings")
+            .select("price_usd, token_mint, last_seen_at")
+            .eq("edition_id", edition.id)
+            .eq("is_active", true)
+            .gt("price_usd", 0)
+            .gte("last_seen_at", since)
+            .order("price_usd", { ascending: true })
+            .limit(200),
+          supabase
+            .from("candy_listings")
+            .select("last_seen_at")
+            .eq("is_active", true)
+            .order("last_seen_at", { ascending: false })
+            .limit(1),
+        ]);
+        const newest = (head.data ?? [])[0]?.last_seen_at as string | undefined;
+        const bookFresh = !!newest && Date.parse(newest) >= Date.parse(since);
+        floorOk = !asks.error && !head.error && bookFresh;
+        if (floorOk) {
+          const rows = (asks.data ?? []) as Array<{ price_usd: number | string; token_mint: string }>;
+          listingsCount = rows.length;
+          floorAsk = rows.length ? Number(rows[0].price_usd) : null;
+          floorBuyUrl = rows.length ? marketplaceMomentUrl(slug, String(rows[0].token_mint)) : null;
+          fetchedAt = newest ?? null;
+        }
       }
 
       const status = listingsStatus(floorOk, listingsCount, floorAsk);
@@ -2663,7 +2703,9 @@ async function executeTool(
                 ? "the Top Shot marketplace"
                 : floorView
                   ? "RPC's on-chain listing index"
-                  : "a live marketplace",
+                  : slug === "candy-mlb"
+                    ? "Magic Eden (RPC's Candy listing index, re-checked every 3 hours; fetched_at is the last sweep)"
+                    : "a live marketplace",
             ),
         market_closed: closed ? { closed_on: closed.closedOn, venue: closed.venue } : null,
         floor_ask: status === "listed" ? floorAsk : null,
