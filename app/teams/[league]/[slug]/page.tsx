@@ -236,13 +236,14 @@ function PanelLabel({ children }: { children: ReactNode }) {
 // does not exist (that 404s). Makes no claim about the team.
 function HubUnavailable() {
   return (
-    <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+    // A <div>, not a <main>: app/teams/layout.tsx supplies the page's <main> (2026-09-25).
+    <div style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
         Team hub unavailable
       </div>
       <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 520, textAlign: "center", margin: 0, lineHeight: 1.5 }}>
         The team data didn&rsquo;t come back in time. This is a problem on our side &mdash; it says nothing about the team. Reloading often works.
       </p>
-    </main>
+    </div>
   )
 }
