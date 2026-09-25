@@ -60,6 +60,7 @@ describe("planReconcile — Golazos storefront reconciliation", () => {
       price_usd: 12.5,
       currency: "DUC",
       completed_at: null,
+      verified_at: new Date(NOW * 1000).toISOString(),
     })
     expect(p.counts.inserted).toBe(1)
     expect(p.closes).toHaveLength(0)
@@ -76,6 +77,8 @@ describe("planReconcile — Golazos storefront reconciliation", () => {
       listed_at: "2026-08-01T00:00:00.000Z",
       edition_id: "ed-uuid-89",
       price_usd: 12.5,
+      // the walk re-confirms an existing row too — pricing depends on it staying fresh
+      verified_at: new Date(NOW * 1000).toISOString(),
     })
     expect(p.counts.updated).toBe(1)
     expect(p.counts.inserted).toBe(0)

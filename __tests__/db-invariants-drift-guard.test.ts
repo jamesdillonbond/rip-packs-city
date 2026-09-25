@@ -311,9 +311,14 @@ const PINS = [
     migration: "supabase/migrations/20260830152806_audit_20260830_pack_ev_pool_reads_latest_snapshot_per_edition_not_the_fmv_current_view.sql",
   },
   {
+    fn: "refresh_golazos_ask_fmv_from_listings",
+    test: "supabase/tests/refresh_golazos_ask_fmv_from_listings.sql",
+    migration: "supabase/migrations/20260925224605_audit_20260925_golazos_ask_fmv_moves_off_flowty_onto_the_onchain_book.sql",
+  },
+  {
     fn: "fmv_from_cached_listings",
     test: "supabase/tests/fmv_from_cached_listings.sql",
-    migration: "supabase/migrations/20260925152928_audit_20260925_fmv_from_cached_listings_prices_only_fresh_listings.sql",
+    migration: "supabase/migrations/20260925224605_audit_20260925_golazos_ask_fmv_moves_off_flowty_onto_the_onchain_book.sql",
   },
   {
     fn: "apply_fmv_thin_sales_guard",

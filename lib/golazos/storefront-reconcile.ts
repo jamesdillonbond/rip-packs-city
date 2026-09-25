@@ -138,6 +138,8 @@ export interface ListingRow {
   block_height: number | null
   tx_hash: string | null
   event_index: number | null
+  /** When a storefront walk last confirmed the listing live (migration 20260925224605). */
+  verified_at?: string | null
 }
 
 export type CloseStatus = "ghosted" | "vanished" | "expired"
@@ -176,6 +178,10 @@ export function planReconcile(input: {
   nowEpoch: number
 }): ReconcilePlan {
   const { walkedSellers, editionUuidByExternalId, nowEpoch } = input
+  // Stamped on every listing this walk confirmed live. Golazos ask pricing
+  // (refresh_golazos_ask_fmv_from_listings) counts a listing only while this — or
+  // the event's listed_at — is within 6 h, so a stalled reconciler stops pricing.
+  const verifiedAt = new Date(nowEpoch * 1000).toISOString()
   // Only rows this storefront backs. A walk of the Dapper NFTStorefrontV2 says
   // nothing about a V1 (`direct_v1`) or Flowty-fork (`direct`) listing, so those
   // must never be closed as "vanished" for being absent from it.
@@ -233,6 +239,7 @@ export function planReconcile(input: {
         price_usd: priceUsdFor(currency, l.salePrice),
         currency,
         expiry_at: new Date(l.expiryEpoch * 1000).toISOString(),
+        verified_at: verifiedAt,
       }
 
       if (row) {

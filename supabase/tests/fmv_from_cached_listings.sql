@@ -7,9 +7,11 @@
 -- edition with a sales-backed row, and prices nothing for NFL All Day (owned by the
 -- ghost-aware writers since 2026-09-23). Since 2026-09-25 it prices only from listings
 -- the cache fetched within 2 hours, so a frozen cache (Flowty sweeps failing, prior
--- cache preserved) is never re-stamped as fresh FMV.
+-- cache preserved) is never re-stamped as fresh FMV. Since 2026-09-25 it also prices
+-- nothing for LaLiga Golazos (owned by refresh_golazos_ask_fmv_from_listings), so the
+-- generic fixtures below use UFC Strike.
 -- DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260925152928_audit_20260925_fmv_from_cached_listings_prices_only_fresh_listings.sql);
+-- (supabase/migrations/20260925224605_audit_20260925_golazos_ask_fmv_moves_off_flowty_onto_the_onchain_book.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -65,6 +67,16 @@ BEGIN
   -- them put FMVs 20x above a live buy-it-now (Jer'Zhan Newton $60.39 vs a $3 ask) and
   -- re-created prices the ghost fix had just retired.
   IF p_collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid THEN
+    RETURN 0;
+  END IF;
+
+  -- 2026-09-25: LaLiga Golazos is NOT priced here either. Its ASK_ONLY lane moved to
+  -- refresh_golazos_ask_fmv_from_listings(), which reads the on-chain book in
+  -- cached_listings_v2 (kept by golazos-storefront-reconcile: 3,338 live listings
+  -- across 490 editions vs Flowty's ~67 moments) and survives Flowty switching its
+  -- API off. Pricing Golazos here too would put two writers on one lane, each
+  -- deleting the other's ASK_ONLY rows every 20 minutes.
+  IF p_collection_id = '06248cc4-b85f-47cd-af67-1855d14acd75'::uuid THEN
     RETURN 0;
   END IF;
 
@@ -168,7 +180,9 @@ $function$;
 
 DO $seed$
 DECLARE
-  c uuid := '06248cc4-b85f-47cd-af67-1855d14acd75'; -- golazos (any non-null collection)
+  c uuid := '9b4824a8-736d-4a96-b450-8dcc0c46b023'; -- ufc_strike (a collection this lane still prices)
+  gz uuid := '06248cc4-b85f-47cd-af67-1855d14acd75'; -- laliga_golazos
+  e11 uuid := 'ed000011-0000-0000-0000-000000000011';
   e1 uuid := 'ed000001-0000-0000-0000-000000000001';
   e2 uuid := 'ed000002-0000-0000-0000-000000000002';
   e3 uuid := 'ed000003-0000-0000-0000-000000000003';
@@ -228,6 +242,15 @@ BEGIN
   INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, confidence, algo_version)
     VALUES (e8,ad,NULL,'NO_DATA','allday-ask-retired-v1');
 
+  -- E11: a LaLiga Golazos edition with a fresh listing and a prior ASK_ONLY row from
+  -- the on-chain lane → this function prices nothing for Golazos and leaves it alone.
+  INSERT INTO editions (id, collection_id, external_id, player_name, set_name) VALUES
+    (e11,gz,'M11','P11','S11');
+  INSERT INTO cached_listings (collection_id, moment_id, player_name, set_name, ask_price, fmv) VALUES
+    (gz,'M11','P11','S11',4,9);
+  INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, confidence, algo_version)
+    VALUES (e11,gz,3.6,'ASK_ONLY','golazos-listing-ask-v1');
+
   INSERT INTO editions (id, collection_id, external_id, player_name, set_name) VALUES
     (e9,c,'M9','P9','S9'),(e10,c,'M10','P10','S10');
 
@@ -249,7 +272,7 @@ END $seed$;
 -- Returns the count of ASK_ONLY rows written: E1 (replace) + E2 (ask fallback) + E6 + E7 + E10 = 5.
 -- E9 (stale listing only) is NOT among them.
 SELECT _assert_eq(
-  (fmv_from_cached_listings('06248cc4-b85f-47cd-af67-1855d14acd75'::uuid))::text,
+  (fmv_from_cached_listings('9b4824a8-736d-4a96-b450-8dcc0c46b023'::uuid))::text,
   '5', 'writes 5 ASK_ONLY rows (E1 avg-FMV + E2 ask-fallback + E6 capped + E7 troll-floor + E10 fresh-only)');
 
 -- E1: exactly one ASK_ONLY row now, FMV = avg(10,20) = 15, floor = min(ask) = 30.
@@ -301,6 +324,12 @@ SELECT _assert_eq((SELECT string_agg(fmv_usd::text || '|' || computed_at::date::
 -- E10: priced from the fresh listing only.
 SELECT _assert_eq((SELECT fmv_usd::text || '|' || floor_price_usd::text || '|' || listing_count::text FROM fmv_snapshots WHERE edition_id = 'ed000010-0000-0000-0000-000000000010'),
   '8.00|8.00|1', 'E10 stale cheaper ask ignored: FMV and floor from the fresh listing only');
+
+-- E11: LaLiga Golazos is not priced here — its ASK_ONLY lane is the on-chain book.
+SELECT _assert_eq((fmv_from_cached_listings('06248cc4-b85f-47cd-af67-1855d14acd75'::uuid))::text,
+  '0', 'Golazos call writes nothing');
+SELECT _assert_eq((SELECT string_agg(confidence::text || ':' || fmv_usd::text || ':' || algo_version, ',') FROM fmv_snapshots WHERE edition_id = 'ed000011-0000-0000-0000-000000000011'),
+  'ASK_ONLY:3.6:golazos-listing-ask-v1', 'E11 Golazos on-chain-lane row untouched (not deleted, not replaced by a Flowty price)');
 
 SELECT '✓ fmv_from_cached_listings invariants pass' AS result;
 ROLLBACK;
