@@ -7,12 +7,18 @@
 -- or misattributes editions to the wrong player.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260802181000_audit_20260802_snapshot_resolve_canonical_player.sql);
+-- (supabase/migrations/20260925101847_audit_20260925_resolve_canonical_player_folds_accents.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
 BEGIN;
+
+-- 2026-09-25: the slug folds accents through extensions.unaccent; Supabase
+-- installs unaccent in the `extensions` schema — reproduce that so the
+-- verbatim DDL resolves.
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
 
 CREATE TABLE collections (
   id   uuid PRIMARY KEY,
@@ -50,7 +56,7 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  v_slug := regexp_replace(lower(trim(p_name)), '[^a-z0-9]+', '-', 'g');
+  v_slug := regexp_replace(lower(trim(extensions.unaccent(p_name))), '[^a-z0-9]+', '-', 'g');
   IF v_slug = '' THEN
     RETURN NULL;
   END IF;
@@ -58,7 +64,7 @@ BEGIN
   SELECT p.id INTO v_id
     FROM public.players p
    WHERE p.collection_id = p_collection_id
-     AND regexp_replace(lower(trim(p.name)), '[^a-z0-9]+', '-', 'g') = v_slug
+     AND regexp_replace(lower(trim(extensions.unaccent(p.name))), '[^a-z0-9]+', '-', 'g') = v_slug
    ORDER BY CASE WHEN p.external_id ~ '^[0-9]+$'  THEN 1
                  WHEN p.external_id LIKE 'flow:%' THEN 3
                  ELSE 2 END,
@@ -87,7 +93,7 @@ BEGIN
     SELECT p.id INTO v_id
       FROM public.players p
      WHERE p.collection_id = p_collection_id
-       AND regexp_replace(lower(trim(p.name)), '[^a-z0-9]+', '-', 'g') = v_slug
+       AND regexp_replace(lower(trim(extensions.unaccent(p.name))), '[^a-z0-9]+', '-', 'g') = v_slug
      LIMIT 1;
   END IF;
 
@@ -163,6 +169,33 @@ SELECT _assert_eq(
   resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'Fresh  Rookie')::text,
   (SELECT id::text FROM players WHERE external_id='nba_top_shot-fresh-rookie'),
   'second call resolves to the same row (idempotent), mints no duplicate');
+
+-- 2026-09-25: accents fold. An accented canonical row resolves from its plain
+-- spelling and vice versa, and neither probe mints a second row (17 such
+-- duplicates existed before 20260925101847).
+INSERT INTO players (id, external_id, collection_id, name, team, collection) VALUES
+  ('00000000-0000-0000-0000-000000000006', '1629029', '11111111-1111-1111-1111-111111111111', 'Luka Dončić', NULL, 'nba_top_shot');
+SELECT _assert_eq(
+  resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'Luka Doncic')::text,
+  '00000000-0000-0000-0000-000000000006',
+  'plain spelling resolves the accented canonical row');
+SELECT _assert_eq(
+  resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'LUKA DONČIĆ')::text,
+  '00000000-0000-0000-0000-000000000006',
+  'accented, upper-cased spelling resolves the same row');
+SELECT _assert_eq((SELECT count(*)::text FROM players WHERE lower(extensions.unaccent(name)) = 'luka doncic'), '1',
+  'neither accent-variant probe minted a second row');
+-- A no-match accented name mints ONE row keyed on the UNACCENTED slug, and the
+-- plain spelling then resolves it.
+SELECT resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'Noémie Brochant');
+SELECT _assert(( (SELECT count(*) FROM players WHERE external_id='nba_top_shot-noemie-brochant') = 1 ),
+  'no match on an accented name → one row keyed on the unaccented slug');
+SELECT _assert_eq((SELECT name FROM players WHERE external_id='nba_top_shot-noemie-brochant'), 'Noémie Brochant',
+  'the stored name keeps its accents');
+SELECT _assert_eq(
+  resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'Noemie Brochant')::text,
+  (SELECT id::text FROM players WHERE external_id='nba_top_shot-noemie-brochant'),
+  'the plain spelling resolves the accented row it would once have duplicated');
 
 SELECT '✓ resolve_canonical_player invariants pass' AS result;
 ROLLBACK;
