@@ -4,7 +4,7 @@ import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { isWalletAddress, lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
 import { isSupportedAddress, isValidAddressForChain } from "@/lib/address"
-import { getCollectionByUuid } from "@/lib/collections"
+import { getCollectionByUuid, getCollectionUuid } from "@/lib/collections"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,7 +28,29 @@ export async function GET(req: NextRequest) {
   const wallet = req.nextUrl.searchParams.get("wallet")
   if (!wallet || !wallet.trim()) return NextResponse.json({ error: "wallet required" }, { status: 400 })
 
-  const collectionId = req.nextUrl.searchParams.get("collection_id") || "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+  // ⛔ 2026-09-25 — a NAMED collection is never substituted. The route read
+  // `collection_id` alone and defaulted to Top Shot, so `?collection=nfl-all-day`
+  // (the slug the collection tab also sends) answered with the wallet's TOP SHOT
+  // summary — identical bytes for two collections, every helper satisfied. The
+  // live caller happens to pass both, which is why it never showed. An ABSENT
+  // parameter may still default; a present-but-unknown one is refused.
+  const rawCollectionId = req.nextUrl.searchParams.get("collection_id")
+  const rawSlug = req.nextUrl.searchParams.get("collection")
+  let collectionId: string
+  if (rawCollectionId) {
+    collectionId = rawCollectionId
+  } else if (rawSlug) {
+    const fromSlug = getCollectionUuid(rawSlug)
+    if (!fromSlug) {
+      return NextResponse.json(
+        { error: "collection_not_supported", message: `No collection named ${rawSlug}.` },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      )
+    }
+    collectionId = fromSlug
+  } else {
+    collectionId = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+  }
 
   let address = wallet.trim()
   // ⛔ 2026-09-19 — `isWalletAddress` is the FLOW shape (`0x` + 16 hex) and it

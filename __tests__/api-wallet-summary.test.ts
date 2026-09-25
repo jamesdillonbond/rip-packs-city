@@ -90,6 +90,31 @@ describe("GET /api/wallet-summary", () => {
     expect((await res.json()).message).toMatch(/NBA Top Shot lives on Flow/)
   })
 
+  // ⛔ 2026-09-25 — `?collection=nfl-all-day` with no `collection_id` answered the
+  // wallet's TOP SHOT summary (the route ignored the slug and defaulted): two
+  // collections, identical bytes. A named collection is resolved, never swapped.
+  it("resolves a `collection` slug when `collection_id` is absent — never Top Shot's default", async () => {
+    rpc.data = { total_moments: 3 }
+    const res = await GET(req("https://t/api/wallet-summary?wallet=0xb5081692483c2336&collection=nfl-all-day"))
+    expect(res.status).toBe(200)
+    expect(rpc.lastArgs.p_collection_id).toBe("dee28451-5d62-409e-a1ad-a83f763ac070")
+  })
+  it("refuses an unknown `collection` slug (400) instead of answering about another collection", async () => {
+    rpc.data = { total_moments: 3 }
+    const res = await GET(req("https://t/api/wallet-summary?wallet=0xb5081692483c2336&collection=settings"))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("collection_not_supported")
+    expect(rpc.lastArgs, "the RPC must not be asked").toBeFalsy()
+  })
+  it("no-change control: `collection_id` still wins when both are sent, and no collection at all still defaults to Top Shot", async () => {
+    rpc.data = { total_moments: 3 }
+    await GET(req("https://t/api/wallet-summary?wallet=0xb5081692483c2336&collection=nfl-all-day&collection_id=95f28a17-224a-4025-96ad-adf8a4c63bfd"))
+    expect(rpc.lastArgs.p_collection_id).toBe("95f28a17-224a-4025-96ad-adf8a4c63bfd")
+    rpc.lastArgs = null
+    await GET(req("https://t/api/wallet-summary?wallet=0xb5081692483c2336"))
+    expect(rpc.lastArgs.p_collection_id).toBe("95f28a17-224a-4025-96ad-adf8a4c63bfd")
+  })
+
   it("no-change control: a genuine username still goes to the ladder", async () => {
     // Widening the address test must not swallow usernames — if it did, every
     // username would be handed to the RPC as if it were an address and come

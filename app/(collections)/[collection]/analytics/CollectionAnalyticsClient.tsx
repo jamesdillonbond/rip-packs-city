@@ -1115,14 +1115,22 @@ function AnalyticsInner() {
       router.replace(`?${sp.toString()}`, { scroll: false })
     } catch {}
     try {
+      // ⛔ 2026-09-25 — the "Marketplace Breakdown — TS vs Flowty" panel is a Top
+      // Shot panel, and this fetch carried NO collection, so /api/marketplace-
+      // breakdown defaulted to Top Shot and the All Day / Golazos / UFC analytics
+      // page rendered the wallet's TOP SHOT marketplace split under its own
+      // header — the SUBSTITUTION face. Ask only on Top Shot, and name it.
+      const wantsBreakdown = collection === "nba-top-shot"
       const [analyticsRes, mpRes] = await Promise.all([
         fetch(`/api/analytics?wallet=${encodeURIComponent(trimmed)}&collection_id=${encodeURIComponent(collection)}`),
-        fetch(`/api/marketplace-breakdown?wallet=${encodeURIComponent(trimmed)}`),
+        wantsBreakdown
+          ? fetch(`/api/marketplace-breakdown?wallet=${encodeURIComponent(trimmed)}&collection=${encodeURIComponent(collection)}`)
+          : Promise.resolve(null),
       ])
       const json = await analyticsRes.json()
       if (!analyticsRes.ok) throw new Error(json.error || "Failed to load analytics")
       setData(json)
-      if (mpRes.ok) {
+      if (mpRes && mpRes.ok) {
         const mp = await mpRes.json()
         setMpBreakdown(mp && typeof mp === "object" && !mp.error ? mp : null)
       }

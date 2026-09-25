@@ -7,8 +7,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 const rpc: { data: any; error: any } = { data: null, error: null }
 
+const seen: { args: any } = { args: null }
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { rpc: async () => ({ data: rpc.data, error: rpc.error }) },
+  supabaseAdmin: { rpc: async (_n: string, args: any) => { seen.args = args; return { data: rpc.data, error: rpc.error } } },
 }))
 
 import { GET } from "@/app/api/marketplace-breakdown/route"
@@ -32,6 +33,25 @@ describe("GET /api/marketplace-breakdown", () => {
     const res = await GET(req("https://t/api/marketplace-breakdown?wallet=0xabc"))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ total: 5 })
+  })
+
+  // 2026-09-25 — a named collection is resolved or refused, never Top Shot's.
+  it("resolves a `collection` slug to its uuid", async () => {
+    rpc.data = [{ total: 1 }]
+    await GET(req("https://t/api/marketplace-breakdown?wallet=0xabc&collection=nfl-all-day"))
+    expect(seen.args.p_collection_id).toBe("dee28451-5d62-409e-a1ad-a83f763ac070")
+  })
+  it("refuses an unknown `collection` slug with 400 and never asks the RPC", async () => {
+    seen.args = null
+    const res = await GET(req("https://t/api/marketplace-breakdown?wallet=0xabc&collection=settings"))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("collection_not_supported")
+    expect(seen.args).toBeNull()
+  })
+  it("no-change control: no collection at all still defaults to Top Shot", async () => {
+    rpc.data = [{ total: 1 }]
+    await GET(req("https://t/api/marketplace-breakdown?wallet=0xabc"))
+    expect(seen.args.p_collection_id).toBe("95f28a17-224a-4025-96ad-adf8a4c63bfd")
   })
 
   it("500s on an rpc error", async () => {

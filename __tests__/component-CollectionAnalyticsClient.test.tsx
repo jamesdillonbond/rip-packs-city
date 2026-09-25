@@ -448,6 +448,34 @@ describe("CollectionAnalyticsClient — tabs and wallet search", () => {
     })
   })
 
+  // ⛔ 2026-09-25 — the "Marketplace Breakdown — TS vs Flowty" fetch carried no
+  // collection, so on /nfl-all-day/analytics the panel drew the wallet's TOP
+  // SHOT marketplace split (the route defaults to Top Shot) under All Day's
+  // header. Asked only on Top Shot, and named when asked.
+  it("asks for the marketplace breakdown on Top Shot only, and names the collection", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.startsWith("/api/marketplace-breakdown?") && u.includes("collection=nba-top-shot"))).toBe(true)
+    })
+  })
+  it("never asks for the marketplace breakdown on another collection", async () => {
+    PARAMS.collection = "nfl-all-day"
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
+      render(<CollectionAnalyticsClient />)
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+        expect(urls.some((u) => u.startsWith("/api/analytics?wallet="))).toBe(true)
+      })
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.startsWith("/api/marketplace-breakdown"))).toBe(false)
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
   it("does not request a wallet analysis when the URL names none", async () => {
     render(<CollectionAnalyticsClient />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
