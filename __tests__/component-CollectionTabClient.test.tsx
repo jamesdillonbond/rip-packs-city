@@ -1465,6 +1465,23 @@ describe("CollectionTabClient — offers, sets, packs and sharing", () => {
     })
   })
 
+  it("does NOT ask the Top Shot set tracker on another collection's tab (substitution, 2026-09-25)", async () => {
+    PARAMS.collection = "laliga-golazos"
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      render(<CollectionTabClient />)
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+        expect(urls.some((u) => u.startsWith("/api/collection-moments"))).toBe(true)
+      })
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.startsWith("/api/sets?wallet="))).toBe(false)
+      expect(screen.queryByText(/CLOSE TO COMPLETING/i)).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
   it("survives a failed sets or packs read — both are side panels, not the wallet", async () => {
     searchParams = new URLSearchParams("wallet=0xmine")
     fetchMock.mockImplementation(async (input: unknown) => {

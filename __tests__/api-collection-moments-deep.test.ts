@@ -485,6 +485,36 @@ describe("GET /api/collection-moments — username resolution + collection scopi
     expect(body.total_count).toBe(1)
   })
 
+  // ⛔ 2026-09-25 — a Flow address against Candy MLB answered 200 with an empty
+  // page and a full acquisitionStats object of zeros: "this wallet holds
+  // nothing" about a wallet that cannot hold Candy at all.
+  it("refuses a Flow address against a Solana collection (chain_mismatch 400) before any RPC runs", async () => {
+    const spy = install({
+      "rpc:get_wallet_moments_with_fmv": { data: { moments: [], total_count: 0 }, error: null },
+      "rpc:get_wallet_total_fmv": { data: 0, error: null },
+      "rpc:get_acquisition_stats": { data: null, error: null },
+    })
+    const res = await GET(req("https://t/api/collection-moments?wallet=0xbd94cade097e50ac&collection=candy-mlb"))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe("chain_mismatch")
+    expect(body.message).toMatch(/Candy MLB lives on Solana/)
+    expect(body.moments).toBeUndefined()
+    expect(body.acquisitionStats).toBeUndefined()
+    expect(res.headers.get("cache-control")).toBe("no-store")
+    void spy
+  })
+
+  it("no-change control: a Solana address against Candy MLB still reaches the RPC", async () => {
+    install({
+      "rpc:get_wallet_moments_with_fmv": { data: { moments: [], total_count: 0 }, error: null },
+      "rpc:get_wallet_total_fmv": { data: 0, error: null },
+      "rpc:get_acquisition_stats": { data: null, error: null },
+    })
+    const res = await GET(req("https://t/api/collection-moments?wallet=12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK&collection=candy-mlb"))
+    expect(res.status).toBe(200)
+  })
+
   it("answers the fixed 400 not_found copy (never a 500) when a username cannot be resolved to a wallet — INVERTED 2026-09-04", async () => {
     // Default gqlResolve ({}) → no flowAddress → resolveWalletAddress throws the
     // "could not resolve" message. This test used to PIN the 500 "Internal server

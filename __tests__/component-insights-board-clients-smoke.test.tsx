@@ -109,3 +109,16 @@ describe("insights board clients — empty render smoke", () => {
     expect(container.textContent && container.textContent.length).toBeGreaterThan(0)
   })
 })
+
+describe("SetSqueezeBoardClient — series read like every other page (2026-09-25)", () => {
+  it("pills and row sub-labels use the site-wide Top Shot map, never the raw 'S8' number", () => {
+    const rows = [
+      { set_name: "Base Set", set_slug: "base-set", series: 8, tier: "COMMON", editions: 10, avg_squeeze: 55, max_squeeze: 90, sealed_pct: 12 },
+    ] as unknown as Parameters<typeof SetSqueezeBoardClient>[0]["initialRows"]
+    const { container } = render(<SetSqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    const txt = container.textContent ?? ""
+    expect(txt).toContain("Series 2025-26")
+    expect(txt).toContain("Series 2023-24")
+    expect(txt).not.toMatch(/\bS[5-8]\b/)
+  })
+})

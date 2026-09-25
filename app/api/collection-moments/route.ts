@@ -6,7 +6,7 @@ import { isUpstreamDown, noteUpstreamFailure, noteUpstreamSuccess } from "@/lib/
 import { getCollection } from "@/lib/collections"
 import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
 import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
-import { isSupportedAddress } from "@/lib/address"
+import { isSupportedAddress, isValidAddressForChain } from "@/lib/address"
 
 /**
  * GET /api/collection-moments
@@ -228,6 +228,25 @@ export async function GET(req: NextRequest) {
           .eq("flow_contract_name", contractName)
           .single()
         if (config?.collection_id) collectionId = config.collection_id
+      }
+    }
+
+    // ⛔ 2026-09-25 — a Flow address against Candy MLB answered 200 with
+    // `moments: [] · total_count 0 · total_fmv 0` and a full acquisitionStats
+    // object of zeros: "this wallet holds nothing" about a wallet that cannot
+    // hold that collection at all (CLAUDE.md's chain-two footgun). The wrong
+    // chain is refused, never answered.
+    if (collectionId && collectionSlug) {
+      const dbChain = getCollection(collectionSlug)?.dbChain
+      if (dbChain && isSupportedAddress(wallet) && !isValidAddressForChain(wallet, dbChain)) {
+        const chainName = dbChain === "solana" ? "Solana" : dbChain === "ethereum" ? "Ethereum" : "Flow"
+        return NextResponse.json(
+          {
+            error: "chain_mismatch",
+            message: `${getCollection(collectionSlug)?.label ?? collectionSlug} lives on ${chainName}; that wallet address is not a ${chainName} address, so it cannot hold its moments.`,
+          },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        )
       }
     }
 

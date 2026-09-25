@@ -44,6 +44,15 @@ describe("GET /api/sets", () => {
   // address as a USERNAME and spent two round trips on the decommissioned Top
   // Shot GraphQL host before throwing. Shape copied from the house pattern
   // (`cost_basis_unavailable`), not invented.
+  it("refuses ?collection=<not Top Shot> instead of answering with Top Shot's sets (substitution, 2026-09-25)", async () => {
+    const res = await GET(req("https://t/api/sets?wallet=0xbd94cade097e50ac&collection=candy-mlb"))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe("collection_not_supported")
+    expect(body.sets).toBeUndefined()
+    expect(body.totalSets).toBeUndefined()
+  })
+
   it("a base58 (Solana/Candy) wallet gets a typed not-applicable, not a 500", async () => {
     const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
     const res = await GET(req(`https://t/api/sets?wallet=${CANDY}`))

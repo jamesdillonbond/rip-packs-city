@@ -11,6 +11,7 @@
 // enhancement and only refetches when those change.
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { seriesDisplay } from "@/lib/series-label"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
@@ -71,12 +72,10 @@ function tierColor(tier: string | null): string {
       return "var(--rpc-text-muted)"
   }
 }
-const SERIES_LABEL: Record<string, string> = {
-  "5": "Series 4 (2022-23)",
-  "6": "Series 2023-24",
-  "7": "Series 2024-25",
-  "8": "Series 2025-26",
-}
+// 2026-09-25: the pills and the row sub-labels read "S8 / S7 / S6 / S5" — the
+// raw on-chain number every other page has stopped showing. Labels come from
+// the site-wide Top Shot map (lib/series-label.ts), never a local copy.
+const seriesLabel = (n: number | string): string => seriesDisplay(Number(n), "nba_top_shot")
 
 type Props = {
   initialRows: Row[]
@@ -177,9 +176,9 @@ export default function SetSqueezeBoardClient({
               key={s}
               className={`rpc-ss-pill ${series === s ? "rpc-ss-pill-active" : ""}`}
               onClick={() => setSeries(s)}
-              title={s !== "ALL" ? SERIES_LABEL[s] : "Any series"}
+              title={s !== "ALL" ? seriesLabel(s) : "Any series"}
             >
-              {s === "ALL" ? "Any" : `S${s}`}
+              {s === "ALL" ? "Any" : seriesLabel(s)}
             </button>
           ))}
         </div>
@@ -244,7 +243,7 @@ export default function SetSqueezeBoardClient({
                           title={`${r.set_name} on NBA Top Shot`}
                         >
                           <div className="rpc-ss-set-name">{r.set_name}</div>
-                          <div className="rpc-ss-set-sub">{r.series ? `S${r.series}` : "—"}</div>
+                          <div className="rpc-ss-set-sub">{r.series ? seriesLabel(r.series) : "—"}</div>
                         </Link>
                         <Link
                           href={`/insights/squeeze?set=${encodeURIComponent(r.set_name)}`}
@@ -264,7 +263,7 @@ export default function SetSqueezeBoardClient({
                     ) : (
                       <>
                         <div className="rpc-ss-set-name">—</div>
-                        <div className="rpc-ss-set-sub">{r.series ? `S${r.series}` : "—"}</div>
+                        <div className="rpc-ss-set-sub">{r.series ? seriesLabel(r.series) : "—"}</div>
                       </>
                     )}
                   </td>

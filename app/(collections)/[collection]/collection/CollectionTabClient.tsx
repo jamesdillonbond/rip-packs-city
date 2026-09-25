@@ -611,7 +611,9 @@ function WalletMomentsBody() {
           const res = await fetch(url)
           if (!res.ok) {
             const j = await res.json().catch(function() { return {} })
-            throw new Error(j.error || "Failed to load moments")
+            // `message` is the sentence a reader can act on ("Candy MLB lives on
+            // Solana; …"); `error` is the code ("chain_mismatch").
+            throw new Error(j.message || j.error || "Failed to load moments")
           }
           return res.json()
         }, 30_000)
@@ -828,11 +830,20 @@ function WalletMomentsBody() {
           .catch(function() {})
       }
 
-      // Fire-and-forget: fetch sets data for "close to completing" callout
-      fetch("/api/sets?wallet=" + encodeURIComponent(trimmed) + "&skipAsks=1")
-        .then(function(r) { return r.ok ? r.json() : null })
-        .then(function(d) { if (d) setSetsData(d) })
-        .catch(function() {})
+      // Fire-and-forget: fetch sets data for "close to completing" callout.
+      // ⛔ 2026-09-25 — TOP SHOT ONLY: /api/sets is the Top Shot tracker and
+      // ran for every collection tab, so a Flow wallet on /laliga-golazos/
+      // collection got a "CLOSE TO COMPLETING · Base Set" callout about its
+      // TOP SHOT sets, linking to /nba-top-shot/sets — substitution, the face
+      // where nothing fails.
+      if (collectionSlug === "nba-top-shot") {
+        fetch("/api/sets?wallet=" + encodeURIComponent(trimmed) + "&skipAsks=1")
+          .then(function(r) { return r.ok ? r.json() : null })
+          .then(function(d) { if (d) setSetsData(d) })
+          .catch(function() {})
+      } else {
+        setSetsData(null)
+      }
       // Fire-and-forget: load sealed pack titles for this wallet. (The response's
       // totalSealedPacks was previously stored in a `sealedPackCount` state that
       // nothing ever read — dropped 2026-07-28; re-add a reader before the state.)

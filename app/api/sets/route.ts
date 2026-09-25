@@ -279,6 +279,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "wallet param required" }, { status: 400 });
   }
 
+  // ⛔ 2026-09-25 — SUBSTITUTION, the face where nothing fails: this tracker is
+  // Top Shot only (TOPSHOT_COLLECTION_ID is hardcoded below), and a caller who
+  // asked `?collection=candy-mlb` was answered with the wallet's TOP SHOT set
+  // progress under no label at all — CLAUDE.md's own example of the class. An
+  // absent param still defaults to Top Shot; a different collection is refused.
+  const collectionParam = req.nextUrl.searchParams.get("collection")?.trim();
+  if (collectionParam && collectionParam !== "nba-top-shot" && collectionParam !== "nba_top_shot") {
+    return NextResponse.json(
+      {
+        error: "collection_not_supported",
+        message: "Set progress here is NBA Top Shot only. Other collections use /api/sets-db?collection=<slug>.",
+      },
+      { status: 400, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
   // ⛔ 2026-09-19 — A NON-FLOW ADDRESS CAME BACK AS HTTP 500 "Failed to load
   // sets.", which is the wrong claim twice over. This tracker is TOP SHOT ONLY
   // by construction — it hardcodes TOPSHOT_COLLECTION_ID and calls

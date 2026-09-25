@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { isWalletAddress, lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
-import { isSupportedAddress } from "@/lib/address"
+import { isSupportedAddress, isValidAddressForChain } from "@/lib/address"
 import { getCollectionByUuid } from "@/lib/collections"
 
 const supabase = createClient(
@@ -56,6 +56,17 @@ export async function GET(req: NextRequest) {
     address = resolved
   }
 
+  // ⛔ 2026-09-25 — a Flow address against Candy MLB (or a Solana address
+  // against Top Shot) came back 200 with a COMPLETE OBJECT OF ZEROS: "0
+  // moments · $0" about a wallet that cannot hold that collection at all —
+  // CLAUDE.md's chain-two footgun, verbatim ("a complete object of ZEROS
+  // echoing the mangled wallet back"). The chain is the registry's, and an
+  // address of the wrong chain is refused, never answered.
+  const mismatch = chainMismatch(address, collectionId)
+  if (mismatch) {
+    return NextResponse.json(mismatch, { status: 400, headers: { "Cache-Control": "no-store" } })
+  }
+
   const { data, error } = await boundedRead(supabase.rpc("get_wallet_summary", {
     p_wallet: address,
     p_collection_id: collectionId,
@@ -84,5 +95,26 @@ export function withoutLockStateForChainsThatHaveNone(data: unknown, collectionI
     unlocked_count: null,
     lock_unknown_fmv: null,
     lock_unknown_count: null,
+  }
+}
+
+/**
+ * `{ error: "chain_mismatch", message }` when `address` is a supported address
+ * of a DIFFERENT chain than the collection's, else null. A username that the
+ * ladder resolved is a Flow address by construction; an unknown collection id
+ * (no registry row) refuses nothing — the RPC answers for it as before.
+ */
+export function chainMismatch(
+  address: string,
+  collectionId: string,
+): { error: "chain_mismatch"; message: string } | null {
+  const col = getCollectionByUuid(collectionId)
+  if (!col?.dbChain) return null
+  if (!isSupportedAddress(address)) return null
+  if (isValidAddressForChain(address, col.dbChain)) return null
+  const chainName = col.dbChain === "solana" ? "Solana" : col.dbChain === "ethereum" ? "Ethereum" : "Flow"
+  return {
+    error: "chain_mismatch",
+    message: `${col.label} lives on ${chainName}; that wallet address is not a ${chainName} address, so it cannot hold ${col.label} moments.`,
   }
 }

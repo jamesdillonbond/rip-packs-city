@@ -66,6 +66,30 @@ describe("GET /api/wallet-summary", () => {
     expect(rpc.lastArgs.p_collection_id).toBe("209ade70-32c5-4470-bc7c-4793d660f713")
   })
 
+  // ⛔ 2026-09-25 — a Flow address against Candy MLB answered 200 with a complete
+  // object of zeros ("0 moments · $0") about a wallet that cannot hold Candy at
+  // all. The chain is the registry's; the wrong chain is refused, not answered.
+  it("refuses a Flow address against a Solana collection (chain_mismatch 400), never a row of zeros", async () => {
+    rpc.data = { total_moments: 0, wallet_fmv: 0 }
+    const res = await GET(req(
+      "https://t/api/wallet-summary?wallet=0xbd94cade097e50ac&collection_id=209ade70-32c5-4470-bc7c-4793d660f713"
+    ))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe("chain_mismatch")
+    expect(body.message).toMatch(/Candy MLB lives on Solana/)
+    expect(body.total_moments).toBeUndefined()
+    expect(rpc.lastArgs, "the RPC must not be asked").toBeFalsy()
+    expect(res.headers.get("cache-control")).toBe("no-store")
+  })
+
+  it("refuses a Solana address against Top Shot the same way", async () => {
+    const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+    const res = await GET(req(`https://t/api/wallet-summary?wallet=${CANDY}&collection_id=95f28a17-224a-4025-96ad-adf8a4c63bfd`))
+    expect(res.status).toBe(400)
+    expect((await res.json()).message).toMatch(/NBA Top Shot lives on Flow/)
+  })
+
   it("no-change control: a genuine username still goes to the ladder", async () => {
     // Widening the address test must not swallow usernames — if it did, every
     // username would be handed to the RPC as if it were an address and come
