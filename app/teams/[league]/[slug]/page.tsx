@@ -17,12 +17,12 @@
 // "no cards" (three states, lib/franchise-hub.ts).
 
 import type { Metadata } from "next"
-import type { ReactNode } from "react"
+import { cache, type ReactNode } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { NOT_FOUND_METADATA, franchiseHubMetadata } from "@/lib/seo"
-import { LEAGUES } from "@/lib/teams"
+import { LEAGUES, type League } from "@/lib/teams"
 import {
   HUB_TOP_EDITIONS,
   fetchFranchiseHub,
@@ -62,11 +62,19 @@ function num(v: number | string | null | undefined): number | null {
 
 // ── Metadata ────────────────────────────────────────────────────────────────
 
+// ⚠ ONE hub read per request, shared by generateMetadata and the page body.
+// 2026-09-25: /teams/nba/clippers served "Team Hub | Rip Packs City" (noindex)
+// above a fully rendered body for over an hour — the metadata's own read had
+// failed its 4 s budget on a cold ISR render, the body's separate read
+// succeeded, and the entry cached that split until the next deploy. With the
+// read deduplicated, metadata and body always describe the same outcome.
+const fetchFranchiseHubOnce = cache((league: League, slug: string) => fetchFranchiseHub(league, slug))
+
 export async function generateMetadata(props: { params: Promise<{ league: string; slug: string }> }): Promise<Metadata> {
   const { league: rawLeague, slug: rawSlug } = await props.params
   const key = parseHubParams(rawLeague, rawSlug)
   if (!key) return NOT_FOUND_METADATA
-  const { hub, ok } = await fetchFranchiseHub(key.league, key.slug)
+  const { hub, ok } = await fetchFranchiseHubOnce(key.league, key.slug)
   if (!ok) {
     // Could not ask: a generic, non-404 title so crawlers never cache a
     // not-found signal for a real franchise.
@@ -93,7 +101,7 @@ export default async function FranchiseHubPage(props: { params: Promise<{ league
   const key = parseHubParams(rawLeague, rawSlug)
   if (!key) notFound()
 
-  const { hub, ok } = await fetchFranchiseHub(key.league, key.slug)
+  const { hub, ok } = await fetchFranchiseHubOnce(key.league, key.slug)
   if (!ok) return <HubUnavailable />
   if (!hub) notFound()
 

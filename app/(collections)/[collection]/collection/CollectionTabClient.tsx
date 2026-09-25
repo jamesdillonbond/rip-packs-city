@@ -1168,9 +1168,13 @@ function WalletMomentsBody() {
             }}
           >
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-            Signed in as <span style={{ fontWeight: 600, color: "var(--rpc-text-primary)" }}>{/* A base58 Solana address is 32–44 chars; the old Flow-only regex rendered it in full and blew out this chip. */}
+            {/* 2026-09-25: this is the per-device profile key (the wallet this
+                device treats as "you"), not a sign-in — RPC asks for identifiers
+                only. An anonymous visitor who typed someone's username read
+                "Signed in as 0xbd94…" here. */}
+            This device&rsquo;s wallet <span style={{ fontWeight: 600, color: "var(--rpc-text-primary)" }}>{/* A base58 Solana address is 32–44 chars; the old Flow-only regex rendered it in full and blew out this chip. */}
             {ownerKey.length > 12 ? ownerKey.slice(0, 6) + "\u2026" + ownerKey.slice(-4) : ownerKey}</span>
-            <span style={{ marginLeft: 4, color: "var(--rpc-text-ghost)" }}>· Loading wallet will update your profile stats</span>
+            <span style={{ marginLeft: 4, color: "var(--rpc-text-ghost)" }}>· the wallet you load here becomes this device&rsquo;s profile</span>
           </div>
         )}
 
