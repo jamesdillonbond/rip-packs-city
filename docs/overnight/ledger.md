@@ -11,6 +11,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🧾 Panini squeeze headline after FMV 1.1.0: $1.405M → $1.215M; "sale-backed" share kept honest under the new confidence meaning · Cowork (cloud + laptop VM)
+
+After the backfill and a manual `refresh_panini_squeeze()`, the public sealed-value headline went from **$1,405,408 to $1,214,578** (hc: $1,261,979 → $1,083,343). The ASK_ONLY portion went from $232k to **$129k** (16.5% → 10.6%). Correction to the entry below: the ASK_ONLY FMV total is **$1.10M**, not "about $1.06M".
+
+Confidence now means *recent* evidence, so `pct_sealed_usd_sale_backed` (HIGH+MEDIUM) would have published a drop from 69.6% to **16.7%** under the page's claim that "a real sale stands behind" those editions, with no change in the underlying evidence. Migration `20260925040457` fixes this:
+- Redefines `pct_sealed_usd_sale_backed(_hc)` as HIGH+MEDIUM+LOW (**89.4% / 89.5%**).
+- Appends `pct_sealed_usd_recent_sale_backed(_hc)` (**16.7% / 18.5%**).
+
+`lib/insights/panini-board.ts` reads the new columns. The page now adds "(Y% from a sale in the last 30 days; the rest from the average of older sales)", with the same _hc/all-sets choice. Two component cases were added, including that the clause is absent when the column is absent. tsc is clean. The component suite would not start in the laptop VM (worker timeout), so CI's component job is the gate.
+**Revert:** re-apply the previous `panini_squeeze_totals` body, then `git revert` this commit.
+
 ### 2026-09-24 · 🧰 SHIPPED — Cowork skill bundles now carry `references/*`: the packer wrote `SKILL.md` alone, so re-saving `rpc-surface-qa` would have removed the two reference files its instructions open · Cowork (cloud + laptop VM)
 
 `scripts/pack-cowork-skill.mjs` zipped exactly one entry (and the `zip -j` fallback junked paths, so it could never carry a directory). `rpc-surface-qa/SKILL.md` sends the reader to `references/surface-checklist.md` and `references/browser-qa-and-known-issues.md`; the installed copy has them, the repo bundle did not. The 8 bundles Trevor re-saved at 8:48 PM PT included that one — the installed references survived that save, but the repo artifact was still wrong.
