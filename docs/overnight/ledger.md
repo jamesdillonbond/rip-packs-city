@@ -11,6 +11,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 💲 Panini FMV engine → panini-1.1.0 (recent sales; honest confidence; ASK_ONLY ×0.50) — shipped on clean-enough data, ahead of the 09-30 re-read · Cowork (cloud + laptop VM)
+
+Trevor approved this switch on 09-23. I held it on 09-24 because the backtest's ground truth came from the top-sales list only. **At 8:32 PM PT the re-read was decisive.** With recent sales now captured, `panini_fmv_backtest` covers **n=9,129** sales:
+- **Published 1.0.0:** median abs error **57.6%**, **25.5%** within ±25%, median ratio **1.53** (FMV about 50% high). The earlier 35.9% / 1.11 reading was flattered by top-biased truth.
+- **Candidate:** **33.3%** / **46.2%** / ratio **1.06**.
+- The bias that remains on not-yet-rewalked editions favours the old engine, so the verdict can only strengthen.
+
+**`toFmvRowV11`** (`lib/chains/panini/ingest-normalize.ts`) prices each edition in three tiers:
+- **Recent sales:** median of the edition's last ≤3 non-special sales in 30 days (`panini_recent_sales_fmv`). HIGH at 3 sales, MEDIUM at 1–2.
+- **Lifetime average:** used only when there has been no sale in 30 days, and now always **LOW** (it was HIGH at ≥3 lifetime sales).
+- **ASK_ONLY:** floor × **0.50**, down from 0.90. 261 first sales on 206 ASK_ONLY editions traded at a median 0.40× the prior floor; 0.50 minimises median error across 0.35–0.60 (50% vs 125%).
+
+**Route changes** (`app/api/cron/panini-ingest/route.ts`):
+- The FMV block now runs **after** the sales writes, so each batch's own sales count.
+- New run fields: `fmv_engine`, `fmv_recent_hits`, `fmv_recent_error`.
+- A failed recent-sales read falls back to 1.0.0 rows (labelled as such) **and fails the run**.
+- Kill switch: `PANINI_FMV_ENGINE=1.0`.
+
+**Checks:**
+- Tests: 5 new `toFmvRowV11` cases and 3 route cases. The 3 route cases fail against the old route.
+- tsc clean. Lint unchanged on all four files.
+- Stale "0.90 ×" comments in the squeeze client and OG route were updated. User copy ("lowest listed ask, discounted") is still true.
+
+**Expected public effect:** the squeeze headline and the HIGH share fall, which is the honest direction.
+**Revert:** set `PANINI_FMV_ENGINE=1.0` (no deploy needed), or `git revert` this commit. Today's backfilled 1.1.0 snapshot rows can be deleted with `DELETE FROM panini_fmv_snapshots WHERE algo_version='panini-1.1.0' AND computed_at >= '<ship ts>'`.
+
 ### 2026-09-24 · 📚 DOCS — session close-out: the local-sandbox push route, the ledger-roll recipe, archive conventions, the scheduled-task inventory; CLAUDE.md pointer net-neutral · Cowork
 
 - `tooling-gotchas.md` (end): **Cowork's local sandbox pushes directly** with the mount's `.rpc-git-cred` (seven pushes today). Also recorded: the dry-run-proves-nothing caveat, the non-fast-forward re-apply loop, CI check-runs from the sandbox, ENOSPC / never-`du`-`$HOME`, and that scheduled-task prompts change only via `update_scheduled_task`.
