@@ -265,8 +265,8 @@ File: `app/api/sniper-feed/route.ts`
 - Dapper merchant: `0xc1e4f4f4c4257510`
 - DUC payment: `0xead892083b3e2c6c` (NOT `0x82ec283f88a62e65` — that was an older alias)
 - **NFTStorefront V1 (Dapper, native AllDay/Golazos/UFC marketplace): `A.4eb8a10cb9f87357.NFTStorefront`** (no V2 suffix) — primary path discovered 2026-05-18
-- NFTStorefrontV2 (Dapper, TopShot PackNFT / Pinnacle / MFL packs only): `A.4eb8a10cb9f87357.NFTStorefrontV2`
-- NFTStorefrontV2 (Flowty fork, dormant since 2026-05-14): `A.3cdbb3d569211ff3.NFTStorefrontV2`
+- NFTStorefrontV2 (Dapper): `A.4eb8a10cb9f87357.NFTStorefrontV2` — ⚠ **CORRECTED 2026-09-25: NOT "packs only".** It carries most live NFL All Day and LaLiga Golazos moment listings (measured: All Day's 25 biggest sellers ~5,850 live V2 listings; Golazos 3,338) as well as Top Shot PackNFT / Pinnacle / MFL. Buyable.
+- NFTStorefrontV2 (Flowty fork): `A.3cdbb3d569211ff3.NFTStorefrontV2` — ⛔ **UNPURCHASABLE, not merely dormant.** Its deployed `Listing.purchase()` begins `assert(false, message: "Purchases have been disabled. See Flowty discord for more details.")` and `createListing()` asserts false (read 2026-09-25). Its listings still exist on-chain and look open to an event indexer; never treat one as an ask. See **Storefront listings: source map, reconciliation, pricing** below.
 - NonFungibleToken + MetadataViews: `0x1d7e57aa55817448`
 - FungibleToken: `0xf233dcee88fe0abe`
 - HybridCustody: `0xd8a7e05a7ac670c0`
@@ -358,3 +358,24 @@ The QA pass wrote down "nothing to do on our side" for two catalog gaps. Both an
 - ⚠ **Before filing "no source for this field", check the mainnet contract for a getter.** An off-chain API going dark takes away a copy of the data, not the data itself.
 - ⚠ Still not read from chain: the 48 named dists' `total_minted` / `total_sealed`, which remain a DEFAULTED 0 (#137 (d)).
 - 🚨 **A fill from the chain must survive the original source's next refresh.** Three hours after the 48 names were filled, `seed_topshot_pack_distributions` upserted `title = EXCLUDED.title` from the Studio API, whose title is NULL for exactly these rows, and 45 of the 48 went back to "Pack #8825". Fixed in `20260925132658`: the seeder keeps a known title and merges metadata through `jsonb_strip_nulls()`. **Before calling a fill durable, grep every writer of the column for `= EXCLUDED.`, in the live DB and in app-side `.upsert(…, { ignoreDuplicates: false })`.** The sweep for today's other fills is in [database.md](database.md).
+
+## Storefront listings: source map, reconciliation, pricing (2026-09-25, PT)
+
+**`cached_listings_v2.source` is per-INDEXER, not per-contract — read the collection's indexer `sourceFor` before filtering on it.**
+
+| collection | `direct` | `direct_v1` | `direct_v2` | `storefront_v2` |
+|---|---|---|---|---|
+| NFL All Day | Flowty fork — ⛔ unpurchasable (27,406 rows closed `unpurchasable`, `20260925230134`) | Dapper V1 — buyable (sample: 3,016/3,017 open rows still on-chain) | Dapper V2 — buyable | reconciler rows (Dapper V2 state, no event metadata) |
+| LaLiga Golazos | Flowty fork (no open rows) | Dapper V1 | Dapper V2 | reconciler rows |
+| Disney Pinnacle | **Dapper V2** — buyable | — | — | — |
+
+**The storefront reconciler** — `/api/cron/golazos-storefront-reconcile?collection=laliga_golazos|nfl_all_day` (Vercel cron; Golazos `43 */2`, All Day `13 1-23/2`; pipelines `golazos-storefront-reconcile` / `allday-storefront-reconcile`; code + rules in `lib/golazos/storefront-reconcile.ts`). It walks each known seller's Dapper V2 storefront and reconciles `direct_v2`/`storefront_v2` rows: inserts listings the event indexer never saw (it only sees events after it started; Golazos went 514 → 3,338 open), resolves editions through the listing's own provider capability (works for sellers with no public collection — 244 Golazos rows had none), closes `ghosted` / `vanished` / `expired`, stamps `verified_at`. Sellers come from `storefront_reconcile_sellers(collection, sale_days)` (ONE array — a SETOF clamps at 1,000). Only a seller whose walk SUCCEEDED is reconciled; V1 and Flowty-fork rows are never touched.
+
+- ⛔ **bigint ids arrive from PostgREST as JSON NUMBERS; the chain returns strings.** The first run matched nothing, inserted 3,338 duplicates and closed 514 rows as vanished (repaired, `20260925215205`). Select ids `::text` and key maps on `String(id)`.
+- ⚠ **`rest-mainnet.onflow.org` is QuickNode-fronted at 100 requests/SECOND, shared by every Flow lane.** 12 concurrent walks got 412 × 429. The reconciler walks 3 at a time with exponential backoff on 429.
+- `hasListingBecomeGhosted()` returns TRUE when the NFT is still held — the name reads backwards. `borrowNFT()` force-unwraps the provider, so call it only after that check.
+
+**Ask pricing from the book** (ASK_ONLY, FMV = 90% of the cheapest live ask, ask = floor, never a sales-backed row):
+- Golazos — `refresh_golazos_ask_fmv_from_listings()`, pg_cron 614 `55 */2`, counts a listing only if `COALESCE(verified_at, listed_at)` is within 6 h (a stalled reconciler stops pricing; proven live: priced 0 with 3,336 unverified before the first stamp). `fmv_from_cached_listings` (Flowty cache) prices no Golazos or All Day.
+- All Day — `refresh_allday_ask_fmv_from_listings()`, job 19, ghost-filtered by `allday_listings_sold_after_listing`. Both lanes re-derive their OWN rows when the floor moves either way (`20260925231149`).
+
