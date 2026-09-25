@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the concierge no longer offers wallet verification to a Solana / Candy MLB collector: the prompt says the listing challenge is Top Shot-only, and names a Solana address as how a Candy collection loads · Claude Code (Trevor's box)
+- Live QA question "How do I connect my Solana wallet to see my Candy MLB collection?" got a correct paste-your-address answer plus an offer to verify the wallet by the listing challenge, which lists a TOP SHOT Moment and whose route (`/api/profile/verify-challenge`) accepts only a `0x` wallet. Offering an action the product lacks for that user (Concierge rule 1). Prompt copy only; test added to `__tests__/concierge-names-each-collections-chain.test.ts`; 314 concierge-route tests pass.
+**Revert:** `git log --grep='verification is Top Shot-only'` → `git revert <sha>`. No DB state.
+
 ### 2026-09-25 · 🧹 SHIPPED — the concierge no longer calls Candy MLB a Flow collection: each published collection off Flow is labelled with its chain from the registry ("⚾ Candy MLB (on Solana, not Flow)"), and the hand-kept five-collection Flow list beside the registry list is gone · Claude Code (Trevor's box)
 - Found by asking the live concierge "What is Rip Packs City?" right after the API credits were topped up (it answers again): it listed Candy MLB under "Flow blockchain digital collectibles". `app/api/support-chat/route.ts` `publishedLabels` now carries the chain; the "What RPC Is" paragraph says unlabelled collections are Flow and never to describe a labelled one as Flow. Tagline line left as is (CLAUDE.md tagline rule). Test `__tests__/concierge-names-each-collections-chain.test.ts` (population check + a Flow no-change arm); planted defect (suffix removed) → 1 failed; 455 concierge tests pass.
 **Revert:** `git log --grep='concierge no longer calls Candy'` → `git revert <sha>`. No DB state.
