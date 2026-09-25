@@ -11,6 +11,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 💲 Panini FMV 1.1.0 backfill — all 5,093 editions re-priced at ship time (777 HIGH / 926 MEDIUM / 2,680 LOW / 710 ASK_ONLY) · Cowork (cloud + laptop VM)
+
+Migration `20260925040146`, applied 9:01 PM PT after the Vercel production deploy of `fc245d2` succeeded. It inserts one panini-1.1.0 snapshot per edition, using the same rules as `toFmvRowV11`, so the squeeze board is never mixed-engine during the ~3-day walk rotation.
+
+Before → after:
+- **HIGH:** 3,365 → 777. 1,803 former HIGH editions had no sale in 30 days and are now LOW at their lifetime average.
+- **Recent-sales-priced editions:** $83.2k → $61.2k.
+- **ASK_ONLY:** $1.98M → about $1.06M. This includes 36 editions with no current floor, which moved from $661k to their old value ÷0.9×0.5.
+
+The route's per-day delete-then-insert replaces these rows as each edition is walked.
+**Revert:** `DELETE FROM panini_fmv_snapshots WHERE algo_version='panini-1.1.0' AND computed_at >= '2026-09-25 04:01:00+00'`, then set `PANINI_FMV_ENGINE=1.0`.
+
 ### 2026-09-24 · 💲 Panini FMV engine → panini-1.1.0 (recent sales; honest confidence; ASK_ONLY ×0.50) — shipped on clean-enough data, ahead of the 09-30 re-read · Cowork (cloud + laptop VM)
 
 Trevor approved this switch on 09-23. I held it on 09-24 because the backtest's ground truth came from the top-sales list only. **At 8:32 PM PT the re-read was decisive.** With recent sales now captured, `panini_fmv_backtest` covers **n=9,129** sales:
