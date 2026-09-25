@@ -38,6 +38,21 @@ afterEach(() => {
 })
 
 describe("EditionsGridPaginated", () => {
+  it("names a parallel printing on its tile and prints nothing for a Standard edition (2026-09-25)", () => {
+    // /nba-top-shot/player/courtney-lee showed seven identical tiles — the
+    // Standard and six parallels of one play — distinguishable only by "Mint N".
+    render(
+      <EditionsGridPaginated
+        collectionUrlSlug="nba-top-shot"
+        fetchUrl="/api/x"
+        initial={[tile("273:9048"), tile("273:9048::19", { subedition_name: "Hexwave", circulation_count: 25 }), tile("273:9048::17", { subedition_name: "  " })]}
+        pageSize={10}
+      />,
+    )
+    const chips = screen.getAllByTestId("tile-parallel")
+    expect(chips.map((c) => c.textContent)).toEqual(["Hexwave"])
+  })
+
   it("renders the empty state when there are no rows", () => {
     render(<EditionsGridPaginated collectionUrlSlug="nba-top-shot" fetchUrl="/api/x" initial={[]} pageSize={2} />)
     expect(screen.getByText(/No editions yet/i)).toBeTruthy()

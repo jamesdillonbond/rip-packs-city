@@ -45,6 +45,11 @@ export interface EditionTile {
   // entity edition RPCs for the non-Pinnacle branch.
   team_name?: string | null
   play_type?: string | null
+  // 2026-09-25: the PARALLEL name ("Hexwave", "Galactic") for a Top Shot
+  // subedition — returned by the five entity edition RPCs (migration
+  // 20260925173217); NULL for a Standard edition, undefined elsewhere. Without
+  // it a player's seven printings of one play rendered as seven identical tiles.
+  subedition_name?: string | null
   // Image recovery (2026-06-22 audit, Item 1): a representative on-chain nft_id
   // for the edition. Legacy TS thumbnail_url (assets.nbatopshot.com/editions/…)
   // 404s for ~9k Series 1-4 editions; the per-moment media/<nft_id>/image form
@@ -279,6 +284,16 @@ function EditionTileCard({
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
         <TierBadge tier={e.tier} />
         {e.series_label && <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{tileSeriesLabel(e.series_label, collectionUrlSlug)}</span>}
+        {e.subedition_name?.trim() ? (
+          <span
+            className="rpc-mono"
+            data-testid="tile-parallel"
+            title="Parallel printing"
+            style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.10em", textTransform: "uppercase", border: "1px solid var(--rpc-border-subtle)", borderRadius: 4, padding: "0 5px" }}
+          >
+            {e.subedition_name.trim()}
+          </span>
+        ) : null}
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <div>
