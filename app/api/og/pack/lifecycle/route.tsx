@@ -73,6 +73,7 @@ interface Lifecycle {
     total_cost_basis: number | string | null
     currency: string | null
     gross_pull_value_usd: number | string | null
+    pulls_with_fmv?: number | null
   }
   pulls: Pull[]
   error?: string | null
@@ -119,7 +120,9 @@ export async function GET(req: NextRequest) {
   const tierLabel = tier ? tier.charAt(0).toUpperCase() + tier.slice(1).toLowerCase() : "Pack"
 
   const isRipped = resolved && lc!.status === "ripped"
-  const grossUsd = num(lc?.stats?.gross_pull_value_usd)
+  // 2026-09-25: no priced pull → no "PULLED $0" on the card (the RPC now
+  // returns NULL there; this guard holds against any older shape).
+  const grossUsd = num(lc?.stats?.pulls_with_fmv ?? null) === 0 ? null : num(lc?.stats?.gross_pull_value_usd)
   const basis = num(lc?.stats?.total_cost_basis)
   const retail = num(lc?.distribution?.retail_price_usd ?? null)
   const paidAnchor = basis ?? retail

@@ -124,7 +124,8 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
 
   let description = `Lifecycle of ${collectionName} pack #${id} on Rip Packs City.`
   if (lifecycle && lifecycle.status === "ripped") {
-    const gross = num(lifecycle.stats.gross_pull_value_usd)
+    // Same guard as the page body: no priced pull → no "Pulled $0" description.
+    const gross = num(lifecycle.stats.pulls_with_fmv ?? null) === 0 ? null : num(lifecycle.stats.gross_pull_value_usd)
     const basis = num(lifecycle.stats.total_cost_basis)
     const currency = lifecycle.stats.currency
     const retail = num(lifecycle.distribution?.retail_price_usd ?? null)
@@ -238,7 +239,19 @@ function PackLifecycleView({
   routeSlug: string
   collectionName: string
 }) {
-  const grossUsd = num(lifecycle.stats.gross_pull_value_usd)
+  // ⚠ 2026-09-25: the RPC used to COALESCE the pull sum to 0, so a ripped pack
+  // whose pulls are not indexed (92% of rips) published "PULLED $0 · −$cost vs
+  // cost" — a fabricated loss. The RPC now returns NULL there
+  // (20260925133256); this read-side guard keeps the page honest against any
+  // older shape, and a PARTIAL sum is captioned so "$40" over 3 of 5 pulls is
+  // not read as the pack's value.
+  const pullCount = num(lifecycle.stats.pull_count ?? null)
+  const pricedCount = num(lifecycle.stats.pulls_with_fmv ?? null)
+  const grossUsd = pricedCount === 0 ? null : num(lifecycle.stats.gross_pull_value_usd)
+  const grossCaption =
+    grossUsd !== null && pullCount !== null && pricedCount !== null && pricedCount < pullCount
+      ? `${pricedCount} of ${pullCount} pulls priced`
+      : null
   const totalBasis = num(lifecycle.stats.total_cost_basis)
   const basisCurrency = lifecycle.stats.currency
   const retailUsd = num(lifecycle.distribution?.retail_price_usd ?? null)
@@ -533,6 +546,7 @@ function PackLifecycleView({
         totalCostBasis={totalBasis}
         basisCurrency={basisCurrency}
         grossPullValueUsd={grossUsd}
+        grossCaption={grossCaption}
         roiPct={roiPct}
       />
     </article>

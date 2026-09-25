@@ -641,11 +641,14 @@ export function StatsFooter({
   totalCostBasis,
   basisCurrency,
   grossPullValueUsd,
+  grossCaption,
   roiPct,
 }: {
   totalCostBasis: number | null
   basisCurrency: string | null
   grossPullValueUsd: number | null
+  /** "3 of 5 pulls priced" when the sum is partial; null when complete or absent. */
+  grossCaption?: string | null
   roiPct: number | null
 }) {
   const roiColor =
@@ -670,7 +673,7 @@ export function StatsFooter({
       }}
     >
       <StatCell label="Cost basis" value={fmtPriceWithUsd(totalCostBasis, basisCurrency)} />
-      <StatCell label="Gross pull value" value={fmtUsd(grossPullValueUsd)} />
+      <StatCell label="Gross pull value" value={fmtUsd(grossPullValueUsd)} sub={grossCaption ?? undefined} />
       <StatCell label="ROI" value={roiLabel} color={roiColor} large />
     </div>
   )
@@ -681,11 +684,13 @@ function StatCell({
   value,
   color,
   large,
+  sub,
 }: {
   label: string
   value: string
   color?: string
   large?: boolean
+  sub?: string
 }) {
   return (
     <div>
@@ -711,6 +716,18 @@ function StatCell({
       >
         {value}
       </div>
+      {sub && (
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--rpc-text-muted)",
+            marginTop: 4,
+          }}
+        >
+          {sub}
+        </div>
+      )}
     </div>
   )
 }

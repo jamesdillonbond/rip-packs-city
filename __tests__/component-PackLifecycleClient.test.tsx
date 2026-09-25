@@ -278,6 +278,18 @@ describe("StatsFooter — ROI is the number people act on", () => {
     )
     expect(container.textContent).not.toMatch(/NaN|null|undefined/)
   })
+
+  it("captions a PARTIAL gross pull value so a 3-of-5 sum is not read as the pack's value — 2026-09-25", () => {
+    const { container } = render(
+      <StatsFooter totalCostBasis={10} basisCurrency="USD" grossPullValueUsd={40} grossCaption="3 of 5 pulls priced" roiPct={300} />
+    )
+    expect(container.textContent).toContain("$40")
+    expect(container.textContent).toContain("3 of 5 pulls priced")
+    const { container: full } = render(
+      <StatsFooter totalCostBasis={10} basisCurrency="USD" grossPullValueUsd={40} grossCaption={null} roiPct={300} />
+    )
+    expect(full.textContent).not.toContain("pulls priced")
+  })
 })
 
 describe("RipPerforation", () => {

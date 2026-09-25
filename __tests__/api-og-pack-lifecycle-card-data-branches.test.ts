@@ -185,6 +185,19 @@ describe("/api/og/pack/lifecycle — the ROI verdict", () => {
     expect(text).not.toContain("−ROI")
   })
 
+  it("a rip whose pulls are NOT indexed (pulls_with_fmv 0) never renders PULLED $0 or a loss — 2026-09-25", async () => {
+    // The RPC used to COALESCE the sum to 0; the read side must not trust a 0
+    // that arrives beside pulls_with_fmv: 0 (92% of rips have no indexed pull).
+    mockDb({
+      lifecycle: { ...RIPPED, stats: { ...RIPPED.stats, gross_pull_value_usd: 0, pulls_with_fmv: 0 } },
+    })
+    const text = ogText(await render(ID))
+    expect(text).toContain("RIPPED")
+    expect(text).not.toContain("$0")
+    expect(text).not.toContain("−ROI")
+    expect(text).not.toContain("+ROI")
+  })
+
   it("coerces numeric STRINGS from PostgREST", async () => {
     // numeric columns arrive as strings; left uncoerced the delta would
     // concatenate instead of subtract.
