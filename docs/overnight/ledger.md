@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 📝 SHIPPED — docs: swept the live DB and app-side upserts for writers that could undo the other 09-25 fills (after the seeder wiped the pack names). No damage measured; wallet-search `seedEditionsToSupabase` recorded as the one live risk · Claude Code (web)
+
+- Docs only (database.md, apis-and-cadence.md, sessions/2026-09.md). **Revert:** `git revert` this commit (find it by message).
+
 ### 2026-09-25 · 🧹 SHIPPED — the pack-distribution seeder wiped the 48 PDS names three hours after batch 21 named them (fixed + re-named, `20260925132658`); `get_pack_lifecycle` published "PULLED $0 · −$cost vs cost" for the 92% of ripped packs whose pulls are not indexed (`20260925133256` + the page/OG read guards) · Cowork (cloud + laptop VM)
 
 - Found from Trevor's own transaction history: "BOUGHT PACK · Pack · NBA Top Shot" for dist 8825, which batch 21 had named at 2:13 AM. `pack_distributions.title` was NULL again with `updated_at` 5:13 AM PT: `seed_topshot_pack_distributions` upserts `title = EXCLUDED.title` and `metadata || EXCLUDED.metadata`, so the Studio API's NULL title (the reason these needed the PDS contract at all) and its null tier/slots keys overwrote the fill — 45 of 48 rows. Now `COALESCE(NULLIF(EXCLUDED.title,''), title)` and `|| jsonb_strip_nulls(...)`; names re-applied fill-only from the same list; the migration re-seeds 8825 with a NULL title as its own positive control. First committed definition of the function.
