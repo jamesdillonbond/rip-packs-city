@@ -220,4 +220,12 @@ describe("marketplaceLabel — Candy venue + underscore fallback (2026-09-24)", 
     expect(marketplaceLabel("topshot")).toBe("Top Shot")
     expect(marketplaceLabel("flowty")).toBe("Flowty (historical)")
   })
+  // 2026-09-25 — the keys `sales.marketplace` ACTUALLY carries for All Day and
+  // Golazos are the un-underscored `nflallday` / `laligagolazos`, which the
+  // capitalizer rendered as "Nflallday" on the set page's new Recent Sales rows
+  // (and had been rendering on team pages).
+  it("labels the live All Day and Golazos keys, not just the underscored spellings", () => {
+    expect(marketplaceLabel("nflallday")).toBe("All Day")
+    expect(marketplaceLabel("laligagolazos")).toBe("Golazos")
+  })
 })

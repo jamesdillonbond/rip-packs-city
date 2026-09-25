@@ -138,6 +138,14 @@ describe("marketplaceLabel", () => {
   it("capitalizes an unknown key as a fallback", () => {
     expect(marketplaceLabel("beezie")).toBe("Beezie")
   })
+  // 2026-09-25 — the live All Day / Golazos keys are un-underscored; the
+  // fallback rendered "Nflallday" in the marketplace mix.
+  it("labels and colours the live nflallday / laligagolazos keys like their siblings", () => {
+    expect(marketplaceLabel("nflallday")).toBe("AllDay Native")
+    expect(marketplaceLabel("laligagolazos")).toBe("Golazos Native")
+    expect(marketplaceColor("nflallday")).toBe(marketplaceColor("allday"))
+    expect(marketplaceColor("laligagolazos")).toBe(marketplaceColor("golazos"))
+  })
 })
 
 describe("marketplaceColor", () => {

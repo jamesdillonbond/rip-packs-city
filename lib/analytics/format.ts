@@ -190,6 +190,12 @@ export const MARKETPLACE_LABEL: Record<string, string> = {
   // (`"marketplace":"magic_eden"`). Without this the generic fallback
   // capitalizes it to "Magic_eden" on every Candy row.
   magic_eden: "Magic Eden",
+  // ⚠ The keys `sales.marketplace` ACTUALLY carries for All Day and Golazos are
+  // the un-underscored `nflallday` (12,344 rows / 30d on 2026-09-25) and
+  // `laligagolazos` (61) — the analytics daily rows pass them through verbatim,
+  // and the fallback capitalized them to "Nflallday" in the marketplace mix.
+  nflallday: "AllDay Native",
+  laligagolazos: "Golazos Native",
   "on-chain": "On-chain",
   unknown: "Unknown",
 }
@@ -208,6 +214,8 @@ export const MARKETPLACE_COLOR: Record<string, string> = {
   // Candy's registry accent (lib/collections.ts), so the marketplace mix and
   // the collection chrome agree rather than defaulting this slice to grey.
   magic_eden: "#FB923C",
+  nflallday: "#4F94D4",
+  laligagolazos: "#22C55E",
   "on-chain": "#94A3B8",
   unknown: "#6B7280",
 }

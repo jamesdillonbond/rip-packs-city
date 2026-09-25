@@ -318,8 +318,11 @@ export function marketplaceLabel(raw: string | null | undefined): string {
   if (!raw) return EM_DASH
   const k = raw.toLowerCase()
   if (k === "topshot" || k === "nba_top_shot" || k === "top_shot") return "Top Shot"
-  if (k === "allday" || k === "nfl_all_day" || k === "all_day") return "All Day"
-  if (k === "golazos" || k === "laliga_golazos") return "Golazos"
+  // `sales.marketplace` carries the LIVE keys `nflallday` (12,344 rows / 30d on
+  // 2026-09-25) and `laligagolazos` (61); the generic capitalizer printed
+  // "Nflallday" / "Laligagolazos" on every All Day and Golazos activity row.
+  if (k === "allday" || k === "nfl_all_day" || k === "all_day" || k === "nflallday") return "All Day"
+  if (k === "golazos" || k === "laliga_golazos" || k === "laligagolazos") return "Golazos"
   if (k === "ufc" || k === "ufc_strike") return "UFC Strike"
   if (k === "pinnacle" || k === "disney_pinnacle") return "Pinnacle"
   if (k === "flowty") return "Flowty (historical)"
