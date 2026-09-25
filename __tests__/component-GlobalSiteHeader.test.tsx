@@ -63,4 +63,19 @@ describe("GlobalSiteHeader — the site-wide nav contract", () => {
     expect(header).not.toBeNull()
     expect(header!.style.position).toBe("sticky")
   })
+
+  it("fits a phone: the handle hides and the gaps tighten under 480 px (2026-09-25)", () => {
+    // Measured at 390 px by the true-mobile sweep: the row overflowed its
+    // overflow:hidden box and the SIGN IN button rendered as "SIGN". jsdom has
+    // no layout, so the pinned facts are the CSS that produces the fit: the
+    // rule exists, targets both hooks, and both hooks are on the elements.
+    const { container } = render(<GlobalSiteHeader />)
+    const css = Array.from(container.querySelectorAll("style")).map((s) => s.textContent ?? "").join("\n")
+    expect(css).toMatch(/@media \(max-width: 480px\)/)
+    expect(css).toMatch(/\.rpc-gsh-label \{ display: none !important; \}/)
+    expect(css).toMatch(/\.rpc-gsh-row \{ gap: 8px !important; padding: 0 12px !important; \}/)
+    expect(container.querySelector(".rpc-gsh-row")).not.toBeNull()
+    const label = container.querySelector(".rpc-gsh-label")
+    expect(label?.textContent).toBe("@RIPPACKSCITY")
+  })
 })
