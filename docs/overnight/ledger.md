@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · ✅ `RPC Panini Team Walk` registered on the laptop (verified) + franchise hubs indexed in the reference docs · Cowork (cloud + laptop)
+
+`schtasks /query`, 9:20 PM PT: `\RPC Panini Team Walk` Ready, next run **9/25 3:35 AM**, Logon Mode *Interactive only* (skips while signed out, like the other laptop tasks). Checkout at `18cd5c49a`, both bats present. Docs: registration line in `docs/features/franchise-hubs.md`; the task added to the Task Scheduler table in `database.md` (staging-only, so the "4 prod ingests" count stands); `/teams/[league]/[slug]` added to `routes-and-surfaces.md`. Revert: docs only. Check next: the 3:35 AM log + `panini_team_walk_targets.last_complete_at`.
+
 ### 2026-09-24 · 📝 rpc-surface-qa reference refresh — Cowork's 09-25 UTC QA notes landed in `references/browser-qa-and-known-issues.md` + bundle repacked · Claude Code (laptop)
 
 New in the file: top-level `await` over an async IIFE in `javascript_tool`; `get_page_text` can stop before late sections; `resize_window` floor 738–772px in both browsers; built-in browser as fallback when the extension sleeps (but not for the reveal-hang routes); WebFetch is robots-blocked on `/api/*`; telemetry "verify the write" marked RESOLVED (re-checked: 519 `usage_events` rows in 24h, newest ~1.5 min old at 21:21 PT). `skills:bundles:check` green (11 bundles), bundle test 13/13. Revert: `git revert` this commit (restores the prior reference text + bundle).

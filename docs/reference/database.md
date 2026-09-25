@@ -1650,6 +1650,7 @@ CLAUDE.md requires **six** sources before believing a function has no caller (`p
 | `RPC Pinnacle Render Cache Fill` | **every 15 min** | `scripts/pinnacle-render-cache-fill.mjs` |
 | `RPC Panini Ingest` | every 4 h | — |
 | `RPC AllDay Badge Ingest` | daily 05:37 PT | `scripts/run-allday-badge-ingest.ps1` |
+| `RPC Panini Team Walk` (added 2026-09-24; **staging only** — writes `panini_team_listings`, hidden until the accuracy gate) | daily 03:35 PT, 5 stalest teams | `scripts/panini-team-walk.bat` · [franchise-hubs.md](../features/franchise-hubs.md) |
 
 Enumerate with `Get-ScheduledTask | Where-Object { $_.TaskName -match 'RPC' }`. ⚠ **Read the cadence from `$t.Triggers[0].Repetition.Interval`** — `StartBoundary` alone shows only the first fire and hides a `PT3H`/`PT15M` repetition entirely. Logs are under `%LOCALAPPDATA%\<task-name>\`; ⚠ they carry NUL bytes so `grep` calls them binary — pipe through `tr -d '\000'`.
 

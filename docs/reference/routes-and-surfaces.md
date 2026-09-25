@@ -39,6 +39,8 @@ The `[collection]` dynamic segment serves all 5 published collections: NBA Top S
 - **`pack-sniper`:** Top Shot + AllDay only.
 - **`challenges` + `hot-floors` + `play`:** Top Shot only.
 
+**Franchise hubs (2026-09-23): `/teams/[league]/[slug]`** — cross-collection team page (e.g. `/teams/nba/blazers`: Top Shot + Panini; `/teams/mlb/tigers`: Candy + Panini), outside `(collections)`, public in `proxy.ts`, **noindex until 2+ collections have data**; linked from `/my-teams`. DB: `get_franchise_hub`. Design, panels, Panini team walk: [docs/features/franchise-hubs.md](../features/franchise-hubs.md).
+
 **How the folded pages are reached (IA reorg conventions):** the **Moments | Packs sub-toggle** (`components/collection/PackSubNav.tsx`) mounts under the Collection / Market / Sniper tabs and is URL-param driven — `?section=packs`, NOT nested routes, so sub-views stay deep-linkable and the parent tab keeps highlighting (the market page already owns `?view=` for grid/table, which is why the toggle uses `?section=`). "Moments" is relabeled "Pins" for Pinnacle. Top Shot's `play` tab is the **Play hub** (`play/` route dir) fronting Challenges, Fast Break, and Road to the Ring. `components/collection/FeatureTabGate.tsx` (used by `market/layout.tsx` + `sets/layout.tsx`) gates those routes for collections that don't list the page.
 
 ⚠ **The Set Tracker counts SUBJECTS, not printings** — a Top Shot parallel and a Pinnacle variant both collapse into one checklist slot (`play_id_onchain` / `shape_render_id`). Shipping Pinnacle at render grain hid 445 real completions across 57 wallets. Full rule + the per-collection grain table: [parallels-variants-data-model.md](parallels-variants-data-model.md).
