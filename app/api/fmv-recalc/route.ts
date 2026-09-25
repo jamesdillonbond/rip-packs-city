@@ -1576,6 +1576,12 @@ export async function POST(req: NextRequest) {
           }
 
           const histInsert = rows.map((row) => {
+            // ⚠ 2026-09-25: `avg_price` is the MEDIAN of the edition's LAST 30
+            // paid sales (20260925135620), not the all-time mean it used to be —
+            // the all-time mean leap-frogged drain_fmv_cold_tail's last-30 median
+            // every 7 days (797 editions alternating, "24H CHANGE +232%" with no
+            // sale in 3 years). Both cold-population writers now share one
+            // estimator; `sales_count` is therefore ≤ 30.
             const avgPrice = Number(row.avg_price)
             const daysSinceSale = Math.round(
               (now.getTime() - new Date(row.latest_sold_at).getTime()) / (1000 * 60 * 60 * 24)
