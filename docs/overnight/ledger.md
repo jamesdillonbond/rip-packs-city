@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the analytics whale leaderboards scroll sideways on a phone instead of crushing seven columns until cells touch ("$1.7k$150.37—") · Cowork (batch 42)
+
+**Found 11:18 AM PT** in the true-mobile sweep screenshot of `/nba-top-shot/analytics`: `components/analytics/LeaderboardTable.tsx` wrapped its table in `overflow-y-auto` with `w-full` and no minimum width, so at 390 px the rank / handle / buys / sells / volume / avg / favourite-player columns compressed into one another. **What shipped:** the wrapper scrolls on both axes and the table carries `minWidth: 640`; pinned in `component-LeaderboardTable.test.tsx` by the style facts. tsc green. Also filed **known-issues #139** (37 suffix-variant player pairs — Jr./II/III — where father/son and one-person-two-spellings share one shape; needs a per-pair decision, like Steph/Stephen Curry).
+
+**Revert:** revert the commit.
+
 ### 2026-09-25 · 🧹 SHIPPED — `/moment/<id>` and the whole `/teams` tree get the site header (and `/teams` the footer + concierge): on a desktop they had NO logo, nav, search or sign-in; and the header itself fits a phone (SIGN IN was cut to "SIGN" at 390 px) · Cowork (batch 41)
 
 **Found 11:02 AM PT** from the desktop and true-mobile sweep screenshots. `GlobalSiteHeader` is mounted only by the `(collections)` layout and `/pinnacle/moment/[id]` (P6a, 2026-08: "orphaned from SEO arrivals"); `/moment/[id]` — the serial-grain page every trophy case, share card and wallet table links to — and every `/teams/*` hub rendered under the root layout with only the footer (moment) or nothing at all (teams); the mobile bottom nav is `display:none` above 768 px, so a desktop visitor had no way into the site except the footer. The August session log had left "unifying those headers" for Trevor; the moment and hub pages are the two SEO/share entry points and get the P6a treatment. Separately, at 390 px the header row (logo + `@RIPPACKSCITY` + search ≥ 110 px + theme + Pro + SIGN IN, 16 px gaps, 20 px gutters) overflowed its `overflow:hidden` box and the SIGN IN button rendered as "SIGN" on every collection page.
