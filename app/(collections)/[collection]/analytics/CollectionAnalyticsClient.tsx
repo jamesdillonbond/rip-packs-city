@@ -293,7 +293,13 @@ function panelFailed(md: MarketAnalyticsResponse | null | undefined, key: string
 }
 
 function ChangeBadge({ pct }: { pct: number | null | undefined }) {
-  if (pct == null || !Number.isFinite(pct) || pct === 0) {
+  // An UNKNOWN change (no comparison read yet, or none available) is "—", not
+  // "— 0%": a measured 0% and an unmeasured one used to share one badge
+  // (2026-09-25). A genuine 0.0% keeps its number.
+  if (pct == null || !Number.isFinite(pct)) {
+    return <span className="text-[10px] text-[color:var(--rpc-text-muted)]">—</span>
+  }
+  if (pct === 0) {
     return <span className="text-[10px] text-[color:var(--rpc-text-muted)]">— 0%</span>
   }
   const up = pct > 0
@@ -1249,7 +1255,14 @@ function AnalyticsInner() {
             // Top Shot market had no sales in 30 days while the Overview tab on
             // the same collection showed $32,584 in 24h (deep-audit D12).
             const dash = "—"
-            const kpi = (v: string) => (marketFailed && !marketData ? dash : v)
+            // Three states, never two: a read that FAILED and a read that has
+            // NOT HAPPENED YET both get the dash. Before 2026-09-25 only the
+            // failure did, so the served HTML of /<collection>/analytics — and
+            // the first paint — read "Total Volume $0.00 · Total Sales 0 · Avg
+            // Sale Price $0.00 · 0% vs prev 30d" for every collection (the
+            // 898-URL sweep flagged 5 of them), a measured zero of a market
+            // that had not been read.
+            const kpi = (v: string) => (!marketData ? dash : v)
             return (
               <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
                 <KpiCard label="Total Volume" value={kpi(fmt(totalVolume))} pct={pc ? ch?.volumePct : undefined} period={periodLabel} />

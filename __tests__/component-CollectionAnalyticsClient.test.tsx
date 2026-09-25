@@ -153,6 +153,20 @@ describe("CollectionAnalyticsClient — the market KPI band", () => {
     await waitFor(() => expect(kpiValue("Total Sales")).toBe("89,831"))
   })
 
+  it("withholds the figures while the market read is IN FLIGHT — the first paint / served HTML never says $0.00 (2026-09-25)", async () => {
+    // A request that never resolves: the third state, NOT READ YET. Before this
+    // the band rendered "Total Volume $0.00 · Total Sales 0 · 0% vs prev 30d"
+    // until the fetch landed — and that is what crawlers read.
+    routes["/api/market-analytics"] = () => new Promise<Response>(() => {}) as unknown as Response
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(kpiValue("Total Volume")).toBe("—"))
+    expect(kpiValue("Total Sales")).toBe("—")
+    expect(kpiValue("Avg Sale Price")).toBe("—")
+    expect(kpiValue("Unique Editions")).toBe("—")
+    // and the change badge is "—", not a measured-looking "— 0%"
+    expect(document.body.textContent).not.toContain("— 0%")
+  })
+
   it("adds the thin-volume ecosystem notice ONLY on a real, small market", async () => {
     routes["/api/market-analytics"] = () => json(200, { ...MARKET, totals: { totalSales: 12, totalVolume: 40 } })
     render(<CollectionAnalyticsClient />)
