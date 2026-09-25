@@ -51,8 +51,8 @@ describe("fmtUsd", () => {
     expect(fmtUsd(1000000)).toBe("$1,000,000")
   })
   it("handles negatives via absolute-value threshold", () => {
-    expect(fmtUsd(-1500)).toBe("$-1,500")
-    expect(fmtUsd(-12.5)).toBe("$-12.50")
+    expect(fmtUsd(-1500)).toBe("-$1,500")
+    expect(fmtUsd(-12.5)).toBe("-$12.50")
   })
 })
 

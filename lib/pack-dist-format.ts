@@ -6,6 +6,7 @@
 // documented prior regression.
 
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { usdSignFirst } from "@/lib/usd-format"
 
 /** Split an "Player — Set" edition name on the em-dash, guarding null / no-dash. */
 export function splitEditionName(name: string | null): { player: string; setName: string } {
@@ -24,6 +25,7 @@ export function num(v: string | number | null | undefined): number | null {
 
 /** USD, whole dollars at |v|>=100 else 2dp; null/NaN → em dash. */
 export function fmtUsd(v: number | null | undefined): string {
+  const neg = usdSignFirst(v, fmtUsd); if (neg !== null) return neg
   if (v === null || v === undefined || !Number.isFinite(v)) return "—"
   if (Math.abs(v) >= 100) return `$${Math.round(v).toLocaleString()}`
   return `$${v.toFixed(2)}`
@@ -84,6 +86,7 @@ export function fmtAgo(iso: string | null | undefined, now: number = Date.now())
 
 /** Sale-price USD: whole dollars at >=$1000, else 2dp; null/NaN → em dash. */
 export function fmtSalePrice(v: string | number | null): string {
+  const neg = usdSignFirst(v, fmtSalePrice); if (neg !== null) return neg
   const n = v == null ? null : Number(v)
   if (n == null || !Number.isFinite(n)) return "—"
   if (n >= 1000) return `$${Math.round(n).toLocaleString()}`

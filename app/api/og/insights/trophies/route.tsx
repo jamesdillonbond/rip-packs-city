@@ -12,6 +12,7 @@ import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-font
 
 import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/board-count"
 import { ogFetch } from "@/lib/og/og-fetch"
+import { usdSignFirst } from "@/lib/usd-format"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -47,6 +48,7 @@ function badge(r: Row): string {
 }
 
 function fmtUsd(n: number | null): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 1000) return `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`

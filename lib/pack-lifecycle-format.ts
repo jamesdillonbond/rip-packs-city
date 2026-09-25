@@ -5,6 +5,7 @@
 // the component imports them.
 
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export function shortAddr(addr: string | null | undefined): string {
   if (!addr) return "—"
@@ -44,6 +45,7 @@ export function relativeTime(iso: string | null | undefined): string {
 /** Whole-dollar amounts drop the trailing ".00" so headlines read "$20" rather
  *  than "$20.00". Sub-dollar amounts keep two decimals. */
 export function fmtUsd(n: number | string | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n === null || n === undefined || n === "") return "—"
   const v = typeof n === "number" ? n : Number(n)
   if (!Number.isFinite(v)) return "—"

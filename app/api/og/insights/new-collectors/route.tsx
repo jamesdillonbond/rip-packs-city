@@ -11,6 +11,7 @@ import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 import { ogFetch } from "@/lib/og/og-fetch"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -29,6 +30,7 @@ function fmtInt(n: number | null | undefined): string {
   return Number(n).toLocaleString("en-US")
 }
 function fmtMoneyCompact(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtMoneyCompact); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`

@@ -7,6 +7,7 @@ import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 import { ogFetch } from "@/lib/og/og-fetch"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -27,6 +28,7 @@ function fmtPct(n: number | null): string {
   return `${Number(n).toFixed(0)}%`
 }
 function fmtUsd(n: number | null): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—"
   return `$${Number(n).toFixed(2)}`
 }

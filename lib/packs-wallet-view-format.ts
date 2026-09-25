@@ -7,6 +7,8 @@
 // the wrong server-side status, mis-tints P&L, or mangles the relative "when"
 // column / USD figures.
 
+import { usdSignFirst } from "@/lib/usd-format"
+
 export type PackFilter = "unopened" | "opened" | "sold"
 
 export type PackHistoryStatus = "ripped" | "flipped" | "sold" | "held" | "transferred" | "other"
@@ -74,6 +76,7 @@ export function packDisplayName(packName: string | null | undefined, packNftId: 
 }
 
 export function fmtPackUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtPackUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(Number(n))) return "—"
   const v = Number(n)
   if (v === 0) return "$0"

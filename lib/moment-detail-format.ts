@@ -14,6 +14,8 @@
 // `urlSlugForCollection` is still deliberately kept as its own copy (not
 // re-pointed at lib/collections) to preserve the page's exact prior mapping.
 
+import { usdSignFirst } from "@/lib/usd-format"
+
 /** Decode a URL-encoded route segment (Pinnacle legacy keys arrive percent-
  *  encoded). No-op for numeric nft_ids and uuids; falls back to the raw input
  *  on a malformed sequence rather than throwing. */
@@ -28,6 +30,7 @@ export function decodeMomentId(raw: string): string {
 /** USD money: em-dash for null/non-finite (never a fake "$0"), thousands get
  *  comma grouping + whole dollars, small values keep cents. */
 export function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return "—"
   if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString()
   return "$" + n.toFixed(2)

@@ -7,6 +7,8 @@
 // the highest-traffic public surface. The page keeps its own HubStats type and
 // imports these; HubStats["insights"] is structurally this shape.
 
+import { usdSignFirst } from "@/lib/usd-format"
+
 export interface HubInsightStats {
   squeezeEditions: number
   setSqueezeSets: number
@@ -21,6 +23,7 @@ export interface HubInsightStats {
 }
 
 export function fmtUsd(n: number): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (!Number.isFinite(n)) return "$0"
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `$${Math.round(n / 1_000)}K`

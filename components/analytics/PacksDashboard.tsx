@@ -6,6 +6,7 @@ import { ArrowUpRight, BarChart3, Sparkles, TimerReset, Zap } from "lucide-react
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { usdSignFirst } from "@/lib/usd-format"
 
 // Per-collection summary slot — fields per the analytics_packs_summary RPC.
 interface PacksSummaryCollectionStats {
@@ -70,6 +71,7 @@ const COLLECTION_LABEL: Record<string, string> = {
 }
 
 export function formatUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, formatUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return "—"
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`

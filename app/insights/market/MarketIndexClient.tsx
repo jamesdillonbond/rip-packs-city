@@ -15,6 +15,7 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import { usdSignFirst } from "@/lib/usd-format"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -50,6 +51,7 @@ function num(v: number | string | null): number | null {
 }
 
 function fmtUsd(n: number | null): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`

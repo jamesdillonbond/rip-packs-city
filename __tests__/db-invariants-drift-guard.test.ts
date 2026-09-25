@@ -619,7 +619,7 @@ const PINS = [
   {
     fn: "resolve_canonical_player",
     test: "supabase/tests/resolve_canonical_player.sql",
-    migration: "supabase/migrations/20260925101847_audit_20260925_resolve_canonical_player_folds_accents.sql",
+    migration: "supabase/migrations/20260925135939_audit_20260925_steph_curry_one_player_and_player_name_aliases.sql",
   },
   {
     fn: "upsert_player_canonical",

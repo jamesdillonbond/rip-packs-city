@@ -4,6 +4,7 @@
 // browser globals — behavior is identical to the inline code it replaced.
 
 import { NEUTRAL_TIER_COLOR } from '@/lib/tier-color'
+import { usdSignFirst } from '@/lib/usd-format'
 
 export type TrophyTierFilter =
   | 'ALL'
@@ -104,8 +105,9 @@ export function tierColor(tier: NormalizedTier | UfcTier | null): string {
 //
 // BUGFIX 2026-08-01: threshold was `n >= 1000`, so a large negative skipped the
 // whole-dollar branch while the equal-magnitude positive took it. Gated on
-// Math.abs now; the "$-" negative form is the house convention, unchanged.
+// Math.abs now. Negatives render sign-first ("-$50.00") since 2026-09-25 (#137 b).
 export function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return '—'
   if (!n) return '$0'
   if (Math.abs(n) >= 1000) return '$' + Math.round(n).toLocaleString()

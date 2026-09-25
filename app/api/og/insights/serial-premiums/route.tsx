@@ -15,6 +15,7 @@ import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-font
 import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/board-count"
 import { OgMark } from "@/lib/og/marks"
 import { ogFetch } from "@/lib/og/og-fetch"
+import { usdSignFirst } from "@/lib/usd-format"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -42,6 +43,7 @@ function tierColor(tier: string | null): string {
 }
 
 function fmtMoney(n: number | null): string {
+  const neg = usdSignFirst(n, fmtMoney); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 100) return `$${Math.round(v).toLocaleString("en-US")}`

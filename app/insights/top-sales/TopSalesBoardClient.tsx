@@ -30,6 +30,7 @@ import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { avatarDisplayUrl } from "@/lib/media/avatar-proxy"
 import { fromDbSlug } from "@/lib/collections"
+import { usdSignFirst } from "@/lib/usd-format"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -102,6 +103,7 @@ function normalizeTier(t: string | null): string | null {
 // Sales prices are exact dollar amounts (>= $100 by view bound) — show the real
 // number with separators, not a $5.0k abbreviation. This is the headline.
 function fmtPrice(n: number | null): string {
+  const neg = usdSignFirst(n, fmtPrice); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 100) return `$${Math.round(v).toLocaleString("en-US")}`

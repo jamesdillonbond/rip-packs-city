@@ -7,6 +7,7 @@ import { NextRequest } from "next/server"
 import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 import { ogFetch } from "@/lib/og/og-fetch"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -22,6 +23,7 @@ type Trophy = {
 type Stats = { trophies_90d: number | null; avg_multiplier: number | null; max_multiplier: number | null } | null
 
 function fmtUsd(n: number | null): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 1000) return `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`

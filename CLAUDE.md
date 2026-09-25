@@ -269,7 +269,7 @@ Flow CLI hot wallet `0x3aa11c84d776838f`. ⛔ **Signing MUST be ECDSA_secp256k1 
 
 **The canonical forward plan is [docs/strategy/roadmap-2026-08-03.md](docs/strategy/roadmap-2026-08-03.md).** Thesis: **accuracy is the GATE, not a phase** — growth tactics stay removed until the data beats the sites collectors already use; headline metric is the share of prices at HIGH/MEDIUM confidence. Still binding: **intelligence-first**; Cart / Trade Hub / gifting removed (**read-only product**); **monetization tabled until 50+ weekly active users**; no infra spend pre-revenue.
 
-**Open items** — dated snapshot moved to [roadmap-status.md](docs/reference/roadmap-status.md) 2026-09-19 (status data; goes stale by nature). ⚠ **Needs TREVOR, not code:** the credential-purge residue (#22) · #137 (a) and (b).
+**Open items** — dated snapshot moved to [roadmap-status.md](docs/reference/roadmap-status.md) 2026-09-19 (status data; goes stale by nature). ⚠ **Needs TREVOR, not code:** the credential-purge residue (#22).
 
 Full status + accuracy measurements: [docs/reference/roadmap-status.md](docs/reference/roadmap-status.md). Issue register: [docs/reference/known-issues.md](docs/reference/known-issues.md).
 

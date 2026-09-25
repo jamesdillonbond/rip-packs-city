@@ -42,7 +42,7 @@ describe("fmtUsd", () => {
   it("whole dollars at |v|>=100, 2dp below", () => {
     expect(fmtUsd(1234.5)).toBe("$1,235")
     expect(fmtUsd(4.5)).toBe("$4.50")
-    expect(fmtUsd(-250)).toBe("$-250")
+    expect(fmtUsd(-250)).toBe("-$250")
   })
   it("null/NaN → em dash", () => {
     expect(fmtUsd(null)).toBe("—")
@@ -58,7 +58,7 @@ describe("fmtUsdEv — the <$0.01 tiny-positive rule (Pack G)", () => {
   it("0.005 and up format normally; 0 / negative / null fall through", () => {
     expect(fmtUsdEv(0.005)).toBe("$0.01")
     expect(fmtUsdEv(0)).toBe("$0.00")
-    expect(fmtUsdEv(-1)).toBe("$-1.00")
+    expect(fmtUsdEv(-1)).toBe("-$1.00")
     expect(fmtUsdEv(null)).toBe("—")
   })
 })

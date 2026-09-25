@@ -1,3 +1,4 @@
+import { usdSignFirst } from "@/lib/usd-format"
 // Compact, additive "estimated #1 / perfect-mint premium" badge.
 //
 // Renders nothing unless `data` is present — and the backing RPCs only emit it
@@ -19,6 +20,7 @@ export type SerialFmvData = {
 } | null | undefined;
 
 function fmtUsd(n: number): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (!Number.isFinite(n)) return "—";
   return "$" + Math.round(n).toLocaleString("en-US");
 }

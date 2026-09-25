@@ -11,6 +11,7 @@ import type {
   PulseHourlyRow,
 } from "@/lib/analytics-types"
 import { collectionLabel as resolveCollectionLabel } from "@/lib/analytics/format"
+import { usdSignFirst } from "@/lib/usd-format"
 
 // ── Number / price formatters (branch-heavy) ────────────────────────────────
 
@@ -22,6 +23,7 @@ export function formatUsd(n: number | null | undefined): string {
 }
 
 export function formatPrice(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, formatPrice); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return "—"
   if (n >= 10_000) return `$${(n / 1_000).toFixed(1)}k`
   if (n >= 100) return `$${n.toFixed(0)}`

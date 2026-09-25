@@ -7,7 +7,7 @@
 -- or misattributes editions to the wrong player.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260925101847_audit_20260925_resolve_canonical_player_folds_accents.sql);
+-- (supabase/migrations/20260925135939_audit_20260925_steph_curry_one_player_and_player_name_aliases.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -40,6 +40,14 @@ CREATE TABLE editions (
   player_id uuid
 );
 
+-- 2026-09-25: the alias table the resolver consults first (#137 a).
+CREATE TABLE player_name_aliases (
+  collection_id uuid NOT NULL,
+  alias_slug    text NOT NULL,
+  player_id     uuid NOT NULL,
+  PRIMARY KEY (collection_id, alias_slug)
+);
+
 -- >>> BEGIN verbatim resolve_canonical_player (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.resolve_canonical_player(p_collection_id uuid, p_name text, p_team text DEFAULT NULL::text)
  RETURNS uuid
@@ -61,6 +69,15 @@ BEGIN
     RETURN NULL;
   END IF;
 
+  -- 2026-09-25: a registered ALIAS (a second spelling of one person, e.g.
+  -- "Stephen Curry" -> the "Steph Curry" row) resolves before the slug match,
+  -- so the no-match arm cannot re-mint a merged duplicate.
+  SELECT a.player_id INTO v_id
+    FROM public.player_name_aliases a
+   WHERE a.collection_id = p_collection_id
+     AND a.alias_slug = v_slug;
+
+  IF v_id IS NULL THEN
   SELECT p.id INTO v_id
     FROM public.players p
    WHERE p.collection_id = p_collection_id
@@ -71,6 +88,7 @@ BEGIN
             (SELECT count(*) FROM public.editions e WHERE e.player_id = p.id) DESC,
             p.id
    LIMIT 1;
+  END IF;
 
   IF v_id IS NOT NULL THEN
     IF p_team IS NOT NULL AND trim(p_team) <> '' THEN
@@ -196,6 +214,35 @@ SELECT _assert_eq(
   resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'Noemie Brochant')::text,
   (SELECT id::text FROM players WHERE external_id='nba_top_shot-noemie-brochant'),
   'the plain spelling resolves the accented row it would once have duplicated');
+
+-- 2026-09-25: a registered ALIAS resolves to its player BEFORE the slug match,
+-- so a second NAME for one person (Stephen / Steph Curry) never mints a row.
+INSERT INTO players (id, external_id, collection_id, name, team, collection) VALUES
+  ('00000000-0000-0000-0000-000000000007', '201939', '11111111-1111-1111-1111-111111111111', 'Steph Curry', NULL, 'nba_top_shot');
+INSERT INTO player_name_aliases (collection_id, alias_slug, player_id) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'stephen-curry', '00000000-0000-0000-0000-000000000007');
+SELECT _assert_eq(
+  resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'Stephen Curry')::text,
+  '00000000-0000-0000-0000-000000000007',
+  'an alias spelling resolves to the aliased player');
+SELECT _assert_eq(
+  resolve_canonical_player('11111111-1111-1111-1111-111111111111', '  STEPHEN   curry ')::text,
+  '00000000-0000-0000-0000-000000000007',
+  'the alias is matched on the normalized slug');
+SELECT _assert_eq((SELECT count(*)::text FROM players WHERE name ILIKE 'steph%curry'), '1',
+  'the alias spelling minted no second row');
+-- The alias beats even a slug match: a stray row carrying the alias spelling
+-- does not capture new writes.
+INSERT INTO players (id, external_id, collection_id, name, team, collection) VALUES
+  ('00000000-0000-0000-0000-000000000008', 'stray', '11111111-1111-1111-1111-111111111111', 'Stephen Curry', NULL, 'nba_top_shot');
+SELECT _assert_eq(
+  resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'Stephen Curry')::text,
+  '00000000-0000-0000-0000-000000000007',
+  'the alias wins over a same-slug row');
+-- Team backfill still applies on the alias path.
+SELECT resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'Stephen Curry', 'Golden State Warriors');
+SELECT _assert_eq((SELECT team FROM players WHERE id='00000000-0000-0000-0000-000000000007'), 'Golden State Warriors',
+  'team backfilled through the alias path');
 
 SELECT '✓ resolve_canonical_player invariants pass' AS result;
 ROLLBACK;

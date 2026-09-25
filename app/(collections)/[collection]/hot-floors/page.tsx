@@ -11,6 +11,7 @@ import Link from "next/link"
 import { getCollection } from "@/lib/collections"
 import { fetchHotFloors } from "@/lib/hot-floors/fetchers"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const revalidate = 300
 
@@ -24,6 +25,7 @@ const TIER_COLOR: Record<string, string> = {
 }
 
 function usd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, usd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(Number(n))) return "—"
   const v = Number(n)
   return v < 1 ? `$${v.toFixed(2)}` : `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

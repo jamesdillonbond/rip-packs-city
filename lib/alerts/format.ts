@@ -9,6 +9,7 @@
 import type { Delivery, DealPayload, FmvPayload } from "@/lib/alerts";
 import { marketplaceMomentUrl } from "@/lib/collections";
 import { askAgeHours, fmtAskAge, isAskStale } from "@/lib/market/ask-freshness";
+import { usdSignFirst } from "@/lib/usd-format"
 
 const SITE = "https://www.rippackscity.com";
 
@@ -20,6 +21,7 @@ function isFmv(d: Delivery): d is Delivery & { payload: FmvPayload } {
 }
 
 function money(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, money); if (neg !== null) return neg
   if (n === null || n === undefined || !Number.isFinite(n)) return "—";
   return `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }

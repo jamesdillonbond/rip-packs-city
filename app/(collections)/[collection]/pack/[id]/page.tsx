@@ -45,6 +45,7 @@ import {
 } from "./PackLifecycleClient"
 import type { PackLifecycle, PackPull } from "./types"
 import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const dynamic = "force-dynamic"
 
@@ -64,6 +65,7 @@ function num(v: number | string | null | undefined): number | null {
 /** Whole-dollar amounts drop the trailing ".00" so headlines read "$20"
  *  rather than "$20.00". Mirrors the client-side helper. */
 function fmtUsd(n: number | null): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n === null) return "—"
   if (n === Math.trunc(n)) return `$${n.toLocaleString("en-US")}`
   return n.toLocaleString("en-US", {

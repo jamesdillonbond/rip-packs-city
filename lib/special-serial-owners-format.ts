@@ -2,7 +2,10 @@
 // (app/special-serial-owners/page.tsx — a ~450-line client neither coverage gate
 // measures). Bodies are byte-identical to the originals; the page imports these.
 
+import { usdSignFirst } from "@/lib/usd-format"
+
 export function fmtMoney(n: number | null): string {
+  const neg = usdSignFirst(n, fmtMoney); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 100) return `$${Math.round(v).toLocaleString("en-US")}`

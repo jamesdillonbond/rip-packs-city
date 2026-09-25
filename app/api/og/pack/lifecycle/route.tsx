@@ -24,6 +24,7 @@ import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-font
 import { OgMark } from "@/lib/og/marks"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const runtime = "edge"
 
@@ -48,6 +49,7 @@ function tierColor(tier: string | null | undefined): string {
 }
 
 function fmtUsd(v: number | null | undefined): string {
+  const neg = usdSignFirst(v, fmtUsd); if (neg !== null) return neg
   if (v === null || v === undefined || !Number.isFinite(v)) return "—"
   if (Math.abs(v) >= 100) return `$${Math.round(v).toLocaleString()}`
   return `$${v.toFixed(2)}`

@@ -3,8 +3,11 @@
 // imports, so none of these were measured). Bodies are byte-identical to the
 // originals; the page imports them.
 
+import { usdSignFirst } from "@/lib/usd-format"
+
 /** $ with whole-dollar grouping at/above $1,000, 2 decimals below. */
 export function fmtCurrency(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtCurrency); if (neg !== null) return neg
   if (n == null || isNaN(n)) return "—"
   if (Math.abs(n) >= 1000) {
     return `$${Math.round(n).toLocaleString("en-US")}`

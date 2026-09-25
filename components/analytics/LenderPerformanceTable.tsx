@@ -8,12 +8,14 @@ import {
   displayName as resolveDisplayName,
   truncateAddress,
 } from "@/lib/analytics/username-resolver"
+import { usdSignFirst } from "@/lib/usd-format"
 
 interface LenderPerformanceTableProps {
   collections: string[]
 }
 
 function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return "$0"
   if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
   if (Math.abs(n) >= 1_000) return `$${(n / 1_000).toFixed(1)}k`

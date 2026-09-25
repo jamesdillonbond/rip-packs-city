@@ -6,11 +6,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { normalizeAddress } from "@/lib/address"
 import { supabaseAdmin } from "@/lib/supabase"
+import { usdSignFirst } from "@/lib/usd-format"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const FROM = "rpc-digest@rippackscity.com"
 
 function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—"
   if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString()
   return "$" + Number(n).toFixed(2)

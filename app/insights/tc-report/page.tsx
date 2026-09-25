@@ -15,6 +15,7 @@ import Link from "next/link"
 import { slugifyName } from "@/lib/entity-labels"
 import { fromDbSlug, getCollection } from "@/lib/collections"
 import { closedMarket, formatClosedOn } from "@/lib/market-closed"
+import { usdSignFirst } from "@/lib/usd-format"
 
 type Bucket = { editions: number; moments: number }
 type Buckets = { liquid: Bucket; moderate: Bucket; squeezed: Bucket; extreme: Bucket }
@@ -113,6 +114,7 @@ function fmtInt(n: number | null | undefined): string {
   return Number(n).toLocaleString("en-US")
 }
 function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 1000) return `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`

@@ -8,6 +8,7 @@
 // Auto-refreshes every 60s.
 
 import { useCallback, useEffect, useState } from "react";
+import { usdSignFirst } from "@/lib/usd-format"
 
 const TOKEN_KEY = "rpc_admin_token";
 const REFRESH_MS = 60_000;
@@ -78,6 +79,7 @@ function fmtInt(n: number | null | undefined): string {
 }
 
 function fmtCurrency(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtCurrency); if (neg !== null) return neg
   if (n == null || isNaN(n)) return "—";
   if (Math.abs(n) >= 1000) return `$${Math.round(n).toLocaleString("en-US")}`;
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

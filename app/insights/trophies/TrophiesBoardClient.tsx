@@ -25,6 +25,7 @@ import type { DegradedSummary } from "@/lib/insights/board-status"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { useIpfsRetry } from "@/lib/media/use-ipfs-retry"
 import { fromDbSlug } from "@/lib/collections"
+import { usdSignFirst } from "@/lib/usd-format"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -84,6 +85,7 @@ function normalizeTier(t: string | null): string | null {
 }
 
 function fmtUsd(n: number | null): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 1000) return `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`

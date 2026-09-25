@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usdSignFirst } from "@/lib/usd-format"
 
 // Live FMV preview card for the marketing home's depth fold. Fetches the
 // PUBLIC /api/fmv/demo endpoint (real recent snapshots, 1h CDN cache, no auth)
@@ -23,6 +24,7 @@ interface DemoSample {
 // (confColor removed 2026-07-11 with the confidence line.)
 
 function money(n: number): string {
+  const neg = usdSignFirst(n, money); if (neg !== null) return neg
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 

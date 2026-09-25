@@ -11,6 +11,7 @@ import { fitTelegramText } from "@/lib/telegram-message";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import crypto from "crypto";
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const maxDuration = 60;
 
@@ -26,6 +27,7 @@ const COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const PIPELINE_ALERT_DEBOUNCE_MIN = 60;
 
 function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—";
   if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString();
   return "$" + Number(n).toFixed(2);

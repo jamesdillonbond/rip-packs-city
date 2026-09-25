@@ -17,6 +17,7 @@ import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { fmvBasis } from "@/lib/fmv-basis"
+import { usdSignFirst } from "@/lib/usd-format"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -49,6 +50,7 @@ function fmtInt(n: number | null | undefined): string {
   return Number(n).toLocaleString("en-US")
 }
 function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 1000) return `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`

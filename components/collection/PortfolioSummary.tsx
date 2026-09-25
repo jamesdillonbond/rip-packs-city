@@ -13,11 +13,13 @@ import {
   computeLoanDefaults,
   computeCostBasisSummary,
 } from "@/lib/portfolio-summary-compute"
+import { usdSignFirst } from "@/lib/usd-format"
 
 // 2026-09-24: the P&L strip printed "$113124.59" (no separators) and called a
 // cost-basis subset "wallet-wide totals" while its Current FMV ($34k) sat
 // beside a Wallet FMV of $58k. Format with separators; say what the subset is.
 export function fmtUsd2(n: number): string {
+  const neg = usdSignFirst(n, fmtUsd2); if (neg !== null) return neg
   return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 

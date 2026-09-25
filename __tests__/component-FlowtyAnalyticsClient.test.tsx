@@ -497,7 +497,7 @@ describe("FlowtyAnalyticsClient — leaderboards", () => {
       ],
     })
     expect(screen.getByText("$120.00").getAttribute("style")).toContain("--rpc-success")
-    expect(screen.getByText("$-80.00").getAttribute("style")).toContain("--rpc-danger")
+    expect(screen.getByText("-$80.00").getAttribute("style")).toContain("--rpc-danger")
   })
 
   it("does not colour a missing net position as either", async () => {

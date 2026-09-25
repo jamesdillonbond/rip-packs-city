@@ -14,6 +14,7 @@ import Link from "next/link";
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key";
 import { useProStatus } from "@/lib/hooks/useProStatus";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
+import { usdSignFirst } from "@/lib/usd-format"
 
 const PRO_ALERTS_CAP = 25;
 const DELETE_CONFIRM_WINDOW_MS = 2000;
@@ -38,6 +39,7 @@ interface Alert {
 }
 
 function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null || isNaN(Number(n))) return "—";
   const v = Number(n);
   if (Math.abs(v) >= 1000) return `$${Math.round(v).toLocaleString("en-US")}`;

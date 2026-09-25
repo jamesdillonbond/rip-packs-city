@@ -20,6 +20,7 @@ import {
   type PackMarketBuckets,
   type PackMarketRow,
 } from "@/lib/insights/pack-market-board"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const revalidate = 600
 
@@ -36,6 +37,7 @@ async function fetchBuckets(): Promise<Buckets> {
 }
 
 function fmtUsd(v: number | null): string {
+  const neg = usdSignFirst(v, fmtUsd); if (neg !== null) return neg
   if (v == null) return "—"
   if (Math.abs(v) >= 100) return `$${Math.round(v).toLocaleString()}`
   return `$${v.toFixed(2)}`

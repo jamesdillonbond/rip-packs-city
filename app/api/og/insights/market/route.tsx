@@ -11,6 +11,7 @@ import { NextRequest } from "next/server"
 import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 import { ogFetch } from "@/lib/og/og-fetch"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -38,6 +39,7 @@ function num(v: number | string | null): number | null {
 }
 
 function fmtUsd(n: number | null): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—"
   const v = n
   if (v >= 1000) return `$${(v / 1000).toFixed(1)}k`
@@ -46,6 +48,7 @@ function fmtUsd(n: number | null): string {
 }
 
 function fmtVol(n: number): string {
+  const neg = usdSignFirst(n, fmtVol); if (neg !== null) return neg
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1000) return `$${Math.round(n / 1000)}K`
   return `$${Math.round(n)}`

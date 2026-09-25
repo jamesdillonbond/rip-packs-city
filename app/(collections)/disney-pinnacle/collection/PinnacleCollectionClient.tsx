@@ -11,6 +11,7 @@ import {
   pinnacleStudioShort,
 } from "@/lib/pinnacle/pinnacleTypes"
 import { PINNACLE_SERIAL_MIN_MINT } from "@/lib/pinnacle/serial-fmv"
+import { usdSignFirst } from "@/lib/usd-format"
 
 // Pinnacle wallet view — dedicated route so the Top Shot-heavy
 // [collection]/collection/page.tsx stays focused on player/team/tier.
@@ -52,6 +53,7 @@ const ACCENT = "#A855F7"
 const PAGE_SIZE = 100
 
 function usd(n: number | null | undefined) {
+  const neg = usdSignFirst(n, usd); if (neg !== null) return neg
   if (n == null || !isFinite(Number(n))) return "—"
   return `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }

@@ -13,6 +13,7 @@ import {
   tierHoloClass,
   hiResThumb,
 } from "@/lib/trophy/slab-style";
+import { usdSignFirst } from "@/lib/usd-format"
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -82,6 +83,7 @@ const SCREEN_BLACK = "#050505";
 // ratcheted). Imported at the top of this file.
 
 function fmtUsd(n: number | null): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—";
   if (n >= 1000) return "$" + Math.round(n).toLocaleString();
   if (n >= 1) return "$" + n.toFixed(0);

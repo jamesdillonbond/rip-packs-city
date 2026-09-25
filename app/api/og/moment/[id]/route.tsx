@@ -22,6 +22,7 @@ import { boundedRead } from "@/lib/api/bounded-read"
 import { trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks"
 import { withOfficialArt } from "@/lib/og/official-mark-art"
 import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -77,6 +78,7 @@ interface MomentDetail {
 }
 
 function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return ""
   if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString()
   return "$" + n.toFixed(2)

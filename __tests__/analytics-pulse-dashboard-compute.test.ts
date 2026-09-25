@@ -73,7 +73,7 @@ describe("formatPrice", () => {
   it("formats <100 with two decimals (incl. zero/negative)", () => {
     expect(formatPrice(99.9)).toBe("$99.90")
     expect(formatPrice(0)).toBe("$0.00")
-    expect(formatPrice(-3)).toBe("$-3.00")
+    expect(formatPrice(-3)).toBe("-$3.00")
   })
 })
 

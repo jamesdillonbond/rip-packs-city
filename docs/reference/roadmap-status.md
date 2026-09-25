@@ -744,6 +744,8 @@ in `pinnacle_sales`** — querying the usual tables for all five returns NULL/0 
 
 A dated snapshot. The item text in [known-issues.md](known-issues.md) wins over this list.
 
+✅ **All five settled ~7:30 AM PT the same day** (Trevor: "Steph Curry", "-$50"): #137 (a) merged with a name alias, (b) sign-first everywhere, (c) drop scheduled for 10-02 by pg_cron, #136 verified and closed, #138 decided (flipper deactivated, no mega-wallet source for now). The list below is kept as it stood.
+
 - **#137 (a), Trevor:** Top Shot has two player rows for one person, "Steph Curry" (74 editions) and "Stephen Curry" (23). Top Shot's official spelling is "Stephen Curry". Once the name is chosen, the merge is a one-line data migration.
 - **#137 (b), Trevor:** one sign convention for negative dollars. `lib/usd-format.ts` pins "$-50.34" while `lib/analytics/format` renders "-$42.00". Re-pin the tests after choosing.
 - **#138, decision:** where to get the ids for a Top Shot wallet above ~100k moments (an access node with a higher computation limit, an indexer, or deposit/withdraw events), or deactivate the two seeded rows. Nothing user-facing is wrong today.

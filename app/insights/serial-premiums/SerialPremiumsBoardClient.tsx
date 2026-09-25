@@ -24,6 +24,7 @@ import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { SerialBoardRow as Row, HeadlineMode } from "@/lib/serial-premiums-board"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
+import { usdSignFirst } from "@/lib/usd-format"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -60,6 +61,7 @@ function normalizeTier(t: string | null): string | null {
 }
 
 function fmtMoney(n: number | null): string {
+  const neg = usdSignFirst(n, fmtMoney); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 100) return `$${Math.round(v).toLocaleString("en-US")}`

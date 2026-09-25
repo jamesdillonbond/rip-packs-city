@@ -26,6 +26,8 @@
 // not one that cost nothing, so `spend_usd` never travels without
 // `priced_purchases` beside it.
 
+import { usdSignFirst } from "@/lib/usd-format"
+
 /** Calendar-to-date windows the API accepts. Mirrors BUYBACK_PERIODS. */
 export type BuybackPeriod = "week" | "month" | "year" | "all"
 
@@ -110,6 +112,7 @@ export const BUYBACK_PERIOD_LABELS: Record<BuybackPeriod, string> = {
 export const NO_FIGURE = "—"
 
 export function formatUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, formatUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return NO_FIGURE
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`

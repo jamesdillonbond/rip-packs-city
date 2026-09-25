@@ -5,6 +5,7 @@ import Link from "next/link"
 import Image from "next/image"
 import type { FmvConfidence, SetsDetailEdition } from "@/lib/analytics-types"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { usdSignFirst } from "@/lib/usd-format"
 
 interface Props {
   editions: SetsDetailEdition[]
@@ -61,6 +62,7 @@ const LINKABLE_COLLECTIONS = new Set(["topshot", "allday", "golazos"])
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function formatUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, formatUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return "No FMV"
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`

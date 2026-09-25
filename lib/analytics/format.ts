@@ -3,6 +3,7 @@
 // components. Behavior-identical verbatim move — no logic changes.
 
 import { toDbSlug, fromDbSlug, getCollection } from "@/lib/collections"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export function relativeDate(iso: string): string {
   const t = new Date(iso).getTime()
@@ -19,6 +20,7 @@ export function relativeDate(iso: string): string {
 }
 
 export function fmtUsd(n: number): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   return `$${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 

@@ -29,6 +29,7 @@ import type {
   NCGatewayRow,
   NCCohortRow,
 } from "@/lib/new-collectors-board"
+import { usdSignFirst } from "@/lib/usd-format"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -46,6 +47,7 @@ function fmtInt(n: number | null | undefined): string {
 }
 
 function fmtMoney(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtMoney); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 1000) return `$${Math.round(v).toLocaleString("en-US")}`
@@ -54,6 +56,7 @@ function fmtMoney(n: number | null | undefined): string {
 }
 
 function fmtMoneyCompact(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtMoneyCompact); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`

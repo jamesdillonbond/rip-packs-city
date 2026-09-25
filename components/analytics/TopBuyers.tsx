@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useResolveUsernames } from "@/lib/analytics/username-resolver"
 import { fetchJson } from "@/lib/analytics/fetch-json"
+import { usdSignFirst } from "@/lib/usd-format"
 
 interface TopBuyerRow {
   rank: number
@@ -35,6 +36,7 @@ interface TopBuyerRow {
 const SWEEP_THRESHOLD = 3
 
 function fmt(n: number): string {
+  const neg = usdSignFirst(n, fmt); if (neg !== null) return neg
   const v = Number(n) || 0
   if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`
   if (v >= 1_000) return `$${(v / 1_000).toFixed(1)}k`

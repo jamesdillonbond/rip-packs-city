@@ -537,7 +537,14 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
         playerId = (resolvedId as string | null) ?? null
       }
 
-      const { data: edition } = await supabaseAdmin
+      // INSERT-ONLY (2026-09-25). This used to upsert with ignoreDuplicates:false,
+      // so every Top Shot wallet search re-wrote player_id / name / tier / series /
+      // circulation_count on EXISTING editions from one wallet row — including
+      // NULLs (toNum of a missing series, a missing mintSize) over values the
+      // catalog, the chain fills and the linker had written. A second source's
+      // fill must survive the first source's next write (#137 d). The seed's job
+      // is to make an edition EXIST; it is not an authority on one that does.
+      await supabaseAdmin
         .from("editions")
         .upsert(
           {
@@ -549,12 +556,8 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
             series: toNum(row.series),
             circulation_count: row.mintSize ?? null,
           },
-          { onConflict: "external_id,collection_id", ignoreDuplicates: false }
+          { onConflict: "external_id,collection_id", ignoreDuplicates: true }
         )
-        .select("id")
-        .single()
-
-      if (!edition?.id) continue
       // Sales and FMV snapshots are only written by the real ingest pipeline
       // and fmv-recalc cron — never seeded from wallet purchase prices.
     } catch {

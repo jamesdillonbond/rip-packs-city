@@ -7,11 +7,13 @@ import { getCollection } from "@/lib/collections"
 import { renderEntityOg } from "@/lib/og/entity-card"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return ""
   if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString()
   return "$" + n.toFixed(2)

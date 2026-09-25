@@ -1,3 +1,4 @@
+import { usdSignFirst } from "@/lib/usd-format"
 // Compact, additive "30-day price range" badge for the collection grid / tiles.
 //
 // Renders nothing unless `data` is present — and the backing RPC only emits it
@@ -19,6 +20,7 @@ export type PriceBand30d = {
 } | null | undefined;
 
 function fmtUsd(n: number): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (!Number.isFinite(n)) return "—";
   if (n >= 100) return "$" + Math.round(n).toLocaleString("en-US");
   return "$" + n.toFixed(2);

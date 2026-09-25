@@ -113,12 +113,12 @@ describe("fmtPackUsd", () => {
   it("2-decimal formatting under $1000", () => {
     expect(fmtPackUsd(12.5)).toBe("$12.50")
     expect(fmtPackUsd(3.1)).toBe("$3.10")
-    expect(fmtPackUsd(-4.2)).toBe("$-4.20")
+    expect(fmtPackUsd(-4.2)).toBe("-$4.20")
   })
   it("rounds and adds thousands separators at/above $1000", () => {
     expect(fmtPackUsd(1000)).toBe("$1,000")
     expect(fmtPackUsd(1234.6)).toBe("$1,235")
-    expect(fmtPackUsd(-2500)).toBe("$-2,500")
+    expect(fmtPackUsd(-2500)).toBe("-$2,500")
   })
 })
 

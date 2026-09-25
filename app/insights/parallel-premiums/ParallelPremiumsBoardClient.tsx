@@ -16,8 +16,10 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import Link from "next/link"
 import type { ParallelRow, ParallelSortKey } from "@/lib/parallel-premiums-board"
 import { fetchJson } from "@/lib/analytics/fetch-json"
+import { usdSignFirst } from "@/lib/usd-format"
 
 function fmtUsd(n: number | null): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (v >= 100) return `$${Math.round(v).toLocaleString("en-US")}`

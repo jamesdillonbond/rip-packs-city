@@ -8,12 +8,15 @@
 // badge (null). A regression here 404s a real logo or, worse, points one league's
 // team at the other league's CDN.
 
+import { usdSignFirst } from "@/lib/usd-format"
+
 export interface TeamLogoInput {
   league: string
   external_id: string | null
 }
 
 export function fmtTeamUsd(v: number | null | undefined): string {
+  const neg = usdSignFirst(v, fmtTeamUsd); if (neg !== null) return neg
   if (v == null || !Number.isFinite(Number(v))) return "—"
   return "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 })
 }

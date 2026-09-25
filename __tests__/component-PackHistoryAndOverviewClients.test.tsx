@@ -256,7 +256,7 @@ describe("PackHistoryClient", () => {
   it("publishes Net P&L when both sides are fully covered", async () => {
     mount()
     await waitFor(() => expect(tileValue("Net P&L")).toBeTruthy())
-    expect(tileValue("Net P&L")).toBe("$-25.00")
+    expect(tileValue("Net P&L")).toBe("-$25.00")
     expect(document.body.textContent).not.toMatch(/needs a price on most packs/)
   })
 

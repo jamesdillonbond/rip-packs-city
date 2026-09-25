@@ -111,3 +111,31 @@ export function decodeSlugOrNull(raw: string): string | null {
     return null
   }
 }
+
+/**
+ * The canonical player slug an ALIAS slug points at (public.player_name_aliases,
+ * added 2026-09-25 when "Stephen Curry" merged into "Steph Curry", #137 a).
+ *
+ * THREE states, never two: `{ ok: true, target: "steph-curry" }` (an alias),
+ * `{ ok: true, target: null }` (read clean, not an alias → the caller 404s), and
+ * `{ ok: false }` (the read failed). A failed read must NOT become a 404 — the
+ * caller throws to the retryable error boundary instead.
+ */
+export type PlayerAliasResult = { ok: true; target: string | null } | { ok: false }
+
+export async function resolvePlayerAlias(collectionId: string, slug: string): Promise<PlayerAliasResult> {
+  try {
+    const { data, error } = await rpcWithRetry(supabaseAdmin as never, "get_player_alias_target", {
+      p_collection_id: collectionId,
+      p_slug: slug,
+    })
+    if (error) {
+      console.warn(`[player-layout] alias rpc error slug=${slug}: ${error.message}`)
+      return { ok: false }
+    }
+    return { ok: true, target: typeof data === "string" && data !== "" ? data : null }
+  } catch (err) {
+    console.warn(`[player-layout] alias rpc threw slug=${slug}: ${err instanceof Error ? err.message : String(err)}`)
+    return { ok: false }
+  }
+}

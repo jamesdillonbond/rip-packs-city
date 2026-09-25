@@ -5,6 +5,7 @@ import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 import { ogFetch } from "@/lib/og/og-fetch"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic"
 type Row = { collection_name: string; volume_7d: number; sales_7d: number; buyers_7d: number }
 
 function usd(n: number): string {
+  const neg = usdSignFirst(n, usd); if (neg !== null) return neg
   if (n >= 1000) return `$${Math.round(n).toLocaleString("en-US")}`
   return `$${(n ?? 0).toFixed(0)}`
 }

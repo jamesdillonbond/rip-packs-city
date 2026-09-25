@@ -11,6 +11,7 @@ import type {
   FmvTopMoverRow,
 } from "@/lib/analytics-types"
 import { normalizeTier, titleCaseTier, tierLadder } from "@/lib/tier-order"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const FMV_COLLECTIONS: Array<{ key: string; label: string }> = [
   { key: "topshot", label: "Top Shot" },
@@ -120,6 +121,7 @@ export const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function formatUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, formatUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return "—"
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`

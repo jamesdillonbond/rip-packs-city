@@ -5,9 +5,12 @@
 // / buyer addresses, leaks another collection's sales onto the "Sold" board, or
 // mis-computes the total-proceeds tile and the truncation banner.
 
+import { usdSignFirst } from "@/lib/usd-format"
+
 // USD amount for a sale, or an em-dash when unknown. Matches the component's
 // two-decimal en-US grouping exactly.
 export function fmtSoldUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtSoldUsd); if (neg !== null) return neg
   if (n == null) return "—";
   return (
     "$" +

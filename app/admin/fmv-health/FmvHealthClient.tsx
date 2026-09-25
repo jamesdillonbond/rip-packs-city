@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import { useAdminResource } from "@/lib/admin/use-admin-resource";
+import { usdSignFirst } from "@/lib/usd-format"
 
 
 const WINDOW_OPTIONS = [
@@ -60,6 +61,7 @@ interface Payload {
 }
 
 function fmtUsd(n: number | null): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—";
   return `$${Number(n).toFixed(2)}`;
 }

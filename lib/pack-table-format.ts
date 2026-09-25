@@ -5,6 +5,7 @@
 
 import type { ChipStyle } from '@/lib/tier-style'
 import { humanizeLabel } from '@/lib/format'
+import { usdSignFirst } from "@/lib/usd-format"
 
 // Tier rarity rank for the "Tier" column sort (rarity, not alphabetical —
 // Pack audit B6). common < fandom < rare < legendary < ultimate; UFC tiers
@@ -49,6 +50,7 @@ export function coverageChipClass(cov: number | null): ChipStyle {
 }
 
 export function fmtPrice(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtPrice); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return '—'
   return `$${n.toFixed(2)}`
 }

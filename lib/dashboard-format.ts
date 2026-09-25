@@ -14,6 +14,7 @@
 import { isSolanaAddress } from "@/lib/address"
 import { publishedCollections, getCollection, fromDbSlug } from "@/lib/collections"
 import { NEUTRAL_TIER_COLOR } from "@/lib/tier-color"
+import { usdSignFirst } from "@/lib/usd-format"
 
 // Dashboard USD: falsy (0 / null / NaN) renders "$0" — this surface never wants
 // an em-dash — whole dollars at |n| >= $1,000, 2 decimals below.
@@ -22,9 +23,10 @@ import { NEUTRAL_TIER_COLOR } from "@/lib/tier-color"
 // drawdown) skipped the whole-dollar branch entirely and rendered
 // "$-1500.50" — no thousands separator and cents kept — while the equal-
 // magnitude positive rendered "$1,501". Now gated on Math.abs, matching every
-// other fmtUsd in lib/. The "$-" negative form itself is the deliberate house
-// convention and is unchanged.
+// other fmtUsd in lib/. Negatives render sign-first ("-$1,501") since
+// 2026-09-25 (#137 b).
 export function fmtUsd(n: number): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (!n) return "$0"
   if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString()
   return "$" + n.toFixed(2)

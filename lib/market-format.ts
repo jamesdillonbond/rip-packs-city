@@ -4,6 +4,8 @@
 // is outside the coverage include). Generic over a minimal listing shape so this
 // module doesn't depend on the page's local types.
 
+import { usdSignFirst } from "@/lib/usd-format"
+
 /** Comma-separated string → trimmed, non-empty parts. */
 export function parseList(value: string | null | undefined): string[] {
   if (!value) return []
@@ -66,8 +68,9 @@ export function collectDistinct<T>(rows: T[], pick: (l: T) => string | null | un
  *
  *  BUGFIX 2026-08-01: the threshold was `n >= 1000`, so a large negative never
  *  got the whole-dollar/grouped treatment its positive twin got. Math.abs now.
- *  The "$-" negative form is the deliberate house convention, unchanged. */
+ *  Negatives render sign-first ("-$1,501") since 2026-09-25 (#137 b). */
 export function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return "—"
   if (Math.abs(n) >= 1000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

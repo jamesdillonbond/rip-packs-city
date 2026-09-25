@@ -17,6 +17,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export interface PinnacleFmvPoint {
   computed_at: string
@@ -38,6 +39,7 @@ export function fmtDay(iso: string): string {
 }
 
 export function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n === null || n === undefined || !Number.isFinite(n)) return "—"
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`
   if (n >= 100) return `$${Math.round(n)}`

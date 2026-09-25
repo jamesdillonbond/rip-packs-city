@@ -11,6 +11,7 @@ import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 import { ogFetch } from "@/lib/og/og-fetch"
+import { usdSignFirst } from "@/lib/usd-format"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -25,6 +26,7 @@ type Drop = {
 }
 
 function fmtMoney(n: number | null): string {
+  const neg = usdSignFirst(n, fmtMoney); if (neg !== null) return neg
   if (n == null) return "—"
   const v = Number(n)
   if (!Number.isFinite(v)) return "—"

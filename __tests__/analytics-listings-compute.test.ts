@@ -43,7 +43,7 @@ describe("formatPrice", () => {
     expect(formatPrice(Number.NaN)).toBe("—")
     // Distinct from SalesDashboard.formatPrice: this variant renders 0 and negatives.
     expect(formatPrice(0)).toBe("$0.00")
-    expect(formatPrice(-5)).toBe("$-5.00")
+    expect(formatPrice(-5)).toBe("-$5.00")
   })
   it("abbreviates >= 10k, whole dollars for 100..9999, 2 decimals under 100", () => {
     expect(formatPrice(22_500)).toBe("$22.5k")

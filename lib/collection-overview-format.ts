@@ -5,6 +5,8 @@
 // a legitimately-stale market from reading as a broken pipeline to a visitor.
 // Bodies are byte-identical to the originals; the page imports these.
 
+import { usdSignFirst } from "@/lib/usd-format"
+
 export const EM_DASH = "—"
 
 /** First non-empty candidate, else an em-dash. */
@@ -16,6 +18,7 @@ export function nameOrDash(...candidates: Array<string | null | undefined>): str
 }
 
 export function fmtPrice(n: number): string {
+  const neg = usdSignFirst(n, fmtPrice); if (neg !== null) return neg
   return "$" + Math.round(n).toLocaleString()
 }
 
