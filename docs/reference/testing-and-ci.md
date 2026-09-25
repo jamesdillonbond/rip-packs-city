@@ -3444,3 +3444,11 @@ The diffs were clean, tested and honest by construction. The defects lived in th
 - ⭐ **Ask each ship "what did it write, and does an independent source agree?"** Its own report counts only rows it wrote; count rows that are CORRECT.
 - ⚠ **A headline number from a ship is a claim until re-derived.** The 1.31× went into a ledger entry and needed a CORRECTION entry of its own. Filing the correction under the original entry keeps the next reader from quoting the stale figure.
 
+
+## A pin fixture must carry the live table's CONSTRAINTS, or it cannot see the violation it exists to prevent (2026-09-24, PT)
+
+`supabase/tests/sync_ts_listings_from_atlas.sql` declared its `ts_listings` fixture with only the columns the function touches and no NOT NULL. The live table has `circulation_count NOT NULL`, and one listing on a stub edition aborted a whole production tick on exactly that. The pin could not have caught it: in the fixture, the NULL row would simply have LANDED.
+
+The fix made the fixture column NOT NULL as live. With that, the previous body fails the pin with the byte-identical production error, which is the planted-defect proof.
+
+⚠ **"Minimal fixtures (only the columns the function reads/writes)" must still include every constraint the function can VIOLATE on those columns:** NOT NULL, CHECK, UNIQUE. A constraint-free fixture turns an abort into a silent write.
