@@ -882,6 +882,20 @@ function WalletMomentsBody() {
   // Nothing here narrows Flow — a non-canonical `0x…` reads as "unknown" and
   // falls through to the username arm exactly as it did before.
   useEffect(function() {
+    // ⛔ 2026-09-25 — A URL WALLET OWNS THE PAGE. AutoSearchReader (the ?wallet=
+    // / ?address= / ?q= reader) sits behind a Suspense boundary and mounts
+    // AFTER this effect, so on `/candy-mlb/collection?wallet=0xbd94…` this seed
+    // fired FIRST with the device's saved Candy wallet, the URL search then
+    // failed its chain check, and the page rendered the refusal ABOVE the
+    // saved wallet's $4,285 — a different wallet's holdings under a URL naming
+    // the one that was asked about. When the URL names a wallet, nothing else
+    // may be searched here, whatever that search's outcome.
+    let urlNamesWallet = false
+    try {
+      const sp = new URLSearchParams(window.location.search)
+      urlNamesWallet = !!((sp.get("wallet") || sp.get("address") || sp.get("q") || "").trim())
+    } catch {}
+    if (urlNamesWallet) return
     if (rows.length === 0 && !loading && !lastSearchedRef.current) {
       let saved = ""
       try { saved = localStorage.getItem("rpc_last_wallet") || "" } catch {}

@@ -352,6 +352,42 @@ describe("CollectionTabClient — search entry", () => {
     })
   })
 
+  it("never seeds the device's last wallet when the URL names one — 2026-09-25", async () => {
+    // /candy-mlb/collection?wallet=0xbd94… rendered the chain-check refusal
+    // ABOVE the device's saved Candy wallet's $4,285: the localStorage seed
+    // fired before the Suspense-wrapped URL reader mounted. A URL wallet owns
+    // the page; the seed must not run whatever the URL search's outcome.
+    // The race is reproduced by leaving the URL reader's params EMPTY (it has
+    // not mounted yet) while the address bar names a wallet — the seed reads
+    // the address bar, not the hook.
+    const store: Record<string, string> = { rpc_last_wallet: "0xa1b2c3d4e5f60718" }
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => { store[k] = v },
+        removeItem: () => {}, clear: () => {},
+      },
+    })
+    window.history.replaceState({}, "", "/nba-top-shot/collection?wallet=0xurlwallet")
+    try {
+      render(<CollectionTabClient />)
+      await new Promise((r) => setTimeout(r, 60))
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.includes("/api/collection-moments") && u.includes("wallet=0xa1b2c3d4e5f60718"))).toBe(false)
+    } finally {
+      window.history.replaceState({}, "", "/nba-top-shot/collection")
+    }
+    // Control: with no wallet in the address bar the same seed DOES run.
+    cleanup()
+    fetchMock.mockClear()
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.includes("/api/collection-moments") && u.includes("wallet=0xa1b2c3d4e5f60718"))).toBe(true)
+    })
+  })
+
   it("searches nothing when there is neither a URL wallet nor a saved one", async () => {
     render(<CollectionTabClient />)
     await new Promise((r) => setTimeout(r, 30))
