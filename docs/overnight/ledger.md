@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · ↩️ REPAIRED — the Golazos storefront reconciler's first run (2:48 PM PT) matched none of its existing rows (bigint ids arrive from PostgREST as JSON numbers, the chain's as strings): 3,338 duplicate `storefront_v2` rows inserted and 514 open rows closed as `vanished`. Data restored ~2:55 PM PT (`20260925215205`, backup `audit_20260925_gz_reconcile_first_run_backup`), code fixed with a test on the real numeric shape · Claude Code (Windows box)
+
+- No pricing reads this table for Golazos yet; the market/moment listing reads saw the duplicates and missing rows for ~7 minutes. The unit tests had used string ids on both sides, so they could not see it — the new test (and the route test's fixture) uses the numeric id PostgREST actually returns, and both go red on the old code. The route now also selects the ids `::text`.
+**Revert:** of the repair — re-insert from the backup table. Of the fix — revert the commit by message.
+
 ### 2026-09-25 · 🧹 SHIPPED — LaLiga Golazos gets its own on-chain listing book: a new 2-hourly job walks every known seller's Dapper storefront and reconciles `cached_listings_v2` (the event indexer had seen 514 "open" rows / 200 editions; the chain holds 1,391 live listings / 442 editions, plus 154 ghosts nothing ever closed) — Golazos' ask source once Flowty's API goes dark (`20260925213345`) · Claude Code (Windows box)
 
 - Code: `lib/golazos/storefront-reconcile.ts` (script + pure planner), `app/api/cron/golazos-storefront-reconcile` (Vercel cron `43 */2 * * *`, `after()` + heartbeat, pipeline `golazos-storefront-reconcile`). Reads each listing through its own provider capability (`borrowListing(id).borrowNFT()`), so it resolves editions for the 23 sellers with no public Golazos collection — the reason 244 open rows had no edition. Verified the script against the deployed `A.4eb8a10cb9f87357.NFTStorefrontV2` source and on mainnet (0x709dac…: 188/188 live with editions).
