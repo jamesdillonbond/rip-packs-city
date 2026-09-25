@@ -13,7 +13,7 @@
 -- recapped_above_live_ask now counts only true re-caps; the new
 -- tracked_floor_change counts this lane's own re-derivations.
 --
--- anon-exec: unchanged — CREATE OR REPLACE of an existing SECURITY DEFINER function
+-- anon-exec: unchanged — CREATE OR REPLACE of the existing SECURITY DEFINER refresh_allday_ask_fmv_from_listings
 -- keeps its ACL (read 2026-09-25: anon cannot execute it).
 --
 -- REVERT: re-apply the function body from

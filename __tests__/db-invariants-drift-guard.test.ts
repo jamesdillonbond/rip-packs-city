@@ -633,7 +633,26 @@ const PINS = [
     // TEAM then by season, and COUNTS what it cannot break instead of guessing.
     fn: "match_player_identities",
     test: "supabase/tests/match_player_identities.sql",
-    migration: "supabase/migrations/20260925225610_audit_20260925_player_identities_crosswalk_table_upsert_and_match.sql",
+    // re-pointed 2026-09-25 (batch 46): reads league_team_abbr, gains the SUFFIX
+    // arm and the team+season tie-break.
+    migration: "supabase/migrations/20260925232127_audit_20260925_name_writers_resolve_through_the_player_identity_crosswalk.sql",
+  },
+  {
+    // Added 2026-09-25 (batch 46). The crosswalk's answer to "which person is
+    // this edition label?": feed-backed identities by base name + game year,
+    // then the edition's team; ambiguity is declared, never guessed.
+    fn: "resolve_player_identity",
+    test: "supabase/tests/resolve_player_identity.sql",
+    migration: "supabase/migrations/20260925232127_audit_20260925_name_writers_resolve_through_the_player_identity_crosswalk.sql",
+  },
+  {
+    // Added 2026-09-25 (batch 46). The daily linker's identity arm: links,
+    // mints with the league's spelling, aliases the label, counts what it
+    // cannot decide; the legacy name/alias arms only for labels the crosswalk
+    // does not know.
+    fn: "link_editions_to_players_by_name",
+    test: "supabase/tests/link_editions_to_players_by_name.sql",
+    migration: "supabase/migrations/20260925232127_audit_20260925_name_writers_resolve_through_the_player_identity_crosswalk.sql",
   },
   {
     fn: "resolve_canonical_player",

@@ -1,22 +1,25 @@
 name: Player identities sync — league ids from nflverse
 
 # 2026-09-25 (#139 follow-up). Refreshes the league-id crosswalk
-# (public.player_identities) once a week: the route fetches nflverse
+# (public.player_identities) daily: the route fetches nflverse
 # players.csv (NFL GSIS id + NFL.com spelling + birth date + team + ESPN/PFR
 # ids), upserts it through upsert_player_identities and links it to RPC's
 # players rows with match_player_identities. The route does all fetch + DB
 # I/O itself; this workflow is the scheduler and the failure signal (a non-200
 # fails the job, and the route writes its own pipeline_runs row either way).
 #
-# Weekly is the source's own cadence — nflverse rebuilds players.csv weekly
-# (nightly in season). Tuesday 03:17 PT (10:17Z): after the Monday-night game,
-# off the :00/:30 anchors. GitHub sheds `schedule` events freely (measured 8 %
-# to 33 % delivery on this repo), so a missed week is expected; the row's
-# refreshed_at says when the crosswalk was last true.
+# Daily at 03:17 PT (10:17Z), off the :00/:30 anchors. nflverse rebuilds
+# players.csv nightly in season (weekly otherwise); a day's refresh is ~24.8k
+# idempotent upserts, cheap. Daily rather than weekly because the scheduler
+# liveness watchdog (scripts/check-scheduler-liveness.mjs) can only size a
+# daily-periodic cron against its 24 h window — a weekly cron would sit
+# unwatchable. GitHub sheds `schedule` events freely (measured 8 % to 33 %
+# delivery on this repo), so a missed day is expected; the row's refreshed_at
+# says when the crosswalk was last true.
 
 on:
   schedule:
-    - cron: "17 10 * * 2"
+    - cron: "17 10 * * *"
   workflow_dispatch:
     inputs:
       league:

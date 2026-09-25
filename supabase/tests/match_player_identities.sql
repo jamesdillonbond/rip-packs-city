@@ -9,7 +9,7 @@
 -- centre, or the Cardinals rookie on his Colts father.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260925225610_audit_20260925_player_identities_crosswalk_table_upsert_and_match.sql);
+-- (supabase/migrations/20260925232127_audit_20260925_name_writers_resolve_through_the_player_identity_crosswalk.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -49,7 +49,9 @@ CREATE TABLE teams_master (league text, team_name text, abbreviation text);
 INSERT INTO teams_master VALUES
   ('NFL', 'Buffalo Bills', 'BUF'), ('NFL', 'Tampa Bay Buccaneers', 'TB'),
   ('NFL', 'Arizona Cardinals', 'ARI'), ('NFL', 'Indianapolis Colts', 'IND'),
-  ('NFL', 'Los Angeles Rams', 'LAR'), ('NFL', 'Jacksonville Jaguars', 'JAX');
+  ('NFL', 'Los Angeles Rams', 'LAR'), ('NFL', 'Jacksonville Jaguars', 'JAX'),
+  ('NFL', 'Carolina Panthers', 'CAR'), ('NFL', 'San Francisco 49ers', 'SF'),
+  ('NFL', 'Denver Broncos', 'DEN');
 
 CREATE TABLE player_identities (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -65,9 +67,37 @@ CREATE TABLE player_identities (
   rookie_season    int,
   last_season      int,
   source           text NOT NULL DEFAULT 'test',
+  base_slug        text GENERATED ALWAYS AS (regexp_replace(name_slug, '-(jr|sr|ii|iii|iv|v)-?$', '')) STORED,
   UNIQUE (league, league_player_id)
 );
 CREATE UNIQUE INDEX player_identities_player_id_uidx ON player_identities (player_id) WHERE player_id IS NOT NULL;
+
+-- the shared team map the matcher reads (its own migration; a fixture copy here)
+CREATE OR REPLACE FUNCTION public.league_team_abbr(p_league text)
+ RETURNS TABLE(team_name text, abbr text)
+ LANGUAGE sql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT t.team_name, t.abbreviation AS abbr
+    FROM public.teams_master t
+   WHERE t.league::text = upper(p_league)
+  UNION ALL
+  SELECT v.team_name, v.abbr
+    FROM (VALUES
+      ('nfl', 'Washington Football Team', 'WAS'), ('nfl', 'Washington Redskins', 'WAS'),
+      ('nfl', 'San Diego Chargers', 'LAC'),       ('nfl', 'St. Louis Rams', 'LAR'),
+      ('nfl', 'Oakland Raiders', 'LV'),           ('nfl', 'Los Angeles Raiders', 'LV'),
+      ('nfl', 'Houston Oilers', 'TEN'),           ('nfl', 'Tennessee Oilers', 'TEN'),
+      ('nfl', 'Phoenix Cardinals', 'ARI'),        ('nfl', 'St. Louis Cardinals', 'ARI'),
+      ('nfl', 'Baltimore Colts', 'IND'),
+      ('nba', 'New Jersey Nets', 'BKN'),          ('nba', 'Seattle SuperSonics', 'OKC'),
+      ('nba', 'Vancouver Grizzlies', 'MEM'),      ('nba', 'New Orleans Hornets', 'NOP'),
+      ('nba', 'Charlotte Bobcats', 'CHA')
+    ) v(league, team_name, abbr)
+   WHERE v.league = p_league
+$function$;
 
 -- >>> BEGIN verbatim match_player_identities (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.match_player_identities(p_league text)
@@ -96,26 +126,10 @@ BEGIN
 
   WITH team_abbr AS (
     -- an edition's team_name -> the abbreviation the league row carries
-    SELECT t.team_name, t.abbreviation AS abbr
-      FROM public.teams_master t
-     WHERE t.league::text = upper(p_league)
-    UNION ALL
-    SELECT v.team_name, v.abbr
-      FROM (VALUES
-        ('nfl', 'Washington Football Team', 'WAS'), ('nfl', 'Washington Redskins', 'WAS'),
-        ('nfl', 'San Diego Chargers', 'LAC'),       ('nfl', 'St. Louis Rams', 'LAR'),
-        ('nfl', 'Oakland Raiders', 'LV'),           ('nfl', 'Los Angeles Raiders', 'LV'),
-        ('nfl', 'Houston Oilers', 'TEN'),           ('nfl', 'Tennessee Oilers', 'TEN'),
-        ('nfl', 'Phoenix Cardinals', 'ARI'),        ('nfl', 'St. Louis Cardinals', 'ARI'),
-        ('nfl', 'Baltimore Colts', 'IND'),
-        ('nba', 'New Jersey Nets', 'BKN'),          ('nba', 'Seattle SuperSonics', 'OKC'),
-        ('nba', 'Vancouver Grizzlies', 'MEM'),      ('nba', 'New Orleans Hornets', 'NOP'),
-        ('nba', 'Charlotte Bobcats', 'CHA')
-      ) v(league, team_name, abbr)
-     WHERE v.league = p_league
+    SELECT t.team_name, t.abbr FROM public.league_team_abbr(p_league) t
   ),
   ids AS (
-    SELECT i.id AS identity_id, i.name_slug,
+    SELECT i.id AS identity_id, i.name_slug, i.base_slug,
            -- nflverse spells the Rams 'LA' and keeps historic codes on retired rows
            CASE i.latest_team WHEN 'LA' THEN 'LAR' WHEN 'STL' THEN 'LAR'
                               WHEN 'SD' THEN 'LAC' WHEN 'OAK' THEN 'LV'
@@ -131,7 +145,7 @@ BEGIN
      WHERE p.collection_id = v_coll
        AND NOT EXISTS (SELECT 1 FROM public.player_identities x WHERE x.player_id = p.id)
   ),
-  cand AS (
+  exact AS (
     SELECT ids.identity_id, fp.player_id, 'name'::text AS how,
            ids.abbr, ids.rookie_season, ids.last_season
       FROM ids
@@ -146,6 +160,22 @@ BEGIN
         ON a.collection_id = v_coll AND a.alias_slug = ids.name_slug
      WHERE NOT EXISTS (SELECT 1 FROM free_players fp WHERE fp.slug = ids.name_slug)
        AND NOT EXISTS (SELECT 1 FROM public.player_identities x WHERE x.player_id = a.player_id)
+  ),
+  cand AS (
+    SELECT * FROM exact
+    UNION ALL
+    -- 2026-09-25 (batch 46): the SUFFIX arm — "Deebo Samuel" ↔ "Deebo Samuel
+    -- Sr.", "Michael Pittman Jr." ↔ "Michael Pittman" — only for an identity
+    -- AND a player that no exact arm touched, so a suffix-less father never
+    -- competes with his own exact match for the son
+    SELECT ids.identity_id, fp.player_id, 'suffix'::text,
+           ids.abbr, ids.rookie_season, ids.last_season
+      FROM ids
+      JOIN free_players fp
+        ON regexp_replace(fp.slug, '-(jr|sr|ii|iii|iv|v)-?$', '') = ids.base_slug
+       AND fp.slug <> ids.name_slug
+     WHERE NOT EXISTS (SELECT 1 FROM exact x WHERE x.identity_id = ids.identity_id)
+       AND NOT EXISTS (SELECT 1 FROM exact x WHERE x.player_id = fp.player_id)
   ),
   ev AS (
     SELECT c.*,
@@ -167,7 +197,8 @@ BEGIN
            count(*)                            OVER (PARTITION BY ev.player_id)   AS n_ids,
            count(*)                            OVER (PARTITION BY ev.identity_id) AS n_players,
            count(*) FILTER (WHERE ev.team_hit)   OVER (PARTITION BY ev.player_id) AS n_team,
-           count(*) FILTER (WHERE ev.season_hit) OVER (PARTITION BY ev.player_id) AS n_season
+           count(*) FILTER (WHERE ev.season_hit) OVER (PARTITION BY ev.player_id) AS n_season,
+           count(*) FILTER (WHERE ev.team_hit AND ev.season_hit) OVER (PARTITION BY ev.player_id) AS n_team_season
       FROM ev
   ),
   pick AS (
@@ -176,6 +207,8 @@ BEGIN
              WHEN s.n_players <> 1 THEN NULL
              WHEN s.n_ids = 1 THEN s.how
              WHEN s.n_team = 1 AND s.team_hit THEN s.how || '+team'
+             -- two league rows on the same team (a 2006 and a 2021 "Cam Newton", both CAR): the seasons decide
+             WHEN s.n_team > 1 AND s.team_hit AND s.n_team_season = 1 AND s.season_hit THEN s.how || '+team+season'
              WHEN s.n_team = 0 AND s.n_season = 1 AND s.season_hit THEN s.how || '+season'
              ELSE NULL
            END AS matched_by
@@ -191,15 +224,15 @@ BEGIN
   SELECT COALESCE(jsonb_object_agg(z.matched_by, z.n), '{}'::jsonb) INTO v_by
     FROM (SELECT u.matched_by, count(*)::int AS n FROM upd u GROUP BY u.matched_by) z;
 
-  -- a player whose name matches a league row that is still free got NO link:
-  -- two league rows share the name and nothing in the editions breaks the tie
+  -- a player whose (base) name matches a league row that is still free got NO
+  -- link: league rows share the name and nothing in the editions breaks the tie
   SELECT count(*) INTO v_amb
     FROM public.players p
    WHERE p.collection_id = v_coll
      AND NOT EXISTS (SELECT 1 FROM public.player_identities x WHERE x.player_id = p.id)
      AND EXISTS (SELECT 1 FROM public.player_identities i
                   WHERE i.league = p_league AND i.player_id IS NULL
-                    AND i.name_slug = regexp_replace(lower(trim(extensions.unaccent(p.name))), '[^a-z0-9]+', '-', 'g'));
+                    AND i.base_slug = regexp_replace(regexp_replace(lower(trim(extensions.unaccent(p.name))), '[^a-z0-9]+', '-', 'g'), '-(jr|sr|ii|iii|iv|v)-?$', ''));
   SELECT count(*), count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM public.player_identities x WHERE x.player_id = p.id))
     INTO v_players, v_unm
     FROM public.players p WHERE p.collection_id = v_coll;
@@ -229,7 +262,10 @@ INSERT INTO players (id, external_id, collection_id, name) VALUES
   ('a0000000-0000-0000-0000-000000000004', 'ad-mike-williams',       'dee28451-5d62-409e-a1ad-a83f763ac070', 'Mike Williams'),
   ('a0000000-0000-0000-0000-000000000005', 'ad-chris-jones',         'dee28451-5d62-409e-a1ad-a83f763ac070', 'Chris Jones'),
   ('a0000000-0000-0000-0000-000000000006', 'ad-patrick-mahomes-ii',  'dee28451-5d62-409e-a1ad-a83f763ac070', 'Patrick Mahomes II'),
-  ('a0000000-0000-0000-0000-000000000007', 'ad-nobody',              'dee28451-5d62-409e-a1ad-a83f763ac070', 'Nobody Known');
+  ('a0000000-0000-0000-0000-000000000007', 'ad-nobody',              'dee28451-5d62-409e-a1ad-a83f763ac070', 'Nobody Known'),
+  ('a0000000-0000-0000-0000-000000000008', 'ad-cam-newton',          'dee28451-5d62-409e-a1ad-a83f763ac070', 'Cam Newton'),
+  ('a0000000-0000-0000-0000-000000000009', 'ad-deebo-samuel',        'dee28451-5d62-409e-a1ad-a83f763ac070', 'Deebo Samuel'),
+  ('a0000000-0000-0000-0000-000000000010', 'ad-michael-pittman-jr-', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'Michael Pittman Jr.');
 INSERT INTO player_name_aliases VALUES ('dee28451-5d62-409e-a1ad-a83f763ac070', 'patrick-mahomes', 'a0000000-0000-0000-0000-000000000006');
 
 -- editions: the evidence. Josh Allen carries Bills editions (team breaks the
@@ -241,7 +277,10 @@ INSERT INTO editions (player_id, team_name, game_date) VALUES
   ('a0000000-0000-0000-0000-000000000003', 'Buffalo Bills',       '2023-12-17'),
   ('a0000000-0000-0000-0000-000000000003', 'Jacksonville Jaguars','2022-10-02'),
   ('a0000000-0000-0000-0000-000000000004', NULL,                  '2022-11-13'),
-  ('a0000000-0000-0000-0000-000000000005', NULL,                  NULL);
+  ('a0000000-0000-0000-0000-000000000005', NULL,                  NULL),
+  ('a0000000-0000-0000-0000-000000000008', 'Carolina Panthers',   '2015-12-13'),
+  ('a0000000-0000-0000-0000-000000000009', 'San Francisco 49ers', '2021-10-03'),
+  ('a0000000-0000-0000-0000-000000000010', 'Indianapolis Colts',  '2023-11-12');
 
 -- league rows (nflverse shape)
 INSERT INTO player_identities (league, league_player_id, collection_id, name_slug, display_name, latest_team, rookie_season, last_season) VALUES
@@ -254,7 +293,15 @@ INSERT INTO player_identities (league, league_player_id, collection_id, name_slu
   ('nfl', '00-0033090', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'chris-jones',         'Chris Jones',         'KC',  2016, 2026),
   ('nfl', '00-0027889', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'chris-jones',         'Chris Jones',         'DAL', 2010, 2019),
   ('nfl', '00-0033873', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'patrick-mahomes',     'Patrick Mahomes',     'KC',  2017, 2026),
-  ('nfl', '00-0099999', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'someone-else',        'Someone Else',        'KC',  2020, 2026);
+  ('nfl', '00-0099999', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'someone-else',        'Someone Else',        'KC',  2020, 2026),
+  -- two Cam Newtons, BOTH Panthers: the team cannot split them, the seasons can
+  ('nfl', '00-0027939', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'cam-newton',          'Cam Newton',          'CAR', 2011, 2021),
+  ('nfl', '00-0024001', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'cam-newton',          'Cam Newton',          'CAR', 2006, 2006),
+  -- the league spells him with a suffix RPC lacks
+  ('nfl', '00-0035216', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'deebo-samuel-sr-',    'Deebo Samuel Sr.',    'SF',  2019, 2026),
+  -- RPC has the suffix, the league does not — and there are two of them
+  ('nfl', '00-0036252', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'michael-pittman',     'Michael Pittman',     'IND', 2020, 2026),
+  ('nfl', '00-0011111', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'michael-pittman',     'Michael Pittman',     'DEN', 1998, 2008);
 
 -- ── run ───────────────────────────────────────────────────────────────────────
 DO $$
@@ -290,21 +337,42 @@ BEGIN
                      'a0000000-0000-0000-0000-000000000006', 'Patrick Mahomes -> Patrick Mahomes II via alias');
   PERFORM _assert_eq((SELECT matched_by FROM player_identities WHERE league_player_id = '00-0033873'), 'alias', 'alias matched_by');
 
+  -- 5b. two league rows on ONE team: the seasons split them
+  PERFORM _assert_eq((SELECT player_id::text FROM player_identities WHERE league_player_id = '00-0027939'),
+                     'a0000000-0000-0000-0000-000000000008', 'Cam Newton -> the 2011-2021 Panther');
+  PERFORM _assert_eq((SELECT matched_by FROM player_identities WHERE league_player_id = '00-0027939'), 'name+team+season', 'team+season matched_by');
+  PERFORM _assert((SELECT player_id IS NULL FROM player_identities WHERE league_player_id = '00-0024001'), 'the 2006 Cam Newton stays unlinked');
+
+  -- 5c. the SUFFIX arm: the league's "Deebo Samuel Sr." is RPC's "Deebo Samuel"
+  PERFORM _assert_eq((SELECT player_id::text FROM player_identities WHERE league_player_id = '00-0035216'),
+                     'a0000000-0000-0000-0000-000000000009', 'Deebo Samuel Sr. -> Deebo Samuel');
+  PERFORM _assert_eq((SELECT matched_by FROM player_identities WHERE league_player_id = '00-0035216'), 'suffix', 'suffix matched_by');
+  -- ...and with two suffix-less league rows, the team decides
+  PERFORM _assert_eq((SELECT player_id::text FROM player_identities WHERE league_player_id = '00-0036252'),
+                     'a0000000-0000-0000-0000-000000000010', 'Michael Pittman (IND) -> Michael Pittman Jr.');
+  PERFORM _assert_eq((SELECT matched_by FROM player_identities WHERE league_player_id = '00-0036252'), 'suffix+team', 'suffix+team matched_by');
+  PERFORM _assert((SELECT player_id IS NULL FROM player_identities WHERE league_player_id = '00-0011111'), 'the Broncos Pittman stays unlinked');
+  -- ...and it NEVER fires where an exact arm did: the Harrisons are 'name', not 'suffix'
+  PERFORM _assert_eq((SELECT matched_by FROM player_identities WHERE league_player_id = '00-0007024'), 'name', 'Marvin Harrison stays an exact match');
+
   -- 6. the report
   PERFORM _assert_eq((r->'matched'->>'name'), '2', 'matched.name');
   PERFORM _assert_eq((r->'matched'->>'name+team'), '1', 'matched.name+team');
+  PERFORM _assert_eq((r->'matched'->>'name+team+season'), '1', 'matched.name+team+season');
   PERFORM _assert_eq((r->'matched'->>'name+season'), '1', 'matched.name+season');
   PERFORM _assert_eq((r->'matched'->>'alias'), '1', 'matched.alias');
-  PERFORM _assert_eq((r->>'players_total'), '7', 'players_total');
+  PERFORM _assert_eq((r->'matched'->>'suffix'), '1', 'matched.suffix');
+  PERFORM _assert_eq((r->'matched'->>'suffix+team'), '1', 'matched.suffix+team');
+  PERFORM _assert_eq((r->>'players_total'), '10', 'players_total');
   PERFORM _assert_eq((r->>'players_unmatched'), '2', 'players_unmatched: Chris Jones + Nobody Known');
-  PERFORM _assert_eq((r->>'identities_total'), '10', 'identities_total');
-  PERFORM _assert_eq((r->>'identities_unlinked'), '5', 'identities_unlinked: TB Allen, TB Williams, 2 Jones, Someone Else');
+  PERFORM _assert_eq((r->>'identities_total'), '15', 'identities_total');
+  PERFORM _assert_eq((r->>'identities_unlinked'), '7', 'identities_unlinked: TB Allen, TB Williams, 2 Jones, Someone Else, 2006 Newton, DEN Pittman');
 
   -- 7. a second pass changes nothing and reports the same debt (idempotent)
   r := match_player_identities('nfl');
   PERFORM _assert_eq((r->>'matched'), '{}', 'second pass matches nothing new');
   PERFORM _assert_eq((r->>'players_ambiguous'), '1', 'ambiguity is re-reported, not cleared');
-  PERFORM _assert_eq((SELECT count(*)::text FROM player_identities WHERE player_id IS NOT NULL), '5', 'five links, still');
+  PERFORM _assert_eq((SELECT count(*)::text FROM player_identities WHERE player_id IS NOT NULL), '8', 'eight links, still');
 
   -- 8. an unknown league is refused, not silently empty
   BEGIN
