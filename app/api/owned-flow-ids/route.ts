@@ -3,6 +3,7 @@ import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 import { getCollection } from "@/lib/collections"
 import { supabaseAdmin } from "@/lib/supabase"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 /** Where the `editions` list came from. "chain" is the live per-moment script;
  *  "cache" is the wallet's last synced snapshot (wallet_moments_cache), used
@@ -161,10 +162,15 @@ export async function cachedEditionKeys(
 ): Promise<{ keys: string[]; source: EditionsSource }> {
   if (!collectionId) return { keys: [], source: "none" }
   try {
-    const { data, error } = await supabaseAdmin.rpc("get_wallet_owned_edition_keys", {
-      p_wallet: wallet,
-      p_collection_id: collectionId,
-    })
+    // Bounded like every other read-only route: a hung snapshot read must not
+    // hold the sniper's first paint; a timeout is `source: "none"`, never [].
+    const { data, error } = await boundedRead(
+      supabaseAdmin.rpc("get_wallet_owned_edition_keys", {
+        p_wallet: wallet,
+        p_collection_id: collectionId,
+      }),
+      "api/owned-flow-ids/get_wallet_owned_edition_keys",
+    )
     if (error) {
       console.warn(`[owned-flow-ids] cache fallback failed for ${wallet}: ${error.message}`)
       return { keys: [], source: "none" }
