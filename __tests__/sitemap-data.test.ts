@@ -349,6 +349,38 @@ describe("segment 3 — set/player/team entities + top moments", () => {
     expect(teams).toEqual([`${BASE}/nba-top-shot/team/atlanta-hawks`, `${BASE}/nba-top-shot/team/dallas-wings`])
   })
 
+  it("lists a player whose edition label is a registered ALIAS under the canonical slug, never under the URL that 308s (2026-09-25, #139)", async () => {
+    // After the Curry and #139 merges 31 alias slugs exist (stephen-curry,
+    // patrick-mahomes-ii, jimmy-butler, …). The edition labels keep the source's
+    // spelling, so a label-derived sitemap advertised the redirecting URL.
+    h.t.editions = ok([
+      { id: "a1", external_id: "5:5", collection_id: TS_ID, updated_at: "2026-09-01T00:00:00.000Z", player_name: "Jimmy Butler", set_name: "Base Set", team_name: "Miami Heat" },
+      { id: "a2", external_id: "6:6", collection_id: TS_ID, updated_at: "2026-09-20T00:00:00.000Z", player_name: "Jimmy Butler III", set_name: "Base Set", team_name: "Golden State Warriors" },
+      { id: "a3", external_id: "7:7", collection_id: TS_ID, updated_at: null, player_name: "Gary Payton", set_name: "Base Set", team_name: "Seattle SuperSonics" },
+    ])
+    h.t.player_name_aliases = ok([
+      { collection_id: TS_ID, alias_slug: "jimmy-butler", players: { name: "Jimmy Butler III" } },
+    ])
+    const s = await buildSitemapSegment(3)
+    const players = s.filter((x) => x.url.includes("/player/"))
+    const urls = players.map((x) => x.url).sort()
+    expect(urls).not.toContain(`${BASE}/nba-top-shot/player/jimmy-butler`)
+    expect(urls).toEqual([`${BASE}/nba-top-shot/player/gary-payton`, `${BASE}/nba-top-shot/player/jimmy-butler-iii`])
+    // the folded entry keeps the newest lastModified of both labels
+    const butler = players.find((x) => x.url.endsWith("/jimmy-butler-iii"))!
+    expect((butler.lastModified as Date).toISOString()).toBe("2026-09-20T00:00:00.000Z")
+    delete h.t.player_name_aliases
+  })
+
+  it("a failed alias read fails the segment rather than listing redirecting URLs (2026-09-25)", async () => {
+    h.t.editions = ok([
+      { id: "a1", external_id: "5:5", collection_id: TS_ID, updated_at: null, player_name: "Jimmy Butler", set_name: "Base Set", team_name: "Miami Heat" },
+    ])
+    h.t.player_name_aliases = { data: null, error: { message: "canceling statement due to statement timeout" } }
+    await expect(buildSitemapSegment(3)).rejects.toThrow(/player_name_aliases read failed/)
+    delete h.t.player_name_aliases
+  })
+
   it("dedupes entity slugs keeping the most-recent lastModified", async () => {
     h.t.editions = ok([
       { id: "x1", external_id: "1:1", collection_id: TS_ID, updated_at: "2026-06-01T00:00:00.000Z", player_name: null, set_name: "Shared Set", team_name: null },

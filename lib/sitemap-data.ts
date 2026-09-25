@@ -371,6 +371,40 @@ interface SeriesRow {
   last_updated_at: string | null
 }
 
+/**
+ * 2026-09-25: player NAME aliases (public.player_name_aliases) → the canonical
+ * slug, so a player URL the sitemap derives from an EDITION LABEL ("Jimmy
+ * Butler", "Patrick Mahomes II", "Stephen Curry") is advertised as the page it
+ * 308s to, never as itself. 30 alias slugs exist after the #139 merge; a
+ * sitemap entry that redirects is crawl waste and a "page with redirect" row in
+ * Search Console. Keyed `${urlSlug}|${aliasSlug}` → canonical slug.
+ *
+ * ⚠ A failed read is NOT "there are no aliases": the segment throws, exactly
+ * as the edition and series reads do (R47) — a sitemap that silently lists
+ * redirecting URLs on a bad day is the partial-read class.
+ */
+async function getPlayerAliasMap(): Promise<Map<string, string>> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new SitemapReadIncomplete('player aliases: supabase env missing, so nothing could be read')
+  const sb: any = createClient(url, key)
+  // 31 rows on 2026-09-25 (Curry + #139); the 1,000 clamp is a real bound here.
+  const { data, error } = await sb
+    .from('player_name_aliases')
+    .select('collection_id, alias_slug, players(name)')
+    .limit(1000)
+  if (error) throw new SitemapReadIncomplete('player_name_aliases read failed: ' + error.message)
+  const out = new Map<string, string>()
+  for (const r of (data ?? []) as Array<{ collection_id: string | null; alias_slug: string | null; players: { name: string | null } | Array<{ name: string | null }> | null }>) {
+    const coll = r.collection_id ? getCollectionByUuid(r.collection_id) : null
+    const rel = Array.isArray(r.players) ? r.players[0] : r.players
+    const name = rel?.name
+    if (!coll || !r.alias_slug || !name) continue
+    out.set(`${coll.urlSlug}|${r.alias_slug}`, slugifyPlayerName(name))
+  }
+  return out
+}
+
 async function getCollectionSeries(): Promise<SeriesRow[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -590,6 +624,7 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
   // Derived from the full (fossil-filtered) edition rows, exactly as before.
   if (id === 3) {
     const editions = dropTsFossils(await getEditionRows())
+    const aliasMap = await getPlayerAliasMap()
 
     // /moment/<edition uuid> is NO LONGER LISTED (2026-09-06, Search Console).
     // Every one of those URLs canonicalises to /<collection>/edition/<slug>
@@ -621,7 +656,12 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
       // 57 of the 1,413 Top Shot player URLs in the sitemap 404'd; 44 were this.
       const isTeamMoment = !!e.player_name && !!e.team_name && e.player_name.trim() === e.team_name.trim()
       if (e.player_name && !isTeamMoment) {
-        const k = `${coll.urlSlug}|${slugifyPlayerName(e.player_name)}`
+        // 2026-09-25: an edition label that is a registered ALIAS of the player
+        // ("Patrick Mahomes II" → patrick-mahomes) is listed under the canonical
+        // slug, never under a URL that 308s.
+        const raw = `${coll.urlSlug}|${slugifyPlayerName(e.player_name)}`
+        const canonical = aliasMap.get(raw)
+        const k = canonical ? `${coll.urlSlug}|${canonical}` : raw
         const prev = playerMap.get(k)
         if (!prev || ts > prev) playerMap.set(k, ts)
       }
