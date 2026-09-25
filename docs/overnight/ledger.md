@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧪 CI now BUILDS and RENDERS the app, and lints its own workflows — two new `ci.yml` jobs, both proven against a planted defect · Claude Code cloud
+- **`build-render`**: `next build` (placeholder env only, Supabase → `127.0.0.1:9` so every read fails fast), then `scripts/qa/built-render-smoke.mjs` boots `next start` and requests one URL per page route, with `[collection]` expanded from the registry: 314 URLs / 125 routes. It fails on any 5xx, a `DYNAMIC_SERVER_USAGE` in the body or server log, or fewer than ⅓ of URLs rendering. Baseline: 227 × 200, 86 login-gated (NOT rendered — next gap), 0 × 5xx. ⭐ With the 09-20 `await connection()` re-planted, **`next build` exited 0** and the smoke went red on all 7 edition URLs, so the build alone would not have caught 09-20.
+- **`workflow-lint`**: actionlint 1.7.7 (sha256-pinned) + the runner's shellcheck at warning or above. Baseline 0 findings across 24 workflows. A planted `needs.chnages` typo → exit 1.
+- `npm run test:render-smoke`; `__tests__/built-render-smoke.test.ts` pins the URL derivation and the job wiring. Full detail: testing-and-ci.md (top section).
+**Revert:** `git log --grep='CI now builds and renders'` → `git revert <sha>`. CI-only; no prod or DB state.
+
 ### 2026-09-25 · 📝 SHIPPED — docs: swept the live DB and app-side upserts for writers that could undo the other 09-25 fills (after the seeder wiped the pack names). No damage measured; wallet-search `seedEditionsToSupabase` recorded as the one live risk · Claude Code (web)
 
 - Docs only (database.md, apis-and-cadence.md, sessions/2026-09.md). **Revert:** `git revert` this commit (find it by message).
