@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🧰 SHIPPED — Cowork skill bundles now carry `references/*`: the packer wrote `SKILL.md` alone, so re-saving `rpc-surface-qa` would have removed the two reference files its instructions open · Cowork (cloud + laptop VM)
+
+`scripts/pack-cowork-skill.mjs` zipped exactly one entry (and the `zip -j` fallback junked paths, so it could never carry a directory). `rpc-surface-qa/SKILL.md` sends the reader to `references/surface-checklist.md` and `references/browser-qa-and-known-issues.md`; the installed copy has them, the repo bundle did not. The 8 bundles Trevor re-saved at 8:48 PM PT included that one — the installed references survived that save, but the repo artifact was still wrong.
+- `scripts/lib/zip-one-file.mjs` is now a multi-entry deterministic writer (`zipFiles`), `zipOneFile()` kept byte-identical (asserted). The packer includes `references/*` sorted; the `zip` binary path is removed. `check-cowork-skill-bundles.mjs` reds on a missing or drifted reference. Test arms: missing → red, drifted → red, matching (CRLF) → green, packer lists `SKILL.md, references/a.md, references/b.md`; 13/13; `unzip -t` and Python `zipfile.testzip()` both clean on the repacked bundle.
+- `rpc-surface-qa.skill` repacked with 3 entries. **Owed (Trevor):** re-save that one bundle so the installed `surface-checklist.md` picks up tonight's two corrections (the installed copy is the pre-correction text).
+- **Revert:** `git revert <this commit>` and repack `rpc-surface-qa` with the previous packer.
+
 ### 2026-09-24 · 💲 Panini FMV 1.1.0 backfill — all 5,093 editions re-priced at ship time (777 HIGH / 926 MEDIUM / 2,680 LOW / 710 ASK_ONLY) · Cowork (cloud + laptop VM)
 
 Migration `20260925040146`, applied 9:01 PM PT after the Vercel production deploy of `fc245d2` succeeded. It inserts one panini-1.1.0 snapshot per edition, using the same rules as `toFmvRowV11`, so the squeeze board is never mixed-engine during the ~3-day walk rotation.

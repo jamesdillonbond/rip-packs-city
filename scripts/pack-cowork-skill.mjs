@@ -9,13 +9,11 @@
 // Usage: node scripts/pack-cowork-skill.mjs <name> [<name>...]
 //        node scripts/pack-cowork-skill.mjs --all
 
-import { readdirSync, existsSync, statSync, unlinkSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, existsSync, statSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
-import { zipOneFile } from "./lib/zip-one-file.mjs";
+import { zipFiles } from "./lib/zip-one-file.mjs";
 
 const SKILLS_DIR = "docs/cowork-skills";
-const FIXED_MTIME = "202608240000.00"; // touch -t format; see determinism note
 
 let names = process.argv.slice(2);
 if (names.includes("--all")) {
@@ -45,15 +43,6 @@ if (!names.length) {
 // costs one spawn and converts silent repo corruption into a clear message.
 // ⚠ Keys on ENOENT (the binary is genuinely absent), NOT on a non-zero exit —
 // a version flag this build does not accept must not be reported as "missing".
-function havePATH(bin) {
-  try {
-    execFileSync(bin, ["-v"], { stdio: "ignore" });
-    return true;
-  } catch (err) {
-    return err?.code !== "ENOENT"; // present, just unhappy with `-v`
-  }
-}
-const USE_NATIVE = !(havePATH("zip") && havePATH("touch"));
 
 // ── The native writer, added 2026-09-18 ─────────────────────────────────────
 //
@@ -81,6 +70,24 @@ const USE_NATIVE = !(havePATH("zip") && havePATH("touch"));
 // correctness one — check-cowork-skill-bundles.mjs compares NORMALIZED TEXT and
 // never bytes, for exactly this reason. Re-pack only what you changed.
 
+// ⭐ 2026-09-24: the bundle carries `references/*` beside SKILL.md. rpc-surface-qa's
+// SKILL.md tells the reader to open references/surface-checklist.md; the installed copy
+// has that file, the repo bundle did not, so re-saving the bundle would have removed it.
+// The `zip -j` path junked directory names and could never carry it, so the pure-Node
+// writer is now the only path (it was already the one every arm of the guard tests).
+function bundleEntries(name) {
+  const dir = join(SKILLS_DIR, name);
+  const entries = [{ name: "SKILL.md", content: readFileSync(join(dir, "SKILL.md")) }];
+  const refs = join(dir, "references");
+  if (existsSync(refs) && statSync(refs).isDirectory()) {
+    for (const f of readdirSync(refs).sort()) {
+      const p = join(refs, f);
+      if (statSync(p).isFile()) entries.push({ name: `references/${f}`, content: readFileSync(p) });
+    }
+  }
+  return entries;
+}
+
 for (const name of names) {
   const src = join(SKILLS_DIR, name, "SKILL.md");
   if (!existsSync(src)) {
@@ -88,16 +95,8 @@ for (const name of names) {
     process.exit(1);
   }
   const out = join(SKILLS_DIR, `${name}.skill`);
-  if (USE_NATIVE) {
-    // Build first, write once — the bundle can never go missing on failure.
-    writeFileSync(out, zipOneFile("SKILL.md", readFileSync(src)));
-    console.log(`packed ${out} (native)`);
-  } else {
-    if (existsSync(out)) unlinkSync(out);
-    execFileSync("touch", ["-t", FIXED_MTIME, src]);
-    // -j junks the path so the entry is a bare SKILL.md, matching the existing
-    // bundles (verified 2026-08-24: every .skill holds exactly one SKILL.md).
-    execFileSync("zip", ["-jqX", out, src]);
-    console.log(`packed ${out}`);
-  }
+  const entries = bundleEntries(name);
+  // Build first, write once — the bundle can never go missing on failure.
+  writeFileSync(out, zipFiles(entries));
+  console.log(`packed ${out} (${entries.length} entr${entries.length === 1 ? "y" : "ies"})`);
 }

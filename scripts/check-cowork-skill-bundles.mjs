@@ -110,6 +110,29 @@ for (const name of dirs) {
   if (normalize(readFileSync(md, "utf8")) !== normalize(packed)) {
     violations.push({ name, why: "bundle content differs from SKILL.md — re-pack it" });
   }
+  // 2026-09-24: a skill's references/ must travel with it. rpc-surface-qa's SKILL.md
+  // points the reader at references/surface-checklist.md; a bundle without that file
+  // installs a skill whose instructions name a file that is not there.
+  const refsDir = join(SKILLS_DIR, name, "references");
+  if (existsSync(refsDir) && statSync(refsDir).isDirectory()) {
+    for (const f of readdirSync(refsDir).sort()) {
+      if (!statSync(join(refsDir, f)).isFile()) continue;
+      let packedRef;
+      try {
+        packedRef = execFileSync("unzip", ["-p", bundle, `references/${f}`], {
+          encoding: "utf8",
+          maxBuffer: 8 * 1024 * 1024,
+          stdio: ["ignore", "pipe", "ignore"],
+        });
+      } catch {
+        violations.push({ name, why: `bundle lacks references/${f} — re-pack it` });
+        continue;
+      }
+      if (normalize(readFileSync(join(refsDir, f), "utf8")) !== normalize(packedRef)) {
+        violations.push({ name, why: `bundle's references/${f} differs from the source — re-pack it` });
+      }
+    }
+  }
 }
 
 // ⚠ ASSERT THE COUNT IT INSPECTED. A guard that silently gates an empty set

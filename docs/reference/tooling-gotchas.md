@@ -2011,3 +2011,19 @@ git -c credential.helper= -c credential.helper="store --file=$M/.rpc-git-cred" p
 - ⚠ **Disk:** `/sessions` had ~1.6 GB free. `npm ci` died on `ENOSPC`, so run the node/awk guards directly (`find-*-ledger-headings`, `check-cowork-skill-bundles.mjs`, `fix-inbox-index-counts.mjs --check`) plus a port of the link-resolve test. After one ENOSPC brush a clone returned `fatal: .git/index: index file smaller than expected`: re-clone, don't repair.
 - ⚠ **Never `du` or `grep -r` across `$HOME`** — `$HOME/mnt` is the Windows mount and the walk hangs past the 120 s tool cap.
 - ⛔ Scheduled-task prompts live under `C:\Users\TDill\Claude\Scheduled\<id>\SKILL.md`. File tools can READ them but Edit is refused (read-only in session), and Grep/bash cannot reach the folder. Change a prompt only with `update_scheduled_task`, sending the FULL prompt.
+
+## ✅ 2026-09-24 — a CLOUD Cowork session (Anthropic container + laptop link) has Postgres 16, 30 GB of disk and a full `npm ci` in 35 s — run the whole guard stack there before pushing
+
+The cloud container (not the local sandbox above) ships `postgresql-16` at `/usr/lib/postgresql/16/bin`, `node` 22 and ~30 GB free. Measured 2026-09-24 evening: `npm ci` 35 s, `npx tsc --noEmit` 80 s, the DB-invariant suite 195/195 in 14 s, `check-migration-sql-parses.sh` over 1,290 files. The root user cannot start Postgres, so run it as `claude` in its home:
+
+```bash
+mkdir -p /home/claude/pgdata && chown claude:claude /home/claude/pgdata
+su claude -s /bin/bash -c '/usr/lib/postgresql/16/bin/initdb -D /home/claude/pgdata -U postgres --auth=trust >/dev/null 2>&1; \
+  /usr/lib/postgresql/16/bin/pg_ctl -D /home/claude/pgdata -o "-p 5433 -c listen_addresses=127.0.0.1 -c unix_socket_directories=/tmp" -l /home/claude/pg.log start'
+export DATABASE_URL=postgresql://postgres@127.0.0.1:5433/postgres PGTZ=UTC
+bash scripts/run-db-tests.sh; bash scripts/check-migration-sql-parses.sh
+```
+
+- ⭐ It is also a **race reproducer**: two `psql` sessions launched with `&` inside ONE bash call (background jobs die at call end, so `wait` in the same call) reproduced the `moments_nft_id_key` 23505 on `replace_topshot_moments_batch` and proved the advisory-lock fix before it was applied (ledger 2026-09-24 evening).
+- Pushing from the cloud container itself is still refused (git proxy: "not in this session's authorized repository set"). The route that worked: commit in the cloud clone → `git format-patch origin/main` → `SendUserFile` → `device_commit_files` into the repo root on the laptop as `cowork-YYYYMMDD-NNNN.patch` (`*.patch` is gitignored) → `device_bash`: fresh `$HOME/rpcwork` clone, `git am -3`, push with the mount's `.rpc-git-cred` store helper, compare `ls-remote` to `HEAD`. Three pushes in ~40 min; when `am` fails on the ledger, rebase in the cloud clone and re-splice at the first `^### ` (recipe above).
+- ⚠ **`scripts/pack-cowork-skill.mjs` now carries `references/*` inside the bundle** (it packed `SKILL.md` alone until 2026-09-24, so re-saving `rpc-surface-qa`'s bundle would have dropped the two reference files its SKILL.md tells the reader to open). The guard reds on a missing or drifted reference. The `zip` binary path is gone; `scripts/lib/zip-one-file.mjs` is a multi-entry writer with `zipOneFile()` kept byte-identical.

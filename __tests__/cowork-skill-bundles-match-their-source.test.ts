@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { zipOneFile } from "../scripts/lib/zip-one-file.mjs"
+import { zipOneFile, zipFiles } from "../scripts/lib/zip-one-file.mjs"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync } from "node:fs"
 import { createHash } from "node:crypto"
@@ -145,6 +145,69 @@ describe("Cowork skill bundles match the SKILL.md they were packed from", () => 
     })
     expect(run(dir).code).toBe(0)
     rmSync(dir, { recursive: true, force: true })
+  })
+
+  // 2026-09-24: references/ travel with the skill. rpc-surface-qa's SKILL.md sends the
+  // reader to references/surface-checklist.md; its installed copy had the file, the repo
+  // bundle did not, so re-saving the bundle would have removed it. Three arms: missing,
+  // drifted, and the matching control.
+  function writeSkillWithRef(skills: string, name: string, refSource: string, refPacked: string | null) {
+    mkdirSync(path.join(skills, name, "references"), { recursive: true })
+    writeFileSync(path.join(skills, name, "SKILL.md"), BODY)
+    writeFileSync(path.join(skills, name, "references/checklist.md"), refSource)
+    const entries = [{ name: "SKILL.md", content: BODY }]
+    if (refPacked !== null) entries.push({ name: "references/checklist.md", content: refPacked })
+    writeFileSync(path.join(skills, `${name}.skill`), zipFiles(entries))
+  }
+
+  it("REDS when a skill's references/ file is missing from its bundle", () => {
+    const dir = fixture((skills) => {
+      for (const n of ["a", "b", "c", "d", "e"]) writeSkill(skills, n, BODY, BODY)
+      writeSkillWithRef(skills, "g", "# checklist\n", null)
+    })
+    const { code, out } = run(dir)
+    expect(out).toMatch(/\bg\b — bundle lacks references\/checklist\.md/)
+    expect(code).toBe(1)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it("REDS when a bundled references/ file drifts from its source", () => {
+    const dir = fixture((skills) => {
+      for (const n of ["a", "b", "c", "d", "e"]) writeSkill(skills, n, BODY, BODY)
+      writeSkillWithRef(skills, "g", "# checklist\n- current\n", "# checklist\n- RETIRED\n")
+    })
+    const { code, out } = run(dir)
+    expect(out).toMatch(/\bg\b — bundle's references\/checklist\.md differs/)
+    expect(code).toBe(1)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it("passes when the bundle carries the same references/ file — the two arms above are not vacuous", () => {
+    const dir = fixture((skills) => {
+      for (const n of ["a", "b", "c", "d", "e"]) writeSkill(skills, n, BODY, BODY)
+      writeSkillWithRef(skills, "g", "# checklist\n", "# checklist\r\n\n")
+    })
+    expect(run(dir).code).toBe(0)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it("the packer carries references/ and a single-entry archive is byte-identical to the old writer", () => {
+    expect(zipOneFile("SKILL.md", BODY).equals(zipFiles([{ name: "SKILL.md", content: BODY }]))).toBe(true)
+    const root = mkdtempSync(path.join(tmpdir(), "cowork-skill-refs-"))
+    const skills = path.join(root, "docs/cowork-skills")
+    mkdirSync(path.join(skills, "refs-fixture/references"), { recursive: true })
+    writeFileSync(path.join(skills, "refs-fixture/SKILL.md"), BODY)
+    writeFileSync(path.join(skills, "refs-fixture/references/b.md"), "b\n")
+    writeFileSync(path.join(skills, "refs-fixture/references/a.md"), "a\n")
+    execFileSync("node", [path.join(process.cwd(), "scripts/pack-cowork-skill.mjs"), "refs-fixture"], {
+      cwd: root,
+      stdio: "ignore",
+    })
+    const bundle = path.join(skills, "refs-fixture.skill")
+    const listing = execFileSync("unzip", ["-Z1", bundle], { encoding: "utf8" }).trim().split("\n")
+    expect(listing).toEqual(["SKILL.md", "references/a.md", "references/b.md"])
+    expect(execFileSync("unzip", ["-p", bundle, "references/b.md"], { encoding: "utf8" })).toBe("b\n")
+    rmSync(root, { recursive: true, force: true })
   })
 
   it("FAILS rather than passing when it would inspect nothing", () => {
