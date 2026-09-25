@@ -26,4 +26,6 @@ Archived to `docs/sessions/` (newest-first within each file):
 - `docs/sessions/2026-05.md` — May 31 → May 2 (entity pages, ops/QA pass, FMV recovery, V1 Dapper indexer, multi-collection enrichment).
 - `docs/sessions/2026-04.md` — April 26 / 21 / 10.
 
+**Rolling archives (biweekly `rpc-context-hygiene`, recipe in the task prompt and [ledger-discipline.md](ledger-discipline.md)):** `docs/overnight/ledger-archive-2026-H2.md` (ledger entries older than ~14 days) · `docs/overnight/focus-archive-2026-H2.md` (dated `## STEER` blocks older than ~7 days; created 2026-09-24; focus.md keeps its header, recent steers and every undated persistent section) · `docs/archive/handoffs/` (dated handoffs older than ~7 days, moved **only** if no non-frozen tracked file names them, computed to a fixed point, because `live-docs-md-links-resolve` reds on any dangling live link).
+
 **Doc archive layout:** shipped dated handoffs/audits live under `docs/archive/handoffs/` + `docs/archive/audits/`; weekly health snapshots (`PROJECT_HEALTH_*.md`) under `docs/health/`. Links inside `docs/archive/**`, `docs/health/**`, `docs/sessions/**` are frozen history — don't rewrite them.

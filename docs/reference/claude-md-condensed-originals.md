@@ -647,3 +647,11 @@ The Vercel section gained *"A GREEN SUITE IS NOT A DEPLOY GATE FOR SEGMENT SEMAN
 > ⛔ **And a stale JUSTIFICATION can be INVERTED, not merely out of date — the thing it named may now be the WEAKEST member of the set it excluded** (Top Shot, 95.2%, was gated in as the ONLY collection with buyer coverage). **The tell is a reason citing a SHIP DATE, not a re-runnable probe.**
 
 ⚠ **The `get_deployment.state` LAG bullet was AMENDED, not condensed** — "aliases attached" was dropped from its corroboration list because 2026-09-20 proved it can be absent while the domain serves that very build, and the rollback case was added in its place.
+
+## Pushing from a sandbox — pushurl line (condensed 2026-09-24)
+
+Original CLAUDE.md text, replaced by a shorter pointer that also names the working route:
+
+> ⚠ **The DESKTOP `remote.origin.pushurl` harvest is DEAD and fails QUIETLY.**
+
+The replacement names the mount's `.rpc-git-cred` store helper, proven 2026-09-24 from Cowork's local sandbox too; recipe in [tooling-gotchas.md](tooling-gotchas.md) (end of file).

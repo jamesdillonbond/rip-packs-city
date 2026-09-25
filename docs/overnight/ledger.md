@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 📚 DOCS — session close-out: the local-sandbox push route, the ledger-roll recipe, archive conventions, the scheduled-task inventory; CLAUDE.md pointer net-neutral · Cowork
+
+- `tooling-gotchas.md` (end): **Cowork's local sandbox pushes directly** with the mount's `.rpc-git-cred` (seven pushes today). Also recorded: the dry-run-proves-nothing caveat, the non-fast-forward re-apply loop, CI check-runs from the sandbox, ENOSPC / never-`du`-`$HOME`, and that scheduled-task prompts change only via `update_scheduled_task`.
+- `ledger-discipline.md` (end): the roll recipe, including the mandatory `[ledger-roll]` tag, and **"a roll can move DAMAGE and change a guard's expected value; grep for the old count everywhere."**
+- `session-and-archive-conventions.md`: the three rolling archives (ledger-archive, the new focus-archive, handoffs by the fixed-point rule).
+- `autonomous-tasks.md` (end): the task inventory; the nightly pass fires from the claude.ai cloud trigger that Cowork cannot edit; installed-skill drift and how to check its direction.
+- CLAUDE.md: the pushurl line now names the working route (39,982 → 39,989 chars, under 40,000). The original is verbatim in `claude-md-condensed-originals.md`. Session log: `docs/sessions/2026-09.md`.
+- Guards: memory-doc links 255/255, retired-rules 6/6 absent, skill bundles 11/11, live-link port 0 broken.
+- **Revert:** `git revert <this commit>`.
+
 ### 2026-09-24 · 🔒 SHIPPED — `replace_topshot_moments_batch` serializes its writers: the `moments_nft_id_key` failures on `topshot-moments-hydrate-wmc` (1/216 on 09-24, 3/68 on 09-20) were two lanes resolving one nft to different (edition, serial) rows at the same moment · Cowork (cloud + laptop VM)
 
 The failed tick always succeeded on its next run over the SAME page (the cursor does not advance on a failure), so this was a race, not data. This RPC is the write chokepoint for every moments writer (CF `topshot-moments-hydrator`, `hydrate_topshot_moments_from_wmc`, the pg_net chain hydrator, the Atlas lane). Two of them can resolve the same nft to DIFFERENT `(edition_id, serial_number)` rows concurrently; each caller's DELETE cannot see the other's uncommitted insert and the INSERT's arbiter is `(edition_id, serial_number)`, so the second row lands on the nft_id unique index and raises 23505. Identical rows were already safe (the 05-17 rewrite + `scripts/smoke-replace-topshot-moments-batch-concurrency.mjs`).

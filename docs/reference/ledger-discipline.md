@@ -298,3 +298,10 @@ count held at 1919 across both in-place corrections.)
 *a recorded fact has a shelf life, and the entry most likely to be stale is the one nobody
 re-reads because they wrote it.*** The measurement discipline in CLAUDE.md says re-derive a
 number rather than quote it. A `Shipped:` line is a number of that kind.
+
+## Rolling the ledger (biweekly `rpc-context-hygiene`; first run under this recipe 2026-09-24)
+
+- **Block:** from the first line-start `### ` heading dated more than ~14 days ago (PT) up to the line before `## Declined — do not re-suggest`. First confirm no heading inside the block is newer. Append the block verbatim to `docs/overnight/ledger-archive-2026-H2.md` under a `⏬ Rolled <date>` note, keeping the live ledger's newest-first order inside the block. Update the header pointer line.
+- 🚨 **The commit message MUST carry `[ledger-roll]`.** Otherwise the no-clobber guard reads the removed headings as the concurrent-session clobber and reds `main`.
+- **Verify:** archive = old archive + exact block; new length = old − block; the legacy `## Declined` / `## Shipped (autonomous…)` / `## Queued — ARCHIVE` headers survive; future-dated = 0.
+- ⚠ **Rolling can move DAMAGE out of the live file, which changes a guard's expected value.** The 09-24 roll carried the three 2026-08-11 swallowed headings into the archive, so `find-swallowed-ledger-headings.awk` went **3 → 0**. Every instruction hard-coding 3 then had to change: CLAUDE.md, `tooling-gotchas.md`'s VM push loop (`= 3 ] || exit 4` would have aborted every push), `resolve-ledger-rebase-conflict.mjs`'s hint, the `rpc-audit-drain` skill, and two scheduled-task prompts. **After a roll, grep for the old count across repo, skills and task prompts.**

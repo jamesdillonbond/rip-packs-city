@@ -1972,3 +1972,22 @@ Other writes of the same shape went through, such as the #56 alert-function migr
 ⚠ **An `apply_migration` that succeeds and a push that is then refused leaves prod AHEAD of the repo, and migration-parity goes red.** Push the migration file in the same breath as the apply. If the push is refused, queue a standalone task that recovers the file from `supabase_migrations.schema_migrations` (the parity script's own recipe) rather than trying to route around the refusal. (On 09-24 a later push, bundled with docs, landed, and the queued task was withdrawn.)
 
 ⛔ **A ledger `###` HEADING IS IMMUTABLE once pushed. Correct it in the entry's BODY.** The no-clobber guard compares the heading set of HEAD~1 and HEAD, so renaming a heading reads as a DELETED entry and reds CI, even when nothing was lost (909 → 909 on 09-24, `16671ef7e`). ⚠ **Do not "fix" such a red by renaming it back:** the new name is now in HEAD~1, so the revert is a second rename. Push any commit that leaves every heading unchanged and the tip goes green.
+
+## ✅ 2026-09-24 — Cowork's LOCAL sandbox (`mcp__workspace__bash`) pushes directly, with no VM and no patch queue
+
+A Cowork session on Trevor's laptop gets a Linux sandbox with the repo mounted at `/sessions/<session>/mnt/rip-packs-city/`. That mount carries `.rpc-git-cred`, so the store helper works **from the sandbox itself**. No `device_bash`, no `format-patch`, no `cowork-push` queue. Proven 2026-09-24 with seven pushes (`01475809`, `5fb9296d`, `3eca5b57`, `83571899`, `9d2c5c99` and others), CI green each time.
+
+```bash
+M=/sessions/<session>/mnt/rip-packs-city
+git clone -q --filter=blob:none https://github.com/jamesdillonbond/rip-packs-city $HOME/r   # never /tmp, never the mount's .git
+cd $HOME/r && … commit with -c user.name=Claude -c user.email=noreply@anthropic.com …
+git -c credential.helper= -c credential.helper="store --file=$M/.rpc-git-cred" push origin HEAD:refs/heads/main 2>&1 | sed -E 's#//[^@ ]*@#//***@#g'
+[ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$(git rev-parse HEAD)" ] && echo PUSHED
+```
+
+- ⛔ **A `--dry-run` with nothing to push proves NOTHING on this public repo** (`Everything up-to-date` without authenticating). The proof is a real push plus `ls-remote == HEAD`.
+- ⚠ **`non-fast-forward` means origin moved, not a denied push.** Re-apply onto a fresh `origin/main` in a loop: `reset --hard origin/main`, re-run the scripted edit, re-splice the ledger at the first `^### `, check the guards, push. Never hand-merge the ledger.
+- **CI from the sandbox:** read the token from `.rpc-git-cred` with `sed` into a variable, never echo it, then `curl -H "Authorization: Bearer $TOK" https://api.github.com/repos/jamesdillonbond/rip-packs-city/commits/<sha>/check-runs`.
+- ⚠ **Disk:** `/sessions` had ~1.6 GB free. `npm ci` died on `ENOSPC`, so run the node/awk guards directly (`find-*-ledger-headings`, `check-cowork-skill-bundles.mjs`, `fix-inbox-index-counts.mjs --check`) plus a port of the link-resolve test. After one ENOSPC brush a clone returned `fatal: .git/index: index file smaller than expected`: re-clone, don't repair.
+- ⚠ **Never `du` or `grep -r` across `$HOME`** — `$HOME/mnt` is the Windows mount and the walk hangs past the 120 s tool cap.
+- ⛔ Scheduled-task prompts live under `C:\Users\TDill\Claude\Scheduled\<id>\SKILL.md`. File tools can READ them but Edit is refused (read-only in session), and Grep/bash cannot reach the folder. Change a prompt only with `update_scheduled_task`, sending the FULL prompt.
