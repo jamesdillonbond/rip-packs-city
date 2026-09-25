@@ -11,6 +11,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — `/nfl-all-day/analytics` drew "Volume by Series" with Top Shot's names ("Series 2024-25", "Summer 2021", two "Unknown") for All Day's own series; three All Day pack images sat on the GCS console host the CSP refuses · Cowork (cloud + laptop VM)
+
+- **The analytics series charts decoded EVERY collection's series number through the Top Shot map** (`lib/series-label.ts#seriesLabel`) — CLAUDE.md's "0↔1 is Top-Shot-specific" footgun drawn as a chart: All Day's series 7 read "Series 2024-25", 3 read "Summer 2021", 1 and 9 read "Unknown", on both the bar chart and the daily stack (and the per-player table). `analyticsSeriesLabel(n, collectionSlug)`: Top Shot keeps the map, every other collection is "Series N", an absent series is "Unknown"; `buildSeriesVolumeBars` / `pivotDailySeries` take the collection (omitted = old behaviour, pinned). 5 tests. Found by the desktop sweep (30 client-rendered pages read after JS, honesty counters), which flagged `unknown: 3` on that page.
+- **Three All Day pack distributions carried `image_url` on `storage.cloud.google.com`** (the GCS console host — a 302 to a sign-in) which `img-src` rightly refuses, so `/nfl-all-day/packs` logged "Refused to load the image" and drew no art for them. Rewritten to `storage.googleapis.com` (200 image/png; 384 rows already use it). Migration `20260925081819`.
+- Read and left alone: "$0.00 reality-adjusted" on Sacramento Kings Pack February is the calibration model itself (19 opens, realized mean $0.11, winsorized at a $0 p90 → $0.00; documented in the pack-reality methodology), not a fabricated zero.
+- Guards: `tsc` clean, `lint:ratchet` at baseline (709), migration parse 1,317 / 0; series-label, analytics-shape, analytics-pivot and CollectionAnalyticsClient suites 135/135.
+**Revert:** code — `git revert` this pair of commits; DB — the reverse replace on the three rows.
+
 ### 2026-09-25 · 🧹 SHIPPED — the public profile's saved-wallet card captions its cached FMV with its age ("· as of 6h ago"), so the two figures on one page are both dated · Cowork (cloud + laptop VM)
 
 - `/profile/<user>` printed `saved_wallets.cached_fmv_usd` (refreshed ~6-hourly) on each saved-wallet card beside a LIVE collection breakdown — Pinnacle $890.19 and $889.13 on one page with nothing to say why. The public-profile payload now carries `cache_updated_at`; the card renders "N MOMENTS · as of Nh ago" above the dashboard's own 2 h threshold, the clock read gated on mount (the hydration-safe guard's Rule C caught the first draft's render-time `Date.now()` — marker + effect). 2 tests. Closes #137 (e).
