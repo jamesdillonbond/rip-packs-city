@@ -81,6 +81,9 @@ SELECT DISTINCT e.collection_id FROM public.editions e WHERE e.series IS NOT NUL
 ON CONFLICT (collection_id) DO NOTHING;
 
 -- anon-exec: intentional — backfill_wmc_series_batch is a pg_cron/service_role writer; REVOKEd from PUBLIC, anon and authenticated below.
+-- when-others-timeout-blind: intentional — HISTORY, superseded: this body's handler was blind to a
+-- 57014 kill (the DB instrument caught it an hour later); 20260925063955 splices the live body to
+-- WHEN query_canceled OR OTHERS. The file is kept as applied; the comment is the only edit.
 CREATE OR REPLACE FUNCTION public.backfill_wmc_series_batch(p_editions int DEFAULT 300)
 RETURNS int
 LANGUAGE plpgsql

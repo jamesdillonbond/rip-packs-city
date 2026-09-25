@@ -126,6 +126,16 @@ function blindRegions(body: string): string[] {
   const sql = stripSqlComments(body)
   const parts = sql.split(/\bEXCEPTION\b/i).slice(1)
   const bad: string[] = []
+  // ⚠ SECOND SHAPE, found by the DB instrument and not by this guard (2026-09-24):
+  // the handler itself only CAPTURES the failure — `v_ok := false; v_err := SQLERRM`
+  // — and the `log_pipeline_run` that records it sits AFTER the block's `END;`.
+  // Scoped to the handler, that region carries no RECORDING keyword, so the guard
+  // was structurally silent about `backfill_wmc_series_batch` (20260925062451),
+  // which `check_when_others_timeout_blind()` caught an hour after it shipped.
+  // A handler that stores SQLERRM inside a function that logs pipeline runs is a
+  // recording handler in two halves; treat it as one. Loop-local JSON guards
+  // (`v_body := NULL`) store no SQLERRM and stay out of scope.
+  const functionRecords = /log_pipeline_run/i.test(sql)
   for (const region of parts) {
     // ⚠ BOUND THE REGION AT ITS BLOCK TERMINATOR BEFORE ASKING WHETHER IT RECORDS.
     // 🚨 THIS GUARD CRIED WOLF ON VALID SQL ON THE DAY IT SHIPPED (2026-09-20), and
@@ -145,7 +155,8 @@ function blindRegions(body: string): string[] {
     // / `END CASE;`, which legitimately appear inside a handler body.
     const term = /\bEND\s*;/i.exec(region)
     const scoped = term ? region.slice(0, term.index) : region
-    if (!RECORDING.some((r) => r.test(scoped))) continue
+    const recordsInTwoHalves = functionRecords && /\bSQLERRM\b/i.test(scoped)
+    if (!recordsInTwoHalves && !RECORDING.some((r) => r.test(scoped))) continue
     const clauses = [...scoped.matchAll(/\bWHEN\b([\s\S]{0,200}?)\bTHEN\b/gi)].map((c) => c[1])
     if (clauses.length === 0) continue
     const namesCancel = clauses.some((c) => /query_canceled/i.test(c))
@@ -235,6 +246,31 @@ END;`
   it("is CLEAN once the handler names query_canceled", () => {
     const fixed = BLIND.replace("WHEN OTHERS THEN", "WHEN query_canceled OR OTHERS THEN")
     const [b] = plpgsqlBodies(wrap(fixed))
+    expect(blindRegions(b.body)).toEqual([])
+  })
+
+  // The 2026-09-24 shape: the handler stores SQLERRM and the log call sits after
+  // the block. Planted defect — before the two-halves rule this returned [].
+  const TWO_HALVES = `
+DECLARE v_ok boolean := true; v_err text;
+BEGIN
+  BEGIN
+    UPDATE public.t SET x = 1;
+  EXCEPTION WHEN OTHERS THEN
+    v_ok := false;
+    v_err := SQLERRM;
+  END;
+  PERFORM public.log_pipeline_run('probe', now(), 0, 0, 0, v_ok, v_err);
+END;`
+
+  it("FIRES on a handler that captures SQLERRM for a log_pipeline_run after its block", () => {
+    const [b] = plpgsqlBodies(wrap(TWO_HALVES))
+    expect(blindRegions(b.body)).toHaveLength(1)
+  })
+
+  it("stays CLEAN on a loop-local guard that stores NULL, even inside a logging function", () => {
+    const loopGuard = TWO_HALVES.replace("v_ok := false;\n    v_err := SQLERRM;", "v_ok := NULL;")
+    const [b] = plpgsqlBodies(wrap(loopGuard))
     expect(blindRegions(b.body)).toEqual([])
   })
 
