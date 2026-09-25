@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧪 CI pass 2 — `deno lint` becomes a ratchet (was `|| true`), the Playwright smoke runs after every Production deploy, and its user agent stops counting as a human in the funnel · Claude Code cloud
+- `edge-deno`: `deno lint --json` → `scripts/check-deno-lint-ratchet.mjs` against `deno-lint-ratchet.json` (17 findings, per rule+file; not fixed in bulk because edge:drift:check would then need 13 redeploys). Planted `prefer-const` → exit 1.
+- `e2e-smoke.yml`: added a `deployment_status` trigger, gated to Production + success, with a concurrency group that cancels superseded deploy runs. The schedule is unchanged, and scheduler-liveness counts only `event=schedule` runs.
+- `playwright.config.ts`: UA suffix `RPC-E2E-Smoke (playwright)` → funnel `bot_ua=true`. It was `false` because `devices["Desktop Chrome"]` sends a plain Chrome UA. Pinned against `isBotUserAgent`.
+**Revert:** `git log --grep='deno lint becomes a ratchet'` → `git revert <sha>`. CI/monitor-only; no DB state.
+
 ### 2026-09-25 · 🧹 SHIPPED — a URL wallet owns the collection page (the device's saved wallet was searched FIRST and its holdings rendered under a URL naming another wallet); the set page's doubled "RECENT SALES / RECENT SALES" heading · Cowork (cloud + laptop VM)
 
 - Built-in-browser sweep (53 rendered pages, anon): `/candy-mlb/collection?wallet=0xbd94…` printed the chain-check refusal ("Candy MLB lives on Solana; …") ABOVE the device's saved Candy wallet's $4,285 / 338 moments. `performance` entries showed why: the localStorage seed (`rpc_last_wallet`) searched at t=343 ms, the URL reader (Suspense-wrapped `AutoSearchReader`) at t=395 ms — the seed wins the mount race, then the URL search fails and leaves the seeded wallet's summary on the page. The seed now reads the address bar and stands down whenever it names a wallet/address/q. Test reproduces the race (URL-reader params empty, address bar naming a wallet) with a no-change control; the planted defect (gate disabled) reds it.
