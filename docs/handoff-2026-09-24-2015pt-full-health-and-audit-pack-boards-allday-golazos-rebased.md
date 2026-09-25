@@ -59,6 +59,7 @@ The 4:05 PM PT fix (`20260924230603`) rebased **Top Shot's** retail-basis rows o
    - It took the `WHERE` form plus a `no_circulation` count. It did not take `COALESCE`: any default fabricates the mint-count denominator.
    - The first tick after the apply was ok. See the ledger.
 3. **`topshot-moments-hydrate-wmc`** failed 1/216 in 24 h on `duplicate key … moments_nft_id_key` (also 3/68 on 09-20). Not investigated tonight; 99.5% ok and not stalled.
+   - ✅ **DONE 2026-09-24 8:46 PM PT** (`20260925034648`): a race between two moments writers resolving one nft to different (edition, serial) rows — reproduced on a local Postgres 16, closed with `pg_advisory_xact_lock` at the top of `replace_topshot_moments_batch`. See the ledger.
 4. `panini-team-walk` `high` alert is stale by construction — the failure-rate arm counts 3 calendar days and the fix landed at 4:04 PM PT; it clears as the window rolls.
 
 ## 4. Needs Trevor (unchanged from 09-24 morning)
