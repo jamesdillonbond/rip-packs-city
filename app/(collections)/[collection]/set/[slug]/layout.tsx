@@ -17,9 +17,9 @@
 // (it cannot invent a 404) and it costs no extra round trip. It FAILS OPEN on
 // any RPC error.
 
-import { notFound } from "next/navigation"
+import { notFound, permanentRedirect } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
-import { entityResolves, decodeSlugOrNull } from "@/lib/entity-detail-gate"
+import { entityResolves, decodeSlugOrNull, resolveSetAlias } from "@/lib/entity-detail-gate"
 
 interface LayoutProps {
   children: React.ReactNode
@@ -37,7 +37,18 @@ export default async function SetSegmentLayout({ children, params }: LayoutProps
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
 
-  if (!(await entityResolves("set", coll.id, slug))) notFound()
+  if (!(await entityResolves("set", coll.id, slug))) {
+    // The UNACCENTED spelling of an accented set name ("idolos" for "Ídolos",
+    // whose canonical slug is "-dolos") answers 308 to the canonical page, as
+    // the team route already does (2026-09-25). Consulted only on a would-be 404.
+    const alias = await resolveSetAlias(coll.id, slug)
+    // A failed alias read must not become a 404 for a URL that may be real.
+    if (!alias.ok) throw new Error(`set alias lookup unavailable for ${slug}`)
+    if (alias.target && alias.target !== slug) {
+      permanentRedirect(`/${collection}/set/${encodeURIComponent(alias.target)}`)
+    }
+    notFound()
+  }
 
   return <>{children}</>
 }

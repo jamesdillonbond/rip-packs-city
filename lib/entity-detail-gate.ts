@@ -124,18 +124,39 @@ export function decodeSlugOrNull(raw: string): string | null {
 export type PlayerAliasResult = { ok: true; target: string | null } | { ok: false }
 
 export async function resolvePlayerAlias(collectionId: string, slug: string): Promise<PlayerAliasResult> {
+  return resolveAlias("get_player_alias_target", "player", collectionId, slug)
+}
+
+/**
+ * The canonical set slug for the UNACCENTED spelling of an accented set name
+ * (get_set_alias_target, added 2026-09-25): sets_summary.set_slug collapses an
+ * accent to a dash, so "Ídolos" is `-dolos` and `idolos` 404'd while the team
+ * route already accepted both spellings. Same three states as the player alias.
+ */
+export type SetAliasResult = PlayerAliasResult
+
+export async function resolveSetAlias(collectionId: string, slug: string): Promise<SetAliasResult> {
+  return resolveAlias("get_set_alias_target", "set", collectionId, slug)
+}
+
+async function resolveAlias(
+  fn: string,
+  tag: string,
+  collectionId: string,
+  slug: string,
+): Promise<PlayerAliasResult> {
   try {
-    const { data, error } = await rpcWithRetry(supabaseAdmin as never, "get_player_alias_target", {
+    const { data, error } = await rpcWithRetry(supabaseAdmin as never, fn, {
       p_collection_id: collectionId,
       p_slug: slug,
     })
     if (error) {
-      console.warn(`[player-layout] alias rpc error slug=${slug}: ${error.message}`)
+      console.warn(`[${tag}-layout] alias rpc error slug=${slug}: ${error.message}`)
       return { ok: false }
     }
     return { ok: true, target: typeof data === "string" && data !== "" ? data : null }
   } catch (err) {
-    console.warn(`[player-layout] alias rpc threw slug=${slug}: ${err instanceof Error ? err.message : String(err)}`)
+    console.warn(`[${tag}-layout] alias rpc threw slug=${slug}: ${err instanceof Error ? err.message : String(err)}`)
     return { ok: false }
   }
 }
