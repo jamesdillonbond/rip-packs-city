@@ -167,6 +167,21 @@ describe("fetchUnifiedFmvDistribution — filtered distribution path", () => {
     expect(out.sample_editions).toHaveLength(2)
   })
 
+  it("always names the highest-FMV edition, even when recency would leave it out (2026-09-25)", async () => {
+    // Wembanyama: the $155 HIGH Rookie Debut common was the edition a "rookie
+    // common at $20?" question was about, and recency sampling dropped it while
+    // max_fmv sat in the payload with no edition beside it. With one slot,
+    // recency picks e2 (Jan 05); the max is e5 ($50).
+    const client = makeClient({
+      editions: { list: { data: editionRows, error: null } },
+      get_editions_latest_fmv: { list: { data: snapRows, error: null } },
+    })
+    const out: any = await fetchUnifiedFmvDistribution(client, { collectionUuid: "c", sampleLimit: 1 })
+    expect(out.max_fmv).toBe(50)
+    expect(out.sample_editions.map((s: any) => s.edition_id)).toEqual(["e5"])
+    expect(out.sample_editions[0].fmv_usd).toBe(out.max_fmv)
+  })
+
   it("returns single mode when exactly one edition has FMV", async () => {
     const client = makeClient({
       editions: { list: { data: [editionRows[0]], error: null } },

@@ -134,13 +134,19 @@ function buildDistribution(
     }
   }
   const fmvs = rows.map((r) => r.fmv_usd).sort((a, b) => a - b)
-  const samples = [...rows]
-    .sort((a, b) => {
-      const at = a.computed_at ? Date.parse(a.computed_at) : 0
-      const bt = b.computed_at ? Date.parse(b.computed_at) : 0
-      return bt - at
-    })
-    .slice(0, Math.min(Math.max(sampleLimit, 1), 10))
+  const n = Math.min(Math.max(sampleLimit, 1), 10)
+  const byRecency = [...rows].sort((a, b) => {
+    const at = a.computed_at ? Date.parse(a.computed_at) : 0
+    const bt = b.computed_at ? Date.parse(b.computed_at) : 0
+    return bt - at
+  })
+  let samples = byRecency.slice(0, n)
+  // 2026-09-25: the highest-FMV edition is always named. Recency alone left
+  // Wembanyama's $155 HIGH Rookie Debut common out of a "rookie common at $20?"
+  // answer, which then priced it off the $10.80 median of his later commons —
+  // max_fmv was in the payload with no edition, and so no badges, beside it.
+  const top = byRecency.reduce((best, r) => (r.fmv_usd > best.fmv_usd ? r : best), byRecency[0])
+  if (!samples.includes(top)) samples = [...samples.slice(0, n - 1), top]
   return {
     status: "ok",
     mode: "distribution",
