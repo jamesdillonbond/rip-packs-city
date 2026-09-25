@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the collection page's identity chip no longer says "Signed in as" to an anonymous visitor (RPC has no wallet sign-in); the franchise hub reads its hub ONCE per request so metadata and body cannot cache a split · Cowork (cloud + laptop VM)
+
+- `/nba-top-shot/collection?q=jamesdillonbond`, anonymous: after the lookup the chip read "Signed in as 0xbd94…50ac · Loading wallet will update your profile stats". It is the per-device profile key (`getOwnerKeyForChain`) — the wallet this device treats as "you" — not a sign-in, and Trevor's standing rule is identifiers only, never a wallet sign-in. Now: "This device's wallet 0xbd94…50ac · the wallet you load here becomes this device's profile".
+- `/teams/nba/clippers` served "Team Hub | Rip Packs City" (noindex) over a fully rendered body from at least 6:55 to 7:27 AM PT: `generateMetadata` and the page body each called `fetchFranchiseHub` (4 s budget); the metadata read failed on a cold ISR render, the body's succeeded, and the ISR entry cached the split until the batch-30 deploy purged it. The page now wraps the read in React `cache()` so one outcome feeds both.
+**Revert:** code — revert the batch-32 commit by message. No DB change.
+
 ### 2026-09-25 · 🧹 SHIPPED — the wallet transaction history now lists PACK SELLS (and the marketplace pack buys the on-chain table missed): Trevor's SELLS tab showed 42 moment sells and none of the 502 packs he sold (`20260925143056`) · Cowork (cloud + laptop VM)
 
 - `/dashboard/history` promises "Every pack and moment that moved through your saved wallets"; `get_wallet_transaction_history` had no seller arm at all. The pack-history page already reads both sources (on-chain `pack_purchases` seller rows and the Dapper marketplace index `topshot_/allday_pack_sales_history` where `storefront_address` is the selling wallet): 396 TS + 106 AD marketplace pack sells for Trevor's wallet, 7 on-chain, 40 marketplace pack BUYS absent from `pack_purchases`.
