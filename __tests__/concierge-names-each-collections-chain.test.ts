@@ -96,3 +96,19 @@ describe("the concierge prompt names each collection's chain", () => {
     expect(A.createCalls[0].system[0].text).not.toContain("the major collections across the Dapper and Top Shot ecosystem")
   })
 })
+
+// Same day: asked "How do I connect my Solana wallet to see my Candy MLB
+// collection?", the concierge offered the listing-challenge verification — which
+// lists a TOP SHOT Moment and whose route accepts only a 0x wallet. The prompt
+// called it "the working path for Top Shot collectors" without saying it is the
+// only one, and the model generalised it to Solana.
+describe("wallet verification is scoped to Top Shot in the prompt", () => {
+  it("says there is no verification path for a Solana / Candy MLB wallet", async () => {
+    await POST(post())
+    const sys = A.createCalls[0].system.map((b) => b.text).join("\n")
+    const para = sys.split("\n").find((l) => l.includes("**Wallet verification (listing challenge)**"))
+    expect(para, "verification paragraph missing").toBeDefined()
+    expect(para!).toMatch(/NO verification path for a Solana \/ Candy MLB wallet/)
+    expect(para!).toMatch(/Never offer verification to those users/)
+  })
+})
