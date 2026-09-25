@@ -1,43 +1,21 @@
--- DB invariant: public.get_wallet_pack_summary — the wallet pack P&L hero
--- (/dashboard/packs, the Collection tab's Packs body, the sold-packs alert).
--- Pinned 2026-09-18 when packs_sold went from "pack_purchases.seller_address =
--- wallet" (the transaction PAYER = Dapper's escrow, so 0 for every wallet) to
--- a union with the Dapper marketplace history tables, whose storefront_address
--- IS the seller. Also pins: one purchase seen by both sources counts once; a
--- primary drop with no retail price is counted in primary_spend_unknown_count
--- and contributes nothing to spent; a cancelled listing counts as nothing.
+-- #134 (reader half), 2026-09-25 PT. pack_purchases rows with custom_id 'nba' are
+-- Top Shot's OWN SHOP (one storefront_resource_id, a fixed price per dist; 34,946
+-- rows, 2,190 buyers), which workers/pack-events-ingest labels event_kind
+-- 'secondary_sale'. get_wallet_pack_summary therefore counted a wallet's shop buys
+-- as SECONDARY spend. It now counts them as PRIMARY drops, priced at what was paid
+-- (sale_price) — NOT at pack_distributions retail, which the item warned may not
+-- match. The worker label is unchanged (needs `wrangler deploy`), so this reader
+-- carries the rule. Scoped to Top Shot: All Day has no shop rows today.
 --
--- 2026-09-25 (#134): a Top Shot SHOP buy (custom_id 'nba', labelled secondary_sale
--- on ingest) counts as a PRIMARY drop at the price paid; All Day rows are not shop
--- rows. Pinned by the separate 0xshopper wallet below.
+-- Measured on 0xbd94cade097e50ac before shipping (temp copy, same session):
+-- spent_usd 2,180 -> 2,180 (no-change control), primary_drops 101 -> 102,
+-- secondary_buys 153 -> 152, primary_spent_usd 234 -> 244, secondary_spent_usd
+-- 1,946 -> 1,936.
 --
--- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260925164848_audit_20260925_wallet_pack_summary_counts_topshot_shop_buys_as_primary_134.sql).
--- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
---
--- Runs inside a rolled-back transaction so it leaves no residue.
-
-BEGIN;
-
-CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text UNIQUE, name text);
-CREATE TABLE public.pack_purchases (
-  id uuid DEFAULT gen_random_uuid(), collection_id uuid, pack_nft_id text,
-  buyer_address text, seller_address text, sale_price numeric, sale_currency text,
-  sealed_at timestamptz, is_primary_drop boolean DEFAULT false, event_kind text, pack_dist_id text,
-  custom_id text
-);
-CREATE TABLE public.topshot_pack_sales_history (
-  tx_hash text, pack_nft_id text, sale_price_usd numeric, purchased boolean,
-  buyer_address text, storefront_address text, dist_id text, block_time timestamptz
-);
-CREATE TABLE public.allday_pack_sales_history (LIKE public.topshot_pack_sales_history);
-CREATE TABLE public.pack_rips (
-  id uuid DEFAULT gen_random_uuid(), collection_id uuid, pack_nft_id text, opener_address text,
-  moments_pulled int, sealed_at timestamptz, dist_id text, pull_value_usd numeric
-);
-CREATE TABLE public.pack_distributions (collection_id uuid, dist_id text, title text, image_url text, metadata jsonb);
-
--- >>> BEGIN verbatim get_wallet_pack_summary (body byte-identical to the migration) >>>
+-- Base: live prosrc md5 5aaeb8fb6bf7e82bb15383a4dfe0db1d == 20260919004500 == the
+-- pin copy, read 09-25 9:0x AM PT. Pinned: supabase/tests/get_wallet_pack_summary.sql.
+-- anon-exec: unchanged (get_wallet_pack_summary) — CREATE OR REPLACE of an existing fn; ACL preserved.
+-- Revert: re-apply the function from 20260919004500.
 CREATE OR REPLACE FUNCTION public.get_wallet_pack_summary(p_wallet text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -237,100 +215,3 @@ BEGIN
   );
 END;
 $function$;
--- <<< END verbatim get_wallet_pack_summary <<<
-
-INSERT INTO public.collections VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'nba_top_shot', 'NBA Top Shot'),
-  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'nfl_all_day', 'NFL All Day');
-INSERT INTO public.pack_distributions VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D1', 'Fresh Threads Pack', NULL, '{"retail_price_usd":"10"}');
-
--- buys: B1 primary drop, dist known via the rip (retail 10); B2 primary drop, no dist (unknown);
--- B3 secondary on chain 8 DUC AND the same purchase in the marketplace table (once);
--- B4 marketplace-only 2024 buy $30; AD1 All Day marketplace buy $4.
-INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind) VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'B1', '0xwallet', '0x0b2a3299cc857e29', NULL, NULL, '2026-05-01', true, 'primary_withdraw'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'B2', '0xwallet', '0x0b2a3299cc857e29', NULL, NULL, '2026-05-02', true, 'primary_withdraw'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'B3', '0xwallet', '0x18eb4ee6b3c026d2', 8, 'DUC', '2026-08-01 10:00:00', false, 'secondary_sale');
-INSERT INTO public.pack_rips (collection_id, pack_nft_id, opener_address, moments_pulled, sealed_at, dist_id, pull_value_usd) VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'B1', '0xwallet', 3, '2026-05-03', 'D1', 12.5);
-INSERT INTO public.topshot_pack_sales_history VALUES
-  ('t-b3', 'B3', 8, true, '0xwallet', '0xseller', 'D1', '2026-08-01 10:00:00'),
-  ('t-b4', 'B4', 30, true, '0xwallet', '0xseller', 'D1', '2024-05-01');
-INSERT INTO public.allday_pack_sales_history VALUES
-  ('a-1', 'AD1', 4, true, '0xwallet', '0xseller', 'X1', '2025-01-01');
--- sells: S1, S2 Top Shot marketplace ($25 + $40); S3 All Day marketplace ($7);
--- one cancelled listing ($99, purchased=false) that must count as nothing;
--- one on-chain row whose seller_address really is the wallet ($3).
-INSERT INTO public.topshot_pack_sales_history VALUES
-  ('t-s1', 'S1', 25, true, '0xother', '0xwallet', 'D1', '2026-06-01'),
-  ('t-s2', 'S2', 40, true, '0xother', '0xwallet', 'D1', '2024-03-01'),
-  ('t-s9', 'S9', 99, false, '0xother', '0xwallet', 'D1', '2026-08-20');
-INSERT INTO public.allday_pack_sales_history VALUES
-  ('a-s3', 'S3', 7, true, '0xother', '0xwallet', 'X1', '2025-02-01');
-INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind) VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'S4', '0xother', '0xwallet', 3, 'DUC', '2026-08-02', false, 'secondary_sale');
-
-DO $$
-DECLARE
-  r jsonb; t jsonb; ts jsonb; ad jsonb;
-BEGIN
-  r := public.get_wallet_pack_summary('0xWALLET');
-  t := r->'totals';
-  PERFORM _assert_eq(t->>'packs_purchased', '5', 'B1 B2 B3 B4 AD1 — B3 seen twice counts once');
-  PERFORM _assert_eq(t->>'buys_from_marketplace_history', '2', 'B4 + AD1 only exist in the marketplace tables');
-  PERFORM _assert_eq(t->>'primary_drops', '2', 'B1 B2');
-  PERFORM _assert_eq(t->>'secondary_buys', '3', 'B3 B4 AD1');
-  PERFORM _assert_eq(t->>'primary_spend_unknown_count', '1', 'B2 has no recoverable retail');
-  PERFORM _assert_eq(t->>'spent_usd', '52.00', '10 retail + 8 + 30 + 4; B2 contributes nothing, not $0-as-a-fact');
-  PERFORM _assert_eq(t->>'primary_spent_usd', '10.00', 'B1 at retail');
-  PERFORM _assert_eq(t->>'secondary_spent_usd', '42.00', '8 + 30 + 4');
-  PERFORM _assert_eq(t->>'packs_sold', '4', 'S1 S2 S3 + the on-chain S4; the cancelled S9 is nothing');
-  PERFORM _assert_eq(t->>'sells_from_marketplace_history', '3', 'S1 S2 S3');
-  PERFORM _assert_eq(t->>'sold_proceeds_usd', '75.00', '25 + 40 + 7 + 3');
-  PERFORM _assert_eq(t->>'packs_ripped', '1', 'B1');
-  PERFORM _assert_eq(t->>'ripped_value_known_count', '1', 'B1 valued');
-  PERFORM _assert_eq(t->>'ripped_value_usd', '12.50', 'B1 pull value');
-  PERFORM _assert_eq(t->>'net_pl_usd', '35.50', '75 + 12.5 - 52');
-
-  SELECT c INTO ts FROM jsonb_array_elements(r->'by_collection') c WHERE c->>'collection_slug' = 'nba_top_shot';
-  SELECT c INTO ad FROM jsonb_array_elements(r->'by_collection') c WHERE c->>'collection_slug' = 'nfl_all_day';
-  PERFORM _assert_eq(ts->>'packs_purchased', '4', 'TS buys B1 B2 B3 B4');
-  PERFORM _assert_eq(ts->>'packs_sold', '3', 'TS sells S1 S2 S4');
-  PERFORM _assert_eq(ts->>'proceeds_usd', '68.00', 'TS proceeds 25 + 40 + 3');
-  PERFORM _assert_eq(ts->>'primary_spend_unknown_count', '1', 'TS unknown primary = B2');
-  PERFORM _assert_eq(ad->>'packs_purchased', '1', 'AD buys AD1');
-  PERFORM _assert_eq(ad->>'packs_sold', '1', 'AD sells S3');
-  PERFORM _assert_eq(ad->>'net_pl_usd', '3.00', 'AD 7 - 4');
-
-  PERFORM _assert_eq(r->'by_currency'->'USD'->>'sales', '3', 'USD sales = the three marketplace sells');
-  PERFORM _assert_eq(r->'by_currency'->'DUC'->>'sales', '1', 'DUC sales = S4');
-  PERFORM _assert_eq(r->'by_currency'->'UNKNOWN'->>'purchases', '2', 'the two unpriced primary drops carry no currency');
-
-  PERFORM _assert_eq((public.get_wallet_pack_summary('0xnobody')->'totals')->>'packs_sold', '0', 'unknown wallet -> zeros, not error');
-  PERFORM _assert((public.get_wallet_pack_summary(''))->>'error' = 'wallet required', 'empty wallet -> error');
-END $$;
-
--- #134: a separate wallet so the fixtures above keep their numbers.
--- SH1 Top Shot SHOP buy $10 (custom_id 'nba', no dist -> if it were priced at
--- retail it would be an UNKNOWN primary); SH2 Top Shot marketplace buy $7;
--- SH3 an All Day row carrying custom_id 'nba' ($5) -- not the Top Shot shop.
-INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind, custom_id) VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'SH1', '0xshopper', '0x0b2a3299cc857e29', 10, 'DUC', '2026-08-10', false, 'secondary_sale', 'nba'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'SH2', '0xshopper', '0x18eb4ee6b3c026d2', 7, 'DUC', '2026-08-11', false, 'secondary_sale', 'DAPPER_MARKETPLACE'),
-  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'SH3', '0xshopper', '0x18eb4ee6b3c026d2', 5, 'DUC', '2026-08-12', false, 'secondary_sale', 'nba');
-
-DO $$
-DECLARE t jsonb;
-BEGIN
-  t := public.get_wallet_pack_summary('0xshopper')->'totals';
-  PERFORM _assert_eq(t->>'packs_purchased', '3', 'SH1 SH2 SH3');
-  PERFORM _assert_eq(t->>'primary_drops', '1', 'the Top Shot shop buy SH1 is primary');
-  PERFORM _assert_eq(t->>'secondary_buys', '2', 'SH2 (marketplace) and SH3 (All Day, not the Top Shot shop)');
-  PERFORM _assert_eq(t->>'primary_spent_usd', '10.00', 'SH1 at the price PAID, not retail');
-  PERFORM _assert_eq(t->>'primary_spend_unknown_count', '0', 'a shop buy has a price, so it is never an unknown primary');
-  PERFORM _assert_eq(t->>'secondary_spent_usd', '12.00', '7 + 5');
-  PERFORM _assert_eq(t->>'spent_usd', '22.00', 'total unchanged by the split');
-END $$;
-
-ROLLBACK;

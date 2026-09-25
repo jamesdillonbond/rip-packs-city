@@ -44,7 +44,7 @@ const PINS = [
     fn: "get_wallet_pack_summary",
     test: "supabase/tests/get_wallet_pack_summary.sql",
     migration:
-      "supabase/migrations/20260919004500_audit_20260918_wallet_packs_sold_from_marketplace_history_and_sealed_pack_identity.sql",
+      "supabase/migrations/20260925164848_audit_20260925_wallet_pack_summary_counts_topshot_shop_buys_as_primary_134.sql",
   },
   {
     // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists
