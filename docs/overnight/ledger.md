@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the storefront reconciler now covers NFL All Day too (`?collection=nfl_all_day`, Vercel cron `13 1-23/2`), with sellers from one RPC (`storefront_reconcile_sellers`, `20260925230553`); and All Day's ask lane (job 19) now tracks its own rows' floor in both directions (`20260925231149`) · Claude Code (Windows box)
+
+- Reconciler generalized: `STOREFRONT_COLLECTIONS` config + `storefrontScriptFor()` in `lib/golazos/storefront-reconcile.ts` (the generated Golazos script is byte-identical to the shipped one — checked). All Day logs as `allday-storefront-reconcile`. Seller list now ONE array-returning RPC (a SETOF would clamp at PostgREST's 1,000 rows; All Day has ~1,181 sellers), excluding the unpurchasable Flowty fork; 6 storefront walks in parallel under a 200 s budget. Existing-row read scoped to `direct_v2`/`storefront_v2`. An unknown `?collection=` is refused 400, never walked as another collection. Route test 7 cases (+All Day, +400, +sellers-RPC failure).
+- Job 19: `allday-listing-ask-v1` rows are re-derived whenever 90% of the live floor moves ≥ $0.01 (was: only when above the ask), closing the residue the Flowty-fork cleanup left; other writers' ASK_ONLY rows keep the old rule. SQL pin gains eOwnUp (45 on a floor that rose to 80 → 72) and eOwnSame (no churn); counts 4 → 5; drift guard re-pointed. Live md5 = committed file.
+**Revert:** job 19 — re-apply `20260923220355`; reconciler — drop the vercel.json All Day entry (the Golazos path is unchanged), `DROP FUNCTION storefront_reconcile_sellers(uuid,int)` after reverting the route to its paged seller read.
+
 ### 2026-09-25 · 📱 SHIPPED — trophy case slabs no longer clip the player name / team / set on mobile: the metallic label reflows on its own width (container query, ≤240px) so serial/tier/badges sit in a top row beside the ✕ and the text gets the full label width · Claude Code (web sandbox)
 - Trevor's phone screenshot: 2-up grid left the name column ~45px ("Donovan Clingan" clipped, "PORTLA…", "Series 2024-2…"). Desktop 3-up layout unchanged. Verified by rendering the component in Chromium at 390px.
 **Revert:** `git log --grep='trophy slab label reflows'` → `git revert <sha>`. No DB state.
