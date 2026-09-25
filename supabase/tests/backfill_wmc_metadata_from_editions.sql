@@ -25,7 +25,8 @@ CREATE TABLE public.editions (
   player_name       text,
   set_name          text,
   circulation_count integer,
-  team_name         text
+  team_name         text,
+  series            smallint   -- 2026-09-25: the body fills wmc.series_number from it
 );
 CREATE TABLE public.wallet_moments_cache (
   wallet_address text,
@@ -35,7 +36,8 @@ CREATE TABLE public.wallet_moments_cache (
   player_name    text,
   set_name       text,
   mint_count     integer,
-  team_name      text
+  team_name      text,
+  series_number  integer
 );
 
 -- >>> BEGIN verbatim backfill_wmc_metadata_from_editions (byte-identical to the migration/prod) >>>
@@ -60,7 +62,9 @@ BEGIN
            player_name = COALESCE(wmc.player_name, e.player_name, e.team_name),
            set_name    = COALESCE(wmc.set_name,    e.set_name),
            mint_count  = COALESCE(wmc.mint_count,  e.circulation_count),
-           team_name   = COALESCE(wmc.team_name,   e.team_name)
+           team_name   = COALESCE(wmc.team_name,   e.team_name),
+           -- 2026-09-24: series was the one column this fill skipped (940k NULLs).
+           series_number = COALESCE(wmc.series_number, e.series::int)
       FROM public.editions e
      WHERE e.collection_id = wmc.collection_id
        AND e.external_id   = wmc.edition_key
@@ -73,7 +77,8 @@ BEGIN
          (wmc.player_name IS NULL AND COALESCE(e.player_name, e.team_name) IS NOT NULL) OR
          (wmc.set_name    IS NULL AND e.set_name IS NOT NULL) OR
          (wmc.mint_count  IS NULL AND e.circulation_count IS NOT NULL) OR
-         (wmc.team_name   IS NULL AND e.team_name IS NOT NULL)
+         (wmc.team_name   IS NULL AND e.team_name IS NOT NULL) OR
+         (wmc.series_number IS NULL AND e.series IS NOT NULL)
        )
        AND ($1 IS NULL OR wmc.wallet_address = $1)
        AND ($2 IS NULL OR wmc.collection_id  = $2)
@@ -117,6 +122,17 @@ SELECT _assert_eq(public.backfill_wmc_metadata_from_editions('0xW2')::text, '0',
   'a row whose only NULLs cannot be filled by its edition is not rewritten and not counted');
 SELECT _assert_eq((SELECT xmax::text FROM public.wallet_moments_cache WHERE wallet_address='0xW2'), '0',
   'the unfillable row was never touched (xmax = 0: no UPDATE ever locked or rewrote it)');
+
+-- ── 2026-09-24: series was the one column the fill skipped (940k NULLs) ──────
+-- Inserted AFTER the global call above so its count stays 3.
+INSERT INTO public.editions (collection_id, external_id, tier, player_name, set_name, circulation_count, team_name, series) VALUES
+  (:ts::uuid, 'E4', 'COMMON', 'Four', 'Set D', 10, 'Team Z', 2);
+INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, edition_key, tier, player_name, set_name, mint_count, team_name, series_number) VALUES
+  ('0xW3', :ts::uuid, 'E4', 'COMMON', 'Four', 'Set D', 10, 'Team Z', NULL);
+SELECT _assert_eq(public.backfill_wmc_metadata_from_editions('0xW3')::text, '1',
+  'a row missing ONLY its series is fillable and counted');
+SELECT _assert_eq((SELECT series_number::text FROM public.wallet_moments_cache WHERE wallet_address='0xW3'), '2',
+  'series_number filled from editions.series');
 
 -- ── Row 1: every NULL filled from the edition ───────────────────────────────
 SELECT _assert_eq((SELECT tier||'|'||player_name||'|'||set_name||'|'||mint_count::text||'|'||team_name

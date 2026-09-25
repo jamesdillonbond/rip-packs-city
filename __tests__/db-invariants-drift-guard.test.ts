@@ -35,7 +35,7 @@ const PINS = [
     // kept naming the old owner -- 23 rows on 5 of 27 saved wallets, 23 of 23
     // Sealed, each rendered as an unopened pack still in that user's inventory.
     migration:
-      "supabase/migrations/20260920171011_audit_20260920_wallet_pack_history_trusts_ownership_only_at_or_after_the_last_clean_walk.sql",
+      "supabase/migrations/20260925165425_audit_20260925_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
@@ -247,7 +247,7 @@ const PINS = [
     // plan inverted the join — seq-scanning editions and probing wmc per
     // edition, 73,414 buffers against 1,175 (register #113). The SQL is
     // character-identical apart from the parameters becoming $1/$2.
-    migration: "supabase/migrations/20260914015500_audit_20260913_backfill_wmc_metadata_plans_with_its_parameter_values.sql",
+    migration: "supabase/migrations/20260925165425_audit_20260925_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
   },
   {
     fn: "update_badge_low_ask_from_cached_listings",
@@ -596,7 +596,7 @@ const PINS = [
   {
     fn: "get_wallet_collection_snapshot",
     test: "supabase/tests/get_wallet_collection_snapshot.sql",
-    migration: "supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
+    migration: "supabase/migrations/20260925165425_audit_20260925_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
   },
   {
     fn: "get_pack_detail_bundle",
@@ -712,7 +712,7 @@ const PINS = [
   {
     fn: "detect_floor_drops",
     test: "supabase/tests/detect_floor_drops.sql",
-    migration: "supabase/migrations/20260802200000_audit_20260802_snapshot_detect_floor_drops.sql",
+    migration: "supabase/migrations/20260925165425_audit_20260925_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
   },
   {
     // The PREVIEW half of the deal-alert pipeline. Pinned 2026-08-17 — it was
@@ -778,7 +778,7 @@ const PINS = [
   {
     fn: "detect_topshot_sweeps",
     test: "supabase/tests/detect_topshot_sweeps.sql",
-    migration: "supabase/migrations/20260802202000_audit_20260802_snapshot_detect_topshot_sweeps.sql",
+    migration: "supabase/migrations/20260925165425_audit_20260925_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
   },
   {
     fn: "compute_pinnacle_serial_fmv_multipliers",

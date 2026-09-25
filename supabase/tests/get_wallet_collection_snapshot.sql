@@ -7,7 +7,9 @@
 --   * topMoments = up to 5 with fmv_usd > 0, FMV-desc (a $0/NULL moment never shows
 --     as a "top" moment);
 --   * badgeCount = DISTINCT badge_editions matched by the wallet's edition_keys;
---   * seriesBreakdown buckets by series number ('SUnknown' for NULL);
+--   * series bars (2026-09-24/25): the wallet's LARGEST collection only, labelled by
+--     series_display_label, one bar per LABEL (on-chain 0 and stored 1 are both
+--     Top Shot "Series 1"); another collection's series never leaks in;
 --   * perCollection rollup ordered by moment count desc;
 --   * rarest = smallest positive mint_count (FMV-desc tiebreak);
 --   * an empty wallet -> zeros / '[]' / NULL rarest, never an error.
@@ -31,6 +33,54 @@ CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text, name text, mark
 -- holding's CURRENT FMV confidence through editions → edition_fmv_current.
 CREATE TABLE public.editions (id uuid PRIMARY KEY, external_id text, collection_id uuid);
 CREATE TABLE public.edition_fmv_current (edition_id uuid, confidence text);
+CREATE TABLE public.collection_series (id int, collection_id uuid, series_number int, display_label text, season text);
+
+-- series_display_label: VERBATIM from production (pg_get_functiondef, 2026-09-25,
+-- prosrc md5 d97398150bdf8a1cce5bb3ee91c14de4). Called by the body since 20260925062018.
+CREATE OR REPLACE FUNCTION public.series_display_label(p_collection_id uuid, p_series integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_label  text;
+  v_season text;
+  v_slug   text;
+BEGIN
+  IF p_series IS NULL THEN RETURN NULL; END IF;
+
+  SELECT c.slug INTO v_slug FROM public.collections c WHERE c.id = p_collection_id;
+
+  SELECT cs.display_label, cs.season INTO v_label, v_season
+  FROM public.collection_series cs
+  WHERE cs.collection_id = p_collection_id
+    AND (
+      cs.series_number = p_series
+      OR (v_slug = 'disney_pinnacle' AND cs.season = p_series::text)
+    )
+  ORDER BY (cs.series_number = p_series) DESC
+  LIMIT 1;
+
+  -- Top Shot retired the ordinal after Series 4. The repo map and
+  -- collection_series disagree on the ORDINAL for on-chain 6/7/8 (open — see
+  -- CLAUDE.md) but AGREE on the season, so the season form is the answer that
+  -- does not take a side, and it reproduces lib/series-label.ts exactly.
+  IF v_slug = 'nba_top_shot' AND p_series >= 6 AND v_season IS NOT NULL THEN
+    RETURN 'Series ' || v_season;
+  END IF;
+
+  IF v_label IS NULL OR btrim(v_label) = '' THEN
+    RETURN 'Series ' || p_series::text;
+  END IF;
+
+  IF v_label ~ '^[0-9]' THEN
+    RETURN 'Series ' || v_label;
+  END IF;
+
+  RETURN v_label;
+END;
+$function$;
 
 -- >>> BEGIN verbatim get_wallet_collection_snapshot (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_collection_snapshot(p_wallet text)
@@ -59,12 +109,33 @@ AS $function$
       LIMIT 5
     ) t
   ),
+  -- 2026-09-24: the bars are the wallet's LARGEST collection's series, named
+  -- the way every other page names them (series_display_label). Mixing every
+  -- collection's raw series number into one row named nothing ("S0", "S9").
+  series_coll AS (
+    SELECT w.collection_id, c.slug, c.name
+    FROM w JOIN collections c ON c.id = w.collection_id
+    GROUP BY w.collection_id, c.slug, c.name
+    ORDER BY count(*) DESC, c.slug
+    LIMIT 1
+  ),
+  series_rows AS (
+    -- 2026-09-25: grouped by LABEL — on-chain 0 and a stored 1 are both Top Shot
+    -- "Series 1" and drew two bars.
+    SELECT min(w.series_number) AS series_number,
+           COALESCE(public.series_display_label(w.collection_id, w.series_number::int), 'SUnknown') AS label,
+           count(*)::int AS cnt
+    FROM w
+    WHERE w.collection_id = (SELECT collection_id FROM series_coll)
+    GROUP BY w.collection_id, COALESCE(public.series_display_label(w.collection_id, w.series_number::int), 'SUnknown')
+  ),
   series AS (
-    SELECT jsonb_object_agg(label, cnt) AS obj FROM (
-      SELECT 'S' || COALESCE(series_number::text, 'Unknown') AS label,
-             count(*) AS cnt
-      FROM w GROUP BY 1
-    ) s
+    SELECT jsonb_object_agg(label, cnt) AS obj FROM series_rows
+  ),
+  series_bars AS (
+    SELECT jsonb_agg(jsonb_build_object('label', label, 'count', cnt, 'series_number', series_number)
+                     ORDER BY series_number NULLS LAST) AS arr
+    FROM series_rows
   ),
   badges AS (
     SELECT count(DISTINCT be.external_id)::int AS c
@@ -135,6 +206,8 @@ AS $function$
     'topMoments', COALESCE((SELECT arr FROM top5), '[]'::jsonb),
     'badgeCount', COALESCE((SELECT c FROM badges), 0),
     'seriesBreakdown', COALESCE((SELECT obj FROM series), '{}'::jsonb),
+    'seriesBars', COALESCE((SELECT arr FROM series_bars), '[]'::jsonb),
+    'seriesCollection', (SELECT jsonb_build_object('slug', slug, 'name', name) FROM series_coll),
     'perCollection', COALESCE((SELECT arr FROM per_coll), '[]'::jsonb),
     'rarest', (SELECT obj FROM rarest),
     'staleFmv', COALESCE((SELECT stale_fmv FROM stale), 0),
@@ -179,9 +252,19 @@ SELECT _assert_eq((public.get_wallet_collection_snapshot('W') -> 'topMoments' ->
 -- ── 3. badgeCount = distinct matched edition_keys ────────────────────────────
 SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'badgeCount'), '2', 'badgeCount = 2 (k1,k3)');
 
--- ── 4. seriesBreakdown buckets (SUnknown for null series) ────────────────────
-SELECT _assert_eq((public.get_wallet_collection_snapshot('W') -> 'seriesBreakdown' ->> 'S4'), '3', 'series S4 = 3');
-SELECT _assert_eq((public.get_wallet_collection_snapshot('W') -> 'seriesBreakdown' ->> 'SUnknown'), '1', 'null series -> SUnknown = 1');
+-- ── 4. series bars: the largest collection only, named, one bar per label ─────
+SELECT _assert_eq((public.get_wallet_collection_snapshot('W') -> 'seriesBreakdown' ->> 'Series 4'), '3', 'Top Shot (largest) series 4 = 3, named "Series 4"');
+SELECT _assert((public.get_wallet_collection_snapshot('W') -> 'seriesBreakdown' ->> 'SUnknown') IS NULL, 'the Pinnacle moment''s NULL series does not leak into the Top Shot bars');
+SELECT _assert_eq((public.get_wallet_collection_snapshot('W') -> 'seriesCollection' ->> 'slug'), 'nba_top_shot', 'bars are named for the largest collection');
+SELECT _assert_eq(jsonb_array_length(public.get_wallet_collection_snapshot('W') -> 'seriesBars')::text, '1', 'one bar');
+-- on-chain 0 and stored 1 are both Top Shot "Series 1": ONE bar, not two.
+INSERT INTO public.collection_series (id, collection_id, series_number, display_label, season) VALUES
+  (1, :TS::uuid, 0, '1', '2019-20'), (2, :TS::uuid, 1, '1', '2019-20');
+INSERT INTO public.wallet_moments_cache (wallet_address, player_name, set_name, tier, serial_number, edition_key, image_url, series_number, fmv_usd, mint_count, collection_id) VALUES
+  ('W2','A','Base','COMMON',1,'z1','i',0,1,10,:TS::uuid), ('W2','B','Base','COMMON',2,'z2','i',1,1,10,:TS::uuid);
+SELECT _assert_eq(jsonb_array_length(public.get_wallet_collection_snapshot('W2') -> 'seriesBars')::text, '1', 'series 0 and 1 share the label Series 1 -> one bar');
+SELECT _assert_eq((public.get_wallet_collection_snapshot('W2') -> 'seriesBars' -> 0 ->> 'count'), '2', 'the merged bar counts both moments');
+SELECT _assert_eq((public.get_wallet_collection_snapshot('W2') -> 'seriesBars' -> 0 ->> 'label'), 'Series 1', 'labelled Series 1');
 
 -- ── 5. perCollection ordered by moment count desc ────────────────────────────
 SELECT _assert_eq((public.get_wallet_collection_snapshot('W') -> 'perCollection' -> 0 ->> 'slug'), 'nba_top_shot', 'perCollection[0] = Top Shot (3 moments)');

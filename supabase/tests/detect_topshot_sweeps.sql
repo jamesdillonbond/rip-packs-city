@@ -140,7 +140,7 @@ BEGIN
              'Wallet ' || SUBSTRING(ranked.buyer_address, 1, 10) || '...'
            ),
            ranked.moments, ranked.distinct_editions,
-           to_char(ranked.first_buy, 'Mon DD HH24:MI') || '–' || to_char(ranked.last_buy, 'HH24:MI UTC'),
+           to_char(ranked.first_buy AT TIME ZONE 'America/Los_Angeles', 'Mon DD HH12:MI AM') || '–' || to_char(ranked.last_buy AT TIME ZONE 'America/Los_Angeles', 'HH12:MI AM PT'),
            ROUND(ranked.avg_price, 2), ROUND(ranked.total_spent, 2),
            CASE WHEN COALESCE(array_length(ranked.sample_sets, 1), 0) > 0
                 THEN ' Sets: ' || array_to_string(ranked.sample_sets, ', ') || '.' ELSE '' END),

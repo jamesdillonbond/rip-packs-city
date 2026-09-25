@@ -67,7 +67,11 @@ CREATE TABLE public.pack_distributions (
 CREATE TABLE public.pack_ask_state (
   collection_slug text, dist_id text, lowest_ask numeric, is_listed boolean, last_checked_at timestamptz
 );
-CREATE TABLE public.mv_pack_ev_latest (collection_id uuid, dist_id text, pack_ev numeric, snapshotted_at timestamptz);
+-- 2026-09-25: the body skips the MV's could-not-price sentinel (gross_ev = 0 AND
+-- edition_count = 0) and rows under 25% FMV coverage; the defaults describe a
+-- normally-priced row so the fixtures below keep their meaning.
+CREATE TABLE public.mv_pack_ev_latest (collection_id uuid, dist_id text, pack_ev numeric, snapshotted_at timestamptz,
+  gross_ev numeric DEFAULT 31.2, edition_count int DEFAULT 10, fmv_coverage_pct numeric DEFAULT 100);
 CREATE TABLE public.pack_nft_identity (
   collection_id uuid, pack_nft_id text, dist_id text, status text, owner_address text, checked_at timestamptz DEFAULT now(),
   acquired_at timestamptz,
@@ -196,7 +200,7 @@ BEGIN
   --     buy/rip tables never saw -- reward packs, boxes and drops from before
   --     on-chain coverage. Ranked below every sale and rip we hold.
   index_holds AS (
-    SELECT pack_nft_id, collection_id, coalesce(acquired_at, checked_at) AS at,
+    SELECT pack_nft_id, collection_id, acquired_at AS at,  -- 2026-09-24: never the CHECK time (see header)
            CASE WHEN status = 'Opened' THEN 'idx_open' ELSE 'idx_hold' END AS role
     FROM public.pack_nft_identity
     WHERE owner_address = v_wallet AND status IN ('Sealed', 'Opened')
@@ -379,6 +383,10 @@ BEGIN
     LEFT JOIN public.mv_pack_ev_latest ev
       ON p.dist_id IS NOT NULL
      AND ev.dist_id = p.dist_id AND ev.collection_id = p.collection_id
+     -- 2026-09-24: mirror pack_table_rows' publish gates — the MV's sentinel
+     -- (gross_ev = 0 AND edition_count = 0) is "could not price", not "$0".
+     AND NOT (ev.gross_ev = 0 AND ev.edition_count = 0)
+     AND (ev.fmv_coverage_pct IS NULL OR ev.fmv_coverage_pct >= 25)
     LEFT JOIN LATERAL (
       SELECT pp.sale_price, pp.sealed_at
       FROM public.pack_purchases pp

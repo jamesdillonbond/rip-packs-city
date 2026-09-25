@@ -19,7 +19,10 @@ CREATE TABLE editions (
   id          uuid PRIMARY KEY,
   player_name text,
   set_name    text,
-  tier        text
+  tier        text,
+  -- 2026-09-25: the body names a team moment (no player) by team_name, then name.
+  team_name   text,
+  name        text
 );
 
 CREATE TABLE fmv_snapshots (
@@ -62,7 +65,7 @@ BEGIN
     RETURN json_build_object('error', 'collection not found');
   END IF;
 
-  WITH
+  WITH 
   recent_floors AS (
     SELECT DISTINCT ON (edition_id) edition_id, floor_price_usd AS now_floor, computed_at
     FROM fmv_snapshots
@@ -88,7 +91,7 @@ BEGIN
   drops AS (
     SELECT r.edition_id, r.now_floor, p.prior_floor,
       ROUND(100.0 * (p.prior_floor - r.now_floor) / NULLIF(p.prior_floor, 0), 1) AS drop_pct,
-      rsc.sales_24h, e.player_name, e.set_name, e.tier
+      rsc.sales_24h, COALESCE(e.player_name, e.team_name, e.name) AS player_name, e.set_name, e.tier
     FROM recent_floors r
     JOIN prior_floors p USING (edition_id)
     JOIN recent_sales_check rsc USING (edition_id)
@@ -106,11 +109,11 @@ BEGIN
   INSERT INTO topshot_insider_alerts (
     alert_type, title, summary, evidence_jsonb, severity, generated_at, expires_at
   )
-  SELECT
+  SELECT 
     'floor_drop',
-    format('%s · %s · floor down %s%% in 24h ($%s → $%s)', player_name, set_name, drop_pct, prior_floor, now_floor),
+    format('%s · %s · floor down %s%% in 24h ($%s → $%s)', player_name, set_name, drop_pct, ROUND(prior_floor, 2), ROUND(now_floor, 2)),
     format('%s drops floor by %s%% in 24h with %s active sales. Was $%s, now $%s.',
-           player_name, drop_pct, sales_24h, prior_floor, now_floor),
+           player_name, drop_pct, sales_24h, ROUND(prior_floor, 2), ROUND(now_floor, 2)),
     jsonb_build_object(
       'edition_id', edition_id, 'collection_slug', p_collection_slug,
       'now_floor_usd', now_floor, 'prior_floor_usd', prior_floor,
@@ -120,7 +123,7 @@ BEGIN
     CASE WHEN drop_pct > 60 THEN 3 WHEN drop_pct > 45 THEN 2 ELSE 1 END::smallint,
     NOW(), NOW() + INTERVAL '24 hours'
   FROM drops;
-
+  
   GET DIAGNOSTICS v_inserted = ROW_COUNT;
   RETURN json_build_object('collection', p_collection_slug, 'alerts_inserted', v_inserted);
 END;
