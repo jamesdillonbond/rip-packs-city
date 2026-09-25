@@ -55,3 +55,36 @@ export function usdSignFirst(n: unknown, format: (magnitude: number) => string):
   const body = format(-v)
   return body.startsWith("$") ? "-" + body : body
 }
+
+// ── Dollar-pegged units never show their ticker (Trevor, 2026-09-25) ─────────
+//
+// DUC (Dapper Utility Coin) is pegged 1:1 to the US dollar: a pack that cost
+// 10 DUC cost $10, and the site never prints the word "DUC" — it shows the
+// amount exactly as it would show dollars. The same goes for a literal "USD"
+// tag (a "$10.00 USD" is the same redundancy). Any OTHER unit (FLOW, USDC,
+// FUT …) keeps its code, because there the number is not a dollar figure.
+// `__tests__/site-copy-never-says-duc.test.ts` walks app/, components/ and
+// lib/ for a user-facing "DUC" string.
+
+/** True for the units a formatter renders as plain dollars: USD, DUC, and an
+ *  absent/blank unit (the platform's price columns are dollar-denominated). */
+export function isUsdPegged(currency: unknown): boolean {
+  if (currency == null) return true
+  if (typeof currency !== "string") return false
+  const c = currency.trim().toUpperCase()
+  return c === "" || c === "USD" || c === "DUC"
+}
+
+/** The suffix to append after a "$…" figure: "" for a dollar-pegged unit,
+ *  " FLOW" / " USDC" for anything else. */
+export function currencySuffix(currency: unknown): string {
+  if (isUsdPegged(currency)) return ""
+  return typeof currency === "string" ? " " + currency.trim() : ""
+}
+
+/** The unit to print on its own (a "Currency" detail cell): "USD" for a
+ *  dollar-pegged unit, the code itself otherwise, "—" for none. */
+export function displayCurrency(currency: unknown): string {
+  if (currency == null || (typeof currency === "string" && currency.trim() === "")) return "—"
+  return isUsdPegged(currency) ? "USD" : typeof currency === "string" ? currency.trim() : "—"
+}

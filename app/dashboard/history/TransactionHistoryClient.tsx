@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { fmtUsd, relativeTime, truncAddr } from "@/lib/dashboard/format"
+import { currencySuffix } from "@/lib/usd-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
@@ -347,7 +348,8 @@ function TimelineRow({ e }: { e: TxEvent }) {
 
   // Amount tint: sells are proceeds (green); everything else neutral.
   const amountTint = e.kind === "moment_sell" || e.kind === "pack_sell" ? "#34D399" : "rgba(255,255,255,0.9)"
-  const amountText = e.amount_usd != null ? fmtUsd(e.amount_usd) + (e.currency ? " " + e.currency : "") : "—"
+  // 2026-09-25: a dollar-pegged unit (USD, Dapper's DUC) shows no ticker — "$35.00", never "$35.00 DUC".
+  const amountText = e.amount_usd != null ? fmtUsd(e.amount_usd) + currencySuffix(e.currency) : "—"
 
   const counterpartyLabel =
     (e.kind === "moment_sell" || e.kind === "pack_sell") && e.counterparty

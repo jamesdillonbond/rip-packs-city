@@ -152,6 +152,28 @@ describe("PackHistoryClient", () => {
     expect(txt).toMatch(/12 buys · 3 sells · spent \$120/)
   })
 
+  it("folds the RPC's DUC bucket into USD — the strip never says DUC (Trevor, 2026-09-25)", async () => {
+    // DUC is pegged 1:1 to the dollar; the summary RPC buckets by sale_currency,
+    // so the founder's strip read "DUC 33 buys · 7 sells · spent $303.00 · in
+    // $463.00" beside "USD 120 buys · 495 sells …". One dollar bucket, summed.
+    mount({
+      summary: () => json(200, {
+        ...SUMMARY,
+        by_currency: {
+          DUC: { spent: 303, proceeds: 463, purchases: 33, sales: 7 },
+          USD: { spent: 120, proceeds: 40, purchases: 12, sales: 3 },
+          FLOW: { spent: 5, proceeds: 0, purchases: 1, sales: 0 },
+        },
+      }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/45 buys · 10 sells · spent \$423\.00 · in \$503\.00/))
+    const txt = document.body.textContent!
+    expect(txt).not.toMatch(/\bDUC\b/)
+    expect(txt).not.toMatch(/33 buys/)
+    expect(txt).toMatch(/FLOW/)
+    expect(txt).toMatch(/1 buys · 0 sells · spent \$5\.00/)
+  })
+
   // A summary failure and a history failure are separate reads and must fail independently —
   // one broken panel must not blank the other.
   it("keeps the pack table when only the summary read fails", async () => {

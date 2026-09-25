@@ -45,7 +45,7 @@ import {
 } from "./PackLifecycleClient"
 import type { PackLifecycle, PackPull } from "./types"
 import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
-import { usdSignFirst } from "@/lib/usd-format"
+import { isUsdPegged, usdSignFirst } from "@/lib/usd-format"
 
 export const dynamic = "force-dynamic"
 
@@ -82,11 +82,12 @@ function fmtPrice(n: number | null, currency: string | null | undefined): string
   return currency ? `${formatted} ${currency}` : formatted
 }
 
-/** DUC is 1:1 USD-pegged, so render DUC amounts as plain USD and drop the
- *  "DUC" suffix entirely. Non-DUC currencies keep their suffix. */
+/** A dollar-pegged unit (USD, or Dapper's 1:1 dollar token — never named on
+ *  the site, Trevor 2026-09-25) renders as plain USD with no suffix. Other
+ *  units keep their suffix. */
 function fmtPriceWithUsd(n: number | null, currency: string | null | undefined): string {
   if (n === null) return "—"
-  if (currency && currency.toUpperCase() === "DUC") return fmtUsd(n)
+  if (isUsdPegged(currency)) return fmtUsd(n)
   return fmtPrice(n, currency)
 }
 

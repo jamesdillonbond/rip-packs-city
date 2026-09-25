@@ -560,7 +560,7 @@ export default function LoansDashboard({
         <span className="text-[color:var(--rpc-text-ghost)]">·</span>
         <span className="inline-flex items-center gap-1.5">
           <CircleDollarSign size={12} />
-          USD-pegged token volumes (USDCf, USDC, FUSD, TUSDT, DUC)
+          USD-pegged token volumes (USDCf, USDC, FUSD, TUSDT, Dapper dollars)
         </span>
         <span className="text-[color:var(--rpc-text-ghost)]">·</span>
         <span className="inline-flex items-center gap-1.5">

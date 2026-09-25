@@ -5,6 +5,7 @@
 // the component imports them.
 
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { isUsdPegged } from "@/lib/usd-format"
 import { usdSignFirst } from "@/lib/usd-format"
 
 export function shortAddr(addr: string | null | undefined): string {
@@ -68,10 +69,10 @@ export function fmtPrice(n: number | string | null | undefined, currency: string
   return currency ? `${formatted} ${currency}` : formatted
 }
 
-/** DUC is 1:1 USD-pegged, so we render DUC amounts as plain USD and drop the
- *  "DUC" suffix entirely — every observed Top Shot pack pays in DUC and the
- *  parenthetical doubles up on the same number. Non-DUC currencies (FLOW,
- *  USDC, etc.) keep their suffix so the unit isn't lost. */
+/** A dollar-pegged unit (USD, or Dapper's 1:1 dollar token — Trevor,
+ *  2026-09-25: never show its ticker, show the amount as dollars) renders as
+ *  plain USD with no suffix. Other units (FLOW, USDC, etc.) keep their
+ *  suffix so the unit isn't lost. */
 export function fmtPriceWithUsd(
   n: number | string | null | undefined,
   currency: string | null | undefined,
@@ -79,9 +80,7 @@ export function fmtPriceWithUsd(
   if (n === null || n === undefined || n === "") return "—"
   const v = typeof n === "number" ? n : Number(n)
   if (!Number.isFinite(v)) return "—"
-  if (currency && currency.toUpperCase() === "DUC") {
-    return fmtUsd(v)
-  }
+  if (isUsdPegged(currency)) return fmtUsd(v)
   return fmtPrice(v, currency)
 }
 

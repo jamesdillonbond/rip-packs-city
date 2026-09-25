@@ -223,7 +223,7 @@ export default async function AllDayPackMarketPage() {
           Method: secondary resale of <strong>sealed</strong> (unopened) packs only, from the complete on-chain sale
           history via <code>v_allday_pack_market</code>. Median 90d is the trailing-90-day median secondary price; vs
           retail = median 90d ÷ the pack&rsquo;s original drop price (reward/airdrop packs with $0 retail have no ratio and
-          appear only under Most traded). Prices are DUC ≈ USD. Opened % is the authoritative complete depletion across
+          appear only under Most traded). Prices in USD. Opened % is the authoritative complete depletion across
           all minted packs.
         </p>
         <div style={{ marginTop: 12, display: "flex", gap: 16, flexWrap: "wrap" }}>

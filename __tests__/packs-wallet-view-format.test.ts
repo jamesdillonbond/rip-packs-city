@@ -193,12 +193,14 @@ describe("packBuyLabel (2026-09-18)", () => {
     expect(packBuyLabel({ has_buy: true, buy_usd: 10, buy_price_source: "retail" })).toBe("$10.00 retail")
     expect(packBuyLabel({ has_buy: true, buy_usd: 0, buy_price_source: "retail" })).toBe("$0 (reward)")
   })
-  it("renders a secondary buy with its currency", () => {
-    expect(packBuyLabel({ has_buy: true, buy_usd: 10, buy_price: 10, buy_currency: "DUC", buy_price_source: "onchain" })).toBe("$10.00 DUC")
-    expect(packBuyLabel({ has_buy: true, buy_usd: 30, buy_currency: "USD", buy_price_source: "marketplace" })).toBe("$30.00 USD")
+  it("renders a secondary buy as plain dollars when the unit is dollar-pegged, with the code otherwise (2026-09-25)", () => {
+    // Trevor: DUC is 1:1 USD and the site never shows the word — "$10.00", not "$10.00 DUC".
+    expect(packBuyLabel({ has_buy: true, buy_usd: 10, buy_price: 10, buy_currency: "DUC", buy_price_source: "onchain" })).toBe("$10.00")
+    expect(packBuyLabel({ has_buy: true, buy_usd: 30, buy_currency: "USD", buy_price_source: "marketplace" })).toBe("$30.00")
+    expect(packBuyLabel({ has_buy: true, buy_usd: 30, buy_currency: "FLOW", buy_price_source: "onchain" })).toBe("$30.00 FLOW")
   })
   it("falls back to buy_price when buy_usd is absent (older payloads)", () => {
-    expect(packBuyLabel({ has_buy: true, buy_price: 8, buy_currency: "DUC" })).toBe("$8.00 DUC")
+    expect(packBuyLabel({ has_buy: true, buy_price: 8, buy_currency: "DUC" })).toBe("$8.00")
   })
 })
 

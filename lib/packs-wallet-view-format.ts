@@ -7,7 +7,7 @@
 // the wrong server-side status, mis-tints P&L, or mangles the relative "when"
 // column / USD figures.
 
-import { usdSignFirst } from "@/lib/usd-format"
+import { currencySuffix, usdSignFirst } from "@/lib/usd-format"
 
 export type PackFilter = "unopened" | "opened" | "sold"
 
@@ -138,7 +138,9 @@ export function packBuyLabel(row: {
   const usd = row.buy_usd ?? row.buy_price
   if (usd == null) return "—"
   if (row.buy_price_source === "retail") return usd === 0 ? "$0 (reward)" : fmtPackUsd(usd) + " retail"
-  return fmtPackUsd(usd) + (row.buy_currency ? ` ${row.buy_currency}` : "")
+  // 2026-09-25: a dollar-pegged unit (USD, Dapper's DUC) shows no ticker —
+  // "$10.00", never "$10.00 DUC"; FLOW / USDC keep theirs.
+  return fmtPackUsd(usd) + currencySuffix(row.buy_currency)
 }
 
 export interface IdentitySync {

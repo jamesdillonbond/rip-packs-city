@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
+import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
 import { packBuyLabel, packIdentityNote, packMarketLabel } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
@@ -170,7 +171,7 @@ export function packCoverage(t: SummaryTotals): {
   return { spendKnown, ripKnown, plWithheld: spendCov < PL_COVERAGE_FLOOR || ripCov < PL_COVERAGE_FLOOR }
 }
 
-interface SummaryCurrency {
+export interface SummaryCurrency {
   spent: number
   proceeds: number
   purchases: number
@@ -259,7 +260,34 @@ interface History {
  *  · spent $0 · in $0" on the founder's wallet (2026-09-24). Name the bucket
  *  and withhold the fabricated dollar figures. */
 export function currencyBucketLabel(ccy: string): string {
-  return ccy === "UNKNOWN" ? "DROPS / REWARDS" : ccy
+  return ccy === "UNKNOWN" ? "DROPS / REWARDS" : displayCurrency(ccy)
+}
+
+/** 2026-09-25 (Trevor): DUC is pegged 1:1 to the dollar and the site never
+ *  shows the word — the RPC buckets by sale_currency, so its DUC and USD
+ *  buckets are ONE dollar bucket here: counts and sums added, keyed "USD".
+ *  Other units and the UNKNOWN (drops / rewards) bucket pass through. Keys
+ *  come back in first-seen order, USD where its first member was. */
+export function foldUsdPeggedBuckets(by: Record<string, SummaryCurrency>): Array<[string, SummaryCurrency]> {
+  const out: Array<[string, SummaryCurrency]> = []
+  const at = new Map<string, number>()
+  for (const [ccy, vals] of Object.entries(by)) {
+    const key = ccy !== "UNKNOWN" && isUsdPegged(ccy) ? "USD" : ccy
+    const i = at.get(key)
+    if (i == null) {
+      at.set(key, out.length)
+      out.push([key, { ...vals }])
+    } else {
+      const acc = out[i][1]
+      out[i][1] = {
+        purchases: (acc.purchases ?? 0) + (vals.purchases ?? 0),
+        sales: (acc.sales ?? 0) + (vals.sales ?? 0),
+        spent: (acc.spent ?? 0) + (vals.spent ?? 0),
+        proceeds: (acc.proceeds ?? 0) + (vals.proceeds ?? 0),
+      }
+    }
+  }
+  return out
 }
 export function currencyBucketText(ccy: string, vals: SummaryCurrency): string {
   if (ccy === "UNKNOWN") {
@@ -579,7 +607,7 @@ export default function PackHistoryClient() {
             {/* Currency breakdown */}
             {summary.by_currency && Object.keys(summary.by_currency).length > 0 && (
               <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", letterSpacing: "0.04em" }}>
-                {Object.entries(summary.by_currency).map(([ccy, vals]) => (
+                {foldUsdPeggedBuckets(summary.by_currency).map(([ccy, vals]) => (
                   <span key={ccy}>
                     <span style={{ color: "#fff", fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.08em" }}>{currencyBucketLabel(ccy)}</span>
                     <span style={{ marginLeft: 8 }}>{currencyBucketText(ccy, vals)}</span>
@@ -798,7 +826,7 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
   const buyText = packBuyLabel(row)
   const identityNote = packIdentityNote(row)
   const marketText = packMarketLabel(row)
-  const sellText = row.has_sell ? fmtUsd(row.sell_price) + (row.sell_currency ? " " + row.sell_currency : "") : "—"
+  const sellText = row.has_sell ? fmtUsd(row.sell_price) + currencySuffix(row.sell_currency) : "—"
   const pullTint = row.has_buy && row.has_rip && row.buy_price != null && row.pull_value_usd != null
     ? (row.pull_value_usd >= row.buy_price ? "#34D399" : "var(--rpc-red, #E03A2F)")
     : "rgba(255,255,255,0.85)"

@@ -30,6 +30,7 @@ import {
   displayName as resolveDisplayName,
 } from "@/lib/analytics/username-resolver"
 import { pickEarliest, pickLatest } from "@/lib/analytics/format"
+import { displayCurrency } from "@/lib/usd-format"
 
 interface WalletProfileProps {
   data: WalletDetailResponse
@@ -765,7 +766,7 @@ function RowGroup({
               <Detail label="Term" value={termDays != null ? `${termDays}d` : "—"} />
               <Detail label="Term rate" value={aprPct} />
               <Detail label="Repayment" value={fmtUsd(loan.repayment_usd)} />
-              <Detail label="Currency" value={loan.principal_currency || "—"} />
+              <Detail label="Currency" value={displayCurrency(loan.principal_currency)} />
               <Detail label="NFT ID" value={String(loan.nft_id)} />
               <Detail label="Counterparty" value={loan.counterparty_addr} mono />
             </div>

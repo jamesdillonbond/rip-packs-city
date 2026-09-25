@@ -223,7 +223,7 @@ export default async function TopShotPackMarketPage() {
           Method: secondary resale of <strong>sealed</strong> (unopened) packs only, from the complete on-chain sale
           history via <code>v_topshot_pack_market</code>. Median 90d is the trailing-90-day median secondary price; vs
           retail = median 90d ÷ the pack&rsquo;s original drop price (premium packs with no fixed retail have no ratio and
-          appear only under Most traded). Prices are DUC ≈ USD. Opened % is the authoritative pack depletion from
+          appear only under Most traded). Prices in USD. Opened % is the authoritative pack depletion from
           on-chain supply.
         </p>
         <div style={{ marginTop: 12, display: "flex", gap: 16, flexWrap: "wrap" }}>

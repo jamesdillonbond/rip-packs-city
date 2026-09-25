@@ -666,7 +666,7 @@ export default function PinnacleSniperClient() {
           ) : (
             <span>FMV coverage unavailable — discount and FMV show once the feed loads</span>
           )}
-          <span className="ml-auto">Source: Disney Pinnacle Marketplace · Prices in USD (DUC)</span>
+          <span className="ml-auto">Source: Disney Pinnacle Marketplace · Prices in USD</span>
         </div>
       </div>
     </div>

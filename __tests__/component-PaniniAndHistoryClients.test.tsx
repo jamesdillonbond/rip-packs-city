@@ -237,6 +237,9 @@ describe("TransactionHistoryClient — the three-state ladder", () => {
     // no-change arm: a secondary purchase still reads "Bought pack · from <seller>"
     expect(text).toMatch(/Bought pack/i)
     expect(text).toMatch(/from 0x18eb/i)
+    // 2026-09-25 (Trevor): a 10 DUC pack reads "$10.00", never "$10.00 DUC".
+    expect(text).toMatch(/\$10\.00/)
+    expect(text).not.toMatch(/\bDUC\b/)
   })
 
   // ⚠ The ladder is loading → ERROR → empty, in that order, and the order is the property:
