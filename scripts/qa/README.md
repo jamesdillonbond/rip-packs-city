@@ -103,6 +103,28 @@ byte-identical to the previous build, nothing shipped.
 Behaviour on prod is the real gate either way — `_to_delete/verify44.mjs` and
 `verify16.mjs` measure it.
 
+### The route that sidesteps it: component-scoped `<style>` (2026-09-25)
+
+A layout rule that belongs to ONE component can ship inside that component
+instead of `globals.css`: React 19 hoists `<style href="<id>" precedence="default">`
+into `<head>` and **dedups by `href`** (six trophy slabs → one rule). The CSS then
+lives in the JS chunk and in the SSR HTML, never in the Tailwind/Lightning CSS
+stylesheet, so the cache trap above cannot drop it — and it is verifiable with
+one fetch of any public SSR page that renders the component. Inline `style={}`
+beats a class rule, so the override declarations need `!important`.
+
+**Case — `components/TrophySlab.tsx` (`SLAB_LABEL_CSS`).** In the 2-up mobile
+grid the label's text column was ~45 px ("PORTLA…", "Series 2024-2…"). A
+viewport `@media` query is the wrong instrument for a card: its width depends on
+the grid, not the screen. The label now sits in a `container-type: inline-size`
+wrapper and reflows under `@container (max-width: 240px)`. Verified on prod via
+`web_fetch_vercel_url` on `/profile/<username>/trophy-case` (the rule appears
+once as `<style data-href="rpc-slab-label">`; 6 `class="rpc-slab-label"`).
+⚠ `/dashboard` is no use for this check — an anonymous fetch lands on `/login`
+(`x-matched-path: /login`). jsdom cannot evaluate `@container`, so the unit pin
+(`__tests__/component-TrophySlab.test.tsx`) asserts the container and the narrow
+rule's text; the planted-defect run (drop `column-reverse`) reds it.
+
 ## Signed-in sweeps
 
 `mobile-sweep.mjs` has always accepted `RPC_QA_STATE`, but nothing produced that
