@@ -202,6 +202,25 @@ describe("/api/cron/golazos-storefront-reconcile — a run", () => {
     expect(log.p_extra).toMatchObject({ sellers_walked: 0, sellers_walk_errors: 1 })
   })
 
+  it("a 429 from the shared Flow endpoint is retried, not recorded as a failed walk", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] })
+    const good = state.flow!
+    let calls = 0
+    state.flow = (b) => (++calls <= 2 ? { ok: false, status: 429, text: "100/second request limit reached" } : good(b))
+    try {
+      await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))
+      const done = runAfter()
+      await vi.runAllTimersAsync()
+      await done
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(calls).toBe(3)
+    const log = state.logs.at(-1)
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra).toMatchObject({ sellers_walked: 1, sellers_walk_errors: 0, inserted: 1 })
+  })
+
   it("a failed sellers read makes the run ok=false instead of walking nobody and reporting success", async () => {
     state.sellers = { data: null, error: { message: "timeout" } }
     await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))

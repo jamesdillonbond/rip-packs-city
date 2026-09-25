@@ -40,7 +40,12 @@ const SCRIPT_TIMEOUT_MS = 20_000
 // Stop starting new walks here so the writes and the terminal log land well inside
 // maxDuration. Measured 2026-09-25: Golazos' 170 sellers walked in ~18 s serially.
 const WALK_BUDGET_MS = 200_000
-const WALK_CONCURRENCY = 6
+// ⚠ rest-mainnet.onflow.org is QuickNode-fronted at 100 requests/SECOND, shared with
+// every other Flow lane. The first two-collection run (2026-09-25) walked 12 at once
+// and got 412 HTTP 429s. 3 in flight + backoff on 429 stays well under it.
+const WALK_CONCURRENCY = 3
+const RATE_LIMIT_RETRIES = 4
+const RATE_LIMIT_BASE_MS = 400
 const PAGE = 1000
 
 // bigint ids are selected as TEXT: PostgREST returns a bigint as a JSON number,
@@ -75,16 +80,25 @@ function unwrapCdc(node: unknown): unknown {
 
 async function walkSeller(script: string, seller: string): Promise<StorefrontListing[]> {
   const args = [{ type: "Address", value: seller }]
-  const res = await fetch(`${FLOW_REST}/v1/scripts?block_height=sealed`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      script: Buffer.from(script).toString("base64"),
-      arguments: args.map((a) => Buffer.from(JSON.stringify(a)).toString("base64")),
-    }),
-    signal: AbortSignal.timeout(SCRIPT_TIMEOUT_MS),
+  const body = JSON.stringify({
+    script: Buffer.from(script).toString("base64"),
+    arguments: args.map((a) => Buffer.from(JSON.stringify(a)).toString("base64")),
   })
-  const text = await res.text()
+  let res: Response
+  let text: string
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(`${FLOW_REST}/v1/scripts?block_height=sealed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: AbortSignal.timeout(SCRIPT_TIMEOUT_MS),
+    })
+    text = await res.text()
+    // A rate limit is the shared endpoint being busy, not this seller failing:
+    // back off and retry before recording a walk error.
+    if (res.status !== 429 || attempt >= RATE_LIMIT_RETRIES) break
+    await new Promise((r) => setTimeout(r, RATE_LIMIT_BASE_MS * 2 ** attempt + Math.floor(Math.random() * 200)))
+  }
   if (!res.ok) throw new Error(`script HTTP ${res.status}: ${text.slice(0, 160)}`)
   const decoded = JSON.parse(Buffer.from(JSON.parse(text), "base64").toString("utf8"))
   return parseStorefrontListings(unwrapCdc(decoded))
