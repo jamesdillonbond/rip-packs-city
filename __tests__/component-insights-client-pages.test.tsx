@@ -202,6 +202,8 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
       top_sets: [
         {
           set_name: "Base Set S4",
+          series: 5,
+          series_label: "Series 4",
           owned_eds: 12,
           set_total_eds: 50,
           completion_pct: 24,
@@ -218,7 +220,8 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
       rookie_coverage: {
         cohort_size: 60,
         owned_count: 9,
-        best_holding: { player_name: "Rook One", edition_count: 4 },
+        // 2026-09-24: the RPC shape — a single best MOMENT, never an edition_count.
+        best_holding: { player_name: "Rook One", set_name: "Rookie Debut", tier: "RARE", serial: 1 },
       },
       cross_collection: [
         { slug: "nba_top_shot", moments: 200, editions: 120, approx_fmv_usd: 5400 },
@@ -244,6 +247,15 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
     await waitFor(() => expect(screen.getByText("Squeeze Star")).toBeTruthy())
     expect(screen.getAllByText(/Squeeze Exposure/i).length).toBeGreaterThan(0)
     expect(screen.getByText("Base Set S4")).toBeTruthy()
+    // 2026-09-24: the set's series renders beside it (four "Base Set" rows are
+    // otherwise indistinguishable) and the link opens the set page, not the
+    // generic squeeze board.
+    expect(screen.getByText("Series 4")).toBeTruthy()
+    expect(screen.getByText("Base Set S4").closest("a")?.getAttribute("href")).toBe("/nba-top-shot/set/base-set-s4")
+    // The best rookie holding prints the moment the RPC returns — never a
+    // fabricated "(— editions)" from a field the RPC does not carry.
+    expect(screen.getByText(/Best rookie holding: Rook One/)).toBeTruthy()
+    expect(screen.queryByText(/— editions/)).toBeNull()
     expect(screen.getByText("Recent Buy")).toBeTruthy()
     // Cross-collection label map turns the slug into a display name.
     expect(screen.getAllByText(/NFL All Day/i).length).toBeGreaterThan(0)

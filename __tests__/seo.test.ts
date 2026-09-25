@@ -20,6 +20,7 @@ import {
   packJsonLd,
   NOT_FOUND_METADATA,
 } from "@/lib/seo"
+import { COLLECTIONS } from "@/lib/collections"
 
 // `Metadata.title` is `string | { absolute } | { default, template }`.
 // collectionLayoutMetadata and the four entity builders returned bare strings
@@ -634,4 +635,35 @@ describe("prototype-key collection slugs never surface a prototype member", () =
       expect(typeof node.description).toBe("string")
     })
   }
+})
+
+// 2026-09-24 — the two brand-label maps are DERIVED from lib/collections.ts.
+// Their hand-written predecessors stopped at UFC, so every Candy MLB entity
+// page (125 editions, 100 players, 30 teams, 1 set — read from the live
+// sitemap sweep) carried "| Flow |" in its <title>, breadcrumbs, OG and JSON-LD
+// for a Solana collection. Pin the property over the REGISTRY, not a spelling:
+// every collection the registry lists resolves to its own label, never "Flow".
+describe("collection brand labels follow the registry (2026-09-24)", () => {
+  it("names every registered collection by its registry label, never the 'Flow' fallback", () => {
+    for (const c of COLLECTIONS) {
+      expect(collectionDisplayName(c.id)).toBe(c.label)
+      expect(collectionDisplayName(c.id)).not.toBe("Flow")
+      expect(collectionLayoutMetadata(c.id).keywords).toContain(c.label)
+    }
+  })
+
+  it("brands Candy MLB entity pages as Candy MLB on Solana (the live defect)", () => {
+    expect(collectionDisplayName("candy-mlb")).toBe("Candy MLB")
+    const tm = teamPageMetadata({ route_slug: "detroit-tigers", team_name: "Detroit Tigers" }, "candy-mlb", "detroit-tigers")
+    expect(titleText(tm.title)).toContain("| Candy MLB |")
+    expect(titleText(tm.title)).not.toContain("| Flow |")
+    const em = editionPageMetadata({ route_slug: "aaron-judge", player_name: "Aaron Judge", set_name: "2026 MLB Base Series ICONs" }, "candy-mlb")
+    expect(titleText(em.title)).toContain("| Candy MLB |")
+    const lm = collectionLayoutMetadata("candy-mlb")
+    expect(titleText(lm.title)).toContain("Candy MLB")
+    expect(lm.keywords).toContain("Solana blockchain")
+    expect(lm.keywords).not.toContain("Flow blockchain")
+    // Flow collections keep their chain keyword — a no-change arm for the incumbent chain.
+    expect(collectionLayoutMetadata("nba-top-shot").keywords).toContain("Flow blockchain")
+  })
 })

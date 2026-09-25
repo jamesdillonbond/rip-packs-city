@@ -14,6 +14,26 @@ import {
   computeCostBasisSummary,
 } from "@/lib/portfolio-summary-compute"
 
+// 2026-09-24: the P&L strip printed "$113124.59" (no separators) and called a
+// cost-basis subset "wallet-wide totals" while its Current FMV ($34k) sat
+// beside a Wallet FMV of $58k. Format with separators; say what the subset is.
+export function fmtUsd2(n: number): string {
+  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// The near-complete callout's cost. An unknown cost (no ask, no FMV on the
+// missing plays) rendered as "$0.00" — a fabricated zero in the honesty class.
+// null → "unpriced"; a partially priced set is a lower bound.
+export function nearCompleteCostLabel(s: {
+  totalMissingCost?: number | null
+  unpricedMissingCount?: number | null
+}): string {
+  if (s.totalMissingCost == null) return " · unpriced"
+  const unpriced = s.unpricedMissingCount ?? 0
+  if (unpriced > 0) return ` · ≥ ${fmtUsd2(s.totalMissingCost)} (${unpriced} unpriced)`
+  return ` · ${fmtUsd2(s.totalMissingCost)}`
+}
+
 type WalletSummary = {
   wallet_fmv: number
   unlocked_fmv: number
@@ -196,11 +216,11 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
           const plColor = totalPl >= 0 ? "text-emerald-400" : "text-red-400"
           return (
             <div className="flex flex-wrap gap-6 items-center mb-4 p-3 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-sm font-mono">
-              <div><span className="text-[color:var(--rpc-text-muted)]">Cost Basis:</span> <span className="text-[color:var(--rpc-text-primary)]">${totalCost.toFixed(2)}</span></div>
-              <div><span className="text-[color:var(--rpc-text-muted)]">Current FMV:</span> <span className="text-[color:var(--rpc-text-primary)]">${totalFmv.toFixed(2)}</span></div>
-              <div><span className="text-[color:var(--rpc-text-muted)]">P&amp;L:</span> <span className={plColor}>{totalPl >= 0 ? "+" : ""}{totalPl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</span></div>
+              <div><span className="text-[color:var(--rpc-text-muted)]">Cost Basis:</span> <span className="text-[color:var(--rpc-text-primary)]">{fmtUsd2(totalCost)}</span></div>
+              <div><span className="text-[color:var(--rpc-text-muted)]">Current FMV:</span> <span className="text-[color:var(--rpc-text-primary)]">{fmtUsd2(totalFmv)}</span></div>
+              <div><span className="text-[color:var(--rpc-text-muted)]">P&amp;L:</span> <span className={plColor}>{totalPl >= 0 ? "+" : "-"}{fmtUsd2(Math.abs(totalPl))} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</span></div>
               {walletWide
-                ? <div className="text-[color:var(--rpc-text-muted)] text-xs">wallet-wide totals</div>
+                ? <div className="text-[color:var(--rpc-text-muted)] text-xs">{count > 0 ? `${count.toLocaleString()} moments with a known cost` : "moments with a known cost"} — FMV here is theirs, not the whole wallet</div>
                 : <div className="text-[color:var(--rpc-text-muted)] text-xs">{count} moments with cost data</div>}
             </div>
           )
@@ -216,7 +236,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
                   <span key={s.setId ?? s.setName}>
                     {i > 0 && " · "}
                     <a href={"/nba-top-shot/sets"} style={{ color: "#a1a1aa", textDecoration: "none" }}>
-                      {s.setName} — {s.missingCount} away{s.totalMissingCost != null ? " · $" + s.totalMissingCost.toFixed(2) : ""}
+                      {s.setName} — {s.missingCount} away{nearCompleteCostLabel(s)}
                     </a>
                   </span>
                 )

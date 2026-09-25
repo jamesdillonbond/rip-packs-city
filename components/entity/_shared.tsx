@@ -314,6 +314,16 @@ export function marketplaceLabel(raw: string | null | undefined): string {
   if (k === "ufc" || k === "ufc_strike") return "UFC Strike"
   if (k === "pinnacle" || k === "disney_pinnacle") return "Pinnacle"
   if (k === "flowty") return "Flowty (historical)"
-  if (k === "onchain") return "On-chain"
-  return raw[0].toUpperCase() + raw.slice(1)
+  if (k === "onchain" || k === "on-chain") return "On-chain"
+  // Candy MLB's only venue; `sales.marketplace` carries the underscored key,
+  // and the generic fallback below rendered it as "Magic_eden" on every Candy
+  // team / player row (live 2026-09-24).
+  if (k === "magic_eden" || k === "magiceden") return "Magic Eden"
+  if (k === "opensea") return "OpenSea"
+  // Generic fallback: underscores are separators, never display characters.
+  return raw
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ")
 }

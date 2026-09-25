@@ -47,6 +47,8 @@ interface SetProgress {
   listedCount: number;
   completionPct: number;
   totalMissingCost: number | null;
+  /** Missing plays with neither an ask nor an FMV; null when the preview is not the whole missing set. */
+  unpricedMissingCount?: number | null;
   lowestSingleAsk: number | null;
   bottleneckPrice: number | null;
   bottleneckPlayerName: string | null;
@@ -132,7 +134,7 @@ function toNum(v: unknown): number | null {
 function classifyTier(
   completionPct: number,
   missingPlays: number,
-  estimatedCost: number
+  estimatedCost: number | null
 ): SetTier {
   return classifySetTier({
     completionPct,
@@ -180,9 +182,23 @@ function mapSetSummary(s: RpcSetSummary): SetProgress {
   const ownedPlays = s.ownedPlays ?? 0;
   const missingPlays = s.missingPlays ?? Math.max(totalPlays - ownedPlays, 0);
   const completionPct = Math.round(toNum(s.completionPct) ?? 0);
-  const estimatedCost = toNum(s.estimatedCostToComplete) ?? 0;
   const missing = (s.missingPreview ?? []).map(mapMissing);
   const listedCount = missing.filter((m) => m.lowestAsk !== null).length;
+  // 2026-09-24 — an UNKNOWN cost is not a zero. The RPC's
+  // estimated_cost_to_complete is COALESCE(SUM(COALESCE(low_ask, fmv)), 0), so a
+  // set whose missing plays have neither an ask nor an FMV comes back as 0 and
+  // the callout printed "Base Set — 1 away · $0.00" (live, Trevor's wallet).
+  // The preview carries every missing play whenever missingPlays <= 5 (the
+  // near-complete callout's whole population), so when it is complete and NO
+  // missing play is priced, the cost is unknown → null. A partially priced set
+  // keeps the sum (a lower bound) and reports how many plays are unpriced.
+  const previewComplete = missing.length >= missingPlays;
+  const unpricedMissingCount = previewComplete ? missing.filter((m) => m.lowestAsk === null).length : null;
+  const rawCost = toNum(s.estimatedCostToComplete);
+  const estimatedCost: number | null =
+    rawCost === null ? null
+    : previewComplete && unpricedMissingCount === missingPlays && missingPlays > 0 ? null
+    : rawCost;
   // Explicit min across the whole missing array — relying on `missing[0]` was an
   // implicit dependency on RPC ordering (Set audit B2).
   const lowestSingleAsk = missing
@@ -201,6 +217,7 @@ function mapSetSummary(s: RpcSetSummary): SetProgress {
     listedCount,
     completionPct,
     totalMissingCost: estimatedCost,
+    unpricedMissingCount,
     lowestSingleAsk,
     bottleneckPrice: bn?.lowestAsk ?? null,
     bottleneckPlayerName: bn?.playerName ?? null,
@@ -221,10 +238,13 @@ function mapSetDetail(d: RpcDetailPayload): SetProgress {
   const owned = (d.owned ?? []).map(mapOwned);
   const missing = (d.missing ?? []).map(mapMissing);
   const listedCount = missing.filter((m) => m.lowestAsk !== null).length;
-  const totalMissingCost = missing.reduce(
-    (sum, m) => sum + (m.lowestAsk ?? 0),
-    0
-  );
+  // 2026-09-24 — same rule as mapSetSummary: no priced missing play → null,
+  // never a summed-over-zeros "$0.00". Partially priced → lower bound + count.
+  const unpricedMissingCount = missing.filter((m) => m.lowestAsk === null).length;
+  const totalMissingCost: number | null =
+    missing.length > 0 && unpricedMissingCount === missing.length
+      ? null
+      : missing.reduce((sum, m) => sum + (m.lowestAsk ?? 0), 0);
   const lowestSingleAsk = missing
     .map((m) => m.lowestAsk)
     .filter((v): v is number => v !== null)

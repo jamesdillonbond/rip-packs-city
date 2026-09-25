@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { slugifyName } from "@/lib/entity-labels"
 
 type Bucket = { editions: number; moments: number }
 type Buckets = { liquid: Bucket; moderate: Bucket; squeezed: Bucket; extreme: Bucket }
@@ -38,6 +39,10 @@ type Squeeze = {
 }
 type TopSet = {
   set_name: string
+  // 2026-09-24: the RPC now carries the set's series (additive keys) so the
+  // four "Base Set" rows a long-time collector holds are distinguishable.
+  series?: number | null
+  series_label?: string | null
   owned_eds: number
   set_total_eds: number
   completion_pct: number
@@ -53,7 +58,11 @@ type WnbaCoverage = {
 type RookieCoverage = {
   cohort_size: number
   owned_count: number
-  best_holding: { player_name: string | null; edition_count: number } | null
+  // The RPC's best_holding is the single best rookie MOMENT (serial #1 first,
+  // then tier, then lowest serial): player + set + tier + serial. It never
+  // carried an edition_count — the page read one anyway and printed
+  // "Deepest: <player> (— editions)" on every wallet (live 2026-09-24).
+  best_holding: { player_name: string | null; set_name?: string | null; tier?: string | null; serial?: number | null } | null
 }
 type CrossCollection = {
   slug: string
@@ -327,15 +336,18 @@ export default function TcReportPage() {
                 </thead>
                 <tbody>
                   {topSets.map((s) => (
-                    <tr key={s.set_name}>
+                    <tr key={`${s.set_name}::${s.series ?? "?"}`}>
                       <td className="rpc-tc-td-ed">
                         <Link
-                          href={`/insights/set-squeeze`}
+                          href={`/nba-top-shot/set/${slugifyName(s.set_name)}`}
                           className="rpc-tc-set-link"
-                          title={`See ${s.set_name} on the set-squeeze board`}
+                          title={`Open ${s.set_name}${s.series_label ? ` (${s.series_label})` : ""} on NBA Top Shot`}
                         >
                           {s.set_name}
                         </Link>
+                        {s.series_label ? (
+                          <div className="rpc-tc-ed-set">{s.series_label}</div>
+                        ) : null}
                       </td>
                       <td className="rpc-tc-td-num">{fmtInt(s.owned_eds)}</td>
                       <td className="rpc-tc-td-num">{fmtInt(s.set_total_eds)}</td>
@@ -362,7 +374,10 @@ export default function TcReportPage() {
                     </div>
                     {rookies.best_holding?.player_name ? (
                       <div className="rpc-tc-cohort-sub">
-                        Deepest: {rookies.best_holding.player_name} ({fmtInt(rookies.best_holding.edition_count)} editions)
+                        Best rookie holding: {rookies.best_holding.player_name}
+                        {rookies.best_holding.set_name ? ` · ${rookies.best_holding.set_name}` : ""}
+                        {rookies.best_holding.tier ? ` · ${rookies.best_holding.tier}` : ""}
+                        {rookies.best_holding.serial != null ? ` #${rookies.best_holding.serial}` : ""}
                       </div>
                     ) : (
                       <div className="rpc-tc-cohort-sub">No rookie editions held.</div>

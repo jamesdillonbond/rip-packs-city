@@ -109,13 +109,27 @@ const navLinkStyle: React.CSSProperties = {
   textDecoration: "none",
 };
 
+// 2026-09-24: the collection count is READ FROM THE REGISTRY, never typed. The
+// hardcoded "5" and "FIVE COLLECTIONS" shipped beside a six-tile grid once
+// Candy MLB was published — the same page contradicted itself.
+const NUMBER_WORDS = ["ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN"];
+export function collectionCountWord(n: number): string {
+  return NUMBER_WORDS[n] ?? String(n);
+}
+export function coveringSentence(labels: string[]): string {
+  if (labels.length === 0) return "";
+  if (labels.length === 1) return `Covering ${labels[0]}.`;
+  return `Covering ${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}.`;
+}
+
 const STATS: Array<{ value: string; label: string }> = [
-  // Defensible, non-fabricated values. "5 collections" is exact; "4M+ sales
+  // Defensible, non-fabricated values. The collection count is the registry's
+  // published count; "4M+ sales
   // indexed" is a safe floor (the sales table only grows — live row estimate
   // ~4.7M on 2026-08-05, and reltuples under-counts between analyzes); "20 MIN"
   // is the cron cadence; "24/7" reflects the always-on pipeline. Avoid absolute/
   // stale claims like "100% Uptime" or a precise refresh count that drifts.
-  { value: "5", label: "Collections Tracked" },
+  { value: String(publishedCollections().length), label: "Collections Tracked" },
   { value: "4M+", label: "Sales Indexed" },
   { value: "20 MIN", label: "Live Refresh" },
   { value: "24/7", label: "Live Pipeline" },
@@ -264,7 +278,7 @@ export default function HomePageMarketing() {
           What is your <span className="rpc-home-h1-accent">collection</span> worth?
         </h1>
         <p className="rpc-home-sub">
-          Paste a Top Shot username or Flow wallet and see every moment priced at live FMV — free, no signup. Covering NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike.
+          Paste a Top Shot username or Flow wallet and see every moment priced at live FMV — free, no signup. {coveringSentence(collections.map((c) => c.label))}
         </p>
         <WalletSearch
             surface="home"
@@ -326,7 +340,7 @@ export default function HomePageMarketing() {
       <section id="collections" className="rpc-home-section">
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: 40 }}>
-            <h2 className="rpc-home-h2">FIVE COLLECTIONS. ONE PLATFORM.</h2>
+            <h2 className="rpc-home-h2">{collectionCountWord(collections.length)} COLLECTIONS. ONE PLATFORM.</h2>
             <div
               style={{
                 marginTop: 12,
@@ -336,7 +350,7 @@ export default function HomePageMarketing() {
                 color: "var(--rpc-text-muted)",
               }}
             >
-              Every published collection on Flow blockchain, in one analytics surface.
+              Every published collection — Flow and Solana — in one analytics surface.
             </div>
           </div>
 

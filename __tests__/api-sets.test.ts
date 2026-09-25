@@ -126,3 +126,60 @@ describe("GET /api/sets", () => {
     expect(body.error).toMatch(/try again/i)
   })
 })
+
+// 2026-09-24 — an UNKNOWN cost-to-complete is not a zero. The progress RPC
+// returns estimatedCostToComplete = COALESCE(SUM(COALESCE(low_ask, fmv)), 0),
+// so a set whose missing plays carry neither an ask nor an FMV came back as 0
+// and the Close-to-Completing callout printed "Base Set — 1 away · $0.00" on a
+// real wallet. The route now derives it: all-unpriced → null; partially priced
+// → the sum (a lower bound) plus how many plays are unpriced.
+describe("GET /api/sets — cost-to-complete honesty (2026-09-24)", () => {
+  const setRow = (over: Record<string, unknown>) => ({
+    setId: "s", setName: "Base Set", series: 5, setTier: "COMMON",
+    totalPlays: 10, ownedPlays: 9, missingPlays: 1, completionPct: 90,
+    estimatedCostToComplete: 0,
+    missingPreview: [{ playId: 1, playerName: "X", tier: "COMMON", lowAsk: null, fmvUsd: null, thumbnailUrl: null, topshotUrl: "" }],
+    ...over,
+  })
+  const progress = (row: Record<string, unknown>) => ({
+    wallet: "0xabc", totalSets: 1, completeSets: 0, inProgressSets: 1, notStartedSets: 0, generatedAt: "2026-09-25T05:00:00Z", sets: [row],
+  })
+
+  it("publishes null, never $0, when no missing play has an ask or an FMV", async () => {
+    state.data = progress(setRow({}))
+    const body = await (await GET(req("https://t/api/sets?wallet=0xabc"))).json()
+    expect(body.sets[0].totalMissingCost).toBeNull()
+    expect(body.sets[0].unpricedMissingCount).toBe(1)
+    expect(body.sets[0].tier).not.toBe("almost_there") // no price signal → not "actionable"
+  })
+
+  it("keeps a priced set's cost (no-change arm)", async () => {
+    state.data = progress(setRow({
+      estimatedCostToComplete: 12.5,
+      missingPreview: [{ playId: 1, playerName: "X", tier: "COMMON", lowAsk: 12.5, fmvUsd: 11, thumbnailUrl: null, topshotUrl: "" }],
+    }))
+    const body = await (await GET(req("https://t/api/sets?wallet=0xabc"))).json()
+    expect(body.sets[0].totalMissingCost).toBe(12.5)
+    expect(body.sets[0].unpricedMissingCount).toBe(0)
+  })
+
+  it("reports a partially priced set as a lower bound with the unpriced count", async () => {
+    state.data = progress(setRow({
+      missingPlays: 2, ownedPlays: 8, completionPct: 80, estimatedCostToComplete: 12.5,
+      missingPreview: [
+        { playId: 1, playerName: "X", tier: "COMMON", lowAsk: 12.5, fmvUsd: null, thumbnailUrl: null, topshotUrl: "" },
+        { playId: 2, playerName: "Y", tier: "COMMON", lowAsk: null, fmvUsd: null, thumbnailUrl: null, topshotUrl: "" },
+      ],
+    }))
+    const body = await (await GET(req("https://t/api/sets?wallet=0xabc"))).json()
+    expect(body.sets[0].totalMissingCost).toBe(12.5)
+    expect(body.sets[0].unpricedMissingCount).toBe(1)
+  })
+
+  it("leaves the count null when the preview cannot cover every missing play", async () => {
+    state.data = progress(setRow({ missingPlays: 9, ownedPlays: 1, completionPct: 10, estimatedCostToComplete: 3 }))
+    const body = await (await GET(req("https://t/api/sets?wallet=0xabc"))).json()
+    expect(body.sets[0].unpricedMissingCount).toBeNull()
+    expect(body.sets[0].totalMissingCost).toBe(3)
+  })
+})

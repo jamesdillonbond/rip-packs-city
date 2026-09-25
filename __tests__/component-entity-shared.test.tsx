@@ -198,3 +198,18 @@ describe("_shared — a Solana wallet is rendered as itself, not as a Flow addre
     )
   })
 })
+
+// 2026-09-24 — Candy MLB rows render `sales.marketplace = "magic_eden"`; the
+// generic capitalizer published it as "Magic_eden" on every Candy team/player
+// activity row. Underscores are separators, not display characters.
+describe("marketplaceLabel — Candy venue + underscore fallback (2026-09-24)", () => {
+  it("labels Candy's venue as Magic Eden and never prints an underscore", () => {
+    expect(marketplaceLabel("magic_eden")).toBe("Magic Eden")
+    expect(marketplaceLabel("MAGIC_EDEN")).toBe("Magic Eden")
+    expect(marketplaceLabel("some_new_venue")).toBe("Some New Venue")
+    expect(marketplaceLabel("some_new_venue")).not.toContain("_")
+    // no-change arms for the incumbent keys
+    expect(marketplaceLabel("topshot")).toBe("Top Shot")
+    expect(marketplaceLabel("flowty")).toBe("Flowty (historical)")
+  })
+})

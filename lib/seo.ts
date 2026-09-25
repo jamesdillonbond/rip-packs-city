@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { proxyIpfsUrlAbsolute } from './ipfs-media'
 import { metaField } from './format'
 import { isMarketClosed, closedMarket, formatClosedOn } from "@/lib/market-closed"
-import { collectionHasPage, type CollectionPage } from "@/lib/collections"
+import { COLLECTIONS, collectionHasPage, type CollectionPage } from "@/lib/collections"
 import { ASK_STALE_HOURS } from "@/lib/market/ask-freshness"
 import { MAX_ASK_AGE_HOURS_CORROBORATION } from "@/lib/fmv-confidence"
 
@@ -449,16 +449,22 @@ const COLLECTION_LAYOUT_META: Record<string, PageMeta> = {
     description:
       'FMV pricing, sniper deals, and wallet analytics for UFC Strike moments. Collection migrated to Aptos; 247 NFTs indexed on Flow.',
   },
+  'candy-mlb': {
+    title: 'Candy MLB Analytics — Rip Packs City',
+    description:
+      'FMV pricing from real Magic Eden sales, floor and ask tracking, team and player pages, and market intelligence for Candy MLB collectors on Solana.',
+  },
 }
 
-const COLLECTION_LABELS: Record<string, string> = {
-  'nba-top-shot': 'NBA Top Shot',
-  'nfl-all-day': 'NFL All Day',
-  'laliga-golazos': 'LaLiga Golazos',
-  'disney-pinnacle': 'Disney Pinnacle',
-  'ufc': 'UFC Strike',
-  'panini-blockchain': 'Panini Blockchain',
-}
+// Derived from the collection registry, never hand-listed (2026-09-24). The
+// hand-written copy of this map stopped at UFC, so every /candy-mlb entity
+// page — 125 editions, 100 players, 30 teams, 1 set — shipped with "| Flow |"
+// as its brand segment in <title>, breadcrumbs, OG and JSON-LD for a Solana
+// collection. `lib/collections.ts` is the registry; a label lives there once.
+// Unknown slugs still fall through to the callers' explicit "Flow" fallback.
+const COLLECTION_LABELS: Record<string, string> = Object.fromEntries(
+  COLLECTIONS.map(c => [c.id, c.label])
+)
 
 export function collectionLayoutMetadata(collectionId: string): Metadata {
   const meta = ownMeta(COLLECTION_LAYOUT_META, collectionId) ?? {
@@ -468,6 +474,10 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
   }
   const canonical = `${BASE_URL}/${collectionId}`
   const label = ownMeta(COLLECTION_LABELS, collectionId) ?? 'Flow'
+  // The chain keyword follows the registry's authoritative `dbChain` — a
+  // Solana collection (Candy MLB) must not advertise "Flow blockchain".
+  const chainKeyword =
+    COLLECTIONS.find(c => c.id === collectionId)?.dbChain === 'solana' ? 'Solana blockchain' : 'Flow blockchain'
   // Per-collection OG image. /api/og/collection?id=<slug> renders a
   // 1200×630 card branded with the collection's icon, label, accent
   // color, and chain pill. Returns the generic fallback for unknown ids.
@@ -489,7 +499,7 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
     title: { absolute: meta.title, template: BRAND_TITLE_TEMPLATE },
     description: meta.description,
     alternates: { canonical },
-    keywords: [label, 'FMV', 'moment value', 'collector tools', 'sniper deals', 'Flow blockchain'],
+    keywords: [label, 'FMV', 'moment value', 'collector tools', 'sniper deals', chainKeyword],
     openGraph: {
       ...OG_INHERITED,
       title: meta.title,
@@ -558,13 +568,11 @@ export function collectionPageMetadata(page: string, collectionId = 'nba-top-sho
 
 type Payload = Record<string, unknown>
 
-const COLLECTION_DISPLAY_NAMES: Record<string, string> = {
-  "nba-top-shot": "NBA Top Shot",
-  "nfl-all-day": "NFL All Day",
-  "laliga-golazos": "LaLiga Golazos",
-  "disney-pinnacle": "Disney Pinnacle",
-  "ufc": "UFC Strike",
-}
+// Same registry derivation as COLLECTION_LABELS above (see the note there):
+// the entity-page brand label for every collection the registry knows.
+const COLLECTION_DISPLAY_NAMES: Record<string, string> = Object.fromEntries(
+  COLLECTIONS.map(c => [c.id, c.label])
+)
 
 // UFC has a legacy URL alias "ufc-strike" that getCollectionByUrlSlug still
 // accepts, so /ufc-strike/... entity + tab pages RENDER (the page body doesn't

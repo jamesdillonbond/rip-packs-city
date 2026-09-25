@@ -111,9 +111,15 @@ describe("PortfolioSummary", () => {
     )
     const txt = container.textContent!
     expect(txt).toContain("Cost Basis:")
-    expect(txt).toContain("+1000.00")
+    expect(txt).toContain("+$1,000.00")
     expect(txt).toContain("+25%") // 1000 / 4000
-    expect(txt).toContain("wallet-wide totals")
+    // 2026-09-24: the caption says what the subset IS (moments with a known
+    // cost) instead of "wallet-wide totals" — its Current FMV is the priced
+    // subset's, which on a real wallet sat at $34k beside a $58k Wallet FMV.
+    expect(txt).toContain("moments with a known cost")
+    expect(txt).not.toContain("wallet-wide totals")
+    // thousands separators: the strip printed "$113124.59" live
+    expect(txt).toContain("$4,000.00")
   })
 
   it("suppresses the wallet totals and cost-basis/P&L block for a closed market", () => {
@@ -167,7 +173,7 @@ describe("PortfolioSummary", () => {
     expect(txt).toContain("$150.00") // 100 + 50 cost
     expect(txt).toContain("$70.00") // 40 + 30 fmv
     // totalPl = 70 - 150 = -80 → red, no "+", pct = -53%
-    expect(txt).toContain("-80.00")
+    expect(txt).toContain("-$80.00")
     expect(txt).toContain("-53%")
     // non-wallet-wide → "moments with cost data" caption (2 qualifying rows)
     expect(txt).toContain("2 moments with cost data")
@@ -189,6 +195,8 @@ describe("PortfolioSummary", () => {
     const nearCompleteSets = [
       { setId: "s1", setName: "Base Set", missingCount: 3, totalMissingCost: 42.5 },
       { setId: "s2", setName: "Rare Set", missingCount: 1, totalMissingCost: null },
+      // 2026-09-24: partially priced → a lower bound, never a summed-over-zeros figure
+      { setId: "s3", setName: "Half Set", missingCount: 2, totalMissingCost: 10, unpricedMissingCount: 1 },
     ]
     const { container } = render(<PortfolioSummary {...base} nearCompleteSets={nearCompleteSets} />)
     const txt = container.textContent!
@@ -197,7 +205,9 @@ describe("PortfolioSummary", () => {
     expect(txt).toContain("3 away")
     expect(txt).toContain("$42.50") // totalMissingCost present
     expect(txt).toContain("Rare Set")
-    expect(txt).toContain("1 away")
+    expect(txt).toContain("1 away · unpriced") // unknown cost is named, never "$0.00"
+    expect(txt).not.toContain("$0.00")
+    expect(txt).toContain("2 away · ≥ $10.00 (1 unpriced)")
     expect(txt).toContain("·") // multi-set join separator
   })
 

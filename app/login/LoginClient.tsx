@@ -20,6 +20,7 @@ import { loginErrorCopy } from "@/lib/auth/login-error-copy"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { sendMagicLink } from "@/lib/auth/supabase-client"
+import { publishedCollections } from "@/lib/collections"
 
 type Status = "idle" | "sending" | "sent" | "error" | "waitlist"
 
@@ -102,7 +103,7 @@ export default function LoginClient() {
             color: "var(--rpc-text-ghost)", letterSpacing: "0.2em",
             marginTop: 6, textTransform: "uppercase",
           }}>
-            Collector Intelligence {"·"} Flow Blockchain
+            Collector Intelligence {"·"} Flow + Solana
           </div>
         </div>
 
@@ -295,7 +296,7 @@ export default function LoginClient() {
               letterSpacing: "0.08em",
               textTransform: "uppercase",
             }}>
-              New here? A free account is instant, no invite needed — track your wallets across every Flow collection, then pin your 6 best Moments to a trophy case you can share.{" "}
+              New here? A free account is instant, no invite needed — track your wallets across every published collection, then pin your 6 best Moments to a trophy case you can share.{" "}
               <Link href="/insights" style={{ color: "var(--rpc-text-muted)" }}>
                 Or browse without an account →
               </Link>
@@ -350,7 +351,8 @@ export default function LoginClient() {
         fontSize: 10, color: "var(--rpc-text-ghost)",
         letterSpacing: "0.15em",
       }}>
-        {"⚡ NBA TOP SHOT · NFL ALL DAY · LALIGA GOLAZOS · DISNEY PINNACLE · UFC STRIKE"}
+        {/* 2026-09-24: read from the registry — the typed list had dropped Candy MLB. */}
+        {"⚡ " + publishedCollections().map((c) => c.label.toUpperCase()).join(" · ")}
       </div>
     </div>
   )
