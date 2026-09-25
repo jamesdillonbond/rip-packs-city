@@ -1920,9 +1920,9 @@ Tests  no tests
 
 ⚠ **It reads like ONE broken script, not a missing install**, because 11 of 12 migration suites passed alongside it. The discriminator: `(Get-ChildItem node_modules -Force | Measure-Object).Count` in the worktree (1, not ~845). **Fix: `npm ci` in the worktree** (~1 min, 845 packages); afterwards the file ran 15/15 and the full suite 1,584 files / 18,075 tests green, `tsc --noEmit` (3072 MB heap) exit 0. `node_modules/` is gitignored, so the install dirties nothing (`git status` stayed clean).
 
-### 5 · A fileless migration: let `migration-autorecover` commit it unless the red window matters (2026-09-24)
+### 5 · A handoff to recover a fileless migration can be stale on arrival (2026-09-24)
 
-`.github/workflows/migration-autorecover.yml` runs `scripts/recover-fileless-migrations.mjs` on a schedule and pushes as `rpc-migration-autorecover[bot]`, md5-verified against prod. On 09-24 a manual parity dispatch went red on `panini_team_walk_20260924_rotation_roster` (applied ~5:04 PM PT). A 10-minute wait for its session showed nothing; the hand recovery was md5-clean, but by the time it was ready the bot had pushed the **byte-identical blob** (`1539f0974`, `git hash-object` = `git rev-parse origin/main:<file>`). 👉 **`git fetch` and compare blobs before committing a recovery; if identical, drop yours.** Mid-turn vs abandoned is the separate question in the memory note on migration parity.
+(The bot that recovers fileless migrations, and the race with a hand recovery, is at the top of this file: *"A BOT ALREADY DOES THIS"*. Two sessions hit that same race on 09-24 over `panini_team_walk_20260924_rotation_roster`.)
 
 ⚠ **A handoff prompt describing a fileless migration may already be stale when the session starts.** The same session was handed "recover `…rebases_retail_basis_rows_on_the_live_ask`, ledger it, close #50". All five steps had been shipped by another session 50 minutes earlier (`6cbe957ae`, `e26043661`, `16671ef7e`). **`git log origin/main --oneline -- <migration path>` first** — one command separates "do it" from "verify it".
 
