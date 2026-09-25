@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { getCollection, publishedCollections } from "@/lib/collections"
+import { notFound } from "next/navigation"
+import { getCollection } from "@/lib/collections"
 import { collectionLayoutMetadata, collectionPageJsonLd } from "@/lib/seo"
 import ActiveCollectionSync from "./ActiveCollectionSync"
 import WalletHydrator from "@/components/WalletHydrator"
@@ -22,20 +23,15 @@ export default async function CollectionSegmentLayout(props: any) {
   const collectionId: string = params?.collection ?? ""
   const collection = getCollection(collectionId)
 
-  // Unknown collection → fall back to first published collection
-  if (!collection) {
-    const fallback = publishedCollections()[0]
-    return (
-      <div data-collection={fallback.id}>
-        <ActiveCollectionSync collectionId={fallback.id} />
-        <CollectionTicker collection={fallback} />
-        <CollectionBanner collection={fallback} />
-        <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
-          {props.children}
-        </main>
-      </div>
-    )
-  }
+  // ⛔ Unknown collection → 404. Until 2026-09-25 this FELL BACK to the first
+  // published collection, so a signed-in reader at /settings/overview,
+  // /watchlist/overview or /foo/overview got NBA Top Shot's overview under a
+  // foreign URL with a 200 and a self-canonical — the SUBSTITUTION face of the
+  // honesty rule (a fallback swapping the SUBJECT), and a soft 404 the crawler
+  // cannot tell from a page. Anonymous readers never saw it (the proxy gate
+  // bounced the unknown path to /login first). The registry decides what a
+  // collection is; a slug it does not know is not one.
+  if (!collection) notFound()
 
   // Unpublished collection → show "Coming Soon" in the layout shell
   if (!collection.published) {
