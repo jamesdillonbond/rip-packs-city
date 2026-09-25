@@ -29,6 +29,17 @@ straight from prod and md5-verifies it, which is strictly better than re-typing 
 transcript. It needs `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`; `set -a; . ./.env.local; set +a`
 supplies both without echoing them.
 
+⭐ **A BOT ALREADY DOES THIS — a hand recovery is optional, and can race it (2026-09-24).**
+`.github/workflows/migration-autorecover.yml` runs the same script on a schedule and commits as
+`rpc-migration-autorecover[bot]` (observed fires ~6 h apart: 01:36Z, 12:46Z, 19:28Z, 01:49Z — GitHub does
+not honour the cron exactly). On 09-24 a fileless `panini_team_walk_20260924_rotation_roster` (applied
+5:04 PM PT) went unclaimed for 15 min; my md5-verified recovery was then REJECTED non-fast-forward
+because the bot had pushed the byte-identical file (`1539f0974`) minutes earlier. **Before pushing a
+recovery, `git fetch` and compare `git rev-parse origin/main:<file>` — if it matches, drop your commit.**
+Recover by hand only when ~6 h of red parity actually matters; otherwise let the bot do it. ⚠ The
+bot's commits trigger NO workflows (GITHUB_TOKEN recursion guard), so parity turns green only on the
+next human push or its own schedule.
+
 ⚠ **Hand-written repo copies may carry richer header comments than the applied text** (comments are
 stripped from nothing, but a shorter header is often passed to the tool to save tokens). That
 divergence is comment-only and schema-identical — but say so where it happens rather than leaving
