@@ -92,10 +92,10 @@ describe("heartbeat", () => {
 
 describe("ingest", () => {
   it("passes the flush through and reports what the RPC WROTE", async () => {
-    rpcResult.data = { written: 2, mapped: 2, unmapped: 0, retired: 0 }
+    rpcResult.data = { written: 2, mapped: 2, unmapped: 0, retired: 0, retire_skipped: false, seen: 0, active_before: 0 }
     const r = await POST(req({ op: "ingest", ...base, rows: [{ sku: "a", psku: "p" }], complete: false }))
     expect(r.status).toBe(200)
-    expect(await r.json()).toEqual({ written: 2, mapped: 2, unmapped: 0, retired: 0 })
+    expect(await r.json()).toEqual({ written: 2, mapped: 2, unmapped: 0, retired: 0, retire_skipped: false, seen: 0, active_before: 0 })
     expect(calls[0]).toEqual({
       fn: "panini_team_listings_ingest",
       args: { p_sport: "Basketball", p_team_raw: "Portland Trail Blazers", p_walk_started_at: base.walk_started_at, p_rows: [{ sku: "a", psku: "p" }], p_complete: false },
@@ -132,5 +132,64 @@ describe("finish", () => {
   it("a failed run-log write is a non-2xx", async () => {
     rpcResult.error = { message: "boom" }
     expect((await POST(req({ op: "finish", ...base, pages: 0, listings_seen: 0, written: 0, ok: true }))).status).toBeGreaterThanOrEqual(400)
+  })
+})
+
+describe("plan (rotation mode)", () => {
+  it("returns the plan's targets and passes the limit through", async () => {
+    rpcResult.data = [
+      { sport: "Basketball", team: "Atlanta Hawks", last_complete_at: null, last_attempt_at: null },
+      { sport: "Baseball", team: "Detroit", last_complete_at: "2026-09-24T23:22:49Z", last_attempt_at: "2026-09-24T23:22:49Z" },
+    ]
+    const r = await POST(req({ op: "plan", limit: 5 }))
+    expect(r.status).toBe(200)
+    expect((await r.json()).targets).toEqual([
+      { sport: "Basketball", team: "Atlanta Hawks", last_complete_at: null },
+      { sport: "Baseball", team: "Detroit", last_complete_at: "2026-09-24T23:22:49Z" },
+    ])
+    expect(calls[0]).toEqual({ fn: "panini_team_walk_plan", args: { p_limit: 5 } })
+  })
+  it("rejects a limit outside 1..50 before any DB call", async () => {
+    for (const limit of [0, 51, 2.5, "5", undefined]) {
+      expect((await POST(req({ op: "plan", limit }))).status).toBe(400)
+    }
+    expect(calls).toHaveLength(0)
+  })
+  it("a failed plan read is a non-2xx, and a non-list answer is a 502", async () => {
+    rpcResult.error = { message: "timeout" }
+    expect((await POST(req({ op: "plan", limit: 5 }))).status).toBeGreaterThanOrEqual(400)
+    rpcResult.error = null
+    rpcResult.data = { not: "a list" }
+    expect((await POST(req({ op: "plan", limit: 5 }))).status).toBe(502)
+  })
+})
+
+describe("roster stamps", () => {
+  it("heartbeat stamps the attempt (ok = null)", async () => {
+    rpcResult.data = true
+    const r = await POST(req({ op: "heartbeat", ...base }))
+    expect(await r.json()).toEqual({ landed: true, noted: true })
+    expect(calls[0]).toEqual({ fn: "panini_team_walk_note", args: { p_sport: "Basketball", p_team: "Portland Trail Blazers", p_ok: null, p_listings: null } })
+  })
+  it("finish stamps completion only through the walker's own ok", async () => {
+    rpcResult.data = true
+    await POST(req({ op: "finish", ...base, pages: 203, listings_seen: 6031, written: 6031, ok: true }))
+    expect(calls[1]).toEqual({ fn: "panini_team_walk_note", args: { p_sport: "Basketball", p_team: "Portland Trail Blazers", p_ok: true, p_listings: 6031 } })
+  })
+  it("a roster stamp that did not land is reported, never turned into a failed op", async () => {
+    rpcResult.data = null
+    const r = await POST(req({ op: "finish", ...base, pages: 1, listings_seen: 0, written: 0, ok: false }))
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ logged: true, noted: false })
+    expect(calls).toHaveLength(2)
+  })
+})
+
+describe("retirement guard pass-through", () => {
+  it("reports the DB refusing to retire, so the walker can fail the run", async () => {
+    rpcResult.data = { written: 0, mapped: 0, unmapped: 0, retired: 0, retire_skipped: true, seen: 0, active_before: 6031 }
+    const r = await POST(req({ op: "ingest", ...base, rows: [], complete: true }))
+    expect(r.status).toBe(200)
+    expect(await r.json()).toMatchObject({ retired: 0, retire_skipped: true, seen: 0, active_before: 6031 })
   })
 })

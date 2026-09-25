@@ -19,16 +19,21 @@
 // last page the grid answers with an empty list.
 //
 // ⚠ WHERE IT RUNS. Panini's Cloudflare answers GitHub Actions runners with a 403
-// (1000-series error box, measured 2026-09-24), so this runs on Trevor's box from
-// scripts/panini-run.bat, after the soccer runner, in the same debug Chrome
-// (PANINI_CDP_URL) — and posts to /api/cron/panini-team-walk with INGEST_SECRET_TOKEN.
-// It needs no service-role key. At most one full pass a day (PANINI_TEAM_WALK_STAMP).
+// (1000-series error box, measured 2026-09-24), so this runs on Trevor's box from its
+// OWN daily Windows task (scripts/panini-team-walk.bat, 3:35 AM, between the soccer
+// runner's 2 AM and 6 AM slots) in the runner's debug Chrome (PANINI_CDP_URL), and
+// posts to /api/cron/panini-team-walk with INGEST_SECRET_TOKEN — no service-role key.
+// Rotation mode walks the 5 stalest roster teams per run (~weekly per team); at most
+// one pass a day (PANINI_TEAM_WALK_STAMP).
 //
 // Env:
 //   RPC_PANINI_TEAM_WALK_URL  https://www.rippackscity.com/api/cron/panini-team-walk
 //   INGEST_SECRET_TOKEN       bearer for that route          (neither needed with DRY_RUN=1)
 //   PANINI_CDP_URL            optional: drive an existing Chrome (the runner's debug profile)
-//   PANINI_TEAM_TARGETS       "Basketball:Portland Trail Blazers;Baseball:Detroit" (default)
+//   PANINI_TEAM_TARGETS       explicit list "Sport:Team;Sport:Team" (wins over rotation)
+//   PANINI_TEAM_ROTATION      N: ask the receiver for the N stalest roster teams
+//                             (panini_team_walk_targets); unset + no list = Blazers + Detroit
+//   PANINI_WALK_BUDGET_MIN    do not START a team after this many minutes, default 100
 //   PANINI_MAX_PAGES          per target, default 400 (Blazers measured at 150–250 pages)
 //   PANINI_PAGE_DELAY_MS      pause between pages, default 1500
 //   PANINI_TEAM_WALK_STAMP    optional file: skip when it already holds today's date; written
@@ -96,6 +101,17 @@ export function toRow(item) {
   }
 }
 
+/**
+ * Items on a team-filtered page whose `team` does not name the target. Panini writes a
+ * two-team card as "A | B", so the check is an exact match on any `|` part.
+ */
+export function foreignTeamItems(items, team) {
+  return items.filter((it) => {
+    const parts = typeof it?.team === "string" ? it.team.split("|").map((x) => x.trim()) : []
+    return !parts.includes(team)
+  })
+}
+
 /** Is this network response the grid's `products` query? */
 export function isProductsResponse(url, postData) {
   if (!String(url).includes("/onepanini")) return false
@@ -106,13 +122,19 @@ export function isProductsResponse(url, postData) {
   }
 }
 
+/** Pause before re-reading a page that answered EMPTY, to confirm it really is the end. */
+export const EMPTY_CONFIRM_WAIT_MS = 20_000
+
 async function walkTarget(page, target, { maxPages, delayMs, onFlush, log }) {
   const rows = new Map()
   let pending = []
   let pages = 0
   let complete = false
   let error = null
-  for (let p = 1; p <= maxPages; p++) {
+
+  // One page, with backoff retries. Resolves the items array, or null when no attempt
+  // produced a readable products answer.
+  const readPage = async (p) => {
     let items = null
     for (let attempt = 1; attempt <= MAX_PAGE_ATTEMPTS && items == null; attempt++) {
       const backoff = retryBackoffMs(attempt)
@@ -152,15 +174,51 @@ async function walkTarget(page, target, { maxPages, delayMs, onFlush, log }) {
         log(`  p${p} attempt ${attempt}: http=${resp ? resp.status() : "none"} title=${JSON.stringify(title)} body=${JSON.stringify(body.replace(/\s+/g, " "))}`)
       }
     }
+    return items
+  }
+
+  // Leave the previous target's SPA state behind before the first page of this one.
+  await page.goto("about:blank").catch(() => {})
+
+  for (let p = 1; p <= maxPages; p++) {
+    let items = await readPage(p)
     if (items == null) {
       error = `page ${p}: no readable products response after ${MAX_PAGE_ATTEMPTS} attempts`
       break
     }
-    pages = p
     if (items.length === 0) {
+      // ⚠ AN EMPTY ANSWER IS THE ONLY END-OF-LIST SIGNAL, AND IT RETIRES LISTINGS, so it
+      // is CONFIRMED before it is believed. Measured 2026-09-24 from a datacenter IP: the
+      // Hawks and Jazz both answered page 1 with an EMPTY list in one run and with 30
+      // listings minutes later — an empty answer that, unconfirmed, would have "completed"
+      // the walk and retired every listing the team had. Wait, drop the SPA state, re-read.
+      log(`  p${p}: empty — confirming after ${EMPTY_CONFIRM_WAIT_MS / 1000}s`)
+      await page.waitForTimeout(EMPTY_CONFIRM_WAIT_MS)
+      await page.goto("about:blank").catch(() => {})
+      const again = await readPage(p)
+      if (again == null) {
+        error = `page ${p}: answered empty, then no readable products response when re-read`
+        break
+      }
+      if (again.length > 0) {
+        log(`  p${p}: re-read returned ${again.length} items — the empty answer was not the end`)
+        items = again
+      }
+    }
+    if (items.length === 0) {
+      pages = p
       complete = true
       break
     }
+    const foreign = foreignTeamItems(items, target.team)
+    if (foreign.length) {
+      // The team filter did not hold (an unknown team string, or Panini changed the
+      // parameter). Stop before writing anything from this page: an unfiltered grid is
+      // 4,800 pages of every team, and ingesting it under this walk_team would be wrong.
+      error = `page ${p}: grid did not honour the team filter (${foreign.length}/${items.length} items for other teams, e.g. ${JSON.stringify(foreign[0].team ?? null)})`
+      break
+    }
+    pages = p
     for (const it of items) {
       const r = toRow(it)
       if (r && !rows.has(r.sku)) {
@@ -176,6 +234,13 @@ async function walkTarget(page, target, { maxPages, delayMs, onFlush, log }) {
   }
   if (!complete && !error) error = `hit PANINI_MAX_PAGES=${maxPages} before the end of the list`
   return { rows, pending, pages, complete, error }
+}
+
+/** Receiver plan rows -> targets, keeping only sports this walker supports. */
+export function planToTargets(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .filter((r) => r && (r.sport === "Basketball" || r.sport === "Baseball") && typeof r.team === "string" && r.team.trim())
+    .map((r) => ({ sport: r.sport, team: r.team.trim() }))
 }
 
 /** Local calendar day, YYYY-MM-DD — the stamp's unit. */
@@ -207,7 +272,9 @@ async function post(url, token, body) {
 
 async function main() {
   const fs = await import("node:fs")
-  const targets = parseTargets(process.env.PANINI_TEAM_TARGETS || DEFAULT_TARGETS)
+  const rotation = Number(process.env.PANINI_TEAM_ROTATION || 0)
+  const budgetMin = Number(process.env.PANINI_WALK_BUDGET_MIN || 100)
+  const runStarted = Date.now()
   const maxPages = Number(process.env.PANINI_MAX_PAGES || 400)
   const delayMs = Number(process.env.PANINI_PAGE_DELAY_MS || 1500)
   const dry = process.env.DRY_RUN === "1"
@@ -224,6 +291,21 @@ async function main() {
   const token = process.env.INGEST_SECRET_TOKEN
   if (!dry && (!url || !token)) throw new Error("RPC_PANINI_TEAM_WALK_URL / INGEST_SECRET_TOKEN missing (or set DRY_RUN=1)")
 
+  // Explicit PANINI_TEAM_TARGETS wins; otherwise rotation mode asks the receiver for the
+  // N stalest roster teams (panini_team_walk_plan); otherwise the pilot default.
+  let targets
+  if (process.env.PANINI_TEAM_TARGETS) {
+    targets = parseTargets(process.env.PANINI_TEAM_TARGETS)
+  } else if (rotation > 0) {
+    if (!url || !token) throw new Error("rotation mode needs RPC_PANINI_TEAM_WALK_URL / INGEST_SECRET_TOKEN")
+    const plan = await post(url, token, { op: "plan", limit: rotation })
+    if (!plan.ok || !Array.isArray(plan.data?.targets)) throw new Error(`plan failed (http ${plan.status}): ${plan.data?.error ?? "no targets"}`)
+    targets = planToTargets(plan.data.targets)
+    log(`rotation: ${targets.map((t) => `${t.sport}:${t.team}`).join(", ")}`)
+  } else {
+    targets = parseTargets(DEFAULT_TARGETS)
+  }
+
   const { chromium } = await import("playwright")
   const cdp = process.env.PANINI_CDP_URL
   const browser = cdp
@@ -235,6 +317,14 @@ async function main() {
   let anyFailed = false
   try {
     for (const target of targets) {
+      // Do not START a team past the budget — the task shares the laptop with the soccer
+      // runner's next slot. An unstarted team is not a failure; it heads the next plan.
+      const elapsedMin = (Date.now() - runStarted) / 60_000
+      if (elapsedMin > budgetMin) {
+        log(`budget: ${Math.round(elapsedMin)} min > PANINI_WALK_BUDGET_MIN=${budgetMin}; not starting ${target.sport}:${target.team}`)
+        summary.push({ target: `${target.sport}:${target.team}`, skipped: "budget" })
+        continue
+      }
       const startedIso = new Date().toISOString()
       const label = `${target.sport}:${target.team}`
       const base = { sport: target.sport, team: target.team, walk_started_at: startedIso }
@@ -256,6 +346,12 @@ async function main() {
             continue
           }
           for (const k of Object.keys(acc)) acc[k] += Number(r.data?.[k] ?? 0)
+          if (r.data?.retire_skipped === true) {
+            // The DB would not retire: this "complete" walk saw fewer than half of the
+            // team's active listings — a false end-of-list is far likelier than half a
+            // team's market vanishing. Not a failed write, but not a trustworthy walk.
+            writeErrors.push(`retirement refused: saw ${r.data?.seen} of ${r.data?.active_before} active listings`)
+          }
         }
       }
       log(`walking ${label}`)

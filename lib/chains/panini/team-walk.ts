@@ -10,7 +10,10 @@ export const MAX_ROWS_PER_POST = 1000
 const SPORTS = new Set(["Basketball", "Baseball"])
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?Z$/
 
+export const MAX_PLAN_TARGETS = 50
+
 export type TeamWalkOp =
+  | { op: "plan"; limit: number }
   | { op: "heartbeat"; sport: string; team: string; walkStartedAt: string }
   | { op: "ingest"; sport: string; team: string; walkStartedAt: string; rows: unknown[]; complete: boolean }
   | {
@@ -33,6 +36,12 @@ const nonNegInt = (v: unknown): number | null =>
 export function parseTeamWalkBody(body: unknown): { ok: true; value: TeamWalkOp } | { ok: false; reason: string } {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { ok: false, reason: "body must be a JSON object" }
   const b = body as Record<string, unknown>
+  // `plan` names no target — it ASKS which targets to walk (rotation mode).
+  if (b.op === "plan") {
+    const limit = typeof b.limit === "number" && Number.isInteger(b.limit) ? b.limit : NaN
+    if (!(limit >= 1 && limit <= MAX_PLAN_TARGETS)) return { ok: false, reason: `limit must be an integer from 1 to ${MAX_PLAN_TARGETS}` }
+    return { ok: true, value: { op: "plan", limit } }
+  }
   const sport = typeof b.sport === "string" ? b.sport : ""
   if (!SPORTS.has(sport)) return { ok: false, reason: "sport must be Basketball or Baseball" }
   const team = typeof b.team === "string" ? b.team.trim() : ""
@@ -62,5 +71,5 @@ export function parseTeamWalkBody(body: unknown): { ok: true; value: TeamWalkOp 
     return { ok: true, value: { op: "finish", sport, team, walkStartedAt, pages, listingsSeen, written, ok: b.ok, error, extra } }
   }
 
-  return { ok: false, reason: "op must be heartbeat, ingest or finish" }
+  return { ok: false, reason: "op must be plan, heartbeat, ingest or finish" }
 }

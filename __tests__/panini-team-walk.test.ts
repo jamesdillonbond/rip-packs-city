@@ -12,9 +12,11 @@ import { describe, expect, it } from "vitest"
 import {
   DEFAULT_TARGETS,
   MAX_PAGE_ATTEMPTS,
+  foreignTeamItems,
   isProductsResponse,
   pageUrl,
   parseTargets,
+  planToTargets,
   retryBackoffMs,
   toRow,
 } from "../scripts/panini-team-walk.mjs"
@@ -102,5 +104,36 @@ describe("toRow", () => {
   it("keeps an unparseable number NULL, never 0", () => {
     const r = toRow({ sku: "s", psku: "p", genesis_year: "n/a", end_seq: "", buy_now_price: null, final_price: undefined, price: "x" })
     expect(r).toMatchObject({ genesis_year: null, end_seq: null, price_usd: null })
+  })
+})
+
+describe("foreignTeamItems — the team filter must hold before anything is written", () => {
+  it("accepts the target alone and as one side of a two-team card", () => {
+    const items = [{ team: "Portland Trail Blazers" }, { team: "Denver Nuggets | Portland Trail Blazers" }]
+    expect(foreignTeamItems(items, "Portland Trail Blazers")).toEqual([])
+  })
+  it("flags another team, a near-miss name, and a missing team", () => {
+    const items = [{ team: "Los Angeles Lakers" }, { team: "Portland Trail Blazers II" }, { team: null }, {}]
+    expect(foreignTeamItems(items, "Portland Trail Blazers")).toHaveLength(4)
+  })
+  it("matches MLB cities exactly — 'Detroit' is not 'Detroit Pistons'", () => {
+    expect(foreignTeamItems([{ team: "Detroit" }, { team: "New York | Detroit" }], "Detroit")).toEqual([])
+    expect(foreignTeamItems([{ team: "Detroit Pistons" }], "Detroit")).toHaveLength(1)
+  })
+})
+
+describe("planToTargets", () => {
+  it("keeps supported sports with a team, trimmed", () => {
+    expect(
+      planToTargets([
+        { sport: "Basketball", team: " Atlanta Hawks ", last_complete_at: null },
+        { sport: "Soccer", team: "Brazil" },
+        { sport: "Baseball", team: "" },
+        null,
+      ]),
+    ).toEqual([{ sport: "Basketball", team: "Atlanta Hawks" }])
+  })
+  it("treats a non-array as no targets", () => {
+    expect(planToTargets(undefined)).toEqual([])
   })
 })

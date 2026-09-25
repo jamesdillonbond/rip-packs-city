@@ -8,11 +8,14 @@
 // (1000-series error box, measured 2026-09-24), so the walk runs on Trevor's box
 // beside the soccer runner, which holds INGEST_SECRET_TOKEN and no service-role key.
 //
-// Three ops (body.op), all bearer-guarded:
-//   heartbeat — a `panini-team-walk-heartbeat` marker BEFORE a target's walk
+// Four ops (body.op), all bearer-guarded:
+//   plan      — rotation mode: the N stalest roster targets (panini_team_walk_plan)
+//   heartbeat — a `panini-team-walk-heartbeat` marker BEFORE a target's walk, and
+//               the roster's last_attempt_at (panini_team_walk_note)
 //   ingest    — one flush of listings -> panini_team_listings_ingest; returns what
 //               the RPC says it WROTE, never what was offered
-//   finish    — the target's panini-team-walk pipeline_runs row
+//   finish    — the target's panini-team-walk pipeline_runs row, and the roster's
+//               last_complete_at when the walker says ok (complete + every write landed)
 //
 // ⚠ A FAILED WRITE IS A NON-2xx. The walker treats any non-2xx as a failed flush,
 // withholds `complete` (so nothing is retired) and reports the run ok=false.
@@ -59,9 +62,30 @@ export async function POST(req: NextRequest) {
   const parsed = parseTeamWalkBody(body)
   if (!parsed.ok) return NextResponse.json({ error: parsed.reason }, { status: 400 })
   const v = parsed.value
-  const target = `${v.sport}:${v.team}`
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabaseAdmin as any
+
+  if (v.op === "plan") {
+    const { data, error } = await boundedRpc(db, "panini_team_walk_plan", { p_limit: v.limit })
+    if (error) return apiErrorResponse(error, "api/cron/panini-team-walk")
+    if (!Array.isArray(data)) return NextResponse.json({ error: "plan returned no list" }, { status: 502 })
+    const targets = (data as Array<Record<string, unknown>>)
+      .filter((r) => typeof r.sport === "string" && typeof r.team === "string")
+      .map((r) => ({ sport: r.sport as string, team: r.team as string, last_complete_at: (r.last_complete_at as string | null) ?? null }))
+    return NextResponse.json({ targets })
+  }
+
+  const target = `${v.sport}:${v.team}`
+  // The roster stamp is bookkeeping for the rotation, not the walk's result: a miss is
+  // reported in the response (`noted: false`) and logged, never turned into a failed op.
+  const note = async (ok: boolean | null, listings: number | null): Promise<boolean> => {
+    const { data, error } = await boundedRpc(db, "panini_team_walk_note", { p_sport: v.sport, p_team: v.team, p_ok: ok, p_listings: listings })
+    if (error) {
+      console.error(`[api/cron/panini-team-walk] roster note failed for ${target}`)
+      return false
+    }
+    return data === true
+  }
 
   if (v.op === "heartbeat") {
     const landed = await writeInvocationHeartbeat({
@@ -70,7 +94,8 @@ export async function POST(req: NextRequest) {
       collectionSlug: "panini_blockchain",
       extra: { target },
     })
-    return NextResponse.json({ landed }, { status: landed ? 200 : 503 })
+    const noted = await note(null, null)
+    return NextResponse.json({ landed, noted }, { status: landed ? 200 : 503 })
   }
 
   if (v.op === "ingest") {
@@ -89,7 +114,18 @@ export async function POST(req: NextRequest) {
     const written = n("written")
     // An RPC that answered without a count has not told us what landed.
     if (written == null) return NextResponse.json({ error: "ingest returned no write count" }, { status: 502 })
-    return NextResponse.json({ written, mapped: n("mapped"), unmapped: n("unmapped"), retired: n("retired") })
+    const d = (data as Record<string, unknown> | null) ?? {}
+    return NextResponse.json({
+      written,
+      mapped: n("mapped"),
+      unmapped: n("unmapped"),
+      retired: n("retired"),
+      // The DB refused to retire: a "complete" walk saw < 50 % of the team's active
+      // listings. Passed through so the walker reports the run ok=false.
+      retire_skipped: d.retire_skipped === true,
+      seen: n("seen"),
+      active_before: n("active_before"),
+    })
   }
 
   const { error } = await boundedRpc(db, "log_pipeline_run", {
@@ -106,5 +142,6 @@ export async function POST(req: NextRequest) {
     p_extra: { ...v.extra, target, pages: v.pages },
   })
   if (error) return apiErrorResponse(error, "api/cron/panini-team-walk")
-  return NextResponse.json({ logged: true })
+  const noted = await note(v.ok, v.listingsSeen)
+  return NextResponse.json({ logged: true, noted })
 }

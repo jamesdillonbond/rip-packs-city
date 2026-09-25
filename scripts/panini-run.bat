@@ -71,14 +71,8 @@ if %ERRORLEVEL% NEQ 0 (
 node scripts\ingest-panini-runner.mjs >> "%PANINI_LOG%" 2>&1
 set "RC=%ERRORLEVEL%"
 
-REM 2026-09-24 — Panini NBA/MLB TEAM WALK (franchise-hub staging). Runs here, not on
-REM GitHub Actions, because Panini's Cloudflare 403s datacenter runners. Same debug
-REM Chrome, same INGEST_SECRET_TOKEN. At most one full pass per day (the stamp file);
-REM its exit code is logged but does NOT change this task's result, which stays the
-REM soccer runner's. Detail: docs/features/franchise-hubs.md.
-set "RPC_PANINI_TEAM_WALK_URL=https://www.rippackscity.com/api/cron/panini-team-walk"
-set "PANINI_TEAM_WALK_STAMP=%USERPROFILE%\panini-team-walk.stamp"
-node scripts\panini-team-walk.mjs >> "%PANINI_LOG%" 2>&1
-echo [panini-run] team walk rc=%ERRORLEVEL% >> "%PANINI_LOG%"
+REM The Panini NBA/MLB TEAM WALK used to run here (2026-09-24, a few hours). It now has
+REM its own daily task — scripts\panini-team-walk.bat — so it cannot eat into this task's
+REM 2-hour limit or keep it waiting.
 echo ==== %DATE% %TIME% run end rc=%RC% ==== >> "%PANINI_LOG%"
 endlocal & exit /b %RC%
