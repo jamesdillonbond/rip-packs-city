@@ -331,6 +331,11 @@ function SniperMomentsBody() {
           ? json.editions.map((x: unknown) => String(x))
           : [];
 
+        // 2026-09-24: `editions_complete: false` means neither the chain nor
+        // the snapshot could answer — an empty list there is NOT "owns
+        // nothing" and must not be cached as it for 10 minutes.
+        if (json?.editions_complete === false) return;
+
         localStorage.setItem(
           `rpc_owned_${key}`,
           JSON.stringify({ ids, editions, cachedAt: Date.now() })

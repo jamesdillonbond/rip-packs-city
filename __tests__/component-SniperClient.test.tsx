@@ -989,6 +989,25 @@ describe("SniperClient — owned-moment gating", () => {
     })
     expect(String(call[0])).toContain(encodeURIComponent(OWNER_KEY))
     expect((await screen.findAllByText(/Damian Lillard/i)).length).toBeGreaterThan(0)
+    await waitFor(() => expect(localStorage.getItem(`rpc_owned_${OWNER_KEY}`)).toContain("48:1652"))
+  })
+
+  it("does not cache an INCOMPLETE owned-editions read as 'owns nothing' (2026-09-24)", async () => {
+    // Both the chain script and the snapshot fallback failed: the route says
+    // editions_complete:false. Writing that empty list to localStorage would
+    // hide every Own marker for 10 minutes.
+    warm = { data: feed(), loading: false, error: null, refresh: vi.fn() }
+    localStorage.removeItem(`rpc_owned_${OWNER_KEY}`)
+    fetchMock.mockImplementation(async (input: unknown) => {
+      if (String(input).startsWith("/api/owned-flow-ids")) {
+        return { ok: true, status: 200, json: async () => ({ ids: [], editions: [], editions_source: "none", editions_complete: false }) }
+      }
+      return { ok: true, status: 200, json: async () => ({ deals: [], benchmarks: {} }) }
+    })
+    render(<SniperClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith("/api/owned-flow-ids"))).toBe(true))
+    expect((await screen.findAllByText(/Damian Lillard/i)).length).toBeGreaterThan(0)
+    expect(localStorage.getItem(`rpc_owned_${OWNER_KEY}`)).toBeNull()
   })
 })
 

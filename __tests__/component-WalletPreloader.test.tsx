@@ -66,4 +66,15 @@ describe("WalletPreloader", () => {
     expect(cached.editions).toEqual(["e1"])
     expect(typeof cached.cachedAt).toBe("number")
   })
+
+  it("does not cache an INCOMPLETE read (editions_complete:false) as an empty holding (2026-09-24)", async () => {
+    ownerKey = "0xabc"
+    window.localStorage.removeItem("rpc_owned_0xabc")
+    fetchMock.mockReturnValueOnce(okJson({ ids: [], editions: [], editions_source: "none", editions_complete: false }))
+    render(<WalletPreloader />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    // give the async handler a tick to (not) write
+    await new Promise((r) => setTimeout(r, 20))
+    expect(window.localStorage.getItem("rpc_owned_0xabc")).toBeNull()
+  })
 })

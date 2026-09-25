@@ -130,6 +130,28 @@ describe("PackHistoryClient", () => {
     expect(document.body.textContent).toMatch(/NBA Top Shot/)
   })
 
+  it("names the RPC's UNKNOWN-currency bucket (drops / rewards) and withholds its measured-zero spend", async () => {
+    // 2026-09-24: primary drops and reward packs carry no price on chain; the
+    // RPC sums COALESCE(price, 0) for them, so the strip said "UNKNOWN · 101
+    // buys · 0 sells · spent $0 · in $0" — a $0 that was never measured.
+    mount({
+      summary: () => json(200, {
+        ...SUMMARY,
+        by_currency: {
+          USD: { spent: 120, proceeds: 40, purchases: 12, sales: 3 },
+          UNKNOWN: { spent: 0, proceeds: 0, purchases: 101, sales: 0 },
+        },
+      }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/DROPS \/ REWARDS/))
+    const txt = document.body.textContent!
+    expect(txt).toMatch(/101 received · 0 sells · price not on chain/)
+    expect(txt).not.toMatch(/UNKNOWN/)
+    expect(txt).not.toMatch(/101 buys/)
+    // the priced bucket is unchanged
+    expect(txt).toMatch(/12 buys · 3 sells · spent \$120/)
+  })
+
   // A summary failure and a history failure are separate reads and must fail independently —
   // one broken panel must not blank the other.
   it("keeps the pack table when only the summary read fails", async () => {

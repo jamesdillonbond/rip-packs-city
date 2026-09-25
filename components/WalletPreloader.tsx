@@ -52,6 +52,14 @@ export default function WalletPreloader() {
           ? json.editions.map((x: unknown) => String(x))
           : [];
 
+        // 2026-09-24: an incomplete read (chain script AND snapshot failed)
+        // is not "owns nothing" — never cache it as such (the sniper reads
+        // this key for 10 minutes).
+        if (json?.editions_complete === false) {
+          console.warn(`[preloader] owned editions incomplete for ${ownerKey} — not cached`);
+          return;
+        }
+
         const payload: CachedOwned = { ids, editions, cachedAt: Date.now() };
         localStorage.setItem(`rpc_owned_${ownerKey}`, JSON.stringify(payload));
 

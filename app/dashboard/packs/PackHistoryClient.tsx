@@ -252,6 +252,22 @@ interface History {
   computed_at?: string
 }
 
+/** The RPC buckets buys/sells by sale_currency and labels a NULL currency
+ *  'UNKNOWN' — those are primary drops and reward packs, whose price is NOT
+ *  on chain, and its `spent` for them is a COALESCE(price, 0) sum: a measured
+ *  zero of an unrecorded number. The strip read "UNKNOWN · 101 buys · 0 sells
+ *  · spent $0 · in $0" on the founder's wallet (2026-09-24). Name the bucket
+ *  and withhold the fabricated dollar figures. */
+export function currencyBucketLabel(ccy: string): string {
+  return ccy === "UNKNOWN" ? "DROPS / REWARDS" : ccy
+}
+export function currencyBucketText(ccy: string, vals: SummaryCurrency): string {
+  if (ccy === "UNKNOWN") {
+    return `${vals.purchases} received · ${vals.sales} sells · price not on chain`
+  }
+  return `${vals.purchases} buys · ${vals.sales} sells · spent ${fmtUsd(vals.spent)} · in ${fmtUsd(vals.proceeds)}`
+}
+
 const STATUS_OPTIONS: Array<{ key: "all" | HistoryRow["status"]; label: string; color: string }> = [
   { key: "all", label: "All", color: "var(--rpc-red, #E03A2F)" },
   { key: "ripped", label: "Ripped", color: "#3B82F6" },
@@ -565,8 +581,8 @@ export default function PackHistoryClient() {
               <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", letterSpacing: "0.04em" }}>
                 {Object.entries(summary.by_currency).map(([ccy, vals]) => (
                   <span key={ccy}>
-                    <span style={{ color: "#fff", fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.08em" }}>{ccy}</span>
-                    <span style={{ marginLeft: 8 }}>{vals.purchases} buys · {vals.sales} sells · spent {fmtUsd(vals.spent)} · in {fmtUsd(vals.proceeds)}</span>
+                    <span style={{ color: "#fff", fontFamily: condensedFont, fontWeight: 700, letterSpacing: "0.08em" }}>{currencyBucketLabel(ccy)}</span>
+                    <span style={{ marginLeft: 8 }}>{currencyBucketText(ccy, vals)}</span>
                   </span>
                 ))}
               </div>

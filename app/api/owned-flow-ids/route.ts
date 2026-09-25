@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server"
 import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 import { getCollection } from "@/lib/collections"
+import { supabaseAdmin } from "@/lib/supabase"
+
+/** Where the `editions` list came from. "chain" is the live per-moment script;
+ *  "cache" is the wallet's last synced snapshot (wallet_moments_cache), used
+ *  when the script dies — Flow's 100k computation limit kills it on a large
+ *  collection ("[Error Code: 1110]", 4× in 90 min on a 15,527-moment wallet,
+ *  2026-09-24); "none" means both failed and the list is NOT an answer. */
+export type EditionsSource = "chain" | "cache" | "none"
 
 // GET /api/owned-flow-ids?wallet=0x...
 //
@@ -96,8 +104,8 @@ export async function GET(req: NextRequest) {
     }
   })()
 
-  const editionsPromise: Promise<string[]> = (async () => {
-    if (!cadenceEditions) return [] // Non-TopShot collections don't support edition keys
+  const editionsPromise: Promise<{ keys: string[]; source: EditionsSource }> = (async () => {
+    if (!cadenceEditions) return { keys: [], source: "chain" } // Non-TopShot collections don't support edition keys
     try {
       // 30s soft timeout for the per-moment iteration script.
       const result = await Promise.race([
@@ -110,24 +118,60 @@ export async function GET(req: NextRequest) {
         ),
       ])
       if (result && typeof result === "object") {
-        return Object.keys(result as Record<string, unknown>)
+        return { keys: Object.keys(result as Record<string, unknown>), source: "chain" as const }
       }
-      return []
+      return { keys: [], source: "chain" as const }
     } catch (e) {
       console.warn(`[owned-flow-ids] editions script failed for ${wallet}: ${e instanceof Error ? e.message : String(e)}`)
-      return []
+      // ⚠ This used to `return []` — a failed read published as "owns no
+      // editions" under max-age=600, and the sniper cached it in localStorage
+      // for 10 minutes. Fall back to the wallet's last synced snapshot (same
+      // subject, different depth); if that fails too, say so.
+      return cachedEditionKeys(wallet, col?.supabaseCollectionId ?? null)
     }
   })()
 
   try {
-    const [ids, editions] = await Promise.all([idsPromise, editionsPromise])
+    const [ids, editionsRes] = await Promise.all([idsPromise, editionsPromise])
+    const editions = editionsRes.keys
+    const editionsComplete = editionsRes.source !== "none"
     return NextResponse.json(
-      { wallet, ids, count: ids.length, editions },
-      { headers: { "Cache-Control": "public, max-age=600" } }
+      { wallet, ids, count: ids.length, editions, editions_source: editionsRes.source, editions_complete: editionsComplete },
+      {
+        headers: {
+          // A read that could not answer must not be pinned at the CDN.
+          "Cache-Control": editionsComplete ? "public, max-age=600" : "no-store",
+        },
+      }
     )
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     console.log(`[owned-flow-ids] FCL failure for ${wallet}: ${message}`)
     return NextResponse.json({ error: "Failed to fetch owned IDs" }, { status: 500 })
+  }
+}
+
+/** The wallet's owned edition keys from its last synced snapshot, via
+ *  get_wallet_owned_edition_keys (distinct set:play, subedition suffix
+ *  stripped). `source: "none"` when the read fails — never an empty list
+ *  dressed as an answer. */
+export async function cachedEditionKeys(
+  wallet: string,
+  collectionId: string | null,
+): Promise<{ keys: string[]; source: EditionsSource }> {
+  if (!collectionId) return { keys: [], source: "none" }
+  try {
+    const { data, error } = await supabaseAdmin.rpc("get_wallet_owned_edition_keys", {
+      p_wallet: wallet,
+      p_collection_id: collectionId,
+    })
+    if (error) {
+      console.warn(`[owned-flow-ids] cache fallback failed for ${wallet}: ${error.message}`)
+      return { keys: [], source: "none" }
+    }
+    return { keys: Array.isArray(data) ? data.map((k: unknown) => String(k)) : [], source: "cache" }
+  } catch (e) {
+    console.warn(`[owned-flow-ids] cache fallback threw for ${wallet}: ${e instanceof Error ? e.message : String(e)}`)
+    return { keys: [], source: "none" }
   }
 }

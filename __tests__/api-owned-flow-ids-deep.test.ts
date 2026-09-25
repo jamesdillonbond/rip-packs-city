@@ -21,6 +21,16 @@ vi.mock("@/lib/chains/flow/flow", () => ({
   },
 }))
 
+const sb = vi.hoisted(() => ({ keys: ["37:1199", "90:3424"] as unknown, error: null as { message: string } | null, calls: [] as unknown[] }))
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: {
+    rpc: async (fn: string, args: unknown) => {
+      sb.calls.push({ fn, args })
+      return { data: sb.error ? null : sb.keys, error: sb.error }
+    },
+  },
+}))
+
 import { GET } from "@/app/api/owned-flow-ids/route"
 
 const WALLET = "0x0000000000000001"
@@ -29,6 +39,7 @@ const get = (qs: string) => ({ nextUrl: new URL(`https://t/api/owned-flow-ids${q
 beforeEach(() => {
   q.ids = ["1", "2"]; q.idsThrow = false
   q.editions = { "37:1199": true }; q.editionsThrow = false
+  sb.keys = ["37:1199", "90:3424"]; sb.error = null; sb.calls = []
 })
 
 describe("GET /api/owned-flow-ids", () => {
@@ -56,13 +67,38 @@ describe("GET /api/owned-flow-ids", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toContain("Failed to fetch owned IDs")
   })
-  it("an editions-script failure degrades to [] (ids still returned, 200)", async () => {
+  it("a healthy chain read is source 'chain', complete, cacheable, and never touches the snapshot", async () => {
+    const res = await GET(get(`?wallet=${WALLET}`))
+    const body = await res.json()
+    expect(body.editions_source).toBe("chain")
+    expect(body.editions_complete).toBe(true)
+    expect(res.headers.get("cache-control")).toContain("max-age=600")
+    expect(sb.calls).toHaveLength(0)
+  })
+  it("an editions-script failure falls back to the wallet's synced snapshot (source 'cache', ids still returned, 200)", async () => {
+    // 2026-09-24: the per-moment script dies at Flow's 100k computation limit
+    // on a large collection; this used to answer editions: [] under
+    // max-age=600 — "owns nothing", cached for 10 minutes.
     q.editionsThrow = true
     const res = await GET(get(`?wallet=${WALLET}`))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.ids).toEqual(["1", "2"])
+    expect(body.editions).toEqual(["37:1199", "90:3424"])
+    expect(body.editions_source).toBe("cache")
+    expect(body.editions_complete).toBe(true)
+    expect(sb.calls[0]).toMatchObject({ fn: "get_wallet_owned_edition_keys", args: { p_wallet: WALLET, p_collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd" } })
+  })
+  it("when the chain AND the snapshot fail, the empty list is marked incomplete and is not cacheable", async () => {
+    q.editionsThrow = true
+    sb.error = { message: "statement timeout" }
+    const res = await GET(get(`?wallet=${WALLET}`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
     expect(body.editions).toEqual([])
+    expect(body.editions_source).toBe("none")
+    expect(body.editions_complete).toBe(false)
+    expect(res.headers.get("cache-control")).toBe("no-store")
   })
   it("a non-TopShot collection skips the editions script (empty editions)", async () => {
     const body = await (await GET(get(`?wallet=${WALLET}&collection=nfl-all-day`))).json()
