@@ -54,6 +54,10 @@
       "schedule": "0 4 * * *"
     },
     {
+      "path": "/api/cron/golazos-storefront-reconcile",
+      "schedule": "43 */2 * * *"
+    },
+    {
       "path": "/api/admin/backfill-topshot-onchain-art?limit=300",
       "schedule": "22 */3 * * *"
     },

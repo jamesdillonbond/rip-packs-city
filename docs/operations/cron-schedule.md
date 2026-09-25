@@ -220,6 +220,8 @@ Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `
 
 Count at 2026-08-30 18:2xZ (console read): **69 active, 16 inactive, 85 rows** — the 08-30 dead-host pauses moved Populate Pinnacle WMC FMV, TopShot Deal Floor Serials and Resolve Wallet Usernames to Inactive; Populate Pinnacle now runs on pg_cron jobid 408.
 
+- **2026-09-25 — NEW Vercel cron `/api/cron/golazos-storefront-reconcile`, `43 */2 * * *` (vercel.json only; no cron-job.org entry).** Walks every known LaLiga Golazos seller's Dapper NFTStorefrontV2 and reconciles `cached_listings_v2`: adds listings the event indexer never saw (`source='storefront_v2'`), resolves editions, closes ghosts / expired / vanished listings. Pipeline name `golazos-storefront-reconcile` in `pipeline_runs` (heartbeat first). Why and the rules: `lib/golazos/storefront-reconcile.ts`. It is Golazos' listing source once Flowty's API is switched off.
+
 ## Pending additions
 
 - **RPC UFC Enrichment Drain** → `POST https://www.rippackscity.com/api/cron/ufc-enrichment-drain` — schedule `7,37 * * * *`, `Authorization: Bearer <INGEST_SECRET_TOKEN>` header, expect **202**. Drains the UFC-WMC-NULLKEY backlog (shipped 2026-06-13 `fb2fbac`): enriches NULL-`edition_key` UFC wmc rows directly on-chain (250/tick), logs `pipeline_runs` pipeline=`ufc-enrichment-drain`. **(WIRED 2026-06-13, cron-job.org job 7804392 — now live at 7,37 in the Vercel-routes table above.)**
