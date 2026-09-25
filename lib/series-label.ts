@@ -58,3 +58,20 @@ export function seriesPageLabel(
   if (isTopShot && seriesNumber != null && SERIES_DISPLAY[seriesNumber]) return SERIES_DISPLAY[seriesNumber]
   return (displayLabel ?? "").trim() || (seriesNumber != null ? `Series ${seriesNumber}` : "Series")
 }
+
+/**
+ * Series label for an ENTITY TILE. Several entity RPCs (`get_player_editions`,
+ * `get_team_top_editions`, `get_pack_contents`) emit `e.series::text` — the raw
+ * on-chain number — as `series_label`, so player/team/pack grids printed
+ * "5" / "0" / "8" under a tile while the set and series pages print
+ * "Series 4" / "Series 1" / "Series 2025-26" (found 2026-09-24). A bare integer
+ * is decoded with the Top Shot map, or read as "Series N" elsewhere; a label
+ * that is already a phrase passes through.
+ */
+export function tileSeriesLabel(label: string | null | undefined, collectionSlug: string | null | undefined): string | null {
+  if (label == null) return null
+  const t = String(label).trim()
+  if (!t) return null
+  if (!/^\d+$/.test(t)) return t
+  return seriesDisplay(Number(t), collectionSlug)
+}

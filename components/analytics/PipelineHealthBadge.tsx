@@ -34,7 +34,7 @@ function statusColor(status: string): { dot: string; ring: string; text: string 
   if (status === "degraded") {
     return { dot: "bg-amber-400", ring: "ring-amber-400/30", text: "text-amber-300" }
   }
-  if (status === "unknown") {
+  if (status === "unknown" || status === "archived") {
     return {
       dot: "bg-[color:var(--rpc-text-muted)]",
       ring: "ring-[color:var(--rpc-border)]",
@@ -51,7 +51,7 @@ function statusBadgeClass(status: string): string {
   if (status === "degraded") {
     return "border-amber-500/30 bg-amber-500/10 text-amber-300"
   }
-  if (status === "unknown") {
+  if (status === "unknown" || status === "archived") {
     return "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-muted)]"
   }
   return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"

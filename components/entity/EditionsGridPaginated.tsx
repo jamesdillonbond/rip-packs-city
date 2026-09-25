@@ -9,6 +9,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
+import { tileSeriesLabel } from "@/lib/series-label"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import {
   type EditionSortKey,
@@ -277,7 +278,7 @@ function EditionTileCard({
       )}
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
         <TierBadge tier={e.tier} />
-        {e.series_label && <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{e.series_label}</span>}
+        {e.series_label && <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{tileSeriesLabel(e.series_label, collectionUrlSlug)}</span>}
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <div>

@@ -51,6 +51,33 @@ describe("PipelineHealthBadge", () => {
     await waitFor(() => expect(container.textContent).toContain("All systems healthy"))
   })
 
+  it("an archived pipeline (Flowty loans, closed May 2026) is neither stale nor lagging — the badge stays 'All systems healthy' with no ping", async () => {
+    // 2026-09-24: analytics_pipeline_health() reports loans as "archived" and
+    // excludes it from overall_status; before that the badge sat permanently
+    // red on a source that will never publish again (a dead instrument).
+    fetchMock.mockReturnValue(mockResp(payload("healthy", { loans: "archived" })))
+    const { container, getByRole } = render(<PipelineHealthBadge />)
+    await waitFor(() => expect(container.textContent).toContain("All systems healthy"))
+    expect(container.querySelector(".animate-ping")).toBeNull()
+    fireEvent.click(getByRole("button", { name: "Pipeline health" }))
+    const txt = container.textContent!
+    expect(txt).toContain("archived")
+    // The pill is NEUTRAL: an archived source is neither green (it is not
+    // running) nor red (nothing is wrong). Planted defect: without the
+    // "archived" arm in statusBadgeClass the pill falls through to emerald.
+    const pill = Array.from(container.querySelectorAll("span")).find((el) => el.textContent === "archived")
+    expect(pill).toBeTruthy()
+    expect(pill!.className).not.toMatch(/emerald|rose|amber/)
+    expect(txt).not.toContain("pipeline stale")
+    expect(txt).not.toContain("pipeline lagging")
+  })
+
+  it("an archived pipeline is not counted when another pipeline IS stale", async () => {
+    fetchMock.mockReturnValue(mockResp(payload("stale", { loans: "archived", fmv: "stale" })))
+    const { container } = render(<PipelineHealthBadge />)
+    await waitFor(() => expect(container.textContent).toContain("1 pipeline stale"))
+  })
+
   it("counts stale pipelines and pluralizes the caption", async () => {
     fetchMock.mockReturnValue(mockResp(payload("stale", { fmv: "stale", sales: "stale" })))
     const { container } = render(<PipelineHealthBadge />)

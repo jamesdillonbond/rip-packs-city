@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { seriesLabel, seriesDisplay, seriesPageLabel, SERIES_DISPLAY } from "@/lib/series-label"
+import { seriesLabel, seriesDisplay, seriesPageLabel, tileSeriesLabel, SERIES_DISPLAY } from "@/lib/series-label"
 import { SERIES_FILTER_LABEL_FALLBACK } from "@/lib/collection/helpers"
 
 // The load-bearing quirk: on-chain series 0 = "Series 1" (there is no on-chain
@@ -83,5 +83,21 @@ describe("seriesPageLabel", () => {
     expect(seriesPageLabel(7, "Series 7", "nfl-all-day")).toBe("Series 7")
     expect(seriesPageLabel(99, "Series 99", "nba-top-shot")).toBe("Series 99")
     expect(seriesPageLabel(null, null, "nba-top-shot")).toBe("Series")
+  })
+})
+
+// 2026-09-24 — entity tiles: several RPCs emit the raw on-chain number as
+// series_label; a bare integer is decoded, a phrase passes through.
+describe("tileSeriesLabel", () => {
+  it("decodes a bare integer with the Top Shot map, 'Series N' elsewhere", () => {
+    expect(tileSeriesLabel("5", "nba-top-shot")).toBe("Series 4")
+    expect(tileSeriesLabel("8", "nba-top-shot")).toBe("Series 2025-26")
+    expect(tileSeriesLabel("3", "nfl-all-day")).toBe("Series 3")
+  })
+  it("passes phrases through and nulls empties", () => {
+    expect(tileSeriesLabel("Series 2023-24", "nba-top-shot")).toBe("Series 2023-24")
+    expect(tileSeriesLabel("2024 Season", "nfl-all-day")).toBe("2024 Season")
+    expect(tileSeriesLabel("", "nba-top-shot")).toBeNull()
+    expect(tileSeriesLabel(null, "nba-top-shot")).toBeNull()
   })
 })

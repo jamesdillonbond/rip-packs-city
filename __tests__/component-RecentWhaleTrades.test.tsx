@@ -85,3 +85,22 @@ describe("RecentWhaleTrades", () => {
     expect(container.textContent).not.toContain("No recent whale trades.")
   })
 })
+
+// 2026-09-24 — a TEAM moment (player_name null, set known) is named by its set,
+// the way the catalogue names team moments — never "Unknown moment". The
+// $7.1k Champion's Path #1023 sale rendered "Unknown (error loading)" and then,
+// once that sentinel player was unlinked, would have read "Unknown moment".
+describe("RecentWhaleTrades — team moments", () => {
+  it("names a null-player row by its set when the set is known", async () => {
+    const { render, screen } = await import("@testing-library/react")
+    const { vi } = await import("vitest")
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ rows: [{
+      rank: 1, transaction_hash: "0xh", edition_id: "e", collection: "topshot", player_name: null,
+      set_name: "The Champion's Path", tier: "COMMON", serial_number: 1023, price_usd: 7056, sold_at: "2026-09-01T00:00:00Z",
+    }] }) })) as unknown as typeof fetch)
+    const RecentWhaleTrades = (await import("@/components/analytics/RecentWhaleTrades")).default
+    render(<RecentWhaleTrades />)
+    expect(await screen.findByText("The Champion's Path (team moment)")).toBeTruthy()
+    expect(screen.queryByText("Unknown moment")).toBeNull()
+  })
+})

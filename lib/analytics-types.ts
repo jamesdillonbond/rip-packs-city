@@ -660,7 +660,9 @@ export interface PositionTransfersSummaryResponse {
 // analytics_pipeline_health. Summarizes lag for each upstream pipeline
 // powering the analytics surface.
 
-export type PipelineHealthStatus = "healthy" | "degraded" | "stale"
+// "archived" (2026-09-24): a pipeline whose upstream is gone for good (the
+// Flowty loan book) — reported with its lag, never graded, never counted.
+export type PipelineHealthStatus = "healthy" | "degraded" | "stale" | "archived"
 
 export interface PipelineHealthRow {
   lag_minutes: number
