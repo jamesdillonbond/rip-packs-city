@@ -43,6 +43,31 @@ interface SavedWalletPublic {
   cached_rpc_score: number | null;
   cached_badges: string[] | null;
   accent_color: string;
+  cache_updated_at?: string | null;
+}
+
+/** "as of 6h ago" for a cached figure older than two hours (the dashboard's
+ *  own threshold — under that the stamp is noise); null otherwise. The cache
+ *  is late, not wrong, and the breakdown beside it reads live (2026-09-25).
+ *  Pure: the caller supplies `now` (the component below reads the clock only
+ *  after mount, so SSR and the first client render agree). */
+export function cacheAgeCaption(iso: string | null | undefined, now: number): string | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+  const hrs = (now - t) / 3_600_000;
+  if (hrs < 2) return null;
+  if (hrs < 48) return `as of ${Math.floor(hrs)}h ago`;
+  return `as of ${Math.floor(hrs / 24)}d ago`;
+}
+
+function CacheAgeCaption({ iso }: { iso: string | null | undefined }) {
+  // Clock read gated on mount: nothing on the server, the age after hydration.
+  const [text, setText] = useState<string | null>(null);
+  // hydration-safe: the Date.now() below runs inside useEffect (after mount);
+  // the SSR and first-client render both carry null.
+  useEffect(() => { setText(cacheAgeCaption(iso, Date.now())); }, [iso]);
+  return text ? <>{` · ${text}`}</> : null;
 }
 
 interface PortfolioSnapshot {
@@ -792,7 +817,10 @@ export default function ProfileClient(props: {
                         <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, color: rowClosed ? "var(--rpc-text-secondary)" : "var(--rpc-text-primary)" }}>
                           {rowClosed ? "market closed" : fmtDollars(rowFmv)}
                         </div>
-                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)" }}>{(w.cached_moment_count ?? 0).toLocaleString("en-US")} MOMENTS</div>
+                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)" }}>
+                          {(w.cached_moment_count ?? 0).toLocaleString("en-US")} MOMENTS
+                          <CacheAgeCaption iso={w.cache_updated_at} />
+                        </div>
                       </div>
                     )}
                     {w.username && (

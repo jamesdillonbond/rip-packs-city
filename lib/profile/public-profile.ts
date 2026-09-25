@@ -104,6 +104,10 @@ export type PublicProfileWallet = {
   accent_color: string
   cached_rpc_score: number | null
   cached_change_24h: number | null
+  /** When the cached figures above were last reconciled (ISO), or null. The
+   *  cache is late, not wrong — the card says so with an age caption
+   *  (2026-09-25; the dashboard has done this since 09-12). */
+  cache_updated_at: string | null
 }
 
 export type PublicProfilePayload = {
@@ -250,7 +254,7 @@ async function getPublicProfileUncached(
       .select(
         // wallet_addr is selected but NEVER published — it exists only to count
         // distinct addresses below, and is dropped in the mapping step.
-        "wallet_addr, username, display_name, collection_id, cached_fmv_usd, cached_fmv_stale_usd, cached_stale_count, cached_moment_count, cached_top_tier, cached_badges, accent_color, cached_rpc_score, cached_change_24h"
+        "wallet_addr, username, display_name, collection_id, cached_fmv_usd, cached_fmv_stale_usd, cached_stale_count, cached_moment_count, cached_top_tier, cached_badges, accent_color, cached_rpc_score, cached_change_24h, cache_updated_at"
       )
       .eq("user_id", userId),
       ]) as Promise<
@@ -341,6 +345,7 @@ async function getPublicProfileUncached(
     accent_color: w.accent_color ?? "#E03A2F",
     cached_rpc_score: w.cached_rpc_score ?? null,
     cached_change_24h: w.cached_change_24h ?? null,
+    cache_updated_at: typeof w.cache_updated_at === "string" ? w.cache_updated_at : null,
   }))
 
   console.log(`[public/profile:${source}] done elapsedMs=${Date.now() - startedAt}`)
