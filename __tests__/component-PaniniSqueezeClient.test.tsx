@@ -310,6 +310,28 @@ describe("PaniniSqueezeClient — what the headline total is made of", () => {
     expect(t).toMatch(/upper bound/i)
   })
 
+  // ADDED 2026-09-24 (FMV engine panini-1.1.0). Confidence now means RECENT evidence, so "a real sale
+  // stands behind" (any sale, HIGH+MEDIUM+LOW) is no longer the same as "priced from a recent sale"
+  // (HIGH+MEDIUM). Both are stated, and the recent figure follows the same _hc/all-sets choice.
+  it("states how much of the sale-backed share rests on a sale in the last 30 days", () => {
+    const { container } = render(
+      <PaniniSqueezeClient
+        initialRows={[row()]}
+        totals={{ ...TOTALS, pct_sealed_usd_sale_backed: 89.4, pct_sealed_usd_recent_sale_backed: 16.7 }}
+        fetchedAt="2026-09-24T00:00:00Z"
+      />,
+    )
+    const t = container.textContent ?? ""
+    expect(t).toMatch(/89\.4%[\s\S]*a real sale stands behind[\s\S]*16\.7%[\s\S]*last 30 days/i)
+  })
+
+  it("omits the recent-sale clause entirely when the column is absent (no measured zero)", () => {
+    const { container } = render(
+      <PaniniSqueezeClient initialRows={[row()]} totals={TOTALS} fetchedAt="2026-09-19T00:00:00Z" />,
+    )
+    expect(container.textContent ?? "").not.toMatch(/last 30 days/i)
+  })
+
   // ⚠ ADDED 2026-09-20 — THE DENOMINATOR HAS TO BE THE ONE THE SENTENCE POINTS AT.
   // The sentence reads "of the sealed value ABOVE", and "above" is `sealed_fmv_exposure_usd_hc`
   // whenever `hc` is true. The 09-19 columns are computed over ALL SETS, so the footnote described

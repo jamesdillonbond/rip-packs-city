@@ -65,6 +65,9 @@ export type Totals = {
   sealed_fmv_exposure_usd_hc_ask_only?: number | null;
   pct_sealed_usd_from_asks_only_hc?: number | null;
   pct_sealed_usd_sale_backed_hc?: number | null;
+  // 2026-09-24 (panini-1.1.0): share priced from a sale in the LAST 30 DAYS (HIGH+MEDIUM).
+  pct_sealed_usd_recent_sale_backed?: number | null;
+  pct_sealed_usd_recent_sale_backed_hc?: number | null;
 };
 
 export type Coverage = {
@@ -393,6 +396,9 @@ export default function PaniniSqueezeClient({
         const salePct = hc && totals?.pct_sealed_usd_from_asks_only_hc != null
           ? totals?.pct_sealed_usd_sale_backed_hc
           : totals?.pct_sealed_usd_sale_backed
+        const recentPct = hc && totals?.pct_sealed_usd_from_asks_only_hc != null
+          ? totals?.pct_sealed_usd_recent_sale_backed_hc
+          : totals?.pct_sealed_usd_recent_sale_backed
         return askPct != null && Number(askPct) >= 1 ? (
         <div className="psq-note">
           <b>What this total is made of:</b>{" "}
@@ -402,6 +408,9 @@ export default function PaniniSqueezeClient({
           {salePct != null ? (
             <>
               , and <b>{num(salePct, 1)}%</b> from editions a real sale stands behind
+              {recentPct != null ? (
+                <> (<b>{num(recentPct, 1)}%</b> from a sale in the last 30 days; the rest from the average of older sales)</>
+              ) : null}
             </>
           ) : null}
           . An asking price is what someone hopes to get, not what anyone paid — treat the headline as an
