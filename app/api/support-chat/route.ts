@@ -13,6 +13,7 @@
 
 export const maxDuration = 60;
 
+import { isSolanaAddress } from "@/lib/address";
 import { NextRequest, NextResponse, after } from "next/server";
 import { fitTelegramText } from "@/lib/telegram-message";
 import { createClient } from "@supabase/supabase-js";
@@ -325,8 +326,8 @@ const TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: "object" as const,
       properties: {
-        collectionId: { type: "string", description: "Optional. EXACTLY one of: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc. Never invent other forms (no underscores, no 'ufc-strike'). Omit for the all-collections portfolio view." },
-        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username." },
+        collectionId: { type: "string", description: "Optional. EXACTLY one of: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc, candy-mlb. Never invent other forms (no underscores, no 'ufc-strike'). Omit for the all-collections portfolio view." },
+        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex), a Top Shot / Dapper username, or — for Candy MLB — a Solana wallet address (base58, no 0x; pass it EXACTLY as given, case matters)." },
       },
       required: ["walletAddress"],
     },
@@ -1830,8 +1831,12 @@ async function executeTool(
       // found." error from wallet-search's catch path.
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
       const isHex = /^0x[a-fA-F0-9]{16}$/.test(inputAddr);
+      // 2026-09-25: a Candy MLB wallet is a base58 Solana key — case-sensitive, no
+      // 0x. It is neither a username to resolve nor a key to prefix (both would
+      // destroy it); the indexed snapshot already keys Candy rows on it verbatim.
+      const isSolana = isSolanaAddress(inputAddr);
       let resolvedAddr = inputAddr;
-      if (!isHex) {
+      if (!isHex && !isSolana) {
         // deno-lint-ignore no-explicit-any
         const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
           p_username: inputAddr,
@@ -1874,7 +1879,7 @@ async function executeTool(
       // a single 24-row page as the whole portfolio (and an unknown
       // collectionId fell through to the Top Shot walk — the "UFC mirrors
       // Top Shot" bug seen live on 2026-07-07).
-      const walletKey = resolvedAddr.startsWith("0x") ? resolvedAddr : `0x${resolvedAddr}`;
+      const walletKey = isSolana ? inputAddr : resolvedAddr.startsWith("0x") ? resolvedAddr : `0x${resolvedAddr}`;
       const { data: snap, error: snapErr } = await (supabase as any).rpc("get_wallet_collection_snapshot", {
         p_wallet: walletKey,
       });
@@ -1888,6 +1893,7 @@ async function executeTool(
             "disney-pinnacle": "disney_pinnacle",
             "laliga-golazos": "laliga_golazos",
             "ufc": "ufc_strike",
+            "candy-mlb": "candy_mlb",
           };
           const { data: top } = await (supabase as any)
             .from("wallet_moments_cache")
@@ -1946,6 +1952,21 @@ async function executeTool(
         });
       }
 
+      // A Solana wallet has no live walk here (the fallback below walks Top Shot).
+      // Three states, never two: the read failed · read ok and nothing indexed.
+      if (isSolana) {
+        if (snapErr) {
+          return JSON.stringify({ status: "error", wallet: inputAddr, message: "The wallet lookup failed. Say the check failed; do NOT say the wallet is empty." });
+        }
+        return JSON.stringify({
+          status: "not_indexed",
+          wallet: inputAddr,
+          chain: "solana",
+          message: "RPC has no indexed Candy MLB holdings for this Solana wallet. That can mean it is empty OR that RPC has not indexed it yet — say that, do not claim it holds nothing.",
+          collection_url: `/candy-mlb/collection?wallet=${encodeURIComponent(inputAddr)}`,
+        });
+      }
+
       // ── Fallback: wallet not indexed yet — live Top Shot walk (one page) ──
       // wallet-search returns at most `limit` enriched rows; summary.totalMoments
       // is the real owned count. Only Top Shot enriches reliably here.
@@ -1990,6 +2011,9 @@ async function executeTool(
       // live resolver fallback), kept inline like check_wallet_squeeze does.
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
       const isHex = /^0x[a-fA-F0-9]{16}$/.test(inputAddr);
+      if (isSolanaAddress(inputAddr)) {
+        return JSON.stringify({ status: "unsupported_chain", chain: "solana", message: "analyze_wallet_holdings reads Flow wallets only. For a Candy MLB (Solana) wallet, call check_wallet with collectionId candy-mlb. Do not say the wallet is empty or that the username was not found." });
+      }
       let resolvedAddr = inputAddr;
       if (!isHex) {
         const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
@@ -2074,6 +2098,9 @@ async function executeTool(
       // structured jsonb (buckets, totals, top 10 squeezed editions).
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
       const isHex = /^0x[a-fA-F0-9]{16}$/.test(inputAddr);
+      if (isSolanaAddress(inputAddr)) {
+        return JSON.stringify({ status: "unsupported_chain", chain: "solana", message: "check_wallet_squeeze reads Flow wallets only. For a Candy MLB (Solana) wallet, call check_wallet with collectionId candy-mlb. Do not say the wallet is empty or that the username was not found." });
+      }
       let resolvedAddr = inputAddr;
       if (!isHex) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3909,6 +3936,9 @@ async function executeTool(
       // Same username-resolution ladder as check_wallet / analyze_wallet_holdings,
       // kept inline to match this file's convention.
       const isHex = /^0x[a-fA-F0-9]{16}$/.test(inputAddr);
+      if (isSolanaAddress(inputAddr)) {
+        return JSON.stringify({ status: "unsupported_chain", chain: "solana", message: "find_quirky_serials reads Flow wallets only. For a Candy MLB (Solana) wallet, call check_wallet with collectionId candy-mlb. Do not say the wallet is empty or that the username was not found." });
+      }
       let resolvedAddr = inputAddr;
       if (!isHex) {
         const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
