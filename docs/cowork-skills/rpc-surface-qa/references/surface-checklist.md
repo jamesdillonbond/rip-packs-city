@@ -37,8 +37,9 @@ monospace numbers. Chart.js/canvas hex literals are the documented allowed excep
 file → update). Known-deferred, do NOT burn a risky full-file reinstall on these alone — report them:
 - `rpc-live-health` footer + `rpc-my-wallet` footer name the dropped `pinnacle_fmv_snapshots` in
   **prose only**; the actual SQL correctly uses `pinnacle_fmv_history`.
-- `rpc-qa-scorecard` sentinel predicate `^[0-9]+:[0-9]+$` over-counts `::subID` parallels but stays
-  green under its `<250` threshold.
+- ~~`rpc-qa-scorecard` sentinel predicate `^[0-9]+:[0-9]+$` over-counts `::subID` parallels~~ —
+  **already fixed** (2026-09-25 pass): the live artifact (updatedAt 2026-09-07) uses
+  `^[0-9]+:[0-9]+(::[0-9]+)?$`. Do not re-chase.
 - (2026-08-27 new, same low-priority class) `rpc-live-health`'s wallet-tools row labels
   `/insights/squeeze-check` as backed by `get_wallet_squeeze`; the live function is
   `get_wallet_squeeze_exposure`. Display-only label, not an executed query.
@@ -113,8 +114,8 @@ Run from the connected repo. Flag only NEW violations.
   (33,423 on 2026-08-27; all children 200).
 - Spot-check 2–3 entity/insights pages (raw HTML): self-canonical + `application/ld+json` +
   `<meta name="robots" content="index, follow">`. **Home page** was the known gap (no canonical / no
-  og:url as of 2026-08-23); as of 2026-08-27 the **canonical shipped but `og:url` is still missing** on
-  home — verify current state.
+  og:url as of 2026-08-23; canonical shipped by 2026-08-27). **CLOSED 2026-09-25:** the anon home now
+  emits both `canonical` and `og:url` (`https://www.rippackscity.com`) — just confirm, do not re-chase.
 - `/insights` hub and the footer must both link `/insights/pack-sniper` (it shipped orphaned once).
 - Pack Sniper OG = `/api/og/insights/pack-sniper` → `image/png`, non-trivial size (~45 KB).
 - For any board claiming server-rendered crawlability, verify the **served HTML** (raw fetch) contains
