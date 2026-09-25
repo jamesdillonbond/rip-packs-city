@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🔧 SHIPPED — batch 6's CI red fixed: the owned-editions snapshot fallback is a bounded read (the unbounded-reader budget had gone 20 → 21) · Cowork (cloud + laptop VM)
+
+- `read-only-api-routes-outside-the-honest-error-population-are-counted` reddened on `fb6652fee`: the new `supabaseAdmin.rpc("get_wallet_owned_edition_keys")` in `/api/owned-flow-ids` read Supabase with no bound (budget 20, found 21). Wrapped in `boundedRead(…)` (label `api/owned-flow-ids/get_wallet_owned_edition_keys`); a timeout is `editions_source: "none"`, never an empty list. Guard back at ≤ 20; route tests 13/13; `tsc` clean; ratchet at baseline.
+**Revert:** `git revert` this commit.
+
 ### 2026-09-24 · 🧹 SHIPPED — QA pass batch 7: floor-drop alerts print dollars, not "$25.0000", and name a team moment; the R118 guard learns the two-halves handler shape it was silent about; register #137 carries the pass's residue · Cowork (cloud + laptop VM)
 
 - **Floor-drop insider alerts printed raw numerics** — "floor down 48.0% in 24h ($25.0000 → $13.0000)" on /analytics and the collection overviews — and a TEAM moment (no `player_name`) rendered a subject-less " ·  · floor down 81.0% in 24h ($1250.00 → $237.00)". `detect_floor_drops` now formats `ROUND(x, 2)` and names the subject `COALESCE(player_name, team_name, name)`; the ~300 stored rows were rewritten in place (evidence jsonb untouched). Migrations `20260925065017`, `20260925065051` (guarded splices).
