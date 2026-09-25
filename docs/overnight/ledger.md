@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — a URL wallet owns the collection page (the device's saved wallet was searched FIRST and its holdings rendered under a URL naming another wallet); the set page's doubled "RECENT SALES / RECENT SALES" heading · Cowork (cloud + laptop VM)
+
+- Built-in-browser sweep (53 rendered pages, anon): `/candy-mlb/collection?wallet=0xbd94…` printed the chain-check refusal ("Candy MLB lives on Solana; …") ABOVE the device's saved Candy wallet's $4,285 / 338 moments. `performance` entries showed why: the localStorage seed (`rpc_last_wallet`) searched at t=343 ms, the URL reader (Suspense-wrapped `AutoSearchReader`) at t=395 ms — the seed wins the mount race, then the URL search fails and leaves the seeded wallet's summary on the page. The seed now reads the address bar and stands down whenever it names a wallet/address/q. Test reproduces the race (URL-reader params empty, address bar naming a wallet) with a no-change control; the planted defect (gate disabled) reds it.
+- Batch 23's set-page section was titled "Recent Sales" over `TeamActivity`, which carries its own "Recent sales" sub-head — every set page read "RECENT SALES / RECENT SALES". Titled "Market Activity", as the team page does. ⚠ The set-page test read the source and passed with a JSX comment in expression position; `tsc` caught it (TS1005) before anything shipped — run `tsc`, the file test is not the gate.
+**Revert:** code — revert the batch-30 commit by message. No DB change.
+
 ### 2026-09-25 · 🧹 SHIPPED — fmv-recalc's historical fallback priced cold editions at their ALL-TIME MEAN and leap-frogged the cold-tail drain's last-30 MEDIAN every week (797 editions alternating; "24H CHANGE +232%" on a Golazos edition with no sale in 1,070 days) — `fmv_recalc_historical_candidates` now returns the last-30 median (`20260925135620`) · Cowork (cloud + laptop VM)
 
 - Found on the rendered Golazos edition page (built-in browser sweep): "24H CHANGE +232% · 30D SALES 0 · 1070d since last". `fmv_snapshots` for the edition: `1.7.0` $3.32 (09-24) · `cold-tail-1.0` $1.00 (09-17) · `1.7.0` $3.32 (09-10) · `cold-tail-1.0` $1.00 (09-03). Two writers, two estimators, each waiting 7 days for the other's row to go stale.
