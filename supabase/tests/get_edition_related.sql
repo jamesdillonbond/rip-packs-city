@@ -18,7 +18,7 @@
 --   * p_limit 0 and an unknown edition both return zero rows (never an error).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260907005829_audit_20260907_get_edition_related_the_edition_pages_more_from_this_player_and_set_block.sql);
+-- (supabase/migrations/20260925084253_audit_20260925_candy_parallels_edition_badges_reach_the_unified_reader_and_related_tiles.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -29,7 +29,7 @@ BEGIN;
 CREATE TABLE public.editions (
   id uuid PRIMARY KEY, collection_id uuid, external_id varchar, player_name text,
   team_name text, set_name text, tier text, series smallint, circulation_count integer,
-  thumbnail_url text);
+  thumbnail_url text, badges text[]);
 CREATE TABLE public.fmv_snapshots (edition_id uuid, computed_at timestamptz, fmv_usd numeric);
 
 -- >>> BEGIN verbatim get_edition_related (keep byte-identical to the migration) >>>
@@ -45,7 +45,8 @@ RETURNS TABLE (
   circulation_count integer,
   thumbnail_url text,
   fmv_usd numeric,
-  relation text
+  relation text,
+  badges text[]
 )
 LANGUAGE sql
 STABLE
@@ -61,7 +62,7 @@ WITH src AS (
 by_player AS (
   SELECT e.id, e.external_id::text, e.player_name, e.team_name, e.set_name,
          e.tier::text AS tier, e.series, e.circulation_count, e.thumbnail_url,
-         f.fmv_usd, 'player'::text AS relation
+         f.fmv_usd, 'player'::text AS relation, e.badges
   FROM editions e
   JOIN src s ON e.collection_id = s.collection_id AND e.id <> s.id AND e.player_name = s.player_name
   LEFT JOIN LATERAL (
@@ -89,7 +90,7 @@ set_ids AS (
 by_set AS (
   SELECT e.id, e.external_id::text, e.player_name, e.team_name, e.set_name,
          e.tier::text AS tier, e.series, e.circulation_count, e.thumbnail_url,
-         f.fmv_usd, 'set'::text AS relation
+         f.fmv_usd, 'set'::text AS relation, e.badges
   FROM set_ids si
   JOIN editions e ON e.id = si.id
   LEFT JOIN LATERAL (
@@ -104,7 +105,7 @@ u AS (
   SELECT bs.*, 1 AS leg FROM by_set bs
 )
 SELECT u.id, u.external_id, u.player_name, u.team_name, u.set_name, u.tier, u.series,
-       u.circulation_count, u.thumbnail_url, u.fmv_usd, u.relation
+       u.circulation_count, u.thumbnail_url, u.fmv_usd, u.relation, u.badges
 FROM u
 ORDER BY u.leg, u.fmv_usd DESC NULLS LAST, u.circulation_count ASC NULLS LAST
 LIMIT GREATEST(p_limit, 0)
@@ -179,5 +180,15 @@ SELECT _assert((SELECT count(*) FROM get_edition_related('99999999-9999-4999-899
 SELECT _assert(
   NOT EXISTS (SELECT 1 FROM get_edition_related('00000000-0000-4000-8000-000000000002', 10) WHERE external_id LIKE 'a1b2c3d4%'),
   'uuid-keyed inert edition rows are excluded');
+
+-- 7. (2026-09-25) badges ride along so the tiles can name a parallel; an edition
+--    with none returns NULL (not an empty array — the column is passed through).
+UPDATE public.editions SET badges = ARRAY['Rainbow (Blue)'] WHERE id = '00000000-0000-4000-8000-000000000002';
+SELECT _assert_eq(
+  (SELECT badges::text FROM get_edition_related('00000000-0000-4000-8000-000000000001', 6) WHERE external_id = '1:2'),
+  '{"Rainbow (Blue)"}', 'badges are passed through verbatim');
+SELECT _assert(
+  (SELECT badges IS NULL FROM get_edition_related('00000000-0000-4000-8000-000000000001', 6) WHERE external_id = '2:3'),
+  'an edition without badges returns NULL badges');
 
 ROLLBACK;

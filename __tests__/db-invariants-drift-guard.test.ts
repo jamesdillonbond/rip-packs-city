@@ -393,7 +393,9 @@ const PINS = [
   {
     fn: "get_edition_related",
     test: "supabase/tests/get_edition_related.sql",
-    migration: "supabase/migrations/20260907005829_audit_20260907_get_edition_related_the_edition_pages_more_from_this_player_and_set_block.sql",
+    // Re-pinned 2026-09-25: a trailing `badges text[]` column (DROP + CREATE) so
+    // the edition page's related tiles can name a Candy Rainbow parallel.
+    migration: "supabase/migrations/20260925084253_audit_20260925_candy_parallels_edition_badges_reach_the_unified_reader_and_related_tiles.sql",
   },
   {
     fn: "sync_ts_listings_from_atlas",
@@ -530,7 +532,9 @@ const PINS = [
   {
     fn: "get_edition_badges_unified",
     test: "supabase/tests/get_edition_badges_unified.sql",
-    migration: "supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql",
+    // Re-pinned 2026-09-25: editions.badges is a fourth real source ('edition'),
+    // the column Candy MLB's Rainbow parallels live in; ids trimmed in the follow-up.
+    migration: "supabase/migrations/20260925084355_audit_20260925_edition_badge_ids_trim_separators.sql",
   },
   {
     fn: "refresh_seeded_wallet_stats",

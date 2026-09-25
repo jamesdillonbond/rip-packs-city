@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { applyAllFmvGuards, capFmvAtCheapestAsk } from "@/lib/fmv-phantom-guard"
 import { computeConfidence, escalateConfidence, gateHighToRecentVolume, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
+import { staleTouchDaysSinceSale } from "@/lib/fmv-stale-touch"
 import { rpcWithRetry, queryWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
@@ -1190,7 +1191,18 @@ export async function POST(req: NextRequest) {
       // wider window — but HIGH is reserved for editions liquid in the RECENT
       // 30d window. Demote HIGH -> MEDIUM when the true 30d count is short of
       // the HIGH floor, so a stale-spread 90d edition never reads top-tier.
-      confidence = gateHighToRecentVolume(confidence, count30ByEdition.get(editionId) ?? sales.length)
+      // ⚠ 2026-09-25 — the PUBLISHED count is the TRUE 30d count, never the
+      // sample size. `sales` may be the 90d-widened set (Step 2a-quater/-quinquies),
+      // and writing `sales.length` into `sales_count_30d` published "7 sales in
+      // the last 30 days" on the edition page for an edition whose last sale
+      // was 47 days old (Candy Bobby Witt Jr. BLUE, 6,867 latest rows overstated
+      // estate-wide, 426 with NO 30d sale at all). The widening is a PRICING
+      // input; the count is a FACT with the window in its name. Falls back to
+      // counting the priced set inside the window only if the map somehow lacks
+      // the edition (it is filled from the same map this loop walks).
+      const count30 = count30ByEdition.get(editionId)
+        ?? sales.filter((s) => s.soldAt.getTime() >= Date.parse(windowStart)).length
+      confidence = gateHighToRecentVolume(confidence, count30)
       const daysSinceSale = Math.round(
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )
@@ -1238,8 +1250,11 @@ export async function POST(req: NextRequest) {
         liquidity_rating: liquidityRating(sales.length),
         confidence,
         ask_proxy_fmv: null,
-        sales_count_7d: sales.length,    // column name retained for schema compat; reflects 30d window
-        sales_count_30d: sales.length,
+        // Both columns carry the TRUE 30d count (sales_count_7d is retained for
+        // schema compat and has mirrored the 30d window since 1.7.0). The sample
+        // the price was computed over is `liquidity_rating`'s input, not these.
+        sales_count_7d: count30,
+        sales_count_30d: count30,
         days_since_sale: daysSinceSale,
         algo_version: ALGO_VERSION,
       }))
@@ -2142,7 +2157,14 @@ export async function POST(req: NextRequest) {
                 l.ask_proxy_fmv,
                 l.sales_count_7d,
                 l.sales_count_30d,
-                l.days_since_sale
+                l.days_since_sale,
+                l.computed_at,
+                -- 2026-09-25: the TRUE last sale, so the re-stamp can carry a
+                -- live age instead of freezing the prior row's. ~7 buffers per
+                -- edition through idx_sales_edition (1,000 rows: 161 ms measured),
+                -- evaluated only for the rows the filter below emits.
+                (SELECT max(s.sold_at) FROM sales s
+                  WHERE s.edition_id = l.edition_id AND s.price_usd > 0) AS last_sold_at
               FROM latest l
               LEFT JOIN recent_traded rt ON rt.edition_id = l.edition_id
               WHERE l.computed_at < now() - interval '24 hours'
@@ -2188,9 +2210,19 @@ export async function POST(req: NextRequest) {
               // from counting as HIGH in the confidence-share metric.
               confidence: gateHighToRecentVolume(String(r.confidence), 0),
               ask_proxy_fmv: r.ask_proxy_fmv,
-              sales_count_7d: r.sales_count_7d,
-              sales_count_30d: r.sales_count_30d,
-              days_since_sale: r.days_since_sale,
+              // ⚠ 2026-09-25 — a re-stamp is a NEW ROW dated NOW, so its facts
+              // must be true NOW. Every row here has ZERO sales in the last 30
+              // days (`rt.edition_id IS NULL`), yet carrying `r.sales_count_30d`
+              // forward kept the ORIGINAL count alive ("7 sales / 30d") and
+              // carrying `r.days_since_sale` forward FROZE the age — 426 latest
+              // rows sat at exactly `days_since_sale = 30`, one short of the
+              // fmv_snapshots_zero_stale_sales_count trigger's `> 30`, so the
+              // self-contradiction the trigger exists to zero was never seen by
+              // it. Count 0; age from the true last sale, else the prior age
+              // advanced by the days since that row was written.
+              sales_count_7d: 0,
+              sales_count_30d: 0,
+              days_since_sale: staleTouchDaysSinceSale(r, now),
               algo_version: ALGO_VERSION,
             }))
 

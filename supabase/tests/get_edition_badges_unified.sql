@@ -17,10 +17,15 @@
 --     derived (a play tag wins over a set_play tag of the same key);
 --   * derived-from-set-name badges appear ONLY when there are no real tags;
 --   * the codename-mercury tag is relabelled "Leaderboard Reward";
---   * final order: flag, play, set_play, derived, then key; empty ⇒ '[]'.
+--   * (2026-09-25) badges the ingest wrote onto editions.badges itself are a
+--     fourth REAL source ('edition') — Candy MLB's Rainbow parallel lives only
+--     there — deduped below set_play, above flag, and suppressing the derived
+--     fallback like any real tag; the id is the slugged title with no edge
+--     separators ("Rainbow (Blue)" -> rainbow-blue);
+--   * final order: flag, play, set_play, edition, derived, then key; empty ⇒ '[]'.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql);
+-- (supabase/migrations/20260925084355_audit_20260925_edition_badge_ids_trim_separators.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -35,7 +40,7 @@ CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
 
 -- ── minimal fixtures ─────────────────────────────────────────────────────────
 CREATE TABLE public.editions (
-  id uuid PRIMARY KEY, external_id text, collection_id uuid, set_name text);
+  id uuid PRIMARY KEY, external_id text, collection_id uuid, set_name text, badges text[]);
 CREATE TABLE public.badge_editions (
   external_id text, collection_id uuid, play_tags jsonb, set_play_tags jsonb,
   has_rookie_mint boolean, is_three_star_rookie boolean);
@@ -59,7 +64,7 @@ AS $function$
   WITH ed AS (
     SELECT e.id, e.external_id,
            split_part(e.external_id::text, '::', 1) AS base_external_id,
-           e.collection_id, e.set_name
+           e.collection_id, e.set_name, e.badges
     FROM editions e WHERE e.id = p_edition_id
   ),
   be_row AS (
@@ -92,11 +97,26 @@ AS $function$
     FROM be_row be
     WHERE be.has_rookie_mint = true
   ),
+  -- 2026-09-25: badges the INGEST wrote onto the edition row itself
+  -- (editions.badges text[]). Candy MLB carries its Rainbow parallel here
+  -- ("Rainbow (Blue)") and nowhere else — badge_editions is a Top Shot / All Day
+  -- sync table with no Candy rows — so until now every Candy parallel rendered
+  -- with no badge and five colour printings read as the same edition.
+  sync_edition AS (
+    SELECT jsonb_build_object(
+             'id',    btrim(regexp_replace(lower(b), '[^a-z0-9]+', '-', 'g'), '-'),
+             'title', b
+           ) AS tag, 'edition' AS source
+    FROM ed
+    CROSS JOIN LATERAL unnest(coalesce(ed.badges, '{}'::text[])) AS b
+    WHERE btrim(coalesce(b, '')) <> ''
+  ),
   -- real synced tags (excluding the derived-from-Three-Star injection below)
   real_tags AS (
     SELECT tag, source FROM sync_play
     UNION ALL SELECT tag, source FROM sync_set_play
     UNION ALL SELECT tag, source FROM sync_mint
+    UNION ALL SELECT tag, source FROM sync_edition
   ),
   -- v2 Three-Star rule: Rookie Year + Rookie Mint + Rookie Premiere present.
   flags AS (
@@ -145,8 +165,8 @@ AS $function$
       row_number() OVER (
         PARTITION BY norm_key
         ORDER BY CASE source
-          WHEN 'play' THEN 1 WHEN 'set_play' THEN 2
-          WHEN 'flag' THEN 3 WHEN 'derived' THEN 4
+          WHEN 'play' THEN 1 WHEN 'set_play' THEN 2 WHEN 'edition' THEN 3
+          WHEN 'flag' THEN 4 WHEN 'derived' THEN 5
         END
       ) AS rnk
     FROM normalized
@@ -163,7 +183,7 @@ AS $function$
          ELSE tag
        END) || jsonb_build_object('source', source)
       ORDER BY
-        CASE source WHEN 'flag' THEN 1 WHEN 'play' THEN 2 WHEN 'set_play' THEN 3 WHEN 'derived' THEN 4 END,
+        CASE source WHEN 'flag' THEN 1 WHEN 'play' THEN 2 WHEN 'set_play' THEN 3 WHEN 'edition' THEN 4 WHEN 'derived' THEN 5 END,
         norm_key
     ),
     '[]'::jsonb
@@ -183,6 +203,8 @@ $function$;
 \set edD '''dddddddd-dddd-dddd-dddd-dddddddddddd'''
 \set edE '''eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'''
 \set edF '''ffffffff-ffff-ffff-ffff-ffffffffffff'''
+\set edG '''99999999-9999-4999-8999-999999999999'''
+\set edH '''88888888-8888-4888-8888-888888888888'''
 
 INSERT INTO public.editions (id, external_id, collection_id, set_name) VALUES
   (:edA::uuid, '1:1', :cid::uuid, 'Rookie Set'),
@@ -191,6 +213,12 @@ INSERT INTO public.editions (id, external_id, collection_id, set_name) VALUES
   (:edD::uuid, '4:4', :cid::uuid, 'Nothing Set'),
   (:edE::uuid, '5:5', :cid::uuid, 'Reward Set'),
   (:edF::uuid, '6:6', :cid::uuid, 'Dedup Set');
+-- 2026-09-25: edition-row badges (the Candy MLB shape — no badge_editions row).
+INSERT INTO public.editions (id, external_id, collection_id, set_name, badges) VALUES
+  (:edG::uuid, 'bobby-witt-jr-blue', :cid::uuid, 'Nothing Set', ARRAY['Rainbow (Blue)', '', 'First Mint']),
+  -- edH: an edition badge AND a set name that derives one -> the real tag wins,
+  -- the derived fallback stays out (same rule as every other real source).
+  (:edH::uuid, 'x-pink', :cid::uuid, 'Playoffs Set', ARRAY['Rainbow (Pink)']);
 
 INSERT INTO public.badge_editions (external_id, collection_id, play_tags, set_play_tags, has_rookie_mint, is_three_star_rookie) VALUES
   -- edA: three-star combo (year+premiere+mint-flag) + a whitelisted All-Star + a
@@ -240,6 +268,20 @@ SELECT _assert_eq((public.get_edition_badges_unified(:edE::uuid) -> 0 ->> 'title
 -- ── 6. edF: play beats set_play on the same key (deduped to one, source=play) ─
 SELECT _assert_eq(jsonb_array_length(public.get_edition_badges_unified(:edF::uuid))::text, '1', 'edF: All-Star deduped to one');
 SELECT _assert_eq((public.get_edition_badges_unified(:edF::uuid) -> 0 ->> 'source'), 'play', 'edF: play source wins over set_play');
+
+-- ── 7. edG: editions.badges is a real source (Candy parallels) ───────────────
+SELECT _assert_eq(jsonb_array_length(public.get_edition_badges_unified(:edG::uuid))::text, '2', 'edG -> 2 edition badges (the empty string dropped)');
+SELECT _assert_eq((public.get_edition_badges_unified(:edG::uuid) -> 0 ->> 'title'), 'First Mint', 'edG ordered by key inside the edition source');
+SELECT _assert_eq((public.get_edition_badges_unified(:edG::uuid) -> 1 ->> 'title'), 'Rainbow (Blue)', 'edG carries the Rainbow parallel by its title');
+SELECT _assert_eq((public.get_edition_badges_unified(:edG::uuid) -> 1 ->> 'id'), 'rainbow-blue', 'edG id is slugged with no edge separator');
+SELECT _assert_eq((public.get_edition_badges_unified(:edG::uuid) -> 1 ->> 'source'), 'edition', 'edG badge source = edition');
+
+-- ── 8. edH: an edition badge suppresses the derived fallback ─────────────────
+SELECT _assert_eq(jsonb_array_length(public.get_edition_badges_unified(:edH::uuid))::text, '1', 'edH -> the edition badge only');
+SELECT _assert(NOT (public.get_edition_badges_unified(:edH::uuid)::text ILIKE '%Playoffs%'), 'edH: derived Playoffs stays out when a real tag exists');
+
+-- ── 9. no-change control: edD (no badges column value) is still empty ────────
+SELECT _assert_eq(public.get_edition_badges_unified(:edD::uuid)::text, '[]', 'edD -> still empty with a NULL badges column');
 
 SELECT '✓ get_edition_badges_unified: all assertions passed' AS result;
 

@@ -22,6 +22,8 @@ const state = vi.hoisted(() => ({
   sb: null as unknown,
   /** query_sql rows keyed by a substring of the SQL text. */
   querySqlByMarker: {} as Record<string, { data: unknown; error: unknown }>,
+  /** Every query_sql text the route sent (the marker dispatch answers before the spy records it). */
+  querySqlSeen: [] as string[],
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -61,6 +63,7 @@ function instrument(fixtures: Fixtures) {
   ;(spy.fixture as { rpc: (n: string, a?: Record<string, unknown>) => Promise<unknown> }).rpc = async (name, args) => {
     if (name === "query_sql") {
       const sql = String((args as { query?: unknown } | undefined)?.query ?? "")
+      state.querySqlSeen.push(sql)
       for (const [marker, payload] of Object.entries(state.querySqlByMarker)) {
         if (sql.includes(marker)) return payload
       }
@@ -137,6 +140,7 @@ beforeEach(() => {
   delete process.env.CRON_SECRET
   state.afterCbs.length = 0
   state.querySqlByMarker = {}
+  state.querySqlSeen.length = 0
 })
 
 describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
@@ -163,11 +167,50 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     expect(touched.find((r) => r.edition_id === "cold-2")).toMatchObject({
       fmv_usd: 7.25,
       confidence: "LOW",
-      days_since_sale: 200,
+      // The AGE is not copied: the prior row said 200 days when it was written
+      // 40 days ago, so today the edition is 240 days cold (no sale to name).
+      days_since_sale: 240,
+      sales_count_30d: 0,
       algo_version: "1.7.0",
     })
     // fmv_snapshots is delete-then-insert, never upsert (the write contract).
     expect((writes.fmv_snapshots ?? []).some((w) => w.method === "upsert")).toBe(false)
+  })
+
+  // ⛔ 2026-09-25 — THE FOSSIL. Candy "Bobby Witt Jr. — BLUE" was priced off a
+  // 90d-widened set of 7 sales, the last one 2026-08-08; every night since it
+  // went cold the touch re-stamped `sales_count_30d = 7, days_since_sale = 30`
+  // verbatim, so the edition page read "7 sales in the last 30 days · 30d since
+  // last" 47 days after the last sale — and the DB trigger that zeroes a count
+  // whose own age exceeds 30 never fired, because the frozen age never did.
+  // 426 latest rows across four collections carried the same signature.
+  it("a re-stamp publishes ZERO 30d sales and the TRUE age from the last sale, never the prior row's", async () => {
+    const fossil = {
+      ...staleRow("cold-fossil", 136.76),
+      confidence: "MEDIUM",
+      sales_count_7d: 7,
+      sales_count_30d: 7,
+      days_since_sale: 30,
+      computed_at: daysAgo(1),
+      last_sold_at: daysAgo(47),
+    }
+    state.querySqlByMarker = { recent_traded: { data: [fossil], error: null } }
+    const { inserted } = instrument(baseFixtures())
+
+    await POST(req("?force_stale=true"))
+    await runDeferred()
+
+    // The probe asks the database for the true last sale.
+    const probe = state.querySqlSeen.find((q) => q.includes("recent_traded"))
+    expect(probe ?? "").toMatch(/max\(s\.sold_at\)[\s\S]*AS last_sold_at/)
+
+    const row = (inserted.fmv_snapshots ?? []).find((r) => r.edition_id === "cold-fossil")
+    expect(row).toMatchObject({ fmv_usd: 136.76, confidence: "MEDIUM" })
+    // Every touched row matched `rt.edition_id IS NULL`: no sale in 30 days.
+    expect(row?.sales_count_30d).toBe(0)
+    expect(row?.sales_count_7d).toBe(0)
+    // 47 days, from the sale — not 30, not 31 (prior + elapsed), not null.
+    expect(row?.days_since_sale).toBe(47)
   })
 
   it("demotes a cold HIGH edition to MEDIUM on re-stamp (no HIGH without recent sales)", async () => {
@@ -224,12 +267,19 @@ describe("fmv-recalc — the 90-day extension for thin editions", () => {
   // edition qualifies for the widen.
   const thin = [sale(10, 300, 2), sale(12, 400, 5)]
 
-  it("adopts the wider window only when it genuinely adds depth", async () => {
+  // ⚠ 2026-09-25 — these four used to read the widening off `sales_count_30d`
+  // ("5 sales after the widen, not the 2 the 30-day window saw"), which pinned
+  // the DEFECT: the 90d sample size was being PUBLISHED as the 30-day count,
+  // and the edition page rendered it as "N sales in the last 30 days". The
+  // widening is now observed through the PRICE it changes (floor_price_usd is
+  // min over the priced set), and the count is pinned to the TRUE 30d count.
+
+  it("adopts the wider window only when it genuinely adds depth — and still publishes the TRUE 30d count", async () => {
     const { inserted } = instrument(
       baseFixtures({
         sales: [
           { data: thin, error: null }, // 30-day window
-          { data: [...thin, sale(11, 500, 40), sale(11, 600, 55), sale(11, 700, 70)], error: null }, // 90-day widen
+          { data: [...thin, sale(9, 500, 40), sale(11, 600, 55), sale(11, 700, 70)], error: null }, // 90-day widen
           { data: [], error: null },
         ],
       }),
@@ -238,8 +288,12 @@ describe("fmv-recalc — the 90-day extension for thin editions", () => {
     await runDeferred()
 
     const snap = (inserted.fmv_snapshots ?? []).find((r) => r.edition_id === "ed-1")
-    // 5 sales after the widen, not the 2 the 30-day window saw.
-    expect(snap?.sales_count_30d).toBe(5)
+    // Priced over the 5-sale widened set: the $9 sale 40 days back is the floor.
+    expect(snap?.floor_price_usd).toBe(9)
+    // …but only TWO of those sales are inside 30 days, and that is the count
+    // the row publishes — in both columns (sales_count_7d mirrors 30d).
+    expect(snap?.sales_count_30d).toBe(2)
+    expect(snap?.sales_count_7d).toBe(2)
   })
 
   it("keeps the narrower window when the widen returns no extra depth", async () => {
@@ -256,6 +310,7 @@ describe("fmv-recalc — the 90-day extension for thin editions", () => {
     await runDeferred()
 
     const snap = (inserted.fmv_snapshots ?? []).find((r) => r.edition_id === "ed-1")
+    expect(snap?.floor_price_usd).toBe(10)
     expect(snap?.sales_count_30d).toBe(2)
   })
 
@@ -273,7 +328,9 @@ describe("fmv-recalc — the 90-day extension for thin editions", () => {
     await runDeferred()
 
     expect(terminalLog(rpcCalls)).toMatchObject({ p_ok: true })
-    expect((inserted.fmv_snapshots ?? []).find((r) => r.edition_id === "ed-1")?.sales_count_30d).toBe(2)
+    const snap = (inserted.fmv_snapshots ?? []).find((r) => r.edition_id === "ed-1")
+    expect(snap?.floor_price_usd).toBe(10)
+    expect(snap?.sales_count_30d).toBe(2)
   })
 
   it("drops impossible serials (serial > circulation) from the widened set too", async () => {
@@ -282,7 +339,8 @@ describe("fmv-recalc — the 90-day extension for thin editions", () => {
         sales: [
           { data: thin, error: null },
           // 9999 > circulation 1000 -> a mis-keyed row, excluded on the way in.
-          { data: [...thin, sale(999, 9999, 40), sale(11, 600, 55), sale(11, 700, 70)], error: null },
+          // Priced at $1 so that, were it adopted, it would BE the floor.
+          { data: [...thin, sale(1, 9999, 40), sale(11, 600, 55), sale(11, 700, 70)], error: null },
           { data: [], error: null },
         ],
       }),
@@ -291,6 +349,7 @@ describe("fmv-recalc — the 90-day extension for thin editions", () => {
     await runDeferred()
 
     const snap = (inserted.fmv_snapshots ?? []).find((r) => r.edition_id === "ed-1")
-    expect(snap?.sales_count_30d).toBe(4) // 5 fetched, the mis-key dropped
+    expect(snap?.floor_price_usd).toBe(10) // the $1 mis-key never entered the priced set
+    expect(snap?.sales_count_30d).toBe(2)
   })
 })

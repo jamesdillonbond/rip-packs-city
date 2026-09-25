@@ -40,6 +40,7 @@ import { editionHref, momentSubjectHref, momentSubjectName } from "@/lib/entity-
 import IpfsThumb from "@/components/entity/IpfsThumb"
 import { isTopShotFossilSlug, ASK_LABEL, notableTagLabel, fmvDayDelta, sortNotableSerials } from "@/lib/edition-detail-format"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
+import { parallelLabelFromBadges } from "@/lib/edition-parallel"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
 import {
   EM_DASH,
@@ -356,6 +357,8 @@ interface RelatedEdition {
   thumbnail_url: string | null
   fmv_usd: number | null
   relation: "player" | "set"
+  /** editions.badges — the column a Candy Rainbow parallel lives in (2026-09-25). */
+  badges: string[] | null
 }
 async function fetchRelated(editionId: string): Promise<RelatedEdition[]> {
   return sectionRows<RelatedEdition>("edition related", "get_edition_related", { p_edition_id: editionId, p_limit: 6 })
@@ -632,6 +635,9 @@ export default async function EditionPage(
       : (detail.team_name && detail.team_name.trim())
         ? detail.team_name
         : (detail.name ?? "Edition")
+  // The parallel printing this page IS, when the collection expresses it as a
+  // badge (Candy Rainbow). Top Shot's ::subedition chip above is the other form.
+  const parallelLabel = parallelLabelFromBadges(detail.badges)
 
   // Ask cell (H2/H3): prefer the marketplace low_ask; fall back to the
   // V1-Dapper cross-market ask (populated for ~2.7K All Day editions where
@@ -788,7 +794,7 @@ export default async function EditionPage(
           featured-snippet eligible; gated to a real FMV. (2026-06-29 SEO) */}
       {fmvAvailable && !marketClosed && (
         <p className="rpc-mono" style={{ margin: "12px 2px 2px", fontSize: 13, lineHeight: 1.65, color: "var(--rpc-text-secondary)" }}>
-          <strong style={{ color: "var(--rpc-text-primary)", fontWeight: 700 }}>{editionTitle}{detail.set_name ? ` — ${detail.set_name}` : ""}</strong>{" "}
+          <strong style={{ color: "var(--rpc-text-primary)", fontWeight: 700 }}>{editionTitle}{detail.set_name ? ` — ${detail.set_name}` : ""}{parallelLabel ? ` · ${parallelLabel}` : ""}</strong>{" "}
           is worth ~{fmtUsd(fmv?.fmv_usd ?? null)} (FMV) on {collectionDisplayName(collection)}
           {askValue ? <>, with the lowest ask at {fmtUsd(askValue)}</> : fmv?.floor_price_usd ? <>, with a recent-sale low of {fmtUsd(fmv?.floor_price_usd ?? null)}</> : null}
           {fmv?.sales_count_30d ? <> and {fmtCount(fmv?.sales_count_30d ?? null)} sales in the last 30 days</> : null}
@@ -1233,6 +1239,16 @@ async function EditionBottomSections({
                       {name}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)", marginBottom: 4 }}>{r.set_name ?? "—"}</div>
+                    {/* 2026-09-25: name the parallel, or five Candy Rainbow tiles read
+                        as one edition repeated (same player, set, tier and mint). */}
+                    {(() => {
+                      const p = parallelLabelFromBadges(r.badges)
+                      return p ? (
+                        <div className="rpc-mono" style={{ display: "inline-block", marginBottom: 4, padding: "1px 6px", borderRadius: 3, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 700, color: "var(--rpc-red)", background: "var(--rpc-red-bg, rgba(224,58,47,0.08))", border: "1px solid var(--rpc-red-border, var(--rpc-border))" }}>
+                          {p}
+                        </div>
+                      ) : null
+                    })()}
                     <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)" }}>
                       {(r.tier ?? "").toUpperCase()}
                       {r.circulation_count != null ? ` · ${fmtCount(r.circulation_count)} mint` : ""}

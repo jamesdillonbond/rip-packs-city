@@ -5,6 +5,7 @@ import { isMarketClosed, closedMarket, formatClosedOn } from "@/lib/market-close
 import { COLLECTIONS, collectionHasPage, type CollectionPage } from "@/lib/collections"
 import { ASK_STALE_HOURS } from "@/lib/market/ask-freshness"
 import { MAX_ASK_AGE_HOURS_CORROBORATION } from "@/lib/fmv-confidence"
+import { parallelLabelFromBadges } from "@/lib/edition-parallel"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
@@ -720,7 +721,14 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
   const fmvObj = (payload.fmv as Payload | null | undefined) ?? null
   const fmvUsd = fmvObj ? n(fmvObj, "fmv_usd") : null
   const subject = playerName
-  const context = setName
+  // 2026-09-25 — a PARALLEL printing is its own page and must carry its own
+  // title: six Candy pages (Core + five Rainbow colours) shared one title and
+  // one description, so a SERP could not tell them apart and Google was free to
+  // fold them. The parallel comes from the edition's badges through the one
+  // registry that knows the vocabulary (lib/edition-parallel.ts); Top Shot's
+  // ::subedition pages already carry theirs in the slug and are unaffected.
+  const parallel = parallelLabelFromBadges(Array.isArray(payload.badges) ? (payload.badges as unknown[]).map((b) => (typeof b === "string" ? b : null)) : null)
+  const context = parallel ? `${setName} · ${parallel}` : setName
   // ⛔ NO DOLLAR FIGURE IN THE TITLE (2026-09-06, Search Console read §5).
   // The title used to interpolate the live FMV — "… · Value $1.11 | …" — which
   // is wrong on two counts. (1) It re-writes the <title> of ~20K entity URLs on
@@ -743,11 +751,11 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
   const descParts = [
     cm
       ? (fmvUsd
-          ? `${subject} ${setName} last traded around ${fmtUsd(fmvUsd)} on ${collectionLabel} before its ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}. Historical value, not a present-day price.`
-          : `${subject} ${setName} on ${collectionLabel} — historical value and sales. The ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}.`)
+          ? `${subject} ${context} last traded around ${fmtUsd(fmvUsd)} on ${collectionLabel} before its ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}. Historical value, not a present-day price.`
+          : `${subject} ${context} on ${collectionLabel} — historical value and sales. The ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}.`)
       : (fmvUsd
-          ? `${subject} ${setName} is worth ~${fmtUsd(fmvUsd)} (FMV) on ${collectionLabel}.`
-          : `${subject} ${setName} on ${collectionLabel} — live fair-market value, floor, and recent sales.`),
+          ? `${subject} ${context} is worth ~${fmtUsd(fmvUsd)} (FMV) on ${collectionLabel}.`
+          : `${subject} ${context} on ${collectionLabel} — live fair-market value, floor, and recent sales.`),
     tier ? `Tier ${tier}.` : null,
     seriesLabel ? `${formatSeriesLabel(seriesLabel, collectionUrlSlug)}.` : null,
     circulation ? `Circulation ${fmtCount(circulation)}.` : null,
