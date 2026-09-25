@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 📝 rpc-surface-qa reference refresh — Cowork's 09-25 UTC QA notes landed in `references/browser-qa-and-known-issues.md` + bundle repacked · Claude Code (laptop)
+
+New in the file: top-level `await` over an async IIFE in `javascript_tool`; `get_page_text` can stop before late sections; `resize_window` floor 738–772px in both browsers; built-in browser as fallback when the extension sleeps (but not for the reveal-hang routes); WebFetch is robots-blocked on `/api/*`; telemetry "verify the write" marked RESOLVED (re-checked: 519 `usage_events` rows in 24h, newest ~1.5 min old at 21:21 PT). `skills:bundles:check` green (11 bundles), bundle test 13/13. Revert: `git revert` this commit (restores the prior reference text + bundle).
+
 ### 2026-09-24 · 🧾 Panini squeeze headline after FMV 1.1.0: $1.405M → $1.215M; "sale-backed" share kept honest under the new confidence meaning · Cowork (cloud + laptop VM)
 
 After the backfill and a manual `refresh_panini_squeeze()`, the public sealed-value headline went from **$1,405,408 to $1,214,578** (hc: $1,261,979 → $1,083,343). The ASK_ONLY portion went from $232k to **$129k** (16.5% → 10.6%). Correction to the entry below: the ASK_ONLY FMV total is **$1.10M**, not "about $1.06M".
