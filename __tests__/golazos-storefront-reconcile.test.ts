@@ -152,6 +152,19 @@ describe("planReconcile — Golazos storefront reconciliation", () => {
     expect(p.closes).toHaveLength(1)
   })
 
+  it("matches a row whose id arrives as a JSON NUMBER (PostgREST bigint) to the storefront's STRING id", () => {
+    // The first production run (2026-09-25) missed every match on exactly this:
+    // 3,338 live listings inserted as duplicates, 514 open rows closed as vanished.
+    const numericRow = row({ listing_resource_id: 216603793360707 as unknown as string })
+    const p = plan(
+      [[SELLER, [listing({ listingId: "216603793360707" })]]],
+      [numericRow, row({ listing_resource_id: 15393165463266 as unknown as string })],
+    )
+    expect(p.counts).toMatchObject({ inserted: 0, updated: 1, vanished: 1 })
+    expect(p.upserts[0].source).toBe("direct_v2")
+    expect(String(p.closes[0].listing_resource_id)).toBe("15393165463266")
+  })
+
   it("prefers the event-backed row when a listing exists under both sources", () => {
     const p = plan(
       [[SELLER, [listing({ listingId: "D" })]]],

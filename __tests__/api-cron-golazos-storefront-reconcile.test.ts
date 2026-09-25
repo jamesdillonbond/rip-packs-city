@@ -84,7 +84,7 @@ beforeEach(() => {
   state.tables = {
     cached_listings_v2: [
       {
-        listing_resource_id: "GHOST",
+        listing_resource_id: 216603793360707, // a bigint arrives from PostgREST as a JSON number
         source: "direct_v2",
         flow_id: "5",
         edition_id: null,
@@ -110,7 +110,7 @@ beforeEach(() => {
     status: 200,
     text: cdcListings([
       { listingId: "NEW", nftId: "7", expiry: "9999999999", salePrice: "85.00000000", vault: "A.ead892083b3e2c6c.DapperUtilityCoin.Vault", live: "1", editionId: "89", serial: "64" },
-      { listingId: "GHOST", nftId: "5", expiry: "9999999999", salePrice: "3.0", vault: "A.ead892083b3e2c6c.DapperUtilityCoin.Vault", live: "0" },
+      { listingId: "216603793360707", nftId: "5", expiry: "9999999999", salePrice: "3.0", vault: "A.ead892083b3e2c6c.DapperUtilityCoin.Vault", live: "0" },
     ]),
   })
   vi.stubGlobal("fetch", async (_url: string, init: any) => {
@@ -143,7 +143,7 @@ describe("/api/cron/golazos-storefront-reconcile — a run", () => {
     ])
     const close = state.ops.find((o) => o.op === "update")
     expect(close?.payload).toMatchObject({ completed_status: "ghosted" })
-    expect(close?.filters).toContainEqual(["listing_resource_id", ["GHOST"]])
+    expect(close?.filters).toContainEqual(["listing_resource_id", [216603793360707]])
     expect(close?.filters).toContainEqual(["completed_at", null])
 
     const log = state.logs.at(-1)

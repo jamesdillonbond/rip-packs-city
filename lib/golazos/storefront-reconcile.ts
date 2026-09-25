@@ -181,11 +181,17 @@ export function planReconcile(input: {
   // must never be closed as "vanished" for being absent from it.
   const existing = input.existing.filter((r) => V2_SOURCES.has(r.source))
 
+  // ⚠ KEY ON String(id). PostgREST serialises a bigint column as a JSON NUMBER,
+  // while the storefront script returns every id as a STRING — a Map keyed on the
+  // raw value never matches, and the first production run (2026-09-25 2:48 PM PT)
+  // inserted all 3,338 live listings as new and closed all 514 existing rows as
+  // "vanished" because of exactly that. The route also selects the ids as text.
   const bestByListing = new Map<string, ListingRow>()
   for (const row of existing) {
-    const cur = bestByListing.get(row.listing_resource_id)
+    const key = String(row.listing_resource_id)
+    const cur = bestByListing.get(key)
     if (!cur || sourcePriority(row.source) < sourcePriority(cur.source)) {
-      bestByListing.set(row.listing_resource_id, row)
+      bestByListing.set(key, row)
     }
   }
 
@@ -268,7 +274,7 @@ export function planReconcile(input: {
   for (const row of existing) {
     if (row.completed_at != null) continue
     if (!walked.has(normalizeAddress(row.seller_address))) continue
-    if (seenOnChain.has(row.listing_resource_id)) continue
+    if (seenOnChain.has(String(row.listing_resource_id))) continue
     plan.closes.push({ listing_resource_id: row.listing_resource_id, source: row.source, status: "vanished" })
     plan.counts.vanished++
   }

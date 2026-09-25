@@ -38,8 +38,10 @@ const SCRIPT_TIMEOUT_MS = 20_000
 const WALK_BUDGET_MS = 200_000
 const PAGE = 1000
 
+// bigint ids are selected as TEXT: PostgREST returns a bigint as a JSON number,
+// and the planner matches them against the storefront's string ids.
 const LISTING_COLUMNS =
-  "listing_resource_id, source, flow_id, edition_id, collection_id, seller_address, price_usd, currency, custom_id, listed_at, expiry_at, completed_at, completed_status, block_height, tx_hash, event_index"
+  "listing_resource_id::text, source, flow_id::text, edition_id, collection_id, seller_address, price_usd, currency, custom_id, listed_at, expiry_at, completed_at, completed_status, block_height, tx_hash, event_index"
 
 function authorized(req: NextRequest): boolean {
   const auth = req.headers.get("authorization") ?? ""
