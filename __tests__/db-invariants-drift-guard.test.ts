@@ -628,6 +628,14 @@ const PINS = [
     migration: "supabase/migrations/20260925150357_audit_20260925_one_curry_name_everywhere_alias_normalizer_and_search.sql",
   },
   {
+    // Added 2026-09-25 (#139 follow-up). The league-id crosswalk's matcher: links
+    // by name only when unique both ways, breaks a shared name by the editions'
+    // TEAM then by season, and COUNTS what it cannot break instead of guessing.
+    fn: "match_player_identities",
+    test: "supabase/tests/match_player_identities.sql",
+    migration: "supabase/migrations/20260925225610_audit_20260925_player_identities_crosswalk_table_upsert_and_match.sql",
+  },
+  {
     fn: "resolve_canonical_player",
     test: "supabase/tests/resolve_canonical_player.sql",
     migration: "supabase/migrations/20260925135939_audit_20260925_steph_curry_one_player_and_player_name_aliases.sql",
