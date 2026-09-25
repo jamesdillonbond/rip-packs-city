@@ -11,6 +11,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the site never says "DUC": Dapper's dollar token renders as plain dollars everywhere ("$10.00", never "$10.00 DUC"; the pack-history currency strip folds its DUC bucket into USD), five copy strings reworded, and a tree-walk guard bans the word at zero · Cowork (batch 33)
+
+**Trevor, 10:00 AM PT:** *"we should not have 'DUC' anywhere on our website. DUC is pegged 1:1 with the US Dollar. Show DUC just like you would for the Dollar. So if a pack was 10 DUC, show it was $10."*
+
+**Where it showed (all live at 9:55 AM PT):** `/dashboard/history` "$35.00 DUC" on every Top Shot pack row (544 SELLS rows since batch 31); `/dashboard/packs` "$10.00 DUC" buy labels, "$35.00 DUC" sell column and a "DUC 33 buys · 7 sells · spent $303.00 · in $463.00" strip beside "USD 120 buys · 495 sells …" (two dollar buckets of one currency); the Pinnacle sniper footer "Prices in USD (DUC)"; the Top Shot and All Day pack-market boards "Prices are DUC ≈ USD."; the loans dashboard footer and its methodology text listing DUC as a token; a wallet's loan detail printing the raw `principal_currency`.
+
+**What shipped (code, no migration):**
+- `lib/usd-format.ts` — `isUsdPegged(c)` (USD / DUC / absent → true; FLOW, USDC, FUT … → false), `currencySuffix(c)` ("" for a pegged unit, `" FLOW"` otherwise), `displayCurrency(c)` ("USD" for a pegged unit, the code otherwise, "—" for none). One helper, so the next "DUC" cannot be re-derived per page.
+- `app/dashboard/history/TransactionHistoryClient.tsx` amount text, `app/dashboard/packs/PackHistoryClient.tsx` sell column and `lib/packs-wallet-view-format.ts` `packBuyLabel` use `currencySuffix` (a "$30.00 USD" loses its redundant tag the same way). `PackHistoryClient` gains `foldUsdPeggedBuckets(by_currency)` — DUC + USD become ONE "USD" bucket (counts and sums added, first-seen order, UNKNOWN = drops / rewards and other units pass through); `currencyBucketLabel` prints `displayCurrency`.
+- `lib/pack-lifecycle-format.ts` `fmtPriceWithUsd` and the pack page's local copy test `isUsdPegged` (a `"USD"`-tagged price used to print "20 USD").
+- Copy: Pinnacle sniper "Prices in USD"; both pack-market boards "Prices in USD."; loans footer "(USDCf, USDC, FUSD, TUSDT, Dapper dollars)"; `lib/analytics/methodology.ts` "TUSDT and Dapper's dollar token"; `WalletProfile` loan detail via `displayCurrency`.
+- **Guard** `__tests__/site-copy-never-says-duc.test.ts`: walks `app/` (minus `app/api`, JSON), `components/` and `lib/` (minus `lib/chains`, Cadence sources), strips comments, removes the bare literal form (`"DUC"` — the value a currency column carries and a formatter compares against), and bans any remaining word `DUC` at zero; asserts it inspected > 300 files; scanner proven on four planted shapes and four legitimate ones; **the tree walk proven by planting "Prices in USD (DUC)" back into the sniper footer → red, restored → green.** Re-pins: `packs-wallet-view-format` ("$10.00", "$30.00", FLOW keeps " FLOW"), `component-PackHistoryAndOverviewClients` (DUC 33/7/$303/$463 + USD 12/3/$120/$40 + FLOW → "45 buys · 10 sells · spent $423.00 · in $503.00", no "DUC", FLOW bucket intact), `component-PaniniAndHistoryClients` ("$10.00", no "DUC").
+- Guards: tsc clean · ratchet 709 = baseline · 197 targeted tests green. Not touched: the API routes' `currency: "DUC"` data values, `paymentToken: "DUC"` in the sniper feed types (no component renders it), edge-function comments, SQL data values — none are copy.
+
+**Revert:** find the commit by message ("the site never says DUC"); reverting it restores the suffixes and the copy and deletes the guard. The DB is untouched.
+
 ### 2026-09-25 · ✅ Panini FMV write is now insert-then-supersede (was delete-then-insert); two editions that lost their 1.1.0 price re-priced (`20260925165714`, ~9:57 AM PT) · Cowork (cloud + laptop VM)
 
 **Found:** at 6:36 AM PT one panini-ingest batch (`ok=false`, `fmv_error` "TypeError: fetch failed") had already DELETED today's `panini_fmv_snapshots` rows for its editions when its INSERT failed. Two editions fell back to their 09-22 `panini-1.0.0` row, a top-sales-biased lifetime average. They were the only 2 of 5,093 editions with no `panini-1.1.0` row:
