@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildSeriesBars, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
+import { buildSeriesBars, buildSeriesBarsFrom, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
 
 describe("share-card-view · buildSeriesBars", () => {
   it("sorts series labels and returns the max for bar scaling", () => {
@@ -18,6 +18,30 @@ describe("share-card-view · buildSeriesBars", () => {
     expect(buildSeriesBars({ "Series 1": 0 }).max).toBe(1)
     expect(buildSeriesBars({}).max).toBe(1)
     expect(buildSeriesBars({}).entries).toEqual([])
+  })
+})
+
+describe("share-card-view · buildSeriesBarsFrom", () => {
+  it("keeps the RPC's on-chain order — no lexical sort puts 'Series 2023-24' after 'Series 4' (2026-09-24)", () => {
+    const { entries, max } = buildSeriesBarsFrom(
+      [
+        { label: "Series 1", count: 530, series_number: 0 },
+        { label: "Series 2", count: 1953, series_number: 2 },
+        { label: "Summer 2021", count: 491, series_number: 3 },
+        { label: "Series 4", count: 3675, series_number: 5 },
+        { label: "Series 2023-24", count: 3209, series_number: 6 },
+        { label: "SUnknown", count: 1269, series_number: null },
+      ],
+      { S0: 1 }, // the legacy object is ignored when the array is present
+    )
+    expect(entries.map(([k]) => k)).toEqual(["Series 1", "Series 2", "Summer 2021", "Series 4", "Series 2023-24", "No series"])
+    expect(max).toBe(3675)
+  })
+
+  it("falls back to the legacy object for an older snapshot without the array", () => {
+    const { entries } = buildSeriesBarsFrom(undefined, { "Series 2": 8, "Series 1": 12 })
+    expect(entries.map(([k]) => k)).toEqual(["Series 1", "Series 2"])
+    expect(buildSeriesBarsFrom([], {}).entries).toEqual([])
   })
 })
 

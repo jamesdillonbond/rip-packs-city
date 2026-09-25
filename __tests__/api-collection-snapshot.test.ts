@@ -45,6 +45,8 @@ describe("GET /api/collection-snapshot", () => {
       topMoments: [{ id: "m1" }],
       badgeCount: 7,
       seriesBreakdown: { "4": 10 },
+      seriesBars: [{ label: "Series 3", count: 10, series_number: 4 }],
+      seriesCollection: { slug: "nba_top_shot", name: "NBA Top Shot" },
       perCollection: [{ slug: "nba-top-shot" }],
       rarest: { id: "r1" },
     }
@@ -56,6 +58,9 @@ describe("GET /api/collection-snapshot", () => {
     expect(body.totalFmv).toBe(34567.89)
     expect(body.badgeCount).toBe(7)
     expect(body.topMoments).toHaveLength(1)
+    // 2026-09-24: the ordered one-collection bars travel with their collection.
+    expect(body.seriesBars).toEqual([{ label: "Series 3", count: 10, series_number: 4 }])
+    expect(body.seriesCollection).toEqual({ slug: "nba_top_shot", name: "NBA Top Shot" })
   })
 
   it("defaults missing snapshot fields to safe zeros/empties", async () => {
@@ -65,6 +70,8 @@ describe("GET /api/collection-snapshot", () => {
     expect(body.totalFmv).toBe(0)
     expect(body.topMoments).toEqual([])
     expect(body.seriesBreakdown).toEqual({})
+    expect(body.seriesBars).toEqual([])
+    expect(body.seriesCollection).toBeNull()
   })
 
   it("500s when the RPC returns an error", async () => {

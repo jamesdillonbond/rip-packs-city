@@ -226,6 +226,11 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
       cross_collection: [
         { slug: "nba_top_shot", moments: 200, editions: 120, approx_fmv_usd: 5400 },
         { slug: "nfl_all_day", moments: 30, editions: 25, approx_fmv_usd: null },
+        // A CLOSED market (UFC Strike's Flow marketplace, last sale 13 May 2026)
+        // still carries the last FMV the pipeline observed.
+        { slug: "ufc_strike", moments: 4, editions: 4, approx_fmv_usd: 12.5 },
+        // A registry collection the old hardcoded label map did not know.
+        { slug: "candy_mlb", moments: 338, editions: 300, approx_fmv_usd: 900 },
       ],
       recent_acquisitions: [
         {
@@ -257,8 +262,17 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
     expect(screen.getByText(/Best rookie holding: Rook One/)).toBeTruthy()
     expect(screen.queryByText(/— editions/)).toBeNull()
     expect(screen.getByText("Recent Buy")).toBeTruthy()
-    // Cross-collection label map turns the slug into a display name.
+    // Cross-collection labels come from the registry, not a hand map.
     expect(screen.getAllByText(/NFL All Day/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Candy MLB/i).length).toBeGreaterThan(0)
+    expect(screen.queryByText("candy_mlb")).toBeNull()
+    // 2026-09-24: an FMV on a CLOSED market is historical and says so; a live
+    // market's FMV carries no such marker.
+    const ufcCard = screen.getByText("UFC Strike").closest(".rpc-tc-cc-card")!
+    expect(ufcCard.textContent).toMatch(/as of 13 May 2026 · Flow market closed/)
+    const tsCard = screen.getByText("NBA Top Shot").closest(".rpc-tc-cc-card")!
+    expect(tsCard.textContent).toContain("FMV")
+    expect(tsCard.textContent).not.toMatch(/market closed/)
   })
 })
 

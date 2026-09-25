@@ -51,10 +51,19 @@ export function fmtCount(value: number | null | undefined): string {
   return value.toLocaleString("en-US")
 }
 
+/** A signed DELTA ("+3.2%", "-1.0%"). For a share of a whole use `fmtShare`. */
 export function fmtPercent(value: number | null | undefined, digits = 1): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return EM_DASH
   const sign = value > 0 ? "+" : ""
   return `${sign}${value.toFixed(digits)}%`
+}
+
+/** An unsigned SHARE of a whole ("38.0%") — a share is not a change, so it
+ *  never carries a "+" (the edition page's pack-distributed share read
+ *  "~+38.0%" through `fmtPercent`, 09-24). */
+export function fmtShare(value: number | null | undefined, digits = 1): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return EM_DASH
+  return `${value.toFixed(digits)}%`
 }
 
 /** Wallet address, truncated: `0x1234…abcd` on hex chains, `AGzq…SpcQ` on

@@ -42,6 +42,35 @@ export function shareHeadline(input: {
   return { live, stale, staleCount, caption }
 }
 
+/** One bar of the snapshot's ordered `seriesBars` array (2026-09-24). */
+export interface SeriesBar {
+  label: string
+  count: number
+  series_number: number | null
+}
+
+/**
+ * The bars, from the RPC's ORDERED array when it carries one (one
+ * collection's series, named the way every page names them — "Series 1",
+ * "Summer 2021", "Series 2025-26" — in on-chain order, which no lexical sort
+ * of the labels reproduces), else from the legacy `{label: count}` object.
+ * The null-series bucket is named and stays last either way.
+ */
+export function buildSeriesBarsFrom(
+  seriesBars: SeriesBar[] | null | undefined,
+  seriesBreakdown: Record<string, number> | null | undefined,
+): { entries: Array<[string, number]>; max: number } {
+  if (Array.isArray(seriesBars) && seriesBars.length > 0) {
+    const entries = seriesBars.map((b): [string, number] => [
+      b.label === "SUnknown" || b.label === "Snull" || b.series_number == null ? NO_SERIES_LABEL : b.label,
+      Number(b.count) || 0,
+    ])
+    const max = Math.max(...entries.map(([, v]) => v), 1)
+    return { entries, max }
+  }
+  return buildSeriesBars(seriesBreakdown ?? {})
+}
+
 export function buildSeriesBars(
   seriesBreakdown: Record<string, number>,
 ): { entries: Array<[string, number]>; max: number } {

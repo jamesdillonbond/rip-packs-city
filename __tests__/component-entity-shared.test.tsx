@@ -7,7 +7,7 @@ vi.mock("next/link", () => ({
 }))
 
 import {
-  fmtUsd, fmtCount, fmtPercent, truncWallet, relTime, tileSubject,
+  fmtUsd, fmtCount, fmtPercent, fmtShare, truncWallet, relTime, tileSubject,
   marketplaceLabel, fmvBasisText, FmvBasis, TierBadge, WalletLink, EM_DASH,
   SectionUnavailable,
 } from "@/components/entity/_shared"
@@ -35,6 +35,14 @@ describe("_shared formatters", () => {
     expect(fmtPercent(-5)).toBe("-5.0%")
     expect(fmtPercent(0)).toBe("0.0%")
     expect(fmtPercent(null)).toBe(EM_DASH)
+  })
+
+  it("fmtShare never signs a share of a whole (a share is not a change)", () => {
+    expect(fmtShare(38.04)).toBe("38.0%")
+    expect(fmtShare(0)).toBe("0.0%")
+    expect(fmtShare(100)).toBe("100.0%")
+    expect(fmtShare(null)).toBe(EM_DASH)
+    expect(fmtShare(NaN)).toBe(EM_DASH)
   })
 
   it("truncWallet lowercases, 0x-prefixes and shortens long addresses", () => {

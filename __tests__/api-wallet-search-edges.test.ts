@@ -360,6 +360,30 @@ describe("wallet-search — cost-basis tails", () => {
     })
   })
 
+  it("caches Top Shot's on-chain Series 1 (= 0) as series_number 0, not NULL", async () => {
+    // 2026-09-24: `Number(r.series) || null` wrote NULL for every Series 1
+    // moment, and the metadata self-heal never filled series_number, so the
+    // share card / analyzer counted them as "No series". An empty string (the
+    // Cadence script's "no seriesNumber" value) still stores NULL.
+    state.gqlById = { "101": momentGql("flow-101", "5"), "102": momentGql("flow-102", "6") }
+    state.ownedIds = [101, 102]
+    state.metadataById = {
+      "101": { ...momentMeta("5"), series: "0" },
+      "102": { ...momentMeta("6"), series: "" },
+    }
+    const spy = install(baseFixtures({ sales: { data: [], error: null } }))
+
+    await POST(post({ input: WALLET }))
+    await flush()
+
+    const cached = (spy.writes.wallet_moments_cache ?? [])
+      .filter((w) => w.method === "upsert")
+      .flatMap((w) => w.rows)
+    const byMoment = Object.fromEntries(cached.map((r) => [String(r.moment_id), r.series_number]))
+    expect(byMoment["101"]).toBe(0)
+    expect(byMoment["102"]).toBeNull()
+  })
+
   it("writes nothing when there are no sales for the unpriced moments", async () => {
     state.gqlById = { "101": momentGql("flow-101", "5", { lastPurchasePrice: "0" }) }
     state.ownedIds = [101]

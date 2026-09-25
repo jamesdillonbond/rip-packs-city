@@ -52,6 +52,10 @@ export async function GET(req: NextRequest) {
           snap.seriesBreakdown && typeof snap.seriesBreakdown === "object"
             ? snap.seriesBreakdown
             : {},
+        // 2026-09-24: ordered, one-collection series bars + which collection.
+        seriesBars: Array.isArray(snap.seriesBars) ? snap.seriesBars : [],
+        seriesCollection:
+          snap.seriesCollection && typeof snap.seriesCollection === "object" ? snap.seriesCollection : null,
         perCollection: Array.isArray(snap.perCollection) ? snap.perCollection : [],
         rarest: snap.rarest ?? null,
         generatedAt: new Date().toISOString(),

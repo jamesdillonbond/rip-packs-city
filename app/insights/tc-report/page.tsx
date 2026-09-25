@@ -13,6 +13,8 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { slugifyName } from "@/lib/entity-labels"
+import { fromDbSlug, getCollection } from "@/lib/collections"
+import { closedMarket, formatClosedOn } from "@/lib/market-closed"
 
 type Bucket = { editions: number; moments: number }
 type Buckets = { liquid: Bucket; moderate: Bucket; squeezed: Bucket; extreme: Bucket }
@@ -89,13 +91,21 @@ type Report = {
   recent_acquisitions: RecentAcquisition[]
 } | null
 
-const COLLECTION_LABEL: Record<string, string> = {
-  nba_top_shot: "NBA Top Shot",
-  nfl_all_day: "NFL All Day",
-  laliga_golazos: "LaLiga Golazos",
-  ufc_strike: "UFC Strike",
-  disney_pinnacle: "Disney Pinnacle",
-  candy_mlb: "Candy MLB",
+// Labels come from the registry (lib/collections) through the DB-slug bridge —
+// a hardcoded map beside a registry goes stale silently (Candy was missing
+// from three such maps on 09-24).
+function collectionLabelForDbSlug(dbSlug: string): string {
+  const urlSlug = fromDbSlug(dbSlug)
+  return (urlSlug && getCollection(urlSlug)?.label) || dbSlug
+}
+
+/** "as of 13 May 2026 (Flow market closed)" for a closed market, else null —
+ *  an FMV on a closed market is the last value observed before it closed, and
+ *  must not read as a current price (lib/market-closed.ts). */
+export function ccFmvAsOf(dbSlug: string): string | null {
+  const urlSlug = fromDbSlug(dbSlug)
+  const cm = urlSlug ? closedMarket(urlSlug) : null
+  return cm ? `as of ${formatClosedOn(cm.closedOn)} · ${cm.venue} market closed` : null
 }
 
 function fmtInt(n: number | null | undefined): string {
@@ -307,11 +317,16 @@ export default function TcReportPage() {
               <div className="rpc-tc-cc-grid">
                 {cc.map((c) => (
                   <div key={c.slug} className="rpc-tc-cc-card">
-                    <div className="rpc-tc-cc-label">{COLLECTION_LABEL[c.slug] ?? c.slug}</div>
+                    <div className="rpc-tc-cc-label">{collectionLabelForDbSlug(c.slug)}</div>
                     <div className="rpc-tc-cc-val">{fmtInt(c.moments)}</div>
                     <div className="rpc-tc-cc-sub">moments · {fmtInt(c.editions)} editions</div>
                     {c.approx_fmv_usd != null ? (
-                      <div className="rpc-tc-cc-fmv">≈ {fmtUsd(c.approx_fmv_usd)} FMV</div>
+                      <div className="rpc-tc-cc-fmv">
+                        ≈ {fmtUsd(c.approx_fmv_usd)} FMV
+                        {ccFmvAsOf(c.slug) ? (
+                          <span className="rpc-tc-cc-asof"> · {ccFmvAsOf(c.slug)}</span>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 ))}
@@ -581,6 +596,7 @@ const CSS = `
 .rpc-tc-cc-val { font-family: var(--font-display); font-weight: 800; font-size: 32px; color: var(--rpc-red); letter-spacing: 0.5px; }
 .rpc-tc-cc-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 4px; }
 .rpc-tc-cc-fmv { font-family: var(--font-mono); font-size: 12px; color: var(--rpc-text-secondary); letter-spacing: 1px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rpc-border-subtle); }
+.rpc-tc-cc-asof { color: var(--rpc-text-muted); letter-spacing: 0; text-transform: none; }
 
 .rpc-tc-cohort-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
 .rpc-tc-cohort-card { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 18px; border-radius: 2px; }

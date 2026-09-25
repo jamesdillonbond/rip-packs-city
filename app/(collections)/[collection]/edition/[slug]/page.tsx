@@ -50,6 +50,7 @@ import {
   WalletLink,
   fmtCount,
   fmtPercent,
+  fmtShare,
   fmtUsd,
   relTime,
 } from "@/components/entity/_shared"
@@ -1291,7 +1292,7 @@ async function EditionBottomSections({
             />
             <StatCell
               label="Pack-distributed share"
-              value={packProvenance.observed_pull_share_pct != null ? `~${fmtPercent(packProvenance.observed_pull_share_pct)}` : "—"}
+              value={packProvenance.observed_pull_share_pct != null ? `~${fmtShare(packProvenance.observed_pull_share_pct)}` : "—"}
               sub="of circulation, observed (lower bound)"
             />
             <StatCell

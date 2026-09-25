@@ -6,7 +6,7 @@ import FunnelTracker from "@/components/FunnelTracker"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { formatClosedOn } from "@/lib/market-closed"
 import { fmvBasis } from "@/lib/fmv-basis"
-import { buildSeriesBars, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
+import { buildSeriesBarsFrom, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
 import { OG_INHERITED } from "@/lib/seo"
 import { normalizeAddress } from "@/lib/address"
 
@@ -26,6 +26,11 @@ interface SnapshotData {
   }>
   badgeCount: number
   seriesBreakdown: Record<string, number>
+  // 2026-09-24: the bars are ONE collection's series (the wallet's largest),
+  // ordered on-chain and named like every other page; the object above is the
+  // legacy unordered shape kept for older snapshots.
+  seriesBars?: Array<{ label: string; count: number; series_number: number | null }>
+  seriesCollection?: { slug: string; name: string } | null
   perCollection: Array<{
     slug: string
     name: string
@@ -241,7 +246,8 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
   }
 
   // Series bars + closed-market note extracted to lib/share-card-view.ts (tested).
-  const { entries: seriesEntries, max: maxSeries } = buildSeriesBars(data.seriesBreakdown)
+  const { entries: seriesEntries, max: maxSeries } = buildSeriesBarsFrom(data.seriesBars, data.seriesBreakdown)
+  const seriesHeading = data.seriesCollection?.name ? `${data.seriesCollection.name} · Series Breakdown` : "Series Breakdown"
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", padding: "40px 24px" }}>
@@ -527,7 +533,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
 
         {/* Series breakdown bar */}
         <div style={{ marginBottom: 32 }}>
-          <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "var(--rpc-text-secondary)", marginBottom: 12, textTransform: "uppercase" }}>Series Breakdown</div>
+          <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "var(--rpc-text-secondary)", marginBottom: 12, textTransform: "uppercase" }}>{seriesHeading}</div>
           <div style={{ display: "flex", gap: 8, alignItems: "end", height: 80 }}>
             {seriesEntries.map(([label, count]) => (
               <div key={label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>

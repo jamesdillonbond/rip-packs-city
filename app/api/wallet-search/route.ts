@@ -985,7 +985,9 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
       // store value; the self-heal can fill it later.
       player_name: r.playerName && r.playerName !== "Unknown (error loading)" ? r.playerName : null,
       set_name: r.setName ?? null,
-      series_number: r.series != null ? Number(r.series) || null : null,
+      // ⚠ Not `Number(r.series) || null`: Top Shot's on-chain Series 1 is 0,
+      // and `0 || null` wrote NULL for every Series 1 moment (2026-09-24).
+      series_number: r.series != null && r.series !== "" && Number.isFinite(Number(r.series)) ? Number(r.series) : null,
       image_url: r.thumbnailUrl ?? null,
     })
 
