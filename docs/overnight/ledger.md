@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧪 CI pass 3 — the render smoke now signs in (the 104 login-gated URLs were never rendered), covers routes with their own slug lists, and the deploy smoke stops warning on cache save · Claude Code cloud
+- `scripts/qa/built-render-smoke.mjs` starts a local Supabase STUB (`127.0.0.1:54329`; `ci.yml` `build-render` env changed from `:9`). It admits a test session (`auth/v1/user` + `check_email_allowed`) and drops every data connection. Pass 2 re-requests every `/login`-bounced URL signed in. Result: 104 gated → 87 × 200, 16 × 404 (all explained), 1 × 500 (`/edition/[id]`'s deliberate failed-read throw, now `KNOWN_5XX` with a premise pin). The anonymous pass is unchanged (227 / 1). Planted `throw` in `/analytics/sets/[set_id]` → anonymous saw a redirect, signed-in reported 500.
+- The smoke now also requests `.next/prerender-manifest.json` paths (+18: `/analytics/{sales,loans}/topshot` etc., which the registry slugs 404'd) and UUID placeholders for the two UUID-checked routes.
+- `e2e-smoke.yml`: Playwright cache split into restore/save; no save on `deployment_status`.
+- CLAUDE.md: the SEGMENT SEMANTICS bullet's last sentence is replaced at equal length (39,994 chars, unchanged); the original is verbatim in `claude-md-condensed-originals.md`.
+**Revert:** `git log --grep='render smoke signs in'` → `git revert <sha>`. CI/docs only; no DB state.
+
 ### 2026-09-25 · 🧹 SHIPPED — ONE name for Steph Curry on every surface: 31 edition labels, 1,626 wallet-cache rows, 8 badge rows, 2+2 listings and 13 assets that said "Stephen Curry" now say "Steph Curry" (Top Shot's own spelling on 111 of 124 assets); an alias-driven BEFORE trigger keeps refreshes from re-splitting it, and search finds him by either spelling · Claude Code (web)
 
 - DB: `20260925150357` — `normalize_player_name_alias()` + `a_normalize_player_name_alias_{ins,upd}` on editions / wallet_moments_cache / cached_listings / badge_editions / ts_listings (WHEN clause: INSERT or a CHANGED player_name only); one-time correction (backup `audit_20260925_curry_label_backup`); `rpc_search_catalog` player arm matches `player_name_aliases`. Verified: 0 "Stephen Curry" rows in any of the six tables; search "stephen curry" and "steph curry" → the one player; LeBron control unchanged. Pin `supabase/tests/normalize_player_name_alias.sql` (planted defect proven), DB suite 196/196.
