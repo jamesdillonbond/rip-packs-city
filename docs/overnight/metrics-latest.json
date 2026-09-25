@@ -39,7 +39,7 @@
     "sentinel_ts_uuid_editions_48h": 0,
     "unmapped_resolution_backlog_max": 2
   },
-  "deltas_vs_prev": "FMV HIGH+MED TopShot 7771->7867 (+96), AllDay 1768->1778 (+10), Pinnacle 709->722 (+13), Candy 25->24 (-1 flat), Golazos 4->4. Editions TopShot 14460->14460 (flat), AllDay 6190 flat. DB 24237->26027 MB (+1790 — ~2.2x recent ~800/day trend; driver: tonight's audit_20260925_* backup tables + 940k cache-series backfill + atlas_events no-retention ~90k rows/day). All health arms flat/green.",
+  "deltas_vs_prev": "FMV HIGH+MED TopShot 7771->7867 (+96), AllDay 1768->1778 (+10), Pinnacle 709->722 (+13), Candy 25->24 (-1 flat), Golazos 4->4. Editions TopShot 14460->14460 (flat), AllDay 6190 flat. DB 24237->26027 MB (+1790; ⚠ CORRECTED 2026-09-25 PT, Claude Code: the growth is net._http_response's TOAST REFILLING after the 09-20 VACUUM FULL — 551 MB on 09-20 -> 7.9 GB now, ~1.5 GB/day, 4,788 live rows — NOT the audit_20260924/25 backups (20 tables, 15 MB total) or atlas_events. Expected to plateau near #75's measured ~12 GB steady state; #126 showed reclaiming it bought nothing. Do not chase). All health arms flat/green.",
   "needs_trevor": [
     "Q0 CLOSED 2026-09-25 (Trevor): fixed 09-23 (20260923205831) + bounded to listings <= 2 h old 09-25 (20260925152928); re-derived 0 ask_only_v2 rows above own floor in 24 h, Golazos only. Ledger Declined line — do not re-queue.",
     "Q_alerts CLOSED 2026-09-25 (Trevor): honest zero. Both lanes ok every tick, pools non-empty; the 2 subscriptions match nothing (Lillard Archive <= $0.60 is a deliberate watch on one $50 moment; Blazers rookie serials an honest market zero); fmv_alerts has 0 rows. Ledger Declined line — do not re-queue.",
