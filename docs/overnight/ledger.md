@@ -11,6 +11,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 💲 SHIPPED — the All Day and Golazos packs boards stop ranking unbuyable / sold-out packs on their RETAIL price (#50, the two collections the 4:05 PM fix left out): a $1 trade-in reward pack was #1 on All Day at 15.75× · Cowork (cloud, no push — files in the handoff)
+
+The 4:05 PM PT migration `20260924230603` rebased Top Shot's retail-basis rows on the live ask and scoped itself to Top Shot. Measured at 7:55 PM PT, the other two collections had the same defect:
+- **All Day:** all 521 `mv_pack_ev_latest` rows carry `price_source NULL`; no All Day primary is live; 375 of the 489 rows with an EV had a live secondary ask that the verdict ignored (351 with `ev_pack_price <> secondary_ask`). `/nfl-all-day/packs` headlined **"2025 Regal Rookie Trade In Reward - Nick Emmanwori" at 15.75× on a $1.00 placeholder** with `primary_available=false` and `secondary_available=false`; Kansas City Game Day read 2.82× on $4 retail against a $16 ask (0.70×); Houston Texans Feast 2.32× against $28.50 (0.33×). 10 rows were +EV that are negative on the ask, 9 negative that are positive on the ask, 3 +EV with no price path at all.
+- **Golazos:** all 12 +EV rows (up to 2.07×) had `primary_available=false` by the view's own measured rule (state `Complete`, or a window that ended in 2022/2023, or a placeholder year-2122 window) and `secondary_available=false` under a FRESH ask snapshot (`total_listed = 1` for the whole collection). Nothing on the board could be bought.
+
+**Migrations (applied 8:06 and 8:09 PM PT):**
+- `20260925030613_audit_20260924_pack_table_rows_rebases_allday_retail_basis_rows_on_the_live_ask` — `retail_basis` now also covers All Day rows with no `price_source`, except while the distribution's own primary window (`metadata.endTime`) is still open. Dry run: 3,077 AD rows, 489 with EV, 1 primary window open (kept), 488 rebased, 479 changing, 114 verdicts NULLed. Post-apply: AD +EV **37 → 33**, AD max ratio **15.75 → 4.46**.
+- `20260925030943_audit_20260924_pack_table_rows_rebases_golazos_retail_basis_rows_on_the_live_ask` — same for Golazos, except while the view's Golazos primary-live rule holds. Post-apply: Golazos +EV **12 → 0**, `gross_ev` still published on all 33.
+- Both: 6,006 rows before and after; +EV total **76 → 60** (TS 27 unchanged); reloptions NULL and ACL unchanged (allow-listed definer view); `check_public_security_invariants` [] and `check_secdef_anon_exec_drift` [] after each; `/nfl-all-day/packs`, `/nfl-all-day/pack/dist/860`, `/nfl-all-day/pack/dist/6640`, `/laliga-golazos/packs`, `/laliga-golazos/pack/dist/238` all 200 with no error markers.
+- ⚠ **Files are NOT committed** — this cloud session had no push path (git proxy: repo not in the session's authorized set; laptop bridge offline). Both migration files are in the 2026-09-24 evening handoff. Commit them as usual; the only byte difference from `schema_migrations` (md5 `9bb222b8…` / `d7617ff8…`) is each file's header.
+
+**Re-open:** a Golazos primary drop goes live (its price returns automatically), or the Golazos secondary book grows. **Falsifier:** any All Day or Golazos row showing +EV with `primary_available IS NOT TRUE AND secondary_ask IS NULL`.
+**Revert:** re-apply the `pack_table_rows` body from `20260925030613` (drops Golazos only) or `20260924230603` (drops both).
+
 ### 2026-09-24 · 🗄️ MIGRATION PARITY — `panini_team_walk_20260924_rotation_roster` (applied ~5:04 PM PT, no file) recovered to the repo, md5-verified · Claude Code (desktop)
 
 - Prod `20260925000424` added `panini_team_walk_targets` (30 NBA teams + Detroit), `panini_team_walk_plan(n)` and `panini_team_walk_note(...)`, all service_role-only with RLS on. It was applied with no committed file, so a manually dispatched migration-parity run at ~5:04 PM PT went red on it. The `pack_table_rows` fix (`20260924230603`) was NOT flagged; it was already committed in `6cbe957ae`.
