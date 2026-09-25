@@ -97,7 +97,9 @@ export const STATIC_SITEMAP_PAGES: ReadonlyArray<{
   // 2026-09-07 with its footer link (Trevor, Search Console pass): a page that
   // says the product is free is not a search answer, and it was drawing 27,566
   // internal links. It stays public and noindex, reachable from upgrade_url.
-  { path: '/nba/fast-break',                   changeFrequency: 'daily',   priority: 0.7 },
+  // 2026-09-24: /nba/fast-break REMOVED while parked — app/nba/fast-break/layout.tsx
+  // redirect()s it to "/" (shelved 2026-09-23, known-issues #8), so the sitemap was
+  // handing Google a 307 at priority 0.7 daily. Re-add it with the redirect.
 ]
 
 

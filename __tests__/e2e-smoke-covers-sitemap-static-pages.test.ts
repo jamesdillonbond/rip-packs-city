@@ -62,7 +62,9 @@ describe("the rendered-DOM smoke covers every static sitemap page", () => {
     // not-vacuous check has to be satisfiable at a population of ZERO missing,
     // which is where this sits the moment it is written. A guard whose reader
     // silently returned an empty set would otherwise pass forever over nothing.
-    expect(STATIC_SITEMAP_PAGES.length).toBeGreaterThan(8)
+    // 8 static pages since 2026-09-24 (/nba/fast-break left with its redirect;
+    // /pricing left 09-07) — the floor is about the ENUMERATOR reading something.
+    expect(STATIC_SITEMAP_PAGES.length).toBeGreaterThan(5)
     expect(smokePaths(spec()).size).toBeGreaterThan(40)
   })
 

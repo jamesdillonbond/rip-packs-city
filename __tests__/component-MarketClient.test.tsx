@@ -993,3 +993,21 @@ describe("MarketClient — the owned column follows the collection's chain", () 
     })
   })
 })
+
+// 2026-09-24 — the Top Shot market table showed raw on-chain series numbers
+// ("SERIES 8") because get_topshot_sniper_deals returns `e.series::text`.
+// The label follows lib/series-label; the value stays raw for the RPC filter.
+describe("marketSeriesLabel", () => {
+  it("maps Top Shot's raw on-chain number to the site-wide label", async () => {
+    const { marketSeriesLabel } = await import("@/app/(collections)/[collection]/market/MarketClient")
+    expect(marketSeriesLabel("8", "nba-top-shot")).toBe("Series 2025-26")
+    expect(marketSeriesLabel("0", "nba-top-shot")).toBe("Series 1")
+    expect(marketSeriesLabel("5", "nba-top-shot")).toBe("Series 4")
+  })
+  it("passes other collections' series names through untouched", async () => {
+    const { marketSeriesLabel } = await import("@/app/(collections)/[collection]/market/MarketClient")
+    expect(marketSeriesLabel("2024 Season", "nfl-all-day")).toBe("2024 Season")
+    expect(marketSeriesLabel("Series 1", "laliga-golazos")).toBe("Series 1")
+    expect(marketSeriesLabel("8", "nfl-all-day")).toBe("8")
+  })
+})

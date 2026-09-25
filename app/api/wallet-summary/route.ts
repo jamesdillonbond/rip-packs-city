@@ -4,6 +4,7 @@ import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { isWalletAddress, lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
 import { isSupportedAddress } from "@/lib/address"
+import { getCollectionByUuid } from "@/lib/collections"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -61,5 +62,27 @@ export async function GET(req: NextRequest) {
   }), "api/wallet-summary/get_wallet_summary")
 
   if (error) return apiErrorResponse(error, "api/wallet-summary")
-  return NextResponse.json({ ...(data ?? {}), resolved_wallet: address })
+  return NextResponse.json({ ...withoutLockStateForChainsThatHaveNone(data, collectionId), resolved_wallet: address })
+}
+
+/**
+ * 2026-09-24 — Solana (Candy MLB) has NO locking concept, so "UNLOCKED FMV $0 ·
+ * 0 unlocked · LOCKED FMV $0 · 0 locked" on a 338-moment Candy wallet was a
+ * measured zero of a property the chain does not have. Mirror the Pinnacle
+ * route: NULL the lock fields (the tiles render "n/a for this collection").
+ * Decided by the registry's `dbChain`, never by a hardcoded collection.
+ */
+export function withoutLockStateForChainsThatHaveNone(data: unknown, collectionId: string): Record<string, unknown> {
+  const base = (data && typeof data === "object" ? data : {}) as Record<string, unknown>
+  const chain = getCollectionByUuid(collectionId)?.dbChain
+  if (chain !== "solana") return base
+  return {
+    ...base,
+    locked_fmv: null,
+    locked_count: null,
+    unlocked_fmv: null,
+    unlocked_count: null,
+    lock_unknown_fmv: null,
+    lock_unknown_count: null,
+  }
 }

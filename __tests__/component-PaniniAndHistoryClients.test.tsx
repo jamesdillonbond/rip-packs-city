@@ -221,6 +221,24 @@ describe("TransactionHistoryClient — the three-state ladder", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
   })
 
+  // 2026-09-24 — a pack that came from the collection's own contract
+  // (pack_purchases.event_kind = primary_withdraw: drops, rewards, set-completion
+  // packs) is RECEIVED, not bought from "0x0b2a…7e29" for "—".
+  it("labels a primary-withdraw pack as received (drop / reward), never 'Bought pack from <contract>'", async () => {
+    const PRIMARY = { ...EVENT, kind: "pack_buy" as const, title: "2025-26 Set Completion Reward: Base Set", subtitle: null, amount_usd: null, currency: null, counterparty: "0x0b2a3299cc857e29", method: "primary_withdraw", nft_id: null, pack_nft_id: "p1", dist_id: "8600" }
+    const SECONDARY = { ...PRIMARY, title: "Metallic Gold LE Standard Pack", counterparty: "0x18eb4ee6b3c026d2", method: "secondary_sale", amount_usd: 10, currency: "DUC" }
+    vi.stubGlobal("fetch", routed({ ok: true, body: { wallet: "0xmine", kind_filter: "all", limit: 25, offset: 0, total_count: 2, events: [PRIMARY, SECONDARY] } }))
+    render(<TransactionHistoryClient />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Set Completion Reward/))
+    const text = document.body.textContent ?? ""
+    expect(text).toMatch(/Received pack/i)
+    expect(text).toMatch(/drop \/ reward/i)
+    expect(text).not.toMatch(/from 0x0b2a/i)
+    // no-change arm: a secondary purchase still reads "Bought pack · from <seller>"
+    expect(text).toMatch(/Bought pack/i)
+    expect(text).toMatch(/from 0x18eb/i)
+  })
+
   // ⚠ The ladder is loading → ERROR → empty, in that order, and the order is the property:
   // an inverted ladder tells a collector "No activity for this filter" when the read failed,
   // which is a claim about their own trading history.

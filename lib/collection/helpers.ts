@@ -54,6 +54,9 @@ export function seriesFilterLabel(seriesRaw: string | undefined | null, seriesMa
   const n = parseInt(seriesRaw, 10)
   if (!Number.isNaN(n) && seriesMap?.has(n)) return seriesMap.get(n)!.display_label
   if (!Number.isNaN(n) && SERIES_FILTER_LABEL_FALLBACK[n] !== undefined) return SERIES_FILTER_LABEL_FALLBACK[n]
+  // 2026-09-24: a bare number is not a label — Candy MLB (no collection_series
+  // rows, series 1) rendered its filter option as "1".
+  if (!Number.isNaN(n) && /^\d+$/.test(seriesRaw.trim())) return `Series ${n}`
   return seriesRaw
 }
 
@@ -67,6 +70,8 @@ export function seriesIntToSeason(seriesRaw: string | undefined | null, seriesMa
   if (!Number.isNaN(n) && SERIES_INT_TO_SEASON[n] !== undefined) return SERIES_INT_TO_SEASON[n]
   if (/^\d{4}-\d{2}$/.test(seriesRaw.trim())) return seriesRaw.trim()
   if (/^\d{4}$/.test(seriesRaw.trim())) return seriesRaw.trim()
+  // 2026-09-24: same as seriesFilterLabel — a Candy row read "… · 1".
+  if (!Number.isNaN(n) && /^\d+$/.test(seriesRaw.trim())) return `Series ${n}`
   return seriesRaw
 }
 

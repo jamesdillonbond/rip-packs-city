@@ -23,6 +23,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
 import { getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
+import { seriesDisplay } from "@/lib/series-label"
 import { momentSubjectHref } from "@/lib/entity-href"
 import { COLLECTION_TIERS } from "@/lib/collection-tiers"
 import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
@@ -66,6 +67,18 @@ import PackMarketView from "@/components/packs/PackMarketView"
 // ask for it to describe. Stamping a missing ask with a real-looking age is a
 // claim the reader cannot falsify, which is strictly worse than silence —
 // `lib/market/ask-freshness.ts` carries the long form of that argument.
+// 2026-09-24: get_topshot_sniper_deals returns `e.series::text` — the raw
+// on-chain number — so the Top Shot market table read "SERIES 2 / 5 / 6 / 8"
+// while every other page says "Series 2 / Series 4 / Series 2023-24 /
+// Series 2025-26". The VALUE stays raw (the RPC filters on `e.series::text =
+// ANY(p_series)`); only what the reader sees is mapped. Other collections'
+// series names are already labels and pass through.
+export function marketSeriesLabel(raw: string, collectionId: string): string {
+  if (collectionId !== "nba-top-shot") return raw
+  const n = Number(raw)
+  return Number.isInteger(n) && /^\d+$/.test(raw.trim()) ? seriesDisplay(n, "nba-top-shot") : raw
+}
+
 function AskAge({ cachedAt, askPrice, collectionSlug }: {
   cachedAt: string | null
   askPrice: number | null
@@ -630,7 +643,7 @@ function MarketInner() {
         {/* Row 3: multi-select dropdowns + special serials + owned filter */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <MultiSelectChip label="Set" selected={setsSel} options={setOptions} onChange={setSetsSel} />
-          <MultiSelectChip label="Series" selected={seriesSel} options={seriesOptions} onChange={setSeriesSel} />
+          <MultiSelectChip label="Series" selected={seriesSel} options={seriesOptions} onChange={setSeriesSel} formatOption={(v) => marketSeriesLabel(v, collectionId)} />
           <MultiSelectChip label="Team" selected={teamsSel} options={teamOptions} onChange={setTeamsSel} />
           <MultiSelectChip label="Badges" selected={badgesSel} options={badgeOptions} onChange={setBadgesSel} />
 
@@ -742,15 +755,18 @@ function MarketInner() {
 // collectDistinct extracted to @/lib/market-format (imported below).
 
 function MultiSelectChip({
-  label, selected, options, onChange,
+  label, selected, options, onChange, formatOption,
 }: {
   label: string
   selected: string[]
   options: string[]
   onChange: (next: string[]) => void
+  /** Display label for an option value (the VALUE still round-trips to the API). */
+  formatOption?: (v: string) => string
 }) {
   const [open, setOpen] = useState(false)
-  const summary = selected.length === 0 ? "Any" : selected.length === 1 ? selected[0] : `${selected.length} selected`
+  const fmt = formatOption ?? ((v: string) => v)
+  const summary = selected.length === 0 ? "Any" : selected.length === 1 ? fmt(selected[0]) : `${selected.length} selected`
   const toggle = (v: string) => {
     if (selected.includes(v)) onChange(selected.filter(x => x !== v))
     else onChange([...selected, v])
@@ -835,7 +851,7 @@ function MultiSelectChip({
                 checked={selected.includes(opt)}
                 onChange={() => toggle(opt)}
               />
-              <span>{opt}</span>
+              <span>{fmt(opt)}</span>
             </label>
           ))}
         </div>
@@ -920,7 +936,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
         </div>
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: "0.04em" }}>
           <span style={{ color: dot }}>{tier || "—"}</span>
-          {listing.seriesName ? <> · {listing.seriesName}</> : null}
+          {listing.seriesName ? <> · {marketSeriesLabel(listing.seriesName, collectionUrlSlug)}</> : null}
           {listing.setName ? <> · {listing.setName}</> : null}
           {listing.parallel && listing.parallel !== "Base" ? (
             <> · <span style={{ color: "#c084fc", fontWeight: 600 }}>{listing.parallel}</span></>
@@ -1073,7 +1089,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   )}
                 </td>
                 <td style={{ ...td, color: dot }}>{tier || "—"}</td>
-                <td style={{ ...td, color: "var(--rpc-text-muted)" }}>{l.seriesName ?? "—"}</td>
+                <td style={{ ...td, color: "var(--rpc-text-muted)" }}>{l.seriesName ? marketSeriesLabel(l.seriesName, collectionUrlSlug) : "—"}</td>
                 <td style={{ ...td, color: "var(--rpc-text-muted)" }}>
                   {l.setName ? (
                     <Link

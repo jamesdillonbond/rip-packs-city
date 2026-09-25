@@ -98,3 +98,24 @@ describe("GET /api/wallet-summary", () => {
     expect(body).not.toHaveProperty("wallet_fmv")
   })
 })
+
+// 2026-09-24 — a chain with no locking concept publishes no lock state.
+describe("GET /api/wallet-summary — lock tiles on a chain without locking", () => {
+  it("NULLs the lock fields for Candy MLB (Solana) so the tiles read n/a, not $0 · 0 locked", async () => {
+    const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+    rpc.data = { total_moments: 338, wallet_fmv: 4286.94, locked_fmv: 0, locked_count: 0, unlocked_fmv: 0, unlocked_count: 0, lock_unknown_fmv: 4286.94, lock_unknown_count: 338 }
+    const res = await GET(req(`https://t/api/wallet-summary?wallet=${CANDY}&collection_id=209ade70-32c5-4470-bc7c-4793d660f713`))
+    const body = await res.json()
+    expect(body.wallet_fmv).toBe(4286.94)
+    for (const k of ["locked_fmv", "locked_count", "unlocked_fmv", "unlocked_count", "lock_unknown_fmv", "lock_unknown_count"]) {
+      expect(body[k], k).toBeNull()
+    }
+  })
+  it("no-change control: a Flow collection keeps its lock state", async () => {
+    rpc.data = { total_moments: 5, locked_fmv: 12, locked_count: 1, unlocked_fmv: 3, unlocked_count: 4 }
+    const res = await GET(req(`https://t/api/wallet-summary?wallet=0xbd94cade097e50ac&collection_id=95f28a17-224a-4025-96ad-adf8a4c63bfd`))
+    const body = await res.json()
+    expect(body.locked_fmv).toBe(12)
+    expect(body.unlocked_count).toBe(4)
+  })
+})

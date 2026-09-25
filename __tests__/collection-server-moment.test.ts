@@ -107,3 +107,18 @@ describe("serverMomentToRow", () => {
     expect(serverMomentToRow(sm({ is_locked: false })).isLocked).toBe(false)
   })
 })
+
+// 2026-09-24 — Candy MLB parallels live in the edition NAME ("Player - GREEN");
+// the analyzer's PARALLEL column was empty on every Candy row, so five
+// Murakami LEGENDARY rows at five prices read as one edition priced five ways.
+describe("serverMomentToRow — parallel from the Candy edition name", () => {
+  it("derives the parallel from a '<player> - <X>' edition name", () => {
+    const row = serverMomentToRow(sm({ player_name: "Munetaka Murakami", edition_name: "Munetaka Murakami - GREEN" }))
+    expect(row.subedition).toBe("Green")
+  })
+  it("leaves it null when the name is just the player (Top Shot, Candy base) or absent", () => {
+    expect(serverMomentToRow(sm({ edition_name: "LeBron James" })).subedition).toBeNull()
+    expect(serverMomentToRow(sm({ edition_name: undefined })).subedition).toBeNull()
+    expect(serverMomentToRow(sm({ player_name: null, edition_name: "X - Y" })).subedition).toBeNull()
+  })
+})

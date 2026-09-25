@@ -17,6 +17,9 @@ import type { PriceBand30d } from "@/components/PriceBand30dBadge"
 export type ServerMoment = {
   moment_id: string
   edition_key: string | null
+  /** The edition's catalogue name. Candy MLB spells a parallel INTO it
+   *  ("Munetaka Murakami - GREEN"); editions.subedition_name is null there. */
+  edition_name?: string | null
   serial_number: number | null
   fmv_usd: number | null
   confidence: string | null
@@ -42,6 +45,16 @@ export type ServerMoment = {
   lock_known?: boolean
   serial_fmv?: SerialFmvData
   price_band_30d?: PriceBand30d
+}
+
+/** "Munetaka Murakami - GREEN" + "Munetaka Murakami" → "Green"; otherwise null. */
+export function parallelFromEditionName(editionName: string | null | undefined, playerName: string | null | undefined): string | null {
+  if (!editionName || !playerName) return null
+  const prefix = `${playerName.trim()} - `
+  if (!editionName.startsWith(prefix)) return null
+  const suffix = editionName.slice(prefix.length).trim()
+  if (!suffix) return null
+  return suffix.charAt(0).toUpperCase() + suffix.slice(1).toLowerCase()
 }
 
 export function serverMomentToRow(m: ServerMoment, sport?: string | null): MomentRow {
@@ -124,7 +137,13 @@ export function serverMomentToRow(m: ServerMoment, sport?: string | null): Momen
     bestOffer: null,
     lastPurchasePrice: null,
     parallel: null,
-    subedition: null,
+    // 2026-09-24: Candy MLB parallels are the edition NAME's suffix ("Player -
+    // GREEN"); with nothing here the analyzer showed five Murakami LEGENDARY
+    // rows at $584 / $199 / $183 / $175 / $154 with an empty PARALLEL column,
+    // reading as one edition priced five ways. Derive the parallel from the
+    // name when it is "<player> - <X>"; every other collection's names carry
+    // no such suffix, so they stay null.
+    subedition: parallelFromEditionName(m.edition_name, m.player_name),
     flowId: m.moment_id,
     acquisitionMethod: acqMethod,
     acquisitionSource: m.acquisition_source ?? null,

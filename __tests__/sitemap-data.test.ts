@@ -142,8 +142,13 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // The tab shipped with its own backend (/api/pinnacle-set-progress) because
     // Pinnacle has ZERO rows in `editions`/`sets` and the generic /api/sets-db
     // answered every wallet "0 sets" out of a join that matched nothing.
-    expect(s).toHaveLength(77)
+    // 77 → 76 on 2026-09-24: /nba/fast-break LEFT the static list while
+    // app/nba/fast-break/layout.tsx redirect()s it to "/" (parked 09-23,
+    // known-issues #8) — a sitemap entry that 307s is crawl waste. It returns
+    // with the redirect's removal.
+    expect(s).toHaveLength(76)
     expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
+    expect(s.find((x) => x.url === `${BASE}/nba/fast-break`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/ufc/sniper`)).toBeUndefined()
     // ⚠ PRESENCE, not just the count — a bare length pin is satisfied by ANY
     // 76th URL, so each Candy tab that entered the sitemap is named here. That

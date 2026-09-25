@@ -328,10 +328,19 @@ function TimelineRow({ e }: { e: TxEvent }) {
   const href = eventHref(e)
 
   // Verb: moment_buy with a non-marketplace method reads its method label.
+  // 2026-09-24: a pack_buy whose method is `primary_withdraw` came straight
+  // from the collection's own contract (a drop, reward or set-completion pack —
+  // pack_purchases.is_primary_drop). Trevor's history showed 101 such rows as
+  // "BOUGHT PACK · from 0x0b2a…7e29 · —", the Top Shot contract, as if bought
+  // from a collector for an unknown price. The pack page already calls them
+  // "$0 (reward)". Say what they are.
+  const isPrimaryPack = e.kind === "pack_buy" && e.method === "primary_withdraw"
   const verb =
     e.kind === "moment_buy" && e.method && METHOD_LABEL[e.method]
       ? METHOD_LABEL[e.method]
-      : meta.verb
+      : isPrimaryPack
+        ? "Received pack"
+        : meta.verb
 
   // Amount tint: sells are proceeds (green); everything else neutral.
   const amountTint = e.kind === "moment_sell" ? "#34D399" : "rgba(255,255,255,0.9)"
@@ -340,9 +349,11 @@ function TimelineRow({ e }: { e: TxEvent }) {
   const counterpartyLabel =
     e.kind === "moment_sell" && e.counterparty
       ? "to " + truncAddr(e.counterparty)
-      : (e.kind === "moment_buy" || e.kind === "pack_buy") && e.counterparty
-        ? "from " + truncAddr(e.counterparty)
-        : null
+      : isPrimaryPack
+        ? "drop / reward"
+        : (e.kind === "moment_buy" || e.kind === "pack_buy") && e.counterparty
+          ? "from " + truncAddr(e.counterparty)
+          : null
 
   const titleNode = (
     <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, letterSpacing: "0.01em", color: href ? "#fff" : "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
