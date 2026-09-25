@@ -400,7 +400,8 @@ const PINS = [
     // 2026-09-18: pointed at 20260919012821 for 42 minutes, then REVERTED by 20260919021449 (same-evening IO spell, later RULED OUT as the cause).
     // 2026-09-19: R101 v2 — scan-once (slim _open24, no memory grants) + delta-first upserts; equivalence proven on prod data before apply.
     // ⚠ 2026-09-19 11:2x AM: re-pointed a SECOND time — commit 14f38e53c (a concurrent session) wrote this file from a stale copy and silently reverted both entries; main was red for ~35 min.
-    migration: "supabase/migrations/20260919152824_audit_20260919_r101_v2_atlas_listing_tick_scans_the_open_book_once_and_upserts_only_the_delta.sql",
+    // 2026-09-24: stub-edition listings (NULL circulation_count) are withheld + counted (no_circulation) instead of aborting the tick.
+    migration: "supabase/migrations/20260925034501_audit_20260924_ts_listings_sync_withholds_and_counts_stub_edition_listings_instead_of_aborting_the_tick.sql",
   },
   {
     fn: "sync_edition_offers_from_atlas",

@@ -7,6 +7,8 @@
 --   * only OPEN nba listings (kind='listing', NOT completed) reach ts_listings;
 --   * a listing not VERIFIED in the last 24 h (last_seen_at) is withheld;
 --   * an open listing whose edition is UNMAPPED is withheld and COUNTED, never guessed;
+--   * an open listing whose edition is a catalog STUB (NULL circulation_count) is withheld and
+--     COUNTED (no_circulation) — never written with a made-up count, never allowed to abort the tick;
 --   * one row per Moment — the NEWEST listing wins when a relisted Moment carries a
 --     superseded "open" listing;
 --   * the parallel's subedition id is parsed from the mapped edition's `::N`; a
@@ -15,7 +17,7 @@
 --     return payload counts rows / unverified / unmapped.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260919152824_audit_20260919_r101_v2_atlas_listing_tick_scans_the_open_book_once_and_upserts_only_the_delta.sql);
+-- (supabase/migrations/20260925034501_audit_20260924_ts_listings_sync_withholds_and_counts_stub_edition_listings_instead_of_aborting_the_tick.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -31,9 +33,9 @@ CREATE TABLE public.topshot_atlas_market_events (
 CREATE TABLE public.topshot_atlas_edition_map (atlas_edition_id text PRIMARY KEY, rpc_edition_id uuid, external_id text);
 CREATE TABLE public.editions (id uuid PRIMARY KEY, player_name text, team_name text, set_name text, tier text, series smallint, circulation_count integer,
   thumbnail_url text);  -- read into _open24 (2026-09-18); appended so positional inserts stay valid
-CREATE TABLE public.ts_listings (
+CREATE TABLE public.ts_listings (  -- circulation_count NOT NULL as live (2026-09-24: a stub edition aborted the tick on it)
   listing_id text PRIMARY KEY, flow_id text, set_id integer, play_id integer, parallel_id integer, serial_number integer,
-  circulation_count integer, price_usd numeric, seller_address text, player_name text, set_name text, moment_tier text,
+  circulation_count integer NOT NULL, price_usd numeric, seller_address text, player_name text, set_name text, moment_tier text,
   series_number integer, is_locked boolean, asset_path_prefix text, ingested_at timestamptz, listed_at timestamptz);
 
 -- >>> BEGIN verbatim sync_ts_listings_from_atlas (keep byte-identical to the migration) >>>
@@ -44,7 +46,7 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
 AS $$
-DECLARE v_started timestamptz := clock_timestamp(); v_n int; v_ins int; v_upd int; v_del int; v_unverified int; v_unmapped int;
+DECLARE v_started timestamptz := clock_timestamp(); v_n int; v_ins int; v_upd int; v_del int; v_unverified int; v_unmapped int; v_nocirc int;
 BEGIN
   -- Diagnostics: open nba listings we could not map to an edition are counted, never guessed
   -- at, and listings the verify probes have not re-seen in 24 h are counted the same way.
@@ -77,7 +79,11 @@ BEGIN
      AND ev.nft_id IS NOT NULL AND ev.price_cents > 0
      AND ev.last_seen_at > now() - interval '24 hours';
 
-  -- The wanted set. One row per Moment: the NEWEST listing per nft wins.
+  -- The wanted set. One row per Moment: the NEWEST listing per nft wins. A listing whose edition
+  -- has no circulation_count yet (a catalog STUB — a new set lands its editions before their
+  -- mint counts) is WITHHELD and COUNTED (no_circulation), never given a made-up count:
+  -- ts_listings.circulation_count is NOT NULL, and one such row used to abort the whole tick
+  -- (2026-09-24 04:56Z, the minute the catalog migration created stub editions).
   DROP TABLE IF EXISTS _tsl_want;
   CREATE TEMP TABLE _tsl_want ON COMMIT DROP AS
   SELECT DISTINCT ON (o.nft_id)
@@ -89,8 +95,14 @@ BEGIN
          false AS is_locked, NULL::text AS asset_path_prefix, o.last_seen_at AS ingested_at, o.listed_at
     FROM _open24 o
     JOIN public.editions e ON e.id = o.rpc_edition_id
+   WHERE e.circulation_count IS NOT NULL
    ORDER BY o.nft_id, o.listed_at DESC NULLS LAST;
   SELECT count(*) INTO v_n FROM _tsl_want;
+  -- Counted on the same slim book every tick (cheap, unlike the two sampled stocks above).
+  SELECT count(DISTINCT o.nft_id) INTO v_nocirc
+    FROM _open24 o
+    JOIN public.editions e ON e.id = o.rpc_edition_id
+   WHERE e.circulation_count IS NULL;
 
   -- Gone: rows no longer in the wanted set (sold, cancelled by a verify read, aged out of the window,
   -- or superseded by a newer listing of the same Moment — the newer one's listing_id replaces it).
@@ -145,6 +157,7 @@ BEGIN
 
   RETURN jsonb_build_object('rows', v_n, 'inserted', v_ins, 'updated', v_upd, 'deleted', v_del,
                             'unverified_24h', v_unverified, 'unmapped', v_unmapped, 'diag_sampled', p_diag,
+                            'no_circulation', v_nocirc,
                             'duration_ms', (extract(epoch from clock_timestamp() - v_started) * 1000)::int);
 END $$;
 
@@ -154,11 +167,13 @@ END $$;
 INSERT INTO public.editions VALUES
   ('00000000-0000-4000-8000-000000000001', 'Ja Morant', 'Grizzlies', 'Base Set', 'COMMON', 7, 15000),
   ('00000000-0000-4000-8000-000000000002', 'Ja Morant', 'Grizzlies', 'Base Set', 'RARE',   7,   250),   -- the ::17 parallel
-  ('00000000-0000-4000-8000-000000000003', NULL,        'Kings',     'Clamps',   'COMMON', 7,  1000);   -- team highlight
+  ('00000000-0000-4000-8000-000000000003', NULL,        'Kings',     'Clamps',   'COMMON', 7,  1000),   -- team highlight
+  ('00000000-0000-4000-8000-000000000004', 'Rookie X',  'Hornets',   'New Set',  'COMMON', 8,  NULL);   -- catalog STUB: no mint count yet
 INSERT INTO public.topshot_atlas_edition_map VALUES
   ('E1', '00000000-0000-4000-8000-000000000001', '99:3372'),
   ('E2', '00000000-0000-4000-8000-000000000002', '99:3372::17'),
-  ('E3', '00000000-0000-4000-8000-000000000003', '5:11');
+  ('E3', '00000000-0000-4000-8000-000000000003', '5:11'),
+  ('E4', '00000000-0000-4000-8000-000000000004', '120:9001');
 INSERT INTO public.topshot_atlas_market_events VALUES
   -- open, verified, Standard
   ('u1', 'nba', 'listing', false, 'N1', 'E1', 99, 3372, 4521, 1250, '0xseller1', 'COMMON', now() - interval '3 hours', now() - interval '1 hour'),
@@ -178,12 +193,15 @@ INSERT INTO public.topshot_atlas_market_events VALUES
   -- open, verified, but its edition is UNMAPPED → withheld and counted
   ('u8', 'nba', 'listing', false, 'N8', 'E-unmapped', 1, 1, 1, 700, '0xseller8', 'COMMON', now() - interval '1 hour', now() - interval '1 hour'),
   -- team highlight (edition has no player_name)
-  ('u9', 'nba', 'listing', false, 'N9', 'E3', 5, 11, 3, 250, '0xseller9', 'COMMON', now() - interval '1 hour', now() - interval '1 hour');
+  ('u9', 'nba', 'listing', false, 'N9', 'E3', 5, 11, 3, 250, '0xseller9', 'COMMON', now() - interval '1 hour', now() - interval '1 hour'),
+  -- open, verified, mapped — but its edition is a STUB with NULL circulation → withheld and counted,
+  -- never written with a made-up count (2026-09-24: one such row aborted the whole tick)
+  ('u10', 'nba', 'listing', false, 'N10', 'E4', 120, 9001, 5, 300, '0xseller10', 'COMMON', now() - interval '1 hour', now() - interval '1 hour');
 -- a stale row from the dead writer must be gone after the sync
-INSERT INTO public.ts_listings (listing_id, flow_id, price_usd, ingested_at) VALUES ('stale-may', 'OLD', 1, '2026-05-15');
+INSERT INTO public.ts_listings (listing_id, flow_id, circulation_count, price_usd, ingested_at) VALUES ('stale-may', 'OLD', 1, 1, '2026-05-15');
 
 -- ── assertions ────────────────────────────────────────────────────────────────
-SELECT _assert_eq((SELECT (public.sync_ts_listings_from_atlas())->>'rows'), '4', 'four rows land: u1, u2, u3new, u9');
+SELECT _assert_eq((SELECT (public.sync_ts_listings_from_atlas())->>'rows'), '4', 'four rows land: u1, u2, u3new, u9 (u10, a stub edition, is withheld)');
 SELECT _assert_eq((SELECT string_agg(listing_id, ',' ORDER BY listing_id) FROM public.ts_listings), 'u1,u2,u3new,u9',
   'open + verified + mapped only; newest per Moment; the May row is gone');
 SELECT _assert_eq((SELECT parallel_id::text FROM public.ts_listings WHERE listing_id = 'u2'), '17', 'parallel id parsed from ::17');
@@ -196,6 +214,8 @@ SELECT _assert_eq((SELECT round(price_usd, 2)::text FROM public.ts_listings WHER
 -- the payload counts what it withheld
 SELECT _assert_eq((SELECT j->>'unverified_24h' || '/' || (j->>'unmapped') FROM (SELECT public.sync_ts_listings_from_atlas() j) s), '1/1',
   'one listing withheld as unverified, one as unmapped — counted, not guessed');
+SELECT _assert_eq((SELECT (public.sync_ts_listings_from_atlas(false))->>'no_circulation'), '1',
+  'the stub-edition listing is withheld and COUNTED every tick (sampled or not), never guessed');
 -- idempotent: a second sync yields the same set
 SELECT _assert_eq((SELECT count(*)::text FROM public.ts_listings), '4', 'a second sync leaves exactly the same four rows');
 -- differential (2026-09-07): a sync over an unchanged set touches nothing — no delete/re-insert of the open book
