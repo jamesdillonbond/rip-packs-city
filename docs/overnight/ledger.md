@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — "Nflallday" / "Laligagolazos": the marketplace keys `sales.marketplace` actually carries for All Day and Golazos were unmapped in both label tables · Cowork (cloud + laptop VM)
+
+- Seen on the set page's new Recent Sales rows ("Justin Fields Base · #7430 · Nflallday $0.17") and, on inspection, on every All Day / Golazos team-page activity row and the analytics marketplace mix: `components/entity/_shared.tsx#marketplaceLabel` and `lib/analytics/format.ts#MARKETPLACE_LABEL` mapped `allday` / `nfl_all_day` / `golazos` / `laliga_golazos`, while the live column carries `nflallday` (12,344 rows / 30d) and `laligagolazos` (61) — the same class as the 09-24 "Magic_eden" fix, one key over. Both tables (and the colour map, so the mix slices are not grey) now carry the live keys; tests pin them beside the incumbents.
+- Guards: `tsc` clean, `lint:ratchet` at baseline (709).
+**Revert:** `git revert` this pair of commits.
+
 ### 2026-09-25 · 🧹 SHIPPED — set pages get a "Recent Sales" panel (`get_set_activity`, migration `20260925093248`) — the one entity page with no market on it · Cowork (cloud + laptop VM)
 
 - Sweep #3 tabulated sales copy by page kind: edition 500/500, team 23/24, player pages carry "Top Sales" — and **set pages 0 of 43** (Top Shot, All Day, Golazos; UFC's read as closed-market copy). Trevor's brief: sales history wired up everywhere relevant. `get_set_activity(p_collection_id, p_set_slug, p_limit, p_offset)` is `get_team_activity`'s shape keyed on the set (sets_summary's slug rule, variants fold, the same narrow/wide gate at 2,000 index probes); the WIDE path carries a 365-day floor, measured first: Base Set (3,747 editions) streams the collection's sold_at index in 2,225 buffers / 10 ms, a cold wide set would walk deeper. service_role-only like its sibling. The set page fetches it three-state (`sectionRowsResult`), passes `ok` to `TeamActivity` (whose empty copy CONCLUDES), shows the section on rows OR failure, and never asks for Pinnacle. Verified live through the RPC: Base Set / Holo Icon / the largest All Day set / Candy's set each 20 rows, an unknown slug `[]`.
