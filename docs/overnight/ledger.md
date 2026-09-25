@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🛡 SHIPPED — the Top Shot listing sync withholds and COUNTS listings on stub editions (NULL circulation) instead of aborting the whole tick (handoff 20:15 PT, finding 2) · Claude Code (web)
+
+- **What:** `sync_ts_listings_from_atlas` gains `WHERE e.circulation_count IS NOT NULL` on the wanted set, plus a `no_circulation` count in the payload, computed every tick. There is no COALESCE: a made-up mint count would fabricate the serial-vs-mint read. Before this, one listing on a catalog STUB edition failed the NOT NULL on `ts_listings.circulation_count` and rolled back every leg of the tick, including cached_listings, edition_offers and verify dispatch. That happened at 2026-09-23 9:56 PM PT, the minute the catalog migration created stubs, and it recurs with every new set. Measured before the fix: 863 ok / 1 failed over 72 h; 0 such listings live.
+- **Applied** `20260925034501_audit_20260924_ts_listings_sync_withholds_and_counts_stub_edition_listings_instead_of_aborting_the_tick` at ~8:45 PM PT. Checks:
+  - live `prosrc` md5 `e588f59d…` equals the pin;
+  - anon EXECUTE is false;
+  - the first tick after the apply (8:46 PM PT) was ok, 43,484 rows (continuous), `no_circulation` 0, sync 579 ms (it was 2–3 s before).
+- **Pin:** `supabase/tests/sync_ts_listings_from_atlas.sql`. The fixture column is now NOT NULL as live. Stub edition E4 carries listing u10. The previous body fails the pin with the exact prod error (planted defect). DB suite: 195 files, 0 FAIL. The drift guard is repointed.
+- **Revert:** re-apply the `sync_ts_listings_from_atlas` body from `20260919152824`.
+
 ### 2026-09-24 · 🧩 DOCS — installed-vs-repo skill audit: 8 of 11 installed RPC skills are behind the repo; `rpc-data` source gains the one detail only the installed copy had · Cowork
 
 - Compared every installed RPC skill with `docs/cowork-skills/<name>/SKILL.md`. **Match (3):** rpc-cron-ops, rpc-fmv-audit, rpc-insights-qa. **Installed copy behind the repo (8):** rpc-artifact-ops (formatting only), rpc-audit-drain, rpc-data, rpc-edge-fn-deploy, rpc-handoff, rpc-migration, rpc-nightly-autonomous-pass, rpc-surface-qa. ⚠ The two gaps that matter most for safety: the installed **rpc-edge-fn-deploy** lacks the 09-21 §0 rotator recipe and still presents §2's "copy the key out of `cron.job`" step (how nine keys leaked on 08-18) as normal; the installed **rpc-handoff** still says Claude Code pushes "via the PAT in `remote.origin.pushurl`", which has been dead since 08-16.
