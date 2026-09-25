@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 📱 SHIPPED — trophy case slabs no longer clip the player name / team / set on mobile: the metallic label reflows on its own width (container query, ≤240px) so serial/tier/badges sit in a top row beside the ✕ and the text gets the full label width · Claude Code (web sandbox)
+- Trevor's phone screenshot: 2-up grid left the name column ~45px ("Donovan Clingan" clipped, "PORTLA…", "Series 2024-2…"). Desktop 3-up layout unchanged. Verified by rendering the component in Chromium at 390px.
+**Revert:** `git log --grep='trophy slab label reflows'` → `git revert <sha>`. No DB state.
+
 ### 2026-09-25 · 🧹 SHIPPED — the concierge reads Candy MLB listings: get_edition_listings had no Candy arm, so every Candy "is it listed / cheapest?" answer said "the live marketplace check couldn't be reached" about a book RPC holds · Claude Code (Trevor's box)
 - Live QA (Ohtani, Candy MLB). `get_edition_listings` now reads `candy_listings` (the Magic Eden sweep, every 3 h, ~1,800 asks re-seen per sweep): only asks re-seen within 7 h count (Magic Eden asks carry no expiry and deactivation is evidence-based — `lib/market/ask-freshness.ts`); floor = cheapest fresh ask, count, Magic Eden item link, `fetched_at` = last sweep; and if no sweep landed inside 7 h the check is `unavailable`, never "none listed" (a stalled indexer is not an empty market). Both reads indexed. Route test `concierge-candy-edition-listings` (listed / none_listed / stale book / failed read); planted defects (freshness guard dropped → 1 failed; arm removed → 2 failed). 1,130 concierge tests pass, tsc 0, ratchet at baseline.
 **Revert:** `git log --grep='reads Candy MLB listings'` → `git revert <sha>`. No DB state.
