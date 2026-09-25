@@ -617,6 +617,11 @@ const PINS = [
     migration: "supabase/migrations/20260801160000_audit_20260801_snapshot_resolve_canonical_owner.sql",
   },
   {
+    fn: "normalize_player_name_alias",
+    test: "supabase/tests/normalize_player_name_alias.sql",
+    migration: "supabase/migrations/20260925150357_audit_20260925_one_curry_name_everywhere_alias_normalizer_and_search.sql",
+  },
+  {
     fn: "resolve_canonical_player",
     test: "supabase/tests/resolve_canonical_player.sql",
     migration: "supabase/migrations/20260925135939_audit_20260925_steph_curry_one_player_and_player_name_aliases.sql",
