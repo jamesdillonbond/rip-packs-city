@@ -6,13 +6,14 @@
 
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { fetchFullTierMix, buildTierMixRows } from "@/lib/set-detail/tier-mix"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
-import { sectionRows, structuralSection } from "@/lib/entity-section-rpc"
+import { sectionRows, sectionRowsResult, structuralSection } from "@/lib/entity-section-rpc"
 import { setPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
 import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
+import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
 
@@ -55,6 +56,14 @@ async function fetchDetail(collectionId: string, slug: string): Promise<SetDetai
   if (!data) return null
   if (Array.isArray(data)) return (data[0] as SetDetail) ?? null
   return data as SetDetail
+}
+
+// 2026-09-25 — the set page's recent-sales panel (get_set_activity, the team
+// function's shape keyed on the set). Three-state: TeamActivity's empty copy
+// CONCLUDES ("No recent sales."), so a failed read must reach it as `ok:false`,
+// never as `[]`. Pinnacle's sales live in their own tables; it is not asked.
+async function fetchActivity(collectionId: string, slug: string, limit: number): Promise<{ rows: ActivityRow[]; ok: boolean }> {
+  return sectionRowsResult<ActivityRow>("set activity", "get_set_activity", { p_collection_id: collectionId, p_set_slug: slug, p_limit: limit, p_offset: 0 })
 }
 
 // The editions grid is STRUCTURAL — a set page whose grid silently renders
@@ -150,10 +159,13 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   // failed and lets the page render; it must never return a whole-page view.
   let editionsRes: { rows: EditionTile[]; ok: boolean } = { rows: [], ok: false }
   let tierMix: Awaited<ReturnType<typeof fetchFullTierMix>> = { rows: [], ok: false }
+  let activityRes: { rows: ActivityRow[]; ok: boolean } = { rows: [], ok: false }
+  const wantsActivity = !isPinnacleUrlSlug(collection)
   try {
-    ;[editionsRes, tierMix] = await Promise.all([
+    ;[editionsRes, tierMix, activityRes] = await Promise.all([
       structuralSection<EditionTile>("set editions", fetchEditions(coll.id, slug, PAGE_SIZE, 0)),
       fetchFullTierMix(coll.id, setNames),
+      wantsActivity ? fetchActivity(coll.id, slug, 20) : Promise.resolve({ rows: [], ok: true }),
     ])
   } catch (e) {
     console.error("[set] section fan-out threw outside the section policy", e instanceof Error ? e.message : String(e))
@@ -273,6 +285,16 @@ export default async function SetPage(props: { params: Promise<{ collection: str
               </div>
             ))}
           </div>
+        </Section>
+      )}
+
+      {/* ── Recent sales (2026-09-25) ────────────────────────────────────────
+          Rendered when there are rows OR the read FAILED (TeamActivity then says
+          so in the shared wording); a set that genuinely has no recent sales
+          omits the section, as the team page does. Pinnacle is never asked. */}
+      {wantsActivity && (activityRes.rows.length > 0 || !activityRes.ok) && (
+        <Section title="Recent Sales">
+          <TeamActivity collectionUrlSlug={collection} rows={activityRes.rows} ok={activityRes.ok} />
         </Section>
       )}
 
