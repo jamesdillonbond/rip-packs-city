@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildSeriesBars, buildSeriesBarsFrom, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
+import { buildSeriesBars, buildSeriesBarsFrom, compactSeriesLabel, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
 
 describe("share-card-view · buildSeriesBars", () => {
   it("sorts series labels and returns the max for bar scaling", () => {
@@ -42,6 +42,20 @@ describe("share-card-view · buildSeriesBarsFrom", () => {
     const { entries } = buildSeriesBarsFrom(undefined, { "Series 2": 8, "Series 1": 12 })
     expect(entries.map(([k]) => k)).toEqual(["Series 1", "Series 2"])
     expect(buildSeriesBarsFrom([], {}).entries).toEqual([])
+  })
+})
+
+describe("share-card-view · compactSeriesLabel", () => {
+  it("shortens every site-wide Top Shot label to a bar-width form and passes the rest through", () => {
+    expect(compactSeriesLabel("Series 1")).toBe("S1")
+    expect(compactSeriesLabel("Series 4")).toBe("S4")
+    expect(compactSeriesLabel("Summer 2021")).toBe("Sum '21")
+    expect(compactSeriesLabel("Series 2023-24")).toBe("'23-24")
+    expect(compactSeriesLabel("Series 2025-26")).toBe("'25-26")
+    expect(compactSeriesLabel("No series")).toBe("None")
+    expect(compactSeriesLabel("Season 2")).toBe("Season 2")
+    // never longer than the longest bar-width label
+    for (const l of ["Series 1", "Summer 2021", "Series 2023-24", "No series"]) expect(compactSeriesLabel(l).length).toBeLessThanOrEqual(7)
   })
 })
 

@@ -6,7 +6,7 @@ import FunnelTracker from "@/components/FunnelTracker"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { formatClosedOn } from "@/lib/market-closed"
 import { fmvBasis } from "@/lib/fmv-basis"
-import { buildSeriesBarsFrom, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
+import { buildSeriesBarsFrom, compactSeriesLabel, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
 import { OG_INHERITED } from "@/lib/seo"
 import { normalizeAddress } from "@/lib/address"
 
@@ -399,7 +399,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                         ) : null}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 8 }}>
                           <span style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red, #E03A2F)", fontFamily: "var(--font-mono, monospace)" }}>
-                            {h.fmv_usd != null ? `$${Number(h.fmv_usd).toFixed(2)}` : "—"}
+                            {h.fmv_usd != null ? `$${Number(h.fmv_usd).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
                           </span>
                           {/* Confidence tier removed 2026-07-11 — build-time signal only.
                               The ONE sanctioned per-value marker (plain-words "from asks"
@@ -493,7 +493,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                   <div style={{ fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginBottom: 2 }}>{m.playerName}</div>
                   <div style={{ fontSize: 11, color: TIER_COLORS[m.tier?.toLowerCase()] ?? "var(--tier-common)", fontFamily: "monospace" }}>{m.tier}</div>
                   <div style={{ fontSize: 11, color: "var(--rpc-text-secondary)", fontFamily: "monospace", marginTop: 2 }}>{m.setName}</div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red)", marginTop: 6 }}>${m.fmv.toFixed(2)}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red)", marginTop: 6 }}>${m.fmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 </div>
               </div>
             ))}
@@ -524,7 +524,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 20, fontWeight: 800, color: "var(--rpc-red)", fontFamily: "monospace" }}>${data.rarest.fmv.toFixed(2)}</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "var(--rpc-red)", fontFamily: "monospace" }}>${data.rarest.fmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 <div style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>FMV</div>
               </div>
             </div>
@@ -534,12 +534,15 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
         {/* Series breakdown bar */}
         <div style={{ marginBottom: 32 }}>
           <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "var(--rpc-text-secondary)", marginBottom: 12, textTransform: "uppercase" }}>{seriesHeading}</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "end", height: 80 }}>
+          {/* overflowX auto + a 40px floor per bar: nine bars fill a desktop
+              row and scroll on a phone instead of widening the page (the full
+              labels pushed the layout viewport to 457px on 2026-09-25). */}
+          <div style={{ display: "flex", gap: 8, alignItems: "end", height: 80, overflowX: "auto", paddingBottom: 2 }}>
             {seriesEntries.map(([label, count]) => (
-              <div key={label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+              <div key={label} title={label} style={{ flex: "1 0 40px", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
                 <div style={{ fontSize: 11, fontFamily: "monospace", color: "var(--rpc-text-secondary)" }}>{count}</div>
                 <div style={{ width: "100%", height: Math.max(8, (count / maxSeries) * 60), background: "var(--rpc-red)", borderRadius: 3, opacity: 0.8 }} />
-                <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--rpc-text-muted)" }}>{label}</div>
+                <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--rpc-text-muted)", whiteSpace: "nowrap" }}>{compactSeriesLabel(label)}</div>
               </div>
             ))}
           </div>

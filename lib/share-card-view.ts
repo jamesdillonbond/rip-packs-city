@@ -71,6 +71,24 @@ export function buildSeriesBarsFrom(
   return buildSeriesBars(seriesBreakdown ?? {})
 }
 
+/**
+ * The bar label at chart width. Nine full labels ("Series 2023-24") at 10px
+ * mono do not fit a 390px phone — the row pushed the layout viewport to 457px
+ * on the day the full labels shipped (mobile sweep, 2026-09-25). The heading
+ * already says "<Collection> · Series Breakdown", so the word "Series" is
+ * redundant on every bar; the full label travels in `title`.
+ */
+export function compactSeriesLabel(label: string): string {
+  let m = /^Series (\d{1,2})$/.exec(label)
+  if (m) return `S${m[1]}`
+  m = /^Series (\d{2})(\d{2})-(\d{2})$/.exec(label)
+  if (m) return `'${m[2]}-${m[3]}`
+  m = /^Summer (\d{2})(\d{2})$/.exec(label)
+  if (m) return `Sum '${m[2]}`
+  if (label === NO_SERIES_LABEL) return "None"
+  return label
+}
+
 export function buildSeriesBars(
   seriesBreakdown: Record<string, number>,
 ): { entries: Array<[string, number]>; max: number } {
