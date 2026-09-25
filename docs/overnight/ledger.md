@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🗄️ MIGRATION PARITY — `panini_team_walk_20260924_rotation_roster` (applied ~5:04 PM PT, no file) recovered to the repo, md5-verified · Claude Code (desktop)
+
+- Prod `20260925000424` added `panini_team_walk_targets` (30 NBA teams + Detroit), `panini_team_walk_plan(n)` and `panini_team_walk_note(...)`, all service_role-only with RLS on. It was applied with no committed file, so a manually dispatched migration-parity run at ~5:04 PM PT went red on it. The `pack_table_rows` fix (`20260924230603`) was NOT flagged; it was already committed in `6cbe957ae`.
+- The file was recovered byte-exactly from `schema_migrations.statements` (md5 `95b7f86e8160fc92cb2d773a1890be71`). The autorecover bot committed the same blob first (`1539f0974`, blob `e3a52db7`). Parity is green on that commit.
+- Revert: the file's own header — `DROP FUNCTION public.panini_team_walk_note(text, text, boolean, integer); DROP FUNCTION public.panini_team_walk_plan(integer); DROP TABLE public.panini_team_walk_targets;`
+
 ### 2026-09-24 · 🔧 DOCS/TOOLING — the "swallowed headings must print 3" gate moved to 0 everywhere a pass executes it; the VM push recipe would have aborted every push · Cowork
 
 - The 09-24 ledger roll moved the three 2026-08-11 swallowed headings into the archive, so `find-swallowed-ledger-headings.awk` now prints **0**. Three live instructions still hard-coded 3. The worst was `tooling-gotchas.md`'s VM push loop, `[ … = 3 ] || exit 4`, which would have **exited before pushing on every attempt**. Also fixed: the hint printed by `scripts/resolve-ledger-rebase-conflict.mjs`, and `rpc-audit-drain` SKILL.md (bundle repacked; `skills:bundles:check` 11/11). The same "(=3)" in the `rpc-autonomous-pass` scheduled-task prompt was updated outside the repo.
