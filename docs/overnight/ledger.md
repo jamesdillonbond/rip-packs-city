@@ -11,6 +11,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · ✅ Panini FMV write is now insert-then-supersede (was delete-then-insert); two editions that lost their 1.1.0 price re-priced (`20260925165714`, ~9:57 AM PT) · Cowork (cloud + laptop VM)
+
+**Found:** at 6:36 AM PT one panini-ingest batch (`ok=false`, `fmv_error` "TypeError: fetch failed") had already DELETED today's `panini_fmv_snapshots` rows for its editions when its INSERT failed. Two editions fell back to their 09-22 `panini-1.0.0` row, a top-sales-biased lifetime average. They were the only 2 of 5,093 editions with no `panini-1.1.0` row:
+- Haaland National Landmarks /49 read $388.49 HIGH; now **$600 MEDIUM** (1 recent sale; lowest ask $525).
+- Lyle Foster Base Prizms Gold /10 read $10.67 HIGH; now **$10.67 LOW** (no sale in 30 days).
+
+**Shipped:**
+- **Data repair:** `20260925165714` re-prices exactly those two with the backfill rules. Verified: 0 editions without a 1.1.0 row.
+- **Route fix:** `app/api/cron/panini-ingest/route.ts` now INSERTs each chunk first. Only on success does it delete that chunk's same-day rows with `computed_at < nowIso` (new rows carry `computed_at = nowIso` exactly). A failed insert now deletes nothing. A failed delete fails the run, and the duplicate it leaves is cleared by the next walk.
+- **Tests:** three new route tests pin the order, the no-delete-on-failed-insert case and the delete-error case. All three fail against the old code.
+- **Checks:** lint count unchanged; `tsc` clean.
+
+The pre-existing window dates from R120, not 1.1.0. **Revert:** `git revert` this commit and the next. For the data, `DELETE FROM panini_fmv_snapshots WHERE algo_version='panini-1.1.0' AND computed_at >= '2026-09-25 16:57:00+00' AND edition_id IN (<the two ids>)`.
+
 ### 2026-09-25 · 🧪 SHIPPED — five STALE DB pins repointed: overnight "guarded splice" migrations had changed detect_floor_drops, detect_topshot_sweeps, get_wallet_collection_snapshot, get_wallet_pack_history and backfill_wmc_metadata_from_editions, so each pin test was still validating the PREVIOUS body · Claude Code (Trevor's box)
 - `npm run db:pins:check`: 202/207 → **207/207 clean**. Live bodies captured with `pg_get_functiondef` through `query_sql` (not re-typed) into snapshot `20260925165425`; the APPLIED statement under that version is a DO block asserting each live `md5(prosrc)` equals the captured body (passed) — the file header says so. PINS entries repointed; each test's verbatim block spliced by index.
 - Assertions re-derived, not just re-pinned: fixtures gained the columns the new bodies read (`editions.team_name/name`, `mv_pack_ev_latest.gross_ev/edition_count/fmv_coverage_pct` with priced-row defaults, `editions.series` + `wmc.series_number`); the snapshot test embeds `series_display_label` verbatim and its series section now pins the 09-24/25 behaviour (largest collection only, "Series 4" labels, another collection's NULL series does not leak, on-chain 0 + stored 1 → ONE "Series 1" bar); the backfill test pins the series fill. Run against prod in a THROWAWAY schema inside a transaction that always rolls back (sentinel exception): committed versions PASS (runner control), all five new versions PASS, planted defects in the snapshot scope and the backfill series predicate each FAIL; 0 residue schemas; every live md5 unchanged.
