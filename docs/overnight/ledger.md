@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — ONE name for Steph Curry on every surface: 31 edition labels, 1,626 wallet-cache rows, 8 badge rows, 2+2 listings and 13 assets that said "Stephen Curry" now say "Steph Curry" (Top Shot's own spelling on 111 of 124 assets); an alias-driven BEFORE trigger keeps refreshes from re-splitting it, and search finds him by either spelling · Claude Code (web)
+
+- DB: `20260925150357` — `normalize_player_name_alias()` + `a_normalize_player_name_alias_{ins,upd}` on editions / wallet_moments_cache / cached_listings / badge_editions / ts_listings (WHEN clause: INSERT or a CHANGED player_name only); one-time correction (backup `audit_20260925_curry_label_backup`); `rpc_search_catalog` player arm matches `player_name_aliases`. Verified: 0 "Stephen Curry" rows in any of the six tables; search "stephen curry" and "steph curry" → the one player; LeBron control unchanged. Pin `supabase/tests/normalize_player_name_alias.sql` (planted defect proven), DB suite 196/196.
+**Revert:** DROP the ten `a_normalize_player_name_alias_*` triggers and the function; restore editions from `audit_20260925_curry_label_backup`; caches re-take Top Shot's labels on their next refresh; re-apply `20260925102428` for search.
+
 ### 2026-09-25 · 🧹 SHIPPED — the collection page's identity chip no longer says "Signed in as" to an anonymous visitor (RPC has no wallet sign-in); the franchise hub reads its hub ONCE per request so metadata and body cannot cache a split · Cowork (cloud + laptop VM)
 
 - `/nba-top-shot/collection?q=jamesdillonbond`, anonymous: after the lookup the chip read "Signed in as 0xbd94…50ac · Loading wallet will update your profile stats". It is the per-device profile key (`getOwnerKeyForChain`) — the wallet this device treats as "you" — not a sign-in, and Trevor's standing rule is identifiers only, never a wallet sign-in. Now: "This device's wallet 0xbd94…50ac · the wallet you load here becomes this device's profile".
