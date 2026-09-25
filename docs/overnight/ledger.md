@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · ✅ First live Panini walk on FMV `panini-1.1.0` verified (10 PM PT walk, read 10:11 PM PT) · Cowork (cloud + laptop VM)
+
+Read-only check, no change. `pipeline_runs` panini-ingest since 9:55 PM PT: 10 runs, all ok. 9 carried `extra.fmv_engine='panini-1.1.0'`; the tenth wrote no FMV. 0 `fmv_recent_error`, `fmv_recent_hits` 3. The new `panini_fmv_snapshots` rows were all `panini-1.1.0` (4 MEDIUM, 9 LOW), with 0 duplicate (edition, day) groups. known-issues #136 (a) is marked verified. The remaining item is Maradona Silver, re-read by a scheduled task at 8:10 AM PT 09-25. **Revert:** n/a (docs).
+
 ### 2026-09-24 · ✅ `panini_serial_premium_mult` IMMUTABLE → STABLE; `panini_serial_freshness` comment corrected for paged walks (`20260925045149`, applied ~9:52 PM PT) · Cowork (cloud + laptop VM)
 
 known-issues #136 (c). The function reads `panini_serial_premium`, which was refit today, so IMMUTABLE was a false declaration: the planner may fold a constant-argument call at plan time and keep an old multiplier. Body unchanged. Its only dependents are `panini_deal_board` and `panini_special_serials_board`; no index expression uses it (checked `pg_depend` / `pg_index`). Verified after apply: `provolatile='s'`; board row counts unchanged at 325 / 12,239; ACL unchanged. The view comment no longer claims a walk reads one 30-row page. `editions_at_page_cap` keeps its name so no reader breaks, and the comment says it is now a size bucket. The SQL invariant test's verbatim copy and the drift-guard pin now point at the new file. ⓘ The repo file's `anon-exec:` marker line was reworded after apply to satisfy the marker guard. It is a comment only; parity matches on name. **Revert:** re-run `20260725010500` (IMMUTABLE) and the COMMENT from `20260924035329`, then `git revert` this commit and the next.
