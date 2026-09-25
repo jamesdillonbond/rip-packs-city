@@ -20,6 +20,7 @@
 -- REVERT: re-apply the function body from
 -- 20260923205831_audit_20260923_fmv_from_cached_listings_skips_allday_and_caps_at_ask.sql.
 
+-- anon-exec: unchanged (fmv_from_cached_listings) — CREATE OR REPLACE of an existing SECURITY DEFINER fn; ACL preserved, has_function_privilege('anon') = false and proacl = {postgres, service_role} read 09-25 8:45 AM PT.
 CREATE OR REPLACE FUNCTION public.fmv_from_cached_listings(p_collection_id uuid, p_algo_version text DEFAULT 'ask_only_v2'::text)
  RETURNS integer
  LANGUAGE plpgsql
