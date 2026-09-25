@@ -15,7 +15,7 @@
 --   * an empty wallet -> zeros / '[]' / NULL rarest, never an error.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql);
+-- (supabase/migrations/20260925182927_audit_20260925_share_snapshot_stale_count_pairs_with_stale_fmv.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -172,7 +172,12 @@ AS $function$
       round(COALESCE(sum(w.fmv_usd) FILTER (
         WHERE w.collection_id NOT IN (SELECT id FROM collections WHERE market_closed_at IS NOT NULL)
       ), 0)::numeric, 2) AS stale_fmv,
-      count(*)::int AS stale_count
+      -- 2026-09-25: the COUNT pairs with the AMOUNT — a closed market's STALE
+      -- holdings are outside both, or the card says "$6,419 across 227" when
+      -- 191 of the 227 are UFC moments whose dollars the figure excludes.
+      count(*) FILTER (
+        WHERE w.collection_id NOT IN (SELECT id FROM collections WHERE market_closed_at IS NOT NULL)
+      )::int AS stale_count
     FROM w
     JOIN editions e ON e.external_id = w.edition_key AND e.collection_id = w.collection_id
     JOIN edition_fmv_current l ON l.edition_id = e.id
@@ -298,6 +303,11 @@ UPDATE public.collections SET market_closed_at = now() WHERE slug = 'nba_top_sho
 SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'totalMoments'), '4', 'closed market still counts moments (totalMoments stays 4)');
 SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'totalFmv'), '0.00', 'closed Top Shot FMV excluded from totalFmv (only Pinnacle $0 remains)');
 SELECT _assert((SELECT (pc ->> 'market_closed_at') IS NOT NULL FROM jsonb_array_elements(public.get_wallet_collection_snapshot('W') -> 'perCollection') pc WHERE pc ->> 'slug' = 'nba_top_shot'), 'perCollection Top Shot carries market_closed_at');
+-- 2026-09-25: the stale footnote's COUNT pairs with its AMOUNT — Ant's STALE
+-- $50 sits in the now-closed Top Shot market, so BOTH leave the headline pair
+-- (the card had read "$6,419 across 227" with 191 of the 227 in closed UFC).
+SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'staleFmv'), '0.00', 'closed-market STALE dollars leave staleFmv');
+SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'staleCount'), '0', 'closed-market STALE holdings leave staleCount too (count pairs with amount)');
 
 SELECT '✓ get_wallet_collection_snapshot: all assertions passed' AS result;
 

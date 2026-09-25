@@ -596,7 +596,8 @@ const PINS = [
   {
     fn: "get_wallet_collection_snapshot",
     test: "supabase/tests/get_wallet_collection_snapshot.sql",
-    migration: "supabase/migrations/20260925165425_audit_20260925_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
+    // re-pointed 2026-09-25: stale_count pairs with stale_fmv (closed markets out of both).
+    migration: "supabase/migrations/20260925182927_audit_20260925_share_snapshot_stale_count_pairs_with_stale_fmv.sql",
   },
   {
     fn: "get_pack_detail_bundle",
