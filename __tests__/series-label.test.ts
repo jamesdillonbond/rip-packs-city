@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { seriesLabel, seriesDisplay, SERIES_DISPLAY } from "@/lib/series-label"
+import { seriesLabel, seriesDisplay, seriesPageLabel, SERIES_DISPLAY } from "@/lib/series-label"
 import { SERIES_FILTER_LABEL_FALLBACK } from "@/lib/collection/helpers"
 
 // The load-bearing quirk: on-chain series 0 = "Series 1" (there is no on-chain
@@ -66,5 +66,22 @@ describe("cross-surface consistency — the collection page's filter labels matc
   // reintroduces the inconsistency loudly instead of silently.
   it("SERIES_FILTER_LABEL_FALLBACK === the canonical SERIES_DISPLAY", () => {
     expect(SERIES_FILTER_LABEL_FALLBACK).toEqual(SERIES_DISPLAY)
+  })
+})
+
+// 2026-09-24 — seriesPageLabel: the series PAGE (and every pill / filter that
+// names a collection_series row) shows the site-wide Top Shot label, not the
+// retired ordinal still stored in the DB. Other collections keep their label.
+describe("seriesPageLabel", () => {
+  it("Top Shot on-chain 6/7/8 → the season form the edition pages use", () => {
+    expect(seriesPageLabel(8, "Series 7", "nba-top-shot")).toBe("Series 2025-26")
+    expect(seriesPageLabel(6, "Series 5", "nba_top_shot")).toBe("Series 2023-24")
+    expect(seriesPageLabel(0, "Series 1", "nba-top-shot")).toBe("Series 1")
+    expect(seriesPageLabel(3, "Summer 2021", "nba-top-shot")).toBe("Summer 2021")
+  })
+  it("other collections and unmapped numbers keep the DB label", () => {
+    expect(seriesPageLabel(7, "Series 7", "nfl-all-day")).toBe("Series 7")
+    expect(seriesPageLabel(99, "Series 99", "nba-top-shot")).toBe("Series 99")
+    expect(seriesPageLabel(null, null, "nba-top-shot")).toBe("Series")
   })
 })

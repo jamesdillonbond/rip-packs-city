@@ -13,6 +13,7 @@
 // large series and dropped sets entirely outside the FMV top-100.
 
 import type { Metadata } from "next"
+import { seriesPageLabel } from "@/lib/series-label"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
@@ -270,21 +271,21 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
       {editionsOk && (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionEntityJsonLd({ name: detail.display_label, url: entityUrl(collection, "series", slug), collectionUrlSlug: collection, eds: top25 as unknown as Array<Record<string, unknown>>, crumbName: detail.display_label })) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionEntityJsonLd({ name: seriesPageLabel(detail.series_number, detail.display_label, collection), url: entityUrl(collection, "series", slug), collectionUrlSlug: collection, eds: top25 as unknown as Array<Record<string, unknown>>, crumbName: seriesPageLabel(detail.series_number, detail.display_label, collection) })) }}
         />
       )}
       <Breadcrumbs
         items={[
           { name: "Home", href: "/" },
           { name: collectionDisplayName(collection), href: `/${collection}` },
-          { name: detail.display_label },
+          { name: seriesPageLabel(detail.series_number, detail.display_label, collection) },
         ]}
       />
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="rpc-card" style={{ padding: 18, display: "flex", gap: 18, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
         <div style={{ minWidth: 0, flex: "1 1 auto" }}>
         <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
-          {detail.display_label}
+          {seriesPageLabel(detail.series_number, detail.display_label, collection)}
         </h1>
         {detail.season && (
           <div className="rpc-mono" style={{ marginTop: 6, fontSize: 13, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>

@@ -77,7 +77,7 @@ export type QueryClient = { from: (table: string) => any }
 
 export type RawHubRows = {
   editions: Array<{ set_name?: string | null; player_name?: string | null; team_name?: string | null }>
-  series: Array<{ display_label?: string | null }>
+  series: Array<{ display_label?: string | null; series_number?: number | null }>
 }
 
 export type RawLinkRow = {
@@ -117,7 +117,7 @@ export async function fetchHubRows(
           .eq("collection_id", uuid)
           .order("last_updated_at", { ascending: false, nullsFirst: false })
           .limit(1000),
-        client.from("collection_series").select("display_label").eq("collection_id", uuid).limit(60),
+        client.from("collection_series").select("display_label, series_number").eq("collection_id", uuid).limit(60),
       ]),
       `popular-on-collection/hubs ${collection}`,
       undefined,
@@ -178,7 +178,11 @@ export async function fetchLinkRows(
         .or("player_name.not.is.null,team_name.not.is.null")
         .not("external_id", "is", null)
         .order("circulation_count", { ascending: true, nullsFirst: false })
-        .limit(18),
+        // 2026-09-24: 48, not 18 — the component dedupes by SUBJECT, because a
+        // lowest-mint sample of a parallel-heavy catalogue (Candy MLB) is the
+        // same six players' colour variants, and the tiles carry no parallel.
+        // The Candy overview rendered Murakami ×4, Caminero ×5, Trout ×3.
+        .limit(48),
       `popular-on-collection/links ${collection}`,
       undefined,
       "",

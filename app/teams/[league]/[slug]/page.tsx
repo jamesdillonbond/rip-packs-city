@@ -17,23 +17,29 @@
 // "no cards" (three states, lib/franchise-hub.ts).
 
 import type { Metadata } from "next"
+import type { ReactNode } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { NOT_FOUND_METADATA, franchiseHubMetadata } from "@/lib/seo"
 import { LEAGUES } from "@/lib/teams"
 import {
+  HUB_TOP_EDITIONS,
   fetchFranchiseHub,
+  fetchHubPanelExtras,
   fetchHubPanels,
   franchiseHubPath,
   hubIsIndexable,
   parseHubParams,
   type FranchiseHub,
   type HubPanel,
+  type HubPanelExtras,
 } from "@/lib/franchise-hub"
 import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import TeamHero from "@/components/entity/TeamHero"
+import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
+import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -92,6 +98,9 @@ export default async function FranchiseHubPage(props: { params: Promise<{ league
   if (!hub) notFound()
 
   const panels = await fetchHubPanels(hub)
+  // 2026-09-24: the cards themselves — top editions + recent sales per
+  // collection, from the same RPCs the per-collection team page reads.
+  const extras = await fetchHubPanelExtras(hub, panels)
   const hubPath = franchiseHubPath(hub.league, hub.team_slug)
 
   return (
@@ -121,7 +130,7 @@ export default async function FranchiseHubPage(props: { params: Promise<{ league
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 14 }}>
             {panels.map((p) => (
-              <CollectionPanel key={p.collection.id} panel={p} hub={hub} />
+              <CollectionPanel key={p.collection.id} panel={p} hub={hub} extras={extras.get(p.collection.id) ?? null} />
             ))}
           </div>
         )}
@@ -130,7 +139,7 @@ export default async function FranchiseHubPage(props: { params: Promise<{ league
   )
 }
 
-function CollectionPanel({ panel, hub }: { panel: HubPanel; hub: FranchiseHub }) {
+function CollectionPanel({ panel, hub, extras }: { panel: HubPanel; hub: FranchiseHub; extras: HubPanelExtras | null }) {
   const name = panel.collection.displayName
   const teamHref = isExhibitionTeamSlug(hub.route_slug)
     ? null
@@ -163,6 +172,32 @@ function CollectionPanel({ panel, hub }: { panel: HubPanel; hub: FranchiseHub })
             <StatCell label="30d Sales" value={fmtCount(panel.detail.sales_30d)} />
             <StatCell label="30d Volume" value={fmtUsd(num(panel.detail.volume_30d_usd))} />
           </div>
+          {/* Top editions — three-state: unavailable / measured absence (omitted) / grid. */}
+          {extras && (extras.topEditions.rows.length > 0 || !extras.topEditions.ok) && (
+            <div style={{ marginTop: 16 }}>
+              <PanelLabel>Top editions</PanelLabel>
+              {!extras.topEditions.ok ? (
+                <SectionUnavailable noun={`${hub.team_name}\u2019s ${name} editions`} />
+              ) : (
+                <EditionsGridPaginated
+                  collectionUrlSlug={panel.collection.urlSlug}
+                  fetchUrl={`/api/entity/team-editions?collection=${encodeURIComponent(panel.collection.urlSlug)}&slug=${encodeURIComponent(hub.route_slug)}`}
+                  initial={extras.topEditions.rows as EditionTile[]}
+                  initialFailed={false}
+                  pageSize={HUB_TOP_EDITIONS}
+                  showSetLink
+                />
+              )}
+            </div>
+          )}
+
+          {/* Recent sales — same three states. */}
+          {extras && (extras.activity.rows.length > 0 || !extras.activity.ok) && (
+            <div style={{ marginTop: 16 }}>
+              <TeamActivity collectionUrlSlug={panel.collection.urlSlug} rows={extras.activity.rows as ActivityRow[]} ok={extras.activity.ok} />
+            </div>
+          )}
+
           {teamHref && (
             <Link
               href={teamHref}
@@ -174,6 +209,17 @@ function CollectionPanel({ panel, hub }: { panel: HubPanel; hub: FranchiseHub })
           )}
         </>
       )}
+    </div>
+  )
+}
+
+function PanelLabel({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="rpc-mono"
+      style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 8 }}
+    >
+      {children}
     </div>
   )
 }

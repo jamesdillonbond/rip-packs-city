@@ -877,17 +877,24 @@ export function seriesPageMetadata(
   seriesSlug: string,
 ): Metadata {
   const collectionLabel = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
-  const displayLabel = s(payload, "display_label") ?? "Series"
+  // 2026-09-24: the same label the edition/set/moment pages use for a Top Shot
+  // series (TS_SERIES_DISPLAY — "Series 2025-26", not the retired "Series 7"),
+  // so the series page's title matches every page that links to it.
+  const seriesNumber = n(payload, "series_number")
+  const tsLabel = collectionUrlSlug === "nba-top-shot" && seriesNumber != null ? TS_SERIES_DISPLAY[String(seriesNumber)] : undefined
+  const displayLabel = tsLabel ?? s(payload, "display_label") ?? "Series"
   const season = s(payload, "season")
   const editionCount = n(payload, "edition_count")
   const setCount = n(payload, "set_count")
   const playerCount = n(payload, "player_count")
   const fmvTotal = n(payload, "fmv_total_usd")
   const subject = displayLabel
-  const title = `${subject}${season ? ` (Season ${season})` : ""} — ${collectionLabel} Editions & Values | Rip Packs City`
+  // Skip "(Season X)" when the label already IS the season.
+  const seasonSuffix = season && !displayLabel.includes(season) ? ` (Season ${season})` : ""
+  const title = `${subject}${seasonSuffix} — ${collectionLabel} Editions & Values | Rip Packs City`
   const descParts = [
     `${displayLabel} on ${collectionLabel}.`,
-    season ? `Season ${season}.` : null,
+    season && !displayLabel.includes(season) ? `Season ${season}.` : null,
     editionCount ? `${fmtCount(editionCount)} editions.` : null,
     setCount ? `${fmtCount(setCount)} sets.` : null,
     playerCount ? `${fmtCount(playerCount)} players.` : null,

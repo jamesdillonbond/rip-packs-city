@@ -667,3 +667,22 @@ describe("collection brand labels follow the registry (2026-09-24)", () => {
     expect(collectionLayoutMetadata("nba-top-shot").keywords).toContain("Flow blockchain")
   })
 })
+
+// 2026-09-24 — a Top Shot series page is titled the way every page that links
+// to it names the series (TS_SERIES_DISPLAY), not the retired ordinal still
+// stored in collection_series.display_label. /nba-top-shot/series/series-7 read
+// "Series 7 (Season 2025-26)" while its editions read "Series 2025-26".
+describe("seriesPageMetadata — Top Shot label follows the site-wide series map", () => {
+  it("uses the season form for on-chain 6/7/8 and does not repeat the season", () => {
+    const m = seriesPageMetadata({ series_number: 8, display_label: "Series 7", season: "2025-26", edition_count: 10 }, "nba-top-shot", "series-7")
+    expect(titleText(m.title)).toBe("Series 2025-26 — NBA Top Shot Editions & Values | Rip Packs City")
+    expect(m.description).not.toContain("Season 2025-26.")
+    expect(m.description).toContain("Series 2025-26 on NBA Top Shot.")
+    // canonical is still the DB-derived slug — URLs do not move
+    expect((m.alternates as any).canonical).toBe("https://www.rippackscity.com/nba-top-shot/series/series-7")
+  })
+  it("keeps the ordinal where the map has one (Series 1..4) and leaves other collections alone", () => {
+    expect(titleText(seriesPageMetadata({ series_number: 0, display_label: "Series 1", season: "2019-20" }, "nba-top-shot", "series-1").title)).toContain("Series 1 (Season 2019-20)")
+    expect(titleText(seriesPageMetadata({ series_number: 7, display_label: "Series 7", season: null }, "nfl-all-day", "series-7").title)).toContain("Series 7 — NFL All Day")
+  })
+})

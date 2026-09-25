@@ -144,6 +144,73 @@ export async function fetchHubPanels(
   )
 }
 
+// ── Panel extras: top editions + recent sales per collection (2026-09-24) ──
+//
+// The hub's first cut showed five stat cells and a link. Trevor's brief for
+// the chain-agnostic hubs ("a greater Blazers hub = Top Shot Moments + Panini
+// cards") needs the CARDS on the hub, not a count of them. Each ok panel now
+// also carries its top editions and most recent sales, read from the SAME RPCs
+// the per-collection team page uses (`get_team_top_editions`,
+// `get_team_activity`), so the hub cannot disagree with that page.
+//
+// ⚠ Both are DECORATIVE and THREE-STATE: `ok:false` means "could not ask" and
+// renders as unavailable; `ok:true, rows:[]` is a measured absence.
+
+export const HUB_TOP_EDITIONS = 6
+export const HUB_RECENT_SALES = 6
+
+export interface HubPanelExtras {
+  topEditions: { rows: unknown[]; ok: boolean }
+  activity: { rows: unknown[]; ok: boolean }
+}
+
+export type SectionFetcher = (
+  fn: string,
+  args: Record<string, unknown>,
+) => Promise<{ rows: unknown[]; ok: boolean }>
+
+async function defaultSectionFetcher(fn: string, args: Record<string, unknown>): Promise<{ rows: unknown[]; ok: boolean }> {
+  const { sectionRowsResult } = await import("@/lib/entity-section-rpc")
+  const res = await sectionRowsResult<unknown>(`franchise-hub ${fn}`, fn, args)
+  return { rows: res.rows, ok: res.ok }
+}
+
+/** Per ok-panel extras, keyed by collection id. Failed/empty panels get nothing. */
+export async function fetchHubPanelExtras(
+  hub: Pick<FranchiseHub, "route_slug">,
+  panels: HubPanel[],
+  fetchSection: SectionFetcher = defaultSectionFetcher,
+): Promise<Map<string, HubPanelExtras>> {
+  const out = new Map<string, HubPanelExtras>()
+  await Promise.all(
+    panels
+      .filter((p) => p.state === "ok")
+      .map(async (p) => {
+        const args = { p_collection_id: p.collection.id, p_team_slug: hub.route_slug }
+        const safe = async (fn: string, extra: Record<string, unknown>) => {
+          try {
+            const r = await withBoardBudget(
+              fetchSection(fn, { ...args, ...extra }),
+              `franchise-extra:${fn}:${p.collection.dbSlug}:${hub.route_slug}`,
+              PANEL_TIMEOUT_MS,
+              "teams/",
+            )
+            return { rows: Array.isArray(r.rows) ? r.rows : [], ok: r.ok === true }
+          } catch (e) {
+            console.error(`[teams/franchise-hub] ${fn} ${p.collection.dbSlug} bound:`, e instanceof Error ? e.message : e)
+            return { rows: [], ok: false }
+          }
+        }
+        const [topEditions, activity] = await Promise.all([
+          safe("get_team_top_editions", { p_limit: HUB_TOP_EDITIONS, p_offset: 0 }),
+          safe("get_team_activity", { p_limit: HUB_RECENT_SALES, p_offset: 0 }),
+        ])
+        out.set(p.collection.id, { topEditions, activity })
+      }),
+  )
+  return out
+}
+
 /**
  * Index a hub only when it actually GATHERS something. A one-collection hub is
  * the per-collection team page with a different frame — indexing it would hand

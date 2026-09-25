@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState, useReducer, useEffect, useCallback, useRef, Suspense } from "react"
+import { seriesPageLabel } from "@/lib/series-label"
 import Link from "next/link"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
@@ -230,8 +231,12 @@ function WalletMomentsBody() {
         const map = new Map<number, CollectionSeriesEntry>()
         const opts: { label: string; seriesNumber: number }[] = []
         for (const s of data.series) {
-          map.set(s.series_number, { series_number: s.series_number, display_label: s.display_label, season: s.season ?? null })
-          opts.push({ label: s.display_label, seriesNumber: s.series_number })
+          // 2026-09-24: the filter shows the SITE-WIDE series name (the one the
+          // rows, edition and set pages use — "Series 2025-26"), not the retired
+          // ordinal still stored in collection_series ("Series 7").
+          const label = seriesPageLabel(s.series_number, s.display_label, collectionSlug)
+          map.set(s.series_number, { series_number: s.series_number, display_label: label, season: s.season ?? null })
+          opts.push({ label, seriesNumber: s.series_number })
         }
         setCollectionSeriesMap(map)
         setCollectionSeriesOptions(opts)

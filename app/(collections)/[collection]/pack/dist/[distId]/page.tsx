@@ -153,7 +153,13 @@ export async function generateMetadata(
   // metaField (2026-07-25): pack_distributions.title is raw catalog text and can
   // carry stray whitespace, which leaked ahead of the " — " / " | " separators in
   // the title and ahead of the "." in the description's first sentence.
-  const title = metaField(row?.title) ?? metaField(fb?.title) ?? "Pack"
+  // 2026-09-24: 47 of the newest Top Shot dists (8735–8785, the most-traded
+  // packs of the month — 7,740 sales on one) have no title, because Dapper's
+  // searchPackNft returns no `distribution.title` for them yet. A bare "Pack"
+  // produced the <title> "Pack — Pack · Odds, Pulls & EV" and an H1 of "PACK".
+  // Name the pack by its collection + dist id instead, which is what every
+  // buyer link and sale row already calls it.
+  const title = metaField(row?.title) ?? metaField(fb?.title) ?? `${coll.displayName} Pack #${distId}`
   if (!row && !fb) {
     // Only an ANSWERED read may let this page fall back to the site's generic
     // metadata, which is what an empty object means. A FAILED read says so and
@@ -172,7 +178,7 @@ export async function generateMetadata(
   // 2026-09-07 (Search Console): the queries that land here ("wnba gold slot",
   // "premiumchance") are asking what a pack CONTAINS and what it is worth; the
   // title now says so instead of ending on a bare tier word.
-  const metaTitle = `${joinMetaParts([title, tierLabel ? `${tierLabel} Pack` : "Pack"], " — ")} · Odds, Pulls & EV | ${coll.displayName} | Rip Packs City`
+  const metaTitle = `${joinMetaParts([title, tierLabel ? `${tierLabel} Pack` : (title.endsWith(`Pack #${distId}`) ? "" : "Pack")], " — ")} · Odds, Pulls & EV | ${coll.displayName} | Rip Packs City`
   // AllDay: prefer the odds/median-corrected EV (matches the page headline) so
   // the SEO description never advertises the inflated canonical number.
   // ⚠ Honour `ok`: a FAILED corrected-EV read used to fall through to the raw
@@ -353,7 +359,8 @@ export default async function PackDetailPage(
   const tier = String(merged.tier ?? "common").toLowerCase()
   const chip = tierChip(tier)
   const tierAccent = chip.color
-  const title = String(merged.title ?? "Pack")
+  // Same fallback as generateMetadata — never a bare "Pack" heading.
+  const title = String(merged.title ?? `${coll.displayName} Pack #${distId}`)
   // Canonical EV from pack_table_rows (← pack_ev_latest). For AllDay this is the
   // flat-trimmed-mean number that ignores pull odds; prefer the corrected EV below.
   const grossEvRaw = num(merged.gross_ev)

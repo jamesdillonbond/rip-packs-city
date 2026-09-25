@@ -16,6 +16,7 @@
 // pe.id, so those link to /disney-pinnacle/edition/<id>.
 
 import Link from "next/link"
+import { seriesPageLabel } from "@/lib/series-label"
 import { unstable_cache } from "next/cache"
 import { getCollection } from "@/lib/collections"
 import { fetchHubRows, fetchLinkRows } from "@/lib/entity/popular-on-collection-fetchers"
@@ -86,7 +87,12 @@ async function loadHubs(collection: string): Promise<{ hubs: Hubs; ok: boolean; 
       sets: distinctSlugLinks(data.editions.map((r) => r.set_name), collection, "set", 12),
       players: distinctSlugLinks(data.editions.map((r) => r.player_name), collection, "player", 12),
       teams: distinctSlugLinks(data.editions.map((r) => r.team_name), collection, "team", 10, true),
-      series: distinctSlugLinks(data.series.map((r) => r.display_label), collection, "series", 12),
+      // Slug from the DB label (that is the series page's URL); the PILL reads
+      // the site-wide series name ("Series 2025-26", not "Series 7") — 2026-09-24.
+      series: distinctSlugLinks(data.series.map((r) => r.display_label), collection, "series", 12).map((l) => {
+        const row = data.series.find((r) => slugifyName((r.display_label ?? "").trim()) === l.href.split("/").pop())
+        return row ? { ...l, label: seriesPageLabel(row.series_number, row.display_label, collection) } : l
+      }),
     },
     ok: true,
   }
@@ -106,13 +112,35 @@ async function loadLinks(collection: string): Promise<{ links: EntityLink[]; ok:
     }
   }
   return {
-    links: data.map((r) => ({
-      href: `/${collection}/edition/${encodeURIComponent(String(r.external_id))}`,
-      name: tileSubject({ player_name: r.player_name, team_name: r.team_name, play_type: r.play_type, name: r.set_name }),
-      sub: (r.set_name as string) ?? null,
-    })),
+    links: dedupeLinksBySubject(
+      data.map((r) => ({
+        href: `/${collection}/edition/${encodeURIComponent(String(r.external_id))}`,
+        name: tileSubject({ player_name: r.player_name, team_name: r.team_name, play_type: r.play_type, name: r.set_name }),
+        sub: (r.set_name as string) ?? null,
+      })),
+      POPULAR_LINK_COUNT,
+    ),
     ok: true,
   }
+}
+
+export const POPULAR_LINK_COUNT = 18
+
+// One tile per subject + set. A lowest-mint sample over a parallel-heavy
+// catalogue (Candy MLB: base + four colour parallels per player) is otherwise
+// the same handful of names repeated with nothing on the tile to tell them
+// apart (live 2026-09-24: Murakami ×4, Caminero ×5, Trout ×3 of 18 tiles).
+export function dedupeLinksBySubject(links: EntityLink[], max: number): EntityLink[] {
+  const seen = new Set<string>()
+  const out: EntityLink[] = []
+  for (const l of links) {
+    const key = `${l.name}\u0000${l.sub ?? ""}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(l)
+    if (out.length >= max) break
+  }
+  return out
 }
 
 // One labeled row of hub pill-links (e.g. "Sets" → 12 set pages). Renders

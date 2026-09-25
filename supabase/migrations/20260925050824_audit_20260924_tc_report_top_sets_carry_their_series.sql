@@ -12,6 +12,7 @@
 --                     helper the entity pages use ("Series 4", "Series 2024-25")
 -- Additive keys; existing readers keep working.
 --
+-- anon-exec: intentional — SNAPSHOT of get_wallet_tc_report, whose ACL was set 2026-07-31 (service_role only; REVOKEd from anon/authenticated/PUBLIC) and CREATE OR REPLACE does not reset an ACL, so no revoke is repeated here.
 -- Revert: re-apply the previous body (this file minus the two new keys and
 -- the `s.series` grouping) — the prior definition is in
 -- supabase/migrations/*get_wallet_tc_report* history; grants are untouched

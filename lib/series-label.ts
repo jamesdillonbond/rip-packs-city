@@ -39,3 +39,22 @@ export function seriesDisplay(n: number, collectionSlug: string | null | undefin
   if (isTopShot) return SERIES_DISPLAY[n] ?? `Series ${n}`
   return `Series ${n}`
 }
+
+/**
+ * The label a SERIES PAGE (and any pill linking to it) shows for a
+ * collection_series row. Top Shot's `collection_series.display_label` still
+ * carries the retired ordinals ("Series 5/6/7") that every edition, set and
+ * moment page stopped using on 2026-07-27 — so /nba-top-shot/series/series-7
+ * rendered an H1 of "Series 7" for editions the rest of the site labels
+ * "Series 2025-26" (found 2026-09-24). The URL slug is derived from the DB
+ * label and stays put; only what the reader sees is unified here.
+ */
+export function seriesPageLabel(
+  seriesNumber: number | null | undefined,
+  displayLabel: string | null | undefined,
+  collectionSlug: string | null | undefined,
+): string {
+  const isTopShot = collectionSlug === "nba_top_shot" || collectionSlug === "nba-top-shot"
+  if (isTopShot && seriesNumber != null && SERIES_DISPLAY[seriesNumber]) return SERIES_DISPLAY[seriesNumber]
+  return (displayLabel ?? "").trim() || (seriesNumber != null ? `Series ${seriesNumber}` : "Series")
+}

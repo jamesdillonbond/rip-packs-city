@@ -17,7 +17,7 @@ import { describe, it, expect, vi } from "vitest"
 // reach a live Supabase from this suite.
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 
-import { distinctSlugLinks } from "@/components/entity/PopularOnCollection"
+import { distinctSlugLinks, dedupeLinksBySubject } from "@/components/entity/PopularOnCollection"
 
 describe("distinctSlugLinks", () => {
   it("builds collection/segment-scoped hrefs and keeps the raw name as the label", () => {
@@ -55,5 +55,30 @@ describe("distinctSlugLinks", () => {
   it("url-encodes the slug in the href", () => {
     const out = distinctSlugLinks(["St. John's"], "nba-top-shot", "team", 10)
     expect(out[0].href).toBe("/nba-top-shot/team/st-john-s")
+  })
+})
+
+// 2026-09-24 — the edition tiles are one per subject + set. The lowest-mint
+// sample over Candy MLB's parallel-heavy catalogue rendered the same six
+// players' colour variants (Murakami ×4, Caminero ×5, Trout ×3 of 18 tiles).
+describe("dedupeLinksBySubject", () => {
+  const l = (name: string, sub: string | null, href: string) => ({ name, sub, href })
+  it("keeps the first tile per subject + set and caps at max", () => {
+    const out = dedupeLinksBySubject(
+      [
+        l("Munetaka Murakami", "2026 MLB Base Series ICONs", "/a"),
+        l("Munetaka Murakami", "2026 MLB Base Series ICONs", "/a-blue"),
+        l("Mike Trout", "2026 MLB Base Series ICONs", "/b"),
+        l("Munetaka Murakami", "2026 MLB Base Series ICONs", "/a-pink"),
+        l("Mike Trout", "Some Other Set", "/b2"),
+        l("Paul Skenes", "2026 MLB Base Series ICONs", "/c"),
+      ],
+      3,
+    )
+    expect(out.map((x) => x.href)).toEqual(["/a", "/b", "/b2"])
+  })
+  it("a subject in two sets is two tiles (the set is on the tile)", () => {
+    const out = dedupeLinksBySubject([l("X", "S1", "/1"), l("X", "S2", "/2")], 18)
+    expect(out).toHaveLength(2)
   })
 })

@@ -137,3 +137,53 @@ describe("fetchHubPanels — three states per panel", () => {
     expect(panels.map((p) => p.collection.dbSlug)).toEqual(["candy_mlb"])
   })
 })
+
+// 2026-09-24 — the hub carries the CARDS, not just counts: top editions and
+// recent sales per ok panel, from the team page's own RPCs. Three states each.
+describe("fetchHubPanelExtras — cards per ok panel, three states each", () => {
+  const h = hub([{ collection_id: CANDY, collection_slug: "candy_mlb" }])
+
+  it("reads top editions + activity for an ok panel with the hub's route slug and the hub limits", async () => {
+    const { fetchHubPanelExtras, HUB_TOP_EDITIONS, HUB_RECENT_SALES } = await import("@/lib/franchise-hub")
+    const panels = await fetchHubPanels(h, async () => ({ data: { edition_count: 4 }, error: null }))
+    const calls: Array<[string, Record<string, unknown>]> = []
+    const extras = await fetchHubPanelExtras(h, panels, async (fn, args) => {
+      calls.push([fn, args])
+      return { rows: [{ route_slug: "x" }], ok: true }
+    })
+    expect(calls.map(([fn]) => fn).sort()).toEqual(["get_team_activity", "get_team_top_editions"])
+    for (const [, args] of calls) {
+      expect(args.p_collection_id).toBe(CANDY)
+      expect(args.p_team_slug).toBe("detroit-tigers")
+    }
+    expect(calls.find(([fn]) => fn === "get_team_top_editions")?.[1].p_limit).toBe(HUB_TOP_EDITIONS)
+    expect(calls.find(([fn]) => fn === "get_team_activity")?.[1].p_limit).toBe(HUB_RECENT_SALES)
+    const x = extras.get(CANDY)!
+    expect(x.topEditions).toEqual({ rows: [{ route_slug: "x" }], ok: true })
+    expect(x.activity.ok).toBe(true)
+  })
+
+  it("a failed section is ok:false with no rows — never a measured absence", async () => {
+    const { fetchHubPanelExtras } = await import("@/lib/franchise-hub")
+    const panels = await fetchHubPanels(h, async () => ({ data: { edition_count: 4 }, error: null }))
+    const extras = await fetchHubPanelExtras(h, panels, async (fn) => {
+      if (fn === "get_team_activity") throw new Error("pool acquire timeout")
+      return { rows: [], ok: false }
+    })
+    const x = extras.get(CANDY)!
+    expect(x.topEditions).toEqual({ rows: [], ok: false })
+    expect(x.activity).toEqual({ rows: [], ok: false })
+  })
+
+  it("empty and failed panels get no extras (nothing to read for)", async () => {
+    const { fetchHubPanelExtras } = await import("@/lib/franchise-hub")
+    const panels = await fetchHubPanels(h, async () => ({ data: null, error: null }))
+    let calls = 0
+    const extras = await fetchHubPanelExtras(h, panels, async () => {
+      calls++
+      return { rows: [], ok: true }
+    })
+    expect(calls).toBe(0)
+    expect(extras.size).toBe(0)
+  })
+})

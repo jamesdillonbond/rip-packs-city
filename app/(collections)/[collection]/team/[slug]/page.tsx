@@ -6,9 +6,12 @@
 // UFC has no teams — get_team_detail returns null and the page calls notFound().
 
 import type { Metadata } from "next"
+import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
+import { franchiseHubPath } from "@/lib/franchise-hub"
+import { isLeague } from "@/lib/teams"
 import { sectionRow, sectionRows, sectionRowsResult, structuralSection } from "@/lib/entity-section-rpc"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { teamPageMetadata, teamJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
@@ -256,6 +259,20 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
       {detail.team_name_variants && detail.team_name_variants.length > 1 && (
         <div className="rpc-mono" style={{ marginTop: 8, fontSize: 11, color: "var(--rpc-text-muted)" }}>
           Variants merged: {detail.team_name_variants.join(" · ")}
+        </div>
+      )}
+      {/* 2026-09-24: the cross-collection franchise hub (/teams/<league>/<slug>).
+          Keyed on the SAME teams_master short slug the follow button writes, so
+          the link exists exactly when the franchise is registered. */}
+      {isLeague(detail.league) && detail.team_short_slug && !isExhibitionTeamSlug(slug) && (
+        <div style={{ marginTop: 8 }}>
+          <Link
+            href={franchiseHubPath(detail.league, detail.team_short_slug)}
+            className="rpc-mono"
+            style={{ fontSize: 12, color: "var(--rpc-red)", letterSpacing: "0.04em", textDecoration: "none" }}
+          >
+            {detail.team_name} across every collection →
+          </Link>
         </div>
       )}
       {topEditions.rows.length > 0 && (
