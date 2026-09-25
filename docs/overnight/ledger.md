@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🔧 DOCS/TOOLING — the "swallowed headings must print 3" gate moved to 0 everywhere a pass executes it; the VM push recipe would have aborted every push · Cowork
+
+- The 09-24 ledger roll moved the three 2026-08-11 swallowed headings into the archive, so `find-swallowed-ledger-headings.awk` now prints **0**. Three live instructions still hard-coded 3. The worst was `tooling-gotchas.md`'s VM push loop, `[ … = 3 ] || exit 4`, which would have **exited before pushing on every attempt**. Also fixed: the hint printed by `scripts/resolve-ledger-rebase-conflict.mjs`, and `rpc-audit-drain` SKILL.md (bundle repacked; `skills:bundles:check` 11/11). The same "(=3)" in the `rpc-autonomous-pass` scheduled-task prompt was updated outside the repo.
+- Left alone on purpose: `claude-md-condensed-originals.md` (a record of the old text, not an instruction) and the append-only inbox filing that first reported the three headings.
+- ⚠ The INSTALLED copy of `rpc-audit-drain` still says 3 until Trevor re-saves the skill from the repaired bundle.
+- **Revert:** `git revert <this commit>`, but only together with the ledger-roll commit `01475809`; otherwise the gate is wrong again.
+
 ### 2026-09-24 · 🎯 Panini special-serial premiums refit on 10–15× the data — #1 serial premium was understated ~35% (1.11 → 1.50) · Cowork (cloud + laptop VM)
 
 `panini_serial_premium` was fitted on 07-16 with only n=37–45 per flag, measured against edition FMV. It is now refit (migration `20260925000244`) as the median of each special-serial sale divided by the median non-special sale of the **same edition within ±30 days** (at least 3 baseline sales, 120-day window):

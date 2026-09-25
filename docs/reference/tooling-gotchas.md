@@ -349,7 +349,7 @@ for a in 1 2 3; do
   git am --abort 2>/dev/null; git checkout -q -B main origin/main
   git am -q --3way "$@" || { git am --abort; continue; }
   git log -1 --format=%s | grep -qF "$SUBJ" || exit 3        # gate on the SUBJECT, not HEAD==remote
-  [ "$(awk -f scripts/find-swallowed-ledger-headings.awk docs/overnight/ledger.md)" = 3 ] || exit 4
+  [ "$(awk -f scripts/find-swallowed-ledger-headings.awk docs/overnight/ledger.md)" = 0 ] || exit 4   # 3 until the 2026-09-24 ledger roll
   git -c credential.helper= -c credential.helper="$H" push -q origin HEAD:refs/heads/main
   [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$(git rev-parse HEAD)" ] && exit 0
 done; exit 1

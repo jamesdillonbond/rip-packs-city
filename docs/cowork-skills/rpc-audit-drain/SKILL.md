@@ -77,7 +77,7 @@ Wrap in a 3-attempt retry (origin moves constantly). Hard rules, each learned th
   landed your content — skip, don't commit-tree.
 - **Shared append-at-top files (the ledger): inside EVERY retry, re-extract YOUR entry and re-splice it
   onto the fresh `origin/main` copy at the first line-start `### `** — pushing your older merged copy
-  is the documented clobber. Run `awk -f scripts/find-swallowed-ledger-headings.awk` (must print 3) on
+  is the documented clobber. Run `awk -f scripts/find-swallowed-ledger-headings.awk` (must print 0 — it was 3 until the 2026-09-24 ledger roll) on
   the candidate before hashing. When splicing with Edit-tool anchors, your new_string must RE-INCLUDE
   the heading you anchored on, or you swallow it.
 - Stale `.git/*.lock` on the mount: check mtime + owner; if yours and old, `mv` into `_to_delete/`
