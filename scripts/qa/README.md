@@ -125,6 +125,19 @@ once as `<style data-href="rpc-slab-label">`; 6 `class="rpc-slab-label"`).
 (`__tests__/component-TrophySlab.test.tsx`) asserts the container and the narrow
 rule's text; the planted-defect run (drop `column-reverse`) reds it.
 
+**Follow-up the same day — a grid ROW must align, not just each card.** A label
+one line longer than its neighbour pushed that slab's screen, footer and caption
+box ~30 px out of line. Fix: the Link fills its cell (grid stretch, or `flex:1`
+in a flex-column cell), the slab body fills the Link, and ONE element — the
+label — has `flex-grow`, so it absorbs the row's slack while the screen
+(`flexShrink: 0`) keeps its size. Two traps met on the way: ⚠ `column-reverse`
+packs items at the BOTTOM once the box is stretched — use `order: -1` to put a
+row first; ⚠ a layout that lets two items share a line "only when there is
+room" (serial + tier beside badges) puts the same field on different lines in
+neighbouring cards — pick one arrangement. Measure it, don't eyeball it: in
+Playwright read each label's `getBoundingClientRect()` and the screen's `top`
+per row; equal per row is the pass.
+
 ## Signed-in sweeps
 
 `mobile-sweep.mjs` has always accepted `RPC_QA_STATE`, but nothing produced that
