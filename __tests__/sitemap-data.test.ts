@@ -146,7 +146,11 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // app/nba/fast-break/layout.tsx redirect()s it to "/" (parked 09-23,
     // known-issues #8) — a sitemap entry that 307s is crawl waste. It returns
     // with the redirect's removal.
-    expect(s).toHaveLength(76)
+    // 76 → 77 on 2026-09-25: /teams, the team-hub directory (app/teams/page.tsx),
+    // entered the static list. The hubs it links stay out (noindex while one
+    // collection per league — hubIsIndexable).
+    expect(s).toHaveLength(77)
+    expect(s.find((x) => x.url === `${BASE}/teams`)).toBeDefined()
     expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/nba/fast-break`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/ufc/sniper`)).toBeUndefined()

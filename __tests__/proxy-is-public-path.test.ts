@@ -167,7 +167,10 @@ const TABLE: Row[] = [
   // Franchise hubs (2026-09-23) — exactly /teams/<league>/<slug>.
   ["/teams/nba/blazers", "GET", true],
   ["/teams/mlb/tigers", "GET", true],
-  ["/teams", "GET", false, "no hub index — only the two-segment hub shape is public"],
+  // 2026-09-25: /teams is the hub DIRECTORY (app/teams/page.tsx), read-only.
+  ["/teams", "GET", true, "the hub directory"],
+  ["/teams/", "HEAD", true, "the hub directory, trailing slash"],
+  ["/teams", "POST", false, "GET/HEAD only"],
   ["/teams/nba/blazers/edit", "GET", false, "deeper paths are not hubs"],
 
   // ── Per-collection overview + its backing API ───────────────────────────────

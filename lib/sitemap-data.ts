@@ -91,6 +91,11 @@ export const STATIC_SITEMAP_PAGES: ReadonlyArray<{
   { path: '/blog',                             changeFrequency: 'weekly',  priority: 0.5 },
   { path: '/blog/permanent-moments-ipfs',      changeFrequency: 'monthly', priority: 0.5 },
   { path: '/blog/pinnacle-star-wars-day-2026', changeFrequency: 'monthly', priority: 0.5 },
+  // 2026-09-25: the team-hub directory (app/teams/page.tsx). The hubs it links
+  // stay OUT of the sitemap while hubIsIndexable() keeps them noindex (one
+  // collection per league today) — a noindex URL in a sitemap is a
+  // contradiction the crawler resolves against us.
+  { path: '/teams',                            changeFrequency: 'weekly',  priority: 0.6 },
   // /nba/fast-break added 2026-08-01: public (proxy.ts) and the header comment
   // at the top of this file had claimed it was covered since the file was
   // written — it never was. /pricing was added the same day and REMOVED

@@ -734,6 +734,9 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // page per real-world team gathering every collection that carries it. The
   // shape is exact (two segments) so /teams alone, or deeper paths, stay gated.
   if (/^\/teams\/[a-z]+\/[^/]+\/?$/.test(pathname)) return true
+  // /teams — the hub directory (2026-09-25): every registered franchise by
+  // league, read-only, one get_teams_for_league per league. GET/HEAD only.
+  if ((method === "GET" || method === "HEAD") && /^\/teams\/?$/.test(pathname)) return true
 
   // ── Public entity detail pages ───────────────────────────────────────
   // /<collection>/{edition,set,player,team,series,pack}/<slug> — the
