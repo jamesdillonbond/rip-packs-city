@@ -1783,6 +1783,8 @@ Moved to pay for CLAUDE.md's chain-two section, per that file's rule that an add
 ```bash
 npm ci                   # ⚠ RUN FIRST in a fresh sandbox — without it `npx vitest`/`tsc` die on
                          #   `MODULE_NOT_FOUND … vitest.config.ts`, which reads like a broken config.
+                         # ⚠ ALSO in an agent worktree (.claude/worktrees/<name>/) — see
+                         #   "An agent worktree's node_modules is EMPTY" below (2026-09-24).
 npm run dev
 npx tsc --noEmit         # before deploying, esp. when Vercel is rate-limited.
                          # ⭐ 2026-09-19: this DOES run in the laptop VM with
@@ -1905,6 +1907,24 @@ hint: Updates were rejected because the tip of your current branch is behind
 ```
 
 That is `(non-fast-forward)`, i.e. **rebase and retry**, not a credential problem. The push capability on this box is fine — `git push --dry-run origin main` is the one-command test, and its output distinguishes the two cases in the first line.
+
+### 4 · An agent worktree's `node_modules` is EMPTY, and vitest hides it by resolving UPWARD (2026-09-24)
+
+A Claude Code desktop session runs in `.claude/worktrees/<name>/`, a fresh checkout whose `node_modules/` held **one entry** (not a junction). Vitest still runs there, because Node resolves packages by walking up the tree and finds the **parent checkout's** `node_modules`. So the suite mostly works, and **only a file that imports a package the parent lacks fails**, at load time:
+
+```
+FAIL  __tests__/check-migration-parity-logic.test.ts
+Error: Cannot find package '@supabase/supabase-js' imported from …/scripts/check-migration-parity.mjs
+Tests  no tests
+```
+
+⚠ **It reads like ONE broken script, not a missing install**, because 11 of 12 migration suites passed alongside it. The discriminator: `(Get-ChildItem node_modules -Force | Measure-Object).Count` in the worktree (1, not ~845). **Fix: `npm ci` in the worktree** (~1 min, 845 packages); afterwards the file ran 15/15 and the full suite 1,584 files / 18,075 tests green, `tsc --noEmit` (3072 MB heap) exit 0. `node_modules/` is gitignored, so the install dirties nothing (`git status` stayed clean).
+
+### 5 · A fileless migration: let `migration-autorecover` commit it unless the red window matters (2026-09-24)
+
+`.github/workflows/migration-autorecover.yml` runs `scripts/recover-fileless-migrations.mjs` on a schedule and pushes as `rpc-migration-autorecover[bot]`, md5-verified against prod. On 09-24 a manual parity dispatch went red on `panini_team_walk_20260924_rotation_roster` (applied ~5:04 PM PT). A 10-minute wait for its session showed nothing; the hand recovery was md5-clean, but by the time it was ready the bot had pushed the **byte-identical blob** (`1539f0974`, `git hash-object` = `git rev-parse origin/main:<file>`). 👉 **`git fetch` and compare blobs before committing a recovery; if identical, drop yours.** Mid-turn vs abandoned is the separate question in the memory note on migration parity.
+
+⚠ **A handoff prompt describing a fileless migration may already be stale when the session starts.** The same session was handed "recover `…rebases_retail_basis_rows_on_the_live_ask`, ledger it, close #50". All five steps had been shipped by another session 50 minutes earlier (`6cbe957ae`, `e26043661`, `16671ef7e`). **`git log origin/main --oneline -- <migration path>` first** — one command separates "do it" from "verify it".
 
 ## Windows box, 2026-09-23 — five things relearned (§5 added 2026-09-24)
 

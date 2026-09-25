@@ -84,7 +84,7 @@ Never omit `teamId` on a Vercel API/MCP call.
 
 ## Frequently used commands
 
-**List moved to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-19** (package.json data). ⚠ **`npm ci` FIRST in a fresh sandbox**, or `npx vitest`/`tsc` die on `MODULE_NOT_FOUND … vitest.config.ts` — reads like a broken config. ⭐ **`tsc --noEmit` DOES run in the laptop VM** with `--max-old-space-size=3072`; it OOMs at the default heap, and writing that off as "CI will typecheck" put a compile error on `main` (09-19).
+**List moved to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-19** (package.json data). ⚠ **`npm ci` FIRST in a fresh sandbox or agent worktree**, or `npx vitest`/`tsc` die on `MODULE_NOT_FOUND …` (why: tooling-gotchas.md). ⭐ **`tsc --noEmit` DOES run in the laptop VM** with `--max-old-space-size=3072`; it OOMs at the default heap, and writing that off as "CI will typecheck" put a compile error on `main` (09-19).
 
 
 ⚠ **Exit-code traps** (pipe status, `grep && push`, a wrapper's `exit code 0`): verbatim in tooling-gotchas.md.
