@@ -740,6 +740,16 @@ in `pinnacle_sales`** — querying the usual tables for all five returns NULL/0 
 
 - **The one measured-but-unshipped DB fix is LOW-STAKES** (numbers: [roadmap-status.md](roadmap-status.md)). ⭐ Another stated blocker was itself a MEASUREMENT — **re-read a "blocked" item's blocker before inheriting it.**
 
+## Decisions waiting on a person — re-read from known-issues.md 2026-09-25 (PT)
+
+A dated snapshot. The item text in [known-issues.md](known-issues.md) wins over this list.
+
+- **#137 (a), Trevor:** Top Shot has two player rows for one person, "Steph Curry" (74 editions) and "Stephen Curry" (23). Top Shot's official spelling is "Stephen Curry". Once the name is chosen, the merge is a one-line data migration.
+- **#137 (b), Trevor:** one sign convention for negative dollars. `lib/usd-format.ts` pins "$-50.34" while `lib/analytics/format` renders "-$42.00". Re-pin the tests after choosing.
+- **#138, decision:** where to get the ids for a Top Shot wallet above ~100k moments (an access node with a higher computation limit, an indexer, or deposit/withdraw events), or deactivate the two seeded rows. Nothing user-facing is wrong today.
+- **#137 (c), after 10-01:** drop the `audit_20260924_*` / `audit_20260925_*` backup tables and the retired `wmc_series_backfill_state` + `backfill_wmc_series_batch`.
+- **#136:** closes once the Maradona Silver re-walk is verified. The week-one Panini review is scheduled for 09-30 9 AM PT.
+
 ## Open items (moved verbatim from CLAUDE.md's "Prioritized next actions", 2026-09-19)
 
 **Open items, stated rather than quietly dropped:**

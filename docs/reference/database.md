@@ -2814,3 +2814,11 @@ Moved in the same pass, to pay for the read-layer/write-layer honesty rule. Stil
 - ⚠ **Every `apply_migration` causes a ~10–20 s burst of user-facing `PGRST002` 500s** (schema-cache re-introspection) — batch them, prefer a low-traffic window, and `rpcWithRetry` does NOT save you (database.md).
 
 - 🚨 **A data-modifying statement plans SERIALLY, so a parallel `SELECT` is not a cost model for the `INSERT … SELECT` that wraps it** (2026-09-22, `refresh_allday_listings_sold_after_listing`). The SELECT measured 1.75 s (1 worker); the INSERT's serial plan hashed every All Day sale: 757k buffers, 18–25 s per pg_cron run. Measure with `max_parallel_workers_per_gather = 0` or EXPLAIN the INSERT. `CROSS JOIN LATERAL (… LIMIT 1)` forces a per-row probe: 0.3–0.6 s. Ledger 2026-09-22.
+
+## A name key that drops non-ASCII letters mints duplicate entities (2026-09-25, PT; #137 (a))
+
+`resolve_canonical_player` built its name slug with `[^a-z0-9]+ → '-'` on the raw name, so "Dennis Schröder" slugged to `dennis-schr-der`, missed `dennis-schroder`, and the no-match branch inserted a second player. 17 accent/case pairs were merged on `lower(unaccent(name))` (`20260925101708`). The fix belongs in the **writer** (`20260925101847`), not in a one-off merge.
+
+- ⚠ **Every name matcher over the same entity must fold the same way.** The exact-name linker left 13 editions `player_id NULL` for good, and search's player arm matched the raw name. After the merge, "doncic" returned 20 editions and **no player**: removing the duplicates also removed the only row the unfolded search could still find (`20260925102428`). **After a dedupe merge, re-run the searches that used to hit the losing rows.**
+- ⚠ Do not add a UNIQUE index on (collection, name-slug) without first changing the writer. It inserts `ON CONFLICT (external_id)`, so a second unique index would turn its race condition into an exception.
+- Two different NAMES for one person (Steph / Stephen Curry) are not a folding problem. Trevor has to pick the name (#137 (a)).

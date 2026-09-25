@@ -348,3 +348,12 @@ With no `sortBy`, the API orders by `created_at.block_time` alone. Its opaque cu
 - Batch about 125 (id, holder) pairs per script. Candidate holders come from the latest `sales.buyer_address`, `topshot_ownership` and `moments.owner_address`.
 - A moment that has moved returns nothing: record "not held", never "wrong".
 - Used for #116: `docs/audits/i116-chain-adjudication-2026-09-24.md`.
+
+## Catalog names the Dapper API no longer serves ARE on chain (2026-09-25, PT)
+
+The QA pass wrote down "nothing to do on our side" for two catalog gaps. Both answers were on chain all along (#137 (d), (h)):
+
+- **Pack distribution names:** every Dapper distribution is registered with the PDS contract (`0xb6f2481eba4df97b`, the same one the All Day / Golazos seeder walks). `PDS.getDistInfo(distId)` returns title, tier and slot count. Route: `/api/cron/topshot-pack-dist-names-onchain`.
+- **Top Shot set series:** `TopShot.getSetSeries(setID)` (read through Flow REST). `catalog_topshot_from_atlas` inserts `sets.series` as NULL by construction, so this route fills it: `/api/cron/topshot-set-series-onchain`.
+- ⚠ **Before filing "no source for this field", check the mainnet contract for a getter.** An off-chain API going dark takes away a copy of the data, not the data itself.
+- ⚠ Still not read from chain: the 48 named dists' `total_minted` / `total_sealed`, which remain a DEFAULTED 0 (#137 (d)).

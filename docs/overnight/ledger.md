@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 📝 SHIPPED — CLAUDE.md + reference-doc refresh: the expired "3 until the 09-24 roll" ledger note is gone, #137 (a)/(b) are on the Needs-TREVOR line, and the QA pass's name-folding and on-chain-catalog lessons are in database.md / apis-and-cadence.md · Claude Code (web)
+
+- Docs only (CLAUDE.md 39,994 chars; README index, roadmap-status decisions list, sessions/2026-09.md). **Revert:** `git revert` this commit (find it by message).
+
 ### 2026-09-25 · 🧹 SHIPPED — 17 accent/case-variant duplicate players merged (`20260925101708`), and the THREE name readers/writers that could not see through an accent now fold them: `resolve_canonical_player` (the writer that minted the duplicates, `20260925101847`, pin re-read), the daily linker (13 editions were `player_id NULL` forever), and `rpc_search_catalog`'s player arm (`20260925102428` — "doncic" found 20 editions and NO player) · Cowork (cloud + laptop VM)
 
 - The 09-24 merge grouped on the EXACT name; grouped on `lower(unaccent(name))` there were 17 more pairs — Luka Dončić / "Luka Doncic", Alperen Şengün / "Alperen Sengun" (38 + 17 editions, two /player/ pages, two search hits), Dennis Schröder, Nikola Vučević, Marine Johannès, Manu Ginóbili, Boban Marjanović, Karlo Matković, Vít Krejčí, Temi Fágbénlé, Noémie Brochant, Frieda Bühner, Ivana Dojkić, Marta Suárez, Aleksej Pokuševski, Alicia Flórez in two Unicode normal forms, LaLiga's Luís Fabiano. Kept the row `resolve_canonical_player` itself prefers (numeric id > other > `flow:`, then editions, then age); 55 editions repointed; no other table referenced the extras (checked, and the migration RAISEs if one ever does).
