@@ -293,9 +293,35 @@ describe("TrophySlab", () => {
       .find((t) => t.includes("@container"))
     expect(css).toBeDefined()
     const narrow = css!.slice(css!.indexOf("@container"))
-    expect(narrow).toMatch(/\.rpc-slab-label\s*\{[^}]*flex-direction:\s*column-reverse/)
+    // stacked, meta row FIRST — via order, not column-reverse (a reversed
+    // column packs at the bottom once the label is stretched to the row)
+    expect(narrow).toMatch(/\.rpc-slab-label\s*\{[^}]*flex-direction:\s*column\s*!important/)
+    expect(narrow).toMatch(/\.rpc-slab-label-meta\s*\{[^}]*order:\s*-1/)
+    expect(narrow).not.toMatch(/column-reverse/)
     expect(narrow).toMatch(/\.rpc-slab-label-team\s*\{[^}]*white-space:\s*normal/)
     // the ✕ reserve moves from the whole label to the top (meta) row only
     expect(narrow).toMatch(/\.rpc-slab-label\[data-reserve-corner\]\s+\.rpc-slab-label-meta\s*\{[^}]*padding-right/)
+  })
+
+  // 2026-09-25 follow-up (second screenshot): in a grid row, a label one line
+  // longer than its neighbour pushed that slab's screen, footer and the caption
+  // box below it out of line. The chain that keeps a row aligned: the Link
+  // fills its cell, the slab body fills the Link, and the LABEL is the element
+  // that grows — the screen never shrinks to make room.
+  it("stretches to its grid row with the label absorbing the slack", () => {
+    const { container } = render(<TrophySlab slab={base} slot={3} mode="public" />)
+    const link = container.querySelector("a") as HTMLElement
+    expect(link.style.display).toBe("flex")
+    expect(link.style.flexDirection).toBe("column")
+    expect(link.style.flexGrow).toBe("1")
+    const body = link.firstElementChild as HTMLElement
+    expect(body.style.flexGrow).toBe("1")
+    expect(body.style.display).toBe("flex")
+    const label = container.querySelector(".rpc-slab-label") as HTMLElement
+    expect(label.style.flexGrow).toBe("1")
+    expect((label.parentElement as HTMLElement).style.flexGrow).toBe("1")
+    const screen = Array.from(body.children).find((el) => (el as HTMLElement).style.aspectRatio) as HTMLElement
+    expect(screen).toBeDefined()
+    expect(screen.style.flexShrink).toBe("0")
   })
 })

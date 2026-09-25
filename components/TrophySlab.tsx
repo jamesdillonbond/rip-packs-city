@@ -158,7 +158,12 @@ function FilledSlab({
   return (
     <Link
       href={"/moment/" + slab.moment_id}
-      style={{ textDecoration: "none", display: "block", color: "inherit" }}
+      // Row alignment: the Link fills its grid cell (a grid item stretches to
+      // the row; in the dashboard's flex-column cell, flex:1 does the same) and
+      // the slab body fills the Link. The label absorbs the slack (see
+      // SlabLabel), so the screens, footers and the caption boxes under them
+      // line up across a row even when one label runs a line longer.
+      style={{ textDecoration: "none", display: "flex", flexDirection: "column", flex: "1 1 auto", color: "inherit" }}
       aria-label={`View ${slab.player_name ?? "moment"}`}
     >
       <div
@@ -168,6 +173,9 @@ function FilledSlab({
         style={{
           position: "relative",
           width: "100%",
+          flex: "1 1 auto",
+          display: "flex",
+          flexDirection: "column",
           background: "var(--rpc-surface)",
           border: "1px solid " + border,
           borderRadius: 14,
@@ -367,12 +375,15 @@ function SlabLabel({
     // ~45px — "Donovan Clingan" clipped, team/set cut to "PORTLA…" / "Series
     // 2024-2…". Below the breakpoint the serial/tier/badges move to a top row
     // beside the ✕ and the name/team/set get the full label width.
-    <div style={{ containerType: "inline-size" }}>
+    // flex-grow on the wrapper AND the label: this is the element that takes
+    // the extra height when a neighbour in the same grid row is taller.
+    <div style={{ containerType: "inline-size", flex: "1 0 auto", display: "flex", flexDirection: "column" }}>
     <style href="rpc-slab-label" precedence="default">{SLAB_LABEL_CSS}</style>
     <div
       className="rpc-slab-label"
       data-reserve-corner={reserveCorner ? "1" : undefined}
       style={{
+        flex: "1 0 auto",
         background: LABEL_SILVER,
         borderRadius: 6,
         padding: 8,
@@ -555,16 +566,21 @@ function SlabLabel({
 }
 
 // Narrow-slab reflow for SlabLabel (see the container comment there). Inline
-// styles win over class rules, hence !important. 240px covers the 2-up mobile
+// styles win over class rules, hence !important. The meta row is ordered first
+// (plain column, NOT column-reverse: with the label stretched to the row height
+// a reversed column packs its items at the BOTTOM). Serial and tier always stack
+// — letting them share a line only when no badges sit beside them put the tier
+// on line 1 on some slabs and line 2 on others, so neighbouring labels
+// disagreed on where the name started. 240px covers the 2-up mobile
 // grid (≈120–170px labels) while the 3-up desktop grid (≈280px+) keeps the
 // side-by-side layout.
 const SLAB_LABEL_CSS = `
 @container (max-width: 240px) {
-  .rpc-slab-label { flex-direction: column-reverse !important; padding-right: 8px !important; gap: 5px !important; }
-  .rpc-slab-label-meta { flex-direction: row !important; align-items: center !important; justify-content: space-between !important; min-width: 0 !important; min-height: 16px; }
+  .rpc-slab-label { flex-direction: column !important; justify-content: flex-start !important; padding-right: 8px !important; gap: 5px !important; }
+  .rpc-slab-label-meta { order: -1; flex-direction: row !important; align-items: flex-start !important; justify-content: space-between !important; min-width: 0 !important; }
   .rpc-slab-label[data-reserve-corner] .rpc-slab-label-meta { padding-right: 24px; }
-  .rpc-slab-label-serial { flex-direction: row !important; align-items: baseline !important; gap: 6px; flex-wrap: wrap; }
-  .rpc-slab-label-serial > div { margin-top: 0 !important; }
+  .rpc-slab-label-serial { align-items: flex-start !important; }
+  .rpc-slab-label-main { flex: 0 0 auto !important; }
   .rpc-slab-label-team { white-space: normal !important; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .rpc-slab-label-set { -webkit-line-clamp: 3 !important; }
 }
@@ -591,6 +607,7 @@ function SlabScreen({
     <div
       style={{
         marginTop: 10,
+        flexShrink: 0,
         position: "relative",
         aspectRatio: "3 / 4",
         background: SCREEN_BLACK,
