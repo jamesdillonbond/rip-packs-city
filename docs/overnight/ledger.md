@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-24 · 🎯 Panini special-serial premiums refit on 10–15× the data — #1 serial premium was understated ~35% (1.11 → 1.50) · Cowork (cloud + laptop VM)
+
+`panini_serial_premium` was fitted on 07-16 with only n=37–45 per flag, measured against edition FMV. It is now refit (migration `20260925000244`) as the median of each special-serial sale divided by the median non-special sale of the **same edition within ±30 days** (at least 3 baseline sales, 120-day window):
+- jersey mint: 1.40 → **1.43** (n=547)
+- perfect mint: 1.21 → **1.25** (n=408)
+- #1: 1.11 → **1.50** (n=584, interquartile range 1.00–2.50)
+
+Some baseline sales were captured from the TOP-SALES list before 09-24, which biases the baseline high, so these are floors. The premiums feed `panini_deal_board` and `panini_special_serials_board` only; neither is published.
+**Revert:** set the multipliers back to 1.40 / 1.21 / 1.11.
+
 ### 2026-09-24 · 🧹 DOCS — focus.md trimmed 193 KB → 33 KB: steers dated 2026-09-14 and older rolled to `focus-archive-2026-H2.md` · Cowork (Trevor: "do it all")
 
 - Moved lines 79–756 of `docs/overnight/focus.md` (the 09-14 → 08-22 STEER blocks plus the 08-28 PRIORITIES block) unchanged into the new `docs/overnight/focus-archive-2026-H2.md` (scripted, checked: archive = exact block; kept head and tail unchanged). This follows focus.md's own rewrite rule ("a focus file STEERS the next night, it is not an archive"). The 09-13 pass had already flagged the file as deletable.
