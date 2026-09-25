@@ -504,14 +504,16 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
         {data.rarest ? (
           <div style={{ marginBottom: 32 }}>
             <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "var(--rpc-text-secondary)", marginBottom: 16, textTransform: "uppercase" }}>Rarest Moment</div>
-            <div style={{ display: "flex", gap: 16, alignItems: "center", border: "1px solid var(--rpc-border)", borderRadius: 10, background: "linear-gradient(180deg, rgba(255,215,0,0.06) 0%, var(--rpc-black) 100%)", padding: 16 }}>
+            {/* flexWrap + minWidth 0: at 320px the price block drops to its own
+                line instead of widening the page (mobile sweep, 2026-09-25). */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", border: "1px solid var(--rpc-border)", borderRadius: 10, background: "linear-gradient(180deg, rgba(255,215,0,0.06) 0%, var(--rpc-black) 100%)", padding: 16 }}>
               {data.rarest.thumbnailUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={proxyIpfsUrl(data.rarest.thumbnailUrl) ?? undefined} alt={data.rarest.playerName} style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8, flex: "0 0 96px" }} />
               ) : (
                 <div style={{ width: 96, height: 96, background: "var(--rpc-surface)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontSize: 28, flex: "0 0 96px" }}>?</div>
               )}
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: "1 1 140px", minWidth: 0 }}>
                 <div style={{ fontWeight: 800, fontSize: 20, color: "var(--rpc-text-primary)" }}>{data.rarest.playerName}</div>
                 <div style={{ fontSize: 13, color: "var(--rpc-text-secondary)", fontFamily: "monospace", marginTop: 2 }}>{data.rarest.setName}</div>
                 <div style={{ fontSize: 13, color: TIER_COLORS[data.rarest.tier?.toLowerCase() ?? ""] ?? "var(--tier-common)", fontFamily: "monospace", marginTop: 4 }}>
