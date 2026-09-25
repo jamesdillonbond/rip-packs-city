@@ -5,7 +5,7 @@
 // chart). Extracted so the bucketing/zero-fill/sort is unit-tested. Parametrized
 // over minimal row shapes so the page's own row types stay assignable.
 
-import { seriesLabel } from "@/lib/series-label"
+import { seriesLabel, analyticsSeriesLabel } from "@/lib/series-label"
 
 export interface PivotTierRow {
   date: string
@@ -58,11 +58,13 @@ export interface PivotSeriesRow {
 export function pivotDailySeries(
   rows: PivotSeriesRow[] | undefined,
   topSeriesKeys: string[],
+  // 2026-09-25: the collection the rows belong to (see analyticsSeriesLabel).
+  collectionSlug?: string | null,
 ): Array<Record<string, string | number>> {
   if (!rows || rows.length === 0) return []
   const byDate = new Map<string, Record<string, string | number>>()
   for (const r of rows) {
-    const key = seriesLabel(r.series)
+    const key = collectionSlug === undefined ? seriesLabel(r.series) : analyticsSeriesLabel(r.series, collectionSlug)
     if (!topSeriesKeys.includes(key)) continue
     const bucket = byDate.get(r.date) ?? { date: r.date }
     bucket[key] = Number(bucket[key] ?? 0) + Number(r.volume ?? 0)

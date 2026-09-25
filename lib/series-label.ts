@@ -30,6 +30,22 @@ export function seriesLabel(n: number | null | undefined): string {
 }
 
 /**
+ * Analytics-board series label that knows WHICH collection it labels
+ * (2026-09-25). `seriesLabel` above decodes every integer through the Top
+ * Shot map, so /nfl-all-day/analytics drew "Volume by Series" with "Series
+ * 2024-25", "Summer 2021" and two "Unknown" bars for All Day's own series
+ * 7, 3, 1 and 9 — the CLAUDE.md "0↔1 is Top-Shot-specific" footgun on a chart.
+ * Top Shot keeps the map; any other collection is "Series N"; nullish is
+ * "Unknown" (a series the read did not carry, never a fabricated one).
+ */
+export function analyticsSeriesLabel(n: number | null | undefined, collectionSlug: string | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return "Unknown"
+  const isTopShot = collectionSlug === "nba_top_shot" || collectionSlug === "nba-top-shot"
+  if (isTopShot) return SERIES_DISPLAY[Number(n)] ?? "Unknown"
+  return `Series ${Number(n)}`
+}
+
+/**
  * Moment-page series display. Top Shot decodes via SERIES_DISPLAY (unmapped n →
  * "Series N"); every other collection's series encoding is unverified, so it
  * falls back to the raw "Series N".

@@ -11,7 +11,7 @@ import {
 } from "recharts"
 import { getCollection, toDbSlug } from "@/lib/collections"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
-import { seriesLabel } from "@/lib/series-label"
+import { analyticsSeriesLabel } from "@/lib/series-label"
 import { pivotDailyTier, pivotDailySeries } from "@/lib/analytics-pivot"
 import {
   buildVolumeByTier,
@@ -1030,13 +1030,15 @@ function AnalyticsInner() {
     [marketData?.dailyTierVolume]
   )
 
-  const seriesVolumeBars = useMemo(() => buildSeriesVolumeBars(marketData?.seriesAnalytics), [marketData?.seriesAnalytics])
+  // 2026-09-25: labelled for THIS collection — All Day's series 7 is not
+  // "Series 2024-25" (that is Top Shot's map).
+  const seriesVolumeBars = useMemo(() => buildSeriesVolumeBars(marketData?.seriesAnalytics, collection), [marketData?.seriesAnalytics, collection])
 
   const topSeriesKeys = useMemo(() => seriesVolumeBars.slice(0, 5).map((s) => s.name), [seriesVolumeBars])
 
   const dailySeriesPivot = useMemo(
-    () => pivotDailySeries(marketData?.dailySeriesVolume, topSeriesKeys),
-    [marketData?.dailySeriesVolume, topSeriesKeys]
+    () => pivotDailySeries(marketData?.dailySeriesVolume, topSeriesKeys, collection),
+    [marketData?.dailySeriesVolume, topSeriesKeys, collection]
   )
 
   // Debounced player search.
@@ -1642,7 +1644,7 @@ function AnalyticsInner() {
                               {tier || "—"}
                             </span>
                           </td>
-                          <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{seriesLabel(p.series)}</td>
+                          <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{analyticsSeriesLabel(p.series, collection)}</td>
                           <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{Number(p.sale_count).toLocaleString("en-US")}</td>
                           <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-primary)]">{fmtUsd(p.volume)}</td>
                           <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{fmtUsd(p.avg_price)}</td>

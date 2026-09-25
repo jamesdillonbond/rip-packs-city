@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { seriesLabel, seriesDisplay, seriesPageLabel, tileSeriesLabel, SERIES_DISPLAY } from "@/lib/series-label"
+import { seriesLabel, seriesDisplay, seriesPageLabel, tileSeriesLabel, analyticsSeriesLabel, SERIES_DISPLAY } from "@/lib/series-label"
 import { SERIES_FILTER_LABEL_FALLBACK } from "@/lib/collection/helpers"
 
 // The load-bearing quirk: on-chain series 0 = "Series 1" (there is no on-chain
@@ -99,5 +99,23 @@ describe("tileSeriesLabel", () => {
     expect(tileSeriesLabel("2024 Season", "nfl-all-day")).toBe("2024 Season")
     expect(tileSeriesLabel("", "nba-top-shot")).toBeNull()
     expect(tileSeriesLabel(null, "nba-top-shot")).toBeNull()
+  })
+})
+
+describe("analyticsSeriesLabel — the analytics charts know which collection they label (2026-09-25)", () => {
+  it("Top Shot keeps the site-wide map", () => {
+    expect(analyticsSeriesLabel(0, "nba-top-shot")).toBe("Series 1")
+    expect(analyticsSeriesLabel(7, "nba_top_shot")).toBe("Series 2024-25")
+    expect(analyticsSeriesLabel(1, "nba-top-shot")).toBe("Unknown")
+  })
+  it("All Day's series 7 is NOT Top Shot's 'Series 2024-25' — it is All Day's Series 7 (the chart said otherwise)", () => {
+    expect(analyticsSeriesLabel(7, "nfl-all-day")).toBe("Series 7")
+    expect(analyticsSeriesLabel(3, "nfl-all-day")).toBe("Series 3")
+    expect(analyticsSeriesLabel(1, "nfl_all_day")).toBe("Series 1")
+    expect(analyticsSeriesLabel(9, "laliga-golazos")).toBe("Series 9")
+  })
+  it("a series the read did not carry is Unknown for every collection", () => {
+    expect(analyticsSeriesLabel(null, "nfl-all-day")).toBe("Unknown")
+    expect(analyticsSeriesLabel(undefined, "nba-top-shot")).toBe("Unknown")
   })
 })

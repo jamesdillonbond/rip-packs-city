@@ -10,7 +10,7 @@
 // missing guard silently renders NaN% where a real share belongs).
 
 import { marketplaceLabel, marketplaceColor } from "@/lib/analytics/format"
-import { seriesLabel } from "@/lib/series-label"
+import { seriesLabel, analyticsSeriesLabel } from "@/lib/series-label"
 import { ownLookup } from "@/lib/safe-lookup"
 
 // ── Acquisition-method → display bucket ─────────────────────────────────────
@@ -138,12 +138,15 @@ export function buildSeriesVolumeBars(
   rows:
     | Array<{ series: number | null; volume: number; avg_price: number; sale_count: number }>
     | null
-    | undefined
+    | undefined,
+  // 2026-09-25: the collection the rows belong to. Omitted = the Top Shot map
+  // (the pre-existing behaviour); any other slug labels "Series N".
+  collectionSlug?: string | null
 ): Array<{ name: string; volume: number; avg_price: number; sale_count: number }> {
   if (!rows) return []
   return rows
     .map((s) => ({
-      name: seriesLabel(s.series),
+      name: collectionSlug === undefined ? seriesLabel(s.series) : analyticsSeriesLabel(s.series, collectionSlug),
       volume: Math.round(Number(s.volume) * 100) / 100,
       avg_price: Number(s.avg_price) || 0,
       sale_count: Number(s.sale_count) || 0,

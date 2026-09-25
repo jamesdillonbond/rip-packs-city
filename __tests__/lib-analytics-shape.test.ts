@@ -361,3 +361,16 @@ describe("acquisitionMethodLabel", () => {
     expect(acquisitionMethodLabel("__proto__")).toBeNull()
   })
 })
+
+describe("buildSeriesVolumeBars — collection-aware labels (2026-09-25)", () => {
+  it("labels All Day rows as All Day series, and Top Shot rows through the map; omitted slug keeps the old behaviour", async () => {
+    const { buildSeriesVolumeBars } = await import("@/lib/analytics/shape")
+    const rows = [
+      { series: 7, volume: 100, avg_price: 1, sale_count: 5 },
+      { series: 3, volume: 50, avg_price: 1, sale_count: 2 },
+    ]
+    expect(buildSeriesVolumeBars(rows, "nfl-all-day").map((b) => b.name)).toEqual(["Series 7", "Series 3"])
+    expect(buildSeriesVolumeBars(rows, "nba-top-shot").map((b) => b.name)).toEqual(["Series 2024-25", "Summer 2021"])
+    expect(buildSeriesVolumeBars(rows).map((b) => b.name)).toEqual(["Series 2024-25", "Summer 2021"])
+  })
+})
