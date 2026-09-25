@@ -220,15 +220,20 @@ export async function POST(req: NextRequest) {
       const fmvRows = cards
         .map((c) => (useV11 ? toFmvRowV11(c, nowIso, recentByEdition.get(String(c?.sku ?? c?.psku ?? ""))) : toFmvRow(c, nowIso)))
         .filter(Boolean) as any[];
+      // INSERT FIRST, then delete the SAME-DAY rows this insert supersedes (computed_at < nowIso; the
+      // new rows carry computed_at = nowIso exactly). Until 2026-09-25 this was delete-then-insert,
+      // and a batch whose insert failed ("TypeError: fetch failed", 6:36 AM PT) had already deleted
+      // today's rows — two editions silently fell back to a 3-day-old panini-1.0.0 price. A failed
+      // insert now deletes nothing; a failed delete leaves a same-day duplicate the next walk clears.
       if (fmvRows.length) {
-        const ids = [...new Set(fmvRows.map((f) => f.edition_id))];
-        for (let i = 0; i < ids.length; i += CHUNK) {
-          const { error } = await (supabaseAdmin as any).from("panini_fmv_snapshots").delete().in("edition_id", ids.slice(i, i + CHUNK)).gte("computed_at", nowIso.slice(0, 10));
-          if (error) { fmvError = fmvError ?? `delete: ${error.message}`; console.log(`[${PIPELINE}] fmv delete: ${error.message}`); }
-        }
         for (let i = 0; i < fmvRows.length; i += CHUNK) {
-          const { data, error } = await (supabaseAdmin as any).from("panini_fmv_snapshots").insert(fmvRows.slice(i, i + CHUNK)).select("id");
-          if (error) { fmvError = fmvError ?? error.message; console.log(`[${PIPELINE}] fmv insert: ${error.message}`); } else fmvWritten += data?.length ?? 0;
+          const chunk = fmvRows.slice(i, i + CHUNK);
+          const { data, error } = await (supabaseAdmin as any).from("panini_fmv_snapshots").insert(chunk).select("id");
+          if (error) { fmvError = fmvError ?? error.message; console.log(`[${PIPELINE}] fmv insert: ${error.message}`); continue; }
+          fmvWritten += data?.length ?? 0;
+          const ids = [...new Set(chunk.map((f) => f.edition_id))];
+          const { error: delErr } = await (supabaseAdmin as any).from("panini_fmv_snapshots").delete().in("edition_id", ids).gte("computed_at", nowIso.slice(0, 10)).lt("computed_at", nowIso);
+          if (delErr) { fmvError = fmvError ?? `delete: ${delErr.message}`; console.log(`[${PIPELINE}] fmv delete: ${delErr.message}`); }
         }
       }
       // ok is now DERIVED from whether the writes actually landed, never asserted.

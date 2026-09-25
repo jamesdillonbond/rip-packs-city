@@ -4,7 +4,7 @@ import { makeReq } from "./cron-req-helper"
 // Route integration test for /api/cron/panini-ingest (POST push ingest). Auth:
 // Bearer INGEST_SECRET_TOKEN or CRON_SECRET, else 401. Deep legs: the empty-body
 // 202 no-op, and the captured after() body — editions dedup + chunked upsert (+
-// error branch), the fmv delete-then-insert, the pack-state upsert, the serials
+// error branch), the fmv insert-then-supersede-delete, the pack-state upsert, the serials
 // dedup + upsert (+ error), the success logRun, and the thrown-body catch. The
 // normalize helpers are mocked so row shapes are deterministic.
 
@@ -26,6 +26,9 @@ const st = vi.hoisted(() => ({
   throwInWalk: false,
   recent: { data: [] as unknown[] | null, error: null as null | { message: string } },
   recentCalls: [] as unknown[],
+  // 2026-09-25: order of the fmv writes, so a test can pin insert-BEFORE-delete.
+  fmvOps: [] as string[],
+  fmvDelete: { data: null, error: null as null | { message: string } },
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -43,10 +46,14 @@ vi.mock("@/lib/supabase", () => ({
     from(table: string) {
       let isUpdate = false
       let isInsert = false
+      let isDelete = false
       let rec: (typeof st.updates)[number] | null = null
       const b: any = {
-        upsert: () => b, insert: () => { isInsert = true; return b }, delete: () => b,
+        upsert: () => b,
+        insert: () => { isInsert = true; if (table === "panini_fmv_snapshots") st.fmvOps.push("insert"); return b },
+        delete: () => { if (table === "panini_fmv_snapshots") { st.fmvOps.push("delete"); isDelete = true } return b },
         in: () => b, gte: () => b,
+        lt: (c: string) => { if (isDelete && table === "panini_fmv_snapshots") st.fmvOps.push(`lt:${c}`); return isDelete ? Promise.resolve(st.fmvDelete) : b },
         update: (patch: any) => { isUpdate = true; rec = { table, patch, sku: null, or: null }; st.updates.push(rec); return b },
         eq: (_c: string, v: any) => { if (rec) rec.sku = v; return b },
         or: (expr: string) => { if (rec) rec.or = expr; return b },
@@ -88,6 +95,7 @@ beforeEach(() => {
   st.saleUpdate = {}; st.saleUpdateDefault = { data: [{ id: "u1" }], error: null }
   st.updates = []; st.runs = []; st.captured = null; st.throwInWalk = false
   st.recent = { data: [], error: null }; st.recentCalls = []
+  st.fmvOps = []; st.fmvDelete = { data: null, error: null }
   delete process.env.PANINI_FMV_ENGINE
 })
 afterEach(() => { delete process.env.CRON_SECRET })
@@ -266,6 +274,29 @@ describe("panini-ingest — the after() walk", () => {
     expect(st.runs[0].p_extra.fmv).toBe(2)
     expect(st.runs[0].p_extra.fmv_offered).toBe(2)
     expect(st.runs[0].p_extra.fmv_error).toBeNull()
+  })
+
+  // 2026-09-25: delete-then-insert lost two editions' same-day rows when the insert failed.
+  it("inserts fmv rows BEFORE deleting the same-day rows they supersede", async () => {
+    await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
+    expect(st.fmvOps).toEqual(["insert", "delete", "lt:computed_at"])
+    expect(st.runs[0].p_ok).toBe(true)
+  })
+
+  it("a failed fmv insert deletes NOTHING, so the existing price survives", async () => {
+    st.fmvInsert = { data: null, error: { message: "TypeError: fetch failed" } }
+    await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
+    expect(st.fmvOps).toEqual(["insert"])
+    expect(st.runs[0].p_ok).toBe(false)
+    expect(st.runs[0].p_extra.fmv_error).toBe("TypeError: fetch failed")
+  })
+
+  it("a failed supersede-delete fails the run but keeps the written count", async () => {
+    st.fmvDelete = { data: null, error: { message: "del boom" } }
+    await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
+    expect(st.runs[0].p_extra.fmv).toBe(1)
+    expect(st.runs[0].p_extra.fmv_error).toBe("delete: del boom")
+    expect(st.runs[0].p_ok).toBe(false)
   })
 
   // FMV engine panini-1.1.0 (2026-09-24).
