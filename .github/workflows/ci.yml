@@ -498,6 +498,86 @@ jobs:
       - run: npm ci
       - run: npm run test:coverage:components
 
+  # Workflow lint: actionlint (expressions, `needs`/`outputs` refs, cron syntax,
+  # action inputs) + shellcheck on every `run:` block, at severity >= warning.
+  # 24 workflows / ~4k lines are hand- and agent-edited, and a typo in an `if:`
+  # or a `needs.<job>.outputs` ref does not fail — it evaluates to '' and
+  # silently skips or runs a job. Baseline on 2026-09-25 was ZERO findings at
+  # this severity (2 info-level SC2012 below it), so this is a ban at zero.
+  # The binary is pinned by version AND sha256 (from the release's checksums
+  # file); shellcheck is the runner image's own.
+  workflow-lint:
+    name: Workflow lint (actionlint + shellcheck)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install actionlint (pinned + checksummed)
+        run: |
+          v=1.7.7
+          sha=023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
+          curl -fsSL -o "$RUNNER_TEMP/al.tgz" "https://github.com/rhysd/actionlint/releases/download/v${v}/actionlint_${v}_linux_amd64.tar.gz"
+          echo "${sha}  $RUNNER_TEMP/al.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/al.tgz" -C "$RUNNER_TEMP" actionlint
+          shellcheck --version | head -2
+      - name: actionlint
+        env:
+          SHELLCHECK_OPTS: --severity=warning
+        run: |
+          n=$(find .github/workflows -name '*.yml' -o -name '*.yaml' | wc -l)
+          echo "linting $n workflow files"
+          [ "$n" -ge 20 ] || { echo "expected >= 20 workflows, found $n"; exit 1; }
+          "$RUNNER_TEMP/actionlint" -color -shellcheck="$(command -v shellcheck)"
+
+  # Production BUILD + a RENDER of every page route. Until 2026-09-25 nothing in CI
+  # ran `next build`, and nothing rendered the built app at all. That gap is what
+  # let `await connection()` inside an ISR segment 500 every
+  # /disney-pinnacle/edition/<id> on 2026-09-20 (DYNAMIC_SERVER_USAGE) while tsc,
+  # lint and ~18k tests were green: that error only exists in a real render.
+  #
+  # ⚠ `next build` ALONE DOES NOT CATCH IT. With that defect re-planted, the build
+  # exited 0 and the render smoke went red on all 7 edition URLs (2026-09-25).
+  # The build step catches the other class: a module that throws at evaluation,
+  # a route Next rejects at page-data collection, a prerender that crashes.
+  #
+  # Env is PLACEHOLDER ONLY and the Supabase URL refuses connections, so no
+  # secret is read and every data read fails fast. The smoke therefore renders
+  # the FAILED-READ path of every page, and a 5xx there is a real finding (see
+  # the header of scripts/qa/built-render-smoke.mjs). Routes behind /login are
+  # counted as gated, not passing; the script prints every count it inspected.
+  build-render:
+    name: Build + render smoke (next build / next start)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      NODE_OPTIONS: --max-old-space-size=6144
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: ci-placeholder
+      INGEST_SECRET_TOKEN: ci-placeholder
+      ANTHROPIC_API_KEY: ci-placeholder
+      FLOWTY_PROXY_TOKEN: ci-placeholder
+      TS_PROXY_SECRET: ci-placeholder
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .next/cache
+          key: next-build-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: next-build-${{ hashFiles('package-lock.json') }}-
+      - run: npm ci
+      - run: npx next build
+      - run: npm run test:render-smoke
+
   # Cloudflare Worker coverage. `workers/**` is 6,129 LOC of production ingest
   # and proxy code that neither of the two gates above measures — the primary
   # gate stops at lib/** + app/**/route.ts(x), the component gate at

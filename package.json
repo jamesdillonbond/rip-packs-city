@@ -18,6 +18,7 @@
     "test:coverage:merge": "vitest run --merge-reports --coverage",
     "test:coverage:components": "vitest run --coverage --config vitest.components.config.ts",
     "test:coverage:workers": "vitest run --coverage --config vitest.workers.config.ts",
+    "test:render-smoke": "node scripts/qa/built-render-smoke.mjs",
     "test:cadence": "node scripts/extract-cadence.mjs && flow cadence lint -f tests/cadence/flow.test.json tests/cadence/fixtures/purchase-moment.cdc",
     "test:cadence:escrow": "bash scripts/fetch-cadence-escrow-test-deps.sh && flow test -f cadence/tests/flow.test.json cadence/tests/RPCTradeEscrow_test.cdc",
     "db:pins:check": "node scripts/check-db-pin-staleness.mjs",

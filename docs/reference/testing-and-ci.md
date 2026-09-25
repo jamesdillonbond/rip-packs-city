@@ -2,6 +2,23 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ CI NOW BUILDS AND RENDERS THE APP, AND LINTS ITS OWN WORKFLOWS (2026-09-25)
+
+Two new `ci.yml` jobs close two gaps that nothing covered before.
+
+**`build-render`: `next build`, then `next start`, then one request per page route** (`scripts/qa/built-render-smoke.mjs`, `npm run test:render-smoke`).
+- Until 09-25 **no CI job ran `next build`**. `ci.yml`'s own header said it "blocks a broken build", but only `tsc` ran. And **nothing ever rendered the built app**, which is the only place `DYNAMIC_SERVER_USAGE` exists (the 09-20 Pinnacle outage).
+- ⭐ **Planted-defect proof, 09-25:** the 09-20 `await connection()` was re-planted in `app/(collections)/[collection]/edition/[slug]/page.tsx`. **`next build` exited 0.** The render smoke went red on all 7 `/<collection>/edition/…` URLs and found the digest in the server log. **So the build step alone does NOT close the 09-20 class; the render does.** The build step covers a different class: a module that throws at evaluation, and page-data collection or prerender crashes.
+- **No secrets.** Seven placeholder env vars are enough to build: the address `NEXT_PUBLIC_SUPABASE_URL` plus six keys (`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `INGEST_SECRET_TOKEN`, `ANTHROPIC_API_KEY`, `FLOWTY_PROXY_TOKEN`, `TS_PROXY_SECRET`). They were found by building until green, not by grep. ⚠ **A NEW module-level `throw` on a missing env var reds this job at page-data collection.** Add a placeholder to the job's `env:` block; do not remove the throw.
+- The Supabase URL is `http://127.0.0.1:9`, which refuses connections, so **every data read fails fast and the smoke renders the FAILED-READ path of every page**. A 5xx there means a page turns an unreachable DB into a crash, which is the honesty canon's failure mode. `KNOWN_5XX` is empty and may only shrink.
+- **What it inspected (09-25):** 314 URLs from 125 page routes, with `[collection]` expanded over the registry's 8 ids (parsed from `lib/collections.ts`, never a hand list). Final status: 227 × 200, 86 login-gated, 1 × 404, 0 × 5xx. It follows same-origin redirects, so a canonicalising 307 is never scored as a render. A redirect to `/login` counts as GATED, not passing. There is a not-vacuous floor: at least ⅓ of URLs must render 2xx. ⚠ **The 86 gated routes are NOT rendered.** That is the next gap, and closing it needs a signed test session.
+- ⚠ It is not a data check and cannot see a wrong number. It can only see a render that fails.
+- Runtime: about 2 min of build (cold, 3 cores) plus about 80 s of smoke. The six `/<c>/pack/dist/1` URLs each take about 10 s against the dead DB.
+
+**`workflow-lint`: actionlint 1.7.7 (version- and sha256-pinned) plus the runner's shellcheck at `--severity=warning`.**
+- Baseline was **zero** findings at that severity across 24 workflows. The only hits were 2 info-level SC2012 results, below the threshold. So it is a ban at zero.
+- Planted-defect proof: `needs.chnages.outputs.code` → `property "chnages" is not defined`, exit 1. Without this job, that typo evaluates to `''` and silently skips the job it gates.
+
 ## 🚨🚨 A GUARD THAT CANNOT FAIL, AND THE ONLY REASON I KNOW IT: `\b` IN A JS TEMPLATE LITERAL IS **U+0008 BACKSPACE** (2026-09-20)
 
 Writing `__tests__/addresses-are-never-folded-and-prefixed.test.ts`, one arm re-derives the census
