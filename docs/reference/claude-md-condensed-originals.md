@@ -655,3 +655,9 @@ Original CLAUDE.md text, replaced by a shorter pointer that also names the worki
 > ⚠ **The DESKTOP `remote.origin.pushurl` harvest is DEAD and fails QUIETLY.**
 
 The replacement names the mount's `.rpc-git-cred` store helper, proven 2026-09-24 from Cowork's local sandbox too; recipe in [tooling-gotchas.md](tooling-gotchas.md) (end of file).
+
+## 2026-09-24 — CI `bash -e` bullet condensed to pay for the default-UI-list rule
+
+CLAUDE.md's Measurement discipline gained *"A DEFAULT UI LIST IS A SAMPLE; a UI CLICK CAN FAIL SILENTLY"* (Panini: the SALES HISTORY tab defaults to TOP sales, and a Playwright pointer click switched it to RECENT on 3 of ~300 cards while a DOM `el.click()` worked every time; full case in [panini-fmv-packev-methodology.md](../strategy/panini-fmv-packev-methodology.md)). Headroom was 13 characters, so the CI bullet below was shortened to a pointer. Its full rule already lives in `testing-and-ci.md` (§ "Every CI `run:` block is `bash -e`"). Original:
+
+> - ⚠ **Every CI `run:` block is `bash -e`: a fallible command in an ASSIGNMENT aborts the step there**, so a retry loop after it is DEAD CODE that reads as coverage. Write `X=$(…) || X=""`, then check — ⛔ `|| X="0"` is WORSE: it reports a clean read of what it never read. testing-and-ci.md.

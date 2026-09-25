@@ -3,7 +3,30 @@
 Transparent record of how the Panini WC Prizm numbers are computed. All are **models over live
 marketplace data**, not oracle prices; each is reversible and refreshes as FMV updates.
 
-## Edition FMV
+## Edition FMV — current engine `panini-1.1.0` (shipped 2026-09-24 ~9 PM PT, Trevor-approved)
+
+⚠ **The v0 description below is HISTORY (`panini-1.0.0`).** Current rule (`toFmvRowV11`, `lib/chains/panini/ingest-normalize.ts`; route `app/api/cron/panini-ingest/route.ts` via rpc `panini_recent_sales_fmv`):
+
+| Confidence | Evidence | FMV |
+|---|---|---|
+| HIGH | 3 non-special serial sales in the last 30 days | median of the last ≤3 |
+| MEDIUM | 1–2 such sales | median of them |
+| LOW | no sale in 30 days, but lifetime sales | lifetime `avg_sale` |
+| ASK_ONLY | no sale ever | floor ask × `PANINI_ASK_ONLY_MULT` **0.50** (was 0.90) |
+
+- **Why:** the out-of-sample backtest (`panini_fmv_backtest`: each sale vs the FMV published >1 day before it) put 1.0.0 at MdAPE **57.6%**, median ratio **1.53** (FMV above the sale); the recent-median candidate at **33.3% / 1.06**. The 07-16 "~30% median" validation below was in-sample and against TOP sales.
+- **Kill switch:** Vercel env `PANINI_FMV_ENGINE=1.0` (then redeploy). If the rpc errors, that batch falls back to 1.0.0 and the run is `ok=false` with `extra.fmv_recent_error`. Telemetry: `extra.fmv_engine`, `fmv_recent_hits`.
+- **Backfill** `20260925040146`: 777 HIGH / 926 MEDIUM / 2,680 LOW / 710 ASK_ONLY. `panini_squeeze_totals.sale_backed` = HIGH+MEDIUM+LOW; `recent_sale_backed` = HIGH+MEDIUM (both shown on `/insights/panini-squeeze`).
+
+### Three sampling traps fixed in the runner first (2026-09-23/24)
+1. **30-row serial page:** `getPskuTotalCardsList` pages at `l:30`; only window scroll loads the rest. A max serials-per-edition pinned at 30 is a page size. `loadAllSerialPages()` (`PANINI_SERIAL_PAGES`, default 12). Sentinel warns if it reappears.
+2. **TOP SALES default:** `nftSalesData` returns `sale_type:"top"` (all-time highest) unless the dropdown is switched to RECENT SALES → `openRecentSales()` (kill switch `PANINI_SALES_RECENT=0`; counters `recentPages`/`recentMissed`).
+3. **A pointer click failed silently:** Playwright's click opened RECENT on 3 of ~300 cards with no error; `locator.evaluate(el => el.click())` works. Count opened-vs-missed; never trust "no exception".
+
+### Monitoring
+Sentinel "Panini Ingest" arm over `sentinel_panini_health()`: walk age warn 14 h / critical 26 h; oldest edition warn 168 h / critical 336 h; max serials per edition ≤30 → warn; newest sale warn 72 h / critical 168 h.
+
+## Edition FMV — v0 (`panini-1.0.0`, history)
 Per edition, from `getCardMarketStats`: if the edition has marketplace sales, FMV = its average sale
 (confidence HIGH/MED/LOW by sale count); otherwise FMV = floor ask × 0.90 (confidence ASK_ONLY). Stored
 in `panini_fmv_snapshots` (history intentional).
@@ -19,6 +42,8 @@ as a transparency signal.
 (`panini_card_serials.last_sale_usd`), but it's a pricing-logic change — do it deliberately, not inline.
 
 ## Pack EV (`panini_pack_ev_model` → `panini_pack_ev_board`) — v0.4 (remaining-pool basis + confirmed odds, 2026-07-18)
+
+⚠ **Re-read 2026-09-24 on FMV 1.1.0 (board UNPUBLISHED; never publish a positive "rip edge"):** Hobby EV $158 vs $146 cost, typical pull $32; FOTL $272 vs $264, typical $47. The mean sits above cost only because of the tail; the typical pack loses most of its cost.
 
 **Two things ground this model:** the published pack contents/odds, and the fact that EV is computed on the
 pool that is **still in packs** (unopened), not on total mint.
@@ -65,7 +90,9 @@ if I rip now," which trimmed the FOTL edge as the best exclusives had already be
 family is the catch-all of every non-silver/non-base/non-FOTL edition; within-family draw is taken as
 proportional to remaining copies (packs are pre-allocated at mint).
 
-## Serial-premium FMV (2026-07-16)
+## Serial-premium FMV (2026-07-16; refit 2026-09-24)
+⚠ **Refit 2026-09-24 (`20260925000244`) on the larger sale set: jersey 1.43×, perfect 1.25×, #1 1.50×.** The 07-16 figures below are history. Deal board (`20260924223606`) now also requires a recent-sales basis (`recent_sales_median_usd`, `recent_sales_n`, `deal_basis`).
+
 Per-serial FMV = edition FMV × a premium multiplier for the special flags. Multipliers are the **median
 real-sale ÷ edition-FMV** measured on multi-serial editions: **jersey 1.40× (n=40), perfect 1.21× (n=37),
 #1 1.11× (n=45)**; highest applicable flag wins; everything else 1.00. Finding: Panini has **no
