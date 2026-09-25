@@ -234,7 +234,7 @@ const PINS = [
     // Re-pointed 2026-09-23: it also re-caps an ASK_ONLY price that sits above
     // today's live ask (nothing revisited one after a cheaper listing arrived).
     migration:
-      "supabase/migrations/20260923220355_audit_20260923_allday_ask_only_recaps_when_the_live_ask_drops.sql",
+      "supabase/migrations/20260925231149_audit_20260925_allday_ask_lane_tracks_its_own_floor_both_ways.sql",
   },
   {
     fn: "backfill_wmc_metadata_from_editions",

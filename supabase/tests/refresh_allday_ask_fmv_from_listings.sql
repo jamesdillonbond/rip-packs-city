@@ -27,7 +27,7 @@
 -- counted rather than silent.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260923220355_audit_20260923_allday_ask_only_recaps_when_the_live_ask_drops.sql).
+-- (supabase/migrations/20260925231149_audit_20260925_allday_ask_lane_tracks_its_own_floor_both_ways.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -92,6 +92,7 @@ DECLARE
   v_considered  int := 0;
   v_recapped    int := 0;
   v_ghost_skip  int := 0;
+  v_tracked     int := 0;
   v_started     timestamptz := clock_timestamp();
 BEGIN
   DROP TABLE IF EXISTS _ad_ask;
@@ -121,20 +122,27 @@ BEGIN
 
   DROP TABLE IF EXISTS _ad_targets;
   CREATE TEMP TABLE _ad_targets ON COMMIT DROP AS
-  SELECT a.edition_id, a.low_ask, latest.conf
+  SELECT a.edition_id, a.low_ask, latest.conf, latest.fmv, latest.algo
   FROM _ad_ask a
   JOIN LATERAL (
-    SELECT fs.confidence::text AS conf, fs.fmv_usd AS fmv
+    SELECT fs.confidence::text AS conf, fs.fmv_usd AS fmv, fs.algo_version AS algo
     FROM fmv_snapshots fs
     WHERE fs.edition_id = a.edition_id
     ORDER BY fs.computed_at DESC
     LIMIT 1
   ) latest ON true
   WHERE latest.conf IN ('STALE','NO_DATA')
-     OR (latest.conf = 'ASK_ONLY' AND latest.fmv > a.low_ask);
+     OR (latest.conf = 'ASK_ONLY' AND latest.fmv > a.low_ask)
+     -- 2026-09-25: this lane's OWN rows follow the live floor in BOTH directions.
+     -- Re-capping only downward left a price stranded below the market once its
+     -- cheapest listing sold — and 27,406 unpurchasable Flowty-fork listings closed
+     -- the same day had set exactly such floors.
+     OR (latest.conf = 'ASK_ONLY' AND latest.algo = 'allday-listing-ask-v1'
+         AND abs(latest.fmv - round(a.low_ask * 0.90, 2)) >= 0.01);
 
   v_considered := (SELECT count(*) FROM _ad_targets);
-  v_recapped   := (SELECT count(*) FROM _ad_targets WHERE conf = 'ASK_ONLY');
+  v_recapped   := (SELECT count(*) FROM _ad_targets WHERE conf = 'ASK_ONLY' AND fmv > low_ask);
+  v_tracked    := (SELECT count(*) FROM _ad_targets WHERE algo = 'allday-listing-ask-v1');
 
   IF v_considered > 0 THEN
     DELETE FROM fmv_snapshots fs
@@ -164,12 +172,12 @@ BEGIN
   VALUES ('allday-listing-ask-fmv', true, v_started, clock_timestamp(),
           jsonb_build_object('rescued', v_rescued, 'considered', v_considered,
                              'recapped_above_live_ask', v_recapped,
-                             'ghost_only_editions_skipped', v_ghost_skip));
+                             'ghost_only_editions_skipped', v_ghost_skip,
+                             'tracked_floor_change', v_tracked));
 
   RETURN QUERY SELECT v_rescued, v_considered;
 END;
 $fn$;
-
 -- <<< END verbatim refresh_allday_ask_fmv_from_listings <<<
 
 \set ad '''dee28451-5d62-409e-a1ad-a83f763ac070'''
@@ -182,6 +190,8 @@ $fn$;
 \set eMixed   '''e0000000-0000-0000-0000-0000000000a7'''
 \set eAskHigh '''e0000000-0000-0000-0000-0000000000a8'''
 \set eAskOk   '''e0000000-0000-0000-0000-0000000000a9'''
+set eOwnUp   '''e0000000-0000-0000-0000-0000000000aa'''
+set eOwnSame '''e0000000-0000-0000-0000-0000000000ab'''
 
 -- Listings: eStale has two (MIN 100 wins), eNoData one (50), eHigh one (60),
 -- eCeiling one ABOVE the $10k ceiling (ignored), eDone one but completed (ignored).
@@ -201,7 +211,9 @@ INSERT INTO public.cached_listings_v2
   (:eMixed::uuid,   :ad::uuid,    10, NULL,  NULL,                      'L8', 'dapper'),
   (:eMixed::uuid,   :ad::uuid,    70, NULL,  NULL,                      'L9', 'dapper'),
   (:eAskHigh::uuid, :ad::uuid,    50, NULL,  NULL,                      'L10', 'dapper'),
-  (:eAskOk::uuid,   :ad::uuid,    50, NULL,  NULL,                      'L11', 'dapper');
+  (:eAskOk::uuid,   :ad::uuid,    50, NULL,  NULL,                      'L11', 'dapper'),
+  (:eOwnUp::uuid,   :ad::uuid,    80, NULL,  NULL,                      'L12', 'dapper'),
+  (:eOwnSame::uuid, :ad::uuid,    50, NULL,  NULL,                      'L13', 'dapper');
 
 INSERT INTO public.allday_listings_sold_after_listing (listing_resource_id, source) VALUES
   ('L7', 'dapper'),   -- eGhost's only listing
@@ -224,11 +236,29 @@ INSERT INTO public.fmv_snapshots (edition_id, collection_id, fmv_usd, confidence
   (:eAskHigh::uuid, :ad::uuid, 90, 'ASK_ONLY', date_trunc('day', now()) - interval '3 days', 'nfl_all_day'),
   (:eAskOk::uuid,   :ad::uuid, 40, 'ASK_ONLY', date_trunc('day', now()) - interval '3 days', 'nfl_all_day');
 
+-- 2026-09-25: this lane's OWN rows track the floor both ways. eOwnUp was priced at
+-- 45 off a floor of 50 that has since RISEN to 80 → re-derived to 72. eOwnSame is
+-- still 45 on a floor of 50 → untouched (no churn). An ASK_ONLY row from another
+-- writer below the ask (eAskOk, algo NULL) keeps the old rule and is left alone.
+INSERT INTO public.fmv_snapshots (edition_id, collection_id, fmv_usd, confidence, algo_version, computed_at, collection) VALUES
+  (:eOwnUp::uuid,   :ad::uuid, 45, 'ASK_ONLY', 'allday-listing-ask-v1', date_trunc('day', now()) - interval '2 days', 'nfl_all_day'),
+  (:eOwnSame::uuid, :ad::uuid, 45, 'ASK_ONLY', 'allday-listing-ask-v1', date_trunc('day', now()) - interval '2 days', 'nfl_all_day');
+
 CREATE TEMP TABLE _r AS SELECT * FROM public.refresh_allday_ask_fmv_from_listings();
 
 -- -- Return tuple (rescued, considered) = (4, 4): eStale + eNoData + eMixed + eAskHigh
-SELECT _assert_eq((SELECT rescued::text FROM _r),    '4', 'rescued = eStale + eNoData + eMixed (STALE/NO_DATA with a live NON-GHOST ask) + eAskHigh (ASK_ONLY above it)');
-SELECT _assert_eq((SELECT considered::text FROM _r), '4', 'considered = the same four - HIGH/ceiling/completed/ghost-only/at-or-under-ask never enter');
+SELECT _assert_eq((SELECT rescued::text FROM _r),    '5', 'rescued = eStale + eNoData + eMixed (STALE/NO_DATA with a live NON-GHOST ask) + eAskHigh (ASK_ONLY above it) + eOwnUp (own row, floor rose)');
+SELECT _assert_eq((SELECT considered::text FROM _r), '5', 'considered = the same five - HIGH/ceiling/completed/ghost-only/at-or-under-ask/own-row-unchanged never enter');
+
+-- -- THIS LANE'S OWN ROW FOLLOWS A RISING FLOOR (45 on 50 → 72 on 80) ---------
+SELECT _assert_eq((SELECT fmv_usd::text || '|' || floor_price_usd::text FROM public.fmv_snapshots
+  WHERE edition_id=:eOwnUp::uuid ORDER BY computed_at DESC LIMIT 1), '72.00|80.00',
+  'an own-lane price is re-derived UP when its floor rises - it is not stranded below the market');
+SELECT _assert_eq((SELECT count(*)::text FROM public.fmv_snapshots WHERE edition_id=:eOwnSame::uuid), '1',
+  'an own-lane price already at 90% of the floor gets no new row (no churn)');
+SELECT _assert_eq((SELECT (extra->>'tracked_floor_change') FROM public.pipeline_runs
+  WHERE pipeline='allday-listing-ask-fmv'), '1',
+  'own-lane re-derivations are counted separately');
 
 -- -- AN ASK_ONLY PRICE ABOVE THE LIVE ASK IS RE-CAPPED (90 over a live 50 -> 45) ---
 SELECT _assert_eq((SELECT fmv_usd::text FROM public.fmv_snapshots
@@ -300,7 +330,7 @@ SELECT _assert(
 -- -- the pipeline_runs audit row is written with the counts ------------------
 SELECT _assert_eq((SELECT count(*)::text FROM public.pipeline_runs
   WHERE pipeline='allday-listing-ask-fmv' AND ok
-    AND (extra->>'rescued')='4' AND (extra->>'considered')='4'), '1',
+    AND (extra->>'rescued')='5' AND (extra->>'considered')='5'), '1',
   'a pipeline_runs audit row records rescued/considered');
 
 SELECT 'OK refresh_allday_ask_fmv_from_listings invariants pass' AS result;

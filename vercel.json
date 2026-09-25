@@ -58,6 +58,10 @@
       "schedule": "43 */2 * * *"
     },
     {
+      "path": "/api/cron/golazos-storefront-reconcile?collection=nfl_all_day",
+      "schedule": "13 1-23/2 * * *"
+    },
+    {
       "path": "/api/admin/backfill-topshot-onchain-art?limit=300",
       "schedule": "22 */3 * * *"
     },

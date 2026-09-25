@@ -2,12 +2,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route-integration test for /api/cron/golazos-storefront-reconcile.
 // The planning rules are pinned in golazos-storefront-reconcile.test.ts; this
-// file pins the I/O around them: fail-closed auth, a whole run through the
-// real planner (sellers read → storefront walk → writes → closes → log), and
+// file pins the I/O around them: fail-closed auth, the collection switch (an
+// unknown collection is refused, never walked as another), a whole run through
+// the real planner (sellers RPC → storefront walk → writes → closes → log), and
 // the failure shapes that must never read as success — a failed walk closes
-// nothing for that seller and makes the run ok=false.
+// nothing for that seller, and a failed sellers read walks nobody; both make the
+// run ok=false.
 
 const GZ = "06248cc4-b85f-47cd-af67-1855d14acd75"
+const AD = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const SELLER = "0x709dac865ee203c5"
 
 type Op = { table: string; op: string; payload?: unknown; filters: Array<[string, unknown]> }
@@ -16,7 +19,10 @@ const state = vi.hoisted(() => ({
   afterCbs: [] as Array<() => unknown>,
   ops: [] as Op[],
   logs: [] as any[],
+  sellerCalls: [] as any[],
+  sellers: { data: [] as unknown, error: null as null | { message: string } },
   tables: {} as Record<string, any[]>,
+  scripts: [] as string[],
   flow: null as null | ((body: any) => { ok: boolean; status: number; text: string }),
 }))
 
@@ -31,12 +37,10 @@ function chain(table: string) {
   const c: any = {
     select: () => c,
     eq: (k: string, v: unknown) => (rec.filters.push([k, v]), c),
-    gte: () => c,
-    not: () => c,
     order: () => c,
     is: (k: string, v: unknown) => (rec.filters.push([k, v]), c),
     in: (k: string, v: unknown) => (rec.filters.push([k, v]), c),
-    range: (from: number) => ((rec as any).from = from, c),
+    range: (from: number) => (((rec as any).from = from), c),
     upsert: (payload: unknown) => ((rec.op = "upsert"), (rec.payload = payload), c),
     update: (payload: unknown) => ((rec.op = "update"), (rec.payload = payload), c),
     then: (resolve: any) => {
@@ -55,7 +59,14 @@ function chain(table: string) {
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     from: (t: string) => chain(t),
-    rpc: async (_name: string, args: any) => (state.logs.push(args), { error: null }),
+    rpc: async (name: string, args: any) => {
+      if (name === "storefront_reconcile_sellers") {
+        state.sellerCalls.push(args)
+        return state.sellers
+      }
+      state.logs.push(args)
+      return { error: null }
+    },
   },
 }))
 
@@ -81,6 +92,10 @@ beforeEach(() => {
   state.afterCbs = []
   state.ops = []
   state.logs = []
+  state.sellerCalls = []
+  state.scripts = []
+  // The RPC returns lowercase hex; a stray uppercase copy must still collapse to one seller.
+  state.sellers = { data: [SELLER, SELLER.toUpperCase().replace("0X", "0x")], error: null }
   state.tables = {
     cached_listings_v2: [
       {
@@ -102,7 +117,6 @@ beforeEach(() => {
         event_index: 0,
       },
     ],
-    sales: [{ seller_address: SELLER.toUpperCase().replace("0X", "0x") }],
     editions: [{ id: "ed-89", external_id: "89" }],
   }
   state.flow = () => ({
@@ -114,12 +128,14 @@ beforeEach(() => {
     ]),
   })
   vi.stubGlobal("fetch", async (_url: string, init: any) => {
-    const r = state.flow!(JSON.parse(init.body))
+    const body = JSON.parse(init.body)
+    state.scripts.push(Buffer.from(body.script, "base64").toString("utf8"))
+    const r = state.flow!(body)
     return { ok: r.ok, status: r.status, text: async () => r.text }
   })
 })
 
-describe("/api/cron/golazos-storefront-reconcile — auth", () => {
+describe("/api/cron/golazos-storefront-reconcile — auth and collection", () => {
   it("401s without an authorization header and with a wrong token (fail-closed)", async () => {
     expect((await mod.GET(makeReq({ method: "GET" }))).status).toBe(401)
     expect((await mod.GET(makeReq({ method: "GET", auth: "Bearer nope" }))).status).toBe(401)
@@ -130,6 +146,25 @@ describe("/api/cron/golazos-storefront-reconcile — auth", () => {
     expect((await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))).status).toBe(202)
     expect((await mod.POST(makeReq({ auth: "Bearer gz-ingest" }))).status).toBe(202)
   })
+
+  it("refuses an unknown collection with 400 instead of walking another collection", async () => {
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron", url: "https://t/api/cron/x?collection=candy_mlb" }))
+    expect(res.status).toBe(400)
+    expect(state.afterCbs).toHaveLength(0)
+  })
+
+  it("?collection=nfl_all_day walks the All Day contract and logs under its own pipeline", async () => {
+    state.tables.cached_listings_v2 = []
+    await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron", url: "https://t/api/cron/x?collection=nfl_all_day" }))
+    await runAfter()
+    expect(state.sellerCalls[0]).toEqual({ p_collection_id: AD, p_sale_days: 30 })
+    expect(state.scripts[0]).toContain("import AllDay from 0xe4cf4bdc1751c65d")
+    expect(state.scripts[0]).not.toContain("Golazos")
+    const log = state.logs.at(-1)
+    expect(log).toMatchObject({ p_pipeline: "allday-storefront-reconcile", p_collection_slug: "nfl_all_day" })
+    const upsert = state.ops.find((o) => o.op === "upsert")
+    expect((upsert?.payload as any[])[0]).toMatchObject({ collection_id: AD, source: "storefront_v2" })
+  })
 })
 
 describe("/api/cron/golazos-storefront-reconcile — a run", () => {
@@ -137,9 +172,10 @@ describe("/api/cron/golazos-storefront-reconcile — a run", () => {
     await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))
     await runAfter()
 
+    expect(state.sellerCalls[0]).toEqual({ p_collection_id: GZ, p_sale_days: 365 })
     const upsert = state.ops.find((o) => o.op === "upsert")
     expect(upsert?.payload).toEqual([
-      expect.objectContaining({ listing_resource_id: "NEW", source: "storefront_v2", edition_id: "ed-89", price_usd: 85 }),
+      expect.objectContaining({ listing_resource_id: "NEW", source: "storefront_v2", edition_id: "ed-89", price_usd: 85, collection_id: GZ }),
     ])
     const close = state.ops.find((o) => o.op === "update")
     expect(close?.payload).toMatchObject({ completed_status: "ghosted" })
@@ -151,7 +187,6 @@ describe("/api/cron/golazos-storefront-reconcile — a run", () => {
     expect(log.p_ok).toBe(true)
     expect(log.p_rows_found).toBe(2)
     expect(log.p_rows_written).toBe(2)
-    // the mixed-case sales seller and the listing seller are one seller
     expect(log.p_extra).toMatchObject({ sellers_known: 1, sellers_walked: 1, inserted: 1, ghosted: 1, closed: 1 })
   })
 
@@ -168,22 +203,13 @@ describe("/api/cron/golazos-storefront-reconcile — a run", () => {
   })
 
   it("a failed sellers read makes the run ok=false instead of walking nobody and reporting success", async () => {
-    // Force the sales read to error.
-    const { supabaseAdmin } = (await import("@/lib/supabase")) as any
-    const realFrom = supabaseAdmin.from
-    supabaseAdmin.from = (t: string) =>
-      t === "sales"
-        ? { select: () => ({ eq: () => ({ gte: () => ({ not: () => ({ order: () => ({ range: () => Promise.resolve({ data: null, error: { message: "timeout" } }) }) }) }) }) }) }
-        : realFrom(t)
-    try {
-      await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))
-      await runAfter()
-    } finally {
-      supabaseAdmin.from = realFrom
-    }
+    state.sellers = { data: null, error: { message: "timeout" } }
+    await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))
+    await runAfter()
     const log = state.logs.at(-1)
     expect(log.p_ok).toBe(false)
-    expect(log.p_error).toMatch(/sale sellers read failed: timeout/)
+    expect(log.p_error).toMatch(/sellers read failed: timeout/)
+    expect(state.scripts).toHaveLength(0)
     expect(state.ops.filter((o) => o.op === "update" || o.op === "upsert")).toHaveLength(0)
   })
 })

@@ -43,12 +43,52 @@ import { normalizeAddress } from "@/lib/address"
 
 export const GOLAZOS_COLLECTION_ID = "06248cc4-b85f-47cd-af67-1855d14acd75"
 
-export const GOLAZOS_STOREFRONT_SCRIPT = `
+// One reconciler, per-collection config. Both contracts expose `editionID` and
+// `serialNumber` on their NFT (verified on mainnet 2026-09-25), and both collections
+// key `editions.external_id` by that editionID.
+export interface StorefrontCollection {
+  slug: string
+  collectionId: string
+  contractAddress: string
+  contractName: string
+  pipeline: string
+  /** Sellers from `sales` within this many days join the walk (listers before the indexer existed). */
+  saleSellerDays: number
+}
+
+export const STOREFRONT_COLLECTIONS: Readonly<Record<string, StorefrontCollection>> = {
+  laliga_golazos: {
+    slug: "laliga_golazos",
+    collectionId: GOLAZOS_COLLECTION_ID,
+    contractAddress: "0x87ca73a41bb50ad5",
+    contractName: "Golazos",
+    pipeline: "golazos-storefront-reconcile",
+    saleSellerDays: 365,
+  },
+  // Added 2026-09-25: All Day's Dapper V2 book had the same gap (the 25 largest
+  // sellers: ~5,850 live listings on-chain vs ~4,700 rows here). 30 days of sale
+  // sellers, not 365: 5,404 sellers a year would not fit the walk budget.
+  nfl_all_day: {
+    slug: "nfl_all_day",
+    collectionId: "dee28451-5d62-409e-a1ad-a83f763ac070",
+    contractAddress: "0xe4cf4bdc1751c65d",
+    contractName: "AllDay",
+    pipeline: "allday-storefront-reconcile",
+    saleSellerDays: 30,
+  },
+}
+
+export function storefrontScriptFor(c: Pick<StorefrontCollection, "contractAddress" | "contractName">): string {
+  if (!/^0x[0-9a-f]{16}$/.test(c.contractAddress) || !/^[A-Za-z][A-Za-z0-9]*$/.test(c.contractName)) {
+    throw new Error("invalid storefront collection contract")
+  }
+  const N = c.contractName
+  return `
 import NFTStorefrontV2 from 0x4eb8a10cb9f87357
-import Golazos from 0x87ca73a41bb50ad5
+import ${N} from ${c.contractAddress}
 access(all) fun main(seller: Address): [{String: String}] {
   var out: [{String: String}] = []
-  let t = Type<@Golazos.NFT>()
+  let t = Type<@${N}.NFT>()
   let sf = getAccount(seller).capabilities.borrow<&{NFTStorefrontV2.StorefrontPublic}>(NFTStorefrontV2.StorefrontPublicPath)
   if sf == nil { return out }
   for id in sf!.getListingIDs() {
@@ -65,7 +105,7 @@ access(all) fun main(seller: Address): [{String: String}] {
         }
         if l.hasListingBecomeGhosted() {
           if let n = l.borrowNFT() {
-            let g = n as! &Golazos.NFT
+            let g = n as! &${N}.NFT
             row["live"] = "1"
             row["editionId"] = g.editionID.toString()
             row["serial"] = g.serialNumber.toString()
@@ -78,6 +118,9 @@ access(all) fun main(seller: Address): [{String: String}] {
   return out
 }
 `
+}
+
+export const GOLAZOS_STOREFRONT_SCRIPT = storefrontScriptFor(STOREFRONT_COLLECTIONS.laliga_golazos)
 
 export interface StorefrontListing {
   listingId: string
@@ -176,6 +219,8 @@ export function planReconcile(input: {
   existing: ListingRow[]
   editionUuidByExternalId: ReadonlyMap<string, string>
   nowEpoch: number
+  /** The collection being reconciled; defaults to Golazos (the first user). */
+  collectionId?: string
 }): ReconcilePlan {
   const { walkedSellers, editionUuidByExternalId, nowEpoch } = input
   // Stamped on every listing this walk confirmed live. Golazos ask pricing
@@ -234,7 +279,7 @@ export function planReconcile(input: {
       const currency = deriveCurrency(l.vaultType)
       const fields = {
         flow_id: l.nftId,
-        collection_id: GOLAZOS_COLLECTION_ID,
+        collection_id: input.collectionId ?? GOLAZOS_COLLECTION_ID,
         seller_address: normalizeAddress(seller),
         price_usd: priceUsdFor(currency, l.salePrice),
         currency,

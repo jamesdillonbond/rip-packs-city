@@ -1,17 +1,22 @@
 // app/api/cron/golazos-storefront-reconcile/route.ts
 //
-// Walks every known LaLiga Golazos seller's Dapper NFTStorefrontV2 and
+// Walks every known seller's Dapper NFTStorefrontV2 for one collection and
 // reconciles `cached_listings_v2` against what is actually listed: adds the
 // listings the event indexer never saw, resolves editions it could not, and
-// closes ghosts and listings that are gone. Planning rules and the measured
-// reason this exists: lib/golazos/storefront-reconcile.ts.
+// closes ghosts and listings that are gone. Planning rules, the per-collection
+// config and the measured reason this exists: lib/golazos/storefront-reconcile.ts.
 //
-// Sellers = every seller_address this table has recorded for Golazos, plus every
-// Golazos seller in `sales` over the last 365 days (a seller who listed before
-// the indexer started is found through their sales).
+//   ?collection=laliga_golazos (default) | nfl_all_day
+//
+// The path keeps its Golazos name because vercel.json, the pipeline history and
+// the ledger all cite it; All Day runs through it with ?collection=nfl_all_day
+// and logs under its own pipeline name (allday-storefront-reconcile).
+//
+// Sellers come from storefront_reconcile_sellers() in ONE call (listing sellers on
+// Dapper storefronts + recent sale sellers), walked a few at a time.
 //
 // Auth: Bearer ${CRON_SECRET} (Vercel cron) or ${INGEST_SECRET_TOKEN} (manual).
-// Schedule: vercel.json, every 2 hours.
+// Schedule: vercel.json, every 2 hours per collection.
 
 export const maxDuration = 300
 export const dynamic = "force-dynamic"
@@ -21,21 +26,21 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { normalizeAddress } from "@/lib/address"
 import {
-  GOLAZOS_COLLECTION_ID,
-  GOLAZOS_STOREFRONT_SCRIPT,
+  STOREFRONT_COLLECTIONS,
   parseStorefrontListings,
   planReconcile,
+  storefrontScriptFor,
   type ListingRow,
+  type StorefrontCollection,
   type StorefrontListing,
 } from "@/lib/golazos/storefront-reconcile"
 
-const PIPELINE_NAME = "golazos-storefront-reconcile"
-const COLLECTION_SLUG = "laliga_golazos"
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const SCRIPT_TIMEOUT_MS = 20_000
-// Stop starting new walks here so the writes and the terminal log land well
-// inside maxDuration. Measured 2026-09-25: 48 sellers walked in ~40 s.
+// Stop starting new walks here so the writes and the terminal log land well inside
+// maxDuration. Measured 2026-09-25: Golazos' 170 sellers walked in ~18 s serially.
 const WALK_BUDGET_MS = 200_000
+const WALK_CONCURRENCY = 6
 const PAGE = 1000
 
 // bigint ids are selected as TEXT: PostgREST returns a bigint as a JSON number,
@@ -68,13 +73,13 @@ function unwrapCdc(node: unknown): unknown {
   return value
 }
 
-async function walkSeller(seller: string): Promise<StorefrontListing[]> {
+async function walkSeller(script: string, seller: string): Promise<StorefrontListing[]> {
   const args = [{ type: "Address", value: seller }]
   const res = await fetch(`${FLOW_REST}/v1/scripts?block_height=sealed`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      script: Buffer.from(GOLAZOS_STOREFRONT_SCRIPT).toString("base64"),
+      script: Buffer.from(script).toString("base64"),
       arguments: args.map((a) => Buffer.from(JSON.stringify(a)).toString("base64")),
     }),
     signal: AbortSignal.timeout(SCRIPT_TIMEOUT_MS),
@@ -102,67 +107,51 @@ async function readAll<T>(
   }
 }
 
-async function run(startMs: number, startedAt: string) {
-  await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: startMs })
+async function run(cfg: StorefrontCollection, startMs: number, startedAt: string) {
+  await writeInvocationHeartbeat({ pipeline: cfg.pipeline, startedAtMs: startMs })
 
   let ok = true
   let errorMsg: string | null = null
   let rowsFound = 0
   let rowsWritten = 0
-  const extra: Record<string, unknown> = {}
+  const extra: Record<string, unknown> = { collection: cfg.slug }
   const db = supabaseAdmin as any
 
   try {
-    // 1. Sellers.
-    const listingSellers = await readAll<{ seller_address: string }>(
-      (f, t) =>
-        db
-          .from("cached_listings_v2")
-          .select("seller_address")
-          .eq("collection_id", GOLAZOS_COLLECTION_ID)
-          .order("listing_resource_id", { ascending: true })
-          .order("source", { ascending: true })
-          .range(f, t),
-      "listing sellers",
-    )
-    const saleSellers = await readAll<{ seller_address: string | null }>(
-      (f, t) =>
-        db
-          .from("sales")
-          .select("seller_address")
-          .eq("collection_id", GOLAZOS_COLLECTION_ID)
-          .gte("sold_at", new Date(Date.now() - 365 * 86_400_000).toISOString())
-          .not("seller_address", "is", null)
-          .order("id", { ascending: true })
-          .range(f, t),
-      "sale sellers",
-    )
+    // 1. Sellers, in one call.
+    const { data: sellerData, error: sellerErr } = await db.rpc("storefront_reconcile_sellers", {
+      p_collection_id: cfg.collectionId,
+      p_sale_days: cfg.saleSellerDays,
+    })
+    if (sellerErr) throw new Error(`sellers read failed: ${sellerErr.message}`)
+    if (!Array.isArray(sellerData)) throw new Error("sellers read returned a non-array")
     const sellers = [
-      ...new Set(
-        [...listingSellers, ...saleSellers]
-          .map((r) => r.seller_address)
-          .filter((a): a is string => typeof a === "string" && a.length > 0)
-          .map(normalizeAddress),
-      ),
+      ...new Set((sellerData as unknown[]).filter((a): a is string => typeof a === "string").map(normalizeAddress)),
     ].sort()
     extra.sellers_known = sellers.length
 
-    // 2. Walk storefronts. A failed walk is recorded and that seller is left
-    // untouched — never read as "the seller has no listings".
+    // 2. Walk storefronts, a few at a time. A failed walk is recorded and that
+    // seller is left untouched — never read as "the seller has no listings".
+    const script = storefrontScriptFor(cfg)
     const walked = new Map<string, StorefrontListing[]>()
     const walkErrors: string[] = []
     let unwalked = 0
-    for (const seller of sellers) {
-      if (Date.now() - startMs > WALK_BUDGET_MS) {
-        unwalked++
-        continue
-      }
-      try {
-        walked.set(seller, await walkSeller(seller))
-      } catch (e) {
-        walkErrors.push(`${seller}: ${e instanceof Error ? e.message : String(e)}`)
+    let next = 0
+    async function worker() {
+      while (next < sellers.length) {
+        const seller = sellers[next++]
+        if (Date.now() - startMs > WALK_BUDGET_MS) {
+          unwalked++
+          continue
+        }
+        try {
+          walked.set(seller, await walkSeller(script, seller))
+        } catch (e) {
+          walkErrors.push(`${seller}: ${e instanceof Error ? e.message : String(e)}`)
+        }
       }
     }
+    await Promise.all(Array.from({ length: Math.min(WALK_CONCURRENCY, sellers.length) }, worker))
     const onChain = [...walked.values()].flat()
     rowsFound = onChain.length
     extra.sellers_walked = walked.size
@@ -171,7 +160,8 @@ async function run(startMs: number, startedAt: string) {
     extra.sellers_unwalked_budget = unwalked
     extra.onchain_listings = onChain.length
 
-    // 3. Existing rows for the walked sellers, and the edition map.
+    // 3. Existing rows for the walked sellers (only the sources this storefront
+    // backs), and the edition map.
     const walkedList = [...walked.keys()]
     const existing: ListingRow[] = []
     for (let i = 0; i < walkedList.length; i += 100) {
@@ -182,8 +172,9 @@ async function run(startMs: number, startedAt: string) {
             db
               .from("cached_listings_v2")
               .select(LISTING_COLUMNS)
-              .eq("collection_id", GOLAZOS_COLLECTION_ID)
+              .eq("collection_id", cfg.collectionId)
               .in("seller_address", batch)
+              .in("source", ["direct_v2", "storefront_v2"])
               .order("listing_resource_id", { ascending: true })
               .order("source", { ascending: true })
               .range(f, t),
@@ -197,7 +188,7 @@ async function run(startMs: number, startedAt: string) {
       const { data, error } = await db
         .from("editions")
         .select("id, external_id")
-        .eq("collection_id", GOLAZOS_COLLECTION_ID)
+        .eq("collection_id", cfg.collectionId)
         .in("external_id", editionIds.slice(i, i + 500))
       if (error) throw new Error(`editions read failed: ${error.message}`)
       for (const r of data ?? []) editionUuidByExternalId.set(String(r.external_id), r.id)
@@ -208,6 +199,7 @@ async function run(startMs: number, startedAt: string) {
       existing,
       editionUuidByExternalId,
       nowEpoch: Math.floor(Date.now() / 1000),
+      collectionId: cfg.collectionId,
     })
     Object.assign(extra, plan.counts)
 
@@ -278,27 +270,31 @@ async function run(startMs: number, startedAt: string) {
 
   extra.elapsed_ms = Date.now() - startMs
   const { error: logError } = await db.rpc("log_pipeline_run", {
-    p_pipeline: PIPELINE_NAME,
+    p_pipeline: cfg.pipeline,
     p_started_at: startedAt,
     p_rows_found: rowsFound,
     p_rows_written: rowsWritten,
     p_rows_skipped: 0,
     p_ok: ok,
     p_error: errorMsg,
-    p_collection_slug: COLLECTION_SLUG,
+    p_collection_slug: cfg.slug,
     p_cursor_before: null,
     p_cursor_after: null,
     p_extra: extra,
   })
-  if (logError) console.error(`[${PIPELINE_NAME}] log_pipeline_run error: ${logError.message}`)
+  if (logError) console.error(`[${cfg.pipeline}] log_pipeline_run error: ${logError.message}`)
 }
 
 async function handle(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const slug = req.nextUrl.searchParams.get("collection") ?? "laliga_golazos"
+  const cfg = STOREFRONT_COLLECTIONS[slug]
+  // An unknown collection is refused, never defaulted to another collection's walk.
+  if (!cfg) return NextResponse.json({ error: `unknown collection: ${slug}` }, { status: 400 })
   const startMs = Date.now()
   const startedAt = new Date(startMs).toISOString()
-  after(() => run(startMs, startedAt))
-  return NextResponse.json({ ok: true, accepted: true, pipeline: PIPELINE_NAME }, { status: 202 })
+  after(() => run(cfg, startMs, startedAt))
+  return NextResponse.json({ ok: true, accepted: true, pipeline: cfg.pipeline }, { status: 202 })
 }
 
 export async function GET(req: NextRequest) {
