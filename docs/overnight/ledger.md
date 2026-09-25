@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the player page shows the feed: a "Season Stats" section on every Top Shot and All Day player page, read through `get_player_season_stats`, three states kept apart (unavailable · no feed · no rows yet · rows) · Cowork (batch 48)
+
+**What shipped (~4:50 PM PT):** `components/entity/PlayerSeasonStats.tsx` + `lib/player-page-season-stats.ts` (pure view-model: one table per category in the league's order — NBA averages/totals/misc, NFL passing/rushing/receiving/…; seasons newest first, labelled "2024-25" for the NBA and by year for the NFL; ESPN's values verbatim; an older season whose columns differ from the newest is mapped by stat NAME onto the newest labels, a missing column reads "—" rather than a value shifted into the wrong column; a misaligned row is dropped). `app/(collections)/[collection]/player/[slug]/page.tsx` — a Suspense-streamed `SeasonStatsSection` after Top Collectors, only for `nfl_all_day` / `nba_top_shot` (the RPC would answer NULL for the rest; the call is skipped), through `sectionRowResult`: read failed → `SectionUnavailable` ("season stats" named); NULL → nothing (the feed cannot key this player — an absence, not a claim); `rows: []` → "No season stats from the feed yet."; rows → the tables, with "ESPN · refreshed <rel>" in the section header. 7 component/view-model tests (the three states, the column mapping, the misaligned drop). tsc 0, ratchet at baseline, the 49 app-walking guards green.
+
+**Revert:** `git log --grep='Season Stats'` → revert; no DB state.
+
 ### 2026-09-25 · 📱 SHIPPED — trophy case rows line up on mobile: every slab in a grid row is the same height, the label takes the slack, so the screens, FMV footers and caption boxes align; narrow labels always stack serial over tier (the tier had jumped to line 2 only on badged slabs) · Claude Code (web sandbox)
 - Trevor's second screenshot: Damian's and Amon-Ra's screens/captions sat ~30 px apart. Browser-measured after: label heights equal per row, screens at the same y (390 px and 1000 px).
 **Revert:** `git log --grep='trophy case rows line up'` → `git revert <sha>`. No DB state.
