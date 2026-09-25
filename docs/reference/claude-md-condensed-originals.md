@@ -13,6 +13,12 @@ CLAUDE.md's preamble says a new rule must **DISPLACE** one rather than spend roo
 ⚠ **A spot-check of facts you thought to name cannot catch the loss of something neither party would have listed** — the two are different questions, and only the orphan count answers the second. ⭐ **The sharper reason: the set you remember to enumerate is the set LEAST likely to contain the thing you dropped.**
 
 ⚠ **ONE CAVEAT, so a future session does not panic at a clean result: a line REWORDED IN PLACE reads as removed and will not be found verbatim, producing a FALSE ORPHAN.** So `orphans: 0` is a strong proof and `orphans: N` is a **prompt to look**, not a failure — glance at each one and confirm it was reworded rather than lost. ⭐ **The asymmetry is what makes the check worth running: zero orphans is a guarantee no enumeration can give, and a non-zero count costs only a glance.**
+## Replaced in CLAUDE.md 2026-09-25 (verbatim) — the last sentence of the Vercel "SEGMENT SEMANTICS" bullet
+
+Replaced at equal length (69 → 69 characters) with *"CI `build-render` renders all routes (09-25); PREVIEW-verify too."* because CI now renders every page route of the built app, signed in and anonymous. With the 09-20 defect re-planted, `next build` exited 0 and that job went red (testing-and-ci.md, top section). The preview advice still holds for anything the job cannot see, such as real data and the real auth provider. Original:
+
+> **Verify `revalidate`/`connection()`/`dynamic` on a PREVIEW deploy.**
+
 ## Displaced from CLAUDE.md 2026-09-12 (verbatim) — the strip-comments "blind THREE times" bullet
 
 The guards bullet read, before the 2026-09-12 swap that replaced the un-countable "THREE times"

@@ -542,11 +542,14 @@ jobs:
   # The build step catches the other class: a module that throws at evaluation,
   # a route Next rejects at page-data collection, a prerender that crashes.
   #
-  # Env is PLACEHOLDER ONLY and the Supabase URL refuses connections, so no
-  # secret is read and every data read fails fast. The smoke therefore renders
-  # the FAILED-READ path of every page, and a 5xx there is a real finding (see
-  # the header of scripts/qa/built-render-smoke.mjs). Routes behind /login are
-  # counted as gated, not passing; the script prints every count it inspected.
+  # Env is PLACEHOLDER ONLY. The Supabase URL is a local STUB the smoke script
+  # starts: it drops every data connection, so no secret is read and every
+  # read fails fast, and the smoke renders the FAILED-READ path of every page.
+  # A 5xx there is a real finding (see the header of
+  # scripts/qa/built-render-smoke.mjs). URLs that bounce to /login are then
+  # re-requested SIGNED IN: the stub answers only proxy.ts's two admission
+  # calls (auth/v1/user for the test token, check_email_allowed → true). The
+  # URL is inlined at BUILD time, so the build and the stub must agree on it.
   build-render:
     name: Build + render smoke (next build / next start)
     runs-on: ubuntu-latest
@@ -556,7 +559,7 @@ jobs:
     env:
       NEXT_TELEMETRY_DISABLED: '1'
       NODE_OPTIONS: --max-old-space-size=6144
-      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54329
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
       SUPABASE_SERVICE_ROLE_KEY: ci-placeholder
       INGEST_SECRET_TOKEN: ci-placeholder

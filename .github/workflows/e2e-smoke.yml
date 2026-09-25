@@ -63,13 +63,24 @@ jobs:
       # Browser binaries cached across runs (keyed on the lockfile, so a Playwright
       # bump re-downloads). `install --with-deps` still installs the OS packages
       # each run; only the ~150 MB Chromium download is skipped on a hit.
-      - name: Cache Playwright browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Split restore/save (2026-09-25): GitHub refuses a cache SAVE on a
+      # `deployment_status` run ("not tied to a branch or tag ref"), which the
+      # combined action surfaced as a warning on every deploy smoke. Every run
+      # restores; only scheduled/dispatched runs save, and only on a miss.
+      - name: Restore Playwright browsers
+        id: pw-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
+      - name: Save Playwright browsers
+        if: github.event_name != 'deployment_status' && steps.pw-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Run DOM smoke
         env:
           # workflow_dispatch input wins; otherwise production.

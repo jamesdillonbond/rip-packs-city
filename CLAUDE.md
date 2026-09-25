@@ -199,7 +199,7 @@ Full detail: [docs/reference/database.md](docs/reference/database.md).
 - 🚨 **A GREEN DEPLOY IS NOT PROOF A CSS CHANGE SHIPPED** — 3 of 6 CSS-only commits hit READY with the rule ABSENT from the served chunk (2 byte-identical; `Restored build cache`). **Grep the deployed chunk for the DECLARATION**; `@media` counts lie (Lightning CSS merges blocks): scripts/qa/README.md.
 - **A docs-only push never rebuilds** — `ignoreCommand` diffs vs the LAST DEPLOY and also skips migrations/tests/`.github` (#61); ⚠ the v13 POST does NOT override it. Touch a non-docs file.
 - **Pro Lambda `maxDuration` hard cap is 800s.** Higher sends the deploy to ERROR *invisibly*.
-- 🚨 **A GREEN SUITE IS NOT A DEPLOY GATE FOR SEGMENT SEMANTICS** — `DYNAMIC_SERVER_USAGE` lives only in a real render, so `tsc`/vitest/lint and even a guard pinning the CALL are blind; it 500'd a live route (09-20). **Verify `revalidate`/`connection()`/`dynamic` on a PREVIEW deploy.**
+- 🚨 **A GREEN SUITE IS NOT A DEPLOY GATE FOR SEGMENT SEMANTICS** — `DYNAMIC_SERVER_USAGE` lives only in a real render, so `tsc`/vitest/lint and even a guard pinning the CALL are blind; it 500'd a live route (09-20). **CI `build-render` renders all routes (09-25); PREVIEW-verify too.**
 - ⚠ **`get_deployment.state` LAGS** — corroborate with `ready` vs `buildingAt`, `lambdaRuntimeStats`; **check state PER COMMIT** (an ERRORed deploy is superseded by the next push). 🚨 **After a ROLLBACK the alias fields LIE** — probe the public domain on a value the two builds DISAGREE on.
 - ⚠ **A disk-IO spell can FAIL THE BUILD**: tooling-gotchas.md.
 
