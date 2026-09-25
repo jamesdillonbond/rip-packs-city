@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 📱 SHIPPED — the share card's new series labels widened a phone's layout viewport to 457px; bars now scroll with compact labels, and its prices carry thousands separators · Cowork (cloud + laptop VM)
+
+- **Batch 5's own regression, caught by the mobile instrument (`scripts/qa/mobile-sweep.mjs`, iPhone 13, run from the cloud with the preinstalled Chromium):** nine full labels ("Series 2023-24") at 10px mono under `flex: 1` bars have a min-content width of ~442px, so `/share/<wallet>` pushed `innerWidth` to **457** on a 390px phone — the whole page rendered zoomed out, mobile nav clipped ("COLLECT…"). The old "S0…S9" labels never hit it. Fix: `compactSeriesLabel` ("S1", "Sum '21", "'23-24", "None"; full label in `title`), the row is `overflowX: auto` with a 40px floor per bar (desktop unchanged: nine bars fill the width). Also on the card: "$1800.00" / "$1750.00" → "$1,800.00" (three `toFixed(2)` sites). 1 test.
+- Every other page in the sample (hubs, team pages, market, Candy collection, TC report, pack dist, analytics, edition) measured `iw 390 = sw 390`, no overflow, no broken images, no error copy.
+- Guards: `tsc` clean, `lint:ratchet` at baseline (709), share-card-view 24/24, hydration-safe-dates guard green.
+**Revert:** `git revert` this commit.
+
 ### 2026-09-25 · 🔧 SHIPPED — batch 6's CI red fixed: the owned-editions snapshot fallback is a bounded read (the unbounded-reader budget had gone 20 → 21) · Cowork (cloud + laptop VM)
 
 - `read-only-api-routes-outside-the-honest-error-population-are-counted` reddened on `fb6652fee`: the new `supabaseAdmin.rpc("get_wallet_owned_edition_keys")` in `/api/owned-flow-ids` read Supabase with no bound (budget 20, found 21). Wrapped in `boundedRead(…)` (label `api/owned-flow-ids/get_wallet_owned_edition_keys`); a timeout is `editions_source: "none"`, never an empty list. Guard back at ≤ 20; route tests 13/13; `tsc` clean; ratchet at baseline.
