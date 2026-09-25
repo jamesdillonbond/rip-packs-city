@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the concierge reads Candy MLB listings: get_edition_listings had no Candy arm, so every Candy "is it listed / cheapest?" answer said "the live marketplace check couldn't be reached" about a book RPC holds · Claude Code (Trevor's box)
+- Live QA (Ohtani, Candy MLB). `get_edition_listings` now reads `candy_listings` (the Magic Eden sweep, every 3 h, ~1,800 asks re-seen per sweep): only asks re-seen within 7 h count (Magic Eden asks carry no expiry and deactivation is evidence-based — `lib/market/ask-freshness.ts`); floor = cheapest fresh ask, count, Magic Eden item link, `fetched_at` = last sweep; and if no sweep landed inside 7 h the check is `unavailable`, never "none listed" (a stalled indexer is not an empty market). Both reads indexed. Route test `concierge-candy-edition-listings` (listed / none_listed / stale book / failed read); planted defects (freshness guard dropped → 1 failed; arm removed → 2 failed). 1,130 concierge tests pass, tsc 0, ratchet at baseline.
+**Revert:** `git log --grep='reads Candy MLB listings'` → `git revert <sha>`. No DB state.
+
 ### 2026-09-25 · 🧹 SHIPPED — `player_identities`: the league's own player id for every player (NBA person id, NFL GSIS id), the weekly nflverse sync route, and a pinned matcher that links by name, then by the editions' TEAM, then by season, and counts what it cannot break (`20260925225610`) · Cowork (batch 45)
 
 **Trevor, ~2:30 PM PT: "Proceed with the all"** — the long-term plan from the #139 research (Project doc `research-2026-09-25-player-identity-and-stats-feed.md`): stop keying players on a name; key them on the league's id with the league site's spelling as display and every other spelling as an alias.
