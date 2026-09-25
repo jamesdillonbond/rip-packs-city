@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — Candy MLB tiles name their parallel too ("BLUE" / "ORANGE" chip from the edition name's suffix, the derivation the collection tab already uses) — the Rays team page showed five "Junior Caminero · LEGENDARY · Mint 15" tiles told apart by nothing · Cowork (batch 37)
+
+**Found 10:42 AM PT** on `/candy-mlb/team/tampa-bay-rays` and `/candy-mlb/player/junior-caminero` right after batch 35: Candy has no `subedition_name` (0 of 125 editions); its parallel is the NAME's suffix ("Junior Caminero - BLUE"), which `parallelFromEditionName` already derives for the collection tab (batch 3). **What shipped:** `lib/entity-editions-grid-format.ts` `tileParallelLabel(tile, collectionUrlSlug)` — `subedition_name` first (Top Shot), then the Candy-only name-suffix arm ("Blue"), else null; the shared tile calls it. Pinned in `entity-editions-grid-format.test.ts` (both arms, blank suffix, non-Candy no-change control) and `component-EditionsGridPaginated.test.tsx` (Candy tile chips "Blue", the same name shape on Top Shot renders no chip). tsc clean.
+
+**Revert:** revert the commit (the Top Shot chip from batch 35 is a separate arm and stays).
+
 ### 2026-09-25 · 🧹 SHIPPED — `/panini-blockchain/*` no longer answers with NBA TOP SHOT: the dead collection route redirects to the live Panini WC Prizm squeeze board, and a guard pins that no `next.config` redirect sends one collection's URL to another collection · Cowork (batch 36)
 
 **Found 10:36 AM PT** sweeping every `/<collection>/<tab>` URL anonymously: `/panini-blockchain`, `/panini-blockchain/overview`, `/panini-blockchain/sets`, `/panini-blockchain/zzz` all 307'd to `/nba-top-shot/overview` — a `next.config.ts` redirect from the 2026-05-20 audit ("F17: neutralize the dead route"). That is the SUBSTITUTION face of the honesty rule: nothing fails, the subject is swapped. It became live the day Panini got a surface: `fullCollectionHref` (pinned in `share-card-view.test.ts`) sends a wallet with Panini holdings to `/panini-blockchain/overview`, i.e. to Top Shot's overview. The dedicated `app/(collections)/panini-blockchain/overview` page (an Ethereum-bridge / OpenSea narrative that #64 decided is NOT the collection) stays unreachable behind the redirect — deliberately.
