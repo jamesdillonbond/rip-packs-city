@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the public profile's saved-wallet card captions its cached FMV with its age ("· as of 6h ago"), so the two figures on one page are both dated · Cowork (cloud + laptop VM)
+
+- `/profile/<user>` printed `saved_wallets.cached_fmv_usd` (refreshed ~6-hourly) on each saved-wallet card beside a LIVE collection breakdown — Pinnacle $890.19 and $889.13 on one page with nothing to say why. The public-profile payload now carries `cache_updated_at`; the card renders "N MOMENTS · as of Nh ago" above the dashboard's own 2 h threshold, the clock read gated on mount (the hydration-safe guard's Rule C caught the first draft's render-time `Date.now()` — marker + effect). 2 tests. Closes #137 (e).
+**Revert:** `git revert` this commit.
+
 ### 2026-09-25 · 🧹 SHIPPED — 443 Top Shot editions get the house name ("<player> — <set>"), three sets take their editions' series; the unnamed-series writer filed as #137 (h) · Cowork (cloud + laptop VM)
 
 - **443 Top Shot editions had an empty `name`** with a player and a set present — twelve RPCs read `e.name` (edition detail/page data, set/series/team/sniper lists), so those rows rendered an empty title wherever the name is the label. Filled with the wallet-search writer's own form, `"<player> — <set>"`; touched ids in `audit_20260925_edition_name_fill_backup` (RLS on). UFC's 299 unnamed rows left alone (set_name is garbage, market closed). Migration `20260925080138`.
