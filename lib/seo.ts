@@ -510,7 +510,9 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
     title: { absolute: meta.title, template: BRAND_TITLE_TEMPLATE },
     description: meta.description,
     alternates: { canonical },
-    keywords: [label, 'FMV', 'moment value', 'collector tools', 'sniper deals', chainKeyword],
+    // 'sniper deals' only where the collection HAS a Sniper tab (UFC's was retired
+    // 2026-09-06; its keywords still advertised one — 2026-09-26).
+    keywords: [label, 'FMV', 'moment value', 'collector tools', ...(collectionHasPage(collectionId, 'sniper') ? ['sniper deals'] : []), chainKeyword],
     openGraph: {
       ...OG_INHERITED,
       title: meta.title,

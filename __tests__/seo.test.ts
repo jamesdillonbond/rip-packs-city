@@ -678,6 +678,13 @@ describe("collection brand labels follow the registry (2026-09-24)", () => {
     // Flow collections keep their chain keyword — a no-change arm for the incumbent chain.
     expect(collectionLayoutMetadata("nba-top-shot").keywords).toContain("Flow blockchain")
   })
+
+  // 2026-09-26: UFC's Sniper tab was retired 2026-09-06 but its keywords still
+  // advertised "sniper deals". Keyed on the registry, never a hardcoded list.
+  it("advertises 'sniper deals' only where the collection has a Sniper tab", () => {
+    expect(collectionLayoutMetadata("ufc").keywords).not.toContain("sniper deals")
+    expect(collectionLayoutMetadata("nba-top-shot").keywords).toContain("sniper deals")
+  })
 })
 
 // 2026-09-24 — a Top Shot series page is titled the way every page that links
