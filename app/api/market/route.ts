@@ -366,6 +366,11 @@ async function fetchAllDayMarketEditions(
   else if (filters.sortBy.startsWith("price")) rpcSort = filters.sortBy
   else if (filters.sortBy === "fmv_desc") rpcSort = "fmv_desc"
   else if (filters.sortBy === "discount_desc") rpcSort = "discount_desc"
+  // #146 (1), 2026-09-26: the ascending keys have their own ORDER BY branches
+  // (migration audit_20260926_market_rpcs_take_fmv_asc_and_discount_asc). They
+  // used to fall to listed_desc, so the window was cut by the wrong key.
+  else if (filters.sortBy === "fmv_asc") rpcSort = "fmv_asc"
+  else if (filters.sortBy === "discount_asc") rpcSort = "discount_asc"
   else rpcSort = "listed_desc"
 
   const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_allday_market_editions", {
@@ -777,6 +782,11 @@ async function fetchModernListings(
   else if (filters.sortBy.startsWith("price")) rpcSort = filters.sortBy
   else if (filters.sortBy === "fmv_desc") rpcSort = "fmv_desc"
   else if (filters.sortBy === "discount_desc") rpcSort = "discount_desc"
+  // #146 (1), 2026-09-26: the ascending keys have their own ORDER BY branches
+  // (migration audit_20260926_market_rpcs_take_fmv_asc_and_discount_asc). They
+  // used to fall to listed_desc, so the window was cut by the wrong key.
+  else if (filters.sortBy === "fmv_asc") rpcSort = "fmv_asc"
+  else if (filters.sortBy === "discount_asc") rpcSort = "discount_asc"
   else rpcSort = "listed_desc"
 
   const { data, error } = await boundedRead((supabaseAdmin as any).rpc(rpcName, {
@@ -791,7 +801,7 @@ async function fetchModernListings(
     // window held 261 of the 353 HIGH/MEDIUM positive-discount editions — 92
     // real deals could not be reached under "Discount ↓" (measured 2026-09-25).
     // 1,000 (PostgREST's row cap) holds 349, for ~+35 % buffers (11.6k -> ~15k).
-    p_limit: rpcSort === "discount_desc" ? Math.max(filters.limit, 1000) : Math.max(filters.limit, 500),
+    p_limit: rpcSort.startsWith("discount") ? Math.max(filters.limit, 1000) : Math.max(filters.limit, 500),
     ...rpcBrowseFilterArgs(filters),
   }), `api/market/${rpcName}`)
   if (error) {
