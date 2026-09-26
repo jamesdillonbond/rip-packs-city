@@ -31,7 +31,10 @@
 $ErrorActionPreference = "Stop"
 $IngestKey  = $env:ATLAS_POOL_INGEST_KEY
 if (-not $IngestKey) { throw "ATLAS_POOL_INGEST_KEY env var not set. Set it to the rotated edge secret before harvesting (see the atlas-pool key-rotation runbook)." }
-$IngestBase = "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/ingest-topshot-atlas-pool?key=$IngestKey"
+# The key travels in the Authorization header, never the URL (2026-09-25):
+# edge request logs record full URLs, so `?key=` wrote the secret into them.
+$IngestBase = "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/ingest-topshot-atlas-pool"
+$IngestHeaders = @{ "Authorization" = "Bearer $IngestKey" }
 $AtlasUrl   = "https://api.production.atlas.dapperlabs.com/atlas.v1.DistributionService/GetDistributionEditions"
 $AuthFile   = Join-Path $env:USERPROFILE ".rpc\atlas-auth.json"
 
@@ -41,7 +44,7 @@ $headers = @{ "authorization" = $auth.authorization; "content-type" = "applicati
 if ($auth.x_id_token) { $headers["x-id-token"] = $auth.x_id_token }
 
 Write-Host "Fetching targets..."
-$targets = (Invoke-RestMethod -Uri "$IngestBase&mode=targets" -Method GET).targets
+$targets = (Invoke-RestMethod -Uri "${IngestBase}?mode=targets" -Method GET -Headers $IngestHeaders).targets
 if (-not $targets -or $targets.Count -eq 0) { Write-Host "No targets - all pools honest. Done."; exit 0 }
 Write-Host ("{0} target dists" -f $targets.Count)
 
@@ -52,7 +55,7 @@ foreach ($t in $targets) {
       $body = @{ distributionId = "$distKey"; hideOpened = $false; product = "nba" } | ConvertTo-Json
       $atlas = Invoke-RestMethod -Uri $AtlasUrl -Method POST -Headers $headers -Body $body
       $post = @{ dist_id = "$($t.dist_id)"; atlas = $atlas } | ConvertTo-Json -Depth 12
-      $res = Invoke-RestMethod -Uri $IngestBase -Method POST -ContentType "application/json" -Body $post
+      $res = Invoke-RestMethod -Uri $IngestBase -Method POST -ContentType "application/json" -Headers $IngestHeaders -Body $post
       if ($res.ok) { Write-Host ("OK   dist {0} ({1}): {2} pool rows" -f $t.dist_id, $t.title, $res.rows); $ok++; break }
       else { Write-Host ("SKIP dist {0}: {1}" -f $t.dist_id, $res.reason) }
     } catch {

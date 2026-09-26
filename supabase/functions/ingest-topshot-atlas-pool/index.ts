@@ -25,7 +25,7 @@ const supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "content-type",
+  "Access-Control-Allow-Headers": "content-type, authorization",
 }
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } })
@@ -91,7 +91,18 @@ function normalizeAtlas(raw: any): NormResult {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS })
   const url = new URL(req.url)
-  if (!KEY || url.searchParams.get("key") !== KEY) return json({ ok: false, reason: "unauthorized" }, 401)
+  // The key is accepted in an Authorization header as well as `?key=`
+  // (2026-09-25). ADDITIVE ON PURPOSE: request logs record full URLs, so the
+  // query form writes ATLAS_POOL_INGEST_KEY into the log store on every call.
+  // scripts/atlas-pool-harvest.ps1 now sends the header; the `?key=` branch is
+  // deleted only after every copy of that script (the laptop's Task Scheduler
+  // checkout) and any console snippet has moved to the header.
+  // No regex: a `\s` escape cannot survive a JSON-argument deploy intact.
+  const authHeader = req.headers.get("authorization") ?? ""
+  const bearer = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7) : authHeader
+  if (!KEY || (url.searchParams.get("key") !== KEY && bearer !== KEY)) {
+    return json({ ok: false, reason: "unauthorized" }, 401)
+  }
 
   if (req.method === "GET" && url.searchParams.get("mode") === "targets") {
     const { data, error } = await supabase.from("v_topshot_atlas_pool_targets")

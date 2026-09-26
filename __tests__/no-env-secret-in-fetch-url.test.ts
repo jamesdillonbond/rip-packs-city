@@ -271,9 +271,11 @@ describe("no env-backed secret is interpolated into a fetch URL", () => {
     // fn's ?key= branch. (a) is an edge DEPLOY and is not a repo change.
     // ⚠ This is an allowance, not an absolution: ATLAS_POOL_INGEST_KEY is written
     // into Supabase edge logs on every harvest and should be treated as exposed.
-    const ALLOWED = [
-      "scripts/atlas-pool-harvest.ps1",
-    ]
+    // ✅ The second allowance (scripts/atlas-pool-harvest.ps1 → `?key=`) was
+    // RETIRED the same night: the fn grew an additive Authorization branch
+    // (deployed via edge-fn-deploy) and the script now sends the header. The
+    // fn's `?key=` branch stays until the laptop's checkout has pulled.
+    const ALLOWED: string[] = []
 
     const unexpected = offenders.filter(
       (o) => !ALLOWED.some((a) => o.startsWith(a + ":")),
