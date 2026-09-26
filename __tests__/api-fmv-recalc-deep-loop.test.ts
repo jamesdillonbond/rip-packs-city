@@ -240,7 +240,7 @@ describe("fmv-recalc deferred sweep — happy path", () => {
   // 2026-08-07 rule: base FMV <= cheapest current ask). Before, only Top Shot and
   // All Day fed it, so Munetaka Murakami Green published $584.48 MEDIUM against a
   // $66.50 ask seen in the last 12 h.
-  const candyFixtures = (floor: unknown) => ({
+  const candyFixtures = (floor: { data: unknown; error: unknown }) => ({
     pipeline_runs: { data: null, error: null },
     "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
     sales: {
