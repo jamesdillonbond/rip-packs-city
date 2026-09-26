@@ -541,10 +541,37 @@ async function fetchCandyMarketListings(
   // (its `?? edition_name` fallback is a DISPLAY fallback and must not become a
   // second thing the filter matches on — that would let an edition name satisfy
   // a set filter).
-  return exactSetMatch(data ?? [], filters.sets, "set_name").map((r: any) => ({
+  const rows = exactSetMatch(data ?? [], filters.sets, "set_name")
+
+  // Candy's edition designations (Rookie / First Mint, from Candy's published
+  // checklist — lib/chains/solana/candy-checklist.ts) ride editions.badges, which
+  // candy_market_board does not carry. One extra read for the editions on this
+  // page. The Rainbow colour is NOT repeated here: it is the parallel, which the
+  // row already names. A failed read degrades to NO badges — an absence, never a
+  // claim — and never fails the market read.
+  const badgesByEdition = new Map<string, string[]>()
+  const editionIds = [...new Set(rows.map((r: any) => r.edition_id).filter(Boolean))]
+  if (editionIds.length > 0) {
+    const { data: eds, error: edErr } = await boundedRead(
+      (supabaseAdmin as any).from("editions").select("id, badges").in("id", editionIds),
+      "api/market/candy_edition_badges",
+    )
+    if (edErr) console.log("[/api/market] candy badges read err:", edErr.message)
+    for (const e of (eds ?? []) as { id: string; badges: string[] | null }[]) {
+      const b = (e.badges ?? []).filter((t) => typeof t === "string" && !/^Rainbow \(/.test(t))
+      if (b.length) badgesByEdition.set(e.id, b)
+    }
+  }
+
+  return rows.map((r: any) => ({
     id: r.token_mint ?? `${CANDY_COLLECTION_ID_FOR_DISPATCH}:${r.edition_id}`,
     flow_id: null,
     moment_id: r.token_mint ?? null,
+    // ⛔ The row's OWN edition key (2026-09-25). Without it the shared mapper falls
+    // back to a player+set lookup, and every Candy printing of a player shares
+    // both — the lookup keeps the base card, so a Mike Trout PINK listing linked to
+    // /candy-mlb/edition/mike-trout and showed the base card's edition stats.
+    edition_key: r.external_id ?? null,
     player_name: r.player_name ?? null,
     team_name: r.team_name ?? null,
     set_name: r.set_name ?? r.edition_name ?? null,
@@ -561,7 +588,7 @@ async function fetchCandyMarketListings(
     source: "magic_eden",
     buy_url: r.token_mint ? `https://magiceden.io/item-details/${r.token_mint}` : null,
     thumbnail_url: r.thumbnail_url ?? null,
-    badge_slugs: null,
+    badge_slugs: badgesByEdition.get(r.edition_id) ?? null,
     listing_resource_id: null,
     storefront_address: null,
     is_locked: false,

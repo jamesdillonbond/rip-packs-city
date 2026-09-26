@@ -428,6 +428,35 @@ describe("GET /api/market — Candy MLB (Solana) arm", () => {
     expect(raw).not.toContain('"flow_id":"mintA"')
   })
 
+  // ⛔ 2026-09-25 — every Candy printing of a player shares player_name AND
+  // set_name, so the shared player+set lookup resolves a Rainbow listing to the
+  // BASE card (it keeps the first row, and "mike-trout" sorts first). A PINK
+  // listing linked to the base page and read the base card's stats. The row
+  // must carry its own edition key.
+  it("a Rainbow listing keeps its OWN edition key, never the base card's", async () => {
+    install({
+      candy_market_board: {
+        data: [
+          { token_mint: "mintP", edition_id: "e-pink", external_id: "mike-trout-pink", player_name: "Mike Trout", edition_name: "Mike Trout - PINK", set_name: "Series 1", team_name: "LAA", tier: "LEGENDARY", circulation_count: 15, thumbnail_url: null, serial_number: 3, ask_usd: 90, fmv_usd: 120, confidence: "MEDIUM", discount_pct: 25, seller: "s", first_seen_at: "2026-09-10T00:00:00Z", last_seen_at: "2026-09-12T00:00:00Z" },
+        ],
+        error: null,
+      },
+      editions: {
+        data: [
+          { id: "e-base", external_id: "mike-trout", player_name: "Mike Trout", set_name: "Series 1", badges: null },
+          { id: "e-pink", external_id: "mike-trout-pink", player_name: "Mike Trout", set_name: "Series 1", badges: ["Rookie", "Rainbow (Pink)"] },
+        ],
+        error: null,
+      },
+    })
+    const body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    const l = body.listings[0]
+    expect(l.editionKey).toBe("mike-trout-pink")
+    expect(l.editionKey).not.toBe("mike-trout")
+    // Candy's designation rides along; the Rainbow colour is the parallel, not a badge.
+    expect(l.badgeSlugs).toEqual(["Rookie"])
+  })
+
   // ⚠ Candy is MAGIC EDEN-only in the data, not by assumption: a census of all
   // 1,821 active listings on 2026-09-12 found a single auction house (Magic Eden
   // v2). The label is the venue we can observe, not the venue set we hope for.
