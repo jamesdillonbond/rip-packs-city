@@ -12,9 +12,12 @@
 --   6. A NULL or placeholder thumbnail gets its OWN render's resolver URL only
 --      when exactly one render matches (key, character); several matches are
 --      left alone, and a real thumbnail is never touched.
+--   7. Every catalog character gets a players row via the helper, franchise =
+--      its most common first franchise with ™ stripped; existing rows are left
+--      alone, and the reported count is rows WRITTEN.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926185325_audit_20260926_pinnacle_editions_get_their_own_render_as_thumbnail.sql).
+-- (supabase/migrations/20260926193316_audit_20260926_every_pinnacle_catalog_character_gets_a_page.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -34,6 +37,15 @@ CREATE TABLE public.pinnacle_editions (
   thumbnail_url text,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE public.players (external_id text UNIQUE, collection_id uuid, name text NOT NULL, team text);
+-- The helper, stubbed (it is pinned in its own file): insert unless the name exists.
+CREATE FUNCTION public.pinnacle_ensure_character_player(p_name text, p_team text) RETURNS void
+LANGUAGE sql AS $$
+  INSERT INTO public.players (external_id, collection_id, name, team)
+  SELECT 'disney_pinnacle-' || lower(btrim(p_name)), '7dd9dd11-e8b6-45c4-ac99-71331f959714', btrim(p_name), p_team
+  WHERE btrim(p_name) <> '' AND lower(btrim(p_name)) <> 'unknown'
+    AND NOT EXISTS (SELECT 1 FROM public.players x WHERE lower(x.name) = lower(btrim(p_name)))
+$$;
 
 CREATE OR REPLACE FUNCTION public.pinnacle_editions_fill_from_catalog()
 RETURNS jsonb
@@ -45,6 +57,8 @@ DECLARE
   v_inserted integer;
   v_repaired integer;
   v_thumbs   integer;
+  v_before   integer;
+  v_chars    integer;
 BEGIN
   WITH rep AS (
     SELECT DISTINCT ON (pc.legacy_edition_key)
@@ -135,7 +149,31 @@ BEGIN
      AND one.render_id ~ '^[A-Za-z0-9-]{3,64}$';
   GET DIAGNOSTICS v_thumbs = ROW_COUNT;
 
-  RETURN jsonb_build_object('inserted', v_inserted, 'repaired', v_repaired, 'thumbnails', v_thumbs);
+  -- (4) Characters (20260926 follow-up). Every character the catalog's
+  -- Characters trait names gets its players row — the page is
+  -- /disney-pinnacle/player/<slug>, and it lists that character's pins from the
+  -- catalog. Only characters reached by pinnacle_editions had one (266 of 508
+  -- catalog characters had no page). Franchise = the character's most common
+  -- first franchise, with trademark symbols stripped ("Star Wars™" is
+  -- "Star Wars" everywhere else). pinnacle_ensure_character_player never
+  -- overwrites, skips 'Unknown', and dedupes by slug. The count is rows
+  -- WRITTEN (players before vs after), not calls made.
+  SELECT count(*) INTO v_before FROM public.players
+   WHERE collection_id = '7dd9dd11-e8b6-45c4-ac99-71331f959714'::uuid;
+  PERFORM public.pinnacle_ensure_character_player(c.n, c.team)
+  FROM (
+    SELECT btrim(ch) AS n,
+           mode() WITHIN GROUP (ORDER BY NULLIF(btrim(regexp_replace(pc.franchises[1], '[™®©]', '', 'g')), '')) AS team
+    FROM public.pinnacle_catalog pc
+    CROSS JOIN LATERAL unnest(pc.characters) AS ch
+    WHERE btrim(ch) <> ''
+    GROUP BY btrim(ch)
+    ORDER BY count(*) DESC, btrim(ch)
+  ) c;
+  SELECT count(*) - v_before INTO v_chars FROM public.players
+   WHERE collection_id = '7dd9dd11-e8b6-45c4-ac99-71331f959714'::uuid;
+
+  RETURN jsonb_build_object('inserted', v_inserted, 'repaired', v_repaired, 'thumbnails', v_thumbs, 'characters', v_chars);
 END;
 $function$;
 
@@ -152,6 +190,11 @@ INSERT INTO public.pinnacle_catalog VALUES
   ('R-F', 'OEEV1-SWHL:Color Splash:1', ARRAY['Grogu'], ARRAY['Star Wars'], 'Holiday Vol.2', 'OEEV1-SWHL', 'Color Splash', 'Open Event Edition', 1, false, false, '2025', 10),
   -- no character: nothing.
   ('R-G', 'NOCHAR:Standard:1', ARRAY[]::text[], ARRAY['X'], 'Some Set', 'NOCHAR', 'Standard', 'Open Edition', 1, false, false, '2026', 5);
+
+INSERT INTO public.pinnacle_catalog VALUES
+  ('R-DIN', 'DJAR:Standard:1', ARRAY['Din Djarin'], ARRAY['Star Wars™'], 'Mando Vol.1', 'GROG', 'Standard', 'Open Edition', 1, false, false, '2025', 900);
+INSERT INTO public.players (external_id, collection_id, name, team)
+VALUES ('disney_pinnacle-moana', '7dd9dd11-e8b6-45c4-ac99-71331f959714', 'Moana', 'Pre-existing');
 
 INSERT INTO public.pinnacle_editions (id, edition_key, character_name, franchise, set_name, variant_type)
 VALUES ('LEEV2-FIND:Radiant Chrome:1', 'LEEV2-FIND:Radiant Chrome:1', 'Unknown', 'Unknown', 'Unknown', 'Radiant Chrome'),
@@ -170,8 +213,8 @@ VALUES ('HERC:Standard:1', 'HERC:Standard:1', 'Hades', 'Hercules', 'Hercules Vol
        ('REAL:Standard:1', 'REAL:Standard:1', 'Moana', 'Moana', 'Real Vol.1', 'https://real.example/moana.png');
 
 SELECT _assert_eq(
-  (public.pinnacle_editions_fill_from_catalog() - 'thumbnails')::text,
-  '{"inserted": 2, "repaired": 1}', 'first run: 2 keys inserted, 1 stub repaired');
+  (public.pinnacle_editions_fill_from_catalog() - 'thumbnails' - 'characters')::text,
+  '{"inserted": 3, "repaired": 1}', 'first run: 3 catalog-only keys inserted (incl. the Din Djarin fixture), 1 stub repaired');
 
 -- 6
 SELECT _assert_eq((SELECT thumbnail_url FROM public.pinnacle_editions WHERE id = 'HERC:Standard:1'),
@@ -202,6 +245,14 @@ SELECT _assert_eq(
 SELECT _assert_eq((SELECT count(*)::text FROM public.pinnacle_editions WHERE id = 'NOCHAR:Standard:1'), '0', 'no character, no row');
 
 -- 5
-SELECT _assert_eq(public.pinnacle_editions_fill_from_catalog()::text, '{"inserted": 0, "repaired": 0, "thumbnails": 0}', 'second run writes nothing');
+-- 7: characters. Seeded above: none existed except Moana below. Every other
+-- catalog character got a row on the first run; the franchise drops the ™.
+-- Din Djarin's ONLY pin carries "Star Wars™", so this passes only if the ™ is
+-- stripped (a character with other pins could win the vote without it).
+SELECT _assert_eq((SELECT team FROM public.players WHERE name = 'Din Djarin'), 'Star Wars', '™ stripped from the franchise');
+SELECT _assert_eq((SELECT count(*)::text FROM public.players WHERE name = 'Bo Peep'), '1', 'a catalog character gets exactly one row');
+
+SELECT _assert_eq(public.pinnacle_editions_fill_from_catalog()::text, '{"inserted": 0, "repaired": 0, "characters": 0, "thumbnails": 0}', 'second run writes nothing');
+SELECT _assert_eq((SELECT team FROM public.players WHERE name = 'Moana'), 'Pre-existing', 'an existing row is never overwritten');
 
 ROLLBACK;

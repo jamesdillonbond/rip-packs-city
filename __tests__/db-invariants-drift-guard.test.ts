@@ -32,9 +32,10 @@ const PINS = [
     // 'Unknown' fields are filled, idempotent.
     fn: "pinnacle_editions_fill_from_catalog",
     test: "supabase/tests/pinnacle_editions_fill_from_catalog.sql",
-    // Re-pointed 2026-09-26: 20260926185325 added the thumbnail step.
+    // Re-pointed 2026-09-26: 20260926185325 added the thumbnail step,
+    // 20260926193316 the character step.
     migration:
-      "supabase/migrations/20260926185325_audit_20260926_pinnacle_editions_get_their_own_render_as_thumbnail.sql",
+      "supabase/migrations/20260926193316_audit_20260926_every_pinnacle_catalog_character_gets_a_page.sql",
   },
   {
     // Added 2026-09-26. Every Pinnacle players row came from a one-time 05-05
