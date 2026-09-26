@@ -18,6 +18,7 @@
  */
 
 import { ImageResponse } from "next/og"
+import { pullValueView } from "@/lib/pack-pull-floor"
 import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
@@ -124,7 +125,9 @@ export async function GET(req: NextRequest) {
   const isRipped = resolved && lc!.status === "ripped"
   // 2026-09-25: no priced pull → no "PULLED $0" on the card (the RPC now
   // returns NULL there; this guard holds against any older shape).
-  const grossUsd = num(lc?.stats?.pulls_with_fmv ?? null) === 0 ? null : num(lc?.stats?.gross_pull_value_usd)
+  // ...and a PARTIAL sum is a floor: no negative delta off it (lib/pack-pull-floor.ts).
+  const pv = pullValueView(lc?.stats)
+  const grossUsd = pv.grossUsd
   const basis = num(lc?.stats?.total_cost_basis)
   const retail = num(lc?.distribution?.retail_price_usd ?? null)
   const paidAnchor = basis ?? retail
@@ -132,7 +135,7 @@ export async function GET(req: NextRequest) {
   // Delta vs cost — only when both gross and a cost anchor resolve. DUC is
   // 1:1 USD so total_cost_basis compares directly to gross_pull_value_usd,
   // matching the live page's ROI math.
-  const delta = isRipped && grossUsd !== null && basis !== null ? grossUsd - basis : null
+  const delta = isRipped ? pv.deltaUsd : null
   const isPositive = delta !== null && delta > 0
   const hasDelta = delta !== null
 
@@ -260,7 +263,7 @@ export async function GET(req: NextRequest) {
         <div style={{ display: "flex", gap: 40, alignItems: "flex-end", marginTop: "auto" }}>
           {isRipped ? (
             <>
-              <Stat label="PULLED" value={fmtUsd(grossUsd)} color={hasDelta && isPositive ? "#10B981" : "#FFFFFF"} />
+              <Stat label={pv.partial ? "PULLED (AT LEAST)" : "PULLED"} value={fmtUsd(grossUsd)} color={hasDelta && isPositive ? "#10B981" : "#FFFFFF"} />
               <Stat label="PAID" value={fmtUsd(paidAnchor)} color="#FFFFFF" />
             </>
           ) : (

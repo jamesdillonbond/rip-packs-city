@@ -28,6 +28,7 @@
 // the top pulls from this same lifecycle payload.
 
 import type { Metadata } from "next"
+import { pullValueView } from "@/lib/pack-pull-floor"
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
@@ -128,16 +129,19 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   let description = `Lifecycle of ${collectionName} pack #${id} on Rip Packs City.`
   if (lifecycle && lifecycle.status === "ripped") {
     // Same guard as the page body: no priced pull → no "Pulled $0" description.
-    const gross = num(lifecycle.stats.pulls_with_fmv ?? null) === 0 ? null : num(lifecycle.stats.gross_pull_value_usd)
+    const pv = pullValueView(lifecycle.stats)
+    const gross = pv.grossUsd
+    // A partial sum is a floor: "at least", never the pack's value.
+    const pulled = pv.partial ? "Pulled at least" : "Pulled"
     const basis = num(lifecycle.stats.total_cost_basis)
     const currency = lifecycle.stats.currency
     const retail = num(lifecycle.distribution?.retail_price_usd ?? null)
     if (gross !== null && distTitle && retail !== null) {
-      description = `Pulled ${fmtUsd(gross)} from a ${distTitle} (${fmtUsd(retail)} retail). See the full rip on Rip Packs City.`
+      description = `${pulled} ${fmtUsd(gross)} from a ${distTitle} (${fmtUsd(retail)} retail). See the full rip on Rip Packs City.`
     } else if (gross !== null && basis !== null) {
-      description = `Pulled ${fmtUsd(gross)} from a ${fmtPriceWithUsd(basis, currency)} pack. See the full rip on Rip Packs City.`
+      description = `${pulled} ${fmtUsd(gross)} from a ${fmtPriceWithUsd(basis, currency)} pack. See the full rip on Rip Packs City.`
     } else if (gross !== null) {
-      description = `Pulled ${fmtUsd(gross)}. See the full rip on Rip Packs City.`
+      description = `${pulled} ${fmtUsd(gross)}. See the full rip on Rip Packs City.`
     }
   } else if (lifecycle && lifecycle.status === "sealed") {
     const basis = num(lifecycle.stats.total_cost_basis)
@@ -248,9 +252,11 @@ function PackLifecycleView({
   // (20260925133256); this read-side guard keeps the page honest against any
   // older shape, and a PARTIAL sum is captioned so "$40" over 3 of 5 pulls is
   // not read as the pack's value.
-  const pullCount = num(lifecycle.stats.pull_count ?? null)
-  const pricedCount = num(lifecycle.stats.pulls_with_fmv ?? null)
-  const grossUsd = pricedCount === 0 ? null : num(lifecycle.stats.gross_pull_value_usd)
+  // ⚠ And a PARTIAL sum is a FLOOR (lib/pack-pull-floor.ts): the headline says
+  // "at least", and a negative delta / ROI is withheld — it could be closed by
+  // the unpriced pulls, so publishing it would claim a loss the data does not show.
+  const pv = pullValueView(lifecycle.stats)
+  const { pullCount, pricedCount, grossUsd } = pv
   const grossCaption =
     grossUsd !== null && pullCount !== null && pricedCount !== null && pricedCount < pullCount
       ? `${pricedCount} of ${pullCount} pulls priced`
@@ -263,10 +269,7 @@ function PackLifecycleView({
   // total_cost_basis directly to gross_pull_value_usd without conversion.
   // For non-DUC, non-USD currencies a price lookup would be needed; today
   // every observed pack purchase is DUC, so this matches reality.
-  const roiPct =
-    grossUsd !== null && totalBasis !== null && totalBasis !== 0
-      ? ((grossUsd - totalBasis) / totalBasis) * 100
-      : null
+  const roiPct = pv.roiPct
 
   // Last ownership-chain row backs the "sealed-with-history" headline (the
   // RPC no longer emits a dedicated last_cost_basis field).
@@ -292,7 +295,7 @@ function PackLifecycleView({
   let delta: string | null = null
   let deltaDir: "up" | "down" | "flat" | null = null
   if (lifecycle.status === "ripped") {
-    headline = `PULLED ${fmtUsd(grossUsd)}`
+    headline = pv.partial ? `PULLED AT LEAST ${fmtUsd(grossUsd)}` : `PULLED ${fmtUsd(grossUsd)}`
     if (totalBasis !== null) {
       subhead = (
         <>
@@ -303,9 +306,9 @@ function PackLifecycleView({
         </>
       )
     }
-    if (grossUsd !== null && totalBasis !== null) {
-      const d = grossUsd - totalBasis
-      delta = `${d >= 0 ? "+" : "−"}${fmtUsd(Math.abs(d))} vs cost`
+    if (pv.deltaUsd !== null) {
+      const d = pv.deltaUsd
+      delta = `${d >= 0 ? "+" : "−"}${fmtUsd(Math.abs(d))} vs cost${pv.partial ? " (at least)" : ""}`
       deltaDir = d > 0 ? "up" : d < 0 ? "down" : "flat"
     }
   } else if (lastChainRow) {

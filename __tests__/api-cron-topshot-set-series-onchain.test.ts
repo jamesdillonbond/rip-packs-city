@@ -24,11 +24,19 @@ const sb = vi.hoisted(() => {
   const s: any = {
     rows: [] as any[], readError: null as any,
     updates: [] as any[], updateResults: { sets: { data: [{ id: "x" }], error: null }, editions: { data: [{ id: "e1" }, { id: "e2" }], error: null } } as any,
-    _table: "", _pendingUpdate: false,
+    _table: "", _pendingUpdate: false, _in: false,
+    // The stranded-editions catch-up's two reads (editions still NULL; their sets
+    // that already carry a series). Default: nothing stranded.
+    strandedEds: { data: [], error: null } as any, seriesedSets: { data: [], error: null } as any,
   }
-  s.from = (t: string) => { s._table = t; return s }
+  s.from = (t: string) => { s._table = t; s._in = false; return s }
   for (const m of ["eq", "is", "not", "order"]) s[m] = () => s
-  s.limit = () => Promise.resolve(s.readError ? { data: null, error: s.readError } : { data: s.rows, error: null })
+  s.in = () => { s._in = true; return s }
+  s.limit = () => {
+    if (s._table === "editions") return Promise.resolve(s.strandedEds)
+    if (s._table === "sets" && s._in) return Promise.resolve(s.seriesedSets)
+    return Promise.resolve(s.readError ? { data: null, error: s.readError } : { data: s.rows, error: null })
+  }
   s.update = (patch: any) => { s.updates.push({ table: s._table, patch }); s._pendingUpdate = true; return s }
   s.select = () => {
     if (s._pendingUpdate) { s._pendingUpdate = false; return Promise.resolve(s.updateResults[s._table]) }
@@ -64,6 +72,7 @@ beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = "ingest-tok"
   captured = null
   sb.rows = []; sb.readError = null; sb.updates = []; sb._pendingUpdate = false
+  sb.strandedEds = { data: [], error: null }; sb.seriesedSets = { data: [], error: null }
   sb.updateResults = { sets: { data: [{ id: "x" }], error: null }, editions: { data: [{ id: "e1" }, { id: "e2" }], error: null } }
   heartbeat.mockClear(); terminal.mockClear()
 })
@@ -156,3 +165,33 @@ describe("the sweep", () => {
     expect(lastTerminal()).toMatchObject({ ok: true, rowsFound: 0, rowsWritten: 0 })
   })
 })
+
+// Reviewed 2026-09-25: the main loop fills a set's editions only in the run that
+// writes the set, and the next run no longer selects that set — so an editions
+// write that failed after its set landed would strand those editions NULL for
+// good. A catch-up pass runs every time, independent of this run's set writes.
+describe("stranded-editions catch-up", () => {
+  it("fills editions still NULL under a set that already has its series, even when no set is unseriesed", async () => {
+    stubFlow([])
+    sb.rows = []
+    sb.strandedEds = { data: [{ set_id_onchain: 140 }, { set_id_onchain: 140 }], error: null }
+    sb.seriesedSets = { data: [{ set_id_onchain: 140, series: 3 }], error: null }
+    await GET(req("Bearer cron-tok"))
+    await captured!()
+    const edUpdates = sb.updates.filter((u: any) => u.table === "editions")
+    expect(edUpdates.map((u: any) => u.patch)).toEqual([{ series: 3 }])
+    expect(lastTerminal().ok).toBe(true)
+    expect(lastTerminal().extra).toMatchObject({ stranded_editions_filled: 2, stranded_editions_error: null })
+  })
+
+  it("a failed catch-up read fails the run and says why — never a silent zero", async () => {
+    stubFlow([])
+    sb.strandedEds = { data: null, error: { message: "timeout" } }
+    await GET(req("Bearer cron-tok"))
+    await captured!()
+    expect(lastTerminal().ok).toBe(false)
+    expect(lastTerminal().extra.stranded_editions_filled).toBeNull()
+    expect(String(lastTerminal().extra.stranded_editions_error)).toContain("timeout")
+  })
+})
+

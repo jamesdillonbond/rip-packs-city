@@ -111,6 +111,51 @@ async function readUnseriesedSets(): Promise<{ rows: SetRow[]; complete: boolean
   return { rows: rows.slice(0, MAX_SETS_PER_RUN), complete: rows.length <= MAX_SETS_PER_RUN }
 }
 
+/**
+ * Catch-up: editions still NULL whose set ALREADY carries a series. The main
+ * loop fills a set's editions only in the run that writes the set, and the next
+ * run no longer selects that set — so an editions write that failed after its
+ * set write landed would leave those editions NULL for good. This pass does not
+ * depend on this run's set writes. Returns rows that LANDED, or throws.
+ */
+async function fillStrandedEditions(): Promise<{ written: number; sets: number }> {
+  const { data: eds, error } = await (supabaseAdmin as any)
+    .from("editions")
+    .select("set_id_onchain")
+    .eq("collection_id", COLLECTION_ID)
+    .is("series", null)
+    .not("set_id_onchain", "is", null)
+    .order("set_id_onchain", { ascending: true })
+    .limit(1000)
+  if (error) throw new Error(`stranded editions read failed: ${error.message}`)
+  const setIds = [...new Set(((eds ?? []) as { set_id_onchain: number }[]).map((r) => r.set_id_onchain))]
+  if (setIds.length === 0) return { written: 0, sets: 0 }
+  const { data: sets, error: setErr } = await (supabaseAdmin as any)
+    .from("sets")
+    .select("set_id_onchain,series")
+    .eq("collection_id", COLLECTION_ID)
+    .in("set_id_onchain", setIds)
+    .not("series", "is", null)
+    .limit(setIds.length)
+  if (setErr) throw new Error(`stranded sets read failed: ${setErr.message}`)
+  let written = 0
+  let filledSets = 0
+  for (const st of (sets ?? []) as { set_id_onchain: number; series: number }[]) {
+    const { data, error: upErr } = await (supabaseAdmin as any)
+      .from("editions")
+      .update({ series: st.series })
+      .eq("collection_id", COLLECTION_ID)
+      .eq("set_id_onchain", st.set_id_onchain)
+      .is("series", null)
+      .select("id")
+    if (upErr) throw new Error(`stranded editions write failed: ${upErr.message}`)
+    const n = Array.isArray(data) ? data.length : 0
+    written += n
+    if (n > 0) filledSets++
+  }
+  return { written, sets: filledSets }
+}
+
 function authorized(request: NextRequest): boolean {
   const auth = request.headers.get("authorization") ?? ""
   const cron = process.env.CRON_SECRET
@@ -138,6 +183,8 @@ async function run(request: NextRequest) {
     let scriptCalls = 0
     let scriptErrors = 0
     let writeErrors = 0
+    let strandedWritten: number | null = null
+    let strandedError: string | null = null
 
     try {
       const read = await readUnseriesedSets()
@@ -198,6 +245,17 @@ async function run(request: NextRequest) {
       errMsg = e instanceof Error ? e.message : String(e)
     }
 
+    // Runs every time, after the main loop, whatever it did.
+    try {
+      const r = await fillStrandedEditions()
+      strandedWritten = r.written
+      editionsWritten += r.written
+    } catch (e) {
+      ok = false
+      strandedError = e instanceof Error ? e.message : String(e)
+      errMsg = errMsg ?? strandedError
+    }
+
     await logTerminalRun({
       pipeline: PIPELINE_NAME,
       startedAt: startedMs,
@@ -216,6 +274,8 @@ async function run(request: NextRequest) {
         script_calls: scriptCalls,
         script_errors: scriptErrors,
         write_errors: writeErrors,
+        stranded_editions_filled: strandedWritten,
+        stranded_editions_error: strandedError,
         duration_ms: Date.now() - startedMs,
       },
     })
