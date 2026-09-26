@@ -399,3 +399,75 @@ export async function fetchActiveListingAsk(
     return { data: null, ok: false }
   }
 }
+
+/**
+ * Candy MLB (Solana) asks — the edition's confirmed floor and THIS card's own
+ * live listing, from Candy's native Magic Eden plane (2026-09-25).
+ *
+ * Without it every Candy moment page read "Floor ask —" and "Listed —": the
+ * generic ask cell reads `get_edition_high_offer` / `top_shot_ask` /
+ * `cross_market_ask` (all Flow sources, none carry Candy), and
+ * `fetchActiveListingAsk` refuses a non-numeric id — correctly, a base58 mint is
+ * not a Flow nft_id.
+ *
+ * Both reads keep the 12-hour CONFIRMATION the Sets and Packs tabs use: the
+ * indexer (`35 *\/3 * * *`) never retires an ask on absence, so an ask not seen
+ * in four sweeps is not quoted as live. `floorUsd` is
+ * `candy_listing_floor.confirmed_floor_usd` (troll-capped, confirmed asks only);
+ * `serialAskUsd` is this mint's cheapest active ask seen in the window. The mint
+ * is matched VERBATIM (base58 is case-sensitive).
+ */
+export const CANDY_ASK_CONFIRMED_HOURS = 12
+
+export interface CandyAsks {
+  floorUsd: number | null
+  serialAskUsd: number | null
+}
+
+export async function fetchCandyAsks(
+  editionId: string,
+  tokenMint: string | null,
+  db: Db = supabaseAdmin,
+  now: number = Date.now(),
+): Promise<RowResult<CandyAsks>> {
+  const since = new Date(now - CANDY_ASK_CONFIRMED_HOURS * 3_600_000).toISOString()
+  const num = (v: unknown): number | null => {
+    const n = Number(v)
+    return v != null && Number.isFinite(n) && n > 0 ? n : null
+  }
+  try {
+    const [floorRes, serialRes] = await Promise.all([
+      bounded(
+        Promise.resolve(
+          db.from("candy_listing_floor").select("confirmed_floor_usd").eq("edition_id", editionId).limit(1),
+        ),
+        "candy-floor",
+      ),
+      tokenMint
+        ? bounded(
+            Promise.resolve(
+              db
+                .from("candy_listings")
+                .select("price_usd")
+                .eq("token_mint", tokenMint)
+                .eq("is_active", true)
+                .gt("last_seen_at", since)
+                .order("price_usd", { ascending: true })
+                .limit(1),
+            ),
+            "candy-serial-ask",
+          )
+        : Promise.resolve({ data: [], error: null }),
+    ])
+    if (floorRes.error || serialRes.error) {
+      console.warn(`[moment-page] candy asks: ${(floorRes.error ?? serialRes.error)?.message}`)
+      return { data: null, ok: false }
+    }
+    const floorRow = Array.isArray(floorRes.data) ? floorRes.data[0] : null
+    const serialRow = Array.isArray(serialRes.data) ? serialRes.data[0] : null
+    return { data: { floorUsd: num(floorRow?.confirmed_floor_usd), serialAskUsd: num(serialRow?.price_usd) }, ok: true }
+  } catch (err) {
+    console.warn(`[moment-page] candy asks threw: ${err instanceof Error ? err.message : String(err)}`)
+    return { data: null, ok: false }
+  }
+}

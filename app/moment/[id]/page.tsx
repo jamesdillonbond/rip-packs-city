@@ -40,6 +40,8 @@ import {
   fetchBadges,
   fetchEditionNotableSerials,
   fetchActiveListingAsk,
+  fetchCandyAsks,
+  type CandyAsks,
   type HighOffer,
   type ParallelEdition,
   type EditionBadge,
@@ -96,6 +98,8 @@ const MARKETPLACE_LABEL: Record<string, string> = {
   "nfl-all-day": "NFL All Day",
   "laliga-golazos": "LaLiga Golazos",
   "disney-pinnacle": "Pinnacle",
+  // Candy MLB's secondary market; the per-mint template is in lib/collections.ts.
+  "candy-mlb": "Magic Eden",
 }
 
 // Collection-aware label for the lowest-ask cell — the value source is not
@@ -110,6 +114,9 @@ const ASK_LABEL: Record<string, string> = {
   // the same map in lib/edition-detail-format.ts).
   "ufc": "UFC ask",
   "ufc-strike": "UFC ask",
+  // Candy MLB's ask is its OWN plane (Magic Eden, confirmed in the last 12 h —
+  // fetchCandyAsks), not the Flow high-offer / cross-market fields.
+  "candy-mlb": "Magic Eden ask",
 }
 
 export const dynamic = "force-dynamic"
@@ -579,7 +586,8 @@ export default async function MomentPage(
   // "1 of 6 sections could not be loaded (Special serials)" beside a Special
   // serials table that had rendered fine from the other. The badges are now
   // derived from the single read below (mapNotableTagsToSpecialSerials).
-  const [highOfferRes, parallelsRes, badgesRes, momentBestOfferRes, notableSerialsRes, activeListingAskRes, subSiblingsRes] = await Promise.all([
+  const isCandyColl = e.collection_slug === "candy_mlb"
+  const [highOfferRes, parallelsRes, badgesRes, momentBestOfferRes, notableSerialsRes, activeListingAskRes, subSiblingsRes, candyAsksRes] = await Promise.all([
     fetchHighOffer(e.id),
     fetchParallels(e.id),
     fetchBadges(e.id),
@@ -601,6 +609,11 @@ export default async function MomentPage(
     isTopShotColl && e.external_id
       ? fetchSubeditionSiblings(e.external_id)
       : Promise.resolve({ rows: [] as SubeditionSibling[], ok: true }),
+    // Candy MLB (Solana): edition floor + this mint's own ask, from Candy's
+    // native listings. Flow pages skip it (ok:true, nothing to say).
+    isCandyColl
+      ? fetchCandyAsks(e.id, r?.kind === "moment" ? ss?.nft_id ?? null : null)
+      : Promise.resolve({ data: null as CandyAsks | null, ok: true }),
   ])
   const highOffer = highOfferRes.data
   const parallels = parallelsRes.rows
@@ -609,7 +622,8 @@ export default async function MomentPage(
   const notableSerials = notableSerialsRes.rows
   const specialSerials: SpecialSerialRow[] =
     r?.kind === "moment" && serial != null ? mapNotableTagsToSpecialSerials(notableSerials, serial) : []
-  const activeListingAsk = activeListingAskRes.data
+  const candyAsks = candyAsksRes.data
+  const activeListingAsk = isCandyColl ? candyAsks?.serialAskUsd ?? null : activeListingAskRes.data
   const subSiblings = subSiblingsRes.rows
   // Every one of these panels SELF-HIDES when its data is absent, so a failed
   // read is indistinguishable from "this moment has no badges / no parallels /
@@ -622,7 +636,7 @@ export default async function MomentPage(
     boardStatus("Parallels", parallelsRes.ok),
     boardStatus("Badges", badgesRes.ok),
     boardStatus("Special serials", notableSerialsRes.ok),
-    boardStatus("Live ask", activeListingAskRes.ok),
+    boardStatus("Live ask", activeListingAskRes.ok && candyAsksRes.ok),
     boardStatus("Printing ladder", subSiblingsRes.ok),
   ])
 
@@ -992,7 +1006,11 @@ export default async function MomentPage(
             <StatCell label="Avg Sales Price" value={fmtUsd(f?.wap_usd)} />
             <StatCell
               label={ASK_LABEL[collectionSlugUrl ?? ""] ?? "Floor ask"}
-              value={fmtUsd(highOffer?.low_ask ?? f?.top_shot_ask ?? f?.cross_market_ask)}
+              value={fmtUsd(
+                isCandyColl
+                  ? candyAsks?.floorUsd
+                  : highOffer?.low_ask ?? f?.top_shot_ask ?? f?.cross_market_ask,
+              )}
             />
             {hasBestOffer && (
               <StatCell

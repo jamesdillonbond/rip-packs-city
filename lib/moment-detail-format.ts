@@ -113,6 +113,11 @@ export function urlSlugForCollection(dbSlug: string | null | undefined): string 
     // /ufc/... form the sitemap and the moment page's own canonical tag use.
     case "ufc_strike": return "ufc"
     case "disney_pinnacle": return "disney-pinnacle"
+    // Candy MLB (Solana), 2026-09-25. Missing until then, so every Candy moment
+    // page had a NULL collection slug: no team link, no collection link in the
+    // breadcrumb, no "View on Magic Eden" CTA (the template in lib/collections.ts
+    // existed but was never reached), and the generic "Floor ask" label.
+    case "candy_mlb": return "candy-mlb"
     default: return null
   }
 }

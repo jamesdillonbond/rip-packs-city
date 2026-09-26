@@ -145,16 +145,23 @@ describe("urlSlugForCollection", () => {
     // sitemap so /moment links don't build a duplicate-canonical /ufc-strike/ URL.
     expect(urlSlugForCollection("ufc_strike")).toBe("ufc")
     expect(urlSlugForCollection("disney_pinnacle")).toBe("disney-pinnacle")
+    // Candy MLB (Solana) — null until 2026-09-25, which stripped every Candy
+    // moment page of its team link, breadcrumb link and Magic Eden CTA.
+    expect(urlSlugForCollection("candy_mlb")).toBe("candy-mlb")
   })
   it("agrees with fromDbSlug on the canonical URL slug for every published collection", () => {
     // The moment page builds entity links with urlSlugForCollection and its
     // canonical tag with fromDbSlug; a mismatch is a duplicate-canonical hazard.
-    for (const dbSlug of ["nba_top_shot", "nfl_all_day", "laliga_golazos", "ufc_strike", "disney_pinnacle"]) {
+    for (const dbSlug of ["nba_top_shot", "nfl_all_day", "laliga_golazos", "ufc_strike", "disney_pinnacle", "candy_mlb"]) {
       expect(urlSlugForCollection(dbSlug)).toBe(fromDbSlug(dbSlug))
     }
   })
   it("returns null for an unknown slug so the caller suppresses the link", () => {
-    expect(urlSlugForCollection("candy_mlb")).toBeNull()
+    // Re-pinned 2026-09-25: candy_mlb was this case's subject until it gained a
+    // URL slug; the property (unknown → null, link suppressed) is kept on slugs
+    // that genuinely have no moment surface.
+    expect(urlSlugForCollection("panini_blockchain")).toBeNull()
+    expect(urlSlugForCollection("not_a_collection")).toBeNull()
     expect(urlSlugForCollection(null)).toBeNull()
   })
 })
