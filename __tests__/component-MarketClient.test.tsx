@@ -1023,3 +1023,58 @@ describe("marketSeriesLabel", () => {
     expect(marketSeriesLabel("8", "nfl-all-day")).toBe("8")
   })
 })
+
+// ─── #146 (1), 2026-09-26 — no "Recently listed" on Top Shot ─────────────────
+// Top Shot's only timestamp is a badge_editions REFRESH stamp (the 500 "most
+// recent" editions fell in one 4-minute refresh tick), so the option could only
+// show an arbitrary batch under a label promising recency. Other collections
+// have real listing times and keep it.
+describe("MarketClient — the sort list is honest per collection", () => {
+  const optionLabels = () =>
+    within(screen.getByDisplayValue(/Price ↑|Recently listed|Price ↓|Discount|FMV/) as HTMLElement)
+      .getAllByRole("option").map((o) => o.textContent)
+
+  it("Top Shot offers no 'Recently listed'", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(optionLabels()).not.toContain("Recently listed")
+  })
+
+  it("a Top Shot deep link carrying sort=recent is served — and shown — as the default", async () => {
+    searchParams = new URLSearchParams("sort=recent")
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+    expect(urls.every((u) => !u.includes("sort=recent"))).toBe(true)
+    expect(urls.some((u) => u.includes("sort=price_asc"))).toBe(true)
+  })
+
+  it("All Day keeps 'Recently listed', and a chosen one survives into the URL", async () => {
+    PARAMS.collection = "nfl-all-day"
+    try {
+      searchParams = new URLSearchParams("sort=recent")
+      render(<MarketClient />)
+      await screen.findByText("Damian Lillard")
+      expect(optionLabels()).toContain("Recently listed")
+      // It used to be the one value the URL sync omitted, so a reload read Price ↑.
+      await waitFor(() => expect(replace.mock.calls.some((c) => String(c[0]).includes("sort=recent"))).toBe(true))
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("clearing filters returns the sort to the page default, not to 'recent'", async () => {
+    PARAMS.collection = "nfl-all-day"
+    try {
+      searchParams = new URLSearchParams("minPrice=5&sort=fmv_desc")
+      render(<MarketClient />)
+      fireEvent.click(await screen.findByText(/^Clear 1 filter$/))
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+        expect(urls.at(-1)).toContain("sort=price_asc")
+      })
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+})

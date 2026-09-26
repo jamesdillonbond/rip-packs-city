@@ -74,7 +74,7 @@ function instrument(fixtures: Fixtures) {
   const inserted = new Proxy({} as Record<string, Record<string, unknown>[]>, {
     get: (_t, table) => (spy.writes[String(table)] ?? []).filter((w) => w.method === "insert").flatMap((w) => w.rows),
   })
-  return { rpcCalls: spy.rpcCalls, writes: spy.writes, inserted }
+  return { rpcCalls: spy.rpcCalls, writes: spy.writes, deletes: spy.deletes, inserted }
 }
 
 function daysAgo(n: number) {
@@ -313,6 +313,86 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
 
     expect(terminalLog(rpcCalls)).toMatchObject({ p_ok: true })
     expect((inserted.fmv_snapshots ?? []).filter((r) => String(r.edition_id).startsWith("cold-"))).toHaveLength(0)
+  })
+})
+
+// ⛔ 2026-09-26 — Step 6b, the Candy ask-CEILING sweep. The ceiling reached an
+// edition only when a run priced or re-stamped it; Murakami Blue (LOW, sales
+// all older than 30 days) did neither, so a $175.45 FMV sat over a $66.83 live
+// ask and the Deals board listed the ask as "62% off".
+describe("fmv-recalc — Step 6b Candy ceiling sweep", () => {
+  const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
+  const BLUE = "bbdb9cae-8078-450b-ad72-69d664fcb945"
+  const prevBlue = {
+    edition_id: BLUE, collection_id: CANDY, fmv_usd: 175.45, floor_price_usd: 175.45, asp_usd: 175.45,
+    asp_without_outliers: 175.45, liquidity_rating: "LOW", confidence: "HIGH", ask_proxy_fmv: null,
+    days_since_sale: 29, computed_at: daysAgo(1), last_sold_at: daysAgo(31), sales_30d: 0,
+  }
+
+  it("caps a Candy edition's latest row at its confirmed ask — fresh facts; deletes only that edition's OLDER rows from today", async () => {
+    state.querySqlByMarker = { candy_ceiling_sweep: { data: [prevBlue], error: null } }
+    const { rpcCalls, deletes, inserted } = instrument(
+      baseFixtures({
+        candy_fmv_current: { data: [{ edition_id: BLUE, fmv_usd: 175.45 }], error: null },
+        candy_listing_floor: { data: [{ edition_id: BLUE, confirmed_floor_usd: 66.83 }], error: null },
+      }),
+    )
+    await POST(req())
+    await runDeferred()
+
+    const row = (inserted.fmv_snapshots ?? []).find((r) => r.edition_id === BLUE)
+    expect(row?.fmv_usd).toBe(66.83)
+    // No sale in 30 days: the count is 0, the age is from the true last sale,
+    // and a HIGH cannot survive zero recent sales.
+    expect(row?.sales_count_30d).toBe(0)
+    expect(row?.days_since_sale).toBe(31)
+    expect(row?.confidence).toBe("MEDIUM")
+    // The delete is bounded ABOVE by the new row's stamp (`lt computed_at`), so
+    // it can never remove the row just written, and it is scoped to this one
+    // Candy edition — never a collection- or day-wide delete.
+    const sweepDelete = (deletes.fmv_snapshots ?? []).find((d) =>
+      d.filters.some((f) => f.method === "eq" && f.args[0] === "edition_id" && f.args[1] === BLUE))
+    expect(sweepDelete).toBeTruthy()
+    const fm = sweepDelete!.filters
+    expect(fm.some((f) => f.method === "eq" && f.args[0] === "collection_id" && f.args[1] === CANDY)).toBe(true)
+    expect(fm.some((f) => f.method === "lt" && f.args[0] === "computed_at")).toBe(true)
+    expect(fm.some((f) => f.method === "gte" && f.args[0] === "computed_at")).toBe(true)
+    const extra = terminalLog(rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.candy_ask_ceiling_sweep_caps).toBe(1)
+    expect(extra.candy_ask_ceiling_error).toBeNull()
+  })
+
+  it("writes NOTHING when every Candy row is already at or under its ask", async () => {
+    state.querySqlByMarker = { candy_ceiling_sweep: { data: [prevBlue], error: null } }
+    const { rpcCalls, inserted } = instrument(
+      baseFixtures({
+        candy_fmv_current: { data: [{ edition_id: BLUE, fmv_usd: 60 }], error: null },
+        candy_listing_floor: { data: [{ edition_id: BLUE, confirmed_floor_usd: 66.83 }], error: null },
+      }),
+    )
+    await POST(req())
+    await runDeferred()
+
+    expect((inserted.fmv_snapshots ?? []).some((r) => r.edition_id === BLUE)).toBe(false)
+    expect(state.querySqlSeen.some((q) => q.includes("candy_ceiling_sweep"))).toBe(false)
+    expect((terminalLog(rpcCalls)?.p_extra as Record<string, unknown>).candy_ask_ceiling_sweep_caps).toBe(0)
+  })
+
+  it("a failed sweep read is RECORDED and writes nothing — the run stays ok", async () => {
+    state.querySqlByMarker = { candy_ceiling_sweep: { data: null, error: { message: "sweep read timed out" } } }
+    const { rpcCalls, inserted } = instrument(
+      baseFixtures({
+        candy_fmv_current: { data: [{ edition_id: BLUE, fmv_usd: 175.45 }], error: null },
+        candy_listing_floor: { data: [{ edition_id: BLUE, confirmed_floor_usd: 66.83 }], error: null },
+      }),
+    )
+    await POST(req())
+    await runDeferred()
+
+    expect((inserted.fmv_snapshots ?? []).some((r) => r.edition_id === BLUE)).toBe(false)
+    const log = terminalLog(rpcCalls)
+    expect(log).toMatchObject({ p_ok: true })
+    expect(String((log?.p_extra as Record<string, unknown>).candy_ask_ceiling_error)).toMatch(/^sweep .*sweep read timed out/)
   })
 })
 

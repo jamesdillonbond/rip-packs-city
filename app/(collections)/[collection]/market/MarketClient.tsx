@@ -189,6 +189,20 @@ const SORT_LABELS: Record<SortKey, string> = {
   fmv_desc:       "FMV ↓",
 }
 
+// The page's default sort; Reset returns here.
+const DEFAULT_SORT: SortKey = "price_asc"
+
+// ⛔ No "Recently listed" on Top Shot (2026-09-26, #146 (1)). Top Shot's market
+// source is edition-grain `badge_editions`, whose only timestamp is a REFRESH
+// stamp: the 500 "most recent" editions measured fell in ONE 4-minute refresh
+// tick. There is no listing time to sort by, so the option could only ever
+// show an arbitrary refresh batch under a label that promised recency — and
+// "Recently repriced" would be just as false. Dropped rather than relabelled.
+export function sortKeysFor(collectionId: string | null | undefined): SortKey[] {
+  const keys = Object.keys(SORT_LABELS) as SortKey[]
+  return collectionId === "nba-top-shot" ? keys.filter((k) => k !== "recent") : keys
+}
+
 // TIER_COLORS extracted to @/lib/market-format (imported above).
 
 // COLLECTION_TIERS moved to @/lib/collection-tiers (imported above) so the Market
@@ -281,9 +295,14 @@ function MarketInner() {
     // surface (lowest ask up top), while the Sniper tab owns the recently-listed
     // deal-flow default. (The old "recent" default was also misleading on TopShot —
     // its sniper RPC ignored the recency sort and silently ranked by discount.)
-    const v = (searchParams.get("sort") as SortKey) ?? "price_asc"
-    return (Object.keys(SORT_LABELS) as SortKey[]).includes(v) ? v : "price_asc"
+    const v = (searchParams.get("sort") as SortKey) ?? DEFAULT_SORT
+    return (Object.keys(SORT_LABELS) as SortKey[]).includes(v) ? v : DEFAULT_SORT
   })
+  // Derived, never written back: `collectionId` can briefly read the fallback
+  // collection before params resolve, so a sort this collection does not offer
+  // is DISPLAYED and FETCHED as the default without destroying the chosen value.
+  const sortKeys = sortKeysFor(collectionId)
+  const effectiveSort: SortKey = sortKeys.includes(sort) ? sort : DEFAULT_SORT
   const [page, setPage] = useState<number>(() => {
     const v = parseInt(searchParams.get("page") ?? "1", 10)
     return Number.isFinite(v) && v > 0 ? v : 1
@@ -312,7 +331,7 @@ function MarketInner() {
     setPage(1)
   }, [
     tiersSel.join(","), setsSel.join(","), seriesSel.join(","), teamsSel.join(","), badgesSel.join(","),
-    minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, sort,
+    minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, effectiveSort,
   ])
 
   // ── Owner key + edition counts (powers Owned filter + Owned/Locked col) ──
@@ -374,11 +393,11 @@ function MarketInner() {
     if (maxPrice) params.set("maxPrice", maxPrice)
     if (minDiscount) params.set("minDiscount", minDiscount)
     if (debouncedPlayer) params.set("player", debouncedPlayer)
-    params.set("sort", sort)
+    params.set("sort", effectiveSort)
     params.set("page", String(page))
     params.set("limit", "50")
     return params.toString()
-  }, [resolvedCollectionUuid, tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, sort, page])
+  }, [resolvedCollectionUuid, tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, effectiveSort, page])
 
   useEffect(() => {
     if (!resolvedCollectionUuid) { setLoading(false); return }
@@ -412,12 +431,14 @@ function MarketInner() {
     if (minDiscount) sp.set("minDiscount", minDiscount)
     if (debouncedPlayer) sp.set("player", debouncedPlayer)
     if (ownedFilter !== "all") sp.set("owned", ownedFilter)
-    if (sort !== "recent") sp.set("sort", sort)
+    // Always written. It used to be omitted for "recent" — which is not the
+    // default — so a chosen "Recently listed" read back as Price ↑ on reload.
+    sp.set("sort", effectiveSort)
     if (page > 1) sp.set("page", String(page))
     if (view === "grid") sp.set("view", "grid")
     const qs = sp.toString()
     try { router.replace(qs ? `?${qs}` : "?", { scroll: false }) } catch { /* ignore */ }
-  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, sort, page, view, router])
+  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, effectiveSort, page, view, router])
 
   // ── Thin-volume notice — reads /api/ready's per_collection array ─────
   const [healthRow, setHealthRow] = useState<HealthPerCollection | null>(null)
@@ -473,7 +494,7 @@ function MarketInner() {
     setMinDiscount("")
     setPlayerQuery("")
     setOwnedFilter("all")
-    setSort("recent")
+    setSort(DEFAULT_SORT)
     setPage(1)
   }, [])
 
@@ -572,7 +593,7 @@ function MarketInner() {
           <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
             <span className="rpc-label">Sort</span>
             <select
-              value={sort}
+              value={effectiveSort}
               onChange={(e) => setSort(e.target.value as SortKey)}
               className="rpc-mono"
               style={{
@@ -584,7 +605,7 @@ function MarketInner() {
                 fontSize: 11,
               }}
             >
-              {(Object.keys(SORT_LABELS) as SortKey[]).map(k => (
+              {sortKeys.map(k => (
                 <option key={k} value={k}>{SORT_LABELS[k]}</option>
               ))}
             </select>

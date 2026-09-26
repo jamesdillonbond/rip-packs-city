@@ -2316,6 +2316,116 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Step 6b: Candy ask-CEILING sweep (2026-09-26) ─────────────────────────
+    // The ceiling (Step 2a-ter(b')) reaches an edition only when this run PRICES
+    // it (Step 1) or RE-STAMPS it (Step 6, HIGH/MEDIUM only, once per 24 h). A
+    // Candy edition that does neither kept a pre-ceiling FMV above a live,
+    // confirmed ask indefinitely — Murakami Blue: $175.45 LOW, off sales all
+    // older than 30 days, against a $66.83 ask, listed on the Deals board as
+    // "62% off". That is the fabricated deal the rule exists to refuse (Trevor
+    // 2026-08-07: a base FMV must not exceed the cheapest current ask).
+    //
+    // So: every tick, cap any Candy edition whose LATEST row sits above its
+    // confirmed ask. It writes ONLY where the cap binds — after a cap the row is
+    // at or under the ask, so a stale edition is not kept fake-fresh (the
+    // 2026-06-09 concern); it is re-written only if the ask falls again.
+    // Facts on the new row are re-derived NOW (the 09-25 fossil lesson): true
+    // last sale, true 30-day count, HIGH gated on that count. Insert FIRST, then
+    // delete only today's OLDER rows, so no moment exists with no row.
+    let candyCeilingSweepCaps = 0
+    try {
+      const candyCollectionId = COLLECTION_UUID_BY_SLUG["candy-mlb"]
+      const { data: latestCandy, error: latestErr } = await supabaseAdmin
+        .from("candy_fmv_current")
+        .select("edition_id, fmv_usd")
+        .order("edition_id", { ascending: true })
+        .range(0, 999)
+      if (latestErr) throw new Error(`candy_fmv_current: ${latestErr.message}`)
+      const latestRows = (latestCandy ?? []) as Array<{ edition_id: unknown; fmv_usd: unknown }>
+      // A full page is a PARTIAL population: say so rather than sweep part silently.
+      if (latestRows.length >= 1000) candyCeilingError = candyCeilingError ?? "sweep candy_fmv_current returned a full page (1,000) — sweep is partial"
+      const sweepAsks = await fetchCandyConfirmedFloors(supabaseAdmin, latestRows.map((r) => String(r.edition_id)))
+      if (sweepAsks.error) candyCeilingError = candyCeilingError ?? `sweep ${sweepAsks.error}`
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      const overIds = latestRows
+        .filter((r) => {
+          const ask = sweepAsks.floors.get(String(r.edition_id))
+          const fmv = Number(r.fmv_usd)
+          return ask != null && Number.isFinite(fmv) && fmv > ask
+        })
+        .map((r) => String(r.edition_id))
+        .filter((id) => UUID_RE.test(id))
+
+      if (overIds.length > 0) {
+        const { data: prevRows, error: prevErr } = await supabaseAdmin.rpc("query_sql", {
+          query: `
+            -- candy_ceiling_sweep: latest snapshot + the TRUE sale facts, per edition
+            SELECT l.*,
+              (SELECT max(s.sold_at) FROM sales s
+                WHERE s.edition_id = e.id AND s.price_usd > 0) AS last_sold_at,
+              (SELECT count(*) FROM sales s
+                WHERE s.edition_id = e.id AND s.price_usd > 0
+                  AND s.sold_at >= now() - interval '30 days')::int AS sales_30d
+            FROM unnest(ARRAY[${overIds.map((id) => `'${id}'`).join(",")}]::uuid[]) AS e(id)
+            CROSS JOIN LATERAL (
+              SELECT fs.edition_id, fs.collection_id, fs.fmv_usd, fs.floor_price_usd, fs.asp_usd,
+                     fs.asp_without_outliers, fs.liquidity_rating, fs.confidence::text AS confidence,
+                     fs.ask_proxy_fmv, fs.days_since_sale, fs.computed_at
+              FROM fmv_snapshots fs
+              WHERE fs.collection_id = '${candyCollectionId}' AND fs.edition_id = e.id
+              ORDER BY fs.computed_at DESC
+              LIMIT 1
+            ) l
+          `,
+        })
+        if (prevErr) throw new Error(`sweep read: ${prevErr.message}`)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const r of (prevRows as any[] | null) ?? []) {
+          const edId = String(r.edition_id)
+          const ask = sweepAsks.floors.get(edId)
+          const carried = Number(r.fmv_usd)
+          const capped = capFmvAtCheapestAsk(carried, ask ?? null)
+          if (!(capped < carried)) continue
+          const sales30 = Number(r.sales_30d) || 0
+          const sweepAt = new Date()
+          const row = applyAllFmvGuards({
+            edition_id: r.edition_id,
+            collection_id: r.collection_id,
+            fmv_usd: capped,
+            floor_price_usd: r.floor_price_usd,
+            asp_usd: r.asp_usd,
+            asp_without_outliers: r.asp_without_outliers,
+            liquidity_rating: r.liquidity_rating,
+            confidence: gateHighToRecentVolume(String(r.confidence), sales30),
+            ask_proxy_fmv: r.ask_proxy_fmv,
+            sales_count_7d: sales30,
+            sales_count_30d: sales30,
+            days_since_sale: staleTouchDaysSinceSale(r, sweepAt),
+            algo_version: ALGO_VERSION,
+            computed_at: sweepAt.toISOString(),
+          })
+          const { error: insErr } = await supabaseAdmin.from("fmv_snapshots").insert(row)
+          if (insErr) {
+            candyCeilingError = candyCeilingError ?? `sweep insert ${edId}: ${insErr.message}`
+            continue
+          }
+          candyCeilingSweepCaps++
+          const { error: delErr } = await supabaseAdmin
+            .from("fmv_snapshots")
+            .delete()
+            .eq("collection_id", candyCollectionId)
+            .eq("edition_id", edId)
+            .gte("computed_at", todayStart.toISOString())
+            .lt("computed_at", sweepAt.toISOString())
+          if (delErr) candyCeilingError = candyCeilingError ?? `sweep delete ${edId}: ${delErr.message}`
+        }
+      }
+      if (candyCeilingSweepCaps > 0) console.log(`[FMV-RECALC] Candy ceiling sweep capped ${candyCeilingSweepCaps} editions`)
+    } catch (err) {
+      candyCeilingError = candyCeilingError ?? `sweep ${err instanceof Error ? err.message : String(err)}`
+      console.warn("[FMV-RECALC] Candy ceiling sweep error (non-fatal):", err instanceof Error ? err.message : err)
+    }
+
     // ── Step 8: Thin-sale haircut on freshly-recalc'd collections ────────────
     // fmv_apply_thin_sale_haircut filters internally to LOW + ASK_ONLY, so
     // HIGH/MEDIUM rows we just wrote are untouched. Calling it inline here
@@ -2559,6 +2669,7 @@ export async function POST(req: NextRequest) {
           // Step 2a-ter(b'): Candy editions whose Step-4 FMV the confirmed ask
           // LOWERED this run, paired with its read error (null = the read ran).
           candy_ask_ceiling_caps: candyCeilingCaps,
+          candy_ask_ceiling_sweep_caps: candyCeilingSweepCaps,
           candy_ask_ceiling_error: candyCeilingError,
         },
       })
