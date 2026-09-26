@@ -42,7 +42,8 @@ interface ProfileBio {
 }
 
 interface SavedWalletPublic {
-  wallet_addr: string;
+  // Absent on the public payload (privacy-stripped); never assume it.
+  wallet_addr?: string;
   username: string | null;
   display_name: string | null;
   cached_fmv: number | null;
@@ -514,6 +515,11 @@ export default function CollectionProfileClient({
   // under MOMENTS: a failed read printed "0 WALLETS" on a public profile
   // (2026-09-26). It renders only from a read that returned the list.
   const [walletsLoaded, setWalletsLoaded] = useState(false);
+  // DISTINCT wallets, computed server-side: `wallets` is one row per
+  // (wallet, collection), so wallets.length over-counts a multi-collection wallet.
+  const [walletCount, setWalletCount] = useState<number | null>(null);
+  // The owner's own first wallet address, for the per-wallet chart only.
+  const [ownerChartWallet, setOwnerChartWallet] = useState<{ addr: string; label?: string } | null>(null);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [sniperDeals, setSniperDeals] = useState<SniperDealPreview[]>([]);
   const [loading, setLoading] = useState(true);
@@ -534,6 +540,24 @@ export default function CollectionProfileClient({
     } catch {}
   }, [username]);
 
+  // The per-wallet chart needs an ADDRESS, which the public payload strips. The
+  // owner's own saved wallets are readable to the owner only (the route answers
+  // with the signed-in user's rows), so ask for them only on the owner's view.
+  useEffect(function() {
+    // No synchronous reset here: the render is gated on `isOwner && ownerChartWallet`.
+    if (!isOwner) return;
+    let cancelled = false;
+    fetch("/api/profile/saved-wallets", { cache: "no-store" })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        if (cancelled) return;
+        const w = Array.isArray(data?.wallets) ? data.wallets.find(function(x: { wallet_addr?: string }) { return !!x?.wallet_addr; }) : null;
+        setOwnerChartWallet(w ? { addr: w.wallet_addr, label: w.display_name || w.username || undefined } : null);
+      })
+      .catch(function() { if (!cancelled) setOwnerChartWallet(null); });
+    return function() { cancelled = true; };
+  }, [isOwner]);
+
   // Fetch all data on mount
   useEffect(function() {
     if (!username) return;
@@ -543,39 +567,42 @@ export default function CollectionProfileClient({
 
     const enc = encodeURIComponent(username);
 
-    const trophyP = fetch("/api/profile/trophy?username=" + enc)
-      .then(function(r) { return r.ok ? r.json() : null; })
+    // ⛔ ONE PUBLIC READ, keyed on the PROFILE's username (2026-09-26). This page
+    // read /api/profile/{trophy,bio,saved-wallets}, all three of which ignore the
+    // username they are passed and answer with the SIGNED-IN VIEWER's own rows
+    // (requireUser → user.id). So a signed-in collector opening someone else's
+    // profile saw THEIR OWN trophies, bio, wallets, FMV and moment count rendered
+    // as that collector's; a signed-out visitor got 401s. /profile/[username]
+    // moved to the public endpoint in Phase 7.5; this collection-scoped copy never
+    // did. The public payload strips wallet addresses, so the per-wallet chart
+    // below reads the owner's own wallets separately, only for the owner.
+    const publicP = fetch("/api/public/profile/" + enc)
+      .then(function(r) {
+        if (!r.ok) throw new Error("public profile " + r.status);
+        return r.json();
+      })
       .then(function(data) {
-        // A null body is a FAILED read, not an empty case. Left unflagged it
-        // rendered three empty slabs plus "0 / 3 TROPHY MOMENTS" in the headline
-        // — a claim about what this collector has curated, on their public page.
-        if (!data) { setFailed(function(f) { return { ...f, trophies: true }; }); return; }
+        if (!data || !Array.isArray(data.trophies)) throw new Error("public profile: bad shape");
         const slots: (TrophyMoment | null)[] = [null, null, null];
-        (data.trophies ?? []).forEach(function(t: TrophyMoment) {
+        (data.trophies as TrophyMoment[]).forEach(function(t) {
           if (t.slot >= 1 && t.slot <= 3) slots[t.slot - 1] = t;
         });
         setTrophies(slots);
+        if (data.bio) setBio(data.bio);
+        if (Array.isArray(data.wallets)) {
+          setWallets(data.wallets);
+          setWalletCount(typeof data.wallet_count === "number" ? data.wallet_count : null);
+          setWalletsLoaded(true);
+        }
       })
       .catch(function() { setFailed(function(f) { return { ...f, trophies: true }; }); });
-
-    const bioP = fetch("/api/profile/bio?ownerKey=" + enc)
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) { if (data?.bio) setBio(data.bio); })
-      .catch(function() {});
-
-    const walletsP = fetch("/api/profile/saved-wallets?ownerKey=" + enc)
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) {
-        if (Array.isArray(data?.wallets)) { setWallets(data.wallets); setWalletsLoaded(true); }
-      })
-      .catch(function() {});
 
     const historyP = fetch("/api/profile/portfolio-history?ownerKey=" + enc + "&days=30")
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) { if (data?.snapshots) setSnapshots(data.snapshots); })
       .catch(function() {});
 
-    Promise.all([trophyP, bioP, walletsP, historyP]).finally(function() { setLoading(false); });
+    Promise.all([publicP, historyP]).finally(function() { setLoading(false); });
   }, [username]);
 
   // Fetch sniper deals
@@ -736,7 +763,7 @@ export default function CollectionProfileClient({
             {totalMoments > 0 ? totalMoments.toLocaleString() : "\u2014"}
           </div>
           <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>
-            {walletsLoaded ? `${wallets.length} WALLET${wallets.length !== 1 ? "S" : ""}` : "\u2014 WALLETS"}
+            {walletsLoaded && walletCount != null ? `${walletCount} WALLET${walletCount !== 1 ? "S" : ""}` : "\u2014 WALLETS"}
           </div>
         </div>
         <div style={{ ...cardStyle, textAlign: "center" }}>
@@ -800,13 +827,15 @@ export default function CollectionProfileClient({
                       <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)" }}>{w.cached_moment_count ?? 0} MOMENTS</div>
                     </div>
                   )}
-                  <Link
-                    href={basePath + "/collection?q=" + encodeURIComponent(w.username ?? w.wallet_addr)}
-                    className="rpc-chip"
-                    style={{ textDecoration: "none", flexShrink: 0 }}
-                  >
-                    LOAD {"\u2192"}
-                  </Link>
+                  {(w.username || w.wallet_addr) && (
+                    <Link
+                      href={basePath + "/collection?q=" + encodeURIComponent((w.username || w.wallet_addr) as string)}
+                      className="rpc-chip"
+                      style={{ textDecoration: "none", flexShrink: 0 }}
+                    >
+                      LOAD {"\u2192"}
+                    </Link>
+                  )}
                 </div>
               );
             })}
@@ -815,11 +844,8 @@ export default function CollectionProfileClient({
       )}
 
       {/* ── Portfolio Value Time-Series ── */}
-      {wallets.length > 0 && wallets[0]?.wallet_addr && (
-        <PortfolioValueCard
-          wallet={wallets[0].wallet_addr}
-          label={wallets[0].display_name || wallets[0].username || undefined}
-        />
+      {isOwner && ownerChartWallet && (
+        <PortfolioValueCard wallet={ownerChartWallet.addr} label={ownerChartWallet.label} />
       )}
 
       {/* ── Live Sniper Deals ── */}

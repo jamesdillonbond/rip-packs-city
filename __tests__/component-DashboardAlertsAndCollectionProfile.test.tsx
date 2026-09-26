@@ -581,12 +581,31 @@ describe("CollectionProfileClient", () => {
     wallets?: () => Response
     snapshots?: () => Response
   } = {}) {
+    // 2026-09-26: the page reads ONE public endpoint (/api/public/profile/<username>)
+    // instead of three auth-gated routes that answered with the VIEWER's rows. The
+    // per-leg options still describe the fixture; they compose into that one
+    // payload, and any failing leg fails the single read.
     const f = vi.fn(async (input: unknown, _init?: RequestInit) => {
       const url = String(input)
-      if (url.includes("trophy")) return (opts.trophies ?? (() => json(200, { trophies: [TROPHY()] })))()
+      if (url.includes("/api/public/profile/")) {
+        const legs = [
+          (opts.trophies ?? (() => json(200, { trophies: [TROPHY()] })))(),
+          (opts.bio ?? (() => json(200, { bio: { display_name: "Trevor", tagline: "Blazers" } })))(),
+          (opts.wallets ?? (() => json(200, { wallets: [] })))(),
+        ]
+        const bad = legs.find((r) => !r.ok)
+        if (bad) return bad
+        const [t, b, w] = await Promise.all(legs.map((r) => r.json()))
+        const wallets = w?.wallets ?? []
+        return json(200, {
+          username: "trevor",
+          trophies: t?.trophies ?? [],
+          bio: b?.bio ?? null,
+          wallets,
+          wallet_count: w?.wallet_count ?? new Set(wallets.map((x: { wallet_addr?: string }) => x.wallet_addr)).size,
+        })
+      }
       if (url.includes("sniper")) return (opts.sniper ?? (() => json(200, { deals: [] })))()
-      if (url.includes("bio")) return (opts.bio ?? (() => json(200, { bio: { display_name: "Trevor", tagline: "Blazers" } })))()
-      if (url.includes("wallet")) return (opts.wallets ?? (() => json(200, { wallets: [] })))()
       if (url.includes("snapshot") || url.includes("portfolio")) return (opts.snapshots ?? (() => json(200, { snapshots: [] })))()
       return json(200, {})
     })
@@ -768,15 +787,33 @@ describe("CollectionProfileClient", () => {
   // ⚠ THE `> 0` GATE IS WHAT MAKES A FAILED WALLETS READ SAFE. Every portfolio stat renders
   // an em-dash rather than a manufactured $0, which is why `wallets` needs no failure flag
   // of its own — the honesty lives in the render, not in a state variable.
+  // RE-PINNED 2026-09-26: one public read now carries trophies + wallets, so a failed
+  // wallets leg fails the whole read — the page shows the trophy-failure copy, not
+  // Damian. The property is unchanged: no manufactured $0, no "0 WALLETS".
   it("renders an em-dash rather than $0 when no wallet data loaded", async () => {
     mount({ wallets: () => json(500, {}, false) })
-    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Couldn't load this trophy case/))
     expect(document.body.textContent).not.toMatch(/\$0\b/)
     expect(document.body.textContent).toMatch(/—/)
     // ⚠ The gate did NOT cover the wallet COUNT under MOMENTS: a failed read printed
     // "0 WALLETS" on the public profile (2026-09-26). Assert the absence of the claim.
     expect(document.body.textContent).not.toMatch(/\b0 WALLETS/)
     expect(document.body.textContent).toMatch(/— WALLETS/)
+  })
+
+  // ⛔ 2026-09-26: /api/profile/{trophy,bio,saved-wallets} ignore the username and answer
+  // with the SIGNED-IN VIEWER's own rows, so a visitor saw their own trophies, bio and
+  // wallets presented as this collector's. The page must read the PUBLIC endpoint for the
+  // profile it shows, and a visitor's page must never ask for the viewer-scoped rows.
+  it("reads the PUBLIC profile for the username shown, never the viewer-scoped routes", async () => {
+    localStorage.removeItem("rpc_owner_key")
+    const f = mount()
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    const urls = f.mock.calls.map((c) => String(c[0]))
+    expect(urls.some((u) => u.startsWith("/api/public/profile/trevor"))).toBe(true)
+    expect(urls.some((u) => /\/api\/profile\/(trophy|bio|saved-wallets)(\?|$)/.test(u))).toBe(false)
+    // ...and a visitor gets no per-wallet chart built from someone's saved wallets.
+    expect(document.body.textContent).not.toMatch(/PORTFOLIO VALUE/)
   })
 
   it("CONTROL: a successful read with no saved wallets does say 0 WALLETS", async () => {
@@ -854,17 +891,20 @@ describe("CollectionProfileClient", () => {
   async function loadChart(history: () => Response) {
     const f = vi.fn(async (input: unknown, _init?: RequestInit) => {
       const url = String(input)
-      if (url.includes("trophy")) return json(200, { trophies: [TROPHY()] })
       if (url.includes("sniper")) return json(200, { deals: [] })
-      if (url.includes("bio")) return json(200, { bio: { display_name: "Trevor" } })
       // ⚠ ORDER MATTERS: the per-wallet chart calls portfolio-history with `?wallet=`, and
       // the page-level call uses `?ownerKey=`. Checking "wallet" before "portfolio" would
       // route the chart's request to the saved-wallets stub and the chart would never load.
       if (url.includes("portfolio-history")) return history()
-      if (url.includes("wallet")) return json(200, { wallets: [WALLET()] })
+      if (url.includes("/api/public/profile/"))
+        return json(200, { username: "trevor", trophies: [TROPHY()], bio: { display_name: "Trevor" }, wallets: [], wallet_count: 1 })
+      if (url.includes("saved-wallets")) return json(200, { wallets: [WALLET()] })
       return json(200, {})
     })
     vi.stubGlobal("fetch", f)
+    // 2026-09-26: the chart is OWNER-ONLY. It needs a wallet ADDRESS, which the
+    // public payload strips; the owner's own saved-wallets read supplies it.
+    localStorage.setItem("rpc_owner_key", "trevor")
     render(<CollectionProfileClient collection="nba-top-shot" username="trevor" />)
     // ⚠ No click needed: `PortfolioValueCard` mounts automatically for `wallets[0]`. The
     // "LOAD →" affordance beside each wallet is a Link to the collection page, not the
