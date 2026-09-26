@@ -57,6 +57,16 @@ const PINS = [
       "supabase/migrations/20260926170000_audit_20260926_wallet_reconstructed_rips_from_pack_pull_delivery_bursts.sql",
   },
   {
+    // Added 2026-09-26. Pins the lane that records every All Day drop's sale
+    // window from Dapper searchDistributions (1,632 distributions had no start
+    // time): pages walked with their cursor, a page with a next page is not a
+    // finished walk, an unparseable time is NULL, a failed page ends the walk
+    // with its error and ok=false.
+    fn: "run_allday_drop_windows_lane",
+    test: "supabase/tests/run_allday_drop_windows_lane.sql",
+    migration: "supabase/migrations/20260926210050_audit_20260926_allday_drop_windows_page_cap_200.sql",
+  },
+  {
     // Added 2026-09-26. Pins the lane that reads Flow's PackNFT.Minted events at
     // the instant Dapper's index says a wallet acquired each pack (215 of
     // Trevor's packs arrived in one PDS mint on 2026-04-24): Top Shot + All Day
@@ -110,7 +120,7 @@ const PINS = [
     // v9 (same day): packs opened with no pack NFT, reconstructed from delivery
     // bursts (wallet_reconstructed_rips), labelled rip_source = reconstructed.
     migration:
-      "supabase/migrations/20260926200100_audit_20260926_wallet_pack_history_prices_packs_dapper_minted_in_and_never_trade_tickets.sql",
+      "supabase/migrations/20260926210100_audit_20260926_wallet_pack_history_judges_allday_against_real_drop_windows.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
@@ -119,7 +129,7 @@ const PINS = [
     fn: "get_wallet_pack_summary",
     test: "supabase/tests/get_wallet_pack_summary.sql",
     migration:
-      "supabase/migrations/20260926200200_audit_20260926_wallet_pack_summary_prices_packs_dapper_minted_in_and_never_trade_tickets.sql",
+      "supabase/migrations/20260926210200_audit_20260926_wallet_pack_summary_judges_allday_against_real_drop_windows.sql",
   },
   {
     // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists

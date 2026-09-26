@@ -50,7 +50,7 @@
 --      pull_value_source = 'delivery_burst' -- and ONLY for their own wallet.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926200100_audit_20260926_wallet_pack_history_prices_packs_dapper_minted_in_and_never_trade_tickets.sql).
+-- (supabase/migrations/20260926210100_audit_20260926_wallet_pack_history_judges_allday_against_real_drop_windows.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -132,6 +132,9 @@ AS $function$
   SELECT CASE WHEN p_title ILIKE '%trade ticket%' THEN NULL
               ELSE public.pack_retail_usd(p_raw) END
 $function$;
+-- 2026-09-26 (v12): All Day drop windows from Dapper
+CREATE TABLE public.allday_drop_windows (dist_id text PRIMARY KEY, start_time timestamptz, end_time timestamptz,
+  price_usd numeric(14,2), title text, fetched_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE public.pack_nft_mints (collection_id uuid, pack_nft_id text, dist_id text, minted_at timestamptz,
   block_height bigint, tx_id text, first_seen_at timestamptz DEFAULT now(), PRIMARY KEY (collection_id, pack_nft_id));
 
@@ -434,8 +437,12 @@ BEGIN
     -- allday_pack_supply.pack_price, where 0 is "not known", never "free".
     LEFT JOIN public.allday_pack_supply aps
       ON r.collection_id = v_ad AND aps.dist_id = r.dist_id
+    -- 2026-09-26 (v12): an All Day distribution Dapper types REWARD cost the
+    -- wallet nothing -- $0, a known price. A price of 0 on any other type stays
+    -- unknown (internal holds like "Jan 29 hold" carry 0 too).
     CROSS JOIN LATERAL (
-      SELECT CASE WHEN r.collection_id = v_ad THEN NULLIF(aps.pack_price, 0)
+      SELECT CASE WHEN r.collection_id = v_ad AND pd.metadata->>'type' = 'REWARD' THEN 0::numeric
+                  WHEN r.collection_id = v_ad THEN NULLIF(aps.pack_price, 0)
                   ELSE public.pack_retail_usd(pd.metadata->>'retail_price_usd', pd.title) END AS retail_usd
     ) rt
     -- A pack with no buy row we hold is priced at its drop's retail ONLY when it
@@ -448,9 +455,16 @@ BEGIN
     -- on record: rewards, not retail) stays NULL, as does any drop with no
     -- start_time. A transfer inside the window would read the same. Never a
     -- reconstructed rip (no distribution).
+    -- 2026-09-26 (v12): an All Day drop's start from Dapper's own distribution
+    -- record (allday_drop_windows) where pack_distributions carries none -- 151
+    -- of 3,228 All Day distributions had start_time.
+    LEFT JOIN public.allday_drop_windows adw
+      ON r.collection_id = v_ad AND adw.dist_id = r.dist_id
     CROSS JOIN LATERAL (
-      SELECT CASE WHEN pg_input_is_valid(pd.metadata->>'start_time', 'timestamptz')
-                  THEN (pd.metadata->>'start_time')::timestamptz END AS drop_start
+      SELECT COALESCE(
+               CASE WHEN pg_input_is_valid(pd.metadata->>'start_time', 'timestamptz')
+                    THEN (pd.metadata->>'start_time')::timestamptz END,
+               adw.start_time) AS drop_start
     ) ds
     -- 2026-09-26 (v11): ... OR Dapper MINTED the pack into this wallet at the
     -- instant its index says the wallet acquired it (pack_nft_mints, read from
@@ -635,7 +649,7 @@ BEGIN
     'coverage', jsonb_build_object(
       'onchain', 'pack_purchases: Top Shot + All Day, block-indexed from 2026-04; primary drops carry no price on chain',
       'opens', 'pack_rips (Top Shot, All Day) + golazos_pack_opens + pinnacle_pack_opens',
-      'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = Dapper''s index date, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack''s price is in tickets, not dollars: NULL. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
+      'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = Dapper''s index date, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16, dates from Dapper''s distribution record), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack''s price is in tickets, not dollars: NULL. An All Day distribution Dapper types REWARD is $0 (reward); any other All Day price of 0 is unknown. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
       'reconstructed', 'wallet_reconstructed_rips: Top Shot packs opened with NO pack NFT (custodial packs, 2021 on), rebuilt from the wallet''s pack-pull moment deliveries (a gap > 3 s starts a new reveal; 114 of 115 bursts overlapping a known pack matched its moment list exactly). rip_source = reconstructed; no distribution, no price paid; covers deliveries seeded into moment_acquisitions (through 2026-03)',
       'pulls', 'pack_open_pull_values: every pack this wallet opened, priced from the moments Dapper''s searchPackNft.nfts says it yielded (current FMV, whole-pack: NULL unless every moment is priced; pulls_priced / pulls_total say how close). Refreshed by the wallet-pack-pulls lane; pull_value_source = rip_record where only the rip row''s value is held',
       'marketplace', 'topshot_pack_sales_history / allday_pack_sales_history / golazos_pack_sales_history: Dapper marketplace secondary sales (seller = storefront_address), Top Shot from 2023-09, All Day from 2022-12; ingest is bursty and can lag days',
@@ -1087,6 +1101,42 @@ BEGIN
   PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'retail_inferred', 'P56 a reward pack minted in -> $0 (reward), inferred');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P57';
   PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P57 a Trade Ticket pack inside its window -> NULL, never $10');
+END $$;
+
+-- ── v12 (2026-09-26): All Day packs judged against Dapper's drop windows; REWARD = $0 ──
+INSERT INTO public.pack_distributions VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AW1', 'Rookie Debut Premium Wave 2', NULL, '{"name":"Rookie Debut Premium Wave 2"}', 1, 1),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AR1', 'Josh Allen Launch Codes Reward', NULL, '{"type":"REWARD"}', 1, 1),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AZ1', 'Jan 29 hold', NULL, '{"type":"DEFAULT"}', 1, 1),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AO1', 'Series 1 Premium', NULL, '{}', 1, 1);
+INSERT INTO public.allday_pack_supply VALUES ('AW1', 99), ('AR1', 0), ('AZ1', 0), ('AO1', 249);
+INSERT INTO public.allday_drop_windows (dist_id, start_time, end_time, price_usd, title) VALUES
+  ('AW1', '2024-09-06 00:00:00+00', '2024-09-10 03:30:00+00', 99, 'Rookie Debut Premium - Wave 2 (2024 Season)'),
+  ('AR1', '2025-11-07 00:00:00+00', '2025-11-07 00:00:00+00', 0, 'Josh Allen Launch Codes Sapphire Moment - Instant Reward'),
+  ('AZ1', '2026-01-29 00:00:00+00', NULL, 0, 'Jan 29 hold'),
+  ('AO1', '2022-06-01 00:00:00+00', NULL, 249, 'Series 1 Premium');
+INSERT INTO public.pack_nft_identity VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P60', 'AW1', 'Sealed', '0xwallet6', now(), '2024-09-08'),   -- inside its window
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P61', 'AW1', 'Sealed', '0xwallet6', now(), '2025-06-01'),   -- 9 months later
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P62', 'AR1', 'Sealed', '0xwallet6', now(), '2025-11-07'),   -- a reward
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P63', 'AZ1', 'Sealed', '0xwallet6', now(), '2026-01-30'),   -- price 0, not a reward
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P64', 'AO1', 'Sealed', '0xwallet6', now(), '2022-06-02');   -- before marketplace coverage
+
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet6', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P60';
+  PERFORM _assert(row_->>'buy_usd' = '99.00' AND row_->>'buy_price_source' = 'retail_inferred',
+                  'P60 no start_time in pack_distributions, Dapper''s window says it arrived 2 days into the drop -> $99, inferred');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P61';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P61 arrived 9 months after its drop -> NULL');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P62';
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'retail_inferred', 'P62 a REWARD drop is $0 (reward), not unknown');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P63';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P63 a price of 0 on a non-REWARD drop stays unknown, never $0');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P64';
+  PERFORM _assert(row_->>'buy_usd' IS NULL, 'P64 a 2022-06 All Day drop is before marketplace coverage -> NULL, even inside its window');
 END $$;
 
 ROLLBACK;
