@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the Candy pack-EV card stops calling a fully priced Rainbow leg "largely unpriced (25/25)": `candy_pack_ev_model.model_note` derives its priced counts and its confidence clause (was "all FMV LOW-confidence"; live: 102 of 125 LOW, 23 MEDIUM) from its own rows, every numeric column verified identical before apply (`20260926015732`, applied ~6:57 PM PT, `security_invoker` re-set in the same migration); the /insights/candy-mlb card's adjective follows the count and loses the July "floor has moved since these prices were set" line · Claude Code (web sandbox)
+
+- **Revert:** DB — re-apply the view body from `20260811033305_…candy_pack_ev_model_scope_fmv_to_collection.sql`, then `ALTER VIEW public.candy_pack_ev_model SET (security_invoker = on)`. Code — revert the "fix(candy): pack-EV coverage copy" commit.
+
+
 ### 2026-09-25 · 🧹 SHIPPED — Candy MLB gains a real SETS tab (Top Shot parity): its own Solana backend `/api/candy-set-progress` — the base58 key read verbatim (the generic `/api/sets-db` lowercases it, so every Candy wallet would have read "0 of 100"), a Flow wallet refused rather than answered with zeros, the checklist counted as the 100 PLAYERS with the five-colour Rainbow cards as parallels (edition grain would have hidden 70 of 72 real completions — 72 of 425 wallets hold all 100 players, only 2 hold all 125 printings), cost-to-finish from the troll-capped `candy_listing_floor` only while that map is ≤12 h old on its own stamp (3-hourly writer). Registry `pages` + proxy (tab and API anon-public, `sets` out of THIN_COLLECTION_MISSING_TABS) + sitemap 77 → 78 in the same commit · Claude Code (web sandbox)
 
 - **Revert:** revert the code commit ("feat(candy): Sets tab") — removes the route, the client arm, the `sets` page entry and the proxy lines together. No DB change.
