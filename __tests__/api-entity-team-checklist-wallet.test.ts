@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 /**
- * /api/entity/team-checklist(-progress): the wallet param is parsed for the
+ * /api/entity/team-checklist(-progress) and /api/entity/team-sets: the wallet param is parsed for the
  * collection's chain. A Solana key reaches the RPC VERBATIM (the RPC matches
  * `wallet_address = p_wallet` exactly, so a folded key reads "0 owned"); a Flow
  * key on a Solana collection is a 400, never a checklist with no owned flags.
@@ -20,6 +20,7 @@ vi.mock("@/lib/supabase", () => ({
 
 import { GET as checklistGET } from "@/app/api/entity/team-checklist/route"
 import { GET as progressGET } from "@/app/api/entity/team-checklist-progress/route"
+import { GET as setsGET } from "@/app/api/entity/team-sets/route"
 
 const SOL = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix"
 const req = (q: string, route: string) => new Request(`https://t/api/entity/${route}?${q}`)
@@ -29,6 +30,7 @@ beforeEach(() => { rpcCalls.length = 0 })
 for (const [name, GET, route] of [
   ["team-checklist", checklistGET, "team-checklist"],
   ["team-checklist-progress", progressGET, "team-checklist-progress"],
+  ["team-sets", setsGET, "team-sets"],
 ] as const) {
   describe(`GET /api/entity/${name}`, () => {
     it("passes a Solana key VERBATIM on Candy", async () => {

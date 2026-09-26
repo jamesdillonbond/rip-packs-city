@@ -11,6 +11,8 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { EM_DASH, fmtCount, fmtUsd } from "./_shared"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
+import { getCollection } from "@/lib/collections"
+import { checklistWalletStorageKey, parseChecklistWallet } from "@/lib/entity/checklist-wallet"
 
 export interface SetRow {
   set_slug: string
@@ -20,8 +22,8 @@ export interface SetRow {
   owned: number | null
 }
 
-const LS_KEY = "rpc_checklist_wallet"
-const WALLET_RE = /^0x[0-9a-f]{16}$/
+// The wallet slot is the Team Checklist's, per chain (lib/entity/checklist-wallet.ts):
+// a Candy (Solana) key is read VERBATIM from its own slot, never folded.
 
 export default function TeamSets({
   collectionUrlSlug,
@@ -51,8 +53,10 @@ export default function TeamSets({
   useEffect(() => {
     let wallet: string | null = null
     try {
-      const saved = window.localStorage.getItem(LS_KEY)
-      if (saved && WALLET_RE.test(saved.toLowerCase())) wallet = saved.toLowerCase()
+      const dbChain = getCollection(collectionUrlSlug)?.dbChain ?? null
+      const saved = window.localStorage.getItem(checklistWalletStorageKey(dbChain))
+      const parsed = saved ? parseChecklistWallet(saved, dbChain) : null
+      if (parsed?.ok && parsed.wallet) wallet = parsed.wallet
     } catch { /* localStorage unavailable */ }
     if (!wallet) return
     setTracking(true)

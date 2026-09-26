@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, cleanup, waitFor, fireEvent } from "@testing-library/react"
 import TeamChecklist from "@/components/entity/TeamChecklist"
+import TeamSets from "@/components/entity/TeamSets"
 import { parseChecklistWallet, checklistWalletStorageKey } from "@/lib/entity/checklist-wallet"
 
 /**
@@ -113,5 +114,23 @@ describe("TeamChecklist on Candy MLB (Solana)", () => {
     const { getByText } = render(<TeamChecklist collectionUrlSlug="candy-mlb" teamSlug="new-york-yankees" />)
     await waitFor(() => expect(getByText("7 editions")).toBeTruthy())
     expect(calls.some((u) => u.includes("wallet="))).toBe(false)
+  })
+})
+
+describe("TeamSets on Candy MLB (Solana)", () => {
+  it("reads the checklist's Solana slot and sends the key unfolded", async () => {
+    window.localStorage.setItem(checklistWalletStorageKey("solana"), SOL)
+    stubFetch(() => ({}))
+    render(<TeamSets collectionUrlSlug="candy-mlb" teamSlug="new-york-yankees" initial={[]} initialOk={true} />)
+    await waitFor(() => expect(calls.some((u) => u.includes("team-sets"))).toBe(true))
+    const u = calls.find((c) => c.includes("team-sets"))!
+    expect(new URL(u, "https://t").searchParams.get("wallet")).toBe(SOL)
+  })
+  it("never sends a Flow key saved by a Top Shot page", async () => {
+    window.localStorage.setItem("rpc_checklist_wallet", FLOW)
+    stubFetch(() => ({}))
+    render(<TeamSets collectionUrlSlug="candy-mlb" teamSlug="new-york-yankees" initial={[]} initialOk={true} />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(calls.some((c) => c.includes("team-sets"))).toBe(false)
   })
 })
