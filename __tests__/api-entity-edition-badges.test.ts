@@ -44,6 +44,15 @@ describe("GET /api/entity/edition-badges", () => {
     expect((await res.json()).badges).toBeUndefined()
   })
 
+  it("a result of the wrong shape is a 502, never an empty badge map (reviewed 2026-09-25)", async () => {
+    for (const bad of [null, [], "x", 3]) {
+      rpc.data = bad
+      const res = await get("collection=nba-top-shot&slugs=2:145")
+      expect(res.status).toBe(502)
+      expect((await res.json()).badges).toBeUndefined()
+    }
+  })
+
   it("rejects an unknown collection, missing slugs, and too many slugs without calling the DB", async () => {
     expect((await get("collection=nope&slugs=a")).status).toBe(404)
     expect((await get("collection=nba-top-shot")).status).toBe(400)

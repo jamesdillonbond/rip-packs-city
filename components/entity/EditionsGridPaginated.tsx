@@ -5,7 +5,7 @@
 // and Series pages. Each tile links to /[collection]/edition/[route_slug].
 // "Load more" calls the supplied endpoint with offset.
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { EM_DASH, RECENT_LOW_HINT, RECENT_LOW_LABEL, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
@@ -176,13 +176,17 @@ function useWalletEditionOwnership(enabled: boolean, collectionUrlSlug: string):
 
 // Badge titles per loaded edition, fetched in batches as pages load. A slug is
 // in `map` only once its read SUCCEEDED; a failed batch leaves its slugs
-// unknown (and retryable on the next page load) rather than badge-less.
+// unknown and in `failedSlugs` until a later read of THOSE slugs succeeds — a
+// success on another batch does not clear them (a shared boolean used to, and
+// hid the failure line while the slugs were still unknown). `retry()` re-reads
+// the failed slugs without waiting for another page to load.
 // Matches MAX_SLUGS in app/api/entity/edition-badges/route.ts (a GET: slugs
 // ride in the query string, so the batch bounds the URL length).
 const BADGE_BATCH = 100
-function useEditionBadges(enabled: boolean, collectionUrlSlug: string, slugs: string[]): { map: Map<string, string[]>; failed: boolean } {
+function useEditionBadges(enabled: boolean, collectionUrlSlug: string, slugs: string[]): { map: Map<string, string[]>; failed: boolean; retry: () => void } {
   const [map, setMap] = useState<Map<string, string[]>>(() => new Map())
-  const [failed, setFailed] = useState(false)
+  const [failedSlugs, setFailedSlugs] = useState<Set<string>>(() => new Set())
+  const [attempt, setAttempt] = useState(0)
   const requested = useRef<Set<string>>(new Set())
   const slugsKey = slugs.join("\u0000")
   useEffect(() => {
@@ -207,16 +211,27 @@ function useEditionBadges(enabled: boolean, collectionUrlSlug: string, slugs: st
             }
             return next
           })
-          setFailed(false)
+          setFailedSlugs((prev) => {
+            if (!batch.some((sl) => prev.has(sl))) return prev
+            const next = new Set(prev)
+            batch.forEach((sl) => next.delete(sl))
+            return next
+          })
         })
         .catch(() => {
           batch.forEach((sl) => requested.current.delete(sl))
-          setFailed(true)
+          setFailedSlugs((prev) => {
+            const next = new Set(prev)
+            batch.forEach((sl) => next.add(sl))
+            return next
+          })
         })
     }
-    // Keyed on slugsKey, not `slugs` (a fresh array every render).
-  }, [enabled, collectionUrlSlug, slugsKey])
-  return { map, failed }
+    // Keyed on slugsKey, not `slugs` (a fresh array every render); `attempt`
+    // re-runs it for the failed slugs, which the catch removed from `requested`.
+  }, [enabled, collectionUrlSlug, slugsKey, attempt])
+  const retry = useCallback(() => setAttempt((n) => n + 1), [])
+  return { map, failed: failedSlugs.size > 0, retry }
 }
 
 export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, initial, initialFailed = false, pageSize, showSetLink = true, showSort = false, packMode = false, exhaustedTotal = 0, showFilters = false, showOwnership = false }: Props) {
@@ -232,6 +247,13 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
   const [filters, setFilters] = useState<EditionFilters>(EMPTY_EDITION_FILTERS)
   const ownership = useWalletEditionOwnership(showOwnership && collectionUrlSlug !== "disney-pinnacle", collectionUrlSlug)
   const ownershipMap = ownership.status === "ok" ? ownership.map : null
+  // The Ownership select is hidden while ownership is unknown (loading /
+  // failed / no wallet), and filterEditions treats an unknown map as a no-op —
+  // so a choice made earlier must not stay "active" behind it, or the grid reads
+  // "N of N loaded · Clear filters" for a filter the reader cannot see.
+  useEffect(() => {
+    if (ownershipMap === null && filters.own !== "all") setFilters((f) => ({ ...f, own: "all" }))
+  }, [ownershipMap, filters.own])
   const filterOptions = useMemo(() => editionFilterOptions(rows, collectionUrlSlug), [rows, collectionUrlSlug])
   // Badges: the grid RPCs return none, so they come from their own batch read.
   // Pinnacle is excluded — its route_slug is not an editions key.
@@ -302,7 +324,10 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
       )}
       {badgesEnabled && badges.failed && (
         <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10 }}>
-          Couldn&rsquo;t load badges for {badgesUnknown} edition{badgesUnknown === 1 ? "" : "s"} &mdash; the Badge filter can&rsquo;t match them until they load.
+          Couldn&rsquo;t load badges for {badgesUnknown} edition{badgesUnknown === 1 ? "" : "s"} &mdash; the Badge filter can&rsquo;t match them until they load.{" "}
+          <button type="button" onClick={badges.retry} className="rpc-mono" style={{ fontSize: 11, background: "none", border: "none", padding: 0, color: "var(--rpc-red)", cursor: "pointer", textDecoration: "underline" }}>
+            Retry
+          </button>
         </div>
       )}
       {badgesEnabled && !badges.failed && filters.badge !== "all" && badgesUnknown > 0 && (

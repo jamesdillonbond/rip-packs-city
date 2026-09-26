@@ -46,7 +46,13 @@ export async function GET(req: Request) {
     p_route_slugs: clean,
   }), "api/entity/edition-badges/get_edition_badge_titles")
   if (error) return apiErrorResponse(error, "api/entity/edition-badges")
-  const badges = data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, string[]>) : {}
+  // ⚠ A result of the wrong shape is a 502, never `{badges:{}}` — an empty map
+  // is a success the client would cache as "these slugs have no answer", with
+  // no failure line and no retry (same rule as /api/wallet/edition-counts).
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return NextResponse.json({ error: "unexpected edition-badges shape" }, { status: 502, headers: { "Cache-Control": "no-store" } })
+  }
+  const badges = data as Record<string, string[]>
   // Badges change on a sync cadence of hours; a short shared cache is safe and
   // spares the DB repeat reads of the same player's grid.
   return NextResponse.json({ badges }, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } })

@@ -187,6 +187,38 @@ describe("EditionsGridPaginated — badge filter", () => {
     expect(screen.queryByLabelText("All Badges")).toBeNull()
   })
 
+  it("Retry re-reads the failed badges and the failure line clears only once THEY load (reviewed 2026-09-25)", async () => {
+    let fail = true
+    badgeMock.mockImplementation(async () =>
+      fail ? { ok: false, status: 503, json: async () => ({}) } : { ok: true, json: async () => ({ badges: BADGES }) })
+    renderGrid()
+    await screen.findByText(/Couldn.t load badges for 3 editions/)
+    expect(badgeMock).toHaveBeenCalledTimes(1)
+    fail = false
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+    await waitFor(() => expect(badgeMock).toHaveBeenCalledTimes(2))
+    const u = new URL(String(badgeMock.mock.calls[1][0]), "https://t")
+    expect(u.searchParams.get("slugs")!.split(",")).toEqual(["1:1", "1:2", "1:2::17"])
+    await waitFor(() => expect(screen.queryByText(/Couldn.t load badges/)).toBeNull())
+    expect(await screen.findByLabelText("All Badges")).toBeTruthy()
+  })
+
+  it("an Ownership choice does not stay active behind a hidden select once ownership becomes unknown", async () => {
+    localStorage.setItem("rpc_owner_key", WALLET)
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ editions: { "1:2": { owned: 3, locked: 1 } } }) } as any)
+    renderGrid()
+    const own = await screen.findByLabelText(/ownership/i)
+    fireEvent.change(own, { target: { value: "owned" } })
+    expect(shown()).toEqual(["1:2"])
+    // The counts read now fails (e.g. the wallet changed and its read errored).
+    fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) } as any)
+    localStorage.setItem("rpc_owner_key", "0xabcdefabcdef1234")
+    window.dispatchEvent(new StorageEvent("storage", { key: "rpc_owner_key" }))
+    await waitFor(() => expect(screen.queryByLabelText(/ownership/i)).toBeNull())
+    expect(shown()).toEqual(["1:1", "1:2", "1:2::17"])
+    expect(screen.queryByText(/Clear filters/)).toBeNull()
+  })
+
   it("an edition the badge read does not return is unknown: it cannot match, and the grid counts it", async () => {
     badgeMock.mockImplementation(async () => ({ ok: true, json: async () => ({ badges: { "1:1": ["Rookie Year"] } }) }))
     renderGrid()
