@@ -12,14 +12,17 @@
 //   - confidence LOW, SALES_ONLY or STALE AND daysSinceSale > 30 → cap FMV at askPrice (0% discount)
 /**
  * An FMV that must NOT anchor a confident discount %: ASK_ONLY (0.90 × one
- * seller's ask, no sales) and STALE (carried forward from a prior cycle,
- * nothing re-priced it). Rows carrying one render with the low-confidence
+ * seller's ask, no sales), STALE (carried forward from a prior cycle, nothing
+ * re-priced it) and SALES_ONLY (sales with no ask to corroborate — measured
+ * 2026-09-25: 11 of 17 All Day SALES_ONLY editions with recent sales carry an
+ * FMV more than 3× the median of their own last-180-day prints; the Cowboys
+ * Banner Year RARE read $46.78 against 2026 prints of $1–$2). Rows carrying one render with the low-confidence
  * caveat and sort below verified rows (2026-09-25: STALE added — it was
  * rendering "95% off" on a Legendary priced from 2024 sales).
  */
 export function fmvCannotAnchorDiscount(confidence: string | null | undefined): boolean {
   const c = String(confidence ?? "").toUpperCase()
-  return c === "ASK_ONLY" || c === "STALE"
+  return c === "ASK_ONLY" || c === "STALE" || c === "SALES_ONLY"
 }
 
 export function applyFmvStalenessPenalty(

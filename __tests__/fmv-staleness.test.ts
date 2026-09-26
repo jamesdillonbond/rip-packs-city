@@ -70,10 +70,11 @@ describe("weak confidence classes cap like LOW", () => {
 })
 
 describe("fmvCannotAnchorDiscount", () => {
-  it("ASK_ONLY and STALE cannot anchor a discount; others can", async () => {
+  it("ASK_ONLY, STALE and SALES_ONLY cannot anchor a discount; others can", async () => {
     const { fmvCannotAnchorDiscount } = await import("@/lib/sniper/fmv-staleness")
     expect(fmvCannotAnchorDiscount("ASK_ONLY")).toBe(true)
     expect(fmvCannotAnchorDiscount("stale")).toBe(true)
-    for (const c of ["HIGH", "MEDIUM", "LOW", "SALES_ONLY", null, undefined]) expect(fmvCannotAnchorDiscount(c)).toBe(false)
+    expect(fmvCannotAnchorDiscount("sales_only")).toBe(true)
+    for (const c of ["HIGH", "MEDIUM", "LOW", null, undefined]) expect(fmvCannotAnchorDiscount(c)).toBe(false)
   })
 })
