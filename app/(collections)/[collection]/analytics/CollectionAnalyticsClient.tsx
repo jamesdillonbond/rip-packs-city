@@ -384,10 +384,12 @@ function TabNav({ active, onChange }: { active: "market" | "portfolio"; onChange
 function MarketplaceBreakdownCard({
   rows,
   loading,
+  failed,
   period,
 }: {
   rows: Array<{ marketplace: string; volume: number; transactions: number }>
   loading: boolean
+  failed: boolean
   period: string
 }) {
   const enriched = enrichMarketplaceRows(rows)
@@ -399,6 +401,8 @@ function MarketplaceBreakdownCard({
       </h2>
       {loading ? (
         <div className="h-48 animate-pulse rounded bg-[var(--rpc-surface)]" />
+      ) : failed ? (
+        <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">Couldn&rsquo;t load the marketplace breakdown.</div>
       ) : enriched.length === 0 ? (
         <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No marketplace activity in the last {period}.</div>
       ) : enriched.length === 1 ? (
@@ -942,7 +946,6 @@ function AnalyticsInner() {
   const [error, setError] = useState<string | null>(null)
   const [mpBreakdown, setMpBreakdown] = useState<MarketplaceBreakdown | null>(null)
   const [marketData, setMarketData] = useState<MarketAnalyticsResponse | null>(null)
-  const [marketLoading, setMarketLoading] = useState(false)
   // deep-audit D12: the fetch below soft-failed to null and every KPI fell back
   // to `?? 0`, so a timed-out request rendered "$0.00 / 0 sales" for 30d — on a
   // collection doing 89,831 sales / $583k in that window. A failure must not be
@@ -1001,7 +1004,9 @@ function AnalyticsInner() {
   useEffect(() => {
     if (!collection) return
     let cancelled = false
-    setMarketLoading(true)
+    // Reset, so a collection switch never shows the PREVIOUS collection's
+    // numbers under the new name while the new read is in flight.
+    setMarketData(null)
     setMarketFailed(false)
     fetch(`/api/market-analytics?collection=${encodeURIComponent(collection)}&period=30d&detail=full&comparison=true`)
       .then((r) => (r.ok ? r.json() : null))
@@ -1013,13 +1018,18 @@ function AnalyticsInner() {
         else setMarketFailed(true)
       })
       .catch(() => { if (!cancelled) setMarketFailed(true) })
-      .finally(() => { if (!cancelled) setMarketLoading(false) })
     return () => { cancelled = true }
   }, [collection])
 
   const volumeByTier = useMemo(() => buildVolumeByTier(marketData?.tierAnalytics), [marketData?.tierAnalytics])
 
   const marketplaceBreakdown = useMemo(() => aggregateMarketplaceDaily(marketData?.daily), [marketData?.daily])
+  // 2026-09-25: PENDING = no answer yet and no failure. The old gate
+  // (loading AND no data) was false BEFORE the fetch started (the
+  // server render and first paint), so every panel rendered its empty state —
+  // the Golazos page served "No marketplace activity in the last 30d" over 61
+  // sales / $2,783 — and a failed read said "No data" instead of "Couldn't load".
+  const marketPending = !marketData && !marketFailed
 
   const avgPricePivot = useMemo(
     () => pivotDailyTier(marketData?.dailyTierVolume, "avg_price"),
@@ -1284,17 +1294,17 @@ function AnalyticsInner() {
           })()}
 
           <div className="space-y-6">
-            <MarketplaceBreakdownCard rows={marketplaceBreakdown} loading={marketLoading && !marketData} period={marketData?.period ?? "30d"} />
+            <MarketplaceBreakdownCard rows={marketplaceBreakdown} loading={marketPending} failed={marketFailed} period={marketData?.period ?? "30d"} />
 
             {/* Volume by Tier */}
             <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
               <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                 Volume by Tier
               </h2>
-              {marketLoading && !marketData ? (
+              {marketPending ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : volumeByTier.length === 0 ? (
-                <PanelEmpty degraded={panelFailed(marketData, "tierAnalytics")} />
+                <PanelEmpty degraded={marketFailed || panelFailed(marketData, "tierAnalytics")} />
               ) : (
                 <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                   <ResponsiveContainer>
@@ -1320,10 +1330,10 @@ function AnalyticsInner() {
               <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                 Top Sales
               </h2>
-              {marketLoading && !marketData ? (
+              {marketPending ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : !marketData?.topSales || marketData.topSales.length === 0 ? (
-                <PanelEmpty degraded={panelFailed(marketData, "topSales")} />
+                <PanelEmpty degraded={marketFailed || panelFailed(marketData, "topSales")} />
               ) : (
                 <div className="overflow-x-auto">
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
@@ -1372,10 +1382,10 @@ function AnalyticsInner() {
               <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                 Hottest Editions
               </h2>
-              {marketLoading && !marketData ? (
+              {marketPending ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : !marketData?.topEditions || marketData.topEditions.length === 0 ? (
-                <PanelEmpty degraded={panelFailed(marketData, "topEditions")} />
+                <PanelEmpty degraded={marketFailed || panelFailed(marketData, "topEditions")} />
               ) : (
                 <div className="overflow-x-auto">
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
@@ -1422,10 +1432,10 @@ function AnalyticsInner() {
               <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                 Average Price by Tier
               </h2>
-              {marketLoading && !marketData ? (
+              {marketPending ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : avgPricePivot.tiers.length === 0 ? (
-                <PanelEmpty degraded={panelFailed(marketData, "dailyTierVolume")} />
+                <PanelEmpty degraded={marketFailed || panelFailed(marketData, "dailyTierVolume")} />
               ) : (
                 <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                   <ResponsiveContainer>
@@ -1449,10 +1459,10 @@ function AnalyticsInner() {
               <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                 Daily Sales by Tier
               </h2>
-              {marketLoading && !marketData ? (
+              {marketPending ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : saleCountPivot.tiers.length === 0 ? (
-                <PanelEmpty degraded={panelFailed(marketData, "dailyTierVolume")} />
+                <PanelEmpty degraded={marketFailed || panelFailed(marketData, "dailyTierVolume")} />
               ) : (
                 <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                   <ResponsiveContainer>
@@ -1481,10 +1491,10 @@ function AnalyticsInner() {
                 <div className="mb-3 text-[11px] text-[color:var(--rpc-text-muted)]">
                   How much more badged editions sell for vs non-badged within the same tier
                 </div>
-                {marketLoading && !marketData ? (
+                {marketPending ? (
                   <div className="h-40 animate-pulse rounded bg-[var(--rpc-surface)]" />
                 ) : !marketData?.badgePremium || marketData.badgePremium.length === 0 ? (
-                  <PanelEmpty degraded={panelFailed(marketData, "badgePremium")} />
+                  <PanelEmpty degraded={marketFailed || panelFailed(marketData, "badgePremium")} />
                 ) : (
                   <div className="flex flex-wrap gap-3" style={{ fontFamily: "var(--font-mono)" }}>
                     {marketData.badgePremium.map((b) => {
@@ -1520,10 +1530,10 @@ function AnalyticsInner() {
                 <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                   Volume by Series
                 </h2>
-                {marketLoading && !marketData ? (
+                {marketPending ? (
                   <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
                 ) : seriesVolumeBars.length === 0 ? (
-                  <PanelEmpty degraded={panelFailed(marketData, "seriesAnalytics")} />
+                  <PanelEmpty degraded={marketFailed || panelFailed(marketData, "seriesAnalytics")} />
                 ) : (
                   <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                     <ResponsiveContainer>
@@ -1564,10 +1574,10 @@ function AnalyticsInner() {
                 <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                   Daily Volume by Series
                 </h2>
-                {marketLoading && !marketData ? (
+                {marketPending ? (
                   <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
                 ) : dailySeriesPivot.length === 0 ? (
-                  <PanelEmpty degraded={panelFailed(marketData, "dailySeriesVolume")} />
+                  <PanelEmpty degraded={marketFailed || panelFailed(marketData, "dailySeriesVolume")} />
                 ) : (
                   <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                     <ResponsiveContainer>

@@ -1055,3 +1055,48 @@ describe("CollectionAnalyticsClient — Top Accumulators gate", () => {
     }
   })
 })
+
+// ─── The Market-tab PANELS (2026-09-25) ──────────────────────────────────────
+// The KPI band was fixed for the in-flight state; the panels were not. Their gate
+// (loading AND no data) was false BEFORE the fetch started, so the served HTML of
+// /laliga-golazos/analytics read "No marketplace activity in the last 30d" over
+// 61 sales / $2,783 (dapper.market: 63 / $2.8K), and a failed read said "No data".
+describe("CollectionAnalyticsClient — Market-tab panels never claim emptiness they have not measured", () => {
+  it("SERVER RENDER (no effects have run): no panel says 'No marketplace activity' or 'No data'", async () => {
+    // ⚠ A jsdom render cannot see this defect: the fetch effect runs before any
+    // assertion and flips the loading flag. The served HTML is produced with NO
+    // effects, which is exactly what renderToString does — so that is the
+    // instrument. (Against the old gate this reads "No marketplace activity".)
+    const { renderToString } = await import("react-dom/server")
+    const html = renderToString(<CollectionAnalyticsClient />)
+    expect(html).not.toContain("No marketplace activity")
+    expect(html).not.toMatch(/No data(?!\.)/)
+  })
+
+  it("IN FLIGHT after hydration: no panel says 'No marketplace activity' or 'No data'", async () => {
+    routes["/api/market-analytics"] = () => new Promise<Response>(() => {}) as unknown as Response
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(kpiValue("Total Volume")).toBe("—"))
+    expect(document.body.textContent).not.toContain("No marketplace activity")
+    // Market panels render "No data" (no period); the whale leaderboard is a
+    // separate, MEASURED card whose empty copy is "No data." — not asserted here.
+    expect(document.body.textContent).not.toMatch(/No data(?!\.)/)
+  })
+
+  it("FAILED (503): the breakdown and the panels say they could not load", async () => {
+    routes["/api/market-analytics"] = () => json(503, {})
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("Couldn’t load the marketplace breakdown"))
+    expect(document.body.textContent).not.toContain("No marketplace activity")
+    expect(document.body.textContent).toContain("Couldn't load this panel")
+    // Market panels render "No data" (no period); the whale leaderboard is a
+    // separate, MEASURED card whose empty copy is "No data." — not asserted here.
+    expect(document.body.textContent).not.toMatch(/No data(?!\.)/)
+  })
+
+  it("a real answer still renders (no-change arm)", async () => {
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(kpiValue("Total Sales")).toBe("89,831"))
+    expect(document.body.textContent).not.toContain("Couldn’t load the marketplace breakdown")
+  })
+})
