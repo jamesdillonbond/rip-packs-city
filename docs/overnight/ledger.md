@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — player page Top Sales is readable on a phone and sits above Editions: rows are two stacked lines (edition name + price, then serial · time · buyer/seller) instead of a fixed 560px six-column grid that collapsed the name column to zero at 390px and overflowed its own card border · Claude Code (web sandbox)
+
+**Why (~8:12 PM PT):** Trevor, from /nba-top-shot/player/damian-lillard on mobile — every row read "#6 · 6 years ago" with the edition name gone and the price only reachable by side-scrolling. Missing buyer/seller addresses are now omitted rather than printed as "—". File: `app/(collections)/[collection]/player/[slug]/page.tsx`. **Revert:** revert the commit titled "Player page: stack Top Sales rows for mobile, move above Editions".
+
 ### 2026-09-25 · 🧹 SHIPPED — the paid-tier machinery is gone, not just hidden: `ProBadge`, `useProStatus`, `/api/pro-status` and `requirePro` deleted (zero callers since the headers dropped the badge), plus a ban-at-zero guard so no paid tier can be named on the site again before 100 WAU · Claude Code (web sandbox)
 
 **Why (~8:05 PM PT):** after the day's removals, these four pieces had no caller left. They were exactly what would put a PRO badge or a "available to RPC Pro members" 402 back on screen with a one-line import.
