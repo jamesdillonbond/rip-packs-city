@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the Candy MLB ticker (every Candy tab) stops saying "WALLET + PACK TOOLS — coming behind this overview" (both shipped) and "the highest sales-backed share on the platform" (Candy reads 18.4% HIGH/MEDIUM vs Top Shot 55.1%); it now names the Collection, Set Tracker and Pack Market tools. The confidence drop (~60% → 18% from 09-19 to 09-22) is recorded in go-live-2026-09.md §4 as a market event — a 09-20/21 floor dump made recent sales disagree; same engine, sales flowing · Claude Code (web sandbox)
+
+- **Revert:** revert the "fix(candy): ticker names tools that exist" commit.
+
+
 ### 2026-09-25 · 🧹 SHIPPED — 76 All Day / Golazos pack distributions with no image got Dapper's own (65 Golazos = every one; 11 All Day = every real product), from Studio Platform `searchDistributions` `images`; control 80/80 equal to stored images, 53/53 target URLs HTTP 200 image/png. What stays NULL is correct: 34 All Day internal holding/test dists (Dapper publishes `url: ""` for them) and all 154 Pinnacle dists (no per-pack art in the Studio API, the PDS contract, or the PackNFT Display — none exists publicly) · Claude Code (web session)
 
 Migration `20260926022452` (applied ~7:44 PM PT; fill-only; post-condition asserted Golazos 0 NULL and All Day exactly 34 NULL). Not shipped, needs a call: the 34 internal All Day dists ("Do Not Use", "Pack Test 2", "NFL Pack Hold – Genesis") are rows in `pack_table_rows` and the pack sitemap — none in the default board's top 100 (earliest rank 394), no EV. **Revert:** `UPDATE pack_distributions d SET image_url = NULL FROM audit_20260925_ad_gz_pack_dist_images_backup b WHERE d.id = b.id` (drop the backup after 10-02).
