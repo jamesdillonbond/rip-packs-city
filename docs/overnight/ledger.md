@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — Candy MLB gains a real SETS tab (Top Shot parity): its own Solana backend `/api/candy-set-progress` — the base58 key read verbatim (the generic `/api/sets-db` lowercases it, so every Candy wallet would have read "0 of 100"), a Flow wallet refused rather than answered with zeros, the checklist counted as the 100 PLAYERS with the five-colour Rainbow cards as parallels (edition grain would have hidden 70 of 72 real completions — 72 of 425 wallets hold all 100 players, only 2 hold all 125 printings), cost-to-finish from the troll-capped `candy_listing_floor` only while that map is ≤12 h old on its own stamp (3-hourly writer). Registry `pages` + proxy (tab and API anon-public, `sets` out of THIN_COLLECTION_MISSING_TABS) + sitemap 77 → 78 in the same commit · Claude Code (web sandbox)
+
+- **Revert:** revert the code commit ("feat(candy): Sets tab") — removes the route, the client arm, the `sets` page entry and the proxy lines together. No DB change.
+- **Verify:** `/candy-mlb/sets?wallet=<base58>` renders the set card; `/api/candy-set-progress?wallet=0x…` → 400.
+
 ### 2026-09-25 · 🧹 SHIPPED — 5 saved wallets for EVERY account (a flat `SAVED_WALLET_LIMIT`, no plan consulted) and no paid tier named anywhere on the site: /pricing → home, PRO badge off the headers, the alerts/table "Upgrade to Pro" copy gone, concierge limit copy neutral, `pro_1mo` reward retired (`20260926012810`) · Claude Code (web sandbox)
 
 **Why (~6:30 PM PT):** Trevor: "5 wallets for any account. Assume I always mean free accounts. We shouldn't be considering or mentioning paid accounts anywhere on the website … until we get to 100 weekly active users." CLAUDE.md's gate line now reads 100 WAU (was "monetization tabled until 50+").
