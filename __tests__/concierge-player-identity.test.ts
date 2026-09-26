@@ -309,10 +309,79 @@ describe("get_fmv with a player name", () => {
     await POST(post({}))
     const r = toolResult() as { status: string; message: string; median_fmv?: unknown; p50?: unknown }
     expect(r.status).toBe("ambiguous")
-    expect(r.message).toMatch(/no distribution was computed/)
+    expect(r.message).toMatch(/nothing was searched or priced/)
     expect(r.p50).toBeUndefined()
     expect(r.median_fmv).toBeUndefined()
     expect(inst.rpcCalls.map((c) => c.name)).not.toContain("get_editions_latest_fmv")
+  })
+})
+
+describe("the label-keyed tools are scoped to the PERSON (batch 59)", () => {
+  const flaccoLabels: PlayerResolution = { ...flaccoOne, player: { ...flaccoOne.player, labels: ["Joe Flacco", "Joseph Flacco"] } }
+  it("search_catalog_deals filters cached_listings on the person's edition LABELS, not an ILIKE of the typed name; the answer carries player_identity", async () => {
+    const inst = install({
+      "rpc:resolve_player_name": { data: flaccoLabels, error: null },
+      cached_listings: { data: [{ player_name: "Joseph Flacco", set_name: "Base", tier: "COMMON", serial_number: 5, circulation_count: 100, ask_price: 3, fmv: 4, discount: 25, badge_slugs: [], buy_url: "u", collection_id: AD_UUID }], error: null },
+    })
+    // the fixture ignores filter args, so assert on the filter CALLS the builder saw
+    const seen: Array<[string, unknown, unknown]> = []
+    const from = (inst.fixture as { from: (t: string) => Record<string, unknown> }).from
+    ;(inst.fixture as { from: unknown }).from = (t: string) => {
+      const b = from(t)
+      for (const m of ["in", "ilike"]) {
+        const orig = b[m] as (...a: unknown[]) => unknown
+        b[m] = (...a: unknown[]) => { seen.push([`${t}.${m}`, a[0], a[1]]); return orig(...a) }
+      }
+      return b
+    }
+    A.sb = inst.fixture
+    script("search_catalog_deals", { player: "Joseph Flacco", collectionId: "nfl-all-day" })
+    await POST(post({}))
+    const r = toolResult() as { status: string; player_identity: { status: string } }
+    expect(r.status).toBe("ok")
+    expect(r.player_identity.status).toBe("one")
+    expect(seen).toContainEqual(["cached_listings.in", "player_name", ["Joe Flacco", "Joseph Flacco"]])
+    expect(seen.some(([k, col]) => k === "cached_listings.ilike" && col === "player_name")).toBe(false)
+  })
+  it("an ambiguous name on a deal board answers with the candidates and searches NOTHING", async () => {
+    const inst = install({ "rpc:resolve_player_name": { data: murphyAmbiguous, error: null }, cached_listings: { data: [{ player_name: "Byron Murphy II" }], error: null } })
+    script("search_catalog_deals", { player: "Byron Murphy", collectionId: "nfl-all-day" })
+    await POST(post({}))
+    expect(toolResult()).toMatchObject({ status: "ambiguous" })
+    expect(inst.rpcCalls.map((c) => c.name)).toEqual(["resolve_player_name"])
+  })
+  it("an UNRESOLVED name keeps the tool's own ILIKE (a partial still searches) and says the identity check found nobody", async () => {
+    const seen: string[] = []
+    const inst = install({ "rpc:resolve_player_name": { data: { status: "none", query: "Flac" }, error: null }, cached_listings: { data: [], error: null } })
+    const from = (inst.fixture as { from: (t: string) => Record<string, unknown> }).from
+    ;(inst.fixture as { from: unknown }).from = (t: string) => { const b = from(t); const o = b.ilike as (...a: unknown[]) => unknown; b.ilike = (...a: unknown[]) => { seen.push(`${t}.ilike:${a[0]}=${a[1]}`); return o(...a) }; return b }
+    A.sb = inst.fixture
+    script("search_catalog_deals", { player: "Flac", collectionId: "nfl-all-day" })
+    await POST(post({}))
+    expect(seen).toContain("cached_listings.ilike:player_name=%Flac%")
+    expect((toolResult() as { player_identity: { status: string } }).player_identity.status).toBe("none")
+  })
+  it("get_special_serial_owners asks the board once per label and drops a namesake's rows", async () => {
+    const harrisonLabels: PlayerResolution = { ...harrisonOne, player: { ...harrisonOne.player, labels: ["Marvin Harrison"] } }
+    const inst = install({
+      "rpc:resolve_player_name": { data: harrisonLabels, error: null },
+      "rpc:get_special_serial_owners_board": { data: [
+        { edition_key: "1:1", player_name: "Marvin Harrison", set_name: "S", tier: "LEGENDARY", serial: 1, circulation_count: 10, tag: "#1", holder_address: "0xa", edition_fmv: 100 },
+        { edition_key: "2:2", player_name: "Marvin Harrison Jr.", set_name: "S", tier: "LEGENDARY", serial: 1, circulation_count: 10, tag: "#1", holder_address: "0xb", edition_fmv: 900 },
+      ], error: null },
+    })
+    script("get_special_serial_owners", { playerName: "Marvin Harrison" })
+    await POST(post({}))
+    const r = toolResult() as { rows?: Array<{ player: string }>; results?: Array<{ player: string }> }
+    const rows = (r.rows ?? r.results ?? []) as Array<{ player: string }>
+    expect(rows.map((x) => x.player)).toEqual(["Marvin Harrison"])
+    expect(inst.rpcCalls.filter((c) => c.name === "get_special_serial_owners_board").map((c) => c.args?.p_player)).toEqual(["Marvin Harrison"])
+  })
+  it("Pinnacle characters are never sent through the player crosswalk", async () => {
+    const inst = install({ "rpc:resolve_player_name": { data: flaccoLabels, error: null } })
+    script("search_catalog_deals", { player: "Mickey Mouse", collectionId: "disney-pinnacle" })
+    await POST(post({}))
+    expect(inst.rpcCalls.map((c) => c.name)).not.toContain("resolve_player_name")
   })
 })
 

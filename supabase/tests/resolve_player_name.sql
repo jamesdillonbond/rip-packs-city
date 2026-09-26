@@ -24,7 +24,7 @@ CREATE TABLE collections (id uuid PRIMARY KEY, slug text);
 INSERT INTO collections VALUES ('dee28451-5d62-409e-a1ad-a83f763ac070', 'nfl_all_day'),
                                ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'nba_top_shot');
 CREATE TABLE players (id uuid PRIMARY KEY, collection_id uuid NOT NULL, name text NOT NULL, team text);
-CREATE TABLE editions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), player_id uuid);
+CREATE TABLE editions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), player_id uuid, player_name text);
 CREATE TABLE player_name_aliases (collection_id uuid, alias_slug text, player_id uuid, note text);
 CREATE TABLE player_identities (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -56,7 +56,15 @@ AS $function$
       -- hand it straight to get_player_editions and the page route
       'slug', regexp_replace(lower(trim(extensions.unaccent(p.name))), '[^a-z0-9]+', '-', 'g'),
       'team', p.team,
-      'edition_count', (SELECT count(*) FROM public.editions e WHERE e.player_id = p.id)),
+      'edition_count', (SELECT count(*) FROM public.editions e WHERE e.player_id = p.id),
+      -- every LABEL this person's editions carry (a merged first-name variant
+      -- keeps its editions' spelling: Joe Flacco's rows say "Joseph Flacco" on
+      -- 4 of 8), so a label-keyed reader can match the person EXACTLY instead
+      -- of ILIKE-ing a name that also matches a namesake — capped at 25
+      'labels', (SELECT COALESCE(jsonb_agg(l.player_name ORDER BY l.n DESC, l.player_name), '[]'::jsonb)
+                   FROM (SELECT e.player_name, count(*) AS n FROM public.editions e
+                          WHERE e.player_id = p.id AND e.player_name IS NOT NULL AND e.player_name <> ''
+                          GROUP BY e.player_name ORDER BY count(*) DESC, e.player_name LIMIT 25) l)),
     'aliases', (
       SELECT COALESCE(jsonb_agg(jsonb_build_object('slug', a.alias_slug, 'note', a.note) ORDER BY a.alias_slug), '[]'::jsonb)
         FROM public.player_name_aliases a WHERE a.player_id = p.id),
@@ -267,9 +275,12 @@ INSERT INTO players (id, collection_id, name, team) VALUES
   ('a0000000-0000-0000-0000-000000000011', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Damian Lillard',      'Portland Trail Blazers'),
   ('a0000000-0000-0000-0000-000000000012', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Gary Payton',         'Seattle SuperSonics'),
   ('a0000000-0000-0000-0000-000000000013', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Gary Payton II',      'Golden State Warriors');
-INSERT INTO editions (player_id) SELECT 'a0000000-0000-0000-0000-000000000001' FROM generate_series(1, 11);
-INSERT INTO editions (player_id) SELECT 'a0000000-0000-0000-0000-000000000002' FROM generate_series(1, 5);
-INSERT INTO editions (player_id) VALUES ('a0000000-0000-0000-0000-000000000003'), ('a0000000-0000-0000-0000-000000000004'), ('a0000000-0000-0000-0000-000000000011');
+INSERT INTO editions (player_id, player_name) SELECT 'a0000000-0000-0000-0000-000000000001', 'Marvin Harrison Jr.' FROM generate_series(1, 11);
+INSERT INTO editions (player_id, player_name) SELECT 'a0000000-0000-0000-0000-000000000002', 'Marvin Harrison' FROM generate_series(1, 5);
+INSERT INTO editions (player_id, player_name) VALUES ('a0000000-0000-0000-0000-000000000003', 'Josh Allen'), ('a0000000-0000-0000-0000-000000000004', 'Josh Allen'), ('a0000000-0000-0000-0000-000000000011', 'Damian Lillard');
+-- a merged first-name variant keeps its editions' spelling (batch 51): Joe Flacco's rows say "Joseph Flacco" on 4 of 8
+INSERT INTO editions (player_id, player_name) SELECT 'a0000000-0000-0000-0000-000000000005', 'Joe Flacco' FROM generate_series(1, 4);
+INSERT INTO editions (player_id, player_name) SELECT 'a0000000-0000-0000-0000-000000000005', 'Joseph Flacco' FROM generate_series(1, 4);
 INSERT INTO player_name_aliases VALUES
   ('dee28451-5d62-409e-a1ad-a83f763ac070', 'joseph-flacco', 'a0000000-0000-0000-0000-000000000005', 'batch 51: first-name variant of Joe Flacco'),
   ('dee28451-5d62-409e-a1ad-a83f763ac070', 'mike-vick',     'a0000000-0000-0000-0000-000000000006', 'batch 51: league spelling of Michael Vick');
@@ -297,6 +308,7 @@ BEGIN
   PERFORM _assert_eq(r->>'matched_via', 'exact', 'exact spelling');
   PERFORM _assert_eq(r->'player'->>'name', 'Marvin Harrison', 'the father');
   PERFORM _assert_eq(r->'player'->>'edition_count', '5', 'his edition count');
+  PERFORM _assert_eq((r->'player'->'labels')::text, '["Marvin Harrison"]', 'the father''s labels never carry the son''s');
   PERFORM _assert_eq(jsonb_array_length(r->'namesakes')::text, '1', 'one namesake');
   PERFORM _assert_eq(r->'namesakes'->0->'player'->>'name', 'Marvin Harrison Jr.', 'the son is the namesake');
   -- the slug is the SITE's (a trailing "." keeps its dash: /player/marvin-harrison-jr-), so a caller can hand it to get_player_editions
@@ -327,6 +339,9 @@ BEGIN
   PERFORM _assert_eq(r->>'matched_via', 'alias', 'via alias');
   PERFORM _assert_eq(r->'player'->>'name', 'Joe Flacco', 'the row');
   PERFORM _assert_eq(r->'aliases'->0->>'slug', 'joseph-flacco', 'aliases listed');
+  -- the person's edition LABELS, both spellings, so a label-keyed reader can match him exactly (batch 59)
+  PERFORM _assert_eq((r->'player'->'labels')::text, '["Joe Flacco", "Joseph Flacco"]', 'labels carry every spelling his editions use');
+  PERFORM _assert_eq(r->'player'->>'edition_count', '8', 'eight editions');
   PERFORM _assert_eq(jsonb_array_length(r->'namesakes')::text, '0', 'no namesakes');
   PERFORM _assert((r->>'note') IS NULL, 'no warning without namesakes');
 

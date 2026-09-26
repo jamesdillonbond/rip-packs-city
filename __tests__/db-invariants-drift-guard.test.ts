@@ -686,7 +686,8 @@ const PINS = [
     fn: "_player_identity_summary",
     test: "supabase/tests/resolve_player_name.sql",
     // re-pointed 2026-09-25 (batch 57): output slugs are the site's (a trailing "." keeps its dash).
-    migration: "supabase/migrations/20260926013254_audit_20260925_resolve_player_name_slugs_are_the_site_slug.sql",
+    // re-pointed 2026-09-25 (batch 59): player.labels — every edition label the person carries.
+    migration: "supabase/migrations/20260926015840_audit_20260925_resolve_player_name_carries_the_persons_edition_labels.sql",
   },
   {
     fn: "upsert_player_canonical",

@@ -42,7 +42,7 @@ import {
   type ConciergeErrorMode,
 } from "@/lib/concierge/errors";
 import { editionKeyCollectionMismatch } from "@/lib/concierge/edition-key";
-import { resolvePlayerName, identityContextFor, type PlayerResolution } from "@/lib/concierge/player-identity";
+import { resolvePlayerName, identityContextFor, playerLabelsFor, type PlayerResolution } from "@/lib/concierge/player-identity";
 import {
   listingsStatus,
   listingsNote,
@@ -973,7 +973,7 @@ When a user mentions a tier — Common, Rare, Fandom, Legendary, Ultimate, or an
 ## CRITICAL — Name Filtering Rule
 If the user names a specific player or character anywhere in their query, you MUST pass that exact name as a filter on every search and FMV tool call (player / character / playerName / characterName / name). Never label a returned row with a name the row doesn't carry. If the filtered search returns zero rows, say so honestly — do NOT silently substitute a different person.
 
-**Names are not people.** get_player_editions, get_fmv and search_catalog_deals resolve the name you pass through RPC's player-identity crosswalk and attach a \`player_identity\` block — READ IT before you answer. It tells you (a) what the typed name resolved to and HOW (an alias like "Joseph Flacco" → Joe Flacco, the league's spelling like "Mike Vick" → Michael Vick or "Kenny Gainwell" → Kenneth Gainwell, a dropped suffix, a former name, a partial) — when the catalog name differs from what the user typed, say the catalog name once; (b) the league's own spelling when it differs (same person; do not treat it as a second player); (c) any name the person has also gone by (Robby Anderson is now Robbie Chosen; the Jaguars' Josh Allen became Josh Hines-Allen in 2024 — a different person from the Bills quarterback); (d) NAMESAKES — other players in the collection with the same base name — each with the RECORDED relation: parent/child (Marvin Harrison → Marvin Harrison Jr., Gary Payton → Gary Payton II, Tim Hardaway → Tim Hardaway Jr., Larry Nance → Larry Nance Jr., Antoine Winfield → Jr., Asante Samuel → Jr., Joey Porter → Jr., Glenn Robinson → III, Ron Harper → Jr.), UNRELATED (Byron Murphy Jr. the Vikings CB vs Byron Murphy II the Seahawks DT), or "kinship NOT recorded", in which case you do not know and must not assert one. A suffix-less name matches the row spelt that way — usually the FATHER — so when namesakes exist say which person you priced ("that's Marvin Harrison the Colts Hall of Famer; his son Marvin Harrison Jr. has 11 Cardinals editions — want those?") and NEVER pool two people into one figure. When the block's status is 'ambiguous' the tool returned candidates and no prices: ask which person, or pick by team / era, then call again with the candidate's exact name. When it reads 'unavailable' the identity check FAILED — the answer is for the literal spelling only; say the alias / namesake check could not run if the name could be more than one person. resolve_player_name answers "who is X", "is X the same as Y", "is X related to Y" and gives the crosswalk identity (league id, position, seasons, latest team, whether season stats exist on the player page) — use it, and never answer a relationship question from memory when the tool can be asked.
+**Names are not people.** get_player_editions, get_fmv, search_live_deals, search_catalog_deals, get_edition_listings, search_serial_deals, get_special_serial_owners and get_badge_info resolve the name you pass through RPC's player-identity crosswalk, filter on the PERSON (every spelling their editions carry, never a namesake's) and attach a \`player_identity\` block — READ IT before you answer. It tells you (a) what the typed name resolved to and HOW (an alias like "Joseph Flacco" → Joe Flacco, the league's spelling like "Mike Vick" → Michael Vick or "Kenny Gainwell" → Kenneth Gainwell, a dropped suffix, a former name, a partial) — when the catalog name differs from what the user typed, say the catalog name once; (b) the league's own spelling when it differs (same person; do not treat it as a second player); (c) any name the person has also gone by (Robby Anderson is now Robbie Chosen; the Jaguars' Josh Allen became Josh Hines-Allen in 2024 — a different person from the Bills quarterback); (d) NAMESAKES — other players in the collection with the same base name — each with the RECORDED relation: parent/child (Marvin Harrison → Marvin Harrison Jr., Gary Payton → Gary Payton II, Tim Hardaway → Tim Hardaway Jr., Larry Nance → Larry Nance Jr., Antoine Winfield → Jr., Asante Samuel → Jr., Joey Porter → Jr., Glenn Robinson → III, Ron Harper → Jr.), UNRELATED (Byron Murphy Jr. the Vikings CB vs Byron Murphy II the Seahawks DT), or "kinship NOT recorded", in which case you do not know and must not assert one. A suffix-less name matches the row spelt that way — usually the FATHER — so when namesakes exist say which person you priced ("that's Marvin Harrison the Colts Hall of Famer; his son Marvin Harrison Jr. has 11 Cardinals editions — want those?") and NEVER pool two people into one figure. When the block's status is 'ambiguous' the tool returned candidates and no prices: ask which person, or pick by team / era, then call again with the candidate's exact name. When it reads 'unavailable' the identity check FAILED — the answer is for the literal spelling only; say the alias / namesake check could not run if the name could be more than one person. resolve_player_name answers "who is X", "is X the same as Y", "is X related to Y" and gives the crosswalk identity (league id, position, seasons, latest team, whether season stats exist on the player page) — use it, and never answer a relationship question from memory when the tool can be asked.
 
 ## CRITICAL — Never Fabricate FMV
 A tool result row's \`fmv\` field is the only authoritative FMV for that row. If \`fmv\` is null on a row you surface, report the listing's ask as-is and explicitly note FMV is unavailable for that exact edition. Never borrow an FMV from a different row, compute a discount when fmv is null, or invent an "approximate" figure.
@@ -1223,7 +1223,7 @@ async function resolvePlayerForDistribution(
         status: "ambiguous",
         player: name,
         player_identity: identity,
-        message: "That name is more than one person in this collection, so no distribution was computed (pooling them would price two people as one). Ask which one, or pick by team / era from the candidates, then call again with that candidate's exact name.",
+        message: "That name is more than one person in this collection, so nothing was searched or priced (pooling them would answer for two people as one). Ask which one, or pick by team / era from the candidates, then call again with that candidate's exact name.",
       }),
     };
   }
@@ -1426,10 +1426,48 @@ async function resolveTeamName(
   return { status: "ambiguous", candidates: names.slice(0, 10) };
 }
 
-async function executeTool(
+type ToolCtx = { sessionId: string; ownerKey?: string | null; userWallet?: string | null; userEmail?: string | null; userId?: string | null; collectionId?: string | null; pageContext?: string | null };
+
+// 2026-09-25 (batch 59): the label-keyed player tools — deal boards on
+// cached_listings, the special-serial boards, get_edition_listings, the badge
+// census — resolve the typed name to the PERSON once, up front. `labels` is
+// every spelling the person's editions carry (a merged variant keeps its
+// editions' label), so a reader matches `player_name IN (labels)` instead of
+// `ILIKE '%name%'` — which missed "Joseph Flacco" and pooled the Harrisons.
+// An ambiguous name answers with the candidates and nothing is searched; an
+// unresolved or FAILED lookup keeps the tool's own ILIKE and says so in
+// player_identity; Pinnacle (characters) and search_across_collections (every
+// collection at once) are not scoped. The block rides on the answer.
+type PlayerScope = { typed: string; labels: string[] | null; playerId: string | null; identity: Record<string, unknown> | null };
+const PLAYER_SCOPED_TOOLS = new Set(["search_live_deals", "search_catalog_deals", "get_edition_listings", "search_serial_deals", "get_special_serial_owners", "get_badge_info"]);
+const TOP_SHOT_ONLY_TOOLS = new Set(["search_serial_deals", "get_special_serial_owners", "get_badge_info"]);
+
+async function executeTool(toolName: string, toolInput: any, ctx: ToolCtx): Promise<string> {
+  const scope: PlayerScope = { typed: "", labels: null, playerId: null, identity: null };
+  if (PLAYER_SCOPED_TOOLS.has(toolName) && toolInput && typeof toolInput === "object") {
+    const typed = String(toolInput.playerName ?? toolInput.player ?? toolInput.character ?? toolInput.characterName ?? "").trim();
+    const collectionId: string | undefined = toolInput.collectionId ?? ctx.collectionId ?? undefined;
+    if (typed && !isPinnacle(collectionId)) {
+      const uuid = TOP_SHOT_ONLY_TOOLS.has(toolName)
+        ? COLLECTION_UUID_BY_SLUG["nba-top-shot"]
+        : (collectionId ? (COLLECTION_UUID_BY_SLUG[collectionId] ?? null) : null);
+      const who = await resolvePlayerForDistribution(uuid, typed);
+      if (who.ambiguous) return who.ambiguous;
+      scope.typed = typed;
+      scope.labels = playerLabelsFor(who.resolution);
+      scope.playerId = who.playerId;
+      scope.identity = who.identity;
+    }
+  }
+  const out = await executeToolInner(toolName, toolInput, ctx, scope);
+  return scope.identity ? attachPlayerIdentity(out, scope.identity) : out;
+}
+
+async function executeToolInner(
   toolName: string,
   toolInput: any,
-  ctx: { sessionId: string; ownerKey?: string | null; userWallet?: string | null; userEmail?: string | null; userId?: string | null; collectionId?: string | null; pageContext?: string | null }
+  ctx: ToolCtx,
+  playerScope: PlayerScope,
 ): Promise<string> {
   const base = siteUrl();
   const effectiveCollectionId: string | undefined = toolInput.collectionId ?? ctx.collectionId ?? undefined;
@@ -1441,6 +1479,11 @@ async function executeTool(
     if (toolInput.character && !toolInput.player) toolInput.player = toolInput.character;
     if (toolInput.characterName && !toolInput.playerName) toolInput.playerName = toolInput.characterName;
   }
+  // A label-keyed filter for the resolved person: exact labels when resolved, the tool's ILIKE otherwise.
+  const playerFilter = (q: any, typed: unknown): any =>
+    playerScope.labels ? q.in("player_name", playerScope.labels) : q.ilike("player_name", `%${typed}%`);
+  const playerLabelMatches = (label: unknown, typed: unknown): boolean =>
+    playerScope.labels ? playerScope.labels.includes(String(label ?? "")) : String(label ?? "").toLowerCase().includes(String(typed).toLowerCase());
 
   // Delegates to the pure guard in @/lib/concierge/edition-key (unit-tested);
   // the JSON string shape handed back to the model is unchanged.
@@ -1578,7 +1621,7 @@ async function executeTool(
       // listing in this set", NEVER "nothing in this set is listed" — that
       // question belongs to get_edition_listings.
       const deals = (data.deals || data || []).filter((d: any) => {
-        if (toolInput.player && !d.playerName?.toLowerCase().includes(String(toolInput.player).toLowerCase())) return false;
+        if (toolInput.player && !playerLabelMatches(d.playerName, toolInput.player)) return false;
         if (toolInput.setName && !d.setName?.toLowerCase().includes(String(toolInput.setName).toLowerCase())) return false;
         return true;
       });
@@ -1642,7 +1685,7 @@ async function executeTool(
         .order("discount", { ascending: false })
         .limit(toolInput.limit || 10);
       if (effectiveCollectionUuid) query = query.eq("collection_id", effectiveCollectionUuid);
-      if (toolInput.player) query = query.ilike("player_name", `%${toolInput.player}%`);
+      if (toolInput.player) query = playerFilter(query, toolInput.player);
       if (toolInput.setName) query = query.ilike("set_name", `%${toolInput.setName}%`);
       if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
       if (toolInput.maxPrice) query = query.lte("ask_price", toolInput.maxPrice);
@@ -1791,7 +1834,7 @@ async function executeTool(
         .order("discount", { ascending: false })
         .limit(toolInput.limit || 8);
       if (effectiveCollectionUuid) query = query.eq("collection_id", effectiveCollectionUuid);
-      if (toolInput.player) query = query.ilike("player_name", `%${toolInput.player}%`);
+      if (toolInput.player) query = playerFilter(query, toolInput.player);
       if (toolInput.team) query = query.ilike("team_name", `%${toolInput.team}%`);
       if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
       if (toolInput.maxPrice) query = query.lte("ask_price", toolInput.maxPrice);
@@ -2475,16 +2518,27 @@ async function executeTool(
         });
       }
       const limit = Math.min(Math.max(Number(toolInput.limit) || 25, 1), 100);
-      const { data, error } = await supabase.rpc("get_special_serial_owners_board", {
-        p_tag: tag,
-        p_tier: tier,
-        p_player: player,
-        p_holder: holder,
-        p_sort: "fmv",
-        p_limit: limit,
-        p_offset: 0,
-      });
+      // The board RPC ILIKEs the label. For a resolved person ask once per
+      // label the person's editions carry (up to 4) and keep only rows whose
+      // label is one of them — "Marvin Harrison" no longer returns the son.
+      const boardArgs = { p_tag: tag, p_tier: tier, p_holder: holder, p_sort: "fmv", p_limit: limit, p_offset: 0 };
+      const labelsToAsk = player && playerScope.labels ? playerScope.labels.slice(0, 4) : [player];
+      let data: any[] = [];
+      let error: any = null;
+      for (const label of labelsToAsk) {
+        const r = await supabase.rpc("get_special_serial_owners_board", { ...boardArgs, p_player: label });
+        if (r.error) { error = r.error; break; }
+        data.push(...((r.data ?? []) as any[]));
+      }
       if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
+      if (player && playerScope.labels) {
+        const seen = new Set<string>();
+        data = data
+          .filter((r: any) => playerScope.labels!.includes(String(r.player_name ?? "")))
+          .filter((r: any) => { const k = `${r.edition_key}|${r.serial}|${r.tag}`; if (seen.has(k)) return false; seen.add(k); return true; })
+          .sort((a: any, b: any) => Number(b.edition_fmv ?? -1) - Number(a.edition_fmv ?? -1))
+          .slice(0, limit);
+      }
       const ownersMeta = await fetchEditionMetadata(supabase, COLLECTION_UUID_BY_SLUG["nba-top-shot"], (data ?? []).map((r: any) => r.edition_key));
       const rows = (data ?? []).map((r: any) => ({
         editionKey: r.edition_key ?? null,
@@ -2561,7 +2615,7 @@ async function executeTool(
           .from("editions")
           .select("id, external_id, player_name, set_name, tier, circulation_count, collection_id")
           .eq("collection_id", collUuid);
-        if (player) q = q.ilike("player_name", `%${player}%`);
+        if (player) q = playerScope.playerId ? q.eq("player_id", playerScope.playerId) : q.ilike("player_name", `%${player}%`);
         if (setName) q = q.ilike("set_name", `%${setName}%`);
         if (tier) q = q.eq("tier", tier);
         const { data, error } = await q.limit(50);
@@ -2960,7 +3014,7 @@ async function executeTool(
         let q = supabase
           .from("topshot_underpriced_serials_board")
           .select("player_name, set_name, tier, serial_number, circulation_count, ask_usd, serial_fmv_usd, edition_fmv_usd, serial_multiplier, discount_pct, estimate_quality, confidence, nft_id, edition_key, external_id");
-        if (player) q = q.ilike("player_name", `%${player}%`);
+        if (player) q = playerFilter(q, player);
         if (tier) q = q.eq("tier", tier);
         if (tag === "#1") q = q.eq("serial_number", 1);
         if (minDiscount) q = q.gte("discount_pct", minDiscount);
@@ -4256,13 +4310,13 @@ async function executeTool(
       let playerEditions: any = null;
       if (player) {
         const wantTitles = new Set(matches.filter((m) => m.kind === "moment_tag").map((m) => normBadge(m.title)));
-        const { data: pe, error: peErr } = await (supabase as any)
+        let peQ = (supabase as any)
           .from("badge_editions")
           .select("external_id, player_name, set_name, tier, series_number, circulation_count, burned, locked, low_ask, highest_offer, avg_sale_price, play_tags, updated_at")
-          .eq("collection_id", tsUuid)
-          .ilike("player_name", `%${player}%`)
-          .order("external_id", { ascending: true })
-          .limit(400);
+          .eq("collection_id", tsUuid);
+        // the resolved PERSON (badge_editions carries player_id), else the typed label
+        peQ = playerScope.playerId ? peQ.eq("player_id", playerScope.playerId) : peQ.ilike("player_name", `%${player}%`);
+        const { data: pe, error: peErr } = await peQ.order("external_id", { ascending: true }).limit(400);
         if (peErr) {
           playerEditions = { status: "error", message: safeApiError(peErr, "player badge lookup failed").error };
         } else {

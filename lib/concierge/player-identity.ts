@@ -43,7 +43,8 @@ export type PlayerIdentity = {
 } | null
 
 export type PlayerSummary = {
-  player: { id: string; name: string; slug: string; team: string | null; edition_count: number }
+  /** `labels` (batch 59): every editions.player_name this person's editions carry, commonest first — a merged variant keeps its editions' spelling. */
+  player: { id: string; name: string; slug: string; team: string | null; edition_count: number; labels?: string[] }
   aliases: Array<{ slug: string; note: string | null }>
   identity: PlayerIdentity
   relations: PlayerRelation[]
@@ -164,4 +165,18 @@ export function identityContextFor(res: PlayerResolution): Record<string, unknow
     namesakes,
     warnings,
   }
+}
+
+/**
+ * The exact edition LABELS to match for a resolved person — every spelling
+ * their editions carry (Joe Flacco's rows say "Joseph Flacco" on four of
+ * eight), never a namesake's. A label-keyed reader filters
+ * `player_name IN (labels)` with this instead of `ILIKE '%name%'`; an
+ * unresolved or failed lookup returns null and the caller keeps its ILIKE.
+ */
+export function playerLabelsFor(res: PlayerResolution | null): string[] | null {
+  if (!res || res.status !== "one") return null
+  const labels = Array.isArray(res.player.labels) ? res.player.labels.filter((l) => typeof l === "string" && l.trim() !== "") : []
+  if (labels.length > 0) return labels
+  return res.player.name ? [res.player.name] : null
 }
