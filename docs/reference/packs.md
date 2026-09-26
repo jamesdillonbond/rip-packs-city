@@ -135,6 +135,10 @@ Durable facts from the `/dashboard/history` "packs erroring out" thread (ledger 
 - **Pinnacle images:** none public. Titles from PDS / `compute-pinnacle-pack-ev`.
 - **New Top Shot dists:** `discover_missing_topshot_pack_distributions(p_days)` inserts a placeholder (title NULL) for any dist a rip/purchase references and the catalog lacks; the same route names and pictures it in the same run.
 
+### What a pack YIELDED — Dapper's pull list, not `moment_acquisitions` (2026-09-26)
+
+⭐ **`searchPackNft` nodes carry `nfts`: the comma-separated moment ids (`A.<addr>.<Contract>.<id>`) the pack revealed — every era, every Dapper collection.** One `owner_address + status=Opened` request returned 518 of 518 opened packs for 0xbd94…50ac (114 KB). It is the ONLY source that names a pre-2023-11 pull (below the Flow spork floor the on-chain walkers reach). ⛔ **`moment_acquisitions.source_pack_rip_id` is not a pull list:** its `bulk_seed` rows attach every moment acquired near a rip to it (95 on one 3-moment pack), so the whole-pack rule refused those rips forever. Lane `wallet-pack-pulls` → `pack_open_pulls` / `pack_open_pull_values` (saved wallets only); the wallet readers take that value first (same opener), `pack_rips.pull_value_usd` second. ⚠ Dapper's `searchTopShotNft` answers **0 rows** for any id or owner — Top Shot editions resolve only from `moments`/wmc; `searchAllDayNft`/`searchGolazosNft` take `filters:[{id:{in:[…]}}]` and return `edition{id}` = `editions.external_id`. ⚠ `ownershipHistory` lists only the CURRENT holder on most packs (a pack you sold does not name you; `source` is always "Dapper") — it cannot recover an old acquisition.
+
 ### Which pack a wallet opened
 `get_pack_lifecycle` prefers `pack_purchases.pack_dist_id`, then `pack_rips.dist_id`, then the drop-pool guess (`20260926015925`; 0 disagreements vs `pack_nft_identity`). The drop-pool vote alone named the WRONG pack.
 
