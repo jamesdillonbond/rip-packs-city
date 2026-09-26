@@ -5,6 +5,7 @@ import { applyAllFmvGuards, capFmvAtCheapestAsk } from "@/lib/fmv-phantom-guard"
 import { fetchCandyConfirmedFloors, mergeCeilingAsks } from "@/lib/fmv-candy-ceiling"
 import { computeConfidence, escalateConfidence, gateHighToRecentVolume, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
 import { staleTouchDaysSinceSale } from "@/lib/fmv-stale-touch"
+import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { rpcWithRetry, queryWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
@@ -2223,12 +2224,36 @@ export async function POST(req: NextRequest) {
           const rows: any[] = (staleRows as any[] | null) ?? []
           // Skip editions already written in this run to avoid duplicate today rows.
           const skipSet = new Set<string>(insertRows.map((r) => String(r.edition_id)))
-          const touchRows = rows
-            .filter((r) => !skipSet.has(String(r.edition_id)))
-            .map((r) => applyAllFmvGuards({
+          const touchSource = rows.filter((r) => !skipSet.has(String(r.edition_id)))
+          // ⚠ 2026-09-26 — the Candy ask-CEILING (Step 2a-ter(b')) applied only to
+          // editions PRICED this run. A cold Candy edition is never priced, so this
+          // re-stamp carried its pre-ceiling FMV forward dated NOW, every night:
+          // Paul Skenes Green re-stamped at $82.22 against a $30.38 confirmed ask,
+          // Murakami Green due at $584.48 against $66.83 (10 of 123 Candy editions
+          // over their ask the morning after the ceiling shipped). A re-stamp is a
+          // NEW ROW, so it takes the same min(). The filter is only a query-count
+          // bound — candy_listing_floor holds Candy editions alone.
+          const candyTouchIds = touchSource
+            .filter((r) => String(r.collection_id) === COLLECTION_UUID_BY_SLUG["candy-mlb"])
+            .map((r) => String(r.edition_id))
+          const touchCandy = candyTouchIds.length > 0
+            ? await fetchCandyConfirmedFloors(supabaseAdmin, candyTouchIds)
+            : { floors: new Map<string, number>(), error: null }
+          if (touchCandy.error) {
+            candyCeilingError = candyCeilingError ?? `stale_touch ${touchCandy.error}`
+            console.warn("[FMV-RECALC] Stale touch Candy ceiling error (non-fatal):", touchCandy.error)
+          }
+          const touchRows = touchSource
+            .map((r) => {
+              const carried = Number(r.fmv_usd)
+              const capped = capFmvAtCheapestAsk(carried, touchCandy.floors.get(String(r.edition_id)) ?? null)
+              if (capped < carried) candyCeilingCaps++
+              return { r, fmv: capped < carried ? capped : r.fmv_usd }
+            })
+            .map(({ r, fmv }) => applyAllFmvGuards({
               edition_id: r.edition_id,
               collection_id: r.collection_id,
-              fmv_usd: r.fmv_usd,
+              fmv_usd: fmv,
               floor_price_usd: r.floor_price_usd,
               asp_usd: r.asp_usd,
               asp_without_outliers: r.asp_without_outliers,

@@ -238,6 +238,61 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     })
   })
 
+  // ⛔ 2026-09-26 — the Candy ask-ceiling shipped 09-25 for editions PRICED in a
+  // run; a cold Candy edition is only ever re-stamped here, so its pre-ceiling
+  // FMV rode forward dated now (Paul Skenes Green $82.22 vs a $30.38 confirmed
+  // ask). A re-stamp is a new row and takes the same min().
+  it("caps a re-stamped Candy edition at its confirmed ask, and counts the cap", async () => {
+    const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
+    const skenes = { ...staleRow("cold-candy", 82.22), collection_id: CANDY }
+    const underAsk = { ...staleRow("cold-candy-ok", 20), collection_id: CANDY }
+    // A Top Shot row sharing no ask stays verbatim.
+    state.querySqlByMarker = { recent_traded: { data: [skenes, underAsk, staleRow("cold-ts", 50)], error: null } }
+    const { rpcCalls, inserted } = instrument(
+      baseFixtures({
+        candy_listing_floor: {
+          data: [
+            { edition_id: "cold-candy", confirmed_floor_usd: 30.38 },
+            { edition_id: "cold-candy-ok", confirmed_floor_usd: 45 },
+          ],
+          error: null,
+        },
+      }),
+    )
+
+    await POST(req("?force_stale=true"))
+    await runDeferred()
+
+    const touched = inserted.fmv_snapshots ?? []
+    expect(touched.find((r) => r.edition_id === "cold-candy")?.fmv_usd).toBe(30.38)
+    // min() only lowers: an FMV already under its ask is carried verbatim.
+    expect(touched.find((r) => r.edition_id === "cold-candy-ok")?.fmv_usd).toBe(20)
+    expect(touched.find((r) => r.edition_id === "cold-ts")?.fmv_usd).toBe(50)
+    const extra = terminalLog(rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.candy_ask_ceiling_caps).toBe(1)
+    expect(extra.candy_ask_ceiling_error).toBeNull()
+  })
+
+  it("a failed Candy ask read on re-stamp is recorded, and leaves the row uncapped", async () => {
+    const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
+    state.querySqlByMarker = { recent_traded: { data: [{ ...staleRow("cold-candy", 82.22), collection_id: CANDY }], error: null } }
+    const { rpcCalls, inserted } = instrument(
+      baseFixtures({
+        candy_listing_floor: [
+          { data: [], error: null }, // the main-loop read (Step 2a-ter(b')) succeeds
+          { data: null, error: { message: "candy floor timed out" } }, // the re-stamp read fails
+        ],
+      }),
+    )
+
+    await POST(req("?force_stale=true"))
+    await runDeferred()
+
+    expect((inserted.fmv_snapshots ?? []).find((r) => r.edition_id === "cold-candy")?.fmv_usd).toBe(82.22)
+    const extra = terminalLog(rpcCalls)?.p_extra as Record<string, unknown>
+    expect(String(extra.candy_ask_ceiling_error)).toMatch(/^stale_touch .*candy floor timed out/)
+  })
+
   it("stays non-fatal when the stale-touch probe itself errors", async () => {
     state.querySqlByMarker = { recent_traded: { data: null, error: { message: "query_sql timeout" } } }
     const { rpcCalls, inserted } = instrument(baseFixtures())
