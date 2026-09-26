@@ -566,7 +566,7 @@ function MarketInner() {
       >
         {/* Row 1: tier chips + sort + view toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span className="rpc-label">Tier</span>
+          <span className="rpc-label">{getEntityLabels(collectionId).tier}</span>
           {availableTiers.length === 0 ? (
             <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-ghost)" }}>—</span>
           ) : availableTiers.map(t => {
@@ -692,7 +692,7 @@ function MarketInner() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <MultiSelectChip label="Set" selected={setsSel} options={setOptions} onChange={setSetsSel} />
           <MultiSelectChip label="Series" selected={seriesSel} options={seriesOptions} onChange={setSeriesSel} formatOption={(v) => marketSeriesLabel(v, collectionId)} />
-          <MultiSelectChip label="Team" selected={teamsSel} options={teamOptions} onChange={setTeamsSel} />
+          <MultiSelectChip label={getEntityLabels(collectionId).team} selected={teamsSel} options={teamOptions} onChange={setTeamsSel} />
           <MultiSelectChip label="Badges" selected={badgesSel} options={badgeOptions} onChange={setBadgesSel} />
 
           {showOwnedFilter && (
@@ -1097,7 +1097,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
           <tr style={{ borderBottom: "1px solid var(--rpc-border)", color: "var(--rpc-text-muted)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.14em" }}>
             <th style={th}></th>
             <th style={th}>{getEntityLabels(collectionUrlSlug).player}</th>
-            <th style={th}>Tier</th>
+            <th style={th}>{getEntityLabels(collectionUrlSlug).tier}</th>
             <th style={th}>Series</th>
             <th style={th}>Set</th>
             <th style={th}>Badges</th>
@@ -1140,10 +1140,11 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   ) : l.playerName ? (
                     <Link
                       // ⚠ Pinnacle: the row IS one pin (render), so its name opens that
-                      // pin. The character page 404'd for most rows — 561 of 676
-                      // catalog characters have no `players` row (get_player_detail
-                      // resolves only those), measured 2026-09-26: 1,535 of 2,357 live
-                      // Market rows linked to a 404.
+                      // pin. The name shown is the RENDER name ("Just Keep Swimming"),
+                      // not the character-page key (the Characters trait, "Dory"), so a
+                      // character link built from it 404'd for 1,535 of 2,357 live rows
+                      // (measured 2026-09-26). Corrected 09-26: an earlier note here
+                      // blamed missing `players` rows alone — that counted render names.
                       href={
                         (isPinnacleUrlSlug(collectionUrlSlug) && l.editionKey
                           ? pinnacleRenderHref(l.editionKey)

@@ -2245,7 +2245,7 @@ async function PackStreamedTop({
               <thead>
                 <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                   <Th>Edition</Th>
-                  <Th>Tier</Th>
+                  <Th>{getEntityLabels(collection).tier}</Th>
                   <Th align="right">Pull %</Th>
                   <Th align="right">FMV</Th>
                   <Th align="right">EV share</Th>
@@ -2397,7 +2397,7 @@ async function PackStreamedBottom({
                 <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                   <Th>{getEntityLabels(collection).player}</Th>
                   <Th>Set</Th>
-                  <Th>Tier</Th>
+                  <Th>{getEntityLabels(collection).tier}</Th>
                   <Th align="right">Drop %</Th>
                   <Th align="right">FMV</Th>
                   <Th align="right">Edition EV</Th>

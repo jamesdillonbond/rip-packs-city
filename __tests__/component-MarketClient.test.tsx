@@ -479,6 +479,9 @@ describe("MarketClient — Pinnacle says Character, not Player", () => {
       const heads = Array.from(container.querySelectorAll("th")).map((t) => t.textContent)
       expect(heads).toContain("Character")
       expect(heads).not.toContain("Player")
+      // Same vocabulary for the scarcity band: Pinnacle calls it a Variant.
+      expect(heads).toContain("Variant")
+      expect(heads).not.toContain("Tier")
       expect(screen.getAllByText("Character").length).toBeGreaterThanOrEqual(2)
       expect(screen.queryByText("Player")).toBeNull()
     } finally {
@@ -492,6 +495,8 @@ describe("MarketClient — Pinnacle says Character, not Player", () => {
     const heads = Array.from(container.querySelectorAll("th")).map((t) => t.textContent)
     expect(heads).toContain("Player")
     expect(heads).not.toContain("Character")
+    expect(heads).toContain("Tier")
+    expect(heads).not.toContain("Variant")
   })
 })
 

@@ -15,6 +15,17 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-26. Every Pinnacle players row came from a one-time 05-05
+    // seed, so 127 of 249 characters had no row and their pages 404'd. Pins the
+    // writer the pinnacle_editions trigger calls: one row per slug, keyed
+    // disney_pinnacle-<slug>, idempotent across case variants, never for the
+    // 'Unknown' stub placeholder, and never overwriting an existing row.
+    fn: "pinnacle_ensure_character_player",
+    test: "supabase/tests/pinnacle_ensure_character_player.sql",
+    migration:
+      "supabase/migrations/20260926164840_audit_20260926_pinnacle_characters_get_a_page_the_day_they_mint.sql",
+  },
+  {
     // Added 2026-09-26. The pulls a wallet's pack row shows: Dapper's list for
     // THIS pack and opener, else the wallet's own reconstructed burst, else
     // nothing -- never the moment_acquisitions linkage that listed 95 "pulls"

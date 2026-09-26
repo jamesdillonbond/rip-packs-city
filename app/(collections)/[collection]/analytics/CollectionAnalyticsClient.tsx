@@ -1302,7 +1302,7 @@ function AnalyticsInner() {
             {/* Volume by Tier */}
             <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
               <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
-                Volume by Tier
+                Volume by {labels.tier}
               </h2>
               {marketPending ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
@@ -1345,7 +1345,7 @@ function AnalyticsInner() {
                       <th className="py-2 pr-2">#</th>
                       <th className="py-2 pr-2">{labels.player}</th>
                       <th className="py-2 pr-2">Set</th>
-                      <th className="py-2 pr-2">Tier</th>
+                      <th className="py-2 pr-2">{labels.tier}</th>
                       <th className="py-2 pr-2 text-right">Serial</th>
                       <th className="py-2 pr-2 text-right">Price</th>
                       <th className="py-2 text-right">Date</th>
@@ -1396,7 +1396,7 @@ function AnalyticsInner() {
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
                       <th className="py-2 pr-2">{labels.player}</th>
                       <th className="py-2 pr-2">Set</th>
-                      <th className="py-2 pr-2">Tier</th>
+                      <th className="py-2 pr-2">{labels.tier}</th>
                       <th className="py-2 pr-2 text-right">Sales</th>
                       <th className="py-2 pr-2 text-right">Volume</th>
                       <th className="py-2 text-right">Avg Price</th>
@@ -1433,7 +1433,7 @@ function AnalyticsInner() {
             {/* Average Price by Tier */}
             <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
               <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
-                Average Price by Tier
+                Average Price by {labels.tier}
               </h2>
               {marketPending ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
@@ -1460,7 +1460,7 @@ function AnalyticsInner() {
             {/* Daily Sales by Tier */}
             <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
               <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
-                Daily Sales by Tier
+                Daily Sales by {labels.tier}
               </h2>
               {marketPending ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
@@ -1634,7 +1634,7 @@ function AnalyticsInner() {
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
                       <th className="py-2 pr-2">{labels.player}</th>
                       <th className="py-2 pr-2">Set</th>
-                      <th className="py-2 pr-2">Tier</th>
+                      <th className="py-2 pr-2">{labels.tier}</th>
                       <th className="py-2 pr-2">Series</th>
                       <th className="py-2 pr-2 text-right">Sales</th>
                       <th className="py-2 pr-2 text-right">Volume</th>
@@ -1874,7 +1874,7 @@ function AnalyticsInner() {
 
               {/* Tier Breakdown */}
               <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
-                <div className="mb-3 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Tier Breakdown</div>
+                <div className="mb-3 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">{labels.tier} Breakdown</div>
                 <div className="space-y-2">
                   {data.tiers.map((t) => {
                     const maxFmv = data.tiers.reduce((m, x) => Math.max(m, x.fmv), 0)

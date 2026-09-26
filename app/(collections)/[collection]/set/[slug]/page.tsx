@@ -7,6 +7,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
+import { getEntityLabels } from "@/lib/entity-labels"
 import { fetchFullTierMix, buildTierMixRows } from "@/lib/set-detail/tier-mix"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { sectionRows, sectionRowsResult, structuralSection } from "@/lib/entity-section-rpc"
@@ -267,7 +268,7 @@ export default async function SetPage(props: { params: Promise<{ collection: str
 
       {/* ── Tier mix bar ─────────────────────────────────────────────────── */}
       {tierMixRows.length > 0 && (
-        <Section title="Tier Mix">
+        <Section title={`${getEntityLabels(collection).tier} Mix`}>
           <div style={{ display: "flex", height: 14, borderRadius: 4, overflow: "hidden", border: "1px solid var(--rpc-border)" }}>
             {tierMixRows.map(r => (
               <div key={r.tier} title={`${r.tier} — ${r.n} (${r.pct.toFixed(1)}%)`} style={{
