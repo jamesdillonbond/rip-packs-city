@@ -102,7 +102,13 @@ function urlSlug(dbSlug: string): string {
 
 function eventHref(e: TxEvent): string | null {
   if (e.kind === "pack_buy" || e.kind === "pack_open" || e.kind === "pack_sell") {
-    return e.dist_id ? `/${urlSlug(e.collection_slug)}/packs/simulator/${encodeURIComponent(e.dist_id)}` : null
+    // 2026-09-25: the pack's distribution page, not the simulator. The simulator
+    // needs an indexed drop pool and dead-ends on "Drop pool not indexed" for
+    // every reward/leaderboard pack and every dist whose pool Dapper never
+    // served (dists 8734+ — searchPackNft 530s since ~08-28), so Trevor's two
+    // newest packs (8825, 8735) read as broken links. /pack/dist resolves any
+    // dist in pack_distributions, pool or not (same target as every other pack link).
+    return e.dist_id ? `/${urlSlug(e.collection_slug)}/pack/dist/${encodeURIComponent(e.dist_id)}` : null
   }
   return e.nft_id ? `/moment/${encodeURIComponent(e.nft_id)}` : null
 }
@@ -361,7 +367,9 @@ function TimelineRow({ e }: { e: TxEvent }) {
           : null
 
   const titleNode = (
-    <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, letterSpacing: "0.01em", color: href ? "#fff" : "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+    // display:block + minWidth 0 — an inline span ignores text-overflow, so a long
+    // pack title ran under the amount column on a phone instead of truncating.
+    <span style={{ display: "block", minWidth: 0, fontFamily: condensedFont, fontWeight: 700, fontSize: 14, letterSpacing: "0.01em", color: href ? "#fff" : "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
       {e.title}
     </span>
   )
@@ -381,7 +389,7 @@ function TimelineRow({ e }: { e: TxEvent }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           <span className="rpc-tx-chip" style={{ background: meta.tint + "22", color: meta.tint, border: `1px solid ${meta.tint}66`, flexShrink: 0 }}>{verb}</span>
           {href ? (
-            <Link href={href} style={{ textDecoration: "none", minWidth: 0 }}>{titleNode}</Link>
+            <Link href={href} style={{ textDecoration: "none", minWidth: 0, overflow: "hidden" }}>{titleNode}</Link>
           ) : (
             titleNode
           )}

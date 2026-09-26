@@ -242,6 +242,21 @@ describe("TransactionHistoryClient — the three-state ladder", () => {
     expect(text).not.toMatch(/\bDUC\b/)
   })
 
+  // 2026-09-25 (Trevor) — a pack row linked the SIMULATOR, which dead-ends on "Drop pool
+  // not indexed" for every reward pack and every dist Dapper never served a pool for
+  // (8825, 8735 on his wallet). It links the distribution page, which resolves them.
+  it("links a pack row to its distribution page, never the pool-gated simulator", async () => {
+    const PACK = { ...EVENT, kind: "pack_buy" as const, title: "Portland Fire Seasonal Leaderboard Snapshot 2", subtitle: null, method: "primary_withdraw", nft_id: null, pack_nft_id: "278176444597001", dist_id: "8825" }
+    vi.stubGlobal("fetch", routed({ ok: true, body: { wallet: "0xmine", kind_filter: "all", limit: 25, offset: 0, total_count: 2, events: [PACK, EVENT] } }))
+    render(<TransactionHistoryClient />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Portland Fire Seasonal/))
+    const hrefs = Array.from(document.querySelectorAll("a")).map((a) => a.getAttribute("href") ?? "")
+    expect(hrefs).toContain("/nba-top-shot/pack/dist/8825")
+    expect(hrefs.some((h) => h.includes("/packs/simulator/"))).toBe(false)
+    // no-change arm: a moment row still links its moment page
+    expect(hrefs).toContain("/moment/1")
+  })
+
   // ⚠ The ladder is loading → ERROR → empty, in that order, and the order is the property:
   // an inverted ladder tells a collector "No activity for this filter" when the read failed,
   // which is a claim about their own trading history.
