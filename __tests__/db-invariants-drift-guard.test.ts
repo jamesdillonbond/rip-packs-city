@@ -57,6 +57,24 @@ const PINS = [
       "supabase/migrations/20260926170000_audit_20260926_wallet_reconstructed_rips_from_pack_pull_delivery_bursts.sql",
   },
   {
+    // Added 2026-09-26. Pins the lane that reads Flow's PackNFT.Minted events at
+    // the instant Dapper's index says a wallet acquired each pack (215 of
+    // Trevor's packs arrived in one PDS mint on 2026-04-24): Top Shot + All Day
+    // instants only, below-floor instants failed with their reason, a window
+    // that misses its instant re-aimed (never recorded as "no mints"), ok=false
+    // on an HTTP failure.
+    fn: "run_pack_mint_probe_lane",
+    test: "supabase/tests/run_pack_mint_probe_lane.sql",
+    migration: "supabase/migrations/20260926200050_audit_20260926_pack_mint_probe_lane_waits_20s_per_request.sql",
+  },
+  {
+    // Added 2026-09-26. The height estimate the mint-probe lane aims with.
+    fn: "flow_height_estimate",
+    test: "supabase/tests/run_pack_mint_probe_lane.sql",
+    migration:
+      "supabase/migrations/20260926200000_audit_20260926_pack_nft_mints_name_packs_dapper_minted_straight_into_a_wallet.sql",
+  },
+  {
     // Added 2026-09-26. Pins the lane that prices every pack a saved wallet
     // OPENED from Dapper's own list of what it yielded (searchPackNft.nfts):
     // collection-scoped edition resolution, whole-pack all-or-nothing pricing
@@ -92,7 +110,7 @@ const PINS = [
     // v9 (same day): packs opened with no pack NFT, reconstructed from delivery
     // bursts (wallet_reconstructed_rips), labelled rip_source = reconstructed.
     migration:
-      "supabase/migrations/20260926190300_audit_20260926_inferred_drop_cost_only_inside_the_drops_sale_window.sql",
+      "supabase/migrations/20260926200100_audit_20260926_wallet_pack_history_prices_packs_dapper_minted_in_and_never_trade_tickets.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
@@ -101,7 +119,7 @@ const PINS = [
     fn: "get_wallet_pack_summary",
     test: "supabase/tests/get_wallet_pack_summary.sql",
     migration:
-      "supabase/migrations/20260926190400_audit_20260926_wallet_pack_summary_inferred_drop_cost_sale_window.sql",
+      "supabase/migrations/20260926200200_audit_20260926_wallet_pack_summary_prices_packs_dapper_minted_in_and_never_trade_tickets.sql",
   },
   {
     // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists

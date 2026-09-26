@@ -117,11 +117,25 @@ export type BuyPriceSource = "onchain" | "marketplace" | "retail" | "retail_infe
 
 /** Second line under the pack name. `null` when nothing needs saying. */
 export function packIdentityNote(
-  row: { dist_id: string | null; status: string; pack_name?: string | null; current_owner?: string | null },
+  row: {
+    dist_id: string | null; status: string; pack_name?: string | null; current_owner?: string | null
+    minted_to_wallet_at?: string | null
+  },
 ): string | null {
   if (row.status === "transferred") {
     const owner = row.current_owner ? ` · now held by ${row.current_owner.slice(0, 6)}…${row.current_owner.slice(-4)}` : ""
     return "Left this wallet without a recorded sale" + owner
+  }
+  // 2026-09-26 (get_wallet_pack_history v11): Flow's PackNFT.Minted says Dapper
+  // minted this pack straight into the wallet -- often a pack long held at
+  // Dapper turned into an NFT (one mint on 2026-04-24 carried 215 of them), so
+  // the date is when it became an NFT here, not when it was bought.
+  if (row.minted_to_wallet_at) {
+    const d = new Date(row.minted_to_wallet_at)
+    if (Number.isFinite(d.getTime())) {
+      const day = d.toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", year: "numeric" })
+      return `Minted into this wallet by Dapper · ${day}`
+    }
   }
   if (row.dist_id) return null
   if (row.status === "held") return "Sealed · distribution not recorded until opened or resold"

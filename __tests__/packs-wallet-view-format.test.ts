@@ -294,3 +294,21 @@ describe("packsSoldCaption", () => {
     expect(packsSoldCaption(null)).toBeUndefined()
   })
 })
+
+describe("packIdentityNote: minted into the wallet (2026-09-26)", () => {
+  it("says Dapper minted it in, dated in PT, even when the distribution is known", () => {
+    // 11:15 UTC on 04-24 is 04:15 PT the same day; 03:00 UTC on 04-25 is still 04-24 in PT
+    expect(packIdentityNote({ dist_id: "1427", status: "held", minted_to_wallet_at: "2026-04-24T11:15:01.118Z" }))
+      .toBe("Minted into this wallet by Dapper · Apr 24, 2026")
+    expect(packIdentityNote({ dist_id: "1427", status: "held", minted_to_wallet_at: "2026-04-25T03:00:00Z" }))
+      .toBe("Minted into this wallet by Dapper · Apr 24, 2026")
+  })
+  it("a pack that left the wallet still says so first", () => {
+    expect(packIdentityNote({ dist_id: "1427", status: "transferred", minted_to_wallet_at: "2026-04-24T11:15:01Z" }))
+      .toMatch(/^Left this wallet/)
+  })
+  it("no mint on record, or an unreadable date, changes nothing", () => {
+    expect(packIdentityNote({ dist_id: "1427", status: "held", minted_to_wallet_at: null })).toBeNull()
+    expect(packIdentityNote({ dist_id: "1427", status: "held", minted_to_wallet_at: "not a date" })).toBeNull()
+  })
+})

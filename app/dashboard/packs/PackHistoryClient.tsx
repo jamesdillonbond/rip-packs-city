@@ -254,6 +254,8 @@ interface HistoryRow {
   pack_ev_usd?: number | null
   last_sale_usd?: number | null
   current_owner?: string | null
+  /** 2026-09-26 (v11): Dapper minted this pack straight into the wallet (Flow PackNFT.Minted). */
+  minted_to_wallet_at?: string | null
   identity_status?: string | null
 }
 
