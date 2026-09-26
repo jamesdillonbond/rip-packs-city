@@ -51,7 +51,10 @@ AS $function$
   SELECT jsonb_build_object(
     'player', jsonb_build_object(
       'id', p.id, 'name', p.name,
-      'slug', trim(both '-' from regexp_replace(lower(trim(extensions.unaccent(p.name))), '[^a-z0-9]+', '-', 'g')),
+      -- the site's player-URL slug (lib/entity-labels slugifyName: a trailing
+      -- "." keeps its dash — /player/marvin-harrison-jr-), so a caller can
+      -- hand it straight to get_player_editions and the page route
+      'slug', regexp_replace(lower(trim(extensions.unaccent(p.name))), '[^a-z0-9]+', '-', 'g'),
       'team', p.team,
       'edition_count', (SELECT count(*) FROM public.editions e WHERE e.player_id = p.id)),
     'aliases', (
@@ -73,22 +76,22 @@ AS $function$
       SELECT COALESCE(jsonb_agg(x.rel ORDER BY x.rel->>'relation', x.rel->>'name'), '[]'::jsonb)
         FROM (
           SELECT jsonb_build_object('relation', 'parent_of', 'name', o.name,
-                   'slug', trim(both '-' from regexp_replace(lower(trim(extensions.unaccent(o.name))), '[^a-z0-9]+', '-', 'g')), 'note', r.note) AS rel
+                   'slug', regexp_replace(lower(trim(extensions.unaccent(o.name))), '[^a-z0-9]+', '-', 'g'), 'note', r.note) AS rel
             FROM public.player_relations r JOIN public.players o ON o.id = r.related_player_id
            WHERE r.player_id = p.id AND r.relation = 'parent_of'
           UNION ALL
           SELECT jsonb_build_object('relation', 'child_of', 'name', o.name,
-                   'slug', trim(both '-' from regexp_replace(lower(trim(extensions.unaccent(o.name))), '[^a-z0-9]+', '-', 'g')), 'note', r.note)
+                   'slug', regexp_replace(lower(trim(extensions.unaccent(o.name))), '[^a-z0-9]+', '-', 'g'), 'note', r.note)
             FROM public.player_relations r JOIN public.players o ON o.id = r.player_id
            WHERE r.related_player_id = p.id AND r.relation = 'parent_of'
           UNION ALL
           SELECT jsonb_build_object('relation', 'unrelated_namesake', 'name', o.name,
-                   'slug', trim(both '-' from regexp_replace(lower(trim(extensions.unaccent(o.name))), '[^a-z0-9]+', '-', 'g')), 'note', r.note)
+                   'slug', regexp_replace(lower(trim(extensions.unaccent(o.name))), '[^a-z0-9]+', '-', 'g'), 'note', r.note)
             FROM public.player_relations r JOIN public.players o ON o.id = CASE WHEN r.player_id = p.id THEN r.related_player_id ELSE r.player_id END
            WHERE r.relation = 'namesake' AND (r.player_id = p.id OR r.related_player_id = p.id)
           UNION ALL
           SELECT jsonb_build_object('relation', 'also_known_as', 'name', r.name,
-                   'slug', trim(both '-' from regexp_replace(lower(trim(extensions.unaccent(r.name))), '[^a-z0-9]+', '-', 'g')), 'note', r.note)
+                   'slug', regexp_replace(lower(trim(extensions.unaccent(r.name))), '[^a-z0-9]+', '-', 'g'), 'note', r.note)
             FROM public.player_relations r
            WHERE r.player_id = p.id AND r.relation = 'name_change'
         ) x),
@@ -296,6 +299,9 @@ BEGIN
   PERFORM _assert_eq(r->'player'->>'edition_count', '5', 'his edition count');
   PERFORM _assert_eq(jsonb_array_length(r->'namesakes')::text, '1', 'one namesake');
   PERFORM _assert_eq(r->'namesakes'->0->'player'->>'name', 'Marvin Harrison Jr.', 'the son is the namesake');
+  -- the slug is the SITE's (a trailing "." keeps its dash: /player/marvin-harrison-jr-), so a caller can hand it to get_player_editions
+  PERFORM _assert_eq(r->'namesakes'->0->'player'->>'slug', 'marvin-harrison-jr-', 'the son carries the page slug');
+  PERFORM _assert_eq(r->'relations'->0->>'slug', 'marvin-harrison-jr-', 'and so does the relation');
   PERFORM _assert_eq(r->'namesakes'->0->'relations'->0->>'relation', 'child_of', 'the son knows his father');
   PERFORM _assert_eq(r->'namesakes'->0->'identity'->>'stats_seasons', '2', 'the son has two stat seasons');
   PERFORM _assert_eq(r->'relations'->0->>'relation', 'parent_of', 'the father knows his son');

@@ -78,15 +78,18 @@ export async function resolvePlayerName(
   }
 }
 
+/** Slugs compare with a trailing dash folded: the site keeps the dash a trailing "." leaves ("marvin-harrison-jr-"), the query slug does not. */
+const sameSlug = (a: string, b: string): boolean => a.replace(/-+$/, "") === b.replace(/-+$/, "")
+
 /** The relation between the resolved player and one namesake, as the model should read it. */
 function relationLabel(resolved: PlayerSummary, other: PlayerSummary, querySlug: string): string {
-  const fromResolved = resolved.relations.find((r) => r.slug === other.player.slug)
+  const fromResolved = resolved.relations.find((r) => sameSlug(r.slug, other.player.slug))
   if (fromResolved) {
     if (fromResolved.relation === "parent_of") return `${other.player.name} is the CHILD of ${resolved.player.name}`
     if (fromResolved.relation === "child_of") return `${other.player.name} is the PARENT of ${resolved.player.name}`
     if (fromResolved.relation === "unrelated_namesake") return `${other.player.name} is UNRELATED to ${resolved.player.name} (same name only)`
   }
-  const aka = other.relations.find((r) => r.relation === "also_known_as" && r.slug === querySlug)
+  const aka = other.relations.find((r) => r.relation === "also_known_as" && sameSlug(r.slug, querySlug))
   if (aka) return `${other.player.name} also played under the name "${aka.name}" — ${aka.note ?? "a recorded name change"}`
   return `${other.player.name} shares the base name; kinship NOT recorded — do not assert a relation`
 }

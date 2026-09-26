@@ -685,7 +685,8 @@ const PINS = [
     // (shared by the resolved case and every ambiguous candidate).
     fn: "_player_identity_summary",
     test: "supabase/tests/resolve_player_name.sql",
-    migration: "supabase/migrations/20260926011020_audit_20260925_player_relations_and_resolve_player_name_for_the_concierge.sql",
+    // re-pointed 2026-09-25 (batch 57): output slugs are the site's (a trailing "." keeps its dash).
+    migration: "supabase/migrations/20260926013254_audit_20260925_resolve_player_name_slugs_are_the_site_slug.sql",
   },
   {
     fn: "upsert_player_canonical",

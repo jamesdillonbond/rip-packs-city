@@ -224,6 +224,20 @@ describe("get_player_editions resolves the name first", () => {
     expect(r.player_identity.namesakes[0]).toMatchObject({ name: "Marvin Harrison Jr.", relation_to_resolved: "Marvin Harrison Jr. is the CHILD of Marvin Harrison" })
     expect(r.player_identity.warnings.join(" ")).toMatch(/Marvin Harrison ONLY/)
   })
+  it("a suffixed name's slug is handed to the RPC and the URL VERBATIM — the site keeps the dash a trailing '.' leaves (batch 57: 0 rows + a 404 otherwise)", async () => {
+    const jr: PlayerResolution = { status: "one", query: "Marvin Harrison Jr.", query_slug: "marvin-harrison-jr", matched_via: "exact", ...son, player: { ...son.player, slug: "marvin-harrison-jr-" }, namesakes: [father] }
+    const inst = install({
+      "rpc:resolve_player_name": { data: jr, error: null },
+      "rpc:get_player_editions": { data: [{ ...flaccoEditions[0], player_name: "Marvin Harrison Jr.", team_name: "Arizona Cardinals" }], error: null },
+    })
+    script("get_player_editions", { playerName: "Marvin Harrison Jr.", collectionId: "nfl-all-day" })
+    await POST(post({}))
+    const r = toolResult() as { player_url: string; player_identity: { namesakes: Array<{ relation_to_resolved: string }> } }
+    expect(inst.rpcCalls.find((c) => c.name === "get_player_editions")!.args).toMatchObject({ p_player_slug: "marvin-harrison-jr-" })
+    expect(r.player_url).toMatch(/\/player\/marvin-harrison-jr-$/)
+    // the relation still resolves across the trailing dash
+    expect(r.player_identity.namesakes[0].relation_to_resolved).toBe("Marvin Harrison is the PARENT of Marvin Harrison Jr.")
+  })
   it("two unrelated Byron Murphys: AMBIGUOUS, the candidates come back, and NO editions RPC runs", async () => {
     const inst = install({ "rpc:resolve_player_name": { data: murphyAmbiguous, error: null }, "rpc:get_player_editions": { data: flaccoEditions, error: null } })
     script("get_player_editions", { playerName: "Byron Murphy", collectionId: "nfl-all-day" })
