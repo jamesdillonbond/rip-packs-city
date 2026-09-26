@@ -1044,6 +1044,9 @@ export function isPublicPath(pathname: string, method: string): boolean {
     "/api/candy-set-progress",
     // 2026-09-25: Candy MLB's Packs tab backend — same commit as the tab.
     "/api/candy-pack-market",
+    // 2026-09-25: the Candy Collection tab's SNS name → wallet lookup. GET-only,
+    // no session, no DB — a public on-chain name resolution.
+    "/api/candy/resolve-name",
     "/api/ufc-set-progress", "/api/topshot/challenge-plan", "/api/topshot/challenges",
     "/api/wallet-summary", "/api/seeded-wallets", "/api/owned-flow-ids",
     "/api/wallet/edition-counts", "/api/wallet-cache", "/api/ready",

@@ -54,6 +54,26 @@ describe("GET /api/market — Panini arm", () => {
     expect(messi.flowId).toBeNull()
     expect(messi.teamName).toBeNull() // a nation is not a team
     expect(messi.source).toBe("panini")
+    // Relative thumbnail paths have no known host — never served (broken image).
+    expect(messi.thumbnailUrl).toBeNull()
+    expect(messi.lowConfidenceFmv).toBe(false) // MEDIUM anchors a discount
+    const mbappe = body.listings.find((l: any) => l.playerName === "Kylian Mbappe")
+    expect(mbappe.lowConfidenceFmv).toBe(true) // LOW does not
+  })
+
+  it("a LOW-confidence Panini discount sorts BELOW a real one in discount sort", async () => {
+    install({
+      ...board(),
+      panini_market_board: {
+        data: [
+          { external_id: "low", player_name: "A", set_name: "S", tier: "RARE", circulation_count: 49, thumbnail_url: "pack/x.png", low_ask_usd: 2, listed_count: 1, ask_confirmed_at: "2026-09-25T20:00:00Z", fmv_usd: 73, confidence: "LOW", discount_pct: 97 },
+          { external_id: "med", player_name: "B", set_name: "S", tier: "RARE", circulation_count: 49, thumbnail_url: null, low_ask_usd: 80, listed_count: 1, ask_confirmed_at: "2026-09-25T20:00:00Z", fmv_usd: 100, confidence: "MEDIUM", discount_pct: 20 },
+        ],
+        error: null,
+      },
+    })
+    const body = await (await GET(req(`https://t/api/market?collectionId=${PANINI}&sort=discount_desc`))).json()
+    expect(body.listings.map((l: any) => l.editionKey)).toEqual(["med", "low"])
   })
 
   it("carries the listing-gated coverage disclosure", async () => {

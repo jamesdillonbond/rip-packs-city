@@ -204,3 +204,10 @@ Moved to keep the memory file under its character limit (the concierge's second 
 Moved to pay for the collection-keyed-map rule; the NEVER-NARROW bullet in CLAUDE.md keeps its first two sentences and ends "Pin the hex path as its own arm."
 
 - ⛔ **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(k,"flow")` is **stricter** than the `startsWith("0x")` it resembles. **Pin the hex path as its own no-change arm**, or the Solana assertions pass against a function that changed every Flow label.
+
+## Candy MLB — name → wallet lookup (2026-09-25)
+
+- **There is no Candy username to resolve.** Candy generates a self-custody Solana wallet per fan and publishes no public profiles or username API (re-researched 2026-09-25; candy.io, Magic Eden, OpenSea, Tensor, SNS/AllDomains checked from specs + SDK source — the sandbox egress blocks all of them, so nothing was probed live from here).
+- ⛔ **RPC's own usernames are NOT a source either.** `lib/profile/public-profile.ts` strips wallet addresses from the public profile as a load-bearing privacy step; resolving `@rpcuser` → address would publish exactly what it hides.
+- ✅ **SNS names are.** `/api/candy/resolve-name?q=alice.sns` (lib/chains/solana/sns.ts) resolves `.sns` / `.sol` via the SNS SDK proxy `sdk-proxy-v2.sns.id` (the legacy `sdk-proxy.sns.id` retires 2026-10-01). Three outcomes: 200 wallet (verbatim base58) · 404 the name does not resolve · 503 the lookup failed — never "not found". `.sol` may return "Unsupported TLD" past a slot height; that maps to 503, not 404. The Candy Collection search box calls it for any SNS-shaped input.
+- Magic Eden `/v2/wallets/{addr}` gives wallet → displayName only (reverse); OpenSea `accounts/resolve` needs `OPENSEA_API_KEY` (absent, #58).

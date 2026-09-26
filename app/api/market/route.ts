@@ -664,11 +664,21 @@ async function fetchPaniniMarketListings(
     adjusted_fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
     discount: r.discount_pct != null ? Number(r.discount_pct) : null,
     confidence: r.confidence ?? null,
+    // LOW is Panini's MOST COMMON confidence (2,491 of 5,094 editions,
+    // 2026-09-25) and its discounts read absurdly on live data — a $2 ask
+    // against a $72.92 LOW FMV rendered as −97% at the top of discount sort.
+    // Flagged so the shared mapper demotes it and shows "⚠ thin data", the
+    // treatment ASK_ONLY already gets.
+    fmv_low_confidence: String(r.confidence ?? "").toUpperCase() === "LOW",
     source: "panini",
     buy_url: r.external_id
       ? `https://nft.paniniamerica.net/marketplace-details/${encodeURIComponent(r.external_id)}.html`
       : null,
-    thumbnail_url: r.thumbnail_url ?? null,
+    // ⛔ NULL, not r.thumbnail_url: Panini's stored thumbnails are RELATIVE paths
+    // ("pack/1038/thumbnail/…", measured 2026-09-25 on all 5,094) with no known
+    // host, so the browser would request them from OUR domain — a broken image
+    // on every row. No image is honest; a guessed CDN host is not.
+    thumbnail_url: null,
     badge_slugs: null,
     listing_resource_id: null,
     storefront_address: null,
@@ -991,7 +1001,7 @@ export async function GET(req: NextRequest) {
           // not a real deal (a stale $700 ask → $385 FMV makes a fresh $12
           // listing render "−97%"). Flagging it flows through the same "⚠ thin
           // data" chip + discount-sort demotion the P2.5 guard already applies.
-          lowConfidenceFmv: g.lowConfidenceFmv || fmvCannotAnchorDiscount(r.confidence),
+          lowConfidenceFmv: g.lowConfidenceFmv || fmvCannotAnchorDiscount(r.confidence) || r.fmv_low_confidence === true,
           confidence: r.confidence,
           source: r.source,
           buyUrl: r.buy_url,

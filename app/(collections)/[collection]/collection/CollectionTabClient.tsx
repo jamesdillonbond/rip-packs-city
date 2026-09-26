@@ -10,7 +10,8 @@ import WalletPacksView from "@/components/packs/WalletPacksView"
 import { buildEditionScopeKey } from "@/lib/wallet-normalize"
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKeyForChain, setOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
-import { detectAddressChain, isSupportedAddress } from "@/lib/address"
+import { detectAddressChain, isSupportedAddress, isValidAddressForChain } from "@/lib/address"
+import { parseSnsName } from "@/lib/chains/solana/sns"
 import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { useWarmCache, usePrefetch, useWarmup } from "@/lib/warmup/WarmupContext"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
@@ -125,9 +126,14 @@ function WalletMomentsBody() {
     ? (ownerKey
         ? `Enter ${collectionLabel} username or wallet address (or press Enter to load your wallet)`
         : `Enter ${collectionLabel} username or wallet address`)
-    : (ownerKey
-        ? "Enter a wallet address (or press Enter to load your wallet)"
-        : "Enter a wallet address")
+    : collectionObj?.dbChain === "solana"
+      // An SNS name resolves to its wallet (/api/candy/resolve-name, 2026-09-25).
+      ? (ownerKey
+          ? "Enter a Solana wallet or SNS name like alice.sns (or press Enter to load your wallet)"
+          : "Enter a Solana wallet address or SNS name like alice.sns")
+      : (ownerKey
+          ? "Enter a wallet address (or press Enter to load your wallet)"
+          : "Enter a wallet address")
   const [packsByTitle, setPacksByTitle] = useState<Record<string, number>>({})
   // ⚠ THE THIRD STATE FOR THE PACKS COLUMN (2026-08-29). `packsByTitle = {}` is
   // produced by BOTH "this wallet holds no sealed packs" and "the sealed-pack
@@ -687,7 +693,39 @@ function WalletMomentsBody() {
 
   const runSearch = useCallback(async function(query: string) {
     if (!query.trim()) return
-    const trimmed = query.trim()
+    let trimmed = query.trim()
+    // ── Solana: an SNS name (alice.sns / alice.sol) resolves to its wallet ──
+    // (2026-09-25). There is no Candy username to type — Candy publishes no
+    // profiles — and RPC's own usernames deliberately never expose addresses,
+    // so an SNS name is the one name → wallet source. Three outcomes, three
+    // sentences: a name that does not resolve is about the NAME; a failed
+    // lookup is about US and must never read as "no such name".
+    if (ownerKeyChain === "solana" && !isValidAddressForChain(trimmed, "solana") && parseSnsName(trimmed)) {
+      setLoading(true)
+      setError("")
+      let status = 0
+      let resolved: string | undefined
+      try {
+        const res = await fetch("/api/candy/resolve-name?q=" + encodeURIComponent(trimmed))
+        status = res.status
+        if (res.ok) {
+          const j = (await res.json()) as { wallet?: unknown }
+          if (typeof j?.wallet === "string") resolved = j.wallet
+        }
+      } catch {
+        status = 0
+      }
+      setLoading(false)
+      if (!resolved || !isValidAddressForChain(resolved, "solana")) {
+        setError(
+          status === 404
+            ? `${trimmed} doesn't point at a Solana wallet. Paste the wallet address from your Candy account instead.`
+            : "Couldn't look up that name right now. Try again, or paste the wallet address.",
+        )
+        return
+      }
+      trimmed = resolved
+    }
     track("search-executed", {
       collection: collectionSlug,
       // ⛔ Was `startsWith("0x")`, so every Candy base58 address was reported to
@@ -864,7 +902,7 @@ function WalletMomentsBody() {
     } finally {
       setLoading(false)
     }
-  }, [router, collectionSlug, view.sortKey, view.sortDirection, view.playerFilter, view.seriesFilter, view.rarityFilter, view.leagueFilter])
+  }, [router, collectionSlug, ownerKeyChain, view.sortKey, view.sortDirection, view.playerFilter, view.seriesFilter, view.rarityFilter, view.leagueFilter])
 
   // Auto-search on mount: prefer the raw input the user last typed
   // (rpc_last_wallet — username or address) over the resolved ownerKey.
