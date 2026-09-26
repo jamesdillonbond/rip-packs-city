@@ -7,12 +7,13 @@ import { NextRequest } from "next/server"
 // JSON 400, missing packListingId 400, invalid tier 400, unknown collection
 // 400, and the rate-limited insert happy 200.
 
-const state: { rpc: any; rpcErr: any; count: number; countErr: any; insertErr: any } = {
+const state: { rpc: any; rpcErr: any; count: number; countErr: any; insertErr: any; inserted: unknown[] } = {
   rpc: [],
   rpcErr: null,
   count: 0,
   countErr: null,
   insertErr: null,
+  inserted: [],
 }
 
 vi.mock("@supabase/supabase-js", () => {
@@ -20,7 +21,7 @@ vi.mock("@supabase/supabase-js", () => {
     select: () => builder,
     eq: () => builder,
     gte: () => builder,
-    insert: async () => ({ error: state.insertErr }),
+    insert: async (row: unknown) => { state.inserted.push(row); return { error: state.insertErr } },
     then: (resolve: any) => resolve({ count: state.count, error: state.countErr }),
   }
   return {
@@ -48,6 +49,7 @@ beforeEach(() => {
   state.rpcErr = null
   state.count = 0
   state.countErr = null
+  state.inserted = []
   state.insertErr = null
 })
 
@@ -107,5 +109,14 @@ describe("POST /api/pack-pulls", () => {
     state.count = 20
     const res = await POST(post({ packListingId: "abc", tier: "RARE" }))
     expect(res.status).toBe(429)
+  })
+
+  // 2026-09-26: a failed count used to SKIP the cap and fall through to the
+  // service-role insert — an anonymous flood path during any DB slowdown.
+  it("FAILS CLOSED when the rate-limit count errors: 503, and nothing is inserted", async () => {
+    state.countErr = { message: "canceling statement due to statement timeout" }
+    const res = await POST(post({ packListingId: "abc", tier: "RARE" }))
+    expect(res.status).toBe(503)
+    expect(state.inserted).toHaveLength(0)
   })
 })

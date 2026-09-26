@@ -182,11 +182,22 @@ export async function POST(req: NextRequest) {
   // DISTINCT wallet_addr (one Dapper wallet = 5 rows here), and a re-resolve of
   // an already-saved wallet always passes so a capped user can still refresh.
   try {
-    const { data: addrRows } = await supabase
+    const { data: addrRows, error: addrErr } = await supabase
       .from("saved_wallets")
       .select("wallet_addr")
       .eq("user_id", user.id)
       .limit(1000);
+    // FAIL-OPEN by decision (2026-09-03), but never SILENTLY — same as the
+    // saved-wallets POST sibling: supabase-js returns errors, so without this
+    // an outage that lets the cap slip left no trace (2026-09-26).
+    if (addrErr) {
+      console.error(
+        "[resolve-and-associate] quota count read failed (cap check fails OPEN):",
+        addrErr.message,
+        "code:",
+        (addrErr as { code?: string }).code ?? "unknown"
+      );
+    }
 
     // Linked usernames (a Panini handle) share the cap. An unreadable count is
     // logged inside and treated as 0 — this check is fail-open by decision

@@ -76,9 +76,16 @@ export async function POST(req: NextRequest) {
     .eq("pack_listing_id", packListingId)
     .eq("ip_hash", ipHash)
     .gte("submitted_at", startOfDay.toISOString())
-  if (countErr) {
-    console.warn(`[pack-pulls] rate-limit check error: ${countErr.message}`)
-  } else if ((count ?? 0) >= DAILY_IP_LIMIT_PER_PACK) {
+  // ⛔ FAIL CLOSED (2026-09-26). This anonymous POST writes with the service
+  // role, and the daily per-IP cap is its only brake. A failed count used to be
+  // logged and then SKIP the cap, so during any DB slowdown one client could
+  // flood pack_pull_log — which feeds the public per-pack pull stats. An
+  // unmeasurable limit refuses the write; a genuine submitter can retry.
+  if (countErr || count == null) {
+    console.warn(`[pack-pulls] rate-limit check unavailable: ${countErr?.message ?? "no count returned"}`)
+    return NextResponse.json({ error: "Submissions are temporarily unavailable — try again shortly" }, { status: 503 })
+  }
+  if (count >= DAILY_IP_LIMIT_PER_PACK) {
     return NextResponse.json({ error: "Rate limit: max 20 pulls per pack per day" }, { status: 429 })
   }
 

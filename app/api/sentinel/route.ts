@@ -2372,7 +2372,17 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     } else {
       const rows: any[] = trustRows ?? [];
       const breaches = rows.filter((r) => r.status !== "ok");
-      checks.push({
+      if (rows.length === 0) {
+        // Zero metrics is "we measured nothing", not "everything is fine" — the
+        // same rule as the watchlist check above (2026-09-26: this read "0/0
+        // trust metrics ok" with status ok).
+        checks.push({
+          name: "Trust Health",
+          status: "warn",
+          detail: "v_rpc_trust_health returned no metrics — nothing was measured",
+          value: "0/0",
+        });
+      } else checks.push({
         name: "Trust Health",
         status: breaches.length === 0 ? "ok" : "warn",
         detail:

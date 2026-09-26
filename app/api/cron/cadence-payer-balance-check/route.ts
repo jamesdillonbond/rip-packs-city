@@ -92,8 +92,15 @@ export async function POST(req: NextRequest) {
     errMsg = e instanceof Error ? e.message : String(e)
   }
 
+  // ⚠ The pipeline_runs row IS this alert's only delivery channel: the watchlist
+  // reads `ok=false` from it. supabase-js RETURNS errors, so the catch below never
+  // saw a failed write and a low-balance alert could vanish silently (2026-09-26).
+  // A write that did not land fails the HTTP response (500) so the scheduler sees
+  // it; a low balance that WAS recorded stays 200 — a non-2xx on every low-balance
+  // tick risks the scheduler auto-disabling the one job that reports it.
+  let logWriteError: string | null = null
   try {
-    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+    const { error: logErr } = await (supabaseAdmin as any).rpc("log_pipeline_run", {
       p_pipeline: PIPELINE_NAME,
       p_started_at: startedAtIso,
       p_rows_found: 1,
@@ -112,19 +119,25 @@ export async function POST(req: NextRequest) {
         duration_ms: Date.now() - startedMs,
       },
     })
+    if (logErr) logWriteError = logErr.message ?? String(logErr)
   } catch (e) {
-    console.log(
-      `[${PIPELINE_NAME}] log_pipeline_run err: ${e instanceof Error ? e.message : String(e)}`
-    )
+    logWriteError = e instanceof Error ? e.message : String(e)
+  }
+  if (logWriteError) {
+    console.error(`[${PIPELINE_NAME}] log_pipeline_run FAILED — this run's result was not recorded: ${logWriteError}`)
   }
 
-  return NextResponse.json({
-    ok,
-    error: errMsg,
-    payer_address: PAYER_ADDR,
-    balance_flow: Number.isFinite(balanceFlow) ? balanceFlow : null,
-    threshold_flow: threshold,
-  })
+  return NextResponse.json(
+    {
+      ok: ok && !logWriteError,
+      error: errMsg,
+      log_write_error: logWriteError,
+      payer_address: PAYER_ADDR,
+      balance_flow: Number.isFinite(balanceFlow) ? balanceFlow : null,
+      threshold_flow: threshold,
+    },
+    { status: logWriteError ? 500 : 200 },
+  )
 }
 
 export async function GET(req: NextRequest) {

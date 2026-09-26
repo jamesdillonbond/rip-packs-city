@@ -4986,19 +4986,27 @@ export async function POST(req: NextRequest) {
       const clientIp = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim();
       if (clientIp) {
         try {
-          const { data: rl } = await supabase.rpc("bump_concierge_ip_rate", {
+          const { data: rl, error: rlErr } = await supabase.rpc("bump_concierge_ip_rate", {
             p_ip: clientIp,
             p_limit: 40,
             p_window_secs: 3600,
           });
+          // Fail-OPEN stays the decision, but it must be VISIBLE: supabase-js
+          // returns errors rather than throwing, so the catch below never saw a
+          // failed limiter and every anonymous message went uncapped with no
+          // trace (2026-09-26).
+          if (rlErr) {
+            console.error("[support-chat] concierge IP limiter failed (failing OPEN):", rlErr.message);
+          }
           if (rl && rl.allowed === false) {
             return NextResponse.json(
               { response: "You've sent a lot of messages! Take a breather and try again in an hour.", escalated: false, category: "rate_limit" },
               { status: 429 }
             );
           }
-        } catch {
-          /* fail-open — a limiter error must never block a real user */
+        } catch (e) {
+          /* fail-open — a limiter error must never block a real user — but say so */
+          console.error("[support-chat] concierge IP limiter threw (failing OPEN):", e instanceof Error ? e.message : String(e));
         }
       }
     }

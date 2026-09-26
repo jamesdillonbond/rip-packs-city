@@ -603,6 +603,13 @@ describe("sentinel — pipeline / trust / totals arms", () => {
     const r = await run({ v_rpc_trust_health: { data: null, error: { message: "permission denied" } } as never })
     expect(chk(r, "Trust Health").status).toBe("warn")
   })
+  // 2026-09-26: zero metrics read "0/0 trust metrics ok" with status ok.
+  it("warns when trust health returns NO metrics — nothing measured is not 'ok'", async () => {
+    const r = await run({ v_rpc_trust_health: { data: [], error: null } as never })
+    const c = chk(r, "Trust Health")
+    expect(c.status).toBe("warn")
+    expect(c.detail).not.toMatch(/0\/0 trust metrics ok/)
+  })
   it("warns when total-sales estimate is zero", async () => {
     const r = await run({ "rpc:sentinel_total_sales_estimate": { data: 0, error: null } as never })
     expect(chk(r, "Total Sales").status).toBe("warn")

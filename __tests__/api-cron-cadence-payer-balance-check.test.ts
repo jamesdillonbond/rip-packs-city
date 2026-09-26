@@ -88,3 +88,32 @@ describe("POST /api/cron/cadence-payer-balance-check — success path", () => {
     expect(res.status).toBe(200)
   })
 })
+
+// 2026-09-26: the pipeline_runs row IS the low-balance alert's delivery channel.
+// supabase-js returns errors, so a failed write was dropped silently while the
+// route answered 200.
+describe("cadence-payer-balance-check — the alert's own write", () => {
+  it("a FAILED log_pipeline_run write answers 500 and says the result was not recorded", async () => {
+    const { supabaseAdmin } = (await import("@/lib/supabase")) as any
+    const orig = supabaseAdmin.rpc
+    supabaseAdmin.rpc = async () => ({ data: null, error: { message: "permission denied" } })
+    try {
+      const res = await POST(makeReq({ method: "POST", auth: "Bearer test-ingest-secret" }))
+      expect(res.status).toBe(500)
+      const body = await res.json()
+      expect(body.ok).toBe(false)
+      expect(body.log_write_error).toContain("permission denied")
+    } finally {
+      supabaseAdmin.rpc = orig
+    }
+  })
+
+  it("CONTROL: a LOW balance that WAS recorded stays 200 (a non-2xx every tick risks the scheduler disabling the job)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ balance: "1000" }), text: async () => "" })))
+    const res = await POST(makeReq({ method: "POST", auth: "Bearer test-ingest-secret" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(String(body.error)).toMatch(/below alert threshold/)
+  })
+})

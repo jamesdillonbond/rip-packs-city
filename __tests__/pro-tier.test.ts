@@ -96,6 +96,14 @@ describe("checkFeatureQuota", () => {
     expect(q.daily_limit).toBeNull()
   })
 
+  it("…and the fail-open is LOGGED, never silent (2026-09-26)", async () => {
+    state.rpc = async () => ({ data: null, error: { message: "down" } })
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    await checkFeatureQuota(WALLET, "concierge")
+    expect(spy.mock.calls.some((c) => String(c[0]).includes("failing OPEN") && String(c[1]).includes("down"))).toBe(true)
+    spy.mockRestore()
+  })
+
   it("known wallet returns the RPC quota verbatim", async () => {
     state.rpc = async () => ({ data: { allowed: true, plan: "pro_paid", used_today: 1, daily_limit: null, remaining: null, reason: "unlimited" }, error: null })
     const q = await checkFeatureQuota(WALLET, "alerts")

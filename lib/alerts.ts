@@ -190,9 +190,12 @@ export async function claimPendingDeliveries(channel: Channel, max = 50) {
     p_channel: channel,
     p_max: max,
   });
+  // ⚠ A failed claim is NOT an empty outbox (2026-09-26). Returning `[]` here made
+  // alerts-send log ok:true / sent:0 — identical to a quiet queue — for as long as
+  // the RPC kept failing, so every user alert could go silent behind a green run.
+  // Throw: the sender already records a thrown claim as ok=false, per channel.
   if (error) {
-    console.log("[alerts] claim_pending_deliveries err", channel, error.message);
-    return { channel, count: 0, deliveries: [] as Delivery[] };
+    throw new Error(`claim_pending_deliveries (${channel}): ${error.message}`);
   }
   return data as { channel: Channel; count: number; deliveries: Delivery[] };
 }

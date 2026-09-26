@@ -99,6 +99,12 @@ export async function checkFeatureQuota(
     p_wallet: wallet, p_feature: featureName,
   })
   if (error || !data) {
+    // Visible, not silent (2026-09-26): a quota that fails open with no log is
+    // a guard nobody can see fail.
+    console.error(
+      `[pro-tier] check_feature_quota failed for ${featureName} (failing OPEN):`,
+      error?.message ?? "no data returned",
+    )
     // Fail-open for known-good wallets: if the RPC is unreachable we don't
     // want to wedge the product. Free callers get the same zero-quota
     // shape they'd see on a true block; everyone else is treated as

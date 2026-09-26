@@ -259,9 +259,11 @@ describe("claimPendingDeliveries", () => {
     expect(lastCall()).toEqual({ name: "claim_pending_deliveries", args: { p_channel: "email", p_max: 50 } })
   })
 
-  it("returns an empty batch sentinel on error", async () => {
+  // INVERTED 2026-09-26: this pinned the empty-batch sentinel. alerts-send read it
+  // as a quiet queue and logged ok:true / sent:0 while every alert went undelivered.
+  it("THROWS on an RPC error — a failed claim is never an empty outbox", async () => {
     state.rpcResults["claim_pending_deliveries"] = { data: null, error: { message: "x" } }
-    expect(await claimPendingDeliveries("telegram", 5)).toEqual({ channel: "telegram", count: 0, deliveries: [] })
+    await expect(claimPendingDeliveries("telegram", 5)).rejects.toThrow(/claim_pending_deliveries \(telegram\): x/)
     expect(lastCall().args.p_max).toBe(5)
   })
 })
