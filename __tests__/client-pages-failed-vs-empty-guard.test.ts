@@ -397,7 +397,7 @@ describe("client pages — a failed read is not an empty result", () => {
     })
 
     it("the empty-state copy SURVIVES — a sole listing is a real answer", () => {
-      expect(src).toContain("No other listings for this edition.")
+      expect(src).toContain("No other listings for this edition in the live feed.")
     })
 
     it("the sibling floor leg still reports its own failure", () => {

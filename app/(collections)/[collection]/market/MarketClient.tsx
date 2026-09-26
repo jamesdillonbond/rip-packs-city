@@ -717,6 +717,16 @@ function MarketInner() {
         <div className="rpc-card" style={{ padding: 20, borderLeft: "3px solid #EF4444" }}>
           <span className="rpc-mono" style={{ color: "#FCA5A5" }}>Couldn&apos;t load market — {error}</span>
         </div>
+      ) : filteredListings.length === 0 && baseListings.length > 0 && ownedFilter !== "all" ? (
+        // ⚠ The Owned filter runs over THIS PAGE's listings only (known-issues
+        // #146). An empty result here says nothing about the market, so it must
+        // not fall through to the collection's "nothing is listed" empty state.
+        <div className="rpc-card" style={{ padding: 24, textAlign: "center" }} data-testid="owned-filter-page-empty">
+          <span className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", lineHeight: 1.7 }}>
+            None of the {baseListings.length.toLocaleString()} listings on this page {ownedFilter === "owned" ? "are editions you own" : "are editions you don't own"}.
+            The Owned filter applies to the current page only — try the next page, or clear the filter.
+          </span>
+        </div>
       ) : filteredListings.length === 0 ? (
         <EmptyState collectionId={collectionId} thinVolume={thinVolume} />
       ) : view === "grid" ? (

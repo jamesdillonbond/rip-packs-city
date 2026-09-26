@@ -611,9 +611,13 @@ describe("MarketClient — controls", () => {
     render(<MarketClient />)
     await screen.findByText("Damian Lillard")
     fireEvent.click(await screen.findByRole("button", { name: "Not owned" }))
-    // The row IS owned, so a not-owned filter must empty the board — and that
-    // empty is honest (the read succeeded), so the empty state is correct here.
-    await screen.findByText("No listings match these filters.")
+    // The row IS owned, so a not-owned filter empties the PAGE. ⚠ RE-PINNED
+    // 2026-09-25 (known-issues #146): the Owned filter runs over this page's
+    // listings only, so the empty must say THAT — not fall through to the
+    // market's empty state, which concludes about listings it never looked at.
+    const note = await screen.findByTestId("owned-filter-page-empty")
+    expect(note.textContent).toMatch(/current page only/)
+    expect(screen.queryByText("No listings match these filters.")).toBeNull()
   })
 })
 

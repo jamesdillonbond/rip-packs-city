@@ -1669,11 +1669,13 @@ function SniperMomentsBody() {
                               // first swallows the failure silently.
                               <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", padding: "4px 0" }}>{depthListingsError}</div>
                             ) : depthDeals.length === 0 ? (
-                              <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", padding: "4px 0" }}>No other listings for this edition.</div>
+                              <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", padding: "4px 0" }}>No other listings for this edition in the live feed.</div>
                             ) : (
                               <>
                                 <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>
-                                  {depthDeals.length} OTHER LISTING{depthDeals.length !== 1 ? "S" : ""} FOR {deal.playerName} — {deal.setName}
+                                  {/* The panel searches the Sniper's live feed pool, not every listing of the
+                                    edition (known-issues #146), so the count names its scope. */}
+                                  {depthDeals.length} OTHER LISTING{depthDeals.length !== 1 ? "S" : ""} IN THE LIVE FEED FOR {deal.playerName} — {deal.setName}
                                 </div>
                                 {[...depthDeals].sort((a, b) => a.askPrice - b.askPrice).map((dd) => (
                                   <div key={dd.flowId} className="flex items-center gap-4" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", padding: "4px 0" }}>
