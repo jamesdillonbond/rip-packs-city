@@ -278,6 +278,9 @@ export const COLLECTIONS: Collection[] = [
     // only once it has been listed — a floor, not a census. The static
     // app/(collections)/panini-blockchain/ dirs (OpenSea bridge plane, no data)
     // were deleted in the same change; they shadowed [collection]/overview.
+    // ⛔ `collections.is_active` stays FALSE by decision (known-issues #64): it
+    // enrolls a collection in sales-fed rollups (smoke, readiness, search…) and
+    // `sales` holds zero Panini rows. Published status is THIS registry's.
     pages: ["overview", "market"],
     published: true,
     openSeaSlug: "paniniblockchain",

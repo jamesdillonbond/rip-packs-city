@@ -195,9 +195,10 @@ whole-group statistic used as a proxy for a per-slice property.
    `20260926041006` + `20260926041443` (the second corrects the first's `nation` → `team_name`).
 3. ✅ **`published` + `proxy.ts` FLIPPED 2026-09-25 ~10:00 PM PT** — Overview + Market on the shared
    routes, coverage disclosure on both (known-issues #64 has the full list). The site-wide badge
-   stayed `BUILT ON FLOW + SOLANA` (dbChain null), as the pin below predicted. ⏳ **`is_active` NOT
-   flipped**: 19 DB functions + ~11 code paths read it, several Flow-shaped (alerts, wallet
-   seeding, health/readiness, sentinel, search) — each needs checking for a Panini arm first.
+   stayed `BUILT ON FLOW + SOLANA` (dbChain null), as the pin below predicted. ✅ **`is_active`
+   stays `false` — DECIDED 2026-09-25 ~10:30 PM PT after auditing all 19 DB readers:** the flip
+   would enroll Panini in sales-fed rollups over `sales` (0 Panini rows) — smoke freshness red,
+   $0 volume rows, search hits into entity routes Panini lacks. Full audit: known-issues #64.
    *(original order:)* **The flips**, in the 09-06 audit's order: `published` → `proxy.ts` → `is_active` LAST.
    ⚠ **The `published` flip is not cosmetic** — measured 2026-09-20, it rewrites the site-wide
    provenance badge. That specific defect is fixed (§5 gap 1) and pinned, but re-read the pin before

@@ -211,3 +211,9 @@ Moved to pay for the collection-keyed-map rule; the NEVER-NARROW bullet in CLAUD
 - ⛔ **RPC's own usernames are NOT a source either.** `lib/profile/public-profile.ts` strips wallet addresses from the public profile as a load-bearing privacy step; resolving `@rpcuser` → address would publish exactly what it hides.
 - ✅ **SNS names are.** `/api/candy/resolve-name?q=alice.sns` (lib/chains/solana/sns.ts) resolves `.sns` / `.sol` via the SNS SDK proxy `sdk-proxy-v2.sns.id` (the legacy `sdk-proxy.sns.id` retires 2026-10-01). Three outcomes: 200 wallet (verbatim base58) · 404 the name does not resolve · 503 the lookup failed — never "not found". `.sol` may return "Unsupported TLD" past a slot height; that maps to 503, not 404. The Candy Collection search box calls it for any SNS-shaped input.
 - Magic Eden `/v2/wallets/{addr}` gives wallet → displayName only (reverse); OpenSea `accounts/resolve` needs `OPENSEA_API_KEY` (absent, #58).
+
+## Panini — a published collection with NO chain (2026-09-25)
+
+- `dbChain: null` (no chain identity established, owners are usernames). Published with Overview + Market; `collections.is_active` stays false by decision (known-issues #64).
+- ⛔ **`c.dbChain ?? "flow"` treats null as Flow.** It did so in three places on publish day — the dashboard gave every Flow wallet a Panini tile, the overview ran Flow insider detectors, and the wallet band would have offered a Flow wallet box (`chain && chain !== "flow"` lets null through). Test `=== "flow"` explicitly.
+- A collection with no entity routes (no `lib/collection-slug.ts` record) must not render edition/player/set links — MarketClient's `hasEntityPages` gates them (pinned in collection-registry-consistency.test.ts as `FACADE_GATED_PAGES`).

@@ -13,6 +13,18 @@ CLAUDE.md's preamble says a new rule must **DISPLACE** one rather than spend roo
 ⚠ **A spot-check of facts you thought to name cannot catch the loss of something neither party would have listed** — the two are different questions, and only the orphan count answers the second. ⭐ **The sharper reason: the set you remember to enumerate is the set LEAST likely to contain the thing you dropped.**
 
 ⚠ **ONE CAVEAT, so a future session does not panic at a clean result: a line REWORDED IN PLACE reads as removed and will not be found verbatim, producing a FALSE ORPHAN.** So `orphans: 0` is a strong proof and `orphans: N` is a **prompt to look**, not a failure — glance at each one and confirm it was reworded rather than lost. ⭐ **The asymmetry is what makes the check worth running: zero orphans is a guarantee no enumeration can give, and a non-zero count costs only a glance.**
+## Condensed in CLAUDE.md 2026-09-25 (verbatim) — the second confidence vocabulary (Enums bullet)
+
+Same displacement as the entry below. Topic-specific: needed only when writing `nba_player_projections`.
+
+> ⚠ Two confidence vocabularies — `nba_player_projections.confidence` allows only 3-letter `MED`.
+
+## Condensed in CLAUDE.md 2026-09-25 (verbatim) — the `openGraph` half of the `generateMetadata` bullet
+
+Condensed to a pointer to make room for two Panini-publish lessons (a null `dbChain` defaulted to Flow; a new writer bypassing a gated one). A topic-specific rule — needed only once you are writing route metadata:
+
+> ⚠ `openGraph`/`twitter` merge **SHALLOWLY**: a route redefining either key REPLACES the root object, silently dropping `siteName`/`type`/`locale`/`creator`.
+
 ## Replaced in CLAUDE.md 2026-09-25 (verbatim) — the last sentence of the Vercel "SEGMENT SEMANTICS" bullet
 
 Replaced at equal length (69 → 69 characters) with *"CI `build-render` renders all routes (09-25); PREVIEW-verify too."* because CI now renders every page route of the built app, signed in and anonymous. With the 09-20 defect re-planted, `next build` exited 0 and that job went red (testing-and-ci.md, top section). The preview advice still holds for anything the job cannot see, such as real data and the real auth provider. Original:

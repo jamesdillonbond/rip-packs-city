@@ -149,7 +149,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 - ⚠ **A filed FINDING is a hypothesis — re-derive before acting; and so is a filed DECISION NOT TO ACT (the tell is a cost stated with no number in it), a stale JUSTIFICATION (invertible — the tell cites a SHIP DATE), and a filed CORRECTION.** ⛔ **Read the ITEM, never an excerpt — a grep of #118’s first paragraph cost a change it twice FORBIDS. OPEN the dated item before contradicting it, and a CONFOUND found does not license the OPPOSITE attribution.** Five more clauses + every case, verbatim: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
 - ⚠ **A plausible mechanism is not a measurement**, including when it flatters this file — a cheap sample beats a good story. ⚠ **And a probe whose HARNESS differs from production in the ONE dimension the answer depends on is not a measurement of production** (OG-font case: key-files-and-honesty.md).
 - ⛔ **A FIX TO A ROUTE IS NOT A FIX TO THE SURFACE until its CALLER can reach it** — one was verified live 0 → 5 while its client still returned early on the wallet shape, and **no route-level test could have caught it** (case: cron-and-schedulers.md).
-- ⚠ **Name the caller before you touch the function** — an afternoon went into one with **zero** callers. **EIGHT sources, and the last two are INVISIBLE from a sandbox**; a TRIGGER function has no textual caller. ⚠ **A TABLE’s WRITERS the same — grep the DB: two pg_cron ones REFUTED a filed finding (#81).** Full list: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
+- ⚠ **Name the caller before you touch the function** — an afternoon went into one with **zero** callers. **EIGHT sources, and the last two are INVISIBLE from a sandbox**; a TRIGGER function has no textual caller. ⚠ **A TABLE’s WRITERS the same — grep the DB: two pg_cron ones REFUTED a filed finding (#81).** ⛔ **A writer bypassing a GATED one removes the gate.** Full list: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
 - ⚠ **Displaced 09-20 (verbatim, end of file): DISCOVERY must not double as the REFRESH list · an ELIGIBILITY count is not a GAIN count · a SWEEP under-covers two ways, both reporting success: too few slots (`N ≥ population ÷ staleness_hours`) and the WRONG POPULATION · **size the MARGINAL set; a CAP IS NOT A RATE** → [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md) · `count(*)` over a ONE-ROW function → database.md · Diff the SET, not the count → trust-board-and-safety.md.**
 - ⚠ **Read `cron.job.command` to learn what a schedule calls; never infer the callee from the name** — two objects one suffix apart yielded *opposite* conclusions. ⛔ **Where a job’s PERIOD outruns the instrument’s WINDOW, `latest_status=failed` cannot separate STILL-BROKEN from FIXED-AWAITING-NEXT-RUN** — a WEEKLY reindex read red 11 min after its fix landed; resolve against LIVE state.
 - ⚠ **A directional claim needs a DISTRIBUTION, not a snapshot; a delta between two STOCKS is neither a rate nor a sign; `max()` on a `text` cursor is lexicographic.**
@@ -219,17 +219,17 @@ Two vocabularies, not interchangeable — mixing them corrupts `flowty_*` writes
 Flow/EVM: hex, `0x`-prefixed, case-INsensitive. Solana: **base58, un-prefixed, CASE-SENSITIVE**. This repo's two reflexes — `.toLowerCase()` and *prepend `0x` if missing* — do not normalise a Candy key, they **destroy** it. ⚠ **It fails SILENTLY IN THE WRONG DIRECTION: zero rows, rendered as "this wallet holds nothing"** — or a complete object of ZEROS echoing the mangled wallet back.
 
 - **Use [lib/address.ts](lib/address.ts) — never a bare `.toLowerCase()`, never a fresh helper** (a grep found TEN already). Which function for which job: [chain-strategy.md](docs/reference/chain-strategy.md).
-- ⛔ **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(k,"flow")` is **stricter** than the `startsWith("0x")` it resembles. Pin the hex path as its own arm.
+- ⛔ **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(k,"flow")` is **stricter** than the `startsWith("0x")` it resembles. Pin the hex path as its own arm. ⛔ **`dbChain ?? "flow"` made null-chain Panini Flow — test `=== "flow"`.**
 - ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence**; a per-device identity key is chain-scoped, swept by PREFIX: chain-strategy.md.
 - ⛔ **A collection-keyed map lacking the new chain returns `null`, and null SILENTLY DROPS features** (Candy moment pages lost links + CTA; its test used `candy_mlb` as "unknown"): chain-strategy.md.
 
 ### Collection UUIDs
 
-All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-truth.md) — ⚠ **09-08: Candy MLB (`solana`) is `is_active=true` (#63); Panini (`ethereum`) is the ONLY inactive row.**
+All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-truth.md) — ⚠ **09-08: Candy MLB (`solana`) is `is_active=true` (#63); Panini: published 09-25 but `is_active=false` BY DECISION (#64).**
 
 ### Enums
 
-- **Never `.ilike` an enum column — use `.eq`**; `fmv_snapshots.confidence` is UPPERCASE. ⚠ Two confidence vocabularies — `nba_player_projections.confidence` allows only 3-letter `MED`. Value lists (`fmv_confidence`, `tier_type`): [database.md](docs/reference/database.md). `chain_type`, and why `chain` lives on `collections` ONLY: [chain-strategy.md](docs/reference/chain-strategy.md).
+- **Never `.ilike` an enum column — use `.eq`**; `fmv_snapshots.confidence` is UPPERCASE. Value lists (+ a 2nd confidence vocabulary; `fmv_confidence`, `tier_type`): [database.md](docs/reference/database.md). `chain_type`, and why `chain` lives on `collections` ONLY: [chain-strategy.md](docs/reference/chain-strategy.md).
 
 ### Series map (on-chain UInt32 → display name)
 
@@ -254,7 +254,7 @@ The rest (Pinnacle's FMV triple-join, DERIVE-don't-recite): [concierge.md](docs/
 
 - Full file replacements only — never snippets or diffs. Claude Code prompts: normal markdown, desktop-read.
 - `proxy.ts` is the correct Next.js 16 convention (renamed from middleware.ts). Supabase client typed `any` in API routes.
-- `generateMetadata` cannot be exported from a client component — it belongs in the server `layout.tsx`. ⚠ `openGraph`/`twitter` merge **SHALLOWLY**: a route redefining either key REPLACES the root object, silently dropping `siteName`/`type`/`locale`/`creator`.
+- `generateMetadata` cannot be exported from a client component — it belongs in the server `layout.tsx`. ⚠ `openGraph`/`twitter` merge SHALLOWLY: claude-md-condensed-originals.md.
 - `useSearchParams` requires a Suspense wrapper.
 - Fire-and-forget >30s: `after(runX())` from `next/server`, return `{status: accepted}`. ⚠ **`try/catch` CANNOT catch a `maxDuration` kill and the kill is ABSENT from `pipeline_runs_daily`** — write a `<pipeline>-heartbeat` BEFORE the work (`rows_*` NULL), read kills by CORRELATION (`npm run pipelines:kills`), bound every `fetch`. Cases: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
 - Never hardcode `#E03A2F` or `'Barlow Condensed'` — always the tokens in `app/rpc-tokens.css`. ⚠ **Web red is `#E03A2F`; email red is `#E55A4C`**, hardcoded on purpose (email clients lack CSS custom properties). ⚠ `--rpc-black` and `--rpc-text-primary` are THEME-AWARE — a hardcoded dark hex renders a black slab in light mode.
