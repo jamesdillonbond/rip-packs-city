@@ -256,9 +256,16 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         followShortSlug={detail.team_short_slug}
         teamPath={`/${collection}/team/${slug}`}
       />
+      {/* 2026-09-25 (batch 62): the variants are the franchise's ERAS — every
+          label it minted under (Las Vegas · Oakland · Los Angeles Raiders) is
+          counted on this one page — so say that, current name first. */}
       {detail.team_name_variants && detail.team_name_variants.length > 1 && (
         <div className="rpc-mono" style={{ marginTop: 8, fontSize: 11, color: "var(--rpc-text-muted)" }}>
-          Variants merged: {detail.team_name_variants.join(" · ")}
+          Every era counted:{" "}
+          {[
+            ...(detail.team_name && detail.team_name_variants.includes(detail.team_name) ? [detail.team_name] : []),
+            ...detail.team_name_variants.filter((v) => v !== detail.team_name),
+          ].join(" · ")}
         </div>
       )}
       {/* 2026-09-24: the cross-collection franchise hub (/teams/<league>/<slug>).
