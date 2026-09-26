@@ -18,18 +18,6 @@
 -- would take candy_secondary_board and candy_offer_spread_board with it. The two
 -- appended columns are inert to every other reader, so the rollback is to stop
 -- reading them (revert the paired code commit) and leave the view as is.
-CREATE OR REPLACE VIEW can only add at the end, so every
--- existing column and its meaning is unchanged for candy_secondary_board and
--- candy_offer_spread_board):
---   confirmed_floor_usd      troll-capped min over asks seen in the last 12 h
---   confirmed_listing_count  how many such asks
--- 12 h = four missed sweeps of the 3-hourly /api/candy-listings-indexer.
---
--- Rollback: re-apply the body from
--- 20260724180000_audit_20260724_candy_scoped_fmv_current.sql's candy_listing_floor
--- definition WITHOUT the two appended columns is NOT possible via CREATE OR REPLACE
--- (columns cannot be dropped that way): DROP VIEW ... CASCADE would take its two
--- dependents with it. Leave the columns in place and stop reading them instead.
 CREATE OR REPLACE VIEW public.candy_listing_floor AS
  WITH tier_median AS (
          SELECT e.tier,
