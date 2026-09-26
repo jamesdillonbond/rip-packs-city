@@ -34,6 +34,7 @@ function makeDb(o: {
   dists?: Array<{ id: string; dist_id: string }>
   distError?: { message: string } | null
   packs?: Record<string, string | null>
+  ripPacks?: Record<string, string | null>
   packError?: { message: string } | null
   updateResult?: { data: unknown; error: { message: string } | null }
 }) {
@@ -59,8 +60,8 @@ function makeDb(o: {
             return Promise.resolve(o.distError ? { data: null, error: o.distError } : { data: o.dists ?? [], error: null })
           }
           if (o.packError) return Promise.resolve({ data: null, error: o.packError })
-          const dist = state.eqs.find(([c]) => c === "pack_dist_id")?.[1] as string
-          const id = o.packs?.[dist]
+          const dist = state.eqs.find(([c]) => c === "pack_dist_id" || c === "dist_id")?.[1] as string
+          const id = table === "pack_rips" ? o.ripPacks?.[dist] : o.packs?.[dist]
           return Promise.resolve({ data: id ? [{ pack_nft_id: id }] : [], error: null })
         },
       }
@@ -93,6 +94,14 @@ describe("fillMissingDistImages", () => {
     expect(db.updates[0].eqs).toContainEqual(["id", "r1"])
     expect(db.updates[0].isNull).toContain("image_url")
     expect(r).toMatchObject({ ok: true, complete: true, imageless: 1, filled: 1, no_pack: 0, no_image: 0 })
+  })
+
+  it("falls back to an OPENED pack when the dist has no purchase (a dist discovered from rips alone)", async () => {
+    const db = makeDb({ dists: [{ id: "r1", dist_id: "8870" }], packs: {}, ripPacks: { "8870": "999" } })
+    const f = vi.fn(async () => res(302, REDIRECT_8825))
+    const r = await fillMissingDistImages({ ...BASE, db, fetchImpl: f as unknown as typeof fetch })
+    expect(((f.mock.calls[0] as unknown) as [string])[0]).toBe(`${PACKNFT_MEDIA_BASE}/999/media/image?format=jpeg&width=256`)
+    expect(r).toMatchObject({ ok: true, filled: 1, no_pack: 0 })
   })
 
   it("a 404 is no_image and a dist with no known pack is no_pack — both left NULL, never guessed", async () => {

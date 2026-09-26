@@ -97,19 +97,32 @@ export async function fillMissingDistImages(opts: Options): Promise<DistImagePas
       break
     }
 
-    const pack = await db
-      .from("pack_purchases")
-      .select("pack_nft_id")
-      .eq("collection_id", collectionId)
-      .eq("pack_dist_id", row.dist_id)
-      .order("sealed_at", { ascending: false })
-      .limit(1)
-    if (pack.error) {
-      fail(`pack lookup failed: ${pack.error.message}`)
-      continue
+    // Any pack of the dist will do — purchased first, then opened (a dist
+    // discovered from rips alone may have no purchase row; the media redirect
+    // still answers for a burned pack, verified 2026-09-25).
+    let packNftId: string | undefined
+    let lookupFailed = false
+    for (const [table, distCol] of [["pack_purchases", "pack_dist_id"], ["pack_rips", "dist_id"]] as const) {
+      const pack = await db
+        .from(table)
+        .select("pack_nft_id")
+        .eq("collection_id", collectionId)
+        .eq(distCol, row.dist_id)
+        .order("sealed_at", { ascending: false })
+        .limit(1)
+      if (pack.error) {
+        fail(`pack lookup failed (${table}): ${pack.error.message}`)
+        lookupFailed = true
+        break
+      }
+      const id = (pack.data ?? [])[0]?.pack_nft_id as string | undefined
+      if (id && /^\d+$/.test(id)) {
+        packNftId = id
+        break
+      }
     }
-    const packNftId = (pack.data ?? [])[0]?.pack_nft_id as string | undefined
-    if (!packNftId || !/^\d+$/.test(packNftId)) {
+    if (lookupFailed) continue
+    if (!packNftId) {
       r.no_pack++
       continue
     }

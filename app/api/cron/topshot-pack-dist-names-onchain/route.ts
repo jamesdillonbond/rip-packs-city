@@ -33,6 +33,14 @@ import { fillMissingDistImages, type DistImagePassResult } from "@/lib/packs/top
 // stop is `complete:false` on an ok run; a write error fails the run and the
 // row count means rows the UPDATE actually returned.
 //
+// DISCOVERY (2026-09-25). Nothing else creates a row for a PDS-era dist
+// (Studio Platform, the old seeder's source, does not carry them), and the
+// passes below only fill rows that EXIST — so a brand-new dist a collector
+// opened stayed "Pack" forever (64 had piled up). The run starts by calling
+// discover_missing_topshot_pack_distributions(7): a placeholder row (title
+// NULL) for every dist a rip or purchase of the last 7 days references and the
+// table lacks. The naming and image passes then fill it in the same run.
+//
 // IMAGES (2026-09-25). A second pass fills `image_url` for dists that have
 // none, from the pack NFT's own media redirect (lib/packs/topshot-dist-images.ts)
 // — PDS carries no image for most new dists. Same honesty rules; its counts
@@ -50,6 +58,7 @@ const FLOW_REST = process.env.FLOW_REST_URL ?? "https://rest-mainnet.onflow.org"
 const SCRIPT_TIMEOUT_MS = 15_000
 const MAX_ROWS_PER_RUN = 200
 const TIME_BUDGET_MS = (maxDuration - 45) * 1000
+const DISCOVERY_DAYS = 7
 
 // Verified on mainnet 2026-09-25 through Flow REST against 0xb6f2481eba4df97b
 // (dists 8825, 8869, 8734, 5266). Re-verify with the cadence MCP before any
@@ -176,6 +185,24 @@ async function run(request: NextRequest) {
     let scriptErrors = 0
     let writeErrors = 0
     let images: DistImagePassResult | null = null
+    let discovered: number | null = null
+
+    // Discovery first, so the passes below see the new rows. A failure fails
+    // the run but does not stop naming/pictures for the rows that do exist.
+    try {
+      const { data, error } = await (supabaseAdmin as any).rpc("discover_missing_topshot_pack_distributions", {
+        p_days: DISCOVERY_DAYS,
+      })
+      if (error) throw new Error(error.message)
+      // null is not 0 — an absent count must not become a measured zero.
+      if (data == null) throw new Error("no count returned")
+      discovered = typeof data === "number" ? data : Number(data)
+      if (!Number.isFinite(discovered)) throw new Error(`unexpected result ${JSON.stringify(data)}`)
+    } catch (e) {
+      ok = false
+      discovered = null
+      errMsg = errMsg ?? `discover: ${e instanceof Error ? e.message : String(e)}`
+    }
 
     try {
       const read = await readUnnamed()
@@ -245,11 +272,12 @@ async function run(request: NextRequest) {
       ok,
       error: errMsg,
       rowsFound: unnamed + (images?.imageless ?? 0),
-      rowsWritten: named + (images?.filled ?? 0),
+      rowsWritten: (discovered ?? 0) + named + (images?.filled ?? 0),
       rowsSkipped: notOnChain,
       collectionSlug: "nba-top-shot",
       extra: {
         complete,
+        discovered,
         unnamed,
         named,
         not_on_chain: notOnChain,

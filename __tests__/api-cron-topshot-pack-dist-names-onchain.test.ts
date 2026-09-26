@@ -29,9 +29,11 @@ const sb = vi.hoisted(() => {
   const s: any = {
     rows: [] as any[], readError: null as any,
     updates: [] as any[], updateResult: { data: [{ id: "x" }], error: null } as any,
+    rpcCalls: [] as any[], rpcResult: { data: 0, error: null } as any, readCalls: 0,
   }
+  s.rpc = (fn: string, args: any) => { s.rpcCalls.push({ fn, args, at: s.readCalls }); return Promise.resolve(s.rpcResult) }
   for (const m of ["from", "select", "eq", "is", "order"]) s[m] = () => s
-  s.limit = () => Promise.resolve(s.readError ? { data: null, error: s.readError } : { data: s.rows, error: null })
+  s.limit = () => (s.readCalls++, Promise.resolve(s.readError ? { data: null, error: s.readError } : { data: s.rows, error: null }))
   s.update = (patch: any) => { s.updates.push(patch); return s }
   // the update chain ends in .select("id") — return a thenable answering the update result
   const origSelect = s.select
@@ -86,6 +88,9 @@ beforeEach(() => {
   sb.updates = []
   sb._selectSeen = 0
   sb.updateResult = { data: [{ id: "x" }], error: null }
+  sb.rpcCalls = []
+  sb.rpcResult = { data: 0, error: null }
+  sb.readCalls = 0
   heartbeat.mockClear()
   terminal.mockClear()
   images.mockReset()
@@ -214,6 +219,43 @@ describe("the sweep", () => {
     await captured!()
     expect(f).not.toHaveBeenCalled()
     expect(lastTerminal()).toMatchObject({ ok: false, rowsWritten: 0 })
+  })
+
+  it("DISCOVERS missing dists first (before the unnamed read), and counts what it inserted", async () => {
+    sb.rows = [ROW_8825]
+    stubFlow([CHAIN_8825])
+    sb.rpcResult = { data: 2, error: null }
+    await GET(req("Bearer cron-tok"))
+    await captured!()
+    expect(sb.rpcCalls).toHaveLength(1)
+    expect(sb.rpcCalls[0]).toMatchObject({ fn: "discover_missing_topshot_pack_distributions", args: { p_days: 7 }, at: 0 })
+    const t = lastTerminal()
+    expect(t).toMatchObject({ ok: true, rowsWritten: 3 })
+    expect(t.extra.discovered).toBe(2)
+  })
+
+  it("a failed discovery fails the run, reports discovered=null (never 0), and still names what exists", async () => {
+    sb.rows = [ROW_8825]
+    stubFlow([CHAIN_8825])
+    sb.rpcResult = { data: null, error: { message: "statement timeout" } }
+    await GET(req("Bearer cron-tok"))
+    await captured!()
+    const t = lastTerminal()
+    expect(t.ok).toBe(false)
+    expect(String(t.error)).toMatch(/discover: statement timeout/)
+    expect(t.extra.discovered).toBeNull()
+    expect(sb.updates).toHaveLength(1)
+    expect(t.rowsWritten).toBe(1)
+  })
+
+  it("a discovery that returns no count is a failure, not a zero", async () => {
+    sb.rows = []
+    stubFlow([])
+    sb.rpcResult = { data: null, error: null }
+    await GET(req("Bearer cron-tok"))
+    await captured!()
+    expect(lastTerminal()).toMatchObject({ ok: false })
+    expect(lastTerminal().extra.discovered).toBeNull()
   })
 
   it("runs the image pass after naming and folds its filled count into the written total", async () => {
