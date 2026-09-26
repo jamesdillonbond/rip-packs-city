@@ -97,7 +97,13 @@ jobs:
         run: |
           set -euo pipefail
           body=$(curl -sS --fail -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/functions/$FN")
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/functions/$FN") || body=""
+          # `run:` is bash -e: without the `|| body=""` a failed curl aborts HERE and
+          # the verify_jwt check below never runs. An empty body is a failed check.
+          if [ -z "$body" ]; then
+            echo "::error::could not read $FN from the Management API — verify_jwt NOT verified"
+            exit 1
+          fi
           node -e '
             const f = JSON.parse(process.argv[1]);
             console.log(`${f.slug} v${f.version} verify_jwt=${f.verify_jwt} status=${f.status}`);
