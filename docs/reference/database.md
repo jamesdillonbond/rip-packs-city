@@ -2854,4 +2854,5 @@ Accent and case variants fold (`unaccent` + `lower`). Two different names for on
 
 ## Displaced from CLAUDE.md 2026-09-25 (verbatim; still binding)
 
+- ⛔ **`last_vacuum` AND `last_autovacuum` both NULL = NEVER vacuumed** — heap fetches 46,674 → 19. ⚠ **A fresh stamp is not enough — read `relallvisible`/`relpages`:** a degraded visibility map turns an Index Only Scan into heap fetches, so *"not a missing index"* can be one word short (#121, 41× blocks/call). ⭐ **BLOCKS TOUCHED is the cache-independent discriminator.** ⭐ **SIZE an index build (640 kB = ms; 300 MB+ = spell).** *(displaced 09-25 ~10:20 PM PT to pay for the `moment_id` / InitPlan bullet)*
 - ⚠ **Cursor paging needs a UNIQUE sort tiebreak**; `totalCount` falling faster than rows read is the skip tell: apis-and-cadence.md.

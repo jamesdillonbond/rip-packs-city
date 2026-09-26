@@ -1,6 +1,10 @@
 import { NextRequest } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
+// This route classifies Top Shot moments (Top Shot GQL); the cache is shared
+// across collections and a moment id is unique only WITHIN one (#142).
+const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+
 // GET /api/bulk-classify?wallet=0x...&token=...&offset=0
 //
 // Classifies unclassified (acquisition_method='unknown') moments by pulling
@@ -217,6 +221,7 @@ export async function GET(req: NextRequest) {
                 (supabaseAdmin as any)
                   .from("wallet_moments_cache")
                   .update({ acquired_at: u.acquiredDate })
+                  .eq("collection_id", TOPSHOT_COLLECTION_ID) // moment ids collide across collections (#142)
                   .eq("moment_id", u.nftId)
                   .eq("wallet_address", wallet)
                   .is("acquired_at", null),

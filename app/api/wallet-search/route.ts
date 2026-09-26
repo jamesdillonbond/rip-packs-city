@@ -566,6 +566,11 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
   }
 }
 
+// The Top Shot collection uuid (lib/collection-slug.ts carries the same value);
+// used where a wallet_moments_cache write must not touch another collection's
+// row that happens to share the moment id (#142).
+const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+
 async function getCollectionId(): Promise<string | null> {
   try {
     const { data } = await supabaseAdmin
@@ -942,6 +947,7 @@ async function progressivelyClassify(rows: WalletRow[], wallet: string) {
       await (supabaseAdmin as any)
         .from("wallet_moments_cache")
         .update({ acquired_at: row.acquiredAt })
+        .eq("collection_id", TOPSHOT_COLLECTION_ID) // this path is Top Shot-only; moment ids collide across collections (#142)
         .eq("moment_id", row.momentId)
         .eq("wallet_address", walletAddr)
         .is("acquired_at", null)
