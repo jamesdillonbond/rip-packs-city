@@ -8,10 +8,13 @@
 --   2. mint_count only when every render under the key agrees, else NULL.
 --   3. A stub's 'Unknown' fields are filled; a REAL value is never overwritten.
 --   4. A render with no character or no set name writes nothing.
---   5. Idempotent: a second run reports inserted 0, repaired 0.
+--   5. Idempotent: a second run reports inserted 0, repaired 0, thumbnails 0.
+--   6. A NULL or placeholder thumbnail gets its OWN render's resolver URL only
+--      when exactly one render matches (key, character); several matches are
+--      left alone, and a real thumbnail is never touched.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926171433_audit_20260926_pinnacle_catalog_only_sets_and_editions_reach_the_set_pages.sql).
+-- (supabase/migrations/20260926185325_audit_20260926_pinnacle_editions_get_their_own_render_as_thumbnail.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -28,6 +31,7 @@ CREATE TABLE public.pinnacle_editions (
   set_name text NOT NULL, royalty_code text, series_year int, variant_type text NOT NULL DEFAULT 'Standard',
   edition_type text NOT NULL DEFAULT 'Open Edition', printing int NOT NULL DEFAULT 1, mint_count int,
   is_serialized boolean NOT NULL DEFAULT false, is_chaser boolean NOT NULL DEFAULT false,
+  thumbnail_url text,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -40,6 +44,7 @@ AS $function$
 DECLARE
   v_inserted integer;
   v_repaired integer;
+  v_thumbs   integer;
 BEGIN
   WITH rep AS (
     SELECT DISTINCT ON (pc.legacy_edition_key)
@@ -105,7 +110,32 @@ BEGIN
           OR (pe.set_name       = 'Unknown' AND r.set_name       IS NOT NULL));
   GET DIAGNOSTICS v_repaired = ROW_COUNT;
 
-  RETURN jsonb_build_object('inserted', v_inserted, 'repaired', v_repaired);
+  -- (3) Thumbnails (20260926 follow-up). A row whose thumbnail is NULL or the
+  -- contract's generic placeholder gets the resolver URL of its OWN render —
+  -- only when exactly ONE catalog render under the key carries the row's
+  -- character. Several renders of one character under a set-level key (e.g. a
+  -- royalty code shared by two sets) is left alone rather than guessed.
+  WITH one AS (
+    SELECT pe.id, min(pc.render_id) AS render_id
+    FROM public.pinnacle_editions pe
+    JOIN public.pinnacle_catalog pc
+      ON pc.legacy_edition_key = pe.id
+     AND lower(btrim(pc.characters[1])) = lower(btrim(pe.character_name))
+    WHERE pe.thumbnail_url IS NULL
+       OR btrim(pe.thumbnail_url) = ''
+       OR pe.thumbnail_url LIKE '%/on-chain/pinnacle.jpg%'
+    GROUP BY pe.id
+    HAVING count(*) = 1
+  )
+  UPDATE public.pinnacle_editions pe
+     SET thumbnail_url = '/api/public/pinnacle-image/' || one.render_id,
+         updated_at    = now()
+    FROM one
+   WHERE one.id = pe.id
+     AND one.render_id ~ '^[A-Za-z0-9-]{3,64}$';
+  GET DIAGNOSTICS v_thumbs = ROW_COUNT;
+
+  RETURN jsonb_build_object('inserted', v_inserted, 'repaired', v_repaired, 'thumbnails', v_thumbs);
 END;
 $function$;
 
@@ -127,7 +157,29 @@ INSERT INTO public.pinnacle_editions (id, edition_key, character_name, franchise
 VALUES ('LEEV2-FIND:Radiant Chrome:1', 'LEEV2-FIND:Radiant Chrome:1', 'Unknown', 'Unknown', 'Unknown', 'Radiant Chrome'),
        ('OEEV1-SWHL:Color Splash:1', 'OEEV1-SWHL:Color Splash:1', 'Stormtrooper', 'Star Wars', 'Holiday Vol.1', 'Color Splash');
 
-SELECT _assert_eq(public.pinnacle_editions_fill_from_catalog()::text, '{"inserted": 2, "repaired": 1}', 'first run: 2 keys inserted, 1 stub repaired');
+-- 6's fixtures: a placeholder row with one matching render, a NULL row whose
+-- character has TWO renders under the key, and a row with a real thumbnail.
+INSERT INTO public.pinnacle_catalog VALUES
+  ('OEV1-HERC-HADE-S2', 'HERC:Standard:1', ARRAY['Hades'], ARRAY['Hercules'], 'Hercules Vol.1', 'HERC', 'Standard', 'Open Edition', 1, false, false, '2025', 900),
+  ('OEV1-TWIN-A-S2', 'TWIN:Standard:1', ARRAY['Stitch'], ARRAY['Lilo'], 'Twin Vol.1', 'TWIN', 'Standard', 'Open Edition', 1, false, false, '2025', 900),
+  ('OEV1-TWIN-B-S2', 'TWIN:Standard:1', ARRAY['Stitch'], ARRAY['Lilo'], 'Twin Vol.2', 'TWIN', 'Standard', 'Open Edition', 1, false, false, '2025', 900),
+  ('OEV1-REAL-X-S2', 'REAL:Standard:1', ARRAY['Moana'], ARRAY['Moana'], 'Real Vol.1', 'REAL', 'Standard', 'Open Edition', 1, false, false, '2025', 900);
+INSERT INTO public.pinnacle_editions (id, edition_key, character_name, franchise, set_name, thumbnail_url)
+VALUES ('HERC:Standard:1', 'HERC:Standard:1', 'Hades', 'Hercules', 'Hercules Vol.1', 'https://assets.disneypinnacle.com/on-chain/pinnacle.jpg'),
+       ('TWIN:Standard:1', 'TWIN:Standard:1', 'Stitch', 'Lilo', 'Twin Vol.1', NULL),
+       ('REAL:Standard:1', 'REAL:Standard:1', 'Moana', 'Moana', 'Real Vol.1', 'https://real.example/moana.png');
+
+SELECT _assert_eq(
+  (public.pinnacle_editions_fill_from_catalog() - 'thumbnails')::text,
+  '{"inserted": 2, "repaired": 1}', 'first run: 2 keys inserted, 1 stub repaired');
+
+-- 6
+SELECT _assert_eq((SELECT thumbnail_url FROM public.pinnacle_editions WHERE id = 'HERC:Standard:1'),
+  '/api/public/pinnacle-image/OEV1-HERC-HADE-S2', 'the placeholder becomes the row''s own render');
+SELECT _assert_eq((SELECT coalesce(thumbnail_url, 'NULL') FROM public.pinnacle_editions WHERE id = 'TWIN:Standard:1'),
+  'NULL', 'two renders of one character under a key: left alone, never guessed');
+SELECT _assert_eq((SELECT thumbnail_url FROM public.pinnacle_editions WHERE id = 'REAL:Standard:1'),
+  'https://real.example/moana.png', 'a real thumbnail is never overwritten');
 
 -- 1 + 2
 SELECT _assert_eq(
@@ -150,6 +202,6 @@ SELECT _assert_eq(
 SELECT _assert_eq((SELECT count(*)::text FROM public.pinnacle_editions WHERE id = 'NOCHAR:Standard:1'), '0', 'no character, no row');
 
 -- 5
-SELECT _assert_eq(public.pinnacle_editions_fill_from_catalog()::text, '{"inserted": 0, "repaired": 0}', 'second run writes nothing');
+SELECT _assert_eq(public.pinnacle_editions_fill_from_catalog()::text, '{"inserted": 0, "repaired": 0, "thumbnails": 0}', 'second run writes nothing');
 
 ROLLBACK;

@@ -4,6 +4,7 @@
 //   and returns the next offset so the caller can chain requests.
 // GET  /api/pinnacle-ingest  → pinnacle_health_check (monitor progress, no auth)
 
+import { isPinnaclePlaceholderImage } from "@/lib/pinnacle/image-url"
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import {
@@ -99,7 +100,12 @@ export async function POST(req: NextRequest) {
         p_color: editionData.color ?? null,
         p_thickness: editionData.thickness ?? null,
         p_minting_date: editionData.mintingDate ?? null,
-        p_thumbnail_url: nft.card.images?.[0]?.url ?? null,
+        // ⚠ NULL, never the card image: it is the contract's generic placeholder
+        // for every NFT, and upsert_pinnacle_edition's COALESCE(EXCLUDED, …) would
+        // write it over the row's real thumbnail (2026-09-26).
+        p_thumbnail_url: isPinnaclePlaceholderImage(nft.card.images?.[0]?.url)
+          ? null
+          : (nft.card.images?.[0]?.url ?? null),
       })
 
       if (error) {

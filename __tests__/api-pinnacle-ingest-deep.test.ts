@@ -97,6 +97,22 @@ describe("POST /api/pinnacle-ingest — ingest", () => {
     expect(body.batchSize).toBe(4)
   })
 
+  it("never writes the contract's placeholder as a thumbnail (it would overwrite real art)", async () => {
+    st.batch = [
+      nft({ id: "a", card: { max: "1", images: [{ url: "https://assets.disneypinnacle.com/on-chain/pinnacle.jpg" }] } }),
+      nft({ id: "b", nftView: { traits: { traits: [{ editionKey: "ek2", royaltyCode: "rc" }] } }, card: { max: "1", images: [{ url: "https://real.example/art.png" }] } }),
+    ]
+    const sent: Record<string, unknown> = {}
+    rpc.mockImplementation(async (name: string, params?: any) => {
+      if (name === "upsert_pinnacle_edition") sent[params.p_edition_key] = params.p_thumbnail_url
+      return { data: null, error: null }
+    })
+    await POST(post() as any)
+    expect(sent.ek1).toBeNull()
+    // NO-CHANGE CONTROL: a real image still passes through.
+    expect(sent.ek2).toBe("https://real.example/art.png")
+  })
+
   it("builds sales from non-LISTED priced orders and bulk-inserts them", async () => {
     st.batch = [nft({
       orders: [

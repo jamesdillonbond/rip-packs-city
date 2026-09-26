@@ -16,3 +16,12 @@ export function pinnacleListThumb(url: string | null | undefined): string | null
   if (!url) return null
   return RESOLVER_RE.test(url) ? `${url}?v=thumb` : url
 }
+
+/**
+ * The Pinnacle contract returns ONE generic placeholder ("…/on-chain/pinnacle.jpg")
+ * as the display image of EVERY NFT, and Flowty relays it as `card.images[0]`.
+ * It is never a pin's art, so a writer must treat it as absent — never store it.
+ */
+export function isPinnaclePlaceholderImage(url: string | null | undefined): boolean {
+  return !!url && /\/on-chain\/pinnacle\.jpg(\?|#|$)/i.test(url)
+}
