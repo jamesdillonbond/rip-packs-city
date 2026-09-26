@@ -73,16 +73,34 @@ export type BoardCacheKey =
   | "first-mint"
   | "candy-mlb"
   | "panini-squeeze"
+  | "panini-boards"
 
 /** The hot boards the cron proactively warms. `label` feeds the cron's per-board
  *  telemetry; `key` is the snapshot row + the value each page passes to the cache. */
-export const WARM_BOARDS: { key: BoardCacheKey; label: string }[] = [
+export const WARM_BOARDS: { key: BoardCacheKey; label: string; warmEveryMs?: number }[] = [
   { key: "deals", label: "Below FMV" },
   { key: "rookies", label: "2025 Rookie Index" },
   { key: "first-mint", label: "First-Mint Trophies" },
   { key: "candy-mlb", label: "Candy MLB ICONs" },
   { key: "panini-squeeze", label: "Panini WC Squeeze" },
+  // ⚠ HOURLY, not every tick (2026-09-25). Its four views cost ~270k buffers per
+  // warm (deal board seq-scans panini_card_serials), their data moves only on
+  // Panini's ~4-hourly walk, and at the 5-minute cadence that is ~290 GB/day of
+  // buffer traffic for no fresher answer. See lib/insights/panini-more-boards.ts.
+  { key: "panini-boards", label: "Panini boards (deals, packs, serials, players)", warmEveryMs: 60 * 60 * 1000 },
 ]
+
+/**
+ * How old a board's snapshot may be before the READER treats it as stale and
+ * runs the live query. Every board uses BOARD_CACHE_FRESH_MS except one warmed
+ * less often than the cron ticks: its window is its warm interval plus 30 min,
+ * so a healthy hourly board is never "stale" between warms (which would push its
+ * heavy query onto the render path — the thing the cache exists to prevent).
+ */
+export function freshMsFor(key: BoardCacheKey): number {
+  const every = WARM_BOARDS.find((b) => b.key === key)?.warmEveryMs
+  return every ? Math.max(BOARD_CACHE_FRESH_MS, every + 30 * 60 * 1000) : BOARD_CACHE_FRESH_MS
+}
 
 /** What a board's live-fetch closure returns. `ok` is true ONLY when every backing
  *  query succeeded — an errored/partial fetch must never be cached and must trigger
@@ -157,7 +175,7 @@ export async function readBoardSnapshot(
     return {
       payload: data.payload as Record<string, unknown>,
       ageMs,
-      stale: ageMs > BOARD_CACHE_FRESH_MS,
+      stale: ageMs > freshMsFor(key),
       refreshedAt: data.refreshed_at as string,
     }
   } catch {

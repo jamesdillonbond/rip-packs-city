@@ -31,6 +31,7 @@ import {
 } from "@/lib/insights/boards"
 import { fetchCandyMlbDefault } from "@/lib/insights/candy-board"
 import { fetchPaniniSqueezeDefault } from "@/lib/insights/panini-board"
+import { fetchPaniniMoreBoards } from "@/lib/insights/panini-more-boards"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -44,6 +45,7 @@ const BUILDERS: Record<BoardCacheKey, () => Promise<any>> = {
   "first-mint": () => fetchFirstMintDefault(),
   "candy-mlb": () => fetchCandyMlbDefault(),
   "panini-squeeze": () => fetchPaniniSqueezeDefault(),
+  "panini-boards": () => fetchPaniniMoreBoards(),
 }
 
 async function run(request: NextRequest) {
@@ -65,8 +67,21 @@ async function run(request: NextRequest) {
 
   // Warm every board in parallel so one slow view can't serialize the others; each
   // warmBoard is self-contained and never throws.
+  //
+  // A board with `warmEveryMs` (panini-boards, hourly) is skipped while its
+  // snapshot is younger than that interval. Its age is read first; an UNKNOWN age
+  // (never warmed, or the read failed) warms it — never skip on missing evidence.
+  const preAges = WARM_BOARDS.some((b) => b.warmEveryMs) ? await readBoardSnapshotAges() : []
+  const notDue = new Set(
+    WARM_BOARDS.filter((b) => {
+      if (!b.warmEveryMs) return false
+      const age = preAges.find((a) => a.key === b.key)?.ageMs
+      // 2-minute slack so a board warmed on the previous hour's tick is due now.
+      return age != null && age < b.warmEveryMs - 2 * 60 * 1000
+    }).map((b) => b.key),
+  )
   const results = await Promise.all(
-    WARM_BOARDS.map(({ key }) => warmBoard(key, BUILDERS[key]))
+    WARM_BOARDS.filter(({ key }) => !notDue.has(key)).map(({ key }) => warmBoard(key, BUILDERS[key]))
   )
 
   const okCount = results.filter((r) => r.ok).length
@@ -129,6 +144,9 @@ async function run(request: NextRequest) {
         duration_ms: Date.now() - startedMs,
         warmed: okCount,
         total: results.length,
+        // Boards on a slower warm interval that were not due this tick — not a
+        // failure, and not counted in `total`.
+        skipped_not_due: [...notDue],
         boards: results.map((r) => ({ key: r.key, ok: r.ok, row_count: r.rowCount })),
         // Cumulative view — queryable per board, so a streak is visible without
         // reconstructing it from per-tick rows (which prune at ~73h).
