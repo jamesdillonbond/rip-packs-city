@@ -4,7 +4,10 @@ import {
   flowtyNftToSniperDeals,
   fetchFlowtyPinnacleListings,
   fetchAllFlowtyPinnacleNfts,
+  pinNameFromTitle,
+  pinnacleRenderKey,
   type FlowtyPinnacleNft,
+  type PinnacleRenderRef,
 } from "@/lib/pinnacle/pinnacleFlowty"
 
 // lib/pinnacle/pinnacleFlowty.ts — pure parsers/mappers only (the fetch fns are
@@ -231,6 +234,90 @@ describe("flowtyNftToSniperDeals", () => {
 })
 
 // ── Fetch layer (network seam mocked) ─────────────────────────────────────────
+
+describe("flowtyNftToSniperDeals — resolving the listed NFT to its catalog render", () => {
+  // A legacy edition key is SET-level: PAS-OEV1-PPTB:Standard:1 is nine different
+  // badges. The Characters trait says "Dory"; the catalog (and the card title) call
+  // this pin "Just Keep Swimming". Shapes from a live Flowty listing, 2026-09-26.
+  const KEY = "PAS-OEV1-PPTB:Standard:1"
+  const legacyFmv = new Map([[KEY, { fmv: 100, confidence: "LOW" }]])
+  const listed = (title: string): FlowtyPinnacleNft =>
+    nft(
+      { RoyaltyCodes: "[PAS-OEV1-PPTB]", Variant: "Standard", EditionType: "Open Edition", Characters: "[Dory]" },
+      {
+        card: { title, max: null, images: [{ url: "https://assets.disneypinnacle.com/on-chain/pinnacle.jpg" }] },
+        orders: [
+          {
+            salePrice: 10,
+            listingResourceID: "lr-1",
+            storefrontAddress: "0xstore",
+            state: "LISTED",
+            listingKind: "sale",
+            blockTimestamp: 1_700_000_000_000,
+            nftID: "nft-1",
+            paymentTokenName: "DUC",
+          },
+        ],
+      },
+    )
+  const lookup = (ref: PinnacleRenderRef) =>
+    new Map([[pinnacleRenderKey(KEY, "Just Keep Swimming"), ref]])
+
+  it("takes the pin name from the card title, not the Characters trait", () => {
+    expect(pinNameFromTitle("Just Keep Swimming [Pixar Animation Studios • Pixar Playtime Badges Vol.1, Standard]")).toBe(
+      "Just Keep Swimming",
+    )
+    expect(pinNameFromTitle(null)).toBeNull()
+    expect(pinNameFromTitle("   ")).toBeNull()
+  })
+
+  it("a resolved pin gets its render id, its own art and its OWN FMV", () => {
+    const [d] = flowtyNftToSniperDeals(
+      listed("Just Keep Swimming [Pixar Animation Studios • Pixar Playtime Badges Vol.1, Standard]"),
+      legacyFmv,
+      lookup({ renderId: "OEV1-PPTB-SWIM-S2", fmv: 40, confidence: "HIGH" }),
+    )
+    expect(d.renderId).toBe("OEV1-PPTB-SWIM-S2")
+    expect(d.pinName).toBe("Just Keep Swimming")
+    expect(d.thumbnailUrl).toBe("/api/public/pinnacle-image/OEV1-PPTB-SWIM-S2")
+    // Priced at THIS render, not at whichever badge represents the set-level key.
+    expect(d.baseFmv).toBe(40)
+    expect(d.confidence).toBe("HIGH")
+  })
+
+  it("name matching ignores case and surrounding whitespace", () => {
+    const [d] = flowtyNftToSniperDeals(
+      listed("  just keep SWIMMING  [x, Standard]"),
+      legacyFmv,
+      lookup({ renderId: "OEV1-PPTB-SWIM-S2", fmv: 40, confidence: "HIGH" }),
+    )
+    expect(d.renderId).toBe("OEV1-PPTB-SWIM-S2")
+  })
+
+  it("an UNPRICED render still gets art + id, and keeps the legacy FMV", () => {
+    const [d] = flowtyNftToSniperDeals(
+      listed("Just Keep Swimming [x, Standard]"),
+      legacyFmv,
+      lookup({ renderId: "OEV1-PPTB-SWIM-S2", fmv: null, confidence: null }),
+    )
+    expect(d.renderId).toBe("OEV1-PPTB-SWIM-S2")
+    expect(d.baseFmv).toBe(100)
+    expect(d.confidence).toBe("LOW")
+  })
+
+  it("an unresolved pin has NO thumbnail — never the contract's generic placeholder", () => {
+    const [d] = flowtyNftToSniperDeals(listed("Some Other Badge [x, Standard]"), legacyFmv, lookup({ renderId: "R", fmv: 40, confidence: "HIGH" }))
+    expect(d.renderId).toBeNull()
+    expect(d.thumbnailUrl).toBeNull()
+    expect(d.baseFmv).toBe(100)
+  })
+
+  it("NO-CHANGE CONTROL: without a render lookup the legacy FMV path is untouched", () => {
+    const [d] = flowtyNftToSniperDeals(listed("Just Keep Swimming [x, Standard]"), legacyFmv)
+    expect(d.baseFmv).toBe(100)
+    expect(d.renderId).toBeNull()
+  })
+})
 
 describe("fetchFlowtyPinnacleListings", () => {
   const fetchMock = vi.fn()

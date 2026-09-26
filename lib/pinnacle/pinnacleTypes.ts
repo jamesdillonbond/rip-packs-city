@@ -84,6 +84,12 @@ export interface PinnacleSniperDeal {
   isSpecialSerial: boolean
   serialSignal: string | null
   thumbnailUrl: string | null
+  /** The catalog render this listed NFT is (pinnacle_catalog.render_id), or null
+   *  when it could not be resolved. The per-pin page and the art both key on it. */
+  renderId?: string | null
+  /** The pin's own name from the card title ("Just Keep Swimming"), which is what
+   *  the catalog calls it — `characterName` is the Characters trait ("Dory"). */
+  pinName?: string | null
   isLocked: boolean
   updatedAt: string
   buyUrl: string

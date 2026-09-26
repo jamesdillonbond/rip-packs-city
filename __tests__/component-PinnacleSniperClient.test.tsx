@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react"
-import PinnacleSniperClient from "@/app/(collections)/disney-pinnacle/sniper/PinnacleSniperClient"
-import type { PinnacleSniperDeal, PinnacleVariant } from "@/lib/pinnacle/pinnacleTypes"
+import PinnacleSniperClient, { type PinnacleFeedDeal } from "@/app/(collections)/disney-pinnacle/sniper/PinnacleSniperClient"
 
 // This page was a `page.tsx` measured by NEITHER coverage gate, and no honesty guard
 // covered it — `client-pages-failed-vs-empty-guard` keeps a HAND-PICKED list of sniper
@@ -18,41 +17,36 @@ import type { PinnacleSniperDeal, PinnacleVariant } from "@/lib/pinnacle/pinnacl
 
 vi.mock("@/lib/track-click", () => ({ trackOutboundClick: vi.fn() }))
 
-// Shaped from lib/pinnacle/pinnacleTypes.ts — a fixture the page's own renderer accepts.
-// ⚠ An invented shape would exercise a render path production never produces; the first
-// draft of this file used one and the component threw inside its price formatter, which is
-// the lucky version of that mistake.
-const DEAL: PinnacleSniperDeal = {
+// Shaped from what /api/pinnacle-sniper-feed ACTUALLY sends — the unified sniper row
+// `computePinnacleSniperFeed` (lib/sniper/pinnacle.ts) maps to.
+// ⚠ An invented shape would exercise a render path production never produces. This
+// fixture WAS that: it was typed `PinnacleSniperDeal` (characterName / variantType /
+// franchise) while the feed sends playerName / tier / teamName, so every test here passed
+// while production rendered an empty name, franchise and variant on every row (2026-09-26).
+const DEAL: PinnacleFeedDeal = {
   flowId: "1",
-  nftId: "99",
+  momentId: "1",
   editionKey: "royal:standard:1",
-  characterName: "Mickey Mouse",
-  franchise: "Disney",
-  studio: "Disney",
+  renderId: "OEV1-STEAM-MICK-S2",
+  playerName: "Mickey Mouse",
+  teamName: "Disney",
   setName: "Steamboat Willie",
-  seriesYear: 2024,
-  variantType: "standard" as PinnacleVariant,
-  editionType: "Limited Edition",
+  seriesName: "2024",
+  tier: "Standard",
   serial: 12,
-  mintCount: 1000,
+  circulationCount: 1000,
   askPrice: 25,
   baseFmv: 40,
   adjustedFmv: 40,
   discount: 37.5,
-  confidence: "HIGH",
+  confidence: "high",
   serialMult: 1,
   isSpecialSerial: false,
   serialSignal: null,
-  thumbnailUrl: null,
+  thumbnailUrl: "/api/public/pinnacle-image/OEV1-STEAM-MICK-S2",
   isLocked: false,
   updatedAt: new Date().toISOString(),
-  buyUrl: "https://example.test/listing/1",
   listingResourceID: null,
-  listingOrderID: null,
-  storefrontAddress: null,
-  source: "pinnacle",
-  offerAmount: null,
-  offerFmvPct: null,
 }
 
 function feed(over: Record<string, unknown> = {}) {
@@ -390,5 +384,45 @@ describe("PinnacleSniperClient — the discount badge and the row affordances", 
     const body = document.body.textContent ?? ""
     expect(body).toMatch(/1\s*locked/)
     expect(body).toMatch(/1\s*special serials/)
+  })
+})
+
+describe("PinnacleSniperClient — each row shows its pin and opens its page", () => {
+  const mount = async (deals: PinnacleFeedDeal[]) => {
+    vi.stubGlobal("fetch", okOnce(feed({ deals, count: deals.length })))
+    render(<PinnacleSniperClient />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/FMV coverage/))
+  }
+
+  it("renders the name, franchise and variant the feed sends (the cells were blank)", async () => {
+    await mount([DEAL])
+    const body = document.body.textContent ?? ""
+    expect(body).toMatch(/Mickey Mouse/)
+    expect(body).toMatch(/Disney/)
+    expect(body).toMatch(/Standard/)
+  })
+
+  it("links the pin to its own render page on this site, not a 404-prone guess", async () => {
+    await mount([DEAL])
+    // Both the art and the name open the pin.
+    const hrefs = screen.getAllByRole("link", { name: "Mickey Mouse" }).map((l) => l.getAttribute("href"))
+    expect(hrefs).toEqual(["/pinnacle/moment/OEV1-STEAM-MICK-S2", "/pinnacle/moment/OEV1-STEAM-MICK-S2"])
+  })
+
+  it("an UNRESOLVED render falls back to the legacy-key page, which lists its renders", async () => {
+    await mount([{ ...DEAL, renderId: null, thumbnailUrl: null }])
+    const link = screen.getByRole("link", { name: "Mickey Mouse" })
+    expect(link.getAttribute("href")).toBe("/pinnacle/moment/royal%3Astandard%3A1")
+  })
+
+  it("shows the pin's art when the feed has it, and no image at all when it does not", async () => {
+    await mount([DEAL, { ...DEAL, flowId: "2", playerName: "Goofy", renderId: null, thumbnailUrl: null }])
+    const imgs = Array.from(document.querySelectorAll("img"))
+    expect(imgs.map((i) => i.getAttribute("src"))).toEqual(["/api/public/pinnacle-image/OEV1-STEAM-MICK-S2"])
+  })
+
+  it("an Open Edition's serial 0 is not published as '#0'", async () => {
+    await mount([{ ...DEAL, serial: 0, circulationCount: 0 }])
+    expect(document.body.textContent).not.toMatch(/#0\b/)
   })
 })

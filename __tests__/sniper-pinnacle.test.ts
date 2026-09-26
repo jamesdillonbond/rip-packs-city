@@ -16,12 +16,15 @@ const state: {
   nfts: any[]
   /** The fmvMap that actually reached the deal builder. */
   seenFmv: Map<string, { fmv: number; confidence: string }> | null
+  /** The render lookup that actually reached the deal builder. */
+  seenRenders: Map<string, any> | null
 } = {
   query: { data: [], error: null },
   pages: null,
   cursors: [],
   nfts: [],
   seenFmv: null,
+  seenRenders: null,
 }
 
 vi.mock("@/lib/supabase", () => {
@@ -52,8 +55,10 @@ vi.mock("@/lib/pinnacle/pinnacleFlowty", () => ({
   // Only the offset-0 page returns NFTs; the other 3 pages are empty. Each NFT
   // carries a `__deals` payload that our flowtyNftToSniperDeals mock returns.
   fetchFlowtyPinnacleListings: vi.fn(async (o: any) => (o.offset === 0 ? state.nfts : [])),
-  flowtyNftToSniperDeals: (nft: any, fmv: any) => {
+  pinnacleRenderKey: (k: string, n: string) => `${k}\u0000${n.trim().toLowerCase()}`,
+  flowtyNftToSniperDeals: (nft: any, fmv: any, renders: any) => {
     state.seenFmv = fmv
+    state.seenRenders = renders
     return nft.__deals ?? []
   },
 }))
@@ -357,5 +362,36 @@ describe("loadFmvMap — the catalog read pages past PostgREST's 1000-row cap", 
     const res = await computePinnacleSniperFeed()
     expect(state.seenFmv?.get("kept:key")).toEqual({ fmv: 7, confidence: "HIGH" })
     expect(res.fmvCoverage).toBe(PAGE)
+  })
+})
+
+describe("computePinnacleSniperFeed — listing → render resolution", () => {
+  it("indexes EVERY render by (legacy key, name), priced or not; FMV map stays priced-only", async () => {
+    state.query = {
+      data: [
+        { render_id: "OEV1-PPTB-SWIM-S2", legacy_edition_key: "K:Standard:1", character_name: " Just Keep Swimming ", fmv_usd: 4, fmv_confidence: "HIGH", fmv_sales_count_30d: 3 },
+        { render_id: "OEV1-PPTB-EVE-S2", legacy_edition_key: "K:Standard:1", character_name: "EVE", fmv_usd: null, fmv_confidence: null, fmv_sales_count_30d: null },
+      ],
+      error: null,
+    }
+    state.nfts = [{ id: "n1", __deals: [] }]
+    const res = await computePinnacleSniperFeed()
+    expect(state.seenRenders?.get("K:Standard:1\u0000just keep swimming")).toEqual({ renderId: "OEV1-PPTB-SWIM-S2", fmv: 4, confidence: "HIGH" })
+    expect(state.seenRenders?.get("K:Standard:1\u0000eve")).toEqual({ renderId: "OEV1-PPTB-EVE-S2", fmv: null, confidence: null })
+    // The unpriced render must NOT reach the FMV map, and coverage counts keys.
+    expect(state.seenFmv?.get("K:Standard:1")).toEqual({ fmv: 4, confidence: "HIGH" })
+    expect(res.fmvCoverage).toBe(1)
+  })
+
+  it("maps renderId and prefers the pin name for playerName", async () => {
+    state.nfts = [nft("n1", [{ ...mkDeal({ characterName: "Dory" }), renderId: "OEV1-PPTB-SWIM-S2", pinName: "Just Keep Swimming" }])]
+    const res = await computePinnacleSniperFeed()
+    expect(res.deals[0]).toMatchObject({ renderId: "OEV1-PPTB-SWIM-S2", playerName: "Just Keep Swimming" })
+  })
+
+  it("an unresolved deal carries renderId null and falls back to the character name", async () => {
+    state.nfts = [nft("n1", [mkDeal({ characterName: "Dory" })])]
+    const res = await computePinnacleSniperFeed()
+    expect(res.deals[0]).toMatchObject({ renderId: null, playerName: "Dory" })
   })
 })

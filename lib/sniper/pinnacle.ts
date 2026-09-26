@@ -10,18 +10,28 @@ import { supabaseAdmin } from "@/lib/supabase"
 import {
   fetchFlowtyPinnacleListings,
   flowtyNftToSniperDeals,
+  pinnacleRenderKey,
   type FlowtyPinnacleNft,
+  type PinnacleRenderRef,
 } from "@/lib/pinnacle/pinnacleFlowty"
 
 interface FmvRow {
   render_id: string
   legacy_edition_key: string | null
-  fmv_usd: number
+  character_name?: string | null
+  fmv_usd: number | null
   fmv_confidence: string
   fmv_sales_count_30d: number | null
 }
 
-async function loadFmvMap(): Promise<Map<string, { fmv: number; confidence: string }>> {
+interface CatalogMaps {
+  fmvMap: Map<string, { fmv: number; confidence: string }>
+  /** (legacy key, pin name) → the exact render. Covers UNPRICED renders too: a pin
+   *  with no FMV of its own still has art and a page. */
+  renderLookup: Map<string, PinnacleRenderRef>
+}
+
+async function loadCatalogMaps(): Promise<CatalogMaps> {
   // PIN-FMV-REKEY Wave 3: per-render source (pinnacle_catalog) instead of the
   // retiring per-edition blend. The map is still keyed by the legacy edition id
   // (legacy_edition_key) because the Flowty NFT lookup keys on it; for each
@@ -45,14 +55,17 @@ async function loadFmvMap(): Promise<Map<string, { fmv: number; confidence: stri
   // identical requests — and under paging, first-wins over a page order that is
   // not the ranking order is simply wrong.
   const best = new Map<string, FmvRow>()
+  const renderLookup = new Map<string, PinnacleRenderRef>()
   const PAGE = 1000
   const MAX_PAGES = 100
   let cursor = ""
   for (let page = 0; page < MAX_PAGES; page++) {
     let q = (supabaseAdmin as any)
       .from("pinnacle_catalog")
-      .select("render_id, legacy_edition_key, fmv_usd, fmv_confidence, fmv_sales_count_30d")
-      .not("fmv_usd", "is", null)
+      // No `fmv_usd IS NOT NULL` filter any more (2026-09-26): the same walk now
+      // resolves listings to their render for art + the per-pin link, and an
+      // unpriced render is still a real pin. Priced-only rows feed the FMV map below.
+      .select("render_id, legacy_edition_key, character_name, fmv_usd, fmv_confidence, fmv_sales_count_30d")
       .order("render_id", { ascending: true })
       .limit(PAGE)
     if (cursor) q = q.gt("render_id", cursor)
@@ -72,6 +85,15 @@ async function loadFmvMap(): Promise<Map<string, { fmv: number; confidence: stri
     for (const row of rows) {
       const key = row.legacy_edition_key
       if (!key) continue
+      const fmv = row.fmv_usd == null ? null : Number(row.fmv_usd)
+      if (row.character_name && row.character_name.trim()) {
+        renderLookup.set(pinnacleRenderKey(key, row.character_name), {
+          renderId: row.render_id,
+          fmv: fmv != null && Number.isFinite(fmv) ? fmv : null,
+          confidence: row.fmv_confidence ?? null,
+        })
+      }
+      if (fmv == null || !Number.isFinite(fmv)) continue
       const prev = best.get(key)
       if (!prev || moreRepresentative(row, prev)) best.set(key, row)
     }
@@ -84,9 +106,9 @@ async function loadFmvMap(): Promise<Map<string, { fmv: number; confidence: stri
 
   const map = new Map<string, { fmv: number; confidence: string }>()
   for (const [key, row] of best) {
-    map.set(key, { fmv: row.fmv_usd, confidence: row.fmv_confidence })
+    map.set(key, { fmv: Number(row.fmv_usd), confidence: row.fmv_confidence })
   }
-  return map
+  return { fmvMap: map, renderLookup }
 }
 
 /**
@@ -100,7 +122,9 @@ function moreRepresentative(candidate: FmvRow, incumbent: FmvRow): boolean {
   const cSales = candidate.fmv_sales_count_30d ?? -1
   const iSales = incumbent.fmv_sales_count_30d ?? -1
   if (cSales !== iSales) return cSales > iSales
-  if (candidate.fmv_usd !== incumbent.fmv_usd) return candidate.fmv_usd > incumbent.fmv_usd
+  const cFmv = Number(candidate.fmv_usd)
+  const iFmv = Number(incumbent.fmv_usd)
+  if (cFmv !== iFmv) return cFmv > iFmv
   return candidate.render_id < incumbent.render_id
 }
 
@@ -130,12 +154,12 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
   const sortBy = opts.sortBy ?? "discount"
 
   // 4 pages of 24 = 96 listed NFTs (matches the long-standing baseline).
-  const [page0, page1, page2, page3, fmvMap] = await Promise.all([
+  const [page0, page1, page2, page3, { fmvMap, renderLookup }] = await Promise.all([
     fetchFlowtyPinnacleListings({ limit: 24, offset: 0, listedOnly: true, timeoutMs: 10000 }),
     fetchFlowtyPinnacleListings({ limit: 24, offset: 24, listedOnly: true, timeoutMs: 10000 }),
     fetchFlowtyPinnacleListings({ limit: 24, offset: 48, listedOnly: true, timeoutMs: 10000 }),
     fetchFlowtyPinnacleListings({ limit: 24, offset: 72, listedOnly: true, timeoutMs: 10000 }),
-    loadFmvMap(),
+    loadCatalogMaps(),
   ])
 
   const allNfts: FlowtyPinnacleNft[] = [...page0, ...page1, ...page2, ...page3]
@@ -149,7 +173,7 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
 
   console.log(`[pinnacle-sniper] Flowty: ${uniqueNfts.length} unique listed NFTs, FMV coverage: ${fmvMap.size} editions`)
 
-  let deals = uniqueNfts.flatMap((nft) => flowtyNftToSniperDeals(nft, fmvMap))
+  let deals = uniqueNfts.flatMap((nft) => flowtyNftToSniperDeals(nft, fmvMap, renderLookup))
 
   if (variantFilter !== "all") {
     deals = deals.filter((d) => d.variantType.toLowerCase() === variantFilter.toLowerCase())
@@ -164,6 +188,7 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
     const q = playerFilter.toLowerCase()
     deals = deals.filter((d) =>
       d.characterName.toLowerCase().includes(q) ||
+      (d.pinName ?? "").toLowerCase().includes(q) ||
       d.franchise.toLowerCase().includes(q) ||
       d.setName.toLowerCase().includes(q)
     )
@@ -194,8 +219,14 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
     flowId: d.flowId,
     momentId: d.nftId,
     editionKey: d.editionKey,
+    // The exact catalog render (null when unresolved). Consumers link the per-pin
+    // page and art on this; `editionKey` stays the legacy key that owned-matching
+    // (wallet_moments_cache.edition_key) uses.
+    renderId: d.renderId ?? null,
     intEditionKey: null,
-    playerName: d.characterName,
+    // The pin's own name ("Just Keep Swimming"), as the catalog and the per-pin
+    // page call it; the Characters trait ("Dory") is the fallback.
+    playerName: d.pinName || d.characterName,
     teamName: d.franchise,
     setName: d.setName,
     seriesName: d.seriesYear ? String(d.seriesYear) : "",

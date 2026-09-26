@@ -205,6 +205,46 @@ export function extractEditionKeyFromNft(nft: FlowtyPinnacleNft): {
 
 // ── Listing -> SniperDeal Mapper ─────────────────────────────────────────────
 
+// ── Listing -> catalog render ────────────────────────────────────────────────
+
+/** One catalog render, as the sniper needs it: identity + its own FMV. */
+export interface PinnacleRenderRef {
+  renderId: string
+  fmv: number | null
+  confidence: string | null
+}
+
+/**
+ * The pin's own name from a Flowty card title:
+ * "Just Keep Swimming [Pixar Animation Studios • Pixar Playtime Badges Vol.1, Standard]"
+ * → "Just Keep Swimming". Null when the title is absent or has no name part.
+ */
+export function pinNameFromTitle(title: string | null | undefined): string | null {
+  if (!title) return null
+  const i = title.indexOf(" [")
+  const name = (i >= 0 ? title.slice(0, i) : title).trim()
+  return name || null
+}
+
+/**
+ * Key for the (legacy edition key, pin name) → render lookup.
+ *
+ * ⚠ WHY TWO PARTS. A legacy edition key is SET-level: 424 of 446 keys cover more
+ * than one render (e.g. `PAS-OEV1-PPTB:Standard:1` is nine different badges), so
+ * the key alone names no pin. Within one key the render name is unique (measured
+ * 2026-09-26: 0 duplicate names across all 446 keys). The Characters trait is NOT
+ * the render name ("Dory" vs the catalog's "Just Keep Swimming", "Pain Panic" vs
+ * "Pain & Panic"); the card title's name part is — 24 of 24 live listings matched.
+ */
+export function pinnacleRenderKey(legacyEditionKey: string, pinName: string): string {
+  return `${legacyEditionKey}\u0000${pinName.trim().toLowerCase()}`
+}
+
+/** Same-origin art for a render — the route mints a fresh signed CDN URL. */
+export function pinnacleRenderImageUrl(renderId: string): string {
+  return `/api/public/pinnacle-image/${encodeURIComponent(renderId)}`
+}
+
 /**
  * Convert a Flowty NFT with active orders to PinnacleSniperDeals.
  * Each order (listing) on an NFT becomes a separate deal.
@@ -212,7 +252,9 @@ export function extractEditionKeyFromNft(nft: FlowtyPinnacleNft): {
  */
 export function flowtyNftToSniperDeals(
   nft: FlowtyPinnacleNft,
-  fmvLookup: Map<string, { fmv: number; confidence: string }>
+  fmvLookup: Map<string, { fmv: number; confidence: string }>,
+  // Optional so existing callers keep their behaviour; the sniper feed passes it.
+  renderLookup?: Map<string, PinnacleRenderRef>,
 ): PinnacleSniperDeal[] {
   const traits = getTraitMap(nft)
   const royaltyCodes = parseStringifiedArray(traits.get("RoyaltyCodes"))
@@ -224,7 +266,16 @@ export function flowtyNftToSniperDeals(
   const printing = parseInt(traits.get("Printing") ?? "1", 10)
   const editionKey = buildPinnacleEditionKey(royaltyCode, variant, printing)
 
-  const fmvData = fmvLookup.get(editionKey)
+  const pinName = pinNameFromTitle(nft.card?.title)
+  const render = pinName ? renderLookup?.get(pinnacleRenderKey(editionKey, pinName)) ?? null : null
+
+  // Price THIS pin when its render is known and priced. The legacy-key map holds
+  // one representative render per SET-level key, i.e. usually a different badge
+  // or character than the one listed; it stays the fallback for an unresolved pin.
+  const fmvData =
+    render && render.fmv != null && render.fmv > 0
+      ? { fmv: render.fmv, confidence: render.confidence ?? "LOW" }
+      : fmvLookup.get(editionKey)
   if (!fmvData || fmvData.fmv <= 0) return []
 
   const characters = parseStringifiedArray(traits.get("Characters"))
@@ -282,7 +333,12 @@ export function flowtyNftToSniperDeals(
       serialMult,
       isSpecialSerial: isSpecial,
       serialSignal: signal,
-      thumbnailUrl: nft.card.images?.[0]?.url ?? null,
+      // ⛔ NOT nft.card.images[0]: the contract returns one generic placeholder
+      // (`/on-chain/pinnacle.jpg`) for EVERY NFT, so it is never this pin's art.
+      // No render → no thumbnail, rather than the same logo on every row.
+      thumbnailUrl: render ? pinnacleRenderImageUrl(render.renderId) : null,
+      renderId: render?.renderId ?? null,
+      pinName,
       isLocked: false,
       updatedAt,
       buyUrl: PINNACLE_MARKETPLACE_URL,

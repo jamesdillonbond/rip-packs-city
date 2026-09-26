@@ -1,21 +1,74 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import Link from "next/link";
 import {
-  type PinnacleSniperDeal,
   type PinnacleVariant,
   PINNACLE_VARIANT_COLORS,
 } from "@/lib/pinnacle/pinnacleTypes";
 import { trackOutboundClick } from "@/lib/track-click";
+import { pinnacleRenderHref } from "@/lib/entity-href";
+import IpfsImg from "@/components/media/IpfsImg";
+import { proxyIpfsUrl } from "@/lib/ipfs-media";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
+/**
+ * One row as `/api/pinnacle-sniper-feed` ACTUALLY sends it — the unified sniper
+ * shape `computePinnacleSniperFeed` (lib/sniper/pinnacle.ts) maps to.
+ *
+ * ⚠ 2026-09-26: this page was typed against `PinnacleSniperDeal` (characterName,
+ * variantType, franchise, seriesYear, mintCount) while the feed had long since
+ * been remapped to playerName / tier / teamName / seriesName / circulationCount.
+ * Every name, franchise and variant cell rendered EMPTY in production, and typing
+ * in the search box threw. The component test passed because its fixture used
+ * the type, not the feed — so this type now mirrors the mapper, and the fixture
+ * is built from it.
+ */
+export interface PinnacleFeedDeal {
+  flowId: string;
+  momentId: string;
+  editionKey: string;
+  /** Exact catalog render, or null when the listing could not be resolved. */
+  renderId: string | null;
+  playerName: string;
+  teamName: string;
+  setName: string;
+  seriesName: string;
+  tier: PinnacleVariant | string;
+  serial: number;
+  circulationCount: number;
+  askPrice: number;
+  baseFmv: number;
+  adjustedFmv: number;
+  discount: number;
+  confidence: string;
+  serialMult: number;
+  isSpecialSerial: boolean;
+  serialSignal: string | null;
+  thumbnailUrl: string | null;
+  isLocked: boolean;
+  updatedAt: string;
+  listingResourceID: string | null;
+}
+
 interface FeedResult {
   count: number;
-  flowtyTotal: number;
+  flowtyTotal?: number;
   fmvCoverage: number;
   lastRefreshed: string;
-  deals: PinnacleSniperDeal[];
+  deals: PinnacleFeedDeal[];
+}
+
+/**
+ * Where a row's pin links on OUR site. The exact render's page when resolved;
+ * otherwise the legacy-key page, which lists every render sharing that key
+ * (a real page, never a guess at which one).
+ */
+export function pinnacleDealHref(deal: Pick<PinnacleFeedDeal, "renderId" | "editionKey">): string | null {
+  if (deal.renderId) return pinnacleRenderHref(deal.renderId);
+  if (deal.editionKey) return `/pinnacle/moment/${encodeURIComponent(deal.editionKey)}`;
+  return null;
 }
 
 type SortOption = "price_asc" | "price_desc" | "discount";
@@ -70,8 +123,8 @@ function fmt(n: number, decimals = 2) {
   });
 }
 
-function variantPill(variant: PinnacleVariant) {
-  const color = PINNACLE_VARIANT_COLORS[variant] ?? "#6B7280";
+function variantPill(variant: string) {
+  const color = PINNACLE_VARIANT_COLORS[variant as PinnacleVariant] ?? "#6B7280";
   return (
     <span
       style={{
@@ -174,9 +227,9 @@ export default function PinnacleSniperClient() {
     if (search) {
       const q = search.toLowerCase();
       if (
-        !d.characterName.toLowerCase().includes(q) &&
-        !d.setName.toLowerCase().includes(q) &&
-        !d.editionKey.toLowerCase().includes(q)
+        !(d.playerName ?? "").toLowerCase().includes(q) &&
+        !(d.setName ?? "").toLowerCase().includes(q) &&
+        !(d.editionKey ?? "").toLowerCase().includes(q)
       )
         return false;
     }
@@ -469,6 +522,7 @@ export default function PinnacleSniperClient() {
             <table style={{ width: "100%", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
+                  <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px", width: 72 }}><span className="sr-only">Art</span></th>
                   <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Pin</th>
                   <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px" }}>Variant</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Serial</th>
@@ -491,10 +545,30 @@ export default function PinnacleSniperClient() {
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)"; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.flowId === highlightedId ? `${ACCENT}12` : "transparent"; }}
                   >
+                    {/* Art — same-origin render image; nothing when unresolved
+                        (the contract's generic placeholder is never this pin). */}
+                    <td style={{ padding: "8px 12px", width: 72 }}>
+                      {deal.thumbnailUrl ? (
+                        pinnacleDealHref(deal) ? (
+                          <Link href={pinnacleDealHref(deal)!} prefetch={false} aria-label={deal.playerName}>
+                            <IpfsImg src={proxyIpfsUrl(deal.thumbnailUrl) ?? undefined} alt={deal.playerName ?? ""} width={56} height={56} style={{ objectFit: "contain", display: "block" }} />
+                          </Link>
+                        ) : (
+                          <IpfsImg src={proxyIpfsUrl(deal.thumbnailUrl) ?? undefined} alt={deal.playerName ?? ""} width={56} height={56} style={{ objectFit: "contain", display: "block" }} />
+                        )
+                      ) : null}
+                    </td>
+
                     {/* Pin info */}
                     <td style={{ padding: "8px 12px" }}>
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", lineHeight: 1.2 }}>
-                        {deal.characterName}
+                        {pinnacleDealHref(deal) ? (
+                          <Link href={pinnacleDealHref(deal)!} prefetch={false} style={{ color: "inherit", textDecoration: "none" }}>
+                            {deal.playerName}
+                          </Link>
+                        ) : (
+                          deal.playerName
+                        )}
                         {deal.isLocked && (
                           <span title="Pin is locked (maturity date in future)" style={{ marginLeft: 6, fontSize: "var(--text-xs)", opacity: 0.5 }}>
                             🔒
@@ -502,15 +576,19 @@ export default function PinnacleSniperClient() {
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>
-                        <span style={{ color: PINNACLE_VARIANT_COLORS[deal.variantType] ?? "#6B7280", fontWeight: 600 }}>
-                          {deal.franchise}
-                        </span>
-                        <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
-                        <span style={{ color: "var(--rpc-text-muted)" }}>{deal.setName || "—"}</span>
-                        {(deal.seriesYear ?? 0) > 0 && (
+                        {deal.teamName && (
+                          <>
+                            <span style={{ color: PINNACLE_VARIANT_COLORS[deal.tier as PinnacleVariant] ?? "#6B7280", fontWeight: 600 }}>
+                              {deal.teamName}
+                            </span>
+                            <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
+                          </>
+                        )}
+                        <span style={{ color: "var(--rpc-text-muted)" }}>{(deal.setName ?? "").trim() || "—"}</span>
+                        {deal.seriesName && (
                           <>
                             <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
-                            <span style={{ color: "var(--rpc-text-ghost)" }}>{deal.seriesYear}</span>
+                            <span style={{ color: "var(--rpc-text-ghost)" }}>{deal.seriesName}</span>
                           </>
                         )}
                       </div>
@@ -523,32 +601,25 @@ export default function PinnacleSniperClient() {
                             CHASER
                           </span>
                         )}
-                        {deal.editionType && deal.editionType !== "Open Edition" && (
-                          <span
-                            className="px-1 py-0.5 rounded text-xs"
-                            style={{ background: "rgba(168,85,247,0.10)", color: "#c084fc", border: "1px solid rgba(168,85,247,0.25)" }}
-                          >
-                            {deal.editionType}
-                          </span>
-                        )}
                       </div>
                     </td>
 
                     {/* Variant pill */}
                     <td style={{ padding: "8px 12px" }}>
-                      {variantPill(deal.variantType)}
+                      {variantPill(deal.tier)}
                     </td>
 
                     {/* Serial */}
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
-                      {deal.serial !== null ? (
+                      {/* The feed sends 0 for "no serial" (Open Editions), not null. */}
+                      {(deal.serial ?? 0) > 0 ? (
                         <>
                           <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)" }}>
                             #{deal.serial}
                           </div>
-                          {(deal.mintCount ?? 0) > 0 && (
+                          {(deal.circulationCount ?? 0) > 0 && (
                             <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>
-                              / {(deal.mintCount ?? 0).toLocaleString()}
+                              / {(deal.circulationCount ?? 0).toLocaleString()}
                             </div>
                           )}
                           {deal.isSpecialSerial && (
@@ -622,9 +693,9 @@ export default function PinnacleSniperClient() {
                             destination: "pinnacle_listing",
                             editionKey: deal.editionKey,
                             momentId: deal.flowId,
-                            playerName: deal.characterName,
+                            playerName: deal.playerName,
                             setName: deal.setName,
-                            tier: deal.variantType,
+                            tier: deal.tier,
                             serial: deal.serial,
                             askPrice: deal.askPrice,
                             fmv: deal.adjustedFmv,

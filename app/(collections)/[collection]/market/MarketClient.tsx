@@ -24,7 +24,7 @@ import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
 import { getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
 import { seriesDisplay } from "@/lib/series-label"
-import { momentSubjectHref } from "@/lib/entity-href"
+import { momentSubjectHref, pinnacleRenderHref } from "@/lib/entity-href"
 import { COLLECTION_TIERS } from "@/lib/collection-tiers"
 import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
 import { filterListingsByOwned, collectBadgeOptions, countActiveFilters } from "@/lib/market/filters"
@@ -39,7 +39,7 @@ import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSu
 import PackMarketView from "@/components/packs/PackMarketView"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import type { PaniniCoverage } from "@/lib/panini/coverage"
-import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 
 // ── Ask age ─────────────────────────────────────────────────────────────────
 //
@@ -1138,7 +1138,16 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                     l.playerName
                   ) : l.playerName ? (
                     <Link
-                      href={momentSubjectHref(collectionUrlSlug, l.playerName, l.teamName) ?? "#"}
+                      // ⚠ Pinnacle: the row IS one pin (render), so its name opens that
+                      // pin. The character page 404'd for most rows — 561 of 676
+                      // catalog characters have no `players` row (get_player_detail
+                      // resolves only those), measured 2026-09-26: 1,535 of 2,357 live
+                      // Market rows linked to a 404.
+                      href={
+                        (isPinnacleUrlSlug(collectionUrlSlug) && l.editionKey
+                          ? pinnacleRenderHref(l.editionKey)
+                          : momentSubjectHref(collectionUrlSlug, l.playerName, l.teamName)) ?? "#"
+                      }
                       prefetch={false}
                       style={{ color: "inherit", textDecoration: "none" }}
                     >
