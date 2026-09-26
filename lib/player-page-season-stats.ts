@@ -24,6 +24,8 @@ export interface SeasonStatRow {
 
 export interface SeasonStatsResult {
   league: "nba" | "nfl" | string
+  /** Which ESPN league the lines come from (batch 56): a Top Shot WNBA player is league nba / espn_league wnba. */
+  espn_league?: "nba" | "wnba" | "nfl" | string | null
   espn_id: string
   display_name: string | null
   stats_refreshed_at: string | null
@@ -56,7 +58,7 @@ export function teamSlugLabel(slug: string | null | undefined): string | null {
     .join(" ")
 }
 
-/** NBA seasons are labelled "2024-25" for ESPN's year 2025; NFL by the year. */
+/** NBA seasons are labelled "2024-25" for ESPN's year 2025; NFL and the WNBA (a calendar-year season) by the year. */
 export function seasonLabel(league: string, season: number): string {
   if (league === "nba") return `${season - 1}-${String(season).slice(-2)}`
   return String(season)
@@ -132,7 +134,7 @@ export function buildSeasonStatsTables(result: SeasonStatsResult): SeasonStatsTa
         const j = r.names.indexOf(name)
         return j === -1 ? "—" : (r.values[j] ?? "—")
       })
-      return { season: r.season, seasonLabel: seasonLabel(result.league, r.season), team, values }
+      return { season: r.season, seasonLabel: seasonLabel(result.espn_league || result.league, r.season), team, values }
     })
     tables.push({ category: cat, title: head.display_name ?? cat, labels, seasons })
   }

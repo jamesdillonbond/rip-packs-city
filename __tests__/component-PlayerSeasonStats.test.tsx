@@ -88,6 +88,14 @@ describe("buildSeasonStatsTables", () => {
   it("season labels: NBA is the two-year form, NFL the year; team slugs read as names", () => {
     expect(seasonLabel("nba", 2025)).toBe("2024-25")
     expect(seasonLabel("nfl", 2025)).toBe("2025")
+    // a Top Shot WNBA player (league nba, espn_league wnba): a calendar-year season (batch 56)
+    expect(seasonLabel("wnba", 2026)).toBe("2026")
+    const wnba: SeasonStatsResult = {
+      ...nfl, league: "nba", espn_league: "wnba", espn_id: "3149391", display_name: "A'ja Wilson",
+      rows: [{ season: 2026, season_type: 2, category: "averages", display_name: "Averages", team_slug: "las-vegas-aces", is_total: false, labels: ["GP", "PTS"], names: ["gamesPlayed", "avgPoints"], values: ["40", "23.4"] }],
+    }
+    expect(buildSeasonStatsTables(wnba)[0].seasons[0].seasonLabel).toBe("2026")
+    expect(buildSeasonStatsTables({ ...wnba, espn_league: "nba" })[0].seasons[0].seasonLabel).toBe("2025-26")
     expect(teamSlugLabel("san-francisco-49ers")).toBe("San Francisco 49ers")
     expect(teamSlugLabel(null)).toBeNull()
   })

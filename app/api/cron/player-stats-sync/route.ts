@@ -13,12 +13,14 @@ import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 //
 // Runner protocol:
 //   GET  ?phase=targets&league=nfl|nba&limit=N
-//        -> { targets:[{identity_id, espn_id, display_name, stats_refreshed_at}] }
+//        -> { targets:[{identity_id, espn_id, espn_league, display_name, stats_refreshed_at}] }
+//        (espn_league — nba | wnba | nfl — picks the stats path; batch 56)
 //        (writes the -heartbeat row: the runner's invocation is then knowable
 //        even when the job is killed before its final POST)
 //   GET  ?phase=espn-resolve-targets&league=nba&limit=N
-//        -> { targets:[{identity_id, display_name, name_slug}] }
-//   POST { league, espn_ids:[{identity_id, espn_id|null, matched_by}] }
+//        -> { targets:[{identity_id, display_name, name_slug, aliases[]}] }
+//        (aliases: the other spellings RPC knows, for search retries; batch 56)
+//   POST { league, espn_ids:[{identity_id, espn_id|null, espn_league|null, matched_by}] }
 //        -> { updated }  (writes an espn_id only where NULL; provenance kept)
 //   POST { league, rows:[…stat lines…], touched:[espn_id…] }
 //        -> { upserted }  (rows_written is what the RPC RETURNED)

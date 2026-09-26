@@ -1,27 +1,41 @@
 // scripts/lib/espn-player-stats.mjs — the pure half of the ESPN stats feed
-// (batch 47, 2026-09-25). Plain JS so the GitHub Actions runner script can
-// import it without a build; vitest imports it the same way.
+// (batch 47, 2026-09-25; search v2 + WNBA in batch 56). Plain JS so the
+// GitHub Actions runner script can import it without a build; vitest imports
+// it the same way.
 //
 // ESPN's public JSON, measured 2026-09-25 from the cloud sandbox:
-//   site.web.api.espn.com/apis/common/v3/sports/<sport>/<league>/athletes/<id>/stats
+//   site.web.api.espn.com/apis/common/v3/sports/<sport>/<espn league>/athletes/<id>/stats
 //     → { filters: [{name:'seasontype', value:'2'}…], categories: [{ name, displayName,
 //          labels[], names[], statistics: [{ season:{year, displayName}, teamSlug, stats[] }] }] }
-//   site.web.api.espn.com/apis/common/v3/search?query=<name>&type=player&sport=<sport>
-//     → { items: [{ id, displayName, sport, league, … }] }
+//     serves a RETIRED id (Paul Pierce 662 → 19 seasons) and a WNBA id under
+//     basketball/wnba (A'ja Wilson 3149391 → 9 calendar-year seasons).
+//   site.web.api.espn.com/apis/search/v2?query=<name>&type=player&limit=N
+//     → { results: [{ type:'player', contents: [{ uid:'s:40~l:46~a:662', displayName,
+//          defaultLeagueSlug:'nba'|'wnba'|'nfl'|'college-football'…, sport, subtitle:<team> }] }] }
+//     ⚠ the older /apis/common/v3/search (batch 47) returns ACTIVE players only
+//     and no WNBA under sport=basketball — 64 Top Shot names came back empty.
 
 export const ESPN_SPORT = { nfl: "football", nba: "basketball" }
+/** The ESPN leagues an identity league may be keyed in (Top Shot mints WNBA moments). */
+export const ESPN_LEAGUES = { nfl: ["nfl"], nba: ["nba", "wnba"] }
 
-export function espnStatsUrl(league, espnId) {
+export function espnStatsUrl(league, espnId, espnLeague = league) {
   const sport = ESPN_SPORT[league]
   if (!sport) throw new Error(`espnStatsUrl: unknown league ${league}`)
-  return `https://site.web.api.espn.com/apis/common/v3/sports/${sport}/${league}/athletes/${encodeURIComponent(espnId)}/stats`
+  const el = String(espnLeague || league)
+  if (!ESPN_LEAGUES[league].includes(el)) throw new Error(`espnStatsUrl: ${el} is not an ESPN league of ${league}`)
+  return `https://site.web.api.espn.com/apis/common/v3/sports/${sport}/${el}/athletes/${encodeURIComponent(espnId)}/stats`
 }
 
 export function espnSearchUrl(league, name, limit = 10) {
-  const sport = ESPN_SPORT[league]
-  if (!sport) throw new Error(`espnSearchUrl: unknown league ${league}`)
-  const q = new URLSearchParams({ query: name, type: "player", sport, limit: String(limit) })
-  return `https://site.web.api.espn.com/apis/common/v3/search?${q.toString()}`
+  if (!ESPN_SPORT[league]) throw new Error(`espnSearchUrl: unknown league ${league}`)
+  const q = new URLSearchParams({ query: name, type: "player", limit: String(limit) })
+  return `https://site.web.api.espn.com/apis/search/v2?${q.toString()}`
+}
+
+/** "stephen-curry" → "stephen curry": an alias slug as a search query. */
+export function slugToQuery(slug) {
+  return String(slug ?? "").replace(/-+/g, " ").trim()
 }
 
 /** The stat-line rows upsert_player_season_stats takes, from one athlete's /stats payload. */
@@ -84,22 +98,59 @@ export function baseSlug(name) {
 }
 
 /**
- * Pick the ONE ESPN athlete for a display name from a search result: same
- * league, base name equal. Exactly one → { espn_id, matched_by }; none or
- * several → { espn_id: null, matched_by: 'unresolved:none' | 'unresolved:ambiguous' }.
+ * The player hits of a /apis/search/v2 payload, flattened: { id, displayName,
+ * league, sport, team }. The athlete id is the `a:` segment of `uid`
+ * (s:40~l:46~a:662); a hit without one is skipped. Tolerates the batch-47
+ * `items` shape too.
  */
-export function matchEspnSearch(items, league, displayName) {
+export function espnSearchHits(payload) {
+  const out = []
+  const push = (c) => {
+    if (!c || typeof c !== "object") return
+    if (c.type && c.type !== "player") return
+    let id = c.id != null && /^\d+$/.test(String(c.id)) ? String(c.id) : null
+    const m = typeof c.uid === "string" ? c.uid.match(/~a:(\d+)/) : null
+    if (m) id = m[1]
+    if (!id) return
+    out.push({
+      id,
+      displayName: String(c.displayName ?? ""),
+      league: String(c.defaultLeagueSlug ?? c.league ?? "").toLowerCase(),
+      sport: String(c.sport ?? "").toLowerCase(),
+      team: typeof c.subtitle === "string" ? c.subtitle : null,
+    })
+  }
+  if (payload && Array.isArray(payload.results)) {
+    for (const r of payload.results) for (const c of Array.isArray(r?.contents) ? r.contents : []) push(c)
+  } else if (payload && Array.isArray(payload.items)) {
+    for (const c of payload.items) push(c)
+  } else if (Array.isArray(payload)) {
+    for (const c of payload) push(c)
+  }
+  return out
+}
+
+/**
+ * Pick the ONE ESPN athlete for a display name from a search payload: an ESPN
+ * league of this identity league (nba → nba or wnba), base name equal.
+ * Exactly one → { espn_id, espn_league, matched_by }; none or several →
+ * { espn_id: null, espn_league: null, matched_by: 'unresolved:none' |
+ * 'unresolved:ambiguous:N' }. A same-base-name tie is broken by the exact
+ * spelling when unique — never by league or team.
+ */
+export function matchEspnSearch(payload, league, displayName) {
   const want = baseSlug(displayName)
-  const list = Array.isArray(items) ? items : []
-  const hits = list.filter(
-    (i) => i && String(i.league ?? "").toLowerCase() === league && i.id != null && baseSlug(i.displayName) === want,
+  const leagues = ESPN_LEAGUES[league] ?? [league]
+  const sport = ESPN_SPORT[league]
+  const hits = espnSearchHits(payload).filter(
+    (h) => leagues.includes(h.league) && (!sport || !h.sport || h.sport === sport) && baseSlug(h.displayName) === want,
   )
-  if (hits.length === 1) return { espn_id: String(hits[0].id), matched_by: "espn-search:name" }
-  if (hits.length === 0) return { espn_id: null, matched_by: "unresolved:none" }
+  if (hits.length === 1) return { espn_id: hits[0].id, espn_league: hits[0].league, matched_by: "espn-search:name" }
+  if (hits.length === 0) return { espn_id: null, espn_league: null, matched_by: "unresolved:none" }
   // several with the same base name: an exact spelling wins when unique
-  const exact = hits.filter((i) => String(i.displayName).trim() === String(displayName).trim())
-  if (exact.length === 1) return { espn_id: String(exact[0].id), matched_by: "espn-search:exact" }
-  return { espn_id: null, matched_by: `unresolved:ambiguous:${hits.length}` }
+  const exact = hits.filter((h) => h.displayName.trim() === String(displayName).trim())
+  if (exact.length === 1) return { espn_id: exact[0].id, espn_league: exact[0].league, matched_by: "espn-search:exact" }
+  return { espn_id: null, espn_league: null, matched_by: `unresolved:ambiguous:${hits.length}` }
 }
 
 export function chunk(arr, size) {

@@ -663,7 +663,8 @@ const PINS = [
     test: "supabase/tests/get_player_season_stats.sql",
     // re-pointed 2026-09-25 (batch 49): the key gained team_slug (a traded season
     // is one line per team plus a total), the read returns is_total.
-    migration: "supabase/migrations/20260925235606_audit_20260925_player_season_stats_keyed_by_team_too.sql",
+    // re-pointed 2026-09-25 (batch 56): returns espn_league (WNBA seasons are calendar years).
+    migration: "supabase/migrations/20260926012607_audit_20260925_stats_feed_reaches_retired_players_and_the_wnba.sql",
   },
   {
     fn: "resolve_canonical_player",

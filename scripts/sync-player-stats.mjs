@@ -25,7 +25,7 @@
  *   slow ESPN ends in a logged, partial run instead of a SIGKILL with no row)
  */
 
-import { chunk, espnSearchUrl, espnStatsUrl, matchEspnSearch, parseEspnStats } from "./lib/espn-player-stats.mjs"
+import { chunk, espnSearchUrl, espnStatsUrl, matchEspnSearch, parseEspnStats, slugToQuery } from "./lib/espn-player-stats.mjs"
 
 const BASE_URL = (process.env.BASE_URL || "https://www.rippackscity.com").replace(/\/$/, "")
 const TOKEN = process.env.INGEST_SECRET_TOKEN
@@ -81,20 +81,41 @@ async function resolveEspnIds(league, stats) {
   const out = []
   for (const t of targets) {
     if (pastDeadline()) { stats.deadline_hit = true; break }
-    try {
-      const r = await espnGet(espnSearchUrl(league, t.display_name, 10))
-      if (r.status !== 200) {
-        stats.resolve_failed++
-        stats.errors.push(`search ${t.display_name}: HTTP ${r.status}`)
-      } else {
-        const m = matchEspnSearch(r.json?.items, league, t.display_name)
-        out.push({ identity_id: t.identity_id, espn_id: m.espn_id, matched_by: m.matched_by })
-        if (m.espn_id) stats.resolved++
-        else stats.unresolved++
+    // The catalog spelling first, then every other spelling RPC knows for the
+    // person ("Steph Curry" is Stephen Curry to ESPN; the alias row says so).
+    // A search that FAILS (HTTP / network) leaves the target untouched for the
+    // next run; only a search that ANSWERED without a match is recorded.
+    const spellings = [t.display_name, ...(Array.isArray(t.aliases) ? t.aliases.map(slugToQuery) : [])].filter(Boolean)
+    let verdict = null
+    let failed = false
+    for (const [i, name] of spellings.entries()) {
+      if (pastDeadline()) { stats.deadline_hit = true; break }
+      try {
+        const r = await espnGet(espnSearchUrl(league, name, 10))
+        if (r.status !== 200) {
+          failed = true
+          stats.errors.push(`search ${name}: HTTP ${r.status}`)
+          break
+        }
+        const m = matchEspnSearch(r.json, league, name)
+        if (m.espn_id) {
+          verdict = { ...m, matched_by: i === 0 ? m.matched_by : `${m.matched_by}:alias:${t.aliases[i - 1]}` }
+          break
+        }
+        if (verdict === null || m.matched_by.startsWith("unresolved:ambiguous")) verdict = m
+      } catch (err) {
+        failed = true
+        stats.errors.push(`search ${name}: ${err instanceof Error ? err.message : String(err)}`)
+        break
       }
-    } catch (err) {
+      await sleep(ESPN_DELAY_MS)
+    }
+    if (failed) {
       stats.resolve_failed++
-      stats.errors.push(`search ${t.display_name}: ${err instanceof Error ? err.message : String(err)}`)
+    } else if (verdict) {
+      out.push({ identity_id: t.identity_id, espn_id: verdict.espn_id, espn_league: verdict.espn_league, matched_by: verdict.matched_by })
+      if (verdict.espn_id) stats.resolved++
+      else stats.unresolved++
     }
     await sleep(ESPN_DELAY_MS)
   }
@@ -117,7 +138,7 @@ async function syncStats(league, stats) {
     for (const t of part) {
       if (pastDeadline()) { stats.deadline_hit = true; break }
       try {
-        const r = await espnGet(espnStatsUrl(league, t.espn_id))
+        const r = await espnGet(espnStatsUrl(league, t.espn_id, t.espn_league || league))
         if (r.status === 404) {
           stats.fetched_404++
           touched.push(t.espn_id)

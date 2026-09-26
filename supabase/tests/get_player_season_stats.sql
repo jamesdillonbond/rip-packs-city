@@ -9,7 +9,7 @@
 -- with zero categories, so it leaves the front of the queue.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260925235606_audit_20260925_player_season_stats_keyed_by_team_too.sql);
+-- (supabase/migrations/20260926012607_audit_20260925_stats_feed_reaches_retired_players_and_the_wnba.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -20,7 +20,7 @@ CREATE TABLE player_identities (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   league text NOT NULL, espn_id text, display_name text NOT NULL, player_id uuid,
   refreshed_at timestamptz NOT NULL DEFAULT now(), stats_refreshed_at timestamptz, espn_id_matched_by text,
-  source text NOT NULL DEFAULT 'players.external_id', rookie_season int, last_season int, latest_team text
+  source text NOT NULL DEFAULT 'players.external_id', rookie_season int, last_season int, latest_team text, espn_league text
 );
 CREATE TABLE teams_master (league text, team_name text, abbreviation text);
 INSERT INTO teams_master VALUES ('NFL', 'Kansas City Chiefs', 'KC'), ('NBA', 'Denver Nuggets', 'DEN'), ('NBA', 'LA Clippers', 'LAC');
@@ -127,7 +127,7 @@ DECLARE
   v_rows  jsonb;
   v_refreshed timestamptz;
 BEGIN
-  SELECT i.id, i.league, i.espn_id, i.display_name, i.stats_refreshed_at
+  SELECT i.id, i.league, i.espn_id, i.espn_league, i.display_name, i.stats_refreshed_at
     INTO v_ident
     FROM public.player_identities i
    WHERE i.player_id = p_player_id
@@ -165,6 +165,9 @@ BEGIN
   RETURN jsonb_build_object(
     'league', v_ident.league,
     'espn_id', v_ident.espn_id,
+    -- 2026-09-25: which ESPN league the lines come from (a WNBA season is a
+    -- calendar year; the page labels it so)
+    'espn_league', COALESCE(v_ident.espn_league, v_ident.league),
     'display_name', v_ident.display_name,
     'stats_refreshed_at', v_ident.stats_refreshed_at,
     'rows_refreshed_at', v_refreshed,
@@ -180,6 +183,9 @@ INSERT INTO player_identities (id, league, espn_id, display_name, player_id, sou
 INSERT INTO player_identities (id, league, espn_id, display_name, player_id) VALUES
   ('b0000000-0000-0000-0000-000000000002', 'nba', NULL,      'Gary Payton',     'a0000000-0000-0000-0000-000000000002'),
   ('b0000000-0000-0000-0000-000000000003', 'nfl', '999',     'Rookie Nobody',   'a0000000-0000-0000-0000-000000000003');
+-- a Top Shot WNBA player: league nba (the collection's), espn_league wnba (batch 56)
+INSERT INTO player_identities (id, league, espn_id, espn_league, display_name, player_id) VALUES
+  ('b0000000-0000-0000-0000-000000000005', 'nba', '3149391', 'wnba', 'A''ja Wilson', 'a0000000-0000-0000-0000-000000000005');
 
 DO $$
 DECLARE r jsonb; n int;
@@ -193,6 +199,11 @@ BEGIN
   PERFORM _assert(r IS NOT NULL, 'keyed identity is not NULL');
   PERFORM _assert_eq(r->>'rows', '[]', 'no stats yet -> rows []');
   PERFORM _assert((r->>'rows_refreshed_at') IS NULL, 'no rows -> no rows_refreshed_at');
+  -- 3b. the ESPN league rides along: the collection's league by default, 'wnba' for a WNBA identity (batch 56)
+  PERFORM _assert_eq(r->>'espn_league', 'nfl', 'espn_league defaults to the identity league');
+  r := get_player_season_stats('a0000000-0000-0000-0000-000000000005', 3);
+  PERFORM _assert_eq(r->>'league', 'nba', 'a WNBA player keeps the collection league');
+  PERFORM _assert_eq(r->>'espn_league', 'wnba', 'and says the lines are WNBA');
 
   -- 4. the writer: four seasons of passing, one of rushing; a malformed row
   --    (labels/values length mismatch) is dropped, not stored
