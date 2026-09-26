@@ -77,6 +77,8 @@ interface SetsResponse {
   notStartedSets?: number;
   sets: SetProgress[];
   generatedAt: string;
+  /** Candy only: the published checklist, and its players RPC has no card for. */
+  publishedChecklist?: { total: number; notIndexed: string[] };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -503,7 +505,15 @@ export default function CollectionSetsClient({ collection }: { collection: strin
 
             <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5, marginBottom: 16, maxWidth: 880 }}>
               {isCandy ? (
-                <>RPC counts a set complete when you own every player in it, in any printing. The five-colour Rainbow cards are parallels of those players &mdash; counted beside completion as depth, never as extra checklist slots.</>
+                <>
+                  RPC counts a set complete when you own every player in it, in any printing. The five-colour Rainbow cards are parallels of those players &mdash; counted beside completion as depth, never as extra checklist slots.
+                  {data.publishedChecklist && data.publishedChecklist.notIndexed.length > 0 ? (
+                    <>
+                      {" "}Candy&apos;s published checklist names {data.publishedChecklist.total} players; RPC has not seen a minted card for{" "}
+                      {data.publishedChecklist.notIndexed.join(", ")}, so they are not counted here yet.
+                    </>
+                  ) : null}
+                </>
               ) : (
                 <>RPC counts a set complete when you own every play in it. Top Shot&apos;s &ldquo;Completed Sets&rdquo; may include per-set criteria (challenges, badges, parallel collections) this tracker doesn&apos;t model &mdash; gaps are expected.</>
               )}

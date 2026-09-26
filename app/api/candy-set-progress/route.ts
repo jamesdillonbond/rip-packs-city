@@ -48,6 +48,7 @@ import { editionHref } from "@/lib/entity-href"
 import { isSolanaAddress } from "@/lib/address"
 // The name-suffix derivation the Collection tab already uses — not a fresh copy.
 import { parallelFromEditionName } from "@/lib/collection/server-moment"
+import { CANDY_PUBLISHED_CHECKLIST_PLAYERS } from "@/lib/chains/solana/candy-checklist"
 
 export const dynamic = "force-dynamic"
 // Above the 8 s per-read bound × the handful of reads, so the lambda cannot
@@ -386,6 +387,13 @@ export async function GET(req: NextRequest) {
 
     sets.sort((a, b) => b.completionPct - a.completionPct)
 
+    // Candy's PUBLISHED checklist can name players RPC has never seen a minted
+    // card for (3 on 2026-09-25). Computed live against the catalog read above,
+    // so the list empties itself when a card for one of them is indexed.
+    const norm = (n: string) => n.normalize("NFC").trim().toLowerCase()
+    const seenPlayers = new Set(edRes.rows.map((e) => norm(e.player_name ?? "")).filter(Boolean))
+    const notIndexed = CANDY_PUBLISHED_CHECKLIST_PLAYERS.filter((n) => !seenPlayers.has(norm(n)))
+
     return NextResponse.json(
       {
         wallet: raw,
@@ -395,6 +403,7 @@ export async function GET(req: NextRequest) {
         inProgressSets: sets.filter((s) => s.completionPct > 0 && s.completionPct < 100).length,
         notStartedSets: sets.filter((s) => s.completionPct === 0).length,
         asksAsOf: newestAskStamp === null ? null : new Date(newestAskStamp).toISOString(),
+        publishedChecklist: { total: CANDY_PUBLISHED_CHECKLIST_PLAYERS.length, notIndexed },
         sets,
         generatedAt: new Date().toISOString(),
       },

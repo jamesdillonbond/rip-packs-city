@@ -225,4 +225,12 @@ describe("GET /api/candy-set-progress", () => {
     expect(json.sets).toBeUndefined()
     expect(JSON.stringify(json)).not.toMatch(/canceling statement/)
   })
+
+  it("names the published-checklist players RPC has no card for — never implies 100 is the whole checklist", async () => {
+    state.editions = [page([ed("aaron-judge", { player_name: "Aaron Judge" })])]
+    const { json } = await body()
+    expect(json.publishedChecklist.total).toBeGreaterThanOrEqual(100)
+    expect(json.publishedChecklist.notIndexed).toContain("Edwin Díaz")
+    expect(json.publishedChecklist.notIndexed).not.toContain("Aaron Judge")
+  })
 })
