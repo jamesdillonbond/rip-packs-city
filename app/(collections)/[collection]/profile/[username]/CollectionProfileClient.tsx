@@ -582,7 +582,10 @@ export default function CollectionProfileClient({
         return r.json();
       })
       .then(function(data) {
-        if (!data || !Array.isArray(data.trophies)) throw new Error("public profile: bad shape");
+        // A null or wrong-shaped body is a FAILED read, flagged here as well as in
+        // the .catch (a non-ok response throws there): three empty slabs would say
+        // "this collector pinned nothing".
+        if (!data || !Array.isArray(data.trophies)) { setFailed(function(f) { return { ...f, trophies: true }; }); return; }
         const slots: (TrophyMoment | null)[] = [null, null, null];
         (data.trophies as TrophyMoment[]).forEach(function(t) {
           if (t.slot >= 1 && t.slot <= 3) slots[t.slot - 1] = t;
@@ -590,8 +593,16 @@ export default function CollectionProfileClient({
         setTrophies(slots);
         if (data.bio) setBio(data.bio);
         if (Array.isArray(data.wallets)) {
-          setWallets(data.wallets);
-          setWalletCount(typeof data.wallet_count === "number" ? data.wallet_count : null);
+          // Scoped to THIS page's collection: the payload carries one row per
+          // (wallet, collection), so an unscoped sum put all five collections'
+          // FMV and moments on e.g. the Top Shot profile (2026-09-26). Within one
+          // collection each wallet has one row, so the count is the rows'.
+          const collUuid = getCollection(collection)?.supabaseCollectionId ?? null;
+          const scoped = collUuid
+            ? (data.wallets as Array<SavedWalletPublic & { collection_id?: string | null }>).filter(function(w) { return w.collection_id === collUuid; })
+            : data.wallets;
+          setWallets(scoped);
+          setWalletCount(collUuid ? scoped.length : (typeof data.wallet_count === "number" ? data.wallet_count : null));
           setWalletsLoaded(true);
         }
       })
@@ -603,7 +614,7 @@ export default function CollectionProfileClient({
       .catch(function() {});
 
     Promise.all([publicP, historyP]).finally(function() { setLoading(false); });
-  }, [username]);
+  }, [username, collection]);
 
   // Fetch sniper deals
   useEffect(function() {

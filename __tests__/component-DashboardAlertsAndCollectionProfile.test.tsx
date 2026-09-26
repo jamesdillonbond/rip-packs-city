@@ -596,7 +596,9 @@ describe("CollectionProfileClient", () => {
         const bad = legs.find((r) => !r.ok)
         if (bad) return bad
         const [t, b, w] = await Promise.all(legs.map((r) => r.json()))
-        const wallets = w?.wallets ?? []
+        // Rows carry their collection (the page scopes to its own); default the
+        // fixture rows to Top Shot, the collection this harness renders.
+        const wallets = (w?.wallets ?? []).map((x: Record<string, unknown>) => ({ collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd", ...x }))
         return json(200, {
           username: "trevor",
           trophies: t?.trophies ?? [],
@@ -814,6 +816,25 @@ describe("CollectionProfileClient", () => {
     expect(urls.some((u) => /\/api\/profile\/(trophy|bio|saved-wallets)(\?|$)/.test(u))).toBe(false)
     // ...and a visitor gets no per-wallet chart built from someone's saved wallets.
     expect(document.body.textContent).not.toMatch(/PORTFOLIO VALUE/)
+  })
+
+  // 2026-09-26: the public payload has one row per (wallet, collection). Unscoped, the
+  // Top Shot profile summed every collection's FMV and moments into its tiles.
+  it("scopes the portfolio tiles to THIS collection's rows", async () => {
+    mount({
+      wallets: () => json(200, {
+        wallets: [
+          WALLET({ cached_fmv: 1200, cached_moment_count: 34 }),
+          WALLET({ collection_id: "dee28451-5d62-409e-a1ad-a83f763ac070", cached_fmv: 9000, cached_moment_count: 500 }),
+        ],
+      }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    await waitFor(() => expect(document.body.textContent).toContain("MOMENTS34"))
+    expect(document.body.textContent).not.toContain("MOMENTS534")
+    // Tiles render adjacent ("MOMENTS34" + "1 WALLET"), so no word boundary.
+    expect(document.body.textContent).toContain("MOMENTS341 WALLET")
+    expect(document.body.textContent).not.toMatch(/2 WALLETS/)
   })
 
   it("CONTROL: a successful read with no saved wallets does say 0 WALLETS", async () => {
