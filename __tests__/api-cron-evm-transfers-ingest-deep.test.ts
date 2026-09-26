@@ -158,7 +158,8 @@ describe("evm-transfers-ingest — decode + cursor contract", () => {
         { data: { last_processed_block: 1000, total_transfers_indexed: 10 }, error: null },
         { data: null, error: null }, // cursor advance update
       ],
-      evm_nft_transfers: { data: null, error: null },
+      // Both rows are new: the upsert RETURNS both (the route counts rows returned).
+      evm_nft_transfers: { data: [{ block_number: 1250 }, { block_number: 1251 }], error: null },
     })
 
     const res = await POST(req())
@@ -218,6 +219,26 @@ describe("evm-transfers-ingest — decode + cursor contract", () => {
     })
   })
 
+  it("a re-walked window of DUPLICATES writes 0 and leaves the persisted total where it was (2026-09-26)", async () => {
+    // ignoreDuplicates = ON CONFLICT DO NOTHING: nothing is returned for rows
+    // already indexed. Counting the rows SENT used to add 2 to the cursor's
+    // total_transfers_indexed on every re-walk — a count that never comes down.
+    state.getLogsQueue = [{ logs: [transferLog(), transferLog({ logIndex: "0x3" })] }]
+    const spy = install({
+      evm_nft_contracts: { data: [BEEZIE], error: null },
+      evm_indexer_cursors: [
+        { data: { last_processed_block: 1000, total_transfers_indexed: 10 }, error: null },
+        { data: null, error: null },
+      ],
+      evm_nft_transfers: { data: [], error: null },
+    })
+    await POST(req())
+    await runDeferred()
+    const advance = (spy.writes.evm_indexer_cursors ?? []).find((w) => w.method === "update")
+    expect(advance?.rows[0]).toMatchObject({ total_transfers_indexed: 10 })
+    expect(ingestLogs(spy.rpcCalls)[0]).toMatchObject({ p_ok: true, p_rows_written: 0 })
+  })
+
   it("initializes a fresh cursor at start_block-1, skips non-standard logs, and resolves missing timestamps via RPC", async () => {
     state.getLogsQueue = [
       {
@@ -239,7 +260,7 @@ describe("evm-transfers-ingest — decode + cursor contract", () => {
         { data: null, error: null }, // insert
         { data: null, error: null }, // advance
       ],
-      evm_nft_transfers: { data: null, error: null },
+      evm_nft_transfers: { data: [{ block_number: 0xaa }], error: null }, // the one standard log landed
     })
 
     await POST(req())

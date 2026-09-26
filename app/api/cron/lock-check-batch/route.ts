@@ -392,6 +392,7 @@ async function runBatch(startedAtIso: string): Promise<void> {
   }
 
   let inserted = 0
+  let skippedLocked: number | null = null
   let writeError: string | null = null
   if (results.length > 0) {
     const { data: applyRes, error: applyErr } = await (supabaseAdmin as any).rpc(
@@ -401,7 +402,18 @@ async function runBatch(startedAtIso: string): Promise<void> {
     if (applyErr) {
       writeError = applyErr.message
     } else {
-      inserted = Number((applyRes as any)?.updated ?? results.length) || results.length
+      // The RPC's own `updated` is the count that LANDED. Until 2026-09-26 a real
+      // 0 (every row claimed by a concurrent run: skipped_locked) fell through
+      // `|| results.length` and was published as every row written. A missing
+      // count is not a success either.
+      const updated = Number((applyRes as any)?.updated)
+      if (Number.isFinite(updated)) {
+        inserted = updated
+        const sk = Number((applyRes as any)?.skipped_locked)
+        skippedLocked = Number.isFinite(sk) ? sk : null
+      } else {
+        writeError = "apply_lock_check_batch returned no updated count"
+      }
     }
   }
 
@@ -411,8 +423,15 @@ async function runBatch(startedAtIso: string): Promise<void> {
     p_rows_found: candidates.length,
     p_rows_written: inserted,
     p_rows_skipped: candidates.length - results.length,
-    p_ok: !writeError && groupErrors.length === 0,
-    p_error: writeError ?? (groupErrors[0] ? `cadence: ${groupErrors[0].error}` : null),
+    // A partial batch read (one slug failed) is a failed lane, not a clean run.
+    p_ok: !writeError && groupErrors.length === 0 && batchReadErrors.length === 0,
+    p_error:
+      writeError ??
+      (groupErrors[0]
+        ? `cadence: ${groupErrors[0].error}`
+        : batchReadErrors[0]
+          ? `get_lock_check_batch: ${batchReadErrors[0]}`
+          : null),
     p_collection_slug: null,
     p_cursor_before: null,
     p_cursor_after: null,
@@ -422,10 +441,12 @@ async function runBatch(startedAtIso: string): Promise<void> {
       wallets_grouped: groups.size,
       unsupported_collections: unsupportedCollections,
       group_errors: groupErrors.slice(0, 5),
+      batch_read_errors: batchReadErrors,
+      skipped_locked: skippedLocked,
     },
   })
 
   console.log(
-    `[lock-check-batch] done ok=${!writeError && groupErrors.length === 0} found=${candidates.length} written=${inserted} wallets=${walletsProcessed} ms=${Date.now() - started}`
+    `[lock-check-batch] done ok=${!writeError && groupErrors.length === 0 && batchReadErrors.length === 0} found=${candidates.length} written=${inserted} wallets=${walletsProcessed} ms=${Date.now() - started}`
   )
 }

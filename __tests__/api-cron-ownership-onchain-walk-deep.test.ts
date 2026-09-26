@@ -191,6 +191,12 @@ describe("ownership-onchain-walk — verification walk", () => {
     const log = logRun(spy.rpcCalls)
     expect(log?.p_ok).toBe(false)
     expect(String(log?.p_error)).toContain("upsert:")
+    // The chain confirmed the row, but it did not LAND — never reported as written
+    // (2026-09-26: rows_written used to be the buffered `confirmed` count).
+    expect(log?.p_rows_written).toBe(0)
+    const extra = log?.p_extra as { confirmed?: number; written?: number } | undefined
+    expect(extra?.confirmed).toBe(1)
+    expect(extra?.written).toBe(0)
   })
 
   it("a stale-wallets RPC error flips ok=false with a 'stale-wallets:' error", async () => {

@@ -161,6 +161,11 @@ export async function GET(req: NextRequest) {
 
     let resolved = 0;
     let gqlErrors = 0;
+    // resolved counts rows the update LANDED on (.select), never rows attempted:
+    // the update is fill-only (.is("render_id", null)), so a row a concurrent
+    // writer already filled changes nothing and must not count (2026-09-26).
+    let writeErrors = 0;
+    let writeError: string | null = null;
     for (let i = 0; i < ids.length; i += ID_CHUNK) {
       const chunk = ids.slice(i, i + ID_CHUNK);
       let nodes: Array<{ id: string; serial: number | null; render_id: string | null }> = [];
@@ -172,7 +177,7 @@ export async function GET(req: NextRequest) {
       }
       for (const n of nodes) {
         if (!n.render_id) continue;
-        await supabaseAdmin
+        const { data: landed, error: upErr } = await supabaseAdmin
           .from("wallet_moments_cache")
           .update({
             render_id: n.render_id,
@@ -180,26 +185,40 @@ export async function GET(req: NextRequest) {
           })
           .eq("collection_id", PINNACLE_COLLECTION_ID)
           .eq("moment_id", n.id)
-          .is("render_id", null);
-        resolved++;
+          .is("render_id", null)
+          .select("moment_id");
+        if (upErr) {
+          writeErrors++;
+          writeError = writeError ?? upErr.message;
+          continue;
+        }
+        resolved += Array.isArray(landed) ? landed.length : 0;
       }
     }
 
     // Derive character/set/mint/image from the catalog for everything just resolved.
+    // derived is the RPC's own row count, never `resolved` restated.
     let derived = 0;
+    let deriveError: string | null = null;
     if (resolved > 0) {
-      const { error: derErr } = await supabaseAdmin.rpc("derive_pinnacle_wmc_from_catalog");
-      if (!derErr) derived = resolved;
+      const { data: derCount, error: derErr } = await supabaseAdmin.rpc("derive_pinnacle_wmc_from_catalog");
+      if (derErr) deriveError = derErr.message;
+      else derived = typeof derCount === "number" ? derCount : 0;
     }
 
     // Q2 — drain a small batch of unresolved pinnacle_sales render_ids (same GQL path).
+    // It never STOPS the wmc work above, but a failed sales read or write is not
+    // a success: it is recorded in sales_error and fails the run (2026-09-26 —
+    // the RPC's error was never read, so a broken lane reported ok:true).
     let salesResolved = 0;
     let salesUpdated = 0;
+    let salesError: string | null = null;
     try {
-      const { data: salesIdsData } = await supabaseAdmin.rpc(
+      const { data: salesIdsData, error: salesReadErr } = await supabaseAdmin.rpc(
         "pinnacle_sales_unresolved_render_nft_ids",
         { p_limit: SALES_CAP },
       );
+      if (salesReadErr) throw new Error(`read: ${salesReadErr.message}`);
       const salesIds = [...new Set(((salesIdsData ?? []) as string[]).filter(Boolean))];
       for (let i = 0; i < salesIds.length; i += ID_CHUNK) {
         const chunk = salesIds.slice(i, i + ID_CHUNK);
@@ -217,24 +236,39 @@ export async function GET(req: NextRequest) {
         const keys = Object.keys(map);
         if (keys.length === 0) continue;
         salesResolved += keys.length;
-        const { data: cnt } = await supabaseAdmin.rpc("pinnacle_sales_set_render_ids", { p_map: map });
+        const { data: cnt, error: setErr } = await supabaseAdmin.rpc("pinnacle_sales_set_render_ids", { p_map: map });
+        if (setErr) {
+          salesError = salesError ?? `write: ${setErr.message}`;
+          continue;
+        }
         salesUpdated += typeof cnt === "number" ? cnt : 0;
       }
-    } catch {
-      // best-effort — sales drain never fails the wmc pipeline
+    } catch (e) {
+      salesError = salesError ?? (e instanceof Error ? e.message : String(e));
     }
 
+    const errors = [
+      gqlErrors > 0 ? `${gqlErrors} gql chunk errors` : null,
+      writeError ? `wmc write (${writeErrors}): ${writeError}` : null,
+      deriveError ? `derive: ${deriveError}` : null,
+      salesError ? `sales: ${salesError}` : null,
+    ].filter(Boolean) as string[];
+
     await logRun({
-      ok: gqlErrors === 0,
-      error: gqlErrors > 0 ? `${gqlErrors} gql chunk errors` : null,
+      ok: errors.length === 0,
+      error: errors.length ? errors.join(" | ") : null,
       rowsFound: ids.length,
       resolved,
       extra: {
         unresolved_found: ids.length,
         resolved,
+        write_errors: writeErrors,
+        write_error: writeError,
         derived,
+        derive_error: deriveError,
         sales_resolved: salesResolved,
         sales_updated: salesUpdated,
+        sales_error: salesError,
         gql_errors: gqlErrors,
       },
     });

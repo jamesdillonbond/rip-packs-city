@@ -628,6 +628,19 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
   } = { mint_count_filled: [], edition_keys_resolved: [], disagreements_corrected: [], catalog_upserted: [], serials_filled: [] }
   let gqlErrors = 0
   const errorSamples: Array<{ wallet: string; error: string }> = []
+  // Every correction write's { error } lands here (2026-09-26). The per-lane
+  // counts were already honest (pushed only on success), but a failed write
+  // was invisible: ok was gqlErrors === 0 alone, and the pinnacle_nft_map
+  // upsert's result was not read at all — so an edition_key_resolve that
+  // fixed wmc but not the map (the exact disagreement this job repairs) was
+  // published as resolved on an ok:true run.
+  let writeErrors = 0
+  const writeErrorSamples: Array<{ lane: string; error: string }> = []
+  const noteWriteError = (lane: string, err: { message?: string } | null | undefined) => {
+    if (!err) return
+    writeErrors++
+    if (writeErrorSamples.length < 3) writeErrorSamples.push({ lane, error: err.message ?? String(err) })
+  }
 
   for (const [wallet, wmap] of workByWallet.entries()) {
     if (Date.now() - started > SOFT_DEADLINE_MS) break
@@ -662,6 +675,7 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
           .eq("moment_id", momentId)
           .is("serial_number", null)
           .select("id")
+        noteWriteError("serial", serErr)
         if (!serErr && serUpd && serUpd.length > 0) {
           corrections.serials_filled.push({
             wmc_id: (serUpd[0] as { id: string }).id,
@@ -682,6 +696,7 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
               updated_at: new Date().toISOString(),
             })
             .eq("id", job.edition_pk)
+          noteWriteError(job.kind, error)
           if (!error) {
             corrections.mint_count_filled.push({
               edition_pk: job.edition_pk,
@@ -695,10 +710,17 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
             .from("wallet_moments_cache")
             .update({ edition_key: authoritativeKey })
             .eq("id", job.wmc_id)
-          if (wmcUpErr) continue
-          await supabaseAdmin
+          if (wmcUpErr) {
+            noteWriteError("edition_key_resolve:wmc", wmcUpErr)
+            continue
+          }
+          const { error: mapUpErr } = await supabaseAdmin
             .from("pinnacle_nft_map")
             .upsert({ nft_id: momentId, edition_key: authoritativeKey }, { onConflict: "nft_id" })
+          if (mapUpErr) {
+            noteWriteError("edition_key_resolve:map", mapUpErr)
+            continue
+          }
           corrections.edition_keys_resolved.push({
             wmc_id: job.wmc_id,
             moment_id: momentId,
@@ -713,6 +735,7 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
               .from("pinnacle_nft_map")
               .update({ edition_key: authoritativeKey })
               .eq("nft_id", momentId)
+            noteWriteError(job.kind, error)
             if (!error) {
               corrections.disagreements_corrected.push({
                 wmc_id: job.wmc_id,
@@ -728,6 +751,7 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
               .from("wallet_moments_cache")
               .update({ edition_key: authoritativeKey })
               .eq("id", job.wmc_id)
+            noteWriteError(job.kind, error)
             if (!error) {
               corrections.disagreements_corrected.push({
                 wmc_id: job.wmc_id,
@@ -765,6 +789,7 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
               },
               { onConflict: "id" },
             )
+          noteWriteError(job.kind, error)
           if (!error) {
             corrections.catalog_upserted.push({
               edition_key: authoritativeKey,
@@ -791,8 +816,12 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
       corrections.catalog_upserted.length +
       corrections.serials_filled.length,
     p_rows_skipped: q1Skipped.length,
-    p_ok: gqlErrors === 0,
-    p_error: errorSamples[0] ? `cadence: ${errorSamples[0].error}` : null,
+    p_ok: gqlErrors === 0 && writeErrors === 0,
+    p_error: errorSamples[0]
+      ? `cadence: ${errorSamples[0].error}`
+      : writeErrorSamples[0]
+        ? `write (${writeErrorSamples[0].lane}): ${writeErrorSamples[0].error}`
+        : null,
     p_collection_slug: "disney_pinnacle",
     p_cursor_before: null,
     p_cursor_after: null,
@@ -830,11 +859,14 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
       images_filled: 0,
       gql_errors: gqlErrors,
       error_samples: errorSamples,
+      write_errors: writeErrors,
+      write_error_samples: writeErrorSamples,
     },
   })
 
   return NextResponse.json({
-    ok: gqlErrors === 0,
+    ok: gqlErrors === 0 && writeErrors === 0,
+    write_errors: writeErrors,
     mint_count_filled: corrections.mint_count_filled.length,
     edition_keys_resolved: corrections.edition_keys_resolved.length,
     disagreements_corrected: corrections.disagreements_corrected.length,

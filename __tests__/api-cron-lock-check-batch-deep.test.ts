@@ -194,6 +194,60 @@ describe("lock-check-batch — degradation + honesty", () => {
     expect(String(log.p_error)).toContain("503")
   })
 
+  it("rows_written is the RPC's own `updated` — a real 0 is never replaced by the rows sent (2026-09-26)", async () => {
+    // Every submitted row claimed by a concurrent run: the RPC updates nothing.
+    // `|| results.length` used to publish that as 2 rows written.
+    const spy = install({
+      "rpc:get_lock_check_batch": [
+        { data: [cand("nba_top_shot", "0xw1", "111", TS_UUID), cand("nba_top_shot", "0xw1", "222", TS_UUID)], error: null },
+        { data: [], error: null },
+      ],
+      "rpc:apply_lock_check_batch": { data: { submitted: 2, updated: 0, skipped_locked: 2 }, error: null },
+    })
+    fetchMock = installFetchMock([flowRest([{ body: lockScriptResult({ "111": true, "222": false }) }])])
+    await POST(req())
+    await runDeferred()
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_rows_written).toBe(0)
+    expect(log.p_extra.skipped_locked).toBe(2)
+    expect(log.p_ok).toBe(true)
+  })
+
+  it("an apply result with no `updated` count is a failed write, not every row written", async () => {
+    const spy = install({
+      "rpc:get_lock_check_batch": [
+        { data: [cand("nba_top_shot", "0xw1", "111", TS_UUID)], error: null },
+        { data: [], error: null },
+      ],
+      "rpc:apply_lock_check_batch": { data: {}, error: null },
+    })
+    fetchMock = installFetchMock([flowRest([{ body: lockScriptResult({ "111": true }) }])])
+    await POST(req())
+    await runDeferred()
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_rows_written).toBe(0)
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toContain("no updated count")
+  })
+
+  it("ONE slug's batch read failing is a failed lane: ok=false, named, while the other slug's rows still apply", async () => {
+    const spy = install({
+      "rpc:get_lock_check_batch": [
+        { data: [cand("nba_top_shot", "0xw1", "111", TS_UUID)], error: null },
+        { data: null, error: { message: "statement timeout" } }, // disney_pinnacle
+      ],
+      "rpc:apply_lock_check_batch": { data: { updated: 1 }, error: null },
+    })
+    fetchMock = installFetchMock([flowRest([{ body: lockScriptResult({ "111": true }) }])])
+    await POST(req())
+    await runDeferred()
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_rows_written).toBe(1)
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toContain("disney_pinnacle: statement timeout")
+    expect(log.p_extra.batch_read_errors).toEqual(["disney_pinnacle: statement timeout"])
+  })
+
   it("all-slug batch-read failure short-circuits to a batch_read ok=false row", async () => {
     const spy = install({
       "rpc:get_lock_check_batch": { data: null, error: { message: "statement timeout" } },

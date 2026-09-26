@@ -397,17 +397,23 @@ async function runContract(
 
       for (let i = 0; i < inserts.length; i += UPSERT_CHUNK) {
         const batch = inserts.slice(i, i + UPSERT_CHUNK);
-        const { error: upsertErr } = await (supabaseAdmin as any)
+        // ignoreDuplicates is ON CONFLICT DO NOTHING: a re-walked window (a retry,
+        // or a crash before the cursor advanced) inserts nothing, so count the
+        // rows RETURNED, never the rows sent — this count is also persisted into
+        // the cursor's total_transfers_indexed, where an over-count never comes
+        // back down (2026-09-26).
+        const { data: landed, error: upsertErr } = await (supabaseAdmin as any)
           .from("evm_nft_transfers")
           .upsert(batch, {
             onConflict:
               "chain_id,contract_address,token_id,block_number,log_index,block_timestamp",
             ignoreDuplicates: true,
-          });
+          })
+          .select("block_number");
         if (upsertErr) {
           throw new Error(`upsert_failed: ${upsertErr.message}`);
         }
-        rowsWritten += batch.length;
+        rowsWritten += Array.isArray(landed) ? landed.length : 0;
       }
 
       // Advance the cursor to toBlock once all writes succeed. We advance

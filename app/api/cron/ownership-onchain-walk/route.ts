@@ -154,6 +154,7 @@ async function run(req: NextRequest) {
     let errMsg: string | null = null;
     let walletsWalked = 0;
     let confirmed = 0;
+    let written = 0;
     let vanished = 0;
     let walletErrors = 0;
     let budgetHit = false;
@@ -254,6 +255,11 @@ async function run(req: NextRequest) {
         }
       });
 
+      // `confirmed` is what the chain CONFIRMED; `written` is what LANDED. A
+      // plain upsert writes every row it is sent or none, so a chunk counts in
+      // full on success — and the chunks after a failed one are not written and
+      // must not be reported as written (2026-09-26: rows_written was
+      // `confirmed`, counted at buffer time).
       for (let i = 0; i < upsertBuf.length; i += UPSERT_CHUNK) {
         const chunk = upsertBuf.slice(i, i + UPSERT_CHUNK);
         const { error } = await supabaseAdmin
@@ -264,6 +270,7 @@ async function run(req: NextRequest) {
           errMsg = `upsert: ${error.message}`;
           break;
         }
+        written += chunk.length;
       }
     } catch (e) {
       ok = false;
@@ -275,13 +282,14 @@ async function run(req: NextRequest) {
         p_pipeline: PIPELINE,
         p_started_at: startedAt,
         p_rows_found: confirmed + vanished,
-        p_rows_written: confirmed,
+        p_rows_written: written,
         p_rows_skipped: vanished,
         p_ok: ok,
         p_error: errMsg,
         p_extra: {
           wallets_walked: walletsWalked,
           confirmed,
+          written,
           vanished,
           wallet_errors: walletErrors,
           budget_hit: budgetHit,

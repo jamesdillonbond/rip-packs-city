@@ -206,6 +206,35 @@ describe("pinnacle-metadata-backfill — Q2 edition_key resolve", () => {
     expect(wmcRows).toContainEqual({ edition_key: "RC:Std:1" })
   })
 
+  it("a failed pinnacle_nft_map upsert is NOT a resolved key and fails the run (2026-09-26)", async () => {
+    // The map write's result used to be discarded: wmc fixed, map not — the exact
+    // disagreement this job repairs — published as resolved on an ok:true run.
+    const spy = install({
+      pinnacle_editions: [NO_Q1],
+      wallet_moments_cache: [
+        { data: [{ id: "w1", wallet_address: "0xw1", moment_id: "777" }], error: null }, // Q2
+        { data: [{ id: "w1" }], error: null }, // serial update .select("id")
+        { data: null, error: null }, // edition_key update (wmc) succeeds
+      ],
+      pinnacle_nft_map: { data: null, error: { message: "duplicate key value" } },
+    })
+    fetchMock = installFetchMock([
+      flowScript([pinDict({ "777": { royaltyCode: "RC", variant: "Std", printing: 1, serial: 42 } })]),
+    ])
+
+    const body = await (await GET(req())).json()
+    expect(body.edition_keys_resolved).toBe(0)
+    expect(body.ok).toBe(false)
+    expect(body.write_errors).toBe(1)
+    const { args, extra } = logExtra(spy)
+    expect(args.p_ok).toBe(false)
+    expect(String(args.p_error)).toContain("edition_key_resolve:map")
+    expect(extra.write_errors).toBe(1)
+    expect(extra.edition_keys_resolved).toBe(0)
+    // The serial fill that DID land is still reported.
+    expect(body.serials_filled).toBe(1)
+  })
+
   it("skips the serial fill for an open edition (no on-chain serial) and when the key components are missing", async () => {
     const spy = install({
       pinnacle_editions: [NO_Q1],

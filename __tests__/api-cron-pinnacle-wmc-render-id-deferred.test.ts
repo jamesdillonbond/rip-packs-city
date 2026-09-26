@@ -11,7 +11,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 //   - happy path → GQL-resolved rows update wmc, derive runs, sales drain updates,
 //     final log ok:true with the telemetry envelope
 //   - a GQL chunk throwing → gqlErrors++ and final ok:false "N gql chunk errors"
-//   - the sales drain is best-effort (its throw never fails the wmc pipeline)
+//   - the sales drain never STOPS the wmc work, but its failure fails the run
+//     (inverted 2026-09-26 — it used to report ok:true over a broken lane)
+//   - resolved / derived count rows that LANDED, never rows attempted
 //   - null-render_id nodes are skipped
 
 vi.hoisted(() => {
@@ -39,7 +41,8 @@ const rpc = vi.hoisted(() => vi.fn(async (name: string, params?: any) => {
 function makeBuilder() {
   let op: "select" | "update" = "select"
   const b: any = {
-    select: () => { op = "select"; return b },
+    // .update(...).select("moment_id") is still the update (the route reads the landed rows).
+    select: () => { if (op !== "update") op = "select"; return b },
     update: () => { op = "update"; return b },
     eq: () => b,
     is: () => b,
@@ -103,10 +106,11 @@ beforeEach(() => {
   capturedAfter = null
   rpc.mockClear()
   st.selectResult = { data: [], error: null }
-  st.updateResult = { data: null, error: null }
+  // Each update lands on one row unless a test says otherwise.
+  st.updateResult = { data: [{ moment_id: "x" }], error: null }
   st.rpcImpl = {
     log_pipeline_run: async () => ({ data: null, error: null }),
-    derive_pinnacle_wmc_from_catalog: async () => ({ error: null }),
+    derive_pinnacle_wmc_from_catalog: async () => ({ data: 1, error: null }),
     pinnacle_sales_unresolved_render_nft_ids: async () => ({ data: [] }),
     pinnacle_sales_set_render_ids: async () => ({ data: 0 }),
   }
@@ -177,14 +181,72 @@ describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
     expect(logParams().p_extra.derived).toBe(0)
   })
 
-  it("the sales drain is best-effort — its RPC throwing never fails the wmc pipeline", async () => {
+  it("the sales drain failing never stops the wmc work — but it FAILS the run (inverted 2026-09-26)", async () => {
     st.selectResult = { data: [{ moment_id: "1" }], error: null }
     gqlFixture["1"] = { serial_number: "1", render_id: "r1" }
     st.rpcImpl.pinnacle_sales_unresolved_render_nft_ids = async () => { throw new Error("sales rpc down") }
     await drive()
     const p = logParams()
-    expect(p.p_ok).toBe(true) // wmc side succeeded
-    expect(p.p_extra.resolved).toBe(1)
+    expect(p.p_extra.resolved).toBe(1) // the wmc side still ran and is still reported
     expect(p.p_extra.sales_resolved).toBe(0)
+    expect(p.p_ok).toBe(false)
+    expect(p.p_extra.sales_error).toContain("sales rpc down")
+  })
+
+  it("a sales read or write { error } fails the run and says which", async () => {
+    st.rpcImpl.pinnacle_sales_unresolved_render_nft_ids = async () => ({ data: null, error: { message: "timeout" } })
+    await drive()
+    expect(logParams().p_ok).toBe(false)
+    expect(logParams().p_extra.sales_error).toBe("read: timeout")
+
+    rpc.mockClear()
+    gqlFixture["9"] = { serial_number: "2", render_id: "r9" }
+    st.rpcImpl.pinnacle_sales_unresolved_render_nft_ids = async () => ({ data: ["9"], error: null })
+    st.rpcImpl.pinnacle_sales_set_render_ids = async () => ({ data: null, error: { message: "deadlock" } })
+    await drive()
+    const p = logParams()
+    expect(p.p_ok).toBe(false)
+    expect(p.p_extra.sales_error).toBe("write: deadlock")
+    expect(p.p_extra.sales_updated).toBe(0)
+  })
+
+  it("a wmc update { error } is not counted as resolved and fails the run", async () => {
+    st.selectResult = { data: [{ moment_id: "1" }], error: null }
+    gqlFixture["1"] = { serial_number: "1", render_id: "r1" }
+    st.updateResult = { data: null, error: { message: "permission denied" } }
+    await drive()
+    const p = logParams()
+    expect(p.p_rows_written).toBe(0)
+    expect(p.p_extra.resolved).toBe(0)
+    expect(p.p_extra.write_errors).toBe(1)
+    expect(p.p_ok).toBe(false)
+    expect(p.p_error).toContain("permission denied")
+  })
+
+  it("an update that lands on NO row (a concurrent writer filled it) is not resolved", async () => {
+    st.selectResult = { data: [{ moment_id: "1" }], error: null }
+    gqlFixture["1"] = { serial_number: "1", render_id: "r1" }
+    st.updateResult = { data: [], error: null }
+    await drive()
+    const p = logParams()
+    expect(p.p_ok).toBe(true)
+    expect(p.p_extra.resolved).toBe(0)
+    expect(p.p_rows_written).toBe(0)
+  })
+
+  it("derived is the derive RPC's own count, and its { error } fails the run", async () => {
+    st.selectResult = { data: [{ moment_id: "1" }], error: null }
+    gqlFixture["1"] = { serial_number: "1", render_id: "r1" }
+    st.rpcImpl.derive_pinnacle_wmc_from_catalog = async () => ({ data: 7, error: null })
+    await drive()
+    expect(logParams().p_extra.derived).toBe(7)
+
+    rpc.mockClear()
+    st.rpcImpl.derive_pinnacle_wmc_from_catalog = async () => ({ data: null, error: { message: "boom" } })
+    await drive()
+    const p = logParams()
+    expect(p.p_extra.derived).toBe(0)
+    expect(p.p_extra.derive_error).toBe("boom")
+    expect(p.p_ok).toBe(false)
   })
 })
