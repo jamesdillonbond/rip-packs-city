@@ -339,15 +339,17 @@ describe("PackHistoryClient", () => {
     await waitFor(() => expect(f.mock.calls.some((c) => /offset=50\b/.test(String(c[0])))).toBe(true))
 
     const sold = screen.getAllByRole("button").find((b) => /^sold$/i.test((b.textContent ?? "").trim()))
-    if (sold) {
-      fireEvent.click(sold)
-      // ⚠ Without the reset the new filter is read at the OLD offset, so a collector
-      // switching to a filter with three results is shown an empty page and told they have
-      // no such packs.
-      await waitFor(() =>
-        expect(f.mock.calls.some((c) => /offset=0\b/.test(String(c[0])) && /status=sold/.test(String(c[0])))).toBe(true),
-      )
-    }
+    expect(sold).toBeTruthy()
+    fireEvent.click(sold!)
+    // ⚠ Without the reset the new filter is read at the OLD offset, so a collector
+    // switching to a filter with three results is shown an empty page and told they have
+    // no such packs.
+    // 2026-09-26: and it asks for sold_any (sold + flipped) — 'sold' alone hid every
+    // pack the wallet had also bought (17 of 396 Top Shot sales on 0xbd94…).
+    await waitFor(() =>
+      expect(f.mock.calls.some((c) => /offset=0\b/.test(String(c[0])) && /status=sold_any\b/.test(String(c[0])))).toBe(true),
+    )
+    expect(f.mock.calls.some((c) => /status=sold(&|$)/.test(String(c[0])))).toBe(false)
   })
 
   it("filters by collection", async () => {

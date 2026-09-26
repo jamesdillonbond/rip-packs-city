@@ -15,6 +15,7 @@ import {
   packPullLabel,
   packsRippedCaption,
   spentCaption,
+  packsSoldCaption,
   packMarketLabel,
   identitySyncNote,
 } from "@/lib/packs-wallet-view-format"
@@ -276,5 +277,20 @@ describe("inferred drop cost (2026-09-26)", () => {
     expect(spentCaption(258, 261, 307, 13599)).toBe("across 258 of 261 packs with a known price · + $13,599 at drop retail for 307 more packs (inferred)")
     expect(spentCaption(5, 5, 0, 0)).toBeUndefined()
     expect(spentCaption(5, 5, undefined, undefined)).toBeUndefined()
+  })
+})
+
+describe("packsSoldCaption", () => {
+  it("names each collection's sales so one collection's count is readable apart from the total", () => {
+    expect(packsSoldCaption([
+      { collection_name: "NFL All Day", packs_sold: 106 },
+      { collection_name: "NBA Top Shot", packs_sold: 396 },
+      { collection_name: "LaLiga Golazos", packs_sold: 0 },
+    ])).toBe("396 NBA Top Shot · 106 NFL All Day")
+  })
+  it("says nothing when the headline already is the one collection's number", () => {
+    expect(packsSoldCaption([{ collection_name: "NBA Top Shot", packs_sold: 396 }, { collection_name: "NFL All Day", packs_sold: 0 }])).toBeUndefined()
+    expect(packsSoldCaption([])).toBeUndefined()
+    expect(packsSoldCaption(null)).toBeUndefined()
   })
 })

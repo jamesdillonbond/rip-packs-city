@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
-import { packBuyLabel, packIdentityNote, packMarketLabel, packPullLabel, packsRippedCaption, spentCaption } from "@/lib/packs-wallet-view-format"
+import { packBuyLabel, packIdentityNote, packMarketLabel, packPullLabel, packsRippedCaption, packsSoldCaption, spentCaption } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 import {
@@ -311,11 +311,17 @@ export function currencyBucketText(ccy: string, vals: SummaryCurrency): string {
   return `${vals.purchases} buys · ${vals.sales} sells · spent ${fmtUsd(vals.spent)} · in ${fmtUsd(vals.proceeds)}`
 }
 
-const STATUS_OPTIONS: Array<{ key: "all" | HistoryRow["status"]; label: string; color: string }> = [
+// "sold_any" (2026-09-26): the Sold filter is every pack the wallet sold while
+// sealed. A pack it also BOUGHT is classified 'flipped', so filtering on 'sold'
+// alone hid those (0xbd94…: 379 of 396 Top Shot sales). Flipped stays as the
+// bought-and-resold subset. WalletPacksView's Sold tab made the same fix.
+type StatusFilter = "all" | "sold_any" | HistoryRow["status"]
+
+const STATUS_OPTIONS: Array<{ key: StatusFilter; label: string; color: string }> = [
   { key: "all", label: "All", color: "var(--rpc-red, #E03A2F)" },
   { key: "ripped", label: "Ripped", color: "#3B82F6" },
+  { key: "sold_any", label: "Sold", color: "#34D399" },
   { key: "flipped", label: "Flipped", color: "#A855F7" },
-  { key: "sold", label: "Sold", color: "#34D399" },
   { key: "held", label: "Held", color: "#71717A" },
   { key: "transferred", label: "Transferred", color: "#F59E0B" },
   { key: "other", label: "Other", color: "#71717A" },
@@ -326,7 +332,7 @@ const PAGE_SIZE = 50
 // fmtUsd / relativeTime extracted to @/lib/dashboard/format (unit-tested there).
 
 function statusColor(s: HistoryRow["status"]): string {
-  const match = STATUS_OPTIONS.find((o) => o.key === s)
+  const match = STATUS_OPTIONS.find((o) => o.key === (s === "sold" ? "sold_any" : s))
   return match?.color ?? "#71717A"
 }
 
@@ -350,7 +356,7 @@ export default function PackHistoryClient() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
 
-  const [status, setStatus] = useState<"all" | HistoryRow["status"]>("all")
+  const [status, setStatus] = useState<StatusFilter>("all")
   const [collection, setCollection] = useState<string | null>(null)
   const [page, setPage] = useState(0)
 
@@ -584,6 +590,11 @@ export default function PackHistoryClient() {
                     label="Packs ripped"
                     value={t.packs_ripped}
                     caption={packsRippedCaption(t.packs_ripped, ripKnown, t.packs_ripped_reconstructed)}
+                  />
+                  <CountStat
+                    label="Packs sold"
+                    value={t.packs_sold}
+                    caption={packsSoldCaption(summary.by_collection)}
                   />
                   <HeroStat
                     label="Total spent"

@@ -198,6 +198,22 @@ export function spentCaption(
   return parts.length ? parts.join(" · ") : undefined
 }
 
+/** "Packs sold" caption (2026-09-26): the headline count is every collection
+ *  together, so a collector checking one collection's number (e.g. Top Shot)
+ *  reads it here instead of against the all-collection total. Undefined when
+ *  only one collection has sales (the headline already is that number). */
+export function packsSoldCaption(
+  byCollection: ReadonlyArray<{ collection_name: string; packs_sold: number }> | null | undefined,
+): string | undefined {
+  const withSales = (byCollection ?? []).filter((c) => c.packs_sold > 0)
+  if (withSales.length < 2) return undefined
+  return withSales
+    .slice()
+    .sort((a, b) => b.packs_sold - a.packs_sold)
+    .map((c) => `${c.packs_sold.toLocaleString("en-US")} ${c.collection_name}`)
+    .join(" · ")
+}
+
 export interface IdentitySync {
   requested_at?: string | null
   completed_at?: string | null
