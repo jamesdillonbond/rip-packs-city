@@ -15,6 +15,24 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-26. The Pinnacle franchise grid and roster read
+    // pinnacle_editions (one franchise + one character per set-level key, grid
+    // limited to rows with a thumbnail): Star Wars listed 98 of 723 pins, three
+    // franchises had an empty grid. Pins the catalog read by the Franchises trait
+    // (™ stripped, every franchise a pin names), the roster over every name on a
+    // pin, and the legacy fallback.
+    fn: "get_team_top_editions",
+    test: "supabase/tests/get_team_top_editions.sql",
+    migration:
+      "supabase/migrations/20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql",
+  },
+  {
+    fn: "get_team_players",
+    test: "supabase/tests/get_team_top_editions.sql",
+    migration:
+      "supabase/migrations/20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql",
+  },
+  {
     // Added 2026-09-26. The Pinnacle series pages read pinnacle_editions by
     // series_year, set on 87 rows: 2026 showed 11 of 1,023 pins. Pins the
     // catalog read scoped to the series year for the grid and its set/character
@@ -677,7 +695,9 @@ const PINS = [
     // now points at a fresh snapshot of the live body.
     // Re-pinned 2026-09-25 (batch 62): the read covers the WHOLE franchise —
     // every label it minted under — and names the primary name canonical.
-    migration: "supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql",
+    // Re-pinned 2026-09-26: the Pinnacle branch reads the render catalog by
+    // each pin's Franchises trait (™ stripped); legacy read kept as fallback.
+    migration: "supabase/migrations/20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql",
   },
   {
     // Added 2026-09-25 (batch 62). The helpers behind every team read: the

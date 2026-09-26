@@ -14,10 +14,14 @@
 --   * teams_master branding is read from the ACTIVE row on the same slug;
 --   * sales_30d / volume_30d count only in-window sales on this team's editions
 --     (other teams excluded via the team_name filter);
--- Pins (Pinnacle branch): franchise-slug resolution + per-render FMV collapse.
+-- Pins (Pinnacle branch, 2026-09-26): the render catalog by each pin's own
+--   Franchises trait (™ stripped; a pin counts toward every franchise it names;
+--   characters counted by page slug over every name, 'Unknown' excluded); a
+--   catalog-only franchise resolves; a franchise no catalog pin names falls
+--   through to the legacy pinnacle_editions read + per-render FMV collapse.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql);
+-- (supabase/migrations/20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -46,6 +50,9 @@ CREATE FUNCTION public.get_pinnacle_edition_fmv_collapsed(p_id uuid)
  RETURNS TABLE(fmv_usd numeric, floor_usd numeric) LANGUAGE sql STABLE AS $$
   SELECT 12::numeric, 10::numeric WHERE p_id IS NOT NULL
 $$;
+CREATE TABLE public.pinnacle_catalog (
+  render_id text PRIMARY KEY, franchises text[], characters text[],
+  total_minted int, fmv_usd numeric, floor_ask numeric);
 
 -- Franchise helpers (batch 62, 2026-09-25): fixture copies of the shared league
 -- map and the two helpers the body now reads (their own pin is
@@ -213,37 +220,87 @@ BEGIN
   SELECT slug INTO v_collection_slug FROM collections WHERE id = p_collection_id;
 
   IF p_collection_id = v_pinnacle_uuid THEN
-    SELECT array_agg(DISTINCT franchise),
-           (array_agg(franchise ORDER BY franchise))[1]
+    -- 2026-09-26: the render catalog, by each pin's own Franchises trait (™/®/©
+    -- stripped, so "Star Wars™" and "Star Wars" are one franchise). The old read
+    -- was pinnacle_editions — set-level keys naming ONE franchise and ONE
+    -- character each — so Star Wars listed 129 of its 723 pins and ten
+    -- franchises a character page links to had no page at all. A franchise no
+    -- catalog pin carries falls through to that old read, unchanged.
+    SELECT array_agg(DISTINCT f.name),
+           (array_agg(f.name ORDER BY f.name))[1]
     INTO v_team_variants, v_team_canonical
-    FROM pinnacle_editions
-    WHERE franchise IS NOT NULL
-      AND regexp_replace(lower(trim(franchise)), '[^a-z0-9]+', '-', 'g') = p_team_slug;
+    FROM pinnacle_catalog pc
+    CROSS JOIN LATERAL unnest(pc.franchises) AS u(fr)
+    CROSS JOIN LATERAL (SELECT btrim(regexp_replace(u.fr, '[™®©]', '', 'g')) AS name) f
+    WHERE f.name <> ''
+      AND regexp_replace(lower(f.name), '[^a-z0-9]+', '-', 'g') = p_team_slug;
 
-    -- Fallback: accept the diacritic-stripped slug the frontend emits.
+    -- Fallback: the diacritic-stripped slug the frontend emits.
     IF v_team_variants IS NULL THEN
+      SELECT array_agg(DISTINCT f.name),
+             (array_agg(f.name ORDER BY f.name))[1]
+      INTO v_team_variants, v_team_canonical
+      FROM pinnacle_catalog pc
+      CROSS JOIN LATERAL unnest(pc.franchises) AS u(fr)
+      CROSS JOIN LATERAL (SELECT btrim(regexp_replace(u.fr, '[™®©]', '', 'g')) AS name) f
+      WHERE f.name <> ''
+        AND regexp_replace(lower(extensions.unaccent(f.name)), '[^a-z0-9]+', '-', 'g') = p_team_slug;
+    END IF;
+
+    IF v_team_variants IS NOT NULL THEN
+      -- The same pins get_team_top_editions / get_team_players list, so the
+      -- header counts what the grid and roster show. Characters are counted by
+      -- page slug over every name on a pin (a duo pin counts for both).
+      WITH pins AS (
+        SELECT pc.render_id, pc.characters, pc.total_minted, pc.fmv_usd, pc.floor_ask
+        FROM pinnacle_catalog pc
+        WHERE EXISTS (
+            SELECT 1 FROM unnest(pc.franchises) AS u(fr)
+            WHERE btrim(regexp_replace(u.fr, '[™®©]', '', 'g')) = ANY (v_team_variants))
+      )
+      SELECT
+        (SELECT COUNT(DISTINCT regexp_replace(lower(btrim(u.ch)), '[^a-z0-9]+', '-', 'g'))
+           FROM pins p CROSS JOIN LATERAL unnest(p.characters) AS u(ch)
+          WHERE btrim(u.ch) NOT IN ('', 'Unknown')),
+        (SELECT COUNT(*) FROM pins),
+        (SELECT SUM(total_minted) FILTER (WHERE total_minted IS NOT NULL) FROM pins),
+        (SELECT SUM(fmv_usd) FILTER (WHERE fmv_usd > 0) FROM pins),
+        (SELECT SUM(COALESCE(floor_ask, fmv_usd)) FILTER (WHERE COALESCE(floor_ask, fmv_usd) > 0) FROM pins)
+      INTO v_player_count, v_edition_count, v_total_circulation, v_fmv_total, v_floor_total;
+    ELSE
       SELECT array_agg(DISTINCT franchise),
              (array_agg(franchise ORDER BY franchise))[1]
       INTO v_team_variants, v_team_canonical
       FROM pinnacle_editions
       WHERE franchise IS NOT NULL
-        AND regexp_replace(lower(trim(extensions.unaccent(franchise))), '[^a-z0-9]+', '-', 'g') = p_team_slug;
+        AND regexp_replace(lower(trim(franchise)), '[^a-z0-9]+', '-', 'g') = p_team_slug;
+
+      -- Fallback: accept the diacritic-stripped slug the frontend emits.
+      IF v_team_variants IS NULL THEN
+        SELECT array_agg(DISTINCT franchise),
+               (array_agg(franchise ORDER BY franchise))[1]
+        INTO v_team_variants, v_team_canonical
+        FROM pinnacle_editions
+        WHERE franchise IS NOT NULL
+          AND regexp_replace(lower(trim(extensions.unaccent(franchise))), '[^a-z0-9]+', '-', 'g') = p_team_slug;
+      END IF;
+
+      IF v_team_variants IS NULL THEN RETURN NULL; END IF;
+
+      -- PIN-FMV-REKEY Wave 2: per-render FMV via the collapse helper.
+      SELECT
+        COUNT(DISTINCT pe.character_name),
+        COUNT(*),
+        SUM(pe.mint_count) FILTER (WHERE pe.mint_count IS NOT NULL),
+        SUM(fmv.fmv_usd)   FILTER (WHERE fmv.fmv_usd > 0),
+        SUM(COALESCE(fmv.floor_usd, fmv.fmv_usd)) FILTER (WHERE COALESCE(fmv.floor_usd, fmv.fmv_usd) > 0)
+      INTO v_player_count, v_edition_count, v_total_circulation, v_fmv_total, v_floor_total
+      FROM pinnacle_editions pe
+      LEFT JOIN LATERAL public.get_pinnacle_edition_fmv_collapsed(pe.id) fmv ON true
+      WHERE pe.franchise = ANY(v_team_variants);
+      -- Pinnacle: no teams_master branding, no sports sales activity. Leave NULL.
     END IF;
 
-    IF v_team_variants IS NULL THEN RETURN NULL; END IF;
-
-    -- PIN-FMV-REKEY Wave 2: per-render FMV via the collapse helper.
-    SELECT
-      COUNT(DISTINCT pe.character_name),
-      COUNT(*),
-      SUM(pe.mint_count) FILTER (WHERE pe.mint_count IS NOT NULL),
-      SUM(fmv.fmv_usd)   FILTER (WHERE fmv.fmv_usd > 0),
-      SUM(COALESCE(fmv.floor_usd, fmv.fmv_usd)) FILTER (WHERE COALESCE(fmv.floor_usd, fmv.fmv_usd) > 0)
-    INTO v_player_count, v_edition_count, v_total_circulation, v_fmv_total, v_floor_total
-    FROM pinnacle_editions pe
-    LEFT JOIN LATERAL public.get_pinnacle_edition_fmv_collapsed(pe.id) fmv ON true
-    WHERE pe.franchise = ANY(v_team_variants);
-    -- Pinnacle: no teams_master branding, no sports sales activity. Leave NULL.
   ELSE
     -- 2026-09-25 (batch 62): the WHOLE franchise — every label it minted under
     -- (Las Vegas + Oakland + Los Angeles Raiders) — and the canonical name is
@@ -395,6 +452,15 @@ INSERT INTO public.pinnacle_editions (id, franchise, character_name, mint_count)
   ('aaaaaaaa-0000-0000-0000-000000000001'::uuid, 'Marvel', 'Iron Man', 500),
   ('aaaaaaaa-0000-0000-0000-000000000002'::uuid, 'Marvel', 'Thor',     400);
 
+-- Pinnacle catalog (2026-09-26). 'Star Wars™' and 'Star Wars' are one franchise;
+-- r2 is a duo pin; r4 also names Lucasfilm and an 'Unknown' character; Moana
+-- exists ONLY in the catalog. No catalog pin names Marvel (legacy fallback).
+INSERT INTO public.pinnacle_catalog (render_id, franchises, characters, total_minted, fmv_usd, floor_ask) VALUES
+  ('r1', ARRAY['Star Wars™'],             ARRAY['Luke Skywalker'],           100, 10, 8),
+  ('r2', ARRAY['Star Wars'],              ARRAY['Luke Skywalker', 'Leia'],    50,  5, NULL),
+  ('r3', ARRAY['Moana'],                  ARRAY['Moana'],                     25,  7, 6),
+  ('r4', ARRAY['Star Wars', 'Lucasfilm'], ARRAY['Unknown'],                   NULL, NULL, NULL);
+
 -- ── 1. not found -> NULL ─────────────────────────────────────────────────────
 SELECT _assert(public.get_team_detail(:cid::uuid, 'no-such-team') IS NULL, 'unmatched team slug -> NULL');
 
@@ -420,6 +486,17 @@ SELECT _assert_eq((public.get_team_detail(:pin::uuid,'marvel') ->> 'is_franchise
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'marvel') ->> 'player_count'), '2', 'Pinnacle: distinct characters = 2');
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'marvel') ->> 'fmv_total_usd'), '24', 'Pinnacle: per-render FMV collapse 12+12');
 SELECT _assert(public.get_team_detail(:pin::uuid,'marvel') ->> 'abbreviation' IS NULL, 'Pinnacle: no teams_master branding');
+
+-- ── 6b. Pinnacle from the render catalog (2026-09-26) ────────────────────────
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'edition_count'), '3', 'catalog: every pin naming Star Wars, ™ or not, multi-franchise included');
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'player_count'), '2', 'catalog: characters by page slug over every name on a pin; Unknown excluded');
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'total_circulation'), '150', 'catalog: circulation over pins with a count');
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'fmv_total_usd'), '15', 'catalog: FMV total over priced pins');
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'floor_total_usd'), '13', 'catalog: floor falls back to FMV per pin (8 + 5)');
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'team_name'), 'Star Wars', 'catalog: canonical name has no ™ (the layout redirect compares slugs)');
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'lucasfilm') ->> 'edition_count'), '1', 'catalog: a pin counts toward every franchise it names');
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'moana') ->> 'edition_count'), '1', 'catalog: a catalog-only franchise has a page (was a 404)');
+SELECT _assert(public.get_team_detail(:pin::uuid,'no-such-franchise') IS NULL, 'Pinnacle: unknown franchise -> NULL');
 
 -- ── 7. UNACCENT FALLBACK lane (2026-08-01 audit change) ──────────────────────
 SELECT _assert(public.get_team_detail(:cid::uuid,'atletico-madrid') IS NOT NULL, 'diacritic team resolves via the unaccent fallback (accented slug would 404)');

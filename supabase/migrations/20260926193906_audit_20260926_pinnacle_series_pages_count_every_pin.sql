@@ -26,6 +26,10 @@
 --   identify the previous definitions in production history).
 
 -- anon-exec: unchanged (refresh_series_detail_rollup) — CREATE OR REPLACE of an existing fn; ACL preserved, verified has_function_privilege anon=false.
+-- when-others-timeout-blind: intentional — the handler (around
+-- refresh_edition_fmv_current) is the live body's, unchanged here; its tail is
+-- the per-collection LOOP, so catching a 57014 would let every remaining
+-- iteration run after the timeout fired.
 CREATE OR REPLACE FUNCTION public.refresh_series_detail_rollup(p_max_seconds integer DEFAULT 240)
  RETURNS jsonb
  LANGUAGE plpgsql
