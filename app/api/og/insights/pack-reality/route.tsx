@@ -16,6 +16,7 @@ type Stats = {
   rips_60d: number | null
   zero_value_pct: number | null
   mean_pull_value_usd: number | null
+  median_pull_value_usd?: number | string | null
   rips_over_100_pct: number | null
 } | null
 
@@ -26,6 +27,13 @@ function fmtInt(n: number | null): string {
 function fmtPct(n: number | null): string {
   if (n == null) return "—"
   return `${Number(n).toFixed(0)}%`
+}
+// 2dp percent, "—" when unknown. The OVER $100 tile used `?? 0`, so a failed
+// stats read printed "0.00%" — "no rip was worth over $100" — beside two "—"
+// tiles, on a card cached for an hour (2026-09-26).
+function fmtPct2(n: number | string | null | undefined): string {
+  if (n == null || !Number.isFinite(Number(n))) return "—"
+  return `${Number(n).toFixed(2)}%`
 }
 function fmtUsd(n: number | null): string {
   const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
@@ -113,7 +121,11 @@ export async function GET(req: NextRequest) {
             maxWidth: 1000,
           }}
         >
-          We audited every Top Shot pack ripped in the last 60 days. Median pull value $0.
+          {/* The median was a HARDCODED "$0" — false (live $0.91 on 2026-09-26, with 31.6% of
+              rips at $0). It is read from the stats view, and omitted when unavailable. */}
+          {stats?.median_pull_value_usd != null && Number.isFinite(Number(stats.median_pull_value_usd))
+            ? `We audited every Top Shot pack ripped in the last 60 days. Median pull value ${fmtUsd(Number(stats.median_pull_value_usd))}.`
+            : "We audited every Top Shot pack ripped in the last 60 days."}
         </div>
 
         <div
@@ -126,7 +138,7 @@ export async function GET(req: NextRequest) {
           {[
             { label: "DELIVERED $0", value: fmtPct(stats?.zero_value_pct ?? null) },
             { label: "MEAN VALUE", value: fmtUsd(stats?.mean_pull_value_usd ?? null) },
-            { label: "OVER $100", value: `${(stats?.rips_over_100_pct ?? 0).toFixed(2)}%` },
+            { label: "OVER $100", value: fmtPct2(stats?.rips_over_100_pct) },
           ].map((k) => (
             <div
               key={k.label}

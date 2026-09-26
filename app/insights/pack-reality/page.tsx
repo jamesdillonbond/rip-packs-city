@@ -239,11 +239,23 @@ export default function PackRealityPage() {
     return { count: s.stale_count, agoLabel, atLeast }
   }, [data, loadFailed, loading])
 
+  // Built from the LOADED stats (2026-09-26). It hardcoded "145,000+ rips … ~41%
+  // deliver nothing" — each false against the live numbers (69,956 · 31.6%) — so
+  // every share published stale figures under the collector's name. A figure the
+  // read did not supply is left out, never guessed.
   const tweetIntent = useMemo(() => {
-    const text = `I ran the math on every Top Shot pack ripped in the last 60 days.\n\n145,000+ rips. Median pull value under $2. ~41% deliver nothing.\n\nHonest pack ranker:`
+    const st = data?.stats
+    const facts: string[] = []
+    if (st?.rips_60d != null) facts.push(`${fmtInt(st.rips_60d)} rips.`)
+    if (st?.median_pull_value_usd != null) facts.push(`Median pull value ${fmtUsd(st.median_pull_value_usd)}.`)
+    if (st?.zero_value_pct != null) facts.push(`${Number(st.zero_value_pct).toFixed(0)}% deliver nothing.`)
+    const text =
+      `I ran the math on every Top Shot pack ripped in the last 60 days.` +
+      (facts.length ? `\n\n${facts.join(" ")}` : "") +
+      `\n\nHonest pack ranker:`
     const url = `${SITE_URL}/insights/pack-reality`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
-  }, [])
+  }, [data])
 
   return (
     <main style={styles.page}>

@@ -12,7 +12,10 @@ export const metadata: Metadata = {
   // so baking the brand in here rendered it twice. (deep-audit D24)
   title: "Top Shot Pack Reality",
   description:
-    "We audited every Top Shot pack ripped in the last 60 days. Over 145,000 rips. Median pull value under $2. ~41% delivered nothing. Free. No signup.",
+    // ⚠ No live figures in static metadata (2026-09-26): "Over 145,000 rips", "~41%
+    // delivered nothing" and "Under 1% deliver over $100" were each false against the
+    // live stats (69,956 · 31.6% · 1.47%). The page and OG card carry the live numbers.
+    "We audited every Top Shot pack ripped in the last 60 days: how many deliver nothing, the median pull value, and an honest pack ranker. Free. No signup.",
   keywords: [
     "NBA Top Shot pack EV",
     "Top Shot pack value",
@@ -27,7 +30,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Top Shot Pack Reality",
     description:
-      "145,000+ TS rips, last 60 days. Median pull value under $2. ~41% deliver nothing. Under 1% deliver over $100.",
+      "Every Top Shot pack ripped in the last 60 days — how many deliver nothing, the median pull value, and how rare a $100+ pull really is.",
     url: `${SITE_URL}/insights/pack-reality`,
     siteName: "Rip Packs City",
     images: [
@@ -46,7 +49,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Top Shot Pack Reality",
     description:
-      "Median pull value under $2. ~41% of TS packs deliver nothing. Honest pack ranker, free.",
+      "What Top Shot packs actually deliver, from every rip in the last 60 days. Honest pack ranker, free.",
     images: [`${SITE_URL}/api/og/insights/pack-reality`],
     creator: "@RipPacksCity",
   },
