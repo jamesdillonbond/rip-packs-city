@@ -3479,3 +3479,8 @@ The diffs were clean, tested and honest by construction. The defects lived in th
 The fix made the fixture column NOT NULL as live. With that, the previous body fails the pin with the byte-identical production error, which is the planted-defect proof.
 
 ⚠ **"Minimal fixtures (only the columns the function reads/writes)" must still include every constraint the function can VIOLATE on those columns:** NOT NULL, CHECK, UNIQUE. A constraint-free fixture turns an abort into a silent write.
+
+### The client failure-collapse ratchet counts the IDIOM, not the defect (2026-09-26)
+
+`__tests__/client-failure-collapses-to-empty-ratchet.test.ts` counts `r.ok ? r.json() : null`-shaped reads. Fixing a failed-read-as-claim defect by keeping that shape and handling the `null` honestly downstream (TeamFollowButton: null → an "unknown" state) still ADDS a site and reds the budget, though the code is now correct. **Do not raise the budget:** write the failure branch as STATE at the read — `if (!r.ok) { setState("unknown"); return }` — so there is no null sentinel to count. The ratchet then stays flat and the fix is visible in one place.
+
