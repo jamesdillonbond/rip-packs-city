@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the Candy Set Tracker's cost to finish uses only asks SEEN in the last 12 h: `candy_listing_floor` gains `confirmed_floor_usd` + `confirmed_listing_count` (appended; every existing column verified identical both ways over 124 rows before apply; `security_invoker` re-set; `20260926030328`, applied ~8:03 PM PT). 5 editions differ today (4 had their floor set by an ask unseen >12 h, 1 has only unseen asks) · Claude Code (web sandbox)
+
+- **Revert:** code — revert the "fix(candy): Set Tracker prices from confirmed asks" commit. DB — leave the two appended columns (inert to other readers; dropping them needs DROP … CASCADE through two dependent views).
+
+
 ### 2026-09-25 · 🧹 SHIPPED — 151 early NFL All Day pack distributions (ids 1–179, 2022–23) added to `pack_distributions`: 453,796 recorded pack opens pointed at them and every one rendered as a nameless "Pack" (58 of them in Trevor's history); plus 7 low-id rows corrected (2 carried a stray "Dak Prescott – Rookie Rewind Gold: Sapphire Reward" title, 5 a background image instead of the pack art) · Claude Code (web session)
 
 Migration `20260926030150` (applied ~8:30 PM PT). Source: Studio Platform `searchDistributions(byProductID:"AllDay", byIDs)` — 154/154 answered with title + DEFAULT image; ID-namespace control 23/25 titles equal to ours (the 2 misses are the stray title, contradicted 3:1 by Dapper's own per-pack index for dist 2); row text md5-verified against the API response before writing; 14 image URLs fetched, all image/png. Counts deliberately left unknown (0/0, the dist-8825 convention) — no source we could stand behind. Verified: 0 All Day rips point at a missing dist; all 778 of Trevor's pack events carry a title + thumbnail. **Revert:** `DELETE FROM pack_distributions WHERE collection_id='dee28451-5d62-409e-a1ad-a83f763ac070' AND metadata->>'seeded_from'='studio_platform_gql_backfill_20260925'`; restore the 7 from `audit_20260925_allday_low_dist_fix_backup` (drop after 10-02).
