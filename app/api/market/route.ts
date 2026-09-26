@@ -850,6 +850,7 @@ export async function GET(req: NextRequest) {
   const minPrice = parseFloat(sp.get("minPrice") || "")
   const maxPrice = parseFloat(sp.get("maxPrice") || "")
   const minDiscount = parseFloat(sp.get("minDiscount") || "")
+  const hasMinDiscountFilter = Number.isFinite(minDiscount) && minDiscount > 0
   const maxDiscount = parseFloat(sp.get("maxDiscount") || "")
   const player = (sp.get("player") || "").trim()
   const setRaw = sp.get("set") || ""
@@ -901,7 +902,13 @@ export async function GET(req: NextRequest) {
       maxPrice: Number.isFinite(maxPrice) ? maxPrice : 0,
       minDiscount: Number.isFinite(minDiscount) ? minDiscount : 0,
       sortBy: sort,
-      limit,
+      // ⚠ A Min-discount filter runs IN APP over the fetched window (the RPCs take
+      // p_min_discount 0 — a serial-adjusted FMV can raise a row's discount above
+      // the RPC's, so pre-filtering there would drop real matches). With Price ↑ +
+      // Min 30 % the window was the 500 cheapest editions, and the page showed only
+      // the 30 %-off rows among THOSE (known-issues #146 (2)). Pull the full 1,000
+      // (PostgREST's cap) whenever the filter is set; the total stays a floor.
+      limit: hasMinDiscountFilter ? MAX_LIMIT : limit,
       sets,
       seriesList,
       player,
@@ -1153,7 +1160,8 @@ export async function GET(req: NextRequest) {
 
     // Fetch a larger window when discount sort is active so in-memory sort
     // gives a stable ordering across pagination.
-    const fetchLimit = sort.startsWith("discount") ? MAX_LIMIT : Math.min(MAX_LIMIT, offset + limit + 100)
+    // A Min-discount filter also pulls the full window: it runs in app, after the fetch (#146 (2)).
+    const fetchLimit = sort.startsWith("discount") || hasMinDiscountFilter ? MAX_LIMIT : Math.min(MAX_LIMIT, offset + limit + 100)
     q = q.range(0, fetchLimit - 1)
 
     // Run editions lookup in parallel with the main query.
