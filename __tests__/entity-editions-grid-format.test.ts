@@ -271,3 +271,23 @@ describe("edition filters (player page, 2026-09-25)", () => {
     expect(filterEditions(rows, f, "nba-top-shot", null).map((r) => r.route_slug)).toEqual(["a", "c"])
   })
 })
+
+import { editionBadgeOptions } from "@/lib/entity-editions-grid-format"
+
+describe("edition badge filter (2026-09-25)", () => {
+  const rows = [{ route_slug: "a" }, { route_slug: "b" }, { route_slug: "c" }]
+  const base = { player_name: "P", name: "N", series_label: null, tier: null }
+  const full = rows.map((r) => ({ ...base, ...r }))
+
+  it("orders badge options rookie-first, then any other title A→Z", () => {
+    const m = new Map([["a", ["All-Star", "Zeta Award"]], ["b", ["Top Shot Debut", "Three-Star Rookie"]]])
+    expect(editionBadgeOptions(rows, m)).toEqual(["Three-Star Rookie", "Top Shot Debut", "All-Star", "Zeta Award"])
+  })
+
+  it("a row with UNKNOWN badges never matches a badge filter; a known [] does not either", () => {
+    const m = new Map([["a", ["Rookie Year"]], ["b", []]])
+    const f = { ...EMPTY_EDITION_FILTERS, badge: "Rookie Year" }
+    expect(filterEditions(full, f, "nba-top-shot", null, m).map((r) => r.route_slug)).toEqual(["a"])
+    expect(isEditionFilterActive(f)).toBe(true)
+  })
+})

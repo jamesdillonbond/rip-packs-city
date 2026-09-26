@@ -222,10 +222,12 @@ export interface EditionFilters {
   tier: string
   parallel: string
   own: EditionOwnFilter
+  /** A badge TITLE ("Top Shot Debut"), or "all". */
+  badge: string
 }
 
 export const EMPTY_EDITION_FILTERS: EditionFilters = {
-  q: "", team: "all", set: "all", series: "all", tier: "all", parallel: "all", own: "all",
+  q: "", team: "all", set: "all", series: "all", tier: "all", parallel: "all", own: "all", badge: "all",
 }
 
 /** The label a Standard (non-parallel) printing files under in the Parallel filter. */
@@ -249,7 +251,7 @@ export interface EditionOwnership { owned: number; locked: number }
 export function isEditionFilterActive(f: EditionFilters): boolean {
   return (
     f.q.trim() !== "" || f.team !== "all" || f.set !== "all" || f.series !== "all" ||
-    f.tier !== "all" || f.parallel !== "all" || f.own !== "all"
+    f.tier !== "all" || f.parallel !== "all" || f.own !== "all" || f.badge !== "all"
   )
 }
 
@@ -295,6 +297,24 @@ export function editionFilterOptions<T extends FilterableEdition>(rows: T[], col
   }
 }
 
+// The badges collectors filter on most, in the order Top Shot lists them; any
+// other title the data carries follows A→Z.
+const BADGE_ORDER = [
+  "Three-Star Rookie", "Rookie Mint", "Rookie Year", "Rookie Premiere", "Top Shot Debut",
+  "Rookie of the Year", "MVP Year", "Championship Year", "All-Star",
+]
+
+/**
+ * Distinct badge titles across the rows whose badges are KNOWN. A row missing
+ * from `badges` contributes nothing — it is unknown, not badge-less.
+ */
+export function editionBadgeOptions(rows: Array<{ route_slug: string }>, badges: Map<string, string[]>): string[] {
+  const seen = new Set<string>()
+  for (const e of rows) for (const t of badges.get(e.route_slug) ?? []) seen.add(t)
+  const rank = (t: string) => { const i = BADGE_ORDER.indexOf(t); return i < 0 ? BADGE_ORDER.length : i }
+  return [...seen].sort((a, b) => (rank(a) - rank(b)) || a.localeCompare(b))
+}
+
 /**
  * Apply `f` to `rows`. `ownership` is null when the wallet's counts are not
  * KNOWN (no wallet, still loading, or the read failed) — the ownership filter
@@ -305,6 +325,10 @@ export function filterEditions<T extends FilterableEdition>(
   f: EditionFilters,
   collectionUrlSlug: string,
   ownership: Map<string, EditionOwnership> | null,
+  // Badge titles per route_slug. A row ABSENT from the map has unknown badges
+  // and cannot match a badge filter (it is not claimed to lack the badge — the
+  // grid reports how many rows are still unknown).
+  badges: Map<string, string[]> = new Map(),
 ): T[] {
   const q = f.q.trim().toLowerCase()
   return rows.filter((e) => {
@@ -320,6 +344,7 @@ export function filterEditions<T extends FilterableEdition>(
       if (f.own === "not_owned" && owned > 0) return false
       if (f.own === "locked" && (o?.locked ?? 0) === 0) return false
     }
+    if (f.badge !== "all" && !(badges.get(e.route_slug) ?? []).includes(f.badge)) return false
     if (q) {
       const hay = [e.name, e.player_name, e.team_name, e.set_name, e.subedition_name].filter(Boolean).join(" ").toLowerCase()
       if (!hay.includes(q)) return false

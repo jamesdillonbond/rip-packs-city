@@ -5,7 +5,7 @@
 // and Series pages. Each tile links to /[collection]/edition/[route_slug].
 // "Load more" calls the supplied endpoint with offset.
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
@@ -24,6 +24,7 @@ import {
   type EditionOwnFilter,
   type EditionOwnership,
   EMPTY_EDITION_FILTERS,
+  editionBadgeOptions,
   editionFilterOptions,
   filterEditions,
   isEditionFilterActive,
@@ -173,6 +174,51 @@ function useWalletEditionOwnership(enabled: boolean, collectionUrlSlug: string):
   return settled.state
 }
 
+// Badge titles per loaded edition, fetched in batches as pages load. A slug is
+// in `map` only once its read SUCCEEDED; a failed batch leaves its slugs
+// unknown (and retryable on the next page load) rather than badge-less.
+const BADGE_BATCH = 500
+function useEditionBadges(enabled: boolean, collectionUrlSlug: string, slugs: string[]): { map: Map<string, string[]>; failed: boolean } {
+  const [map, setMap] = useState<Map<string, string[]>>(() => new Map())
+  const [failed, setFailed] = useState(false)
+  const requested = useRef<Set<string>>(new Set())
+  const slugsKey = slugs.join("\u0000")
+  useEffect(() => {
+    if (!enabled) return
+    const need = (slugsKey ? slugsKey.split("\u0000") : []).filter((sl) => !requested.current.has(sl))
+    for (let i = 0; i < need.length; i += BADGE_BATCH) {
+      const batch = need.slice(i, i + BADGE_BATCH)
+      batch.forEach((sl) => requested.current.add(sl))
+      fetch("/api/entity/edition-badges", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collection: collectionUrlSlug, slugs: batch }),
+        signal: AbortSignal.timeout(15000),
+      })
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return (await r.json()) as { badges?: Record<string, unknown> }
+        })
+        .then((j) => {
+          setMap((prev) => {
+            const next = new Map(prev)
+            for (const [k, v] of Object.entries(j.badges ?? {})) {
+              next.set(k, Array.isArray(v) ? v.filter((t): t is string => typeof t === "string") : [])
+            }
+            return next
+          })
+          setFailed(false)
+        })
+        .catch(() => {
+          batch.forEach((sl) => requested.current.delete(sl))
+          setFailed(true)
+        })
+    }
+    // Keyed on slugsKey, not `slugs` (a fresh array every render).
+  }, [enabled, collectionUrlSlug, slugsKey])
+  return { map, failed }
+}
+
 export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, initial, initialFailed = false, pageSize, showSetLink = true, showSort = false, packMode = false, exhaustedTotal = 0, showFilters = false, showOwnership = false }: Props) {
   const [rows, setRows] = useState<EditionTile[]>(initial)
   const [offset, setOffset] = useState<number>(initial.length)
@@ -187,8 +233,15 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
   const ownership = useWalletEditionOwnership(showOwnership && collectionUrlSlug !== "disney-pinnacle", collectionUrlSlug)
   const ownershipMap = ownership.status === "ok" ? ownership.map : null
   const filterOptions = useMemo(() => editionFilterOptions(rows, collectionUrlSlug), [rows, collectionUrlSlug])
+  // Badges: the grid RPCs return none, so they come from their own batch read.
+  // Pinnacle is excluded — its route_slug is not an editions key.
+  const badgesEnabled = showFilters && collectionUrlSlug !== "disney-pinnacle"
+  const rowSlugs = useMemo(() => rows.map((r) => r.route_slug), [rows])
+  const badges = useEditionBadges(badgesEnabled, collectionUrlSlug, rowSlugs)
+  const badgeOptions = useMemo(() => editionBadgeOptions(rows, badges.map), [rows, badges.map])
+  const badgesUnknown = badgesEnabled ? rows.filter((r) => !badges.map.has(r.route_slug)).length : 0
   const filtersActive = showFilters && isEditionFilterActive(filters)
-  const visible = filtersActive ? filterEditions(rows, filters, collectionUrlSlug, ownershipMap) : rows
+  const visible = filtersActive ? filterEditions(rows, filters, collectionUrlSlug, ownershipMap, badges.map) : rows
 
   const sorted = showSort ? [...visible].sort((a, b) => compareEditions(a, b, sortKey, tileSubject)) : visible
 
@@ -243,8 +296,19 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
           setFilters={setFilters}
           options={filterOptions}
           ownershipKnown={ownershipMap !== null}
+          badgeOptions={badgeOptions}
           collectionUrlSlug={collectionUrlSlug}
         />
+      )}
+      {badgesEnabled && badges.failed && (
+        <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10 }}>
+          Couldn&rsquo;t load badges for {badgesUnknown} edition{badgesUnknown === 1 ? "" : "s"} &mdash; the Badge filter can&rsquo;t match them until they load.
+        </div>
+      )}
+      {badgesEnabled && !badges.failed && filters.badge !== "all" && badgesUnknown > 0 && (
+        <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10 }}>
+          Badges not known for {badgesUnknown} loaded edition{badgesUnknown === 1 ? "" : "s"} &mdash; they can&rsquo;t match a badge filter.
+        </div>
       )}
       {showOwnership && ownership.status === "failed" && (
         <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10 }}>
@@ -463,12 +527,14 @@ function EditionFilterBar({
   setFilters,
   options,
   ownershipKnown,
+  badgeOptions,
   collectionUrlSlug,
 }: {
   filters: EditionFilters
   setFilters: (f: EditionFilters) => void
   options: ReturnType<typeof editionFilterOptions>
   ownershipKnown: boolean
+  badgeOptions: string[]
   collectionUrlSlug: string
 }) {
   const set = <K extends keyof EditionFilters>(k: K, v: EditionFilters[K]) => setFilters({ ...filters, [k]: v })
@@ -495,6 +561,14 @@ function EditionFilterBar({
           {s.opts.map((v) => <option key={v} value={v}>{s.label ? s.label(v) : v}</option>)}
         </select>
       ))}
+      {/* Offered once at least one loaded edition's badges are KNOWN to carry
+          a badge; a single badge is still a useful filter (has it vs not). */}
+      {(badgeOptions.length > 0 || filters.badge !== "all") && (
+        <select aria-label="All Badges" value={filters.badge} onChange={(ev) => set("badge", ev.target.value)} className="rpc-filter-select">
+          <option value="all">All Badges</option>
+          {badgeOptions.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+      )}
       {/* Only offered once the wallet's counts are KNOWN — otherwise "Owned"
           would filter against nothing and read as "you own none of these". */}
       {ownershipKnown && (

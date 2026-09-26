@@ -36,10 +36,18 @@ const ROWS: EditionTile[] = [
 
 const WALLET = "0x1234567890abcdef"
 
-let fetchMock: ReturnType<typeof vi.fn>
+// `fetchMock` answers the wallet counts route; `badgeMock` the batch badge
+// route (which fires on mount whenever filters are shown). Routed by URL so
+// the two reads never depend on call order.
+type FetchFn = (url: string, init?: RequestInit) => Promise<any>
+let fetchMock: ReturnType<typeof vi.fn<FetchFn>>
+let badgeMock: ReturnType<typeof vi.fn<FetchFn>>
+const BADGES: Record<string, string[]> = { "1:1": ["Top Shot Debut", "Rookie Year"], "1:2": [], "1:2::17": ["Rookie Year"] }
 beforeEach(() => {
-  fetchMock = vi.fn()
-  vi.stubGlobal("fetch", fetchMock)
+  fetchMock = vi.fn<FetchFn>()
+  badgeMock = vi.fn<FetchFn>(async () => ({ ok: true, json: async () => ({ badges: BADGES }) }))
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
+    String(url).includes("/api/entity/edition-badges") ? badgeMock(url, init) : fetchMock(url, init))
   localStorage.clear()
 })
 afterEach(() => {
@@ -151,5 +159,40 @@ describe("EditionsGridPaginated — filters", () => {
     fireEvent.click(screen.getByText("Clear filters"))
     expect(screen.queryByTestId("edition-filter-count")).toBeNull()
     expect(shown()).toHaveLength(3)
+  })
+})
+
+describe("EditionsGridPaginated — badge filter", () => {
+  it("requests badges for the loaded slugs and offers them rookie-first", async () => {
+    renderGrid()
+    const sel = (await screen.findByLabelText("All Badges")) as HTMLSelectElement
+    expect(JSON.parse(String(badgeMock.mock.calls[0][1]?.body))).toEqual({ collection: "nba-top-shot", slugs: ["1:1", "1:2", "1:2::17"] })
+    expect(Array.from(sel.options).map((o) => o.value)).toEqual(["all", "Rookie Year", "Top Shot Debut"])
+  })
+
+  it("narrows to editions carrying the badge", async () => {
+    renderGrid()
+    fireEvent.change(await screen.findByLabelText("All Badges"), { target: { value: "Rookie Year" } })
+    expect(shown()).toEqual(["1:1", "1:2::17"])
+  })
+
+  it("a FAILED badge read offers no Badge filter and says the badges are unknown — never 'no badges'", async () => {
+    badgeMock.mockImplementation(async () => ({ ok: false, status: 503, json: async () => ({}) }))
+    renderGrid()
+    await screen.findByText(/Couldn.t load badges for 3 editions/)
+    expect(screen.queryByLabelText("All Badges")).toBeNull()
+  })
+
+  it("an edition the badge read does not return is unknown: it cannot match, and the grid counts it", async () => {
+    badgeMock.mockImplementation(async () => ({ ok: true, json: async () => ({ badges: { "1:1": ["Rookie Year"] } }) }))
+    renderGrid()
+    fireEvent.change(await screen.findByLabelText("All Badges"), { target: { value: "Rookie Year" } })
+    expect(shown()).toEqual(["1:1"])
+    expect(screen.getByText(/Badges not known for 2 loaded editions/)).toBeTruthy()
+  })
+
+  it("never requests badges on Pinnacle", () => {
+    renderGrid({ collectionUrlSlug: "disney-pinnacle" })
+    expect(badgeMock).not.toHaveBeenCalled()
   })
 })
