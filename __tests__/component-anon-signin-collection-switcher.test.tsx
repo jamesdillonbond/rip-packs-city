@@ -60,12 +60,15 @@ describe("CollectionSwitcher", () => {
   })
 
   it("disables (span, not link) a collection that lacks the current page", () => {
-    // "sets" is not a Pinnacle page — its chip must be a disabled span.
-    pathname = "/nba-top-shot/sets"
+    // RE-PINNED 2026-09-25: this used "sets", and every published collection
+    // now has a Sets tab (Pinnacle 09-20, Candy MLB 09-25), so no chip was
+    // disabled. "packs" is still missing on Candy MLB and UFC — the property
+    // stays exercised by subjects that genuinely lack the page.
+    pathname = "/nba-top-shot/packs"
     const { container } = render(<CollectionSwitcher activeCollectionId="nba-top-shot" />)
     const disabled = container.querySelector('[aria-disabled="true"]')
     expect(disabled).toBeTruthy()
-    expect(disabled?.getAttribute("title")).toMatch(/doesn't have a sets page/i)
+    expect(disabled?.getAttribute("title")).toMatch(/doesn't have a packs page/i)
   })
 
   it("falls back to overview when the path has no recognizable page segment", () => {

@@ -446,7 +446,7 @@ describe("THIN_COLLECTION_MISSING_TABS is the complement of the registry", () =>
 
   it("redirect-shape rows: a missing tab matches, and a REAL tab does not", async () => {
     const { THIN_COLLECTION_MISSING_TABS } = await import("@/proxy")
-    for (const p of ["/candy-mlb/sniper", "/candy-mlb/sets", "/candy-mlb/packs/"]) {
+    for (const p of ["/candy-mlb/sniper", "/candy-mlb/badges", "/candy-mlb/packs/"]) {
       expect(THIN_COLLECTION_MISSING_TABS.test(p), p).toBe(true)
     }
     for (const p of [
@@ -462,6 +462,10 @@ describe("THIN_COLLECTION_MISSING_TABS is the complement of the registry", () =>
       // invisible in production: the page renders for a signed-in reader, the
       // sitemap lists it, and only the crawler sees the 307.
       "/candy-mlb/collection",
+      // ⭐ AND AGAIN 2026-09-25: `/candy-mlb/sets` sat in the `true` list above
+      // until the Sets tab became real (its own Solana backend,
+      // /api/candy-set-progress). Same commit shrank proxy.ts.
+      "/candy-mlb/sets",
       "/candy-mlb",
       "/candy-mlb/edition/foo",
       "/nba-top-shot/sniper",

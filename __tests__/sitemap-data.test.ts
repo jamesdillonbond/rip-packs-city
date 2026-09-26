@@ -149,7 +149,10 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 76 → 77 on 2026-09-25: /teams, the team-hub directory (app/teams/page.tsx),
     // entered the static list. The hubs it links stay out (noindex while one
     // collection per league — hubIsIndexable).
-    expect(s).toHaveLength(77)
+    // 77 → 78 on 2026-09-25: Candy MLB gained its Sets tab (/api/candy-set-progress,
+    // its own Solana backend). Same derived coupling: `pages` grew and
+    // /candy-mlb/sets entered segment 0 by itself.
+    expect(s).toHaveLength(78)
     expect(s.find((x) => x.url === `${BASE}/teams`)).toBeDefined()
     expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/nba/fast-break`)).toBeUndefined()
@@ -161,6 +164,7 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     expect(s.find((x) => x.url === `${BASE}/candy-mlb/analytics`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/candy-mlb/market`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/candy-mlb/collection`)).toBeTruthy()
+    expect(s.find((x) => x.url === `${BASE}/candy-mlb/sets`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/disney-pinnacle/sets`)).toBeTruthy()
     // …and the pages Pinnacle still does NOT expose stay out.
     expect(s.find((x) => x.url === `${BASE}/disney-pinnacle/play`)).toBeUndefined()

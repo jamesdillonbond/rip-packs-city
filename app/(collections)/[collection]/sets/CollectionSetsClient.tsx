@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getCollection } from "@/lib/collections";
 import { filterAndSortSets, tierStripeColor, computeSetSummary } from "@/lib/sets/display";
-import { getOwnerKey } from "@/lib/owner-key";
+import { getOwnerKey, getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/owner-key";
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection";
 import { setEntityHref } from "@/lib/entity-href";
 import MomentMedia from "@/components/MomentMedia";
@@ -166,6 +166,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
   const isAllDay = collectionSlug === "nfl-all-day";
   const isUfc = collectionSlug === "ufc";
   const isPinnacle = collectionSlug === "disney-pinnacle";
+  const isCandy = collectionSlug === "candy-mlb";
   // Pinnacle's collectibles are PINS, not moments — the same relabel
   // components/collection/PackSubNav.tsx already makes on the sub-nav.
   const pieceNoun = isPinnacle ? "pins" : "moments";
@@ -209,7 +210,17 @@ export default function CollectionSetsClient({ collection }: { collection: strin
       return;
     }
     if (autoLoadFired.current) return;
-    const key = getOwnerKey();
+    // The owner key is CHAIN-SCOPED (lib/owner-key.ts). Flow collections keep the
+    // historical global slot byte-for-byte (it may hold a Top Shot username,
+    // which /api/sets resolves); a Solana collection reads its own slot and
+    // refuses a key of the wrong chain, so a Flow key is never sent to Candy.
+    const dbChain = collectionObj?.dbChain ?? null;
+    const key = isCandy
+      ? (() => {
+          const k = getOwnerKeyForChain(dbChain);
+          return k && ownerKeyMatchesChain(k, dbChain) ? k : "";
+        })()
+      : getOwnerKey();
     if (key) {
       autoLoadFired.current = true;
       setWallet(key);
@@ -218,10 +229,12 @@ export default function CollectionSetsClient({ collection }: { collection: strin
     let cancelled = false;
     fetchSavedWalletForCollection(collectionSlug).then((addr) => {
       if (cancelled || autoLoadFired.current || !addr) return;
+      if (isCandy && !ownerKeyMatchesChain(addr, dbChain)) return;
       autoLoadFired.current = true;
       setWallet(addr);
     });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- collectionObj/isCandy derive from collectionSlug
   }, [collectionSlug]);
 
   useEffect(() => {
@@ -242,6 +255,11 @@ export default function CollectionSetsClient({ collection }: { collection: strin
           // rows in `editions`/`sets`, so /api/sets-db answered every wallet with
           // a confident "0 sets". It has its own route (2026-09-20).
           : isPinnacle ? "/api/pinnacle-set-progress"
+          // Candy MLB is Solana: a base58 key is CASE-SENSITIVE and /api/sets-db
+          // folds it, so that route matched nothing and would have answered
+          // "0 of 100". Its own route keeps the key verbatim and counts the 100
+          // PLAYERS as slots, Rainbow colours as parallels (2026-09-25).
+          : isCandy ? "/api/candy-set-progress"
           : `/api/sets-db?collection=${encodeURIComponent(collectionSlug)}&`;
         const url = endpoint.includes("?")
           ? endpoint + "wallet=" + encodeURIComponent(w)
@@ -274,7 +292,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
     }
     go();
     return () => { cancelled = true; };
-  }, [wallet, collectionSlug, isAllDay, isUfc, isPinnacle, reloadKey]);
+  }, [wallet, collectionSlug, isAllDay, isUfc, isPinnacle, isCandy, reloadKey]);
 
   // Modal a11y: escape-to-close + focus trap (Set audit V5).
   useEffect(() => {
@@ -484,7 +502,11 @@ export default function CollectionSetsClient({ collection }: { collection: strin
             </div>
 
             <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5, marginBottom: 16, maxWidth: 880 }}>
-              RPC counts a set complete when you own every play in it. Top Shot&apos;s &ldquo;Completed Sets&rdquo; may include per-set criteria (challenges, badges, parallel collections) this tracker doesn&apos;t model &mdash; gaps are expected.
+              {isCandy ? (
+                <>RPC counts a set complete when you own every player in it, in any printing. The five-colour Rainbow cards are parallels of those players &mdash; counted beside completion as depth, never as extra checklist slots.</>
+              ) : (
+                <>RPC counts a set complete when you own every play in it. Top Shot&apos;s &ldquo;Completed Sets&rdquo; may include per-set criteria (challenges, badges, parallel collections) this tracker doesn&apos;t model &mdash; gaps are expected.</>
+              )}
             </div>
 
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>

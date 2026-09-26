@@ -335,13 +335,17 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // advertises it, which is precisely the Googlebot-gets-a-login-redirect failure
 // the 09-12 note above describes.
 //
+// ⚠ SHRUNK A THIRD TIME 2026-09-25: `sets` is GONE. Candy's Sets tab is in
+// `pages` with its own Solana backend (/api/candy-set-progress, anon-public
+// below), so leaving it here would 302 a sitemap URL to /login.
+//
 // ⚠ THE INVARIANT IS THAT THIS ALTERNATION IS THE COMPLEMENT OF THE REGISTRY'S
 // `pages`. A tab added to lib/collections.ts and not removed here is silently
 // unreachable to anonymous visitors AND still listed for crawlers; a tab removed
 // there and not added here serves a soft-404. Both directions are pinned in
 // __tests__/proxy-is-public-path.test.ts.
 export const THIN_COLLECTION_MISSING_TABS =
-  /^\/(candy-mlb)\/(packs|sniper|sets|badges|challenges|hot-floors|pack-sniper|fast-break|road-to-the-ring|play|series|profile)(?:\/|$)/
+  /^\/(candy-mlb)\/(packs|sniper|badges|challenges|hot-floors|pack-sniper|fast-break|road-to-the-ring|play|series|profile)(?:\/|$)/
 
 // A PUBLISHED collection that has most tabs but not this one. The thin regex
 // above covers overview-only collections; this covers the partial case, and the
@@ -899,6 +903,11 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // Sets and cost-basis therefore render as absent for an anon reader, never as
   // a zero.
   //
+  // 2026-09-25 — SETS joins them. Anon-safety RE-CHECKED: its only fetch is
+  // /api/candy-set-progress, a GET-only service-role read of the public
+  // checklist, public Magic Eden floors and on-chain holdings — the same
+  // wallet_moments_cache rows /share/<wallet> already exposes. No session.
+  //
   // 2026-09-20 — ANALYTICS joins them, same set, same "one tab, one rule".
   //
   // Anon-safety RE-CHECKED, and this tab is the easiest of the three to clear
@@ -916,6 +925,7 @@ export function isPublicPath(pathname: string, method: string): boolean {
     (method === "GET" || method === "HEAD") &&
     (pathname === "/candy-mlb/market" ||
       pathname === "/candy-mlb/collection" ||
+      pathname === "/candy-mlb/sets" ||
       pathname === "/candy-mlb/analytics")
   ) {
     return true
@@ -997,6 +1007,9 @@ export function isPublicPath(pathname: string, method: string): boolean {
     // why `set-tracker-backends-are-anon-public.test.ts` now derives this list
     // from the client's dispatch instead of trusting a fifth hand-kept row.
     "/api/pinnacle-set-progress",
+    // 2026-09-25: Candy MLB's Set Tracker backend, added in the SAME commit as
+    // the tab — the omission this block's 09-20 note records for Pinnacle.
+    "/api/candy-set-progress",
     "/api/ufc-set-progress", "/api/topshot/challenge-plan", "/api/topshot/challenges",
     "/api/wallet-summary", "/api/seeded-wallets", "/api/owned-flow-ids",
     "/api/wallet/edition-counts", "/api/wallet-cache", "/api/ready",

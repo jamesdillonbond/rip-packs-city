@@ -359,7 +359,19 @@ export const COLLECTIONS: Collection[] = [
     // for its own sake. (Candy DOES have a native pack plane — `candy_packs`
     // 2,501 rows, `candy_pack_ev_model` — but it is surfaced on
     // /insights/candy-mlb and is not what the shared Packs tab reads.)
-    pages: ["overview", "market", "collection", "analytics"],
+    //
+    // 2026-09-25 — SETS added, with its own Solana backend
+    // (/api/candy-set-progress), because the generic /api/sets-db was wrong for
+    // Candy twice over: it `.toLowerCase()`s the wallet (a base58 key then
+    // matches nothing, so every wallet would read "0 of 100"), and it counts
+    // EDITIONS as slots (125) where the house rule — Top Shot's DISTINCT play,
+    // Pinnacle's shape_render_id — counts SUBJECTS: Candy's one set is 100
+    // players, and the five-colour Rainbow cards are parallels of five of them.
+    // Cost to finish is the troll-capped `candy_listing_floor`, quoted only while
+    // that map is fresh on its own stamp (12 h against a 3-hourly writer).
+    // Measured against the largest live holders before enabling: 1,896 rows /
+    // 124 editions, all joined (0 orphan `edition_key`s estate-wide).
+    pages: ["overview", "market", "collection", "sets", "analytics"],
     published: true,
     supabaseCollectionId: "209ade70-32c5-4470-bc7c-4793d660f713",
     pitch: "Wallet analytics, FMV, and pack/edition intelligence for Candy MLB on Solana — Metaplex Core, secondary on Magic Eden.",

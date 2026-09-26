@@ -90,7 +90,12 @@ describe("dbChain registry invariant", () => {
     // below pins both halves. Every panel on the tab was read against Candy live
     // before this line was widened — see the registry comment on candy-mlb for
     // the per-panel numbers.
-    solana: ["overview", "market", "collection", "analytics"],
+    //
+    // ⭐ `sets` joined 2026-09-25 on the `market` basis — an ARM written:
+    // /api/candy-set-progress, because the generic /api/sets-db folds the
+    // wallet and counts editions (not players) as slots. The test below pins
+    // that the client dispatches Candy there and the route keeps the key intact.
+    solana: ["overview", "market", "collection", "sets", "analytics"],
     ethereum: ["overview"],
   }
 
@@ -122,6 +127,21 @@ describe("dbChain registry invariant", () => {
     expect(route).toContain("CANDY_COLLECTION_ID_FOR_DISPATCH")
     expect(route).toContain("209ade70-32c5-4470-bc7c-4793d660f713")
   })
+  // ⚠ THE BACKING HALF FOR `sets`. The Set Tracker client dispatches per
+  // collection; without a Candy arm it falls through to /api/sets-db, which
+  // lowercases the wallet (a base58 key then matches nothing → "0 of 100").
+  it("⚠ the Solana `sets` permission is backed by a Candy arm that keeps the key verbatim", () => {
+    const read = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8")
+    const client = read("app/(collections)/[collection]/sets/CollectionSetsClient.tsx")
+    expect(client).toContain('collectionSlug === "candy-mlb"')
+    expect(client).toContain('isCandy ? "/api/candy-set-progress"')
+    const route = read("app/api/candy-set-progress/route.ts")
+    expect(route).toContain("isSolanaAddress(raw)")
+    expect(route).toContain("const wallet = raw\n")
+    expect(route).not.toMatch(/raw\.toLowerCase\(\)|normalizeAddress\(/)
+    expect(route).toContain("209ade70-32c5-4470-bc7c-4793d660f713")
+  })
+
   // ⚠ THE OTHER HALF, for `collection`. It cannot be the same SHAPE of check as
   // the `market` one above, because there is no Candy-specific function to name
   // — that is the point: the Collection tab works for Solana precisely because
