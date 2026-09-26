@@ -30,7 +30,7 @@ failure it documents.
 
 ---
 
-## 2026-09-25 — 1 filing
+## 2026-09-26 — 1 filing
 
 - [🟡 **sync-nba-projections 100% failure (8/8 in 24h) — dispositioned: it is known-issue #8, shelved 09-23, alert muted to 10-13; upstreams 403, not offseason**](2026-09-26T0006Z-daytime-monitor-sync-nba-projections-100pct-failure-24h.md) — *(daytime monitor, ~5:06 PM PT 09-25; disposition appended by Claude Code ~5:45 PM PT.)* No action: the lane fails safe and self-recovers if the block lifts; the provider decision stays on #8.
 
