@@ -11,6 +11,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — team page: the "Variants merged: …" line under the header now reads "Every era counted: Las Vegas Raiders · Los Angeles Raiders · Oakland Raiders" (current name first) — since batch 62 those variants are the franchise's eras, not data-quality spellings, and the old copy read as a defect. Revert by message · Cowork
+
 ### 2026-09-25 · 🧹 SHIPPED — Candy moment pages: "Similar editions" tiles name the Rainbow colour. Candy has no printing ladder, so two Rainbow Trouts rendered as identical "Mike Trout · LEGENDARY · … · /15" tiles. New `candyParallelFromExternalId` (`lib/moment-detail/similar-edition-label.ts`) reads the colour off the external_id (`mike-trout-pink` → "Pink") as a FALLBACK only when no ladder sibling names the edition; base cards return null. Checked against all 125 live editions before shipping: agrees with the edition-name parser on every one, 25 Rainbows named, 100 base cards null. Also verified live ~9:15 PM PT that the previous push rendered: Judge #1 shows "Magic Eden ask $4.84", "View on Magic Eden →" to the mint, and the team + collection links · Claude Code (web sandbox)
 
 **Revert:** `git revert` the commit titled "fix(candy): Similar editions name the Rainbow colour" — code only.
