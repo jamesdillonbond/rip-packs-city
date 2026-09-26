@@ -120,22 +120,19 @@ type EditionEnrichment = {
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   const wallet = url.searchParams.get("wallet");
-  const token = url.searchParams.get("token") || "";
   const startIdx = parseInt(url.searchParams.get("start") || "0");
   const authToken = Deno.env.get("INGEST_SECRET_TOKEN") || "";
-  // Accept the token in an Authorization header as well as `?token=`.
-  // ADDITIVE ON PURPOSE: request logs record full URLs, so the query-string form
-  // writes INGEST_SECRET_TOKEN — a secret shared across ~15 functions — into the
-  // log store on every call. The caller is being moved to the header form, and
-  // this branch must be DEPLOYED FIRST or that move 401s a user-facing wallet
-  // scan. The `?token=` branch stays until every caller is migrated; deleting it
-  // is a separate, later step. Sibling `scan-ufc-wallet` already works this way.
+  // The ingest token is accepted ONLY in the Authorization header (2026-09-25).
+  // Request logs record full URLs, so the old `?token=` form wrote
+  // INGEST_SECRET_TOKEN — shared across ~15 functions — into the log store on
+  // every call. Order that made this safe: header branch deployed (edge-fn-deploy
+  // run 36215009197) → both callers moved to the header (fb688d0e6) → this.
   // No regex: a `\s` escape cannot survive a JSON-argument deploy intact.
   const authHeader = req.headers.get("authorization") || "";
   const bearer = authHeader.toLowerCase().startsWith("bearer ")
     ? authHeader.slice(7)
     : authHeader;
-  if (authToken && token !== authToken && bearer !== authToken) {
+  if (!authToken || bearer !== authToken) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
   if (!wallet) return new Response(JSON.stringify({ error: "wallet required" }), { status: 400 });

@@ -622,6 +622,12 @@ describe("edge-fn drift detector — the run's exit code", () => {
 // never the exact size of the set — a guard that dies on a legitimate edit is a
 // guard that gets deleted.
 // ─────────────────────────────────────────────────────────────────────────────
+// A stand-in parked function, so the DEFERRED arm stays tested while the live
+// DEPLOY_DEFERRED list is empty (2026-09-25).
+const FIXTURE_DEFERRED = new Map([
+  ["some-deferred-fn", "Fixture only. CLEARS WHEN: never — it exists so the DEFERRED bucket is exercised."],
+])
+
 describe("edge-fn drift: redeploy advice must exclude the gate-key-blocked functions", () => {
   it("separates the blocked ones from the safe ones", () => {
     // ⚠ INVERTED 2026-08-31, not deleted. This previously asserted
@@ -635,14 +641,17 @@ describe("edge-fn drift: redeploy advice must exclude the gate-key-blocked funct
     // ⚠ RE-PINNED 2026-09-24: compute-topshot-pack-ev's deferral was CLEARED by
     // its v72 deploy, so the still-deferred enrich-ufc-wallet carries the DEFERRED
     // arm now. The three-way split is the property; the slug is only the example.
-    const { safe, mustNotDeploy, deferred } = partitionByDeploySafety([
-      "enrich-ufc-wallet",
-      "ingest-pinnacle-mints",
-      "sales-serial-backfill",
-      "compute-golazos-pack-ev",
-    ])
+    // ⚠ RE-PINNED AGAIN 2026-09-25: enrich-ufc-wallet's deferral cleared too
+    // (edge-fn-deploy run 36215009197), leaving DEPLOY_DEFERRED EMPTY. The
+    // DEFERRED arm is still exercised — through an explicit fixture map, so the
+    // property does not depend on some real function happening to be parked.
+    const { safe, mustNotDeploy, deferred } = partitionByDeploySafety(
+      ["some-deferred-fn", "ingest-pinnacle-mints", "sales-serial-backfill", "compute-golazos-pack-ev"],
+      GATE_KEY_DEPLOY_BLOCKED,
+      FIXTURE_DEFERRED,
+    )
     expect(mustNotDeploy).toEqual(["ingest-pinnacle-mints", "compute-golazos-pack-ev"])
-    expect(deferred).toEqual(["enrich-ufc-wallet"])
+    expect(deferred).toEqual(["some-deferred-fn"])
     expect(safe).toEqual(["sales-serial-backfill"])
   })
 
@@ -712,14 +721,21 @@ describe("edge-fn drift: redeploy advice must exclude the gate-key-blocked funct
       "a",
       "ingest-pinnacle-mints",
       "b",
-      "enrich-ufc-wallet",
+      "some-deferred-fn",
       "ingest-topshot-pack-opens-history",
       "c",
     ]
-    const { safe, mustNotDeploy, deferred } = partitionByDeploySafety(input)
+    const { safe, mustNotDeploy, deferred } = partitionByDeploySafety(input, GATE_KEY_DEPLOY_BLOCKED, FIXTURE_DEFERRED)
     expect([...safe, ...mustNotDeploy, ...deferred].sort()).toEqual([...input].sort())
     expect(safe).toEqual(["a", "b", "c"])
-    // re-pinned 2026-09-24 — compute-topshot-pack-ev's deferral cleared (v72)
-    expect(deferred).toEqual(["enrich-ufc-wallet"])
+    // re-pinned 2026-09-25 — the live list is empty; the fixture keeps the arm exercised
+    expect(deferred).toEqual(["some-deferred-fn"])
+  })
+
+  it("enrich-ufc-wallet is no longer deferred — deployed from files, callers on the header", () => {
+    expect(DEPLOY_DEFERRED.has("enrich-ufc-wallet")).toBe(false)
+    const { safe, deferred } = partitionByDeploySafety(["enrich-ufc-wallet"])
+    expect(deferred).toEqual([])
+    expect(safe).toEqual(["enrich-ufc-wallet"])
   })
 })

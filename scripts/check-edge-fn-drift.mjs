@@ -275,10 +275,12 @@ export const DEPLOY_DEFERRED = new Map([
   // instead of the `\u0300` escape. v53 sent `\u005cu0300`, which the extra
   // decode turns back into `\u0300`. Any agent deploy of a file containing
   // `\uXXXX` needs that workaround — see docs/cowork-skills/rpc-edge-fn-deploy.
-  [
-    'enrich-ufc-wallet',
-    '\u26d4 DELIBERATELY NOT DEPLOYED FROM AN AGENT SESSION \u2014 the committed change is an ADDITIVE auth branch (accept the ingest token in an Authorization header as well as ?token=), needed so the user-facing caller app/api/ufc-wallet-scan can stop writing INGEST_SECRET_TOKEN into Supabase edge logs on every scan. The code is correct and byte-verified against the deployed v47 before editing (identical, md5 6c7d\u2026a35). WHY IT WAS NOT SHIPPED: deploy_edge_function takes file CONTENT as an inline JSON argument, so an MCP deploy means hand-transcribing 340 lines / 15.9 KB that embed HARDCODED CADENCE CONTRACT ADDRESSES (0x1d7e57aa55817448, 0x329feb3ab062d289). A wrong hex digit there does not crash \u2014 it silently resolves the wrong contract, which is the exact failure the deploy skill forbids transcription for, on a USER-TRIGGERED path. Same class as the sync-nba-projections entry above, which was also aborted by a byte-exactness gate rather than shipped. CLEARS WHEN: deployed by a path that uploads FILES rather than transcribed content \u2014 the supabase CLI (npx supabase functions deploy enrich-ufc-wallet --no-verify-jwt --import-map supabase/functions/deno.json --project-ref bxcqstmqfzmuolpuynti) from a box where the CLI authenticates. \u26a0 POST-CONDITION: assert verify_jwt is still FALSE on readback, and that BOTH the header branch and the ?token= branch are present \u2014 the caller still uses ?token= until step 2. \u26a0 ORDER: deploy, THEN switch callEnrich to a header, THEN delete the ?token= branch. Reversing steps 1 and 2 401s every UFC wallet scan.',
-  ],
+  // ✅ CLEARED 2026-09-25: `enrich-ufc-wallet` — the reason it was parked
+  // (hand-transcribing 340 lines with hardcoded contract addresses) is gone:
+  // .github/workflows/edge-fn-deploy.yml deploys from the committed FILES with
+  // the CLI and reads back verify_jwt=false + a `clean` drift verdict (run
+  // 36215009197). Both callers then moved to the Authorization header, and the
+  // fn's `?token=` branch was removed and redeployed the same way.
 ])
 
 /**
