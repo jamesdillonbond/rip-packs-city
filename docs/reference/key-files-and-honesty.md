@@ -3,6 +3,26 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## ⭐ AN EVIDENCE-ONLY RETIREMENT RULE IS ONLY AS COMPLETE AS ITS EVIDENCE FEED (2026-09-25, PT)
+
+`candy-listings-indexer` retires an ask only on POSITIVE evidence (a delist/fill in Magic Eden's
+activities feed, expiry, a 1-of-1 supersede) — correctly, since absence-based retirement once wiped
+419 live asks off a short answer. But the activities feed is a **1,000-event window per tick**, so a
+fill it never showed was never evidence, and the ask stayed `is_active` forever: measured that day,
+**163 card + 14 pack asks whose token had SOLD after `last_seen_at`**, 20 of 124 edition floors set
+by one (real floor 1.65× higher), the pack floor a July listing. Nothing reported it — every run was
+`ok`, `deactivated` was small and plausible.
+
+- ⭐ **The fix is a SECOND evidence source, not a looser rule:** our own `sales` / `candy_pack_sales`.
+  A sale after the ask's `last_seen_at` is positive evidence; it cannot touch a relist (new listing
+  account, first seen after the sale). `candy_retire_listings_sold_since_seen()`, `20260926020528`.
+- ⚠ **A reader over an add-only set must still split CONFIRMED from UNCONFIRMED.** The retirement
+  cannot catch an ask with no sale evidence; `/api/candy-pack-market` therefore heads with the floor
+  over asks seen in the last 12 h and lists the rest last, labelled.
+- 🔎 **The tell:** an "active" row whose `last_seen_at` is many writer-periods old, in a table the
+  writer touches every tick. `count(*) where is_active and last_seen_at < now() - 4 × period` should
+  be near zero; if it is not, ask what evidence would ever retire those rows.
+
 ## ⭐ THE FOURTEENTH SHAPE (2026-09-20): SUBSTITUTION — answering for a subject nobody asked about
 
 A read that fails and renders as a fact is the class everyone here knows. **This is the variant where
