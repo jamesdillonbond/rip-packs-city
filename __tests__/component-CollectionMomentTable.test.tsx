@@ -413,12 +413,16 @@ describe("CollectionMomentTable — FMV alert popover + rich expanded panel", ()
     expect(JSON.parse(call[1].body).channel).toBe("telegram")
   })
 
-  it("shows the upgrade prompt when the alerts API returns 402", async () => {
+  // INVERTED 2026-09-25 (Trevor): no paid account is mentioned anywhere on
+  // the site until 100 weekly active users. A refused alert says it failed —
+  // it never offers an upgrade or names a Pro tier.
+  it("a refused alert (402) shows a plain failure, never an upgrade prompt", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: false, status: 402, json: async () => ({}) } as Response)))
     const { container, getByText } = render(<CollectionMomentTable {...baseProps({ ownerKey: "0xabc" })} />)
     openBell(container)
     fireEvent.click(getByText("Set Alert"))
-    await waitFor(() => expect(container.textContent).toContain("Upgrade to Pro"))
+    await waitFor(() => expect(container.textContent).toContain("Failed to set alert"))
+    expect(container.textContent).not.toMatch(/upgrade|\bpro\b|free tier/i)
   })
 
   it("shows the sign-in prompt when there is no owner wallet", () => {

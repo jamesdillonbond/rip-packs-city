@@ -9,8 +9,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
-import { checkFeatureQuota } from "@/lib/pro-tier";
-import { evaluateSavedWalletCap } from "@/lib/profile/saved-wallet-quota";
+import { evaluateSavedWalletCap, SAVED_WALLET_LIMIT, savedWalletLimitMessage } from "@/lib/profile/saved-wallet-quota";
 import { countLinkedIdentities } from "@/lib/profile/collector-identities";
 import { publishedCollections, getCollectionByUuid } from "@/lib/collections";
 import { warmWalletDeep } from "@/lib/profile/warm-wallet";
@@ -218,17 +217,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Pro-tier saved-wallet cap. feature_quotas.saved_wallets_max stores a
-  // count limit (not a daily-event limit) keyed on the user's wallet via
-  // get_user_plan. Free → 1 wallet; pro_trial → 5; pro_paid/grandfather/
-  // moments_payment → unlimited; founding/admin → unlimited.
-  // Existence of the row IS the count, so we don't fire record_feature_usage
-  // here. We pre-check on POST only; idempotent re-saves of the same
+  // Saved-wallet cap: 5 wallets + linked usernames for EVERY account (Trevor,
+  // 2026-09-25) — no plan is consulted. Existence of the row IS the count, so
+  // we don't fire record_feature_usage here. Idempotent re-saves of the same
   // (user_id, wallet_addr, collection_id) skip the cap check below.
   try {
     // Count DISTINCT wallet_addr, not rows. saved_wallets holds one row per
     // (wallet, collection), so a row count reads 5 after a single Dapper wallet
-    // and blocked every free user (cap 1) on their SECOND collection.
+    // and blocked every user on their SECOND collection when the cap was 1.
     const { data: addrRows, error: addrErr } = await supabase
       .from("saved_wallets")
       .select("wallet_addr")
@@ -236,7 +232,7 @@ export async function POST(req: NextRequest) {
       .limit(1000);
     // DECISION (re-affirmed 2026-09-03): this cap check stays FAIL-OPEN — a
     // transient count failure must not block a collector's save, and the
-    // downside is one extra free-plan wallet during an outage. But fail-open
+    // downside is one extra wallet during an outage. But fail-open
     // and SILENT is a guard nobody can see fail: supabase-js RETURNS errors,
     // so `addrRows` is null and the count reads 0 with no trace. Bind the
     // error and log it at error level, so an outage that lets the cap slip
@@ -250,24 +246,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const quota = await checkFeatureQuota(walletAddr, "saved_wallets_max");
-    const maxAllowed = quota.daily_limit; // null = unlimited per quota RPC contract
-    // Linked usernames (a Panini handle) share the 5-per-user cap. An
-    // unreadable count is logged inside and treated as 0 — this check is
-    // fail-open by decision (2026-09-03).
+    // Linked usernames (a Panini handle) share the cap. An unreadable count is
+    // logged inside and treated as 0 — this check is fail-open by decision
+    // (2026-09-03).
     const linkedIdentities = (await countLinkedIdentities(supabase, user.id)) ?? 0;
-    const { allowed, distinctCount } = evaluateSavedWalletCap(addrRows, walletAddr, maxAllowed, linkedIdentities);
+    const { allowed, distinctCount } = evaluateSavedWalletCap(addrRows, walletAddr, SAVED_WALLET_LIMIT, linkedIdentities);
     if (!allowed) {
       return NextResponse.json(
         {
-          error: "plan_limit_reached",
-          message: `Free plan supports ${maxAllowed} saved wallets and linked usernames. Upgrade to RPC Pro for unlimited.`,
-          plan: quota.plan,
+          error: "wallet_limit_reached",
+          message: savedWalletLimitMessage(),
           saved_wallet_count: distinctCount,
-          saved_wallet_limit: maxAllowed,
-          upgrade_url: "/pricing",
+          saved_wallet_limit: SAVED_WALLET_LIMIT,
         },
-        { status: 402 }
+        { status: 409 }
       );
     }
   } catch (err) {

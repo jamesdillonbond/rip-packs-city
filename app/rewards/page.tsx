@@ -81,18 +81,12 @@ interface Cosmetic {
   value: string | null;
   acquired_at: string;
 }
-interface ProStatus {
-  isPro: boolean;
-  plan: string | null;
-  expiresAt: string | null;
-}
 interface Equipped {
   border: string | null;
   banner: string | null;
 }
 
 const TYPE_LABEL: Record<string, string> = {
-  pro: "Pro",
   cosmetic: "Cosmetic",
   raffle: "Raffle",
   moment: "Moment",
@@ -124,7 +118,6 @@ export default function RewardsPage() {
   const [referralCount, setReferralCount] = useState<number | null>(0);
   const [cosmetics, setCosmetics] = useState<Cosmetic[]>([]);
   const [equipped, setEquipped] = useState<Equipped>({ border: null, banner: null });
-  const [pro, setPro] = useState<ProStatus>({ isPro: false, plan: null, expiresAt: null });
   const [resolvedTsUsername, setResolvedTsUsername] = useState<string | null>(null);
   // RPC profile handle (for the /profile/<handle> share link) — distinct from
   // the Top Shot username above. From /api/profile/me.
@@ -163,7 +156,6 @@ export default function RewardsPage() {
       setReferralCount(data.referralCount ?? null);
       setCosmetics(data.cosmetics ?? []);
       setEquipped(data.equipped ?? { border: null, banner: null });
-      setPro(data.pro ?? { isPro: false, plan: null, expiresAt: null });
       setResolvedTsUsername(data.resolvedTsUsername ?? null);
       setHasVerifiedWallet(data.hasVerifiedWallet ?? false);
     } catch {
@@ -276,7 +268,7 @@ export default function RewardsPage() {
           // failure. (redeem_shop_item returns 'verified_wallet_required'.)
           setFlash({
             kind: "err",
-            msg: "Verify your Top Shot wallet (list a Moment, ~2 min) to unlock Moment + Pro rewards.",
+            msg: "Verify your Top Shot wallet (list a Moment, ~2 min) to unlock Moment rewards.",
             cta: { label: "Verify wallet →", href: "/dashboard?verify=1" },
           });
         } else {
@@ -523,30 +515,8 @@ export default function RewardsPage() {
               </div>
             </section>
 
-            {/* PRO STATUS — only when active (granted via the Pro shop item) */}
-            {pro.isPro && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  margin: "0 0 28px",
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  border: `1px solid ${RED}`,
-                  background: "rgba(224,58,47,0.10)",
-                  fontFamily: MONO,
-                  fontSize: 13,
-                }}
-              >
-                <span style={{ color: RED, fontFamily: DISPLAY, letterSpacing: "0.06em" }}>★ RPC PRO</span>
-                <span style={{ color: "#cfcfcf" }}>
-                  {pro.expiresAt
-                    ? `Active until ${new Date(pro.expiresAt).toLocaleDateString()}`
-                    : "Active"}
-                </span>
-              </div>
-            )}
+            {/* PRO STATUS panel removed 2026-09-25: no paid tier is mentioned anywhere
+                until 100 weekly active users (the pro_1mo shop item is retired). */}
 
             {/* INVITE */}
             {userId && (
@@ -753,7 +723,7 @@ export default function RewardsPage() {
                   🔒
                 </span>
                 <span style={{ fontFamily: MONO, fontSize: 13 }}>
-                  Verify by listing a Moment — about 2 minutes. Unlocks Moment + Pro rewards and earns{" "}
+                  Verify by listing a Moment — about 2 minutes. Unlocks Moment rewards and earns{" "}
                   <strong style={{ color: RED }}>500 credits</strong>.
                 </span>
                 <span style={{ marginLeft: "auto", color: RED, fontFamily: DISPLAY, whiteSpace: "nowrap" }}>

@@ -1077,7 +1077,7 @@ Relay each finding's \`why\` — "you have a palindrome" is unverifiable on its 
 - **Team Hub** (/my-teams): follow teams and track per-team checklists — owned vs missing + cost-to-complete — across collections.
 - **Play hub** (Top Shot /play): fronts the game-adjacent tools — Fast Break lineup optimizer and Road to the Ring (tier progress + lock ROI). Top Shot only.
 - **Public API + keys** (/dashboard/api-keys): signed-in users can self-serve API keys to query RPC's data programmatically. If someone asks about API access, point them there — but never reveal or generate a key value yourself.
-- **Pricing** (/pricing): RPC is free in open beta — anyone can create an account with an email magic link, no invite and no waitlist (this must match the Posture section above; the old "invite beta" wording contradicted it). There is NO paid tier live today. If asked about cost or Pro, say it's currently free with no paywall yet.
+- **Cost**: RPC is free — anyone can create an account with an email magic link, no invite and no waitlist (this must match the Posture section above). There is NO paid tier. Never mention Pro, pricing, plans, upgrades or a future paid tier; if asked about cost, say RPC is free.
 - **Per-render Pinnacle pin pages** — /pinnacle/moment/<render_id>. Pinnacle FMV is per-render (each pin priced on its own sales), not a blended set-level number.
 
 ## Tone
@@ -4867,14 +4867,14 @@ export async function POST(req: NextRequest) {
       if (!quota.allowed) {
         return NextResponse.json(
           {
-            response: `You've hit your daily Concierge limit (${quota.daily_limit ?? 0}/day on the ${quota.plan} plan). Upgrade to RPC Pro for 200 messages per day — see /pricing.`,
+            // No plan or upgrade in this copy: nothing on the site mentions a
+            // paid tier until 100 weekly active users (Trevor, 2026-09-25).
+            response: `You've reached today's Concierge limit (${quota.daily_limit ?? 0} messages). It resets tomorrow — the rest of RPC is unaffected.`,
             escalated: false,
             category: "daily_limit_reached",
             error: "daily_limit_reached",
-            plan: quota.plan,
             used_today: quota.used_today,
             daily_limit: quota.daily_limit,
-            upgrade_url: "/pricing",
           },
           { status: 429 }
         );

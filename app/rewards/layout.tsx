@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 export const metadata: Metadata = {
   title: "Rewards",
   description:
-    "Earn status and Credits for using Rip Packs City — link a wallet, complete your profile, scout the market — and spend Credits on Pro time, cosmetics, raffles, and Moments.",
+    "Earn status and Credits for using Rip Packs City — link a wallet, complete your profile, scout the market — and spend Credits on cosmetics, raffles, and Moments.",
   robots: { index: false, follow: true },
 };
 

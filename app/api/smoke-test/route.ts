@@ -782,32 +782,8 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       expected: "200-html",
     }),
 
-    time(async () => {
-      const meta = {
-        name: "pricing page renders",
-        endpoint: "/pricing",
-        expected: "200-html",
-      };
-      const res = await smokeFetch(`${BASE_URL}/pricing`, {
-        cache: "no-store",
-        redirect: "manual",
-        headers: { "User-Agent": BROWSER_UA },
-        signal: AbortSignal.timeout(10_000),
-      });
-      const passed = res.status === 200;
-      return {
-        ...meta,
-        passed,
-        statusCode: res.status,
-        detail: `HTTP ${res.status}`,
-        bodyExcerpt: passed ? null : (await res.text().catch(() => "")).slice(0, 500),
-        notes: null,
-      };
-    }, {
-      name: "pricing page renders",
-      endpoint: "/pricing",
-      expected: "200-html",
-    }),
+    // "pricing page renders" REMOVED 2026-09-25: /pricing redirects home (no
+    // paid tier is mentioned anywhere until 100 WAU), so a 200 check would fail.
 
     // 2d. Pack/moment history modules (2026-06-08). The pack dist page must
     // mount the "Sales History" module and the edition page its sales/activity

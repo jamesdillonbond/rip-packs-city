@@ -430,8 +430,8 @@ export function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/login" || pathname.startsWith("/login/")) return true
   // /early-access + subpaths
   if (pathname === "/early-access" || pathname.startsWith("/early-access/")) return true
-  // /pricing — conversion funnel must be reachable unauth'd so prospects
-  // can see what Pro unlocks before signing up.
+  // /pricing — redirects home since 2026-09-25 (no paid tier is mentioned
+  // until 100 WAU); stays public so an old link reaches "/", not /login.
   if (pathname === "/pricing" || pathname.startsWith("/pricing/")) return true
   // /about — marketing surface
   if (pathname === "/about" || pathname.startsWith("/about/")) return true

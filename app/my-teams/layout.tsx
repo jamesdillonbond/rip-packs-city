@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { ProBadge } from "@/components/auth/ProBadge"
 import SignOutButton from "@/components/auth/SignOutButton"
 import SupportChatConnected from "@/components/SupportChatConnected"
 import SiteFooter from "@/components/SiteFooter"
@@ -27,7 +26,6 @@ export default function MyTeamsLayout({ children }: { children: React.ReactNode 
           <TopNav />
           <div className="flex-1" />
           <ThemeToggle />
-          <ProBadge />
           <SignOutButton />
         </div>
       </header>

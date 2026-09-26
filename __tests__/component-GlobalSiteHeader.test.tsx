@@ -30,14 +30,13 @@ describe("GlobalSiteHeader — the site-wide nav contract", () => {
   it("mounts every child the header is responsible for", () => {
     const { container } = render(<GlobalSiteHeader />)
     // Each entry here is a capability that vanishes site-wide if the child is
-    // dropped: sign-in state (pro-badge / sign-out), catalog discovery
+    // dropped: sign-in state (sign-out), catalog discovery
     // (global-search), collection navigation (top-nav), theme (theme-toggle).
     for (const slot of [
       "logo",
       "top-nav",
       "global-search",
       "theme-toggle",
-      "pro-badge",
       "sign-out",
     ]) {
       expect(
@@ -45,6 +44,14 @@ describe("GlobalSiteHeader — the site-wide nav contract", () => {
         `GlobalSiteHeader must mount ${slot} — dropping it removes the capability from every page`,
       ).not.toBeNull()
     }
+  })
+
+  // 2026-09-25 (Trevor): no paid account is mentioned anywhere on the site
+  // until 100 weekly active users. The PRO / FOUNDING badge was the header's
+  // paid-tier surface, so its ABSENCE is the contract now.
+  it("does not mount the Pro badge", () => {
+    const { container } = render(<GlobalSiteHeader />)
+    expect(container.querySelector('[data-slot="pro-badge"]')).toBeNull()
   })
 
   it("keeps a working route home", () => {

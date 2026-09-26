@@ -103,14 +103,16 @@ describe("POST /api/profile/collector-identities", () => {
     expect(state.inserts).toHaveLength(0)
   })
 
-  it("4 wallets + 1 linked username fills the free cap of 5 (402, nothing stored)", async () => {
+  it("4 wallets + 1 linked username fills the cap of 5 (409, nothing stored, no plan mentioned)", async () => {
     state.tables.saved_wallets = {
       data: ["0xa", "0xb", "0xc", "0xd"].map((wallet_addr) => ({ wallet_addr })),
       error: null,
     }
     state.tables.saved_collector_identities = { data: [], error: null, count: 1 }
+    state.planLimit = null // a plan saying "unlimited" must not matter
     const res = await POST(req({ username: "MoeSidani" }))
-    expect(res.status).toBe(402)
+    expect(res.status).toBe(409)
+    expect(JSON.stringify(await res.json())).not.toMatch(/plan|upgrade|pro\b|pricing/i)
     expect(state.inserts).toHaveLength(0)
   })
 

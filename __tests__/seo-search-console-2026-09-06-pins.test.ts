@@ -139,4 +139,11 @@ describe("/pricing is no longer advertised (2026-09-07, Trevor: 'take /pricing o
     const src = read("app/pricing/page.tsx")
     expect(src).toMatch(/robots:\s*\{\s*index:\s*false/)
   })
+  // 2026-09-25 (Trevor): no paid account is mentioned anywhere on the site
+  // until 100 weekly active users — /pricing now redirects home.
+  it("the pricing page redirects home and renders no plan or checkout", () => {
+    const src = read("app/pricing/page.tsx")
+    expect(src).toMatch(/redirect\("\/"\)/)
+    expect(src).not.toMatch(/<StripeSubscribeButton|import StripeSubscribeButton/)
+  })
 })

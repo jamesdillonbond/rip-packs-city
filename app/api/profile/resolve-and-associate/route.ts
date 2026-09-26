@@ -33,8 +33,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve";
 import { publishedCollections } from "@/lib/collections";
-import { checkFeatureQuota } from "@/lib/pro-tier";
-import { evaluateSavedWalletCap } from "@/lib/profile/saved-wallet-quota";
+import { evaluateSavedWalletCap, SAVED_WALLET_LIMIT, savedWalletLimitMessage } from "@/lib/profile/saved-wallet-quota";
 import { countLinkedIdentities } from "@/lib/profile/collector-identities";
 import { warmWalletDeep } from "@/lib/profile/warm-wallet";
 import { claimUsernameFromTopShot, type ClaimOutcome } from "@/lib/profile/claim-username";
@@ -178,7 +177,7 @@ export async function POST(req: NextRequest) {
     (c) => SEED_SLUGS.has(c.id) && !!c.supabaseCollectionId
   );
 
-  // Plan cap. This is the PRIMARY "Load my collection" path and had no quota
+  // Wallet cap (5 per account, 2026-09-25). This is the PRIMARY "Load my collection" path and had no quota
   // check at all, so it bypassed the saved-wallets cap entirely. Measured on
   // DISTINCT wallet_addr (one Dapper wallet = 5 rows here), and a re-resolve of
   // an already-saved wallet always passes so a capped user can still refresh.
@@ -189,24 +188,20 @@ export async function POST(req: NextRequest) {
       .eq("user_id", user.id)
       .limit(1000);
 
-    const quota = await checkFeatureQuota(walletAddress, "saved_wallets_max");
-    const maxAllowed = quota.daily_limit; // null = unlimited per quota RPC contract
-    // Linked usernames (a Panini handle) share the 5-per-user cap. An
-    // unreadable count is logged inside and treated as 0 — this check is
-    // fail-open by decision (2026-09-03).
+    // Linked usernames (a Panini handle) share the cap. An unreadable count is
+    // logged inside and treated as 0 — this check is fail-open by decision
+    // (2026-09-03).
     const linkedIdentities = (await countLinkedIdentities(supabase, user.id)) ?? 0;
-    const { allowed, distinctCount } = evaluateSavedWalletCap(addrRows, walletAddress, maxAllowed, linkedIdentities);
+    const { allowed, distinctCount } = evaluateSavedWalletCap(addrRows, walletAddress, SAVED_WALLET_LIMIT, linkedIdentities);
     if (!allowed) {
       return NextResponse.json(
         {
-          error: "plan_limit_reached",
-          message: `Free plan supports ${maxAllowed} saved wallets and linked usernames. Remove one you have saved, or upgrade to RPC Pro.`,
-          plan: quota.plan,
+          error: "wallet_limit_reached",
+          message: savedWalletLimitMessage(),
           saved_wallet_count: distinctCount,
-          saved_wallet_limit: maxAllowed,
-          upgrade_url: "/pricing",
+          saved_wallet_limit: SAVED_WALLET_LIMIT,
         },
-        { status: 402 }
+        { status: 409 }
       );
     }
   } catch (err) {

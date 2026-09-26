@@ -5,18 +5,16 @@
 // Per-user FMV alert management. Lists active + inactive alerts, lets the
 // user toggle active/delete each row, and create new ones via a modal.
 //
-// Quota: POST /api/alerts gates on check_feature_quota(wallet,
-// 'custom_alerts_max'). Free plan returns 402; we surface "Upgrade to Pro"
-// with a /pricing link. Pro plan = 25 alerts/wallet.
+// Every account gets alerts; POST /api/alerts applies no plan gate. The old
+// "Upgrade to Pro" paywall (a 402 the route never returns) was removed
+// 2026-09-25 — no paid plan is mentioned anywhere until 100 weekly active users.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key";
-import { useProStatus } from "@/lib/hooks/useProStatus";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
 import { usdSignFirst } from "@/lib/usd-format"
 
-const PRO_ALERTS_CAP = 25;
 const DELETE_CONFIRM_WINDOW_MS = 2000;
 
 interface Alert {
@@ -66,7 +64,6 @@ export default function DashboardAlertsClient() {
   const [deleteArmed, setDeleteArmed] = useState<string | null>(null);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const proStatus = useProStatus(ownerKey || null);
 
   useEffect(() => {
     setOwnerKey(getOwnerKey());
@@ -170,14 +167,6 @@ export default function DashboardAlertsClient() {
             discount vs FMV reaches a threshold. Emails go to your saved
             address; Telegram delivery is available too.
           </p>
-          {proStatus.isPro && alerts && (
-            <div className="rpc-al-quota">
-              <span className="rpc-al-quota-count">{alerts.length}</span>
-              <span className="rpc-al-quota-sep"> / </span>
-              <span className="rpc-al-quota-cap">{PRO_ALERTS_CAP}</span>
-              <span className="rpc-al-quota-label">alerts used</span>
-            </div>
-          )}
         </div>
         <div className="rpc-al-actions">
           <button
@@ -203,11 +192,7 @@ export default function DashboardAlertsClient() {
 
       {paywall && (
         <div className="rpc-al-paywall">
-          <div className="rpc-al-paywall-title">Upgrade to Pro</div>
           <div className="rpc-al-paywall-body">{paywall}</div>
-          <Link href="/pricing" className="rpc-al-cta" style={{ display: "inline-block", marginTop: 8 }}>
-            See Pro plans →
-          </Link>
         </div>
       )}
 
@@ -446,7 +431,7 @@ function CreateAlertModal({
       });
       const j = await res.json().catch(() => ({}));
       if (res.status === 402) {
-        onClose(null, j?.message ?? "Custom alerts are a Pro feature.");
+        onClose(null, j?.message ?? "Couldn't create this alert. Try again in a moment.");
         return;
       }
       if (!res.ok) {

@@ -8,7 +8,7 @@ import { assertHealthyPage, type PageCheck } from "./healthy-page"
 // "200-but-broken-DOM" class the API smoke gate structurally can't see.
 //
 // Only enumerate pages that are public per proxy.ts (the 5 published Flow
-// collections' read tabs, the /insights hub + every un-flagged board, /pricing,
+// collections' read tabs, the /insights hub + every un-flagged board,
 // and the marketing home). Personalized/gated routes are intentionally omitted.
 
 const PAGES: PageCheck[] = [
@@ -128,7 +128,8 @@ const PAGES: PageCheck[] = [
   // the 200-but-broken-DOM class. To cover these pages, the spec needs an
   // authenticated browser context, not another entry in this public list.
 
-  { path: "/pricing", name: "pricing" },
+  // /pricing REMOVED 2026-09-25: it redirects home (no paid tier is mentioned
+  // anywhere until 100 WAU), so it has no DOM of its own to smoke.
 
   // ── Marketing / legal / blog, added 2026-08-20 ─────────────────────────────
   //

@@ -189,30 +189,58 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
     { wallet_addr: "0x1111111111111111" },
   ]
 
-  it("402s at the plan limit when the user is already at their saved-wallet cap", async () => {
+  // 2026-09-25 (Trevor): "5 wallets for any account" — the cap is ONE number
+  // and no plan is consulted. The quota mock below says UNLIMITED on purpose:
+  // if the route ever reads a plan again, the sixth wallet gets in and this
+  // test fails.
+  const fiveWallets = [
+    ...oneWalletFiveRows,
+    { wallet_addr: "0x2222222222222222" },
+    { wallet_addr: "0x3333333333333333" },
+    { wallet_addr: "0x4444444444444444" },
+    { wallet_addr: "0x5555555555555555" },
+  ]
+
+  it("refuses a 6th distinct wallet at the flat cap of 5, whatever plan the wallet has", async () => {
+    state.user = { id: "u1" }
+    state.quota = { daily_limit: null, plan: "pro_paid" }
+    install({
+      saved_wallets: [
+        { data: fiveWallets, error: null }, // 9 rows, 5 distinct wallets
+      ],
+    })
+
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0x6666666666666666" }))
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body).toMatchObject({
+      error: "wallet_limit_reached",
+      saved_wallet_count: 5, // DISTINCT wallets, not the 9 rows
+      saved_wallet_limit: 5,
+    })
+    // No paid plan is mentioned anywhere until 100 weekly active users.
+    expect(JSON.stringify(body)).not.toMatch(/plan|upgrade|pro\b|pricing/i)
+  })
+
+  it("allows a 5th distinct wallet (the cap is 5, not 4)", async () => {
     state.user = { id: "u1" }
     state.quota = { daily_limit: 1, plan: "free" }
     install({
       saved_wallets: [
-        { data: oneWalletFiveRows, error: null }, // 5 rows, 1 distinct wallet
+        { data: fiveWallets.slice(0, 8), error: null }, // 4 distinct wallets
+        { count: 0, error: null }, // new-wallet probe
+        { data: { id: "w5", wallet_addr: "0x5555555555555555" }, error: null },
       ],
     })
 
-    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0x2222222222222222" }))
-    expect(res.status).toBe(402)
-    const body = await res.json()
-    expect(body).toMatchObject({
-      error: "plan_limit_reached",
-      plan: "free",
-      saved_wallet_count: 1, // DISTINCT wallets, not the 5 rows
-      saved_wallet_limit: 1,
-    })
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0x5555555555555555" }))
+    expect(res.status).toBe(200)
   })
 
   // REGRESSION (2026-08-05): counting rows meant a free user (cap 1) was blocked
   // on their own wallet the moment resolve-and-associate wrote its 5 collection
   // rows — currentCount read 5 >= 1 for a wallet they already owned.
-  it("does NOT 402 when re-saving a wallet already held across 5 collections at cap 1", async () => {
+  it("does NOT refuse a re-save of a wallet already held across 5 collections", async () => {
     state.user = { id: "u1" }
     state.quota = { daily_limit: 1, plan: "free" }
     install({

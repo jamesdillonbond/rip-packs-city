@@ -1,6 +1,6 @@
 // lib/profile/saved-wallet-quota.ts
 //
-// Plan-cap arithmetic for saved wallets.
+// Saved-wallet cap arithmetic (5 wallets + linked usernames per account).
 //
 // THE BUG THIS EXISTS TO PREVENT: saved_wallets stores ONE ROW PER
 // (user_id, wallet_addr, collection_id), so a single Dapper wallet lands 5 rows
@@ -18,6 +18,19 @@
 // all and so bypassed the limit entirely.
 
 import { normalizeAddress } from "@/lib/address";
+
+/**
+ * Saved wallets + linked usernames per account. ONE number for every account —
+ * Trevor, 2026-09-25: "5 wallets for any account", and no plan (paid or
+ * otherwise) is considered anywhere until RPC reaches 100 weekly active users.
+ * This replaced a per-plan lookup of feature_quotas.saved_wallets_max.
+ */
+export const SAVED_WALLET_LIMIT = 5;
+
+/** The refusal copy every save path shows at the cap. No plan, no upgrade. */
+export function savedWalletLimitMessage(limit: number = SAVED_WALLET_LIMIT): string {
+  return `You can save up to ${limit} wallets and linked usernames. Remove one to add another.`;
+}
 
 /** Minimal shape needed to count distinct wallets. */
 export interface SavedWalletAddrRow {
@@ -66,11 +79,11 @@ export function walletAlreadySaved(
 }
 
 /**
- * Decide whether adding `candidate` would exceed the plan cap.
+ * Decide whether adding `candidate` would exceed the saved-wallet cap.
  *
- * `maxAllowed` follows the checkFeatureQuota contract: null = unlimited.
- * Returns the numbers the caller needs for its 402 body so the message can
- * state the real count rather than a row count.
+ * `maxAllowed` is SAVED_WALLET_LIMIT at every call site; `null` (no cap) is
+ * kept only so the arithmetic stays total. Returns the numbers the caller needs
+ * for its refusal body so the message can state the real count, not a row count.
  */
 export function evaluateSavedWalletCap(
   rows: readonly SavedWalletAddrRow[] | null | undefined,

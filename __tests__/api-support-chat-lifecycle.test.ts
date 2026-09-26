@@ -139,7 +139,10 @@ describe("concierge lifecycle — daily quota gate", () => {
     expect(res.status).toBe(429)
     const body = await res.json()
     expect(body.error).toBe("daily_limit_reached")
-    expect(body.upgrade_url).toBe("/pricing")
+    // No paid tier is mentioned anywhere until 100 WAU (Trevor, 2026-09-25):
+    // the refusal names the limit, never a plan, an upgrade or /pricing.
+    expect(body.upgrade_url).toBeUndefined()
+    expect(JSON.stringify(body)).not.toMatch(/upgrade|pricing|\bpro\b|plan/i)
     // Gated before the model loop.
     expect(A.createCalls.length).toBe(0)
   })

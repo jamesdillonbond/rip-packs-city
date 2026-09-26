@@ -47,10 +47,8 @@ const ROOT = path.resolve(__dirname, "..")
 
 /** Features whose quota row is a CARDINALITY cap or which are knowingly broken. */
 const SUPPRESSED: Record<string, string> = {
-  // Reads `quota.daily_limit` only, as a max-at-any-time cap, and counts the
-  // user's saved_wallets rows itself. `allowed` / `used_today` are never read,
-  // so there is nothing for a writer to feed.
-  saved_wallets_max: "cardinality cap — consumes daily_limit only, never allowed/used_today",
+  // (saved_wallets_max was here until 2026-09-25, when the saved-wallet cap
+  // became a flat constant — SAVED_WALLET_LIMIT — and stopped being checked.)
 
   // ⚠ WRITTEN, BUT FROM SQL — so this scan cannot see it, and that is the ONLY
   // reason it is here. `mcp_log_tool_call` writes the `mcp_query` row (migration
@@ -126,7 +124,6 @@ describe("a quota that counts usage_events has something that writes them", () =
     // not force an edit here.
     const { checked, written } = scan()
     expect([...checked].sort()).toContain("concierge_messages")
-    expect([...checked].sort()).toContain("saved_wallets_max")
     expect([...checked].sort()).toContain("mcp_query")
     expect([...written]).toContain("concierge_messages")
   })

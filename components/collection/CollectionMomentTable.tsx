@@ -716,11 +716,6 @@ export default function CollectionMomentTable(props: {
                                     <>
                                       <a href={"/login?redirect=" + encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : "/nba-top-shot/collection")} style={{ color: accent, textDecoration: "underline" }}>Sign in</a> to save price alerts
                                     </>
-                                  ) : alertError === "not_pro" ? (
-                                    <>
-                                      Free tier alert limit reached.{" "}
-                                      <a href="mailto:support@rippackscity.com?subject=RPC%20Pro%20Early%20Access" style={{ color: accent, textDecoration: "underline" }}>Upgrade to Pro</a>
-                                    </>
                                   ) : (
                                     "Failed to set alert"
                                   )}
@@ -750,7 +745,6 @@ export default function CollectionMomentTable(props: {
                                     }),
                                   })
                                     .then(function(r) {
-                                      if (r.status === 402) throw new Error("not_pro")
                                       if (!r.ok) throw new Error("save_failed")
                                       return r.json()
                                     })

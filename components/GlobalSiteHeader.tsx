@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { ProBadge } from "@/components/auth/ProBadge"
 import SignOutButton from "@/components/auth/SignOutButton"
 import RpcLogo from "@/components/RpcLogo"
 import TopNav from "@/components/TopNav"
@@ -24,11 +23,10 @@ export default function GlobalSiteHeader() {
         <div style={{ flex: 1 }} />
         <GlobalSearch />
         <ThemeToggle />
-        <ProBadge />
         <SignOutButton />
       </div>
       {/* 2026-09-25: at a phone width the row (logo + handle + search ≥ 110 px +
-          theme + Pro + SIGN IN, 16 px gaps, 20 px gutters) overflowed its
+          theme + SIGN IN, 16 px gaps, 20 px gutters) overflowed its
           overflow:hidden box, so the SIGN IN button was cut to "SIGN" at 390 px
           (true-mobile sweep screenshot). The handle is decorative beside the
           logo; drop it and tighten the gaps under 480 px so every control fits

@@ -19,7 +19,7 @@
 //   username seen        → stored + summary
 //
 //   GET    → { identities: [{ collection, username, created_at, summary|null, summary_failed }] }
-//   POST   { username } → links it (cap: 5 wallets + usernames per free user)
+//   POST   { username } → links it (cap: 5 wallets + usernames per account)
 //   DELETE { username } → unlinks it
 
 import { NextRequest, NextResponse } from "next/server";
@@ -28,8 +28,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { getCollection } from "@/lib/collections";
 import { withBoardBudget } from "@/lib/insights/board-page-fetch";
-import { checkFeatureQuota } from "@/lib/pro-tier";
-import { countDistinctWallets } from "@/lib/profile/saved-wallet-quota";
+import { countDistinctWallets, SAVED_WALLET_LIMIT, savedWalletLimitMessage } from "@/lib/profile/saved-wallet-quota";
 import {
   countLinkedIdentities,
   normalizePaniniUsername,
@@ -165,8 +164,8 @@ export async function POST(req: NextRequest) {
   if (existErr) return apiErrorResponse(existErr, "api/profile/collector-identities");
 
   if (!existing) {
-    // Cap: 5 saved wallets + linked usernames per free user (Trevor,
-    // 2026-09-25). Unlike the wallet routes this fails CLOSED — a new, optional
+    // Cap: 5 saved wallets + linked usernames per account, no plan consulted
+    // (Trevor, 2026-09-25). Unlike the wallet routes this fails CLOSED — a new, optional
     // link can wait out an outage; a wallet save is the primary path.
     const { data: addrRows, error: addrErr } = await supabase
       .from("saved_wallets")
@@ -177,22 +176,16 @@ export async function POST(req: NextRequest) {
     if (addrErr || linked === null) {
       return apiErrorResponse(addrErr ?? new Error("linked-identity count failed"), "api/profile/collector-identities");
     }
-    // The plan is keyed on a wallet; a user with none is on the free plan.
-    const planWallet = (addrRows ?? []).find((r: any) => typeof r?.wallet_addr === "string")?.wallet_addr ?? null;
-    const quota = await checkFeatureQuota(planWallet, "saved_wallets_max");
-    const maxAllowed = quota.daily_limit; // null = unlimited
     const used = countDistinctWallets(addrRows) + linked;
-    if (maxAllowed !== null && used >= maxAllowed) {
+    if (used >= SAVED_WALLET_LIMIT) {
       return NextResponse.json(
         {
-          error: "plan_limit_reached",
-          message: `Free plan supports ${maxAllowed} saved wallets and linked usernames. Remove one you have saved, or upgrade to RPC Pro.`,
-          plan: quota.plan,
+          error: "wallet_limit_reached",
+          message: savedWalletLimitMessage(),
           saved_wallet_count: used,
-          saved_wallet_limit: maxAllowed,
-          upgrade_url: "/pricing",
+          saved_wallet_limit: SAVED_WALLET_LIMIT,
         },
-        { status: 402 }
+        { status: 409 }
       );
     }
 
