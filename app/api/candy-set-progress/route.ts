@@ -172,7 +172,11 @@ export async function GET(req: NextRequest) {
       boundedRead(
         (supabaseAdmin as any)
           .from("candy_listing_floor")
-          .select("edition_id, floor_usd, last_seen_at"),
+          // confirmed_floor_usd (20260926030328): the troll-capped floor over asks
+          // SEEN in the last 12 h. floor_usd also counts asks the indexer has not
+          // seen for days (it never retires on absence), which set 4 edition floors
+          // on 2026-09-25; an unseen ask must not price a shopping list.
+          .select("edition_id, confirmed_floor_usd, last_seen_at"),
         "candy-set-progress/floor",
       ),
       fetchAllPaged<OwnedRow>(
@@ -227,8 +231,8 @@ export async function GET(req: NextRequest) {
     }
     let newestAskStamp: number | null = null
     if (floorOk) {
-      for (const r of (floorRes.data ?? []) as { edition_id: string; floor_usd: unknown; last_seen_at: string | null }[]) {
-        const ask = num(r.floor_usd)
+      for (const r of (floorRes.data ?? []) as { edition_id: string; confirmed_floor_usd: unknown; last_seen_at: string | null }[]) {
+        const ask = num(r.confirmed_floor_usd)
         slot(r.edition_id).ask = ask !== null && ask > 0 ? ask : null
         const t = r.last_seen_at ? Date.parse(r.last_seen_at) : NaN
         if (!Number.isNaN(t) && (newestAskStamp === null || t > newestAskStamp)) newestAskStamp = t

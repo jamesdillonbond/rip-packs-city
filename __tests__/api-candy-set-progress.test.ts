@@ -88,7 +88,7 @@ function ed(ext: string, over: Row = {}): Row {
   }
 }
 const page = (rows: Row[]) => ({ data: rows, error: null })
-const floor = (ext: string, usd: number, seen = FRESH) => ({ edition_id: `id-${ext}`, floor_usd: usd, last_seen_at: seen })
+const floor = (ext: string, usd: number | null, seen = FRESH) => ({ edition_id: `id-${ext}`, confirmed_floor_usd: usd, last_seen_at: seen })
 
 beforeEach(() => {
   calls.editions = 0
@@ -232,5 +232,16 @@ describe("GET /api/candy-set-progress", () => {
     expect(json.publishedChecklist.total).toBeGreaterThanOrEqual(100)
     expect(json.publishedChecklist.notIndexed).toContain("Edwin Díaz")
     expect(json.publishedChecklist.notIndexed).not.toContain("Aaron Judge")
+  })
+
+  it("an ask not SEEN recently prices nothing — the confirmed floor is null, the slot is unlisted", async () => {
+    state.editions = [page([ed("aaron-judge"), ed("ben-rice")])]
+    state.owned = [page([{ moment_id: "m1", edition_key: "aaron-judge", serial_number: 1, is_locked: false }])]
+    // The map is fresh (another edition was seen now) but ben-rice has only an old ask.
+    state.floor = { data: [floor("aaron-judge", 5), floor("ben-rice", null)], error: null }
+    const s = (await body()).json.sets[0]
+    expect(s.asksEnriched).toBe(true)
+    expect(s.missing[0].lowestAsk).toBeNull()
+    expect(s.totalMissingCost).toBeNull()
   })
 })
