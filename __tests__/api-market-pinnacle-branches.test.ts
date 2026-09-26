@@ -91,10 +91,12 @@ describe("GET /api/market — Pinnacle edition path", () => {
     expect(res.status).toBe(200)
   })
 
-  it("returns an empty board (not a 500) when the pinnacle_catalog fetch errors", async () => {
+  // ⛔ INVERTED 2026-09-26 — an empty board for a failed read is the false
+  // "no listings" this route refuses for Candy and Panini; Pinnacle joins them.
+  it("503s (never an empty board) when the pinnacle_catalog fetch errors", async () => {
     install({ pinnacle_catalog: { data: null, error: { message: "relation missing" } }, editions: { data: [], error: null } })
     const res = await GET(req(`https://t/api/market?collectionId=${PINNACLE}`))
-    expect(res.status).toBe(200)
-    expect((await res.json()).listings).toEqual([])
+    expect(res.status).toBe(503)
+    expect((await res.json()).listings).toBeUndefined()
   })
 })

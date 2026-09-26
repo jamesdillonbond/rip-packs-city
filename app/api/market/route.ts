@@ -267,8 +267,10 @@ async function fetchPinnacleModernListings(
     player: string
     minPrice: number
   },
-): Promise<any[]> {
+): Promise<any[] | null> {
   try {
+    const s = filters.sortBy
+    const build = () => {
     let q = (supabaseAdmin as any)
       .from("pinnacle_catalog")
       .select("render_id, character_name, set_name, series_name, variant, total_minted, floor_ask, fmv_usd, fmv_confidence, thumbnail_url, floor_ask_updated_at")
@@ -295,18 +297,44 @@ async function fetchPinnacleModernListings(
     // dimension the UI sort leads with — otherwise a fixed cheapest-first window
     // would hide the expensive renders under "Price ↓" / "FMV ↓". Final ordering
     // is still applied authoritatively in-memory downstream.
-    const s = filters.sortBy
     if (s === "price_desc") q = q.order("floor_ask", { ascending: false, nullsFirst: false })
     else if (s === "fmv_desc") q = q.order("fmv_usd", { ascending: false, nullsFirst: false })
     else if (s === "fmv_asc") q = q.order("fmv_usd", { ascending: true, nullsFirst: false })
     else if (s === "recent" || s === "listed_desc") q = q.order("floor_ask_updated_at", { ascending: false, nullsFirst: false })
     else q = q.order("floor_ask", { ascending: true, nullsFirst: false }) // price_asc + discount (computed downstream)
-    q = q.limit(1000)
+    // Deterministic tiebreak on the table's unique key (paging needs it).
+    return q.order("render_id", { ascending: true })
+    }
 
-    const { data, error } = await q
-    if (error) {
-      console.log("[/api/market] pinnacle catalog fetch err:", error.message)
-      return []
+    // ⚠ DISCOUNT SORTS READ THE WHOLE LIVE CATALOG (#146 (1), 2026-09-26).
+    // pinnacle_catalog has no discount column to order by, so a discount sort
+    // took the 1,000 CHEAPEST renders and ranked those — 1,357 of the 2,357 live
+    // renders (measured) could never appear under "Discount ↓/↑". The live
+    // population is small enough to page in full; the downstream mapper
+    // computes discount and sorts authoritatively.
+    // ⛔ A failed read returns NULL, never [] — cached_listings holds ZERO
+    // Pinnacle rows, so [] fell through to a confident "no listings".
+    const discountSort = s === "discount_desc" || s === "discount_asc"
+    const PAGE = 1000
+    const MAX_PAGES = discountSort ? 10 : 1
+    const data: any[] = []
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const { data: rows, error } = await boundedRead(
+        build().range(page * PAGE, page * PAGE + PAGE - 1),
+        "api/market/pinnacle_catalog",
+      )
+      if (error) {
+        console.log("[/api/market] pinnacle catalog fetch err:", error.message ?? String(error))
+        return null
+      }
+      data.push(...(rows ?? []))
+      if ((rows?.length ?? 0) < PAGE) break
+      // A discount sort that fills every page is a PARTIAL population ranked as
+      // if whole — refuse it rather than publish it (4× today's live count).
+      if (discountSort && page === MAX_PAGES - 1) {
+        console.log(`[/api/market] pinnacle catalog exceeded ${MAX_PAGES * PAGE} rows under a discount sort — refusing a partial ranking`)
+        return null
+      }
     }
     // EXACT pass. The DB filters above narrow; these decide, on the same
     // trimmed value the caller sent. Multi-select sets are handled here rather
@@ -344,7 +372,7 @@ async function fetchPinnacleModernListings(
     }))
   } catch (err) {
     console.log("[/api/market] pinnacle catalog fetch threw:", err instanceof Error ? err.message : String(err))
-    return []
+    return null
   }
 }
 
@@ -957,7 +985,10 @@ export async function GET(req: NextRequest) {
     // ⛔ PANINI NEVER FALLS THROUGH either — same reason as Candy below:
     // `cached_listings` holds ZERO Panini rows, so a fall-through can only turn a
     // failed read into a confident "no listings".
-    if ((collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH || isPanini) && (modernRows === null || modernRows.length === 0)) {
+    // ⛔ PINNACLE NEVER FALLS THROUGH either (2026-09-26): `cached_listings` holds
+    // ZERO Pinnacle rows (measured), so a failed catalog read became "no listings".
+    const isPinnacle = collectionId === PINNACLE_COLLECTION_ID_FOR_DISPATCH
+    if ((collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH || isPanini || isPinnacle) && (modernRows === null || modernRows.length === 0)) {
       if (modernRows === null) {
         return NextResponse.json(
           { error: "market_unavailable", retry: true, collection_id: collectionId },
@@ -972,7 +1003,7 @@ export async function GET(req: NextRequest) {
         listings: [],
         pagination: { total: 0, page, limit, hasMore: false, totalIsExact: true, matchedBeforeFilters: null },
         clamp: { applied: true, ceilings: TIER_CEILING },
-        diagnostics: { rawCount: 0, postClampCount: 0, postFilterCount: 0, source: isPanini ? "panini_market_board" : "candy_market_board", windowTruncated: false },
+        diagnostics: { rawCount: 0, postClampCount: 0, postFilterCount: 0, source: isPanini ? "panini_market_board" : isPinnacle ? "pinnacle_catalog" : "candy_market_board", windowTruncated: false },
         ...coverageField,
       }, {
         headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },

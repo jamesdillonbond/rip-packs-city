@@ -319,16 +319,42 @@ describe("GET /api/market — Pinnacle modern (catalog) path", () => {
     expect(row.serialNumber).toBeNull()
   })
 
-  it("returns an empty feed when the pinnacle catalog query errors (fail-soft, still 200)", async () => {
+  // ⛔ INVERTED 2026-09-26. This pinned the defect: the error became [] and the
+  // page said "no listings" for a market it never read (cached_listings holds
+  // zero Pinnacle rows, so the fall-through cannot answer either).
+  it("503s when the pinnacle catalog query errors — never an empty market", async () => {
     install({
       pinnacle_catalog: { data: null, error: { message: "catalog down" } },
       editions: { data: [], error: null },
     })
     const res = await GET(req(`https://t/api/market?collectionId=${PINNACLE}`))
-    // fetchPinnacleModernListings swallows the error -> [] -> modern branch, empty.
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(503)
     const body = await res.json()
-    expect(body.listings).toHaveLength(0)
+    expect(body.listings).toBeUndefined()
+    expect(body.error).toBe("market_unavailable")
+  })
+
+  it("NO-CHANGE CONTROL: a genuinely empty Pinnacle catalog is still a 200 empty board", async () => {
+    install({ pinnacle_catalog: { data: [], error: null }, editions: { data: [], error: null } })
+    const res = await GET(req(`https://t/api/market?collectionId=${PINNACLE}`))
+    expect(res.status).toBe(200)
+    expect((await res.json()).listings).toEqual([])
+  })
+
+  // #146 (1), 2026-09-26 — a discount sort read the 1,000 CHEAPEST renders
+  // (the catalog has no discount column), so 1,357 of 2,357 live renders were
+  // unreachable. It now pages the whole live catalog.
+  it("a discount sort pages past PostgREST's 1,000-row cap and ranks the whole catalog", async () => {
+    const row = (i: number, ask: number, fmv: number) => ({
+      render_id: `r${i}`, character_name: `C${i}`, set_name: "S", series_name: "1", variant: "Standard",
+      total_minted: 100, floor_ask: ask, fmv_usd: fmv, fmv_confidence: "HIGH", thumbnail_url: null,
+      floor_ask_updated_at: "2026-09-26T00:00:00Z",
+    })
+    const page1 = Array.from({ length: 1000 }, (_, i) => row(i, 10, 11)) // ~9% off
+    const page2 = [row(5000, 50, 100)] // 50% off — beyond the first 1,000
+    install({ pinnacle_catalog: [{ data: page1, error: null }, { data: page2, error: null }], editions: { data: [], error: null } })
+    const body = await (await GET(req(`https://t/api/market?collectionId=${PINNACLE}&sort=discount_desc`))).json()
+    expect(body.listings[0].editionKey).toBe("r5000")
   })
 })
 

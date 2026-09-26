@@ -43,6 +43,8 @@ vi.mock("@/lib/supabase", () => {
     ilike: (col: string, v: any) => { calls.filters[`ilike:${col}`] = v; return b },
     order: () => b,
     limit: () => b,
+    // The Pinnacle arm pages with .range() since 2026-09-26 (#146 (1)).
+    range: () => b,
     then: (resolve: any) => resolve({ data: calls.rows, error: null, count: calls.rows.length }),
   }
   return { supabaseAdmin: { from: () => b } }

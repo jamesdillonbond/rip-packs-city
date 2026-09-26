@@ -134,7 +134,9 @@ describe("dbChain registry invariant", () => {
     expect(route).toContain("d1a0a7f5-609a-49f4-a1a7-4eaac55b020b")
     // The no-fall-through guard: cached_listings holds zero Panini rows, so a
     // fall-through could only turn a failed read into "no listings".
-    expect(route).toMatch(/\(collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH \|\| isPanini\) && \(modernRows === null \|\| modernRows\.length === 0\)/)
+    // Pinnacle joined the guard 2026-09-26 (cached_listings holds zero Pinnacle
+    // rows too); the pin requires Panini to stay IN it, not the exact arm list.
+    expect(route).toMatch(/\(collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH \|\| isPanini(?: \|\| isPinnacle)?\) && \(modernRows === null \|\| modernRows\.length === 0\)/)
   })
 
   it("⚠ the Solana `market` permission is backed by an actual arm in /api/market", () => {
