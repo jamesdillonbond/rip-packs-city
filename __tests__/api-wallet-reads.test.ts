@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // several also validate the collection slug — all returning 400/401 before any
 // DB call. This pins those guards AND drives each route's 2xx path:
 //   - pack-summary  → requireUser + verified saved_wallet → get_wallet_pack_summary RPC
-//   - edition-counts→ groups wallet_moments_cache rows by edition_key
+//   - edition-counts→ get_wallet_edition_counts RPC (SQL aggregate; no row cap)
 //   - cost-basis    → non-TopShot collection short-circuits (reason=cost_basis_unavailable)
 //   - hold-time     → non-TopShot collection short-circuits (reason=acquisition_data_unavailable)
 //   - wallet/profile→ requireOwnedKey → get_user_profile RPC payload echoed with x-rpc-cache: miss
@@ -13,8 +13,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // wallet/profile returns-a-Response via requireOwnedKey (which reads the session
 // through getCurrentUser and resolves ownership against profile_bio).
 
-const db: { tables: Record<string, any>; rpc: Record<string, any>; eqCalls: Array<{ table: string; col: string; val: any }> } =
-  { tables: {}, rpc: {}, eqCalls: [] }
+const db: { tables: Record<string, any>; rpc: Record<string, any>; eqCalls: Array<{ table: string; col: string; val: any }>; rpcCalls: Array<{ name: string; args: any }> } =
+  { tables: {}, rpc: {}, eqCalls: [], rpcCalls: [] }
 const authState: { user: { id: string } | null } = { user: null }
 
 // ── requireOwnedKey fixtures (wallet/profile) ───────────────────────────────
@@ -74,7 +74,7 @@ vi.mock("@/lib/supabase", () => {
   }
   const client: any = {
     from: (t: string) => makeBuilder(t),
-    rpc: async (name: string) => db.rpc[name] ?? { data: null, error: null },
+    rpc: async (name: string, args?: any) => { db.rpcCalls.push({ name, args }); return db.rpc[name] ?? { data: null, error: null } },
   }
   return { supabaseAdmin: client, supabase: client }
 })
@@ -99,6 +99,7 @@ const req = (u: string) => ({ nextUrl: new URL(u) }) as any
 
 beforeEach(() => {
   db.eqCalls = []
+  db.rpcCalls = []
   db.tables = {}
   db.rpc = {}
   authState.user = null
@@ -120,24 +121,24 @@ describe("wallet read routes — required-identifier guard", () => {
   // corrupted address as the one it had read. Fourth route in this class.
   it("edition-counts queries a base58 wallet VERBATIM and echoes what it queried", async () => {
     const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
-    db.tables.wallet_moments_cache = { data: [{ edition_key: "mike-trout-pink", is_locked: false }], error: null }
+    db.rpc.get_wallet_edition_counts = { data: { "mike-trout-pink": { owned: 1, locked: 0 } }, error: null }
     const res = await editionCounts(req(
       `https://t/api/wallet/edition-counts?wallet=${CANDY}&collection=candy-mlb`
     ))
     expect(res.status).toBe(200)
-    const asked = db.eqCalls.find((c) => c.table === "wallet_moments_cache" && c.col === "wallet_address")
-    expect(asked, "no wallet_address filter was applied").toBeDefined()
-    expect(asked!.val).toBe(CANDY)
-    expect(asked!.val).not.toBe(CANDY.toLowerCase())
+    const asked = db.rpcCalls.find((c) => c.name === "get_wallet_edition_counts")
+    expect(asked, "the counts RPC was not called").toBeDefined()
+    expect(asked!.args.p_wallet).toBe(CANDY)
+    expect(asked!.args.p_wallet).not.toBe(CANDY.toLowerCase())
     // The echo must name the address actually queried, or it is unfalsifiable.
     expect((await res.json()).wallet).toBe(CANDY)
   })
 
   it("no-change control: a Flow wallet is still folded to lowercase", async () => {
-    db.tables.wallet_moments_cache = { data: [], error: null }
+    db.rpc.get_wallet_edition_counts = { data: {}, error: null }
     await editionCounts(req("https://t/api/wallet/edition-counts?wallet=0xBD94CADE097E50AC&collection=nba-top-shot"))
-    const asked = db.eqCalls.find((c) => c.table === "wallet_moments_cache" && c.col === "wallet_address")
-    expect(asked!.val).toBe("0xbd94cade097e50ac")
+    const asked = db.rpcCalls.find((c) => c.name === "get_wallet_edition_counts")
+    expect(asked!.args.p_wallet).toBe("0xbd94cade097e50ac")
   })
 
   it("edition-counts 400s without wallet", async () => {
@@ -194,21 +195,37 @@ describe("wallet read routes — success paths", () => {
     expect(res.status).toBe(403)
   })
 
-  it("edition-counts 200s and groups rows by edition_key", async () => {
-    db.tables.wallet_moments_cache = {
-      data: [
-        { edition_key: "73:2785", is_locked: true },
-        { edition_key: "73:2785", is_locked: false },
-        { edition_key: "8:1", is_locked: false },
-      ],
-      error: null,
-    }
+  it("edition-counts 200s with the SQL aggregate's per-edition counts", async () => {
+    db.rpc.get_wallet_edition_counts = { data: { "73:2785": { owned: 2, locked: 1 }, "8:1": { owned: 1, locked: 0 } }, error: null }
     const res = await editionCounts(req("https://t/api/wallet/edition-counts?wallet=0xABC&collection=nba-top-shot"))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.wallet).toBe("0xabc")
     expect(body.editionCount).toBe(2)
     expect(body.editions["73:2785"]).toEqual({ owned: 2, locked: 1 })
+  })
+
+  // ⛔ 2026-09-25 — the route used to page rows by OFFSET and stop after ~51
+  // pages, answering 200 as if complete; 3 live wallets exceed 50k moments. It
+  // must pass through EVERY edition the aggregate returns (no cap), and a failed
+  // or malformed read must be an error — never `{}`, which reads "owns nothing".
+  it("edition-counts passes through every edition — no cap at 50k", async () => {
+    const big: Record<string, { owned: number; locked: number }> = {}
+    for (let i = 0; i < 8168; i++) big[`${i}:1`] = { owned: 19, locked: 1 }
+    db.rpc.get_wallet_edition_counts = { data: big, error: null }
+    const body = await (await editionCounts(req("https://t/api/wallet/edition-counts?wallet=0xabc&collection=nba-top-shot"))).json()
+    expect(body.editionCount).toBe(8168)
+    expect(Object.values(body.editions as Record<string, { owned: number }>).reduce((s, v) => s + v.owned, 0)).toBe(8168 * 19)
+  })
+  it("edition-counts: a failed or malformed aggregate is an error, not an empty wallet", async () => {
+    db.rpc.get_wallet_edition_counts = { data: null, error: { message: "canceling statement due to statement timeout", code: "57014" } }
+    const r1 = await editionCounts(req("https://t/api/wallet/edition-counts?wallet=0xabc&collection=nba-top-shot"))
+    expect(r1.status).toBeGreaterThanOrEqual(500)
+    expect((await r1.json()).editions).toBeUndefined()
+    db.rpc.get_wallet_edition_counts = { data: null, error: null }
+    const r2 = await editionCounts(req("https://t/api/wallet/edition-counts?wallet=0xabc&collection=nba-top-shot"))
+    expect(r2.status).toBe(502)
+    expect((await r2.json()).editions).toBeUndefined()
   })
 
   it("cost-basis 200s with cost_basis_unavailable for a non-TopShot collection", async () => {

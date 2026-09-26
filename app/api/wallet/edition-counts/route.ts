@@ -16,11 +16,6 @@ import { normalizeAddress } from "@/lib/address"
 
 export const dynamic = "force-dynamic"
 
-interface CountRow {
-  edition_key: string | null
-  is_locked: boolean | null
-}
-
 export async function GET(req: NextRequest) {
   // ⛔ 2026-09-19 — THIS ROUTE FOLDED THE WALLET AND wallet_moments_cache STORES
   // CANDY BASE58 VERBATIM, so a Candy address matched zero rows and the route
@@ -50,50 +45,39 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Pull edition_key + is_locked for every cached moment in this wallet +
-    // collection. Service-role client; the only field we surface is the
-    // grouped count, so this never leaks individual moment IDs.
-    const PAGE = 1000
-    const counts = new Map<string, { owned: number; locked: number }>()
-    let offset = 0
-    while (true) {
-      const { data, error } = await boundedRead((supabaseAdmin as any)
-        .from("wallet_moments_cache")
-        .select("edition_key, is_locked")
-        .eq("wallet_address", normalizeAddress(wallet))
-        .eq("collection_id", collectionId)
-        .not("edition_key", "is", null)
-        // edition_key is NOT unique per wallet (many moments share one); moment_id is,
-        // via UNIQUE(wallet_address, collection_id, moment_id).
-        .order("moment_id", { ascending: true })
-        .range(offset, offset + PAGE - 1), "api/wallet/edition-counts/wallet_moments_cache")
-      if (error) {
-        console.warn("[wallet/edition-counts] query error: " + error.message)
-        return apiErrorResponse(error, "api/wallet/edition-counts")
-      }
-      const rows = (data ?? []) as CountRow[]
-      for (const r of rows) {
-        const key = r.edition_key
-        if (!key) continue
-        const slot = counts.get(key) ?? { owned: 0, locked: 0 }
-        slot.owned += 1
-        if (r.is_locked) slot.locked += 1
-        counts.set(key, slot)
-      }
-      if (rows.length < PAGE) break
-      offset += PAGE
-      if (offset > 50_000) break // hard safety cap
+    // ⛔ 2026-09-25 — THIS USED TO PAGE ROWS 1000 AT A TIME BY OFFSET AND STOP
+    // AFTER ~51 PAGES (`if (offset > 50_000) break`), then answer 200 as if the
+    // list were complete. Three live wallets hold more than 50k moments in one
+    // collection (largest 153,544), so every edition past the cap read as
+    // "Owned: 0" on Market, Sniper and the player-page tiles — a PAGED read that
+    // breaks returns a partial list no caller can tell from a whole one. The
+    // aggregate now runs in SQL (get_wallet_edition_counts, migration
+    // 20260926050443): one jsonb value, no row cap, 2.0 s on the largest wallet.
+    const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_wallet_edition_counts", {
+      p_wallet: normalizeAddress(wallet),
+      p_collection_id: collectionId,
+    }), "api/wallet/edition-counts/get_wallet_edition_counts")
+    if (error) {
+      console.warn("[wallet/edition-counts] query error: " + error.message)
+      return apiErrorResponse(error, "api/wallet/edition-counts")
     }
-
+    // The function always returns an object ('{}' for an empty wallet). Anything
+    // else is a broken read, and answering it as `{}` would publish "owns
+    // nothing" — so it is an error, not an empty result.
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return NextResponse.json({ error: "unexpected edition-counts shape" }, { status: 502, headers: { "Cache-Control": "no-store" } })
+    }
     const editions: Record<string, { owned: number; locked: number }> = {}
-    for (const [k, v] of counts) editions[k] = v
+    for (const [k, v] of Object.entries(data as Record<string, { owned?: unknown; locked?: unknown }>)) {
+      editions[k] = { owned: Number(v?.owned ?? 0), locked: Number(v?.locked ?? 0) }
+    }
 
     return NextResponse.json(
       {
         wallet: normalizeAddress(wallet),
         collection,
         editions,
-        editionCount: counts.size,
+        editionCount: Object.keys(editions).length,
       },
       { headers: { "Cache-Control": "private, max-age=60" } }
     )
