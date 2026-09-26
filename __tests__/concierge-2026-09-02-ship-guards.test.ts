@@ -58,7 +58,8 @@ describe("prompt-cache breakpoint holds only invariant text", () => {
     // constant for a given deploy, so they are the ONLY allowed interpolations.
     // A new name showing up here means someone moved a per-user or per-page
     // value above the breakpoint; move it into `dynamic` instead of widening this.
-    const DEPLOY_CONSTANT = new Set(["publishedLabels", "FMV_METHODOLOGY_BLOCK"])
+    // candyTabs (2026-09-25): Candy's registry `pages`, as paths — constant per deploy.
+    const DEPLOY_CONSTANT = new Set(["publishedLabels", "FMV_METHODOLOGY_BLOCK", "candyTabs"])
     expect(
       interpolations.filter((n) => !DEPLOY_CONSTANT.has(n)),
       "per-request values must live in `dynamic`, BELOW the cache breakpoint — " +

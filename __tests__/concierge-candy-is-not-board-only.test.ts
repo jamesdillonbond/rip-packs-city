@@ -5,9 +5,10 @@
 // market is Magic Eden (Candy Digital is the issuer). Only Panini is board-only.
 
 import { describe, it, expect } from "vitest"
-import { readFileSync, existsSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { publishedCollections } from "@/lib/collections"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 const ROOT = join(__dirname, "..")
 const ROUTE = readFileSync(join(ROOT, "app", "api", "support-chat", "route.ts"), "utf8")
@@ -34,14 +35,22 @@ describe("the concierge prompt does not call a published collection board-only",
     expect(publishedCollections().some((c) => c.id === "candy-mlb")).toBe(true)
   })
 
-  it("every Candy tab path the prompt names is a real route", () => {
-    const m = /Candy MLB, on Solana, ALSO has full collection tabs at ([^—]+)—/.exec(ROUTE)
-    expect(m, "Candy tab clause missing").not.toBeNull()
-    const tabs = [...m![1].matchAll(/\/(?:candy-mlb\/)?([a-z-]+)/g)].map((x) => x[1]).filter((t) => t !== "candy-mlb")
-    expect(tabs.length).toBeGreaterThanOrEqual(5)
-    for (const t of tabs) {
-      const dir = join(ROOT, "app", "(collections)", "[collection]", t)
-      expect(existsSync(join(dir, "page.tsx")), `/candy-mlb/${t} has no page`).toBe(true)
+  // ⭐ REWRITTEN 2026-09-25. This used to check that each named path had a
+  // page.tsx SOMEWHERE — and /sniper does exist, for other collections, so a
+  // hand-kept list naming /candy-mlb/sniper (a tab Candy does not have; the URL
+  // redirects) passed. The property is "only tabs CANDY has", so both Candy tab
+  // lists are now derived from the registry and pinned here, and no Candy path
+  // outside the registry's pages may appear as a literal.
+  it("names only the tabs Candy actually has — derived from the registry, never hand-kept", async () => {
+    const { getCollection } = await import("@/lib/collections")
+    const pages = getCollection("candy-mlb")?.pages ?? []
+    expect(pages.length).toBeGreaterThanOrEqual(5)
+    expect(ROUTE).toContain('getCollection("candy-mlb")?.pages')
+    expect(ROUTE).toContain("${CANDY_TAB_PATHS}")
+    expect(ROUTE).toContain("${candyTabs}")
+    // Comments stripped: a comment naming the old dead link is not a claim to a user.
+    for (const m of stripComments(ROUTE).matchAll(/\/candy-mlb\/([a-z-]+)/g)) {
+      expect(pages as readonly string[], `/candy-mlb/${m[1]} is not a Candy tab`).toContain(m[1])
     }
   })
 

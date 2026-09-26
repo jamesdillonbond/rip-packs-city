@@ -213,6 +213,10 @@ function siteUrl() {
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
+// Candy's tabs, from the registry — this used to be a hand-kept list naming
+// /candy-mlb/sniper, a tab Candy does not have (2026-09-25).
+const CANDY_TAB_PATHS = (getCollection("candy-mlb")?.pages ?? []).map((p) => `/candy-mlb/${p}`).join(", ")
+
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "log_bug",
@@ -628,7 +632,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_insight_board",
-    description: "Read any of RPC's other public insight boards by name — the shareable /insights/* surfaces not covered by a more specific tool. Use for board/ecosystem questions about supply, scarcity, set completion, trophies, or the pack market. board options: 'squeeze' (Top Shot supply locked + burned, ecosystem-wide), 'set_squeeze' (set-level squeeze), 'set_completers' (wallets closest to completing sets), 'trophies' (#1 / first-mint trophy room — who holds the grails), 'pinnacle_scarcity' (Disney Pinnacle scarcity), 'allday_scarcity' (NFL All Day scarcity), 'topshot_pack_market' (Top Shot pack prices / market), 'allday_pack_market' (All Day pack market), 'pack_reality' (Top Shot pack REALIZED EV — what packs actually returned vs cost), 'allday_pack_reality' (All Day pack realized EV), 'market' (Top Shot daily market index), 'rookie_board' (the Top Shot rookie EDITION board — a different source from get_rookies' 2025 rookie index, so use this one for per-edition rookie supply/burn questions), 'panini_squeeze' (Panini Blockchain squeeze — Panini is board-only and NOT browsable as tab surfaces, so hand out the board and do not imply a full collection), 'candy_mlb' (the Candy MLB board; Candy MLB, on Solana, ALSO has full collection tabs at /candy-mlb/overview, /collection, /market, /sniper, /sets, /packs and /analytics — Candy Digital issues it and its secondary market is Magic Eden, so point listing questions at Magic Eden, not at Candy Digital) and 'pack_drops' (upcoming / recent pack drops). Read-only; report the rows factually, no buy/sell calls, and any figure you cite must come from this tool call this turn.",
+    description: `Read any of RPC's other public insight boards by name — the shareable /insights/* surfaces not covered by a more specific tool. Use for board/ecosystem questions about supply, scarcity, set completion, trophies, or the pack market. board options: 'squeeze' (Top Shot supply locked + burned, ecosystem-wide), 'set_squeeze' (set-level squeeze), 'set_completers' (wallets closest to completing sets), 'trophies' (#1 / first-mint trophy room — who holds the grails), 'pinnacle_scarcity' (Disney Pinnacle scarcity), 'allday_scarcity' (NFL All Day scarcity), 'topshot_pack_market' (Top Shot pack prices / market), 'allday_pack_market' (All Day pack market), 'pack_reality' (Top Shot pack REALIZED EV — what packs actually returned vs cost), 'allday_pack_reality' (All Day pack realized EV), 'market' (Top Shot daily market index), 'rookie_board' (the Top Shot rookie EDITION board — a different source from get_rookies' 2025 rookie index, so use this one for per-edition rookie supply/burn questions), 'panini_squeeze' (Panini Blockchain squeeze — Panini is board-only and NOT browsable as tab surfaces, so hand out the board and do not imply a full collection), 'candy_mlb' (the Candy MLB board; Candy MLB, on Solana, ALSO has collection tabs at ${CANDY_TAB_PATHS} — Candy Digital issues it and its secondary market is Magic Eden, so point listing questions at Magic Eden, not at Candy Digital) and 'pack_drops' (upcoming / recent pack drops). Read-only; report the rows factually, no buy/sell calls, and any figure you cite must come from this tool call this turn.`,
     input_schema: {
       type: "object" as const,
       properties: {
@@ -833,12 +837,18 @@ function buildSystemPromptParts(ctx: {
   const publishedLabels = published
     .map((c) => (chainName(c) ? `${c.icon} ${c.label} (on ${chainName(c)}, not Flow)` : `${c.icon} ${c.label}`))
     .join(", ");
+  // A collection's tabs, from the registry. The Candy sentence below used to be a
+  // hand-kept list that named /candy-mlb/sniper — a tab Candy does not have (the
+  // URL redirects) — so the model sent collectors to a dead page (2026-09-25).
+  const tabsFor = (c: { id: string; pages: readonly string[] } | null | undefined) =>
+    c ? c.pages.map((p) => `/${c.id}/${p}`).join(", ") : "";
+  const candyTabs = tabsFor(getCollection("candy-mlb"));
 
   const collectionBlurb = activeCollection
     ? `\n## Active Collection
 The user is currently browsing **${activeCollection.label}** (${activeCollection.sport}, ${activeCollection.partner}, ${(activeCollection.dbChain ?? activeCollection.chain).toUpperCase()} chain).
 Treat THIS collection as the default scope for any query the user asks without naming a collection. If they ask about a different published collection, switch scope naturally.
-When linking to pages, use ${activeCollection.id} paths, e.g. /${activeCollection.id}/sniper, /${activeCollection.id}/packs.`
+When linking to pages, use only the tabs this collection has: ${tabsFor(activeCollection)}.`
     : `\n## Active Collection
 The user is not on a collection-scoped page. Treat all published collections equally.`;
 
@@ -986,7 +996,7 @@ Any tool can come back as \`{ "status": "error", "message": ... }\`. That means 
 ## What RPC Is
 Rip Packs City (rippackscity.com) is a collector intelligence platform built by and for the Flow digital collectibles community. It covers these currently published collections: ${publishedLabels}. Every collection without a chain named there is on Flow; never describe a collection marked with another chain as a Flow collection. UFC Strike is published with a BETA badge — coverage is limited (only ~20% of editions have FMV) and on-chain volume is thin post-Aptos migration. Tell users explicitly that UFC coverage is limited when they ask.
 
-Every published collection offers the same toolset where data supports it: Overview, Collection Analyzer, Market browser, Sniper feed, Sets tracker, Pack EV calculator, Analytics. The read-only feature tabs and the /insights boards are PUBLIC — anyone can browse them without signing in; signing in with an email magic link adds saved wallets, cost-basis / P&L, watchlists, alerts, trophy pins, and a public profile at /profile/[username]. Market is edition-level (one row per edition, best floor) and Sniper is serial-level (individual listings) — point users to Market for "what's an edition worth / cheapest floor" and Sniper for specific listings to buy. Badges are NBA Top Shot moment-level metadata (Rookie Year, Top Shot Debut, Championship Year, etc) — surface inline on Collection / Market / Sniper rows when relevant. Candy MLB (Solana) is a published collection with the full tab set (/candy-mlb/overview, /collection, /market, /sniper, /sets, /packs, /analytics) plus its /insights/candy-mlb board; its secondary market is Magic Eden. Panini is the one board-only surface (/insights/panini-squeeze): live and public — link it when relevant — but it has no tab set, so treat it as a board, not as a browsable collection.
+Every published collection offers the same toolset where data supports it: Overview, Collection Analyzer, Market browser, Sniper feed, Sets tracker, Pack EV calculator, Analytics. The read-only feature tabs and the /insights boards are PUBLIC — anyone can browse them without signing in; signing in with an email magic link adds saved wallets, cost-basis / P&L, watchlists, alerts, trophy pins, and a public profile at /profile/[username]. Market is edition-level (one row per edition, best floor) and Sniper is serial-level (individual listings) — point users to Market for "what's an edition worth / cheapest floor" and Sniper for specific listings to buy. Badges are NBA Top Shot moment-level metadata (Rookie Year, Top Shot Debut, Championship Year, etc) — surface inline on Collection / Market / Sniper rows when relevant. Candy MLB (Solana) is a published collection with these tabs: ${candyTabs} (no Sniper tab — its deals are on /insights/deals and the Deals tab of /insights/candy-mlb) plus its /insights/candy-mlb board; its secondary market is Magic Eden. Panini is the one board-only surface (/insights/panini-squeeze): live and public — link it when relevant — but it has no tab set, so treat it as a board, not as a browsable collection. Below the squeeze board that page also carries Deals, Pack EV, Special serials and Players tabs, all over a listing-fed index (Panini publishes no checklist), so call them a floor, never a census.
 
 ${FMV_METHODOLOGY_BLOCK}
 ## Pinnacle Routing (invariant)
