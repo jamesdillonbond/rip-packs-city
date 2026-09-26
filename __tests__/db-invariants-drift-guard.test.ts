@@ -15,6 +15,22 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-26. The Pinnacle series pages read pinnacle_editions by
+    // series_year, set on 87 rows: 2026 showed 11 of 1,023 pins. Pins the
+    // catalog read scoped to the series year for the grid and its set/character
+    // rollups.
+    fn: "get_series_editions",
+    test: "supabase/tests/get_series_editions.sql",
+    migration:
+      "supabase/migrations/20260926193906_audit_20260926_pinnacle_series_pages_count_every_pin.sql",
+  },
+  {
+    fn: "get_series_rollups",
+    test: "supabase/tests/get_series_editions.sql",
+    migration:
+      "supabase/migrations/20260926193906_audit_20260926_pinnacle_series_pages_count_every_pin.sql",
+  },
+  {
     // Added 2026-09-26. Pinnacle character pages list the render catalog: 36 of
     // 248 rendered no editions when the branch read pinnacle_editions filtered
     // to rows with a thumbnail. Pins the catalog match (Characters trait, exact;
