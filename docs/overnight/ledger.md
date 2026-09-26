@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED (prod edge deploy) — `enrich-ufc-wallet` deployed from the committed file by the new `edge-fn-deploy` workflow (run 36215009197, ~8:30 PM PT): pre-flight passed (no `*_GATE_KEY`; auth is the already-set ingest token), CLI deploy with `--no-verify-jwt` + the import map, then both post-conditions green — `verify_jwt=false` + `ACTIVE`, and the drift census reads the slug `clean`. This was the last content-drifted function, so the next `edge-fn-drift` run should go green for the first time since 08-09. The deploy adds only the ADDITIVE Authorization-header branch; `?token=` is untouched, so every current caller keeps working. NOT done (left to Trevor, the session's permission classifier stopped it): step 2, moving `app/api/ufc-wallet-scan`'s call to the header; step 3, deleting the `?token=` branch; removing the entry from `DEPLOY_DEFERRED` in `scripts/check-edge-fn-drift.mjs` · Claude Code (web sandbox)
+
+- **Revert:** `git revert` the commit that added the header branch to `supabase/functions/enrich-ufc-wallet/index.ts`, then dispatch `edge-fn-deploy` with `function=enrich-ufc-wallet` (redeploys that body, verified the same way).
+
 ### 2026-09-25 · 🧹 SHIPPED — Candy Market tab: the 93 Rainbow listings (of 1,885) linked to and read stats from the BASE card — the Candy arm sent no edition key, so the shared player+set lookup (which every printing of a player shares) resolved each to the base edition. Rows now carry their own `edition_key`. Also: Candy's Rookie / First Mint designations ride the row as badges (the Rainbow colour stays the parallel, not a badge; a failed badge read degrades to none) · Claude Code (web sandbox)
 
 - **Revert:** revert the "fix(candy): Market rows carry their own edition key" commit.
