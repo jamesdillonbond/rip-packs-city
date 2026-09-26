@@ -247,9 +247,13 @@ export function pinnacleRenderKey(legacyEditionKey: string, pinName: string): st
   return `${legacyEditionKey}\u0000${pinName.trim().toLowerCase()}`
 }
 
-/** Same-origin art for a render — the route mints a fresh signed CDN URL. */
-export function pinnacleRenderImageUrl(renderId: string): string {
-  return `/api/public/pinnacle-image/${encodeURIComponent(renderId)}`
+/**
+ * Same-origin art for a render — the route mints a fresh signed CDN URL.
+ * `thumb` asks for the cropped render (~4x lighter) for list thumbnails.
+ */
+export function pinnacleRenderImageUrl(renderId: string, opts: { thumb?: boolean } = {}): string {
+  const base = `/api/public/pinnacle-image/${encodeURIComponent(renderId)}`
+  return opts.thumb ? `${base}?v=thumb` : base
 }
 
 /**
@@ -343,7 +347,7 @@ export function flowtyNftToSniperDeals(
       // ⛔ NOT nft.card.images[0]: the contract returns one generic placeholder
       // (`/on-chain/pinnacle.jpg`) for EVERY NFT, so it is never this pin's art.
       // No render → no thumbnail, rather than the same logo on every row.
-      thumbnailUrl: render ? pinnacleRenderImageUrl(render.renderId) : null,
+      thumbnailUrl: render ? pinnacleRenderImageUrl(render.renderId, { thumb: true }) : null,
       renderId: render?.renderId ?? null,
       pinName,
       isChaser: traits.get("IsChaser") === "true",

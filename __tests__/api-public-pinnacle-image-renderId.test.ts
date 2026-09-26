@@ -56,4 +56,35 @@ describe("GET /api/public/pinnacle-image/[renderId]", () => {
     expect(res.status).toBe(404)
     expect((await res.json()).error).toBe("not found")
   })
+
+  describe("variants pick the media their surface needs", () => {
+    const medias = [
+      { name: "Front_Transparent", url: "https://cdn.example.com/front.png" },
+      { name: "Front_Quarter_Transparent", url: "https://cdn.example.com/main.png" },
+      { name: "Front_Cropped", url: "https://cdn.example.com/front_cropped.png" },
+    ]
+    const stub = (m = medias) =>
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({ ok: true, json: async () => ({ data: { searchPinnacleEditions: { edges: [{ node: { medias: m } }] } } }) })),
+      )
+    const loc = async (q: string) =>
+      (await GET(req(`https://t/api/public/pinnacle-image/x${q}`), ctx("OEV1-SOUL-JGAR-S2"))).headers.get("location")
+
+    it("?v=thumb serves the cropped render (the ~4x lighter list thumbnail)", async () => {
+      stub()
+      expect(await loc("?v=thumb")).toBe("https://cdn.example.com/front_cropped.png")
+    })
+
+    it("?v=thumb falls back to the full render when no crop exists", async () => {
+      stub(medias.filter((m) => m.name !== "Front_Cropped"))
+      expect(await loc("?v=thumb")).toBe("https://cdn.example.com/front.png")
+    })
+
+    it("NO-CHANGE CONTROL: no variant and ?v=quarter keep their media", async () => {
+      stub()
+      expect(await loc("")).toBe("https://cdn.example.com/front.png")
+      expect(await loc("?v=quarter")).toBe("https://cdn.example.com/main.png")
+    })
+  })
 })

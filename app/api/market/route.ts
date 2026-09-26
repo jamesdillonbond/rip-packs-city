@@ -31,6 +31,7 @@
 //   Response includes { total, page, hasMore } so the client doesn't have to
 //   eat a 1000-row payload for UI-side paging.
 
+import { pinnacleListThumb } from "@/lib/pinnacle/image-url"
 import { fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness";
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -360,7 +361,10 @@ async function fetchPinnacleModernListings(
       confidence: r.fmv_confidence ?? null,
       source: "pinnacle",
       buy_url: null,
-      thumbnail_url: r.thumbnail_url ?? null,
+      // List thumbnail: the cropped render (~4x lighter than the full 2880px PNG
+      // a Market page otherwise loads 50 of). Only our own resolver URL gets the
+      // variant; anything else passes through unchanged.
+      thumbnail_url: pinnacleListThumb(r.thumbnail_url),
       badge_slugs: null,             // Pinnacle has no edition-wide badges
       listed_count: null,            // catalog floor is a floor, not a live-count
       listing_resource_id: null,

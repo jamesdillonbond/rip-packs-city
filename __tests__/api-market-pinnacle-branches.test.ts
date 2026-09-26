@@ -27,7 +27,7 @@ function threeRenders() {
   return {
     pinnacle_catalog: {
       data: [
-        { render_id: "p1", character_name: "Mickey", set_name: " Set A ", series_name: "S1", variant: "Standard", total_minted: 500, floor_ask: 100, fmv_usd: 200, fmv_confidence: "MEDIUM", thumbnail_url: "http://x/1.png", floor_ask_updated_at: fresh },
+        { render_id: "p1", character_name: "Mickey", set_name: " Set A ", series_name: "S1", variant: "Standard", total_minted: 500, floor_ask: 100, fmv_usd: 200, fmv_confidence: "MEDIUM", thumbnail_url: "/api/public/pinnacle-image/OEV1-AAA-MICK-S2", floor_ask_updated_at: fresh },
         { render_id: "p2", character_name: "Donald", set_name: "Set B", series_name: "S1", variant: "Standard", total_minted: 250, floor_ask: 40, fmv_usd: 100, fmv_confidence: "LOW", thumbnail_url: null, floor_ask_updated_at: fresh },
         { render_id: "p3", character_name: "Goofy", set_name: "Set C", series_name: "S2", variant: "Colored Enamel", total_minted: 99, floor_ask: 240, fmv_usd: 300, fmv_confidence: "HIGH", thumbnail_url: "http://x/3.png", floor_ask_updated_at: fresh },
       ],
@@ -52,6 +52,10 @@ describe("GET /api/market — Pinnacle edition path", () => {
     expect(Math.round(p1.discount)).toBe(50) // (200-100)/200
     expect(p1.setName).toBe("Set A") // trimmed
     expect(p1.serialNumber).toBeNull() // edition grain — no single serial
+    // List thumbnails ask the resolver for the cropped render (~4x lighter);
+    // a non-resolver URL passes through untouched.
+    expect(p1.thumbnailUrl).toBe("/api/public/pinnacle-image/OEV1-AAA-MICK-S2?v=thumb")
+    expect(body.listings.find((r: any) => r.editionKey === "p3").thumbnailUrl).toBe("http://x/3.png")
   })
 
   it("coalesces null render fields without dropping the row", async () => {

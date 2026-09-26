@@ -279,7 +279,7 @@ describe("flowtyNftToSniperDeals — resolving the listed NFT to its catalog ren
     )
     expect(d.renderId).toBe("OEV1-PPTB-SWIM-S2")
     expect(d.pinName).toBe("Just Keep Swimming")
-    expect(d.thumbnailUrl).toBe("/api/public/pinnacle-image/OEV1-PPTB-SWIM-S2")
+    expect(d.thumbnailUrl).toBe("/api/public/pinnacle-image/OEV1-PPTB-SWIM-S2?v=thumb")
     // Priced at THIS render, not at whichever badge represents the set-level key.
     expect(d.baseFmv).toBe(40)
     expect(d.confidence).toBe("HIGH")

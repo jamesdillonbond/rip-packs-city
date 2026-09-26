@@ -13,6 +13,10 @@
 //
 // GET /api/public/pinnacle-image/<renderId>          -> front.png (Front_Transparent)
 // GET /api/public/pinnacle-image/<renderId>?v=quarter -> main.png  (Front_Quarter_Transparent)
+// GET /api/public/pinnacle-image/<renderId>?v=thumb   -> front_cropped.png (Front_Cropped)
+//   For LIST thumbnails (Market, Sniper). Measured 2026-09-26 on one render:
+//   Front_Cropped 284,505 bytes vs Front_Transparent 1,144,333 — ~4x lighter,
+//   and the tighter crop fills a small tile. Falls back to the full renders.
 
 import { NextRequest, NextResponse } from "next/server";
 
@@ -31,9 +35,18 @@ query PinnacleImage($rid: String!) {
   }
 }`;
 
+type Variant = "front" | "quarter" | "thumb";
+
+// Preference order per variant; the first media present wins.
+const MEDIA_ORDER: Record<Variant, string[]> = {
+  front: ["Front_Transparent", "Front_Quarter_Transparent", "Front_Cropped"],
+  quarter: ["Front_Quarter_Transparent", "Front_Transparent", "Front_Cropped"],
+  thumb: ["Front_Cropped", "Front_Transparent", "Front_Quarter_Transparent"],
+};
+
 async function resolveSignedUrl(
   renderId: string,
-  wantQuarter: boolean,
+  variant: Variant,
 ): Promise<string | null> {
   const res = await fetch(GQL, {
     method: "POST",
@@ -53,11 +66,7 @@ async function resolveSignedUrl(
   if (Array.isArray(json.errors) && json.errors.length > 0) return null;
   const medias = json.data?.searchPinnacleEditions?.edges?.[0]?.node?.medias ?? [];
   if (medias.length === 0) return null;
-  const primary = wantQuarter ? "Front_Quarter_Transparent" : "Front_Transparent";
-  const fallbackOrder = wantQuarter
-    ? ["Front_Quarter_Transparent", "Front_Transparent", "Front_Cropped"]
-    : ["Front_Transparent", "Front_Quarter_Transparent", "Front_Cropped"];
-  for (const name of [primary, ...fallbackOrder]) {
+  for (const name of MEDIA_ORDER[variant]) {
     const m = medias.find((x) => x.name === name && x.url);
     if (m) return m.url;
   }
@@ -73,11 +82,12 @@ export async function GET(
   if (!RENDER_ID_RE.test(renderId)) {
     return NextResponse.json({ error: "invalid render_id" }, { status: 400 });
   }
-  const wantQuarter = req.nextUrl.searchParams.get("v") === "quarter";
+  const v = req.nextUrl.searchParams.get("v");
+  const variant: Variant = v === "quarter" ? "quarter" : v === "thumb" ? "thumb" : "front";
 
   let url: string | null = null;
   try {
-    url = await resolveSignedUrl(renderId, wantQuarter);
+    url = await resolveSignedUrl(renderId, variant);
   } catch {
     url = null;
   }
