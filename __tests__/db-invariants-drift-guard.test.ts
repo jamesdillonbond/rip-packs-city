@@ -552,7 +552,27 @@ const PINS = [
     // Re-pinned 2026-08-01: the concurrent platform-audit changed get_team_detail
     // (unaccented-slug 404 fix) via MCP with no committed migration, so the pin
     // now points at a fresh snapshot of the live body.
-    migration: "supabase/migrations/20260801231400_audit_20260801_snapshot_get_team_detail_unaccented.sql",
+    // Re-pinned 2026-09-25 (batch 62): the read covers the WHOLE franchise —
+    // every label it minted under — and names the primary name canonical.
+    migration: "supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql",
+  },
+  {
+    // Added 2026-09-25 (batch 62). The helpers behind every team read: the
+    // franchise's slugs (registry-keyed, cheap enough for an index condition),
+    // its primary name, and the historic slugs the sitemap drops.
+    fn: "team_franchise_slugs",
+    test: "supabase/tests/team_franchise_slugs.sql",
+    migration: "supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql",
+  },
+  {
+    fn: "team_franchise_primary_name",
+    test: "supabase/tests/team_franchise_slugs.sql",
+    migration: "supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql",
+  },
+  {
+    fn: "team_historic_slugs",
+    test: "supabase/tests/team_franchise_slugs.sql",
+    migration: "supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql",
   },
   // These already had a committed migration carrying their current live DDL.
   {
@@ -693,9 +713,10 @@ const PINS = [
     // Added 2026-09-25 (batch 61). The concierge's view of a TEAM name: labels
     // grouped into franchises through the league map (historic names), the
     // current name primary, ambiguity declared.
+    // Re-pinned 2026-09-25 (batch 62): the note says the reads cover every era.
     fn: "resolve_team_name",
     test: "supabase/tests/resolve_team_name.sql",
-    migration: "supabase/migrations/20260926021808_audit_20260925_resolve_team_name_for_the_concierge_and_the_historic_labels_in_the_league_map.sql",
+    migration: "supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql",
   },
   {
     fn: "upsert_player_canonical",

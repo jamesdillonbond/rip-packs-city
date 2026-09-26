@@ -17,7 +17,7 @@
 -- Pins (Pinnacle branch): franchise-slug resolution + per-render FMV collapse.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260801231400_audit_20260801_snapshot_get_team_detail_unaccented.sql);
+-- (supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -46,6 +46,140 @@ CREATE FUNCTION public.get_pinnacle_edition_fmv_collapsed(p_id uuid)
  RETURNS TABLE(fmv_usd numeric, floor_usd numeric) LANGUAGE sql STABLE AS $$
   SELECT 12::numeric, 10::numeric WHERE p_id IS NOT NULL
 $$;
+
+-- Franchise helpers (batch 62, 2026-09-25): fixture copies of the shared league
+-- map and the two helpers the body now reads (their own pin is
+-- supabase/tests/team_franchise_slugs.sql).
+CREATE OR REPLACE FUNCTION public.league_team_abbr(p_league text)
+ RETURNS TABLE(team_name text, abbr text)
+ LANGUAGE sql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT t.team_name, t.abbreviation AS abbr
+    FROM public.teams_master t
+   WHERE t.league::text = upper(p_league)
+  UNION ALL
+  SELECT v.team_name, v.abbr
+    FROM (VALUES
+      ('nfl', 'Washington Football Team', 'WAS'), ('nfl', 'Washington Redskins', 'WAS'),
+      ('nfl', 'San Diego Chargers', 'LAC'),       ('nfl', 'St. Louis Rams', 'LAR'),
+      ('nfl', 'Oakland Raiders', 'LV'),           ('nfl', 'Los Angeles Raiders', 'LV'),
+      ('nfl', 'Houston Oilers', 'TEN'),           ('nfl', 'Tennessee Oilers', 'TEN'),
+      ('nfl', 'Phoenix Cardinals', 'ARI'),        ('nfl', 'St. Louis Cardinals', 'ARI'),
+      ('nfl', 'Baltimore Colts', 'IND'),
+      ('nba', 'New Jersey Nets', 'BKN'),          ('nba', 'Seattle SuperSonics', 'OKC'),
+      ('nba', 'Vancouver Grizzlies', 'MEM'),      ('nba', 'New Orleans Hornets', 'NOP'),
+      ('nba', 'Charlotte Bobcats', 'CHA'),
+      -- 2026-09-25 (batch 61): the historic labels Top Shot's moments carry
+      ('nba', 'Washington Bullets', 'WAS'),       ('nba', 'Los Angeles Clippers', 'LAC'),
+      ('nba', 'San Diego Clippers', 'LAC'),       ('nba', 'Buffalo Braves', 'LAC'),
+      ('nba', 'St. Louis Hawks', 'ATL'),          ('nba', 'New Orleans/Oklahoma City Hornets', 'NOP'),
+      ('nba', 'Kansas City-Omaha Kings', 'SAC'),  ('nba', 'Kansas City Kings', 'SAC'),
+      ('wnba', 'San Antonio Stars', 'LVA'),       ('wnba', 'San Antonio Silver Stars', 'LVA'),
+      ('wnba', 'Utah Starzz', 'LVA'),             ('wnba', 'Detroit Shock', 'DAL'),
+      ('wnba', 'Tulsa Shock', 'DAL'),             ('wnba', 'Orlando Miracle', 'CON')
+    ) v(league, team_name, abbr)
+   WHERE v.league = p_league
+$function$;
+
+CREATE OR REPLACE FUNCTION public.team_franchise_slugs(p_collection_id uuid, p_team_slug text)
+ RETURNS text[]
+ LANGUAGE plpgsql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+-- The site slugs of every label of the franchise p_team_slug names. Keyed from
+-- the REGISTRIES only (league_team_abbr — historic names, the WNBA arm — else
+-- teams_master), never from editions: the callers put the result in an index
+-- condition (`slug_expr = ANY (…)`), so this must cost milliseconds, and a
+-- label no registry knows is its own franchise (the slug comes back alone).
+-- The list may name a label no edition carries (Tennessee Oilers); harmless in
+-- a predicate. Accent-tolerant on input (atletico-de-madrid finds Atlético).
+DECLARE
+  v_coll  text;
+  v_maps  text[];
+  v_tm    text;
+  v_out   text[];
+BEGIN
+  IF p_collection_id IS NULL OR p_team_slug IS NULL OR p_team_slug = '' THEN
+    RETURN ARRAY[COALESCE(p_team_slug, '')];
+  END IF;
+  SELECT c.slug INTO v_coll FROM public.collections c WHERE c.id = p_collection_id;
+  v_maps := CASE v_coll WHEN 'nfl_all_day' THEN ARRAY['nfl'] WHEN 'nba_top_shot' THEN ARRAY['nba', 'wnba'] END;
+  v_tm   := CASE v_coll WHEN 'nfl_all_day' THEN 'NFL' WHEN 'nba_top_shot' THEN 'NBA' WHEN 'laliga_golazos' THEN 'LALIGA' END;
+
+  WITH names AS (
+    -- the league map(s), first map wins for a name in both (nba before wnba)
+    SELECT a.team_name, 'map:' || m.lg || ':' || a.abbr AS fkey, m.ord::int AS ord
+      FROM unnest(COALESCE(v_maps, '{}'::text[])) WITH ORDINALITY AS m(lg, ord)
+      CROSS JOIN LATERAL public.league_team_abbr(m.lg) a
+    UNION ALL
+    -- teams_master, namespaced by league (the Mystics' WAS must not fold into the Wizards' WAS)
+    SELECT t.team_name, 'tm:' || t.league::text || ':' || t.abbreviation, 100
+      FROM public.teams_master t
+     WHERE t.league::text = ANY (ARRAY[v_tm, 'WNBA'])
+  ),
+  keyed AS (
+    SELECT DISTINCT ON (n.team_name) n.team_name, n.fkey,
+           regexp_replace(lower(trim(n.team_name)), '[^a-z0-9]+', '-', 'g') AS slug,
+           regexp_replace(lower(trim(extensions.unaccent(n.team_name))), '[^a-z0-9]+', '-', 'g') AS uslug
+      FROM names n
+     ORDER BY n.team_name, n.ord
+  ),
+  hit AS (
+    SELECT k.fkey FROM keyed k
+     WHERE k.slug = p_team_slug OR k.uslug = p_team_slug
+     ORDER BY (k.slug = p_team_slug) DESC LIMIT 1
+  )
+  SELECT array_agg(DISTINCT k.slug) INTO v_out
+    FROM keyed k JOIN hit h ON h.fkey = k.fkey;
+  RETURN COALESCE(v_out, ARRAY[p_team_slug]);
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.team_franchise_primary_name(p_collection_id uuid, p_team_slug text)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+-- The franchise's CURRENT name: a teams_master row of the collection's league
+-- (WNBA included for Top Shot) whose slug is in the franchise, else the
+-- most-minted label the collection's editions carry, else NULL (no such team).
+-- plpgsql on purpose: a SQL body inlines into its caller and the planner then
+-- re-evaluates team_franchise_slugs per scanned row (a 57014 on first apply).
+DECLARE
+  v_slugs text[];
+  v_coll  text;
+  v_tm    text;
+  v_name  text;
+BEGIN
+  v_slugs := public.team_franchise_slugs(p_collection_id, p_team_slug);
+  SELECT c.slug INTO v_coll FROM public.collections c WHERE c.id = p_collection_id;
+  v_tm := CASE v_coll WHEN 'nfl_all_day' THEN 'NFL' WHEN 'nba_top_shot' THEN 'NBA' WHEN 'laliga_golazos' THEN 'LALIGA' END;
+
+  SELECT t.team_name INTO v_name
+    FROM public.teams_master t
+   WHERE t.league::text = ANY (ARRAY[v_tm, 'WNBA'])
+     AND regexp_replace(lower(trim(t.team_name)), '[^a-z0-9]+', '-', 'g') = ANY (v_slugs)
+   ORDER BY t.team_name
+   LIMIT 1;
+  IF v_name IS NOT NULL THEN RETURN v_name; END IF;
+
+  SELECT e.team_name INTO v_name
+    FROM public.editions e
+   WHERE e.collection_id = p_collection_id AND e.team_name IS NOT NULL
+     AND regexp_replace(lower(trim(e.team_name)), '[^a-z0-9]+', '-', 'g') = ANY (v_slugs)
+   GROUP BY e.team_name
+   ORDER BY count(*) DESC, e.team_name
+   LIMIT 1;
+  RETURN v_name;
+END
+$function$;
 
 -- >>> BEGIN verbatim get_team_detail (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_team_detail(p_collection_id uuid, p_team_slug text)
@@ -111,13 +245,18 @@ BEGIN
     WHERE pe.franchise = ANY(v_team_variants);
     -- Pinnacle: no teams_master branding, no sports sales activity. Leave NULL.
   ELSE
-    SELECT array_agg(DISTINCT team_name),
-           (array_agg(team_name ORDER BY team_name))[1]
-    INTO v_team_variants, v_team_canonical
+    -- 2026-09-25 (batch 62): the WHOLE franchise — every label it minted under
+    -- (Las Vegas + Oakland + Los Angeles Raiders) — and the canonical name is
+    -- the franchise's primary (current) name, so a historic label's URL 308s
+    -- to the current page through the layout's canonical-slug redirect.
+    SELECT array_agg(DISTINCT team_name)
+    INTO v_team_variants
     FROM editions
     WHERE collection_id = p_collection_id
       AND team_name IS NOT NULL
-      AND regexp_replace(lower(trim(team_name)), '[^a-z0-9]+', '-', 'g') = p_team_slug;
+      AND regexp_replace(lower(trim(team_name)), '[^a-z0-9]+', '-', 'g') = ANY (ARRAY(SELECT unnest(public.team_franchise_slugs(p_collection_id, p_team_slug))));
+    -- (ARRAY(SELECT …) is an InitPlan: the helper runs ONCE, never per scanned row)
+    v_team_canonical := public.team_franchise_primary_name(p_collection_id, p_team_slug);
 
     -- Fallback: accept the diacritic-stripped slug the frontend emits
     -- (e.g. atletico-de-madrid for "Atletico de Madrid"). Runs only on a
@@ -156,7 +295,8 @@ BEGIN
     INTO v_team_short_slug, v_primary_color, v_secondary_color, v_abbreviation, v_team_external_id, v_league
     FROM teams_master tm
     WHERE tm.active
-      AND regexp_replace(lower(trim(tm.team_name)), '[^a-z0-9]+', '-', 'g') = p_team_slug
+      AND regexp_replace(lower(trim(tm.team_name)), '[^a-z0-9]+', '-', 'g')
+          = regexp_replace(lower(trim(COALESCE(v_team_canonical, ''))), '[^a-z0-9]+', '-', 'g')
     LIMIT 1;
 
     -- 30d activity: bounded by the team's editions via edition_id join. The
@@ -240,6 +380,16 @@ INSERT INTO public.sales (edition_id, collection_id, price_usd, sold_at) VALUES
   (:e2::uuid, :cid::uuid, 30, now() - interval '40 days'),
   (:e4::uuid, :cid::uuid, 500, now() - interval '5 days');
 
+-- A FRANCHISE under two labels (batch 62): All Day 'Las Vegas Raiders' (current, teams_master) + 'Oakland Raiders' (historic, league map)
+\set ad '''dee28451-5d62-409e-a1ad-a83f763ac070'''
+INSERT INTO public.collections (id, slug) VALUES (:ad::uuid, 'nfl_all_day');
+INSERT INTO public.editions (id, collection_id, team_name, player_name, circulation_count) VALUES
+  ('bbbbbbbb-0000-0000-0000-000000000001'::uuid, :ad::uuid, 'Las Vegas Raiders', 'Maxx Crosby',  100),
+  ('bbbbbbbb-0000-0000-0000-000000000002'::uuid, :ad::uuid, 'Oakland Raiders',   'Bo Jackson',    20),
+  ('bbbbbbbb-0000-0000-0000-000000000003'::uuid, :ad::uuid, 'Denver Broncos',    'John Elway',    30);
+INSERT INTO public.teams_master (slug, team_name, primary_color, secondary_color, abbreviation, external_id, league, active) VALUES
+  ('las-vegas-raiders', 'Las Vegas Raiders', '#000000', '#A5ACAF', 'LV', 'LV1', 'NFL', true);
+
 -- Pinnacle franchise: two renders under 'Marvel' (slug 'marvel'), FMV 12/floor 10 each.
 INSERT INTO public.pinnacle_editions (id, franchise, character_name, mint_count) VALUES
   ('aaaaaaaa-0000-0000-0000-000000000001'::uuid, 'Marvel', 'Iron Man', 500),
@@ -274,6 +424,16 @@ SELECT _assert(public.get_team_detail(:pin::uuid,'marvel') ->> 'abbreviation' IS
 -- ── 7. UNACCENT FALLBACK lane (2026-08-01 audit change) ──────────────────────
 SELECT _assert(public.get_team_detail(:cid::uuid,'atletico-madrid') IS NOT NULL, 'diacritic team resolves via the unaccent fallback (accented slug would 404)');
 SELECT _assert_eq((public.get_team_detail(:cid::uuid,'atletico-madrid') ->> 'team_name'), 'Atlético Madrid', 'unaccent fallback returns the canonical accented team_name');
+
+-- ── 8. THE FRANCHISE (batch 62): the current name's page counts every era; a historic label's page names the current name as canonical (the layout 308s it); another team is untouched
+SELECT _assert_eq((public.get_team_detail(:ad::uuid,'las-vegas-raiders') ->> 'edition_count'), '2', 'Las Vegas + Oakland editions counted together');
+SELECT _assert_eq((public.get_team_detail(:ad::uuid,'las-vegas-raiders') ->> 'total_circulation'), '120', 'circulation over both eras');
+SELECT _assert_eq((public.get_team_detail(:ad::uuid,'las-vegas-raiders') ->> 'team_name'), 'Las Vegas Raiders', 'the current name is canonical');
+SELECT _assert_eq((public.get_team_detail(:ad::uuid,'las-vegas-raiders') ->> 'abbreviation'), 'LV', 'branding by the primary name');
+SELECT _assert_eq((public.get_team_detail(:ad::uuid,'oakland-raiders') ->> 'team_name'), 'Las Vegas Raiders', 'a historic label resolves to the franchise and names the CURRENT name (the layout redirects)');
+SELECT _assert_eq((public.get_team_detail(:ad::uuid,'oakland-raiders') ->> 'edition_count'), '2', 'and counts every era too');
+SELECT _assert_eq((public.get_team_detail(:ad::uuid,'denver-broncos') ->> 'edition_count'), '1', 'a one-label team is unchanged');
+SELECT _assert_eq((public.get_team_detail(:ad::uuid,'denver-broncos') ->> 'team_name'), 'Denver Broncos', 'and keeps its own name');
 
 SELECT '✓ get_team_detail: all assertions passed' AS result;
 

@@ -406,6 +406,33 @@ async function getPlayerAliasMap(): Promise<Map<string, string>> {
   return out
 }
 
+/**
+ * 2026-09-25 (batch 62): a team label whose franchise has a DIFFERENT primary
+ * name (Oakland Raiders → Las Vegas Raiders, Washington Bullets → Wizards) is a
+ * URL that 308s to the primary page (the team layout's canonical-slug
+ * redirect), so it is never listed — the same rule as the player alias map
+ * above. `team_historic_slugs(collection)` is the DB's own list, keyed the way
+ * every team read now is; a failed read fails the segment (never a partial).
+ * Returns the set of `${urlSlug}|${teamSlug}` keys to drop.
+ */
+async function getHistoricTeamSlugs(collectionIds: string[]): Promise<Set<string>> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new SitemapReadIncomplete('historic team slugs: supabase env missing, so nothing could be read')
+  const sb: any = createClient(url, key)
+  const out = new Set<string>()
+  for (const cid of collectionIds) {
+    const coll = getCollectionByUuid(cid)
+    if (!coll) continue
+    const { data, error } = await sb.rpc('team_historic_slugs', { p_collection_id: cid })
+    if (error) throw new SitemapReadIncomplete(`team_historic_slugs(${coll.urlSlug}) read failed: ` + error.message)
+    // the RPC returns text[] ('{}' when none); anything else is not an answer
+    if (!Array.isArray(data)) throw new SitemapReadIncomplete(`team_historic_slugs(${coll.urlSlug}) returned no list`)
+    for (const s of data as unknown[]) if (typeof s === 'string' && s) out.add(`${coll.urlSlug}|${s}`)
+  }
+  return out
+}
+
 async function getCollectionSeries(): Promise<SeriesRow[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -626,6 +653,7 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
   if (id === 3) {
     const editions = dropTsFossils(await getEditionRows())
     const aliasMap = await getPlayerAliasMap()
+    const historicTeams = await getHistoricTeamSlugs(EDITION_COLLECTION_IDS)
 
     // /moment/<edition uuid> is NO LONGER LISTED (2026-09-06, Search Console).
     // Every one of those URLs canonicalises to /<collection>/edition/<slug>
@@ -668,9 +696,11 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
       }
       if (e.team_name) {
         const teamSlug = slugifyName(e.team_name)
-        // Exhibition / all-star rosters are not real franchises — skip.
-        if (!isExhibitionTeamSlug(teamSlug)) {
-          const k = `${coll.urlSlug}|${teamSlug}`
+        const k = `${coll.urlSlug}|${teamSlug}`
+        // Exhibition / all-star rosters are not real franchises — skip. A
+        // historic label of a franchise (oakland-raiders) 308s to the primary
+        // page (las-vegas-raiders, already listed from its own editions) — skip.
+        if (!isExhibitionTeamSlug(teamSlug) && !historicTeams.has(k)) {
           const prev = teamMap.get(k)
           if (!prev || ts > prev) teamMap.set(k, ts)
         }

@@ -56,6 +56,12 @@ export default async function TeamSegmentLayout({ children, params }: LayoutProp
   // Canonicalising here (rather than teaching six more functions the alias)
   // also gives the team hub ONE indexable URL.
   //
+  // 2026-09-25 (batch 62): get_team_detail names the FRANCHISE's primary name
+  // (Las Vegas Raiders for /team/oakland-raiders), so this same redirect now
+  // sends every historic label's URL to the current name's page, where every
+  // section RPC reads the whole franchise (team_franchise_slugs). The sitemap
+  // drops the historic slugs (team_historic_slugs) so no listed URL 308s.
+  //
   // Loop-safety: slugifyName is byte-equivalent to that Postgres expression, and
   // on the primary lane every matched variant slugifies back to the requested
   // slug — so the canonical target can only ever resolve via the primary lane

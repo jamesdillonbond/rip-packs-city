@@ -389,7 +389,7 @@ describe("get_team_intel resolves a team to its FRANCHISE (batch 61)", () => {
   const raiders = { status: "one", query: "Raiders", franchise: "LV", current_name: "Las Vegas Raiders", primary_name: "Las Vegas Raiders", total_editions: 140,
     names: [{ team_name: "Las Vegas Raiders", editions: 114, current: true }, { team_name: "Oakland Raiders", editions: 18, current: false }, { team_name: "Los Angeles Raiders", editions: 8, current: false }],
     historic_names: [{ team_name: "Oakland Raiders", editions: 18, current: false }, { team_name: "Los Angeles Raiders", editions: 8, current: false }], note: "more than one name" }
-  it("'Raiders' is ONE franchise: the roster is read for the primary name and the answer names the historic labels it does not cover", async () => {
+  it("'Raiders' is ONE franchise: the roster is read for the primary name and the answer names the historic labels those reads INCLUDE (batch 62)", async () => {
     const inst = install({
       "rpc:resolve_team_name": { data: raiders, error: null },
       "rpc:get_team_players": { data: [{ name: "Maxx Crosby", player_slug: "maxx-crosby", is_rookie: false, edition_count: 9, fmv_total_usd: 120 }], error: null },
@@ -401,6 +401,9 @@ describe("get_team_intel resolves a team to its FRANCHISE (batch 61)", () => {
     expect(inst.rpcCalls.find((c) => c.name === "get_team_players")!.args).toMatchObject({ p_team_slug: "las-vegas-raiders" })
     expect(r.franchise.historic_names.map((h) => `${h.team_name}:${h.editions}`)).toEqual(["Oakland Raiders:18", "Los Angeles Raiders:8"])
     expect(r.franchise.note).toMatch(/Oakland Raiders \(18 editions\)/)
+    // batch 62: the reads cover every era — the note must never send the historic moments elsewhere
+    expect(r.franchise.note).toMatch(/every era included/)
+    expect(r.franchise.note).not.toMatch(/only|own team pages/)
   })
   it("two different franchises ('Washington' on Top Shot: the Wizards and the Mystics) are ambiguous — the historic Bullets are NOT a third candidate", async () => {
     install({ "rpc:resolve_team_name": { data: { status: "ambiguous", query: "Washington", franchises: [

@@ -19,6 +19,7 @@ import { SitemapReadIncomplete, assertUsableTiebreak } from "@/lib/sitemap-data"
 
 const h = vi.hoisted(() => ({
   t: {} as Record<string, { data: any; error: any }> ,
+  r: {} as Record<string, { data: any; error: any }> ,
   // Set by the tiebreaker test to record the ORDER KEYS a read actually used.
   orderSpy: undefined as undefined | ((col: string, table: string) => void),
 }))
@@ -52,7 +53,9 @@ vi.mock("@supabase/supabase-js", () => ({
       }
       return b
     },
-    rpc: async () => ({ data: null, error: null }),
+    // 2026-09-25 (batch 62): team_historic_slugs per collection; a test sets
+    // h.r[<fn>] to answer, the default is an answered-empty list.
+    rpc: async (fn: string) => h.r[fn] ?? { data: [], error: null },
   }),
 }))
 
@@ -61,6 +64,7 @@ import { buildSitemapSegment, SITEMAP_SEGMENT_IDS } from "@/lib/sitemap-data"
 
 const BASE = "https://www.rippackscity.com"
 const TS_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+const AD_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const ALLDAY_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 
 function ok(data: any) {
@@ -376,6 +380,35 @@ describe("segment 3 — set/player/team entities + top moments", () => {
     const butler = players.find((x) => x.url.endsWith("/jimmy-butler-iii"))!
     expect((butler.lastModified as Date).toISOString()).toBe("2026-09-20T00:00:00.000Z")
     delete h.t.player_name_aliases
+  })
+
+  it("drops a team label that 308s to its franchise's primary page — the historic era is on that page (2026-09-25, batch 62)", async () => {
+    h.t.editions = ok([
+      { id: "a1", external_id: "5:5", collection_id: AD_ID, updated_at: "2026-09-01T00:00:00.000Z", player_name: "Derek Carr", set_name: "Base", team_name: "Las Vegas Raiders" },
+      { id: "a2", external_id: "6:6", collection_id: AD_ID, updated_at: "2026-09-20T00:00:00.000Z", player_name: "Charles Woodson", set_name: "Legends", team_name: "Oakland Raiders" },
+      { id: "a3", external_id: "7:7", collection_id: AD_ID, updated_at: null, player_name: "Russell Wilson", set_name: "Base", team_name: "Denver Broncos" },
+    ])
+    h.r.team_historic_slugs = { data: ["oakland-raiders", "los-angeles-raiders"], error: null }
+    const s = await buildSitemapSegment(3)
+    const teams = s.filter((x) => x.url.includes("/team/")).map((x) => x.url).sort()
+    expect(teams).not.toContain(`${BASE}/nfl-all-day/team/oakland-raiders`)
+    expect(teams).toEqual([`${BASE}/nfl-all-day/team/denver-broncos`, `${BASE}/nfl-all-day/team/las-vegas-raiders`])
+    delete h.r.team_historic_slugs
+  })
+
+  it("a failed historic-team read fails the segment rather than listing redirecting URLs (2026-09-25, batch 62)", async () => {
+    h.t.editions = ok([
+      { id: "a1", external_id: "5:5", collection_id: AD_ID, updated_at: null, player_name: "Derek Carr", set_name: "Base", team_name: "Las Vegas Raiders" },
+    ])
+    try {
+      h.r.team_historic_slugs = { data: null, error: { message: "canceling statement due to statement timeout" } }
+      await expect(buildSitemapSegment(3)).rejects.toThrow(/team_historic_slugs\([a-z-]+\) read failed: canceling statement/)
+      // a non-list answer is not an answered-empty either
+      h.r.team_historic_slugs = { data: null, error: null }
+      await expect(buildSitemapSegment(3)).rejects.toThrow(/returned no list/)
+    } finally {
+      delete h.r.team_historic_slugs
+    }
   })
 
   it("a failed alias read fails the segment rather than listing redirecting URLs (2026-09-25)", async () => {

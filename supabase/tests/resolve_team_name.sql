@@ -9,7 +9,7 @@
 -- is 'none'.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260926021808_audit_20260925_resolve_team_name_for_the_concierge_and_the_historic_labels_in_the_league_map.sql);
+-- (supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -142,7 +142,7 @@ BEGIN
     RETURN jsonb_build_object('status', 'one', 'query', p_name)
            || (v_fr->0)
            || CASE WHEN jsonb_array_length(v_fr->0->'historic_names') > 0
-                   THEN jsonb_build_object('note', 'This franchise has minted under more than one name; the per-team reads below are for the primary name only — say so, and call again with a historic name to include those moments.')
+                   THEN jsonb_build_object('note', 'This franchise has minted under more than one name; the team reads cover EVERY era (historic labels included) — the historic_names list says which labels and how many editions each carries.')
                    ELSE '{}'::jsonb END;
   END IF;
   -- an exact label match among several franchises decides ("Hornets" → Charlotte, not New Orleans, only when typed exactly)
@@ -186,7 +186,7 @@ BEGIN
   PERFORM _assert_eq(jsonb_array_length(r->'historic_names')::text, '2', 'two historic labels');
   PERFORM _assert_eq(r->'historic_names'->0->>'team_name', 'Oakland Raiders', 'commonest historic label first');
   PERFORM _assert_eq(r->'historic_names'->0->>'editions', '18', 'with its count');
-  PERFORM _assert((r->>'note') LIKE '%more than one name%', 'the answer says the reads are for the primary name only');
+  PERFORM _assert((r->>'note') LIKE '%EVERY era%', 'the answer says the reads cover every era (batch 62)');
 
   -- 2. a historic label typed directly still resolves to the FRANCHISE
   r := resolve_team_name(ad, 'Oakland');
