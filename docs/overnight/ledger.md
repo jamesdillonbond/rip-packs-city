@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — 483 Top Shot pack distributions added to `pack_distributions` (3,061 recorded opens pointed at them and rendered as "Pack"); every pack rip in every collection now resolves to a named distribution · Claude Code (web session)
+
+Migration `20260926030602` (applied ~8:45 PM PT), inserting from `audit_20260925_ts_dist_backfill_source` (the recorded reads): 419 from Studio Platform `byProductID:"TopShot"` (control: 40 random existing dists, title 40/40 + image 40/40 equal), 64 recent (8761–8870) from the PDS contract + the pack-NFT media redirect (64/64). 482 of 483 pictured (API has no image for 8588); 14 random image URLs fetched, all image/png; counts left to the supply pipeline. **Revert:** `DELETE FROM pack_distributions WHERE collection_id='95f28a17-224a-4025-96ad-adf8a4c63bfd' AND metadata->>'seeded_from'='ts_dist_backfill_20260925'`.
+
 ### 2026-09-25 · 🧹 SHIPPED — the public /insights/candy-mlb "Floor ask" and listing count read the CONFIRMED floor (asks seen in the last 12 h): `candy_secondary_board` swaps two expressions to `candy_listing_floor.confirmed_*`, same columns/order/types (`20260926030516`, applied ~8:05 PM PT; 123 of 125 editions carry a floor). Also: repaired the committed text of `20260926030328` — a scripted comment edit had left a stray uncommented line in the file (the APPLIED SQL was unaffected; the file would have failed CI's migration-parse check) · Claude Code (web sandbox)
 
 - **Revert:** re-apply `candy_secondary_board` with `lf.floor_usd AS floor_ask_usd, lf.listing_count` (header of `20260926030516`), then `ALTER VIEW public.candy_secondary_board SET (security_invoker = on)`.
