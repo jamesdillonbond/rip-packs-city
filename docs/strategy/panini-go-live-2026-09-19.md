@@ -140,6 +140,17 @@ whole-group statistic used as a proxy for a per-slice property.
    the backlog once and stops reaching it) is not appearing: p90 fell from 470 h (09-20) to 37 h. One day
    left on the exit bar (≤ 1% through 09-26); read it once more tomorrow before calling step 1 closed.
 
+   📏 **Re-read 2026-09-25 ~9:55 PM PT (still day 6):** stale_45d **0.0%**, walked ≤7 d **100.0%**, p50
+   **23.1 h**, p90 **39.5 h**. 🔲 **PENDING — the day-7 read (Sat 09-26, any time after ~10 AM PT) is the
+   last thing between step 1 and CLOSED.** Whoever runs it: `select edition_age_p50_h, edition_age_p90_h,
+   pct_editions_stale_45d, pct_editions_walked_7d from panini_coverage_summary`; stale_45d ≤ 1% → record
+   step 1 CLOSED here with the PT time and the four numbers, plus a ledger entry. A check-in is scheduled
+   for 10:45 AM PT (routine `trig_017CASconsjv8imk4q7Cz6xA`), but it fires into the 09-25 Candy/Panini
+   parity session; if that session has been archived it will not run, and this note is the handoff. ⚠ Since
+   ~9:15 PM PT 09-25 `sync_panini_bridge()` (another session, `1abe9c468`) is gated on this same ceiling
+   (fail-closed), and since `03ecc2fee` Panini is published on the shared Overview + Market routes, so
+   the bar is now load-bearing for the bridge and those public routes, not only for this doc.
+
    ⚠ **`pct_trustworthy` did NOT move (36.2% → 35.2%) and that is not a counter-result** — §1's
    correction says exactly this: it bands on listing bias, not freshness. Do not read it either way.
 2. **Then the P1 bridge.** The mapping is settled and executable (§5). It is ~2 days of work, not

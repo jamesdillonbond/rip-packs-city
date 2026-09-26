@@ -292,3 +292,9 @@ Pure lookup data, moved to keep the memory file under its character limit. **CLA
 
 - **Long-form** (`sales`, `editions`, `collections.slug`): `nba_top_shot` · `nfl_all_day` · `laliga_golazos` · `disney_pinnacle` · `ufc_strike`
 - **Short-form** (`flowty_transactions`, `flowty_loans`, `flowty_loan_events`): `topshot` · `allday` · `golazos` · `pinnacle` · `ufc` · `unknown` — the CHECK whitelists exactly these six, NOT `other`
+
+## Displaced from CLAUDE.md — 2026-09-25 (verbatim)
+
+Moved to pay for the collection-keyed-map rule in CLAUDE.md's chain-two section; CLAUDE.md keeps the verdict and points here.
+
+⚠ **That CHECK is on `flowty_transactions` ONLY** (verified live 08-22), so `'ufc_strike'` fails LOUDLY there and persists SILENTLY in the other two, where it never matches. Bridge: the `analytics_sales` view (long → short via CASE).

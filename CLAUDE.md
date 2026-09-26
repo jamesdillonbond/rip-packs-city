@@ -213,15 +213,16 @@ Two vocabularies, not interchangeable — mixing them corrupts `flowty_*` writes
 
 **Long-form** (`sales`, `editions`, `collections.slug`) vs **short-form** (`flowty_*`, CHECK-whitelisted to six values, NOT `other`) — both lists: [schema-truth.md](docs/reference/schema-truth.md).
 
-⚠ **That CHECK is on `flowty_transactions` ONLY** (verified live 08-22), so `'ufc_strike'` fails LOUDLY there and persists SILENTLY in the other two, where it never matches. Bridge: the `analytics_sales` view (long → short via CASE).
+⚠ **That CHECK is on `flowty_transactions` ONLY** — a wrong value persists SILENTLY in the other two: schema-truth.md.
 
 ### Chain two — a Solana address is not a Flow address with different characters (CRITICAL footgun)
 
 Flow/EVM: hex, `0x`-prefixed, case-INsensitive. Solana: **base58, un-prefixed, CASE-SENSITIVE**. This repo's two reflexes — `.toLowerCase()` and *prepend `0x` if missing* — do not normalise a Candy key, they **destroy** it. ⚠ **It fails SILENTLY IN THE WRONG DIRECTION: zero rows, rendered as "this wallet holds nothing"** — or a complete object of ZEROS echoing the mangled wallet back.
 
 - **Use [lib/address.ts](lib/address.ts) — never a bare `.toLowerCase()`, never a fresh helper** (a grep found TEN already). Which function for which job: [chain-strategy.md](docs/reference/chain-strategy.md).
-- ⛔ **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(k,"flow")` is **stricter** than the `startsWith("0x")` it resembles. **Pin the hex path as its own no-change arm**, or the Solana assertions pass against a function that changed every Flow label.
+- ⛔ **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(k,"flow")` is **stricter** than the `startsWith("0x")` it resembles. Pin the hex path as its own arm.
 - ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence**; a per-device identity key is chain-scoped, swept by PREFIX: chain-strategy.md.
+- ⛔ **A collection-keyed map lacking the new chain returns `null`, and null SILENTLY DROPS features** (Candy moment pages lost links + CTA; its test used `candy_mlb` as "unknown"): chain-strategy.md.
 
 ### Collection UUIDs
 
