@@ -25,6 +25,8 @@ const st = vi.hoisted(() => ({
   // (still an RPC) and the marker row cannot be confused for one another.
   hbRows: [] as any[],
   captured: null as null | (() => Promise<void>),
+  wmcRows: [] as any[],
+  listings: { data: [] as any[] | null, error: null as any },
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -47,14 +49,16 @@ vi.mock("@/lib/supabase", () => ({
           },
         }
       }
+      if (table === "candy_listings") {
+        const q: any = { select: () => q, in: () => q, eq: async () => st.listings }
+        return q
+      }
       return {
-        upsert: () => ({
-          select: async () =>
-            table === "editions"
-              ? st.edUpsert
-              : table === "candy_packs"
-                ? st.packUpsert
-                : st.wmcUpsert,
+        upsert: (rows: any[]) => ({
+          select: async () => {
+            if (table === "wallet_moments_cache") st.wmcRows.push(...rows)
+            return table === "editions" ? st.edUpsert : table === "candy_packs" ? st.packUpsert : st.wmcUpsert
+          },
         }),
       }
     },
@@ -108,6 +112,8 @@ beforeEach(() => {
   // i.e. it would have passed while asserting nothing about its own fixture.
   st.hbRows = []
   st.captured = null
+  st.wmcRows = []
+  st.listings = { data: [], error: null }
 })
 
 describe("candy-editions — auth", () => {
@@ -382,5 +388,40 @@ describe("candy-editions — invocation heartbeat", () => {
     // The walk still completed and still logged its own terminal row.
     expect(heartbeat()).toBeUndefined()
     expect(terminal().p_ok).toBe(true)
+  })
+})
+
+// 2026-09-25: a listed Candy card sits in Magic Eden's escrow, and the walk used
+// to write it under the escrow — so it vanished from its seller's portfolio.
+describe("candy-editions — escrow-held (listed) cards are attributed to their seller", () => {
+  const ESCROW = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix"
+  async function run() {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+  }
+
+  it("writes an escrow-held card under the seller of its active listing, and counts it", async () => {
+    st.pages = [[{ kind: "icon", ed: "ed1", w: ESCROW, m: "m9" }, { kind: "icon", ed: "ed1", w: "w1", m: "m1" }]]
+    st.listings = { data: [{ token_mint: "m9", seller: "SellerWallet111", last_seen_at: "2026-09-25T20:00:00Z" }], error: null }
+    await run()
+    expect(st.wmcRows.find((r) => r.moment_id === "m9")?.wallet_address).toBe("SellerWallet111")
+    expect(st.wmcRows.find((r) => r.moment_id === "m1")?.wallet_address).toBe("w1")
+    expect(terminal()?.p_extra).toMatchObject({ escrow_remapped: 1, escrow_unmatched: 0, escrow_remap_error: null })
+  })
+
+  it("leaves an escrow-held card with NO active listing on the escrow — nothing is guessed", async () => {
+    st.pages = [[{ kind: "icon", ed: "ed1", w: ESCROW, m: "m9" }]]
+    await run()
+    expect(st.wmcRows[0].wallet_address).toBe(ESCROW)
+    expect(terminal()?.p_extra).toMatchObject({ escrow_remapped: 0, escrow_unmatched: 1 })
+  })
+
+  it("a failed listings lookup keeps the escrow rows and RECORDS the error", async () => {
+    st.pages = [[{ kind: "icon", ed: "ed1", w: ESCROW, m: "m9" }]]
+    st.listings = { data: null, error: { message: "timeout" } }
+    await run()
+    expect(st.wmcRows[0].wallet_address).toBe(ESCROW)
+    expect(terminal()?.p_extra?.escrow_remap_error).toContain("timeout")
   })
 })

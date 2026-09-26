@@ -14,6 +14,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { paginateGroup, type DasAsset } from "@/lib/chains/solana/das"
+import { attributeEscrowHeldToSellers } from "@/lib/chains/solana/escrow"
 import {
   CANDY_MLB_COLLECTION_ADDRESS,
   CANDY_MLB_SLUG,
@@ -194,6 +195,11 @@ async function handleIngest(req: NextRequest) {
     let burntSkipped = 0
     let packsSkipped = 0
     let packRowsWritten = 0
+    // Listed cards sit in Magic Eden's escrow; they are attributed to their
+    // listing's seller before the wmc write (lib/chains/solana/escrow.ts).
+    let escrowRemapped = 0
+    let escrowUnmatched = 0
+    let escrowRemapError: string | null = null
     // R123 (2026-09-20): every rejected upsert below used to be console.logged and
     // then the run row claimed ok=true with a hardcoded `true, null`. A rejected
     // write is non-fatal to the WALK (later chunks and tables still run) but it
@@ -300,8 +306,18 @@ async function handleIngest(req: NextRequest) {
             return { ...s, last_seen_at: now }
           })
           .filter((r): r is NonNullable<typeof r> => r !== null)
-        for (let i = 0; i < serialRows.length; i += UPSERT_CHUNK) {
-          const chunk = serialRows.slice(i, i + UPSERT_CHUNK)
+        // A card the chain says Magic Eden's ESCROW holds is a listed card: write
+        // it under its listing's seller, so listing a card does not remove it from
+        // the collector's portfolio (and the one-row-per-card purge keeps the
+        // seller's row, not the escrow's). A failed lookup leaves the page's rows
+        // on the escrow — the pre-existing behaviour — and is recorded.
+        const attributed = await attributeEscrowHeldToSellers(supabaseAdmin as any, serialRows)
+        escrowRemapped += attributed.remapped
+        escrowUnmatched += attributed.unmatched
+        if (attributed.error) escrowRemapError = escrowRemapError ?? attributed.error
+        const writeRows = attributed.rows
+        for (let i = 0; i < writeRows.length; i += UPSERT_CHUNK) {
+          const chunk = writeRows.slice(i, i + UPSERT_CHUNK)
           const { data, error } = await (supabaseAdmin as any)
             .from("wallet_moments_cache")
             .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
@@ -365,6 +381,9 @@ async function handleIngest(req: NextRequest) {
         pack_rows_touched: packRowsWritten,
         packs_distinct: distinctPackMints.size,
         jerseys_distinct: distinctJerseys.size,
+        escrow_remapped: escrowRemapped,
+        escrow_unmatched: escrowUnmatched,
+        escrow_remap_error: escrowRemapError,
         duration_ms: Date.now() - startedMs,
         },
       )
