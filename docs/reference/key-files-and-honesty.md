@@ -2484,3 +2484,22 @@ The Candy FMV ask-ceiling (09-25) capped an FMV only when fmv-recalc PRICED the 
 
 The client-error beacon logged `unhandledrejection: SyntaxError: failed to parse` five times on `/nfl-all-day/collection`, all from `Lightpanda/1.0`. A floating promise was found and fixed on that page (`e9c59ee67` — real, and reproduced in a test), and the ledger attributed the beacon's reports to it. ⛔ **That attribution was wrong.** Fetching the deployed chunk and reading the reported line:column put the frame on a `fetch(...).then(r => r.ok ? r.json() : null)` chain that ENDS in `.catch(function(){})`, and the five reports named different call sites. The engine fails to parse valid JSON and reports rejections it should consider handled. **Rules:** (1) before attributing a beacon report to a code site, fetch the deployed chunk and read the exact `line:column` — a stack frame is cheap to check and a plausible match is not a measurement; (2) a report whose `ua` is a single headless engine is a hypothesis about that ENGINE until a real browser shows it (#69); (3) the fix that was shipped still stands on its own test, but the claim that it cleared the beacon is withdrawn.
 
+
+## Displaced from CLAUDE.md 2026-09-26 (verbatim)
+
+Moved here to pay for the "window over a change-only feed is not a census" rule (#149); nothing deleted.
+
+- ⭐ **A DEAD COUNTER IS NOT ONLY STALE — test it against a FLOOR you already hold:** observed on-chain opens refuted 42 tier + 775 opened counts (09-25). A floor NULLs a count, never replaces it (#74).
+- ⛔ **A SUPPRESSION IS A CLAIM — re-derive the source is still dead.** A hardcoded retirement DATE cannot notice its premise expired: 13 days of "retired" over a LIVE 60k-row feed, ratchet GREEN (it pins that the disclosure EXISTS, not that it is TRUE). Gate on its OWN age.
+
+## A window over a change-only feed is not a census — nor are its aged-out rows (2026-09-26, #149)
+
+The Atlas firehose re-reports Top Shot listings only when they CHANGE (#85). Everything built on `_open24` / `ts_listings` — "open listings seen in the last 24 h" — silently treated that window as the book. Three surfaces published it as fact:
+
+- **The floor** (`edition_offers.low_ask`): a quiet cheap listing ages out of the window while dearer, newer ones stay in. 241 floors written from the window and 994 stored floors were undercut by an open listing under half of them (Tre Jones 124:5108: "lowest ask $20.00" over 69 open from $0.20).
+- **The count** (edition page "% Listed", `get_edition_market_bundle`): 10,871 of 13,537 editions with an open listing read "0.0% · 0 of N listed"; the window held 29,183 of 411,308 listings open within 30 d.
+- **The depth** (Analytics "Order Book Depth" + Listings methodology): the methodology called it "a full snapshot of the open Top Shot book".
+
+**The tempting fix is wrong.** Widening the window to the older rows publishes closures nobody reported: a hand verification of 30 affected editions found **39 of 198 (20 %) "open" listings older than 24 h were actually closed** (264:9191::20 — the $21 and $29 "undercutters" were gone; the floor is $39). Only an edition VERIFICATION (the full Atlas book) answers both directions, and it re-priced every edition that answered.
+
+**Rules.** (1) A value derived from a re-observation window is a claim about RECENT ACTIVITY, not about the book — label it so, or publish it only when the window provably holds the whole book (no open row older than the window). (2) When an unconfirmed older row contradicts the window, publish NULL (unknown), never either number. (3) Close the gap with verification, prioritised to the NULLs (`rpc-ts-edition-verify-undercut`), not by trusting age. (4) Find the others by grepping READERS of the window (`ts_listings`, `_open24`, `interval '24 hours'` on `topshot_atlas_market_events`), not by the copy.

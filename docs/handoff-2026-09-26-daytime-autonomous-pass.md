@@ -33,7 +33,7 @@ Checks run before pushing code: full vitest suite (4 shards, 18.8k tests) green 
 - 7:00 PM PT scheduled task "verify Candy escrow remap after walk" (#145 falsifier). The per-wallet path and the nightly walk now agree on attribution; `purge_candy_wmc_ghost_rows` keeps the newest row per card.
 - `wallet-backfill-candy` run rows: `escrow_listed_error` / `escrow_listed_capped` should stay null/false.
 - Migration parity should stay green (both migrations' files landed within minutes).
-- Housekeeping: 16 `cowork-20260926-*.patch` files sit in the laptop repo root (gitignored); delete them when convenient.
+- ~~Housekeeping: patch files in the laptop repo root~~ — all 22 deleted ~2:15 PM PT (with your permission prompt).
 - Crawling with 4–8 parallel requests from one IP produced sporadic `000`/SSL resets that all returned 200 on a sequential retry — a crawl artefact (proxy/edge), not a site fault.
 
 ## Closing check (~12:06 PM PT)
@@ -47,3 +47,5 @@ Checks run before pushing code: full vitest suite (4 shards, 18.8k tests) green 
 - **Measured after:** 801 of the 1,234 NULLed editions were edition-verified within 7 d and in every one the cheap listing was re-seen by that verification — the undercuts are real, the old floors were false.
 - **Open decision (#149):** publish the cheapest listing a verification re-saw within N days (with its age) instead of NULL, and/or give undercut-NULL editions priority verify slots. Not shipped autonomously (changes what the ask means / the probe budget).
 - **Decision taken (~1:05 PM PT, "do what you think is best"): priority re-verification.** A hand probe of 30 undercut-NULL editions found 20 % of "open" listings older than 24 h were actually closed, and every edition that answered was re-priced correctly from the verified book. New lane `rpc-ts-edition-verify-undercut` (3 Atlas edition probes every 5 min, `20260926200238`); first run pool 1,220, ok. Watch `extra.pool` fall over ~1.5 days and the edition-probe 403 rate stay ~6 %.
+- **Same root, two more surfaces (~2:08–2:25 PM PT):** the edition page's Top Shot "% Listed" read "0 of N listed" on 10,871 editions holding open listings — `20260926210824` now returns unknown (em-dash) unless the edition's whole book was re-seen in 24 h (Tre Jones → em-dash, control 67:2568 → 30 unchanged). The Analytics "Order Book Depth" card and methodology no longer call the 24 h window the full book.
+- **Docs:** CLAUDE.md honesty section gains "a window over a change-only feed is not a census — nor are its aged-out rows" (two bullets displaced verbatim to key-files-and-honesty.md, which also holds the full case).

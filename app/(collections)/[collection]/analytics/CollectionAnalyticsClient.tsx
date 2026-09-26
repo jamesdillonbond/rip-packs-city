@@ -567,6 +567,14 @@ function OrderBookCard({ short }: { short: string }) {
           <div className="mt-1 text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>
             {count.toLocaleString("en-US")} <span className="text-[11px] text-[color:var(--rpc-text-muted)]">listings</span>
           </div>
+          {isTs && (
+            // ⛔ #149 (2026-09-26): ts_listings is a 24 h RE-OBSERVATION window over a feed that
+            // re-reports only CHANGED listings — about 29k of ~411k open on the day this was
+            // measured. Without this line the count reads as the whole Top Shot book.
+            <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">
+              Re-seen in the last 24 h — recently active listings, not the whole book.
+            </div>
+          )}
           <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
             <div>
               <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Median ask</div>
