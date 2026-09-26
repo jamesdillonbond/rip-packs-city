@@ -124,3 +124,39 @@ export const CANDY_PUBLISHED_CHECKLIST_PLAYERS: readonly string[] = [
   "Kazuma Okamoto",
   "George Springer",
 ]
+
+// Candy's own designations from the same checklist (the "Rookie" and "First Mint"
+// columns). Neither is an on-chain trait on Drop 1 — the normalizer's First Mint
+// trait probe finds nothing — so the published checklist is the only source. They
+// are PLAYER-level: every printing of the player (Core and Rainbow) carries them.
+// Pinned to the CSV columns by __tests__/candy-published-checklist.test.ts.
+export const CANDY_CHECKLIST_ROOKIES: readonly string[] = [
+  "Munetaka Murakami",
+  "Chase DeLauter",
+  "Kevin McGonigle",
+  "Kazuma Okamoto",
+]
+
+export const CANDY_CHECKLIST_FIRST_MINTS: readonly string[] = [
+  "Andy Pages",
+  "Jung Hoo Lee",
+  "Bryce Eldridge",
+  "Otto Lopez",
+  "José Soriano",
+  "Munetaka Murakami",
+  "Chase DeLauter",
+  "Kevin McGonigle",
+  "Ben Rice",
+  "Kazuma Okamoto",
+]
+
+/** Candy's checklist designations for a player, in display order ([] if none). */
+export function candyChecklistBadges(playerName: string | null | undefined): string[] {
+  const n = (playerName ?? "").normalize("NFC").trim().toLowerCase()
+  if (!n) return []
+  const has = (list: readonly string[]) => list.some((x) => x.normalize("NFC").toLowerCase() === n)
+  const out: string[] = []
+  if (has(CANDY_CHECKLIST_ROOKIES)) out.push("Rookie")
+  if (has(CANDY_CHECKLIST_FIRST_MINTS)) out.push("First Mint")
+  return out
+}

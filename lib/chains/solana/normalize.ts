@@ -24,6 +24,7 @@
 // editions.external_id for the same card. normalizeSerial + normalizeEdition
 // derive both from editionKeyFromAsset so they can never diverge.
 
+import { candyChecklistBadges } from "./candy-checklist"
 import type { DasAsset } from "./das"
 
 // Collection UUID in public.collections (seeded inert 2026-06-08).
@@ -226,7 +227,11 @@ export interface NormalizedEdition {
 // (First Mint). Null (not []) when nothing matched, mirroring the Flow collections.
 function editionBadges(asset: DasAsset): string[] | null {
   const out: string[] = []
-  if (isFirstMint(asset)) out.push("First Mint")
+  // Candy's published-checklist designations (2026-09-25). Drop 1 carries no
+  // on-chain trait for either, so without this the ingest would rewrite every
+  // edition's badges without them. Player-level: Core and Rainbow printings alike.
+  for (const b of candyChecklistBadges(attr(asset, "Player Name"))) out.push(b)
+  if (isFirstMint(asset) && !out.includes("First Mint")) out.push("First Mint")
   const color = rainbowColorFromAsset(asset)
   if (color) out.push(`Rainbow (${color.charAt(0).toUpperCase() + color.slice(1)})`)
   return out.length ? out : null

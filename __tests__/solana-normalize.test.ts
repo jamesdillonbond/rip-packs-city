@@ -191,6 +191,30 @@ describe("normalizeEdition badges", () => {
     })
     expect(normalizeEdition(a).badges).toEqual(["First Mint", "Rainbow (Green)"])
   })
+  // 2026-09-25: Candy's checklist designations (no on-chain trait on Drop 1).
+  it("adds the checklist's Rookie + First Mint for a designated player, on every printing", () => {
+    const base = asset({ id: "m1", content: { metadata: { name: "Munetaka Murakami #9/250", attributes: [
+      { trait_type: "Player Name", value: "Munetaka Murakami" },
+    ] } } })
+    expect(normalizeEdition(base).badges).toEqual(["Rookie", "First Mint"])
+    const rainbow = asset({ id: "m2", content: { metadata: { name: "Munetaka Murakami - PINK (3/15)", attributes: [
+      { trait_type: "Player Name", value: "Munetaka Murakami" },
+    ] } } })
+    expect(normalizeEdition(rainbow).badges).toEqual(["Rookie", "First Mint", "Rainbow (Pink)"])
+  })
+  it("never duplicates First Mint when the trait AND the checklist both say so", () => {
+    const a = asset({ id: "m3", content: { metadata: { name: "Ben Rice #1/250", attributes: [
+      { trait_type: "Player Name", value: "Ben Rice" },
+      { trait_type: "First Mint", value: "true" },
+    ] } } })
+    expect(normalizeEdition(a).badges).toEqual(["First Mint"])
+  })
+  it("an undesignated player gets no checklist badge", () => {
+    const a = asset({ id: "m4", content: { metadata: { name: "Aaron Judge #1/250", attributes: [
+      { trait_type: "Player Name", value: "Aaron Judge" },
+    ] } } })
+    expect(normalizeEdition(a).badges).toBeNull()
+  })
   it("badges is null (not []) when nothing matched", () => {
     const a = asset({ id: "m", content: { metadata: { name: "Mookie Betts #1/250" } } })
     expect(normalizeEdition(a).badges).toBeNull()
