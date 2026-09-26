@@ -1,54 +1,51 @@
 {
-  "generated_at_pt": "2026-09-25 ~01:15 AM PT",
-  "generated_at_utc": "2026-09-25T08:12Z",
-  "pass": "overnight autonomous pass (Cowork cloud). GENUINE OVERNIGHT window (01:07 AM PT, shell/DB clocks agree, no skew). PUSH-CAPABLE (path 1: desktop VM + .rpc-git-cred, dry-run exit 0). QUEUE-ONLY this run: a concurrent Claude Code session pushed 13+ commits tonight through 08:04Z (3 min before clone) — per the collision gate an actively-advancing origin/main degrades to queue-only. Nothing needed shipping: health green, the one HIGH alert self-recovered.",
+  "generated_at_pt": "2026-09-26 ~01:11 AM PT",
+  "generated_at_utc": "2026-09-26T08:12Z",
+  "pass": "overnight autonomous pass (Cowork cloud). GENUINE OVERNIGHT (01:11 AM PT; shell 08:11Z ~= DB now() 08:11:43Z ~= newest sale 08:03Z, no skew). PUSH-CAPABLE (path 1: desktop VM + .rpc-git-cred, dry-run exit 0). QUEUE-ONLY: a very active concurrent Claude Code deep-sweep session pushed ~40 commits 23:15->00:48 PT (#146 board; last ~19 min before clone) and the whole code+migration surface is hot -> collision + hot-file gates => no code/migration shipping. Nothing needed shipping: health green.",
   "shipped": 0,
   "reverted": 0,
-  "verdict": "GREEN / no regression. Security 4/4 [] (invariants, anon_write_holes, rls_off_base, secdef_anon). trust_health 0 breaches (all 38 arms ok). stalled_pipelines [] and all 6 structural-drift arms []. check_when_others_timeout_blind [] (R118). check_pgcron_recent_failures []. Vercel 15 error groups but only ONE first-seen in 24h — a single-occurrence /insights/pack-drops drop-5 TimeoutError at 03:00Z; the rest are chronic (DEP0169 warning, Flow computation-limit on mega-wallets, pack-detail slow reads, AD-GQL 403). Post-ship watch on tonight's heavy concurrent ships (panini-fmv-1.1.0, QA batches 1-13, editions naming/linking): no regression, all health arms green.",
+  "verdict": "GREEN / no regression. Security 4/4 [] (invariants, anon_write_holes, rls_off_base, secdef_anon). trust_health 0 breaches (all 38 arms ok). stalled_pipelines = only the residential TS-active-listings feeder (expected, box dark ~19h). all 6 structural-drift arms []. check_pgcron_recent_failures []. Vercel prod READY at dbf33f54; runtime errors 6h all chronic/known (DEP0169 warn, AllDay sniper GQL 403, old ipfs-media blip, 1 single edition-counts timeout). Post-ship watch on the concurrent session's ~40 ships: no regression.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
     "trust_health_breaches": 0,
-    "stalled_pipelines": [],
+    "stalled_pipelines": "topshot-active-listings-ingest only (medium, silent 1139min ~19h; KNOWN residential Win Task Scheduler feeder on Trevor's box dark; visibility-only, by design)",
     "structural_drift_arms": "all [] (backward_cursor_rewinds, function_search_path_drift, procedure_txn_control_pins, cross_collection_mat_staleness, procedure_search_path_unpinned, suppression_parked_claim_drift)",
-    "timeout_blind_R118": 0,
     "pgcron_recent_failures": 0,
-    "zero_yield_lanes": "2 offenders (alerts-send 1048 runs/0 writes, alerts-dispatch 712/0), both last_find 2026-09-14 — STANDING 11-day item, not new tonight; likely honest-zero (no qualifying deals) but unconfirmed. Queued for Trevor.",
-    "pipeline_alerts": ["panini-team-walk failure_rate HIGH = SELF-RECOVERED transient (last 3 runs 09-24 15:20-16:19 PT ok/complete; failures 'no readable products' predate them; R124 pooling-across-recovery trap)", "unmapped-sales-nfl_all_day 7413 actionable ~4.0d info", "golazos_sales resolving_editions info", "atlas-editions-upstream-403 4.0% info designed", "atlas-market-upstream-403 4.7% info (last drain 08:09Z newest 08:06Z fresh)", "flow-rest-moment-moved-400 16.7% info designed"],
-    "pipeline_fails_24h": "low chronic, none stalled (atlas-market-feed 10, sync-nba-projections 8, atlas-editions-refresh 7, wallet-backfill 6, panini-team-walk 3, others 1-2)",
-    "sentry_24h": "DARK (SDK out of tree #34) — PAIRED with Vercel: only 1 single-occurrence new group in 24h, so read as healthy",
-    "vercel_24h_error_groups": 15,
-    "vercel_new_first_seen_24h": 1,
-    "prod_deploy": "READY at 1ebd3e60 (origin/main; concurrent session HEAD)",
-    "db_size_mb": 26027
+    "pipeline_alerts": ["panini-team-walk medium (R124 pooling-across-recovery, known)", "unmapped-sales-nfl_all_day 7173 actionable info (AllDay permanent-floor)", "atlas-editions-403 9.0% info designed", "atlas-market-403 8.7% info (fresh, last drain 08:11Z)", "flow-rest-moment-moved-400 23.7% info designed"],
+    "pipeline_fails_24h": "low chronic, none stalled (atlas-market-feed 16, sync-nba-projections 8 [known #8 shelved], player-stats-sync 3 [self-cleared], atlas-editions-refresh 3, wallet-backfill 1-2, storefront-reconcile 1 each [23:19:01Z co-fire], panini-ingest 1)",
+    "sentry_24h": "monitor 0308Z reported 0 new-in-24h; SDK noted out-of-tree (#34) so read paired with Vercel = healthy",
+    "vercel_6h_error_groups": 4,
+    "vercel_new_first_seen": 0,
+    "prod_deploy": "READY at dpl_47ED63WY2B4QvmF2K3mwqReLthpa (dbf33f54; origin/main HEAD, concurrent session's work)",
+    "db_size_mb": 27952
   },
   "fmv_high_med": {
-    "nba_top_shot": 7867,
-    "nfl_all_day": 1778,
-    "disney_pinnacle": 722,
-    "candy_mlb": 24,
+    "nba_top_shot": 7976,
+    "nfl_all_day": 1505,
+    "disney_pinnacle": 771,
+    "panini_blockchain": 1842,
+    "candy_mlb": 23,
     "laliga_golazos": 4
   },
   "editions_by_collection": {
     "nba_top_shot": 14460,
     "nfl_all_day": 6190,
-    "ufc_strike": 518,
+    "panini_blockchain": 5095,
     "laliga_golazos": 575,
+    "ufc_strike": 518,
     "candy_mlb": 125
   },
   "sentinels": {
     "sentinel_ts_uuid_editions_48h": 0,
     "unmapped_resolution_backlog_max": 2
   },
-  "deltas_vs_prev": "FMV HIGH+MED TopShot 7771->7867 (+96), AllDay 1768->1778 (+10), Pinnacle 709->722 (+13), Candy 25->24 (-1 flat), Golazos 4->4. Editions TopShot 14460->14460 (flat), AllDay 6190 flat. DB 24237->26027 MB (+1790; ⚠ CORRECTED 2026-09-25 PT, Claude Code: the growth is net._http_response's TOAST REFILLING after the 09-20 VACUUM FULL — 551 MB on 09-20 -> 7.9 GB now, ~1.5 GB/day, 4,788 live rows — NOT the audit_20260924/25 backups (20 tables, 15 MB total) or atlas_events. Expected to plateau near #75's measured ~12 GB steady state; #126 showed reclaiming it bought nothing. Do not chase). All health arms flat/green.",
+  "deltas_vs_prev": "FMV HIGH+MED TopShot 7867->7976 (+109), AllDay 1778->1505 (-273 ~-15%; WITHIN accepted Q3 thinner-market class, allday_fmv stale arms both ok so no data-loss step change; NOT re-queued, visibility only), Pinnacle 722->771 (+49), Candy 24->23 (-1), Golazos 4->4, Panini 1842 (newly tracked). Editions all flat (TopShot 14460, AllDay 6190). DB 26027->27952 MB (+1925; net._http_response TOAST refill after 09-20 VACUUM FULL, documented, do not chase). ts_uuid_48h 0 flat, unmapped_backlog_max 2 flat. All health arms green.",
   "needs_trevor": [
-    "Q0 CLOSED 2026-09-25 (Trevor): fixed 09-23 (20260923205831) + bounded to listings <= 2 h old 09-25 (20260925152928); re-derived 0 ask_only_v2 rows above own floor in 24 h, Golazos only. Ledger Declined line — do not re-queue.",
-    "Q_alerts CLOSED 2026-09-25 (Trevor): honest zero. Both lanes ok every tick, pools non-empty; the 2 subscriptions match nothing (Lillard Archive <= $0.60 is a deliberate watch on one $50 moment; Blazers rookie serials an honest market zero); fmv_alerts has 0 rows. Ledger Declined line — do not re-queue.",
-    "Q1 CLOSED 2026-09-25 (re-derived, stale): snapshot-institutional-wallets ok=true rows=3 daily (10:07Z cron-job.org primary + ~12:45Z GHA backstop) 09-22..09-25; wallet_holdings_snapshot 3/day, only 09-11 (documented) and 09-20 (tier upgrade) missing in 21 days.",
-    "Q2 CLOSED 2026-09-23 (stale): known-issues #55 — both disabled Routines DELETED.",
-    "Q3 ACCEPTED 2026-09-25 (Trevor): All Day HIGH+MED drift is thinner market data. Ledger Declined line — do not re-queue.",
-    "Q4 INVESTIGATED 2026-09-25 — working as written, NOT population mixing: 101 LOW Candy editions avg 12.1 sales/30d vs 24 MEDIUM at 3.7, i.e. the dispersion gate demoting well-traded editions (count>=7, spread >0.35). Parallels are already separate editions. The spread is real market: price trends inside the window (Kevin McGonigle ~$30 -> ~$18) plus genuine sub-$1 fills (two wallets sold 188 at median $0.49; McGonigle #20 $0.49 then resold $15.46 same day). Same phenomenon roadmap-status.md records for Top Shot. Only open lever is Trevor's product call there: split LOW into 'too few sales' vs 'sales disagree'. Do not re-investigate.",
-    "Q5 consolidate 11 legacy desktop dashboards",
-    "OPS: nightly pass now PUSH-CAPABLE again (path 1 cred restored). Restoring remote.origin.pushurl on the mount would remove the cred-file dependency."
+    "[LOW nc1] storefront-reconcile co-fire: allday + golazos both fire :19:01 and share QuickNode 100/sec -> a co-firing tick 429s the seller-walk (23:19:01Z allday 333 fail / golazos 79 fail); self-recovers next tick. Fix = stagger one lane off :19 (cron-schedule.md) or rate-bound the walkers. Not auto-shipped: cron/schedule files hot + governed by cron-schedule.md.",
+    "[LOW carried] player-stats-sync within-chunk dedup (DISTINCT ON conflict key) ONLY if it recurs after the active stats-feed rewrite settles; self-cleared this run.",
+    "TS-active-listings residential feeder box was dark ~19h tonight (visibility).",
+    "Q5 consolidate 11 legacy desktop dashboards (long-standing).",
+    "OPS: restoring remote.origin.pushurl on the mount would remove the .rpc-git-cred dependency."
   ],
-  "housekeeping": "Inbox 547 files, APPEND-ONLY BY RULE (CI-enforced __tests__/inbox-is-append-only-since-the-rule.test.ts + focus-file directive) — NOT archived, by design. Only new candidate since last pass (2026-09-24T2110Z) already dispositioned honestly-empty. Ledger prepend intentionally SKIPPED tonight to avoid a rebase conflict with the active concurrent session (nothing shipped, so nothing to mark resolved). Handoff + this metrics file are the durable outputs; handoff also mirrored to the claude.ai Project."
+  "housekeeping": "Inbox 549 files (mount) / 548 (clone), APPEND-ONLY BY RULE (CI-enforced + focus directive) — NOT archived, by design. Two new 09-26 monitor filings both dispositioned (nba-projections = known #8 shelved; player-stats-sync self-cleared + active concurrent dev; storefront co-fire queued). Ledger prepended with the queue-only entry. Session entry -> docs/sessions/2026-09.md (CLAUDE.md redirects there; CLAUDE.md at 39,997 chars / ~40k ceiling + hot, not touched). Handoff is the durable output; also mirrored to the claude.ai Project."
 }
