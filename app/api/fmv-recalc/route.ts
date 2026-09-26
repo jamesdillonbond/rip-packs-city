@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { applyAllFmvGuards, capFmvAtCheapestAsk } from "@/lib/fmv-phantom-guard"
+import { fetchCandyConfirmedFloors, mergeCeilingAsks } from "@/lib/fmv-candy-ceiling"
 import { computeConfidence, escalateConfidence, gateHighToRecentVolume, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
 import { staleTouchDaysSinceSale } from "@/lib/fmv-stale-touch"
 import { rpcWithRetry, queryWithRetry } from "@/lib/analytics/rpc-with-retry"
@@ -754,6 +755,20 @@ export async function POST(req: NextRequest) {
       console.warn("[FMV-RECALC] All Day floor-ask ceiling fetch failed (non-fatal):", err instanceof Error ? err.message : err)
     }
 
+    // ── Step 2a-ter(b'): Candy MLB confirmed ask into the CEILING (2026-09-25) ──
+    // The third collection with a live, edition-keyed ask. Ceiling ONLY — it is
+    // deliberately NOT fed to ask-corroboration (editionAskById), so this step can
+    // lower an overstated Candy FMV and can never raise a confidence. Measured the
+    // day it shipped: 56 of 123 Candy editions sat above 1.5x their confirmed ask
+    // (Murakami Green LEGENDARY $584.48 MEDIUM vs a $66.50 ask). See
+    // lib/fmv-candy-ceiling.ts. Only Candy editions exist in candy_listing_floor,
+    // so querying the page's ids is inherently Candy-scoped.
+    const candyCeiling = await fetchCandyConfirmedFloors(supabaseAdmin, editionIds)
+    mergeCeilingAsks(editionCeilingAskById, candyCeiling.floors)
+    let candyCeilingError: string | null = candyCeiling.error
+    if (candyCeilingError) console.warn("[FMV-RECALC] Candy confirmed-ask ceiling fetch error (non-fatal):", candyCeilingError)
+    let candyCeilingCaps = 0
+
     // ── Step 2a-ter(c): All Day ask-CORROBORATION (M2, 2026-09-09) ────────────
     // Ask-corroboration (lib/fmv-confidence.ts, A2) lifts LOW -> MEDIUM when an
     // independent live ask agrees with the sales median. Until today it was fed
@@ -1226,7 +1241,9 @@ export async function POST(req: NextRequest) {
       // only ever lowers an overstated value toward a real listing. Source is
       // editionCeilingAskById = Top Shot edition_offers.low_ask ∪ All Day
       // allday_edition_floor_ask.floor_ask (built at Step 2a-ter(b)).
+      const preCeilingFmv = fmv
       fmv = capFmvAtCheapestAsk(fmv, editionCeilingAskById.get(editionId) ?? null)
+      if (fmv < preCeilingFmv && candyCeiling.floors.has(editionId)) candyCeilingCaps++
 
       // Sanity guard: a single anomalous high-priced sale (e.g. a stale wallet
       // seed or one-off transaction) can produce a wildly inflated LOW
@@ -1573,6 +1590,15 @@ export async function POST(req: NextRequest) {
             }
           } catch (err) {
             console.warn("[FMV-RECALC] Historical fallback floor-ask ceiling fetch failed (non-fatal):", err instanceof Error ? err.message : err)
+          }
+          // Candy's confirmed ask joins the same min() (Step 2a-ter(b'), 2026-09-25).
+          {
+            const histCandy = await fetchCandyConfirmedFloors(supabaseAdmin, rows.map((r) => r.edition_id))
+            for (const [edId, ask] of histCandy.floors) addHistCeiling(edId, ask)
+            if (histCandy.error) {
+              candyCeilingError = candyCeilingError ?? `historical_fallback ${histCandy.error}`
+              console.warn("[FMV-RECALC] Historical fallback Candy ceiling error (non-fatal):", histCandy.error)
+            }
           }
 
           const histInsert = rows.map((row) => {
@@ -2505,6 +2531,10 @@ export async function POST(req: NextRequest) {
           haircut_collections_run: haircutCollectionsRun,
           thin_sales_caps: thinSalesCaps,
           disconnected_ask_clamp_rows: clampRows,
+          // Step 2a-ter(b'): Candy editions whose Step-4 FMV the confirmed ask
+          // LOWERED this run, paired with its read error (null = the read ran).
+          candy_ask_ceiling_caps: candyCeilingCaps,
+          candy_ask_ceiling_error: candyCeilingError,
         },
       })
     } catch (err) {

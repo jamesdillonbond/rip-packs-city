@@ -235,6 +235,69 @@ describe("fmv-recalc deferred sweep — happy path", () => {
     // Only the 5 surviving sales count toward volume.
     expect(snaps[0].sales_count_30d).toBe(5)
   })
+
+  // 2026-09-25: Candy's confirmed live ask joins the ask-CEILING (Trevor's
+  // 2026-08-07 rule: base FMV <= cheapest current ask). Before, only Top Shot and
+  // All Day fed it, so Munetaka Murakami Green published $584.48 MEDIUM against a
+  // $66.50 ask seen in the last 12 h.
+  const candyFixtures = (floor: unknown) => ({
+    pipeline_runs: { data: null, error: null },
+    "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
+    sales: {
+      data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15), sale(10, 800, 20)],
+      error: null,
+    },
+    editions: EDITION_META,
+    edition_offers: { data: [], error: null },
+    fmv_snapshots: { data: [], error: null },
+    candy_listing_floor: floor,
+    ...QUIET_TAIL,
+  })
+
+  it("caps a sales-derived FMV at the Candy confirmed ask and counts the cap", async () => {
+    const { rpcCalls, inserted } = instrument(
+      candyFixtures({ data: [{ edition_id: "ed-1", confirmed_floor_usd: "4.25" }], error: null }),
+    )
+    await POST(req())
+    await runDeferred()
+
+    const snaps = inserted.fmv_snapshots ?? []
+    expect(snaps).toHaveLength(1)
+    // The published price is the live ask; the sales evidence is kept as-is.
+    expect(Number(snaps[0].fmv_usd)).toBe(4.25)
+    expect(Number(snaps[0].asp_usd)).toBe(10)
+    const extra = terminalLog(rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.candy_ask_ceiling_caps).toBe(1)
+    expect(extra.candy_ask_ceiling_error).toBeNull()
+  })
+
+  it("never RAISES an FMV to a Candy ask above it (a ceiling, not a price)", async () => {
+    const { rpcCalls, inserted } = instrument(
+      candyFixtures({ data: [{ edition_id: "ed-1", confirmed_floor_usd: 50 }], error: null }),
+    )
+    await POST(req())
+    await runDeferred()
+
+    expect(Number((inserted.fmv_snapshots ?? [])[0].fmv_usd)).toBe(10)
+    expect((terminalLog(rpcCalls)?.p_extra as Record<string, unknown>).candy_ask_ceiling_caps).toBe(0)
+  })
+
+  it("a failed Candy ask read leaves the FMV uncapped and RECORDS the error beside the count", async () => {
+    const { rpcCalls, inserted } = instrument(
+      candyFixtures({ data: null, error: { message: "candy floor view timed out" } }),
+    )
+    await POST(req())
+    await runDeferred()
+
+    const snaps = inserted.fmv_snapshots ?? []
+    expect(snaps).toHaveLength(1)
+    expect(Number(snaps[0].fmv_usd)).toBe(10)
+    const log = terminalLog(rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.candy_ask_ceiling_caps).toBe(0)
+    expect(String(extra.candy_ask_ceiling_error)).toContain("candy floor view timed out")
+  })
 })
 
 describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 incident class)", () => {
@@ -678,6 +741,29 @@ describe("fmv-recalc ASK-fallback + backfill steps", () => {
     expect(hist).toHaveLength(1)
     expect(Number(hist[0].fmv_usd)).toBe(3)
     expect(Number(hist[0].asp_usd)).toBe(62.1)
+  })
+
+  it("never publishes a historical-fallback FMV above the Candy confirmed ask", async () => {
+    const CANDY_ID = "209ade70-32c5-4470-bc7c-4793d660f713"
+    const { inserted } = instrument({
+      ...fallbackFixtures(QS({})),
+      // FIRST read = Step 2a-ter(b')'s page-scoped map (not this candidate); only
+      // Step 5b's own fetch (the second read) sees the ask.
+      candy_listing_floor: [
+        { data: [], error: null },
+        { data: [{ edition_id: "ed-hist-candy", confirmed_floor_usd: 66.5 }], error: null },
+      ],
+      "rpc:fmv_recalc_historical_candidates": {
+        data: [histCandidate({ edition_id: "ed-hist-candy", collection_id: CANDY_ID, avg_price: "584.48" })],
+        error: null,
+      },
+    })
+    await POST(req())
+    await runDeferred()
+
+    const hist = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-hist-candy")
+    expect(hist).toHaveLength(1)
+    expect(Number(hist[0].fmv_usd)).toBe(66.5)
   })
 
   it("caps a historical-fallback FMV at the TS ask the candidate RPC returns", async () => {
