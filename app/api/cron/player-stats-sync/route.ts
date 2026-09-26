@@ -127,11 +127,16 @@ export async function POST(req: NextRequest) {
     // run, so a failure rate under 5 % is noted, not a failed run. Above it
     // — or ANY chunk that did not land, any search failure, a deadline — is.
     const fetchFailRate = targets && targets > 0 ? fetchedFailed / targets : fetchedFailed > 0 ? 1 : 0
+    // The same rule for the name searches (batch 58): a 400-search tick met one
+    // ESPN 504 and the whole run read failed. A failed search leaves its target
+    // for the next tick, so under 5 % is noted, not failed.
+    const resolveTargets = num(s.resolve_targets)
+    const resolveFailRate = resolveTargets && resolveTargets > 0 ? resolveFailed / resolveTargets : resolveFailed > 0 ? 1 : 0
     if (fetchedFailed > 0) problems.push(`${fetchedFailed} ESPN stat fetches failed`)
     if (resolveFailed > 0) problems.push(`${resolveFailed} ESPN searches failed`)
     if (s.deadline_hit === true) problems.push("runner hit its deadline before finishing")
     const ok =
-      chunksOk === chunks && resolveFailed === 0 && s.deadline_hit !== true && fetchFailRate < 0.05
+      chunksOk === chunks && resolveFailRate < 0.05 && s.deadline_hit !== true && fetchFailRate < 0.05
     await logTerminalRun({
       pipeline: PIPELINE,
       startedAt,

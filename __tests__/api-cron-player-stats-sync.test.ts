@@ -184,6 +184,23 @@ describe("POST final — ok is derived from the counts", () => {
     expect(t.p_error).toBe("15 ESPN stat fetches failed")
   })
 
+  it("one ESPN 504 in 400 name searches is NOTED, not a failed run — the target is retried next tick; 5 % is (batch 58)", async () => {
+    const one = { ...good, resolve_targets: 400, resolved: 375, unresolved: 24, resolve_failed: 1 }
+    const r1 = await POST(makeReq({ url, auth: AUTH, body: { final: true, league: "nba", stats: one } }))
+    expect(await r1.json()).toEqual({ ok: true, problems: ["1 ESPN searches failed"] })
+    expect(terminal().p_ok).toBe(true)
+    state.rpcCalls = []
+    const many = { ...good, resolve_targets: 40, resolved: 30, unresolved: 6, resolve_failed: 4 }
+    const r2 = await POST(makeReq({ url, auth: AUTH, body: { final: true, league: "nba", stats: many } }))
+    expect((await r2.json()).ok).toBe(false)
+    expect(terminal().p_error).toBe("4 ESPN searches failed")
+    state.rpcCalls = []
+    // a search failure with NO targets counted (the targets read itself failed) is still a failed run
+    const blind = { ...good, resolve_targets: 0, resolve_failed: 1 }
+    const r3 = await POST(makeReq({ url, auth: AUTH, body: { final: true, league: "nba", stats: blind } }))
+    expect((await r3.json()).ok).toBe(false)
+  })
+
   it("a run that never sent a chunk logs rows_written NULL (not measured), never 0", async () => {
     const none = { ...good, targets: 0, fetched_ok: 0, fetched_404: 0, rows_upserted: 0, chunks: 0, chunks_ok: 0 }
     await POST(makeReq({ url, auth: AUTH, body: { final: true, league: "nfl", stats: none } }))
