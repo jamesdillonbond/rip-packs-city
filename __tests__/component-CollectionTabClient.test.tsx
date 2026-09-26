@@ -1178,6 +1178,43 @@ describe("CollectionTabClient — persisted view state and operator affordances"
     })
   })
 
+  // 2026-09-26 — the client-error beacon recorded `unhandledrejection: SyntaxError:
+  // failed to parse` on /nfl-all-day/collection. The reload fired from the cache
+  // refresh was a FLOATING promise inside `.then`, so the chain's `.catch` never
+  // saw its rejection. The page already shows page 1, so a failed background
+  // reload must be handled — never escape as an unhandled rejection.
+  it("a failed background reload after a cache refresh is handled, not an unhandled rejection", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason) }
+    process.on("unhandledRejection", onUnhandled)
+    try {
+      let momentsCalls = 0
+      fetchMock.mockImplementation(async (input: unknown) => {
+        const url = String(input)
+        if (url.startsWith("/api/cache-refresh")) return json(200, { new_stubs_inserted: 2 })
+        if (url.startsWith("/api/collection-moments?wallet=0xmine&page=1")) {
+          momentsCalls++
+          if (momentsCalls > 1) {
+            return { ok: true, status: 200, json: async () => { throw new SyntaxError("failed to parse") } } as unknown as Response
+          }
+          return momentsResponse()
+        }
+        if (url.startsWith("/api/collection-moments")) return momentsResponse()
+        return json(200, {})
+      })
+      render(<CollectionTabClient />)
+      await waitFor(() => expect(momentsCalls).toBeGreaterThan(1))
+      // Let the rejected reload settle, then give the runtime a turn to report it.
+      await new Promise((r) => setTimeout(r, 50))
+      expect(unhandled.filter((e) => String(e).includes("failed to parse"))).toHaveLength(0)
+      // Page 1 is still on screen.
+      expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1")
+    } finally {
+      process.off("unhandledRejection", onUnhandled)
+    }
+  })
+
   it("does not reload when the cache refresh finds nothing new", async () => {
     searchParams = new URLSearchParams("wallet=0xmine")
     fetchMock.mockImplementation(async (input: unknown) => {

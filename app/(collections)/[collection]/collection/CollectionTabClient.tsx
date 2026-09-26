@@ -381,7 +381,11 @@ function WalletMomentsBody() {
         if (cancelled || !data) return
         if (data.new_stubs_inserted > 0) {
           console.log("[collection] cache-refresh found " + data.new_stubs_inserted + " new moments, reloading page 1")
-          fetchPaginatedMoments(activeWallet, 1, serverSortBy, false)
+          // RETURNED so the `.catch` below owns its failure. It was a floating
+          // promise: a failed reload escaped as an unhandled rejection (the
+          // beacon's "SyntaxError: failed to parse", 2026-09-26). Page 1 is
+          // already on screen, so a failed background reload leaves it there.
+          return fetchPaginatedMoments(activeWallet, 1, serverSortBy, false)
         }
       })
       .catch(function() {})
