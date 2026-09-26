@@ -1008,6 +1008,18 @@ would convert working runs into failures. See known-issues **#43**.
 
 ⚠ **For a pg_cron `net.http_get` pipeline, `net._http_response` splits dispatched / killed / answered with NO deploy.**
 
+## ⚠ A STABLE HELPER IN A PREDICATE IS NOT EVALUATED ONCE — a SQL-language helper INLINES into its caller and re-runs per scanned row; the form that runs it once is `= ANY (ARRAY(SELECT unnest(fn(…))))` (2026-09-25, batch 62)
+
+The first apply of the franchise migration hit a 57014 in its own post-conditions. `team_historic_slugs` called `team_franchise_primary_name` (a `LANGUAGE sql` STABLE function) per label; that body inlined into the caller, and inside it `… IN (SELECT unnest(team_franchise_slugs(p_collection_id, p_team_slug)))` became a subplan correlated on the caller's per-row label — so `team_franchise_slugs` (then ~70 ms: a DISTINCT over 6,153 editions plus a per-label `league_team_abbr` lateral) ran once per scanned edition row. 6,153 × 70 ms is the timeout.
+
+Three things fixed it, and each is a rule on its own:
+
+- **Key a helper that will sit in a predicate from the REGISTRIES, not from the table being scanned.** `team_franchise_slugs` now reads `league_team_abbr` + `teams_master` (~11 ms) and never `editions`.
+- **Write a helper that another function calls in plpgsql when you need it to be a CALL.** `LANGUAGE sql` single-SELECT bodies are inlined by the planner, which is exactly what you want for a thin wrapper and exactly what you do not want when the body carries its own expensive subplan.
+- **In the caller, `col = ANY (ARRAY(SELECT unnest(public.fn($1, $2))))`.** The `ARRAY(SELECT …)` is an uncorrelated InitPlan — evaluated once per statement, its result a runtime array key for the functional index (`idx_editions_collection_team_slug`). A bare `col = ANY (public.fn($1, $2))` is a per-row call whenever the planner puts the predicate in a Filter rather than an Index Cond, and `col = ANY ((SELECT public.fn($1, $2)))` does not parse as an array at all (`operator does not exist: text = text[]`).
+
+Measured after the rewrite (live, 8:35 PM PT): helpers 11 ms, `get_team_detail` LA Clippers 178 ms, `get_team_players` 133 ms, `team_historic_slugs` Top Shot 284 ms. ⚠ **A correctness probe is silent about cost by construction (CLAUDE.md, Measurement discipline)** — the post-conditions that passed on the slow draft (`get_team_detail`, `get_team_top_editions`) passed because those callers happened to get an Index Cond; the one that got a Filter timed out. Read the plan, not the pass.
+
 ## 🚨 A CORRELATED SUBQUERY AGAINST A `DISTINCT ON` VIEW RE-MATERIALISES THE WHOLE VIEW ONCE PER OUTER ROW (measured 2026-09-02)
 
 **The shape.** `pack_ev_latest` is a view of `pack_ev_history` with
