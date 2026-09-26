@@ -7,7 +7,7 @@
 -- or misattributes editions to the wrong player.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260925135939_audit_20260925_steph_curry_one_player_and_player_name_aliases.sql);
+-- (supabase/migrations/20260926004254_audit_20260925_resolve_canonical_player_consults_the_player_identity_crosswalk.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -45,8 +45,130 @@ CREATE TABLE player_name_aliases (
   collection_id uuid NOT NULL,
   alias_slug    text NOT NULL,
   player_id     uuid NOT NULL,
+  note          text,
   PRIMARY KEY (collection_id, alias_slug)
 );
+
+-- 2026-09-25 (batch 53): the league-id crosswalk the resolver consults first
+-- (its tables and the two functions it calls, as fixture copies — each is
+-- pinned in its own file).
+CREATE TABLE teams_master (league text, team_name text, abbreviation text);
+INSERT INTO teams_master VALUES ('NBA', 'Los Angeles Lakers', 'LAL'), ('NBA', 'Golden State Warriors', 'GSW'), ('NBA', 'Seattle SuperSonics', 'SEA');
+CREATE TABLE player_identities (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  league text NOT NULL, league_player_id text NOT NULL, collection_id uuid NOT NULL,
+  player_id uuid, matched_by text, matched_at timestamptz,
+  name_slug text NOT NULL, display_name text NOT NULL,
+  latest_team text, rookie_season int, last_season int,
+  base_slug text GENERATED ALWAYS AS (regexp_replace(name_slug, '-(jr|sr|ii|iii|iv|v)-?$', '')) STORED
+);
+CREATE UNIQUE INDEX player_identities_player_id_uidx ON player_identities (player_id) WHERE player_id IS NOT NULL;
+CREATE OR REPLACE FUNCTION public.league_team_abbr(p_league text)
+ RETURNS TABLE(team_name text, abbr text)
+ LANGUAGE sql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT t.team_name, t.abbreviation AS abbr
+    FROM public.teams_master t
+   WHERE t.league::text = upper(p_league)
+  UNION ALL
+  SELECT v.team_name, v.abbr
+    FROM (VALUES
+      ('nfl', 'Washington Football Team', 'WAS'), ('nfl', 'Washington Redskins', 'WAS'),
+      ('nfl', 'San Diego Chargers', 'LAC'),       ('nfl', 'St. Louis Rams', 'LAR'),
+      ('nfl', 'Oakland Raiders', 'LV'),           ('nfl', 'Los Angeles Raiders', 'LV'),
+      ('nfl', 'Houston Oilers', 'TEN'),           ('nfl', 'Tennessee Oilers', 'TEN'),
+      ('nfl', 'Phoenix Cardinals', 'ARI'),        ('nfl', 'St. Louis Cardinals', 'ARI'),
+      ('nfl', 'Baltimore Colts', 'IND'),
+      ('nba', 'New Jersey Nets', 'BKN'),          ('nba', 'Seattle SuperSonics', 'OKC'),
+      ('nba', 'Vancouver Grizzlies', 'MEM'),      ('nba', 'New Orleans Hornets', 'NOP'),
+      ('nba', 'Charlotte Bobcats', 'CHA')
+    ) v(league, team_name, abbr)
+   WHERE v.league = p_league
+$function$;
+
+CREATE OR REPLACE FUNCTION public.resolve_player_identity(p_collection_id uuid, p_name text, p_team_name text, p_game_date date)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_league text;
+  v_base   text;
+  v_year   int;
+  v_abbr   text;
+  v_n      int;
+  v_nteam  int;
+  v_row    record;
+BEGIN
+  IF p_collection_id IS NULL OR p_name IS NULL OR trim(p_name) = '' THEN
+    RETURN jsonb_build_object('verdict', 'none', 'candidates', 0);
+  END IF;
+  SELECT CASE c.slug WHEN 'nba_top_shot' THEN 'nba' WHEN 'nfl_all_day' THEN 'nfl' END
+    INTO v_league FROM public.collections c WHERE c.id = p_collection_id;
+  IF v_league IS NULL THEN
+    RETURN jsonb_build_object('verdict', 'none', 'candidates', 0);
+  END IF;
+
+  v_base := regexp_replace(
+              regexp_replace(lower(trim(extensions.unaccent(p_name))), '[^a-z0-9]+', '-', 'g'),
+              '-(jr|sr|ii|iii|iv|v)-?$', '');
+  IF v_base = '' THEN
+    RETURN jsonb_build_object('verdict', 'none', 'candidates', 0);
+  END IF;
+  v_year := extract(year FROM p_game_date)::int;
+  IF p_team_name IS NOT NULL THEN
+    SELECT t.abbr INTO v_abbr FROM public.league_team_abbr(v_league) t WHERE t.team_name = p_team_name LIMIT 1;
+  END IF;
+
+  -- feed-backed candidates whose seasons contain the game year
+  SELECT count(*),
+         count(*) FILTER (WHERE v_abbr IS NOT NULL AND v_abbr =
+           CASE i.latest_team WHEN 'LA' THEN 'LAR' WHEN 'STL' THEN 'LAR'
+                              WHEN 'SD' THEN 'LAC' WHEN 'OAK' THEN 'LV'
+                              ELSE i.latest_team END)
+    INTO v_n, v_nteam
+    FROM public.player_identities i
+   WHERE i.league = v_league AND i.base_slug = v_base
+     AND i.rookie_season IS NOT NULL AND i.last_season IS NOT NULL
+     AND (v_year IS NULL OR v_year BETWEEN i.rookie_season - 1 AND i.last_season + 1);
+
+  IF v_n = 0 THEN
+    RETURN jsonb_build_object('verdict', 'none', 'candidates', 0);
+  END IF;
+
+  IF v_n = 1 THEN
+    SELECT i.id, i.player_id, i.display_name, i.name_slug INTO v_row
+      FROM public.player_identities i
+     WHERE i.league = v_league AND i.base_slug = v_base
+       AND i.rookie_season IS NOT NULL AND i.last_season IS NOT NULL
+       AND (v_year IS NULL OR v_year BETWEEN i.rookie_season - 1 AND i.last_season + 1);
+    RETURN jsonb_build_object('verdict', 'one', 'how', 'unique', 'candidates', 1,
+                              'identity_id', v_row.id, 'player_id', v_row.player_id,
+                              'display_name', v_row.display_name, 'name_slug', v_row.name_slug);
+  END IF;
+
+  IF v_nteam = 1 THEN
+    SELECT i.id, i.player_id, i.display_name, i.name_slug INTO v_row
+      FROM public.player_identities i
+     WHERE i.league = v_league AND i.base_slug = v_base
+       AND i.rookie_season IS NOT NULL AND i.last_season IS NOT NULL
+       AND (v_year IS NULL OR v_year BETWEEN i.rookie_season - 1 AND i.last_season + 1)
+       AND v_abbr = CASE i.latest_team WHEN 'LA' THEN 'LAR' WHEN 'STL' THEN 'LAR'
+                                        WHEN 'SD' THEN 'LAC' WHEN 'OAK' THEN 'LV'
+                                        ELSE i.latest_team END;
+    RETURN jsonb_build_object('verdict', 'one', 'how', 'team', 'candidates', v_n,
+                              'identity_id', v_row.id, 'player_id', v_row.player_id,
+                              'display_name', v_row.display_name, 'name_slug', v_row.name_slug);
+  END IF;
+
+  RETURN jsonb_build_object('verdict', 'ambiguous', 'candidates', v_n, 'team_hits', v_nteam);
+END
+$function$;
 
 -- >>> BEGIN verbatim resolve_canonical_player (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.resolve_canonical_player(p_collection_id uuid, p_name text, p_team text DEFAULT NULL::text)
@@ -59,6 +181,7 @@ DECLARE
   v_slug      text;
   v_coll_slug text;
   v_id        uuid;
+  v_r         jsonb;
 BEGIN
   IF p_collection_id IS NULL OR p_name IS NULL OR trim(p_name) = '' THEN
     RETURN NULL;
@@ -76,6 +199,39 @@ BEGIN
     FROM public.player_name_aliases a
    WHERE a.collection_id = p_collection_id
      AND a.alias_slug = v_slug;
+
+  -- 2026-09-25 (batch 53): the league-id crosswalk decides before the slug.
+  -- 'one' is the person (minted with the league's spelling when RPC has no
+  -- row; the label aliased when no row owns its slug); 'ambiguous' and
+  -- 'none' fall through to the slug match and the mint below, unchanged.
+  IF v_id IS NULL THEN
+    v_r := public.resolve_player_identity(p_collection_id, p_name, p_team, NULL);
+    IF v_r->>'verdict' = 'one' THEN
+      v_id := (v_r->>'player_id')::uuid;
+      IF v_id IS NULL THEN
+        SELECT c.slug INTO v_coll_slug FROM public.collections c WHERE c.id = p_collection_id;
+        INSERT INTO public.players (external_id, collection_id, name, team, collection)
+        VALUES (coalesce(v_coll_slug, 'unknown') || '-' || (v_r->>'name_slug'),
+                p_collection_id, v_r->>'display_name', nullif(trim(coalesce(p_team, '')), ''),
+                coalesce(v_coll_slug, 'unknown'))
+        ON CONFLICT (external_id) DO NOTHING
+        RETURNING id INTO v_id;
+        IF v_id IS NOT NULL THEN
+          UPDATE public.player_identities
+             SET player_id = v_id, matched_by = 'resolver', matched_at = now()
+           WHERE id = (v_r->>'identity_id')::uuid AND player_id IS NULL;
+        END IF;
+      END IF;
+      IF v_id IS NOT NULL AND v_slug <> (v_r->>'name_slug')
+         AND NOT EXISTS (SELECT 1 FROM public.players p
+                          WHERE p.collection_id = p_collection_id
+                            AND regexp_replace(lower(trim(extensions.unaccent(p.name))), '[^a-z0-9]+', '-', 'g') = v_slug) THEN
+        INSERT INTO public.player_name_aliases (collection_id, alias_slug, player_id, note)
+        VALUES (p_collection_id, v_slug, v_id, 'resolver ' || to_char(now(), 'YYYY-MM-DD') || ': label for ' || (v_r->>'name_slug'))
+        ON CONFLICT (collection_id, alias_slug) DO NOTHING;
+      END IF;
+    END IF;
+  END IF;
 
   IF v_id IS NULL THEN
   SELECT p.id INTO v_id
@@ -245,4 +401,43 @@ SELECT _assert_eq((SELECT team FROM players WHERE id='00000000-0000-0000-0000-00
   'team backfilled through the alias path');
 
 SELECT '✓ resolve_canonical_player invariants pass' AS result;
+
+-- 2026-09-25 (batch 53): the crosswalk decides before the slug.
+-- (a) a label that is a VARIANT of a feed-backed identity with a keyed row
+--     resolves to that row, mints nothing, and aliases the label
+INSERT INTO players (id, external_id, collection_id, name, team, collection) VALUES
+  ('00000000-0000-0000-0000-000000000009', '1627780', '11111111-1111-1111-1111-111111111111', 'Gary Payton II', NULL, 'nba_top_shot');
+INSERT INTO player_identities (id, league, league_player_id, collection_id, player_id, name_slug, display_name, latest_team, rookie_season, last_season) VALUES
+  ('b0000000-0000-0000-0000-000000000001', 'nba', '1627780', '11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000009', 'gary-payton-ii', 'Gary Payton II', 'GSW', 2016, 2026),
+  ('b0000000-0000-0000-0000-000000000002', 'nba', '56',      '11111111-1111-1111-1111-111111111111', NULL,                                   'gary-payton',    'Gary Payton',    'SEA', 1990, 2007),
+  -- a feed-backed rookie RPC has no row for yet
+  ('b0000000-0000-0000-0000-000000000003', 'nba', '9999',    '11111111-1111-1111-1111-111111111111', NULL,                                   'newman-rookie-jr-', 'Newman Rookie Jr.', 'LAL', 2026, 2026);
+SELECT _assert_eq(
+  resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'Gary Payton', 'Golden State Warriors')::text,
+  '00000000-0000-0000-0000-000000000009',
+  'a Warriors "Gary Payton" is Gary Payton II — decided by the crosswalk, not the exact slug');
+SELECT _assert_eq((SELECT count(*)::text FROM players WHERE name ILIKE 'gary payton%'), '1', 'no row minted for the variant');
+-- the label slug is NOT aliased: 'gary-payton' could be the father's URL (an owned slug is never aliased; here no row owns it, so it IS aliased)
+SELECT _assert_eq((SELECT player_id::text FROM player_name_aliases WHERE alias_slug = 'gary-payton'), '00000000-0000-0000-0000-000000000009',
+  'the label slug is aliased to the keyed row while no players row owns it');
+-- (b) no evidence splits the two Paytons → ambiguous → the legacy path (exact slug, then a mint under the label)
+DELETE FROM player_name_aliases WHERE alias_slug = 'gary-payton';
+SELECT resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'Gary Payton', NULL);
+SELECT _assert(( (SELECT count(*) FROM players WHERE external_id = 'nba_top_shot-gary-payton') = 1 ),
+  'ambiguous → the legacy path mints under the label, as it always did');
+-- (c) a feed-backed identity with no row: minted with the LEAGUE spelling, keyed, the label aliased
+SELECT resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'Newman Rookie', 'Los Angeles Lakers');
+SELECT _assert_eq((SELECT name FROM players WHERE external_id = 'nba_top_shot-newman-rookie-jr-'), 'Newman Rookie Jr.',
+  'minted with the league spelling, keyed on its slug');
+SELECT _assert_eq((SELECT player_id::text FROM player_identities WHERE id = 'b0000000-0000-0000-0000-000000000003'),
+  (SELECT id::text FROM players WHERE external_id = 'nba_top_shot-newman-rookie-jr-'), 'identity keyed by the resolver');
+SELECT _assert_eq((SELECT matched_by FROM player_identities WHERE id = 'b0000000-0000-0000-0000-000000000003'), 'resolver', 'matched_by resolver');
+SELECT _assert_eq((SELECT player_id::text FROM player_name_aliases WHERE alias_slug = 'newman-rookie'),
+  (SELECT id::text FROM players WHERE external_id = 'nba_top_shot-newman-rookie-jr-'), 'the label aliased');
+SELECT _assert(( (SELECT count(*) FROM players WHERE external_id = 'nba_top_shot-newman-rookie') = 0 ), 'no row under the label spelling');
+-- (d) a second call resolves the minted row (alias first) and mints nothing
+SELECT _assert_eq(
+  resolve_canonical_player('11111111-1111-1111-1111-111111111111', 'Newman Rookie', 'Los Angeles Lakers')::text,
+  (SELECT id::text FROM players WHERE external_id = 'nba_top_shot-newman-rookie-jr-'), 'idempotent');
+
 ROLLBACK;

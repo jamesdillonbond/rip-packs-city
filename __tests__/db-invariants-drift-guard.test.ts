@@ -667,7 +667,8 @@ const PINS = [
   {
     fn: "resolve_canonical_player",
     test: "supabase/tests/resolve_canonical_player.sql",
-    migration: "supabase/migrations/20260925135939_audit_20260925_steph_curry_one_player_and_player_name_aliases.sql",
+    // re-pointed 2026-09-25 (batch 53): the league-id crosswalk decides before the slug.
+    migration: "supabase/migrations/20260926004254_audit_20260925_resolve_canonical_player_consults_the_player_identity_crosswalk.sql",
   },
   {
     fn: "upsert_player_canonical",
