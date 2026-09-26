@@ -143,6 +143,10 @@ Durable facts from the `/dashboard/history` "packs erroring out" thread (ledger 
 
 A pack bought and opened inside the Top Shot account (custodial, never minted as a PackNFT) leaves no pack NFT, no `PackNFT.Opened` event and no `searchPackNft` row — **every pack source here is NFT-keyed and misses it.** 0xbd94…50ac: 119 PackNFT rips vs **2,855** real Top Shot reveals since 2021-03. The only trace is the moment deliveries: `moment_acquisitions` pack-pull rows land in bursts (ms apart within a reveal, tens of seconds between reveals). `rebuild_wallet_reconstructed_rips` groups them on a > 3 s gap — **validated 114 / 115 exact against known PackNFT pull lists** — into `wallet_reconstructed_rips`, surfaced with `rip_source = reconstructed` (no dist, no price paid). ⚠ Only as deep as the delivery seed (`bulk_seed`/LiveToken, ends 2026-03; only Trevor's wallet is deep-seeded); later custodial rips need a new delivery source.
 
+### ⛔ `retail_price_usd` is MIXED UNITS; an unrecorded buy is priced only inside its sale window (2026-09-26)
+
+Top Shot `pack_distributions.metadata->>'retail_price_usd'` holds 109 drops in UFix64 (×1e8) beside ~700 in dollars — **read it through `pack_retail_usd(text)`** (SQL) or `normalizePackRetailPrice` (TS), never raw and never blanket-÷1e8 (both shapes shipped: tens-of-millions "buys", and "$0.00 retail" on the pack page). All Day drop price: `allday_pack_supply.pack_price` (0 = unknown). ⚠ **"No buy row" does NOT mean "bought at retail"**: the first inference priced All Day Series 1 packs received in 2023–25 (no sale ever recorded — rewards) at their 2022 drop price. The rule that held: acquisition inside the drop window (start_time −1 d … +30 d) AND marketplace history covering it; label `retail_inferred`, keep it out of recorded spend.
+
 ### Which pack a wallet opened
 `get_pack_lifecycle` prefers `pack_purchases.pack_dist_id`, then `pack_rips.dist_id`, then the drop-pool guess (`20260926015925`; 0 disagreements vs `pack_nft_identity`). The drop-pool vote alone named the WRONG pack.
 
