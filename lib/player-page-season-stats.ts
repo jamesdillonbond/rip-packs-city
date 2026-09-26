@@ -62,6 +62,25 @@ export function seasonLabel(league: string, season: number): string {
   return String(season)
 }
 
+/** "0", "0.0", "0-0", "0.00", "-", "—", "" — ESPN's ways of writing nothing. */
+export function isZeroLike(v: string): boolean {
+  const t = String(v ?? "").trim()
+  if (t === "" || t === "-" || t === "—") return true
+  return /^[0.\-]+$/.test(t) && !/[1-9]/.test(t)
+}
+
+/**
+ * A line is EMPTY when every counting column is zero-like. Games played /
+ * started and derived columns (ratings, percentages, averages, efficiency —
+ * ESPN prints a 39.6 passer rating for zero attempts) do not make a line real.
+ */
+const CONTEXT_COLUMN = /games|rating|qbr|pct|avg|eff|per|ratio/i
+export function categoryIsEmpty(row: SeasonStatRow): boolean {
+  const counting = row.names.map((n, i) => ({ n, v: row.values[i] })).filter(({ n }) => !CONTEXT_COLUMN.test(n))
+  if (counting.length === 0) return row.values.every(isZeroLike)
+  return counting.every(({ v }) => isZeroLike(v))
+}
+
 export function buildSeasonStatsTables(result: SeasonStatsResult): SeasonStatsTable[] {
   const order = CATEGORY_ORDER[result.league] ?? []
   const byCat = new Map<string, SeasonStatRow[]>()
@@ -98,6 +117,11 @@ export function buildSeasonStatsTables(result: SeasonStatsResult): SeasonStatsTa
       void season
     }
     if (rows.length === 0) continue
+    // ESPN lists every category it tracks for the position group — a wide
+    // receiver comes with a "Passing" line of zeros. A category with nothing
+    // but zero-like values across the shown seasons is not a stat line, it is
+    // an absence, and it is not rendered.
+    if (rows.every(({ row }) => categoryIsEmpty(row))) continue
     // a category's label set can differ between seasons (ESPN adds columns);
     // the table is keyed on the newest season's labels and older seasons map by name
     const head = rows[0].row

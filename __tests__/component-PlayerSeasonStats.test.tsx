@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
 
 import PlayerSeasonStats from "@/components/entity/PlayerSeasonStats"
-import { buildSeasonStatsTables, seasonLabel, teamSlugLabel, type SeasonStatsResult } from "@/lib/player-page-season-stats"
+import { buildSeasonStatsTables, isZeroLike, seasonLabel, teamSlugLabel, type SeasonStatRow, type SeasonStatsResult } from "@/lib/player-page-season-stats"
 
 // The player page's Season stats section (batch 48, 2026-09-25). Pins the
 // THREE states the RPC hands back and that the component must keep apart:
@@ -57,6 +57,28 @@ describe("buildSeasonStatsTables", () => {
       [2022, "Team A", "5"],
       [2022, "Team B", "9"],
     ])
+  })
+
+  it("a category whose counting columns are all zero (a receiver's 'Passing': GP 14, RTG 39.6, everything else 0) is not rendered; a single real count keeps it", () => {
+    const line = (category: string, names: string[], values: string[]): SeasonStatRow => ({
+      season: 2025, season_type: 2, category, display_name: category, team_slug: "x", is_total: false, labels: names, names, values,
+    })
+    const wr: SeasonStatsResult = {
+      ...nfl,
+      rows: [
+        line("passing", ["gamesPlayed", "completions", "passingAttempts", "completionPct", "passingYards", "QBRating"], ["14", "0", "0", "0.0", "0", "39.6"]),
+        line("receiving", ["gamesPlayed", "receptions", "receivingYards"], ["14", "60", "789"]),
+        line("rushing", ["gamesPlayed", "rushingAttempts", "rushingYards"], ["14", "0", "1"]),
+      ],
+    }
+    expect(buildSeasonStatsTables(wr).map((t) => t.category)).toEqual(["rushing", "receiving"])
+    expect(isZeroLike("0")).toBe(true)
+    expect(isZeroLike("0.0")).toBe(true)
+    expect(isZeroLike("0-0")).toBe(true)
+    expect(isZeroLike("-")).toBe(true)
+    expect(isZeroLike("10")).toBe(false)
+    expect(isZeroLike("0.5")).toBe(false)
+    expect(isZeroLike("9.3-18.1")).toBe(false)
   })
 
   it("a misaligned row is dropped rather than rendered askew", () => {
