@@ -1540,6 +1540,22 @@ describe("SniperClient — a fully-decorated row draws every chip it earns", () 
     expect(row.textContent).toMatch(/Hexwave/i)
   })
 
+  it("the lowest-in-window chip says 'Feed low', never 'Floor' (it is computed over the feed window, not every listing)", async () => {
+    warm = {
+      data: feed({ deals: [deal({ isLowestAsk: true })] }),
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    }
+    render(<SniperClient />)
+    const row = (await waitFor(() => document.querySelector("#sniper-row-111"))) as HTMLElement
+    const chip = row.querySelector('[data-testid="feed-low-chip"]') as HTMLElement
+    expect(chip).toBeTruthy()
+    expect(chip.textContent?.trim()).toBe("Feed low")
+    expect(chip.getAttribute("title")).toMatch(/in this feed/)
+    expect(chip.getAttribute("title")).not.toMatch(/^Lowest ask for this edition$/)
+  })
+
   it("suppresses the parallel chip for a Base printing", async () => {
     // Not vacuous: "Base" is the default printing, so labelling it would put a
     // parallel badge on essentially every Top Shot row and make the real ones

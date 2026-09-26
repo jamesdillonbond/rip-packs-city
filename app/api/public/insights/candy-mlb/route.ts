@@ -93,26 +93,39 @@ export async function GET(req: NextRequest) {
     ? salesCounts[Math.floor((salesCounts.length - 1) / 2)]
     : 0;
 
+  // ⚠ The coverage counts are computed over the FETCHED rows. With a caller's
+  // `limit` below the board's size the window is the top-N by the sort key, so
+  // "N of limit priced" would read as a census and be skewed by the sort
+  // (sort=fmv&limit=50 said "50 of 50 editions carry one"). A truncated window
+  // publishes null counts and says so (2026-09-26).
+  const rowMeta = boardRowMeta(rows.length, limit);
+  const windowIsCensus = !rowMeta.truncated;
+
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
       source: "candy_secondary_board",
       set: "2026 MLB Base Series ICONs · Candy Digital (Solana)",
-      ...boardRowMeta(rows.length, limit),
+      ...rowMeta,
       elapsed_ms: Date.now() - t0,
       coverage: {
-        total_editions: rows.length,
-        priced_editions: priced,
-        editions_with_best_offer: withOffer,
-        rainbow_priced: rainbowPriced,
-        rainbow_total: rainbowTotal,
+        complete: windowIsCensus,
+        total_editions: windowIsCensus ? rows.length : null,
+        priced_editions: windowIsCensus ? priced : null,
+        editions_with_best_offer: windowIsCensus ? withOffer : null,
+        rainbow_priced: windowIsCensus ? rainbowPriced : null,
+        rainbow_total: windowIsCensus ? rainbowTotal : null,
         basis: "thin_secondary",
-        median_sales_per_priced_edition: medianSales,
+        median_sales_per_priced_edition: windowIsCensus ? medianSales : null,
         note:
           "Candy's secondary market opened ~2026-07-23 (Magic Eden). FMV is auto-computed by the standard " +
-          `pipeline off live sales: ${priced} of ${rows.length} editions carry one, off a median of ` +
-          `${medianSales} sale${medianSales === 1 ? "" : "s"} each — the cold tail (no-sale editions) shows ` +
-          "FMV '—'. best_offer_usd is an OFFER-derived floor, NEVER FMV. Treat this board as an early read " +
+          (windowIsCensus
+            ? `pipeline off live sales: ${priced} of ${rows.length} editions carry one, off a median of ` +
+              `${medianSales} sale${medianSales === 1 ? "" : "s"} each — the cold tail (no-sale editions) shows ` +
+              "FMV '—'. "
+            : `pipeline off live sales. This response is the top ${rows.length} by ${sortKey} (limit ${limit}), ` +
+              "not the whole board, so coverage counts are omitted — raise `limit` for them. ") +
+          "best_offer_usd is an OFFER-derived floor, NEVER FMV. Treat this board as an early read " +
           "on a thin market, not a census.",
       },
       pack_ev: packEv,

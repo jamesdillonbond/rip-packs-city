@@ -76,6 +76,24 @@ describe("GET /api/public/insights/candy-mlb", () => {
     })
   })
 
+  it("a truncated window (limit below the board) publishes NO coverage counts — never 'N of limit' as a census (2026-09-26)", async () => {
+    tables.candy_secondary_board = {
+      data: [
+        { external_id: "a", is_rainbow: false, fmv_usd: 50, best_offer_usd: null },
+        { external_id: "b", is_rainbow: false, fmv_usd: 40, best_offer_usd: null },
+      ],
+      error: null,
+    }
+    tables.candy_pack_ev_model = { data: [], error: null }
+    const body = await (await GET(req(`${base}?sort=fmv&limit=2`))).json()
+    expect(body.meta.truncated).toBe(true)
+    expect(body.meta.coverage.complete).toBe(false)
+    expect(body.meta.coverage.priced_editions).toBeNull()
+    expect(body.meta.coverage.total_editions).toBeNull()
+    expect(body.meta.coverage.note).not.toMatch(/2 of 2 editions carry one/)
+    expect(body.meta.coverage.note).toMatch(/not the whole board/)
+  })
+
   it("defaults sort to fmv_usd and clamps limit into [1,300]", async () => {
     tables.candy_secondary_board = { data: [], error: null }
     const res = await GET(req(`${base}?sort=bogus&limit=99999`))

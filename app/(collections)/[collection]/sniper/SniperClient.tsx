@@ -1483,9 +1483,13 @@ function SniperMomentsBody() {
                         <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>/ {deal.circulationCount.toLocaleString()}</div>
                       )}
                       <div className="flex gap-1 mt-0.5 flex-wrap justify-end">
+                        {/* isLowestAsk is computed over the feed's listing window (the newest ~200),
+                            not every open listing — so this chip may not sit on the edition's real
+                            floor, and must not say "Floor" (2026-09-26; the real floor is in the
+                            row's depth panel, read from /api/edition-floor). */}
                         {deal.isLowestAsk && (
-                          <span className="rpc-chip" title="Lowest ask for this edition" style={{ background: "rgba(16,185,129,0.15)", borderColor: "rgba(16,185,129,0.3)", color: "#34d399", fontSize: 9, padding: "1px 5px" }}>
-                            Floor
+                          <span className="rpc-chip" data-testid="feed-low-chip" title="Lowest ask for this edition among the listings in this feed — the edition's floor may be lower (expand the row)" style={{ background: "rgba(16,185,129,0.15)", borderColor: "rgba(16,185,129,0.3)", color: "#34d399", fontSize: 9, padding: "1px 5px" }}>
+                            Feed low
                           </span>
                         )}
                         {deal.isJersey && (
