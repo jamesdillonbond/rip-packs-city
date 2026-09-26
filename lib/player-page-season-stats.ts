@@ -15,6 +15,8 @@ export interface SeasonStatRow {
   category: string
   display_name: string | null
   team_slug: string | null
+  /** A traded season's "<year> Totals" line (ESPN gives one line per team plus this). */
+  is_total?: boolean
   labels: string[]
   names: string[]
   values: string[]
@@ -78,18 +80,35 @@ export function buildSeasonStatsTables(result: SeasonStatsResult): SeasonStatsTa
   })
   const tables: SeasonStatsTable[] = []
   for (const cat of cats) {
-    const rows = (byCat.get(cat) ?? []).slice().sort((a, b) => b.season - a.season)
+    const all = (byCat.get(cat) ?? []).slice().sort((a, b) => b.season - a.season)
+    // A traded season arrives as one line per team plus a totals line: show the
+    // total (labelled with both teams) and drop the per-team lines; a season
+    // with per-team lines and NO total keeps every line, each named by team.
+    const rows: Array<{ row: SeasonStatRow; team: string | null }> = []
+    const bySeason = new Map<number, SeasonStatRow[]>()
+    for (const r of all) bySeason.set(r.season, [...(bySeason.get(r.season) ?? []), r])
+    for (const [season, lines] of [...bySeason.entries()].sort((a, b) => b[0] - a[0])) {
+      const total = lines.find((l) => l.is_total === true)
+      if (total) {
+        const teams = lines.filter((l) => l !== total && l.team_slug).map((l) => teamSlugLabel(l.team_slug)).filter(Boolean) as string[]
+        rows.push({ row: total, team: teams.length ? teams.join(" / ") : null })
+      } else {
+        for (const l of lines) rows.push({ row: l, team: teamSlugLabel(l.team_slug) })
+      }
+      void season
+    }
+    if (rows.length === 0) continue
     // a category's label set can differ between seasons (ESPN adds columns);
     // the table is keyed on the newest season's labels and older seasons map by name
-    const head = rows[0]
+    const head = rows[0].row
     const labels = head.labels
-    const seasons = rows.map((r) => {
+    const seasons = rows.map(({ row: r, team }) => {
       const values = labels.map((_, i) => {
         const name = head.names[i]
         const j = r.names.indexOf(name)
         return j === -1 ? "—" : (r.values[j] ?? "—")
       })
-      return { season: r.season, seasonLabel: seasonLabel(result.league, r.season), team: teamSlugLabel(r.team_slug), values }
+      return { season: r.season, seasonLabel: seasonLabel(result.league, r.season), team, values }
     })
     tables.push({ category: cat, title: head.display_name ?? cat, labels, seasons })
   }

@@ -34,6 +34,7 @@ export function parseEspnStats(payload, espnId) {
   const seasonType = st && Number.isInteger(Number(st.value)) ? Number(st.value) : 2
 
   const rows = []
+  const seen = new Set()
   for (const c of cats) {
     if (!c || typeof c.name !== "string" || c.name === "") continue
     const labels = Array.isArray(c.labels) ? c.labels.map(String) : null
@@ -44,13 +45,24 @@ export function parseEspnStats(payload, espnId) {
       if (!Number.isInteger(year)) continue
       const values = Array.isArray(s.stats) ? s.stats.map((v) => (v == null ? "" : String(v))) : null
       if (!values || values.length !== labels.length) continue
+      // A traded season comes as one line PER TEAM plus a "<year> Totals" line
+      // (teamId null, teamSlug "2024 Totals"). The total is keyed on team_slug ''
+      // and flagged; per-team lines keep their slug. Measured 2026-09-25 (Adams).
+      const rawSlug = typeof s.teamSlug === "string" ? s.teamSlug.trim() : ""
+      // a real slug never carries a space; the totals "slug" is "<year> Totals"
+      const isTotal = /totals?$/i.test(rawSlug) || / /.test(rawSlug)
+      const teamSlug = isTotal || rawSlug === "" ? "" : rawSlug
+      const key = `${year}|${c.name}|${teamSlug}`
+      if (seen.has(key)) continue
+      seen.add(key)
       rows.push({
         espn_id: String(espnId),
         season: year,
         season_type: seasonType,
         category: c.name,
         display_name: typeof c.displayName === "string" ? c.displayName : null,
-        team_slug: typeof s.teamSlug === "string" && s.teamSlug !== "" ? s.teamSlug : null,
+        team_slug: teamSlug === "" ? null : teamSlug,
+        is_total: isTotal,
         labels,
         names,
         values,

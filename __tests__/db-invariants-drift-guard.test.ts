@@ -660,7 +660,9 @@ const PINS = [
     // no rows yet, else the latest N regular seasons newest first.
     fn: "get_player_season_stats",
     test: "supabase/tests/get_player_season_stats.sql",
-    migration: "supabase/migrations/20260925233446_audit_20260925_player_season_stats_espn_feed_table_and_sync_rpcs.sql",
+    // re-pointed 2026-09-25 (batch 49): the key gained team_slug (a traded season
+    // is one line per team plus a total), the read returns is_total.
+    migration: "supabase/migrations/20260925235606_audit_20260925_player_season_stats_keyed_by_team_too.sql",
   },
   {
     fn: "resolve_canonical_player",

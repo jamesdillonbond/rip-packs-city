@@ -9,7 +9,7 @@
 -- with zero categories, so it leaves the front of the queue.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260925233446_audit_20260925_player_season_stats_espn_feed_table_and_sync_rpcs.sql);
+-- (supabase/migrations/20260925235606_audit_20260925_player_season_stats_keyed_by_team_too.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -23,10 +23,10 @@ CREATE TABLE player_identities (
 );
 CREATE TABLE player_season_stats (
   league text NOT NULL, espn_id text NOT NULL, season int NOT NULL, season_type int NOT NULL DEFAULT 2,
-  category text NOT NULL, display_name text, team_slug text,
+  category text NOT NULL, display_name text, team_slug text NOT NULL DEFAULT '', is_total boolean NOT NULL DEFAULT false,
   labels text[] NOT NULL, names text[] NOT NULL, "values" text[] NOT NULL,
   source text NOT NULL DEFAULT 'espn', refreshed_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (league, espn_id, season, season_type, category),
+  PRIMARY KEY (league, espn_id, season, season_type, category, team_slug),
   CHECK (array_length(labels, 1) = array_length("values", 1))
 );
 
@@ -43,24 +43,27 @@ BEGIN
     RAISE EXCEPTION 'upsert_player_season_stats: unknown league %', p_league;
   END IF;
   WITH r AS (
-    SELECT * FROM jsonb_to_recordset(COALESCE(p_rows, '[]'::jsonb))
+    SELECT DISTINCT ON (x.espn_id, x.season, COALESCE(x.season_type, 2), x.category, COALESCE(nullif(trim(x.team_slug), ''), ''))
+           x.*
+      FROM jsonb_to_recordset(COALESCE(p_rows, '[]'::jsonb))
              AS x(espn_id text, season int, season_type int, category text, display_name text,
-                  team_slug text, labels text[], names text[], "values" text[])
+                  team_slug text, is_total boolean, labels text[], names text[], "values" text[])
+     ORDER BY x.espn_id, x.season, COALESCE(x.season_type, 2), x.category, COALESCE(nullif(trim(x.team_slug), ''), '')
   ),
   ins AS (
     INSERT INTO public.player_season_stats
-      (league, espn_id, season, season_type, category, display_name, team_slug, labels, names, "values", source, refreshed_at)
+      (league, espn_id, season, season_type, category, display_name, team_slug, is_total, labels, names, "values", source, refreshed_at)
     SELECT p_league, trim(r.espn_id), r.season, COALESCE(r.season_type, 2), trim(r.category),
-           nullif(trim(r.display_name), ''), nullif(trim(r.team_slug), ''),
+           nullif(trim(r.display_name), ''), COALESCE(nullif(trim(r.team_slug), ''), ''), COALESCE(r.is_total, false),
            r.labels, r.names, r."values", 'espn', now()
       FROM r
      WHERE r.espn_id IS NOT NULL AND trim(r.espn_id) <> ''
        AND r.season IS NOT NULL AND r.category IS NOT NULL AND trim(r.category) <> ''
        AND r.labels IS NOT NULL AND r.names IS NOT NULL AND r."values" IS NOT NULL
        AND array_length(r.labels, 1) = array_length(r."values", 1)
-    ON CONFLICT (league, espn_id, season, season_type, category) DO UPDATE SET
+    ON CONFLICT (league, espn_id, season, season_type, category, team_slug) DO UPDATE SET
       display_name = EXCLUDED.display_name,
-      team_slug    = EXCLUDED.team_slug,
+      is_total     = EXCLUDED.is_total,
       labels       = EXCLUDED.labels,
       names        = EXCLUDED.names,
       "values"     = EXCLUDED."values",
@@ -115,11 +118,12 @@ BEGIN
            'season_type', s.season_type,
            'category', s.category,
            'display_name', s.display_name,
-           'team_slug', s.team_slug,
+           'team_slug', nullif(s.team_slug, ''),
+           'is_total', s.is_total,
            'labels', to_jsonb(s.labels),
            'names', to_jsonb(s.names),
            'values', to_jsonb(s."values")
-         ) ORDER BY s.season DESC, s.category), '[]'::jsonb),
+         ) ORDER BY s.season DESC, s.category, s.is_total DESC, s.team_slug), '[]'::jsonb),
          max(s.refreshed_at)
     INTO v_rows, v_refreshed
     FROM public.player_season_stats s
@@ -186,13 +190,28 @@ BEGIN
   PERFORM _assert_eq(r->'rows'->0->'values'->>1, '4,100', 'values kept as ESPN gives them');
   PERFORM _assert((r->>'rows_refreshed_at') IS NOT NULL, 'rows_refreshed_at set');
 
+  -- 6b. a traded season: two team lines + a totals line land as THREE rows (the
+  --     shape that failed the first production run), and the read returns all
+  --     three, the total first
+  n := upsert_player_season_stats('nfl', jsonb_build_array(
+    jsonb_build_object('espn_id','3139477','season',2022,'season_type',2,'category','receiving','display_name','Receiving','team_slug','team-a','is_total',false,'labels',array['GP'],'names',array['gp'],'values',array['3']),
+    jsonb_build_object('espn_id','3139477','season',2022,'season_type',2,'category','receiving','display_name','Receiving','team_slug','team-b','is_total',false,'labels',array['GP'],'names',array['gp'],'values',array['11']),
+    jsonb_build_object('espn_id','3139477','season',2022,'season_type',2,'category','receiving','display_name','Receiving','team_slug',NULL,'is_total',true,'labels',array['GP'],'names',array['gp'],'values',array['14']),
+    jsonb_build_object('espn_id','3139477','season',2022,'season_type',2,'category','receiving','display_name','Receiving','team_slug','team-b','is_total',false,'labels',array['GP'],'names',array['gp'],'values',array['11'])
+  ), NULL);
+  PERFORM _assert_eq(n::text, '3', 'two teams + a total = three rows; the duplicate collapsed');
+  r := get_player_season_stats('a0000000-0000-0000-0000-000000000001', 4);
+  PERFORM _assert_eq((SELECT count(*)::text FROM jsonb_array_elements(r->'rows') x WHERE x->>'season' = '2022' AND x->>'category' = 'receiving'), '3', 'the read carries all three lines');
+  PERFORM _assert_eq((SELECT x->>'is_total' FROM jsonb_array_elements(r->'rows') x WHERE x->>'season' = '2022' AND x->>'category' = 'receiving' LIMIT 1), 'true', 'the total is first');
+  PERFORM _assert((SELECT x->'team_slug' = 'null'::jsonb FROM jsonb_array_elements(r->'rows') x WHERE x->>'season' = '2022' AND x->>'category' = 'receiving' LIMIT 1), 'the total reads team_slug null, not empty string');
+
   -- 7. a re-upsert of a changed line replaces it (no duplicate key, new values)
   n := upsert_player_season_stats('nfl', jsonb_build_array(
     jsonb_build_object('espn_id','3139477','season',2025,'season_type',2,'category','passing','display_name','Passing','team_slug','kansas-city-chiefs','labels',array['GP','YDS'],'names',array['gamesPlayed','passingYards'],'values',array['17','4,250'])
   ), NULL);
   PERFORM _assert_eq(n::text, '1', 'one row replaced');
-  PERFORM _assert_eq((SELECT "values"[2] FROM player_season_stats WHERE espn_id = '3139477' AND season = 2025 AND category = 'passing' AND season_type = 2), '4,250', 'replaced value');
-  PERFORM _assert_eq((SELECT count(*)::text FROM player_season_stats WHERE espn_id = '3139477'), '6', 'still six rows');
+  PERFORM _assert_eq((SELECT "values"[2] FROM player_season_stats WHERE espn_id = '3139477' AND season = 2025 AND category = 'passing' AND season_type = 2 AND team_slug = 'kansas-city-chiefs'), '4,250', 'replaced value');
+  PERFORM _assert_eq((SELECT count(*)::text FROM player_season_stats WHERE espn_id = '3139477'), '9', 'still nine rows');
 
   -- 8. unknown league refused
   BEGIN

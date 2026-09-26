@@ -167,6 +167,23 @@ describe("POST final — ok is derived from the counts", () => {
     expect(t.p_extra.deadline_hit).toBe(true)
   })
 
+  it("one ESPN 500 in 300 is NOTED, not a failed run — the player is retried next run; 5 % is", async () => {
+    const one = { ...good, fetched_ok: 297, fetched_failed: 1 }
+    const r1 = await POST(makeReq({ url, auth: AUTH, body: { final: true, league: "nfl", stats: one } }))
+    expect(await r1.json()).toEqual({ ok: true, problems: ["1 ESPN stat fetches failed"] })
+    let t = terminal()
+    expect(t.p_ok).toBe(true)
+    expect(t.p_error).toBeNull()
+    expect(t.p_extra.problems).toEqual(["1 ESPN stat fetches failed"])
+    state.rpcCalls = []
+    const many = { ...good, fetched_ok: 283, fetched_failed: 15 }
+    const r2 = await POST(makeReq({ url, auth: AUTH, body: { final: true, league: "nfl", stats: many } }))
+    expect((await r2.json()).ok).toBe(false)
+    t = terminal()
+    expect(t.p_ok).toBe(false)
+    expect(t.p_error).toBe("15 ESPN stat fetches failed")
+  })
+
   it("a run that never sent a chunk logs rows_written NULL (not measured), never 0", async () => {
     const none = { ...good, targets: 0, fetched_ok: 0, fetched_404: 0, rows_upserted: 0, chunks: 0, chunks_ok: 0 }
     await POST(makeReq({ url, auth: AUTH, body: { final: true, league: "nfl", stats: none } }))

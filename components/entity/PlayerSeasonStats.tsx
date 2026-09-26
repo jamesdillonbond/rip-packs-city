@@ -64,8 +64,8 @@ export default function PlayerSeasonStats({
                     </tr>
                   </thead>
                   <tbody>
-                    {t.seasons.map((s) => (
-                      <tr key={s.season} style={{ borderTop: "1px solid var(--rpc-border)" }}>
+                    {t.seasons.map((s, idx) => (
+                      <tr key={`${s.season}-${idx}`} style={{ borderTop: "1px solid var(--rpc-border)" }}>
                         <td style={{ padding: "6px 8px", whiteSpace: "nowrap", color: "var(--rpc-text-primary)" }}>
                           <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13 }}>{s.seasonLabel}</span>
                           {s.team ? <span style={{ color: "var(--rpc-text-muted)", marginLeft: 8, fontSize: 11 }}>{s.team}</span> : null}

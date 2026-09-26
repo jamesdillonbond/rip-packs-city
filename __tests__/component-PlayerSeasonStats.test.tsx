@@ -38,6 +38,27 @@ describe("buildSeasonStatsTables", () => {
     expect(passing.seasons[1].values).toEqual(["16", "3,928", "26", "—"])
     expect(passing.seasons[0].team).toBe("Kansas City Chiefs")
   })
+  it("a traded season shows its TOTALS line labelled with both teams, not two half-seasons; without a total, each team's line stays", () => {
+    const traded: SeasonStatsResult = {
+      ...nfl,
+      rows: [
+        { season: 2024, season_type: 2, category: "receiving", display_name: "Receiving", team_slug: "las-vegas-raiders", is_total: false, labels: ["GP"], names: ["gamesPlayed"], values: ["3"] },
+        { season: 2024, season_type: 2, category: "receiving", display_name: "Receiving", team_slug: "new-york-jets", is_total: false, labels: ["GP"], names: ["gamesPlayed"], values: ["11"] },
+        { season: 2024, season_type: 2, category: "receiving", display_name: "Receiving", team_slug: null, is_total: true, labels: ["GP"], names: ["gamesPlayed"], values: ["14"] },
+        { season: 2023, season_type: 2, category: "receiving", display_name: "Receiving", team_slug: "las-vegas-raiders", is_total: false, labels: ["GP"], names: ["gamesPlayed"], values: ["17"] },
+        { season: 2022, season_type: 2, category: "receiving", display_name: "Receiving", team_slug: "team-a", is_total: false, labels: ["GP"], names: ["gamesPlayed"], values: ["5"] },
+        { season: 2022, season_type: 2, category: "receiving", display_name: "Receiving", team_slug: "team-b", is_total: false, labels: ["GP"], names: ["gamesPlayed"], values: ["9"] },
+      ],
+    }
+    const [t] = buildSeasonStatsTables(traded)
+    expect(t.seasons.map((s) => [s.season, s.team, s.values[0]])).toEqual([
+      [2024, "Las Vegas Raiders / New York Jets", "14"],
+      [2023, "Las Vegas Raiders", "17"],
+      [2022, "Team A", "5"],
+      [2022, "Team B", "9"],
+    ])
+  })
+
   it("a misaligned row is dropped rather than rendered askew", () => {
     const broken: SeasonStatsResult = { ...nfl, rows: [{ ...nfl.rows[0], values: ["16"] }] }
     expect(buildSeasonStatsTables(broken)).toEqual([])

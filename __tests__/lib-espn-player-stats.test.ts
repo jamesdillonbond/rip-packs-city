@@ -38,6 +38,7 @@ describe("parseEspnStats", () => {
         category: "passing",
         display_name: "Passing",
         team_slug: "kansas-city-chiefs",
+        is_total: false,
         labels: ["GP", "YDS", "TD"],
         names: ["gamesPlayed", "passingYards", "passingTouchdowns"],
         values: ["16", "3,928", "26"],
@@ -49,10 +50,34 @@ describe("parseEspnStats", () => {
         category: "passing",
         display_name: "Passing",
         team_slug: "kansas-city-chiefs",
+        is_total: false,
         labels: ["GP", "YDS", "TD"],
         names: ["gamesPlayed", "passingYards", "passingTouchdowns"],
         values: ["17", "4,100", "30"],
       },
+    ])
+  })
+
+  it("a traded season: one line per team keeps its slug, the totals line is team_slug null + is_total, duplicates collapse", () => {
+    const traded = {
+      filters: [{ name: "seasontype", value: "2" }],
+      categories: [
+        {
+          name: "receiving", displayName: "Receiving", labels: ["GP"], names: ["gamesPlayed"],
+          statistics: [
+            { season: { year: 2024 }, teamSlug: "las-vegas-raiders", teamId: 13, stats: ["3"] },
+            { season: { year: 2024 }, teamSlug: "new-york-jets", teamId: 20, stats: ["11"] },
+            { season: { year: 2024 }, teamSlug: "2024 Totals", teamId: null, displayName: "2024  Totals", stats: ["14"] },
+            { season: { year: 2024 }, teamSlug: "new-york-jets", teamId: 20, stats: ["11"] },
+          ],
+        },
+      ],
+    }
+    const rows = parseEspnStats(traded, 16800)
+    expect(rows.map((r) => [r.team_slug, r.is_total, r.values[0]])).toEqual([
+      ["las-vegas-raiders", false, "3"],
+      ["new-york-jets", false, "11"],
+      [null, true, "14"],
     ])
   })
 

@@ -120,10 +120,16 @@ export async function POST(req: NextRequest) {
     const targets = num(s.targets)
     const problems: string[] = []
     if (chunksOk !== chunks) problems.push(`${chunks - chunksOk} of ${chunks} chunks did not land`)
+    // ESPN answers an occasional 500 for one athlete (1 of 300 on the first
+    // run); that player stays at the front of the queue and is retried next
+    // run, so a failure rate under 5 % is noted, not a failed run. Above it
+    // — or ANY chunk that did not land, any search failure, a deadline — is.
+    const fetchFailRate = targets && targets > 0 ? fetchedFailed / targets : fetchedFailed > 0 ? 1 : 0
     if (fetchedFailed > 0) problems.push(`${fetchedFailed} ESPN stat fetches failed`)
     if (resolveFailed > 0) problems.push(`${resolveFailed} ESPN searches failed`)
     if (s.deadline_hit === true) problems.push("runner hit its deadline before finishing")
-    const ok = problems.length === 0
+    const ok =
+      chunksOk === chunks && resolveFailed === 0 && s.deadline_hit !== true && fetchFailRate < 0.05
     await logTerminalRun({
       pipeline: PIPELINE,
       startedAt,
@@ -146,6 +152,8 @@ export async function POST(req: NextRequest) {
         unresolved: num(s.unresolved),
         resolve_failed: resolveFailed,
         deadline_hit: s.deadline_hit === true,
+        // named even on an ok run (a sub-threshold ESPN failure is still a fact)
+        problems,
         errors: Array.isArray(s.errors) ? s.errors.slice(0, 10) : null,
         event: typeof s.runner_event === "string" ? s.runner_event : null,
       },
