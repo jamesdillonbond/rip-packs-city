@@ -29,7 +29,9 @@ export const maxDuration = 300
 
 const PIPELINE_NAME = "wallet-backfill-candy"
 const UPSERT_CHUNK = 500
-const ESCROW_READ_CONCURRENCY = 8
+// 8 was measured to draw DAS HTTP 429 on a 62-listing seller (2026-09-26);
+// 2 with one backoff retry on a 429 stays under the helius-proxy rate limit.
+const ESCROW_READ_CONCURRENCY = 2
 const ESCROW_READ_BUDGET_MS = 200_000
 
 // Permissive base58 sanity check — keeps obvious garbage off DAS without
@@ -213,7 +215,13 @@ export async function POST(req: NextRequest) {
             const mint = todo[next++]
             let a: DasAsset
             try {
-              a = await getAsset(mint)
+              try {
+                a = await getAsset(mint)
+              } catch (e) {
+                if (!/HTTP 429/.test(e instanceof Error ? e.message : String(e))) throw e
+                await new Promise((r) => setTimeout(r, 1500))
+                a = await getAsset(mint)
+              }
             } catch (e) {
               escrowError = `getAsset ${mint}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200)
               continue

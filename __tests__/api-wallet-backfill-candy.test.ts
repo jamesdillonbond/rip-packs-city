@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
   listings: { data: [] as any[] | null, error: null as any },
   assets: {} as Record<string, any>,
   upserted: [] as any[][],
+  throttleOnce: new Set<string>(),
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -45,6 +46,7 @@ vi.mock("@/lib/chains/solana/das", () => ({
     for (const page of state.pages) await cb(page)
   },
   getAsset: async (id: string) => {
+    if (state.throttleOnce.has(id)) { state.throttleOnce.delete(id); throw new Error("DAS getAsset HTTP 429: Too Many Requests") }
     if (!(id in state.assets)) throw new Error("no asset " + id)
     return state.assets[id]
   },
@@ -279,4 +281,16 @@ describe("POST /api/wallet-backfill-candy — deferred DAS walk", () => {
     expect(run.p_extra.escrow_listed_capped).toBe(true)
     expect(String(run.p_error)).toContain("incomplete")
   })
+
+  it("a DAS 429 on one read is retried once, not reported as a failed run", async () => {
+    state.pages = []
+    state.listings = { data: [{ token_mint: "m9" }], error: null }
+    state.assets = { m9: asset({ m: "m9", ownership: { owner: ESCROW } }) }
+    state.throttleOnce = new Set(["m9"])
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.escrow_listed_written).toBe(1)
+  }, 10_000)
 })
