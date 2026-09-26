@@ -148,7 +148,6 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 
 - ⚠ **A filed FINDING is a hypothesis — re-derive before acting; and so is a filed DECISION NOT TO ACT (the tell is a cost stated with no number in it), a stale JUSTIFICATION (invertible — the tell cites a SHIP DATE), and a filed CORRECTION.** ⛔ **Read the ITEM, never an excerpt — a grep of #118’s first paragraph cost a change it twice FORBIDS. OPEN the dated item before contradicting it, and a CONFOUND found does not license the OPPOSITE attribution.** Five more clauses + every case, verbatim: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
 - ⚠ **A plausible mechanism is not a measurement**, including when it flatters this file — a cheap sample beats a good story. ⚠ **And a probe whose HARNESS differs from production in the ONE dimension the answer depends on is not a measurement of production** (OG-font case: key-files-and-honesty.md).
-- ⚠ **A DEFAULT UI LIST IS A SAMPLE; a UI CLICK CAN FAIL SILENTLY** — Panini sales default to TOP; a pointer click hit RECENT 3/~300 times, DOM click always: panini-fmv-packev-methodology.md.
 - ⛔ **A FIX TO A ROUTE IS NOT A FIX TO THE SURFACE until its CALLER can reach it** — one was verified live 0 → 5 while its client still returned early on the wallet shape, and **no route-level test could have caught it** (case: cron-and-schedulers.md).
 - ⚠ **Name the caller before you touch the function** — an afternoon went into one with **zero** callers. **EIGHT sources, and the last two are INVISIBLE from a sandbox**; a TRIGGER function has no textual caller. ⚠ **A TABLE’s WRITERS the same — grep the DB: two pg_cron ones REFUTED a filed finding (#81).** Full list: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
 - ⚠ **Displaced 09-20 (verbatim, end of file): DISCOVERY must not double as the REFRESH list · an ELIGIBILITY count is not a GAIN count · a SWEEP under-covers two ways, both reporting success: too few slots (`N ≥ population ÷ staleness_hours`) and the WRONG POPULATION · **size the MARGINAL set; a CAP IS NOT A RATE** → [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md) · `count(*)` over a ONE-ROW function → database.md · Diff the SET, not the count → trust-board-and-safety.md.**
@@ -265,6 +264,8 @@ The rest (Pinnacle's FMV triple-join, DERIVE-don't-recite): [concierge.md](docs/
 ## Hot wallet & secrets
 
 Flow CLI hot wallet `0x3aa11c84d776838f`. ⛔ **Signing MUST be ECDSA_secp256k1 + SHA2_256** (`server-authz.ts` used p256 + SHA3-256 for months) and signing tests must verify **cryptographically**, never assert output shape. Wallet rules, HybridCustody ban, the 8 key env vars: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
+
+⭐ **Edge deploys: push, then dispatch `.github/workflows/edge-fn-deploy.yml` (`function=<slug>`) — CLI from committed files, read-back checks; no MCP transcription.** rpc-edge-fn-deploy §4.
 
 ## Prioritized next actions
 

@@ -2876,3 +2876,21 @@ Condensed in CLAUDE.md to make room for the stray-worktree / regenerator-as-dele
 **Fix `20260924182358`:** both checks fall back to `pipeline_runs_daily` (indefinite retention, 6-hourly refresh, PK `(pipeline, day)`) ONLY when the raw table has no row for the lane, so raw stays the authority and a same-day failure is never masked. It is pinned in `supabase/tests/detect_stalled_pipelines.sql` with three fixtures: a purged weekly lane that is not stalled, a 9-day-dead lane that is stalled, and a case where raw beats a fresher rollup.
 
 ⭐ **Before adding a watchlist row, compare the lane's period with the retention of every table the check reads.** A threshold longer than the retention is never evaluated against real data.
+
+## A heartbeat must carry the INVOCATION's start, or a correlation reads a clean run as a kill (2026-09-25, PT)
+
+The Wall Kills arm pairs a `<pipeline>-heartbeat` row with a terminal row whose `started_at` is within ±5 s. `player-stats-sync` read **5/10 killed** while every run had written its terminal row: the GitHub runner stamps `startedAt` before its ~3-minute ESPN-resolve phase, and the route wrote the heartbeat only on the later `targets` call, ~160 s after. Every NBA run (the leg with the resolve phase) read as a kill; every NFL run read clean — a perfect split by leg was the tell.
+
+**Fix (`e9d018a46`):** the runner sends its own `startedAt` plus `hb=1` on its FIRST route call; the route stamps the heartbeat with that instant (plausibility-bounded to the last hour). Verified on the next run: heartbeat and terminal row carry the identical `started_at`.
+
+⭐ **Rule: when the caller is a separate process (a runner, a script, a laptop task), the heartbeat's `started_at` is the CALLER's start, passed in — never the route's `Date.now()` on whichever request happens to write it.** A route-side stamp is late by however long the caller worked before calling.
+
+## A work queue must stamp a FAILED attempt too, or the failures own its head forever (2026-09-25, PT)
+
+`player_stats_sync_targets` ordered `stats_refreshed_at NULLS FIRST`, and only a 200/404 wrote that column. Five NBA identities whose ESPN stats endpoint 500s every time were never stamped, so they were re-read FIRST on every run — 8–9 failures per run against a 5 % (15) fail threshold, with every resolve batch able to add more. Past 15, every NBA run would have read failed, permanently.
+
+**Fix (`20260926025347`):** `player_identities.stats_failed_at` (queue position only — the page still reads `stats_refreshed_at`), the queue orders by `GREATEST(stats_refreshed_at, stats_failed_at) NULLS FIRST`, and the runner posts its failed ids to `mark_player_stats_fetch_failed` once per run. A failing player now goes to the back and is retried once per cycle. This is the CLAUDE.md "a leg's ORDER BY decides whether it progresses" rule in its commonest form: **the column a queue sorts on must be written on EVERY attempt's outcome, success or failure.**
+
+## Displaced from CLAUDE.md 2026-09-25 PT (verbatim) — the UI-sample bullet, to pay for the edge-deploy pointer
+
+- ⚠ **A DEFAULT UI LIST IS A SAMPLE; a UI CLICK CAN FAIL SILENTLY** — Panini sales default to TOP; a pointer click hit RECENT 3/~300 times, DOM click always: panini-fmv-packev-methodology.md.

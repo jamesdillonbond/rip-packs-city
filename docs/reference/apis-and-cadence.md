@@ -348,6 +348,7 @@ With no `sortBy`, the API orders by `created_at.block_time` alone. Its opaque cu
 - Batch about 125 (id, holder) pairs per script. Candidate holders come from the latest `sales.buyer_address`, `topshot_ownership` and `moments.owner_address`.
 - A moment that has moved returns nothing: record "not held", never "wrong".
 - Used for #116: `docs/audits/i116-chain-adjudication-2026-09-24.md`.
+- ⭐ **2026-09-25 (#142) additions.** (1) `getNumMomentsInEdition` batches cleanly — one script over 42 `[[setID, playID]]` pairs returned all 42 counts; build the argument with `string_agg(… ORDER BY …)` so results map back by position. (2) **It counts base + ALL parallels** — compare it with `sum(circulation_count)` over `base` and `base::*`, never the base row alone (the 09-22 lesson; 5 "mismatches" were exactly that). (3) **Run a positive control before trusting a zero:** an owner walk found 0 of 74 misattributed moments still with their last buyer; the same script over the 20 most recent sales found 20 of 20 with set/play/serial/subedition all matching — so the zero was real (the moments had moved), not a broken script. (4) Holder coverage is the limit: of 1,288 misattributed NFT ids only 74 had a buyer address, 2 a `topshot_ownership` row and 1 a `moments` owner.
 
 ## Catalog names the Dapper API no longer serves ARE on chain (2026-09-25, PT)
 

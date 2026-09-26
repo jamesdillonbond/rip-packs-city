@@ -163,7 +163,23 @@ have **two** cron callers sharing one key — check before assuming 1:1.
 
 ## 4. Deploying
 
-### CLI (preferred — resolves `_shared` deps correctly)
+### ⭐ FIRST CHOICE since 2026-09-25 — the `edge-fn-deploy` GitHub workflow (no transcription, no local credential)
+`.github/workflows/edge-fn-deploy.yml`, `workflow_dispatch` with input `function=<slug>`
+(GitHub MCP: `actions_run_trigger` → `run_workflow`, `ref: main`). It runs the CLI below on
+a GitHub runner with the repo's `SUPABASE_ACCESS_TOKEN` / `SUPABASE_PROJECT_ID` secrets and
+deploys **the bytes committed on `main`** — so commit + push FIRST, then dispatch.
+- Pre-flight: slug must be a real `supabase/functions/<slug>/index.ts`; a function whose
+  source reads `*_GATE_KEY` is **refused** unless `gate_secret_is_set` is ticked (§1).
+- Post-conditions read back from production and FAIL the run if false: `verify_jwt=false`,
+  `status=ACTIVE`, and the drift census (`edge:drift:check --json`) calls the slug `clean`.
+- ✅ Proven 2026-09-25: `enrich-ufc-wallet` (twice — the header branch, then the `?token=`
+  removal) and `ingest-topshot-atlas-pool`; `edge-fn-drift` went green for the first time since
+  08-09 on the back of it. It removes the whole MCP-transcription class below (`\uXXXX`
+  decoding, hand-copied Cadence addresses) — use the MCP path only if GitHub is unavailable.
+- Verification still means the real caller (§5) — a green deploy run proves the bytes, not
+  the behaviour. Revert = `git revert` the function's commit, push, dispatch again.
+
+### CLI (resolves `_shared` deps correctly — what the workflow runs)
 ```
 npx supabase@latest functions deploy <name> \
   --no-verify-jwt \
