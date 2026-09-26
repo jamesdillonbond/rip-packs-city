@@ -147,7 +147,7 @@ async function TopSalesRows({ collection, collectionId, slug }: { collection: st
             {sectionEmptyCopy(ok, "Top sales", "No recorded sales yet")}
           </div>
         ) : (
-          <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {topSales.map(s => {
               const href = s.route_slug ? `/${collection}/edition/${encodeURIComponent(s.route_slug)}` : null
               // ⛔ This folded and `0x`-prefixed unconditionally. On Candy MLB
@@ -155,23 +155,28 @@ async function TopSalesRows({ collection, collectionId, slug }: { collection: st
               // the label rendered `0x2at8…jrqw` while the `title=` on the very
               // same element carried the correct `AGzqZEJ…SpcQ`. Measured live
               // 2026-09-19 on /candy-mlb/player/mike-trout.
-              const truncAddr = (a: string | null) => truncateAddressForDisplay(a)
+              const buyer = truncateAddressForDisplay(s.buyer_address, "")
+              const seller = truncateAddressForDisplay(s.seller_address, "")
+              // Two stacked lines, no fixed min-width. The old six-column grid
+              // (minWidth 560) collapsed its `1fr` name column to ZERO on a phone
+              // — every row read "#6 · 6 years ago" with no edition — and the
+              // content overflowed its own card border inside a scroll strip.
               const inner = (
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(90px, auto) 1fr minmax(100px, auto) minmax(110px, auto) minmax(110px, auto) minmax(90px, auto)", gap: 12, padding: "10px 12px", alignItems: "center", minWidth: 560 }}>
-                  <span className="rpc-mono" style={{ fontSize: 11, color: s.serial_number != null && s.serial_number > 0 ? "var(--rpc-text-secondary)" : "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
-                    {s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "unresolved"}
-                  </span>
-                  <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {s.edition_name ?? s.set_name ?? "—"}
-                  </span>
-                  <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", textAlign: "right" }}>{relTime(s.sold_at)}</span>
-                  <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", textAlign: "right" }} title={s.buyer_address ?? undefined}>
-                    {truncAddr(s.buyer_address)}
-                  </span>
-                  <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", textAlign: "right" }} title={s.seller_address ?? undefined}>
-                    {truncAddr(s.seller_address)}
-                  </span>
-                  <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", textAlign: "right" }}>{fmtUsd(s.price_usd)}</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "10px 12px", minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 12, minWidth: 0 }}>
+                    <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {s.edition_name ?? s.set_name ?? "—"}
+                    </span>
+                    <span style={{ flexShrink: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)" }}>{fmtUsd(s.price_usd)}</span>
+                  </div>
+                  <div className="rpc-mono" style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.04em" }}>
+                    <span style={{ color: s.serial_number != null && s.serial_number > 0 ? "var(--rpc-text-secondary)" : "var(--rpc-text-muted)" }}>
+                      {s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "serial unresolved"}
+                    </span>
+                    <span>{relTime(s.sold_at)}</span>
+                    {buyer && <span title={s.buyer_address ?? undefined}>buyer <span style={{ color: "var(--rpc-text-secondary)" }}>{buyer}</span></span>}
+                    {seller && <span title={s.seller_address ?? undefined}>seller <span style={{ color: "var(--rpc-text-secondary)" }}>{seller}</span></span>}
+                  </div>
                 </div>
               )
               return href ? (
@@ -419,6 +424,13 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
         </div>
       )}
 
+      {/* ── Top sales ────────────────────────────────────────────────────── */}
+      <Section title="Top Sales">
+        <Suspense fallback={<TopSalesSkeleton />}>
+          <TopSalesRows collection={collection} collectionId={coll.id} slug={slug} />
+        </Suspense>
+      </Section>
+
       {/* ── Editions grid ────────────────────────────────────────────────── */}
       <Section title="Editions">
         {editionsOk ? (
@@ -433,13 +445,6 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
         ) : (
           <SectionUnavailable noun={`${detail.name}\u2019s editions`} />
         )}
-      </Section>
-
-      {/* ── Top sales ────────────────────────────────────────────────────── */}
-      <Section title="Top Sales">
-        <Suspense fallback={<TopSalesSkeleton />}>
-          <TopSalesRows collection={collection} collectionId={coll.id} slug={slug} />
-        </Suspense>
       </Section>
 
       {/* ── Top collectors (rookie ownership index) ──────────────────────── */}
