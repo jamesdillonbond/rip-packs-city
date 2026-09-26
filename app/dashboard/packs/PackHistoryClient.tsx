@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
-import { packBuyLabel, packIdentityNote, packMarketLabel, packPullLabel } from "@/lib/packs-wallet-view-format"
+import { packBuyLabel, packIdentityNote, packMarketLabel, packPullLabel, packsRippedCaption } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 import {
@@ -38,6 +38,9 @@ interface SummaryTotals {
    *  which is treated the same as partial: the caption still renders, without a
    *  count, and NET P&L still withholds. */
   ripped_value_known_count?: number
+  /** 2026-09-26: how many of packs_ripped are packs opened with NO pack NFT,
+   *  reconstructed from moment deliveries. Optional (older payloads). */
+  packs_ripped_reconstructed?: number
   packs_sold: number
   primary_drops: number
   secondary_buys: number
@@ -228,9 +231,12 @@ interface HistoryRow {
   pull_value_usd: number | null
   // 2026-09-26 (v8): where the pull value came from, and — when Dapper's list
   // of the pack's moments is held — how many are priced. NULL = unknown.
-  pull_value_source?: "dapper_pulls" | "rip_record" | null
+  pull_value_source?: "dapper_pulls" | "rip_record" | "delivery_burst" | null
   pulls_total?: number | null
   pulls_priced?: number | null
+  // 2026-09-26 (v9): "reconstructed" = a pack opened with no pack NFT, rebuilt
+  // from its moment deliveries (its pack_name says so too).
+  rip_source?: "rip" | "reconstructed" | null
   realized_pl_usd: number | null
   first_event_at: string | null
   latest_event_at: string | null
@@ -565,13 +571,7 @@ export default function PackHistoryClient() {
                   <CountStat
                     label="Packs ripped"
                     value={t.packs_ripped}
-                    caption={
-                      ripKnown == null
-                        ? undefined
-                        : ripKnown < t.packs_ripped
-                          ? `${ripKnown.toLocaleString("en-US")} with a known pull value`
-                          : "all valued"
-                    }
+                    caption={packsRippedCaption(t.packs_ripped, ripKnown, t.packs_ripped_reconstructed)}
                   />
                   <HeroStat
                     label="Total spent"

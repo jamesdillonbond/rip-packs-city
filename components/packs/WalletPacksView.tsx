@@ -69,7 +69,8 @@ interface HistoryRow {
   sell_price: number | null
   pull_value_usd: number | null
   // 2026-09-26 (v8): pull_value_source + how many of the pack's moments are priced.
-  pull_value_source?: "dapper_pulls" | "rip_record" | null
+  pull_value_source?: "dapper_pulls" | "rip_record" | "delivery_burst" | null
+  rip_source?: "rip" | "reconstructed" | null
   pulls_total?: number | null
   pulls_priced?: number | null
   realized_pl_usd: number | null

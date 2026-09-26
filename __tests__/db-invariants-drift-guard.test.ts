@@ -15,6 +15,16 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-26. Pins the reconstruction of packs opened with NO pack NFT
+    // (custodial Top Shot packs) from pack-pull delivery bursts: the 3 s burst
+    // rule, that a burst overlapping a KNOWN rip is never reconstructed, whole-
+    // pack pricing, and write-first / retire-only-this-wallet.
+    fn: "rebuild_wallet_reconstructed_rips",
+    test: "supabase/tests/rebuild_wallet_reconstructed_rips.sql",
+    migration:
+      "supabase/migrations/20260926170000_audit_20260926_wallet_reconstructed_rips_from_pack_pull_delivery_bursts.sql",
+  },
+  {
     // Added 2026-09-26. Pins the lane that prices every pack a saved wallet
     // OPENED from Dapper's own list of what it yielded (searchPackNft.nfts):
     // collection-scoped edition resolution, whole-pack all-or-nothing pricing
@@ -47,8 +57,10 @@ const PINS = [
     // Sealed, each rendered as an unopened pack still in that user's inventory.
     // v8 (2026-09-26): Golazos/Pinnacle opens + Golazos market trades, and pull
     // value from Dapper's per-pack pull list (same opener) before the rip row.
+    // v9 (same day): packs opened with no pack NFT, reconstructed from delivery
+    // bursts (wallet_reconstructed_rips), labelled rip_source = reconstructed.
     migration:
-      "supabase/migrations/20260926160000_audit_20260926_wallet_pack_history_lists_golazos_pinnacle_and_prices_rips_from_dapper_pulls.sql",
+      "supabase/migrations/20260926170100_audit_20260926_wallet_pack_history_lists_reconstructed_rips.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
@@ -57,7 +69,7 @@ const PINS = [
     fn: "get_wallet_pack_summary",
     test: "supabase/tests/get_wallet_pack_summary.sql",
     migration:
-      "supabase/migrations/20260926160100_audit_20260926_wallet_pack_summary_counts_golazos_pinnacle_opens_and_dapper_pull_values.sql",
+      "supabase/migrations/20260926170200_audit_20260926_wallet_pack_summary_counts_reconstructed_rips.sql",
   },
   {
     // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists

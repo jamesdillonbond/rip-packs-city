@@ -13,6 +13,7 @@ import {
   packIdentityNote,
   packBuyLabel,
   packPullLabel,
+  packsRippedCaption,
   packMarketLabel,
   identitySyncNote,
 } from "@/lib/packs-wallet-view-format"
@@ -246,5 +247,18 @@ describe("packPullLabel (2026-09-26)", () => {
   })
   it("unknown with no pull list is a bare dash", () => {
     expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null })).toBe("—")
+  })
+})
+
+describe("packsRippedCaption (2026-09-26)", () => {
+  it("says how many rips are reconstructions, so one never reads as an open event we hold", () => {
+    expect(packsRippedCaption(3254, 3228, 2736)).toBe("3,228 with a known pull value · 2,736 reconstructed (no pack NFT)")
+  })
+  it("no reconstructions -> the old caption, unchanged", () => {
+    expect(packsRippedCaption(10, 10, 0)).toBe("all valued")
+    expect(packsRippedCaption(10, 4, undefined)).toBe("4 with a known pull value")
+  })
+  it("coverage unknown and nothing reconstructed -> no caption", () => {
+    expect(packsRippedCaption(10, undefined, null)).toBeUndefined()
   })
 })

@@ -162,6 +162,17 @@ export function packPullLabel(row: {
   return "—"
 }
 
+/** "Packs ripped" caption (2026-09-26). `reconstructed` is how many of the
+ *  rips are packs opened with NO pack NFT, rebuilt from moment deliveries
+ *  (get_wallet_pack_summary.packs_ripped_reconstructed) -- said out loud so a
+ *  reconstruction never reads as an open event we hold. */
+export function packsRippedCaption(total: number, known: number | null | undefined, reconstructed: number | null | undefined): string | undefined {
+  const parts: string[] = []
+  if (known != null) parts.push(known < total ? `${known.toLocaleString("en-US")} with a known pull value` : "all valued")
+  if (reconstructed != null && reconstructed > 0) parts.push(`${reconstructed.toLocaleString("en-US")} reconstructed (no pack NFT)`)
+  return parts.length ? parts.join(" · ") : undefined
+}
+
 export interface IdentitySync {
   requested_at?: string | null
   completed_at?: string | null
