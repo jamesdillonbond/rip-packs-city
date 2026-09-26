@@ -47,7 +47,9 @@ vi.mock("@supabase/supabase-js", () => ({
       }
       return b
     },
-    rpc: async () => ({ data: null, error: null }),
+    // 2026-09-25 (batch 62): segment 3 asks team_historic_slugs per collection
+    // and treats a non-list answer as a failed read; an answered-empty list here.
+    rpc: async () => ({ data: [], error: null }),
   }),
 }))
 
