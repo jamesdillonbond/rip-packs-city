@@ -55,3 +55,4 @@ Checks run before pushing code: full vitest suite (4 shards, 18.8k tests) green 
 - Undercut lane: pool 1,220 → 1,208 in 75 min, 0 failed runs; edition-probe 403 rate 4 of 108 (~4 %, at baseline). Re-read ~09-29 (#149 exit).
 - Tre Jones page: no "$20.00", "% Listed" em-dash, "recent-sale low of $0.20". CI green on the % Listed commit; stalled [], no pg_cron failures besides the drop-windows lane (fixed).
 - Nothing from this thread is left open except the #149 3-day watch. Standing Trevor items unchanged: rotate `ATLAS_POOL_INGEST_KEY` (#144), #22, #64, #140, wrangler/CLI deploys.
+- **Correction (~2:45 PM PT):** the undercut pool is a steady state, not a backlog — at 3/tick it held ~1,208 while 105 editions were re-priced (verified cheap listings age out of the 24 h window again a day later). Raised to 6 probes/tick (`20260926214505`); 403 rate ~4 %. Watch that the pool falls and 403s stay near baseline; if 403s climb, go back to 3.
