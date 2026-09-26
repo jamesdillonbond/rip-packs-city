@@ -15,6 +15,33 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-26. A Pinnacle character page's Top sales matched
+    // pinnacle_editions.character_name (one character per set-level key), so
+    // catalog-only characters read "No recorded sales yet" over real sales.
+    // Pins the catalog pin match (duos included), render_id sales, the fallback.
+    fn: "get_player_top_sales",
+    test: "supabase/tests/get_player_top_sales.sql",
+    migration:
+      "supabase/migrations/20260926211939_audit_20260926_pinnacle_character_top_sales_read_the_pins.sql",
+  },
+  {
+    // Added 2026-09-26. The Pinnacle franchise checklist joined wallet holdings on
+    // pinnacle_editions.external_id, which matched none of the 431 keys wallets
+    // hold, so every wallet read 0 owned. Pins the catalog pin list, ownership by
+    // the pin held (render_id), the progress aggregates and the fallback's
+    // corrected legacy-key join.
+    fn: "get_team_checklist",
+    test: "supabase/tests/get_team_checklist.sql",
+    migration:
+      "supabase/migrations/20260926211121_audit_20260926_pinnacle_franchise_checklist_sees_what_a_wallet_holds.sql",
+  },
+  {
+    fn: "get_team_checklist_progress",
+    test: "supabase/tests/get_team_checklist.sql",
+    migration:
+      "supabase/migrations/20260926211121_audit_20260926_pinnacle_franchise_checklist_sees_what_a_wallet_holds.sql",
+  },
+  {
     // Added 2026-09-26. The Pinnacle franchise grid and roster read
     // pinnacle_editions (one franchise + one character per set-level key, grid
     // limited to rows with a thumbnail): Star Wars listed 98 of 723 pins, three

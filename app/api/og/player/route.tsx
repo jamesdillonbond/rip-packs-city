@@ -79,7 +79,8 @@ export async function GET(req: NextRequest) {
     // player with no art at all. Saying so is what stops a transient upstream
     // outage from being cached as a blank card for a day.
     artFailed: candidates.length > 0 && !portrait,
-    statLabel: editions ? "Editions" : null,
+    // A Pinnacle character counts PINS (the render catalog, 2026-09-26).
+    statLabel: editions ? (isCharacter ? "Pins" : "Editions") : null,
     statValue: editions ? editions.toLocaleString() : null,
   })
 }

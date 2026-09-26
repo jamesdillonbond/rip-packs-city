@@ -177,6 +177,20 @@ describe("/api/og/player — a dead top candidate must not blank the card", () =
     expect(ogImageSrcs(el)).toEqual([])
   })
 
+  it("a Pinnacle character card counts PINS, a player card editions (2026-09-26)", async () => {
+    mockSupabase([], { ...DETAIL, is_character: true, edition_count: 34 })
+    stubFetch([])
+    const text = ogText(await render("?collection=disney-pinnacle&slug=mickey-mouse"))
+    expect(text).toContain("Pins")
+    expect(text).not.toContain("Editions")
+  })
+
+  it("a player card still says Editions", async () => {
+    mockSupabase([], { ...DETAIL, edition_count: 34 })
+    stubFetch([])
+    expect(ogText(await render())).toContain("Editions")
+  })
+
   it("survives a thumbnail list full of nulls", async () => {
     mockSupabase([null, null])
     stubFetch([])

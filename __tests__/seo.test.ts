@@ -361,8 +361,21 @@ describe("playerPageMetadata", () => {
       "mickey"
     )
     expect(m.description).toBe(
-      "Mickey (Character) on Disney Pinnacle. Franchise: Disney. Edition grid, top sale, and set breakdown."
+      "Mickey (Character) on Disney Pinnacle. Franchise: Disney. Pin grid, top sale, and set breakdown."
     )
+  })
+
+  it("a Pinnacle character page is about PINS, never 'Moments' or 'editions' (2026-09-26)", () => {
+    const m = playerPageMetadata(
+      { name: "Mickey Mouse", is_character: true, team: "Mickey & Friends", edition_count: 34 },
+      "disney-pinnacle",
+      "mickey-mouse"
+    )
+    expect(titleText(m.title)).toBe("Mickey Mouse — Pins & Market Value | Disney Pinnacle | Rip Packs City")
+    expect(m.description).toContain(" 34 pins.")
+    expect(`${titleText(m.title)} ${m.description}`).not.toMatch(/Moments|editions?\b/)
+    const ts = playerPageMetadata({ name: "Damian Lillard", edition_count: 42 }, "nba-top-shot", "damian-lillard")
+    expect(titleText(ts.title)).toBe("Damian Lillard — Moments & Market Value | NBA Top Shot | Rip Packs City")
   })
 })
 
@@ -387,6 +400,19 @@ describe("teamPageMetadata", () => {
     expect(m.description).toBe(
       "Marvel franchise on Disney Pinnacle. 3 characters. Cast grid and franchise breakdown."
     )
+  })
+
+  it("a Pinnacle franchise page is about PINS, never 'Moments' or 'editions' (2026-09-26)", () => {
+    const m = teamPageMetadata(
+      { team_name: "Star Wars", is_franchise: true, player_count: 118, edition_count: 723 },
+      "disney-pinnacle",
+      "star-wars"
+    )
+    expect(titleText(m.title)).toBe("Star Wars — Pins & Market Value | Disney Pinnacle | Rip Packs City")
+    expect(m.description).toContain(" 723 pins.")
+    expect(`${titleText(m.title)} ${m.description}`).not.toMatch(/Moments|editions?\b/)
+    const ts = teamPageMetadata({ team_name: "Lakers", edition_count: 10 }, "nba-top-shot", "lakers")
+    expect(titleText(ts.title)).toBe("Lakers — Moments & Market Value | NBA Top Shot | Rip Packs City")
   })
 })
 

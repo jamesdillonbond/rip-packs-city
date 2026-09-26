@@ -849,13 +849,14 @@ export function playerPageMetadata(
   const fmvTotal = n(payload, "fmv_total_usd")
   const headshot = s(payload, "headshot_url")
   const teamLabel = isCharacter ? "Franchise" : "Team"
-  const title = `${name} — Moments & Market Value | ${collectionLabel} | Rip Packs City`
+  const title = `${name} — ${isCharacter ? "Pins" : "Moments"} & Market Value | ${collectionLabel} | Rip Packs City`
   const descParts = [
     `${name} (${noun}) on ${collectionLabel}.`,
     team ? `${teamLabel}: ${team}.` : null,
-    editionCount ? `${countNoun(editionCount, "edition", "editions")}.` : null,
+    // A Pinnacle character page counts PINS (the render catalog, 2026-09-26).
+    editionCount ? `${isCharacter ? countNoun(editionCount, "pin", "pins") : countNoun(editionCount, "edition", "editions")}.` : null,
     fmvTotal ? `Portfolio FMV ${fmtUsd(fmvTotal)}${fmvClosedQualifier(collectionUrlSlug)}.` : null,
-    "Edition grid, top sale, and set breakdown.",
+    isCharacter ? "Pin grid, top sale, and set breakdown." : "Edition grid, top sale, and set breakdown.",
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
   const canonical = `${BASE_URL}/${collectionUrlSlug}/player/${encodeURIComponent(playerSlug)}`
@@ -880,11 +881,12 @@ export function teamPageMetadata(
   const playerCount = n(payload, "player_count")
   const editionCount = n(payload, "edition_count")
   const fmvTotal = n(payload, "fmv_total_usd")
-  const title = `${teamName} — Moments & Market Value | ${collectionLabel} | Rip Packs City`
+  const title = `${teamName} — ${isFranchise ? "Pins" : "Moments"} & Market Value | ${collectionLabel} | Rip Packs City`
   const descParts = [
     `${teamName} ${noun.toLowerCase()} on ${collectionLabel}.`,
     playerCount ? `${isFranchise ? countNoun(playerCount, "character", "characters") : countNoun(playerCount, "player", "players")}.` : null,
-    editionCount ? `${countNoun(editionCount, "edition", "editions")}.` : null,
+    // A Pinnacle franchise page counts PINS (the render catalog, 2026-09-26).
+    editionCount ? `${isFranchise ? countNoun(editionCount, "pin", "pins") : countNoun(editionCount, "edition", "editions")}.` : null,
     fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}${fmvClosedQualifier(collectionUrlSlug)}.` : null,
     isFranchise ? "Cast grid and franchise breakdown." : "Roster grid and team breakdown.",
   ].filter(Boolean) as string[]

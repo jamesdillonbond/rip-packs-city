@@ -255,6 +255,18 @@ describe("/api/og/team — the franchise distinction", () => {
     mockRpc(healthy(card, { ...card.detail, is_franchise: false }))
     expect(ogText(await render(card, TS))).toContain("TEAM")
   })
+
+  it("a franchise (Pinnacle) card counts PINS, a team card editions (2026-09-26)", async () => {
+    mockRpc(healthy(card, { ...card.detail, is_franchise: true }))
+    const franchise = ogText(await render(card, TS))
+    expect(franchise).toContain("1,234 pins")
+    expect(franchise).not.toContain("editions")
+  })
+
+  it("a team card still counts editions", async () => {
+    mockRpc(healthy(card, { ...card.detail, is_franchise: false }))
+    expect(ogText(await render(card, TS))).toContain("1,234 editions")
+  })
 })
 
 describe("/api/og/series — the season subtitle", () => {

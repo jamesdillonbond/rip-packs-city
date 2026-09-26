@@ -53,7 +53,8 @@ export async function GET(req: NextRequest) {
   return renderEntityOg({
     eyebrow: `${label.toUpperCase()} · ${isFranchise ? "FRANCHISE" : "TEAM"}`,
     title: detail.team_name ?? "Team",
-    subtitle: edCount ? `${edCount.toLocaleString()} ${edCount === 1 ? "edition" : "editions"}` : null,
+    // A Pinnacle franchise counts PINS (the render catalog, 2026-09-26).
+    subtitle: edCount ? `${edCount.toLocaleString()} ${isFranchise ? (edCount === 1 ? "pin" : "pins") : (edCount === 1 ? "edition" : "editions")}` : null,
     accent,
     images,
     statLabel: fmvTotal && fmvTotal > 0 ? "Aggregate FMV" : null,
