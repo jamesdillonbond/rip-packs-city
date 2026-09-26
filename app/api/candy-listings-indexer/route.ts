@@ -305,6 +305,9 @@ async function handleSweep(req: NextRequest) {
     let packDeactivated = 0
     // null until the superseded pass runs (a killed/errored tick never reached it).
     let superseded: number | null = null
+    // Asks whose token has a recorded SALE after we last saw them (cards + packs).
+    // null = the pass failed; the counts are rows actually retired.
+    let soldSinceSeen: { cards_retired: number; packs_retired: number } | null = null
     let sweepComplete = false
     try {
       const rate = await solUsd()
@@ -676,6 +679,31 @@ async function handleSweep(req: NextRequest) {
       deactivated += supersededCount
       superseded = supersedeFailed ? null : supersededCount
 
+      // SOLD SINCE SEEN (2026-09-25). The activities feed is a 1,000-event window,
+      // so a fill it never shows left the ask "active" forever: measured that day,
+      // 163 card asks and 14 pack asks whose tokens had SOLD after their last
+      // sighting, 20 of 124 edition floors set by one (real floor 1.65x higher),
+      // and the pack floor a July listing. A recorded sale after last_seen_at is
+      // POSITIVE evidence — the same standard as the rule above, from our own
+      // sales tables — and it cannot touch a live relist (new listing account,
+      // first seen after the sale). Migration 20260926020528.
+      const { data: soldData, error: soldErr } = await (supabaseAdmin as any).rpc(
+        "candy_retire_listings_sold_since_seen",
+      )
+      if (soldErr) {
+        writeErrors.push(`sold-since-seen retire: ${soldErr.message}`)
+      } else {
+        const cards = Number(soldData?.cards_retired)
+        const packs = Number(soldData?.packs_retired)
+        if (Number.isFinite(cards) && Number.isFinite(packs)) {
+          soldSinceSeen = { cards_retired: cards, packs_retired: packs }
+          deactivated += cards
+          packDeactivated += packs
+        } else {
+          writeErrors.push("sold-since-seen retire: unreadable result")
+        }
+      }
+
       // A short listings answer is no longer dangerous — it just refreshes
       // fewer prices — so it is reported as a metric, not a failure.
       // null = UNKNOWN (the baseline count failed), never false: "not truncated"
@@ -706,6 +734,8 @@ async function handleSweep(req: NextRequest) {
         // Subset of `deactivated`: rows retired because this sweep saw a newer
         // listing for the same 1-of-1 mint. null = the pass failed or never ran.
         superseded,
+        sold_since_seen_cards: soldSinceSeen?.cards_retired ?? null,
+        sold_since_seen_packs: soldSinceSeen?.packs_retired ?? null,
         sweep_complete: sweepComplete,
         // Distinguishes "the book ended" from "we ran out of time". Without it a
         // budget-truncated sweep and a genuinely short book both read as

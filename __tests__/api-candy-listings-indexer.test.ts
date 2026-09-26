@@ -65,8 +65,14 @@ interface MeListing {
 }
 
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
+const SOLD_RPC = "rpc:candy_retire_listings_sold_since_seen"
 function install(fixtures: Fixtures) {
-  const spy = makeInstrumentedSupabaseFixture(fixtures)
+  // Default: the sold-since-seen pass ran and retired nothing. Tests that
+  // exercise it pass their own `rpc:candy_retire_listings_sold_since_seen`.
+  const spy = makeInstrumentedSupabaseFixture({
+    [SOLD_RPC]: { data: { cards_retired: 0, packs_retired: 0 }, error: null },
+    ...fixtures,
+  })
   state.sb = spy.fixture
   return spy
 }
@@ -702,3 +708,48 @@ describe("candy-listings-indexer — superseded listings", () => {
     expect((log?.p_extra as Record<string, unknown>).superseded).toBeNull()
   })
 })
+
+// 2026-09-25 — asks whose token SOLD after we last saw them. The activities feed
+// is a 1,000-event window, so a fill it never showed left 163 card asks and 14
+// pack asks "active" for up to two months, setting 20 edition floors. The retire
+// pass reads our own sales tables (migration 20260926020528).
+describe("candy-listings-indexer — sold-since-seen retirement", () => {
+  function sweepFixtures(extra: Fixtures = {}): Fixtures {
+    return {
+      wallet_moments_cache: { data: [] },
+      candy_packs: { data: [] },
+      candy_listings: { data: [], count: 0 },
+      candy_pack_listings: { data: [] },
+      ...extra,
+    }
+  }
+
+  it("runs every sweep and counts what it retired into the run row", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", []), jsonRoute("/activities", [])])
+    const spy = install(
+      sweepFixtures({ [SOLD_RPC]: { data: { cards_retired: 7, packs_retired: 2 }, error: null } }),
+    )
+    await POST(req())
+    await runDeferred()
+    expect(spy.rpcCalls.some((c) => c.name === "candy_retire_listings_sold_since_seen")).toBe(true)
+    const log = logRun(spy.rpcCalls)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.sold_since_seen_cards).toBe(7)
+    expect(extra.sold_since_seen_packs).toBe(2)
+    expect(extra.deactivated as number).toBeGreaterThanOrEqual(7)
+    expect(extra.pack_asks_deactivated as number).toBeGreaterThanOrEqual(2)
+  })
+
+  it("a FAILED retire pass fails the run and reports null, never 0", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", []), jsonRoute("/activities", [])])
+    const spy = install(sweepFixtures({ [SOLD_RPC]: { data: null, error: { message: "boom" } } }))
+    await POST(req())
+    await runDeferred()
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.sold_since_seen_cards).toBeNull()
+    expect(extra.sold_since_seen_packs).toBeNull()
+  })
+})
+
