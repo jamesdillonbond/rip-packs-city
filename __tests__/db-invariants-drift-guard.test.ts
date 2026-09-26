@@ -15,6 +15,16 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-26. Pinnacle character pages list the render catalog: 36 of
+    // 248 rendered no editions when the branch read pinnacle_editions filtered
+    // to rows with a thumbnail. Pins the catalog match (Characters trait, exact;
+    // duos by joined name), the fallback, and the unknown-slug empty.
+    fn: "get_player_editions",
+    test: "supabase/tests/get_player_editions.sql",
+    migration:
+      "supabase/migrations/20260926191644_audit_20260926_pinnacle_duo_character_pages_find_their_pins.sql",
+  },
+  {
     // Added 2026-09-26. Every pinnacle_editions writer walks wallet holdings, so
     // a catalog key no tracked wallet held never got a row (Disney Genesis), and
     // an 'Unknown' stub was never repaired (Finding Nemo Vol.2). Pins the catalog
@@ -702,7 +712,8 @@ const PINS = [
   {
     fn: "get_player_detail",
     test: "supabase/tests/get_player_detail.sql",
-    migration: "supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
+    // Re-pointed 2026-09-26: Pinnacle characters aggregate the render catalog.
+    migration: "supabase/migrations/20260926191644_audit_20260926_pinnacle_duo_character_pages_find_their_pins.sql",
   },
   {
     fn: "get_wallet_collection_snapshot",

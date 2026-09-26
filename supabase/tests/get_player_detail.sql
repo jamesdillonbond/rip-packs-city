@@ -22,10 +22,13 @@
 --   * standard aggregation (edition_count / circulation / latest-snapshot FMV +
 --     floor totals) over the player's editions by player_id OR player_name;
 --   * team_slug derivation + is_character flag;
---   * Pinnacle branch aggregates by character_name via the FMV-collapse helper.
+--   * Pinnacle branch: a character the render catalog names aggregates ITS PINS
+--     from pinnacle_catalog (count, circulation, FMV + floor totals — the same
+--     pins get_player_editions lists); otherwise it falls back to the old
+--     pinnacle_editions aggregate via the FMV-collapse helper (2026-09-26).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql);
+-- (supabase/migrations/20260926191644_audit_20260926_pinnacle_duo_character_pages_find_their_pins.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -50,6 +53,8 @@ CREATE TABLE public.fmv_snapshots (
   edition_id uuid, fmv_usd numeric, floor_price_usd numeric, computed_at timestamptz);
 CREATE TABLE public.pinnacle_editions (
   id uuid PRIMARY KEY, character_name text, mint_count int, minting_date timestamptz);
+CREATE TABLE public.pinnacle_catalog (
+  render_id text PRIMARY KEY, characters text[], total_minted int, fmv_usd numeric, floor_ask numeric);
 CREATE FUNCTION public.get_pinnacle_edition_fmv_collapsed(p_id uuid)
  RETURNS TABLE(fmv_usd numeric, floor_usd numeric) LANGUAGE sql STABLE AS $$
   SELECT 12::numeric, 10::numeric WHERE p_id IS NOT NULL
@@ -121,7 +126,32 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  IF p_collection_id = v_pinnacle_uuid THEN
+  IF p_collection_id = v_pinnacle_uuid AND EXISTS (
+       SELECT 1 FROM pinnacle_catalog pc
+       WHERE (EXISTS (SELECT 1 FROM unnest(pc.characters) c WHERE lower(btrim(c)) = lower(btrim(v_player.name)))
+             OR (cardinality(pc.characters) > 1
+                 AND lower(btrim(v_player.name)) IN (lower(array_to_string(pc.characters, ' & ')),
+                                                     lower(array_to_string(pc.characters, ' ')))))
+     ) THEN
+    -- 2026-09-26: the same render catalog get_player_editions lists, so the
+    -- header counts the pins the grid shows. Minting dates stay from
+    -- pinnacle_editions (the catalog carries none) and are NULL where it has none.
+    SELECT
+      COUNT(*),
+      SUM(pc.total_minted) FILTER (WHERE pc.total_minted IS NOT NULL),
+      SUM(pc.fmv_usd)      FILTER (WHERE pc.fmv_usd > 0),
+      SUM(COALESCE(pc.floor_ask, pc.fmv_usd)) FILTER (WHERE COALESCE(pc.floor_ask, pc.fmv_usd) > 0)
+    INTO v_edition_count, v_total_circulation, v_fmv_total, v_floor_total
+    FROM pinnacle_catalog pc
+    WHERE (EXISTS (SELECT 1 FROM unnest(pc.characters) c WHERE lower(btrim(c)) = lower(btrim(v_player.name)))
+             OR (cardinality(pc.characters) > 1
+                 AND lower(btrim(v_player.name)) IN (lower(array_to_string(pc.characters, ' & ')),
+                                                     lower(array_to_string(pc.characters, ' ')))));
+    SELECT MIN(pe.minting_date), MAX(pe.minting_date)
+    INTO v_first_minted, v_last_minted
+    FROM pinnacle_editions pe
+    WHERE pe.character_name = v_player.name;
+  ELSIF p_collection_id = v_pinnacle_uuid THEN
     SELECT
       COUNT(*),
       SUM(pe.mint_count) FILTER (WHERE pe.mint_count IS NOT NULL),
@@ -248,6 +278,29 @@ SELECT _assert_eq((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'flo
 SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'is_character'), 'true', 'Pinnacle -> is_character true');
 SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'edition_count'), '2', 'Pinnacle character: 2 renders');
 SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'fmv_total_usd'), '24', 'Pinnacle: per-render FMV collapse 12+12');
+
+-- ── 4b. Pinnacle character the render catalog names: counts ITS PINS ──────────
+-- Mickey above has no catalog rows, so it proves the fallback is unchanged.
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  ('a0a0a0a0-0000-4000-8000-000000000001', :PIN::uuid, 'Aurora', 'Sleeping Beauty', true, NULL, 'CH2', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO public.pinnacle_catalog (render_id, characters, total_minted, fmv_usd, floor_ask) VALUES
+  ('LEV1-SLBT-FORE-S6', ARRAY['Aurora'],               500, 12,   10),
+  ('LEV1-SLBT-SPIN-S6', ARRAY[' aurora'],              300, 30,   NULL),
+  ('LEV1-SLBT-DUEL-S6', ARRAY['Maleficent', 'Aurora'],  50, NULL, NULL),
+  ('X-BOREALIS-S1',     ARRAY['Aurora Borealis'],       99, 99,   90);
+INSERT INTO public.pinnacle_editions (id, character_name, mint_count, minting_date) VALUES
+  ('bb000000-0000-0000-0000-000000000001'::uuid, 'Aurora', 7, TIMESTAMPTZ '2025-01-02 00:00:00+00');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'edition_count'), '3', 'catalog character: 3 pins (the two-character pin counts; Aurora Borealis does not)');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'total_circulation'), '850', 'catalog character: circulation from the pins');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'fmv_total_usd'), '42', 'catalog character: FMV 12 + 30, unpriced pin excluded');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'floor_total_usd'), '40', 'catalog character: floor 10 + (no floor -> FMV 30)');
+SELECT _assert_eq(left(public.get_player_detail(:PIN::uuid,'aurora') ->> 'first_minted_at', 10), '2025-01-02', 'minting dates still come from pinnacle_editions');
+-- A duo character (combined name) counts the pin that lists both characters.
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  ('a0a0a0a0-0000-4000-8000-000000000002', :PIN::uuid, 'Maurice & Cogsworth', NULL, true, NULL, 'CH3', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO public.pinnacle_catalog (render_id, characters, total_minted, fmv_usd, floor_ask) VALUES
+  ('LEV2-BATB-MACO-S2', ARRAY['Maurice', 'Cogsworth'], 250, 6, 5);
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'maurice-cogsworth') ->> 'edition_count'), '1', 'duo character: the pin listing both counts');
 
 -- ── 5. TRADED + still active: current team beats most-moments ────────────────
 -- p4 has 3 team-matching editions and p5 only 1, so the pre-2026-08-01 ladder
