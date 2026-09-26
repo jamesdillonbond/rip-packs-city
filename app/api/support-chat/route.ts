@@ -2578,6 +2578,8 @@ async function executeToolInner(
       let error: any = null;
       for (const label of labelsToAsk) {
         const r = await supabase.rpc("get_special_serial_owners_board", { ...boardArgs, p_player: label });
+        // paged-partial: intentional — the break is followed by `if (error) return`
+        // an error status, so the rows gathered before it are never published.
         if (r.error) { error = r.error; break; }
         data.push(...((r.data ?? []) as any[]));
       }
