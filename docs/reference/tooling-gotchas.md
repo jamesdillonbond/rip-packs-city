@@ -2027,3 +2027,17 @@ bash scripts/run-db-tests.sh; bash scripts/check-migration-sql-parses.sh
 - ⭐ It is also a **race reproducer**: two `psql` sessions launched with `&` inside ONE bash call (background jobs die at call end, so `wait` in the same call) reproduced the `moments_nft_id_key` 23505 on `replace_topshot_moments_batch` and proved the advisory-lock fix before it was applied (ledger 2026-09-24 evening).
 - Pushing from the cloud container itself is still refused (git proxy: "not in this session's authorized repository set"). The route that worked: commit in the cloud clone → `git format-patch origin/main` → `SendUserFile` → `device_commit_files` into the repo root on the laptop as `cowork-YYYYMMDD-NNNN.patch` (`*.patch` is gitignored) → `device_bash`: fresh `$HOME/rpcwork` clone, `git am -3`, push with the mount's `.rpc-git-cred` store helper, compare `ls-remote` to `HEAD`. Three pushes in ~40 min; when `am` fails on the ledger, rebase in the cloud clone and re-splice at the first `^### ` (recipe above).
 - ⚠ **`scripts/pack-cowork-skill.mjs` now carries `references/*` inside the bundle** (it packed `SKILL.md` alone until 2026-09-24, so re-saving `rpc-surface-qa`'s bundle would have dropped the two reference files its SKILL.md tells the reader to open). The guard reds on a missing or drifted reference. The `zip` binary path is gone; `scripts/lib/zip-one-file.mjs` is a multi-entry writer with `zipOneFile()` kept byte-identical.
+
+## Displaced from CLAUDE.md 2026-09-25 (verbatim; still binding)
+
+- ⚠ **A disk-IO spell can FAIL THE BUILD**: tooling-gotchas.md.
+
+## Verifying a live page or route from a cloud sandbox whose egress blocks the site (2026-09-25, PT)
+
+In the web sandbox, `www.rippackscity.com` is **denied by the egress policy** (the agent proxy answers 403 to CONNECT; Chromium reports `ERR_TUNNEL_CONNECTION_FAILED`). `curl $HTTPS_PROXY/__agentproxy/status` lists it under `recentRelayFailures`. Do not route around it. Three levers that work:
+
+1. **`mcp__Vercel__web_fetch_vercel_url`** on the DEPLOYMENT URL (`rip-packs-city-<hash>-rippackscity-projects.vercel.app/<path>`, with `teamId`). It is **GET only**. A full page is ~450k characters and lands in a tool-results file, so grep it with `node` (`indexOf` on a heading or a `data-testid`) rather than reading it. That proves SSR markup and section ORDER; it cannot run client-side JS.
+2. **`mcp__Vercel__get_runtime_logs`** with `query: "<path>"` and `group_by: "statusCode"` shows how REAL visitors' calls to a route are answered (this is how a proxy 401 on a POST was found — see brand-auth-proxy.md).
+3. **Render the markup locally**: Playwright (`executablePath: '/opt/pw-browsers/chromium'`) + `page.setContent` with the component's inline styles at 390 and 320 px; assert `scrollWidth <= clientWidth` per card. That measures layout, not data.
+
+⚠ `apply_migration` registers the version at APPLY time. Name the migration file after `supabase_migrations.schema_migrations.version` (`select version … where name = '<name>'`) read back after applying, or migration-parity reds.

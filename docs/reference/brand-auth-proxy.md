@@ -44,3 +44,12 @@ Order:
 
 ---
 
+
+## The proxy's public boundary is per (path, METHOD) — a POST under a GET-only prefix 401s every signed-out reader (2026-09-25, PT)
+
+`proxy.ts` `isPublicPath(pathname, method)` opens `/api/entity/*` to anonymous readers for **GET/HEAD only** (every route there is a read). The player-page Badge filter's route first shipped as `POST /api/entity/edition-badges`: production logged **3 of 3 live calls answered 401 by `serverless-middleware`** (the proxy's anonymous-fetch branch, `sec-fetch-dest: empty` → 401 JSON), so every signed-out visitor got "Couldn't load badges" and no filter. A signed-in allow-listed reader passes the session gate and never sees it, and every test was green: route tests call the handler directly and component tests mock `fetch`, so **nothing in the suite goes through the proxy**.
+
+- **Fix shipped:** the route became a GET (`?collection=&slugs=a,b,c`, batches of 100). No proxy change was needed, and none was wanted — widening a method on a public prefix is a boundary change.
+- **Pins:** `__tests__/proxy-is-public-path.test.ts` rows (GET public, POST gated), a route test that no `POST` is exported, and a component test that the grid calls GET.
+- **The check that caught it:** Vercel runtime logs grouped by status for the new path (`get_runtime_logs`, `query: "<path>"`, `group_by: "statusCode"`). Your own session cannot see it — you are signed in.
+- ⚠ **Rule:** a client fetch from a PUBLIC page must use a method `isPublicPath` opens for that path. Read the proxy row before choosing POST for a read.

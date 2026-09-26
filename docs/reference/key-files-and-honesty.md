@@ -2459,3 +2459,7 @@ COALESCE** — a reviewer reading only the diff would get that backwards.
 
 - ⚠ **A SERVER-SEEDED PROP (`initial={rows}`) is a fifth layer the table misses** — pass `initialFailed`, assert by SSR: key-files-and-honesty.md.
 - ⚠ **ISR CACHES A FAILED READ for the whole `revalidate` window** and self-heals warm, so it is **easy to declare fixed by accident**: test *"does a COLD pass exceed the budget"*, never *"is the page OK now"* (#33).
+
+## Another PAGED read with a hard stop: /api/wallet/edition-counts truncated three real wallets (2026-09-25, PT)
+
+The route paged `wallet_moments_cache` by OFFSET, 1000 at a time, with `if (offset > 50_000) break`, then answered 200 as if complete. **3 live wallets exceed 50k moments in one collection** (largest 153,544), so every edition past the cap read "Owned: 0" on Market, Sniper and the player-page tiles. The tell is the same control-flow keyword as the `/sitemap/3.xml` case above: a `break` inside a paging loop with no `complete:false`. **Fixed by moving the aggregate into SQL** (`get_wallet_edition_counts`, migration `20260926050443`): one jsonb value, so no PostgREST row cap applies. On the largest wallet it takes 2.0 s and ~103k buffers, counting owned from the covering `(wallet, collection, edition_key)` index and locked from the `is_locked` partial index. The obvious single `GROUP BY` heap-fetched `is_locked` for all 153k rows: 23.6 s, ~581k buffers. Equivalence: a 0-row set diff against a direct count on a 678-edition wallet. A malformed result is now a 502, never `{}`.
