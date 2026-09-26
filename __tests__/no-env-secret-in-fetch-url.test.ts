@@ -274,7 +274,8 @@ describe("no env-backed secret is interpolated into a fetch URL", () => {
     // ✅ The second allowance (scripts/atlas-pool-harvest.ps1 → `?key=`) was
     // RETIRED the same night: the fn grew an additive Authorization branch
     // (deployed via edge-fn-deploy) and the script now sends the header. The
-    // fn's `?key=` branch stays until the laptop's checkout has pulled.
+    // fn's `?key=` branch stayed until the laptop's checkout had pulled; it was
+    // DELETED 2026-09-26 (#144) — the fn reads the header only.
     const ALLOWED: string[] = []
 
     const unexpected = offenders.filter(

@@ -91,16 +91,15 @@ function normalizeAtlas(raw: any): NormResult {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS })
   const url = new URL(req.url)
-  // The key is accepted in an Authorization header as well as `?key=`
-  // (2026-09-25). ADDITIVE ON PURPOSE: request logs record full URLs, so the
-  // query form writes ATLAS_POOL_INGEST_KEY into the log store on every call.
-  // scripts/atlas-pool-harvest.ps1 now sends the header; the `?key=` branch is
-  // deleted only after every copy of that script (the laptop's Task Scheduler
-  // checkout) and any console snippet has moved to the header.
+  // The key is accepted ONLY in the Authorization header (2026-09-26, #144).
+  // The `?key=` form was deleted: request logs record full URLs, so it wrote
+  // ATLAS_POOL_INGEST_KEY into the log store on every call. The header branch
+  // shipped 2026-09-25 and every caller (scripts/atlas-pool-harvest.ps1, incl.
+  // the laptop's checkout, pulled 09-26) sends it. Never re-add a query-string key.
   // No regex: a `\s` escape cannot survive a JSON-argument deploy intact.
   const authHeader = req.headers.get("authorization") ?? ""
   const bearer = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7) : authHeader
-  if (!KEY || (url.searchParams.get("key") !== KEY && bearer !== KEY)) {
+  if (!KEY || bearer !== KEY) {
     return json({ ok: false, reason: "unauthorized" }, 401)
   }
 
