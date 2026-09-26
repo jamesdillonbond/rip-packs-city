@@ -5,6 +5,7 @@
 // a recent buy/sell table. Self-contained apart from shared format helpers.
 import { useEffect, useState } from "react"
 import { fmt, relativeDate } from "@/lib/analytics/format"
+import { getEntityLabels } from "@/lib/entity-labels"
 
 export default function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; urlSlug: string }) {
   const [rows, setRows] = useState<any[] | null>(null)
@@ -42,7 +43,7 @@ export default function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; 
         <thead>
           <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
             <th className="py-1.5 pr-2">Side</th>
-            <th className="py-1.5 pr-2">Player</th>
+            <th className="py-1.5 pr-2">{getEntityLabels(urlSlug).player}</th>
             <th className="py-1.5 pr-2">Set</th>
             <th className="py-1.5 pr-2">Serial</th>
             <th className="py-1.5 pr-2 text-right">Price</th>

@@ -43,6 +43,16 @@ describe("SalesHistoryCard", () => {
     expect(fetchMock.mock.calls[0][0]).toContain("collection=nba-top-shot")
   })
 
+  it("heads the name column Character on Pinnacle", async () => {
+    fetchMock.mockReturnValueOnce(
+      okJson({ rows: [{ side: "buy", player_name: "Grogu", set_name: "D23", serial_number: null, price_usd: 3, marketplace: "pinnacle", sold_at: "2026-09-01T00:00:00Z" }] }),
+    )
+    const { getByText, queryByText } = render(<SalesHistoryCard wallet="0xW" urlSlug="disney-pinnacle" />)
+    await waitFor(() => expect(getByText("Grogu")).toBeTruthy())
+    expect(getByText("Character")).toBeTruthy()
+    expect(queryByText("Player")).toBeNull()
+  })
+
   it("renders nothing when the wallet has no sales", async () => {
     fetchMock.mockReturnValueOnce(okJson({ rows: [] }))
     const { container } = render(<SalesHistoryCard wallet="0xW" urlSlug="nba-top-shot" />)

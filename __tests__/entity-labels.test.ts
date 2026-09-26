@@ -9,12 +9,14 @@ describe("getEntityLabels", () => {
   it("returns the Pinnacle vocabulary for disney-pinnacle", () => {
     const l = getEntityLabels("disney-pinnacle")
     expect(l.player).toBe("Character")
+    expect(l.players).toBe("Characters")
     expect(l.team).toBe("Franchise")
     expect(l.tier).toBe("Variant")
   })
   it("returns the sports vocabulary for everything else", () => {
     const l = getEntityLabels("nba-top-shot")
     expect(l.player).toBe("Player")
+    expect(l.players).toBe("Players")
     expect(l.team).toBe("Team")
     expect(l.tier).toBe("Tier")
   })

@@ -26,6 +26,7 @@ import TopBuyers from "@/components/analytics/TopBuyers"
 import HeldTimeDistributionCard from "@/components/analytics/HeldTimeDistributionCard"
 import CostBasisCard from "@/components/analytics/CostBasisCard"
 import SalesHistoryCard from "@/components/analytics/SalesHistoryCard"
+import { getEntityLabels } from "@/lib/entity-labels"
 import CrossCollectionHoldingsCard from "@/components/analytics/CrossCollectionHoldingsCard"
 import { fmt, fmtUsd, shortAddr, relativeDate, shortSlug } from "@/lib/analytics/format"
 import { classifyTsOrderbook, TS_ORDERBOOK_STALE_LABEL, tsOrderbookStaleBody, TS_ORDERBOOK_UNKNOWN_LABEL, TS_ORDERBOOK_UNKNOWN_BODY } from "@/lib/analytics/ts-orderbook-freshness"
@@ -961,6 +962,8 @@ function AnalyticsInner() {
   const collectionMeta = useMemo(() => getCollection(collection), [collection])
   const accent = collectionMeta?.accent ?? "#EF4444"
   const isPinnacle = collection === "disney-pinnacle"
+  // Pinnacle says Character, not Player (lib/entity-labels.ts).
+  const labels = getEntityLabels(collection)
 
   // Sync tab to URL.
   const switchTab = useCallback((next: "market" | "portfolio") => {
@@ -1340,7 +1343,7 @@ function AnalyticsInner() {
                   <thead>
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
                       <th className="py-2 pr-2">#</th>
-                      <th className="py-2 pr-2">Player</th>
+                      <th className="py-2 pr-2">{labels.player}</th>
                       <th className="py-2 pr-2">Set</th>
                       <th className="py-2 pr-2">Tier</th>
                       <th className="py-2 pr-2 text-right">Serial</th>
@@ -1391,7 +1394,7 @@ function AnalyticsInner() {
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-                      <th className="py-2 pr-2">Player</th>
+                      <th className="py-2 pr-2">{labels.player}</th>
                       <th className="py-2 pr-2">Set</th>
                       <th className="py-2 pr-2">Tier</th>
                       <th className="py-2 pr-2 text-right">Sales</th>
@@ -1601,18 +1604,18 @@ function AnalyticsInner() {
             {/* Player Search */}
             <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
               <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
-                Player Search
+                {labels.player} Search
               </h2>
               <input
                 value={playerQuery}
                 onChange={(e) => setPlayerQuery(e.target.value)}
-                placeholder="Search by player name..."
+                placeholder={`Search by ${labels.player.toLowerCase()} name...`}
                 className="mb-3 w-full rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] px-4 py-2 text-[color:var(--rpc-text-primary)] placeholder:text-[color:var(--rpc-text-muted)] focus:border-[color:var(--rpc-border-hover)] focus:outline-none"
                 style={{ fontFamily: "var(--font-mono)" }}
               />
               {!playerQuery.trim() ? (
                 <div className="py-6 text-center text-sm text-[color:var(--rpc-text-muted)]">
-                  Search for a player to see their marketplace analytics
+                  Search for a {labels.player.toLowerCase()} to see their marketplace analytics
                 </div>
               ) : playerLoading ? (
                 <div className="h-24 animate-pulse rounded bg-[var(--rpc-surface)]" />
@@ -1629,7 +1632,7 @@ function AnalyticsInner() {
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-                      <th className="py-2 pr-2">Player</th>
+                      <th className="py-2 pr-2">{labels.player}</th>
                       <th className="py-2 pr-2">Set</th>
                       <th className="py-2 pr-2">Tier</th>
                       <th className="py-2 pr-2">Series</th>

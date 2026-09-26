@@ -25,6 +25,7 @@ import { getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
 import { seriesDisplay } from "@/lib/series-label"
 import { momentSubjectHref, pinnacleRenderHref } from "@/lib/entity-href"
+import { getEntityLabels } from "@/lib/entity-labels"
 import { COLLECTION_TIERS } from "@/lib/collection-tiers"
 import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
 import { filterListingsByOwned, collectBadgeOptions, countActiveFilters } from "@/lib/market/filters"
@@ -666,7 +667,7 @@ function MarketInner() {
             style={inputStyle}
           />
 
-          <span className="rpc-label" style={{ marginLeft: 12 }}>Player</span>
+          <span className="rpc-label" style={{ marginLeft: 12 }}>{getEntityLabels(collectionId).player}</span>
           <input
             type="text"
             placeholder="Search…"
@@ -1095,7 +1096,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
         <thead className="rpc-thead-scanline">
           <tr style={{ borderBottom: "1px solid var(--rpc-border)", color: "var(--rpc-text-muted)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.14em" }}>
             <th style={th}></th>
-            <th style={th}>Player</th>
+            <th style={th}>{getEntityLabels(collectionUrlSlug).player}</th>
             <th style={th}>Tier</th>
             <th style={th}>Series</th>
             <th style={th}>Set</th>

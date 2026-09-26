@@ -17,6 +17,8 @@ import { isPinnacleUrlSlug } from "./collection-slug"
 export interface EntityLabels {
   /** "Player" | "Character" — singular form for hero block + breadcrumbs. */
   player: string
+  /** "Players" | "Characters" — plural, for stat cells and section titles. */
+  players: string
   /** "Team" | "Franchise" — singular form. */
   team: string
   /** "Roster" | "Cast" — collective noun for the team-page player grid. */
@@ -29,6 +31,7 @@ export interface EntityLabels {
 
 const PINNACLE: EntityLabels = {
   player: "Character",
+  players: "Characters",
   team: "Franchise",
   roster: "Cast",
   portrait: "Portrait",
@@ -37,6 +40,7 @@ const PINNACLE: EntityLabels = {
 
 const SPORTS: EntityLabels = {
   player: "Player",
+  players: "Players",
   team: "Team",
   roster: "Roster",
   portrait: "Headshot",

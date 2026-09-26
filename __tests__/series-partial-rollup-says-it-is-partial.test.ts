@@ -83,8 +83,15 @@ describe("the series rollup fallback declares itself partial", () => {
     const uses = src.match(/\{cardsPartial && partialNote\}/g) ?? []
     expect(uses.length, "expected the note on both Sets and Top Players").toBe(2)
 
-    for (const title of ["Sets in this Series", "Top Players in this Series"]) {
-      const at = src.indexOf(`<Section title="${title}">`)
+    // The second title is built from the collection's vocabulary since
+    // 2026-09-26 ("Top Characters" on Pinnacle), so it is anchored on its
+    // template rather than a literal string. The property is unchanged.
+    const anchors: Array<[string, string]> = [
+      ["Sets in this Series", `<Section title="Sets in this Series">`],
+      ["Top Players in this Series", "<Section title={`Top ${getEntityLabels(collection).players} in this Series`}>"],
+    ]
+    for (const [title, anchor] of anchors) {
+      const at = src.indexOf(anchor)
       expect(at, `${title} section not found`).toBeGreaterThan(-1)
       expect(
         src.slice(at, at + 260),

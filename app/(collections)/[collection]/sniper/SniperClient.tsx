@@ -9,7 +9,7 @@ import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav";
 import PackSniperClient from "@/app/insights/pack-sniper/PackSniperClient";
 import { getOwnerKey } from "@/lib/owner-key";
-import { slugifyName } from "@/lib/entity-labels";
+import { slugifyName, getEntityLabels } from "@/lib/entity-labels";
 import MomentDetailModal from "@/components/MomentDetailModal";
 import BadgeIcon from "@/components/BadgeIcon";
 import SerialFmvBadge from "@/components/SerialFmvBadge";
@@ -981,7 +981,7 @@ function SniperMomentsBody() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
                     <thead>
                       <tr style={{ color: "var(--rpc-text-muted)", textAlign: "left" }}>
-                        <th style={{ padding: "6px 8px" }}>PLAYER</th>
+                        <th style={{ padding: "6px 8px" }}>{getEntityLabels(collectionSlug).player.toUpperCase()}</th>
                         <th style={{ padding: "6px 8px" }}>SET</th>
                         <th style={{ padding: "6px 8px" }}>TIER</th>
                         <th style={{ padding: "6px 8px", textAlign: "right" }}>ASK</th>

@@ -17,6 +17,7 @@ import { seriesPageLabel } from "@/lib/series-label"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { getEntityLabels } from "@/lib/entity-labels"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { sectionRowResult, sectionRows, structuralSection } from "@/lib/entity-section-rpc"
 import { seriesPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
@@ -300,7 +301,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
       <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
         <StatCell label="Editions" value={fmtCount(detail.edition_count)} />
         <StatCell label="Sets" value={fmtCount(detail.set_count)} />
-        <StatCell label="Players" value={fmtCount(detail.player_count)} />
+        <StatCell label={getEntityLabels(collection).players} value={fmtCount(detail.player_count)} />
         <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
         <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={RECENT_LOW_HINT} />
       </section>
@@ -351,13 +352,13 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
 
           {cardsUnavailable && (
             <Section title="Sets in this Series">
-              <SectionUnavailable noun={"this series’ sets and players"} />
+              <SectionUnavailable noun={`this series’ sets and ${getEntityLabels(collection).players.toLowerCase()}`} />
             </Section>
           )}
 
           {/* ── Top Players in this Series ───────────────────────────────── */}
           {topPlayers.length > 0 && (
-            <Section title="Top Players in this Series">
+            <Section title={`Top ${getEntityLabels(collection).players} in this Series`}>
               {cardsPartial && partialNote}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
                 {topPlayers.map(p => (

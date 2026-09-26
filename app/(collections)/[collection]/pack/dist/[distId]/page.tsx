@@ -13,6 +13,7 @@
 // click here via detailHref. Golazos packs surface was removed 2026-05-19
 // — see lib/collections.ts pages array.
 
+import { getEntityLabels } from "@/lib/entity-labels"
 import type { Metadata } from "next"
 import { Suspense } from "react"
 import { momentSubjectName } from "@/lib/entity-href"
@@ -2394,7 +2395,7 @@ async function PackStreamedBottom({
             <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                  <Th>Player</Th>
+                  <Th>{getEntityLabels(collection).player}</Th>
                   <Th>Set</Th>
                   <Th>Tier</Th>
                   <Th align="right">Drop %</Th>

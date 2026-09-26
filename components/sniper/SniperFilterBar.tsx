@@ -133,7 +133,7 @@ export default function SniperFilterBar(props: {
       <div className={isMobile ? "flex flex-col gap-3 mb-4" : "flex flex-wrap items-center gap-3"} style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
         <input
           type="text"
-          placeholder="Search player, set, team…"
+          placeholder={isPinnacle ? "Search character, set, franchise…" : "Search player, set, team…"}
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", width: 200, outline: "none" }}

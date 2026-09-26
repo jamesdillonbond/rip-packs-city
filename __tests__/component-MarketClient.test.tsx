@@ -469,6 +469,32 @@ describe("MarketClient — the Pinnacle empty state", () => {
   })
 })
 
+describe("MarketClient — Pinnacle says Character, not Player", () => {
+  it("labels the filter and the table column Character on Pinnacle", async () => {
+    PARAMS.collection = "disney-pinnacle"
+    try {
+      marketResponse = () => json(200, market({ listings: [LISTING({ playerName: "Grogu", editionKey: "OEEV1-D231-GROG-E2" })] }))
+      const { container } = render(<MarketClient />)
+      await screen.findByText("Grogu")
+      const heads = Array.from(container.querySelectorAll("th")).map((t) => t.textContent)
+      expect(heads).toContain("Character")
+      expect(heads).not.toContain("Player")
+      expect(screen.getAllByText("Character").length).toBeGreaterThanOrEqual(2)
+      expect(screen.queryByText("Player")).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("NO-CHANGE CONTROL: a sports collection still says Player", async () => {
+    const { container } = render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const heads = Array.from(container.querySelectorAll("th")).map((t) => t.textContent)
+    expect(heads).toContain("Player")
+    expect(heads).not.toContain("Character")
+  })
+})
+
 // ─── Controls ────────────────────────────────────────────────────────────────
 
 describe("MarketClient — controls", () => {
