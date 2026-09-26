@@ -42,4 +42,18 @@ describe("GET /api/pinnacle-sniper", () => {
       })
     )
   })
+
+  it("forwards the studio tab and chasers-only box the page sends (they were dropped)", async () => {
+    spy.mockClear()
+    feed.value = { deals: [] }
+    await GET(req("https://t/api/pinnacle-sniper?franchise=Star%20Wars&chaserOnly=true"))
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ franchiseFilter: "Star Wars", chaserOnly: true }))
+  })
+
+  it("NO-CHANGE CONTROL: absent params mean all studios and every deal", async () => {
+    spy.mockClear()
+    feed.value = { deals: [] }
+    await GET(req("https://t/api/pinnacle-sniper"))
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ franchiseFilter: "all", chaserOnly: false }))
+  })
 })

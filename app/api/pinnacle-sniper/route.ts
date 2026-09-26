@@ -17,6 +17,8 @@ export async function GET(req: NextRequest) {
     maxPrice: parseFloat(url.searchParams.get("maxPrice") ?? "0"),
     minDiscount: parseFloat(url.searchParams.get("minDiscount") ?? "0"),
     playerFilter: url.searchParams.get("player") ?? "",
+    franchiseFilter: url.searchParams.get("franchise") ?? "all",
+    chaserOnly: url.searchParams.get("chaserOnly") === "true",
     sortBy: url.searchParams.get("sortBy") ?? "discount",
   })
 

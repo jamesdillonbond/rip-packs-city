@@ -63,7 +63,7 @@ vi.mock("@/lib/pinnacle/pinnacleFlowty", () => ({
   },
 }))
 
-import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle"
+import { computePinnacleSniperFeed, matchesPinnacleStudioTab } from "@/lib/sniper/pinnacle"
 
 // Minimal PinnacleSniperDeal with only the fields computePinnacleSniperFeed reads.
 function mkDeal(o: Partial<Record<string, any>> = {}) {
@@ -393,5 +393,42 @@ describe("computePinnacleSniperFeed — listing → render resolution", () => {
     state.nfts = [nft("n1", [mkDeal({ characterName: "Dory" })])]
     const res = await computePinnacleSniperFeed()
     expect(res.deals[0]).toMatchObject({ renderId: null, playerName: "Dory" })
+  })
+})
+
+describe("computePinnacleSniperFeed — the studio tabs and chasers-only box filter", () => {
+  const deals = () => [
+    { ...mkDeal({ nftId: "wdas", setName: "Walt Disney Animation Studios • Hercules Vol.1" }), studio: "Unknown" },
+    { ...mkDeal({ nftId: "pix", setName: "Pixar Animation Studios • Toy Story Vol.4" }), studio: "Pixar Animation Studios", isChaser: true },
+    { ...mkDeal({ nftId: "sw", setName: "Lucasfilm Ltd. • Star Wars Helmets Vol.1" }), studio: "Lucasfilm Ltd." },
+    { ...mkDeal({ nftId: "fox", setName: "20th Century Studios • Alien Vol.1" }), studio: "20th Century Studios" },
+  ]
+  const ids = (r: any) => r.deals.map((d: any) => d.momentId).sort()
+
+  it("each tab keeps only its studio", async () => {
+    state.nfts = [nft("n1", deals())]
+    expect(ids(await computePinnacleSniperFeed({ franchiseFilter: "Pixar" }))).toEqual(["pix"])
+    expect(ids(await computePinnacleSniperFeed({ franchiseFilter: "Star Wars" }))).toEqual(["sw"])
+    expect(ids(await computePinnacleSniperFeed({ franchiseFilter: "Disney" }))).toEqual(["wdas"])
+  })
+
+  it("chasers-only keeps chasers, and the row says it is one", async () => {
+    state.nfts = [nft("n1", deals())]
+    const res = await computePinnacleSniperFeed({ chaserOnly: true })
+    expect(ids(res)).toEqual(["pix"])
+    expect(res.deals[0]).toMatchObject({ isChaser: true })
+  })
+
+  it("NO-CHANGE CONTROL: 'all' and an unknown tab filter nothing", async () => {
+    state.nfts = [nft("n1", deals())]
+    expect(ids(await computePinnacleSniperFeed({ franchiseFilter: "all" }))).toHaveLength(4)
+    expect(ids(await computePinnacleSniperFeed({ franchiseFilter: "Marvel" }))).toHaveLength(4)
+  })
+
+  it("a joint Disney & Pixar set sits under both tabs", () => {
+    const set = "Walt Disney & Pixar Animation Studios • Crossover Vol.1"
+    expect(matchesPinnacleStudioTab("Disney", "Unknown", set)).toBe(true)
+    expect(matchesPinnacleStudioTab("Pixar", "Unknown", set)).toBe(true)
+    expect(matchesPinnacleStudioTab("Star Wars", "Unknown", set)).toBe(false)
   })
 })

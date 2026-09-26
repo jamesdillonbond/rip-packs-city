@@ -134,7 +134,31 @@ export interface PinnacleSniperOpts {
   maxPrice?: number
   minDiscount?: number
   playerFilter?: string
+  /** The page's studio tabs: "Disney" | "Pixar" | "Star Wars" (anything else = all). */
+  franchiseFilter?: string
+  chaserOnly?: boolean
   sortBy?: string
+}
+
+/**
+ * Whether a deal belongs under one of the Sniper page's studio tabs. Matched on
+ * the Studios trait AND the set-name prefix ("Pixar Animation Studios • …"),
+ * because the trait is often absent where the set name still says it. A joint
+ * "Walt Disney & Pixar" set belongs to both tabs; 20th Century is under neither.
+ * An unknown tab value filters nothing rather than emptying the board.
+ */
+export function matchesPinnacleStudioTab(tab: string, studio: string | null | undefined, setName: string | null | undefined): boolean {
+  const hay = `${studio ?? ""} ${setName ?? ""}`
+  switch (tab.trim().toLowerCase()) {
+    case "disney":
+      return /disney/i.test(hay)
+    case "pixar":
+      return /pixar/i.test(hay)
+    case "star wars":
+      return /lucasfilm|star wars/i.test(hay)
+    default:
+      return true
+  }
 }
 
 export interface PinnacleSniperResult {
@@ -151,6 +175,8 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
   const maxPrice = Number(opts.maxPrice ?? 0)
   const minDiscount = Number(opts.minDiscount ?? 0)
   const playerFilter = opts.playerFilter ?? ""
+  const franchiseFilter = opts.franchiseFilter ?? "all"
+  const chaserOnly = opts.chaserOnly === true
   const sortBy = opts.sortBy ?? "discount"
 
   // 4 pages of 24 = 96 listed NFTs (matches the long-standing baseline).
@@ -183,6 +209,15 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
   }
   if (minDiscount > 0) {
     deals = deals.filter((d) => d.discount >= minDiscount)
+  }
+  // ⚠ Both of these were SENT by /disney-pinnacle/sniper (its studio tabs and
+  // "Chasers only" box) and read by nothing until 2026-09-26, so the page showed
+  // a filter as applied while listing every deal.
+  if (franchiseFilter !== "all") {
+    deals = deals.filter((d) => matchesPinnacleStudioTab(franchiseFilter, d.studio, d.setName))
+  }
+  if (chaserOnly) {
+    deals = deals.filter((d) => d.isChaser === true)
   }
   if (playerFilter) {
     const q = playerFilter.toLowerCase()
@@ -228,6 +263,8 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
     // page call it; the Characters trait ("Dory") is the fallback.
     playerName: d.pinName || d.characterName,
     teamName: d.franchise,
+    studio: d.studio,
+    isChaser: d.isChaser === true,
     setName: d.setName,
     seriesName: d.seriesYear ? String(d.seriesYear) : "",
     tier: d.variantType,

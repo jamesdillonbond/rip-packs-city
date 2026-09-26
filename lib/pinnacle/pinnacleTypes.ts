@@ -90,6 +90,8 @@ export interface PinnacleSniperDeal {
   /** The pin's own name from the card title ("Just Keep Swimming"), which is what
    *  the catalog calls it — `characterName` is the Characters trait ("Dory"). */
   pinName?: string | null
+  /** The IsChaser trait. Optional so hand-built deals elsewhere stay valid. */
+  isChaser?: boolean
   isLocked: boolean
   updatedAt: string
   buyUrl: string

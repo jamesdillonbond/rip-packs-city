@@ -33,6 +33,8 @@ export interface PinnacleFeedDeal {
   renderId: string | null;
   playerName: string;
   teamName: string;
+  studio?: string;
+  isChaser?: boolean;
   setName: string;
   seriesName: string;
   tier: PinnacleVariant | string;
@@ -239,7 +241,7 @@ export default function PinnacleSniperClient() {
   const stats = {
     total: visibleDeals.length,
     locked: visibleDeals.filter((d) => d.isLocked).length,
-    chasers: 0,
+    chasers: visibleDeals.filter((d) => d.isChaser).length,
     special: visibleDeals.filter((d) => d.isSpecialSerial).length,
   };
 
@@ -593,7 +595,7 @@ export default function PinnacleSniperClient() {
                         )}
                       </div>
                       <div className="flex gap-1 mt-1 flex-wrap">
-                        {false /* isChaser */ && (
+                        {deal.isChaser && (
                           <span
                             className="px-1 py-0.5 rounded text-xs font-bold"
                             style={{ background: "rgba(245,158,11,0.15)", color: "#F59E0B", border: "1px solid rgba(245,158,11,0.3)" }}

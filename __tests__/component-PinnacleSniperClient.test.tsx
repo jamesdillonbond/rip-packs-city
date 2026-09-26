@@ -425,4 +425,10 @@ describe("PinnacleSniperClient — each row shows its pin and opens its page", (
     await mount([{ ...DEAL, serial: 0, circulationCount: 0 }])
     expect(document.body.textContent).not.toMatch(/#0\b/)
   })
+
+  it("marks a chaser and counts it in the stats bar (both were hardcoded off)", async () => {
+    await mount([{ ...DEAL, isChaser: true }, { ...DEAL, flowId: "2", playerName: "Goofy", isChaser: false }])
+    expect(screen.getAllByText("CHASER")).toHaveLength(1)
+    expect(document.body.textContent).toMatch(/1\s*chasers/)
+  })
 })

@@ -340,7 +340,8 @@ describe("fetchFlowtyPinnacleListings", () => {
     const out = await fetchFlowtyPinnacleListings({ limit: 5, offset: 10 })
     expect(out).toEqual([{ id: "n1" }])
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
-    expect(body).toEqual({ filters: { listingKind: "sale" }, offset: 10, limit: 5 })
+    // `from` is the parameter Flowty actually pages on (offset is ignored upstream).
+    expect(body).toEqual({ filters: { listingKind: "sale" }, from: 10, offset: 10, limit: 5 })
   })
 
   it("omits the listingKind filter when listedOnly=false", async () => {
@@ -420,10 +421,24 @@ describe("fetchAllFlowtyPinnacleNfts", () => {
   })
 
   it("honors maxTotal, never advancing past the cap", async () => {
-    fetchMock.mockResolvedValue(page([{ id: "x" }, { id: "y" }]))
+    // Distinct pages (re-pinned 2026-09-26): an identical page is now the
+    // upstream-ignored-paging case, covered by its own test below.
+    fetchMock
+      .mockResolvedValueOnce(page([{ id: "w" }, { id: "x" }]))
+      .mockResolvedValueOnce(page([{ id: "y" }, { id: "z" }]))
+      .mockResolvedValue(page([{ id: "never" }, { id: "fetched" }]))
     const out = await fetchAllFlowtyPinnacleNfts({ batchSize: 2, maxTotal: 4 })
     // offset walks 0,2 then 4 >= maxTotal stops → exactly 2 fetches
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(out).toHaveLength(4)
+  })
+
+  it("stops when the upstream ignores paging and repeats page one", async () => {
+    // Flowty ignored `offset` for months; the walker re-fetched page one until
+    // maxTotal (~417 identical requests at the defaults).
+    fetchMock.mockResolvedValue(page([{ id: "a" }, { id: "b" }]))
+    const out = await fetchAllFlowtyPinnacleNfts({ batchSize: 2, maxTotal: 1000 })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(out.map((n: FlowtyPinnacleNft) => n.id)).toEqual(["a", "b"])
   })
 })

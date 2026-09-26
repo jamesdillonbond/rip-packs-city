@@ -102,7 +102,11 @@ export async function fetchFlowtyPinnacleListings(options?: {
     const filters: Record<string, unknown> = {}
     if (listedOnly) filters.listingKind = "sale"
 
-    const body = JSON.stringify({ filters, offset, limit })
+    // ⚠ `from`, not `offset`, is what Flowty pages on. Measured 2026-09-26: four
+    // requests at offset 0/24/48/72 returned the SAME 24 NFTs (the sniper saw
+    // 24 unique listings, never 96), while `from: 24` returned the next page.
+    // `offset` is still sent so nothing that already reads it breaks.
+    const body = JSON.stringify({ filters, from: offset, offset, limit })
 
     const res = await fetch(FLOWTY_PINNACLE_ENDPOINT, {
       method: "POST",
@@ -157,6 +161,9 @@ export async function fetchAllFlowtyPinnacleNfts(options?: {
     })
 
     if (batch.length === 0) break
+    // A page whose first NFT we already hold means the upstream ignored the
+    // paging parameter; stop instead of re-fetching page one until maxTotal.
+    if (allNfts.length > 0 && allNfts.some((n) => n.id === batch[0].id)) break
     allNfts.push(...batch)
     offset += batchSize
 
@@ -339,6 +346,7 @@ export function flowtyNftToSniperDeals(
       thumbnailUrl: render ? pinnacleRenderImageUrl(render.renderId) : null,
       renderId: render?.renderId ?? null,
       pinName,
+      isChaser: traits.get("IsChaser") === "true",
       isLocked: false,
       updatedAt,
       buyUrl: PINNACLE_MARKETPLACE_URL,
