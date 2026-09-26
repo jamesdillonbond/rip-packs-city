@@ -85,6 +85,13 @@ export type FmvDistributionResult =
 interface UnifiedInput {
   collectionUuid: string | null
   player?: string | null
+  /**
+   * 2026-09-25 (batch 55): when the caller has RESOLVED the name to one
+   * players row (resolve_player_name), filter on editions.player_id instead
+   * of an ILIKE on the label — an ILIKE '%Marvin Harrison%' pools the father
+   * and the son into one distribution. Takes precedence over `player`.
+   */
+  playerId?: string | null
   setName?: string | null
   tier?: string | null
   editionKey?: string | null
@@ -270,7 +277,8 @@ export async function fetchUnifiedFmvDistribution(
   const applyCatalogFilters = (q: any): any => {
     let out = q.not("player_name", "is", null).neq("player_name", "")
     if (input.collectionUuid) out = out.eq("collection_id", input.collectionUuid)
-    if (input.player) out = out.ilike("player_name", `%${input.player}%`)
+    if (input.playerId) out = out.eq("player_id", input.playerId)
+    else if (input.player) out = out.ilike("player_name", `%${input.player}%`)
     if (input.setName) out = out.ilike("set_name", `%${input.setName}%`)
     if (input.tier) out = out.eq("tier", input.tier.toUpperCase())
     return out

@@ -42,6 +42,7 @@ import {
   type ConciergeErrorMode,
 } from "@/lib/concierge/errors";
 import { editionKeyCollectionMismatch } from "@/lib/concierge/edition-key";
+import { resolvePlayerName, identityContextFor, type PlayerResolution } from "@/lib/concierge/player-identity";
 import {
   listingsStatus,
   listingsNote,
@@ -733,6 +734,19 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "resolve_player_name",
+    description:
+      "Turn a player NAME into the PERSON before you price or list anything — the catalog knows things the spelling hides. Returns status 'one' (the catalog row: canonical name, player_slug, team, edition count; its ALIASES — other spellings RPC recognises; the crosswalk IDENTITY — league id, ESPN id, position, seasons, latest team, whether season stats exist; every RECORDED relation: parent_of / child_of, unrelated_namesake, also_known_as with the note; and every NAMESAKE in the collection with the relation between them), 'ambiguous' (the candidates, described the same way — ask which, never pool them), or 'none'. Resolves an alias ('Joseph Flacco' → Joe Flacco, 'Stephen Curry' → Steph Curry), the league's spelling ('Mike Vick' → Michael Vick, 'Kenny Gainwell' → Kenneth Gainwell), a dropped or added suffix ('Patrick Surtain' → Patrick Surtain II), a former name ('Josh Allen' on All Day is the Bills QB AND was the Jaguars edge rusher now named Josh Hines-Allen — both come back), a unique partial ('Lillard'). Call it when a name got no_results, when the user's spelling might be a nickname or alias, when a name could be a father or a son (Marvin Harrison, Gary Payton, Tim Hardaway, Larry Nance, Antoine Winfield, Asante Samuel, Joey Porter, Glenn Robinson, Ron Harper, Byron Murphy), or when the user asks who someone is / whether two names are the same person. get_player_editions and get_fmv already run this resolution and attach it as player_identity — read that block before answering.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        playerName: { type: "string", description: "The name as the user typed it. Required." },
+        collectionId: { type: "string", description: "Collection id: nba-top-shot, nfl-all-day, laliga-golazos, ufc. Defaults to the page's active collection, else nba-top-shot." },
+      },
+      required: ["playerName"],
+    },
+  },
+  {
     name: "get_team_intel",
     description:
       "Team-level intelligence for one team in one collection — the same data as the public /[collection]/team/[slug] page. part='roster' (default): the team's players ranked by total FMV of their editions, with edition counts, rookie flags and jersey numbers (set rookiesOnly=true for 'which rookies does this team have'); part='squeeze': the team's most supply-squeezed editions (burn / lock share, effectively-buyable count, FMV, indexed low ask); part='activity': the team's most recent SALES (player, set, tier, serial, price, when). Use for 'how is the Blazers market', 'which Blazers rookies exist on Top Shot', 'what Blazers moments are locked up', 'what sold for the Lakers today'. Team names resolve from a partial ('Blazers' → Portland Trail Blazers); an ambiguous partial returns the candidates. Not for Pinnacle (no teams). Read-only; no buy/sell calls, and for a live ask on any edition chain get_edition_listings.",
@@ -899,7 +913,7 @@ RPC is in free, open beta — anyone can create a free account, no invite needed
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so the team can act on them. This is critical — the user is a beta tester whose feedback the team wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches the team. Praise still counts — it signals what's working. Never name any individual behind RPC — refer to "the team" only.
 
-**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_edition_listings / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost) or rank which set is CHEAPEST to finish when they have not named one (get_cheapest_sets_to_complete), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), pull the whole-collection Top Collector Report for a wallet (get_collector_report), look up what a badge means and how many editions carry it (get_badge_info), see every edition a player has with badges + FMV (get_player_editions), read a team's roster / squeeze / recent sales (get_team_intel), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_edition_listings / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost) or rank which set is CHEAPEST to finish when they have not named one (get_cheapest_sets_to_complete), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), pull the whole-collection Top Collector Report for a wallet (get_collector_report), look up what a badge means and how many editions carry it (get_badge_info), see every edition a player has with badges + FMV (get_player_editions), turn a typed name into the person — aliases, league spelling, name changes, namesakes and recorded parent/child relations (resolve_player_name), read a team's roster / squeeze / recent sales (get_team_intel), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -958,6 +972,8 @@ When a user mentions a tier — Common, Rare, Fandom, Legendary, Ultimate, or an
 
 ## CRITICAL — Name Filtering Rule
 If the user names a specific player or character anywhere in their query, you MUST pass that exact name as a filter on every search and FMV tool call (player / character / playerName / characterName / name). Never label a returned row with a name the row doesn't carry. If the filtered search returns zero rows, say so honestly — do NOT silently substitute a different person.
+
+**Names are not people.** get_player_editions, get_fmv and search_catalog_deals resolve the name you pass through RPC's player-identity crosswalk and attach a \`player_identity\` block — READ IT before you answer. It tells you (a) what the typed name resolved to and HOW (an alias like "Joseph Flacco" → Joe Flacco, the league's spelling like "Mike Vick" → Michael Vick or "Kenny Gainwell" → Kenneth Gainwell, a dropped suffix, a former name, a partial) — when the catalog name differs from what the user typed, say the catalog name once; (b) the league's own spelling when it differs (same person; do not treat it as a second player); (c) any name the person has also gone by (Robby Anderson is now Robbie Chosen; the Jaguars' Josh Allen became Josh Hines-Allen in 2024 — a different person from the Bills quarterback); (d) NAMESAKES — other players in the collection with the same base name — each with the RECORDED relation: parent/child (Marvin Harrison → Marvin Harrison Jr., Gary Payton → Gary Payton II, Tim Hardaway → Tim Hardaway Jr., Larry Nance → Larry Nance Jr., Antoine Winfield → Jr., Asante Samuel → Jr., Joey Porter → Jr., Glenn Robinson → III, Ron Harper → Jr.), UNRELATED (Byron Murphy Jr. the Vikings CB vs Byron Murphy II the Seahawks DT), or "kinship NOT recorded", in which case you do not know and must not assert one. A suffix-less name matches the row spelt that way — usually the FATHER — so when namesakes exist say which person you priced ("that's Marvin Harrison the Colts Hall of Famer; his son Marvin Harrison Jr. has 11 Cardinals editions — want those?") and NEVER pool two people into one figure. When the block's status is 'ambiguous' the tool returned candidates and no prices: ask which person, or pick by team / era, then call again with the candidate's exact name. When it reads 'unavailable' the identity check FAILED — the answer is for the literal spelling only; say the alias / namesake check could not run if the name could be more than one person. resolve_player_name answers "who is X", "is X the same as Y", "is X related to Y" and gives the crosswalk identity (league id, position, seasons, latest team, whether season stats exist on the player page) — use it, and never answer a relationship question from memory when the tool can be asked.
 
 ## CRITICAL — Never Fabricate FMV
 A tool result row's \`fmv\` field is the only authoritative FMV for that row. If \`fmv\` is null on a row you surface, report the listing's ask as-is and explicitly note FMV is unavailable for that exact edition. Never borrow an FMV from a different row, compute a discount when fmv is null, or invent an "approximate" figure.
@@ -1184,6 +1200,47 @@ function formatDistributionForModel(
 // Fetch the badge / supply block for every edition a distribution result names,
 // then format. One chunked read; a failed read is REPORTED on each row
 // (badges_status "unavailable"), never rendered as "no badges".
+// 2026-09-25 (batch 55): a player-scoped distribution resolves the NAME to
+// the person first. 'one' → the query filters on editions.player_id (an
+// ILIKE on the label pools a father and son); 'ambiguous' → the caller
+// returns the candidates instead of a pooled distribution; 'none' /
+// 'unavailable' → the ILIKE path as before, with the identity block saying
+// what was (not) checked. The block rides on the answer as player_identity.
+async function resolvePlayerForDistribution(
+  collectionUuid: string | null,
+  playerName: unknown,
+): Promise<{ playerId: string | null; identity: Record<string, unknown> | null; ambiguous: string | null; resolution: PlayerResolution | null }> {
+  const name = String(playerName ?? "").trim();
+  if (!name || !collectionUuid) return { playerId: null, identity: null, ambiguous: null, resolution: null };
+  const resolution = await resolvePlayerName(supabase, collectionUuid, name);
+  const identity = identityContextFor(resolution);
+  if (resolution.status === "ambiguous") {
+    return {
+      playerId: null,
+      identity,
+      resolution,
+      ambiguous: JSON.stringify({
+        status: "ambiguous",
+        player: name,
+        player_identity: identity,
+        message: "That name is more than one person in this collection, so no distribution was computed (pooling them would price two people as one). Ask which one, or pick by team / era from the candidates, then call again with that candidate's exact name.",
+      }),
+    };
+  }
+  return { playerId: resolution.status === "one" ? resolution.player.id : null, identity, ambiguous: null, resolution };
+}
+
+function attachPlayerIdentity(json: string, identity: Record<string, unknown> | null): string {
+  if (!identity) return json;
+  try {
+    const parsed = JSON.parse(json);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return JSON.stringify({ ...parsed, player_identity: identity });
+    }
+  } catch { /* not an object payload — hand it back untouched */ }
+  return json;
+}
+
 async function formatDistributionWithMetadata(
   result: FmvDistributionResult,
   collectionId: string | null,
@@ -1761,14 +1818,17 @@ async function executeTool(
         });
       }
       if (toolInput.player || toolInput.tier || toolInput.setName) {
+        const who = await resolvePlayerForDistribution(effectiveCollectionUuid, toolInput.player);
+        if (who.ambiguous) return who.ambiguous;
         const dist = await fetchUnifiedFmvDistribution(supabase, {
           collectionUuid: effectiveCollectionUuid,
           player: toolInput.player ?? null,
+          playerId: who.playerId,
           setName: toolInput.setName ?? null,
           tier: toolInput.tier ?? null,
           sampleLimit: toolInput.limit ?? 5,
         });
-        return formatDistributionWithMetadata(dist, effectiveCollectionId ?? null, effectiveCollectionUuid);
+        return attachPlayerIdentity(await formatDistributionWithMetadata(dist, effectiveCollectionId ?? null, effectiveCollectionUuid), who.identity);
       }
       return JSON.stringify({ status: "no_results", message: "No moments found matching those criteria." });
     } catch (err: any) {
@@ -1810,14 +1870,17 @@ async function executeTool(
         return formatDistributionWithMetadata(result, effectiveCollectionId ?? null, effectiveCollectionUuid);
       }
       if (toolInput.playerName || toolInput.setName || toolInput.tier) {
+        const who = await resolvePlayerForDistribution(effectiveCollectionUuid, toolInput.playerName);
+        if (who.ambiguous) return who.ambiguous;
         const result = await fetchUnifiedFmvDistribution(supabase, {
           collectionUuid: effectiveCollectionUuid,
           player: toolInput.playerName ?? null,
+          playerId: who.playerId,
           setName: toolInput.setName ?? null,
           tier: toolInput.tier ?? null,
           sampleLimit: 5,
         });
-        return formatDistributionWithMetadata(result, effectiveCollectionId ?? null, effectiveCollectionUuid);
+        return attachPlayerIdentity(await formatDistributionWithMetadata(result, effectiveCollectionId ?? null, effectiveCollectionUuid), who.identity);
       }
       return JSON.stringify({
         status: "error",
@@ -4260,7 +4323,24 @@ async function executeTool(
       }
       const uuid = COLLECTION_UUID_BY_SLUG[slug] ?? null;
       if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
-      const playerSlug = slugifyPlayerName(playerName);
+      // 2026-09-25 (batch 55): the name goes through the identity resolver
+      // first, so an alias, the league's spelling, a dropped suffix or a
+      // former name reaches the right row — and the answer carries the
+      // namesakes / relations the spelling hides. A failed resolver read
+      // falls back to the typed spelling and SAYS so; it is never 'no such
+      // player'. Ambiguity is returned, not guessed.
+      const resolution = await resolvePlayerName(supabase, uuid, playerName);
+      if (resolution.status === "ambiguous") {
+        return JSON.stringify({
+          status: "ambiguous",
+          player: playerName,
+          collectionId: slug,
+          player_identity: identityContextFor(resolution),
+          message: "That name is more than one person in this collection. Ask which one (or pick by team / era from the candidates), then call again with the candidate's exact name. Never merge their editions.",
+        });
+      }
+      const playerSlug = resolution.status === "one" ? resolution.player.slug : slugifyPlayerName(playerName);
+      const playerIdentity = identityContextFor(resolution);
       const { data, error } = await (supabase as any).rpc("get_player_editions", {
         p_collection_id: uuid,
         p_player_slug: playerSlug,
@@ -4275,7 +4355,10 @@ async function executeTool(
           player: playerName,
           player_slug: playerSlug,
           collectionId: slug,
-          message: "No editions under that exact player name in this collection. This is a CATALOG miss on the spelling, not a market claim — check the spelling with search_catalog (it returns the player's canonical name) and call again.",
+          player_identity: playerIdentity,
+          message: resolution.status === "one"
+            ? `The name resolved to ${resolution.player.name} but that row has no editions with media in this collection — say the catalog has the player but no priced moments; do not substitute another person.`
+            : "No player in this collection matches that spelling, its aliases, the league's spelling, a former name or a partial. This is a CATALOG miss, not a market claim — check the spelling with search_catalog (it returns the player's canonical name) and call again. Do NOT substitute a different person.",
         });
       }
       const tier = String(toolInput.tier ?? "").trim().toUpperCase();
@@ -4290,10 +4373,11 @@ async function executeTool(
       const pricedCount = all.filter((r) => r.fmv_usd != null).length;
       return JSON.stringify({
         status: "ok",
-        player: all[0]?.player_name ?? playerName,
+        player: resolution.status === "one" ? resolution.player.name : (all[0]?.player_name ?? playerName),
         team: all[0]?.team_name ?? null,
         collectionId: slug,
         player_url: `${base}/${slug}/player/${playerSlug}`,
+        player_identity: playerIdentity,
         total_editions: all.length,
         // ⚠ 200 is the RPC page: at exactly 200 the catalog may hold more.
         total_is_lower_bound: all.length >= 200,
@@ -4325,6 +4409,35 @@ async function executeTool(
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: safeApiError(err, "get_player_editions failed").error });
     }
+  }
+
+  // ── Player identity: any spelling → the person, with namesakes and relations
+  if (toolName === "resolve_player_name") {
+    const playerName = String(toolInput.playerName ?? "").trim();
+    if (!playerName) return JSON.stringify({ status: "error", message: "playerName is required." });
+    const slug = effectiveCollectionId ?? "nba-top-shot";
+    if (isPinnacle(slug)) {
+      return JSON.stringify({ status: "error", message: "Disney Pinnacle has characters, not players — there is no identity crosswalk to resolve against; use get_fmv with characterName." });
+    }
+    const uuid = COLLECTION_UUID_BY_SLUG[slug] ?? null;
+    if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
+    const resolution = await resolvePlayerName(supabase, uuid, playerName);
+    if (resolution.status === "unavailable") {
+      return JSON.stringify({ status: "error", collectionId: slug, message: safeApiError({ message: resolution.error }, "player identity lookup failed").error, player_identity: identityContextFor(resolution) });
+    }
+    const ctx = identityContextFor(resolution);
+    return JSON.stringify({
+      status: resolution.status,
+      collectionId: slug,
+      ...ctx,
+      ...(resolution.status === "one"
+        ? { player_url: `${base}/${slug}/player/${resolution.player.slug}` }
+        : {}),
+      notes: [
+        "Relations come from RPC's curated player_relations table (public record only). A namesake whose relation reads 'kinship NOT recorded' may or may not be related — say you don't know.",
+        "identity.stats_available means RPC's ESPN season-stats feed has lines for this player (Top Shot / All Day player pages show them); league_name is included only when it differs from the catalog spelling.",
+      ],
+    });
   }
 
   // ── Team roster / squeeze / recent sales ──────────────────────────────────
@@ -5031,6 +5144,7 @@ export async function POST(req: NextRequest) {
               // reads the public entity pages make.
               get_badge_info: 12000,
               get_player_editions: 10000,
+              resolve_player_name: 10000,
               get_team_intel: 10000,
             };
             const toolBudget = TOOL_TIMEOUT_MS[tb.name] ?? 6000;

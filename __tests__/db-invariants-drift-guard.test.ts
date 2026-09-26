@@ -672,6 +672,21 @@ const PINS = [
     migration: "supabase/migrations/20260926004254_audit_20260925_resolve_canonical_player_consults_the_player_identity_crosswalk.sql",
   },
   {
+    // Added 2026-09-25 (batch 55). The concierge's view of a player NAME: any
+    // spelling → the person, with namesakes, recorded relations (parent/child,
+    // unrelated, name change), aliases, crosswalk identity; ambiguity declared.
+    fn: "resolve_player_name",
+    test: "supabase/tests/resolve_player_name.sql",
+    migration: "supabase/migrations/20260926011020_audit_20260925_player_relations_and_resolve_player_name_for_the_concierge.sql",
+  },
+  {
+    // Added 2026-09-25 (batch 55). resolve_player_name's per-player summary
+    // (shared by the resolved case and every ambiguous candidate).
+    fn: "_player_identity_summary",
+    test: "supabase/tests/resolve_player_name.sql",
+    migration: "supabase/migrations/20260926011020_audit_20260925_player_relations_and_resolve_player_name_for_the_concierge.sql",
+  },
+  {
     fn: "upsert_player_canonical",
     test: "supabase/tests/upsert_player_canonical.sql",
     migration: "supabase/migrations/20260802181500_audit_20260802_snapshot_upsert_player_canonical.sql",

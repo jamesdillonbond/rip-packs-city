@@ -158,6 +158,24 @@ describe("fetchUnifiedFmvDistribution — filtered distribution path", () => {
     expect(edChain.some((s: any) => s[0] === "ilike" && s[1] === "tier")).toBe(false)
   })
 
+  it("a RESOLVED player filters on editions.player_id, never an ILIKE on the label (batch 55: an ILIKE pools a father and son)", async () => {
+    const client = makeClient({
+      editions: { list: { data: editionRows, error: null } },
+      get_editions_latest_fmv: { list: { data: snapRows, error: null } },
+    })
+    await fetchUnifiedFmvDistribution(client, { collectionUuid: "c", player: "Marvin Harrison", playerId: "p-father" })
+    const edChain = client.calls.filter((c: any) => c.table === "editions").flatMap((c: any) => c.chain)
+    expect(edChain).toContainEqual(["eq", "player_id", "p-father"])
+    expect(edChain.some((s: any) => s[0] === "ilike" && s[1] === "player_name")).toBe(false)
+    // both the population count and the fetch carry the same predicate
+    expect(client.calls.filter((c: any) => c.table === "editions").every((c: any) => c.chain.some((s: any) => s[0] === "eq" && s[1] === "player_id"))).toBe(true)
+    // without a resolved id the label ILIKE stands (an unresolved partial still searches)
+    const client2 = makeClient({ editions: { list: { data: editionRows, error: null } }, get_editions_latest_fmv: { list: { data: snapRows, error: null } } })
+    await fetchUnifiedFmvDistribution(client2, { collectionUuid: "c", player: "Harrison", playerId: null })
+    const edChain2 = client2.calls.filter((c: any) => c.table === "editions").flatMap((c: any) => c.chain)
+    expect(edChain2).toContainEqual(["ilike", "player_name", "%Harrison%"])
+  })
+
   it("respects sampleLimit (capped at 10, min 1)", async () => {
     const client = makeClient({
       editions: { list: { data: editionRows, error: null } },
