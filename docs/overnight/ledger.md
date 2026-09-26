@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the public /insights/candy-mlb "Floor ask" and listing count read the CONFIRMED floor (asks seen in the last 12 h): `candy_secondary_board` swaps two expressions to `candy_listing_floor.confirmed_*`, same columns/order/types (`20260926030516`, applied ~8:05 PM PT; 123 of 125 editions carry a floor). Also: repaired the committed text of `20260926030328` — a scripted comment edit had left a stray uncommented line in the file (the APPLIED SQL was unaffected; the file would have failed CI's migration-parse check) · Claude Code (web sandbox)
+
+- **Revert:** re-apply `candy_secondary_board` with `lf.floor_usd AS floor_ask_usd, lf.listing_count` (header of `20260926030516`), then `ALTER VIEW public.candy_secondary_board SET (security_invoker = on)`.
+
+
 ### 2026-09-25 · 🧹 SHIPPED — the Candy Set Tracker's cost to finish uses only asks SEEN in the last 12 h: `candy_listing_floor` gains `confirmed_floor_usd` + `confirmed_listing_count` (appended; every existing column verified identical both ways over 124 rows before apply; `security_invoker` re-set; `20260926030328`, applied ~8:03 PM PT). 5 editions differ today (4 had their floor set by an ask unseen >12 h, 1 has only unseen asks) · Claude Code (web sandbox)
 
 - **Revert:** code — revert the "fix(candy): Set Tracker prices from confirmed asks" commit. DB — leave the two appended columns (inert to other readers; dropping them needs DROP … CASCADE through two dependent views).
