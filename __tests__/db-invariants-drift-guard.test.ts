@@ -15,6 +15,59 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-26 (known-issues #150 residue). Eight Pinnacle readers joined
+    // pinnacle_editions (one character + franchise per set-level key): market
+    // analytics named the wrong character on 3,711 of 4,928 30-day sales, the
+    // wallet franchise breakdown misfiled 3,423 held pins, platform stats and the
+    // sets summary counted 594 keys for 2,732 pins. Pins the catalog reads.
+    fn: "pinnacle_top_editions",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    fn: "pinnacle_top_sales",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    fn: "pinnacle_tier_analytics",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    fn: "pinnacle_daily_tier_volume",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    fn: "get_pinnacle_franchise_breakdown",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    fn: "get_edition_detail",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    fn: "get_platform_stats",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    fn: "analytics_sets_summary",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
     // Added 2026-09-26. get_team_sets / get_team_activity read only `editions`,
     // which holds no Pinnacle rows, so both franchise-page sections were hidden.
     // Pins the catalog sets (trimmed slug, pins held by render_id) and the
