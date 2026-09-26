@@ -510,6 +510,10 @@ export default function CollectionProfileClient({
   const [trophies, setTrophies] = useState<(TrophyMoment | null)[]>([null, null, null]);
   const [bio, setBio] = useState<ProfileBio | null>(null);
   const [wallets, setWallets] = useState<SavedWalletPublic[]>([]);
+  // The one wallets-derived value NOT gated on `> 0` is the "N WALLETS" count
+  // under MOMENTS: a failed read printed "0 WALLETS" on a public profile
+  // (2026-09-26). It renders only from a read that returned the list.
+  const [walletsLoaded, setWalletsLoaded] = useState(false);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [sniperDeals, setSniperDeals] = useState<SniperDealPreview[]>([]);
   const [loading, setLoading] = useState(true);
@@ -517,9 +521,9 @@ export default function CollectionProfileClient({
   const [isOwner, setIsOwner] = useState(false);
   // Per LEG, not one flag: these endpoints fail independently, and a single flag
   // would blank the trophy case whenever the sniper feed hiccuped. Same shape as
-  // /alerts. Only the legs that back a CLAIM need one — `bio` and `wallets` are
-  // already safe, because every stat derived from wallets is gated on `> 0` and
-  // renders an em-dash rather than a manufactured $0.
+  // /alerts. Only the legs that back a CLAIM need one — `bio` is already safe,
+  // and every wallets-derived STAT is gated on `> 0` (an em-dash, never a
+  // manufactured $0); the wallet COUNT is not, so it has `walletsLoaded` below.
   const [failed, setFailed] = useState({ trophies: false, sniper: false });
 
   // Check if the current user owns this profile
@@ -561,7 +565,9 @@ export default function CollectionProfileClient({
 
     const walletsP = fetch("/api/profile/saved-wallets?ownerKey=" + enc)
       .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) { if (data?.wallets) setWallets(data.wallets); })
+      .then(function(data) {
+        if (Array.isArray(data?.wallets)) { setWallets(data.wallets); setWalletsLoaded(true); }
+      })
       .catch(function() {});
 
     const historyP = fetch("/api/profile/portfolio-history?ownerKey=" + enc + "&days=30")
@@ -730,7 +736,7 @@ export default function CollectionProfileClient({
             {totalMoments > 0 ? totalMoments.toLocaleString() : "\u2014"}
           </div>
           <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>
-            {wallets.length} WALLET{wallets.length !== 1 ? "S" : ""}
+            {walletsLoaded ? `${wallets.length} WALLET${wallets.length !== 1 ? "S" : ""}` : "\u2014 WALLETS"}
           </div>
         </div>
         <div style={{ ...cardStyle, textAlign: "center" }}>

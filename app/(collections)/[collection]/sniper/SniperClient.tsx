@@ -135,6 +135,11 @@ function SniperMomentsBody() {
   const [deepLinkDismissed, setDeepLinkDismissed] = useState(false);
   const [deepLinkResolved, setDeepLinkResolved] = useState<"pending" | "found" | "missing">("pending");
   const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map());
+  // ⚠ "Not owned" is a claim about the collector's OWN wallet; it may only be
+  // made from a read that SUCCEEDED. Until 2026-09-26 a failed / timed-out /
+  // still-loading edition-counts read left the map empty and every row said
+  // "Not owned" ("You don't own any copies of this edition").
+  const [editionStatsStatus, setEditionStatsStatus] = useState<"loading" | "ok" | "unavailable">("loading");
   const [showFilters, setShowFilters] = useState(false);
 
   // Telemetry: emit a `sniper-filter-applied` beacon any time the user-facing
@@ -357,25 +362,37 @@ function SniperMomentsBody() {
     let cancelled = false;
     (async () => {
       try {
+        setEditionStatsStatus("loading");
         const key = getOwnerKey();
         if (!key || !key.startsWith("0x")) {
           setEditionStats(new Map());
+          setEditionStatsStatus("unavailable");
           return;
         }
         const res = await fetch(
           `/api/wallet/edition-counts?wallet=${encodeURIComponent(key)}&collection=${encodeURIComponent(collectionSlug)}`,
           { cache: "no-store", signal: AbortSignal.timeout(15000) }
         );
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          setEditionStatsStatus("unavailable");
+          return;
+        }
         const json = (await res.json()) as { editions?: Record<string, { owned: number; locked: number }> };
         if (cancelled) return;
+        if (!json || typeof json.editions !== "object" || json.editions === null) {
+          setEditionStatsStatus("unavailable");
+          return;
+        }
         const next = new Map<string, { owned: number; locked: number }>();
         for (const [k, v] of Object.entries(json.editions ?? {})) {
           next.set(k, { owned: Number(v.owned) || 0, locked: Number(v.locked) || 0 });
         }
         setEditionStats(next);
+        setEditionStatsStatus("ok");
       } catch {
-        // Silent — empty editionStats falls back to the simple ownedIds path.
+        // A failed read is UNKNOWN ownership, never "Not owned".
+        if (!cancelled) setEditionStatsStatus("unavailable");
       }
     })();
     return () => { cancelled = true };
@@ -1224,6 +1241,13 @@ function SniperMomentsBody() {
                           </span>
                         );
                       }
+                      if (editionStatsStatus !== "ok") {
+                        return (
+                          <span data-testid="ownership-unknown" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }} title={editionStatsStatus === "loading" ? "Checking your ownership…" : "Ownership unavailable right now"}>
+                            Own —
+                          </span>
+                        );
+                      }
                       return (
                         <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }} title="You don't own any copies of this edition">
                           Not owned
@@ -1541,6 +1565,13 @@ function SniperMomentsBody() {
                           return (
                             <span style={{ color: "var(--rpc-success)" }} title={`${eStats.owned} owned · ${eStats.locked} locked`}>
                               {eStats.owned} / {eStats.locked}
+                            </span>
+                          );
+                        }
+                        if (editionStatsStatus !== "ok") {
+                          return (
+                            <span data-testid="ownership-unknown" style={{ color: "var(--rpc-text-ghost)" }} title={editionStatsStatus === "loading" ? "Checking your ownership…" : "Ownership unavailable right now"}>
+                              —
                             </span>
                           );
                         }

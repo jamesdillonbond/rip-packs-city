@@ -119,20 +119,32 @@ describe("TeamFollowButton", () => {
     )
   })
 
-  it("treats a failed status fetch as anonymous (GET catch branch)", async () => {
+  // INVERTED 2026-09-26. Both pinned a failed status read as ANONYMOUS, so a
+  // signed-in follower was told "Sign in to follow". The route answers a real
+  // anonymous visitor with 200 { authed:false } — a failed read is UNKNOWN.
+  it("a failed status fetch (GET catch branch) is unknown, never 'Sign in to follow'", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))))
-    const { findByText } = render(<TeamFollowButton {...props} />)
-    // GET rejection -> catch -> setState("anon")
-    expect(await findByText(/Sign in to follow/)).toBeTruthy()
+    const { findByText, queryByText } = render(<TeamFollowButton {...props} />)
+    expect(await findByText(/Follow unavailable/)).toBeTruthy()
+    expect(queryByText(/Sign in to follow/)).toBeNull()
   })
 
-  it("treats a non-ok status fetch as not-authed (GET !r.ok branch)", async () => {
+  it("a non-ok status fetch (GET !r.ok branch) is unknown, never 'Sign in to follow'", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(() => Promise.resolve({ ok: false, status: 500, json: async () => ({}) } as Response)),
     )
+    const { findByText, queryByText } = render(<TeamFollowButton {...props} />)
+    expect(await findByText(/Follow unavailable/)).toBeTruthy()
+    expect(queryByText(/Sign in to follow/)).toBeNull()
+  })
+
+  it("CONTROL: a real anonymous answer (200, authed:false) still offers sign-in", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: true, status: 200, json: async () => ({ authed: false, following: false }) } as Response)),
+    )
     const { findByText } = render(<TeamFollowButton {...props} />)
-    // !r.ok -> { authed:false } -> anon
     expect(await findByText(/Sign in to follow/)).toBeTruthy()
   })
 })

@@ -206,6 +206,9 @@ function ProfilePageInner() {
   const [activityFailed, setActivityFailed] = useState(false);
   const [hero, setHero] = useState<HeroMoment | null>(null);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
+  // A failed favorites read is not "no favorites": every chip rendered ☆ and a
+  // click sent a POST built from that false state (2026-09-26).
+  const [favoritesFailed, setFavoritesFailed] = useState(false);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [statsByWallet, setStatsByWallet] = useState<Record<string, CollectionStat[]>>({});
   // Addresses whose collection-stats fetch FAILED this pass. Load-bearing for
@@ -528,6 +531,7 @@ function ProfilePageInner() {
       } else {
         setHero(null);
       }
+      setFavoritesFailed(!favRes.ok);
       if (favRes.ok) {
         const f = await favRes.json();
         setFavorites(f?.favorites ?? []);
@@ -1365,6 +1369,11 @@ function ProfilePageInner() {
         {/* ── Favorite Collections + News Feed ── */}
         <section className="rpc-section">
           <div className="rpc-section-title">Favorite Collections</div>
+          {favoritesFailed && (
+            <div data-testid="favorites-unavailable" className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 8 }}>
+              Your favorites couldn&apos;t be loaded right now — they&apos;re unchanged. Refresh to try again.
+            </div>
+          )}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {publishedCollections().map((c) => {
               const uuid = c.supabaseCollectionId;
@@ -1372,7 +1381,9 @@ function ProfilePageInner() {
               return (
                 <button
                   key={c.id}
-                  onClick={() => uuid && toggleFavorite(uuid, isFav)}
+                  onClick={() => uuid && !favoritesFailed && toggleFavorite(uuid, isFav)}
+                  disabled={favoritesFailed}
+                  aria-disabled={favoritesFailed}
                   style={{
                     background: isFav ? `${c.accent}22` : "var(--rpc-surface)",
                     border: `1px solid ${isFav ? c.accent : "var(--rpc-border)"}`,
@@ -1390,7 +1401,7 @@ function ProfilePageInner() {
                     gap: 6,
                   }}
                 >
-                  {isFav ? "★" : "☆"} {c.icon} {c.shortLabel}
+                  {favoritesFailed ? "–" : isFav ? "★" : "☆"} {c.icon} {c.shortLabel}
                 </button>
               );
             })}

@@ -1573,6 +1573,43 @@ describe("SniperClient — a fully-decorated row draws every chip it earns", () 
   })
 })
 
+describe("SniperClient — the ownership chip claims only what a successful read showed (2026-09-26)", () => {
+  function mount(editionCounts: { ok: boolean; body?: unknown } | "throw") {
+    warm = { data: feed({ deals: [deal()] }), loading: false, error: null, refresh: vi.fn() }
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const u = String(input)
+      if (u.startsWith("/api/wallet/edition-counts")) {
+        if (editionCounts === "throw") throw new Error("network down")
+        return { ok: editionCounts.ok, status: editionCounts.ok ? 200 : 500, json: async () => editionCounts.body ?? {} }
+      }
+      if (u.startsWith("/api/owned-flow-ids")) return { ok: true, status: 200, json: async () => ({ ids: [] }) }
+      return { ok: true, status: 200, json: async () => ({ deals: [], benchmarks: {} }) }
+    })
+    render(<SniperClient />)
+  }
+
+  it("a FAILED edition-counts read (500) never says 'Not owned' about the collector's wallet", async () => {
+    mount({ ok: false, body: { error: "timeout" } })
+    const row = (await waitFor(() => document.querySelector("#sniper-row-111"))) as HTMLElement
+    await waitFor(() => expect(row.querySelector('[data-testid="ownership-unknown"]')).toBeTruthy())
+    expect(row.textContent).not.toMatch(/Not owned/)
+  })
+
+  it("a THROWN edition-counts read (network / timeout) is unknown too", async () => {
+    mount("throw")
+    const row = (await waitFor(() => document.querySelector("#sniper-row-111"))) as HTMLElement
+    await waitFor(() => expect(row.querySelector('[data-testid="ownership-unknown"]')).toBeTruthy())
+    expect(row.textContent).not.toMatch(/Not owned/)
+  })
+
+  it("CONTROL: a SUCCESSFUL read with no copies of this edition does say 'Not owned'", async () => {
+    mount({ ok: true, body: { editions: { "99:1": { owned: 2, locked: 0 } } } })
+    const row = (await waitFor(() => document.querySelector("#sniper-row-111"))) as HTMLElement
+    await waitFor(() => expect(row.textContent).toMatch(/Not owned/))
+    expect(row.querySelector('[data-testid="ownership-unknown"]')).toBeNull()
+  })
+})
+
 describe("SniperClient — the depth panel's floor variants", () => {
   function mountDepth(floor: Record<string, unknown>, others: unknown[] = []) {
     warm = { data: feed(), loading: false, error: null, refresh: vi.fn() }

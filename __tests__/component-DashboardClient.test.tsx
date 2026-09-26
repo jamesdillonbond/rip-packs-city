@@ -640,6 +640,34 @@ describe("DashboardClient — favourites and activity", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
   })
 
+  // 2026-09-26: a failed favourites read rendered every chip as un-favourited (☆)
+  // — "you have no favourites" — and a click sent a POST built from that false state.
+  it("a failed favourites read says so, shows no ☆/★ claim, and a click writes nothing", async () => {
+    routes["/api/profile/favorites"] = () => json(503, {})
+    render(<DashboardClient />)
+    const note = await waitFor(() => {
+      const el = document.querySelector('[data-testid="favorites-unavailable"]')
+      expect(el).toBeTruthy()
+      return el as HTMLElement
+    })
+    const section = note.closest("section") as HTMLElement
+    expect(section.textContent).not.toMatch(/[☆★]/)
+    const chip = section.querySelector("button") as HTMLButtonElement
+    expect(chip.disabled).toBe(true)
+    fireEvent.click(chip)
+    const writes = fetchMock.mock.calls.filter(
+      (c: unknown[]) => String(c[0]).startsWith("/api/profile/favorites") && (c[1] as RequestInit | undefined)?.method,
+    )
+    expect(writes).toHaveLength(0)
+  })
+
+  it("CONTROL: a successful favourites read renders the ☆/★ chips and no unavailable note", async () => {
+    routes["/api/profile/favorites"] = () => json(200, { favorites: [] })
+    render(<DashboardClient />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/☆/))
+    expect(document.querySelector('[data-testid="favorites-unavailable"]')).toBeNull()
+  })
+
   it("survives a failed activity read", async () => {
     routes["/api/profile/activity"] = () => json(503, {})
     render(<DashboardClient />)

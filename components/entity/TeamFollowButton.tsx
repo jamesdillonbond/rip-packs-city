@@ -18,7 +18,10 @@ interface Props {
   dark?: boolean          // true on the branded gradient (light text)
 }
 
-type State = "loading" | "anon" | "following" | "not-following"
+// "unknown": the status read FAILED. The route answers an anonymous visitor
+// with 200 { authed:false }, so a non-ok or thrown read is not "signed out" —
+// until 2026-09-26 it rendered "Sign in to follow" to a signed-in follower.
+type State = "loading" | "anon" | "following" | "not-following" | "unknown"
 
 export default function TeamFollowButton({ league, teamShortSlug, teamPath, dark }: Props) {
   const [state, setState] = useState<State>("loading")
@@ -28,12 +31,14 @@ export default function TeamFollowButton({ league, teamShortSlug, teamPath, dark
     let cancelled = false
     const p = new URLSearchParams({ league, slug: teamShortSlug })
     fetch(`/api/teams/follow?${p.toString()}`, { cache: "no-store" })
-      .then(r => (r.ok ? r.json() : { authed: false, following: false }))
-      .then((j: { authed: boolean; following: boolean }) => {
+      .then(async r => {
+        if (!r.ok) { if (!cancelled) setState("unknown"); return }
+        const j = (await r.json()) as { authed?: unknown; following?: unknown }
         if (cancelled) return
-        setState(!j.authed ? "anon" : j.following ? "following" : "not-following")
+        if (typeof j?.authed !== "boolean") { setState("unknown"); return }
+        setState(!j.authed ? "anon" : j.following === true ? "following" : "not-following")
       })
-      .catch(() => { if (!cancelled) setState("anon") })
+      .catch(() => { if (!cancelled) setState("unknown") })
     return () => { cancelled = true }
   }, [league, teamShortSlug])
 
@@ -73,6 +78,14 @@ export default function TeamFollowButton({ league, teamShortSlug, teamPath, dark
 
   if (state === "loading") {
     return <span style={{ ...baseStyle, opacity: 0.5, color: dark ? "#fff" : "var(--rpc-text-muted)", border: `1px solid ${dark ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.14)"}` }}>★ …</span>
+  }
+
+  if (state === "unknown") {
+    return (
+      <span data-testid="follow-status-unknown" title="Follow status couldn't be loaded — refresh to try again" style={{ ...baseStyle, cursor: "default", opacity: 0.6, color: dark ? "#fff" : "var(--rpc-text-muted)", border: `1px solid ${dark ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.14)"}` }}>
+        ★ Follow unavailable
+      </span>
+    )
   }
 
   if (state === "anon") {

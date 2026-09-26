@@ -773,6 +773,16 @@ describe("CollectionProfileClient", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
     expect(document.body.textContent).not.toMatch(/\$0\b/)
     expect(document.body.textContent).toMatch(/—/)
+    // ⚠ The gate did NOT cover the wallet COUNT under MOMENTS: a failed read printed
+    // "0 WALLETS" on the public profile (2026-09-26). Assert the absence of the claim.
+    expect(document.body.textContent).not.toMatch(/\b0 WALLETS/)
+    expect(document.body.textContent).toMatch(/— WALLETS/)
+  })
+
+  it("CONTROL: a successful read with no saved wallets does say 0 WALLETS", async () => {
+    mount({ wallets: () => json(200, { wallets: [] }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/\b0 WALLETS/))
   })
 
   it("renders the portfolio totals when wallets loaded", async () => {
