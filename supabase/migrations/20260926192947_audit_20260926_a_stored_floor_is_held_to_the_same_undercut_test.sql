@@ -1,41 +1,24 @@
--- DB invariant: public.sync_edition_offers_from_atlas — Top Shot's per-edition lowest ask,
--- refreshed from the Atlas marketplace firehose after the GQL offers-sweep host died (2026-09-07).
--- edition_offers.low_ask is the "lowest ask" on the collection grid, moment and edition pages and
--- fmv-recalc's ask feed; a regression here either publishes a stale/higher floor as current or
--- NULLs an edition Atlas simply has not seen.
+-- A STORED floor the 24 h window no longer re-observes is held to the same undercut test (2026-09-26).
+-- 20260926192206 stopped the sync WRITING a 24 h floor undercut by an older open listing under half
+-- of it (first tick 12:26 PM PT: undercut_nulled 239). But an edition with NO listing re-observed in
+-- 24 h never reaches that upsert (Atlas is not a census), so its old floor stood however far it was
+-- undercut — measured ~12:27 PM PT: 996 stored Top Shot floors with an open listing seen within 30 d
+-- under half of them, 158 under a tenth; Tre Jones 124:5108 still read $20.00 (no 24 h listing, 69
+-- open from $0.20). New step (a0): the same rule on edition_offers.low_ask itself — NULL (unknown),
+-- never the older price. Per-row LATERAL ... LIMIT 1 on idx_tame_open_by_edition: 123 ms / 41,687 hit
+-- buffers over 13,337 rows on prod (an EXISTS form hash-semi-joined 411k events: 15.5 s — not used).
+-- Return gains 'stale_undercut_nulled'. proconfig and EXECUTE grants unchanged (restated).
 --
--- Pins:
---   * the floor is the MIN open, verified (24 h) listing price per canonical external_id, with
---     that listing's serial + nft id beside it;
---   * ...UNLESS an open listing seen within 30 d is under HALF of it: then the 24 h minimum is not
---     the floor and low_ask is NULL (unknown), never the older unconfirmed price (2026-09-26);
---   * the same test NULLs a STORED floor the 24 h window no longer re-observes (2026-09-26);
---   * a parallel's listings land on the `::sub` row, never the base row;
---   * an edition with NO open listing in our events is left untouched (Atlas is not a census);
---   * completed listings, unverified listings and inert (non-canonical) keys never contribute;
---   * a stale ask is NULLed ONLY for an edition verified COMPLETE within 24 h with no open listing;
---   * highest_offer = MAX open EDITION/PARALLEL offer for editions verified within 24 h (SERIAL and
---     completed offers never count), NULLed when verified complete with none open;
---   * a re-run over unchanged data writes 0 rows (WHERE guards).
---
--- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260926192947_audit_20260926_a_stored_floor_is_held_to_the_same_undercut_test.sql);
--- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
---
--- Runs inside a rolled-back transaction so it leaves no residue.
+-- REVERT: re-apply the sync_edition_offers_from_atlas body from 20260926192206, re-point the PINS
+--         entry and the supabase/tests copy back to it.
+-- anon-exec: sync_edition_offers_from_atlas (REVOKED below — already false live, restated because a snapshot must say so)
 
-BEGIN;
-
-CREATE TABLE public.topshot_atlas_market_events (
-  uuid text PRIMARY KEY, product text, kind text, offer_type text, completed boolean, nft_id text, atlas_edition_id text,
-  serial_number integer, price_cents bigint, last_seen_at timestamptz);
-CREATE TABLE public.topshot_atlas_edition_verified (atlas_edition_id text PRIMARY KEY, verified_at timestamptz, complete boolean);
-CREATE TABLE public.topshot_atlas_edition_map (atlas_edition_id text PRIMARY KEY, external_id text);
-CREATE TABLE public.edition_offers (
-  collection_id uuid, external_id text, highest_offer numeric, low_ask numeric, updated_at timestamptz,
-  low_ask_serial integer, low_ask_nft_id text, PRIMARY KEY (collection_id, external_id));
-
--- >>> BEGIN verbatim sync_edition_offers_from_atlas (keep byte-identical to the migration) >>>
+DO $guard$
+BEGIN
+  IF (SELECT md5(prosrc) FROM pg_proc WHERE proname = 'sync_edition_offers_from_atlas' AND pronamespace = 'public'::regnamespace) <> 'c06e1509d17de2d2ac9421dda27e6d20' THEN
+    RAISE EXCEPTION 'sync_edition_offers_from_atlas live body is not the 20260926192206 one — re-read before a full-body write';
+  END IF;
+END $guard$;
 
 CREATE OR REPLACE FUNCTION public.sync_edition_offers_from_atlas()
 RETURNS jsonb
@@ -237,65 +220,5 @@ BEGIN
                             'duration_ms', (extract(epoch from clock_timestamp() - v_started) * 1000)::int);
 END $$;
 
--- <<< END verbatim sync_edition_offers_from_atlas <<<
-
-INSERT INTO public.topshot_atlas_edition_map VALUES ('E1', '99:3372'), ('E2', '99:3372::17'), ('E3', 'a1b2c3d4-0000-4000-8000-000000000000:x');
-INSERT INTO public.topshot_atlas_market_events (uuid, product, kind, completed, nft_id, atlas_edition_id, serial_number, price_cents, last_seen_at) VALUES
-  ('u1', 'nba', 'listing', false, 'N1', 'E1', 4521, 1250, now() - interval '1 hour'),   -- $12.50
-  ('u2', 'nba', 'listing', false, 'N2', 'E1', 12,   900,  now() - interval '2 hours'),  -- $9.00 ← the floor
-  ('u3', 'nba', 'listing', false, 'N3', 'E1', 3,    600,  now() - interval '30 hours'), -- $6 but UNVERIFIED (not under half the floor, so no undercut)
-  ('u4', 'nba', 'listing', true,  'N4', 'E1', 4,    50,   now() - interval '1 hour'),   -- $0.50 but SOLD
-  ('u5', 'nba', 'listing', false, 'N5', 'E2', 17,   99900, now() - interval '1 hour'),  -- the parallel
-  ('u6', 'nba', 'listing', false, 'N6', 'E3', 1,    10,   now() - interval '1 hour');   -- inert key
--- E5 '5:5': a $20 listing re-seen in 24 h over an OLDER still-open $0.20 listing (the 124:5108 case) -> NULL.
--- E6 '6:6': a $5 floor with a $0.10 open listing last seen 40 days ago (outside the 30 d window) -> $5 stands.
-INSERT INTO public.topshot_atlas_edition_map VALUES ('E5', '5:5'), ('E6', '6:6');
-INSERT INTO public.topshot_atlas_market_events (uuid, product, kind, completed, nft_id, atlas_edition_id, serial_number, price_cents, last_seen_at) VALUES
-  ('u7', 'nba', 'listing', false, 'N7', 'E5', 2182, 2000, now() - interval '1 hour'),
-  ('u8', 'nba', 'listing', false, 'N8', 'E5', 90,   20,   now() - interval '5 days'),
-  ('u9', 'nba', 'listing', false, 'N9', 'E6', 50,   500,  now() - interval '1 hour'),
-  ('u10','nba', 'listing', false, 'N10','E6', 51,   10,   now() - interval '40 days');
--- E8 '8:8': a STORED $30 floor, nothing re-seen in 24 h, an open $1 listing seen 10 days ago -> NULL.
--- E9 '9:9': a STORED $30 floor, nothing re-seen in 24 h, an open $20 listing (not under half) -> $30 stands, untouched.
-INSERT INTO public.topshot_atlas_edition_map VALUES ('E8', '8:8'), ('E9', '9:9');
-INSERT INTO public.topshot_atlas_market_events (uuid, product, kind, completed, nft_id, atlas_edition_id, serial_number, price_cents, last_seen_at) VALUES
-  ('u11','nba', 'listing', false, 'N11','E8', 60,   100,  now() - interval '10 days'),
-  ('u12','nba', 'listing', false, 'N12','E9', 61,   2000, now() - interval '10 days');
--- offers: an open EDITION offer and a SERIAL offer on E1 (serial offers are not an edition's offer),
--- an open PARALLEL offer on E2; E4 ('7:7') has a stale ask + offer and is VERIFIED COMPLETE with nothing open.
-INSERT INTO public.topshot_atlas_edition_map VALUES ('E4', '7:7');
-INSERT INTO public.topshot_atlas_market_events (uuid, product, kind, offer_type, completed, nft_id, atlas_edition_id, serial_number, price_cents, last_seen_at) VALUES
-  ('o1', 'nba', 'offer', 'EDITION',  false, NULL, 'E1', NULL, 700, now() - interval '1 hour'),
-  ('o2', 'nba', 'offer', 'SERIAL',   false, 'N1', 'E1', 4521, 5000, now() - interval '1 hour'),
-  ('o3', 'nba', 'offer', 'EDITION',  true,  NULL, 'E1', NULL, 9000, now() - interval '1 hour'),
-  ('o4', 'nba', 'offer', 'PARALLEL', false, NULL, 'E2', NULL, 30000, now() - interval '1 hour');
-INSERT INTO public.topshot_atlas_edition_verified VALUES ('E1', now() - interval '1 hour', true), ('E2', now() - interval '1 hour', false), ('E4', now() - interval '1 hour', true);
-INSERT INTO public.edition_offers VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '99:3372', 6.00, 40.00, '2026-08-28', NULL, NULL),  -- stale ask (higher) and stale offer
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '1:1',     3.00, 55.00, '2026-08-28', NULL, NULL),  -- Atlas has not seen it
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '7:7',     2.00, 12.00, '2026-08-28', 9, 'OLD'),    -- verified COMPLETE, nothing open
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '5:5',     NULL, 20.00, '2026-08-28', 2182, 'N7'),  -- published the undercut $20 floor
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '8:8',     NULL, 30.00, '2026-08-28', 7, 'OLD8'),   -- stored floor, undercut, no 24 h listing
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '9:9',     NULL, 30.00, '2026-08-28', 8, 'OLD9');   -- stored floor, NOT undercut
-
-SELECT _assert_eq((SELECT j->>'rows' || '/' || (j->>'undercut_nulled') || '/' || (j->>'stale_undercut_nulled') || '/' || (j->>'nulled') || '/' || (j->>'offers') FROM (SELECT public.sync_edition_offers_from_atlas() j) s), '4/1/1/1/3',
-  'four floor writes (99:3372, its ::17, 5:5 NULLed as undercut, 6:6 new), one STORED floor NULLed as undercut (8:8), one stale ask NULLed on evidence, three highest_offer writes');
-SELECT _assert_eq((SELECT coalesce(low_ask::text, 'null') || '/' || coalesce(low_ask_serial::text, 'null') || '/' || coalesce(low_ask_nft_id, 'null') FROM public.edition_offers WHERE external_id = '8:8'), 'null/null/null',
-  'a STORED floor with no 24 h re-observation, undercut by an open listing under half of it, is NULLed — not left standing because Atlas did not re-report it');
-SELECT _assert_eq((SELECT round(low_ask, 2)::text || '/' || low_ask_nft_id || '/' || updated_at::date FROM public.edition_offers WHERE external_id = '9:9'), '30.00/OLD9/2026-08-28',
-  'a stored floor whose cheapest open listing is NOT under half of it is left exactly as it was');
-SELECT _assert_eq((SELECT coalesce(low_ask::text, 'null') || '/' || coalesce(low_ask_serial::text, 'null') || '/' || coalesce(low_ask_nft_id, 'null') FROM public.edition_offers WHERE external_id = '5:5'), 'null/null/null',
-  'a 24 h floor undercut by an open listing under half of it is NOT published — unknown, not $20 and not the unconfirmed $0.20');
-SELECT _assert_eq((SELECT round(low_ask, 2)::text || '/' || low_ask_serial FROM public.edition_offers WHERE external_id = '6:6'), '5.00/50',
-  'a cheaper open listing last seen outside 30 d does not undercut: the 24 h floor stands');
-SELECT _assert_eq((SELECT round(low_ask, 2)::text || '/' || low_ask_serial || '/' || low_ask_nft_id || '/' || round(highest_offer, 2)::text FROM public.edition_offers WHERE external_id = '99:3372'),
-  '9.00/12/N2/7.00', 'floor = min OPEN VERIFIED listing, with its serial + nft; highest_offer = the open EDITION offer, not the SERIAL one nor the completed $90');
-SELECT _assert((SELECT updated_at > now() - interval '1 minute' FROM public.edition_offers WHERE external_id = '99:3372'), 'refreshed row carries a fresh updated_at');
-SELECT _assert_eq((SELECT round(low_ask, 2)::text || '/' || low_ask_serial || '/' || round(highest_offer, 2)::text FROM public.edition_offers WHERE external_id = '99:3372::17'), '999.00/17/300.00', 'the parallel lands on its ::sub row with its own PARALLEL offer');
-SELECT _assert_eq((SELECT coalesce(low_ask::text, 'null') || '/' || coalesce(low_ask_nft_id, 'null') || '/' || coalesce(highest_offer::text, 'null') FROM public.edition_offers WHERE external_id = '7:7'), 'null/null/null',
-  'verified COMPLETE with nothing open: the stale ask AND the stale offer are NULLed — on evidence, not age');
-SELECT _assert_eq((SELECT round(low_ask, 2)::text || '/' || updated_at::date FROM public.edition_offers WHERE external_id = '1:1'), '55.00/2026-08-28', 'an edition Atlas has not seen is left exactly as it was — never NULLed');
-SELECT _assert((SELECT NOT EXISTS (SELECT 1 FROM public.edition_offers WHERE external_id LIKE 'a1b2c3d4%')), 'an inert uuid-keyed map row never writes a floor');
-SELECT _assert_eq((SELECT j->>'rows' || '/' || (j->>'undercut_nulled') || '/' || (j->>'stale_undercut_nulled') || '/' || (j->>'nulled') || '/' || (j->>'offers') FROM (SELECT public.sync_edition_offers_from_atlas() j) s), '0/0/0/0/0', 'a second run over unchanged data writes nothing (an undercut NULL is stable)');
-
-ROLLBACK;
+REVOKE ALL ON FUNCTION public.sync_edition_offers_from_atlas() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sync_edition_offers_from_atlas() TO service_role;

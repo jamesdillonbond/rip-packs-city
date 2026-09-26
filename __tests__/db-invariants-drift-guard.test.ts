@@ -513,7 +513,9 @@ const PINS = [
     // 2026-09-18: pointed at 20260919012821 for 42 minutes, then REVERTED by 20260919021449 (same-evening IO spell, later RULED OUT as the cause).
     // 2026-09-19: R101 v2 — scan-once (slim _open24, no memory grants) + delta-first upserts; equivalence proven on prod data before apply.
     // ⚠ 2026-09-19 11:2x AM: re-pointed a SECOND time — commit 14f38e53c (a concurrent session) wrote this file from a stale copy and silently reverted both entries; main was red for ~35 min.
-    migration: "supabase/migrations/20260919152824_audit_20260919_r101_v2_atlas_listing_tick_scans_the_open_book_once_and_upserts_only_the_delta.sql",
+    // 2026-09-26: a 24 h floor undercut by an older open listing under half its price is written NULL (unknown), never published as the floor (20260926192206);
+    //             then the same test on a STORED floor the 24 h window no longer re-observes (20260926192947).
+    migration: "supabase/migrations/20260926192947_audit_20260926_a_stored_floor_is_held_to_the_same_undercut_test.sql",
   },
   {
     fn: "mcp_get_fmv",
