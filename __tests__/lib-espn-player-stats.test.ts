@@ -117,6 +117,10 @@ describe("matchEspnSearch — ESPN search v2 (batch 56: retired players and the 
     // an NFL identity never takes a basketball hit
     expect(matchEspnSearch(wilson, "nfl", "A'ja Wilson")).toEqual({ espn_id: null, espn_league: null, matched_by: "unresolved:none" })
   })
+  it("a player ESPN files on a G League roster (nba-development, same athlete id) is an NBA hit", () => {
+    const fultz = v2([{ uid: "s:40~l:69~a:4066636", displayName: "Markelle Fultz", sport: "basketball", defaultLeagueSlug: "nba-development", subtitle: "Raptors 905" }])
+    expect(matchEspnSearch(fultz, "nba", "Markelle Fultz")).toEqual({ espn_id: "4066636", espn_league: "nba", matched_by: "espn-search:name" })
+  })
   it("a retired player's hit (the v3 search never returned one) is taken like any other", () => {
     const pierce = v2([{ uid: "s:40~l:46~a:662", displayName: "Paul Pierce", sport: "basketball", defaultLeagueSlug: "nba", subtitle: "LA Clippers" }])
     expect(matchEspnSearch(pierce, "nba", "Paul Pierce")).toEqual({ espn_id: "662", espn_league: "nba", matched_by: "espn-search:name" })

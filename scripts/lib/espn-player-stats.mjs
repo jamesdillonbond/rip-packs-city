@@ -18,6 +18,13 @@
 export const ESPN_SPORT = { nfl: "football", nba: "basketball" }
 /** The ESPN leagues an identity league may be keyed in (Top Shot mints WNBA moments). */
 export const ESPN_LEAGUES = { nfl: ["nfl"], nba: ["nba", "wnba"] }
+/**
+ * A search hit's league that is really another: ESPN files a player on a
+ * G League roster under `nba-development` (Fultz on Raptors 905, Oladipo on
+ * the Charge — measured 2026-09-25) with the SAME athlete id, and
+ * basketball/nba/athletes/<id>/stats serves their NBA seasons.
+ */
+export const ESPN_LEAGUE_ALIASES = { "nba-development": "nba" }
 
 export function espnStatsUrl(league, espnId, espnLeague = league) {
   const sport = ESPN_SPORT[league]
@@ -115,7 +122,7 @@ export function espnSearchHits(payload) {
     out.push({
       id,
       displayName: String(c.displayName ?? ""),
-      league: String(c.defaultLeagueSlug ?? c.league ?? "").toLowerCase(),
+      league: (() => { const l = String(c.defaultLeagueSlug ?? c.league ?? "").toLowerCase(); return ESPN_LEAGUE_ALIASES[l] ?? l })(),
       sport: String(c.sport ?? "").toLowerCase(),
       team: typeof c.subtitle === "string" ? c.subtitle : null,
     })

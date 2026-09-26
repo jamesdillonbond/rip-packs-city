@@ -31,7 +31,10 @@ const BASE_URL = (process.env.BASE_URL || "https://www.rippackscity.com").replac
 const TOKEN = process.env.INGEST_SECRET_TOKEN
 const LEAGUES = (process.env.LEAGUES || "nfl,nba").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
 const LIMIT = process.env.LIMIT ? Number(process.env.LIMIT) : 300
-const RESOLVE_LIMIT = process.env.RESOLVE_LIMIT ? Number(process.env.RESOLVE_LIMIT) : 150
+// 150 → 400 (batch 58): a dispatched run resolved 150 and fetched 300 players in
+// 2.6 min (2026-09-25 6:31 PM PT), so 400 searches at 250 ms sit well inside
+// the 20-min deadline and the 931 still-unkeyed Top Shot names clear in ~3 ticks.
+const RESOLVE_LIMIT = process.env.RESOLVE_LIMIT ? Number(process.env.RESOLVE_LIMIT) : 400
 const DRY_RUN = process.env.DRY_RUN === "1" || process.env.DRY_RUN === "true"
 const DEADLINE_MS = process.env.DEADLINE_MS ? Number(process.env.DEADLINE_MS) : 20 * 60 * 1000
 const ESPN_DELAY_MS = 250
