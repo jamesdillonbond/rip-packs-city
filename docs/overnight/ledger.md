@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — Candy MLB cards play their clips (go-live C6): CSP `media-src` gains `arweave.net` + `*.arweave.net`, `candy-mlb` joins `VIDEO_ENABLED_SLUGS` (hover clips on edition grids), and the Candy edition page hero plays the clip. Verified first via pg_net: every Candy `video_url` is `https://arweave.net/<id>`, which redirects to a per-transaction `*.arweave.net` host serving `video/mp4` (5 of 5 sampled, base and Rainbow). A clip that fails still shows the card (hero falls back on error; grid tiles keep the poster). Coupling test: Candy video stays enabled only while media-src allows both hosts · Claude Code (web sandbox)
+
+- **Revert:** revert the "feat(candy): cards play their clips" commit (CSP line, slug, hero condition together).
+
+
 ### 2026-09-25 · 🧹 SHIPPED — the concierge stops sending collectors to /candy-mlb/sniper (a tab Candy does not have; the URL redirects): BOTH of its hand-kept Candy tab lists (the system prompt and the get_insight_board tool description) are derived from the registry's `pages`, the active-collection link hint names only that collection's tabs (was "/<id>/sniper, /<id>/packs" for every collection), and the Panini sentence mentions the new boards as a floor, not a census. The test that should have caught it checked only that a page.tsx existed SOMEWHERE (/sniper exists for other collections); it now checks every /candy-mlb/<tab> literal against Candy's pages · Claude Code (web sandbox)
 
 - **Revert:** revert the "fix(concierge): Candy tab lists come from the registry" commit.
