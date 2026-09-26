@@ -62,7 +62,6 @@ import { slugifyName, slugifyPlayerName } from '@/lib/entity-labels'
 import { isExhibitionTeamSlug } from '@/lib/team-denylist'
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from '@/lib/launch-flags'
 import { PUBLIC_TAB_PAGES } from '@/lib/seo'
-import { isExcluded, readPackExclusions } from '@/lib/packs/distribution-exclusions'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
@@ -496,11 +495,6 @@ async function getPackRows(): Promise<PackRow[]> {
       // tiebreaker while providing nothing.
       'id',
     )
-    // Dapper-internal dists (no art, never opened/bought/sold) stay out of the
-    // sitemap — lib/packs/distribution-exclusions.ts. Fails open: a failed read
-    // lists every pack, so this can only ever REMOVE a page that is provably
-    // internal, never drop a real one.
-    const exclusions = await readPackExclusions(sb, PACK_COLLECTION_IDS)
     return ((data ?? []) as Array<{
       dist_id: string | null
       collection_id: string | null
@@ -510,7 +504,6 @@ async function getPackRows(): Promise<PackRow[]> {
     }>)
       .filter((r) => typeof r.dist_id === 'string' && r.dist_id.length > 0 && !!r.collection_id)
       .filter(packDistributionIsSitemapWorthy)
-      .filter((r) => !isExcluded(exclusions, r.collection_id, r.dist_id))
       .map((r) => ({
         dist_id: r.dist_id as string,
         collection_id: r.collection_id as string,

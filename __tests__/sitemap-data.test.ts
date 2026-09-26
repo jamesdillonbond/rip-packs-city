@@ -459,29 +459,6 @@ describe("segment 4 — pack distributions + Pinnacle pins", () => {
     expect(s.some((x) => x.url.includes("/pack/dist/"))).toBe(false)
     expect(s.some((x) => x.url === `${BASE}/pinnacle/moment/r9`)).toBe(true)
   })
-  // 2026-09-25 — Dapper-internal dists (no art, never opened/bought/sold) leave
-  // the sitemap. The exclusion is per COLLECTION, and a failed read fails OPEN.
-  it("drops an excluded internal All Day dist, keeps the same id in Top Shot and every legitimate pack", async () => {
-    h.t.pack_distributions = ok([
-      { dist_id: "6818", collection_id: ALLDAY_ID, updated_at: null, title: "Do Not Use", total_minted: 0 },
-      { dist_id: "6818", collection_id: TS_ID, updated_at: null, title: "A real Top Shot pack", total_minted: 0 },
-      { dist_id: "5975", collection_id: ALLDAY_ID, updated_at: null, title: "Wideout Wonders Trade In Reward", total_minted: 750 },
-    ])
-    h.t.v_pack_distribution_exclusions_active = ok([{ collection_id: ALLDAY_ID, dist_id: "6818" }])
-    const urls = (await buildSitemapSegment(4)).map((x) => x.url).filter((u) => u.includes("/pack/dist/"))
-    expect(urls).not.toContain(`${BASE}/nfl-all-day/pack/dist/6818`)
-    expect(urls).toContain(`${BASE}/nba-top-shot/pack/dist/6818`)
-    expect(urls).toContain(`${BASE}/nfl-all-day/pack/dist/5975`)
-  })
-
-  it("a failed exclusion read lists EVERY pack rather than failing the sitemap", async () => {
-    h.t.pack_distributions = ok([
-      { dist_id: "6818", collection_id: ALLDAY_ID, updated_at: null, title: "Do Not Use", total_minted: 0 },
-    ])
-    h.t.v_pack_distribution_exclusions_active = err("relation does not exist")
-    const urls = (await buildSitemapSegment(4)).map((x) => x.url)
-    expect(urls).toContain(`${BASE}/nfl-all-day/pack/dist/6818`)
-  })
 })
 
 describe("assertUsableTiebreak", () => {

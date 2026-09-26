@@ -3,8 +3,6 @@ import { createClient } from "@supabase/supabase-js"
 import { derivePackAvailability, packEvBasis } from "@/lib/pack-availability"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
-import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
-import { readPackExclusions } from "@/lib/packs/distribution-exclusions"
 
 // GET /api/packs?collection=<slug>&sort=<key>&tier=<tier>&search=<q>&limit=<n>
 //
@@ -81,17 +79,6 @@ export async function GET(req: NextRequest) {
   query = query.not("title", "ilike", "%Stress test%")
   if (collection === "laliga-golazos") {
     query = query.not("title", "ilike", "%(Split)%")
-  }
-
-  // Dapper-internal distributions ("NFL Pack Hold", "Pack Test 2", "Do Not
-  // Use"): no published art AND no rip, purchase or sale, re-derived per read by
-  // the view — see lib/packs/distribution-exclusions.ts. Filtered in the QUERY
-  // so `total` and the limit count only real packs. Fails open (all shown).
-  const collectionId = COLLECTION_UUID_BY_SLUG[collection]
-  const exclusions = await readPackExclusions(supabase, collectionId ? [collectionId] : [])
-  const excludedIds = collectionId ? Array.from(exclusions.byCollection.get(collectionId) ?? []) : []
-  if (excludedIds.length > 0) {
-    query = query.not("dist_id", "in", `(${excludedIds.map((d) => `"${d.replace(/"/g, "")}"`).join(",")})`)
   }
 
   const { data, count, error } = await query
@@ -259,10 +246,6 @@ export async function GET(req: NextRequest) {
       rows,
       total: count ?? (rows.length ?? 0),
       collection_slug: collection,
-      // How many Dapper-internal dists were left out, and whether that list was
-      // readable (false = it failed open and nothing was left out).
-      internal_excluded: excludedIds.length,
-      internal_exclusions_ok: exclusions.ok,
       // Which pool the EV above was weighted by. Null for collections we do not
       // model a drop pool for (Pinnacle), where neither label would be true.
       ev_basis: basis
