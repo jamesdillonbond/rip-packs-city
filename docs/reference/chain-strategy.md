@@ -226,3 +226,8 @@ Moved to pay for the collection-keyed-map rule; the NEVER-NARROW bullet in CLAUD
 - **Why it mattered:** `purge_candy_wmc_ghost_rows` keeps ONE row per card, so an escrow row erased the seller's — 1,663 listed cards across up to 157 sellers were missing from their portfolios, and moment pages named the escrow as Owner. Listing on Top Shot never removed a moment from its owner on this site; listing on Candy did.
 - ⚠ **Still open:** `wallet-backfill-candy` reads DAS by owner and cannot see a listed card for its seller (it relies on the walk); `candy_pack_market.collector_wallets` counts the escrow as one collector wallet. Known-issues #145.
 
+## Displaced from CLAUDE.md 2026-09-26 (verbatim) — the tagline rule
+
+Moved to pay for the Disney Pinnacle grain rule in CLAUDE.md's quick-reference facts; CLAUDE.md keeps a pointer here.
+
+**Tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships; no multi-chain outreach pre-launch.

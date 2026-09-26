@@ -298,3 +298,22 @@ Pure lookup data, moved to keep the memory file under its character limit. **CLA
 Moved to pay for the collection-keyed-map rule in CLAUDE.md's chain-two section; CLAUDE.md keeps the verdict and points here.
 
 ⚠ **That CHECK is on `flowty_transactions` ONLY** (verified live 08-22), so `'ufc_strike'` fails LOUDLY there and persists SILENTLY in the other two, where it never matches. Bridge: the `analytics_sales` view (long → short via CASE).
+
+## Disney Pinnacle grain — which table answers which question (2026-09-26)
+
+Measured live 2026-09-26 PT; re-derive before quoting a number. Case history: [known-issues #150](known-issues.md).
+
+| Question | Answer from | NOT from |
+|---|---|---|
+| What pins exist / what a pin is (art, set, variant, series, FMV, floor) | `pinnacle_catalog` — one row per PIN, `render_id` PK (2,732 rows) | `pinnacle_editions` |
+| Which pins a character / franchise has | `pinnacle_catalog.characters[]` / `.franchises[]` (arrays: a duo pin names both; a pin can name several franchises) | `pinnacle_editions.character_name` / `.franchise` (ONE per row) |
+| Which pins a wallet holds | `wallet_moments_cache.render_id` (set on 41,264 of 41,264 Pinnacle rows, every one a catalog `render_id`) | `wallet_moments_cache.edition_key` for a per-pin question |
+| A sale's pin | `pinnacle_sales.render_id` (200,205 of 200,214) — `idx_pinnacle_sales_render_id` | a join through `pinnacle_editions` |
+| Set-level legacy key (`ROYALTY:Variant:Printing`) | `pinnacle_editions.id` (= `pinnacle_catalog.legacy_edition_key` = `wallet_moments_cache.edition_key`) | ⛔ `pinnacle_editions.external_id` — set on 31 of 594 rows and equal to NONE of the 431 keys wallets hold |
+
+- ⛔ **`pinnacle_editions` is SET-LEVEL:** one legacy key can span several characters and pins; the row names ONE of them. A page built on it under-counts (Star Wars franchise 129 of 723 pins; series 2026 11 of 1,023), and a `thumbnail_url IS NOT NULL` filter on it drops whole characters (Aurora). It is also only as complete as the wallet walks that write it — `pinnacle_editions_fill_from_catalog()` (pg_cron `rpc-pinnacle-editions-fill-from-catalog`, 07:43 UTC daily) back-fills rows, thumbnails and `players` rows from the catalog.
+- **Matching rules the fixed functions share (copy them, do not re-invent):** franchise = `btrim(regexp_replace(fr, '[™®©]', '', 'g'))` over `unnest(franchises)` (the catalog spells some "Star Wars™"; stripped names equal the ones `pinnacle_editions`/`players` use, so the team layout's canonical-slug redirect keeps comparing equal); character = exact `lower(btrim())` over `unnest(characters)`, OR for a duo name ("Maurice & Cogsworth") the joined list with `' & '` / `' '`.
+- **Pattern for moving a Pinnacle branch:** read the catalog first; fall through to the old `pinnacle_editions` read ONLY when the catalog does not name the subject (e.g. "20th Century Studios", 1 legacy row), so no page that resolved before stops resolving.
+- **Functions on the catalog as of 2026-09-26:** `get_player_editions`, `get_player_detail`, `get_player_top_sales`, `get_series_editions`, `get_series_rollups`, `get_series_detail`, `refresh_series_detail_rollup`, `get_team_detail`, `get_team_top_editions`, `get_team_players`, `get_team_checklist`, `get_team_checklist_progress`, `get_team_sets`, `get_team_activity`; set pages via `sets_summary` (catalog-only sets + catalog spellings in `set_name_variants`). `get_team_squeeze` is Top Shot-only by design. The not-yet-audited remainder is listed in known-issues #150.
+- ⓘ `pinnacle_editions` holds **148 numeric-id rows** (one-off 2026-04-16 batch, set "Unknown") that anchor 1,289 `pinnacle_sales` rows by FK — do not delete.
+- ⓘ The image resolver `/api/public/pinnacle-image/<render_id>` 302s to the signed CDN render; `?v=thumb` serves the cropped ~285 KB render (list views), the default the ~1.1 MB full render. `pinnacle_catalog.thumbnail_url` is always that resolver path.

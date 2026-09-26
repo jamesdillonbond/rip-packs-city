@@ -130,7 +130,7 @@ The last three were added with the parallel/subedition + jersey-match work: `jer
 
 The denormalised `player_name` / `set_name` / `tier` / `team_name` / `circulation_count` columns DO exist on this table — safe to select directly.
 
-Pinnacle editions live in parallel table `pinnacle_editions` with different schema: id (text), external_id (text), edition_key (text), character_name, franchise, set_name, variant_type, edition_type, mint_count, is_chaser, thumbnail_url, ask_price, ask_source, plus 10+ Pinnacle-native columns (studio, materials, effects, size, color, thickness). `edition_key` format: `royalty_code || ':' || variant_type || ':' || printing`.
+Pinnacle editions live in parallel table `pinnacle_editions` with different schema: id (text), external_id (text), edition_key (text), character_name, franchise, set_name, variant_type, edition_type, mint_count, is_chaser, thumbnail_url, ask_price, ask_source, plus 10+ Pinnacle-native columns (studio, materials, effects, size, color, thickness). `edition_key` format: `royalty_code || ':' || variant_type || ':' || printing`. ⛔ **That key is SET-LEVEL — one row names ONE character and ONE franchise for a key that can span several pins. A PIN is a `pinnacle_catalog` row (`render_id`); per-pin ownership is `wallet_moments_cache.render_id`, and `external_id` matches NO key a wallet holds** (2026-09-26): [schema-truth.md § Disney Pinnacle grain](schema-truth.md#disney-pinnacle-grain--which-table-answers-which-question-2026-09-26).
 
 ### Disney Pinnacle has THREE transaction types, not two (2026-08-22)
 

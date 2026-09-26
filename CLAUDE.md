@@ -67,7 +67,7 @@ Stack: Next.js 16 · React 19 · TS 5 · Tailwind 4 · Supabase (Pro, Large) · 
 
 **Repo map** (re-derive; never quote a count): [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
 
-**Tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships; no multi-chain outreach pre-launch.
+**Tagline** rule: [chain-strategy.md](docs/reference/chain-strategy.md) (end).
 
 ---
 
@@ -222,6 +222,10 @@ Flow/EVM: hex, `0x`-prefixed, case-INsensitive. Solana: **base58, un-prefixed, C
 - ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence**; a per-device identity key is chain-scoped, swept by PREFIX: chain-strategy.md.
 - ⛔ **A collection-keyed map lacking the new chain returns `null`, and null SILENTLY DROPS features** (Candy moment pages lost links + CTA; its test used `candy_mlb` as "unknown"): chain-strategy.md.
 
+### Disney Pinnacle grain
+
+⛔ **A pin = a `pinnacle_catalog` row (`render_id`); `pinnacle_editions` is SET-LEVEL (one character/franchise per key) and its `external_id` matches NO held key**: [schema-truth.md](docs/reference/schema-truth.md) (end).
+
 ### Collection UUIDs
 
 All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-truth.md) — ⚠ **09-08: Candy MLB (`solana`) is `is_active=true` (#63); Panini: published 09-25 but `is_active=false` BY DECISION (#64).**
@@ -252,9 +256,7 @@ The rest (Pinnacle's FMV triple-join, DERIVE-don't-recite): [concierge.md](docs/
 ## Code patterns and conventions
 
 - Full file replacements only — never snippets or diffs. Claude Code prompts: normal markdown, desktop-read.
-- `proxy.ts` is the correct Next.js 16 convention (renamed from middleware.ts). Supabase client typed `any` in API routes.
-- `generateMetadata` cannot be exported from a client component — it belongs in the server `layout.tsx`. ⚠ `openGraph`/`twitter` merge SHALLOWLY: claude-md-condensed-originals.md.
-- `useSearchParams` requires a Suspense wrapper.
+- Next.js conventions (`proxy.ts`, `any` client, `generateMetadata` placement + shallow merge, Suspense): [architecture-notes.md](docs/reference/architecture-notes.md) (end).
 - Fire-and-forget >30s: `after(runX())` from `next/server`, return `{status: accepted}`. ⚠ **`try/catch` CANNOT catch a `maxDuration` kill and the kill is ABSENT from `pipeline_runs_daily`** — write a `<pipeline>-heartbeat` BEFORE the work (`rows_*` NULL), read kills by CORRELATION (`npm run pipelines:kills`), bound every `fetch`. Cases: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
 - Never hardcode `#E03A2F` or `'Barlow Condensed'` — always the tokens in `app/rpc-tokens.css`. ⚠ **Web red is `#E03A2F`; email red is `#E55A4C`**, hardcoded on purpose (email clients lack CSS custom properties). ⚠ `--rpc-black` and `--rpc-text-primary` are THEME-AWARE — a hardcoded dark hex renders a black slab in light mode.
 
