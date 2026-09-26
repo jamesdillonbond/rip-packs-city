@@ -190,6 +190,14 @@ export default function FmvMethodologyPage() {
           <strong style={STRONG}>STALE</strong> — Underlying data is more than 7
           days old.
         </li>
+        <li>
+          <strong style={STRONG}>Editions that have stopped trading.</strong> When
+          an edition has had no sale in 30 days and no live ask, its estimate is
+          the median of its sales from the 90 days before its most recent sale
+          (always at least its 3 most recent sales, at most 30), labelled STALE or
+          SALES_ONLY. A price from a period when the edition traded higher is
+          never carried forward past its latest market.
+        </li>
       </ul>
 
       <h2 style={H2}>What FMV Does NOT Account For</h2>

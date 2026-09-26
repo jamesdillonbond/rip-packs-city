@@ -1581,7 +1581,10 @@ export async function POST(req: NextRequest) {
             // the all-time mean leap-frogged drain_fmv_cold_tail's last-30 median
             // every 7 days (797 editions alternating, "24H CHANGE +232%" with no
             // sale in 3 years). Both cold-population writers now share one
-            // estimator; `sales_count` is therefore ≤ 30.
+            // estimator; `sales_count` is therefore ≤ 30. Since 20260926032039
+            // (#140) both keep only the sales within 90 days of the edition's
+            // newest sale, never fewer than its 3 most recent — a thin
+            // edition's 2024 prints no longer price it in 2026.
             const avgPrice = Number(row.avg_price)
             const daysSinceSale = Math.round(
               (now.getTime() - new Date(row.latest_sold_at).getTime()) / (1000 * 60 * 60 * 24)
