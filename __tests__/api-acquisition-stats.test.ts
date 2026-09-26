@@ -14,7 +14,7 @@ import { NextRequest } from "next/server"
 const rpc: { data: any; error: any } = { data: null, error: null }
 // What the route asked the `collections` table to resolve, and what it passed
 // to the RPC — captured so tests can assert the mapping rather than just a 200.
-const captured: { slug: string | null; collectionId: string | null } = {
+const captured: { slug: string | null; collectionId: string | null; wallet?: string | null } = {
   slug: null,
   collectionId: null,
 }
@@ -28,9 +28,9 @@ vi.mock("@/lib/supabase", () => {
       return b
     },
     // Slug-aware: a resolvable slug returns a synthetic id keyed on the slug,
-    // an unknown slug misses (→ route falls back to Top Shot). This is what
+    // an unknown slug misses (→ the route refuses it, 2026-09-26). This is what
     // distinguishes "ufc_strike" (resolves) from the old buggy "ufc" (misses).
-    single: async () => {
+    maybeSingle: async () => {
       const known = new Set([
         "nba_top_shot",
         "nfl_all_day",
@@ -46,6 +46,7 @@ vi.mock("@/lib/supabase", () => {
     },
     rpc: async (_name: string, args: any) => {
       captured.collectionId = args?.p_collection_id ?? null
+      captured.wallet = args?.p_wallet ?? null
       return { data: rpc.data, error: rpc.error }
     },
   }
@@ -108,9 +109,28 @@ describe("GET /api/acquisition-stats", () => {
     expect(captured.collectionId).toBe("9b4824a8-736d-4a96-b450-8dcc0c46b023")
   })
 
-  it("falls back to Top Shot for an unknown slug", async () => {
+  // INVERTED 2026-09-26: this used to pin the fallback — an unknown slug answered
+  // with Top Shot's acquisition stats under the caller's collection label.
+  it("refuses an unknown slug (404) and never runs the Top Shot query for it", async () => {
     rpc.data = []
-    await GET(req("?wallet=0xabc&collection=not-a-collection"))
+    captured.collectionId = null
+    const res = await GET(req("?wallet=0xabc&collection=not-a-collection"))
+    expect(res.status).toBe(404)
+    expect(captured.collectionId).toBeNull()
+  })
+
+  it("an ABSENT collection still defaults to Top Shot", async () => {
+    rpc.data = []
+    const res = await GET(req("?wallet=0xabc"))
+    expect(res.status).toBe(200)
     expect(captured.collectionId).toBe(TOPSHOT_COLLECTION_ID)
+  })
+
+  it("keeps a Solana wallet verbatim — no 0x prefix on a base58 key", async () => {
+    rpc.data = []
+    const sol = "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2"
+    const res = await GET(req(`?wallet=${sol}&collection=candy_mlb`))
+    expect(res.status).toBe(200)
+    expect(captured.wallet).toBe(sol)
   })
 })

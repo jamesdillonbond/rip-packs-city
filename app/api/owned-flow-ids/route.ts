@@ -36,6 +36,17 @@ export async function GET(req: NextRequest) {
   // Collection-aware: look up contract details from registry (default: nba-top-shot)
   const collectionSlug = req.nextUrl.searchParams.get("collection") ?? "nba-top-shot"
   const col = getCollection(collectionSlug)
+  // ⛔ A NAMED collection with no Flow contract (unknown, or a non-Flow chain such
+  // as candy-mlb / panini-blockchain) is refused (2026-09-26). The `??` defaults
+  // below used to turn it into the Top Shot walk, so the caller got the wallet's
+  // Top Shot moments under the collection it asked for. An ABSENT param still
+  // defaults to Top Shot — the in-app callers send none.
+  if (!col?.contractName || !col.contractAddress) {
+    return NextResponse.json(
+      { error: `collection '${collectionSlug}' has no Flow contract to walk` },
+      { status: 400 },
+    )
+  }
   const contractAddr = col?.contractAddress ?? "0x0b2a3299cc857e29"
   const contractName = col?.contractName ?? "TopShot"
   const collectionPath = col?.cadenceCollectionPath ?? "/public/MomentCollection"

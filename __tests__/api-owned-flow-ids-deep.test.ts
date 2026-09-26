@@ -100,6 +100,15 @@ describe("GET /api/owned-flow-ids", () => {
     expect(body.editions_complete).toBe(false)
     expect(res.headers.get("cache-control")).toBe("no-store")
   })
+  it("a named collection with no Flow contract is refused — never the Top Shot walk under its name (2026-09-26)", async () => {
+    for (const c of ["candy-mlb", "panini-blockchain", "bogus"]) {
+      const res = await GET(get(`?wallet=${WALLET}&collection=${c}`))
+      expect(res.status).toBe(400)
+      const body = await res.json()
+      expect(body.ids).toBeUndefined()
+      expect(String(body.error)).toContain(c)
+    }
+  })
   it("a non-TopShot collection skips the editions script (empty editions)", async () => {
     const body = await (await GET(get(`?wallet=${WALLET}&collection=nfl-all-day`))).json()
     expect(body.ids).toEqual(["1", "2"])

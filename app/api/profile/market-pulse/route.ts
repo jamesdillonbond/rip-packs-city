@@ -20,6 +20,14 @@ export async function GET(req: NextRequest) {
   const collectionUuid =
     collection?.supabaseCollectionId ?? COLLECTION_UUID_BY_SLUG[collectionId] ?? null;
 
+  // ⛔ A named collection that does not resolve is REFUSED (2026-09-26). The
+  // unscoped branches below used to answer it with the GLOBAL counts and
+  // floors — mostly Top Shot — echoed under the requested name, and cached
+  // them under that key: a substitution, not a degradation.
+  if (!collectionUuid) {
+    return NextResponse.json({ error: `unknown collection '${collectionId}'` }, { status: 404 });
+  }
+
   const cached = cache.get(collectionId);
   if (cached && Date.now() - cached.ts < CACHE_TTL) {
     return NextResponse.json(cached.data);

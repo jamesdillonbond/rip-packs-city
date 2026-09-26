@@ -85,14 +85,17 @@ describe("GET /api/profile/market-pulse", () => {
     expect(body.legendaryFloor).toBeNull()
   })
 
-  it("unknown collection → global count path (no crash)", async () => {
+  // INVERTED 2026-09-26: this pinned the substitution — an unknown collection
+  // answered with the GLOBAL (mostly Top Shot) counts under the requested name.
+  it("unknown collection is refused (404), never answered with the global counts under its name", async () => {
     st.snapCount = 999; st.edCount = 42
     const GET = await loadGET()
-    const body = await (await GET(get("?collectionId=bogus-collection"))).json()
-    expect(body.collectionId).toBe("bogus-collection")
-    // unknown uuid ⇒ both snapshotsToday and indexedEditions read the fmv_snapshots count
-    expect(body.snapshotsToday).toBe(999)
-    expect(body.indexedEditions).toBe(999)
+    const res = await GET(get("?collectionId=bogus-collection"))
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.snapshotsToday).toBeUndefined()
+    expect(body.indexedEditions).toBeUndefined()
+    expect(String(body.error)).toContain("bogus-collection")
   })
 
   // ⚠ INVERTED, NOT DELETED. This asserted `snapshotsToday` "stays 0" on a failed

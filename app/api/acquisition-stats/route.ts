@@ -5,36 +5,33 @@ import { supabaseAdmin } from "@/lib/supabase"
 // wallet silently resolved to the Top Shot collection_id via the fallback below.
 import { SLUG_TO_DB_SLUG } from "@/lib/collections"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { detectAddressChain } from "@/lib/address"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
-async function resolveCollectionId(input?: string | null): Promise<string> {
-  if (!input) return TOPSHOT_COLLECTION_ID
+type Resolved = { ok: true; id: string } | { ok: false; status: 404 | 503; error: string }
+
+// An ABSENT collection defaults to Top Shot (the route's original contract). A
+// PRESENT one resolves or the request fails — never Top Shot's stats under the
+// caller's label (2026-09-26; until then an unknown slug OR a failed lookup
+// answered with Top Shot, a false claim about someone's own wallet).
+async function resolveCollectionId(input?: string | null): Promise<Resolved> {
+  if (!input) return { ok: true, id: TOPSHOT_COLLECTION_ID }
   // Direct UUID pass-through
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input)) {
-    return input
+    return { ok: true, id: input }
   }
   const dbSlug = SLUG_TO_DB_SLUG[input] ?? input
-  // ⚠ DELIBERATELY LEFT UNBOUNDED, 2026-09-04, and the reason is a defect rather
-  // than an exemption. Both exits here fall back to `TOPSHOT_COLLECTION_ID`, so a
-  // failed lookup for (say) laliga-golazos does not degrade — it silently answers
-  // with TOP SHOT's acquisition stats under the caller's collection label. That is
-  // a false claim about someone's own wallet, the worst sub-class in the canon.
-  //
-  // Bounding this read would make that fallback MORE reachable (a slow lookup
-  // would start taking it too), so the bound is not the fix and adding one here
-  // would quietly widen the defect while looking like a hardening commit. The fix
-  // is to resolve the collection honestly or fail — a behaviour change with a
-  // caller contract attached, filed rather than slipped into a bounding pass.
   try {
-    const { data } = await (supabaseAdmin as any)
-      .from("collections")
-      .select("id")
-      .eq("slug", dbSlug)
-      .single()
-    return data?.id ?? TOPSHOT_COLLECTION_ID
+    const { data, error } = await boundedRead(
+      (supabaseAdmin as any).from("collections").select("id").eq("slug", dbSlug).maybeSingle(),
+      "api/acquisition-stats/collections",
+    )
+    if (error) return { ok: false, status: 503, error: "Collection lookup unavailable" }
+    if (!data?.id) return { ok: false, status: 404, error: `unknown collection '${input}'` }
+    return { ok: true, id: data.id }
   } catch {
-    return TOPSHOT_COLLECTION_ID
+    return { ok: false, status: 503, error: "Collection lookup unavailable" }
   }
 }
 
@@ -46,8 +43,15 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const collectionId = await resolveCollectionId(collectionParam)
-    const walletAddr = wallet.startsWith("0x") ? wallet : "0x" + wallet
+    const resolved = await resolveCollectionId(collectionParam)
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: resolved.status })
+    }
+    const collectionId = resolved.id
+    // A Solana (Candy) key is base58 and case-sensitive: prefixing "0x" destroys it.
+    // The Flow/EVM path is unchanged.
+    const walletAddr =
+      detectAddressChain(wallet) === "solana" ? wallet.trim() : wallet.startsWith("0x") ? wallet : "0x" + wallet
     const { data, error } = await boundedRead(
       (supabaseAdmin as any).rpc("get_acquisition_stats", { p_wallet: walletAddr, p_collection_id: collectionId }),
       "api/acquisition-stats/get_acquisition_stats",
