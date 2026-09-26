@@ -652,7 +652,8 @@ const PINS = [
     // does not know.
     fn: "link_editions_to_players_by_name",
     test: "supabase/tests/link_editions_to_players_by_name.sql",
-    migration: "supabase/migrations/20260925232127_audit_20260925_name_writers_resolve_through_the_player_identity_crosswalk.sql",
+    // re-pointed 2026-09-25 (batch 54): a city-labelled team moment links to the franchise row.
+    migration: "supabase/migrations/20260926004758_audit_20260925_city_labelled_team_moments_belong_to_the_franchise_row.sql",
   },
   {
     // Added 2026-09-25 (batch 47). The player page's stats read: NULL for a

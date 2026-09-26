@@ -10,7 +10,7 @@
 -- row carries the split.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260925232127_audit_20260925_name_writers_resolve_through_the_player_identity_crosswalk.sql);
+-- (supabase/migrations/20260926004758_audit_20260925_city_labelled_team_moments_belong_to_the_franchise_row.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -302,6 +302,27 @@ BEGIN
         AND NOT EXISTS (SELECT 1 FROM public.players p2
                          WHERE p2.collection_id = e.collection_id
                            AND lower(extensions.unaccent(btrim(p2.name))) = lower(extensions.unaccent(btrim(e.player_name))))
+      UNION ALL
+      -- 2026-09-25 (batch 54): a team moment labelled by its CITY ("Buffalo" on
+      -- a Buffalo Bills "Banner Year" edition) links to the franchise row named
+      -- after the team — never to a person, never to a row minted for the city
+      SELECT e.id AS edition_id, f.id AS player_id
+      FROM public.editions e
+      JOIN public.players f
+        ON f.collection_id = e.collection_id
+       AND f.name = e.team_name
+      WHERE e.player_id IS NULL
+        AND e.player_name IS NOT NULL
+        AND btrim(e.player_name) <> ''
+        AND e.team_name IS NOT NULL
+        AND e.team_name LIKE btrim(e.player_name) || ' %'
+        AND (p_collection_id IS NULL OR e.collection_id = p_collection_id)
+        AND NOT EXISTS (SELECT 1 FROM res r WHERE r.edition_id = e.id AND r.verdict <> 'none')
+        AND NOT EXISTS (SELECT 1 FROM public.players p2
+                         WHERE p2.collection_id = e.collection_id
+                           AND lower(extensions.unaccent(btrim(p2.name))) = lower(extensions.unaccent(btrim(e.player_name))))
+        AND (SELECT count(*) FROM public.players f2
+              WHERE f2.collection_id = e.collection_id AND f2.name = e.team_name) = 1
     ),
     upd AS (
       UPDATE public.editions e
@@ -354,7 +375,8 @@ INSERT INTO players (id, external_id, collection_id, name, collection) VALUES
   ('a0000000-0000-0000-0000-000000000002', 'nfl_all_day-marvin-harrison',     'dee28451-5d62-409e-a1ad-a83f763ac070', 'Marvin Harrison',     'nfl_all_day'),
   ('a0000000-0000-0000-0000-000000000003', 'nfl_all_day-nobody-known',        'dee28451-5d62-409e-a1ad-a83f763ac070', 'Nobody Known',        'nfl_all_day'),
   ('a0000000-0000-0000-0000-000000000004', 'nfl_all_day-zed-zed',             'dee28451-5d62-409e-a1ad-a83f763ac070', 'Zed Zed',             'nfl_all_day'),
-  ('a0000000-0000-0000-0000-000000000005', '201939',                          '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Steph Curry',         'nba_top_shot');
+  ('a0000000-0000-0000-0000-000000000005', '201939',                          '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Steph Curry',         'nba_top_shot'),
+  ('a0000000-0000-0000-0000-000000000006', 'nfl_all_day-buffalo-bills',       'dee28451-5d62-409e-a1ad-a83f763ac070', 'Buffalo Bills',       'nfl_all_day');
 INSERT INTO player_name_aliases VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'stephen-curry', 'a0000000-0000-0000-0000-000000000005', 'test');
 
 INSERT INTO player_identities (id, league, league_player_id, collection_id, player_id, name_slug, display_name, latest_team, rookie_season, last_season) VALUES
@@ -376,13 +398,14 @@ INSERT INTO editions (id, collection_id, player_name, team_name, game_date) VALU
   ('e0000000-0000-0000-0000-000000000007', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'Zed Zed',         'Buffalo Bills',      '2024-01-01'), -- mint blocked
   ('e0000000-0000-0000-0000-000000000008', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Stephen Curry',   'Golden State Warriors', '2024-01-01'), -- legacy alias
   ('e0000000-0000-0000-0000-000000000009', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'Buffalo Bills',   'Buffalo Bills',      '2024-01-01'), -- team moment: untouched
-  ('e0000000-0000-0000-0000-000000000010', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'Team Moment',     'Buffalo Bills',      '2024-01-01');
+  ('e0000000-0000-0000-0000-000000000010', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'Team Moment',     'Buffalo Bills',      '2024-01-01'),
+  ('e0000000-0000-0000-0000-000000000011', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'Buffalo',         'Buffalo Bills',      '2025-09-07'); -- city label → the franchise row
 
 DO $$
 DECLARE n int; x jsonb; v_jr uuid;
 BEGIN
   n := link_editions_to_players_by_name(NULL);
-  PERFORM _assert_eq(n::text, '6', 'six editions linked: 4 by identity (2 on the minted row) + 2 legacy');
+  PERFORM _assert_eq(n::text, '7', 'seven editions linked: 4 by identity (2 on the minted row) + 3 legacy');
 
   -- 1. THE case: the Cardinals 2026 label went to Jr., the Colts 2005 to Sr.
   PERFORM _assert_eq((SELECT player_id::text FROM editions WHERE id = 'e0000000-0000-0000-0000-000000000001'),
@@ -417,17 +440,20 @@ BEGIN
   PERFORM _assert_eq((SELECT player_id::text FROM editions WHERE id = 'e0000000-0000-0000-0000-000000000008'), 'a0000000-0000-0000-0000-000000000005', 'alias -> legacy link');
   PERFORM _assert((SELECT player_id IS NULL FROM editions WHERE id = 'e0000000-0000-0000-0000-000000000009'), 'team-named edition untouched');
   PERFORM _assert((SELECT player_id IS NULL FROM editions WHERE id = 'e0000000-0000-0000-0000-000000000010'), 'Team Moment untouched');
+  -- 2026-09-25 (batch 54): a CITY label links to the franchise row named after its team
+  PERFORM _assert_eq((SELECT player_id::text FROM editions WHERE id = 'e0000000-0000-0000-0000-000000000011'), 'a0000000-0000-0000-0000-000000000006', '"Buffalo" on a Bills edition -> the Buffalo Bills row');
+  PERFORM _assert((SELECT count(*) = 0 FROM players WHERE name = 'Buffalo'), 'no "Buffalo" person minted');
 
   -- 7. every link is backed up; the run row carries the split
-  PERFORM _assert_eq((SELECT count(*)::text FROM audit_20260925_edition_player_link_backup), '6', 'six backup rows');
+  PERFORM _assert_eq((SELECT count(*)::text FROM audit_20260925_edition_player_link_backup), '7', 'seven backup rows');
   SELECT extra INTO x FROM _runs WHERE pipeline = 'editions-player-link';
   PERFORM _assert((SELECT ok FROM _runs WHERE pipeline = 'editions-player-link'), 'run ok');
   PERFORM _assert_eq(x->>'by_identity', '4', 'by_identity: 2 Harrisons + 2 Foo Bars');
   PERFORM _assert_eq(x->>'players_minted', '1', 'players_minted');
   PERFORM _assert_eq(x->>'identity_ambiguous', '1', 'identity_ambiguous');
   PERFORM _assert_eq(x->>'mint_blocked', '1', 'mint_blocked');
-  PERFORM _assert_eq(x->>'by_name_or_alias', '2', 'by_name_or_alias');
-  PERFORM _assert_eq(x->>'rows_written', '6', 'rows_written = links made');
+  PERFORM _assert_eq(x->>'by_name_or_alias', '3', 'by_name_or_alias (incl. the city label)');
+  PERFORM _assert_eq(x->>'rows_written', '7', 'rows_written = links made');
 
   -- 8. a second run links nothing new and re-reports the debt
   DELETE FROM _runs;
@@ -436,7 +462,7 @@ BEGIN
   SELECT extra INTO x FROM _runs WHERE pipeline = 'editions-player-link';
   PERFORM _assert_eq(x->>'identity_ambiguous', '1', 'ambiguity re-reported');
   PERFORM _assert_eq(x->>'mint_blocked', '1', 'blocked mint re-reported');
-  PERFORM _assert_eq((SELECT count(*)::text FROM players), '6', 'no second mint');
+  PERFORM _assert_eq((SELECT count(*)::text FROM players), '7', 'no second mint');
 END $$;
 
 ROLLBACK;
