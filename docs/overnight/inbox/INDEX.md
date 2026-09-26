@@ -1,4 +1,4 @@
-# Inbox index — 546 live filings
+# Inbox index — 547 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -29,6 +29,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-09-25 — 1 filing
+
+- [🟡 **sync-nba-projections 100% failure (8/8 in 24h) — dispositioned: it is known-issue #8, shelved 09-23, alert muted to 10-13; upstreams 403, not offseason**](2026-09-26T0006Z-daytime-monitor-sync-nba-projections-100pct-failure-24h.md) — *(daytime monitor, ~5:06 PM PT 09-25; disposition appended by Claude Code ~5:45 PM PT.)* No action: the lane fails safe and self-recovers if the block lifts; the provider decision stays on #8.
 
 ## 2026-09-24 — 1 filing
 
