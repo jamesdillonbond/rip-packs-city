@@ -46,6 +46,11 @@ import { fillMissingDistImages, type DistImagePassResult } from "@/lib/packs/top
 // — PDS carries no image for most new dists. Same honesty rules; its counts
 // ride in `extra.images`, and its failure fails the run.
 //
+// COUNTER CHECKS (2026-09-25). Last, refresh_pack_supply_counter_checks()
+// re-checks every Top Shot supply counter pack_table_rows publishes against the
+// opens we observed on-chain (a floor) — the view hides a contradicted counter.
+// Its verdict counts ride in `extra.counter_checks`; its failure fails the run.
+//
 // Auth: `Bearer $CRON_SECRET` (Vercel cron) or `Bearer $INGEST_SECRET_TOKEN`
 // (manual/backstop). 202 + after(): heartbeat FIRST, terminal row LAST.
 
@@ -186,6 +191,7 @@ async function run(request: NextRequest) {
     let writeErrors = 0
     let images: DistImagePassResult | null = null
     let discovered: number | null = null
+    let counterChecks: Record<string, unknown> | null = null
 
     // Discovery first, so the passes below see the new rows. A failure fails
     // the run but does not stop naming/pictures for the rows that do exist.
@@ -266,6 +272,20 @@ async function run(request: NextRequest) {
       errMsg = errMsg ?? `images: ${e instanceof Error ? e.message : String(e)}`
     }
 
+    // Counter checks last, after discovery added any new dist.
+    try {
+      const { data, error } = await (supabaseAdmin as any).rpc("refresh_pack_supply_counter_checks")
+      if (error) throw new Error(error.message)
+      if (!data || typeof data !== "object" || (data as { ok?: unknown }).ok !== true) {
+        throw new Error(`unexpected result ${JSON.stringify(data)}`)
+      }
+      counterChecks = data as Record<string, unknown>
+    } catch (e) {
+      ok = false
+      counterChecks = null
+      errMsg = errMsg ?? `counter checks: ${e instanceof Error ? e.message : String(e)}`
+    }
+
     await logTerminalRun({
       pipeline: PIPELINE_NAME,
       startedAt: startedMs,
@@ -285,6 +305,7 @@ async function run(request: NextRequest) {
         script_errors: scriptErrors,
         write_errors: writeErrors,
         images,
+        counter_checks: counterChecks,
         duration_ms: Date.now() - startedMs,
       },
     })

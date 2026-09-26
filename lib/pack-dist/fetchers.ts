@@ -216,6 +216,15 @@ export interface PackTableRow {
    * pairing one with the other's stamp would be worse than showing no age.
    */
   depletion_as_of: string | null
+  /**
+   * 2026-09-25: TRUE when the observed on-chain opens (pack_rips, a floor)
+   * contradict the v20 tier counts in pack_distributions.metadata at their own
+   * stamp — the page then drops that payload whole (lib/pack-dist/tier-counts.ts).
+   * Optional: absent on a synthesized row.
+   */
+  tier_counts_contradicted?: boolean | null
+  /** Opens observed on-chain for this dist (a LOWER bound, never the count). */
+  observed_packs_opened?: number | null
 }
 
 export interface DistFallbackRow {

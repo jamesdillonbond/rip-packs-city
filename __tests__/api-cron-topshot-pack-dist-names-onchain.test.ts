@@ -30,8 +30,13 @@ const sb = vi.hoisted(() => {
     rows: [] as any[], readError: null as any,
     updates: [] as any[], updateResult: { data: [{ id: "x" }], error: null } as any,
     rpcCalls: [] as any[], rpcResult: { data: 0, error: null } as any, readCalls: 0,
+    checksResult: null as any,
   }
-  s.rpc = (fn: string, args: any) => { s.rpcCalls.push({ fn, args, at: s.readCalls }); return Promise.resolve(s.rpcResult) }
+  // refresh_pack_supply_counter_checks answers `checksResult`; discovery answers `rpcResult`.
+  s.rpc = (fn: string, args: any) => {
+    s.rpcCalls.push({ fn, args, at: s.readCalls })
+    return Promise.resolve(fn === "refresh_pack_supply_counter_checks" ? s.checksResult : s.rpcResult)
+  }
   for (const m of ["from", "select", "eq", "is", "order"]) s[m] = () => s
   s.limit = () => (s.readCalls++, Promise.resolve(s.readError ? { data: null, error: s.readError } : { data: s.rows, error: null }))
   s.update = (patch: any) => { s.updates.push(patch); return s }
@@ -73,6 +78,7 @@ function stubFlow(answers: Array<Record<string, string> | null | "http500">) {
   return f
 }
 
+const CHECKS_CLEAN = { ok: true, rows_written: 3050, rows_deleted: 0, pd_refuted: 775, pev_refuted: 10, tier_refuted: 42 }
 const NULL_META = { tier: null, uuid: null, pack_type: null, start_time: null, retail_price_usd: null, number_of_pack_slots: null }
 const ROW_8825 = { id: "r1", dist_id: "8825", metadata: NULL_META }
 const ROW_8869 = { id: "r2", dist_id: "8869", metadata: NULL_META }
@@ -90,6 +96,7 @@ beforeEach(() => {
   sb.updateResult = { data: [{ id: "x" }], error: null }
   sb.rpcCalls = []
   sb.rpcResult = { data: 0, error: null }
+  sb.checksResult = { data: CHECKS_CLEAN, error: null }
   sb.readCalls = 0
   heartbeat.mockClear()
   terminal.mockClear()
@@ -227,7 +234,7 @@ describe("the sweep", () => {
     sb.rpcResult = { data: 2, error: null }
     await GET(req("Bearer cron-tok"))
     await captured!()
-    expect(sb.rpcCalls).toHaveLength(1)
+    expect(sb.rpcCalls.map((c: any) => c.fn)).toEqual(["discover_missing_topshot_pack_distributions", "refresh_pack_supply_counter_checks"])
     expect(sb.rpcCalls[0]).toMatchObject({ fn: "discover_missing_topshot_pack_distributions", args: { p_days: 7 }, at: 0 })
     const t = lastTerminal()
     expect(t).toMatchObject({ ok: true, rowsWritten: 3 })
@@ -292,6 +299,38 @@ describe("the sweep", () => {
     await captured!()
     expect(lastTerminal()).toMatchObject({ ok: false })
     expect(String(lastTerminal().error)).toMatch(/images: boom/)
+  })
+
+  it("refreshes the counter checks LAST and reports their verdict counts in extra", async () => {
+    sb.rows = [ROW_8825]
+    stubFlow([CHAIN_8825])
+    await GET(req("Bearer cron-tok"))
+    await captured!()
+    const last = sb.rpcCalls[sb.rpcCalls.length - 1]
+    expect(last.fn).toBe("refresh_pack_supply_counter_checks")
+    const t = lastTerminal()
+    expect(t.ok).toBe(true)
+    expect(t.extra.counter_checks).toEqual(CHECKS_CLEAN)
+  })
+
+  it("a failed or shapeless counter check fails the run and reports null, never a clean verdict", async () => {
+    for (const checksResult of [
+      { data: null, error: { message: "statement timeout" } },
+      { data: null, error: null },
+      { data: { ok: false }, error: null },
+    ]) {
+      terminal.mockClear()
+      sb.rpcCalls = []
+      sb.checksResult = checksResult
+      sb.rows = []
+      stubFlow([])
+      await GET(req("Bearer cron-tok"))
+      await captured!()
+      const t = lastTerminal()
+      expect(t.ok).toBe(false)
+      expect(String(t.error)).toMatch(/counter checks/)
+      expect(t.extra.counter_checks).toBeNull()
+    }
   })
 
   it("nothing unnamed is a clean, complete, zero-row run", async () => {

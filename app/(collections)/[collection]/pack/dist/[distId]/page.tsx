@@ -82,6 +82,7 @@ import {
   fetchPackDetailBundle,
 } from "@/lib/pack-dist/fetchers"
 import { withAsOf, depletionTileAsOf, packsRemainingTileAsOf } from "@/lib/pack-dist/as-of"
+import { readTierCounts, observedOpensFloorLabel } from "@/lib/pack-dist/tier-counts"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 
@@ -343,6 +344,8 @@ export default async function PackDetailPage(
     // "we measured zero just now" rather than "we have no row yet".
     supply_as_of: null,
     depletion_as_of: null,
+    tier_counts_contradicted: null,
+    observed_packs_opened: null,
   }
 
   const distMetadata = fallback?.metadata ?? null
@@ -511,13 +514,15 @@ export default async function PackDetailPage(
   // compute-topshot-pack-ev v20 persists per-pack remaining/original counts-by-tier
   // + total_unopened/total_pack_count into pack_distributions.metadata as its EV
   // sweep touches each pack. Present only on packs the v20 sweep has reached.
-  const tierCountsUpdatedAt = typeof distMetadata?.tier_counts_updated_at === "string" ? distMetadata.tier_counts_updated_at : null
-  const metaTotalUnopened = num((distMetadata?.total_unopened as string | number | null | undefined) ?? null)
-  const metaTotalPackCount = num((distMetadata?.total_pack_count as string | number | null | undefined) ?? null)
-  const remainingByTier = distMetadata && typeof distMetadata.remaining_by_tier === "object" && distMetadata.remaining_by_tier !== null
-    ? (distMetadata.remaining_by_tier as Record<string, number>) : null
-  const originalByTier = distMetadata && typeof distMetadata.original_counts_by_tier === "object" && distMetadata.original_counts_by_tier !== null
-    ? (distMetadata.original_counts_by_tier as Record<string, number>) : null
+  // Dropped whole when our observed on-chain opens contradict it
+  // (pack_table_rows.tier_counts_contradicted; lib/pack-dist/tier-counts.ts).
+  const tierCountsContradicted = merged.tier_counts_contradicted === true
+  const tierCounts = readTierCounts(distMetadata, tierCountsContradicted)
+  const tierCountsUpdatedAt = tierCounts.updatedAt
+  const metaTotalUnopened = num((tierCounts.totalUnopened as string | number | null | undefined) ?? null)
+  const metaTotalPackCount = num((tierCounts.totalPackCount as string | number | null | undefined) ?? null)
+  const remainingByTier = tierCounts.remainingByTier
+  const originalByTier = tierCounts.originalByTier
   // Freshest packs-remaining figure: prefer the v20 metadata, else the cached view.
   const liveUnopened = metaTotalUnopened ?? totalUnopened
   const oddsSlots = merged.slots && merged.slots > 0 ? merged.slots : null
@@ -1157,7 +1162,11 @@ export default async function PackDetailPage(
           <KpiCell
             label="Packs remaining"
             value={fmtCount(effectiveUnopened)}
-            sub={withAsOf(effectiveTotalMinted !== null ? `of ${fmtCount(effectiveTotalMinted)} minted` : null, packsRemainingAsOf) ?? undefined}
+            sub={
+              (effectiveUnopened === null ? observedOpensFloorLabel(tierCountsContradicted, merged.observed_packs_opened) : null) ??
+              withAsOf(effectiveTotalMinted !== null ? `of ${fmtCount(effectiveTotalMinted)} minted` : null, packsRemainingAsOf) ??
+              undefined
+            }
           />
         )}
       </section>
