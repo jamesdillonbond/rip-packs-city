@@ -31,6 +31,7 @@
 //   Response includes { total, page, hasMore } so the client doesn't have to
 //   eat a 1000-row payload for UI-side paging.
 
+import { fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness";
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fmv-display-guard"
@@ -866,7 +867,7 @@ export async function GET(req: NextRequest) {
           // not a real deal (a stale $700 ask → $385 FMV makes a fresh $12
           // listing render "−97%"). Flagging it flows through the same "⚠ thin
           // data" chip + discount-sort demotion the P2.5 guard already applies.
-          lowConfidenceFmv: g.lowConfidenceFmv || String(r.confidence ?? "").toUpperCase() === "ASK_ONLY",
+          lowConfidenceFmv: g.lowConfidenceFmv || fmvCannotAnchorDiscount(r.confidence),
           confidence: r.confidence,
           source: r.source,
           buyUrl: r.buy_url,
@@ -1067,7 +1068,7 @@ export async function GET(req: NextRequest) {
         discount,
         // ASK_ONLY FMV is ask-derived (no sales anchor) → thin data; see the
         // modern-path note above. Suppresses fake ask-vs-ask discounts.
-        lowConfidenceFmv: g.lowConfidenceFmv || String(r.confidence ?? "").toUpperCase() === "ASK_ONLY",
+        lowConfidenceFmv: g.lowConfidenceFmv || fmvCannotAnchorDiscount(r.confidence),
         confidence: r.confidence,
         source: r.source,
         buyUrl: r.buy_url,

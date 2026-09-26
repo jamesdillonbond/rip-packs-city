@@ -997,6 +997,7 @@ Badges are what collectors pay attention to (Rookie Year, Top Shot Debut, Champi
 
 ## Reading get_fmv / search_catalog_deals responses
 - mode = "distribution" (count >= 2): surface median (median_fmv), middle 80% (p10 → p90), count for breadth, name 1-3 sample editions. Frame the user's price relative to the distribution.
+- ⚠ **A deal row with low_confidence_fmv: true is NOT a deal to headline.** Its FMV is ASK_ONLY (one seller's ask, no sales) or STALE (carried forward, not re-priced), so its discount_pct compares an ask with a number nothing supports. List verified rows first; if you mention a flagged row at all, say its FMV is thin/stale and that the discount may not be real. Never call one "the sharpest deal" or "deepest discount".
 - ⚠ **A distribution mixes very different editions.** sample_editions always include the highest-FMV one AND (on Top Shot) the highest-FMV editions that carry a badge; badged_editions_in_filter counts badged editions across the WHOLE filter (null = not counted). When the user's question names a variant — "rookie", a set, a parallel, a badge — look for a sample whose badges / set / parallel_name match it and answer about THAT edition; if none matches, call get_fmv again with setName (or search_catalog_deals with hasBadge) before answering. Never price a named variant off the whole player's median, and never say "none of the editions carry badge X" about a sample — say which editions you looked at.
 - ⚠ **If the result carries truncated: true, the percentiles are a SLICE, not the filter.** Read population_matched: the filter matched that many editions and only "scanned" of them were read, in a fixed catalog order rather than at random. You MUST say that plainly — "that matched N editions and I priced the first M of them, so treat this as a sample" — and offer to narrow by set or tier. Do NOT present a truncated distribution as the range for the whole filter, and do not quietly drop the caveat because the numbers look reasonable. A percentile over a slice is more misleading than a short list, because it LOOKS like a summary of everything.
 - mode = "single" (count = 1): surface the single edition's fmv with confidence label and exact set/player/tier.
@@ -1530,7 +1531,11 @@ async function executeTool(
         // get_edition_listings — so it re-searches the deal board and reports
         // whatever that returns, which is how a discount-ranked snapshot ends
         // up being described as the market.
-        const results = deals.slice(0, toolInput.limit || 5).map((d: any) => ({
+        // 2026-09-25: verified-FMV deals first. A discount against an ASK_ONLY or
+        // STALE FMV is not a deal the model may headline (a "95% off" Legendary
+        // topped this list off a 2024 price), so it ranks below and says why.
+        const ranked = [...deals].sort((a: any, b: any) => Number(!!a.lowConfidenceFmv) - Number(!!b.lowConfidenceFmv));
+        const results = ranked.slice(0, toolInput.limit || 5).map((d: any) => ({
           editionKey: d.editionKey ?? null,
           player: d.playerName,
           set: d.setName ?? null,
@@ -1545,6 +1550,8 @@ async function executeTool(
           price: d.askPrice,
           fmv: d.adjustedFmv,
           discount_pct: d.discount,
+          fmv_confidence: d.confidence ? String(d.confidence).toUpperCase() : null,
+          low_confidence_fmv: d.lowConfidenceFmv === true,
           // The feed already carries the moment's tags (SniperDeal.badgeLabels /
           // badgeSlugs) — it just never reached the model. Labels are the
           // human titles; slugs are the fallback when labels are absent.

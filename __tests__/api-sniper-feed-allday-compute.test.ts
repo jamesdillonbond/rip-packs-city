@@ -375,6 +375,31 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     expect(body.deals.every((d: any) => d.baseFmv > 0)).toBe(true)
   })
 
+  it("RPC-fallback flags an ASK_ONLY / STALE FMV as low-confidence (2026-09-25)", async () => {
+    // This leg set no flag at all, so the live All Day board (GQL 403s on Vercel
+    // egress) was topped by Dalton Kincaid's Dynamic LEGENDARY: $30 vs a STALE
+    // $570.86 built on 2024 sales — "94.7% off", rendered and quoted as a deal.
+    gqlEdges = []
+    rpc.mockImplementation(async (name: string) => {
+      if (name === "get_allday_sniper_deals") {
+        return {
+          data: [
+            { flow_id: "k", moment_id: "mk", tier: "LEGENDARY", confidence: "STALE", player_name: "Dalton Kincaid", ask_price: 30, fmv_usd: 570.86, discount_pct: 94.7 },
+            { flow_id: "w", moment_id: "mw", tier: "RARE", confidence: "ASK_ONLY", player_name: "Donovan Wilson", ask_price: 5, fmv_usd: 81, discount_pct: 93.8 },
+            { flow_id: "h", moment_id: "mh", tier: "RARE", confidence: "HIGH", player_name: "Alvin Kamara", ask_price: 2, fmv_usd: 3.67, discount_pct: 45.5 },
+          ],
+          error: null,
+        }
+      }
+      return { data: [], error: null }
+    })
+    const body = await (await GET(get(ADQS))).json()
+    const by = (p: string) => body.deals.find((d: any) => d.playerName === p)
+    expect(by("Dalton Kincaid").lowConfidenceFmv).toBe(true)
+    expect(by("Donovan Wilson").lowConfidenceFmv).toBe(true)
+    expect(by("Alvin Kamara").lowConfidenceFmv).toBe(false)
+  })
+
   it("RPC-fallback error → empty result", async () => {
     gqlEdges = []
     rpc.mockImplementation(async (name: string) => {

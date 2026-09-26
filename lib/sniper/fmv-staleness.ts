@@ -9,7 +9,19 @@
 //
 // Rules:
 //   - daysSinceSale > 14 AND salesCount30d <= 1 → multiply FMV by 0.7
-//   - confidence LOW AND daysSinceSale > 30      → cap FMV at askPrice (0% discount)
+//   - confidence LOW, SALES_ONLY or STALE AND daysSinceSale > 30 → cap FMV at askPrice (0% discount)
+/**
+ * An FMV that must NOT anchor a confident discount %: ASK_ONLY (0.90 × one
+ * seller's ask, no sales) and STALE (carried forward from a prior cycle,
+ * nothing re-priced it). Rows carrying one render with the low-confidence
+ * caveat and sort below verified rows (2026-09-25: STALE added — it was
+ * rendering "95% off" on a Legendary priced from 2024 sales).
+ */
+export function fmvCannotAnchorDiscount(confidence: string | null | undefined): boolean {
+  const c = String(confidence ?? "").toUpperCase()
+  return c === "ASK_ONLY" || c === "STALE"
+}
+
 export function applyFmvStalenessPenalty(
   adjustedFmv: number,
   askPrice: number,
@@ -26,8 +38,14 @@ export function applyFmvStalenessPenalty(
     result = result * 0.7
   }
 
-  const isLow = confidence === "LOW" || confidence === "low"
-  if (isLow && days > 30) {
+  // STALE is weaker than LOW, not stronger: it is an FMV carried forward from a
+  // prior cycle that nothing re-priced. 2026-09-25: Dalton Kincaid's All Day
+  // Dynamic LEGENDARY showed $30 vs a STALE $570.86 (built on 2024 sales of
+  // $450–$580; its real 2026 prints were $199 and $25) — a "95% off" deal on the
+  // Sniper feed and in the concierge. The 0.7 haircut alone left it at 93%.
+  // SALES_ONLY is a LOW-level estimate (sales with no ask to corroborate).
+  const isWeak = /^(low|sales_only|stale)$/i.test(confidence)
+  if (isWeak && days > 30) {
     result = Math.min(result, askPrice)
   }
 

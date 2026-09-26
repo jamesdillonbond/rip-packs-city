@@ -7,7 +7,7 @@ import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
 // Per-serial weighting + display signal lives in a tested lib module.
 import { sniperSerialMultiplier as serialMultiplier } from "@/lib/sniper/serial-multiplier";
 import { feeNetDeal } from "@/lib/marketplace-fees";
-import { applyFmvStalenessPenalty } from "@/lib/sniper/fmv-staleness";
+import { applyFmvStalenessPenalty, fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness";
 import { leagueForSetName } from "@/lib/league";
 import { loadTopshotFmvGuard, guardTopshotFmv } from "@/lib/fmv-display-guard";
 // Pure listing/badge helpers live in a tested lib module.
@@ -1366,6 +1366,11 @@ async function computeAllDaySniperFeed(opts: {
         daysSinceSale: null,
         salesCount30d: null,
         discount: Number(r.discount_pct) || 0,
+        // 2026-09-25: this leg set NO low-confidence flag, so an ASK_ONLY or STALE
+        // FMV rendered a confident discount — the live All Day board (the GQL leg
+        // 403s on Vercel egress) was topped by a "94.7% off" Legendary priced from
+        // 2024 sales. Same rule as every other leg (fmvCannotAnchorDiscount).
+        lowConfidenceFmv: fmvCannotAnchorDiscount(confidence),
         confidence: confidence.toLowerCase(),
         confidenceSource: confidence === "ASK_ONLY" ? "ask_fallback" : "fmv_snapshots",
         hasBadge: false,
@@ -1509,7 +1514,7 @@ async function computeAllDaySniperFeed(opts: {
       // guardTopshotFmv to baseFmv — that clamp CHANGES the discount number, so
       // it wants its own blast-radius measurement and is deliberately NOT added
       // here alongside a disclosure-only fix.
-      lowConfidenceFmv: String(confidence ?? "").toUpperCase() === "ASK_ONLY",
+      lowConfidenceFmv: fmvCannotAnchorDiscount(confidence),
       hasBadge,
       badgeSlugs,
       badgeLabels,
@@ -1715,7 +1720,7 @@ async function computeSniperFeed(opts: {
           // display guard only carries editions it has already flagged (~17% of
           // ASK_ONLY rows), so keying the caveat off the guard alone let 83% of
           // them render a hard discount %. Matches app/api/market/route.ts.
-          lowConfidenceFmv: g.lowConfidenceFmv || confidence.toUpperCase() === "ASK_ONLY",
+          lowConfidenceFmv: g.lowConfidenceFmv || fmvCannotAnchorDiscount(confidence),
           confidence: confidence.toLowerCase(),
           confidenceSource: confidence === "ASK_ONLY" ? "ask_fallback" : "fmv_snapshots",
           hasBadge: false,
@@ -1999,7 +2004,7 @@ async function computeSniperFeed(opts: {
       isLowestAsk: false,
       // See the RPC path above — ask-derived FMV never anchors a real discount.
       lowConfidenceFmv:
-        guarded.lowConfidenceFmv || String(confidence ?? "").toUpperCase() === "ASK_ONLY",
+        guarded.lowConfidenceFmv || fmvCannotAnchorDiscount(confidence),
     });
   }
 

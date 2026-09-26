@@ -46,3 +46,34 @@ describe("applyFmvStalenessPenalty", () => {
     expect(applyFmvStalenessPenalty(100, 80, "LOW", null, null)).toBe(100)
   })
 })
+
+// 2026-09-25: STALE (carried forward, nothing re-priced it) and SALES_ONLY (sales
+// with no ask to corroborate) are no stronger than LOW, and the cap now covers
+// them. Dalton Kincaid's All Day Dynamic LEGENDARY — STALE $570.86 built on 2024
+// sales, 69 days since its last print ($25) — rendered "95% off" at a $30 ask.
+describe("weak confidence classes cap like LOW", () => {
+  it("STALE > 30 days since sale → capped at the ask (0% discount)", () => {
+    expect(applyFmvStalenessPenalty(570.86, 30, "STALE", 69, 0)).toBe(30)
+  })
+  it("SALES_ONLY > 30 days since sale → capped at the ask", () => {
+    expect(applyFmvStalenessPenalty(46.78, 2, "SALES_ONLY", 70, 0)).toBe(2)
+  })
+  it("lowercase spellings match too (the feed lowercases confidence)", () => {
+    expect(applyFmvStalenessPenalty(570.86, 30, "stale", 69, 0)).toBe(30)
+  })
+  it("a STALE FMV within 30 days is only haircut, not capped", () => {
+    expect(applyFmvStalenessPenalty(100, 10, "STALE", 20, 0)).toBeCloseTo(70)
+  })
+  it("MEDIUM is never capped (no-change arm)", () => {
+    expect(applyFmvStalenessPenalty(100, 10, "MEDIUM", 69, 0)).toBeCloseTo(70)
+  })
+})
+
+describe("fmvCannotAnchorDiscount", () => {
+  it("ASK_ONLY and STALE cannot anchor a discount; others can", async () => {
+    const { fmvCannotAnchorDiscount } = await import("@/lib/sniper/fmv-staleness")
+    expect(fmvCannotAnchorDiscount("ASK_ONLY")).toBe(true)
+    expect(fmvCannotAnchorDiscount("stale")).toBe(true)
+    for (const c of ["HIGH", "MEDIUM", "LOW", "SALES_ONLY", null, undefined]) expect(fmvCannotAnchorDiscount(c)).toBe(false)
+  })
+})
