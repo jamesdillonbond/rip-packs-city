@@ -743,7 +743,8 @@ export async function triggerUfcEnrichmentChain(wallet: string): Promise<{
     const url = new URL(baseUrl)
     url.searchParams.set("wallet", wallet)
     url.searchParams.set("start", String(start))
-    url.searchParams.set("token", ingestToken)
+    // The token rides ONLY in the Authorization header below (2026-09-25):
+    // a `?token=` copy wrote INGEST_SECRET_TOKEN into edge request logs.
     let json: any
     try {
       const res = await fetch(url.toString(), {

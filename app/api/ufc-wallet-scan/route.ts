@@ -43,20 +43,17 @@ async function callScan(wallet: string): Promise<ScanResponse> {
 }
 
 async function callEnrich(wallet: string, start: number): Promise<EnrichResponse> {
-  // ⛔ STILL `?token=`, AND THAT IS DELIBERATE — DO NOT "FIX" THIS LINE ALONE.
-  // Deployed enrich-ufc-wallet v47 reads the Authorization header NOWHERE; the
-  // query param is its ONLY accepted path (verified against the deployed source).
-  // Moving this to a header before that build ships would 401 every UFC wallet
-  // scan — a live user-facing break. The header-accepting build IS written and
-  // committed (supabase/functions/enrich-ufc-wallet/index.ts, additive: it keeps
-  // `?token=`), and is registered in scripts/check-edge-fn-drift.mjs →
-  // DEPLOY_DEFERRED with the reason it was not shipped from here.
-  // ORDER, and it only breaks in one direction: deploy that build FIRST, then
-  // change this line, then delete the fn's `?token=` branch. Never the reverse.
-  // Tracked by __tests__/no-env-secret-in-fetch-url.test.ts, which allows exactly
-  // this one site and FAILS if the allowance outlives the leak.
-  const url = `${SUPABASE_FN_BASE}/enrich-ufc-wallet?wallet=${encodeURIComponent(wallet)}&token=${TOKEN}&start=${start}`
-  const res = await fetch(url, { method: "POST", signal: AbortSignal.timeout(55000) })
+  // The ingest token travels in the Authorization header, never the URL:
+  // request logs record full URLs, and INGEST_SECRET_TOKEN is shared across ~15
+  // functions. Moved 2026-09-25 after enrich-ufc-wallet's header branch was
+  // deployed (edge-fn-deploy run 36215009197, verified clean); the fn's
+  // `?token=` branch is removed in the step after this one.
+  const url = `${SUPABASE_FN_BASE}/enrich-ufc-wallet?wallet=${encodeURIComponent(wallet)}&start=${start}`
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    signal: AbortSignal.timeout(55000),
+  })
   if (!res.ok) throw new Error(`enrich-ufc-wallet HTTP ${res.status}`)
   return (await res.json()) as EnrichResponse
 }

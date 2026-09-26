@@ -86,8 +86,8 @@ describe("POST /api/ufc-wallet-scan — failure paths + background drain", () =>
   const TOKEN = "ufc-scan-token"
   let POST: (req: any) => Promise<Response>
   // Driven per-test: scan outcome, then a queue of enrich chunk outcomes.
-  const f: { scanOk: boolean; enrich: Array<any | "fail"> ; enrichCalls: number[] } = {
-    scanOk: true, enrich: [], enrichCalls: [],
+  const f: { scanOk: boolean; enrich: Array<any | "fail"> ; enrichCalls: number[]; enrichUrls: string[]; enrichAuth: Array<string | null> } = {
+    scanOk: true, enrich: [], enrichCalls: [], enrichUrls: [], enrichAuth: [],
   }
 
   beforeAll(async () => {
@@ -101,6 +101,8 @@ describe("POST /api/ufc-wallet-scan — failure paths + background drain", () =>
       }
       const start = Number(new URL(String(url)).searchParams.get("start") ?? 0)
       f.enrichCalls.push(start)
+      f.enrichUrls.push(String(url))
+      f.enrichAuth.push(init?.headers?.Authorization ?? null)
       const next = f.enrich.shift()
       if (next === "fail" || next === undefined) return { ok: false, status: 500, json: async () => ({}) }
       return { ok: true, json: async () => next }
@@ -113,7 +115,20 @@ describe("POST /api/ufc-wallet-scan — failure paths + background drain", () =>
     f.scanOk = true
     f.enrich = []
     f.enrichCalls = []
+    f.enrichUrls = []
+    f.enrichAuth = []
     cap.fn = null
+  })
+
+  it("sends the ingest token to enrich-ufc-wallet ONLY in the Authorization header, never in the URL", async () => {
+    f.enrich = [{ enriched: 3, done: true }]
+    await POST(wallet())
+    expect(f.enrichUrls.length).toBeGreaterThan(0)
+    for (const u of f.enrichUrls) {
+      expect(u).not.toContain(TOKEN)
+      expect(new URL(u).searchParams.has("token")).toBe(false)
+    }
+    expect(f.enrichAuth[0]).toBe(`Bearer ${TOKEN}`)
   })
 
   const wallet = () => req({ wallet: "0xbd94cade097e50ac" })

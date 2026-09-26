@@ -243,11 +243,11 @@ describe("no env-backed secret is interpolated into a fetch URL", () => {
     }
 
     // ── The allowance, and why it is two-way ──────────────────────────────
-    // Exactly ONE site is still permitted, because fixing it alone would cause
-    // the outage it is meant to prevent: deployed `enrich-ufc-wallet` v47 reads
-    // the Authorization header nowhere, so header-only 401s a user-facing UFC
-    // wallet scan. Its header-accepting build is committed and registered in
-    // scripts/check-edge-fn-drift.mjs → DEPLOY_DEFERRED.
+    // ✅ The first allowance (app/api/ufc-wallet-scan/route.ts → enrich-ufc-wallet
+    // `?token=`) was RETIRED 2026-09-25: the fn's header branch was deployed from
+    // the committed file by .github/workflows/edge-fn-deploy.yml (drift census
+    // `clean`), then both callers moved to the Authorization header. Exactly the
+    // two-way exit described below — the entry stopped matching and was deleted.
     //
     // ⚠ The check runs in BOTH directions on purpose. An allowance that merely
     // suppresses is how a "temporary" exception becomes permanent: once the
@@ -272,7 +272,6 @@ describe("no env-backed secret is interpolated into a fetch URL", () => {
     // ⚠ This is an allowance, not an absolution: ATLAS_POOL_INGEST_KEY is written
     // into Supabase edge logs on every harvest and should be treated as exposed.
     const ALLOWED = [
-      "app/api/ufc-wallet-scan/route.ts",
       "scripts/atlas-pool-harvest.ps1",
     ]
 
