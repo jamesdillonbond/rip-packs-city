@@ -12,6 +12,12 @@
 //   from wallet_moments_cache. If the wallet isn't indexed yet, we fire the
 //   EXISTING public wallet-search path (which warms wmc) and poll back, rather
 //   than re-implementing backfill.
+// - A SOLANA collection (Candy MLB, 2026-09-25) takes a base58 key VERBATIM —
+//   never lowercased, it is case-sensitive — in its own localStorage slot, via
+//   lib/entity/checklist-wallet.ts (shared with the routes). There is no
+//   warm-on-paste for it: /api/wallet-search is a Flow path, and Candy holdings
+//   are cached by a scheduled walk. So an uncached key says exactly that,
+//   instead of an "Indexing…" banner that nothing would ever satisfy.
 //
 // Data: /api/entity/team-checklist (paginated tiles) +
 //       /api/entity/team-checklist-progress (header + cost-to-complete).
@@ -23,6 +29,8 @@ import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import type { EditionTile } from "./EditionsGridPaginated"
 import { topshotSeriesLabel, TOPSHOT_SERIES_ORDER } from "@/lib/analytics/series-labels"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { getCollection } from "@/lib/collections"
+import { checklistWalletStorageKey, isSolanaChecklist, parseChecklistWallet } from "@/lib/entity/checklist-wallet"
 
 interface ChecklistTile extends EditionTile {
   owned?: boolean | null
@@ -63,8 +71,6 @@ interface Props {
 }
 
 const PAGE_SIZE = 24
-const WALLET_RE = /^0x[0-9a-f]{16}$/
-const LS_KEY = "rpc_checklist_wallet"
 const MAX_INDEX_POLLS = 6
 const INDEX_POLL_MS = 12_000
 
@@ -75,13 +81,11 @@ function seriesChipLabel(collectionUrlSlug: string, n: number): string {
   return `Series ${n}`
 }
 
-function isFlowAddr(v: string): boolean {
-  const lower = v.trim().toLowerCase()
-  return WALLET_RE.test(lower)
-}
-
 export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptions: seriesProp }: Props) {
   const isTopShot = collectionUrlSlug === "nba-top-shot"
+  const dbChain = getCollection(collectionUrlSlug)?.dbChain ?? null
+  const isSolana = isSolanaChecklist(dbChain)
+  const lsKey = checklistWalletStorageKey(dbChain)
 
   const [scope, setScope] = useState<Scope>("all_time")
   const [wallet, setWallet] = useState<string | null>(null)
@@ -111,10 +115,11 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
   // Restore a previously-pasted wallet so it carries across team pages.
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem(LS_KEY)
-      if (saved && isFlowAddr(saved)) setWallet(saved.toLowerCase())
+      const saved = window.localStorage.getItem(lsKey)
+      const parsed = saved ? parseChecklistWallet(saved, dbChain) : null
+      if (parsed?.ok && parsed.wallet) setWallet(parsed.wallet)
     } catch { /* localStorage unavailable */ }
-  }, [])
+  }, [lsKey, dbChain])
 
   const checklistUrl = useCallback((s: Scope, w: string | null, offset: number) => {
     const p = new URLSearchParams({
@@ -185,6 +190,8 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
   useEffect(() => {
     if (!wallet || !progress) { setIndexing(false); return }
     if (progress.wallet_cached) { setIndexing(false); pollCountRef.current = 0; return }
+    // No warm path exists for a Solana key (see the header) — never claim one.
+    if (isSolana) { setIndexing(false); return }
 
     setIndexing(true)
     // Fire the warm-up exactly once per wallet.
@@ -208,7 +215,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
       loadScope(scope, wallet)
     }, INDEX_POLL_MS)
     return () => window.clearTimeout(id)
-  }, [wallet, progress, scope, collectionUrlSlug, loadScope])
+  }, [wallet, progress, scope, collectionUrlSlug, loadScope, isSolana])
 
   async function loadMore() {
     if (loadingMore || exhausted || loading) return
@@ -236,18 +243,23 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
 
   function submitWallet(e: React.FormEvent) {
     e.preventDefault()
-    const v = walletInput.trim().toLowerCase()
-    if (!isFlowAddr(v)) { setWalletError("Enter a valid 0x Flow address (0x + 16 hex)."); return }
+    const parsed = parseChecklistWallet(walletInput, dbChain)
+    if (!parsed.ok) { setWalletError(parsed.error); return }
+    if (!parsed.wallet) {
+      setWalletError(isSolana ? "Enter a Solana wallet address." : "Enter a valid 0x Flow address (0x + 16 hex).")
+      return
+    }
+    const v = parsed.wallet
     setWalletError(null)
     setWallet(v)
-    try { window.localStorage.setItem(LS_KEY, v) } catch { /* ignore */ }
+    try { window.localStorage.setItem(lsKey, v) } catch { /* ignore */ }
   }
 
   function clearWallet() {
     setWallet(null)
     setWalletInput("")
     setWalletError(null)
-    try { window.localStorage.removeItem(LS_KEY) } catch { /* ignore */ }
+    try { window.localStorage.removeItem(lsKey) } catch { /* ignore */ }
   }
 
   // ── Scope tabs ──────────────────────────────────────────────────────────────
@@ -355,7 +367,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
               inputMode="text"
               autoComplete="off"
               spellCheck={false}
-              placeholder="0x…"
+              placeholder={isSolana ? "Solana wallet…" : "0x…"}
               value={walletInput}
               onChange={e => setWalletInput(e.target.value)}
               style={{
@@ -378,6 +390,11 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
         {indexing && (
           <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 8 }}>
             Indexing your collection — check back shortly. This can take a minute on first paste.
+          </div>
+        )}
+        {isSolana && hasWallet && progress && !progress.wallet_cached && (
+          <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 8 }}>
+            RPC has no cards indexed for this wallet yet. Holdings refresh on a schedule, not on paste — if this wallet holds cards, the owned count above is not yet known.
           </div>
         )}
       </div>

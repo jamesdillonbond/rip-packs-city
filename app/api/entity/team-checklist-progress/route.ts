@@ -4,7 +4,7 @@
 // completion %, cost-to-complete at floor, per-tier breakdown, and a
 // wallet_cached signal the component uses to decide whether to fire a backfill.
 //   GET /api/entity/team-checklist-progress?collection=<urlSlug>&slug=<teamSlug>
-//        &scope=<all_time|contemporary|series_N>&wallet=<0x..>
+//        &scope=<all_time|contemporary|series_N>&wallet=<0x.. | base58 on a Solana collection>
 //
 // Read-only. Anon-visible (proxy.ts opens GET /api/entity/*); the no-wallet
 // number is the public full-checklist acquisition cost.
@@ -14,6 +14,8 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { getCollection } from "@/lib/collections"
+import { parseChecklistWallet } from "@/lib/entity/checklist-wallet"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -31,8 +33,11 @@ export async function GET(req: Request) {
   const rawScope = url.searchParams.get("scope") ?? "all_time"
   const scope = SCOPE_RE.test(rawScope) ? rawScope : "all_time"
 
-  const rawWallet = (url.searchParams.get("wallet") ?? "").trim().toLowerCase()
-  const wallet = /^0x[0-9a-f]{16}$/.test(rawWallet) ? rawWallet : null
+  // Parsed for the collection's own chain: a Solana key passes VERBATIM, a
+  // wrong-chain key on a Solana collection is refused (lib/entity/checklist-wallet.ts).
+  const parsed = parseChecklistWallet(url.searchParams.get("wallet"), getCollection(collectionUrlSlug)?.dbChain)
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+  const wallet = parsed.wallet
 
   const supa = supabaseAdmin as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }
   const { data, error } = await boundedRead(supa.rpc("get_team_checklist_progress", {
