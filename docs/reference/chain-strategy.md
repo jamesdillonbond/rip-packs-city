@@ -217,3 +217,12 @@ Moved to pay for the collection-keyed-map rule; the NEVER-NARROW bullet in CLAUD
 - `dbChain: null` (no chain identity established, owners are usernames). Published with Overview + Market; `collections.is_active` stays false by decision (known-issues #64).
 - ⛔ **`c.dbChain ?? "flow"` treats null as Flow.** It did so in three places on publish day — the dashboard gave every Flow wallet a Panini tile, the overview ran Flow insider detectors, and the wallet band would have offered a Flow wallet box (`chain && chain !== "flow"` lets null through). Test `=== "flow"` explicitly.
 - A collection with no entity routes (no `lib/collection-slug.ts` record) must not render edition/player/set links — MarketClient's `hasEntityPages` gates them (pinned in collection-registry-consistency.test.ts as `FACADE_GATED_PAGES`).
+
+## Candy MLB — Magic Eden's listing escrow (2026-09-25)
+
+`1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix` is **Magic Eden's Solana listing escrow**, not a collector and not inventory. A listed Candy card or pack MOVES to it until it sells or is delisted, so DAS reports the escrow as the owner. Measured: 1,788 of 1,916 confirmed active Candy listings sit on cards it holds; 14 of 14 non-treasury listed packs. (It was filed on 09-24 as an "inventory-shaped wallet … ownership not proven" and excluded from the holder board — right outcome, wrong reason; the exclusion row's reason is corrected.)
+
+- **Rule:** a card or pack the escrow holds belongs to the seller of its active listing. `lib/chains/solana/escrow.ts` (`MAGIC_EDEN_SOLANA_ESCROW`, `attributeEscrowHeldToSellers`) is the one place that knows this; the collection walk (`ingest/candy-editions`) uses it before writing `wallet_moments_cache`, and `/api/candy-pack-market` counts a wallet's actively listed packs. Compare the address VERBATIM (base58).
+- **Why it mattered:** `purge_candy_wmc_ghost_rows` keeps ONE row per card, so an escrow row erased the seller's — 1,663 listed cards across up to 157 sellers were missing from their portfolios, and moment pages named the escrow as Owner. Listing on Top Shot never removed a moment from its owner on this site; listing on Candy did.
+- ⚠ **Still open:** `wallet-backfill-candy` reads DAS by owner and cannot see a listed card for its seller (it relies on the walk); `candy_pack_market.collector_wallets` counts the escrow as one collector wallet. Known-issues #145.
+
