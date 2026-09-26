@@ -11,6 +11,7 @@
 // as progressive enhancement and only refetches when those change.
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { boardCountFloor } from "@/lib/insights/board-meta"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
@@ -22,6 +23,9 @@ import {
   BID_AGE_UNKNOWN_LABEL, BID_AGE_UNKNOWN_TITLE,
 } from "@/lib/market/bid-age"
 import { usdSignFirst } from "@/lib/usd-format"
+
+// The page seed and every refetch read at most this many rows.
+const OFFER_SPREAD_LIMIT = 200
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -185,7 +189,7 @@ export default function OfferSpreadBoardClient({
       setError(null)
       try {
         const params = new URLSearchParams()
-        params.set("limit", "200")
+        params.set("limit", String(OFFER_SPREAD_LIMIT))
         params.set("sort", sort)
         // Board view hides penny-floor ratio noise with min_ask=5. On a
         // player/set drill-down drop to 0 so the reader sees every edition
@@ -219,6 +223,10 @@ export default function OfferSpreadBoardClient({
   // are missing because the READ failed, not because nothing matched.
   const seedFailed = (degraded?.failed?.length ?? 0) > 0
 
+  // ⚠ The strip is counted over a window of at most OFFER_SPREAD_LIMIT rows out of
+  // thousands (known-issues #146): at the cap every count is a FLOOR ("200+"),
+  // and the median describes the rows shown, so the label says so.
+  const truncated = rows.length >= OFFER_SPREAD_LIMIT
   const kpis = useMemo(() => {
     // ⛔ A FAILED READ HAS NO KPIs (deep-audit 2026-09-18 §2, P0; the same
     // defect the top-sales/squeeze fix closed). Under this board's own banner —
@@ -370,19 +378,19 @@ export default function OfferSpreadBoardClient({
       <section className="rpc-os-kpi-row" aria-label="Summary">
         <div className="rpc-os-kpi">
           <div className="rpc-os-kpi-label">Bid ≥ floor</div>
-          <div className="rpc-os-kpi-value">{loading ? "—" : fmtInt(kpis.bidMeets)}</div>
+          <div className="rpc-os-kpi-value">{loading ? "—" : kpis.bidMeets == null ? fmtInt(null) : boardCountFloor(kpis.bidMeets, truncated)}</div>
         </div>
         <div className="rpc-os-kpi">
           <div className="rpc-os-kpi-label">Within 10% of floor</div>
-          <div className="rpc-os-kpi-value">{loading ? "—" : fmtInt(kpis.within10)}</div>
+          <div className="rpc-os-kpi-value">{loading ? "—" : kpis.within10 == null ? fmtInt(null) : boardCountFloor(kpis.within10, truncated)}</div>
         </div>
         <div className="rpc-os-kpi">
-          <div className="rpc-os-kpi-label">Median spread</div>
+          <div className="rpc-os-kpi-label">{truncated ? "Median spread (rows shown)" : "Median spread"}</div>
           <div className="rpc-os-kpi-value">{loading ? "—" : fmtUsd(kpis.medianSpread)}</div>
         </div>
         <div className="rpc-os-kpi">
           <div className="rpc-os-kpi-label">Rows shown</div>
-          <div className="rpc-os-kpi-value">{loading ? "—" : fmtInt(kpis.count)}</div>
+          <div className="rpc-os-kpi-value">{loading ? "—" : kpis.count == null ? fmtInt(null) : boardCountFloor(kpis.count, truncated)}</div>
         </div>
       </section>
 

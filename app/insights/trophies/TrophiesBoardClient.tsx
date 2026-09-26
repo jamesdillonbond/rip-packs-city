@@ -26,6 +26,10 @@ import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { useIpfsRetry } from "@/lib/media/use-ipfs-retry"
 import { fromDbSlug } from "@/lib/collections"
 import { usdSignFirst } from "@/lib/usd-format"
+import { boardCountFloor } from "@/lib/insights/board-meta"
+
+// Both the page (SSR seed) and the refetch read at most this many rows.
+const BOARD_LIMIT = 200
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -221,7 +225,7 @@ export default function TrophiesBoardClient({
       setError(null)
       try {
         const params = new URLSearchParams()
-        params.set("limit", "200")
+        params.set("limit", String(BOARD_LIMIT))
         params.set("sort", sort)
         params.set("type", type)
         if (collection !== "all") params.set("collection", collection)
@@ -249,12 +253,17 @@ export default function TrophiesBoardClient({
   // the never-traded grails fill the grid below.
   const heroRows = useMemo(() => rows.filter((r) => r.fmv_usd != null).slice(0, 4), [rows])
 
+  // ⚠ THE KPIs ARE COUNTED OVER A CAPPED WINDOW (known-issues #146). At the
+  // cap, every count is a FLOOR ("200+"), never the census — the view held 1,456
+  // trophies / 1,347 one-of-ones on 2026-09-25 while the strip read "200". And
+  // "Top value" is only the true maximum when the window is ordered by FMV.
   const kpis = useMemo(() => {
+    const truncated = rows.length >= BOARD_LIMIT
     const priced = rows.filter((r) => r.fmv_usd != null)
     const oneOfOne = rows.filter((r) => r.is_one_of_one).length
-    const topFmv = priced.length ? Math.max(...priced.map((r) => Number(r.fmv_usd))) : null
-    return { count: rows.length, oneOfOne, priced: priced.length, topFmv }
-  }, [rows])
+    const topFmv = priced.length && (!truncated || sort === "fmv") ? Math.max(...priced.map((r) => Number(r.fmv_usd))) : null
+    return { count: rows.length, oneOfOne, priced: priced.length, topFmv, truncated }
+  }, [rows, sort])
 
   const tweetIntent = useMemo(() => {
     const text = `The rarest things on Flow, in one place.\n\nEvery 1-of-1 + Ultimate-tier moment across NBA Top Shot and NFL All Day — the Trophy Room:`
@@ -290,15 +299,15 @@ export default function TrophiesBoardClient({
       <section className="rpc-tr-kpi-row" aria-label="Summary">
         <div className="rpc-tr-kpi">
           <div className="rpc-tr-kpi-label">Trophies</div>
-          <div className="rpc-tr-kpi-value">{fmtInt(kpis.count)}</div>
+          <div className="rpc-tr-kpi-value">{boardCountFloor(kpis.count, kpis.truncated)}</div>
         </div>
         <div className="rpc-tr-kpi">
           <div className="rpc-tr-kpi-label">1-of-1s</div>
-          <div className="rpc-tr-kpi-value">{fmtInt(kpis.oneOfOne)}</div>
+          <div className="rpc-tr-kpi-value">{boardCountFloor(kpis.oneOfOne, kpis.truncated)}</div>
         </div>
         <div className="rpc-tr-kpi">
           <div className="rpc-tr-kpi-label">With a comp</div>
-          <div className="rpc-tr-kpi-value">{fmtInt(kpis.priced)}</div>
+          <div className="rpc-tr-kpi-value">{boardCountFloor(kpis.priced, kpis.truncated)}</div>
         </div>
         <div className="rpc-tr-kpi">
           <div className="rpc-tr-kpi-label">Top value</div>
