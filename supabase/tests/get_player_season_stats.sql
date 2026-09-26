@@ -19,8 +19,17 @@ BEGIN;
 CREATE TABLE player_identities (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   league text NOT NULL, espn_id text, display_name text NOT NULL, player_id uuid,
-  refreshed_at timestamptz NOT NULL DEFAULT now(), stats_refreshed_at timestamptz, espn_id_matched_by text
+  refreshed_at timestamptz NOT NULL DEFAULT now(), stats_refreshed_at timestamptz, espn_id_matched_by text,
+  source text NOT NULL DEFAULT 'players.external_id', rookie_season int, last_season int, latest_team text
 );
+CREATE TABLE teams_master (league text, team_name text, abbreviation text);
+INSERT INTO teams_master VALUES ('NFL', 'Kansas City Chiefs', 'KC'), ('NBA', 'Denver Nuggets', 'DEN'), ('NBA', 'LA Clippers', 'LAC');
+CREATE OR REPLACE FUNCTION public.league_team_abbr(p_league text)
+ RETURNS TABLE(team_name text, abbr text)
+ LANGUAGE sql STABLE AS $f$
+  SELECT t.team_name, t.abbreviation FROM teams_master t WHERE t.league = upper(p_league)
+  UNION ALL SELECT v.team_name, v.abbr FROM (VALUES ('nba', 'New Jersey Nets', 'BKN')) v(league, team_name, abbr) WHERE v.league = p_league
+$f$;
 CREATE TABLE player_season_stats (
   league text NOT NULL, espn_id text NOT NULL, season int NOT NULL, season_type int NOT NULL DEFAULT 2,
   category text NOT NULL, display_name text, team_slug text NOT NULL DEFAULT '', is_total boolean NOT NULL DEFAULT false,
@@ -77,6 +86,29 @@ BEGIN
     UPDATE public.player_identities i
        SET stats_refreshed_at = now()
      WHERE i.league = p_league AND i.espn_id = ANY (p_touched);
+
+    -- 2026-09-25: an identity no league feed describes (the NBA half, seeded
+    -- from ids) takes its seasons and latest team from its own stat lines;
+    -- a feed-described one (nflverse) keeps the feed's values.
+    UPDATE public.player_identities i
+       SET rookie_season = d.rookie,
+           last_season   = d.last,
+           latest_team   = COALESCE(d.abbr, i.latest_team)
+      FROM (
+        SELECT s.espn_id, min(s.season) AS rookie, max(s.season) AS last,
+               (SELECT t.abbr
+                  FROM public.league_team_abbr(p_league) t
+                 WHERE regexp_replace(lower(t.team_name), '[^a-z0-9]+', '-', 'g') = (
+                         SELECT s2.team_slug FROM public.player_season_stats s2
+                          WHERE s2.league = p_league AND s2.espn_id = s.espn_id
+                            AND s2.season_type = 2 AND s2.team_slug <> ''
+                          ORDER BY s2.season DESC LIMIT 1)
+                 LIMIT 1) AS abbr
+          FROM public.player_season_stats s
+         WHERE s.league = p_league AND s.season_type = 2 AND s.espn_id = ANY (p_touched)
+         GROUP BY s.espn_id
+      ) d
+     WHERE i.league = p_league AND i.espn_id = d.espn_id AND i.source <> 'nflverse';
   END IF;
   RETURN v_n;
 END
@@ -142,8 +174,10 @@ END
 $function$;
 -- <<< END verbatim get_player_season_stats <<<
 
+INSERT INTO player_identities (id, league, espn_id, display_name, player_id, source, rookie_season, last_season, latest_team) VALUES
+  ('b0000000-0000-0000-0000-000000000001', 'nfl', '3139477', 'Patrick Mahomes', 'a0000000-0000-0000-0000-000000000001', 'nflverse', 2017, 2026, 'KC'),
+  ('b0000000-0000-0000-0000-000000000004', 'nba', '3112335', 'Nikola Jokić',   'a0000000-0000-0000-0000-000000000004', 'players.external_id', NULL, NULL, NULL);
 INSERT INTO player_identities (id, league, espn_id, display_name, player_id) VALUES
-  ('b0000000-0000-0000-0000-000000000001', 'nfl', '3139477', 'Patrick Mahomes', 'a0000000-0000-0000-0000-000000000001'),
   ('b0000000-0000-0000-0000-000000000002', 'nba', NULL,      'Gary Payton',     'a0000000-0000-0000-0000-000000000002'),
   ('b0000000-0000-0000-0000-000000000003', 'nfl', '999',     'Rookie Nobody',   'a0000000-0000-0000-0000-000000000003');
 
@@ -212,6 +246,17 @@ BEGIN
   PERFORM _assert_eq(n::text, '1', 'one row replaced');
   PERFORM _assert_eq((SELECT "values"[2] FROM player_season_stats WHERE espn_id = '3139477' AND season = 2025 AND category = 'passing' AND season_type = 2 AND team_slug = 'kansas-city-chiefs'), '4,250', 'replaced value');
   PERFORM _assert_eq((SELECT count(*)::text FROM player_season_stats WHERE espn_id = '3139477'), '9', 'still nine rows');
+
+  -- 9. an identity NO league feed describes takes its seasons and latest team
+  --    from its own stat lines (the NBA half); a feed-described one keeps the feed's
+  n := upsert_player_season_stats('nba', jsonb_build_array(
+    jsonb_build_object('espn_id','3112335','season',2016,'season_type',2,'category','averages','team_slug','denver-nuggets','is_total',false,'labels',array['PTS'],'names',array['pts'],'values',array['10.0']),
+    jsonb_build_object('espn_id','3112335','season',2026,'season_type',2,'category','averages','team_slug','denver-nuggets','is_total',false,'labels',array['PTS'],'names',array['pts'],'values',array['27.7']),
+    jsonb_build_object('espn_id','3112335','season',2026,'season_type',3,'category','averages','team_slug','la-clippers','is_total',false,'labels',array['PTS'],'names',array['pts'],'values',array['30.0'])
+  ), array['3112335']);
+  PERFORM _assert_eq((SELECT rookie_season::text||'-'||last_season::text||' '||latest_team FROM player_identities WHERE espn_id = '3112335'), '2016-2026 DEN', 'NBA identity: seasons + team from its regular-season lines (the postseason Clippers line ignored)');
+  -- the nflverse-sourced Mahomes keeps nflverse's values even though his lines say 2022-2025
+  PERFORM _assert_eq((SELECT rookie_season::text||'-'||last_season::text||' '||latest_team FROM player_identities WHERE espn_id = '3139477'), '2017-2026 KC', 'nflverse identity untouched');
 
   -- 8. unknown league refused
   BEGIN
