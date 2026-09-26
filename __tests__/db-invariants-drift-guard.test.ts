@@ -15,6 +15,22 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-26. get_team_sets / get_team_activity read only `editions`,
+    // which holds no Pinnacle rows, so both franchise-page sections were hidden.
+    // Pins the catalog sets (trimmed slug, pins held by render_id) and the
+    // render_id sales feed (both lanes agree).
+    fn: "get_team_sets",
+    test: "supabase/tests/get_team_sets.sql",
+    migration:
+      "supabase/migrations/20260926213521_audit_20260926_pinnacle_franchise_pages_show_sets_and_recent_sales.sql",
+  },
+  {
+    fn: "get_team_activity",
+    test: "supabase/tests/get_team_sets.sql",
+    migration:
+      "supabase/migrations/20260926213521_audit_20260926_pinnacle_franchise_pages_show_sets_and_recent_sales.sql",
+  },
+  {
     // Added 2026-09-26. A Pinnacle character page's Top sales matched
     // pinnacle_editions.character_name (one character per set-level key), so
     // catalog-only characters read "No recorded sales yet" over real sales.
