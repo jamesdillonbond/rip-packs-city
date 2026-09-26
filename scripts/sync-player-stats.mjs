@@ -163,6 +163,9 @@ async function resolveEspnIds(league, stats) {
 async function syncStats(league, stats) {
   const { targets } = await routeGet(`phase=targets&league=${league}&limit=${LIMIT}&${runQs(stats)}`)
   stats.targets = targets.length
+  // Players whose fetch FAILED (not 404): stamped stats_failed_at at the end so
+  // one ESPN keeps 500ing on stops heading every run (20260926025347).
+  const failedIds = []
   const parts = chunk(targets, CHUNK_PLAYERS)
   for (const part of parts) {
     if (pastDeadline()) { stats.deadline_hit = true; break }
@@ -177,6 +180,7 @@ async function syncStats(league, stats) {
           touched.push(t.espn_id)
         } else if (r.status !== 200) {
           stats.fetched_failed++
+          failedIds.push(t.espn_id)
           stats.errors.push(`stats ${t.espn_id}: HTTP ${r.status}`)
         } else {
           rows.push(...parseEspnStats(r.json, t.espn_id))
@@ -185,6 +189,7 @@ async function syncStats(league, stats) {
         }
       } catch (err) {
         stats.fetched_failed++
+        failedIds.push(t.espn_id)
         stats.errors.push(`stats ${t.espn_id}: ${err instanceof Error ? err.message : String(err)}`)
       }
       await sleep(ESPN_DELAY_MS)
@@ -202,6 +207,15 @@ async function syncStats(league, stats) {
       stats.rows_upserted += typeof r.upserted === "number" ? r.upserted : 0
     } catch (err) {
       stats.errors.push(`chunk: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  if (failedIds.length && !DRY_RUN) {
+    try {
+      const r = await routePost({ league, failed_espn_ids: failedIds })
+      console.log(`[${league}] failed fetches stamped: ${r.marked} of ${failedIds.length}`)
+    } catch (err) {
+      // not fatal to the run: those players simply stay at the queue head
+      stats.errors.push(`mark failed: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 }

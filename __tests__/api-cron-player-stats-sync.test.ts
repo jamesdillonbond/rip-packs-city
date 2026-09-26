@@ -139,6 +139,19 @@ describe("POST writes", () => {
     expect(await res.json()).toEqual({ ok: true, upserted: 7 })
     expect(state.rpcCalls[0].args).toEqual({ p_league: "nfl", p_rows: rows, p_touched: ["3139477", "x"] })
   })
+  it("failed_espn_ids: stamps them through the RPC (strings only) and reports what it RETURNED", async () => {
+    state.rpcResult.mark_player_stats_fetch_failed = { data: 2, error: null }
+    const res = await POST(makeReq({ url, auth: AUTH, body: { league: "nba", failed_espn_ids: ["2115954", 7, "", "2202073"] } }))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, marked: 2 })
+    expect(state.rpcCalls[0]).toEqual({ fn: "mark_player_stats_fetch_failed", args: { p_league: "nba", p_espn_ids: ["2115954", "2202073"] } })
+  })
+  it("failed_espn_ids: an RPC failure is a 500, not ok:true", async () => {
+    state.rpcResult.mark_player_stats_fetch_failed = { data: null, error: { message: "boom" } }
+    const res = await POST(makeReq({ url, auth: AUTH, body: { league: "nba", failed_espn_ids: ["1"] } }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("mark failed: boom")
+  })
   it("rows: an RPC failure is a 500 naming the upsert", async () => {
     state.rpcResult.upsert_player_season_stats = { data: null, error: { message: "boom" } }
     const res = await POST(makeReq({ url, auth: AUTH, body: { league: "nfl", rows: [], touched: [] } }))

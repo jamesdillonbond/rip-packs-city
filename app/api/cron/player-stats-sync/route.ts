@@ -31,6 +31,9 @@ import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 //        -> { updated }  (writes an espn_id only where NULL; provenance kept)
 //   POST { league, rows:[…stat lines…], touched:[espn_id…] }
 //        -> { upserted }  (rows_written is what the RPC RETURNED)
+//   POST { league, failed_espn_ids:[espn_id…] }
+//        -> { marked }  (stamps stats_failed_at so a player ESPN keeps failing
+//           on leaves the head of the queue; 20260926025347)
 //   POST { final:true, league, startedAt, stats:{…} }
 //        -> terminal pipeline_runs row: ok is DERIVED from the runner's counts
 //           (every chunk landed, nothing exploded), never asserted
@@ -206,6 +209,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, updated: typeof data === "number" ? data : 0 }, { status: 200 })
   }
 
+  if (Array.isArray(body.failed_espn_ids)) {
+    const ids = body.failed_espn_ids.filter((t): t is string => typeof t === "string" && t !== "")
+    const { data, error } = await supabaseAdmin.rpc("mark_player_stats_fetch_failed", {
+      p_league: league,
+      p_espn_ids: ids,
+    })
+    if (error) return NextResponse.json({ error: `mark failed: ${error.message}` }, { status: 500 })
+    return NextResponse.json({ ok: true, marked: typeof data === "number" ? data : null }, { status: 200 })
+  }
+
   if (Array.isArray(body.rows)) {
     const touched = Array.isArray(body.touched) ? body.touched.filter((t) => typeof t === "string") : null
     const { data, error } = await supabaseAdmin.rpc("upsert_player_season_stats", {
@@ -217,5 +230,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, upserted: typeof data === "number" ? data : 0 }, { status: 200 })
   }
 
-  return NextResponse.json({ error: "body needs rows, espn_ids or final:true" }, { status: 400 })
+  return NextResponse.json({ error: "body needs rows, espn_ids, failed_espn_ids or final:true" }, { status: 400 })
 }
