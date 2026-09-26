@@ -12,6 +12,16 @@ import { fmvBasis } from "@/lib/fmv-basis"
 
 export const EM_DASH = "—"
 
+// ── "Recent low", never "Floor" (known-issues #143) ─────────────────────────
+// fmv_snapshots.floor_price_usd has several writers with several meanings: on
+// the main sales path it is the LOWEST SALE in the pricing window, on others a
+// low ask or a fresh ask. None of them is a live floor a collector can buy at
+// (Candy: 100 of 125 editions read BELOW the confirmed live floor, 2026-09-25),
+// so every entity surface that shows it labels it as what it is.
+export const RECENT_LOW_LABEL = "Recent Low"
+export const RECENT_LOW_TOTAL_LABEL = "Recent-Low Total"
+export const RECENT_LOW_HINT = "Lowest recent sale or ask — not a live floor"
+
 // ── Team-moment subject ──────────────────────────────────────────────────────
 // Tile/row subject line shared by every entity surface. Player moments → the
 // player; team moments (player_name null — WNBA Skyline, Season Rewind, Squad

@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
   return renderEntityOg({
     eyebrow: `${label.toUpperCase()} · SERIES`,
     title: detail.display_label ?? "Series",
-    subtitle: detail.season ? String(detail.season) : (edCount ? `${edCount.toLocaleString()} editions` : null),
+    subtitle: detail.season ? String(detail.season) : (edCount ? `${edCount.toLocaleString()} ${edCount === 1 ? "edition" : "editions"}` : null),
     accent,
     images,
     statLabel: fmvTotal && fmvTotal > 0 ? "Aggregate FMV" : null,

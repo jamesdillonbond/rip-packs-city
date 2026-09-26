@@ -55,15 +55,21 @@ export async function GET(
   }
   const body = entries
     .map((e) => {
-      const lastmod =
+      // ⚠ An UNKNOWN lastModified is omitted, never stamped with the generation
+      // time (the child-segment half of R35): a <lastmod> that always reads
+      // "now" is false, and Google discounts every lastmod in a sitemap that
+      // does it. An unparseable one is omitted too ("Invalid Date" fails
+      // validation for the whole file).
+      const d =
         e.lastModified instanceof Date
-          ? e.lastModified.toISOString()
+          ? e.lastModified
           : typeof e.lastModified === "string"
-            ? e.lastModified
-            : new Date().toISOString()
+            ? new Date(e.lastModified)
+            : null
+      const lastmod = d && !Number.isNaN(d.getTime()) ? `\n    <lastmod>${d.toISOString()}</lastmod>` : ""
       const freq = e.changeFrequency ? `\n    <changefreq>${e.changeFrequency}</changefreq>` : ""
       const prio = typeof e.priority === "number" ? `\n    <priority>${e.priority}</priority>` : ""
-      return `  <url>\n    <loc>${esc(e.url)}</loc>\n    <lastmod>${lastmod}</lastmod>${freq}${prio}\n  </url>`
+      return `  <url>\n    <loc>${esc(e.url)}</loc>${lastmod}${freq}${prio}\n  </url>`
     })
     .join("\n")
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`

@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
-import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
+import { EM_DASH, RECENT_LOW_HINT, RECENT_LOW_LABEL, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { tileSeriesLabel } from "@/lib/series-label"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
@@ -485,7 +485,7 @@ function EditionTileCard({
           <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 16, color: "var(--rpc-text-primary)" }}>{fmtUsd(e.fmv_usd)}</div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }}>Floor</div>
+          <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }} title={RECENT_LOW_HINT}>{RECENT_LOW_LABEL}</div>
           <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{fmtUsd(e.floor_usd ?? null)}</div>
         </div>
       </div>

@@ -11,7 +11,7 @@ import { fetchFullTierMix, buildTierMixRows } from "@/lib/set-detail/tier-mix"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { sectionRows, sectionRowsResult, structuralSection } from "@/lib/entity-section-rpc"
 import { setPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
-import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
+import { Section, SectionUnavailable, StatCell, RECENT_LOW_HINT, RECENT_LOW_TOTAL_LABEL, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -262,7 +262,7 @@ export default async function SetPage(props: { params: Promise<{ collection: str
         <StatCell label="Editions" value={fmtCount(detail.edition_count)} sub={detail.editions_with_fmv !== null ? `${fmtCount(detail.editions_with_fmv)} with FMV` : undefined} />
         <StatCell label="Total Mint" value={fmtCount(detail.total_circulation)} />
         <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
-        <StatCell label="Floor Total" value={fmtUsd(detail.floor_total_usd)} />
+        <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={RECENT_LOW_HINT} />
       </section>
 
       {/* ── Tier mix bar ─────────────────────────────────────────────────── */}

@@ -638,6 +638,12 @@ function fmtCount(value: number | null): string | null {
   return value === null ? null : value.toLocaleString()
 }
 
+// "1 edition", never "1 editions" — a Candy player with one edition published
+// "1 editions." in its meta description (2026-09-25).
+function countNoun(value: number, singular: string, plural: string): string {
+  return `${fmtCount(value)} ${value === 1 ? singular : plural}`
+}
+
 function buildMeta(opts: {
   title: string
   description: string
@@ -813,7 +819,7 @@ export function setPageMetadata(
   const title = `${setName} — Set Value & Editions | ${collectionLabel} | Rip Packs City`
   const descParts = [
     `${setName} on ${collectionLabel}.`,
-    editionCount ? `${fmtCount(editionCount)} editions.` : null,
+    editionCount ? `${countNoun(editionCount, "edition", "editions")}.` : null,
     totalCirc ? `${fmtCount(totalCirc)} total circulation.` : null,
     fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}${fmvClosedQualifier(collectionUrlSlug)}.` : null,
     "Tier mix, edition grid, and player breakdown.",
@@ -845,7 +851,7 @@ export function playerPageMetadata(
   const descParts = [
     `${name} (${noun}) on ${collectionLabel}.`,
     team ? `${teamLabel}: ${team}.` : null,
-    editionCount ? `${fmtCount(editionCount)} editions.` : null,
+    editionCount ? `${countNoun(editionCount, "edition", "editions")}.` : null,
     fmvTotal ? `Portfolio FMV ${fmtUsd(fmvTotal)}${fmvClosedQualifier(collectionUrlSlug)}.` : null,
     "Edition grid, top sale, and set breakdown.",
   ].filter(Boolean) as string[]
@@ -875,8 +881,8 @@ export function teamPageMetadata(
   const title = `${teamName} — Moments & Market Value | ${collectionLabel} | Rip Packs City`
   const descParts = [
     `${teamName} ${noun.toLowerCase()} on ${collectionLabel}.`,
-    playerCount ? `${fmtCount(playerCount)} ${isFranchise ? "characters" : "players"}.` : null,
-    editionCount ? `${fmtCount(editionCount)} editions.` : null,
+    playerCount ? `${isFranchise ? countNoun(playerCount, "character", "characters") : countNoun(playerCount, "player", "players")}.` : null,
+    editionCount ? `${countNoun(editionCount, "edition", "editions")}.` : null,
     fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}${fmvClosedQualifier(collectionUrlSlug)}.` : null,
     isFranchise ? "Cast grid and franchise breakdown." : "Roster grid and team breakdown.",
   ].filter(Boolean) as string[]
@@ -913,9 +919,9 @@ export function seriesPageMetadata(
   const descParts = [
     `${displayLabel} on ${collectionLabel}.`,
     season && !displayLabel.includes(season) ? `Season ${season}.` : null,
-    editionCount ? `${fmtCount(editionCount)} editions.` : null,
-    setCount ? `${fmtCount(setCount)} sets.` : null,
-    playerCount ? `${fmtCount(playerCount)} players.` : null,
+    editionCount ? `${countNoun(editionCount, "edition", "editions")}.` : null,
+    setCount ? `${countNoun(setCount, "set", "sets")}.` : null,
+    playerCount ? `${countNoun(playerCount, "player", "players")}.` : null,
     fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}${fmvClosedQualifier(collectionUrlSlug)}.` : null,
     "Top editions, set breakdown, and player leaderboard.",
   ].filter(Boolean) as string[]

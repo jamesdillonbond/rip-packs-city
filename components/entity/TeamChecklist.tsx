@@ -312,7 +312,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
             </div>
             <div style={{ textAlign: "right" }}>
               <div className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
-                {hasWallet ? "Cost to complete" : "Cost to complete at floor"}
+                {hasWallet ? "Est. cost to complete" : "Est. cost to complete (all)"}
               </div>
               <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>
                 {fmtUsd(progress.cost_to_complete_usd)}
@@ -349,7 +349,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
 
           {staleNote && (
             <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
-              {progress!.stale_missing_pct}% of missing editions have stale or low-confidence pricing — cost-to-complete is an at-floor estimate, not a quote.
+              {progress!.stale_missing_pct}% of missing editions have stale or low-confidence pricing — cost-to-complete is an estimate from recent lows and FMV, not a quote.
             </div>
           )}
         </div>

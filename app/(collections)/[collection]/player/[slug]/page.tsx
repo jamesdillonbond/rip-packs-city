@@ -18,7 +18,7 @@ import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { playerPageMetadata, playerJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { getEntityLabels } from "@/lib/entity-labels"
-import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
+import { Section, SectionUnavailable, StatCell, RECENT_LOW_HINT, RECENT_LOW_TOTAL_LABEL, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import { buildPlayerSetCards } from "@/lib/player-page-view"
 import PlayerSeasonStats from "@/components/entity/PlayerSeasonStats"
@@ -414,7 +414,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
         <StatCell label="Editions" value={fmtCount(detail.edition_count)} />
         <StatCell label="Total Mint" value={fmtCount(detail.total_circulation)} />
         <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
-        <StatCell label="Floor Total" value={fmtUsd(detail.floor_total_usd)} />
+        <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={RECENT_LOW_HINT} />
       </section>
 
       {(detail.first_minted_at || detail.last_minted_at) && (

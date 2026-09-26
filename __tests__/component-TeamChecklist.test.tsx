@@ -67,7 +67,7 @@ describe("TeamChecklist", () => {
     vi.stubGlobal("fetch", fetchMock)
     const { getByText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="portland-trail-blazers" />)
     await waitFor(() => expect(getByText("100 editions")).toBeTruthy())
-    expect(getByText("Cost to complete at floor")).toBeTruthy()
+    expect(getByText("Est. cost to complete (all)")).toBeTruthy()
     expect(getByText("$5,000")).toBeTruthy() // fmtUsd(cost_to_complete_usd)
     expect(getByText("Damian Lillard")).toBeTruthy() // tile subject
     // anonymous invites a wallet paste
@@ -108,7 +108,7 @@ describe("TeamChecklist", () => {
     fireEvent.click(getByText("Track"))
 
     await waitFor(() => expect(getByText("42 / 100")).toBeTruthy()) // Owned readout
-    expect(getByText("Cost to complete")).toBeTruthy() // wallet variant label (no "at floor")
+    expect(getByText("Est. cost to complete")).toBeTruthy() // wallet variant label (no "(all)")
     expect(window.localStorage.getItem("rpc_checklist_wallet")).toBe("0x0123456789abcdef")
   })
 

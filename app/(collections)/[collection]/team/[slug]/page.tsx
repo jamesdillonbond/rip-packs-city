@@ -16,7 +16,7 @@ import { sectionRow, sectionRows, sectionRowsResult, structuralSection } from "@
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { teamPageMetadata, teamJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import { getEntityLabels } from "@/lib/entity-labels"
-import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
+import { Section, SectionUnavailable, StatCell, RECENT_LOW_HINT, RECENT_LOW_TOTAL_LABEL, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import PlayersGridPaginated, { type PlayerTile } from "@/components/entity/PlayersGridPaginated"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -295,7 +295,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         <StatCell label="Editions" value={fmtCount(detail.edition_count)} />
         <StatCell label="Total Mint" value={fmtCount(detail.total_circulation)} />
         <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
-        <StatCell label="Floor Total" value={fmtUsd(detail.floor_total_usd)} />
+        <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={RECENT_LOW_HINT} />
         <StatCell label="30d Sales" value={fmtCount(detail.sales_30d)} />
         <StatCell label="30d Volume" value={fmtUsd(detail.volume_30d_usd == null ? null : Number(detail.volume_30d_usd))} />
       </section>

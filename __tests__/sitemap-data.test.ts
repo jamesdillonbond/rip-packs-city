@@ -229,6 +229,25 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     expect(profiles[0].priority).toBe(0.5)
     // updated_at present → concrete lastModified date.
     expect((profiles[0].lastModified as Date).toISOString()).toBe("2026-05-01T00:00:00.000Z")
+    // updated_at null → none (never "now").
+    expect(profiles[1].lastModified).toBeUndefined()
+  })
+
+  it("stamps NO segment-0 entry with the generation time (child-segment half of R35)", async () => {
+    // Static pages, insights boards, collection tabs and the timestamp-less
+    // series rows all used to carry lastModified = new Date(): /privacy and
+    // /terms claimed to have changed on every fetch. A lastModified that exists
+    // must be a real timestamp, which cannot be within a second of now here.
+    const before = Date.now()
+    const s = await buildSitemapSegment(0)
+    expect(s.length).toBeGreaterThan(20)
+    const stampedNow = s.filter(
+      (x) => x.lastModified instanceof Date && Math.abs(x.lastModified.getTime() - before) < 60_000,
+    )
+    expect(stampedNow.map((x) => x.url)).toEqual([])
+    const statics = s.filter((x) => /\/(privacy|terms|about|insights)$/.test(x.url))
+    expect(statics.length).toBeGreaterThanOrEqual(4)
+    for (const x of statics) expect(x.lastModified).toBeUndefined()
   })
 
   it("pages profile_bio past the 1,000-row PostgREST cap (no silent truncation)", async () => {
@@ -308,8 +327,9 @@ describe("segment 2 — AllDay/Golazos/UFC editions (no fossil filter)", () => {
     const s = await buildSitemapSegment(2)
     expect(s).toHaveLength(1)
     expect(s[0].url).toBe(`${BASE}/nfl-all-day/edition/some-allday-slug`)
-    // null updated_at → lastModified defaults to a Date (now).
-    expect(s[0].lastModified).toBeInstanceOf(Date)
+    // null updated_at → NO lastModified (never "now"; the route then omits
+    // <lastmod>). Inverted 2026-09-25 from "defaults to a Date (now)".
+    expect(s[0].lastModified).toBeUndefined()
   })
 })
 

@@ -40,7 +40,15 @@
 // Edition collections are filtered by collection_id directly (not via a
 // PostgREST embedded join on collections.slug, which returned 0 rows at
 // generation time). collection_series carries NO timestamp column, so its
-// entries use `now` for lastModified.
+// entries carry no lastModified.
+//
+// ⚠ NO ENTRY IS EVER STAMPED "NOW" (2026-09-25, the child-segment half of R35).
+// A lastModified we do not know is OMITTED, never filled with the generation
+// time: every static page, insights board and collection tab used to read
+// <lastmod>=now on every fetch — /privacy and /terms included — and Google
+// discounts a sitemap whose lastmod always says "now", which costs the rows
+// whose timestamps ARE real (editions, packs, profiles) their signal too.
+// <lastmod> is optional in the protocol; the route emits it only when known.
 //
 // SPLIT (2026-07-11): served as 5 segment children via generateSitemaps()
 // (/sitemap/0.xml … /sitemap/4.xml) behind a hand-rolled sitemap INDEX at
@@ -441,7 +449,7 @@ async function getCollectionSeries(): Promise<SeriesRow[]> {
   try {
     const sb: any = createClient(url, key)
     // collection_series carries no timestamp column — select only what exists
-    // and let lastModified fall back to `now` downstream.
+    // and carry no lastModified downstream (never "now" — see the header).
     const { data, error } = await sb
       .from('collection_series')
       .select('display_label, collection_id')
@@ -615,7 +623,7 @@ function dropTsFossils(rows: EditionRow[]): EditionRow[] {
   )
 }
 
-function buildEditionPages(editions: EditionRow[], now: Date): MetadataRoute.Sitemap {
+function buildEditionPages(editions: EditionRow[]): MetadataRoute.Sitemap {
   return editions
     .filter((e) => !!e.external_id)
     .map((e) => {
@@ -623,7 +631,7 @@ function buildEditionPages(editions: EditionRow[], now: Date): MetadataRoute.Sit
       if (!coll) return null
       return {
         url: `${BASE_URL}/${coll.urlSlug}/edition/${encodeURIComponent(e.external_id as string)}`,
-        lastModified: e.last_updated_at ? new Date(e.last_updated_at) : now,
+        lastModified: e.last_updated_at ? new Date(e.last_updated_at) : undefined,
         changeFrequency: 'daily' as const,
         priority: 0.6,
       }
@@ -634,18 +642,17 @@ function buildEditionPages(editions: EditionRow[], now: Date): MetadataRoute.Sit
 export const SITEMAP_SEGMENT_IDS = [0, 1, 2, 3, 4]
 
 export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sitemap> {
-  const now = new Date()
 
   // ── Segment 1: Top Shot edition pages ─────────────────────────────────────
   if (id === 1) {
     const rows = dropTsFossils(await getEditionRows([TS_ID]))
-    return buildEditionPages(rows, now)
+    return buildEditionPages(rows)
   }
 
   // ── Segment 2: AllDay / Golazos / UFC edition pages ───────────────────────
   if (id === 2) {
     const rows = await getEditionRows(EDITION_COLLECTION_IDS.filter((c) => c !== TS_ID))
-    return buildEditionPages(rows, now)
+    return buildEditionPages(rows)
   }
 
   // ── Segment 3: set / player / team entities + top moments ────────────────
@@ -665,17 +672,21 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
     // file already lists. The edition pages themselves are in segment 2.
     const momentPages: MetadataRoute.Sitemap = []
 
-    const setMap = new Map<string, Date>()
-    const playerMap = new Map<string, Date>()
-    const teamMap = new Map<string, Date>()
+    // An entity's lastModified is the newest KNOWN timestamp of its editions;
+    // null when none is known (never "now" — see the header).
+    const setMap = new Map<string, Date | null>()
+    const playerMap = new Map<string, Date | null>()
+    const teamMap = new Map<string, Date | null>()
+    const newer = (prev: Date | null | undefined, ts: Date | null): boolean =>
+      prev === undefined || (ts !== null && (prev === null || ts > prev))
     for (const e of editions) {
       const coll = getCollectionByDbSlug(e.collection_db_slug)
       if (!coll) continue
-      const ts = e.last_updated_at ? new Date(e.last_updated_at) : now
+      const ts = e.last_updated_at ? new Date(e.last_updated_at) : null
       if (e.set_name) {
         const k = `${coll.urlSlug}|${slugifyName(e.set_name)}`
         const prev = setMap.get(k)
-        if (!prev || ts > prev) setMap.set(k, ts)
+        if (newer(prev, ts)) setMap.set(k, ts)
       }
       // ⚠ A TEAM Moment stores its franchise in player_name (Squad Goals, Season
       // Rewind, WNBA Skyline: 44 distinct names / 431 editions on 2026-09-06).
@@ -692,7 +703,7 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
         const canonical = aliasMap.get(raw)
         const k = canonical ? `${coll.urlSlug}|${canonical}` : raw
         const prev = playerMap.get(k)
-        if (!prev || ts > prev) playerMap.set(k, ts)
+        if (newer(prev, ts)) playerMap.set(k, ts)
       }
       if (e.team_name) {
         const teamSlug = slugifyName(e.team_name)
@@ -702,18 +713,18 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
         // page (las-vegas-raiders, already listed from its own editions) — skip.
         if (!isExhibitionTeamSlug(teamSlug) && !historicTeams.has(k)) {
           const prev = teamMap.get(k)
-          if (!prev || ts > prev) teamMap.set(k, ts)
+          if (newer(prev, ts)) teamMap.set(k, ts)
         }
       }
     }
 
-    function entityPages(map: Map<string, Date>, segment: 'set' | 'player' | 'team', priority: number): MetadataRoute.Sitemap {
+    function entityPages(map: Map<string, Date | null>, segment: 'set' | 'player' | 'team', priority: number): MetadataRoute.Sitemap {
       const out: MetadataRoute.Sitemap = []
       for (const [key, ts] of map) {
         const [urlSlug, slug] = key.split('|')
         out.push({
           url: `${BASE_URL}/${urlSlug}/${segment}/${encodeURIComponent(slug)}`,
-          lastModified: ts,
+          lastModified: ts ?? undefined,
           changeFrequency: 'weekly',
           priority,
         })
@@ -738,7 +749,7 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
         if (!coll) return null
         return {
           url: `${BASE_URL}/${coll.urlSlug}/pack/dist/${encodeURIComponent(p.dist_id)}`,
-          lastModified: p.updated_at ? new Date(p.updated_at) : now,
+          lastModified: p.updated_at ? new Date(p.updated_at) : undefined,
           changeFrequency: 'weekly' as const,
           priority: 0.5,
         }
@@ -750,7 +761,7 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
       .filter((r) => typeof r.render_id === 'string' && r.render_id.length > 0)
       .map((r) => ({
         url: `${BASE_URL}/pinnacle/moment/${encodeURIComponent(r.render_id)}`,
-        lastModified: r.updated_at ? new Date(r.updated_at) : now,
+        lastModified: r.updated_at ? new Date(r.updated_at) : undefined,
         changeFrequency: 'weekly' as const,
         priority: 0.55,
       }))
@@ -761,7 +772,6 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
   // ── Segment 0 (default): static + insights + overviews + series + profiles ─
   const staticPages: MetadataRoute.Sitemap = STATIC_SITEMAP_PAGES.map((e) => ({
     url: e.path === '/' ? BASE_URL : `${BASE_URL}${e.path}`,
-    lastModified: now,
     changeFrequency: e.changeFrequency,
     priority: e.priority,
   }))
@@ -803,10 +813,9 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
     ...(PANINI_PUBLIC ? ['panini-squeeze'] : []),
   ]
   const insightsPages: MetadataRoute.Sitemap = [
-    { url: `${BASE_URL}/insights`, lastModified: now, changeFrequency: 'daily', priority: 0.9 },
+    { url: `${BASE_URL}/insights`, changeFrequency: 'daily', priority: 0.9 },
     ...INSIGHT_ROUTES.map((r) => ({
       url: `${BASE_URL}/insights/${r}`,
-      lastModified: now,
       changeFrequency: 'daily' as const,
       priority: 0.8,
     })),
@@ -820,7 +829,6 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
   const featurePages: MetadataRoute.Sitemap = publishedCollections().flatMap((col) => [
     {
       url: `${BASE_URL}/${col.id}/overview`,
-      lastModified: now,
       changeFrequency: 'daily' as const,
       priority: 0.9,
     },
@@ -828,7 +836,6 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
       .filter((p) => p !== 'overview' && PUBLIC_TAB_PAGES.includes(p))
       .map((p) => ({
         url: `${BASE_URL}/${col.id}/${p}`,
-        lastModified: now,
         // Below /overview (0.9): a tab is what a collector lands on from a
         // query, the overview is the collection front door.
         changeFrequency: 'daily' as const,
@@ -844,7 +851,7 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
       const slug = slugifyName(r.display_label)
       return {
         url: `${BASE_URL}/${coll.urlSlug}/series/${encodeURIComponent(slug)}`,
-        lastModified: r.last_updated_at ? new Date(r.last_updated_at) : now,
+        lastModified: r.last_updated_at ? new Date(r.last_updated_at) : undefined,
         changeFrequency: 'weekly' as const,
         priority: 0.55,
       }
@@ -854,7 +861,7 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
   const profiles = await getPublicProfiles()
   const profilePages: MetadataRoute.Sitemap = profiles.map((p) => ({
     url: `${BASE_URL}/profile/${encodeURIComponent(p.username)}`,
-    lastModified: p.updated_at ? new Date(p.updated_at) : now,
+    lastModified: p.updated_at ? new Date(p.updated_at) : undefined,
     changeFrequency: 'weekly' as const,
     priority: 0.5,
   }))

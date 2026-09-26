@@ -20,7 +20,7 @@ import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { sectionRowResult, sectionRows, structuralSection } from "@/lib/entity-section-rpc"
 import { seriesPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
-import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
+import { Section, SectionUnavailable, StatCell, RECENT_LOW_HINT, RECENT_LOW_TOTAL_LABEL, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
@@ -302,7 +302,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
         <StatCell label="Sets" value={fmtCount(detail.set_count)} />
         <StatCell label="Players" value={fmtCount(detail.player_count)} />
         <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
-        <StatCell label="Floor Total" value={fmtUsd(detail.floor_total_usd)} />
+        <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={RECENT_LOW_HINT} />
       </section>
 
       {isEmpty ? (

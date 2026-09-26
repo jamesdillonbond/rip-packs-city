@@ -172,16 +172,24 @@ describe("/sitemap/<id>.xml — the segment children", () => {
     expect(xml).toContain("<lastmod>")
   })
 
-  it("accepts a string or missing lastModified without emitting an invalid date", async () => {
+  it("OMITS an unknown or unparseable lastModified rather than stamping it with now", async () => {
+    // ⚠ INVERTED 2026-09-25 from "a missing lastModified still gets a <lastmod>"
+    // (the child-segment half of R35). The old fallback was new Date(), so a URL
+    // with no known timestamp claimed it changed at the instant of every fetch —
+    // the same false, always-"now" lastmod R35 removed from the index.
     mockSegment([
       { url: "https://www.rippackscity.com/a", lastModified: "2026-08-01T00:00:00.000Z" },
       { url: "https://www.rippackscity.com/b" },
+      { url: "https://www.rippackscity.com/c", lastModified: "not a date" },
     ])
     const { xml } = await get("3.xml")
     const mods = [...xml.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map((m) => m[1])
-    expect(mods).toHaveLength(2)
+    // Only the KNOWN timestamp is published, and it is the one we were given.
+    expect(mods).toEqual(["2026-08-01T00:00:00.000Z"])
+    // All three URLs are still listed — omitting the tag must not drop the URL.
+    for (const u of ["/a", "/b", "/c"]) expect(xml).toContain(`<loc>https://www.rippackscity.com${u}</loc>`)
     // "Invalid Date" in a lastmod fails sitemap validation for the whole file.
-    for (const m of mods) expect(Number.isNaN(Date.parse(m))).toBe(false)
+    expect(xml).not.toContain("Invalid Date")
   })
 
   it("renders an empty but VALID urlset when the segment has no entries", async () => {

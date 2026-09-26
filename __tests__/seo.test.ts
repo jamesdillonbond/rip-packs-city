@@ -342,6 +342,18 @@ describe("playerPageMetadata", () => {
     )
   })
 
+  it("a count of one is singular — never '1 editions' (live on a Candy player page, 2026-09-25)", () => {
+    const m = playerPageMetadata(
+      { name: "Aaron Judge", edition_count: 1, fmv_total_usd: 5.07 },
+      "candy-mlb",
+      "aaron-judge"
+    )
+    expect(m.description).toContain(" 1 edition.")
+    expect(m.description).not.toContain("1 editions")
+    const t = teamPageMetadata({ team_name: "Solo", player_count: 1, edition_count: 1 }, "nba-top-shot", "solo")
+    expect(t.description).toContain(" 1 player. 1 edition.")
+  })
+
   it("is_character payload flips noun→'Character' + label→'Franchise'", () => {
     const m = playerPageMetadata(
       { name: "Mickey", is_character: true, team: "Disney" },
