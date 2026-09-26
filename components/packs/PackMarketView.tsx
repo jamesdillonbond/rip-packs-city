@@ -8,6 +8,7 @@
 // route and the sub-section stay byte-identical.
 
 import PackPageClient from "@/components/packs/PackPageClient"
+import CandyPackMarket from "@/components/packs/CandyPackMarket"
 import { getCollection } from "@/lib/collections"
 
 const TS_TIERS = ["ultimate", "legendary", "rare", "fandom", "common"]
@@ -48,6 +49,13 @@ function ModelNote({ children }: { children: React.ReactNode }) {
 export default function PackMarketView({ collection }: { collection: string }) {
   const collectionObj = getCollection(collection)
   const accent = collectionObj?.accent ?? "var(--rpc-red)"
+
+  // Candy MLB (Solana): one sealed product on Magic Eden, read from Candy's own
+  // pack plane — it has no rows in the Flow pack_distributions board that
+  // PackPageClient reads (2026-09-25).
+  if (collection === "candy-mlb") {
+    return <CandyPackMarket />
+  }
 
   if (collection === "disney-pinnacle") {
     return (

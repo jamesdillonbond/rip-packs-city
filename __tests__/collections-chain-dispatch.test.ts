@@ -95,7 +95,10 @@ describe("dbChain registry invariant", () => {
     // /api/candy-set-progress, because the generic /api/sets-db folds the
     // wallet and counts editions (not players) as slots. The test below pins
     // that the client dispatches Candy there and the route keeps the key intact.
-    solana: ["overview", "market", "collection", "sets", "analytics"],
+    // ⭐ `packs` joined 2026-09-25, also an ARM: /api/candy-pack-market reads
+    // Candy's native pack plane (the Flow board reads pack_distributions, where
+    // Candy has zero rows). Pinned below.
+    solana: ["overview", "market", "collection", "packs", "sets", "analytics"],
     ethereum: ["overview"],
   }
 
@@ -140,6 +143,18 @@ describe("dbChain registry invariant", () => {
     expect(route).toContain("const wallet = raw\n")
     expect(route).not.toMatch(/raw\.toLowerCase\(\)|normalizeAddress\(/)
     expect(route).toContain("209ade70-32c5-4470-bc7c-4793d660f713")
+  })
+
+  it("⚠ the Solana `packs` permission is backed by a Candy arm on the native pack plane", () => {
+    const read = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8")
+    const view = read("components/packs/PackMarketView.tsx")
+    expect(view).toContain('collection === "candy-mlb"')
+    expect(view).toContain("<CandyPackMarket />")
+    const route = read("app/api/candy-pack-market/route.ts")
+    expect(route).toContain('from("candy_pack_market")')
+    expect(route).toContain('from("candy_pack_listings")')
+    expect(route).toContain("isSolanaAddress(rawWallet)")
+    expect(route).not.toMatch(/rawWallet\.toLowerCase\(\)/)
   })
 
   // ⚠ THE OTHER HALF, for `collection`. It cannot be the same SHAPE of check as

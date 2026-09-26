@@ -371,7 +371,14 @@ export const COLLECTIONS: Collection[] = [
     // that map is fresh on its own stamp (12 h against a 3-hourly writer).
     // Measured against the largest live holders before enabling: 1,896 rows /
     // 124 editions, all joined (0 orphan `edition_key`s estate-wide).
-    pages: ["overview", "market", "collection", "sets", "analytics"],
+    //
+    // 2026-09-25 — PACKS added, on Candy's NATIVE pack plane (/api/candy-pack-
+    // market → candy_pack_market / _ev_model / _listings / _sales / candy_packs),
+    // not the Flow pack_distributions board the note above rules out. Shipped the
+    // same evening the pack floor was found to be a July listing whose token had
+    // sold (retired by migration 20260926020528); the tab leads with the floor
+    // over asks CONFIRMED in the last 12 h and lists unconfirmed ones last.
+    pages: ["overview", "market", "collection", "packs", "sets", "analytics"],
     published: true,
     supabaseCollectionId: "209ade70-32c5-4470-bc7c-4793d660f713",
     pitch: "Wallet analytics, FMV, and pack/edition intelligence for Candy MLB on Solana — Metaplex Core, secondary on Magic Eden.",

@@ -152,7 +152,9 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 77 → 78 on 2026-09-25: Candy MLB gained its Sets tab (/api/candy-set-progress,
     // its own Solana backend). Same derived coupling: `pages` grew and
     // /candy-mlb/sets entered segment 0 by itself.
-    expect(s).toHaveLength(78)
+    // 78 → 79 on 2026-09-25: Candy MLB gained its Packs tab (/api/candy-pack-market,
+    // its native pack plane). Same derived coupling.
+    expect(s).toHaveLength(79)
     expect(s.find((x) => x.url === `${BASE}/teams`)).toBeDefined()
     expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/nba/fast-break`)).toBeUndefined()
@@ -171,7 +173,7 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // …and the tabs Candy does NOT have stay out (the complement proxy.ts
     // redirects). A sitemap entry for one is a login redirect handed to a crawler.
     expect(s.find((x) => x.url === `${BASE}/candy-mlb/sniper`)).toBeUndefined()
-    expect(s.find((x) => x.url === `${BASE}/candy-mlb/packs`)).toBeUndefined()
+    expect(s.find((x) => x.url === `${BASE}/candy-mlb/packs`)).toBeTruthy()
     // …and the no-change control: the other collections still advertise theirs.
     expect(s.find((x) => x.url === `${BASE}/nba-top-shot/sniper`)).toBeTruthy()
     // Root is priority 1.0, changeFrequency daily.
