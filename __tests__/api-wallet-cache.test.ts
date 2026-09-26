@@ -133,13 +133,19 @@ describe("POST /api/wallet-cache", () => {
     expect((await res.json()).written).toBe(2)
   })
 
-  it("tolerates an RPC error per chunk (logs, counts 0, still ok)", async () => {
+  // INVERTED 2026-09-26: "still ok" was the defect — a hardcoded ok:true beside a
+  // count that did not land. It still never throws past the chunk (200), but ok is false.
+  it("an RPC error per chunk counts 0 and reports ok:false with the error", async () => {
     state.collectionId = "cid-d"
     state.rpcError = { message: "rpc boom" }
     const res = await POST(
       postReq({ wallet: "0xabc", collection: "coll-resolved-d", moments: [{ momentId: "m1" }] }),
     )
     expect(res.status).toBe(200)
-    expect((await res.json()).written).toBe(0)
+    const j = await res.json()
+    expect(j.written).toBe(0)
+    expect(j.ok).toBe(false)
+    expect(j.write_errors).toBe(1)
+    expect(j.write_error).toBe("rpc boom")
   })
 })

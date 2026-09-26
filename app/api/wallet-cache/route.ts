@@ -125,20 +125,27 @@ export async function POST(req: NextRequest) {
 
     const CHUNK = 200
     let written = 0
+    // ok is DERIVED from whether every chunk landed (2026-09-26): it was a
+    // hardcoded `true` beside a count, so a failed write read as success.
+    let writeErrors = 0
+    let writeError: string | null = null
     for (let i = 0; i < rows.length; i += CHUNK) {
       const chunk = rows.slice(i, i + CHUNK)
       const { data, error } = await (supabaseAdmin as any)
         .rpc("upsert_wmc_batch", { p_rows: chunk })
       if (error) {
         console.warn("[wallet-cache] upsert_wmc_batch err:", error.message)
+        writeErrors++
+        writeError = writeError ?? error.message
       } else {
         written += Number(data?.written ?? 0)
       }
     }
 
-    return NextResponse.json({ ok: true, written })
+    return NextResponse.json({ ok: writeErrors === 0, written, write_errors: writeErrors, write_error: writeError })
   } catch (err) {
-    console.warn("[wallet-cache] Error:", err instanceof Error ? err.message : String(err))
-    return NextResponse.json({ ok: true, written: 0 })
+    const message = err instanceof Error ? err.message : String(err)
+    console.warn("[wallet-cache] Error:", message)
+    return NextResponse.json({ ok: false, written: 0, error: "wallet cache write failed" }, { status: 500 })
   }
 }
