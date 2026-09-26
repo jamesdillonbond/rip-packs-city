@@ -15,18 +15,30 @@ const ownedFilters: Array<[string, unknown]> = []
 
 vi.mock("@/lib/supabase", () => {
   function builder(table: string) {
+    let usedIn = false
+    let bySeller = false
+    let byOwner = false
     const b: any = {
       select: () => b,
       eq: (c: string, v: unknown) => {
-        if (table === "candy_packs") ownedFilters.push([c, v])
+        if (table === "candy_packs") {
+          ownedFilters.push([c, v])
+          if (c === "owner") byOwner = true
+        }
+        if (table === "candy_pack_listings" && c === "seller") bySeller = true
         return b
       },
+      in: () => ((usedIn = true), b),
       not: () => b,
       order: () => b,
       limit: () => b,
       then: (resolve: any) => {
-        const owned = table === "candy_packs" && ownedFilters.some(([c]) => c === "owner")
-        return resolve(state[owned ? "candy_packs:owned" : table] ?? { data: [], error: null })
+        const key =
+          table === "candy_packs" && byOwner ? "candy_packs:owned"
+          : table === "candy_packs" && usedIn ? "candy_packs:holders"
+          : table === "candy_pack_listings" && bySeller ? "candy_pack_listings:listed"
+          : table
+        return resolve(state[key] ?? { data: [], error: null })
       },
     }
     return b
@@ -39,7 +51,9 @@ import { GET, CANDY_PACK_ASK_CONFIRMED_HOURS } from "@/app/api/candy-pack-market
 const req = (qs = "") => ({ nextUrl: new URL("https://t/api/candy-pack-market" + qs) }) as any
 const FRESH = new Date(Date.now() - 60 * 60 * 1000).toISOString()
 const STALE = new Date(Date.now() - (CANDY_PACK_ASK_CONFIRMED_HOURS + 48) * 3_600_000).toISOString()
-const WALLET = "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2"
+const WALLET = "7xPaEpQwzGmdTxj4kF3yUq2n8HcVbRsLtNaWoPe9ZkD1"
+const TREASURY = "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2"
+const ESCROW = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix"
 
 const MARKET = {
   pack_assets_indexed: 2501, declared_supply: 2500, duplicate_serials: 1, treasury_held: 2336,
@@ -64,6 +78,7 @@ beforeEach(() => {
   }
   state.candy_pack_sales = { data: [{ serial_number: 606, price_usd: 51.78, sold_at: "2026-09-14T19:52:44Z" }], error: null }
   state.candy_packs = { data: [{ image_url: "https://arweave.net/x" }], error: null }
+  state.candy_treasury_wallet = { data: [{ wallet_address: TREASURY }], error: null }
 })
 
 async function body(qs = "") {
@@ -81,6 +96,47 @@ describe("GET /api/candy-pack-market", () => {
     // …and the unconfirmed ask is listed LAST, labelled.
     expect(json.asks.at(-1)).toMatchObject({ priceUsd: 30.02, confirmed: false })
     expect(json.asks[0]).toMatchObject({ priceUsd: 36.44, confirmed: true })
+  })
+
+  // 2026-09-25: Magic Eden kept returning launch-week asks on packs that are back
+  // in Candy's treasury — one "confirmed" at $36.27 headlined the tile while the
+  // real (escrowed) floor was $76.17.
+  it("an ask on a pack the TREASURY holds is a ghost: never the floor, never counted", async () => {
+    state["candy_packs:holders"] = {
+      data: [
+        { token_mint: "b", owner: TREASURY, is_burnt: false, serial_number: 5 },
+        { token_mint: "c", owner: ESCROW, is_burnt: false, serial_number: 6 },
+      ],
+      error: null,
+    }
+    const { json } = await body()
+    expect(json.market.confirmedFloorUsd).toBe(40)
+    expect(json.market.confirmedAsks).toBe(1)
+    expect(json.market.staleAsks).toBe(1)
+    expect(json.asks.map((a: any) => a.priceUsd)).not.toContain(36.44)
+  })
+
+  it("an ask on a BURNT pack is excluded too", async () => {
+    state["candy_packs:holders"] = { data: [{ token_mint: "b", owner: ESCROW, is_burnt: true, serial_number: 5 }], error: null }
+    const { json } = await body()
+    expect(json.market.confirmedFloorUsd).toBe(40)
+    expect(json.market.staleAsks).toBe(1)
+  })
+
+  it("if the holder check cannot run, the asks panel says it failed — never unverified asks", async () => {
+    state["candy_packs:holders"] = { data: null, error: { message: "boom" } }
+    const { json } = await body()
+    expect(json.asks).toBeNull()
+    expect(json.asks_error).toBe(true)
+    expect(json.market.confirmedFloorUsd).toBeNull()
+    expect(json.market.confirmedAsks).toBeNull()
+  })
+
+  it("an unknown treasury wallet fails the holder check closed", async () => {
+    state.candy_treasury_wallet = { data: [], error: null }
+    const { json } = await body()
+    expect(json.asks_error).toBe(true)
+    expect(json.market.confirmedFloorUsd).toBeNull()
   })
 
   it("no confirmed ask → no floor, not the stale one", async () => {
@@ -125,6 +181,29 @@ describe("GET /api/candy-pack-market", () => {
     const { json } = await body("?wallet=" + WALLET)
     expect(ownedFilters.find(([c]) => c === "owner")?.[1]).toBe(WALLET)
     expect(json.owned).toMatchObject({ count: 2, serials: [12, 99] })
+  })
+
+  it("a pack the wallet has LISTED (held in escrow) is still its sealed pack", async () => {
+    state["candy_packs:owned"] = { data: [{ serial_number: 99 }], error: null, count: 1 }
+    state["candy_pack_listings:listed"] = { data: [{ token_mint: "m1", expiry: null }, { token_mint: "m2", expiry: null }], error: null }
+    state["candy_packs:holders"] = {
+      data: [
+        { token_mint: "m1", owner: ESCROW, is_burnt: false, serial_number: 12 },
+        // A stale listing on a pack now back in the treasury is NOT the wallet's.
+        { token_mint: "m2", owner: TREASURY, is_burnt: false, serial_number: 40 },
+      ],
+      error: null,
+    }
+    const { json } = await body("?wallet=" + WALLET)
+    expect(json.owned).toMatchObject({ count: 2, listed: 1, serials: [12, 99] })
+  })
+
+  it("a failed listed-packs read fails the panel, never an undercount", async () => {
+    state["candy_packs:owned"] = { data: [{ serial_number: 99 }], error: null, count: 1 }
+    state["candy_pack_listings:listed"] = { data: null, error: { message: "boom" } }
+    const { json } = await body("?wallet=" + WALLET)
+    expect(json.owned).toBeNull()
+    expect(json.owned_error).toMatch(/Could not read/)
   })
 
   it("a Flow wallet is refused for the packs panel, never '0 packs'", async () => {

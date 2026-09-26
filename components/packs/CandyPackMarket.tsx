@@ -32,6 +32,8 @@ interface PackMarketResponse {
     confirmedFloorSol: number | null
     confirmedAsks: number | null
     unconfirmedAsks: number | null
+    /** Asks excluded because their pack is back in the treasury or burnt. */
+    staleAsks?: number | null
     confirmedWithinHours: number
     salesAll: number | null
     sales7d: number | null
@@ -56,7 +58,7 @@ interface PackMarketResponse {
   asks_error: boolean
   sales: { serial: number | null; priceUsd: number | null; priceSol: number | null; marketplace: string | null; soldAt: string | null }[] | null
   sales_error: boolean
-  owned: { wallet: string; count: number; serials: number[] } | null
+  owned: { wallet: string; count: number; listed?: number; serials: number[] } | null
   owned_error: string | null
 }
 
@@ -254,7 +256,10 @@ export default function CandyPackMarket() {
         {data.asks === null ? (
           <Note>Asks couldn&apos;t load right now.</Note>
         ) : data.asks.length === 0 ? (
-          <Note>No active pack asks are indexed.</Note>
+          <Note>
+            No live pack asks are indexed.
+            {data.market.staleAsks ? ` ${count(data.market.staleAsks)} older ask${data.market.staleAsks === 1 ? " is" : "s are"} excluded — the pack is back with Candy or burnt, so the listing cannot fill.` : ""}
+          </Note>
         ) : (
           <>
             <div style={{ overflowX: "auto" }}>
@@ -285,6 +290,13 @@ export default function CandyPackMarket() {
                 <Note>
                   {count(data.market.unconfirmedAsks)} ask{data.market.unconfirmedAsks === 1 ? "" : "s"} have not been seen in the last{" "}
                   {market.confirmedWithinHours}h — they may already be gone, so they are listed last and never used as the lowest ask.
+                </Note>
+              </div>
+            ) : null}
+            {data.market.staleAsks ? (
+              <div style={{ marginTop: 8 }}>
+                <Note>
+                  {count(data.market.staleAsks)} older ask{data.market.staleAsks === 1 ? " is" : "s are"} not shown — the pack is back with Candy or burnt, so the listing cannot fill.
                 </Note>
               </div>
             ) : null}
@@ -329,6 +341,8 @@ export default function CandyPackMarket() {
             {data.owned.count === 0
               ? "This wallet holds no sealed Candy packs."
               : `This wallet holds ${count(data.owned.count)} sealed pack${data.owned.count === 1 ? "" : "s"}${
+                  data.owned.listed ? ` (${count(data.owned.listed)} listed on Magic Eden)` : ""
+                }${
                   data.owned.serials.length ? `: ${data.owned.serials.slice(0, 30).map((n) => `#${n}`).join(", ")}${data.owned.serials.length > 30 ? "…" : ""}` : ""
                 }.`}
           </Note>

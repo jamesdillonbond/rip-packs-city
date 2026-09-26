@@ -24,8 +24,21 @@
 //     route therefore reports the floor over asks CONFIRMED within
 //     CANDY_PACK_ASK_CONFIRMED_HOURS separately from the unconfirmed count, and
 //     never lets an unconfirmed ask be the headline.
+//   · AN ASK IS ONLY LIVE WHILE ITS PACK IS NOT BACK IN THE TREASURY (2026-09-25).
+//     Magic Eden kept returning launch-week asks (Jul 27–30) on packs whose
+//     indexed holder is Candy's treasury wallet — 9 of 23 active asks, one of them
+//     "confirmed" at $36.27 and headlining the tile while every escrowed ask
+//     started at $76.17. A seller cannot have a live listing on a pack the
+//     treasury holds, so such an ask (or one on a burnt pack) is excluded from the
+//     floor, the counts and the list, and counted in `market.staleAsks`. If the
+//     holder check cannot run, the asks panel reports itself failed rather than
+//     publish unverified asks.
 //   · A wallet is read only if it is a Solana address, verbatim (base58 is
 //     case-sensitive); anything else is refused for that panel, not zeroed.
+//   · A LISTED pack is still the wallet's: Magic Eden moves it to its escrow
+//     wallet, so `candy_packs.owner` stops being the seller. "My sealed packs"
+//     counts packs held AND packs the wallet has actively listed (not held by the
+//     treasury), and says how many are listed.
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -59,6 +72,59 @@ function num(v: unknown): number | null {
   if (v === null || v === undefined) return null
   const n = Number(v)
   return Number.isFinite(n) ? n : null
+}
+
+type PackHolder = { owner: string | null; burnt: boolean; serial: number | null }
+
+/** Holder of each pack, plus the treasury wallet. null = the check could not run. */
+async function readPackHolders(mints: string[]): Promise<{ byMint: Map<string, PackHolder>; treasury: string | null } | null> {
+  if (mints.length === 0) return { byMint: new Map(), treasury: null }
+  const [packsRes, treasuryRes] = await Promise.all([
+    boundedRead(
+      (supabaseAdmin as any).from("candy_packs").select("token_mint, owner, is_burnt, serial_number").in("token_mint", mints),
+      "candy-pack-market/holders",
+    ),
+    boundedRead((supabaseAdmin as any).from("candy_treasury_wallet").select("wallet_address").limit(1), "candy-pack-market/treasury"),
+  ])
+  if (packsRes.error || treasuryRes.error) {
+    console.error("[candy-pack-market] holder check failed:", packsRes.error ?? treasuryRes.error)
+    return null
+  }
+  const treasury = ((treasuryRes.data ?? [])[0] as { wallet_address?: string } | undefined)?.wallet_address ?? null
+  // Without the treasury wallet the check cannot tell a ghost from a live ask.
+  if (!treasury) return null
+  const byMint = new Map<string, PackHolder>()
+  for (const r of (packsRes.data ?? []) as { token_mint: string; owner: string | null; is_burnt: boolean | null; serial_number: number | null }[]) {
+    byMint.set(r.token_mint, { owner: r.owner, burnt: r.is_burnt === true, serial: r.serial_number })
+  }
+  return { byMint, treasury }
+}
+
+/** Packs the wallet has ACTIVELY listed (held by Magic Eden's escrow, not the treasury). null = read failed. */
+async function readListedPacks(wallet: string): Promise<{ mint: string; serial: number | null }[] | null> {
+  const { data, error } = await boundedRead(
+    (supabaseAdmin as any)
+      .from("candy_pack_listings")
+      .select("token_mint, expiry")
+      .eq("seller", wallet)
+      .eq("is_active", true)
+      .limit(MAX_OWNED_SERIALS),
+    "candy-pack-market/listed",
+  )
+  if (error) return null
+  const now = Date.now()
+  const mints = [...new Set(((data ?? []) as { token_mint: string; expiry: string | null }[])
+    .filter((r) => !r.expiry || Date.parse(r.expiry) > now)
+    .map((r) => r.token_mint))]
+  const holders = await readPackHolders(mints)
+  if (!holders) return null
+  return mints
+    .filter((m) => {
+      const h = holders.byMint.get(m)
+      // Held by the wallet itself is already in the owner count; treasury/burnt is not the wallet's.
+      return !!h && !h.burnt && h.owner !== holders.treasury && h.owner !== wallet
+    })
+    .map((m) => ({ mint: m, serial: holders.byMint.get(m)?.serial ?? null }))
 }
 
 export async function GET(req: NextRequest) {
@@ -125,10 +191,25 @@ export async function GET(req: NextRequest) {
     let confirmedFloorSol: number | null = null
     let confirmedCount = 0
     let unconfirmedCount = 0
+    let staleAsks = 0
+    let asksFailed = !!asksRes.error
     if (!asksRes.error) {
-      const rows = ((asksRes.data ?? []) as AskRow[]).filter(
+      const unexpired = ((asksRes.data ?? []) as AskRow[]).filter(
         (r) => !r.expiry || Date.parse(r.expiry) > now,
       )
+      // Holder check (see the header): drop asks on treasury-held / burnt packs.
+      const holders = await readPackHolders(unexpired.map((r) => r.token_mint))
+      if (!holders) {
+        asksFailed = true
+      }
+      const rows = holders
+        ? unexpired.filter((r) => {
+            const h = holders.byMint.get(r.token_mint)
+            const dead = !!h && (h.burnt || (holders.treasury !== null && h.owner === holders.treasury))
+            if (dead) staleAsks++
+            return !dead
+          })
+        : []
       for (const r of rows) {
         const seen = r.last_seen_at ? Date.parse(r.last_seen_at) : NaN
         const confirmed = !Number.isNaN(seen) && seen >= cutoff
@@ -151,6 +232,11 @@ export async function GET(req: NextRequest) {
     } else {
       console.error("[candy-pack-market] asks read failed:", asksRes.error)
     }
+    if (asksFailed) {
+      asks = []
+      confirmedFloorUsd = null
+      confirmedFloorSol = null
+    }
 
     const sales = salesRes.error
       ? null
@@ -166,7 +252,7 @@ export async function GET(req: NextRequest) {
     const image = imageRes.error ? null : ((imageRes.data ?? [])[0] as { image_url?: string } | undefined)?.image_url ?? null
 
     // ── The wallet's sealed packs ───────────────────────────────────────────
-    let owned: { wallet: string; count: number; serials: number[] } | null = null
+    let owned: { wallet: string; count: number; listed: number; serials: number[] } | null = null
     let ownedError: string | null = null
     if (rawWallet) {
       if (!isSolanaAddress(rawWallet)) {
@@ -182,16 +268,20 @@ export async function GET(req: NextRequest) {
             .limit(MAX_OWNED_SERIALS),
           "candy-pack-market/owned",
         )
-        if (error || count === null || count === undefined) {
-          console.error("[candy-pack-market] owned read failed:", error)
+        const listed = error ? null : await readListedPacks(rawWallet)
+        if (error || count === null || count === undefined || listed === null) {
+          console.error("[candy-pack-market] owned read failed:", error ?? "listed-packs read failed")
           ownedError = "Could not read this wallet's packs right now."
         } else {
+          const heldSerials = ((data ?? []) as { serial_number: number | null }[])
+            .map((r) => r.serial_number)
+            .filter((n): n is number => typeof n === "number")
           owned = {
             wallet: rawWallet,
-            count,
-            serials: ((data ?? []) as { serial_number: number | null }[])
-              .map((r) => r.serial_number)
-              .filter((n): n is number => typeof n === "number"),
+            count: count + listed.length,
+            listed: listed.length,
+            serials: [...heldSerials, ...listed.map((l) => l.serial).filter((n): n is number => n !== null)]
+              .sort((a, b) => a - b),
           }
         }
       }
@@ -217,8 +307,9 @@ export async function GET(req: NextRequest) {
         market: {
           confirmedFloorUsd,
           confirmedFloorSol,
-          confirmedAsks: asksRes.error ? null : confirmedCount,
-          unconfirmedAsks: asksRes.error ? null : unconfirmedCount,
+          confirmedAsks: asksFailed ? null : confirmedCount,
+          unconfirmedAsks: asksFailed ? null : unconfirmedCount,
+          staleAsks: asksFailed ? null : staleAsks,
           confirmedWithinHours: CANDY_PACK_ASK_CONFIRMED_HOURS,
           salesAll: num(m.sales_all),
           sales7d: num(m.sales_7d),
@@ -241,8 +332,8 @@ export async function GET(req: NextRequest) {
             }
           : null,
         ev_error: evRes.error ? true : false,
-        asks: asksRes.error ? null : asks,
-        asks_error: asksRes.error ? true : false,
+        asks: asksFailed ? null : asks,
+        asks_error: asksFailed,
         sales,
         sales_error: salesRes.error ? true : false,
         owned,
