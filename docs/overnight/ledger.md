@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the sentinel's Wall Kills warn on `player-stats-sync` (5/10, "0 clean since") was FALSE: every NBA run wrote its terminal row, but the runner stamps `startedAt` BEFORE the ~3-min ESPN-resolve phase and the route wrote the `-heartbeat` only at the later `targets` call (160 s after), outside the ±5 s correlation — so every NBA run read as a kill and every NFL run as clean. Now the runner sends its own `startedAt` and `hb=1` on its FIRST route call; the route stamps the heartbeat with that instant (plausibility-bounded; a missing `hb` keeps the old targets-phase write). Also checked, no change: Golazos 0 sales/24h is the filed known-issues cause (indexer at chain head, 331k blocks/3 d, no Golazos type seen; separating a quiet venue from a silent contract needs a Flow read the sandbox cannot make); alerts-send/dispatch zero-yield is genuine — 2 narrow subscriptions, Lillard Archive low ask is $0.70 vs the $0.60 cap · Claude Code (web sandbox)
+
+- **Revert:** revert the "fix(stats-feed): the heartbeat carries the runner's startedAt" commit (route + runner + test; no DB change).
+
 ### 2026-09-25 · 🧹 SHIPPED — the Candy MLB ticker (every Candy tab) stops saying "WALLET + PACK TOOLS — coming behind this overview" (both shipped) and "the highest sales-backed share on the platform" (Candy reads 18.4% HIGH/MEDIUM vs Top Shot 55.1%); it now names the Collection, Set Tracker and Pack Market tools. The confidence drop (~60% → 18% from 09-19 to 09-22) is recorded in go-live-2026-09.md §4 as a market event — a 09-20/21 floor dump made recent sales disagree; same engine, sales flowing · Claude Code (web sandbox)
 
 - **Revert:** revert the "fix(candy): ticker names tools that exist" commit.
