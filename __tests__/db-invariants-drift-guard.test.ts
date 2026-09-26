@@ -15,6 +15,17 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-26. Every pinnacle_editions writer walks wallet holdings, so
+    // a catalog key no tracked wallet held never got a row (Disney Genesis), and
+    // an 'Unknown' stub was never repaired (Finding Nemo Vol.2). Pins the catalog
+    // fill: lowest render_id names the row, mint only when renders agree, only
+    // 'Unknown' fields are filled, idempotent.
+    fn: "pinnacle_editions_fill_from_catalog",
+    test: "supabase/tests/pinnacle_editions_fill_from_catalog.sql",
+    migration:
+      "supabase/migrations/20260926171433_audit_20260926_pinnacle_catalog_only_sets_and_editions_reach_the_set_pages.sql",
+  },
+  {
     // Added 2026-09-26. Every Pinnacle players row came from a one-time 05-05
     // seed, so 127 of 249 characters had no row and their pages 404'd. Pins the
     // writer the pinnacle_editions trigger calls: one row per slug, keyed
