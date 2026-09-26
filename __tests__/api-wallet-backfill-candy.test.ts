@@ -266,4 +266,17 @@ describe("POST /api/wallet-backfill-candy — deferred DAS walk", () => {
     expect(run.p_ok).toBe(false)
     expect(String(run.p_error)).toContain("escrow-listed read failed: listings down")
   })
+
+  it("more active listings than the read cap fails the run as incomplete (never reported complete)", async () => {
+    state.pages = []
+    const mints = Array.from({ length: 1001 }, (_, i) => `mm${i}`)
+    state.listings = { data: mints.map((token_mint) => ({ token_mint })), error: null }
+    state.assets = Object.fromEntries(mints.map((m) => [m, asset({ m, ownership: { owner: "SOLD_TO_SOMEONE" } })]))
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(false)
+    expect(run.p_extra.escrow_listed_capped).toBe(true)
+    expect(String(run.p_error)).toContain("incomplete")
+  })
 })

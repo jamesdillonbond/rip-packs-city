@@ -88,7 +88,7 @@ export async function attributeEscrowHeldToSellers<T extends { wallet_address: s
 }
 
 /** Hard cap on escrow-listed cards a per-wallet backfill re-reads from DAS. */
-export const ESCROW_LISTED_READ_CAP = 200
+export const ESCROW_LISTED_READ_CAP = 1000
 
 export type EscrowListedMints = { mints: string[]; error: string | null; capped: boolean }
 

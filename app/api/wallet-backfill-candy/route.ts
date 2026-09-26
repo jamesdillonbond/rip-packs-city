@@ -29,6 +29,8 @@ export const maxDuration = 300
 
 const PIPELINE_NAME = "wallet-backfill-candy"
 const UPSERT_CHUNK = 500
+const ESCROW_READ_CONCURRENCY = 8
+const ESCROW_READ_BUDGET_MS = 200_000
 
 // Permissive base58 sanity check — keeps obvious garbage off DAS without
 // pinning the exact Solana address shape (the strict per-chain validator flips
@@ -198,20 +200,34 @@ export async function POST(req: NextRequest) {
       } else {
         const now = new Date().toISOString()
         const escrowRows: Array<Record<string, unknown>> = []
-        for (const mint of listed.mints) {
-          if (seenMoments.has(mint)) continue
-          let a: DasAsset
-          try {
-            a = await getAsset(mint)
-          } catch (e) {
-            escrowError = `getAsset ${mint}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200)
-            continue
+        const todo = listed.mints.filter((m) => !seenMoments.has(m))
+        // Bounded: ESCROW_READ_CONCURRENCY DAS reads at a time, and none started
+        // after ESCROW_READ_BUDGET_MS of the invocation — a big seller (487
+        // listings measured 09-26) must not run the lambda into its kill, which
+        // would write no run row at all. A budget stop is reported, not hidden.
+        let next = 0
+        let budgetHit = false
+        const worker = async () => {
+          while (next < todo.length) {
+            if (Date.now() - startedMs > ESCROW_READ_BUDGET_MS) { budgetHit = true; return }
+            const mint = todo[next++]
+            let a: DasAsset
+            try {
+              a = await getAsset(mint)
+            } catch (e) {
+              escrowError = `getAsset ${mint}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200)
+              continue
+            }
+            if (a?.ownership?.owner !== MAGIC_EDEN_SOLANA_ESCROW) { escrowStale++; continue }
+            if (!inCandyCollection(a) || isBurnt(a) || isPack(a)) continue
+            const s = normalizeSerial(a)
+            if (!s.moment_id) continue
+            escrowRows.push({ ...s, wallet_address: wallet, last_seen_at: now })
           }
-          if (a?.ownership?.owner !== MAGIC_EDEN_SOLANA_ESCROW) { escrowStale++; continue }
-          if (!inCandyCollection(a) || isBurnt(a) || isPack(a)) continue
-          const s = normalizeSerial(a)
-          if (!s.moment_id) continue
-          escrowRows.push({ ...s, wallet_address: wallet, last_seen_at: now })
+        }
+        await Promise.all(Array.from({ length: ESCROW_READ_CONCURRENCY }, worker))
+        if (budgetHit || escrowCapped) {
+          escrowError = escrowError ?? `incomplete: ${budgetHit ? "time budget reached" : `more than ${todo.length} active listings`}`
         }
         escrowListed = escrowRows.length
         found += escrowRows.length
