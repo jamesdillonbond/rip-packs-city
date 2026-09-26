@@ -35,6 +35,26 @@ const fullSummary: NonNullable<WalletSummary> = {
 }
 
 describe("computeWalletStatRow", () => {
+  // 2026-09-26: with the summary read failed, the locked / unlocked tiles fell
+  // back to `totals` whenever ANY row had loaded — page 1's sums published as
+  // the wallet's. The headline already refused that; now the tiles do too.
+  it("a PARTIAL row set (50 of 15,290 loaded) never stands in for the lock split", () => {
+    const partial: PortfolioTotals = { ...zeroTotals, totalFmv: 900, lockedFmv: 300, unlockedFmv: 600, totalCount: 50, lockedCount: 20, unlockedCount: 30 }
+    const r = computeWalletStatRow({ walletSummary: null, walletTotalFmv: null, totals: partial, paginatedTotal: 15290, collectionSlug: "nba-top-shot" })
+    expect(r.walletFmv).toBeNull()
+    expect(r.unlockedFmv).toBeNull()
+    expect(r.unlockedCount).toBeNull()
+    expect(r.lockedFmv).toBeNull()
+    expect(r.lockedCount).toBeNull()
+  })
+
+  it("CONTROL: a COMPLETE row set does stand in for the lock split", () => {
+    const whole: PortfolioTotals = { ...zeroTotals, totalFmv: 900, lockedFmv: 300, unlockedFmv: 600, totalCount: 50, lockedCount: 20, unlockedCount: 30 }
+    const r = computeWalletStatRow({ walletSummary: null, walletTotalFmv: null, totals: whole, paginatedTotal: 50, collectionSlug: "nba-top-shot" })
+    expect(r.lockedFmv).toBe(300)
+    expect(r.unlockedCount).toBe(30)
+  })
+
   it("prefers authoritative walletSummary when loaded", () => {
     const r = computeWalletStatRow({
       walletSummary: fullSummary,

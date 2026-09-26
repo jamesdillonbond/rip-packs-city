@@ -121,25 +121,29 @@ export function computeWalletStatRow(input: {
         // summed under "WALLET FMV"). Only a complete row set may stand in.
         ? totals.totalFmv
         : null
+  // The same completeness gate as the headline (2026-09-26): the locked /
+  // unlocked tiles fell back to `totals` whenever ANY row had loaded, so with
+  // the summary read failed they published page 1's sums as the wallet's.
+  const totalsComplete = totals.totalCount > 0 && totals.totalCount >= paginatedTotal
   const unlockedFmv: number | null = walletSummary
     ? walletSummary.unlocked_fmv
-    : totals.totalCount > 0
+    : totalsComplete
       ? totals.unlockedFmv
       : null
   const unlockedCount: number | null = walletSummary
     ? walletSummary.unlocked_count
-    : totals.totalCount > 0
+    : totalsComplete
       ? totals.unlockedCount
       : null
 
   const lockedFmv: number | null = walletSummary
     ? walletSummary.locked_fmv
-    : totals.totalCount > 0
+    : totalsComplete
       ? totals.lockedFmv
       : null
   const lockedCount: number | null = walletSummary
     ? walletSummary.locked_count
-    : totals.totalCount > 0
+    : totalsComplete
       ? totals.lockedCount
       : null
 
