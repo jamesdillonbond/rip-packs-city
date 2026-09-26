@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🔧 FIXED CI — main was red since `af502fc5e` (edge-fn-deploy workflow): `workflow-curl-assignments-are-guarded` flagged `edge-fn-deploy.yml:99`, an unguarded `body=$(curl …)` that under `bash -e` would abort the verify_jwt post-condition silently on a failed read. Ported the guard's prescribed fix: `|| body=""` plus an explicit `::error::` + exit 1 on an empty body · Claude Code (web sandbox)
+
+- **Revert:** revert the "ci(edge-fn-deploy): guard the verify_jwt curl" commit.
+
+
 ### 2026-09-25 · 🧹 SHIPPED (prod edge deploy) — `enrich-ufc-wallet` deployed from the committed file by the new `edge-fn-deploy` workflow (run 36215009197, ~8:30 PM PT): pre-flight passed (no `*_GATE_KEY`; auth is the already-set ingest token), CLI deploy with `--no-verify-jwt` + the import map, then both post-conditions green — `verify_jwt=false` + `ACTIVE`, and the drift census reads the slug `clean`. This was the last content-drifted function, so the next `edge-fn-drift` run should go green for the first time since 08-09. The deploy adds only the ADDITIVE Authorization-header branch; `?token=` is untouched, so every current caller keeps working. NOT done (left to Trevor, the session's permission classifier stopped it): step 2, moving `app/api/ufc-wallet-scan`'s call to the header; step 3, deleting the `?token=` branch; removing the entry from `DEPLOY_DEFERRED` in `scripts/check-edge-fn-drift.mjs` · Claude Code (web sandbox)
 
 - **Revert:** `git revert` the commit that added the header branch to `supabase/functions/enrich-ufc-wallet/index.ts`, then dispatch `edge-fn-deploy` with `function=enrich-ufc-wallet` (redeploys that body, verified the same way).
