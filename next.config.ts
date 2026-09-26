@@ -114,17 +114,11 @@ const nextConfig: NextConfig = {
         destination: "/pinnacle/moment/:id",
         permanent: true,
       },
-      // Audit 2026-05-20 (F17): panini-blockchain is unpublished; neutralize the dead route.
-      // ⚠ 2026-09-25: the destination WAS /nba-top-shot/overview — a Panini URL
-      // answered with NBA Top Shot, the SUBSTITUTION face of the honesty rule (a
-      // fallback swapping the SUBJECT). It bit the moment Panini had a real
-      // surface: `fullCollectionHref` sends a wallet with Panini holdings to
-      // /panini-blockchain/overview, which landed on Top Shot. The Panini WC
-      // Prizm squeeze board is LIVE (PANINI_PUBLIC), so the dead collection
-      // route goes to the Panini surface that exists. Pinned: a redirect whose
-      // source is a collection slug never lands on ANOTHER collection's slug
-      // (__tests__/next-config-redirects-never-swap-the-collection.test.ts).
-      { source: "/panini-blockchain/:path*", destination: "/insights/panini-squeeze", permanent: false },
+      // ⛔ REMOVED 2026-09-25: `/panini-blockchain/:path*` → /insights/panini-squeeze.
+      // Panini PUBLISHED on the shared [collection] routes (Overview + Market), and a
+      // next.config redirect runs BEFORE the proxy and every page — left in place it
+      // would have made the published collection unreachable. Its missing tabs now
+      // 307 to its overview from proxy.ts (RETIRED_COLLECTION_TABS), like UFC's sniper.
       // ⛔ REMOVED 2026-08-29 (register R36): `/profile` → `/dashboard` was a
       // PERMANENT redirect into an auth-gated page, so the leftmost mobile tab
       // sent every anonymous first-run visitor `/profile` → 308 → `/dashboard`

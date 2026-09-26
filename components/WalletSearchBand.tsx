@@ -208,9 +208,13 @@ export default function WalletSearchBand({
   // non-Flow collection (Candy MLB, Solana, published thin) it would invite a
   // base58 address into a Cadence lookup and answer with an empty card — a
   // "0 moments" claim we manufactured. No band until that chain has a wallet tool.
+  // ⛔ 2026-09-25: `chain && chain !== "flow"` let a NULL dbChain through —
+  // Panini (published that day; owners are usernames, no wallets at all) would
+  // have rendered a Flow wallet box. A known collection shows the band ONLY
+  // when it is on Flow.
   if (scope === "collection" && collectionId) {
-    const chain = getCollection(collectionId)?.dbChain
-    if (chain && chain !== "flow") return null
+    const c = getCollection(collectionId)
+    if (c && c.dbChain !== "flow") return null
   }
 
   const copy =

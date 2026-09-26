@@ -100,11 +100,15 @@ describe("dbChain registry invariant", () => {
     // Candy has zero rows). Pinned below.
     solana: ["overview", "market", "collection", "packs", "sets", "analytics"],
     ethereum: ["overview"],
+    // ⭐ 2026-09-25 — Panini (dbChain null: no chain identity, no wallets)
+    // published with `overview` (chain-agnostic) and `market`, whose ARM is
+    // fetchPaniniMarketListings → panini_market_board. Pinned below.
+    "": ["overview", "market"],
   }
 
   it("every published NON-Flow collection exposes only pages that have a dispatch for its chain", () => {
     const nonFlow = COLLECTIONS.filter((c) => c.published && c.dbChain !== "flow")
-    expect(nonFlow.map((c) => c.id)).toEqual(["candy-mlb"])
+    expect(nonFlow.map((c) => c.id).sort()).toEqual(["candy-mlb", "panini-blockchain"])
     for (const c of nonFlow) {
       const allowed = DISPATCHED[c.dbChain ?? ""] ?? []
       for (const page of c.pages) {
@@ -122,6 +126,17 @@ describe("dbChain registry invariant", () => {
   // restating itself. Pinned as a SOURCE fact because there is no route-level
   // harness here and the failure is silent: a Flow-dispatched page pointed at a
   // Solana collection renders an empty board, not an error.
+  it("⚠ Panini's `market` permission is backed by an actual arm in /api/market that never falls through", () => {
+    const route = readFileSync(join(process.cwd(), "app/api/market/route.ts"), "utf8")
+    expect(route).toContain("fetchPaniniMarketListings")
+    expect(route).toContain("panini_market_board")
+    expect(route).toContain("PANINI_COLLECTION_ID_FOR_DISPATCH")
+    expect(route).toContain("d1a0a7f5-609a-49f4-a1a7-4eaac55b020b")
+    // The no-fall-through guard: cached_listings holds zero Panini rows, so a
+    // fall-through could only turn a failed read into "no listings".
+    expect(route).toMatch(/\(collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH \|\| isPanini\) && \(modernRows === null \|\| modernRows\.length === 0\)/)
+  })
+
   it("⚠ the Solana `market` permission is backed by an actual arm in /api/market", () => {
     const route = readFileSync(join(process.cwd(), "app/api/market/route.ts"), "utf8")
     expect(route).toContain("fetchCandyMarketListings")
@@ -247,7 +262,8 @@ describe("dbChain registry invariant", () => {
 
   it("every published FLOW collection still declares dbChain flow (the chain filters key on it)", () => {
     for (const c of COLLECTIONS) {
-      if (!c.published || c.id === "candy-mlb") continue
+      // Candy (Solana) and Panini (no chain) are the non-Flow published entries.
+      if (!c.published || c.id === "candy-mlb" || c.id === "panini-blockchain") continue
       expect(c.dbChain, `published collection ${c.id} is not on Flow`).toBe("flow")
     }
   })

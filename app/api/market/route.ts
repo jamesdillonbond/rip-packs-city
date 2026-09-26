@@ -36,6 +36,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fmv-display-guard"
 import { apiErrorResponse } from "@/lib/api-error"
+import { readPaniniCoverage } from "@/lib/panini/coverage"
 import { boundedRead } from "@/lib/api/bounded-read"
 
 export const dynamic = "force-dynamic"
@@ -231,6 +232,7 @@ const TS_COLLECTION_ID_FOR_DISPATCH = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const ALLDAY_COLLECTION_ID_FOR_DISPATCH = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const PINNACLE_COLLECTION_ID_FOR_DISPATCH = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 const CANDY_COLLECTION_ID_FOR_DISPATCH = "209ade70-32c5-4470-bc7c-4793d660f713"
+const PANINI_COLLECTION_ID_FOR_DISPATCH = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
 
 // Pinnacle Market source (edition-level, 2026-07-18). Trevor's Market=edition /
 // Sniper=serial split: Market shows ONE row per Pinnacle render (= edition) with
@@ -599,6 +601,85 @@ async function fetchCandyMarketListings(
   }))
 }
 
+// ── Panini Market source (2026-09-25, published with Overview + Market) ──────
+// `panini_market_board` (migration 20260926041904): one row per bridged Panini
+// edition with at least one ask CONFIRMED by a walk in the last 7 days — lowest
+// ask, listed-serial count, when it was last confirmed, and the edition's FMV
+// from edition_fmv_current. Edition grain, like All Day and Pinnacle.
+//
+// ⚠ LISTING-GATED BY CONSTRUCTION: Panini publishes no checklist, so a card
+// exists to RPC only once it has been listed. The response carries `coverage`
+// (panini_coverage_summary) and the Market tab renders it beside the rows.
+//
+// ⚠ PANINI IS NOT A CHAIN WITH WALLETS, and the Flow furniture is NULL rather
+// than filled with a stand-in: no flow_id, no moment id, no storefront, no lock.
+// `buy_url` is the edition's page on Panini's own marketplace, where the psku
+// (`external_id`) is the recorded identifier the ingest walk itself navigates to.
+async function fetchPaniniMarketListings(
+  filters: {
+    tier: string; maxPrice: number; sortBy: string; limit: number
+    sets: string[]; seriesList: string[]; player: string; minPrice: number
+  }
+): Promise<any[] | null> {
+  let q = (supabaseAdmin as any)
+    .from("panini_market_board")
+    .select(
+      "external_id, player_name, set_name, tier, circulation_count, thumbnail_url, low_ask_usd, listed_count, ask_confirmed_at, fmv_usd, confidence, discount_pct"
+    )
+  if (filters.tier && filters.tier !== "all") q = q.eq("tier", filters.tier.toUpperCase())
+  if (filters.maxPrice > 0) q = q.lte("low_ask_usd", filters.maxPrice)
+  q = applyBrowseFilters(q, { set: "set_name", player: "player_name", price: "low_ask_usd" }, filters)
+
+  if (filters.sortBy === "price_desc") q = q.order("low_ask_usd", { ascending: false })
+  else if (filters.sortBy === "fmv_desc") q = q.order("fmv_usd", { ascending: false, nullsFirst: false })
+  else if (filters.sortBy === "discount_desc") q = q.order("discount_pct", { ascending: false, nullsFirst: false })
+  else if (filters.sortBy === "recent" || filters.sortBy === "listed_desc") q = q.order("ask_confirmed_at", { ascending: false, nullsFirst: false })
+  else q = q.order("low_ask_usd", { ascending: true })
+  // Deterministic tiebreak on the view's unique key.
+  q = q.order("external_id", { ascending: true })
+
+  const { data, error } = await boundedRead(q.limit(Math.max(filters.limit, 500)), "api/market/panini_market_board")
+  if (error) {
+    console.log("[/api/market] panini fetch err:", error.message)
+    // null, NOT []: an empty array would read as "the Panini market is empty".
+    return null
+  }
+  const rows = exactSetMatch(data ?? [], filters.sets, "set_name")
+  return rows.map((r: any) => ({
+    id: `${PANINI_COLLECTION_ID_FOR_DISPATCH}:${r.external_id}`,
+    flow_id: null,
+    moment_id: null,
+    edition_key: r.external_id ?? null,
+    player_name: r.player_name ?? null,
+    team_name: null, // a nation is not a team (go-live doc gap 3)
+    set_name: r.set_name ?? null,
+    series_name: null,
+    tier: r.tier ? String(r.tier).toUpperCase() : null,
+    subedition_name: null,
+    serial_number: null,
+    circulation_count: r.circulation_count ?? null,
+    listed_count: r.listed_count ?? null,
+    ask_price: r.low_ask_usd != null ? Number(r.low_ask_usd) : null,
+    fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
+    adjusted_fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
+    discount: r.discount_pct != null ? Number(r.discount_pct) : null,
+    confidence: r.confidence ?? null,
+    source: "panini",
+    buy_url: r.external_id
+      ? `https://nft.paniniamerica.net/marketplace-details/${encodeURIComponent(r.external_id)}.html`
+      : null,
+    thumbnail_url: r.thumbnail_url ?? null,
+    badge_slugs: null,
+    listing_resource_id: null,
+    storefront_address: null,
+    is_locked: false,
+    raw_data: null,
+    listed_at: r.ask_confirmed_at ?? null,
+    cached_at: r.ask_confirmed_at ?? null,
+    collection_id: PANINI_COLLECTION_ID_FOR_DISPATCH,
+  }))
+}
+
 async function fetchModernListings(
   collectionId: string,
   filters: {
@@ -611,6 +692,12 @@ async function fetchModernListings(
     sets: string[]; seriesList: string[]; player: string; minPrice: number
   }
 ): Promise<any[] | null> {
+  if (collectionId === PANINI_COLLECTION_ID_FOR_DISPATCH) {
+    return fetchPaniniMarketListings({
+      tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
+      sets: filters.sets, seriesList: filters.seriesList, player: filters.player, minPrice: filters.minPrice,
+    })
+  }
   if (collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH) {
     return fetchCandyMarketListings({
       tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
@@ -797,7 +884,16 @@ export async function GET(req: NextRequest) {
     // A genuine zero short-circuits here too — not because it would be wrong to
     // fall through, but because spending a second query to reach the same empty
     // answer only widens the window in which the two can disagree.
-    if (collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH && (modernRows === null || modernRows.length === 0)) {
+    // Panini's listing-gated coverage rides every Panini response (overview +
+    // market carry the same disclosure). A failed read drops the FIGURES; the
+    // client still renders the principle.
+    const isPanini = collectionId === PANINI_COLLECTION_ID_FOR_DISPATCH
+    const paniniCoverage = isPanini ? await readPaniniCoverage(supabaseAdmin, "api/market/panini_coverage") : null
+    const coverageField = isPanini ? { coverage: paniniCoverage?.ok ? paniniCoverage.coverage : null, coverage_failed: !paniniCoverage?.ok } : {}
+    // ⛔ PANINI NEVER FALLS THROUGH either — same reason as Candy below:
+    // `cached_listings` holds ZERO Panini rows, so a fall-through can only turn a
+    // failed read into a confident "no listings".
+    if ((collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH || isPanini) && (modernRows === null || modernRows.length === 0)) {
       if (modernRows === null) {
         return NextResponse.json(
           { error: "market_unavailable", retry: true, collection_id: collectionId },
@@ -812,7 +908,8 @@ export async function GET(req: NextRequest) {
         listings: [],
         pagination: { total: 0, page, limit, hasMore: false, totalIsExact: true, matchedBeforeFilters: null },
         clamp: { applied: true, ceilings: TIER_CEILING },
-        diagnostics: { rawCount: 0, postClampCount: 0, postFilterCount: 0, source: "candy_market_board", windowTruncated: false },
+        diagnostics: { rawCount: 0, postClampCount: 0, postFilterCount: 0, source: isPanini ? "panini_market_board" : "candy_market_board", windowTruncated: false },
+        ...coverageField,
       }, {
         headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },
       })
@@ -970,6 +1067,7 @@ export async function GET(req: NextRequest) {
         },
         clamp: { applied: true, ceilings: TIER_CEILING },
         diagnostics: { rawCount: count, postClampCount: clamped.length, postFilterCount: total, source: "modern", windowTruncated: modernPageFull },
+        ...coverageField,
       }, {
         headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },
       })

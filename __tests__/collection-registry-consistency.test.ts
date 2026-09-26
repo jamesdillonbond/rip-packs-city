@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { describe, it, expect } from "vitest"
 import {
   COLLECTION_UUID_BY_SLUG,
@@ -59,10 +61,15 @@ const ENTITY_PAGE_URL_SLUGS = [
   "disney-pinnacle",
   "candy-mlb",
 ]
-// Published collections that route NO entity pages. Empty today, and that is a
-// state not an invariant — a future thin launch belongs here, and must then
-// expose none of ENTITY_LINKING_PAGES.
-const THIN_PUBLISHED: string[] = []
+// Published collections that route NO entity pages. Empty until 2026-09-25,
+// when Panini published (Overview + Market) with no /edition, /player, /set
+// routes — its WC Prizm cards have no entity corpus yet. A thin collection must
+// expose none of ENTITY_LINKING_PAGES EXCEPT a page in FACADE_GATED_PAGES.
+const THIN_PUBLISHED: string[] = ["panini-blockchain"]
+// Entity-linking pages whose component SUPPRESSES those links when the
+// collection has no facade record (MarketClient's `hasEntityPages`, pinned
+// below as a source fact). Only these may appear on a thin collection.
+const FACADE_GATED_PAGES = ["market"]
 
 // Tabs whose components render a link into the entity corpus. Regenerate with:
 //   grep -rln '/edition/\|/player/\|/team/\|/set/\|editionHref\|momentSubjectHref' \
@@ -93,7 +100,7 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
     for (const id of THIN_PUBLISHED) {
       const pages = publishedCollections().find((c) => c.id === id)?.pages ?? []
       expect(
-        pages.filter((p) => ENTITY_LINKING_PAGES.includes(p)),
+        pages.filter((p) => ENTITY_LINKING_PAGES.includes(p) && !FACADE_GATED_PAGES.includes(p)),
         `${id} exposes an entity-linking page but is not in the facade`,
       ).toEqual([])
       expect(facadeSlugs).not.toContain(id)
@@ -107,7 +114,9 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
   // this commit it is green again for the right reason.
   it("every published collection that renders entity links resolves through the facade", () => {
     for (const c of publishedCollections()) {
-      const linking = c.pages.filter((p) => ENTITY_LINKING_PAGES.includes(p))
+      const linking = c.pages.filter(
+        (p) => ENTITY_LINKING_PAGES.includes(p) && !(THIN_PUBLISHED.includes(c.id) && FACADE_GATED_PAGES.includes(p)),
+      )
       if (linking.length === 0) continue
       expect(
         getCollectionByUrlSlug(c.id),
@@ -115,6 +124,18 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
           `but is absent from lib/collection-slug.ts, so every one of those links 404s`,
       ).not.toBeNull()
     }
+  })
+
+  // The half that makes FACADE_GATED_PAGES mean something: the Market client
+  // really does drop edition / player / set links for a facade-less collection.
+  it("MarketClient gates every entity link on the facade (FACADE_GATED_PAGES is backed)", () => {
+    const src = readFileSync(join(process.cwd(), "app/(collections)/[collection]/market/MarketClient.tsx"), "utf8")
+    expect(src).toMatch(/function hasEntityPages\(collectionUrlSlug: string\): boolean \{\s*return getCollectionByUrlSlug\(collectionUrlSlug\) != null/)
+    // Card edition link, table edition link, player link, set link.
+    expect(src).toContain("listing.editionKey && hasEntityPages(collectionUrlSlug)")
+    expect(src).toContain("l.editionKey && entityLinks")
+    expect(src).toContain("l.playerName && !entityLinks")
+    expect(src).toContain("l.setName && !entityLinks")
   })
 
   it.each(ENTITY_PAGE_URL_SLUGS)("%s: UUID + dbSlug match across both modules", (urlSlug) => {
@@ -157,11 +178,10 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
 
   // ⚠ Candy was in this list until 2026-09-19 and is deliberately NOT replaced
   // by a weaker assertion — it is now asserted the other way, above and in
-  // collection-slug.test.ts. Panini remains: it is genuinely unpublished
-  // (`published: false`, `collections.is_active = false`), its identity is a
-  // USERNAME not an address, and it has NO rows in `editions` at all — so an
-  // entity route for it would resolve nothing even if the facade let it
-  // through. That is a data fact, not a policy, which is why it still holds.
+  // collection-slug.test.ts. Panini remains, for a CHANGED reason (2026-09-25):
+  // it published with Overview + Market only and has no entity routes, so the
+  // facade must keep refusing it — a facade record would turn MarketClient's
+  // suppressed links back on, and every one of them would 404.
   it("does not expose unpublished chain-two placeholders through the entity facade", () => {
     expect(getCollectionByUrlSlug("panini-blockchain")).toBeNull()
     expect(getCollectionByUrlSlug("candy-mlb")).not.toBeNull()

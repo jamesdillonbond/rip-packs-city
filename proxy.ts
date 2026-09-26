@@ -381,8 +381,21 @@ export const THIN_COLLECTION_MISSING_TABS =
 // them is a defensible cleanup and is NOT this change: it would swap a
 // deliberate UX shell for a redirect on four collections nobody asked about.
 // Filed instead — docs/overnight/inbox/2026-09-07T0330Z-*.
+//
+// 2026-09-25 — PANINI joins, with every tab it lacks. It published with
+// `pages: ["overview", "market"]`, and — unlike Candy — its missing set includes
+// tabs Candy HAS (collection, sets, packs, analytics), so it cannot share
+// THIN_COLLECTION_MISSING_TABS' single tab alternation without redirecting live
+// Candy tabs. A per-pair set is exactly the shape that cannot widen by accident.
+// Pinned one-way by __tests__/ufc-sniper-is-retired.test.ts (no entry may name a
+// tab the collection ships) and the other way by
+// __tests__/panini-publish-routes.test.ts (every tab Panini lacks is here).
 export const RETIRED_COLLECTION_TABS: ReadonlySet<string> = new Set([
   "ufc/sniper",
+  ...[
+    "collection", "sniper", "sets", "packs", "pack-sniper", "challenges", "hot-floors",
+    "play", "analytics", "badges", "fast-break", "road-to-the-ring", "series", "profile",
+  ].map((tab) => `panini-blockchain/${tab}`),
 ])
 
 export function isPublicPath(pathname: string, method: string): boolean {
@@ -889,7 +902,7 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // that /share and /profile already expose anonymously. No session-scoped data,
   // no cost basis, no saved wallets. The comment above says "Panini/Candy tabs
   // stay gated (no multi-chain pre-launch)"; that was written on 2026-07-17,
-  // before Candy published on 09-06. Panini is still unpublished and still out.
+  // before Candy published on 09-06. (Panini published 2026-09-25 with its own rule above.)
   //
   // 2026-09-19 — COLLECTION joins MARKET here, and it is added to THIS SET rather
   // than by appending `candy-mlb` to the Flow alternation above, for exactly the
@@ -929,6 +942,15 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // The tab's optional wallet-lookup box reads the same public holdings
   // /share/<wallet> already exposes. Nothing session-scoped: cost basis and
   // saved wallets are gated elsewhere and stay gated.
+  // Panini's Market tab — anon-public, 2026-09-25, its own rule for the same
+  // "one tab, one rule" reason as Candy's below. Anon-safety checked, not
+  // inherited: /api/market's Panini arm is a service-role read of
+  // `panini_market_board` — public asks seen on Panini's marketplace plus bridged
+  // FMV. No wallet, no session, no cost basis (Panini has no wallet concept).
+  if ((method === "GET" || method === "HEAD") && pathname === "/panini-blockchain/market") {
+    return true
+  }
+
   if (
     (method === "GET" || method === "HEAD") &&
     (pathname === "/candy-mlb/market" ||
@@ -951,13 +973,14 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // BreadcrumbList JSON-LD link the collection name to `/<collection>`, and the
   // 2026-09-04 sweep measured all five roots 307-ing to /login for the SEO
   // traffic those pages exist for. Published slugs only, GET/HEAD only — the
-  // same set the feature tabs above open; the Panini root stays gated.
+  // same set the feature tabs above open.
   // candy-mlb joined 2026-09-06 (published, overview-only) — its root is the
   // breadcrumb + BreadcrumbList JSON-LD target, so an anon 307 there is a
-  // crawl dead-end.
+  // crawl dead-end. panini-blockchain joined 2026-09-25 (published, Overview +
+  // Market), same reason.
   if (
     (method === "GET" || method === "HEAD") &&
-    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc|candy-mlb)$/.test(pathname)
+    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc|candy-mlb|panini-blockchain)$/.test(pathname)
   ) {
     return true
   }

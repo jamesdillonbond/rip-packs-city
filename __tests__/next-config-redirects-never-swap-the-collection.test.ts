@@ -39,7 +39,9 @@ describe("next.config.ts redirects never swap the collection", () => {
 
   it("inspects a real population of redirects", () => {
     expect(redirects.length).toBeGreaterThan(3)
-    expect(redirects.some((r) => r.source.startsWith("/panini-blockchain/"))).toBe(true)
+    // At least one redirect is sourced from a collection slug, so the ban below
+    // is not vacuous (the Panini one that seeded this file was removed 2026-09-25).
+    expect(redirects.some((r) => slugs.has(firstSegment(r.source)))).toBe(true)
   })
 
   it("a redirect from one collection's URL never lands on another collection's URL", () => {
@@ -53,9 +55,18 @@ describe("next.config.ts redirects never swap the collection", () => {
     expect(offenders).toEqual([])
   })
 
-  it("the Panini dead route lands on the Panini surface, not Top Shot", () => {
-    const panini = redirects.find((r) => r.source === "/panini-blockchain/:path*")
-    expect(panini?.destination).toBe("/insights/panini-squeeze")
+  // ⭐ INVERTED 2026-09-25 (was: "the Panini dead route lands on the Panini
+  // surface"). Panini PUBLISHED, and the whole-subtree redirect that test pinned
+  // would have made it unreachable — next.config redirects run before the proxy
+  // and every page. The property now: a PUBLISHED collection's URL space is never
+  // swallowed whole by a redirect.
+  it("no redirect swallows a PUBLISHED collection's whole URL space", () => {
+    const published = new Set(COLLECTIONS.filter((c) => c.published).map((c) => c.id))
+    expect(published.has("panini-blockchain")).toBe(true)
+    const swallowed = redirects
+      .filter((r) => /^\/[^/]+\/:path\*$/.test(r.source) && published.has(firstSegment(r.source)))
+      .map((r) => `${r.source} → ${r.destination}`)
+    expect(swallowed).toEqual([])
   })
 
   it("the scanner sees the defect it bans (planted)", () => {

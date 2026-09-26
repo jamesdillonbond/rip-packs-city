@@ -101,12 +101,18 @@ describe("the site-wide chain claim cannot be widened by a `published` flip alon
     expect(COLLECTIONS[i].published).toBe(false)
   })
 
-  it("Panini specifically: the flip is inert, which is the fix this guard records", () => {
+  // ⭐ RE-PINNED 2026-09-25, the day the flip this guard was written for
+  // HAPPENED. Panini is published and the site-wide claim is still
+  // "BUILT ON FLOW + SOLANA" (asserted in the first test) — which is the
+  // property: the flip was inert because dbChain is null. `published` moved;
+  // the claim did not.
+  it("Panini specifically: published, and the flip stayed inert", () => {
     const panini = COLLECTIONS.find((c) => c.id === "panini-blockchain")
     expect(panini, "panini-blockchain left the registry — re-point this guard").toBeDefined()
-    expect(panini!.published).toBe(false)
-    // null, not "ethereum": RPC holds 5,074 WC Prizm editions and zero rows from
+    expect(panini!.published).toBe(true)
+    // null, not "ethereum": RPC holds 5,094 WC Prizm editions and zero rows from
     // the OpenSea bridge plane that value used to name.
     expect(panini!.dbChain ?? null).toBeNull()
+    expect(publishedChainsBadge()).not.toMatch(/ETHEREUM|PANINI/)
   })
 })

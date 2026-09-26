@@ -11,7 +11,7 @@
 --      doc's exit bar (pct_editions_stale_45d ≤ 1.0, FAIL-CLOSED on an unreadable coverage row)
 --      and creates the 62 sets / 552 players rows the editions link to.
 --
--- Measured before this migration (~9:25 PM PT): pct_editions_stale_45d 0.0 (0 of 5,094), walked
+-- Measured before this migration (~9:13 PM PT): pct_editions_stale_45d 0.0 (0 of 5,094), walked
 -- ≤7 d 100%, age p50 22.5 h / p90 38.9 h; dry run blocked=false, 0 slug collisions. So the gate
 -- was open when 041006 wrote — the write was not stale, but it must not be ABLE to be.
 --

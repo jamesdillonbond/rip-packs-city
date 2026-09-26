@@ -59,7 +59,9 @@ describe("prompt-cache breakpoint holds only invariant text", () => {
     // A new name showing up here means someone moved a per-user or per-page
     // value above the breakpoint; move it into `dynamic` instead of widening this.
     // candyTabs (2026-09-25): Candy's registry `pages`, as paths — constant per deploy.
-    const DEPLOY_CONSTANT = new Set(["publishedLabels", "FMV_METHODOLOGY_BLOCK", "candyTabs"])
+    // PANINI_TAB_PATHS / CANDY_TAB_PATHS (2026-09-25, Panini's publish): module-level
+    // constants derived from the registry's `pages` — constant per deploy.
+    const DEPLOY_CONSTANT = new Set(["publishedLabels", "FMV_METHODOLOGY_BLOCK", "candyTabs", "PANINI_TAB_PATHS", "CANDY_TAB_PATHS"])
     expect(
       interpolations.filter((n) => !DEPLOY_CONSTANT.has(n)),
       "per-request values must live in `dynamic`, BELOW the cache breakpoint — " +

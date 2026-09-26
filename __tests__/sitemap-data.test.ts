@@ -158,7 +158,13 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // /candy-mlb/sets entered segment 0 by itself.
     // 78 → 79 on 2026-09-25: Candy MLB gained its Packs tab (/api/candy-pack-market,
     // its native pack plane). Same derived coupling.
-    expect(s).toHaveLength(79)
+    // 79 → 81 on 2026-09-25: Panini PUBLISHED (Overview + Market). Same derived
+    // coupling: /panini-blockchain/overview + /panini-blockchain/market entered
+    // segment 0 by themselves.
+    expect(s).toHaveLength(81)
+    expect(s.find((x) => x.url === `${BASE}/panini-blockchain/overview`)).toBeTruthy()
+    expect(s.find((x) => x.url === `${BASE}/panini-blockchain/market`)).toBeTruthy()
+    expect(s.find((x) => x.url === `${BASE}/panini-blockchain/sniper`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/teams`)).toBeDefined()
     expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/nba/fast-break`)).toBeUndefined()

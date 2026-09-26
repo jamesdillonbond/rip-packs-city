@@ -5,7 +5,7 @@
     "@typescript-eslint/no-explicit-any"
   ],
   "counts": {
-    "@typescript-eslint/no-unused-vars": 350,
+    "@typescript-eslint/no-unused-vars": 345,
     "@next/next/no-html-link-for-pages": 114,
     "react-hooks/set-state-in-effect": 54,
     "react/no-unescaped-entities": 54,

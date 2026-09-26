@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { safeApiError, statusForSafeError } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { readPaniniCoverage } from "@/lib/panini/coverage"
 
 // ── THE HIGH/MEDIUM SHARE COMES FROM get_collection_stats, NOT A SECOND SCAN ──
 //
@@ -101,6 +102,29 @@ export async function GET(req: NextRequest) {
             fmv_high_medium_pct: (data as any).fmv_high_medium_pct ?? null,
           }
         : data
+
+    // ── Panini (published 2026-09-25) ──────────────────────────────────────
+    // get_collection_stats' generic arm reads SALES and LISTINGS from the Flow
+    // feeds (`sales_*`, `cached_listings`), which hold ZERO Panini rows — so it
+    // returns volume 0 / no top sales / 0 listings for a market with ~17k live
+    // asks. Those zeros are a fact about OUR feeds, not about Panini's market:
+    // they are nulled here with `sales_tracked: false`, and the page says "not
+    // tracked" instead of "$0" / "No sales in the last 24h". The listing-gated
+    // coverage disclosure rides along (lib/panini/coverage.ts).
+    if (normalized === "panini_blockchain" && enriched && typeof enriched === "object" && !Array.isArray(enriched)) {
+      const cov = await readPaniniCoverage(supabaseAdmin, "api/collection-stats/panini_coverage")
+      Object.assign(enriched as Record<string, unknown>, {
+        volume_24h: null,
+        volume_7d: null,
+        sales_24h: null,
+        top_sales: null,
+        listing_count: null,
+        sniper_deals: null,
+        sales_tracked: false,
+        coverage: cov.ok ? cov.coverage : null,
+        coverage_failed: !cov.ok,
+      })
+    }
 
     return NextResponse.json(enriched, {
       headers: {

@@ -234,7 +234,7 @@ export const COLLECTIONS: Collection[] = [
     id: "panini-blockchain",
     label: "Panini Blockchain",
     shortLabel: "Panini",
-    sport: "Multi-Sport",
+    sport: "Soccer",
     chain: "panini",
     // 2026-09-20 — dbChain "ethereum" → null. This is a CORRECTION, and the
     // reason is measured, not stylistic.
@@ -270,11 +270,19 @@ export const COLLECTIONS: Collection[] = [
     partner: "Panini America",
     accent: "#C084FC",
     icon: "\u{1F0CF}",
-    pages: ["overview", "sniper"],
-    published: false,
+    // 2026-09-25 — PUBLISHED on the shared [collection] routes, Overview + Market
+    // (Trevor: "do all of this"). Its data is the WC Prizm plane bridged into the
+    // shared tables by sync_panini_bridge (known-issues #64). Every Panini surface
+    // carries the listing-gated coverage disclosure (components/collection/
+    // PaniniCoverageNote.tsx): Panini publishes no checklist, so RPC sees a card
+    // only once it has been listed — a floor, not a census. The static
+    // app/(collections)/panini-blockchain/ dirs (OpenSea bridge plane, no data)
+    // were deleted in the same change; they shadowed [collection]/overview.
+    pages: ["overview", "market"],
+    published: true,
     openSeaSlug: "paniniblockchain",
     supabaseCollectionId: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",
-    pitch: "Reserved for Panini Blockchain integration.",
+    pitch: "Panini Prizm World Cup 2026 on Panini's digital platform — every edition RPC has seen listed, priced, with live asks. Listing-based coverage: a floor, not a census.",
   },
   {
     id: "candy-mlb",

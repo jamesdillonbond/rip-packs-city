@@ -21,8 +21,11 @@ describe("getPublishedCollection", () => {
     expect(getPublishedCollection("not-a-real-collection")).toBeUndefined()
   })
   it("returns undefined for a collection that exists but is NOT published", () => {
-    // Panini is the registry's unpublished placeholder (Candy was published 2026-09-06).
-    const unpublished = ["panini-blockchain", "rwa"].map((id) => getCollection(id)).filter(Boolean)
+    // RWA is the registry's unpublished placeholder (Candy published 2026-09-06,
+    // Panini 2026-09-25 — re-pinned that day: the property is "unpublished →
+    // undefined", and RWA still exercises it).
+    const unpublished = ["rwa"].map((id) => getCollection(id)).filter(Boolean)
+    expect(unpublished.every((c) => !c!.published)).toBe(true)
     expect(unpublished.length).toBeGreaterThan(0)
     for (const c of unpublished) expect(getPublishedCollection(c!.id)).toBeUndefined()
   })

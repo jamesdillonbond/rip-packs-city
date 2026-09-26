@@ -96,6 +96,15 @@ describe("WalletSearchBand", () => {
     expect(flow.container.querySelector("input")).toBeTruthy()
   })
 
+  // 2026-09-25: Panini published with dbChain NULL (no chain, no wallets). The
+  // old guard (`chain && chain !== "flow"`) let null through and would have put
+  // a Flow wallet box on /panini-blockchain/*.
+  it("renders NOTHING on a collection with NO chain (Panini — owners are usernames)", () => {
+    const { container } = render(<WalletSearchBand scope="collection" collectionId="panini-blockchain" />)
+    expect(container.querySelector("input")).toBeNull()
+    expect(container.querySelector("[data-rpc-wallet-band]")).toBeNull()
+  })
+
   it("is present on the FIRST render pass so it ships in the server HTML", () => {
     // A wallet in localStorage must NOT remove the band before hydration —
     // the deferred check is what keeps the entry point in the delivered HTML.

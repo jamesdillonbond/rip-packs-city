@@ -37,6 +37,9 @@ import { fmvBasis } from "@/lib/fmv-basis"
 import { askAgeStamp } from "@/lib/market/ask-freshness"
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
 import PackMarketView from "@/components/packs/PackMarketView"
+import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
+import type { PaniniCoverage } from "@/lib/panini/coverage"
+import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 
 // ── Ask age ─────────────────────────────────────────────────────────────────
 //
@@ -140,6 +143,16 @@ type MarketResponse = {
   pagination: { total: number; page: number; limit: number; hasMore: boolean }
   clamp: { applied: boolean; ceilings: Record<string, number> }
   diagnostics: { rawCount: number; postClampCount: number; postFilterCount: number }
+  // Panini only (published 2026-09-25): the listing-gated coverage disclosure.
+  coverage?: PaniniCoverage | null
+  coverage_failed?: boolean
+}
+
+// ⛔ A collection with NO entity pages (Panini: no /edition, /player or /set
+// routes — lib/collection-slug.ts has no record for it) must not render those
+// links: each one would be a 404. Its rows link OUT to the listing instead.
+function hasEntityPages(collectionUrlSlug: string): boolean {
+  return getCollectionByUrlSlug(collectionUrlSlug) != null
 }
 
 // Mirrors /api/ready's per_collection rows. `sales_24h` is nullable on
@@ -498,8 +511,16 @@ function MarketInner() {
         </div>
       )}
 
+      {/* ── Panini: the listing-gated coverage disclosure rides every tab ── */}
+      {collectionId === "panini-blockchain" && (
+        <PaniniCoverageNote coverage={data?.coverage} failed={data?.coverage_failed === true || error != null} />
+      )}
+
       {/* ── Alerts front door ── turn a below-FMV listing you're watching into a
-          standing alert. Auth-gated (/alerts); anon bounces to login. */}
+          standing alert. Auth-gated (/alerts); anon bounces to login.
+          ⛔ Not on Panini: alerts have no Panini arm, and RPC never offers an
+          action the product lacks. */}
+      {collectionId !== "panini-blockchain" && (
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <Link
           href="/alerts"
@@ -510,6 +531,7 @@ function MarketInner() {
           🔔 ALERT ME ON DEALS →
         </Link>
       </div>
+      )}
 
       {/* ── Filter bar ── */}
       <section
@@ -887,7 +909,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
   const dapper = resolveDapperListingUrl(listing, collectionUrlSlug)
   // Full-card click target: navigate to the edition entity page; the outbound
   // listing moves to an explicit "View Listing →" button below.
-  const editionHref = listing.editionKey
+  const editionHref = listing.editionKey && hasEntityPages(collectionUrlSlug)
     ? `/${collectionUrlSlug}/edition/${encodeURIComponent(listing.editionKey)}`
     : null
   const hasThumb = !!listing.thumbnailUrl
@@ -1061,7 +1083,8 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
             const dapper = resolveDapperListingUrl(l, collectionUrlSlug)
             const stats = l.editionKey ? editionStats.get(l.editionKey) : null
             const uniqueBadges = Array.from(new Set(l.badgeSlugs))
-            const editionHref = l.editionKey ? `/${collectionUrlSlug}/edition/${encodeURIComponent(l.editionKey)}` : null
+            const entityLinks = hasEntityPages(collectionUrlSlug)
+            const editionHref = l.editionKey && entityLinks ? `/${collectionUrlSlug}/edition/${encodeURIComponent(l.editionKey)}` : null
             return (
               <tr
                 key={l.id}
@@ -1076,7 +1099,9 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   ) : null}
                 </td>
                 <td style={{ ...td, color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", fontWeight: 700 }}>
-                  {l.playerName ? (
+                  {l.playerName && !entityLinks ? (
+                    l.playerName
+                  ) : l.playerName ? (
                     <Link
                       href={momentSubjectHref(collectionUrlSlug, l.playerName, l.teamName) ?? "#"}
                       prefetch={false}
@@ -1091,7 +1116,9 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 <td style={{ ...td, color: dot }}>{tier || "—"}</td>
                 <td style={{ ...td, color: "var(--rpc-text-muted)" }}>{l.seriesName ? marketSeriesLabel(l.seriesName, collectionUrlSlug) : "—"}</td>
                 <td style={{ ...td, color: "var(--rpc-text-muted)" }}>
-                  {l.setName ? (
+                  {l.setName && !entityLinks ? (
+                    l.setName
+                  ) : l.setName ? (
                     <Link
                       href={`/${collectionUrlSlug}/set/${slugifyName(l.setName)}`}
                       prefetch={false}

@@ -14,20 +14,35 @@ const ROOT = join(__dirname, "..")
 const ROUTE = readFileSync(join(ROOT, "app", "api", "support-chat", "route.ts"), "utf8")
 
 describe("the concierge prompt does not call a published collection board-only", () => {
-  it("every 'board-only' claim is about Panini, never Candy", () => {
+  // ⭐ REWRITTEN 2026-09-25 (was: "every 'board-only' claim is about Panini").
+  // Panini PUBLISHED that day, so the one legitimate board-only claim became
+  // false too. The property was always "never call a PUBLISHED collection
+  // board-only"; it is now asserted for every published collection, and it is
+  // satisfiable at a population of zero claims (there are none today).
+  it("no 'board-only' claim names a PUBLISHED collection", () => {
+    const names = publishedCollections().flatMap((c) => [c.label, c.shortLabel ?? c.label, c.id])
     const windows: string[] = []
-    let i = ROUTE.indexOf("board-only")
+    const src = stripComments(ROUTE)
+    let i = src.indexOf("board-only")
     while (i >= 0) {
-      // The CLAUSE the claim sits in: back to the nearest sentence / clause break.
-      const before = ROUTE.slice(Math.max(0, i - 160), i)
+      const before = src.slice(Math.max(0, i - 160), i)
       const cut = Math.max(before.lastIndexOf(". "), before.lastIndexOf("; "), before.lastIndexOf(", '"))
-      windows.push(before.slice(cut + 1) + ROUTE.slice(i, i + 20))
-      i = ROUTE.indexOf("board-only", i + 1)
+      windows.push(before.slice(cut + 1) + src.slice(i, i + 20))
+      i = src.indexOf("board-only", i + 1)
     }
-    expect(windows.length, "no board-only claim left to check").toBeGreaterThan(0)
     for (const w of windows) {
-      expect(w, w).toContain("Panini")
-      expect(w, w).not.toMatch(/candy/i)
+      for (const n of names) expect(w.toLowerCase(), w).not.toContain(n.toLowerCase())
+    }
+    // Planted: the exact pre-publish sentence must be caught by the same scan.
+    const planted = "Panini is the one board-only surface (/insights/panini-squeeze)"
+    expect(names.some((n) => planted.toLowerCase().includes(n.toLowerCase()))).toBe(true)
+  })
+
+  it("Panini's tabs are derived from the registry, never hand-kept", () => {
+    expect(ROUTE).toContain('getCollection("panini-blockchain")?.pages')
+    expect(ROUTE).toContain("${PANINI_TAB_PATHS}")
+    for (const m of stripComments(ROUTE).matchAll(/\/panini-blockchain\/([a-z-]+)/g)) {
+      expect(["overview", "market"], `/panini-blockchain/${m[1]} is not a Panini tab`).toContain(m[1])
     }
   })
 

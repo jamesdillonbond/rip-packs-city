@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react"
-import PaniniOverviewClient from "@/app/(collections)/panini-blockchain/overview/PaniniOverviewClient"
-import PaniniSniperClient from "@/app/(collections)/panini-blockchain/sniper/PaniniSniperClient"
 import TransactionHistoryClient from "@/app/dashboard/history/TransactionHistoryClient"
 
+// 2026-09-25: the two Panini clients this file also covered were DELETED when Panini
+// published on the shared [collection] routes (their OpenSea bridge plane holds no data RPC
+// ingests, #64). Only the history client remains.
+//
 // Three pages converted for COVERAGE, not for a fix: all three were already honest, and
 // each carries an in-file comment explaining the distinction it makes. That is worth
 // recording — a conversion that finds nothing is a real result, and re-sweeping these later
@@ -25,154 +27,9 @@ vi.mock("next/link", () => ({
   ),
 }))
 
-const okJson = (body: unknown) =>
-  vi.fn(async (_i: unknown, _init?: RequestInit) =>
-    ({ ok: true, status: 200, json: async () => body }) as unknown as Response)
-const failJson = (status = 503, body: unknown = {}) =>
-  vi.fn(async (_i: unknown, _init?: RequestInit) =>
-    ({ ok: false, status, json: async () => body }) as unknown as Response)
 
 afterEach(() => cleanup())
 
-// ── Panini overview ─────────────────────────────────────────────────────────
-describe("PaniniOverviewClient — market stats", () => {
-  const STATS = {
-    floor_price: 0.42,
-    floor_price_symbol: "ETH",
-    total_volume: 128.5,
-    total_sales: 900,
-    num_owners: 310,
-    total_supply: 4149,
-    updated_at: new Date().toISOString(),
-  }
-
-  it("publishes the market figures on a successful read", async () => {
-    vi.stubGlobal("fetch", okJson(STATS))
-    render(<PaniniOverviewClient />)
-    await waitFor(() => expect(kpi("Cards On-Chain")).toMatch(/4,?149/))
-    expect(kpi("Unique Owners")).toMatch(/310/)
-    expect(kpi("Floor Price")).toMatch(/0\.4200 ETH/)
-  })
-
-  /** The value text of one KPI card, read by its label. */
-  function kpi(label: string): string {
-    const card = Array.from(document.querySelectorAll(".rpc-card")).find((c) =>
-      c.textContent?.includes(label),
-    )
-    if (!card) throw new Error(`no KPI card for ${label}`)
-    return (card.textContent ?? "").replace(label, "").trim()
-  }
-
-  // ⚠ These are a floor price and an owner count — MARKET claims. On a failed read they must
-  // be withheld, not zeroed: "Floor Price 0.0000 ETH" tells a collector the market collapsed.
-  //
-  // ⚠ Asserted PER CARD. The first version checked the whole page for "Floor Price 0", which
-  // never matches because the label and the value are separate elements — so a mutation
-  // replacing the null with 0 sailed through. Reading the card's own text is the difference
-  // between observing the value and observing the page.
-  // ⚠ MUTATION SURVIVOR, DOCUMENTED: `statsError` is redundant for the DISPLAY. The error
-  // branch renders "—", and without it a null `stats` reaches `fmt(null)` which also renders
-  // "—" — identical output, so no fixture separates them. It is still not dead code: it is
-  // what would let this page say something more specific than an em-dash, and it is the only
-  // signal distinguishing "we could not ask" from "there is no floor", which the next case
-  // shows are different facts.
-  it("withholds every figure when the read fails", async () => {
-    vi.stubGlobal("fetch", failJson())
-    render(<PaniniOverviewClient />)
-    await waitFor(() => expect(kpi("Floor Price")).toBe("—"))
-    expect(kpi("Unique Owners")).toBe("—")
-    expect(kpi("Total Volume")).toBe("—")
-    expect(kpi("Cards On-Chain")).toBe("—")
-  })
-
-  it("never renders a zeroed figure on a failed read", async () => {
-    vi.stubGlobal("fetch", failJson())
-    render(<PaniniOverviewClient />)
-    await waitFor(() => expect(kpi("Floor Price")).toBe("—"))
-    // A `?? 0` fallback would render "0.0000 ETH" and "0" — plausible numbers a reader
-    // cannot tell from a measurement.
-    for (const label of ["Floor Price", "Total Volume", "Unique Owners", "Cards On-Chain"]) {
-      expect(kpi(label)).not.toMatch(/\d/)
-    }
-  })
-
-  // ⚠ THE CASE THAT IS ACTUALLY LOAD-BEARING, found by mutation. On a FAILED read the
-  // error branch short-circuits before the value expression is reached, so `statsError` and
-  // a null `stats` render identically ("—") and no fixture can separate them — documented,
-  // not contrived. What the null DOES decide is a SUCCESSFUL read carrying a null field,
-  // which is a real state: a collection with nothing listed has no floor. A `?? 0` there
-  // would publish "0.0000 ETH" as the floor price of a market that simply has no ask.
-  it("renders an absent floor as withheld, not as a floor of zero", async () => {
-    vi.stubGlobal("fetch", okJson({ ...STATS, floor_price: null, num_owners: null }))
-    render(<PaniniOverviewClient />)
-    await waitFor(() => expect(kpi("Cards On-Chain")).toMatch(/4,?149/))
-    expect(kpi("Floor Price")).toBe("—")
-    expect(kpi("Unique Owners")).toBe("—")
-  })
-
-  // A genuine zero is a different statement and must survive.
-  it("renders a real zero volume as zero", async () => {
-    vi.stubGlobal("fetch", okJson({ ...STATS, total_volume: 0 }))
-    render(<PaniniOverviewClient />)
-    await waitFor(() => expect(kpi("Cards On-Chain")).toMatch(/4,?149/))
-    expect(kpi("Total Volume")).toMatch(/0\.0000 ETH/)
-  })
-
-  it("distinguishes loading from failed", async () => {
-    let resolve: (v: unknown) => void = () => {}
-    vi.stubGlobal("fetch", vi.fn(() => new Promise((r) => { resolve = r })))
-    render(<PaniniOverviewClient />)
-    // While in flight the page must not have decided anything yet — neither figures nor a
-    // failure notice.
-    const during = document.body.textContent ?? ""
-    expect(during).not.toMatch(/Floor Price\s*0\b/)
-    resolve({ ok: true, status: 200, json: async () => STATS })
-    await waitFor(() => expect(document.body.textContent).toMatch(/310/))
-  })
-})
-
-// ── Panini sniper ───────────────────────────────────────────────────────────
-describe("PaniniSniperClient — listings feed", () => {
-  const LISTING = {
-    id: "l1",
-    name: "Panini Card #1",
-    image_url: null,
-    traits: { Rarity: "Rare" },
-    price_eth: 0.5,
-    price_usd: 1500,
-    seller: "0xseller",
-    listed_at: new Date().toISOString(),
-    buy_url: "https://example.test/buy/1",
-  }
-  const FEED = { listings: [LISTING], floor_eth: 0.4, count: 1 }
-
-  it("renders a listing on a successful read", async () => {
-    vi.stubGlobal("fetch", okJson(FEED))
-    render(<PaniniSniperClient />)
-    await waitFor(() => expect(document.body.textContent).toMatch(/Panini Card #1/))
-  })
-
-  // ⚠ The page's own comment says the liveness dot is a CLAIM and must know about `error`.
-  // That distinction is what these assertions pin: a failed read must not leave a page that
-  // looks live and confident.
-  it("does not present a failed read as an empty market", async () => {
-    vi.stubGlobal("fetch", failJson())
-    render(<PaniniSniperClient />)
-    await waitFor(() => expect(document.body.textContent).toMatch(/couldn|unavailable|error|failed/i))
-    // "No listings" is a claim about the Panini market; the error path must own the screen.
-    expect(document.body.textContent).not.toMatch(/No listings (found|match)/i)
-  })
-
-  it("shows a genuinely empty feed as empty, not as an error", async () => {
-    vi.stubGlobal("fetch", okJson({ listings: [], floor_eth: null, count: 0 }))
-    render(<PaniniSniperClient />)
-    await waitFor(() => expect(document.body.textContent).toBeTruthy())
-    // Both directions: an honest zero must not be dressed up as a failure.
-    expect(document.body.textContent).not.toMatch(/couldn't load|failed to load/i)
-  })
-})
-
-// ── Dashboard transaction history ───────────────────────────────────────────
 describe("TransactionHistoryClient — the three-state ladder", () => {
   // ⚠ Shaped from the file's own TxEvent / VerifiedWallet interfaces. Fifth time this
   // session that an invented payload rendered nothing and read as a selector problem — the
@@ -296,80 +153,6 @@ describe("TransactionHistoryClient — the three-state ladder", () => {
 // fetch paths leaves most of them dark. These three landed the component gate BELOW its
 // functions threshold on the fetch tests alone, which is the documented price of a
 // conversion rather than a surprise.
-
-describe("PaniniSniperClient — filters, sort and rows", () => {
-  const listing = (over: Record<string, unknown> = {}) => ({
-    id: "l1",
-    name: "Panini Card #1",
-    image_url: null,
-    traits: { Rarity: "Rare" },
-    price_eth: 0.5,
-    price_usd: 1500,
-    seller: "0x1234567890abcdef",
-    listed_at: new Date(Date.now() - 3 * 60_000).toISOString(),
-    buy_url: "https://example.test/buy/1",
-    ...over,
-  })
-
-  async function mount(listings: unknown[]) {
-    vi.stubGlobal("fetch", okJson({ listings, floor_eth: 0.4, count: listings.length }))
-    render(<PaniniSniperClient />)
-    await waitFor(() => expect(document.body.textContent).toMatch(/Panini|listing/i))
-  }
-
-  it("renders a listing with its price and seller", async () => {
-    await mount([listing()])
-    const body = document.body.textContent ?? ""
-    expect(body).toMatch(/Panini Card #1/)
-    // The seller is shortened rather than dropped — a full 42-char address would blow the
-    // row, and omitting it entirely removes the only counterparty signal on the card.
-    expect(body).toMatch(/0x1234/)
-  })
-
-  it("renders a listing with every optional field absent", async () => {
-    await mount([listing({ name: null, image_url: null, price_usd: null, traits: {} })])
-    expect(document.querySelectorAll("img,[class*=card]").length).toBeGreaterThan(0)
-  })
-
-  it("filters by search text", async () => {
-    await mount([listing({ id: "a", name: "Lillard Auto" }), listing({ id: "b", name: "Curry Base" })])
-    const search = screen.getByPlaceholderText(/search/i)
-    fireEvent.change(search, { target: { value: "lillard" } })
-    await waitFor(() => expect(document.body.textContent).toMatch(/Lillard Auto/))
-    expect(document.body.textContent).not.toMatch(/Curry Base/)
-  })
-
-  it("applies the max-price filter at the boundary", async () => {
-    await mount([listing({ id: "a", name: "Cheap", price_eth: 0.2 }), listing({ id: "b", name: "Dear", price_eth: 2 })])
-    const max = screen.getByPlaceholderText(/max/i)
-    fireEvent.change(max, { target: { value: "1" } })
-    await waitFor(() => expect(document.body.textContent).not.toMatch(/Dear/))
-    expect(document.body.textContent).toMatch(/Cheap/)
-  })
-
-  it("re-sorts without losing rows", async () => {
-    await mount([listing({ id: "a", name: "Alpha", price_eth: 2 }), listing({ id: "b", name: "Beta", price_eth: 1 })])
-    const sort = screen.getByRole("combobox")
-    const opts = Array.from(sort.querySelectorAll("option")).map((o) => (o as HTMLOptionElement).value)
-    for (const v of opts) {
-      fireEvent.change(sort, { target: { value: v } })
-      // A comparator that throws or drops its tail is invisible in the sorted output but
-      // obvious in the row count.
-      await waitFor(() => {
-        const body = document.body.textContent ?? ""
-        expect(body).toMatch(/Alpha/)
-        expect(body).toMatch(/Beta/)
-      })
-    }
-  })
-
-  it("formats a recent listing time as a relative age", async () => {
-    await mount([listing({ listed_at: new Date(Date.now() - 2 * 60 * 60_000).toISOString() })])
-    // An absolute timestamp on a sniper feed is unreadable at a glance; the relative form is
-    // the whole point of the column.
-    expect(document.body.textContent).toMatch(/\d+\s*(m|h|d)\b/i)
-  })
-})
 
 describe("TransactionHistoryClient — filters, wallets and paging", () => {
   const EV = (over: Record<string, unknown> = {}) => ({

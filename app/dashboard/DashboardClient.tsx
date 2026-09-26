@@ -2371,8 +2371,12 @@ function WalletGroupCard({
             A Flow wallet cannot hold Candy (Solana) and a Solana wallet cannot
             hold Top Shot — rendering the other chain's tiles is a "0 moments"
             claim we manufactured. A thin-tab collection (no `collection` page)
-            links to its overview rather than a tab that does not exist. */}
-        {publishedCollections().filter((c) => (c.dbChain ?? "flow") === (detectAddressChain(group.addr) === "solana" ? "solana" : "flow")).map((col) => {
+            links to its overview rather than a tab that does not exist.
+            ⛔ 2026-09-25: EXACT dbChain, no `?? "flow"` default. Panini
+            (published that day) has dbChain null — no wallet concept at all —
+            and the default made every Flow wallet grow a Panini "0 moments"
+            tile. A collection with no chain matches no wallet. */}
+        {publishedCollections().filter((c) => c.dbChain != null && c.dbChain === (detectAddressChain(group.addr) === "solana" ? "solana" : "flow")).map((col) => {
           const stat = stats.find(
             (s) => s.collection_id === col.supabaseCollectionId || s.collection_slug === col.id.replace(/-/g, "_")
           );

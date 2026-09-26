@@ -31,6 +31,9 @@ export const COLLECTION_TIERS: Record<string, readonly string[]> = {
   "nfl-all-day": ["COMMON", "UNCOMMON", "RARE", "LEGENDARY", "ULTIMATE"],
   "laliga-golazos": ["COMMON", "UNCOMMON", "RARE", "LEGENDARY"],
   "ufc": ["CONTENDER", "CHALLENGER", "FANDOM", "CHAMPION"],
+  // Panini WC Prizm (published 2026-09-25). Measured live that day over the
+  // bridged editions: LEGENDARY 2,871 · RARE 1,367 · COMMON 499 · ULTIMATE 357.
+  "panini-blockchain": ["COMMON", "RARE", "LEGENDARY", "ULTIMATE"],
   // Pinnacle scarcity is expressed as variant_type, not tier — both surfaces
   // render a variant picker instead, so an empty tier list is correct.
   "disney-pinnacle": [],

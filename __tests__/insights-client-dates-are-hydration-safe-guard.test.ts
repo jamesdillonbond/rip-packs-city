@@ -478,25 +478,10 @@ describe("client date formatting is hydration-safe site-wide", () => {
     expect(isRuleA(v[0])).toBe(false)
   })
 
-  it("the four known post-mount clocks are marked, and the Panini date is PINNED not marked", () => {
-    // The one real defect had to be FIXED, not excused. If a later edit swaps
-    // the timeZone pin for a marker, this reds — an escape is not a fix.
-    const panini = readFileSync(
-      join(process.cwd(), "app/(collections)/panini-blockchain/overview/PaniniOverviewClient.tsx"),
-      "utf8",
-    )
-    // Rule A only: this file also carries a bare `n.toLocaleString()` number
-    // format (Rule B), which is inside the site-wide ratchet, not this ban.
-    expect(findUnsafeLocaleCalls(stripComments(panini)).filter(isRuleA)).toHaveLength(0)
-    // 2026-09-06: the PANINI_NEWS block that carried the pinned date was REMOVED
-    // (fabricated provenance copy). The property this test holds is "no Rule-A
-    // call in the file", asserted above; the `timeZone: "UTC"` pin is asserted
-    // only while the module still renders a module-constant date, so its
-    // removal cannot be mistaken for an escape.
-    if (/new Date\([^)]*\)\.toLocaleDateString/.test(stripComments(panini))) {
-      expect(panini).toContain('timeZone: "UTC"')
-    }
-
+  it("the four known post-mount clocks are marked", () => {
+    // 2026-09-25: the Panini half of this pin went with its file — PaniniOverviewClient was
+    // DELETED when Panini published on the shared [collection] routes. The fix it held (no
+    // Rule-A call) cannot regress in a file that no longer exists.
     for (const f of [
       "components/sniper/SniperStatsBar.tsx",
       "app/admin/analytics/AdminAnalyticsClient.tsx",

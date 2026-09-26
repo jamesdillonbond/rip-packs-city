@@ -185,7 +185,15 @@ const TABLE: Row[] = [
   ["/ufc", "GET", true],
   ["/nba-top-shot", "POST", false, "GET/HEAD only"],
   ["/candy-mlb", "GET", true, "published 2026-09-06 (thin) — the breadcrumb/JSON-LD root is crawlable"],
-  ["/panini-blockchain", "GET", false, "unpublished chain-three root stays gated"],
+  // ⭐ RE-PINNED 2026-09-25 (was `false`, "unpublished chain-three root stays
+  // gated"): Panini published on the shared routes, so its root is the
+  // breadcrumb/JSON-LD target like every other published collection's.
+  ["/panini-blockchain", "GET", true, "published 2026-09-25 — the root is crawlable"],
+  ["/panini-blockchain/overview", "GET", true, "published overview"],
+  ["/panini-blockchain/market", "GET", true, "published Market tab (panini_market_board)"],
+  ["/panini-blockchain/market", "POST", false, "GET/HEAD only"],
+  ["/panini-blockchain/sniper", "GET", false, "not a Panini tab: never opened anonymously (the proxy 307s it to /overview)"],
+  ["/panini-blockchain/collection", "GET", false, "not a Panini tab"],
   ["/panini", "GET", false, "unpublished root stays gated"],
   ["/api/collection-stats", "GET", true],
   ["/api/collection-stats", "POST", false],

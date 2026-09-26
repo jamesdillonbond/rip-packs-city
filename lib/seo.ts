@@ -455,6 +455,11 @@ const COLLECTION_LAYOUT_META: Record<string, PageMeta> = {
     description:
       'FMV pricing from real Magic Eden sales, floor and ask tracking, team and player pages, and market intelligence for Candy MLB collectors on Solana.',
   },
+  'panini-blockchain': {
+    title: 'Panini Prizm World Cup Analytics — Rip Packs City',
+    description:
+      "FMV pricing and live asks for Panini's digital Prizm World Cup 2026 cards, from every edition RPC has seen listed on Panini's marketplace — a floor, not a census.",
+  },
 }
 
 // Derived from the collection registry, never hand-listed (2026-09-24). The
@@ -477,8 +482,13 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
   const label = ownMeta(COLLECTION_LABELS, collectionId) ?? 'Flow'
   // The chain keyword follows the registry's authoritative `dbChain` — a
   // Solana collection (Candy MLB) must not advertise "Flow blockchain".
+  // ⚠ A collection with NO established chain (Panini, dbChain null) gets its
+  // own platform name, never "Flow blockchain" by default.
+  const chainCol = COLLECTIONS.find(c => c.id === collectionId)
   const chainKeyword =
-    COLLECTIONS.find(c => c.id === collectionId)?.dbChain === 'solana' ? 'Solana blockchain' : 'Flow blockchain'
+    chainCol?.dbChain === 'solana' ? 'Solana blockchain'
+    : chainCol && chainCol.dbChain == null ? `${chainCol.partner ?? chainCol.label} digital collectibles`
+    : 'Flow blockchain'
   // Per-collection OG image. /api/og/collection?id=<slug> renders a
   // 1200×630 card branded with the collection's icon, label, accent
   // color, and chain pill. Returns the generic fallback for unknown ids.

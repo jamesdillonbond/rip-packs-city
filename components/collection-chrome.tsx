@@ -62,11 +62,15 @@ const TICKER_ITEMS: Record<string, string[]> = {
     "⚾ PACK MARKET — confirmed floor, recent pack sales and pull value",
     "⚾ LIVE BOARD — floors, asks and 24h sales on the Candy MLB insights board",
   ],
+  // 2026-09-25 — rewritten at publish. The old four described the OpenSea
+  // Ethereum bridge plane RPC holds zero rows from (a live "MARKET SNIPER —
+  // OpenSea floor", five sports, a "coming soon" analyzer). Panini's published
+  // tabs are the WC Prizm plane; every line names a tool that exists.
   "panini-blockchain": [
-    "🃏 ETHEREUM BRIDGE LIVE — Panini cards now on-chain",
-    "⚡ MARKET SNIPER — live OpenSea floor + listings",
-    "🃏 BASKETBALL · FOOTBALL · SOCCER · WNBA · RACING",
-    "⚡ WALLET ANALYZER — coming soon for bridged cards",
+    "🃏 PANINI PRIZM WORLD CUP 2026 — every edition RPC has seen listed, priced",
+    "🃏 MARKET — lowest confirmed ask per edition vs FMV",
+    "🃏 SQUEEZE BOARD — which cards are still sealed in packs",
+    "🃏 LISTING-BASED COVERAGE — a floor, not a census",
   ],
 }
 

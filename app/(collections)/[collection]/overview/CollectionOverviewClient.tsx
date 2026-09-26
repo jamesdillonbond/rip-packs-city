@@ -7,6 +7,8 @@ import { nameOrDash, fmtPrice, fmtAge, minutesSince, freshnessFromAge, EM_DASH, 
 import InsiderSignalsPanel from "@/components/InsiderSignalsPanel"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { toolCardDesc } from "@/lib/collection/closed-market-chrome"
+import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
+import type { PaniniCoverage } from "@/lib/panini/coverage"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -45,11 +47,17 @@ interface CollectionStats {
   fmv_high_medium_count?: number | null
   fmv_high_medium_pct?: number | null
   fmv_age_minutes: number | null
-  volume_24h: number
-  sales_24h?: number
-  listing_count?: number
-  top_sales: TopSale[]
-  sniper_deals: SniperDeal[]
+  // null when the collection's sales are NOT a tracked feed (Panini: the route
+  // sets `sales_tracked: false` and nulls these rather than serving the Flow
+  // feeds' zeros as a market fact).
+  volume_24h: number | null
+  sales_24h?: number | null
+  listing_count?: number | null
+  top_sales: TopSale[] | null
+  sniper_deals: SniperDeal[] | null
+  sales_tracked?: boolean
+  coverage?: PaniniCoverage | null
+  coverage_failed?: boolean
   error?: string
 }
 
@@ -126,6 +134,20 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
     {
       title: "What Is Live Here",
       body: "This overview carries the market pulse; the full Candy MLB board (floors, asks, 24h sales, per-edition history) is one tap away below. Wallet analytics and pack tools for Solana wallets are next — they appear here when they are real, not before.",
+    },
+  ],
+  "panini-blockchain": [
+    {
+      title: "Panini Prizm World Cup 2026",
+      body: "Panini's digital Prizm World Cup 2026 cards live on Panini's own marketplace. RPC walks that marketplace continuously, prices every edition it has seen, and tracks the live asks against those prices.",
+    },
+    {
+      title: "What RPC Can and Cannot See",
+      body: "Panini publishes no full checklist, so RPC indexes a card only once it has been listed for sale. Every count and price here is a floor, not a census — the coverage note above says how much of the set that covers today.",
+    },
+    {
+      title: "Where the Deep Boards Live",
+      body: "The pack squeeze board, deals, pack EV, special serials and player boards are on the Panini WC Prizm board, one tap away below. Market here lists every edition with an ask RPC has confirmed in the last week.",
     },
   ],
   "ufc": [
@@ -239,7 +261,14 @@ export default function CollectionOverviewClient({ collection }: { collection: s
   // panels link to do not exist. Each panel below asks for what it needs.
   const saleDrivenFmv = collection === "candy-mlb"
   const hasSniperTab = enabledPages.has("sniper" as never)
-  const hasInsiderDetectors = (collectionObj?.dbChain ?? "flow") === "flow"
+  // ⚠ Explicit "flow", not `?? "flow"`: Panini's dbChain is null (no chain
+  // identity established), and the old default ran Flow detectors for it.
+  const hasInsiderDetectors = collectionObj ? collectionObj.dbChain === "flow" : true
+  // Panini (published 2026-09-25): sales are not a tracked feed — the route
+  // nulls them with `sales_tracked: false` — and every surface carries the
+  // listing-gated coverage disclosure.
+  const isPanini = collection === "panini-blockchain"
+  const salesUntracked = stats?.sales_tracked === false
   const freshness = freshnessFromAge(fmvAge, showLoading, frozenMarket, saleDrivenFmv ? "sale-driven" : "continuous")
 
   // ── Failed read vs empty result (deep-audit R1) ──────────────────────────
@@ -282,6 +311,8 @@ export default function CollectionOverviewClient({ collection }: { collection: s
   //   read ok, 0 rows    → rawTopSales empty ("no sales") — an honest market claim
   //   read ok, 0 nameable→ every row dropped ("N not matched yet") — about US
   const sniperDeals = stats?.sniper_deals ?? []
+  // `?? []` is safe here only because the `salesUntracked` branch below renders
+  // BEFORE the empty-state one: a null top_sales never reaches "No sales".
   const rawTopSales = stats?.top_sales ?? []
   const topSales = rawTopSales.filter(
     (s) => nameOrDash(s.edition_name, s.player_name, s.character_name) !== EM_DASH,
@@ -346,14 +377,41 @@ export default function CollectionOverviewClient({ collection }: { collection: s
               : null
           }
         />
-        <KpiCard
-          label="24h Sales Volume"
-          accent={accent}
-          loading={loading}
-          valueColor="#34D399"
-          value={stats ? `$${Math.round(stats.volume_24h ?? 0).toLocaleString()}` : null}
-        />
+        {isPanini ? (
+          // Panini's sales are not a tracked feed, so its third cell is the
+          // freshness of its prices — a figure RPC actually measures — never a
+          // "$0" volume manufactured from feeds that hold no Panini rows.
+          <KpiCard
+            label="Typical Price Checked"
+            accent={accent}
+            loading={loading}
+            valueColor="#34D399"
+            value={
+              stats?.coverage?.edition_age_p50_h != null
+                ? fmtAge(Math.round(stats.coverage.edition_age_p50_h * 60))
+                : stats
+                  ? EM_DASH
+                  : null
+            }
+          />
+        ) : (
+          <KpiCard
+            label="24h Sales Volume"
+            accent={accent}
+            loading={loading}
+            valueColor="#34D399"
+            value={
+              stats
+                ? stats.volume_24h != null
+                  ? `$${Math.round(stats.volume_24h).toLocaleString()}`
+                  : EM_DASH
+                : null
+            }
+          />
+        )}
       </div>
+
+      {isPanini && <PaniniCoverageNote coverage={stats?.coverage} failed={stats?.coverage_failed === true || statsUnavailable} />}
 
       {error && (
         <section className="rpc-card" style={{ padding: "12px 16px", borderLeft: "3px solid #F59E0B" }}>
@@ -491,7 +549,7 @@ export default function CollectionOverviewClient({ collection }: { collection: s
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--tier-legendary)" }} />
             <span className="rpc-label">Recent Top Sales</span>
-            <Link href={hasSniperTab ? basePath + "/sniper" : collection === "candy-mlb" ? "/insights/candy-mlb" : basePath + "/overview"} className="rpc-mono" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
+            <Link href={hasSniperTab ? basePath + "/sniper" : collection === "candy-mlb" ? "/insights/candy-mlb" : isPanini ? "/insights/panini-squeeze" : basePath + "/overview"} className="rpc-mono" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
               View all {"\u2192"}
             </Link>
           </div>
@@ -499,6 +557,12 @@ export default function CollectionOverviewClient({ collection }: { collection: s
             <SkeletonRows />
           ) : statsUnavailable ? (
             <PanelUnavailable />
+          ) : salesUntracked ? (
+            // Not "No sales": RPC has no complete sale feed for this collection,
+            // so an empty list here is a fact about us, not about the market.
+            <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
+              Sales aren&rsquo;t a tracked feed for this collection yet
+            </div>
           ) : rawTopSales.length === 0 ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
               No sales in the last 24h
@@ -653,6 +717,22 @@ export default function CollectionOverviewClient({ collection }: { collection: s
           </div>
           <Link href="/insights/candy-mlb" className="rpc-heading" style={{ display: "inline-block", padding: "10px 18px", background: accent, color: "#0B0B0D", borderRadius: 6, fontSize: "var(--text-sm)", letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none" }}>
             Open the Candy MLB board →
+          </Link>
+        </section>
+      )}
+
+      {isPanini && (
+        <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: accent, opacity: 0.7 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: accent }} />
+            <span className="rpc-label">Panini WC Prizm board</span>
+          </div>
+          <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", marginBottom: 12, lineHeight: 1.6 }}>
+            Which cards are still sealed in packs, deals against FMV, pack EV, special serials and the player board — under the same coverage note.
+          </div>
+          <Link href="/insights/panini-squeeze" className="rpc-heading" style={{ display: "inline-block", padding: "10px 18px", background: accent, color: "#0B0B0D", borderRadius: 6, fontSize: "var(--text-sm)", letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none" }}>
+            Open the Panini boards →
           </Link>
         </section>
       )}
