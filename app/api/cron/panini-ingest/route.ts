@@ -224,7 +224,9 @@ export async function POST(req: NextRequest) {
       // new rows carry computed_at = nowIso exactly). Until 2026-09-25 this was delete-then-insert,
       // and a batch whose insert failed ("TypeError: fetch failed", 6:36 AM PT) had already deleted
       // today's rows — two editions silently fell back to a 3-day-old panini-1.0.0 price. A failed
-      // insert now deletes nothing; a failed delete leaves a same-day duplicate the next walk clears.
+      // insert now deletes nothing. A failed delete leaves an OLDER same-day row beside the new one —
+      // harmless to latest-per-edition readers. Only a later SAME-DAY walk of that edition removes it
+      // (the delete is bounded to [today, nowIso)); otherwise it stays as history, and fmv_error says so.
       if (fmvRows.length) {
         for (let i = 0; i < fmvRows.length; i += CHUNK) {
           const chunk = fmvRows.slice(i, i + CHUNK);
