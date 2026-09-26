@@ -442,25 +442,33 @@ export default function PackHistoryClient() {
     setPage(0)
   }, [status, collection, activeWallet])
 
-  const expandPack = useCallback(async (packNftId: string) => {
+  // 2026-09-26: keyed by collection too (a pack id is unique only within a
+  // collection), and a failed read is CACHED AS AN ERROR — it used to be
+  // swallowed, which left the row reading "Loading lifecycle…" for ever.
+  const expandPack = useCallback(async (packNftId: string, collectionSlug: string) => {
     if (!activeWallet) return
-    if (expanded === packNftId) {
+    const key = collectionSlug + ":" + packNftId
+    if (expanded === key) {
       setExpanded(null)
       return
     }
-    setExpanded(packNftId)
-    if (lifecycleCache[packNftId]) return
+    setExpanded(key)
+    if (lifecycleCache[key] && !lifecycleCache[key].error) return
     try {
       const res = await fetch(
-        "/api/wallet/pack-lifecycle?wallet=" + encodeURIComponent(activeWallet) + "&packNftId=" + encodeURIComponent(packNftId),
+        "/api/wallet/pack-lifecycle?wallet=" + encodeURIComponent(activeWallet) +
+          "&packNftId=" + encodeURIComponent(packNftId) +
+          "&collection=" + encodeURIComponent(collectionSlug),
         { cache: "no-store" },
       )
+      // A body that will not parse throws into the catch below, which records the error.
       const json = await res.json()
-      if (res.ok) {
-        setLifecycleCache((m) => ({ ...m, [packNftId]: json }))
-      }
+      setLifecycleCache((m) => ({
+        ...m,
+        [key]: res.ok && json ? json : { error: "Couldn't load this pack's details — try again." },
+      }))
     } catch {
-      // swallow — keep row collapsed
+      setLifecycleCache((m) => ({ ...m, [key]: { error: "Couldn't load this pack's details — try again." } }))
     }
   }, [activeWallet, expanded, lifecycleCache])
 
@@ -700,15 +708,16 @@ export default function PackHistoryClient() {
                 </thead>
                 <tbody>
                   {history.packs.map((row) => {
-                    const isOpen = expanded === row.pack_nft_id
-                    const lifecycle = lifecycleCache[row.pack_nft_id]
+                    const key = row.collection_slug + ":" + row.pack_nft_id
+                    const isOpen = expanded === key
+                    const lifecycle = lifecycleCache[key]
                     return (
                       <ExpandableRow
-                        key={row.pack_nft_id}
+                        key={key}
                         row={row}
                         isOpen={isOpen}
                         lifecycle={lifecycle}
-                        onClick={() => expandPack(row.pack_nft_id)}
+                        onClick={() => expandPack(row.pack_nft_id, row.collection_slug)}
                       />
                     )
                   })}
@@ -886,6 +895,12 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
   )
 }
 
+function pullsSourceNote(source: unknown): string | null {
+  if (source === "dapper_pulls") return "from Dapper's record of this pack"
+  if (source === "delivery_burst") return "reconstructed from moment deliveries"
+  return null
+}
+
 function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }) {
   if (!lifecycle) {
     return <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Loading lifecycle…</div>
@@ -940,16 +955,23 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
       )}
       {pulls.length > 0 && (
         <div>
-          <div style={{ fontFamily: condensedFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", marginBottom: 6 }}>Pulls ({pulls.length})</div>
+          <div style={{ fontFamily: condensedFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", marginBottom: 6 }}>
+            Pulls ({pulls.length}){pullsSourceNote(lifecycle.pulls_source) ? <span style={{ textTransform: "none", letterSpacing: 0, fontFamily: monoFont, color: "rgba(255,255,255,0.4)" }}> · {pullsSourceNote(lifecycle.pulls_source)}</span> : null}
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 6 }}>
             {pulls.map((p: any, i: number) => (
               <div key={i} style={{ background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 4, padding: 4 }}>
                 {p.thumbnail_url ? <img src={proxyIpfsUrl(p.thumbnail_url) ?? undefined} alt="" style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 2 }} /> : <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#1a1a1d", borderRadius: 2 }} />}
                 <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, color: "#fff", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.player_name ?? p.character_name ?? "—"}</div>
-                <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.6)" }}>{fmtUsd(p.fmv_usd)}</div>
+                <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.6)" }}>{fmtUsd(p.current_fmv ?? p.fmv_usd ?? null)}</div>
               </div>
             ))}
           </div>
+        </div>
+      )}
+      {pulls.length === 0 && (row.has_rip || row.status === "ripped") && (
+        <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
+          What this pack pulled isn&apos;t identified yet.
         </div>
       )}
       {row.dist_id && (

@@ -15,6 +15,16 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-26. The pulls a wallet's pack row shows: Dapper's list for
+    // THIS pack and opener, else the wallet's own reconstructed burst, else
+    // nothing -- never the moment_acquisitions linkage that listed 95 "pulls"
+    // for a 3-moment pack. Collection-scoped editions; FMV 0 is unpriced.
+    fn: "get_wallet_pack_pulls",
+    test: "supabase/tests/get_wallet_pack_pulls.sql",
+    migration:
+      "supabase/migrations/20260926180000_audit_20260926_wallet_pack_pulls_rpc_names_what_a_pack_really_yielded.sql",
+  },
+  {
     // Added 2026-09-26. Pins the reconstruction of packs opened with NO pack NFT
     // (custodial Top Shot packs) from pack-pull delivery bursts: the 3 s burst
     // rule, that a burst overlapping a KNOWN rip is never reconstructed, whole-

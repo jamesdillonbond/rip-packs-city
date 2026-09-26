@@ -373,6 +373,33 @@ describe("PackHistoryClient", () => {
     expect(f.mock.calls.filter((c) => String(c[0]).includes("pack-lifecycle")).length).toBe(before)
   })
 
+  // 2026-09-26: a NON-2XX lifecycle read used to be swallowed, leaving the row on
+  // "Loading lifecycle…" for ever. It must say it failed.
+  it("states a failed (non-2xx) lifecycle read instead of loading for ever", async () => {
+    mount({ lifecycle: () => json(500, { error: "x" }, false) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Couldn.t load this pack.s details/))
+    expect(document.body.textContent).not.toMatch(/Loading lifecycle/)
+  })
+
+  it("asks for the pack's collection, prices a pull from current_fmv, and says where the pulls came from", async () => {
+    const f = mount({ lifecycle: () => json(200, { pulls: [{ player_name: "Scoot Henderson", current_fmv: 7.5 }], pulls_source: "dapper_pulls", ownership_chain: [] }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Scoot Henderson/))
+    expect(document.body.textContent).toMatch(/\$7\.50/)
+    expect(document.body.textContent).toMatch(/from Dapper.s record of this pack/)
+    expect(f.mock.calls.some((c) => String(c[0]).includes("collection=nba_top_shot"))).toBe(true)
+  })
+
+  it("says a ripped pack's pulls are not identified rather than showing an empty panel", async () => {
+    mount({ lifecycle: () => json(200, { pulls: [], pulls_source: null, ownership_chain: [] }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/isn.t identified yet/))
+  })
+
   // ⚠ A lifecycle that failed must SAY so inside the expanded row. Rendering the empty
   // "no pulls" shape would tell a collector their pack produced nothing.
   it("states a lifecycle failure inside the expanded row", async () => {

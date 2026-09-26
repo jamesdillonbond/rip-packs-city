@@ -6,10 +6,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // saved_wallet reaches get_pack_lifecycle — ownership chain resolves a match
 // and the RPC fixture is returned.
 
-const state: { user: any; owned: any; rpc: any } = {
+const state: { user: any; owned: any; rpc: any; rpcByFn: Record<string, any>; calls: string[] } = {
   user: null,
   owned: { data: [], error: null },
   rpc: { data: null, error: null },
+  rpcByFn: {},
+  calls: [],
 }
 
 vi.mock("@/lib/supabase", () => {
@@ -17,7 +19,7 @@ vi.mock("@/lib/supabase", () => {
     select: () => b, eq: () => b, not: () => b, limit: () => b,
     then: (resolve: any) => resolve(state.owned),
   }
-  return { supabaseAdmin: { from: () => b, rpc: async () => state.rpc } }
+  return { supabaseAdmin: { from: () => b, rpc: async (fn: string) => { state.calls.push(fn); return state.rpcByFn[fn] ?? state.rpc } } }
 })
 vi.mock("@/lib/auth/supabase-server", () => ({
   requireUser: async () => {
@@ -37,6 +39,8 @@ beforeEach(() => {
   state.user = null
   state.owned = { data: [], error: null }
   state.rpc = { data: null, error: null }
+  state.rpcByFn = {}
+  state.calls = []
 })
 
 describe("GET /api/wallet/pack-lifecycle", () => {
@@ -97,5 +101,57 @@ describe("GET /api/wallet/pack-lifecycle", () => {
     state.rpc = { data: {}, error: null }
     const res = await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xABC&packNftId=1"))
     expect(res.status).toBe(200)
+  })
+
+  // ── 2026-09-26: the pulls come from what the pack REALLY yielded ──
+  const authed = () => {
+    state.user = { id: "u1" }
+    state.owned = { data: [{ wallet_addr: "0xabc" }], error: null }
+  }
+  const junk = Array.from({ length: 95 }, (_, i) => ({ nft_id: String(i) }))
+
+  it("replaces the acquisition-linkage pull list with the wallet's own pull list", async () => {
+    authed()
+    state.rpcByFn.get_pack_lifecycle = { data: { pack_nft_id: "1", rip: { moments_pulled: 3 }, pulls: junk }, error: null }
+    state.rpcByFn.get_wallet_pack_pulls = { data: { source: "dapper_pulls", pulls: [{ nft_id: "a" }, { nft_id: "b" }, { nft_id: "c" }], pulls_total: 3, pulls_identified: 3, pulls_priced: 2 }, error: null }
+    const body = await (await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xabc&packNftId=1&collection=nba_top_shot"))).json()
+    expect(body.pulls).toHaveLength(3)
+    expect(body.pulls_source).toBe("dapper_pulls")
+    expect(body.pulls_priced).toBe(2)
+  })
+
+  it("never shows a pull list that is not the size of the pack — 95 'pulls' for a 3-moment pack become none", async () => {
+    authed()
+    state.rpcByFn.get_pack_lifecycle = { data: { pack_nft_id: "1", rip: { moments_pulled: 3 }, pulls: junk }, error: null }
+    state.rpcByFn.get_wallet_pack_pulls = { data: { source: null, pulls: [] }, error: null }
+    const body = await (await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xabc&packNftId=1&collection=nba_top_shot"))).json()
+    expect(body.pulls).toEqual([])
+    expect(body.pulls_source).toBeNull()
+  })
+
+  it("keeps a lifecycle pull list that IS the size of the pack", async () => {
+    authed()
+    state.rpcByFn.get_pack_lifecycle = { data: { pack_nft_id: "1", rip: { moments_pulled: 2 }, pulls: [{ nft_id: "x" }, { nft_id: "y" }] }, error: null }
+    const body = await (await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xabc&packNftId=1"))).json()
+    expect(body.pulls).toHaveLength(2)
+    expect(body.pulls_source).toBe("rip_record")
+  })
+
+  it("a reconstructed rip (burst:) skips the pack lifecycle and lists its own moments", async () => {
+    authed()
+    state.rpcByFn.get_wallet_pack_pulls = { data: { source: "delivery_burst", pulls: [{ nft_id: "5" }], pulls_total: 1, pulls_identified: 1, pulls_priced: 1 }, error: null }
+    const body = await (await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xabc&packNftId=burst%3A5&collection=nba_top_shot"))).json()
+    expect(state.calls).not.toContain("get_pack_lifecycle")
+    expect(body.pulls_source).toBe("delivery_burst")
+    expect(body.pulls).toHaveLength(1)
+  })
+
+  it("a failed pull read errors — it never falls back to the linkage it replaces", async () => {
+    authed()
+    state.rpcByFn.get_pack_lifecycle = { data: { pack_nft_id: "1", rip: { moments_pulled: 95 }, pulls: junk }, error: null }
+    state.rpcByFn.get_wallet_pack_pulls = { data: null, error: { message: "boom" } }
+    const res = await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xabc&packNftId=1&collection=nba_top_shot"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(JSON.stringify(await res.json())).not.toContain("\"pulls\"")
   })
 })
