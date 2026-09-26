@@ -67,7 +67,7 @@ Stack: Next.js 16 · React 19 · TS 5 · Tailwind 4 · Supabase (Pro, Large) · 
 
 **Repo map** (re-derive; never quote a count): [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
 
-**Tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships visible product. No tweets / Reddit / TC DMs on multi-chain pre-launch.
+**Tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships; no multi-chain outreach pre-launch.
 
 ---
 
@@ -84,7 +84,7 @@ Never omit `teamId` on a Vercel API/MCP call.
 
 ## Frequently used commands
 
-**List moved to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-19** (package.json data). ⚠ **`npm ci` FIRST in a fresh sandbox or agent worktree**, or `npx vitest`/`tsc` die on `MODULE_NOT_FOUND …` (why: tooling-gotchas.md). ⭐ **`tsc --noEmit` DOES run in the laptop VM** with `--max-old-space-size=3072`; it OOMs at the default heap, and writing that off as "CI will typecheck" put a compile error on `main` (09-19).
+**List: [tooling-gotchas.md](docs/reference/tooling-gotchas.md)** (package.json data). ⚠ **`npm ci` FIRST in a fresh sandbox or agent worktree**, or `npx vitest`/`tsc` die on `MODULE_NOT_FOUND …`. ⭐ **`tsc --noEmit` DOES run in the laptop VM** with `--max-old-space-size=3072`; it OOMs at the default heap, and writing that off as "CI will typecheck" put a compile error on `main` (09-19).
 
 
 ⚠ **Exit-code traps** (pipe status, `grep && push`, a wrapper's `exit code 0`): verbatim in tooling-gotchas.md.
@@ -221,8 +221,7 @@ Flow/EVM: hex, `0x`-prefixed, case-INsensitive. Solana: **base58, un-prefixed, C
 
 - **Use [lib/address.ts](lib/address.ts) — never a bare `.toLowerCase()`, never a fresh helper** (a grep found TEN already). Which function for which job: [chain-strategy.md](docs/reference/chain-strategy.md).
 - ⛔ **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(k,"flow")` is **stricter** than the `startsWith("0x")` it resembles. **Pin the hex path as its own no-change arm**, or the Solana assertions pass against a function that changed every Flow label.
-- ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence** (4 were live HREFs: chain-strategy.md). ⚠ **A sweep is only as wide as its PATH ARGUMENT**, and `tsc` is a REACHABILITY instrument: delete the variable to find its other readers.
-- ⚠ **A per-device identity key must be chain-scoped, and its sign-out / account-switch sweep by PREFIX** — an exact-name list left the other chain's key for the next collector.
+- ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence**; a per-device identity key is chain-scoped, swept by PREFIX: chain-strategy.md.
 
 ### Collection UUIDs
 
@@ -245,8 +244,9 @@ All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-tr
 ## Concierge non-negotiable rules
 
 1. **RPC is READ-ONLY** — no cart, no gifting, no trading. **Never offer an action the product lacks.** This binds every surface, not just the concierge.
+2. **A NAME is not a PERSON; a team label is not a FRANCHISE** (09-25): resolve via `resolve_player_name` / `resolve_team_name` (aliases, league spelling, renames, father/son, historic labels); a new father/son or rename goes in `player_relations`; the league's spelling is an ALIAS, never a rename.
 
-The rest, incl. Pinnacle's FMV triple-join and DERIVE-don't-recite: [concierge.md](docs/reference/concierge.md).
+The rest (Pinnacle's FMV triple-join, DERIVE-don't-recite): [concierge.md](docs/reference/concierge.md); rule 2: [player-identity.md](docs/reference/player-identity.md).
 
 ---
 

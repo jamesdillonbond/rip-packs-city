@@ -39,7 +39,7 @@ Guards: `__tests__/concierge-2026-09-13-metadata-badges-context.test.ts` pins th
 
 **Engagement review — closed and open:** feedback #4067 (alerts filter UI: "toggleable + type-to-fill") is **already built** — `app/alerts/AlertsClient.tsx` has `ChipTypeahead` for players / sets / teams and `Chip` toggles for channels, badges, jersey / last-mint / never-sold — but its row still reads `new`. ✅ Flipped to `shipped` 10:41 PT 09-13 once Trevor authorised the write ("handle these yourself"); the trigger stamped `shipped_at`. Real concierge traffic is ~0–3 real turns/day, so the degraded-share check stays `low_sample` and the honest instrument for "is it answering well" remains reading the rows.
 
-### 2026-09-25 pass — names are not people: `resolve_player_name` and the `player_identity` block (39 tools)
+### 2026-09-25 pass — names are not people (the full model: [player-identity.md](player-identity.md)): `resolve_player_name` and the `player_identity` block (39 tools)
 
 **Input was the crosswalk work of the same day (#139, batches 44–54).** Until this pass every player tool took the typed label as the person: `get_player_editions` slugged it and called the RPC (an alias — "Joseph Flacco", "Stephen Curry", "Kenny Gainwell", "Mike Vick" — was a catalog miss), a suffix-less namesake resolved to the row spelt that way (the FATHER: "Marvin Harrison", "Tim Hardaway", "Gary Payton") with no word about the son, `get_fmv`'s `ILIKE '%name%'` pooled father and son into one distribution, and a name change (Robby Anderson → Robbie Chosen 2022; the Jaguars' Josh Allen → Josh Hines-Allen 2024) was invisible.
 

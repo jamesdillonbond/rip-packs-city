@@ -188,3 +188,10 @@ today" is NOT a reason** — `lib/address.ts` exists for exactly that case.
 Moved to keep the memory file under its character limit. CLAUDE.md keeps the rule and points here for the case.
 
 - ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence** — 4 were **HREFs** on live pages, sending readers to an analyzer that resolved nothing. ⚠ **A sweep is only as wide as its PATH ARGUMENT**, and `tsc` is a REACHABILITY instrument: delete the variable to find its other readers.
+
+## Displaced from CLAUDE.md — 2026-09-25 (verbatim)
+
+Moved to keep the memory file under its character limit (the concierge's second non-negotiable rule took the room). CLAUDE.md keeps the rule and points here for the case.
+
+- ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence** (4 were live HREFs: chain-strategy.md). ⚠ **A sweep is only as wide as its PATH ARGUMENT**, and `tsc` is a REACHABILITY instrument: delete the variable to find its other readers.
+- ⚠ **A per-device identity key must be chain-scoped, and its sign-out / account-switch sweep by PREFIX** — an exact-name list left the other chain's key for the next collector.
