@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { makeReq } from "./cron-req-helper"
+import type { DistImagePassResult } from "@/lib/packs/topshot-dist-images"
 
 // /api/cron/topshot-pack-dist-names-onchain — names Top Shot pack
 // distributions the dead GraphQL catalog left with `title NULL`, from the PDS
@@ -16,6 +17,11 @@ const heartbeat = vi.fn<(opts: unknown) => Promise<boolean>>(async () => true)
 vi.mock("@/lib/pipeline/heartbeat", () => ({ writeInvocationHeartbeat: (opts: unknown) => heartbeat(opts) }))
 const terminal = vi.fn<(opts: unknown) => Promise<boolean>>(async () => true)
 vi.mock("@/lib/pipeline/terminal-run", () => ({ logTerminalRun: (opts: unknown) => terminal(opts) }))
+// The image pass has its own suite (lib-topshot-dist-images); here it is a stub
+// whose result the route must fold into ok / counts / extra.
+const IMAGES_CLEAN: DistImagePassResult = { ok: true, error: null, complete: true, imageless: 0, filled: 0, no_pack: 0, no_image: 0, fetch_errors: 0, write_errors: 0 }
+const images = vi.fn<(opts: unknown) => Promise<DistImagePassResult>>(async () => IMAGES_CLEAN)
+vi.mock("@/lib/packs/topshot-dist-images", () => ({ fillMissingDistImages: (opts: unknown) => images(opts) }))
 
 // A chainable supabase stub: the read resolves `rows`; every update is captured
 // and answers `updateResult` (an array of returned ids = rows that LANDED).
@@ -82,6 +88,8 @@ beforeEach(() => {
   sb.updateResult = { data: [{ id: "x" }], error: null }
   heartbeat.mockClear()
   terminal.mockClear()
+  images.mockReset()
+  images.mockImplementation(async () => IMAGES_CLEAN)
 })
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -206,6 +214,42 @@ describe("the sweep", () => {
     await captured!()
     expect(f).not.toHaveBeenCalled()
     expect(lastTerminal()).toMatchObject({ ok: false, rowsWritten: 0 })
+  })
+
+  it("runs the image pass after naming and folds its filled count into the written total", async () => {
+    sb.rows = [ROW_8825]
+    const f = stubFlow([CHAIN_8825])
+    images.mockImplementation(async () => ({ ...IMAGES_CLEAN, imageless: 3, filled: 2, no_image: 1 }))
+    await GET(req("Bearer cron-tok"))
+    await captured!()
+    expect(images).toHaveBeenCalledTimes(1)
+    expect(images.mock.invocationCallOrder[0]).toBeGreaterThan((f as any).mock.invocationCallOrder[0])
+    expect(images.mock.calls[0][0]).toMatchObject({ collectionId: "95f28a17-224a-4025-96ad-adf8a4c63bfd" })
+    const t = lastTerminal()
+    expect(t).toMatchObject({ ok: true, rowsFound: 4, rowsWritten: 3 })
+    expect(t.extra.images).toMatchObject({ filled: 2, no_image: 1 })
+  })
+
+  it("a failed image pass fails the run and names its error, even when naming succeeded", async () => {
+    sb.rows = [ROW_8825]
+    stubFlow([CHAIN_8825])
+    images.mockImplementation(async () => ({ ...IMAGES_CLEAN, ok: false, error: "pack media 1: HTTP 500 with no redirect", fetch_errors: 1 }))
+    await GET(req("Bearer cron-tok"))
+    await captured!()
+    const t = lastTerminal()
+    expect(t.ok).toBe(false)
+    expect(String(t.error)).toMatch(/pack media 1/)
+    expect(t.rowsWritten).toBe(1)
+  })
+
+  it("an image pass that THROWS still fails the run and still writes the terminal row", async () => {
+    sb.rows = []
+    stubFlow([])
+    images.mockImplementation(async () => { throw new Error("boom") })
+    await GET(req("Bearer cron-tok"))
+    await captured!()
+    expect(lastTerminal()).toMatchObject({ ok: false })
+    expect(String(lastTerminal().error)).toMatch(/images: boom/)
   })
 
   it("nothing unnamed is a clean, complete, zero-row run", async () => {

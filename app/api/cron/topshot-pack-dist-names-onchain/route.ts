@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { logTerminalRun } from "@/lib/pipeline/terminal-run"
+import { fillMissingDistImages, type DistImagePassResult } from "@/lib/packs/topshot-dist-images"
 
 // Top Shot pack distributions that have NO NAME get one from the chain.
 //
@@ -31,6 +32,11 @@ import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 // `not_on_chain` and left unnamed (a NULL, not a fabricated title); a budget
 // stop is `complete:false` on an ok run; a write error fails the run and the
 // row count means rows the UPDATE actually returned.
+//
+// IMAGES (2026-09-25). A second pass fills `image_url` for dists that have
+// none, from the pack NFT's own media redirect (lib/packs/topshot-dist-images.ts)
+// — PDS carries no image for most new dists. Same honesty rules; its counts
+// ride in `extra.images`, and its failure fails the run.
 //
 // Auth: `Bearer $CRON_SECRET` (Vercel cron) or `Bearer $INGEST_SECRET_TOKEN`
 // (manual/backstop). 202 + after(): heartbeat FIRST, terminal row LAST.
@@ -169,6 +175,7 @@ async function run(request: NextRequest) {
     let scriptCalls = 0
     let scriptErrors = 0
     let writeErrors = 0
+    let images: DistImagePassResult | null = null
 
     try {
       const read = await readUnnamed()
@@ -214,13 +221,31 @@ async function run(request: NextRequest) {
       errMsg = e instanceof Error ? e.message : String(e)
     }
 
+    // Images after names, so a dist named this run is also pictured this run.
+    try {
+      images = await fillMissingDistImages({
+        db: supabaseAdmin,
+        collectionId: COLLECTION_ID,
+        maxRows: MAX_ROWS_PER_RUN,
+        deadlineMs: startedMs + TIME_BUDGET_MS,
+      })
+      if (!images.ok) {
+        ok = false
+        errMsg = errMsg ?? images.error
+      }
+      if (!images.complete) complete = false
+    } catch (e) {
+      ok = false
+      errMsg = errMsg ?? `images: ${e instanceof Error ? e.message : String(e)}`
+    }
+
     await logTerminalRun({
       pipeline: PIPELINE_NAME,
       startedAt: startedMs,
       ok,
       error: errMsg,
-      rowsFound: unnamed,
-      rowsWritten: named,
+      rowsFound: unnamed + (images?.imageless ?? 0),
+      rowsWritten: named + (images?.filled ?? 0),
       rowsSkipped: notOnChain,
       collectionSlug: "nba-top-shot",
       extra: {
@@ -231,6 +256,7 @@ async function run(request: NextRequest) {
         script_calls: scriptCalls,
         script_errors: scriptErrors,
         write_errors: writeErrors,
+        images,
         duration_ms: Date.now() - startedMs,
       },
     })
