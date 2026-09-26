@@ -577,3 +577,22 @@ describe("GET /api/market — ascending sorts reach the edition RPCs", () => {
     if (sort === "discount_asc" && rpcName === "get_topshot_sniper_deals") expect(call?.args?.p_limit).toBe(1000)
   })
 })
+
+// 2026-09-26 — `?collectionId=disney-pinnacle` reached a uuid column raw and
+// 500'd in production (22P02). A known slug resolves; anything else is a 400.
+describe("GET /api/market — collectionId accepts a slug, refuses junk", () => {
+  it("a known slug is served as its collection (not a 500)", async () => {
+    install({ pinnacle_catalog: { data: [], error: null }, editions: { data: [], error: null } })
+    const res = await GET(req("https://t/api/market?collectionId=disney-pinnacle"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).diagnostics?.source).toBe("pinnacle_catalog")
+  })
+
+  it("an unknown non-UUID value is a 400 naming it, never a 500", async () => {
+    install({ editions: { data: [], error: null } })
+    const res = await GET(req("https://t/api/market?collectionId=not-a-collection"))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain("not-a-collection")
+  })
+})
+

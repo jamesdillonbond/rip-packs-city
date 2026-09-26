@@ -38,6 +38,7 @@ import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fm
 import { apiErrorResponse } from "@/lib/api-error"
 import { readPaniniCoverage } from "@/lib/panini/coverage"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { getCollectionUuid } from "@/lib/collections"
 
 export const dynamic = "force-dynamic"
 // AllDay's get_allday_market_listings was rewritten for LIMIT-pushdown (~62ms), but
@@ -873,13 +874,27 @@ async function fetchModernListings(
   }))
 }
 
+const MARKET_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
 
-  const collectionId = sp.get("collectionId") || sp.get("collection_id") || ""
-  if (!collectionId) {
+  const collectionParam = (sp.get("collectionId") || sp.get("collection_id") || "").trim()
+  if (!collectionParam) {
     return NextResponse.json(
       { error: "collectionId is required" },
+      { status: 400 }
+    )
+  }
+  // A collection SLUG names the same subject as its UUID, so it resolves; any
+  // other non-UUID value is a 400. It used to reach a uuid column raw:
+  // `?collectionId=disney-pinnacle` → 22P02 → a 500 (production, 2026-09-26).
+  const collectionId = MARKET_UUID_RE.test(collectionParam)
+    ? collectionParam.toLowerCase()
+    : getCollectionUuid(collectionParam)
+  if (!collectionId) {
+    return NextResponse.json(
+      { error: "unknown collection: " + collectionParam },
       { status: 400 }
     )
   }
