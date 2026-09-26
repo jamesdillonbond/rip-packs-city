@@ -11,6 +11,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — `resolve_canonical_player` (wallet-search's resolve-or-create) consults the league-id crosswalk before the name slug — the last name writer that keyed a person on a label alone (`20260926004254`, pinned) · Cowork (batch 53)
+
+**What:** after the alias lookup and before the slug match, `resolve_player_identity(collection, name, team, NULL)`. `'one'` is the person: its keyed row, or — when RPC has none — a row minted with the LEAGUE's spelling, the identity keyed (`matched_by = 'resolver'`), the label's slug aliased when no row owns it. `'ambiguous'` and `'none'` fall through to the unchanged alias → slug → mint path, so nothing that resolved before resolves differently (the pinned suite's earlier cases pass untouched; four new ones: a Warriors "Gary Payton" → Gary Payton II by team, two Paytons with no evidence → the legacy mint under the label, a feed-backed rookie minted as "Newman Rookie Jr." from the label "Newman Rookie" with the label aliased, idempotence; planted defect: the identity arm disabled → the Warriors case resolves to a freshly minted row). Post-condition on the live crosswalk: "LeBron James" + "Los Angeles Lakers" → his keyed row, players count unchanged. With batch 52, every name writer — the resolver, the seeder, the daily linker — now resolves through the crosswalk where it is feed-backed.
+
+**Revert:** re-apply the body from `20260925135939`; re-point the pin.
+
 ### 2026-09-25 · 📝 DISPOSITIONED — the daytime monitor's "sync-nba-projections 100% failure" filing is known-issue #8 (shelved 09-23, alert muted to 10-13); upstreams 403, not offseason — no change · Claude Code (Trevor's box)
 - Filing `2026-09-26T0006Z-daytime-monitor-…` committed with a disposition appended and registered in `inbox/INDEX.md` (546 → 547; guard green). The monitor looked only in the ledger/Declined list; the decision lives in known-issues #8. Its suggested fix ("exit ok when no games") would turn a real 403 block into a green run, and pausing the lane would remove the signal that the block has lifted — so the lane keeps running, failing safe.
 **Revert:** `git log --grep='DISPOSITIONED — the daytime monitor'` → `git revert <sha>` (docs only).
