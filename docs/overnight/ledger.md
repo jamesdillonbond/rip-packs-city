@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — same fix, same page: the team page's "Sets featuring …" panel (`components/entity/TeamSets.tsx` + `/api/entity/team-sets`) had the identical Flow-only wallet gate, so a Candy holder's "You own X / Y" per set could never render. Now reads the checklist's per-chain slot and parses through `lib/entity/checklist-wallet.ts` (Solana verbatim, Flow key on Candy → 400; Flow unchanged). `get_team_sets` matches `wallet_address = p_wallet` exactly (read live). Tests extended; planted lowercase fold → red · Claude Code (web sandbox)
+
+**Revert:** `git revert` the commit titled "fix(candy): team Sets panel reads the Solana wallet" — code only.
+
 ### 2026-09-25 · 🧹 SHIPPED — Candy MLB team checklist takes a Solana wallet: every `/candy-mlb/team/*` page's "Paste your wallet to see what you're missing" refused every real holder ("Enter a valid 0x Flow address") because the component AND both routes (`/api/entity/team-checklist`, `-progress`) forced `/^0x[0-9a-f]{16}$/` on a lowercased value — and a folded base58 key matches nothing in the exact-match RPCs (live control, ~8:55 PM PT: a real Yankees holder reads 7/7 owned verbatim, **0** lowercased). New `lib/entity/checklist-wallet.ts` parses per the collection's `dbChain`: Solana passes VERBATIM, a Flow key on a Solana page is a 400 / an inline refusal, own localStorage slot (`rpc_checklist_wallet_solana`), no Flow `/api/wallet-search` warm-up and no "Indexing…" promise for a Solana key (an uncached one says RPC has no cards indexed for it). Flow path byte-for-byte unchanged, pinned as its own arm. Tests: `team-checklist-solana-wallet`, `api-entity-team-checklist-wallet` (planted lowercase fold → 4 red). No DB change · Claude Code (web sandbox)
 
 **Revert:** `git revert` the commit titled "fix(candy): team checklist takes a Solana wallet" — code only.
