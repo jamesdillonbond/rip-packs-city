@@ -86,3 +86,37 @@ export async function attributeEscrowHeldToSellers<T extends { wallet_address: s
   })
   return { rows: out, remapped, unmatched, error: null }
 }
+
+/** Hard cap on escrow-listed cards a per-wallet backfill re-reads from DAS. */
+export const ESCROW_LISTED_READ_CAP = 200
+
+export type EscrowListedMints = { mints: string[]; error: string | null; capped: boolean }
+
+/**
+ * #145: the token mints a wallet currently has LISTED on Magic Eden. While
+ * listed, those cards sit in the escrow, so a DAS getAssetsByOwner walk of the
+ * SELLER cannot see them — a per-wallet backfill must read them from the
+ * listings table and attribute them back to the seller. A failed read returns
+ * `error` (never an empty list dressed as "nothing listed").
+ */
+export async function listedMintsInEscrowForSeller(
+  supabase: SupabaseLike,
+  seller: string,
+  table = "candy_listings",
+): Promise<EscrowListedMints> {
+  if (!seller || seller === MAGIC_EDEN_SOLANA_ESCROW) return { mints: [], error: null, capped: false }
+  try {
+    const { data, error } = await supabase
+      .from(table)
+      .select("token_mint")
+      .eq("seller", seller)
+      .eq("is_active", true)
+      .order("token_mint", { ascending: true })
+      .limit(ESCROW_LISTED_READ_CAP + 1)
+    if (error) return { mints: [], error: error.message ?? String(error), capped: false }
+    const all = [...new Set(((data ?? []) as Array<{ token_mint: string | null }>).map((r) => r.token_mint).filter((m): m is string => !!m))]
+    return { mints: all.slice(0, ESCROW_LISTED_READ_CAP), error: null, capped: all.length > ESCROW_LISTED_READ_CAP }
+  } catch (e) {
+    return { mints: [], error: e instanceof Error ? e.message : String(e), capped: false }
+  }
+}

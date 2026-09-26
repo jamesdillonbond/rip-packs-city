@@ -13,7 +13,8 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { paginateOwner, type DasAsset } from "@/lib/chains/solana/das"
+import { paginateOwner, getAsset, type DasAsset } from "@/lib/chains/solana/das"
+import { MAGIC_EDEN_SOLANA_ESCROW, listedMintsInEscrowForSeller } from "@/lib/chains/solana/escrow"
 import { isBurnt,
   isPack,
   CANDY_MLB_COLLECTION_ADDRESS,
@@ -113,6 +114,14 @@ export async function POST(req: NextRequest) {
     // R123 (2026-09-20): a rejected chunk was console.logged and the run row
     // still claimed ok=true. Non-fatal to the walk; not a success.
     const writeErrors: string[] = []
+    const seenMoments = new Set<string>()
+    // #145: cards this wallet has LISTED on Magic Eden sit in the escrow, so
+    // the owner walk below cannot see them. Counted separately.
+    let escrowListed = 0
+    let escrowWritten = 0
+    let escrowStale = 0
+    let escrowCapped = false
+    let escrowError: string | null = null
     try {
       await paginateOwner(wallet, async (items) => {
         const now = new Date().toISOString()
@@ -128,6 +137,7 @@ export async function POST(req: NextRequest) {
             return { ...s, wallet_address: wallet, last_seen_at: now }
           })
           .filter((r): r is NonNullable<typeof r> => r !== null)
+        for (const r of rows) seenMoments.add(String(r.moment_id))
         found += rows.length
         for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
           const chunk = rows.slice(i, i + UPSERT_CHUNK)
@@ -176,18 +186,72 @@ export async function POST(req: NextRequest) {
         }
       })
 
+      // #145: attribute this wallet's escrow-held LISTED cards back to it. Each
+      // mint is re-read from DAS and written only if the escrow still holds it
+      // (a listing row can outlive its sale by a tick); a failed listings read
+      // fails the run — the wallet's holdings would otherwise be published as
+      // complete while every listed card is missing.
+      const listed = await listedMintsInEscrowForSeller(supabaseAdmin as any, wallet)
+      escrowCapped = listed.capped
+      if (listed.error) {
+        escrowError = listed.error
+      } else {
+        const now = new Date().toISOString()
+        const escrowRows: Array<Record<string, unknown>> = []
+        for (const mint of listed.mints) {
+          if (seenMoments.has(mint)) continue
+          let a: DasAsset
+          try {
+            a = await getAsset(mint)
+          } catch (e) {
+            escrowError = `getAsset ${mint}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200)
+            continue
+          }
+          if (a?.ownership?.owner !== MAGIC_EDEN_SOLANA_ESCROW) { escrowStale++; continue }
+          if (!inCandyCollection(a) || isBurnt(a) || isPack(a)) continue
+          const s = normalizeSerial(a)
+          if (!s.moment_id) continue
+          escrowRows.push({ ...s, wallet_address: wallet, last_seen_at: now })
+        }
+        escrowListed = escrowRows.length
+        found += escrowRows.length
+        for (let i = 0; i < escrowRows.length; i += UPSERT_CHUNK) {
+          const chunk = escrowRows.slice(i, i + UPSERT_CHUNK)
+          const { data, error } = await (supabaseAdmin as any)
+            .from("wallet_moments_cache")
+            .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
+            .select("moment_id")
+          if (error) {
+            writeErrors.push(`wallet_moments_cache (escrow-listed): ${error.message}`)
+          } else {
+            const n = data?.length ?? chunk.length
+            written += n
+            escrowWritten += n
+          }
+        }
+      }
+      const runOk = writeErrors.length === 0 && escrowError === null
       await logRun(
         startedAtIso,
         wallet,
         found,
         written,
-        writeErrors.length === 0,
-        writeErrors.length ? `${writeErrors.length} rejected write(s): ${writeErrors.slice(0, 3).join(" | ")}`.slice(0, 500) : null,
+        runOk,
+        writeErrors.length
+          ? `${writeErrors.length} rejected write(s): ${writeErrors.slice(0, 3).join(" | ")}`.slice(0, 500)
+          : escrowError
+            ? `escrow-listed read failed: ${escrowError}`.slice(0, 500)
+            : null,
         {
           force,
           rows_found: found,
           rows_written: written,
           write_errors: writeErrors.length,
+          escrow_listed: escrowListed,
+          escrow_listed_written: escrowWritten,
+          escrow_listed_stale: escrowStale,
+          escrow_listed_capped: escrowCapped,
+          escrow_listed_error: escrowError,
           duration_ms: Date.now() - startedMs,
         },
       )

@@ -18,6 +18,9 @@ const state = vi.hoisted(() => ({
   paginateThrows: false,
   upsert: { data: [{ moment_id: "m1" }] as { moment_id: string }[] | null, error: null as any },
   runs: [] as any[],
+  listings: { data: [] as any[] | null, error: null as any },
+  assets: {} as Record<string, any>,
+  upserted: [] as any[][],
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -27,13 +30,23 @@ vi.mock("next/server", async (importOriginal) => {
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     rpc: async (_n: string, args: any) => { state.runs.push(args); return { data: null, error: null } },
-    from: () => ({ upsert: () => ({ select: async () => state.upsert }) }),
+    from: (table: string) => {
+      if (table === "candy_listings") {
+        const b: any = { select: () => b, eq: () => b, order: () => b, limit: async () => state.listings }
+        return b
+      }
+      return { upsert: (rows: any[]) => { state.upserted.push(rows); return { select: async () => state.upsert } } }
+    },
   },
 }))
 vi.mock("@/lib/chains/solana/das", () => ({
   paginateOwner: async (_w: string, cb: (items: any[]) => Promise<void>) => {
     if (state.paginateThrows) throw new Error("DAS down")
     for (const page of state.pages) await cb(page)
+  },
+  getAsset: async (id: string) => {
+    if (!(id in state.assets)) throw new Error("no asset " + id)
+    return state.assets[id]
   },
 }))
 vi.mock("@/lib/chains/solana/normalize", () => ({
@@ -127,6 +140,9 @@ describe("POST /api/wallet-backfill-candy — deferred DAS walk", () => {
     state.paginateThrows = false
     state.upsert = { data: [{ moment_id: "m1" }], error: null }
     state.runs = []
+    state.listings = { data: [], error: null }
+    state.assets = {}
+    state.upserted = []
   })
 
   async function accept(body: any = { wallet: VALID_SOL }) {
@@ -208,5 +224,46 @@ describe("POST /api/wallet-backfill-candy — deferred DAS walk", () => {
     expect((await res.json()).skipped).toBe("discovery_pending")
     expect(state.captured).toBeNull()
     expect(state.runs.at(-1).p_extra.skip_reason).toBe("discovery_pending")
+  })
+
+  // #145 (2026-09-26): a card the wallet has LISTED on Magic Eden sits in the
+  // escrow, so the owner walk cannot see it. The backfill reads the wallet's
+  // active listings and writes those cards back under the wallet.
+  const ESCROW = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix"
+
+  it("writes an escrow-held card the wallet has listed under the wallet (not the escrow)", async () => {
+    state.pages = [[asset({ m: "m1" })]]
+    state.listings = { data: [{ token_mint: "m9" }], error: null }
+    state.assets = { m9: asset({ m: "m9", ownership: { owner: ESCROW } }) }
+    state.upsert = { data: [{ moment_id: "x" }], error: null }
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.escrow_listed_written).toBe(1)
+    const escrowWrite = state.upserted.flat().find((r: any) => r.moment_id === "m9")
+    expect(escrowWrite.wallet_address).toBe(VALID_SOL)
+  })
+
+  it("skips a listing whose card the escrow no longer holds (sold or delisted since)", async () => {
+    state.pages = []
+    state.listings = { data: [{ token_mint: "m9" }], error: null }
+    state.assets = { m9: asset({ m: "m9", ownership: { owner: "SOMEONE_ELSE" } }) }
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.escrow_listed_stale).toBe(1)
+    expect(state.upserted.flat().some((r: any) => r.moment_id === "m9")).toBe(false)
+  })
+
+  it("a failed listings read FAILS the run instead of reporting the holdings complete", async () => {
+    state.pages = [[asset({ m: "m1" })]]
+    state.listings = { data: null, error: { message: "listings down" } }
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(false)
+    expect(String(run.p_error)).toContain("escrow-listed read failed: listings down")
   })
 })
