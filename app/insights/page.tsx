@@ -289,7 +289,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "Parallel Premiums",
     blurb:
-      "What each Top Shot parallel — Hexwave, Jukebox, Club Collection, Cosmic — is really worth versus its Standard base. A Wembanyama Hexwave /25 trades at ~58x its Standard. Top Shot and dapper.market name the parallels; only RPC prices them.",
+      "What each Top Shot parallel — Hexwave, Jukebox, Club Collection, Cosmic — is really worth versus its Standard base. The low-numbered parallels trade at many multiples of their Standard. Top Shot and dapper.market name the parallels; only RPC prices them.",
     cta: "Open parallel premiums",
     available: true,
   },
@@ -346,7 +346,7 @@ const CARDS: Card[] = [
           // ships a second ICONs series.
           blurb:
             // baked-count-ok: closed 125-edition print run, verified 2026-08-26
-            "Our first non-Flow board. 2026 MLB Base Series ICONs on Solana — secondary FMV, best offers, pack EV, and holder concentration across all 125 editions and the Rainbow parallels. The market is days old, so this is an early read, not a census.",
+            "Our first non-Flow board. 2026 MLB Base Series ICONs on Solana — secondary FMV, best offers, pack EV, and holder concentration across all 125 editions and the Rainbow parallels. The market is young and thin, so this is an early read, not a census.",
           cta: "Open the Candy board",
           available: true,
         },

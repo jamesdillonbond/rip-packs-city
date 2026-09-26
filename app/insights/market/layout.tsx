@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   // so baking the brand in here rendered it twice. (deep-audit D24)
   title: "The RPC Index — Tier-Segmented Top Shot Market",
   description:
-    "Top Shot's blended floor is a sub-$1 number dominated by commons. The RPC Index segments the market by tier and normalizes each to 100 — a free, honest read of Legendary, Rare, Fandom, and Common momentum. No signup.",
+    "Top Shot's blended floor is dominated by commons. The RPC Index segments the market by tier and normalizes each to 100 — a free, honest read of Legendary, Rare, Fandom, and Common momentum. No signup.",
   keywords: [
     "NBA Top Shot market index",
     "Top Shot price index",

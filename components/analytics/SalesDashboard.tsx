@@ -241,7 +241,7 @@ export default function SalesDashboard({
         <Info size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
         <p className="text-xs text-[color:var(--rpc-text-secondary)] leading-relaxed">
           Buyer and seller counts reflect on-chain marketplace activity only. NBA Top Shot’s centralized
-          marketplace (~94% of total volume) doesn’t expose participant wallets, so leaderboard data is
+          marketplace (most of total volume) doesn’t expose participant wallets, so leaderboard data is
           concentrated on Flowty and direct on-chain Pinnacle sales. Total volume figures include all
           marketplaces.{" "}
           <a

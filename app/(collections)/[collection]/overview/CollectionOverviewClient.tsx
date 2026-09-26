@@ -115,7 +115,7 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
     },
     {
       title: "The Golazos Ecosystem",
-      body: "Golazos runs a clean four-tier structure (Legendary, Rare, Uncommon, Fandom) across 575 editions and 23 sets. Because volume is lighter than Top Shot, floor pricing matters — RPC measures relative value against the floor so you can see which moments are priced correctly and which aren't.",
+      body: "Golazos runs a clean four-tier structure (Legendary, Rare, Uncommon, Fandom) across every edition and set. Because volume is lighter than Top Shot, floor pricing matters — RPC measures relative value against the floor so you can see which moments are priced correctly and which aren't.",
     },
     {
       title: "Deals Relative to Market",

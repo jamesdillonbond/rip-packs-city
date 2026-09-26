@@ -448,7 +448,7 @@ const COLLECTION_LAYOUT_META: Record<string, PageMeta> = {
   'ufc': {
     title: 'UFC Strike Analytics — Rip Packs City',
     description:
-      'FMV pricing, sniper deals, and wallet analytics for UFC Strike moments. Collection migrated to Aptos; 247 NFTs indexed on Flow.',
+      'FMV pricing, market data, and wallet analytics for UFC Strike moments indexed on Flow (the collection has since migrated to Aptos).',
   },
   'candy-mlb': {
     title: 'Candy MLB Analytics — Rip Packs City',

@@ -908,7 +908,7 @@ function WhaleLeaderboard({ short }: { short: string }) {
             fontFamily: "var(--font-mono)",
           }}
         >
-          On-chain data only — Top Shot&apos;s centralized marketplace is ~94% of volume and doesn&apos;t expose wallet identities.{" "}
+          On-chain data only — Top Shot&apos;s centralized marketplace carries most of its volume and doesn&apos;t expose wallet identities.{" "}
           <Link href="/analytics/sales" className="underline" style={{ color: "var(--rpc-red)" }}>
             View full sales breakdown at /analytics/sales
           </Link>.

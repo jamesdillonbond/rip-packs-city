@@ -86,7 +86,7 @@ export const EMPTY_BOARD: NewCollectorsBoard = {
 }
 
 export const COVERAGE_NOTE =
-  "Active buyers, returning buyers, market $ and composition (spend mix, gateway sets/players) are reliable for recent windows (~92% of active buyers captured). New-collector counts are a lower-confidence, directional metric — partial historical buyer coverage mislabels some returning collectors as new; the debiased count strips wallets seen selling before their first observed buy. These self-correct as deep-history buyer resolution backfills."
+  "Active buyers, returning buyers, market $ and composition (spend mix, gateway sets/players) are reliable for recent windows (most active buyers are resolved to a wallet). New-collector counts are a lower-confidence, directional metric — partial historical buyer coverage mislabels some returning collectors as new; the debiased count strips wallets seen selling before their first observed buy. These self-correct as deep-history buyer resolution backfills."
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null

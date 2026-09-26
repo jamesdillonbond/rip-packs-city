@@ -27,7 +27,12 @@ describe("COVERAGE_NOTE", () => {
   it("flags new-collector counts as lower-confidence/directional", () => {
     expect(COVERAGE_NOTE).toMatch(/directional/)
     expect(COVERAGE_NOTE).toMatch(/debiased/)
-    expect(COVERAGE_NOTE).toMatch(/92%/)
+    // RE-PINNED 2026-09-26: this asserted the literal "92%" — a buyer-resolution
+    // coverage figure that moves as backfill runs (Top Shot re-measured 95.2% on
+    // 09-20), i.e. it pinned a decaying snapshot. The property is that the note
+    // DISCLOSES partial coverage without freezing a percentage.
+    expect(COVERAGE_NOTE).toMatch(/most active buyers/)
+    expect(COVERAGE_NOTE).not.toMatch(/\d+\s*%/)
   })
 })
 

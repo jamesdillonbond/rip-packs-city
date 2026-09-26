@@ -36,7 +36,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Candy MLB ICONs — Rip Packs City",
     description:
-      "Secondary FMV, best offers, and pack EV for the 2026 MLB Base Series ICONs on Solana. An early read on a days-old market.",
+      "Secondary FMV, best offers, and pack EV for the 2026 MLB Base Series ICONs on Solana. An early read on a young, thin market.",
     url: `${SITE_URL}/insights/candy-mlb`,
     siteName: "Rip Packs City",
     images: [
