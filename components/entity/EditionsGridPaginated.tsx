@@ -177,7 +177,9 @@ function useWalletEditionOwnership(enabled: boolean, collectionUrlSlug: string):
 // Badge titles per loaded edition, fetched in batches as pages load. A slug is
 // in `map` only once its read SUCCEEDED; a failed batch leaves its slugs
 // unknown (and retryable on the next page load) rather than badge-less.
-const BADGE_BATCH = 500
+// Matches MAX_SLUGS in app/api/entity/edition-badges/route.ts (a GET: slugs
+// ride in the query string, so the batch bounds the URL length).
+const BADGE_BATCH = 100
 function useEditionBadges(enabled: boolean, collectionUrlSlug: string, slugs: string[]): { map: Map<string, string[]>; failed: boolean } {
   const [map, setMap] = useState<Map<string, string[]>>(() => new Map())
   const [failed, setFailed] = useState(false)
@@ -189,10 +191,8 @@ function useEditionBadges(enabled: boolean, collectionUrlSlug: string, slugs: st
     for (let i = 0; i < need.length; i += BADGE_BATCH) {
       const batch = need.slice(i, i + BADGE_BATCH)
       batch.forEach((sl) => requested.current.add(sl))
-      fetch("/api/entity/edition-badges", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collection: collectionUrlSlug, slugs: batch }),
+      // ⚠ GET — proxy.ts opens /api/entity/* to signed-out readers for GET only.
+      fetch(`/api/entity/edition-badges?collection=${encodeURIComponent(collectionUrlSlug)}&slugs=${batch.map(encodeURIComponent).join(",")}`, {
         signal: AbortSignal.timeout(15000),
       })
         .then(async (r) => {

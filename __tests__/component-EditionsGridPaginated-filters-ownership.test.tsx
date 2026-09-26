@@ -166,7 +166,11 @@ describe("EditionsGridPaginated — badge filter", () => {
   it("requests badges for the loaded slugs and offers them rookie-first", async () => {
     renderGrid()
     const sel = (await screen.findByLabelText("All Badges")) as HTMLSelectElement
-    expect(JSON.parse(String(badgeMock.mock.calls[0][1]?.body))).toEqual({ collection: "nba-top-shot", slugs: ["1:1", "1:2", "1:2::17"] })
+    // A GET (proxy.ts opens /api/entity/* to signed-out readers for GET only).
+    expect(badgeMock.mock.calls[0][1]?.method ?? "GET").toBe("GET")
+    const u = new URL(String(badgeMock.mock.calls[0][0]), "https://t")
+    expect(u.searchParams.get("collection")).toBe("nba-top-shot")
+    expect(u.searchParams.get("slugs")!.split(",")).toEqual(["1:1", "1:2", "1:2::17"])
     expect(Array.from(sel.options).map((o) => o.value)).toEqual(["all", "Rookie Year", "Top Shot Debut"])
   })
 

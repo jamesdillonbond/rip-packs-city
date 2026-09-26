@@ -207,6 +207,11 @@ const TABLE: Row[] = [
   ["/nba-top-shot/edition/some-slug", "POST", false],
   ["/api/entity/set-editions", "GET", true],
   ["/api/entity/set-editions", "POST", false],
+  // The player-page Badge filter's read. It first shipped as a POST and every
+  // signed-out reader got a proxy 401 (3 of 3 live calls, 2026-09-25) — it must
+  // be a GET, which this row holds open, and a POST stays gated.
+  ["/api/entity/edition-badges", "GET", true],
+  ["/api/entity/edition-badges", "POST", false],
 
   // ── Global catalog search ────────────────────────────────────────────────────
   // Read-only index over data that is already anonymously readable (the
