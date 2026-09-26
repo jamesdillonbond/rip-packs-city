@@ -523,3 +523,31 @@ describe("GET /api/market — Candy MLB (Solana) arm", () => {
     expect(body.pagination.hasMore).toBe(false)
   })
 })
+
+// #146 (1), 2026-09-26 — "FMV ↑" / "Discount ↑" were mapped to listed_desc, so
+// the edition RPCs cut their window by the wrong key (All Day: the 500 most
+// recently listed of ~4,300; Top Shot: the 500 deepest discounts of ~13,700) and
+// the route re-sorted that window. The keys now reach the RPC 1:1.
+// ⚠ LAST in the file: the Top Shot arm loads the FMV display guard into a
+// module-level cache, and an empty guard loaded here would leak into the
+// display-guard test above.
+describe("GET /api/market — ascending sorts reach the edition RPCs", () => {
+  it.each([
+    [ALLDAY, "get_allday_market_editions", "fmv_asc"],
+    [ALLDAY, "get_allday_market_editions", "discount_asc"],
+    [TS, "get_topshot_sniper_deals", "fmv_asc"],
+    [TS, "get_topshot_sniper_deals", "discount_asc"],
+  ])("%s → %s receives p_sort_by=%s", async (collectionId, rpcName, sort) => {
+    install({ [`rpc:${rpcName}`]: { data: [], error: null }, editions: { data: [], error: null } })
+    const sb = state.sb as { rpc: (n: string, a?: Record<string, unknown>) => unknown }
+    const baseRpc = sb.rpc.bind(sb)
+    const calls: Array<{ name: string; args?: Record<string, unknown> }> = []
+    sb.rpc = (n, a) => { calls.push({ name: n, args: a }); return baseRpc(n, a) }
+    await GET(req(`https://t/api/market?collectionId=${collectionId}&sort=${sort}`))
+    const call = calls.find((c) => c.name === rpcName)
+    expect(call, `${rpcName} was not called`).toBeTruthy()
+    expect(call?.args?.p_sort_by).toBe(sort)
+    // Ascending discount is demoted in-app like descending, so it pulls the same 1,000.
+    if (sort === "discount_asc" && rpcName === "get_topshot_sniper_deals") expect(call?.args?.p_limit).toBe(1000)
+  })
+})
