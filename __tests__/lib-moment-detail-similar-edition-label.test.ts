@@ -5,7 +5,7 @@
 // printing ladder already on the page, else the print run, so it says what it is.
 
 import { describe, it, expect } from "vitest"
-import { similarEditionParallelLabel } from "@/lib/moment-detail/similar-edition-label"
+import { similarEditionParallelLabel, candyParallelFromExternalId } from "@/lib/moment-detail/similar-edition-label"
 
 const ladder = [
   { external_id: "273:9048", subedition_name: "Standard", circulation_count: 149 },
@@ -28,5 +28,37 @@ describe("similarEditionParallelLabel", () => {
     expect(similarEditionParallelLabel({ external_id: "273:9048::19", circulation_count: null }, ladder)).toBe(" · Hexwave /25")
     expect(similarEditionParallelLabel({ external_id: null, circulation_count: null }, ladder)).toBe("")
     expect(similarEditionParallelLabel({ circulation_count: null }, [])).toBe("")
+  })
+})
+
+// Candy MLB (2026-09-25): no printing ladder, so two Rainbow Trouts rendered as
+// identical "LEGENDARY · … · /15" tiles. The colour comes from the external_id;
+// the slug rule was checked against all 125 live editions (25 Rainbows named,
+// 100 base cards null) before shipping.
+describe("candyParallelFromExternalId", () => {
+  it("names a Rainbow parallel by colour", () => {
+    expect(candyParallelFromExternalId("mike-trout-pink", "Mike Trout")).toBe("Pink")
+    expect(candyParallelFromExternalId("bobby-witt-jr-blue", "Bobby Witt Jr.")).toBe("Blue")
+  })
+  it("returns null for a BASE card — never a fabricated colour", () => {
+    expect(candyParallelFromExternalId("mike-trout", "Mike Trout")).toBeNull()
+    expect(candyParallelFromExternalId("pete-crow-armstrong", "Pete Crow-Armstrong")).toBeNull()
+    // Non-ASCII is DROPPED in Candy's slugs: the base card must still read null.
+    expect(candyParallelFromExternalId("jos-ramrez", "José Ramírez")).toBeNull()
+    expect(candyParallelFromExternalId("ronald-acua-jr", "Ronald Acuña Jr.")).toBeNull()
+  })
+  it("returns null when the id is not this player's", () => {
+    expect(candyParallelFromExternalId("aaron-judge", "Mike Trout")).toBeNull()
+    expect(candyParallelFromExternalId(null, "Mike Trout")).toBeNull()
+  })
+  it("feeds the tile label as a fallback, never over a ladder name", () => {
+    expect(similarEditionParallelLabel({ external_id: "mike-trout-pink", circulation_count: 15 }, [], "Pink")).toBe(" · Pink /15")
+    expect(
+      similarEditionParallelLabel(
+        { external_id: "x", circulation_count: 25 },
+        [{ external_id: "x", subedition_name: "Ruby", circulation_count: 25 }],
+        "Pink",
+      ),
+    ).toBe(" · Ruby /25")
   })
 })

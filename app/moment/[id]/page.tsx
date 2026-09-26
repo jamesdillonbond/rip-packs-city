@@ -51,7 +51,7 @@ import {
   type SubeditionSibling,
 } from "@/lib/moment-detail/fetchers"
 import { mapNotableTagsToSpecialSerials } from "@/lib/moment-special-serials"
-import { similarEditionParallelLabel } from "@/lib/moment-detail/similar-edition-label"
+import { similarEditionParallelLabel, candyParallelFromExternalId } from "@/lib/moment-detail/similar-edition-label"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { seriesDisplay } from "@/lib/series-label"
@@ -1612,7 +1612,7 @@ export default async function MomentPage(
                       letterSpacing: "0.12em",
                     }}
                   >
-                    {(s.tier ?? "").toUpperCase()}{s.series != null ? " · " + seriesDisplay(s.series, e.collection_slug) : ""} · {s.set_name ?? "—"}{similarEditionParallelLabel(s, subSiblings)}
+                    {(s.tier ?? "").toUpperCase()}{s.series != null ? " · " + seriesDisplay(s.series, e.collection_slug) : ""} · {s.set_name ?? "—"}{similarEditionParallelLabel(s, subSiblings, isCandyColl ? candyParallelFromExternalId(s.external_id, s.player_name) : null)}
                   </div>
                   <div
                     style={{
