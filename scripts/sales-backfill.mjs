@@ -152,6 +152,7 @@ async function main() {
     const { data: rows } = await supabase
       .from("wallet_moments_cache")
       .select("moment_id, edition_key, serial_number")
+      .eq("collection_id", TOPSHOT_COLLECTION_ID) // moment ids collide across collections (#142)
       .in("moment_id", batch)
     if (rows) {
       for (const r of rows) {

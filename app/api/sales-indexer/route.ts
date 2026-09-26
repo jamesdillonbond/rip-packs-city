@@ -438,12 +438,21 @@ export async function POST(req: NextRequest) {
     }
 
     // 4a: Check wallet_moments_cache
+    // ⛔ SCOPED TO TOP SHOT (2026-09-25, #142). The cache holds every collection
+    // and moment ids collide across them: without this filter an All Day row
+    // (nft 6024287, Amon-Ra St. Brown #2630) answered for Top Shot nft 6024287
+    // (LaMelo Ball 35:816). Its edition_key failed the Top Shot lookup, so the
+    // EDITION fell through to `moments` and landed right — but the SERIAL was
+    // already taken from the foreign row and the fall-through only fills a
+    // null. 333 sales carried a foreign serial in the current cache snapshot.
+    // Guard: wallet-moments-cache-moment-id-reads-are-collection-scoped.test.ts.
     const cacheMap = new Map<string, { edition_key: string; serial_number: number | null }>()
     for (let i = 0; i < uniqueNftIds.length; i += 500) {
       const batch = uniqueNftIds.slice(i, i + 500)
       const { data: cacheRows, error: cacheErr } = await (supabaseAdmin as any)
         .from("wallet_moments_cache")
         .select("moment_id, edition_key, serial_number")
+        .eq("collection_id", TOPSHOT_COLLECTION_ID)
         .in("moment_id", batch)
 
       if (cacheErr) throw new Error(`wallet_moments_cache lookup: ${cacheErr.message}`)
