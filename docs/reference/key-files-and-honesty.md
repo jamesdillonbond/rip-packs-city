@@ -2454,3 +2454,8 @@ COALESCE** — a reviewer reading only the diff would get that backwards.
 
 ⭐ **The tell is a NULL `price_source` (or any basis field) beside a published verdict:** a ratio is only a buy signal against a price that is actually on offer.
 ⚠ The ranker (`mv_topshot_pack_reality_top_ev`) was already safe, because it excludes NULL-depletion rows. Always check EVERY reader of a shared EV source, not only the one the finding named.
+
+## Displaced from CLAUDE.md 2026-09-25 (verbatim)
+
+- ⚠ **A SERVER-SEEDED PROP (`initial={rows}`) is a fifth layer the table misses** — pass `initialFailed`, assert by SSR: key-files-and-honesty.md.
+- ⚠ **ISR CACHES A FAILED READ for the whole `revalidate` window** and self-heals warm, so it is **easy to declare fixed by accident**: test *"does a COLD pass exceed the budget"*, never *"is the page OK now"* (#33).
