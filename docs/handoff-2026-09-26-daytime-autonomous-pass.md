@@ -40,3 +40,9 @@ Checks run before pushing code: full vitest suite (4 shards, 18.8k tests) green 
 - Security [], stalled [], 0 pg_cron failures in 3 h, CI green on `a14d7ff47`.
 - Set-page statement timeouts (10:17 / 10:27 AM PT, during the concurrent session's Pinnacle set migrations) did not recur.
 - `wallet-backfill-candy` latest run: ok, 62 escrow-listed cards written.
+
+## Continued pass (~12:10 → ~12:50 PM PT) — Top Shot "lowest ask" was false on ~1,230 editions (#149)
+- **Found:** the Tre Jones Base Set page (124:5108) said "lowest ask at $20.00" over 69 open listings from $0.20. `sync_edition_offers_from_atlas()` took the floor from listings re-observed in 24 h; the Atlas firehose only re-reports CHANGED listings (#85), so cheap quiet listings age out, and an edition with no 24 h listing kept its old floor forever.
+- **Shipped** (`d23b32d1e`, 2 migrations, DB-only): `20260926192206` NULLs a 24 h floor undercut by an open listing (seen ≤ 30 d) under half of it; `20260926192947` applies the same test to the STORED floor. First ticks: `undercut_nulled 239` (12:26), `stale_undercut_nulled 994` (12:31), tick 2.7 s ok. Live page now reads "worth ~$0.21 … recent-sale low of $0.20". Pin extended, two planted defects caught.
+- **Measured after:** 801 of the 1,234 NULLed editions were edition-verified within 7 d and in every one the cheap listing was re-seen by that verification — the undercuts are real, the old floors were false.
+- **Open decision (#149):** publish the cheapest listing a verification re-saw within N days (with its age) instead of NULL, and/or give undercut-NULL editions priority verify slots. Not shipped autonomously (changes what the ask means / the probe budget).
