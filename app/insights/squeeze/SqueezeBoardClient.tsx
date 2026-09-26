@@ -205,11 +205,16 @@ export default function SqueezeBoardClient({
         // squeezed ones — e.g. a rookie with max squeeze 48% deserves to
         // be visible.
         params.set("min_squeeze", setFilter || playerFilter ? "0" : "50")
-        // Set + player filters are server-side (ilike). Push them when
-        // present. Tier/buyable/circulation stay client-side over the
-        // already-fetched 200.
+        // Every filter is server-side. ⚠ Tier / buyable / circulation used to
+        // run in the browser over the already-fetched 200 — out of ~5,600
+        // editions at >=50% squeeze (2026-09-25) — so "Legendary" showed only
+        // the Legendaries that happened to rank in the overall top 200, and
+        // could conclude "No editions match" while hundreds exist.
         if (setFilter) params.set("set", setFilter)
         if (playerFilter) params.set("player", playerFilter)
+        if (tier !== "ALL") params.set("tier", tier)
+        if (maxBuyable != null) params.set("max_buyable", String(maxBuyable))
+        if (maxCirculation != null) params.set("max_circulation", String(maxCirculation))
         const r = await fetch(`/api/public/insights/squeeze?${params.toString()}`, {
           signal: ctrl.signal,
           cache: "no-store",
@@ -228,7 +233,7 @@ export default function SqueezeBoardClient({
     }
     run()
     return () => ctrl.abort()
-  }, [sort, setFilter, playerFilter])
+  }, [sort, setFilter, playerFilter, tier, maxBuyable, maxCirculation])
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {

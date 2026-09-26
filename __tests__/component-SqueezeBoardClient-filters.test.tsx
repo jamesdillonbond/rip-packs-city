@@ -74,26 +74,69 @@ function group(container: HTMLElement, ariaLabel: string): HTMLElement {
   return el as HTMLElement
 }
 
-describe("SqueezeBoardClient — client-side filters", () => {
-  it("filters to a single tier via the tier pills", () => {
+// ⚠ RE-PINNED 2026-09-25 (known-issues #146). These tests used to assert the
+// filters ran CLIENT-SIDE over the already-fetched 200 rows — which was the
+// defect: the board holds ~5,600 editions at >=50% squeeze, so "Legendary" showed
+// only the Legendaries that ranked in the overall top 200 and could conclude "No
+// editions match". Each control now REFETCHES with its parameter; the stub below
+// plays the server (it filters by the params it receives), so every test pins
+// both that the parameter is SENT and that the server's answer is what renders.
+function stubServerFiltering(all: ReturnType<typeof row>[]) {
+  const fn = vi.fn((url: string) => {
+    const u = new URL(String(url), "https://t")
+    if (!u.pathname.includes("/api/public/insights/squeeze")) {
+      return Promise.resolve({ ok: true, json: async () => ({}) } as Response)
+    }
+    const tier = u.searchParams.get("tier")
+    const maxB = u.searchParams.get("max_buyable")
+    const maxC = u.searchParams.get("max_circulation")
+    const out = all.filter((r) =>
+      (!tier || r.tier === tier) &&
+      (maxB == null || (r.effectively_buyable as number) <= Number(maxB)) &&
+      (maxC == null || (r.circulation as number) <= Number(maxC)))
+    return Promise.resolve({ ok: true, json: async () => ({ rows: out, meta: { fetched_at: FETCHED, total_rows: out.length } }) } as Response)
+  })
+  vi.stubGlobal("fetch", fn)
+  return fn
+}
+const squeezeCalls = (fn: ReturnType<typeof vi.fn>) =>
+  fn.mock.calls.map((c) => new URL(String(c[0]), "https://t")).filter((u) => u.pathname.includes("/api/public/insights/squeeze"))
+
+describe("SqueezeBoardClient — filters are sent to the server", () => {
+  it("filters to a single tier via the tier pills", async () => {
+    const fn = stubServerFiltering(rows)
     const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
     fireEvent.click(within(group(container, "Tier")).getByText("LEGENDARY"))
+    await waitFor(() => expect(container.textContent).not.toMatch(/Common Guy/))
+    expect(squeezeCalls(fn).at(-1)?.searchParams.get("tier")).toBe("LEGENDARY")
     expect(container.textContent).toMatch(/Legend Guy/)
     expect(container.textContent).not.toMatch(/Ultimate Guy/)
-    expect(container.textContent).not.toMatch(/Common Guy/)
 
     fireEvent.click(within(group(container, "Tier")).getByText("ULTIMATE"))
-    expect(container.textContent).toMatch(/Ultimate Guy/)
+    await waitFor(() => expect(container.textContent).toMatch(/Ultimate Guy/))
+    expect(squeezeCalls(fn).at(-1)?.searchParams.get("tier")).toBe("ULTIMATE")
     expect(container.textContent).not.toMatch(/Legend Guy/)
   })
 
-  it("filters by max effectively-buyable", () => {
+  it("a tier the top-200 window did NOT contain still comes back from the server", async () => {
+    // The initial (default-view) rows hold no Ultimate at all; the server does.
+    const initial = rows.filter((r) => r.tier !== "ULTIMATE")
+    stubServerFiltering(rows)
+    const { container } = render(<SqueezeBoardClient initialRows={initial} initialFetchedAt={FETCHED} />)
+    fireEvent.click(within(group(container, "Tier")).getByText("ULTIMATE"))
+    await waitFor(() => expect(container.textContent).toMatch(/Ultimate Guy/))
+    expect(container.textContent).not.toMatch(/No editions match those filters/i)
+  })
+
+  it("filters by max effectively-buyable", async () => {
+    const fn = stubServerFiltering(rows)
     const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
     // ≤ 5 keeps Legend(4) + Ultimate(3), drops Common(500)
     fireEvent.click(within(group(container, "Max effectively buyable")).getByText("≤ 5"))
+    await waitFor(() => expect(container.textContent).not.toMatch(/Common Guy/))
+    expect(squeezeCalls(fn).at(-1)?.searchParams.get("max_buyable")).toBe("5")
     expect(container.textContent).toMatch(/Legend Guy/)
     expect(container.textContent).toMatch(/Ultimate Guy/)
-    expect(container.textContent).not.toMatch(/Common Guy/)
   })
 
   // 2026-08-01 QA: the board printed a raw troll ask as if it were the market —
@@ -139,12 +182,14 @@ describe("SqueezeBoardClient — client-side filters", () => {
     })
   })
 
-  it("filters by max circulation (trophy-scarce)", () => {
+  it("filters by max circulation (trophy-scarce)", async () => {
+    const fn = stubServerFiltering(rows)
     const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
     // ≤ 10 (Ultimate) keeps only Ultimate(circ 8)
     fireEvent.click(within(group(container, "Max circulation")).getByText(/≤ 10 \(Ultimate\)/))
+    await waitFor(() => expect(container.textContent).not.toMatch(/Legend Guy/))
+    expect(squeezeCalls(fn).at(-1)?.searchParams.get("max_circulation")).toBe("10")
     expect(container.textContent).toMatch(/Ultimate Guy/)
-    expect(container.textContent).not.toMatch(/Legend Guy/)
     expect(container.textContent).not.toMatch(/Common Guy/)
   })
 })
@@ -214,11 +259,12 @@ describe("SqueezeBoardClient — set / player drill-down from the URL", () => {
 })
 
 describe("SqueezeBoardClient — table states + cells", () => {
-  it("shows the empty state when the client filters exclude every row", () => {
+  it("shows the empty state when the SERVER returns no row for the filters", async () => {
     const one = [row({ edition_id: "only", player_name: "Only Common", tier: "COMMON" })]
+    stubServerFiltering(one)
     const { container } = render(<SqueezeBoardClient initialRows={one} initialFetchedAt={FETCHED} />)
     fireEvent.click(within(group(container, "Tier")).getByText("LEGENDARY"))
-    expect(container.textContent).toMatch(/No editions match those filters/i)
+    await waitFor(() => expect(container.textContent).toMatch(/No editions match those filters/i))
   })
 
   it("falls back to the set name (and drops the duplicate line) when player_name is null", () => {
