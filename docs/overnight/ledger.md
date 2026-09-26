@@ -11,6 +11,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — `ATLAS_POOL_INGEST_KEY` stops riding in URLs (steps a+b of 3): `ingest-topshot-atlas-pool` accepts the key in an `Authorization: Bearer` header as well as `?key=` (ADDITIVE; CORS now allows `authorization` for the nbatopshot.com-console path), deployed from the committed file by `edge-fn-deploy` with its read-back post-conditions; `scripts/atlas-pool-harvest.ps1` sends the header on both its targets GET and its POSTs. `no-env-secret-in-fetch-url` has NO allowances left (two-way guard — any secret-in-URL now fails CI). Step (c), deleting the fn's `?key=` branch, is deliberately NOT done: the harvest runs from the laptop's Task Scheduler checkout, which keeps sending `?key=` until it pulls — remove the branch (and redeploy via `edge-fn-deploy`) once it has · Claude Code (web sandbox)
+
+- **Revert:** revert the "fix(security): atlas-pool ingest key in the header" commit and dispatch `edge-fn-deploy` with `function=ingest-topshot-atlas-pool` (`?key=` still works throughout, so nothing breaks in either direction).
+
 ### 2026-09-25 · 🧹 SHIPPED — player page Season Stats: ESPN's `la-clippers` team slug rendered as "La Clippers" (seen live on Paul Pierce's 2016-17 line); `teamSlugLabel` now upper-cases the LA / NY initialisms ("LA Clippers"), pinned in `component-PlayerSeasonStats.test.tsx`. Revert by message · Cowork
 
 ### 2026-09-25 · 🧹 SHIPPED — player page Editions gets a Badge filter (Three-Star Rookie · Rookie Mint · Rookie Year · Rookie Premiere · Top Shot Debut · Rookie of the Year · All-Star · …): new `get_edition_badge_titles(collection_id, route_slugs[])` (`20260926040619`, applied ~9:06 PM PT) + `POST /api/entity/edition-badges` · Claude Code (web sandbox)
