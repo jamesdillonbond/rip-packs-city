@@ -1094,6 +1094,11 @@ function applySecurityHeaders(response: NextResponse) {
     "Strict-Transport-Security",
     "max-age=63072000; includeSubDomains; preload"
   )
+  // media-src gained arweave.net + *.arweave.net 2026-09-25 for Candy MLB clips:
+  // every Candy edition's video_url is https://arweave.net/<id>, which 302s to a
+  // per-transaction *.arweave.net host serving video/mp4 (5 of 5 sampled via
+  // pg_net that day, base and Rainbow). Both hosts are needed — the redirect
+  // target is the one that actually serves the bytes.
   response.headers.set(
     "Content-Security-Policy",
     [
@@ -1101,7 +1106,7 @@ function applySecurityHeaders(response: NextResponse) {
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://cdn.nba.com https://cdn.wnba.com https://*.supabase.co https://arweave.net https://*.arweave.net",
-      "media-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com",
+      "media-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://arweave.net https://*.arweave.net",
       "font-src 'self' https://fonts.gstatic.com",
       "connect-src 'self' https://*.supabase.co https://public-api.nbatopshot.com https://public-api.nflallday.com https://public-api.laligagolazos.com https://api2.flowty.io https://rest-mainnet.onflow.org https://access-mainnet.onflow.org https://pinnacle-proxy.tdillonbond.workers.dev https://topshot-proxy.tdillonbond.workers.dev wss://*.supabase.co",
       "frame-ancestors 'none'",

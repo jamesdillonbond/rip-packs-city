@@ -74,6 +74,18 @@ describe("isTileVideoEnabled", () => {
     expect(isTileVideoEnabled("laliga-golazos")).toBe(true)
     expect(isTileVideoEnabled("ufc")).toBe(true)
   })
+  // 2026-09-25 — Candy MLB's clips are arweave mp4. The tile is enabled ONLY
+  // because proxy.ts's media-src allows both arweave.net and the *.arweave.net
+  // host it redirects to; without them the CSP blocks every clip and the poster
+  // hides the failure. Coupled here so neither half can change alone.
+  it("Candy MLB video is enabled only while media-src allows both arweave hosts", async () => {
+    const { readFileSync } = await import("node:fs")
+    const proxySrc = readFileSync("proxy.ts", "utf8")
+    const mediaSrc = proxySrc.match(/"media-src [^"]*"/)?.[0] ?? ""
+    expect(isTileVideoEnabled("candy-mlb")).toBe(true)
+    expect(mediaSrc).toContain("https://arweave.net")
+    expect(mediaSrc).toContain("https://*.arweave.net")
+  })
   it("false for Pinnacle and unknown slugs", () => {
     expect(isTileVideoEnabled("disney-pinnacle")).toBe(false)
     expect(isTileVideoEnabled("")).toBe(false)

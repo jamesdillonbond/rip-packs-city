@@ -601,7 +601,10 @@ export default async function EditionPage(
   const dayDelta = fmvDayDelta(history.rows)
 
   const isAllDay = collection === "nfl-all-day"
-  const hasVideo = (collection === "nba-top-shot" || collection === "nfl-all-day") && !!detail.video_url
+  // Candy MLB joined 2026-09-25: its clips are arweave mp4 (media-src allows
+  // arweave.net + *.arweave.net), and MomentHeroMedia falls back to the image on
+  // a video error, so a clip that fails to load still shows the card.
+  const hasVideo = (collection === "nba-top-shot" || collection === "nfl-all-day" || collection === "candy-mlb") && !!detail.video_url
 
   // Resilient hero media (Item E, 2026-06-13 audit — parity with the /moment
   // hero). detail.thumbnail_url / video_url are the constructed

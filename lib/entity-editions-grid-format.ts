@@ -54,29 +54,20 @@ export function compareEditions<T extends ComparableEdition>(
 // Top Shot / All Day / Golazos / UFC have editions.video_url populated;
 // Pinnacle has no video CDN.
 //
-// ⛔ DO NOT ADD "candy-mlb" HERE WITHOUT ADDING arweave TO media-src FIRST.
-// Measured 2026-09-05, and it is a landmine rather than a live bug:
-//   · all 125 Candy MLB editions carry `video_url = https://arweave.net/<id>`,
-//     and Candy is the ONLY collection that does — the four slugs below hold
-//     21,271 video_urls between them and ZERO on arweave or *.supabase.co;
-//   · `proxyIpfsUrl()` returns a non-IPFS URL UNCHANGED (lib/ipfs-media.ts:28),
-//     so an arweave URL reaches the browser as-is rather than via our proxy;
-//   · the live CSP carries `arweave.net` + `*.arweave.net` in **img-src ONLY**,
-//     not media-src (verified against production the day they were added).
-// So enabling video for Candy renders `<video src="https://arweave.net/…">`
-// against a media-src that forbids it.
-//
-// ⚠ WHY IT WOULD BE SLOW TO DIAGNOSE, which is the reason this comment exists
-// at the line you would edit rather than in a doc: the POSTER still loads —
-// thumbnail_url is also arweave and img-src allows it — so the tile looks
-// completely fine and merely never plays. A CSP violation is client-only, and
-// client-only failures are captured by NOTHING here (Sentry has dropped every
-// event since 2026-08-18). Nothing would go red; hover would just do nothing.
+// Candy MLB added 2026-09-25, AFTER arweave went into media-src (proxy.ts). The
+// 09-05 note here was right that doing it the other way round renders a
+// <video> the CSP forbids — and that a poster-only tile hides the failure, since
+// the arweave thumbnail loads under img-src. Verified before enabling: all 125
+// Candy editions carry https://arweave.net/<id>; that URL 302s to a
+// per-transaction *.arweave.net host serving video/mp4 (5 of 5 sampled, base and
+// Rainbow). media-src therefore carries BOTH hosts. ⛔ Do not remove either from
+// the CSP while candy-mlb is in this set.
 const VIDEO_ENABLED_SLUGS: ReadonlySet<string> = new Set([
   "nba-top-shot",
   "nfl-all-day",
   "laliga-golazos",
   "ufc",
+  "candy-mlb",
 ])
 
 /** Whether hover-video is enabled for a collection's tiles. */
