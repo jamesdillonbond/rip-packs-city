@@ -156,7 +156,7 @@ const PINS = [
     fn: "collect_wallet_pack_pulls",
     test: "supabase/tests/collect_wallet_pack_pulls.sql",
     migration:
-      "supabase/migrations/20260926153000_audit_20260926_wallet_pack_pulls_named_by_dapper_index_so_every_rip_can_be_priced.sql",
+      "supabase/migrations/20260926234000_audit_20260926_pack_pulls_that_left_the_wallet_named_from_sales_and_ownership.sql",
   },
   {
     // Added 2026-09-18. Pins the FIX for "my wallet shows 0 sold packs when I have

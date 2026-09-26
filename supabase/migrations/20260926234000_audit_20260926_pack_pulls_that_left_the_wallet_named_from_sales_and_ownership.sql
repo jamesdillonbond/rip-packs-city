@@ -1,83 +1,44 @@
--- DB invariant: public.collect_wallet_pack_pulls — prices every pack a saved
--- wallet opened from the exact moments Dapper's index says it yielded
--- (searchPackNft.nfts), added 2026-09-26 for "pull value should be filled for
--- every ripped pack" (Trevor). Claims it must keep:
+-- 2026-09-26 (PT) — a Top Shot pull that LEFT the wallet is named from the
+-- records we already hold about that moment id.
 --
---   1. The pull list is Dapper's `nfts` for OPENED packs only, one row per
---      (collection, pack, moment); a Sealed pack or an unknown pack type adds
---      nothing.
---   2. Editions resolve from what we hold, COLLECTION-SCOPED (a moment id is
---      unique only within a collection): a Top Shot `moments` row with the same
---      id never names an All Day pull.
---   3. WHOLE-PACK, ALL-OR-NOTHING: pull_value_usd is the sum of current FMV only
---      when every pull is priced. A partial sum is never published, and an FMV
---      of 0 is "unpriced", so a pack never reads $0 for "unknown".
---   4. An unnamed All Day pull is looked up in Dapper's index (searchAllDayNft,
---      id IN [...]); the answer names it and the pack is repriced.
---   5. A failed page ends the walk WITH an error and ok=false; a page with a
---      next page dispatches it and does NOT mark the walk complete.
---   6. (2026-09-26) A Top Shot pull that left the wallet is named from a
---      recorded sale / the ownership walk / nft_edition_map / a STANDARD Atlas
---      market event -- only when every source that answers agrees, never from an
---      Atlas parallel, never across collections (an All Day pull is not named by
---      a Top Shot sale; an 'nfl' Atlas event never names a Top Shot pull).
+-- WHY (Trevor: "I don't understand why we have such low coverage of
+-- understanding the moments inside the packs"). Measured 14:10 PT: 31,128 Top
+-- Shot pack pulls sat with edition_id NULL across the saved wallets, so their
+-- packs could never be priced (whole-pack rule). collect_wallet_pack_pulls names
+-- a Top Shot pull only from `moments` / wallet_moments_cache -- i.e. only while
+-- someone we walk still HOLDS it -- and Dapper's Top Shot index answers nothing.
+-- A pulled moment that was sold on is exactly the one that falls through. On
+-- 0xbd94cade097e50ac: 10 opened packs unpriced by 13 such pulls.
 --
--- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926234000_audit_20260926_pack_pulls_that_left_the_wallet_named_from_sales_and_ownership.sql).
--- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- Four tables already name a Top Shot moment by id. Measured against 20,000
+-- pulls ALREADY named from `moments` (positive control, same id space):
+--   sales (collection-scoped)             5,422 / 5,425 agree  (99.94 %)
+--   topshot_ownership (on-chain walk)     1,905 / 1,908 agree  (99.84 %)
+--   Atlas market events, Standard         2,618 / 2,621 agree  (99.9 %)
+--   Atlas market events, parallels        ~92 % (Blockchain 300/325) -> NOT used
+--   nft_edition_map                       (160 of the unnamed; same shape)
+-- Reach on the 31,128 unnamed: sales 2,979 · ownership 471 · Atlas 658 ·
+-- nft_edition_map 159 -- 3,235+ distinct pulls, 0 multi-edition answers within
+-- a source; sales vs Atlas disagree on 8, which stay unnamed (a pull is named
+-- only when every source that answers agrees).
 --
--- Runs inside a rolled-back transaction so it leaves no residue.
+-- WHAT. One LEFT JOIN LATERAL in step (2), consulted only when the existing four
+-- sources say nothing, Top Shot only (Atlas product = 'nba'). resolved_via
+-- records which source(s) answered ('sales+topshot_ownership', ...). The body
+-- is otherwise byte-identical to 20260926153000; applied to prod as a guarded
+-- splice of that one hunk (live md5 before = ee238a732c5b5ad943f7143d1778c8b5).
+--
+-- anon-exec: unchanged (collect_wallet_pack_pulls) — body replacement of an existing fn; ACL preserved (postgres, service_role only).
+--
+-- Revert: re-run the collect_wallet_pack_pulls DDL from
+--   20260926153000_audit_20260926_wallet_pack_pulls_named_by_dapper_index_so_every_rip_can_be_priced.sql
+--   (pulls already named keep their edition -- each is a recorded fact about
+--   that moment id; to unwind them too:
+--   UPDATE pack_open_pulls SET edition_id = NULL, resolved_via = NULL, resolved_at = NULL
+--    WHERE resolved_via IN ('sales','topshot_ownership','nft_edition_map','atlas_market_events')
+--       OR resolved_via LIKE '%+%';
+--   UPDATE pack_open_pull_values SET priced_at = '-infinity';)
 
-BEGIN;
-
-CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text UNIQUE, name text);
-CREATE TABLE public.editions (id uuid PRIMARY KEY, collection_id uuid, external_id text);
-CREATE TABLE public.moments (nft_id text, collection_id uuid, edition_id uuid);
-CREATE TABLE public.allday_pack_pull (pack_nft_id text, moment_nft_id text, edition_id uuid);
-CREATE TABLE public.golazos_pack_open_pulls (nft_id text PRIMARY KEY, pack_nft_id text, edition_external_id text);
-CREATE TABLE public.wallet_moments_cache (wallet_address text, moment_id text, collection_id uuid, edition_key text);
-CREATE TABLE public.sales (nft_id text, collection_id uuid, edition_id uuid);
-CREATE TABLE public.topshot_ownership (nft_id text PRIMARY KEY, edition_external_id text, owner_address text);
-CREATE TABLE public.nft_edition_map (collection_id uuid, nft_id text, edition_external_id text, PRIMARY KEY (collection_id, nft_id));
-CREATE TABLE public.topshot_atlas_market_events (nft_id text, product text, atlas_edition_id text, parallel text);
-CREATE TABLE public.topshot_atlas_edition_map (atlas_edition_id text, rpc_edition_id uuid, parallel text);
-CREATE TABLE public.fmv_snapshots (collection_id uuid, edition_id uuid, fmv_usd numeric, computed_at timestamptz);
-CREATE TABLE public.pipeline_runs_stub (pipeline text, ok boolean, extra jsonb);
-CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestamptz, p_rows_found int, p_rows_written int,
-  p_rows_skipped int, p_ok boolean, p_error text, p_collection_slug text, p_cursor_before text, p_cursor_after text, p_extra jsonb)
-RETURNS bigint LANGUAGE sql AS $$ INSERT INTO public.pipeline_runs_stub VALUES (p_pipeline, p_ok, p_extra) RETURNING 1::bigint $$;
-
--- pg_net stand-in: http_post records the call and returns an id; responses are
--- planted into net._http_response by the test.
-CREATE SCHEMA net;
-CREATE TABLE net._http_response (id bigint PRIMARY KEY, status_code int, content text, error_msg text);
-CREATE SEQUENCE net.req_seq START 1000;
-CREATE TABLE net.calls (id bigint, body jsonb);
-CREATE FUNCTION net.http_post(url text, body jsonb, headers jsonb, timeout_milliseconds int)
-RETURNS bigint LANGUAGE plpgsql AS $$
-DECLARE v bigint := nextval('net.req_seq');
-BEGIN INSERT INTO net.calls VALUES (v, body); RETURN v; END $$;
-
--- the lane's own tables, as the migration creates them
-CREATE TABLE public.pack_open_pulls (
-  collection_id uuid NOT NULL, pack_nft_id text NOT NULL, nft_id text NOT NULL, opener_address text NOT NULL,
-  edition_id uuid, resolved_via text, resolved_at timestamptz, local_checked_at timestamptz,
-  api_attempts int NOT NULL DEFAULT 0, api_checked_at timestamptz, first_seen_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (collection_id, pack_nft_id, nft_id));
-CREATE TABLE public.pack_open_pull_values (
-  collection_id uuid NOT NULL, pack_nft_id text NOT NULL, opener_address text NOT NULL,
-  n_pulls int NOT NULL, n_resolved int NOT NULL, n_priced int NOT NULL, pull_value_usd numeric(14,2),
-  priced_at timestamptz NOT NULL, PRIMARY KEY (collection_id, pack_nft_id),
-  CONSTRAINT pack_open_pull_values_whole_pack CHECK (pull_value_usd IS NULL OR n_priced = n_pulls));
-CREATE TABLE public.pack_pull_wallet_state (
-  wallet text PRIMARY KEY, requested_at timestamptz, completed_at timestamptz,
-  pages int NOT NULL DEFAULT 0, packs int NOT NULL DEFAULT 0, pulls int NOT NULL DEFAULT 0, last_error text);
-CREATE TABLE public.pack_pull_requests (
-  request_id bigint PRIMARY KEY, kind text NOT NULL CHECK (kind IN ('wallet', 'editions')), wallet text,
-  collection_id uuid, nft_ids text[] NOT NULL DEFAULT '{}', after_cursor text, page int,
-  dispatched_at timestamptz NOT NULL DEFAULT now(), collected_at timestamptz, status_code int, outcome text, n_returned int);
-
--- >>> BEGIN verbatim collect_wallet_pack_pulls (body byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.collect_wallet_pack_pulls()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -467,194 +428,3 @@ BEGIN
                             'last_error', v_last_error);
 END;
 $function$;
--- <<< END verbatim <<<
-
-INSERT INTO public.collections VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'nba_top_shot', 'NBA Top Shot'),
-  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'nfl_all_day', 'NFL All Day'),
-  ('06248cc4-b85f-47cd-af67-1855d14acd75', 'laliga_golazos', 'LaLiga Golazos');
-INSERT INTO public.editions VALUES
-  ('00000000-0000-0000-0000-0000000000a1', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '1:1'),
-  ('00000000-0000-0000-0000-0000000000a2', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '1:2'),
-  ('00000000-0000-0000-0000-0000000000a3', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '1:3'),
-  ('00000000-0000-0000-0000-0000000000a9', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '9:9'),
-  ('00000000-0000-0000-0000-0000000000b1', 'dee28451-5d62-409e-a1ad-a83f763ac070', '4080'),
-  ('00000000-0000-0000-0000-0000000000b2', 'dee28451-5d62-409e-a1ad-a83f763ac070', '4090'),
-  ('00000000-0000-0000-0000-0000000000c1', '06248cc4-b85f-47cd-af67-1855d14acd75', '572');
--- Top Shot 101 via moments; 102 via wallet_moments_cache (another wallet's row);
--- 103's edition has FMV 0. A Top Shot moments row with id 202 must NOT name the
--- All Day pull 202 (claim 2).
-INSERT INTO public.moments VALUES
-  ('101', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a1'),
-  ('103', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a3'),
-  ('202', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a9');
-INSERT INTO public.wallet_moments_cache VALUES
-  ('0xsomeoneelse00000', '102', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '1:2');
-INSERT INTO public.allday_pack_pull VALUES ('A1', '201', '00000000-0000-0000-0000-0000000000b1');
-INSERT INTO public.golazos_pack_open_pulls VALUES ('301', 'G1', '572');
-INSERT INTO public.fmv_snapshots VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a1', 1.00, now() - interval '2 days'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a1', 5.00, now() - interval '1 hour'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a2', 7.25, now()),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a3', 0,    now()),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a9', 99,   now()),
-  ('dee28451-5d62-409e-a1ad-a83f763ac070', '00000000-0000-0000-0000-0000000000b1', 2.00, now()),
-  ('dee28451-5d62-409e-a1ad-a83f763ac070', '00000000-0000-0000-0000-0000000000b2', 3.50, now()),
-  ('06248cc4-b85f-47cd-af67-1855d14acd75', '00000000-0000-0000-0000-0000000000c1', 4.00, now());
-
--- Page 1 of the wallet walk, landed.
-INSERT INTO public.pack_pull_wallet_state (wallet, requested_at) VALUES ('0xbd94cade097e50ac', now());
-INSERT INTO public.pack_pull_requests (request_id, kind, wallet, page) VALUES (1, 'wallet', '0xbd94cade097e50ac', 1);
-INSERT INTO net._http_response VALUES (1, 200, $j${"data":{"searchPackNft":{"totalCount":6,"pageInfo":{"endCursor":"c1","hasNextPage":false},"edges":[
-  {"node":{"id":"T1","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Opened","nfts":"A.0b2a3299cc857e29.TopShot.101,A.0b2a3299cc857e29.TopShot.102"}},
-  {"node":{"id":"T2","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Opened","nfts":"A.0b2a3299cc857e29.TopShot.103"}},
-  {"node":{"id":"A1","type_name":"A.e4cf4bdc1751c65d.PackNFT.NFT","status":"Opened","nfts":"A.e4cf4bdc1751c65d.AllDay.201,A.e4cf4bdc1751c65d.AllDay.202"}},
-  {"node":{"id":"G1","type_name":"A.87ca73a41bb50ad5.PackNFT.NFT","status":"Opened","nfts":"A.87ca73a41bb50ad5.Golazos.301"}},
-  {"node":{"id":"S1","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Sealed","nfts":"A.0b2a3299cc857e29.TopShot.999"}},
-  {"node":{"id":"X1","type_name":"A.ffffffffffffffff.PackNFT.NFT","status":"Opened","nfts":"A.ffffffffffffffff.Other.1"}}
-]}}}$j$, NULL);
-
-DO $$
-DECLARE v jsonb; n int;
-BEGIN
-  v := public.collect_wallet_pack_pulls();
-  PERFORM _assert((v->>'ok')::boolean, 'clean page -> ok');
-
-  -- claim 1
-  SELECT count(*) INTO n FROM public.pack_open_pulls;
-  PERFORM _assert_eq(n::text, '6', 'six pulls from four opened packs; sealed + unknown type add nothing');
-  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_open_pulls WHERE pack_nft_id IN ('S1', 'X1')), 'no sealed/unknown-type rows');
-  PERFORM _assert((SELECT completed_at IS NOT NULL AND last_error IS NULL AND packs = 6 AND pulls = 6
-                     FROM public.pack_pull_wallet_state), 'last page -> walk complete, counts recorded');
-
-  -- claim 2
-  PERFORM _assert((SELECT edition_id IS NULL FROM public.pack_open_pulls WHERE nft_id = '202'),
-                  'a Top Shot moments row never names an All Day pull with the same id');
-  PERFORM _assert_eq((SELECT resolved_via FROM public.pack_open_pulls WHERE nft_id = '102'), 'wallet_moments_cache', '102 via wmc');
-  PERFORM _assert_eq((SELECT resolved_via FROM public.pack_open_pulls WHERE nft_id = '201'), 'allday_pack_pull', '201 via allday_pack_pull');
-  PERFORM _assert_eq((SELECT resolved_via FROM public.pack_open_pulls WHERE nft_id = '301'), 'golazos_pack_open_pulls', '301 via golazos pulls');
-
-  -- claim 3
-  PERFORM _assert_eq((SELECT pull_value_usd::text FROM public.pack_open_pull_values WHERE pack_nft_id = 'T1'), '12.25',
-                     'T1 = latest FMV 5.00 (not the older 1.00) + 7.25');
-  PERFORM _assert((SELECT pull_value_usd IS NULL AND n_pulls = 1 AND n_priced = 0 FROM public.pack_open_pull_values WHERE pack_nft_id = 'T2'),
-                  'an FMV of 0 is unpriced: T2 is NULL, never $0');
-  PERFORM _assert((SELECT pull_value_usd IS NULL AND n_pulls = 2 AND n_priced = 1 FROM public.pack_open_pull_values WHERE pack_nft_id = 'A1'),
-                  'a half-priced pack publishes NO partial sum');
-  PERFORM _assert_eq((SELECT pull_value_usd::text FROM public.pack_open_pull_values WHERE pack_nft_id = 'G1'), '4.00', 'G1 priced');
-
-  -- claim 4: the unnamed All Day pull went to Dapper's index
-  PERFORM _assert((SELECT nft_ids = ARRAY['202'] AND collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'
-                     FROM public.pack_pull_requests WHERE kind = 'editions'), 'one All Day lookup for 202');
-  PERFORM _assert((SELECT body->>'query' LIKE '%searchAllDayNft%' FROM net.calls ORDER BY id DESC LIMIT 1), 'lookup asks searchAllDayNft');
-END $$;
-
--- Dapper answers the lookup.
-INSERT INTO net._http_response
-SELECT request_id, 200, '{"data":{"searchAllDayNft":{"totalCount":1,"edges":[{"node":{"id":"202","serial_number":"5","edition":{"id":"4090"}}}]}}}', NULL
-  FROM public.pack_pull_requests WHERE kind = 'editions';
-
-DO $$
-DECLARE v jsonb;
-BEGIN
-  v := public.collect_wallet_pack_pulls();
-  PERFORM _assert_eq(v->>'editions_named_api', '1', 'the lookup named 202');
-  PERFORM _assert_eq((SELECT pull_value_usd::text FROM public.pack_open_pull_values WHERE pack_nft_id = 'A1'), '5.50',
-                     'A1 repriced once every pull is named: 2.00 + 3.50');
-  PERFORM _assert((SELECT count(*) = 0 FROM public.pack_pull_requests WHERE collected_at IS NULL), 'nothing left in flight');
-END $$;
-
--- claim 3, at the table: a partial sum cannot be stored at all.
-DO $$
-BEGIN
-  BEGIN
-    INSERT INTO public.pack_open_pull_values VALUES
-      ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Z1', '0xw', 3, 3, 2, 10.00, now());
-    PERFORM _assert(false, 'CHECK must refuse a value on a partly priced pack');
-  EXCEPTION WHEN check_violation THEN
-    PERFORM _assert(true, 'CHECK refuses a partial sum');
-  END;
-END $$;
-
--- claim 5: a page with a next page keeps the walk open and dispatches page 2;
--- a failed page ends it with an error and ok=false.
-INSERT INTO public.pack_pull_wallet_state (wallet, requested_at) VALUES ('0x1111111111111111', now()), ('0x2222222222222222', now());
-INSERT INTO public.pack_pull_requests (request_id, kind, wallet, page) VALUES (2, 'wallet', '0x1111111111111111', 1), (3, 'wallet', '0x2222222222222222', 1);
-INSERT INTO net._http_response VALUES
-  (2, 200, '{"data":{"searchPackNft":{"totalCount":1500,"pageInfo":{"endCursor":"next-1","hasNextPage":true},"edges":[]}}}', NULL),
-  (3, 503, 'upstream unavailable', NULL);
-
-DO $$
-DECLARE v jsonb;
-BEGIN
-  v := public.collect_wallet_pack_pulls();
-  PERFORM _assert(NOT (v->>'ok')::boolean, 'a failed page -> ok=false');
-  PERFORM _assert((SELECT completed_at IS NULL FROM public.pack_pull_wallet_state WHERE wallet = '0x1111111111111111'),
-                  'a page with a next page is NOT a completed walk');
-  PERFORM _assert((SELECT count(*) = 1 FROM public.pack_pull_requests
-                    WHERE wallet = '0x1111111111111111' AND page = 2 AND after_cursor = 'next-1' AND collected_at IS NULL),
-                  'page 2 dispatched with the cursor');
-  PERFORM _assert((SELECT completed_at IS NOT NULL AND last_error LIKE 'page 1:%' FROM public.pack_pull_wallet_state WHERE wallet = '0x2222222222222222'),
-                  'a failed page ends the walk WITH its error');
-  PERFORM _assert((SELECT ok = false FROM public.pipeline_runs_stub ORDER BY ctid DESC LIMIT 1), 'the pipeline row says ok=false');
-END $$;
-
--- claim 6: pulls that LEFT the wallet (no moments / wallet-cache row).
---   401 sales only -> a1 · 402 sales + ownership agree -> a2 · 403 sales a1 vs a
---   Standard Atlas event a2 -> conflict, unnamed · 404 an Atlas PARALLEL only ->
---   unnamed · 405 an All Day pull beside a Top Shot sale with that id -> unnamed
---   · 406 a Top Shot pull beside an ALL DAY sale with that id -> unnamed · 407 an
---   'nfl' Atlas event -> unnamed · 408 nft_edition_map only -> a3 · 409 a
---   Standard Atlas event only -> a9.
-INSERT INTO public.sales VALUES
-  ('401', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a1'),
-  ('402', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a2'),
-  ('402', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a2'),
-  ('403', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a1'),
-  ('405', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000a1'),
-  ('406', 'dee28451-5d62-409e-a1ad-a83f763ac070', '00000000-0000-0000-0000-0000000000b1');
-INSERT INTO public.topshot_ownership VALUES ('402', '1:2', '0xsomeoneelse00000');
-INSERT INTO public.nft_edition_map VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '408', '1:3');
-INSERT INTO public.topshot_atlas_edition_map VALUES
-  ('atl-a2', '00000000-0000-0000-0000-0000000000a2', 'Standard'),
-  ('atl-a9', '00000000-0000-0000-0000-0000000000a9', 'Standard'),
-  ('atl-par', '00000000-0000-0000-0000-0000000000a1', 'Blockchain');
-INSERT INTO public.topshot_atlas_market_events VALUES
-  ('403', 'nba', 'atl-a2', 'Standard'),
-  ('404', 'nba', 'atl-par', 'Blockchain'),
-  ('407', 'nfl', 'atl-a9', 'Standard'),
-  ('409', 'nba', 'atl-a9', 'Standard');
-INSERT INTO public.pack_open_pulls (collection_id, pack_nft_id, nft_id, opener_address) VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'T3', '401', '0xbd94cade097e50ac'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'T3', '402', '0xbd94cade097e50ac'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'T4', '403', '0xbd94cade097e50ac'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'T4', '404', '0xbd94cade097e50ac'),
-  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'A2', '405', '0xbd94cade097e50ac'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'T5', '406', '0xbd94cade097e50ac'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'T5', '407', '0xbd94cade097e50ac'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'T6', '408', '0xbd94cade097e50ac'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'T6', '409', '0xbd94cade097e50ac');
-INSERT INTO public.pack_open_pull_values VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'T3', '0xbd94cade097e50ac', 2, 0, 0, NULL, now());
-
-DO $$
-DECLARE v jsonb;
-BEGIN
-  v := public.collect_wallet_pack_pulls();
-  PERFORM _assert_eq((SELECT edition_id::text || ' ' || resolved_via FROM public.pack_open_pulls WHERE nft_id = '401'),
-                     '00000000-0000-0000-0000-0000000000a1 sales', '401 named by its recorded sale');
-  PERFORM _assert_eq((SELECT edition_id::text || ' ' || resolved_via FROM public.pack_open_pulls WHERE nft_id = '402'),
-                     '00000000-0000-0000-0000-0000000000a2 sales+topshot_ownership', '402: two agreeing sources, both recorded');
-  PERFORM _assert((SELECT edition_id IS NULL FROM public.pack_open_pulls WHERE nft_id = '403'), 'sources that disagree name nothing');
-  PERFORM _assert((SELECT edition_id IS NULL FROM public.pack_open_pulls WHERE nft_id = '404'), 'an Atlas parallel never names a pull');
-  PERFORM _assert((SELECT edition_id IS NULL FROM public.pack_open_pulls WHERE nft_id = '405'), 'a Top Shot sale never names an All Day pull');
-  PERFORM _assert((SELECT edition_id IS NULL FROM public.pack_open_pulls WHERE nft_id = '406'), 'an All Day sale never names a Top Shot pull');
-  PERFORM _assert((SELECT edition_id IS NULL FROM public.pack_open_pulls WHERE nft_id = '407'), 'an nfl Atlas event never names a Top Shot pull');
-  PERFORM _assert_eq((SELECT resolved_via FROM public.pack_open_pulls WHERE nft_id = '408'), 'nft_edition_map', '408 via nft_edition_map');
-  PERFORM _assert_eq((SELECT edition_id::text || ' ' || resolved_via FROM public.pack_open_pulls WHERE nft_id = '409'),
-                     '00000000-0000-0000-0000-0000000000a9 atlas_market_events', '409 via a Standard Atlas event');
-  PERFORM _assert_eq((SELECT pull_value_usd::text FROM public.pack_open_pull_values WHERE pack_nft_id = 'T3'), '12.25',
-                     'T3 repriced once both departed pulls are named: 5.00 + 7.25');
-END $$;
-
-ROLLBACK;
