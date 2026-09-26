@@ -447,6 +447,34 @@ describe("listing-cache — empty result + control flow", () => {
     expect(String(run?.error)).toContain("forced cached_listings upsert failure")
   })
 
+  // 2026-09-26 — SUBSTITUTION: a named slug with no config used to run the Top
+  // Shot sweep and log it as Top Shot, so `?collection=ufc` read as success.
+  it("REGRESSION: a NAMED unknown collection is refused — no Top Shot sweep, no Top Shot run row", async () => {
+    fetchMock = installFetchMock([proxyStub([lillardNft])])
+    const spy = install({ pipeline_runs: { data: null, error: null } })
+
+    // An Object.prototype key is not a collection either.
+    expect((await POST(req("collection=constructor"))).status).toBe(400)
+    const res = await POST(req("collection=ufc&chain=true"))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(JSON.stringify(body)).not.toMatch(/"collection":"nba-top-shot"/)
+    expect(fetchMock.calls).toHaveLength(0)
+    expect(spy.writes.cached_listings ?? []).toHaveLength(0)
+    expect(pipelineRow(spy)).toBeUndefined()
+    expect(state.chainCalls).toHaveLength(0)
+  })
+
+  it("NO-CHANGE CONTROL: an ABSENT collection param still defaults to Top Shot (fmv-recalc chains here with none)", async () => {
+    fetchMock = installFetchMock([proxyStub([])])
+    install({ pipeline_runs: { data: null, error: null } })
+
+    const res = await POST(req(""))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, collection: "nba-top-shot" })
+  })
+
   it("401s without the ingest token and never touches Flowty", async () => {
     fetchMock = installFetchMock([proxyStub([lillardNft])])
     install({})

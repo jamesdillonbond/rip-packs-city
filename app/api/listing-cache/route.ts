@@ -81,7 +81,7 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
 };
 
 function getCollectionConfig(slug: string | null): CollectionConfig {
-  if (slug && COLLECTIONS[slug]) return COLLECTIONS[slug];
+  if (slug && Object.prototype.hasOwnProperty.call(COLLECTIONS, slug)) return COLLECTIONS[slug];
   return COLLECTIONS["nba-top-shot"];
 }
 
@@ -312,6 +312,18 @@ export async function POST(req: NextRequest) {
     const auth = req.headers.get("authorization");
     if (auth !== ("Bearer " + process.env.INGEST_SECRET_TOKEN)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // A NAMED collection this route has no Flowty config for is refused, never
+    // answered with the Top Shot ingest (2026-09-26 — the substitution class:
+    // `?collection=ufc` used to sweep Top Shot and log it as Top Shot, so the
+    // caller read success for a collection nothing touched). An ABSENT param
+    // still defaults to Top Shot — fmv-recalc chains here with no param.
+    if (!Object.prototype.hasOwnProperty.call(COLLECTIONS, collectionSlug)) {
+      return NextResponse.json(
+        { ok: false, error: "unknown collection: " + collectionSlug, supported: Object.keys(COLLECTIONS) },
+        { status: 400 }
+      );
     }
 
     // Flowty ingest kill-switch — cron-job.org keeps firing on its schedule,

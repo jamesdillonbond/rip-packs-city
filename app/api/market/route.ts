@@ -525,6 +525,11 @@ async function fetchCandyMarketListings(
   if (filters.sortBy === "price_desc") q = q.order("ask_usd", { ascending: false })
   else if (filters.sortBy === "fmv_desc") q = q.order("fmv_usd", { ascending: false, nullsFirst: false })
   else if (filters.sortBy === "discount_desc") q = q.order("discount_pct", { ascending: false, nullsFirst: false })
+  // "FMV ↑" / "Discount ↑" used to fall to ask ascending, so the 500-row window
+  // was the 500 cheapest listings (of ~1,900) re-sorted — not the market's lowest
+  // FMV or smallest discount (#146 (1), 2026-09-26).
+  else if (filters.sortBy === "fmv_asc") q = q.order("fmv_usd", { ascending: true, nullsFirst: false })
+  else if (filters.sortBy === "discount_asc") q = q.order("discount_pct", { ascending: true, nullsFirst: false })
   else if (filters.sortBy === "recent" || filters.sortBy === "listed_desc") q = q.order("first_seen_at", { ascending: false, nullsFirst: false })
   else q = q.order("ask_usd", { ascending: true })
 

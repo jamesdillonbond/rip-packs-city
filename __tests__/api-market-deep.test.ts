@@ -433,6 +433,29 @@ describe("GET /api/market — Candy MLB (Solana) arm", () => {
   // BASE card (it keeps the first row, and "mike-trout" sorts first). A PINK
   // listing linked to the base page and read the base card's stats. The row
   // must carry its own edition key.
+  // #146 (1), 2026-09-26 — "FMV ↑" / "Discount ↑" fell through to ask
+  // ascending, so the 500-row window was the cheapest listings, re-sorted.
+  it.each([
+    ["fmv_asc", "fmv_usd"],
+    ["discount_asc", "discount_pct"],
+  ])("orders the Candy read by the sort's OWN key for %s, ascending", async (sortBy, column) => {
+    install(candyRows())
+    const sb = state.sb as { from: (t: string) => Record<string, unknown> }
+    const baseFrom = sb.from.bind(sb)
+    const orders: unknown[][] = []
+    sb.from = (t: string) => {
+      const b = baseFrom(t)
+      if (t === "candy_market_board") {
+        const prev = b.order as (...a: unknown[]) => unknown
+        b.order = (...a: unknown[]) => { orders.push(a); return prev(...a) }
+      }
+      return b
+    }
+    await GET(req(`https://t/api/market?collectionId=${CANDY}&sort=${sortBy}`))
+    expect(orders[0]?.[0]).toBe(column)
+    expect(orders[0]?.[1]).toMatchObject({ ascending: true })
+  })
+
   it("a Rainbow listing keeps its OWN edition key, never the base card's", async () => {
     install({
       candy_market_board: {
