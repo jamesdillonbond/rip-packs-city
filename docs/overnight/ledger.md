@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the concierge stops sending collectors to /candy-mlb/sniper (a tab Candy does not have; the URL redirects): BOTH of its hand-kept Candy tab lists (the system prompt and the get_insight_board tool description) are derived from the registry's `pages`, the active-collection link hint names only that collection's tabs (was "/<id>/sniper, /<id>/packs" for every collection), and the Panini sentence mentions the new boards as a floor, not a census. The test that should have caught it checked only that a page.tsx existed SOMEWHERE (/sniper exists for other collections); it now checks every /candy-mlb/<tab> literal against Candy's pages · Claude Code (web sandbox)
+
+- **Revert:** revert the "fix(concierge): Candy tab lists come from the registry" commit.
+
+
 ### 2026-09-25 · 🧹 SHIPPED — new Top Shot pack distributions now get a catalog row automatically: the daily `topshot-pack-dist-names-onchain` route starts by calling `discover_missing_topshot_pack_distributions(7)` (placeholder row for any dist a rip/purchase of the last 7 days references), then its existing naming (PDS) and image passes fill it; the image pass falls back to an OPENED pack when a dist has no purchase · Claude Code (web session)
 
 Root cause of the 64 PDS-era dists backfilled in `20260926030602`: nothing created their rows (Studio Platform, the old seeder's source, does not carry them; the route only filled rows that existed) — 2 more appeared minutes after the backfill. Migration `20260926030748` (function; REVOKE anon/authenticated, service_role only; ~33k buffers at 14 days, route uses 7). A failed discovery fails the run with `discovered: null` (never 0) and still names/pictures existing rows. 4 new tests, two planted defects caught; suite 18,581 green, `tsc` clean, ratchet 709. First production run: 9:25 PM PT tonight (check-in already scheduled for 9:45). **Revert:** `git revert` the commit titled "packs: discover new Top Shot distributions before naming them"; `DROP FUNCTION public.discover_missing_topshot_pack_distributions(integer)`.
