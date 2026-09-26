@@ -14,6 +14,7 @@ import {
   packBuyLabel,
   packPullLabel,
   packsRippedCaption,
+  spentCaption,
   packMarketLabel,
   identitySyncNote,
 } from "@/lib/packs-wallet-view-format"
@@ -260,5 +261,20 @@ describe("packsRippedCaption (2026-09-26)", () => {
   })
   it("coverage unknown and nothing reconstructed -> no caption", () => {
     expect(packsRippedCaption(10, undefined, null)).toBeUndefined()
+  })
+})
+
+describe("inferred drop cost (2026-09-26)", () => {
+  it("shows an inferred retail on a pack with no buy row, labelled as inferred", () => {
+    expect(packBuyLabel({ has_buy: false, buy_usd: 25, buy_price_source: "retail_inferred" })).toBe("$25.00 retail (inferred)")
+    expect(packBuyLabel({ has_buy: false, buy_usd: 0, buy_price_source: "retail_inferred" })).toBe("$0 (reward, inferred)")
+  })
+  it("a pack with no buy row and nothing inferred is still a dash, never $0", () => {
+    expect(packBuyLabel({ has_buy: false, buy_usd: null, buy_price_source: null })).toBe("—")
+  })
+  it("the spend caption says the inferred cost apart from the recorded one", () => {
+    expect(spentCaption(258, 261, 307, 13599)).toBe("across 258 of 261 packs with a known price · + $13,599 at drop retail for 307 more packs (inferred)")
+    expect(spentCaption(5, 5, 0, 0)).toBeUndefined()
+    expect(spentCaption(5, 5, undefined, undefined)).toBeUndefined()
   })
 })

@@ -110,7 +110,10 @@ export function relativePackTime(iso: string | null | undefined, now: number = D
 // cannot be known; the row must SAY that instead of dressing a serial fragment
 // up as a name.
 
-export type BuyPriceSource = "onchain" | "marketplace" | "retail" | null
+// "retail_inferred" (2026-09-26): no buy row, but the pack was acquired inside
+// its drop's sale window where our marketplace history is complete, so it
+// came from Dapper at the drop's retail -- shown as an inference, never a record.
+export type BuyPriceSource = "onchain" | "marketplace" | "retail" | "retail_inferred" | null
 
 /** Second line under the pack name. `null` when nothing needs saying. */
 export function packIdentityNote(
@@ -134,8 +137,13 @@ export function packBuyLabel(row: {
   buy_currency?: string | null
   buy_price_source?: BuyPriceSource
 }): string {
-  if (!row.has_buy) return "—"
   const usd = row.buy_usd ?? row.buy_price
+  if (!row.has_buy) {
+    if (row.buy_price_source === "retail_inferred" && row.buy_usd != null) {
+      return row.buy_usd === 0 ? "$0 (reward, inferred)" : fmtPackUsd(row.buy_usd) + " retail (inferred)"
+    }
+    return "—"
+  }
   if (usd == null) return "—"
   if (row.buy_price_source === "retail") return usd === 0 ? "$0 (reward)" : fmtPackUsd(usd) + " retail"
   // 2026-09-25: a dollar-pegged unit (USD, Dapper's DUC) shows no ticker —
@@ -170,6 +178,23 @@ export function packsRippedCaption(total: number, known: number | null | undefin
   const parts: string[] = []
   if (known != null) parts.push(known < total ? `${known.toLocaleString("en-US")} with a known pull value` : "all valued")
   if (reconstructed != null && reconstructed > 0) parts.push(`${reconstructed.toLocaleString("en-US")} reconstructed (no pack NFT)`)
+  return parts.length ? parts.join(" · ") : undefined
+}
+
+/** "Total spent" caption (2026-09-26). The recorded figure covers
+ *  `spendKnown` of `purchased` buys; packs the wallet sold or opened with no
+ *  buy row but acquired inside their drop's sale window carry an INFERRED
+ *  drop cost (get_wallet_pack_summary.inferred_primary_*), said apart so an
+ *  inference never reads as money we saw leave the wallet. */
+export function spentCaption(
+  spendKnown: number, purchased: number,
+  inferredCount: number | null | undefined, inferredUsd: number | null | undefined,
+): string | undefined {
+  const parts: string[] = []
+  if (spendKnown < purchased) parts.push(`across ${spendKnown.toLocaleString("en-US")} of ${purchased.toLocaleString("en-US")} packs with a known price`)
+  if (inferredCount != null && inferredCount > 0 && inferredUsd != null) {
+    parts.push(`+ ${fmtPackUsd(inferredUsd)} at drop retail for ${inferredCount.toLocaleString("en-US")} more packs (inferred)`)
+  }
   return parts.length ? parts.join(" · ") : undefined
 }
 

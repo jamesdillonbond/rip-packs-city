@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
-import { packBuyLabel, packIdentityNote, packMarketLabel, packPullLabel, packsRippedCaption } from "@/lib/packs-wallet-view-format"
+import { packBuyLabel, packIdentityNote, packMarketLabel, packPullLabel, packsRippedCaption, spentCaption } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 import {
@@ -41,6 +41,10 @@ interface SummaryTotals {
   /** 2026-09-26: how many of packs_ripped are packs opened with NO pack NFT,
    *  reconstructed from moment deliveries. Optional (older payloads). */
   packs_ripped_reconstructed?: number
+  /** 2026-09-26: packs sold/opened with no buy row, acquired inside their drop's
+   *  sale window -> an INFERRED drop cost, kept out of spent_usd. Optional. */
+  inferred_primary_count?: number
+  inferred_primary_spent_usd?: number
   packs_sold: number
   primary_drops: number
   secondary_buys: number
@@ -243,7 +247,7 @@ interface HistoryRow {
   rip_id: string | null
   // 2026-09-18 (get_wallet_pack_history v4), all optional; NULL = unknown.
   buy_usd?: number | null
-  buy_price_source?: "onchain" | "marketplace" | "retail" | null
+  buy_price_source?: "onchain" | "marketplace" | "retail" | "retail_inferred" | null
   sell_source?: "onchain" | "marketplace" | null
   dist_source?: "rip" | "own_row" | "peer_sale" | null
   lowest_ask_usd?: number | null
@@ -585,11 +589,7 @@ export default function PackHistoryClient() {
                     label="Total spent"
                     value={t.spent_usd}
                     tint={t.spent_usd > 0 ? "var(--rpc-red, #E03A2F)" : "#fff"}
-                    caption={
-                      spendKnown < t.packs_purchased
-                        ? `across ${spendKnown.toLocaleString("en-US")} of ${t.packs_purchased.toLocaleString("en-US")} packs with a known price`
-                        : undefined
-                    }
+                    caption={spentCaption(spendKnown, t.packs_purchased, t.inferred_primary_count, t.inferred_primary_spent_usd)}
                   />
                   <HeroStat label="Sold proceeds" value={t.sold_proceeds_usd} tint="#34D399" />
                   <HeroStat

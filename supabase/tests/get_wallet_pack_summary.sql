@@ -12,7 +12,7 @@
 -- rows. Pinned by the separate 0xshopper wallet below.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926170200_audit_20260926_wallet_pack_summary_counts_reconstructed_rips.sql).
+-- (supabase/migrations/20260926190400_audit_20260926_wallet_pack_summary_inferred_drop_cost_sale_window.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -46,6 +46,26 @@ CREATE TABLE public.pack_open_pull_values (
   collection_id uuid, pack_nft_id text, opener_address text, n_pulls int, n_resolved int, n_priced int,
   pull_value_usd numeric(14,2), priced_at timestamptz DEFAULT now(), PRIMARY KEY (collection_id, pack_nft_id));
 
+-- 2026-09-26 (v10): retail normalisation helper + All Day drop prices
+CREATE OR REPLACE FUNCTION public.pack_retail_usd(p_raw text)
+RETURNS numeric
+LANGUAGE sql
+IMMUTABLE PARALLEL SAFE
+SET search_path TO 'public'
+AS $function$
+  -- A pack's retail price in DOLLARS from pack_distributions.metadata->>'retail_price_usd',
+  -- which carries some Top Shot prices in UFix64 units (x1e8). The estate's rule
+  -- (lib/packs/normalize-retail-price.ts): >= 1,000,000 is UFix64. Unlike that
+  -- helper, unknown stays NULL (never 0); 0 stays 0 (a reward pack's known price).
+  SELECT CASE
+           WHEN p_raw IS NULL OR p_raw !~ '^\s*[0-9]+(\.[0-9]+)?\s*$' THEN NULL
+           WHEN p_raw::numeric >= 1000000 THEN round(p_raw::numeric / 100000000, 2)
+           ELSE p_raw::numeric
+         END
+$function$;
+CREATE TABLE IF NOT EXISTS public.allday_pack_supply (dist_id text PRIMARY KEY, pack_price numeric);
+CREATE TABLE IF NOT EXISTS public.pack_nft_identity (collection_id uuid, pack_nft_id text, dist_id text, status text, owner_address text, checked_at timestamptz DEFAULT now(), acquired_at timestamptz, PRIMARY KEY (collection_id, pack_nft_id));
+
 -- >>> BEGIN verbatim get_wallet_pack_summary (body byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_pack_summary(p_wallet text)
  RETURNS jsonb
@@ -63,6 +83,7 @@ DECLARE
   v_purchases_total int; v_sales_total int; v_rips_total int;
   v_rips_valued int;
   v_rips_reconstructed int;
+  v_inf_count int; v_inf_spent numeric; v_inf_unpriced int;
   v_spent numeric; v_proceeds numeric; v_ripped_value numeric;
   v_primary_spent numeric; v_primary_count int; v_primary_unknown int;
   v_secondary_spent numeric; v_secondary_count int;
@@ -115,16 +136,20 @@ BEGIN
   SELECT
     l.collection_id, l.pack_nft_id, l.price, l.currency, l.at,
     (l.is_primary_drop OR coalesce(l.is_shop, false)) AS is_primary_drop, l.src,
+    -- 2026-09-26: retail in DOLLARS (pack_retail_usd normalises Top Shot's
+    -- UFix64-unit prices; All Day's drop price lives in allday_pack_supply).
     CASE WHEN l.is_primary_drop THEN
       COALESCE(
-        (pd_direct.metadata->>'retail_price_usd')::numeric,
-        (pd_via_rip.metadata->>'retail_price_usd')::numeric
+        public.pack_retail_usd(pd_direct.metadata->>'retail_price_usd'),
+        public.pack_retail_usd(pd_via_rip.metadata->>'retail_price_usd'),
+        NULLIF(aps.pack_price, 0)
       )
     ELSE l.price END AS effective_buy_usd,
     (l.is_primary_drop AND
       COALESCE(
-        (pd_direct.metadata->>'retail_price_usd')::numeric,
-        (pd_via_rip.metadata->>'retail_price_usd')::numeric
+        public.pack_retail_usd(pd_direct.metadata->>'retail_price_usd'),
+        public.pack_retail_usd(pd_via_rip.metadata->>'retail_price_usd'),
+        NULLIF(aps.pack_price, 0)
       ) IS NULL
     ) AS is_unknown_primary_buy
   FROM latest l
@@ -134,21 +159,23 @@ BEGIN
   LEFT JOIN public.pack_rips pr
     ON pr.pack_nft_id = l.pack_nft_id AND pr.collection_id = l.collection_id
   LEFT JOIN public.pack_distributions pd_via_rip
-    ON pd_via_rip.dist_id = pr.dist_id AND pd_via_rip.collection_id = l.collection_id;
+    ON pd_via_rip.dist_id = pr.dist_id AND pd_via_rip.collection_id = l.collection_id
+  LEFT JOIN public.allday_pack_supply aps
+    ON l.collection_id = v_ad AND aps.dist_id = COALESCE(ad.dist_id, pr.dist_id);
 
   CREATE TEMP TABLE _wps_sells ON COMMIT DROP AS
   WITH sell_src AS (
     SELECT pp.pack_nft_id, pp.collection_id, pp.sale_price AS price, pp.sale_currency AS currency,
-           pp.sealed_at AS at, pp.is_primary_drop, 'onchain'::text AS src, 1 AS pri
+           pp.sealed_at AS at, pp.is_primary_drop, 'onchain'::text AS src, 1 AS pri, pp.pack_dist_id AS dist_id
     FROM public.pack_purchases pp WHERE pp.seller_address = v_wallet
     UNION ALL
-    SELECT h.pack_nft_id, v_ts, h.sale_price_usd, 'USD', h.block_time, false, 'marketplace', 2
+    SELECT h.pack_nft_id, v_ts, h.sale_price_usd, 'USD', h.block_time, false, 'marketplace', 2, h.dist_id
     FROM public.topshot_pack_sales_history h WHERE h.storefront_address = v_wallet AND h.purchased
     UNION ALL
-    SELECT h.pack_nft_id, v_ad, h.sale_price_usd, 'USD', h.block_time, false, 'marketplace', 2
+    SELECT h.pack_nft_id, v_ad, h.sale_price_usd, 'USD', h.block_time, false, 'marketplace', 2, h.dist_id
     FROM public.allday_pack_sales_history h WHERE h.storefront_address = v_wallet AND h.purchased
     UNION ALL
-    SELECT h.pack_nft_id, v_gz, h.sale_price_usd, 'USD', h.block_time, false, 'marketplace', 2
+    SELECT h.pack_nft_id, v_gz, h.sale_price_usd, 'USD', h.block_time, false, 'marketplace', 2, h.dist_id
     FROM public.golazos_pack_sales_history h WHERE h.storefront_address = v_wallet AND h.purchased
   )
   SELECT DISTINCT ON (collection_id, pack_nft_id) *
@@ -159,21 +186,21 @@ BEGIN
   -- Dapper's list of the moments each pack yielded (pack_open_pull_values, same
   -- opener) first, the open row's own value otherwise. NULL stays NULL.
   CREATE TEMP TABLE _wps_rips ON COMMIT DROP AS
-  SELECT o.collection_id, o.pack_nft_id, o.sealed_at, o.reconstructed,
+  SELECT o.collection_id, o.pack_nft_id, o.sealed_at, o.reconstructed, o.dist_id,
          COALESCE(pov.pull_value_usd, o.pull_value_usd) AS pull_value_usd
   FROM (
-    SELECT collection_id, pack_nft_id, sealed_at, pull_value_usd, false AS reconstructed
+    SELECT collection_id, pack_nft_id, sealed_at, pull_value_usd, false AS reconstructed, dist_id
     FROM public.pack_rips WHERE opener_address = v_wallet
     UNION ALL
-    SELECT v_gz, pack_nft_id, opened_at, pull_value_usd, false
+    SELECT v_gz, pack_nft_id, opened_at, pull_value_usd, false, dist_id
     FROM public.golazos_pack_opens WHERE opener_address = v_wallet
     UNION ALL
-    SELECT v_pin, pack_nft_id, opened_at, pull_value_usd, false
+    SELECT v_pin, pack_nft_id, opened_at, pull_value_usd, false, dist_id
     FROM public.pinnacle_pack_opens WHERE opener_address = v_wallet
     UNION ALL
     -- 2026-09-26: packs opened with no pack NFT, reconstructed from delivery
     -- bursts (wallet_reconstructed_rips); counted, and counted separately.
-    SELECT collection_id, burst_id, opened_at, pull_value_usd, true
+    SELECT collection_id, burst_id, opened_at, pull_value_usd, true, NULL::text
     FROM public.wallet_reconstructed_rips WHERE wallet = v_wallet
   ) o
   LEFT JOIN public.pack_open_pull_values pov
@@ -207,6 +234,46 @@ BEGIN
          COUNT(*) FILTER (WHERE reconstructed)
   INTO v_rips_total, v_rips_valued, v_ripped_value, v_first_event, v_last_event, v_rips_reconstructed
   FROM _wps_rips;
+
+  -- 2026-09-26: packs the wallet SOLD or OPENED with no buy row we hold, acquired
+  -- inside their drop's sale window (start_time - 1 day .. + 30 days; Dapper's
+  -- index date, else bounded by the first sale / open) where the marketplace
+  -- history covers that window (Top Shot; All Day drops from 2022-12-16) --
+  -- priced at the drop's retail, reported SEPARATELY from spent_usd.
+  -- Reconstructed rips have no distribution and are never inferred.
+  SELECT count(*) FILTER (WHERE x.retail IS NOT NULL), COALESCE(sum(x.retail), 0), count(*) FILTER (WHERE x.retail IS NULL)
+    INTO v_inf_count, v_inf_spent, v_inf_unpriced
+  FROM (
+    SELECT CASE WHEN k.collection_id = v_ad
+                THEN (SELECT NULLIF(s2.pack_price, 0) FROM public.allday_pack_supply s2 WHERE s2.dist_id = k.dist_id)
+                ELSE public.pack_retail_usd(pd.metadata->>'retail_price_usd')
+           END AS retail
+    FROM (
+      SELECT u.collection_id, u.pack_nft_id, max(u.dist_id) AS dist_id, min(u.at) AS first_at
+      FROM (
+        SELECT collection_id, pack_nft_id, dist_id, sealed_at AS at FROM _wps_rips WHERE NOT reconstructed
+        UNION ALL
+        SELECT collection_id, pack_nft_id, dist_id, at FROM _wps_sells
+      ) u
+      GROUP BY u.collection_id, u.pack_nft_id
+      HAVING max(u.dist_id) IS NOT NULL
+    ) k
+    LEFT JOIN public.pack_distributions pd
+      ON pd.dist_id = k.dist_id AND pd.collection_id = k.collection_id
+    LEFT JOIN public.pack_nft_identity i
+      ON i.collection_id = k.collection_id AND i.pack_nft_id = k.pack_nft_id AND i.owner_address = v_wallet
+    CROSS JOIN LATERAL (
+      SELECT CASE WHEN pg_input_is_valid(pd.metadata->>'start_time', 'timestamptz')
+                  THEN (pd.metadata->>'start_time')::timestamptz END AS drop_start
+    ) ds
+    WHERE NOT EXISTS (SELECT 1 FROM _wps_buys b WHERE b.collection_id = k.collection_id AND b.pack_nft_id = k.pack_nft_id)
+      -- the history's rule: acquired inside the drop's sale window, and the
+      -- marketplace history covers that window
+      AND ds.drop_start IS NOT NULL
+      AND (k.collection_id = v_ts OR (k.collection_id = v_ad AND ds.drop_start >= timestamptz '2022-12-16'))
+      AND COALESCE(i.acquired_at, k.first_at)
+            BETWEEN ds.drop_start - interval '1 day' AND ds.drop_start + interval '30 days'
+  ) x;
 
   SELECT COALESCE(jsonb_object_agg(sale_currency, jsonb_build_object('purchases', purchases, 'sales', sales, 'spent', spent, 'proceeds', proceeds)), '{}'::jsonb)
   INTO v_currency_breakdown
@@ -275,13 +342,17 @@ BEGIN
       'secondary_proceeds_usd',         ROUND(COALESCE(v_secondary_proceeds, 0)::numeric, 2),
       'ripped_value_usd',               ROUND(COALESCE(v_ripped_value, 0)::numeric, 2),
       'net_pl_usd',                     ROUND((COALESCE(v_proceeds, 0) + COALESCE(v_ripped_value, 0) - COALESCE(v_spent, 0))::numeric, 2),
+      'inferred_primary_count',         v_inf_count,
+      'inferred_primary_spent_usd',     ROUND(COALESCE(v_inf_spent, 0)::numeric, 2),
+      'inferred_primary_unpriced_count', v_inf_unpriced,
+      'net_pl_incl_inferred_usd',       ROUND((COALESCE(v_proceeds, 0) + COALESCE(v_ripped_value, 0) - COALESCE(v_spent, 0) - COALESCE(v_inf_spent, 0))::numeric, 2),
       'first_event_at',                 v_first_event,
       'last_event_at',                  v_last_event
     ),
     'by_currency', v_currency_breakdown,
     'by_collection', v_by_collection,
     'computed_at', now(),
-    'note', 'Buys and sells are one row per (collection, pack) across public.pack_purchases (on-chain: secondary_sale + primary_withdraw/primary_mint, block-indexed from 2026-04) and the Dapper marketplace history tables topshot_pack_sales_history / allday_pack_sales_history / golazos_pack_sales_history (seller = storefront_address; Top Shot from 2023-09, All Day from 2022-12; bursty ingest). pack_purchases.seller_address is the transaction PAYER, which on Dapper is the escrow account, so on-chain rows almost never identify a seller -- packs_sold comes from the marketplace tables. Primary drop sale_price is NULL on-chain; primary_spent_usd recovers retail via pack_distributions.metadata->>retail_price_usd and primary_spend_unknown_count counts the rest. Top Shot shop buys (pack_purchases.custom_id = nba, labelled secondary_sale on ingest) count as primary drops at the price paid. ripped_value_known_count is how many of packs_ripped carry a pull_value_usd -- ripped_value_usd sums THOSE only. packs_ripped counts Top Shot + All Day rips (pack_rips) and Golazos + Pinnacle opens; a pull value comes from Dapper''s list of the moments the pack yielded (pack_open_pull_values, current FMV, whole-pack) first, the open row''s own value otherwise. packs_ripped_reconstructed of packs_ripped are Top Shot packs opened with no pack NFT, rebuilt from the wallet''s moment deliveries (wallet_reconstructed_rips).'
+    'note', 'Buys and sells are one row per (collection, pack) across public.pack_purchases (on-chain: secondary_sale + primary_withdraw/primary_mint, block-indexed from 2026-04) and the Dapper marketplace history tables topshot_pack_sales_history / allday_pack_sales_history / golazos_pack_sales_history (seller = storefront_address; Top Shot from 2023-09, All Day from 2022-12; bursty ingest). pack_purchases.seller_address is the transaction PAYER, which on Dapper is the escrow account, so on-chain rows almost never identify a seller -- packs_sold comes from the marketplace tables. Primary drop sale_price is NULL on-chain; primary_spent_usd recovers retail via pack_distributions.metadata->>retail_price_usd and primary_spend_unknown_count counts the rest. Top Shot shop buys (pack_purchases.custom_id = nba, labelled secondary_sale on ingest) count as primary drops at the price paid. ripped_value_known_count is how many of packs_ripped carry a pull_value_usd -- ripped_value_usd sums THOSE only. packs_ripped counts Top Shot + All Day rips (pack_rips) and Golazos + Pinnacle opens; a pull value comes from Dapper''s list of the moments the pack yielded (pack_open_pull_values, current FMV, whole-pack) first, the open row''s own value otherwise. packs_ripped_reconstructed of packs_ripped are Top Shot packs opened with no pack NFT, rebuilt from the wallet''s moment deliveries (wallet_reconstructed_rips). inferred_primary_* are packs sold or opened with no buy row, acquired inside their drop''s sale window (start_time - 1 day .. + 30 days) where the marketplace history covers it (Top Shot; All Day drops from 2022-12-16), priced at the drop''s retail -- an inference kept OUT of spent_usd; net_pl_incl_inferred_usd subtracts it.'
   );
 END;
 $function$;
@@ -431,6 +502,37 @@ BEGIN
   PERFORM _assert_eq(t->>'ripped_value_known_count', '4', '3 + burst:1');
   PERFORM _assert_eq(t->>'ripped_value_usd', '21.50', '15.50 + 6.00; never another wallet''s burst');
   PERFORM _assert_eq(t->>'first_event_at', '2022-01-01T00:00:00+00:00', 'history now starts at the first reconstructed rip');
+END $$;
+
+-- v10 (2026-09-26): retail in dollars; inferred acquisitions reported apart.
+INSERT INTO public.pack_distributions VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DU', 'UFix Pack', NULL, '{"retail_price_usd":"4990000000"}'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DS', 'Fifteen Pack', NULL, '{"retail_price_usd":"15","start_time":"2025-04-20T00:00:00Z"}'),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'A99', 'AD Drop', NULL, '{"start_time":"2024-05-25T00:00:00Z"}');
+-- I5: a TS pack sold a YEAR after its drop, no buy row -> outside the window -> never inferred
+INSERT INTO public.topshot_pack_sales_history VALUES ('t-i5', 'I5', 70, true, '0xb', '0xinf', 'DS', '2026-05-01');
+INSERT INTO public.allday_pack_supply VALUES ('A99', 99);
+-- I1 a recorded TS primary buy on a UFix64 dist; I2 a TS pack SOLD for 40 with no
+-- buy row (retail 15 inferred); I3 an All Day rip acquired 2024 per the index
+-- (99 inferred); I4 an All Day rip with no index row (not inferable).
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind, pack_dist_id) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'I1', '0xinf', '0x0b2a3299cc857e29', NULL, NULL, '2026-07-01', true, 'primary_withdraw', 'DU');
+INSERT INTO public.topshot_pack_sales_history VALUES ('t-i2', 'I2', 40, true, '0xb', '0xinf', 'DS', '2025-05-01');
+INSERT INTO public.pack_rips (collection_id, pack_nft_id, opener_address, moments_pulled, sealed_at, dist_id, pull_value_usd) VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'I3', '0xinf', 3, '2025-01-02', 'A99', 20),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'I4', '0xinf', 3, '2025-01-03', 'A99', 5);
+INSERT INTO public.pack_nft_identity VALUES ('dee28451-5d62-409e-a1ad-a83f763ac070', 'I3', 'A99', 'Opened', '0xinf', now(), '2024-06-01');
+
+DO $$
+DECLARE t jsonb;
+BEGIN
+  t := public.get_wallet_pack_summary('0xinf')->'totals';
+  PERFORM _assert_eq(t->>'primary_spent_usd', '49.90', 'a UFix64 retail is $49.90 of spend, not $4.99bn');
+  PERFORM _assert_eq(t->>'spent_usd', '49.90', 'recorded spend excludes every inference');
+  PERFORM _assert_eq(t->>'inferred_primary_count', '2', 'I2 (TS sold 11 days into its drop) + I3 (AD acquired 7 days into its drop); never I1 (recorded), I4 (no index date, rip outside the window) or I5');
+  PERFORM _assert_eq(t->>'inferred_primary_spent_usd', '114.00', '15 + 99');
+  PERFORM _assert_eq(t->>'net_pl_usd', '85.10', '40 + 70 + 25 - 49.90 -- the recorded view is unchanged');
+  PERFORM _assert_eq(t->>'net_pl_incl_inferred_usd', '-28.90', '85.10 - 114; I5 (sold a year after its drop) is never inferred');
 END $$;
 
 ROLLBACK;

@@ -78,7 +78,7 @@ interface HistoryRow {
   // 2026-09-18 (get_wallet_pack_history v4) — every one optional so an older
   // payload still renders. NULL means unknown; the RPC never emits 0 for it.
   buy_usd?: number | null
-  buy_price_source?: "onchain" | "marketplace" | "retail" | null
+  buy_price_source?: "onchain" | "marketplace" | "retail" | "retail_inferred" | null
   sell_source?: "onchain" | "marketplace" | null
   dist_source?: "rip" | "own_row" | "peer_sale" | null
   lowest_ask_usd?: number | null

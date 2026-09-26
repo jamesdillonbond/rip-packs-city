@@ -81,7 +81,7 @@ const PINS = [
     // v9 (same day): packs opened with no pack NFT, reconstructed from delivery
     // bursts (wallet_reconstructed_rips), labelled rip_source = reconstructed.
     migration:
-      "supabase/migrations/20260926170100_audit_20260926_wallet_pack_history_lists_reconstructed_rips.sql",
+      "supabase/migrations/20260926190300_audit_20260926_inferred_drop_cost_only_inside_the_drops_sale_window.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
@@ -90,7 +90,7 @@ const PINS = [
     fn: "get_wallet_pack_summary",
     test: "supabase/tests/get_wallet_pack_summary.sql",
     migration:
-      "supabase/migrations/20260926170200_audit_20260926_wallet_pack_summary_counts_reconstructed_rips.sql",
+      "supabase/migrations/20260926190400_audit_20260926_wallet_pack_summary_inferred_drop_cost_sale_window.sql",
   },
   {
     // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists
