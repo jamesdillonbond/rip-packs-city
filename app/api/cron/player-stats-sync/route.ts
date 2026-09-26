@@ -20,6 +20,13 @@ import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 //   GET  ?phase=espn-resolve-targets&league=nba&limit=N
 //        -> { targets:[{identity_id, display_name, name_slug, aliases[]}] }
 //        (aliases: the other spellings RPC knows, for search retries; batch 56)
+//   Both GETs take &startedAt=<ISO>&hb=1|0 (2026-09-25): the heartbeat is
+//   written by the runner's FIRST call (hb=1) and stamped with the runner's OWN
+//   startedAt — the same value the final POST logs. Before this the NBA leg
+//   resolved ESPN ids for ~3 min before its targets call, so the heartbeat sat
+//   ~160 s after the terminal row's started_at, outside the ±5 s correlation,
+//   and the sentinel's Wall Kills arm read every NBA run as a kill (5/10).
+//   With no hb param, the targets phase still writes it (older runner).
 //   POST { league, espn_ids:[{identity_id, espn_id|null, espn_league|null, matched_by}] }
 //        -> { updated }  (writes an espn_id only where NULL; provenance kept)
 //   POST { league, rows:[…stat lines…], touched:[espn_id…] }
@@ -55,15 +62,37 @@ function limitOf(raw: string | null, dflt: number): number {
   return Number.isInteger(n) && n > 0 ? Math.min(n, 2000) : dflt
 }
 
+// The runner's own start, when it sent one that is plausible (in the last
+// hour, not ahead of this clock by more than a minute); otherwise now. The
+// correlation window is ±5 s, so the marker must carry the SAME instant the
+// terminal row will — a route-side Date.now() is late by however long the
+// runner worked before calling.
+function runnerStartMs(raw: string | null): number {
+  const now = Date.now()
+  if (!raw) return now
+  const t = Date.parse(raw)
+  if (!Number.isFinite(t) || t > now + 60_000 || t < now - 3_600_000) return now
+  return t
+}
+
 export async function GET(req: NextRequest) {
   if (!authed(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const phase = req.nextUrl.searchParams.get("phase")
   const league = leagueOf(req.nextUrl.searchParams.get("league"))
   if (!league) return NextResponse.json({ error: "league must be nfl or nba" }, { status: 400 })
 
+  const hb = req.nextUrl.searchParams.get("hb")
+  const writeHb = hb === "1" || (hb == null && phase === "targets")
+  if (writeHb && (phase === "targets" || phase === "espn-resolve-targets")) {
+    await writeInvocationHeartbeat({
+      pipeline: PIPELINE,
+      startedAtMs: runnerStartMs(req.nextUrl.searchParams.get("startedAt")),
+      extra: { league, limit: limitOf(req.nextUrl.searchParams.get("limit"), phase === "targets" ? 300 : 200), first_phase: phase },
+    })
+  }
+
   if (phase === "targets") {
     const limit = limitOf(req.nextUrl.searchParams.get("limit"), 300)
-    await writeInvocationHeartbeat({ pipeline: PIPELINE, startedAtMs: Date.now(), extra: { league, limit } })
     const { data, error } = await supabaseAdmin.rpc("player_stats_sync_targets", { p_league: league, p_limit: limit })
     if (error) return NextResponse.json({ error: `targets: ${error.message}` }, { status: 500 })
     const targets = (data as unknown[]) ?? []

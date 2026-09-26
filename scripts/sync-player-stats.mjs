@@ -78,8 +78,18 @@ async function espnGet(url) {
   return { status: 200, json: await res.json() }
 }
 
+// The run's identity for the route's heartbeat: the SAME startedAt the final
+// POST logs, and hb=1 on the run's FIRST route call only (nba: the resolve
+// phase; nfl: targets). See the route header — a heartbeat written later than
+// the terminal row's started_at reads as a wall kill.
+function runQs(stats) {
+  const first = !stats.hb_sent
+  stats.hb_sent = true
+  return `startedAt=${encodeURIComponent(stats.started_at)}&hb=${first ? 1 : 0}`
+}
+
 async function resolveEspnIds(league, stats) {
-  const { targets } = await routeGet(`phase=espn-resolve-targets&league=${league}&limit=${RESOLVE_LIMIT}`)
+  const { targets } = await routeGet(`phase=espn-resolve-targets&league=${league}&limit=${RESOLVE_LIMIT}&${runQs(stats)}`)
   stats.resolve_targets = targets.length
   const out = []
   for (const t of targets) {
@@ -151,7 +161,7 @@ async function resolveEspnIds(league, stats) {
 }
 
 async function syncStats(league, stats) {
-  const { targets } = await routeGet(`phase=targets&league=${league}&limit=${LIMIT}`)
+  const { targets } = await routeGet(`phase=targets&league=${league}&limit=${LIMIT}&${runQs(stats)}`)
   stats.targets = targets.length
   const parts = chunk(targets, CHUNK_PLAYERS)
   for (const part of parts) {
@@ -204,6 +214,7 @@ async function runLeague(league) {
     resolve_targets: 0, resolved: 0, unresolved: 0, resolve_failed: 0,
     deadline_hit: false, errors: [],
     runner_event: process.env.GITHUB_EVENT_NAME || "local",
+    started_at: startedAt, hb_sent: false,
   }
   try {
     if (league === "nba") await resolveEspnIds(league, stats)
@@ -216,7 +227,7 @@ async function runLeague(league) {
   console.log(`[${league}] targets ${stats.targets} · ok ${stats.fetched_ok} · 404 ${stats.fetched_404} · failed ${stats.fetched_failed} · rows ${stats.rows_upserted} · chunks ${stats.chunks_ok}/${stats.chunks}${stats.deadline_hit ? " · DEADLINE" : ""}`)
   if (stats.errors.length) console.log(`[${league}] first errors: ${stats.errors.slice(0, 5).join(" | ")}`)
   if (DRY_RUN) return true
-  const fin = await routePost({ final: true, league, startedAt, stats: { ...stats, errors: stats.errors.slice(0, 10) } })
+  const fin = await routePost({ final: true, league, startedAt, stats: { ...stats, started_at: undefined, hb_sent: undefined, errors: stats.errors.slice(0, 10) } })
   console.log(`[${league}] logged: ok=${fin.ok} ${fin.problems?.length ? fin.problems.join("; ") : ""}`)
   return fin.ok === true
 }

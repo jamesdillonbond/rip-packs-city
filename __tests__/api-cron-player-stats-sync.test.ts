@@ -99,6 +99,24 @@ describe("GET phases", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toMatch(/targets: canceling/)
   })
+  it("the heartbeat carries the RUNNER's startedAt, so it correlates with the final row (±5 s) however long the runner worked first", async () => {
+    const startedAt = new Date(Date.now() - 170_000).toISOString()
+    await GET(makeReq({ url: url + `?phase=espn-resolve-targets&league=nba&startedAt=${encodeURIComponent(startedAt)}&hb=1`, method: "GET", auth: AUTH }))
+    expect(state.inserts).toHaveLength(1)
+    expect(state.inserts[0].pipeline).toBe("player-stats-sync-heartbeat")
+    expect(state.inserts[0].started_at).toBe(startedAt)
+    expect(state.inserts[0].extra).toMatchObject({ league: "nba", first_phase: "espn-resolve-targets" })
+  })
+  it("hb=0 on the run's second call writes NO second heartbeat (one marker per run)", async () => {
+    const startedAt = new Date(Date.now() - 170_000).toISOString()
+    await GET(makeReq({ url: url + `?phase=targets&league=nba&startedAt=${encodeURIComponent(startedAt)}&hb=0`, method: "GET", auth: AUTH }))
+    expect(state.inserts).toEqual([])
+  })
+  it("an implausible startedAt (a day old, or in the future) falls back to now, not to the bogus instant", async () => {
+    const before = Date.now()
+    await GET(makeReq({ url: url + `?phase=targets&league=nfl&startedAt=${encodeURIComponent(new Date(before - 86_400_000).toISOString())}&hb=1`, method: "GET", auth: AUTH }))
+    expect(Date.parse(state.inserts[0].started_at)).toBeGreaterThanOrEqual(before)
+  })
   it("espn-resolve-targets: returns the unresolved identities, no heartbeat", async () => {
     const res = await GET(makeReq({ url: url + "?phase=espn-resolve-targets&league=nba", method: "GET", auth: AUTH }))
     expect(res.status).toBe(200)
