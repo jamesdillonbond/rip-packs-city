@@ -205,3 +205,125 @@ export function tileParallelLabel(
   if (!suffix) return null
   return suffix.charAt(0).toUpperCase() + suffix.slice(1).toLowerCase()
 }
+
+// ── Edition filters (player page, 2026-09-25) ────────────────────────────────
+//
+// Client-side, over the rows ALREADY LOADED. ⚠ That makes a filtered view a
+// SAMPLE whenever more pages remain — the grid says so next to the count
+// rather than letting "0 matches" read as "this player has none".
+
+export type EditionOwnFilter = "all" | "owned" | "not_owned" | "locked"
+
+export interface EditionFilters {
+  q: string
+  team: string
+  set: string
+  series: string
+  tier: string
+  parallel: string
+  own: EditionOwnFilter
+}
+
+export const EMPTY_EDITION_FILTERS: EditionFilters = {
+  q: "", team: "all", set: "all", series: "all", tier: "all", parallel: "all", own: "all",
+}
+
+/** The label a Standard (non-parallel) printing files under in the Parallel filter. */
+export const STANDARD_PARALLEL = "Standard"
+
+export interface FilterableEdition {
+  route_slug: string
+  player_name: string | null
+  name: string | null
+  team_name?: string | null
+  set_name?: string | null
+  series_label: string | null
+  series_num?: number | null
+  tier: string | null
+  tier_rank?: number | null
+  subedition_name?: string | null
+}
+
+export interface EditionOwnership { owned: number; locked: number }
+
+export function isEditionFilterActive(f: EditionFilters): boolean {
+  return (
+    f.q.trim() !== "" || f.team !== "all" || f.set !== "all" || f.series !== "all" ||
+    f.tier !== "all" || f.parallel !== "all" || f.own !== "all"
+  )
+}
+
+export function editionParallelValue(e: FilterableEdition, collectionUrlSlug: string): string {
+  return tileParallelLabel(e, collectionUrlSlug) ?? STANDARD_PARALLEL
+}
+
+export interface EditionFilterOptions {
+  teams: string[]
+  sets: string[]
+  series: string[]
+  tiers: string[]
+  parallels: string[]
+}
+
+/** Distinct option values present in `rows` — a filter never offers a value that matches nothing. */
+export function editionFilterOptions<T extends FilterableEdition>(rows: T[], collectionUrlSlug: string): EditionFilterOptions {
+  const teams = new Set<string>()
+  const sets = new Set<string>()
+  const series = new Map<string, number>()
+  const tiers = new Map<string, number>()
+  const parallels = new Set<string>()
+  for (const e of rows) {
+    if (e.team_name) teams.add(e.team_name)
+    if (e.set_name) sets.add(e.set_name)
+    if (e.series_label) {
+      const n = e.series_num ?? Number.NEGATIVE_INFINITY
+      series.set(e.series_label, Math.max(series.get(e.series_label) ?? Number.NEGATIVE_INFINITY, n))
+    }
+    if (e.tier) tiers.set(e.tier, Math.min(tiers.get(e.tier) ?? Number.POSITIVE_INFINITY, e.tier_rank ?? Number.POSITIVE_INFINITY))
+    parallels.add(editionParallelValue(e, collectionUrlSlug))
+  }
+  const alpha = (a: string, b: string) => a.localeCompare(b)
+  return {
+    teams: [...teams].sort(alpha),
+    sets: [...sets].sort(alpha),
+    // newest series first, then label
+    series: [...series.entries()].sort((a, b) => (b[1] - a[1]) || alpha(a[0], b[0])).map(([k]) => k),
+    // rarest first (tier_rank 1 = ULTIMATE)
+    tiers: [...tiers.entries()].sort((a, b) => (a[1] - b[1]) || alpha(a[0], b[0])).map(([k]) => k),
+    // Standard first, then parallels A→Z
+    parallels: [...parallels].sort((a, b) => (a === STANDARD_PARALLEL ? -1 : b === STANDARD_PARALLEL ? 1 : alpha(a, b))),
+  }
+}
+
+/**
+ * Apply `f` to `rows`. `ownership` is null when the wallet's counts are not
+ * KNOWN (no wallet, still loading, or the read failed) — the ownership filter
+ * is then a no-op rather than an "owns nothing" that empties the grid.
+ */
+export function filterEditions<T extends FilterableEdition>(
+  rows: T[],
+  f: EditionFilters,
+  collectionUrlSlug: string,
+  ownership: Map<string, EditionOwnership> | null,
+): T[] {
+  const q = f.q.trim().toLowerCase()
+  return rows.filter((e) => {
+    if (f.team !== "all" && e.team_name !== f.team) return false
+    if (f.set !== "all" && e.set_name !== f.set) return false
+    if (f.series !== "all" && e.series_label !== f.series) return false
+    if (f.tier !== "all" && e.tier !== f.tier) return false
+    if (f.parallel !== "all" && editionParallelValue(e, collectionUrlSlug) !== f.parallel) return false
+    if (f.own !== "all" && ownership) {
+      const o = ownership.get(e.route_slug)
+      const owned = o?.owned ?? 0
+      if (f.own === "owned" && owned === 0) return false
+      if (f.own === "not_owned" && owned > 0) return false
+      if (f.own === "locked" && (o?.locked ?? 0) === 0) return false
+    }
+    if (q) {
+      const hay = [e.name, e.player_name, e.team_name, e.set_name, e.subedition_name].filter(Boolean).join(" ").toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+}

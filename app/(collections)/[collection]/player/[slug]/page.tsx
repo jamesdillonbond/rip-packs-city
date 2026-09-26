@@ -441,6 +441,8 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
             pageSize={PAGE_SIZE}
             showSetLink
             showSort
+            showFilters
+            showOwnership
           />
         ) : (
           <SectionUnavailable noun={`${detail.name}\u2019s editions`} />

@@ -225,3 +225,49 @@ describe("tileParallelLabel (2026-09-25)", () => {
     expect(tileParallelLabel({ name: null, player_name: null }, "candy-mlb")).toBeNull()
   })
 })
+
+import {
+  EMPTY_EDITION_FILTERS,
+  editionFilterOptions,
+  filterEditions,
+  isEditionFilterActive,
+} from "@/lib/entity-editions-grid-format"
+
+describe("edition filters (player page, 2026-09-25)", () => {
+  const e = (slug: string, over: Record<string, unknown> = {}) => ({
+    route_slug: slug, player_name: "P", name: "N " + slug, series_label: "Series 4", series_num: 4,
+    tier: "COMMON", tier_rank: 9, team_name: "A", set_name: "Base", ...over,
+  })
+  const rows = [
+    e("a", { tier: "LEGENDARY", tier_rank: 3, series_label: "Series 1", series_num: 1 }),
+    e("b", { subedition_name: "Hexwave", team_name: "B" }),
+    e("c", { tier: "RARE", tier_rank: 5, series_label: "Series 7", series_num: 7 }),
+  ]
+
+  it("options are ordered rarest tier first, newest series first, Standard first", () => {
+    const o = editionFilterOptions(rows, "nba-top-shot")
+    expect(o.tiers).toEqual(["LEGENDARY", "RARE", "COMMON"])
+    expect(o.series).toEqual(["Series 7", "Series 4", "Series 1"])
+    expect(o.parallels).toEqual(["Standard", "Hexwave"])
+    expect(o.teams).toEqual(["A", "B"])
+  })
+
+  it("the empty filter is inactive and matches everything", () => {
+    expect(isEditionFilterActive(EMPTY_EDITION_FILTERS)).toBe(false)
+    expect(filterEditions(rows, EMPTY_EDITION_FILTERS, "nba-top-shot", null)).toHaveLength(3)
+  })
+
+  it("an ownership filter with UNKNOWN counts is a no-op, not 'owns nothing'", () => {
+    const f = { ...EMPTY_EDITION_FILTERS, own: "owned" as const }
+    expect(filterEditions(rows, f, "nba-top-shot", null)).toHaveLength(3)
+    const known = new Map([["b", { owned: 1, locked: 0 }]])
+    expect(filterEditions(rows, f, "nba-top-shot", known).map((r) => r.route_slug)).toEqual(["b"])
+    expect(filterEditions(rows, { ...f, own: "not_owned" }, "nba-top-shot", known).map((r) => r.route_slug)).toEqual(["a", "c"])
+    expect(filterEditions(rows, { ...f, own: "locked" }, "nba-top-shot", known)).toHaveLength(0)
+  })
+
+  it("Standard matches only rows with no parallel", () => {
+    const f = { ...EMPTY_EDITION_FILTERS, parallel: "Standard" }
+    expect(filterEditions(rows, f, "nba-top-shot", null).map((r) => r.route_slug)).toEqual(["a", "c"])
+  })
+})

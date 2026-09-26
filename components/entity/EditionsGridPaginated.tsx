@@ -5,7 +5,7 @@
 // and Series pages. Each tile links to /[collection]/edition/[route_slug].
 // "Load more" calls the supplied endpoint with offset.
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
@@ -20,7 +20,16 @@ import {
   buildLoadMoreUrl,
   buildEditionImageCandidates,
   tileParallelLabel,
+  type EditionFilters,
+  type EditionOwnFilter,
+  type EditionOwnership,
+  EMPTY_EDITION_FILTERS,
+  editionFilterOptions,
+  filterEditions,
+  isEditionFilterActive,
 } from "@/lib/entity-editions-grid-format"
+import { getCollection } from "@/lib/collections"
+import { getOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 
 export interface EditionTile {
   route_slug: string
@@ -99,9 +108,72 @@ interface Props {
   packMode?: boolean
   /** Total exhausted (drop_weight = 0) pool rows, for the collapsed-section header. */
   exhaustedTotal?: number
+  /** Team / Set / Series / Rarity / Parallel / Ownership filters over the loaded rows. */
+  showFilters?: boolean
+  /**
+   * "Owned: X  Locked: Y" under FMV on each tile, for the reader's loaded wallet
+   * (the per-chain `rpc_owner_key` every Owned/Locked surface uses). Joined on
+   * `route_slug` = `wallet_moments_cache.edition_key`, which holds for every
+   * collection EXCEPT Pinnacle (its route_slug is a pinnacle_editions id), so
+   * Pinnacle never renders the line — a zero there would be a false claim.
+   */
+  showOwnership?: boolean
 }
 
-export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, initial, initialFailed = false, pageSize, showSetLink = true, showSort = false, packMode = false, exhaustedTotal = 0 }: Props) {
+// The wallet's counts, in all the states a read can be in. Only `ok` may put
+// a number on a tile: a missing wallet, a pending read and a failed read are
+// all UNKNOWN, and "Owned: 0" out of any of them is the fabricated-zero class.
+type OwnershipState =
+  | { status: "off" }
+  | { status: "loading" }
+  | { status: "failed" }
+  // The wallet has NO rows in this collection's cache — either it holds none
+  // or it was never indexed; the route cannot tell which, so neither do we.
+  | { status: "unindexed" }
+  | { status: "ok"; map: Map<string, EditionOwnership> }
+
+function useWalletEditionOwnership(enabled: boolean, collectionUrlSlug: string): OwnershipState {
+  const dbChain = getCollection(collectionUrlSlug)?.dbChain
+  // localStorage is an external store: read it with useSyncExternalStore ("" on
+  // the server and at hydration, so SSR never renders a wallet it cannot know).
+  const ownerKey = useSyncExternalStore(
+    (cb) => (enabled ? onOwnerKeyChangeForChain(dbChain, () => cb()) : () => {}),
+    () => (enabled ? getOwnerKeyForChain(dbChain) : ""),
+    () => "",
+  )
+  // The settled result, tagged with the request it answers. "off" and
+  // "loading" are DERIVED below, so the effect only sets state from its async
+  // callbacks — a result for a previous wallet can never be shown for this one.
+  const [settled, setSettled] = useState<{ reqKey: string; state: OwnershipState } | null>(null)
+  const active = enabled && !!ownerKey && ownerKeyMatchesChain(ownerKey, dbChain)
+  const url = active
+    ? `/api/wallet/edition-counts?wallet=${encodeURIComponent(ownerKey)}&collection=${encodeURIComponent(collectionUrlSlug)}`
+    : null
+  useEffect(() => {
+    if (!url) return
+    let cancelled = false
+    fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15000) })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return (await r.json()) as { editions?: Record<string, { owned: number; locked: number }> }
+      })
+      .then((j) => {
+        if (cancelled) return
+        const map = new Map<string, EditionOwnership>()
+        for (const [k, v] of Object.entries(j.editions ?? {})) {
+          map.set(k, { owned: Number(v.owned) || 0, locked: Number(v.locked) || 0 })
+        }
+        setSettled({ reqKey: url, state: map.size === 0 ? { status: "unindexed" } : { status: "ok", map } })
+      })
+      .catch(() => { if (!cancelled) setSettled({ reqKey: url, state: { status: "failed" } }) })
+    return () => { cancelled = true }
+  }, [url])
+  if (!url) return { status: "off" }
+  if (!settled || settled.reqKey !== url) return { status: "loading" }
+  return settled.state
+}
+
+export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, initial, initialFailed = false, pageSize, showSetLink = true, showSort = false, packMode = false, exhaustedTotal = 0, showFilters = false, showOwnership = false }: Props) {
   const [rows, setRows] = useState<EditionTile[]>(initial)
   const [offset, setOffset] = useState<number>(initial.length)
   const [loading, setLoading] = useState(false)
@@ -111,7 +183,14 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
   const [sortKey, setSortKey] = useState<EditionSortKey>("fmv_desc")
   const [showExhausted, setShowExhausted] = useState(false)
 
-  const sorted = showSort ? [...rows].sort((a, b) => compareEditions(a, b, sortKey, tileSubject)) : rows
+  const [filters, setFilters] = useState<EditionFilters>(EMPTY_EDITION_FILTERS)
+  const ownership = useWalletEditionOwnership(showOwnership && collectionUrlSlug !== "disney-pinnacle", collectionUrlSlug)
+  const ownershipMap = ownership.status === "ok" ? ownership.map : null
+  const filterOptions = useMemo(() => editionFilterOptions(rows, collectionUrlSlug), [rows, collectionUrlSlug])
+  const filtersActive = showFilters && isEditionFilterActive(filters)
+  const visible = filtersActive ? filterEditions(rows, filters, collectionUrlSlug, ownershipMap) : rows
+
+  const sorted = showSort ? [...visible].sort((a, b) => compareEditions(a, b, sortKey, tileSubject)) : visible
 
   // packMode: pull drop_weight === 0 rows out of the main grid into a collapsed
   // "pulled out" section. Rows with no drop_weight (every non-pack importer)
@@ -158,8 +237,38 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
 
   return (
     <div>
+      {showFilters && (
+        <EditionFilterBar
+          filters={filters}
+          setFilters={setFilters}
+          options={filterOptions}
+          ownershipKnown={ownershipMap !== null}
+          collectionUrlSlug={collectionUrlSlug}
+        />
+      )}
+      {showOwnership && ownership.status === "failed" && (
+        <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10 }}>
+          Couldn&rsquo;t load your owned &amp; locked counts &mdash; tiles show no ownership until it loads.
+        </div>
+      )}
+      {showOwnership && ownership.status === "unindexed" && (
+        <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10 }}>
+          Owned / Locked appears once your loaded wallet is indexed for this collection &mdash; open it in Collection to index it.
+        </div>
+      )}
+      {filtersActive && (
+        <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10, display: "flex", flexWrap: "wrap", gap: "4px 12px", alignItems: "center" }}>
+          <span data-testid="edition-filter-count">
+            {visible.length} of {rows.length} loaded edition{rows.length === 1 ? "" : "s"}
+            {!exhausted ? " \u00b7 more not loaded yet" : ""}
+          </span>
+          <button type="button" onClick={() => setFilters(EMPTY_EDITION_FILTERS)} className="rpc-mono" style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "var(--rpc-red)", fontSize: 11, letterSpacing: "0.06em" }}>
+            Clear filters
+          </button>
+        </div>
+      )}
       {showSort && (
-        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
           {([
             { k: "fmv_desc",    l: "FMV ↓" },
             { k: "circ_asc",    l: "Mint ↑" },
@@ -181,11 +290,18 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
           ))}
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
-        {gridRows.map((e, idx) => (
-          <EditionTileCard key={e.route_slug} e={e} idx={idx} collectionUrlSlug={collectionUrlSlug} showSetLink={showSetLink} videoEnabled={videoEnabled} />
-        ))}
-      </div>
+      {filtersActive && gridRows.length === 0 ? (
+        <div className="rpc-mono" style={{ padding: 12, fontSize: 12, color: "var(--rpc-text-muted)" }}>
+          {/* ⚠ A match against LOADED rows only — never "this player has none". */}
+          Nothing among the loaded editions matches these filters{!exhausted ? " \u2014 load more to search the rest" : ""}.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+          {gridRows.map((e, idx) => (
+            <EditionTileCard key={e.route_slug} e={e} idx={idx} collectionUrlSlug={collectionUrlSlug} showSetLink={showSetLink} videoEnabled={videoEnabled} ownership={ownershipMap ? (ownershipMap.get(e.route_slug) ?? { owned: 0, locked: 0 }) : null} />
+          ))}
+        </div>
+      )}
       {!exhausted && (
         <div style={{ marginTop: 14, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
           {/* ⚠ The failure line, and the button STAYS so the reader can retry.
@@ -237,7 +353,7 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
             ) : (
               <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10, opacity: 0.6 }}>
                 {exhaustedRows.map((e, idx) => (
-                  <EditionTileCard key={e.route_slug} e={e} idx={idx} collectionUrlSlug={collectionUrlSlug} showSetLink={showSetLink} videoEnabled={videoEnabled} />
+                  <EditionTileCard key={e.route_slug} e={e} idx={idx} collectionUrlSlug={collectionUrlSlug} showSetLink={showSetLink} videoEnabled={videoEnabled} ownership={ownershipMap ? (ownershipMap.get(e.route_slug) ?? { owned: 0, locked: 0 }) : null} />
                 ))}
               </div>
             )
@@ -256,12 +372,15 @@ function EditionTileCard({
   collectionUrlSlug,
   showSetLink,
   videoEnabled,
+  ownership,
 }: {
   e: EditionTile
   idx: number
   collectionUrlSlug: string
   showSetLink: boolean
   videoEnabled: boolean
+  /** null = counts not KNOWN (no wallet / loading / failed) — render nothing, never a zero. */
+  ownership: EditionOwnership | null
 }) {
   return (
     <Link
@@ -307,7 +426,13 @@ function EditionTileCard({
         </div>
       </div>
       {/* ConfidencePill removed 2026-07-11 — confidence is build-time signal. */}
-      <div style={{ marginTop: 6, display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
+      <div style={{ marginTop: 6, display: "flex", justifyContent: ownership ? "space-between" : "flex-end", alignItems: "center", gap: 8 }}>
+        {ownership && (
+          <span className="rpc-mono" data-testid="tile-ownership" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
+            Owned: <span style={{ color: ownership.owned > 0 ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)", fontWeight: ownership.owned > 0 ? 700 : 400 }}>{fmtCount(ownership.owned)}</span>
+            <span style={{ marginLeft: 10 }}>Locked:</span> <span style={{ color: ownership.locked > 0 ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)", fontWeight: ownership.locked > 0 ? 700 : 400 }}>{fmtCount(ownership.locked)}</span>
+          </span>
+        )}
         {e.circulation_count !== null && e.circulation_count !== undefined && (
           <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
             Mint {fmtCount(e.circulation_count)}
@@ -330,6 +455,57 @@ function EditionTileCard({
         </div>
       )}
     </Link>
+  )
+}
+
+function EditionFilterBar({
+  filters,
+  setFilters,
+  options,
+  ownershipKnown,
+  collectionUrlSlug,
+}: {
+  filters: EditionFilters
+  setFilters: (f: EditionFilters) => void
+  options: ReturnType<typeof editionFilterOptions>
+  ownershipKnown: boolean
+  collectionUrlSlug: string
+}) {
+  const set = <K extends keyof EditionFilters>(k: K, v: EditionFilters[K]) => setFilters({ ...filters, [k]: v })
+  // A select with one option filters nothing — hide it rather than offer a no-op.
+  const selects: Array<{ k: "team" | "set" | "series" | "tier" | "parallel"; all: string; opts: string[]; label?: (v: string) => string }> = [
+    { k: "team", all: "All Teams", opts: options.teams },
+    { k: "set", all: "All Sets", opts: options.sets },
+    { k: "series", all: "All Series", opts: options.series, label: (v) => tileSeriesLabel(v, collectionUrlSlug) ?? v },
+    { k: "tier", all: "All Rarities", opts: options.tiers },
+    { k: "parallel", all: "All Parallels", opts: options.parallels },
+  ]
+  return (
+    <div data-testid="edition-filters" className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" style={{ marginBottom: 10 }}>
+      <input
+        value={filters.q}
+        onChange={(ev) => set("q", ev.target.value)}
+        placeholder="Filter editions…"
+        aria-label="Filter editions"
+        className="rpc-filter-input col-span-2 sm:col-span-1"
+      />
+      {selects.filter((s) => s.opts.length > 1 || filters[s.k] !== "all").map((s) => (
+        <select key={s.k} aria-label={s.all} value={filters[s.k]} onChange={(ev) => set(s.k, ev.target.value)} className="rpc-filter-select">
+          <option value="all">{s.all}</option>
+          {s.opts.map((v) => <option key={v} value={v}>{s.label ? s.label(v) : v}</option>)}
+        </select>
+      ))}
+      {/* Only offered once the wallet's counts are KNOWN — otherwise "Owned"
+          would filter against nothing and read as "you own none of these". */}
+      {ownershipKnown && (
+        <select aria-label="Ownership" value={filters.own} onChange={(ev) => set("own", ev.target.value as EditionOwnFilter)} className="rpc-filter-select">
+          <option value="all">All Ownership</option>
+          <option value="owned">Owned</option>
+          <option value="not_owned">Not Owned</option>
+          <option value="locked">Locked</option>
+        </select>
+      )}
+    </div>
   )
 }
 
