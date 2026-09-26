@@ -189,9 +189,9 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 - ⚠ **`rows_written = 0`, `ok = false` and `extra.<step>=0` are null instruments** — read `extra` + `last_error`, pair every count with an `_error`, **measure the OUTCOME table, not the self-report**. [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
 - ⚠ **A `*_at` name is its WRITER's contract — REPLACING the writer REDEFINES the column while the name holds**; ⛔ **a CACHE keyed on one rots INVISIBLY — the tell is it disagreeing with the row it NAMES** (R107). `col_description()` first: database.md.
 - ⚠ **Displaced 09-20 to [database.md](docs/reference/database.md) (verbatim, end of file): REVOKE `FROM PUBLIC, anon, authenticated` in ONE statement ORPHANS a pg_cron caller — GRANT in the same migration · `check_*` MIXED return shapes — THREE, incl. a jsonb OBJECT; LENGTH ≠ SEVERITY · UNIQUE INDEX on a PARTITIONED table · `pipeline_runs` ~73h retention.**
-- **`apply_migration` for DDL; `execute_sql` for reads/verification.** FMV writes are delete-then-insert, NEVER upsert. ⚠ **CIC needs `execute_sql` and dies at the 60 s cap leaving `indisvalid=false`; a `SET …;` prefix makes a pg_cron command a TRANSACTION BLOCK; ⛔ never `RESET ALL`** — [database.md](docs/reference/database.md). MCP + schema gotchas: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
+- **`apply_migration` for DDL (its FILE first, 09-26); `execute_sql` for reads.** FMV writes are delete-then-insert, NEVER upsert. ⚠ **CIC needs `execute_sql` and dies at the 60 s cap leaving `indisvalid=false`; a `SET …;` prefix makes a pg_cron command a TRANSACTION BLOCK; ⛔ never `RESET ALL`** — [database.md](docs/reference/database.md). MCP + schema gotchas: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
-Full detail: [docs/reference/database.md](docs/reference/database.md).
+Full detail: [database.md](docs/reference/database.md).
 
 ### Vercel
 
