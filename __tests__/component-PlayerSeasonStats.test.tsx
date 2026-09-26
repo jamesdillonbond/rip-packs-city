@@ -109,6 +109,25 @@ describe("<PlayerSeasonStats>", () => {
     expect(screen.getByTestId("season-stats-empty").textContent).toMatch(/No season stats from the feed yet/)
     expect(screen.getByTestId("season-stats-source").textContent).toMatch(/ESPN/)
   })
+  it("no refresh stamp at all → the source line is just ESPN; a line without a team shows no team", () => {
+    const bare: SeasonStatsResult = {
+      ...nfl,
+      stats_refreshed_at: null,
+      rows_refreshed_at: null,
+      rows: [{ season: 2025, season_type: 2, category: "passing", display_name: "Passing", team_slug: null, is_total: false, labels: ["YDS"], names: ["passingYards"], values: ["4,100"] }],
+    }
+    render(<PlayerSeasonStats result={bare} ok={true} playerName="P" />)
+    expect(screen.getByTestId("season-stats-source").textContent).toBe("ESPN")
+    const passing = screen.getByTestId("season-stats-passing")
+    expect(passing.textContent).toContain("4,100")
+    expect(passing.querySelectorAll("tbody tr").length).toBe(1)
+    expect(passing.querySelectorAll("tbody tr td")[0].querySelectorAll("span").length).toBe(1)
+  })
+  it("the identity's stamp stands in when no row carries one", () => {
+    render(<PlayerSeasonStats result={{ ...nfl, rows: [], rows_refreshed_at: null, stats_refreshed_at: "2026-09-25T20:00:00.000Z" }} ok={true} playerName="P" />)
+    expect(screen.getByTestId("season-stats-source").textContent).toMatch(/ESPN · refreshed/)
+  })
+
   it("rows → tables with ESPN's values verbatim and the source line", () => {
     render(<PlayerSeasonStats result={nfl} ok={true} playerName="Patrick Mahomes" />)
     const passing = screen.getByTestId("season-stats-passing")
