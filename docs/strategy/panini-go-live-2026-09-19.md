@@ -175,6 +175,13 @@ whole-group statistic used as a proxy for a per-slice property.
    (`pct_trustworthy` **35.2%**) a full citizen of shared surfaces that have nowhere to disclose
    partial coverage. ⚠ **That objection is NOT addressed anywhere in this document's ordering**, and
    it is the one that needs Trevor, not a threshold.
+   ✅ **BRIDGED 2026-09-25 ~9:30 PM PT** (Trevor: "do all of this" — publish with the coverage
+   disclosure, which is his answer to the editorial objection above). Gate read at write time:
+   `pct_editions_stale_45d` **0.0** (0 of 5,094), p90 age 38.9 h — day 6 of the hold, clean every
+   day. Catalogue via the gated `sync_panini_editions_to_shared(false)` (62 sets, 552 players,
+   5,094 editions, 208 without a player link = expected); prices via the new scheduled
+   `sync_panini_bridge()`, which obeys the same ceiling and fails closed. Migrations
+   `20260926041006` + `20260926041443` (the second corrects the first's `nation` → `team_name`).
 3. **Then the flips**, in the 09-06 audit's order: `published` → `proxy.ts` → `is_active` LAST.
    ⚠ **The `published` flip is not cosmetic** — measured 2026-09-20, it rewrites the site-wide
    provenance badge. That specific defect is fixed (§5 gap 1) and pinned, but re-read the pin before
