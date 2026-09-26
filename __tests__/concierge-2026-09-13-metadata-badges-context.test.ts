@@ -379,7 +379,8 @@ describe("get_team_intel", () => {
     const r = toolResult() as { players: Array<Record<string, unknown>> }
     expect(r).toMatchObject({ status: "ok", part: "roster", team: "Portland Trail Blazers", rookies_only: true, total_players: 1 })
     expect(r.players[0]).toMatchObject({ player: "Caleb Love", is_rookie: true })
-    expect(inst.rpcCalls[0]).toMatchObject({ name: "get_team_players", args: { p_team_slug: "portland-trail-blazers" } })
+    // batch 61: the franchise resolver is asked first; with no fixture it answers nothing and the legacy label path stands in
+    expect(inst.rpcCalls.find((c) => c.name === "get_team_players")).toMatchObject({ name: "get_team_players", args: { p_team_slug: "portland-trail-blazers" } })
   })
   it("hands back candidates when the partial is ambiguous, and no_results when nothing matches", async () => {
     install({ editions: { data: [{ team_name: "Los Angeles Lakers" }, { team_name: "Los Angeles Clippers" }], error: null } })

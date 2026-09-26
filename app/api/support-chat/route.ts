@@ -749,7 +749,7 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "get_team_intel",
     description:
-      "Team-level intelligence for one team in one collection — the same data as the public /[collection]/team/[slug] page. part='roster' (default): the team's players ranked by total FMV of their editions, with edition counts, rookie flags and jersey numbers (set rookiesOnly=true for 'which rookies does this team have'); part='squeeze': the team's most supply-squeezed editions (burn / lock share, effectively-buyable count, FMV, indexed low ask); part='activity': the team's most recent SALES (player, set, tier, serial, price, when). Use for 'how is the Blazers market', 'which Blazers rookies exist on Top Shot', 'what Blazers moments are locked up', 'what sold for the Lakers today'. Team names resolve from a partial ('Blazers' → Portland Trail Blazers); an ambiguous partial returns the candidates. Not for Pinnacle (no teams). Read-only; no buy/sell calls, and for a live ask on any edition chain get_edition_listings.",
+      "Team-level intelligence for one team in one collection — the same data as the public /[collection]/team/[slug] page. part='roster' (default): the team's players ranked by total FMV of their editions, with edition counts, rookie flags and jersey numbers (set rookiesOnly=true for 'which rookies does this team have'); part='squeeze': the team's most supply-squeezed editions (burn / lock share, effectively-buyable count, FMV, indexed low ask); part='activity': the team's most recent SALES (player, set, tier, serial, price, when). Use for 'how is the Blazers market', 'which Blazers rookies exist on Top Shot', 'what Blazers moments are locked up', 'what sold for the Lakers today'. Team names resolve from a partial to the FRANCHISE ('Blazers' → Portland Trail Blazers; 'Raiders' → Las Vegas Raiders with Oakland / Los Angeles Raiders listed as historic labels in the `franchise` block — the reads cover the primary name only, say so); an ambiguous partial returns the different franchises as candidates. Not for Pinnacle (no teams). Read-only; no buy/sell calls, and for a live ask on any edition chain get_edition_listings.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -974,6 +974,8 @@ When a user mentions a tier — Common, Rare, Fandom, Legendary, Ultimate, or an
 If the user names a specific player or character anywhere in their query, you MUST pass that exact name as a filter on every search and FMV tool call (player / character / playerName / characterName / name). Never label a returned row with a name the row doesn't carry. If the filtered search returns zero rows, say so honestly — do NOT silently substitute a different person.
 
 **Names are not people.** get_player_editions, get_fmv, search_live_deals, search_catalog_deals, get_edition_listings, search_serial_deals, get_special_serial_owners and get_badge_info resolve the name you pass through RPC's player-identity crosswalk, filter on the PERSON (every spelling their editions carry, never a namesake's) and attach a \`player_identity\` block — READ IT before you answer. It tells you (a) what the typed name resolved to and HOW (an alias like "Joseph Flacco" → Joe Flacco, the league's spelling like "Mike Vick" → Michael Vick or "Kenny Gainwell" → Kenneth Gainwell, a dropped suffix, a former name, a partial) — when the catalog name differs from what the user typed, say the catalog name once; (b) the league's own spelling when it differs (same person; do not treat it as a second player); (c) any name the person has also gone by (Robby Anderson is now Robbie Chosen; the Jaguars' Josh Allen became Josh Hines-Allen in 2024 — a different person from the Bills quarterback); (d) NAMESAKES — other players in the collection with the same base name — each with the RECORDED relation: parent/child (Marvin Harrison → Marvin Harrison Jr., Gary Payton → Gary Payton II, Tim Hardaway → Tim Hardaway Jr., Larry Nance → Larry Nance Jr., Antoine Winfield → Jr., Asante Samuel → Jr., Joey Porter → Jr., Glenn Robinson → III, Ron Harper → Jr.), UNRELATED (Byron Murphy Jr. the Vikings CB vs Byron Murphy II the Seahawks DT), or "kinship NOT recorded", in which case you do not know and must not assert one. A suffix-less name matches the row spelt that way — usually the FATHER — so when namesakes exist say which person you priced ("that's Marvin Harrison the Colts Hall of Famer; his son Marvin Harrison Jr. has 11 Cardinals editions — want those?") and NEVER pool two people into one figure. When the block's status is 'ambiguous' the tool returned candidates and no prices: ask which person, or pick by team / era, then call again with the candidate's exact name. When it reads 'unavailable' the identity check FAILED — the answer is for the literal spelling only; say the alias / namesake check could not run if the name could be more than one person. resolve_player_name answers "who is X", "is X the same as Y", "is X related to Y" and gives the crosswalk identity (league id, position, seasons, latest team, whether season stats exist on the player page) — use it, and never answer a relationship question from memory when the tool can be asked.
+
+**Teams are franchises.** get_team_intel resolves a team name to the FRANCHISE and attaches a \`franchise\` block: the primary (current) name it read, and every HISTORIC label the franchise minted under with its edition count ("Raiders" = Las Vegas Raiders, also Oakland Raiders 18 editions and Los Angeles Raiders 8; "Washington" on All Day = the Commanders, also the Washington Football Team 50; Top Shot's Seattle SuperSonics are the Thunder, New Jersey the Nets, the Bobcats the Hornets, the Washington Bullets the Wizards). The roster / squeeze / activity reads cover the PRIMARY name only — when historic_names is non-empty say so in one clause ("that's the Las Vegas era; Oakland and LA Raiders moments sit under their own pages") and offer to pull them. An 'ambiguous' answer lists different FRANCHISES (the Wizards and the Mystics both match "Washington" on Top Shot) — ask which; never pick. When the block's note says the franchise map could not be read, the answer is for the literal label only.
 
 ## CRITICAL — Never Fabricate FMV
 A tool result row's \`fmv\` field is the only authoritative FMV for that row. If \`fmv\` is null on a row you surface, report the listing's ask as-is and explicitly note FMV is unavailable for that exact edition. Never borrow an FMV from a different row, compute a discount when fmv is null, or invent an "approximate" figure.
@@ -1398,13 +1400,62 @@ async function countTopShotTag(title: string, tier: string | null): Promise<numb
   }
 }
 
-// Team-name resolution shared by get_team_intel: a partial ("Blazers") resolves
-// against the collection's own editions.team_name values, so the slug handed to
-// the team RPCs is the one the public team page routes on.
-async function resolveTeamName(
-  collectionUuid: string,
-  partial: string,
-): Promise<{ status: "ok"; name: string } | { status: "ambiguous"; candidates: string[] } | { status: "no_results" } | { status: "error"; safeCopy: string }> {
+// Team-name resolution shared by get_team_intel. 2026-09-25 (batch 61): a
+// partial ("Blazers", "Raiders", "Washington") resolves to a FRANCHISE
+// through public.resolve_team_name — the collection's team labels grouped by
+// the league map, so "Raiders" is Las Vegas with Oakland and Los Angeles as
+// historic labels (edition counts kept) instead of three candidates, and
+// "Washington" on Top Shot is the Wizards/Bullets OR the Mystics (declared).
+// The primary name is the one the per-team RPCs are asked for; the historic
+// labels ride along so the answer can say what it does not cover. When that
+// read FAILS the legacy ILIKE over editions.team_name stands in, with no
+// franchise view (never "no such team"). Exhibition rosters never resolve.
+type TeamResolution =
+  | { status: "ok"; name: string; franchise: TeamFranchise | null }
+  | { status: "ambiguous"; candidates: string[]; franchises?: TeamFranchise[] }
+  | { status: "no_results" }
+  | { status: "error"; safeCopy: string };
+type TeamFranchise = {
+  franchise: string;
+  current_name: string | null;
+  primary_name: string;
+  total_editions: number;
+  historic_names: Array<{ team_name: string; editions: number }>;
+  note?: string;
+};
+function compactFranchise(f: Record<string, any>): TeamFranchise {
+  return {
+    franchise: String(f.franchise ?? ""),
+    current_name: f.current_name ?? null,
+    primary_name: String(f.primary_name ?? ""),
+    total_editions: Number(f.total_editions ?? 0),
+    historic_names: (Array.isArray(f.historic_names) ? f.historic_names : [])
+      .map((n: Record<string, unknown>) => ({ team_name: String(n.team_name ?? ""), editions: Number(n.editions ?? 0) }))
+      .filter((n: { team_name: string }) => n.team_name && !isExhibitionTeamSlug(slugifyName(n.team_name))),
+    ...(typeof f.note === "string" ? { note: f.note } : {}),
+  };
+}
+async function resolveTeamName(collectionUuid: string, partial: string): Promise<TeamResolution> {
+  try {
+    const { data, error } = await (supabase as any).rpc("resolve_team_name", { p_collection_id: collectionUuid, p_name: partial });
+    if (!error && data && typeof data === "object" && typeof data.status === "string") {
+      if (data.status === "one") {
+        const f = compactFranchise(data);
+        if (!f.primary_name || isExhibitionTeamSlug(slugifyName(f.primary_name))) return { status: "no_results" };
+        return { status: "ok", name: f.primary_name, franchise: f };
+      }
+      if (data.status === "ambiguous") {
+        const fr = (Array.isArray(data.franchises) ? data.franchises : []).map(compactFranchise)
+          .filter((f: TeamFranchise) => f.primary_name && !isExhibitionTeamSlug(slugifyName(f.primary_name)));
+        if (fr.length === 0) return { status: "no_results" };
+        if (fr.length === 1) return { status: "ok", name: fr[0].primary_name, franchise: fr[0] };
+        const exact = fr.find((f: TeamFranchise) => f.primary_name.toLowerCase() === partial.toLowerCase());
+        if (exact) return { status: "ok", name: exact.primary_name, franchise: exact };
+        return { status: "ambiguous", candidates: fr.slice(0, 10).map((f: TeamFranchise) => f.primary_name), franchises: fr.slice(0, 10) };
+      }
+      return { status: "no_results" };
+    }
+  } catch { /* the legacy read below stands in */ }
   const { data, error } = await (supabase as any)
     .from("editions")
     .select("team_name")
@@ -1420,9 +1471,9 @@ async function resolveTeamName(
   const names = [...new Set(((data ?? []) as Array<{ team_name: string }>).map((r) => String(r.team_name).trim()).filter(Boolean))]
     .filter((n) => !isExhibitionTeamSlug(slugifyName(n)));
   if (names.length === 0) return { status: "no_results" };
-  if (names.length === 1) return { status: "ok", name: names[0] };
+  if (names.length === 1) return { status: "ok", name: names[0], franchise: null };
   const exact = names.find((n) => n.toLowerCase() === partial.toLowerCase());
-  if (exact) return { status: "ok", name: exact };
+  if (exact) return { status: "ok", name: exact, franchise: null };
   return { status: "ambiguous", candidates: names.slice(0, 10) };
 }
 
@@ -4513,9 +4564,26 @@ async function executeToolInner(
         return JSON.stringify({ status: "no_results", team: teamIn, collectionId: slug, message: `No team in ${slug} matches "${teamIn}". If the user is on a different sport's page, switch collectionId (the Blazers are nba-top-shot).` });
       }
       if (resolved.status === "ambiguous") {
-        return JSON.stringify({ status: "ambiguous", team: teamIn, collectionId: slug, candidates: resolved.candidates, message: "More than one team matches — ask the user which, then call again with that name." });
+        return JSON.stringify({
+          status: "ambiguous", team: teamIn, collectionId: slug, candidates: resolved.candidates,
+          ...(resolved.franchises ? { franchises: resolved.franchises } : {}),
+          message: "More than one FRANCHISE matches — ask the user which, then call again with that primary_name. (A franchise's historic labels are grouped under it already; these are different teams.)",
+        });
       }
       const teamName = resolved.name;
+      // the franchise view rides on every answer: what the primary name covers and what it does not
+      const franchise = resolved.franchise
+        ? {
+            franchise: resolved.franchise.franchise,
+            primary_name: resolved.franchise.primary_name,
+            current_name: resolved.franchise.current_name,
+            total_editions_all_names: resolved.franchise.total_editions,
+            historic_names: resolved.franchise.historic_names,
+            note: resolved.franchise.historic_names.length > 0
+              ? `The reads below cover "${resolved.franchise.primary_name}" only. This franchise also minted as ${resolved.franchise.historic_names.map((h) => `${h.team_name} (${h.editions} editions)`).join(", ")} — those sit under their own team pages; say so, and call again with that name to include them.`
+              : null,
+          }
+        : { franchise: null, primary_name: teamName, current_name: null, total_editions_all_names: null, historic_names: [], note: "The franchise map could not be read for this call; the answer is for the literal team label only." };
       const teamSlug = slugifyName(teamName);
       // The resolver already drops exhibition rosters; this is the same gate
       // every other team-hub href builder carries, kept at the href itself.
@@ -4529,14 +4597,14 @@ async function executeToolInner(
         if (rookiesOnly) rows = rows.filter((r) => r.is_rookie === true);
         rows.sort((a, b) => Number(b.fmv_total_usd ?? 0) - Number(a.fmv_total_usd ?? 0));
         if (rows.length === 0) {
-          return JSON.stringify({ status: "no_results", team: teamName, collectionId: slug, rookies_only: rookiesOnly, team_url: teamUrl, message: rookiesOnly ? "No player on this team is flagged as a rookie in the catalog." : "No players indexed for this team." });
+          return JSON.stringify({ status: "no_results", team: teamName, collectionId: slug, rookies_only: rookiesOnly, team_url: teamUrl, franchise, message: rookiesOnly ? "No player on this team is flagged as a rookie in the catalog." : "No players indexed for this team." });
         }
         return JSON.stringify({
           status: "ok",
           part,
           team: teamName,
           collectionId: slug,
-          team_url: teamUrl,
+          team_url: teamUrl, franchise,
           total_players: rows.length,
           rookies_only: rookiesOnly,
           players: rows.slice(0, limit).map((r) => ({
@@ -4558,13 +4626,13 @@ async function executeToolInner(
         const { data, error } = await (supabase as any).rpc("get_team_squeeze", { p_collection_id: uuid, p_team_slug: teamSlug, p_limit: limit });
         if (error) return JSON.stringify({ status: "error", message: safeApiError(error, "team squeeze unavailable").error });
         const rows = (Array.isArray(data) ? data : []) as Array<Record<string, any>>;
-        if (rows.length === 0) return JSON.stringify({ status: "no_results", part, team: teamName, collectionId: slug, team_url: teamUrl, message: "No squeeze rows for this team." });
+        if (rows.length === 0) return JSON.stringify({ status: "no_results", part, team: teamName, collectionId: slug, team_url: teamUrl, franchise, message: "No squeeze rows for this team." });
         return JSON.stringify({
           status: "ok",
           part,
           team: teamName,
           collectionId: slug,
-          team_url: teamUrl,
+          team_url: teamUrl, franchise,
           editions: rows.map((r) => ({
             editionKey: r.route_slug ?? null,
             player: r.player_name ?? null,
@@ -4587,13 +4655,13 @@ async function executeToolInner(
       const { data, error } = await (supabase as any).rpc("get_team_activity", { p_collection_id: uuid, p_team_slug: teamSlug, p_limit: limit, p_offset: 0 });
       if (error) return JSON.stringify({ status: "error", message: safeApiError(error, "team activity unavailable").error });
       const rows = (Array.isArray(data) ? data : []) as Array<Record<string, any>>;
-      if (rows.length === 0) return JSON.stringify({ status: "no_results", part, team: teamName, collectionId: slug, team_url: teamUrl, message: "No recorded sales for this team's editions." });
+      if (rows.length === 0) return JSON.stringify({ status: "no_results", part, team: teamName, collectionId: slug, team_url: teamUrl, franchise, message: "No recorded sales for this team's editions." });
       return JSON.stringify({
         status: "ok",
         part,
         team: teamName,
         collectionId: slug,
-        team_url: teamUrl,
+        team_url: teamUrl, franchise,
         sales: rows.map((r) => ({
           editionKey: r.route_slug ?? null,
           player: r.player_name ?? null,

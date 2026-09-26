@@ -690,6 +690,14 @@ const PINS = [
     migration: "supabase/migrations/20260926015840_audit_20260925_resolve_player_name_carries_the_persons_edition_labels.sql",
   },
   {
+    // Added 2026-09-25 (batch 61). The concierge's view of a TEAM name: labels
+    // grouped into franchises through the league map (historic names), the
+    // current name primary, ambiguity declared.
+    fn: "resolve_team_name",
+    test: "supabase/tests/resolve_team_name.sql",
+    migration: "supabase/migrations/20260926021808_audit_20260925_resolve_team_name_for_the_concierge_and_the_historic_labels_in_the_league_map.sql",
+  },
+  {
     fn: "upsert_player_canonical",
     test: "supabase/tests/upsert_player_canonical.sql",
     migration: "supabase/migrations/20260802181500_audit_20260802_snapshot_upsert_player_canonical.sql",

@@ -385,6 +385,49 @@ describe("the label-keyed tools are scoped to the PERSON (batch 59)", () => {
   })
 })
 
+describe("get_team_intel resolves a team to its FRANCHISE (batch 61)", () => {
+  const raiders = { status: "one", query: "Raiders", franchise: "LV", current_name: "Las Vegas Raiders", primary_name: "Las Vegas Raiders", total_editions: 140,
+    names: [{ team_name: "Las Vegas Raiders", editions: 114, current: true }, { team_name: "Oakland Raiders", editions: 18, current: false }, { team_name: "Los Angeles Raiders", editions: 8, current: false }],
+    historic_names: [{ team_name: "Oakland Raiders", editions: 18, current: false }, { team_name: "Los Angeles Raiders", editions: 8, current: false }], note: "more than one name" }
+  it("'Raiders' is ONE franchise: the roster is read for the primary name and the answer names the historic labels it does not cover", async () => {
+    const inst = install({
+      "rpc:resolve_team_name": { data: raiders, error: null },
+      "rpc:get_team_players": { data: [{ name: "Maxx Crosby", player_slug: "maxx-crosby", is_rookie: false, edition_count: 9, fmv_total_usd: 120 }], error: null },
+    })
+    script("get_team_intel", { team: "Raiders", collectionId: "nfl-all-day" })
+    await POST(post({}))
+    const r = toolResult() as { status: string; team: string; franchise: { historic_names: Array<{ team_name: string; editions: number }>; note: string } }
+    expect(r).toMatchObject({ status: "ok", team: "Las Vegas Raiders" })
+    expect(inst.rpcCalls.find((c) => c.name === "get_team_players")!.args).toMatchObject({ p_team_slug: "las-vegas-raiders" })
+    expect(r.franchise.historic_names.map((h) => `${h.team_name}:${h.editions}`)).toEqual(["Oakland Raiders:18", "Los Angeles Raiders:8"])
+    expect(r.franchise.note).toMatch(/Oakland Raiders \(18 editions\)/)
+  })
+  it("two different franchises ('Washington' on Top Shot: the Wizards and the Mystics) are ambiguous — the historic Bullets are NOT a third candidate", async () => {
+    install({ "rpc:resolve_team_name": { data: { status: "ambiguous", query: "Washington", franchises: [
+      { franchise: "WAS", current_name: "Washington Wizards", primary_name: "Washington Wizards", total_editions: 338, names: [], historic_names: [{ team_name: "Washington Bullets", editions: 16 }] },
+      { franchise: "WAS", current_name: "Washington Mystics", primary_name: "Washington Mystics", total_editions: 176, names: [], historic_names: [] },
+    ] }, error: null } })
+    script("get_team_intel", { team: "Washington" })
+    await POST(post({}))
+    const r = toolResult() as { status: string; candidates: string[]; franchises: Array<{ historic_names: unknown[] }> }
+    expect(r.status).toBe("ambiguous")
+    expect(r.candidates).toEqual(["Washington Wizards", "Washington Mystics"])
+    expect(r.franchises[0].historic_names).toHaveLength(1)
+  })
+  it("a FAILED franchise read falls back to the label path and says the franchise map could not be read", async () => {
+    install({
+      "rpc:resolve_team_name": { data: null, error: { message: "timeout" } },
+      editions: { data: [{ team_name: "Portland Trail Blazers" }], error: null },
+      "rpc:get_team_players": { data: [{ name: "Damian Lillard", player_slug: "damian-lillard", is_rookie: false, edition_count: 42, fmv_total_usd: 4638 }], error: null },
+    })
+    script("get_team_intel", { team: "Blazers" })
+    await POST(post({}))
+    const r = toolResult() as { status: string; franchise: { note: string } }
+    expect(r.status).toBe("ok")
+    expect(r.franchise.note).toMatch(/could not be read/)
+  })
+})
+
 describe("resolve_player_name as a tool", () => {
   it("answers 'who is X' with the identity, aliases, relations, namesakes and the player URL", async () => {
     install({ "rpc:resolve_player_name": { data: harrisonOne, error: null } })
