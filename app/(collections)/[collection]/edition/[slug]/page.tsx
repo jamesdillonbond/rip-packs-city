@@ -540,6 +540,11 @@ export default async function EditionPage(
   // Order Book Depth card made the opposite choice and published a false
   // "retired on 2026-05-26" claim for 13 days; it now gates the same way.
   // Prefer this shape over a constant, every time.
+  //
+  // ⛔ 2026-09-26 (#149): the Top Shot arm now also returns NULL when the edition holds an
+  // open listing the firehose has not re-observed in 24 h — ts_listings is a 24 h
+  // re-observation window, not a census, and 10,871 editions read "0 of N listed" over
+  // open listings (Tre Jones 124:5108: 69). Null here means "unknown", never "none".
   const listedSupply = currentSibling?.circulation_count ?? detail.circulation_count
   const pctListed =
     bundle.active_listings != null && listedSupply != null && listedSupply > 0
@@ -871,8 +876,9 @@ export default async function EditionPage(
         />
         <StatCell
           label="% Listed"
-          // em-dash (not "0%") when the collection has no fresh listing source —
-          // a "0% listed" off a dead feed would be a lie, not a datapoint.
+          // em-dash (not "0%") when the collection has no fresh listing source, or (Top Shot)
+          // our open book for this edition is not fully re-observed — a "0% listed" off a
+          // dead feed or a partial window would be a lie, not a datapoint.
           value={pctListed == null ? EM_DASH : `${pctListed.toFixed(1)}%`}
           sub={
             pctListed == null
