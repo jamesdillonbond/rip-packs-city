@@ -21,7 +21,6 @@ import {
   isProUser,
   checkFeatureQuota,
   recordFeatureUsage,
-  requirePro,
 } from "@/lib/pro-tier"
 
 const WALLET = "0xbd94cade097e50ac"
@@ -121,23 +120,5 @@ describe("recordFeatureUsage", () => {
     await expect(recordFeatureUsage(WALLET, "concierge", { n: 1 })).resolves.toBeUndefined()
     expect(spy).toHaveBeenCalledOnce()
     warn.mockRestore()
-  })
-})
-
-describe("requirePro", () => {
-  it("returns null (pass) for a pro plan", async () => {
-    state.rpc = async () => ({ data: "founding", error: null })
-    expect(await requirePro(WALLET)).toBeNull()
-  })
-
-  it("returns a 402 with the upgrade url for a free plan", async () => {
-    state.rpc = async () => ({ data: "free", error: null })
-    const res = await requirePro(WALLET, "/pricing")
-    expect(res).not.toBeNull()
-    expect(res!.status).toBe(402)
-    const body = await res!.json()
-    expect(body.error).toBe("pro_required")
-    expect(body.upgrade_url).toBe("/pricing")
-    expect(body.plan).toBe("free")
   })
 })

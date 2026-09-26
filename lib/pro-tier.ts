@@ -16,7 +16,6 @@
 // users get the row from `feature_quotas WHERE plan='free'`.
 
 import { supabaseAdmin } from "@/lib/supabase"
-import { NextResponse } from "next/server"
 
 export type UserPlan =
   | "free"
@@ -135,21 +134,6 @@ export async function recordFeatureUsage(
   }
 }
 
-// Guard helper for Pro-only API routes. Returns null on success, or a
-// 402 Payment Required NextResponse the caller should `return` directly.
-export async function requirePro(
-  walletAddress: string | null | undefined,
-  upgradeUrl = "/pricing"
-): Promise<NextResponse | null> {
-  const plan = await getUserPlan(walletAddress)
-  if (PRO_PLANS.has(plan)) return null
-  return NextResponse.json(
-    {
-      error: "pro_required",
-      message: "This feature is available to RPC Pro members.",
-      plan,
-      upgrade_url: upgradeUrl,
-    },
-    { status: 402 }
-  )
-}
+// requirePro (a 402 "available to RPC Pro members" guard) was removed
+// 2026-09-25: it had no callers, and no paid tier is gated or mentioned
+// anywhere until 100 weekly active users.

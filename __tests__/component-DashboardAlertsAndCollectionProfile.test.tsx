@@ -32,9 +32,6 @@ vi.mock("@/lib/owner-key", () => ({
   getOwnerKey: () => "0xowner",
   onOwnerKeyChange: () => () => {},
 }))
-vi.mock("@/lib/hooks/useProStatus", () => ({
-  useProStatus: () => ({ isPro: true, loading: false, tier: "pro" }),
-}))
 
 function json(status: number, body: unknown, ok = status < 400) {
   return { ok, status, json: async () => body, text: async () => JSON.stringify(body) } as unknown as Response

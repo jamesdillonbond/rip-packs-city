@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, cleanup } from "@testing-library/react"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 
 // GlobalSiteHeader — measured at 0% statements before this file, on the one
 // component that mounts on every page outside the (collections) group.
@@ -8,14 +10,13 @@ import { render, cleanup } from "@testing-library/react"
 // It is pure composition, and that is exactly the risk: a refactor that drops
 // one child from this file removes it from EVERY page at once, with `tsc`
 // green and no other test noticing. The repo has already paid for the
-// neighbouring version of this — ProBadge would have gone dark site-wide from
-// here (see component-ProBadge.test.tsx).
+// neighbouring version of this — the (since-deleted, 2026-09-25) ProBadge
+// would have gone dark site-wide from here.
 //
 // The children are stubbed because each is separately tested and several fetch
 // on mount; what is pinned here is the CONTRACT — which children the header
 // mounts, and the home link — not their internals.
 
-vi.mock("@/components/auth/ProBadge", () => ({ ProBadge: () => <i data-slot="pro-badge" /> }))
 vi.mock("@/components/auth/SignOutButton", () => ({ default: () => <i data-slot="sign-out" /> }))
 vi.mock("@/components/RpcLogo", () => ({ default: () => <i data-slot="logo" /> }))
 vi.mock("@/components/TopNav", () => ({ default: () => <i data-slot="top-nav" /> }))
@@ -49,9 +50,12 @@ describe("GlobalSiteHeader — the site-wide nav contract", () => {
   // 2026-09-25 (Trevor): no paid account is mentioned anywhere on the site
   // until 100 weekly active users. The PRO / FOUNDING badge was the header's
   // paid-tier surface, so its ABSENCE is the contract now.
-  it("does not mount the Pro badge", () => {
+  it("does not mount a Pro badge", () => {
+    // The component no longer exists; pin that the header cannot import one.
+    const src = readFileSync(join(process.cwd(), "components/GlobalSiteHeader.tsx"), "utf8")
+    expect(src).not.toMatch(/ProBadge/)
     const { container } = render(<GlobalSiteHeader />)
-    expect(container.querySelector('[data-slot="pro-badge"]')).toBeNull()
+    expect(container.textContent ?? "").not.toMatch(/\bpro\b|founding/i)
   })
 
   it("keeps a working route home", () => {
