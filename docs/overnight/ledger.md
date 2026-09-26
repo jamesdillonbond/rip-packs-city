@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — Candy Market tab: the 93 Rainbow listings (of 1,885) linked to and read stats from the BASE card — the Candy arm sent no edition key, so the shared player+set lookup (which every printing of a player shares) resolved each to the base edition. Rows now carry their own `edition_key`. Also: Candy's Rookie / First Mint designations ride the row as badges (the Rainbow colour stays the parallel, not a badge; a failed badge read degrades to none) · Claude Code (web sandbox)
+
+- **Revert:** revert the "fix(candy): Market rows carry their own edition key" commit.
+
+
 ### 2026-09-25 · 🧹 SHIPPED — Candy MLB editions carry Candy's own Rookie / First Mint designations (the badge chips Top Shot cards show): 4 Rookie + 10 First Mint players from the published checklist, player-level (Core and Rainbow printings alike), written by the Solana normalizer from now on (Drop 1 has no on-chain trait for either) and backfilled on the 15 existing editions (`20260926032837`, applied ~8:28 PM PT). Rendered as text chips on the edition page; "Rookie" resolves to a generic badge entry with no art, so no Top Shot artwork is borrowed. Lists pinned to the CSV's ticked columns · Claude Code (web sandbox)
 
 - **Revert:** revert the "feat(candy): Rookie / First Mint designations" commit, then `UPDATE editions SET badges = NULLIF(array(SELECT x FROM unnest(badges) x WHERE x NOT IN ('Rookie','First Mint')), '{}') WHERE collection_id = '209ade70-32c5-4470-bc7c-4793d660f713';`
