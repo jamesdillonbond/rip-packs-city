@@ -211,7 +211,13 @@ describe("concierge tools — get_challenges", () => {
   })
 
   it("returns the empty-note when no challenges are seeded", async () => {
-    install({ "rpc:get_active_challenges": { data: { activeCount: 0, challenges: [] }, error: null } })
+    // 2026-09-25: the empty note now depends on the challenge FEED's freshness
+    // (concierge-challenges-empty-is-not-a-market-claim.test.ts covers stale /
+    // unknown). This arm is the CURRENT feed, where "none active" is the answer.
+    install({
+      "rpc:get_active_challenges": { data: { activeCount: 0, challenges: [] }, error: null },
+      pipeline_runs_daily: { data: [{ day: new Date().toISOString().slice(0, 10) }], error: null },
+    })
     script("get_challenges", {})
     await POST(post("any challenges"))
     const r = toolResult()

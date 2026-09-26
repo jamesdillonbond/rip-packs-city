@@ -301,7 +301,11 @@ describe("concierge tools — data reads", () => {
     })
 
     A.createCalls.length = 0
-    install({ "rpc:get_active_challenges": { data: { activeCount: 0, challenges: [] }, error: null } })
+    // The CURRENT-feed arm (see concierge-challenges-empty-is-not-a-market-claim for stale / unknown).
+    install({
+      "rpc:get_active_challenges": { data: { activeCount: 0, challenges: [] }, error: null },
+      pipeline_runs_daily: { data: [{ day: new Date().toISOString().slice(0, 10) }], error: null },
+    })
     script("get_challenges", {})
     await POST(post("challenges?"))
     expect(String(toolResult().note)).toContain("don't invent challenges")

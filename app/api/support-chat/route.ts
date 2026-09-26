@@ -13,6 +13,7 @@
 
 export const maxDuration = 60;
 
+import { fetchChallengeFeed } from "@/lib/challenges/hub-fetchers";
 import { isSolanaAddress } from "@/lib/address";
 import { NextRequest, NextResponse, after } from "next/server";
 import { fitTelegramText } from "@/lib/telegram-message";
@@ -579,7 +580,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_market_movers",
-    description: "The market-pulse board: which Top Shot editions are heating up or cooling, by recent volume and price movement across time windows. THE tool for 'what's moving right now', 'what's hot', 'market pulse', 'what's trending'. Read-only; report the movers factually, no buy/sell calls.",
+    description: "The market-pulse board: COLLECTION-level activity per collection — sales, volume, buyers/sellers and top sale over 24h / 7d / 30d windows. THE tool for 'market pulse', 'how active is the market', 'which collection is busiest'. ⚠ It has NO per-edition or per-moment price movement: for 'which moments/editions are trending or heating up' say RPC has no per-edition price-trend board, offer get_hot_floors (editions being swept right now, Top Shot) instead, and never claim /insights/market-pulse shows edition-level movement. Read-only; report factually, no buy/sell calls.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -1006,7 +1007,7 @@ Badges are what collectors pay attention to (Rookie Year, Top Shot Debut, Champi
 ## Market & ecosystem intelligence tools (on request)
 When the user asks about market STATE rather than one specific price, reach for these — same rule as FMV: any number you cite MUST come from the tool result this turn, never memory. Report what the rows say, factually; no buy/sell calls, and note when a board is thin or a collection isn't covered.
 - **get_top_sales** — the biggest recent sales ("whale watch") for a collection or all collections, with buyer/seller handles. For "biggest sales today/this week", "what grails just sold". Params: collection (optional), window (7d or 30d), limit.
-- **get_market_movers** — the market-pulse board: which editions are heating up or cooling by recent volume/price. For "what's moving", "what's hot", "market pulse".
+- **get_market_movers** — the market-pulse board: COLLECTION-level sales / volume / buyers / top sale by 24h, 7d, 30d. For "market pulse", "how busy is the market". It has no per-edition movement — for "which moments are trending" use get_hot_floors (sweep pressure, Top Shot) and say RPC has no per-edition price-trend board.
 - **get_rookies** — the rookie market board (rookie moments by momentum). For "how are rookies doing", "hot rookies".
 - **get_premiums** — how much premium parallels (kind="parallel") or low serials (kind="serial") carry over base editions. For "do parallels carry a premium", "what's a low serial worth over floor". Top Shot.
 - **get_cheapest_sets_to_complete** vs **get_set_completion_cost** — the user having NAMED a set is the whole difference. "How much to finish the Base Set?" is get_set_completion_cost; "which set is cheapest for me to finish / am I close to anything?" is get_cheapest_sets_to_complete, which ranks the sets they are already part-way through. ⚠ Never answer the second with the first — it requires a set name, and asking the user to pick one is asking them the question they asked you. ⚠ On the ranking, cost_to_complete_at_floor_usd covers only the missing plays that are LISTED: when fully_buyable is false the set cannot be finished today at any price and that number is partial — say so, do not quote it as the cost to finish.
@@ -3565,10 +3566,22 @@ async function executeTool(
         cost_to_complete_usd: c.costToComplete, reward_value_usd: c.rewardValue, net_ev_usd: c.netEv, worth_it: c.worthIt,
         completed_by: c.completedCount, allocation: c.totalRewardAllocation,
       }));
+      // 2026-09-25: an empty tracker says nothing about Top Shot unless the
+      // challenge INGEST is current — it has failed since 2026-08-29, so the
+      // concierge was telling collectors "Top Shot likely hasn't launched any".
+      // Same three-state check the /challenges page uses (fetchChallengeFeed).
+      const feed = challenges.length === 0 ? await fetchChallengeFeed(supabase) : null;
+      const emptyNote =
+        feed?.state === "current"
+          ? `No active challenges right now. RPC's challenge feed is current (last update ${feed.lastOkDay}), so this reflects Top Shot. Say it plainly; don't invent challenges.`
+          : feed?.state === "stale"
+            ? `RPC's challenge feed is BEHIND (last successful update ${feed.lastOkDay ?? "never"}), so RPC does not know Top Shot's current challenges. Do NOT say Top Shot has none or hasn't launched any — say RPC's tracker is behind and the user should check Top Shot directly.`
+            : "RPC tracks no active challenges, and the feed's freshness could not be checked. Say RPC isn't tracking any; make NO claim about whether Top Shot is running challenges.";
       return JSON.stringify({
         status: "ok", wallet, active_count: data?.activeCount ?? 0, challenges,
+        ...(feed ? { challenge_feed: feed } : {}),
         note: challenges.length === 0
-          ? "No active challenges are loaded yet — the challenge tracker is live but no definitions have been seeded. Say this plainly; don't invent challenges."
+          ? emptyNote
           : "net_ev_usd = reward_value − cost_to_complete: positive means finishing nets value, negative means the reward is worth less than what you'd spend. Ranked by net_ev.",
       });
     } catch (err: any) {
