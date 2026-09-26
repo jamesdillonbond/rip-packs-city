@@ -42,4 +42,22 @@ describe("fetchFranchiseDirectory", () => {
     expect(dir.leagues.every((l) => l.state === "failed")).toBe(true)
     expect(dir.okLeagues).toBe(0)
   })
+
+  it("an answer that cannot support 'no teams' is failed, never an empty league", async () => {
+    // Not an array, or rows of which none render: either would print
+    // "No <league> teams are registered yet" over a read that never said so.
+    const rpc = vi.fn(async (_fn: string, args: Record<string, unknown>) => {
+      if (args.p_league === "NBA") return { data: { rows: [team("blazers")] }, error: null }
+      if (args.p_league === "NFL") return { data: [{ junk: true }, { slug: 7 }], error: null }
+      return { data: [], error: null }
+    })
+    const spyE = vi.spyOn(console, "error").mockImplementation(() => {})
+    const dir = await fetchFranchiseDirectory({ rpc })
+    spyE.mockRestore()
+    const by = Object.fromEntries(dir.leagues.map((l) => [l.league, l]))
+    expect(by.NBA.state).toBe("failed")
+    expect(by.NFL.state).toBe("failed")
+    expect(by.MLB.state).toBe("ok") // a genuinely empty answer stays a measured absence
+    expect(dir.okLeagues).toBe(LEAGUES.length - 2)
+  })
 })

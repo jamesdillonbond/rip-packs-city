@@ -27,12 +27,25 @@ export interface FranchiseDirectory {
   okLeagues: number
 }
 
-function asTeams(data: unknown): TeamMaster[] {
-  if (!Array.isArray(data)) return []
-  return data.filter(
-    (r): r is TeamMaster =>
-      !!r && typeof r === "object" && typeof (r as TeamMaster).slug === "string" && typeof (r as TeamMaster).team_name === "string",
-  )
+function isTeam(r: unknown): r is TeamMaster {
+  return !!r && typeof r === "object" && typeof (r as TeamMaster).slug === "string" && typeof (r as TeamMaster).team_name === "string"
+}
+
+/**
+ * The renderable teams, or null when the answer cannot support "no teams": a
+ * payload that is not an array, or a non-empty array in which NO row renders.
+ * Either would otherwise publish "No <league> teams are registered yet" — an
+ * empty state that CONCLUDES — over a read that did not say so. A partial drop
+ * keeps the rows that render and is logged.
+ */
+export function asTeams(data: unknown, league = "?"): TeamMaster[] | null {
+  if (!Array.isArray(data)) return null
+  const teams = data.filter(isTeam)
+  if (teams.length === 0 && data.length > 0) return null
+  if (teams.length < data.length) {
+    console.warn(`[teams/franchise-directory] ${league}: dropped ${data.length - teams.length} of ${data.length} malformed rows`)
+  }
+  return teams
 }
 
 export async function fetchFranchiseDirectory(
@@ -51,7 +64,12 @@ export async function fetchFranchiseDirectory(
           console.error(`[teams/franchise-directory] ${l.value}:`, error.message)
           return { league: l.value, label: l.label, emoji: l.emoji, state: "failed", teams: [] }
         }
-        return { league: l.value, label: l.label, emoji: l.emoji, state: "ok", teams: asTeams(data) }
+        const teams = asTeams(data, l.value)
+        if (teams == null) {
+          console.error(`[teams/franchise-directory] ${l.value}: unrenderable answer`)
+          return { league: l.value, label: l.label, emoji: l.emoji, state: "failed", teams: [] }
+        }
+        return { league: l.value, label: l.label, emoji: l.emoji, state: "ok", teams }
       } catch (e) {
         console.error(`[teams/franchise-directory] ${l.value} bound:`, e instanceof Error ? e.message : e)
         return { league: l.value, label: l.label, emoji: l.emoji, state: "failed", teams: [] }
