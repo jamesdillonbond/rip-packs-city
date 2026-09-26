@@ -1,29 +1,29 @@
 {
-  "generated_at_pt": "2026-09-26 ~01:11 AM PT",
-  "generated_at_utc": "2026-09-26T08:12Z",
-  "pass": "overnight autonomous pass (Cowork cloud). GENUINE OVERNIGHT (01:11 AM PT; shell 08:11Z ~= DB now() 08:11:43Z ~= newest sale 08:03Z, no skew). PUSH-CAPABLE (path 1: desktop VM + .rpc-git-cred, dry-run exit 0). QUEUE-ONLY: a very active concurrent Claude Code deep-sweep session pushed ~40 commits 23:15->00:48 PT (#146 board; last ~19 min before clone) and the whole code+migration surface is hot -> collision + hot-file gates => no code/migration shipping. Nothing needed shipping: health green.",
-  "shipped": 0,
+  "generated_at_pt": "2026-09-26 ~11:00 AM PT",
+  "generated_at_utc": "2026-09-26T18:00Z",
+  "pass": "daytime autonomous pass (Cowork cloud + laptop VM, Trevor-requested 5 h, ~7:55 AM -> ~12:55 PM PT). PUSH-CAPABLE via path 1 (laptop VM + .rpc-git-cred). A concurrent Claude Code web session was pushing ~every 10 min; this pass took DB/ops/older register items.",
+  "shipped": 10,
   "reverted": 0,
-  "verdict": "GREEN / no regression. Security 4/4 [] (invariants, anon_write_holes, rls_off_base, secdef_anon). trust_health 0 breaches (all 38 arms ok). stalled_pipelines = only the residential TS-active-listings feeder (expected, box dark ~19h). all 6 structural-drift arms []. check_pgcron_recent_failures []. Vercel prod READY at dbf33f54; runtime errors 6h all chronic/known (DEP0169 warn, AllDay sniper GQL 403, old ipfs-media blip, 1 single edition-counts timeout). Post-ship watch on the concurrent session's ~40 ships: no regression.",
+  "verdict": "GREEN. Security all []; trust_health 38/38 ok; pg_cron 10,209/0 failed in 24 h; stalled = TS active-listings only (laptop Windows task dark since 09-25 6:13 AM PT) -> hand-run sweep, stalled [] after. Vercel: chronic groups only. See docs/handoff-2026-09-26-daytime-autonomous-pass.md.",
   "health": {
-    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
+    "security_invariants": "clean (invariants, anon write, secdef anon, search_path, WHEN OTHERS blind all [])",
     "trust_health_breaches": 0,
-    "stalled_pipelines": "topshot-active-listings-ingest only (medium, silent 1139min ~19h; KNOWN residential Win Task Scheduler feeder on Trevor's box dark; visibility-only, by design)",
-    "structural_drift_arms": "all [] (backward_cursor_rewinds, function_search_path_drift, procedure_txn_control_pins, cross_collection_mat_staleness, procedure_search_path_unpinned, suppression_parked_claim_drift)",
-    "pgcron_recent_failures": 0,
-    "pipeline_alerts": ["panini-team-walk medium (R124 pooling-across-recovery, known)", "unmapped-sales-nfl_all_day 7173 actionable info (AllDay permanent-floor)", "atlas-editions-403 9.0% info designed", "atlas-market-403 8.7% info (fresh, last drain 08:11Z)", "flow-rest-moment-moved-400 23.7% info designed"],
-    "pipeline_fails_24h": "low chronic, none stalled (atlas-market-feed 16, sync-nba-projections 8 [known #8 shelved], player-stats-sync 3 [self-cleared], atlas-editions-refresh 3, wallet-backfill 1-2, storefront-reconcile 1 each [23:19:01Z co-fire], panini-ingest 1)",
-    "sentry_24h": "monitor 0308Z reported 0 new-in-24h; SDK noted out-of-tree (#34) so read paired with Vercel = healthy",
-    "vercel_6h_error_groups": 4,
-    "vercel_new_first_seen": 0,
-    "prod_deploy": "READY at dpl_47ED63WY2B4QvmF2K3mwqReLthpa (dbf33f54; origin/main HEAD, concurrent session's work)",
-    "db_size_mb": 27952
+    "stalled_pipelines": "[] after the hand-run sweep (was topshot-active-listings-ingest 1,544 min)",
+    "pgcron_24h": "10,209 succeeded / 0 failed",
+    "pipeline_alerts": [
+      "panini-team-walk medium (R124 pooled; green since 09-24)",
+      "pg_net_http_422 high = GraphQL schema probes (self-inflicted)",
+      "pg_net_http_403 critical = Cloudflare challenge samples",
+      "atlas 403 arms info (designed)"
+    ],
+    "vercel_24h": "DEP0169 warn, All Day GQL 403 (RPC fallback), sparse pack-detail 5 s read timeouts; /api/market 22P02 fixed by the concurrent session (1e248c9c2)",
+    "site_crawl": "14 key pages -> 530 internal links: 474 x 200, 42 x 404 (all Panini fan-out, FIXED), rest transient/redirects; 2nd level 585 links: no real 404s"
   },
   "fmv_high_med": {
-    "nba_top_shot": 7976,
-    "nfl_all_day": 1505,
-    "disney_pinnacle": 771,
-    "panini_blockchain": 1842,
+    "nba_top_shot": 8007,
+    "nfl_all_day": 1511,
+    "disney_pinnacle": 801,
+    "panini_blockchain": 1845,
     "candy_mlb": 23,
     "laliga_golazos": 4
   },
@@ -37,15 +37,18 @@
   },
   "sentinels": {
     "sentinel_ts_uuid_editions_48h": 0,
-    "unmapped_resolution_backlog_max": 2
+    "unmapped_resolution_backlog_max": 2,
+    "topshot_pull_value_zero": 38134
   },
-  "deltas_vs_prev": "FMV HIGH+MED TopShot 7867->7976 (+109), AllDay 1778->1505 (-273 ~-15%; WITHIN accepted Q3 thinner-market class, allday_fmv stale arms both ok so no data-loss step change; NOT re-queued, visibility only), Pinnacle 722->771 (+49), Candy 24->23 (-1), Golazos 4->4, Panini 1842 (newly tracked). Editions all flat (TopShot 14460, AllDay 6190). DB 26027->27952 MB (+1925; net._http_response TOAST refill after 09-20 VACUUM FULL, documented, do not chase). ts_uuid_48h 0 flat, unmapped_backlog_max 2 flat. All health arms green.",
+  "deltas_vs_prev": "FMV HIGH+MED vs 01:11 AM pass: nba_top_shot 7976->8007, nfl_all_day 1505->1511, disney_pinnacle 771->801, panini_blockchain 1842->1845, candy_mlb 23->23, laliga_golazos 4->4",
   "needs_trevor": [
-    "[LOW nc1] storefront-reconcile co-fire: allday + golazos both fire :19:01 and share QuickNode 100/sec -> a co-firing tick 429s the seller-walk (23:19:01Z allday 333 fail / golazos 79 fail); self-recovers next tick. Fix = stagger one lane off :19 (cron-schedule.md) or rate-bound the walkers. Not auto-shipped: cron/schedule files hot + governed by cron-schedule.md.",
-    "[LOW carried] player-stats-sync within-chunk dedup (DISTINCT ON conflict key) ONLY if it recurs after the active stats-feed rewrite settles; self-cleared this run.",
-    "TS-active-listings residential feeder box was dark ~19h tonight (visibility).",
-    "Q5 consolidate 11 legacy desktop dashboards (long-standing).",
-    "OPS: restoring remote.origin.pushurl on the mount would remove the .rpc-git-cred dependency."
+    "laptop Task Scheduler: topshot-active-listings-ingest silent since 09-25 6:13 AM PT (Atlas still passes in browser mode)",
+    "rotate ATLAS_POOL_INGEST_KEY (#144)",
+    "#22",
+    "#64",
+    "#140",
+    "wrangler deploy pack-events-ingest (#134/#123)",
+    "enrich-ufc-wallet CLI deploy"
   ],
-  "housekeeping": "Inbox 549 files (mount) / 548 (clone), APPEND-ONLY BY RULE (CI-enforced + focus directive) — NOT archived, by design. Two new 09-26 monitor filings both dispositioned (nba-projections = known #8 shelved; player-stats-sync self-cleared + active concurrent dev; storefront co-fire queued). Ledger prepended with the queue-only entry. Session entry -> docs/sessions/2026-09.md (CLAUDE.md redirects there; CLAUDE.md at 39,997 chars / ~40k ceiling + hot, not touched). Handoff is the durable output; also mirrored to the claude.ai Project."
+  "housekeeping": "cowork-20260926-*.patch files (16) left in the laptop repo root (gitignored *.patch); delete permission was not requested."
 }
