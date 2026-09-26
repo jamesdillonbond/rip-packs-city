@@ -19,6 +19,7 @@ import Link from "next/link"
 import { seriesPageLabel } from "@/lib/series-label"
 import { unstable_cache } from "next/cache"
 import { getCollection } from "@/lib/collections"
+import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchHubRows, fetchLinkRows } from "@/lib/entity/popular-on-collection-fetchers"
 import { slugifyName } from "@/lib/entity-labels"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
@@ -232,6 +233,14 @@ export async function loadPopularOnCollection(collection: string): Promise<Popul
 export default async function PopularOnCollection({ collection }: { collection: string }) {
   const coll = getCollection(collection)
   if (!coll) return null
+  // Link only into entity pages that EXIST. The entity routes (edition / set /
+  // player / team / series) resolve a collection through the lib/collection-slug
+  // facade and 404 anything outside it. Panini (published 2026-09-25, not in the
+  // facade) rendered this block on /overview and /market: 42 links, every one a
+  // 404 (measured by a link crawl 2026-09-26) — the same class that hit Candy's
+  // Market tab before 09-19. A collection joins the fan-out when it joins the
+  // facade, never before.
+  if (!getCollectionByUrlSlug(collection)) return null
   const { linkRes, hubRes } = await loadPopularOnCollection(collection)
   const links = linkRes.links
   const hubs = hubRes.hubs
