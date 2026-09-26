@@ -135,6 +135,11 @@ whole-group statistic used as a proxy for a per-slice property.
    (`packcard-2332_486965_12679054_413`, Khuliso Mudau) that the walk is not reaching at all, for a
    cause distinct from the FK defect that froze the other two. **Judge step 1 on the other 5,073.**
 
+   📏 **Re-read 2026-09-25 ~7:30 PM PT (day 6 of 7):** `pct_editions_stale_45d` **0.0%**, walked ≤7 d
+   **100.0%**, age p50 **20.7 h**, p90 **37.1 h**. The tail the hold exists to rule out (a walk that drains
+   the backlog once and stops reaching it) is not appearing: p90 fell from 470 h (09-20) to 37 h. One day
+   left on the exit bar (≤ 1% through 09-26); read it once more tomorrow before calling step 1 closed.
+
    ⚠ **`pct_trustworthy` did NOT move (36.2% → 35.2%) and that is not a counter-result** — §1's
    correction says exactly this: it bands on listing bias, not freshness. Do not read it either way.
 2. **Then the P1 bridge.** The mapping is settled and executable (§5). It is ~2 days of work, not
@@ -315,7 +320,19 @@ direction:
   on 2026-09-10** — not because no walk ran that day, but because everything walked then has since
   been re-walked.
 
-👉 **So the severity decision is currently resting on a number nobody can check.** If it should be
+⭐ **SUPERSEDED 2026-09-25 ~7:30 PM PT — the drop rate IS measurable, and the ~15% premise holds.**
+`pipeline_runs_daily` (the durable daily rollup, which this section did not know about) keeps one
+`panini-ingest-enum` marker per walk for **41 days**. Over the 40 whole UTC days 2026-08-16 → 09-24:
+**207 walks of 240 scheduled = 86.3% arrival (13.7% dropped); 84.4% over the last 14 days.** The drops are
+lumpy, not uniform: 24 days had all 6 walks, 7 had 5, 4 had 4, **5 had ≤ 3** (min 1) — i.e. mostly
+whole-box outages, not scattered misses. Query:
+`select day, runs from pipeline_runs_daily where pipeline='panini-ingest-enum' order by day`.
+For the severity call this means: at today's walk cadence every edition is re-walked within ~1.5 days
+(p90 37 h), so one dropped tick costs little and a `medium` page on a single miss would fire ~5×/week;
+a multi-walk gap (≤ 3 walks in a day) is the event worth paging on. Still Trevor's decision.
+
+👉 **So the severity decision is currently resting on a number nobody can check.** *(09-19 text, kept
+as written; see the correction above.)* If it should be
 decided on evidence, something has to record tick ARRIVALS durably — a tiny append-only table, or a
 retention bump on this one pipeline. Until then, the honest framing for Trevor is "we do not know
 the drop rate", not "~15%".
