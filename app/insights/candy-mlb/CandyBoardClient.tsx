@@ -179,6 +179,25 @@ const playerCell = (r: Dict) => (
   </>
 );
 
+/** How much of the Rainbow leg carries a price, in words that follow the count
+ *  rather than a hardcoded adjective (which read "largely unpriced (25/25)"). */
+export function rainbowCoverageNote(
+  priced: number | string | null | undefined,
+  total: number | string | null | undefined,
+): React.ReactNode {
+  const p = priced == null ? null : Number(priced)
+  const t = total == null ? null : Number(total)
+  if (p == null || t == null || !Number.isFinite(p) || !Number.isFinite(t) || t <= 0) {
+    return <>whose pricing coverage we could not read</>
+  }
+  const label = p >= t ? "fully priced" : p * 2 >= t ? "partly priced" : "largely unpriced"
+  return (
+    <>
+      which is <b>{label} ({p}/{t})</b>
+    </>
+  )
+}
+
 function DataTable({
   rows,
   cols,
@@ -671,11 +690,13 @@ export default function CandyBoardClient({
               <div className="cdy-ev-warn">
                 <b>Read the Typical Pull, not the Actual EV.</b> A pack is {num(packEv.icon_slots)} ICONs + a{" "}
                 {num(Number(packEv.rainbow_chance) * 100)}% Rainbow chance. &ldquo;Actual EV&rdquo; is a mean dragged
-                up by the Rainbow leg, which is{" "}
-                <b>largely unpriced ({num(packEv.rainbow_priced)}/{num(packEv.rainbow_total)})</b> — and you cannot
+                up by the Rainbow leg — a 15% shot at a /15 card —{" "}
+                {/* 2026-09-25: this said "largely unpriced (25/25)" — hardcoded prose
+                    from when the Rainbow leg WAS unpriced, printed beside a count that
+                    had reached 25 of 25. The adjective is now derived from the count. */}
+                {rainbowCoverageNote(packEv.rainbow_priced, packEv.rainbow_total)} — and you cannot
                 liquidate {num(packEv.icon_slots)}{" "}
-                ICONs at FMV on a market this thin. Drop 3 (Jul 29) added ~15,000 more commons, so the floor
-                has moved since these prices were set.
+                ICONs at FMV on a market this thin.
                 {packMarket && packMarket.median_7d_usd != null ? (
                   <>
                     {" "}
