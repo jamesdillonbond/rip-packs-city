@@ -140,7 +140,9 @@ type Listing = {
 
 type MarketResponse = {
   listings: Listing[]
-  pagination: { total: number; page: number; limit: number; hasMore: boolean }
+  // totalIsExact=false: `total` counts only the rows the route's window could
+  // see (e.g. Panini's 500-row window over a 4,650-row board), so it is a FLOOR.
+  pagination: { total: number; page: number; limit: number; hasMore: boolean; totalIsExact?: boolean }
   clamp: { applied: boolean; ceilings: Record<string, number> }
   diagnostics: { rawCount: number; postClampCount: number; postFilterCount: number }
   // Panini only (published 2026-09-25): the listing-gated coverage disclosure.
@@ -486,6 +488,8 @@ function MarketInner() {
   }
 
   const total = data?.pagination.total ?? 0
+  // A windowed total is printed as a floor ("500+"), never as the market's size.
+  const totalPlus = data?.pagination.totalIsExact === false ? "+" : ""
   const hasMore = data?.pagination.hasMore ?? false
   const showOwnedColumn = !!ownerKey && editionStats.size > 0
   const showOwnedFilter = !!ownerKey
@@ -696,7 +700,7 @@ function MarketInner() {
         {/* Row 4: result summary */}
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>
           {loading ? "LOADING…" : error ? `ERROR — ${error}` :
-            `${filteredListings.length.toLocaleString()} OF ${total.toLocaleString()} EDITION${total === 1 ? "" : "S"}` +
+            `${filteredListings.length.toLocaleString()} OF ${total.toLocaleString()}${totalPlus} EDITION${total === 1 && !totalPlus ? "" : "S"}` +
             (data?.diagnostics && data.diagnostics.rawCount > data.diagnostics.postClampCount
               ? ` · ${(data.diagnostics.rawCount - data.diagnostics.postClampCount).toLocaleString()} OUTLIERS CLAMPED`
               : "")
@@ -755,7 +759,7 @@ function MarketInner() {
             ← Prev
           </button>
           <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>
-            PAGE {page} / {Math.max(1, Math.ceil(total / 50))}
+            PAGE {page} / {Math.max(1, Math.ceil(total / 50))}{totalPlus}
           </span>
           <button
             type="button"

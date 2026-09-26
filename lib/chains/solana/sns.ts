@@ -73,8 +73,13 @@ export async function resolveSnsName(
     // "Unsupported TLD" (the proxy stops resolving `.sol` past a slot height) is
     // a limitation of the SOURCE, not a verdict that the name is unregistered.
     if (/unsupported/i.test(msg)) return { kind: "failed", reason: "unsupported_tld" }
-    // A 5xx carrying an error envelope is still the proxy failing.
-    if (res.status >= 500) return { kind: "failed", reason: `proxy_${res.status}` }
+    // Only the statuses the proxy uses for a VERDICT on the name (it answers an
+    // unregistered name 400 "Domain not found") may say not_found. A 5xx, a 429
+    // rate limit, an auth or timeout status carrying an error envelope is the
+    // lookup failing — "that name doesn't exist" would be a false claim.
+    if (res.status !== 200 && res.status !== 400 && res.status !== 404) {
+      return { kind: "failed", reason: `proxy_${res.status}` }
+    }
     return { kind: "not_found", reason: msg.slice(0, 120) }
   }
   return { kind: "failed", reason: `unexpected_${res.status}` }

@@ -41,6 +41,14 @@ describe("resolveSnsName", () => {
     const r = await resolveSnsName("alice.sns", (async () => resp(200, { s: "ok", result: "0xabc" })) as never)
     expect(r.kind).toBe("failed")
   })
+  it("a rate-limited / auth / timeout error envelope is a FAILED lookup, never 'not found'", async () => {
+    for (const status of [429, 401, 403, 408, 502]) {
+      const r = await resolveSnsName("alice.sns", (async () => resp(status, { s: "error", result: "Too many requests" })) as never)
+      expect(r.kind).toBe("failed")
+    }
+    expect((await resolveSnsName("x.sns", (async () => resp(404, { s: "error", result: "Domain not found" })) as never)).kind).toBe("not_found")
+  })
+
   it("an error envelope is not_found — except 'Unsupported TLD', which is a source limitation", async () => {
     expect((await resolveSnsName("x.sns", (async () => resp(400, { s: "error", result: "Domain not found" })) as never)).kind).toBe("not_found")
     expect((await resolveSnsName("x.sol", (async () => resp(400, { s: "error", result: "Unsupported TLD" })) as never)).kind).toBe("failed")

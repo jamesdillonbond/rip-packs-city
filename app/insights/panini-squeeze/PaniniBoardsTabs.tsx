@@ -245,7 +245,13 @@ export default function PaniniBoardsTabs({
                 </tr>
               ))}
             </Table>
-            {data.deals_capped ? <Note>Showing the top {int(data.deals?.length ?? 0)} by estimated edge; more exist.</Note> : null}
+            {data.deals_capped ? (
+              <Note>
+                {deals.fmvOnly.length > 0
+                  ? <>Showing {int(data.deals?.length ?? 0)} deals: every sale-backed one, then the FMV-only ones by estimated edge — more FMV-only deals exist.</>
+                  : <>Showing the top {int(data.deals?.length ?? 0)} sale-backed deals by estimated edge; more exist.</>}
+              </Note>
+            ) : null}
           </>
         )
       ) : tab === "packs" ? (

@@ -11,6 +11,7 @@ import { fetchPaniniMoreBoards, PANINI_BOARD_LIMIT } from "@/lib/insights/panini
 type Res = { data?: unknown; error?: unknown; count?: number | null }
 function db(over: Record<string, Res> = {}) {
   const selects: Record<string, string[]> = {}
+  const orders: Record<string, string[]> = {}
   const base: Record<string, Res> = {
     panini_deal_board: { data: [{ sku: "a", deal_basis: "fmv_and_recent_sales" }] },
     panini_pack_ev_board: { data: [{ pack_type: "hobby" }] },
@@ -21,6 +22,7 @@ function db(over: Record<string, Res> = {}) {
   }
   return {
     selects,
+    orders,
     from(table: string) {
       const b: any = {
         select: (cols: string) => {
@@ -28,7 +30,10 @@ function db(over: Record<string, Res> = {}) {
           return b
         },
         eq: () => b,
-        order: () => b,
+        order: (col: string) => {
+          ;(orders[table] ??= []).push(col)
+          return b
+        },
         limit: () => b,
         then: (resolve: any) => resolve({ data: null, error: null, count: null, ...base[table] }),
       }
@@ -38,6 +43,15 @@ function db(over: Record<string, Res> = {}) {
 }
 
 describe("fetchPaniniMoreBoards", () => {
+  it("orders sale-backed deals FIRST so the cap can only cut FMV-only rows (2026-09-25)", async () => {
+    const d = db() as any
+    await fetchPaniniMoreBoards(d)
+    expect(d.orders.panini_deal_board?.[0]).toBe("deal_basis")
+    // ...and the enum's string order puts the sale-backed basis first.
+    expect(["fmv_only_no_recent_sales", "fmv_and_recent_sales"].sort()[0]).toBe("fmv_and_recent_sales")
+  })
+
+
   it("assembles all four boards + coverage and is cacheable when every read succeeds", async () => {
     const r = await fetchPaniniMoreBoards(db())
     expect(r.ok).toBe(true)

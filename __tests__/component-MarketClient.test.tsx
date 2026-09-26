@@ -253,6 +253,14 @@ describe("MarketClient — results", () => {
     await waitFor(() => expect(document.body.textContent).toContain("1 OF 137 EDITIONS"))
   })
 
+  it("prints a WINDOWED total as a floor ('500+'), never as the market's size (2026-09-25)", async () => {
+    // Panini: a 500-row window over a 4,650-row board printed "48 OF 500 EDITIONS".
+    marketResponse = () => json(200, market({ pagination: { total: 500, page: 1, limit: 50, hasMore: true, totalIsExact: false } }))
+    render(<MarketClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("1 OF 500+ EDITIONS"))
+    expect(document.body.textContent).toContain("PAGE 1 / 10+")
+  })
+
   it("singularises the count for a one-edition market", async () => {
     marketResponse = () => json(200, market({ pagination: { total: 1, page: 1, limit: 50, hasMore: false } }))
     render(<MarketClient />)

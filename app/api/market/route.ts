@@ -621,24 +621,50 @@ async function fetchPaniniMarketListings(
     sets: string[]; seriesList: string[]; player: string; minPrice: number
   }
 ): Promise<any[] | null> {
-  let q = (supabaseAdmin as any)
-    .from("panini_market_board")
-    .select(
-      "external_id, player_name, set_name, tier, circulation_count, thumbnail_url, low_ask_usd, listed_count, ask_confirmed_at, fmv_usd, confidence, discount_pct"
-    )
-  if (filters.tier && filters.tier !== "all") q = q.eq("tier", filters.tier.toUpperCase())
-  if (filters.maxPrice > 0) q = q.lte("low_ask_usd", filters.maxPrice)
-  q = applyBrowseFilters(q, { set: "set_name", player: "player_name", price: "low_ask_usd" }, filters)
+  const window = Math.max(filters.limit, 500)
+  const build = () => {
+    const q = (supabaseAdmin as any)
+      .from("panini_market_board")
+      .select(
+        "external_id, player_name, set_name, tier, circulation_count, thumbnail_url, low_ask_usd, listed_count, ask_confirmed_at, fmv_usd, confidence, discount_pct"
+      )
+    let f = q
+    if (filters.tier && filters.tier !== "all") f = f.eq("tier", filters.tier.toUpperCase())
+    if (filters.maxPrice > 0) f = f.lte("low_ask_usd", filters.maxPrice)
+    return applyBrowseFilters(f, { set: "set_name", player: "player_name", price: "low_ask_usd" }, filters)
+  }
+  const order = (q: any) => {
+    if (filters.sortBy === "price_desc") q = q.order("low_ask_usd", { ascending: false })
+    else if (filters.sortBy === "fmv_desc") q = q.order("fmv_usd", { ascending: false, nullsFirst: false })
+    else if (filters.sortBy === "discount_desc") q = q.order("discount_pct", { ascending: false, nullsFirst: false })
+    else if (filters.sortBy === "discount_asc") q = q.order("discount_pct", { ascending: true, nullsFirst: false })
+    else if (filters.sortBy === "recent" || filters.sortBy === "listed_desc") q = q.order("ask_confirmed_at", { ascending: false, nullsFirst: false })
+    else q = q.order("low_ask_usd", { ascending: true })
+    // Deterministic tiebreak on the view's unique key.
+    return q.order("external_id", { ascending: true })
+  }
 
-  if (filters.sortBy === "price_desc") q = q.order("low_ask_usd", { ascending: false })
-  else if (filters.sortBy === "fmv_desc") q = q.order("fmv_usd", { ascending: false, nullsFirst: false })
-  else if (filters.sortBy === "discount_desc") q = q.order("discount_pct", { ascending: false, nullsFirst: false })
-  else if (filters.sortBy === "recent" || filters.sortBy === "listed_desc") q = q.order("ask_confirmed_at", { ascending: false, nullsFirst: false })
-  else q = q.order("low_ask_usd", { ascending: true })
-  // Deterministic tiebreak on the view's unique key.
-  q = q.order("external_id", { ascending: true })
-
-  const { data, error } = await boundedRead(q.limit(Math.max(filters.limit, 500)), "api/market/panini_market_board")
+  // ⚠ DISCOUNT SORTS FETCH THE NON-LOW WINDOW FIRST (2026-09-25). The shared
+  // mapper demotes LOW-confidence rows below verified ones, but it only reorders
+  // the rows it was GIVEN: ordering the whole board by discount filled the
+  // 500-row window with LOW rows (312 of the top 500), so ~109 of the 293
+  // non-LOW editions with a real discount could not be reached under
+  // "Discount ↓". The LOW rows ride in a second window, after.
+  const discountSort = filters.sortBy === "discount_desc" || filters.sortBy === "discount_asc"
+  let data: any[] | null
+  let error: { message: string } | null
+  if (discountSort) {
+    const [hi, lo] = await Promise.all([
+      boundedRead(order(build().neq("confidence", "LOW")).limit(window), "api/market/panini_market_board"),
+      boundedRead(order(build().eq("confidence", "LOW")).limit(window), "api/market/panini_market_board_low"),
+    ])
+    error = hi.error ?? lo.error ?? null
+    data = error ? null : [...(hi.data ?? []), ...(lo.data ?? [])]
+  } else {
+    const r = await boundedRead(order(build()).limit(window), "api/market/panini_market_board")
+    error = r.error
+    data = r.data
+  }
   if (error) {
     console.log("[/api/market] panini fetch err:", error.message)
     // null, NOT []: an empty array would read as "the Panini market is empty".

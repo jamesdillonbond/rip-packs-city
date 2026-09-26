@@ -61,19 +61,51 @@ describe("GET /api/market — Panini arm", () => {
     expect(mbappe.lowConfidenceFmv).toBe(true) // LOW does not
   })
 
+  const lowRow = { external_id: "low", player_name: "A", set_name: "S", tier: "RARE", circulation_count: 49, thumbnail_url: "pack/x.png", low_ask_usd: 2, listed_count: 1, ask_confirmed_at: "2026-09-25T20:00:00Z", fmv_usd: 73, confidence: "LOW", discount_pct: 97 }
+  const medRow = { external_id: "med", player_name: "B", set_name: "S", tier: "RARE", circulation_count: 49, thumbnail_url: null, low_ask_usd: 80, listed_count: 1, ask_confirmed_at: "2026-09-25T20:00:00Z", fmv_usd: 100, confidence: "MEDIUM", discount_pct: 20 }
+
   it("a LOW-confidence Panini discount sorts BELOW a real one in discount sort", async () => {
+    // Discount sorts read two windows: non-LOW first, then LOW (2026-09-25).
     install({
       ...board(),
-      panini_market_board: {
-        data: [
-          { external_id: "low", player_name: "A", set_name: "S", tier: "RARE", circulation_count: 49, thumbnail_url: "pack/x.png", low_ask_usd: 2, listed_count: 1, ask_confirmed_at: "2026-09-25T20:00:00Z", fmv_usd: 73, confidence: "LOW", discount_pct: 97 },
-          { external_id: "med", player_name: "B", set_name: "S", tier: "RARE", circulation_count: 49, thumbnail_url: null, low_ask_usd: 80, listed_count: 1, ask_confirmed_at: "2026-09-25T20:00:00Z", fmv_usd: 100, confidence: "MEDIUM", discount_pct: 20 },
-        ],
-        error: null,
-      },
+      panini_market_board: [{ data: [medRow], error: null }, { data: [lowRow], error: null }],
     })
     const body = await (await GET(req(`https://t/api/market?collectionId=${PANINI}&sort=discount_desc`))).json()
     expect(body.listings.map((l: any) => l.editionKey)).toEqual(["med", "low"])
+  })
+
+  it("discount sort reads the non-LOW window SEPARATELY, so LOW rows cannot crowd real deals out of it", async () => {
+    const base = makeSupabaseFixture({
+      ...board(),
+      panini_market_board: [{ data: [medRow], error: null }, { data: [lowRow], error: null }],
+    } as never) as any
+    const conf: Array<[string, unknown]> = []
+    state.sb = {
+      ...base,
+      from: (t: string) => {
+        const b = base.from(t)
+        if (t !== "panini_market_board") return b
+        for (const m of ["eq", "neq"] as const) {
+          const orig = b[m]
+          b[m] = (...a: unknown[]) => {
+            if (a[0] === "confidence") conf.push([m, a[1]])
+            return orig(...a)
+          }
+        }
+        return b
+      },
+    }
+    await GET(req(`https://t/api/market?collectionId=${PANINI}&sort=discount_desc`))
+    expect(conf).toEqual([["neq", "LOW"], ["eq", "LOW"]])
+  })
+
+  it("a failure of EITHER discount window is a failed read, never a half board", async () => {
+    install({
+      ...board(),
+      panini_market_board: [{ data: [medRow], error: null }, { data: null, error: { message: "boom" } }],
+    })
+    const res = await GET(req(`https://t/api/market?collectionId=${PANINI}&sort=discount_desc`))
+    expect(res.status).toBeGreaterThanOrEqual(500)
   })
 
   it("carries the listing-gated coverage disclosure", async () => {

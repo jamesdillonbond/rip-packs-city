@@ -77,6 +77,11 @@ export async function fetchPaniniMoreBoards(
   const [deals, packs, specials, players, coverage, specialCount] = await Promise.all([
     read(
       db.from("panini_deal_board").select(DEAL_COLS)
+        // Sale-corroborated deals FIRST ('fmv_and_recent_sales' sorts before
+        // 'fmv_only_no_recent_sales'), so the cap can only cut FMV-only rows.
+        // Ordered by edge alone, 5 of the 20 sale-backed deals fell outside the
+        // top 200 and the tab said "15 are also under the median" (2026-09-25).
+        .order("deal_basis", { ascending: true })
         .order("est_profit_usd", { ascending: false })
         .order("sku", { ascending: true })
         .limit(PANINI_BOARD_LIMIT),
