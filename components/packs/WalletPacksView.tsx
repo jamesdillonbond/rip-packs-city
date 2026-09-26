@@ -22,6 +22,7 @@ import {
   identitySyncNote,
   netPlTint,
   packBuyLabel,
+  packPullLabel,
   packDisplayName,
   packIdentityNote,
   packMarketLabel,
@@ -67,6 +68,10 @@ interface HistoryRow {
   buy_currency: string | null
   sell_price: number | null
   pull_value_usd: number | null
+  // 2026-09-26 (v8): pull_value_source + how many of the pack's moments are priced.
+  pull_value_source?: "dapper_pulls" | "rip_record" | null
+  pulls_total?: number | null
+  pulls_priced?: number | null
   realized_pl_usd: number | null
   latest_event_at: string | null
   // 2026-09-18 (get_wallet_pack_history v4) — every one optional so an older
@@ -385,7 +390,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
                           drop is tagged so "$0 (reward)" reads as a fact. */}
                       <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{packBuyLabel(row)}</td>
                       <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{row.has_sell ? fmtPackUsd(row.sell_price) : "—"}</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{row.has_rip ? fmtPackUsd(row.pull_value_usd) : "—"}</td>
+                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{packPullLabel(row)}</td>
                       <td style={{ padding: "9px 12px", textAlign: "right", color: plTint, fontFamily: display, fontWeight: 700 }}>{fmtPackUsd(row.realized_pl_usd)}</td>
                       <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)", whiteSpace: "nowrap" }}>{market || "—"}</td>
                     </tr>

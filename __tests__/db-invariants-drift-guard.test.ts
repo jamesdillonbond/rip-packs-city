@@ -15,6 +15,17 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-26. Pins the lane that prices every pack a saved wallet
+    // OPENED from Dapper's own list of what it yielded (searchPackNft.nfts):
+    // collection-scoped edition resolution, whole-pack all-or-nothing pricing
+    // (never a partial sum, FMV 0 = unpriced), the All Day index lookup, and
+    // that a page with a next page is not a finished walk.
+    fn: "collect_wallet_pack_pulls",
+    test: "supabase/tests/collect_wallet_pack_pulls.sql",
+    migration:
+      "supabase/migrations/20260926153000_audit_20260926_wallet_pack_pulls_named_by_dapper_index_so_every_rip_can_be_priced.sql",
+  },
+  {
     // Added 2026-09-18. Pins the FIX for "my wallet shows 0 sold packs when I have
     // sold hundreds" (Trevor). pack_purchases.seller_address is the transaction
     // PAYER — Dapper's escrow on every marketplace sale (103,396 of 103,398 Top
@@ -34,8 +45,10 @@ const PINS = [
     // wallet's last CLEAN walk. A departed pack is never re-walked, so its row
     // kept naming the old owner -- 23 rows on 5 of 27 saved wallets, 23 of 23
     // Sealed, each rendered as an unopened pack still in that user's inventory.
+    // v8 (2026-09-26): Golazos/Pinnacle opens + Golazos market trades, and pull
+    // value from Dapper's per-pack pull list (same opener) before the rip row.
     migration:
-      "supabase/migrations/20260925165425_audit_20260925_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
+      "supabase/migrations/20260926160000_audit_20260926_wallet_pack_history_lists_golazos_pinnacle_and_prices_rips_from_dapper_pulls.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
@@ -44,7 +57,7 @@ const PINS = [
     fn: "get_wallet_pack_summary",
     test: "supabase/tests/get_wallet_pack_summary.sql",
     migration:
-      "supabase/migrations/20260925164848_audit_20260925_wallet_pack_summary_counts_topshot_shop_buys_as_primary_134.sql",
+      "supabase/migrations/20260926160100_audit_20260926_wallet_pack_summary_counts_golazos_pinnacle_opens_and_dapper_pull_values.sql",
   },
   {
     // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists

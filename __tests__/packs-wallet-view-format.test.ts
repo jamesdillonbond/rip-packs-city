@@ -12,6 +12,7 @@ import {
   relativePackTime,
   packIdentityNote,
   packBuyLabel,
+  packPullLabel,
   packMarketLabel,
   identitySyncNote,
 } from "@/lib/packs-wallet-view-format"
@@ -225,5 +226,25 @@ describe("packMarketLabel (2026-09-18)", () => {
     expect(packMarketLabel({ lowest_ask_usd: 22.5, pack_ev_usd: 31.2, last_sale_usd: 19 })).toBe("Ask $22.50 · EV $31.20 · Last $19.00")
     expect(packMarketLabel({ lowest_ask_usd: null, pack_ev_usd: 31.2 })).toBe("EV $31.20")
     expect(packMarketLabel({})).toBe("")
+  })
+})
+
+describe("packPullLabel (2026-09-26)", () => {
+  it("prints a known pull value", () => {
+    expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: 12.5 })).toBe(fmtPackUsd(12.5))
+  })
+  it("never renders an unknown pull value as $0 — it says how close the pull list is", () => {
+    const label = packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null, pulls_total: 3, pulls_priced: 2 })
+    expect(label).toBe("— (2/3 priced)")
+    expect(label).not.toMatch(/\$0/)
+  })
+  it("an index-only opened pack (no rip row of ours) still shows its value", () => {
+    expect(packPullLabel({ status: "ripped", has_rip: false, pull_value_usd: 4 })).toBe(fmtPackUsd(4))
+  })
+  it("a pack that was never opened has no pull value", () => {
+    expect(packPullLabel({ status: "held", has_rip: false, pull_value_usd: null, pulls_total: 3, pulls_priced: 3 })).toBe("—")
+  })
+  it("unknown with no pull list is a bare dash", () => {
+    expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null })).toBe("—")
   })
 })

@@ -36,9 +36,17 @@
 --      never synced, in flight, errored, page-capped -- because suppressing on a
 --      PARTIAL walk is the same defect pointing the other way. P19 is the
 --      no-change control for that, and the fix cannot move it.
+--   7. (v8, 2026-09-26) WIDER AND DEEPER. Golazos and Pinnacle opens (their own
+--      tables; pack_rips holds neither) are RIPPED rows, and Golazos marketplace
+--      buys/sells count like Top Shot's and All Day's. A pack's pull value comes
+--      first from pack_open_pull_values -- priced from the moments Dapper's index
+--      says the pack yielded -- and ONLY for the wallet that opened it; the rip
+--      row's value is the fallback, and pull_value_source says which. A pack whose
+--      pull list is partly priced publishes NULL plus pulls_priced / pulls_total,
+--      never a partial sum.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260920171011_audit_20260920_wallet_pack_history_trusts_ownership_only_at_or_after_the_last_clean_walk.sql).
+-- (supabase/migrations/20260926160000_audit_20260926_wallet_pack_history_lists_golazos_pinnacle_and_prices_rips_from_dapper_pulls.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -78,6 +86,13 @@ CREATE TABLE public.pack_nft_identity (
   PRIMARY KEY (collection_id, pack_nft_id)
 );
 CREATE TABLE public.pack_wallet_sync (wallet text PRIMARY KEY, requested_at timestamptz, completed_at timestamptz, pages int, packs int, last_error text, last_clean_sync_at timestamptz);
+-- v8 (2026-09-26)
+CREATE TABLE public.golazos_pack_sales_history (LIKE public.topshot_pack_sales_history);
+CREATE TABLE public.golazos_pack_opens (pack_nft_id text, dist_id text, opener_address text, opened_at timestamptz, moments_pulled int, pull_value_usd numeric);
+CREATE TABLE public.pinnacle_pack_opens (LIKE public.golazos_pack_opens);
+CREATE TABLE public.pack_open_pull_values (
+  collection_id uuid, pack_nft_id text, opener_address text, n_pulls int, n_resolved int, n_priced int,
+  pull_value_usd numeric(14,2), priced_at timestamptz DEFAULT now(), PRIMARY KEY (collection_id, pack_nft_id));
 
 -- >>> BEGIN verbatim get_wallet_pack_history (body byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_pack_history(p_wallet text, p_collection_slug text DEFAULT NULL::text, p_status text DEFAULT NULL::text, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0)
@@ -93,6 +108,8 @@ DECLARE
   v_safe_offset int := GREATEST(COALESCE(p_offset, 0), 0);
   v_ts uuid;
   v_ad uuid;
+  v_gz uuid;
+  v_pin uuid;
   v_total int;
   v_packs jsonb;
   v_sync jsonb;
@@ -113,6 +130,8 @@ BEGIN
 
   SELECT id INTO v_ts FROM public.collections WHERE slug = 'nba_top_shot';
   SELECT id INTO v_ad FROM public.collections WHERE slug = 'nfl_all_day';
+  SELECT id INTO v_gz FROM public.collections WHERE slug = 'laliga_golazos';
+  SELECT id INTO v_pin FROM public.collections WHERE slug = 'disney_pinnacle';
 
   SELECT jsonb_build_object('requested_at', s.requested_at, 'completed_at', s.completed_at,
                             'pages', s.pages, 'packs', s.packs, 'last_error', s.last_error,
@@ -137,6 +156,11 @@ BEGIN
     SELECT pack_nft_id, v_ad, sale_price_usd, 'USD', block_time, storefront_address, false,
            'secondary_sale', dist_id, 'marketplace', 2
     FROM public.allday_pack_sales_history WHERE buyer_address = v_wallet AND purchased
+    UNION ALL
+    -- 2026-09-26: Golazos marketplace history (same walker shape, same meaning).
+    SELECT pack_nft_id, v_gz, sale_price_usd, 'USD', block_time, storefront_address, false,
+           'secondary_sale', dist_id, 'marketplace', 2
+    FROM public.golazos_pack_sales_history WHERE buyer_address = v_wallet AND purchased
   ),
   -- One buy per pack. The same purchase is often in BOTH sources with DIFFERENT
   -- timestamps: the marketplace row carries the sale moment, the on-chain row
@@ -179,6 +203,9 @@ BEGIN
     UNION ALL
     SELECT pack_nft_id, v_ad, sale_price_usd, 'USD', block_time, buyer_address, dist_id, 'marketplace', 2
     FROM public.allday_pack_sales_history WHERE storefront_address = v_wallet AND purchased
+    UNION ALL
+    SELECT pack_nft_id, v_gz, sale_price_usd, 'USD', block_time, buyer_address, dist_id, 'marketplace', 2
+    FROM public.golazos_pack_sales_history WHERE storefront_address = v_wallet AND purchased
   ),
   latest_sells AS (
     SELECT DISTINCT ON (collection_id, pack_nft_id)
@@ -194,6 +221,14 @@ BEGIN
   wallet_rips AS (
     SELECT id, pack_nft_id, collection_id, sealed_at, moments_pulled, dist_id, pull_value_usd
     FROM public.pack_rips WHERE opener_address = v_wallet
+    UNION ALL
+    -- 2026-09-26: Golazos and Pinnacle opens live in their own tables (pack_rips
+    -- holds neither -- 0 rows each), so the Opened tab never listed them.
+    SELECT NULL::uuid, pack_nft_id, v_gz, opened_at, moments_pulled, dist_id, pull_value_usd
+    FROM public.golazos_pack_opens WHERE opener_address = v_wallet
+    UNION ALL
+    SELECT NULL::uuid, pack_nft_id, v_pin, opened_at, moments_pulled, dist_id, pull_value_usd
+    FROM public.pinnacle_pack_opens WHERE opener_address = v_wallet
   ),
   -- (3) Dapper's index of what the wallet HOLDS or OPENED (pack_nft_identity,
   --     filled by the pack-nft-identity lane's wallet sync): the packs our
@@ -241,7 +276,19 @@ BEGIN
       lb.buy_price, lb.buy_currency, lb.bought_at, lb.bought_from, lb.bought_primary,
       lb.bought_event_kind, lb.buy_src,
       ls.sell_price, ls.sell_currency, ls.sold_at, ls.sold_to, ls.sell_src,
-      wr.id AS rip_id, wr.sealed_at AS ripped_at, wr.moments_pulled, wr.pull_value_usd,
+      wr.id AS rip_id, wr.sealed_at AS ripped_at,
+      -- 2026-09-26: what the pack yielded, from Dapper's own list of its moments
+      -- (pack_open_pull_values, the wallet-pack-pulls lane) first; the rip
+      -- record's value only where that list has not been priced. Both are
+      -- current FMV, whole-pack, NULL -- never 0 -- when any pull is unpriced.
+      COALESCE(wr.moments_pulled, pov.n_pulls) AS moments_pulled,
+      COALESCE(pov.pull_value_usd, wr.pull_value_usd) AS pull_value_usd,
+      CASE WHEN pov.pull_value_usd IS NOT NULL THEN 'dapper_pulls'
+           WHEN wr.pull_value_usd IS NOT NULL THEN 'rip_record'
+      END AS pull_value_source,
+      pov.n_pulls    AS pulls_total,
+      pov.n_resolved AS pulls_identified,
+      pov.n_priced   AS pulls_priced,
       -- Dapper's own index of the pack (pack_nft_identity, filled by the
       -- pack-nft-identity lane): current owner + Sealed/Opened, as of checked_at.
       -- TRUE when the index still names this wallet but the wallet's last clean
@@ -277,6 +324,8 @@ BEGIN
     LEFT JOIN buy_dist     bd ON bd.collection_id = d.collection_id AND bd.pack_nft_id = d.pack_nft_id
     LEFT JOIN sell_dist    sd ON sd.collection_id = d.collection_id AND sd.pack_nft_id = d.pack_nft_id
     LEFT JOIN public.pack_nft_identity pi ON pi.collection_id = d.collection_id AND pi.pack_nft_id = d.pack_nft_id
+    LEFT JOIN public.pack_open_pull_values pov
+      ON pov.collection_id = d.collection_id AND pov.pack_nft_id = d.pack_nft_id AND pov.opener_address = v_wallet
     LEFT JOIN LATERAL (
       SELECT h.dist_id FROM public.topshot_pack_sales_history h
       WHERE d.collection_id = v_ts
@@ -285,6 +334,11 @@ BEGIN
       UNION ALL
       SELECT h.dist_id FROM public.allday_pack_sales_history h
       WHERE d.collection_id = v_ad
+        AND wr.dist_id IS NULL AND bd.dist_id IS NULL AND sd.dist_id IS NULL
+        AND h.pack_nft_id = d.pack_nft_id AND h.dist_id IS NOT NULL
+      UNION ALL
+      SELECT h.dist_id FROM public.golazos_pack_sales_history h
+      WHERE d.collection_id = v_gz
         AND wr.dist_id IS NULL AND bd.dist_id IS NULL AND sd.dist_id IS NULL
         AND h.pack_nft_id = d.pack_nft_id AND h.dist_id IS NOT NULL
       LIMIT 1
@@ -420,6 +474,11 @@ BEGIN
         'rip_id', rip_id, 'ripped_at', ripped_at,
         'moments_pulled', moments_pulled,
         'pull_value_usd', CASE WHEN pull_value_usd IS NULL THEN NULL ELSE ROUND(pull_value_usd::numeric, 2) END,
+        -- 'dapper_pulls' | 'rip_record' | NULL; and, when Dapper's list is held,
+        -- how many of the pack's moments are identified / priced (so a NULL
+        -- value can say "3 of 4 priced" instead of nothing).
+        'pull_value_source', pull_value_source,
+        'pulls_total', pulls_total, 'pulls_identified', pulls_identified, 'pulls_priced', pulls_priced,
         'buy_price', CASE WHEN buy_price IS NULL THEN NULL ELSE ROUND(buy_price::numeric, 2) END,
         'buy_usd',   CASE WHEN buy_usd   IS NULL THEN NULL ELSE ROUND(buy_usd::numeric, 2) END,
         'buy_price_source', buy_price_source,
@@ -452,7 +511,9 @@ BEGIN
     'identity_sync', v_sync,
     'coverage', jsonb_build_object(
       'onchain', 'pack_purchases: Top Shot + All Day, block-indexed from 2026-04; primary drops carry no price on chain',
-      'marketplace', 'topshot_pack_sales_history / allday_pack_sales_history: Dapper marketplace secondary sales (seller = storefront_address), Top Shot from 2023-09, All Day from 2022-12; ingest is bursty and can lag days',
+      'opens', 'pack_rips (Top Shot, All Day) + golazos_pack_opens + pinnacle_pack_opens',
+      'pulls', 'pack_open_pull_values: every pack this wallet opened, priced from the moments Dapper''s searchPackNft.nfts says it yielded (current FMV, whole-pack: NULL unless every moment is priced; pulls_priced / pulls_total say how close). Refreshed by the wallet-pack-pulls lane; pull_value_source = rip_record where only the rip row''s value is held',
+      'marketplace', 'topshot_pack_sales_history / allday_pack_sales_history / golazos_pack_sales_history: Dapper marketplace secondary sales (seller = storefront_address), Top Shot from 2023-09, All Day from 2022-12; ingest is bursty and can lag days',
       'identity', 'pack_nft_identity: Dapper searchPackNft index (dist_id, Sealed/Opened, current owner, acquired_at) filled by the pack-nft-identity lane and the per-wallet sync; identity_sync says when this wallet''s holdings were last confirmed (NULL completed_at = not yet, the list is what we hold so far). An ownership claim is trusted only at or after identity_sync.last_clean_sync_at, the start of the last clean full walk: a row older than that names a pack the wallet no longer holds, is excluded from the held/ripped counts, and carries identity_departed = true'
     ),
     'computed_at', now()
@@ -463,7 +524,9 @@ $function$;
 
 INSERT INTO public.collections VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'nba_top_shot', 'NBA Top Shot'),
-  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'nfl_all_day', 'NFL All Day');
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'nfl_all_day', 'NFL All Day'),
+  ('06248cc4-b85f-47cd-af67-1855d14acd75', 'laliga_golazos', 'LaLiga Golazos'),
+  ('7dd9dd11-e8b6-45c4-ac99-71331f959714', 'disney_pinnacle', 'Disney Pinnacle');
 
 INSERT INTO public.pack_distributions VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D1', 'Fresh Threads Pack', 'https://img/d1.png', '{"retail_price_usd":"10"}', 100, 40),
@@ -710,6 +773,57 @@ BEGIN
   PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nfl_all_day', NULL, 50, 0))->>'total_count', '0', 'collection filter');
   PERFORM _assert_eq((public.get_wallet_pack_history('0xnobody', NULL, NULL, 50, 0))->>'total_count', '0', 'unknown wallet -> empty, not error');
   PERFORM _assert((public.get_wallet_pack_history('', NULL, NULL, 50, 0))->>'error' = 'wallet required', 'empty wallet -> error');
+END $$;
+
+-- ── v8 (2026-09-26): wider (Golazos/Pinnacle) and deeper (Dapper pull lists) ──
+-- A second wallet so every count above is untouched.
+-- P20: Top Shot rip whose rip row is unvalued; Dapper's pull list prices it.
+INSERT INTO public.pack_rips (collection_id, pack_nft_id, opener_address, moments_pulled, sealed_at, dist_id, pull_value_usd)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P20', '0xwallet2', 3, '2026-09-01', 'D1', NULL),
+-- P21: rip row valued at 7, Dapper's list only 2 of 3 priced -> the rip value stands.
+       ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P21', '0xwallet2', 3, '2026-09-02', 'D1', 7);
+INSERT INTO public.pack_open_pull_values (collection_id, pack_nft_id, opener_address, n_pulls, n_resolved, n_priced, pull_value_usd) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P20', '0xwallet2', 3, 3, 3, 12.50),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P21', '0xwallet2', 3, 3, 2, NULL),
+-- a value keyed to ANOTHER opener must never price this wallet's P5
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P5', '0xsomeoneelse', 3, 3, 3, 99.00),
+  ('06248cc4-b85f-47cd-af67-1855d14acd75', 'G1', '0xwallet2', 4, 4, 4, 5.00);
+-- G1: a Golazos open (golazos_pack_opens); G2 bought / G3 sold on the Golazos market.
+INSERT INTO public.golazos_pack_opens VALUES ('G1', 'GD1', '0xwallet2', '2026-09-03', 4, 4.00);
+INSERT INTO public.golazos_pack_sales_history VALUES
+  ('tx-g2', 'G2', 15, true, '0xwallet2', '0xgzseller', 'GD1', '2026-09-04'),
+  ('tx-g3', 'G3', 21, true, '0xgzbuyer', '0xwallet2', 'GD1', '2026-09-05');
+-- PN1: a Pinnacle open; only the open row's own value is known.
+INSERT INTO public.pinnacle_pack_opens VALUES ('PN1', 'PD1', '0xwallet2', '2026-09-06', 5, 3.30);
+
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet2', NULL, NULL, 50, 0);
+  PERFORM _assert_eq(r->>'total_count', '6', 'P20, P21, G1, G2, G3, PN1');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P20';
+  PERFORM _assert_eq(row_->>'pull_value_usd', '12.50', 'P20 priced from Dapper''s pull list when the rip row is unvalued');
+  PERFORM _assert_eq(row_->>'pull_value_source', 'dapper_pulls', 'P20 provenance');
+  PERFORM _assert_eq(row_->>'realized_pl_usd', NULL, 'P20 no buy leg -> no P&L');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P21';
+  PERFORM _assert_eq(row_->>'pull_value_usd', '7.00', 'P21 a partly priced pull list never overrides a whole rip value');
+  PERFORM _assert_eq(row_->>'pull_value_source', 'rip_record', 'P21 provenance');
+  PERFORM _assert(row_->>'pulls_priced' = '2' AND row_->>'pulls_total' = '3', 'P21 carries how close the pull list is');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'G1';
+  PERFORM _assert(row_->>'status' = 'ripped' AND row_->>'collection_slug' = 'laliga_golazos', 'G1 a Golazos open is RIPPED');
+  PERFORM _assert_eq(row_->>'pull_value_usd', '5.00', 'G1 Dapper pull list first');
+  PERFORM _assert_eq(row_->>'moments_pulled', '4', 'G1 moments from the open row');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'G2';
+  PERFORM _assert(row_->>'status' = 'held' AND row_->>'buy_price' = '15.00' AND row_->>'buy_price_source' = 'marketplace', 'G2 a Golazos market buy is a BUY');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'G3';
+  PERFORM _assert(row_->>'status' = 'sold' AND row_->>'sell_price' = '21.00' AND row_->>'sold_to' = '0xgzbuyer', 'G3 a Golazos market sale is a SALE');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'PN1';
+  PERFORM _assert(row_->>'status' = 'ripped' AND row_->>'collection_slug' = 'disney_pinnacle', 'PN1 a Pinnacle open is RIPPED');
+  PERFORM _assert(row_->>'pull_value_usd' = '3.30' AND row_->>'pull_value_source' = 'rip_record', 'PN1 value from the open row');
+
+  -- the opener scoping: another wallet's pull value never prices P5
+  SELECT p INTO row_ FROM jsonb_array_elements((public.get_wallet_pack_history('0xwallet', NULL, NULL, 50, 0))->'packs') p WHERE p->>'pack_nft_id' = 'P5';
+  PERFORM _assert(row_->>'pull_value_usd' IS NULL AND row_->>'pull_value_source' IS NULL, 'P5 stays NULL: a pull value keyed to another opener is not this wallet''s');
 END $$;
 
 ROLLBACK;

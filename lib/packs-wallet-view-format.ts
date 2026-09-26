@@ -143,6 +143,25 @@ export function packBuyLabel(row: {
   return fmtPackUsd(usd) + currencySuffix(row.buy_currency)
 }
 
+/** Pull-value cell (2026-09-26, get_wallet_pack_history v8). A pack that was
+ *  opened shows its value; when Dapper's pull list is held but not every
+ *  moment is priced, it says how close ("2/3 priced") instead of a bare dash.
+ *  Unknown is never rendered as $0. Not opened -> "—". */
+export function packPullLabel(row: {
+  status: string
+  has_rip: boolean
+  pull_value_usd: number | null
+  pulls_total?: number | null
+  pulls_priced?: number | null
+}): string {
+  if (!row.has_rip && row.status !== "ripped") return "—"
+  if (row.pull_value_usd != null) return fmtPackUsd(row.pull_value_usd)
+  if (row.pulls_total != null && row.pulls_total > 0 && row.pulls_priced != null) {
+    return `— (${row.pulls_priced}/${row.pulls_total} priced)`
+  }
+  return "—"
+}
+
 export interface IdentitySync {
   requested_at?: string | null
   completed_at?: string | null

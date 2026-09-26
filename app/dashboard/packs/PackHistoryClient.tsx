@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
-import { packBuyLabel, packIdentityNote, packMarketLabel } from "@/lib/packs-wallet-view-format"
+import { packBuyLabel, packIdentityNote, packMarketLabel, packPullLabel } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 import {
@@ -226,6 +226,11 @@ interface HistoryRow {
   ripped_at: string | null
   moments_pulled: number | null
   pull_value_usd: number | null
+  // 2026-09-26 (v8): where the pull value came from, and — when Dapper's list
+  // of the pack's moments is held — how many are priced. NULL = unknown.
+  pull_value_source?: "dapper_pulls" | "rip_record" | null
+  pulls_total?: number | null
+  pulls_priced?: number | null
   realized_pl_usd: number | null
   first_event_at: string | null
   latest_event_at: string | null
@@ -867,7 +872,7 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
         <td style={{ padding: "10px 12px", color: "rgba(255,255,255,0.7)" }}>{relativeTime(row.latest_event_at)}</td>
         <td style={{ padding: "10px 12px", textAlign: "right" }}>{buyText}</td>
         <td style={{ padding: "10px 12px", textAlign: "right" }}>{sellText}</td>
-        <td style={{ padding: "10px 12px", textAlign: "right", color: pullTint }}>{row.has_rip ? fmtUsd(row.pull_value_usd) : "—"}</td>
+        <td style={{ padding: "10px 12px", textAlign: "right", color: pullTint }}>{packPullLabel(row)}</td>
         <td style={{ padding: "10px 12px", textAlign: "right", color: plTint, fontFamily: condensedFont, fontWeight: 700 }}>{fmtUsd(row.realized_pl_usd)}</td>
       </tr>
       {isOpen && (

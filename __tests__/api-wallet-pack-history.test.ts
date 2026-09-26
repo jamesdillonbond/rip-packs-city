@@ -151,6 +151,8 @@ describe("GET /api/wallet/pack-history", () => {
     expect(afterCalls).toHaveLength(1)
     await afterCalls[0]()
     expect(rpcNames).toContain("request_wallet_pack_sync")
+    // 2026-09-26: and the per-pack pull-list walk that prices every rip.
+    expect(rpcNames).toContain("request_wallet_pack_pulls")
     ;((await import("@/lib/supabase")).supabaseAdmin as any).rpc = origRpc
   })
 

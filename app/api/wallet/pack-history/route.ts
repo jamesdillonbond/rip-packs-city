@@ -109,6 +109,16 @@ export async function GET(req: NextRequest) {
     } catch (err) {
       console.error("[wallet/pack-history] sync request threw", err instanceof Error ? err.message : String(err))
     }
+    // 2026-09-26: and for the list of moments every OPENED pack yielded
+    // (searchPackNft.nfts), which prices each rip's pull value. No-op when a
+    // walk completed in the last 6 h or one is in flight; the
+    // rpc-wallet-pack-pulls-lane pg_cron job collects it within 5 minutes.
+    try {
+      const { error: pullErr } = await sb.rpc("request_wallet_pack_pulls", { p_wallet: wallet })
+      if (pullErr) console.error("[wallet/pack-history] pull request", pullErr.message)
+    } catch (err) {
+      console.error("[wallet/pack-history] pull request threw", err instanceof Error ? err.message : String(err))
+    }
   })
 
   try {
