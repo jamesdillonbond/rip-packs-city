@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — Candy MLB editions carry Candy's own Rookie / First Mint designations (the badge chips Top Shot cards show): 4 Rookie + 10 First Mint players from the published checklist, player-level (Core and Rainbow printings alike), written by the Solana normalizer from now on (Drop 1 has no on-chain trait for either) and backfilled on the 15 existing editions (`20260926032837`, applied ~8:28 PM PT). Rendered as text chips on the edition page; "Rookie" resolves to a generic badge entry with no art, so no Top Shot artwork is borrowed. Lists pinned to the CSV's ticked columns · Claude Code (web sandbox)
+
+- **Revert:** revert the "feat(candy): Rookie / First Mint designations" commit, then `UPDATE editions SET badges = NULLIF(array(SELECT x FROM unnest(badges) x WHERE x NOT IN ('Rookie','First Mint')), '{}') WHERE collection_id = '209ade70-32c5-4470-bc7c-4793d660f713';`
+
+
 ### 2026-09-25 · 🧹 SHIPPED — `.github/workflows/edge-fn-deploy.yml`: a `workflow_dispatch` that deploys ONE edge function with the Supabase CLI from the COMMITTED files (no transcription), using the `SUPABASE_ACCESS_TOKEN` / `SUPABASE_PROJECT_ID` secrets `edge-fn-drift` already has. Refuses a slug that is not a directory, and any function reading a `*_GATE_KEY` unless `gate_secret_is_set` is ticked (the 08-12 / 09-20 fail-closed class); mandatory `--no-verify-jwt` + `--import-map supabase/functions/deno.json`; post-conditions read back from production — `verify_jwt=false`, `ACTIVE`, and the drift census calls the slug `clean`. Removes the reason `enrich-ufc-wallet` has been DEPLOY_DEFERRED (hand-transcribing 340 lines with hardcoded contract addresses) and the `\uXXXX`-decoding MCP class for every future deploy · Claude Code (web sandbox)
 
 - **Revert:** revert the "ci: edge-fn-deploy workflow" commit (the workflow only runs when dispatched; deleting it deploys nothing).
