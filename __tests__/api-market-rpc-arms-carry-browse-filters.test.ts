@@ -80,3 +80,16 @@ describe.each([
     expect(args).not.toHaveProperty("p_min_price")
   })
 })
+
+// known-issues #146 (2026-09-25): Top Shot's RPC ranks by RAW discount and the
+// route demotes thin / stale FMV only after the fetch, so a 500-row window held
+// 261 of 353 real (HIGH/MEDIUM, positive) deals. Discount sorts pull 1,000.
+describe("GET /api/market — Top Shot discount sort pulls a wider window", () => {
+  it("discount_desc asks the RPC for 1,000 rows; other sorts keep 500", async () => {
+    await GET(req(`https://t/api/market?collectionId=${TS}&sort=discount_desc`))
+    expect(argsOf("get_topshot_sniper_deals")?.p_limit).toBe(1000)
+    rpcCalls.length = 0
+    await GET(req(`https://t/api/market?collectionId=${TS}&sort=price_asc`))
+    expect(argsOf("get_topshot_sniper_deals")?.p_limit).toBe(500)
+  })
+})

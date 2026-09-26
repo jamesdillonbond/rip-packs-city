@@ -780,7 +780,13 @@ async function fetchModernListings(
     p_rarity: filters.tier && filters.tier !== "all" ? filters.tier : "all",
     p_team: filters.team && filters.team !== "all" ? filters.team : "all",
     p_sort_by: rpcSort,
-    p_limit: Math.max(filters.limit, 500), // pull enough so downstream pagination has headroom
+    // Pull enough so downstream pagination has headroom. ⚠ DISCOUNT SORTS PULL
+    // 1,000 (known-issues #146): the RPC ranks by RAW discount and this route
+    // demotes thin / stale / ask-only FMV only AFTER the fetch, so a 500-row
+    // window held 261 of the 353 HIGH/MEDIUM positive-discount editions — 92
+    // real deals could not be reached under "Discount ↓" (measured 2026-09-25).
+    // 1,000 (PostgREST's row cap) holds 349, for ~+35 % buffers (11.6k -> ~15k).
+    p_limit: rpcSort === "discount_desc" ? Math.max(filters.limit, 1000) : Math.max(filters.limit, 500),
     ...rpcBrowseFilterArgs(filters),
   }), `api/market/${rpcName}`)
   if (error) {
