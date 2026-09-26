@@ -208,4 +208,28 @@ describe("GET /api/profile/hero-moment", () => {
       expect(res.status).toBe(401)
     })
   })
+
+  // #148 (a): strict mode — an ownerKey that resolves to nobody is 404
+  // owner_not_found, never the signed-in viewer's hero.
+  describe("strict ownerKey (#148)", () => {
+    it("404s an unresolved ownerKey instead of answering with the viewer's hero", async () => {
+      state.user = { id: "viewer-1" }
+      state.tables = {}                              // no wallet, no username
+      state.rpc = { data: [pricedRow({ player_name: "Viewer Own" })], error: null }
+      const res = await GET(req("https://t/api/profile/hero-moment?ownerKey=nobody&strict=1"))
+      expect(res.status).toBe(404)
+      const body = await res.json()
+      expect(body.error).toBe("owner_not_found")
+      expect(JSON.stringify(body)).not.toContain("Viewer Own")
+    })
+
+    it("without strict the documented session fallback is unchanged (control)", async () => {
+      state.user = { id: "viewer-1" }
+      state.tables = {}
+      state.rpc = { data: [pricedRow({ player_name: "Viewer Own" })], error: null }
+      const res = await GET(req("https://t/api/profile/hero-moment?ownerKey=nobody"))
+      expect(res.status).toBe(200)
+      expect((await res.json()).hero.playerName).toBe("Viewer Own")
+    })
+  })
 })

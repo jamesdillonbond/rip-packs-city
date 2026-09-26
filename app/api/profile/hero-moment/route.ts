@@ -72,10 +72,10 @@ const SMOKE_TEST_HERO = {
 // resolves to nobody still falls back to the session. Only a read FAILURE stops
 // being spelled like "no such owner".
 type OwnerResolution =
-  | { ok: true; userId: string | null }
+  | { ok: true; userId: string | null; unresolved?: true }
   | { ok: false; error: unknown };
 
-async function resolveUserId(ownerKey: string | null): Promise<OwnerResolution> {
+async function resolveUserId(ownerKey: string | null, strict = false): Promise<OwnerResolution> {
   if (ownerKey) {
     const key = ownerKey.trim();
     // ⛔ 2026-09-19 — THIS GATE WAS `key.startsWith("0x")` AND THE LOOKUP WAS
@@ -108,6 +108,12 @@ async function resolveUserId(ownerKey: string | null): Promise<OwnerResolution> 
       .maybeSingle(), "api/profile/hero-moment/owner-by-username");
     if (bioErr) return { ok: false, error: bioErr };
     if (bio?.user_id) return { ok: true, userId: bio.user_id as string };
+    // #148 (a): STRICT mode — a page about SOMEONE ELSE must never fall back to
+    // the session. A supplied ownerKey that resolves to nobody is "no such
+    // owner", not "the viewer". The default (non-strict) keeps the documented
+    // fallback because today's callers (dashboard, trophy/avatar pickers) pass
+    // the viewer's own, possibly unsaved, owner key.
+    if (strict) return { ok: true, userId: null, unresolved: true };
   }
   const user = await getCurrentUser();
   return { ok: true, userId: user?.id ?? null };
@@ -115,10 +121,14 @@ async function resolveUserId(ownerKey: string | null): Promise<OwnerResolution> 
 
 export async function GET(req: NextRequest) {
   const ownerKey = req.nextUrl.searchParams.get("ownerKey");
-  const owner = await resolveUserId(ownerKey);
+  const strict = req.nextUrl.searchParams.get("strict") === "1";
+  const owner = await resolveUserId(ownerKey, strict);
   if (!owner.ok) {
     console.error("[profile/hero-moment] owner resolve failed", (owner.error as { message?: string })?.message);
     return apiErrorResponse(owner.error, "api/profile/hero-moment");
+  }
+  if (owner.unresolved) {
+    return NextResponse.json({ error: "owner_not_found" }, { status: 404 });
   }
   const userId = owner.userId;
   if (!userId) {

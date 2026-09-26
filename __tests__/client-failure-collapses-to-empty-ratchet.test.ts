@@ -177,7 +177,7 @@ const ROOTS = ["app", "components"]
  * The method that still works is sweeping the empty-state COPY of sites that DO
  * render one, not the fetch code.
  */
-const BUDGET = 65
+const BUDGET = 64
 
 /**
  * A failure funnelled into the success-with-nothing value.

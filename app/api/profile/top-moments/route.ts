@@ -7,6 +7,8 @@
 // Resolution order for the user_id:
 //   1. ?ownerKey=<wallet_addr | username> query param (when supplied)
 //   2. Authenticated session (requireUser fallback)
+//   ?strict=1 (#148): a supplied ownerKey that resolves to nobody answers 404
+//   owner_not_found, never the session. Any page about someone else sends it.
 //
 // Optional ?collection=<slug> filters to one collection (e.g. "nba-top-shot")
 // and routes to the 4-arg overload of get_user_top_owned_moments which adds a
@@ -39,10 +41,10 @@ import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
 // the contract in this file's header. What is no longer allowed is for a read
 // FAILURE to be spelled the same way as "no such owner".
 type OwnerResolution =
-  | { ok: true; userId: string | null }
+  | { ok: true; userId: string | null; unresolved?: true }
   | { ok: false; error: unknown };
 
-async function resolveUserId(ownerKey: string | null): Promise<OwnerResolution> {
+async function resolveUserId(ownerKey: string | null, strict = false): Promise<OwnerResolution> {
   if (ownerKey) {
     const key = ownerKey.trim();
     // ⛔ 2026-09-19 — THIS GATE WAS `key.startsWith("0x")` AND THE LOOKUP WAS
@@ -75,6 +77,12 @@ async function resolveUserId(ownerKey: string | null): Promise<OwnerResolution> 
       .maybeSingle(), "api/profile/top-moments/profile_bio");
     if (bioErr) return { ok: false, error: bioErr };
     if (bio?.user_id) return { ok: true, userId: bio.user_id as string };
+    // #148 (a): STRICT mode — a page about SOMEONE ELSE must never fall back to
+    // the session. A supplied ownerKey that resolves to nobody is "no such
+    // owner", not "the viewer". The default (non-strict) keeps the documented
+    // fallback because today's callers (dashboard, trophy/avatar pickers) pass
+    // the viewer's own, possibly unsaved, owner key.
+    if (strict) return { ok: true, userId: null, unresolved: true };
   }
   const user = await getCurrentUser();
   return { ok: true, userId: user?.id ?? null };
@@ -91,10 +99,14 @@ export async function GET(req: NextRequest) {
   const collectionSlug = req.nextUrl.searchParams.get("collection");
   const collectionUuid = collectionSlug ? COLLECTION_UUID_BY_SLUG[collectionSlug] ?? null : null;
 
-  const owner = await resolveUserId(ownerKey);
+  const strict = req.nextUrl.searchParams.get("strict") === "1";
+  const owner = await resolveUserId(ownerKey, strict);
   if (!owner.ok) {
     console.error("[profile/top-moments] owner resolve failed", (owner.error as { message?: string })?.message);
     return apiErrorResponse(owner.error, "api/profile/top-moments");
+  }
+  if (owner.unresolved) {
+    return NextResponse.json({ error: "owner_not_found" }, { status: 404 });
   }
   const userId = owner.userId;
   if (!userId) {

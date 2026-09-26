@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import RpcLogo from "@/components/RpcLogo";
-import CostBasisCard from "@/components/profile/CostBasisCard";
 import TopMoversCard from "@/components/profile/TopMoversCard";
 import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCard";
 import PublicAchievements from "@/components/profile/PublicAchievements";

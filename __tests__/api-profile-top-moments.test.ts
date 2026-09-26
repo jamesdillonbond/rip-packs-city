@@ -99,4 +99,26 @@ describe("GET /api/profile/top-moments", () => {
     expect(res.status).toBe(200)
     expect((await res.json()).moments).toHaveLength(1)
   })
+
+  // #148 (a): a page about SOMEONE ELSE sends ?strict=1 — an ownerKey that
+  // resolves to nobody must be "no such owner", never the signed-in viewer.
+  it("strict: an unresolved ownerKey 404s and never answers with the viewer's moments", async () => {
+    state.user = { id: "viewer-1" }
+    state.single = { data: null, error: null }        // no wallet, no username
+    state.rpc = { data: [{ moment_id: "viewer-moment", fmv_usd: 1 }], error: null }
+    const res = await GET(req("https://t/api/profile/top-moments?ownerKey=nobody&strict=1"))
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error).toBe("owner_not_found")
+    expect(JSON.stringify(body)).not.toContain("viewer-moment")
+  })
+
+  it("strict: a resolved ownerKey still answers (control)", async () => {
+    state.user = { id: "viewer-1" }
+    state.single = { data: { user_id: "u1" }, error: null }
+    state.rpc = { data: [{ moment_id: "m1", fmv_usd: 100 }], error: null }
+    const res = await GET(req("https://t/api/profile/top-moments?ownerKey=trevor&strict=1"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).moments).toHaveLength(1)
+  })
 })

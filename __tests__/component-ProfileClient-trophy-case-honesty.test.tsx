@@ -20,7 +20,6 @@ import { render, cleanup, waitFor } from "@testing-library/react"
 vi.mock("next/navigation", () => ({ useParams: () => ({ username: "trevor" }) }))
 vi.mock("next/link", () => ({ default: ({ children, ...p }: any) => <a {...p}>{children}</a> }))
 vi.mock("@/components/RpcLogo", () => ({ default: () => <div /> }))
-vi.mock("@/components/profile/CostBasisCard", () => ({ default: () => <div /> }))
 vi.mock("@/components/profile/TopMoversCard", () => ({ default: () => <div /> }))
 vi.mock("@/components/profile/CollectionBreakdownCard", () => ({ default: () => <div /> }))
 vi.mock("@/components/profile/PublicAchievements", () => ({ default: () => <div /> }))
