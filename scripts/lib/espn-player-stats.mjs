@@ -158,15 +158,45 @@ export function matchEspnSearch(payload, league, displayName) {
   const want = baseSlug(displayName)
   const leagues = ESPN_LEAGUES[league] ?? [league]
   const sport = ESPN_SPORT[league]
-  const hits = espnSearchHits(payload).filter(
-    (h) => leagues.includes(h.league) && (!sport || !h.sport || h.sport === sport) && baseSlug(h.displayName) === want,
+  const named = espnSearchHits(payload).filter(
+    (h) => (!sport || !h.sport || h.sport === sport) && baseSlug(h.displayName) === want,
   )
-  if (hits.length === 1) return { espn_id: hits[0].id, espn_league: hits[0].league, matched_by: "espn-search:name" }
-  if (hits.length === 0) return { espn_id: null, espn_league: null, matched_by: "unresolved:none" }
+  const hits = named.filter((h) => leagues.includes(h.league))
+  // A same-name hit ESPN files under another PRO league of the sport — a
+  // player now abroad reads `fiba` / `nbl` / `womens-olympics-basketball`
+  // (Patty Mills, Boris Diaw, Dario Saric, Julie Vanloo — measured 2026-09-25)
+  // with the SAME athlete id the nba / wnba stats path serves. Never taken
+  // by name alone: the runner probes each one's stats and takes the ONE that
+  // has seasons. College leagues are never candidates.
+  const probe = named.filter((h) => !leagues.includes(h.league) && h.league !== "" && !/college/.test(h.league))
+  const cand = (list) => list.map((h) => ({ id: h.id, league: h.league, displayName: h.displayName, team: h.team }))
+  if (hits.length === 1) return { espn_id: hits[0].id, espn_league: hits[0].league, matched_by: "espn-search:name", candidates: [] }
+  if (hits.length === 0) return { espn_id: null, espn_league: null, matched_by: "unresolved:none", candidates: cand(probe) }
   // several with the same base name: an exact spelling wins when unique
   const exact = hits.filter((h) => h.displayName.trim() === String(displayName).trim())
-  if (exact.length === 1) return { espn_id: exact[0].id, espn_league: exact[0].league, matched_by: "espn-search:exact" }
-  return { espn_id: null, espn_league: null, matched_by: `unresolved:ambiguous:${hits.length}` }
+  if (exact.length === 1) return { espn_id: exact[0].id, espn_league: exact[0].league, matched_by: "espn-search:exact", candidates: [] }
+  return { espn_id: null, espn_league: null, matched_by: `unresolved:ambiguous:${hits.length}`, candidates: cand(hits) }
+}
+
+/**
+ * The verdict of a stats PROBE over search candidates: `probed` is one entry
+ * per (candidate, espn league) tried with the season count its stats page
+ * showed (0 for an answered empty). Exactly one candidate with seasons is
+ * the person; none or several is still unresolved — a duplicate ESPN entry
+ * (a G League affiliate copy, a phantom with no team) has no seasons, two
+ * real players both do.
+ */
+export function pickProbedCandidate(probed) {
+  const withSeasons = new Map()
+  for (const p of Array.isArray(probed) ? probed : []) {
+    if (!p || !p.id || !(p.seasons > 0)) continue
+    if (!withSeasons.has(p.id)) withSeasons.set(p.id, p.espn_league)
+  }
+  if (withSeasons.size === 1) {
+    const [id, espn_league] = [...withSeasons.entries()][0]
+    return { espn_id: id, espn_league, matched_by: "espn-search:stats-probe" }
+  }
+  return { espn_id: null, espn_league: null, matched_by: withSeasons.size === 0 ? "unresolved:none" : `unresolved:ambiguous:${withSeasons.size}` }
 }
 
 export function chunk(arr, size) {

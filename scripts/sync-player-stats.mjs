@@ -25,7 +25,7 @@
  *   slow ESPN ends in a logged, partial run instead of a SIGKILL with no row)
  */
 
-import { chunk, espnSearchUrl, espnStatsUrl, matchEspnSearch, parseEspnStats, slugToQuery } from "./lib/espn-player-stats.mjs"
+import { ESPN_LEAGUES, chunk, espnSearchUrl, espnStatsUrl, matchEspnSearch, parseEspnStats, pickProbedCandidate, slugToQuery } from "./lib/espn-player-stats.mjs"
 
 const BASE_URL = (process.env.BASE_URL || "https://www.rippackscity.com").replace(/\/$/, "")
 const TOKEN = process.env.INGEST_SECRET_TOKEN
@@ -100,7 +100,27 @@ async function resolveEspnIds(league, stats) {
           stats.errors.push(`search ${name}: HTTP ${r.status}`)
           break
         }
-        const m = matchEspnSearch(r.json, league, name)
+        let m = matchEspnSearch(r.json, league, name)
+        // Duplicate ESPN entries (a G League copy, a phantom) and a player
+        // now filed abroad (fiba / nbl) are settled by their STATS: the one
+        // candidate with seasons under this league's stats path is the person.
+        if (!m.espn_id && m.candidates && m.candidates.length > 0 && m.candidates.length <= 4) {
+          const probed = []
+          for (const c of m.candidates) {
+            for (const el of ESPN_LEAGUES[league]) {
+              const pr = await espnGet(espnStatsUrl(league, c.id, el))
+              let seasons = 0
+              if (pr.status === 200) {
+                try { seasons = new Set(parseEspnStats(pr.json, c.id).map((row) => row.season)).size } catch { seasons = 0 }
+              }
+              probed.push({ id: c.id, espn_league: el, seasons })
+              await sleep(ESPN_DELAY_MS)
+            }
+          }
+          const picked = pickProbedCandidate(probed)
+          if (picked.espn_id) m = { ...picked, candidates: [] }
+          else if (picked.matched_by.startsWith("unresolved:ambiguous")) m = { ...m, matched_by: picked.matched_by }
+        }
         if (m.espn_id) {
           verdict = { ...m, matched_by: i === 0 ? m.matched_by : `${m.matched_by}:alias:${t.aliases[i - 1]}` }
           break

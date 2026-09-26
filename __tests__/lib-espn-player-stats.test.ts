@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parseEspnStats, matchEspnSearch, espnSearchHits, baseSlug, espnStatsUrl, espnSearchUrl, slugToQuery, chunk } from "../scripts/lib/espn-player-stats.mjs"
+import { parseEspnStats, matchEspnSearch, espnSearchHits, pickProbedCandidate, baseSlug, espnStatsUrl, espnSearchUrl, slugToQuery, chunk } from "../scripts/lib/espn-player-stats.mjs"
 
 // The pure half of the ESPN stats feed (batch 47, 2026-09-25). Properties: a
 // payload without a categories array is a FAILED read (throws), not zero rows;
@@ -109,36 +109,59 @@ describe("matchEspnSearch — ESPN search v2 (batch 56: retired players and the 
     { uid: "s:40~l:41~a:777", displayName: "Jimmy Butler", sport: "basketball", defaultLeagueSlug: "mens-college-basketball" },
   ])
   it("accepts the one same-league base-name hit, suffix-insensitively, and says which ESPN league it lives in", () => {
-    expect(matchEspnSearch(butler, "nba", "Jimmy Butler")).toEqual({ espn_id: "6430", espn_league: "nba", matched_by: "espn-search:name" })
-    expect(matchEspnSearch(butler, "nba", "Jimmy Butler III")).toEqual({ espn_id: "6430", espn_league: "nba", matched_by: "espn-search:name" })
+    expect(matchEspnSearch(butler, "nba", "Jimmy Butler")).toEqual({ espn_id: "6430", espn_league: "nba", matched_by: "espn-search:name", candidates: [] })
+    expect(matchEspnSearch(butler, "nba", "Jimmy Butler III")).toEqual({ espn_id: "6430", espn_league: "nba", matched_by: "espn-search:name", candidates: [] })
   })
   it("a Top Shot WNBA player resolves under league nba to her wnba id; college and other sports never do", () => {
     const wilson = v2([
       { uid: "s:40~l:59~a:3149391", displayName: "A'ja Wilson", sport: "basketball", defaultLeagueSlug: "wnba", subtitle: "Las Vegas Aces" },
       { uid: "s:40~l:54~a:4412077", displayName: "A'Ja Wilson", sport: "basketball", defaultLeagueSlug: "womens-college-basketball" },
     ])
-    expect(matchEspnSearch(wilson, "nba", "A'ja Wilson")).toEqual({ espn_id: "3149391", espn_league: "wnba", matched_by: "espn-search:name" })
+    expect(matchEspnSearch(wilson, "nba", "A'ja Wilson")).toEqual({ espn_id: "3149391", espn_league: "wnba", matched_by: "espn-search:name", candidates: [] })
     // an NFL identity never takes a basketball hit
-    expect(matchEspnSearch(wilson, "nfl", "A'ja Wilson")).toEqual({ espn_id: null, espn_league: null, matched_by: "unresolved:none" })
+    expect(matchEspnSearch(wilson, "nfl", "A'ja Wilson")).toEqual({ espn_id: null, espn_league: null, matched_by: "unresolved:none", candidates: [] })
   })
   it("a player ESPN files on a G League roster (nba-development, same athlete id) is an NBA hit", () => {
     const fultz = v2([{ uid: "s:40~l:69~a:4066636", displayName: "Markelle Fultz", sport: "basketball", defaultLeagueSlug: "nba-development", subtitle: "Raptors 905" }])
-    expect(matchEspnSearch(fultz, "nba", "Markelle Fultz")).toEqual({ espn_id: "4066636", espn_league: "nba", matched_by: "espn-search:name" })
+    expect(matchEspnSearch(fultz, "nba", "Markelle Fultz")).toEqual({ espn_id: "4066636", espn_league: "nba", matched_by: "espn-search:name", candidates: [] })
   })
   it("a retired player's hit (the v3 search never returned one) is taken like any other", () => {
     const pierce = v2([{ uid: "s:40~l:46~a:662", displayName: "Paul Pierce", sport: "basketball", defaultLeagueSlug: "nba", subtitle: "LA Clippers" }])
-    expect(matchEspnSearch(pierce, "nba", "Paul Pierce")).toEqual({ espn_id: "662", espn_league: "nba", matched_by: "espn-search:name" })
+    expect(matchEspnSearch(pierce, "nba", "Paul Pierce")).toEqual({ espn_id: "662", espn_league: "nba", matched_by: "espn-search:name", candidates: [] })
   })
   it("reports none and ambiguity instead of guessing — a same-name pair is never settled by league or team", () => {
-    expect(matchEspnSearch(butler, "nba", "Nobody Known")).toEqual({ espn_id: null, espn_league: null, matched_by: "unresolved:none" })
+    expect(matchEspnSearch(butler, "nba", "Nobody Known")).toEqual({ espn_id: null, espn_league: null, matched_by: "unresolved:none", candidates: [] })
     const two = v2([
       { uid: "s:40~l:46~a:1", displayName: "Marcus Morris Sr.", defaultLeagueSlug: "nba", sport: "basketball" },
       { uid: "s:40~l:46~a:2", displayName: "Marcus Morris", defaultLeagueSlug: "nba", sport: "basketball" },
     ])
-    expect(matchEspnSearch(two, "nba", "Marcus Morris Sr.")).toEqual({ espn_id: "1", espn_league: "nba", matched_by: "espn-search:exact" })
-    expect(matchEspnSearch(two, "nba", "Marcus Morris Jr.")).toEqual({ espn_id: null, espn_league: null, matched_by: "unresolved:ambiguous:2" })
-    expect(matchEspnSearch(undefined, "nba", "X")).toEqual({ espn_id: null, espn_league: null, matched_by: "unresolved:none" })
-    expect(matchEspnSearch({ results: [] }, "nba", "X")).toEqual({ espn_id: null, espn_league: null, matched_by: "unresolved:none" })
+    expect(matchEspnSearch(two, "nba", "Marcus Morris Sr.")).toEqual({ espn_id: "1", espn_league: "nba", matched_by: "espn-search:exact", candidates: [] })
+    expect(matchEspnSearch(two, "nba", "Marcus Morris Jr.")).toMatchObject({ espn_id: null, espn_league: null, matched_by: "unresolved:ambiguous:2" })
+    expect(matchEspnSearch(two, "nba", "Marcus Morris Jr.").candidates.map((c: { id: string }) => c.id)).toEqual(["1", "2"])
+    expect(matchEspnSearch(undefined, "nba", "X")).toEqual({ espn_id: null, espn_league: null, matched_by: "unresolved:none", candidates: [] })
+    expect(matchEspnSearch({ results: [] }, "nba", "X")).toEqual({ espn_id: null, espn_league: null, matched_by: "unresolved:none", candidates: [] })
+  })
+  it("a same-name hit filed abroad (fiba / nbl) is a PROBE candidate, never taken by name; a college hit is never a candidate (batch 60)", () => {
+    const mills = v2([
+      { uid: "s:40~l:99~a:2284648", displayName: "Patty Mills", sport: "basketball", defaultLeagueSlug: "fiba", subtitle: "Australia" },
+      { uid: "s:40~l:41~a:777", displayName: "Patty Mills", sport: "basketball", defaultLeagueSlug: "mens-college-basketball" },
+    ])
+    const m = matchEspnSearch(mills, "nba", "Patty Mills")
+    expect(m).toMatchObject({ espn_id: null, matched_by: "unresolved:none" })
+    expect(m.candidates).toEqual([{ id: "2284648", league: "fiba", displayName: "Patty Mills", team: "Australia" }])
+  })
+  it("pickProbedCandidate: exactly one candidate with seasons is the person; a phantom (0) loses; two real players stay ambiguous", () => {
+    expect(pickProbedCandidate([
+      { id: "4905397", espn_league: "nba", seasons: 0 }, { id: "4905397", espn_league: "wnba", seasons: 0 },
+      { id: "4230557", espn_league: "nba", seasons: 5 }, { id: "4230557", espn_league: "wnba", seasons: 0 },
+    ])).toEqual({ espn_id: "4230557", espn_league: "nba", matched_by: "espn-search:stats-probe" })
+    // a WNBA player filed under fiba resolves to her wnba stats path
+    expect(pickProbedCandidate([{ id: "2566110", espn_league: "nba", seasons: 0 }, { id: "2566110", espn_league: "wnba", seasons: 3 }]))
+      .toEqual({ espn_id: "2566110", espn_league: "wnba", matched_by: "espn-search:stats-probe" })
+    expect(pickProbedCandidate([{ id: "97", espn_league: "nba", seasons: 12 }, { id: "2994", espn_league: "nba", seasons: 4 }]))
+      .toMatchObject({ espn_id: null, matched_by: "unresolved:ambiguous:2" })
+    expect(pickProbedCandidate([{ id: "1", espn_league: "nba", seasons: 0 }])).toMatchObject({ espn_id: null, matched_by: "unresolved:none" })
+    expect(pickProbedCandidate(undefined)).toMatchObject({ espn_id: null })
   })
   it("a hit without an athlete id in its uid is skipped, not taken with an empty id; the batch-47 items shape still parses", () => {
     expect(espnSearchHits(v2([{ uid: "s:40~l:46", displayName: "No Id", defaultLeagueSlug: "nba" }]))).toEqual([])
