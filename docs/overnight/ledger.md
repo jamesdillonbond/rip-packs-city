@@ -11,6 +11,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — the paid-tier machinery is gone, not just hidden: `ProBadge`, `useProStatus`, `/api/pro-status` and `requirePro` deleted (zero callers since the headers dropped the badge), plus a ban-at-zero guard so no paid tier can be named on the site again before 100 WAU · Claude Code (web sandbox)
+
+**Why (~8:05 PM PT):** after the day's removals, these four pieces had no caller left. They were exactly what would put a PRO badge or a "available to RPC Pro members" 402 back on screen with a one-line import.
+
+**What shipped:** deleted `components/auth/ProBadge.tsx`, `lib/hooks/useProStatus.ts`, `app/api/pro-status/route.ts`, `requirePro` (lib/pro-tier.ts) and their three test files. Dropped the stale mocks in two tests and the brand-token list entry (a missing listed file counts as a violation). The GlobalSiteHeader test now pins that the header source never imports a Pro badge and renders no "pro"/"founding" text. **New guard `__tests__/no-paid-tier-is-named-on-the-site.test.ts`:** comment-stripped walk of app/ + components/ (asserts > 500 files), banning "RPC Pro", "Upgrade to Pro", "Pro plan(s)", "free plan/tier", `/pricing` hrefs, `upgrade_url`, `ProBadge`. The suppression list is EMPTY (the unreferenced Stripe plumbing matches no pattern), and a rot check deletes entries that stop matching. A planted "Upgrade to Pro" in a real component reddened it; "Pro Bowl"/"profile" do not. Suite 1628/1628, component coverage 91.06%, tsc 0, lint 708 (re-baselined −1: the deleted badge carried a set-state-in-effect).
+
+**Revert:** `git log --grep='paid-tier machinery'` → revert the code commit (restores the four files and their tests). No DB state.
+
 ### 2026-09-25 · 🧹 SHIPPED — `.github/workflows/player-stats-sync.yml` header comment brought up to date with the two stats-feed fixes above (heartbeat on the runner's first call with its own startedAt; failed fetches stamp `stats_failed_at`). Comment only · Claude Code (web sandbox)
 
 - **Revert:** revert the "docs(workflow): player-stats-sync header" commit.
