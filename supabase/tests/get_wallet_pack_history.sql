@@ -50,7 +50,7 @@
 --      pull_value_source = 'delivery_burst' -- and ONLY for their own wallet.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926210100_audit_20260926_wallet_pack_history_judges_allday_against_real_drop_windows.sql).
+-- (supabase/migrations/20260926230000_audit_20260926_wallet_pack_history_gross_ev_and_held_pack_value.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -554,6 +554,11 @@ BEGIN
       CASE WHEN pas.is_listed THEN pas.lowest_ask END AS lowest_ask_usd,
       pas.last_checked_at                             AS ask_checked_at,
       ev.pack_ev                                      AS pack_ev_usd,
+      -- 2026-09-26 (v13): the pack's CONTENTS value -- what ripping it is
+      -- expected to yield. pack_ev is that minus the drop price (net), which
+      -- the row labelled "EV" (Anthology Quick Rip: contents $2.33 read "EV
+      -- -$6.67"). A holder compares this with the floor ask: rip or sell.
+      ev.gross_ev                                     AS pack_gross_ev_usd,
       ev.snapshotted_at                               AS ev_snapshotted_at,
       lsale.sale_price                                AS last_sale_usd,
       lsale.sealed_at                                 AS last_sale_at
@@ -631,7 +636,9 @@ BEGIN
       -- wallet (Flow PackNFT.Minted at the index's acquisition instant); NULL =
       -- not known to be (a buy, a transfer, or before the spork floor). A second
       -- object: the one above is at Postgres's 100-argument limit.
-      || jsonb_build_object('minted_to_wallet_at', minted_to_wallet_at)
+      || jsonb_build_object('minted_to_wallet_at', minted_to_wallet_at,
+           -- v13: the contents' expected value (gross), beside pack_ev_usd (net of drop price)
+           'pack_gross_ev_usd', CASE WHEN pack_gross_ev_usd IS NULL THEN NULL ELSE ROUND(pack_gross_ev_usd::numeric, 2) END)
       ORDER BY latest_event_at DESC NULLS LAST, collection_id, pack_nft_id
     ), '[]'::jsonb)
   INTO v_total, v_packs
@@ -660,6 +667,56 @@ BEGIN
 END;
 $function$;
 -- <<< END verbatim get_wallet_pack_history <<<
+
+-- >>> BEGIN verbatim wallet_held_pack_value (body byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.wallet_held_pack_value(p_wallet text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '20s'
+AS $function$
+DECLARE
+  v_page jsonb;
+  v_total int := NULL;
+  v_offset int := 0;
+  v_rows jsonb := '[]'::jsonb;
+  v_pages int := 0;
+BEGIN
+  -- The sealed packs this wallet holds, valued at the market -- read THROUGH
+  -- get_wallet_pack_history(status 'held') so "held" means exactly what the
+  -- history lists (identity-sync floor, departures, transfers), page by page.
+  LOOP
+    v_page := public.get_wallet_pack_history(p_wallet, NULL, 'held', 200, v_offset);
+    IF v_page ? 'error' THEN
+      RETURN jsonb_build_object('error', v_page->>'error');
+    END IF;
+    v_total := (v_page->>'total_count')::int;
+    v_rows := v_rows || coalesce(v_page->'packs', '[]'::jsonb);
+    v_pages := v_pages + 1;
+    v_offset := v_offset + 200;
+    EXIT WHEN v_offset >= coalesce(v_total, 0) OR v_pages >= 25;
+  END LOOP;
+
+  RETURN (
+    SELECT jsonb_build_object(
+      'count',               coalesce(v_total, 0),
+      -- false = more held packs than the 25 pages read; every sum below then
+      -- covers a PART of the holdings and says so
+      'complete',            jsonb_array_length(v_rows) >= coalesce(v_total, 0),
+      'rows_read',           jsonb_array_length(v_rows),
+      'listed_count',        count(*) FILTER (WHERE e->>'lowest_ask_usd' IS NOT NULL),
+      'floor_ask_usd',       round(coalesce(sum((e->>'lowest_ask_usd')::numeric), 0), 2),
+      'oldest_ask_checked_at', min((e->>'ask_checked_at')::timestamptz) FILTER (WHERE e->>'lowest_ask_usd' IS NOT NULL),
+      'last_sale_count',     count(*) FILTER (WHERE e->>'last_sale_usd' IS NOT NULL),
+      'last_sale_usd',       round(coalesce(sum((e->>'last_sale_usd')::numeric), 0), 2),
+      'rip_ev_count',        count(*) FILTER (WHERE e->>'pack_gross_ev_usd' IS NOT NULL),
+      'rip_ev_usd',          round(coalesce(sum((e->>'pack_gross_ev_usd')::numeric), 0), 2))
+    FROM jsonb_array_elements(v_rows) e
+  );
+END;
+$function$;
+-- <<< END verbatim wallet_held_pack_value <<<
 
 INSERT INTO public.collections VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'nba_top_shot', 'NBA Top Shot'),
@@ -1137,6 +1194,48 @@ BEGIN
   PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P63 a price of 0 on a non-REWARD drop stays unknown, never $0');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P64';
   PERFORM _assert(row_->>'buy_usd' IS NULL, 'P64 a 2022-06 All Day drop is before marketplace coverage -> NULL, even inside its window');
+END $$;
+
+-- ── v13 (2026-09-26): contents value on the row; held packs valued at the market ──
+INSERT INTO public.pack_distributions VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H1', 'Anthology Quick Rip', NULL, '{"retail_price_usd":"9"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H2', 'Unlisted Pack', NULL, '{}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H3', 'No Market Pack', NULL, '{}', 1, 1);
+INSERT INTO public.pack_ask_state VALUES ('nba-top-shot', 'H1', 10, true, '2026-09-20'), ('nba-top-shot', 'H2', 5, false, '2026-09-25');
+INSERT INTO public.mv_pack_ev_latest (collection_id, dist_id, pack_ev, snapshotted_at, gross_ev) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H1', -6.67, '2026-09-25', 2.33);
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind, pack_dist_id)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X9', '0xa', '0x18eb4ee6b3c026d2', 8, 'DUC', '2026-09-24', false, 'secondary_sale', 'H1');
+INSERT INTO public.pack_nft_identity VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X1', 'H1', 'Sealed', '0xheld', now(), '2026-01-01'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X2', 'H1', 'Sealed', '0xheld', now(), '2026-01-01'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X3', 'H2', 'Sealed', '0xheld', now(), '2026-01-01'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X4', 'H3', 'Sealed', '0xheld', now(), '2026-01-01'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X5', 'H1', 'Opened', '0xheld', now(), '2026-01-01');
+INSERT INTO public.pack_rips (collection_id, pack_nft_id, opener_address, moments_pulled, sealed_at, dist_id, pull_value_usd)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X5', '0xheld', 3, '2026-02-01', 'H1', 4);
+
+DO $$
+DECLARE r jsonb; row_ jsonb; v jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xheld', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'X1';
+  PERFORM _assert(row_->>'pack_gross_ev_usd' = '2.33' AND row_->>'pack_ev_usd' = '-6.67',
+                  'X1 the contents value (2.33) rides beside the net-of-drop-price figure (-6.67), never in its place');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'X4';
+  PERFORM _assert(row_->>'pack_gross_ev_usd' IS NULL, 'X4 no EV row -> NULL, never 0');
+
+  v := public.wallet_held_pack_value('0xheld');
+  PERFORM _assert_eq(v->>'count', '4', 'four sealed packs held; the opened X5 is not');
+  PERFORM _assert_eq(v->>'complete', 'true', 'every held row read');
+  PERFORM _assert_eq(v->>'listed_count', '2', 'X1 + X2 listed; H2''s ask is not listed, H3 has none');
+  PERFORM _assert_eq(v->>'floor_ask_usd', '20.00', 'two packs at a $10 floor; an unlisted ask adds nothing');
+  PERFORM _assert_eq(v->>'last_sale_count', '2', 'the last sale covers the two H1 packs');
+  PERFORM _assert_eq(v->>'last_sale_usd', '16.00', '2 x $8');
+  PERFORM _assert(v->>'rip_ev_count' = '2' AND v->>'rip_ev_usd' = '4.66', 'rip EV = contents value, 2 x 2.33, over the 2 it covers');
+  PERFORM _assert_eq(v->>'oldest_ask_checked_at', '2026-09-20T00:00:00+00:00', 'the oldest listed ask it relies on is named');
+  v := public.wallet_held_pack_value('0xnobody00000000');
+  PERFORM _assert(v->>'count' = '0' AND v->>'floor_ask_usd' = '0.00' AND v->>'listed_count' = '0' AND v->>'complete' = 'true', 'a wallet holding nothing: 0 of 0, complete');
 END $$;
 
 ROLLBACK;

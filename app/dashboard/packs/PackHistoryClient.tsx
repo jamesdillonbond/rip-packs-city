@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
-import { packBuyLabel, packIdentityNote, packMarketLabel, packPullLabel, packsRippedCaption, packsSoldCaption, spentCaption } from "@/lib/packs-wallet-view-format"
+import { heldPacksCaption, packBuyLabel, packIdentityNote, packMarketLabel, packPullLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 import {
@@ -206,6 +206,8 @@ interface Summary {
   totals: SummaryTotals
   by_currency: Record<string, SummaryCurrency>
   by_collection: SummaryCollection[]
+  /** 2026-09-26 (summary v14): sealed packs held, valued at the market. Optional (older payloads). */
+  held?: HeldPackValue
   note?: string
   computed_at?: string
 }
@@ -254,6 +256,8 @@ interface HistoryRow {
   dist_source?: "rip" | "own_row" | "peer_sale" | null
   lowest_ask_usd?: number | null
   pack_ev_usd?: number | null
+  /** 2026-09-26 (history v13): the contents' expected value (gross). */
+  pack_gross_ev_usd?: number | null
   last_sale_usd?: number | null
   current_owner?: string | null
   /** 2026-09-26 (v11): Dapper minted this pack straight into the wallet (Flow PackNFT.Minted). */
@@ -595,6 +599,13 @@ export default function PackHistoryClient() {
                     value={t.packs_ripped}
                     caption={packsRippedCaption(t.packs_ripped, ripKnown, t.packs_ripped_reconstructed, t.packs_ripped_reconstructed_single)}
                   />
+                  {summary.held && summary.held.count > 0 && (
+                    <CountStat
+                      label="Sealed packs held"
+                      value={summary.held.count}
+                      caption={heldPacksCaption(summary.held)}
+                    />
+                  )}
                   <CountStat
                     label="Packs sold"
                     value={t.packs_sold}

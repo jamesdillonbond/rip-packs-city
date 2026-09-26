@@ -85,6 +85,14 @@ const PINS = [
       "supabase/migrations/20260926170000_audit_20260926_wallet_reconstructed_rips_from_pack_pull_delivery_bursts.sql",
   },
   {
+    // Added 2026-09-26. The sealed packs a wallet holds, valued at the market,
+    // read THROUGH get_wallet_pack_history('held') page by page: counts beside
+    // every sum, an unlisted ask adds nothing, a missing EV is not 0.
+    fn: "wallet_held_pack_value",
+    test: "supabase/tests/get_wallet_pack_history.sql",
+    migration: "supabase/migrations/20260926230000_audit_20260926_wallet_pack_history_gross_ev_and_held_pack_value.sql",
+  },
+  {
     // Added 2026-09-26. Pins the lane that records every All Day drop's sale
     // window from Dapper searchDistributions (1,632 distributions had no start
     // time): pages walked with their cursor, a page with a next page is not a
@@ -148,7 +156,7 @@ const PINS = [
     // v9 (same day): packs opened with no pack NFT, reconstructed from delivery
     // bursts (wallet_reconstructed_rips), labelled rip_source = reconstructed.
     migration:
-      "supabase/migrations/20260926210100_audit_20260926_wallet_pack_history_judges_allday_against_real_drop_windows.sql",
+      "supabase/migrations/20260926230000_audit_20260926_wallet_pack_history_gross_ev_and_held_pack_value.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
@@ -157,7 +165,7 @@ const PINS = [
     fn: "get_wallet_pack_summary",
     test: "supabase/tests/get_wallet_pack_summary.sql",
     migration:
-      "supabase/migrations/20260926220000_audit_20260926_wallet_pack_summary_names_single_moment_reconstructed_rips.sql",
+      "supabase/migrations/20260926230100_audit_20260926_wallet_pack_summary_values_held_packs.sql",
   },
   {
     // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists

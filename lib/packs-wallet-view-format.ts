@@ -263,16 +263,60 @@ export function identitySyncNote(sync: IdentitySync | null | undefined, now: num
   return "Confirming holdings with the Dapper pack index now — refresh in a few minutes for the full list."
 }
 
-/** Market context for a row whose distribution is known: floor ask · EV ·
- *  last sale, each omitted when unknown. Empty string when nothing is known. */
+/** Market context for a row whose distribution is known: floor ask · rip EV ·
+ *  last sale, each omitted when unknown. Empty string when nothing is known.
+ *
+ *  2026-09-26: "Rip EV" is pack_gross_ev_usd -- the contents' expected value,
+ *  what ripping the pack yields -- set beside the floor ask (what selling it
+ *  yields). pack_ev_usd is that value MINUS the drop price; it was shown as
+ *  "EV", so an Anthology Quick Rip worth $2.33 inside read "EV -$6.67". The net
+ *  figure is never labelled EV. */
 export function packMarketLabel(row: {
   lowest_ask_usd?: number | null
   pack_ev_usd?: number | null
+  pack_gross_ev_usd?: number | null
   last_sale_usd?: number | null
 }): string {
   const parts: string[] = []
   if (row.lowest_ask_usd != null) parts.push("Ask " + fmtPackUsd(row.lowest_ask_usd))
-  if (row.pack_ev_usd != null) parts.push("EV " + fmtPackUsd(row.pack_ev_usd))
+  if (row.pack_gross_ev_usd != null) parts.push("Rip EV " + fmtPackUsd(row.pack_gross_ev_usd))
   if (row.last_sale_usd != null) parts.push("Last " + fmtPackUsd(row.last_sale_usd))
   return parts.join(" · ")
+}
+
+export interface HeldPackValue {
+  count: number
+  complete?: boolean
+  rows_read?: number
+  listed_count?: number
+  floor_ask_usd?: number
+  oldest_ask_checked_at?: string | null
+  last_sale_count?: number
+  last_sale_usd?: number
+  rip_ev_count?: number
+  rip_ev_usd?: number
+  error?: string
+}
+
+/** "Sealed packs held" caption (2026-09-26, get_wallet_pack_summary.held). Every
+ *  sum names how many packs it covers, and the oldest ask it relies on (PT), so
+ *  a floor total over asks a month old does not read as today's price. Unrealized
+ *  -- the page shows it beside net P&L, never inside it. */
+export function heldPacksCaption(held: HeldPackValue | null | undefined, now: number = Date.now()): string | undefined {
+  if (!held || held.error || !held.count) return undefined
+  const n = (x: number) => x.toLocaleString("en-US")
+  const parts: string[] = []
+  if (held.complete === false && held.rows_read != null) parts.push(`first ${n(held.rows_read)} valued`)
+  if (held.listed_count) {
+    let ask = `${fmtPackUsd(held.floor_ask_usd ?? 0)} at floor ask (${n(held.listed_count)} listed)`
+    if (held.oldest_ask_checked_at) {
+      const d = new Date(held.oldest_ask_checked_at)
+      if (Number.isFinite(d.getTime()) && now - d.getTime() > 24 * 3600 * 1000) {
+        ask += `, asks checked since ${d.toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric" })}`
+      }
+    }
+    parts.push(ask)
+  }
+  if (held.rip_ev_count) parts.push(`rip EV ${fmtPackUsd(held.rip_ev_usd ?? 0)} (${n(held.rip_ev_count)} priced)`)
+  return parts.length ? parts.join(" · ") : undefined
 }

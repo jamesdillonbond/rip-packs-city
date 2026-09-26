@@ -12,7 +12,7 @@
 -- rows. Pinned by the separate 0xshopper wallet below.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926220000_audit_20260926_wallet_pack_summary_names_single_moment_reconstructed_rips.sql).
+-- (supabase/migrations/20260926230100_audit_20260926_wallet_pack_summary_values_held_packs.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -84,6 +84,12 @@ CREATE TABLE public.allday_drop_windows (dist_id text PRIMARY KEY, start_time ti
 CREATE TABLE public.pack_nft_mints (collection_id uuid, pack_nft_id text, dist_id text, minted_at timestamptz,
   block_height bigint, tx_id text, first_seen_at timestamptz DEFAULT now(), PRIMARY KEY (collection_id, pack_nft_id));
 CREATE TABLE IF NOT EXISTS public.pack_nft_identity (collection_id uuid, pack_nft_id text, dist_id text, status text, owner_address text, checked_at timestamptz DEFAULT now(), acquired_at timestamptz, PRIMARY KEY (collection_id, pack_nft_id));
+
+-- v14 (2026-09-26): the held-value helper is pinned in get_wallet_pack_history.sql
+-- (it pages that function); here a stand-in records the wallet it was asked for.
+CREATE TABLE public.held_calls (wallet text);
+CREATE FUNCTION public.wallet_held_pack_value(p_wallet text) RETURNS jsonb LANGUAGE plpgsql AS $$
+BEGIN INSERT INTO public.held_calls VALUES (p_wallet); RETURN jsonb_build_object('count', 4, 'floor_ask_usd', 20.00, 'complete', true); END $$;
 
 -- >>> BEGIN verbatim get_wallet_pack_summary (body byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_pack_summary(p_wallet text)
@@ -394,8 +400,11 @@ BEGIN
     ),
     'by_currency', v_currency_breakdown,
     'by_collection', v_by_collection,
+    -- 2026-09-26 (v14): the sealed packs held, valued at the market -- unrealized,
+    -- reported beside net P&L, never folded into it
+    'held', public.wallet_held_pack_value(v_wallet),
     'computed_at', now(),
-    'note', 'Buys and sells are one row per (collection, pack) across public.pack_purchases (on-chain: secondary_sale + primary_withdraw/primary_mint, block-indexed from 2026-04) and the Dapper marketplace history tables topshot_pack_sales_history / allday_pack_sales_history / golazos_pack_sales_history (seller = storefront_address; Top Shot from 2023-09, All Day from 2022-12; bursty ingest). pack_purchases.seller_address is the transaction PAYER, which on Dapper is the escrow account, so on-chain rows almost never identify a seller -- packs_sold comes from the marketplace tables. Primary drop sale_price is NULL on-chain; primary_spent_usd recovers retail via pack_distributions.metadata->>retail_price_usd and primary_spend_unknown_count counts the rest (a Trade Ticket pack''s retail is a ticket price, never dollars: unknown; an All Day distribution Dapper types REWARD is $0). Top Shot shop buys (pack_purchases.custom_id = nba, labelled secondary_sale on ingest) count as primary drops at the price paid. ripped_value_known_count is how many of packs_ripped carry a pull_value_usd -- ripped_value_usd sums THOSE only. packs_ripped counts Top Shot + All Day rips (pack_rips) and Golazos + Pinnacle opens; a pull value comes from Dapper''s list of the moments the pack yielded (pack_open_pull_values, current FMV, whole-pack) first, the open row''s own value otherwise. packs_ripped_reconstructed of packs_ripped are Top Shot packs opened with no pack NFT, rebuilt from the wallet''s moment deliveries (wallet_reconstructed_rips); packs_ripped_reconstructed_single of those are a single moment delivery, which may be a reward or a gift rather than an opened pack. inferred_primary_* are packs sold or opened with no buy row, acquired inside their drop''s sale window (start_time - 1 day .. + 30 days) where the marketplace history covers it (Top Shot; All Day drops from 2022-12-16, dates from Dapper''s distribution record) or -- Top Shot -- minted by Dapper straight into this wallet (pack_nft_mints), priced at the drop''s retail -- an inference kept OUT of spent_usd; net_pl_incl_inferred_usd subtracts it.'
+    'note', 'Buys and sells are one row per (collection, pack) across public.pack_purchases (on-chain: secondary_sale + primary_withdraw/primary_mint, block-indexed from 2026-04) and the Dapper marketplace history tables topshot_pack_sales_history / allday_pack_sales_history / golazos_pack_sales_history (seller = storefront_address; Top Shot from 2023-09, All Day from 2022-12; bursty ingest). pack_purchases.seller_address is the transaction PAYER, which on Dapper is the escrow account, so on-chain rows almost never identify a seller -- packs_sold comes from the marketplace tables. Primary drop sale_price is NULL on-chain; primary_spent_usd recovers retail via pack_distributions.metadata->>retail_price_usd and primary_spend_unknown_count counts the rest (a Trade Ticket pack''s retail is a ticket price, never dollars: unknown; an All Day distribution Dapper types REWARD is $0). Top Shot shop buys (pack_purchases.custom_id = nba, labelled secondary_sale on ingest) count as primary drops at the price paid. ripped_value_known_count is how many of packs_ripped carry a pull_value_usd -- ripped_value_usd sums THOSE only. packs_ripped counts Top Shot + All Day rips (pack_rips) and Golazos + Pinnacle opens; a pull value comes from Dapper''s list of the moments the pack yielded (pack_open_pull_values, current FMV, whole-pack) first, the open row''s own value otherwise. packs_ripped_reconstructed of packs_ripped are Top Shot packs opened with no pack NFT, rebuilt from the wallet''s moment deliveries (wallet_reconstructed_rips); packs_ripped_reconstructed_single of those are a single moment delivery, which may be a reward or a gift rather than an opened pack. inferred_primary_* are packs sold or opened with no buy row, acquired inside their drop''s sale window (start_time - 1 day .. + 30 days) where the marketplace history covers it (Top Shot; All Day drops from 2022-12-16, dates from Dapper''s distribution record) or -- Top Shot -- minted by Dapper straight into this wallet (pack_nft_mints), priced at the drop''s retail -- an inference kept OUT of spent_usd; net_pl_incl_inferred_usd subtracts it. held values the sealed packs the wallet holds (the history''s held list): floor_ask_usd over listed_count, last_sale_usd over last_sale_count, rip_ev_usd (the contents'' expected value) over rip_ev_count -- unrealized, never part of net P&L.'
   );
 END;
 $function$;
@@ -661,6 +670,17 @@ BEGIN
   PERFORM _assert_eq(t->>'packs_ripped_reconstructed', '3', 'three reconstructed rips');
   PERFORM _assert_eq(t->>'packs_ripped_reconstructed_single', '2', 'two of them a single moment; never another wallet''s');
   PERFORM _assert_eq(t->>'packs_ripped', '3', 'packs_ripped itself is unchanged');
+END $$;
+
+-- v14 (2026-09-26): held packs are published beside net P&L, never folded into it.
+DO $$
+DECLARE s jsonb; before jsonb;
+BEGIN
+  s := public.get_wallet_pack_summary('0xinf');
+  PERFORM _assert(s->'held'->>'count' = '4' AND s->'held'->>'floor_ask_usd' = '20.00', 'the summary carries the held value object');
+  PERFORM _assert((SELECT wallet = '0xinf' FROM public.held_calls ORDER BY ctid DESC LIMIT 1), 'asked for THIS wallet');
+  PERFORM _assert_eq(s->'totals'->>'net_pl_usd', '85.10', 'net P&L unchanged by held value (unrealized)');
+  PERFORM _assert_eq(s->'totals'->>'net_pl_incl_inferred_usd', '-28.90', 'nor the inferred view');
 END $$;
 
 ROLLBACK;

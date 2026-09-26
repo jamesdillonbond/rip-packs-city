@@ -83,6 +83,8 @@ interface HistoryRow {
   dist_source?: "rip" | "own_row" | "peer_sale" | null
   lowest_ask_usd?: number | null
   pack_ev_usd?: number | null
+  /** 2026-09-26 (history v13): the contents' expected value (gross). */
+  pack_gross_ev_usd?: number | null
   last_sale_usd?: number | null
   current_owner?: string | null
   /** 2026-09-26 (v11): Dapper minted this pack straight into the wallet (Flow PackNFT.Minted). */

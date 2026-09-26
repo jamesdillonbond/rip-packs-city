@@ -17,6 +17,7 @@ import {
   spentCaption,
   packsSoldCaption,
   packMarketLabel,
+  heldPacksCaption,
   identitySyncNote,
 } from "@/lib/packs-wallet-view-format"
 
@@ -226,8 +227,12 @@ describe("identitySyncNote (2026-09-18)", () => {
 
 describe("packMarketLabel (2026-09-18)", () => {
   it("joins only the parts that are known", () => {
-    expect(packMarketLabel({ lowest_ask_usd: 22.5, pack_ev_usd: 31.2, last_sale_usd: 19 })).toBe("Ask $22.50 · EV $31.20 · Last $19.00")
-    expect(packMarketLabel({ lowest_ask_usd: null, pack_ev_usd: 31.2 })).toBe("EV $31.20")
+    expect(packMarketLabel({ lowest_ask_usd: 22.5, pack_gross_ev_usd: 31.2, last_sale_usd: 19 })).toBe("Ask $22.50 · Rip EV $31.20 · Last $19.00")
+    expect(packMarketLabel({ lowest_ask_usd: null, pack_gross_ev_usd: 31.2 })).toBe("Rip EV $31.20")
+    // 2026-09-26: the NET figure (contents minus drop price) is never labelled EV --
+    // an Anthology Quick Rip worth $2.33 inside read "EV -$6.67"
+    expect(packMarketLabel({ lowest_ask_usd: 10, pack_ev_usd: -6.67, pack_gross_ev_usd: 2.33 })).toBe("Ask $10.00 · Rip EV $2.33")
+    expect(packMarketLabel({ pack_ev_usd: -6.67 })).not.toMatch(/EV/)
     expect(packMarketLabel({})).toBe("")
   })
 })
@@ -314,5 +319,24 @@ describe("packIdentityNote: minted into the wallet (2026-09-26)", () => {
   it("no mint on record, or an unreadable date, changes nothing", () => {
     expect(packIdentityNote({ dist_id: "1427", status: "held", minted_to_wallet_at: null })).toBeNull()
     expect(packIdentityNote({ dist_id: "1427", status: "held", minted_to_wallet_at: "not a date" })).toBeNull()
+  })
+})
+
+describe("heldPacksCaption (2026-09-26)", () => {
+  const NOW = Date.parse("2026-09-26T19:00:00Z")
+  it("names what each sum covers and how old the oldest ask is (PT)", () => {
+    expect(heldPacksCaption({ count: 434, complete: true, rows_read: 434, listed_count: 433, floor_ask_usd: 11042.2,
+      oldest_ask_checked_at: "2026-08-27T02:58:21Z", rip_ev_count: 222, rip_ev_usd: 1900.5 }, NOW))
+      .toBe("$11,042 at floor ask (433 listed), asks checked since Aug 26 · rip EV $1,901 (222 priced)")
+  })
+  it("fresh asks carry no age note; a partial read says so first", () => {
+    expect(heldPacksCaption({ count: 6000, complete: false, rows_read: 5000, listed_count: 10, floor_ask_usd: 50,
+      oldest_ask_checked_at: "2026-09-26T12:00:00Z" }, NOW)).toBe("first 5,000 valued · $50.00 at floor ask (10 listed)")
+  })
+  it("nothing held, an error, or nothing priced -> no caption (never a $0 value)", () => {
+    expect(heldPacksCaption({ count: 0 }, NOW)).toBeUndefined()
+    expect(heldPacksCaption({ count: 3, error: "wallet required" }, NOW)).toBeUndefined()
+    expect(heldPacksCaption({ count: 3, listed_count: 0, rip_ev_count: 0 }, NOW)).toBeUndefined()
+    expect(heldPacksCaption(undefined, NOW)).toBeUndefined()
   })
 })
