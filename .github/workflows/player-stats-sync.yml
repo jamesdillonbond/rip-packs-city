@@ -5,9 +5,11 @@ name: Player stats sync — ESPN season stats through the league-id crosswalk
 # Supabase edge egress (#8, measured 2026-08-09) and answers 200 from a runner,
 # the cloud sandbox and the laptop. The runner fetches ESPN and does every DB
 # read and write through /api/cron/player-stats-sync (Bearer
-# INGEST_SECRET_TOKEN); the route writes the heartbeat (targets phase) and the
-# terminal pipeline_runs row (final phase), whose `ok` is derived from the
-# runner's own counts.
+# INGEST_SECRET_TOKEN); the route writes the heartbeat on the runner's FIRST
+# call (hb=1), stamped with the runner's own startedAt so it correlates with
+# the terminal pipeline_runs row (final phase), whose `ok` is derived from the
+# runner's own counts. A failed ESPN fetch stamps stats_failed_at so that
+# player leaves the head of the queue (20260926025347).
 #
 # Every 6 hours at :23 (off the :00/:30 anchors; daily-periodic so the
 # scheduler-liveness watchdog can size it). Each run refreshes up to LIMIT
