@@ -48,10 +48,19 @@ export function slugToQuery(slug) {
 /** The stat-line rows upsert_player_season_stats takes, from one athlete's /stats payload. */
 export function parseEspnStats(payload, espnId) {
   if (!payload || typeof payload !== "object") throw new Error("parseEspnStats: payload is not an object")
-  const cats = Array.isArray(payload.categories) ? payload.categories : null
-  if (cats === null) throw new Error("parseEspnStats: no categories array")
-  const filters = Array.isArray(payload.filters) ? payload.filters : []
-  const st = filters.find((f) => f && f.name === "seasontype")
+  const filters = Array.isArray(payload.filters) ? payload.filters : null
+  let cats = Array.isArray(payload.categories) ? payload.categories : null
+  if (cats === null) {
+    // ESPN's shape for an athlete with NO stat lines (an offensive lineman, a
+    // practice-squad id — measured 2026-09-25 on nfl 14924 / 4429955 / 16790)
+    // is { filters:[{name:'league',…}] } with no categories at all. The
+    // filters array is the positive control that ESPN ANSWERED; a payload
+    // with neither is a changed upstream and stays a failed read.
+    const answered = filters !== null && filters.some((f) => f && typeof f === "object" && typeof f.name === "string")
+    if (!answered) throw new Error("parseEspnStats: no categories array")
+    cats = []
+  }
+  const st = (filters ?? []).find((f) => f && f.name === "seasontype")
   const seasonType = st && Number.isInteger(Number(st.value)) ? Number(st.value) : 2
 
   const rows = []

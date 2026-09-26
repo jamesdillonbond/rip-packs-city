@@ -86,9 +86,13 @@ describe("parseEspnStats", () => {
     expect(rows.every((r) => r.season_type === 3)).toBe(true)
   })
 
-  it("THROWS on a payload without categories — a changed upstream is a failed read, not zero stats", () => {
+  it("THROWS on a payload with neither categories nor a filters answer — a changed upstream is a failed read, not zero stats", () => {
     expect(() => parseEspnStats({ filters: [] }, "1")).toThrow(/no categories/)
+    expect(() => parseEspnStats({}, "1")).toThrow(/no categories/)
     expect(() => parseEspnStats(null, "1")).toThrow(/not an object/)
+  })
+  it("ESPN's 'no stat lines for this athlete' shape — filters present, no categories — is ZERO rows, an answered empty (batch 58)", () => {
+    expect(parseEspnStats({ filters: [{ displayName: "League", name: "league", value: "nfl", options: [] }] }, "14924")).toEqual([])
   })
 
   it("an athlete with categories but no seasons yields zero rows (a real empty, not an error)", () => {
