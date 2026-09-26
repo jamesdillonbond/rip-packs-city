@@ -199,7 +199,7 @@ Full detail: [database.md](docs/reference/database.md).
 - **A docs-only push never rebuilds** — `ignoreCommand` diffs vs the LAST DEPLOY and also skips migrations/tests/`.github` (#61); ⚠ the v13 POST does NOT override it. Touch a non-docs file.
 - **Pro Lambda `maxDuration` hard cap is 800s.** Higher sends the deploy to ERROR *invisibly*.
 - 🚨 **A GREEN SUITE IS NOT A DEPLOY GATE FOR SEGMENT SEMANTICS** — `DYNAMIC_SERVER_USAGE` lives only in a real render, so `tsc`/vitest/lint and even a guard pinning the CALL are blind; it 500'd a live route (09-20). **CI `build-render` renders all routes (09-25); PREVIEW-verify too.**
-- ⚠ **`get_deployment.state` LAGS** — corroborate with `ready` vs `buildingAt`, `lambdaRuntimeStats`; **check state PER COMMIT** (an ERRORed deploy is superseded by the next push). 🚨 **After a ROLLBACK the alias fields LIE** — probe the public domain on a value the two builds DISAGREE on. A disk-IO spell can FAIL THE BUILD (tooling-gotchas.md).
+- ⚠ **`get_deployment.state` LAGS** — corroborate with `ready` vs `buildingAt`; **check a deploy EXISTS and its state PER COMMIT** — a push can create NONE (09-26). 🚨 Rollback aliases LIE; disk IO can fail a build: tooling-gotchas.md.
 
 ---
 

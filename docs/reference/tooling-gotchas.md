@@ -329,6 +329,10 @@ Three tree-walking guards landed green on CI and red on Trevor's Windows box the
 
 ---
 
+## 🚨 A push can produce NO deployment at all — the GitHub → Vercel hook is not guaranteed (2026-09-26)
+
+d0897b0ce (app + lib changes, CI green) had **no Vercel deployment of any kind 23 minutes after the push** — not QUEUED, not CANCELED, not skipped: `list_deployments` with `since` = the previous deploy returned an empty list, while the next-older commit (8bc7a5dd4) had deployed normally. `ignoreCommand` was not the cause (a skipped build still creates a CANCELED row). ⚠ **`list_deployments(sha=…)` returning 0 is not a diagnosis** — list WITHOUT the sha filter, `since` = the last known deploy, to tell "never created" from "filtered out". Recovery that worked: `create_deployment` with `requestBody = {name, project, target:"production", gitSource:{type:"github", repoId:1188272071, ref:"main", sha:<full sha>}}` → READY in ~12 min, and the public domain's `data-dpl-id` carried the new id. ⭐ **A green CI run says nothing about the deploy — check a deployment EXISTS per pushed commit** (CLAUDE.md: "check state PER COMMIT").
+
 ## Pushing from a sandbox — the full case history (moved verbatim from CLAUDE.md 2026-08-17)
 
 ### ✅ Cowork DESKTOP-VM sessions CAN push — durable recipe (Trevor approved 2026-08-29)
@@ -581,6 +585,8 @@ was removed as dead. ⭐ **A suppression is a claim that the guard is right and 
 the guard is the one that is wrong, a marker buys silence and leaves the next honest instance to be
 flagged too** — which is exactly the reason its author gave. The marker is still correct for a handler
 that genuinely records inside an unbounded LOOP; it is not a way to quiet a false alarm.
+
+⛔ **AND THE THIRD WAY TO GET IT WRONG: changing ANOTHER session's handler because the guard named it (2026-09-26).** Main was red on `refresh_series_detail_rollup` (shipped by a concurrent session minutes earlier). I folded its fix into my own migration (`20260926233100`) as a body splice — `WHEN query_canceled OR OTHERS` — and it was the wrong fix: that handler's tail is a LOOP, so its owner's intentional `WHEN OTHERS` + the marker was right, and the owner pushed exactly that (8bc7a5dd4) while my splice was in flight. Prod then carried my body under their marker until `20260926233200` spliced it back (live md5 015747ae… = their file again). ⭐ **When the guard names a function you did not write, read `git log -1 -- <its migration>` and the tail of its handler before touching SQL: a LOOP tail means the marker, owned by its author; only a single-statement handler takes `query_canceled`.**
 
 ### 🚨 In an App Router tree, a basename-keyed backup is a COLLISION BY DEFAULT
 
@@ -1050,6 +1056,12 @@ drifted figures were refreshed. The rules stand; the detail is here.
 
 > - ⚠ **`get_deployment.state` LAGS** (`BUILDING` for ~45 min on a READY deploy). Corroborate: `ready` vs `buildingAt`, production aliases attached, `lambdaRuntimeStats` present. ⚠ **A deploy that ERRORs is easy to miss** because the next push supersedes it and goes READY — **check deploy state PER COMMIT**.
 > - **A disk-IO saturation spell can FAIL THE WHOLE PRODUCTION BUILD** — prerendered `/insights` pages get 60 s each, and a *slow* board errors nowhere, so the stale-fallback never fires. Now a **ban at zero** (`insights-server-pages-bound-their-reads`); ⚠ twice the failing page was one the pushing commit never touched.
+
+### Displaced from CLAUDE.md 2026-09-26 — the Vercel state bullet, verbatim
+
+Shortened to pay for the "a push can create NO deployment" clause (CLAUDE.md was at 39,993/40,000). The rollback half is the case in `## Vercel tool behavior` above; the "no deployment" case is `## 🚨 A push can produce NO deployment at all` below. CLAUDE.md keeps a pointer.
+
+> - ⚠ **`get_deployment.state` LAGS** — corroborate with `ready` vs `buildingAt`, `lambdaRuntimeStats`; **check state PER COMMIT** (an ERRORed deploy is superseded by the next push). 🚨 **After a ROLLBACK the alias fields LIE** — probe the public domain on a value the two builds DISAGREE on. A disk-IO spell can FAIL THE BUILD (tooling-gotchas.md).
 
 ### Displaced from CLAUDE.md 2026-09-14 — the Vercel log-tool bullet, verbatim
 
