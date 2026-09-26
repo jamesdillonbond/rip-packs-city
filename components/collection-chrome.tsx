@@ -50,11 +50,17 @@ const TICKER_ITEMS: Record<string, string[]> = {
     "⚡ SNIPER — fight moments below market",
     "⚡ ANALYTICS — portfolio tracking",
   ],
+  // 2026-09-25: two lines here had gone false. "The highest sales-backed share
+  // on the platform" read 18.4% HIGH/MEDIUM against Top Shot's 55.1% (a floor
+  // dump on 09-20/21 made recent sales disagree), and "wallet + pack tools —
+  // coming" sat on every tab after both tabs had shipped. The list now names
+  // tools that exist and makes no comparative a later reading can falsify.
   "candy-mlb": [
-    "⚾ CANDY MLB ON SOLANA — every edition priced from real sales",
-    "⚾ FMV FROM REAL SALES — the highest sales-backed share on the platform",
+    "⚾ CANDY MLB ON SOLANA — every edition priced from Magic Eden sales",
+    "⚾ COLLECTION ANALYZER — paste a Solana wallet for FMV on every card",
+    "⚾ SET TRACKER — 100-player checklist + cost to finish from live asks",
+    "⚾ PACK MARKET — confirmed floor, recent pack sales and pull value",
     "⚾ LIVE BOARD — floors, asks and 24h sales on the Candy MLB insights board",
-    "⚾ WALLET + PACK TOOLS — coming behind this overview",
   ],
   "panini-blockchain": [
     "🃏 ETHEREUM BRIDGE LIVE — Panini cards now on-chain",

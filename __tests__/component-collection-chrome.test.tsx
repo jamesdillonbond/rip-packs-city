@@ -152,3 +152,17 @@ describe("CollectionBanner — composition", () => {
     expect(getByTestId("anon-pill")).toBeTruthy()
   })
 })
+
+// 2026-09-25: the Candy ticker carried "WALLET + PACK TOOLS — coming behind this
+// overview" after both tabs shipped, and a platform comparative ("the highest
+// sales-backed share") that the headline metric had falsified. Pin the ABSENCE.
+describe("Candy MLB ticker makes no claim its tabs or metrics contradict", () => {
+  it("no 'coming' line for a tool that exists, no platform-wide comparative", async () => {
+    const { readFileSync } = await import("node:fs")
+    const src = readFileSync("components/collection-chrome.tsx", "utf8")
+    const block = /"candy-mlb": \[([\s\S]*?)\]/.exec(src)?.[1] ?? ""
+    expect(block.length).toBeGreaterThan(0)
+    expect(block).not.toMatch(/coming/i)
+    expect(block).not.toMatch(/highest|best on the platform|most on the platform/i)
+  })
+})
