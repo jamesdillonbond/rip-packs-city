@@ -130,7 +130,7 @@ const PINS = [
     fn: "get_wallet_pack_summary",
     test: "supabase/tests/get_wallet_pack_summary.sql",
     migration:
-      "supabase/migrations/20260926210200_audit_20260926_wallet_pack_summary_judges_allday_against_real_drop_windows.sql",
+      "supabase/migrations/20260926220000_audit_20260926_wallet_pack_summary_names_single_moment_reconstructed_rips.sql",
   },
   {
     // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists

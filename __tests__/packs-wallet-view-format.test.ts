@@ -255,6 +255,10 @@ describe("packPullLabel (2026-09-26)", () => {
 describe("packsRippedCaption (2026-09-26)", () => {
   it("says how many rips are reconstructions, so one never reads as an open event we hold", () => {
     expect(packsRippedCaption(3254, 3228, 2736)).toBe("3,228 with a known pull value · 2,736 reconstructed (no pack NFT)")
+    // the single-moment share is said out loud, never folded silently into the count
+    expect(packsRippedCaption(3254, 3228, 2736, 1244))
+      .toBe("3,228 with a known pull value · 2,736 reconstructed (no pack NFT; 1,244 of them a single moment, which may be a reward)")
+    expect(packsRippedCaption(3254, 3228, 2736, 0)).toBe("3,228 with a known pull value · 2,736 reconstructed (no pack NFT)")
   })
   it("no reconstructions -> the old caption, unchanged", () => {
     expect(packsRippedCaption(10, 10, 0)).toBe("all valued")

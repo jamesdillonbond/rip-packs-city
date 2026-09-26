@@ -188,10 +188,21 @@ export function packPullLabel(row: {
  *  rips are packs opened with NO pack NFT, rebuilt from moment deliveries
  *  (get_wallet_pack_summary.packs_ripped_reconstructed) -- said out loud so a
  *  reconstruction never reads as an open event we hold. */
-export function packsRippedCaption(total: number, known: number | null | undefined, reconstructed: number | null | undefined): string | undefined {
+export function packsRippedCaption(
+  total: number, known: number | null | undefined, reconstructed: number | null | undefined,
+  // 2026-09-26: how many reconstructed rips are ONE moment delivery -- which may
+  // be a reward or a gift rather than an opened pack (nothing we hold tells
+  // them apart), so the caption says how much of the count rests on them.
+  reconstructedSingle?: number | null,
+): string | undefined {
   const parts: string[] = []
   if (known != null) parts.push(known < total ? `${known.toLocaleString("en-US")} with a known pull value` : "all valued")
-  if (reconstructed != null && reconstructed > 0) parts.push(`${reconstructed.toLocaleString("en-US")} reconstructed (no pack NFT)`)
+  if (reconstructed != null && reconstructed > 0) {
+    const single = reconstructedSingle != null && reconstructedSingle > 0
+      ? `; ${reconstructedSingle.toLocaleString("en-US")} of them a single moment, which may be a reward`
+      : ""
+    parts.push(`${reconstructed.toLocaleString("en-US")} reconstructed (no pack NFT${single})`)
+  }
   return parts.length ? parts.join(" · ") : undefined
 }
 

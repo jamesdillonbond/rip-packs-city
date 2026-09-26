@@ -41,6 +41,8 @@ interface SummaryTotals {
   /** 2026-09-26: how many of packs_ripped are packs opened with NO pack NFT,
    *  reconstructed from moment deliveries. Optional (older payloads). */
   packs_ripped_reconstructed?: number
+  /** 2026-09-26 (summary v13): of those, single-moment deliveries (may be rewards). Optional. */
+  packs_ripped_reconstructed_single?: number
   /** 2026-09-26: packs sold/opened with no buy row, acquired inside their drop's
    *  sale window -> an INFERRED drop cost, kept out of spent_usd. Optional. */
   inferred_primary_count?: number
@@ -591,7 +593,7 @@ export default function PackHistoryClient() {
                   <CountStat
                     label="Packs ripped"
                     value={t.packs_ripped}
-                    caption={packsRippedCaption(t.packs_ripped, ripKnown, t.packs_ripped_reconstructed)}
+                    caption={packsRippedCaption(t.packs_ripped, ripKnown, t.packs_ripped_reconstructed, t.packs_ripped_reconstructed_single)}
                   />
                   <CountStat
                     label="Packs sold"

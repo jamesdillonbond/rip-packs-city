@@ -12,7 +12,7 @@
 -- rows. Pinned by the separate 0xshopper wallet below.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926210200_audit_20260926_wallet_pack_summary_judges_allday_against_real_drop_windows.sql).
+-- (supabase/migrations/20260926220000_audit_20260926_wallet_pack_summary_names_single_moment_reconstructed_rips.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -102,6 +102,7 @@ DECLARE
   v_purchases_total int; v_sales_total int; v_rips_total int;
   v_rips_valued int;
   v_rips_reconstructed int;
+  v_rips_reconstructed_single int;
   v_inf_count int; v_inf_spent numeric; v_inf_unpriced int;
   v_spent numeric; v_proceeds numeric; v_ripped_value numeric;
   v_primary_spent numeric; v_primary_count int; v_primary_unknown int;
@@ -256,6 +257,13 @@ BEGIN
   INTO v_rips_total, v_rips_valued, v_ripped_value, v_first_event, v_last_event, v_rips_reconstructed
   FROM _wps_rips;
 
+  -- 2026-09-26 (v13): how many reconstructed rips are a SINGLE moment delivery.
+  -- A lone delivery the seed labelled a pack pull may be a reward or a gift
+  -- rather than an opened pack, and nothing we hold tells them apart (the
+  -- drop-pool fit scored 88% for both) -- so the count says it out loud.
+  SELECT count(*) INTO v_rips_reconstructed_single
+  FROM public.wallet_reconstructed_rips WHERE wallet = v_wallet AND moments_pulled = 1;
+
   -- 2026-09-26: packs the wallet SOLD or OPENED with no buy row we hold, acquired
   -- inside their drop's sale window (start_time - 1 day .. + 30 days; Dapper's
   -- index date, else bounded by the first sale / open) where the marketplace
@@ -366,6 +374,7 @@ BEGIN
       'packs_ripped',                   v_rips_total,
       'ripped_value_known_count',       v_rips_valued,
       'packs_ripped_reconstructed',     v_rips_reconstructed,
+      'packs_ripped_reconstructed_single', v_rips_reconstructed_single,
       'buys_from_marketplace_history',  v_buys_marketplace,
       'sells_from_marketplace_history', v_sells_marketplace,
       'spent_usd',                      ROUND(COALESCE(v_spent, 0)::numeric, 2),
@@ -386,7 +395,7 @@ BEGIN
     'by_currency', v_currency_breakdown,
     'by_collection', v_by_collection,
     'computed_at', now(),
-    'note', 'Buys and sells are one row per (collection, pack) across public.pack_purchases (on-chain: secondary_sale + primary_withdraw/primary_mint, block-indexed from 2026-04) and the Dapper marketplace history tables topshot_pack_sales_history / allday_pack_sales_history / golazos_pack_sales_history (seller = storefront_address; Top Shot from 2023-09, All Day from 2022-12; bursty ingest). pack_purchases.seller_address is the transaction PAYER, which on Dapper is the escrow account, so on-chain rows almost never identify a seller -- packs_sold comes from the marketplace tables. Primary drop sale_price is NULL on-chain; primary_spent_usd recovers retail via pack_distributions.metadata->>retail_price_usd and primary_spend_unknown_count counts the rest (a Trade Ticket pack''s retail is a ticket price, never dollars: unknown; an All Day distribution Dapper types REWARD is $0). Top Shot shop buys (pack_purchases.custom_id = nba, labelled secondary_sale on ingest) count as primary drops at the price paid. ripped_value_known_count is how many of packs_ripped carry a pull_value_usd -- ripped_value_usd sums THOSE only. packs_ripped counts Top Shot + All Day rips (pack_rips) and Golazos + Pinnacle opens; a pull value comes from Dapper''s list of the moments the pack yielded (pack_open_pull_values, current FMV, whole-pack) first, the open row''s own value otherwise. packs_ripped_reconstructed of packs_ripped are Top Shot packs opened with no pack NFT, rebuilt from the wallet''s moment deliveries (wallet_reconstructed_rips). inferred_primary_* are packs sold or opened with no buy row, acquired inside their drop''s sale window (start_time - 1 day .. + 30 days) where the marketplace history covers it (Top Shot; All Day drops from 2022-12-16, dates from Dapper''s distribution record) or -- Top Shot -- minted by Dapper straight into this wallet (pack_nft_mints), priced at the drop''s retail -- an inference kept OUT of spent_usd; net_pl_incl_inferred_usd subtracts it.'
+    'note', 'Buys and sells are one row per (collection, pack) across public.pack_purchases (on-chain: secondary_sale + primary_withdraw/primary_mint, block-indexed from 2026-04) and the Dapper marketplace history tables topshot_pack_sales_history / allday_pack_sales_history / golazos_pack_sales_history (seller = storefront_address; Top Shot from 2023-09, All Day from 2022-12; bursty ingest). pack_purchases.seller_address is the transaction PAYER, which on Dapper is the escrow account, so on-chain rows almost never identify a seller -- packs_sold comes from the marketplace tables. Primary drop sale_price is NULL on-chain; primary_spent_usd recovers retail via pack_distributions.metadata->>retail_price_usd and primary_spend_unknown_count counts the rest (a Trade Ticket pack''s retail is a ticket price, never dollars: unknown; an All Day distribution Dapper types REWARD is $0). Top Shot shop buys (pack_purchases.custom_id = nba, labelled secondary_sale on ingest) count as primary drops at the price paid. ripped_value_known_count is how many of packs_ripped carry a pull_value_usd -- ripped_value_usd sums THOSE only. packs_ripped counts Top Shot + All Day rips (pack_rips) and Golazos + Pinnacle opens; a pull value comes from Dapper''s list of the moments the pack yielded (pack_open_pull_values, current FMV, whole-pack) first, the open row''s own value otherwise. packs_ripped_reconstructed of packs_ripped are Top Shot packs opened with no pack NFT, rebuilt from the wallet''s moment deliveries (wallet_reconstructed_rips); packs_ripped_reconstructed_single of those are a single moment delivery, which may be a reward or a gift rather than an opened pack. inferred_primary_* are packs sold or opened with no buy row, acquired inside their drop''s sale window (start_time - 1 day .. + 30 days) where the marketplace history covers it (Top Shot; All Day drops from 2022-12-16, dates from Dapper''s distribution record) or -- Top Shot -- minted by Dapper straight into this wallet (pack_nft_mints), priced at the drop''s retail -- an inference kept OUT of spent_usd; net_pl_incl_inferred_usd subtracts it.'
   );
 END;
 $function$;
@@ -636,6 +645,22 @@ BEGIN
   PERFORM _assert_eq(t->>'inferred_primary_unpriced_count', '1', 'Q3 a 0 price on a non-REWARD drop is unknown');
   PERFORM _assert_eq(t->>'primary_spend_unknown_count', '0', 'Q4 a recorded reward buy is a KNOWN $0, not an unknown');
   PERFORM _assert_eq(t->>'primary_spent_usd', '0.00', 'Q4 adds no dollars');
+END $$;
+
+-- v13 (2026-09-26): the single-moment share of reconstructed rips is published.
+INSERT INTO public.wallet_reconstructed_rips (wallet, collection_id, burst_id, opened_at, moments_pulled, n_resolved, n_priced, pull_value_usd) VALUES
+  ('0xsingle', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'burst:s1', '2024-01-01', 1, 1, 1, 2.00),
+  ('0xsingle', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'burst:s2', '2024-01-02', 1, 0, 0, NULL),
+  ('0xsingle', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'burst:s3', '2024-01-03', 4, 4, 4, 9.00),
+  ('0xsomeoneelse', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'burst:s4', '2024-01-04', 1, 1, 1, 1.00);
+
+DO $$
+DECLARE t jsonb;
+BEGIN
+  t := public.get_wallet_pack_summary('0xsingle')->'totals';
+  PERFORM _assert_eq(t->>'packs_ripped_reconstructed', '3', 'three reconstructed rips');
+  PERFORM _assert_eq(t->>'packs_ripped_reconstructed_single', '2', 'two of them a single moment; never another wallet''s');
+  PERFORM _assert_eq(t->>'packs_ripped', '3', 'packs_ripped itself is unchanged');
 END $$;
 
 ROLLBACK;
