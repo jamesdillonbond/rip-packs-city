@@ -243,6 +243,8 @@ this is exactly the case it was written for.
 
 ## 6. Still Trevor's
 
+- ✅ **DECIDED 2026-09-25 ~7:40 PM PT (Trevor: "All four"):** the four built-but-unsurfaced boards (deals, pack EV, special serials, players) now render as tabs on `/insights/panini-squeeze`, each under the listing-gated coverage disclosure. This is Panini's own page — it does NOT bridge Panini into the shared surfaces, so the §4 step 2 editorial objection stands untouched.
+
 - **`panini-ingest` severity `info` → `medium`** at go-live (P3 in the 09-06 audit, missed on
   08-01). It pages his own residential box, so it is his call, and it should wait for §4 step 1 —
   raising it while a quarter of the catalogue is stale trains him to skim past it.

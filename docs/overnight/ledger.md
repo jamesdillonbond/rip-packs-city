@@ -11,6 +11,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-25 · 🧹 SHIPPED — four Panini boards surface as tabs on /insights/panini-squeeze (Trevor: "All four"): Deals (263 listed serials ≥15% under FMV, ask re-read ≤7 d, sale-backed rows first — 243 have no recent sale and are labelled), Pack EV (Hobby + FOTL, typical pull first), Special serials (#1 / jersey / perfect mints listed with a confirmed ask), Players (sorted by indexed editions, value columns labelled as ask-inflatable). One `panini-boards` snapshot warmed HOURLY (new `warmEveryMs` + `freshMsFor` in board-cache; the views cost ~270k buffers per warm), coverage disclosure on every tab, no Panini usernames selected · Claude Code (web sandbox)
+
+- **Revert:** revert the "feat(panini): four more boards" commit (tabs, fetcher, the `panini-boards` cache key + hourly warm, page wiring). No DB change; the stale `public_board_snapshots` row can be left or deleted (`board_key='panini-boards'`).
+
+
 ### 2026-09-25 · ↩️ REVERTED — the internal-pack exclusion shipped ~20 min earlier is gone: Trevor, "keep their internal packs visible if they're legitimate and hold any moments", and all 33 hold moments (minted 3–39,984 packs each, drop pools of 1–342 editions) · Claude Code (web session)
 
 Code: `git revert` of "packs: hide Dapper-internal distributions from the board and sitemap" (`/api/packs` and the pack sitemap back to listing every dist; helper + its tests removed). DB: migration `20260926024300` drops `v_pack_distribution_exclusions_active` + `pack_distribution_exclusions` (verified gone); `20260926023037` stays on disk as history for migration parity. **Revert of this revert:** re-apply `20260926023037` and `git revert` this commit.
