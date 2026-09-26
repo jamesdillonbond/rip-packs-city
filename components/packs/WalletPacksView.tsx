@@ -85,6 +85,9 @@ interface HistoryRow {
   pack_ev_usd?: number | null
   /** 2026-09-26 (history v13): the contents' expected value (gross). */
   pack_gross_ev_usd?: number | null
+  /** 2026-09-26 (history v14): mean current value of this drop's opened packs (>= 5), and how many. */
+  pack_opened_avg_usd?: number | null
+  pack_opened_n?: number | null
   last_sale_usd?: number | null
   current_owner?: string | null
   /** 2026-09-26 (v11): Dapper minted this pack straight into the wallet (Flow PackNFT.Minted). */

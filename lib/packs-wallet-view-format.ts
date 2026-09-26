@@ -275,11 +275,18 @@ export function packMarketLabel(row: {
   lowest_ask_usd?: number | null
   pack_ev_usd?: number | null
   pack_gross_ev_usd?: number | null
+  pack_opened_avg_usd?: number | null
+  pack_opened_n?: number | null
   last_sale_usd?: number | null
 }): string {
   const parts: string[] = []
   if (row.lowest_ask_usd != null) parts.push("Ask " + fmtPackUsd(row.lowest_ask_usd))
   if (row.pack_gross_ev_usd != null) parts.push("Rip EV " + fmtPackUsd(row.pack_gross_ev_usd))
+  // 2026-09-26: no published pool to model (reward / chance-hit drops) -> what
+  // this drop's opened packs actually yielded, with how many -- never as "EV"
+  else if (row.pack_opened_avg_usd != null && row.pack_opened_n != null) {
+    parts.push(`Opened avg ${fmtPackUsd(row.pack_opened_avg_usd)} (${row.pack_opened_n.toLocaleString("en-US")} packs)`)
+  }
   if (row.last_sale_usd != null) parts.push("Last " + fmtPackUsd(row.last_sale_usd))
   return parts.join(" · ")
 }
@@ -295,6 +302,8 @@ export interface HeldPackValue {
   last_sale_usd?: number
   rip_ev_count?: number
   rip_ev_usd?: number
+  opened_avg_count?: number
+  opened_avg_usd?: number
   error?: string
 }
 
@@ -318,5 +327,8 @@ export function heldPacksCaption(held: HeldPackValue | null | undefined, now: nu
     parts.push(ask)
   }
   if (held.rip_ev_count) parts.push(`rip EV ${fmtPackUsd(held.rip_ev_usd ?? 0)} (${n(held.rip_ev_count)} priced)`)
+  if (held.opened_avg_count) {
+    parts.push(`${fmtPackUsd(held.opened_avg_usd ?? 0)} more at their drops' opened averages (${n(held.opened_avg_count)})`)
+  }
   return parts.length ? parts.join(" · ") : undefined
 }

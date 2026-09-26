@@ -340,3 +340,18 @@ describe("heldPacksCaption (2026-09-26)", () => {
     expect(heldPacksCaption(undefined, NOW)).toBeUndefined()
   })
 })
+
+describe("opened-pack averages (2026-09-26)", () => {
+  it("a drop with no modelled EV shows what its opened packs yielded, with the count -- never labelled EV", () => {
+    expect(packMarketLabel({ lowest_ask_usd: 12, pack_opened_avg_usd: 7.5, pack_opened_n: 41 })).toBe("Ask $12.00 · Opened avg $7.50 (41 packs)")
+    expect(packMarketLabel({ pack_opened_avg_usd: 7.5, pack_opened_n: 41 })).not.toMatch(/EV/)
+  })
+  it("the modelled EV wins when both exist", () => {
+    expect(packMarketLabel({ pack_gross_ev_usd: 2.33, pack_opened_avg_usd: 7.5, pack_opened_n: 41 })).toBe("Rip EV $2.33")
+  })
+  it("the held caption reports opened averages apart from rip EV", () => {
+    expect(heldPacksCaption({ count: 434, listed_count: 433, floor_ask_usd: 11042.2, rip_ev_count: 222, rip_ev_usd: 597.66,
+      opened_avg_count: 190, opened_avg_usd: 1500 }, Date.parse("2026-09-26T19:00:00Z")))
+      .toBe("$11,042 at floor ask (433 listed) · rip EV $597.66 (222 priced) · $1,500 more at their drops' opened averages (190)")
+  })
+})

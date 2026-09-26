@@ -50,7 +50,7 @@
 --      pull_value_source = 'delivery_burst' -- and ONLY for their own wallet.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926230000_audit_20260926_wallet_pack_history_gross_ev_and_held_pack_value.sql).
+-- (supabase/migrations/20260926233000_audit_20260926_pack_observed_values_value_drops_with_no_published_pool.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -132,6 +132,14 @@ AS $function$
   SELECT CASE WHEN p_title ILIKE '%trade ticket%' THEN NULL
               ELSE public.pack_retail_usd(p_raw) END
 $function$;
+-- 2026-09-26 (v14): what each drop's opened packs yielded
+CREATE TABLE public.pack_observed_values (collection_id uuid NOT NULL, dist_id text NOT NULL, n_opened int NOT NULL,
+  n_valued int NOT NULL, avg_value_usd numeric(14,2), refreshed_at timestamptz NOT NULL, PRIMARY KEY (collection_id, dist_id),
+  CONSTRAINT pack_observed_values_avg_needs_values CHECK (avg_value_usd IS NULL OR n_valued > 0));
+CREATE TABLE public.pipeline_runs_stub (pipeline text, ok boolean, rows_written int, extra jsonb);
+CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestamptz, p_rows_found int, p_rows_written int,
+  p_rows_skipped int, p_ok boolean, p_error text, p_collection_slug text, p_cursor_before text, p_cursor_after text, p_extra jsonb)
+RETURNS bigint LANGUAGE sql AS $$ INSERT INTO public.pipeline_runs_stub VALUES (p_pipeline, p_ok, p_rows_written, p_extra) RETURNING 1::bigint $$;
 -- 2026-09-26 (v12): All Day drop windows from Dapper
 CREATE TABLE public.allday_drop_windows (dist_id text PRIMARY KEY, start_time timestamptz, end_time timestamptz,
   price_usd numeric(14,2), title text, fetched_at timestamptz NOT NULL DEFAULT now());
@@ -559,6 +567,11 @@ BEGIN
       -- the row labelled "EV" (Anthology Quick Rip: contents $2.33 read "EV
       -- -$6.67"). A holder compares this with the floor ask: rip or sell.
       ev.gross_ev                                     AS pack_gross_ev_usd,
+      -- 2026-09-26 (v14): where the drop has no published pool to model, what
+      -- its opened packs actually yielded -- the mean current value of >= 5
+      -- valued opens (pack_observed_values), with the count behind it.
+      obs.avg_value_usd                               AS pack_opened_avg_usd,
+      obs.n_valued                                    AS pack_opened_n,
       ev.snapshotted_at                               AS ev_snapshotted_at,
       lsale.sale_price                                AS last_sale_usd,
       lsale.sealed_at                                 AS last_sale_at
@@ -574,6 +587,10 @@ BEGIN
      -- (gross_ev = 0 AND edition_count = 0) is "could not price", not "$0".
      AND NOT (ev.gross_ev = 0 AND ev.edition_count = 0)
      AND (ev.fmv_coverage_pct IS NULL OR ev.fmv_coverage_pct >= 25)
+    LEFT JOIN public.pack_observed_values obs
+      ON p.dist_id IS NOT NULL
+     AND obs.dist_id = p.dist_id AND obs.collection_id = p.collection_id
+     AND obs.n_valued >= 5
     LEFT JOIN LATERAL (
       SELECT pp.sale_price, pp.sealed_at
       FROM public.pack_purchases pp
@@ -638,7 +655,9 @@ BEGIN
       -- object: the one above is at Postgres's 100-argument limit.
       || jsonb_build_object('minted_to_wallet_at', minted_to_wallet_at,
            -- v13: the contents' expected value (gross), beside pack_ev_usd (net of drop price)
-           'pack_gross_ev_usd', CASE WHEN pack_gross_ev_usd IS NULL THEN NULL ELSE ROUND(pack_gross_ev_usd::numeric, 2) END)
+           'pack_gross_ev_usd', CASE WHEN pack_gross_ev_usd IS NULL THEN NULL ELSE ROUND(pack_gross_ev_usd::numeric, 2) END,
+           -- v14: the mean current value of this drop's opened packs (>= 5 valued), and how many
+           'pack_opened_avg_usd', pack_opened_avg_usd, 'pack_opened_n', pack_opened_n)
       ORDER BY latest_event_at DESC NULLS LAST, collection_id, pack_nft_id
     ), '[]'::jsonb)
   INTO v_total, v_packs
@@ -711,12 +730,68 @@ BEGIN
       'last_sale_count',     count(*) FILTER (WHERE e->>'last_sale_usd' IS NOT NULL),
       'last_sale_usd',       round(coalesce(sum((e->>'last_sale_usd')::numeric), 0), 2),
       'rip_ev_count',        count(*) FILTER (WHERE e->>'pack_gross_ev_usd' IS NOT NULL),
-      'rip_ev_usd',          round(coalesce(sum((e->>'pack_gross_ev_usd')::numeric), 0), 2))
+      'rip_ev_usd',          round(coalesce(sum((e->>'pack_gross_ev_usd')::numeric), 0), 2),
+      -- 2026-09-26: packs whose drop has no modelled EV, valued at what that
+      -- drop's opened packs yielded on average -- reported apart from rip_ev
+      'opened_avg_count',    count(*) FILTER (WHERE e->>'pack_gross_ev_usd' IS NULL AND e->>'pack_opened_avg_usd' IS NOT NULL),
+      'opened_avg_usd',      round(coalesce(sum((e->>'pack_opened_avg_usd')::numeric) FILTER (WHERE e->>'pack_gross_ev_usd' IS NULL), 0), 2))
     FROM jsonb_array_elements(v_rows) e
   );
 END;
 $function$;
 -- <<< END verbatim wallet_held_pack_value <<<
+
+-- >>> BEGIN verbatim refresh_pack_observed_values (body byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.refresh_pack_observed_values()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '120s'
+AS $function$
+DECLARE
+  v_started timestamptz := clock_timestamp();
+  v_written int := 0; v_removed int := 0; v_err text := NULL;
+BEGIN
+  IF NOT pg_try_advisory_xact_lock(hashtext('refresh_pack_observed_values')) THEN
+    RETURN jsonb_build_object('ok', true, 'skipped', 'another refresh holds the lock');
+  END IF;
+  BEGIN
+    -- Every opened pack with a distribution: its value is Dapper's pull list
+    -- priced at current FMV (pack_open_pull_values, whole-pack) first, the rip
+    -- row's own value otherwise. NULL (unpriced) packs are counted, never
+    -- averaged in as 0.
+    CREATE TEMP TABLE _pov_new ON COMMIT DROP AS
+    SELECT r.collection_id, r.dist_id,
+           count(*)::int AS n_opened,
+           count(coalesce(v.pull_value_usd, r.pull_value_usd))::int AS n_valued,
+           round(avg(coalesce(v.pull_value_usd, r.pull_value_usd))::numeric, 2) AS avg_value_usd
+      FROM public.pack_rips r
+      LEFT JOIN public.pack_open_pull_values v
+        ON v.collection_id = r.collection_id AND v.pack_nft_id = r.pack_nft_id
+     WHERE r.dist_id IS NOT NULL
+     GROUP BY r.collection_id, r.dist_id;
+
+    -- write first, then delete only what this refresh did not write
+    INSERT INTO public.pack_observed_values (collection_id, dist_id, n_opened, n_valued, avg_value_usd, refreshed_at)
+    SELECT collection_id, dist_id, n_opened, n_valued, avg_value_usd, now() FROM _pov_new
+    ON CONFLICT (collection_id, dist_id) DO UPDATE
+      SET n_opened = EXCLUDED.n_opened, n_valued = EXCLUDED.n_valued,
+          avg_value_usd = EXCLUDED.avg_value_usd, refreshed_at = EXCLUDED.refreshed_at;
+    GET DIAGNOSTICS v_written = ROW_COUNT;
+    DELETE FROM public.pack_observed_values o
+     WHERE NOT EXISTS (SELECT 1 FROM _pov_new n WHERE n.collection_id = o.collection_id AND n.dist_id = o.dist_id);
+    GET DIAGNOSTICS v_removed = ROW_COUNT;
+  -- a statement_timeout kill (57014) is named: WHEN OTHERS cannot see it (R118)
+  EXCEPTION WHEN query_canceled OR OTHERS THEN
+    v_err := left(SQLERRM, 300);
+  END;
+  PERFORM public.log_pipeline_run('pack-observed-values', v_started, v_written, v_written, v_removed,
+    v_err IS NULL, v_err, NULL, NULL, NULL, jsonb_build_object('written', v_written, 'removed', v_removed));
+  RETURN jsonb_build_object('ok', v_err IS NULL, 'written', v_written, 'removed', v_removed, 'error', v_err);
+END;
+$function$;
+-- <<< END verbatim refresh_pack_observed_values <<<
 
 INSERT INTO public.collections VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'nba_top_shot', 'NBA Top Shot'),
@@ -1236,6 +1311,49 @@ BEGIN
   PERFORM _assert_eq(v->>'oldest_ask_checked_at', '2026-09-20T00:00:00+00:00', 'the oldest listed ask it relies on is named');
   v := public.wallet_held_pack_value('0xnobody00000000');
   PERFORM _assert(v->>'count' = '0' AND v->>'floor_ask_usd' = '0.00' AND v->>'listed_count' = '0' AND v->>'complete' = 'true', 'a wallet holding nothing: 0 of 0, complete');
+END $$;
+
+-- ── v14 (2026-09-26): a drop with no published pool is valued by what its opened packs yielded ──
+INSERT INTO public.pack_observed_values VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H2', 9, 6, 7.50, now()),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H3', 4, 3, 9.00, now());
+DO $$
+DECLARE r jsonb; row_ jsonb; v jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xheld', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'X3';
+  PERFORM _assert(row_->>'pack_opened_avg_usd' = '7.50' AND row_->>'pack_opened_n' = '6' AND row_->>'pack_gross_ev_usd' IS NULL,
+                  'X3 no modelled EV; its drop''s 6 valued opens averaged $7.50 -- said with the count');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'X4';
+  PERFORM _assert(row_->>'pack_opened_avg_usd' IS NULL, 'X4 3 valued opens is too few -> NULL, never a thin average');
+  v := public.wallet_held_pack_value('0xheld');
+  PERFORM _assert(v->>'opened_avg_count' = '1' AND v->>'opened_avg_usd' = '7.50', 'held: X3 valued at its drop''s opened average, apart from rip EV');
+  PERFORM _assert(v->>'rip_ev_count' = '2' AND v->>'rip_ev_usd' = '4.66', 'rip EV unchanged: the modelled figure only');
+END $$;
+
+-- refresh_pack_observed_values: rebuilt from the opens we hold
+INSERT INTO public.pack_rips (collection_id, pack_nft_id, opener_address, moments_pulled, sealed_at, dist_id, pull_value_usd) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1a', '0xo', 3, '2026-03-01', 'RD', 10),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1b', '0xo', 3, '2026-03-01', 'RD', 99),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1c', '0xo', 3, '2026-03-01', 'RD', NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1d', '0xo', 3, '2026-03-01', 'RD', NULL);
+-- R1b's Dapper pull list prices it at 20 (wins over its rip row's 99); R1c's at NULL
+INSERT INTO public.pack_open_pull_values (collection_id, pack_nft_id, opener_address, n_pulls, n_resolved, n_priced, pull_value_usd) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1b', '0xo', 3, 3, 3, 20),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1c', '0xo', 3, 3, 2, NULL);
+INSERT INTO public.pack_observed_values VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'GONE', 5, 5, 1.00, now() - interval '2 days');
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.refresh_pack_observed_values();
+  PERFORM _assert((v->>'ok')::boolean, 'refresh ok');
+  PERFORM _assert((SELECT n_opened = 4 AND n_valued = 2 AND avg_value_usd = 15.00 FROM public.pack_observed_values
+                    WHERE dist_id = 'RD'),
+                  'RD: 4 opened, 2 valued (the pull list''s 20 over the rip''s 99, and 10); unpriced opens are counted, never averaged in as 0');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_observed_values WHERE dist_id = 'GONE'), 'a drop no longer backed by opens is removed');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_observed_values WHERE dist_id = 'H2'), 'hand-planted rows with no opens behind them do not survive a rebuild');
+  PERFORM _assert((SELECT ok AND rows_written > 0 FROM public.pipeline_runs_stub WHERE pipeline = 'pack-observed-values' ORDER BY ctid DESC LIMIT 1),
+                  'the pipeline row says what it wrote');
 END $$;
 
 ROLLBACK;
