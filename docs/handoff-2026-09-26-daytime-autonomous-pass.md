@@ -13,7 +13,7 @@
 - #128 drain: Top Shot `pull_value_usd = 0` 53,134 (09-24) → **38,134** (09-26 ~9:40 AM) — on track for the ~10-01 re-read.
 
 ## Shipped (all on `main`, each with a ledger entry and revert path)
-1. **Top Shot underpriced-#1s board refreshed by hand.** The laptop's Windows Task Scheduler arm has logged nothing since 09-25 6:13 AM PT. A dry run from the laptop VM in browser mode proved Atlas still passes (landing 200), so the task is the fault, not Cloudflare. Ran 13 `CHUNK_MODE` slices (1,006 targets, 392 upserted) + one `{final, deactivate}` POST (12 deactivated).
+1. **Top Shot underpriced-#1s board refreshed by hand.** The laptop's Windows Task Scheduler arm has logged nothing since 09-25 6:13 AM PT. A dry run from the laptop VM in browser mode proved Atlas still passes (landing 200). ⚠ Corrected later: the task was fine — the laptop had been dark; it ran by itself at 9:13 AM PT. Ran 13 `CHUNK_MODE` slices (1,006 targets, 392 upserted) + one `{final, deactivate}` POST (12 deactivated).
 2. **`candy_pack_market` escrow fix** (`20260926154232`): collector_wallets 63 → 71.
 3. **#148 closed**: `?strict=1` on `/api/profile/top-moments` + `/hero-moment` (404 `owner_not_found`); unmounted profile `CostBasisCard` deleted. (Note: `/api/profile/*` is auth-walled by `proxy.ts` — a signed-out call 307s to `/login`.)
 4. **#144**: `ingest-topshot-atlas-pool` reads the key from the Authorization header only — deployed v37 via edge-fn-deploy, `?key=` now 401s, pin test added.
@@ -25,7 +25,7 @@
 Checks run before pushing code: full vitest suite (4 shards, 18.8k tests) green twice, `tsc` 0, `lint:ratchet` ≤ baseline, new tests fail against the previous code.
 
 ## Needs Trevor
-- **The laptop's `topshot-active-listings-ingest` scheduled task.** Open Task Scheduler → last run result, and `%LOCALAPPDATA%\rpc-deal-board-ingest\ingest.log`. (The folder-access prompt could not be shown — the desktop window was not available.) Until it runs again, the sentinel's `cron_silent` will return in ~15 h.
+- ~~The laptop's scheduled task~~ — **CORRECTED at the 12:05 PM closing check:** it ran on its own at 9:13 AM PT (393 rows, browser mode). The 25 h gap was the laptop being off/asleep; nothing to fix.
 - **Rotate `ATLAS_POOL_INGEST_KEY`** (#144) — edge secret + your user env var.
 - Standing: #22 (GitHub Support GC + rotate), #64 (Panini bridge), #140 (thin-edition FMV window), `wrangler deploy` of pack-events-ingest (#134/#123), `enrich-ufc-wallet` CLI deploy.
 
@@ -35,3 +35,8 @@ Checks run before pushing code: full vitest suite (4 shards, 18.8k tests) green 
 - Migration parity should stay green (both migrations' files landed within minutes).
 - Housekeeping: 16 `cowork-20260926-*.patch` files sit in the laptop repo root (gitignored); delete them when convenient.
 - Crawling with 4–8 parallel requests from one IP produced sporadic `000`/SSL resets that all returned 200 on a sequential retry — a crawl artefact (proxy/edge), not a site fault.
+
+## Closing check (~12:06 PM PT)
+- Security [], stalled [], 0 pg_cron failures in 3 h, CI green on `a14d7ff47`.
+- Set-page statement timeouts (10:17 / 10:27 AM PT, during the concurrent session's Pinnacle set migrations) did not recur.
+- `wallet-backfill-candy` latest run: ok, 62 escrow-listed cards written.
