@@ -48,13 +48,14 @@ const CATEGORY_ORDER: Record<string, string[]> = {
   nfl: ["passing", "rushing", "receiving", "defensive", "defensiveInterceptions", "kicking", "punting", "returning", "scoring", "general"],
 }
 
-/** "kansas-city-chiefs" → "Kansas City Chiefs"; "49ers" stays "49ers". */
+/** "kansas-city-chiefs" → "Kansas City Chiefs"; "49ers" stays "49ers"; "la-clippers" → "LA Clippers" (an initialism, never "La"). */
+const TEAM_SLUG_INITIALISMS = new Set(["la", "ny"])
 export function teamSlugLabel(slug: string | null | undefined): string | null {
   if (!slug) return null
   return slug
     .split("-")
     .filter(Boolean)
-    .map((w) => (/^[a-z]/.test(w) ? w[0].toUpperCase() + w.slice(1) : w))
+    .map((w) => (TEAM_SLUG_INITIALISMS.has(w) ? w.toUpperCase() : /^[a-z]/.test(w) ? w[0].toUpperCase() + w.slice(1) : w))
     .join(" ")
 }
 
