@@ -1,51 +1,23 @@
--- DB invariant: public.run_allday_drop_windows_lane — every All Day drop's sale
--- window (startTime / endTime) and price from Dapper's searchDistributions, so a
--- pack with no buy row can be judged against its drop. Added 2026-09-26 (1,632
--- All Day distributions carried no start time at all). Claims:
+-- 2026-09-26 (PT) — run_allday_drop_windows_lane: one row per distribution per page.
 --
---   1. A walk starts when none is in flight: page 1 of searchDistributions
---      (byProductID AllDay, 100 per page).
---   2. A landed page upserts every node (start / end / price / title; an
---      unparseable time is NULL, never a guess) and dispatches the next page
---      with its cursor -- a page with a next page is NOT a finished walk.
---   3. The last page finishes the walk with no error; no new walk starts
---      within 24 h.
---   4. A failed page ends the walk WITH its error and the run says ok=false;
---      rows already written stay.
+-- From 2:17 PM PT every tick failed: "ON CONFLICT DO UPDATE command cannot affect row a second
+-- time" — a searchDistributions page carried the same node twice, the INSERT aborted, the page
+-- stayed uncollected and every tick re-read it (walk wedged, 0 rows). The page's nodes are now
+-- DISTINCT ON id before the upsert. Nothing else changes. Base: live md5
+-- befe7ea335177d714170efe4d77cb658 (= 20260926210050's body, guard below).
+-- anon-exec: unchanged (run_allday_drop_windows_lane) — CREATE OR REPLACE of an existing fn; ACL preserved (REVOKE FROM PUBLIC, anon, authenticated in 20260926210000).
 --
--- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926212402_audit_20260926_allday_drop_windows_one_row_per_distribution_per_page.sql; tables from 20260926210000).
--- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
---
--- Runs inside a rolled-back transaction so it leaves no residue.
+-- Revert: re-apply the body from
+--   supabase/migrations/20260926210050_audit_20260926_allday_drop_windows_page_cap_200.sql
+-- and repoint its pin.
 
-BEGIN;
+DO $guard$
+BEGIN
+  IF (SELECT md5(prosrc) FROM pg_proc WHERE proname = 'run_allday_drop_windows_lane' AND pronamespace = 'public'::regnamespace) <> 'befe7ea335177d714170efe4d77cb658' THEN
+    RAISE EXCEPTION 'run_allday_drop_windows_lane live body is not the 20260926210050 one — re-read before a full-body write';
+  END IF;
+END $guard$;
 
-CREATE TABLE public.pipeline_runs_stub (pipeline text, ok boolean, extra jsonb);
-CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestamptz, p_rows_found int, p_rows_written int,
-  p_rows_skipped int, p_ok boolean, p_error text, p_collection_slug text, p_cursor_before text, p_cursor_after text, p_extra jsonb)
-RETURNS bigint LANGUAGE sql AS $$ INSERT INTO public.pipeline_runs_stub VALUES (p_pipeline, p_ok, p_extra) RETURNING 1::bigint $$;
-
--- pg_net stand-in: http_post records the body and returns an id.
-CREATE SCHEMA net;
-CREATE TABLE net._http_response (id bigint PRIMARY KEY, status_code int, content text, error_msg text);
-CREATE SEQUENCE net.req_seq START 1000;
-CREATE TABLE net.calls (id bigint, body jsonb, timeout_ms int);
-CREATE FUNCTION net.http_post(url text, body jsonb, headers jsonb, timeout_milliseconds int)
-RETURNS bigint LANGUAGE plpgsql AS $$
-DECLARE v bigint := nextval('net.req_seq');
-BEGIN INSERT INTO net.calls VALUES (v, body, timeout_milliseconds); RETURN v; END $$;
-
--- the lane's own tables, as the migration creates them
-CREATE TABLE public.allday_drop_windows (dist_id text PRIMARY KEY, start_time timestamptz, end_time timestamptz,
-  price_usd numeric(14,2), title text, fetched_at timestamptz NOT NULL DEFAULT now());
-CREATE TABLE public.allday_drop_window_pages (request_id bigint PRIMARY KEY, page int NOT NULL, after_cursor text,
-  dispatched_at timestamptz NOT NULL DEFAULT now(), collected_at timestamptz, status_code int, outcome text, n_returned int);
-CREATE TABLE public.allday_drop_window_state (id int PRIMARY KEY DEFAULT 1 CHECK (id = 1), started_at timestamptz,
-  completed_at timestamptz, pages int NOT NULL DEFAULT 0, rows_upserted int NOT NULL DEFAULT 0, last_error text);
-INSERT INTO public.allday_drop_window_state (id) VALUES (1);
-
--- >>> BEGIN verbatim run_allday_drop_windows_lane (body byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.run_allday_drop_windows_lane()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -187,77 +159,3 @@ BEGIN
                             'last_error', v_last_error);
 END;
 $function$;
--- <<< END verbatim <<<
-
--- claim 1
-DO $$
-DECLARE v jsonb;
-BEGIN
-  v := public.run_allday_drop_windows_lane();
-  PERFORM _assert((v->>'walk_started')::boolean, 'no walk in flight -> a walk starts');
-  PERFORM _assert((SELECT count(*) = 1 FROM public.allday_drop_window_pages WHERE page = 1 AND collected_at IS NULL), 'page 1 in flight');
-  PERFORM _assert((SELECT body->'variables'->'input'->'filters'->>'byProductID' = 'AllDay'
-                      AND (body->'variables'->'input'->>'first')::int = 100
-                      AND body->'variables'->'input'->>'after' IS NULL
-                      AND body->>'query' LIKE '%startTime endTime%'
-                      AND timeout_ms = 20000
-                     FROM net.calls ORDER BY id LIMIT 1), 'page 1 asks All Day''s distributions, 100 a page, with their windows');
-END $$;
-
--- claim 2: page 1 lands with two nodes and a next page
-INSERT INTO net._http_response
-SELECT request_id, 200, '{"data":{"searchDistributions":{"pageInfo":{"endCursor":"cur-1","hasNextPage":true},"edges":[
-  {"node":{"id":4078,"title":"Regal Rookies Quick Rips (2024 Season)","startTime":"2024-10-31T20:00:00Z","endTime":"2024-11-04T22:00:00Z","price":{"value":"5.00000000"}}},
-  {"node":{"id":9999,"title":"Undated","startTime":"soon","endTime":null,"price":{"value":"0E-8"}}}
-]}}}', NULL
-FROM public.allday_drop_window_pages WHERE page = 1;
-
-DO $$
-DECLARE v jsonb;
-BEGIN
-  v := public.run_allday_drop_windows_lane();
-  PERFORM _assert((v->>'ok')::boolean AND (v->>'rows_upserted')::int = 2, 'both nodes upserted');
-  PERFORM _assert((SELECT start_time = '2024-10-31 20:00:00+00' AND end_time = '2024-11-04 22:00:00+00' AND price_usd = 5.00
-                     FROM public.allday_drop_windows WHERE dist_id = '4078'), 'a drop carries its window and price');
-  PERFORM _assert((SELECT start_time IS NULL AND price_usd = 0 FROM public.allday_drop_windows WHERE dist_id = '9999'),
-                  'an unparseable time is NULL, never a guess');
-  PERFORM _assert((SELECT count(*) = 1 FROM public.allday_drop_window_pages WHERE page = 2 AND after_cursor = 'cur-1' AND collected_at IS NULL),
-                  'page 2 dispatched with the cursor');
-  PERFORM _assert((SELECT completed_at IS NULL FROM public.allday_drop_window_state), 'a page with a next page is NOT a finished walk');
-  PERFORM _assert(NOT (v->>'walk_started')::boolean, 'no second walk while one is in flight');
-END $$;
-
--- claim 3: page 2 is the last
-INSERT INTO net._http_response
-SELECT request_id, 200, '{"data":{"searchDistributions":{"pageInfo":{"endCursor":"cur-2","hasNextPage":false},"edges":[{"node":{"id":1768,"title":"Rookie Debut Premium - Wave 2","startTime":"2024-09-06T00:00:00Z","endTime":"2024-09-10T03:30:00Z","price":{"value":"99.00000000"}}},{"node":{"id":1768,"title":"Rookie Debut Premium - Wave 2","startTime":"2024-09-06T00:00:00Z","endTime":"2024-09-10T03:30:00Z","price":{"value":"99.00000000"}}}]}}}', NULL
-FROM public.allday_drop_window_pages WHERE page = 2;
-
-DO $$
-DECLARE v jsonb;
-BEGIN
-  v := public.run_allday_drop_windows_lane();
-  PERFORM _assert((v->>'walk_finished')::boolean, 'the last page finishes the walk');
-  PERFORM _assert((SELECT completed_at IS NOT NULL AND last_error IS NULL AND pages = 2 AND rows_upserted = 3 FROM public.allday_drop_window_state),
-                  'state: finished, 2 pages, 3 rows, no error');
-  PERFORM _assert(NOT (v->>'walk_started')::boolean, 'no new walk within 24 h');
-  PERFORM _assert((SELECT count(*) = 0 FROM public.allday_drop_window_pages WHERE collected_at IS NULL), 'nothing left in flight');
-END $$;
-
--- claim 4: a day later a walk starts and its page fails
-UPDATE public.allday_drop_window_state SET completed_at = now() - interval '25 hours';
-DO $$ BEGIN PERFORM public.run_allday_drop_windows_lane(); END $$;
-INSERT INTO net._http_response
-SELECT request_id, 503, 'upstream unavailable', NULL FROM public.allday_drop_window_pages WHERE collected_at IS NULL;
-
-DO $$
-DECLARE v jsonb;
-BEGIN
-  v := public.run_allday_drop_windows_lane();
-  PERFORM _assert(NOT (v->>'ok')::boolean, 'a failed page -> ok=false');
-  PERFORM _assert((SELECT ok = false FROM public.pipeline_runs_stub ORDER BY ctid DESC LIMIT 1), 'the pipeline row says ok=false');
-  PERFORM _assert((SELECT completed_at IS NOT NULL AND last_error LIKE 'page 1:%' FROM public.allday_drop_window_state),
-                  'a failed page ends the walk WITH its error');
-  PERFORM _assert((SELECT count(*) = 3 FROM public.allday_drop_windows), 'rows already written stay');
-END $$;
-
-ROLLBACK;

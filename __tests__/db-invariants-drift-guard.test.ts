@@ -127,7 +127,8 @@ const PINS = [
     // with its error and ok=false.
     fn: "run_allday_drop_windows_lane",
     test: "supabase/tests/run_allday_drop_windows_lane.sql",
-    migration: "supabase/migrations/20260926210050_audit_20260926_allday_drop_windows_page_cap_200.sql",
+    // 2026-09-26 2:24 PM PT: a page carrying the same node twice wedged the walk (ON CONFLICT twice) — nodes DISTINCT ON id.
+    migration: "supabase/migrations/20260926212402_audit_20260926_allday_drop_windows_one_row_per_distribution_per_page.sql",
   },
   {
     // Added 2026-09-26. Pins the lane that reads Flow's PackNFT.Minted events at
