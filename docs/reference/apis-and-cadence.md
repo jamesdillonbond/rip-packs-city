@@ -373,6 +373,7 @@ The QA pass wrote down "nothing to do on our side" for two catalog gaps. Both an
 
 - ⛔ **bigint ids arrive from PostgREST as JSON NUMBERS; the chain returns strings.** The first run matched nothing, inserted 3,338 duplicates and closed 514 rows as vanished (repaired, `20260925215205`). Select ids `::text` and key maps on `String(id)`.
 - ⚠ **`rest-mainnet.onflow.org` is QuickNode-fronted at 100 requests/SECOND, shared by every Flow lane.** 12 concurrent walks got 412 × 429. The reconciler walks 3 at a time with exponential backoff on 429.
+- **Disney Pinnacle is deliberately NOT reconciled (measured 2026-09-25).** Its `cached_listings_v2` book (source `direct` = Dapper V2) is badly ghosted — e.g. seller `0xab20…` 1,058 on-chain listings / 0 live, `0xaec8…` 1,194 / 10 — and the largest seller (6,695 rows) exceeds the script computation limit. But NO reader prices or displays from it: Market and pricing read `pinnacle_catalog.floor_ask` (studio-platform GQL); the only DB readers are `resolve_moment_id` and `bc_continuity_status`. Re-check the readers before building one — and page any walk of a >5k-listing storefront.
 - `hasListingBecomeGhosted()` returns TRUE when the NFT is still held — the name reads backwards. `borrowNFT()` force-unwraps the provider, so call it only after that check.
 
 **Ask pricing from the book** (ASK_ONLY, FMV = 90% of the cheapest live ask, ask = floor, never a sales-backed row):
