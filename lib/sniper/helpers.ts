@@ -41,6 +41,8 @@ export interface SniperDealFilterOpts {
   ownedFilter?: OwnedFilter;
   /** the viewer's owned edition keys (both int-pair and legacy uuid keys) */
   ownedIds?: Set<string>;
+  /** exact `teamName` match (Team on sports, Franchise on Disney Pinnacle); "all"/empty is a no-op */
+  team?: string | null;
 }
 
 /** Does the viewer own the edition this deal is for? Checks both key forms. */
@@ -53,11 +55,29 @@ export function isDealOwned(d: SniperDeal, ownedIds: Set<string>): boolean {
 
 // The visibleDeals filter: drop negative-discount rows, apply the search box,
 // the Verified-only toggle, and the owned/not-owned gate. Returns a NEW array.
+/**
+ * The Team / Franchise dropdown's options: every distinct `teamName` on the
+ * board, sorted, with the placeholder "Unknown" left out. A still-selected
+ * value that has dropped off the board stays listed so the control never shows
+ * a selection it cannot display.
+ */
+export function sniperTeamOptions(deals: Pick<SniperDeal, "teamName">[], selected?: string | null): string[] {
+  const set = new Set<string>();
+  for (const d of deals) {
+    const t = (d.teamName ?? "").trim();
+    if (t && t.toLowerCase() !== "unknown") set.add(t);
+  }
+  if (selected && selected !== "all") set.add(selected);
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
 export function filterSniperDeals(deals: SniperDeal[], opts: SniperDealFilterOpts = {}): SniperDeal[] {
   const { search, showVerifiedOnly, ownedFilter = "all", ownedIds } = opts;
   const q = search ? search.toLowerCase() : null;
+  const team = opts.team && opts.team !== "all" ? opts.team.trim().toLowerCase() : null;
   return deals.filter((d) => {
     if (d.discount < 0) return false;
+    if (team && (d.teamName ?? "").trim().toLowerCase() !== team) return false;
     if (q) {
       if (
         !d.playerName.toLowerCase().includes(q) &&

@@ -7,6 +7,7 @@
 // and reports changes through the callback props below. No data-fetch logic here.
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
 import { variantColor } from "@/lib/sniper/helpers";
+import { getEntityLabels } from "@/lib/entity-labels";
 import type { SortOption } from "@/lib/sniper/types";
 
 export default function SniperFilterBar(props: {
@@ -20,6 +21,10 @@ export default function SniperFilterBar(props: {
   onToggleFilters: () => void;
   playerInput: string;
   onPlayerChange: (value: string) => void;
+  /** Team (sports) / Franchise (Disney Pinnacle) dropdown — options from the board. */
+  teamOptions?: string[];
+  teamFilter?: string;
+  onTeamChange?: (value: string) => void;
   tierTab: string;
   tabs: readonly string[];
   onTierChange: (t: string) => void;
@@ -50,6 +55,7 @@ export default function SniperFilterBar(props: {
     isMobile, isPinnacle, isAllDay, isGolazos, accent, collectionSlug,
     showFilters, onToggleFilters,
     playerInput, onPlayerChange,
+    teamOptions = [], teamFilter = "all", onTeamChange,
     tierTab, tabs, onTierChange,
     minDiscount, onMinDiscountChange,
     maxPrice, onMaxPriceChange,
@@ -62,6 +68,7 @@ export default function SniperFilterBar(props: {
     leagueFilter, onLeagueChange,
     saveSearchMsg, onSaveSearch,
   } = props;
+  const labels = getEntityLabels(collectionSlug);
 
   return (
     <>
@@ -69,7 +76,8 @@ export default function SniperFilterBar(props: {
       {(!isMobile || showFilters) && (
       <div className={isMobile ? "flex flex-col gap-3 mb-4" : "flex flex-wrap items-center gap-3 mb-4"} style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
         <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
-          <span>{isPinnacle ? "CHARACTER" : "PLAYER"}</span>
+          {/* The collection's own vocabulary (Character on Pinnacle) — lib/entity-labels. */}
+          <span>{labels.player.toUpperCase()}</span>
           <input
             type="text"
             placeholder={isPinnacle ? "e.g. Grogu" : "e.g. LeBron"}
@@ -78,6 +86,24 @@ export default function SniperFilterBar(props: {
             style={{ width: isMobile ? "100%" : 160, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 12px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
           />
         </label>
+        {/* 2026-09-27 — the Team / Franchise filter, the same control on every
+            collection (Trevor: Pinnacle's Sniper filters by Character and
+            Franchise). Hidden when the board offers nothing to choose between. */}
+        {onTeamChange && teamOptions.length >= 2 && (
+          <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
+            <span>{labels.team.toUpperCase()}</span>
+            <select
+              aria-label={labels.team}
+              value={teamFilter}
+              onChange={(e) => onTeamChange(e.target.value)}
+              className="rpc-filter-select"
+              style={{ maxWidth: isMobile ? "100%" : 200 }}
+            >
+              <option value="all">{"All " + (labels.team === "Franchise" ? "Franchises" : "Teams")}</option>
+              {teamOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </label>
+        )}
         {!isAllDay && (
         <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
           <span>MIN DISC.</span>

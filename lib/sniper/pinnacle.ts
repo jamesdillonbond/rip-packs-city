@@ -8,12 +8,8 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { pinnacleRenderImageUrl } from "@/lib/pinnacle/pinnacleFlowty"
-import {
-  PINNACLE_MARKETPLACE_URL,
-  pinnacleSerialMultiplier,
-  isPinnacleSpecialSerial,
-  type PinnacleSniperDeal,
-} from "@/lib/pinnacle/pinnacleTypes"
+import { PINNACLE_MARKETPLACE_URL, type PinnacleSniperDeal } from "@/lib/pinnacle/pinnacleTypes"
+import { pinnacleSerialFmv, pinnacleSerialFmvData, toMultiplierMap } from "@/lib/pinnacle/serial-fmv"
 import { isSerialisedEditionType } from "@/lib/pinnacle/serialisation"
 
 /** Oldest live-listing sweep the Sniper will publish. The sweep runs 5×/day
@@ -61,10 +57,14 @@ interface LiveListingRow {
  */
 async function loadLiveDeals(nowMs: number): Promise<{ deals: PinnacleSniperDeal[]; listed: number; asOf: string }> {
   const db = supabaseAdmin as any
-  const [newest, live] = await Promise.all([
+  const [newest, live, multRes] = await Promise.all([
     db.from("pinnacle_live_listings").select("seen_at", { count: "exact" }).order("seen_at", { ascending: false }).limit(1),
     db.rpc("get_pinnacle_live_listings_for_sniper", { p_limit: LIVE_READ_LIMIT }),
+    // The #1 / perfect serial premium model. A failed read claims NO premium
+    // (deals priced at base FMV) rather than failing the board.
+    Promise.resolve(db.from("pinnacle_serial_fmv_multipliers").select("band, multiplier, is_reliable")).catch(() => ({ data: null, error: true })),
   ])
+  const serialMults = toMultiplierMap(multRes?.error ? null : multRes?.data)
   if (newest?.error) throw new Error(`pinnacle_live_listings read failed: ${newest.error.message}`)
   if (live?.error) throw new Error(`get_pinnacle_live_listings_for_sniper failed: ${live.error.message}`)
   const asOf: string | null = newest?.data?.[0]?.seen_at ?? null
@@ -82,12 +82,21 @@ async function loadLiveDeals(nowMs: number): Promise<{ deals: PinnacleSniperDeal
     const serial = r.serial_number != null && Number.isFinite(Number(r.serial_number)) ? Number(r.serial_number) : null
     const mintCount = r.total_minted != null ? Number(r.total_minted) : null
     const isSerialized = isSerialisedEditionType(r.edition_type) === true
-    const serialMult = pinnacleSerialMultiplier(serial, mintCount, isSerialized)
-    const adjustedFmv = baseFmv * serialMult
+    // ⚠ 2026-09-27 (Trevor): the shared pattern — a premium for #1 and PERFECT
+    // (#N of N) only, over a HIGH/MEDIUM base (lib/pinnacle/serial-fmv.ts).
+    // Replaces `1 + 0.08 × (1 − serial/mint)`, which bumped EVERY serial.
+    const est = isSerialized
+      ? pinnacleSerialFmv(serial, mintCount, baseFmv, serialMults, { applyMinMintGuard: true, baseConfidence: r.fmv_confidence })
+      : null
+    const premium = est && est.band !== "normal" ? est : null
+    const serialMult = premium ? premium.multiplier : 1
+    const adjustedFmv = premium ? premium.estimate : baseFmv
     const discount = Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10
     // Same floor the Flowty mapper applied: only a meaningful discount is a deal.
     if (discount < 5) continue
-    const { isSpecial, signal } = isPinnacleSpecialSerial(serial, mintCount)
+    const isSpecial = premium != null
+    const signal = premium ? (premium.band === "first" ? "#1 Serial" : "Perfect Serial") : null
+    const serialFmvEstimate = pinnacleSerialFmvData(premium)
     const setName = r.set_name ?? ""
     // pinnacle_catalog has no studio column; the set name is "<Studio> • <Set>".
     const studio = setName.includes(" • ") ? setName.slice(0, setName.indexOf(" • ")) : "Unknown"
@@ -128,6 +137,7 @@ async function loadLiveDeals(nowMs: number): Promise<{ deals: PinnacleSniperDeal
       source: "pinnacle",
       offerAmount: null,
       offerFmvPct: null,
+      serialFmvEstimate,
     })
   }
   return { deals, listed: Number(newest?.count ?? 0), asOf }
@@ -275,6 +285,7 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
     isSpecialSerial: d.isSpecialSerial,
     isJersey: false,
     serialSignal: d.serialSignal,
+    serialFmvEstimate: d.serialFmvEstimate ?? undefined,
     thumbnailUrl: d.thumbnailUrl,
     isLocked: d.isLocked,
     updatedAt: d.updatedAt,

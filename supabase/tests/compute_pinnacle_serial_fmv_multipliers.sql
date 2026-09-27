@@ -1,15 +1,16 @@
 -- DB invariant: public.compute_pinnacle_serial_fmv_multipliers(integer, integer, numeric)
 -- — the Pinnacle serial-FMV band multipliers. Pins: the serial→band buckets
--- (first / low5≤5% / low20≤20% / normal); the per-band MEDIAN price/render-median
--- ratio; NORMALIZATION so 'normal' = 1.0; the FLOOR at 1.0 (a scarce serial never
--- values below normal); the CAP at p_cap (a thin outlier can't run away);
--- is_reliable = sample ≥ p_min_sample; the total_minted > 1 filter; and the
--- delete-then-insert replace. All exercised in ONE call — the function's
--- `create temp table … on commit drop` cannot be re-created within one test
--- transaction, so a second call in the same txn would fail.
+-- (⚠ since 2026-09-27: first = #1 / perfect = #N of N / normal — the shared
+-- serial_fmv_estimate pattern; the old top-5%/top-20% bands are gone); the
+-- per-band MEDIAN price/render-median ratio; NORMALIZATION so 'normal' = 1.0; the
+-- FLOOR at 1.0 (a special serial never values below normal); the CAP at p_cap (a
+-- thin outlier can't run away); is_reliable = sample ≥ p_min_sample; the
+-- total_minted > 1 filter; and the delete-then-insert replace. All exercised in
+-- ONE call — the function's `create temp table … on commit drop` cannot be
+-- re-created within one test transaction, so a second call in the same txn would fail.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260802203000_audit_20260802_snapshot_compute_pinnacle_serial_fmv_multipliers.sql);
+-- (supabase/migrations/20260927183258_audit_20260927_pinnacle_serial_premium_first_and_perfect_only.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -68,8 +69,7 @@ begin
   banded as (
     select case
              when serial_number = 1 then 'first'
-             when serial_number::numeric / total_minted <= 0.05 then 'low5'
-             when serial_number::numeric / total_minted <= 0.20 then 'low20'
+             when serial_number = total_minted then 'perfect'
              else 'normal'
            end as band,
            sale_price_usd / render_med as ratio
@@ -99,21 +99,25 @@ $function$;
 INSERT INTO pinnacle_catalog (render_id, total_minted) VALUES
   ('R1', 100), ('R2', 100), ('R3', 1);  -- R3 total_minted=1 must be filtered out
 
--- R1: first (serial 1, $5000 → ratio 50, tests the CAP), low5 (serials 2-5, $200
--- → ratio 2.0), normal (serials 21-41, $100). render_med(R1)=100 (normal dominates).
+-- R1: first (serial 1, $5000 → ratio 50, tests the CAP), perfect (serial 100, $50
+-- → ratio 0.5), low serials 2-5 at $200 that are now plain NORMAL, and normal
+-- serials 21-41 at $100. render_med(R1)=100.
 INSERT INTO pinnacle_sales (render_id, serial_number, sale_price_usd, sold_at) VALUES
-  ('R1', 1, 5000, now() - interval '10 days');
+  ('R1', 1, 5000, now() - interval '10 days'),
+  ('R1', 100, 50, now() - interval '10 days');
 INSERT INTO pinnacle_sales (render_id, serial_number, sale_price_usd, sold_at)
 SELECT 'R1', s, 200, now() - interval '10 days' FROM generate_series(2,5) s;
 INSERT INTO pinnacle_sales (render_id, serial_number, sale_price_usd, sold_at)
 SELECT 'R1', s, 100, now() - interval '10 days' FROM generate_series(21,41) s;
 
--- R2: normal (serials 21-36, $300, 16 rows), low20 (serials 6-20, $150, 15 rows).
--- render_med(R2)=300 → normal ratio 1.0, low20 ratio 0.5 (tests the FLOOR).
+-- R2: normal (serials 21-37, $300, 17 rows), serials 6-20 at $150 (15 rows, normal),
+-- perfect (serial 100, $150 → ratio 0.5). render_med(R2)=300.
 INSERT INTO pinnacle_sales (render_id, serial_number, sale_price_usd, sold_at)
-SELECT 'R2', s, 300, now() - interval '10 days' FROM generate_series(21,36) s;
+SELECT 'R2', s, 300, now() - interval '10 days' FROM generate_series(21,37) s;
 INSERT INTO pinnacle_sales (render_id, serial_number, sale_price_usd, sold_at)
 SELECT 'R2', s, 150, now() - interval '10 days' FROM generate_series(6,20) s;
+INSERT INTO pinnacle_sales (render_id, serial_number, sale_price_usd, sold_at) VALUES
+  ('R2', 100, 150, now() - interval '10 days');
 
 -- R3: total_minted=1 → excluded by the total_minted > 1 filter (would otherwise
 -- add a 2nd 'first' sample).
@@ -122,33 +126,31 @@ INSERT INTO pinnacle_sales (render_id, serial_number, sale_price_usd, sold_at) V
 
 -- A stale pre-existing row that the delete-then-insert must remove.
 INSERT INTO pinnacle_serial_fmv_multipliers (band, sample_size, multiplier, is_reliable, computed_at)
-VALUES ('garbage', 999, 7.0, true, now() - interval '30 days');
+VALUES ('low5', 999, 7.0, true, now() - interval '30 days');
 
 -- One call: p_min_sample=5, default cap 40.
-SELECT _assert_eq(compute_pinnacle_serial_fmv_multipliers(365, 5, 40.0)::text, '4', 'writes exactly 4 bands');
+SELECT _assert_eq(compute_pinnacle_serial_fmv_multipliers(365, 5, 40.0)::text, '3', 'writes exactly 3 bands');
 
--- delete-then-insert removed the stale row.
-SELECT _assert_eq((SELECT count(*)::text FROM pinnacle_serial_fmv_multipliers), '4', 'total rows = 4 (stale row deleted)');
-SELECT _assert_eq((SELECT count(*)::text FROM pinnacle_serial_fmv_multipliers WHERE band='garbage'), '0', 'stale garbage band removed');
+-- delete-then-insert removed the stale row; no low5/low20 band is produced.
+SELECT _assert_eq((SELECT count(*)::text FROM pinnacle_serial_fmv_multipliers), '3', 'total rows = 3 (stale row deleted)');
+SELECT _assert_eq((SELECT count(*)::text FROM pinnacle_serial_fmv_multipliers WHERE band IN ('low5','low20')), '0', 'no low5/low20 band');
 
--- Multipliers: first CAPPED at 40 (raw ratio 50), low5 = 2.0, low20 FLOORED to 1.0
--- (raw ratio 0.5), normal = 1.0 (the normalizer).
+-- Multipliers: first CAPPED at 40 (raw ratio 50), perfect FLOORED to 1.0 (raw
+-- ratio 0.5), normal = 1.0 (the normalizer).
 SELECT _assert(( (SELECT multiplier FROM pinnacle_serial_fmv_multipliers WHERE band='first') = 40.0 ), 'first ratio 50 → capped at 40');
-SELECT _assert(( (SELECT multiplier FROM pinnacle_serial_fmv_multipliers WHERE band='low5')  = 2.0 ), 'low5 → 2.0x');
-SELECT _assert(( (SELECT multiplier FROM pinnacle_serial_fmv_multipliers WHERE band='low20') = 1.0 ), 'low20 raw ratio 0.5 → floored to 1.0');
+SELECT _assert(( (SELECT multiplier FROM pinnacle_serial_fmv_multipliers WHERE band='perfect') = 1.0 ), 'perfect raw ratio 0.5 → floored to 1.0');
 SELECT _assert(( (SELECT multiplier FROM pinnacle_serial_fmv_multipliers WHERE band='normal')= 1.0 ), 'normal → 1.0 (normalizer)');
 
--- Sample sizes (R3 excluded by the total_minted > 1 filter → first stays 1).
+-- Sample sizes (R3 excluded by the total_minted > 1 filter → first stays 1; the
+-- low serials count as normal now).
 SELECT _assert_eq((SELECT sample_size::text FROM pinnacle_serial_fmv_multipliers WHERE band='first'), '1', 'first sample 1 (R3 total_minted=1 excluded)');
-SELECT _assert_eq((SELECT sample_size::text FROM pinnacle_serial_fmv_multipliers WHERE band='low5'), '4', 'low5 sample 4');
-SELECT _assert_eq((SELECT sample_size::text FROM pinnacle_serial_fmv_multipliers WHERE band='low20'), '15', 'low20 sample 15');
-SELECT _assert_eq((SELECT sample_size::text FROM pinnacle_serial_fmv_multipliers WHERE band='normal'), '37', 'normal sample 37 (R1 21 + R2 16)');
+SELECT _assert_eq((SELECT sample_size::text FROM pinnacle_serial_fmv_multipliers WHERE band='perfect'), '2', 'perfect sample 2 (R1 + R2 serial = mint)');
+SELECT _assert_eq((SELECT sample_size::text FROM pinnacle_serial_fmv_multipliers WHERE band='normal'), '57', 'normal sample 57 (R1 4+21, R2 17+15)');
 
--- is_reliable at p_min_sample=5: first(1)/low5(4) below → false; low20(15)/normal(37) → true.
+-- is_reliable at p_min_sample=5: first(1)/perfect(2) below → false; normal(57) → true.
 SELECT _assert_eq((SELECT is_reliable::text FROM pinnacle_serial_fmv_multipliers WHERE band='first'), 'false', 'first sample 1 < 5 → not reliable');
-SELECT _assert_eq((SELECT is_reliable::text FROM pinnacle_serial_fmv_multipliers WHERE band='low5'), 'false', 'low5 sample 4 < 5 → not reliable');
-SELECT _assert_eq((SELECT is_reliable::text FROM pinnacle_serial_fmv_multipliers WHERE band='low20'), 'true', 'low20 sample 15 ≥ 5 → reliable');
-SELECT _assert_eq((SELECT is_reliable::text FROM pinnacle_serial_fmv_multipliers WHERE band='normal'), 'true', 'normal sample 37 ≥ 5 → reliable');
+SELECT _assert_eq((SELECT is_reliable::text FROM pinnacle_serial_fmv_multipliers WHERE band='perfect'), 'false', 'perfect sample 2 < 5 → not reliable');
+SELECT _assert_eq((SELECT is_reliable::text FROM pinnacle_serial_fmv_multipliers WHERE band='normal'), 'true', 'normal sample 57 ≥ 5 → reliable');
 
 SELECT '✓ compute_pinnacle_serial_fmv_multipliers invariants pass' AS result;
 ROLLBACK;

@@ -35,6 +35,13 @@ vi.mock("@/lib/supabase", () => ({
       select: () => ({
         in: async () => ({ data: table === "pinnacle_editions" ? state.editionTypes : [], error: null }),
         eq: () => ({ single: async () => ({ data: null }) }),
+        // pinnacle_serial_fmv_multipliers is read with a bare select()
+        then: (resolve: any) => resolve({
+          data: table === "pinnacle_serial_fmv_multipliers"
+            ? [{ band: "first", multiplier: 14.45, is_reliable: true }, { band: "perfect", multiplier: 3.49, is_reliable: true }, { band: "normal", multiplier: 1, is_reliable: true }]
+            : [],
+          error: null,
+        }),
       }),
     }),
   },
@@ -110,6 +117,26 @@ describe("/api/collection-moments carries what the Pinnacle rows need", () => {
     expect(body.moments[0].thumbnail_url).toContain("assets.nbatopshot.com")
     expect(body.moments[0].is_serialised).toBeNull()
     expect(body.moments[0].render_id).toBeNull()
+  })
+
+  // 2026-09-27: the #1 / perfect serial premium reaches the shared table's badge
+  // (SerialFmvBadge) — the column the bespoke page had as "Serial est.".
+  it("a #1 and a perfect Pinnacle serial carry the shared serial estimate; a low serial does not", async () => {
+    state.moments = {
+      moments: [
+        pinRow({ moment_id: "a", serial_number: 1, circulation_count: 500, fmv_usd: 10, confidence: "HIGH" }),
+        pinRow({ moment_id: "b", serial_number: 500, circulation_count: 500, fmv_usd: 10, confidence: "MEDIUM" }),
+        pinRow({ moment_id: "c", serial_number: 3, circulation_count: 500, fmv_usd: 10, confidence: "HIGH" }),
+        pinRow({ moment_id: "d", serial_number: 1, circulation_count: 500, fmv_usd: 10, confidence: "LOW" }),
+      ],
+      total_count: 4,
+    }
+    const body = await (await GET(req(`https://t/api/collection-moments?wallet=${WALLET}&collection=disney-pinnacle`))).json()
+    const byId = Object.fromEntries(body.moments.map((m: any) => [m.moment_id, m.serial_fmv]))
+    expect(byId.a).toMatchObject({ serial_bucket: "first", estimate_usd: 144.5 })
+    expect(byId.b).toMatchObject({ serial_bucket: "perfect", estimate_usd: 34.9 })
+    expect(byId.c).toBeNull()
+    expect(byId.d).toBeNull() // LOW-confidence base: no premium claimed
   })
 
   it("the client row mapper keeps both fields", () => {

@@ -7,6 +7,8 @@ import { getCollection } from "@/lib/collections"
 import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
 import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
 import { fetchEditionTypes } from "@/lib/pinnacle/edition-types"
+import { boundedRead } from "@/lib/api/bounded-read"
+import { pinnacleSerialFmv, pinnacleSerialFmvData, toMultiplierMap } from "@/lib/pinnacle/serial-fmv"
 import { isSerialisedEditionType } from "@/lib/pinnacle/serialisation"
 import { isSupportedAddress, isValidAddressForChain } from "@/lib/address"
 
@@ -388,6 +390,23 @@ export async function GET(req: NextRequest) {
     // Open Event / Starter), and a bare "#-" reads as data we failed to index.
     // Same keyed lookup /api/pinnacle-wallet makes; fails soft to null.
     if (isPinnacle && moments.length > 0) {
+      // #1 / perfect serial premium (2026-09-27): the same SerialFmvData shape the
+      // shared table's badge renders for every collection, from Pinnacle's own
+      // render-keyed model (get_wallet_moments_with_fmv has no Pinnacle model —
+      // Pinnacle has no `editions` rows). A failed multiplier read claims no
+      // premium: the badge is simply absent.
+      const multRes = await boundedRead(
+        (supabaseAdmin as any).from("pinnacle_serial_fmv_multipliers").select("band, multiplier, is_reliable"),
+        "api/collection-moments/pinnacle_serial_fmv_multipliers",
+      )
+      const serialMults = toMultiplierMap(multRes.error ? null : multRes.data)
+      for (const m of moments as any[]) {
+        const est = pinnacleSerialFmv(m.serial_number, m.circulation_count, m.fmv_usd, serialMults, {
+          applyMinMintGuard: true,
+          baseConfidence: m.confidence ?? null,
+        })
+        m.serial_fmv = pinnacleSerialFmvData(est)
+      }
       const editionTypes = await fetchEditionTypes(
         Array.from(new Set(moments.map(function (m: any) { return m.edition_key as string | null }).filter(Boolean))) as string[],
         "api/collection-moments",

@@ -101,6 +101,8 @@ export interface PinnacleSniperDeal {
   source: "pinnacle"
   offerAmount: number | null
   offerFmvPct: number | null
+  /** #1 / perfect serial estimate in the shared SerialFmvData shape (null = no premium). */
+  serialFmvEstimate?: { estimate_usd: number; multiplier: number; serial_bucket: "first" | "perfect"; label: string; basis: string } | null
 }
 
 // ── Variant Hierarchy ────────────────────────────────────────────────────────

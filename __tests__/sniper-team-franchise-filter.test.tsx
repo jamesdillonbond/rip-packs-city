@@ -1,0 +1,67 @@
+// @vitest-environment jsdom
+// 2026-09-27 — the Sniper's Team / Franchise filter (Trevor: Pinnacle's Sniper
+// filters by Character and Franchise, not Player and Team). ONE shared control:
+// the label comes from the collection's vocabulary (lib/entity-labels), the
+// options from the board itself.
+import { describe, it, expect, afterEach } from "vitest"
+import { render, cleanup, fireEvent } from "@testing-library/react"
+import SniperFilterBar from "@/components/sniper/SniperFilterBar"
+import { filterSniperDeals, sniperTeamOptions } from "@/lib/sniper/helpers"
+import type { SniperDeal } from "@/lib/sniper/types"
+
+afterEach(() => cleanup())
+
+const deal = (teamName: string, over: Partial<SniperDeal> = {}) =>
+  ({ playerName: "x", setName: "s", teamName, discount: 10, ...over }) as SniperDeal
+
+describe("sniperTeamOptions / filterSniperDeals({ team })", () => {
+  it("options are the board's distinct teams, sorted, without the Unknown placeholder", () => {
+    expect(sniperTeamOptions([deal("Star Wars"), deal("Pocahontas"), deal("Star Wars"), deal("Unknown"), deal("")])).toEqual(["Pocahontas", "Star Wars"])
+  })
+  it("a selected team that left the board stays listed", () => {
+    expect(sniperTeamOptions([deal("Pocahontas")], "Toy Story")).toEqual(["Pocahontas", "Toy Story"])
+  })
+  it("filters on an exact (case-insensitive) team match; 'all' is a no-op", () => {
+    const deals = [deal("Star Wars"), deal("Star Wars Rebels"), deal("Pocahontas")]
+    expect(filterSniperDeals(deals, { team: "star wars" }).map((d) => d.teamName)).toEqual(["Star Wars"])
+    expect(filterSniperDeals(deals, { team: "all" })).toHaveLength(3)
+  })
+})
+
+function bar(slug: string, teamOptions: string[]) {
+  const picked: string[] = []
+  const r = render(
+    <SniperFilterBar
+      isMobile={false} isPinnacle={slug === "disney-pinnacle"} isAllDay={false} isGolazos={false} accent="#A855F7" collectionSlug={slug}
+      showFilters onToggleFilters={() => {}} playerInput="" onPlayerChange={() => {}}
+      teamOptions={teamOptions} teamFilter="all" onTeamChange={(v) => picked.push(v)}
+      tierTab="all" tabs={["all"]} onTierChange={() => {}} minDiscount={0} onMinDiscountChange={() => {}}
+      maxPrice={0} onMaxPriceChange={() => {}} search="" onSearchChange={() => {}} serialFilter="" onSerialChange={() => {}}
+      sortBy={"discount" as never} sortOptions={[]} onSortChange={() => {}} badgeOnly={false} onBadgeOnlyChange={() => {}}
+      showVerifiedOnly={false} onVerifiedChange={() => {}} ownedFilter="all" onOwnedFilterChange={() => {}} ownedCount={0}
+      leagueFilter={"all" as never} onLeagueChange={() => {}} saveSearchMsg={null} onSaveSearch={() => {}}
+    />,
+  )
+  return { text: r.container.textContent ?? "", select: r.container.querySelector("select[aria-label]") as HTMLSelectElement | null, picked }
+}
+
+describe("SniperFilterBar — Character / Franchise on Pinnacle, Player / Team elsewhere", () => {
+  it("Pinnacle: CHARACTER input and a FRANCHISE dropdown", () => {
+    const { text, select, picked } = bar("disney-pinnacle", ["Pocahontas", "Star Wars"])
+    expect(text).toMatch(/CHARACTER/)
+    expect(text).toMatch(/FRANCHISE/)
+    expect(text).toMatch(/All Franchises/)
+    expect(text).not.toMatch(/PLAYER|TEAM\b/)
+    fireEvent.change(select!, { target: { value: "Star Wars" } })
+    expect(picked).toEqual(["Star Wars"])
+  })
+  it("CONTROL: Top Shot keeps PLAYER and gets a TEAM dropdown", () => {
+    const { text } = bar("nba-top-shot", ["Lakers", "Trail Blazers"])
+    expect(text).toMatch(/PLAYER/)
+    expect(text).toMatch(/TEAM/)
+    expect(text).toMatch(/All Teams/)
+  })
+  it("no dropdown when the board offers fewer than two choices", () => {
+    expect(bar("disney-pinnacle", ["Star Wars"]).select).toBeNull()
+  })
+})

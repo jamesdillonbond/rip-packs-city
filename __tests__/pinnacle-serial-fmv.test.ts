@@ -5,6 +5,7 @@ import {
   pinnacleSerialFmv,
   pinnacleSerialLadder,
   toMultiplierMap,
+  pinnacleSerialFmvData,
   type PinnacleSerialMultipliers,
 } from "@/lib/pinnacle/serial-fmv"
 
@@ -19,7 +20,9 @@ import {
 
 // Live values on 2026-07-26 (compute_pinnacle_serial_fmv_multipliers, refit
 // weekly). Exact numbers don't matter to the logic — the shape does.
-const LIVE: PinnacleSerialMultipliers = { first: 15.7741, low5: 2.1926, low20: 1.183, normal: 1 }
+// ⚠ 2026-09-27: #1 + perfect only (Trevor — the shared serial_fmv_estimate
+// pattern). Live refit that day: first 14.45 (n=50), perfect 3.49 (n=36).
+const LIVE: PinnacleSerialMultipliers = { first: 15.7741, perfect: 3.49, normal: 1 }
 
 describe("toMultiplierMap", () => {
   it("keeps reliable bands and coerces string numerics", () => {
@@ -40,10 +43,20 @@ describe("toMultiplierMap", () => {
     expect(
       toMultiplierMap([
         { band: "chase", multiplier: 4, is_reliable: true },
-        { band: "low5", multiplier: "not-a-number", is_reliable: true },
-        { band: "low20", multiplier: 0, is_reliable: true },
+        { band: "first", multiplier: "not-a-number", is_reliable: true },
+        { band: "perfect", multiplier: 0, is_reliable: true },
       ]),
     ).toEqual({})
+  })
+
+  it("drops a STALE low5 / low20 row (the pre-2026-09-27 fit) — those bands no longer exist", () => {
+    expect(
+      toMultiplierMap([
+        { band: "low5", multiplier: 2.45, is_reliable: true },
+        { band: "low20", multiplier: 1.23, is_reliable: true },
+        { band: "perfect", multiplier: 3.49, is_reliable: true },
+      ]),
+    ).toEqual({ perfect: 3.49 })
   })
 
   it("tolerates null / undefined input", () => {
@@ -70,12 +83,20 @@ describe("pinnacleSerialBand", () => {
     expect(pinnacleSerialBand(4, 1)).toBe("normal")
   })
 
-  it("splits low5 / low20 / normal on the position boundaries INCLUSIVELY", () => {
-    // mint 100: 5/100 = 0.05 exactly -> low5; 6 -> low20; 20/100 = 0.20 -> low20; 21 -> normal
-    expect(pinnacleSerialBand(5, 100)).toBe("low5")
-    expect(pinnacleSerialBand(6, 100)).toBe("low20")
-    expect(pinnacleSerialBand(20, 100)).toBe("low20")
-    expect(pinnacleSerialBand(21, 100)).toBe("normal")
+  // INVERTED 2026-09-27: this case pinned the top-5% / top-20% bands. A low serial
+  // now earns NO premium — only #1 and perfect do.
+  it("a LOW serial is `normal` — no top-5% / top-20% band exists any more", () => {
+    expect(pinnacleSerialBand(2, 100)).toBe("normal")
+    expect(pinnacleSerialBand(5, 100)).toBe("normal")
+    expect(pinnacleSerialBand(20, 100)).toBe("normal")
+    expect(pinnacleSerialBand(99, 100)).toBe("normal")
+  })
+
+  it("the LAST serial of a mint > 1 is `perfect`", () => {
+    expect(pinnacleSerialBand(100, 100)).toBe("perfect")
+    expect(pinnacleSerialBand(2, 2)).toBe("perfect")
+    // #1 of 1 is `first`, not perfect (precedence, same as the SQL)
+    expect(pinnacleSerialBand(1, 1)).toBe("first")
   })
 })
 
@@ -110,7 +131,22 @@ describe("pinnacleSerialFmv", () => {
   })
 
   it("declines when the band has no reliable multiplier", () => {
-    expect(pinnacleSerialFmv(1, 500, 10, { low20: 1.18 }, guard)).toBeNull()
+    expect(pinnacleSerialFmv(1, 500, 10, { perfect: 3.49 }, guard)).toBeNull()
+    expect(pinnacleSerialFmv(500, 500, 10, { first: 14 }, guard)).toBeNull()
+  })
+
+  it("prices a perfect serial with the perfect multiplier", () => {
+    expect(pinnacleSerialFmv(500, 500, 10, LIVE, guard)).toEqual({ band: "perfect", multiplier: 3.49, estimate: 34.9 })
+  })
+
+  it("claims a #1 / perfect premium only over a HIGH or MEDIUM base (the shared gate)", () => {
+    expect(pinnacleSerialFmv(1, 500, 10, LIVE, { ...guard, baseConfidence: "HIGH" })).not.toBeNull()
+    expect(pinnacleSerialFmv(1, 500, 10, LIVE, { ...guard, baseConfidence: "medium" })).not.toBeNull()
+    expect(pinnacleSerialFmv(1, 500, 10, LIVE, { ...guard, baseConfidence: "LOW" })).toBeNull()
+    expect(pinnacleSerialFmv(500, 500, 10, LIVE, { ...guard, baseConfidence: "ASK_ONLY" })).toBeNull()
+    expect(pinnacleSerialFmv(1, 500, 10, LIVE, { ...guard, baseConfidence: null })).toBeNull()
+    // a normal serial is not a premium claim — the gate does not apply to it
+    expect(pinnacleSerialFmv(7, 500, 10, LIVE, { ...guard, baseConfidence: "LOW" })).toEqual({ band: "normal", multiplier: 1, estimate: 10 })
   })
 
   it("without the guard it reproduces the raw fitted model at any mint", () => {
@@ -120,23 +156,35 @@ describe("pinnacleSerialFmv", () => {
 })
 
 describe("pinnacleSerialLadder", () => {
-  it("builds first / low5 / low20 / typical, descending, with the top-5% cutoff", () => {
+  it("builds #1 / perfect / typical, descending", () => {
     const rows = pinnacleSerialLadder(500, 10, LIVE)!
-    expect(rows.map((r) => r.label)).toEqual(["#1", "low serial", "mid serial", "typical"])
-    expect(rows[1].note).toBe("#2–#25 (top 5%)")
-    expect(rows[3]).toEqual({ label: "typical", note: "most serials", estimate: 10, mult: 1 })
+    expect(rows.map((r) => r.label)).toEqual(["#1", "perfect", "typical"])
+    expect(rows[1].note).toBe("#500 of 500 (the last serial)")
+    expect(rows[2]).toEqual({ label: "typical", note: "every other serial", estimate: 10, mult: 1 })
     for (let i = 1; i < rows.length; i++) expect(rows[i].estimate).toBeLessThan(rows[i - 1].estimate)
   })
 
-  it("floors the top-5% cutoff at #2 so a small mint never prints '#2–#1'", () => {
-    const rows = pinnacleSerialLadder(30, 10, LIVE)!
-    expect(rows[1].note).toBe("#2–#2 (top 5%)")
-  })
-
-  it("returns null below the mint guard, unpriced, or with no premium band available", () => {
+  it("returns null below the mint guard, unpriced, a LOW base, or with no premium band available", () => {
     expect(pinnacleSerialLadder(PINNACLE_SERIAL_MIN_MINT - 1, 10, LIVE)).toBeNull()
     expect(pinnacleSerialLadder(500, null, LIVE)).toBeNull()
     expect(pinnacleSerialLadder(500, 10, { normal: 1 })).toBeNull()
+    expect(pinnacleSerialLadder(500, 10, LIVE, "LOW")).toBeNull()
+    expect(pinnacleSerialLadder(500, 10, LIVE, "HIGH")).not.toBeNull()
+  })
+})
+
+describe("pinnacleSerialFmvData — the shared SerialFmvData shape", () => {
+  it("emits the badge shape for #1 and perfect", () => {
+    expect(pinnacleSerialFmvData({ band: "first", multiplier: 14.456, estimate: 144.56 })).toMatchObject({
+      estimate_usd: 144.56, multiplier: 14.46, serial_bucket: "first", label: "estimated #1 premium",
+    })
+    expect(pinnacleSerialFmvData({ band: "perfect", multiplier: 3.49, estimate: 34.9 })).toMatchObject({
+      serial_bucket: "perfect", label: "estimated perfect-mint premium",
+    })
+  })
+  it("a normal serial or no estimate is NOT a serial estimate", () => {
+    expect(pinnacleSerialFmvData({ band: "normal", multiplier: 1, estimate: 10 })).toBeNull()
+    expect(pinnacleSerialFmvData(null)).toBeNull()
   })
 })
 
@@ -154,9 +202,7 @@ function sqlEstimate(
   let band: string | null
   if (serial === null || serial <= 0 || baseFmv === null) band = null
   else if (serial === 1) band = "first"
-  else if (mint === null || mint <= 1) band = "normal"
-  else if (serial / mint <= 0.05) band = "low5"
-  else if (serial / mint <= 0.2) band = "low20"
+  else if (mint !== null && mint > 1 && serial === mint) band = "perfect"
   else band = "normal"
 
   if (baseFmv === null) return null

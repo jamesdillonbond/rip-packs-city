@@ -372,7 +372,7 @@ export async function load(
       .eq("render_id", renderId)
       .order("computed_at", { ascending: true })
       .limit(400),
-    // P4: global Pinnacle serial-premium bands (first/low5/low20/normal → multiplier).
+    // P4: global Pinnacle serial-premium bands (first/perfect/normal → multiplier; #1 + perfect only since 09-27).
       supa.from("pinnacle_serial_fmv_multipliers").select("band, multiplier, is_reliable"),
       ]),
       "detail-bundle",
@@ -433,6 +433,8 @@ export async function load(
     ed.total_minted != null ? Number(ed.total_minted) : null,
     ed.fmv_usd != null ? Number(ed.fmv_usd) : null,
     mult,
+    // Same gate as the shared serial estimator: no premium over a LOW base.
+    ed.fmv_confidence ?? null,
   )
 
   return {

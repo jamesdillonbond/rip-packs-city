@@ -283,8 +283,8 @@ export default async function PinnacleMomentPage({
         <section className="rpc-pm-detail">
           <h2 className="rpc-pm-h2">Serial premium</h2>
           <div className="rpc-pm-ladder-note">
-            Low serials on Disney Pinnacle command a premium. Estimated value by serial tier for this
-            pin, from Rip Packs City&rsquo;s render-keyed serial-FMV model (overlay on the {fmtUsd(ed.fmv_usd)} render FMV).
+            The #1 and perfect (last) serials of a Disney Pinnacle pin command a premium; other serials trade
+            at the pin&rsquo;s typical price. Estimated value from Rip Packs City&rsquo;s serial-FMV model (overlay on the {fmtUsd(ed.fmv_usd)} render FMV).
           </div>
           <div className="rpc-pm-disambig">
             {serialLadder.map((r) => (

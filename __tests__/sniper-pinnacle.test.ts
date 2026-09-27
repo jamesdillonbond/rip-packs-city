@@ -25,17 +25,25 @@ const state: {
   rpcError: any
   newest: { data: any; error: any; count: number | null }
   rpcArgs: any
-} = { rows: [], rpcError: null, newest: { data: [{ seen_at: FRESH }], error: null, count: 16000 }, rpcArgs: null }
+  mults: any
+} = { rows: [], rpcError: null, newest: { data: [{ seen_at: FRESH }], error: null, count: 16000 }, rpcArgs: null, mults: null }
+
+const MULTS = [
+  { band: "first", multiplier: 14.45, is_reliable: true },
+  { band: "perfect", multiplier: 3.49, is_reliable: true },
+  { band: "normal", multiplier: 1, is_reliable: true },
+]
 
 vi.mock("@/lib/supabase", () => {
-  const probe = () => {
+  const probe = (table: string) => {
     const b: any = {}
     for (const m of ["select", "order", "limit", "eq"]) b[m] = () => b
-    b.then = (resolve: any) => resolve(state.newest)
+    b.then = (resolve: any) =>
+      resolve(table === "pinnacle_serial_fmv_multipliers" ? { data: state.mults, error: null } : state.newest)
     return b
   }
   const client: any = {
-    from: () => probe(),
+    from: (table: string) => probe(table),
     rpc: async (_name: string, args: any) => {
       state.rpcArgs = args
       return { data: state.rpcError ? null : state.rows, error: state.rpcError }
@@ -73,6 +81,7 @@ beforeEach(() => {
   state.rpcError = null
   state.newest = { data: [{ seen_at: FRESH }], error: null, count: 16000 }
   state.rpcArgs = null
+  state.mults = MULTS
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
   return () => vi.useRealTimers()
@@ -140,13 +149,46 @@ describe("computePinnacleSniperFeed — each listing priced and linked as its ow
     expect(d.playerName).toBe("Just Keep Swimming")
   })
 
-  it("a serialised edition applies the serial multiplier and flags a special serial", async () => {
+  // ⚠ 2026-09-27: the premium is the shared pattern — #1 and PERFECT only, from
+  // pinnacle_serial_fmv_multipliers, over a HIGH/MEDIUM base (was 1 + 0.08×… on EVERY serial).
+  it("a #1 serial is priced with the #1 premium, flagged, and carries the shared badge shape", async () => {
     state.rows = [row({ edition_type: "Limited Edition", serial_number: 1, total_minted: 100, price_usd: 50, fmv_usd: 80 })]
     const d = (await computePinnacleSniperFeed()).deals[0]
-    expect(d.serialMult).toBeGreaterThan(1)
-    expect(d.adjustedFmv).toBeGreaterThan(80)
-    expect(d.serial).toBe(1)
-    expect(d.isSpecialSerial).toBe(true)
+    expect(d.serialMult).toBe(14.45)
+    expect(d.adjustedFmv).toBe(1156)
+    expect(d).toMatchObject({ isSpecialSerial: true, serialSignal: "#1 Serial" })
+    expect(d.serialFmvEstimate).toMatchObject({ serial_bucket: "first", estimate_usd: 1156 })
+  })
+
+  it("a PERFECT serial (#N of N) gets the perfect premium", async () => {
+    state.rows = [row({ edition_type: "Limited Edition", serial_number: 100, total_minted: 100, price_usd: 50, fmv_usd: 80 })]
+    const d = (await computePinnacleSniperFeed()).deals[0]
+    expect(d.serialMult).toBe(3.49)
+    expect(d).toMatchObject({ isSpecialSerial: true, serialSignal: "Perfect Serial" })
+    expect(d.serialFmvEstimate).toMatchObject({ serial_bucket: "perfect" })
+  })
+
+  it("a LOW serial earns no premium any more", async () => {
+    state.rows = [row({ edition_type: "Limited Edition", serial_number: 2, total_minted: 100, price_usd: 50, fmv_usd: 80 })]
+    const d = (await computePinnacleSniperFeed()).deals[0]
+    expect(d.serialMult).toBe(1)
+    expect(d.adjustedFmv).toBe(80)
+    expect(d.isSpecialSerial).toBe(false)
+    expect(d.serialFmvEstimate).toBeUndefined()
+  })
+
+  it("no premium over a LOW-confidence base (the shared gate)", async () => {
+    state.rows = [row({ edition_type: "Limited Edition", serial_number: 1, total_minted: 100, price_usd: 50, fmv_usd: 80, fmv_confidence: "LOW" })]
+    const d = (await computePinnacleSniperFeed()).deals[0]
+    expect(d.serialMult).toBe(1)
+  })
+
+  it("a failed model read prices at base FMV rather than failing the board", async () => {
+    state.mults = null
+    state.rows = [row({ edition_type: "Limited Edition", serial_number: 1, total_minted: 100, price_usd: 50, fmv_usd: 80 })]
+    const res = await computePinnacleSniperFeed()
+    expect(res.count).toBe(1)
+    expect(res.deals[0].serialMult).toBe(1)
   })
 
   it("an unserialised edition gets no multiplier even with a serial-like value", async () => {

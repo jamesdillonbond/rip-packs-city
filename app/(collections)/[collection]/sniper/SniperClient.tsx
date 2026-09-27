@@ -43,6 +43,7 @@ import {
 } from "@/lib/sniper/listing-suggestions";
 import {
   filterSniperDeals,
+  sniperTeamOptions,
   sortByVerifiedFirst,
   computeSniperStats,
   trackClick,
@@ -132,6 +133,14 @@ function SniperMomentsBody() {
   const [badgeOnly, setBadgeOnly] = useState(false);
   const [flowWalletOnly, setFlowWalletOnly] = useState(false);
   const [search, setSearch] = useState("");
+  // Team (sports) / Franchise (Pinnacle) filter. Reset when the collection
+  // changes — the same component instance serves every /<collection>/sniper, and
+  // a Lakers filter carried onto Pinnacle would silently empty the board.
+  // Keyed by slug (not reset in an effect): a selection made on another
+  // collection reads as "all" here.
+  const [teamSel, setTeamSel] = useState<{ slug: string; value: string }>({ slug: collectionSlug, value: "all" });
+  const teamFilter = teamSel.slug === collectionSlug ? teamSel.value : "all";
+  const setTeamFilter = (value: string) => setTeamSel({ slug: collectionSlug, value });
   // P2.5 — default ON: the credible verified-FMV view leads. Users can toggle
   // it off to also see thin-data deals (demoted + flagged, never headlined).
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(true);
@@ -689,8 +698,9 @@ function SniperMomentsBody() {
   // group). Headline "hot"/avg-discount reflect the VERIFIED subset only so the
   // top-of-page numbers can't be inflated by thin-FMV fake bargains. Extracted to
   // lib/sniper/helpers (filterSniperDeals / sortByVerifiedFirst / computeSniperStats).
+  const teamOptions = sniperTeamOptions(data?.deals ?? [], teamFilter);
   const visibleDeals = sortByVerifiedFirst(
-    filterSniperDeals(data?.deals ?? [], { search, showVerifiedOnly, ownedFilter, ownedIds }),
+    filterSniperDeals(data?.deals ?? [], { search, showVerifiedOnly, ownedFilter, ownedIds, team: teamFilter }),
   );
   const stats = computeSniperStats(visibleDeals);
 
@@ -885,6 +895,9 @@ function SniperMomentsBody() {
             onToggleFilters={() => setShowFilters((v) => !v)}
             playerInput={playerInput}
             onPlayerChange={handlePlayerChange}
+            teamOptions={teamOptions}
+            teamFilter={teamFilter}
+            onTeamChange={setTeamFilter}
             tierTab={tierTab}
             tabs={isPinnacle ? PINNACLE_VARIANT_TABS : sniperTierTabs(collectionSlug)}
             onTierChange={(t) => setTierTab(t as TierTab)}

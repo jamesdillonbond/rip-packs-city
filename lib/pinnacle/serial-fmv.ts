@@ -8,10 +8,15 @@
 // in `pinnacle_serial_fmv_multipliers` (refreshed weekly, Sun 12:00 UTC, by
 // `compute_pinnacle_serial_fmv_multipliers`) supplies the per-band premium:
 //
-//     first  — serial #1                     (n=81,     ~15.8x)
-//     low5   — serial within the top 5%      (n=649,     ~2.2x)
-//     low20  — serial within the top 20%     (n=2,297,   ~1.2x)
-//     normal — everything else               (n=14,859,   1.0x)
+//     first   — serial #1                          (n=50, ~14.5x, 09-27 fit)
+//     perfect — serial #N of N (the last serial)   (n=36,  ~3.5x)
+//     normal  — every other serial                 (1.0x)
+//
+// ⚠ 2026-09-27 (Trevor): "our typical FMV pattern … only should apply serial
+// premiums for #1 and Perfect Serials" — the shared serial_fmv_estimate rule.
+// The old top-5% (~2.5x) and top-20% (~1.2x) bands are GONE; a low serial earns
+// no premium. Like the shared estimator, a premium is only claimed over a HIGH
+// or MEDIUM confidence base FMV (`baseConfidence`).
 //
 // Bands are normalised so `normal` = 1.0, which is why an estimate is simply
 // `render FMV x band multiplier`. Only bands flagged `is_reliable` are applied.
@@ -34,7 +39,7 @@
 // it lives here rather than in the SQL function — and it is why
 // `pinnacleSerialFmv` takes it as an explicit option instead of assuming it.
 
-export type PinnacleSerialBand = "first" | "low5" | "low20" | "normal"
+export type PinnacleSerialBand = "first" | "perfect" | "normal"
 
 /** Multipliers keyed by band. Only `is_reliable` rows should be loaded in. */
 export type PinnacleSerialMultipliers = Partial<Record<PinnacleSerialBand, number>>
@@ -59,7 +64,8 @@ export function toMultiplierMap(rows: PinnacleMultiplierRow[] | null | undefined
   for (const r of rows ?? []) {
     if (!r?.is_reliable) continue
     const band = r.band as PinnacleSerialBand
-    if (band !== "first" && band !== "low5" && band !== "low20" && band !== "normal") continue
+    // A stale low5/low20 row (the pre-09-27 fit) is an unknown band now: dropped.
+    if (band !== "first" && band !== "perfect" && band !== "normal") continue
     const m = Number(r.multiplier)
     if (!Number.isFinite(m) || m <= 0) continue
     out[band] = m
@@ -71,16 +77,13 @@ export function toMultiplierMap(rows: PinnacleMultiplierRow[] | null | undefined
  * Which premium band does this serial fall in?
  *
  * Mirrors `pinnacle_serial_fmv_estimate` exactly: a null/non-positive serial
- * has no band, and a mint of null or <= 1 cannot express a position so it reads
- * as `normal`. Returns null when no band applies.
+ * has no band; #1 is `first` (even on a mint of 1); the last serial of a mint
+ * > 1 is `perfect`; every other serial is `normal`. Returns null when no band applies.
  */
 export function pinnacleSerialBand(serial: number | null | undefined, mint: number | null | undefined): PinnacleSerialBand | null {
   if (serial == null || !Number.isFinite(serial) || serial <= 0) return null
   if (serial === 1) return "first"
-  if (mint == null || !Number.isFinite(mint) || mint <= 1) return "normal"
-  const position = serial / mint
-  if (position <= 0.05) return "low5"
-  if (position <= 0.2) return "low20"
+  if (mint != null && Number.isFinite(mint) && mint > 1 && serial === mint) return "perfect"
   return "normal"
 }
 
@@ -90,6 +93,13 @@ export interface SerialFmvOptions {
    * reproducing the raw fitted model passes false.
    */
   applyMinMintGuard?: boolean
+  /**
+   * The base FMV's confidence. When PASSED, a premium band (first / perfect) is
+   * only estimated over HIGH or MEDIUM — the shared serial_fmv_estimate gate:
+   * multiplying an unreliable base by x14 publishes noise as a price. Omit it
+   * to reproduce the raw fitted model.
+   */
+  baseConfidence?: string | null
 }
 
 export interface PinnacleSerialFmv {
@@ -124,6 +134,11 @@ export function pinnacleSerialFmv(
     if (mint == null || !Number.isFinite(mint) || mint < PINNACLE_SERIAL_MIN_MINT) return null
   }
 
+  if (band !== "normal" && opts.baseConfidence !== undefined) {
+    const c = (opts.baseConfidence ?? "").toUpperCase()
+    if (c !== "HIGH" && c !== "MEDIUM") return null
+  }
+
   const multiplier = mults[band]
   if (multiplier == null) return null
 
@@ -138,27 +153,50 @@ export interface SerialLadderRow {
 }
 
 /**
- * The "what would a better serial of this pin be worth" ladder shown on a
+ * The "what would a #1 / perfect serial of this pin be worth" ladder shown on a
  * render page. Returns null when the render is unpriced, below the mint guard,
- * or the model has no reliable premium band to show — the page renders nothing
- * rather than a one-row ladder that says only "typical".
+ * its FMV is not HIGH/MEDIUM confidence (when given), or the model has no
+ * reliable premium band — the page renders nothing rather than a one-row
+ * ladder that says only "typical".
  */
 export function pinnacleSerialLadder(
   mint: number | null | undefined,
   baseFmv: number | null | undefined,
   mults: PinnacleSerialMultipliers,
+  baseConfidence?: string | null,
 ): SerialLadderRow[] | null {
   const base = baseFmv == null ? NaN : Number(baseFmv)
   const m = mint == null ? NaN : Number(mint)
   if (!Number.isFinite(base) || base <= 0) return null
   if (!Number.isFinite(m) || m < PINNACLE_SERIAL_MIN_MINT) return null
-  if (!mults.first && !mults.low5 && !mults.low20) return null
+  if (baseConfidence !== undefined) {
+    const c = (baseConfidence ?? "").toUpperCase()
+    if (c !== "HIGH" && c !== "MEDIUM") return null
+  }
+  if (!mults.first && !mults.perfect) return null
 
-  const top5 = Math.max(2, Math.round(m * 0.05))
   const rows: SerialLadderRow[] = []
   if (mults.first) rows.push({ label: "#1", note: "serial #1", estimate: base * mults.first, mult: mults.first })
-  if (mults.low5) rows.push({ label: "low serial", note: `#2–#${top5} (top 5%)`, estimate: base * mults.low5, mult: mults.low5 })
-  if (mults.low20) rows.push({ label: "mid serial", note: "top 20%", estimate: base * mults.low20, mult: mults.low20 })
-  rows.push({ label: "typical", note: "most serials", estimate: base, mult: 1 })
+  if (mults.perfect) rows.push({ label: "perfect", note: `#${m} of ${m} (the last serial)`, estimate: base * mults.perfect, mult: mults.perfect })
+  rows.push({ label: "typical", note: "every other serial", estimate: base, mult: 1 })
   return rows
+}
+
+/**
+ * The shared serial-estimate shape (`SerialFmvData`, rendered by
+ * `SerialFmvBadge` on every collection's table and sniper) for one Pinnacle
+ * holding or listing — or null when there is no #1 / perfect premium to claim.
+ * A `normal` serial returns null: no premium is not a serial ESTIMATE.
+ */
+export function pinnacleSerialFmvData(
+  est: PinnacleSerialFmv | null,
+): { estimate_usd: number; multiplier: number; serial_bucket: "first" | "perfect"; label: string; basis: string } | null {
+  if (!est || est.band === "normal") return null
+  return {
+    estimate_usd: est.estimate,
+    multiplier: Math.round(est.multiplier * 100) / 100,
+    serial_bucket: est.band,
+    label: est.band === "first" ? "estimated #1 premium" : "estimated perfect-mint premium",
+    basis: "pinnacle_serial_model",
+  }
 }

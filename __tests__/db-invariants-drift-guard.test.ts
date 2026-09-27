@@ -627,7 +627,8 @@ const PINS = [
   {
     fn: "pinnacle_serial_fmv_estimate",
     test: "supabase/tests/pinnacle_serial_fmv_estimate.sql",
-    migration: "supabase/migrations/20260725004336_audit_20260725_pin_pinnacle_serial_fmv_estimate.sql",
+    // 2026-09-27: #1 + perfect only (the shared serial_fmv_estimate pattern).
+    migration: "supabase/migrations/20260927183258_audit_20260927_pinnacle_serial_premium_first_and_perfect_only.sql",
   },
   {
     fn: "panini_serial_premium_mult",
@@ -1138,7 +1139,8 @@ const PINS = [
   {
     fn: "compute_pinnacle_serial_fmv_multipliers",
     test: "supabase/tests/compute_pinnacle_serial_fmv_multipliers.sql",
-    migration: "supabase/migrations/20260802203000_audit_20260802_snapshot_compute_pinnacle_serial_fmv_multipliers.sql",
+    // 2026-09-27: #1 + perfect only (the shared serial_fmv_estimate pattern).
+    migration: "supabase/migrations/20260927183258_audit_20260927_pinnacle_serial_premium_first_and_perfect_only.sql",
   },
   {
     // Re-pointed 2026-08-27 onto the change-detection migration, which added a
