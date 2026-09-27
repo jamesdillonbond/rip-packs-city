@@ -1,10 +1,18 @@
 "use client"
 
 // PaniniCollection — the Panini Collection tab body (/panini-blockchain/collection,
-// 2026-09-27). Reads /api/panini-collection (panini_owner_cards) for a Panini
-// USERNAME — Panini has no wallets.
+// 2026-09-27). Reads /api/panini-collection for a Panini USERNAME — Panini has no
+// wallets. Two views, never mixed:
+//   · PROFILE (a collector walk has read this username's public Panini profile —
+//     linked on an RPC profile): the whole collection AS OF THAT WALK, with its
+//     time, whether it read every card, and the profile's unopened-pack count
+//   · SEEN (never walked): the cards RPC has seen under the username on the market
 //
 // Honesty rules this component keeps (see the route header for the why):
+//   · profile holdings carry the walk's own time and say "partial read (N of M)"
+//     when the walk did not read every card; a private / missing profile says so
+//   · a card from a sport RPC does not price yet (NBA, NFL, …) is "not priced by
+//     RPC", never $0, and does not link to an edition page RPC does not have
 //   · it is "cards RPC has seen under this username", never "your collection":
 //     RPC reads a card's holder only when the card has been listed, so most
 //     usernames appear only through their own listings — the tab says so
@@ -17,7 +25,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import MomentMedia from "@/components/MomentMedia"
-import type { PaniniOwnerCards } from "@/lib/panini/owner-cards"
+import type { PaniniCollectionResponse, PaniniOwnerCard, PaniniProfileHoldings } from "@/lib/panini/owner-cards"
 
 const STORAGE_KEY = "rpc.panini.collection.username"
 const mono = "var(--font-mono)"
@@ -57,7 +65,7 @@ type LoadState =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "failed"; message: string }
-  | { kind: "ok"; data: PaniniOwnerCards }
+  | { kind: "ok"; data: PaniniCollectionResponse }
 
 function initialUsername(): string {
   try {
@@ -98,11 +106,18 @@ export default function PaniniCollection() {
           return
         }
         // Discriminate on status + shape: a failed read is not an empty collection.
-        if (!res.ok || !body || typeof body !== "object" || typeof (body as PaniniOwnerCards).cardsSeen !== "number") {
+        if (
+          !res.ok ||
+          !body ||
+          typeof body !== "object" ||
+          typeof (body as PaniniCollectionResponse).cardsSeen !== "number" ||
+          !(body as PaniniCollectionResponse).profile ||
+          typeof (body as PaniniCollectionResponse).profile.cardsHeld !== "number"
+        ) {
           setState({ kind: "failed", message: fail })
           return
         }
-        setState({ kind: "ok", data: body as PaniniOwnerCards })
+        setState({ kind: "ok", data: body as PaniniCollectionResponse })
       })
       .catch(() => {
         if (!cancelled) setState({ kind: "failed", message: fail })
@@ -134,8 +149,8 @@ export default function PaniniCollection() {
         Panini — Collection
       </h1>
       <Note>
-        Enter a Panini username to see the cards RPC has seen under it. Panini has no public wallet view, so RPC learns who holds a card only
-        when that card is listed for sale — for most collectors this shows their listings, not everything they own.
+        Enter a Panini username. For a username linked to an RPC profile, RPC reads the collector&apos;s public Panini profile daily and
+        shows the whole collection. For any other username RPC can only show the cards it has seen listed under it.
       </Note>
 
       <form onSubmit={submit} style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
@@ -174,14 +189,90 @@ export default function PaniniCollection() {
   )
 }
 
-function CollectionBody({ data }: { data: PaniniOwnerCards }) {
+function CollectionBody({ data }: { data: PaniniCollectionResponse }) {
+  if (data.profile.walk) return <ProfileBody username={data.username} profile={data.profile} />
+  return <SeenBody data={data} />
+}
+
+function linkNote() {
+  return (
+    <>
+      {" "}
+      Link your Panini username on your <Link href="/dashboard" style={{ color: "var(--rpc-text-primary)" }}>dashboard</Link> and RPC will read
+      your full collection from your public Panini profile each day.
+    </>
+  )
+}
+
+/** Absolute PT date and time of a walk. */
+function ptDateTime(iso: string | null): string {
+  if (!iso) return "—"
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return "—"
+  return (
+    new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }) + " PT"
+  )
+}
+
+function ProfileBody({ username, profile }: { username: string; profile: PaniniProfileHoldings }) {
+  const w = profile.walk!
+  if (w.profileState === "private" || w.profileState === "not_found") {
+    return (
+      <div data-testid="panini-collection-profile-unreadable" style={{ padding: "14px 16px", border: "1px dashed var(--rpc-border)", borderRadius: 8 }}>
+        <Note>
+          {w.profileState === "private"
+            ? <>Panini shows <b>{username}</b>&apos;s profile as private, so RPC can&apos;t read the collection (last tried {ptDateTime(w.lastWalkAt)}).</>
+            : <>Panini had no profile named <b>{username}</b> when RPC last looked ({ptDateTime(w.lastWalkAt)}).</>}
+          {profile.cardsHeld > 0 ? ` The ${count(profile.cardsHeld)} cards below are from an earlier read.` : ""}
+        </Note>
+        {profile.cardsHeld > 0 ? <CardGrid cards={profile.cards} /> : null}
+      </div>
+    )
+  }
+  const complete = w.lastCompleteAt !== null && w.lastCompleteAt === w.lastWalkAt
+  const unpriced = profile.cardsHeld - profile.fmvPricedCards
+  const shown = profile.cards.length
+  return (
+    <>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Tile
+          label="Cards held"
+          value={count(profile.cardsHeld)}
+          sub={w.reportedTotal != null && !complete ? `of ${count(w.reportedTotal)} on the profile` : `${count(profile.editions)} editions`}
+        />
+        <Tile label="Unopened packs" value={count(w.unopenedPacks)} sub={w.unopenedPacks == null ? "not read yet" : undefined} />
+        <Tile
+          label="FMV of priced cards"
+          value={usd(profile.fmvHeldUsd)}
+          sub={`${count(profile.fmvPricedCards)} of ${count(profile.cardsHeld)} priced`}
+        />
+        <Tile label="Listed now" value={count(profile.listedNow)} sub={profile.specialSerials > 0 ? `${count(profile.specialSerials)} special serials` : undefined} />
+      </div>
+      <div style={{ marginTop: 8 }} data-testid="panini-collection-profile-note">
+        <Note>
+          Read from <b>{username}</b>&apos;s public Panini profile {ptDateTime(w.lastWalkAt)}.{" "}
+          {complete
+            ? "Every card on the profile was read."
+            : `Partial read — ${count(w.cardsCollected)} of ${w.reportedTotal != null ? count(w.reportedTotal) : "an unknown number of"} cards; cards missing from this read are not shown.`}
+          {unpriced > 0
+            ? ` ${count(unpriced)} card${unpriced === 1 ? "" : "s"} ${unpriced === 1 ? "has" : "have"} no RPC price yet — RPC prices Panini’s soccer cards; other sports aren’t covered, so they are left unpriced rather than counted as $0.`
+            : ""}
+          {shown < profile.cardsHeld ? ` Showing the ${count(shown)} highest-FMV cards of ${count(profile.cardsHeld)}.` : ""}
+        </Note>
+      </div>
+      <CardGrid cards={profile.cards} />
+    </>
+  )
+}
+
+function SeenBody({ data }: { data: PaniniCollectionResponse }) {
   if (data.cardsSeen === 0) {
     return (
       <div data-testid="panini-collection-unseen" style={{ padding: "14px 16px", border: "1px dashed var(--rpc-border)", borderRadius: 8 }}>
         <Note>
           RPC hasn&apos;t seen a card under <b>{data.username}</b>. RPC only learns a card&apos;s holder when the card is listed for sale on
           Panini&apos;s marketplace, so this does not mean the collector holds nothing — it means none of their cards has been listed while RPC
-          was looking.
+          was looking.{linkNote()}
         </Note>
       </div>
     )
@@ -202,39 +293,46 @@ function CollectionBody({ data }: { data: PaniniOwnerCards }) {
       </div>
       <div style={{ marginTop: 8 }}>
         <Note>
-          Last seen {ptDate(data.lastSeenAt)}. A card sold since RPC last read it can still appear here.
+          Last seen {ptDate(data.lastSeenAt)}. These are cards seen listed under this username, not the whole collection; a card sold since
+          RPC last read it can still appear here.
           {shown < data.cardsSeen ? ` Showing the ${count(shown)} highest-FMV cards of ${count(data.cardsSeen)}.` : ""}
+          {linkNote()}
         </Note>
       </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10, marginTop: 14 }}>
-        {data.cards.map((c) => {
-          const inner = (
-            <>
-              <div style={{ aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden", background: "var(--rpc-surface)" }}>
-                {c.thumbnailUrl ? <MomentMedia thumbnailUrl={c.thumbnailUrl} alt={`${c.playerName ?? "Card"} — ${c.setName ?? ""}`} size={160} rounded={6} /> : null}
-              </div>
-              <div style={{ fontFamily: display, fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginTop: 6, lineHeight: 1.2 }}>{c.playerName ?? "—"}</div>
-              <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{c.setName ?? "—"}</div>
-              <div style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 4 }}>
-                {c.serial != null ? `#${c.serial}${c.mintCap != null ? `/${c.mintCap}` : ""}` : "serial —"}
-                {c.flags.length ? ` · ${c.flags.map((f) => FLAG_LABEL[f] ?? f).join(", ")}` : ""}
-              </div>
-              <div style={{ fontFamily: mono, fontSize: 11, color: "var(--rpc-text-secondary)", marginTop: 2 }}>
-                FMV {usd(c.fmvUsd)}
-                {c.isListed && c.askUsd != null ? <> · listed {usd(c.askUsd)}</> : null}
-              </div>
-            </>
-          )
-          return c.editionKey ? (
-            <Link key={c.sku} href={`/panini-blockchain/edition/${encodeURIComponent(c.editionKey)}`} className="rpc-card" style={{ padding: 8, textDecoration: "none", color: "inherit", display: "block" }}>
-              {inner}
-            </Link>
-          ) : (
-            <div key={c.sku} className="rpc-card" style={{ padding: 8 }}>{inner}</div>
-          )
-        })}
-      </div>
+      <CardGrid cards={data.cards} />
     </>
+  )
+}
+
+function CardGrid({ cards }: { cards: PaniniOwnerCard[] }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10, marginTop: 14 }}>
+      {cards.map((c) => {
+        const inner = (
+          <>
+            <div style={{ aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden", background: "var(--rpc-surface)" }}>
+              {c.thumbnailUrl ? <MomentMedia thumbnailUrl={c.thumbnailUrl} alt={`${c.playerName ?? "Card"} — ${c.setName ?? ""}`} size={160} rounded={6} /> : null}
+            </div>
+            <div style={{ fontFamily: display, fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginTop: 6, lineHeight: 1.2 }}>{c.playerName ?? "—"}</div>
+            <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{c.setName ?? "—"}</div>
+            <div style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 4 }}>
+              {c.serial != null ? `#${c.serial}${c.mintCap != null ? `/${c.mintCap}` : ""}` : "serial —"}
+              {c.flags.length ? ` · ${c.flags.map((f) => FLAG_LABEL[f] ?? f).join(", ")}` : ""}
+            </div>
+            <div style={{ fontFamily: mono, fontSize: 11, color: "var(--rpc-text-secondary)", marginTop: 2 }}>
+              {c.catalogued ? <>FMV {usd(c.fmvUsd)}</> : <>{c.sport ? `${c.sport} · ` : ""}not priced by RPC</>}
+              {c.isListed && c.askUsd != null ? <> · listed {usd(c.askUsd)}</> : null}
+            </div>
+          </>
+        )
+        return c.editionKey && c.catalogued ? (
+          <Link key={c.sku} href={`/panini-blockchain/edition/${encodeURIComponent(c.editionKey)}`} className="rpc-card" style={{ padding: 8, textDecoration: "none", color: "inherit", display: "block" }}>
+            {inner}
+          </Link>
+        ) : (
+          <div key={c.sku} className="rpc-card" style={{ padding: 8 }}>{inner}</div>
+        )
+      })}
+    </div>
   )
 }

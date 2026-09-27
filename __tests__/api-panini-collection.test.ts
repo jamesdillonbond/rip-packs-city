@@ -6,11 +6,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
  * collection, a malformed username is not "0 cards", an unpriced card is not $0.
  */
 
-const state: { rpc: { data: unknown; error: unknown } } = { rpc: { data: null, error: null } }
+const state: { rpc: { data: unknown; error: unknown }; profile: { data: unknown; error: unknown } } = {
+  rpc: { data: null, error: null },
+  profile: { data: null, error: null },
+}
 const calls: unknown[] = []
+const profileCalls: unknown[] = []
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
-    rpc: (_fn: string, args: unknown) => {
+    rpc: (fn: string, args: unknown) => {
+      if (fn === "panini_profile_holdings") {
+        profileCalls.push(args)
+        return { then: (resolve: any) => resolve(state.profile) }
+      }
       calls.push(args)
       return { then: (resolve: any) => resolve(state.rpc) }
     },
@@ -18,7 +26,7 @@ vi.mock("@/lib/supabase", () => ({
 }))
 
 import { GET } from "@/app/api/panini-collection/route"
-import { parsePaniniOwnerCards } from "@/lib/panini/owner-cards"
+import { parsePaniniOwnerCards, parsePaniniProfileHoldings } from "@/lib/panini/owner-cards"
 
 const req = (qs: string) => ({ nextUrl: new URL("https://t/api/panini-collection" + qs) }) as any
 const PAYLOAD = {
@@ -30,9 +38,22 @@ const PAYLOAD = {
   ],
 }
 
+const NOT_WALKED = { username: "adlcards", walk: null, cards_held: 0, editions: 0, catalogued_cards: 0, listed_now: 0, special_serials: 0, fmv_held_usd: null, fmv_priced_cards: 0, cards: [] }
+const WALKED = {
+  username: "jamesdillonbond",
+  walk: { last_walk_at: "2026-09-27T20:00:00+00:00", last_complete_at: null, profile_state: "public", reported_total: 146, cards_collected: 2, unopened_packs: 12, last_error: "collected 2 of 146 cards" },
+  cards_held: 2, editions: 2, catalogued_cards: 1, listed_now: 0, special_serials: 0, fmv_held_usd: 650, fmv_priced_cards: 1,
+  cards: [
+    { sku: "packcard-1__1_10", edition_external_id: "packcard-1", serial_number: 1, mint_cap: 10, is_listed: false, fmv_usd: 650, catalogued: true, sport: null, thumbnail_url: "https://assets.paniniamerica.net/catalog/product/pack/1/x.png" },
+    { sku: "x__4_99", edition_external_id: "x", serial_number: 4, mint_cap: 99, is_listed: false, fmv_usd: null, catalogued: false, sport: "Basketball", thumbnail_url: null },
+  ],
+}
+
 beforeEach(() => {
   calls.length = 0
+  profileCalls.length = 0
   state.rpc = { data: PAYLOAD, error: null }
+  state.profile = { data: NOT_WALKED, error: null }
 })
 
 describe("GET /api/panini-collection", () => {
@@ -75,5 +96,41 @@ describe("GET /api/panini-collection", () => {
   it("control: a username never seen is a real 0 with no cards", () => {
     const p = parsePaniniOwnerCards({ username: "jamesdillonbond", cards_seen: 0, listed_now: 0, editions: 0, special_serials: 0, fmv_seen_usd: null, fmv_priced_cards: 0, last_seen_at: null, cards: [] })
     expect(p).toMatchObject({ cardsSeen: 0, fmvSeenUsd: null, cards: [] })
+  })
+
+  it("carries the profile walk: never-walked is walk:null, not an empty collection", async () => {
+    const res = await GET(req("?username=adlcards"))
+    const j = await res.json()
+    expect(profileCalls[0]).toEqual({ p_username: "adlcards", p_limit: 500 })
+    expect(j.profile.walk).toBeNull()
+    expect(j.profile.cardsHeld).toBe(0)
+  })
+
+  it("a walked username carries the walk's time, completeness and pack count; uncatalogued cards stay unpriced", async () => {
+    state.profile = { data: WALKED, error: null }
+    const j = await (await GET(req("?username=Jamesdillonbond"))).json()
+    expect(j.profile.walk).toMatchObject({ profileState: "public", reportedTotal: 146, cardsCollected: 2, unopenedPacks: 12, lastCompleteAt: null })
+    expect(j.profile.cards[1]).toMatchObject({ catalogued: false, sport: "Basketball", fmvUsd: null })
+    expect(j.profile.cards[0].catalogued).toBe(true)
+  })
+
+  it("a failed PROFILE read is a 503 — half a collection is not the collection", async () => {
+    state.profile = { data: null, error: { message: "boom" } }
+    const res = await GET(req("?username=adlcards"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect((await res.json()).cardsSeen).toBeUndefined()
+  })
+
+  it("a profile payload missing its counts, or with a walk lacking its time, is rejected", () => {
+    expect(parsePaniniProfileHoldings({ walk: null, cards: [] })).toBeNull()
+    expect(parsePaniniProfileHoldings({ ...WALKED, walk: { ...WALKED.walk, last_walk_at: null } })).toBeNull()
+    expect(parsePaniniProfileHoldings({ ...WALKED, walk: "yes" })).toBeNull()
+    // control
+    expect(parsePaniniProfileHoldings(WALKED)?.walk?.unopenedPacks).toBe(12)
+  })
+
+  it("an unread pack count stays null, never 0", () => {
+    const p = parsePaniniProfileHoldings({ ...WALKED, walk: { ...WALKED.walk, unopened_packs: null } })
+    expect(p?.walk?.unopenedPacks).toBeNull()
   })
 })

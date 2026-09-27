@@ -50,4 +50,7 @@ if %ERRORLEVEL% NEQ 0 (
 node scripts\panini-team-walk.mjs >> "%PANINI_LOG%" 2>&1
 set "RC=%ERRORLEVEL%"
 echo ==== %DATE% %TIME% team walk end rc=%RC% ==== >> "%PANINI_LOG%"
+REM Then the collector walk (Panini Collection tab, 2026-09-27) in the same Chrome. Its own
+REM log is %USERPROFILE%\panini-collector-walk.log; its result does not change this task's rc.
+call scripts\panini-collector-walk.bat
 endlocal & exit /b %RC%

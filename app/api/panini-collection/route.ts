@@ -17,13 +17,20 @@
 //     (`fmvPricedCards` < `cardsSeen`), never priced as $0.
 //   · Media paths go through paniniAssetUrl (absolute on the measured host).
 //   · A malformed username is a 400 for the username; a failed read is a 503.
+//
+// ── PROFILE HOLDINGS (2026-09-27, migration 20260927194743) ─────────────────
+// For a username a collector walk has read (linked on an RPC profile, or walked by
+// the box's owner), `profile` carries the cards read off the PUBLIC Panini profile
+// — the whole collection, as of the walk — via panini_profile_holdings. `walk: null`
+// means "never walked", which the tab says, never "holds nothing". Either read
+// failing is a 503: half a collection is not rendered as the collection.
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { normalizePaniniUsername } from "@/lib/profile/collector-identities"
-import { parsePaniniOwnerCards } from "@/lib/panini/owner-cards"
+import { parsePaniniOwnerCards, parsePaniniProfileHoldings } from "@/lib/panini/owner-cards"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 30
@@ -41,16 +48,20 @@ export async function GET(req: NextRequest) {
     )
   }
   try {
-    const { data, error } = await boundedRead(
-      (supabaseAdmin as any).rpc("panini_owner_cards", { p_username: username, p_limit: 200 }),
-      "panini-collection",
-    )
-    if (error) return apiErrorResponse(error, "api/panini-collection", "This collection is unavailable right now.")
-    const parsed = parsePaniniOwnerCards(data)
-    if (!parsed) {
-      return apiErrorResponse(new Error("panini_owner_cards returned an unexpected shape"), "api/panini-collection", "This collection is unavailable right now.")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabaseAdmin as any
+    const [seen, held] = await Promise.all([
+      boundedRead(db.rpc("panini_owner_cards", { p_username: username, p_limit: 200 }), "panini-collection"),
+      boundedRead(db.rpc("panini_profile_holdings", { p_username: username, p_limit: 500 }), "panini-collection-profile"),
+    ])
+    if (seen.error) return apiErrorResponse(seen.error, "api/panini-collection", "This collection is unavailable right now.")
+    if (held.error) return apiErrorResponse(held.error, "api/panini-collection", "This collection is unavailable right now.")
+    const parsed = parsePaniniOwnerCards(seen.data)
+    const profile = parsePaniniProfileHoldings(held.data)
+    if (!parsed || !profile) {
+      return apiErrorResponse(new Error("panini collection RPC returned an unexpected shape"), "api/panini-collection", "This collection is unavailable right now.")
     }
-    return NextResponse.json(parsed, { headers: { "Cache-Control": "private, no-store" } })
+    return NextResponse.json({ ...parsed, profile }, { headers: { "Cache-Control": "private, no-store" } })
   } catch (err) {
     return apiErrorResponse(err, "api/panini-collection", "This collection is unavailable right now.")
   }
