@@ -65,3 +65,13 @@ describe("SniperFilterBar — Character / Franchise on Pinnacle, Player / Team e
     expect(bar("disney-pinnacle", ["Star Wars"]).select).toBeNull()
   })
 })
+
+import { serialCellText } from "@/app/(collections)/[collection]/sniper/SniperClient"
+describe("serialCellText — serial 0 is never printed as '#0'", () => {
+  it("Top Shot floor rows say Floor; unserialised Pinnacle pins say —; real serials keep #N", () => {
+    expect(serialCellText(0, false)).toBe("Floor")
+    expect(serialCellText(0, true)).toBe("—")
+    expect(serialCellText(12, true)).toBe("#12")
+    expect(serialCellText(12, false)).toBe("#12")
+  })
+})

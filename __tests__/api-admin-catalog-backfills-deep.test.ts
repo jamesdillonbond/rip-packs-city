@@ -813,9 +813,10 @@ describe("/api/admin/backfill-pinnacle-catalog", () => {
     })
     fetchMock = installFetchMock([
       gqlRoute("FloorAsks", floorPage([
-        { node: { id: "101", serial_number: "7", edition: { render_id: "rid-1" }, listing: { price: "12.5" } } },
-        { node: { id: "102", serial_number: null, edition: { render_id: "rid-1" }, listing: { price: "20" } } },
-        { node: { id: "103", edition: { render_id: "rid-2" }, listing: { price: "4" } } },
+        // Raw UFix64 (× 1e8), exactly as the Studio GraphQL returns it.
+        { node: { id: "101", serial_number: "7", edition: { render_id: "rid-1" }, listing: { price: "1250000000" } } },
+        { node: { id: "102", serial_number: null, edition: { render_id: "rid-1" }, listing: { price: "2000000000" } } },
+        { node: { id: "103", edition: { render_id: "rid-2" }, listing: { price: "400000000" } } },
         { node: { id: "104", edition: { render_id: "rid-2" }, listing: { price: "0" } } }, // non-positive — dropped
         { node: { edition: { render_id: "rid-3" }, listing: { price: "9" } } }, // no nft id — dropped
       ])),
@@ -824,6 +825,7 @@ describe("/api/admin/backfill-pinnacle-catalog", () => {
     await runDeferred()
 
     const live = spy.rpcCalls.find((c) => c.name === "pinnacle_live_listings_replace")!
+    // DOLLARS, not raw UFix64 — the 1e8 scale is divided out.
     expect(live.args?.p_rows).toEqual([
       { nft_id: "101", render_id: "rid-1", serial_number: 7, price_usd: 12.5 },
       { nft_id: "102", render_id: "rid-1", serial_number: null, price_usd: 20 },

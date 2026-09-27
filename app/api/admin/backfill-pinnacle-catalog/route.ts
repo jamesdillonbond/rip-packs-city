@@ -249,7 +249,11 @@ async function handle(req: NextRequest): Promise<NextResponse> {
           if (Number.isFinite(n) && n > 0) floorByRender.set(rid, n);
         }
         const nftId = e.node?.id ?? null;
-        const p = price != null ? Number(price) : NaN;
+        // ⚠ `listing.price` is RAW UFix64 (× 1e8) — pinnacle_catalog_set_floor_asks
+        // divides the floor map by 1e8 in SQL. The live-listing rows store DOLLARS,
+        // so divide here. (First shipped without it, 2026-09-27: every listing read
+        // 1e8× its price and the Sniper found 0 deals in 16,116 listings.)
+        const p = price != null ? Number(price) / 1e8 : NaN;
         if (rid && nftId && Number.isFinite(p) && p > 0) {
           const serial = e.node?.serial_number != null ? Number(e.node.serial_number) : NaN;
           liveListings.push({ nft_id: String(nftId), render_id: rid, serial_number: Number.isInteger(serial) ? serial : null, price_usd: p });

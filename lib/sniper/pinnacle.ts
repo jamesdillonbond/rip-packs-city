@@ -11,6 +11,7 @@ import { pinnacleRenderImageUrl } from "@/lib/pinnacle/pinnacleFlowty"
 import { PINNACLE_MARKETPLACE_URL, type PinnacleSniperDeal } from "@/lib/pinnacle/pinnacleTypes"
 import { pinnacleSerialFmv, pinnacleSerialFmvData, toMultiplierMap } from "@/lib/pinnacle/serial-fmv"
 import { isSerialisedEditionType } from "@/lib/pinnacle/serialisation"
+import { applyFmvStalenessPenalty, fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness"
 
 /** Oldest live-listing sweep the Sniper will publish. The sweep runs 5×/day
  *  (vercel.json: 45 1,7,13,19 UTC + the 21:37 daily), so > 13 h means at least
@@ -37,6 +38,8 @@ interface LiveListingRow {
   franchises: string[] | null
   fmv_usd: number | string
   fmv_confidence: string | null
+  fmv_days_since_sale?: number | null
+  fmv_sales_count_30d?: number | null
 }
 
 /**
@@ -90,7 +93,14 @@ async function loadLiveDeals(nowMs: number): Promise<{ deals: PinnacleSniperDeal
       : null
     const premium = est && est.band !== "normal" ? est : null
     const serialMult = premium ? premium.multiplier : 1
-    const adjustedFmv = premium ? premium.estimate : baseFmv
+    // The SAME display-time guard every other collection's Sniper applies
+    // (lib/sniper/fmv-staleness.ts): a haircut when the FMV rests on one old
+    // sale, and a cap at the ask for a weak confidence priced from stale sales.
+    const daysSinceSale = r.fmv_days_since_sale != null ? Number(r.fmv_days_since_sale) : null
+    const salesCount30d = r.fmv_sales_count_30d != null ? Number(r.fmv_sales_count_30d) : null
+    const adjustedFmv = applyFmvStalenessPenalty(
+      premium ? premium.estimate : baseFmv, askPrice, r.fmv_confidence ?? "LOW", daysSinceSale, salesCount30d,
+    )
     const discount = Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10
     // Same floor the Flowty mapper applied: only a meaningful discount is a deal.
     if (discount < 5) continue
@@ -138,6 +148,11 @@ async function loadLiveDeals(nowMs: number): Promise<{ deals: PinnacleSniperDeal
       offerAmount: null,
       offerFmvPct: null,
       serialFmvEstimate,
+      // ASK_ONLY / STALE / SALES_ONLY cannot anchor a confident discount — the
+      // shared caveat + verified-first demotion (fmvCannotAnchorDiscount).
+      lowConfidenceFmv: fmvCannotAnchorDiscount(r.fmv_confidence),
+      daysSinceSale,
+      salesCount30d,
     })
   }
   return { deals, listed: Number(newest?.count ?? 0), asOf }
@@ -272,8 +287,8 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
     baseFmv: d.baseFmv,
     adjustedFmv: d.adjustedFmv,
     aspUsd: null,
-    daysSinceSale: null,
-    salesCount30d: null,
+    daysSinceSale: d.daysSinceSale ?? null,
+    salesCount30d: d.salesCount30d ?? null,
     discount: d.discount,
     confidence: d.confidence.toLowerCase(),
     confidenceSource: "rpc_fmv",
@@ -286,6 +301,7 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
     isJersey: false,
     serialSignal: d.serialSignal,
     serialFmvEstimate: d.serialFmvEstimate ?? undefined,
+    lowConfidenceFmv: d.lowConfidenceFmv === true,
     thumbnailUrl: d.thumbnailUrl,
     isLocked: d.isLocked,
     updatedAt: d.updatedAt,

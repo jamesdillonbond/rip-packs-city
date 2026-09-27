@@ -73,6 +73,8 @@ function row(o: Partial<Record<string, any>> = {}) {
     franchises: o.franchises ?? ["Star Wars"],
     fmv_usd: o.fmv_usd ?? 80,
     fmv_confidence: o.fmv_confidence ?? "HIGH",
+    fmv_days_since_sale: o.fmv_days_since_sale ?? 2,
+    fmv_sales_count_30d: o.fmv_sales_count_30d ?? 5,
   }
 }
 
@@ -189,6 +191,24 @@ describe("computePinnacleSniperFeed — each listing priced and linked as its ow
     const res = await computePinnacleSniperFeed()
     expect(res.count).toBe(1)
     expect(res.deals[0].serialMult).toBe(1)
+  })
+
+  // The SAME display-time guards as every other collection (lib/sniper/fmv-staleness).
+  it("applies the shared staleness haircut: one sale, weeks old → FMV x0.7", async () => {
+    state.rows = [row({ price_usd: 20, fmv_usd: 100, fmv_confidence: "MEDIUM", fmv_days_since_sale: 20, fmv_sales_count_30d: 1 })]
+    const d = (await computePinnacleSniperFeed()).deals[0]
+    expect(d.adjustedFmv).toBeCloseTo(70)
+    expect(d.discount).toBeCloseTo(71.4, 1)
+  })
+  it("a weak confidence priced from stale sales is capped at the ask — no fake 'deal'", async () => {
+    state.rows = [row({ price_usd: 20, fmv_usd: 100, fmv_confidence: "LOW", fmv_days_since_sale: 45, fmv_sales_count_30d: 0 })]
+    expect((await computePinnacleSniperFeed()).count).toBe(0)
+  })
+  it("an ASK_ONLY / STALE FMV carries the shared 'discount is uncertain' caveat", async () => {
+    state.rows = [row({ nft_id: "a", fmv_confidence: "ASK_ONLY" }), row({ nft_id: "b", fmv_confidence: "HIGH" })]
+    const byId = Object.fromEntries((await computePinnacleSniperFeed()).deals.map((d: any) => [d.momentId, d]))
+    expect(byId.a.lowConfidenceFmv).toBe(true)
+    expect(byId.b.lowConfidenceFmv).toBe(false)
   })
 
   it("an unserialised edition gets no multiplier even with a serial-like value", async () => {

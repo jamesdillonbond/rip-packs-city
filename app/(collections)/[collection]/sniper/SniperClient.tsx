@@ -63,6 +63,17 @@ import { sniperTierTabs } from "@/lib/collection-tiers";
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+/**
+ * The Serial cell. `serial === 0` is not a serial: on Top Shot it is an
+ * edition-level FLOOR row, on Disney Pinnacle an edition type that carries no
+ * serials at all. The desktop table printed "#0" for both (2026-09-27; mobile
+ * already said "Floor").
+ */
+export function serialCellText(serial: number, isPinnacle: boolean): string {
+  if (serial === 0) return isPinnacle ? "—" : "Floor"
+  return `#${serial}`
+}
+
 const REFRESH_INTERVAL = 30;
 // Tier chips are DRIVEN BY THE COLLECTION'S REAL VOCABULARY (lib/collection-tiers).
 // They used to be one hardcoded Top Shot list plus a Golazos special case, which
@@ -1221,7 +1232,7 @@ function SniperMomentsBody() {
                   {/* Row 3: Serial + Ask + Discount */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1">
-                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", fontSize: "var(--text-sm)" }}>{deal.serial === 0 ? "Floor" : `#${deal.serial}`}</span>
+                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", fontSize: "var(--text-sm)" }}>{serialCellText(deal.serial, isPinnacle)}</span>
                       <SerialBadge deal={deal} collection={collectionSlug} />
                       {deal.isJersey && (
                         <span className="rpc-chip" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}><SpecialSerialGlyph tag="jersey" size={11} collection={collectionSlug} />Jersey</span>
@@ -1373,7 +1384,7 @@ function SniperMomentsBody() {
                           </div>
                         </div>
                       </td>
-                      <td style={{ padding: "8px 12px 8px 4px", textAlign: "right", fontFamily: "var(--font-mono)" }}>#{deal.serial}</td>
+                      <td style={{ padding: "8px 12px 8px 4px", textAlign: "right", fontFamily: "var(--font-mono)" }} title={isPinnacle && deal.serial === 0 ? "This Pinnacle edition type is not serialised" : undefined}>{serialCellText(deal.serial, isPinnacle)}</td>
                       <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>{timeAgo(deal.updatedAt)}</td>
                       <td style={{ padding: "8px 12px", textAlign: "right" }}>—</td>
                       <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)" }}>${fmt(deal.askPrice)}</td>
@@ -1540,7 +1551,7 @@ function SniperMomentsBody() {
 
                     {/* Serial — Task 3: serial intelligence chips */}
                     <td style={{ padding: "8px 12px 8px 4px", textAlign: "right" }}>
-                      <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)" }}>{deal.serial === 0 ? "Floor" : `#${deal.serial}`}</div>
+                      <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)" }}>{serialCellText(deal.serial, isPinnacle)}</div>
                       {deal.circulationCount > 0 && (
                         <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>/ {deal.circulationCount.toLocaleString()}</div>
                       )}
