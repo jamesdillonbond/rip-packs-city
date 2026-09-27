@@ -173,4 +173,39 @@ describe("analyze — whose budget vouches for which read", () => {
     // racing a full production scan.
     expect(inFixtureCwd(() => analyze("app/does-not-exist.tsx")).readAt).toBeNull()
   })
+
+  // 2026-09-27 — `import type` carries no code, so no read is reachable through
+  // it. Following it put two Panini pages on the report (2 > 0, main red) via
+  // client components that import only `type PaniniCoverage`.
+  it("a type-only import does not reach the imported module's read", () => {
+    writeFileSync(
+      page,
+      ['import type { Row } from "@/lib/raw-lib"', "export default async function P() {}"].join("\n"),
+    )
+    expect(inFixtureCwd(() => analyze("app/page.tsx")).readAt).toBeNull()
+  })
+
+  it("a MULTI-LINE type-only import is classified by its first line", () => {
+    writeFileSync(
+      page,
+      ["import type {", "  Row,", "  Other,", '} from "@/lib/raw-lib"', "export default async function P() {}"].join("\n"),
+    )
+    expect(inFixtureCwd(() => analyze("app/page.tsx")).readAt).toBeNull()
+  })
+
+  it("CONTROL — a mixed import (runtime value + type) still reaches the read", () => {
+    writeFileSync(
+      page,
+      ['import rows, { type Row } from "@/lib/raw-lib"', "export default async function P() {}"].join("\n"),
+    )
+    expect(inFixtureCwd(() => analyze("app/page.tsx")).readAt).toBe("lib/raw-lib.ts")
+  })
+
+  it("CONTROL — a multi-line RUNTIME import still reaches the read", () => {
+    writeFileSync(
+      page,
+      ["import {", "  rows,", '} from "@/lib/raw-lib"', "export default async function P() {}"].join("\n"),
+    )
+    expect(inFixtureCwd(() => analyze("app/page.tsx")).readAt).toBe("lib/raw-lib.ts")
+  })
 })

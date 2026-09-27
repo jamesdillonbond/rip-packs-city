@@ -203,13 +203,41 @@ function resolveModule(spec) {
   return null
 }
 
+// ⚠ `import type` / `export type` ARE SKIPPED (2026-09-27). They are erased at
+// compile time and carry no code, so no read is reachable through them — yet
+// the bare `from "…"` match followed them. Five Panini client components import
+// only `type PaniniCoverage` from lib/panini/coverage.ts, which also holds the
+// (boundedRead-wrapped) read the API routes call; that put /[collection]/packs
+// and /[collection]/sets on this report at 2 > 0 and reddened main for hours,
+// with no page able to reach the read. A mixed import (`import X, { type Y }`)
+// still counts: X is runtime. This is a sensitivity fix, not a ceiling raise.
+const TYPE_ONLY_IMPORT = /^\s*(?:import|export)\s+type\b/
+
 function importsOf(src) {
   const out = []
-  for (const m of src.matchAll(/from\s+["']@\/((?:lib|components)\/[A-Za-z0-9._$/-]+)["']/g)) {
-    const f = resolveModule(m[1])
+  for (const m of src.matchAll(/(^|\n)([^\n]*?)from\s+["']@\/((?:lib|components)\/[A-Za-z0-9._$/-]+)["']/g)) {
+    const stmt = statementHead(src, m.index + m[1].length)
+    if (TYPE_ONLY_IMPORT.test(stmt)) continue
+    const f = resolveModule(m[3])
     if (f) out.push(f)
   }
   return out
+}
+
+/**
+ * The start of the import/export statement that owns the `from` at `at`: walks
+ * back to the nearest line beginning with `import` or `export`, so a multi-line
+ * `import type {\n  A,\n  B,\n} from "…"` is classified by its first line.
+ */
+function statementHead(src, at) {
+  let i = at
+  for (;;) {
+    const lineStart = src.lastIndexOf("\n", i - 1) + 1
+    const line = src.slice(lineStart, src.indexOf("\n", lineStart) === -1 ? undefined : src.indexOf("\n", lineStart))
+    if (/^\s*(?:import|export)\b/.test(line) || lineStart === 0) return line
+    i = lineStart - 1
+    if (i <= 0) return line
+  }
 }
 
 /**
