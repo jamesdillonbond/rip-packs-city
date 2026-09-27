@@ -1,36 +1,40 @@
 {
-  "generated_at_pt": "2026-09-26 ~11:00 AM PT",
-  "generated_at_utc": "2026-09-26T18:00Z",
-  "pass": "daytime autonomous pass (Cowork cloud + laptop VM, Trevor-requested 5 h, ~7:55 AM -> ~12:55 PM PT). PUSH-CAPABLE via path 1 (laptop VM + .rpc-git-cred). A concurrent Claude Code web session was pushing ~every 10 min; this pass took DB/ops/older register items.",
-  "shipped": 10,
+  "generated_at_pt": "2026-09-27 ~1:10 AM PT",
+  "generated_at_utc": "2026-09-27T08:10Z",
+  "pass": "overnight autonomous pass (Cowork cloud + laptop VM). PUSH-CAPABLE via Path A (laptop VM + .rpc-git-cred). Genuine overnight (real time confirmed via DB now() vs app-stamped rows; no clock skew). 0 shipped, 0 reverted, 0 new queued — honest quiet night.",
+  "shipped": 0,
   "reverted": 0,
-  "verdict": "GREEN. Security all []; trust_health 38/38 ok; pg_cron 10,209/0 failed in 24 h; stalled = TS active-listings only (laptop Windows task dark since 09-25 6:13 AM PT) -> hand-run sweep, stalled [] after. Vercel: chronic groups only. See docs/handoff-2026-09-26-daytime-autonomous-pass.md.",
+  "verdict": "GREEN. Security all []; trust_health 38/38 ok, 0 breaches; sentinel_ts_uuid_editions_48h 0; Sentry 0 new/24h; client_error beacon 11/24h ALL crawler UA. Stalled = topshot-active-listings-ingest only (Trevor's residential Windows box dark since 09-26 16:13Z; medium/visibility). Vercel: last READY 492f8cb5; tip 2c351bae correctly CANCELED (docs+migration only). See docs/handoff-2026-09-27-overnight-pass.md.",
   "health": {
-    "security_invariants": "clean (invariants, anon write, secdef anon, search_path, WHEN OTHERS blind all [])",
+    "security_invariants": "clean (invariants, anon_write_holes, rls_off_base_tables, secdef_anon_violations all [])",
     "trust_health_breaches": 0,
-    "stalled_pipelines": "[] after the hand-run sweep (was topshot-active-listings-ingest 1,544 min)",
-    "pgcron_24h": "10,209 succeeded / 0 failed",
+    "stalled_pipelines": "topshot-active-listings-ingest 958 min (residential Windows box dark; medium, visibility only)",
+    "pgcron_fails_24h": "atlas-market-feed 15 + atlas-editions-refresh 4 (Cloudflare 403 self-heal, freshness ok), sync-nba-projections 8 (#8 shelved), wallet-backfill 2/2/1, pack-mint-probes 2, candy-listings-indexer 1, pinnacle-wmc-render-id 1 — all known/transient",
     "pipeline_alerts": [
-      "panini-team-walk medium (R124 pooled; green since 09-24)",
-      "pg_net_http_422 high = GraphQL schema probes (self-inflicted)",
-      "pg_net_http_403 critical = Cloudflare challenge samples",
-      "atlas 403 arms info (designed)"
+      "topshot-active-listings-ingest cron_silent medium (box dark; expected)",
+      "atlas-editions-upstream-403 info (designed, self-healing)",
+      "atlas-market-upstream-403 info (designed, self-healing)",
+      "flow-rest-moment-moved-400 info (designed borrowMoment panic)",
+      "unmapped-sales-nfl_all_day info (7098 open, non-stationary drain)"
     ],
-    "vercel_24h": "DEP0169 warn, All Day GQL 403 (RPC fallback), sparse pack-detail 5 s read timeouts; /api/market 22P02 fixed by the concurrent session (1e248c9c2)",
-    "site_crawl": "14 key pages -> 530 internal links: 474 x 200, 42 x 404 (all Panini fan-out, FIXED), rest transient/redirects; 2nd level 585 links: no real 404s"
+    "sentry_new_24h": 0,
+    "client_error_beacon_24h": "11, all crawler UA (Lightpanda/Lightworks; not user-facing)",
+    "vercel": "last READY 492f8cb5; tip 2c351bae CANCELED (docs+migration only, ignoreCommand skip); no ERROR deploys; public_board_empty 0, public_board_slow 0",
+    "db_size_mb": 29433
   },
   "fmv_high_med": {
-    "nba_top_shot": 8007,
-    "nfl_all_day": 1511,
-    "disney_pinnacle": 801,
-    "panini_blockchain": 1845,
+    "nba_top_shot": 8043,
+    "nfl_all_day": 1522,
+    "disney_pinnacle": 823,
+    "panini_blockchain": 1846,
     "candy_mlb": 23,
-    "laliga_golazos": 4
+    "laliga_golazos": 4,
+    "ufc_strike": 0
   },
   "editions_by_collection": {
     "nba_top_shot": 14460,
     "nfl_all_day": 6190,
-    "panini_blockchain": 5095,
+    "panini_blockchain": 5101,
     "laliga_golazos": 575,
     "ufc_strike": 518,
     "candy_mlb": 125
@@ -38,17 +42,20 @@
   "sentinels": {
     "sentinel_ts_uuid_editions_48h": 0,
     "unmapped_resolution_backlog_max": 2,
-    "topshot_pull_value_zero": 38134
+    "edition_integrity_flags": 7
   },
-  "deltas_vs_prev": "FMV HIGH+MED vs 01:11 AM pass: nba_top_shot 7976->8007, nfl_all_day 1505->1511, disney_pinnacle 771->801, panini_blockchain 1842->1845, candy_mlb 23->23, laliga_golazos 4->4",
-  "needs_trevor": [
-    "laptop Task Scheduler: topshot-active-listings-ingest silent since 09-25 6:13 AM PT (Atlas still passes in browser mode)",
-    "rotate ATLAS_POOL_INGEST_KEY (#144)",
-    "#22",
-    "#64",
-    "#140",
-    "wrangler deploy pack-events-ingest (#134/#123)",
-    "enrich-ufc-wallet CLI deploy"
+  "deltas_vs_prev": "FMV HIGH+MED vs 09-26 18:00Z: nba_top_shot 8007->8043 (+36), nfl_all_day 1511->1522 (+11), disney_pinnacle 801->823 (+22), panini_blockchain 1845->1846 (+1), candy_mlb 23->23, laliga_golazos 4->4. Editions panini 5095->5101. All up or flat.",
+  "open_watches": [
+    "circulation-sampler fix (2c351bae / migration 20260927042000) first exercised at 03:25-03:29 UTC 09-28 (8:25 PM PT 09-27); falsifier = 0x429 in net._http_response + 50x ok in topshot_circulation_chain_audit. Tonight's 03:25Z tick was PRE-fix (10x429) and is NOT a regression."
   ],
-  "housekeeping": "cowork-20260926-*.patch files (16) left in the laptop repo root (gitignored *.patch); delete permission was not requested."
+  "needs_trevor": [
+    "laptop Task Scheduler: topshot-active-listings-ingest silent since 09-26 16:13Z (board's only live feeder)",
+    "rotate ATLAS_POOL_INGEST_KEY (#144)",
+    "wrangler deploy pack-events-ingest (#134/#123)",
+    "enrich-ufc-wallet CLI deploy",
+    "#22 (credential-purge residue)",
+    "#64 (Panini is_active decision)",
+    "#140"
+  ],
+  "housekeeping": "inbox backlog 549 files left as-is (INDEX.md CI assertions gate archival; consistent with recent passes). Two newest candidates dispositioned in the handoff."
 }
