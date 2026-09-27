@@ -55,6 +55,13 @@ interface Props {
    * could not, because `[]` reached it with no provenance.
    */
   initialFailed?: boolean
+  /**
+   * false for a collection whose sales are not a recorded feed (Panini: RPC keeps
+   * the LAST sale per card, not every sale). The 1Y/ALL ranges read sale prints,
+   * so they are hidden rather than rendered as "too few recorded sales", and the
+   * FMV empty state stops blaming sales. Default true (every other collection).
+   */
+  salesTracked?: boolean
 }
 
 interface SalePoint {
@@ -119,7 +126,8 @@ export function fmtUsd(n: number | null | undefined): string {
   return `$${n.toFixed(2)}`
 }
 
-export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial, initialFailed = false }: Props) {
+export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial, initialFailed = false, salesTracked = true }: Props) {
+  const ranges = salesTracked ? RANGES : RANGES.filter(r => r.source === "fmv")
   const [days, setDays] = useState<number>(30)
   const [data, setData] = useState<HistoryPoint[]>(initial)
   const [saleData, setSaleData] = useState<SalePoint[]>([])
@@ -200,7 +208,7 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial,
   return (
     <div>
       <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-        {RANGES.map(r => (
+        {ranges.map(r => (
           <button
             key={r.days}
             type="button"
@@ -251,7 +259,9 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial,
         }}>
           {source === "sales"
             ? "Too few recorded sales in this window to chart"
-            : "Building price history — too few sales to chart"}
+            : salesTracked
+              ? "Building price history — too few sales to chart"
+              : "Building price history — not enough daily FMV readings to chart yet"}
         </div>
       ) : (
         <div style={{ width: "100%", height: 220 }}>

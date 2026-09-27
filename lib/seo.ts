@@ -765,7 +765,9 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
   const cm = closedMarket(collectionUrlSlug)
   const title = cm
     ? `${subject} — ${context} · Value History & Sales (${cm.venue} market closed) | ${collectionLabel} | Rip Packs City`
-    : `${subject} — ${context} · Value, Floor & Sales | ${collectionLabel} | Rip Packs City`
+    : collectionUrlSlug === "panini-blockchain"
+      ? `${subject} — ${context} · Value & Asks | ${collectionLabel} | Rip Packs City`
+      : `${subject} — ${context} · Value, Floor & Sales | ${collectionLabel} | Rip Packs City`
   const descParts = [
     cm
       ? (fmvUsd
@@ -773,7 +775,9 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
           : `${subject} ${context} on ${collectionLabel} — historical value and sales. The ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}.`)
       : (fmvUsd
           ? `${subject} ${context} is worth ~${fmtUsd(fmvUsd)} (FMV) on ${collectionLabel}.`
-          : `${subject} ${context} on ${collectionLabel} — live fair-market value, floor, and recent sales.`),
+          : collectionUrlSlug === "panini-blockchain"
+            ? `${subject} ${context} on ${collectionLabel} — fair-market value and live asks.`
+            : `${subject} ${context} on ${collectionLabel} — live fair-market value, floor, and recent sales.`),
     tier ? `Tier ${tier}.` : null,
     seriesLabel ? `${formatSeriesLabel(seriesLabel, collectionUrlSlug)}.` : null,
     circulation ? `Circulation ${fmtCount(circulation)}.` : null,
@@ -793,7 +797,11 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
     // was one defect, not five.
     cm
       ? "Sales history, the FMV history chart, and the packs that contained this edition."
-      : "Live FMV, recent sales, history chart, and packs that contained this edition.",
+      // Panini (2026-09-27): no recorded sales feed and no pack pool per edition —
+      // the page shows FMV, live asks and the last sale seen per card.
+      : collectionUrlSlug === "panini-blockchain"
+        ? "FMV, live asks on Panini's marketplace, the last sale seen per card, and FMV history."
+        : "Live FMV, recent sales, history chart, and packs that contained this edition.",
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
   const canonical = `${BASE_URL}/${collectionUrlSlug}/edition/${encodeURIComponent(routeSlug)}`
@@ -849,14 +857,16 @@ export function playerPageMetadata(
   const fmvTotal = n(payload, "fmv_total_usd")
   const headshot = s(payload, "headshot_url")
   const teamLabel = isCharacter ? "Franchise" : "Team"
-  const title = `${name} — ${isCharacter ? "Pins" : "Moments"} & Market Value | ${collectionLabel} | Rip Packs City`
+  // Panini (2026-09-27) sells CARDS, and records no sales feed to take a top sale from.
+  const isPanini = collectionUrlSlug === "panini-blockchain"
+  const title = `${name} — ${isCharacter ? "Pins" : isPanini ? "Cards" : "Moments"} & Market Value | ${collectionLabel} | Rip Packs City`
   const descParts = [
     `${name} (${noun}) on ${collectionLabel}.`,
     team ? `${teamLabel}: ${team}.` : null,
     // A Pinnacle character page counts PINS (the render catalog, 2026-09-26).
     editionCount ? `${isCharacter ? countNoun(editionCount, "pin", "pins") : countNoun(editionCount, "edition", "editions")}.` : null,
     fmvTotal ? `Portfolio FMV ${fmtUsd(fmvTotal)}${fmvClosedQualifier(collectionUrlSlug)}.` : null,
-    isCharacter ? "Pin grid, top sale, and set breakdown." : "Edition grid, top sale, and set breakdown.",
+    isCharacter ? "Pin grid, top sale, and set breakdown." : isPanini ? "Card grid, live asks, and set breakdown." : "Edition grid, top sale, and set breakdown.",
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
   const canonical = `${BASE_URL}/${collectionUrlSlug}/player/${encodeURIComponent(playerSlug)}`
@@ -1021,7 +1031,9 @@ export function editionJsonLd(
     description: `${playerName}${setName ? " — " + setName : ""}${tier ? " (" + tier + ")" : ""} on ${label}. ${
       isMarketClosed(collectionUrlSlug)
         ? `Historical value and sales history — the ${closedMarket(collectionUrlSlug)!.venue} market for this collection closed on ${formatClosedOn(closedMarket(collectionUrlSlug)!.closedOn)}.`
-        : "Live FMV, recent sales, price history, and the packs that contained this edition."
+        : collectionUrlSlug === "panini-blockchain"
+          ? "FMV, live asks on Panini's marketplace, the last sale seen per card, and FMV history."
+          : "Live FMV, recent sales, price history, and the packs that contained this edition."
     }`,
   }
   // Google caps sku length (~50 chars); TS integer pairs ("8:133") keep their

@@ -63,6 +63,7 @@
 // whole surface is hand-rolled route handlers.
 
 import type { MetadataRoute } from 'next'
+import { paniniSubjectIsPlayer } from '@/lib/panini/subjects'
 import { createClient } from '@supabase/supabase-js'
 import { publishedCollections } from '@/lib/collections'
 import { getCollectionByDbSlug, getCollectionByUuid } from '@/lib/collection-slug'
@@ -185,6 +186,15 @@ const EDITION_COLLECTION_IDS = [
   // adds ~125 edition URLs plus their derived player/set/team slugs — a rounding
   // error against the ~23.5K already enumerated here.
   '209ade70-32c5-4470-bc7c-4793d660f713', // candy_mlb
+  // panini_blockchain — added 2026-09-27 in the SAME commit that registered
+  // Panini in lib/collection-slug.ts, on the same rule as Candy above. Measured
+  // first: get_edition_detail / get_player_detail / get_set_detail answer for
+  // this UUID (5,101 bridged editions, 62 sets via sets_summary's Panini arm,
+  // 552 of 552 linkable player names resolve). team_name is NULL on every
+  // Panini row (a nation is not a team), so no team URLs; dual-player cards and
+  // nation/poster sets are kept out of the player map below. Its pack pools are
+  // not in pack_distributions, so PACK_COLLECTION_IDS gains nothing from it.
+  'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b', // panini_blockchain
 ]
 
 // Pack distributions exist for the edition collections plus Disney Pinnacle.
@@ -695,7 +705,10 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
       // emitted from teamMap below. Same rule as lib/entity-href.ts. Measured:
       // 57 of the 1,413 Top Shot player URLs in the sitemap 404'd; 44 were this.
       const isTeamMoment = !!e.player_name && !!e.team_name && e.player_name.trim() === e.team_name.trim()
-      if (e.player_name && !isTeamMoment) {
+      // Panini: a dual-player card or a Team Badges / World Cup Posters card has no
+      // player page (lib/panini/subjects.ts — the bridge's own rule).
+      const noPlayerPage = coll.urlSlug === "panini-blockchain" && !paniniSubjectIsPlayer(e.player_name, e.set_name)
+      if (e.player_name && !isTeamMoment && !noPlayerPage) {
         // 2026-09-25: an edition label that is a registered ALIAS of the player
         // ("Patrick Mahomes II" → patrick-mahomes) is listed under the canonical
         // slug, never under a URL that 308s.

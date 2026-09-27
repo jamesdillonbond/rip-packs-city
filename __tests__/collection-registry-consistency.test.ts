@@ -60,12 +60,17 @@ const ENTITY_PAGE_URL_SLUGS = [
   "ufc",
   "disney-pinnacle",
   "candy-mlb",
+  // 2026-09-27 — Panini joined (its entity pages exist: bridged editions/players/
+  // sets, absolute media, sets_summary arm, isPanini arms on the pages).
+  "panini-blockchain",
 ]
 // Published collections that route NO entity pages. Empty until 2026-09-25,
 // when Panini published (Overview + Market) with no /edition, /player, /set
 // routes — its WC Prizm cards have no entity corpus yet. A thin collection must
 // expose none of ENTITY_LINKING_PAGES EXCEPT a page in FACADE_GATED_PAGES.
-const THIN_PUBLISHED: string[] = ["panini-blockchain"]
+// Empty again since 2026-09-27 (Panini joined the facade); the checks below hold
+// at a population of zero and re-arm the day a thin collection publishes.
+const THIN_PUBLISHED: string[] = []
 // Entity-linking pages whose component SUPPRESSES those links when the
 // collection has no facade record (MarketClient's `hasEntityPages`, pinned
 // below as a source fact). Only these may appear on a thin collection.
@@ -143,7 +148,8 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
     // Card edition link, table edition link, player link, set link.
     expect(src).toContain("listing.editionKey && hasEntityPages(collectionUrlSlug)")
     expect(src).toContain("l.editionKey && entityLinks")
-    expect(src).toContain("l.playerName && !entityLinks")
+    // 2026-09-27: the plain-name branch also covers Panini subjects with no player page.
+    expect(src).toContain("l.playerName && (!entityLinks ||")
     expect(src).toContain("l.setName && !entityLinks")
   })
 
@@ -223,7 +229,12 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
   // facade must keep refusing it — a facade record would turn MarketClient's
   // suppressed links back on, and every one of them would 404.
   it("does not expose unpublished chain-two placeholders through the entity facade", () => {
-    expect(getCollectionByUrlSlug("panini-blockchain")).toBeNull()
+    // INVERTED 2026-09-27: Panini's entity pages now exist, so the facade must
+    // route it (a MISSING record would now be the 404 defect). The property the
+    // old assertion held — no unpublished placeholder in the facade — is held by
+    // rwa, which is still unpublished.
+    expect(getCollectionByUrlSlug("panini-blockchain")).not.toBeNull()
+    expect(getCollectionByUrlSlug("rwa")).toBeNull()
     expect(getCollectionByUrlSlug("candy-mlb")).not.toBeNull()
   })
 })

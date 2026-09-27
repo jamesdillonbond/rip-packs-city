@@ -37,7 +37,7 @@ const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
 // Panini Blockchain — published:false, collections.is_active false, and ZERO
 // rows in `editions`, so it has no entity route and never will until it gets
 // one. It replaced Candy as this file's route-less fixture on 2026-09-19.
-const PANINI = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
+const UNROUTED = "00000000-0000-4000-8000-000000000001"
 
 const req = (qs: string) =>
   ({ nextUrl: new URL("http://localhost/api/search" + qs) }) as any
@@ -116,11 +116,12 @@ describe("GET /api/search", () => {
     // always returned Candy hits (7 for "trout", measured live), and every one
     // of them was being thrown away before it reached the reader.
     //
-    // Panini is the honest fixture for this invariant: published:false,
-    // collections.is_active false, and zero rows in `editions`, so there is no
-    // entity route to link to and a link would genuinely 404.
+    // ⚠ AND THE FIXTURE MOVED AGAIN 2026-09-27: it was Panini, whose entity
+    // routes now EXIST (bridged editions, facade record) — so the Panini row is
+    // no longer an unroutable one. The invariant is "a collection the facade
+    // does not route", so the fixture is now a UUID no collection owns.
     state.rpc = {
-      data: [row(), row({ collection_id: PANINI, label: "Mickey Moniak", slug: "mickey-moniak" })],
+      data: [row(), row({ collection_id: UNROUTED, label: "Mickey Moniak", slug: "mickey-moniak" })],
       error: null,
     }
     const j = await (await GET(req("?q=mickey"))).json()

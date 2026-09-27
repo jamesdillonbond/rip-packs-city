@@ -30,6 +30,8 @@ export const ASK_LABEL: Record<string, string> = {
   "disney-pinnacle": "Pinnacle ask",
   "ufc": "UFC ask",
   "ufc-strike": "UFC ask",
+  // 2026-09-27: Panini's lowest listed serial re-read in the last 7 days.
+  "panini-blockchain": "Panini ask",
 }
 
 export function notableTagLabel(tag: string): string {

@@ -317,6 +317,11 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
 
   const labels = getEntityLabels(collection)
   const isCharacter = detail.is_character === true
+  // Panini (entity pages opened 2026-09-27): no `sales` rows, and the bridge has
+  // no floor source, so floor_total_usd is the FMV total restated (COALESCE in
+  // get_player_detail) — a "Recent-Low Total" equal to FMV would be a fabricated
+  // floor. Both sale-derived sections are replaced below.
+  const isPanini = collection === "panini-blockchain"
   // get_player_editions is STRUCTURAL and throws (203 occurrences / 199 users).
   //
   // ⚠ PER-SECTION, NOT PER-PAGE (R19, 2026-08-23). This used to return
@@ -414,7 +419,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
         <StatCell label="Editions" value={fmtCount(detail.edition_count)} />
         <StatCell label="Total Mint" value={fmtCount(detail.total_circulation)} />
         <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
-        <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={RECENT_LOW_HINT} />
+        {!isPanini && <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={RECENT_LOW_HINT} />}
       </section>
 
       {(detail.first_minted_at || detail.last_minted_at) && (
@@ -425,11 +430,22 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       )}
 
       {/* ── Top sales ────────────────────────────────────────────────────── */}
+      {isPanini ? (
+        <Section title="Sales">
+          {/* NOT "No recorded sales yet": that would be a claim about Panini's
+              market. RPC keeps the last sale Panini shows per card, on each
+              edition page — it has no sales feed to rank a top sale from. */}
+          <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+            RPC doesn&rsquo;t record every Panini sale, so there is no top-sales list here. Each edition page shows its live asks and the last sale seen for each card.
+          </div>
+        </Section>
+      ) : (
       <Section title="Top Sales">
         <Suspense fallback={<TopSalesSkeleton />}>
           <TopSalesRows collection={collection} collectionId={coll.id} slug={slug} />
         </Suspense>
       </Section>
+      )}
 
       {/* ── Editions grid ────────────────────────────────────────────────── */}
       <Section title="Editions">
@@ -450,9 +466,14 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       </Section>
 
       {/* ── Top collectors (rookie ownership index) ──────────────────────── */}
-      <Suspense fallback={null}>
-        <TopCollectorsSection playerName={detail.name} />
-      </Suspense>
+      {/* ⛔ TOP SHOT ONLY (2026-09-27). get_topshot_rookie_collectors takes a player
+          NAME and no collection, over a Top Shot index — on any other collection a
+          same-named player would be shown Top Shot wallets (substitution). */}
+      {collection === "nba-top-shot" && (
+        <Suspense fallback={null}>
+          <TopCollectorsSection playerName={detail.name} />
+        </Suspense>
+      )}
 
       {/* ── Season stats (ESPN, through the league-id crosswalk) ─────────── */}
       <Suspense fallback={null}>

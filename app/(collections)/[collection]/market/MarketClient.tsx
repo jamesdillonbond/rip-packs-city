@@ -34,6 +34,7 @@ import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid, collectionHasLocking } from "@/lib/collections"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import IpfsImg from "@/components/media/IpfsImg"
+import { paniniSubjectIsPlayer } from "@/lib/panini/subjects"
 import { fmvBasis } from "@/lib/fmv-basis"
 import { askAgeStamp } from "@/lib/market/ask-freshness"
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
@@ -1135,7 +1136,9 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   ) : null}
                 </td>
                 <td style={{ ...td, color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", fontWeight: 700 }}>
-                  {l.playerName && !entityLinks ? (
+                  {l.playerName && (!entityLinks || (collectionUrlSlug === "panini-blockchain" && !paniniSubjectIsPlayer(l.playerName, l.setName))) ? (
+                    // Panini dual-player cards, Team Badges and World Cup Posters
+                    // have no player page (2026-09-27) — name, no 404 link.
                     l.playerName
                   ) : l.playerName ? (
                     <Link

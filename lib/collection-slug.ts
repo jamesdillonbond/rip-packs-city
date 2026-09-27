@@ -98,6 +98,22 @@ const RECORDS: CollectionSlugInfo[] = [
     displayName: "Candy MLB",
     urlSlug: "candy-mlb",
   },
+  // 2026-09-27 — Panini WC Prizm (Trevor: "proceed with all"). The generic
+  // get_edition_detail / get_player_detail / get_set_detail answer from Panini's
+  // BRIDGED `editions` / `players` / `sets` rows (sync_panini_editions_to_shared),
+  // media URLs are absolute on the measured asset host (20260927180515), and set
+  // pages resolve through sets_summary's Panini arm (20260927180751). Every
+  // section that reads a shared table Panini has no rows in (`sales`,
+  // `wallet_moments_cache`, `edition_offers`, `pack_distributions`) branches on
+  // the collection instead of calling its empty read "none" — see the
+  // `isPanini` arms on the edition, player and set pages. `collections.is_active`
+  // stays false (known-issues #64); this record is not that flag.
+  {
+    id: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",
+    dbSlug: "panini_blockchain",
+    displayName: "Panini Blockchain",
+    urlSlug: "panini-blockchain",
+  },
 ]
 
 const BY_URL_SLUG = new Map<string, CollectionSlugInfo>()

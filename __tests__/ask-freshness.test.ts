@@ -203,7 +203,10 @@ describe("edition page is wired to the provenance helper", () => {
   )
 
   it("is not vacuous: the ask cell and its fallback chain are still there", () => {
-    expect(src).toContain("const askValue = highOffer?.low_ask ?? fmv?.cross_market_ask")
+    // Re-pinned 2026-09-27: the shared chain now sits in the non-Panini arm of the
+    // assignment (Panini reads its own ask from panini_market_board).
+    expect(src).toContain("const askValue = isPanini")
+    expect(src).toContain("(highOffer?.low_ask ?? fmv?.cross_market_ask ?? null)")
     expect(src).toContain("label={askLabel}")
   })
 

@@ -16,6 +16,7 @@
 // until then this read the SET-level pinnacle_editions — see fetchLinkRows).
 
 import Link from "next/link"
+import { paniniSubjectIsPlayer } from "@/lib/panini/subjects"
 import { seriesPageLabel } from "@/lib/series-label"
 import { unstable_cache } from "next/cache"
 import { getCollection } from "@/lib/collections"
@@ -87,7 +88,16 @@ async function loadHubs(collection: string): Promise<{ hubs: Hubs; ok: boolean; 
   return {
     hubs: {
       sets: distinctSlugLinks(data.editions.map((r) => r.set_name), collection, "set", 12),
-      players: distinctSlugLinks(data.editions.map((r) => r.player_name), collection, "player", 12),
+      // Panini (2026-09-27): dual-player cards and nation/poster sets have no player
+      // page — the same rule the bridge uses to link a `players` row.
+      players: distinctSlugLinks(
+        data.editions
+          .filter((r) => collection !== "panini-blockchain" || paniniSubjectIsPlayer(r.player_name, r.set_name))
+          .map((r) => r.player_name),
+        collection,
+        "player",
+        12,
+      ),
       teams: distinctSlugLinks(data.editions.map((r) => r.team_name), collection, "team", 10, true),
       // Slug from the DB label (that is the series page's URL); the PILL reads
       // the site-wide series name ("Series 2025-26", not "Series 7") — 2026-09-24.

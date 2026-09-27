@@ -138,7 +138,9 @@ export type AskStampKind = "changed" | "checked" | "listed"
 export function askStampKind(collectionSlug: string | null | undefined): AskStampKind {
   const s = (collectionSlug ?? "").replace(/-/g, "_").toLowerCase()
   if (s === "nfl_all_day" || s === "laliga_golazos") return "listed"
-  if (s === "disney_pinnacle" || s === "candy_mlb") return "checked"
+  // Panini (2026-09-27): the stamp is panini_card_serials.captured_at, the time
+  // the walk last READ the serial — a check, not a listing or change time.
+  if (s === "disney_pinnacle" || s === "candy_mlb" || s === "panini_blockchain") return "checked"
   return "changed"
 }
 

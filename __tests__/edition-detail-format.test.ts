@@ -28,7 +28,8 @@ describe("ASK_LABEL", () => {
     // two live forms — canonical "ufc" (lib/collections.ts id + sitemap) and the
     // "ufc-strike" alias (/moment links) — so BOTH must be present.
     expect(Object.keys(ASK_LABEL).sort()).toEqual(
-      ["disney-pinnacle", "laliga-golazos", "nba-top-shot", "nfl-all-day", "ufc", "ufc-strike"].sort(),
+      // panini-blockchain joined 2026-09-27 with its entity pages ("Panini ask").
+      ["disney-pinnacle", "laliga-golazos", "nba-top-shot", "nfl-all-day", "panini-blockchain", "ufc", "ufc-strike"].sort(),
     )
   })
   it("labels UFC as 'UFC ask' on the CANONICAL 'ufc' slug the route receives", () => {

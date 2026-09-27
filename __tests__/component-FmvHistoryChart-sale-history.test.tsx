@@ -150,3 +150,28 @@ describe("fmtBucket", () => {
     expect(fmtBucket("2026-07-04", undefined)).toBe("Jul 4")
   })
 })
+
+// 2026-09-27 — Panini records no sales feed (RPC keeps the LAST sale per card),
+// so its edition page passes salesTracked={false}: the sale-print ranges would
+// only ever say "Too few recorded sales in this window", a claim about a market
+// whose sales we do not record.
+describe("FmvHistoryChart — salesTracked={false} (Panini)", () => {
+  it("offers FMV ranges only — no 1Y/ALL sale-print chips", () => {
+    render(<FmvHistoryChart collectionUrlSlug="panini-blockchain" routeSlug="packcard-1" initial={initial} salesTracked={false} />)
+    expect(screen.queryByRole("button", { name: "1Y" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "ALL" })).toBeNull()
+    expect(screen.getByRole("button", { name: "30d" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "90d" })).toBeTruthy()
+  })
+
+  it("an empty FMV series does not blame sales", () => {
+    const { container } = render(<FmvHistoryChart collectionUrlSlug="panini-blockchain" routeSlug="packcard-1" initial={[]} salesTracked={false} />)
+    expect(container.textContent).toContain("not enough daily FMV readings")
+    expect(container.textContent).not.toMatch(/sales/i)
+  })
+
+  it("control: the default still offers the sale-print ranges", () => {
+    renderChart()
+    expect(screen.getByRole("button", { name: "1Y" })).toBeTruthy()
+  })
+})

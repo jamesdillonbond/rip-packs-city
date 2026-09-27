@@ -65,6 +65,15 @@ import { fmvBasis } from "@/lib/fmv-basis"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import { dapperMarketEditionUrl } from "@/lib/collections"
+import {
+  fetchPaniniEditionAsk,
+  fetchPaniniEditionSerials,
+  paniniEditionUrl,
+  paniniSubjectIsPlayer,
+  PANINI_ASK_CONFIRMED_DAYS,
+  type PaniniEditionAsk,
+  type PaniniSerialRow,
+} from "@/lib/panini/edition-market"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -455,6 +464,12 @@ export default async function EditionPage(
   if (!detail) notFound()
 
   const isPinnacle = isPinnacleUrlSlug(collection)
+  // Panini WC Prizm (entity pages opened 2026-09-27). Its market is NOT in
+  // `sales` / `edition_offers` / `wallet_moments_cache` (zero rows in each) — it is
+  // in panini_card_serials, read by lib/panini/edition-market.ts. Every section
+  // below that would otherwise read an empty shared table and call it "no sales"
+  // branches on this flag instead.
+  const isPanini = collection === "panini-blockchain"
 
   // Fast shell — only the cheap single-row / aggregate RPCs the hero + FMV strip
   // need. The heavy bottom sections (recent sales, parallels, packs, special
@@ -479,8 +494,12 @@ export default async function EditionPage(
   let insightRes: Awaited<ReturnType<typeof fetchInsightLinks>> = { data: EMPTY_INSIGHT_LINKS, ok: false }
   let badgeArt: Awaited<ReturnType<typeof fetchBadgeArt>> = new Map()
   let repSales: Awaited<ReturnType<typeof fetchSales>> = []
+  // Panini's lowest confirmed ask. Defaults to a FAILED read on Panini (so an
+  // unexpected throw below can never read as "no ask") and a non-applicable
+  // success everywhere else.
+  let paniniAskRes: { ask: PaniniEditionAsk | null; ok: boolean } = { ask: null, ok: !isPanini }
   try {
-    ;[history, bundleRes, insightRes, badgeArt, repSales] = await Promise.all([
+    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     // high_offer + subedition (parallel) ladder + IPFS assets in ONE round-trip.
     fetchMarketBundle(detail.id, detail.external_id),
@@ -497,7 +516,10 @@ export default async function EditionPage(
     // One representative sale → the resilient hero-media nft id (the
     // media/<nftId>/image form that survives the legacy-CDN 404s). The full
     // sales page is fetched in the streamed bottom block.
-      fetchSales(coll.id, slug, 1, 0),
+      isPanini ? Promise.resolve([] as SaleRow[]) : fetchSales(coll.id, slug, 1, 0),
+    isPanini && detail.external_id
+      ? fetchPaniniEditionAsk(detail.external_id)
+      : Promise.resolve({ ask: null, ok: true }),
     ])
   } catch (e) {
     // ⚠ Must NOT return a whole-page view. The declared defaults above are
@@ -511,6 +533,7 @@ export default async function EditionPage(
   // fabricated 0. `ok` exists for the first consumer that wants to render a
   // figure unconditionally.
   const bundle = bundleRes.data
+  const paniniAsk = paniniAskRes.ask
   const insightLinks = insightRes.data
   const highOffer = bundle.high_offer
   // Top Shot subedition (parallel) ladder — Standard + each ::sub printing.
@@ -546,9 +569,12 @@ export default async function EditionPage(
   // re-observation window, not a census, and 10,871 editions read "0 of N listed" over
   // open listings (Tre Jones 124:5108: 69). Null here means "unknown", never "none".
   const listedSupply = currentSibling?.circulation_count ?? detail.circulation_count
+  // Panini: serials listed AND re-read in the last 7 days — a LOWER bound on what
+  // is listed (a listing the walk has not re-read this week is not counted).
+  const activeListings = isPanini ? (paniniAsk?.listedCount ?? null) : bundle.active_listings
   const pctListed =
-    bundle.active_listings != null && listedSupply != null && listedSupply > 0
-      ? (bundle.active_listings / listedSupply) * 100
+    activeListings != null && listedSupply != null && listedSupply > 0
+      ? (activeListings / listedSupply) * 100
       : null
 
   const hasInsightLinks =
@@ -587,7 +613,12 @@ export default async function EditionPage(
   const setHref = detail.set_slug ? `/${collection}/set/${encodeURIComponent(detail.set_slug)}` : null
   // A team Moment stores the team in player_name; momentSubjectHref sends it to /team, which
   // exists, instead of /player, which 404s for all 370 of them.
-  const playerHref = momentSubjectHref(collection, detail.player_name, detail.team_name)
+  // Panini: dual-player cards and the Team Badges / World Cup Posters sets have no
+  // player page (the bridge links no `players` row for them) — no link, not a 404.
+  const playerHref =
+    isPanini && !paniniSubjectIsPlayer(detail.player_name, detail.set_name)
+      ? null
+      : momentSubjectHref(collection, detail.player_name, detail.team_name)
   // ⚠ THE DENYLIST IS ENFORCED AT THE DESTINATION, SO IT MUST BE ENFORCED HERE.
   // /[collection]/team/[slug] (and its layout) notFound() the 12 exhibition
   // rosters, and the sitemap and PopularOnCollection both filter them -- but the
@@ -609,7 +640,9 @@ export default async function EditionPage(
   // Candy MLB joined 2026-09-25: its clips are arweave mp4 (media-src allows
   // arweave.net + *.arweave.net), and MomentHeroMedia falls back to the image on
   // a video error, so a clip that fails to load still shows the card.
-  const hasVideo = (collection === "nba-top-shot" || collection === "nfl-all-day" || collection === "candy-mlb") && !!detail.video_url
+  // Panini joined 2026-09-27: its clips are mp4 on assets.paniniamerica.net
+  // (15/15 sampled 200 video/mp4; the host is in media-src).
+  const hasVideo = (collection === "nba-top-shot" || collection === "nfl-all-day" || collection === "candy-mlb" || isPanini) && !!detail.video_url
 
   // Resilient hero media (Item E, 2026-06-13 audit — parity with the /moment
   // hero). detail.thumbnail_url / video_url are the constructed
@@ -650,7 +683,11 @@ export default async function EditionPage(
   // Ask cell (H2/H3): prefer the marketplace low_ask; fall back to the
   // V1-Dapper cross-market ask (populated for ~2.7K All Day editions where
   // badge_editions.low_ask is null). Label is collection-aware.
-  const askValue = highOffer?.low_ask ?? fmv?.cross_market_ask ?? null
+  // Panini's ask is its own: the lowest listed serial re-read in the last 7 days
+  // (panini_market_board) — none of the shared ask sources carries Panini.
+  const askValue = isPanini
+    ? (paniniAsk?.lowAskUsd ?? null)
+    : (highOffer?.low_ask ?? fmv?.cross_market_ask ?? null)
   const askLabel = ASK_LABEL[collection] ?? "Floor ask"
   // ⚠ WHEN DID WE LAST CONFIRM THAT ASK? The cell below rendered a bare number
   // with no age while its NEIGHBOUR — the best-offer cell, twenty lines down —
@@ -666,7 +703,7 @@ export default async function EditionPage(
   // ONLY from the branch the timestamp actually describes, and every other branch
   // renders no marker. Server component: the default clock is fine here (this is
   // never hydrated), same arrangement `relTime` itself uses.
-  const askAt = askVerifiedAt(highOffer)
+  const askAt = isPanini ? (paniniAsk?.askConfirmedAt ?? null) : askVerifiedAt(highOffer)
   const askAge = askAgeHours(askAt)
   // Best-offer cell (H1): only render when there's a real positive offer.
   // edition_offers is Top-Shot-only today, so an em-dash here would be a
@@ -677,7 +714,7 @@ export default async function EditionPage(
     <div>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(editionJsonLd(detail as unknown as Record<string, unknown>, collection, highOffer?.low_ask ?? null, askAt)) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(editionJsonLd(detail as unknown as Record<string, unknown>, collection, isPanini ? askValue : (highOffer?.low_ask ?? null), askAt)) }}
       />
       <Breadcrumbs
         items={[
@@ -883,7 +920,9 @@ export default async function EditionPage(
           sub={
             pctListed == null
               ? undefined
-              : `${fmtCount(bundle.active_listings)} of ${fmtCount(listedSupply)} listed`
+              : isPanini
+                ? `at least ${fmtCount(activeListings)} of ${fmtCount(listedSupply)} listed (seen in ${PANINI_ASK_CONFIRMED_DAYS} d)`
+                : `${fmtCount(bundle.active_listings)} of ${fmtCount(listedSupply)} listed`
           }
         />
         {hasBestOffer && (
@@ -905,11 +944,16 @@ export default async function EditionPage(
             }
           />
         )}
-        <StatCell
-          label="30d Sales"
-          value={fmtCount(fmv?.sales_count_30d ?? null)}
-          sub={fmv?.days_since_sale !== null && fmv?.days_since_sale !== undefined ? `${fmv.days_since_sale}d since last` : undefined}
-        />
+        {/* Panini: no 30-day sale count exists — RPC records the LAST sale of each
+            card it checks, not every sale, and the bridge's sales_count_30d is 0 on
+            748 editions for that reason. A "0" here would be a fabricated count. */}
+        {!isPanini && (
+          <StatCell
+            label="30d Sales"
+            value={fmtCount(fmv?.sales_count_30d ?? null)}
+            sub={fmv?.days_since_sale !== null && fmv?.days_since_sale !== undefined ? `${fmv.days_since_sale}d since last` : undefined}
+          />
+        )}
       </section>
 
       {/* ⚠ THIS USED TO READ "No recent market activity" AND THAT IS A CLAIM ABOUT
@@ -933,7 +977,7 @@ export default async function EditionPage(
           defaulting it to 0 would publish a measured zero we never measured. */}
       {!fmvAvailable && (
         <div className="rpc-mono" style={{ marginTop: 8, padding: "8px 12px", color: "var(--rpc-text-muted)", fontSize: 11 }}>
-          {!salesCountKnown
+          {!salesCountKnown || isPanini
             ? "No price available for this edition"
             : fmv!.sales_count_30d! > 0
               ? `${fmtCount(fmv!.sales_count_30d)} recent sales — not enough to price this edition`
@@ -978,10 +1022,49 @@ export default async function EditionPage(
         </div>
       )}
 
+      {/* ── Outbound: the edition on Panini's own marketplace ─────────────── */}
+      {isPanini && paniniEditionUrl(detail.external_id) && (
+        <div style={{ marginTop: 14 }}>
+          <TrackedOutboundLink
+            href={paniniEditionUrl(detail.external_id)!}
+            payload={{
+              surface: "edition",
+              destination: "panini_marketplace_edition",
+              editionKey: detail.external_id,
+              playerName: detail.player_name,
+              setName: detail.set_name,
+              tier: detail.tier,
+              fmv: fmv?.fmv_usd ?? null,
+            }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              padding: "12px 20px",
+              background: "transparent",
+              color: "var(--rpc-red)",
+              border: "1px solid var(--rpc-red)",
+              borderRadius: 8,
+              textDecoration: "none",
+              fontFamily: "var(--font-display)",
+              fontWeight: 800,
+              fontSize: 14,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+            }}
+          >
+            View on Panini ↗
+          </TrackedOutboundLink>
+        </div>
+      )}
+
       {/* ── Watch this edition (FMV / ask alert) ─────────────────────────── */}
       {/* Pinnacle FMV lives in its own tables the alert dispatcher doesn't read,
           so the watch control is gated to the editions+fmv_snapshots collections. */}
-      {!isPinnacle && detail.external_id && (
+      {/* Panini too: the alert dispatcher's ask arm reads the shared ask tables,
+          which carry no Panini asks, so an ask alert could never fire. */}
+      {!isPinnacle && !isPanini && detail.external_id && (
         <div style={{ marginTop: 14 }}>
           <WatchEditionButton
             editionKey={detail.external_id}
@@ -1085,7 +1168,7 @@ export default async function EditionPage(
 
       {/* ── FMV history chart ────────────────────────────────────────────── */}
       <Section title="FMV History">
-        <FmvHistoryChart collectionUrlSlug={collection} routeSlug={detail.route_slug ?? slug} initial={history.rows} initialFailed={!history.ok} />
+        <FmvHistoryChart collectionUrlSlug={collection} routeSlug={detail.route_slug ?? slug} initial={history.rows} initialFailed={!history.ok} salesTracked={!isPanini} />
       </Section>
 
       {/* ── Heavy bottom sections stream in (recent sales, parallels, packs,
@@ -1098,6 +1181,7 @@ export default async function EditionPage(
           slug={slug}
           isPinnacle={isPinnacle}
           isAllDay={isAllDay}
+          isPanini={isPanini}
         />
       </Suspense>
     </div>
@@ -1113,12 +1197,14 @@ async function EditionBottomSections({
   slug,
   isPinnacle,
   isAllDay,
+  isPanini = false,
 }: {
   detail: EditionDetail
   collection: string
   slug: string
   isPinnacle: boolean
   isAllDay: boolean
+  isPanini?: boolean
 }) {
   const isTopShot = collection === "nba-top-shot"
   // Each fetch degrades to its empty fallback on a THROW, not just on the
@@ -1130,14 +1216,20 @@ async function EditionBottomSections({
   // the edition smoke probe even though the page was healthy. Per-fetch .catch
   // keeps the section (and its titled empty-states) rendering when one leg times
   // out, and degrades real users gracefully instead of blanking the block.
-  const [salesRes, offersRes, parallels, packs, notableRes, packProvenance, topOwners, related] = await Promise.all([
+  // Panini: the sales / offers / notable-serial / pack reads below are over shared
+  // tables that hold zero Panini rows — each would answer "none" about a market
+  // that exists. They are skipped (not-applicable, not failed), and the Panini
+  // market section replaces Activity + Special Serials.
+  const na = <T,>() => Promise.resolve({ rows: new Array<T>(), ok: true })
+  const noPacks = (): Promise<PackRow[]> => Promise.resolve(new Array<PackRow>())
+  const [salesRes, offersRes, parallels, packs, notableRes, packProvenance, topOwners, related, paniniSerials] = await Promise.all([
     // ⚠ The catch fallbacks carry ok:false. Returning a bare [] here would put the
     // failure back exactly where it was erased before — see fetchSalesResult.
-    fetchSalesResult(detail.collection_id, slug, SALES_PAGE_SIZE, 0).catch(() => ({ rows: [] as SaleRow[], ok: false })),
-    fetchOffers(detail.id, 50).catch(() => ({ rows: [] as OfferRow[], ok: false })),
+    (isPanini ? na<SaleRow>() : fetchSalesResult(detail.collection_id, slug, SALES_PAGE_SIZE, 0)).catch(() => ({ rows: [] as SaleRow[], ok: false })),
+    (isPanini ? na<OfferRow>() : fetchOffers(detail.id, 50)).catch(() => ({ rows: [] as OfferRow[], ok: false })),
     fetchParallels(detail.id).catch(() => [] as ParallelEdition[]),
-    fetchPacks(detail.collection_id, slug).catch(() => [] as PackRow[]),
-    (isPinnacle
+    (isPanini ? noPacks() : fetchPacks(detail.collection_id, slug)).catch(() => [] as PackRow[]),
+    (isPinnacle || isPanini
       ? Promise.resolve({ rows: [] as NotableSerialRow[], ok: true })
       : fetchNotableSerials(detail.id)
     ).catch(() => ({ rows: [] as NotableSerialRow[], ok: false })),
@@ -1147,6 +1239,10 @@ async function EditionBottomSections({
     ).catch(() => null),
     (isTopShot ? fetchTopOwners(detail.id) : Promise.resolve([] as TopOwnerRow[])).catch(() => [] as TopOwnerRow[]),
     (isPinnacle ? Promise.resolve([] as RelatedEdition[]) : fetchRelated(detail.id)).catch(() => [] as RelatedEdition[]),
+    (isPanini && detail.external_id
+      ? fetchPaniniEditionSerials(detail.external_id)
+      : Promise.resolve(null)
+    ).catch(() => ({ listed: null, sales: null })),
   ])
   // Rows for rendering; the `ok` halves travel separately to the Activity block
   // so a degraded read can never be published as "No sales yet."
@@ -1185,6 +1281,9 @@ async function EditionBottomSections({
       {/* ── Activity (Sales | Offers toggle) ─────────────────────────────── */}
       {/* Sales reuses the paginated SalesTablePaginated (no regression);
           Offers is the live standing-bid list from get_edition_offers. */}
+      {isPanini ? (
+        <PaniniEditionMarketSection serials={paniniSerials ?? { listed: null, sales: null }} />
+      ) : (
       <Section title="Activity">
         <EditionActivity
           collectionUrlSlug={collection}
@@ -1199,6 +1298,7 @@ async function EditionBottomSections({
           offersOk={offersRes.ok}
         />
       </Section>
+      )}
 
       {/* ── Same play in OTHER sets (distinct from the subedition ladder
              above, which is the same set's parallel printings) ──────────── */}
@@ -1333,8 +1433,8 @@ async function EditionBottomSections({
         </Section>
       )}
 
-      {/* ── Special serials (non-Pinnacle) ───────────────── */}
-      {!isPinnacle && (
+      {/* ── Special serials (non-Pinnacle; Panini's are flagged in its market section) ── */}
+      {!isPinnacle && !isPanini && (
         <Section title="Special Serials">
           <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
             Notable serials — #1, jersey match, and the perfect serial (final mint) — with their last sale and tracked owner where known.
@@ -1421,6 +1521,79 @@ async function EditionBottomSections({
           </div>
         </Section>
       )}
+    </>
+  )
+}
+
+// Panini's market for this edition, from panini_card_serials (2026-09-27). Three
+// states per list: a failed read says so; an empty read says what is empty; rows
+// render. Never "No sales yet." — RPC does not record every Panini sale.
+function PaniniEditionMarketSection({
+  serials,
+}: {
+  serials: { listed: PaniniSerialRow[] | null; sales: PaniniSerialRow[] | null }
+}) {
+  const cell: React.CSSProperties = { padding: "6px 8px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", borderBottom: "1px solid var(--rpc-border-subtle, var(--rpc-border))" }
+  const head: React.CSSProperties = { ...cell, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }
+  const serialLabel = (r: PaniniSerialRow) => (r.serial == null ? "—" : r.mintCap != null ? `#${r.serial}/${r.mintCap}` : `#${r.serial}`)
+  const flagLabel = (r: PaniniSerialRow) => r.flags.map(notableTagLabel).join(", ")
+  const note = (t: string) => (
+    <div style={{ padding: "12px 14px", border: "1px dashed var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>{t}</div>
+  )
+  return (
+    <>
+      <Section title="Listed Now">
+        <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+          Serials listed on Panini&rsquo;s marketplace whose ask RPC re-read in the last {PANINI_ASK_CONFIRMED_DAYS} days, cheapest first.
+        </div>
+        {serials.listed === null
+          ? note("Listings couldn't be loaded — refresh to try again.")
+          : serials.listed.length === 0
+            ? note(`No listing of this edition has been re-read in the last ${PANINI_ASK_CONFIRMED_DAYS} days.`)
+            : (
+              <div className="rpc-scroll-x">
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 380 }}>
+                  <thead><tr><th style={head}>Serial</th><th style={head}>Ask</th><th style={head}>Seen</th><th style={head}>Special</th></tr></thead>
+                  <tbody>
+                    {serials.listed.map((r, i) => (
+                      <tr key={`${r.serial}-${i}`}>
+                        <td style={cell}>{serialLabel(r)}</td>
+                        <td style={{ ...cell, color: "var(--rpc-text-primary)" }}>{fmtUsd(r.askUsd)}</td>
+                        <td style={cell}>{r.seenAt ? relTime(r.seenAt) : "—"}</td>
+                        <td style={cell}>{flagLabel(r) || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+      </Section>
+      <Section title="Last Sales Seen">
+        <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+          The most recent sale Panini showed for each card when RPC last checked it — one per card, not a complete sales history.
+        </div>
+        {serials.sales === null
+          ? note("Sales couldn't be loaded — refresh to try again.")
+          : serials.sales.length === 0
+            ? note("RPC hasn't seen a sale price on any card of this edition yet.")
+            : (
+              <div className="rpc-scroll-x">
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 380 }}>
+                  <thead><tr><th style={head}>Serial</th><th style={head}>Sold for</th><th style={head}>When</th><th style={head}>Special</th></tr></thead>
+                  <tbody>
+                    {serials.sales.map((r, i) => (
+                      <tr key={`${r.serial}-${i}`}>
+                        <td style={cell}>{serialLabel(r)}</td>
+                        <td style={{ ...cell, color: "var(--rpc-text-primary)" }}>{fmtUsd(r.lastSaleUsd)}</td>
+                        <td style={cell}>{r.lastSaleAt ? relTime(r.lastSaleAt) : "—"}</td>
+                        <td style={cell}>{flagLabel(r) || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+      </Section>
     </>
   )
 }

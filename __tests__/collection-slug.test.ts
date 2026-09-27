@@ -39,12 +39,13 @@ describe("getCollectionByUuid / getCollectionByDbSlug", () => {
 })
 
 describe("listEntityPageCollections", () => {
-  it("returns all 6 entity-page collections as a fresh copy", () => {
+  it("returns all 7 entity-page collections as a fresh copy", () => {
     const list = listEntityPageCollections()
-    expect(list).toHaveLength(6)
+    // 7 since 2026-09-27 (Panini joined the facade).
+    expect(list).toHaveLength(7)
     // mutating the returned array must not affect subsequent calls
     list.pop()
-    expect(listEntityPageCollections()).toHaveLength(6)
+    expect(listEntityPageCollections()).toHaveLength(7)
   })
 })
 

@@ -5,6 +5,7 @@
 // Aggregate stats + tier mix + paginated edition grid.
 
 import type { Metadata } from "next"
+import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { getEntityLabels } from "@/lib/entity-labels"
@@ -161,7 +162,10 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   let editionsRes: { rows: EditionTile[]; ok: boolean } = { rows: [], ok: false }
   let tierMix: Awaited<ReturnType<typeof fetchFullTierMix>> = { rows: [], ok: false }
   let activityRes: { rows: ActivityRow[]; ok: boolean } = { rows: [], ok: false }
-  const wantsActivity = !isPinnacleUrlSlug(collection)
+  // Panini (2026-09-27): get_set_activity reads `sales` (0 Panini rows), and a
+  // failed read would render "couldn't load" over a feed that does not exist.
+  const isPanini = collection === "panini-blockchain"
+  const wantsActivity = !isPinnacleUrlSlug(collection) && !isPanini
   try {
     ;[editionsRes, tierMix, activityRes] = await Promise.all([
       structuralSection<EditionTile>("set editions", fetchEditions(coll.id, slug, PAGE_SIZE, 0)),
@@ -263,8 +267,15 @@ export default async function SetPage(props: { params: Promise<{ collection: str
         <StatCell label="Editions" value={fmtCount(detail.edition_count)} sub={detail.editions_with_fmv !== null ? `${fmtCount(detail.editions_with_fmv)} with FMV` : undefined} />
         <StatCell label="Total Mint" value={fmtCount(detail.total_circulation)} />
         <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
-        <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={RECENT_LOW_HINT} />
+        {/* Panini: floor_total_usd is FMV restated (no floor source) — not a recent low. */}
+        {!isPanini && <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={RECENT_LOW_HINT} />}
       </section>
+      {isPanini && (
+        <div className="rpc-mono" style={{ marginTop: 8, padding: "0 4px", fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
+          Panini publishes no checklist, so this is every edition of the set RPC has seen listed — a floor, not a census.{" "}
+          <Link href={`/${collection}/sets`} style={{ color: "var(--rpc-red)", textDecoration: "none" }}>Cost to finish each set →</Link>
+        </div>
+      )}
 
       {/* ── Tier mix bar ─────────────────────────────────────────────────── */}
       {tierMixRows.length > 0 && (
