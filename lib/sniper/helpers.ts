@@ -157,6 +157,11 @@ export function trackClick(deal: SniperDeal, walletAddress: string | null) {
 // listing URL when it points at a live native marketplace; Flowty links are
 // dead, so fall back to the collection's native moment page.
 export function resolveViewUrl(deal: SniperDeal, collectionSlug: string): string | null {
+  // Disney Pinnacle's feed sets buyUrl to the marketplace LANDING page for every
+  // row, so it names no pin. The pin's own page is keyed on its flow id.
+  if (collectionSlug === "disney-pinnacle" && deal.flowId && /^\d+$/.test(deal.flowId)) {
+    return marketplaceMomentUrl(collectionSlug, deal.flowId);
+  }
   const url = deal.buyUrl?.trim();
   // Reject dead links before returning them: Flowty (marketplace shut down
   // 2026-05) and the TopShot `listings/p2p?editionFlowID=<setID:playID>` form

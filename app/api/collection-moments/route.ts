@@ -6,6 +6,8 @@ import { isUpstreamDown, noteUpstreamFailure, noteUpstreamSuccess } from "@/lib/
 import { getCollection } from "@/lib/collections"
 import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
 import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
+import { fetchEditionTypes } from "@/lib/pinnacle/edition-types"
+import { isSerialisedEditionType } from "@/lib/pinnacle/serialisation"
 import { isSupportedAddress, isValidAddressForChain } from "@/lib/address"
 
 /**
@@ -318,9 +320,17 @@ export async function GET(req: NextRequest) {
       })
 
     // Add thumbnail URLs: prefer RPC thumbnail_url, fall back to edition_key construction, then moment media URL
+    //
+    // ⛔ 2026-09-27 — the two fallbacks below build TOP SHOT asset URLs, so they
+    // run only for Top Shot (or an unscoped read). A moment_id is unique only
+    // within a collection (CLAUDE.md), so on any other collection's tab the
+    // `assets.nbatopshot.com/media/<id>` fallback is a different NFT's art — or
+    // a 404 — shown as this one's. No thumbnail is the honest answer there.
+    const isTopShotScope = !collectionSlug || collectionSlug === "nba-top-shot"
+    const isPinnacle = collectionSlug === "disney-pinnacle"
     const moments = rawMoments.map(function (row: any) {
       let thumbnailUrl: string | null = row.thumbnail_url ?? null
-      if (!thumbnailUrl) {
+      if (!thumbnailUrl && isTopShotScope) {
         const ek = row.edition_key as string | null
         if (ek) {
           const parts = ek.split(":")
@@ -330,7 +340,7 @@ export async function GET(req: NextRequest) {
         }
       }
       // Final fallback: moment flow ID media URL (reliable for all Top Shot moments)
-      if (!thumbnailUrl && row.moment_id) {
+      if (!thumbnailUrl && isTopShotScope && row.moment_id) {
         thumbnailUrl = "https://assets.nbatopshot.com/media/" + row.moment_id + "?width=256"
       }
       return {
@@ -366,12 +376,32 @@ export async function GET(req: NextRequest) {
         // Cleaned 30d price band {low,high,n} — only present for high-volume
         // LOW/MEDIUM editions (the cohort whose bare "LOW" reads as wrong).
         price_band_30d: row.price_band_30d ?? null,
+        // Disney Pinnacle: the exact `pinnacle_catalog` render the pin's own
+        // page is keyed on. Null on every other collection.
+        render_id: row.render_id ?? null,
+        // Disney Pinnacle only, filled below: true / false / null ("cannot say").
+        is_serialised: null as boolean | null,
       }
     })
 
+    // Disney Pinnacle: most editions carry no serial numbers at all (Open /
+    // Open Event / Starter), and a bare "#-" reads as data we failed to index.
+    // Same keyed lookup /api/pinnacle-wallet makes; fails soft to null.
+    if (isPinnacle && moments.length > 0) {
+      const editionTypes = await fetchEditionTypes(
+        Array.from(new Set(moments.map(function (m: any) { return m.edition_key as string | null }).filter(Boolean))) as string[],
+        "api/collection-moments",
+      )
+      for (const m of moments) {
+        m.is_serialised = m.edition_key ? isSerialisedEditionType(editionTypes.get(m.edition_key) ?? null) : null
+      }
+    }
+
     // GQL fallback for moments in current page missing player_name
+    // (Top Shot's GraphQL — so Top Shot / unscoped reads only; another
+    // collection's edition key means nothing there.)
     const missingByEditionKey = new Map<string, number[]>()
-    for (let i = 0; i < moments.length; i++) {
+    for (let i = 0; i < (isTopShotScope ? moments.length : 0); i++) {
       const m = moments[i]
       if (!m.player_name && m.moment_id) {
         const key = m.edition_key ?? m.moment_id

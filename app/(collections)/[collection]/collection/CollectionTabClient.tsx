@@ -839,7 +839,9 @@ function WalletMomentsBody() {
       // Secondary: call wallet-search for summary stats only (total FMV, locked/unlocked counts)
       // This runs in parallel as a background fetch — does NOT block the moment display.
       // Skipped for UFC: wallet-search is driven by Top Shot GQL and has no UFC path.
-      if (trimmed && collectionSlug !== "ufc") {
+      // Skipped for Disney Pinnacle: the route refuses it (4xx, "use
+      // /api/pinnacle-wallet"), so the call could only ever fail.
+      if (trimmed && collectionSlug !== "ufc" && collectionSlug !== "disney-pinnacle") {
         const walletSearchBody: Record<string, unknown> = { input: trimmed, offset: 0, limit: 50, collection: collectionSlug }
         if (collectionSlug === "nba-top-shot" && view.leagueFilter !== "all") walletSearchBody.league = view.leagueFilter
         fetch("/api/wallet-search", {
@@ -1445,12 +1447,12 @@ function WalletMomentsBody() {
               {loadingMore ? pickLoading() : "Load More (" + (paginatedTotal - rows.length) + " remaining)"}
             </button>
             <span className="text-xs text-[color:var(--rpc-text-muted)]">
-              Showing {rows.length} of {paginatedTotal} moments
+              Showing {rows.length} of {paginatedTotal} {collectionSlug === "disney-pinnacle" ? "pins" : "moments"}
             </span>
           </div>
         ) : hasSearched && paginatedTotal > 0 ? (
           <div className="mt-4 text-center text-xs text-[color:var(--rpc-text-muted)]">
-            All {paginatedTotal} moments loaded
+            All {paginatedTotal} {collectionSlug === "disney-pinnacle" ? "pins" : "moments"} loaded
           </div>
         ) : null}
 

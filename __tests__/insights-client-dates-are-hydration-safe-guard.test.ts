@@ -478,15 +478,16 @@ describe("client date formatting is hydration-safe site-wide", () => {
     expect(isRuleA(v[0])).toBe(false)
   })
 
-  it("the four known post-mount clocks are marked", () => {
+  it("the three known post-mount clocks are marked", () => {
     // 2026-09-25: the Panini half of this pin went with its file — PaniniOverviewClient was
     // DELETED when Panini published on the shared [collection] routes. The fix it held (no
     // Rule-A call) cannot regress in a file that no longer exists.
+    // 2026-09-27: same for PinnacleSniperClient — Disney Pinnacle moved onto the shared
+    // sniper, whose clock is SniperStatsBar's (still pinned first below).
     for (const f of [
       "components/sniper/SniperStatsBar.tsx",
       "app/admin/analytics/AdminAnalyticsClient.tsx",
       "app/dashboard/alerts/DashboardAlertsClient.tsx",
-      "app/(collections)/disney-pinnacle/sniper/PinnacleSniperClient.tsx",
     ]) {
       const raw = readFileSync(join(process.cwd(), f), "utf8")
       const ruleA = findUnsafeLocaleCalls(stripComments(raw)).filter(isRuleA)

@@ -17,7 +17,9 @@ import { isPublicPath } from "@/proxy"
 // that is not.
 describe("anon-public pages can reach the APIs they actually call", () => {
   const PAGE_TO_APIS: Array<[string, string[]]> = [
-    ["/disney-pinnacle/sniper", ["/api/pinnacle-sniper-feed", "/api/pinnacle-sniper"]],
+    // 2026-09-27: the bespoke Pinnacle sniper (which called /api/pinnacle-sniper-feed) was
+    // deleted; /disney-pinnacle/sniper is the shared SniperClient, whose feed is /api/sniper-feed.
+    ["/disney-pinnacle/sniper", ["/api/sniper-feed"]],
     ["/nba-top-shot/sniper", ["/api/sniper-feed"]],
     ["/nba-top-shot/packs", ["/api/pack-listings"]],
     ["/nfl-all-day/packs", ["/api/pack-listings"]],

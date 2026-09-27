@@ -44,6 +44,9 @@ export type ServerMoment = {
   /** True only where the source recorded having checked (lock_checked_at). */
   lock_known?: boolean
   serial_fmv?: SerialFmvData
+  /** Disney Pinnacle only (see /api/collection-moments). */
+  render_id?: string | null
+  is_serialised?: boolean | null
   price_band_30d?: PriceBand30d
 }
 
@@ -118,6 +121,8 @@ export function serverMomentToRow(m: ServerMoment, sport?: string | null): Momen
     tier: m.tier ? m.tier.replace(/^MOMENT_TIER_/i, "") : undefined,
     series: m.series_number != null ? String(m.series_number) : undefined,
     thumbnailUrl: m.thumbnail_url,
+    renderId: m.render_id ?? null,
+    isSerialised: m.is_serialised ?? null,
     acquiredAt: m.acquired_at ?? null,
     marketConfidence: (m.confidence?.toLowerCase() ?? "none") as MomentRow["marketConfidence"],
     fmvUsd: fmvVal,

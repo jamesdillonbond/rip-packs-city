@@ -61,6 +61,10 @@ export type MomentRow = {
   editionsOwned?: number
   editionsLocked?: number
   thumbnailUrl?: string | null
+  /** Disney Pinnacle: the exact catalog render (the pin's own page). */
+  renderId?: string | null
+  /** Disney Pinnacle: false = the edition TYPE carries no serials; null = cannot say. */
+  isSerialised?: boolean | null
   flowId?: string | null
   flowtyListingUrl?: string | null
   fmv?: number | null

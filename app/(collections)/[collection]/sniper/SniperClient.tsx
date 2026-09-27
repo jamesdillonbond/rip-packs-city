@@ -10,6 +10,7 @@ import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSu
 import PackSniperClient from "@/app/insights/pack-sniper/PackSniperClient";
 import { getOwnerKey } from "@/lib/owner-key";
 import { slugifyName, getEntityLabels } from "@/lib/entity-labels";
+import { pinnacleRenderHref } from "@/lib/entity-href";
 import MomentDetailModal from "@/components/MomentDetailModal";
 import BadgeIcon from "@/components/BadgeIcon";
 import SerialFmvBadge from "@/components/SerialFmvBadge";
@@ -187,9 +188,21 @@ function SniperMomentsBody() {
   const router = useRouter();
   // Full-card click target: navigate to the asset's entity page. Edition page
   // when we have an int edition key, else the serial-specific moment page.
-  const dealHref = (d: SniperDeal) => d.editionKey
-    ? `/${collectionSlug}/edition/${encodeURIComponent(d.editionKey)}`
-    : `/moment/${d.flowId}`;
+  //
+  // ⚠ Disney Pinnacle: `editionKey` is the LEGACY key, and
+  // /disney-pinnacle/edition/<key> only permanent-redirects to the legacy-key
+  // list page — every row paid a hop and never reached the pin. The pin's own
+  // page is keyed on `renderId` (2026-09-27, when Pinnacle moved onto this
+  // shared sniper from its bespoke one).
+  const dealHref = (d: SniperDeal): string => {
+    if (isPinnacle) {
+      if (d.renderId) return pinnacleRenderHref(d.renderId);
+      if (d.editionKey) return `/pinnacle/moment/${encodeURIComponent(d.editionKey)}`;
+    }
+    return d.editionKey
+      ? `/${collectionSlug}/edition/${encodeURIComponent(d.editionKey)}`
+      : `/moment/${d.flowId}`;
+  };
   const [depthDeals, setDepthDeals] = useState<SniperDeal[]>([]);
   const [depthLoading, setDepthLoading] = useState(false);
   const [depthFloor, setDepthFloor] = useState<{
@@ -1159,7 +1172,7 @@ function SniperMomentsBody() {
                       </div>
                       {deal.editionKey ? (
                         <Link
-                          href={`/${collectionSlug}/edition/${encodeURIComponent(deal.editionKey)}`}
+                          href={dealHref(deal)}
                           prefetch={false}
                           style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", textDecoration: "none" }}
                           className="truncate"
@@ -1406,7 +1419,7 @@ function SniperMomentsBody() {
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", lineHeight: 1.2 }}>
                         {deal.editionKey ? (
                           <Link
-                            href={`/${collectionSlug}/edition/${encodeURIComponent(deal.editionKey)}`}
+                            href={dealHref(deal)}
                             prefetch={false}
                             onClick={(e) => e.stopPropagation()}
                             style={{ color: "inherit", textDecoration: "none" }}

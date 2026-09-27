@@ -36,6 +36,12 @@ export interface SniperDeal {
   isJersey: boolean;
   serialSignal: string | null;
   thumbnailUrl: string | null;
+  /** Disney Pinnacle: the exact catalog render (the pin's own page), null when unresolved. */
+  renderId?: string | null;
+  /** Disney Pinnacle: the pin is a chaser variant. */
+  isChaser?: boolean;
+  /** Disney Pinnacle: the studio (Walt Disney Animation Studios, Pixar, Lucasfilm …). */
+  studio?: string;
   isLocked: boolean;
   updatedAt: string | null;
   packListingId: string | null;

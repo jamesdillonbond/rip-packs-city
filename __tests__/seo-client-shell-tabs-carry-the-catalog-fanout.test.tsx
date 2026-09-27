@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { readFileSync } from "fs"
+import { readFileSync, readdirSync } from "fs"
 import path from "path"
 
 // 2026-09-07 (Search Console pass, part three).
@@ -37,11 +37,15 @@ describe("the indexable client-shell tabs carry the server-rendered catalog fan-
       expect(src.indexOf("<PopularOnCollection")).toBeGreaterThan(src.indexOf("{props.children}"))
     })
   }
-  it("the bespoke Disney Pinnacle segment (its own /collection and /sniper page dirs) mounts it too", () => {
-    const src = read("app/(collections)/disney-pinnacle/layout.tsx")
-    expect(src).toMatch(/import PopularOnCollection from "@\/components\/entity\/PopularOnCollection"/)
-    expect(src).toMatch(/<PopularOnCollection collection=\{collection\.id\} \/>/)
-    expect(src.indexOf("<PopularOnCollection")).toBeGreaterThan(src.indexOf("{children}"))
+  // 2026-09-27: Disney Pinnacle's bespoke segment (its own /collection and /sniper page
+  // dirs + layout, which had to re-mount this block by hand) was deleted — Pinnacle now
+  // falls through to the shared [collection] layouts above, like every collection. A
+  // static segment re-appearing would shadow them again and silently drop the fan-out.
+  it("no collection has a bespoke static segment shadowing the shared tabs", () => {
+    const segments = readdirSync(path.join(process.cwd(), "app/(collections)"), { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+    expect(segments).toEqual(["[collection]"])
   })
   it("the overview keeps it too (the pass that added it, 2026-06-05)", () => {
     expect(read("app/(collections)/[collection]/overview/layout.tsx")).toMatch(/<PopularOnCollection collection=\{collection\} \/>/)

@@ -27,7 +27,9 @@ const proxySrc = readFileSync(join(process.cwd(), "proxy.ts"), "utf8")
 
 /** Public wallet-lookup page -> the API route it cannot function without. */
 const WALLET_SURFACES: Array<{ page: string; api: string }> = [
-  { page: "/disney-pinnacle/collection", api: "/api/pinnacle-wallet" },
+  // 2026-09-27: Pinnacle's tab is the SHARED one now (its bespoke page, which called
+  // /api/pinnacle-wallet, was deleted), so it needs the same route as every collection.
+  { page: "/disney-pinnacle/collection", api: "/api/collection-moments" },
   { page: "/nba-top-shot/collection", api: "/api/collection-moments" },
 ]
 

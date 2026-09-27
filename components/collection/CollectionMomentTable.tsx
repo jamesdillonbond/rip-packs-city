@@ -12,8 +12,9 @@
 import { Fragment, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { slugifyName } from "@/lib/entity-labels"
-import { momentSubjectHref } from "@/lib/entity-href"
+import { getEntityLabels } from "@/lib/entity-labels"
+import { momentSubjectHref, setEntityHref, pinnacleRenderHref } from "@/lib/entity-href"
+import { getCollection, marketplaceMomentUrl } from "@/lib/collections"
 import { normalizeSetName, buildEditionScopeKey } from "@/lib/wallet-normalize"
 import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
@@ -74,6 +75,47 @@ function AskDerivedMark({ show }: { show: boolean }) {
   )
 }
 
+// ⚠ 2026-09-27 — THIS TABLE IS EVERY COLLECTION'S, not Top Shot's. Disney
+// Pinnacle moved off its bespoke wallet page onto this one, which surfaced the
+// Top Shot constants that had been rendering on every collection: a "View on
+// Top Shot" link on an All Day / Golazos / UFC row, a `/moment/<id>` detail
+// link (a moment_id is unique only WITHIN a collection — CLAUDE.md), and set
+// links that 404 on Pinnacle. Each now comes from the collection.
+
+/** Where a row opens on RPC. Pinnacle has a page per catalog render. */
+export function momentRowHref(collectionSlug: string, row: Pick<MomentRow, "momentId" | "renderId" | "editionKey">): string {
+  if (collectionSlug === "disney-pinnacle") {
+    if (row.renderId) return pinnacleRenderHref(row.renderId)
+    if (row.editionKey) return "/pinnacle/moment/" + encodeURIComponent(row.editionKey)
+  }
+  return "/moment/" + row.momentId
+}
+
+// The marketplace a collection's own moment link opens, by NAME. Candy's
+// secondary market is Magic Eden; every other collection is its own site.
+const MARKETPLACE_NAME: Record<string, string> = { "candy-mlb": "Magic Eden" }
+
+/** "View on <marketplace>" for this row, or null where the collection has no per-moment URL. */
+export function momentMarketplaceLink(collectionSlug: string, momentId: string): { href: string; label: string } | null {
+  const href = marketplaceMomentUrl(collectionSlug, momentId)
+  if (!href) return null
+  const name = MARKETPLACE_NAME[collectionSlug] ?? getCollection(collectionSlug)?.label ?? collectionSlug
+  return { href, label: "View on " + name }
+}
+
+// Disney Pinnacle: Open / Open Event / Starter editions carry no serial numbers
+// at all (~72% of holdings). "#-" there reads as data we failed to index.
+function NotSerialised() {
+  return (
+    <span
+      title="This Pinnacle edition type is not serialised — its mints carry no serial numbers. This is not missing data."
+      className="text-[11px] italic text-[color:var(--rpc-text-muted)]"
+    >
+      not serialised
+    </span>
+  )
+}
+
 export default function CollectionMomentTable(props: {
   isMobile: boolean
   filteredRows: MomentRow[]
@@ -112,6 +154,9 @@ export default function CollectionMomentTable(props: {
   // is_locked flag is a stale past-run value. Render lock figures as "—" (not
   // tracked) rather than as current fact. Re-enable when a scheduled refresh lands.
   const lockUntracked = collectionSlug === "nfl-all-day"
+  const labels = getEntityLabels(collectionSlug)
+  const isPinnacle = collectionSlug === "disney-pinnacle"
+  const unitNoun = isPinnacle ? "pins" : "moments"
 
   // Task 2: FMV Alert UI state
   const [alertOpenMomentId, setAlertOpenMomentId] = useState<string | null>(null)
@@ -136,8 +181,8 @@ export default function CollectionMomentTable(props: {
               // collector holding 500 moments that they hold none.
               <div className="rpc-table-empty">
                 {rows.length === 0
-                  ? "No moments found for this wallet on this collection."
-                  : "No moments match your current filters. Try adjusting the filters above."}
+                  ? "No " + unitNoun + " found for this wallet on this collection."
+                  : "No " + unitNoun + " match your current filters. Try adjusting the filters above."}
               </div>
             ) : filteredRows.map(function(row) {
               const expanded = !!view.expandedRows[row.momentId]
@@ -166,7 +211,7 @@ export default function CollectionMomentTable(props: {
                             loading="lazy"
                             className="rounded object-cover shrink-0"
                             style={{ width: 36, height: 48, background: "var(--rpc-surface)" }}
-                            onClick={function(e) { e.stopPropagation(); router.push("/moment/" + row.momentId) }}
+                            onClick={function(e) { e.stopPropagation(); router.push(momentRowHref(collectionSlug, row)) }}
                             onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }}
                           />
                         )
@@ -196,9 +241,9 @@ export default function CollectionMomentTable(props: {
                   </div>
                   {/* Row 2: Set + Series */}
                   <div className="text-xs text-[color:var(--rpc-text-secondary)]">
-                    {row.setName ? (
+                    {setEntityHref(collectionSlug, row.setName) ? (
                       <Link
-                        href={`/${collectionSlug}/set/${slugifyName(row.setName)}`}
+                        href={setEntityHref(collectionSlug, row.setName)!}
                         prefetch={false}
                         onClick={function(e) { e.stopPropagation() }}
                         style={{ color: "inherit", textDecoration: "none" }}
@@ -213,7 +258,7 @@ export default function CollectionMomentTable(props: {
                   {/* Row 3: Serial, Badges */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">#{getSerial(row) ?? "-"}<span className="text-[color:var(--rpc-text-muted)]">/{getMint(row) ?? "-"}</span></span>
+                      {row.isSerialised === false && getSerial(row) == null ? <NotSerialised /> : <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">#{getSerial(row) ?? "-"}<span className="text-[color:var(--rpc-text-muted)]">/{getMint(row) ?? "-"}</span></span>}
                       <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} collection={collectionSlug} />
                       {editionCounts.owned > 1 && (
                         <span
@@ -325,8 +370,8 @@ export default function CollectionMomentTable(props: {
                       <div className="rpc-expand-section">
                         <div className="rpc-expand-section-eyebrow">Links</div>
                         <div className="flex flex-wrap gap-2">
-                          <Link href={"/moment/" + row.momentId} prefetch={false} onClick={function(e) { e.stopPropagation() }} className="rpc-expand-link">View on RPC</Link>
-                          <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Top Shot</a>
+                          <Link href={momentRowHref(collectionSlug, row)} prefetch={false} onClick={function(e) { e.stopPropagation() }} className="rpc-expand-link">View on RPC</Link>
+                          {(function() { const m = momentMarketplaceLink(collectionSlug, row.momentId); return m ? <a href={m.href} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">{m.label}</a> : null })()}
                         </div>
                       </div>
                       <div className="rpc-expand-section">
@@ -340,7 +385,7 @@ export default function CollectionMomentTable(props: {
             })}
             {summary && summary.remainingMoments > 0 && isMobile && (
               <div className="mt-3 rounded-lg border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface)] px-3 py-2 text-center text-xs text-[color:var(--rpc-text-muted)]">
-                Showing {rows.length} of {summary.totalMoments} moments — open on desktop for full collection
+                Showing {rows.length} of {summary.totalMoments} {unitNoun} — open on desktop for full collection
               </div>
             )}
           </div>
@@ -349,11 +394,11 @@ export default function CollectionMomentTable(props: {
           <table className="rpc-table">
             <thead>
               <tr>
-                <th>Player</th>
+                <th>{labels.player}</th>
                 <th className="hidden sm:table-cell">Set</th>
                 <th className="hidden sm:table-cell">Series</th>
                 <th className="hidden md:table-cell">Parallel</th>
-                <th className="hidden md:table-cell">Rarity</th>
+                <th className="hidden md:table-cell">{isPinnacle ? labels.tier : "Rarity"}</th>
                 <th className="hidden sm:table-cell">Serial / Mint</th>
                 <th className="hidden lg:table-cell">Held / Locked</th>
                 <th className="hidden xl:table-cell">Packs</th>
@@ -371,8 +416,8 @@ export default function CollectionMomentTable(props: {
                 <tr>
                   <td colSpan={15} className="rpc-table-empty">
                     {rows.length === 0
-                      ? "No moments found for this wallet on this collection."
-                      : "No moments match your current filters. Try adjusting the filters above."}
+                      ? "No " + unitNoun + " found for this wallet on this collection."
+                      : "No " + unitNoun + " match your current filters. Try adjusting the filters above."}
                   </td>
                 </tr>
               ) : filteredRows.map(function(row) {
@@ -394,11 +439,11 @@ export default function CollectionMomentTable(props: {
                 return (
                   <Fragment key={row.momentId}>
                     <tr
-                      onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; router.push("/moment/" + row.momentId) }}
+                      onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; router.push(momentRowHref(collectionSlug, row)) }}
                       role="button"
                       tabIndex={0}
-                      aria-label={"Open " + (row.playerName ?? "moment") + " moment"}
-                      onKeyDown={function(e) { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push("/moment/" + row.momentId) } }}
+                      aria-label={"Open " + (row.playerName ?? (isPinnacle ? "pin" : "moment")) + (isPinnacle ? " pin" : " moment")}
+                      onKeyDown={function(e) { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(momentRowHref(collectionSlug, row)) } }}
                       className={"group align-top cursor-pointer " + (expanded ? "rpc-table-row--expanded " : "")}
                     >
                       <td className="rpc-table-cell--player min-w-[160px]">
@@ -420,7 +465,7 @@ export default function CollectionMomentTable(props: {
                                     <div
                                       className="rounded flex items-center justify-center cursor-pointer"
                                       style={{ /* brand-exception: white on tier-accent fill */ width: 48, height: 64, background: accent, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 16, letterSpacing: "0.04em" }}
-                                      onClick={function(e) { e.stopPropagation(); router.push("/moment/" + row.momentId) }}
+                                      onClick={function(e) { e.stopPropagation(); router.push(momentRowHref(collectionSlug, row)) }}
                                       title={row.playerName}
                                     >
                                       {initials || "—"}
@@ -437,7 +482,7 @@ export default function CollectionMomentTable(props: {
                                         loading="lazy"
                                         className="rounded object-cover cursor-pointer"
                                         style={{ width: 48, height: 64, background: "var(--rpc-surface)" }}
-                                        onClick={function(e) { e.stopPropagation(); router.push("/moment/" + row.momentId) }}
+                                        onClick={function(e) { e.stopPropagation(); router.push(momentRowHref(collectionSlug, row)) }}
                                         onError={function(e) {
                                           const img = e.target as HTMLImageElement
                                           img.style.display = "none"
@@ -504,9 +549,9 @@ export default function CollectionMomentTable(props: {
                         </div>
                       </td>
                       <td className="text-sm hidden sm:table-cell">
-                        {row.setName ? (
+                        {setEntityHref(collectionSlug, row.setName) ? (
                           <Link
-                            href={`/${collectionSlug}/set/${slugifyName(row.setName)}`}
+                            href={setEntityHref(collectionSlug, row.setName)!}
                             prefetch={false}
                             style={{ color: "inherit", textDecoration: "none" }}
                           >
@@ -523,7 +568,7 @@ export default function CollectionMomentTable(props: {
                         <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "" : "border-[color:var(--rpc-border)] bg-[var(--rpc-black)]")} style={primaryBadge ? { borderColor: accent, backgroundColor: accent + "1A" } : undefined}>
                           <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} collection={collectionSlug} />
                           <div className={"text-sm font-black flex items-center gap-1 " + (primaryBadge ? "" : "text-[color:var(--rpc-text-primary)]")} style={primaryBadge ? { color: accent } : undefined}>
-                            <span>{"#" + (getSerial(row) ?? "-")}</span>
+                            {row.isSerialised === false && getSerial(row) == null ? <NotSerialised /> : <span>{"#" + (getSerial(row) ?? "-")}</span>}
                           </div>
                           <div className="text-xs text-[color:var(--rpc-text-secondary)]">{"/ " + (getMint(row) ?? "-")}</div>
                           {primaryBadge ? <div className="mt-1 rounded bg-[var(--rpc-surface-raised)] px-1 py-0.5 text-[9px] font-bold text-[color:var(--rpc-text-primary)]">{primaryBadge}</div> : null}
@@ -772,7 +817,7 @@ export default function CollectionMomentTable(props: {
                               <div className="rpc-expand-section-eyebrow">Details</div>
                               <div className="rpc-expand-grid">
                                 <div className="rpc-expand-field">
-                                  <div className="rpc-expand-field-label">Top Shot Ask</div>
+                                  <div className="rpc-expand-field-label">{(getCollection(collectionSlug)?.shortLabel ?? "Marketplace") + " Ask"}</div>
                                   <div className="rpc-expand-field-value rpc-table-cell--mono">{formatCurrency(row.topshotAsk ?? row.editionLowAsk)}</div>
                                 </div>
                                 <div className="rpc-expand-field">
@@ -859,9 +904,9 @@ export default function CollectionMomentTable(props: {
                             <div className="rpc-expand-section">
                               <div className="rpc-expand-section-eyebrow">Links</div>
                               <div className="flex flex-wrap gap-2">
-                                <Link href={"/moment/" + row.momentId} prefetch={false} className="rpc-expand-link">View on RPC</Link>
-                                <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Top Shot</a>
-                                {summary && (
+                                <Link href={momentRowHref(collectionSlug, row)} prefetch={false} className="rpc-expand-link">View on RPC</Link>
+                                {(function() { const m = momentMarketplaceLink(collectionSlug, row.momentId); return m ? <a href={m.href} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">{m.label}</a> : null })()}
+                                {summary && collectionSlug === "nba-top-shot" && (
                                   <a href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(input.trim())} className="rpc-expand-link rpc-expand-link--muted">View Set Progress →</a>
                                 )}
                               </div>

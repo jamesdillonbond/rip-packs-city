@@ -30,20 +30,24 @@ describe("static pages declare their own self-canonical", () => {
   })
 })
 
-describe("the bespoke Pinnacle tabs carry their own title and canonical", () => {
-  it.each(["collection", "sniper"])("disney-pinnacle/%s builds its metadata through pageMetadata", async (tab) => {
-    const src = read(`app/(collections)/disney-pinnacle/${tab}/page.tsx`)
-    expect(src).toMatch(/export function generateMetadata\(\)/)
-    expect(src).toMatch(new RegExp(`pageMetadata\\("${tab}",`))
-    const mod = await import(`@/app/(collections)/disney-pinnacle/${tab}/page`)
-    const m = mod.generateMetadata() as { alternates?: { canonical?: string }; title?: unknown }
+// 2026-09-27: the bespoke Pinnacle page dirs were deleted — Disney Pinnacle's collection
+// and sniper tabs are now served by the SHARED [collection] layouts like every other
+// collection. The property this block pinned (each tab its own title + self-canonical,
+// never the shared generic one) is re-asserted against the layouts that serve them now.
+describe("the Pinnacle collection and sniper tabs carry their own title and canonical", () => {
+  const meta = async (tab: string) => {
+    const mod = await import(`@/app/(collections)/[collection]/${tab}/layout`)
+    return (await mod.generateMetadata({ params: Promise.resolve({ collection: "disney-pinnacle" }) })) as {
+      alternates?: { canonical?: string }
+      title?: unknown
+    }
+  }
+  it.each(["collection", "sniper"])("disney-pinnacle/%s gets a self-canonical from the shared layout", async (tab) => {
+    const m = await meta(tab)
     expect(m.alternates?.canonical).toBe(`https://www.rippackscity.com/disney-pinnacle/${tab}`)
-    // Not the segment layout's generic title — the tab's own.
     expect(String(m.title)).not.toMatch(/Disney Pinnacle Analytics — Rip Packs City/)
   })
-  it("the two tabs no longer share a title", async () => {
-    const a = (await import("@/app/(collections)/disney-pinnacle/collection/page")).generateMetadata()
-    const b = (await import("@/app/(collections)/disney-pinnacle/sniper/page")).generateMetadata()
-    expect(String(a.title)).not.toBe(String(b.title))
+  it("the two tabs do not share a title", async () => {
+    expect(String((await meta("collection")).title)).not.toBe(String((await meta("sniper")).title))
   })
 })
