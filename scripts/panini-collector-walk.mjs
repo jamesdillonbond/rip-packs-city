@@ -3,8 +3,9 @@
 //
 // WHY. The Panini Collection tab could only show cards RPC had SEEN under a username, and RPC
 // learns a holder only from a LISTING: Trevor's profile shows 146 NFTs + 12 unopened packs and
-// RPC had seen 0. Panini publishes every collector's cards on a public profile page:
-//   https://nft.paniniamerica.net/public-profile/collections.html?nickname=<u>&tab=collected
+// RPC had seen 0. Panini publishes every collector's cards on a public profile page — its own
+// "View your collection" link is /@<u>/profile/collections.html (route constant rP, Panini's
+// bundle 2026-09-27; Trevor's profile link is the /@<u>/profile/panini-wall.html sibling) —
 // whose SPA asks its own GraphQL `userCollectedNftsV2(p, l:30, …, nickname)` — 30 cards a page,
 // the next page on SCROLL (measured in Panini's bundle 2026-09-27: the page appends while the
 // last answer carried ≥ 30 products) — each product with url_key (= panini_card_serials.sku),
@@ -40,6 +41,47 @@ const USERNAME = /^[A-Za-z0-9_.-]{2,16}$/
 export function profileUrl(nickname) {
   const q = new URLSearchParams({ nickname, tab: "collected" })
   return `${PROFILE_BASE}?${q.toString()}`
+}
+
+/**
+ * The pages to try, in order, until one answers with this collector's cards. Panini serves the
+ * collection under two route families (both in its bundle); which one pages the collected list
+ * for a signed-out-or-other viewer was not measurable from RPC's side, so the walker tries both
+ * and logs which one answered.
+ */
+export function profileUrlCandidates(nickname) {
+  const at = `https://nft.paniniamerica.net/@${encodeURIComponent(nickname)}/profile/collections.html`
+  return [`${at}?tab=collected`, profileUrl(nickname), at]
+}
+
+export const UNOPENED_PACKS_URL = (nickname) => `https://nft.paniniamerica.net/@${encodeURIComponent(nickname)}/profile/unopened-packs.html`
+
+/**
+ * Does this request ask about `nickname`? ⛔ One of Panini's collection components falls back to
+ * the SIGNED-IN user when the URL names nobody, and the runner's Chrome may be signed in — so an
+ * answer is attributed to a username only when its own request names that username (the
+ * `nickname:` argument, or `nickname=` / `full_name=` in the filters it forwards).
+ */
+export function answerIsFor(postData, nickname) {
+  let q = ""
+  try {
+    const b = JSON.parse(postData || "{}")
+    q = typeof b.query === "string" ? b.query : ""
+    if (b.variables && typeof b.variables === "object") q += " " + JSON.stringify(b.variables)
+  } catch {
+    return false
+  }
+  const want = String(nickname).toLowerCase()
+  for (const m of q.matchAll(/(?:nickname|full_name)\\?"?\s*[:=]\s*\\?"?([A-Za-z0-9_.%-]+)/gi)) {
+    let v = m[1]
+    try {
+      v = decodeURIComponent(v)
+    } catch {
+      // keep the raw value
+    }
+    if (v.toLowerCase() === want) return true
+  }
+  return false
 }
 
 /** "a, b;c" -> ["a","b","c"] (valid usernames, first spelling of each folded name kept). */
@@ -160,6 +202,8 @@ async function walkProfile(ctx, nickname, { maxPages, log }) {
   let error = null
   let sampleKeys = null
   let waiter = null
+  let foreign = 0
+  let source = null
 
   page.on("response", async (r) => {
     const op = operationOf(r.url(), r.request().postData())
@@ -169,6 +213,11 @@ async function walkProfile(ctx, nickname, { maxPages, log }) {
       json = JSON.parse(await r.text())
     } catch {
       if (op === "userCollectedNftsV2") log(`  ${nickname}: userCollectedNftsV2 answered non-JSON (status=${r.status()})`)
+      return
+    }
+    if ((op === "userCollectedNftsV2" || op === "UnopenedPacksStats") && !answerIsFor(r.request().postData(), nickname)) {
+      foreign += 1
+      if (foreign <= 3) log(`  ${nickname}: ignored a ${op} answer whose request does not name ${nickname}`)
       return
     }
     if (op === "userCollectedNftsV2") {
@@ -211,11 +260,21 @@ async function walkProfile(ctx, nickname, { maxPages, log }) {
 
   let finalUrl = ""
   try {
-    const first = nextAnswer(60_000)
-    await page.goto(profileUrl(nickname), { waitUntil: "domcontentloaded", timeout: 60_000 }).catch((e) => {
-      log(`  ${nickname}: goto failed (${e.message.split("\n")[0]})`)
-    })
-    const got = await first
+    let got
+    for (const candidate of profileUrlCandidates(nickname)) {
+      const first = nextAnswer(45_000)
+      await page.goto(candidate, { waitUntil: "domcontentloaded", timeout: 60_000 }).catch((e) => {
+        log(`  ${nickname}: goto failed (${e.message.split("\n")[0]})`)
+      })
+      got = await first
+      if (got !== undefined && got !== null) {
+        source = candidate
+        log(`  ${nickname}: collected cards answered on ${candidate}`)
+        break
+      }
+      log(`  ${nickname}: no collected-cards answer for ${nickname} on ${candidate} (landed on ${page.url()})`)
+      if (/\/usernotfound/i.test(page.url())) break
+    }
     if (got === undefined || got === null) {
       const title = await page.title().catch(() => "?")
       const body = await page.evaluate(() => (document.body?.innerText || "").slice(0, 160)).catch(() => "?")
@@ -246,6 +305,12 @@ async function walkProfile(ctx, nickname, { maxPages, log }) {
       }
       // Give the profile header's own reads (packs, profile info) a moment if they have not landed.
       if (unopenedPacks == null || profileInfo == null) await page.waitForTimeout(3_000)
+      if (unopenedPacks == null) {
+        // The Unopened Packs tab asks UnopenedPacksStats(nickname) for itself.
+        await page.goto(UNOPENED_PACKS_URL(nickname), { waitUntil: "domcontentloaded", timeout: 60_000 }).catch(() => {})
+        for (let i = 0; i < 20 && unopenedPacks == null; i++) await page.waitForTimeout(1_000)
+        if (unopenedPacks == null) log(`  ${nickname}: unopened-pack count not read (kept as unknown)`)
+      }
     }
   } finally {
     finalUrl = page.url()
@@ -253,7 +318,7 @@ async function walkProfile(ctx, nickname, { maxPages, log }) {
   }
   const profileState = profileStateOf({ url: finalUrl, profileInfo, collectedSeen })
   if (!error && total != null && holdings.size < total) error = `collected ${holdings.size} of ${total} cards`
-  return { holdings: [...holdings.values()], total, unopenedPacks, profileState, answers, error, sampleKeys }
+  return { holdings: [...holdings.values()], total, unopenedPacks, profileState, answers, error, sampleKeys, source, foreign }
 }
 
 /** POST one op to the receiver. Resolves { ok, status, data } — never throws. */
@@ -325,6 +390,8 @@ async function main() {
         cards_collected: res.holdings.length,
         unopened_packs: res.unopenedPacks,
         answers: res.answers,
+        source: res.source,
+        ignored_foreign_answers: res.foreign,
         complete,
         error: res.error,
         product_fields: res.sampleKeys,
@@ -340,7 +407,7 @@ async function main() {
           unopened_packs: res.unopenedPacks,
           error: res.error,
           holdings: res.holdings,
-          extra: { answers: res.answers },
+          extra: { answers: res.answers, source: res.source, ignored_foreign_answers: res.foreign },
         })
         if (!r.ok || typeof r.data?.written !== "number") {
           line.write_error = `ingest http ${r.status}: ${r.data?.error ?? r.data?.message ?? "no write count"}`

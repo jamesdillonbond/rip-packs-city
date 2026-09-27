@@ -11,6 +11,9 @@
 import { describe, expect, it } from "vitest"
 import {
   PAGE_SIZE,
+  UNOPENED_PACKS_URL,
+  answerIsFor,
+  profileUrlCandidates,
   findKey,
   isComplete,
   mergeTargets,
@@ -111,5 +114,30 @@ describe("targets", () => {
   })
   it("merges the receiver's plan without walking a folded name twice", () => {
     expect(mergeTargets(["Jamesdillonbond"], [{ nickname: "jamesdillonbond" }, { nickname: "AdlCards" }, { nickname: "bad name!" }, null])).toEqual(["Jamesdillonbond", "AdlCards"])
+  })
+})
+
+describe("profileUrlCandidates", () => {
+  it("tries Panini's own /@<u>/profile/collections.html first, then the public-profile form", () => {
+    expect(profileUrlCandidates("jamesdillonbond")).toEqual([
+      "https://nft.paniniamerica.net/@jamesdillonbond/profile/collections.html?tab=collected",
+      "https://nft.paniniamerica.net/public-profile/collections.html?nickname=jamesdillonbond&tab=collected",
+      "https://nft.paniniamerica.net/@jamesdillonbond/profile/collections.html",
+    ])
+    expect(UNOPENED_PACKS_URL("jamesdillonbond")).toBe("https://nft.paniniamerica.net/@jamesdillonbond/profile/unopened-packs.html")
+  })
+})
+
+describe("answerIsFor — never file one account's cards under another username", () => {
+  const body = (query: string) => JSON.stringify({ query })
+  it("accepts a request naming the username (argument or forwarded filters), any case", () => {
+    expect(answerIsFor(body('query userCollectedNftsV2 { userCollectedNftsV2(p:1,l:30,applied_filters:"",nickname:"JamesDillonBond") {'), "jamesdillonbond")).toBe(true)
+    expect(answerIsFor(body('query userCollectedNftsV2 { userCollectedNftsV2(p:2,l:30,applied_filters:"?tab=collected&nickname=jamesdillonbond&full_name=jamesdillonbond&reqFrom=x",nickname:"") {'), "Jamesdillonbond")).toBe(true)
+  })
+  it("rejects the signed-in fallback (no username named) and a different or longer username", () => {
+    expect(answerIsFor(body('query userCollectedNftsV2 { userCollectedNftsV2(p:1,l:30,applied_filters:"?tab=collected&reqFrom=x",nickname:"") {'), "jamesdillonbond")).toBe(false)
+    expect(answerIsFor(body('userCollectedNftsV2(p:1,l:30,applied_filters:"",nickname:"adlcards")'), "jamesdillonbond")).toBe(false)
+    expect(answerIsFor(body('userCollectedNftsV2(p:1,l:30,applied_filters:"",nickname:"jamesdillonbond2")'), "jamesdillonbond")).toBe(false)
+    expect(answerIsFor("not json", "jamesdillonbond")).toBe(false)
   })
 })
