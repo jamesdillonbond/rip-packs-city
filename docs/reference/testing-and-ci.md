@@ -3491,3 +3491,8 @@ Before pushing a rewrite of `CollectionProfileClient.tsx` I ran every test that 
 ## Displaced from CLAUDE.md — 2026-09-27 (verbatim; it paid for the one-page-structure + Pinnacle-lock rule)
 
 - ⚠ **Grep for the guards that READ a file before you EDIT it** — a pinned exemption reddened main (08-22).
+
+### A guard that follows IMPORTS must skip TYPE-ONLY imports — they carry no code (2026-09-27)
+
+`check-unbounded-server-reads` reddened `main` for ~1.5 h (2 > 0) on `/[collection]/packs` and `/sets`: the only path to the read in `lib/panini/coverage.ts` was five client components doing `import type { PaniniCoverage }`, which TypeScript erases. `importsOf` matched any `from "@/…"`. Fixed by skipping `import type` / `export type` statements (classified by the statement's FIRST line, so a multi-line `import type {…}` counts as type-only; a mixed `import X, { type Y }` still reaches). ⚠ **Four pushes from two sessions stacked on the red before anyone read the failing STEP** — the job was named `TypeScript` and `tsc` itself was green; the failing step was the ratchet script after it. **Read the step, not the job name.** Register [#154](known-issues.md).
+

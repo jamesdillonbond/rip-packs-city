@@ -234,3 +234,12 @@ Moved to pay for the collection-keyed-map rule; the NEVER-NARROW bullet in CLAUD
 Moved to pay for the Disney Pinnacle grain rule in CLAUDE.md's quick-reference facts; CLAUDE.md keeps a pointer here.
 
 **Tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships; no multi-chain outreach pre-launch.
+
+## Candy MLB — in the trophy case (2026-09-27)
+
+The trophy pool is `wallet_moments_cache` via `get_user_top_owned_moments` (chain-neutral: saved wallets joined by address). Candy is IN it — 25,375 holdings across 456 wallets on 09-27, 25,375/25,375 edition-matched, art on arweave.net (on the trophy-thumbnail allowlist; passed through by the OG and PDF fetchers). A rolled-back pin of a real Candy card through `get_trophy_slab_data` returned name, serial, FMV, badge and team.
+
+- `TrophyPickerModal` offers a chip per published collection whose `dbChain` is in `TROPHY_INDEXED_CHAINS` (`flow`, `solana`). ⛔ **A chain whose holdings are NOT in that cache must stay out** — its chip could only answer "you own none". Panini (`dbChain` null) is out for that reason: `panini_card_serials` is a LISTINGS crawl (96 % listed, keyed by seller username), not holdings, so unlisted cards would read as not owned.
+- The empty-pool copy (`emptyPoolCopy` in `lib/trophy-picker-format.ts`) says "you haven't added a Flow / Solana wallet" ONLY when the saved-wallet list was read (`savedChains` from the dashboard; NULL while loading or on a failed read). One Flow (Dapper) wallet covers all five Flow collections.
+- The dashboard's one-field "Add wallet" already chain-detects a base58 address and saves it to Candy; as of 09-27 **0 users had saved a Solana wallet**.
+
