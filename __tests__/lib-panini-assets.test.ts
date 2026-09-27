@@ -8,8 +8,16 @@ describe("paniniAssetUrl", () => {
     expect(PANINI_ASSET_BASE).toBe("https://assets.paniniamerica.net/catalog/product/")
   })
 
-  it("encodes each segment (a space in a stored path is not a broken URL)", () => {
-    expect(paniniAssetUrl("pack/a b.png")).toBe(PANINI_ASSET_BASE + "pack/a%20b.png")
+  it("is idempotent — a URL already on the Panini base (editions since 20260927190000) passes through", () => {
+    const u = PANINI_ASSET_BASE + "pack/1038/thumbnail/x.png"
+    expect(paniniAssetUrl(u)).toBe(u)
+    expect(paniniAssetUrl(paniniAssetUrl("pack/x.png"))).toBe(PANINI_ASSET_BASE + "pack/x.png")
+    expect(paniniAssetUrl(PANINI_ASSET_BASE + "../x.png")).toBeNull()
+    expect(paniniAssetUrl(PANINI_ASSET_BASE + "//evil.example/x.png")).toBeNull()
+  })
+
+  it("matches the SQL twin's character set — a space is refused (no stored path has one)", () => {
+    expect(paniniAssetUrl("pack/a b.png")).toBeNull()
   })
 
   it("refuses anything that is not a plain relative path — never a request to an arbitrary host", () => {

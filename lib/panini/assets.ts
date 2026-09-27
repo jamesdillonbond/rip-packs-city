@@ -24,12 +24,25 @@
 
 export const PANINI_ASSET_BASE = "https://assets.paniniamerica.net/catalog/product/"
 
-const RELATIVE_PATH = /^[A-Za-z0-9][A-Za-z0-9._\-/ ]*$/
+// Same character set as the SQL twin `public.panini_asset_url` (migration
+// 20260927190000), which also writes these URLs into `editions` — measured: all
+// 5,101 stored paths fit it, none carries a space, "..", or "//".
+const RELATIVE_PATH = /^[A-Za-z0-9][A-Za-z0-9._\-/]*$/
 
-/** Absolute URL for a stored Panini media path, or null when it is absent or not a safe relative path. */
+/**
+ * Absolute URL for a stored Panini media path, or null when it is absent or not a
+ * safe relative path. IDEMPOTENT: a URL already on the Panini base passes through
+ * (editions.thumbnail_url holds absolute URLs since 20260927190000, while
+ * panini_editions still holds the relative source paths).
+ */
 export function paniniAssetUrl(path: string | null | undefined): string | null {
   if (typeof path !== "string") return null
   const p = path.trim()
-  if (!p || !RELATIVE_PATH.test(p) || p.includes("..") || p.includes("//")) return null
-  return PANINI_ASSET_BASE + p.split("/").map(encodeURIComponent).join("/")
+  if (!p || p.includes("..")) return null
+  if (p.startsWith(PANINI_ASSET_BASE)) {
+    const rest = p.slice(PANINI_ASSET_BASE.length)
+    return RELATIVE_PATH.test(rest) && !rest.includes("//") ? p : null
+  }
+  if (!RELATIVE_PATH.test(p) || p.includes("//")) return null
+  return PANINI_ASSET_BASE + p
 }
