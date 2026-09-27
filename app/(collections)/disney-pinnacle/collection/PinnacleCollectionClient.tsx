@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { getOwnerKey } from "@/lib/owner-key"
@@ -12,6 +13,11 @@ import {
 } from "@/lib/pinnacle/pinnacleTypes"
 import { PINNACLE_SERIAL_MIN_MINT } from "@/lib/pinnacle/serial-fmv"
 import { usdSignFirst } from "@/lib/usd-format"
+import { getCollection } from "@/lib/collections"
+import { pinnacleRenderHref } from "@/lib/entity-href"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { pickLoading } from "@/lib/schonely"
+import IpfsImg from "@/components/media/IpfsImg"
 
 // Pinnacle wallet view — dedicated route so the Top Shot-heavy
 // [collection]/collection/page.tsx stays focused on player/team/tier.
@@ -37,6 +43,9 @@ type PinnacleMoment = {
   is_serialised?: boolean | null
   mint_count?: number | null
   thumbnail_url?: string | null
+  /** Exact `pinnacle_catalog` render — the pin's own page is keyed on it. */
+  render_id?: string | null
+  low_ask?: number | null
   // Serial-adjusted value from the fitted Pinnacle serial-premium model
   // (lib/pinnacle/serial-fmv.ts, applied in /api/pinnacle-wallet). Null when the
   // model declines to estimate — an unpriced render, a serial with no premium
@@ -49,7 +58,8 @@ type PinnacleMoment = {
 type VariantBucket = { variant_type: string; count: number; total_fmv: number | null }
 type FranchiseBucket = { franchise: string; count: number; total_fmv: number | null }
 
-const ACCENT = "#A855F7"
+// The registry accent, not a second hardcoded copy of it.
+const ACCENT = getCollection("disney-pinnacle")?.accent ?? "var(--rpc-red)"
 const PAGE_SIZE = 100
 
 function usd(n: number | null | undefined) {
@@ -68,7 +78,7 @@ function notSerialisedCell() {
   return (
     <span
       title="This Pinnacle edition type is not serialised — its mints carry no serial numbers. This is not missing data."
-      style={{ color: "rgba(255,255,255,0.32)", fontStyle: "italic", fontSize: 11 }}
+      style={{ color: "var(--rpc-text-ghost)", fontStyle: "italic", fontSize: 11 }}
     >
       not serialised
     </span>
@@ -86,31 +96,56 @@ function serialEstCell(m: PinnacleMoment) {
   if (m.serial_fmv == null) return "—"
   const mult = m.serial_mult ?? 1
   if (m.serial_band === "normal" || mult <= 1.001) {
-    return <span style={{ color: "rgba(255,255,255,0.55)" }}>{usd(m.serial_fmv)}</span>
+    return <span style={{ color: "var(--rpc-text-secondary)" }}>{usd(m.serial_fmv)}</span>
   }
   return (
     <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
       <span style={{ color: ACCENT, fontWeight: 600 }}>{usd(m.serial_fmv)}</span>
-      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)" }}>×{mult.toFixed(2)}</span>
+      <span style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>×{mult.toFixed(2)}</span>
     </span>
   )
 }
 
+// A variant is shown as a coloured dot + the name in the theme's text colour.
+// The old chip painted the NAME in the variant colour, which is unreadable in
+// light mode for the pale variants (Golden #FFD700, Brushed Silver #C0C0C0 on
+// white) — the dot carries the colour, the text stays legible in both themes.
 function variantBadge(variant: string | null | undefined) {
   const v = variant ?? "Standard"
   const color = PINNACLE_VARIANT_COLORS[v] ?? "#6B7280"
   return (
     <span style={{
-      display: "inline-block", padding: "1px 6px", borderRadius: 3,
-      fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 700,
-      color, background: `${color}22`, border: `1px solid ${color}55`, letterSpacing: "0.05em",
-    }}>{v}</span>
+      display: "inline-flex", alignItems: "center", gap: 6, padding: "2px 8px", borderRadius: 999,
+      fontSize: 11, fontFamily: "var(--font-mono)", fontWeight: 600, whiteSpace: "nowrap",
+      color: "var(--rpc-text-primary)", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)",
+    }}>
+      <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: color, flexShrink: 0 }} />
+      {v}
+    </span>
   )
+}
+
+// `set_name` arrives as "<Studio> • <Set>" from get_wallet_moments_with_fmv
+// (measured 2026-09-27). The row carries NO `franchise` or `studio` field, so a
+// Franchise column read "—" on every row in production; the studio is IN the
+// set name, so split it out rather than render a column that is always empty.
+export function splitPinnacleSetName(setName: string | null | undefined): { studio: string | null; set: string | null } {
+  if (!setName) return { studio: null, set: null }
+  const i = setName.indexOf(" • ")
+  if (i < 0) return { studio: null, set: setName }
+  return { studio: setName.slice(0, i), set: setName.slice(i + 3) || null }
+}
+
+/** Where a held pin links on OUR site: its exact render when the row names it. */
+function pinHref(m: PinnacleMoment): string | null {
+  if (m.render_id) return pinnacleRenderHref(m.render_id)
+  if (m.edition_key) return `/pinnacle/moment/${encodeURIComponent(m.edition_key)}`
+  return null
 }
 
 export default function PinnacleCollectionClient() {
   return (
-    <Suspense fallback={<div style={{ color: "rgba(255,255,255,0.5)", padding: 20 }}>Loading…</div>}>
+    <Suspense fallback={<div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", padding: 24 }}>Loading…</div>}>
       <PinnacleCollectionPageInner />
     </Suspense>
   )
@@ -143,7 +178,7 @@ function PinnacleCollectionPageInner() {
     const w = input.trim()
     if (!w) return
     setActiveWallet(w)
-    router.replace(`/disney-pinnacle/collection?wallet=${encodeURIComponent(w)}`)
+    router.push(`/disney-pinnacle/collection?wallet=${encodeURIComponent(w)}`)
   }, [input, router])
 
   // Auto-load: when neither URL ?wallet= nor manual input is set but the user
@@ -225,191 +260,245 @@ function PinnacleCollectionPageInner() {
     return [...franchises].sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
   }, [franchises])
 
+  // ⚠ 2026-09-27 — THE SAME SHELL AS EVERY OTHER COLLECTION'S TAB. This page was
+  // styled on its own: hardcoded white text and `rgba(255,255,255,…)` surfaces
+  // (a white-on-white page in light mode), a purple "Analyze" button where every
+  // other collection has the red `rpc-btn-primary` "Search", and a bare table
+  // where the rest use `.rpc-table`. Layout, search bar, stat tiles and table
+  // now use the tokens and classes `[collection]/collection/CollectionTabClient`
+  // and `CollectionMomentTable` use, so Pinnacle reads as part of the same site.
   return (
-    <div style={{ color: "#fff", paddingTop: 20 }}>
-      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && onSearch()}
-          placeholder="Enter Flow wallet (0x...)"
-          style={{
-            flex: 1, padding: "10px 12px", borderRadius: 4,
-            background: "rgba(255,255,255,0.04)", border: `1px solid ${ACCENT}44`,
-            color: "#fff", fontFamily: "var(--font-mono)", fontSize: 13,
-          }}
-        />
-        <button
-          onClick={onSearch}
-          style={{
-            padding: "10px 20px", background: ACCENT, color: "#fff",
-            border: "none", borderRadius: 4, fontFamily: "var(--font-display)",
-            fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer",
-          }}>Analyze</button>
-      </div>
-
-      {error && (
-        <div style={{ padding: 12, marginBottom: 16, border: "1px solid #EF444466", color: "#FCA5A5", borderRadius: 4 }}>
-          {error}
+    <div className="min-h-screen bg-[var(--rpc-black)] text-[color:var(--rpc-text-primary)] overflow-x-hidden">
+      <div className="mx-auto max-w-[1600px] px-3 py-4 md:px-6">
+        {/* Search bar — same markup as the shared Collection tab. */}
+        <div className="mb-5 flex flex-col gap-2 sm:flex-row">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !loading && input.trim()) onSearch() }}
+            placeholder="Enter Disney Pinnacle username or Flow wallet (0x…)"
+            aria-label="Disney Pinnacle username or wallet address"
+            className="w-full sm:max-w-lg"
+            style={{
+              background: "var(--rpc-surface-raised)",
+              border: "1px solid var(--rpc-border)",
+              borderRadius: "var(--radius-md)",
+              padding: "8px 12px",
+              color: "var(--rpc-text-primary)",
+              outline: "none",
+            }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--rpc-red)" }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--rpc-border)" }}
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={onSearch}
+              disabled={loading || !input.trim()}
+              className="rpc-btn-primary"
+              style={{
+                opacity: loading || !input.trim() ? 0.5 : 1,
+                cursor: loading || !input.trim() ? "not-allowed" : "pointer",
+              }}
+            >
+              {loading ? pickLoading() : "Search"}
+            </button>
+          </div>
         </div>
-      )}
 
-      {(activeWallet || hasSearched) && (
-        <>
-          {/* Standard four-tile WalletStatRow — same component every collection
-              renders. Pinnacle returns null for lockedFmv/lockedCount/bestOfferTotal
-              because those concepts don't apply here. */}
-          <div style={{ marginBottom: 16 }}>
-            <WalletStatRow
-              walletFmv={totalFmv}
-              unlockedFmv={unlockedFmv}
-              lockedFmv={null}
-              bestOfferTotal={bestOfferTotal}
-              momentCount={momentCount || null}
-              unlockedCount={unlockedCount}
-              lockedCount={null}
-              spreadGap={spreadGap}
-              collectionSlug="disney-pinnacle"
-              loading={loading}
-            />
+        {error && (
+          <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">
+            {error}
           </div>
+        )}
 
-          {/* Pinnacle-specific secondary row — additive context that doesn't
-              fit the universal four-tile layout. */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 24 }}>
-            <HeaderCard label="Wallet" value={`${activeWallet.slice(0, 6)}…${activeWallet.slice(-4)}`} />
-            <HeaderCard label="Total Pins" value={momentCount == null ? "—" : String(momentCount)} />
-            <HeaderCard label="Franchises" value={String(sortedFranchises.length)} />
-          </div>
-
-          {/* Variant breakdown */}
-          {sortedVariants.length > 0 && (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>
-                Variant Breakdown
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {sortedVariants.map((v) => (
-                  <div key={v.variant_type} style={{
-                    padding: "6px 10px", background: "rgba(255,255,255,0.03)",
-                    border: `1px solid ${PINNACLE_VARIANT_COLORS[v.variant_type] ?? "#6B7280"}66`,
-                    borderRadius: 4, fontSize: 12, fontFamily: "var(--font-mono)",
-                  }}>
-                    {variantBadge(v.variant_type)}
-                    <span style={{ marginLeft: 8, color: "#fff" }}>{v.count}</span>
-                    {v.total_fmv != null && (
-                      <span style={{ marginLeft: 6, color: "rgba(255,255,255,0.5)" }}>{usd(v.total_fmv)}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
+        {(activeWallet || hasSearched) && (
+          <>
+            {/* Standard four-tile WalletStatRow — same component every collection
+                renders. Pinnacle returns null for lockedFmv/lockedCount/bestOfferTotal
+                because those concepts don't apply here. */}
+            <div style={{ marginBottom: 12 }}>
+              <WalletStatRow
+                walletFmv={totalFmv}
+                unlockedFmv={unlockedFmv}
+                lockedFmv={null}
+                bestOfferTotal={bestOfferTotal}
+                momentCount={momentCount || null}
+                unlockedCount={unlockedCount}
+                lockedCount={null}
+                spreadGap={spreadGap}
+                collectionSlug="disney-pinnacle"
+                loading={loading}
+              />
             </div>
-          )}
 
-          {/* Franchise breakdown */}
-          {sortedFranchises.length > 0 && (
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>
-                Franchise Breakdown
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {sortedFranchises.slice(0, 12).map((f) => (
-                  <div key={f.franchise} style={{
-                    padding: "6px 10px", background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4,
-                    fontSize: 12, fontFamily: "var(--font-mono)",
-                  }}>
-                    <span style={{ color: "#fff", fontWeight: 600 }}>{f.franchise}</span>
-                    <span style={{ marginLeft: 8, color: ACCENT }}>{f.count}</span>
-                    {f.total_fmv != null && (
-                      <span style={{ marginLeft: 6, color: "rgba(255,255,255,0.5)" }}>{usd(f.total_fmv)}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
+            {/* Pinnacle-specific secondary row — additive context that doesn't
+                fit the universal four-tile layout. */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 20 }}>
+              <HeaderCard label="Wallet" value={activeWallet.length > 12 ? `${activeWallet.slice(0, 6)}…${activeWallet.slice(-4)}` : activeWallet} />
+              <HeaderCard label="Total Pins" value={momentCount == null ? "—" : String(momentCount)} />
+              <HeaderCard label="Franchises" value={error ? "—" : String(sortedFranchises.length)} />
             </div>
-          )}
 
-          {/* Pins table */}
-          <div className="rpc-mono" style={{ padding: "0 2px 6px", fontSize: 10, color: "rgba(255,255,255,0.45)", letterSpacing: "0.05em" }}>
-            FMV is what a typical serial of that render trades at. <span style={{ color: "rgba(255,255,255,0.7)" }}>Serial est.</span> applies the fitted
-            serial-premium model for low serials, and is left blank on editions minted under {PINNACLE_SERIAL_MIN_MINT}, where the whole edition is
-            scarce and serial position is not the price driver. Totals above use FMV, not the estimate. Rows marked{" "}
-            <span style={{ color: "rgba(255,255,255,0.55)", fontStyle: "italic" }}>not serialised</span> are Open, Open Event or Starter editions, which
-            carry no serial numbers at all — that is the edition type, not missing data.
-          </div>
-          <div style={{ overflow: "auto", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 4 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "var(--font-mono)" }}>
-              <thead>
-                <tr style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.6)", textAlign: "left" }}>
-                  <Th>Character</Th>
-                  <Th>Franchise</Th>
-                  <Th>Set</Th>
-                  <Th>Variant</Th>
-                  <Th>Serial</Th>
-                  <Th>FMV</Th>
-                  <Th>Serial est.</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((m) => (
-                  <tr key={m.moment_id} style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                    <Td>{m.player_name ?? "—"}</Td>
-                    <Td>{m.franchise ?? "—"}</Td>
-                    <Td style={{ color: "rgba(255,255,255,0.7)" }}>{m.set_name ?? "—"}{m.studio ? ` · ${pinnacleStudioShort(m.studio)}` : ""}</Td>
-                    <Td>{variantBadge(m.variant_type ?? m.tier)}</Td>
-                    <Td>{m.serial_number != null
-                      ? `#${m.serial_number}${m.mint_count ? `/${m.mint_count}` : ""}`
-                      : m.is_serialised === false ? notSerialisedCell() : "—"}</Td>
-                    <Td>{usd(m.fmv_usd)}</Td>
-                    <Td>{serialEstCell(m)}</Td>
-                  </tr>
-                ))}
-                {/* ⚠ SECOND CLAIM SITE ON THIS PAGE, found by the test written for the
-                    first. The catch sets `rows` to [], so without the `!error` guard this
-                    told a collector "No Pinnacle pins found for this wallet" — a statement
-                    about their OWN holdings — whenever the read failed. Sweep every site
-                    that consumes the failed read, not the one you noticed. */}
-                {rows.length === 0 && !loading && !error && (
-                  <tr><td colSpan={7} style={{ padding: 24, textAlign: "center", color: "rgba(255,255,255,0.4)" }}>
-                    No Pinnacle pins found for this wallet.
-                  </td></tr>
+            {(sortedVariants.length > 0 || sortedFranchises.length > 0) && (
+              <div
+                className="mb-5 grid gap-4 md:grid-cols-2"
+                style={{
+                  padding: 16,
+                  border: "1px solid var(--rpc-border)",
+                  background: "var(--rpc-surface)",
+                  borderRadius: "var(--radius-lg)",
+                }}
+              >
+                {sortedVariants.length > 0 && (
+                  <div>
+                    <SectionEyebrow>Variant Breakdown</SectionEyebrow>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {sortedVariants.map((v) => (
+                        <div key={v.variant_type} style={chipStyle}>
+                          {variantBadge(v.variant_type)}
+                          <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{v.count}</span>
+                          {v.total_fmv != null && (
+                            <span style={{ color: "var(--rpc-text-muted)" }}>{usd(v.total_fmv)}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
-              </tbody>
-            </table>
-          </div>
+                {sortedFranchises.length > 0 && (
+                  <div>
+                    <SectionEyebrow>Franchise Breakdown</SectionEyebrow>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {sortedFranchises.slice(0, 12).map((f) => (
+                        <div key={f.franchise} style={chipStyle}>
+                          <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{f.franchise}</span>
+                          <span style={{ color: ACCENT, fontWeight: 600 }}>{f.count}</span>
+                          {f.total_fmv != null && (
+                            <span style={{ color: "var(--rpc-text-muted)" }}>{usd(f.total_fmv)}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
-          {loading && (
-            <div style={{ padding: 16, textAlign: "center", color: "rgba(255,255,255,0.5)" }}>
-              Loading wallet…
+            {/* Pins table */}
+            <div className="rpc-mono" style={{ padding: "0 2px 8px", fontSize: 11, lineHeight: 1.6, color: "var(--rpc-text-muted)" }}>
+              FMV is what a typical serial of that render trades at. <span style={{ color: "var(--rpc-text-secondary)" }}>Serial est.</span> applies the fitted
+              serial-premium model for low serials, and is left blank on editions minted under {PINNACLE_SERIAL_MIN_MINT}, where the whole edition is
+              scarce and serial position is not the price driver. Totals above use FMV, not the estimate. Rows marked{" "}
+              <span style={{ color: "var(--rpc-text-secondary)", fontStyle: "italic" }}>not serialised</span> are Open, Open Event or Starter editions, which
+              carry no serial numbers at all — that is the edition type, not missing data.
             </div>
-          )}
-        </>
-      )}
+            <div className="rpc-table-wrapper">
+              <table className="rpc-table" style={{ minWidth: 0 }}>
+                <thead>
+                  <tr>
+                    <th>Pin</th>
+                    <th className="hidden sm:table-cell">Set</th>
+                    <th className="hidden md:table-cell">Variant</th>
+                    <th className="hidden sm:table-cell">Serial / Mint</th>
+                    <th className="whitespace-nowrap">FMV</th>
+                    <th className="hidden lg:table-cell">Serial est.</th>
+                    <th className="hidden lg:table-cell">Low Ask</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((m) => {
+                    const href = pinHref(m)
+                    const { studio, set } = splitPinnacleSetName(m.set_name)
+                    const studioLabel = m.studio ?? studio
+                    const thumb = proxyIpfsUrl(m.thumbnail_url)
+                    const name = m.player_name ?? "—"
+                    return (
+                      <tr key={m.moment_id} style={{ cursor: "default" }}>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div style={{
+                              width: 40, height: 40, flexShrink: 0, borderRadius: 6, overflow: "hidden",
+                              background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border-subtle)",
+                            }}>
+                              {thumb ? (
+                                <IpfsImg src={thumb} alt={m.player_name ?? ""} width={40} height={40} style={{ objectFit: "contain", display: "block", width: 40, height: 40 }} />
+                              ) : null}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div className="rpc-table-cell--player" style={{ lineHeight: 1.25 }}>
+                                {href ? (
+                                  <Link href={href} prefetch={false} style={{ color: "inherit", textDecoration: "none" }}>{name}</Link>
+                                ) : name}
+                              </div>
+                              {/* On narrow screens the Set / Variant / Serial columns are hidden,
+                                  so their essentials ride under the name. */}
+                              <div className="sm:hidden rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 2 }}>
+                                {[studioLabel ? pinnacleStudioShort(studioLabel) : null, m.variant_type ?? m.tier].filter(Boolean).join(" · ")}
+                                {m.serial_number != null ? ` · #${m.serial_number}` : ""}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="hidden sm:table-cell rpc-table-cell--muted">
+                          <div style={{ lineHeight: 1.3 }}>{set ?? m.set_name ?? "—"}</div>
+                          {(studioLabel || m.franchise) && (
+                            <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 2 }}>
+                              {[studioLabel ? pinnacleStudioShort(studioLabel) : null, m.franchise].filter(Boolean).join(" · ")}
+                            </div>
+                          )}
+                        </td>
+                        <td className="hidden md:table-cell">{variantBadge(m.variant_type ?? m.tier)}</td>
+                        <td className="hidden sm:table-cell rpc-table-cell--mono">{m.serial_number != null
+                          ? `#${m.serial_number}${m.mint_count ? `/${m.mint_count}` : ""}`
+                          : m.is_serialised === false ? notSerialisedCell() : "—"}</td>
+                        <td className="rpc-table-cell--mono" style={{ fontWeight: 600 }}>{usd(m.fmv_usd)}</td>
+                        <td className="hidden lg:table-cell rpc-table-cell--mono">{serialEstCell(m)}</td>
+                        <td className="hidden lg:table-cell rpc-table-cell--mono rpc-table-cell--muted">{usd(m.low_ask)}</td>
+                      </tr>
+                    )
+                  })}
+                  {/* ⚠ SECOND CLAIM SITE ON THIS PAGE, found by the test written for the
+                      first. The catch sets `rows` to [], so without the `!error` guard this
+                      told a collector "No Pinnacle pins found for this wallet" — a statement
+                      about their OWN holdings — whenever the read failed. Sweep every site
+                      that consumes the failed read, not the one you noticed. */}
+                  {rows.length === 0 && !loading && !error && (
+                    <tr style={{ cursor: "default" }}><td colSpan={7} className="rpc-table-empty">
+                      No Pinnacle pins found for this wallet.
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {loading && (
+              <div className="rpc-mono" style={{ padding: 16, textAlign: "center", color: "var(--rpc-text-muted)" }}>
+                Loading wallet…
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
+}
+
+const chipStyle: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 8,
+  padding: "4px 8px", background: "var(--rpc-surface-raised)",
+  border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-md)",
+  fontSize: 12, fontFamily: "var(--font-mono)",
+}
+
+function SectionEyebrow({ children }: { children: React.ReactNode }) {
+  return <div className="rpc-stat-eyebrow" style={{ marginBottom: 10 }}>{children}</div>
 }
 
 function HeaderCard({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{
-      padding: 14, background: "rgba(255,255,255,0.03)",
-      border: "1px solid rgba(255,255,255,0.08)", borderRadius: 4,
-    }}>
-      <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)", textTransform: "uppercase" }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 22, fontFamily: "var(--font-display)", fontWeight: 900, color: "#fff", marginTop: 4 }}>
-        {value}
-      </div>
+    <div className="rpc-stat-tile">
+      <div className="rpc-stat-eyebrow">{label}</div>
+      <div className="rpc-stat-value">{value}</div>
     </div>
   )
-}
-
-const thTdStyle = { padding: "8px 12px", whiteSpace: "nowrap" as const }
-function Th({ children }: { children: React.ReactNode }) {
-  return <th style={{ ...thTdStyle, fontWeight: 700, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase" }}>{children}</th>
-}
-function Td({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <td style={{ ...thTdStyle, ...style }}>{children}</td>
 }

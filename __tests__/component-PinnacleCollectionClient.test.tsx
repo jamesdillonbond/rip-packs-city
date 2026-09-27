@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react"
-import PinnacleCollectionClient from "@/app/(collections)/disney-pinnacle/collection/PinnacleCollectionClient"
+import PinnacleCollectionClient, { splitPinnacleSetName } from "@/app/(collections)/disney-pinnacle/collection/PinnacleCollectionClient"
 
 // Third page in this sweep with the same defect, and the sharpest instance of it: the figure
 // manufactured from a failed read is a claim about the READER'S OWN HOLDINGS.
@@ -298,5 +298,88 @@ describe("PinnacleCollectionClient — the moment rows", () => {
     const body = document.body.textContent ?? ""
     expect(body).toMatch(/Locked Pin/)
     expect(body).toMatch(/Open Pin/)
+  })
+})
+
+// 2026-09-27 — the page was re-skinned onto the shared collection-tab shell. These pin
+// the two data facts that re-skin rests on, measured live on get_wallet_moments_with_fmv:
+// the row carries `render_id` (so a pin can link to its own page) and NO franchise/studio
+// field (the studio lives inside `set_name` as "<Studio> • <Set>").
+describe("PinnacleCollectionClient — rows as the wallet RPC actually sends them", () => {
+  const liveRow = (over: Record<string, unknown> = {}) => ({
+    moment_id: "217703303243381",
+    edition_key: "WDAS-OEEV2-MNF:Embellished Enamel:1",
+    render_id: "OEEV2-MNF-MIDO-E3",
+    player_name: "Mickey Mouse & Donald Duck",
+    set_name: "Walt Disney Animation Studios • Disney's Mickey & Friends Vol.2",
+    tier: "Embellished Enamel",
+    serial_number: null,
+    circulation_count: 1369,
+    mint_count: 1369,
+    fmv_usd: 4.054,
+    low_ask: 5,
+    thumbnail_url: "/api/public/pinnacle-image/OEEV2-MNF-MIDO-E3",
+    is_serialised: false,
+    ...over,
+  })
+
+  async function mountRows(moments: unknown[]) {
+    params = new URLSearchParams(`wallet=${WALLET}`)
+    vi.stubGlobal("fetch", ok(payload({ moments, momentCount: moments.length })))
+    render(<PinnacleCollectionClient />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Mickey Mouse & Donald Duck/))
+  }
+
+  it("links a pin to its own render page", async () => {
+    await mountRows([liveRow()])
+    const a = Array.from(document.querySelectorAll("a")).find((x) => x.textContent === "Mickey Mouse & Donald Duck")
+    expect(a?.getAttribute("href")).toBe("/pinnacle/moment/OEEV2-MNF-MIDO-E3")
+  })
+
+  it("falls back to the edition-key page when the row names no render", async () => {
+    await mountRows([liveRow({ render_id: null })])
+    const a = Array.from(document.querySelectorAll("a")).find((x) => x.textContent === "Mickey Mouse & Donald Duck")
+    expect(a?.getAttribute("href")).toBe(`/pinnacle/moment/${encodeURIComponent("WDAS-OEEV2-MNF:Embellished Enamel:1")}`)
+  })
+
+  it("splits the studio out of the set name instead of showing an always-empty franchise", async () => {
+    await mountRows([liveRow()])
+    const row = document.querySelector("tbody tr")?.textContent ?? ""
+    expect(row).toContain("Disney's Mickey & Friends Vol.2")
+    expect(row).toContain("Disney")
+    // The full "<Studio> • <Set>" string is not repeated verbatim in the Set cell.
+    expect(row).not.toContain("Walt Disney Animation Studios •")
+  })
+
+  it("renders the pin art and the low ask", async () => {
+    await mountRows([liveRow()])
+    const img = document.querySelector("tbody img")
+    expect(img?.getAttribute("src")).toBe("/api/public/pinnacle-image/OEEV2-MNF-MIDO-E3")
+    expect(document.querySelector("tbody tr")?.textContent).toContain("$5.00")
+  })
+
+  it("does not state a franchise count out of a failed read", async () => {
+    params = new URLSearchParams(`wallet=${WALLET}`)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 503, json: async () => ({ error: "upstream down" }) }) as unknown as Response),
+    )
+    render(<PinnacleCollectionClient />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/upstream down/))
+    const body = document.body.textContent ?? ""
+    expect(body).not.toMatch(/Franchises\s*0/)
+    expect(body).toMatch(/Franchises\s*—/)
+  })
+})
+
+describe("splitPinnacleSetName", () => {
+  it("splits '<Studio> • <Set>'", () => {
+    expect(splitPinnacleSetName("Lucasfilm Ltd. • Star Wars Holiday Vol.1")).toEqual({ studio: "Lucasfilm Ltd.", set: "Star Wars Holiday Vol.1" })
+  })
+  it("keeps a set name with no studio prefix whole", () => {
+    expect(splitPinnacleSetName("Steamboat Willie")).toEqual({ studio: null, set: "Steamboat Willie" })
+  })
+  it("passes null through", () => {
+    expect(splitPinnacleSetName(null)).toEqual({ studio: null, set: null })
   })
 })
