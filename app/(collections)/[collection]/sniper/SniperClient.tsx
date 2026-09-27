@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
-import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
+import { getCollection, COLLECTION_UUID_BY_SLUG, collectionHasLocking } from "@/lib/collections";
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav";
 import PackSniperClient from "@/app/insights/pack-sniper/PackSniperClient";
 import { getOwnerKey } from "@/lib/owner-key";
@@ -1319,10 +1319,10 @@ function SniperMomentsBody() {
             <table style={{ width: "100%", minWidth: 980, fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", borderCollapse: "collapse" }}>
               <thead>
                 <tr className="rpc-thead-scanline" style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
-                  <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px 10px 10px" }}>Moment</th>
+                  <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px 10px 10px" }}>{isPinnacle ? "Pin" : "Moment"}</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px 10px 4px" }}>Serial</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Listed</th>
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Own / Lock</th>
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>{collectionHasLocking(collectionSlug) ? "Own / Lock" : "Own"}</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Ask</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Adj. FMV</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Discount</th>

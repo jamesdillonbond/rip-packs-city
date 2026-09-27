@@ -14,7 +14,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { momentSubjectHref, setEntityHref, pinnacleRenderHref } from "@/lib/entity-href"
-import { getCollection, marketplaceMomentUrl } from "@/lib/collections"
+import { getCollection, marketplaceMomentUrl, collectionHasLocking } from "@/lib/collections"
 import { normalizeSetName, buildEditionScopeKey } from "@/lib/wallet-normalize"
 import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
@@ -154,6 +154,14 @@ export default function CollectionMomentTable(props: {
   // is_locked flag is a stale past-run value. Render lock figures as "—" (not
   // tracked) rather than as current fact. Re-enable when a scheduled refresh lands.
   const lockUntracked = collectionSlug === "nfl-all-day"
+  // Disney Pinnacle pins cannot be locked: no lock column, count, flag or
+  // filter at all — "Held" alone (lib/collections.ts collectionHasLocking).
+  const hasLocking = collectionHasLocking(collectionSlug)
+  const heldLabel = hasLocking ? "Held / Locked" : "Held"
+  const heldValue = function(c: { owned: number; locked: number }) {
+    if (!hasLocking) return String(c.owned)
+    return c.owned + " / " + (lockUntracked ? "—" : c.locked)
+  }
   const labels = getEntityLabels(collectionSlug)
   const isPinnacle = collectionSlug === "disney-pinnacle"
   const unitNoun = isPinnacle ? "pins" : "moments"
@@ -263,9 +271,9 @@ export default function CollectionMomentTable(props: {
                       {editionCounts.owned > 1 && (
                         <span
                           className="text-[10px] font-mono text-[color:var(--rpc-text-secondary)]"
-                          title={lockUntracked ? `You hold ${editionCounts.owned} of this edition` : `You hold ${editionCounts.owned} of this edition · ${editionCounts.locked} locked`}
+                          title={lockUntracked || !hasLocking ? `You hold ${editionCounts.owned} of this edition` : `You hold ${editionCounts.owned} of this edition · ${editionCounts.locked} locked`}
                         >
-                          ×{editionCounts.owned}{!lockUntracked && editionCounts.locked > 0 ? ` (${editionCounts.locked}🔒)` : ""}
+                          ×{editionCounts.owned}{!lockUntracked && hasLocking && editionCounts.locked > 0 ? ` (${editionCounts.locked}🔒)` : ""}
                         </span>
                       )}
                     </div>
@@ -362,8 +370,8 @@ export default function CollectionMomentTable(props: {
                           </div>
                           {/* Confidence field removed 2026-07-11 — build-time signal only. */}
                           <div className="rpc-expand-field">
-                            <div className="rpc-expand-field-label">Held / Locked</div>
-                            <div className="rpc-expand-field-value rpc-table-cell--mono">{editionCounts.owned} / {lockUntracked ? "—" : editionCounts.locked}</div>
+                            <div className="rpc-expand-field-label">{heldLabel}</div>
+                            <div className="rpc-expand-field-value rpc-table-cell--mono">{heldValue(editionCounts)}</div>
                           </div>
                         </div>
                       </div>
@@ -400,7 +408,7 @@ export default function CollectionMomentTable(props: {
                 <th className="hidden md:table-cell">Parallel</th>
                 <th className="hidden md:table-cell">{isPinnacle ? labels.tier : "Rarity"}</th>
                 <th className="hidden sm:table-cell">Serial / Mint</th>
-                <th className="hidden lg:table-cell">Held / Locked</th>
+                <th className="hidden lg:table-cell">{heldLabel}</th>
                 <th className="hidden xl:table-cell">Packs</th>
                 <th className="whitespace-nowrap">FMV</th>
                 <th className="hidden xl:table-cell">Paid</th>
@@ -575,7 +583,7 @@ export default function CollectionMomentTable(props: {
                         </div>
                       </td>
                       <td className="text-sm hidden lg:table-cell">
-                        <div>{editionCounts.owned} / {lockUntracked ? "—" : editionCounts.locked}</div>
+                        <div>{heldValue(editionCounts)}</div>
                         {row.badgeInfo && row.badgeInfo.circulation_count != null && row.badgeInfo.circulation_count > 0 && !(row.badgeInfo.circulation_count === 1 || row.tier?.toUpperCase() === "ULTIMATE") && (
                           <div className="mt-1 text-[10px] text-[color:var(--rpc-text-muted)] font-mono leading-tight" title={"Minted: " + row.badgeInfo.circulation_count + " · Owned: " + row.badgeInfo.owned + " · For Sale: " + (row.badgeInfo.for_sale_by_collectors ?? "?") + " · In Packs: " + row.badgeInfo.hidden_in_packs + " · Burned: " + row.badgeInfo.burned}>
                             <span>{row.badgeInfo.circulation_count.toLocaleString()} minted</span>
@@ -862,10 +870,12 @@ export default function CollectionMomentTable(props: {
                                   <div className="rpc-expand-field-label">Acquired</div>
                                   <div className="rpc-expand-field-value rpc-table-cell--mono">{formatAcquiredAt(row.acquiredAt)}</div>
                                 </div>
+                                {hasLocking && (
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Locked</div>
                                   <div className="rpc-expand-field-value">{lockUntracked || !isLockKnown(row) ? "—" : (isLocked ? "Yes" : "No")}</div>
                                 </div>
+                                )}
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Edition Key</div>
                                   <div className="rpc-expand-field-value rpc-table-cell--mono">{row.editionKey ?? "—"}</div>

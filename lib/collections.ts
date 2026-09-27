@@ -472,6 +472,19 @@ export function requirePublishedCollection(id: string): Collection {
   return c
 }
 
+// ── Locking ─────────────────────────────────────────────────────────────────
+// Collections whose NFTs have no lock concept. Disney Pinnacle pins cannot be
+// locked (Trevor, 2026-09-27), yet `wallet_moments_cache.is_locked` reads true
+// on 375 Pinnacle rows from the shared lock-check lane — so every lock figure,
+// column, filter and caption is HIDDEN for these collections rather than shown
+// from that column. Not "—": a dash says "unknown", and there is nothing to know.
+const COLLECTIONS_WITHOUT_LOCKING: ReadonlySet<string> = new Set(["disney-pinnacle", "pinnacle"])
+
+/** False for a collection whose NFTs cannot be locked — render no lock UI at all. */
+export function collectionHasLocking(id: string): boolean {
+  return !COLLECTIONS_WITHOUT_LOCKING.has(id)
+}
+
 export function collectionHasPage(id: string, page: CollectionPage): boolean {
   const c = getCollection(id)
   return !!c && c.pages.includes(page)

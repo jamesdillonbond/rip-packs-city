@@ -29,7 +29,7 @@ import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import type { EditionTile } from "./EditionsGridPaginated"
 import { topshotSeriesLabel, TOPSHOT_SERIES_ORDER } from "@/lib/analytics/series-labels"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
-import { getCollection } from "@/lib/collections"
+import { getCollection, collectionHasLocking } from "@/lib/collections"
 import { checklistWalletStorageKey, isSolanaChecklist, parseChecklistWallet } from "@/lib/entity/checklist-wallet"
 
 interface ChecklistTile extends EditionTile {
@@ -83,6 +83,8 @@ function seriesChipLabel(collectionUrlSlug: string, n: number): string {
 
 export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptions: seriesProp }: Props) {
   const isTopShot = collectionUrlSlug === "nba-top-shot"
+  // Disney Pinnacle pins cannot be locked: no "N locked", no locked legend or state.
+  const hasLocking = collectionHasLocking(collectionUrlSlug)
   const dbChain = getCollection(collectionUrlSlug)?.dbChain ?? null
   const isSolana = isSolanaChecklist(dbChain)
   const lsKey = checklistWalletStorageKey(dbChain)
@@ -304,7 +306,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
                   <span className="rpc-mono" style={{ fontSize: 13, color: "var(--rpc-red)", marginLeft: 8 }}>{pct}%</span>
                 )}
               </div>
-              {hasWallet && progress.locked_owned != null && (
+              {hasWallet && hasLocking && progress.locked_owned != null && (
                 <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 2 }}>
                   {fmtCount(progress.locked_owned)} locked
                 </div>
@@ -411,7 +413,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
           {/* Three-state legend (mirrors Top Shot's owned/locked/missing). */}
           {hasWallet && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 10 }}>
-              <LegendDot kind="locked" label="Owned + locked" />
+              {hasLocking && <LegendDot kind="locked" label="Owned + locked" />}
               <LegendDot kind="owned" label="Owned" />
               <LegendDot kind="missing" label="Missing" />
             </div>
@@ -479,7 +481,7 @@ function ScopeChip({ active, onClick, children }: { active: boolean; onClick: ()
 // ── Checklist tile (mirrors EditionsGridPaginated styling + ownership badge) ───
 function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionUrlSlug: string; e: ChecklistTile; hasWallet: boolean; eager: boolean }) {
   const owned = e.owned === true
-  const locked = owned && e.owned_locked === true
+  const locked = owned && e.owned_locked === true && collectionHasLocking(collectionUrlSlug)
   const ownState: OwnState = locked ? "locked" : owned ? "owned" : "missing"
   const badgeStyle = OWN_STYLE[ownState]
   const addCost = e.floor_usd ?? e.fmv_usd ?? null

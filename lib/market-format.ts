@@ -96,7 +96,8 @@ export function tierColor(tier: string | null): string {
 }
 
 /** "owned / locked" label; no-holdings (null or owned<=0) → em dash. */
-export function ownLockLabel(stats: { owned: number; locked: number } | null | undefined): string {
+export function ownLockLabel(stats: { owned: number; locked: number } | null | undefined, hasLocking = true): string {
   if (!stats || stats.owned <= 0) return "—"
-  return `${stats.owned} / ${stats.locked}`
+  // A collection with no locking (Disney Pinnacle) shows the owned count alone.
+  return hasLocking ? `${stats.owned} / ${stats.locked}` : String(stats.owned)
 }

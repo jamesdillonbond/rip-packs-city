@@ -31,7 +31,7 @@ import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIE
 import { filterListingsByOwned, collectBadgeOptions, countActiveFilters } from "@/lib/market/filters"
 import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
-import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid } from "@/lib/collections"
+import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid, collectionHasLocking } from "@/lib/collections"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import IpfsImg from "@/components/media/IpfsImg"
 import { fmvBasis } from "@/lib/fmv-basis"
@@ -1044,7 +1044,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
           {showOwned && (
             <>
               <span>·</span>
-              <span>OWN {ownLockLabel(stats)}</span>
+              <span>OWN {ownLockLabel(stats, collectionHasLocking(collectionUrlSlug))}</span>
             </>
           )}
         </div>
@@ -1103,7 +1103,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
             <th style={th}>Badges</th>
             <th style={{ ...th, textAlign: "right" }}># Listed</th>
             <th style={{ ...th, textAlign: "right" }}>Mint</th>
-            {showOwnedColumn && <th style={{ ...th, textAlign: "right" }}>Own / Lock</th>}
+            {showOwnedColumn && <th style={{ ...th, textAlign: "right" }}>{collectionHasLocking(collectionUrlSlug) ? "Own / Lock" : "Own"}</th>}
             <th style={{ ...th, textAlign: "right" }}>Floor Ask</th>
             <th style={{ ...th, textAlign: "right" }}>FMV</th>
             <th style={{ ...th, textAlign: "right" }}>Discount</th>
@@ -1205,8 +1205,8 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 </td>
                 {showOwnedColumn && (
                   <td style={{ ...td, textAlign: "right", color: stats && stats.owned > 0 ? "var(--rpc-success)" : "var(--rpc-text-ghost)" }}
-                      title={stats && stats.owned > 0 ? `${stats.owned} owned · ${stats.locked} locked` : undefined}>
-                    {ownLockLabel(stats)}
+                      title={stats && stats.owned > 0 ? (collectionHasLocking(collectionUrlSlug) ? `${stats.owned} owned · ${stats.locked} locked` : `${stats.owned} owned`) : undefined}>
+                    {ownLockLabel(stats, collectionHasLocking(collectionUrlSlug))}
                   </td>
                 )}
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>

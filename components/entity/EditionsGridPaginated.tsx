@@ -29,7 +29,7 @@ import {
   filterEditions,
   isEditionFilterActive,
 } from "@/lib/entity-editions-grid-format"
-import { getCollection } from "@/lib/collections"
+import { getCollection, collectionHasLocking } from "@/lib/collections"
 import { getOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 
 export interface EditionTile {
@@ -337,12 +337,12 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
       )}
       {showOwnership && ownership.status === "failed" && (
         <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10 }}>
-          Couldn&rsquo;t load your owned &amp; locked counts &mdash; tiles show no ownership until it loads.
+          {collectionHasLocking(collectionUrlSlug) ? <>Couldn&rsquo;t load your owned &amp; locked counts</> : <>Couldn&rsquo;t load your owned counts</>} &mdash; tiles show no ownership until it loads.
         </div>
       )}
       {showOwnership && ownership.status === "unindexed" && (
         <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10 }}>
-          Owned / Locked appears once your loaded wallet is indexed for this collection &mdash; open it in Collection to index it.
+          {collectionHasLocking(collectionUrlSlug) ? "Owned / Locked" : "Owned"} appears once your loaded wallet is indexed for this collection &mdash; open it in Collection to index it.
         </div>
       )}
       {filtersActive && (
@@ -519,7 +519,10 @@ function EditionTileCard({
         {ownership && (
           <span className="rpc-mono" data-testid="tile-ownership" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
             Owned: <span style={{ color: ownership.owned > 0 ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)", fontWeight: ownership.owned > 0 ? 700 : 400 }}>{fmtCount(ownership.owned)}</span>
+            {/* No lock count where the collection has no locking (Disney Pinnacle). */}
+            {collectionHasLocking(collectionUrlSlug) && (<>
             <span style={{ marginLeft: 10 }}>Locked:</span> <span style={{ color: ownership.locked > 0 ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)", fontWeight: ownership.locked > 0 ? 700 : 400 }}>{fmtCount(ownership.locked)}</span>
+            </>)}
           </span>
         )}
         {e.circulation_count !== null && e.circulation_count !== undefined && (
@@ -601,7 +604,7 @@ function EditionFilterBar({
           <option value="all">All Ownership</option>
           <option value="owned">Owned</option>
           <option value="not_owned">Not Owned</option>
-          <option value="locked">Locked</option>
+          {collectionHasLocking(collectionUrlSlug) && <option value="locked">Locked</option>}
         </select>
       )}
     </div>

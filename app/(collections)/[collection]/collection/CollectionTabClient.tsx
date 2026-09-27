@@ -12,7 +12,7 @@ import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKeyForChain, setOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import { detectAddressChain, isSupportedAddress, isValidAddressForChain } from "@/lib/address"
 import { parseSnsName } from "@/lib/chains/solana/sns"
-import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+import { getCollection, COLLECTION_UUID_BY_SLUG, collectionHasLocking } from "@/lib/collections"
 import { useWarmCache, usePrefetch, useWarmup } from "@/lib/warmup/WarmupContext"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
 import MomentDetailModal from "@/components/MomentDetailModal"
@@ -1162,8 +1162,11 @@ function WalletMomentsBody() {
   }, [rows])
 
   const filteredRows = useMemo(
-    () => computeFilteredSortedRows(rows, view, { collectionSeriesMap, duplicateEditions, batchEditionStats }),
-    [rows, view.searchWithin, view.playerFilter, view.setFilter, view.seriesFilter, view.rarityFilter, view.lockedFilter, view.badgeFilter, view.filterBadges, view.filterHasOffer, view.filterListed, view.filterLoanDefaultsOnly, view.filterDupsOnly, duplicateEditions, view.sortKey, view.sortDirection, batchEditionStats, collectionSeriesMap]
+    // ⚠ `lockedFilter` is persisted in localStorage ACROSS collections, so a
+    // "Locked" picked on Top Shot would silently filter a Pinnacle wallet — a
+    // collection with no locking and no lock filter on screen to undo it.
+    () => computeFilteredSortedRows(rows, collectionHasLocking(collectionSlug) ? view : { ...view, lockedFilter: "all" }, { collectionSeriesMap, duplicateEditions, batchEditionStats }),
+    [rows, collectionSlug, view.searchWithin, view.playerFilter, view.setFilter, view.seriesFilter, view.rarityFilter, view.lockedFilter, view.badgeFilter, view.filterBadges, view.filterHasOffer, view.filterListed, view.filterLoanDefaultsOnly, view.filterDupsOnly, duplicateEditions, view.sortKey, view.sortDirection, batchEditionStats, collectionSeriesMap]
   )
 
   const totals = useMemo(() => computeCollectionTotals(filteredRows), [filteredRows])

@@ -150,3 +150,75 @@ describe("the shared sniper's outbound link names the pin", () => {
     expect(resolveViewUrl(deal({ buyUrl: "https://nbatopshot.com/moment/5" }), "nba-top-shot")).toBe("https://nbatopshot.com/moment/5")
   })
 })
+
+// ── No locking on Disney Pinnacle (Trevor, 2026-09-27) ──────────────────────
+// Pinnacle pins cannot be locked, yet 375 Pinnacle rows in wallet_moments_cache
+// read is_locked = true from the shared lock-check lane. Every lock surface is
+// therefore HIDDEN for Pinnacle — not rendered as "—", which still claims a
+// lock state exists and is unknown. Each case has a Top Shot control.
+import { render, cleanup } from "@testing-library/react"
+import { afterEach } from "vitest"
+import WalletStatRow from "@/components/wallet-stat-row"
+import CollectionFilterBar from "@/components/collection/CollectionFilterBar"
+import { initialCollectionView } from "@/lib/collection/view-reducer"
+import { collectionHasLocking } from "@/lib/collections"
+import { ownLockLabel } from "@/lib/market-format"
+
+afterEach(() => cleanup())
+
+describe("Disney Pinnacle shows no lock state anywhere", () => {
+  it("the registry says Pinnacle has no locking and every other collection does", () => {
+    expect(collectionHasLocking("disney-pinnacle")).toBe(false)
+    for (const c of ["nba-top-shot", "nfl-all-day", "laliga-golazos", "ufc", "candy-mlb"]) expect(collectionHasLocking(c)).toBe(true)
+  })
+
+  const statRow = (slug: string) =>
+    render(
+      <WalletStatRow
+        walletFmv={420.04} unlockedFmv={420.04} lockedFmv={0} bestOfferTotal={30}
+        momentCount={218} unlockedCount={212} lockedCount={6} spreadGap={10}
+        collectionSlug={slug}
+      />,
+    ).container.textContent ?? ""
+
+  it("the wallet stat row has no Unlocked / Locked tiles on Pinnacle", () => {
+    const text = statRow("disney-pinnacle")
+    expect(text).toMatch(/Wallet FMV/)
+    expect(text).toMatch(/Best Offer Total/)
+    expect(text).not.toMatch(/locked/i)
+  })
+  it("control: Top Shot keeps both tiles", () => {
+    const text = statRow("nba-top-shot")
+    expect(text).toMatch(/Unlocked FMV/)
+    expect(text).toMatch(/Locked FMV/)
+    expect(text).toMatch(/6 locked/)
+  })
+
+  const filterBar = (slug: string) =>
+    render(
+      <CollectionFilterBar
+        view={initialCollectionView} dispatchView={() => {}}
+        availablePlayers={["all"]} availableSets={["all"]} availableSeries={["all"]} availableRarities={["all"]}
+        collectionSlug={slug}
+      />,
+    ).container.textContent ?? ""
+
+  it("the filter bar offers no lock filter on Pinnacle, and speaks Pinnacle", () => {
+    const text = filterBar("disney-pinnacle")
+    expect(text).not.toMatch(/Lock States|Locked|Unlocked/)
+    expect(text).toMatch(/All Characters/)
+    expect(text).toMatch(/All Variants/)
+  })
+  it("control: Top Shot keeps its lock filter and wording", () => {
+    const text = filterBar("nba-top-shot")
+    expect(text).toMatch(/All Lock States/)
+    expect(text).toMatch(/All Players/)
+    expect(text).toMatch(/All Rarities/)
+  })
+
+  it("the market's own count drops the lock half on Pinnacle only", () => {
+    expect(ownLockLabel({ owned: 3, locked: 2 }, collectionHasLocking("disney-pinnacle"))).toBe("3")
+    expect(ownLockLabel({ owned: 3, locked: 2 }, collectionHasLocking("nba-top-shot"))).toBe("3 / 2")
+    expect(ownLockLabel({ owned: 3, locked: 2 })).toBe("3 / 2")
+  })
+})

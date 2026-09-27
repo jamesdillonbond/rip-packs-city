@@ -4,6 +4,7 @@ import type { ReactNode } from "react"
 import { formatCurrency, formatCount } from "@/lib/format"
 import FmvDisclaimer from "@/components/legal/FmvDisclaimer"
 import { closedMarket, formatClosedOn } from "@/lib/market-closed"
+import { collectionHasLocking } from "@/lib/collections"
 
 // Shared four-tile wallet analytics row used by every collection's
 // /[collection]/collection page (and the standalone Pinnacle page until
@@ -14,9 +15,9 @@ import { closedMarket, formatClosedOn } from "@/lib/market-closed"
 //   0     → "$0"          — real, computed zero (e.g. wallet has no locked moments)
 //   N     → "$N" with thousands separators
 //
-// For Pinnacle (no locking concept), the route returns null for
-// lockedFmv + lockedCount so the Locked tile renders em-dash without a
-// misleading "0 locked" caption.
+// For Pinnacle (no locking concept) the Unlocked and Locked tiles are not
+// rendered at all (collectionHasLocking, 2026-09-27) — an em-dash there still
+// implied a lock state we did not know.
 //
 // loadProgress is optional. When provided AND loaded < total, the
 // Wallet FMV caption swaps from "N moments" to a small progress bar
@@ -103,6 +104,9 @@ export default function WalletStatRow(props: WalletStatRowProps) {
   } = props
 
   const showProgress = loadProgress && loadProgress.loaded < loadProgress.total
+  // Disney Pinnacle pins cannot be locked, so the Unlocked / Locked split is not
+  // a thing to show — not even as an em-dash (lib/collections.ts).
+  const hasLocking = collectionHasLocking(collectionSlug)
   const noun = unitNoun(collectionSlug)
 
   // Closed-market collections (e.g. UFC Strike, Flow market closed 2026-05-13)
@@ -138,7 +142,7 @@ export default function WalletStatRow(props: WalletStatRowProps) {
 
   return (
     <div>
-    <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
+    <div className={hasLocking ? "grid gap-3 grid-cols-2 xl:grid-cols-4" : "grid gap-3 grid-cols-2"}>
       <div className="rpc-stat-tile">
         <div className="rpc-stat-eyebrow">
           <span>Wallet FMV</span>
@@ -189,6 +193,7 @@ export default function WalletStatRow(props: WalletStatRowProps) {
         )}
       </div>
 
+      {hasLocking && (<>
       <div className="rpc-stat-tile">
         <div className="rpc-stat-eyebrow">
           <span>Unlocked FMV</span>
@@ -214,6 +219,7 @@ export default function WalletStatRow(props: WalletStatRowProps) {
         <div className="rpc-stat-value">{formatCurrency(lockedFmv)}</div>
         <div className="rpc-stat-caption">{lockedCaption(lockedCount)}</div>
       </div>
+      </>)}
 
       <div className="rpc-stat-tile">
         <div className="rpc-stat-eyebrow">Best Offer Total</div>

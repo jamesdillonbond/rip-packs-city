@@ -9,7 +9,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   AreaChart, Area, BarChart, Bar,
 } from "recharts"
-import { getCollection, toDbSlug } from "@/lib/collections"
+import { getCollection, toDbSlug, collectionHasLocking } from "@/lib/collections"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { analyticsSeriesLabel } from "@/lib/series-label"
 import { pivotDailyTier, pivotDailySeries } from "@/lib/analytics-pivot"
@@ -1793,7 +1793,10 @@ function AnalyticsInner() {
                 )}
               </section>
 
-              {/* Liquid vs Locked */}
+              {/* Liquid vs Locked — not rendered for a collection with no locking
+                  (Disney Pinnacle): its pins cannot be locked, so the split is not
+                  a fact about the wallet (lib/collections.ts collectionHasLocking). */}
+              {collectionHasLocking(collection) && (
               <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
                 <div className="mb-3 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Liquid vs Locked</div>
                 <div className="grid grid-cols-2 gap-3">
@@ -1827,6 +1830,7 @@ function AnalyticsInner() {
                   </div>
                 )}
               </section>
+              )}
 
               {/* Cost Basis & P&L (TopShot only; hides on non-TS or empty cost-basis) */}
               <CostBasisCard wallet={activeWallet} urlSlug={collection} />

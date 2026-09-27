@@ -5,6 +5,9 @@
 // extraction — reads/writes the view reducer via {view, dispatchView} and the
 // option arrays the page already derives. No data-fetch logic here.
 import LeagueFilter from "@/components/filters/LeagueFilter"
+import { collectionHasLocking } from "@/lib/collections"
+import { getEntityLabels } from "@/lib/entity-labels"
+import { isPinnacleUrlSlug } from "@/lib/collection-slug"
 import type {
   CollectionViewState,
   CollectionViewAction,
@@ -23,7 +26,7 @@ export default function CollectionFilterBar(props: {
   return (
     <div className="mb-5 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-7">
       <select value={view.playerFilter} onChange={function(e) { dispatchView({ type: "SET", field: "playerFilter", value: e.target.value }) }} className="rpc-filter-select">
-        {availablePlayers.map(function(p) { return <option key={p} value={p}>{p === "all" ? "All Players" : p}</option> })}
+        {availablePlayers.map(function(p) { return <option key={p} value={p}>{p === "all" ? "All " + getEntityLabels(collectionSlug).players : p}</option> })}
       </select>
       <select value={view.setFilter} onChange={function(e) { dispatchView({ type: "SET", field: "setFilter", value: e.target.value }) }} className="rpc-filter-select">
         {availableSets.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Sets" : s}</option> })}
@@ -32,14 +35,17 @@ export default function CollectionFilterBar(props: {
         {availableSeries.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Series" : s}</option> })}
       </select>
       <select value={view.rarityFilter} onChange={function(e) { dispatchView({ type: "SET", field: "rarityFilter", value: e.target.value }) }} className="rpc-filter-select">
-        {availableRarities.map(function(tier) { return <option key={tier} value={tier}>{tier === "all" ? "All Rarities" : tier}</option> })}
+        {availableRarities.map(function(tier) { return <option key={tier} value={tier}>{tier === "all" ? (isPinnacleUrlSlug(collectionSlug) ? "All Variants" : "All Rarities") : tier}</option> })}
       </select>
+      {/* No lock filter where the collection has no locking (Disney Pinnacle). */}
+      {collectionHasLocking(collectionSlug) && (
       <select value={view.lockedFilter} onChange={function(e) { dispatchView({ type: "SET", field: "lockedFilter", value: e.target.value }) }} className="rpc-filter-select">
         <option value="all">All Lock States</option>
         <option value="locked">Locked</option>
         <option value="unlocked">Unlocked</option>
       </select>
-      <input value={view.searchWithin} onChange={function(e) { dispatchView({ type: "SET", field: "searchWithin", value: e.target.value }) }} placeholder="Filter moments…" className="rpc-filter-input col-span-2 sm:col-span-1" />
+      )}
+      <input value={view.searchWithin} onChange={function(e) { dispatchView({ type: "SET", field: "searchWithin", value: e.target.value }) }} placeholder={isPinnacleUrlSlug(collectionSlug) ? "Filter pins…" : "Filter moments…"} className="rpc-filter-input col-span-2 sm:col-span-1" />
       <LeagueFilter value={view.leagueFilter} onChange={function(v) { dispatchView({ type: "SET", field: "leagueFilter", value: v }) }} visible={collectionSlug === "nba-top-shot"} />
     </div>
   )
