@@ -322,4 +322,34 @@ describe("TrophyPickerModal — manual lookup + grid pin + row variants", () => 
     // the league badge <span> renders the raw league string
     expect(container.textContent).toContain("NBA")
   })
+
+  // 2026-09-27 — Candy MLB (Solana) holdings are in the trophy pool, so the
+  // picker offers a Candy chip. Panini (dbChain null, holdings unindexed) must
+  // NOT get one: its chip could only ever answer "you own none".
+  it("offers a Candy MLB chip and no Panini chip", async () => {
+    const { container } = render(<TrophyPickerModal {...baseProps} />)
+    const titles = Array.from(container.querySelectorAll("button[title]")).map((b) => b.getAttribute("title"))
+    expect(titles).toContain("Candy")
+    expect(titles.some((t) => /panini/i.test(t ?? ""))).toBe(false)
+  })
+
+  it("an empty Candy filter says how to add a Solana wallet, not just 'none found'", async () => {
+    stubFetch({ moments: [] })
+    const { container, findByText } = render(<TrophyPickerModal {...baseProps} />)
+    const candy = Array.from(container.querySelectorAll("button[title]")).find((b) => b.getAttribute("title") === "Candy")
+    fireEvent.click(candy!)
+    await waitFor(() =>
+      expect((fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes("collection=candy-mlb"))).toBe(true),
+    )
+    expect(await findByText(/Add your Solana wallet address/)).toBeTruthy()
+  })
+
+  it("an empty Flow filter keeps the generic empty copy (control)", async () => {
+    stubFetch({ moments: [] })
+    const { container, findByText, queryByText } = render(<TrophyPickerModal {...baseProps} />)
+    const ts = Array.from(container.querySelectorAll("button[title]")).find((b) => b.getAttribute("title") === "Top Shot")
+    fireEvent.click(ts!)
+    expect(await findByText(/No owned moments found yet/)).toBeTruthy()
+    expect(queryByText(/Solana/)).toBeNull()
+  })
 })

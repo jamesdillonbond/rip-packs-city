@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // falls back to the session; returns 401 when NEITHER resolves. Pins the
 // fail-closed 401 and a mocked username → RPC happy path.
 
-const state: { user: any; single: any; rpc: any } = {
+const state: { user: any; single: any; rpc: any; rpcArgs?: any } = {
   user: null,
   single: { data: null, error: null },
   rpc: { data: [], error: null },
@@ -20,7 +20,13 @@ vi.mock("@/lib/supabase", () => {
     }
     return b
   }
-  const client: any = { from: () => build(), rpc: async () => state.rpc }
+  const client: any = {
+    from: () => build(),
+    rpc: async (_fn: string, args: any) => {
+      state.rpcArgs = args
+      return state.rpc
+    },
+  }
   return { supabase: client, supabaseAdmin: client }
 })
 
@@ -120,5 +126,32 @@ describe("GET /api/profile/top-moments", () => {
     const res = await GET(req("https://t/api/profile/top-moments?ownerKey=trevor&strict=1"))
     expect(res.status).toBe(200)
     expect((await res.json()).moments).toHaveLength(1)
+  })
+
+  // ⛔ SUBSTITUTION (2026-09-27): an unrecognised ?collection= used to become
+  // `null` = every collection, so a filter the map does not know answered with
+  // the collector's Top Shot Moments under that collection's label.
+  it("refuses an unknown collection slug instead of widening it to every collection", async () => {
+    state.user = { id: "u1" }
+    state.rpc = { data: [{ moment_id: "topshot-moment", fmv_usd: 1 }], error: null }
+    state.rpcArgs = undefined
+    const res = await GET(req("https://t/api/profile/top-moments?collection=not-a-collection"))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.moments).toBeUndefined()
+    expect(state.rpcArgs).toBeUndefined()
+  })
+
+  it("scopes a Candy MLB filter to Candy's collection id (the trophy picker's Candy chip)", async () => {
+    state.user = { id: "u1" }
+    const res = await GET(req("https://t/api/profile/top-moments?collection=candy-mlb"))
+    expect(res.status).toBe(200)
+    expect(state.rpcArgs.p_collection_id).toBe("209ade70-32c5-4470-bc7c-4793d660f713")
+  })
+
+  it("an absent collection param still means every collection (control)", async () => {
+    state.user = { id: "u1" }
+    await GET(req("https://t/api/profile/top-moments"))
+    expect(state.rpcArgs.p_collection_id).toBeNull()
   })
 })

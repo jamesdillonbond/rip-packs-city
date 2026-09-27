@@ -39,6 +39,9 @@ const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
 const ACCENT_RED = "var(--rpc-red)";
 
+// Chains whose holdings are in wallet_moments_cache, the trophy pool.
+const TROPHY_INDEXED_CHAINS = new Set<string>(["flow", "solana"]);
+
 // Top Shot collection UUID — used to gate the NBA/WNBA league badge so it only
 // renders on Top Shot rows. Other collections store NULL in wmc.league.
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
@@ -214,6 +217,11 @@ export default function TrophyPickerModal({
   // A full page back means the collection is at least this big — the grid, and
   // therefore the search, is a slice rather than the whole collection.
   const atCap = (moments?.length ?? 0) >= PICKER_LIMIT;
+
+  const selectedCollection =
+    collectionFilter === "all" ? null : publishedCollections().find((c) => c.id === collectionFilter) ?? null;
+  const selectedChain = selectedCollection?.dbChain ?? null;
+  const selectedLabel = selectedCollection?.shortLabel ?? "";
 
   const tiersPresent = useMemo<TierFilter[]>(() => presentTiers(moments), [moments]);
 
@@ -563,7 +571,12 @@ export default function TrophyPickerModal({
                   textAlign: "center",
                 }}
               >
-                {moments.length === 0
+                {moments.length === 0 && selectedChain === "solana"
+                  ? /* A Candy wallet is saved separately (a Solana address, not
+                       the Flow wallet), so "none found" here usually means none
+                       is saved. Say how to fix that rather than just "none". */
+                    `No ${selectedLabel} cards found in your saved wallets. Add your Solana wallet address with "Add wallet" on your dashboard — once it's indexed (about a minute), your cards show up here.`
+                  : moments.length === 0
                   ? "No owned moments found yet — try the manual tab if you know the moment ID."
                   : atCap
                     ? `Nothing in your top ${PICKER_LIMIT} by value matches. A lower-value Moment won't be listed here — use the manual tab if you know its ID.`
@@ -1051,10 +1064,13 @@ function CollectionPicker({
 }) {
   const items: { key: CollectionFilter; label: string; icon: string; accent: string }[] = [
     { key: "all", label: "All", icon: "★", accent: "#9CA3AF" },
-    // Flow collections only: the trophy pool is read from the Flow-sourced
-    // wallet cache, so a Solana chip (Candy MLB, published 2026-09-06) would
-    // filter to an empty list every time — not "no trophies", "not indexed here".
-    ...publishedCollections().filter((c) => c.dbChain === "flow").map((c) => ({
+    // Every chain the trophy pool is indexed for. The pool is
+    // wallet_moments_cache; Candy MLB (Solana) is in it — 25,375 holdings
+    // across 456 wallets on 2026-09-27, all edition-matched — so it is a chip
+    // too. A chain NOT in that cache (Panini, unindexed) would filter to an
+    // empty list every time, which reads as "you own none" when the truth is
+    // "not indexed here", so it stays out until its holdings are.
+    ...publishedCollections().filter((c) => c.dbChain != null && TROPHY_INDEXED_CHAINS.has(c.dbChain)).map((c) => ({
       key: c.id,
       label: c.shortLabel,
       icon: c.icon,

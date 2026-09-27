@@ -98,6 +98,14 @@ export async function GET(req: NextRequest) {
   const league = leagueRaw === "NBA" || leagueRaw === "WNBA" ? leagueRaw : null;
   const collectionSlug = req.nextUrl.searchParams.get("collection");
   const collectionUuid = collectionSlug ? COLLECTION_UUID_BY_SLUG[collectionSlug] ?? null : null;
+  // ⛔ SUBSTITUTION: an unrecognised slug used to fall through to `null` —
+  // "every collection" — so a picker filtered to a collection this map does not
+  // know answered with the collector's Top Shot Moments under that label. A
+  // named filter we cannot honour is refused, never widened. (An ABSENT param
+  // still means all collections.)
+  if (collectionSlug && !collectionUuid) {
+    return NextResponse.json({ error: "unknown_collection" }, { status: 400 });
+  }
 
   const strict = req.nextUrl.searchParams.get("strict") === "1";
   const owner = await resolveUserId(ownerKey, strict);
