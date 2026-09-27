@@ -151,13 +151,15 @@ describe("PopularOnCollection — edition tiles", () => {
     expect(tile.children).toHaveLength(1)
   })
 
-  it("links Disney Pinnacle on `id` (a text key) and labels it with character_name", async () => {
-    seedLinks([{ id: "pin-7", character_name: "Mickey Mouse", set_name: "Pin Set" }])
+  it("links a Disney Pinnacle pin to its own render page and labels it with the pin name", async () => {
+    seedLinks([{ render_id: "OEV2-MNF-MIDO-E3", character_name: "Mickey Mouse", set_name: " Pin Set " }])
     const { container } = await renderBlock("disney-pinnacle")
-    // ⚠ Pinnacle editions live in a different table with text ids, and the
-    // edition page resolves them on pe.id — an external_id href would 404.
-    expect(hrefs(container!)).toContain("/disney-pinnacle/edition/pin-7")
+    // ⚠ 2026-09-27: was /disney-pinnacle/edition/<set-level key> — a redirect to the
+    // legacy-key list, off the SET-grain pinnacle_editions. A pin is a render.
+    expect(hrefs(container!)).toContain("/pinnacle/moment/OEV2-MNF-MIDO-E3")
+    expect(hrefs(container!).some((h) => h.startsWith("/disney-pinnacle/edition/"))).toBe(false)
     expect(container!.textContent).toContain("Mickey Mouse")
+    expect(container!.textContent).toContain("Pin Set")
   })
 })
 
@@ -200,7 +202,7 @@ describe("PopularOnCollection — hub rows", () => {
   })
 
   it("skips the hub read for Disney Pinnacle by design, keeping only the edition fan-out", async () => {
-    seedLinks([{ id: "pin-7", character_name: "Mickey Mouse", set_name: "Pin Set" }])
+    seedLinks([{ render_id: "pin-7", character_name: "Mickey Mouse", set_name: "Pin Set" }])
     const { container } = await renderBlock("disney-pinnacle")
     // Pinnacle set/player/team/series hubs are not in the sitemap, so linking
     // them would manufacture crawl waste. The read must not even be attempted.

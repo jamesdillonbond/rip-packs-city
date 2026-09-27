@@ -88,6 +88,8 @@ export type RawLinkRow = {
   play_type?: string | null
   set_name?: string | null
   character_name?: string | null
+  /** Disney Pinnacle: the pin (pinnacle_catalog.render_id) — its page's key. */
+  render_id?: string | null
 }
 
 const EMPTY_HUB_ROWS: RawHubRows = { editions: [], series: [] }
@@ -147,13 +149,20 @@ export async function fetchLinkRows(
 ): Promise<FetchResult<RawLinkRow[]>> {
   try {
     if (collection === "disney-pinnacle") {
+      // ⛔ 2026-09-27 — was `pinnacle_editions`, the last set-level reader #150 missed:
+      // that table is SET-grain (one character per legacy key; CLAUDE.md "Disney
+      // Pinnacle grain"), so each tile named a whole set after one character and
+      // linked /disney-pinnacle/edition/<legacy key>, which only redirects to the
+      // legacy-key list page. A pin is a pinnacle_catalog row; its page is
+      // /pinnacle/moment/<render_id>. "Popular" = most sales in 30 days.
       const { data, error } = await withBoardBudget<SupabaseRows<RawLinkRow>>(
         client
-          .from("pinnacle_editions")
-          .select("id, character_name, set_name")
+          .from("pinnacle_catalog")
+          .select("render_id, character_name, set_name")
           .not("thumbnail_url", "is", null)
           .not("character_name", "is", null)
-          .order("mint_count", { ascending: true, nullsFirst: false })
+          .order("fmv_sales_count_30d", { ascending: false, nullsFirst: false })
+          .order("render_id", { ascending: true })
           .limit(18),
         "popular-on-collection/links disney-pinnacle",
         undefined,

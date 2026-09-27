@@ -68,7 +68,17 @@ const REFRESH_INTERVAL = 30;
 // meant UFC Strike rendered common/uncommon/fandom/rare/legendary/ultimate — five
 // chips that can never match, leaving 515 of its 518 editions unfilterable (UFC is
 // CONTENDER 460 / CHALLENGER 55 / FANDOM 2 / CHAMPION 1). Fixed 2026-08-01.
-const PINNACLE_VARIANT_TABS = ["all", "Standard", "Brushed Silver", "Colored Enamel", "Golden", "Digital Display", "Limited Edition"] as const;
+// ⚠ Disney Pinnacle's list was hand-written and WRONG (fixed 2026-09-27): it
+// carried "Limited Edition" — an EDITION TYPE, not a variant, so that chip
+// matched nothing — and omitted Silver Sparkle, Luxe Marble, Color Splash,
+// Embellished Enamel and Radiant Chrome (with Silver Sparkle alone 320 listed
+// renders). This is `pinnacle_catalog.variant`, every value with a live listing,
+// most-listed first (measured 2026-09-27; Genesis had none listed).
+export const PINNACLE_VARIANT_TABS = [
+  "all", "Standard", "Digital Display", "Golden", "Silver Sparkle", "Brushed Silver",
+  "Luxe Marble", "Colored Enamel", "Color Splash", "Embellished Enamel", "Radiant Chrome",
+  "Quartis", "Quinova", "Xenith", "Apex",
+] as const;
 type TierTab = string;
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -1225,7 +1235,7 @@ function SniperMomentsBody() {
                       <NetOfFeesNote net={deal.netOfFees} />
                       {deal.serialFmvEstimate ? <SerialFmvBadge data={deal.serialFmvEstimate} /> : null}
                     </span>
-                    <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }}>Listed {timeAgo(deal.updatedAt)}</span>
+                    <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }}>{isPinnacle ? "Seen" : "Listed"} {timeAgo(deal.updatedAt)}</span>
                     {(() => {
                       // AllDay + Pinnacle keys don't match wallet_moments_cache.edition_key
                       // shape today (AllDay sniper feed emits "set:play"; wmc stores plain
@@ -1321,7 +1331,9 @@ function SniperMomentsBody() {
                 <tr className="rpc-thead-scanline" style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
                   <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px 10px 10px" }}>{isPinnacle ? "Pin" : "Moment"}</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px 10px 4px" }}>Serial</th>
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Listed</th>
+                  {/* Pinnacle's time is when the listing sweep last SAW it live (the source
+                      carries no listing time), not when it was listed. */}
+                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }} title={isPinnacle ? "When our listing sweep last saw this listing live on Disney Pinnacle" : undefined}>{isPinnacle ? "Seen" : "Listed"}</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>{collectionHasLocking(collectionSlug) ? "Own / Lock" : "Own"}</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Ask</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Adj. FMV</th>

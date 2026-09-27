@@ -138,11 +138,15 @@ query FloorAsks($first: Int!, $after: String) {
   }) {
     totalCount
     pageInfo { endCursor hasNextPage }
-    edges { node { edition { render_id } listing { price } } }
+    edges { node { id serial_number edition { render_id } listing { price } } }
   }
 }`;
 
-interface FloorEdge { node?: { edition?: { render_id: string | null } | null; listing?: { price: string | null } | null } }
+// `id` + `serial_number` added 2026-09-27: the same field names the production
+// pinnacle-wmc-render-id cron reads off searchPinnacleNft. The sweep already
+// visits every live listing; it now KEEPS them (pinnacle_live_listings) so the
+// Sniper can read live listings instead of the dead Flowty feed.
+interface FloorEdge { node?: { id?: string | null; serial_number?: string | null; edition?: { render_id: string | null } | null; listing?: { price: string | null } | null } }
 
 async function fetchFloorPage(after: string | null) {
   const res = await fetch(GQL, {
@@ -227,6 +231,10 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   let floorRows = 0;       // catalog rows updated (= editions with a floor)
   let floorPages = 0;
   let floorTotal = 0;
+  let floorComplete = false;
+  let liveWritten = 0;
+  let liveDeleted = 0;
+  const liveListings: Array<{ nft_id: string; render_id: string; serial_number: number | null; price_usd: number }> = [];
   try {
     const floorByRender = new Map<string, number>(); // first-seen wins (price asc)
     let fAfter: string | null = null;
@@ -240,11 +248,20 @@ async function handle(req: NextRequest): Promise<NextResponse> {
           const n = Number(price);
           if (Number.isFinite(n) && n > 0) floorByRender.set(rid, n);
         }
+        const nftId = e.node?.id ?? null;
+        const p = price != null ? Number(price) : NaN;
+        if (rid && nftId && Number.isFinite(p) && p > 0) {
+          const serial = e.node?.serial_number != null ? Number(e.node.serial_number) : NaN;
+          liveListings.push({ nft_id: String(nftId), render_id: rid, serial_number: Number.isInteger(serial) ? serial : null, price_usd: p });
+        }
       }
       floorPages++;
-      if (!res.pageInfo.hasNextPage) break;
+      if (!res.pageInfo.hasNextPage) { floorComplete = true; break; }
       fAfter = res.pageInfo.endCursor;
-      if (floorPages > 200) break; // runaway guard (~20k listings)
+      // Runaway guard. Was 200 pages (~20k listings) while the market already sat
+      // at ~16.1k (161 pages, 2026-09-27) — raised so growth does not silently
+      // truncate the sweep. A guard exit leaves floorComplete=false.
+      if (floorPages > 400) break;
     }
     floorListed = floorByRender.size;
     if (floorListed > 0) {
@@ -255,6 +272,22 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       });
       if (floorErr) errors.push(`floor set: ${floorErr.message}`);
       else floorRows = typeof cnt === "number" ? cnt : 0;
+    }
+    // The live-listing set is REPLACED only from a COMPLETE sweep: a partial one
+    // would retire listings it simply never reached (CLAUDE.md, R123). The RPC
+    // upserts first and deletes only what this sweep did not write.
+    if (floorComplete && liveListings.length > 0) {
+      const { data: live, error: liveErr } = await supabase.rpc("pinnacle_live_listings_replace", {
+        p_rows: liveListings,
+        p_seen_at: startedAtIso,
+      });
+      if (liveErr) errors.push(`live listings: ${liveErr.message}`);
+      else {
+        liveWritten = Number(live?.written ?? 0);
+        liveDeleted = Number(live?.deleted ?? 0);
+      }
+    } else if (!floorComplete) {
+      errors.push(`live listings: sweep incomplete after ${floorPages} pages — live set left as it was`);
     }
   } catch (e) {
     errors.push(`floor phase: ${e instanceof Error ? e.message : String(e)}`);
@@ -274,7 +307,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       p_collection_slug: "disney_pinnacle",
       p_cursor_before: null,
       p_cursor_after: null,
-      p_extra: { floors_only: floorsOnly, pages, total_count: total, upserted, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, duration_ms: durationMs, errors: errors.slice(0, 3) },
+      p_extra: { floors_only: floorsOnly, pages, total_count: total, upserted, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, floor_complete: floorComplete, live_listings_seen: liveListings.length, live_written: liveWritten, live_deleted: liveDeleted, duration_ms: durationMs, errors: errors.slice(0, 3) },
     });
   } catch {
     // best-effort observability

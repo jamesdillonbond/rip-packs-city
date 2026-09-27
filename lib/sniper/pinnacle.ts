@@ -7,125 +7,130 @@
 // /api/sniper-feed/route.ts.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { pinnacleRenderImageUrl } from "@/lib/pinnacle/pinnacleFlowty"
 import {
-  fetchFlowtyPinnacleListings,
-  flowtyNftToSniperDeals,
-  pinnacleRenderKey,
-  type FlowtyPinnacleNft,
-  type PinnacleRenderRef,
-} from "@/lib/pinnacle/pinnacleFlowty"
+  PINNACLE_MARKETPLACE_URL,
+  pinnacleSerialMultiplier,
+  isPinnacleSpecialSerial,
+  type PinnacleSniperDeal,
+} from "@/lib/pinnacle/pinnacleTypes"
+import { isSerialisedEditionType } from "@/lib/pinnacle/serialisation"
 
-interface FmvRow {
+/** Oldest live-listing sweep the Sniper will publish. The sweep runs 5×/day
+ *  (vercel.json: 45 1,7,13,19 UTC + the 21:37 daily), so > 13 h means at least
+ *  two consecutive sweeps failed — the board says so rather than show old asks. */
+export const PINNACLE_LIVE_LISTINGS_MAX_AGE_HOURS = 13
+
+/** Rows the Sniper reads per request (best base discount first). */
+const LIVE_READ_LIMIT = 2000
+
+interface LiveListingRow {
+  nft_id: string
   render_id: string
+  serial_number: number | null
+  price_usd: number | string
+  seen_at: string
+  character_name: string | null
+  set_name: string | null
+  series_name: string | null
+  variant: string | null
+  total_minted: number | null
+  edition_type: string | null
+  is_chaser: boolean | null
   legacy_edition_key: string | null
-  character_name?: string | null
-  fmv_usd: number | null
-  fmv_confidence: string
-  fmv_sales_count_30d: number | null
-}
-
-interface CatalogMaps {
-  fmvMap: Map<string, { fmv: number; confidence: string }>
-  /** (legacy key, pin name) → the exact render. Covers UNPRICED renders too: a pin
-   *  with no FMV of its own still has art and a page. */
-  renderLookup: Map<string, PinnacleRenderRef>
-}
-
-async function loadCatalogMaps(): Promise<CatalogMaps> {
-  // PIN-FMV-REKEY Wave 3: per-render source (pinnacle_catalog) instead of the
-  // retiring per-edition blend. The map is still keyed by the legacy edition id
-  // (legacy_edition_key) because the Flowty NFT lookup keys on it; for each
-  // legacy key we keep the representative render (most-liquid, then highest FMV),
-  // matching the Wave 2 collapse. (This Flowty leg is dormant since the 2026-05-13
-  // shutdown, but we keep it off the legacy table for consistency.)
-  // 🚨 THIS READ WAS CAPPED AND THE MISSES WERE INVISIBLE. It was unbounded, and
-  // PostgREST caps every read at 1,000 rows with no error and no short page.
-  // Measured live 2026-09-02: **2,470 rows carry an fmv_usd**, and the first
-  // 1,000 under the old ordering cover only **290 of the 416 distinct
-  // legacy_edition_keys — 69.7%**. A map miss is not cosmetic here:
-  // flowtyNftToSniperDeals DROPS the listing (`if (!fmvData || fmvData.fmv <= 0)
-  // return []`), so ~30% of Pinnacle editions could never appear on the sniper
-  // board however they were priced, and the board looked honestly quiet.
-  //
-  // Paged by KEYSET on render_id, which is unique (2,600 of 2,600 verified live).
-  // ⚠ The representative row per key is now chosen by an EXPLICIT comparison
-  // rather than by first-wins over a global sort. That is not a refactor for its
-  // own sake: the old `ORDER BY fmv_sales_count_30d DESC, fmv_usd DESC` has no
-  // unique tiebreak, so which render represented a key could differ between two
-  // identical requests — and under paging, first-wins over a page order that is
-  // not the ranking order is simply wrong.
-  const best = new Map<string, FmvRow>()
-  const renderLookup = new Map<string, PinnacleRenderRef>()
-  const PAGE = 1000
-  const MAX_PAGES = 100
-  let cursor = ""
-  for (let page = 0; page < MAX_PAGES; page++) {
-    let q = (supabaseAdmin as any)
-      .from("pinnacle_catalog")
-      // No `fmv_usd IS NOT NULL` filter any more (2026-09-26): the same walk now
-      // resolves listings to their render for art + the per-pin link, and an
-      // unpriced render is still a real pin. Priced-only rows feed the FMV map below.
-      .select("render_id, legacy_edition_key, character_name, fmv_usd, fmv_confidence, fmv_sales_count_30d")
-      .order("render_id", { ascending: true })
-      .limit(PAGE)
-    if (cursor) q = q.gt("render_id", cursor)
-    const { data, error } = await q
-
-    if (error || !data) {
-      // ⚠ A partial map DROPS LISTINGS, so this is not a cosmetic degradation.
-      // Reported with the page index and the rows kept so a truncated map is
-      // distinguishable in the logs from a genuinely small catalog.
-      console.warn(
-        `[pinnacle-sniper] FMV fetch error @page ${page} (kept ${best.size} keys):`,
-        error?.message,
-      )
-      break
-    }
-    const rows = data as FmvRow[]
-    for (const row of rows) {
-      const key = row.legacy_edition_key
-      if (!key) continue
-      const fmv = row.fmv_usd == null ? null : Number(row.fmv_usd)
-      if (row.character_name && row.character_name.trim()) {
-        renderLookup.set(pinnacleRenderKey(key, row.character_name), {
-          renderId: row.render_id,
-          fmv: fmv != null && Number.isFinite(fmv) ? fmv : null,
-          confidence: row.fmv_confidence ?? null,
-        })
-      }
-      if (fmv == null || !Number.isFinite(fmv)) continue
-      const prev = best.get(key)
-      if (!prev || moreRepresentative(row, prev)) best.set(key, row)
-    }
-    if (rows.length < PAGE) break
-    const next = rows[rows.length - 1]?.render_id
-    // No cursor means no progress — stop rather than re-read page 0 forever.
-    if (!next || next === cursor) break
-    cursor = next
-  }
-
-  const map = new Map<string, { fmv: number; confidence: string }>()
-  for (const [key, row] of best) {
-    map.set(key, { fmv: Number(row.fmv_usd), confidence: row.fmv_confidence })
-  }
-  return { fmvMap: map, renderLookup }
+  franchises: string[] | null
+  fmv_usd: number | string
+  fmv_confidence: string | null
 }
 
 /**
- * Which of two catalog renders represents its legacy edition key: most liquid
- * first, then highest FMV, then the lowest render_id so the answer is stable
- * across requests. The old code expressed the first two as a global ORDER BY
- * plus first-wins, which needs the read to be complete AND totally ordered —
- * neither held.
+ * The live Pinnacle listings, as deals.
+ *
+ * ⚠ 2026-09-27 — THIS USED TO READ FLOWTY, whose marketplace shut down
+ * 2026-05-13: the board was built from 96 Flowty NFTs whose newest listing was
+ * 2026-08-21 and showed 2 deals (the same pin twice). It now reads
+ * `pinnacle_live_listings` — every listing Disney's own Studio GraphQL returned
+ * on the catalog sweep's last COMPLETE pass — through
+ * `get_pinnacle_live_listings_for_sniper`, already joined to each pin's render
+ * (its own FMV, art, page) in pinnacle_catalog.
+ *
+ * Throws on a failed read AND on a live set older than
+ * PINNACLE_LIVE_LISTINGS_MAX_AGE_HOURS (or never written): the sniper-feed
+ * route turns a throw into a degraded response, so a dead sweep reads as a
+ * failure rather than as "no deals right now".
  */
-function moreRepresentative(candidate: FmvRow, incumbent: FmvRow): boolean {
-  const cSales = candidate.fmv_sales_count_30d ?? -1
-  const iSales = incumbent.fmv_sales_count_30d ?? -1
-  if (cSales !== iSales) return cSales > iSales
-  const cFmv = Number(candidate.fmv_usd)
-  const iFmv = Number(incumbent.fmv_usd)
-  if (cFmv !== iFmv) return cFmv > iFmv
-  return candidate.render_id < incumbent.render_id
+async function loadLiveDeals(nowMs: number): Promise<{ deals: PinnacleSniperDeal[]; listed: number; asOf: string }> {
+  const db = supabaseAdmin as any
+  const [newest, live] = await Promise.all([
+    db.from("pinnacle_live_listings").select("seen_at", { count: "exact" }).order("seen_at", { ascending: false }).limit(1),
+    db.rpc("get_pinnacle_live_listings_for_sniper", { p_limit: LIVE_READ_LIMIT }),
+  ])
+  if (newest?.error) throw new Error(`pinnacle_live_listings read failed: ${newest.error.message}`)
+  if (live?.error) throw new Error(`get_pinnacle_live_listings_for_sniper failed: ${live.error.message}`)
+  const asOf: string | null = newest?.data?.[0]?.seen_at ?? null
+  if (!asOf) throw new Error("pinnacle_live_listings is empty — the listing sweep has not written a live set")
+  const ageH = (nowMs - new Date(asOf).getTime()) / 3_600_000
+  if (!(ageH <= PINNACLE_LIVE_LISTINGS_MAX_AGE_HOURS)) {
+    throw new Error(`pinnacle live listings are ${ageH.toFixed(1)} h old (max ${PINNACLE_LIVE_LISTINGS_MAX_AGE_HOURS} h) — the listing sweep is not completing`)
+  }
+
+  const deals: PinnacleSniperDeal[] = []
+  for (const r of (live?.data ?? []) as LiveListingRow[]) {
+    const askPrice = Number(r.price_usd)
+    const baseFmv = Number(r.fmv_usd)
+    if (!(askPrice > 0) || !(baseFmv > 0)) continue
+    const serial = r.serial_number != null && Number.isFinite(Number(r.serial_number)) ? Number(r.serial_number) : null
+    const mintCount = r.total_minted != null ? Number(r.total_minted) : null
+    const isSerialized = isSerialisedEditionType(r.edition_type) === true
+    const serialMult = pinnacleSerialMultiplier(serial, mintCount, isSerialized)
+    const adjustedFmv = baseFmv * serialMult
+    const discount = Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10
+    // Same floor the Flowty mapper applied: only a meaningful discount is a deal.
+    if (discount < 5) continue
+    const { isSpecial, signal } = isPinnacleSpecialSerial(serial, mintCount)
+    const setName = r.set_name ?? ""
+    // pinnacle_catalog has no studio column; the set name is "<Studio> • <Set>".
+    const studio = setName.includes(" • ") ? setName.slice(0, setName.indexOf(" • ")) : "Unknown"
+    const seriesYear = parseInt(r.series_name ?? "", 10)
+    deals.push({
+      flowId: r.nft_id,
+      nftId: r.nft_id,
+      editionKey: r.legacy_edition_key ?? r.render_id,
+      characterName: r.character_name ?? "Unknown",
+      franchise: r.franchises?.[0] ?? "Unknown",
+      studio,
+      setName,
+      seriesYear: Number.isFinite(seriesYear) ? seriesYear : null,
+      variantType: (r.variant ?? "Standard") as PinnacleSniperDeal["variantType"],
+      editionType: (isSerialized ? "Limited Edition" : "Open Edition"),
+      serial,
+      mintCount,
+      askPrice,
+      baseFmv,
+      adjustedFmv,
+      discount,
+      confidence: r.fmv_confidence ?? "LOW",
+      serialMult,
+      isSpecialSerial: isSpecial,
+      serialSignal: signal,
+      thumbnailUrl: pinnacleRenderImageUrl(r.render_id, { thumb: true }),
+      renderId: r.render_id,
+      pinName: r.character_name ?? null,
+      isChaser: r.is_chaser === true,
+      isLocked: false,
+      // When the sweep last SAW this listing live — not when it was listed; the
+      // GraphQL sweep does not return a listing time.
+      updatedAt: r.seen_at,
+      buyUrl: PINNACLE_MARKETPLACE_URL,
+      listingResourceID: null,
+      listingOrderID: null,
+      storefrontAddress: null,
+      source: "pinnacle",
+      offerAmount: null,
+      offerFmvPct: null,
+    })
+  }
+  return { deals, listed: Number(newest?.count ?? 0), asOf }
 }
 
 export interface PinnacleSniperOpts {
@@ -179,27 +184,8 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
   const chaserOnly = opts.chaserOnly === true
   const sortBy = opts.sortBy ?? "discount"
 
-  // 4 pages of 24 = 96 listed NFTs (matches the long-standing baseline).
-  const [page0, page1, page2, page3, { fmvMap, renderLookup }] = await Promise.all([
-    fetchFlowtyPinnacleListings({ limit: 24, offset: 0, listedOnly: true, timeoutMs: 10000 }),
-    fetchFlowtyPinnacleListings({ limit: 24, offset: 24, listedOnly: true, timeoutMs: 10000 }),
-    fetchFlowtyPinnacleListings({ limit: 24, offset: 48, listedOnly: true, timeoutMs: 10000 }),
-    fetchFlowtyPinnacleListings({ limit: 24, offset: 72, listedOnly: true, timeoutMs: 10000 }),
-    loadCatalogMaps(),
-  ])
-
-  const allNfts: FlowtyPinnacleNft[] = [...page0, ...page1, ...page2, ...page3]
-
-  const seen = new Set<string>()
-  const uniqueNfts = allNfts.filter((nft) => {
-    if (seen.has(nft.id)) return false
-    seen.add(nft.id)
-    return true
-  })
-
-  console.log(`[pinnacle-sniper] Flowty: ${uniqueNfts.length} unique listed NFTs, FMV coverage: ${fmvMap.size} editions`)
-
-  let deals = uniqueNfts.flatMap((nft) => flowtyNftToSniperDeals(nft, fmvMap, renderLookup))
+  const { deals: liveDeals, listed, asOf } = await loadLiveDeals(Date.now())
+  let deals = liveDeals
 
   if (variantFilter !== "all") {
     deals = deals.filter((d) => d.variantType.toLowerCase() === variantFilter.toLowerCase())
@@ -311,9 +297,12 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
   return {
     count: mappedDeals.length,
     tsCount: 0,
-    flowtyCount: uniqueNfts.length,
-    fmvCoverage: fmvMap.size,
-    lastRefreshed: new Date().toISOString(),
+    // Kept for the response shape: now the number of live listings in the last
+    // complete sweep (Flowty is no longer read).
+    flowtyCount: listed,
+    fmvCoverage: liveDeals.length,
+    // When the live listing set was last swept, not when this request ran.
+    lastRefreshed: asOf,
     deals: mappedDeals,
   }
 }

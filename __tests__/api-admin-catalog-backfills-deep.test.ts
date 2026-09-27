@@ -802,6 +802,63 @@ describe("/api/admin/backfill-pinnacle-catalog", () => {
     })
   })
 
+  // 2026-09-27 — the sweep now KEEPS every live listing (pinnacle_live_listings) so the
+  // Sniper reads live asks instead of the dead Flowty feed. The live set may only be
+  // REPLACED from a COMPLETE sweep: a partial one would retire listings it never reached.
+  it("a COMPLETE floor sweep replaces the live listing set with every listing it saw", async () => {
+    const spy = install({
+      "rpc:pinnacle_catalog_set_floor_asks": { data: 2, error: null },
+      "rpc:pinnacle_live_listings_replace": { data: { written: 3, deleted: 7 }, error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+    fetchMock = installFetchMock([
+      gqlRoute("FloorAsks", floorPage([
+        { node: { id: "101", serial_number: "7", edition: { render_id: "rid-1" }, listing: { price: "12.5" } } },
+        { node: { id: "102", serial_number: null, edition: { render_id: "rid-1" }, listing: { price: "20" } } },
+        { node: { id: "103", edition: { render_id: "rid-2" }, listing: { price: "4" } } },
+        { node: { id: "104", edition: { render_id: "rid-2" }, listing: { price: "0" } } }, // non-positive — dropped
+        { node: { edition: { render_id: "rid-3" }, listing: { price: "9" } } }, // no nft id — dropped
+      ])),
+    ])
+    await pinCatalog.GET(adminReq("https://t/api/admin/backfill-pinnacle-catalog?floors_only=1", { authorization: "Bearer cron-secret" }))
+    await runDeferred()
+
+    const live = spy.rpcCalls.find((c) => c.name === "pinnacle_live_listings_replace")!
+    expect(live.args?.p_rows).toEqual([
+      { nft_id: "101", render_id: "rid-1", serial_number: 7, price_usd: 12.5 },
+      { nft_id: "102", render_id: "rid-1", serial_number: null, price_usd: 20 },
+      { nft_id: "103", render_id: "rid-2", serial_number: null, price_usd: 4 },
+    ])
+    expect(typeof live.args?.p_seen_at).toBe("string")
+    // The query asks for the fields it keeps.
+    expect(fetchMock.calls.some((c) => /\bid serial_number edition/.test(String(c.init?.body)))).toBe(true)
+    const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args!
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra).toMatchObject({ floor_complete: true, live_listings_seen: 3, live_written: 3, live_deleted: 7 })
+  })
+
+  it("an INCOMPLETE sweep (runaway guard) leaves the live set alone and says so", async () => {
+    const spy = install({
+      "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
+      "rpc:pinnacle_live_listings_replace": { data: { written: 1, deleted: 0 }, error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+    const endless = {
+      data: { searchPinnacleNft: { totalCount: 99999, pageInfo: { endCursor: "c", hasNextPage: true }, edges: [
+        { node: { id: "201", edition: { render_id: "rid-1" }, listing: { price: "3" } } },
+      ] } },
+    }
+    fetchMock = installFetchMock([gqlRoute("FloorAsks", endless)])
+    await pinCatalog.GET(adminReq("https://t/api/admin/backfill-pinnacle-catalog?floors_only=1", { authorization: "Bearer cron-secret" }))
+    await runDeferred()
+
+    expect(spy.rpcCalls.some((c) => c.name === "pinnacle_live_listings_replace")).toBe(false)
+    const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args!
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toMatch(/incomplete/)
+    expect(log.p_extra).toMatchObject({ floor_complete: false })
+  })
+
   it("?floors_only=1 skips the catalog pager entirely and reports the floor pipeline identity", async () => {
     const spy = install({
       "rpc:pinnacle_catalog_set_floor_asks": { data: 5, error: null },

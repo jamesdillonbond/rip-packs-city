@@ -165,14 +165,14 @@ describe("fetchHubRows", () => {
 })
 
 describe("fetchLinkRows", () => {
-  it("reads editions for a standard collection and pinnacle_editions for Pinnacle", async () => {
+  it("reads editions for a standard collection and the pin catalog (never set-level pinnacle_editions) for Pinnacle", async () => {
     const standard: string[] = []
     await fetchLinkRows("nba-top-shot", client({ editions: okRes([]) }, (t) => standard.push(t)))
     expect(standard).toEqual(["editions"])
 
     const pinnacle: string[] = []
-    await fetchLinkRows("disney-pinnacle", client({ pinnacle_editions: okRes([]) }, (t) => pinnacle.push(t)))
-    expect(pinnacle).toEqual(["pinnacle_editions"])
+    await fetchLinkRows("disney-pinnacle", client({ pinnacle_catalog: okRes([]) }, (t) => pinnacle.push(t)))
+    expect(pinnacle).toEqual(["pinnacle_catalog"])
   })
 
   it("a genuinely empty result is ok:true", async () => {
@@ -182,7 +182,7 @@ describe("fetchLinkRows", () => {
   it("a RETURNED error is ok:false on both the standard and the Pinnacle path", async () => {
     const std = await fetchLinkRows("nba-top-shot", client({ editions: errRes("boom") }))
     expect(std).toEqual({ data: [], ok: false, reason: "boom" })
-    const pin = await fetchLinkRows("disney-pinnacle", client({ pinnacle_editions: errRes("pin boom") }))
+    const pin = await fetchLinkRows("disney-pinnacle", client({ pinnacle_catalog: errRes("pin boom") }))
     expect(pin).toEqual({ data: [], ok: false, reason: "pin boom" })
   })
 

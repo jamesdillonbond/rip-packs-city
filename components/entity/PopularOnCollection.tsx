@@ -11,9 +11,9 @@
 // sitemap). SEO internal-linking pass, 2026-06-05.
 //
 // Standard collections link to /<collection>/edition/<external_id> (the
-// route_slug get_edition_detail resolves on). Disney Pinnacle editions live in
-// pinnacle_editions with text ids, and the edition page resolves Pinnacle on
-// pe.id, so those link to /disney-pinnacle/edition/<id>.
+// route_slug get_edition_detail resolves on). Disney Pinnacle pins are
+// pinnacle_catalog renders and link to /pinnacle/moment/<render_id> (2026-09-27;
+// until then this read the SET-level pinnacle_editions — see fetchLinkRows).
 
 import Link from "next/link"
 import { seriesPageLabel } from "@/lib/series-label"
@@ -22,6 +22,7 @@ import { getCollection } from "@/lib/collections"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchHubRows, fetchLinkRows } from "@/lib/entity/popular-on-collection-fetchers"
 import { slugifyName } from "@/lib/entity-labels"
+import { pinnacleRenderHref } from "@/lib/entity-href"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { tileSubject } from "./_shared"
 
@@ -105,9 +106,11 @@ async function loadLinks(collection: string): Promise<{ links: EntityLink[]; ok:
   if (collection === "disney-pinnacle") {
     return {
       links: data.map((r) => ({
-        href: `/disney-pinnacle/edition/${encodeURIComponent(String(r.id))}`,
+        // The pin's own page (see fetchLinkRows): no redirect hop, and the
+        // canonical URL the sitemap publishes.
+        href: pinnacleRenderHref(String(r.render_id ?? r.id)),
         name: r.character_name as string,
-        sub: (r.set_name as string) ?? null,
+        sub: (r.set_name as string)?.trim() ?? null,
       })),
       ok: true,
     }
