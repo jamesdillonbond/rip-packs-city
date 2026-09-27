@@ -21,12 +21,14 @@ import { fetchJson } from "@/lib/analytics/fetch-json"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import type { PaniniCoverage } from "@/lib/panini/coverage"
 import type { PaniniPackLabel } from "@/lib/panini/pack-market"
+import MomentMedia from "@/components/MomentMedia"
 
 export interface PaniniPackProduct {
   id: string
   packType: string
   label: string
   name: string | null
+  imageUrl?: string | null
   labels: PaniniPackLabel[]
   cardsPerPack: number | null
   costUsd: number | null
@@ -118,10 +120,19 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
       data-testid={`panini-pack-${p.packType}`}
       style={{ marginTop: 20, padding: "16px 16px 12px", background: "var(--rpc-surface-raised, var(--rpc-surface))", border: "1px solid var(--rpc-border)", borderRadius: 10 }}
     >
-      <h2 style={{ fontFamily: display, fontWeight: 800, fontSize: 18, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: "0 0 4px" }}>
-        {p.label} pack{p.cardsPerPack !== null ? ` · ${p.cardsPerPack} cards` : ""}
-      </h2>
-      {p.name ? <Note>{p.name}</Note> : null}
+      <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+        {p.imageUrl ? (
+          <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", flex: "0 0 auto" }}>
+            <MomentMedia thumbnailUrl={p.imageUrl} alt={`${p.label} pack`} size={64} rounded={8} />
+          </div>
+        ) : null}
+        <div>
+          <h2 style={{ fontFamily: display, fontWeight: 800, fontSize: 18, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: "0 0 4px" }}>
+            {p.label} pack{p.cardsPerPack !== null ? ` · ${p.cardsPerPack} cards` : ""}
+          </h2>
+          {p.name ? <Note>{p.name}</Note> : null}
+        </div>
+      </div>
       {p.stale ? (
         <div role="status" style={{ marginTop: 8, padding: "8px 12px", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", borderRadius: 6 }}>
           <Note>

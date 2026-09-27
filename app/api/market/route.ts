@@ -32,6 +32,7 @@
 //   eat a 1000-row payload for UI-side paging.
 
 import { pinnacleListThumb } from "@/lib/pinnacle/image-url"
+import { paniniAssetUrl } from "@/lib/panini/assets"
 import { fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness";
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -743,11 +744,12 @@ async function fetchPaniniMarketListings(
     buy_url: r.external_id
       ? `https://nft.paniniamerica.net/marketplace-details/${encodeURIComponent(r.external_id)}.html`
       : null,
-    // ⛔ NULL, not r.thumbnail_url: Panini's stored thumbnails are RELATIVE paths
-    // ("pack/1038/thumbnail/…", measured 2026-09-25 on all 5,094) with no known
-    // host, so the browser would request them from OUR domain — a broken image
-    // on every row. No image is honest; a guessed CDN host is not.
-    thumbnail_url: null,
+    // Panini's stored thumbnails are RELATIVE paths ("pack/1038/thumbnail/…").
+    // Until 2026-09-27 no host was known and this was NULL (a relative src 404s
+    // on our domain). The host is now MEASURED — 50 of 50 sampled paths resolve
+    // on assets.paniniamerica.net/catalog/product/ (lib/panini/assets.ts) — and
+    // anything that is not a safe relative path still maps to null.
+    thumbnail_url: paniniAssetUrl(r.thumbnail_url),
     badge_slugs: null,
     listing_resource_id: null,
     storefront_address: null,

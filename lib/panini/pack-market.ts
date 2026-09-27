@@ -4,6 +4,8 @@
 // out of the route file so the route exports only handlers + segment config, and
 // so the parsing is testable without a request.
 
+import { paniniAssetUrl } from "@/lib/panini/assets"
+
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null
   const n = Number(v)
@@ -20,8 +22,8 @@ export interface PaniniPackLabel {
 }
 
 /** The product's published name + guaranteed-contents/odds labels from the raw market stats. */
-export function parsePackDetails(raw: unknown): { name: string | null; labels: PaniniPackLabel[]; topSaleUsd: number | null; listedCount: number | null } {
-  if (!raw || typeof raw !== "object") return { name: null, labels: [], topSaleUsd: null, listedCount: null }
+export function parsePackDetails(raw: unknown): { name: string | null; imageUrl: string | null; labels: PaniniPackLabel[]; topSaleUsd: number | null; listedCount: number | null } {
+  if (!raw || typeof raw !== "object") return { name: null, imageUrl: null, labels: [], topSaleUsd: null, listedCount: null }
   const r = raw as Record<string, unknown>
   const labels: PaniniPackLabel[] = []
   if (Array.isArray(r.pack_label)) {
@@ -36,6 +38,9 @@ export function parsePackDetails(raw: unknown): { name: string | null; labels: P
   const ms = r.market_stats && typeof r.market_stats === "object" ? (r.market_stats as Record<string, unknown>) : null
   return {
     name: str(r.pack_name),
+    // Relative pack art ("pack/pack_enh_bc_1038.png") on Panini's measured asset
+    // host (lib/panini/assets.ts; 200 image/png verified 2026-09-27).
+    imageUrl: paniniAssetUrl(str(r.pack_img)),
     labels,
     topSaleUsd: ms ? num(ms.top_sale) : null,
     listedCount: ms ? num(ms.pack_auction_count) : null,

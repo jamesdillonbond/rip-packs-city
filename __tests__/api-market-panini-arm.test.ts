@@ -54,7 +54,9 @@ describe("GET /api/market — Panini arm", () => {
     expect(messi.flowId).toBeNull()
     expect(messi.teamName).toBeNull() // a nation is not a team
     expect(messi.source).toBe("panini")
-    // Relative thumbnail paths have no known host — never served (broken image).
+    // An absolute URL is not a stored Panini path shape — refused, never passed
+    // through to an arbitrary host (2026-09-27: relative paths now resolve on
+    // Panini's measured asset host; see the relative-path case below).
     expect(messi.thumbnailUrl).toBeNull()
     expect(messi.lowConfidenceFmv).toBe(false) // MEDIUM anchors a discount
     const mbappe = body.listings.find((l: any) => l.playerName === "Kylian Mbappe")
@@ -72,6 +74,17 @@ describe("GET /api/market — Panini arm", () => {
     })
     const body = await (await GET(req(`https://t/api/market?collectionId=${PANINI}&sort=discount_desc`))).json()
     expect(body.listings.map((l: any) => l.editionKey)).toEqual(["med", "low"])
+  })
+
+  it("a stored RELATIVE thumbnail resolves on Panini's measured asset host; a missing one stays null", async () => {
+    install({
+      ...board(),
+      panini_market_board: [{ data: [medRow], error: null }, { data: [lowRow], error: null }],
+    })
+    const body = await (await GET(req(`https://t/api/market?collectionId=${PANINI}&sort=discount_desc`))).json()
+    const byKey = Object.fromEntries(body.listings.map((l: any) => [l.editionKey, l]))
+    expect(byKey.low.thumbnailUrl).toBe("https://assets.paniniamerica.net/catalog/product/pack/x.png")
+    expect(byKey.med.thumbnailUrl).toBeNull()
   })
 
   it("discount sort reads the non-LOW window SEPARATELY, so LOW rows cannot crowd real deals out of it", async () => {

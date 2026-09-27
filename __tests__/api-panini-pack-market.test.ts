@@ -43,6 +43,7 @@ const FOTL = { ...HOBBY, id: "1039", pack_type: "fotl", cards_per_pack: 5, pack_
 
 const RAW = {
   pack_name: "2026 Panini NFT Prizm World Cup Soccer Packs",
+  pack_img: "pack/pack_enh_bc_1038.png",
   pack_label: [
     { label: "GUARANTEED", children: ["2 Base Silver cards (each #/259)", "1 Other Card"] },
     { label: "PACK ODDS", children: ["An Insert falls in 7 out of every 20 packs"] },
@@ -75,6 +76,9 @@ describe("GET /api/panini-pack-market", () => {
     const hobby = json.products.find((p: any) => p.packType === "hobby")
     expect(hobby).toMatchObject({ costUsd: 144, costBasis: "floor", typicalEvUsd: 30, actualEvUsd: 150, topSaleUsd: 265, listedCount: 498, stale: false })
     expect(hobby.name).toBe(RAW.pack_name)
+    expect(hobby.imageUrl).toBe("https://assets.paniniamerica.net/catalog/product/pack/pack_enh_bc_1038.png")
+    // FOTL's raw has no pack_img — no image, not a guessed one.
+    expect(json.products.find((p: any) => p.packType === "fotl").imageUrl).toBeNull()
     // The FOTL-exclusive leg belongs to FOTL only.
     expect(hobby.legs.fotlExclusive).toBeNull()
     expect(json.products.find((p: any) => p.packType === "fotl").legs.fotlExclusive).toBe(114)

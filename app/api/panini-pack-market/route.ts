@@ -109,6 +109,7 @@ export async function GET() {
         packType,
         label: packLabel(packType),
         name: d?.name ?? null,
+        imageUrl: d?.imageUrl ?? null,
         labels: d?.labels ?? [],
         cardsPerPack: num(p.cards_per_pack),
         costUsd: num(p.pack_cost_usd),

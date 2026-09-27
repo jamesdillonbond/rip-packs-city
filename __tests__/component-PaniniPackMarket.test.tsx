@@ -2,6 +2,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, cleanup, waitFor } from "@testing-library/react"
 
+vi.mock("@/components/MomentMedia", () => ({
+  default: (p: { thumbnailUrl?: string | null }) => <span data-testid="pack-art" data-src={p.thumbnailUrl ?? ""} />,
+}))
+
 import PaniniPackMarket from "@/components/packs/PaniniPackMarket"
 
 const RECENT = new Date(Date.now() - 2 * 3_600_000).toISOString()
@@ -61,6 +65,14 @@ describe("PaniniPackMarket", () => {
     expect(text).toContain("5,100")
     // Fresh stats carry no stale warning.
     expect(text).not.toContain("may not be current")
+  })
+
+  it("renders pack art only when the product carries an image URL", async () => {
+    mockFetch(200, payload({ products: [product({ imageUrl: "https://assets.paniniamerica.net/catalog/product/pack/pack_enh_bc_1038.png" }), product({ id: "1039", packType: "fotl", label: "FOTL", imageUrl: null })] }))
+    const c = await mount()
+    const art = c.querySelectorAll('[data-testid="pack-art"]')
+    expect(art).toHaveLength(1)
+    expect(art[0].getAttribute("data-src")).toBe("https://assets.paniniamerica.net/catalog/product/pack/pack_enh_bc_1038.png")
   })
 
   it("a stale product says its prices may not be current", async () => {

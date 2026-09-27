@@ -158,6 +158,8 @@ export const CSP_ALLOWED_IMAGE_HOSTS: readonly string[] = [
   "cdn.nba.com",
   "cdn.wnba.com",
   "arweave.net",
+  // 2026-09-27: Panini card/pack art (lib/panini/assets.ts), same commit as the CSP entry.
+  "assets.paniniamerica.net",
   // ⛔ `cloudflare-ipfs.com` WAS HERE AND WAS REMOVED 2026-09-05, together with
   // its two entries in the proxy.ts CSP. The host is DECOMMISSIONED — it fails
   // DNS instantly, measured 0/8 CIDs in under 0.1 s — and nothing references it:
