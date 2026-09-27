@@ -863,8 +863,11 @@ const PINS = [
     // to. Two sessions replaced this function the same evening; the second read
     // the LIVE definition before writing, which is the only reason the first
     // one's guard is still here.
+    // ⚠ REPOINTED 2026-09-27: both moment_acquisitions reads are scoped to the
+    // trophy's collection_id (a moment_id is unique only within a collection;
+    // 55 nft_ids already span collections in that table).
     migration:
-      "supabase/migrations/20260913040000_audit_20260913_trophy_art_falls_back_to_the_live_edition_render.sql",
+      "supabase/migrations/20260927174800_audit_20260927_trophy_slab_acquisition_is_scoped_to_the_trophys_collection.sql",
   },
   {
     fn: "get_moment_detail",

@@ -53,7 +53,8 @@ CREATE TABLE public.fmv_snapshots (
   edition_id uuid, fmv_usd numeric, confidence text, computed_at timestamptz);
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text, name text);
 CREATE TABLE public.moment_acquisitions (
-  nft_id text, buy_price numeric, acquisition_method text, acquired_date timestamptz);
+  nft_id text, buy_price numeric, acquisition_method text, acquired_date timestamptz,
+  collection_id uuid);
 
 CREATE FUNCTION public.serial_fmv_estimate(p_cid uuid, p_serial int, p_circ int, p_tier text, p_fmv numeric, p_conf text, p_jersey int, p_edition_id uuid)
  RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$ SELECT jsonb_build_object('est', p_fmv) $$;
@@ -154,12 +155,14 @@ BEGIN
       (
         SELECT ma.buy_price FROM moment_acquisitions ma
         WHERE ma.nft_id = tm.moment_id
+          AND ma.collection_id = tm.collection_id
         ORDER BY ma.acquired_date DESC NULLS LAST
         LIMIT 1
       ) AS acquired_price,
       (
         SELECT ma.acquisition_method FROM moment_acquisitions ma
         WHERE ma.nft_id = tm.moment_id
+          AND ma.collection_id = tm.collection_id
         ORDER BY ma.acquired_date DESC NULLS LAST
         LIMIT 1
       ) AS acquisition_method
@@ -241,9 +244,12 @@ INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, confidence, computed_at) 
   ('e1111111-1111-1111-1111-111111111111'::uuid, 55, 'HIGH', now());
 
 -- mA acquisitions: latest (30/marketplace) must win over the older (20/pack).
-INSERT INTO public.moment_acquisitions (nft_id, buy_price, acquisition_method, acquired_date) VALUES
-  ('mA', 20, 'pack',        now() - interval '10 days'),
-  ('mA', 30, 'marketplace', now() - interval '1 day');
+INSERT INTO public.moment_acquisitions (nft_id, buy_price, acquisition_method, acquired_date, collection_id) VALUES
+  ('mA', 20, 'pack',        now() - interval '10 days', :TS::uuid),
+  ('mA', 30, 'marketplace', now() - interval '1 day',   :TS::uuid),
+  -- ⛔ SAME nft_id, ANOTHER collection, and the NEWEST row (2026-09-27): a
+  -- moment_id is unique only within a collection. An unscoped read took this.
+  ('mA', 999, 'gift',       now(),                      'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid);
 
 -- ── 1. cross-user guard ──────────────────────────────────────────────────────
 DO $$
@@ -277,7 +283,7 @@ SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 0 ->> 'player_name'
 SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 0 ->> 'fmv'), '22', 'mB fmv from frozen tm.fmv (no snapshot)');
 
 -- ── 6. acquisition latest-wins ───────────────────────────────────────────────
-SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 1 ->> 'acquired_price'), '30', 'mA acquired_price = latest (30)');
+SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 1 ->> 'acquired_price'), '30', 'mA acquired_price = latest IN ITS OWN COLLECTION (30), not the newer 999 from another collection');
 SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 1 ->> 'acquisition_method'), 'marketplace', 'mA method = latest');
 
 -- ── 7. ART: the snapshot wins, and a MISSING snapshot falls back to the edition ─
