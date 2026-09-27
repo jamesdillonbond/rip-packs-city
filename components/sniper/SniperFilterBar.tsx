@@ -25,6 +25,14 @@ export default function SniperFilterBar(props: {
   teamOptions?: string[];
   teamFilter?: string;
   onTeamChange?: (value: string) => void;
+  /** Studio dropdown (Disney Pinnacle) — options from the board; hidden under 2. */
+  studioOptions?: string[];
+  studioFilter?: string;
+  onStudioChange?: (value: string) => void;
+  /** Chasers-only toggle — shown only when the board lists a chase edition. */
+  showChaserToggle?: boolean;
+  chaserOnly?: boolean;
+  onChaserOnlyChange?: (value: boolean) => void;
   tierTab: string;
   tabs: readonly string[];
   onTierChange: (t: string) => void;
@@ -56,6 +64,8 @@ export default function SniperFilterBar(props: {
     showFilters, onToggleFilters,
     playerInput, onPlayerChange,
     teamOptions = [], teamFilter = "all", onTeamChange,
+    studioOptions = [], studioFilter = "all", onStudioChange,
+    showChaserToggle = false, chaserOnly = false, onChaserOnlyChange,
     tierTab, tabs, onTierChange,
     minDiscount, onMinDiscountChange,
     maxPrice, onMaxPriceChange,
@@ -102,6 +112,32 @@ export default function SniperFilterBar(props: {
               <option value="all">{"All " + (labels.team === "Franchise" ? "Franchises" : "Teams")}</option>
               {teamOptions.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
+          </label>
+        )}
+        {onStudioChange && studioOptions.length >= 2 && (
+          <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
+            <span>STUDIO</span>
+            <select
+              aria-label="Studio"
+              value={studioFilter}
+              onChange={(e) => onStudioChange(e.target.value)}
+              className="rpc-filter-select"
+              style={{ maxWidth: isMobile ? "100%" : 220 }}
+            >
+              <option value="all">All Studios</option>
+              {studioOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </label>
+        )}
+        {onChaserOnlyChange && showChaserToggle && (
+          <label className="flex items-center gap-1.5 cursor-pointer" style={{ color: "var(--rpc-text-muted)" }}>
+            <input
+              type="checkbox"
+              checked={chaserOnly}
+              onChange={(e) => onChaserOnlyChange(e.target.checked)}
+              style={{ accentColor: accent }}
+            />
+            <span>CHASERS ONLY</span>
           </label>
         )}
         {!isAllDay && (

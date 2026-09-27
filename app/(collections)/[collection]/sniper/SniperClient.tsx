@@ -44,6 +44,8 @@ import {
 import {
   filterSniperDeals,
   sniperTeamOptions,
+  sniperStudioOptions,
+  sniperHasChasers,
   sortByVerifiedFirst,
   computeSniperStats,
   trackClick,
@@ -149,9 +151,17 @@ function SniperMomentsBody() {
   // a Lakers filter carried onto Pinnacle would silently empty the board.
   // Keyed by slug (not reset in an effect): a selection made on another
   // collection reads as "all" here.
-  const [teamSel, setTeamSel] = useState<{ slug: string; value: string }>({ slug: collectionSlug, value: "all" });
-  const teamFilter = teamSel.slug === collectionSlug ? teamSel.value : "all";
-  const setTeamFilter = (value: string) => setTeamSel({ slug: collectionSlug, value });
+  // Studio + Chasers-only (Disney Pinnacle's deals carry `studio`/`isChaser`;
+  // the controls hide themselves on boards without them) follow the same rule.
+  type BoardFilters = { slug: string; team: string; studio: string; chaserOnly: boolean };
+  const [boardSel, setBoardSel] = useState<BoardFilters>({ slug: collectionSlug, team: "all", studio: "all", chaserOnly: false });
+  const board = boardSel.slug === collectionSlug ? boardSel : { slug: collectionSlug, team: "all", studio: "all", chaserOnly: false };
+  const teamFilter = board.team;
+  const studioFilter = board.studio;
+  const chaserOnly = board.chaserOnly;
+  const setBoardFilter = (patch: Partial<Omit<BoardFilters, "slug">>) =>
+    setBoardSel({ ...board, ...patch, slug: collectionSlug });
+  const setTeamFilter = (value: string) => setBoardFilter({ team: value });
   // P2.5 — default ON: the credible verified-FMV view leads. Users can toggle
   // it off to also see thin-data deals (demoted + flagged, never headlined).
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(true);
@@ -710,8 +720,11 @@ function SniperMomentsBody() {
   // top-of-page numbers can't be inflated by thin-FMV fake bargains. Extracted to
   // lib/sniper/helpers (filterSniperDeals / sortByVerifiedFirst / computeSniperStats).
   const teamOptions = sniperTeamOptions(data?.deals ?? [], teamFilter);
+  const studioOptions = sniperStudioOptions(data?.deals ?? [], studioFilter);
+  const hasChasers = sniperHasChasers(data?.deals ?? []) || chaserOnly;
+  const boardFilterOpts = { team: teamFilter, studio: studioFilter, chaserOnly };
   const visibleDeals = sortByVerifiedFirst(
-    filterSniperDeals(data?.deals ?? [], { search, showVerifiedOnly, ownedFilter, ownedIds, team: teamFilter }),
+    filterSniperDeals(data?.deals ?? [], { search, showVerifiedOnly, ownedFilter, ownedIds, ...boardFilterOpts }),
   );
   const stats = computeSniperStats(visibleDeals);
 
@@ -731,6 +744,7 @@ function SniperMomentsBody() {
     showVerifiedOnly,
     ownedFilter,
     ownedIds,
+    ...boardFilterOpts,
   });
 
   // ── Empty-sniper diagnostic beacon (beta_feedback_inbox #402) ────────────
@@ -909,6 +923,12 @@ function SniperMomentsBody() {
             teamOptions={teamOptions}
             teamFilter={teamFilter}
             onTeamChange={setTeamFilter}
+            studioOptions={studioOptions}
+            studioFilter={studioFilter}
+            onStudioChange={(value) => setBoardFilter({ studio: value })}
+            showChaserToggle={hasChasers}
+            chaserOnly={chaserOnly}
+            onChaserOnlyChange={(value) => setBoardFilter({ chaserOnly: value })}
             tierTab={tierTab}
             tabs={isPinnacle ? PINNACLE_VARIANT_TABS : sniperTierTabs(collectionSlug)}
             onTierChange={(t) => setTierTab(t as TierTab)}
@@ -1156,6 +1176,7 @@ function SniperMomentsBody() {
                   setTierTab("all"); setMinDiscount(0); setMaxPrice(0);
                   setSerialFilter("all"); setBadgeOnly(false);
                   setFlowWalletOnly(false); setShowVerifiedOnly(false); setSearch("");
+                  setBoardFilter({ team: "all", studio: "all", chaserOnly: false });
                 }}
                 className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accent }}
               >

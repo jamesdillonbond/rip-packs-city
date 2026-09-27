@@ -1,6 +1,7 @@
 // app/api/pinnacle-sniper-feed/route.ts
 // Alias for /api/pinnacle-sniper — re-exports the same handler.
-// The disney-pinnacle/sniper/page.tsx references this endpoint.
+// No in-app caller since the bespoke Pinnacle pages were retired (2026-09-27);
+// kept as a public alias — the shared Sniper reads /api/sniper-feed.
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 25

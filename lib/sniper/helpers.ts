@@ -43,6 +43,10 @@ export interface SniperDealFilterOpts {
   ownedIds?: Set<string>;
   /** exact `teamName` match (Team on sports, Franchise on Disney Pinnacle); "all"/empty is a no-op */
   team?: string | null;
+  /** exact `studio` match (Disney Pinnacle); "all"/empty is a no-op */
+  studio?: string | null;
+  /** keep only chase editions (`isChaser === true`) */
+  chaserOnly?: boolean;
 }
 
 /** Does the viewer own the edition this deal is for? Checks both key forms. */
@@ -71,13 +75,34 @@ export function sniperTeamOptions(deals: Pick<SniperDeal, "teamName">[], selecte
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+// The Studio dropdown's options (Disney Pinnacle deals carry `studio`; other
+// collections carry none, so the control hides itself). Same shape as
+// sniperTeamOptions: board-derived, sorted, a stale selection kept selectable.
+export function sniperStudioOptions(deals: Pick<SniperDeal, "studio">[], selected?: string | null): string[] {
+  const set = new Set<string>();
+  for (const d of deals) {
+    const s = (d.studio ?? "").trim();
+    if (s && s.toLowerCase() !== "unknown") set.add(s);
+  }
+  if (selected && selected !== "all") set.add(selected);
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+/** Whether the board lists any chase edition — the Chasers-only toggle shows only then. */
+export function sniperHasChasers(deals: Pick<SniperDeal, "isChaser">[]): boolean {
+  return deals.some((d) => d.isChaser === true);
+}
+
 export function filterSniperDeals(deals: SniperDeal[], opts: SniperDealFilterOpts = {}): SniperDeal[] {
   const { search, showVerifiedOnly, ownedFilter = "all", ownedIds } = opts;
   const q = search ? search.toLowerCase() : null;
   const team = opts.team && opts.team !== "all" ? opts.team.trim().toLowerCase() : null;
+  const studio = opts.studio && opts.studio !== "all" ? opts.studio.trim().toLowerCase() : null;
   return deals.filter((d) => {
     if (d.discount < 0) return false;
     if (team && (d.teamName ?? "").trim().toLowerCase() !== team) return false;
+    if (studio && (d.studio ?? "").trim().toLowerCase() !== studio) return false;
+    if (opts.chaserOnly && d.isChaser !== true) return false;
     if (q) {
       if (
         !d.playerName.toLowerCase().includes(q) &&
