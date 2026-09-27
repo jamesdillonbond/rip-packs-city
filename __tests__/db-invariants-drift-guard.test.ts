@@ -15,6 +15,16 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-27. The Pinnacle wallet-backfill post-pass named holdings
+    // from the SET-LEVEL pinnacle_editions key: 769 held pins read "Unknown"
+    // (the trophy picker showed Dolly that way) and ~31k read another
+    // character from the same set. Pins that names come from the pin catalog.
+    fn: "backfill_pinnacle_wmc_metadata_from_editions",
+    test: "supabase/tests/backfill_pinnacle_wmc_metadata_from_editions.sql",
+    migration:
+      "supabase/migrations/20260927164145_audit_20260927_pinnacle_multi_character_names_read_as_a_list.sql",
+  },
+  {
     // Added 2026-09-26 (known-issues #150 residue). Eight Pinnacle readers joined
     // pinnacle_editions (one character + franchise per set-level key): market
     // analytics named the wrong character on 3,711 of 4,928 30-day sales, the
