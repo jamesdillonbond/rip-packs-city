@@ -9,6 +9,7 @@
 
 import PackPageClient from "@/components/packs/PackPageClient"
 import CandyPackMarket from "@/components/packs/CandyPackMarket"
+import PaniniPackMarket from "@/components/packs/PaniniPackMarket"
 import { getCollection } from "@/lib/collections"
 
 const TS_TIERS = ["ultimate", "legendary", "rare", "fandom", "common"]
@@ -55,6 +56,13 @@ export default function PackMarketView({ collection }: { collection: string }) {
   // PackPageClient reads (2026-09-25).
   if (collection === "candy-mlb") {
     return <CandyPackMarket />
+  }
+
+  // Panini (no chain, no wallets): two sealed WC Prizm products on Panini's own
+  // marketplace, read from Panini's native pack plane (panini_pack_ev_board) —
+  // zero rows in pack_distributions (2026-09-27).
+  if (collection === "panini-blockchain") {
+    return <PaniniPackMarket />
   }
 
   if (collection === "disney-pinnacle") {

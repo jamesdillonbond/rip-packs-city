@@ -281,7 +281,13 @@ export const COLLECTIONS: Collection[] = [
     // ⛔ `collections.is_active` stays FALSE by decision (known-issues #64): it
     // enrolls a collection in sales-fed rollups (smoke, readiness, search…) and
     // `sales` holds zero Panini rows. Published status is THIS registry's.
-    pages: ["overview", "market"],
+    //
+    // 2026-09-27 — PACKS added, on Panini's NATIVE pack plane (/api/panini-pack-
+    // market → panini_pack_ev_board / panini_pack_state / _history), the Candy
+    // pattern: the Flow pack board reads pack_distributions, where Panini has zero
+    // rows. Two products (Hobby, FOTL); typical pull leads, the coverage note
+    // renders on the tab, and stats older than 24 h say so beside the price.
+    pages: ["overview", "market", "packs"],
     published: true,
     openSeaSlug: "paniniblockchain",
     supabaseCollectionId: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",

@@ -70,6 +70,14 @@ const THIN_PUBLISHED: string[] = ["panini-blockchain"]
 // collection has no facade record (MarketClient's `hasEntityPages`, pinned
 // below as a source fact). Only these may appear on a thin collection.
 const FACADE_GATED_PAGES = ["market"]
+// Per-collection tabs whose component for THAT collection renders no entity link
+// at all (a native arm, not the Flow board the ENTITY_LINKING_PAGES entry is
+// about). 2026-09-27: Panini's Packs tab dispatches to PaniniPackMarket (pack
+// products + EV, no card rows), pinned as a source fact below — the arm is only
+// exempt while it really links nothing.
+const LINK_FREE_THIN_ARMS: Record<string, string[]> = { "panini-blockchain": ["packs"] }
+const exempt = (id: string, p: string) =>
+  FACADE_GATED_PAGES.includes(p) || (LINK_FREE_THIN_ARMS[id] ?? []).includes(p)
 
 // Tabs whose components render a link into the entity corpus. Regenerate with:
 //   grep -rln '/edition/\|/player/\|/team/\|/set/\|editionHref\|momentSubjectHref' \
@@ -100,7 +108,7 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
     for (const id of THIN_PUBLISHED) {
       const pages = publishedCollections().find((c) => c.id === id)?.pages ?? []
       expect(
-        pages.filter((p) => ENTITY_LINKING_PAGES.includes(p) && !FACADE_GATED_PAGES.includes(p)),
+        pages.filter((p) => ENTITY_LINKING_PAGES.includes(p) && !exempt(id, p)),
         `${id} exposes an entity-linking page but is not in the facade`,
       ).toEqual([])
       expect(facadeSlugs).not.toContain(id)
@@ -115,7 +123,7 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
   it("every published collection that renders entity links resolves through the facade", () => {
     for (const c of publishedCollections()) {
       const linking = c.pages.filter(
-        (p) => ENTITY_LINKING_PAGES.includes(p) && !(THIN_PUBLISHED.includes(c.id) && FACADE_GATED_PAGES.includes(p)),
+        (p) => ENTITY_LINKING_PAGES.includes(p) && !(THIN_PUBLISHED.includes(c.id) && exempt(c.id, p)),
       )
       if (linking.length === 0) continue
       expect(
@@ -136,6 +144,25 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
     expect(src).toContain("l.editionKey && entityLinks")
     expect(src).toContain("l.playerName && !entityLinks")
     expect(src).toContain("l.setName && !entityLinks")
+  })
+
+  // The half that makes LINK_FREE_THIN_ARMS mean something: Panini's Packs tab
+  // reaches its own component BEFORE the Flow pack board, and that component
+  // emits no link of any kind (so no entity link can 404).
+  it("Panini's Packs arm is link-free (LINK_FREE_THIN_ARMS is backed)", () => {
+    const view = readFileSync(join(process.cwd(), "components/packs/PackMarketView.tsx"), "utf8")
+    const arm = view.indexOf('collection === "panini-blockchain"')
+    expect(arm).toBeGreaterThan(-1)
+    expect(view.slice(arm, arm + 120)).toContain("<PaniniPackMarket />")
+    // …ahead of every Flow board arm inside the component body.
+    const body = view.indexOf("export default function PackMarketView")
+    expect(body).toBeGreaterThan(-1)
+    expect(arm).toBeGreaterThan(body)
+    expect(arm).toBeLessThan(view.indexOf("<PackPageClient", body))
+    const src = readFileSync(join(process.cwd(), "components/packs/PaniniPackMarket.tsx"), "utf8")
+    for (const needle of ["href", "<Link", "/edition/", "/player/", "/set/", "/team/", "router.push"]) {
+      expect(src, `PaniniPackMarket must not contain ${needle}`).not.toContain(needle)
+    }
   })
 
   it.each(ENTITY_PAGE_URL_SLUGS)("%s: UUID + dbSlug match across both modules", (urlSlug) => {

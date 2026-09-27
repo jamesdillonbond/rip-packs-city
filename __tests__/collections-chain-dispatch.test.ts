@@ -103,7 +103,9 @@ describe("dbChain registry invariant", () => {
     // ⭐ 2026-09-25 — Panini (dbChain null: no chain identity, no wallets)
     // published with `overview` (chain-agnostic) and `market`, whose ARM is
     // fetchPaniniMarketListings → panini_market_board. Pinned below.
-    "": ["overview", "market"],
+    // ⭐ `packs` joined 2026-09-27 — an ARM: /api/panini-pack-market reads
+    // Panini's native pack plane (panini_pack_ev_board). Pinned below.
+    "": ["overview", "market", "packs"],
   }
 
   it("every published NON-Flow collection exposes only pages that have a dispatch for its chain", () => {
@@ -172,6 +174,19 @@ describe("dbChain registry invariant", () => {
     expect(route).toContain('from("candy_pack_listings")')
     expect(route).toContain("isSolanaAddress(rawWallet)")
     expect(route).not.toMatch(/rawWallet\.toLowerCase\(\)/)
+  })
+
+  it("⚠ Panini's `packs` permission is backed by a Panini arm on the native pack plane", () => {
+    const read = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8")
+    const view = read("components/packs/PackMarketView.tsx")
+    expect(view).toContain('collection === "panini-blockchain"')
+    expect(view).toContain("<PaniniPackMarket />")
+    const client = read("components/packs/PaniniPackMarket.tsx")
+    expect(client).toContain('"/api/panini-pack-market"')
+    const route = read("app/api/panini-pack-market/route.ts")
+    expect(route).toContain('from("panini_pack_ev_board")')
+    // A failed primary read is a 503, never a zeroed board.
+    expect(route).toMatch(/if \(evRes\.error\) return apiErrorResponse\(/)
   })
 
   // ⚠ THE OTHER HALF, for `collection`. It cannot be the same SHAPE of check as
