@@ -180,6 +180,12 @@ const PACK_NFT_TYPE_ID = "A.0b2a3299cc857e29.PackNFT.NFT";
 // event_kind = 'primary_mint'.
 const EVT_ALLDAY_PACKNFT_MINT = "A.e4cf4bdc1751c65d.PackNFT.Mint";
 const EVT_ALLDAY_PACKNFT_DEPOSIT = "A.e4cf4bdc1751c65d.PackNFT.Deposit";
+// 2026-09-27: the All Day secondary seller. Same shape as Top Shot's fix
+// (2026-09-18): on a marketplace sale the pack is withdrawn FROM THE SELLER
+// inside the purchase tx, so Withdraw.from IS the seller, while the payer is
+// Dapper's escrow. Verified on-chain against allday_pack_sales_history
+// .storefront_address for txs f7477d3f… and 785243fa… (both exact matches).
+const EVT_ALLDAY_PACKNFT_WITHDRAW = "A.e4cf4bdc1751c65d.PackNFT.Withdraw";
 
 // Secondary AllDay pack sales route through the same V2 Dapper
 // NFTStorefrontV2 contract as TopShot pack secondaries (the address +
@@ -689,11 +695,21 @@ async function fetchAllDayPurchasesChunk(
   //     to AllDay PackNFT type + same-tx PackNFT.Deposit for buyer
   // The Mint and Listing scans share the AllDay PackNFT.Deposit index for
   // buyer resolution so we only fetch it once.
-  const [alldayMints, alldayDeposits, listings] = await Promise.all([
+  const [alldayMints, alldayDeposits, listings, alldayWithdraws] = await Promise.all([
     fetchEventChunk(EVT_ALLDAY_PACKNFT_MINT, fromBlock, toBlock),
     fetchEventChunk(EVT_ALLDAY_PACKNFT_DEPOSIT, fromBlock, toBlock),
     fetchEventChunk(EVT_LISTING_COMPLETED, fromBlock, toBlock),
+    fetchEventChunk(EVT_ALLDAY_PACKNFT_WITHDRAW, fromBlock, toBlock),
   ]);
+
+  // Same-tx Withdraw.from names the seller of a secondary sale (see
+  // EVT_ALLDAY_PACKNFT_WITHDRAW). The payer stays as the fallback only.
+  const alldayWithdrawByTxAndId = new Map<string, FlatEvent>();
+  for (const wd of alldayWithdraws) {
+    const nftId = wd.decoded["id"];
+    if (nftId === undefined || nftId === null) continue;
+    alldayWithdrawByTxAndId.set(`${wd.transaction_id}:${String(nftId)}`, wd);
+  }
 
   const alldayDepositByTxAndId = new Map<string, FlatEvent>();
   for (const dep of alldayDeposits) {
@@ -760,7 +776,11 @@ async function fetchAllDayPurchasesChunk(
     const buyerAddress = dep.decoded["to"];
     if (typeof buyerAddress !== "string") continue;
 
-    const sellerAddress = await getTransactionPayer(lc.transaction_id);
+    const wdFrom = alldayWithdrawByTxAndId.get(`${lc.transaction_id}:${nftIdStr}`)?.decoded["from"];
+    const sellerAddress =
+      typeof wdFrom === "string"
+        ? wdFrom.toLowerCase()
+        : await getTransactionPayer(lc.transaction_id);
 
     const vaultTypeId = extractTypeId(d["salePaymentVaultType"]);
     const salePrice = d["salePrice"] === undefined || d["salePrice"] === null

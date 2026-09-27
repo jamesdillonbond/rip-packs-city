@@ -280,6 +280,13 @@ function adMintPayload(nftId: string, distId: string | null) {
   })
 }
 
+const EVT_AD_WITHDRAW = "A.e4cf4bdc1751c65d.PackNFT.Withdraw"
+function adWithdrawPayload(nftId: string, from: string) {
+  return cdcEvent(EVT_AD_WITHDRAW, {
+    id: cdc.uint64(nftId),
+    from: { type: "Optional", value: { type: "Address", value: from } },
+  })
+}
 function adDepositPayload(nftId: string, to: string) {
   return cdcEvent(EVT_AD_DEPOSIT, {
     id: cdc.uint64(nftId),
@@ -467,8 +474,47 @@ describe("pack-events-ingest worker — AllDay primary_mint", () => {
     expect(sale.event_kind).toBe("secondary_sale")
     expect(sale.collection_id).toBe(AD_COLLECTION)
     expect(sale.sale_price).toBe(12.5)
-    // The payer is the real seller — recovered from the tx, not the event.
+    // No same-tx PackNFT.Withdraw in this fixture, so the seller falls back to
+    // the tx payer. On Dapper the payer is the ESCROW; the next test is the
+    // real-world shape, where Withdraw.from names the seller.
     expect(sale.seller_address).toBe("0x5555555555555555")
+  })
+
+  it("an AllDay resale names the seller from the same-tx PackNFT.Withdraw, not the escrow payer", async () => {
+    // 2026-09-27 (#123): the All Day leg wrote the payer — Dapper's escrow
+    // 0x18eb4ee6b3c026d2 — on 240 of 284 resales in 30 d. On-chain, the sale tx
+    // carries PackNFT.Withdraw{from: seller}; verified against
+    // allday_pack_sales_history.storefront_address for two live txs.
+    const tx = "3".repeat(64)
+    const ESCROW = "0x18eb4ee6b3c026d2"
+    fetchMock = installFetchMock([
+      jsonRoute("sealed", [{ header: { height: "1200" } }]),
+      jsonRoute(encodeURIComponent(EVT_AD_MINT), []),
+      jsonRoute(encodeURIComponent(EVT_AD_DEPOSIT), [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_AD_DEPOSIT, payload: adDepositPayload("905", "0x8888888888888888") }),
+      ]),
+      jsonRoute(encodeURIComponent(EVT_AD_WITHDRAW), [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_AD_WITHDRAW, payload: adWithdrawPayload("905", "0xF2BCCFA0D1BD0DEE") }),
+      ]),
+      jsonRoute(encodeURIComponent(EVT_LISTING), [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_LISTING, payload: packListingPayload("905", "3.00000000", AD_PACK_TYPE) }),
+      ]),
+      jsonRoute("/v1/transactions/", { payer: ESCROW }),
+      jsonRoute("/v1/events", []),
+    ])
+    const spy = install({
+      event_cursor: cursorsAtTip(1000),
+      pack_purchases: { data: [{ event_kind: "secondary_sale" }], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(post(), ENV, CTX)).json()
+    expect(body.allday_forward.secondary_sale_rows).toBe(1)
+    const rows = (spy.writes.pack_purchases ?? []).flatMap((w) => w.rows)
+    const sale = mustFind(rows, (r) => r.pack_nft_id === "905", "the AllDay resale")
+    expect(sale.seller_address).toBe("0xf2bccfa0d1bd0dee") // Withdraw.from, lower-cased
+    expect(sale.seller_address).not.toBe(ESCROW)
+    expect(sale.buyer_address).toBe("0x8888888888888888")
   })
 })
 
