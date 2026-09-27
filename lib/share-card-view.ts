@@ -6,7 +6,7 @@
 // plural), which is an HONESTY line — closed-market moments are counted but
 // excluded from Total FMV, and the copy must say so correctly.
 
-import { DB_SLUG_TO_SLUG, getCollection } from "@/lib/collections"
+import { DB_SLUG_TO_SLUG, getCollection, collectionHasWalletTab } from "@/lib/collections"
 export const NO_SERIES_LABEL = "No series"
 
 /**
@@ -145,6 +145,7 @@ export function fullCollectionHref(
   const urlSlug = dominant ? DB_SLUG_TO_SLUG[dominant.slug] : undefined
   if (!urlSlug) return `/nba-top-shot/collection?wallet=${enc}`
   const coll = getCollection(urlSlug)
-  if (coll?.pages.includes("collection")) return `/${urlSlug}/collection?wallet=${enc}`
+  // A WALLET-keyed Collection tab only (Panini's is by username — 2026-09-27).
+  if (collectionHasWalletTab(coll)) return `/${urlSlug}/collection?wallet=${enc}`
   return `/${urlSlug}/overview`
 }

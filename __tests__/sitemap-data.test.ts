@@ -164,7 +164,9 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 81 → 82 on 2026-09-27: Panini gained its Packs tab (/api/panini-pack-market,
     // its native pack plane). Same derived coupling.
     // 82 → 83 on 2026-09-27: Panini gained its Sets tab (/api/panini-set-progress).
-    expect(s).toHaveLength(83)
+    // 83 → 84 on 2026-09-27: Panini gained its Collection tab (by username).
+    expect(s).toHaveLength(84)
+    expect(s.find((x) => x.url === `${BASE}/panini-blockchain/collection`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/packs`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/sets`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/overview`)).toBeTruthy()

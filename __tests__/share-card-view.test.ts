@@ -163,9 +163,11 @@ describe("fullCollectionHref", () => {
   })
 
   it("⚠ THE PROPERTY, not the row: a collection WITHOUT a `collection` tab still falls back to overview", () => {
-    // Panini ships pages: ["overview", "sniper"]. This is the arm that makes the
-    // registry read load-bearing; without it, `fullCollectionHref` could go back
-    // to hardcoding `/<slug>/collection` and every assertion here would pass.
+    // Panini HAS a Collection tab since 2026-09-27 — keyed on a USERNAME, not a
+    // wallet (dbChain null) — so a wallet share must still fall back to overview.
+    // This is the arm that makes the registry read load-bearing; without it,
+    // `fullCollectionHref` could go back to hardcoding `/<slug>/collection` (or
+    // to `pages.includes("collection")`) and every other assertion here would pass.
     expect(fullCollectionHref([{ slug: "panini_blockchain", moments: 7 }], "0xabc")).toBe(
       "/panini-blockchain/overview",
     )
@@ -225,5 +227,17 @@ describe("top-sales collection chips agree with the API's valid set", () => {
     return import("@/lib/insights/top-sales").then(({ TOP_SALES_VALID_COLLECTIONS }) => {
       expect(TOP_SALES_VALID_COLLECTIONS.has("candy_mlb")).toBe(true)
     })
+  })
+})
+
+describe("collectionHasWalletTab (2026-09-27)", () => {
+  it("is true only for a Collection tab keyed on a chain wallet", async () => {
+    const { collectionHasWalletTab, getCollection } = await import("@/lib/collections")
+    expect(collectionHasWalletTab(getCollection("nba-top-shot"))).toBe(true)
+    expect(collectionHasWalletTab(getCollection("candy-mlb"))).toBe(true)
+    // Panini has the tab, but by username — no wallet.
+    expect(getCollection("panini-blockchain")?.pages).toContain("collection")
+    expect(collectionHasWalletTab(getCollection("panini-blockchain"))).toBe(false)
+    expect(collectionHasWalletTab(null)).toBe(false)
   })
 })

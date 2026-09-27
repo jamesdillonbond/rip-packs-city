@@ -402,7 +402,9 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                 {detail.team && (teamHref ? (
                   <Link href={teamHref} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{detail.team}</Link>
                 ) : <span>{detail.team}</span>)}
-                {detail.is_active === true && (
+                {/* Panini: players.is_active is a column DEFAULT on the bridged rows,
+                    not a measured status — an "active" badge would be a claim. */}
+                {detail.is_active === true && !isPanini && (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                     <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--rpc-success)", boxShadow: "0 0 6px var(--rpc-success)" }} />
                     <span style={{ color: "var(--rpc-success)" }}>active</span>

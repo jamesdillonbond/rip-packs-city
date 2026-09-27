@@ -395,7 +395,8 @@ export const RETIRED_COLLECTION_TABS: ReadonlySet<string> = new Set([
   ...[
     // `packs` left 2026-09-27: Panini's Packs tab is in `pages` (native pack plane).
     // `sets` left 2026-09-27: Panini's Sets tab is in `pages` (/api/panini-set-progress).
-    "collection", "sniper", "pack-sniper", "challenges", "hot-floors",
+    // `collection` left 2026-09-27: by username (/api/panini-collection).
+    "sniper", "pack-sniper", "challenges", "hot-floors",
     "play", "analytics", "badges", "fast-break", "road-to-the-ring", "series", "profile",
   ].map((tab) => `panini-blockchain/${tab}`),
 ])
@@ -960,7 +961,8 @@ export function isPublicPath(pathname: string, method: string): boolean {
     (method === "GET" || method === "HEAD") &&
     (pathname === "/panini-blockchain/market" ||
       pathname === "/panini-blockchain/packs" ||
-      pathname === "/panini-blockchain/sets")
+      pathname === "/panini-blockchain/sets" ||
+      pathname === "/panini-blockchain/collection")
   ) {
     return true
   }
@@ -1062,6 +1064,9 @@ export function isPublicPath(pathname: string, method: string): boolean {
     "/api/panini-pack-market",
     // 2026-09-27: Panini's Sets tab backend — same commit as the tab.
     "/api/panini-set-progress",
+    // 2026-09-27: Panini's Collection tab backend (username → cards RPC has seen;
+    // the same public listing data Panini's marketplace shows) — same commit.
+    "/api/panini-collection",
     // 2026-09-25: the Candy Collection tab's SNS name → wallet lookup. GET-only,
     // no session, no DB — a public on-chain name resolution.
     "/api/candy/resolve-name",

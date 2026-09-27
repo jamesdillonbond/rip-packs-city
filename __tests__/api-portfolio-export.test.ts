@@ -87,9 +87,10 @@ describe("GET /api/portfolio-export — a Candy wallet exports its own moments",
   })
 
   it("⚠ but it does NOT widen to collections with no Collection tab", async () => {
-    // The gate is `published && pages.includes("collection")`, so the route's
-    // surface is exactly the set of buttons that can call it. Without this arm,
-    // swapping a map for a registry lookup quietly exposes Panini and RWA.
+    // The gate is `published && collectionHasWalletTab` (2026-09-27: Panini's
+    // Collection tab is by USERNAME, so "has a collection page" stopped meaning
+    // "has wallet rows to export"). Without this arm, swapping a map for a
+    // registry lookup quietly exposes Panini and RWA.
     rpc.data = { moments: [] }
     for (const slug of ["panini-blockchain", "rwa"]) {
       const res = await GET(req(`https://t/api/portfolio-export?wallet=0xabcdef1234567890&collection=${slug}`))

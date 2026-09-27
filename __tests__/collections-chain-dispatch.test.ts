@@ -107,7 +107,9 @@ describe("dbChain registry invariant", () => {
     // Panini's native pack plane (panini_pack_ev_board). Pinned below.
     // ⭐ `sets` joined 2026-09-27 — an ARM: /api/panini-set-progress over
     // panini_set_progress (usernames, not addresses). Pinned below.
-    "": ["overview", "market", "packs", "sets"],
+    // ⭐ `collection` joined 2026-09-27 — an ARM keyed on a USERNAME:
+    // /api/panini-collection over panini_owner_cards. Pinned below.
+    "": ["overview", "market", "packs", "sets", "collection"],
   }
 
   it("every published NON-Flow collection exposes only pages that have a dispatch for its chain", () => {
@@ -189,6 +191,17 @@ describe("dbChain registry invariant", () => {
     expect(route).toContain('from("panini_pack_ev_board")')
     // A failed primary read is a 503, never a zeroed board.
     expect(route).toMatch(/if \(evRes\.error\) return apiErrorResponse\(/)
+  })
+
+  it("⚠ Panini's `collection` permission is backed by a Panini arm keyed on a USERNAME", () => {
+    const read = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8")
+    const page = read("app/(collections)/[collection]/collection/page.tsx")
+    expect(page).toContain('collection === "panini-blockchain"')
+    expect(page).toContain("<PaniniCollection />")
+    expect(read("components/collection/PaniniCollection.tsx")).toContain('"/api/panini-collection?username="')
+    const route = read("app/api/panini-collection/route.ts")
+    expect(route).toContain('rpc("panini_owner_cards"')
+    expect(route).toContain("normalizePaniniUsername(raw)")
   })
 
   it("⚠ Panini's `sets` permission is backed by a Panini arm keyed on a USERNAME", () => {

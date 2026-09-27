@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { normalizeAddress } from "@/lib/address"
-import { getCollection } from "@/lib/collections"
+import { getCollection, collectionHasWalletTab } from "@/lib/collections"
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
@@ -46,7 +46,9 @@ export async function GET(req: NextRequest) {
 
   const collection = getCollection(collectionSlug)
   const collectionId =
-    collection?.published && collection.pages.includes("collection")
+    // Wallet-keyed tabs only: Panini's Collection tab is by username (no wallet
+    // rows exist to export), so it must not widen this route (2026-09-27).
+    collection?.published && collectionHasWalletTab(collection)
       ? collection.supabaseCollectionId ?? null
       : null
   if (!collectionId) return NextResponse.json({ error: "Unknown collection" }, { status: 400 })

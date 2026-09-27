@@ -293,7 +293,12 @@ export const COLLECTIONS: Collection[] = [
     // `editions` set membership. Counts are editions SEEN (listing-gated), cost to
     // finish is at confirmed 7-day asks with unpriced editions counted apart, and
     // an optional Panini USERNAME shows what RPC has seen that collector holding.
-    pages: ["overview", "market", "packs", "sets"],
+    //
+    // 2026-09-27 — COLLECTION added (Trevor: "proceed with all"), by USERNAME:
+    // /api/panini-collection → panini_owner_cards. It is "cards RPC has seen
+    // under this username" — RPC learns a holder only when a card is listed, so
+    // for most collectors it shows their listings — and the tab says so.
+    pages: ["overview", "market", "collection", "packs", "sets"],
     published: true,
     openSeaSlug: "paniniblockchain",
     supabaseCollectionId: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",
@@ -499,6 +504,18 @@ export function collectionHasLocking(id: string): boolean {
 export function collectionHasPage(id: string, page: CollectionPage): boolean {
   const c = getCollection(id)
   return !!c && c.pages.includes(page)
+}
+
+/**
+ * True when the collection's Collection tab is keyed on a WALLET address.
+ * ⚠ Not the same as `collectionHasPage(id, "collection")` since 2026-09-27:
+ * Panini's Collection tab is keyed on a USERNAME (dbChain null — no wallet
+ * concept), so a caller that hands the tab or its export a wallet must use this,
+ * or it sends a `?wallet=` to a page that cannot read one (and an export that
+ * could only ever come back empty — a fabricated "no moments").
+ */
+export function collectionHasWalletTab(c: Pick<Collection, "pages" | "dbChain"> | null | undefined): boolean {
+  return !!c && c.pages.includes("collection") && c.dbChain != null
 }
 
 // ── Top-level tab bar (2026-07-18 IA reorg) ─────────────────────────────────
