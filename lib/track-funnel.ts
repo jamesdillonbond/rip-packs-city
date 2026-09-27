@@ -144,6 +144,17 @@ function getAttribution(): string | null {
   }
 }
 
+/**
+ * The session id + resolved campaign attribution, for a SERVER route that logs
+ * its own funnel event (trophy_pinned / trophy_removed — the public beacon may
+ * not write those; the DB policy refuses them from anon/authenticated). Sent in
+ * the request body so the server row joins the same session as the beacons.
+ * Never throws; either field is null when unavailable.
+ */
+export function getFunnelContext(): { sessionId: string | null; referrer: string | null } {
+  return { sessionId: getSessionId(), referrer: getAttribution() }
+}
+
 export function trackFunnelEvent(payload: FunnelEventPayload): void {
   try {
     if (typeof window === "undefined") return

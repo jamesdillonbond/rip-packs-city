@@ -20,6 +20,7 @@ import SerialFmvBadge, { type SerialFmvData } from "@/components/SerialFmvBadge"
 import SerialBadge from "@/components/collection/SerialBadge";
 import { publishedCollections } from "@/lib/collections";
 import { track } from "@/lib/telemetry/track";
+import { getFunnelContext } from "@/lib/track-funnel";
 import { seriesLabel, isUnmappedSeriesLabel } from "@/lib/analytics/series-labels";
 import {
   type TrophySortKey,
@@ -241,6 +242,8 @@ export default function TrophyPickerModal({
             tier: m.tier,
             thumbnailUrl: m.image_url,
             fmv: m.fmv_usd,
+            // Session + campaign attribution for the server-logged trophy_pinned event.
+            funnel: getFunnelContext(),
           }),
         });
         if (!res.ok) {

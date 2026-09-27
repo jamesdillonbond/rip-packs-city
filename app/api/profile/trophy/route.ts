@@ -12,6 +12,7 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { sanitizeTrophyThumbnail } from "@/lib/profile/trophy-thumbnail";
+import { logTrophyFunnelEvent } from "@/lib/trophy/funnel-event";
 
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
     fmv,
     badges,
     note,
+    funnel,
   } = body;
 
   if (!slot || !momentId) {
@@ -147,6 +149,18 @@ export async function POST(req: NextRequest) {
     console.error("[trophy POST]", error);
     return apiErrorResponse(error, "api/profile/trophy");
   }
+
+  // Campaign attribution (2026-09-27). Only after the pin LANDED. A failed log
+  // does not fail the pin — started/completed milestones come from a DB trigger
+  // on trophy_moments, so what a lost row costs is attribution, not the count.
+  await logTrophyFunnelEvent(supabase as any, {
+    eventType: "trophy_pinned",
+    userId: user.id,
+    slot,
+    funnel,
+    userAgent: req.headers?.get?.("user-agent") ?? null,
+  });
+
   return NextResponse.json({ trophy: data });
 }
 
@@ -230,20 +244,35 @@ export async function DELETE(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { slot } = body;
+  const { slot, funnel } = body;
   if (!slot) {
     return NextResponse.json({ error: "slot required" }, { status: 400 });
   }
 
-  const { error } = await supabase
+  // `.select("id")` so the event below is logged only when a row was actually
+  // removed — a DELETE of an already-empty slot succeeds with nothing to count.
+  const { data: removed, error } = await supabase
     .from("trophy_moments")
     .delete()
     .eq("user_id", user.id)
-    .eq("slot", slot);
+    .eq("slot", slot)
+    .select("id");
 
   if (error) {
     console.error("[trophy DELETE]", error);
     return apiErrorResponse(error, "api/profile/trophy");
   }
+
+  // See POST: logged only after the delete landed, never fails the unpin.
+  if (Array.isArray(removed) && removed.length > 0) {
+    await logTrophyFunnelEvent(supabase as any, {
+      eventType: "trophy_removed",
+      userId: user.id,
+      slot,
+      funnel,
+      userAgent: req.headers?.get?.("user-agent") ?? null,
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }

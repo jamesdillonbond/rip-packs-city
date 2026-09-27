@@ -1,6 +1,7 @@
 "use client";
 
 import { apiErrorMessage } from "@/lib/api-error-message"
+import { getFunnelContext } from "@/lib/track-funnel"
 import { reconcileDeviceKeysForUser } from "@/lib/auth/device-keys";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
@@ -333,7 +334,7 @@ function ProfilePageInner() {
       const res = await fetch("/api/profile/trophy", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slot }),
+        body: JSON.stringify({ slot, funnel: getFunnelContext() }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { safeApiError } from "@/lib/api-error"
+import { isBotUserAgent } from "@/lib/bot-ua"
 
 // Top-of-funnel event sink. Publicly reachable (see proxy.ts isPublicPath) so
 // anon visitors on the marketing home, /share/<wallet>, and /insights can log
@@ -42,32 +43,9 @@ type TrackFunnelBody = {
   sessionId?: string | null;
 };
 
-// ── Bot classification (deep-audit R23) ─────────────────────────────────────
-// MEASURED 7 days to 2026-08-22: 15,803 events across 15,689 distinct sessions.
-// Only 53 sessions (0.34%) fired more than one event, and 99.82% carried a null
-// referrer. `getSessionId()` persists `rpc_sess` in sessionStorage, so a real
-// multi-page visit SHARES one id — 1.007 events/session is a crawler with fresh
-// storage per fetch, not browsing. `collection_view` rose 82 -> 7,738/day
-// between 08-16 and 08-18 with ZERO change in wallet_paste, signups or sign-ins.
-//
-// The table had no way to express any of that, so any future read of "views" as
-// traction is wrong by roughly three orders of magnitude. Same shape as the
-// `is_smoke_test` lesson — except here the flag did not exist yet.
-//
-// ⚠ THIS IS A HEURISTIC AND THE COLUMN NAME SAYS SO. `bot_ua` records what the
-// USER-AGENT claims, nothing more: a crawler that lies is not caught, and a real
-// browser is never flagged by it. It is a cheap FIRST cut whose job is to make
-// the honest slice possible at all — the stronger signals (one-event sessions,
-// null referrer) stay in the analysis, not in this column.
-//
-// ⚠ Slice by this BEFORE slicing by time. That is the whole lesson.
-const BOT_UA = /bot|crawl|spider|slurp|bingpreview|headless|phantomjs|puppeteer|playwright|curl|wget|python-requests|httpx|axios|go-http-client|java\/|scrapy|facebookexternalhit|embedly|whatsapp|telegrambot|discordbot|semrush|ahrefs|mj12|dotbot|petalbot|bytespider|gptbot|claudebot|ccbot|perplexity|amazonbot|applebot|yandex|baiduspider|duckduckbot|lightpanda/i
-
-/** True when the User-Agent SELF-IDENTIFIES as automated. Never a certainty. */
-export function isBotUserAgent(ua: string | null | undefined): boolean {
-  if (!ua) return false
-  return BOT_UA.test(ua)
-}
+// Bot classification (deep-audit R23) lives in lib/bot-ua.ts — shared with the
+// trophy funnel writer. Re-exported here because tests import it from the route.
+export { isBotUserAgent }
 
 function clampStr(v: unknown, max: number): string | null {
   if (v == null) return null;
