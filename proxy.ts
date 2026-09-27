@@ -394,7 +394,8 @@ export const RETIRED_COLLECTION_TABS: ReadonlySet<string> = new Set([
   "ufc/sniper",
   ...[
     // `packs` left 2026-09-27: Panini's Packs tab is in `pages` (native pack plane).
-    "collection", "sniper", "sets", "pack-sniper", "challenges", "hot-floors",
+    // `sets` left 2026-09-27: Panini's Sets tab is in `pages` (/api/panini-set-progress).
+    "collection", "sniper", "pack-sniper", "challenges", "hot-floors",
     "play", "analytics", "badges", "fast-break", "road-to-the-ring", "series", "profile",
   ].map((tab) => `panini-blockchain/${tab}`),
 ])
@@ -951,10 +952,15 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // 2026-09-27 — PACKS joins it. Anon-safety checked: its only fetch is
   // /api/panini-pack-market, a GET-only service-role read of Panini's own public
   // pack market stats + the pack-EV model + the coverage summary. No wallet, no
-  // session.
+  // session. SETS joins too (2026-09-27): its only fetch is
+  // /api/panini-set-progress, a GET-only service-role read of the public
+  // listing-fed catalogue, public asks and the public holder names Panini's own
+  // marketplace shows. The username is typed by the reader; no session.
   if (
     (method === "GET" || method === "HEAD") &&
-    (pathname === "/panini-blockchain/market" || pathname === "/panini-blockchain/packs")
+    (pathname === "/panini-blockchain/market" ||
+      pathname === "/panini-blockchain/packs" ||
+      pathname === "/panini-blockchain/sets")
   ) {
     return true
   }
@@ -1054,6 +1060,8 @@ export function isPublicPath(pathname: string, method: string): boolean {
     "/api/candy-pack-market",
     // 2026-09-27: Panini's Packs tab backend — same commit as the tab.
     "/api/panini-pack-market",
+    // 2026-09-27: Panini's Sets tab backend — same commit as the tab.
+    "/api/panini-set-progress",
     // 2026-09-25: the Candy Collection tab's SNS name → wallet lookup. GET-only,
     // no session, no DB — a public on-chain name resolution.
     "/api/candy/resolve-name",

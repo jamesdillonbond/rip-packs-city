@@ -105,7 +105,9 @@ describe("dbChain registry invariant", () => {
     // fetchPaniniMarketListings → panini_market_board. Pinned below.
     // ⭐ `packs` joined 2026-09-27 — an ARM: /api/panini-pack-market reads
     // Panini's native pack plane (panini_pack_ev_board). Pinned below.
-    "": ["overview", "market", "packs"],
+    // ⭐ `sets` joined 2026-09-27 — an ARM: /api/panini-set-progress over
+    // panini_set_progress (usernames, not addresses). Pinned below.
+    "": ["overview", "market", "packs", "sets"],
   }
 
   it("every published NON-Flow collection exposes only pages that have a dispatch for its chain", () => {
@@ -187,6 +189,17 @@ describe("dbChain registry invariant", () => {
     expect(route).toContain('from("panini_pack_ev_board")')
     // A failed primary read is a 503, never a zeroed board.
     expect(route).toMatch(/if \(evRes\.error\) return apiErrorResponse\(/)
+  })
+
+  it("⚠ Panini's `sets` permission is backed by a Panini arm keyed on a USERNAME", () => {
+    const read = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8")
+    const page = read("app/(collections)/[collection]/sets/page.tsx")
+    expect(page).toContain('collection === "panini-blockchain"')
+    expect(page).toContain("<PaniniSetProgress />")
+    expect(read("components/collection/PaniniSetProgress.tsx")).toContain('"/api/panini-set-progress"')
+    const route = read("app/api/panini-set-progress/route.ts")
+    expect(route).toContain('rpc("panini_set_progress"')
+    expect(route).toContain("normalizePaniniUsername(raw)")
   })
 
   // ⚠ THE OTHER HALF, for `collection`. It cannot be the same SHAPE of check as

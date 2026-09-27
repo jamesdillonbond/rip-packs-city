@@ -75,7 +75,8 @@ const FACADE_GATED_PAGES = ["market"]
 // about). 2026-09-27: Panini's Packs tab dispatches to PaniniPackMarket (pack
 // products + EV, no card rows), pinned as a source fact below — the arm is only
 // exempt while it really links nothing.
-const LINK_FREE_THIN_ARMS: Record<string, string[]> = { "panini-blockchain": ["packs"] }
+// Sets joined 2026-09-27 (PaniniSetProgress — set rows, no card links).
+const LINK_FREE_THIN_ARMS: Record<string, string[]> = { "panini-blockchain": ["packs", "sets"] }
 const exempt = (id: string, p: string) =>
   FACADE_GATED_PAGES.includes(p) || (LINK_FREE_THIN_ARMS[id] ?? []).includes(p)
 
@@ -162,6 +163,18 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
     const src = readFileSync(join(process.cwd(), "components/packs/PaniniPackMarket.tsx"), "utf8")
     for (const needle of ["href", "<Link", "/edition/", "/player/", "/set/", "/team/", "router.push"]) {
       expect(src, `PaniniPackMarket must not contain ${needle}`).not.toContain(needle)
+    }
+  })
+
+  it("Panini's Sets arm is link-free (LINK_FREE_THIN_ARMS is backed)", () => {
+    const page = readFileSync(join(process.cwd(), "app/(collections)/[collection]/sets/page.tsx"), "utf8")
+    const arm = page.indexOf('collection === "panini-blockchain"')
+    expect(arm).toBeGreaterThan(-1)
+    expect(page.slice(arm, arm + 80)).toContain("<PaniniSetProgress />")
+    expect(arm).toBeLessThan(page.indexOf("return <CollectionSetsClient"))
+    const src = readFileSync(join(process.cwd(), "components/collection/PaniniSetProgress.tsx"), "utf8")
+    for (const needle of ["href=", "<Link", "/edition/", "/player/", "/set/", "/team/", "router.push"]) {
+      expect(src, `PaniniSetProgress must not contain ${needle}`).not.toContain(needle)
     }
   })
 

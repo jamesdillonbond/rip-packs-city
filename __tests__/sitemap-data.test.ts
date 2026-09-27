@@ -163,8 +163,10 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // segment 0 by themselves.
     // 81 → 82 on 2026-09-27: Panini gained its Packs tab (/api/panini-pack-market,
     // its native pack plane). Same derived coupling.
-    expect(s).toHaveLength(82)
+    // 82 → 83 on 2026-09-27: Panini gained its Sets tab (/api/panini-set-progress).
+    expect(s).toHaveLength(83)
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/packs`)).toBeTruthy()
+    expect(s.find((x) => x.url === `${BASE}/panini-blockchain/sets`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/overview`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/market`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/sniper`)).toBeUndefined()

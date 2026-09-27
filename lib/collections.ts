@@ -287,7 +287,13 @@ export const COLLECTIONS: Collection[] = [
     // pattern: the Flow pack board reads pack_distributions, where Panini has zero
     // rows. Two products (Hobby, FOTL); typical pull leads, the coverage note
     // renders on the tab, and stats older than 24 h say so beside the price.
-    pages: ["overview", "market", "packs"],
+    //
+    // 2026-09-27 — SETS added, with its own backend (/api/panini-set-progress →
+    // panini_set_progress): the shared Set Tracker keys on a wallet ADDRESS and
+    // `editions` set membership. Counts are editions SEEN (listing-gated), cost to
+    // finish is at confirmed 7-day asks with unpriced editions counted apart, and
+    // an optional Panini USERNAME shows what RPC has seen that collector holding.
+    pages: ["overview", "market", "packs", "sets"],
     published: true,
     openSeaSlug: "paniniblockchain",
     supabaseCollectionId: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",
