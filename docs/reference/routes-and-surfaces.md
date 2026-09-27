@@ -31,6 +31,15 @@ never look, which is why it is restated here.
 
 Feature pages live at `app/(collections)/[collection]/`. The layout at that level provides header, nav, and ticker — pages must NOT include standalone headers.
 
+### ⛔ One page structure for EVERY collection (Trevor, 2026-09-27)
+
+*"The foundational pages shouldn't change between each collection"* — colours (the registry `accent`) may differ; the pages may not. So:
+
+- **No static `app/(collections)/<slug>/` segment.** Disney Pinnacle had one (`disney-pinnacle/collection` + `/sniper` + its own layout, which also lacked `FunnelTracker`); it shadowed the shared tabs and drifted into a different-looking site. Deleted 2026-09-27; `__tests__/seo-client-shell-tabs-carry-the-catalog-fanout.test.tsx` pins `app/(collections)` to `[collection]` alone.
+- **A collection difference is a REGISTRY SWITCH read by the shared page, never a fork:** `getEntityLabels()` (Character/Variant/Franchise vocabulary), `collectionHasLocking()` (no lock UI at all — Pinnacle), `marketplaceMomentUrl()` ("View on <collection>"; null → no link, e.g. UFC), `setEntityHref()` (null → set name as text), `momentRowHref()` in `CollectionMomentTable` (Pinnacle → `/pinnacle/moment/<render_id>`), `isPinnacleUrlSlug()` for "pins" copy.
+- **The shared pages carried Top Shot constants on every collection until this move** ("View on Top Shot" links, `/moment/<id>` detail links — a `moment_id` is unique only within a collection — and Top Shot thumbnail/GraphQL fallbacks in `/api/collection-moments`). When a new collection moves onto a shared page, look for those, not just for its own gaps.
+- Pinnacle's data on the shared pages: `/api/collection-moments` passes `render_id` + `is_serialised` (from `lib/pinnacle/edition-types.ts`); the Sniper feed is `pinnacle_live_listings` (schema-truth.md, Pinnacle grain). `/api/pinnacle-wallet` and `/api/pinnacle-sniper-feed` still answer but have **no in-app caller** since 09-27 (left in place; enumerate callers before removing).
+
 The `[collection]` dynamic segment serves all 5 published collections: NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike. Each collection's page set is its `pages: [...]` array in `lib/collections.ts`, but since the **2026-07-18 IA reorg** the TOP BAR renders `tabBarPages()` = `pages` minus `TAB_BAR_HIDDEN_PAGES` (`packs`, `pack-sniper`, `hot-floors`, `challenges`) — those stay registered pages so every gate, capability check, and collection-switch keeps working; only the tab bar hides them. Per-collection `pages` (verified 2026-07-18):
 
 - **All 5 published:** `overview`, `collection`, `sniper`, `analytics`.

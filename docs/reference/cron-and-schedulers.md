@@ -2894,3 +2894,7 @@ The Wall Kills arm pairs a `<pipeline>-heartbeat` row with a terminal row whose 
 ## Displaced from CLAUDE.md 2026-09-25 PT (verbatim) — the UI-sample bullet, to pay for the edge-deploy pointer
 
 - ⚠ **A DEFAULT UI LIST IS A SAMPLE; a UI CLICK CAN FAIL SILENTLY** — Panini sales default to TOP; a pointer click hit RECENT 3/~300 times, DOM click always: panini-fmv-packev-methodology.md.
+
+## Displaced from CLAUDE.md — 2026-09-27 (verbatim; it paid for the one-page-structure + Pinnacle-lock rule)
+
+- ⚠ **A directional claim needs a DISTRIBUTION, not a snapshot; a delta between two STOCKS is neither a rate nor a sign; `max()` on a `text` cursor is lexicographic.**

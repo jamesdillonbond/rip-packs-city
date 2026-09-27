@@ -3488,3 +3488,6 @@ The fix made the fixture column NOT NULL as live. With that, the previous body f
 
 Before pushing a rewrite of `CollectionProfileClient.tsx` I ran every test that `grep`-matched the component's name — 635 green — and `main` went RED on `client-pages-failed-vs-empty-guard.test.ts`, which reads the page by ROUTE path (`app/(collections)/[collection]/profile/[username]/page.tsx` + its siblings, via `pageSource()`) and never names the component. It pins a SHAPE (the trophy leg sets its failure flag on BOTH the null-body path and the catch); the rewrite kept the behaviour but routed both through one catch. **A targeted selection is a speed-up, not a gate: before pushing a component or route REWRITE, run the full suite** (~10 min locally, `timeout 900 npx vitest run`). When `main` is red from your own push, push the repair first and let the full suite confirm it — do not leave `main` red for the length of a local run.
 
+## Displaced from CLAUDE.md — 2026-09-27 (verbatim; it paid for the one-page-structure + Pinnacle-lock rule)
+
+- ⚠ **Grep for the guards that READ a file before you EDIT it** — a pinned exemption reddened main (08-22).
