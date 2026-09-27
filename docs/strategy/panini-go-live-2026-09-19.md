@@ -151,6 +151,12 @@ whole-group statistic used as a proxy for a per-slice property.
    (fail-closed), and since `03ecc2fee` Panini is published on the shared Overview + Market routes, so
    the bar is now load-bearing for the bridge and those public routes, not only for this doc.
 
+   ✅ **STEP 1 CLOSED — read 2026-09-27 ~9:17 AM PT (day 8):** `pct_editions_stale_45d` **0.0%**, walked
+   ≤7 d **100.0%**, p50 **30.0 h**, p90 **46.8 h**. ⚠ The scheduled 09-26 day-7 read did not land (no
+   record in the ledger), so this closes on the day-8 read. It still bounds 09-26: a 45-day staleness
+   count at 0.0 today means any edition that could have been ≥45 d stale yesterday was walked since,
+   and every daily read from 09-20 through 09-25 was ≤ 0.1%. Exit bar met.
+
    ⚠ **`pct_trustworthy` did NOT move (36.2% → 35.2%) and that is not a counter-result** — §1's
    correction says exactly this: it bands on listing bias, not freshness. Do not read it either way.
 2. **Then the P1 bridge.** The mapping is settled and executable (§5). It is ~2 days of work, not

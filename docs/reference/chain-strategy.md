@@ -217,6 +217,7 @@ Moved to pay for the collection-keyed-map rule; the NEVER-NARROW bullet in CLAUD
 - `dbChain: null` (no chain identity established, owners are usernames). Published with Overview + Market; `collections.is_active` stays false by decision (known-issues #64).
 - ⛔ **`c.dbChain ?? "flow"` treats null as Flow.** It did so in three places on publish day — the dashboard gave every Flow wallet a Panini tile, the overview ran Flow insider detectors, and the wallet band would have offered a Flow wallet box (`chain && chain !== "flow"` lets null through). Test `=== "flow"` explicitly.
 - A collection with no entity routes (no `lib/collection-slug.ts` record) must not render edition/player/set links — MarketClient's `hasEntityPages` gates them (pinned in collection-registry-consistency.test.ts as `FACADE_GATED_PAGES`).
+- **Packs tab (2026-09-27)** — the Candy pattern: a NATIVE arm (`/api/panini-pack-market` → `panini_pack_ev_board` + `panini_pack_state.raw` + `panini_pack_state_history`, `components/packs/PaniniPackMarket.tsx`), because the Flow pack board reads `pack_distributions` (zero Panini rows). Typical pull leads; stats older than 24 h say so beside the price (the residential runner writes them ~4-hourly); a cost with no floor is labelled an average sale. `packs` is an entity-linking page for the Flow board, so the Panini arm is exempted per collection (`LINK_FREE_THIN_ARMS`) only while its component emits no link — pinned as a source fact.
 
 ## Candy MLB — Magic Eden's listing escrow (2026-09-25)
 
