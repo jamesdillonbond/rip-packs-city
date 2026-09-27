@@ -341,15 +341,30 @@ describe("TrophyPickerModal — manual lookup + grid pin + row variants", () => 
     await waitFor(() =>
       expect((fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes("collection=candy-mlb"))).toBe(true),
     )
-    expect(await findByText(/Add your Solana wallet address/)).toBeTruthy()
+    // savedChains unknown → hedged: "if you haven't added…", never "you haven't".
+    expect(await findByText(/If you haven’t added your Solana wallet/)).toBeTruthy()
   })
 
-  it("an empty Flow filter keeps the generic empty copy (control)", async () => {
+  it("an empty Flow filter with a Flow wallet saved says none found, not 'add a wallet' (control)", async () => {
     stubFetch({ moments: [] })
-    const { container, findByText, queryByText } = render(<TrophyPickerModal {...baseProps} />)
+    const { container, findByText, queryByText } = render(<TrophyPickerModal {...baseProps} savedChains={["flow"]} />)
     const ts = Array.from(container.querySelectorAll("button[title]")).find((b) => b.getAttribute("title") === "Top Shot")
     fireEvent.click(ts!)
-    expect(await findByText(/No owned moments found yet/)).toBeTruthy()
-    expect(queryByText(/Solana/)).toBeNull()
+    expect(await findByText(/No Top Shot Moments found in your saved wallets/)).toBeTruthy()
+    expect(queryByText(/haven’t added/)).toBeNull()
+  })
+
+  it("an empty Flow filter with NO Flow wallet saved says to add a Dapper wallet", async () => {
+    stubFetch({ moments: [] })
+    const { container, findByText } = render(<TrophyPickerModal {...baseProps} savedChains={["solana"]} />)
+    const ts = Array.from(container.querySelectorAll("button[title]")).find((b) => b.getAttribute("title") === "Top Shot")
+    fireEvent.click(ts!)
+    expect(await findByText(/You haven’t added a Flow wallet/)).toBeTruthy()
+  })
+
+  it("no wallets at all, on All, says to add a wallet", async () => {
+    stubFetch({ moments: [] })
+    const { findByText } = render(<TrophyPickerModal {...baseProps} savedChains={[]} />)
+    expect(await findByText(/You haven’t added a wallet yet/)).toBeTruthy()
   })
 })

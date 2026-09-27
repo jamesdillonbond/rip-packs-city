@@ -31,6 +31,7 @@ import {
   displayName,
   presentTiers,
   filterSortMoments,
+  emptyPoolCopy,
 } from "@/lib/trophy-picker-format";
 import { NEUTRAL_TIER_COLOR, tierColorAlpha } from "@/lib/tier-color";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
@@ -123,6 +124,13 @@ interface Props {
    * WRONG Moment whenever the case has a gap.
    */
   replacingName?: string | null;
+  /**
+   * dbChains of the collector's saved wallets ("flow", "solana"), or null when
+   * unknown (the wallet read failed / caller cannot tell). Drives the "you
+   * haven't added a wallet on this chain" empty copy, which must never be
+   * shown on a guess.
+   */
+  savedChains?: readonly string[] | null;
 }
 
 export default function TrophyPickerModal({
@@ -132,6 +140,7 @@ export default function TrophyPickerModal({
   onPinned,
   pinnedMomentIds,
   replacingName,
+  savedChains,
 }: Props) {
   const [tab, setTab] = useState<"grid" | "manual">("grid");
   const [moments, setMoments] = useState<PickerMoment[] | null>(null);
@@ -571,13 +580,10 @@ export default function TrophyPickerModal({
                   textAlign: "center",
                 }}
               >
-                {moments.length === 0 && selectedChain === "solana"
-                  ? /* A Candy wallet is saved separately (a Solana address, not
-                       the Flow wallet), so "none found" here usually means none
-                       is saved. Say how to fix that rather than just "none". */
-                    `No ${selectedLabel} cards found in your saved wallets. Add your Solana wallet address with "Add wallet" on your dashboard — once it's indexed (about a minute), your cards show up here.`
-                  : moments.length === 0
-                  ? "No owned moments found yet — try the manual tab if you know the moment ID."
+                {moments.length === 0
+                  ? /* "None" is either "owns nothing here" or "no wallet saved on
+                       this chain" — the helper says which only when it KNOWS. */
+                    emptyPoolCopy(selectedChain, selectedLabel, savedChains ?? null)
                   : atCap
                     ? `Nothing in your top ${PICKER_LIMIT} by value matches. A lower-value Moment won't be listed here — use the manual tab if you know its ID.`
                     : "No moments match the current filter."}

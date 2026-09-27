@@ -30,6 +30,7 @@ import { tierColorAlpha } from "@/lib/tier-color";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
 import { occupantOfSlot, reorderByDelta, reorderByTarget } from "@/lib/trophy/reorder";
+import { savedWalletChains } from "@/lib/trophy-picker-format";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
@@ -1464,6 +1465,9 @@ function ProfilePageInner() {
           // Resolved by the slab's OWN `slot`, never by array position — see
           // occupantOfSlot for why the index form names the wrong trophy.
           replacingName={occupantOfSlot(slabs, pinSlot)?.player_name ?? null}
+          // null while the wallet read is unknown: the picker says "you haven't
+          // added a wallet" only when the list was actually read.
+          savedChains={loading || walletsFailed ? null : savedWalletChains(wallets.map((w) => w.wallet_addr), detectAddressChain)}
         />
       )}
       {heroEditOpen && (

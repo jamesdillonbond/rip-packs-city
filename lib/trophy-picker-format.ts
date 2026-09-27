@@ -185,3 +185,62 @@ export function filterSortMoments<T extends TrophyMomentLike>(
   })
   return filtered
 }
+
+/**
+ * The picker's empty-grid copy when the owner's pool came back EMPTY (a
+ * successful read — a failed read has its own copy and never reaches here).
+ *
+ * "None found" has two very different causes: the collector owns nothing in
+ * this collection, or we are not looking at the wallet that holds it because
+ * they never saved one on that chain. The second is fixable, so say how — but
+ * ONLY when we KNOW no wallet on that chain is saved. `savedChains` is:
+ *   · a list  → the chains of the collector's saved wallets (read succeeded);
+ *   · null    → unknown (the wallet read failed, or the caller cannot tell).
+ * Unknown never produces "you haven't added a wallet": telling someone who
+ * has one to add it is a false claim about their own account.
+ *
+ * @param filterChain  dbChain of the selected collection, or null for "All".
+ * @param filterLabel  short label of the selected collection ("Top Shot").
+ */
+export function emptyPoolCopy(
+  filterChain: string | null,
+  filterLabel: string,
+  savedChains: readonly string[] | null,
+): string {
+  const MANUAL = 'try the manual tab if you know the moment ID.'
+  const known = savedChains != null
+  const has = (c: string) => known && savedChains!.includes(c)
+
+  if (filterChain == null) {
+    if (known && savedChains!.length === 0) {
+      return 'You haven’t added a wallet yet. Add your Dapper (Flow) wallet address or Top Shot username — or a Solana address for Candy — with “Add wallet” on your dashboard. Once it’s indexed (about a minute), your Moments show up here.'
+    }
+    return `No owned moments found yet — ${MANUAL}`
+  }
+
+  if (filterChain === 'solana') {
+    if (has('solana')) return `No ${filterLabel} cards in your saved Solana wallet.`
+    if (known) {
+      return `You haven’t added a Solana wallet, so there are no ${filterLabel} cards to show. Add your Solana wallet address with “Add wallet” on your dashboard — once it’s indexed (about a minute), your cards show up here.`
+    }
+    return `No ${filterLabel} cards found in your saved wallets. If you haven’t added your Solana wallet, add it with “Add wallet” on your dashboard — once it’s indexed (about a minute), your cards show up here.`
+  }
+
+  if (filterChain === 'flow' && known && !has('flow')) {
+    return `You haven’t added a Flow wallet, so there are no ${filterLabel} Moments to show. Add your Dapper wallet address or Top Shot username with “Add wallet” on your dashboard — once it’s indexed (about a minute), your Moments show up here.`
+  }
+
+  return `No ${filterLabel} Moments found in your saved wallets — ${MANUAL}`
+}
+
+/** Collapse saved wallet addresses to the dbChain vocabulary the picker uses. */
+export function savedWalletChains(addrs: readonly string[], detect: (a: string) => string): string[] {
+  const out = new Set<string>()
+  for (const a of addrs) {
+    const c = detect(a)
+    if (c === 'cadence') out.add('flow')
+    else if (c === 'solana') out.add('solana')
+    else if (c === 'evm') out.add('evm')
+  }
+  return Array.from(out)
+}
