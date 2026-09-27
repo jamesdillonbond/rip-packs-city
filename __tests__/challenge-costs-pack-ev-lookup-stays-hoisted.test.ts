@@ -33,7 +33,7 @@ import { join } from "node:path"
 
 const MIGRATION = join(
   process.cwd(),
-  "supabase/migrations/20260902120329_audit_20260902_challenge_costs_arm1_hoisted_out_of_the_per_row_loop.sql",
+  "supabase/migrations/20260927153137_audit_20260927_challenge_reward_median_excludes_topshot_shop.sql",
 )
 
 const sql = () => readFileSync(MIGRATION, "utf8")
@@ -112,7 +112,7 @@ describe("refresh_challenge_costs reads pack_ev_latest once, not once per challe
       .sort()
     expect(defining.length).toBeGreaterThan(0)
     expect(defining[defining.length - 1]).toBe(
-      "20260902120329_audit_20260902_challenge_costs_arm1_hoisted_out_of_the_per_row_loop.sql",
+      "20260927153137_audit_20260927_challenge_reward_median_excludes_topshot_shop.sql",
     )
   })
 })

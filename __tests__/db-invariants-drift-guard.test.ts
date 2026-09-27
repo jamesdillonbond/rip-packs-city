@@ -1367,7 +1367,7 @@ const PINS = [
     fn: "refresh_challenge_costs",
     test: "supabase/tests/refresh_challenge_costs.sql",
     migration:
-      "supabase/migrations/20260902120329_audit_20260902_challenge_costs_arm1_hoisted_out_of_the_per_row_loop.sql",
+      "supabase/migrations/20260927153137_audit_20260927_challenge_reward_median_excludes_topshot_shop.sql",
   },
   {
     // Points at the 2026-08-01 snapshot, NOT the 2026-07-13 migration whose

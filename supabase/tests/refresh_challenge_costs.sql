@@ -7,7 +7,7 @@
 -- fmv; other -> NULL), and the returned refreshed-challenge count.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260902120329_audit_20260902_challenge_costs_arm1_hoisted_out_of_the_per_row_loop.sql);
+-- (supabase/migrations/20260927153137_audit_20260927_challenge_reward_median_excludes_topshot_shop.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- REPOINTED 2026-09-02: the pin had named the 2026-08-01 snapshot, and that day's
@@ -16,6 +16,11 @@
 -- went red, correctly, and this is the repair rather than a behaviour change.
 -- Verified against LIVE prod 2026-09-02, expression recorded beside the digest so
 -- it stays checkable: md5(pg_get_functiondef(oid)) = c39522c974490a3071f8813d31bf803b.
+--
+-- REPOINTED 2026-09-27 (#134): both median arms now exclude Top Shot SHOP sales
+-- (custom_id 'nba'). Live after apply: md5(pg_get_functiondef(oid)) =
+-- ed17aa750fae9ede8b038025845af4b8. The d4 fixture carries four shop rows that turn
+-- the CH4 median into 9 under the previous body -- run and seen to fail.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -26,7 +31,7 @@ CREATE TABLE badge_editions (external_id text, collection_id uuid, low_ask numer
 CREATE TABLE challenge_slot_editions (challenge_id uuid, slot_order int, external_id text);
 CREATE TABLE mv_topshot_set_play_catalog (external_id text, fmv_usd numeric);
 CREATE TABLE pack_ev_latest (dist_id text, collection_id uuid, gross_ev numeric, snapshotted_at timestamptz);
-CREATE TABLE pack_purchases (pack_dist_id text, event_kind text, sale_price numeric, sealed_at timestamptz);
+CREATE TABLE pack_purchases (pack_dist_id text, event_kind text, sale_price numeric, sealed_at timestamptz, custom_id text);
 CREATE TABLE pack_drop_pool (dist_id text, edition_id uuid, drop_weight numeric);
 CREATE TABLE fmv_snapshots (edition_id uuid, fmv_usd numeric, computed_at timestamptz);
 
@@ -84,6 +89,7 @@ BEGIN
         (SELECT round(percentile_cont(0.5) WITHIN GROUP (ORDER BY pp.sale_price)::numeric, 2)
          FROM public.pack_purchases pp
          WHERE pp.pack_dist_id = c.reward_pack_dist_id AND pp.event_kind = 'secondary_sale'
+           AND pp.custom_id IS DISTINCT FROM 'nba'
            AND pp.sale_price > 0 AND pp.sealed_at > now() - interval '90 days'
          HAVING count(*) >= 3),
         (SELECT round(sum(fp.fmv_usd * dp.drop_weight) / NULLIF(sum(dp.drop_weight), 0), 2)
@@ -94,6 +100,7 @@ BEGIN
         (SELECT round(percentile_cont(0.5) WITHIN GROUP (ORDER BY pp.sale_price)::numeric, 2)
          FROM public.pack_purchases pp
          WHERE pp.pack_dist_id = c.reward_pack_dist_id AND pp.event_kind = 'secondary_sale'
+           AND pp.custom_id IS DISTINCT FROM 'nba'
            AND pp.sale_price > 0 AND pp.sealed_at > now() - interval '90 days'
          HAVING count(*) >= 2))
       WHEN c.reward_kind = 'moment' AND c.reward_moment_external_id IS NOT NULL THEN (
@@ -131,6 +138,16 @@ INSERT INTO pack_purchases (pack_dist_id, event_kind, sale_price, sealed_at) VAL
   ('d4','secondary_sale',100, now()-interval '1 day'),
   ('d4','secondary_sale',200, now()-interval '2 day'),
   ('d4','secondary_sale',300, now()-interval '3 day');
+-- 2026-09-27 (#134): FOUR Top Shot SHOP sales of the same dist, at the shop's fixed
+-- price. They carry event_kind 'secondary_sale' exactly as the worker writes them.
+-- A median that admits them reads {9,9,9,9,100,200,300} = 9, so the CH4 assertion
+-- below (= 200) fails unless the reader excludes custom_id 'nba'. Proven by planting:
+-- the 20260902120329 body run against this fixture returns 9.
+INSERT INTO pack_purchases (pack_dist_id, event_kind, sale_price, sealed_at, custom_id) VALUES
+  ('d4','secondary_sale',9, now()-interval '1 day','nba'),
+  ('d4','secondary_sale',9, now()-interval '1 day','nba'),
+  ('d4','secondary_sale',9, now()-interval '2 day','nba'),
+  ('d4','secondary_sale',9, now()-interval '2 day','nba');
 
 -- Single writer call; it returns the count of challenges whose reward value was refreshed.
 SELECT _assert_eq(refresh_challenge_costs('00000000-0000-0000-0000-00000000cccc'::uuid)::text, '4', 'refreshes all 4 challenges in the collection');
@@ -143,7 +160,7 @@ SELECT _assert_eq((SELECT (cost_refreshed_at IS NOT NULL)::text FROM challenges 
 SELECT _assert((SELECT cached_reward_value FROM challenges WHERE id='00000000-0000-0000-0000-0000000c0001') = 250, 'CH1 reward = pack_ev_latest.gross_ev (top of the ladder)');
 SELECT _assert((SELECT cached_reward_value FROM challenges WHERE id='00000000-0000-0000-0000-0000000c0002') = 88, 'CH2 reward = moment catalog fmv');
 SELECT _assert_eq((SELECT (cached_reward_value IS NULL)::text FROM challenges WHERE id='00000000-0000-0000-0000-0000000c0003'), 'true', 'CH3 non-pack/non-moment reward = NULL');
-SELECT _assert((SELECT cached_reward_value FROM challenges WHERE id='00000000-0000-0000-0000-0000000c0004') = 200, 'CH4 reward = secondary-sale median fallback (median of 100/200/300)');
+SELECT _assert((SELECT cached_reward_value FROM challenges WHERE id='00000000-0000-0000-0000-0000000c0004') = 200, 'CH4 reward = collector-resale median fallback (median of 100/200/300; the four shop rows at 9 are excluded)');
 
 SELECT '✓ refresh_challenge_costs invariants pass' AS result;
 ROLLBACK;
