@@ -479,11 +479,16 @@ export function requirePublishedCollection(id: string): Collection {
 }
 
 // ── Locking ─────────────────────────────────────────────────────────────────
-// Collections whose NFTs have no lock concept. Disney Pinnacle pins cannot be
-// locked (Trevor, 2026-09-27), yet `wallet_moments_cache.is_locked` reads true
-// on 375 Pinnacle rows from the shared lock-check lane — so every lock figure,
-// column, filter and caption is HIDDEN for these collections rather than shown
-// from that column. Not "—": a dash says "unknown", and there is nothing to know.
+// Collections that show NO lock UI. Disney Pinnacle has no collector-facing
+// locking (Trevor, 2026-09-27), so every lock figure, column, filter and caption
+// is HIDDEN for it — not "—", which says "unknown" when there is nothing to know.
+//
+// ⚠ THE DATA IS NOT WRONG — DO NOT "FIX" THE LOCK LANE. `is_locked = true` on
+// ~375 Pinnacle rows (09-27) is the contract's own `Pinnacle.NFT.isLocked()`:
+// a pin from a maturing edition cannot move until its maturity date
+// (app/api/cron/lock-check-batch). Trevor chose, 09-27, to KEEP that data and
+// the daily check, and only hide it. Clearing the rows or dropping
+// disney_pinnacle from the lane would delete a true on-chain fact.
 const COLLECTIONS_WITHOUT_LOCKING: ReadonlySet<string> = new Set(["disney-pinnacle", "pinnacle"])
 
 /** False for a collection whose NFTs cannot be locked — render no lock UI at all. */
