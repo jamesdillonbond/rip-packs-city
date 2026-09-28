@@ -14,6 +14,8 @@ const st = {
   ownedThrows: false,
   existing: [] as { nft_id: string }[],
   insertErr: null as any,
+  existingErr: null as any,
+  upserts: 0,
 }
 
 vi.mock("@/lib/chains/flow/flow", () => ({
@@ -25,8 +27,8 @@ vi.mock("@supabase/supabase-js", () => ({
     from() {
       const b: any = {
         select: () => b, eq: () => b, in: () => b,
-        upsert: async () => ({ error: st.insertErr }),
-        then: (resolve: any) => resolve({ data: st.existing, error: null }),
+        upsert: async () => { st.upserts++; return { error: st.insertErr } },
+        then: (resolve: any) => resolve(st.existingErr ? { data: null, error: st.existingErr } : { data: st.existing, error: null }),
       }
       return b
     },
@@ -57,7 +59,7 @@ function installFetch() {
 }
 
 beforeEach(() => {
-  st.owned = []; st.ownedThrows = false; st.existing = []; st.insertErr = null
+  st.owned = []; st.ownedThrows = false; st.existing = []; st.insertErr = null; st.existingErr = null; st.upserts = 0
   priceById = {}
   installFetch()
 })
@@ -106,6 +108,19 @@ describe("POST /api/cost-basis-gql-backfill — processing loop", () => {
     expect(body.noPrice).toBe(1)
     expect(body.gqlErrors).toBe(1)
     expect(body.done).toBe(true)
+  })
+
+  // 2026-09-28: the existence read discarded its error, so a failed read meant
+  // "nothing covered" and every moment got a `gql:` row beside its real one.
+  it("a failed existence read 502s the chunk and writes nothing", async () => {
+    st.owned = ["e1", "e2"]
+    priceById = { e1: 10, e2: 20 }
+    st.existingErr = { message: "statement timeout" }
+    const POST = await loadPOST()
+    const res = await POST(req({ auth: AUTH, body: { wallet: "0x5555555555555555" } }))
+    expect(res.status).toBe(502)
+    expect(st.upserts).toBe(0)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it("tolerates an upsert error (inserted stays 0)", async () => {

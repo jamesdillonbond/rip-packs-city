@@ -715,17 +715,22 @@ export async function POST(req: NextRequest) {
       }
       const allKeys = Array.from(editionKeySet)
       if (allKeys.length > 0) {
-        const { data: existingRows } = await (supabaseAdmin as any)
+        const { data: existingRows, error: existingErr } = await (supabaseAdmin as any)
           .from("editions")
           .select("external_id")
           .in("external_id", allKeys)
           .eq("collection_id", collectionId)
+        if (existingErr) {
+          console.log(`[ingest] editions existence read failed, skipping hydration: ${existingErr.message}`)
+        }
         const existingSet = new Set<string>(
           ((existingRows as { external_id: string }[] | null) ?? []).map(
             (r) => r.external_id,
           ),
         )
-        const missing = allKeys.filter((k) => !existingSet.has(k))
+        // ⛔ A failed read is not "missing": it would re-hydrate editions that
+        // exist and upsert over them. Hydrate nothing this run (2026-09-28).
+        const missing = existingErr ? [] : allKeys.filter((k) => !existingSet.has(k))
         if (missing.length > 0) {
           const candidates = missing.length
           let hydratedCount = 0

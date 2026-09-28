@@ -336,16 +336,24 @@ async function run(startedAt: string, startedMs: number) {
     if (resolvedEditionIds.size > 0) {
       const ids = [...resolvedEditionIds]
       const existing = new Set<string>()
+      // ⛔ A failed read is not "missing": it would re-hydrate editions that
+      // exist and upsert over them. Hydrate nothing this run instead (2026-09-28).
+      let existingReadFailed = false
       for (let i = 0; i < ids.length; i += 500) {
         const batch = ids.slice(i, i + 500)
-        const { data } = await (supabaseAdmin as any)
+        const { data, error: existingErr } = await (supabaseAdmin as any)
           .from("editions")
           .select("external_id")
           .eq("collection_id", ALLDAY_COLLECTION_ID)
           .in("external_id", batch)
+        if (existingErr) {
+          console.log(`[${PIPELINE_NAME}] editions existence read failed, skipping hydration: ${existingErr.message}`)
+          existingReadFailed = true
+          break
+        }
         for (const r of data ?? []) existing.add(r.external_id)
       }
-      const missing = ids.filter((id) => !existing.has(id))
+      const missing = existingReadFailed ? [] : ids.filter((id) => !existing.has(id))
       if (missing.length > 0) {
         const now = new Date().toISOString()
         const upsertRows: Record<string, unknown>[] = []

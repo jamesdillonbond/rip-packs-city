@@ -165,11 +165,20 @@ export async function POST(req: NextRequest) {
   )
 
   // Skip IDs already covered (any source) so re-runs are cheap
-  const { data: existingRows } = await (supabase as any)
+  const { data: existingRows, error: existingErr } = await (supabase as any)
     .from("moment_acquisitions")
     .select("nft_id")
     .eq("wallet", fullWallet)
     .in("nft_id", chunk)
+  // ⛔ A failed read is not "none covered": the rows below carry their own
+  // `gql:<id>` hash, so the unique key cannot stop them landing beside a real
+  // marketplace row. Fail the chunk instead (2026-09-28).
+  if (existingErr) {
+    return NextResponse.json(
+      { error: "Failed to read existing acquisitions", detail: existingErr.message, offset, limit },
+      { status: 502 },
+    )
+  }
 
   const existingIds = new Set((existingRows ?? []).map((r: { nft_id: string }) => r.nft_id))
   const toProcess = chunk.filter((id) => !existingIds.has(id))
