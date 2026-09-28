@@ -132,7 +132,7 @@ describe("every sitemap URL is anon-public, and every anon-public tab is in the 
     // but do not lift this check into an argument that everything listed is
     // anon-READABLE. (/admin is robots-disallowed anyway and never reaches the
     // sitemap.)
-    for (const p of ["/analytics/sales", "/dashboard", "/profile/edit", "/nba-top-shot/badges", "/panini-blockchain/sniper"]) {
+    for (const p of ["/analytics/sales", "/dashboard", "/profile/edit", "/nba-top-shot/badges", "/panini-blockchain/pack-sniper"]) {
       expect(isPublicPath(p, "GET"), `${p} must read as GATED`).toBe(false)
     }
     for (const p of ["/", "/pricing", "/insights/squeeze", "/nba-top-shot/overview"]) {

@@ -165,13 +165,16 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // its native pack plane). Same derived coupling.
     // 82 → 83 on 2026-09-27: Panini gained its Sets tab (/api/panini-set-progress).
     // 83 → 84 on 2026-09-27: Panini gained its Collection tab (by username).
-    expect(s).toHaveLength(84)
+    // 84 → 85 on 2026-09-28: Panini gained its Sniper tab (panini-boards deal snapshot).
+    expect(s).toHaveLength(85)
+    expect(s.find((x) => x.url === `${BASE}/panini-blockchain/sniper`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/collection`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/packs`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/sets`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/overview`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/market`)).toBeTruthy()
-    expect(s.find((x) => x.url === `${BASE}/panini-blockchain/sniper`)).toBeUndefined()
+    // Negative control (was /sniper until 2026-09-28): a retired Panini tab stays out.
+    expect(s.find((x) => x.url === `${BASE}/panini-blockchain/pack-sniper`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/teams`)).toBeDefined()
     expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/nba/fast-break`)).toBeUndefined()

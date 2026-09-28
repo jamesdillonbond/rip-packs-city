@@ -200,6 +200,7 @@ export const PUBLIC_TAB_PAGES: string[] = Object.keys(PAGE_META)
 // badges and no lock UI, and its packs publish no pull odds. Its own copy, so
 // a search result or link preview makes no claim the page cannot back.
 const PINNACLE_ID = 'disney-pinnacle'
+const PANINI_ID = 'panini-blockchain'
 const PAGE_META_OVERRIDES: Record<string, PageMeta> = {
   [`overview:${PINNACLE_ID}`]: {
     title: '{label} Value — Pin FMV, Floor Prices & Market Pulse',
@@ -230,6 +231,28 @@ const PAGE_META_OVERRIDES: Record<string, PageMeta> = {
     title: 'Portfolio Analytics — {label} Wallet Breakdown',
     description:
       'Disney Pinnacle wallet analytics: pin value by variant, series, franchise and character, acquisition history, and how much of the collection has a reliable price.',
+  },
+  // Panini (2026-09-28): its tabs inherited the Flow copy ("across Top Shot, All Day…",
+  // "Flow wallet") — false on a Panini page. Stated from what each Panini arm reads.
+  [`sniper:${PANINI_ID}`]: {
+    title: 'Sniper — {label} Cards Below FMV',
+    description:
+      'Panini Prizm World Cup serials listed at least 15% under FMV, with #1, jersey-number and perfect-mint premiums applied and recent sales alongside — from every card RPC has seen listed on Panini.',
+  },
+  [`packs:${PANINI_ID}`]: {
+    title: 'Pack Market — {label} Pack Asks & EV',
+    description:
+      'Panini Prizm World Cup packs: listed asks, remaining supply and expected value modelled from FMV on the cards RPC has seen listed — typical pull and mean EV side by side.',
+  },
+  [`sets:${PANINI_ID}`]: {
+    title: 'Set Progress — {label} Sets & Cost to Finish',
+    description:
+      'Panini Prizm World Cup sets: editions seen per set and the cost to finish at confirmed asks, with unpriced editions counted apart — add a Panini username to see what that collector holds.',
+  },
+  [`collection:${PANINI_ID}`]: {
+    title: 'Collection — {label} Cards by Panini Username',
+    description:
+      'Look up a Panini username: the cards on its public Panini profile (for linked collectors) or the cards RPC has seen listed under it, with FMV where RPC prices the card.',
   },
   [`market:${PINNACLE_ID}`]: {
     title: 'Market Intelligence — {label} Pin Lookup & Leaderboards',

@@ -9,11 +9,47 @@
 // be wrapped — but a boundary left INSIDE the client file moves it into the
 // coverage gate without making it renderable by a test, because the test then
 // mounts the fallback and asserts against a loading string.
+//
+// Panini (2026-09-28): its own arm. The shared client is a Flow feed (wallet
+// ownership, badges, watchlist); Panini's deals are the hourly `panini-boards`
+// snapshot the /insights/panini-squeeze Deals tab already serves, so the tab is
+// server-seeded from it — no extra read per render.
 
 import { Suspense } from "react"
 import SniperClient from "./SniperClient"
+import PaniniSniper, { type PaniniSniperData } from "@/components/collection/PaniniSniper"
+import { fetchPaniniMoreBoards } from "@/lib/insights/panini-more-boards"
+import { readBoardOrLive } from "@/lib/insights/board-cache"
+import { degradedFromSource, type DegradedSummary } from "@/lib/insights/board-status"
 
-export default function SniperPage() {
+// Panini's arm reads a snapshot that moves hourly; the other collections' shell is
+// static, so ISR at the insights board's own cadence costs them nothing.
+export const revalidate = 300
+
+export default async function SniperPage(props: { params: Promise<{ collection: string }> }) {
+  const { collection } = await props.params
+  if (collection === "panini-blockchain") {
+    const { payload, source } = await readBoardOrLive("panini-boards", () => fetchPaniniMoreBoards())
+    const p = payload as Record<string, unknown>
+    // No payload at all (nothing cached AND the live read produced nothing) is a
+    // failed read, never "no deals".
+    const data: PaniniSniperData | null =
+      p && Object.keys(p).length > 0
+        ? {
+            deals: Array.isArray(p.deals) ? (p.deals as PaniniSniperData["deals"]) : null,
+            dealsError: p.deals_error === true,
+            dealsCapped: p.deals_capped === true,
+            coverage: (p.coverage as PaniniSniperData["coverage"]) ?? null,
+            computedAt: typeof p.fetchedAt === "string" ? p.fetchedAt : null,
+          }
+        : null
+    return (
+      <PaniniSniper
+        data={data}
+        degraded={(p?.degraded as DegradedSummary | null) ?? degradedFromSource(source, "Panini deals")}
+      />
+    )
+  }
   return (
     <Suspense
       fallback={

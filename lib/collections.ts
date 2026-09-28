@@ -301,7 +301,13 @@ export const COLLECTIONS: Collection[] = [
     // /api/panini-collection → panini_owner_cards. It is "cards RPC has seen
     // under this username" — RPC learns a holder only when a card is listed, so
     // for most collectors it shows their listings — and the tab says so.
-    pages: ["overview", "market", "collection", "packs", "sets"],
+    //
+    // 2026-09-28 — SNIPER added: the hourly `panini-boards` deal snapshot (the same
+    // rows /insights/panini-squeeze's Deals tab shows), its own component — the
+    // shared Sniper is a Flow feed. Candy has NO sniper on purpose: its FMV is
+    // capped at the cheapest confirmed ask (lib/fmv-candy-ceiling.ts), so a
+    // listing below FMV cannot exist (0 of 1,881 active asks, 2026-09-28).
+    pages: ["overview", "market", "collection", "packs", "sets", "sniper"],
     published: true,
     openSeaSlug: "paniniblockchain",
     supabaseCollectionId: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",

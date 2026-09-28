@@ -109,7 +109,9 @@ describe("dbChain registry invariant", () => {
     // panini_set_progress (usernames, not addresses). Pinned below.
     // ⭐ `collection` joined 2026-09-27 — an ARM keyed on a USERNAME:
     // /api/panini-collection over panini_owner_cards. Pinned below.
-    "": ["overview", "market", "packs", "sets", "collection"],
+    // ⭐ `sniper` joined 2026-09-28 — an ARM: the panini-boards deal snapshot,
+    // server-seeded into PaniniSniper. Pinned below.
+    "": ["overview", "market", "packs", "sets", "collection", "sniper"],
   }
 
   it("every published NON-Flow collection exposes only pages that have a dispatch for its chain", () => {
@@ -202,6 +204,15 @@ describe("dbChain registry invariant", () => {
     const route = read("app/api/panini-collection/route.ts")
     expect(route).toContain('rpc("panini_owner_cards"')
     expect(route).toContain("normalizePaniniUsername(raw)")
+  })
+
+  it("⚠ Panini's `sniper` permission is backed by a Panini arm over the deal snapshot", () => {
+    const read = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8")
+    const page = read("app/(collections)/[collection]/sniper/page.tsx")
+    expect(page).toContain('collection === "panini-blockchain"')
+    expect(page).toContain('readBoardOrLive("panini-boards", () => fetchPaniniMoreBoards())')
+    expect(page).toContain("<PaniniSniper")
+    expect(read("lib/insights/panini-more-boards.ts")).toContain('db.from("panini_deal_board")')
   })
 
   it("⚠ Panini's `sets` permission is backed by a Panini arm keyed on a USERNAME", () => {
