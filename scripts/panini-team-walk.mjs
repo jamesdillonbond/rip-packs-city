@@ -34,6 +34,7 @@
 //   PANINI_TEAM_ROTATION      N: ask the receiver for the N stalest roster teams
 //                             (panini_team_walk_targets); unset + no list = Blazers + Detroit
 //   PANINI_WALK_BUDGET_MIN    do not START a team after this many minutes, default 100
+//   PANINI_WALK_HARD_MIN      watchdog: exit 3 after this many minutes, whatever is pending, default 160
 //   PANINI_MAX_PAGES          per target, default 400 (Blazers measured at 150–250 pages)
 //   PANINI_PAGE_DELAY_MS      pause between pages, default 1500
 //   PANINI_TEAM_WALK_STAMP    optional file: skip when it already holds today's date; written
@@ -399,6 +400,16 @@ async function main() {
 if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
   // Exit explicitly: a lingering handle must never turn a finished walk into a task the
   // scheduler kills (which also swallows panini-run.bat's "run end" line).
+  //
+  // ⚠ WATCHDOG. The budget only stops a NEW team from starting; a read that hangs INSIDE a team
+  // never returns. The 2026-09-25 3:35 AM run hung mid Brooklyn Nets, stayed "Running", and the
+  // task's MultipleInstances=IgnoreNew skipped the 09-26 and 09-27 starts until its 72 h limit
+  // killed it — two days with no team walk and no collector walk. Exit instead, logged.
+  const hardMin = Number(process.env.PANINI_WALK_HARD_MIN || 160)
+  setTimeout(() => {
+    console.error(`[panini-team-walk] WATCHDOG: still running after ${hardMin} min (PANINI_WALK_HARD_MIN) — a read hung; exiting 3 so the next run is not blocked`)
+    process.exit(3)
+  }, hardMin * 60_000).unref()
   main().then(() => process.exit(process.exitCode ?? 0), (e) => {
     console.error("[panini-team-walk] fatal:", e instanceof Error ? e.stack : e)
     process.exit(2)

@@ -15,6 +15,10 @@ if not exist "%RUN%" (
 
 schtasks /create /f /tn "%TASK%" /tr "\"%RUN%\"" /sc daily /st 03:35
 if %errorlevel%==0 (
+  REM 3.5 h limit, not the 72 h default: a hung 09-25 run held the task "Running" and
+  REM MultipleInstances=IgnoreNew skipped the next two days (2026-09-28). The scripts' own
+  REM watchdogs exit first (team 160 + collector 30 = 190 min); this is the backstop.
+  powershell -NoProfile -Command "$t = Get-ScheduledTask -TaskName '%TASK%'; $t.Settings.ExecutionTimeLimit = 'PT3H30M'; $null = Set-ScheduledTask -InputObject $t"
   echo.
   echo Scheduled "%TASK%" daily at 3:35 AM.
   echo Run it now to test:   schtasks /run /tn "%TASK%"

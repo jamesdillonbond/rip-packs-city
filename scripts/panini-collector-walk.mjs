@@ -35,7 +35,8 @@
 //   PANINI_CDP_URL                 optional: drive an existing Chrome (the runner's debug profile)
 //   PANINI_COLLECTOR_TARGETS       optional explicit usernames, comma/semicolon separated
 //   PANINI_COLLECTOR_PLAN          N linked usernames to ask the receiver for, default 25 (0 = none)
-//   PANINI_COLLECTOR_MAX_PAGES     per username, default 200 (30 cards a page)
+//   PANINI_COLLECTOR_MAX_PAGES     per collection, default 200 (30 cards a page)
+//   PANINI_COLLECTOR_HARD_MIN      watchdog: exit 3 after this many minutes, default 30
 //   DRY_RUN=1                      walk and report, write nothing
 //   CHROMIUM_PATH                  optional executablePath when launching (no CDP)
 
@@ -568,6 +569,13 @@ async function main() {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
+  // Watchdog (same reason as panini-team-walk.mjs): a read that hangs must end the walk, logged,
+  // not hold the team-walk task open. One username measured ~2–4 min on 2026-09-27/28.
+  const hardMin = Number(process.env.PANINI_COLLECTOR_HARD_MIN || 30)
+  setTimeout(() => {
+    console.error(`[panini-collector-walk] WATCHDOG: still running after ${hardMin} min (PANINI_COLLECTOR_HARD_MIN) — a read hung; exiting 3`)
+    process.exit(3)
+  }, hardMin * 60_000).unref()
   main().then(() => process.exit(process.exitCode ?? 0), (e) => {
     console.error("[panini-collector-walk] fatal:", e instanceof Error ? e.stack : e)
     process.exit(2)
