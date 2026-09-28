@@ -11,6 +11,13 @@
 // last answer carried ≥ 30 products) — each product with url_key (= panini_card_serials.sku),
 // psku, athlete, cardset, sport_name, image_url, start_seq/end_seq, plus total_size.
 //
+// ⚠ PER COLLECTION (measured live 2026-09-27, first run). The profile page no longer pages the
+// cards: it opens in Collection View and asks only collectionList (one row per collection with
+// collected_count — Trevor's 24 rows sum to exactly the 146 his header shows). So the walk reads
+// that list, then opens each collection's collection-details page, which DOES page
+// userCollectedNftsV2 on scroll. The reported total is the sum of collected_count, known only
+// when every collection row was read.
+//
 // ⚠ WHY THE RESPONSE AND NOT A REPLAY. Panini signs every /onepanini request. The page builds
 // and signs its own queries; page.on("response") reads the answers at the network layer. RPC
 // never forges, stores or replays a signature.
@@ -55,6 +62,82 @@ export function profileUrlCandidates(nickname) {
 }
 
 export const UNOPENED_PACKS_URL = (nickname) => `https://nft.paniniamerica.net/@${encodeURIComponent(nickname)}/profile/unopened-packs.html`
+
+/**
+ * One collection's card page, built the way Panini's own Collection View links it (measured
+ * 2026-09-27). ⚠ WHY PER COLLECTION. The profile page now opens in "Collection View": it asks
+ * collectionList (one row per collection, with collected_count) and never pages the collected
+ * cards itself; its "All Cards View" toggle is disabled, and forcing it
+ * (?all_card_collection_view) answers userCollectedNftsV2 with products:[] even for the
+ * signed-in owner. Each collection-details page DOES page userCollectedNftsV2 (30 a page, next
+ * on scroll), with nickname= and full_name= in the filters it forwards.
+ */
+export function collectionDetailsUrl(nickname, c) {
+  const q = [
+    ["sport", c.sport],
+    ["year", String(c.year)],
+    ["cname", c.cname],
+    ["tab", "collected"],
+    ["nickname", nickname],
+    ["show_collected", "true"],
+    ["sortBy", "new"],
+  ]
+  return `https://nft.paniniamerica.net/collection-details?${q.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&")}`
+}
+
+/**
+ * Read a collectionList answer: { collections, total } where total is the NUMBER OF COLLECTIONS
+ * the profile reported (not cards) and each collection carries its own collected card count.
+ * A row without a name, year, sport or a readable count makes the whole answer unreadable (null):
+ * a card total summed over a row that could not be read would be a made-up total.
+ */
+export function readCollectionList(json) {
+  const data = json?.data?.collectionList?.data
+  if (!data || !Array.isArray(data.collections)) return { collections: null, total: null }
+  const collections = []
+  for (const c of data.collections) {
+    const cname = str(c?.cname, 200)
+    const sport = str(c?.sport_name, 40)
+    const year = int(c?.year)
+    const count = int(c?.collected_count)
+    if (!cname || !sport || year == null || count == null) return { collections: null, total: null }
+    collections.push({ cname, sport, year, count })
+  }
+  return { collections, total: int(data.total_size) }
+}
+
+/** The SIGNED-IN account's Panini nickname (profileInfo's blockchain_name attribute), or null. */
+export function signedInNickname(json) {
+  const attrs = json?.data?.profileInfo?.custom_attributes
+  if (!Array.isArray(attrs)) return null
+  return str(attrs.find((a) => a?.attribute_code === "blockchain_name")?.value, 64)
+}
+
+/**
+ * Unopened packs from a clubSimilarPacks answer (the Unopened Packs tab, measured 2026-09-27):
+ * the sum of pack_count over its rows, or null unless every row arrived (rows >= total_count).
+ * ⛔ Its request names NO user — it answers for the SIGNED-IN viewer — so the walk credits it to
+ * a username only when that username IS the signed-in account (signedInNickname).
+ */
+export function readClubPacks(json) {
+  const node = json?.data?.clubSimilarPacks
+  const rows = Array.isArray(node?.data) ? node.data : null
+  const total = int(node?.total_count)
+  if (!rows || total == null || rows.length < total) return null
+  let sum = 0
+  for (const r of rows) {
+    const n = int(r?.pack_count)
+    if (n == null) return null
+    sum += n
+  }
+  return sum
+}
+
+/** Cards the profile reports, summed over its collections — known only once EVERY collection was read. */
+export function reportedCardTotal(collections, collectionTotal) {
+  if (!Array.isArray(collections) || collectionTotal == null || collections.length < collectionTotal) return null
+  return collections.reduce((s, c) => s + c.count, 0)
+}
 
 /**
  * Does this request ask about `nickname`? ⛔ One of Panini's collection components falls back to
@@ -193,17 +276,22 @@ export function isComplete(distinct, total, error) {
 async function walkProfile(ctx, nickname, { maxPages, log }) {
   const page = await ctx.newPage()
   const holdings = new Map()
-  let total = null
+  let collections = null
+  let collectionTotal = null
+  let lastListLen = null
   let unopenedPacks = null
   let profileInfo = null
+  let signedIn = null
+  let clubPacks
   let collectedSeen = false
   let answers = 0
   let lastLen = null
-  let error = null
   let sampleKeys = null
-  let waiter = null
+  const waiters = { list: null, cards: null }
   let foreign = 0
   let source = null
+  const shortfalls = []
+  let error = null
 
   page.on("response", async (r) => {
     const op = operationOf(r.url(), r.request().postData())
@@ -212,111 +300,160 @@ async function walkProfile(ctx, nickname, { maxPages, log }) {
     try {
       json = JSON.parse(await r.text())
     } catch {
-      if (op === "userCollectedNftsV2") log(`  ${nickname}: userCollectedNftsV2 answered non-JSON (status=${r.status()})`)
+      if (op === "userCollectedNftsV2" || op === "collectionList") log(`  ${nickname}: ${op} answered non-JSON (status=${r.status()})`)
       return
     }
-    if ((op === "userCollectedNftsV2" || op === "UnopenedPacksStats") && !answerIsFor(r.request().postData(), nickname)) {
+    if ((op === "userCollectedNftsV2" || op === "collectionList" || op === "UnopenedPacksStats") && !answerIsFor(r.request().postData(), nickname)) {
       foreign += 1
       if (foreign <= 3) log(`  ${nickname}: ignored a ${op} answer whose request does not name ${nickname}`)
       return
     }
-    if (op === "userCollectedNftsV2") {
+    if (op === "collectionList") {
+      const got = readCollectionList(json)
+      if (!got.collections) {
+        log(`  ${nickname}: collectionList unreadable (${JSON.stringify(json).slice(0, 200)})`)
+        if (waiters.list) waiters.list(null)
+        return
+      }
+      collections ??= []
+      const seen = new Set(collections.map((c) => `${c.sport}|${c.year}|${c.cname}`))
+      for (const c of got.collections) if (!seen.has(`${c.sport}|${c.year}|${c.cname}`)) collections.push(c)
+      if (got.total != null) collectionTotal = got.total
+      lastListLen = got.collections.length
+      if (waiters.list) waiters.list(got.collections.length)
+    } else if (op === "userCollectedNftsV2") {
       const got = readCollected(json)
       if (!got.products) {
         log(`  ${nickname}: userCollectedNftsV2 without products (status=${JSON.stringify(got.status)} message=${JSON.stringify(got.message)})`)
-        if (waiter) waiter(null)
+        if (waiters.cards) waiters.cards(null)
         return
       }
       collectedSeen = true
       answers += 1
       lastLen = got.products.length
-      if (got.total != null) total = got.total
       if (!sampleKeys && got.products[0]) sampleKeys = Object.keys(got.products[0]).sort().join(",")
       for (const p of got.products) {
         const h = toHolding(p)
         if (h && !holdings.has(h.url_key)) holdings.set(h.url_key, h)
       }
-      if (waiter) waiter(got.products.length)
+      if (waiters.cards) waiters.cards(got.products.length)
     } else if (op === "UnopenedPacksStats" || op === "unopenedPackStats") {
       const n = int(findKey(json, "unopenedpacks_total_count"))
       if (n != null) unopenedPacks = n
-    } else if (op === "bcProfileInfo" || op === "profileInfo") {
+    } else if (op === "clubSimilarPacks") {
+      clubPacks = readClubPacks(json)
+    } else if (op === "profileInfo") {
+      signedIn = signedInNickname(json) ?? signedIn
+      if (!profileInfo) profileInfo = json
+    } else if (op === "bcProfileInfo") {
       profileInfo = json
     }
   })
 
-  const nextAnswer = (ms) =>
+  const nextAnswer = (kind, ms) =>
     new Promise((resolve) => {
       const t = setTimeout(() => {
-        waiter = null
+        waiters[kind] = null
         resolve(undefined)
       }, ms)
-      waiter = (v) => {
+      waiters[kind] = (v) => {
         clearTimeout(t)
-        waiter = null
+        waiters[kind] = null
         resolve(v)
       }
     })
 
+  const scrollForNext = async (kind) => {
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      const next = nextAnswer(kind, attempt === 1 ? 15_000 : 25_000)
+      await page.evaluate(() => window.scrollTo(0, Math.max(0, document.documentElement.scrollHeight - 1600))).catch(() => {})
+      await page.waitForTimeout(300)
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)).catch(() => {})
+      const n = await next
+      if (n !== undefined) return n
+    }
+    return undefined
+  }
+
   let finalUrl = ""
   try {
+    // 1. The profile's collection list: one row per collection, each with its collected count.
     let got
     for (const candidate of profileUrlCandidates(nickname)) {
-      const first = nextAnswer(45_000)
+      const first = nextAnswer("list", 45_000)
       await page.goto(candidate, { waitUntil: "domcontentloaded", timeout: 60_000 }).catch((e) => {
         log(`  ${nickname}: goto failed (${e.message.split("\n")[0]})`)
       })
       got = await first
       if (got !== undefined && got !== null) {
         source = candidate
-        log(`  ${nickname}: collected cards answered on ${candidate}`)
+        log(`  ${nickname}: collection list answered on ${candidate}`)
         break
       }
-      log(`  ${nickname}: no collected-cards answer for ${nickname} on ${candidate} (landed on ${page.url()})`)
+      log(`  ${nickname}: no collection list for ${nickname} on ${candidate} (landed on ${page.url()})`)
       if (/\/usernotfound/i.test(page.url())) break
     }
     if (got === undefined || got === null) {
       const title = await page.title().catch(() => "?")
       const body = await page.evaluate(() => (document.body?.innerText || "").slice(0, 160)).catch(() => "?")
-      error = `no collected-cards answer (url=${page.url()} title=${JSON.stringify(title)} body=${JSON.stringify(String(body).replace(/\s+/g, " "))})`
+      error = `no collection list (url=${page.url()} title=${JSON.stringify(title)} body=${JSON.stringify(String(body).replace(/\s+/g, " "))})`
     } else {
-      // Scroll for the next page while the last answer was a full page and cards are missing.
-      let pages = 1
-      while (lastLen != null && lastLen >= PAGE_SIZE && (total == null || holdings.size < total)) {
-        if (pages >= maxPages) {
-          error = `hit PANINI_COLLECTOR_MAX_PAGES=${maxPages}`
-          break
-        }
-        let n
-        for (let attempt = 1; attempt <= 4 && n === undefined; attempt++) {
-          const next = nextAnswer(attempt === 1 ? 15_000 : 25_000)
-          await page.evaluate(() => window.scrollTo(0, Math.max(0, document.documentElement.scrollHeight - 1600))).catch(() => {})
-          await page.waitForTimeout(300)
-          await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)).catch(() => {})
-          n = await next
-          if (n === undefined) log(`  ${nickname}: no next page after scroll attempt ${attempt} (${holdings.size}/${total ?? "?"})`)
-        }
-        if (n === undefined || n === null) {
-          error = `stopped at ${holdings.size}/${total ?? "?"} cards: the next page never answered`
-          break
-        }
-        pages += 1
-        await page.waitForTimeout(800)
+      while (lastListLen != null && lastListLen >= PAGE_SIZE && (collectionTotal == null || collections.length < collectionTotal)) {
+        const n = await scrollForNext("list")
+        if (n === undefined || n === null) break
       }
-      // Give the profile header's own reads (packs, profile info) a moment if they have not landed.
-      if (unopenedPacks == null || profileInfo == null) await page.waitForTimeout(3_000)
+      const reported = reportedCardTotal(collections, collectionTotal)
+      log(`  ${nickname}: ${collections.length}/${collectionTotal ?? "?"} collections, ${reported ?? "?"} cards reported`)
+      if (reported == null) error = `read ${collections.length} of ${collectionTotal ?? "?"} collections`
+
+      // 2. Each collection's own card pages.
+      for (const c of collections) {
+        if (c.count === 0) continue
+        const before = holdings.size
+        let pages = 0
+        // A collection that comes up short is loaded once more (a slow first answer missed the
+        // 45 s wait on 2026-09-27 and answered on the next load).
+        for (let load = 1; load <= 2 && holdings.size - before < c.count; load++) {
+          lastLen = null
+          const first = nextAnswer("cards", 45_000)
+          await page.goto(collectionDetailsUrl(nickname, c), { waitUntil: "domcontentloaded", timeout: 60_000 }).catch((e) => {
+            log(`  ${nickname}: ${c.cname}: goto failed (${e.message.split("\n")[0]})`)
+          })
+          let n = await first
+          pages = n === undefined || n === null ? 0 : 1
+          while (n !== undefined && n !== null && lastLen >= PAGE_SIZE && holdings.size - before < c.count) {
+            if (pages >= maxPages) break
+            n = await scrollForNext("cards")
+            if (n !== undefined && n !== null) pages += 1
+            await page.waitForTimeout(500)
+          }
+        }
+        const read = holdings.size - before
+        log(`  ${nickname}: ${c.cname} (${c.year} ${c.sport}): ${read}/${c.count} cards, ${pages} page(s)`)
+        if (read < c.count) shortfalls.push(`${c.cname} ${read}/${c.count}`)
+      }
+      if (shortfalls.length) error = [error, `short in ${shortfalls.length} collection(s): ${shortfalls.slice(0, 5).join("; ")}`].filter(Boolean).join("; ")
+
+      // 3. Unopened packs. The tab asks clubSimilarPacks, which answers for the SIGNED-IN viewer
+      //    and names nobody — so it counts only when this username IS the signed-in account.
       if (unopenedPacks == null) {
-        // The Unopened Packs tab asks UnopenedPacksStats(nickname) for itself.
+        clubPacks = undefined
         await page.goto(UNOPENED_PACKS_URL(nickname), { waitUntil: "domcontentloaded", timeout: 60_000 }).catch(() => {})
-        for (let i = 0; i < 20 && unopenedPacks == null; i++) await page.waitForTimeout(1_000)
-        if (unopenedPacks == null) log(`  ${nickname}: unopened-pack count not read (kept as unknown)`)
+        for (let i = 0; i < 30 && unopenedPacks == null && clubPacks === undefined; i++) await page.waitForTimeout(1_000)
+        const self = signedIn != null && signedIn.toLowerCase() === nickname.toLowerCase()
+        if (unopenedPacks == null && self && clubPacks != null) unopenedPacks = clubPacks
+        if (unopenedPacks == null) {
+          const why = !self ? `signed in as ${signedIn ?? "?"}, not ${nickname}` : clubPacks === undefined ? "no answer" : "answer unreadable or partial"
+          log(`  ${nickname}: unopened-pack count not read (${why}; kept as unknown)`)
+        }
       }
     }
   } finally {
     finalUrl = page.url()
     await page.close().catch(() => {})
   }
-  const profileState = profileStateOf({ url: finalUrl, profileInfo, collectedSeen })
+  const total = reportedCardTotal(collections, collectionTotal)
+  const profileState = profileStateOf({ url: finalUrl, profileInfo, collectedSeen: collectedSeen || (collections != null && collections.length === 0 && collectionTotal === 0) })
   if (!error && total != null && holdings.size < total) error = `collected ${holdings.size} of ${total} cards`
   return { holdings: [...holdings.values()], total, unopenedPacks, profileState, answers, error, sampleKeys, source, foreign }
 }

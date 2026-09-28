@@ -13,7 +13,12 @@ import {
   PAGE_SIZE,
   UNOPENED_PACKS_URL,
   answerIsFor,
+  collectionDetailsUrl,
   profileUrlCandidates,
+  readClubPacks,
+  readCollectionList,
+  reportedCardTotal,
+  signedInNickname,
   findKey,
   isComplete,
   mergeTargets,
@@ -125,6 +130,63 @@ describe("profileUrlCandidates", () => {
       "https://nft.paniniamerica.net/@jamesdillonbond/profile/collections.html",
     ])
     expect(UNOPENED_PACKS_URL("jamesdillonbond")).toBe("https://nft.paniniamerica.net/@jamesdillonbond/profile/unopened-packs.html")
+  })
+})
+
+describe("per-collection walk (the profile page stopped paging cards, 2026-09-27)", () => {
+  const list = (collections: unknown[], total_size: unknown) => ({ data: { collectionList: { status: 200, data: { collections, total_size } } } })
+  const row = (cname: string, year: number, sport_name: string, collected_count: string) => ({ cname, year, sport_name, collected_count, c_image: "x" })
+
+  it("builds the collection-details URL Panini's own Collection View links to", () => {
+    expect(collectionDetailsUrl("jamesdillonbond", { sport: "BASKETBALL", year: 2022, cname: "2022 Panini NFT Hoops Basketball", count: 42 })).toBe(
+      "https://nft.paniniamerica.net/collection-details?sport=BASKETBALL&year=2022&cname=2022%20Panini%20NFT%20Hoops%20Basketball&tab=collected&nickname=jamesdillonbond&show_collected=true&sortBy=new",
+    )
+  })
+
+  it("reads collectionList rows; total is the number of COLLECTIONS, not cards", () => {
+    expect(readCollectionList(list([row("A", 2024, "BASKETBALL", "5"), row("B", 2025, "FOOTBALL", "141")], 2))).toEqual({
+      collections: [
+        { cname: "A", year: 2024, sport: "BASKETBALL", count: 5 },
+        { cname: "B", year: 2025, sport: "FOOTBALL", count: 141 },
+      ],
+      total: 2,
+    })
+  })
+
+  it("one unreadable row makes the whole list unreadable — never a total summed around a gap", () => {
+    expect(readCollectionList(list([row("A", 2024, "BASKETBALL", "5"), row("B", 2025, "FOOTBALL", "")], 2))).toEqual({ collections: null, total: null })
+    expect(readCollectionList({ data: { collectionList: { status: 400 } } })).toEqual({ collections: null, total: null })
+  })
+
+  it("the card total is known only once every collection row was read", () => {
+    const cols = [
+      { cname: "A", year: 2024, sport: "BASKETBALL", count: 5 },
+      { cname: "B", year: 2025, sport: "FOOTBALL", count: 141 },
+    ]
+    expect(reportedCardTotal(cols, 2)).toBe(146)
+    expect(reportedCardTotal(cols, 3)).toBeNull()
+    expect(reportedCardTotal(cols, null)).toBeNull()
+    expect(reportedCardTotal(null, 2)).toBeNull()
+    expect(reportedCardTotal([], 0)).toBe(0)
+  })
+})
+
+describe("unopened packs — answered for the SIGNED-IN viewer, so attributed only to that account", () => {
+  it("reads the signed-in nickname from profileInfo's blockchain_name attribute", () => {
+    const pi = (attrs: unknown) => ({ data: { profileInfo: { email: "x", custom_attributes: attrs } } })
+    expect(signedInNickname(pi([{ attribute_code: "kyc_status", value: "DONE" }, { attribute_code: "blockchain_name", value: "jamesdillonbond" }]))).toBe("jamesdillonbond")
+    expect(signedInNickname(pi([{ attribute_code: "kyc_status", value: "DONE" }]))).toBeNull()
+    expect(signedInNickname({ data: {} })).toBeNull()
+  })
+
+  it("sums pack_count only when every row arrived", () => {
+    const club = (data: unknown, total_count: unknown) => ({ data: { clubSimilarPacks: { data, total_count } } })
+    const rows = [1, 2, 1, 1, 7].map((pack_count, i) => ({ pack_count, pack_id: i }))
+    expect(readClubPacks(club(rows, 5))).toBe(12)
+    expect(readClubPacks(club(rows.slice(0, 3), 5))).toBeNull()
+    expect(readClubPacks(club(rows, null))).toBeNull()
+    expect(readClubPacks(club([{ pack_count: null }], 1))).toBeNull()
+    expect(readClubPacks(club([], 0))).toBe(0)
   })
 })
 
