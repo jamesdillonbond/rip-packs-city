@@ -33,7 +33,16 @@ const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts?block_height=seale
 
 // Raised 200 -> 400 on 2026-09-02. ⚠ EVERY NUMBER THE OLD COMMENT BLOCK USED TO
 // JUSTIFY 200 WAS RE-MEASURED AND IS NOW WRONG — see the corrected block below.
-const BATCH_LIMIT = 400
+//
+// Raised 400 -> 1000 on 2026-09-28 (Large compute), measured first:
+//   - the last 24 h at 400: 48 runs, 0 failures, p50 11.3 s, p90 17.5 s, max
+//     19.6 s — p90 at ~10% of the 180 s revert trigger below;
+//   - get_lock_check_batch('nba_top_shot', …, 7): 11,345–13,530 buffers at 400
+//     and 17,855 at 1000 (2.5× the rows for ~1.4× the buffers), 85–160 ms warm.
+// Breadth goes from ~19,200 to ~48,000 Top Shot rows/day. The revert trigger
+// and how to read it (a saturation-free window, never a pooled 24 h p90) are
+// unchanged; if it trips, go back to 400.
+const BATCH_LIMIT = 1000
 
 // MAX_AGE_DAYS is a BACKGROUND TARGET, NOT A PROMISE THIS BATCH KEEPS.
 //
