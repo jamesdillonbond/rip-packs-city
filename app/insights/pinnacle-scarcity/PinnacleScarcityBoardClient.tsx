@@ -266,10 +266,10 @@ export default function PinnacleScarcityBoardClient({
           </p>
           <p>
             <strong>Chaser</strong> = a Pinnacle-designated rare variant
-            (8 across the platform). <strong>FMV</strong> = the latest
+            (8 across the platform). <strong>FMV</strong> = the latest{" "}
             <em>per-pin</em> sales-weighted value (<code>pinnacle-2.0.0-render</code>),
             now ranked per render rather than blended across a set.{" "}
-            <strong>Ask</strong> = the live lowest listing (floor). Editions with
+            <strong>Ask</strong> = the live lowest listing (floor). Editions with{" "}
             <code>set_name = &lsquo;Unknown&rsquo;</code> (stub rows from
             wallet scans) are excluded.
           </p>
