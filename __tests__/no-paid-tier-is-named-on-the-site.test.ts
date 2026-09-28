@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync, readdirSync, statSync } from "node:fs"
-import { join, relative } from "node:path"
+import { join, relative, sep } from "node:path"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // Trevor, 2026-09-25: "We shouldn't be considering or mentioning paid accounts
@@ -49,23 +49,26 @@ function walk(dir: string): string[] {
 }
 
 const ROOT = process.cwd()
+// POSIX-separated relative path: the population check and the SUPPRESSED keys
+// are written with "/", and relative() answers with "\\" on Windows.
+const rel = (full: string) => relative(ROOT, full).split(sep).join("/")
 const files = ROOTS.flatMap((r) => walk(join(ROOT, r)))
 
 describe("no paid tier is named on the site (until 100 WAU)", () => {
   it("inspects a real population", () => {
     // A broken walk would pass the ban below vacuously.
     expect(files.length).toBeGreaterThan(500)
-    expect(files.map((f) => relative(ROOT, f))).toContain("app/pricing/page.tsx")
+    expect(files.map(rel)).toContain("app/pricing/page.tsx")
   })
 
   it("no reachable file names a paid tier", () => {
     const hits: string[] = []
     for (const full of files) {
-      const rel = relative(ROOT, full)
-      if (rel in SUPPRESSED) continue
+      const r = rel(full)
+      if (r in SUPPRESSED) continue
       const code = stripComments(readFileSync(full, "utf8"))
       for (const [label, re] of BANNED) {
-        if (re.test(code)) hits.push(`${rel}: ${label}`)
+        if (re.test(code)) hits.push(`${r}: ${label}`)
       }
     }
     expect(hits, "a paid tier is named on the site — Trevor: none until 100 weekly active users").toEqual([])
