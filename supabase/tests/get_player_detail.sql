@@ -28,7 +28,8 @@
 --     pinnacle_editions aggregate via the FMV-collapse helper (2026-09-26).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260926191644_audit_20260926_pinnacle_duo_character_pages_find_their_pins.sql);
+-- (supabase/migrations/20260928064804_audit_20260927_pinnacle_character_mint_dates_only_when_complete.sql;
+-- before that, 20260926191644_audit_20260926_pinnacle_duo_character_pages_find_their_pins.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -147,7 +148,12 @@ BEGIN
              OR (cardinality(pc.characters) > 1
                  AND lower(btrim(v_player.name)) IN (lower(array_to_string(pc.characters, ' & ')),
                                                      lower(array_to_string(pc.characters, ' ')))));
-    SELECT MIN(pe.minting_date), MAX(pe.minting_date)
+    -- 2026-09-27: dates only when EVERY row carries one. pinnacle_editions has a
+    -- minting_date on 83 of 594 rows, so a MIN/MAX over the dated few published a
+    -- span as fact (Mickey Mouse: "first minted" = "last minted" from 1 of 24
+    -- rows, while his pins span 2023–2026). NULL hides the line.
+    SELECT CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(pe.minting_date) THEN MIN(pe.minting_date) END,
+           CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(pe.minting_date) THEN MAX(pe.minting_date) END
     INTO v_first_minted, v_last_minted
     FROM pinnacle_editions pe
     WHERE pe.character_name = v_player.name;
@@ -157,8 +163,8 @@ BEGIN
       SUM(pe.mint_count) FILTER (WHERE pe.mint_count IS NOT NULL),
       SUM(fmv.fmv_usd)   FILTER (WHERE fmv.fmv_usd > 0),
       SUM(COALESCE(fmv.floor_usd, fmv.fmv_usd)) FILTER (WHERE COALESCE(fmv.floor_usd, fmv.fmv_usd) > 0),
-      MIN(pe.minting_date),
-      MAX(pe.minting_date)
+      CASE WHEN COUNT(*) = COUNT(pe.minting_date) THEN MIN(pe.minting_date) END,
+      CASE WHEN COUNT(*) = COUNT(pe.minting_date) THEN MAX(pe.minting_date) END
     INTO v_edition_count, v_total_circulation, v_fmv_total, v_floor_total, v_first_minted, v_last_minted
     FROM pinnacle_editions pe
     LEFT JOIN LATERAL public.get_pinnacle_edition_fmv_collapsed(pe.id) fmv ON true
@@ -301,6 +307,25 @@ INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_u
 INSERT INTO public.pinnacle_catalog (render_id, characters, total_minted, fmv_usd, floor_ask) VALUES
   ('LEV2-BATB-MACO-S2', ARRAY['Maurice', 'Cogsworth'], 250, 6, 5);
 SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'maurice-cogsworth') ->> 'edition_count'), '1', 'duo character: the pin listing both counts');
+
+-- 2026-09-27: dates only when EVERY row carries one. A partly dated character
+-- used to publish the dated few as its span (Mickey: 1 of 24 rows, first = last).
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  ('a0a0a0a0-0000-4000-8000-000000000004', :PIN::uuid, 'Belle', 'Beauty and the Beast', true, NULL, 'CH4', NULL, NULL, NULL, NULL, NULL),
+  ('a0a0a0a0-0000-4000-8000-000000000005', :PIN::uuid, 'Goofy', 'Mickey & Friends', true, NULL, 'CH5', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO public.pinnacle_catalog (render_id, characters, total_minted, fmv_usd, floor_ask) VALUES
+  ('LEV2-BATB-BELL-S2', ARRAY['Belle'], 100, 5, 4);
+INSERT INTO public.pinnacle_editions (id, character_name, mint_count, minting_date) VALUES
+  ('cc000000-0000-0000-0000-000000000001'::uuid, 'Belle', 10, TIMESTAMPTZ '2024-03-01 00:00:00+00'),
+  ('cc000000-0000-0000-0000-000000000002'::uuid, 'Belle', 10, NULL),
+  ('cc000000-0000-0000-0000-000000000003'::uuid, 'Goofy', 10, TIMESTAMPTZ '2024-03-01 00:00:00+00'),
+  ('cc000000-0000-0000-0000-000000000004'::uuid, 'Goofy', 10, NULL);
+SELECT _assert((public.get_player_detail(:PIN::uuid,'belle') ->> 'first_minted_at') IS NULL, 'catalog character, partly dated: no first-minted date (not the dated few)');
+SELECT _assert((public.get_player_detail(:PIN::uuid,'belle') ->> 'last_minted_at') IS NULL, 'catalog character, partly dated: no last-minted date');
+SELECT _assert((public.get_player_detail(:PIN::uuid,'goofy') ->> 'first_minted_at') IS NULL, 'editions-only character, partly dated: no first-minted date');
+-- CONTROL: fully dated characters keep their span (Mickey: both rows dated).
+SELECT _assert((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'first_minted_at') IS NOT NULL, 'fully dated character keeps its first-minted date');
+SELECT _assert((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'first_minted_at') < (public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'last_minted_at'), 'fully dated character: first < last');
 
 -- ── 5. TRADED + still active: current team beats most-moments ────────────────
 -- p4 has 3 team-matching editions and p5 only 1, so the pre-2026-08-01 ladder

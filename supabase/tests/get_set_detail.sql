@@ -22,7 +22,8 @@
 --   * the jsonb envelope carries the summary passthrough fields + collection slug.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260822193500_audit_20260822_snapshot_get_set_detail_underlying_set_count.sql);
+-- (supabase/migrations/20260928064405_audit_20260927_pinnacle_set_total_mint_from_the_pins.sql;
+-- before that, 20260822193500_audit_20260822_snapshot_get_set_detail_underlying_set_count.sql);
 -- re-pinned 2026-08-22: `db-pin-staleness` had reported this pin STALE on every
 -- run since 2026-08-10 (13 consecutive, known-issues #24). Diffed rather than
 -- assumed — the ENTIRE drift was the D20 underlying_set_count rollup. Neither the
@@ -50,7 +51,7 @@ CREATE TABLE public.editions (
 CREATE TABLE public.fmv_snapshots (
   edition_id uuid, fmv_usd numeric, floor_price_usd numeric, computed_at timestamptz);
 CREATE TABLE public.pinnacle_catalog (
-  set_name text, fmv_usd numeric, floor_ask numeric);
+  set_name text, fmv_usd numeric, floor_ask numeric, total_minted int);
 CREATE TABLE public.sets (
   collection_id uuid, name text);
 
@@ -71,6 +72,7 @@ DECLARE
   v_edition_count int;
   v_collection_slug text;
   v_underlying_set_count int;
+  v_pin_circulation bigint;
 BEGIN
   SELECT * INTO v_set
   FROM sets_summary
@@ -92,12 +94,17 @@ BEGIN
     IF p_collection_id = v_pinnacle_uuid THEN
       -- Render-level (per-pin), matching the get_set_editions grid. Joined by
       -- btrim(set_name) to defuse the catalog leading-space quirk.
+      -- Total Mint too (2026-09-27): sets_summary's figure for Pinnacle is ONE
+      -- set-level legacy key's mint count, not the set's (163 of 178 sets were
+      -- understated, median 4.9x). Summed over the same pins the grid lists, and
+      -- NULL — never a partial sum — if any pin's mint count is unknown.
       SELECT
         COUNT(*),
         SUM(pc.fmv_usd)                                  FILTER (WHERE pc.fmv_usd > 0),
         SUM(COALESCE(pc.floor_ask, pc.fmv_usd))          FILTER (WHERE COALESCE(pc.floor_ask, pc.fmv_usd) > 0),
-        COUNT(pc.fmv_usd)                                FILTER (WHERE pc.fmv_usd > 0)
-      INTO v_edition_count, v_fmv_total, v_floor_total, v_editions_with_fmv
+        COUNT(pc.fmv_usd)                                FILTER (WHERE pc.fmv_usd > 0),
+        CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(pc.total_minted) THEN SUM(pc.total_minted) END
+      INTO v_edition_count, v_fmv_total, v_floor_total, v_editions_with_fmv, v_pin_circulation
       FROM pinnacle_catalog pc
       WHERE btrim(pc.set_name) = ANY (SELECT btrim(x) FROM unnest(v_set.set_name_variants) x);
     ELSE
@@ -126,6 +133,7 @@ BEGIN
     v_fmv_total := NULL;
     v_floor_total := NULL;
     v_editions_with_fmv := NULL;
+    v_pin_circulation := NULL;
   END;
 
   -- D20: how many underlying `sets` rows merged into this slug. Complete-by-
@@ -146,7 +154,7 @@ BEGIN
     'underlying_set_count', v_underlying_set_count,
     'edition_count',       v_edition_count,
     'editions_with_fmv',   v_editions_with_fmv,
-    'total_circulation',   v_set.total_circulation,
+    'total_circulation',   CASE WHEN p_collection_id = v_pinnacle_uuid THEN v_pin_circulation ELSE v_set.total_circulation END,
     'tiers_present',       v_set.tiers_present,
     'min_series',          v_set.min_series,
     'max_series',          v_set.max_series,
@@ -215,6 +223,27 @@ SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'underlying_
 -- ── 5. envelope passthrough ──────────────────────────────────────────────────
 SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'set_name'), 'Base Set', 'set_name passthrough');
 SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'collection_slug'), 'nba_top_shot', 'collection_slug resolved');
+
+-- ── 6. Pinnacle Total Mint = the sum over its PINS (2026-09-27) ─────────────
+-- sets_summary carries ONE set-level key's count (9,268 for a six-pin set that
+-- totals 51,592). The Pinnacle arm sums the catalog's pins instead, NULL when
+-- any pin's mint count is unknown; every other collection keeps the summary.
+\set pin '''7dd9dd11-e8b6-45c4-ac99-71331f959714'''
+INSERT INTO public.collections (id, slug) VALUES (:pin::uuid, 'disney_pinnacle');
+INSERT INTO public.sets_summary (collection_id, set_slug, set_name, set_name_variants, total_circulation, tiers_present, min_series, max_series, computed_at) VALUES
+  (:pin::uuid, 'mf-vol-1', 'Mickey & Friends Vol.1', ARRAY['Mickey & Friends Vol.1'], 9268, ARRAY['Standard'], 2023, 2023, now()),
+  (:pin::uuid, 'gap-set',  'Gap Set',                ARRAY['Gap Set'],                500,  ARRAY['Standard'], 2023, 2023, now());
+INSERT INTO public.pinnacle_catalog (set_name, fmv_usd, floor_ask, total_minted) VALUES
+  ('Mickey & Friends Vol.1',  2, 3, 9268),
+  (' Mickey & Friends Vol.1', 2, 3, 7328),   -- leading-space quirk: still this set
+  ('Mickey & Friends Vol.1',  2, 3, 7192),
+  ('Gap Set',                 1, 1, 400),
+  ('Gap Set',                 1, 1, NULL);   -- one unknown count
+SELECT _assert_eq((public.get_set_detail(:pin::uuid,'mf-vol-1') ->> 'total_circulation'), '23788', 'Pinnacle Total Mint = sum over its pins (9268+7328+7192), not the set-level 9268');
+SELECT _assert((public.get_set_detail(:pin::uuid,'gap-set') ->> 'total_circulation') IS NULL, 'Pinnacle Total Mint is NULL, not a partial 400, when a pin''s count is unknown');
+SELECT _assert_eq((public.get_set_detail(:pin::uuid,'mf-vol-1') ->> 'edition_count'), '3', 'Pinnacle pin count from the catalog (unchanged)');
+-- CONTROL: the non-Pinnacle set still reports the summary figure.
+SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'total_circulation'), '100', 'non-Pinnacle Total Mint = sets_summary (unchanged)');
 
 SELECT '✓ get_set_detail: all assertions passed' AS result;
 

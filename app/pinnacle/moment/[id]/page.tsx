@@ -128,7 +128,9 @@ function fmtInt(n: number | null | undefined): string {
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—"
   try {
-    return new Date(iso).toLocaleDateString("en-US", { dateStyle: "medium" })
+    // PT, the site's display zone. This renders on the SERVER (UTC), so a sale at
+    // 6 PM PT printed as the next day (live sweep 2026-09-27: "Sep 28" on Sep 27).
+    return new Date(iso).toLocaleDateString("en-US", { dateStyle: "medium", timeZone: "America/Los_Angeles" })
   } catch {
     return "—"
   }
@@ -167,6 +169,10 @@ export default async function PinnacleMomentPage({
   // Parallel ladder: every printing of THIS pin (same shape_render_id). Only
   // shown when there's more than one (the pin actually has parallels).
   const ladder = siblings.length >= 2 ? siblings : []
+  // The Serial column only when some sale carries one: the forward on-chain
+  // indexer records none (every Pinnacle sale since July 2026), so the column was
+  // a wall of dashes on every recently traded pin (known-issues #156).
+  const salesHaveSerials = sales.some((s) => s.serial_number != null && s.serial_number > 0)
 
   // FMV-vs-floor signal: when FMV runs well above the live floor (>1.3x) on a
   // thin pin, the floor is often the better "what it's worth right now" number.
@@ -341,7 +347,7 @@ export default async function PinnacleMomentPage({
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th className="rpc-pm-num">Serial</th>
+                  {salesHaveSerials ? <th className="rpc-pm-num">Serial</th> : null}
                   <th className="rpc-pm-num">Price</th>
                   <th>Buyer</th>
                   <th>Seller</th>
@@ -351,7 +357,9 @@ export default async function PinnacleMomentPage({
                 {sales.map((s, i) => (
                   <tr key={i}>
                     <td>{fmtDate(s.sold_at)}</td>
-                    <td className="rpc-pm-num">{s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "—"}</td>
+                    {salesHaveSerials ? (
+                      <td className="rpc-pm-num">{s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "—"}</td>
+                    ) : null}
                     <td className="rpc-pm-num">{fmtUsd(s.sale_price_usd)}</td>
                     <td><WalletLink address={s.buyer_address} name={s.buyer_address ? nameByAddr[s.buyer_address.toLowerCase()] : null} collectionUrlSlug="disney-pinnacle" /></td>
                     <td><WalletLink address={s.seller_address} name={s.seller_address ? nameByAddr[s.seller_address.toLowerCase()] : null} collectionUrlSlug="disney-pinnacle" /></td>

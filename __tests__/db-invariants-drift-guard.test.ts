@@ -850,7 +850,8 @@ const PINS = [
     // WHEN query_canceled, Sentry NEXTJS-22) is unchanged and still pinned.
     fn: "get_set_detail",
     test: "supabase/tests/get_set_detail.sql",
-    migration: "supabase/migrations/20260822193500_audit_20260822_snapshot_get_set_detail_underlying_set_count.sql",
+    // 2026-09-27: Pinnacle Total Mint summed over the set's pins.
+    migration: "supabase/migrations/20260928064405_audit_20260927_pinnacle_set_total_mint_from_the_pins.sql",
   },
   {
     fn: "get_user_top_owned_moments",
@@ -885,8 +886,8 @@ const PINS = [
   {
     fn: "get_player_detail",
     test: "supabase/tests/get_player_detail.sql",
-    // Re-pointed 2026-09-26: Pinnacle characters aggregate the render catalog.
-    migration: "supabase/migrations/20260926191644_audit_20260926_pinnacle_duo_character_pages_find_their_pins.sql",
+    // Re-pointed 2026-09-27: Pinnacle mint dates only when every row carries one.
+    migration: "supabase/migrations/20260928064804_audit_20260927_pinnacle_character_mint_dates_only_when_complete.sql",
   },
   {
     fn: "get_wallet_collection_snapshot",
