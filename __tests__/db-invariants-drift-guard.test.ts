@@ -195,6 +195,12 @@ const PINS = [
     migration: "supabase/migrations/20260928111652_audit_20260927_pinnacle_catalog_characters_get_a_page.sql",
   },
   {
+    fn: "pinnacle_sale_serials_tick",
+    test: "supabase/tests/pinnacle_sale_serials_tick.sql",
+    // 2026-09-28 (#156): serials for serialised Pinnacle sales (local + Studio history).
+    migration: "supabase/migrations/20260928113619_audit_20260928_pinnacle_sale_serials.sql",
+  },
+  {
     // Added 2026-09-26. The pulls a wallet's pack row shows: Dapper's list for
     // THIS pack and opener, else the wallet's own reconstructed burst, else
     // nothing -- never the moment_acquisitions linkage that listed 95 "pulls"
