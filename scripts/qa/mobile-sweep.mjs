@@ -156,7 +156,19 @@ async function one(sitePath) {
           dead: document.querySelectorAll("[data-rpc-dead-art]").length,
           unknown: (t.match(/\bUnknown\b/g) || []).length,
           undef: (t.match(/undefined|NaN|\[object/g) || []).length,
-          dollarZero: (t.match(/\$0(\.00)?(?![\d.,])/g) || []).length,
+          // ⚠ 2026-09-28: counted over text OUTSIDE <svg>. A chart's y-axis starts
+          // at "$0.00", so every page with an FMV chart read dollarZero ≥ 1 and the
+          // count could not tell a baseline tick from a "$0" sale (the real one it
+          // caught that day: a $0.36 Candy sale rendered "$0" on the Overview).
+          dollarZero: (() => {
+            let n = 0;
+            const w = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
+            for (let node = w.nextNode(); node; node = w.nextNode()) {
+              if (node.parentElement && node.parentElement.closest("svg")) continue;
+              n += ((node.textContent || "").match(/\$0(\.00)?(?![\d.,])/g) || []).length;
+            }
+            return n;
+          })(),
           rows: document.querySelectorAll("table tbody tr").length,
           cards: document.querySelectorAll("[class*=card]").length,
           errCopy: (t.match(/unavailable|couldn.t load|try again|something went wrong|degraded/gi) || []).slice(0, 4),
