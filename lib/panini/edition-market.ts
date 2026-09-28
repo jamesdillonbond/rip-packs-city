@@ -18,7 +18,8 @@
 //   · No owner username is selected: nothing here needs a person's handle.
 
 import { supabaseAdmin } from "@/lib/supabase"
-import { boundedRead } from "@/lib/api/bounded-read"
+import { apiReadTimeoutMs } from "@/lib/api/bounded-read"
+import { withQueryDeadline } from "@/lib/analytics/rpc-with-retry"
 
 export const PANINI_ASK_CONFIRMED_DAYS = 7
 const LISTED_LIMIT = 25
@@ -66,6 +67,13 @@ export function toSerialRow(r: Record<string, unknown>): PaniniSerialRow {
   }
 }
 
+// Every read here runs on the shared edition PAGE (server render), so each goes
+// through withQueryDeadline — a wall-clock bound that also aborts the query, and
+// one of the budget primitives scripts/check-unbounded-server-reads.mjs
+// recognises (boundedRead is an equal 8 s bound but is not on that list, which
+// reddened main from 2026-09-27 11:37 AM PT). Same budget as before.
+type RawRows = Record<string, unknown>[]
+
 const SERIAL_COLS = "serial_number,mint_cap,price_usd,captured_at,last_sale_usd,last_sale_at,is_number_one,is_jersey_mint,is_perfect_mint"
 
 /** The edition's lowest confirmed ask, from panini_market_board (null when it has none). */
@@ -74,9 +82,10 @@ export async function fetchPaniniEditionAsk(
   db: any = supabaseAdmin, // eslint-disable-line @typescript-eslint/no-explicit-any
 ): Promise<{ ask: PaniniEditionAsk | null; ok: boolean }> {
   try {
-    const { data, error } = await boundedRead(
+    const { data, error } = await withQueryDeadline<RawRows>(
       db.from("panini_market_board").select("low_ask_usd,listed_count,ask_confirmed_at").eq("external_id", externalId).limit(1),
       "edition/panini-ask",
+      apiReadTimeoutMs(),
     )
     if (error) return { ask: null, ok: false }
     const r = ((data ?? []) as Record<string, unknown>[])[0]
@@ -101,7 +110,7 @@ export async function fetchPaniniEditionSerials(
 ): Promise<{ listed: PaniniSerialRow[] | null; sales: PaniniSerialRow[] | null }> {
   const since = new Date(Date.now() - PANINI_ASK_CONFIRMED_DAYS * 86_400_000).toISOString()
   const [listedRes, salesRes] = await Promise.all([
-    boundedRead(
+    withQueryDeadline<RawRows>(
       db.from("panini_card_serials").select(SERIAL_COLS)
         .eq("edition_external_id", externalId)
         .eq("is_listed", true)
@@ -111,8 +120,9 @@ export async function fetchPaniniEditionSerials(
         .order("serial_number", { ascending: true })
         .limit(LISTED_LIMIT),
       "edition/panini-listed",
+      apiReadTimeoutMs(),
     ).catch((e: unknown) => ({ data: null, error: e })),
-    boundedRead(
+    withQueryDeadline<RawRows>(
       db.from("panini_card_serials").select(SERIAL_COLS)
         .eq("edition_external_id", externalId)
         .not("last_sale_at", "is", null)
@@ -120,6 +130,7 @@ export async function fetchPaniniEditionSerials(
         .order("serial_number", { ascending: true })
         .limit(SALES_LIMIT),
       "edition/panini-sales",
+      apiReadTimeoutMs(),
     ).catch((e: unknown) => ({ data: null, error: e })),
   ])
   return {
