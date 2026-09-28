@@ -94,6 +94,41 @@ describe("cache-refresh — guards + degradation", () => {
     expect((await res.json()).error).toContain("on-chain IDs")
   })
 
+  // 2026-09-28: both reads below discarded their error, so a failed read
+  // looked like "nothing there" and the route wrote on that basis.
+  it("502s when the cached-id read fails, and writes nothing (a failed read is not 'none cached')", async () => {
+    state.ownedIds = ["101", "102"]
+    const spy = install({
+      wallet_moments_cache: [
+        { data: [], error: null }, // cooldown read
+        { data: null, error: { message: "statement timeout" } }, // cached-id lookup FAILS
+      ],
+      moment_acquisitions: { data: [], error: null },
+    })
+    const res = await GET(req(`?wallet=${WALLET}`))
+    expect(res.status).toBe(502)
+    expect((await res.json()).error).toContain("cached moments")
+    expect(Object.keys(spy.writes)).toHaveLength(0)
+  })
+
+  it("a failed acquisition existence read inserts NO fallback 'unknown' rows", async () => {
+    state.ownedIds = ["101", "102"]
+    const spy = install({
+      wallet_moments_cache: [
+        { data: [], error: null }, // cooldown read
+        { data: [{ moment_id: "101" }], error: null }, // 102 is new
+        { count: 1, error: null } as never, // last_seen_at touch
+        { data: null, error: null }, // stub upsert ack
+        { data: null, error: null },
+      ],
+      moment_acquisitions: { data: null, error: { message: "connection reset" } },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req(`?wallet=${WALLET}`))
+    expect(res.status).toBe(200)
+    expect(spy.writes.moment_acquisitions?.filter((w) => w.method === "insert") ?? []).toHaveLength(0)
+  })
+
   it("an empty wallet returns ok with zero counts and touches nothing", async () => {
     const spy = install({})
     const res = await GET(req(`?wallet=${WALLET}`))

@@ -227,9 +227,14 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
 
   it("skips Step 6b entirely when no enrichment landed (every wmc update errored)", async () => {
     const spy = install({
-      // Diff read, then every enrichment update fails -> enrichedKeysById stays empty.
+      // Cooldown read, diff read, stub upsert, then every enrichment update
+      // fails -> enrichedKeysById stays empty. Re-pinned 2026-09-28: the error
+      // used to land on the DIFF read (the cooldown read shifted it), which the
+      // route now answers with a 502 instead of treating as "none cached".
       wallet_moments_cache: [
         { data: [], error: null },
+        { data: [], error: null },
+        { data: null, error: null },
         { data: null, error: { message: "wmc update rejected" } },
       ],
       moment_acquisitions: { data: [], error: null },

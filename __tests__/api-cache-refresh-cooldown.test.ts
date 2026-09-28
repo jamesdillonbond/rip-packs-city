@@ -41,8 +41,11 @@ const WALLET = "0xbd94cade097e50ac"
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 
 function install(lastSeenAt: string | null, opts: { readError?: boolean } = {}) {
+  // readError fails the COOLDOWN read only (the first wmc query). Re-pinned
+  // 2026-09-28: it used to fail every wmc query, and the cached-id read now
+  // 502s on its own error — so the subject here stays the cooldown read.
   const wmc = opts.readError
-    ? { data: null, error: { message: "canceling statement due to statement timeout" } }
+    ? [{ data: null, error: { message: "canceling statement due to statement timeout" } }, { data: [], error: null }]
     : { data: lastSeenAt ? [{ moment_id: "1", last_seen_at: lastSeenAt }] : [], error: null }
   const fixtures: Fixtures = {
     wallet_moments_cache: wmc as never,

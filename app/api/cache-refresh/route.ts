@@ -388,12 +388,18 @@ export async function GET(req: NextRequest) {
     const cachedIds = new Set<string>()
     for (let i = 0; i < onChainIds.length; i += 500) {
       const chunk = onChainIds.slice(i, i + 500)
-      const { data } = await supabase
+      const { data, error: cachedErr } = await supabase
         .from("wallet_moments_cache")
         .select("moment_id")
         .eq("wallet_address", wallet)
         .eq("collection_id", collectionId)
         .in("moment_id", chunk)
+      // A failed read is not "none cached": it would make every on-chain moment
+      // look new and send all of them down the stub + fallback-acquisition path.
+      if (cachedErr) {
+        console.log("[cache-refresh] cached-id read failed: " + cachedErr.message)
+        return NextResponse.json({ error: "Failed to read cached moments" }, { status: 502 })
+      }
       for (const row of data ?? []) {
         if (row.moment_id) cachedIds.add(String(row.moment_id))
       }
@@ -504,18 +510,28 @@ export async function GET(req: NextRequest) {
     // Only insert for nft_ids that don't already have ANY acquisition row for this wallet,
     // to avoid creating duplicate rows that override real marketplace data.
     const existingAcqIds = new Set<string>()
+    // ⛔ A failed existence read must not read as "no acquisition row yet": the
+    // fallback rows below carry their own transaction_hash, so the unique key
+    // cannot stop an "unknown" row landing beside a real marketplace one. On a
+    // failed read, insert no fallback rows this run (2026-09-28).
+    let acqReadFailed = false
     for (let i = 0; i < newIds.length; i += 500) {
       const chunk = newIds.slice(i, i + 500)
-      const { data: existingRows } = await supabase
+      const { data: existingRows, error: existingErr } = await supabase
         .from("moment_acquisitions")
         .select("nft_id")
         .eq("wallet", wallet)
         .in("nft_id", chunk)
+      if (existingErr) {
+        console.log("[cache-refresh] acquisitions existence read failed, skipping fallback rows: " + existingErr.message)
+        acqReadFailed = true
+        break
+      }
       for (const row of existingRows ?? []) {
         if (row.nft_id) existingAcqIds.add(String(row.nft_id))
       }
     }
-    const acqNewIds = newIds.filter(function(id) { return !existingAcqIds.has(id) })
+    const acqNewIds = acqReadFailed ? [] : newIds.filter(function(id) { return !existingAcqIds.has(id) })
 
     for (let i = 0; i < acqNewIds.length; i += 200) {
       const chunk = acqNewIds.slice(i, i + 200)
