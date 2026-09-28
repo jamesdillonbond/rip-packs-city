@@ -61,6 +61,8 @@ function fmtMoneyCompact(n: number | null | undefined): string {
   const v = Number(n)
   if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`
   if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`
+  // a real sub-dollar amount is not "$0" (2026-09-28)
+  if (v > 0 && v < 1) return `$${v.toFixed(2)}`
   return `$${Math.round(v).toLocaleString("en-US")}`
 }
 

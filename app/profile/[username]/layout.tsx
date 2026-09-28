@@ -47,7 +47,9 @@ function fmtDollars(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "$0"
   if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1) + "M"
   if (n >= 1000) return "$" + (n / 1000).toFixed(1) + "K"
-  return "$" + Math.round(n).toLocaleString()
+  // a real sub-dollar value is not "$0" (2026-09-28); locale pinned
+  if (n < 1) return "$" + n.toFixed(2)
+  return "$" + Math.round(n).toLocaleString("en-US")
 }
 
 /**
