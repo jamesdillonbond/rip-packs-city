@@ -189,6 +189,12 @@ const PINS = [
       "supabase/migrations/20260926164840_audit_20260926_pinnacle_characters_get_a_page_the_day_they_mint.sql",
   },
   {
+    fn: "pinnacle_catalog_ensure_character_players_tg",
+    test: "supabase/tests/pinnacle_catalog_ensure_character_players_tg.sql",
+    // 2026-09-27: catalog-only characters (the Characters trait) get a page.
+    migration: "supabase/migrations/20260928111652_audit_20260927_pinnacle_catalog_characters_get_a_page.sql",
+  },
+  {
     // Added 2026-09-26. The pulls a wallet's pack row shows: Dapper's list for
     // THIS pack and opener, else the wallet's own reconstructed burst, else
     // nothing -- never the moment_acquisitions linkage that listed 95 "pulls"
