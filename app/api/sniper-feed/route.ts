@@ -649,7 +649,23 @@ async function fetchAlldayGqlPage(after: string | null, sink: SourceFailureSink)
   }
 }
 
+// ⚠ 2026-09-28: the All Day marketplace GraphQL leg is OFF unless
+// ALLDAY_MARKETPLACE_GQL=1. Both surfaces have been dead since June 2026:
+// `public-api.nflallday.com/graphql` answers an nginx 404 and
+// `nflallday.com/consumer/graphql` a WAF 403 (re-verified 08-08 from a
+// residential IP). With browser headers the consumer path is now a plain 404
+// page, so the endpoint is gone, not just walled. Every request still called
+// it, so the All Day board ALWAYS came from the get_allday_sniper_deals
+// fallback while reporting `sourcesFailed: ["allday-marketplace"]` and
+// `degraded: true`. A permanently degraded flag cannot tell a real outage from
+// this. Off, the RPC is the primary path and `degraded` reports real failures
+// only; set the env var to revive this leg if Dapper restores an endpoint.
+function alldayMarketplaceGqlEnabled(): boolean {
+  return process.env.ALLDAY_MARKETPLACE_GQL === "1";
+}
+
 async function fetchAlldayPool(sink: SourceFailureSink): Promise<Array<Record<string, unknown>>> {
+  if (!alldayMarketplaceGqlEnabled()) return [];
   const page1 = await fetchAlldayGqlPage(null, sink);
   let page2Edges: unknown[] = [];
   if (page1.hasNextPage && page1.endCursor) {
@@ -1305,13 +1321,16 @@ async function computeAllDaySniperFeed(opts: {
   }
   console.log(`[sniper-feed] AD FMV map size: ${fmvMap.size}`);
 
-  // 2. Pull the live marketplace pool from NFL All Day public GQL.
+  // 2. Pull the live marketplace pool from NFL All Day public GQL — only when
+  //    ALLDAY_MARKETPLACE_GQL=1 (see alldayMarketplaceGqlEnabled; dead since June).
   const nodes = await fetchAlldayPool(sink);
 
-  // 3. Fallback to the RPC path when the live feed is empty — preserves the
-  //    behavior that was shipping before this rewrite.
+  // 3. The RPC path: the primary source while the GQL leg is off, and the
+  //    fallback when it is on and returned nothing.
   if (nodes.length === 0) {
-    console.log(`[sniper-feed] AD GQL empty — falling back to get_allday_sniper_deals RPC`);
+    if (alldayMarketplaceGqlEnabled()) {
+      console.log(`[sniper-feed] AD GQL empty — falling back to get_allday_sniper_deals RPC`);
+    }
     const { data: rows, error } = await boundedRead(
       (supabase as any).rpc("get_allday_sniper_deals", {
         p_min_discount: minDiscount,
@@ -1406,8 +1425,9 @@ async function computeAllDaySniperFeed(opts: {
       flowtyCount: fallback.length,
       lastRefreshed: new Date().toISOString(),
       deals: fallback,
-      // Non-empty here still carries the GQL failure that sent us down this
-      // path: the fallback is edition-level, so the board is real but partial.
+      // With the GQL leg ON, a failure there that sent us down this path is
+      // still named here. With it OFF (the default since 2026-09-28) this lists
+      // only real failures, e.g. the FMV map.
       sourcesFailed: sink.failed,
     };
   }

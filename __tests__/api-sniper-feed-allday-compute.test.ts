@@ -129,6 +129,8 @@ const get = (qs: string) => new Request(`https://t/api/sniper-feed${qs}`)
 const ADQS = "?collection=nfl-all-day&minDiscount=0&maxPrice=100000&rarity=all&team=all"
 
 beforeEach(() => {
+  // The All Day GQL leg is opt-in since 2026-09-28; this file drives its shaping.
+  process.env.ALLDAY_MARKETPLACE_GQL = "1"
   st2.editionCursors = []
   st2.fmvChunks = []
   st2.ignoreCursor = false
@@ -140,7 +142,7 @@ beforeEach(() => {
   gqlHasNext = false
   installFetch()
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); delete process.env.ALLDAY_MARKETPLACE_GQL })
 
 const node = (over: any = {}) => ({
   node: {

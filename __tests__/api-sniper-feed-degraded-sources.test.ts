@@ -89,6 +89,8 @@ let gqlBody: any = { data: { searchMarketplaceEditions: { edges: [], pageInfo: {
 let gqlThrows = false
 
 beforeEach(() => {
+  // The All Day GQL leg is opt-in since 2026-09-28; these cases exercise it.
+  process.env.ALLDAY_MARKETPLACE_GQL = "1"
   cacheState.deleted = []
   cacheState.throws = false
   st.fmv = { data: [], error: null }
@@ -107,7 +109,7 @@ beforeEach(() => {
     return { ok: gqlOk, status: gqlStatus, text: async () => "<title>block</title>", json: async () => gqlBody }
   }))
 })
-afterEach(() => { vi.unstubAllGlobals() })
+afterEach(() => { vi.unstubAllGlobals(); delete process.env.ALLDAY_MARKETPLACE_GQL })
 
 describe("GET /api/sniper-feed — a failed source is never rendered as a quiet floor", () => {
   it("healthy build: degraded false and sourcesFailed empty (no-change control)", async () => {
@@ -118,6 +120,20 @@ describe("GET /api/sniper-feed — a failed source is never rendered as a quiet 
     // A clean build stays in cache — the eviction below must be caused by the
     // failure, not by every request.
     expect(cacheState.deleted).toEqual([])
+  })
+
+  // 2026-09-28: the marketplace GQL has been dead since June, so with the leg
+  // on by default every All Day response read degraded:true. Off by default,
+  // the RPC board is served and degraded reports real failures only.
+  it("with ALLDAY_MARKETPLACE_GQL unset the dead GQL leg is not called and the board is not degraded", async () => {
+    delete process.env.ALLDAY_MARKETPLACE_GQL
+    gqlOk = false
+    gqlStatus = 403 // would mark degraded if the leg were called
+    const body = await (await GET(get(ADQS))).json()
+    expect((globalThis.fetch as any).mock.calls.length).toBe(0)
+    expect(body.sourcesFailed).not.toContain("allday-marketplace")
+    expect(body.degraded).toBe(false)
+    expect(rpc.mock.calls.some((c) => c[0] === "get_allday_sniper_deals")).toBe(true)
   })
 
   it("All Day marketplace 403 is named, not swallowed", async () => {
