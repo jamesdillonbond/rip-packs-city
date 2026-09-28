@@ -149,18 +149,20 @@ export default function CollectionMomentTable(props: {
     loading, showDebug, getPackCount, accent,
   } = props
   const router = useRouter()
-  // All Day lock state is frozen/undated (see PortfolioSummary + WMC-LOCK-FRESHNESS):
-  // /api/allday-lock-refresh is unscheduled with no on-demand path, so every
-  // is_locked flag is a stale past-run value. Render lock figures as "—" (not
-  // tracked) rather than as current fact. Re-enable when a scheduled refresh lands.
-  const lockUntracked = collectionSlug === "nfl-all-day"
+  // ⛔ 2026-09-28: the All Day lock suppression (lockUntracked = the slug is
+  // "nfl-all-day" → render lock figures as "—") is gone. It said to re-enable
+  // "when a scheduled refresh lands"; one had, and since 2026-09-28 it checks every
+  // row of every All Day wallet each cycle — the freshest lock data of any
+  // collection. lib/portfolio-summary-compute.ts removed the same suppression on
+  // 2026-09-13 as the mirror defect (an "unknown" that is actually KNOWN). Lock
+  // state is decided per row (isLockKnown), never by collection slug.
   // Disney Pinnacle pins cannot be locked: no lock column, count, flag or
   // filter at all — "Held" alone (lib/collections.ts collectionHasLocking).
   const hasLocking = collectionHasLocking(collectionSlug)
   const heldLabel = hasLocking ? "Held / Locked" : "Held"
   const heldValue = function(c: { owned: number; locked: number }) {
     if (!hasLocking) return String(c.owned)
-    return c.owned + " / " + (lockUntracked ? "—" : c.locked)
+    return c.owned + " / " + c.locked
   }
   const labels = getEntityLabels(collectionSlug)
   const isPinnacle = collectionSlug === "disney-pinnacle"
@@ -277,9 +279,9 @@ export default function CollectionMomentTable(props: {
                       {editionCounts.owned > 1 && (
                         <span
                           className="text-[10px] font-mono text-[color:var(--rpc-text-secondary)]"
-                          title={lockUntracked || !hasLocking ? `You hold ${editionCounts.owned} of this edition` : `You hold ${editionCounts.owned} of this edition · ${editionCounts.locked} locked`}
+                          title={!hasLocking ? `You hold ${editionCounts.owned} of this edition` : `You hold ${editionCounts.owned} of this edition · ${editionCounts.locked} locked`}
                         >
-                          ×{editionCounts.owned}{!lockUntracked && hasLocking && editionCounts.locked > 0 ? ` (${editionCounts.locked}🔒)` : ""}
+                          ×{editionCounts.owned}{hasLocking && editionCounts.locked > 0 ? ` (${editionCounts.locked}🔒)` : ""}
                         </span>
                       )}
                     </div>
@@ -879,7 +881,7 @@ export default function CollectionMomentTable(props: {
                                 {hasLocking && (
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Locked</div>
-                                  <div className="rpc-expand-field-value">{lockUntracked || !isLockKnown(row) ? "—" : (isLocked ? "Yes" : "No")}</div>
+                                  <div className="rpc-expand-field-value">{!isLockKnown(row) ? "—" : (isLocked ? "Yes" : "No")}</div>
                                 </div>
                                 )}
                                 <div className="rpc-expand-field">

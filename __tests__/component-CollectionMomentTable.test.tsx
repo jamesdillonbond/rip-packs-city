@@ -2,6 +2,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
 import { render, cleanup, within, fireEvent, waitFor } from "@testing-library/react"
 import CollectionMomentTable from "@/components/collection/CollectionMomentTable"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 
 // Render coverage for the ~850-line wallet moment table (mobile cards + desktop
 // table + expanded panel). It was entirely untested despite being the primary
@@ -187,12 +189,25 @@ describe("CollectionMomentTable", () => {
     expect(container.textContent).toContain("Lock rate: —")
   })
 
-  it("shows lock figures as untracked for All Day", () => {
-    const { container } = render(
-      <CollectionMomentTable {...baseProps({ collectionSlug: "nfl-all-day" })} />
-    )
-    // lockUntracked=true renders "—" for lock stats rather than a number
-    expect(container.textContent).toContain("—")
+  // INVERTED 2026-09-28. This pinned the All Day suppression ("—" for lock
+  // figures by collection slug); that was the mirror defect, since All Day's lock
+  // data is the freshest of any collection. The property now: the SLUG does not
+  // change what the table renders for identical rows.
+  it("All Day shows its locked count like any lockable collection (desktop Held / Locked, mobile badge)", () => {
+    const rows = [row({ editionsOwned: 3, editionsLocked: 2 })]
+    const desktop = render(<CollectionMomentTable {...baseProps({ collectionSlug: "nfl-all-day", filteredRows: rows })} />)
+    expect(desktop.container.textContent).toContain("3 / 2")
+    expect(desktop.container.textContent).not.toContain("3 / —")
+    desktop.unmount()
+    const mobile = render(<CollectionMomentTable {...baseProps({ collectionSlug: "nfl-all-day", isMobile: true, filteredRows: rows })} />)
+    expect(mobile.container.textContent).toContain("2🔒")
+  })
+
+  it("no collection slug decides lock display in the table source", () => {
+    const src = readFileSync(join(process.cwd(), "components", "collection", "CollectionMomentTable.tsx"), "utf8")
+      .replace(/\/\/.*$/gm, "")
+    expect(src).not.toMatch(/lockUntracked/)
+    expect(src).not.toMatch(/collectionSlug\s*===\s*"nfl-all-day"/)
   })
 
   it("renders an empty state when there are no rows", () => {
