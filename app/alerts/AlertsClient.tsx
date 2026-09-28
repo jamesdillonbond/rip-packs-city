@@ -475,7 +475,9 @@ export default function AlertsClient() {
           <label style={labelStyle}>Teams</label>
           <ChipTypeahead value={form.team_names} onChange={(v) => setForm({ ...form, team_names: v })} kind="team" collectionId={form.collection_ids[0] ?? null} placeholder="Type a team…" />
 
-          {/* Live-listing-only filters — saved now, enforced once the per-serial feed lands */}
+          {/* Live-listing-only filters — enforced by the per-serial deal feed
+              (topshot_serial_deal_alerts_for_subscription / dispatch_due_deal_alerts;
+              re-verified 2026-09-28 — this comment used to say "enforced once it lands") */}
           <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid #27272a" }}>
             <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", fontWeight: 700 }}>
               Serial & live-listing filters
