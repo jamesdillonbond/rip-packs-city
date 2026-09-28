@@ -31,6 +31,7 @@ import {
 } from "@/lib/entity-editions-grid-format"
 import { getCollection, collectionHasLocking } from "@/lib/collections"
 import { getOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
+import { editionRouteHref } from "@/lib/entity-href"
 
 export interface EditionTile {
   route_slug: string
@@ -473,7 +474,7 @@ function EditionTileCard({
 }) {
   return (
     <Link
-      href={`/${collectionUrlSlug}/edition/${encodeURIComponent(e.route_slug)}`}
+      href={editionRouteHref(collectionUrlSlug, e.route_slug)}
       className="rpc-card"
       style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block" }}
     >

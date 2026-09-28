@@ -81,3 +81,25 @@ describe("next.config.ts /pinnacle canonicalization redirect", () => {
     }
   })
 })
+
+// 2026-09-27: /disney-pinnacle/edition/<id> was a 200 placeholder + client hop
+// (the page's permanentRedirect runs inside a streamed render). It is a real 308
+// to the pin page now, evaluated from next.config's own redirects().
+describe("next.config.ts /disney-pinnacle/edition → /pinnacle/moment", () => {
+  it("is a permanent redirect to the pin page, and loops into nothing", async () => {
+    const mod = await import("../next.config")
+    const cfg = (mod.default ?? mod) as { redirects: () => Promise<Array<{ source: string; destination: string; permanent: boolean; has?: unknown[] }>> }
+    const rules = await cfg.redirects()
+    const rule = rules.find((r) => r.source === "/disney-pinnacle/edition/:id")
+    expect(rule, "a /disney-pinnacle/edition/:id rule must exist").toBeTruthy()
+    expect(rule!.destination).toBe("/pinnacle/moment/:id")
+    expect(rule!.permanent).toBe(true)
+    // No unconditional rule may match the destination (a host-conditioned rule —
+    // the vercel.app → www hop — never applies on the canonical host).
+    const dest = "/pinnacle/moment/OEEV1-EXPD-MINN-E2"
+    const reMatches = rules.filter((r) => !r.has && pathToRegexp(r.source, []).test(dest))
+    expect(reMatches).toEqual([])
+    // CONTROL: other collections' edition pages are untouched.
+    expect(rules.some((r) => !r.has && pathToRegexp(r.source, []).test("/nba-top-shot/edition/98:3150"))).toBe(false)
+  })
+})

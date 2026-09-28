@@ -164,6 +164,12 @@ export default function CollectionMomentTable(props: {
   }
   const labels = getEntityLabels(collectionSlug)
   const isPinnacle = collectionSlug === "disney-pinnacle"
+  // ⚠ Pinnacle: the row's name is the PIN's name ("Welcome to Endor"), not the
+  // character-page key (the Characters trait: "Ewok", "Wicket W. Warrick") —
+  // 266 of 683 catalog names have no character page (measured 2026-09-27). The
+  // name opens the pin itself, as it does on the Market tab.
+  const subjectHref = (row: MomentRow): string =>
+    isPinnacle ? momentRowHref(collectionSlug, row) : (momentSubjectHref(collectionSlug, row.playerName, row.team) ?? "#")
   const unitNoun = isPinnacle ? "pins" : "moments"
 
   // Task 2: FMV Alert UI state
@@ -226,7 +232,7 @@ export default function CollectionMomentTable(props: {
                       })()}
                       {row.playerName ? (
                         <Link
-                          href={momentSubjectHref(collectionSlug, row.playerName, row.team) ?? "#"}
+                          href={subjectHref(row)}
                           prefetch={false}
                           onClick={function(e) { e.stopPropagation() }}
                           className="font-semibold text-[color:var(--rpc-text-primary)] text-sm truncate"
@@ -515,7 +521,7 @@ export default function CollectionMomentTable(props: {
                             <div className="font-semibold text-[color:var(--rpc-text-primary)] text-sm">
                               {row.playerName ? (
                                 <Link
-                                  href={momentSubjectHref(collectionSlug, row.playerName, row.team) ?? "#"}
+                                  href={subjectHref(row)}
                                   prefetch={false}
                                   style={{ color: "inherit", textDecoration: "none" }}
                                 >

@@ -21,8 +21,8 @@ import { seriesPageLabel } from "@/lib/series-label"
 import { unstable_cache } from "next/cache"
 import { getCollection } from "@/lib/collections"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
-import { fetchHubRows, fetchLinkRows } from "@/lib/entity/popular-on-collection-fetchers"
-import { slugifyName } from "@/lib/entity-labels"
+import { fetchHubRows, fetchLinkRows, fetchPinnacleHubRows } from "@/lib/entity/popular-on-collection-fetchers"
+import { slugifyName, getEntityLabels } from "@/lib/entity-labels"
 import { pinnacleRenderHref } from "@/lib/entity-href"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { tileSubject } from "./_shared"
@@ -74,16 +74,14 @@ export function distinctSlugLinks(
   return out
 }
 
-// Server-rendered hub links (sets / players / teams / series) for the four
-// sports collections. Pinnacle is skipped — the sitemap doesn't enumerate
-// Pinnacle set/player/team/series hubs (those routes resolve differently), so
-// linking them here would manufacture crawl waste; Pinnacle keeps the edition
-// fan-out only. Sourced from a single bounded, recency-ordered editions sample
+// Server-rendered hub links (sets / players / teams / series). Disney Pinnacle
+// reads its render catalog (fetchPinnacleHubRows) — it used to be skipped because
+// its hub pages "resolve differently", which stopped being true on 2026-09-26.
+// Sourced from a single bounded, recency-ordered editions sample
 // (diverse coverage, cheap) plus collection_series — the layout ISR-caches the
 // segment hourly so these queries don't run per request.
 async function loadHubs(collection: string): Promise<{ hubs: Hubs; ok: boolean; reason?: string }> {
-  if (collection === "disney-pinnacle") return { hubs: EMPTY_HUBS, ok: true }
-  const { data, ok, reason } = await fetchHubRows(collection)
+  const { data, ok, reason } = collection === "disney-pinnacle" ? await fetchPinnacleHubRows() : await fetchHubRows(collection)
   if (!ok) return { hubs: EMPTY_HUBS, ok: false, reason }
   return {
     hubs: {
@@ -120,7 +118,9 @@ async function loadLinks(collection: string): Promise<{ links: EntityLink[]; ok:
         // canonical URL the sitemap publishes.
         href: pinnacleRenderHref(String(r.render_id ?? r.id)),
         name: r.character_name as string,
-        sub: (r.set_name as string)?.trim() ?? null,
+        // The variant tells apart pins that share a name and set (the overview
+        // showed "Mickey Mouse · 2026 Trading Event Vol.1" three times).
+        sub: [(r.set_name as string | null)?.trim(), (r.variant as string | null)?.trim()].filter(Boolean).join(" · ") || null,
       })),
       ok: true,
     }
@@ -254,6 +254,8 @@ export default async function PopularOnCollection({ collection }: { collection: 
   // Market tab before 09-19. A collection joins the fan-out when it joins the
   // facade, never before.
   if (!getCollectionByUrlSlug(collection)) return null
+  // Pinnacle's hubs are Characters / Franchises (lib/entity-labels).
+  const labels = getEntityLabels(collection)
   const { linkRes, hubRes } = await loadPopularOnCollection(collection)
   const links = linkRes.links
   const hubs = hubRes.hubs
@@ -335,8 +337,8 @@ export default async function PopularOnCollection({ collection }: { collection: 
       {hasHubs && (
         <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--rpc-border)" }}>
           <HubRow label="Sets" links={hubs.sets} />
-          <HubRow label="Players" links={hubs.players} />
-          <HubRow label="Teams" links={hubs.teams} />
+          <HubRow label={labels.players} links={hubs.players} />
+          <HubRow label={labels.team === "Franchise" ? "Franchises" : "Teams"} links={hubs.teams} />
           <HubRow label="Series" links={hubs.series} />
         </div>
       )}

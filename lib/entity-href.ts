@@ -1,3 +1,4 @@
+import { isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { slugifyName, slugifyPlayerName } from "@/lib/entity-labels"
 
 /**
@@ -54,9 +55,22 @@ export function editionHref(
   externalId: string | null | undefined,
   editionId: string,
 ): string {
-  if (collectionUrlSlug === "disney-pinnacle") return `/disney-pinnacle/edition/${encodeURIComponent(editionId)}`
+  if (isPinnacleUrlSlug(collectionUrlSlug)) return pinnacleRenderHref(editionId)
   const ext = externalId?.trim()
   return ext ? `/${collectionUrlSlug}/edition/${encodeURIComponent(ext)}` : `/moment/${encodeURIComponent(editionId)}`
+}
+
+/**
+ * The edition-page href for a row that carries its ROUTE slug (the key the
+ * `/[collection]/edition/[slug]` page resolves). On Disney Pinnacle that page
+ * permanentRedirects EVERY slug to `/pinnacle/moment/<slug>` — and it can only
+ * do so after the stream has started, so the reader gets a 200 placeholder and a
+ * client-side hop, and the crawler a contentless 200 (live sweep 2026-09-27).
+ * Link to the target directly; every other collection is unchanged.
+ */
+export function editionRouteHref(collectionUrlSlug: string, routeSlug: string): string {
+  if (isPinnacleUrlSlug(collectionUrlSlug)) return pinnacleRenderHref(routeSlug)
+  return `/${collectionUrlSlug}/edition/${encodeURIComponent(routeSlug)}`
 }
 
 export function momentSubjectName(
@@ -86,6 +100,27 @@ export function pinnacleRenderHref(renderId: string): string {
   return `/pinnacle/moment/${encodeURIComponent(renderId)}`
 }
 
+/** A Pinnacle franchise as get_team_detail keys it: ™ / ® / © removed ("Star Wars™" → "Star Wars"). */
+export function pinnacleFranchiseName(name: string): string {
+  return name.replace(/[\u2122\u00AE\u00A9]/g, "").trim()
+}
+
+/**
+ * A Disney Pinnacle pin's entity links — its characters (the `characters`
+ * TRAIT; `character_name` is the PIN's name and often has no page), franchises,
+ * set and series. The pin page showed all of these as plain text (live sweep
+ * 2026-09-27), where every other collection's detail page links them.
+ */
+export function pinnacleCharacterHref(name: string): string {
+  return `/disney-pinnacle/player/${encodeURIComponent(slugifyName(name.trim()))}`
+}
+export function pinnacleFranchiseHref(name: string): string {
+  return `/disney-pinnacle/team/${encodeURIComponent(slugifyName(pinnacleFranchiseName(name)))}`
+}
+export function pinnacleSeriesHref(seriesName: string): string {
+  return `/disney-pinnacle/series/${encodeURIComponent(slugifyName(seriesName.trim()))}`
+}
+
 /**
  * The set-detail page for a set NAME, or `null` when this collection has none.
  *
@@ -98,6 +133,16 @@ export function pinnacleRenderHref(renderId: string): string {
  * `collection-registry-consistency.test.ts`): a link that is *formed* correctly
  * and *resolves* to nothing. The caller renders plain text instead.
  *
+ * ✅ PINNACLE RESOLVES SINCE 2026-09-26 (migration
+ * `audit_20260926_pinnacle_catalog_only_sets_and_editions_reach_the_set_pages`):
+ * `sets_summary` gained a Pinnacle arm from `pinnacle_catalog`, and
+ * get_set_detail / get_set_editions read the catalog for it. Measured
+ * 2026-09-27: 177 of 178 catalog set names resolve with this slug; the one miss
+ * was a set first seen that afternoon, after the daily 07:50 UTC sets_summary
+ * refresh — the same < 24 h lag every collection's new set has. So Pinnacle
+ * gets a link like everyone else (a live sweep found its set names as plain
+ * text on every pin page and table).
+ *
  * ⛔ Do NOT "fix" this by seeding `sets`/`editions` for Pinnacle — its FMV,
  * pricing and every public surface key on `render_id`, and CLAUDE.md records
  * that separation as deliberate, not as debt.
@@ -108,6 +153,5 @@ export function setEntityHref(
 ): string | null {
   const name = setName?.trim()
   if (!name) return null
-  if (collectionUrlSlug === "disney-pinnacle" || collectionUrlSlug === "pinnacle") return null
   return `/${collectionUrlSlug}/set/${encodeURIComponent(slugifyName(name))}`
 }

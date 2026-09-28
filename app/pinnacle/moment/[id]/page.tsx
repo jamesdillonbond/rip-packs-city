@@ -34,6 +34,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 import { load, decodeId, type LegacyData } from "@/lib/pinnacle/moment-detail"
 import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 import { usdSignFirst } from "@/lib/usd-format"
+import { setEntityHref, pinnacleCharacterHref, pinnacleFranchiseHref, pinnacleSeriesHref } from "@/lib/entity-href"
 
 export async function generateMetadata({
   params,
@@ -155,6 +156,14 @@ export default async function PinnacleMomentPage({
   // Animation Studios • Disney Genesis"), so joining set · franchise · series
   // printed the studio twice. Dedupe the parts before rendering.
   const metaParts = dedupeLabelParts([ed.set_name, franchise, ed.series_name])
+  // Each part links to its entity page, as every other collection's detail page
+  // does (2026-09-27 live sweep: this line was plain text, and the pin page had
+  // no link to its character, franchise, set or series at all).
+  const metaHref = new Map<string, string | null>()
+  if (ed.set_name) metaHref.set(ed.set_name.trim(), setEntityHref("disney-pinnacle", ed.set_name))
+  if (franchise) metaHref.set(franchise.trim(), pinnacleFranchiseHref(franchise))
+  if (ed.series_name) metaHref.set(ed.series_name.trim(), pinnacleSeriesHref(ed.series_name))
+  const characterLinks = (ed.characters ?? []).map((c) => c.trim()).filter(Boolean)
   // Parallel ladder: every printing of THIS pin (same shape_render_id). Only
   // shown when there's more than one (the pin actually has parallels).
   const ladder = siblings.length >= 2 ? siblings : []
@@ -205,14 +214,32 @@ export default async function PinnacleMomentPage({
           <h1 className="rpc-pm-h1">{ed.character_name ?? "—"}</h1>
           <div className="rpc-pm-meta-row">
             {metaParts.length === 0 ? <span className="rpc-pm-meta">—</span> : null}
-            {metaParts.map((part, i) => (
-              <Fragment key={part}>
-                {i > 0 ? <span className="rpc-pm-meta-sep">·</span> : null}
-                <span className="rpc-pm-meta">{part}</span>
-              </Fragment>
-            ))}
+            {metaParts.map((part, i) => {
+              const href = metaHref.get(part) ?? null
+              return (
+                <Fragment key={part}>
+                  {i > 0 ? <span className="rpc-pm-meta-sep">·</span> : null}
+                  {href ? (
+                    <Link href={href} prefetch={false} className="rpc-pm-meta rpc-pm-meta-link">{part}</Link>
+                  ) : (
+                    <span className="rpc-pm-meta">{part}</span>
+                  )}
+                </Fragment>
+              )
+            })}
             {ed.is_chaser ? <span className="rpc-pm-chaser">CHASER</span> : null}
           </div>
+          {characterLinks.length > 0 ? (
+            <div className="rpc-pm-meta-row">
+              <span className="rpc-pm-meta">{characterLinks.length > 1 ? "Characters:" : "Character:"}</span>
+              {characterLinks.map((c, i) => (
+                <Fragment key={c}>
+                  {i > 0 ? <span className="rpc-pm-meta-sep">·</span> : null}
+                  <Link href={pinnacleCharacterHref(c)} prefetch={false} className="rpc-pm-meta rpc-pm-meta-link">{c}</Link>
+                </Fragment>
+              ))}
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -400,8 +427,11 @@ export default async function PinnacleMomentPage({
       </section>
 
       <section className="rpc-pm-footer">
+        <Link href="/disney-pinnacle/overview" className="rpc-pm-back">
+          ← Disney Pinnacle overview
+        </Link>
         <Link href="/insights/pinnacle-scarcity" className="rpc-pm-back">
-          ← Back to Pinnacle scarcity board
+          Pinnacle scarcity board →
         </Link>
       </section>
     </main>
@@ -505,6 +535,8 @@ const CSS = `
 .rpc-pm-meta-row { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .rpc-pm-meta { color: var(--rpc-text-secondary); }
 .rpc-pm-meta-sep { color: var(--rpc-text-ghost); }
+.rpc-pm-meta-link { text-decoration: none; border-bottom: 1px dotted var(--rpc-border); }
+.rpc-pm-meta-link:hover { color: var(--rpc-red); border-bottom-color: var(--rpc-red); }
 .rpc-pm-code { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-primary); background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 2px; text-transform: none; letter-spacing: 0; }
 .rpc-pm-chaser { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; padding: 3px 8px; background: var(--rpc-red-bg); color: var(--rpc-red); border: 1px solid var(--rpc-red-border); border-radius: 2px; margin-left: 4px; }
 
@@ -543,7 +575,7 @@ const CSS = `
 .rpc-pm-disambig-stats { display: flex; gap: 12px; font-family: var(--font-mono); font-size: 12px; color: var(--rpc-text-secondary); }
 .rpc-pm-disambig-fmv { color: var(--rpc-red); font-weight: 700; }
 
-.rpc-pm-footer { max-width: 1180px; margin: 0 auto; }
+.rpc-pm-footer { max-width: 1180px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
 .rpc-pm-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; }
 .rpc-pm-back:hover { color: var(--rpc-red); }
 

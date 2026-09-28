@@ -7,6 +7,7 @@
 import Link from "next/link"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { EM_DASH, fmtUsd, relTime, marketplaceLabel, tileSubject } from "./_shared"
+import { editionRouteHref } from "@/lib/entity-href"
 
 export interface ActivityRow {
   route_slug: string
@@ -26,7 +27,7 @@ export interface ActivityRow {
 function MomentLink({ collectionUrlSlug, row }: { collectionUrlSlug: string; row: ActivityRow }) {
   return (
     <Link
-      href={`/${collectionUrlSlug}/edition/${encodeURIComponent(row.route_slug)}`}
+      href={editionRouteHref(collectionUrlSlug, row.route_slug)}
       style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: "var(--font-display)", fontWeight: 700, letterSpacing: "0.02em" }}
     >
       {tileSubject({ player_name: row.player_name, team_name: row.team_name, play_type: row.play_type, name: row.set_name })}

@@ -114,6 +114,17 @@ const nextConfig: NextConfig = {
         destination: "/pinnacle/moment/:id",
         permanent: true,
       },
+      // 2026-09-27: the edition route too. app/(collections)/[collection]/edition
+      // permanentRedirects EVERY Pinnacle slug to /pinnacle/moment/<slug>, but from
+      // inside a streamed page — so the reader got a 200 placeholder plus a client
+      // hop and a crawler a contentless 200 (live sweep). Here it is a real 308,
+      // before the page runs. In-app links go straight to the pin already
+      // (lib/entity-href editionRouteHref); this covers every link we don't own.
+      {
+        source: "/disney-pinnacle/edition/:id",
+        destination: "/pinnacle/moment/:id",
+        permanent: true,
+      },
       // ⛔ REMOVED 2026-09-25: `/panini-blockchain/:path*` → /insights/panini-squeeze.
       // Panini PUBLISHED on the shared [collection] routes (Overview + Market), and a
       // next.config redirect runs BEFORE the proxy and every page — left in place it

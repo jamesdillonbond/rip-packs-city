@@ -24,6 +24,7 @@ import { buildPlayerSetCards } from "@/lib/player-page-view"
 import PlayerSeasonStats from "@/components/entity/PlayerSeasonStats"
 import type { SeasonStatsResult } from "@/lib/player-page-season-stats"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { editionRouteHref } from "@/lib/entity-href"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -149,7 +150,7 @@ async function TopSalesRows({ collection, collectionId, slug }: { collection: st
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {topSales.map(s => {
-              const href = s.route_slug ? `/${collection}/edition/${encodeURIComponent(s.route_slug)}` : null
+              const href = s.route_slug ? editionRouteHref(collection, s.route_slug) : null
               // ⛔ This folded and `0x`-prefixed unconditionally. On Candy MLB
               // the buyer is a Solana mint — case-sensitive and un-prefixed — so
               // the label rendered `0x2at8…jrqw` while the `title=` on the very

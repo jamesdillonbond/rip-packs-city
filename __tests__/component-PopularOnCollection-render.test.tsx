@@ -31,10 +31,12 @@ vi.mock("next/link", () => ({
 
 const fetchers = vi.hoisted(() => ({
   hubs: vi.fn(),
+  pinnacleHubs: vi.fn(),
   links: vi.fn(),
 }))
 vi.mock("@/lib/entity/popular-on-collection-fetchers", () => ({
   fetchHubRows: fetchers.hubs,
+  fetchPinnacleHubRows: fetchers.pinnacleHubs,
   fetchLinkRows: fetchers.links,
 }))
 
@@ -67,6 +69,7 @@ function hrefs(container: HTMLElement): string[] {
 beforeEach(() => {
   seedHubs()
   seedLinks()
+  fetchers.pinnacleHubs.mockResolvedValue({ data: NO_HUBS, ok: true })
 })
 
 afterEach(() => {
@@ -201,13 +204,37 @@ describe("PopularOnCollection — hub rows", () => {
     expect(container!.textContent).not.toContain("Series")
   })
 
-  it("skips the hub read for Disney Pinnacle by design, keeping only the edition fan-out", async () => {
-    seedLinks([{ render_id: "pin-7", character_name: "Mickey Mouse", set_name: "Pin Set" }])
+  it("Disney Pinnacle reads ITS OWN hubs and labels them Characters / Franchises", async () => {
+    // INVERTED 2026-09-27. This asserted the hub read was skipped for Pinnacle
+    // because its set/character/franchise/series pages "resolve differently".
+    // Since 2026-09-26 they resolve from the render catalog, and a live sweep
+    // found the Pinnacle overview linking none of them. It must read the
+    // catalog-backed hub rows, never the sports `editions` read (0 rows for it).
+    seedLinks([{ render_id: "pin-7", character_name: "Mickey Mouse", set_name: "Pin Set", variant: "Golden" }])
+    fetchers.pinnacleHubs.mockResolvedValue({
+      data: {
+        editions: [
+          { set_name: "Pixar Animation Studios • Toy Story Vol.1" },
+          { player_name: "Buzz Lightyear" }, { player_name: "Woody" },
+          { team_name: "Star Wars" }, { team_name: "Toy Story" },
+        ],
+        series: [{ display_label: "2026", series_number: 4 }],
+      },
+      ok: true,
+    })
     const { container } = await renderBlock("disney-pinnacle")
-    // Pinnacle set/player/team/series hubs are not in the sitemap, so linking
-    // them would manufacture crawl waste. The read must not even be attempted.
     expect(fetchers.hubs).not.toHaveBeenCalled()
-    expect(hrefs(container!).some((h) => /\/(set|player|team|series)\//.test(h))).toBe(false)
+    expect(fetchers.pinnacleHubs).toHaveBeenCalled()
+    const h = hrefs(container!)
+    expect(h).toContain("/disney-pinnacle/set/pixar-animation-studios-toy-story-vol-1")
+    expect(h).toContain("/disney-pinnacle/player/buzz-lightyear")
+    expect(h).toContain("/disney-pinnacle/team/star-wars")
+    expect(h).toContain("/disney-pinnacle/series/2026")
+    expect(container!.textContent).toContain("Characters")
+    expect(container!.textContent).toContain("Franchises")
+    expect(container!.textContent).not.toMatch(/\bPlayers\b|\bTeams\b/)
+    // The pin tile names its variant, so same-name pins are told apart.
+    expect(container!.textContent).toContain("Pin Set · Golden")
   })
 })
 
@@ -227,5 +254,16 @@ describe("PopularOnCollection — the section frame", () => {
     const { container } = await renderBlock("nba-top-shot")
     expect(container).not.toBeNull()
     expect(hrefs(container!)).toContain("/nba-top-shot/set/base-set")
+  })
+})
+
+describe("pinnacleFranchiseName — the key get_team_detail resolves", () => {
+  it("drops ™ / ® / © so 'Star Wars™' links /team/star-wars (not star-wars-, a 404)", async () => {
+    const real = await vi.importActual<typeof import("@/lib/entity/popular-on-collection-fetchers")>(
+      "@/lib/entity/popular-on-collection-fetchers",
+    )
+    expect(real.pinnacleFranchiseName("Star Wars™")).toBe("Star Wars")
+    expect(real.pinnacleFranchiseName("Marvel® ")).toBe("Marvel")
+    expect(real.pinnacleFranchiseName("Mickey & Friends")).toBe("Mickey & Friends")
   })
 })

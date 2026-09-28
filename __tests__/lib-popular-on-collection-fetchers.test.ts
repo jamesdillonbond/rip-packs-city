@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { fetchHubRows, fetchLinkRows } from "@/lib/entity/popular-on-collection-fetchers"
+import { fetchHubRows, fetchLinkRows, fetchPinnacleHubRows } from "@/lib/entity/popular-on-collection-fetchers"
 
 // Drives the two reads behind the /overview internal-link block. They lived
 // inside an async SERVER component until 2026-08-17, which put them outside the
@@ -202,5 +202,38 @@ describe("fetchLinkRows", () => {
       const r = await fetchLinkRows("nba-top-shot", c)
       expect(!r.ok && r.data.length > 0, JSON.stringify(r)).toBe(false)
     }
+  })
+})
+
+// 2026-09-27 — Disney Pinnacle's hubs come from its render catalog (0 rows in
+// `editions`). Characters from the `characters` TRAIT, never `character_name`
+// (the pin's name — 266 of 683 have no character page); franchises with ™/®/©
+// dropped, the key get_team_detail resolves.
+describe("fetchPinnacleHubRows", () => {
+  it("reads pinnacle_catalog + collection_series, never editions", async () => {
+    const tables: string[] = []
+    await fetchPinnacleHubRows(client({}, (t) => tables.push(t)) as never)
+    expect(tables.sort()).toEqual(["collection_series", "pinnacle_catalog"])
+  })
+
+  it("flattens characters and franchises; drops ™ from franchises", async () => {
+    const res = await fetchPinnacleHubRows(client({
+      pinnacle_catalog: okRes([
+        { set_name: "Lucasfilm Ltd. • Return of the Jedi Vol.1", characters: ["Ewok", "Wicket W. Warrick"], franchises: ["Star Wars™"] },
+      ]),
+      collection_series: okRes([{ display_label: "2026", series_number: 4 }]),
+    }) as never)
+    expect(res.ok).toBe(true)
+    const players = res.data.editions.map((e) => e.player_name).filter(Boolean)
+    const teams = res.data.editions.map((e) => e.team_name).filter(Boolean)
+    expect(players).toEqual(["Ewok", "Wicket W. Warrick"])
+    expect(teams).toEqual(["Star Wars"])
+    expect(res.data.series).toHaveLength(1)
+  })
+
+  it("a failed read is ok:false with no rows (never an empty success)", async () => {
+    const res = await fetchPinnacleHubRows(client({ pinnacle_catalog: errRes("boom") }) as never)
+    expect(res.ok).toBe(false)
+    expect(res.data.editions).toEqual([])
   })
 })

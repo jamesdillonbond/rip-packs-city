@@ -24,7 +24,7 @@ import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
 import { getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
 import { seriesDisplay } from "@/lib/series-label"
-import { momentSubjectHref, pinnacleRenderHref } from "@/lib/entity-href"
+import { momentSubjectHref, pinnacleRenderHref, editionRouteHref } from "@/lib/entity-href"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { COLLECTION_TIERS } from "@/lib/collection-tiers"
 import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
@@ -949,7 +949,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
   // Full-card click target: navigate to the edition entity page; the outbound
   // listing moves to an explicit "View Listing →" button below.
   const editionHref = listing.editionKey && hasEntityPages(collectionUrlSlug)
-    ? `/${collectionUrlSlug}/edition/${encodeURIComponent(listing.editionKey)}`
+    ? editionRouteHref(collectionUrlSlug, listing.editionKey)
     : null
   const hasThumb = !!listing.thumbnailUrl
   const stats = listing.editionKey ? editionStats.get(listing.editionKey) : null
@@ -1124,7 +1124,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
             const stats = l.editionKey ? editionStats.get(l.editionKey) : null
             const uniqueBadges = Array.from(new Set(l.badgeSlugs))
             const entityLinks = hasEntityPages(collectionUrlSlug)
-            const editionHref = l.editionKey && entityLinks ? `/${collectionUrlSlug}/edition/${encodeURIComponent(l.editionKey)}` : null
+            const editionHref = l.editionKey && entityLinks ? editionRouteHref(collectionUrlSlug, l.editionKey) : null
             return (
               <tr
                 key={l.id}

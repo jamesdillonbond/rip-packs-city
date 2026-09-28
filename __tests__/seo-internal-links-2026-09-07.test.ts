@@ -27,7 +27,9 @@ describe("editionHref", () => {
     expect(editionHref("nfl-all-day", "4408", "x")).toBe("/nfl-all-day/edition/4408")
   })
   it("keys Pinnacle on the edition id (its route convention), ignoring external_id", () => {
-    expect(editionHref("disney-pinnacle", "STAR-OEV1", "abc")).toBe("/disney-pinnacle/edition/abc")
+    // RE-PINNED 2026-09-27: still keyed on the id, now linked to the page the
+    // /disney-pinnacle/edition/<id> route permanentRedirects to (no hop).
+    expect(editionHref("disney-pinnacle", "STAR-OEV1", "abc")).toBe("/pinnacle/moment/abc")
   })
   it("falls back to the resolver URL ONLY when there is no external_id (never guesses a slug)", () => {
     expect(editionHref("nba-top-shot", null, "1d24f53d-a3aa-49dd-9606-38bd87ba1153")).toBe("/moment/1d24f53d-a3aa-49dd-9606-38bd87ba1153")

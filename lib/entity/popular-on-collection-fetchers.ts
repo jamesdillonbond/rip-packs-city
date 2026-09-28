@@ -58,6 +58,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionUuid } from "@/lib/collections"
+import { pinnacleFranchiseName } from "@/lib/entity-href"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 
 export type FetchResult<T> = { data: T; ok: boolean; reason?: string }
@@ -90,6 +91,8 @@ export type RawLinkRow = {
   character_name?: string | null
   /** Disney Pinnacle: the pin (pinnacle_catalog.render_id) — its page's key. */
   render_id?: string | null
+  /** Disney Pinnacle: the pin's variant — tells apart pins that share a name and set. */
+  variant?: string | null
 }
 
 const EMPTY_HUB_ROWS: RawHubRows = { editions: [], series: [] }
@@ -142,6 +145,61 @@ export async function fetchHubRows(
   }
 }
 
+/**
+ * Disney Pinnacle's hub sample, in the same shape as fetchHubRows: it has 0
+ * `editions` rows, so the sports read returns nothing for it and the overview
+ * used to skip Pinnacle's hubs entirely (2026-09-27 live sweep: no Sets /
+ * Characters / Franchises / Series links anywhere on its overview). Every one
+ * of those pages resolves from the render catalog since 2026-09-26.
+ *
+ * ⚠ CHARACTERS COME FROM THE `characters` TRAIT, NOT `character_name`. The
+ * latter is the PIN's name ("Welcome to Endor" = Ewok + Wicket W. Warrick) and
+ * 266 of its 683 values have no character page; the trait resolves for 508 of
+ * 513 (the five misses minted that afternoon). Franchises drop ™/®/© first —
+ * get_team_detail does, so "Star Wars™" lives at /team/star-wars.
+ * Ordered by 30-day sales, so the links are the collection's busiest.
+ */
+export async function fetchPinnacleHubRows(
+  client: QueryClient = supabaseAdmin as unknown as QueryClient,
+): Promise<FetchResult<RawHubRows>> {
+  const uuid = getCollectionUuid("disney-pinnacle")
+  if (!uuid) return { data: EMPTY_HUB_ROWS, ok: true }
+  try {
+    const [catRes, seriesRes] = await withBoardBudget(
+      Promise.all([
+        client
+          .from("pinnacle_catalog")
+          .select("set_name, characters, franchises")
+          .order("fmv_sales_count_30d", { ascending: false, nullsFirst: false })
+          .order("render_id", { ascending: true })
+          .limit(1000),
+        client.from("collection_series").select("display_label, series_number").eq("collection_id", uuid).limit(60),
+      ]),
+      "popular-on-collection/hubs disney-pinnacle",
+      undefined,
+      "",
+    )
+    const err = catRes?.error ?? seriesRes?.error
+    if (err) return { data: EMPTY_HUB_ROWS, ok: false, reason: err.message }
+    const editions: RawHubRows["editions"] = []
+    for (const r of (Array.isArray(catRes?.data) ? catRes.data : []) as Array<{
+      set_name?: string | null; characters?: string[] | null; franchises?: string[] | null
+    }>) {
+      editions.push({ set_name: r.set_name ?? null })
+      for (const c of r.characters ?? []) editions.push({ player_name: c })
+      for (const f of r.franchises ?? []) editions.push({ team_name: pinnacleFranchiseName(f) })
+    }
+    return {
+      data: { editions, series: Array.isArray(seriesRes?.data) ? seriesRes.data : [] },
+      ok: true,
+    }
+  } catch (e) {
+    return { data: EMPTY_HUB_ROWS, ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export { pinnacleFranchiseName }
+
 /** The 18 leaf-edition tiles. Pinnacle reads a different table by design. */
 export async function fetchLinkRows(
   collection: string,
@@ -158,7 +216,7 @@ export async function fetchLinkRows(
       const { data, error } = await withBoardBudget<SupabaseRows<RawLinkRow>>(
         client
           .from("pinnacle_catalog")
-          .select("render_id, character_name, set_name")
+          .select("render_id, character_name, set_name, variant")
           .not("thumbnail_url", "is", null)
           .not("character_name", "is", null)
           .order("fmv_sales_count_30d", { ascending: false, nullsFirst: false })

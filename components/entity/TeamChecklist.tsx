@@ -31,6 +31,7 @@ import { topshotSeriesLabel, TOPSHOT_SERIES_ORDER } from "@/lib/analytics/series
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { getCollection, collectionHasLocking } from "@/lib/collections"
 import { checklistWalletStorageKey, isSolanaChecklist, parseChecklistWallet } from "@/lib/entity/checklist-wallet"
+import { editionRouteHref } from "@/lib/entity-href"
 
 interface ChecklistTile extends EditionTile {
   owned?: boolean | null
@@ -490,7 +491,7 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
 
   return (
     <Link
-      href={`/${collectionUrlSlug}/edition/${encodeURIComponent(e.route_slug)}`}
+      href={editionRouteHref(collectionUrlSlug, e.route_slug)}
       className="rpc-card"
       style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block", opacity: dim ? 0.82 : 1, position: "relative" }}
     >

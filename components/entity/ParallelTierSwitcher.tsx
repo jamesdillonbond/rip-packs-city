@@ -24,6 +24,7 @@ import {
   hasAnyPremium,
   pillName,
 } from "@/lib/entity-parallel-tier-format"
+import { editionRouteHref } from "@/lib/entity-href"
 
 interface SubeditionSibling {
   external_id: string
@@ -113,7 +114,7 @@ export default function ParallelTierSwitcher({
           return (
             <Link
               key={s.external_id}
-              href={`/${collection}/edition/${encodeURIComponent(s.external_id)}`}
+              href={editionRouteHref(collection, s.external_id)}
               prefetch
               style={PILL_BASE}
             >

@@ -6,6 +6,7 @@
 
 import Link from "next/link"
 import { EM_DASH, fmtUsd, fmtCount, TierBadge, tileSubject } from "./_shared"
+import { editionRouteHref } from "@/lib/entity-href"
 
 export interface SqueezeRow {
   route_slug: string
@@ -40,7 +41,7 @@ export default function TeamSqueeze({ collectionUrlSlug, rows }: { collectionUrl
       {rows.map((r, i) => (
         <Link
           key={`${r.route_slug}-${i}`}
-          href={`/${collectionUrlSlug}/edition/${encodeURIComponent(r.route_slug)}`}
+          href={editionRouteHref(collectionUrlSlug, r.route_slug)}
           style={{
             display: "grid",
             gridTemplateColumns: "minmax(0,1fr) auto auto auto",

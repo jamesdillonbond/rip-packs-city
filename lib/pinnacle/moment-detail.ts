@@ -88,6 +88,8 @@ export type CatalogRow = {
   character_name: string | null
   set_name: string | null
   franchises: string[] | null
+  /** The Characters trait — the character-page keys (character_name is the pin's name). */
+  characters: string[] | null
   variant: string | null
   parallel_type: string | null
   printing: number | null
@@ -172,7 +174,7 @@ export type LegacyRender = {
 export type LegacyData = { kind: "legacy"; key: string; renders: LegacyRender[] }
 
 export const CATALOG_COLS =
-  "render_id, edition_id, character_name, set_name, franchises, variant, parallel_type, printing, total_minted, edition_type, limited_edition, series_name, is_chaser, color, effects, materials, size, thickness, thumbnail_url, fmv_usd, fmv_wap_usd, fmv_confidence, fmv_sales_count_30d, fmv_days_since_sale, fmv_computed_at, floor_ask"
+  "render_id, edition_id, character_name, set_name, franchises, characters, variant, parallel_type, printing, total_minted, edition_type, limited_edition, series_name, is_chaser, color, effects, materials, size, thickness, thumbnail_url, fmv_usd, fmv_wap_usd, fmv_confidence, fmv_sales_count_30d, fmv_days_since_sale, fmv_computed_at, floor_ask"
 
 // A render_id (OEV1-WINN-GOPH-S3) is the canonical key, but the page is also
 // reached with two other legitimate numeric id shapes that must resolve, not
