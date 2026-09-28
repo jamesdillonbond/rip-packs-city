@@ -90,6 +90,38 @@ describe("PaniniSniper", () => {
     expect(c.textContent).toContain("More FMV-only deals exist")
   })
 
+  // 2026-09-28 (another session's component; main's component-coverage gate sat
+  // at 81.94% < 81.95% on its unexercised branches). Missing fields render an
+  // honest dash, never a fabricated value, and a non-serial sku gets no links.
+  it("renders missing fields as dashes and links nothing it cannot key", () => {
+    const sparse = deal({
+      sku: "packcard-1_2_3_4", player_name: null, parallel: null, serial_number: null, mint_cap: null,
+      discount_pct: 20, est_profit_usd: null, fmv_usd: null, ask_usd: null, deal_basis: "fmv_only_no_recent_sales",
+      recent_sales_median_usd: null, recent_sales_n: 0,
+    } as Partial<PaniniSniperDeal>)
+    const c = render(<PaniniSniper data={data({ deals: [sparse], coverage: null, computedAt: null } as Partial<PaniniSniperData>)} degraded={null} />).container
+    const row = c.querySelector("tbody tr")!.textContent ?? ""
+    expect(row).toContain("—")
+    expect(row).not.toContain("null")
+    expect(row).not.toContain("NaN")
+    expect(c.querySelector('a[href^="/panini-blockchain/edition/"]')).toBeNull()
+    expect(c.querySelector('a[href*="paniniamerica.net"]')).toBeNull()
+    expect(c.textContent).not.toContain("computed")
+    expect(c.textContent).not.toContain("editions indexed")
+    // Singular wording for one FMV-only deal and zero sale-backed ones.
+    expect(c.textContent).toContain("has no sale in 30 days")
+  })
+
+  it("the special-serials filter keeps only flagged cards", () => {
+    const c = render(<PaniniSniper data={data()} degraded={null} />).container
+    const btn = [...c.querySelectorAll("button")].find((b) => /special/i.test(b.textContent ?? ""))
+    expect(btn, "a special-serials filter exists").toBeTruthy()
+    fireEvent.click(btn!)
+    const rows = c.querySelectorAll("tbody tr")
+    expect(rows).toHaveLength(1)
+    expect(rows[0].textContent).toContain("number 1")
+  })
+
   it("paniniEditionKeyOfSku takes the edition key only from a serial sku", () => {
     expect(paniniEditionKeyOfSku("packcard-1_2_3_4__5_49")).toBe("packcard-1_2_3_4")
     expect(paniniEditionKeyOfSku("packcard-1_2_3_4")).toBeNull()
