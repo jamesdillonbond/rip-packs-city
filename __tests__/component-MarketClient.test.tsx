@@ -166,6 +166,33 @@ describe("MarketClient — a failed read must not render as an empty market", ()
     expect(screen.queryByText(/Couldn't load market/)).toBeNull()
   })
 
+  // 2026-09-27: Pinnacle's empty state said "No Disney Pinnacle pins are listed
+  // at the moment" whenever a page came back empty — including a search that
+  // simply matched nothing. With a filter on it must not conclude about the market.
+  it("Pinnacle: a filtered empty page says the FILTERS matched nothing, not that nothing is listed", async () => {
+    PARAMS.collection = "disney-pinnacle"
+    searchParams = new URLSearchParams("tier=Golden")
+    marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+    try {
+      render(<MarketClient />)
+      await screen.findByText(/No pins match these filters/)
+      expect(screen.queryByText(/No Disney Pinnacle pins are listed/)).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("CONTROL: Pinnacle with no filters and no rows keeps its 'nothing listed' state", async () => {
+    PARAMS.collection = "disney-pinnacle"
+    marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+    try {
+      render(<MarketClient />)
+      await screen.findByText(/No Disney Pinnacle pins are listed/)
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
   it("hides pagination on a failed read so nothing invites paging through nothing", async () => {
     marketResponse = () => json(503, {})
     render(<MarketClient />)

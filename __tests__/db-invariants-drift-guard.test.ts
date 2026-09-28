@@ -832,7 +832,8 @@ const PINS = [
     // every label it minted under — and names the primary name canonical.
     // Re-pinned 2026-09-26: the Pinnacle branch reads the render catalog by
     // each pin's Franchises trait (™ stripped); legacy read kept as fallback.
-    migration: "supabase/migrations/20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql",
+    // Re-pinned 2026-09-28: the catalog arm reads 30-day activity from pinnacle_sales.
+    migration: "supabase/migrations/20260928160159_audit_20260928_pinnacle_franchise_30d_activity.sql",
   },
   {
     // Added 2026-09-25 (batch 62). The helpers behind every team read: the

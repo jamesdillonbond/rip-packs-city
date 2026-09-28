@@ -753,7 +753,7 @@ function MarketInner() {
           </span>
         </div>
       ) : filteredListings.length === 0 ? (
-        <EmptyState collectionId={collectionId} thinVolume={thinVolume} />
+        <EmptyState collectionId={collectionId} thinVolume={thinVolume} filtersActive={activeFilterCount > 0} />
       ) : view === "grid" ? (
         <div className="rpc-binder">
           {filteredListings.map((l) => (
@@ -1286,12 +1286,24 @@ const td: React.CSSProperties = {
   height: 96,
 }
 
-function EmptyState({ collectionId, thinVolume }: { collectionId: string; thinVolume: boolean }) {
+function EmptyState({ collectionId, thinVolume, filtersActive = false }: { collectionId: string; thinVolume: boolean; filtersActive?: boolean }) {
   // Pinnacle's Pins feed is edition-level (/api/market → pinnacle_catalog, one row
   // per render with a fresh direct-chain floor_ask), so it normally shows every
   // priced edition. This empty state is the fallback for when no renders carry a
   // maintained floor / the upstream is briefly unavailable — point to Sniper
   // (serial-level deals below FMV) + the Packs sub-view rather than a bare "no listings".
+  // ⚠ With a filter or search on, an empty page says nothing about the market:
+  // "No Disney Pinnacle pins are listed" was a false conclusion from a search
+  // that simply matched nothing (2026-09-27 live sweep). Say what is true.
+  if (collectionId === "disney-pinnacle" && filtersActive) {
+    return (
+      <div className="rpc-card" style={{ padding: 24, textAlign: "center" }} data-testid="pinnacle-market-filter-empty">
+        <span className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", lineHeight: 1.7 }}>
+          No pins match these filters. Clear a filter or broaden the search to see more listings.
+        </span>
+      </div>
+    )
+  }
   if (collectionId === "disney-pinnacle") {
     return (
       <div className="rpc-card" style={{ padding: 40, textAlign: "center", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>

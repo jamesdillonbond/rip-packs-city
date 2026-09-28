@@ -21,7 +21,8 @@
 --   through to the legacy pinnacle_editions read + per-render FMV collapse.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql);
+-- (supabase/migrations/20260928160159_audit_20260928_pinnacle_franchise_30d_activity.sql;
+-- before that, 20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -53,6 +54,7 @@ $$;
 CREATE TABLE public.pinnacle_catalog (
   render_id text PRIMARY KEY, franchises text[], characters text[],
   total_minted int, fmv_usd numeric, floor_ask numeric);
+CREATE TABLE public.pinnacle_sales (render_id text, sale_price_usd numeric, sold_at timestamptz);
 
 -- Franchise helpers (batch 62, 2026-09-25): fixture copies of the shared league
 -- map and the two helpers the body now reads (their own pin is
@@ -267,6 +269,19 @@ BEGIN
         (SELECT SUM(fmv_usd) FILTER (WHERE fmv_usd > 0) FROM pins),
         (SELECT SUM(COALESCE(floor_ask, fmv_usd)) FILTER (WHERE COALESCE(floor_ask, fmv_usd) > 0) FROM pins)
       INTO v_player_count, v_edition_count, v_total_circulation, v_fmv_total, v_floor_total;
+
+      -- 2026-09-28: 30-day activity from pinnacle_sales over the same pins (the
+      -- shared `sales` table below holds no Pinnacle rows, so this read "—").
+      SELECT COUNT(*), COALESCE(SUM(s.sale_price_usd), 0)
+      INTO v_sales_30d, v_volume_30d
+      FROM pinnacle_sales s
+      WHERE s.sold_at >= now() - interval '30 days'
+        AND s.sale_price_usd > 0
+        AND s.render_id IN (
+          SELECT pc.render_id FROM pinnacle_catalog pc
+          WHERE EXISTS (
+            SELECT 1 FROM unnest(pc.franchises) AS u(fr)
+            WHERE btrim(regexp_replace(u.fr, '[™®©]', '', 'g')) = ANY (v_team_variants)));
     ELSE
       SELECT array_agg(DISTINCT franchise),
              (array_agg(franchise ORDER BY franchise))[1]
@@ -497,6 +512,15 @@ SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'team_name
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'lucasfilm') ->> 'edition_count'), '1', 'catalog: a pin counts toward every franchise it names');
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'moana') ->> 'edition_count'), '1', 'catalog: a catalog-only franchise has a page (was a 404)');
 SELECT _assert(public.get_team_detail(:pin::uuid,'no-such-franchise') IS NULL, 'Pinnacle: unknown franchise -> NULL');
+-- 30-day activity from pinnacle_sales over the franchise's pins (2026-09-28):
+-- in-window r1 (4) + r2 (6) count; an old r1 sale, a $0 row and Moana's r3 do not.
+INSERT INTO public.pinnacle_sales VALUES
+  ('r1', 4, now() - interval '2 days'), ('r2', 6, now() - interval '10 days'),
+  ('r1', 99, now() - interval '40 days'), ('r2', 0, now() - interval '1 day'),
+  ('r3', 50, now() - interval '1 day');
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'sales_30d'), '2', 'catalog: 30d sales over the franchise''s pins (old, $0 and other-franchise rows excluded)');
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'volume_30d_usd'), '10', 'catalog: 30d volume = 4 + 6');
+SELECT _assert(public.get_team_detail(:pin::uuid,'marvel') ->> 'sales_30d' IS NULL, 'legacy fallback branch unchanged (no 30d read)');
 
 -- ── 7. UNACCENT FALLBACK lane (2026-08-01 audit change) ──────────────────────
 SELECT _assert(public.get_team_detail(:cid::uuid,'atletico-madrid') IS NOT NULL, 'diacritic team resolves via the unaccent fallback (accented slug would 404)');

@@ -163,7 +163,10 @@ export const COLLECTIONS: Collection[] = [
     flowtyCollectionFilter: "0xedf9df96c92f4595/Pinnacle",
     cadenceCollectionPath: "/public/PinnacleCollection",
     supabaseCollectionId: "7dd9dd11-e8b6-45c4-ac99-71331f959714",
-    pitch: "Wallet analytics and marketplace intelligence for Disney Pinnacle — 2,272 renders tracked, 2,177 FMV live, 168K+ historical sales.",
+    // No counts here (2026-09-28): this is present-tense page copy (a meta
+    // description), and the 07-02 figures it quoted (2,272 renders / 168K sales)
+    // had gone stale. The dated news item below keeps them as history.
+    pitch: "Wallet analytics and marketplace intelligence for Disney Pinnacle — every pin priced by its own sales, live listings, character and franchise pages.",
     news: [
       { title: "Pinnacle on Flow — 2,272 renders tracked with live FMV", date: "2026-07-02", summary: "Render-keyed FMV covers 2,177 renders (96%) with 168K+ historical sales indexed.", url: "https://disneypinnacle.com" },
     ],

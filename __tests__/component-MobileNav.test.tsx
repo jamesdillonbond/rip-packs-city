@@ -50,6 +50,20 @@ describe("MobileNav", () => {
     expect(links).not.toContain("/dashboard")
   })
 
+  it("on a Disney Pinnacle pin page (/pinnacle/moment/<id>) Sniper goes to Pinnacle's Sniper", () => {
+    const prev = nav.pathname
+    nav.pathname = "/pinnacle/moment/OEEV1-EXPD-MINN-E2"
+    try {
+      const { container } = render(<MobileNav />)
+      const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement
+      const links = Array.from(bar.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+      expect(links).toContain("/disney-pinnacle/sniper")
+      expect(links).not.toContain("/nba-top-shot/sniper")
+    } finally {
+      nav.pathname = prev
+    }
+  })
+
   it("gives the bar a way home, which it did not have", () => {
     const { container } = render(<MobileNav />)
     const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement

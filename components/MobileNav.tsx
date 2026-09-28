@@ -89,6 +89,11 @@ export default function MobileNav() {
   const collection = useMemo(() => {
     const seg = segments[0] ?? "";
     if (getCollection(seg)) return seg;
+    // /pinnacle/moment/<render_id> is a Disney Pinnacle pin page, but "pinnacle"
+    // is not a collection id — the Sniper tab fell back to the last-visited
+    // collection or Top Shot there (2026-09-27 live sweep). Same rule as
+    // SupportChatConnected.
+    if (seg === "pinnacle" && segments[1] === "moment") return "disney-pinnacle";
     if (getCollection(fallbackCollection)) return fallbackCollection;
     return "nba-top-shot";
   }, [segments, fallbackCollection]);
