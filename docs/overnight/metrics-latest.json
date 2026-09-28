@@ -1,40 +1,41 @@
 {
-  "generated_at_pt": "2026-09-27 ~1:10 AM PT",
-  "generated_at_utc": "2026-09-27T08:10Z",
+  "generated_at_pt": "2026-09-28 ~1:20 AM PT",
+  "generated_at_utc": "2026-09-28T08:20Z",
   "pass": "overnight autonomous pass (Cowork cloud + laptop VM). PUSH-CAPABLE via Path A (laptop VM + .rpc-git-cred). Genuine overnight (real time confirmed via DB now() vs app-stamped rows; no clock skew). 0 shipped, 0 reverted, 0 new queued — honest quiet night.",
   "shipped": 0,
   "reverted": 0,
-  "verdict": "GREEN. Security all []; trust_health 38/38 ok, 0 breaches; sentinel_ts_uuid_editions_48h 0; Sentry 0 new/24h; client_error beacon 11/24h ALL crawler UA. Stalled = topshot-active-listings-ingest only (Trevor's residential Windows box dark since 09-26 16:13Z; medium/visibility). Vercel: last READY 492f8cb5; tip 2c351bae correctly CANCELED (docs+migration only). See docs/handoff-2026-09-27-overnight-pass.md.",
+  "verdict": "GREEN. Security all []; trust_health 38/38 ok, 0 breaches; timeout_blind 0; pgcron_recent_failures []; sentinel_ts_uuid_editions_48h 0. Stalled_pipelines [] (topshot-active-listings-ingest RECOVERED, last run 07:13Z). Circulation-sampler watch CLOSED PASS (03:25Z tick 50/50 ok, 0x429). Pack-seller drain complete (10,236/10,236) + jobs unscheduled. alerts zero-yield still genuine quiet (0 pending/0 stuck). Vercel 6h: 3 known/benign groups, no ERROR deploys, last READY e6321790.",
   "health": {
     "security_invariants": "clean (invariants, anon_write_holes, rls_off_base_tables, secdef_anon_violations all [])",
     "trust_health_breaches": 0,
-    "stalled_pipelines": "topshot-active-listings-ingest 958 min (residential Windows box dark; medium, visibility only)",
-    "pgcron_fails_24h": "atlas-market-feed 15 + atlas-editions-refresh 4 (Cloudflare 403 self-heal, freshness ok), sync-nba-projections 8 (#8 shelved), wallet-backfill 2/2/1, pack-mint-probes 2, candy-listings-indexer 1, pinnacle-wmc-render-id 1 — all known/transient",
+    "timeout_blind": 0,
+    "pgcron_recent_failures": "[]",
+    "stalled_pipelines": "[] (topshot-active-listings-ingest recovered)",
+    "pgcron_fails_24h": "atlas-market-feed 11, sync-nba-projections 8 (#8 shelved), atlas-editions-refresh 7, wallet-backfill golazos/allday 2/2, candy-listings-indexer 1 - all upstream 0, known/transient",
     "pipeline_alerts": [
-      "topshot-active-listings-ingest cron_silent medium (box dark; expected)",
+      "unmapped-sales-nfl_all_day info (7015 open, non-stationary drain)",
       "atlas-editions-upstream-403 info (designed, self-healing)",
-      "atlas-market-upstream-403 info (designed, self-healing)",
-      "flow-rest-moment-moved-400 info (designed borrowMoment panic)",
-      "unmapped-sales-nfl_all_day info (7098 open, non-stationary drain)"
+      "atlas-market-upstream-403 info (designed, self-healing, last drain fresh)",
+      "flow-rest-moment-moved-400 info (designed borrowMoment panic)"
     ],
-    "sentry_new_24h": 0,
-    "client_error_beacon_24h": "11, all crawler UA (Lightpanda/Lightworks; not user-facing)",
-    "vercel": "last READY 492f8cb5; tip 2c351bae CANCELED (docs+migration only, ignoreCommand skip); no ERROR deploys; public_board_empty 0, public_board_slow 0",
-    "db_size_mb": 29433
+    "zero_yield_lanes": "alerts-send / alerts-dispatch (genuine quiet market; 0 pending/0 stuck deliveries; unchanged disposition)",
+    "sentry_new_24h": "n/a (Sentry dark since 08-18, decided no spend)",
+    "vercel": "6h: DEP0169 warning 21, AllDay GQL 403 WAF 7, set_activity timeout->empty 1; no ERROR deploys; last READY e6321790; public_board_empty 0, public_board_slow 0",
+    "db_size_mb": 22082
   },
   "fmv_high_med": {
-    "nba_top_shot": 8043,
-    "nfl_all_day": 1522,
-    "disney_pinnacle": 823,
+    "nba_top_shot": 8148,
+    "nfl_all_day": 1553,
+    "disney_pinnacle": 825,
     "panini_blockchain": 1846,
-    "candy_mlb": 23,
-    "laliga_golazos": 4,
+    "candy_mlb": 24,
+    "laliga_golazos": 3,
     "ufc_strike": 0
   },
   "editions_by_collection": {
     "nba_top_shot": 14460,
     "nfl_all_day": 6190,
-    "panini_blockchain": 5101,
+    "panini_blockchain": 5111,
     "laliga_golazos": 575,
     "ufc_strike": 518,
     "candy_mlb": 125
@@ -44,18 +45,15 @@
     "unmapped_resolution_backlog_max": 2,
     "edition_integrity_flags": 7
   },
-  "deltas_vs_prev": "FMV HIGH+MED vs 09-26 18:00Z: nba_top_shot 8007->8043 (+36), nfl_all_day 1511->1522 (+11), disney_pinnacle 801->823 (+22), panini_blockchain 1845->1846 (+1), candy_mlb 23->23, laliga_golazos 4->4. Editions panini 5095->5101. All up or flat.",
+  "deltas_vs_prev": "FMV HIGH+MED vs 09-27 08:10Z: nba_top_shot 8043->8148 (+105), nfl_all_day 1522->1553 (+31), disney_pinnacle 823->825 (+2), panini_blockchain 1846 flat, candy_mlb 23->24 (+1), laliga_golazos 4->3 (-1 noise). Editions panini 5101->5111 (+10). db_size 29433->22082 MB (-7.3 GB, reclamation; nothing dropped).",
   "open_watches": [
-    "circulation-sampler fix (2c351bae / migration 20260927042000) first exercised at 03:25-03:29 UTC 09-28 (8:25 PM PT 09-27); falsifier = 0x429 in net._http_response + 50x ok in topshot_circulation_chain_audit. Tonight's 03:25Z tick was PRE-fix (10x429) and is NOT a regression."
+    "None new. Circulation-sampler watch closed PASS this run. topshot-active-listings-ingest recovered on its own; re-check it stays fed if it dips again."
   ],
   "needs_trevor": [
-    "laptop Task Scheduler: topshot-active-listings-ingest silent since 09-26 16:13Z (board's only live feeder)",
     "rotate ATLAS_POOL_INGEST_KEY (#144)",
-    "wrangler deploy pack-events-ingest (#134/#123)",
-    "enrich-ufc-wallet CLI deploy",
-    "#22 (credential-purge residue)",
-    "#64 (Panini is_active decision)",
-    "#140"
+    "wrangler deploy pack-events-ingest residual / enrich-ufc-wallet CLI (verify vs 09-27 session log; may be closed)",
+    "#22 (credential-purge residue / Dapper session), #64 (Panini is_active), #140",
+    "paste the 09-27 Panini freshness-check prompt update in Claude Desktop (device-bound)"
   ],
-  "housekeeping": "inbox backlog 549 files left as-is (INDEX.md CI assertions gate archival; consistent with recent passes). Two newest candidates dispositioned in the handoff."
+  "housekeeping": "inbox left append-only (INDEX CI gates archival). No new candidates since 09-26. Concurrent Claude Code session shipped Pinnacle/Panini overnight; reviewed, no regression."
 }
