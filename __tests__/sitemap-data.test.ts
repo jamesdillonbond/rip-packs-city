@@ -518,6 +518,30 @@ describe("segment 4 — pack distributions + Pinnacle pins", () => {
     await expect(buildSitemapSegment(4)).rejects.toThrow(SitemapReadIncomplete)
   })
 
+  // 2026-09-27: Disney Pinnacle's set / character / franchise pages, from the
+  // same catalog read. Keys are the ones each page RESOLVES (measured live):
+  // characters from the TRAIT (not the pin's name), franchises without ™.
+  it("lists Pinnacle set / character / franchise pages with the keys the pages resolve", async () => {
+    h.t.pack_distributions = ok([])
+    h.t.pinnacle_catalog = ok([
+      { render_id: "r1", updated_at: "2026-06-01T00:00:00.000Z", set_name: " Lucasfilm Ltd. • Return of the Jedi Vol.1",
+        characters: ["Ewok", "Wicket W. Warrick"], franchises: ["Star Wars™"] },
+      { render_id: "r2", updated_at: "2026-07-01T00:00:00.000Z", set_name: "Lucasfilm Ltd. • Return of the Jedi Vol.1",
+        characters: ["Ewok"], franchises: ["Star Wars™"] },
+    ])
+    const s = await buildSitemapSegment(4)
+    const urls = s.map((x) => x.url)
+    expect(urls).toContain(`${BASE}/disney-pinnacle/set/lucasfilm-ltd-return-of-the-jedi-vol-1`)
+    expect(urls).toContain(`${BASE}/disney-pinnacle/player/ewok`)
+    expect(urls).toContain(`${BASE}/disney-pinnacle/player/wicket-w-warrick`)
+    expect(urls).toContain(`${BASE}/disney-pinnacle/team/star-wars`)
+    expect(urls.some((u) => u.endsWith("/team/star-wars-"))).toBe(false)
+    // One URL per entity, dated by its newest pin.
+    expect(urls.filter((u) => u.endsWith("/player/ewok"))).toHaveLength(1)
+    const ewok = s.find((x) => x.url.endsWith("/player/ewok"))!
+    expect((ewok.lastModified as Date).toISOString()).toBe("2026-07-01T00:00:00.000Z")
+  })
+
   it("NO-CHANGE CONTROL: packs empty + pins present still resolves with the pins", async () => {
     h.t.pack_distributions = ok([])
     h.t.pinnacle_catalog = ok([{ render_id: "r9", updated_at: null }])

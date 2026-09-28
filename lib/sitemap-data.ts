@@ -68,6 +68,7 @@ import { createClient } from '@supabase/supabase-js'
 import { publishedCollections } from '@/lib/collections'
 import { getCollectionByDbSlug, getCollectionByUuid } from '@/lib/collection-slug'
 import { slugifyName, slugifyPlayerName } from '@/lib/entity-labels'
+import { pinnacleFranchiseName } from '@/lib/entity-href'
 import { isExhibitionTeamSlug } from '@/lib/team-denylist'
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from '@/lib/launch-flags'
 import { PUBLIC_TAB_PAGES } from '@/lib/seo'
@@ -171,6 +172,8 @@ async function getPublicProfiles(): Promise<Array<{ username: string; updated_at
 // generation time even though the data + FK exist. Pinnacle data lives in
 // `pinnacle_editions` (different schema) so it's excluded from edition
 // enumeration; its entity pages are still reachable via in-app navigation.
+const PINNACLE_COLLECTION_ID = '7dd9dd11-e8b6-45c4-ac99-71331f959714'
+
 const EDITION_COLLECTION_IDS = [
   '95f28a17-224a-4025-96ad-adf8a4c63bfd', // nba_top_shot
   'dee28451-5d62-409e-a1ad-a83f763ac070', // nfl_all_day
@@ -463,7 +466,9 @@ async function getCollectionSeries(): Promise<SeriesRow[]> {
     const { data, error } = await sb
       .from('collection_series')
       .select('display_label, collection_id')
-      .in('collection_id', EDITION_COLLECTION_IDS)
+      // + Disney Pinnacle (2026-09-27): not an EDITIONS collection (0 rows in
+      // `editions`), but its series pages resolve (4/4 measured live).
+      .in('collection_id', [...EDITION_COLLECTION_IDS, PINNACLE_COLLECTION_ID])
       // collection_series holds 26 rows in total (measured 2026-09-09). Any
       // bound above PostgREST's 1,000-row cap is clamped silently, so 2000 was
       // a claim, not a limit.
@@ -568,6 +573,11 @@ async function getPackRows(): Promise<PackRow[]> {
 interface PinnacleRenderRow {
   render_id: string
   updated_at: string | null
+  // 2026-09-27: the pin's hub keys, so segment 4 can list Pinnacle's set /
+  // character / franchise pages from the SAME read (no second walk).
+  set_name?: string | null
+  characters?: string[] | null
+  franchises?: string[] | null
 }
 
 async function getPinnacleRenderRows(): Promise<PinnacleRenderRow[]> {
@@ -592,7 +602,7 @@ async function getPinnacleRenderRows(): Promise<PinnacleRenderRow[]> {
     for (let from = 0; from < 10000; from += PAGE) {
       const { data, error } = await sb
         .from('pinnacle_catalog')
-        .select('render_id, updated_at')
+        .select('render_id, updated_at, set_name, characters, franchises')
         .not('render_id', 'is', null)
         .not('character_name', 'is', null)
         .order('render_id', { ascending: true })
@@ -779,7 +789,46 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
         priority: 0.55,
       }))
 
-    return [...packPages, ...pinnaclePinPages]
+    // Disney Pinnacle's set / character / franchise pages (2026-09-27). They
+    // were left out because they "resolve differently"; since 2026-09-26 they
+    // resolve from the render catalog. Keys are the ones each page resolves,
+    // measured live 2026-09-28: set = slug of the trimmed set_name (178/178),
+    // character = slug of each `characters` TRAIT value — NOT character_name,
+    // the pin's own name (513/513; the catalog trigger 20260928111652 keeps it
+    // so) — franchise = slug with ™/®/© dropped (81/81; the raw "star-wars-"
+    // 404s). An entity's lastModified is the newest of its pins' (never "now").
+    const pinSets = new Map<string, Date | null>()
+    const pinChars = new Map<string, Date | null>()
+    const pinFranchises = new Map<string, Date | null>()
+    const touch = (m: Map<string, Date | null>, slug: string, ts: Date | null) => {
+      if (!slug) return
+      const prev = m.get(slug)
+      if (prev === undefined || (ts !== null && (prev === null || ts > prev))) m.set(slug, ts)
+    }
+    for (const r of pinnacleRenders) {
+      const ts = r.updated_at ? new Date(r.updated_at) : null
+      if (r.set_name && r.set_name.trim()) touch(pinSets, slugifyName(r.set_name.trim()), ts)
+      for (const c of r.characters ?? []) if (c && c.trim()) touch(pinChars, slugifyName(c.trim()), ts)
+      for (const f of r.franchises ?? []) {
+        const name = pinnacleFranchiseName(f ?? '')
+        if (name) touch(pinFranchises, slugifyName(name), ts)
+      }
+    }
+    const pinnacleHub = (m: Map<string, Date | null>, segment: 'set' | 'player' | 'team', priority: number): MetadataRoute.Sitemap =>
+      [...m].map(([slug, ts]) => ({
+        url: `${BASE_URL}/disney-pinnacle/${segment}/${encodeURIComponent(slug)}`,
+        lastModified: ts ?? undefined,
+        changeFrequency: 'weekly' as const,
+        priority,
+      }))
+
+    return [
+      ...packPages,
+      ...pinnaclePinPages,
+      ...pinnacleHub(pinSets, 'set', 0.6),
+      ...pinnacleHub(pinChars, 'player', 0.6),
+      ...pinnacleHub(pinFranchises, 'team', 0.55),
+    ]
   }
 
   // ── Segment 0 (default): static + insights + overviews + series + profiles ─
