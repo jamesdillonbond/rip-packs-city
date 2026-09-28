@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { refreshAllDayWalletLocks } from "@/lib/allday-lock"
+import { refreshAllDayWalletLocks, AllDayLockDeadlineError } from "@/lib/allday-lock"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 // Scheduled All Day lock-refresh batch.
@@ -25,7 +25,11 @@ export const dynamic = "force-dynamic"
 
 const PIPELINE_NAME = "allday-lock-refresh"
 const WALLET_FETCH = 60 // candidate wallets pulled per tick; the soft deadline caps how many run
-const SOFT_DEADLINE_MS = 270_000
+// 2026-09-28: 270 s → 200 s. A wallet now walks the chain in a few calls, but a
+// whale's write phase (tens of thousands of stamped rows) runs AFTER its walk,
+// so a wallet started at 270 s could still be writing at the 300 s wall. The
+// same value bounds the walk itself (no window starts past it).
+const SOFT_DEADLINE_MS = 200_000
 
 function authed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization") ?? ""
@@ -69,6 +73,11 @@ function handle(req: NextRequest) {
     // `pipeline_cadence_watchlist` at 120 min — so the kill does not merely go
     // unlogged, it is read as "the schedule stopped firing", which needs the
     // opposite response.
+    //
+    // ⓘ 2026-09-28: those figures describe the 270 s cutoff and the 1,000-id
+    // borrowNFT walk. The walk is now IDs-only (a whale in one or a few calls),
+    // the cutoff is 200 s and also bounds the walk; `max_wallet_ms` in p_extra
+    // is the tail to size against the wall from here on.
     //
     // ⚠ The marker's name carries the `-heartbeat` suffix (added by the helper,
     // never by the caller). A marker under the REAL name would refresh `last_run`
@@ -121,21 +130,43 @@ async function runBatch(startedAtIso: string): Promise<void> {
 
   const candidates: Array<{ wallet_address: string }> = wallets ?? []
   let walletsProcessed = 0
+  let walletsDeferred = 0
   let rowsStamped = 0
+  let rowsExamined = 0
+  let writeErrors = 0
   let marked = 0
+  let maxWalletMs = 0
   const errors: Array<{ wallet: string; error: string }> = []
 
   for (const c of candidates) {
     if (Date.now() - started > SOFT_DEADLINE_MS) break
+    const walletStarted = Date.now()
     try {
-      const r = await refreshAllDayWalletLocks(c.wallet_address, supabaseAdmin)
-      walletsProcessed += 1
-      rowsStamped += r.total_cached
+      const r = await refreshAllDayWalletLocks(c.wallet_address, supabaseAdmin, {
+        deadlineMs: started + SOFT_DEADLINE_MS,
+      })
+      rowsExamined += r.total_cached
+      // rows_written counts writes that LANDED, never rows read (2026-09-28).
+      rowsStamped += r.rows_stamped
       marked += r.marked_locked + r.marked_unlocked
+      if (r.write_errors > 0) {
+        writeErrors += r.write_errors
+        errors.push({ wallet: c.wallet_address, error: `${r.write_errors} write chunk(s) failed: ${r.first_write_error}` })
+      } else {
+        walletsProcessed += 1
+      }
     } catch (e) {
+      if (e instanceof AllDayLockDeadlineError) {
+        // Not a failure: the wallet's walk would have crossed the deadline, so
+        // nothing was written and it stays stalest for the next tick.
+        walletsDeferred += 1
+        break
+      }
       // Per-wallet failure (e.g. an over-budget whale window) leaves the wallet
       // stale; it is re-selected on a later tick. Not fatal to the batch.
       errors.push({ wallet: c.wallet_address, error: e instanceof Error ? e.message : String(e) })
+    } finally {
+      maxWalletMs = Math.max(maxWalletMs, Date.now() - walletStarted)
     }
   }
 
@@ -169,7 +200,11 @@ async function runBatch(startedAtIso: string): Promise<void> {
       duration_ms: Date.now() - started,
       wallets_processed: walletsProcessed,
       wallets_failed: errors.length,
+      wallets_deferred: walletsDeferred,
       wallets_candidate: candidates.length,
+      rows_examined: rowsExamined,
+      write_errors: writeErrors,
+      max_wallet_ms: maxWalletMs,
       lock_flips: marked,
       errors: errors.slice(0, 5),
     },

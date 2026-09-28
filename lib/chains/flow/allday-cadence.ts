@@ -97,6 +97,26 @@ export const GET_UNLOCKED_MOMENT_DETAILS_RANGE = `
   }
 `
 
+// IDs-only window of the same collection, for callers that need only the id
+// set (the All Day lock diff). No borrowNFT, so the window can be large:
+// measured 2026-09-28 on a 69,297-moment wallet, one call with count 100,000
+// returned all 45,053 unlocked ids in 1.8 s, where the DETAILS_RANGE walk takes
+// ~46 calls at 1.0–4.9 s each (every call re-derives getIDs(), so a late
+// window costs more than an early one). args: address, start (Int), count (Int).
+export const GET_UNLOCKED_MOMENT_IDS_RANGE = `
+  import NonFungibleToken from 0x1d7e57aa55817448
+  access(all) fun main(addr: Address, start: Int, count: Int): [UInt64] {
+    let ref = getAccount(addr).capabilities.borrow<&{NonFungibleToken.Collection}>(/public/AllDayNFTCollection)
+    if ref == nil { return [] }
+    let ids = ref!.getIDs()
+    let total = ids.length
+    if start >= total { return [] }
+    var endVal = start + count
+    if endVal > total { endVal = total }
+    return ids.slice(from: start, upTo: endVal)
+  }
+`
+
 export const GET_MOMENT_METADATA = `
   import AllDay from 0xe4cf4bdc1751c65d
   import MetadataViews from 0x1d7e57aa55817448

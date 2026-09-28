@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   sb: null as unknown,
   refresh: vi.fn(async (wallet: string) => ({
     wallet, total_cached: 10, unlocked_onchain: 8, marked_locked: 2, marked_unlocked: 0,
+    rows_stamped: 10, write_errors: 0, first_write_error: null as string | null,
   })),
 }))
 
@@ -22,7 +23,10 @@ vi.mock("next/server", async (importOriginal) => {
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy({}, { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] }),
 }))
-vi.mock("@/lib/allday-lock", () => ({ refreshAllDayWalletLocks: state.refresh }))
+vi.mock("@/lib/allday-lock", () => {
+  class AllDayLockDeadlineError extends Error {}
+  return { refreshAllDayWalletLocks: state.refresh, AllDayLockDeadlineError }
+})
 
 const { GET, POST } = await import("@/app/api/cron/allday-lock-refresh-batch/route")
 
@@ -108,6 +112,45 @@ describe("allday-lock-refresh-batch", () => {
     expect(log.p_extra.wallets_processed).toBe(0)
     expect(log.p_extra.wallets_failed).toBe(2)
     expect(String(log.p_error)).toContain("Flow 400")
+  })
+
+  // 2026-09-28: rows_written was the rows READ (total_cached), so a tick whose
+  // writes all failed still reported them as written.
+  it("rows_written counts writes that landed, and a wallet with failed writes is a failure", async () => {
+    const spy = install({})
+    state.refresh
+      .mockImplementationOnce(async (wallet: string) => ({
+        wallet, total_cached: 10, unlocked_onchain: 8, marked_locked: 0, marked_unlocked: 0,
+        rows_stamped: 4, write_errors: 3, first_write_error: "statement timeout",
+      }))
+    await POST(req())
+    await runDeferred()
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_rows_written).toBe(4 + 10)
+    expect(log.p_extra.rows_examined).toBe(20)
+    expect(log.p_extra.write_errors).toBe(3)
+    expect(log.p_extra.wallets_processed).toBe(1)
+    expect(log.p_extra.wallets_failed).toBe(1)
+    expect(String(log.p_error)).toContain("3 write chunk(s) failed: statement timeout")
+  })
+
+  it("passes the soft deadline to the walk, and a deadline stop is deferred, not failed", async () => {
+    const spy = install({})
+    const mod = await import("@/lib/allday-lock")
+    state.refresh
+      .mockImplementationOnce(async (wallet: string) => ({
+        wallet, total_cached: 10, unlocked_onchain: 8, marked_locked: 0, marked_unlocked: 0,
+        rows_stamped: 10, write_errors: 0, first_write_error: null,
+      }))
+      .mockImplementationOnce(async () => { throw new (mod as any).AllDayLockDeadlineError("deadline") })
+    await POST(req())
+    await runDeferred()
+    expect((state.refresh.mock.calls[0] as any[])[2]).toMatchObject({ deadlineMs: expect.any(Number) })
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra.wallets_deferred).toBe(1)
+    expect(log.p_extra.wallets_failed).toBe(0)
+    expect(log.p_error).toBeNull()
   })
 
   it("a wallet-fetch error logs a wallet_fetch ok=false row", async () => {

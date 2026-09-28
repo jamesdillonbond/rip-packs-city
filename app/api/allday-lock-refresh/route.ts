@@ -8,7 +8,7 @@ import { refreshAllDayWalletLocks } from "@/lib/allday-lock"
 // are moved to Dapper custodial infrastructure, so they never appear on-chain;
 // any cached moment not present on-chain is locked.
 //
-// The diff walk is whale-safe (chunked GET_UNLOCKED_MOMENT_DETAILS_RANGE) and
+// The diff walk is whale-safe (chunked GET_UNLOCKED_MOMENT_IDS_RANGE) and
 // lives in lib/allday-lock.ts, shared with the scheduled batch orchestrator
 // /api/cron/allday-lock-refresh-batch. See that route for scheduling; this
 // endpoint stays available for a single on-demand wallet refresh.

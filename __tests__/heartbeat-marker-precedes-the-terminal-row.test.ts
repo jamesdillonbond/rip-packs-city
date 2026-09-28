@@ -184,7 +184,9 @@ describe("cron/allday-lock-refresh-batch writes its marker first", () => {
     // ⚠ NO-CHANGE CONTROL for the extra payload: the soft deadline is the whole
     // reason this route runs at 90%+ of its wall, so it must be readable off the
     // marker without opening the source at the version that was deployed.
-    expect((rec.rows[0].extra as Record<string, unknown>).soft_deadline_ms).toBe(270_000)
+    // Re-pinned 2026-09-28: 270,000 → 200,000 when the cutoff also began to
+    // bound the walk and leave room for a whale's write phase.
+    expect((rec.rows[0].extra as Record<string, unknown>).soft_deadline_ms).toBe(200_000)
   })
 })
 
