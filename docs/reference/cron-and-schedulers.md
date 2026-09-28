@@ -2898,3 +2898,9 @@ The Wall Kills arm pairs a `<pipeline>-heartbeat` row with a terminal row whose 
 ## Displaced from CLAUDE.md — 2026-09-27 (verbatim; it paid for the one-page-structure + Pinnacle-lock rule)
 
 - ⚠ **A directional claim needs a DISTRIBUTION, not a snapshot; a delta between two STOCKS is neither a rate nor a sign; `max()` on a `text` cursor is lexicographic.**
+
+## Added 2026-09-28 — a STALEST-FIRST picker over a PARTIAL writer never advances
+
+- ⛔ **A picker ordered by `min(<stamp>)` per key, paired with a writer that stamps only PART of that key's rows, re-picks the same key forever.** `get_allday_lock_refresh_wallets` orders wallets by `min(lock_checked_at)`; `lib/allday-lock.ts` read the wallet's cache rows with an unpaged select, so PostgREST's 1,000-row cap applied. For the 61 wallets above 1,000 rows, the minimum never moved, so they were picked every tick. The 69,297-row wallet was walked hourly to stamp 1,000 rows, and whales took most of each 270 s tick. The self-report looked healthy (ok=true, thousands of rows "written" every run). **The tell: `rows_written` an exact multiple of 1,000 per unit of work** (6 wallets → 6,000, 7 → 7,000). Read the stamp distribution per key in the OUTCOME table (`date_trunc('hour', <stamp>)`, `count(*)`): exactly 1,000 per tick for one key is this defect.
+- ⚠ **The other half: a script doing per-item work the caller never reads is a cost, not a safeguard.** The walk borrowed every NFT for `editionID`/`serialNumber` the diff ignored, which forced 1,000-id windows (1.0–4.9 s each, rising with the offset because each call re-derives `getIDs()`). An IDs-only script returned all 45,053 ids in one 1.8 s call. Before shrinking a window, ask whether the per-item work is needed at all.
+- Fix + numbers: ledger 2026-09-28 ("All Day lock refresh checks every row of a big wallet").

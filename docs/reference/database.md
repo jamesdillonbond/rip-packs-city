@@ -2861,3 +2861,7 @@ Accent and case variants fold (`unaccent` + `lower`). Two different names for on
 ## Displaced from CLAUDE.md 2026-09-27 (verbatim; still binding)
 
 - ⚠ **A `*_at` name is its WRITER's contract — REPLACING the writer REDEFINES the column while the name holds**; ⛔ **a CACHE keyed on one rots INVISIBLY — the tell is it disagreeing with the row it NAMES** (R107). `col_description()` first: database.md.
+
+## Added 2026-09-28 — a stream filtered by a MEMBER SET costs window ÷ density
+
+- ⚠ **`ORDER BY sold_at DESC LIMIT n` over a `(collection_id, sold_at)` index, filtered by `edition_id = ANY(<set>)`, heap-checks rows until it has n matches, so its cost is roughly n ÷ (the set's share of the collection).** It is cheap for a busy set and walks the whole window for a quiet one. `get_set_activity` on Top Shot `2022-23-season-rewind` (77 of 1.1M yearly sales) cost 421,711 buffers and hit the 8 s timeout cold. Base Set (dense) cost 2,225. **Measure the SPARSEST member of the population, not the biggest**; the author measured Base Set and wrote "a cold wide set would walk deeper". Fix pattern (migration `20260928143942`): one pass over the newest N index rows keeping the set's rows. If the window filled, or the pass covered the whole range, those rows are the answer. Otherwise use a per-member `LATERAL … LIMIT n` with the same floor as an index bound. It was proved equal over all 735 sets before shipping.
