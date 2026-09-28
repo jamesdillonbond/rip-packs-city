@@ -17,9 +17,16 @@ export function nameOrDash(...candidates: Array<string | null | undefined>): str
   return EM_DASH
 }
 
+// ⚠ 2026-09-28: whole-dollar rounding printed a $0.36 Candy sale as "$0" (a sale
+// for nothing) and $2.46 as "$2". Under $100 the cents are the price, so show
+// them; from $100 up whole dollars carry it. Locale pinned: a bare
+// toLocaleString() follows the runtime, so server and client could disagree.
 export function fmtPrice(n: number): string {
   const neg = usdSignFirst(n, fmtPrice); if (neg !== null) return neg
-  return "$" + Math.round(n).toLocaleString()
+  if (n < 100) {
+    return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+  return "$" + Math.round(n).toLocaleString("en-US")
 }
 
 /** "just now" / N min ago / Nh ago / Nd ago; em-dash for null. */

@@ -403,7 +403,8 @@ export default function CollectionOverviewClient({ collection }: { collection: s
             value={
               stats
                 ? stats.volume_24h != null
-                  ? `$${Math.round(stats.volume_24h).toLocaleString()}`
+                  ? // a real sub-$0.50 day is not "$0" (2026-09-28); a measured zero stays "$0"
+                    stats.volume_24h > 0 ? fmtPrice(stats.volume_24h) : "$0"
                   : EM_DASH
                 : null
             }

@@ -9,6 +9,16 @@ describe("collection-overview-format — nameOrDash / fmtPrice", () => {
   it("fmtPrice rounds and groups", () => {
     expect(fmtPrice(1234.6)).toBe("$1,235")
   })
+  // 2026-09-28: a real $0.36 Candy sale rendered as "$0" on the overview.
+  it("fmtPrice never prints a paid sale as $0 — cents under $100", () => {
+    expect(fmtPrice(0.36)).toBe("$0.36")
+    expect(fmtPrice(2.46)).toBe("$2.46")
+    expect(fmtPrice(24.68)).toBe("$24.68")
+    expect(fmtPrice(99.994)).toBe("$99.99")
+    expect(fmtPrice(100)).toBe("$100")
+    expect(fmtPrice(0.36)).not.toBe("$0")
+    expect(fmtPrice(-0.36)).toBe("-$0.36")
+  })
 })
 
 describe("collection-overview-format — fmtAge / minutesSince", () => {
