@@ -32,4 +32,21 @@ describe("set page — Recent Sales is three-state", () => {
     expect(mig).toMatch(/REVOKE ALL ON FUNCTION public\.get_set_activity\(uuid, text, integer, integer\) FROM PUBLIC, anon, authenticated;/)
     expect(mig).toMatch(/s\.sold_at >= now\(\) - interval '365 days'/)
   })
+  // 2026-09-28 — the wide path streamed the collection's sold_at index until it
+  // had a window, so a sparse wide set (77 sales in a year against 1.1M) walked
+  // the whole year and timed out. The replacement bounds that pass and falls back
+  // to a per-edition window that keeps the year floor as an index bound.
+  it("the wide path's pass over the collection is bounded, and a sparse set falls back per edition", () => {
+    const mig = readFileSync(join(process.cwd(), "supabase", "migrations", "20260928143942_audit_20260928_get_set_activity_sparse_wide_set_per_edition_path.sql"), "utf8")
+    expect(mig).toMatch(/ORDER BY s\.sold_at DESC\s+LIMIT 5000\s+\) p\s+WHERE \(p\.s\)\.edition_id = ANY\(v_edition_ids\)\s+LIMIT v_window/)
+    expect(mig).toMatch(/IF v_year_rows < 5000 THEN\s+v_mode := 'head';\s+ELSE\s+v_mode := 'per_edition_year';/)
+    expect(mig).toMatch(/AND s\.edition_id = ed\.id\s+AND s\.sold_at >= CASE WHEN v_mode = 'per_edition_year'\s+THEN now\(\) - interval '365 days'/)
+    // no unbounded collection stream is left: every sales scan keyed only on the
+    // collection carries LIMIT 5000
+    const collectionScans = mig.match(/WHERE s\.collection_id = p_collection_id\s+AND s\.sold_at >= now\(\) - interval '365 days'\s+(ORDER BY s\.sold_at DESC\s+)?LIMIT (\d+)/g) ?? []
+    expect(collectionScans).toHaveLength(2)
+    expect(mig).not.toMatch(/AND s\.sold_at >= now\(\) - interval '365 days'\s+AND s\.edition_id = ANY\(v_edition_ids\)/)
+    expect(mig).toMatch(/REVOKE ALL ON FUNCTION public\.get_set_activity\(uuid, text, integer, integer\) FROM PUBLIC, anon, authenticated;/)
+    expect(mig).toMatch(/GRANT EXECUTE ON FUNCTION public\.get_set_activity\(uuid, text, integer, integer\) TO service_role;/)
+  })
 })
