@@ -41,3 +41,23 @@ describe("registry switches", () => {
     expect(collectionHasPage("nba-top-shot", "pack-sniper")).toBe(true)
   })
 })
+
+describe("collectionEntityJsonLd — ItemList URLs are the pages the tiles link", () => {
+  it("a Pinnacle pin's ListItem url is its own page, not the redirecting /edition/ URL", async () => {
+    const { collectionEntityJsonLd } = await import("@/lib/seo")
+    const ld = JSON.stringify(collectionEntityJsonLd({
+      name: "Set", url: "https://www.rippackscity.com/disney-pinnacle/set/x", collectionUrlSlug: "disney-pinnacle",
+      eds: [{ route_slug: "SEV1-MNF-DAIS-S1", player_name: "Daisy Duck" }], crumbName: "Sets",
+    }))
+    expect(ld).toContain("https://www.rippackscity.com/pinnacle/moment/SEV1-MNF-DAIS-S1")
+    expect(ld).not.toContain("/disney-pinnacle/edition/")
+  })
+  it("CONTROL: Top Shot keeps its /edition/ URL", async () => {
+    const { collectionEntityJsonLd } = await import("@/lib/seo")
+    const ld = JSON.stringify(collectionEntityJsonLd({
+      name: "Set", url: "https://www.rippackscity.com/nba-top-shot/set/x", collectionUrlSlug: "nba-top-shot",
+      eds: [{ route_slug: "98:3150", player_name: "Damian Lillard" }], crumbName: "Sets",
+    }))
+    expect(ld).toContain("https://www.rippackscity.com/nba-top-shot/edition/98%3A3150")
+  })
+})

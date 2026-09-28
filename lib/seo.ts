@@ -1,3 +1,4 @@
+import { editionRouteHref } from "@/lib/entity-href"
 import type { Metadata } from 'next'
 import { proxyIpfsUrlAbsolute } from './ipfs-media'
 import { metaField } from './format'
@@ -1213,7 +1214,9 @@ export function collectionEntityJsonLd(opts: {
     const li: LdValue = {
       "@type": "ListItem",
       position: i + 1,
-      url: `${BASE_URL}/${opts.collectionUrlSlug}/edition/${encodeURIComponent(s(e, "route_slug") ?? "")}`,
+      // The page each tile links to (a Pinnacle pin's own page, not the
+      // /disney-pinnacle/edition/ URL that only redirects there — 2026-09-27).
+      url: `${BASE_URL}${editionRouteHref(opts.collectionUrlSlug, s(e, "route_slug") ?? "")}`,
     }
     const nm = s(e, "player_name") ?? s(e, "name")
     const img = proxyIpfsUrlAbsolute(s(e, "thumbnail_url"), BASE_URL)
