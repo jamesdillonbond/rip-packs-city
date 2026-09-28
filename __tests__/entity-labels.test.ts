@@ -12,6 +12,8 @@ describe("getEntityLabels", () => {
     expect(l.players).toBe("Characters")
     expect(l.team).toBe("Franchise")
     expect(l.tier).toBe("Variant")
+    expect(l.unit).toBe("Pin")
+    expect(l.units).toBe("Pins")
   })
   it("returns the sports vocabulary for everything else", () => {
     const l = getEntityLabels("nba-top-shot")
@@ -19,6 +21,8 @@ describe("getEntityLabels", () => {
     expect(l.players).toBe("Players")
     expect(l.team).toBe("Team")
     expect(l.tier).toBe("Tier")
+    expect(l.unit).toBe("Moment")
+    expect(l.units).toBe("Moments")
   })
 })
 

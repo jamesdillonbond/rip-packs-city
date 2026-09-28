@@ -300,8 +300,8 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         <StatCell label="30d Volume" value={fmtUsd(detail.volume_30d_usd == null ? null : Number(detail.volume_30d_usd))} />
       </section>
 
-      {/* ── Team Checklist (headline feature) ────────────────────────────── */}
-      <Section title="Team Checklist">
+      {/* ── Team / Franchise Checklist (headline feature) ─────────────────── */}
+      <Section title={`${labels.team} Checklist`}>
         <TeamChecklist collectionUrlSlug={collection} teamSlug={slug} />
       </Section>
 

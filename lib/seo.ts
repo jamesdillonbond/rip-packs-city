@@ -192,7 +192,50 @@ const PAGE_META: Record<string, PageMeta> = {
 // list that could drift.
 export const PUBLIC_TAB_PAGES: string[] = Object.keys(PAGE_META)
 
-const PAGE_META_OVERRIDES: Record<string, PageMeta> = {}
+// Disney Pinnacle (2026-09-27): the generic templates speak a sports
+// collection's vocabulary — "moments", "players", badge detection, "liquid vs
+// locked FMV", pull odds — and several list five collections on a page that
+// serves one. Pinnacle sells PINS by character, franchise and variant, has no
+// badges and no lock UI, and its packs publish no pull odds. Its own copy, so
+// a search result or link preview makes no claim the page cannot back.
+const PINNACLE_ID = 'disney-pinnacle'
+const PAGE_META_OVERRIDES: Record<string, PageMeta> = {
+  [`overview:${PINNACLE_ID}`]: {
+    title: '{label} Value — Pin FMV, Floor Prices & Market Pulse',
+    description:
+      'What Disney Pinnacle pins are worth: FMV by pin and variant, floor prices, top sales, and the market pulse on Flow — for any pin or your whole collection.',
+  },
+  [`collection:${PINNACLE_ID}`]: {
+    title: 'Wallet Analytics — Track Your {label} Pin Collection',
+    description:
+      'Value any Flow wallet\'s Disney Pinnacle pins: FMV per pin, #1 and perfect serial premiums, variant and franchise breakdown, and live marketplace asks.',
+  },
+  [`sniper:${PINNACLE_ID}`]: {
+    title: 'Sniper — {label} Pins Below FMV',
+    description:
+      'Disney Pinnacle pins listed below FMV, from every live listing on the Disney Pinnacle marketplace: filter by character, franchise, studio, variant and chasers.',
+  },
+  [`packs:${PINNACLE_ID}`]: {
+    title: 'Pack Analysis — {label} Pack EV',
+    description:
+      'Disney Pinnacle pack expected value, modelled from pin supply and FMV (no per-tier pull odds are published), with sealed and opened counts for every pack.',
+  },
+  [`sets:${PINNACLE_ID}`]: {
+    title: 'Set Completion — Track Your {label} Sets',
+    description:
+      'Disney Pinnacle set completion: which pins you hold in each set, the ones you are missing, and what the rest cost at today\'s asks.',
+  },
+  [`analytics:${PINNACLE_ID}`]: {
+    title: 'Portfolio Analytics — {label} Wallet Breakdown',
+    description:
+      'Disney Pinnacle wallet analytics: pin value by variant, series, franchise and character, acquisition history, and how much of the collection has a reliable price.',
+  },
+  [`market:${PINNACLE_ID}`]: {
+    title: 'Market Intelligence — {label} Pin Lookup & Leaderboards',
+    description:
+      'Pin-level market intelligence for Disney Pinnacle: FMV, floor asks, 30-day sales, and liquidity and discount leaderboards.',
+  },
+}
 
 // ── Closed-market tab copy ──────────────────────────────────────────────────
 //

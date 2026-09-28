@@ -1866,15 +1866,15 @@ function SniperMomentsBody() {
                of INACTION — it tells them not to re-list. */
             <div role="status" className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
               Couldn&rsquo;t read your collection, so there&rsquo;s nothing to compare against yet. This says
-              nothing about how your Moments are priced.
+              nothing about how your {isPinnacle ? "pins" : "Moments"} are priced.
             </div>
           ) : suggestionsState_ === "no-market" ? (
             <div role="status" className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
-              Waiting on the live listings feed — suggestions compare your Moments against it.
+              Waiting on the live listings feed — suggestions compare your {isPinnacle ? "pins" : "Moments"} against it.
             </div>
           ) : suggestions.length === 0 ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
-              No listing suggestions found. Your moments are priced at or below current market asks.
+              No listing suggestions found. Your {isPinnacle ? "pins" : "moments"} are priced at or below current market asks.
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

@@ -89,6 +89,13 @@ const COPY: Record<string, { title: string; placeholder: string; hint: ReactNode
     placeholder: "Solana wallet address…",
     hint: "Free, no signup. Total FMV + your top moments.",
   },
+  // Disney Pinnacle collects PINS; the default "top moments" was the only
+  // sports word left on every Pinnacle tab (2026-09-27).
+  "disney-pinnacle": {
+    title: "What's your collection worth?",
+    placeholder: "Flow wallet address (0x…)",
+    hint: "Free, no signup. Total FMV + your top pins.",
+  },
   __default: {
     title: "What's your collection worth?",
     placeholder: "Flow wallet address (0x…)",

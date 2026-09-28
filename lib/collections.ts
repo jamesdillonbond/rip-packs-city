@@ -501,6 +501,15 @@ export function collectionHasLocking(id: string): boolean {
   return !COLLECTIONS_WITHOUT_LOCKING.has(id)
 }
 
+// Disney Pinnacle has no badge program (2026-09-27): a "Badges" column or
+// filter on its Market tab is an empty column that implies one exists.
+const COLLECTIONS_WITHOUT_BADGES: ReadonlySet<string> = new Set(["disney-pinnacle", "pinnacle"])
+
+/** False for a collection with no badge program — render no badge column or filter. */
+export function collectionHasBadges(id: string): boolean {
+  return !COLLECTIONS_WITHOUT_BADGES.has(id)
+}
+
 export function collectionHasPage(id: string, page: CollectionPage): boolean {
   const c = getCollection(id)
   return !!c && c.pages.includes(page)

@@ -7,6 +7,7 @@ import GrailsView from './GrailsView'
 import { useWarmCache } from '@/lib/warmup/WarmupContext'
 import { topshotPackUrl, dapperMarketPackUrl } from '@/lib/pack-urls'
 import { packEvBasis, derivePackAvailability } from '@/lib/pack-availability'
+import { collectionHasPage } from '@/lib/collections'
 
 // Shared client component for the static pack pages (nba-top-shot,
 // nfl-all-day). Renders /api/packs (pack_table_rows view) into the
@@ -579,13 +580,19 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
               Clear
             </button>
           )}
-          <Link
-            href="/insights/pack-sniper"
-            className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)] ml-auto"
-            style={{ color: 'var(--rpc-red)' }}
-          >
-            Pack Sniper: currently-listed packs ranked by ask vs EV →
-          </Link>
+          {/* 2026-09-27 — only where this collection HAS a Pack Sniper, and to its
+              own tab. The link went to /insights/pack-sniper on every collection,
+              which serves Top Shot / All Day only and defaulted to Top Shot — so
+              a Pinnacle or Golazos collector landed on another collection's packs. */}
+          {collectionHasPage(collection, 'pack-sniper') && (
+            <Link
+              href={`/${collection}/pack-sniper`}
+              className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)] ml-auto"
+              style={{ color: 'var(--rpc-red)' }}
+            >
+              Pack Sniper: currently-listed packs ranked by ask vs EV →
+            </Link>
+          )}
         </div>
 
         {/* Row 4: type chips + price range */}

@@ -515,7 +515,13 @@ export default function CollectionSetsClient({ collection }: { collection: strin
                   ) : null}
                 </>
               ) : (
-                <>RPC counts a set complete when you own every play in it. Top Shot&apos;s &ldquo;Completed Sets&rdquo; may include per-set criteria (challenges, badges, parallel collections) this tracker doesn&apos;t model &mdash; gaps are expected.</>
+                // Pinnacle collects PINS and has no challenges/badges; the Top Shot
+                // caveat only describes Top Shot (2026-09-27).
+                isPinnacle ? (
+                  <>RPC counts a set complete when you own every pin in it.</>
+                ) : (
+                  <>RPC counts a set complete when you own every play in it. Top Shot&apos;s &ldquo;Completed Sets&rdquo; may include per-set criteria (challenges, badges, parallel collections) this tracker doesn&apos;t model &mdash; gaps are expected.</>
+                )
               )}
             </div>
 

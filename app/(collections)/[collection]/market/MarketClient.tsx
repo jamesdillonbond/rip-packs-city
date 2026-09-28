@@ -31,7 +31,7 @@ import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIE
 import { filterListingsByOwned, collectBadgeOptions, countActiveFilters } from "@/lib/market/filters"
 import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
-import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid, collectionHasLocking } from "@/lib/collections"
+import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid, collectionHasLocking, collectionHasBadges } from "@/lib/collections"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import IpfsImg from "@/components/media/IpfsImg"
 import { paniniSubjectIsPlayer } from "@/lib/panini/subjects"
@@ -694,7 +694,9 @@ function MarketInner() {
           <MultiSelectChip label="Set" selected={setsSel} options={setOptions} onChange={setSetsSel} />
           <MultiSelectChip label="Series" selected={seriesSel} options={seriesOptions} onChange={setSeriesSel} formatOption={(v) => marketSeriesLabel(v, collectionId)} />
           <MultiSelectChip label={getEntityLabels(collectionId).team} selected={teamsSel} options={teamOptions} onChange={setTeamsSel} />
-          <MultiSelectChip label="Badges" selected={badgesSel} options={badgeOptions} onChange={setBadgesSel} />
+          {collectionHasBadges(collectionId) && (
+            <MultiSelectChip label="Badges" selected={badgesSel} options={badgeOptions} onChange={setBadgesSel} />
+          )}
 
           {showOwnedFilter && (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -1091,6 +1093,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
   badgeCollectionId: string | null
 }) {
   const router = useRouter()
+  const showBadges = collectionHasBadges(collectionUrlSlug)
   return (
     <div className="rpc-card" style={{ padding: 0, overflow: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 11 }}>
@@ -1101,7 +1104,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
             <th style={th}>{getEntityLabels(collectionUrlSlug).tier}</th>
             <th style={th}>Series</th>
             <th style={th}>Set</th>
-            <th style={th}>Badges</th>
+            {showBadges && <th style={th}>Badges</th>}
             <th style={{ ...th, textAlign: "right" }}># Listed</th>
             <th style={{ ...th, textAlign: "right" }}>Mint</th>
             {showOwnedColumn && <th style={{ ...th, textAlign: "right" }}>{collectionHasLocking(collectionUrlSlug) ? "Own / Lock" : "Own"}</th>}
@@ -1186,20 +1189,22 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                     </span>
                   )}
                 </td>
-                <td style={td}>
-                  {uniqueBadges.length === 0 ? (
-                    <span style={{ color: "var(--rpc-text-ghost)" }}>—</span>
-                  ) : (
-                    <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-                      {uniqueBadges.slice(0, 3).map(slug => (
-                        <BadgeIcon key={slug} title={slug} size={20} collectionId={badgeCollectionId} />
-                      ))}
-                      {uniqueBadges.length > 3 && (
-                        <span style={{ fontSize: 10, color: "var(--rpc-text-ghost)" }}>+{uniqueBadges.length - 3}</span>
-                      )}
-                    </div>
-                  )}
-                </td>
+                {showBadges && (
+                  <td style={td}>
+                    {uniqueBadges.length === 0 ? (
+                      <span style={{ color: "var(--rpc-text-ghost)" }}>—</span>
+                    ) : (
+                      <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                        {uniqueBadges.slice(0, 3).map(slug => (
+                          <BadgeIcon key={slug} title={slug} size={20} collectionId={badgeCollectionId} />
+                        ))}
+                        {uniqueBadges.length > 3 && (
+                          <span style={{ fontSize: 10, color: "var(--rpc-text-ghost)" }}>+{uniqueBadges.length - 3}</span>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                )}
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>
                   {l.listedCount != null ? l.listedCount.toLocaleString() : "—"}
                 </td>

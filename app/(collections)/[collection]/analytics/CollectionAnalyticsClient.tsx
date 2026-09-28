@@ -1917,7 +1917,7 @@ function AnalyticsInner() {
                     <thead>
                       <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
                         <th className="pb-2">Series</th>
-                        <th className="pb-2 text-right">Moments</th>
+                        <th className="pb-2 text-right">{labels.units}</th>
                         <th className="pb-2 text-right">Total FMV</th>
                       </tr>
                     </thead>
@@ -1944,10 +1944,10 @@ function AnalyticsInner() {
               <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
                 <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
                   <span>Portfolio Clarity Score</span>
-                  <span className="text-[color:var(--rpc-text-muted)]" title="Share of moments priced from solid recent sales data. Higher = more reliable total portfolio FMV.">ⓘ</span>
+                  <span className="text-[color:var(--rpc-text-muted)]" title={`Share of ${labels.units.toLowerCase()} priced from solid recent sales data. Higher = more reliable total portfolio FMV.`}>ⓘ</span>
                 </div>
                 <div className="text-5xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{data.portfolio_clarity_score.toFixed(1)}%</div>
-                <div className="mt-3 text-[11px] text-[color:var(--rpc-text-muted)]">How reliably we know this portfolio&apos;s FMV. Higher means most moments are priced from solid recent sales data.</div>
+                <div className="mt-3 text-[11px] text-[color:var(--rpc-text-muted)]">How reliably we know this portfolio&apos;s FMV. Higher means most {labels.units.toLowerCase()} are priced from solid recent sales data.</div>
               </section>
 
               {/* Sales History (hidden silently if route doesn't exist) */}

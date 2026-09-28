@@ -27,6 +27,10 @@ export interface EntityLabels {
   portrait: string
   /** "Tier" | "Variant" — Pinnacle calls scarcity bands "variants". */
   tier: string
+  /** "Moment" | "Pin" — the collectible itself, singular. */
+  unit: string
+  /** "Moments" | "Pins" — plural, for column headers and counts. */
+  units: string
 }
 
 const PINNACLE: EntityLabels = {
@@ -36,6 +40,8 @@ const PINNACLE: EntityLabels = {
   roster: "Cast",
   portrait: "Portrait",
   tier: "Variant",
+  unit: "Pin",
+  units: "Pins",
 }
 
 const SPORTS: EntityLabels = {
@@ -45,6 +51,8 @@ const SPORTS: EntityLabels = {
   roster: "Roster",
   portrait: "Headshot",
   tier: "Tier",
+  unit: "Moment",
+  units: "Moments",
 }
 
 export function getEntityLabels(collectionUrlSlug: string): EntityLabels {

@@ -354,7 +354,9 @@ describe("client pages — a failed read is not an empty result", () => {
     it("both failure branches precede the conclusion", () => {
       const readFailed = src.indexOf('suggestionsState_ === "read-failed" ?')
       const noMarket = src.indexOf('suggestionsState_ === "no-market" ?')
-      const conclusion = src.indexOf("Your moments are priced at or below current market asks")
+      // 2026-09-27: the noun follows the collection ("pins" on Pinnacle), so
+      // the conclusion is matched past it.
+      const conclusion = src.indexOf("are priced at or below current market asks")
       expect(readFailed, "a read-failed branch must exist").toBeGreaterThan(-1)
       expect(noMarket, "a no-market branch must exist").toBeGreaterThan(-1)
       expect(readFailed).toBeLessThan(conclusion)
@@ -366,7 +368,7 @@ describe("client pages — a failed read is not an empty result", () => {
     })
 
     it("the failure copy does not make a claim about the reader's pricing", () => {
-      expect(src).toContain("This says\n              nothing about how your Moments are priced")
+      expect(src).toContain('This says\n              nothing about how your {isPinnacle ? "pins" : "Moments"} are priced')
     })
   })
 

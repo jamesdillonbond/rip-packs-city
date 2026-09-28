@@ -87,6 +87,15 @@ describe("WalletSearchBand", () => {
     expect(container.querySelector("[data-rpc-wallet-band='collection']")).toBeTruthy()
   })
 
+  // 2026-09-27: "top moments" was the one sports word left on every Pinnacle tab.
+  it("Disney Pinnacle's hint says pins, not moments; Top Shot keeps moments", () => {
+    const pin = render(<WalletSearchBand scope="collection" collectionId="disney-pinnacle" />)
+    expect(pin.container.textContent).toMatch(/top pins/)
+    expect(pin.container.textContent).not.toMatch(/moments/i)
+    const ts = render(<WalletSearchBand scope="collection" collectionId="nba-top-shot" />)
+    expect(ts.container.textContent).toMatch(/top moments/)
+  })
+
   it("renders NOTHING on a non-Flow collection — /share is a Flow wallet card (Candy MLB, 2026-09-06)", () => {
     const { container } = render(<WalletSearchBand scope="collection" collectionId="candy-mlb" />)
     expect(container.querySelector("input")).toBeNull()
