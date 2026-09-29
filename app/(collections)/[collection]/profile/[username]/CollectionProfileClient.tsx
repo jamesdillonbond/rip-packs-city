@@ -917,7 +917,7 @@ export default function CollectionProfileClient({
               reason the sweep is the caller list and not the one file you had
               in mind (CLAUDE.md). */}
           {[
-            { label: "Collection", icon: "\u25C8", page: "collection", href: basePath + "/collection", color: "var(--rpc-red)" },
+            { label: "Binder", icon: "\u25C8", page: "collection", href: basePath + "/collection", color: "var(--rpc-red)" },
             { label: "Pack EV", icon: "\u25A3", page: "packs", href: basePath + "/packs", color: "#F59E0B" },
             { label: "Sniper", icon: "\u26A1", page: "sniper", href: basePath + "/sniper", color: "#34D399" },
             { label: "Sets", icon: "\u25C9", page: "sets", href: basePath + "/sets", color: "#F472B6" },

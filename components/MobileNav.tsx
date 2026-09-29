@@ -35,7 +35,11 @@ const ICON_SIZE = 22;
 // MARKET page, so tapping the active tab left. Every rule below maps a route to
 // the tab whose href actually lands there (or its sub-toggle), and returns null
 // for a route no tab leads to — an honest "none", not a guess.
-const ACCOUNT_PREFIXES = ["/profile", "/dashboard", "/alerts", "/rewards", "/my-teams"];
+// ⚠ MY BINDER IS THE WALLET PAGE (`/{collection}/collection`), not the account
+// dashboard (Trevor, 2026-09-28): the binder is a wallet's holdings. Account
+// surfaces (/dashboard, /profile, /alerts) are reached through the header's
+// sign-in pill and light no tab — no tab leads there any more.
+const BINDER_PAGES = new Set(["collection"]);
 // Packs and Hot Floors were folded into Market by the 2026-07-18 IA reorg (the
 // Market/Sniper sub-toggle), and Pack Sniper into Sniper — so those pages are
 // reached through, and belong to, the tab that hosts the toggle.
@@ -46,8 +50,8 @@ export type MobileTab = "home" | "binder" | "market" | "sniper";
 
 export function activeTabFor(pathname: string, pageSegment: string, isCollectionRoute: boolean): MobileTab | null {
   if (pathname === "/") return "home";
-  if (ACCOUNT_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) return "binder";
   if (!isCollectionRoute) return null;
+  if (BINDER_PAGES.has(pageSegment)) return "binder";
   if (SNIPER_PAGES.has(pageSegment)) return "sniper";
   if (MARKET_PAGES.has(pageSegment)) return "market";
   return null;
@@ -112,14 +116,13 @@ export default function MobileNav() {
   const activeTab = activeTabFor(pathname, segments[1] ?? "", isCollectionRoute);
   const activeCollection = getCollection(collection);
 
-  // ⚠ MY BINDER MUST POINT AT `/profile`, NEVER `/dashboard`. `/dashboard` is
-  // auth-gated, and the measured chain used to be `/profile → 308 → /dashboard →
-  // 307 → /login?next=…`, two hops into a login wall from the first tap.
-  // `app/profile/page.tsx` exists to end that (register R36) — it is PUBLIC and
-  // server-redirects a signed-in visitor onward.
-  const tabs: { key: MobileTab; label: string; href: string; page?: "market" | "sniper" }[] = [
+  // My Binder opens the binder page with NO `?wallet=`: the page re-opens the
+  // wallet this device last looked up (rpc_last_wallet, chain-checked there),
+  // and shows the lookup box to a first-time visitor. It is PUBLIC — never point
+  // a tab at auth-gated /dashboard (a login wall from the first tap, R36).
+  const tabs: { key: MobileTab; label: string; href: string; page?: "collection" | "market" | "sniper" }[] = [
     { key: "home", label: "HOME", href: "/" },
-    { key: "binder", label: "MY BINDER", href: "/profile" },
+    { key: "binder", label: "MY BINDER", href: `/${collection}/collection`, page: "collection" },
     { key: "market", label: "MARKET", href: `/${collection}/market`, page: "market" },
     { key: "sniper", label: "SNIPER", href: `/${collection}/sniper`, page: "sniper" },
   ];

@@ -755,7 +755,7 @@ export default function CollectionOverviewClient({ collection }: { collection: s
             // lib/collection/closed-market-chrome.ts, which carries the case
             // history; they are deliberately NOT repeated in this file, because
             // the guard bans them from this source.
-            { label: "Collection", desc: toolCardDesc("collection", collection), icon: "\u25C8", color: accent,                  page: "collection" },
+            { label: "Binder", desc: toolCardDesc("collection", collection), icon: "\u25C8", color: accent,                  page: "collection" },
             { label: "Pack EV",   desc: toolCardDesc("packs", collection),      icon: "\u25A3", color: "var(--tier-legendary)", page: "packs" },
             { label: "Sniper",    desc: toolCardDesc("sniper", collection),     icon: "\u26A1", color: "#34D399",                page: "sniper" },
             { label: "Sets",      desc: toolCardDesc("sets", collection),       icon: "\u25C9", color: "#F472B6",                page: "sets" },

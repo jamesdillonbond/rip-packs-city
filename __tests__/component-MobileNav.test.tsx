@@ -47,19 +47,21 @@ describe("MobileNav", () => {
     expect(bar(container).querySelector("button")).toBeNull()
   })
 
-  // ⛔ THE ONE HREF THAT MUST NOT DRIFT. /dashboard is auth-gated; the measured
-  // chain used to be `/profile → 308 → /dashboard → 307 → /login?next=…`, two
-  // hops into a login wall from the first tap. app/profile/page.tsx is PUBLIC and
-  // server-redirects a signed-in visitor onward (register R36).
-  it("⛔ MY BINDER points at the PUBLIC /profile, never at auth-gated /dashboard", () => {
+  // ⭐ RE-PINNED 2026-09-28 (Trevor): My Binder is the WALLET page — one
+  // wallet's holdings — not the account dashboard. It carries no `?wallet=`: the
+  // page re-opens this device's last lookup itself. ⛔ Never auth-gated
+  // /dashboard: a login wall from the first tap (register R36).
+  it("⛔ MY BINDER opens the collection's binder page, never auth-gated /dashboard", () => {
     const { container } = render(<MobileNav />)
-    expect(tab(container, "MY BINDER").getAttribute("href")).toBe("/profile")
+    expect(tab(container, "MY BINDER").getAttribute("href")).toBe("/nba-top-shot/collection")
     expect(hrefs(container)).not.toContain("/dashboard")
+    expect(hrefs(container).some((h) => h?.includes("wallet="))).toBe(false)
   })
 
   it("scopes Market and Sniper to the collection in the URL", () => {
     nav.pathname = "/nfl-all-day/overview"
     const { container } = render(<MobileNav />)
+    expect(tab(container, "MY BINDER").getAttribute("href")).toBe("/nfl-all-day/collection")
     expect(tab(container, "MARKET").getAttribute("href")).toBe("/nfl-all-day/market")
     expect(tab(container, "SNIPER").getAttribute("href")).toBe("/nfl-all-day/sniper")
   })
@@ -117,7 +119,7 @@ describe("MobileNav — thin collections", () => {
     expect(hrefs(container).filter((h) => h?.endsWith("/market") || h?.endsWith("/sniper"))).toEqual([])
     const inert = Array.from(bar(container).querySelectorAll("[aria-disabled='true']"))
     expect(inert.map((e) => (e.textContent ?? "").trim())).toEqual(["MARKET", "SNIPER"])
-    expect(hrefs(container)).toContain("/profile")
+    expect(hrefs(container)).toContain("/ufc/collection")
   })
 
   it("inerts only the page a collection is missing", () => {
@@ -153,21 +155,29 @@ describe("MobileNav — which tab owns the route", () => {
     }
   })
 
+  it("lights My Binder on a collection's binder page", () => {
+    expect(activeTabFor("/nba-top-shot/collection", "collection", true)).toBe("binder")
+    expect(activeTabFor("/candy-mlb/collection", "collection", true)).toBe("binder")
+  })
+
   it("lights nothing on a collection page no tab leads to", () => {
-    // Overview, Wallet, Sets, Analytics are reached through the collection's own
+    // Overview, Sets, Analytics are reached through the collection's own
     // switcher + tab bar. No bottom tab goes there, so none may claim to.
-    for (const p of ["overview", "collection", "sets", "analytics"]) {
+    for (const p of ["overview", "sets", "analytics"]) {
       expect(activeTabFor(`/nba-top-shot/${p}`, p, true), p).toBeNull()
     }
   })
 
   it("⚠ does NOT light a collection tab on /dashboard/packs — that tab links elsewhere", () => {
-    expect(activeTabFor("/dashboard/packs", "packs", false)).toBe("binder")
+    // `segments[1]` is "packs" here; Market's href is /{collection}/market.
+    expect(activeTabFor("/dashboard/packs", "packs", false)).toBeNull()
   })
 
-  it("lights My Binder on every account surface, not just /profile", () => {
-    for (const p of ["/profile", "/profile/someone", "/dashboard", "/dashboard/history", "/alerts", "/rewards", "/my-teams"]) {
-      expect(activeTabFor(p, "", false), p).toBe("binder")
+  it("lights no tab on the account surfaces — no tab leads to them any more", () => {
+    // My Binder is the wallet page (2026-09-28). The dashboard is reached through
+    // the header's sign-in pill, so lighting My Binder there would point away.
+    for (const p of ["/profile", "/profile/someone", "/dashboard", "/dashboard/history", "/alerts", "/my-teams"]) {
+      expect(activeTabFor(p, "", false), p).toBeNull()
     }
   })
 
@@ -201,7 +211,7 @@ describe("MobileNav — which tab owns the route", () => {
 
 describe("MobileNav — the active tab is announced, not just coloured", () => {
   it("marks the active tab with aria-current=page", () => {
-    nav.pathname = "/profile/settings"
+    nav.pathname = "/nba-top-shot/collection"
     const { container } = render(<MobileNav />)
     expect(tab(container, "MY BINDER").getAttribute("aria-current")).toBe("page")
     expect(tab(container, "HOME").getAttribute("aria-current")).toBeNull()

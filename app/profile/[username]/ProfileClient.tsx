@@ -843,7 +843,7 @@ export default function ProfileClient(props: {
           <div style={Object.assign({}, labelStyle, { marginBottom: 12 })}>TOOLS</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
             {[
-              { label: "Collection", icon: "◈", href: "/nba-top-shot/collection", color: "var(--rpc-red)" },
+              { label: "Binder", icon: "◈", href: "/nba-top-shot/collection", color: "var(--rpc-red)" },
               { label: "Pack EV", icon: "▣", href: "/nba-top-shot/packs", color: "#F59E0B" },
               { label: "Sniper", icon: "⚡", href: "/nba-top-shot/sniper", color: "#34D399" },
               { label: "Sets", icon: "◉", href: "/nba-top-shot/sets", color: "#F472B6" },

@@ -722,7 +722,11 @@ export function getCollectionUuid(slug: string): string | null {
 
 export const PAGE_LABELS: Record<CollectionPage, string> = {
   overview:            "Overview",
-  collection:          "Collection",
+  // "Binder" (2026-09-28, Trevor): "collection" meant too many things — the
+  // five published collections, the registry, a wallet's holdings. The page
+  // that shows ONE wallet's holdings is a binder, in card-collecting terms.
+  // The URL segment stays `/collection` (links, sitemap, SEO titles unchanged).
+  collection:          "Binder",
   packs:               "Packs",
   "pack-sniper":       "Pack Sniper",
   "fast-break":        "Fast Break",
@@ -741,7 +745,7 @@ export const PAGE_LABELS: Record<CollectionPage, string> = {
 // One-line page pitches — rendered under tab hovers and in empty states.
 export const PAGE_PITCHES: Record<CollectionPage, string> = {
   overview:            "Ecosystem snapshot, news, pipeline health",
-  collection:          "Your moments — FMV, badges, acquisition history",
+  collection:          "Your binder — FMV, badges, acquisition history",
   market:              "Sort and filter every indexed listing across the collection",
   packs:               "Pack EV calculator — find drops where EV > retail",
   "pack-sniper":       "Sealed packs listed below their expected pull value",

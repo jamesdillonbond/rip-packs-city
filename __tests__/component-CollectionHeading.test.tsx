@@ -40,7 +40,7 @@ afterEach(() => cleanup())
 describe("CollectionHeading — tab routes get the <h1> they were missing", () => {
   it.each([
     ["/nba-top-shot/overview", "Overview"],
-    ["/nba-top-shot/collection", "Collection"],
+    ["/nba-top-shot/collection", "Binder"],
     ["/nba-top-shot/market", "Market"],
     ["/nba-top-shot/analytics", "Analytics"],
   ])("renders an h1 on %s", (path, tabLabel) => {
