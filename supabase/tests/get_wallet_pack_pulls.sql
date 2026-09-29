@@ -12,7 +12,9 @@
 --      unpriced (current_fmv NULL), and the totals count exactly that.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929133500_audit_20260929_pack_pull_list_names_what_the_value_was_priced_from.sql).
+-- (supabase/migrations/20260929163000_audit_20260929_pack_pull_serials_from_the_chain_read.sql).
+--   5. (2026-09-29) A serial missing from moments and the cache comes from the
+--      chain read -- for Top Shot only; never onto another collection's pull.
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -28,6 +30,8 @@ CREATE TABLE public.fmv_snapshots (collection_id uuid, edition_id uuid, fmv_usd 
 CREATE TABLE public.pack_open_pulls (collection_id uuid, pack_nft_id text, nft_id text, opener_address text,
   edition_id uuid, resolved_via text);
 CREATE TABLE public.wallet_reconstructed_rips (wallet text, collection_id uuid, burst_id text, nft_ids text[]);
+CREATE TABLE public.topshot_chain_moment_reads (nft_id bigint PRIMARY KEY, set_id int, play_id int, serial_number int,
+  subedition_id int, owner_address text, block_height bigint, read_at timestamptz);
 
 -- >>> BEGIN verbatim get_wallet_pack_pulls (body byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_pack_pulls(p_wallet text, p_collection_slug text, p_pack_nft_id text)
@@ -78,7 +82,9 @@ BEGIN
 
   SELECT coalesce(jsonb_agg(jsonb_build_object(
            'nft_id', u.nft_id,
-           'serial_number', coalesce(mo.serial_number, wm.serial_number),
+           -- 2026-09-29: else the serial read on chain at the rip block
+           -- (Top Shot only; moments that left every wallet have no other)
+           'serial_number', coalesce(mo.serial_number, wm.serial_number, cr.serial_number),
            'edition_id', e.id,
            'player_name', e.player_name,
            'set_name', e.set_name,
@@ -121,6 +127,11 @@ BEGIN
      WHERE w.moment_id = u.nft_id AND w.collection_id = v_coll AND w.edition_key IS NOT NULL
      LIMIT 1
   ) wm ON mo.edition_id IS NULL
+  LEFT JOIN LATERAL (
+    SELECT c.serial_number FROM public.topshot_chain_moment_reads c
+     WHERE v_coll = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+       AND u.nft_id ~ '^[0-9]{1,15}$' AND c.nft_id = u.nft_id::bigint
+  ) cr ON mo.serial_number IS NULL AND wm.serial_number IS NULL
   LEFT JOIN public.editions e ON e.id = coalesce(po.edition_id, mo.edition_id, wm.edition_id)
   LEFT JOIN LATERAL (
     SELECT CASE WHEN s.fmv_usd > 0 THEN s.fmv_usd END AS fmv_usd,
@@ -205,6 +216,26 @@ BEGIN
   PERFORM _assert_eq(r->>'pulls_inferred', '1', 'one inferred name, counted');
   r := public.get_wallet_pack_pulls('0xW', 'nba-top-shot', 'PK1');
   PERFORM _assert(r->>'pulls_inferred' = '0' AND r->'pulls'->0->>'named_by' = 'record', 'PK1 unchanged: record names, none inferred');
+END $$;
+
+-- 2026-09-29: serials read on chain. 21 has none in moments or the cache; 11
+-- has 101 in moments (the chain read, planted as 999, must not override it);
+-- an All Day pack pulled an id (21) equal to a Top Shot chain read.
+INSERT INTO public.topshot_chain_moment_reads VALUES
+  (21, 1, 1, 459, 0, '0xw', 100, now()),
+  (11, 1, 1, 999, 0, '0xw', 100, now());
+INSERT INTO public.pack_open_pulls VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AD1', '21', '0xw', NULL, NULL);
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.get_wallet_pack_pulls('0xw', 'nba_top_shot', 'PK3');
+  PERFORM _assert_eq(r->'pulls'->0->>'serial_number', '459', 'a pull only the chain read has a serial for shows it');
+  PERFORM _assert(r->'pulls'->2->>'serial_number' IS NULL, '23: no read anywhere, no serial');
+  r := public.get_wallet_pack_pulls('0xW', 'nba-top-shot', 'PK1');
+  PERFORM _assert_eq(r->'pulls'->0->>'serial_number', '101', 'moments'' serial wins over the chain read');
+  r := public.get_wallet_pack_pulls('0xw', 'nfl_all_day', 'AD1');
+  PERFORM _assert(r->'pulls'->0->>'serial_number' IS NULL, 'a Top Shot chain read never gives an All Day pull a serial');
 END $$;
 
 ROLLBACK;

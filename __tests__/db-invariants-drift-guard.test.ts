@@ -297,8 +297,8 @@ const PINS = [
     fn: "get_wallet_pack_pulls",
     test: "supabase/tests/get_wallet_pack_pulls.sql",
     // 2026-09-29: the pull lane's names first; named_by + pulls_inferred.
-    migration:
-      "supabase/migrations/20260929133500_audit_20260929_pack_pull_list_names_what_the_value_was_priced_from.sql",
+    // 2026-09-29: serial falls back to the chain read (Top Shot only).
+    migration: "supabase/migrations/20260929163000_audit_20260929_pack_pull_serials_from_the_chain_read.sql",
   },
   {
     // Added 2026-09-26. Pins the reconstruction of packs opened with NO pack NFT
