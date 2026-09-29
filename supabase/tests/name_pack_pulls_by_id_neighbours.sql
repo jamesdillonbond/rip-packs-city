@@ -15,13 +15,16 @@
 --
 --   I1 (2026-09-29) an inferred name is re-derived each run: cleared when its
 --      neighbours no longer agree, moved when they now agree on another edition.
+--   A1 (2026-09-29) a Standard Atlas market event names its id into the corpus; a
+--      Parallel one never does.
 --   S1 (2026-09-29) sales feed the corpus through topshot_sale_id_editions; an
 --      id whose sales disagree is marked NULL for good and never enters it.
 --
 -- The function DDL below is VERBATIM from the committed migrations
 -- (supabase/migrations/20260929130700_audit_20260929_topshot_pack_pulls_named_by_id_neighbours.sql,
 --  supabase/migrations/20260929143000_audit_20260929_id_neighbour_corpus_reads_sales.sql,
---  supabase/migrations/20260929145500_audit_20260929_inferred_pull_names_rederived_each_run.sql).
+--  supabase/migrations/20260929145500_audit_20260929_inferred_pull_names_rederived_each_run.sql,
+--  supabase/migrations/20260929150500_audit_20260929_id_neighbour_corpus_reads_atlas_standard_events.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -46,6 +49,8 @@ CREATE TABLE public.pack_open_pull_values (collection_id uuid, pack_nft_id text,
   n_inferred int NOT NULL DEFAULT 0, PRIMARY KEY (collection_id, pack_nft_id));
 CREATE TABLE public.sales (collection_id uuid, nft_id text, edition_id uuid, sold_at timestamptz);
 CREATE TABLE public.topshot_sale_id_editions (id bigint PRIMARY KEY, edition_external_id text, updated_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE public.topshot_atlas_market_events (nft_id bigint, product text, atlas_edition_id text, parallel text);
+CREATE TABLE public.topshot_atlas_edition_map (atlas_edition_id text, rpc_edition_id uuid, parallel text);
 CREATE TABLE public.topshot_moment_id_editions (id bigint PRIMARY KEY, edition_external_id text NOT NULL,
   refreshed_at timestamptz NOT NULL DEFAULT now());
 
@@ -144,6 +149,18 @@ BEGIN
     -- whose sales disagree carries '!' and so drops out below
     SELECT s.id, coalesce(s.edition_external_id, '!')
       FROM public.topshot_sale_id_editions s
+    UNION ALL
+    -- 2026-09-29: a Standard Atlas market event names its moment id (matched a
+    -- record on 99.9 % when checked 09-26; 812 of ~445k overlapping ids
+    -- disagree today, and the count(DISTINCT) rule drops those). Parallel
+    -- events are NOT used: their label survives the edition map only ~92 %.
+    SELECT a.nft_id::bigint, e.external_id
+      FROM public.topshot_atlas_market_events a
+      JOIN public.topshot_atlas_edition_map am ON am.atlas_edition_id = a.atlas_edition_id AND am.parallel = 'Standard'
+      JOIN public.editions e ON e.id = am.rpc_edition_id AND e.collection_id = v_ts
+     WHERE a.product = 'nba' AND a.parallel = 'Standard'
+       AND a.nft_id::text ~ '^[0-9]{1,15}$'
+       AND e.external_id ~ '^[0-9]+:[0-9]+(::[0-9]+)?$'
   ) u
   GROUP BY u.id
   HAVING count(DISTINCT u.ext) = 1 AND min(u.ext) <> '!';
@@ -441,6 +458,18 @@ BEGIN
   v := public.refresh_topshot_moment_id_editions();
   PERFORM _assert((SELECT edition_external_id = '1:2' FROM public.topshot_moment_id_editions WHERE id = 702), 'S1 a sale-named id enters the corpus');
   PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.topshot_moment_id_editions WHERE id IN (700, 701)), 'S1 a conflicting sale id never enters it');
+END $$;
+
+-- A1: Atlas Standard names 800; the Parallel event for 801 is not read
+INSERT INTO public.topshot_atlas_edition_map
+  SELECT 'AE1', id, 'Standard' FROM public.editions WHERE external_id = '1:2'
+  UNION ALL SELECT 'AE2', id, 'Blockchain' FROM public.editions WHERE external_id = '1:3';
+INSERT INTO public.topshot_atlas_market_events VALUES (800, 'nba', 'AE1', 'Standard'), (801, 'nba', 'AE1', 'Blockchain'), (802, 'wnba', 'AE1', 'Standard');
+DO $$
+BEGIN
+  PERFORM public.refresh_topshot_moment_id_editions();
+  PERFORM _assert((SELECT edition_external_id = '1:2' FROM public.topshot_moment_id_editions WHERE id = 800), 'A1 a Standard Atlas event names 800');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.topshot_moment_id_editions WHERE id IN (801, 802)), 'A1 a Parallel event / another product never enters');
 END $$;
 
 ROLLBACK;
