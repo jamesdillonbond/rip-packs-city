@@ -10,7 +10,7 @@
 // sniper link to), in a new tab. A Panini slab whose edition key is not a
 // Panini SKU gets NO link rather than a dead one.
 
-import { paniniEditionUrl } from "@/lib/panini/edition-market"
+import { paniniEditionUrl } from "@/lib/panini/edition-url"
 
 export const PANINI_COLLECTION_ID = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
 

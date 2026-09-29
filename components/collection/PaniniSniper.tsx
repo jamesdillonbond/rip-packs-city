@@ -22,7 +22,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
-import { paniniEditionUrl } from "@/lib/panini/edition-market"
+import { paniniEditionUrl } from "@/lib/panini/edition-url"
 
 type Num = number | null
 

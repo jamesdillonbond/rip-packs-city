@@ -139,10 +139,7 @@ export async function fetchPaniniEditionSerials(
   }
 }
 
-/** The public Panini marketplace page for an edition (same shape the Market tab links). */
-export function paniniEditionUrl(externalId: string | null | undefined): string | null {
-  if (!externalId || !/^packcard-[0-9_]+$/.test(externalId)) return null
-  return `https://nft.paniniamerica.net/marketplace-details/${encodeURIComponent(externalId)}.html`
-}
+// Lives in the client-safe lib/panini/edition-url.ts — re-exported for server callers.
+export { paniniEditionUrl } from "@/lib/panini/edition-url"
 
 export { paniniSubjectIsPlayer } from "@/lib/panini/subjects"
