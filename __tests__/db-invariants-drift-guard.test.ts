@@ -15,6 +15,17 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-29. A chain-found arrival from a Dapper delivery account
+    // (0xe1f2..., 0xb6f2...) that is not a known NFT pack pull becomes a
+    // verified custodial pack-pull acquisition. Pins the allowlist (collector
+    // wallets 0xb5b7.../0xf2b9... that sold on the marketplace are excluded),
+    // the NFT-pack exclusion, and that existing pack-pull records stand.
+    fn: "apply_chain_arrival_pack_pulls",
+    test: "supabase/tests/apply_chain_arrival_pack_pulls.sql",
+    migration:
+      "supabase/migrations/20260929175000_audit_20260929_custodial_pulls_found_on_chain_become_pack_pull_acquisitions.sql",
+  },
+  {
     // Added 2026-09-29. When and from whom a wallet got a Top Shot moment,
     // bisected on its own holdings on the historical spork nodes, then the
     // delivering TopShot.Withdraw (0xb5b7... = custodial pack pull). Pins the
