@@ -29,7 +29,9 @@ export function fmtTeamCount(v: number | null | undefined): string {
 export function teamLogoUrl(t: TeamLogoInput): string | null {
   if (!t.external_id) return null
   const league = t.league.toUpperCase()
-  if (league === "NBA") return `https://cdn.nba.com/logos/nba/${t.external_id}/global/L/logo.svg`
-  if (league === "WNBA") return `https://cdn.wnba.com/logos/wnba/${t.external_id}/global/L/logo.svg`
+  // Same-origin, rasterized: Chrome fails cdn.nba.com / cdn.wnba.com directly with
+  // ERR_HTTP2_PROTOCOL_ERROR (2026-09-29). See app/api/public/team-logo/[league]/[id]/route.ts.
+  if (league === "NBA") return `/api/public/team-logo/nba/${encodeURIComponent(String(t.external_id))}`
+  if (league === "WNBA") return `/api/public/team-logo/wnba/${encodeURIComponent(String(t.external_id))}`
   return null
 }

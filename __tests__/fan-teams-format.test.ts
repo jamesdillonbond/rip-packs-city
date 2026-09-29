@@ -22,15 +22,15 @@ describe("fan-teams-format · formatters", () => {
 })
 
 describe("fan-teams-format · teamLogoUrl", () => {
-  it("returns the league-specific official CDN SVG for NBA and WNBA", () => {
-    expect(teamLogoUrl({ league: "NBA", external_id: "1610612757" })).toBe(
-      "https://cdn.nba.com/logos/nba/1610612757/global/L/logo.svg",
-    )
-    expect(teamLogoUrl({ league: "WNBA", external_id: "1611661319" })).toBe(
-      "https://cdn.wnba.com/logos/wnba/1611661319/global/L/logo.svg",
-    )
+  // RE-PINNED 2026-09-29: the official logo now comes through our same-origin rasterizing route,
+  // because Chrome fails cdn.nba.com / cdn.wnba.com directly (ERR_HTTP2_PROTOCOL_ERROR).
+  it("returns the league-specific official logo, via the same-origin route, for NBA and WNBA", () => {
+    expect(teamLogoUrl({ league: "NBA", external_id: "1610612757" })).toBe("/api/public/team-logo/nba/1610612757")
+    expect(teamLogoUrl({ league: "WNBA", external_id: "1611661319" })).toBe("/api/public/team-logo/wnba/1611661319")
     // case-insensitive league
-    expect(teamLogoUrl({ league: "nba", external_id: "1" })).toContain("cdn.nba.com")
+    expect(teamLogoUrl({ league: "nba", external_id: "1" })).toBe("/api/public/team-logo/nba/1")
+    // no direct hotlink to the CDN Chrome cannot reach
+    expect(teamLogoUrl({ league: "NBA", external_id: "1610612757" })).not.toContain("cdn.nba.com")
   })
 
   it("falls back to null (abbreviation badge) for other leagues or no external_id", () => {

@@ -21,6 +21,7 @@ import type { CSSProperties } from "react"
 import TeamLogo from "./TeamLogo"
 import TeamFollowButton from "./TeamFollowButton"
 import { relTime } from "./_shared"
+import { teamLogoUrl } from "@/lib/fan-teams-format"
 
 export interface TeamNextGame {
   opponent_abbr: string | null
@@ -180,13 +181,9 @@ export default function TeamHero({
   // their respective CDNs. Every other league (NFL/LaLiga) has no external_id
   // and falls back to the initials badge inside TeamLogo.
   const league = (leagueLabel ?? "").toUpperCase()
-  const logoUrl = externalId
-    ? league === "NBA"
-      ? `https://cdn.nba.com/logos/nba/${externalId}/global/L/logo.svg`
-      : league === "WNBA"
-        ? `https://cdn.wnba.com/logos/wnba/${externalId}/global/L/logo.svg`
-        : null
-    : null
+  // One source for the URL (lib/fan-teams-format): same-origin and rasterized, because Chrome fails
+  // the NBA/WNBA CDNs directly with ERR_HTTP2_PROTOCOL_ERROR (2026-09-29).
+  const logoUrl = teamLogoUrl({ league, external_id: externalId ?? null })
   const accent = secondaryColor || "var(--rpc-red)"
   const gradient = `linear-gradient(105deg, ${primaryColor} 0%, var(--rpc-surface) 88%)`
 
