@@ -160,3 +160,23 @@ describe("panini-runner sales-capture source-drift guard", () => {
     expect(src).toContain('process.env.PANINI_SALES_HISTORY !== "0"')
   })
 })
+
+// 2026-09-29: the site links drop pages without ".html"; the first PACK_LINK_RE required it and
+// harvested 0 links. Pins the widened pattern, the ".html" normalisation, and the packDetails capture.
+describe("panini-runner pack-page discovery (2026-09-29)", () => {
+  const src = readFileSync(RUNNER_PATH, "utf8")
+  const reSrc = src.match(/const PACK_LINK_RE = (\/.*\/);/)?.[1]
+  it("the pattern accepts both spellings of a drop page and rejects card and off-site links", () => {
+    expect(reSrc).toBeTruthy()
+    const re = new Function(`return ${reSrc}`)() as RegExp
+    expect(re.test("https://nft.paniniamerica.net/pack-2026_Panini_NFT_Prizm_WNBA_Packs")).toBe(true)
+    expect(re.test("https://nft.paniniamerica.net/pack-2026_Panini_NFT_Prizm_WNBA_FOTL_Packs.html")).toBe(true)
+    expect(re.test("https://nft.paniniamerica.net/marketplace-details/subpack-5270763-1038.html")).toBe(true)
+    expect(re.test("https://nft.paniniamerica.net/packcard-2305_4544702_12015358_1__7_10.html")).toBe(false)
+    expect(re.test("https://evil.example/pack-x")).toBe(false)
+  })
+  it("normalises a harvested link to its .html form, and keeps a packDetails sample", () => {
+    expect(src).toMatch(/function packPageKey\(u\) \{ return u\.endsWith\("\.html"\) \? u : u \+ "\.html"; \}/)
+    expect(src).toMatch(/op === "packDetails"/)
+  })
+})

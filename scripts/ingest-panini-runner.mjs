@@ -209,7 +209,11 @@ function setIdOf(psku) {
 }
 function isWalked(psku) { const sid = setIdOf(psku); return sid !== null && WALK_SETS.has(sid); }
 // Pack links on any page the walk visits: marketplace subpack pages and /pack-<name>.html drop pages.
-const PACK_LINK_RE = /^https:\/\/nft\.paniniamerica\.net\/(?:marketplace-details\/subpack-\d+-\d+|pack-[^/?#]+)\.html$/;
+// 2026-09-29: the site links drop pages WITHOUT ".html" (/pack-2026_Panini_NFT_Prizm_WNBA_Packs), so
+// the first version (".html" required) harvested 0 links while those two sat in packish_unmatched.
+// ".html" is optional here and added back by packPageKey, so both spellings are one page.
+const PACK_LINK_RE = /^https:\/\/nft\.paniniamerica\.net\/(?:marketplace-details\/subpack-\d+-\d+|pack-[^/?#.]+)(?:\.html)?$/;
+function packPageKey(u) { return u.endsWith(".html") ? u : u + ".html"; }
 
 async function main() {
   const CDP = process.env.PANINI_CDP_URL; // e.g. http://localhost:9222 — connect to YOUR real logged-in Chrome
@@ -306,7 +310,7 @@ async function main() {
     let added = 0;
     for (const h of hrefs) {
       const u = String(h).split("#")[0].split("?")[0];
-      if (PACK_LINK_RE.test(u) && !harvestedPackUrls.has(u)) { harvestedPackUrls.add(u); added++; }
+      if (PACK_LINK_RE.test(u)) { const k = packPageKey(u); if (!harvestedPackUrls.has(k)) { harvestedPackUrls.add(k); added++; } }
       // Evidence for the pattern itself (0 links matched on 2026-09-28): keep a few pack-ish hrefs
       // that did NOT match, so a wrong PACK_LINK_RE is visible in the enum marker.
       else if (/pack/i.test(u) && packishUnmatched.size < 15) packishUnmatched.add(u.slice(0, 200));
@@ -394,6 +398,13 @@ async function main() {
       const op = opNameOf(resp);
       packVisitOps[op] = (packVisitOps[op] || 0) + 1;
       if (!packVisitPackLike) { const pl = findPackLike(d, 0); if (pl) packVisitPackLike = { op, keys: Object.keys(pl).slice(0, 60), pack_sku: pl.pack_sku ?? null, pack_name: pl.pack_name ?? null }; }
+      // Drop pages (/pack-<name>.html) carry their data in op packDetails, not getPackMarketStats
+      // (measured 2026-09-29 on the WNBA FOTL page), and findPackLike saw no pack_sku in it. Keep a
+      // truncated copy of that payload so its shape can be read before anything is built on it.
+      if (op === "packDetails" && !packVisitPackLike?.sample) {
+        let sample = null; try { sample = JSON.stringify(d).slice(0, 3000); } catch {}
+        packVisitPackLike = { ...(packVisitPackLike ?? { op }), details_keys: Object.keys(d?.packDetails ?? d ?? {}).slice(0, 60), sample };
+      }
     }
     if (d.getCardMarketStats?.data) { const cd = d.getCardMarketStats.data; if (cd.psku && nationByPsku[cd.psku]) cd.__nation = nationByPsku[cd.psku]; cards.push(cd); }
     if (d.getPackMarketStats?.data) { const pk = d.getPackMarketStats.data; if (currentPackId) pk.__pack_id = currentPackId; if (currentPackUrl) pk.__page_url = currentPackUrl; packs.push(pk); }
