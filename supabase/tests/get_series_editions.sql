@@ -11,6 +11,8 @@
 --   4. An unknown series is [] / empty lists.
 --
 -- The function DDL below is VERBATIM from the committed migration
+-- (get_team_activity / get_team_checklist / get_team_top_editions / get_series_editions:
+-- supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql; the rest:)
 -- (supabase/migrations/20260926193906_audit_20260926_pinnacle_series_pages_count_every_pin.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -66,6 +68,7 @@ BEGIN
       SELECT
         pc.render_id                                        AS route_slug,
         btrim(pc.characters[1])                             AS player_name,
+        btrim(pc.character_name)                            AS pin_name,
         regexp_replace(lower(btrim(pc.characters[1])), '[^a-z0-9]+', '-', 'g') AS player_slug,
         btrim(pc.character_name) || ' (' || pc.variant || ')' AS name,
         btrim(pc.set_name)                                  AS set_name,
@@ -369,6 +372,9 @@ SELECT _assert_eq(
   'maleficent,aurora,hercules', 'top characters by trait, FMV-ordered');
 
 -- 4
+-- #23 (2026-09-28): the tile TITLE is the pin's own name, never its first character.
+SELECT _assert_eq((SELECT x->>'pin_name' || '|' || (x->>'player_name') FROM jsonb_array_elements(public.get_series_editions('7dd9dd11-e8b6-45c4-ac99-71331f959714', '2026')) x WHERE x->>'route_slug' = 'A-2026-2'),
+  'The Duel|Maleficent', 'pin_name = the pin''s own name; player_name stays the first character');
 SELECT _assert_eq(public.get_series_editions('7dd9dd11-e8b6-45c4-ac99-71331f959714', '1999')::text, '[]', 'unknown series: empty grid');
 SELECT _assert_eq(public.get_series_rollups('7dd9dd11-e8b6-45c4-ac99-71331f959714', '1999')::text, '{"sets": [], "players": []}', 'unknown series: empty lists');
 

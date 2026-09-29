@@ -12,6 +12,8 @@ import { editionRouteHref } from "@/lib/entity-href"
 export interface ActivityRow {
   route_slug: string
   player_name: string | null
+  /** Pinnacle only: the pin's own name — the row title (tileSubject). */
+  pin_name?: string | null
   set_name: string | null
   // Team-moment display: team moments (player_name null) read "{team} {play}".
   team_name?: string | null
@@ -30,7 +32,7 @@ function MomentLink({ collectionUrlSlug, row }: { collectionUrlSlug: string; row
       href={editionRouteHref(collectionUrlSlug, row.route_slug)}
       style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: "var(--font-display)", fontWeight: 700, letterSpacing: "0.02em" }}
     >
-      {tileSubject({ player_name: row.player_name, team_name: row.team_name, play_type: row.play_type, name: row.set_name })}
+      {tileSubject({ pin_name: row.pin_name, player_name: row.player_name, team_name: row.team_name, play_type: row.play_type, name: row.set_name })}
     </Link>
   )
 }

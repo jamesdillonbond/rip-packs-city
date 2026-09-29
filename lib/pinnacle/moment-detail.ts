@@ -138,6 +138,18 @@ export type SiblingRow = {
   is_self: boolean
 }
 
+/**
+ * Distinct wallets among a pin's cached copies — null when the page of rows is
+ * not the whole population (a count above the rows returned), never a number
+ * computed from a partial list.
+ */
+export function distinctHolders(res: { data?: unknown; count?: number | null }): number | null {
+  const rows = Array.isArray(res.data) ? (res.data as { wallet_address?: string | null }[]) : []
+  const total = Number(res.count ?? rows.length)
+  if (total > rows.length) return null
+  return new Set(rows.map((r) => r.wallet_address).filter((w): w is string => !!w)).size
+}
+
 export type RenderData = {
   kind: "render"
   ed: CatalogRow
@@ -150,6 +162,12 @@ export type RenderData = {
    * the page prints null as an em-dash.
    */
   holders: number | null
+  /**
+   * Copies of this pin in the wallet cache (rows). `holders` is DISTINCT
+   * wallets — before 2026-09-28 the card showed this row count as "holders"
+   * (41,262 cached copies across 14,584 wallet+pin pairs). null = read failed.
+   */
+  copies: number | null
   variant_avg_mint: number | null
   scarcity_pct: number | null
   siblings: SiblingRow[]
@@ -355,11 +373,15 @@ export async function load(
       .eq("render_id", renderId)
       .order("sold_at", { ascending: false, nullsFirst: false })
       .limit(25),
+    // Wallet per cached copy (max 159 copies of one pin, measured 09-28), so
+    // distinct holders are counted here; the exact count says whether the
+    // page is complete.
     supa
       .from("wallet_moments_cache")
-      .select("moment_id", { count: "exact", head: true })
+      .select("wallet_address", { count: "exact" })
       .eq("collection_id", PINNACLE_COLLECTION_ID)
-      .eq("render_id", renderId),
+      .eq("render_id", renderId)
+      .limit(1000),
     supa
       .from("pinnacle_scarcity_board")
       .select("variant_avg_mint, scarcity_vs_variant_pct")
@@ -449,7 +471,8 @@ export async function load(
       // answer. The other five reads in the Promise.all degrade to an omitted
       // section or an em-dash, which understates — the safe direction — so this
       // is the one that needed a flag.
-      holders: holdersRes.error ? null : Number(holdersRes.count ?? 0),
+      holders: holdersRes.error ? null : distinctHolders(holdersRes),
+      copies: holdersRes.error ? null : Number(holdersRes.count ?? 0),
       variant_avg_mint: boardRes.data?.variant_avg_mint != null ? Number(boardRes.data.variant_avg_mint) : null,
       scarcity_pct: boardRes.data?.scarcity_vs_variant_pct != null ? Number(boardRes.data.scarcity_vs_variant_pct) : null,
       siblings,

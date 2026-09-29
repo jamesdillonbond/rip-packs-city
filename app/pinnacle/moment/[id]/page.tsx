@@ -154,7 +154,7 @@ export default async function PinnacleMomentPage({
 
   if (data.kind === "legacy") return <PinnacleShell><LegacyDisambiguation data={data} /></PinnacleShell>
 
-  const { ed, sales, holders, variant_avg_mint, scarcity_pct, siblings, fmvHistory, nameByAddr, serialLadder } = data
+  const { ed, sales, holders, copies, variant_avg_mint, scarcity_pct, siblings, fmvHistory, nameByAddr, serialLadder } = data
   const franchise = ed.franchises && ed.franchises.length > 0 ? ed.franchises[0] : null
   // set_name often already embeds the studio/franchise (e.g. "Walt Disney
   // Animation Studios • Disney Genesis"), so joining set · franchise · series
@@ -310,7 +310,7 @@ export default async function PinnacleMomentPage({
         <div className="rpc-pm-card">
           <div className="rpc-pm-card-label">Tracked holders</div>
           <div className="rpc-pm-card-val">{fmtInt(holders)}</div>
-          <div className="rpc-pm-card-sub">in RPC wallet cache</div>
+          <div className="rpc-pm-card-sub">{copies != null && copies !== holders ? `wallets · ${fmtInt(copies)} copies in RPC wallet cache` : "wallets in RPC wallet cache"}</div>
         </div>
       </section>
 

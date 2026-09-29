@@ -26,6 +26,7 @@ import type { SeasonStatsResult } from "@/lib/player-page-season-stats"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { editionRouteHref } from "@/lib/entity-href"
 import { fetchPaniniPlayerSales, type PaniniPlayerSale } from "@/lib/panini/player-sales"
+import { saleSerialLabel } from "@/lib/entity/sale-serial-label"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -101,6 +102,8 @@ interface PlayerTopSale {
   thumbnail_url: string | null
   price_usd: number | null
   serial_number: number | null
+  /** Pinnacle: false = an edition with no serials (Open / Starter); absent elsewhere. */
+  serial_numbered?: boolean | null
   sold_at: string | null
   marketplace: string | null
   nft_id: string | null
@@ -218,8 +221,8 @@ async function TopSalesRows({ collection, collectionId, slug }: { collection: st
                     <span style={{ flexShrink: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)" }}>{fmtUsd(s.price_usd)}</span>
                   </div>
                   <div className="rpc-mono" style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.04em" }}>
-                    <span style={{ color: s.serial_number != null && s.serial_number > 0 ? "var(--rpc-text-secondary)" : "var(--rpc-text-muted)" }}>
-                      {s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "serial unresolved"}
+                    <span style={{ color: saleSerialLabel(s).resolved ? "var(--rpc-text-secondary)" : "var(--rpc-text-muted)" }}>
+                      {saleSerialLabel(s).text}
                     </span>
                     <span>{relTime(s.sold_at)}</span>
                     {buyer && <span title={s.buyer_address ?? undefined}>buyer <span style={{ color: "var(--rpc-text-secondary)" }}>{buyer}</span></span>}

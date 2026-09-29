@@ -230,10 +230,52 @@ async function drainRender(
     for (const r of (data ?? []) as Array<{ id: string }>) existing.add(r.id)
   }
 
+  // ⛔ The id pre-read is NOT enough (2026-09-28 page audit, #22): the studio
+  // feed's transaction hash and block time are not the on-chain sale's, so a
+  // sale the on-chain indexers already hold arrived under a DIFFERENT id —
+  // 25,802 twins (same nft, price and buyer; median 0.34 h apart), counting
+  // $617k of volume twice. A candidate whose nft already has a non-studio sale
+  // at the same price within ±2 days is that sale again: a dupe, not a row.
+  const remainingNfts = Array.from(new Set(
+    Array.from(candidates.values())
+      .filter((r) => !existing.has(r.id))
+      .map((r) => r.nft_id)
+      .filter((n): n is string => n != null),
+  ))
+  const twinsByNft = new Map<string, Array<{ price: number; ms: number }>>()
+  for (let i = 0; i < remainingNfts.length; i += READ_CHUNK) {
+    const chunk = remainingNfts.slice(i, i + READ_CHUNK)
+    const { data, error } = await supabaseAdmin
+      .from("pinnacle_sales")
+      .select("nft_id, sale_price_usd, sold_at")
+      .in("nft_id", chunk)
+      .neq("source", SOURCE_TAG)
+    if (error) {
+      return { status: attempts + 1 >= MAX_ATTEMPTS ? "error" : "pending", studioTotal, found, inserted: 0, dupes: 0, pages, error: `twin_read: ${error.message.slice(0, 160)}` }
+    }
+    for (const r of (data ?? []) as Array<{ nft_id: string | number; sale_price_usd: number | string | null; sold_at: string | null }>) {
+      const ms = r.sold_at ? Date.parse(r.sold_at) : NaN
+      const price = Number(r.sale_price_usd)
+      if (!Number.isFinite(ms) || !Number.isFinite(price)) continue
+      const k = String(r.nft_id)
+      const list = twinsByNft.get(k) ?? []
+      list.push({ price, ms })
+      twinsByNft.set(k, list)
+    }
+  }
+  const TWIN_WINDOW_MS = 2 * 86_400_000
+  const hasTwin = (row: PinSaleRow): boolean => {
+    const ms = Date.parse(row.sold_at)
+    if (row.nft_id == null) return false
+    return (twinsByNft.get(row.nft_id) ?? []).some(
+      (t) => Math.abs(t.price - row.sale_price_usd) < 1e-9 && Math.abs(t.ms - ms) <= TWIN_WINDOW_MS,
+    )
+  }
+
   const toInsert: PinSaleRow[] = []
   let dupes = 0
   for (const row of candidates.values()) {
-    if (existing.has(row.id)) dupes++
+    if (existing.has(row.id) || hasTwin(row)) dupes++
     else toInsert.push(row)
   }
   if (toInsert.length === 0) {

@@ -13,6 +13,8 @@
 --   3. Another franchise's sales never appear; an unknown slug is [].
 --
 -- The function DDL below is VERBATIM from the committed migration
+-- (get_team_activity / get_team_checklist / get_team_top_editions / get_series_editions:
+-- supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql; the rest:)
 -- (supabase/migrations/20260926213521_audit_20260926_pinnacle_franchise_pages_show_sets_and_recent_sales.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -22,7 +24,7 @@ BEGIN;
 
 CREATE TABLE public.pinnacle_catalog (
   render_id text PRIMARY KEY, franchises text[], characters text[], set_name text,
-  variant text, thumbnail_url text, fmv_usd numeric, floor_ask numeric);
+  variant text, thumbnail_url text, fmv_usd numeric, floor_ask numeric, character_name text);
 CREATE TABLE public.wallet_moments_cache (
   wallet_address text, collection_id uuid, edition_key text, render_id text);
 CREATE TABLE public.pinnacle_sales (
@@ -185,6 +187,7 @@ BEGIN
         SELECT
           pc.render_id                        AS route_slug,
           btrim(pc.characters[1])             AS player_name,
+          btrim(pc.character_name)            AS pin_name,
           btrim(pc.set_name)                  AS set_name,
           v_variants[1]                       AS team_name,
           NULL::text                          AS play_type,
@@ -343,6 +346,10 @@ SELECT _assert_eq((SELECT string_agg(x->>'route_slug', ',') FROM jsonb_array_ele
   'r3', 'offset/limit apply');
 SELECT _assert_eq((public.get_team_activity(:pin::uuid, 'star-wars', 30, 0) -> 0 ->> 'team_name'), 'Star Wars', 'team_name without ™');
 SELECT _assert_eq((public.get_team_activity(:pin::uuid, 'star-wars', 30, 0) -> 0 ->> 'player_name'), 'Leia', 'player_name = the pin''s character');
+-- #23 (2026-09-28): the tile TITLE is the pin's own name, never its first character.
+UPDATE public.pinnacle_catalog SET character_name = 'Rebel Salute' WHERE render_id = 'r2';
+SELECT _assert_eq((SELECT x->>'pin_name' FROM jsonb_array_elements(public.get_team_activity(:pin::uuid, 'star-wars', 30, 0)) x WHERE x->>'route_slug' = 'r2'), 'Rebel Salute', 'pin_name = the pin''s own name');
+SELECT _assert_eq((SELECT x->>'player_name' FROM jsonb_array_elements(public.get_team_activity(:pin::uuid, 'star-wars', 30, 0)) x WHERE x->>'route_slug' = 'r2'), 'Leia', 'player_name stays the character (the link)');
 SELECT _assert_eq(public.get_team_activity(:pin::uuid, 'no-such', 30, 0)::text, '[]', 'unknown franchise -> []');
 
 -- the wide lane on real rows: 700 extra Star Wars pins push pins x window past 2000

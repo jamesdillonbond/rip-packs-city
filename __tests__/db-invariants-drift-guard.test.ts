@@ -91,7 +91,7 @@ const PINS = [
     fn: "get_team_activity",
     test: "supabase/tests/get_team_sets.sql",
     migration:
-      "supabase/migrations/20260926213521_audit_20260926_pinnacle_franchise_pages_show_sets_and_recent_sales.sql",
+      "supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql",
   },
   {
     // Added 2026-09-26. A Pinnacle character page's Top sales matched
@@ -101,7 +101,7 @@ const PINS = [
     fn: "get_player_top_sales",
     test: "supabase/tests/get_player_top_sales.sql",
     migration:
-      "supabase/migrations/20260926211939_audit_20260926_pinnacle_character_top_sales_read_the_pins.sql",
+      "supabase/migrations/20260929060006_audit_20260928_pinnacle_top_sales_say_which_pins_are_numbered.sql",
   },
   {
     // Added 2026-09-26. The Pinnacle franchise checklist joined wallet holdings on
@@ -112,7 +112,7 @@ const PINS = [
     fn: "get_team_checklist",
     test: "supabase/tests/get_team_checklist.sql",
     migration:
-      "supabase/migrations/20260926211121_audit_20260926_pinnacle_franchise_checklist_sees_what_a_wallet_holds.sql",
+      "supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql",
   },
   {
     fn: "get_team_checklist_progress",
@@ -130,7 +130,7 @@ const PINS = [
     fn: "get_team_top_editions",
     test: "supabase/tests/get_team_top_editions.sql",
     migration:
-      "supabase/migrations/20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql",
+      "supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql",
   },
   {
     fn: "get_team_players",
@@ -146,7 +146,7 @@ const PINS = [
     fn: "get_series_editions",
     test: "supabase/tests/get_series_editions.sql",
     migration:
-      "supabase/migrations/20260926193906_audit_20260926_pinnacle_series_pages_count_every_pin.sql",
+      "supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql",
   },
   {
     fn: "get_series_rollups",

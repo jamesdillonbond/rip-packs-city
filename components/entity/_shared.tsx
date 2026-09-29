@@ -30,12 +30,17 @@ export const RECENT_LOW_HINT = "Lowest recent sale or ask — not a live floor"
 // no "use client") so both server components (TeamActivity/TeamSqueeze/
 // PopularOnCollection) and client components (the grids) can call it. Loose
 // structural param so any row shape with these fields works.
+// Disney Pinnacle: a pin is titled by its OWN name (`pin_name`, the catalog's
+// character_name). Its player_name is only the pin's FIRST character — the
+// link target — so "Spindle of Fate" read "Aurora" before #23 (2026-09-28).
 export function tileSubject(e: {
+  pin_name?: string | null
   player_name?: string | null
   team_name?: string | null
   play_type?: string | null
   name?: string | null
 }): string {
+  if (e.pin_name && e.pin_name.trim()) return e.pin_name
   if (e.player_name && e.player_name.trim()) return e.player_name
   if (e.team_name && e.team_name.trim()) {
     const play = e.play_type && e.play_type.trim() && e.play_type !== "Unknown" ? ` ${e.play_type}` : ""

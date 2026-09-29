@@ -269,7 +269,9 @@ export default function CollectionOverviewClient({ collection }: { collection: s
   // listing-gated coverage disclosure.
   const isPanini = collection === "panini-blockchain"
   const salesUntracked = stats?.sales_tracked === false
-  const freshness = freshnessFromAge(fmvAge, showLoading, frozenMarket, saleDrivenFmv ? "sale-driven" : "continuous")
+  // Disney Pinnacle's FMV recomputes once a day — a daily cadence, not a fault.
+  const dailyFmv = collection === "disney-pinnacle"
+  const freshness = freshnessFromAge(fmvAge, showLoading, frozenMarket, saleDrivenFmv ? "sale-driven" : dailyFmv ? "daily" : "continuous")
 
   // ── Failed read vs empty result (deep-audit R1) ──────────────────────────
   // The KPI band above already distinguishes these correctly (D11), but the

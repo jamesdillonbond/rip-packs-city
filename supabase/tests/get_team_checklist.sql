@@ -14,6 +14,8 @@
 --      its ownership now matches the legacy key the wallet holds.
 --
 -- The function DDL below is VERBATIM from the committed migration
+-- (get_team_activity / get_team_checklist / get_team_top_editions / get_series_editions:
+-- supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql; the rest:)
 -- (supabase/migrations/20260926211121_audit_20260926_pinnacle_franchise_checklist_sees_what_a_wallet_holds.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -84,6 +86,7 @@ BEGIN
         SELECT
           pc.render_id                                        AS route_slug,
           btrim(pc.characters[1])                             AS player_name,
+          btrim(pc.character_name)                            AS pin_name,
           btrim(pc.character_name) || ' (' || pc.variant || ')' AS name,
           btrim(pc.set_name)                                  AS set_name,
           regexp_replace(lower(btrim(pc.set_name)), '[^a-z0-9]+', '-', 'g') AS set_slug,
@@ -106,7 +109,7 @@ BEGIN
       ),
       ed AS (
         SELECT
-          s.route_slug, s.player_name, s.name, s.set_name, s.set_slug, s.tier, s.tier_rank,
+          s.route_slug, s.player_name, s.pin_name, s.name, s.set_name, s.set_slug, s.tier, s.tier_rank,
           s.series_label, s.series_num, s.circulation_count, s.thumbnail_url, s.team_name,
           s.fmv_usd, s.floor_usd, s.fmv_confidence, s.fmv_computed_at,
           CASE WHEN p_wallet IS NULL THEN NULL ELSE COALESCE(ok.cnt, 0) > 0 END AS owned,
@@ -566,6 +569,10 @@ SELECT _assert_eq((SELECT string_agg(x->>'route_slug', ',') FROM jsonb_array_ele
   'r3', 'series_<year> scopes to the pin''s own series');
 
 -- ── 3. progress over the same pins ────────────────────────────────────────────
+-- #23 (2026-09-28): the tile TITLE is the pin's own name, never its first character.
+UPDATE public.pinnacle_catalog SET character_name = 'Rebel Salute' WHERE render_id = 'r2';
+SELECT _assert_eq((SELECT x->>'pin_name' || '|' || (x->>'player_name') FROM jsonb_array_elements(public.get_team_checklist(:pin::uuid, 'star-wars', 'all_time', :w, 60, 0)) x WHERE x->>'route_slug' = 'r2'),
+  'Rebel Salute|Leia', 'pin_name = the pin''s own name; player_name stays the character');
 SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'total'), '3', 'progress total = the checklist''s pins');
 SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'owned'), '1', 'owned = pins held (r1), not keys');
 SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'locked_owned'), '1', 'r1 has a locked copy');

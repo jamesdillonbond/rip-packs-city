@@ -215,6 +215,26 @@ describe("load — the six tail reads", () => {
     expect((await load(RENDER, db)).data).toMatchObject({ holders: 0 })
   })
 
+  it("⛔ holders counts DISTINCT wallets, not cached copies (page audit 2026-09-28)", async () => {
+    // One wallet holding two copies was two "holders": across the cache that
+    // read 41,262 copies as holders for 14,584 wallet+pin pairs.
+    const { db } = makeDb({
+      pinnacle_catalog: { data: CATALOG_ROW },
+      ...quietTail(),
+      wallet_moments_cache: { data: [{ wallet_address: "0xa" }, { wallet_address: "0xa" }, { wallet_address: "0xb" }], count: 3 },
+    })
+    expect((await load(RENDER, db)).data).toMatchObject({ holders: 2, copies: 3 })
+  })
+
+  it("a PARTIAL page of copies yields holders=null, never a distinct count of the part", async () => {
+    const { db } = makeDb({
+      pinnacle_catalog: { data: CATALOG_ROW },
+      ...quietTail(),
+      wallet_moments_cache: { data: [{ wallet_address: "0xa" }], count: 1500 },
+    })
+    expect((await load(RENDER, db)).data).toMatchObject({ holders: null, copies: 1500 })
+  })
+
   it("a failed sales / history / scarcity read degrades rather than 404ing", async () => {
     // These five are DECORATION relative to the pin's identity: the page omits
     // the section or renders an em-dash, which understates — the safe

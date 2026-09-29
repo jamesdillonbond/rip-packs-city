@@ -68,4 +68,12 @@ describe("TeamActivity", () => {
     expect(queryByText("Biggest recent sales")).toBeNull()
     expect(queryByText("Recent sales")).toBeTruthy()
   })
+
+  it("⛔ a Pinnacle sale row is titled by the pin, never its first character (#23)", () => {
+    const { container } = render(
+      <TeamActivity collectionUrlSlug="disney-pinnacle" rows={[row({ route_slug: "LEV1-SLBT-SPIN-S6", pin_name: "Spindle of Fate", player_name: "Aurora" })]} />,
+    )
+    expect(container.textContent).toContain("Spindle of Fate")
+    expect(container.textContent).not.toContain("Aurora")
+  })
 })

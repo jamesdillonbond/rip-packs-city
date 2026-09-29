@@ -14,6 +14,8 @@
 --      pinnacle_editions read; an unknown slug is [].
 --
 -- The function DDL below is VERBATIM from the committed migration
+-- (get_team_activity / get_team_checklist / get_team_top_editions / get_series_editions:
+-- supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql; the rest:)
 -- (supabase/migrations/20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -67,6 +69,7 @@ BEGIN
         SELECT
           pc.render_id                                        AS route_slug,
           btrim(pc.characters[1])                             AS player_name,
+          btrim(pc.character_name)                            AS pin_name,
           btrim(pc.character_name) || ' (' || pc.variant || ')' AS name,
           btrim(pc.set_name)                                  AS set_name,
           regexp_replace(lower(btrim(pc.set_name)), '[^a-z0-9]+', '-', 'g') AS set_slug,
@@ -373,6 +376,9 @@ SELECT _assert_eq((SELECT string_agg(x->>'route_slug', ',') FROM jsonb_array_ele
   'r5,r1,r2,r4', 'grid is FMV-ordered, unpriced last, routes by render_id');
 SELECT _assert_eq((public.get_team_top_editions(:pin::uuid, 'star-wars', 50, 0) -> 1 ->> 'set_slug'), 'set-a', 'set slug from the trimmed set name');
 SELECT _assert_eq((public.get_team_top_editions(:pin::uuid, 'star-wars', 50, 0) -> 1 ->> 'team_name'), 'Star Wars', 'team_name carries no ™');
+-- #23 (2026-09-28): the tile TITLE is the pin's own name, never its first character.
+SELECT _assert_eq((SELECT x->>'pin_name' || '|' || (x->>'player_name') FROM jsonb_array_elements(public.get_team_top_editions(:pin::uuid, 'star-wars', 50, 0)) x WHERE x->>'route_slug' = 'r2'),
+  'Luke Skywalker & Leia|Luke Skywalker', 'pin_name = the pin''s own name; player_name stays the first character (the link)');
 SELECT _assert_eq(jsonb_array_length(public.get_team_top_editions(:pin::uuid, 'star-wars', 2, 0))::text, '2', 'limit applies');
 SELECT _assert_eq(jsonb_array_length(public.get_team_top_editions(:pin::uuid, 'lucasfilm', 50, 0))::text, '1', 'a pin lists under every franchise it names');
 SELECT _assert_eq((public.get_team_top_editions(:pin::uuid, 'moana', 50, 0) -> 0 ->> 'route_slug'), 'r3', 'a catalog-only franchise lists its pins');

@@ -200,6 +200,7 @@ describe("pinnacle-studio-sales-history-backfill — drain loop", () => {
       ],
       pinnacle_sales: [
         { data: [], error: null }, // existing-id pre-read
+        { data: [], error: null }, // twin read (no on-chain twin)
         { data: null, error: null }, // insert ok
       ],
     })
@@ -320,6 +321,7 @@ describe("pinnacle-studio-sales-history-backfill — drain loop", () => {
       ],
       pinnacle_sales: [
         { data: [{ id: "0xa_111" }], error: null }, // pre-read: 0xa already ingested
+        { data: [], error: null }, // twin read: 222 has no on-chain twin
         { error: { code: "23505", message: "duplicate key value" } }, // chunk insert races
         { error: { code: "23505", message: "duplicate key value" } }, // row insert raced too
       ],
@@ -331,6 +333,63 @@ describe("pinnacle-studio-sales-history-backfill — drain loop", () => {
     const log = terminalLog(spy.rpcCalls)
     expect(log).toMatchObject({ p_rows_found: 2, p_rows_written: 0, p_rows_skipped: 2 })
     expect(await res.json()).toMatchObject({ sales_inserted: 0, dupes_skipped: 2 })
+  })
+})
+
+describe("pinnacle-studio-sales-history-backfill — on-chain twins (#22)", () => {
+  it("⛔ a studio sale the on-chain feed already holds (same nft + price, ±2 days) is a dupe, never a second row", async () => {
+    fetchMock = installFetchMock([
+      studioStub([
+        histPage([
+          goodNode({ nft_id: "111", created_at: { block_time: "2025-06-01T00:00:00Z", transaction_hash: "0xa" } }),
+          goodNode({ nft_id: "222", created_at: { block_time: "2025-06-02T00:00:00Z", transaction_hash: "0xb" } }),
+          goodNode({ nft_id: "333", created_at: { block_time: "2025-06-02T00:00:00Z", transaction_hash: "0xc" } }),
+        ]),
+      ]),
+    ])
+    const spy = install({
+      [PROGRESS_TABLE]: [
+        { data: [target()], error: null },
+        { data: null, error: null },
+        { data: null, error: null, count: 0 } as never,
+      ],
+      pinnacle_sales: [
+        { data: [], error: null }, // no id overlap
+        {
+          data: [
+            { nft_id: "111", sale_price_usd: 2.5, sold_at: "2025-06-01T08:00:00Z" }, // twin: same price, 8 h later
+            { nft_id: "222", sale_price_usd: 9, sold_at: "2025-06-02T00:00:00Z" }, // same nft, DIFFERENT price
+            { nft_id: "333", sale_price_usd: 2.5, sold_at: "2025-06-10T00:00:00Z" }, // same price, 8 days apart
+          ],
+          error: null,
+        },
+        { data: null, error: null }, // insert ok
+      ],
+    })
+
+    const res = await POST(req())
+    const rows = (spy.writes.pinnacle_sales ?? []).flatMap((w) => w.rows)
+    expect(rows.map((r) => (r as { id: string }).id).sort()).toEqual(["0xb_222", "0xc_333"])
+    expect(await res.json()).toMatchObject({ sales_inserted: 2, dupes_skipped: 1 })
+  })
+
+  it("a failed twin read inserts NOTHING and stays retryable", async () => {
+    fetchMock = installFetchMock([studioStub([histPage([goodNode()])])])
+    const spy = install({
+      [PROGRESS_TABLE]: [
+        { data: [target()], error: null },
+        { data: null, error: null },
+        { data: null, error: null, count: 1 } as never,
+      ],
+      pinnacle_sales: [
+        { data: [], error: null },
+        { data: null, error: { message: "canceling statement due to statement timeout" } },
+      ],
+    })
+    await POST(req())
+    expect((spy.writes.pinnacle_sales ?? []).flatMap((w) => w.rows)).toHaveLength(0)
+    const upd = (spy.writes[PROGRESS_TABLE] ?? []).flatMap((w) => w.rows)
+    expect(upd[0]).toMatchObject({ status: "pending" })
   })
 })
 

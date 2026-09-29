@@ -36,6 +36,8 @@ import { editionRouteHref } from "@/lib/entity-href"
 export interface EditionTile {
   route_slug: string
   player_name: string | null
+  /** Pinnacle only: the pin's own name — the tile title (tileSubject). */
+  pin_name?: string | null
   player_slug?: string | null
   name: string | null
   set_name?: string | null

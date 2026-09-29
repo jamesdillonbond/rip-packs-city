@@ -72,6 +72,11 @@ describe("_shared formatters", () => {
     expect(tileSubject({})).toBe("Edition")
   })
 
+  it("⛔ tileSubject titles a Pinnacle pin by its own name, never its first character (#23)", () => {
+    expect(tileSubject({ pin_name: "Spindle of Fate", player_name: "Aurora", name: "Spindle of Fate (Standard)" })).toBe("Spindle of Fate")
+    expect(tileSubject({ pin_name: "  ", player_name: "Aurora" })).toBe("Aurora")
+  })
+
   it("marketplaceLabel canonicalises the collection vocabularies", () => {
     expect(marketplaceLabel("nba_top_shot")).toBe("Top Shot")
     expect(marketplaceLabel("allday")).toBe("All Day")

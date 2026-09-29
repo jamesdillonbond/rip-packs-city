@@ -1,39 +1,12 @@
--- DB invariant: public.get_player_top_sales — the Pinnacle branch (a
--- character page's "Top sales"). Added 2026-09-26: it matched
--- pinnacle_editions.character_name (one character per set-level key), so a
--- character the catalog names but no legacy row does read "No recorded sales
--- yet" over real sales. Claims:
---
---   1. Sales of EVERY pin whose Characters trait names the character (a duo pin
---      counts for both), highest price first, routed to the pin (render_id),
---      edition_name = the pin's name.
---   2. A duo character ("Maurice & Cogsworth") matches its joined pin.
---   3. p_limit caps the list; other characters' sales never appear.
---   4. A character the catalog does not name falls through to the legacy read;
---      an unknown slug is [].
---
--- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929060006_audit_20260928_pinnacle_top_sales_say_which_pins_are_numbered.sql; was:)
--- (supabase/migrations/20260926211939_audit_20260926_pinnacle_character_top_sales_read_the_pins.sql).
--- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
---
--- Runs inside a rolled-back transaction so it leaves no residue.
+-- 2026-09-28 page audit: a Pinnacle character page's top sales printed
+-- "serial unresolved" on every Open / Open Event / Starter Edition sale. Those
+-- pins carry NO serial by design: in 60 days 14,012 of 16,473 sales were of
+-- non-limited pins, 0 with a serial, while 2,459 of 2,461 limited sales have
+-- one. The Pinnacle catalog branch now returns serial_numbered
+-- (pinnacle_catalog.limited_edition) so the page can tell "unnumbered" from
+-- "not yet resolved". Additive jsonb key; other branches untouched.
 
-BEGIN;
-
-CREATE SCHEMA IF NOT EXISTS extensions;
-CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA extensions;
-CREATE TABLE public.players (id serial PRIMARY KEY, collection_id uuid, name text);
-CREATE TABLE public.pinnacle_catalog (
-  render_id text PRIMARY KEY, characters text[], character_name text, set_name text,
-  variant text, thumbnail_url text, limited_edition boolean);
-CREATE TABLE public.pinnacle_sales (
-  id bigserial PRIMARY KEY, render_id text, edition_id text, serial_number int,
-  sale_price_usd numeric, source text, buyer_address text, seller_address text,
-  nft_id bigint, sold_at timestamptz);
-CREATE TABLE public.pinnacle_editions (
-  id text PRIMARY KEY, character_name text, set_name text, variant_type text, thumbnail_url text);
-
+-- anon-exec: unchanged (get_player_top_sales) — CREATE OR REPLACE of an existing fn; ACL preserved, verified has_function_privilege anon=false.
 CREATE OR REPLACE FUNCTION public.get_player_top_sales(p_collection_id uuid, p_player_slug text, p_limit integer DEFAULT 10)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -198,54 +171,3 @@ BEGIN
   RETURN result;
 END;
 $function$;
-
-\set pin '''7dd9dd11-e8b6-45c4-ac99-71331f959714'''
-
-INSERT INTO public.players (collection_id, name) VALUES
-  (:pin::uuid, 'Luke Skywalker'), (:pin::uuid, 'Leia'), (:pin::uuid, 'Han Solo'),
-  (:pin::uuid, 'Maurice & Cogsworth'), (:pin::uuid, 'Iron Man');
-INSERT INTO public.pinnacle_catalog (render_id, characters, character_name, set_name, variant, thumbnail_url) VALUES
-  ('r1', ARRAY['Luke Skywalker'],          'Luke Skywalker',          ' Set A ', 'Standard', '/img/r1'),
-  ('r2', ARRAY['Luke Skywalker', 'Leia'],  'Luke Skywalker & Leia',   'Set A',   'Golden',   '/img/r2'),
-  ('r3', ARRAY['Han Solo'],                'Han Solo',                'Set B',   'Standard', '/img/r3'),
-  ('r4', ARRAY['Maurice', 'Cogsworth'],    'Maurice & Cogsworth',     'Set C',   'Standard', '/img/r4');
-INSERT INTO public.pinnacle_sales (render_id, edition_id, serial_number, sale_price_usd, sold_at) VALUES
-  ('r1', 'K1', 1, 10, now() - interval '3 days'),
-  ('r1', 'K1', 2, 50, now() - interval '2 days'),
-  ('r2', 'K1', 3, 30, now() - interval '1 day'),
-  ('r3', 'K2', 4, 99, now()),
-  ('r4', 'K3', 5, 7,  now());
--- Iron Man exists ONLY in pinnacle_editions (the legacy fallback).
-INSERT INTO public.pinnacle_editions (id, character_name, set_name, variant_type, thumbnail_url) VALUES
-  ('MRV:Standard:1', 'Iron Man', 'Marvel Set', 'Standard', '/img/m1');
-INSERT INTO public.pinnacle_sales (render_id, edition_id, serial_number, sale_price_usd, sold_at) VALUES
-  (NULL, 'MRV:Standard:1', 9, 12, now());
-
--- ── 1. every pin naming the character, price-ordered, routed to the pin ──────
-SELECT _assert_eq((SELECT string_agg((x->>'price_usd') || '@' || (x->>'route_slug'), ',') FROM jsonb_array_elements(public.get_player_top_sales(:pin::uuid, 'luke-skywalker', 10)) x),
-  '50@r1,30@r2,10@r1', 'Luke: his solo pin and the duo pin, highest first; Han''s 99 never appears');
-SELECT _assert_eq((SELECT string_agg((x->>'price_usd') || '@' || (x->>'route_slug'), ',') FROM jsonb_array_elements(public.get_player_top_sales(:pin::uuid, 'leia', 10)) x),
-  '30@r2', 'Leia: the duo pin, where she is the SECOND name (no legacy row names her)');
-SELECT _assert_eq((public.get_player_top_sales(:pin::uuid, 'luke-skywalker', 10) -> 1 ->> 'edition_name'), 'Luke Skywalker & Leia (Golden)', 'edition_name = the pin''s name');
-SELECT _assert_eq((public.get_player_top_sales(:pin::uuid, 'luke-skywalker', 10) -> 0 ->> 'set_name'), 'Set A', 'set name trimmed');
-
--- ── 2. duo character ──────────────────────────────────────────────────────────
-SELECT _assert_eq((public.get_player_top_sales(:pin::uuid, 'maurice-cogsworth', 10) -> 0 ->> 'route_slug'), 'r4', 'a duo character matches its joined pin');
-
--- ── 3. limit ─────────────────────────────────────────────────────────────────
-SELECT _assert_eq(jsonb_array_length(public.get_player_top_sales(:pin::uuid, 'luke-skywalker', 2))::text, '2', 'p_limit caps the list');
-
--- ── 4. fallback + unknown ────────────────────────────────────────────────────
-SELECT _assert_eq((public.get_player_top_sales(:pin::uuid, 'iron-man', 10) -> 0 ->> 'route_slug'), 'MRV:Standard:1', 'a character the catalog does not name falls through to the legacy read');
-SELECT _assert_eq(public.get_player_top_sales(:pin::uuid, 'no-such-character', 10)::text, '[]', 'unknown slug -> []');
-
--- 2026-09-28: serial_numbered = the pin's limited_edition, so an Open Edition
--- sale is "unnumbered", never "serial unresolved"; unknown stays null.
-UPDATE public.pinnacle_catalog SET limited_edition = (render_id = 'r1') WHERE render_id IN ('r1', 'r2');
-SELECT _assert_eq((SELECT string_agg(DISTINCT (x->>'route_slug') || ':' || COALESCE(x->>'serial_numbered', 'null'), ',') FROM jsonb_array_elements(public.get_player_top_sales(:pin::uuid, 'luke-skywalker', 10)) x),
-  'r1:true,r2:false', 'serial_numbered carries the pin''s limited_edition');
-SELECT _assert_eq((public.get_player_top_sales(:pin::uuid, 'han-solo', 10) -> 0 ->> 'serial_numbered'), NULL, 'unknown limited_edition stays null, never false');
-
-SELECT '✓ get_player_top_sales: all assertions passed' AS result;
-
-ROLLBACK;
