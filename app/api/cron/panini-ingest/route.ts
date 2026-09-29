@@ -60,6 +60,8 @@ const CHUNK = 500;
 // Sale writes are per-sku UPDATEs (no batch form exists for row-varying values), so they run a
 // few at a time — enough to keep the after() short, low enough not to crowd the pooler.
 const SALES_CONCURRENCY = 8;
+// One panini_sales_ingest call per this many raw sale records (one set-based statement each).
+const SALES_HISTORY_CHUNK = 2000;
 
 type RecentFmvRpc = {
   rpc: (fn: "panini_recent_sales_fmv", args: { p_edition_ids: string[] }) => Promise<{
@@ -352,6 +354,27 @@ export async function POST(req: NextRequest) {
         }));
         for (const n of applied) { if (n > 0) salesApplied += n; else if (n === 0) salesMissed++; }
       }
+      // sales -> panini_sales, EVERY record (2026-09-28, migration 20260929020655). The block above
+      // keeps only the newest sale per card; this keeps the history — the Top-20 and Recent-20 lists
+      // the runner reads per edition — deduplicated on (sku, sold_at). Records the runner tagged
+      // with the list they came from (`__list`, `__page_size`) also move each edition's coverage
+      // (panini_sales_reads.complete_since). Counts are what the RPC says it WROTE.
+      let salesHistNew = 0, salesHistRefreshed = 0, salesHistReads = 0, salesHistGaps = 0, salesHistValid = 0;
+      let salesHistError: string | null = null;
+      for (let i = 0; i < sales.length; i += SALES_HISTORY_CHUNK) {
+        const { data, error } = await (supabaseAdmin as any).rpc("panini_sales_ingest", { p_records: sales.slice(i, i + SALES_HISTORY_CHUNK) });
+        const d = (data ?? null) as Record<string, unknown> | null;
+        if (error || !d || typeof d.stored_new !== "number") {
+          salesHistError = salesHistError ?? (error?.message ?? "panini_sales_ingest returned no write count");
+          console.log(`[${PIPELINE}] sales history: ${salesHistError}`);
+          continue;
+        }
+        salesHistNew += Number(d.stored_new) || 0;
+        salesHistRefreshed += Number(d.refreshed) || 0;
+        salesHistReads += Number(d.recent_reads) || 0;
+        salesHistGaps += Number(d.gaps_now) || 0;
+        salesHistValid += Number(d.valid) || 0;
+      }
       // fmv snapshots (delete-then-insert per edition; daily history intentional).
       // R120: `fmv` used to report fmvRows.length — rows OFFERED, reported under a name that
       // reads as rows written — and NEITHER the delete nor the insert had its error read at all.
@@ -408,6 +431,7 @@ export async function POST(req: NextRequest) {
         packIdMapError ? `pack id map (a pack seen under a new page may have written a duplicate row): ${packIdMapError}` : null,
         productsError ? `products (gate fell back to ${PANINI_LEGACY_SET_ID} only): ${productsError}` : null,
         salesError ? `sales: ${salesError}` : null,
+        salesHistError ? `sales_history: ${salesHistError}` : null,
       ].filter(Boolean) as string[];
       await logRun(startedAtIso, found, written, writeErrors.length === 0, writeErrors.length ? writeErrors.join(" | ") : null, {
         editions: written, editions_error: editionsError,
@@ -421,6 +445,8 @@ export async function POST(req: NextRequest) {
         products_error: productsError, admitted_set_ids: [...admitted], skipped_by_set: skippedBySet,
         sales_seen: sales.length, sales_serials: latestSales.length, sales_applied: salesApplied,
         sales_missed: salesMissed, sales_errors: salesErrors, sales_error: salesError,
+        sales_history_valid: salesHistValid, sales_history_new: salesHistNew, sales_history_refreshed: salesHistRefreshed,
+        sales_history_recent_reads: salesHistReads, sales_history_gaps: salesHistGaps, sales_history_error: salesHistError,
       });
     } catch (e) {
       await logRun(startedAtIso, found, written, false, e instanceof Error ? e.message : String(e), {});

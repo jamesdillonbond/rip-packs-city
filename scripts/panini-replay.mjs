@@ -10,29 +10,53 @@
 // file it exists to recover. The runner now bounds the backup, but streaming is what makes this
 // script independent of that bound rather than merely lucky.
 //
+// ⚠ SALES-ONLY MODE (2026-09-28): PANINI_REPLAY_SALES_ONLY=1 posts ONLY each batch's `sales`
+// array and skips batches without one. Use it to BACKFILL panini_sales (every sale record is kept
+// since migration 20260929020655) from an old backup. ⛔ A full replay of an OLD backup re-posts
+// its serials and editions and overwrites today's asks, owners and listing state with stale ones —
+// full replay is for recovering a walk that FAILED TO POST, not for backfilling history. The
+// ingest dedupes sales on (sku, sold_at), so replaying the same file twice is harmless.
+//
 // ⚠ Replays the ROTATED generation first. The runner rotates BACKUP_FILE -> BACKUP_FILE + ".1"
 // when it hits its cap, so the batches you are trying to recover may well be in ".1" — reading
 // only the live file would silently skip them, which is the same failure this rewrite removes.
 import fs from "node:fs";
 import readline from "node:readline";
+import { pathToFileURL } from "node:url";
 const URL = process.env.RPC_PANINI_INGEST_URL;
 const TOKEN = process.env.INGEST_SECRET_TOKEN;
 const FILE = process.env.PANINI_BACKUP_FILE || "panini-capture.jsonl";
+const SALES_ONLY = process.env.PANINI_REPLAY_SALES_ONLY === "1";
+
+/** The body to POST for one backup line, or null to skip it. Exported for the test. */
+export function replayBody(line, salesOnly) {
+  if (!salesOnly) return line;
+  let j;
+  try { j = JSON.parse(line); } catch { return null; }
+  const sales = Array.isArray(j?.sales) ? j.sales : [];
+  return sales.length ? JSON.stringify({ sales }) : null;
+}
+if (import.meta.url === pathToFileURL(process.argv[1] || "").href) await main();
+
+async function main() {
 if (!URL || !TOKEN) throw new Error("missing RPC_PANINI_INGEST_URL / INGEST_SECRET_TOKEN");
 
 // Oldest first, so batches replay in capture order.
 const FILES = [FILE + ".1", FILE].filter((f) => fs.existsSync(f));
 if (!FILES.length) throw new Error(`no backup file: ${FILE} (nor ${FILE}.1)`);
 
-let ok = 0, fail = 0, n = 0;
+let ok = 0, fail = 0, n = 0, skipped = 0;
+if (SALES_ONLY) console.log("[panini-replay] SALES-ONLY: posting each batch's sales array; serials/editions/packs are not re-sent");
 for (const f of FILES) {
   const bytes = fs.statSync(f).size;
   console.log(`[panini-replay] streaming ${f} (${(bytes / 1024 / 1024).toFixed(1)} MB)`);
   const rl = readline.createInterface({ input: fs.createReadStream(f, "utf8"), crlfDelay: Infinity });
   for await (const line of rl) {
     if (!line.trim()) continue;
+    const body = replayBody(line, SALES_ONLY);
+    if (body == null) { skipped++; continue; }
     n++;
-    const r = await fetch(URL, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}` }, body: line });
+    const r = await fetch(URL, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}` }, body });
     if (r.status === 202) ok++;
     else {
       fail++;
@@ -41,5 +65,6 @@ for (const f of FILES) {
     if (n % 500 === 0) console.log(`[panini-replay] ${n} batches (${ok} accepted, ${fail} failed)`);
   }
 }
-console.log(`[panini-replay] done: ${n} batches, ${ok} accepted, ${fail} failed`);
+console.log(`[panini-replay] done: ${n} batches, ${ok} accepted, ${fail} failed${SALES_ONLY ? `, ${skipped} without sales skipped` : ""}`);
 if (fail) process.exit(1);
+}

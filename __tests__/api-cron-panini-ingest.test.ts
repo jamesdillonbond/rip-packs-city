@@ -33,6 +33,9 @@ const st = vi.hoisted(() => ({
   products: { data: [{ set_id: 2332, name: "2026 Panini NFT Prizm World Cup Soccer", walk_cards: true }] as unknown[] | null, error: null as null | { message: string } },
   registryUpserts: [] as { table: string; rows: any; opts: any }[],
   packRowsArgs: [] as unknown[][],
+  // 2026-09-28: panini_sales_ingest — every sale record into panini_sales.
+  salesHist: { data: { valid: 0, stored_new: 0, refreshed: 0, recent_reads: 0, gaps_now: 0 } as unknown, error: null as null | { message: string } },
+  salesHistCalls: [] as unknown[],
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -45,6 +48,7 @@ vi.mock("@/lib/supabase", () => ({
     // kept out of st.runs so every "st.runs[i] is a logRun" assertion below still holds.
     rpc: async (n: string, args: unknown) => {
       if (n === "panini_recent_sales_fmv") { st.recentCalls.push(args); return st.recent }
+      if (n === "panini_sales_ingest") { st.salesHistCalls.push(args); return st.salesHist }
       st.runs.push(args); return { data: null, error: null }
     },
     from(table: string) {
@@ -108,6 +112,7 @@ beforeEach(() => {
   st.fmvOps = []; st.fmvDelete = { data: null, error: null }
   st.products = { data: [{ set_id: 2332, name: "2026 Panini NFT Prizm World Cup Soccer", walk_cards: true }], error: null }
   st.registryUpserts = []; st.packRowsArgs = []
+  st.salesHist = { data: { valid: 0, stored_new: 0, refreshed: 0, recent_reads: 0, gaps_now: 0 }, error: null }; st.salesHistCalls = []
   delete process.env.PANINI_FMV_ENGINE
 })
 afterEach(() => { delete process.env.CRON_SECRET })
@@ -406,6 +411,34 @@ describe("panini-ingest — the after() walk", () => {
     expect(st.runs[0].p_extra.sales_missed).toBe(0)
     expect(st.runs[0].p_extra.sales_errors).toBe(1)
     expect(st.runs[0].p_extra.sales_error).toBe("sale err")
+  })
+
+  it("stores EVERY sale record in panini_sales (raw records, as received) and reports what the RPC wrote", async () => {
+    st.salesHist = { data: { valid: 2, stored_new: 1, refreshed: 1, recent_reads: 1, gaps_now: 0 }, error: null }
+    const recs = [{ sku: "a", amt: 10, at: "2026-08-02T10:08:02Z", __list: "recent" }, { sku: "a", amt: 12, at: "2026-08-01T10:08:02Z", __list: "top" }]
+    await accept({ sales: recs })
+    await st.captured!()
+    // The raw records go to the RPC — not the newest-per-card reduction.
+    expect(st.salesHistCalls).toEqual([{ p_records: recs }])
+    expect(st.runs[0].p_ok).toBe(true)
+    expect(st.runs[0].p_extra).toMatchObject({ sales_history_new: 1, sales_history_refreshed: 1, sales_history_recent_reads: 1, sales_history_error: null })
+  })
+
+  it("a failed sales-history write fails the run and says so", async () => {
+    st.salesHist = { data: null, error: { message: "hist boom" } }
+    await accept({ sales: [{ sku: "a", amt: 10, at: "2026-08-02T10:08:02Z" }] })
+    await st.captured!()
+    expect(st.runs[0].p_ok).toBe(false)
+    expect(st.runs[0].p_error).toContain("sales_history: hist boom")
+    expect(st.runs[0].p_extra.sales_history_new).toBe(0)
+  })
+
+  it("an RPC answer without a write count is a failure, not zero sales", async () => {
+    st.salesHist = { data: {}, error: null }
+    await accept({ sales: [{ sku: "a", amt: 10, at: "2026-08-02T10:08:02Z" }] })
+    await st.captured!()
+    expect(st.runs[0].p_ok).toBe(false)
+    expect(st.runs[0].p_extra.sales_history_error).toMatch(/no write count/)
   })
 
   it("counts a sales-only body as work (not an empty no-op) and echoes it in the 202", async () => {

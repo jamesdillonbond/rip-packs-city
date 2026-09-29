@@ -55,6 +55,7 @@ import readline from "node:readline";
 // Pure enumeration-progress helpers, extracted so the stop decision is unit-testable without a
 // browser (this file calls main() at import). See panini-enum-progress.mjs for the full why.
 import { enumProgress, stepStability, enumStopReason } from "./panini-enum-progress.mjs";
+import { tagSaleRecords } from "./panini-sales-list.mjs";
 
 const USER_DATA_DIR = process.env.PANINI_USER_DATA_DIR;
 const INGEST_URL = process.env.RPC_PANINI_INGEST_URL;
@@ -247,6 +248,10 @@ async function main() {
   const nationByPsku = {}; // psku -> country (only the grid list carries team; per-card API does not)
   let opCount = 0; const dataKeys = new Set();
   let salesRecords = 0, salesPages = 0, salesTabMissed = 0;
+  // Which list each sale record came from (2026-09-28): the ingest keeps every record in
+  // panini_sales, and only RECENT-list records move an edition's coverage. untagged > 0 means the
+  // request's list field was not recognised (scripts/panini-sales-list.mjs).
+  const salesByList = { top: 0, recent: 0, untagged: 0 };
   // Grid-enumeration progress (2026-08-15). Counts EVERY product the grid returns, not just the
   // WC-Prizm subset, because the stability heuristic below has to be able to tell "the grid is
   // exhausted" apart from "this stretch of the grid happens to be other soccer product". The
@@ -361,7 +366,11 @@ async function main() {
     const prods = d.getPskuTotalCardsList?.data?.products;
     if (Array.isArray(prods)) serials.push(...prods);
     const saleRecs = []; findSaleRecords(d, 0, saleRecs);
-    if (saleRecs.length) { sales.push(...saleRecs); salesRecords += saleRecs.length; }
+    if (saleRecs.length) {
+      const list = tagSaleRecords(saleRecs, resp.request().postData() || "");
+      salesByList[list ?? "untagged"] += saleRecs.length;
+      sales.push(...saleRecs); salesRecords += saleRecs.length;
+    }
     // Grid page accounting, read from the products op SPECIFICALLY (not findItems, which
     // recurses into every {items:[]} in any payload and would count menu/category noise as
     // enumeration progress). This is the denominator for the WC-share diagnostic below.
@@ -755,7 +764,7 @@ async function main() {
   // locator ladder never matched and the tab label needs re-reading — not a data finding.
   console.log(`[panini-runner] recent sales: opened=${recentPages} missed=${recentMissed}${SALES_RECENT ? "" : " (DISABLED via PANINI_SALES_RECENT=0)"}`);
   console.log(`[panini-runner] serial paging: cards_paged=${serialPagedCards} extra_pages=${serialExtraPages} stops=${JSON.stringify(serialStops)}${SERIAL_PAGES_MAX > 0 ? "" : " (DISABLED via PANINI_SERIAL_PAGES=0)"}`);
-  console.log(`[panini-runner] sales capture: tab_opened=${salesPages} tab_missed=${salesTabMissed} records=${salesRecords}${SALES_HISTORY ? "" : " (DISABLED via PANINI_SALES_HISTORY=0)"}`);
+  console.log(`[panini-runner] sales capture: tab_opened=${salesPages} tab_missed=${salesTabMissed} records=${salesRecords} top=${salesByList.top} recent=${salesByList.recent} untagged=${salesByList.untagged}${SALES_HISTORY ? "" : " (DISABLED via PANINI_SALES_HISTORY=0)"}`);
   await post({ cards, packs, serials, sales });
   if (CDP) { await browser.close().catch(() => {}); } // disconnects; leaves your Chrome open
   else { await ctx.close(); }
