@@ -100,6 +100,14 @@ you add, and reads as "my rule was dropped" when it shipped fine. That false
 alarm cost a whole extra commit. Grep the declaration; and if the chunk is
 byte-identical to the previous build, nothing shipped.
 
+⚠ **Third shape (2026-09-29): the served CSS lagged EXACTLY ONE DEPLOY.** Commit `222f65ceb` added a
+`globals.css` rule; its deployment served a stylesheet WITHOUT it (chunk `3k86bg84bb24t.css`). The next
+commit `5f3de6342` removed that rule and added another; ITS deployment served a stylesheet WITH the
+removed rule and without the new one (`41n7p-87no-qv.css`). Each build shipped the previous commit's CSS.
+So compare the served declarations with the COMMIT, and never conclude "it never shipped" from one
+deploy: here that conclusion was wrong one deploy later, when the removed rule went live on touch
+devices. The next code deploy caught up.
+
 Behaviour on prod is the real gate either way — `_to_delete/verify44.mjs` and
 `verify16.mjs` measure it.
 
