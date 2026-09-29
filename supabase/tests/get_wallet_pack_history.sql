@@ -54,9 +54,11 @@
 --      marketplace first (P70-P74). And the index's acquisition date is only
 --      this wallet's while the index names this wallet: on a sold pack it is
 --      the BUYER's (P75).
+--  10. (v16, same night) The wallet's OWN index date outranks the mint: some
+--      All Day drops are pre-minted days before they open (P76).
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929062300_audit_20260928_wallet_pack_history_dates_allday_primary_buys_by_mint.sql).
+-- (supabase/migrations/20260929065000_audit_20260928_wallet_pack_history_own_index_date_before_allday_mint.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -532,12 +534,16 @@ BEGIN
          AND wa.at IS NOT NULL
          AND abs(extract(epoch FROM m.minted_at - wa.at)) <= 2
     ) mt ON true
-    -- 2026-09-28 (v15): an All Day pack is minted ON PURCHASE, so its mint in
-    -- Dapper's index (pack_index_mints, 100/100 = the on-chain primary sale) is
-    -- when it was bought at the drop -- the acquisition, when no one else sold
-    -- it on the marketplace between the mint and this wallet's sale / open
-    -- (allday_pack_primary_minted_at). It dates a pack the wallet has SOLD,
-    -- which otherwise had only "no later than the sale".
+    -- 2026-09-28 (v15): an All Day pack's mint in Dapper's index
+    -- (pack_index_mints) dates a pack the wallet has SOLD, which otherwise had
+    -- only "no later than the sale" -- when no one else sold it on the
+    -- marketplace between the mint and this wallet's sale / open
+    -- (allday_pack_primary_minted_at). Mint-on-demand drops mint AT the
+    -- purchase (100/100 = the on-chain primary sale), but some drops are
+    -- PRE-MINTED days before they open, so the wallet's own index date wins
+    -- where we have one (v16): minted inside the window -> acquired inside it
+    -- on 4,868 of 4,913 saved-wallet packs (99.1%); 830 pre-minted packs were
+    -- acquired inside a window their mint precedes.
     LEFT JOIN LATERAL (
       SELECT public.allday_pack_primary_minted_at(r.pack_nft_id, v_wallet, LEAST(r.sold_at, r.ripped_at)) AS minted_at
        WHERE r.collection_id = v_ad AND NOT r.has_buy
@@ -548,7 +554,7 @@ BEGIN
               AND ((ds.drop_start IS NOT NULL
                     AND (r.collection_id = v_ts
                          OR (r.collection_id = v_ad AND ds.drop_start >= timestamptz '2022-12-16'))
-                    AND COALESCE(am.minted_at, wa.at, LEAST(r.sold_at, r.ripped_at))
+                    AND COALESCE(wa.at, am.minted_at, LEAST(r.sold_at, r.ripped_at))
                           BETWEEN ds.drop_start - interval '1 day' AND ds.drop_start + interval '30 days')
                    OR mt.minted_at IS NOT NULL), false) AS inferable
     ) inf
@@ -710,8 +716,9 @@ BEGIN
            'pack_gross_ev_usd', CASE WHEN pack_gross_ev_usd IS NULL THEN NULL ELSE ROUND(pack_gross_ev_usd::numeric, 2) END,
            -- v14: the mean current value of this drop's opened packs (>= 5 valued), and how many
            'pack_opened_avg_usd', pack_opened_avg_usd, 'pack_opened_n', pack_opened_n,
-           -- v15: an All Day pack's primary purchase instant (its mint in Dapper's
-           -- index, no marketplace sale by anyone else before this wallet's)
+           -- v15: an All Day pack's mint in Dapper's index, when no marketplace
+           -- sale by anyone else precedes this wallet's (mint-on-demand drops:
+           -- the purchase itself; a pre-minted drop: days before it opened)
            'primary_minted_at', primary_minted_at)
       ORDER BY latest_event_at DESC NULLS LAST, collection_id, pack_nft_id
     ), '[]'::jsonb)
@@ -730,7 +737,7 @@ BEGIN
     'coverage', jsonb_build_object(
       'onchain', 'pack_purchases: Top Shot + All Day, block-indexed from 2026-04; primary drops carry no price on chain',
       'opens', 'pack_rips (Top Shot, All Day) + golazos_pack_opens + pinnacle_pack_opens',
-      'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = for All Day the pack''s mint in Dapper''s index (primary_minted_at: minted on purchase) when no one else sold it on the marketplace before this wallet''s sale / open, else Dapper''s index date while the index names this wallet, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16, dates from Dapper''s distribution record), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack''s price is in tickets, not dollars: NULL. An All Day distribution Dapper types REWARD is $0 (reward); any other All Day price of 0 is unknown. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
+      'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = Dapper''s index date while the index names this wallet, else -- All Day -- the pack''s mint in Dapper''s index (primary_minted_at) when no one else sold it on the marketplace before this wallet''s sale / open, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16, dates from Dapper''s distribution record), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack''s price is in tickets, not dollars: NULL. An All Day distribution Dapper types REWARD is $0 (reward); any other All Day price of 0 is unknown. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
       'reconstructed', 'wallet_reconstructed_rips: Top Shot packs opened with NO pack NFT (custodial packs, 2021 on), rebuilt from the wallet''s pack-pull moment deliveries (a gap > 3 s starts a new reveal; 114 of 115 bursts overlapping a known pack matched its moment list exactly). rip_source = reconstructed; no distribution, no price paid; covers deliveries seeded into moment_acquisitions (through 2026-03)',
       'pulls', 'pack_open_pull_values: every pack this wallet opened, priced from the moments Dapper''s searchPackNft.nfts says it yielded (current FMV, whole-pack: NULL unless every moment is priced; pulls_priced / pulls_total say how close). Refreshed by the wallet-pack-pulls lane; pull_value_source = rip_record where only the rip row''s value is held',
       'marketplace', 'topshot_pack_sales_history / allday_pack_sales_history / golazos_pack_sales_history: Dapper marketplace secondary sales (seller = storefront_address), Top Shot from 2023-09, All Day from 2022-12; ingest is bursty and can lag days',
@@ -1460,6 +1467,27 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P75';
   PERFORM _assert(row_->>'status' = 'sold' AND row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL,
                   'P75 the index''s acquisition date is the BUYER''s -> never evidence of when this wallet acquired it -> NULL');
+END $$;
+
+-- v16: P76 a PRE-MINTED All Day pack (minted 2 days before its drop opened) the wallet
+-- holds, bought 1 minute after the drop opened per the index -> the wallet's own date wins.
+INSERT INTO public.pack_distributions VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AM4', 'Rookie Debut Quick Rips Wave 4', NULL, '{}', 1, 1);
+INSERT INTO public.allday_pack_supply VALUES ('AM4', 9);
+INSERT INTO public.allday_drop_windows (dist_id, start_time, end_time, price_usd, title) VALUES
+  ('AM4', '2024-09-19 18:00:00+00', NULL, 9, 'Rookie Debut Quick Rips Wave 4');
+INSERT INTO public.pack_nft_identity VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P76', 'AM4', 'Sealed', '0xwallet7', now(), '2024-09-19 18:01:25+00');
+INSERT INTO public.pack_index_mints (collection_id, pack_nft_id, in_index, minted_at, mint_tx) VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P76', true, '2024-09-17 21:53:47+00', 'tx-mint-76');
+
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet7', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P76';
+  PERFORM _assert(row_->>'status' = 'held' AND row_->>'buy_usd' = '9.00' AND row_->>'buy_price_source' = 'retail_inferred',
+                  'P76 pre-minted before its drop, bought 1 minute in per the wallet''s own index date -> $9 inferred (the mint must not outrank it)');
 END $$;
 
 ROLLBACK;
