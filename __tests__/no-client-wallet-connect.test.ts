@@ -37,6 +37,14 @@ const FILES = ROOTS.flatMap((r) => walk(r)).map((path) => ({
 
 const clientFiles = FILES.filter((f) => /^\s*["']use client["']/m.test(f.src))
 
+// ⚠ THE ONE EXCEPTION (Trevor, 2026-09-29: "Yes do that"): the giveaway ADMIN
+// connects their OWN Flow Wallet on /admin/giveaways to approve a delivery
+// transaction. It lives in exactly one module, and only the admin console may
+// import it (pinned below). Users still have no wallet sign-in anywhere.
+const ADMIN_WALLET_MODULE = "lib/giveaways/admin-wallet.ts"
+const ADMIN_WALLET_IMPORTER = "app/admin/giveaways/AdminGiveawaysClient.tsx"
+const notTheException = (f: { path: string }) => f.path !== ADMIN_WALLET_MODULE
+
 describe("no wallet sign-in anywhere (Trevor, 2026-08-08)", () => {
   it("has client components to scan (guards against the scan silently matching nothing)", () => {
     // A positive control: if the walker broke, every assertion below would pass
@@ -52,15 +60,30 @@ describe("no wallet sign-in anywhere (Trevor, 2026-08-08)", () => {
   })
 
   it("nothing in the tree calls fcl.authenticate() or fcl.unauthenticate()", () => {
-    const offenders = FILES.filter((f) => /\bfcl\.(un)?authenticate\s*\(/.test(f.src)).map((f) => f.path)
+    const offenders = FILES.filter(notTheException)
+      .filter((f) => /\bfcl\.(un)?authenticate\s*\(/.test(f.src))
+      .map((f) => f.path)
     expect(offenders).toEqual([])
   })
 
   it("nothing configures FCL wallet discovery", () => {
     // `discovery.wallet` / `discovery.authn.*` are the keys that make FCL pop a
     // wallet-connect dialog. lib/chains/flow/flow.ts sets CHAIN config only.
-    const offenders = FILES.filter((f) => /["']discovery\.(wallet|authn)/.test(f.src)).map((f) => f.path)
+    const offenders = FILES.filter(notTheException)
+      .filter((f) => /["']discovery\.(wallet|authn)/.test(f.src))
+      .map((f) => f.path)
     expect(offenders).toEqual([])
+  })
+
+  it("the admin exception is exactly one module, imported only by the admin giveaway console", () => {
+    const mod = FILES.find((f) => f.path === ADMIN_WALLET_MODULE)
+    // positive control: the exception is real and still does what it is excused for
+    expect(mod, `${ADMIN_WALLET_MODULE} is missing — delete this exception instead`).toBeTruthy()
+    expect(mod!.src).toMatch(/\bfcl\.authenticate\s*\(/)
+    const importers = FILES.filter((f) => /from\s+["']@\/lib\/giveaways\/admin-wallet["']/.test(f.src)).map((f) => f.path)
+    expect(importers).toEqual([ADMIN_WALLET_IMPORTER])
+    // and the importer is an admin page (token-gated), never a user surface
+    expect(ADMIN_WALLET_IMPORTER.startsWith("app/admin/")).toBe(true)
   })
 
   it("no rendered copy tells the user to connect a wallet", () => {

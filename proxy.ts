@@ -1147,7 +1147,18 @@ export function isPublicPath(pathname: string, method: string): boolean {
 }
 
 // ── Security headers applied to every response ──────────────────────────────
-function applySecurityHeaders(response: NextResponse) {
+// The giveaway admin console is the ONE page that connects a wallet (Trevor,
+// 2026-09-29; lib/giveaways/admin-wallet.ts): Flow's wallet picker is an iframe
+// on fcl-discovery.onflow.org. Only that page's policy gains the host.
+const WALLET_DISCOVERY_PAGES = ["/admin/giveaways"]
+const WALLET_DISCOVERY_HOST = "https://fcl-discovery.onflow.org"
+
+export function walletDiscoveryAllowed(pathname: string | undefined): boolean {
+  return !!pathname && WALLET_DISCOVERY_PAGES.some((p) => pathname === p || pathname.startsWith(p + "/"))
+}
+
+function applySecurityHeaders(response: NextResponse, pathname?: string) {
+  const wallet = walletDiscoveryAllowed(pathname)
   response.headers.set("X-Frame-Options", "DENY")
   response.headers.set("X-Content-Type-Options", "nosniff")
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -1175,7 +1186,9 @@ function applySecurityHeaders(response: NextResponse) {
       "img-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://cdn.nba.com https://cdn.wnba.com https://*.supabase.co https://arweave.net https://*.arweave.net https://assets.paniniamerica.net",
       "media-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://arweave.net https://*.arweave.net https://assets.paniniamerica.net",
       "font-src 'self' https://fonts.gstatic.com",
-      "connect-src 'self' https://*.supabase.co https://public-api.nbatopshot.com https://public-api.nflallday.com https://public-api.laligagolazos.com https://api2.flowty.io https://rest-mainnet.onflow.org https://access-mainnet.onflow.org https://pinnacle-proxy.tdillonbond.workers.dev https://topshot-proxy.tdillonbond.workers.dev wss://*.supabase.co",
+      "connect-src 'self' https://*.supabase.co https://public-api.nbatopshot.com https://public-api.nflallday.com https://public-api.laligagolazos.com https://api2.flowty.io https://rest-mainnet.onflow.org https://access-mainnet.onflow.org https://pinnacle-proxy.tdillonbond.workers.dev https://topshot-proxy.tdillonbond.workers.dev wss://*.supabase.co" +
+        (wallet ? ` ${WALLET_DISCOVERY_HOST}` : ""),
+      ...(wallet ? [`frame-src 'self' ${WALLET_DISCOVERY_HOST}`] : []),
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -1372,7 +1385,7 @@ export async function proxy(request: NextRequest) {
   if (hasValidBypassToken(request)) {
     const passResponse = NextResponse.next()
     applyCorsHeaders(request, passResponse, isCorsApiRoute)
-    return applySecurityHeaders(passResponse)
+    return applySecurityHeaders(passResponse, pathname)
   }
 
   // ── Rate limiting for /api/ routes ──────────────────────────────────────
@@ -1432,7 +1445,7 @@ export async function proxy(request: NextRequest) {
   if (isPublicPath(pathname, request.method)) {
     const passResponse = NextResponse.next()
     applyCorsHeaders(request, passResponse, isCorsApiRoute)
-    return applySecurityHeaders(passResponse)
+    return applySecurityHeaders(passResponse, pathname)
   }
 
   // ── Site-wide auth gate ─────────────────────────────────────────────────
@@ -1461,13 +1474,13 @@ export async function proxy(request: NextRequest) {
         { status: 401, headers: { "Cache-Control": "no-store", "WWW-Authenticate": "Session" } }
       )
       carryCookies(unauth, response)
-      return applySecurityHeaders(unauth)
+      return applySecurityHeaders(unauth, pathname)
     }
     const loginUrl = new URL("/login", request.url)
     loginUrl.searchParams.set("next", pathname + search)
     const redirectResp = NextResponse.redirect(loginUrl)
     carryCookies(redirectResp, response)
-    return applySecurityHeaders(redirectResp)
+    return applySecurityHeaders(redirectResp, pathname)
   }
 
   const userEmail = (user.email || "").toLowerCase()
@@ -1495,7 +1508,7 @@ export async function proxy(request: NextRequest) {
       const redirectResp = NextResponse.redirect(loginUrl)
       carryCookies(redirectResp, response)
       clearAllowCookie(redirectResp)
-      return applySecurityHeaders(redirectResp)
+      return applySecurityHeaders(redirectResp, pathname)
     }
 
     if (allowedRaw !== true) {
@@ -1512,14 +1525,14 @@ export async function proxy(request: NextRequest) {
       const redirectResp = NextResponse.redirect(loginUrl)
       carryCookies(redirectResp, response)
       clearAllowCookie(redirectResp)
-      return applySecurityHeaders(redirectResp)
+      return applySecurityHeaders(redirectResp, pathname)
     }
 
     writeAllowCookie(response, userEmail)
   }
 
   applyCorsHeaders(request, response, isCorsApiRoute)
-  return applySecurityHeaders(response)
+  return applySecurityHeaders(response, pathname)
 }
 
 // Permissive matcher — the in-function `isPublicPath` check carries the

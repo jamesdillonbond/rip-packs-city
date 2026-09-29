@@ -19,6 +19,8 @@ const { store, getCurrentUser, resolve } = vi.hoisted(() => ({
   verifyDeliveries: vi.fn(),
   },
 }))
+const { planDelivery } = vi.hoisted(() => ({ planDelivery: vi.fn() }))
+vi.mock("@/lib/giveaways/deliver", () => ({ planDelivery: (...a: unknown[]) => planDelivery(...a) }))
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 vi.mock("@/lib/giveaways/store", async (orig) => {
   const real = await orig<typeof import("@/lib/giveaways/store")>()
@@ -32,6 +34,7 @@ import * as adminList from "@/app/api/admin/giveaways/route"
 import * as adminOne from "@/app/api/admin/giveaways/[id]/route"
 import { GiveawayError } from "@/lib/giveaways/store"
 import { commitmentHash } from "@/lib/giveaways/seal"
+import { FlowScriptError } from "@/lib/giveaways/flow-script"
 
 const ID = "11111111-1111-1111-1111-111111111111"
 const DROP = {
@@ -262,5 +265,27 @@ describe("/api/admin/giveaways", () => {
 
     store.getDrop.mockResolvedValueOnce(null)
     expect((await act("seal")).status).toBe(404)
+  })
+
+  it("deliver_plan passes the connected wallet (lowercased) and returns the simulated plan", async () => {
+    store.getDrop.mockResolvedValue(DROP)
+    const plan = { parent: "0x00000000000000bb", child: DROP.admin_wallet, providerControllerID: "70", batches: [], skipped: [] }
+    planDelivery.mockResolvedValueOnce(plan)
+    const res = await adminOne.POST(post(`http://x/api/admin/giveaways/${ID}`, { action: "deliver_plan", parent: " 0x00000000000000BB " }, auth), idCtx(ID))
+    expect(await res.json()).toEqual({ ok: true, plan })
+    expect(planDelivery).toHaveBeenCalledWith({}, DROP, "0x00000000000000bb")
+    // a non-string parent is passed as "" (planDelivery refuses it)
+    planDelivery.mockRejectedValueOnce(new GiveawayError("not a Flow address", 400, "bad_parent"))
+    const bad = await adminOne.POST(post(`http://x/api/admin/giveaways/${ID}`, { action: "deliver_plan", parent: 7 }, auth), idCtx(ID))
+    expect(bad.status).toBe(400)
+    expect(planDelivery).toHaveBeenLastCalledWith({}, DROP, "")
+  })
+
+  it("a Cadence panic from our scripts reaches the operator as a 409 with its message", async () => {
+    store.getDrop.mockResolvedValue(DROP)
+    planDelivery.mockRejectedValueOnce(new FlowScriptError("Cadence: Cannot withdraw: Moment is locked", 400))
+    const res = await adminOne.POST(post(`http://x/api/admin/giveaways/${ID}`, { action: "deliver_plan", parent: "0x00000000000000bb" }, auth), idCtx(ID))
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: "Cadence: Cannot withdraw: Moment is locked", code: "flow" })
   })
 })

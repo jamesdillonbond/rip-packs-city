@@ -189,8 +189,6 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 - ⚠ **Displaced 09-20 to [database.md](docs/reference/database.md) (verbatim, end of file): REVOKE `FROM PUBLIC, anon, authenticated` in ONE statement ORPHANS a pg_cron caller — GRANT in the same migration · `check_*` MIXED return shapes — THREE, incl. a jsonb OBJECT; LENGTH ≠ SEVERITY · UNIQUE INDEX on a PARTITIONED table · `pipeline_runs` ~73h retention.**
 - **`apply_migration` for DDL (its FILE first, 09-26); `execute_sql` for reads.** FMV writes are delete-then-insert, NEVER upsert. ⚠ **CIC needs `execute_sql` and dies at the 60 s cap leaving `indisvalid=false`; a `SET …;` prefix makes a pg_cron command a TRANSACTION BLOCK; ⛔ never `RESET ALL`** — [database.md](docs/reference/database.md). MCP + schema gotchas: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
-Full detail: [database.md](docs/reference/database.md).
-
 ### Vercel
 
 - 🚨 **A GREEN DEPLOY IS NOT PROOF A CSS CHANGE SHIPPED** — 3 of 6 CSS-only commits hit READY with the rule ABSENT from the served chunk (2 byte-identical; `Restored build cache`). **Grep the deployed chunk for the DECLARATION**; `@media` counts lie (Lightning CSS merges blocks): scripts/qa/README.md.
@@ -244,7 +242,7 @@ All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-tr
 
 ## Concierge non-negotiable rules
 
-1. **RPC is READ-ONLY** — no cart, no gifting, no trading. **Never offer an action the product lacks.** This binds every surface, not just the concierge.
+1. **RPC is READ-ONLY** — no cart, no gifting, no trading (except admin-signed giveaway delivery: concierge.md). **Never offer an action the product lacks.** This binds every surface, not just the concierge.
 2. **A NAME is not a PERSON; a team label is not a FRANCHISE** (09-25): resolve via `resolve_player_name` / `resolve_team_name` (aliases, league spelling, renames, father/son, historic labels); a new father/son or rename goes in `player_relations`; the league's spelling is an ALIAS, never a rename.
 
 The rest (Pinnacle's FMV triple-join, DERIVE-don't-recite): [concierge.md](docs/reference/concierge.md); rule 2: [player-identity.md](docs/reference/player-identity.md).

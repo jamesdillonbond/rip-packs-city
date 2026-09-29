@@ -13,6 +13,8 @@ import { useAdminResource } from "@/lib/admin/use-admin-resource"
 import { usd, ptTime } from "@/lib/giveaways/view-format"
 import { checklistRows, type ChecklistRow } from "@/lib/giveaways/checklist"
 import type { Candidate, ClaimRow, DropRow, PoolRow } from "@/lib/giveaways/store"
+import type { DeliveryPlan } from "@/lib/giveaways/deliver"
+import { connectAdminWallet, disconnectAdminWallet, sendDeliveryBatch } from "@/lib/giveaways/admin-wallet"
 
 const DISPLAY = "var(--font-display)"
 const MONO = "var(--font-mono)"
@@ -374,6 +376,7 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
       {open && detailError ? (
         <p style={{ fontSize: 13, fontFamily: MONO, color: "var(--rpc-danger)", margin: "8px 0 0" }}>Couldn&apos;t load the checklist: {detailError}</p>
       ) : null}
+      {drop.status === "open" || drop.status === "closed" ? <DeliverAll drop={drop} call={call} onDone={() => { onChanged(); if (open) void load() }} /> : null}
       {open && detail ? (
         <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
           <thead>
@@ -403,6 +406,105 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
             ))}
           </tbody>
         </table>
+      ) : null}
+    </div>
+  )
+}
+
+// One signature per batch (≤ 50 moments): the connected Flow Wallet must be a
+// Hybrid Custody PARENT of the drop's admin wallet. Every batch was simulated on
+// mainnet by the plan; after the last one seals, Verify reads the chain.
+function DeliverAll({ drop, call, onDone }: { drop: DropRow; call: Call; onDone: () => void }) {
+  const [wallet, setWallet] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [log, setLog] = useState<string[]>([])
+  const note = (line: string) => setLog((l) => [...l, line])
+
+  const connect = async () => {
+    setLog([])
+    try {
+      setWallet(await connectAdminWallet())
+    } catch (e) {
+      note(`Wallet: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  const disconnect = async () => {
+    await disconnectAdminWallet().catch(() => undefined)
+    setWallet(null)
+  }
+
+  const deliver = async () => {
+    if (!wallet) return
+    setBusy(true)
+    setLog([])
+    try {
+      const r = await call(`/api/admin/giveaways/${drop.id}`, { method: "POST", body: JSON.stringify({ action: "deliver_plan", parent: wallet }) })
+      if (!r.ok) {
+        note(String(r.body?.error ?? `HTTP ${r.status}`))
+        return
+      }
+      const plan = r.body?.plan as DeliveryPlan | undefined
+      if (!plan || !Array.isArray(plan.batches)) {
+        note("The delivery plan came back malformed.")
+        return
+      }
+      const n = plan.batches.reduce((s, b) => s + b.momentIDs.length, 0)
+      for (const sk of plan.skipped) note(`Skipped ${sk.moment_id}: ${sk.reason === "locked" ? "locked on chain" : "no longer in your account"}`)
+      if (!window.confirm(`Send ${n} moment(s) from ${plan.child} in ${plan.batches.length} transaction(s)? Your Flow Wallet will ask you to approve each one.`)) {
+        note("Cancelled; nothing was sent.")
+        return
+      }
+      for (const [i, b] of plan.batches.entries()) {
+        note(`Batch ${i + 1}/${plan.batches.length}: waiting for your wallet…`)
+        try {
+          const sent = await sendDeliveryBatch(plan, b)
+          note(`Batch ${i + 1}: sealed · ${b.momentIDs.length} moment(s) · tx ${sent.txId}`)
+        } catch (e) {
+          note(`Batch ${i + 1} NOT sent: ${e instanceof Error ? e.message : String(e)}`)
+          break
+        }
+      }
+      const v = await call(`/api/admin/giveaways/${drop.id}`, { method: "POST", body: JSON.stringify({ action: "verify" }) })
+      const rep = v.body?.report as { delivered: number; pending: number; missing: number; failed_recipients: string[] } | undefined
+      note(
+        rep
+          ? `Verified on chain: ${rep.delivered} delivered, ${rep.pending} still with you, ${rep.missing} missing` +
+              (rep.failed_recipients.length ? ` · chain read FAILED for ${rep.failed_recipients.join(", ")}` : "")
+          : `Verify: ${String(v.body?.error ?? `HTTP ${v.status}`)}`,
+      )
+    } finally {
+      setBusy(false)
+      onDone()
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 10, padding: 10, border: "1px dashed var(--rpc-border)", borderRadius: 6 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <strong style={{ fontFamily: MONO, fontSize: 12, textTransform: "uppercase" }}>Deliver all</strong>
+        {wallet ? (
+          <>
+            <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-text-muted)" }}>Flow Wallet {wallet}</span>
+            <button type="button" style={btn} disabled={busy} onClick={deliver}>
+              {busy ? "Delivering…" : "Deliver claimed moments"}
+            </button>
+            <button type="button" style={btn} disabled={busy} onClick={disconnect}>
+              Disconnect
+            </button>
+          </>
+        ) : (
+          <button type="button" style={btn} onClick={connect}>
+            Connect Flow Wallet
+          </button>
+        )}
+      </div>
+      {log.length ? (
+        <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontFamily: MONO, fontSize: 12, color: "var(--rpc-text-secondary)" }}>
+          {log.map((l, i) => (
+            <li key={i}>{l}</li>
+          ))}
+        </ul>
       ) : null}
     </div>
   )

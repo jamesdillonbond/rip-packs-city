@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
 import { render, screen, waitFor, cleanup, fireEvent, within } from "@testing-library/react"
+const wallet = vi.hoisted(() => ({ connect: vi.fn(), disconnect: vi.fn(), send: vi.fn() }))
+vi.mock("@/lib/giveaways/admin-wallet", () => ({
+  connectAdminWallet: () => wallet.connect(),
+  disconnectAdminWallet: () => wallet.disconnect(),
+  sendDeliveryBatch: (...a: unknown[]) => wallet.send(...a),
+}))
 import AdminGiveawaysClient from "@/app/admin/giveaways/AdminGiveawaysClient"
 import { ADMIN_TOKEN_KEY } from "@/lib/admin/use-admin-resource"
 
@@ -264,5 +270,128 @@ describe("AdminGiveawaysClient — drops", () => {
     stub(() => json({ error: "db down" }, 503))
     render(<AdminGiveawaysClient />)
     expect(await screen.findByText(/HTTP 503/)).toBeTruthy()
+  })
+})
+
+describe("AdminGiveawaysClient — deliver all (one signature per batch)", () => {
+  const PLAN = {
+    parent: "0x00000000000000bb",
+    child: "0x00000000000000aa",
+    providerControllerID: "70",
+    batches: [
+      { momentIDs: ["1", "2"], recipients: ["0x01", "0x02"] },
+      { momentIDs: ["3"], recipients: ["0x03"] },
+    ],
+    skipped: [
+      { moment_id: "9", reason: "locked" },
+      { moment_id: "8", reason: "not_held" },
+    ],
+  }
+  const REPORT = { checked: 3, delivered: 3, pending: 0, missing: 0, failed_recipients: [], written: 3, write_error: null }
+
+  beforeEach(() => {
+    wallet.connect.mockReset()
+    wallet.disconnect.mockReset()
+    wallet.send.mockReset()
+  })
+
+  function server(planResponse: Response | (() => Response), verify: Response = json({ ok: true, report: REPORT })) {
+    const posts: unknown[] = []
+    stub((url, init) => {
+      if (init?.method === "POST") {
+        const body = JSON.parse(init.body as string)
+        posts.push(body)
+        if (body.action === "deliver_plan") return typeof planResponse === "function" ? planResponse() : planResponse
+        if (body.action === "verify") return verify
+      }
+      if (url.endsWith("/d3")) return json({ drop: DROP({ id: "d3", status: "open" }), pool: [], claims: [] })
+      return json({ drops: [DROP({ id: "d3", status: "open", title: "Open one" })] })
+    })
+    return posts
+  }
+
+  async function connected() {
+    wallet.connect.mockResolvedValue("0x00000000000000bb")
+    render(<AdminGiveawaysClient />)
+    fireEvent.click(await screen.findByRole("button", { name: /connect flow wallet/i }))
+    return screen.findByText(/Flow Wallet 0x00000000000000bb/)
+  }
+
+  it("is offered only on open or closed drops", async () => {
+    stub(() => json({ drops: [DROP({ id: "d1", title: "Draft one" }), DROP({ id: "d2", status: "sealed", title: "Sealed one" })] }))
+    render(<AdminGiveawaysClient />)
+    await screen.findByText("Draft one")
+    expect(screen.queryByRole("button", { name: /connect flow wallet/i })).toBeNull()
+  })
+
+  it("plans with the connected wallet, signs each batch in order, then verifies on chain", async () => {
+    const posts = server(json({ ok: true, plan: PLAN }))
+    await connected()
+    wallet.send.mockResolvedValueOnce({ txId: "tx1" }).mockResolvedValueOnce({ txId: "tx2" })
+    fireEvent.click(screen.getByRole("button", { name: /deliver claimed moments/i }))
+    expect(await screen.findByText(/Verified on chain: 3 delivered, 0 still with you, 0 missing/)).toBeTruthy()
+    expect(posts[0]).toEqual({ action: "deliver_plan", parent: "0x00000000000000bb" })
+    expect(wallet.send.mock.calls.map((c) => (c[1] as { momentIDs: string[] }).momentIDs)).toEqual([["1", "2"], ["3"]])
+    expect(wallet.send.mock.calls[0][0]).toMatchObject({ child: "0x00000000000000aa", providerControllerID: "70" })
+    expect(screen.getByText(/Batch 1: sealed · 2 moment\(s\) · tx tx1/)).toBeTruthy()
+    expect(screen.getByText(/Skipped 9: locked on chain/)).toBeTruthy()
+    expect(screen.getByText(/Skipped 8: no longer in your account/)).toBeTruthy()
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("Send 3 moment(s) from 0x00000000000000aa in 2 transaction(s)"))
+  })
+
+  it("a declined or failed batch stops the run, and Verify still reports what landed", async () => {
+    server(
+      json({ ok: true, plan: PLAN }),
+      json({ ok: false, report: { ...REPORT, delivered: 0, pending: 3, failed_recipients: ["0x03"] } }, 207),
+    )
+    await connected()
+    wallet.send.mockRejectedValueOnce(new Error("User rejected signature"))
+    fireEvent.click(screen.getByRole("button", { name: /deliver claimed moments/i }))
+    expect(await screen.findByText(/Batch 1 NOT sent: User rejected signature/)).toBeTruthy()
+    expect(wallet.send).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText(/chain read FAILED for 0x03/)).toBeTruthy()
+  })
+
+  it("cancelling the confirm sends nothing", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false)
+    const posts = server(json({ ok: true, plan: PLAN }))
+    await connected()
+    fireEvent.click(screen.getByRole("button", { name: /deliver claimed moments/i }))
+    expect(await screen.findByText("Cancelled; nothing was sent.")).toBeTruthy()
+    expect(wallet.send).not.toHaveBeenCalled()
+    expect(posts.some((p) => (p as { action: string }).action === "verify")).toBe(false)
+  })
+
+  it("a refused or malformed plan is shown, and nothing is signed", async () => {
+    let n = 0
+    server(() => (++n === 1 ? json({ error: "Cadence: Cannot withdraw: Moment is locked" }, 409) : json({ ok: true, plan: { batches: "x" } })))
+    await connected()
+    fireEvent.click(screen.getByRole("button", { name: /deliver claimed moments/i }))
+    expect(await screen.findByText("Cadence: Cannot withdraw: Moment is locked")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /deliver claimed moments/i }))
+    expect(await screen.findByText("The delivery plan came back malformed.")).toBeTruthy()
+    expect(wallet.send).not.toHaveBeenCalled()
+  })
+
+  it("a failed verify after sending is reported, not swallowed", async () => {
+    server(json({ ok: true, plan: { ...PLAN, batches: [PLAN.batches[1]], skipped: [] } }), json({ error: "db down" }, 500))
+    await connected()
+    wallet.send.mockResolvedValueOnce({ txId: "tx9" })
+    fireEvent.click(screen.getByRole("button", { name: /deliver claimed moments/i }))
+    expect(await screen.findByText("Verify: db down")).toBeTruthy()
+  })
+
+  it("wallet connect errors are shown; disconnect returns to the connect button", async () => {
+    server(json({ ok: true, plan: PLAN }))
+    wallet.connect.mockRejectedValueOnce(new Error("Popup closed"))
+    render(<AdminGiveawaysClient />)
+    fireEvent.click(await screen.findByRole("button", { name: /connect flow wallet/i }))
+    expect(await screen.findByText("Wallet: Popup closed")).toBeTruthy()
+    wallet.connect.mockResolvedValueOnce("0x00000000000000bb")
+    fireEvent.click(screen.getByRole("button", { name: /connect flow wallet/i }))
+    await screen.findByText(/Flow Wallet 0x00000000000000bb/)
+    wallet.disconnect.mockResolvedValueOnce(undefined)
+    fireEvent.click(screen.getByRole("button", { name: /disconnect/i }))
+    expect(await screen.findByRole("button", { name: /connect flow wallet/i })).toBeTruthy()
   })
 })

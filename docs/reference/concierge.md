@@ -2,6 +2,15 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## The one exception to "RPC is READ-ONLY" (Trevor, 2026-09-29)
+
+CLAUDE.md concierge rule #1 points here. **Admin-signed giveaway delivery** is the only surface where RPC builds a transaction:
+
+- **Who:** the giveaway ADMIN only, on `/admin/giveaways` (RPC_ADMIN_TOKEN). Users still have no wallet sign-in, no cart, no gifting, no trading anywhere, and the concierge must keep saying so.
+- **What:** "Deliver all" plans a batch (`lib/giveaways/deliver.ts`), SIMULATES it on mainnet as a script, and the admin's OWN Flow Wallet (a Hybrid Custody parent of their Dapper account) signs `DELIVER_BATCH_CADENCE` in the browser (`lib/giveaways/admin-wallet.ts`). RPC never holds a key, never signs, never custodies a moment.
+- **Guards:** `__tests__/no-client-wallet-connect.test.ts` allows exactly `lib/giveaways/admin-wallet.ts`, imported only by `app/admin/giveaways/AdminGiveawaysClient.tsx`; the wallet-picker CSP host is added for `/admin/giveaways` only (`proxy.ts walletDiscoveryAllowed`).
+- **Do not widen it** (a user-facing gift, a second admin surface, a server-held key) without Trevor saying so. Background: `docs/strategy/free-packs-reassessment-2026-09-29.md` §7–8.
+
 ## AI Concierge
 
 Claude Sonnet chat on every page via SupportChatConnected component.

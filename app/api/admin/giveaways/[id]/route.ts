@@ -8,7 +8,11 @@
 //        close  — open -> closed (claims stop; salt + manifest become public)
 //        verify — read the chain for every claimed moment and record delivery
 //        delete — a draft only
-// RPC never moves a moment: the admin gifts each one in the Top Shot app.
+//        deliver_plan { parent } — plan a one-signature delivery for the admin's
+//               connected Flow Wallet (a Hybrid Custody parent of admin_wallet);
+//               every batch is SIMULATED on mainnet first (lib/giveaways/deliver.ts).
+//               RPC signs nothing: the admin's wallet signs in the browser.
+// RPC never moves a moment or holds a key.
 
 import { NextRequest, NextResponse } from "next/server"
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth"
@@ -24,6 +28,8 @@ import {
   setStatus,
   verifyDeliveries,
 } from "@/lib/giveaways/store"
+import { planDelivery } from "@/lib/giveaways/deliver"
+import { FlowScriptError } from "@/lib/giveaways/flow-script"
 
 export const dynamic = "force-dynamic"
 // seal/verify make Flow script calls (20 s bound each, 50 moments per call)
@@ -52,13 +58,23 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params
   if (!UUID.test(id)) return NextResponse.json({ error: "not a drop id" }, { status: 400 })
   let action: unknown
+  let parent: unknown
   try {
-    action = ((await req.json()) as { action?: unknown })?.action
+    const body = (await req.json()) as { action?: unknown; parent?: unknown }
+    action = body?.action
+    parent = body?.parent
   } catch {
     return NextResponse.json({ error: "body must be JSON" }, { status: 400 })
   }
-  if (action !== "seal" && action !== "open" && action !== "close" && action !== "verify" && action !== "delete") {
-    return NextResponse.json({ error: "action must be seal, open, close, verify or delete" }, { status: 400 })
+  if (
+    action !== "seal" &&
+    action !== "open" &&
+    action !== "close" &&
+    action !== "verify" &&
+    action !== "delete" &&
+    action !== "deliver_plan"
+  ) {
+    return NextResponse.json({ error: "action must be seal, open, close, verify, delete or deliver_plan" }, { status: 400 })
   }
   try {
     const drop = await getDrop(supabaseAdmin, { id })
@@ -77,6 +93,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       case "delete":
         await deleteDraft(supabaseAdmin, drop)
         return NextResponse.json({ ok: true })
+      case "deliver_plan": {
+        const p = typeof parent === "string" ? parent.trim().toLowerCase() : ""
+        return NextResponse.json({ ok: true, plan: await planDelivery(supabaseAdmin, drop, p) })
+      }
       case "verify": {
         const report = await verifyDeliveries(supabaseAdmin, drop)
         // ok only when every claimed moment was read AND every result was written.
@@ -86,6 +106,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
   } catch (err) {
     if (err instanceof GiveawayError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status })
+    // a Cadence panic from OUR scripts (e.g. "Cannot withdraw: Moment is locked") — operator-facing, token-gated
+    if (err instanceof FlowScriptError) return NextResponse.json({ error: err.message, code: "flow" }, { status: 409 })
     return apiErrorResponse(err, `api/admin/giveaways/[id] ${String(action)}`)
   }
 }

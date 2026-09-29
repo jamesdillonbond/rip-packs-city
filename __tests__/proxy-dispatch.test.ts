@@ -113,6 +113,16 @@ describe("proxy() — security headers", () => {
     expect(res.headers.get("Strict-Transport-Security")).toContain("max-age=63072000")
     expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'")
   })
+
+  it("only the giveaway admin console may frame Flow's wallet picker (2026-09-29)", async () => {
+    const admin = (await proxy(req("/admin/giveaways"))).headers.get("Content-Security-Policy")!
+    expect(admin).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
+    expect(admin).toMatch(/connect-src [^;]*https:\/\/fcl-discovery\.onflow\.org/)
+    for (const path of ["/", "/admin", "/admin/rewards", "/giveaways/fall-drop", "/admin/giveaways-evil"]) {
+      const csp = (await proxy(req(path))).headers.get("Content-Security-Policy")!
+      expect(csp, path).not.toContain("fcl-discovery")
+    }
+  })
 })
 
 describe("proxy() — CORS preflight", () => {
