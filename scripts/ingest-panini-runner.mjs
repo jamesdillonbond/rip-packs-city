@@ -408,6 +408,14 @@ async function main() {
     }
     if (d.getCardMarketStats?.data) { const cd = d.getCardMarketStats.data; if (cd.psku && nationByPsku[cd.psku]) cd.__nation = nationByPsku[cd.psku]; cards.push(cd); }
     if (d.getPackMarketStats?.data) { const pk = d.getPackMarketStats.data; if (currentPackId) pk.__pack_id = currentPackId; if (currentPackUrl) pk.__page_url = currentPackUrl; packs.push(pk); }
+    // DROP pages (/pack-<name>.html) carry op packDetails instead: Panini's own primary listing —
+    // pack_id, pack_name, collection_name, sport, subpack_price, pack_label, in_stock (read from the
+    // 2026-09-29 samples of the WNBA FOTL 1055 / WNBA 1056 pages). No market stats (no floor, no
+    // unopened count), so those stay null downstream; the pack id is Panini's own numeric id.
+    else if (currentPackUrl && d.packDetails?.data?.pack_id != null) {
+      const pk = { ...d.packDetails.data, __pack_id: String(d.packDetails.data.pack_id), __page_url: currentPackUrl, __source: "packDetails" };
+      packs.push(pk);
+    }
     const prods = d.getPskuTotalCardsList?.data?.products;
     if (Array.isArray(prods)) serials.push(...prods);
     const saleRecs = []; findSaleRecords(d, 0, saleRecs);

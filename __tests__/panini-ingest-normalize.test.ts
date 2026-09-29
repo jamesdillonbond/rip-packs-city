@@ -266,3 +266,18 @@ describe("toPackRow product identity (multi-product, 2026-09-28)", () => {
     expect(toPackRow({ __pack_id: "1038", collection_name: "WC" }, NOW, 2332).product_set_id).toBe(2332)
   })
 })
+
+describe("toPackRow from a DROP page (packDetails, 2026-09-29)", () => {
+  // Shape read from the WNBA FOTL (1055) packDetails sample: Panini's own primary listing.
+  const drop = { pack_id: 1055, __pack_id: "1055", __source: "packDetails", pack_name: "2026 Panini NFT Prizm WNBA FOTL Packs", collection_name: "2026 Panini NFT Prizm WNBA", sport: "WOMENS BASKETBALL", subpack_price: 150, in_stock: true }
+  it("keeps Panini's primary price, the product, and FOTL; no market stats are invented", () => {
+    const r = toPackRow(drop, NOW, null)
+    expect(r).toMatchObject({ id: "1055", price_usd: 150, pack_type: "fotl", product_name: "2026 Panini NFT Prizm WNBA", sport: "WOMENS BASKETBALL", product_set_id: null })
+    expect(r.floor_usd).toBeNull()
+    expect(r.avg_sale_usd).toBeNull()
+    expect(r.packs_remaining).toBeNull()
+  })
+  it("a marketplace payload (no subpack_price) still carries no primary price", () => {
+    expect(toPackRow({ __pack_id: "1038", market_stats: { floor_price: 144 } }, NOW).price_usd).toBeNull()
+  })
+})

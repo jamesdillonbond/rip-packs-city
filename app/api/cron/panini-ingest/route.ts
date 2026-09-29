@@ -88,9 +88,9 @@ const PANINI_LEGACY_SET_ID = 2332;
 // names as best known; a value the site does not recognise shows up as grid_items=0 (or the
 // unfiltered grid) in that sport's `panini-ingest-enum` marker — read it before assuming coverage.
 // Override without a code change: PANINI_DISCOVERY_SPORTS="Soccer,Basketball,…" on Vercel.
-// "WNBA" added 2026-09-29: none of the 60 Basketball setIds sampled on the 09-29 walks carried a WNBA
-// team, so WNBA product may sit under its own filter value. Unverified — its enum marker entry says.
-const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Football", "Baseball", "WNBA"];
+// "WNBA" was tried 2026-09-29 and removed the same day: the 10:10 AM PT walk's "WNBA" grid served
+// the same setIds as Basketball (the filter value is not recognised), so it only cost 3 minutes.
+const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Football", "Baseball"];
 function discoverySports(): string[] {
   const env = (process.env.PANINI_DISCOVERY_SPORTS || "").split(",").map((s) => s.trim()).filter(Boolean);
   return env.length ? env : PANINI_DISCOVERY_SPORTS;

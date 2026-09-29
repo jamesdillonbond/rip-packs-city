@@ -180,3 +180,11 @@ describe("panini-runner pack-page discovery (2026-09-29)", () => {
     expect(src).toMatch(/op === "packDetails"/)
   })
 })
+
+describe("panini-runner drop-page capture (2026-09-29)", () => {
+  const src = readFileSync(RUNNER_PATH, "utf8")
+  it("turns a pack page's packDetails into a pack payload keyed by Panini's pack_id", () => {
+    expect(src).toMatch(/else if \(currentPackUrl && d\.packDetails\?\.data\?\.pack_id != null\)/)
+    expect(src).toMatch(/__pack_id: String\(d\.packDetails\.data\.pack_id\)/)
+  })
+})

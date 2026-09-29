@@ -110,7 +110,9 @@ export function toPackRow(p: any, nowIso: string, productSetId: number | null = 
     product_set_id: productSetId,
     page_url: typeof p?.__page_url === "string" ? p.__page_url : null,
     pack_type: /fotl|first off/i.test(p?.pack_name ?? "") || packId === "1039" ? "fotl" : "hobby",
-    price_usd: null,
+    // Panini's PRIMARY (drop) price, from a drop page's packDetails.subpack_price. Absent on the
+    // marketplace pages (getPackMarketStats), where the secondary floor below is the price.
+    price_usd: posOrNull(p?.subpack_price),
     cards_per_pack: Number(p?.cards_per_subpack) || null,
     packs_total: Number(p?.total_pack_qty) || null,
     packs_remaining: Number.isFinite(+ms.unopen_pack_count) ? +ms.unopen_pack_count : null,

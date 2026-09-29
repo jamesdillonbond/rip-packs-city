@@ -79,7 +79,7 @@ export async function GET() {
     const db = supabaseAdmin as any
     const [evRes, stateRes, histRes, coverage] = await Promise.all([
       boundedRead(db.from("panini_pack_ev_board").select(EV_COLS).order("pack_type", { ascending: true }), "panini-pack-market/ev"),
-      boundedRead(db.from("panini_pack_state").select("id,pack_type,raw"), "panini-pack-market/state"),
+      boundedRead(db.from("panini_pack_state").select("id,pack_type,raw,price_usd"), "panini-pack-market/state"),
       boundedRead(
         db
           .from("panini_pack_state_history")
@@ -97,10 +97,18 @@ export async function GET() {
     if (evRes.error) return apiErrorResponse(evRes.error, "api/panini-pack-market", "Pack market is unavailable right now.")
 
     const details = new Map<string, ReturnType<typeof parsePackDetails>>()
+    // Panini's PRIMARY (drop) price per pack id — set only for packs captured from a drop page
+    // (packDetails.subpack_price). Used as the cost ONLY when the pack has no secondary floor or
+    // average sale yet, and labelled as such (costBasis "primary"), never presented as a floor.
+    const primaryPrice = new Map<string, number>()
     if (stateRes.error) {
       console.error("[panini-pack-market] product details read failed:", stateRes.error)
     } else {
-      for (const r of (stateRes.data ?? []) as { id: string; raw: unknown }[]) details.set(String(r.id), parsePackDetails(r.raw))
+      for (const r of (stateRes.data ?? []) as { id: string; raw: unknown; price_usd?: unknown }[]) {
+        details.set(String(r.id), parsePackDetails(r.raw))
+        const pp = num(r.price_usd)
+        if (pp !== null && pp > 0) primaryPrice.set(String(r.id), pp)
+      }
     }
 
     const products = ((evRes.data ?? []) as Record<string, unknown>[]).map((p) => {
@@ -124,9 +132,10 @@ export async function GET() {
         imageUrl: d?.imageUrl ?? null,
         labels: d?.labels ?? [],
         cardsPerPack: num(p.cards_per_pack),
-        costUsd: num(p.pack_cost_usd),
-        // COALESCE(floor, avg_sale) in the view — say which one it is.
-        costBasis: floor !== null ? ("floor" as const) : num(p.avg_sale_usd) !== null ? ("avg_sale" as const) : null,
+        costUsd: num(p.pack_cost_usd) ?? primaryPrice.get(String(p.id)) ?? null,
+        // COALESCE(floor, avg_sale) in the view — say which one it is. A drop pack with no
+        // secondary market yet falls back to Panini's own primary price, labelled "primary".
+        costBasis: floor !== null ? ("floor" as const) : num(p.avg_sale_usd) !== null ? ("avg_sale" as const) : primaryPrice.has(String(p.id)) ? ("primary" as const) : null,
         floorUsd: floor,
         avgSaleUsd: num(p.avg_sale_usd),
         recentSaleUsd: num(p.recent_sale_usd),

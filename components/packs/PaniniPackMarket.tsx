@@ -41,7 +41,7 @@ export interface PaniniPackProduct {
   labels: PaniniPackLabel[]
   cardsPerPack: number | null
   costUsd: number | null
-  costBasis: "floor" | "avg_sale" | null
+  costBasis: "floor" | "avg_sale" | "primary" | null
   floorUsd: number | null
   avgSaleUsd: number | null
   recentSaleUsd: number | null
@@ -123,7 +123,7 @@ const th: React.CSSProperties = { textAlign: "left", padding: "6px 8px", fontFam
 const td: React.CSSProperties = { padding: "6px 8px", fontFamily: mono, fontSize: 12, color: "var(--rpc-text-secondary)", borderBottom: "1px solid var(--rpc-border-subtle)" }
 
 function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterHours: number }) {
-  const costLabel = p.costBasis === "avg_sale" ? "Cost (avg sale — no floor)" : "Floor"
+  const costLabel = p.costBasis === "avg_sale" ? "Cost (avg sale — no floor)" : p.costBasis === "primary" ? "Panini drop price" : "Floor"
   const modeled = p.evModeled === true
   return (
     <section

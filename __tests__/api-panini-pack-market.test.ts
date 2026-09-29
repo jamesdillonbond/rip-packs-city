@@ -211,3 +211,27 @@ describe("GET /api/panini-pack-market — products the model does not price", ()
   })
 })
 
+
+// Drop packs (2026-09-29): a pack captured from Panini's drop page has a PRIMARY price and no
+// secondary market yet. The tile may show that price — labelled as Panini's drop price — but a
+// pack with a real floor keeps the floor, and the primary price is never passed off as one.
+describe("GET /api/panini-pack-market — Panini drop price", () => {
+  const DROP = { ...HOBBY, id: "1056", pack_type: "hobby", pack_cost_usd: null, floor_usd: null, avg_sale_usd: null, recent_sale_usd: null,
+    product_name: "2026 Panini NFT Prizm WNBA", product_set_id: null, ev_modeled: false, actual_ev_usd: null, typical_ev_usd: null, net_rip_edge_usd: null }
+  it("shows the drop price as cost with basis 'primary' when no floor or sale exists", async () => {
+    state.panini_pack_ev_board = { data: [DROP], error: null }
+    state.panini_pack_state = { data: [{ id: "1056", pack_type: "hobby", raw: {}, price_usd: 30 }], error: null }
+    const { json } = await body()
+    const p = json.products[0]
+    expect(p.costUsd).toBe(30)
+    expect(p.costBasis).toBe("primary")
+    expect(p.floorUsd).toBeNull()
+  })
+  it("a pack WITH a floor keeps the floor even if a primary price is stored", async () => {
+    state.panini_pack_ev_board = { data: [HOBBY], error: null }
+    state.panini_pack_state = { data: [{ id: "1038", pack_type: "hobby", raw: {}, price_usd: 99 }], error: null }
+    const { json } = await body()
+    expect(json.products[0].costUsd).toBe(144)
+    expect(json.products[0].costBasis).toBe("floor")
+  })
+})
