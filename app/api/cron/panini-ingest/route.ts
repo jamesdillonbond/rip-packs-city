@@ -361,8 +361,8 @@ export async function POST(req: NextRequest) {
       // (panini_sales_reads.complete_since). Counts are what the RPC says it WROTE.
       let salesHistNew = 0, salesHistRefreshed = 0, salesHistReads = 0, salesHistGaps = 0, salesHistValid = 0;
       let salesHistError: string | null = null;
-      for (let i = 0; i < sales.length; i += SALES_HISTORY_CHUNK) {
-        const { data, error } = await (supabaseAdmin as any).rpc("panini_sales_ingest", { p_records: sales.slice(i, i + SALES_HISTORY_CHUNK) });
+      for (let i = 0; i < salesIn.length; i += SALES_HISTORY_CHUNK) {
+        const { data, error } = await (supabaseAdmin as any).rpc("panini_sales_ingest", { p_records: salesIn.slice(i, i + SALES_HISTORY_CHUNK) });
         const d = (data ?? null) as Record<string, unknown> | null;
         if (error || !d || typeof d.stored_new !== "number") {
           salesHistError = salesHistError ?? (error?.message ?? "panini_sales_ingest returned no write count");

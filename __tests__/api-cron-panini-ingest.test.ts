@@ -548,3 +548,15 @@ describe("panini-ingest — one pack product, one row", () => {
     expect(up.rows).toHaveLength(1)
   })
 })
+
+describe("panini-ingest — sales history respects the product gate", () => {
+  it("never sends a non-admitted product's sale records to panini_sales_ingest", async () => {
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { sales: [
+      { sku: "packcard-2332_1_1_1__1_10", url_key: "packcard-2332_1_1_1__1_10", amt: 5 },
+      { sku: "packcard-4100_1_1_1__1_10", url_key: "packcard-4100_1_1_1__1_10", amt: 7 },
+    ] } }))
+    if (st.captured) await st.captured()
+    const sent = st.salesHistCalls.flatMap((a: any) => a.p_records)
+    expect(sent.map((r: any) => r.url_key)).toEqual(["packcard-2332_1_1_1__1_10"])
+  })
+})
