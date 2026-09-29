@@ -58,6 +58,7 @@ import {
 import { ASK_STALE_HOURS, askAgeHours, askAgeTitle, askStampKind, askVerifiedAt, fmtAskAge } from "@/lib/market/ask-freshness"
 import FmvHistoryChart from "@/components/entity/FmvHistoryChart"
 import EditionActivity from "@/components/entity/EditionActivity"
+import PaniniSalesChart from "@/components/entity/PaniniSalesChart"
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { isMarketClosed } from "@/lib/market-closed"
@@ -69,6 +70,8 @@ import {
   fetchPaniniEditionAsk,
   fetchPaniniEditionSerials,
   fetchPaniniEditionSales,
+  summarizeEditionSales,
+  PANINI_SALES_TABLE_ROWS,
   paniniEditionUrl,
   paniniSubjectIsPlayer,
   PANINI_ASK_CONFIRMED_DAYS,
@@ -1552,6 +1555,7 @@ function PaniniEditionMarketSection({
   serials: { listed: PaniniSerialRow[] | null; sales: PaniniSerialRow[] | null }
   history: PaniniEditionSales
 }) {
+  const summary = summarizeEditionSales(history)
   const cell: React.CSSProperties = { padding: "6px 8px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", borderBottom: "1px solid var(--rpc-border-subtle, var(--rpc-border))" }
   const head: React.CSSProperties = { ...cell, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }
   const serialLabel = (r: PaniniSerialRow) => (r.serial == null ? "—" : r.mintCap != null ? `#${r.serial}/${r.mintCap}` : `#${r.serial}`)
@@ -1596,10 +1600,16 @@ function PaniniEditionMarketSection({
               : history.coverage.kind === "since"
                 ? `Every sale since ${ptDateOf(history.coverage.since)} is on record; anything earlier shown here is partial. Newest first.`
                 : "Sales on record so far, newest first — RPC keeps every sale it reads since Sep 28, and this edition's full recent history fills in when the walk next reads it."}
-          {history.totalOnRecord != null && history.sales && history.totalOnRecord > history.sales.length
-            ? ` Showing the latest ${history.sales.length} of ${history.totalOnRecord.toLocaleString("en-US")}.`
-            : ""}
         </div>
+        {summary && history.sales && history.sales.length > 0 ? (
+          <div className="rpc-mono" data-testid="panini-sales-30d" style={{ marginBottom: 10, fontSize: 12, color: "var(--rpc-text-secondary)" }}>
+            Last 30 days: {summary.complete30d ? "" : "at least "}
+            {summary.sales30d.toLocaleString("en-US")} sale{summary.sales30d === 1 ? "" : "s"}
+            {summary.median30dUsd != null ? ` · median ${fmtUsd(summary.median30dUsd)}` : ""}
+            {summary.complete30d ? "" : " (not every sale of the window is on record yet)"}
+          </div>
+        ) : null}
+        {history.sales && history.sales.length >= 2 ? <PaniniSalesChart sales={history.sales} coverage={history.coverage} /> : null}
         {history.sales === null
           ? note("Sales couldn't be loaded — refresh to try again.")
           : history.sales.length === 0
@@ -1613,7 +1623,7 @@ function PaniniEditionMarketSection({
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 380 }}>
                   <thead><tr><th style={head}>Serial</th><th style={head}>Sold for</th><th style={head}>When</th><th style={head}>Special</th></tr></thead>
                   <tbody>
-                    {history.sales.map((r) => (
+                    {history.sales.slice(0, PANINI_SALES_TABLE_ROWS).map((r) => (
                       <tr key={`${r.sku}|${r.soldAt}`}>
                         <td style={cell}>{r.serial == null ? "—" : r.mintCap != null ? `#${r.serial}/${r.mintCap}` : `#${r.serial}`}</td>
                         <td style={{ ...cell, color: "var(--rpc-text-primary)" }}>{fmtUsd(r.amountUsd)}</td>
@@ -1625,6 +1635,12 @@ function PaniniEditionMarketSection({
                 </table>
               </div>
             )}
+        {history.sales && history.sales.length > PANINI_SALES_TABLE_ROWS ? (
+          <div className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+            Showing the latest {PANINI_SALES_TABLE_ROWS} of{" "}
+            {(history.totalOnRecord ?? history.sales.length).toLocaleString("en-US")} sales on record; the chart plots up to {history.sales.length}.
+          </div>
+        ) : null}
       </Section>
     </>
   )

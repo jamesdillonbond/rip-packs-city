@@ -148,7 +148,10 @@ export async function fetchPaniniEditionSerials(
 //   complete_since = -infinity → every sale of this edition is on record
 //   complete_since = <t>       → every sale since <t> is on record
 //   no row                     → RPC has not read this edition's Recent list yet
-const HISTORY_LIMIT = 20
+// Up to this many sales are read for the price chart; the table shows the newest
+// PANINI_SALES_TABLE_ROWS of them.
+const HISTORY_LIMIT = 200
+export const PANINI_SALES_TABLE_ROWS = 20
 
 export interface PaniniEditionSale {
   sku: string
@@ -251,6 +254,32 @@ export async function fetchPaniniEditionSales(
   const totalOnRecord = countRes.error || typeof countRaw !== "number" ? null : countRaw
   const coverage = readRes.error ? null : coverageOf(((readRes.data ?? []) as Record<string, unknown>[])[0])
   return { sales, totalOnRecord, coverage }
+}
+
+/** 30-day sales on record for an edition, and whether that count is complete. */
+export interface PaniniEditionSalesSummary {
+  sales30d: number
+  median30dUsd: number | null
+  /** true when every sale of the last 30 days is known to be on record (and was read here). */
+  complete30d: boolean
+}
+
+/**
+ * Pure. The 30-day count is COMPLETE only when (a) the edition's coverage reaches back 30 days
+ * (whole history, or complete since a moment at least 30 days ago) and (b) this read reached back
+ * 30 days (fewer rows than the read limit, or its oldest row is older than the window). Otherwise
+ * it is "at least" — the page says so.
+ */
+export function summarizeEditionSales(h: PaniniEditionSales, nowMs: number = Date.now()): PaniniEditionSalesSummary | null {
+  if (!h.sales) return null
+  const cutoff = nowMs - 30 * 86_400_000
+  const recent = h.sales.filter((x) => Date.parse(x.soldAt) >= cutoff).map((x) => x.amountUsd).sort((a, b) => a - b)
+  const mid = recent.length ? (recent.length % 2 ? recent[(recent.length - 1) / 2] : (recent[recent.length / 2 - 1] + recent[recent.length / 2]) / 2) : null
+  const cov = h.coverage
+  const coverageReaches = !!cov && (cov.kind === "all" || (cov.kind === "since" && Date.parse(cov.since) <= cutoff))
+  const oldest = h.sales.length ? Date.parse(h.sales[h.sales.length - 1].soldAt) : NaN
+  const readReaches = h.sales.length < HISTORY_LIMIT || (Number.isFinite(oldest) && oldest < cutoff)
+  return { sales30d: recent.length, median30dUsd: mid, complete30d: coverageReaches && readReaches }
 }
 
 // Lives in the client-safe lib/panini/edition-url.ts — re-exported for server callers.
