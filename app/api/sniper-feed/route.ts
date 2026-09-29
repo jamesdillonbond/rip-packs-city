@@ -1888,8 +1888,14 @@ async function computeSniperFeed(opts: {
   const tsDistinctEditions = new Set(
     tsListings.map((l) => `${l.setPlay?.setID ?? ""}:${l.setPlay?.playID ?? ""}`),
   ).size;
-  if (tsListings.length < TS_GQL_SPARSE_THRESHOLD || tsDistinctEditions < TS_GQL_SPARSE_THRESHOLD) {
-    console.log(`[sniper-feed] TS pool sparse (${tsListings.length} listings over ${tsDistinctEditions} editions) — augmenting with get_topshot_sniper_deals RPC`);
+  // ⚠ A TEAM PICK ALWAYS AUGMENTS (2026-09-29). The RPC reads every edition of
+  // the team with a floor, the pool only its newest 200 listings. Gated on
+  // sparseness alone, the board's COVERAGE depended on how many editions those
+  // 200 happened to span: 8 of 65 teams (Lakers 37, Liberty 32…) cleared 25 and
+  // got a newest-200 slice instead of every edition's floor.
+  const teamPicked = team !== "all";
+  if (teamPicked || tsListings.length < TS_GQL_SPARSE_THRESHOLD || tsDistinctEditions < TS_GQL_SPARSE_THRESHOLD) {
+    console.log(`[sniper-feed] TS augment (${teamPicked ? `team pick` : `sparse`}: ${tsListings.length} listings over ${tsDistinctEditions} editions) — get_topshot_sniper_deals RPC`);
     // p_team is one exact label, so a franchise pick asks once per label it has
     // carried (measured 10-30 ms a call) — else the edition-level rows, which
     // dominate a sparse board, would be the picked label's alone.
@@ -1916,8 +1922,8 @@ async function computeSniperFeed(opts: {
     });
     if (rpcErr) {
       console.error(`[sniper-feed] get_topshot_sniper_deals error: ${rpcErr.message}`);
-      // Reached only when the GQL pool is already sparse, so this failure is
-      // the difference between a populated board and an apparently quiet one.
+      // Reached when the pool is sparse or a team is picked; either way this
+      // read carries the board's edition coverage, so its failure is reported.
       sink.note("topshot-deals-rpc");
     }
     // A franchise pick's labels are read separately; the ones that answered

@@ -217,6 +217,36 @@ describe("sniper-feed ?team= covers every label of the franchise", () => {
   })
 })
 
+describe("sniper-feed a team pick always gets every edition's floor", () => {
+  // 30 Blazers editions in the newest listings: NOT sparse (>= 25), which used
+  // to skip the edition-level read and leave a newest-200 slice as the board.
+  const eds = Array.from({ length: 30 }, (_, i) => ({
+    id: `uuid-b${i}`, external_id: `${100 + i}:${200 + i}`, set_id_onchain: 100 + i, play_id_onchain: 200 + i, team_name: BLAZERS, thumbnail_url: null,
+  }))
+  const pool = eds.map((e, i) => listing(i, e.set_id_onchain, e.play_id_onchain))
+
+  it("calls the edition-level read on a team pick even when the pool is not sparse", async () => {
+    fx.resolve = (table) => {
+      if (table === "editions") return { data: eds, error: null }
+      if (table === "ts_listings") return { data: pool, error: null }
+      return { data: [], error: null }
+    }
+    await GET(get(`?collection=nba-top-shot&team=${encodeURIComponent(BLAZERS)}`))
+    const asked = fx.rpcCalls.filter((c) => c.name === "get_topshot_sniper_deals").map((c) => c.args.p_team)
+    expect(asked).toEqual([BLAZERS])
+  })
+
+  it("the default board still skips it when the pool is not sparse (control)", async () => {
+    fx.resolve = (table) => {
+      if (table === "editions") return { data: eds, error: null }
+      if (table === "ts_listings") return { data: pool, error: null }
+      return { data: [], error: null }
+    }
+    await GET(get("?collection=nba-top-shot"))
+    expect(fx.rpcCalls.filter((c) => c.name === "get_topshot_sniper_deals")).toHaveLength(0)
+  })
+})
+
 describe("sniper-feed default board carries team names and the league's teams", () => {
   it("pool deals take their edition's team, and teamOptions lists teams not on the board", async () => {
     fx.resolve = defaultResolve(Array.from({ length: 26 }, (_, i) => listing(i, 5, 7)))
