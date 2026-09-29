@@ -494,6 +494,61 @@ describe("CollectionAnalyticsClient — tabs and wallet search", () => {
   })
 })
 
+// ─── Portfolio honesty (2026-09-28) ──────────────────────────────────────────
+
+describe("CollectionAnalyticsClient — portfolio read failures and truncation", () => {
+  const WALLET_BODY = {
+    wallet: "0xmine",
+    acquisition: null,
+    locked: { locked_count: 0, unlocked_count: 2, locked_fmv: 0, unlocked_fmv: 20 },
+    tiers: [{ tier: "RARE", count: 2, fmv: 20 }],
+    series: [{ label: "Series 1", seriesNumber: 0, count: 2, fmv: 20 }],
+    confidence: { HIGH: 2 },
+    total_fmv: 20,
+    total_moments: 2,
+    portfolio_clarity_score: 100,
+  }
+
+  it("says the acquisition read failed rather than 'not yet indexed'", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
+    routes["/api/analytics"] = () => json(200, { ...WALLET_BODY, acquisition_failed: true })
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("Couldn't load acquisition history right now."))
+    expect(document.body.textContent).not.toContain("not yet indexed")
+  })
+
+  it("CONTROL: an untracked collection still says 'not yet indexed'", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
+    routes["/api/analytics"] = () => json(200, { ...WALLET_BODY, acquisition_failed: false })
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("not yet indexed"))
+    expect(document.body.textContent).not.toContain("Couldn't load acquisition history")
+  })
+
+  it("discloses a wallet read only in part, with the source's total", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
+    routes["/api/analytics"] = () => json(200, { ...WALLET_BODY, truncated: true, moments_total: 12000 })
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("highest-value moments of 12,000"))
+  })
+
+  it("discloses truncation even when the source total is unknown", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
+    routes["/api/analytics"] = () => json(200, { ...WALLET_BODY, truncated: true })
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("the lowest-value tail is not included"))
+    expect(document.body.textContent).not.toContain(" of 12,000")
+  })
+
+  it("CONTROL: a fully read wallet carries no truncation notice", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
+    routes["/api/analytics"] = () => json(200, { ...WALLET_BODY, truncated: false })
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("Portfolio Origin Story"))
+    expect(document.body.textContent).not.toContain("lowest-value tail")
+  })
+})
+
 // ─── Thin volume ─────────────────────────────────────────────────────────────
 
 describe("CollectionAnalyticsClient — the thin-volume notice", () => {

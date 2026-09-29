@@ -74,3 +74,12 @@ describe("Analytics cards — the priced-row noun comes from the collection", ()
     expect(src).toMatch(/const pricedNoun = labels\.units === "Pins" \? "pins" : "editions"/)
   })
 })
+
+describe("Analytics KPI — Pinnacle counts pins", () => {
+  it("the period KPI says Unique Pins on Pinnacle, Unique Editions elsewhere", async () => {
+    const { readFileSync } = await import("node:fs")
+    const src = readFileSync("app/(collections)/[collection]/analytics/CollectionAnalyticsClient.tsx", "utf8")
+    expect(src).toMatch(/label=\{isPinnacle \? "Unique Pins" : "Unique Editions"\}/)
+    expect(src).not.toMatch(/label="Unique Editions"/)
+  })
+})

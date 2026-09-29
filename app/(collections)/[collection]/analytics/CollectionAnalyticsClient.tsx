@@ -72,6 +72,12 @@ type AnalyticsResponse = {
   total_fmv: number
   total_moments: number
   portfolio_clarity_score: number
+  // 2026-09-28 — optional: an older deployment of /api/analytics omits them.
+  /** The acquisition read FAILED (distinct from `acquisition: null` = not tracked). */
+  acquisition_failed?: boolean
+  /** The wallet's size per the source, and whether the figures cover only part of it. */
+  moments_total?: number
+  truncated?: boolean
 }
 
 type TopSale = {
@@ -1302,7 +1308,7 @@ function AnalyticsInner() {
                 <KpiCard label="Total Volume" value={kpi(fmt(totalVolume))} pct={pc ? ch?.volumePct : undefined} period={periodLabel} />
                 <KpiCard label="Total Sales" value={kpi(totalSalesLocal.toLocaleString("en-US"))} pct={pc ? ch?.salesPct : undefined} period={periodLabel} />
                 <KpiCard label="Avg Sale Price" value={kpi(fmtUsd(avgPrice))} pct={pc ? ch?.avgPricePct : undefined} period={periodLabel} />
-                <KpiCard label="Unique Editions" value={kpi(uniqueEds.toLocaleString("en-US"))} pct={pc ? ch?.uniqueEditionsPct : undefined} period={periodLabel} />
+                <KpiCard label={isPinnacle ? "Unique Pins" : "Unique Editions"} value={kpi(uniqueEds.toLocaleString("en-US"))} pct={pc ? ch?.uniqueEditionsPct : undefined} period={periodLabel} />
               </div>
             )
           })()}
@@ -1741,10 +1747,25 @@ function AnalyticsInner() {
 
           {data && (
             <div className="space-y-6">
+              {data.truncated && (
+                // A partial wallet presented as the whole one understates every
+                // total below. Say which part was read.
+                <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] px-3 py-2 text-[12px] text-[color:var(--rpc-text-secondary)]">
+                  Figures below cover this wallet&apos;s {data.total_moments.toLocaleString("en-US")} highest-value {labels.units.toLowerCase()}
+                  {data.moments_total != null && data.moments_total > data.total_moments
+                    ? <> of {data.moments_total.toLocaleString("en-US")}</>
+                    : null}
+                  ; the lowest-value tail is not included.
+                </div>
+              )}
               {/* Portfolio Origin Story */}
               <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
                 <div className="mb-3 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Portfolio Origin Story</div>
-                {acquisitionNotIndexed ? (
+                {data.acquisition_failed ? (
+                  <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)]/30 px-3 py-3 text-[12px] text-[color:var(--rpc-text-secondary)]">
+                    Couldn&apos;t load acquisition history right now.
+                  </div>
+                ) : acquisitionNotIndexed ? (
                   <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)]/30 px-3 py-3 text-[12px] text-[color:var(--rpc-text-secondary)]">
                     Acquisition history not yet indexed for this collection — coming soon.
                   </div>

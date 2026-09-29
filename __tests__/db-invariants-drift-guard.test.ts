@@ -223,6 +223,12 @@ const PINS = [
       "supabase/migrations/20260929022013_audit_20260928_pinnacle_analytics_fmv_health_and_order_book.sql",
   },
   {
+    fn: "pinnacle_period_comparison",
+    test: "supabase/tests/pinnacle_period_comparison.sql",
+    // 2026-09-28: uniqueEditions counts pins (render_id), not set keys.
+    migration: "supabase/migrations/20260929022535_audit_20260928_pinnacle_unique_editions_count_pins.sql",
+  },
+  {
     // Added 2026-09-26. The pulls a wallet's pack row shows: Dapper's list for
     // THIS pack and opener, else the wallet's own reconstructed burst, else
     // nothing -- never the moment_acquisitions linkage that listed 95 "pulls"

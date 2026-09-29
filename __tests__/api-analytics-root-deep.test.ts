@@ -23,19 +23,34 @@ const state = vi.hoisted(() => ({
   rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
   resolveThrows: null as string | null,
   resolvedAddress: "0xbd94cade097e50ac" as string | null,
+  acqError: null as unknown,
+  pageErrorAt: null as number | null,
+  totalCount: 0,
+  catalog: [] as Array<{ render_id: string; series_name: string | null }>,
 }))
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     rpc: async (name: string, args: Record<string, unknown>) => {
       state.rpcCalls.push({ name, args })
-      if (name === "get_acquisition_stats") return { data: state.acq, error: null }
+      if (name === "get_acquisition_stats") return { data: state.acqError ? null : state.acq, error: state.acqError }
       if (name === "get_wallet_moments_with_fmv") {
         const page = Number(args.p_offset ?? 0) / 1000
-        return { data: [{ moments: state.pages[page] ?? [], total_count: 0 }], error: null }
+        if (state.pageErrorAt === page) return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } }
+        return { data: [{ moments: state.pages[page] ?? [], total_count: state.totalCount }], error: null }
       }
       return { data: null, error: null }
     },
+    from: (table: string) => ({
+      select: () => ({
+        order: () => ({
+          range: async (from: number, to: number) => {
+            state.rpcCalls.push({ name: `from:${table}`, args: { from, to } })
+            return { data: state.catalog.slice(from, to + 1), error: null }
+          },
+        }),
+      }),
+    }),
   },
 }))
 vi.mock("@/lib/chains/flow/topshot", () => ({
@@ -68,6 +83,10 @@ beforeEach(() => {
   state.rpcCalls = []
   state.resolveThrows = null
   state.resolvedAddress = WALLET
+  state.acqError = null
+  state.pageErrorAt = null
+  state.totalCount = 0
+  state.catalog = []
 })
 
 describe("GET /api/analytics — guards + wallet resolution", () => {
@@ -241,5 +260,79 @@ describe("GET /api/analytics — aggregation", () => {
       expect(call.args.p_wallet).toBe(WALLET)
       expect(call.args.p_collection_id).toBe(ALLDAY)
     }
+  })
+})
+
+// 2026-09-28 — the route discarded the `error` from both reads, so a timeout
+// was published as a measurement: an empty/partial wallet (down to $0) or
+// "acquisition history not yet indexed".
+describe("GET /api/analytics — a failed read is never published as the wallet", () => {
+  const PINNACLE = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+
+  it("⛔ a failed moments page fails the request — no $0 / partial wallet at 200", async () => {
+    state.pages = [Array.from({ length: 1000 }, () => moment({ fmv_usd: 5 }))]
+    state.pageErrorAt = 1
+    const res = await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body.total_fmv).toBeUndefined()
+    expect(body.total_moments).toBeUndefined()
+  })
+
+  it("⛔ a failed acquisition read is reported as failed, not as 'not tracked'", async () => {
+    state.acqError = { code: "57014", message: "timeout" }
+    state.pages = [[moment()]]
+    const res = await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.acquisition_failed).toBe(true)
+    // Not a zeroed Top Shot breakdown built from nothing.
+    expect(body.acquisition).toBeNull()
+    // The rest of the portfolio still renders.
+    expect(body.total_moments).toBe(1)
+  })
+
+  it("CONTROL: a successful acquisition read reports acquisition_failed false", async () => {
+    state.acq = [{ breakdown: [{ method: "pack_pull", count: 1 }], total_moments: 1 }]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.acquisition_failed).toBe(false)
+    expect(body.acquisition).toMatchObject({ pack_pull_count: 1 })
+  })
+
+  it("discloses a wallet larger than what was read (truncated + the source's total)", async () => {
+    state.pages = [[moment(), moment()]]
+    state.totalCount = 12000
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.truncated).toBe(true)
+    expect(body.moments_total).toBe(12000)
+    expect(body.total_moments).toBe(2)
+  })
+
+  it("CONTROL: a fully-read wallet is not truncated", async () => {
+    state.pages = [[moment(), moment()]]
+    state.totalCount = 2
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.truncated).toBe(false)
+  })
+
+  it("labels Pinnacle series by the pin's catalog year, not one 'Unknown' row", async () => {
+    state.catalog = [
+      { render_id: "r-a", series_name: "2024" },
+      { render_id: "r-b", series_name: "2026" },
+    ]
+    state.pages = [[
+      moment({ series_number: null, render_id: "r-a" }),
+      moment({ series_number: null, render_id: "r-b" }),
+      moment({ series_number: null, render_id: "r-b" }),
+      moment({ series_number: null, render_id: "r-missing" }),
+    ]]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=${PINNACLE}`))).json()
+    const rows = body.series.map((s: { label: string; count: number }) => `${s.label}:${s.count}`)
+    expect(rows).toEqual(["Unknown:1", "2024:1", "2026:2"])
+  })
+
+  it("CONTROL: Top Shot never reads the Pinnacle catalog", async () => {
+    await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))
+    expect(state.rpcCalls.some((c) => c.name.startsWith("from:"))).toBe(false)
   })
 })

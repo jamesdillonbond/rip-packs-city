@@ -8,6 +8,9 @@ import { boundedRead } from "@/lib/api/bounded-read"
 import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+// Pages of get_wallet_moments_with_fmv read per request (1,000 each, FMV-desc).
+const MAX_PAGES = 10
 const VALID_UUIDS = new Set(Object.values(COLLECTION_UUID_BY_SLUG))
 
 const SERIES_MAP: Record<number, string> = {
@@ -74,6 +77,30 @@ class PublicApiError extends Error {
   }
 }
 
+/**
+ * render_id → series year for every Pinnacle pin (~2.8k catalog rows, read in
+ * 1,000-row pages on a unique key). Throws on a failed page: a partial map
+ * would label pins "Unknown" that have a series.
+ */
+async function readPinnacleSeriesByRender(): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await boundedRead(
+      (supabaseAdmin as any)
+        .from("pinnacle_catalog")
+        .select("render_id, series_name")
+        .order("render_id", { ascending: true })
+        .range(from, from + 999),
+      "api/analytics/pinnacle_catalog_series",
+    )
+    if (error) throw error
+    const page = (data ?? []) as Array<{ render_id: string; series_name: string | null }>
+    for (const r of page) if (r.series_name) out.set(String(r.render_id), String(r.series_name))
+    if (page.length < 1000) break
+  }
+  return out
+}
+
 function resolveCollectionId(raw: string | null): string | null {
   if (!raw) return null
   const trimmed = raw.trim()
@@ -101,11 +128,16 @@ export async function GET(req: NextRequest) {
 
     const wallet = await resolveWallet(walletInput)
 
-    // Acquisition stats via RPC
-    const { data: acqRaw } = await boundedRead((supabaseAdmin as any).rpc("get_acquisition_stats", {
+    // Acquisition stats via RPC.
+    // ⚠ 2026-09-28: the error was discarded, so a timeout here rendered as
+    // "Acquisition history not yet indexed" (or a zero breakdown). It now
+    // fails only THIS panel, reported as `acquisition_failed`.
+    const { data: acqRaw, error: acqError } = await boundedRead((supabaseAdmin as any).rpc("get_acquisition_stats", {
       p_wallet: wallet,
       p_collection_id: collectionId,
     }), "api/analytics/get_acquisition_stats")
+    const acquisitionFailed = acqError != null
+    if (acquisitionFailed) console.log("[analytics] get_acquisition_stats failed:", acqError?.code ?? "timeout")
     const acqResult = (Array.isArray(acqRaw) ? acqRaw[0] : acqRaw) ?? {}
     const acqCounts = bucketAcquisitionCounts(
       acqResult.breakdown as Array<{ method?: string | null; count?: number | null }> | undefined
@@ -114,8 +146,13 @@ export async function GET(req: NextRequest) {
     // Wallet moments (page 1, large limit) via get_wallet_moments_with_fmv — returns tier/series/is_locked/fmv/confidence
     const PAGE_SIZE = 1000
     const rows: any[] = []
-    for (let page = 0; page < 10; page++) {
-      const { data } = await boundedRead((supabaseAdmin as any).rpc("get_wallet_moments_with_fmv", {
+    // ⚠ 2026-09-28: a failed or timed-out page used to read as an EMPTY page —
+    // the loop broke and the route published a partial (or $0) wallet as the
+    // whole one. A failed page now fails the request (apiErrorResponse below).
+    let reportedTotal: number | null = null
+    let lastPageFull = false
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_wallet_moments_with_fmv", {
         p_wallet: wallet,
         p_sort_by: "fmv_desc",
         p_limit: PAGE_SIZE,
@@ -125,11 +162,24 @@ export async function GET(req: NextRequest) {
         p_tier: null,
         p_collection_id: collectionId,
       }), "api/analytics/get_wallet_moments_with_fmv")
+      if (error) throw error
       const result = (Array.isArray(data) ? data[0] : data) as { moments?: any[]; total_count?: number } | null
       const batch = result?.moments ?? []
+      if (result?.total_count != null) reportedTotal = Number(result.total_count)
       rows.push(...batch)
-      if (batch.length < PAGE_SIZE) break
+      lastPageFull = batch.length === PAGE_SIZE
+      if (!lastPageFull) break
     }
+    // The page cap leaves the lowest-FMV tail unread on the largest wallets.
+    // Disclosed, never presented as the whole wallet.
+    const truncated =
+      (reportedTotal != null && reportedTotal > rows.length) ||
+      (lastPageFull && rows.length >= PAGE_SIZE * MAX_PAGES)
+
+    // Pinnacle pins carry no series NUMBER (that map is Top Shot's); their
+    // series is the catalog's year (2023–2026). Without this every pin landed
+    // in one "Unknown" row.
+    const pinnacleSeries = collectionId === PINNACLE_COLLECTION_ID ? await readPinnacleSeriesByRender() : null
 
     // Tier breakdown
     const tierBreakdown: Record<string, { count: number; fmv: number }> = {}
@@ -164,8 +214,13 @@ export async function GET(req: NextRequest) {
       // rather than silently resuming the old overstatement.
       const lockKnown = r.lock_known === true
       const conf = (r.confidence ? String(r.confidence).toUpperCase() : "NO_DATA")
-      const seriesNum = r.series_number != null ? Number(r.series_number) : -1
-      const seriesLabel = seriesNum >= 0 ? (SERIES_MAP[seriesNum] ?? `Series ${seriesNum}`) : "Unknown"
+      const pinSeries = pinnacleSeries && r.render_id ? pinnacleSeries.get(String(r.render_id)) ?? null : null
+      const seriesNum = pinnacleSeries
+        ? (pinSeries != null && Number.isFinite(Number(pinSeries)) ? Number(pinSeries) : -1)
+        : r.series_number != null ? Number(r.series_number) : -1
+      const seriesLabel = pinnacleSeries
+        ? (pinSeries ?? "Unknown")
+        : seriesNum >= 0 ? (SERIES_MAP[seriesNum] ?? `Series ${seriesNum}`) : "Unknown"
 
       if (!tierBreakdown[tier]) tierBreakdown[tier] = { count: 0, fmv: 0 }
       tierBreakdown[tier].count++
@@ -193,7 +248,7 @@ export async function GET(req: NextRequest) {
     // acquisition source yet, so report nulls instead of misleading zeros.
     const isTopShot = collectionId === TOPSHOT_COLLECTION_ID
     const acqTotal = Number(acqResult.total_moments ?? 0)
-    const acquisitionPayload = !isTopShot && acqTotal === 0
+    const acquisitionPayload = acquisitionFailed || (!isTopShot && acqTotal === 0)
       ? null
       : {
           pack_pull_count: acqCounts.pack_pull,
@@ -208,6 +263,9 @@ export async function GET(req: NextRequest) {
       wallet,
       collection_id: collectionId,
       acquisition: acquisitionPayload,
+      // True when the acquisition read FAILED — distinct from `acquisition:
+      // null` meaning "not tracked for this collection".
+      acquisition_failed: acquisitionFailed,
       locked: {
         locked_count: lockedCount,
         unlocked_count: unlockedCount,
@@ -223,6 +281,10 @@ export async function GET(req: NextRequest) {
       confidence: confidenceDist,
       total_fmv: Math.round(totalFmv * 100) / 100,
       total_moments: total,
+      // The wallet's full size as the source reports it, and whether the
+      // figures above cover only part of it (the page cap).
+      moments_total: reportedTotal ?? total,
+      truncated,
       portfolio_clarity_score: clarityPct,
     })
   } catch (err) {
