@@ -89,7 +89,8 @@ async function fetchEditionCids(
     signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
-    throw new Error(`Flow script HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
+    // Keep the whole cause: Flow nests it (e.g. "[Error Code: 1110] computation limit exceeded") ~400 chars in.
+    throw new Error(`Flow script HTTP ${res.status}: ${(await res.text()).slice(0, 2000)}`);
   }
   const raw = await res.text();
   // Response is a base64 string wrapped in JSON quotes.

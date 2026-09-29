@@ -105,7 +105,8 @@ async function fetchIds(cadence: string, wallet: string): Promise<string[]> {
     signal: AbortSignal.timeout(20000),
   })
   if (!res.ok) {
-    throw new Error(`Flow script HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    // Keep the whole cause: Flow nests it (e.g. "[Error Code: 1110] computation limit exceeded") ~400 chars in.
+    throw new Error(`Flow script HTTP ${res.status}: ${(await res.text()).slice(0, 2000)}`)
   }
   const raw = await res.text()
   const decoded = JSON.parse(atob(raw.trim().replace(/^"|"$/g, "")))

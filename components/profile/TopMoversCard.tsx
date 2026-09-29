@@ -45,7 +45,7 @@ export default function TopMoversCard(props: { ownerKey: string }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{momentSubjectName(r.player_name, null, r.set_name)}</div>
-          <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.set_name ?? ""}</div>
+          <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{/* the set is already the subject when there is no player */ r.player_name ? (r.set_name ?? "") : ""}</div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff" }}>{fmtDollars(fmv)}</div>

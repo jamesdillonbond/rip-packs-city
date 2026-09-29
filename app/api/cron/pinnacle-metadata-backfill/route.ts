@@ -331,7 +331,8 @@ async function runCadenceFetch(wallet: string, ids: string[]): Promise<Record<st
       signal: AbortSignal.timeout(PER_CALL_TIMEOUT_MS),
     })
     if (!res.ok) {
-      throw new Error(`Flow ${res.status}: ${(await res.text()).slice(0, 200)}`)
+      // Keep the whole cause: Flow nests it (e.g. "[Error Code: 1110] computation limit exceeded") ~400 chars in.
+      throw new Error(`Flow ${res.status}: ${(await res.text()).slice(0, 2000)}`)
     }
     const raw = await res.text()
     const decoded = JSON.parse(atob(raw.trim().replace(/^"|"$/g, "")))
