@@ -13,6 +13,11 @@ import { pinnacleSerialFmv, pinnacleSerialFmvData, toMultiplierMap } from "@/lib
 import { isSerialisedEditionType } from "@/lib/pinnacle/serialisation"
 import { applyFmvStalenessPenalty, fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness"
 
+/** Pinnacle LOW = at most one sale in 30 days: too thin to anchor a discount. */
+export function pinnacleLowIsThin(confidence: string | null | undefined): boolean {
+  return String(confidence ?? "").toUpperCase() === "LOW"
+}
+
 /** Oldest live-listing sweep the Sniper will publish. The sweep runs 5×/day
  *  (vercel.json: 45 1,7,13,19 UTC + the 21:37 daily), so > 13 h means at least
  *  two consecutive sweeps failed — the board says so rather than show old asks. */
@@ -150,7 +155,11 @@ async function loadLiveDeals(nowMs: number): Promise<{ deals: PinnacleSniperDeal
       serialFmvEstimate,
       // ASK_ONLY / STALE / SALES_ONLY cannot anchor a confident discount — the
       // shared caveat + verified-first demotion (fmvCannotAnchorDiscount).
-      lowConfidenceFmv: fmvCannotAnchorDiscount(r.fmv_confidence),
+      // ⛔ Pinnacle LOW too (2026-09-28): the Pinnacle engine's LOW means at
+      // most ONE sale in 30 days (all 648 LOW pins, measured), so one print
+      // sets the "FMV". A $55 one-off made $12 asks read "-78%" on a pin that
+      // trades at $12–$22. Scoped to Pinnacle: other engines' LOW differs.
+      lowConfidenceFmv: fmvCannotAnchorDiscount(r.fmv_confidence) || pinnacleLowIsThin(r.fmv_confidence),
       daysSinceSale,
       salesCount30d,
     })

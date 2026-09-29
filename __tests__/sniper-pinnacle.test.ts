@@ -211,6 +211,18 @@ describe("computePinnacleSniperFeed — each listing priced and linked as its ow
     expect(byId.b.lowConfidenceFmv).toBe(false)
   })
 
+  // 2026-09-28: Pinnacle LOW = at most one sale in 30 days. A $55 one-off
+  // made $12 asks read "-78%" on a pin that trades at $12–$22.
+  it("⛔ a Pinnacle LOW FMV (one sale in 30 days) carries the caveat; MEDIUM does not", async () => {
+    state.rows = [
+      row({ nft_id: "low", price_usd: 12, fmv_usd: 55, fmv_confidence: "LOW", fmv_days_since_sale: 13, fmv_sales_count_30d: 1 }),
+      row({ nft_id: "med", price_usd: 12, fmv_usd: 55, fmv_confidence: "MEDIUM", fmv_days_since_sale: 2, fmv_sales_count_30d: 6 }),
+    ]
+    const byId = Object.fromEntries((await computePinnacleSniperFeed()).deals.map((d: any) => [d.momentId, d]))
+    expect(byId.low.lowConfidenceFmv).toBe(true)
+    expect(byId.med.lowConfidenceFmv).toBe(false)
+  })
+
   it("an unserialised edition gets no multiplier even with a serial-like value", async () => {
     state.rows = [row({ edition_type: "Open Edition", serial_number: 1, total_minted: 100 })]
     const d = (await computePinnacleSniperFeed()).deals[0]
