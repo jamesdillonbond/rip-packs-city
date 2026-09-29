@@ -41,3 +41,32 @@ Unverified from any sandbox (Panini is egress-blocked): the marketplace `?sport=
    exclusive). A product needs its own odds (from its `panini_pack_state.raw.pack_label`), its own
    card-family mapping, and priced editions of its own before any EV is published. Then extend the
    `product_set_id = 2332` condition in `panini_pack_ev_board`.
+
+## 2026-09-28 (~11:31 PM PT) — 29 products admitted for a linked collector; the pricing bridge is the open item
+
+**What changed.** Trevor approved admitting every product a linked RPC collector holds (his own
+Panini username, `jamesdillonbond`, linked for the trophy case). `walk_cards=true` was set on 29
+`panini_products` rows: 1579 1584 1587 1602 1613 1631 1632 1705 1759 1779 1780 1783 1784 1819
+1820 1940 1941 1942 1959 1989 2053 2063 2077 2115 2120 2145 2217 2260 2305. Their `note` says why.
+Their grids list ~3,150 items (`last_grid_items`, 2026-09-29 05:20 UTC). A 30th held product,
+2263 (racing), has no registry row yet (never sighted), so it is not admitted.
+Steps 2 (naming) and 5 (pack EV) of the checklist above were **not** done: names are unknown from
+here, and pack EV stays "not modeled".
+
+**Freshness baseline, before the flip** (`panini_coverage_summary`, 2026-09-29 06:30 UTC):
+edition age p50 20.8 h, p90 40.4 h, max 44.8 h; stale 45d 0.0%; walked 7d 100%.
+Expected: the WC cycle stretches from ~1.8 to ~3 days (2,800 editions/day capacity). **Re-measure
+in 2–3 days**; if `pct_editions_stale_45d` moves off 0 or p90 passes ~96 h, narrow the list
+(`update panini_products set walk_cards=false where set_id in (…)` — no deploy).
+
+**The open item — a per-product pricing bridge.** Admitting only COLLECTS: cards, serials, sales.
+No FMV reaches these products, because the bridge into shared `editions` / FMV
+(`sync_panini_editions_to_shared` and its readers) is WC-only via `panini_wc_editions`. The trophy
+slab reads FMV as `editions` → latest `fmv_snapshots` for `collection_id = Panini`, and
+`get_user_top_owned_moments`' Panini branch does the same, so **once non-WC editions land in
+`editions` with FMV snapshots, Panini trophies and the picker price with no further change.**
+Needed: (a) bridge admitted non-WC editions into `editions` (Panini `collection_id`,
+`external_id` = psku) with its own staleness gate (the current 1.0% gate is WC's), and (b) an FMV
+computation over `panini_sales` for them, with confidence from sale count. First consumer: slot 2
+of `/profile/jamesdillonbond` (Rayan Rupert, 1941, #1/1 — a 1/1 will stay thin on sales; LOW or
+NULL is the honest answer there).
