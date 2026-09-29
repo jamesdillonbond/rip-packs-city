@@ -10,6 +10,7 @@ import WalletPacksView from "@/components/packs/WalletPacksView"
 import { buildEditionScopeKey } from "@/lib/wallet-normalize"
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKeyForChain, setOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
+import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { detectAddressChain, isSupportedAddress, isValidAddressForChain } from "@/lib/address"
 import { parseSnsName } from "@/lib/chains/solana/sns"
 import { getCollection, COLLECTION_UUID_BY_SLUG, collectionHasLocking } from "@/lib/collections"
@@ -258,6 +259,10 @@ function WalletMomentsBody() {
   // wrong key. Flow collections resolve to the identical storage slot, so this
   // is a no-op for every collection that shipped before Candy.
   const ownerKeyChain = collectionObj?.dbChain
+  // The signed-in reader's own Flow wallet (2026-09-28). ownerKey above is only
+  // ever written from THIS DEVICE's last search, so a signed-in reader on a new
+  // device opened MY BINDER to an empty lookup box. Used as the LAST seed below.
+  const own = useOwnFlowWallet()
   useEffect(function() {
     setOwnerKey(getOwnerKeyForChain(ownerKeyChain))
     return onOwnerKeyChangeForChain(ownerKeyChain, function(key) { setOwnerKey(key) })
@@ -944,7 +949,9 @@ function WalletMomentsBody() {
     if (rows.length === 0 && !loading && !lastSearchedRef.current) {
       let saved = ""
       try { saved = localStorage.getItem("rpc_last_wallet") || "" } catch {}
-      const candidate = saved || ownerKey
+      // Last resort: the signed-in reader's own wallet — Flow collections only
+      // (the profile wallet is a Flow address; it holds nothing on Solana).
+      const candidate = saved || ownerKey || (ownerKeyChain === "flow" ? (own.wallet || "") : "")
       const seedChain = candidate ? detectAddressChain(candidate) : "unknown"
       const seedUsableHere = !candidate
         ? false
@@ -973,7 +980,7 @@ function WalletMomentsBody() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownerKey])
+  }, [ownerKey, own.wallet])
 
   // Auto-paginate: after initial search, fetch remaining pages automatically
   useEffect(function() {

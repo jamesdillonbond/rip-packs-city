@@ -445,6 +445,21 @@ describe("MarketClient — owned counts", () => {
     expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("edition-counts"))).toBe(false)
   })
 
+  // 2026-09-28 — the device key is written only by a search on THIS device; a
+  // signed-in reader who never searched here got no Owned column.
+  it("no device key, signed in: counts YOUR wallet from the profile", async () => {
+    const base = fetchMock.getMockImplementation() as (input: unknown) => unknown
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me")
+        ? json(200, { user: { id: "u1", wallet_addr: "0x1111222233334444" } })
+        : base(input),
+    )
+    render(<MarketClient />)
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("edition-counts") && u.includes("wallet=0x1111222233334444"))).toBe(true)
+    })
+  })
+
   it("requests edition counts for a signed-in collector", async () => {
     ownerKey = "0xmine"
     render(<MarketClient />)

@@ -1841,3 +1841,61 @@ describe("CollectionTabClient — the owner key follows the collection's chain",
     expect(track.mock.calls[0][1]).toMatchObject({ input_kind: "address" })
   })
 })
+
+// 2026-09-28 — MY BINDER, signed in, on a device with no saved lookup: opened to
+// an empty lookup box, because the seed read only device-local slots. The
+// profile's Flow wallet is now the LAST seed. It never outranks a saved lookup,
+// and never runs on a non-Flow collection.
+describe("CollectionTabClient — signed-in seed", () => {
+  const OWN = "0x1111222233334444"
+  function withMe(me: unknown, store: Record<string, string> = {}) {
+    const base = fetchMock.getMockImplementation() as (input: unknown) => unknown
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me") ? json(200, me) : base(input),
+    )
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = v }, removeItem: () => {}, clear: () => {} },
+    })
+  }
+  const momentCalls = () =>
+    fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/collection-moments?"))
+
+  it("opens your own binder when nothing is saved on this device", async () => {
+    PARAMS.collection = "nba-top-shot"
+    withMe({ user: { id: "u1", wallet_addr: OWN } })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(momentCalls().some((u) => u.includes(`wallet=${OWN}`))).toBe(true))
+  })
+
+  it("a lookup saved on this device still wins over your own wallet", async () => {
+    PARAMS.collection = "nba-top-shot"
+    withMe({ user: { id: "u1", wallet_addr: OWN } }, { rpc_last_wallet: "0xa1b2c3d4e5f60718" })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(momentCalls().some((u) => u.includes("wallet=0xa1b2c3d4e5f60718"))).toBe(true))
+    await new Promise((r) => setTimeout(r, 60))
+    expect(momentCalls().some((u) => u.includes(`wallet=${OWN}`))).toBe(false)
+  })
+
+  it("never runs your Flow wallet against a Solana collection", async () => {
+    PARAMS.collection = "candy-mlb"
+    try {
+      withMe({ user: { id: "u1", wallet_addr: OWN } })
+      render(<CollectionTabClient />)
+      await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith("/api/profile/me"))).toBe(true))
+      await new Promise((r) => setTimeout(r, 60))
+      expect(momentCalls()).toEqual([])
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("signed out: still the empty lookup box", async () => {
+    PARAMS.collection = "nba-top-shot"
+    withMe({ user: null })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith("/api/profile/me"))).toBe(true))
+    await new Promise((r) => setTimeout(r, 60))
+    expect(momentCalls()).toEqual([])
+  })
+})

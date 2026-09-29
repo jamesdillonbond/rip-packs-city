@@ -57,7 +57,10 @@ vi.mock("@/lib/warmup/WarmupContext", () => ({
 // nothing to do with what they assert, and any test that only checks the board
 // still renders passes VACUOUSLY.
 const OWNER_KEY = "0xbd94cade097e50ac"
-vi.mock("@/lib/owner-key", () => ({ getOwnerKey: () => "0xbd94cade097e50ac" }))
+// `mockOwnerKey` is reassignable so the signed-in fallback can be driven with no
+// device key; every other test keeps the historical fixed key.
+let mockOwnerKey = "0xbd94cade097e50ac"
+vi.mock("@/lib/owner-key", () => ({ getOwnerKey: () => mockOwnerKey }))
 vi.mock("@/lib/telemetry/track", () => ({ track: vi.fn() }))
 
 vi.mock("next/link", () => ({
@@ -1810,5 +1813,45 @@ describe("SniperClient — a 200 whose SOURCES failed is not a quiet market eith
 
     expect((await screen.findAllByText(/Damian Lillard/i)).length).toBeGreaterThan(0)
     expect(screen.queryByText(/COULDN'T LOAD THE FLOOR/i)).toBeNull()
+  })
+})
+
+// 2026-09-28 — a signed-in reader on a device that never searched had no owned
+// editions on the sniper: the device key is written only by a search. The
+// profile's Flow wallet is the fallback; a device key still wins.
+describe("SniperClient — signed-in owner fallback", () => {
+  const OWN = "0x1111222233334444"
+  function withMe(user: unknown) {
+    const base = fetchMock.getMockImplementation() as (input: unknown) => unknown
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me")
+        ? { ok: true, status: 200, json: async () => ({ user }) }
+        : base(input),
+    )
+  }
+  afterEach(() => { mockOwnerKey = "0xbd94cade097e50ac" })
+  const ownedCalls = () => fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/owned-flow-ids"))
+
+  it("no device key + signed in: reads YOUR owned editions", async () => {
+    mockOwnerKey = ""
+    withMe({ id: "u1", wallet_addr: OWN })
+    render(<SniperClient />)
+    await waitFor(() => expect(ownedCalls().some((u) => u.includes(`wallet=${OWN}`))).toBe(true))
+  })
+
+  it("a device key still wins over the profile wallet", async () => {
+    withMe({ id: "u1", wallet_addr: OWN })
+    render(<SniperClient />)
+    await waitFor(() => expect(ownedCalls().some((u) => u.includes("wallet=0xbd94cade097e50ac"))).toBe(true))
+    expect(ownedCalls().some((u) => u.includes(`wallet=${OWN}`))).toBe(false)
+  })
+
+  it("no device key + signed out: no owned read", async () => {
+    mockOwnerKey = ""
+    withMe(null)
+    render(<SniperClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith("/api/profile/me"))).toBe(true))
+    await new Promise((r) => setTimeout(r, 40))
+    expect(ownedCalls()).toEqual([])
   })
 })

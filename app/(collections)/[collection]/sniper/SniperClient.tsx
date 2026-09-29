@@ -9,6 +9,7 @@ import { getCollection, COLLECTION_UUID_BY_SLUG, collectionHasLocking } from "@/
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav";
 import PackSniperClient from "@/app/insights/pack-sniper/PackSniperClient";
 import { getOwnerKey } from "@/lib/owner-key";
+import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet";
 import { slugifyName, getEntityLabels } from "@/lib/entity-labels";
 import { pinnacleRenderHref } from "@/lib/entity-href";
 import MomentDetailModal from "@/components/MomentDetailModal";
@@ -136,6 +137,11 @@ function SniperMomentsBody() {
 
   const [ownerKey, setOwnerKey] = useState<string | null>(null);
   const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
+  // 2026-09-28: the device key is written only by a search on THIS device, so a
+  // signed-in reader on a new device saw no owned editions. Their profile's Flow
+  // wallet is the fallback (the key read here is the Flow slot too).
+  const own = useOwnFlowWallet();
+  const ownWallet = own.wallet;
 
   const [tierTab, setTierTab] = useState<TierTab>("all");
   const [sortBy, setSortBy] = useState<SortOption>(isAllDay ? "price_asc" : "listed_desc");
@@ -339,7 +345,7 @@ function SniperMomentsBody() {
     const TEN_MINUTES_MS = 10 * 60 * 1000;
     (async () => {
       try {
-        const key = getOwnerKey();
+        const key = getOwnerKey() || ownWallet || "";
         if (!key) {
           setOwnedIds(new Set());
           return;
@@ -403,7 +409,7 @@ function SniperMomentsBody() {
         // Silent — empty ownedIds is the safe fallback
       }
     })();
-  }, []);
+  }, [ownWallet]);
 
   // Edition-level owned/locked counts for the "Edition Owned/Locked" column.
   // Reads wallet_moments_cache (the same source the Collection page uses)
@@ -416,7 +422,7 @@ function SniperMomentsBody() {
     (async () => {
       try {
         setEditionStatsStatus("loading");
-        const key = getOwnerKey();
+        const key = getOwnerKey() || ownWallet || "";
         if (!key || !key.startsWith("0x")) {
           setEditionStats(new Map());
           setEditionStatsStatus("unavailable");
@@ -449,7 +455,7 @@ function SniperMomentsBody() {
       }
     })();
     return () => { cancelled = true };
-  }, [collectionSlug, isPinnacle]);
+  }, [collectionSlug, isPinnacle, ownWallet]);
 
   const buildFeedUrl = useCallback(() => {
     const params = new URLSearchParams();

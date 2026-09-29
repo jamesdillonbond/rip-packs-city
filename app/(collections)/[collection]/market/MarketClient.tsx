@@ -22,6 +22,7 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
 import { getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
+import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { slugifyName } from "@/lib/entity-labels"
 import { seriesDisplay } from "@/lib/series-label"
 import { momentSubjectHref, pinnacleRenderHref, editionRouteHref } from "@/lib/entity-href"
@@ -341,7 +342,7 @@ function MarketInner() {
   ])
 
   // ── Owner key + edition counts (powers Owned filter + Owned/Locked col) ──
-  const [ownerKey, setOwnerKey] = useState<string | null>(null)
+  const [deviceOwnerKey, setOwnerKey] = useState<string | null>(null)
   const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map())
   // ⛔ 2026-09-19 — BOTH LINES BELOW WERE FLOW-SHAPED, AND THE SECOND ONE IS WHY
   // A FIX THAT SHIPPED EARLIER TODAY WAS INERT. `/api/wallet/edition-counts` was
@@ -359,6 +360,11 @@ function MarketInner() {
   // Cadence arm stays the loose `startsWith("0x")` this line already used, so
   // no Flow collector loses counts to a stricter shape test.
   const ownerKeyChain = getCollection(collectionId)?.dbChain
+  // 2026-09-28: the device key is written only by a search on THIS device, so a
+  // signed-in reader on a new device got no Owned column. Their profile's Flow
+  // wallet is the fallback — on a Flow collection only (it holds nothing elsewhere).
+  const own = useOwnFlowWallet()
+  const ownerKey = deviceOwnerKey || (ownerKeyChain === "flow" ? own.wallet : null)
   useEffect(() => {
     setOwnerKey(getOwnerKeyForChain(ownerKeyChain))
   }, [ownerKeyChain])
