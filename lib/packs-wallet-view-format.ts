@@ -339,3 +339,31 @@ export function heldPacksCaption(held: HeldPackValue | null | undefined, now: nu
   }
   return parts.length ? parts.join(" · ") : undefined
 }
+
+/** "How acquired" for a pack with NO buy row we hold (2026-09-29). The cost
+ *  column may carry an inferred drop retail; this says what the inference
+ *  rests on, and says nothing when there is nothing to say. Dates in PT. */
+export function packInferredAcquisitionLine(row: {
+  has_buy: boolean
+  buy_price_source?: string | null
+  primary_minted_at?: string | null
+  minted_to_wallet_at?: string | null
+}): string | null {
+  if (row.has_buy) return null
+  const day = (iso: string) => {
+    const d = new Date(iso)
+    return Number.isNaN(d.getTime())
+      ? null
+      : d.toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", year: "numeric" })
+  }
+  if (row.minted_to_wallet_at) {
+    const d = day(row.minted_to_wallet_at)
+    if (d) return `Minted into this wallet by Dapper · ${d}`
+  }
+  if (row.primary_minted_at) {
+    const d = day(row.primary_minted_at)
+    if (d) return `Bought at the drop · minted ${d}, no marketplace sale before yours`
+  }
+  if (row.buy_price_source === "retail_inferred") return "No purchase on record · acquired inside the drop's sale window"
+  return null
+}

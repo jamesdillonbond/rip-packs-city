@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
-import { heldPacksCaption, packBuyLabel, packIdentityNote, packMarketLabel, packPullLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
+import { heldPacksCaption, packBuyLabel, packIdentityNote, packInferredAcquisitionLine, packMarketLabel, packPullLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 import {
@@ -267,6 +267,7 @@ interface HistoryRow {
   current_owner?: string | null
   /** 2026-09-26 (v11): Dapper minted this pack straight into the wallet (Flow PackNFT.Minted). */
   minted_to_wallet_at?: string | null
+  primary_minted_at?: string | null
   identity_status?: string | null
 }
 
@@ -952,7 +953,7 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
       : row.bought_from
         ? `Marketplace buy from ${row.bought_from}`
         : "Marketplace buy"
-    : null
+    : packInferredAcquisitionLine(row)
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {acquiredLine && (
@@ -960,11 +961,16 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
           <div style={{ fontFamily: condensedFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", marginBottom: 6 }}>How acquired</div>
           <span
             className="rpc-pack-chip"
-            style={{
-              background: isStudioDrop ? "rgba(168,85,247,0.15)" : "rgba(52,211,153,0.12)",
-              color: isStudioDrop ? "#C084FC" : "#34D399",
-              border: `1px solid ${isStudioDrop ? "rgba(168,85,247,0.4)" : "rgba(52,211,153,0.4)"}`,
-            }}
+            style={
+              // drop purple for a studio drop (recorded, or inferred from a mint);
+              // marketplace green for a recorded buy; neutral for any other
+              // acquisition we hold no record of
+              isStudioDrop || (!row.has_buy && (row.primary_minted_at || row.minted_to_wallet_at))
+                ? { background: "rgba(168,85,247,0.15)", color: "#C084FC", border: "1px solid rgba(168,85,247,0.4)" }
+                : row.has_buy
+                  ? { background: "rgba(52,211,153,0.12)", color: "#34D399", border: "1px solid rgba(52,211,153,0.4)" }
+                  : { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.2)" }
+            }
           >
             {acquiredLine}
           </span>

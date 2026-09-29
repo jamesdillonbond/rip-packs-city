@@ -13,6 +13,7 @@ import {
   packIdentityNote,
   packBuyLabel,
   packPullLabel,
+  packInferredAcquisitionLine,
   packsRippedCaption,
   spentCaption,
   packsSoldCaption,
@@ -245,6 +246,18 @@ describe("packPullLabel (2026-09-26)", () => {
     const label = packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null, pulls_total: 3, pulls_priced: 2 })
     expect(label).toBe("— (2/3 priced)")
     expect(label).not.toMatch(/\$0/)
+  })
+  it("an unrecorded acquisition says what its inferred cost rests on", () => {
+    expect(packInferredAcquisitionLine({ has_buy: false, buy_price_source: "retail_inferred", primary_minted_at: "2024-09-07T19:00:00Z" }))
+      .toBe("Bought at the drop · minted Sep 7, 2024, no marketplace sale before yours")
+    expect(packInferredAcquisitionLine({ has_buy: false, buy_price_source: "retail_inferred", minted_to_wallet_at: "2026-04-24T11:15:01Z", primary_minted_at: null }))
+      .toBe("Minted into this wallet by Dapper · Apr 24, 2026")
+    expect(packInferredAcquisitionLine({ has_buy: false, buy_price_source: "retail_inferred" })).toBe("No purchase on record · acquired inside the drop's sale window")
+    expect(packInferredAcquisitionLine({ has_buy: false, buy_price_source: null })).toBeNull()
+    expect(packInferredAcquisitionLine({ has_buy: true, buy_price_source: "retail", primary_minted_at: "2024-09-07T19:00:00Z" })).toBeNull()
+    // a date is PT: 2 AM UTC on Sep 8 is still Sep 7 in Los Angeles
+    expect(packInferredAcquisitionLine({ has_buy: false, primary_minted_at: "2024-09-08T02:00:00Z" })).toContain("Sep 7, 2024")
+    expect(packInferredAcquisitionLine({ has_buy: false, primary_minted_at: "not a date" })).toBeNull()
   })
   it("a box says what it yielded instead of an unpriced moment count", () => {
     expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null, box_packs: 8 })).toBe("Box · 8 packs")
