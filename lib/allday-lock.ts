@@ -10,6 +10,12 @@
 // therefore a DIFF: everything in wallet_moments_cache that is NOT in the
 // on-chain (unlocked) id set is locked.
 //
+// ⛔ ABSENT ON CHAIN IS AMBIGUOUS: a SOLD moment is absent too, and this diff marks
+// it locked like any other. Nothing here can tell the two apart; the sales table
+// can. prune_allday_wmc_sold_away() (pg_cron, daily) deletes the rows this wallet
+// sold after we last saw them, once a lock check after the sale found them absent.
+// On 2026-09-29 2,535 sold moments across 22 wallets were sitting here as "locked".
+//
 // lock_checked_at is ALWAYS stamped on every examined row (not just flips), so
 // freshness advances even in the steady state where nothing changed.
 //
