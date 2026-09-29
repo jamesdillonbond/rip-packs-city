@@ -341,8 +341,11 @@ const PINS = [
     // value from Dapper's per-pack pull list (same opener) before the rip row.
     // v9 (same day): packs opened with no pack NFT, reconstructed from delivery
     // bursts (wallet_reconstructed_rips), labelled rip_source = reconstructed.
+    // v15 (2026-09-28): an All Day primary buy dated by its mint in Dapper's
+    // index (pack_index_mints) -- a SOLD pack included -- unless someone else
+    // sold it first; the index's acquisition date only while it names this wallet.
     migration:
-      "supabase/migrations/20260926233000_audit_20260926_pack_observed_values_value_drops_with_no_published_pool.sql",
+      "supabase/migrations/20260929062300_audit_20260928_wallet_pack_history_dates_allday_primary_buys_by_mint.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
@@ -350,8 +353,9 @@ const PINS = [
     // (collection, pack) so a purchase both sources saw counts once.
     fn: "get_wallet_pack_summary",
     test: "supabase/tests/get_wallet_pack_summary.sql",
+    // 2026-09-28: inferred_primary_* take the same All Day mint rule.
     migration:
-      "supabase/migrations/20260926230100_audit_20260926_wallet_pack_summary_values_held_packs.sql",
+      "supabase/migrations/20260929062400_audit_20260928_wallet_pack_summary_dates_allday_primary_buys_by_mint.sql",
   },
   {
     // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists
