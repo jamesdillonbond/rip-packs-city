@@ -147,6 +147,47 @@ A launchpad means other people (collectors, communities, creators) build and dro
 
 **Order:** (1) RPC's own free drop on the no-contract design (§3.1). (2) If claims and reveal land well, the escrow contract and creator-side tools, free drops only. (3) Revisit paid transparent bundles only when the 100-WAU gate is met.
 
+---
+
+## 6. Team and sub-community drops (added 2026-09-29, Trevor: "activating with different team-based communities, or sub-communities within each collection")
+
+### 6.1 The communities are out on the market, not in RPC
+
+- **RPC's own users:** 28 non-internal accounts. **3** have picked a favorite team (Blazers 2, Warriors 1; Seahawks 2, Bills 1; Fire 2, Fever 1). There is no team community inside RPC yet. Team drops would have to *bring* fans in, which suits them as acquisition.
+- **The market, last 90 days of `sales`.** Two measures. "Buyers" means anyone who bought that team at least once, and it overlaps heavily because most buyers buy across many teams. **"Loyal fans"** means buyers with at least 3 purchases, at least half of them on one team.
+
+| Collection | Active buyers (3+ buys) | Loyal fans | Teams with 25+ loyal fans | Largest loyal groups |
+|---|---|---|---|---|
+| Top Shot | 2,066 | 362 across 49 teams (median 5) | 2 | Lakers 32, Spurs 30, Knicks 24, Fever 20, Warriors 17, Raptors 16, Celtics 15, Mystics 14 |
+| All Day | 208 | 59 across 25 teams (median 2) | 0 | Bills 7, Cowboys 6, Bucs 5 |
+| Candy MLB | 181 | 25 across 10 teams | 0 | Dodgers 6, Yankees 5 |
+| Golazos | 9 | 3 | 0 | Barcelona 3 |
+
+Looser cut (a team is at least a quarter of the buyer's purchases): Lakers 78, Fever 79, Fire 49, Blazers 24. Blazers have 9 loyal fans on the strict cut.
+
+Raw team reach is much larger, because the WNBA dominates it right now. Top Shot's top raw teams are Wings 1,070, Mystics 1,068, Storm 1,040, Fever 956 and Sparks 895, against ~2,950 total buyers. Those are mostly broad collectors, not team fans.
+
+Pinnacle's sub-communities are franchises (the `characters`/franchise traits), not teams. They aren't measured here.
+
+### 6.2 What this means
+
+- **Only a handful of teams can fill a drop on their own.** A ~25-pack drop is about what Vaultopolis's best paid drop cleared. Lakers, Spurs, Knicks and Fever (Top Shot) can fill one from loyal fans alone, and a few more can on the looser cut. Every All Day, Candy and Golazos team is too small to go it alone.
+- **Two drop shapes that work at today's size:**
+  1. **Team drops for the biggest Top Shot fanbases**: a Lakers pack, a Knicks pack, a Fever pack.
+  2. **Grouped sub-community drops everywhere else**: a division or conference pack, a "WNBA pack" (the largest raw audience on Top Shot right now), an "AFC East pack" for All Day, a "rookies" pack. Group teams until the loyal-fan pool is at least ~25.
+- **Team drops pair naturally with the launchpad (§5).** The people who run a team's collector group (Discord, X) are the obvious creators. They bring the audience and the moments, and RPC brings the claim flow, the pricing, and "Verified by RPC". Dapper's own team-captain communities are the natural co-hosts. ⛔ Per CLAUDE.md, never lead RPC copy or outreach with Trevor's own captain designation.
+
+### 6.3 Rules specific to team drops
+
+- **Anyone can claim.** Theme the *pool* by team, but don't make eligibility depend on owning that team's moments. A holder requirement can count as payment when the qualifying moments have to be bought (§5). A favorite-team pick on an RPC profile is free, so it's fine as a *sort* or a notification target.
+- **Team names, no team marks.** Describe the moments ("Lakers moments") and never use logos, "official", or anything implying the team or league endorses the drop. Add the not-affiliated line from §2.2.
+- **Price the pool per team.** Top Shot's FMV is deep enough. For All Day and Candy MLB, check coverage per pool and refuse a pool whose value we can't publish honestly.
+
+### 6.4 Pilot
+
+The first RPC-run free drop from §3.1, themed to **one Top Shot team with 25+ loyal fans** (Lakers or Spurs), about 25 packs, pool value published in advance, one claim per account. Measure claims, new sign-ups, and 30-day return. That result decides whether team drops scale out, and whether the §5 launchpad is worth the escrow contract.
+
+## Sources
 
 - Vaultopolis drops API (live, 2026-09-29, via `pg_net`); CoinGecko FLOW/USD 90-day chart.
 - [New York Targets Valve's Loot Boxes as Illegal Gambling (Nat'l Law Review)](https://natlawreview.com/article/new-york-targets-valves-loot-boxes-illegal-gambling)
