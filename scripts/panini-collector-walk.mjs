@@ -41,6 +41,9 @@
 //                                  usernames, least-recently-walked first — default 0 (none)
 //   PANINI_COLLECTOR_BUDGET_MIN    stop STARTING new walks after this many minutes (the walk in
 //                                  progress finishes); unset = no budget, the watchdog alone
+//   PANINI_COLLECTOR_WALK_MAX_MIN  per-username cap: past it the walk stops reading, posts what it
+//                                  read as INCOMPLETE (adds, retires nothing) and the run moves on;
+//                                  unset = no cap
 //   PANINI_COLLECTOR_MAX_PAGES     per collection, default 200 (30 cards a page)
 //   PANINI_COLLECTOR_HARD_MIN      watchdog: exit 3 after this many minutes, default 30
 //   DRY_RUN=1                      walk and report, write nothing
@@ -212,6 +215,16 @@ export function mayStartWalk(startedMs, nowMs, budgetMin) {
   return nowMs - startedMs < Number(budgetMin) * 60_000
 }
 
+/**
+ * Past a walk's own deadline? A profile too big for one night (2026-09-29: scottyj111's walk ran
+ * into the 55-min watchdog, which lost everything it had read AND every name after it) stops at
+ * the cap and posts a partial read instead. No cap (null / non-positive / NaN) is never past.
+ */
+export function pastWalkCap(walkStartedMs, nowMs, capMin) {
+  if (!(Number(capMin) > 0)) return false
+  return nowMs - walkStartedMs >= Number(capMin) * 60_000
+}
+
 /** The GraphQL operation a /onepanini request carries, or null. */
 export function operationOf(url, postData) {
   if (!String(url).includes("/onepanini")) return null
@@ -290,7 +303,10 @@ export function isComplete(distinct, total, error) {
   return error == null && total != null && distinct >= total
 }
 
-async function walkProfile(ctx, nickname, { maxPages, log }) {
+async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
+  const walkStartedMs = Date.now()
+  const capped = () => pastWalkCap(walkStartedMs, Date.now(), capMin)
+  let capHit = null
   const page = await ctx.newPage()
   const holdings = new Map()
   let collections = null
@@ -424,8 +440,13 @@ async function walkProfile(ctx, nickname, { maxPages, log }) {
       if (reported == null) error = `read ${collections.length} of ${collectionTotal ?? "?"} collections`
 
       // 2. Each collection's own card pages.
-      for (const c of collections) {
+      for (const [ci, c] of collections.entries()) {
         if (c.count === 0) continue
+        if (capped()) {
+          capHit = `per-walk cap of ${capMin} min reached after ${ci} of ${collections.length} collections`
+          log(`  ${nickname}: ${capHit} — posting a partial read`)
+          break
+        }
         const before = holdings.size
         let pages = 0
         // A collection that comes up short is loaded once more (a slow first answer missed the
@@ -439,7 +460,7 @@ async function walkProfile(ctx, nickname, { maxPages, log }) {
           let n = await first
           pages = n === undefined || n === null ? 0 : 1
           while (n !== undefined && n !== null && lastLen >= PAGE_SIZE && holdings.size - before < c.count) {
-            if (pages >= maxPages) break
+            if (pages >= maxPages || capped()) break
             n = await scrollForNext("cards")
             if (n !== undefined && n !== null) pages += 1
             await page.waitForTimeout(500)
@@ -449,11 +470,12 @@ async function walkProfile(ctx, nickname, { maxPages, log }) {
         log(`  ${nickname}: ${c.cname} (${c.year} ${c.sport}): ${read}/${c.count} cards, ${pages} page(s)`)
         if (read < c.count) shortfalls.push(`${c.cname} ${read}/${c.count}`)
       }
+      if (capHit) error = [error, capHit].filter(Boolean).join("; ")
       if (shortfalls.length) error = [error, `short in ${shortfalls.length} collection(s): ${shortfalls.slice(0, 5).join("; ")}`].filter(Boolean).join("; ")
 
       // 3. Unopened packs. The tab asks clubSimilarPacks, which answers for the SIGNED-IN viewer
       //    and names nobody — so it counts only when this username IS the signed-in account.
-      if (unopenedPacks == null) {
+      if (unopenedPacks == null && !capHit) {
         clubPacks = undefined
         await page.goto(UNOPENED_PACKS_URL(nickname), { waitUntil: "domcontentloaded", timeout: 60_000 }).catch(() => {})
         for (let i = 0; i < 30 && unopenedPacks == null && clubPacks === undefined; i++) await page.waitForTimeout(1_000)
@@ -549,7 +571,7 @@ async function main() {
         if (!hb.ok) log(`heartbeat not recorded (http ${hb.status})`)
       }
       log(`walking ${nickname}`)
-      const res = await walkProfile(ctx, nickname, { maxPages, log })
+      const res = await walkProfile(ctx, nickname, { maxPages, log, capMin: process.env.PANINI_COLLECTOR_WALK_MAX_MIN })
       const complete = isComplete(res.holdings.length, res.total, res.error)
       const line = {
         username: nickname,

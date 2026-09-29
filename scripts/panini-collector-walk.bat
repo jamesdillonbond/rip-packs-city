@@ -25,6 +25,10 @@ REM RPC knows (panini_collector_rotation_targets - never walked first, biggest f
 REM The budget stops STARTING walks after 40 min; the watchdog (55) leaves room for the one in progress.
 if not defined PANINI_COLLECTOR_ROTATION set "PANINI_COLLECTOR_ROTATION=6"
 if not defined PANINI_COLLECTOR_BUDGET_MIN set "PANINI_COLLECTOR_BUDGET_MIN=40"
+REM Per-username cap (2026-09-29): a profile too big for one night stops at 10 min and posts a
+REM partial read, so one big collection cannot run the whole walk into the watchdog.
+REM Worst case: last start at 40 + 10 = 50, inside the 55-min watchdog.
+if not defined PANINI_COLLECTOR_WALK_MAX_MIN set "PANINI_COLLECTOR_WALK_MAX_MIN=10"
 if not defined PANINI_COLLECTOR_HARD_MIN set "PANINI_COLLECTOR_HARD_MIN=55"
 set "PANINI_LOG=%USERPROFILE%\panini-collector-walk.log"
 

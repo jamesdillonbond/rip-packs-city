@@ -22,6 +22,7 @@ import {
   findKey,
   isComplete,
   mayStartWalk,
+  pastWalkCap,
   mergeTargets,
   operationOf,
   parseTargets,
@@ -124,6 +125,17 @@ describe("targets", () => {
   it("puts the rotation AFTER the explicit and linked names, so the budget cuts the rotation first", () => {
     const withPlan = mergeTargets(["Jamesdillonbond"], [{ nickname: "AdlCards" }])
     expect(mergeTargets(withPlan, [{ nickname: "CBark" }, { nickname: "adlcards" }])).toEqual(["Jamesdillonbond", "AdlCards", "CBark"])
+  })
+})
+
+describe("pastWalkCap", () => {
+  const t0 = 5_000_000
+  it("is past the cap once the walk has run that many minutes", () => {
+    expect(pastWalkCap(t0, t0 + 11 * 60_000, "12")).toBe(false)
+    expect(pastWalkCap(t0, t0 + 12 * 60_000, "12")).toBe(true)
+  })
+  it("no cap set is never past, however long the walk", () => {
+    for (const c of [undefined, null, "", "0", "-1", "abc"]) expect(pastWalkCap(t0, t0 + 999 * 60_000, c)).toBe(false)
   })
 })
 
