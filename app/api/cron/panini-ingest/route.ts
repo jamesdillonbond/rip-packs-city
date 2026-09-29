@@ -106,6 +106,12 @@ async function readProducts(): Promise<{ rows: ProductRow[]; error: string | nul
 }
 
 const PANINI_HOST = "https://nft.paniniamerica.net/";
+// Diagnostic JSON from the runner is stored as-is only while small: a runaway payload is replaced by
+// a marker saying it was dropped, never truncated into something that parses as a smaller truth.
+function boundedJson(v: unknown, maxChars: number): unknown {
+  try { return JSON.stringify(v).length <= maxChars ? v : { dropped: "over size bound", max_chars: maxChars }; }
+  catch { return { dropped: "not serialisable" }; }
+}
 // A pack page URL is only ever a Panini URL. The runner harvests links from pages it visits, so the
 // host check is what keeps an off-site link from becoming a page the next walk navigates to.
 function packPageUrl(u: unknown): string | null {
@@ -132,7 +138,11 @@ async function upsertRegistry(products: any[], packPages: any[], nowIso: string)
     const items = Number.isFinite(+p?.grid_items) ? +p.grid_items : null;
     // One setId can appear under two sports' grids; keep the sighting with more items.
     if (prev && (prev.last_grid_items as number | null ?? -1) >= (items ?? -1)) continue;
-    prodRows.set(sid, { set_id: sid, last_seen_at: nowIso, last_grid_items: items, last_grid_sport: typeof p?.sport === "string" ? p.sport.slice(0, 40) : null });
+    const row: Record<string, unknown> = { set_id: sid, last_seen_at: nowIso, last_grid_items: items, last_grid_sport: typeof p?.sport === "string" ? p.sport.slice(0, 40) : null };
+    // Identification evidence (panini_products.sample). Only a small plain object is kept; anything
+    // else is dropped rather than stored, and an absent sample never erases the previous one.
+    if (p?.sample && typeof p.sample === "object" && !Array.isArray(p.sample)) row.sample = boundedJson(p.sample, 2000);
+    prodRows.set(sid, row);
   }
   if (prodRows.size) {
     const { data, error } = await db.from("panini_products").upsert([...prodRows.values()], { onConflict: "set_id" }).select("set_id");
@@ -142,12 +152,16 @@ async function upsertRegistry(products: any[], packPages: any[], nowIso: string)
   extra.products_offered = prodRows.size;
 
   const discovered = new Set<string>();
-  const results: { url: string; walked: boolean; captured: boolean; pack_id: string | null }[] = [];
+  const results: { url: string; walked: boolean; captured: boolean; pack_id: string | null; ops: unknown; pack_like: unknown }[] = [];
   for (const pg of packPages) {
     const url = packPageUrl(pg?.url);
     if (!url) continue;
     if (pg?.discovered) discovered.add(url);
-    if (pg?.walked) results.push({ url, walked: true, captured: pg?.captured === true, pack_id: typeof pg?.pack_id === "string" ? pg.pack_id.slice(0, 120) : null });
+    if (pg?.walked) results.push({
+      url, walked: true, captured: pg?.captured === true, pack_id: typeof pg?.pack_id === "string" ? pg.pack_id.slice(0, 120) : null,
+      ops: pg?.ops && typeof pg.ops === "object" && !Array.isArray(pg.ops) ? boundedJson(pg.ops, 4000) : undefined,
+      pack_like: pg?.pack_like && typeof pg.pack_like === "object" && !Array.isArray(pg.pack_like) ? boundedJson(pg.pack_like, 4000) : pg?.pack_like === null ? null : undefined,
+    });
   }
   if (discovered.size) {
     // ignoreDuplicates: a discovered link never overwrites a seeded/manual row's source or enabled flag.
@@ -161,6 +175,10 @@ async function upsertRegistry(products: any[], packPages: any[], nowIso: string)
   let walkedWritten = 0;
   for (const r of results) {
     const patch: Record<string, unknown> = { last_walked_at: nowIso };
+    // Visit evidence (what the page fired; the first pack-shaped object from any op). Written only
+    // when the runner sent it, so an older runner never blanks the last reading.
+    if (r.ops !== undefined) patch.last_ops = r.ops;
+    if (r.pack_like !== undefined) patch.last_pack_like = r.pack_like;
     if (r.captured) { patch.last_captured_at = nowIso; if (r.pack_id) patch.last_pack_id = r.pack_id; }
     const { data, error } = await db.from("panini_pack_pages").update(patch).eq("url", r.url).select("url");
     if (error) { errors.push(`pack_pages walked: ${error.message}`); break; }

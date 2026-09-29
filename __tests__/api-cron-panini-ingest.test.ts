@@ -560,3 +560,30 @@ describe("panini-ingest — sales history respects the product gate", () => {
     expect(sent.map((r: any) => r.url_key)).toEqual(["packcard-2332_1_1_1__1_10"])
   })
 })
+
+describe("panini-ingest — discovery evidence (2026-09-28)", () => {
+  it("stores a product's identifying sample, and never writes one it was not sent", async () => {
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { products: [
+      { set_id: 4100, sport: "Basketball", grid_items: 3, sample: { psku: "packcard-4100_1_1_1", athlete: "A'ja Wilson", team: "Las Vegas Aces", cardset: "Base Prizms Silver" } },
+      { set_id: 4200, sport: "Football", grid_items: 1 },
+    ] } }))
+    const up = st.registryUpserts.find((u) => u.table === "panini_products")!
+    const byId = Object.fromEntries(up.rows.map((r: any) => [r.set_id, r]))
+    expect(byId[4100].sample).toMatchObject({ team: "Las Vegas Aces" })
+    expect("sample" in byId[4200]).toBe(false)
+  })
+
+  it("stamps a pack page's fired ops and pack-like evidence; an oversize blob is marked dropped, not truncated", async () => {
+    const big = Object.fromEntries(Array.from({ length: 800 }, (_, i) => [`op${i}`, i]))
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { pack_pages: [
+      { url: "https://nft.paniniamerica.net/pack-a.html", walked: true, captured: false, ops: { getDropDetails: 2 }, pack_like: { op: "getDropDetails", keys: ["pack_sku"] } },
+      { url: "https://nft.paniniamerica.net/pack-b.html", walked: true, captured: false, ops: big },
+      { url: "https://nft.paniniamerica.net/pack-c.html", walked: true, captured: false },
+    ] } }))
+    const ups = st.updates.filter((u) => u.table === "panini_pack_pages")
+    expect(ups[0].patch).toMatchObject({ last_ops: { getDropDetails: 2 }, last_pack_like: { op: "getDropDetails" } })
+    expect(ups[1].patch.last_ops).toMatchObject({ dropped: "over size bound" })
+    expect("last_ops" in ups[2].patch).toBe(false)
+    expect("last_pack_like" in ups[2].patch).toBe(false)
+  })
+})

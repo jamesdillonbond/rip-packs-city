@@ -264,6 +264,31 @@ async function main() {
   // most this walk). Fed by BOTH enumeration sources, for EVERY product, walked or not.
   let currentSport = null;
   const sightings = new Map();
+  // One grid item per setId (the first seen), so a product can be IDENTIFIED — a setId alone does
+  // not say "WNBA" (2026-09-28: 129 setIds sighted, none nameable). Stored as panini_products.sample.
+  const sampleBySet = new Map();
+  function sampleOf(it) {
+    const sid = setIdOf(String(it?.psku ?? ""));
+    if (sid === null || sampleBySet.has(sid)) return;
+    const pick = (v) => (typeof v === "string" ? v.slice(0, 120) : v ?? null);
+    sampleBySet.set(sid, { psku: pick(it.psku), athlete: pick(it.athlete), team: pick(it.team), cardset: pick(it.cardset), rarity: pick(it.rarity) });
+  }
+  // Pack-page evidence (2026-09-28): the WNBA /pack-<name>.html page was walked and captured
+  // nothing, so record WHAT each pack-page visit fired, and the first response object that looks
+  // like pack data from ANY operation. Read back as panini_pack_pages.last_ops / last_pack_like.
+  let packVisitOps = null, packVisitPackLike = null;
+  function opNameOf(resp) {
+    try {
+      const pj = JSON.parse(resp.request().postData() || "null");
+      return pj?.operationName || (typeof pj?.query === "string" ? (pj.query.match(/(?:query|mutation)\s+(\w+)/) || [])[1] : null) || "unknown";
+    } catch { return "unknown"; }
+  }
+  function findPackLike(o, depth) {
+    if (!o || typeof o !== "object" || depth > 6) return null;
+    if (!Array.isArray(o) && (o.pack_sku != null || o.total_pack_qty != null)) return o;
+    for (const k in o) { const v = o[k]; if (v && typeof v === "object") { const r = findPackLike(v, depth + 1); if (r) return r; } }
+    return null;
+  }
   function sight(psku) {
     const sid = setIdOf(psku);
     if (sid === null) return;
@@ -272,6 +297,7 @@ async function main() {
   }
   // Pack links harvested from every page the walk visits (discovery -> panini_pack_pages).
   const harvestedPackUrls = new Set();
+  const packishUnmatched = new Set();
   async function harvestPackLinks() {
     let hrefs = [];
     try {
@@ -281,6 +307,9 @@ async function main() {
     for (const h of hrefs) {
       const u = String(h).split("#")[0].split("?")[0];
       if (PACK_LINK_RE.test(u) && !harvestedPackUrls.has(u)) { harvestedPackUrls.add(u); added++; }
+      // Evidence for the pattern itself (0 links matched on 2026-09-28): keep a few pack-ish hrefs
+      // that did NOT match, so a wrong PACK_LINK_RE is visible in the enum marker.
+      else if (/pack/i.test(u) && packishUnmatched.size < 15) packishUnmatched.add(u.slice(0, 200));
     }
     return added;
   }
@@ -361,6 +390,11 @@ async function main() {
     if (resp.status() !== 200 || !j) return;
     const d = j?.data; if (!d) return;
     opCount++; for (const k in d) dataKeys.add(k);
+    if (packVisitOps) {
+      const op = opNameOf(resp);
+      packVisitOps[op] = (packVisitOps[op] || 0) + 1;
+      if (!packVisitPackLike) { const pl = findPackLike(d, 0); if (pl) packVisitPackLike = { op, keys: Object.keys(pl).slice(0, 60), pack_sku: pl.pack_sku ?? null, pack_name: pl.pack_name ?? null }; }
+    }
     if (d.getCardMarketStats?.data) { const cd = d.getCardMarketStats.data; if (cd.psku && nationByPsku[cd.psku]) cd.__nation = nationByPsku[cd.psku]; cards.push(cd); }
     if (d.getPackMarketStats?.data) { const pk = d.getPackMarketStats.data; if (currentPackId) pk.__pack_id = currentPackId; if (currentPackUrl) pk.__page_url = currentPackUrl; packs.push(pk); }
     const prods = d.getPskuTotalCardsList?.data?.products;
@@ -379,7 +413,7 @@ async function main() {
     const items = []; findItems(d, 0, items);
     for (const it of items) {
       if (!it?.psku) continue;
-      if (Array.isArray(gridItems) && gridItems.includes(it)) sight(String(it.psku));
+      if (Array.isArray(gridItems) && gridItems.includes(it)) { sight(String(it.psku)); sampleOf(it); }
       if (isWalked(String(it.psku))) { enumPskus.add(it.psku); if (it.team) nationByPsku[it.psku] = it.team; }
     }
     if (DEBUG && items.length) console.log(`[panini-runner][debug] onepanini keys=${Object.keys(d).join(",")} items=${items.length} walked=${[...enumPskus].length}`);
@@ -623,7 +657,7 @@ async function main() {
   for (const [k, n] of sightings) {
     const [sid, sp] = k.split("|");
     const prev = bestBySet.get(sid);
-    if (!prev || n > prev.grid_items) bestBySet.set(sid, { set_id: Number(sid), sport: sp, grid_items: n });
+    if (!prev || n > prev.grid_items) bestBySet.set(sid, { set_id: Number(sid), sport: sp, grid_items: n, sample: sampleBySet.get(Number(sid)) ?? null });
   }
   const productSightings = [...bestBySet.values()];
   // The first sport pass is the historical Soccer walk; its figures keep the legacy field names below.
@@ -689,7 +723,7 @@ async function main() {
   // Post the enumeration record BEFORE the long per-card walk, so it lands even if the walk is
   // later killed (laptop sleep / unplug / rate-limit). Fire-and-forget semantics: post() already
   // swallows its own failures, and telemetry must never break the ingest it measures.
-  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size } });
+  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size, packish_unmatched: [...packishUnmatched] } });
   // Registry upkeep: every product the grids served + every pack link found. Never admits a
   // product or disables a page — the route only records sightings and new pages.
   await post({ products: productSightings, pack_pages: [...harvestedPackUrls].map((url) => ({ url, discovered: true })) });
@@ -709,10 +743,12 @@ async function main() {
     currentPackId = (url.match(/subpack-\d+-(\d+)\.html$/) || [])[1] || null;
     currentPackUrl = url;
     const before = packs.length;
+    packVisitOps = {}; packVisitPackLike = null;
     await page.goto(url, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(2500);
     const got = packs.slice(before);
-    packVisits.push({ url, walked: true, captured: got.length > 0, pack_id: got.length ? String(got[0].__pack_id ?? got[0].pack_sku ?? "") || null : null });
+    packVisits.push({ url, walked: true, captured: got.length > 0, pack_id: got.length ? String(got[0].__pack_id ?? got[0].pack_sku ?? "") || null : null, ops: packVisitOps, pack_like: packVisitPackLike });
+    packVisitOps = null;
   }
   currentPackId = null; currentPackUrl = null;
   console.log(`[panini-runner] pack pages: ${packVisits.length} visited (${packUrlList.length} known), ${packVisits.filter((v) => v.captured).length} captured`);
