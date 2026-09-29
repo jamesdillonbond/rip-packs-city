@@ -13,8 +13,12 @@
 --   R2 an EMPTY build never wipes the corpus (a failed read is not "no moments").
 --   R3 an id no source names any more is deleted, after the write.
 --
--- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929130700_audit_20260929_topshot_pack_pulls_named_by_id_neighbours.sql).
+--   S1 (2026-09-29) sales feed the corpus through topshot_sale_id_editions; an
+--      id whose sales disagree is marked NULL for good and never enters it.
+--
+-- The function DDL below is VERBATIM from the committed migrations
+-- (supabase/migrations/20260929130700_audit_20260929_topshot_pack_pulls_named_by_id_neighbours.sql,
+--  supabase/migrations/20260929143000_audit_20260929_id_neighbour_corpus_reads_sales.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -36,10 +40,62 @@ CREATE TABLE public.pack_open_pulls (collection_id uuid, pack_nft_id text, nft_i
 CREATE TABLE public.pack_open_pull_values (collection_id uuid, pack_nft_id text, opener_address text,
   n_pulls int, n_resolved int, n_priced int, pull_value_usd numeric, priced_at timestamptz,
   n_inferred int NOT NULL DEFAULT 0, PRIMARY KEY (collection_id, pack_nft_id));
+CREATE TABLE public.sales (collection_id uuid, nft_id text, edition_id uuid, sold_at timestamptz);
+CREATE TABLE public.topshot_sale_id_editions (id bigint PRIMARY KEY, edition_external_id text, updated_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE public.topshot_moment_id_editions (id bigint PRIMARY KEY, edition_external_id text NOT NULL,
   refreshed_at timestamptz NOT NULL DEFAULT now());
 
 -- >>> BEGIN verbatim (body byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.refresh_topshot_sale_id_editions(p_from timestamptz, p_to timestamptz)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '300s'
+AS $function$
+DECLARE
+  v_started timestamptz := clock_timestamp();
+  v_ts constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+  v_read int := 0; v_written int := 0;
+BEGIN
+  IF p_from IS NULL OR p_to IS NULL OR p_from >= p_to THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'p_from < p_to required');
+  END IF;
+  IF NOT pg_try_advisory_xact_lock(hashtext('refresh_topshot_sale_id_editions')) THEN
+    RETURN jsonb_build_object('ok', true, 'skipped', 'another run holds the lock');
+  END IF;
+
+  WITH src AS (
+    SELECT s.nft_id::bigint AS id, e.external_id AS ext
+      FROM public.sales s
+      JOIN public.editions e ON e.id = s.edition_id AND e.collection_id = v_ts
+     WHERE s.collection_id = v_ts
+       AND s.sold_at >= p_from AND s.sold_at < p_to
+       AND s.nft_id ~ '^[0-9]{1,15}$'
+       AND e.external_id ~ '^[0-9]+:[0-9]+(::[0-9]+)?$'
+  ), g AS (
+    SELECT id, CASE WHEN count(DISTINCT ext) = 1 THEN min(ext) END AS ext, count(*) AS n
+      FROM src GROUP BY id
+  ), up AS (
+    INSERT INTO public.topshot_sale_id_editions AS t (id, edition_external_id, updated_at)
+    SELECT id, ext, now() FROM g
+    ON CONFLICT (id) DO UPDATE
+      -- a disagreement, now or before, is final: NULL
+      SET edition_external_id = CASE WHEN t.edition_external_id IS NOT DISTINCT FROM EXCLUDED.edition_external_id
+                                     THEN t.edition_external_id END,
+          updated_at = now()
+      WHERE t.edition_external_id IS DISTINCT FROM EXCLUDED.edition_external_id
+    RETURNING 1
+  )
+  SELECT (SELECT coalesce(sum(n), 0) FROM g), (SELECT count(*) FROM up) INTO v_read, v_written;
+
+  PERFORM public.log_pipeline_run('topshot-sale-id-editions', v_started, v_read, v_written, 0, true, NULL,
+    'nba_top_shot', p_from::text, p_to::text,
+    jsonb_build_object('sales_read', v_read, 'ids_written', v_written));
+  RETURN jsonb_build_object('ok', true, 'sales_read', v_read, 'ids_written', v_written);
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.refresh_topshot_moment_id_editions()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -78,9 +134,15 @@ BEGIN
       FROM public.nft_edition_map n
      WHERE n.collection_id = v_ts AND n.nft_id ~ '^[0-9]{1,15}$'
        AND n.edition_external_id ~ '^[0-9]+:[0-9]+(::[0-9]+)?$'
+    UNION ALL
+    -- 2026-09-29: every Top Shot moment id a recorded SALE names (4.17M ids
+    -- with it, from 2.48M), kept by refresh_topshot_sale_id_editions(); an id
+    -- whose sales disagree carries '!' and so drops out below
+    SELECT s.id, coalesce(s.edition_external_id, '!')
+      FROM public.topshot_sale_id_editions s
   ) u
   GROUP BY u.id
-  HAVING count(DISTINCT u.ext) = 1;
+  HAVING count(DISTINCT u.ext) = 1 AND min(u.ext) <> '!';
   GET DIAGNOSTICS v_built = ROW_COUNT;
 
   -- A build that came back empty is a failed read, never "no moments": keep
@@ -269,6 +331,34 @@ BEGIN
   PERFORM _assert(NOT (v->>'ok')::boolean, 'an empty build reports failure');
   PERFORM _assert_eq((SELECT count(*)::text FROM public.topshot_moment_id_editions), '9', 'R2 and wipes nothing');
   PERFORM _assert((SELECT NOT ok FROM public.pipeline_runs_stub WHERE pipeline = 'topshot-moment-id-editions' ORDER BY ctid DESC LIMIT 1), 'its pipeline row says ok = false');
+END $$;
+
+-- S1: sales feed the corpus; a conflicting id is excluded for good
+INSERT INTO public.wallet_moments_cache VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '100', '1:1');
+INSERT INTO public.sales
+  SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, '700'::text, id, '2026-09-01'::timestamptz FROM public.editions WHERE external_id = '1:2'
+  UNION ALL SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', '701', id, '2026-09-01' FROM public.editions WHERE external_id = '1:2'
+  UNION ALL SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', '701', id, '2026-09-02' FROM public.editions WHERE external_id = '1:3'
+  UNION ALL SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', '702', id, '2025-01-01' FROM public.editions WHERE external_id = '1:2'
+  UNION ALL SELECT 'dee28451-5d62-409e-a1ad-a83f763ac070', '703', id, '2026-09-01' FROM public.editions WHERE external_id = '1:2';
+DO $$
+DECLARE v jsonb;
+BEGIN
+  PERFORM _assert((public.refresh_topshot_sale_id_editions(now(), now() - interval '1 day'))->>'ok' = 'false', 'a backwards window is refused');
+  v := public.refresh_topshot_sale_id_editions('2026-08-01', '2026-10-01');
+  PERFORM _assert_eq(v->>'sales_read', '3', 'three Top Shot sales in the window (the 2025 one and the All Day one are not)');
+  PERFORM _assert((SELECT edition_external_id = '1:2' FROM public.topshot_sale_id_editions WHERE id = 700), 'S1 700 -> 1:2');
+  PERFORM _assert((SELECT edition_external_id IS NULL FROM public.topshot_sale_id_editions WHERE id = 701), 'S1 701 sold as 1:2 and 1:3 -> NULL');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.topshot_sale_id_editions WHERE id IN (702, 703)), 'outside the window / another collection: not read');
+  -- a later window naming 700 differently makes it a conflict for good
+  UPDATE public.sales SET sold_at = '2025-01-01' WHERE nft_id = '702';
+  INSERT INTO public.sales SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', '700', id, '2025-01-02' FROM public.editions WHERE external_id = '1:3';
+  PERFORM public.refresh_topshot_sale_id_editions('2025-01-01', '2025-02-01');
+  PERFORM _assert((SELECT edition_external_id IS NULL FROM public.topshot_sale_id_editions WHERE id = 700), 'S1 a later disagreement turns 700 NULL');
+  PERFORM _assert((SELECT edition_external_id = '1:2' FROM public.topshot_sale_id_editions WHERE id = 702), 'S1 702 -> 1:2 from its own window');
+  v := public.refresh_topshot_moment_id_editions();
+  PERFORM _assert((SELECT edition_external_id = '1:2' FROM public.topshot_moment_id_editions WHERE id = 702), 'S1 a sale-named id enters the corpus');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.topshot_moment_id_editions WHERE id IN (700, 701)), 'S1 a conflicting sale id never enters it');
 END $$;
 
 ROLLBACK;

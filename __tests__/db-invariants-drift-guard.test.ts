@@ -27,7 +27,13 @@ const PINS = [
     // Its corpus: drops ids two sources disagree on; an empty build never wipes it.
     fn: "refresh_topshot_moment_id_editions",
     test: "supabase/tests/name_pack_pulls_by_id_neighbours.sql",
-    migration: "supabase/migrations/20260929130700_audit_20260929_topshot_pack_pulls_named_by_id_neighbours.sql",
+    migration: "supabase/migrations/20260929143000_audit_20260929_id_neighbour_corpus_reads_sales.sql",
+  },
+  {
+    // 2026-09-29: sale-named ids for that corpus; a disagreement is final.
+    fn: "refresh_topshot_sale_id_editions",
+    test: "supabase/tests/name_pack_pulls_by_id_neighbours.sql",
+    migration: "supabase/migrations/20260929143000_audit_20260929_id_neighbour_corpus_reads_sales.sql",
   },
   {
     // Added 2026-09-27. The Pinnacle wallet-backfill post-pass named holdings
