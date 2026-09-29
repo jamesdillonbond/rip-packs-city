@@ -106,3 +106,6 @@ in a rolled-back transaction; see the migration header. Still open from the list
 - WC freshness (`panini_coverage_summary`): p50 20.8 h → 27.3 → 29.5 → **33.0 h**, p90 40.4 → 46.8
   → 49.0 → **52.5 h**, stale-45d still 0.0%. Drifting as predicted while new products are
   enumerated; the narrow-the-list trigger (p90 ≈ 96 h or stale-45d > 0) is not near.
+- 12:00 PM PT 09-29: unchanged (0 of 136 walked; p50 33.2 h / p90 52.7 h / stale-45d 0.0%). The Oct 1
+  check is now a suggested task in the Claude app ("Check Panini held editions got walked and
+  priced") — a scheduled fresh-session routine here cannot carry the Supabase connector.

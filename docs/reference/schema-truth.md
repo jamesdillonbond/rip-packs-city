@@ -350,3 +350,16 @@ Built for the trophy-case campaign ([ledger](../overnight/ledger.md), 2026-09-27
   - Of 9 rows left unpaired, **7 are real same-price resales to a different buyer**, correctly kept. **2 were twins** (one wallet bought nft `163827235222471` twice on 06-24 at $2). They were removed 09-29 in migration `20260929160721` after Trevor's go-ahead; the backup now holds 25,795 rows. 0 same-buyer twins remain.
   - The writer now skips any candidate whose NFT has a non-studio sale at the same price within ±2 days **to the same buyer**, comparing addresses normalized without `0x`. The buyer was added 09-29, after those 7 resales showed that NFT + price + time alone drops real sales.
   - ⚠ Any new cross-source sales writer needs the same identity check: NFT, price, buyer and time window.
+
+## Trophy held_state and the clean-walk floor (2026-09-28)
+
+Migration `20260929061743_audit_20260928_trophy_still_held_state`. Pin: `supabase/tests/get_trophy_slab_data.sql`.
+
+| Object | What it is |
+|---|---|
+| `wmc_clean_walks` | PK `(wallet_address, collection_id)`, `last_clean_walk_at`, `observed_count`. Service-role only. Written ONLY by `deleteUnseenWmcRows` (`lib/chains/flow/wmc-unseen-delete.ts`) when delete-not-seen actually ran (non-empty observed, not skipped, no chunk error); a failed stamp is reported as `extra.clean_walk_stamp_error`, never thrown. Candy never writes it (add-only refresh). |
+| `get_trophy_slab_data` → `held_state` | `held` (moment under one of the user's `saved_wallets`; Panini: on a linked username's walked profile, or its serial seen under the name after that walk) · `not_held` (absent, AND every wallet relevant to the collection has a clean walk after `pinned_at` and within 13 days; Panini: every linked username has a COMPLETE `public` walk after the pin) · `unknown` (anything else). `held_checked_at` = the floor it rests on. |
+
+- ⚠ `seeded_wallets.last_refreshed_per_collection` and `wallet_backfill_state.last_scanned_at` are NOT complete-walk proofs (written on timeouts/degraded runs); the jsonb one is REPLACED on each write, so it holds only the last collection walked.
+- ⚠ `trophy_moments.pinned_at` is overwritten by every re-pin, so "after the pin" means after the LATEST pin of that slot.
+- UI: `TrophySlab` shows "Not in your saved wallets · checked <date>" (public: "this collector's") on `not_held` only — worded as what RPC can see, never "sold" (it may be transferred, or in a wallet never saved). The share page payload (`lib/profile/public-profile.ts`) carries both fields.
