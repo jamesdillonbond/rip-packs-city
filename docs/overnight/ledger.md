@@ -11,6 +11,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-29 · 🔧 SHIPPED (code) — `allday-price-recover` multi-NFT pass: first production tick VERIFIED, then `MULTI_TX_LIMIT` 150 → 400. The 6:40 AM PT run: 150 carts → **355 rows priced, 0 uncertain**, 81 promoted into `sales` straight away (prices match the priced rows exactly; $0.50–$2.00, median $0.67; every row has a seller), 68.8 s of the 200 s budget. At 150/tick the ~23k rows needed ~22 h; at 400 (~0.45 s/tx → ~180 s, and the loop still breaks at the budget) it's ~8–9 h. Revert: set `MULTI_TX_LIMIT` back to 150 in app/api/admin/recover-v1-budget-exhausted/route.ts. · Claude Code (web)
+
 ### 2026-09-29 · 🔧 SHIPPED (migration + FMV recalc + code) — Pinnacle FMV capped at the 30-day max sale; freshness badge corrected to twice-daily; stale News item removed (6:15 AM PT).
 - **(1) FMV cap.** On a falling render the recency-weighted median (#155) lags, and deals ranked by discount select exactly those lags. 3 of the 5 Overview headline deals had an FMV above every sale in the last 30 days (Nemo $9.50 over sales of $3–$6). Migration `20260929131423` caps `pinnacle_fmv_recalc_render` at the 30-day max sale when a render has 2+ sales in 30 days. A lone recent sale never caps.
   - Backtest, simulated engine with the next sale as truth: mean |log err| 0.434 → 0.366 (2–3 recent sales; 30 better / 18 worse) and 0.572 → 0.382 (4+; 20 / 4). One recent sale was worse (0.282 → 0.312), so excluded. A faster decay did not help at any λ.
