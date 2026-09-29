@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
-import { momentSubjectHref } from "@/lib/entity-href"
+import { isTeamMoment, momentSubjectHref } from "@/lib/entity-href"
 
 // ── Team Moments linked to a player page that has never existed (2026-09-04) ──
 // Top Shot's convention for a TEAM highlight is `player_name = team_name`: a *Clamps* Moment of
@@ -61,5 +61,30 @@ describe("momentSubjectHref — a team Moment goes to the team page, not a 404 p
       expect(handRolled, `${f} still builds a player href by hand: ${handRolled.join(" | ")}`)
         .toHaveLength(0)
     }
+  })
+})
+
+// ── All Day's Team Melt stores the CITY (2026-09-29) ─────────────────────────
+// "Denver — Banner Year" (edition 5441) carries player_name "Denver", team_name "Denver Broncos".
+// No `players` row exists for a city, so /nfl-all-day/player/denver 404'd — and the sitemap
+// listed it (and 13 more). Measured live: /nfl-all-day/team/denver-broncos 200. Zero names that DO
+// have a players row start a team_name + " " in any collection, so no real player is rerouted.
+describe("isTeamMoment / momentSubjectHref — All Day Team Melt city names", () => {
+  it("a city that prefixes its franchise is a team Moment, linked to the FRANCHISE page", () => {
+    expect(isTeamMoment("Denver", "Denver Broncos")).toBe(true)
+    expect(momentSubjectHref("nfl-all-day", "Denver", "Denver Broncos")).toBe("/nfl-all-day/team/denver-broncos")
+    expect(momentSubjectHref("nfl-all-day", "New England", "New England Patriots")).toBe("/nfl-all-day/team/new-england-patriots")
+  })
+
+  it("a real player is never a team, even when a word is shared", () => {
+    expect(isTeamMoment("Von Miller", "Denver Broncos")).toBe(false)
+    expect(isTeamMoment("Denver", "Denverx Broncos")).toBe(false)
+    expect(momentSubjectHref("nfl-all-day", "Von Miller", "Denver Broncos")).toBe("/nfl-all-day/player/von-miller")
+  })
+
+  it("the sitemap uses the same predicate, so its player list cannot drift from the links", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "lib/sitemap-data.ts"), "utf8")
+    expect(src).toMatch(/import \{[^}]*\bisTeamMoment\b[^}]*\} from '@\/lib\/entity-href'/)
+    expect(src).not.toMatch(/player_name\.trim\(\) === e\.team_name\.trim\(\)/)
   })
 })

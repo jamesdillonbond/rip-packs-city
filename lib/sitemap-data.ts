@@ -68,7 +68,7 @@ import { createClient } from '@supabase/supabase-js'
 import { publishedCollections } from '@/lib/collections'
 import { getCollectionByDbSlug, getCollectionByUuid } from '@/lib/collection-slug'
 import { slugifyName, slugifyPlayerName } from '@/lib/entity-labels'
-import { pinnacleFranchiseName } from '@/lib/entity-href'
+import { isTeamMoment, pinnacleFranchiseName } from '@/lib/entity-href'
 import { isExhibitionTeamSlug } from '@/lib/team-denylist'
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from '@/lib/launch-flags'
 import { PUBLIC_TAB_PAGES } from '@/lib/seo'
@@ -718,11 +718,13 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
       // guaranteed 404 — and `/team/<franchise>` already resolves and is already
       // emitted from teamMap below. Same rule as lib/entity-href.ts. Measured:
       // 57 of the 1,413 Top Shot player URLs in the sitemap 404'd; 44 were this.
-      const isTeamMoment = !!e.player_name && !!e.team_name && e.player_name.trim() === e.team_name.trim()
+      // 2026-09-29: the shared predicate also covers All Day's Team Melt ("Denver" / "Denver Broncos"),
+      // whose 14 city names were all listed here as /player/<city> 404s.
+      const teamMoment = isTeamMoment(e.player_name, e.team_name)
       // Panini: a dual-player card or a Team Badges / World Cup Posters card has no
       // player page (lib/panini/subjects.ts — the bridge's own rule).
       const noPlayerPage = coll.urlSlug === "panini-blockchain" && !paniniSubjectIsPlayer(e.player_name, e.set_name)
-      if (e.player_name && !isTeamMoment && !noPlayerPage) {
+      if (e.player_name && !teamMoment && !noPlayerPage) {
         // 2026-09-25: an edition label that is a registered ALIAS of the player
         // ("Patrick Mahomes II" → patrick-mahomes) is listed under the canonical
         // slug, never under a URL that 308s.

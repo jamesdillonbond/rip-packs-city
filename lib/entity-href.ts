@@ -13,8 +13,7 @@ import { slugifyName, slugifyPlayerName } from "@/lib/entity-labels"
  * This is not cosmetic on a public, crawled page type: 370 internal links to a 404 is a real
  * crawl-budget and user cost, and the reader who clicks a Moment's headline gets an error page.
  *
- * The rule is entirely local — a team Moment is exactly `playerName === teamName` — so no extra
- * data is needed anywhere this is called.
+ * The rule is entirely local (see isTeamMoment), so no extra data is needed anywhere this is called.
  */
 export function momentSubjectHref(
   collectionUrlSlug: string,
@@ -22,10 +21,27 @@ export function momentSubjectHref(
   teamName: string | null | undefined,
 ): string | null {
   if (!playerName) return null
-  const isTeamMoment = Boolean(teamName) && playerName.trim() === (teamName as string).trim()
-  const kind = isTeamMoment ? "team" : "player"
-  const slug = isTeamMoment ? slugifyName(playerName) : slugifyPlayerName(playerName)
+  const teamMoment = isTeamMoment(playerName, teamName)
+  const kind = teamMoment ? "team" : "player"
+  // A team Moment links to its FRANCHISE page, keyed on team_name: All Day's "Denver" is /team/denver-broncos.
+  const slug = teamMoment ? slugifyName((teamName as string).trim()) : slugifyPlayerName(playerName)
   return `/${collectionUrlSlug}/${kind}/${encodeURIComponent(slug)}`
+}
+
+/**
+ * Is this Moment's "who" a TEAM rather than a person? Two conventions, both with no `players` row:
+ *   · Top Shot: `player_name === team_name` ("Sacramento Kings" / "Sacramento Kings").
+ *   · All Day Team Melt: `player_name` is the franchise's CITY, `team_name` the franchise
+ *     ("Denver" / "Denver Broncos"). 14 names, 2026-09-29; every one 404'd as /player/<city>.
+ * The city rule is `team_name` starting with `player_name + " "`. Measured 2026-09-29: zero names
+ * that DO have a players row match it in any collection, so no real player is rerouted.
+ * lib/sitemap-data.ts uses this same predicate — one rule, so the links and the sitemap cannot drift.
+ */
+export function isTeamMoment(playerName: string | null | undefined, teamName: string | null | undefined): boolean {
+  const p = playerName?.trim()
+  const t = teamName?.trim()
+  if (!p || !t) return false
+  return p === t || t.startsWith(p + " ")
 }
 
 /**
