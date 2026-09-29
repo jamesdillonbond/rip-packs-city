@@ -15,6 +15,21 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-29. Disney Pinnacle pack openers read from the open tx's
+    // Pinnacle.Deposit events (90,105 opens held NO opener). Pins the in-tx
+    // scope (never a later transfer), spork-clamped windows, re-reads for
+    // late-ingested opens, 429-not-a-failure.
+    fn: "run_pinnacle_opener_lane",
+    test: "supabase/tests/run_pinnacle_opener_lane.sql",
+    migration: "supabase/migrations/20260929183000_audit_20260929_pinnacle_pack_openers_read_from_the_open_tx.sql",
+  },
+  {
+    // The ingest re-upserts opener NULL; a known opener must survive it.
+    fn: "pinnacle_pack_opens_keep_opener",
+    test: "supabase/tests/run_pinnacle_opener_lane.sql",
+    migration: "supabase/migrations/20260929183000_audit_20260929_pinnacle_pack_openers_read_from_the_open_tx.sql",
+  },
+  {
     // Added 2026-09-29. A chain-found arrival from a Dapper delivery account
     // (0xe1f2..., 0xb6f2...) that is not a known NFT pack pull becomes a
     // verified custodial pack-pull acquisition. Pins the allowlist (collector
