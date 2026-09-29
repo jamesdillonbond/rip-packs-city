@@ -169,8 +169,10 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 85 → 86 on 2026-09-28: Panini gained its Analytics tab (panini_sales).
     // 86 → 87 on 2026-09-28: /sniper, the cross-collection Sniper hub (the bottom
     // bar's SNIPER tab), entered the static list.
-    expect(s).toHaveLength(87)
+    // 87 → 88 on 2026-09-28: /market, the cross-collection Market hub.
+    expect(s).toHaveLength(88)
     expect(s.find((x) => x.url === `${BASE}/sniper`)).toBeTruthy()
+    expect(s.find((x) => x.url === `${BASE}/market`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/analytics`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/sniper`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/collection`)).toBeTruthy()

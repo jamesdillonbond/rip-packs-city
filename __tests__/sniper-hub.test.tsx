@@ -15,7 +15,7 @@ vi.mock("@/lib/insights/board-cache", () => ({
 vi.mock("@/lib/insights/boards", () => ({ fetchDealsDefault: vi.fn() }))
 vi.mock("@/components/GlobalSiteHeader", () => ({ default: () => <header data-testid="site-header" /> }))
 vi.mock("@/components/SiteFooter", () => ({ default: () => <footer /> }))
-vi.mock("@/components/sniper/LastSniperShortcut", () => ({ default: () => null }))
+vi.mock("@/components/hub/LastCollectionShortcut", () => ({ default: () => null }))
 vi.mock("next/link", () => ({
   default: ({ children, href, ...p }: { children?: React.ReactNode; href: string } & Record<string, unknown>) => (
     <a href={href} {...(p as object)}>{children}</a>

@@ -157,6 +157,7 @@ const PAGES: PageCheck[] = [
   // pages already advertised to Googlebot, so a failure here is a true positive.
   { path: "/about", name: "about" },
   { path: "/sniper", name: "sniper hub" },
+  { path: "/market", name: "market hub" },
   { path: "/privacy", name: "privacy policy" },
   { path: "/terms", name: "terms of service" },
   { path: "/legal/fmv-methodology", name: "legal · fmv methodology" },

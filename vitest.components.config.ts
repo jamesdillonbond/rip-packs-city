@@ -64,6 +64,8 @@ export default defineConfig({
         // ships with tests that prove a thrown error becomes one bounded beacon.
         "components/telemetry/**/*.tsx",
         "components/sniper/**/*.tsx",
+        // 2026-09-28: shared pieces of the /sniper and /market hubs.
+        "components/hub/**/*.tsx",
         "components/collection/**/*.tsx",
         "components/pinnacle/**/*.tsx",
         "components/alerts/**/*.tsx",

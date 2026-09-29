@@ -51,6 +51,7 @@ export type MobileTab = "home" | "binder" | "market" | "sniper";
 export function activeTabFor(pathname: string, pageSegment: string, isCollectionRoute: boolean): MobileTab | null {
   if (pathname === "/") return "home";
   if (pathname === "/sniper") return "sniper";
+  if (pathname === "/market") return "market";
   if (!isCollectionRoute) return null;
   if (BINDER_PAGES.has(pageSegment)) return "binder";
   if (SNIPER_PAGES.has(pageSegment)) return "sniper";
@@ -121,10 +122,11 @@ export default function MobileNav() {
   // wallet this device last looked up (rpc_last_wallet, chain-checked there),
   // and shows the lookup box to a first-time visitor. It is PUBLIC — never point
   // a tab at auth-gated /dashboard (a login wall from the first tap, R36).
-  const tabs: { key: MobileTab; label: string; href: string; page?: "collection" | "market" }[] = [
+  const tabs: { key: MobileTab; label: string; href: string; page?: "collection" }[] = [
     { key: "home", label: "HOME", href: "/" },
     { key: "binder", label: "MY BINDER", href: `/${collection}/collection`, page: "collection" },
-    { key: "market", label: "MARKET", href: `/${collection}/market`, page: "market" },
+    // The cross-collection HUB (app/market/page.tsx), like SNIPER: never inert.
+    { key: "market", label: "MARKET", href: "/market" },
     // The cross-collection HUB (app/sniper/page.tsx), not a guessed collection's
     // sniper: it exists for every visitor, so this tab is never inert.
     { key: "sniper", label: "SNIPER", href: "/sniper" },
@@ -191,8 +193,8 @@ export default function MobileNav() {
           padding: "0 6px",
         };
 
-        // A tab the active collection does not HAVE (UFC has no market or
-        // sniper) renders inert rather than linking to a page that does not
+        // A collection-scoped tab (only MY BINDER since the 2026-09-28 hubs) whose
+        // collection lacks that page renders inert rather than linking to a page that does not
         // exist — a tap that silently redirects reads as a broken app. It never
         // substitutes another collection's page: that would answer with the
         // wrong subject.

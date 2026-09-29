@@ -15,6 +15,7 @@ vi.mock("next/navigation", () => ({
 }))
 
 import MobileNav, { activeTabFor } from "@/components/MobileNav"
+import { getCollection } from "@/lib/collections"
 
 afterEach(() => {
   cleanup()
@@ -58,29 +59,29 @@ describe("MobileNav", () => {
     expect(hrefs(container).some((h) => h?.includes("wallet="))).toBe(false)
   })
 
-  it("scopes My Binder and Market to the collection in the URL", () => {
+  it("scopes My Binder to the collection in the URL", () => {
     nav.pathname = "/nfl-all-day/overview"
     const { container } = render(<MobileNav />)
     expect(tab(container, "MY BINDER").getAttribute("href")).toBe("/nfl-all-day/collection")
-    expect(tab(container, "MARKET").getAttribute("href")).toBe("/nfl-all-day/market")
   })
 
-  // ⭐ 2026-09-28: SNIPER opens the cross-collection HUB, the same place from
-  // every page — not a collection the visitor never chose.
-  it("SNIPER opens the /sniper hub from every page", () => {
+  // ⭐ 2026-09-28: SNIPER and MARKET open the cross-collection HUBS, the same
+  // place from every page — not a collection the visitor never chose.
+  it("SNIPER and MARKET open their hubs from every page", () => {
     for (const p of ["/", "/nfl-all-day/overview", "/ufc/overview", "/insights/deals"]) {
       nav.pathname = p
       const { container } = render(<MobileNav />)
       expect(tab(container, "SNIPER").getAttribute("href"), p).toBe("/sniper")
+      expect(tab(container, "MARKET").getAttribute("href"), p).toBe("/market")
       cleanup()
     }
   })
 
-  it("on a Disney Pinnacle pin page (/pinnacle/moment/<id>) Market goes to Pinnacle's market", () => {
+  it("on a Disney Pinnacle pin page (/pinnacle/moment/<id>) My Binder goes to Pinnacle's binder", () => {
     nav.pathname = "/pinnacle/moment/OEEV1-EXPD-MINN-E2"
     const { container } = render(<MobileNav />)
-    expect(hrefs(container)).toContain("/disney-pinnacle/market")
-    expect(hrefs(container)).not.toContain("/nba-top-shot/market")
+    expect(hrefs(container)).toContain("/disney-pinnacle/collection")
+    expect(hrefs(container)).not.toContain("/nba-top-shot/collection")
   })
 
   it("gives the bar a way home", () => {
@@ -120,28 +121,31 @@ describe("MobileNav", () => {
 })
 
 describe("MobileNav — thin collections", () => {
-  it("renders the tabs a collection lacks as INERT, never as links to a page that does not exist", () => {
-    // UFC has no market page. (Its missing sniper no longer matters: SNIPER is
-    // the cross-collection hub.)
+  it("a collection with no market or sniper of its own (UFC) has NO inert tab — both hubs exist", () => {
+    // Before the 2026-09-28 hubs, UFC's MARKET and SNIPER were inert.
     nav.pathname = "/ufc/overview"
     const { container } = render(<MobileNav />)
     expect(hrefs(container)).not.toContain("/ufc/market")
-    // ⛔ and never SUBSTITUTES another collection's page for the missing one.
-    expect(hrefs(container).filter((h) => h?.endsWith("/market"))).toEqual([])
-    const inert = Array.from(bar(container).querySelectorAll("[aria-disabled='true']"))
-    expect(inert.map((e) => (e.textContent ?? "").trim())).toEqual(["MARKET"])
-    expect(hrefs(container)).toContain("/sniper")
-    expect(hrefs(container)).toContain("/ufc/collection")
+    expect(hrefs(container)).not.toContain("/ufc/sniper")
+    expect(hrefs(container)).toEqual(expect.arrayContaining(["/", "/ufc/collection", "/market", "/sniper"]))
+    expect(bar(container).querySelectorAll("[aria-disabled='true']").length).toBe(0)
   })
 
-  it("a collection with a market but no sniper of its own has NO inert tab", () => {
-    // Candy MLB: before the hub, its SNIPER tab was inert.
-    nav.pathname = "/candy-mlb/overview"
-    const { container } = render(<MobileNav />)
-    expect(hrefs(container)).toContain("/candy-mlb/market")
-    expect(hrefs(container)).toContain("/sniper")
-    expect(hrefs(container)).not.toContain("/candy-mlb/sniper")
-    expect(bar(container).querySelectorAll("[aria-disabled='true']").length).toBe(0)
+  it("renders a collection-scoped tab INERT when the collection lacks the page, never a substitute", () => {
+    // Every collection has a binder today, so this drives the rule through a
+    // registry entry stripped of its `collection` page.
+    const col = getCollection("candy-mlb")!
+    const saved = col.pages
+    col.pages = saved.filter((p) => p !== "collection") as typeof saved
+    try {
+      nav.pathname = "/candy-mlb/overview"
+      const { container } = render(<MobileNav />)
+      expect(hrefs(container).filter((h) => h?.endsWith("/collection"))).toEqual([])
+      const inert = Array.from(bar(container).querySelectorAll("[aria-disabled='true']"))
+      expect(inert.map((e) => (e.textContent ?? "").trim())).toEqual(["MY BINDER"])
+    } finally {
+      col.pages = saved
+    }
   })
 })
 
@@ -157,8 +161,9 @@ describe("MobileNav — which tab owns the route", () => {
     expect(activeTabFor("/", "", false)).toBe("home")
   })
 
-  it("lights Sniper on the hub itself", () => {
+  it("lights Sniper and Market on their hubs", () => {
     expect(activeTabFor("/sniper", "", false)).toBe("sniper")
+    expect(activeTabFor("/market", "", false)).toBe("market")
   })
 
   it("lights Sniper on the sniper pages, including Pack Sniper behind its sub-toggle", () => {

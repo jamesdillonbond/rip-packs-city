@@ -24,7 +24,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
 import SiteFooter from "@/components/SiteFooter"
-import LastSniperShortcut from "@/components/sniper/LastSniperShortcut"
+import LastCollectionShortcut from "@/components/hub/LastCollectionShortcut"
 import { publishedCollections } from "@/lib/collections"
 import { readBoardOrLive } from "@/lib/insights/board-cache"
 import { fetchDealsDefault } from "@/lib/insights/boards"
@@ -80,7 +80,7 @@ export default async function SniperHubPage() {
           </p>
         </header>
 
-        <LastSniperShortcut />
+        <LastCollectionShortcut page="sniper" label="Sniper" />
 
         <section aria-labelledby="sniper-hub-collections">
           <h2 id="sniper-hub-collections" style={sectionTitle}>

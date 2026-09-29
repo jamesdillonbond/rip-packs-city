@@ -463,6 +463,8 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // /sniper — the cross-collection Sniper hub, the bottom bar's SNIPER tab
   // (2026-09-28). Exact match: collection snipers live at /{collection}/sniper.
   if (pathname === "/sniper") return true
+  // /market — the cross-collection Market hub, the bottom bar's MARKET tab.
+  if (pathname === "/market") return true
   // /blog + subpaths — force-static long-form marketing content built for SEO.
   // Linked from the public TopNav, so anon clicks must not bounce to /login.
   // Read-only static; sitemap lists the index + posts. (2026-06-08)
