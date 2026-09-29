@@ -566,7 +566,43 @@ export async function GET(req: NextRequest) {
   // itself stays (its history is real).
   const inScope = paged.rows.filter((r) => { const sid = pskuSetId(r.external_id); return sid !== null && walkSet.has(sid); });
 
+  // HELD-BUT-UNCATALOGUED editions (2026-09-29). The runner walks two sources: this catalogue and
+  // what the marketplace GRID lists. A card nobody has listed is on neither, so an edition a
+  // collector HOLDS in an admitted product was never walked, never catalogued, never priced —
+  // measured: 135 of 135 of the linked founder's editions in his 29 admitted products, while the
+  // walk had already catalogued 332 other editions of those same products. The collector walk
+  // (panini_user_holdings) records the psku of every held card, and the runner navigates straight
+  // to /marketplace-details/<psku> for any psku it is handed (it never needed the grid for that),
+  // so these go at the FRONT: an edition with no row at all is maximally stale.
+  // Fails SOFT: a failed read serves the catalogue alone (the walk it always had) and says so.
+  const catalogued = new Set(paged.rows.map((r) => r.external_id));
+  const heldRes = await fetchAllPaged<{ psku: string | null }>(
+    (from, to) =>
+      (supabaseAdmin as any)
+        .from("panini_user_holdings")
+        .select("psku")
+        .order("username", { ascending: true })
+        .order("url_key", { ascending: true })
+        .range(from, to),
+    { pageSize: 1000, maxPages: 20, label: `${PIPELINE}/walk-order-held` },
+  );
+  const heldNew: string[] = [];
+  if (!heldRes.error) {
+    const seenHeld = new Set<string>();
+    for (const r of heldRes.rows) {
+      const ps = typeof r.psku === "string" ? r.psku : null;
+      if (!ps || seenHeld.has(ps) || catalogued.has(ps)) continue;
+      const sid = pskuSetId(ps);
+      if (sid === null || !walkSet.has(sid)) continue;
+      seenHeld.add(ps);
+      heldNew.push(ps);
+    }
+  } else {
+    console.error(`[${PIPELINE}] walk-order held read failed: ${heldRes.error}`);
+  }
+
   const rows = trim ? inScope.slice(0, trim) : inScope;
+  const pskus = trim ? [...heldNew, ...rows.map((r) => r.external_id)].slice(0, trim) : [...heldNew, ...rows.map((r) => r.external_id)];
   return NextResponse.json({
     walk_set_ids: walkSetIds,
     products_error: prod.error,
@@ -581,15 +617,20 @@ export async function GET(req: NextRequest) {
     pack_urls_error: pagesRes.error,
     as_of: new Date().toISOString(),
     order: "last_seen_at_asc",
-    count: rows.length,
+    count: pskus.length,
+    // Held by a walked collector, in an admitted product, with no catalogue row yet — queued first.
+    held_uncatalogued: heldNew.length,
+    held_error: heldRes.error ?? null,
     // ⚠ Load-bearing for correctness, not diagnostics: the runner may only treat "absent from
     // pskus" as "brand new" when this is false AND nothing was trimmed. See the note above.
+    // (A truncated HELD read only loses queue entries; it cannot make a catalogued edition look
+    // absent, so it does not touch `complete`.)
     complete: !paged.truncated && !trim,
     truncated: paged.truncated,
     // The age of the two ends, so a reader of this response can tell a healthy rotation from a
     // stalled one without a second query.
     oldest_last_seen_at: rows[0]?.last_seen_at ?? null,
     newest_returned_last_seen_at: rows[rows.length - 1]?.last_seen_at ?? null,
-    pskus: rows.map((r) => r.external_id),
+    pskus,
   });
 }

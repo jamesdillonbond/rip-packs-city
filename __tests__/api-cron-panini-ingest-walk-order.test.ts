@@ -25,6 +25,9 @@ const st = vi.hoisted(() => ({
   pages: { data: [{ url: "https://nft.paniniamerica.net/marketplace-details/subpack-5270763-1038.html" }] as unknown[] | null, error: null as null | { message: string } },
   // Set ids of the catalogue rows by index, so a test can put another product in the catalogue.
   setIdAt: ((): number => 2332) as (i: number) => number,
+  // panini_user_holdings (the collector walk) — held pskus, 2026-09-29.
+  holdings: [] as Array<{ psku: string | null }>,
+  holdingsError: null as null | { message: string },
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -36,6 +39,14 @@ vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     rpc: async () => ({ data: null, error: null }),
     from: (table: string) => {
+      if (table === "panini_user_holdings") {
+        const h: any = {
+          select: () => h, order: () => h,
+          range: async (from: number, to: number) =>
+            st.holdingsError ? { data: null, error: st.holdingsError } : { data: st.holdings.slice(from, to + 1), error: null },
+        }
+        return h
+      }
       if (table === "panini_products" || table === "panini_pack_pages") {
         const res = table === "panini_products" ? st.products : st.pages
         const r: any = { select: () => r, eq: () => r, order: () => r, then: (f: any, g: any) => Promise.resolve(res).then(f, g) }
@@ -71,6 +82,8 @@ beforeEach(async () => {
   st.products = { data: [{ set_id: 2332, name: "WC", walk_cards: true }], error: null }
   st.pages = { data: [{ url: "https://nft.paniniamerica.net/marketplace-details/subpack-5270763-1038.html" }], error: null }
   st.setIdAt = () => 2332
+  st.holdings = []
+  st.holdingsError = null
   process.env.INGEST_SECRET_TOKEN = "tok"
   ;({ GET } = await import("@/app/api/cron/panini-ingest/route"))
 })
@@ -147,5 +160,38 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     const j = await (await GET(req())).json()
     expect(j.pack_urls).toBeNull()
     expect(j.pack_urls_error).toBe("nope")
+  })
+
+  // ── HELD-BUT-UNCATALOGUED (2026-09-29) ────────────────────────────────────
+  // A card nobody has listed is on neither the catalogue nor the grid, so a collector's held
+  // edition in an admitted product was never walked (135 of 135 measured). The collector walk
+  // knows its psku, and the runner walks any psku it is handed — so it goes first.
+  it("queues a held, uncatalogued edition of an admitted product FIRST", async () => {
+    st.total = 3
+    st.products = { data: [{ set_id: 2332, name: "WC", walk_cards: true }, { set_id: 1941, name: null, walk_cards: true }], error: null }
+    st.holdings = [
+      { psku: "packcard-1941_377959_9989801_273" },   // admitted, uncatalogued -> queued
+      { psku: "packcard-1941_377959_9989801_273" },   // held twice -> once
+      { psku: "packcard-2332_1_0_1" },                // already catalogued -> not duplicated
+      { psku: "packcard-1783_1_2_3" },                // product NOT admitted -> never widened
+      { psku: null },
+    ]
+    const j = await (await GET(req())).json()
+    expect(j.pskus[0]).toBe("packcard-1941_377959_9989801_273")
+    expect(j.held_uncatalogued).toBe(1)
+    expect(j.pskus.filter((p: string) => p === "packcard-2332_1_0_1")).toHaveLength(1)
+    expect(j.pskus).not.toContain("packcard-1783_1_2_3")
+    expect(j.count).toBe(4)
+    expect(j.complete).toBe(true)
+  })
+
+  it("a failed holdings read serves the catalogue alone, says so, and does not touch `complete`", async () => {
+    st.total = 3
+    st.holdingsError = { message: "canceling statement due to statement timeout" }
+    const j = await (await GET(req())).json()
+    expect(j.pskus).toHaveLength(3)
+    expect(j.held_uncatalogued).toBe(0)
+    expect(j.held_error).toBeTruthy()
+    expect(j.complete).toBe(true)
   })
 })
