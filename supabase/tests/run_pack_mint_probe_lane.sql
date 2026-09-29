@@ -18,7 +18,13 @@
 --
 -- The function DDL below is VERBATIM from the committed migration
 -- (supabase/migrations/20260926200000_audit_20260926_pack_nft_mints_name_packs_dapper_minted_straight_into_a_wallet.sql;
--- run_pack_mint_probe_lane from 20260926200050_audit_20260926_pack_mint_probe_lane_waits_20s_per_request.sql).
+-- run_pack_mint_probe_lane from 20260929162000_audit_20260929_pack_mint_probes_read_the_historical_sporks.sql).
+--
+-- 2026-09-29 additions: the floor is mainnet24's root (2023-11-08 / 65,264,619);
+--   6. each window goes to the node serving its spork and never crosses that
+--      spork's last height;
+--   7. at most 25 dispatches per node per tick;
+--   8. a 429 returns the probe to pending without counting an attempt.
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -100,8 +106,12 @@ SET statement_timeout TO '110s'
 AS $function$
 DECLARE
   v_started   timestamptz := clock_timestamp();
-  v_floor     constant bigint := 137390146;            -- Flow spork root: nothing older is served
-  v_floor_at  constant timestamptz := '2025-12-29 00:00:00+00';
+  -- 2026-09-29: the mainnet24 root. mainnet24-27 still serve events from
+  -- access-001.mainnet2N.nodes.onflow.org:8070; mainnet23 and older are gone.
+  v_floor     constant bigint := 65264619;
+  v_floor_at  constant timestamptz := '2023-11-08 00:00:00+00';
+  v_per_node  constant int := 25;
+  v_node text; v_end bigint; v_throttled int := 0;
   v_ts uuid; v_ad uuid;
   r record;
   v_body jsonb;
@@ -142,6 +152,13 @@ BEGIN
 
     v_body := CASE WHEN r.h_status = 200 AND pg_input_is_valid(r.h_content, 'jsonb')
                    THEN r.h_content::jsonb END;
+    -- 2026-09-29: a 429 is the node's throttle -- retried, not an attempt
+    IF r.h_status = 429 THEN
+      UPDATE public.pack_mint_probes SET status = 'pending', last_error = 'http 429'
+       WHERE collection_id = r.collection_id AND probe_at = r.probe_at;
+      v_throttled := v_throttled + 1;
+      CONTINUE;
+    END IF;
     IF v_body IS NULL OR jsonb_typeof(v_body) IS DISTINCT FROM 'array' OR jsonb_array_length(v_body) = 0 THEN
       v_last_error := left(coalesce(r.h_error, 'http ' || coalesce(r.h_status::text, 'null') || ': ' || r.h_content), 200);
       UPDATE public.pack_mint_probes
@@ -222,14 +239,29 @@ BEGIN
     SELECT count(*) FILTER (WHERE inserted) INTO v_enqueued FROM ins;
   END IF;
 
-  -- (3) Dispatch up to 40 pending probes.
+  -- (3) Dispatch up to 40 pending probes, at most v_per_node for any one
+  -- spork node (2026-09-29: each window goes to the node serving its spork).
   FOR r IN
-    SELECT * FROM public.pack_mint_probes
-    WHERE status = 'pending'
+    WITH p AS (
+      SELECT q.*, coalesce(q.start_height, public.flow_height_estimate(q.probe_at) - 125) AS est_start
+        FROM public.pack_mint_probes q
+       WHERE q.status = 'pending'
+       ORDER BY q.priority DESC, q.probe_at DESC
+       LIMIT 400
+    ), n AS (
+      SELECT p.*, row_number() OVER (
+               PARTITION BY CASE WHEN p.est_start <= 85981134  THEN 24
+                                 WHEN p.est_start <= 88226266  THEN 25
+                                 WHEN p.est_start <= 130290658 THEN 26
+                                 WHEN p.est_start <= 137390145 THEN 27 ELSE 28 END
+               ORDER BY p.priority DESC, p.probe_at DESC) AS rn
+        FROM p
+    )
+    SELECT * FROM n WHERE rn <= v_per_node
     ORDER BY priority DESC, probe_at DESC
     LIMIT 40
   LOOP
-    v_start := coalesce(r.start_height, public.flow_height_estimate(r.probe_at) - 125);
+    v_start := r.est_start;
     IF v_start IS NULL OR v_start < v_floor THEN
       UPDATE public.pack_mint_probes
          SET status = 'failed', finished_at = now(),
@@ -238,10 +270,21 @@ BEGIN
       v_below_floor := v_below_floor + 1;
       CONTINUE;
     END IF;
+    -- the node serving the window's spork; a window never crosses a spork end
+    v_node := CASE WHEN v_start <= 85981134  THEN 'http://access-001.mainnet24.nodes.onflow.org:8070'
+                   WHEN v_start <= 88226266  THEN 'http://access-001.mainnet25.nodes.onflow.org:8070'
+                   WHEN v_start <= 130290658 THEN 'http://access-001.mainnet26.nodes.onflow.org:8070'
+                   WHEN v_start <= 137390145 THEN 'http://access-001.mainnet27.nodes.onflow.org:8070'
+                   ELSE 'https://rest-mainnet.onflow.org' END;
+    v_end := CASE WHEN v_start <= 85981134  THEN least(v_start + 249, 85981134)
+                  WHEN v_start <= 88226266  THEN least(v_start + 249, 88226266)
+                  WHEN v_start <= 130290658 THEN least(v_start + 249, 130290658)
+                  WHEN v_start <= 137390145 THEN least(v_start + 249, 137390145)
+                  ELSE v_start + 249 END;
     SELECT net.http_get(
-      url := 'https://rest-mainnet.onflow.org/v1/events?type='
+      url := v_node || '/v1/events?type='
         || CASE r.collection_id WHEN v_ts THEN 'A.0b2a3299cc857e29' ELSE 'A.e4cf4bdc1751c65d' END
-        || '.PackNFT.Minted&start_height=' || v_start || '&end_height=' || (v_start + 249),
+        || '.PackNFT.Minted&start_height=' || v_start || '&end_height=' || v_end,
       timeout_milliseconds := 20000
     ) INTO v_req;
     UPDATE public.pack_mint_probes
@@ -257,13 +300,13 @@ BEGIN
     NULL, NULL, NULL,
     jsonb_build_object('probes_done', v_done, 'probes_reaimed', v_reaimed, 'probes_failed', v_failed,
                        'probes_expired', v_expired, 'mints_new', v_mints_new, 'enqueued', v_enqueued,
-                       'dispatched', v_dispatched, 'below_floor', v_below_floor)
+                       'dispatched', v_dispatched, 'below_floor', v_below_floor, 'throttled', v_throttled)
   );
 
   RETURN jsonb_build_object('ok', v_failed = 0, 'collected', v_collected, 'done', v_done,
                             'reaimed', v_reaimed, 'failed', v_failed, 'expired', v_expired,
                             'mints_new', v_mints_new, 'enqueued', v_enqueued,
-                            'dispatched', v_dispatched, 'below_floor', v_below_floor,
+                            'dispatched', v_dispatched, 'below_floor', v_below_floor, 'throttled', v_throttled,
                             'last_error', v_last_error);
 END;
 $function$;
@@ -271,7 +314,10 @@ $function$;
 
 -- Anchors: 1,190 blocks over 1,000 s from 2026-04-24 11:00 UTC.
 INSERT INTO public.topshot_pack_sales_history VALUES
-  (140000000, '2026-04-24 11:00:00+00'), (140001190, '2026-04-24 11:16:40+00');
+  (140000000, '2026-04-24 11:00:00+00'), (140001190, '2026-04-24 11:16:40+00'),
+  -- mainnet26 anchors: 2025-01-01, and the spork's last minutes (ends 130,290,658)
+  (100000000, '2025-01-01 00:00:00+00'), (100001190, '2025-01-01 00:16:40+00'),
+  (130290500, '2025-09-01 00:00:00+00'), (130291690, '2025-09-01 00:16:40+00');
 INSERT INTO public.saved_wallets VALUES ('0xBD94CADE097E50AC');
 INSERT INTO public.pack_nft_identity VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P1', '0xbd94cade097e50ac', '2026-04-24 11:08:20.118+00'),  -- saved wallet, T+500 s
@@ -279,22 +325,30 @@ INSERT INTO public.pack_nft_identity VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P3', '0x1111111111111111', '2026-04-24 11:15:00+00'),      -- T+900 s
   ('dee28451-5d62-409e-a1ad-a83f763ac070', 'A4', '0x1111111111111111', '2026-04-24 11:08:20.118+00'),  -- All Day, same instant
   ('06248cc4-b85f-47cd-af67-1855d14acd75', 'G1', '0x1111111111111111', '2026-04-24 11:08:20.118+00'),  -- Golazos: not probed
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P5', '0x1111111111111111', '2025-06-01 00:00:00+00'),      -- before the floor date
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P6', '0x1111111111111111', '2025-12-29 06:00:00+00');      -- estimate below the floor height
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P5', '0x1111111111111111', '2023-06-01 00:00:00+00'),      -- before the floor date
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P6', '0x1111111111111111', '2023-11-08 12:00:00+00'),      -- estimate below the floor height
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P7', '0x1111111111111111', '2025-01-01 00:08:20+00'),      -- mainnet26, est 100000595
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P8', '0x1111111111111111', '2025-09-01 00:01:40+00');      -- est 130290619: window hits mainnet26's end
 
 -- claims 1 + 2
 DO $$
 DECLARE v jsonb;
 BEGIN
   v := public.run_pack_mint_probe_lane();
-  PERFORM _assert_eq(v->>'enqueued', '4', 'TS x3 instants + AD x1; Golazos and pre-floor-date rows are not probes');
-  PERFORM _assert_eq(v->>'dispatched', '3', 'three probes dispatched');
-  PERFORM _assert_eq(v->>'below_floor', '1', 'the 2025-12-29 06:00 instant estimates below the spork floor');
+  PERFORM _assert_eq(v->>'enqueued', '6', 'TS x5 instants + AD x1; Golazos and pre-floor-date rows are not probes');
+  PERFORM _assert_eq(v->>'dispatched', '5', 'five probes dispatched');
+  PERFORM _assert_eq(v->>'below_floor', '1', 'the 2023-11-08 12:00 instant estimates below the spork floor');
+  PERFORM _assert((SELECT count(*) = 1 FROM net.calls WHERE url =
+                    'http://access-001.mainnet26.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.PackNFT.Minted&start_height=100000470&end_height=100000719'),
+                  'a 2025 instant reads the mainnet26 node (claim 6)');
+  PERFORM _assert((SELECT count(*) = 1 FROM net.calls WHERE url =
+                    'http://access-001.mainnet26.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.PackNFT.Minted&start_height=130290494&end_height=130290658'),
+                  'a window reaching past mainnet26''s last height is cut at it (claim 6)');
   PERFORM _assert((SELECT priority = 1 FROM public.pack_mint_probes
                     WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd' AND probe_at = '2026-04-24 11:08:20.118+00'),
                   'a saved wallet''s instant is priority 1 (case-folded address)');
   PERFORM _assert((SELECT status = 'failed' AND last_error = 'below the Flow spork floor' AND request_id IS NULL
-                     FROM public.pack_mint_probes WHERE probe_at = '2025-12-29 06:00:00+00'),
+                     FROM public.pack_mint_probes WHERE probe_at = '2023-11-08 12:00:00+00'),
                   'below the floor: failed with its reason, never dispatched');
   PERFORM _assert((SELECT url FROM net.calls ORDER BY id LIMIT 1)
                    = 'https://rest-mainnet.onflow.org/v1/events?type=A.0b2a3299cc857e29.PackNFT.Minted&start_height=140000470&end_height=140000719',
@@ -331,6 +385,9 @@ FROM public.pack_mint_probes p WHERE p.probe_at = '2026-04-24 11:15:00+00';
 INSERT INTO net._http_response
 SELECT p.request_id, 503, 'upstream unavailable', NULL
 FROM public.pack_mint_probes p WHERE p.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070';
+INSERT INTO net._http_response
+SELECT p.request_id, 429, 'Too Many Requests', NULL
+FROM public.pack_mint_probes p WHERE p.probe_at = '2025-01-01 00:08:20+00';
 
 -- claims 3, 4, 5
 DO $$
@@ -354,6 +411,10 @@ BEGIN
   PERFORM _assert((SELECT status = 'in_flight' AND attempts = 1 AND last_error LIKE 'http 503%'
                      FROM public.pack_mint_probes WHERE collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'),
                   'an HTTP failure retries with its error');
+  PERFORM _assert((SELECT attempts = 0 AND last_error = 'http 429' AND status IN ('pending', 'in_flight')
+                     FROM public.pack_mint_probes WHERE probe_at = '2025-01-01 00:08:20+00'),
+                  'a 429 is retried without counting an attempt (claim 8)');
+  PERFORM _assert_eq(v->>'throttled', '1', 'the 429 is reported as throttled');
 END $$;
 
 -- claim 4, the cap: a fourth miss gives up with the reason.
@@ -370,6 +431,18 @@ BEGIN
                      FROM public.pack_mint_probes WHERE probe_at = '2026-04-24 11:15:00+00'),
                   'after 4 attempts a missing window is failed with its reason');
   PERFORM _assert((SELECT count(*) = 0 FROM public.pack_nft_mints WHERE pack_nft_id = 'P3'), 'a failed probe claims nothing');
+END $$;
+
+-- claim 7: 30 pending mainnet26 instants -> at most 25 dispatched in one tick
+INSERT INTO public.pack_mint_probes (collection_id, probe_at)
+SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-01-01 00:10:00+00'::timestamptz + g * interval '1 second'
+FROM generate_series(1, 30) g;
+DELETE FROM net.calls;
+DO $$
+BEGIN
+  PERFORM public.run_pack_mint_probe_lane();
+  PERFORM _assert((SELECT count(*) = 25 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'),
+                  'at most 25 dispatches to one node per tick');
 END $$;
 
 ROLLBACK;

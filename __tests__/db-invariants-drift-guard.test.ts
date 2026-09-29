@@ -347,7 +347,8 @@ const PINS = [
     // on an HTTP failure.
     fn: "run_pack_mint_probe_lane",
     test: "supabase/tests/run_pack_mint_probe_lane.sql",
-    migration: "supabase/migrations/20260926200050_audit_20260926_pack_mint_probe_lane_waits_20s_per_request.sql",
+    // 2026-09-29: floor = mainnet24 root; per-spork node routing, 25/node, 429 free.
+    migration: "supabase/migrations/20260929162000_audit_20260929_pack_mint_probes_read_the_historical_sporks.sql",
   },
   {
     // Added 2026-09-26. The height estimate the mint-probe lane aims with.
