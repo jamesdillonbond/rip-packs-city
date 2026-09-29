@@ -16,7 +16,7 @@ import { sectionRow, sectionRows, sectionRowsResult, structuralSection } from "@
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { teamPageMetadata, teamJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import { getEntityLabels } from "@/lib/entity-labels"
-import { Section, SectionUnavailable, StatCell, RECENT_LOW_HINT, RECENT_LOW_TOTAL_LABEL, fmtCount, fmtUsd } from "@/components/entity/_shared"
+import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotalSub, recentLowTotalSub, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import PlayersGridPaginated, { type PlayerTile } from "@/components/entity/PlayersGridPaginated"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -44,6 +44,9 @@ interface TeamDetail {
   total_circulation: number | null
   fmv_total_usd: number | null
   floor_total_usd: number | null
+  /** Pinnacle only: pins with a live ask / the ASK_ONLY part of fmv_total_usd. */
+  listed_count?: number | null
+  fmv_ask_derived_usd?: number | null
   // Team Hub Phase 1 (D1): branding + 30d activity. Null on Pinnacle / unbranded teams.
   primary_color?: string | null
   secondary_color?: string | null
@@ -294,8 +297,8 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         <StatCell label={isFranchise ? "Characters" : "Players"} value={fmtCount(detail.player_count)} />
         <StatCell label="Editions" value={fmtCount(detail.edition_count)} />
         <StatCell label="Total Mint" value={fmtCount(detail.total_circulation)} />
-        <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
-        <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={RECENT_LOW_HINT} />
+        <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} sub={fmvTotalSub(detail)} />
+        <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={recentLowTotalSub(detail)} />
         <StatCell label="30d Sales" value={fmtCount(detail.sales_30d)} />
         <StatCell label="30d Volume" value={fmtUsd(detail.volume_30d_usd == null ? null : Number(detail.volume_30d_usd))} />
       </section>

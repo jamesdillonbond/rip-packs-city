@@ -21,7 +21,7 @@
 --   through to the legacy pinnacle_editions read + per-render FMV collapse.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260928160159_audit_20260928_pinnacle_franchise_30d_activity.sql;
+-- (supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql; was 20260928160159;
 -- before that, 20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
@@ -53,7 +53,7 @@ CREATE FUNCTION public.get_pinnacle_edition_fmv_collapsed(p_id uuid)
 $$;
 CREATE TABLE public.pinnacle_catalog (
   render_id text PRIMARY KEY, franchises text[], characters text[],
-  total_minted int, fmv_usd numeric, floor_ask numeric);
+  total_minted int, fmv_usd numeric, floor_ask numeric, fmv_confidence text);
 CREATE TABLE public.pinnacle_sales (render_id text, sale_price_usd numeric, sold_at timestamptz);
 
 -- Franchise helpers (batch 62, 2026-09-25): fixture copies of the shared league
@@ -208,6 +208,8 @@ DECLARE
   v_total_circulation int;
   v_fmv_total numeric;
   v_floor_total numeric;
+  v_fmv_ask_derived numeric;
+  v_listed_count int;
   -- Team Hub Phase 1: branding (teams_master) + 30d activity. NULL for Pinnacle.
   v_primary_color text;
   v_secondary_color text;
@@ -254,7 +256,7 @@ BEGIN
       -- header counts what the grid and roster show. Characters are counted by
       -- page slug over every name on a pin (a duo pin counts for both).
       WITH pins AS (
-        SELECT pc.render_id, pc.characters, pc.total_minted, pc.fmv_usd, pc.floor_ask
+        SELECT pc.render_id, pc.characters, pc.total_minted, pc.fmv_usd, pc.floor_ask, pc.fmv_confidence
         FROM pinnacle_catalog pc
         WHERE EXISTS (
             SELECT 1 FROM unnest(pc.franchises) AS u(fr)
@@ -267,8 +269,10 @@ BEGIN
         (SELECT COUNT(*) FROM pins),
         (SELECT SUM(total_minted) FILTER (WHERE total_minted IS NOT NULL) FROM pins),
         (SELECT SUM(fmv_usd) FILTER (WHERE fmv_usd > 0) FROM pins),
-        (SELECT SUM(COALESCE(floor_ask, fmv_usd)) FILTER (WHERE COALESCE(floor_ask, fmv_usd) > 0) FROM pins)
-      INTO v_player_count, v_edition_count, v_total_circulation, v_fmv_total, v_floor_total;
+        (SELECT SUM(floor_ask) FILTER (WHERE floor_ask > 0) FROM pins),
+        (SELECT SUM(fmv_usd) FILTER (WHERE fmv_usd > 0 AND fmv_confidence::text = 'ASK_ONLY') FROM pins),
+        (SELECT COUNT(*) FILTER (WHERE floor_ask > 0) FROM pins)
+      INTO v_player_count, v_edition_count, v_total_circulation, v_fmv_total, v_floor_total, v_fmv_ask_derived, v_listed_count;
 
       -- 2026-09-28: 30-day activity from pinnacle_sales over the same pins (the
       -- shared `sales` table below holds no Pinnacle rows, so this read "—").
@@ -398,6 +402,8 @@ BEGIN
     'total_circulation', v_total_circulation,
     'fmv_total_usd',     v_fmv_total,
     'floor_total_usd',   v_floor_total,
+    'fmv_ask_derived_usd', v_fmv_ask_derived,
+    'listed_count',      v_listed_count,
     'primary_color',     v_primary_color,
     'secondary_color',   v_secondary_color,
     'abbreviation',      v_abbreviation,
@@ -507,7 +513,13 @@ SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'edition_c
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'player_count'), '2', 'catalog: characters by page slug over every name on a pin; Unknown excluded');
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'total_circulation'), '150', 'catalog: circulation over pins with a count');
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'fmv_total_usd'), '15', 'catalog: FMV total over priced pins');
-SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'floor_total_usd'), '13', 'catalog: floor falls back to FMV per pin (8 + 5)');
+-- 2026-09-28 (#24, INVERTED): live asks only — r2 has no ask, and its FMV (5)
+-- is not a low anyone can buy at.
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'floor_total_usd'), '8', 'catalog: Recent-Low Total = live asks only (8); an unlisted pin adds nothing');
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'listed_count'), '1', 'catalog: 1 of 3 pins listed');
+UPDATE public.pinnacle_catalog SET fmv_confidence = 'ASK_ONLY' WHERE render_id = 'r2';
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'fmv_ask_derived_usd'), '5', 'catalog: the ASK_ONLY part of the FMV total (5 of 15)');
+UPDATE public.pinnacle_catalog SET fmv_confidence = NULL WHERE render_id = 'r2';
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'team_name'), 'Star Wars', 'catalog: canonical name has no ™ (the layout redirect compares slugs)');
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'lucasfilm') ->> 'edition_count'), '1', 'catalog: a pin counts toward every franchise it names');
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'moana') ->> 'edition_count'), '1', 'catalog: a catalog-only franchise has a page (was a 404)');

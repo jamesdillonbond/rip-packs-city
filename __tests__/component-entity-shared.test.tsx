@@ -7,7 +7,7 @@ vi.mock("next/link", () => ({
 }))
 
 import {
-  fmtUsd, fmtCount, fmtPercent, fmtShare, truncWallet, relTime, tileSubject,
+  fmtUsd, fmtCount, fmtPercent, fmtShare, truncWallet, relTime, tileSubject, fmvTotalSub, recentLowTotalSub, RECENT_LOW_HINT,
   marketplaceLabel, fmvBasisText, FmvBasis, TierBadge, WalletLink, EM_DASH,
   SectionUnavailable,
 } from "@/components/entity/_shared"
@@ -75,6 +75,20 @@ describe("_shared formatters", () => {
   it("⛔ tileSubject titles a Pinnacle pin by its own name, never its first character (#23)", () => {
     expect(tileSubject({ pin_name: "Spindle of Fate", player_name: "Aurora", name: "Spindle of Fate (Standard)" })).toBe("Spindle of Fate")
     expect(tileSubject({ pin_name: "  ", player_name: "Aurora" })).toBe("Aurora")
+  })
+
+  it("⛔ Pinnacle FMV Total discloses its ask-derived share; no share → no sub-line (#24)", () => {
+    expect(fmvTotalSub({ fmv_total_usd: 9462, fmv_ask_derived_usd: 6451 })).toBe("68% estimated from asks")
+    expect(fmvTotalSub({ fmv_total_usd: "100", fmv_ask_derived_usd: "25" })).toBe("25% estimated from asks")
+    expect(fmvTotalSub({ fmv_total_usd: 100, fmv_ask_derived_usd: null })).toBeUndefined()
+    expect(fmvTotalSub({ fmv_total_usd: 100 })).toBeUndefined()
+    expect(fmvTotalSub({ fmv_total_usd: null, fmv_ask_derived_usd: 5 })).toBeUndefined()
+  })
+
+  it("⛔ Pinnacle Recent-Low Total says it is live asks and how many pins are listed; others keep the generic hint (#24)", () => {
+    expect(recentLowTotalSub({ listed_count: 2, edition_count: 3 })).toBe("Lowest live asks · 2 of 3 listed")
+    expect(recentLowTotalSub({ listed_count: 0, edition_count: 3 })).toBe("Lowest live asks · 0 of 3 listed")
+    expect(recentLowTotalSub({ edition_count: 3 })).toBe(RECENT_LOW_HINT)
   })
 
   it("marketplaceLabel canonicalises the collection vocabularies", () => {

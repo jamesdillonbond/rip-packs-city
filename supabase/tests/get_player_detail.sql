@@ -28,7 +28,7 @@
 --     pinnacle_editions aggregate via the FMV-collapse helper (2026-09-26).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260928064804_audit_20260927_pinnacle_character_mint_dates_only_when_complete.sql;
+-- (supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql; was 20260928064804;
 -- before that, 20260926191644_audit_20260926_pinnacle_duo_character_pages_find_their_pins.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
@@ -55,7 +55,7 @@ CREATE TABLE public.fmv_snapshots (
 CREATE TABLE public.pinnacle_editions (
   id uuid PRIMARY KEY, character_name text, mint_count int, minting_date timestamptz);
 CREATE TABLE public.pinnacle_catalog (
-  render_id text PRIMARY KEY, characters text[], total_minted int, fmv_usd numeric, floor_ask numeric);
+  render_id text PRIMARY KEY, characters text[], total_minted int, fmv_usd numeric, floor_ask numeric, fmv_confidence text);
 CREATE FUNCTION public.get_pinnacle_edition_fmv_collapsed(p_id uuid)
  RETURNS TABLE(fmv_usd numeric, floor_usd numeric) LANGUAGE sql STABLE AS $$
   SELECT 12::numeric, 10::numeric WHERE p_id IS NOT NULL
@@ -77,6 +77,8 @@ DECLARE
   v_total_circulation int;
   v_fmv_total        numeric;
   v_floor_total      numeric;
+  v_fmv_ask_derived  numeric;
+  v_listed_count     int;
   v_first_minted     timestamptz;
   v_last_minted      timestamptz;
 BEGIN
@@ -141,8 +143,10 @@ BEGIN
       COUNT(*),
       SUM(pc.total_minted) FILTER (WHERE pc.total_minted IS NOT NULL),
       SUM(pc.fmv_usd)      FILTER (WHERE pc.fmv_usd > 0),
-      SUM(COALESCE(pc.floor_ask, pc.fmv_usd)) FILTER (WHERE COALESCE(pc.floor_ask, pc.fmv_usd) > 0)
-    INTO v_edition_count, v_total_circulation, v_fmv_total, v_floor_total
+      SUM(pc.floor_ask)    FILTER (WHERE pc.floor_ask > 0),
+      SUM(pc.fmv_usd)      FILTER (WHERE pc.fmv_usd > 0 AND pc.fmv_confidence::text = 'ASK_ONLY'),
+      COUNT(*)             FILTER (WHERE pc.floor_ask > 0)
+    INTO v_edition_count, v_total_circulation, v_fmv_total, v_floor_total, v_fmv_ask_derived, v_listed_count
     FROM pinnacle_catalog pc
     WHERE (EXISTS (SELECT 1 FROM unnest(pc.characters) c WHERE lower(btrim(c)) = lower(btrim(v_player.name)))
              OR (cardinality(pc.characters) > 1
@@ -209,6 +213,8 @@ BEGIN
     'total_circulation', v_total_circulation,
     'fmv_total_usd',     v_fmv_total,
     'floor_total_usd',   v_floor_total,
+    'fmv_ask_derived_usd', v_fmv_ask_derived,
+    'listed_count',      v_listed_count,
     'first_minted_at',   v_first_minted,
     'last_minted_at',    v_last_minted
   );
@@ -299,7 +305,14 @@ INSERT INTO public.pinnacle_editions (id, character_name, mint_count, minting_da
 SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'edition_count'), '3', 'catalog character: 3 pins (the two-character pin counts; Aurora Borealis does not)');
 SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'total_circulation'), '850', 'catalog character: circulation from the pins');
 SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'fmv_total_usd'), '42', 'catalog character: FMV 12 + 30, unpriced pin excluded');
-SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'floor_total_usd'), '40', 'catalog character: floor 10 + (no floor -> FMV 30)');
+-- 2026-09-28 (#24, INVERTED): the Recent-Low Total sums LIVE asks only. It
+-- used to add the FMV of a pin with no ask (10 + 30 = 40), publishing a
+-- fair-value estimate as a low.
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'floor_total_usd'), '10', 'catalog character: live asks only (10); an unlisted pin adds nothing, never its FMV');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'listed_count'), '1', 'catalog character: 1 of 3 pins has a live ask');
+SELECT _assert((public.get_player_detail(:PIN::uuid,'aurora') ->> 'fmv_ask_derived_usd') IS NULL, 'no ASK_ONLY pin -> no ask-derived part');
+UPDATE public.pinnacle_catalog SET fmv_confidence = 'ASK_ONLY' WHERE render_id = 'LEV1-SLBT-SPIN-S6';
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'fmv_ask_derived_usd'), '30', 'the ASK_ONLY part of the FMV total is disclosed (30 of 42)');
 SELECT _assert_eq(left(public.get_player_detail(:PIN::uuid,'aurora') ->> 'first_minted_at', 10), '2025-01-02', 'minting dates still come from pinnacle_editions');
 -- A duo character (combined name) counts the pin that lists both characters.
 INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES

@@ -149,6 +149,22 @@ const PINS = [
       "supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql",
   },
   {
+    // Added 2026-09-28 (#24). The Pinnacle series header summed
+    // COALESCE(floor_ask, fmv_usd) as its Recent-Low Total and never disclosed
+    // that its FMV Total is mostly ask-derived. Pins live asks only, the listed
+    // count, the ASK_ONLY part, on both the live path and the rollup.
+    fn: "get_series_detail",
+    test: "supabase/tests/series_detail_pinnacle_totals.sql",
+    migration:
+      "supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql",
+  },
+  {
+    fn: "refresh_series_detail_rollup",
+    test: "supabase/tests/series_detail_pinnacle_totals.sql",
+    migration:
+      "supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql",
+  },
+  {
     fn: "get_series_rollups",
     test: "supabase/tests/get_series_editions.sql",
     migration:
@@ -879,7 +895,7 @@ const PINS = [
     // Re-pinned 2026-09-26: the Pinnacle branch reads the render catalog by
     // each pin's Franchises trait (™ stripped); legacy read kept as fallback.
     // Re-pinned 2026-09-28: the catalog arm reads 30-day activity from pinnacle_sales.
-    migration: "supabase/migrations/20260928160159_audit_20260928_pinnacle_franchise_30d_activity.sql",
+    migration: "supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql",
   },
   {
     // Added 2026-09-25 (batch 62). The helpers behind every team read: the
@@ -910,7 +926,7 @@ const PINS = [
     fn: "get_set_detail",
     test: "supabase/tests/get_set_detail.sql",
     // 2026-09-27: Pinnacle Total Mint summed over the set's pins.
-    migration: "supabase/migrations/20260928064405_audit_20260927_pinnacle_set_total_mint_from_the_pins.sql",
+    migration: "supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql",
   },
   {
     fn: "get_user_top_owned_moments",
@@ -951,7 +967,7 @@ const PINS = [
     fn: "get_player_detail",
     test: "supabase/tests/get_player_detail.sql",
     // Re-pointed 2026-09-27: Pinnacle mint dates only when every row carries one.
-    migration: "supabase/migrations/20260928064804_audit_20260927_pinnacle_character_mint_dates_only_when_complete.sql",
+    migration: "supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql",
   },
   {
     fn: "get_wallet_collection_snapshot",

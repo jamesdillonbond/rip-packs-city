@@ -22,6 +22,27 @@ export const RECENT_LOW_LABEL = "Recent Low"
 export const RECENT_LOW_TOTAL_LABEL = "Recent-Low Total"
 export const RECENT_LOW_HINT = "Lowest recent sale or ask — not a live floor"
 
+// ── Disney Pinnacle header totals (#24, 2026-09-28) ─────────────────────────
+// Pinnacle's entity RPCs return `listed_count` (pins with a live ask) and
+// `fmv_ask_derived_usd` (the ASK_ONLY part of the FMV total — FMV estimated
+// as 0.9 x the ask, 77% of the catalog's FMV total when measured). Other
+// collections return neither, and their cells keep the generic hint.
+
+/** Sub-line for "Recent-Low Total": Pinnacle's total is live asks only. */
+export function recentLowTotalSub(d: { listed_count?: number | null; edition_count?: number | null }): string {
+  if (d.listed_count == null) return RECENT_LOW_HINT
+  const of = d.edition_count != null ? ` of ${fmtCount(d.edition_count)}` : ""
+  return `Lowest live asks · ${fmtCount(d.listed_count)}${of} listed`
+}
+
+/** Sub-line for "FMV Total": how much of it is estimated from asks, not sales. */
+export function fmvTotalSub(d: { fmv_total_usd?: number | string | null; fmv_ask_derived_usd?: number | string | null }): string | undefined {
+  const total = d.fmv_total_usd == null ? NaN : Number(d.fmv_total_usd)
+  const ask = d.fmv_ask_derived_usd == null ? NaN : Number(d.fmv_ask_derived_usd)
+  if (!Number.isFinite(total) || !Number.isFinite(ask) || total <= 0 || ask <= 0) return undefined
+  return `${Math.round((ask / total) * 100)}% estimated from asks`
+}
+
 // ── Team-moment subject ──────────────────────────────────────────────────────
 // Tile/row subject line shared by every entity surface. Player moments → the
 // player; team moments (player_name null — WNBA Skyline, Season Rewind, Squad

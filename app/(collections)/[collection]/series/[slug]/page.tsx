@@ -21,7 +21,7 @@ import { getEntityLabels } from "@/lib/entity-labels"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { sectionRowResult, sectionRows, structuralSection } from "@/lib/entity-section-rpc"
 import { seriesPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
-import { Section, SectionUnavailable, StatCell, RECENT_LOW_HINT, RECENT_LOW_TOTAL_LABEL, fmtCount, fmtUsd } from "@/components/entity/_shared"
+import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotalSub, recentLowTotalSub, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
@@ -41,6 +41,9 @@ interface SeriesDetail {
   total_circulation: number | null
   fmv_total_usd: number | null
   floor_total_usd: number | null
+  /** Pinnacle only: pins with a live ask / the ASK_ONLY part of fmv_total_usd. */
+  listed_count?: number | null
+  fmv_ask_derived_usd?: number | null
   set_count: number | null
   player_count: number | null
 }
@@ -302,8 +305,8 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
         <StatCell label="Editions" value={fmtCount(detail.edition_count)} />
         <StatCell label="Sets" value={fmtCount(detail.set_count)} />
         <StatCell label={getEntityLabels(collection).players} value={fmtCount(detail.player_count)} />
-        <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
-        <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={RECENT_LOW_HINT} />
+        <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} sub={fmvTotalSub(detail)} />
+        <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={recentLowTotalSub(detail)} />
       </section>
 
       {isEmpty ? (

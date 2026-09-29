@@ -22,7 +22,7 @@
 --   * the jsonb envelope carries the summary passthrough fields + collection slug.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260928064405_audit_20260927_pinnacle_set_total_mint_from_the_pins.sql;
+-- (supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql; was 20260928064405;
 -- before that, 20260822193500_audit_20260822_snapshot_get_set_detail_underlying_set_count.sql);
 -- re-pinned 2026-08-22: `db-pin-staleness` had reported this pin STALE on every
 -- run since 2026-08-10 (13 consecutive, known-issues #24). Diffed rather than
@@ -51,7 +51,7 @@ CREATE TABLE public.editions (
 CREATE TABLE public.fmv_snapshots (
   edition_id uuid, fmv_usd numeric, floor_price_usd numeric, computed_at timestamptz);
 CREATE TABLE public.pinnacle_catalog (
-  set_name text, fmv_usd numeric, floor_ask numeric, total_minted int);
+  set_name text, fmv_usd numeric, floor_ask numeric, total_minted int, fmv_confidence text);
 CREATE TABLE public.sets (
   collection_id uuid, name text);
 
@@ -68,6 +68,8 @@ DECLARE
   v_set       RECORD;
   v_fmv_total numeric;
   v_floor_total numeric;
+  v_fmv_ask_derived numeric;
+  v_listed_count int;
   v_editions_with_fmv int;
   v_edition_count int;
   v_collection_slug text;
@@ -101,10 +103,12 @@ BEGIN
       SELECT
         COUNT(*),
         SUM(pc.fmv_usd)                                  FILTER (WHERE pc.fmv_usd > 0),
-        SUM(COALESCE(pc.floor_ask, pc.fmv_usd))          FILTER (WHERE COALESCE(pc.floor_ask, pc.fmv_usd) > 0),
+        SUM(pc.floor_ask)                                FILTER (WHERE pc.floor_ask > 0),
         COUNT(pc.fmv_usd)                                FILTER (WHERE pc.fmv_usd > 0),
-        CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(pc.total_minted) THEN SUM(pc.total_minted) END
-      INTO v_edition_count, v_fmv_total, v_floor_total, v_editions_with_fmv, v_pin_circulation
+        CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(pc.total_minted) THEN SUM(pc.total_minted) END,
+        SUM(pc.fmv_usd)                                  FILTER (WHERE pc.fmv_usd > 0 AND pc.fmv_confidence::text = 'ASK_ONLY'),
+        COUNT(*)                                         FILTER (WHERE pc.floor_ask > 0)
+      INTO v_edition_count, v_fmv_total, v_floor_total, v_editions_with_fmv, v_pin_circulation, v_fmv_ask_derived, v_listed_count
       FROM pinnacle_catalog pc
       WHERE btrim(pc.set_name) = ANY (SELECT btrim(x) FROM unnest(v_set.set_name_variants) x);
     ELSE
@@ -134,6 +138,8 @@ BEGIN
     v_floor_total := NULL;
     v_editions_with_fmv := NULL;
     v_pin_circulation := NULL;
+    v_fmv_ask_derived := NULL;
+    v_listed_count := NULL;
   END;
 
   -- D20: how many underlying `sets` rows merged into this slug. Complete-by-
@@ -162,6 +168,8 @@ BEGIN
     'last_updated_at',     v_set.last_updated_at,
     'fmv_total_usd',       v_fmv_total,
     'floor_total_usd',     v_floor_total,
+    'fmv_ask_derived_usd', v_fmv_ask_derived,
+    'listed_count',        v_listed_count,
     'summary_computed_at', v_set.computed_at
   );
 END;
@@ -242,6 +250,13 @@ INSERT INTO public.pinnacle_catalog (set_name, fmv_usd, floor_ask, total_minted)
 SELECT _assert_eq((public.get_set_detail(:pin::uuid,'mf-vol-1') ->> 'total_circulation'), '23788', 'Pinnacle Total Mint = sum over its pins (9268+7328+7192), not the set-level 9268');
 SELECT _assert((public.get_set_detail(:pin::uuid,'gap-set') ->> 'total_circulation') IS NULL, 'Pinnacle Total Mint is NULL, not a partial 400, when a pin''s count is unknown');
 SELECT _assert_eq((public.get_set_detail(:pin::uuid,'mf-vol-1') ->> 'edition_count'), '3', 'Pinnacle pin count from the catalog (unchanged)');
+-- 2026-09-28 (#24): Recent-Low Total = live asks only; the ASK_ONLY part of the FMV total is disclosed.
+UPDATE public.pinnacle_catalog SET floor_ask = NULL WHERE total_minted = 7192;
+UPDATE public.pinnacle_catalog SET fmv_confidence = 'ASK_ONLY' WHERE total_minted = 9268;
+SELECT _assert_eq((public.get_set_detail(:pin::uuid,'mf-vol-1') ->> 'floor_total_usd'), '6', 'Pinnacle Recent-Low Total: live asks 3 + 3; the unlisted pin adds nothing, never its FMV');
+SELECT _assert_eq((public.get_set_detail(:pin::uuid,'mf-vol-1') ->> 'listed_count'), '2', 'Pinnacle: 2 of 3 pins listed');
+SELECT _assert_eq((public.get_set_detail(:pin::uuid,'mf-vol-1') ->> 'fmv_ask_derived_usd'), '2', 'Pinnacle: the ASK_ONLY part of the FMV total');
+SELECT _assert((public.get_set_detail(:cid::uuid,'base-set') ->> 'fmv_ask_derived_usd') IS NULL, 'non-Pinnacle: no ask-derived key value');
 -- CONTROL: the non-Pinnacle set still reports the summary figure.
 SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'total_circulation'), '100', 'non-Pinnacle Total Mint = sets_summary (unchanged)');
 

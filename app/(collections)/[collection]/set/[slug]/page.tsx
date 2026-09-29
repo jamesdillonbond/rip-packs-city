@@ -13,7 +13,7 @@ import { fetchFullTierMix, buildTierMixRows } from "@/lib/set-detail/tier-mix"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { sectionRows, sectionRowsResult, structuralSection } from "@/lib/entity-section-rpc"
 import { setPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
-import { Section, SectionUnavailable, StatCell, RECENT_LOW_HINT, RECENT_LOW_TOTAL_LABEL, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
+import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotalSub, recentLowTotalSub, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -38,6 +38,9 @@ interface SetDetail {
   max_series: number | null
   fmv_total_usd: number | null
   floor_total_usd: number | null
+  /** Pinnacle only: pins with a live ask / the ASK_ONLY part of fmv_total_usd. */
+  listed_count?: number | null
+  fmv_ask_derived_usd?: number | null
   summary_computed_at: string | null
 }
 
@@ -266,9 +269,9 @@ export default async function SetPage(props: { params: Promise<{ collection: str
       <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
         <StatCell label="Editions" value={fmtCount(detail.edition_count)} sub={detail.editions_with_fmv !== null ? `${fmtCount(detail.editions_with_fmv)} with FMV` : undefined} />
         <StatCell label="Total Mint" value={fmtCount(detail.total_circulation)} />
-        <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} />
+        <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} sub={fmvTotalSub(detail)} />
         {/* Panini: floor_total_usd is FMV restated (no floor source) — not a recent low. */}
-        {!isPanini && <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={RECENT_LOW_HINT} />}
+        {!isPanini && <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={recentLowTotalSub(detail)} />}
       </section>
       {isPanini && (
         <div className="rpc-mono" style={{ marginTop: 8, padding: "0 4px", fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
