@@ -125,6 +125,13 @@ Old flat routes redirect to the new nested paths.
 
 ---
 
+## Bottom tabs + the cross-collection hubs (Trevor, 2026-09-28)
+
+- **Phone bottom bar (`components/MobileNav.tsx`) = HOME · MY BINDER · MARKET · SNIPER.** SEARCH and COLLECTIONS sheets were removed: search is the header's `GlobalSearch` (now also in the home header), and collection switching is `CollectionSwitcher` + `CollectionTabBar` on every collection page. Active tab is decided by DESTINATION (`activeTabFor`); account routes light no tab. Icons are `currentColor` SVGs (emoji ignore `color`).
+- **"Binder" is the product word for a wallet's holdings** — `/{collection}/collection` (`PAGE_LABELS.collection = "Binder"`). The URL segment stays `collection`; "collection" alone meant too many things (Trevor). MY BINDER links with no `?wallet=`: the page reopens the device's last wallet, else the signed-in reader's saved one.
+- **`/market` and `/sniper` are HUBS** (`app/market/page.tsx` + `lib/market/hub.ts`, `app/sniper/page.tsx` + `lib/sniper/hub.ts`): a "Back to <X>" shortcut only when a last collection was actually recorded (`components/hub/LastCollectionShortcut.tsx`), one tile per published collection that has the page, and a cross-collection list (Sniper: top discounts from the cached `deals` board; Market: pulse + top sales). Three states each (read failed / empty / rows). `/sniper` used to be a redirect to Top Shot's sniper (removed from `next.config.ts`); both are public exact paths in `proxy.ts` and in the sitemap. Market's sales-table stats exclude Disney Pinnacle (not fed from `sales`).
+- **`GlobalSiteHeader` is mounted on /dashboard, /alerts, /insights, /profile and /profile/edit** — those pages had no header at all before 09-28.
+
 ## ⛔ A signed-in reader's own wallet is ASSUMED, never requested and never announced (Trevor, 2026-09-28/29)
 
 Trevor: a "paste your wallet" box while signed in is "redundant and unnecessary", and "we shouldn't even mention the 'tracking' portion. Should be assumed and is just extra noise." So:

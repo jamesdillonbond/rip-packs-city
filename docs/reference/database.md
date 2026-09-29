@@ -2304,6 +2304,15 @@ ENTIRE history, because the age predicate has had years to accumulate matches wh
 unresolved parked row has no deadline — UFC still holds 1,070 unresolved rows from 2025-12-30 and
 Golazos 20 from 2025-12-29. Parking is durable; promotion is what starts the 7-day clock.
 
+⚠ **Re-measured 2026-09-29:** UFC holds 1,054 unresolved rows (2025-12-30 → 2026-04-18), all marked `promote_blocked = no_resolution_path_all_four_branches_empty` (migration 20260824033743). No promoter leg runs for UFC any more (0 `promote_unmapped_sales` runs for it in 24 h), so they cost nothing; leave them.
+
+### `unmapped_sales` has NO uniqueness beyond `id` (2026-09-28/29)
+
+- **A `23505` fallback never fires there.** Two leaks followed: a sale already recorded in `sales` was parked anyway and never cleared (16,373 All Day + 54 Golazos copies), and a re-scanned range parked the same sale again. Closed 09-28 with hint `resolved_by = dedupe_already_in_sales_20260928`; the backfills now call `lib/ingest/already-recorded.ts` (`dropAlreadyRecorded`, scoped by `collection_id`, THROWS on a failed read) before parking.
+- **Duplicates also block claim RPCs that expect one row per tx** (`tx_rows = 1`): the All Day price recovery found 0 candidates while 1,000+ rows waited, until the copies were removed. ⚠ Nothing alarms on "0 candidates while rows wait" (known-issues #160).
+- **Multi-NFT V1 carts are priced per SEGMENT** (`attributeV1MultiSalePrices` in `lib/chains/flow/dapper-v1-tx-decode.ts`): each ListingAvailable → payment → ListingCompleted segment gets a price only with exactly one contract-sourced payment whose splits match within 1¢, and the tx total must reconcile; otherwise the row is stamped `multi_price_attempted_at` + `multi_price_reason` and left unpriced. Priced rows carry `price_source = v1_multi_nft_segment`. Driver: `/api/admin/recover-v1-budget-exhausted` via `claim_allday_v1_multi_price_recovery_candidates`.
+- **pg_net is the DB's egress** to Flow REST and Atlas (`net.http_get/http_post`, answers in `net._http_response`, which ages out after hours). ⛔ **A stamp written at DISPATCH records the attempt, not the outcome**: both Atlas probe legs (Top Shot 09-08, All Day 09-29) store `resolution_hint.atlas_probe_req` and re-probe when that response is a non-200 or timed out. `atlas_market_drain()` overwrites a failed request's `__nft__<id>` marker, so the request row cannot tell you which nft failed.
+
 ## 🚨 A PARTIAL unique index is not a dedup guarantee — two writers of the same row can BOTH satisfy it and never collide (2026-09-08)
 
 Found minutes after `83820bd8` made the Top Shot indexer park unresolvable sales. Two lanes now write
