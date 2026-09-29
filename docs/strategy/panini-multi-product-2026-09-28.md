@@ -143,3 +143,8 @@ Read at 12:10–12:40 PM PT 09-29 (about 2 days before the planned Oct 1 check; 
   products, not only the founder's 136), `complete=true`, and slot 2's psku is among them. The box's checkout
   (`%USERPROFILE%\rip-packs-city`, which `panini-run.bat` runs from) was clean and was fast-forwarded to 8452bf769,
   so the **2:00 PM PT** scheduled run is the first to use the new order.
+- **2:33 PM PT — confirmed in production.** The 2:00 PM PT run logged `walk order = stalest-first (152 held-priority +
+  2929 new + 5995 known); 8924 pskus queued` and began card posts at about 2:32 PM PT. One minute in: **6 of 136**
+  held editions have a `panini_editions` row (was 0). None were bridged or priced yet, and Rupert's psku had no row
+  yet. At ~660 editions per ~4 h run, all 152 priority pskus should be walked within about an hour. Bridging and FMV
+  follow on the pricing bridge's own schedule.
