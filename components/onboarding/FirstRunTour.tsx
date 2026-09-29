@@ -68,7 +68,10 @@ const STEPS: TourStep[] = [
   {
     id: "trophy-case",
     title: "Build your trophy case",
-    body: "Pin your 6 best Moments, add a caption, and share the case on X — it gets its own page and social card at rippackscity.com/profile/<you>/trophy-case.",
+    // ⚠ No URL template here. This copy used to end "at
+    // rippackscity.com/profile/<you>/trophy-case", and a new collector typed it
+    // in literally on 2026-09-29 and landed on /profile/%3Cyou%3E/trophy-case.
+    body: "Pin your 6 best Moments, add a caption, and share the case on X — it gets its own page and social card, linked from your profile.",
     anchor: "trophy-case",
     cta: "Got it",
   },

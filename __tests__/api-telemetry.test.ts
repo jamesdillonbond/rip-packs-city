@@ -79,8 +79,14 @@ async function post(r: any) {
   return res
 }
 
-const req = (body: any, isBad = false) =>
-  ({ json: async () => { if (isBad) throw new Error("bad json"); return body } }) as any
+const CHROME_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+
+const req = (body: any, isBad = false, ua: string | null = CHROME_UA) =>
+  ({
+    headers: new Headers(ua == null ? {} : { "user-agent": ua }),
+    json: async () => { if (isBad) throw new Error("bad json"); return body },
+  }) as any
 
 beforeEach(() => {
   state.user = null
@@ -164,6 +170,60 @@ describe("POST /api/telemetry", () => {
     await post(req({ feature: "view", metadata: big }))
     expect(state.insert.metadata._truncated).toBe(true)
     expect(state.insert.metadata._bytes).toBeGreaterThan(4096)
+  })
+
+  // 2026-09-29: ~320 anon page-views per /insights page in 48 h came from a headless
+  // scraper (Lightpanda), indistinguishable from a collector. The tag is what lets a
+  // human count exclude them — and a human beacon must NOT carry it.
+  describe("automated-traffic tag", () => {
+    it("does not tag a real browser's beacon", async () => {
+      await post(req({ feature: "page-view", metadata: { path: "/" } }))
+      expect(state.insert.metadata).toEqual({ path: "/" })
+      expect(state.insert.metadata.automated).toBeUndefined()
+    })
+
+    it("tags a Lightpanda beacon (the measured 09-29 scraper) and keeps the row", async () => {
+      await post(req({ feature: "page-view", metadata: { path: "/insights" } }, false, "Lightpanda/1.0"))
+      expect(state.insert.feature_name).toBe("page-view")
+      expect(state.insert.metadata).toEqual({ path: "/insights", automated: true })
+    })
+
+    it("tags headless Chrome, crawlers and HTTP clients", async () => {
+      for (const ua of [
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        "Mozilla/5.0 (compatible; AhrefsBot/7.0)",
+        "python-requests/2.32.3",
+        "curl/8.5.0",
+      ]) {
+        state.insert = null
+        await post(req({ feature: "page-view" }, false, ua))
+        expect(state.insert.metadata, ua).toEqual({ automated: true })
+      }
+    })
+
+    it("does not tag a phone whose model name merely ends in 'bot' (Cubot)", async () => {
+      await post(req({ feature: "page-view" }, false,
+        "Mozilla/5.0 (Linux; Android 12; CUBOT X50) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"))
+      expect(state.insert.metadata).toBeNull()
+    })
+
+    it("tags a beacon with no user-agent at all", async () => {
+      await post(req({ feature: "page-view" }, false, null))
+      expect(state.insert.metadata).toEqual({ automated: true })
+    })
+
+    it("tags a page that reported navigator.webdriver, even from a browser UA", async () => {
+      await post(req({ feature: "page-view", metadata: { path: "/", webdriver: true } }))
+      expect(state.insert.metadata.automated).toBe(true)
+    })
+
+    it("a client cannot claim to be human: its own `automated` key is discarded", async () => {
+      await post(req({ feature: "page-view", metadata: { automated: false } }, false, "Lightpanda/1.0"))
+      expect(state.insert.metadata).toEqual({ automated: true })
+      await post(req({ feature: "page-view", metadata: { path: "/", automated: true } }))
+      expect(state.insert.metadata).toEqual({ path: "/" })
+    })
   })
 
   it("nulls non-object metadata", async () => {

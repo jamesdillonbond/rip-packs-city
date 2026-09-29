@@ -57,8 +57,12 @@ function schedule() {
 export function track(feature: string, metadata?: Record<string, unknown>): void {
   if (typeof window === "undefined") return
   if (!feature) return
+  // An automation-driven page says so (navigator.webdriver); the server tags the
+  // row `automated` so human counts can exclude it (see app/api/telemetry/route.ts).
+  const driven = typeof navigator !== "undefined" && (navigator as { webdriver?: boolean }).webdriver === true
+  const meta = driven ? { ...(metadata ?? {}), webdriver: true } : metadata
   // Coalesce repeated firings of the same feature in the debounce window.
-  pending.set(feature, { feature, metadata })
+  pending.set(feature, { feature, metadata: meta })
   schedule()
 }
 

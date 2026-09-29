@@ -23,7 +23,12 @@ beforeEach(() => {
   fetchMock = vi.fn(() => Promise.resolve({} as Response))
   vi.stubGlobal("fetch", fetchMock)
 })
+// jsdom's navigator has no `webdriver`; define it per test and remove it after.
+function setWebdriver(v: boolean) {
+  Object.defineProperty(navigator, "webdriver", { value: v, configurable: true })
+}
 afterEach(() => {
+  delete (navigator as unknown as { webdriver?: boolean }).webdriver
   vi.runOnlyPendingTimers()
   vi.useRealTimers()
   vi.unstubAllGlobals()
@@ -44,6 +49,22 @@ describe("track", () => {
       feature: "open_cart",
       metadata: { count: 2 },
     })
+  })
+
+  it("marks a beacon from an automation-driven page (navigator.webdriver) so the server can tag it", async () => {
+    setWebdriver(true)
+    track("page-view", { path: "/insights" })
+    vi.advanceTimersByTime(350)
+    const [, blob] = sendBeaconMock.mock.calls[0]
+    expect(JSON.parse(await blobText(blob)).metadata).toEqual({ path: "/insights", webdriver: true })
+  })
+
+  it("adds no webdriver key for an ordinary page", async () => {
+    setWebdriver(false)
+    track("page-view", { path: "/" })
+    vi.advanceTimersByTime(350)
+    const [, blob] = sendBeaconMock.mock.calls[0]
+    expect(JSON.parse(await blobText(blob)).metadata).toEqual({ path: "/" })
   })
 
   it("coalesces repeated firings of the same feature into one beacon (latest metadata wins)", async () => {

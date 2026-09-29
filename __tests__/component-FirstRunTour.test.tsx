@@ -2,6 +2,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
 import { render, cleanup, waitFor } from "@testing-library/react"
 import FirstRunTour from "@/components/onboarding/FirstRunTour"
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 
 // FirstRunTour is a modal-style onboarding popover. It adopts the shared
 // useModalA11y hook, so it now has real dialog semantics: role=dialog, focus
@@ -43,5 +45,18 @@ describe("FirstRunTour", () => {
     render(<FirstRunTour enabled onDismiss={onDismiss} />)
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
     expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  // 2026-09-29: a new collector typed the tour's "rippackscity.com/profile/<you>/trophy-case"
+  // in literally and landed on /profile/%3Cyou%3E/trophy-case. Tour copy states no URL
+  // template a reader could copy — pinned on the source, since only the current step renders.
+  it("tour copy carries no placeholder URL a reader could type in", () => {
+    const src = readFileSync(resolve(__dirname, "../components/onboarding/FirstRunTour.tsx"), "utf8")
+    const bodies = [...src.matchAll(/^\s*body:\s*"([^"]*)"/gm)].map((m) => m[1])
+    expect(bodies.length).toBeGreaterThanOrEqual(5)
+    for (const b of bodies) {
+      expect(b, b).not.toMatch(/rippackscity\.com\/profile\//)
+      expect(b, b).not.toMatch(/<[a-z-]+>/i)
+    }
   })
 })

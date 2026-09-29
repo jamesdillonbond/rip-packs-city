@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { isAutomatedUserAgent } from "@/lib/telemetry/automated"
 
 export const dynamic = "force-dynamic"
 
@@ -80,7 +81,11 @@ export async function POST(req: NextRequest) {
     // Fall through with walletAddress = "anon".
   }
 
-  const metadata = safeMetadata(body.metadata)
+  let metadata = safeMetadata(body.metadata)
+  const ua = typeof req.headers?.get === "function" ? req.headers.get("user-agent") : null
+  const automated = isAutomatedUserAgent(ua) || metadata?.webdriver === true
+  if (metadata && "automated" in metadata) delete metadata.automated
+  if (automated) metadata = { ...(metadata ?? {}), automated: true }
 
   // Fire-and-forget insert. We deliberately swallow errors here — telemetry
   // must never surface as a 5xx in the UI.
