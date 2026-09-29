@@ -63,6 +63,34 @@ export function extractScriptResultB64(rawText: string): string | null {
   return trimmed;
 }
 
+export interface LinkPair {
+  parent: string
+  child: string
+  relationship: "restricted" | "owned"
+}
+
+// Every (parent, child) link one probe proves, from BOTH sides. `addr` is the
+// probed address: as a PARENT it contributes its Manager's children/owned; as a
+// CHILD it contributes every parent that has REDEEMED it. The child side is the
+// one that matters for this estate — candidates are Dapper addresses, i.e.
+// children whose Flow Wallet parents are in no candidate list (2026-09-29: the
+// parent side alone missed 140 of 147 redeemed links on saved+seeded wallets).
+// Deduped on (parent, child), first relationship wins.
+export function linkPairsFromProbe(addr: string, probe: { children: string[]; owned: string[]; redeemedParents: string[] }): LinkPair[] {
+  const out: LinkPair[] = [];
+  const seen = new Set<string>();
+  const add = (parent: string, child: string, relationship: "restricted" | "owned") => {
+    const k = `${parent}|${child}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ parent, child, relationship });
+  };
+  for (const c of probe.children) add(addr, c, "restricted");
+  for (const o of probe.owned) add(addr, o, "owned");
+  for (const p of probe.redeemedParents) add(p, addr, "restricted");
+  return out;
+}
+
 export function parseAddressArray(node: CdcNode | undefined): string[] {
   if (!node || node.type !== "Array" || !Array.isArray(node.value)) return [];
   const out: string[] = [];

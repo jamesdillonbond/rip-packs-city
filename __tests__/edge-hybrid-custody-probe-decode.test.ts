@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import {
   extractScriptResultB64,
+  linkPairsFromProbe,
   parseAddressArray,
   type CdcNode,
 } from "../supabase/functions/_shared/hybrid-custody-probe-decode"
@@ -99,5 +102,80 @@ describe("parseAddressArray — Cadence Address[] decode", () => {
   // case must assert a NON-empty result — and one does, first.
   it("is not vacuous: the happy path returns a non-empty result", () => {
     expect(parseAddressArray({ type: "Array", value: [addr("0xaaa")] }).length).toBeGreaterThan(0)
+  })
+})
+
+// 2026-09-29: linked_accounts held no row for 0xbd94cade097e50ac although it
+// had two redeemed parents on chain. The backfill only asked each candidate
+// "are you a PARENT?"; candidates are Dapper addresses — CHILDREN — so an
+// on-chain census found 140 of 147 redeemed links on saved+seeded wallets
+// missing. These cases pin that a CHILD-only probe yields its parent links.
+describe("linkPairsFromProbe — both sides of a HybridCustody link", () => {
+  const empty = { children: [], owned: [], redeemedParents: [] }
+
+  it("a pure CHILD (no Manager) yields one link per redeemed parent, child = the probed address", () => {
+    const pairs = linkPairsFromProbe("0xbd94cade097e50ac", {
+      ...empty,
+      redeemedParents: ["0xd96dc67ae64ee202", "0x3d0b274c80263484"],
+    })
+    expect(pairs).toEqual([
+      { parent: "0xd96dc67ae64ee202", child: "0xbd94cade097e50ac", relationship: "restricted" },
+      { parent: "0x3d0b274c80263484", child: "0xbd94cade097e50ac", relationship: "restricted" },
+    ])
+  })
+
+  it("a PARENT yields its children as restricted and its owned accounts as owned", () => {
+    expect(linkPairsFromProbe("0xp", { children: ["0xc"], owned: ["0xo"], redeemedParents: [] })).toEqual([
+      { parent: "0xp", child: "0xc", relationship: "restricted" },
+      { parent: "0xp", child: "0xo", relationship: "owned" },
+    ])
+  })
+
+  it("an address that is BOTH a parent and a child contributes both directions", () => {
+    const pairs = linkPairsFromProbe("0xmid", { children: ["0xc"], owned: [], redeemedParents: ["0xtop"] })
+    expect(pairs).toContainEqual({ parent: "0xmid", child: "0xc", relationship: "restricted" })
+    expect(pairs).toContainEqual({ parent: "0xtop", child: "0xmid", relationship: "restricted" })
+  })
+
+  it("dedupes a (parent, child) seen twice; the first relationship wins", () => {
+    expect(linkPairsFromProbe("0xp", { children: ["0xc", "0xc"], owned: ["0xc"], redeemedParents: [] })).toEqual([
+      { parent: "0xp", child: "0xc", relationship: "restricted" },
+    ])
+  })
+
+  it("an address with nothing on either side yields no links", () => {
+    expect(linkPairsFromProbe("0xa", empty)).toEqual([])
+  })
+})
+
+describe("hybrid-custody-backfill carries the child-side probe", () => {
+  const root = process.cwd()
+  const edge = readFileSync(join(root, "supabase/functions/hybrid-custody-backfill/index.ts"), "utf8")
+  const cdc = readFileSync(join(root, "cadence/scripts/get-hybrid-custody-state.cdc"), "utf8")
+
+  it("embeds cadence/scripts/get-hybrid-custody-state.cdc VERBATIM (the edge copy is what runs)", () => {
+    const m = edge.match(/const CADENCE_SCRIPT = `([\s\S]*?)`;/)
+    expect(m).not.toBeNull()
+    expect(m![1]).toBe(cdc)
+  })
+
+  it("the script reads the child side: redeemed parents off the OwnedAccount", () => {
+    expect(cdc).toMatch(/HybridCustody\.OwnedAccountStoragePath/)
+    expect(cdc).toMatch(/getRedeemedStatus\(addr: parent\) == true/)
+    expect(cdc).toMatch(/redeemedParents/)
+  })
+
+  it("decodeStructResult REFUSES a reply lacking redeemedParents instead of reading it as 'no parents'", () => {
+    expect(edge).toMatch(/if \(!parentsArrNode\) return null;/)
+  })
+
+  it("the worker writes every pair linkPairsFromProbe proves, not only a Manager's children", () => {
+    expect(edge).toMatch(/for \(const pair of linkPairsFromProbe\(addr, r\)\)/)
+    expect(edge).not.toMatch(/if \(!r\.hasManager\) return;/)
+  })
+
+  it("the run's ok is DERIVED from probe errors and failed writes, never hardcoded true", () => {
+    expect(edge).toMatch(/const ok = probeErrors === 0 && pairsFailed === 0;/)
+    expect(edge).not.toMatch(/ok: true,\s*\n\s*error: probeErrors/)
   })
 })

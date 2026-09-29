@@ -220,6 +220,7 @@ const PINS: Array<[string, string, string, string]> = [
   // in __tests__/edge-hybrid-custody-probe-decode.test.ts (16 cases).
   ["hybrid-custody-probe-decode", "extractScriptResultB64", "hybrid-custody-backfill", "Flow REST /v1/scripts shape sniffer; a wrong branch feeds JSON to atob()"],
   ["hybrid-custody-probe-decode", "parseAddressArray", "hybrid-custody-backfill", "Cadence Address[] decode; drift silently reports linked children as none"],
+  ["hybrid-custody-probe-decode", "linkPairsFromProbe", "hybrid-custody-backfill", "both-sides link enumeration; dropping the child side missed 140/147 redeemed links (2026-09-29)"],
   // Cadence/base64 decode paths — a drift here corrupts the whole on-chain read rather
   // than failing loudly, which is what makes these worth pinning over prettier targets.
   ["cdc", "unwrapCdc", "ingest-pinnacle-mints", "JSON-Cadence decode for Pinnacle mint events"],
@@ -333,7 +334,11 @@ describe("edge-fn inline-copy drift guard — deployed copies match their tested
     "%s::%s inline in %s == _shared mirror (or the edge fn imports it) — else drift (%s)",
     (mod, fn, edge, _why) => {
       const edgeSrc = readEdge(edge)
-      const importsShared = new RegExp(`_shared/${mod}`).test(edgeSrc)
+      // ⚠ 2026-09-29: this was a bare `_shared/${mod}` text match, so a COMMENT
+      // naming the mirror ("Inline copy of _shared/<mod>.ts") exempted every pin
+      // on that edge fn — a planted defect in linkPairsFromProbe passed. Only a
+      // real `from "…/_shared/<mod>…"` import counts.
+      const importsShared = new RegExp(`\\bfrom\\s+["'][^"']*_shared/${mod}(\\.ts)?["']`).test(edgeSrc)
       if (importsShared) {
         // Migrating the edge fn to import the shared module is the ideal end
         // state — the copy is gone, so there is nothing left to drift.
