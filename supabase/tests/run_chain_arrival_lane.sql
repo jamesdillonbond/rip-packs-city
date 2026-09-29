@@ -16,7 +16,8 @@
 --   E1. Enqueue refuses an interval below the mainnet24 root or inverted.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql).
+-- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
+-- run_chain_arrival_lane from 20260929173000_audit_20260929_chain_arrival_events_parse_materialized.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -162,14 +163,16 @@ BEGIN
       v_bisected := v_bisected + v_n;
     ELSE
       -- events: the LAST TopShot.Withdraw of each probed id in (lo, hi] whose
-      -- sender is not the wallet itself is the delivery
-      WITH ev AS (
+      -- sender is not the wallet itself is the delivery. MATERIALIZED: inlined,
+      -- the payload decode re-ran per probe and an 11.9 MB window (21,794
+      -- withdraws) hit the statement timeout every tick (2026-09-29).
+      WITH ev AS MATERIALIZED (
         SELECT (b->>'block_height')::bigint AS bh, (b->>'block_timestamp')::timestamptz AS bt,
                e->>'transaction_id' AS tx, (e->>'event_index')::int AS ei,
                convert_from(decode(e->>'payload', 'base64'), 'UTF8')::jsonb AS pl
           FROM jsonb_array_elements(v_body) b
           CROSS JOIN LATERAL jsonb_array_elements(coalesce(b->'events', '[]'::jsonb)) e
-      ), w AS (
+      ), w AS MATERIALIZED (
         SELECT bh, bt, tx, ei,
                (SELECT (x->'value'->>'value')::bigint FROM jsonb_array_elements(pl->'value'->'fields') x WHERE x->>'name' = 'id') AS mid,
                (SELECT coalesce(x->'value'->'value'->>'value', x->'value'->>'value')

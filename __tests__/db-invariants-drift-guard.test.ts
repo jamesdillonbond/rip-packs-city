@@ -22,8 +22,8 @@ const PINS = [
     // LAST non-wallet withdraw as the delivery, and 429-not-a-failure.
     fn: "run_chain_arrival_lane",
     test: "supabase/tests/run_chain_arrival_lane.sql",
-    migration:
-      "supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql",
+    // 2026-09-29: the events parse is MATERIALIZED (an 11.9 MB window timed out).
+    migration: "supabase/migrations/20260929173000_audit_20260929_chain_arrival_events_parse_materialized.sql",
   },
   {
     fn: "enqueue_chain_arrivals",
