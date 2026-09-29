@@ -367,3 +367,16 @@ export function packInferredAcquisitionLine(row: {
   if (row.buy_price_source === "retail_inferred") return "No purchase on record · acquired inside the drop's sale window"
   return null
 }
+
+/** A pull tile's serial: "#459 / 15,000" (2026-09-29). The mint size only when
+ *  it is a positive count; nothing at all without a serial -- never "#0" or
+ *  "#null" out of a missing read. */
+export function packPullSerialLabel(
+  serial: number | string | null | undefined,
+  circulation: number | string | null | undefined,
+): string | null {
+  const s = serial == null || serial === "" ? NaN : Number(serial)
+  if (!Number.isInteger(s) || s <= 0) return null
+  const c = circulation == null || circulation === "" ? NaN : Number(circulation)
+  return Number.isInteger(c) && c > 0 ? `#${s.toLocaleString("en-US")} / ${c.toLocaleString("en-US")}` : `#${s.toLocaleString("en-US")}`
+}

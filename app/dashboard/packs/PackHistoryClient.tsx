@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
-import { heldPacksCaption, packBuyLabel, packIdentityNote, packInferredAcquisitionLine, packMarketLabel, packPullLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
+import { heldPacksCaption, packBuyLabel, packIdentityNote, packInferredAcquisitionLine, packMarketLabel, packPullLabel, packPullSerialLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 import {
@@ -1002,6 +1002,9 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
                 <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, color: "#fff", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.player_name ?? p.character_name ?? "—"}</div>
                 {p.named_by === "id_neighbours" && (
                   <div title="No record names this moment; its edition is inferred from the moments minted beside it" style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.45)" }}>est. name</div>
+                )}
+                {packPullSerialLabel(p.serial_number, p.circulation_count) && (
+                  <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{packPullSerialLabel(p.serial_number, p.circulation_count)}</div>
                 )}
                 <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.6)" }}>{fmtUsd(p.current_fmv ?? p.fmv_usd ?? null)}</div>
               </div>

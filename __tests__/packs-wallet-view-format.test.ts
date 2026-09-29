@@ -14,6 +14,7 @@ import {
   packBuyLabel,
   packPullLabel,
   packInferredAcquisitionLine,
+  packPullSerialLabel,
   packsRippedCaption,
   spentCaption,
   packsSoldCaption,
@@ -375,5 +376,25 @@ describe("opened-pack averages (2026-09-26)", () => {
     expect(heldPacksCaption({ count: 434, listed_count: 433, floor_ask_usd: 11042.2, rip_ev_count: 222, rip_ev_usd: 597.66,
       opened_avg_count: 190, opened_avg_usd: 1500 }, Date.parse("2026-09-26T19:00:00Z")))
       .toBe("$11,042 at floor ask (433 listed) · rip EV $597.66 (222 priced) · $1,500 more at their drops' opened averages (190)")
+  })
+})
+
+describe("packPullSerialLabel", () => {
+  it("shows serial and mint size", () => {
+    expect(packPullSerialLabel(459, 15000)).toBe("#459 / 15,000")
+  })
+  it("reads the numeric strings a jsonb payload can carry", () => {
+    expect(packPullSerialLabel("12", "99")).toBe("#12 / 99")
+  })
+  it("drops a mint size it cannot trust", () => {
+    expect(packPullSerialLabel(7, null)).toBe("#7")
+    expect(packPullSerialLabel(7, 0)).toBe("#7")
+  })
+  it("says nothing without a real serial -- never #0 or #null", () => {
+    expect(packPullSerialLabel(null, 100)).toBeNull()
+    expect(packPullSerialLabel(undefined, 100)).toBeNull()
+    expect(packPullSerialLabel(0, 100)).toBeNull()
+    expect(packPullSerialLabel("", 100)).toBeNull()
+    expect(packPullSerialLabel("abc", 100)).toBeNull()
   })
 })
