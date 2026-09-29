@@ -33,6 +33,7 @@ CREATE OR REPLACE FUNCTION public.pinnacle_fmv_recalc_render(p_render_id text)
 AS $function$
 DECLARE
   v_wap numeric; v_wmed numeric; v_s7 int; v_s30 int; v_days int; v_conf text; v_liq int;
+  v_max30 numeric;
 BEGIN
   SELECT
     ROUND(SUM(sale_price_usd * weight) / NULLIF(SUM(weight), 0), 4),
@@ -63,6 +64,23 @@ BEGIN
         WHERE render_id = p_render_id AND sold_at > NOW() - interval '90 days' AND sale_price_usd > 0
       ) w
     ) c;
+  END IF;
+
+  -- Capped at the 30-day MAX SALE when the render has 2+ sales in 30 days
+  -- (2026-09-29). On a falling render the 90-day median lags: Nemo priced $9.50
+  -- over 30-day sales of $3-$6, and ranking deals by discount surfaces exactly
+  -- those lags. Backtest (simulated engine at each sale, next sale as truth): of
+  -- the cases whose median sat above the 30-day max, capping cut mean |log err|
+  -- 0.434 -> 0.366 (2-3 recent sales; 30 better / 18 worse) and 0.572 -> 0.382
+  -- (4+; 20 / 4). With ONE recent sale the cap was worse (0.282 -> 0.312), so a
+  -- lone sale never caps. The cap only ever LOWERS the price.
+  IF v_wmed IS NOT NULL AND COALESCE(v_s30, 0) >= 2 THEN
+    SELECT MAX(sale_price_usd) INTO v_max30
+    FROM pinnacle_sales
+    WHERE render_id = p_render_id AND sold_at > NOW() - interval '30 days' AND sale_price_usd > 0;
+    IF v_max30 IS NOT NULL AND v_wmed > v_max30 THEN
+      v_wmed := v_max30;
+    END IF;
   END IF;
 
   v_conf := CASE
@@ -119,4 +137,22 @@ SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R4')->>'confidence'), 'HIG
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R4')->>'sales_count_30d'), '5', 'R4: counts ignore the $0 sale');
 
 SELECT '✓ pinnacle_fmv_recalc_render invariants pass' AS result;
+-- 2026-09-29: capped at the 30-day max sale when 2+ sales in 30 days; a lone recent sale never caps.
+INSERT INTO public.pinnacle_sales VALUES
+  ('R5', 20, now() - interval '45 days 1 hour'), ('R5', 20, now() - interval '45 days 2 hours'),
+  ('R5', 20, now() - interval '45 days 3 hours'), ('R5', 20, now() - interval '45 days 4 hours'),
+  ('R5', 20, now() - interval '45 days 5 hours'), ('R5', 20, now() - interval '45 days 6 hours'),
+  ('R5', 20, now() - interval '45 days 7 hours'), ('R5', 20, now() - interval '45 days 8 hours'),
+  ('R5', 6, now() - interval '1 day'), ('R5', 8, now() - interval '2 days');
+INSERT INTO public.pinnacle_sales VALUES
+  ('R6', 20, now() - interval '45 days 1 hour'), ('R6', 20, now() - interval '45 days 2 hours'),
+  ('R6', 20, now() - interval '45 days 3 hours'), ('R6', 20, now() - interval '45 days 4 hours'),
+  ('R6', 20, now() - interval '45 days 5 hours'), ('R6', 20, now() - interval '45 days 6 hours'),
+  ('R6', 20, now() - interval '45 days 7 hours'), ('R6', 20, now() - interval '45 days 8 hours'),
+  ('R6', 6, now() - interval '1 day');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R5')->>'fmv_usd')::numeric::text, '8.0000', 'R5: a median (20) above every 30-day sale is capped at the 30-day max (8) with 2 recent sales');
+SELECT _assert_eq(((public.pinnacle_fmv_recalc_render('R5')->>'wap_usd')::numeric > 8)::text, 'true', 'R5: wap_usd is not capped');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R6')->>'fmv_usd')::numeric::text, '20.0000', 'R6: ONE recent sale never caps (the backtest found that worse)');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R1')->>'fmv_usd')::numeric::text, '10.0000', 'R1 control: a median below the 30-day max is untouched');
+
 ROLLBACK;

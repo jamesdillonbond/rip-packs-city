@@ -165,11 +165,11 @@ export const COLLECTIONS: Collection[] = [
     supabaseCollectionId: "7dd9dd11-e8b6-45c4-ac99-71331f959714",
     // No counts here (2026-09-28): this is present-tense page copy (a meta
     // description), and the 07-02 figures it quoted (2,272 renders / 168K sales)
-    // had gone stale. The dated news item below keeps them as history.
+    // had gone stale.
+    // No `news` either (2026-09-29): the one item was our own 07-02 coverage
+    // stats, not news, and its "168K+ sales" counted 25,793 studio-history
+    // twins of on-chain sales since removed (#159). No item beats a false one.
     pitch: "Wallet analytics and marketplace intelligence for Disney Pinnacle — every pin priced by its own sales, live listings, character and franchise pages.",
-    news: [
-      { title: "Pinnacle on Flow — 2,272 renders tracked with live FMV", date: "2026-07-02", summary: "Render-keyed FMV covers 2,177 renders (96%) with 168K+ historical sales indexed.", url: "https://disneypinnacle.com" },
-    ],
   },
   {
     id: "laliga-golazos",

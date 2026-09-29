@@ -59,11 +59,11 @@ describe("collection-overview-format — freshnessFromAge", () => {
     expect(freshnessFromAge(120, false).label).toBe("OUTDATED")
   })
 
-  it("⛔ a DAILY lane (Pinnacle) is on schedule within 26 h — never OUTDATED for most of the day", () => {
-    expect(freshnessFromAge(444.5, false, false, "daily").label).toBe("DAILY")
-    expect(freshnessFromAge(25 * 60, false, false, "daily").label).toBe("DAILY")
-    // A missed run is still red.
-    expect(freshnessFromAge(27 * 60, false, false, "daily").label).toBe("OUTDATED")
-    expect(freshnessFromAge(null, false, false, "daily").label).toBe("UNKNOWN")
+  it("⛔ a TWICE-DAILY lane (Pinnacle) is on schedule within 14 h — never OUTDATED between runs", () => {
+    expect(freshnessFromAge(444.5, false, false, "twice-daily").label).toBe("12-HOURLY")
+    expect(freshnessFromAge(13 * 60, false, false, "twice-daily").label).toBe("12-HOURLY")
+    // One missed run (past 12 h + margin) is red — the old 26 h window hid it for a day.
+    expect(freshnessFromAge(15 * 60, false, false, "twice-daily").label).toBe("OUTDATED")
+    expect(freshnessFromAge(null, false, false, "twice-daily").label).toBe("UNKNOWN")
   })
 })

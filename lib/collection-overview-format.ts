@@ -56,7 +56,7 @@ export function freshnessFromAge(
   minutes: number | null,
   loading: boolean,
   frozenMarket = false,
-  cadence: "continuous" | "sale-driven" | "daily" = "continuous",
+  cadence: "continuous" | "sale-driven" | "twice-daily" = "continuous",
 ): Freshness {
   if (loading) return { color: "var(--rpc-text-muted)", label: "Loading…", loading: true }
   // Sale-driven FMV (Candy MLB, 2026-09-06): snapshots are written when a sale
@@ -68,13 +68,14 @@ export function freshnessFromAge(
     if (minutes == null) return { color: "var(--rpc-text-ghost)", label: "UNKNOWN" }
     return { color: "var(--rpc-text-muted)", label: "ON SALE" }
   }
-  // Daily FMV (Disney Pinnacle, 2026-09-28): one recompute a day
-  // (rpc-pinnacle-fmv-recalc-backstop, 22:37 UTC), so the 30/60-min buckets
-  // read OUTDATED ~23 h of every day on a healthy lane. Within a day plus a
-  // 2 h margin it is on schedule; past that a run was MISSED, and that is red.
-  if (cadence === "daily" && !frozenMarket) {
+  // Twice-daily FMV (Disney Pinnacle): the render recalc runs at 3:07 AM and
+  // 3:37 PM PT (pipeline_runs 'pinnacle-fmv-recalc', measured 09-29 — the 09-28
+  // "daily" reading counted only the 3:37 PM backstop), so the 30/60-min
+  // buckets read OUTDATED most of every day on a healthy lane. Within 12 h plus
+  // a 2 h margin it is on schedule; past that a run was MISSED, and that is red.
+  if (cadence === "twice-daily" && !frozenMarket) {
     if (minutes == null) return { color: "var(--rpc-text-ghost)", label: "UNKNOWN" }
-    if (minutes < 26 * 60) return { color: "var(--rpc-text-muted)", label: "DAILY" }
+    if (minutes < 14 * 60) return { color: "var(--rpc-text-muted)", label: "12-HOURLY" }
     return { color: "var(--rpc-red)", label: "OUTDATED" }
   }
   // Frozen-by-design markets (UFC Strike migrated to Aptos; the Flow market has
