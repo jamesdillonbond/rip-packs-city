@@ -18,6 +18,13 @@
 //   warm-on-paste for it: /api/wallet-search is a Flow path, and Candy holdings
 //   are cached by a scheduled walk. So an uncached key says exactly that,
 //   instead of an "Indexing…" banner that nothing would ever satisfy.
+// - Signed in (2026-09-28): the profile's linked wallet is tracked automatically
+//   and the paste box is hidden behind "Track a different wallet" — asking a
+//   signed-in reader to paste their own wallet was redundant. A wallet pasted
+//   earlier (localStorage) still wins; Clear falls back to the profile wallet.
+//   The profile wallet is Flow, so it only applies where it parses for this
+//   collection's chain (never on a Solana checklist). A degraded identity read
+//   leaves walletAddr unknown, so the paste box stays — never a false "yours".
 //
 // Data: /api/entity/team-checklist (paginated tiles) +
 //       /api/entity/team-checklist-progress (header + cost-to-complete).
@@ -32,6 +39,7 @@ import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { getCollection, collectionHasLocking } from "@/lib/collections"
 import { checklistWalletStorageKey, isSolanaChecklist, parseChecklistWallet } from "@/lib/entity/checklist-wallet"
 import { editionRouteHref } from "@/lib/entity-href"
+import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
 
 interface ChecklistTile extends EditionTile {
   owned?: boolean | null
@@ -110,6 +118,11 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
   const [pageFailed, setPageFailed] = useState(false)
   const [seriesOptions, setSeriesOptions] = useState<number[]>(seriesProp ?? [])
   const [indexing, setIndexing] = useState(false)
+  const [pasteOpen, setPasteOpen] = useState(false)
+
+  const session = useSessionOwner()
+  const ownParsed = session.walletAddr ? parseChecklistWallet(session.walletAddr, dbChain) : null
+  const ownWallet = ownParsed?.ok ? ownParsed.wallet : null
 
   const reqIdRef = useRef(0)
   const indexFiredRef = useRef<Set<string>>(new Set())
@@ -123,6 +136,15 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
       if (parsed?.ok && parsed.wallet) setWallet(parsed.wallet)
     } catch { /* localStorage unavailable */ }
   }, [lsKey, dbChain])
+
+  // Signed in with a linked wallet and nothing pasted → track the reader's own.
+  useEffect(() => {
+    if (!ownWallet) return
+    let saved: string | null = null
+    try { saved = window.localStorage.getItem(lsKey) } catch { /* localStorage unavailable */ }
+    if (saved && parseChecklistWallet(saved, dbChain).ok) return
+    setWallet(prev => prev ?? ownWallet)
+  }, [ownWallet, lsKey, dbChain])
 
   const checklistUrl = useCallback((s: Scope, w: string | null, offset: number) => {
     const p = new URLSearchParams({
@@ -255,13 +277,20 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
     const v = parsed.wallet
     setWalletError(null)
     setWallet(v)
-    try { window.localStorage.setItem(lsKey, v) } catch { /* ignore */ }
+    setPasteOpen(false)
+    try {
+      // Tracking your own wallet needs no saved slot — it follows the session.
+      if (v === ownWallet) window.localStorage.removeItem(lsKey)
+      else window.localStorage.setItem(lsKey, v)
+    } catch { /* ignore */ }
   }
 
   function clearWallet() {
-    setWallet(null)
+    // Falls back to the signed-in reader's own wallet when there is one.
+    setWallet(ownWallet)
     setWalletInput("")
     setWalletError(null)
+    setPasteOpen(false)
     try { window.localStorage.removeItem(lsKey) } catch { /* ignore */ }
   }
 
@@ -274,6 +303,11 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
 
   const pct = progress?.completion_pct ?? 0
   const hasWallet = !!wallet
+  const trackingOwn = hasWallet && wallet === ownWallet
+  const showPaste = !hasWallet || pasteOpen
+  // Signed-in readers: hold the paste box until the session resolves, so it
+  // does not flash and then vanish once their own wallet is picked up.
+  const hidePasteWhileResolving = !hasWallet && session.loading
   const staleNote = progress && progress.stale_missing_pct != null && progress.stale_missing_pct >= 15
 
   return (
@@ -359,8 +393,9 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
       )}
 
       {/* ── Wallet-paste / track ──────────────────────────────────────────── */}
+      {!hidePasteWhileResolving && (
       <div className="rpc-card" style={{ padding: 14, marginBottom: 14 }}>
-        {!hasWallet ? (
+        {showPaste ? (
           <form onSubmit={submitWallet} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
             <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>
               Paste your wallet to see what you&rsquo;re missing:
@@ -380,13 +415,21 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
               }}
             />
             <button type="submit" className="rpc-btn-ghost">Track</button>
+            {pasteOpen && (
+              <button type="button" className="rpc-btn-ghost" onClick={() => { setPasteOpen(false); setWalletError(null) }}>Cancel</button>
+            )}
           </form>
         ) : (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
             <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>
-              Tracking <span style={{ color: "var(--rpc-text-primary)" }}>{wallet!.slice(0, 6)}…{wallet!.slice(-4)}</span>
+              {trackingOwn ? "Tracking your wallet " : "Tracking "}
+              <span style={{ color: "var(--rpc-text-primary)" }}>{wallet!.slice(0, 6)}…{wallet!.slice(-4)}</span>
             </span>
-            <button type="button" className="rpc-btn-ghost" onClick={clearWallet}>Clear</button>
+            {trackingOwn ? (
+              <button type="button" className="rpc-btn-ghost" onClick={() => setPasteOpen(true)}>Track a different wallet</button>
+            ) : (
+              <button type="button" className="rpc-btn-ghost" onClick={clearWallet}>{ownWallet ? "Back to my wallet" : "Clear"}</button>
+            )}
           </div>
         )}
         {walletError && <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-red)", marginTop: 6 }}>{walletError}</div>}
@@ -401,6 +444,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
           </div>
         )}
       </div>
+      )}
 
       {/* ── Tiles ─────────────────────────────────────────────────────────── */}
       {loading ? (

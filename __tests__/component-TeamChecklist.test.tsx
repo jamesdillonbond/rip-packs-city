@@ -44,8 +44,10 @@ const anonProgress = {
 
 // Route the parallel checklist + progress fetches. progress URL is a superset of
 // the checklist path, so match "-progress" FIRST.
-function routeFetch(opts: { checklist: (url: string) => Promise<Response>; progress: (url: string) => Promise<Response>; walletSearch?: () => Promise<Response> }) {
+// /api/profile/me defaults to SIGNED OUT ({ user: null }) — the anonymous render.
+function routeFetch(opts: { checklist: (url: string) => Promise<Response>; progress: (url: string) => Promise<Response>; walletSearch?: () => Promise<Response>; me?: () => Promise<Response> }) {
   return vi.fn((url: string, init?: any) => {
+    if (url.includes("/api/profile/me")) return (opts.me ?? (() => res(true, { user: null })))()
     if (url.includes("/api/wallet-search")) return (opts.walletSearch ?? (() => res(true, {})))()
     if (url.includes("team-checklist-progress")) return opts.progress(url)
     return opts.checklist(url)
@@ -356,5 +358,58 @@ describe("TeamChecklist", () => {
       expect(container.querySelectorAll('a[href^="/nba-top-shot/edition/"]').length).toBe(27),
     )
     expect(container.textContent).not.toMatch(/this list is incomplete/)
+  })
+
+  // ── Signed in: the profile wallet is tracked; no paste box ──────────────────
+  const OWN = "0x1111222233334444"
+  const signedIn = (wallet_addr: string | null, extra: Record<string, unknown> = {}) =>
+    () => res(true, { user: { id: "u1", wallet_addr, ...extra } })
+  const ownedProgress = { ...anonProgress, owned: 12, completion_pct: 12, wallet_cached: true }
+
+  it("signed in with a linked wallet: tracks it automatically and never asks for a paste", async () => {
+    fetchMock = routeFetch({ checklist: () => res(true, [tile]), progress: () => res(true, ownedProgress), me: signedIn(OWN) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByText, queryByPlaceholderText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    await waitFor(() => expect(getByText(/Tracking your wallet/)).toBeTruthy())
+    expect(getByText("12 / 100")).toBeTruthy()
+    expect(queryByText(/Paste your wallet/)).toBeNull()
+    expect(queryByPlaceholderText("0x…")).toBeNull()
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes(`wallet=${OWN}`))).toBe(true)
+    // Following the session is not a saved paste.
+    expect(window.localStorage.getItem("rpc_checklist_wallet")).toBeNull()
+  })
+
+  it("'Track a different wallet' opens the paste box; Cancel returns to your own", async () => {
+    fetchMock = routeFetch({ checklist: () => res(true, [tile]), progress: () => res(true, ownedProgress), me: signedIn(OWN) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByPlaceholderText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    fireEvent.click(await waitFor(() => getByText("Track a different wallet")))
+    expect(queryByPlaceholderText("0x…")).toBeTruthy()
+    fireEvent.click(getByText("Cancel"))
+    expect(queryByPlaceholderText("0x…")).toBeNull()
+    expect(getByText(/Tracking your wallet/)).toBeTruthy()
+  })
+
+  it("a previously pasted wallet wins over the profile wallet; clearing it falls back to your own", async () => {
+    window.localStorage.setItem("rpc_checklist_wallet", "0xaaaabbbbccccdddd")
+    fetchMock = routeFetch({ checklist: () => res(true, [tile]), progress: () => res(true, ownedProgress), me: signedIn(OWN) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    await waitFor(() => expect(getByText("0xaaaa…dddd")).toBeTruthy())
+    expect(queryByText(/Tracking your wallet/)).toBeNull()
+    fireEvent.click(getByText("Back to my wallet"))
+    await waitFor(() => expect(getByText(/Tracking your wallet/)).toBeTruthy())
+    expect(window.localStorage.getItem("rpc_checklist_wallet")).toBeNull()
+  })
+
+  it("signed in with NO linked wallet, or an unreadable identity: the paste box stays", async () => {
+    for (const me of [signedIn(null), () => res(false, null)]) {
+      fetchMock = routeFetch({ checklist: () => res(true, [tile]), progress: () => res(true, anonProgress), me })
+      vi.stubGlobal("fetch", fetchMock)
+      const { getByText, queryByText, unmount } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+      await waitFor(() => expect(getByText(/Paste your wallet/)).toBeTruthy())
+      expect(queryByText(/Tracking your wallet/)).toBeNull()
+      unmount()
+    }
   })
 })

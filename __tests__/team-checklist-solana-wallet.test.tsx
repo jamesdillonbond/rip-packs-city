@@ -58,10 +58,11 @@ const prog = (over: Record<string, unknown> = {}) => ({
 })
 
 let calls: string[] = []
-function stubFetch(progress: (url: string) => unknown) {
+function stubFetch(progress: (url: string) => unknown, me: unknown = { user: null }) {
   calls = []
   vi.stubGlobal("fetch", vi.fn((url: string) => {
     calls.push(String(url))
+    if (url.includes("/api/profile/me")) return res(true, me)
     if (url.includes("team-checklist-progress")) return res(true, progress(url))
     if (url.includes("wallet-search")) return res(true, {})
     return res(true, [tile])
@@ -106,6 +107,15 @@ describe("TeamChecklist on Candy MLB (Solana)", () => {
     await findByText(/no cards indexed for this wallet/)
     expect(queryByText(/Indexing your collection/)).toBeNull()
     expect(calls.some((u) => u.includes("wallet-search"))).toBe(false)
+  })
+
+  it("a signed-in reader's FLOW profile wallet is never tracked on a Candy page", async () => {
+    stubFetch(() => prog(), { user: { id: "u1", wallet_addr: FLOW } })
+    const { getByText, getByPlaceholderText, queryByText } = render(<TeamChecklist collectionUrlSlug="candy-mlb" teamSlug="new-york-yankees" />)
+    await waitFor(() => expect(getByPlaceholderText("Solana wallet…")).toBeTruthy())
+    await waitFor(() => expect(getByText("7 editions")).toBeTruthy())
+    expect(queryByText(/Tracking your wallet/)).toBeNull()
+    expect(calls.some((u) => u.includes("wallet="))).toBe(false)
   })
 
   it("a Flow key saved by a Top Shot page is never restored onto a Candy page", async () => {
