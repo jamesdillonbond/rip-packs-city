@@ -22,6 +22,7 @@ import {
   toSerialRow,
 } from "@/lib/panini/edition-market"
 import { paniniSubjectIsPlayer } from "@/lib/panini/subjects"
+import { fetchPaniniPlayerSales } from "@/lib/panini/player-sales"
 
 type Res = { data: unknown; error: unknown }
 function fakeDb(byTable: Record<string, Res | Res[]>) {
@@ -109,6 +110,38 @@ describe("fetchPaniniEditionSales — history + measured coverage", () => {
     const out = await fetchPaniniEditionSales("p", fakeDb({ panini_sales: { data: null, error: { message: "x" } }, panini_sales_reads: { data: [], error: null } }))
     expect(out.sales).toBeNull()
     expect(out.coverage).toEqual({ kind: "unread" })
+  })
+})
+
+describe("fetchPaniniPlayerSales — a player's sales across editions", () => {
+  it("maps top + recent sales to their edition's parallel, and counts fully-covered editions", async () => {
+    const db = fakeDb({
+      editions: { data: [{ external_id: "e1", set_name: "Base Prizms Gold" }, { external_id: "e2", set_name: "Base" }], error: null },
+      panini_sales: [
+        { data: [{ sku: "e1__1_10", edition_external_id: "e1", sold_at: "2026-09-20T00:00:00Z", amount_usd: 900 }], error: null },
+        { data: [{ sku: "e2__7_99", edition_external_id: "e2", sold_at: "2026-09-28T00:00:00Z", amount_usd: "12" }], error: null },
+      ],
+      panini_sales_reads: { data: null, error: null, count: 1 } as never,
+    })
+    const out = await fetchPaniniPlayerSales("p1", db)
+    expect(out.top).toEqual([{ editionKey: "e1", setName: "Base Prizms Gold", serial: 1, mintCap: 10, amountUsd: 900, soldAt: "2026-09-20T00:00:00Z" }])
+    expect(out.recent?.[0]).toMatchObject({ editionKey: "e2", amountUsd: 12, serial: 7 })
+    expect(out).toMatchObject({ editions: 2, editionsRead: 1 })
+  })
+  it("a failed editions read fails everything to null — never 'no sales'", async () => {
+    const out = await fetchPaniniPlayerSales("p1", fakeDb({ editions: { data: null, error: { message: "x" } } }))
+    expect(out).toEqual({ top: null, recent: null, editions: null, editionsRead: null })
+  })
+  it("a failed sales read is null for that list only", async () => {
+    const db = fakeDb({
+      editions: { data: [{ external_id: "e1", set_name: null }], error: null },
+      panini_sales: [{ data: null, error: { message: "boom" } }, { data: [], error: null }],
+      panini_sales_reads: { data: null, error: { message: "boom" } },
+    })
+    const out = await fetchPaniniPlayerSales("p1", db)
+    expect(out.top).toBeNull()
+    expect(out.recent).toEqual([])
+    expect(out.editionsRead).toBeNull()
   })
 })
 

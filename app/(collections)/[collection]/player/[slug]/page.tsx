@@ -25,6 +25,7 @@ import PlayerSeasonStats from "@/components/entity/PlayerSeasonStats"
 import type { SeasonStatsResult } from "@/lib/player-page-season-stats"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { editionRouteHref } from "@/lib/entity-href"
+import { fetchPaniniPlayerSales, type PaniniPlayerSale } from "@/lib/panini/player-sales"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -136,6 +137,52 @@ function TopSalesSkeleton() {
 // Streamed independently (Suspense) so a slow/cold get_player_top_sales never blocks
 // or fails the whole player page — it fills in (or shows the empty state) after the
 // rest of the page has painted.
+/** A Panini player's top and most recent sales on record (lib/panini/player-sales.ts). */
+async function PaniniPlayerSalesSection({ collection, playerId }: { collection: string; playerId: string }) {
+  const res = await fetchPaniniPlayerSales(playerId)
+  const muted: React.CSSProperties = { padding: "4px 0 8px", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }
+  const ptDay = (iso: string) => {
+    const t = Date.parse(iso)
+    return Number.isNaN(t) ? "—" : new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles" })
+  }
+  const list = (rows: PaniniPlayerSale[] | null, label: string) => (
+    <div style={{ flex: "1 1 280px", minWidth: 0 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 6 }}>{label}</div>
+      {rows === null ? (
+        <div style={muted}>Couldn&rsquo;t load these sales — refresh to try again.</div>
+      ) : rows.length === 0 ? (
+        <div style={muted}>No sale of this player&rsquo;s cards on record.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {rows.map((s, i) => (
+            <Link key={`${s.editionKey}-${s.serial}-${s.soldAt}-${i}`} href={editionRouteHref(collection, s.editionKey)} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "6px 8px", border: "1px solid var(--rpc-border)", borderRadius: 6, textDecoration: "none", color: "inherit", minWidth: 0 }}>
+              <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13, color: "var(--rpc-text-primary)" }}>
+                {s.setName ?? "—"}{s.serial != null ? ` · #${s.serial}${s.mintCap != null ? `/${s.mintCap}` : ""}` : ""}
+              </span>
+              <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)" }}>{fmtUsd(s.amountUsd)} · {ptDay(s.soldAt)}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+  return (
+    <>
+      <div style={muted}>
+        {res.editions === null
+          ? "Sales RPC holds for this player."
+          : res.editionsRead === null
+            ? `Sales RPC holds across this player's ${res.editions} editions.`
+            : `Sales RPC holds across this player's ${res.editions} editions — ${res.editionsRead} of them with every sale on record so far; the rest fill in as the walk reads them.`}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+        {list(res.top, "Top sales")}
+        {list(res.recent, "Most recent")}
+      </div>
+    </>
+  )
+}
+
 async function TopSalesRows({ collection, collectionId, slug }: { collection: string; collectionId: string; slug: string }) {
   const { rows: topSales, ok } = await fetchTopSales(collectionId, slug, 5)
   return (
@@ -435,12 +482,12 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       {/* ── Top sales ────────────────────────────────────────────────────── */}
       {isPanini ? (
         <Section title="Sales">
-          {/* NOT "No recorded sales yet": that would be a claim about Panini's
-              market. RPC keeps the last sale Panini shows per card, on each
-              edition page — it has no sales feed to rank a top sale from. */}
-          <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-            RPC doesn&rsquo;t record every Panini sale, so there is no top-sales list here. Each edition page shows its live asks and the last sale seen for each card.
-          </div>
+          {/* Since 2026-09-28 from panini_sales (every sale the walk reads), with how many of
+              the player's editions have their sales fully on record. NOT "No recorded sales
+              yet" unless that is what the read established. */}
+          <Suspense fallback={<TopSalesSkeleton />}>
+            <PaniniPlayerSalesSection collection={collection} playerId={detail.id} />
+          </Suspense>
         </Section>
       ) : (
       <Section title="Top Sales">
