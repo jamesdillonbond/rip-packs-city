@@ -49,7 +49,10 @@ const PROMOTE_LIMIT = 1000
 const ALLDAY_NFT_TYPE = "A.e4cf4bdc1751c65d.AllDay.NFT"
 // Multi-NFT pass (2026-09-29): whole transactions per tick. One decode prices
 // every NFT in the cart, so this is ~2.4 rows per Flow round-trip.
-const MULTI_TX_LIMIT = 150
+// First production tick (6:40 AM PT 09-29): 150 txs → 355 rows priced, 0
+// uncertain, in 68.8 s of the 200 s budget (~0.45 s/tx). 400 fits with margin,
+// and the loop still breaks at ELAPSED_BUDGET_MS. The claim clamps at 500.
+const MULTI_TX_LIMIT = 400
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
