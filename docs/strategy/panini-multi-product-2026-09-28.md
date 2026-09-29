@@ -138,3 +138,8 @@ Read at 12:10–12:40 PM PT 09-29 (about 2 days before the planned Oct 1 check; 
   2:00 AM PT 09-29. `held_state` over all trophies of the 7 users with pins: **20 held / 1 unknown / 1 not_held**,
   unchanged from the 09-29 baseline. The not_held is still Top Shot 974422 (verified sold 09-12). The unknown is
   All Day 2131556 (never checked). **No new not_held, so nothing needed hand-verifying.**
+- **12:55 PM PT — landed on both halves.** Production deploy of `main` (8452bf769, which contains the fix) is READY.
+  The live GET returns `priority_pskus`: **152** (every walked collector's held, uncatalogued pskus in admitted
+  products, not only the founder's 136), `complete=true`, and slot 2's psku is among them. The box's checkout
+  (`%USERPROFILE%\rip-packs-city`, which `panini-run.bat` runs from) was clean and was fast-forwarded to 8452bf769,
+  so the **2:00 PM PT** scheduled run is the first to use the new order.
