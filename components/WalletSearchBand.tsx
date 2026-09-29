@@ -49,7 +49,9 @@
 //
 // WHO IT IS FOR (2026-08-22): ANONYMOUS visitors only. A SIGNED-IN collector
 // already has a wallet on their account — the collection tab auto-loads it on
-// mount (rpc_last_wallet / rpc_owner_key), WalletHydrator keeps the session
+// mount (rpc_last_wallet / rpc_owner_key, else the account's saved wallet via
+// AutoSearchReader — so this holds on a device that never searched too),
+// WalletHydrator keeps the session
 // warm and WalletPreloader pre-fetches the owned set — so asking them to paste
 // an address is pure noise at the top of every tab. The auth check is
 // affirmative-only: we hide on a KNOWN session, never on a failed/unknown auth

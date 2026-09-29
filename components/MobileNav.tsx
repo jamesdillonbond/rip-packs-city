@@ -120,8 +120,10 @@ export default function MobileNav() {
 
   // My Binder opens the binder page with NO `?wallet=`: the page re-opens the
   // wallet this device last looked up (rpc_last_wallet, chain-checked there),
-  // and shows the lookup box to a first-time visitor. It is PUBLIC — never point
-  // a tab at auth-gated /dashboard (a login wall from the first tap, R36).
+  // else the signed-in reader's saved wallet for that collection
+  // (AutoSearchReader), and shows the lookup box only to a visitor with neither. It is PUBLIC —
+  // never point a tab at auth-gated /dashboard (a login wall from the first
+  // tap, R36).
   const tabs: { key: MobileTab; label: string; href: string; page?: "collection" }[] = [
     { key: "home", label: "HOME", href: "/" },
     { key: "binder", label: "MY BINDER", href: `/${collection}/collection`, page: "collection" },

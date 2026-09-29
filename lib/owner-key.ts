@@ -1,6 +1,14 @@
 // lib/owner-key.ts
 // Shared utility for reading and writing the RPC profile key from localStorage.
 // Used by wallet, sets, sniper, packs pages to auto-populate the signed-in user.
+//
+// ⚠ DEVICE-LOCAL, NOT ACCOUNT STATE (measured 2026-09-28): the only writer is
+// CollectionTabClient's post-search sync, so the key exists only on a device
+// that has run a search. A signed-in reader on a new device has NONE. A surface
+// that should know "who is this" needs ONE account-level fallback: Market and
+// Sniper use lib/hooks/useOwnFlowWallet (the profile's Flow wallet); the binder
+// uses AutoSearchReader's saved wallet — ⛔ never both on one page (they
+// disagree for 1 account and race; measured 2026-09-29).
 
 import { chainKindForDbChain, isValidAddressForChain } from "@/lib/address";
 

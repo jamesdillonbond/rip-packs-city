@@ -125,6 +125,16 @@ Old flat routes redirect to the new nested paths.
 
 ---
 
+## ⛔ A signed-in reader's own wallet is ASSUMED, never requested and never announced (Trevor, 2026-09-28/29)
+
+Trevor: a "paste your wallet" box while signed in is "redundant and unnecessary", and "we shouldn't even mention the 'tracking' portion. Should be assumed and is just extra noise." So:
+
+- **Never ask** a signed-in reader with a linked wallet to paste it. **Never announce** it ("Tracking your wallet", "Showing your wallet"). Just show their data. A lookup box stays only where the tool also checks OTHER wallets (squeeze-check, tc-report, analytics Portfolio, account-value, /insights hub).
+- **Source:** `lib/hooks/useOwnFlowWallet.ts` — the `/api/profile/me` wallet (allow_list by email, else first `saved_wallets` row), Flow-only, `null` when signed out / unlinked / identity degraded (never a guessed "yours"). Link-style shortcut: `components/insights/OwnWalletLink.tsx`.
+- **Where it applies (09-29):** team checklist (auto-tracks, no wallet row at all), squeeze-check + tc-report (auto-load), analytics Portfolio tab (auto-analyze, Flow collections), account-value + /insights hub ("See your account's value" / "Run your own report" links), Market Owned column and Sniper owned editions (fallback when the device has no owner key).
+- **Already covered elsewhere, do NOT add a second source:** MY BINDER falls back to the account's saved wallet via `AutoSearchReader`; a profile-wallet seed there served 0 extra accounts on every Flow collection and raced it to a different wallet for 1 account (removed 09-29, pinned in `component-CollectionTabClient.test.tsx`). Home and /profile redirect signed-in users to /dashboard; `WalletSearchBand` hides for a known session.
+- **Coverage measured 09-29:** 28 of 31 accounts resolve a Flow profile wallet; the other 3 keep the paste box.
+
 ## Preserved from the 2026-08-17 CLAUDE.md restructure
 
 > These lines were condensed or dropped in CLAUDE.md when it was cut to fit the memory-file

@@ -53,3 +53,7 @@ Moved to pay for the Disney Pinnacle grain rule in CLAUDE.md; CLAUDE.md keeps a 
 - `proxy.ts` is the correct Next.js 16 convention (renamed from middleware.ts). Supabase client typed `any` in API routes.
 - `generateMetadata` cannot be exported from a client component — it belongs in the server `layout.tsx`. ⚠ `openGraph`/`twitter` merge SHALLOWLY: claude-md-condensed-originals.md.
 - `useSearchParams` requires a Suspense wrapper.
+
+## ⛔ A SERVER component cannot pass a FUNCTION prop to a CLIENT component — and only a real render says so (2026-09-29, PT)
+
+`InsightsWalletSearch` and `AccountValueSearch` are server components; the first draft of `OwnWalletLink` (a client component) took `href={(w) => …}`. That fails at render with "Functions cannot be passed directly to Client Components", which **`tsc`, vitest (jsdom renders both halves as plain React) and lint all miss** — same class as CLAUDE.md's "a green suite is not a deploy gate for segment semantics". Caught by reading the call site, not by a tool. The fix is a serializable prop: `to: "share" | "tc-report"` plus an `ownWalletHref()` helper inside the client file. Verified on the deployed build: the RSC payload carries `{"to":"tc-report","label":"Run your own report"}`. **Rule: a prop crossing server→client must be data (string/number/plain object), never a callback; build the href on the client side.**
