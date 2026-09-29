@@ -200,7 +200,12 @@ async function one(sitePath) {
           // cause rather than the symptom.
           zoomInputs: (() => {
             const out = [];
+            // Only TEXT-ENTRY controls zoom on focus. A checkbox, radio, range, button or
+            // color input has no caret, so its font size never triggers it: the 09-29 narrow
+            // sweep's only two "hits" were 11-12px checkboxes (a false positive, 2 of 148 pages).
+            const NO_ZOOM = new Set(["checkbox", "radio", "range", "button", "submit", "reset", "color", "file", "image", "hidden"]);
             for (const el of document.querySelectorAll("input,select,textarea")) {
+              if (el.tagName === "INPUT" && NO_ZOOM.has((el.type || "").toLowerCase())) continue;
               const b = el.getBoundingClientRect();
               if (b.width === 0 || b.height === 0) continue;
               const fs = parseFloat(getComputedStyle(el).fontSize) || 0;
