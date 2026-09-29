@@ -7,8 +7,9 @@
 // that has run a search. A signed-in reader on a new device has NONE. A surface
 // that should know "who is this" needs ONE account-level fallback: Market and
 // Sniper use lib/hooks/useOwnFlowWallet (the profile's Flow wallet); the binder
-// uses AutoSearchReader's saved wallet — ⛔ never both on one page (they
-// disagree for 1 account and race; measured 2026-09-29).
+// uses AutoSearchReader's saved wallet — ⛔ never both on one page: the two can
+// DISAGREE (allow_list wallet ≠ saved wallet), and then they race. One account
+// did until its allow_list row was corrected 2026-09-29.
 
 import { chainKindForDbChain, isValidAddressForChain } from "@/lib/address";
 
