@@ -175,9 +175,12 @@ export function packPullLabel(row: {
   pull_value_usd: number | null
   pulls_total?: number | null
   pulls_priced?: number | null
+  /** 2026-09-29: pulls named by inference (id neighbours), not by a record. */
+  pulls_inferred?: number | null
 }): string {
   if (!row.has_rip && row.status !== "ripped") return "—"
-  if (row.pull_value_usd != null) return fmtPackUsd(row.pull_value_usd)
+  // A value that rests on inferred pull names reads as an estimate ("≈").
+  if (row.pull_value_usd != null) return (row.pulls_inferred ?? 0) > 0 ? `≈${fmtPackUsd(row.pull_value_usd)}` : fmtPackUsd(row.pull_value_usd)
   if (row.pulls_total != null && row.pulls_total > 0 && row.pulls_priced != null) {
     return `— (${row.pulls_priced}/${row.pulls_total} priced)`
   }

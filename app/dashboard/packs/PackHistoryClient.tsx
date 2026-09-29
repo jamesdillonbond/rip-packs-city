@@ -242,6 +242,7 @@ interface HistoryRow {
   pull_value_source?: "dapper_pulls" | "rip_record" | "delivery_burst" | null
   pulls_total?: number | null
   pulls_priced?: number | null
+  pulls_inferred?: number | null
   // 2026-09-26 (v9): "reconstructed" = a pack opened with no pack NFT, rebuilt
   // from its moment deliveries (its pack_name says so too).
   rip_source?: "rip" | "reconstructed" | null
@@ -992,6 +993,9 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
               <div key={i} style={{ background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 4, padding: 4 }}>
                 {p.thumbnail_url ? <img src={proxyIpfsUrl(p.thumbnail_url) ?? undefined} alt="" style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 2 }} /> : <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#1a1a1d", borderRadius: 2 }} />}
                 <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, color: "#fff", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.player_name ?? p.character_name ?? "—"}</div>
+                {p.named_by === "id_neighbours" && (
+                  <div title="No record names this moment; its edition is inferred from the moments minted beside it" style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.45)" }}>est. name</div>
+                )}
                 <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.6)" }}>{fmtUsd(p.current_fmv ?? p.fmv_usd ?? null)}</div>
               </div>
             ))}

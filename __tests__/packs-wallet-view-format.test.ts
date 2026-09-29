@@ -246,6 +246,10 @@ describe("packPullLabel (2026-09-26)", () => {
     expect(label).toBe("— (2/3 priced)")
     expect(label).not.toMatch(/\$0/)
   })
+  it("a value resting on inferred pull names reads as an estimate", () => {
+    expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: 12.5, pulls_inferred: 2 })).toBe(`≈${fmtPackUsd(12.5)}`)
+    expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: 12.5, pulls_inferred: 0 })).toBe(fmtPackUsd(12.5))
+  })
   it("an index-only opened pack (no rip row of ours) still shows its value", () => {
     expect(packPullLabel({ status: "ripped", has_rip: false, pull_value_usd: 4 })).toBe(fmtPackUsd(4))
   })
