@@ -46,6 +46,8 @@ import {
   filterSniperDeals,
   sniperClientTeamFilter,
   sniperTeamOptions,
+  readSniperUrlFilters,
+  sniperShareUrl,
   sniperStudioOptions,
   sniperHasChasers,
   sortByVerifiedFirst,
@@ -147,10 +149,14 @@ function SniperMomentsBody() {
   const own = useOwnFlowWallet();
   const ownWallet = own.wallet;
 
-  const [tierTab, setTierTab] = useState<TierTab>("all");
-  const [sortBy, setSortBy] = useState<SortOption>(isAllDay ? "price_asc" : "listed_desc");
-  const [minDiscount, setMinDiscount] = useState(0);
-  const [maxPrice, setMaxPrice] = useState(0);
+  // Filters a shared link carries (see sniperShareUrl / the COPY LINK button).
+  const tierTabs: readonly string[] = isPinnacle ? PINNACLE_VARIANT_TABS : sniperTierTabs(collectionSlug);
+  const defaultSort: SortOption = isAllDay ? "price_asc" : "listed_desc";
+  const urlFilters = readSniperUrlFilters(useSearchParams(), { tiers: tierTabs, sorts: SORT_OPTIONS.map((o) => o.value) });
+  const [tierTab, setTierTab] = useState<TierTab>(urlFilters.tier ?? "all");
+  const [sortBy, setSortBy] = useState<SortOption>((urlFilters.sort as SortOption | undefined) ?? defaultSort);
+  const [minDiscount, setMinDiscount] = useState(urlFilters.minDiscount ?? 0);
+  const [maxPrice, setMaxPrice] = useState(urlFilters.maxPrice ?? 0);
   const [leagueFilter, setLeagueFilter] = useState<LeagueValue>("all");
   const [serialFilter, setSerialFilter] = useState("all");
   const [badgeOnly, setBadgeOnly] = useState(false);
@@ -166,7 +172,7 @@ function SniperMomentsBody() {
   type BoardFilters = { slug: string; team: string; studio: string; chaserOnly: boolean };
   // `?team=` seeds the pick, so a team's board is linkable
   // (/nba-top-shot/sniper?team=Portland%20Trail%20Blazers).
-  const initialTeam = useSearchParams()?.get("team")?.trim() || "all";
+  const initialTeam = urlFilters.team ?? "all";
   const [boardSel, setBoardSel] = useState<BoardFilters>({ slug: collectionSlug, team: initialTeam, studio: "all", chaserOnly: false });
   const board = boardSel.slug === collectionSlug ? boardSel : { slug: collectionSlug, team: "all", studio: "all", chaserOnly: false };
   const teamFilter = board.team;
@@ -285,7 +291,7 @@ function SniperMomentsBody() {
   const [depthListingsError, setDepthListingsError] = useState<string | null>(null);
 
   // ── Task 5: Save search ─────────────────────────────────────────────────────
-  const [saveSearchMsg, setSaveSearchMsg] = useState<string | null>(null);
+  const [copyLinkMsg, setCopyLinkMsg] = useState<string | null>(null);
 
   // ── Relative deals fallback (ASK_ONLY collections) ────────────────────────
   // When the sniper feed is empty on an ASK_ONLY collection (Golazos, UFC),
@@ -337,8 +343,8 @@ function SniperMomentsBody() {
   }
 
   // Player filter with 300ms debounce
-  const [playerInput, setPlayerInput] = useState("");
-  const [playerFilter, setPlayerFilter] = useState("");
+  const [playerInput, setPlayerInput] = useState(urlFilters.player ?? "");
+  const [playerFilter, setPlayerFilter] = useState(urlFilters.player ?? "");
   const playerDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const handlePlayerChange = useCallback((value: string) => {
@@ -714,31 +720,23 @@ function SniperMomentsBody() {
   }
 
   // ── Task 5: Save search handler ────────────────────────────────────────────
-  async function handleSaveSearch() {
-    setSaveSearchMsg(null);
+  async function handleCopyLink() {
+    const url = sniperShareUrl(window.location.href, {
+      team: teamFilter, player: playerInput, tier: tierTab, maxPrice, minDiscount, sort: sortBy, defaultSort,
+    });
+    // The address bar holds the link either way, so a failed copy still leaves it one step away.
+    try { window.history.replaceState(window.history.state, "", url); } catch { /* ignore */ }
+    let copied = false;
     try {
-      const res = await fetch("/api/watchlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "search",
-          player: playerFilter || null,
-          tier: tierTab !== "all" ? tierTab : null,
-          maxPrice: maxPrice || null,
-          minDiscount: minDiscount || null,
-        }),
-      });
-      if (res.ok) {
-        setSaveSearchMsg("Saved!");
-        setTimeout(() => setSaveSearchMsg(null), 3000);
-      } else {
-        setSaveSearchMsg("Sign in to save searches");
-        setTimeout(() => setSaveSearchMsg(null), 3000);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        copied = true;
       }
     } catch {
-      setSaveSearchMsg("Sign in to save searches");
-      setTimeout(() => setSaveSearchMsg(null), 3000);
+      copied = false;
     }
+    setCopyLinkMsg(copied ? "Link copied" : "Copy blocked: the link is in the address bar");
+    setTimeout(() => setCopyLinkMsg(null), 3000);
   }
 
   // P2.5 — filter (discount>=0 + search + Verified-only + owned gate) then demote
@@ -958,7 +956,7 @@ function SniperMomentsBody() {
             chaserOnly={chaserOnly}
             onChaserOnlyChange={(value) => setBoardFilter({ chaserOnly: value })}
             tierTab={tierTab}
-            tabs={isPinnacle ? PINNACLE_VARIANT_TABS : sniperTierTabs(collectionSlug)}
+            tabs={tierTabs}
             onTierChange={(t) => setTierTab(t as TierTab)}
             minDiscount={minDiscount}
             onMinDiscountChange={setMinDiscount}
@@ -980,8 +978,8 @@ function SniperMomentsBody() {
             ownedCount={ownedIds.size}
             leagueFilter={leagueFilter}
             onLeagueChange={setLeagueFilter}
-            saveSearchMsg={saveSearchMsg}
-            onSaveSearch={handleSaveSearch}
+            copyLinkMsg={copyLinkMsg}
+            onCopyLink={handleCopyLink}
           />
         </div>
       </div>

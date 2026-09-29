@@ -56,8 +56,8 @@ export default function SniperFilterBar(props: {
   ownedCount: number;
   leagueFilter: LeagueValue;
   onLeagueChange: (value: LeagueValue) => void;
-  saveSearchMsg: string | null;
-  onSaveSearch: () => void;
+  copyLinkMsg: string | null;
+  onCopyLink: () => void;
 }) {
   const {
     isMobile, isPinnacle, isAllDay, isGolazos, accent, collectionSlug,
@@ -76,7 +76,7 @@ export default function SniperFilterBar(props: {
     showVerifiedOnly, onVerifiedChange,
     ownedFilter, onOwnedFilterChange, ownedCount,
     leagueFilter, onLeagueChange,
-    saveSearchMsg, onSaveSearch,
+    copyLinkMsg, onCopyLink,
   } = props;
   const labels = getEntityLabels(collectionSlug);
 
@@ -275,14 +275,15 @@ export default function SniperFilterBar(props: {
             <option value="owned">OWNED</option>
           </select>
         )}
-        {/* Task 5: Save Search button */}
+        {/* 2026-09-29: was "SAVE SEARCH", which could never save (see
+            sniperShareUrl in lib/sniper/helpers). A link reopens these filters. */}
         <button
-          onClick={onSaveSearch}
+          onClick={onCopyLink}
           className="rpc-chip"
-          title="Save current filter state to your watchlist"
+          title="Copy a link that reopens this board with these filters"
           style={{ marginLeft: "auto" }}
         >
-          {saveSearchMsg ?? "💾 SAVE SEARCH"}
+          {copyLinkMsg ?? "🔗 COPY LINK"}
         </button>
       </div>
       )}

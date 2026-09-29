@@ -52,7 +52,7 @@ function bar(slug: string, teamOptions: string[]) {
       maxPrice={0} onMaxPriceChange={() => {}} search="" onSearchChange={() => {}} serialFilter="" onSerialChange={() => {}}
       sortBy={"discount" as never} sortOptions={[]} onSortChange={() => {}} badgeOnly={false} onBadgeOnlyChange={() => {}}
       showVerifiedOnly={false} onVerifiedChange={() => {}} ownedFilter="all" onOwnedFilterChange={() => {}} ownedCount={0}
-      leagueFilter={"all" as never} onLeagueChange={() => {}} saveSearchMsg={null} onSaveSearch={() => {}}
+      leagueFilter={"all" as never} onLeagueChange={() => {}} copyLinkMsg={null} onCopyLink={() => {}}
     />,
   )
   return { text: r.container.textContent ?? "", select: r.container.querySelector("select[aria-label]") as HTMLSelectElement | null, picked }

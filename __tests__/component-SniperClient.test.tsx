@@ -634,55 +634,59 @@ describe("SniperClient — the filter controls reach the feed request", () => {
   })
 })
 
-describe("SniperClient — saving a search", () => {
+describe("SniperClient — COPY LINK (replaced SAVE SEARCH, 2026-09-29)", () => {
+  // SAVE SEARCH POSTed to /api/watchlist without the owner_key/edition_key that
+  // route requires: a 400 on every click, shown as "Sign in to save searches"
+  // even to signed-in readers, and nothing stores or reads saved searches. The
+  // old cases mocked a 200 the real route never returns. Pinned now: no write is
+  // attempted, and the link carries the ACTIVE filters.
+  let writeText: ReturnType<typeof vi.fn>
   beforeEach(() => {
-    warm = { data: feed(), loading: false, error: null, refresh: vi.fn() }
+    warm = { data: feed({ teamOptions: ["Boston Celtics", "Portland Trail Blazers"] }), loading: false, error: null, refresh: vi.fn() }
+    writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
+    window.history.replaceState(null, "", "/nba-top-shot/sniper")
   })
 
-  it("posts the ACTIVE filters, not an empty rule", async () => {
-    // ⚠ A saved search that silently drops its filters is the alert-shaped
-    // failure: the user is told it saved, and what was stored is broader (or
-    // narrower) than the sentence that created it, with no screen on which the
-    // error is ever visible.
-    fetchMock.mockImplementation(async (input: unknown) => {
-      if (String(input) === "/api/watchlist") return { ok: true, status: 200, json: async () => ({}) }
-      return { ok: true, status: 200, json: async () => ({ ids: [], deals: [], benchmarks: {} }) }
-    })
+  it("copies a link carrying the active filters and posts nothing", async () => {
     render(<SniperClient />)
     fireEvent.change(screen.getByPlaceholderText("any"), { target: { value: "50" } })
-    fireEvent.click(await screen.findByRole("button", { name: /SAVE SEARCH/i }))
+    fireEvent.change((await screen.findAllByLabelText("Team"))[0], { target: { value: "Portland Trail Blazers" } })
+    fireEvent.click(await screen.findByRole("button", { name: /COPY LINK/i }))
 
-    await waitFor(() => {
-      expect(fetchMock.mock.calls.some((c) => String(c[0]) === "/api/watchlist")).toBe(true)
-    })
-    const call = fetchMock.mock.calls.find((c) => String(c[0]) === "/api/watchlist")!
-    const body = JSON.parse(String((call[1] as RequestInit).body))
-    expect(body).toMatchObject({ type: "search", maxPrice: 50 })
-    expect(await screen.findByText(/Saved!/i)).toBeTruthy()
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    const url = new URL(String(writeText.mock.calls[0][0]))
+    expect(url.pathname).toBe("/nba-top-shot/sniper")
+    expect(url.searchParams.get("maxPrice")).toBe("50")
+    expect(url.searchParams.get("team")).toBe("Portland Trail Blazers")
+    expect(await screen.findByText(/Link copied/i)).toBeTruthy()
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith("/api/watchlist"))).toBe(false)
+    expect(screen.queryByText(/Sign in to save searches/i)).toBeNull()
   })
 
-  it("a non-2xx says sign in rather than claiming it saved", async () => {
-    fetchMock.mockImplementation(async (input: unknown) => {
-      if (String(input) === "/api/watchlist") return { ok: false, status: 401, json: async () => ({}) }
-      return { ok: true, status: 200, json: async () => ({ ids: [], deals: [], benchmarks: {} }) }
-    })
+  it("a blocked clipboard says so, and leaves the link in the address bar", async () => {
+    writeText.mockRejectedValue(new Error("denied"))
     render(<SniperClient />)
-    fireEvent.click(await screen.findByRole("button", { name: /SAVE SEARCH/i }))
+    fireEvent.change(screen.getByPlaceholderText("any"), { target: { value: "75" } })
+    fireEvent.click(await screen.findByRole("button", { name: /COPY LINK/i }))
 
-    expect(await screen.findByText(/Sign in to save searches/i)).toBeTruthy()
-    expect(screen.queryByText(/Saved!/i)).toBeNull()
+    expect(await screen.findByText(/Copy blocked/i)).toBeTruthy()
+    expect(screen.queryByText(/Link copied/i)).toBeNull()
+    expect(new URL(window.location.href).searchParams.get("maxPrice")).toBe("75")
   })
 
-  it("a THROWN save also does not claim success", async () => {
-    fetchMock.mockImplementation(async (input: unknown) => {
-      if (String(input) === "/api/watchlist") throw new Error("offline")
-      return { ok: true, status: 200, json: async () => ({ ids: [], deals: [], benchmarks: {} }) }
-    })
+  it("a copied link's filters are applied on load (the feed request carries them)", async () => {
+    searchParams = new URLSearchParams("player=Lillard&maxPrice=40&minDiscount=15&tier=rare&sort=discount&team=Portland Trail Blazers")
     render(<SniperClient />)
-    fireEvent.click(await screen.findByRole("button", { name: /SAVE SEARCH/i }))
-
-    expect(await screen.findByText(/Sign in to save searches/i)).toBeTruthy()
-    expect(screen.queryByText(/Saved!/i)).toBeNull()
+    await waitFor(() => expect(warmKeys.length).toBeGreaterThan(0))
+    const q = new URL(warmKeys[warmKeys.length - 1], "https://t").searchParams
+    expect(q.get("player")).toBe("Lillard")
+    expect(q.get("maxPrice")).toBe("40")
+    expect(q.get("minDiscount")).toBe("15")
+    expect(q.get("tier")?.toLowerCase()).toBe("rare")
+    expect(q.get("sortBy")).toBe("discount")
+    expect(q.get("team")).toBe("Portland Trail Blazers")
+    expect((screen.getByPlaceholderText("e.g. LeBron") as HTMLInputElement).value).toBe("Lillard")
   })
 })
 

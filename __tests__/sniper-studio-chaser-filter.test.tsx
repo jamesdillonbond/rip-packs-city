@@ -59,7 +59,7 @@ function bar(opts: { studioOptions: string[]; showChaserToggle: boolean }) {
       maxPrice={0} onMaxPriceChange={() => {}} search="" onSearchChange={() => {}} serialFilter="" onSerialChange={() => {}}
       sortBy={"discount" as never} sortOptions={[]} onSortChange={() => {}} badgeOnly={false} onBadgeOnlyChange={() => {}}
       showVerifiedOnly={false} onVerifiedChange={() => {}} ownedFilter="all" onOwnedFilterChange={() => {}} ownedCount={0}
-      leagueFilter={"all" as never} onLeagueChange={() => {}} saveSearchMsg={null} onSaveSearch={() => {}}
+      leagueFilter={"all" as never} onLeagueChange={() => {}} copyLinkMsg={null} onCopyLink={() => {}}
     />,
   )
   return {

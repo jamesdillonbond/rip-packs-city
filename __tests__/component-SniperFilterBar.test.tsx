@@ -29,7 +29,7 @@ function makeProps(over: Record<string, any> = {}) {
     onVerifiedChange: vi.fn(),
     onOwnedFilterChange: vi.fn(),
     onLeagueChange: vi.fn(),
-    onSaveSearch: vi.fn(),
+    onCopyLink: vi.fn(),
   }
   const props: any = {
     isMobile: false, isPinnacle: false, isAllDay: false, isGolazos: false,
@@ -38,7 +38,7 @@ function makeProps(over: Record<string, any> = {}) {
     minDiscount: 0, maxPrice: 0, search: "", serialFilter: "all",
     sortBy: "discount", sortOptions: [{ value: "discount", label: "Best Discount" }, { value: "price", label: "Price" }],
     badgeOnly: false, showVerifiedOnly: false, ownedFilter: "all", ownedCount: 0,
-    leagueFilter: "all", saveSearchMsg: null,
+    leagueFilter: "all", copyLinkMsg: null,
     ...cb, ...over,
   }
   return { props, cb }
@@ -58,8 +58,10 @@ describe("SniperFilterBar — wiring (Top Shot desktop)", () => {
     fireEvent.click(screen.getByRole("button", { name: "legendary" }))
     expect(cb.onTierChange).toHaveBeenCalledWith("legendary")
 
-    fireEvent.click(screen.getByRole("button", { name: /SAVE SEARCH/i }))
-    expect(cb.onSaveSearch).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole("button", { name: /COPY LINK/i }))
+    expect(cb.onCopyLink).toHaveBeenCalledTimes(1)
+    // The control that could never save is gone, not relabelled somewhere else.
+    expect(screen.queryByRole("button", { name: /SAVE SEARCH/i })).toBeNull()
 
     // sort select -> onSortChange with the SortOption value
     fireEvent.change(screen.getByDisplayValue("Best Discount"), { target: { value: "price" } })

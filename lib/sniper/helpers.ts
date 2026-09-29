@@ -93,6 +93,75 @@ export function sniperClientTeamFilter(teamFilter: string, teamApplied?: string 
   return teamApplied && teamApplied === teamFilter ? "all" : teamFilter;
 }
 
+/**
+ * The Sniper filters a link can carry. 2026-09-29: this replaced a "Save search"
+ * button that POSTed to /api/watchlist without the owner_key/edition_key that
+ * route requires — a 400 on every click, shown as "Sign in to save searches" even
+ * to signed-in readers, and no table or reader for saved searches exists. A link
+ * that reopens the board with its filters is the save that actually works.
+ */
+export interface SniperUrlFilters {
+  team?: string
+  player?: string
+  tier?: string
+  maxPrice?: number
+  minDiscount?: number
+  sort?: string
+}
+
+export const SNIPER_URL_KEYS = ["team", "player", "tier", "maxPrice", "minDiscount", "sort"] as const
+
+/** Reads the filters from a URL, dropping any value the page could not apply. */
+export function readSniperUrlFilters(
+  sp: Pick<URLSearchParams, "get"> | null | undefined,
+  allowed: { tiers: readonly string[]; sorts: readonly string[] },
+): SniperUrlFilters {
+  const out: SniperUrlFilters = {}
+  if (!sp) return out
+  const text = (k: string) => {
+    const v = sp.get(k)?.trim()
+    return v ? v : undefined
+  }
+  const num = (k: string, max: number) => {
+    const v = Number(sp.get(k))
+    return Number.isFinite(v) && v > 0 && v <= max ? v : undefined
+  }
+  const team = text("team")
+  if (team && team !== "all") out.team = team
+  const player = text("player")
+  if (player) out.player = player
+  const tier = text("tier")
+  const tierMatch = tier ? allowed.tiers.find((t) => t.toLowerCase() === tier.toLowerCase()) : undefined
+  if (tierMatch && tierMatch !== "all") out.tier = tierMatch
+  const maxPrice = num("maxPrice", 10_000_000)
+  if (maxPrice) out.maxPrice = maxPrice
+  const minDiscount = num("minDiscount", 100)
+  if (minDiscount) out.minDiscount = minDiscount
+  const sort = text("sort")
+  if (sort && allowed.sorts.includes(sort)) out.sort = sort
+  return out
+}
+
+/**
+ * A link to this board with these filters. Keeps unrelated params (e.g.
+ * `section`), drops a one-off deep link (`highlight` / `moment`), and writes only
+ * non-default values so an unfiltered board links as its plain URL.
+ */
+export function sniperShareUrl(
+  href: string,
+  f: { team: string; player: string; tier: string; maxPrice: number; minDiscount: number; sort: string; defaultSort: string },
+): string {
+  const url = new URL(href)
+  for (const k of [...SNIPER_URL_KEYS, "highlight", "moment", "momentId"]) url.searchParams.delete(k)
+  if (f.team && f.team !== "all") url.searchParams.set("team", f.team)
+  if (f.player.trim()) url.searchParams.set("player", f.player.trim())
+  if (f.tier && f.tier !== "all") url.searchParams.set("tier", f.tier)
+  if (f.maxPrice > 0) url.searchParams.set("maxPrice", String(f.maxPrice))
+  if (f.minDiscount > 0) url.searchParams.set("minDiscount", String(f.minDiscount))
+  if (f.sort && f.sort !== f.defaultSort) url.searchParams.set("sort", f.sort)
+  return url.toString()
+}
+
 // The Studio dropdown's options (Disney Pinnacle deals carry `studio`; other
 // collections carry none, so the control hides itself). Same shape as
 // sniperTeamOptions: board-derived, sorted, a stale selection kept selectable.
