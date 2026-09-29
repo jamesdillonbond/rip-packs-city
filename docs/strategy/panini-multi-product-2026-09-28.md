@@ -148,3 +148,7 @@ Read at 12:10–12:40 PM PT 09-29 (about 2 days before the planned Oct 1 check; 
   held editions have a `panini_editions` row (was 0). None were bridged or priced yet, and Rupert's psku had no row
   yet. At ~660 editions per ~4 h run, all 152 priority pskus should be walked within about an hour. Bridging and FMV
   follow on the pricing bridge's own schedule.
+- **3:48 PM PT — drained.** The 2:00 PM PT run ended at 3:48 PM PT (rc=0; 650 of 8,924 walked, 646 captured). The
+  founder's held editions: **135 of 136** are catalogued, bridged into `editions` and have `fmv_usd > 0`. The one left is
+  `packcard-2263_…` (set 2263). Set 2263 is **not an admitted product**, so the route correctly never queues it. Trophy
+  slot 2 (Rupert #1/1) now shows **$25, confidence LOW** (floor NULL), labelled honestly.
