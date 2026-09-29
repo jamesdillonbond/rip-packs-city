@@ -4,6 +4,7 @@ import { render, cleanup, waitFor, screen } from "@testing-library/react"
 import SqueezeCheckPage from "@/app/insights/squeeze-check/page"
 import TcReportPage from "@/app/insights/tc-report/page"
 import AccountValueSearch from "@/components/insights/AccountValueSearch"
+import InsightsWalletSearch from "@/components/insights/InsightsWalletSearch"
 import { ownFlowWalletFrom } from "@/lib/hooks/useOwnFlowWallet"
 
 // 2026-09-28 (Trevor: "redundant and unnecessary since I'm signed in"). A
@@ -98,5 +99,24 @@ describe("/insights/account-value", () => {
     await waitFor(() => expect(apiCalls(f, "/api/profile/me").length).toBe(1))
     await new Promise((r) => setTimeout(r, 20))
     expect(screen.queryByText(/See your account's value/)).toBeNull()
+  })
+})
+
+describe("/insights hub", () => {
+  it("signed in: 'Run your own report' links to YOUR tc-report", async () => {
+    stub(signedIn(OWN))
+    render(<InsightsWalletSearch />)
+    const link = await screen.findByText(/Run your own report/)
+    expect(link.closest("a")?.getAttribute("href")).toBe(`/insights/tc-report?wallet=${OWN}`)
+  })
+  it("signed out or unreadable identity: no link, the box is the only entry", async () => {
+    for (const me of [signedOut, () => res(false, null)]) {
+      const f = stub(me)
+      const { unmount } = render(<InsightsWalletSearch />)
+      await waitFor(() => expect(apiCalls(f, "/api/profile/me").length).toBe(1))
+      await new Promise((r) => setTimeout(r, 20))
+      expect(screen.queryByText(/Run your own report/)).toBeNull()
+      unmount()
+    }
   })
 })

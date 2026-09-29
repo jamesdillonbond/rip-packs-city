@@ -1,5 +1,3 @@
-"use client"
-
 // components/insights/AccountValueSearch.tsx
 //
 // Wallet-paste box for the /insights/account-value landing page. A thin binding
@@ -13,12 +11,10 @@
 // reader's own card sits under the box, so they need not paste their own wallet.
 // The box stays for looking up anyone else.
 
-import Link from "next/link"
 import WalletSearch from "@/components/WalletSearch"
-import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
+import OwnWalletLink from "@/components/insights/OwnWalletLink"
 
 export default function AccountValueSearch() {
-  const own = useOwnFlowWallet()
   return (
     <>
       <WalletSearch
@@ -31,21 +27,7 @@ export default function AccountValueSearch() {
         pendingLabel="…"
         style={{ marginTop: 22 }}
       />
-      {own.wallet && (
-        <Link
-          href={`/share/${encodeURIComponent(own.wallet)}`}
-          style={{
-            display: "inline-block",
-            marginTop: 12,
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            color: "var(--rpc-red)",
-            textDecoration: "none",
-          }}
-        >
-          See your account&apos;s value ({own.wallet.slice(0, 6)}…{own.wallet.slice(-4)}) →
-        </Link>
-      )}
+      <OwnWalletLink to="share" label="See your account's value" />
     </>
   )
 }

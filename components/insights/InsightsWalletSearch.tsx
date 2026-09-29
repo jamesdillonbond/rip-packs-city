@@ -10,11 +10,16 @@
 // Destination stays the deep public Top Collector Report rather than /share.
 // Visual spec is unchanged: variant="inline" IS the 52px / r8 / max-560 box
 // this file used to hand-roll.
+//
+// Signed in with a linked Flow wallet (2026-09-28): "Run your own report" sits
+// under the box, so a signed-in reader is never asked to paste their own wallet.
 
 import WalletSearch from "@/components/WalletSearch"
+import OwnWalletLink from "@/components/insights/OwnWalletLink"
 
 export default function InsightsWalletSearch() {
   return (
+    <>
     <WalletSearch
       surface="insights_hub"
       variant="inline"
@@ -25,5 +30,7 @@ export default function InsightsWalletSearch() {
       pendingLabel="…"
       style={{ marginTop: 22 }}
     />
+    <OwnWalletLink to="tc-report" label="Run your own report" />
+    </>
   )
 }
