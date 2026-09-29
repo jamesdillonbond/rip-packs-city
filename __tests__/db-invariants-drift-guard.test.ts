@@ -15,6 +15,23 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-29. When and from whom a wallet got a Top Shot moment,
+    // bisected on its own holdings on the historical spork nodes, then the
+    // delivering TopShot.Withdraw (0xb5b7... = custodial pack pull). Pins the
+    // bisection direction, spork-end splits + per-node script syntax, the
+    // LAST non-wallet withdraw as the delivery, and 429-not-a-failure.
+    fn: "run_chain_arrival_lane",
+    test: "supabase/tests/run_chain_arrival_lane.sql",
+    migration:
+      "supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql",
+  },
+  {
+    fn: "enqueue_chain_arrivals",
+    test: "supabase/tests/run_chain_arrival_lane.sql",
+    migration:
+      "supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql",
+  },
+  {
     // Added 2026-09-29. A Top Shot pull is named by READING THE CHAIN at its
     // pack's rip block on the historical spork node (269 of 269 ids read back;
     // every disagreement a parallel our record filed under its base). Pins the
