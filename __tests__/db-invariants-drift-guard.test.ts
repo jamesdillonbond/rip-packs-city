@@ -15,6 +15,17 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-29. A Top Shot pull is named by READING THE CHAIN at its
+    // pack's rip block on the historical spork node (269 of 269 ids read back;
+    // every disagreement a parallel our record filed under its base). Pins the
+    // spork routing + script syntax, the per-node cap, 429-not-a-failure, and
+    // that a parallel we do not carry is never folded into its base.
+    fn: "run_topshot_pull_chain_lane",
+    test: "supabase/tests/run_topshot_pull_chain_lane.sql",
+    migration:
+      "supabase/migrations/20260929160000_audit_20260929_topshot_pulls_named_by_reading_the_chain_at_the_open_block.sql",
+  },
+  {
     // Added 2026-09-29. A Top Shot pull no record names takes its edition from
     // its nearest known ids (batch mint = consecutive ids) ONLY when both sides
     // agree within 50 ids -- 99.3 % right on 3,189 validation pulls, 81 % past
