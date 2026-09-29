@@ -312,7 +312,8 @@ async function upsertPlayer(
   collectionId: string,
   stats: NonNullable<NonNullable<SaleTransaction["moment"]>["play"]>["stats"]
 ): Promise<string | null> {
-  if (!stats?.playerID) return null
+  // ⛔ No name, no player: a seeded "Unknown Player" becomes a real players row every reader republishes.
+  if (!stats?.playerID || !stats.playerName?.trim()) return null
 
   // Canonical resolve-or-create keyed on (collection_id, name-slug) — the SAME
   // slug expression get_player_detail and ensure_players_from_edition_names use.
@@ -333,7 +334,7 @@ async function upsertPlayer(
   const { data, error } = await supabaseAdmin.rpc("upsert_player_canonical", {
     p_collection_id: collectionId,
     p_external_id: String(stats.playerID),
-    p_name: stats.playerName ?? "Unknown Player",
+    p_name: stats.playerName.trim(),
     p_first_name: stats.firstName ?? null,
     p_last_name: stats.lastName ?? null,
     p_team: stats.teamAtMoment ?? null,
@@ -423,7 +424,9 @@ async function upsertEdition(
         collection_id: collectionId,
         player_id: playerId,
         set_id: setId,
-        name: `${moment.play.stats?.playerName ?? "Unknown"} — ${moment.set.flowName ?? "Unknown Set"}`,
+        // A team Moment has no player: its siblings are named by the set alone ("Clamps"), never
+        // "Unknown — Clamps" (2 such rows repaired 2026-09-29). A missing piece is left out, never invented.
+        name: [moment.play.stats?.playerName?.trim(), moment.set.flowName?.trim()].filter(Boolean).join(" — ") || editionKey,
         tier: tier as "COMMON" | "RARE" | "LEGENDARY" | "ULTIMATE" | "FANDOM",
         series: toNum(moment.set.flowSeriesNumber),
         edition_kind: isRetired ? "LE" : "CC",

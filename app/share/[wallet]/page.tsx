@@ -9,6 +9,7 @@ import { fmvBasis } from "@/lib/fmv-basis"
 import { buildSeriesBarsFrom, compactSeriesLabel, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
 import { OG_INHERITED } from "@/lib/seo"
 import { normalizeAddress } from "@/lib/address"
+import { momentSubjectName } from "@/lib/entity-href"
 
 interface SnapshotData {
   wallet: string
@@ -377,7 +378,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                           ) : null}
                         </div>
                         <div style={{ fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginBottom: 2, fontFamily: "var(--font-display)" }}>
-                          {h.player_name ?? "Unknown"}
+                          {momentSubjectName(h.player_name, null, h.set_name)}
                         </div>
                         <div style={{ fontSize: 11, color: tierColor, fontFamily: "var(--font-mono, monospace)" }}>
                           {h.tier ?? ""}

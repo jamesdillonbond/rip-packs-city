@@ -99,9 +99,13 @@ describe("serverMomentToRow", () => {
     expect(serverMomentToRow(sm({ series_number: null })).series).toBeUndefined()
   })
 
-  it("defaults missing player/set names and treats is_locked strictly", () => {
+  // INVERTED 2026-09-29: this pinned playerName "Unknown". The subject is the team, then the set,
+  // then an honest dash (momentSubjectName) — "Unknown" rendered as a player on profile cards.
+  it("names a missing player by team, then set, never 'Unknown'; treats is_locked strictly", () => {
     const r = serverMomentToRow(sm({ player_name: null, set_name: null }))
-    expect(r.playerName).toBe("Unknown")
+    expect(r.playerName).toBe("Lakers")
+    expect(serverMomentToRow(sm({ player_name: null, team_name: null, set_name: "Clamps" })).playerName).toBe("Clamps")
+    expect(serverMomentToRow(sm({ player_name: null, team_name: null, set_name: null })).playerName).toBe("—")
     expect(r.setName).toBe("Unknown Set")
     expect(serverMomentToRow(sm({ is_locked: true })).isLocked).toBe(true)
     expect(serverMomentToRow(sm({ is_locked: false })).isLocked).toBe(false)

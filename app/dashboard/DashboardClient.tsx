@@ -34,6 +34,7 @@ import { savedWalletChains } from "@/lib/trophy-picker-format";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
+import { momentSubjectName } from "@/lib/entity-href"
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -1677,7 +1678,7 @@ function HeroMomentCard({ hero, onEdit }: { hero: HeroMoment; onEdit: () => void
           </button>
         </div>
         <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 26, letterSpacing: "0.02em", marginTop: 2, lineHeight: 1.1 }}>
-          {hero.playerName ?? "Unknown"}
+          {momentSubjectName(hero.playerName, null, hero.setName)}
         </div>
         <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 4 }}>
           {hero.setName ?? ""}

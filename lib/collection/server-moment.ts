@@ -12,6 +12,7 @@ import { acquisitionMethodLabel } from "@/lib/analytics/shape"
 import type { MomentRow } from "@/lib/collection/types"
 import type { SerialFmvData } from "@/components/SerialFmvBadge"
 import type { PriceBand30d } from "@/components/PriceBand30dBadge"
+import { momentSubjectName } from "@/lib/entity-href"
 
 // The row shape returned by the server-paginated moments endpoints.
 export type ServerMoment = {
@@ -106,7 +107,8 @@ export function serverMomentToRow(m: ServerMoment, sport?: string | null): Momen
 
   return {
     momentId: m.moment_id,
-    playerName: m.player_name ?? "Unknown",
+    // The subject, never the word "Unknown": a team Moment names its team, then the set (lib/entity-href).
+    playerName: momentSubjectName(m.player_name, m.team_name, m.set_name),
     team: m.team_name ?? undefined,
     league: sport ?? undefined,
     setName: m.set_name ?? "Unknown Set",

@@ -222,7 +222,9 @@ describe("TrophySlab", () => {
   })
 
   // ── metallic label edge cases ───────────────────────────────────────────────
-  it("falls back to 'Unknown' / 'COMMON' and omits the serial line when fields are null", () => {
+  // INVERTED 2026-09-29: this pinned the word "Unknown" as the slab's subject. A Moment with no
+  // player names its set (momentSubjectName), because "Unknown" reads as a fact about the Moment.
+  it("names the SET, never 'Unknown', and omits the serial line when fields are null", () => {
     const slab = {
       ...base,
       player_name: null,
@@ -232,7 +234,8 @@ describe("TrophySlab", () => {
       series: null,
     }
     const { container } = render(<TrophySlab slab={slab} slot={3} mode="public" />)
-    expect(container.textContent).toContain("Unknown")
+    expect(container.textContent).not.toContain("Unknown")
+    expect(container.textContent).toContain("Logo Daze")
     expect(container.textContent).toContain("COMMON") // tier ?? "COMMON"
     expect(container.textContent).not.toContain("#") // no serial line
   })

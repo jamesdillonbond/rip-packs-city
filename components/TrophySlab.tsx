@@ -15,6 +15,7 @@ import {
 } from "@/lib/trophy/slab-style";
 import { usdSignFirst } from "@/lib/usd-format"
 import { trophySlabHref, type TrophySlabHref } from "@/lib/trophy/slab-href"
+import { momentSubjectName } from "@/lib/entity-href"
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -455,7 +456,7 @@ function SlabLabel({
             overflow: "hidden",
           }}
         >
-          {slab.player_name ?? "Unknown"}
+          {momentSubjectName(slab.player_name, slab.team_name, slab.set_name)}
         </div>
         {slab.team_name && (
           <div

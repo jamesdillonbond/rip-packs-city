@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { monoFont, condensedFont, labelStyle, fmtDollars, MoverRow, TopMoversData } from "./_shared";
 import { fetchJson } from "@/lib/analytics/fetch-json";
+import { momentSubjectName } from "@/lib/entity-href"
 
 export default function TopMoversCard(props: { ownerKey: string }) {
   const [data, setData] = useState<TopMoversData | null>(null);
@@ -43,7 +44,7 @@ export default function TopMoversCard(props: { ownerKey: string }) {
     return (
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.player_name ?? "Unknown"}</div>
+          <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{momentSubjectName(r.player_name, null, r.set_name)}</div>
           <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.set_name ?? ""}</div>
         </div>
         <div style={{ textAlign: "right" }}>

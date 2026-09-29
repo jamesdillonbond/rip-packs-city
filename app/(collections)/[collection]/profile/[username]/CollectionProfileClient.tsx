@@ -15,6 +15,7 @@ import { proxyIpfsUrl } from "@/lib/ipfs-media";
 import { collectionHasPage, getCollection, type CollectionPage } from "@/lib/collections";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
+import { momentSubjectName } from "@/lib/entity-href"
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -196,7 +197,7 @@ function PublicTrophySlot(props: { slot: number; trophy: TrophyMoment | null }) 
         <span style={{ fontSize: 14 }}>{slotLabels[props.slot]}</span>
       </div>
       <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 12px 14px" }}>
-        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "#fff", letterSpacing: "0.04em", lineHeight: 1.1, marginBottom: 4 }}>{t.player_name ?? "Unknown"}</div>
+        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "#fff", letterSpacing: "0.04em", lineHeight: 1.1, marginBottom: 4 }}>{momentSubjectName(t.player_name, null, t.set_name)}</div>
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.set_name ?? ""}</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: 11, fontFamily: condensedFont, fontWeight: 700, color: tc }}>

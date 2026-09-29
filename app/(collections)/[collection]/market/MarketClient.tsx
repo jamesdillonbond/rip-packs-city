@@ -25,7 +25,7 @@ import { getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { slugifyName } from "@/lib/entity-labels"
 import { seriesDisplay } from "@/lib/series-label"
-import { momentSubjectHref, pinnacleRenderHref, editionRouteHref } from "@/lib/entity-href"
+import { momentSubjectHref, pinnacleRenderHref, editionRouteHref, momentSubjectName } from "@/lib/entity-href"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { COLLECTION_TIERS } from "@/lib/collection-tiers"
 import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
@@ -1007,7 +1007,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
       </div>
       <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
         <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 13, color: "var(--rpc-text-primary)", letterSpacing: "0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {listing.playerName ?? "Unknown"}
+          {momentSubjectName(listing.playerName, listing.teamName, listing.setName)}
         </div>
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: "0.04em" }}>
           <span style={{ color: dot }}>{tier || "—"}</span>
