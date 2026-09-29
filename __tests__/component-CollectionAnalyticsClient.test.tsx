@@ -1179,4 +1179,35 @@ describe("CollectionAnalyticsClient — Market-tab panels never claim emptiness 
     await waitFor(() => expect(kpiValue("Total Sales")).toBe("89,831"))
     expect(document.body.textContent).not.toContain("Couldn’t load the marketplace breakdown")
   })
+
+  // ── Signed in (2026-09-28): the Portfolio tab analyzes the reader's OWN wallet ──
+  const OWN = "0x1111222233334444"
+  it("portfolio tab, signed in, no ?wallet=: analyzes your own wallet without asking", async () => {
+    routes["/api/profile/me"] = () => json(200, { user: { id: "u1", wallet_addr: OWN } })
+    searchParams = new URLSearchParams("tab=portfolio")
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.startsWith("/api/analytics?") && u.includes(`wallet=${OWN}`))).toBe(true)
+    })
+    await waitFor(() => expect(screen.getByText(/Showing your wallet/)).toBeTruthy())
+  })
+  it("a ?wallet= in the URL wins over your own", async () => {
+    routes["/api/profile/me"] = () => json(200, { user: { id: "u1", wallet_addr: OWN } })
+    searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.startsWith("/api/analytics?") && u.includes("wallet=0xmine"))).toBe(true)
+    })
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(urls.some((u) => u.includes(`wallet=${OWN}`))).toBe(false)
+  })
+  it("the Market tab never fires a portfolio analysis for your wallet", async () => {
+    routes["/api/profile/me"] = () => json(200, { user: { id: "u1", wallet_addr: OWN } })
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(kpiValue("Total Sales")).toBe("89,831"))
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(urls.some((u) => u.startsWith("/api/analytics?") && u.includes("wallet="))).toBe(false)
+  })
 })

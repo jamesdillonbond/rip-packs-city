@@ -217,7 +217,8 @@ describe("TcReportPage — money + percent formatter ladders", () => {
     render(<TcReportPage />)
     // A junk URL param must never reach the API — the regex gate is the point.
     await waitFor(() => expect(screen.getByText(/Top Collector Report/i)).toBeTruthy())
-    expect(never).not.toHaveBeenCalled()
+    // (The only permitted call is the session read — never the report API.)
+    expect(never.mock.calls.some((c: unknown[]) => String(c[0]).includes("/api/public/insights/tc-report"))).toBe(false)
   })
 
   it("shows a failure message when the request throws", async () => {

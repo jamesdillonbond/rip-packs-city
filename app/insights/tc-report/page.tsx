@@ -10,8 +10,9 @@
 // /api/public/insights/tc-report route. Same wallet-paste trust model as
 // squeeze-check.
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { slugifyName } from "@/lib/entity-labels"
 import { fromDbSlug, getCollection } from "@/lib/collections"
 import { closedMarket, formatClosedOn } from "@/lib/market-closed"
@@ -190,18 +191,34 @@ export default function TcReportPage() {
 
   // Auto-load when a wallet is pre-filled via ?wallet= URL param (same
   // pattern as squeeze-check).
+  // Signed in with no ?wallet= → load the reader's OWN wallet instead of an
+  // empty box asking them to paste it (2026-09-28). The box stays for checking
+  // any other wallet. Runs once, after the session resolves.
+  const own = useOwnFlowWallet()
+  const autoRanRef = useRef(false)
+  const [showingOwn, setShowingOwn] = useState(false)
   useEffect(() => {
     if (typeof window === "undefined") return
     const url = new URL(window.location.href)
     const w = url.searchParams.get("wallet")
     if (w && /^0x[a-f0-9]{16}$/i.test(w)) {
+      autoRanRef.current = true
       setWallet(w)
       runCheck(w)
     }
   }, [])
+  useEffect(() => {
+    if (autoRanRef.current || own.loading || !own.wallet) return
+    autoRanRef.current = true
+    setWallet(own.wallet)
+    setShowingOwn(true)
+    runCheck(own.wallet)
+  }, [own.loading, own.wallet])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    autoRanRef.current = true // a search typed before the session resolved wins
+    setShowingOwn(!!own.wallet && wallet.trim().toLowerCase() === own.wallet)
     await runCheck(wallet)
   }
 
@@ -246,6 +263,11 @@ export default function TcReportPage() {
           </button>
         </form>
         {error ? <div className="rpc-tc-error">{error}</div> : null}
+        {showingOwn && !error ? (
+          <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-muted)" }}>
+            Showing your wallet — enter another to check it.
+          </div>
+        ) : null}
       </section>
 
       {report ? (

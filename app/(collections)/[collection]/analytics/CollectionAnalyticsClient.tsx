@@ -28,6 +28,7 @@ import CostBasisCard from "@/components/analytics/CostBasisCard"
 import SalesHistoryCard from "@/components/analytics/SalesHistoryCard"
 import { getEntityLabels } from "@/lib/entity-labels"
 import CrossCollectionHoldingsCard from "@/components/analytics/CrossCollectionHoldingsCard"
+import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { fmt, fmtUsd, shortAddr, relativeDate, shortSlug } from "@/lib/analytics/format"
 import { classifyTsOrderbook, TS_ORDERBOOK_STALE_LABEL, tsOrderbookStaleBody, TS_ORDERBOOK_UNKNOWN_LABEL, TS_ORDERBOOK_UNKNOWN_BODY } from "@/lib/analytics/ts-orderbook-freshness"
 
@@ -1176,6 +1177,19 @@ function AnalyticsInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlWallet])
 
+  // Portfolio tab, signed in, no ?wallet= → analyze the reader's OWN wallet
+  // rather than asking them to type it (2026-09-28). Flow wallets only, and
+  // only on a Flow collection — the profile wallet holds nothing on Solana.
+  const own = useOwnFlowWallet()
+  const isFlowCollection = collectionMeta?.dbChain === "flow"
+  useEffect(() => {
+    if (tab !== "portfolio" || urlWallet || activeWallet || loading) return
+    if (own.loading || !own.wallet || !isFlowCollection) return
+    setInput(own.wallet)
+    runSearch(own.wallet)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, own.loading, own.wallet, isFlowCollection])
+
   const acq = data?.acquisition ?? null
   const { acqTotal, pctPack, pctMarket, pctReward, pctGift, pctTrade, acquisitionNotIndexed } =
     computeAcquisitionBreakdown(acq)
@@ -1736,6 +1750,12 @@ function AnalyticsInner() {
               {loading ? "Analyzing..." : "Analyze"}
             </button>
           </form>
+
+          {own.wallet && activeWallet.toLowerCase() === own.wallet && (
+            <div className="mb-4 -mt-3 text-[12px] text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+              Showing your wallet — enter another to analyze it.
+            </div>
+          )}
 
           {error && <div className="mb-4 rounded-lg border border-red-900/40 bg-red-950/20 p-3 text-sm text-red-300">{error}</div>}
 

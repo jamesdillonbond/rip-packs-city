@@ -64,7 +64,8 @@ describe("SqueezeCheckPage (app/insights/squeeze-check/page.tsx)", () => {
     await waitFor(() =>
       expect(screen.getByText(/Wallet must look like a Flow address/i)).toBeTruthy(),
     )
-    expect(fetchMock).not.toHaveBeenCalled()
+    // The session read (/api/profile/me) is allowed; the report API never is.
+    expect(fetchMock.mock.calls.some((c: unknown[]) => String(c[0]).includes("/api/public/insights/squeeze-check"))).toBe(false)
   })
 
   it("renders the bucket bars + top-squeezed table for a populated summary", async () => {
@@ -165,7 +166,8 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
     await waitFor(() =>
       expect(screen.getByText(/Wallet must look like a Flow address/i)).toBeTruthy(),
     )
-    expect(fetchMock).not.toHaveBeenCalled()
+    // The session read (/api/profile/me) is allowed; the report API never is.
+    expect(fetchMock.mock.calls.some((c: unknown[]) => String(c[0]).includes("/api/public/insights/tc-report"))).toBe(false)
   })
 
   it("renders the full report — squeeze, cross-collection, top sets, cohorts, acquisitions", async () => {

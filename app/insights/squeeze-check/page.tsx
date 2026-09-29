@@ -8,8 +8,9 @@
 // burned. No signup. Trust model is identical to nbatopshot.com/profile/<addr>
 // (the user is naming the wallet themselves).
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 
 type Bucket = { editions: number; moments: number }
 type Buckets = { liquid: Bucket; moderate: Bucket; squeezed: Bucket; extreme: Bucket }
@@ -96,18 +97,34 @@ export default function SqueezeCheckPage() {
 
   // Auto-load when a wallet is pre-filled via ?wallet= URL param (used by
   // drill-down links from /insights/cross-collection wallet rows).
+  // Signed in with no ?wallet= → load the reader's OWN wallet instead of an
+  // empty box asking them to paste it (2026-09-28). The box stays for checking
+  // any other wallet. Runs once, after the session resolves.
+  const own = useOwnFlowWallet()
+  const autoRanRef = useRef(false)
+  const [showingOwn, setShowingOwn] = useState(false)
   useEffect(() => {
     if (typeof window === "undefined") return
     const url = new URL(window.location.href)
     const w = url.searchParams.get("wallet")
     if (w && /^0x[a-f0-9]{16}$/i.test(w)) {
+      autoRanRef.current = true
       setWallet(w)
       runCheck(w)
     }
   }, [])
+  useEffect(() => {
+    if (autoRanRef.current || own.loading || !own.wallet) return
+    autoRanRef.current = true
+    setWallet(own.wallet)
+    setShowingOwn(true)
+    runCheck(own.wallet)
+  }, [own.loading, own.wallet])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    autoRanRef.current = true // a search typed before the session resolved wins
+    setShowingOwn(!!own.wallet && wallet.trim().toLowerCase() === own.wallet)
     await runCheck(wallet)
   }
 
@@ -146,6 +163,11 @@ export default function SqueezeCheckPage() {
           </button>
         </form>
         {error ? <div className="rpc-sc-error">{error}</div> : null}
+        {showingOwn && !error ? (
+          <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-muted)" }}>
+            Showing your wallet — enter another to check it.
+          </div>
+        ) : null}
       </section>
 
       {summary ? (
