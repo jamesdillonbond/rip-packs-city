@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/react"
 import SniperFilterBar from "@/components/sniper/SniperFilterBar"
-import { filterSniperDeals, sniperTeamOptions } from "@/lib/sniper/helpers"
+import { filterSniperDeals, sniperClientTeamFilter, sniperTeamOptions } from "@/lib/sniper/helpers"
 import type { SniperDeal } from "@/lib/sniper/types"
 
 afterEach(() => cleanup())
@@ -20,6 +20,16 @@ describe("sniperTeamOptions / filterSniperDeals({ team })", () => {
   })
   it("known teams (the feed's teamOptions) are offered even with no listing on the board", () => {
     expect(sniperTeamOptions([deal("Boston Celtics")], "all", ["Portland Trail Blazers", "Boston Celtics"])).toEqual(["Boston Celtics", "Portland Trail Blazers"])
+  })
+  it("does not re-filter a franchise-wide server pick on its exact label; filters a stale board", () => {
+    const board = [deal("LA Clippers"), deal("Los Angeles Clippers"), deal("Boston Celtics")]
+    // The feed applied "LA Clippers" franchise-wide: both Clippers labels stay.
+    const applied = filterSniperDeals(board.slice(0, 2), { team: sniperClientTeamFilter("LA Clippers", "LA Clippers") })
+    expect(applied.map((d) => d.teamName)).toEqual(["LA Clippers", "Los Angeles Clippers"])
+    // The board on screen was fetched for another pick (or none): filter it here.
+    expect(sniperClientTeamFilter("LA Clippers", null)).toBe("LA Clippers")
+    expect(sniperClientTeamFilter("LA Clippers", "Boston Celtics")).toBe("LA Clippers")
+    expect(filterSniperDeals(board, { team: sniperClientTeamFilter("Boston Celtics", "LA Clippers") }).map((d) => d.teamName)).toEqual(["Boston Celtics"])
   })
   it("a selected team that left the board stays listed", () => {
     expect(sniperTeamOptions([deal("Pocahontas")], "Toy Story")).toEqual(["Pocahontas", "Toy Story"])

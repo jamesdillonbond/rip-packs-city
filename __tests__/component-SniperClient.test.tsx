@@ -360,6 +360,33 @@ describe("SniperClient — the feed request carries the filters", () => {
     expect(key).not.toMatch(/nba-top-shot/)
   })
 
+  // 2026-09-29 — the Team pick is sent to the route (which filters the whole
+  // pool franchise-wide) and kept in the address bar, so a team board is linkable.
+  it("?team= seeds the pick and the feed URL carries it", async () => {
+    searchParams = new URLSearchParams("team=Portland Trail Blazers")
+    warm = { data: feed({ teamOptions: ["Boston Celtics", "Portland Trail Blazers"] }), loading: false, error: null, refresh: vi.fn() }
+    render(<SniperClient />)
+    await waitFor(() => expect(warmKeys.length).toBeGreaterThan(0))
+    expect(new URL(warmKeys[warmKeys.length - 1], "https://t").searchParams.get("team")).toBe("Portland Trail Blazers")
+  })
+
+  it("picking a team re-requests the feed with it and writes it to the URL; 'All' removes it", async () => {
+    warm = { data: feed({ teamOptions: ["Boston Celtics", "Portland Trail Blazers"] }), loading: false, error: null, refresh: vi.fn() }
+    render(<SniperClient />)
+    await waitFor(() => expect(warmKeys.length).toBeGreaterThan(0))
+    expect(new URL(warmKeys[warmKeys.length - 1], "https://t").searchParams.get("team")).toBeNull()
+
+    const select = (await screen.findAllByLabelText("Team"))[0] as HTMLSelectElement
+    fireEvent.change(select, { target: { value: "Portland Trail Blazers" } })
+    await waitFor(() =>
+      expect(new URL(warmKeys[warmKeys.length - 1], "https://t").searchParams.get("team")).toBe("Portland Trail Blazers"))
+    expect(new URL(window.location.href).searchParams.get("team")).toBe("Portland Trail Blazers")
+
+    fireEvent.change(select, { target: { value: "all" } })
+    await waitFor(() => expect(new URL(warmKeys[warmKeys.length - 1], "https://t").searchParams.get("team")).toBeNull())
+    expect(new URL(window.location.href).searchParams.get("team")).toBeNull()
+  })
+
   it("renders a deal row with its player and set", async () => {
     warm = { data: feed(), loading: false, error: null, refresh: vi.fn() }
     render(<SniperClient />)

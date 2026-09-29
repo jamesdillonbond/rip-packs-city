@@ -11,7 +11,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 //     ts_listings), not the newest-200 slice;
 //   * default-board pool rows carry their edition's team, so the dropdown lists them;
 //   * the response carries the league's teams, so a team absent from the board is pickable;
-//   * a failed team read is a DEGRADED board, never an honest "no Blazers deals".
+//   * a failed team read is a DEGRADED board, never an honest "no Blazers deals";
+//   * a pick covers its whole FRANCHISE (a team label is not a franchise): "LA
+//     Clippers" also finds "Los Angeles Clippers" editions, and says so via
+//     `teamApplied` so the client does not re-filter them away on the exact label.
 
 type Op = [string, unknown[]]
 type Call = { table: string; ops: Op[] }
@@ -72,6 +75,8 @@ function listing(i: number, setId: number, playId: number) {
 const EDITIONS = [
   { id: "uuid-1-2", external_id: "1:2", set_id_onchain: 1, play_id_onchain: 2, team_name: BLAZERS, thumbnail_url: null },
   { id: "uuid-5-7", external_id: "5:7", set_id_onchain: 5, play_id_onchain: 7, team_name: "Boston Celtics", thumbnail_url: null },
+  { id: "uuid-3-4", external_id: "3:4", set_id_onchain: 3, play_id_onchain: 4, team_name: "LA Clippers", thumbnail_url: null },
+  { id: "uuid-6-8", external_id: "6:8", set_id_onchain: 6, play_id_onchain: 8, team_name: "Los Angeles Clippers", thumbnail_url: null },
 ]
 
 const opArgs = (ops: Op[], name: string) => ops.filter(([m]) => m === name).map(([, a]) => a)
@@ -80,8 +85,8 @@ const tsCalls = () => (fx.calls as Call[]).filter((c) => c.table === "ts_listing
 function defaultResolve(poolRows: unknown[]) {
   return (table: string, ops: Op[]) => {
     if (table === "editions") {
-      const team = opArgs(ops, "eq").find((a) => a[0] === "team_name")?.[1]
-      return { data: team ? EDITIONS.filter((e) => e.team_name === team) : EDITIONS, error: null }
+      const teams = opArgs(ops, "in").find((a) => a[0] === "team_name")?.[1] as string[] | undefined
+      return { data: teams ? EDITIONS.filter((e) => teams.includes(e.team_name)) : EDITIONS, error: null }
     }
     if (table === "ts_listings") {
       const inPlay = opArgs(ops, "in").find((a) => a[0] === "play_id")?.[1] as number[] | undefined
@@ -102,7 +107,13 @@ beforeEach(() => {
       })),
       error: null,
     },
-    get_teams_for_league: { data: [{ team_name: BLAZERS, has_moments: true }, { team_name: "Boston Celtics", has_moments: true }], error: null },
+    get_teams_for_league: {
+      data: [BLAZERS, "Boston Celtics", "LA Clippers"].map((team_name) => ({ team_name, has_moments: true })),
+      error: null,
+    },
+    // Registry names incl. the historic label; the slugs say which belong together.
+    league_team_abbr: { data: [{ team_name: "Los Angeles Clippers", abbr: "LAC" }, { team_name: BLAZERS, abbr: "POR" }], error: null },
+    team_franchise_slugs: { data: ["portland-trail-blazers"], error: null },
   }
 })
 
@@ -120,9 +131,9 @@ describe("sniper-feed ?team= reads the team's listings from the whole pool", () 
     const res = await GET(get(`?collection=nba-top-shot&team=${encodeURIComponent(BLAZERS)}`))
     const body = await res.json()
 
-    const teamEd = (fx.calls as Call[]).find((c) => c.table === "editions" && opArgs(c.ops, "eq").some((a) => a[0] === "team_name"))
+    const teamEd = (fx.calls as Call[]).find((c) => c.table === "editions" && opArgs(c.ops, "in").some((a) => a[0] === "team_name"))
     expect(teamEd, "the team's editions were never looked up").toBeTruthy()
-    expect(opArgs(teamEd!.ops, "eq")).toContainEqual(["team_name", BLAZERS])
+    expect(opArgs(teamEd!.ops, "in")).toContainEqual(["team_name", [BLAZERS]])
 
     // Every ts_listings read on a team pick is scoped by play id — none is the
     // unscoped newest-200 slice that made the team unreachable.
@@ -136,16 +147,45 @@ describe("sniper-feed ?team= reads the team's listings from the whole pool", () 
       expect(d.editionKey).toBe("1:2")
     }
     expect(body.deals.some((d: { flowId: string }) => d.flowId.startsWith("F9-2-"))).toBe(false)
+    expect(body.teamApplied).toBe(BLAZERS)
   })
 
   it("a failed team-editions read degrades the board rather than concluding there are no deals", async () => {
     const base = defaultResolve(pool)
     fx.resolve = (table, ops) =>
-      table === "editions" && opArgs(ops, "eq").some((a) => a[0] === "team_name")
+      table === "editions" && opArgs(ops, "in").some((a) => a[0] === "team_name")
         ? { data: null, error: { message: "boom" } }
         : base(table, ops)
     const body = await (await GET(get(`?collection=nba-top-shot&team=${encodeURIComponent(BLAZERS)}`))).json()
     expect(body.sourcesFailed).toContain("ts_listings")
+    expect(body.degraded).toBe(true)
+  })
+})
+
+describe("sniper-feed ?team= covers every label of the franchise", () => {
+  const pool = [
+    ...Array.from({ length: 13 }, (_, i) => listing(i, 3, 4)),
+    ...Array.from({ length: 13 }, (_, i) => listing(i + 20, 6, 8)),
+    ...Array.from({ length: 10 }, (_, i) => listing(i, 5, 7)),
+  ]
+
+  it("'LA Clippers' also returns the 'Los Angeles Clippers' editions, each keeping its own label", async () => {
+    fx.rpc.team_franchise_slugs = { data: ["la-clippers", "los-angeles-clippers", "san-diego-clippers"], error: null }
+    fx.resolve = defaultResolve(pool)
+    const body = await (await GET(get(`?collection=nba-top-shot&team=${encodeURIComponent("LA Clippers")}`))).json()
+    expect(body.degraded).toBe(false)
+    const teams = new Set(body.deals.map((d: { teamName: string }) => d.teamName))
+    expect(teams).toEqual(new Set(["LA Clippers", "Los Angeles Clippers"]))
+    expect(body.teamApplied).toBe("LA Clippers")
+  })
+
+  it("a failed franchise lookup falls back to the exact label AND reports the board as narrowed", async () => {
+    fx.rpc.team_franchise_slugs = { data: null, error: { message: "boom" } }
+    fx.resolve = defaultResolve(pool)
+    const body = await (await GET(get(`?collection=nba-top-shot&team=${encodeURIComponent("LA Clippers")}`))).json()
+    expect(body.deals.length).toBeGreaterThan(0)
+    for (const d of body.deals) expect(d.teamName).toBe("LA Clippers")
+    expect(body.sourcesFailed).toContain("team-franchise")
     expect(body.degraded).toBe(true)
   })
 })
@@ -160,5 +200,6 @@ describe("sniper-feed default board carries team names and the league's teams", 
     expect(body.teamOptions).toContain(BLAZERS)
     // The default board stays the unscoped newest slice.
     expect(tsCalls().some((c) => opArgs(c.ops, "in").length === 0)).toBe(true)
+    expect(body.teamApplied).toBeNull()
   })
 })

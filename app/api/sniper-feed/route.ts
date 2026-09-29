@@ -452,7 +452,7 @@ type EditionTeamRow = { set_id_onchain: number | null; play_id_onchain: number |
 // repeats a row. Returns an error rather than a partial list.
 async function readTopshotEditionTeams(
   supabase: SupabaseClient,
-  scope: { team: string } | { playIds: number[] },
+  scope: { teams: string[] } | { playIds: number[] },
   label: string,
 ): Promise<{ rows: EditionTeamRow[]; error: ReadEnvelope["error"] }> {
   const PAGE = 1000;
@@ -462,7 +462,7 @@ async function readTopshotEditionTeams(
       .from("editions")
       .select("set_id_onchain, play_id_onchain, team_name")
       .eq("collection_id", TOPSHOT_COLLECTION_ID);
-    q = "team" in scope ? q.eq("team_name", scope.team) : q.in("play_id_onchain", scope.playIds);
+    q = "teams" in scope ? q.in("team_name", scope.teams) : q.in("play_id_onchain", scope.playIds);
     const { data, error } = await boundedRead(q.order("id").range(from, from + PAGE - 1), label);
     if (error) return { rows: [], error };
     const page = (data ?? []) as EditionTeamRow[];
@@ -475,17 +475,51 @@ async function readTopshotEditionTeams(
 // Before, the pool was the newest 200 of ~27k open listings and the team filter
 // ran over those 200 alone: 915 open Blazers listings, and the Blazers pick
 // showed whichever few (usually none) happened to be in the latest sync batch.
-async function readTeamPoolRows(
+// The site's team slug (same expression as editions' idx_editions_collection_team_slug).
+function teamSlug(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+}
+
+// Every label the picked team's FRANCHISE has carried (a team label is not a
+// franchise): "LA Clippers" also finds the 53 "Los Angeles Clippers" editions,
+// the Thunder the SuperSonics. Slugs come from team_franchise_slugs (the same
+// registry the team pages use); names from the registries that slug came from.
+// On any failed read the pick falls back to its own label and `error` is set, so
+// the caller reports a NARROWED board rather than presenting it as the franchise.
+async function resolveFranchiseLabels(
   supabase: SupabaseClient,
   team: string,
-): Promise<{ rows: any[]; error: ReadEnvelope["error"] }> {
-  const eds = await readTopshotEditionTeams(supabase, { team }, "ts-team-editions");
-  if (eds.error) return { rows: [], error: eds.error };
-  const pairs = new Set<string>();
+): Promise<{ labels: string[]; error: ReadEnvelope["error"] }> {
+  const [slugs, ...names] = await Promise.all([
+    boundedRead((supabase as any).rpc("team_franchise_slugs", { p_collection_id: TOPSHOT_COLLECTION_ID, p_team_slug: teamSlug(team) }), "team-franchise-slugs"),
+    boundedRead((supabase as any).rpc("league_team_abbr", { p_league: "nba" }), "team-labels-nba"),
+    boundedRead((supabase as any).rpc("league_team_abbr", { p_league: "wnba" }), "team-labels-wnba"),
+    boundedRead((supabase as any).rpc("get_teams_for_league", { p_league: "NBA" }), "team-labels-NBA"),
+    boundedRead((supabase as any).rpc("get_teams_for_league", { p_league: "WNBA" }), "team-labels-WNBA"),
+  ]);
+  const failed = [slugs, ...names].find((r) => r.error);
+  if (failed) return { labels: [team], error: failed.error };
+  const wanted = new Set<string>(Array.isArray(slugs.data) ? (slugs.data as string[]) : []);
+  const labels = new Set<string>([team]);
+  for (const { data } of names) {
+    for (const r of (data ?? []) as Array<{ team_name?: string | null }>) {
+      if (r.team_name && wanted.has(teamSlug(r.team_name))) labels.add(r.team_name);
+    }
+  }
+  return { labels: Array.from(labels), error: null };
+}
+
+async function readTeamPoolRows(
+  supabase: SupabaseClient,
+  labels: string[],
+): Promise<{ rows: any[]; teamByPair: Map<string, string>; error: ReadEnvelope["error"] }> {
+  const teamByPair = new Map<string, string>();
+  const eds = await readTopshotEditionTeams(supabase, { teams: labels }, "ts-team-editions");
+  if (eds.error) return { rows: [], teamByPair, error: eds.error };
   const plays = new Set<number>();
   for (const e of eds.rows) {
-    if (e.set_id_onchain == null || e.play_id_onchain == null) continue;
-    pairs.add(`${e.set_id_onchain}:${e.play_id_onchain}`);
+    if (e.set_id_onchain == null || e.play_id_onchain == null || !e.team_name) continue;
+    teamByPair.set(`${e.set_id_onchain}:${e.play_id_onchain}`, e.team_name);
     plays.add(e.play_id_onchain);
   }
   const playList = Array.from(plays);
@@ -500,15 +534,15 @@ async function readTeamPoolRows(
       .order("ingested_at", { ascending: false })
       .order("listing_id", { ascending: true })
       .limit(TS_POOL_LIMIT), "ts_listings-team");
-    if (error) return { rows: [], error };
+    if (error) return { rows: [], teamByPair, error };
     for (const r of data ?? []) {
-      if (pairs.has(`${r.set_id}:${r.play_id}`)) rows.push(r);
+      if (teamByPair.has(`${r.set_id}:${r.play_id}`)) rows.push(r);
     }
   }
   rows.sort((a, b) =>
     String(b.ingested_at ?? "").localeCompare(String(a.ingested_at ?? "")) ||
     String(a.listing_id).localeCompare(String(b.listing_id)));
-  return { rows: rows.slice(0, TS_POOL_LIMIT), error: null };
+  return { rows: rows.slice(0, TS_POOL_LIMIT), teamByPair, error: null };
 }
 
 // Every current NBA + WNBA team, so the Team dropdown can offer a team whose
@@ -537,11 +571,28 @@ async function fetchTopShotPool(
   supabase: SupabaseClient,
   sink: SourceFailureSink,
   team: string = "all",
-): Promise<{ listings: RawListing[]; tsCount: number }> {
+): Promise<{ listings: RawListing[]; tsCount: number; teamLabels: Set<string> | null }> {
   try {
     const teamPick = team !== "all" ? team : null;
+    // Team per (set, play). ts_listings carries no team, so every pool row had
+    // teamName "" and the Team dropdown only ever listed the RPC-augment rows'
+    // teams. On the default board this is enrichment, not deal-bearing: a failed
+    // read leaves the names blank.
+    let teamByPair = new Map<string, string>();
+    let teamLabels: Set<string> | null = null;
+    if (teamPick) {
+      const franchise = await resolveFranchiseLabels(supabase, teamPick);
+      if (franchise.error) {
+        console.error("[sniper-feed] franchise labels unavailable:", franchise.error.message);
+        sink.note("team-franchise");
+      }
+      teamLabels = new Set(franchise.labels);
+    }
     const { data, error } = teamPick
-      ? await readTeamPoolRows(supabase, teamPick).then((r) => ({ data: r.rows, error: r.error }))
+      ? await readTeamPoolRows(supabase, Array.from(teamLabels ?? [])).then((r) => {
+        teamByPair = r.teamByPair;
+        return { data: r.rows, error: r.error };
+      })
       : await boundedRead((supabase as any)
         .from("ts_listings")
         .select(TS_POOL_COLUMNS)
@@ -551,15 +602,11 @@ async function fetchTopShotPool(
     if (error) {
       console.error("[sniper-feed] ts_listings fetch error:", error.message);
       sink.note("ts_listings");
-      return { listings: [], tsCount: 0 };
+      return { listings: [], tsCount: 0, teamLabels };
     }
 
     const rows = data ?? [];
 
-    // Team per (set, play). ts_listings carries no team, so every pool row had
-    // teamName "" and the Team dropdown only ever listed the RPC-augment rows'
-    // teams. Enrichment, not deal-bearing: a failed read leaves the names blank.
-    const teamByPair = new Map<string, string>();
     if (!teamPick && rows.length) {
       const playIds = Array.from(new Set(rows.map((r: any) => r.play_id).filter((v: unknown) => v != null))) as number[];
       for (let i = 0; i < playIds.length; i += TS_PLAY_CHUNK) {
@@ -619,7 +666,7 @@ async function fetchTopShotPool(
         isLocked: r.is_locked ?? false,
         listingOrderID: r.listing_id,
         setPlay: { setID, playID, parallelID },
-        teamName: teamPick ?? teamByPair.get(`${r.set_id}:${r.play_id}`) ?? undefined,
+        teamName: teamByPair.get(`${r.set_id}:${r.play_id}`) ?? undefined,
         // Prefer the actual on-chain listing time; fall back to when our
         // ingest job first saw the row. Either is dramatically better than
         // "now", which would make every TS deal show as "Just now".
@@ -628,11 +675,11 @@ async function fetchTopShotPool(
     });
 
     console.log(`[sniper-feed] ts_listings: ${listings.length} rows, ${editionKeyMap.size} edition keys resolved`);
-    return { listings, tsCount: listings.length };
+    return { listings, tsCount: listings.length, teamLabels };
   } catch (err) {
     console.error("[sniper-feed] ts_listings exception:", err instanceof Error ? err.message : String(err));
     sink.note("ts_listings");
-    return { listings: [], tsCount: 0 };
+    return { listings: [], tsCount: 0, teamLabels: null };
   }
 }
 
@@ -1269,6 +1316,7 @@ export async function GET(req: Request) {
         // matched", which is the only case the UI may say so in.
         sourcesFailed,
         degraded: sniperFeedDegraded(sourcesFailed),
+        teamApplied: team !== "all" && (collection === "nba-top-shot" || collection === "nfl-all-day") ? team : null,
       },
       {
         headers: { "Cache-Control": "public, max-age=0, s-maxage=90, stale-while-revalidate=60" },
@@ -1776,7 +1824,7 @@ async function computeSniperFeed(opts: {
   //    firehose (open Dapper-marketplace listings verified in the last 24 h;
   //    migration 20260907020428). Before 2026-09-07 this table held one row
   //    from May and the feed was edition-level only.
-  const { listings: tsListings, tsCount } = await fetchTopShotPool(supabase as any, sink, team);
+  const { listings: tsListings, tsCount, teamLabels } = await fetchTopShotPool(supabase as any, sink, team);
 
   console.log(`[sniper-feed] fetched ts=${tsListings.length}`);
 
@@ -1998,7 +2046,8 @@ async function computeSniperFeed(opts: {
     const isJersey = jerseyNumber !== null && serial === jerseyNumber;
 
     const teamName = l.teamName ?? NBA_TEAMS[l.play?.stats?.teamAtMoment ?? l.teamAtMomentNbaId ?? ""] ?? l.play?.stats?.teamAtMoment ?? "";
-    if (team !== "all" && teamName !== team) continue;
+    // A pick matches every label of its franchise (teamLabels), else its own.
+    if (team !== "all" && !(teamLabels ? teamLabels.has(teamName) : teamName === team)) continue;
 
     // Badges come from badge_editions keyed by edition key. `l.tags` is a
     // declared-but-never-assigned RawListing field, so the old

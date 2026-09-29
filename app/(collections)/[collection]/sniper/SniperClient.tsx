@@ -44,6 +44,7 @@ import {
 } from "@/lib/sniper/listing-suggestions";
 import {
   filterSniperDeals,
+  sniperClientTeamFilter,
   sniperTeamOptions,
   sniperStudioOptions,
   sniperHasChasers,
@@ -173,7 +174,18 @@ function SniperMomentsBody() {
   const chaserOnly = board.chaserOnly;
   const setBoardFilter = (patch: Partial<Omit<BoardFilters, "slug">>) =>
     setBoardSel({ ...board, ...patch, slug: collectionSlug });
-  const setTeamFilter = (value: string) => setBoardFilter({ team: value });
+  const setTeamFilter = (value: string) => {
+    setBoardFilter({ team: value });
+    // Keep the pick in the address bar so the board is shareable/bookmarkable.
+    try {
+      const url = new URL(window.location.href);
+      if (value === "all") url.searchParams.delete("team");
+      else url.searchParams.set("team", value);
+      window.history.replaceState(window.history.state, "", url);
+    } catch {
+      /* the filter still applies; only the URL is not updated */
+    }
+  };
   // P2.5 — default ON: the credible verified-FMV view leads. Users can toggle
   // it off to also see thin-data deals (demoted + flagged, never headlined).
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(true);
@@ -738,7 +750,7 @@ function SniperMomentsBody() {
   const teamOptions = sniperTeamOptions(data?.deals ?? [], teamFilter, data?.teamOptions);
   const studioOptions = sniperStudioOptions(data?.deals ?? [], studioFilter);
   const hasChasers = sniperHasChasers(data?.deals ?? []) || chaserOnly;
-  const boardFilterOpts = { team: teamFilter, studio: studioFilter, chaserOnly };
+  const boardFilterOpts = { team: sniperClientTeamFilter(teamFilter, data?.teamApplied), studio: studioFilter, chaserOnly };
   const visibleDeals = sortByVerifiedFirst(
     filterSniperDeals(data?.deals ?? [], { search, showVerifiedOnly, ownedFilter, ownedIds, ...boardFilterOpts }),
   );

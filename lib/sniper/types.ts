@@ -102,6 +102,11 @@ export interface FeedResult {
    * current board (Top Shot: NBA + WNBA). Absent when not known.
    */
   teamOptions?: string[];
+  /**
+   * The team the route filtered by, server-side, over its whole pool (every
+   * label of the franchise). Null/absent when no team filter was applied.
+   */
+  teamApplied?: string | null;
 }
 
 export type SortOption =

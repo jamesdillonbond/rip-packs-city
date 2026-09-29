@@ -82,6 +82,17 @@ export function sniperTeamOptions(
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * The team the CLIENT should still filter the board by. When the feed already
+ * applied this pick server-side (`FeedResult.teamApplied`, franchise-wide — "LA
+ * Clippers" includes "Los Angeles Clippers" rows), re-filtering on the exact
+ * label would drop those rows, so the answer is "all". While a new pick is
+ * still loading, the previous board is filtered here so it never shows other teams.
+ */
+export function sniperClientTeamFilter(teamFilter: string, teamApplied?: string | null): string {
+  return teamApplied && teamApplied === teamFilter ? "all" : teamFilter;
+}
+
 // The Studio dropdown's options (Disney Pinnacle deals carry `studio`; other
 // collections carry none, so the control hides itself). Same shape as
 // sniperTeamOptions: board-derived, sorted, a stale selection kept selectable.
