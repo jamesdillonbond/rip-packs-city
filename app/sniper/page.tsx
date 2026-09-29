@@ -95,6 +95,7 @@ export default async function SniperHubPage() {
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
+                  minWidth: 0,
                   minHeight: 56,
                   padding: "10px 14px",
                   borderRadius: 8,
@@ -110,7 +111,7 @@ export default async function SniperHubPage() {
                 }}
               >
                 <span aria-hidden="true" style={{ fontSize: 20 }}>{c.icon}</span>
-                <span style={{ flex: 1 }}>{c.shortLabel}</span>
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.shortLabel}</span>
                 <span aria-hidden="true" style={{ color: "var(--rpc-text-muted)" }}>→</span>
               </Link>
             ))}
@@ -188,7 +189,13 @@ export default async function SniperHubPage() {
       <SiteFooter />
       <style>{`
         .rpc-sniper-hub-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
-        @media (max-width: 480px) { .rpc-sniper-hub-tiles { grid-template-columns: 1fr 1fr; } }
+        /* minmax(0, …) — a bare 1fr track cannot shrink below its content's
+           min width, and at 320 px the two tiles forced the layout viewport to
+           374 px (measured 2026-09-28, the 320 px mobile sweep). */
+        @media (max-width: 480px) { .rpc-sniper-hub-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        /* Below 360 px two columns only fit by truncating names to "TO…" —
+           stack them instead. */
+        @media (max-width: 360px) { .rpc-sniper-hub-tiles { grid-template-columns: minmax(0, 1fr); } }
       `}</style>
     </div>
   )

@@ -89,6 +89,17 @@ describe("sniper hub — tiles and chrome", () => {
     expect(hrefs).not.toContain("/candy-mlb/sniper")
   })
 
+  // ⚠ MEASURED 2026-09-28 in Chromium at 320 px: a bare `1fr 1fr` tile grid
+  // cannot shrink below its labels' min width and forced the layout viewport to
+  // 374 px. jsdom has no layout, so the rules that fix it are pinned as CSS.
+  it("keeps the tile grid shrinkable on phones — no bare 1fr track", async () => {
+    const { container } = await renderHub()
+    const css = Array.from(container.querySelectorAll("style")).map((s) => s.textContent ?? "").join("\n")
+    expect(css).toContain("repeat(2, minmax(0, 1fr))")
+    expect(css).toMatch(/max-width: 360px\) \{ \.rpc-sniper-hub-tiles \{ grid-template-columns: minmax\(0, 1fr\)/)
+    expect(css).not.toMatch(/grid-template-columns:\s*1fr 1fr/)
+  })
+
   it("mounts the site header", async () => {
     const { queryByTestId } = await renderHub()
     expect(queryByTestId("site-header")).not.toBeNull()
