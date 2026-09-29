@@ -169,6 +169,14 @@ Top Shot `pack_distributions.metadata->>'retail_price_usd'` holds 109 drops in U
 
 ⛔ **Custodial Top Shot rips cannot be named or priced from drop pools** (measured 2026-09-28, don't retry without a new source). Matching a reconstructed burst's editions to `pack_drop_pool` subsets, tested on packs whose drop Dapper's index knows: a unique pool match was the RIGHT drop 323 of 585 times (55 %). The retail price it implies was right 522 of 1,225 times. Pools overlap across drops and are incomplete for the true one. 2,732 of 0xbd94…'s 2,851 Top Shot rips stay unnamed and uncosted. Dapper's `searchDistributions` has no type for the untyped All Day rewards either (`distributionType` NULL, price 0 on "Playbook … Free/Classic/Pro"), so "All Day price 0 = unknown" stands.
 
+⛔ **The biggest opener's Top Shot pull gap has no reachable source** (measured 2026-09-28 on Rigged, `0xf77bf547fccf6656`: 14,058 rips, 10,953 Top Shot). Both index walks are complete (15 pages each). All Day pulls are 3,081 of 3,085 valued. Top Shot: 5,731 of 10,934 opened packs are unvalued, all from **12,898 pulls with no edition**, 12,749 of them from 2024–25 opens. Those ids appear nowhere: 19 in any wallet's `moment_acquisitions`, 3 in the Atlas feed, none in sales or ownership. They were most likely burned in challenges. Sources re-probed that night:
+- `searchTopShotNft` returns 0 **even for the 38k moments Rigged holds** (positive control), so the Top Shot NFT index is empty, not filtered.
+- `searchTopShotMarketplaceHistory` holds 41 rows in total.
+- `nbatopshot.com/marketplace/graphql` returns a Cloudflare challenge (403); `public-api.nbatopshot.com` returns 530 (1033).
+- Flow mint events are pre-spork-floor.
+
+The only candidate left is a real browser session on nbatopshot.com (`getMintedMoment`), which is unbuilt. His custodial (non-NFT) rips before 2026-04 are also invisible: 0 reconstructed, because deliveries are seeded only from `flowty_ingest` (2026-04 on). 0xbd94…'s deep history came from its OWNER's Dapper account CSV (`bulk_seed`) + LiveToken activity CSV, so another wallet needs its owner's exports.
+
 ### Which pack a wallet opened
 `get_pack_lifecycle` prefers `pack_purchases.pack_dist_id`, then `pack_rips.dist_id`, then the drop-pool guess (`20260926015925`; 0 disagreements vs `pack_nft_identity`). The drop-pool vote alone named the WRONG pack.
 
