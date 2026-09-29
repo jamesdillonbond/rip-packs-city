@@ -185,7 +185,57 @@ Pinnacle's sub-communities are franchises (the `characters`/franchise traits), n
 
 ### 6.4 Pilot
 
-The first RPC-run free drop from §3.1, themed to **one Top Shot team with 25+ loyal fans** (Lakers or Spurs), about 25 packs, pool value published in advance, one claim per account. Measure claims, new sign-ups, and 30-day return. That result decides whether team drops scale out, and whether the §5 launchpad is worth the escrow contract.
+The first RPC-run free drop from §3.1, themed to **one Top Shot team with 25+ loyal fans** (Lakers or Spurs), about 25 packs, pool value published in advance, one claim per account. Measure claims, new sign-ups, and 30-day return. That result decides whether team drops scale out, and whether the §5 launchpad is worth the escrow contract. (Superseded by §7: the pilot is an admin-run giveaway, not an RPC-run drop.)
+
+---
+
+## 7. The concept, clarified: community admins build packs on RPC and give them to their own members (added 2026-09-29)
+
+Trevor: *"we would get the admins from behind these communities to create packs on RPC, that they could then give away to their communities."*
+
+This is the §5 free launchpad, with **community admins** as the creators and **their own members** as the recipients. It changes three things for the better.
+
+### 7.1 What it removes
+
+- **RPC's inventory budget.** The moments are the admin's.
+- **Most of RPC's legal exposure.** The admin is the giveaway's sponsor. RPC is a tool, the way Gleam or SweepWidget are for ordinary giveaways. RPC should still require a rules template and forbid paid entry (§7.4).
+- **The need for RPC to hold or send anything**, if delivery is signed by the admin (§7.2).
+
+### 7.2 Delivery without custody: this code already exists
+
+`lib/chains/flow/cadence/gift-moment.ts` is a **parent-signed gift out of a Dapper-custodial account**. An admin whose Dapper account is linked to a self-custody wallet (Hybrid Custody) signs one transaction, and the moment moves straight from their Dapper account to the recipient. RPC never holds it, pays for it, or signs for it.
+
+- Dapper's link filter **allows Top Shot, All Day, Golazos and UFC**, and **not Pinnacle** (`docs/research/hybrid-custody-filter-withdraw-probe-2026-07-13.md`, read-only probes).
+- ⚠ **It has never run on mainnet.** The probe executed no withdraw, and `moment_gifts` has 0 rows. The first real transfer is still the gating test.
+- The transaction moves one moment. A pack needs a batch version (several moments, several recipients, one signature), which is a small change to verified code.
+- **Requirement for admins:** a linked self-custody wallet. There are 164 linked Dapper children on chain today, a small group, but community admins are exactly the power users most likely to have one.
+- ⛔ The CLAUDE.md HybridCustody ban is about RPC's **hot wallet** only. It says nothing against a user signing through their own linked wallet, which is what this does.
+
+### 7.3 The flow
+
+1. **Build:** the admin connects their wallet on RPC, picks moments from their holdings, and sets the number of packs and moments per pack. RPC shows the pool's FMV and a typical-pack value ("Verified by RPC").
+2. **Seal:** RPC shuffles the pool into packs and publishes a hash of the assignment before claims open, so the admin can't steer the good pack to a friend after seeing who claimed.
+3. **Share:** the admin gets claim links or codes and hands them out their way: a Discord giveaway, a quiz, first-come, whatever their community does.
+4. **Claim:** the member enters a Top Shot address (the receiver check runs first) and sees their pack reveal.
+5. **Deliver:** the admin signs one batch transaction delivering every claimed pack, or one per claim. RPC shows each pack's status honestly: *claimed, awaiting the admin's signature* → *delivered* (with tx link). It never shows delivered before the transfer lands.
+
+**The trust gap in this version:** between sealing and delivery the admin still owns the moments and could sell one. RPC re-checks ownership at delivery and shows the result; it can't prevent it. If that matters in practice, the §5 escrow contract closes it: the admin deposits once at sealing and members open their own packs. That's ~3–4 weeks plus an audit, so only build it if the gap is actually a problem.
+
+### 7.4 Rules for admins (creator terms)
+
+- **Free entry only.** No paid Discord roles, Patreon tiers, or "buy my listing" as a way in. Any of those is payment, and a free giveaway becomes a lottery.
+- **No reselling unclaimed codes or unopened packs.**
+- Keep each giveaway's total prize value under **$5,000**, or exclude NY/FL (§2.2). RPC can enforce this at sealing, because it prices the pool.
+- Use team names only, with no logos and nothing implying the team or league endorses it (§6.3).
+- RPC provides a one-page official-rules template the admin fills in.
+
+### 7.5 What's left for Trevor
+
+1. **The read-only rule, narrowed:** RPC no longer holds or sends anything. It *prepares* a transfer the owner signs. That's the removed gifting surface in a new form, so it still needs your explicit OK, but the exception is much narrower than §4.
+2. **The first test transfer:** send one common moment through the gift transaction from a linked wallet to a Dapper-custodial account. That proves delivery end to end.
+3. **A pilot admin:** one Top Shot community (§6: Lakers, Spurs, Knicks and Fever have the largest loyal-fan groups) willing to run a ~25-pack giveaway.
+
+**Effort without the escrow contract:** about 1–2 weeks. The builder UI, sealing and claim links, the batch gift transaction, and delivery status.
 
 ## Sources
 
