@@ -11,6 +11,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-09-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-29 · ⚙️ SHIPPED (config) — Panini collector walk: `PDX_Blazer` dropped from `PANINI_COLLECTOR_TARGETS` (`scripts/panini-collector-walk.bat`, Trevor's request); the collector is walked under the Panini spelling `PDXBLAZER`. Flow tracking unchanged (`seeded_wallets` id 482 stays). Revert: `git revert` the commit titled "panini: drop PDX_Blazer (walked as PDXBLAZER)" · Claude Code (web)
+
 ### 2026-09-29 · ⚙️ SHIPPED (config) — Panini collector walk: `Rigged` dropped from `PANINI_COLLECTOR_TARGETS` (`scripts/panini-collector-walk.bat`). The 09-29 walk read it as not_found; the same collector is walked as `TimDunkin`. Revert: `git revert` the commit titled "panini: drop Rigged (not on Panini; walked as TimDunkin)" · Claude Code (web)
 
 ### 2026-09-29 · ⚙️ SHIPPED (config) — Panini collector walk: `spinotronpc` → `spinotron` in `PANINI_COLLECTOR_TARGETS` (`scripts/panini-collector-walk.bat`). Trevor's guess: the 09-29 walk read `spinotronpc` as not_found, and `spinotron` owns 239 cards in `panini_card_serials`. Revert: `git revert` the commit titled "panini: walk spinotron, not spinotronpc" · Claude Code (web)
