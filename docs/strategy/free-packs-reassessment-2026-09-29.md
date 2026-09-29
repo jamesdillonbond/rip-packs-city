@@ -237,6 +237,63 @@ This is the §5 free launchpad, with **community admins** as the creators and **
 
 **Effort without the escrow contract:** about 1–2 weeks. The builder UI, sealing and claim links, the batch gift transaction, and delivery status.
 
+---
+
+## 8. Further digging (2026-09-29, 12:40 PM PT): three findings change the plan
+
+### 8.1 Top Shot already has gifting, so RPC can stay read-only
+
+Top Shot has had native gifting since at least 2022. An owner gifts a Moment **by the recipient's username**, or makes a **"GET MY GIFT LINK"** link sent by email, text or chat. Someone without an account creates one to redeem it (Top Shot blog, "Holiday of Hoops: The Gift That Keeps On Giving", 2022-12-24, fetched today). This works from an ordinary **Dapper account**, with **no linked wallet** needed.
+
+That gives a delivery path where **RPC signs nothing, prepares nothing and holds nothing**:
+
+1. The admin builds and seals the packs on RPC (§7.3 steps 1–2). RPC reads their holdings, which it already does for any wallet.
+2. Members claim with their Top Shot **username**. RPC resolves it to a wallet with the existing `lib/chains/flow/topshot-username-resolve` (used by allow-list prewarm) and checks the account can receive.
+3. RPC gives the admin a **delivery checklist**: "Moment #… → @member". The admin gifts each one **in the Top Shot app**.
+4. RPC marks each item delivered **only when the chain shows it arrived**: the recipient holds the moment, sent from the admin's address. The chain-arrival lane (`chain_arrival_probes`: arrival tx, block, sender) already records exactly this for tracked wallets, so the check reuses a working instrument.
+
+**What this does to the open decisions:** the read-only rule **doesn't need an exception**. RPC builds, randomizes, reveals and *verifies*. Moving the NFTs is the owner's own action in Top Shot's own product. That was the biggest blocker in §4 and §7.5.
+
+**The cost:** gifting is manual, one moment at a time. A 25-pack giveaway of 3 moments each is 75 gifts. That's tedious but doable for a monthly event, and the checklist order makes it quick. The linked-wallet batch transaction (§7.2) stays as a later option for admins who want one signature.
+
+**Gift links, a variant to avoid for now:** the admin could make one link per moment and give them to RPC to hand out, which would onboard new collectors with no account. But a gift link is a **bearer claim on the moment**: whoever holds it can redeem it. Storing them makes RPC hold claimable value, which is custody in practice, and a database leak would hand them out. Use usernames. If links are ever used, the admin should send them to winners directly, never through RPC.
+
+**Top Shot terms constraint:** *"if you choose to lock one or more of your Moments, you cannot sell, gift, burn, withdraw, or trade in any Moments that you have locked"*. The pack builder must exclude locked moments.
+
+### 8.2 The admins already exist, and Top Shot already pays them to do giveaways
+
+Top Shot runs an official **Fan Communities / Team Captains** program. There are communities for all 30 NBA teams plus 2 WNBA Captains, each led by community-elected Captains who get a **monthly budget from Top Shot** for events, watch parties, and giveaways. Members get in by completing a **Team Series Checklist** (any Moment of each active player from one season) and connecting their Top Shot account in Discord (Top Shot blog 2022-11-18 and 2023-01-30; `about.nbatopshot.com/community-team-captains`, last published 2026-02-03).
+
+- **The target user is concrete:** ~32 Captains who already run giveaways monthly, often with Top Shot's money. RPC would give them a better giveaway tool: fair and verifiable, with a pack reveal and priced pools.
+- ⚠ **Eligibility wrinkle:** those communities are gated by owning a team set, which has to be bought. A giveaway limited to that channel means entrants had to buy moments to enter. Dapper's own program already works this way and it's their exposure, but it's exactly the "must hold X" question from §5 and §6.3. For RPC-run tooling, **offer an open-entry option and default to it**, and have counsel look at gated giveaways before RPC markets them.
+- **Go through Dapper, not around them.** Captains are Dapper's program with Dapper's budget. Top Shot's terms bar using a Moment's Art *"to advertise, market, or sell any third party product or service"* without Dapper's written consent. An RPC giveaway page showing admins' moments could be read that way. **A Dapper-sanctioned pilot removes that ambiguity** and brings distribution. ⛔ Per CLAUDE.md, outreach must not lead with Trevor's own captain designation.
+
+### 8.3 What a giveaway costs an admin (Top Shot sales, last 90 days)
+
+| Tier | Sales | p25 | Median | p90 |
+|---|---|---|---|---|
+| Common | 224,931 | $0.25 | $0.33 | $2 |
+| Fandom | 6,605 | $0.40 | $1 | $9 |
+| Rare | 35,946 | $5 | $8.54 | $32 |
+| Legendary | 3,386 | $65 | $99 | $299 |
+| Ultimate | 170 | $325 | $500 | $2,531 |
+
+At median prices, 25 packs of 3 commons cost about **$25**. Add 5 rare "hits" for about **$65**, and one legendary chase for about **$165**. That's **roughly 30× under the $5,000 NY/FL line**, and plausibly inside a Captain's monthly budget. The chase card (one legendary among ordinary packs) is what makes a reveal fun, and RPC's mean-vs-typical pack value (§1.2 of the July addendum) is exactly what an honest giveaway page should show.
+
+### 8.4 Demand evidence: thin, and unmeasured market-wide
+
+- Of the moments tracked into 2 saved wallets by the chain-arrival lane, **78 arrived as non-purchase transfers from 38 distinct senders**, i.e. gifts, trades or giveaway wins. One other saved wallet has **337** gifts recorded via LiveToken activity. **Both samples are tiny** (n = 2 and n = 1 wallets). They show gifting happens; they don't size it.
+- **Nothing here measures giveaway demand across the market.** That needs a chain scan of Top Shot transfers that aren't sales, pack deliveries or Dapper internal moves. The chain-arrival lane can't do it: it works backward from what a tracked wallet holds.
+- The direct evidence is the Captains program itself: Top Shot funds monthly giveaways across 32 communities.
+
+### 8.5 The plan, revised
+
+1. **Sound out Dapper's community team.** "A free, fair, verifiable pack-giveaway tool for Captains; RPC never touches the moments." Get their OK on the Art/terms question and, ideally, a pilot Captain.
+2. **Build the read-only version:** builder (excluding locked moments), seal with a published hash, claim by username, reveal, delivery checklist, and delivery verified on chain. No Cadence, no signing, no custody, no read-only exception. **About a week.**
+3. **Pilot with one Captain** (a large community: Lakers, Spurs, Knicks, Fever). Measure claims, new RPC sign-ups, 30-day return, and how long the admin takes to deliver 75 gifts.
+4. **Only if manual gifting is the bottleneck:** the linked-wallet batch transaction (§7.2). That needs the first real mainnet test and the narrow read-only exception.
+5. **Only if admins not delivering becomes a real problem:** the escrow contract (§5).
+
 ## Sources
 
 - Vaultopolis drops API (live, 2026-09-29, via `pg_net`); CoinGecko FLOW/USD 90-day chart.
@@ -249,4 +306,8 @@ This is the §5 free launchpad, with **community admins** as the creators and **
 - [Florida Game Promotions/Sweepstakes (FDACS)](https://www.fdacs.gov/Business-Services/Game-Promotions-Sweepstakes)
 - [Be Careful with NFT Giveaways (Robert Freund Law)](https://robertfreundlaw.com/los-angeles-false-avertising-litigation-attorney/be-careful-with-nft-giveaways/)
 - [NFT / Puzzle Giveaway official rules (Obey Giant)](https://obeygiant.com/nft/sweepstakes-official-rules/) · [NFT Giveaway Terms (100 Thieves)](https://100thieves.com/pages/nftrules)
-- [NBA Top Shot Terms](https://nbatopshot.com/terms)
+- [NBA Top Shot Terms](https://nbatopshot.com/terms) — Art license §(v)–(vi) and locking clause read 2026-09-29
+- [Holiday of Hoops: The Gift That Keeps On Giving (Top Shot blog, 2022-12-24)](https://blog.nbatopshot.com/posts/holiday-of-hoops-gift-giving) — fetched via `pg_net` 2026-09-29
+- [Fan Communities, Team Captains and the NBA Top Shot Experience (Top Shot blog, 2022-11-18)](https://blog.nbatopshot.com/posts/fan-communities-team-captains-nba-top-shot-experience)
+- [Join Your NBA Top Shot Fan Community (Top Shot blog, 2023-01-30)](https://blog.nbatopshot.com/posts/join-your-nba-top-shot-fan-community)
+- [NBA Team Captains (about.nbatopshot.com)](https://about.nbatopshot.com/community-team-captains)
