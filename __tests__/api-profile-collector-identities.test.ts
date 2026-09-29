@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // /api/profile/collector-identities — linking a Panini USERNAME to a profile
-// (2026-09-25). Pins the three states (read failed ≠ username not seen ≠ seen),
+// (2026-09-25). Pins the three states (read failed ≠ not read yet ≠ read),
 // the 5-per-user cap shared with saved wallets, and the lowercased stored form.
 
 const PANINI_UUID = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
@@ -88,10 +88,48 @@ describe("POST /api/profile/collector-identities", () => {
     ])
   })
 
-  it("refuses a username RPC has never seen (404) and stores nothing", async () => {
+  // ⚠ INVERTED 2026-09-28. This pinned a REFUSAL of any username with 0 cards
+  // in the serial index. Linking is what schedules the profile walk, so the gate
+  // blocked the one read that would find the cards (it refused the founder's own
+  // username, whose walked profile holds 146 cards). A well-formed username with
+  // nothing seen yet is LINKED, and says "not read yet".
+  it("links a username with 0 cards seen yet — linking is what schedules the profile read", async () => {
     state.rpc = seen(0)
-    const res = await POST(req({ username: "ghost_user" }))
-    expect(res.status).toBe(404)
+    const res = await POST(req({ username: "JamesDillonBond" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.error).toBeUndefined()
+    expect(body.identity.summary.profile).toEqual({ walked: false, profile_state: null, last_complete_at: null, cards_held: null })
+    expect(state.inserts).toEqual([
+      {
+        table: "saved_collector_identities",
+        row: { user_id: "u1", collection_id: PANINI_UUID, identity_kind: "username", identity_value: "jamesdillonbond" },
+      },
+    ])
+  })
+
+  it("a walked username reports what the profile read found", async () => {
+    state.rpc = seen(0)
+    state.tables["panini_collector_walks:single"] = { data: { profile_state: "public", last_complete_at: "2026-09-28T12:00:53Z" }, error: null }
+    state.tables.panini_user_holdings = { data: null, error: null, count: 146 }
+    const body = await (await POST(req({ username: "jamesdillonbond" }))).json()
+    expect(body.identity.summary.profile).toEqual({
+      walked: true, profile_state: "public", last_complete_at: "2026-09-28T12:00:53Z", cards_held: 146,
+    })
+  })
+
+  it("a FAILED profile read is an error, never '0 cards' and never a silent link", async () => {
+    state.tables["panini_collector_walks:single"] = { data: null, error: { message: "canceling statement due to statement timeout" } }
+    const res = await POST(req({ username: "jamesdillonbond" }))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(state.inserts).toHaveLength(0)
+  })
+
+  it("a walked username whose card count did not come back is a failed read, not 0", async () => {
+    state.tables["panini_collector_walks:single"] = { data: { profile_state: "public", last_complete_at: null }, error: null }
+    state.tables.panini_user_holdings = { data: null, error: null, count: null }
+    const res = await POST(req({ username: "jamesdillonbond" }))
+    expect(res.status).toBeGreaterThanOrEqual(500)
     expect(state.inserts).toHaveLength(0)
   })
 

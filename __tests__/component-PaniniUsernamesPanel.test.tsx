@@ -5,7 +5,8 @@ import PaniniUsernamesPanel from "@/components/profile/PaniniUsernamesPanel"
 
 // Linking a Panini username (2026-09-25). The properties: a failed list read
 // says so and never renders as "none linked"; a failed summary is not "0
-// cards"; the summary is labelled listing-based; the server's refusal message
+// cards"; a username the profile read has not reached says "not read yet"
+// (never "0 cards"), a private profile says so; the server's refusal message
 // reaches the user; unlink calls DELETE.
 
 afterEach(() => {
@@ -45,12 +46,37 @@ describe("PaniniUsernamesPanel", () => {
     expect(screen.queryByText(/cards seen/)).toBeNull()
   })
 
-  it("renders a linked username's listing-based summary", async () => {
+  // Re-pinned 2026-09-28: the serial-index line is labelled as the World Cup
+  // index (a subset), and the PROFILE READ is the headline.
+  it("renders a linked username's World Cup index line, labelled as that index", async () => {
     stubFetch(() => json({ identities: [identity()] }))
     render(<PaniniUsernamesPanel />)
     expect(await screen.findByText("moesidani")).toBeTruthy()
-    expect(screen.getByText(/7,731 cards seen/)).toBeTruthy()
-    expect(screen.getByText(/listing-based, not full holdings/)).toBeTruthy()
+    expect(screen.getByText(/World Cup index: 7,731 cards seen/)).toBeTruthy()
+  })
+
+  const withProfile = (profile: Record<string, unknown>) =>
+    identity({ summary: { ...identity().summary, cards_seen: 0, listed_now: 0, special_serials: 0, editions: 0, profile } })
+
+  it("a username the profile read has not reached says 'not read yet' — never 0 cards", async () => {
+    stubFetch(() => json({ identities: [withProfile({ walked: false, profile_state: null, last_complete_at: null, cards_held: null })] }))
+    render(<PaniniUsernamesPanel />)
+    expect(await screen.findByText(/hasn.t read this Panini profile yet/)).toBeTruthy()
+    expect(screen.queryByText(/\b0 cards/)).toBeNull()
+    expect(screen.queryByText(/World Cup index/)).toBeNull()
+  })
+
+  it("a walked profile shows its card count", async () => {
+    stubFetch(() => json({ identities: [withProfile({ walked: true, profile_state: "public", last_complete_at: "2026-09-28T12:00:53Z", cards_held: 146 })] }))
+    render(<PaniniUsernamesPanel />)
+    expect(await screen.findByText(/146 cards on your Panini profile/)).toBeTruthy()
+  })
+
+  it("a private profile says it cannot be read, not 0 cards", async () => {
+    stubFetch(() => json({ identities: [withProfile({ walked: true, profile_state: "private", last_complete_at: null, cards_held: 0 })] }))
+    render(<PaniniUsernamesPanel />)
+    expect(await screen.findByText(/profile is private/)).toBeTruthy()
+    expect(screen.queryByText(/0 cards on your Panini profile/)).toBeNull()
   })
 
   it("a failed summary is not rendered as 0 cards", async () => {
@@ -72,13 +98,13 @@ describe("PaniniUsernamesPanel", () => {
   it("posts the username and shows the server's refusal message", async () => {
     const calls = stubFetch((_url, init) =>
       init?.method === "POST"
-        ? json({ error: "username_not_seen", message: "RPC hasn't seen any Panini cards listed under that username." }, 404)
+        ? json({ error: "wallet_limit_reached", message: "You've reached the limit of 5 saved wallets." }, 409)
         : json({ identities: [] }),
     )
     render(<PaniniUsernamesPanel />)
     fireEvent.change(screen.getByLabelText("Panini username"), { target: { value: "Ghost" } })
     fireEvent.click(screen.getByText("Link username"))
-    expect(await screen.findByText(/hasn't seen any Panini cards/)).toBeTruthy()
+    expect(await screen.findByText(/reached the limit of 5 saved wallets/)).toBeTruthy()
     const post = calls.find((c) => c.init?.method === "POST")!
     expect(JSON.parse(String(post.init!.body))).toEqual({ username: "Ghost" })
   })

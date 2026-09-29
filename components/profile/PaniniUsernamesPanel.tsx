@@ -9,9 +9,13 @@
 // resolver, where a Panini handle matching a Top Shot handle would attach
 // someone else's Flow wallet.
 //
-// ⚠ What RPC can show is cards SEEN listed under the username on Panini's
-// marketplace — the Panini data is listing-fed, so this is NOT a holdings
-// count. The copy says so on every card.
+// Two things RPC can show per username (2026-09-28):
+//   · the PROFILE READ — the whole public Panini profile, read on a schedule for
+//     every linked username. Until it has run the card says "not read yet",
+//     never "0 cards"; a private profile says it cannot be read.
+//   · cards seen in RPC's World Cup serial index (a subset, not holdings).
+// Linking is never refused for having no cards seen: linking is what schedules
+// the profile read.
 //
 // Three states for the list: failed to load (says so), none linked, linked.
 
@@ -26,6 +30,12 @@ interface Summary {
   special_serials: number
   editions: number
   last_seen_at: string | null
+  profile?: {
+    walked: boolean
+    profile_state: string | null
+    last_complete_at: string | null
+    cards_held: number | null
+  }
 }
 
 interface Identity {
@@ -114,8 +124,8 @@ export default function PaniniUsernamesPanel() {
     <section className="rpc-section" aria-labelledby="panini-usernames-title">
       <div id="panini-usernames-title" className="rpc-section-title">Panini Username</div>
       <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10, lineHeight: 1.5 }}>
-        Panini collectors are identified by username, not a wallet address. Link yours to track the cards RPC has
-        seen listed under it on Panini&rsquo;s marketplace. Counts toward your 5 saved wallets.
+        Panini collectors are identified by username, not a wallet address. Link yours and RPC reads your public
+        Panini profile on a schedule, so your cards can be pinned as trophies. Counts toward your 5 saved wallets.
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
@@ -179,9 +189,13 @@ export default function PaniniUsernamesPanel() {
               <div style={{ flex: 1, minWidth: 200, fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-secondary)" }}>
                 {i.summary ? (
                   <>
-                    {formatCount(i.summary.cards_seen)} cards seen · {formatCount(i.summary.listed_now)} listed now ·{" "}
-                    {formatCount(i.summary.special_serials)} special serials · {formatCount(i.summary.editions)} editions
-                    <span style={{ color: "var(--rpc-text-muted)" }}> — listing-based, not full holdings</span>
+                    <ProfileLine profile={i.summary.profile} />
+                    {i.summary.cards_seen > 0 && (
+                      <div style={{ color: "var(--rpc-text-muted)", marginTop: 2 }}>
+                        World Cup index: {formatCount(i.summary.cards_seen)} cards seen ·{" "}
+                        {formatCount(i.summary.listed_now)} listed now · {formatCount(i.summary.special_serials)} special serials
+                      </div>
+                    )}
                   </>
                 ) : i.summary_failed ? (
                   <>Couldn&rsquo;t load this username&rsquo;s cards right now.</>
@@ -206,5 +220,29 @@ export default function PaniniUsernamesPanel() {
         </div>
       ) : null}
     </section>
+  )
+}
+
+/**
+ * What the scheduled profile read has found. "Not read yet" and "private" are
+ * said as such — never rendered as "0 cards".
+ */
+function ProfileLine({ profile }: { profile?: Summary["profile"] }) {
+  if (!profile) return null
+  if (!profile.walked) {
+    return <>Linked. RPC hasn&rsquo;t read this Panini profile yet — it&rsquo;s read on a schedule, and your cards show up after the next read.</>
+  }
+  if (profile.profile_state === "private") {
+    return <>This Panini profile is private, so RPC can&rsquo;t read its cards. Make it public on Panini to include them.</>
+  }
+  if (profile.profile_state === "not_found") {
+    return <>Panini has no public profile under this username — check the spelling.</>
+  }
+  if (profile.cards_held == null) return null
+  return (
+    <>
+      {formatCount(profile.cards_held)} cards on your Panini profile
+      {profile.last_complete_at ? <> · read {new Date(profile.last_complete_at).toLocaleDateString()}</> : null}
+    </>
   )
 }

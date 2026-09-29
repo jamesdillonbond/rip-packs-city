@@ -8,15 +8,25 @@
 // sends non-address input to the Top Shot resolver, and a Panini handle that
 // matched a Top Shot handle there would attach someone else's Flow wallet.
 //
-// What RPC can say about a username is what `panini_owner_summary` returns:
-// cards SEEN under it in `panini_card_serials`, which is LISTING-fed. So the
-// response and the UI say "cards seen on Panini's marketplace", never
-// "holdings" — a card that was never listed is invisible to RPC.
+// What RPC can say about a username comes from TWO sources:
+//   · `panini_owner_summary` — cards seen under it in `panini_card_serials`
+//     (the Prizm World Cup editions RPC indexes);
+//   · the COLLECTOR WALK — `panini_collector_walks` + `panini_user_holdings`,
+//     the whole public Panini profile, read on a schedule for every LINKED
+//     username (/api/cron/panini-collector-walk `plan`).
+//
+// ⚠ CHANGED 2026-09-28: a username with 0 cards in the serial index used to be
+// REFUSED ("RPC hasn't seen any Panini cards listed under that username"). That
+// gate was backwards: linking is what schedules the profile walk, so refusing it
+// blocked the one read that would find the cards. It refused the founder's own
+// username, whose walked profile holds 146 cards — none in the indexed editions.
+// A well-formed username is now always linked; the panel says "not read yet"
+// until the walk has run, never "0 cards".
 //
 // Three states, never two (honesty canon):
-//   read failed          → apiErrorResponse (5xx), never "0 cards"
-//   username not seen    → 404 on POST; the link is refused, not stored empty
-//   username seen        → stored + summary
+//   read failed          → apiErrorResponse (5xx) on POST; `summary_failed` on GET
+//   username not walked  → linked; `profile.walked = false` → "not read yet"
+//   username walked      → linked; `profile` carries what the walk read
 //
 //   GET    → { identities: [{ collection, username, created_at, summary|null, summary_failed }] }
 //   POST   { username } → links it (cap: 5 wallets + usernames per account)
@@ -42,7 +52,17 @@ function paniniCollectionId(): string | null {
   return getCollection(PANINI_SLUG)?.supabaseCollectionId ?? null;
 }
 
-type SummaryRead = { ok: true; summary: PaniniOwnerSummary } | { ok: false; error: unknown };
+/** What the collector walk has read off the username's public Panini profile. */
+interface PaniniProfileRead {
+  walked: boolean;
+  profile_state: string | null;
+  last_complete_at: string | null;
+  cards_held: number | null;
+}
+
+type SummaryRead =
+  | { ok: true; summary: PaniniOwnerSummary & { profile: PaniniProfileRead } }
+  | { ok: false; error: unknown };
 
 // Bounded: an unbounded read on a saturated DB lets the platform kill the
 // function before the honest error below can be sent (the caller gets a 504).
@@ -51,20 +71,62 @@ const SUMMARY_BUDGET_MS = 8_000;
 async function readPaniniSummary(username: string): Promise<SummaryRead> {
   let data: unknown;
   let error: unknown;
+  let walk: { data: any; error: unknown };
+  let held: { count: number | null; error: unknown };
   try {
-    ({ data, error } = await withBoardBudget(
-      (supabase as any).rpc("panini_owner_summary", { p_username: username }) as Promise<{ data: unknown; error: unknown }>,
-      "panini_owner_summary",
-      SUMMARY_BUDGET_MS,
-      "api/profile/collector-identities/",
-    ));
+    [{ data, error }, walk, held] = await Promise.all([
+      withBoardBudget(
+        (supabase as any).rpc("panini_owner_summary", { p_username: username }) as Promise<{ data: unknown; error: unknown }>,
+        "panini_owner_summary",
+        SUMMARY_BUDGET_MS,
+        "api/profile/collector-identities/",
+      ),
+      withBoardBudget(
+        (supabase as any)
+          .from("panini_collector_walks")
+          .select("profile_state, last_complete_at")
+          .eq("username", username)
+          .maybeSingle() as Promise<{ data: any; error: unknown }>,
+        "panini_collector_walks",
+        SUMMARY_BUDGET_MS,
+        "api/profile/collector-identities/",
+      ),
+      withBoardBudget(
+        (supabase as any)
+          .from("panini_user_holdings")
+          .select("url_key", { count: "exact", head: true })
+          .eq("username", username) as Promise<{ count: number | null; error: unknown }>,
+        "panini_user_holdings",
+        SUMMARY_BUDGET_MS,
+        "api/profile/collector-identities/",
+      ),
+    ]);
   } catch (err) {
     return { ok: false, error: err };
   }
   if (error) return { ok: false, error };
+  if (walk.error) return { ok: false, error: walk.error };
+  if (held.error) return { ok: false, error: held.error };
   const summary = parsePaniniOwnerSummary(data);
   if (!summary) return { ok: false, error: new Error("panini_owner_summary returned an unexpected shape") };
-  return { ok: true, summary };
+  const walked = walk.data != null;
+  if (walked && typeof held.count !== "number") {
+    // A walked username whose card count did not come back is a FAILED read —
+    // never "0 cards on your profile".
+    return { ok: false, error: new Error("panini_user_holdings count missing") };
+  }
+  return {
+    ok: true,
+    summary: {
+      ...summary,
+      profile: {
+        walked,
+        profile_state: walked ? (walk.data.profile_state ?? null) : null,
+        last_complete_at: walked ? (walk.data.last_complete_at ?? null) : null,
+        cards_held: walked ? held.count : null,
+      },
+    },
+  };
 }
 
 export async function GET() {
@@ -137,20 +199,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Panini is not configured" }, { status: 500 });
   }
 
-  // Existence check: a username RPC has never seen is refused, not stored as a
-  // row that would render "0 cards" forever.
+  // No existence gate (see the header): linking is what schedules the profile
+  // walk. The summary is read so the response can say what RPC has so far.
   const read = await readPaniniSummary(username);
   if (!read.ok) return apiErrorResponse(read.error, "api/profile/collector-identities");
-  if (read.summary.cards_seen === 0) {
-    return NextResponse.json(
-      {
-        error: "username_not_seen",
-        message:
-          "RPC hasn't seen any Panini cards listed under that username. Check the spelling — RPC only sees cards that have been listed on Panini's marketplace.",
-      },
-      { status: 404 }
-    );
-  }
 
   // Already linked? A re-link is idempotent and skips the cap.
   const { data: existing, error: existErr } = await (supabase as any)
