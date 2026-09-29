@@ -20,3 +20,16 @@ export function setLastCollection(id: string): void {
     localStorage.setItem(STORAGE_KEY, id);
   } catch {}
 }
+
+// The last-visited collection ONLY when one was actually recorded — null
+// otherwise. `getLastCollection` substitutes Top Shot, which is right for a
+// link that must go somewhere and wrong for copy that says "jump back to…":
+// a first-time visitor never visited Top Shot.
+export function readRecordedLastCollection(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(STORAGE_KEY) || null;
+  } catch {
+    return null;
+  }
+}

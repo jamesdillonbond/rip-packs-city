@@ -50,6 +50,7 @@ export type MobileTab = "home" | "binder" | "market" | "sniper";
 
 export function activeTabFor(pathname: string, pageSegment: string, isCollectionRoute: boolean): MobileTab | null {
   if (pathname === "/") return "home";
+  if (pathname === "/sniper") return "sniper";
   if (!isCollectionRoute) return null;
   if (BINDER_PAGES.has(pageSegment)) return "binder";
   if (SNIPER_PAGES.has(pageSegment)) return "sniper";
@@ -120,11 +121,13 @@ export default function MobileNav() {
   // wallet this device last looked up (rpc_last_wallet, chain-checked there),
   // and shows the lookup box to a first-time visitor. It is PUBLIC — never point
   // a tab at auth-gated /dashboard (a login wall from the first tap, R36).
-  const tabs: { key: MobileTab; label: string; href: string; page?: "collection" | "market" | "sniper" }[] = [
+  const tabs: { key: MobileTab; label: string; href: string; page?: "collection" | "market" }[] = [
     { key: "home", label: "HOME", href: "/" },
     { key: "binder", label: "MY BINDER", href: `/${collection}/collection`, page: "collection" },
     { key: "market", label: "MARKET", href: `/${collection}/market`, page: "market" },
-    { key: "sniper", label: "SNIPER", href: `/${collection}/sniper`, page: "sniper" },
+    // The cross-collection HUB (app/sniper/page.tsx), not a guessed collection's
+    // sniper: it exists for every visitor, so this tab is never inert.
+    { key: "sniper", label: "SNIPER", href: "/sniper" },
   ];
 
   return (

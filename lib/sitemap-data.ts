@@ -95,6 +95,8 @@ export const STATIC_SITEMAP_PAGES: ReadonlyArray<{
 }> = [
   { path: '/',                                 changeFrequency: 'daily',   priority: 1.0 },
   { path: '/about',                            changeFrequency: 'monthly', priority: 0.5 },
+  // 2026-09-28: the cross-collection Sniper hub (app/sniper/page.tsx).
+  { path: '/sniper',                           changeFrequency: 'daily',   priority: 0.7 },
   { path: '/privacy',                          changeFrequency: 'yearly',  priority: 0.3 },
   { path: '/terms',                            changeFrequency: 'yearly',  priority: 0.3 },
   { path: '/legal/fmv-methodology',            changeFrequency: 'monthly', priority: 0.4 },

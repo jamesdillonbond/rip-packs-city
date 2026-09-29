@@ -15,6 +15,7 @@ const read = (rel: string) => stripComments(readFileSync(join(process.cwd(), rel
 
 const STATIC: Array<[string, string]> = [
   ["app/about/page.tsx", "https://www.rippackscity.com/about"],
+  ["app/sniper/page.tsx", "https://www.rippackscity.com/sniper"],
   ["app/privacy/page.tsx", "https://www.rippackscity.com/privacy"],
   ["app/terms/page.tsx", "https://www.rippackscity.com/terms"],
   ["app/blog/page.tsx", "https://www.rippackscity.com/blog"],

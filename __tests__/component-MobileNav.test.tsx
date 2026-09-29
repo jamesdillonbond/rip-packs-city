@@ -58,19 +58,29 @@ describe("MobileNav", () => {
     expect(hrefs(container).some((h) => h?.includes("wallet="))).toBe(false)
   })
 
-  it("scopes Market and Sniper to the collection in the URL", () => {
+  it("scopes My Binder and Market to the collection in the URL", () => {
     nav.pathname = "/nfl-all-day/overview"
     const { container } = render(<MobileNav />)
     expect(tab(container, "MY BINDER").getAttribute("href")).toBe("/nfl-all-day/collection")
     expect(tab(container, "MARKET").getAttribute("href")).toBe("/nfl-all-day/market")
-    expect(tab(container, "SNIPER").getAttribute("href")).toBe("/nfl-all-day/sniper")
   })
 
-  it("on a Disney Pinnacle pin page (/pinnacle/moment/<id>) Sniper goes to Pinnacle's Sniper", () => {
+  // ⭐ 2026-09-28: SNIPER opens the cross-collection HUB, the same place from
+  // every page — not a collection the visitor never chose.
+  it("SNIPER opens the /sniper hub from every page", () => {
+    for (const p of ["/", "/nfl-all-day/overview", "/ufc/overview", "/insights/deals"]) {
+      nav.pathname = p
+      const { container } = render(<MobileNav />)
+      expect(tab(container, "SNIPER").getAttribute("href"), p).toBe("/sniper")
+      cleanup()
+    }
+  })
+
+  it("on a Disney Pinnacle pin page (/pinnacle/moment/<id>) Market goes to Pinnacle's market", () => {
     nav.pathname = "/pinnacle/moment/OEEV1-EXPD-MINN-E2"
     const { container } = render(<MobileNav />)
-    expect(hrefs(container)).toContain("/disney-pinnacle/sniper")
-    expect(hrefs(container)).not.toContain("/nba-top-shot/sniper")
+    expect(hrefs(container)).toContain("/disney-pinnacle/market")
+    expect(hrefs(container)).not.toContain("/nba-top-shot/market")
   })
 
   it("gives the bar a way home", () => {
@@ -111,24 +121,27 @@ describe("MobileNav", () => {
 
 describe("MobileNav — thin collections", () => {
   it("renders the tabs a collection lacks as INERT, never as links to a page that does not exist", () => {
-    // UFC has neither a market nor a sniper page.
+    // UFC has no market page. (Its missing sniper no longer matters: SNIPER is
+    // the cross-collection hub.)
     nav.pathname = "/ufc/overview"
     const { container } = render(<MobileNav />)
-    for (const dead of ["/ufc/market", "/ufc/sniper"]) expect(hrefs(container), dead).not.toContain(dead)
+    expect(hrefs(container)).not.toContain("/ufc/market")
     // ⛔ and never SUBSTITUTES another collection's page for the missing one.
-    expect(hrefs(container).filter((h) => h?.endsWith("/market") || h?.endsWith("/sniper"))).toEqual([])
+    expect(hrefs(container).filter((h) => h?.endsWith("/market"))).toEqual([])
     const inert = Array.from(bar(container).querySelectorAll("[aria-disabled='true']"))
-    expect(inert.map((e) => (e.textContent ?? "").trim())).toEqual(["MARKET", "SNIPER"])
+    expect(inert.map((e) => (e.textContent ?? "").trim())).toEqual(["MARKET"])
+    expect(hrefs(container)).toContain("/sniper")
     expect(hrefs(container)).toContain("/ufc/collection")
   })
 
-  it("inerts only the page a collection is missing", () => {
-    // Candy MLB has a market but no sniper.
+  it("a collection with a market but no sniper of its own has NO inert tab", () => {
+    // Candy MLB: before the hub, its SNIPER tab was inert.
     nav.pathname = "/candy-mlb/overview"
     const { container } = render(<MobileNav />)
     expect(hrefs(container)).toContain("/candy-mlb/market")
+    expect(hrefs(container)).toContain("/sniper")
     expect(hrefs(container)).not.toContain("/candy-mlb/sniper")
-    expect(bar(container).querySelectorAll("[aria-disabled='true']").length).toBe(1)
+    expect(bar(container).querySelectorAll("[aria-disabled='true']").length).toBe(0)
   })
 })
 
@@ -142,6 +155,10 @@ describe("MobileNav — thin collections", () => {
 describe("MobileNav — which tab owns the route", () => {
   it("lights Home on the homepage", () => {
     expect(activeTabFor("/", "", false)).toBe("home")
+  })
+
+  it("lights Sniper on the hub itself", () => {
+    expect(activeTabFor("/sniper", "", false)).toBe("sniper")
   })
 
   it("lights Sniper on the sniper pages, including Pack Sniper behind its sub-toggle", () => {
