@@ -8,6 +8,7 @@
 --   4. moments.nft_id        (bigint input)                  → kind 'moment'
 --   5. wallet_moments_cache  (bigint input, TS wins ties)    → kind 'moment'
 --   6. cached_listings_v2    (bigint input, active > done)   → kind 'edition'
+--   6b. sales                (bigint input, TS wins ties, newest) → kind 'moment'  (2026-09-29)
 --   7. wallet_moments_cache  (BASE58 input, Solana/Candy)     → kind 'moment'
 -- Three subtle invariants this pins: the wmc fallback PREFERS Top Shot on a
 -- cross-collection nft-id collision; the cached-listing fallback prefers an
@@ -25,7 +26,7 @@
 -- step-5 arms stay exactly as they were, as the no-change control.
 --
 -- DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260919174322_audit_20260919_resolve_moment_id_resolves_a_base58_mint.sql),
+-- (supabase/migrations/20260929260000_audit_20260929_resolve_moment_id_falls_back_to_sales.sql),
 -- which is byte-identical to live prod (verified via pg_get_functiondef).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
@@ -43,6 +44,8 @@ CREATE TABLE public.wallet_moments_cache (
   moment_id text, serial_number int, collection_id uuid, edition_key text);
 CREATE TABLE public.cached_listings_v2 (
   flow_id bigint, edition_id uuid, completed_at timestamptz, listed_at timestamptz);
+CREATE TABLE public.sales (
+  nft_id text, edition_id uuid, serial_number int, collection_id uuid, sold_at timestamptz);
 
 -- >>> BEGIN verbatim resolve_moment_id (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.resolve_moment_id(p_id text)
@@ -136,6 +139,23 @@ BEGIN
     ORDER BY (clv.completed_at IS NULL) DESC, clv.listed_at DESC NULLS LAST
     LIMIT 1;
     IF FOUND THEN RETURN; END IF;
+
+    -- sales fallback (2026-09-29): a SOLD moment now held by an untracked wallet is in none of
+    -- moments / wmc / live listings, so the /moment/<nft_id> links the insights boards publish
+    -- (top-sales, serial-premiums, underpriced-serials) 404'd: 24 of them on one crawl, every one
+    -- carrying a sale with its edition. The sale knows the edition and the serial. Top Shot wins a
+    -- cross-collection nft-id collision (the wmc step's rule), then the newest sale.
+    RETURN QUERY
+    SELECT 'moment'::TEXT, NULL::UUID, s.edition_id, s.serial_number,
+           s.collection_id, c.slug::TEXT, NULL::TEXT
+    FROM sales s
+    JOIN collections c ON c.id = s.collection_id
+    WHERE s.nft_id = p_id
+      AND s.edition_id IS NOT NULL
+    ORDER BY CASE WHEN s.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid THEN 0 ELSE 1 END,
+             s.sold_at DESC
+    LIMIT 1;
+    IF FOUND THEN RETURN; END IF;
   END IF;
 
   -- base58 fallback (2026-09-19): Candy MLB is on Solana, whose mint address is
@@ -215,6 +235,16 @@ BEGIN
   INSERT INTO public.cached_listings_v2 VALUES
     (900900, '44444444-4444-4444-4444-444444444444', now() - interval '1 day', now() - interval '2 day'),
     (900900, '33333333-3333-3333-3333-333333333333', NULL, now() - interval '3 day');
+  -- sales fallback (bigint 950950 absent from moments, wmc AND listings): an AllDay sale that is
+  -- NEWER and a Top Shot sale that is older, plus a TS sale with no edition. Top Shot must win,
+  -- with the newest TS sale's serial; the edition-less row must never be returned.
+  INSERT INTO public.sales VALUES
+    ('950950', '44444444-4444-4444-4444-444444444444', 3,  ad, now() - interval '1 day'),
+    ('950950', 'a0000000-0000-0000-0000-000000000001', 11, ts, now() - interval '10 day'),
+    ('950950', 'a0000000-0000-0000-0000-000000000001', 12, ts, now() - interval '5 day'),
+    ('950950', NULL,                                   99, ts, now());
+  -- an earlier step still wins: 800800 is in wmc AND has a sale; wmc's answer (serial 5) must hold.
+  INSERT INTO public.sales VALUES ('800800', '22222222-2222-2222-2222-222222222222', 77, ts, now());
 END $seed$;
 
 -- 1. pinnacle render id resolves as pinnacle_edition (branch 1, before uuid/bigint)
@@ -257,6 +287,11 @@ SELECT _assert_eq((SELECT edition_id::text FROM resolve_moment_id('24XCd26urKPWK
 SELECT _assert_eq((SELECT count(*)::text FROM resolve_moment_id('ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ')), '0', 'unknown base58 id → still no rows');
 
 -- 8. unknown ids return no rows (numeric miss and text miss)
+-- 6b. sales fallback: a sold moment held by an untracked wallet resolves, Top Shot first, newest sale.
+SELECT _assert_eq((SELECT kind FROM resolve_moment_id('950950')), 'moment', 'sales fallback → moment');
+SELECT _assert_eq((SELECT collection_slug FROM resolve_moment_id('950950')), 'nba_top_shot', 'sales collision resolves to Top Shot');
+SELECT _assert_eq((SELECT serial_number::text FROM resolve_moment_id('950950')), '12', 'newest Top Shot sale with an edition (not the edition-less 99)');
+SELECT _assert_eq((SELECT serial_number::text FROM resolve_moment_id('800800')), '5', 'an earlier step (wmc) still wins over a sale');
 SELECT _assert_eq((SELECT count(*)::text FROM resolve_moment_id('123456789')), '0', 'unknown numeric id → no rows');
 SELECT _assert_eq((SELECT count(*)::text FROM resolve_moment_id('no-such-id')), '0', 'unknown text id → no rows');
 

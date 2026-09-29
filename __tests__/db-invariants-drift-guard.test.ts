@@ -777,7 +777,7 @@ const PINS = [
   {
     fn: "resolve_moment_id",
     test: "supabase/tests/resolve_moment_id.sql",
-    migration: "supabase/migrations/20260919174322_audit_20260919_resolve_moment_id_resolves_a_base58_mint.sql",
+    migration: "supabase/migrations/20260929260000_audit_20260929_resolve_moment_id_falls_back_to_sales.sql",
   },
   {
     fn: "backfill_allday_edition_jersey",
