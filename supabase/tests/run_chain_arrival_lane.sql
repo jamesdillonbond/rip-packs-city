@@ -17,14 +17,16 @@
 --   F1. A 'floor' probe is ONE script at lo: held there -> done ("arrived
 --       before 2023-11-08"), never bisected; not held -> bisect.
 --   F2. Floor checks dispatch before bisections within a node's cap.
+--   R1. A failed call retries in half-size batches (1,000 >> attempts).
 --   S1. The saved-wallet seed takes only unexplained held Top Shot moments
 --       (not an NFT pack pull, no pack-pull record, not a recorded purchase)
 --       at the floor, never another collection's id, never twice.
 --
 -- The function DDL below is VERBATIM from the committed migration
 -- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
--- run_chain_arrival_lane + seed_saved_wallet_chain_arrivals from
--- 20260929180000_audit_20260929_chain_arrivals_for_every_saved_wallet_floor_check_first.sql).
+-- seed_saved_wallet_chain_arrivals from
+-- 20260929180000_audit_20260929_chain_arrivals_for_every_saved_wallet_floor_check_first.sql;
+-- run_chain_arrival_lane from 20260929181500_audit_20260929_chain_arrival_retries_in_half_size_batches.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -256,6 +258,9 @@ BEGIN
   FOR r IN
     WITH pend AS (
       SELECT p.status, p.wallet, p.lo, p.hi, p.nft_id,
+             -- 2026-09-29: a failed call retries in HALF-size batches (a node
+             -- answers 500 to 1,000 ids a wallet mostly holds; 300 pass)
+             (1000 >> least(p.attempts, 4)) AS batch,
              -- the midpoint; an interval straddling a spork end splits AT it
              -- (a floor check reads AT lo)
              CASE WHEN p.status = 'floor' THEN p.lo ELSE
@@ -264,15 +269,15 @@ BEGIN
         FROM public.chain_arrival_probes p
        WHERE p.request_id IS NULL AND p.status IN ('floor', 'bisect', 'window')
     ), grp AS (
-      SELECT status, wallet, lo, hi, mid,
-             (row_number() OVER (PARTITION BY status, wallet, lo, hi ORDER BY nft_id) - 1) / 1000 AS chunk,
+      SELECT status, wallet, lo, hi, mid, batch,
+             (row_number() OVER (PARTITION BY status, wallet, lo, hi, batch ORDER BY nft_id) - 1) / batch AS chunk,
              nft_id
         FROM pend
     ), calls AS (
-      SELECT status, wallet, lo, hi, mid, chunk, array_agg(nft_id ORDER BY nft_id) AS ids,
+      SELECT status, wallet, lo, hi, mid, batch, chunk, array_agg(nft_id ORDER BY nft_id) AS ids,
              CASE WHEN status IN ('bisect', 'floor') THEN mid ELSE lo + 1 END AS at_h
         FROM grp
-       GROUP BY status, wallet, lo, hi, mid, chunk
+       GROUP BY status, wallet, lo, hi, mid, batch, chunk
     ), routed AS (
       SELECT c.*,
              CASE WHEN c.at_h <= 85981134  THEN 'http://access-001.mainnet24.nodes.onflow.org:8070'
@@ -538,6 +543,24 @@ BEGIN
                      FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000bb' AND nft_id = 21),
                   'F1: not held at the floor -> bisected over the same interval');
   PERFORM _assert_eq(v->>'floor_held', '1', 'F1: counted');
+END $$;
+
+-- R1: 1,200 floor probes: fresh -> 2 calls (1,000 + 200); after one failed
+-- attempt -> 3 calls (500 + 500 + 200)
+DELETE FROM net.calls;
+DELETE FROM public.chain_arrival_probes;
+DELETE FROM public.chain_arrival_requests;
+INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
+SELECT '0x00000000000000ee', g, 100000000, 166000000, 'floor' FROM generate_series(1, 1200) g;
+DO $$
+BEGIN
+  PERFORM public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT count(*) = 2 FROM net.calls), 'R1: fresh probes go 1,000 a call');
+  DELETE FROM net.calls; DELETE FROM public.chain_arrival_requests;
+  UPDATE public.chain_arrival_probes SET request_id = NULL, attempts = 1 WHERE wallet = '0x00000000000000ee';
+  PERFORM public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT count(*) = 3 FROM net.calls), 'R1: after a failure, 500 a call');
+  PERFORM _assert((SELECT max(cardinality(pg_temp.call_ids(id))) = 500 FROM net.calls), 'R1: no call carries more than 500 ids');
 END $$;
 
 -- S1

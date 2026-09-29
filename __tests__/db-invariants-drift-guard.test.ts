@@ -34,9 +34,9 @@ const PINS = [
     fn: "run_chain_arrival_lane",
     test: "supabase/tests/run_chain_arrival_lane.sql",
     // 2026-09-29: the events parse is MATERIALIZED (an 11.9 MB window timed out);
-    // then a 'floor' check first, dispatched ahead of bisections.
-    migration:
-      "supabase/migrations/20260929180000_audit_20260929_chain_arrivals_for_every_saved_wallet_floor_check_first.sql",
+    // then a 'floor' check first, dispatched ahead of bisections; then a
+    // failed call retries in half-size batches (1,000 held ids -> HTTP 500).
+    migration: "supabase/migrations/20260929181500_audit_20260929_chain_arrival_retries_in_half_size_batches.sql",
   },
   {
     // Seeds every saved wallet's unexplained held Top Shot moment at the floor.
