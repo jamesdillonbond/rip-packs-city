@@ -159,6 +159,16 @@ describe("hybrid-custody-backfill carries the child-side probe", () => {
     expect(m![1]).toBe(cdc)
   })
 
+  it("the embedded script survives btoa(): Latin1 only, or the function dies at module load", () => {
+    // 2026-09-29: an em dash in a Cadence COMMENT made `btoa(CADENCE_SCRIPT)`
+    // throw InvalidCharacterError at import, so every invocation 500'd.
+    const m = edge.match(/const CADENCE_SCRIPT = `([\s\S]*?)`;/)
+    expect(m).not.toBeNull()
+    const outside = [...m![1]].filter((ch) => ch.charCodeAt(0) > 0xff)
+    expect(outside).toEqual([])
+    expect(() => btoa(m![1])).not.toThrow()
+  })
+
   it("the script reads the child side: redeemed parents off the OwnedAccount", () => {
     expect(cdc).toMatch(/HybridCustody\.OwnedAccountStoragePath/)
     expect(cdc).toMatch(/getRedeemedStatus\(addr: parent\) == true/)

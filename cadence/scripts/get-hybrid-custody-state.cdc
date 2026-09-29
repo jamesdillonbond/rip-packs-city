@@ -1,21 +1,25 @@
-// HybridCustody state probe — reads BOTH sides of the link for one address.
+// HybridCustody state probe - reads BOTH sides of the link for one address.
 //
 //   Parent side: whether the address has a HybridCustody.Manager in storage
 //   and, if so, its child + owned accounts.
 //   Child side:  whether the address is itself a HybridCustody OwnedAccount
 //   and, if so, which parents have REDEEMED it (pending, unredeemed parents
-//   are excluded — they hold no capability yet).
+//   are excluded - they hold no capability yet).
 //
 // Used by the hybrid-custody-backfill edge function to enumerate account-
 // linking state across known addresses (seeded_wallets, saved_wallets, recent
 // buyers/sellers) since the event ingester only sees links made after its
 // cursor started (block 151,110,101, 2026-05-10).
 //
-// ⚠ Why the child side exists (2026-09-29): the candidate set is almost all
+// WARNING: why the child side exists (2026-09-29): the candidate set is almost all
 // Dapper addresses, which are CHILDREN. Their parents are Flow Wallet
 // addresses that are in no candidate list, so a parent-side-only probe found
 // 6 pairs in total and linked_accounts missed 140 of 147 redeemed links held
 // by saved+seeded wallets (0xbd94cade097e50ac among them).
+//
+// ASCII ONLY in this file: the edge function embeds it and base64-encodes it
+// with btoa(), which throws on any non-Latin1 character at module load and
+// takes the whole function down (2026-09-29: an em dash in a comment did).
 //
 // Resilience:
 //   - Uses authAccount.storage.borrow so we read storage directly without
