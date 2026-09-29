@@ -130,6 +130,24 @@ describe("toSerialRow", () => {
     expect(r.serial_number).toBe(7)
     expect(r.mint_cap).toBe(10)
   })
+  it("⚠ AVAILABLE without a price is a HELD card, not a listing (2026-09-28)", () => {
+    // Panini's per-edition card list returns every serial as AVAILABLE; 245,355 of 262,331
+    // "listed" rows had no price when is_listed read state alone.
+    const held = toSerialRow({ sku: "p__3_10", psku: "p", state: "AVAILABLE", buy_now_price: null, owner: "amy" }, NOW)
+    expect(held.is_listed).toBe(false)
+    expect(held.serial_state).toBe("AVAILABLE")
+    // control: the same card with a buy-now price is listed
+    expect(toSerialRow({ sku: "p__3_10", psku: "p", state: "AVAILABLE", buy_now_price: 40 }, NOW).is_listed).toBe(true)
+  })
+  it("records BURNT / PROCESSING state and never lists them; no state stays unknown (null)", () => {
+    const burnt = toSerialRow({ sku: "p__4_10", psku: "p", state: "BURNT", buy_now_price: 40, owner: "amy" }, NOW)
+    expect(burnt.serial_state).toBe("BURNT")
+    expect(burnt.is_listed).toBe(false)
+    expect(toSerialRow({ sku: "p__5_10", psku: "p", state: "PROCESSING" }, NOW).is_listed).toBe(false)
+    const unknown = toSerialRow({ sku: "p__6_10", psku: "p" }, NOW)
+    expect(unknown.is_listed).toBeNull()
+    expect(unknown.serial_state).toBeNull()
+  })
   it("walks the price ladder (buy_now -> price -> final -> amount)", () => {
     expect(toSerialRow({ sku: "s", price: 12 }, NOW).price_usd).toBe(12)
     expect(toSerialRow({ sku: "s", amount: 9 }, NOW).price_usd).toBe(9)

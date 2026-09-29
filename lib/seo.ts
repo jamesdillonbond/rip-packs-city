@@ -252,7 +252,7 @@ const PAGE_META_OVERRIDES: Record<string, PageMeta> = {
   [`collection:${PANINI_ID}`]: {
     title: 'Collection — {label} Cards by Panini Username',
     description:
-      'Look up a Panini username: the cards on its public Panini profile (for linked collectors) or the cards RPC has seen listed under it, with FMV where RPC prices the card.',
+      'Look up a Panini username: the cards on its public Panini profile (for linked collectors), or the Prizm World Cup cards RPC has read under it, with FMV where RPC prices the card.',
   },
   [`market:${PINNACLE_ID}`]: {
     title: 'Market Intelligence — {label} Pin Lookup & Leaderboards',

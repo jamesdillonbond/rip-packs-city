@@ -14,8 +14,11 @@
 //   · a card from a sport RPC does not price yet (NBA, NFL, …) is "not priced by
 //     RPC", never $0, and does not link to an edition page RPC does not have
 //   · it is "cards RPC has seen under this username", never "your collection":
-//     RPC reads a card's holder only when the card has been listed, so most
-//     usernames appear only through their own listings — the tab says so
+//     RPC reads the holder of EVERY serial of each Prizm World Cup edition it
+//     tracks (corrected 2026-09-28 — this once said "only when listed"), but it
+//     tracks no other Panini set, and only editions it has indexed — the tab says so
+//   · "Listed now" counts cards with a buy-now price; a held card is not listed
+//     (panini_card_serials.is_listed meant "exists" until 2026-09-28)
 //   · a username with nothing seen reads "RPC hasn't seen a card under …",
 //     never "0 cards" / "holds nothing"
 //   · the FMV tile says how many of the seen cards it prices; unpriced cards are
@@ -150,7 +153,7 @@ export default function PaniniCollection() {
       </h1>
       <Note>
         Enter a Panini username. For a username linked to an RPC profile, RPC reads the collector&apos;s public Panini profile daily and
-        shows the whole collection. For any other username RPC can only show the cards it has seen listed under it.
+        shows the whole collection. For any other username it shows the Prizm World Cup cards RPC has read under that name — the only Panini set RPC tracks.
       </Note>
 
       <form onSubmit={submit} style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
@@ -270,9 +273,9 @@ function SeenBody({ data }: { data: PaniniCollectionResponse }) {
     return (
       <div data-testid="panini-collection-unseen" style={{ padding: "14px 16px", border: "1px dashed var(--rpc-border)", borderRadius: 8 }}>
         <Note>
-          RPC hasn&apos;t seen a card under <b>{data.username}</b>. RPC only learns a card&apos;s holder when the card is listed for sale on
-          Panini&apos;s marketplace, so this does not mean the collector holds nothing — it means none of their cards has been listed while RPC
-          was looking.{linkNote()}
+          RPC hasn&apos;t seen a card under <b>{data.username}</b>. RPC reads who holds every serial of the Prizm World Cup editions it tracks,
+          and nothing else — so this does not mean the collector holds nothing: cards from Panini&apos;s other sets (NBA, NFL and the rest), and
+          editions RPC has not indexed yet, are not covered.{linkNote()}
         </Note>
       </div>
     )
@@ -283,7 +286,7 @@ function SeenBody({ data }: { data: PaniniCollectionResponse }) {
     <>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Tile label="Cards seen" value={count(data.cardsSeen)} sub={`${count(data.editions)} editions`} />
-        <Tile label="Listed now" value={count(data.listedNow)} sub={unlisted > 0 ? `${count(unlisted)} seen unlisted` : undefined} />
+        <Tile label="Listed now" value={count(data.listedNow)} sub={unlisted > 0 ? `${count(unlisted)} not listed` : undefined} />
         <Tile
           label="FMV of cards seen"
           value={usd(data.fmvSeenUsd)}
@@ -293,8 +296,8 @@ function SeenBody({ data }: { data: PaniniCollectionResponse }) {
       </div>
       <div style={{ marginTop: 8 }}>
         <Note>
-          Last seen {ptDate(data.lastSeenAt)}. These are cards seen listed under this username, not the whole collection; a card sold since
-          RPC last read it can still appear here.
+          Last read {ptDate(data.lastSeenAt)}. These are the Prizm World Cup cards RPC read under this username, not the whole collection —
+          Panini&apos;s other sets aren&apos;t covered. A card sold since RPC last read its edition can still appear here.
           {shown < data.cardsSeen ? ` Showing the ${count(shown)} highest-FMV cards of ${count(data.cardsSeen)}.` : ""}
           {linkNote()}
         </Note>

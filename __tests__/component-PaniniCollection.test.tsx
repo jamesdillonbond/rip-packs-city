@@ -51,7 +51,7 @@ describe("PaniniCollection", () => {
     await waitFor(() => expect(c.textContent).toContain("Cards seen"))
     expect(calls[0]).toContain("username=AdlCards")
     expect(c.textContent).toContain("2 of 3 priced")
-    expect(c.textContent).toContain("1 seen unlisted")
+    expect(c.textContent).toContain("1 not listed")
     expect(c.textContent).toContain("not the whole collection")
     expect(c.textContent).toContain("Link your Panini username")
     expect(c.querySelector('a[href="/panini-blockchain/edition/packcard-1"]')).not.toBeNull()
@@ -63,6 +63,10 @@ describe("PaniniCollection", () => {
     await waitFor(() => expect(c.querySelector('[data-testid="panini-collection-unseen"]')).not.toBeNull())
     expect(c.textContent).toContain("hasn't seen a card under jamesdillonbond")
     expect(c.textContent).toContain("does not mean the collector holds nothing")
+    // ⚠ 2026-09-28: the old copy claimed RPC learns a holder only from a LISTING — false (the walk
+    // reads every serial's holder); it must not come back. The true gap is set coverage.
+    expect(c.textContent).not.toMatch(/only learns a card.s holder when the card is listed/)
+    expect(c.textContent).toContain("Panini’s other sets".replace("’", "'"))
     expect(c.textContent).not.toContain("Cards seen")
   })
 

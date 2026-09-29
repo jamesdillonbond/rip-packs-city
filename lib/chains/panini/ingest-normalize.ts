@@ -135,7 +135,11 @@ export function toSerialRow(p: any, nowIso: string) {
     best_offer_usd: posOrNull(p?.best_offer),
     last_sale_usd: posOrNull(p?.brought_at_price),
     last_sale_at: p?.brought_at_time ? String(p.brought_at_time) : null,
-    is_listed: p?.state ? p.state === "AVAILABLE" : null,
+    // ⚠ AVAILABLE means the serial EXISTS (held or listed) — Panini's per-edition card list
+    // returns every serial with it. Only a buy-now price marks a listing: 245,355 of 262,331
+    // "listed" rows had no price when this read state alone (2026-09-28). No price → not listed.
+    is_listed: p?.state ? p.state === "AVAILABLE" && price != null : null,
+    serial_state: typeof p?.state === "string" && p.state ? p.state : null,
     owner: owner != null ? String(owner) : null,
     nft_type: nftType != null && nftType !== "" ? String(nftType) : null,
     raw: p ?? null,

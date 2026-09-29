@@ -6,11 +6,14 @@
 // has zero rows — a Panini owner is a USERNAME (lib/address.ts isPaniniUsername).
 //
 // ── HONESTY ────────────────────────────────────────────────────────────────
-//   · RPC reads a card's holder only when it reads the card, and it reads a card
-//     only once it has been LISTED: 2,552 of 3,266 owners appear ONLY through
-//     their own listings (2026-09-27). So the payload is "cards seen under this
-//     username", with seen / listed-now counts and the last-seen time, and the
-//     client never calls it a collection total.
+//   · ⚠ CORRECTED 2026-09-28. This said RPC reads a holder only once a card is
+//     LISTED ("2,552 of 3,266 owners appear only through their own listings").
+//     False: that count keyed on is_listed, which then meant "the serial EXISTS"
+//     (migration 20260929013905). The walk reads the holder of EVERY serial of each
+//     Prizm World Cup edition it tracks; what it does NOT cover is Panini's other
+//     sets and editions not yet indexed. So the payload is still "cards seen under
+//     this username" with its last-read time, never a collection total.
+//   · listed-now counts cards with a buy-now price; burnt serials are excluded.
 //   · A username RPC has never seen is `cardsSeen: 0` — the client says "not
 //     seen", never "holds nothing".
 //   · FMV is the EDITION's current FMV; cards with none are counted
