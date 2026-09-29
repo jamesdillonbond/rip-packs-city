@@ -201,6 +201,14 @@ const PINS = [
     migration: "supabase/migrations/20260928113619_audit_20260928_pinnacle_sale_serials.sql",
   },
   {
+    fn: "populate_pinnacle_wmc_fmv",
+    test: "supabase/tests/populate_pinnacle_wmc_fmv.sql",
+    // 2026-09-28: a pin the catalog de-prices (NO_DATA) goes back to NULL in
+    // every wallet — it used to keep its last price forever.
+    migration:
+      "supabase/migrations/20260929021346_audit_20260928_pinnacle_wmc_fmv_follows_the_catalog_to_null.sql",
+  },
+  {
     // Added 2026-09-26. The pulls a wallet's pack row shows: Dapper's list for
     // THIS pack and opener, else the wallet's own reconstructed burst, else
     // nothing -- never the moment_acquisitions linkage that listed 95 "pulls"
