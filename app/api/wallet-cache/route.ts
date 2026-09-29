@@ -106,8 +106,13 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date().toISOString()
+    // ⛔ A row with no edition key carries nothing this cache can use. The collection page posts
+    // /api/wallet-search's live rows here, and a degraded row (Top Shot GraphQL 530, or any All Day
+    // row from that route) has no key and no serial. Inserted, it lands as a nameless NULL-key
+    // holding; on conflict it used to WIPE the cached key and serial (upsert_wmc_batch now keeps
+    // them, 2026-09-29). Holdings are recorded by each collection's own walker, not by this echo.
     const rows = moments
-      .filter(function(m) { return m.momentId })
+      .filter(function(m) { return m.momentId && m.editionKey })
       .map(function(m) {
         return {
           wallet_address: wallet,

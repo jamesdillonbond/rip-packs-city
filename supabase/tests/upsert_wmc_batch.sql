@@ -18,9 +18,12 @@
 --     differ precisely when the guard suppresses a no-op, which is the signal.
 --   • Empty input short-circuits to {total:0, written:0} rather than erroring.
 --   • A NULL last_seen_at COALESCEs to now() rather than writing NULL.
+--   • A NULL edition_key / serial_number never ERASES a known one (2026-09-29): NULL
+--     means the caller does not know it. A degraded collection-page row posted back
+--     through /api/wallet-cache used to wipe the cached key and serial.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260904062632_audit_20260904_upsert_wmc_batch_keys_a_resolved_parallel_at_write_time_and_a_oneshot_rekeys_the_67k_base_keyed_rows.sql);
+-- (supabase/migrations/20260929203000_audit_20260929_upsert_wmc_batch_null_never_erases_a_known_key.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -112,11 +115,14 @@ begin
       edition_key, serial_number, coalesce(last_seen_at, now())
     from input
     on conflict (wallet_address, collection_id, moment_id) do update
-      set edition_key   = excluded.edition_key,
-          serial_number = excluded.serial_number,
+      -- A NULL edition_key / serial_number means THIS CALLER DOES NOT KNOW IT, never "clear it".
+      -- Writing it through erased a known key: /api/wallet-cache posts the collection page's live
+      -- rows, and a degraded row (no key, no serial) wiped the cached key and serial (2026-09-29).
+      set edition_key   = coalesce(excluded.edition_key, w.edition_key),
+          serial_number = coalesce(excluded.serial_number, w.serial_number),
           last_seen_at  = excluded.last_seen_at
-      where w.edition_key   is distinct from excluded.edition_key
-         or w.serial_number is distinct from excluded.serial_number
+      where w.edition_key   is distinct from coalesce(excluded.edition_key, w.edition_key)
+         or w.serial_number is distinct from coalesce(excluded.serial_number, w.serial_number)
          or w.last_seen_at  < now() - interval '24 hours'
     returning 1
   )
@@ -320,6 +326,72 @@ SELECT _assert_eq(
 SELECT _assert_eq(
   (SELECT edition_key FROM wallet_moments_cache WHERE moment_id='p-jukebox' AND collection_id='dee28451-5d62-409e-a1ad-a83f763ac070'),
   '238:8024', 'the parallel map is Top Shot-only — another collection keeps the key as sent'
+);
+
+
+-- ── NULL NEVER ERASES A KNOWN VALUE (2026-09-29) ─────────────────────────────
+-- /api/wallet-cache posts a collection page's live rows; a degraded row carries
+-- no key and no serial. Written through, that NULL wiped the cached key+serial.
+INSERT INTO wallet_moments_cache VALUES
+  ('0xaaaa000000000001', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'n1', '5:6', 42, now());
+
+SELECT _assert_eq(
+  public.upsert_wmc_batch(jsonb_build_array(_row('n1', NULL, NULL, now())))->>'written',
+  '0', 'a fresh row re-sent with NULL key + NULL serial is a no-op, not a change'
+);
+SELECT _assert_eq(
+  (SELECT edition_key || '#' || serial_number FROM wallet_moments_cache WHERE moment_id='n1'), '5:6#42',
+  'a NULL edition_key / serial_number does NOT erase the known ones'
+);
+
+-- Stale + NULL: the row is refreshed (last_seen advances) and the known values survive.
+UPDATE wallet_moments_cache SET last_seen_at = now() - interval '48 hours' WHERE moment_id = 'n1';
+SELECT _assert_eq(
+  public.upsert_wmc_batch(jsonb_build_array(_row('n1', NULL, NULL, now())))->>'written',
+  '1', 'a stale row re-sent with NULLs is still refreshed'
+);
+SELECT _assert(
+  (SELECT edition_key = '5:6' AND serial_number = 42 AND last_seen_at > now() - interval '1 minute'
+     FROM wallet_moments_cache WHERE moment_id='n1'),
+  'the refresh advanced last_seen_at and kept the known key + serial'
+);
+
+-- Each column on its own: a NULL serial beside a NEW key writes the key and keeps the serial.
+SELECT _assert_eq(
+  public.upsert_wmc_batch(jsonb_build_array(_row('n1', '5:7', NULL, now())))->>'written',
+  '1', 'a new key with a NULL serial is written'
+);
+SELECT _assert_eq(
+  (SELECT edition_key || '#' || serial_number FROM wallet_moments_cache WHERE moment_id='n1'), '5:7#42',
+  'the new key landed and the known serial survived its NULL'
+);
+-- ...and a NULL key beside a NEW serial writes the serial and keeps the key.
+SELECT _assert_eq(
+  public.upsert_wmc_batch(jsonb_build_array(_row('n1', NULL, 43, now())))->>'written',
+  '1', 'a new serial with a NULL key is written'
+);
+SELECT _assert_eq(
+  (SELECT edition_key || '#' || serial_number FROM wallet_moments_cache WHERE moment_id='n1'), '5:7#43',
+  'the new serial landed and the known key survived its NULL'
+);
+
+-- The INSERT side is unchanged: a held moment whose key is not known yet still lands.
+SELECT _assert_eq(
+  public.upsert_wmc_batch(jsonb_build_array(_row('n2', NULL, NULL, now())))->>'written',
+  '1', 'a key-less new row still inserts — no holding is dropped'
+);
+SELECT _assert(
+  (SELECT edition_key IS NULL AND serial_number IS NULL FROM wallet_moments_cache WHERE moment_id='n2'),
+  'the new row lands with NULLs, to be named later'
+);
+-- ...and a later caller that DOES know fills it in.
+SELECT _assert_eq(
+  public.upsert_wmc_batch(jsonb_build_array(_row('n2', '8:9', 7, now())))->>'written',
+  '1', 'a known key + serial fills a key-less row'
+);
+SELECT _assert_eq(
+  (SELECT edition_key || '#' || serial_number FROM wallet_moments_cache WHERE moment_id='n2'), '8:9#7',
+  'the fill landed'
 );
 
 ROLLBACK;

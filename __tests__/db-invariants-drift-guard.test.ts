@@ -599,8 +599,10 @@ const PINS = [
     // 2026-09-04: re-pinned to the parallel-aware body — a base setID:playID key
     // whose nft the on-chain map resolved to a cataloged parallel is written as
     // base::N, so a re-walk no longer reverts a split row (67,607 rows were).
+    // 2026-09-29: re-pinned — a NULL edition_key / serial_number no longer
+    // erases a known one (/api/wallet-cache posted degraded page rows back).
     migration:
-      "supabase/migrations/20260904062632_audit_20260904_upsert_wmc_batch_keys_a_resolved_parallel_at_write_time_and_a_oneshot_rekeys_the_67k_base_keyed_rows.sql",
+      "supabase/migrations/20260929203000_audit_20260929_upsert_wmc_batch_null_never_erases_a_known_key.sql",
   },
   {
     // Added 2026-08-11. Bookkeeping write behind wallet_backfill_state, which

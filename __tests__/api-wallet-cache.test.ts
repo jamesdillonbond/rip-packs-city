@@ -15,7 +15,8 @@ const state: {
   collectionId: string | null
   rpcWritten: number
   rpcError: any
-} = { getData: [], getError: null, collectionId: null, rpcWritten: 0, rpcError: null }
+  rpcCalls: any[]
+} = { getData: [], getError: null, collectionId: null, rpcWritten: 0, rpcError: null, rpcCalls: [] }
 
 vi.mock("@/lib/supabase", () => {
   const chain: any = {
@@ -35,7 +36,10 @@ vi.mock("@/lib/supabase", () => {
   return {
     supabaseAdmin: {
       from: () => chain,
-      rpc: async () => ({ data: state.rpcError ? null : { written: state.rpcWritten }, error: state.rpcError }),
+      rpc: async (_name: string, args: any) => {
+        state.rpcCalls.push(args)
+        return { data: state.rpcError ? null : { written: state.rpcWritten }, error: state.rpcError }
+      },
     },
   }
 })
@@ -51,6 +55,7 @@ beforeEach(() => {
   state.collectionId = null
   state.rpcWritten = 0
   state.rpcError = null
+  state.rpcCalls = []
 })
 
 describe("GET /api/wallet-cache", () => {
@@ -139,7 +144,7 @@ describe("POST /api/wallet-cache", () => {
     state.collectionId = "cid-d"
     state.rpcError = { message: "rpc boom" }
     const res = await POST(
-      postReq({ wallet: "0xabc", collection: "coll-resolved-d", moments: [{ momentId: "m1" }] }),
+      postReq({ wallet: "0xabc", collection: "coll-resolved-d", moments: [{ momentId: "m1", editionKey: "1:2" }] }),
     )
     expect(res.status).toBe(200)
     const j = await res.json()
@@ -147,5 +152,32 @@ describe("POST /api/wallet-cache", () => {
     expect(j.ok).toBe(false)
     expect(j.write_errors).toBe(1)
     expect(j.write_error).toBe("rpc boom")
+  })
+
+  // 2026-09-29. A degraded page row (no key, no serial) posted back here landed as a nameless
+  // NULL-key holding and, on conflict, wiped the cached key + serial. It is not sent at all now.
+  it("never sends a row without an edition key to the writer", async () => {
+    state.collectionId = "cid-e"
+    state.rpcWritten = 1
+    const res = await POST(
+      postReq({
+        wallet: "0xabc",
+        collection: "coll-resolved-e",
+        moments: [{ momentId: "m1", editionKey: "1:2", serial: 5 }, { momentId: "m2" }, { momentId: "m3", editionKey: null }],
+      }),
+    )
+    expect(res.status).toBe(200)
+    const sent = state.rpcCalls.flatMap((a) => a.p_rows)
+    expect(sent.map((r: any) => r.moment_id)).toEqual(["m1"])
+    expect(sent.every((r: any) => r.edition_key)).toBe(true)
+  })
+
+  it("a batch of only key-less rows writes nothing and calls no writer", async () => {
+    state.collectionId = "cid-f"
+    const res = await POST(
+      postReq({ wallet: "0xabc", collection: "coll-resolved-f", moments: [{ momentId: "m1" }, { momentId: "m2", serial: 4 }] }),
+    )
+    expect((await res.json()).written).toBe(0)
+    expect(state.rpcCalls).toEqual([])
   })
 })
