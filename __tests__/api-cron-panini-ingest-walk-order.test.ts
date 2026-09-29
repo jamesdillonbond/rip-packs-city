@@ -179,6 +179,9 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     const j = await (await GET(req())).json()
     expect(j.pskus[0]).toBe("packcard-1941_377959_9989801_273")
     expect(j.held_uncatalogued).toBe(1)
+    // Served as its own list too: the runner walks grid discoveries before `pskus` and cannot
+    // pick the held ones out of it.
+    expect(j.priority_pskus).toEqual(["packcard-1941_377959_9989801_273"])
     expect(j.pskus.filter((p: string) => p === "packcard-2332_1_0_1")).toHaveLength(1)
     expect(j.pskus).not.toContain("packcard-1783_1_2_3")
     expect(j.count).toBe(4)
@@ -191,6 +194,7 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     const j = await (await GET(req())).json()
     expect(j.pskus).toHaveLength(3)
     expect(j.held_uncatalogued).toBe(0)
+    expect(j.priority_pskus).toEqual([])
     expect(j.held_error).toBeTruthy()
     expect(j.complete).toBe(true)
   })

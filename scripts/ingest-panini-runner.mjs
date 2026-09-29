@@ -56,6 +56,7 @@ import readline from "node:readline";
 // browser (this file calls main() at import). See panini-enum-progress.mjs for the full why.
 import { enumProgress, stepStability, enumStopReason } from "./panini-enum-progress.mjs";
 import { tagSaleRecords } from "./panini-sales-list.mjs";
+import { buildWalkOrder } from "./panini-walk-order.mjs";
 
 const USER_DATA_DIR = process.env.PANINI_USER_DATA_DIR;
 const INGEST_URL = process.env.RPC_PANINI_INGEST_URL;
@@ -174,7 +175,7 @@ async function fetchWalkOrder() {
     // brand-new discoveries are walked FIRST. `complete` is the route's own statement that
     // nothing was paged off or trimmed; without it the classifier must not run.
     const r = await fetch(INGEST_URL, { headers: { Authorization: `Bearer ${INGEST_TOKEN}` } });
-    if (!r.ok) { console.log(`[panini-runner] walk-order GET -> ${r.status}; falling back to shuffle`); return { list: [], complete: false }; }
+    if (!r.ok) { console.log(`[panini-runner] walk-order GET -> ${r.status}; falling back to shuffle`); return { list: [], complete: false, priority: [] }; }
     const j = await r.json();
     // Walk scope first: the route says which products' cards to walk. Absent (an older deploy) or
     // empty -> the historical WC-only scope, never "everything".
@@ -185,11 +186,14 @@ async function fetchWalkOrder() {
     if (Array.isArray(j?.pack_urls)) SERVED_PACK_URLS = j.pack_urls.filter((x) => typeof x === "string" && x.startsWith(BASE + "/"));
     const list = Array.isArray(j?.pskus) ? j.pskus.filter((x) => typeof x === "string" && isWalked(x)) : [];
     const complete = j?.complete === true;
-    console.log(`[panini-runner] walk order: ${list.length} known pskus, stalest first, complete=${complete} (oldest last_seen_at ${j?.oldest_last_seen_at ?? "?"}); walk sets=[${[...WALK_SETS].join(",")}] sports=[${DISCOVERY_SPORTS.join(",")}] pack pages=${SERVED_PACK_URLS ? SERVED_PACK_URLS.length : "fallback"}`);
-    return { list, complete };
+    // Held-but-uncatalogued editions (2026-09-29): walked BEFORE fresh discoveries. Absent (an
+    // older deploy) -> [] and the order is exactly what it was.
+    const priority = Array.isArray(j?.priority_pskus) ? j.priority_pskus.filter((x) => typeof x === "string" && isWalked(x)) : [];
+    console.log(`[panini-runner] walk order: ${list.length} known pskus, stalest first, complete=${complete} (oldest last_seen_at ${j?.oldest_last_seen_at ?? "?"}); walk sets=[${[...WALK_SETS].join(",")}] sports=[${DISCOVERY_SPORTS.join(",")}] pack pages=${SERVED_PACK_URLS ? SERVED_PACK_URLS.length : "fallback"} priority=${priority.length}`);
+    return { list, complete, priority };
   } catch (e) {
     console.log(`[panini-runner] walk-order GET failed: ${e.message}; falling back to shuffle`);
-    return { list: [], complete: false };
+    return { list: [], complete: false, priority: [] };
   }
 }
 
@@ -612,7 +616,7 @@ async function main() {
   //     products to walk (walk_set_ids), which sports to enumerate and which pack pages to open, and
   //     enumeration below filters on the first. It used to be read after enumeration; the catalogue
   //     it returns is the same either way.
-  const { list: known, complete: knownComplete } = await fetchWalkOrder();
+  const { list: known, complete: knownComplete, priority: priorityPskus } = await fetchWalkOrder();
 
   // Home page first: a cheap pass for pack links (new drops are linked from it), nothing else.
   await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
@@ -718,18 +722,12 @@ async function main() {
   const discovered = enumPskus.size > 0 ? [...enumPskus] : fileList;
   let pskus, orderMode;
   if (known.length > 0) {
-    const knownSet = new Set(known);
     // ⚠ "Absent from `known`" means BRAND NEW only when `known` is the COMPLETE catalogue.
     // On a partial list (a paging failure server-side) every recently-walked edition is also
     // absent, and promoting those to the front is precisely the re-walking this change exists
     // to stop — so the promotion is gated on the route saying the list is complete.
-    const fresh = knownComplete ? discovered.filter((p) => !knownSet.has(p)) : [];
-    const seen = new Set(fresh);
-    pskus = [...fresh];
-    for (const p of [...known, ...discovered]) if (!seen.has(p)) { seen.add(p); pskus.push(p); }
-    orderMode = knownComplete
-      ? `stalest-first (${fresh.length} new + ${known.length} known)`
-      : `stalest-first, PARTIAL list (${known.length} known; new-first promotion disabled)`;
+    // Held-but-uncatalogued editions (priority) go before both — see scripts/panini-walk-order.mjs.
+    ({ pskus, orderMode } = buildWalkOrder({ priority: priorityPskus, known, knownComplete, discovered }));
   } else {
     // FALLBACK ONLY — the order endpoint was unreachable. Shuffle (Fisher-Yates) so successive
     // runs at least cover different subsets, which is the behaviour this file had before.
@@ -742,7 +740,7 @@ async function main() {
   // Post the enumeration record BEFORE the long per-card walk, so it lands even if the walk is
   // later killed (laptop sleep / unplug / rate-limit). Fire-and-forget semantics: post() already
   // swallows its own failures, and telemetry must never break the ingest it measures.
-  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size, packish_unmatched: [...packishUnmatched] } });
+  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, priority_order: priorityPskus.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size, packish_unmatched: [...packishUnmatched] } });
   // Registry upkeep: every product the grids served + every pack link found. Never admits a
   // product or disables a page — the route only records sightings and new pages.
   await post({ products: productSightings, pack_pages: [...harvestedPackUrls].map((url) => ({ url, discovered: true })) });

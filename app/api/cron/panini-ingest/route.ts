@@ -622,6 +622,12 @@ export async function GET(req: NextRequest) {
     count: pskus.length,
     // Held by a walked collector, in an admitted product, with no catalogue row yet — queued first.
     held_uncatalogued: heldNew.length,
+    // The same held pskus as their OWN list (2026-09-29). Being at the front of `pskus` was not
+    // enough: the runner walks brand-new GRID discoveries before the known list (1,464–3,900 per
+    // run vs ~660 walked), and it derives "new" as grid minus `pskus`, so it cannot tell the held
+    // ones apart from the list alone. A runner that reads this walks them before discoveries; an
+    // older runner ignores it and keeps the prepend. Trimmed with the list so ?limit stays a bound.
+    priority_pskus: trim ? heldNew.slice(0, trim) : heldNew,
     held_error: heldRes.error ?? null,
     // ⚠ Load-bearing for correctness, not diagnostics: the runner may only treat "absent from
     // pskus" as "brand new" when this is false AND nothing was trimmed. See the note above.

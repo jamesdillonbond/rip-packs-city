@@ -109,3 +109,32 @@ in a rolled-back transaction; see the migration header. Still open from the list
 - 12:00 PM PT 09-29: unchanged (0 of 136 walked; p50 33.2 h / p90 52.7 h / stale-45d 0.0%). The Oct 1
   check is now a suggested task in the Claude app ("Check Panini held editions got walked and
   priced") — a scheduled fresh-session routine here cannot carry the Supabase connector.
+
+### 2026-09-29 12:40 PM PT — follow-up check (run early; scheduled for Oct 1) + held-priority runner fix
+
+Read at 12:10–12:40 PM PT 09-29 (about 2 days before the planned Oct 1 check; no runner run since 10:35 AM PT).
+
+- **(A) Held editions: 0 of 136 walked.** Distinct `psku` in `panini_user_holdings` for `jamesdillonbond`: 136. With a
+  `panini_editions` row: **0**. Bridged into `editions` (Panini collection): **0**. `edition_fmv_current.fmv_usd > 0`:
+  **0**. Trophy slot 2 (`packcard-1941_377959_9989801_273`, Rayan Rupert #1/1): `held_state=held`, **`fmv` NULL**, as
+  expected with no catalogue row (and a 1/1 with no sales may stay NULL after it is walked; that is not a defect).
+- **(B) Last 3 enum runs, `order_mode`:** 10:35 AM PT `stalest-first (3900 new + 5776 known)`; 6:21 AM PT
+  `(1464 new + 5458 known)`; 2:25 AM PT `(3044 new + 5126 known)`. The "new" pool is **not draining.** It rose to 3,900
+  as the enumeration reached further into the admitted products' grids (14,040 grid items that run). One ~4 h run walks
+  about 660 editions. The 11:46 AM PT note's "drains within about a day" assumed ~3,150 listed items, but one run
+  already had 3,900 new ones, so that estimate is not safe.
+  **Fixed (runner + route):** the walk-order GET now also serves the held pskus as their own list, `priority_pskus`.
+  The runner (`scripts/panini-walk-order.mjs`, `buildWalkOrder`) walks them **before** the fresh grid discoveries, so
+  the 136 go first in the next run. This could not be done from the list alone because the runner derives "fresh"
+  as grid minus list. An older runner ignores the field and keeps the old order. The enum telemetry now records
+  `priority_order`, and `order_mode` reads `(N held-priority + …)`. **The fix takes effect only after `git pull` on
+  Trevor's box** (`panini-run.bat` never pulls). The route half is live after this deploy.
+- **(C) World Cup freshness:** p50 **33.9 h**, p90 **53.4 h** (max 57.8 h), stale-45d **0.0%** (5,126 editions, 100%
+  walked in 7 d). Series: 20.8/40.4 → 27.3/46.8 → 29.5/49.0 → 33.2/52.7 → 33.9/53.4. Nowhere near the p90 ≈ 96 h /
+  stale-45d > 0 trigger, so the admitted list stays as it is. Walking 136 held editions first delays the World Cup
+  rotation by about a fifth of one run.
+- **(D) Trophy "Not in saved wallets" marker:** `wmc_clean_walks` has the 5 Flow collections only (Top Shot 67
+  wallets, All Day 58, Pinnacle 44, UFC 36, Golazos 31; no Candy). Newest walks are 12:37 PM PT and oldest are
+  2:00 AM PT 09-29. `held_state` over all trophies of the 7 users with pins: **20 held / 1 unknown / 1 not_held**,
+  unchanged from the 09-29 baseline. The not_held is still Top Shot 974422 (verified sold 09-12). The unknown is
+  All Day 2131556 (never checked). **No new not_held, so nothing needed hand-verifying.**
