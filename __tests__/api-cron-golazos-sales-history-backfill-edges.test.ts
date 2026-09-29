@@ -207,6 +207,7 @@ describe("golazos-sales-history-backfill — batch-insert dedupe retry", () => {
         wallet_moments_cache: { data: [], error: null },
         editions: { data: [], error: null },
         unmapped_sales: [
+          { data: [], error: null }, // the already-recorded check (select) — nothing parked yet
           { data: null, error: { code: "23505", message: "duplicate key value" } },
           { data: null, error: null },
           { data: null, error: null },
@@ -217,6 +218,48 @@ describe("golazos-sales-history-backfill — batch-insert dedupe retry", () => {
     await POST(req())
     expect((spy.writes.unmapped_sales ?? []).filter((w) => w.method === "insert")).toHaveLength(3)
     expect(terminalLog(spy.rpcCalls)!.p_rows_skipped).toBe(2)
+  })
+
+  // ⛔ 2026-09-28: `unmapped_sales` has no uniqueness beyond its id, so the 23505
+  // fallback never fires there. A sale ALREADY in `sales` (the forward indexer
+  // recorded it) or already parked was parked again — 16,373 All Day + 54
+  // Golazos exact copies were open that day. lib/ingest/already-recorded.ts.
+  it("does not park a sale that is already in `sales` or already parked", async () => {
+    fetchMock = installFetchMock(twoFlowtySales())
+    const spy = install(
+      mappedFixtures({
+        wallet_moments_cache: { data: [], error: null },
+        editions: { data: [], error: null },
+        // tx a/555 is already in `sales`; tx b/777 is already parked.
+        sales: { data: [{ transaction_hash: "a".repeat(64), nft_id: "555" }], error: null },
+        unmapped_sales: [{ data: [{ transaction_hash: "b".repeat(64), nft_id: "777" }], error: null }],
+      }),
+    )
+
+    await POST(req())
+    expect((spy.writes.unmapped_sales ?? []).filter((w) => w.method === "insert")).toHaveLength(0)
+    const log = terminalLog(spy.rpcCalls)!
+    expect(log.p_rows_skipped).toBe(0)
+    expect((log.p_extra as Record<string, unknown>).unmapped_already_recorded).toBe(2)
+  })
+
+  it("⛔ a FAILED already-recorded check fails the run and parks nothing — never parks blind", async () => {
+    fetchMock = installFetchMock(twoFlowtySales())
+    const spy = install(
+      mappedFixtures({
+        wallet_moments_cache: { data: [], error: null },
+        editions: { data: [], error: null },
+        unmapped_sales: [{ data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } }],
+      }),
+    )
+
+    await POST(req())
+    expect((spy.writes.unmapped_sales ?? []).filter((w) => w.method === "insert")).toHaveLength(0)
+    const log = terminalLog(spy.rpcCalls)!
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toMatch(/already-recorded check on unmapped_sales failed/)
+    // …and the cursor is not advanced, so the range is re-scanned intact.
+    expect((spy.writes.event_cursor ?? []).length).toBe(0)
   })
 })
 

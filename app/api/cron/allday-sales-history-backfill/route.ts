@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { dropAlreadyRecorded } from "@/lib/ingest/already-recorded"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { hydrateAllDayEditions, toUpsertRow } from "@/lib/editions-hydrate"
 import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
@@ -38,8 +39,10 @@ import crypto from "crypto"
 //     The platform's HARD ~300s response cap is the limiter, so the loop self-
 //     budgets to ~200s and finalizes with margin.
 //   • Self-throttle: >15 non-self pipeline_runs fails in the last 30 min → skip.
-//   • Idempotent: dedup by transaction_hash against existing sales/unmapped + a
-//     23505 row-by-row fallback. The forward indexer never wrote below block
+//   • Idempotent: dedup by transaction_hash against existing sales/unmapped
+//     (dropAlreadyRecorded, lib/ingest/already-recorded.ts — added 2026-09-28;
+//     before that this line described a check that did not exist and 16,373
+//     duplicates accrued) + a 23505 row-by-row fallback for `sales`. The forward indexer never wrote below block
 //     148,653,524, so this backfill owns the block range exclusively →
 //     REVERT is one bounded DELETE:
 //       DELETE FROM sales WHERE collection_id='dee28451-…'
@@ -949,8 +952,16 @@ async function run(req: NextRequest): Promise<NextResponse> {
         console.log(`[${PIPELINE_NAME}] sales insert err: ${error.message}`)
       }
     }
-    for (let i = 0; i < unmappedRows.length; i += 100) {
-      const batch = unmappedRows.slice(i, i + 100)
+    // Park only what is not already recorded — see lib/ingest/already-recorded.ts
+    // (the "idempotent dedup" the header promised did not exist until 2026-09-28).
+    const { fresh: unmappedFresh, skipped: alreadyRecorded } = await dropAlreadyRecorded(
+      supabaseAdmin as never,
+      ALLDAY_COLLECTION_ID,
+      unmappedRows,
+    )
+    extra.unmapped_already_recorded = alreadyRecorded
+    for (let i = 0; i < unmappedFresh.length; i += 100) {
+      const batch = unmappedFresh.slice(i, i + 100)
       const { error } = await supabaseAdmin.from("unmapped_sales").insert(batch)
       if (!error) {
         rowsSkipped += batch.length

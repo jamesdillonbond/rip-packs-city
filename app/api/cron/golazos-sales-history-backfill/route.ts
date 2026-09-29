@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { dropAlreadyRecorded } from "@/lib/ingest/already-recorded"
 import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import crypto from "crypto"
 
@@ -24,7 +25,10 @@ import crypto from "crypto"
 // SAFETY RAILS (mirrors allday/topshot-sales-history-backfill):
 //   • SYNCHRONOUS, no after()/waitUntil. Self-budgets to ~200s under the ~300s cap.
 //   • Self-throttle on >15 recent non-self pipeline fails.
-//   • Idempotent dedup on transaction_hash. The forward indexer never wrote below
+//   • Idempotent: `sales` has a (tx, nft, sold_at) unique index (23505 fallback
+//     below); `unmapped_sales` has none, so parked rows go through
+//     dropAlreadyRecorded() (lib/ingest/already-recorded.ts, 2026-09-28 — this
+//     line claimed a dedup that did not exist, and 54 duplicates accrued). The forward indexer never wrote below
 //     block 148,721,736, so REVERT is one bounded DELETE:
 //       DELETE FROM sales WHERE collection_id='06248cc4-…' AND block_height < 148721736;
 //       (+ same on unmapped_sales)
@@ -751,8 +755,16 @@ async function run(req: NextRequest): Promise<NextResponse> {
         console.log(`[${PIPELINE_NAME}] sales insert err: ${error.message}`)
       }
     }
-    for (let i = 0; i < unmappedRows.length; i += 100) {
-      const batch = unmappedRows.slice(i, i + 100)
+    // Park only what is not already recorded — see lib/ingest/already-recorded.ts
+    // (the "idempotent dedup" the header promised did not exist until 2026-09-28).
+    const { fresh: unmappedFresh, skipped: alreadyRecorded } = await dropAlreadyRecorded(
+      supabaseAdmin as never,
+      GOLAZOS_COLLECTION_ID,
+      unmappedRows,
+    )
+    extra.unmapped_already_recorded = alreadyRecorded
+    for (let i = 0; i < unmappedFresh.length; i += 100) {
+      const batch = unmappedFresh.slice(i, i + 100)
       const { error } = await supabaseAdmin.from("unmapped_sales").insert(batch)
       if (!error) {
         rowsSkipped += batch.length
