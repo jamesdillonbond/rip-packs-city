@@ -44,8 +44,7 @@ beforeEach(() => {
 
 describe("profileDescription — never emits a zero", () => {
   it("reports every figure it was given", () => {
-    const d = profileDescription({ totalFmv: 1500, momentCount: 200, trophyCount: 2 })
-    expect(d).toContain("$1.5K portfolio")
+    const d = profileDescription({ momentCount: 200, trophyCount: 2 })
     expect(d).toContain("200 Moments")
     expect(d).toContain("2 trophy Moments on display")
   })
@@ -54,10 +53,9 @@ describe("profileDescription — never emits a zero", () => {
   // least one of these — which is the point: the honesty rule is carried by
   // code a mutation can break, not by a flag that cannot change the output.
   it.each([
-    ["nothing at all", { totalFmv: 0, momentCount: 0, trophyCount: 0 }],
-    ["no portfolio", { totalFmv: 0, momentCount: 12, trophyCount: 1 }],
-    ["no moments", { totalFmv: 40, momentCount: 0, trophyCount: 1 }],
-    ["no trophies", { totalFmv: 40, momentCount: 12, trophyCount: 0 }],
+    ["nothing at all", { momentCount: 0, trophyCount: 0 }],
+    ["no moments", { momentCount: 0, trophyCount: 1 }],
+    ["no trophies", { momentCount: 12, trophyCount: 0 }],
   ])("suppresses an absent total rather than publishing it as zero (%s)", (_l, input) => {
     const d = profileDescription(input)
     expect(d).not.toMatch(/\$0\b/)
@@ -68,17 +66,17 @@ describe("profileDescription — never emits a zero", () => {
   it("falls back to describing the surface when it has no figure at all", () => {
     // "$0 FMV across 0 moments" reads as a valuation OF THE PERSON rather than
     // an absence of data — the string that actually shipped.
-    const d = profileDescription({ totalFmv: 0, momentCount: 0, trophyCount: 0 })
+    const d = profileDescription({ momentCount: 0, trophyCount: 0 })
     expect(d).toMatch(/Trophy case/i)
   })
 
   it("still reports the parts it does have", () => {
-    const d = profileDescription({ totalFmv: 0, momentCount: 0, trophyCount: 3 })
+    const d = profileDescription({ momentCount: 0, trophyCount: 3 })
     expect(d).toContain("3 trophy Moments on display")
   })
 
   it("singularises", () => {
-    const d = profileDescription({ totalFmv: 12, momentCount: 1, trophyCount: 1 })
+    const d = profileDescription({ momentCount: 1, trophyCount: 1 })
     expect(d).toContain("1 Moment ")
     expect(d).toContain("1 trophy Moment on display")
   })
@@ -86,8 +84,8 @@ describe("profileDescription — never emits a zero", () => {
   it("never tells a social platform the data is unavailable", () => {
     // An unfurl is cached for days; an outage notice would outlive the outage.
     for (const d of [
-      profileDescription({ totalFmv: 0, momentCount: 0, trophyCount: 0 }),
-      profileDescription({ totalFmv: 5, momentCount: 1, trophyCount: 0 }),
+      profileDescription({ momentCount: 0, trophyCount: 0 }),
+      profileDescription({ momentCount: 1, trophyCount: 0 }),
     ]) {
       expect(d).not.toMatch(/unavailable|couldn't|could not|error|try again/i)
     }
@@ -109,13 +107,19 @@ describe("generateMetadata — the card contract", () => {
     expect(m.twitter.creator).toMatch(/^@/)
   })
 
-  it("describes the portfolio net of stale-priced value, like the page and the card (QA #6)", async () => {
+  // Privacy (Trevor, 2026-09-29): a share link must not broadcast the
+  // collector's account value. The OG image dropped it 09-12; this pins the
+  // description, og:description and twitter:description to the same rule with
+  // a REAL, large FMV on the payload — the case that used to publish "$48.9K".
+  it("never states the collector's account value, even when FMV is known", async () => {
     getPublicProfile.mockResolvedValue(
       okPayload({ wallets: [{ cached_fmv: 88425, cached_fmv_stale: 39553, cached_moment_count: 19381 }] }),
     )
     const m = await meta()
-    expect(String(m.description)).toContain("$48.9K")
-    expect(String(m.description)).not.toContain("$88.4K")
+    for (const d of [m.description, m.openGraph.description, m.twitter.description]) {
+      expect(String(d)).not.toMatch(/\$|portfolio|FMV|48\.9|88\.4/i)
+      expect(String(d)).toContain("19,381 Moments")
+    }
   })
 
   it("ships alt text and explicit dimensions on the image", async () => {

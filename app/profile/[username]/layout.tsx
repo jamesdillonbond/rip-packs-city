@@ -43,17 +43,14 @@ import FunnelTracker from "@/components/FunnelTracker"
 const BASE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
-function fmtDollars(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "$0"
-  if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1) + "M"
-  if (n >= 1000) return "$" + (n / 1000).toFixed(1) + "K"
-  // a real sub-dollar value is not "$0" (2026-09-28); locale pinned
-  if (n < 1) return "$" + n.toFixed(2)
-  return "$" + Math.round(n).toLocaleString("en-US")
-}
-
 /**
  * The one-line description under the card image.
+ *
+ * ⭐ NO DOLLAR FIGURE, EVER (Trevor, 2026-09-29). The OG IMAGE dropped
+ * portfolio FMV on 2026-09-12 as a privacy repair — a share link must not
+ * broadcast the collector's net worth — but this string, in a different file,
+ * kept publishing "$48.9K portfolio" as the text under that same card. It now
+ * takes no FMV input at all, so no caller can reintroduce it by passing one.
  *
  * INVARIANT: this function never emits a zero. Every figure is gated on being
  * positive, so a total that is absent — whether because the collector has no
@@ -76,14 +73,12 @@ function fmtDollars(n: number): string {
  * profile long after it recovered — the OG-card lesson in lib/og/board-empty-copy.
  */
 export function profileDescription(input: {
-  totalFmv: number
   momentCount: number
   trophyCount: number
 }): string {
-  const { totalFmv, momentCount, trophyCount } = input
+  const { momentCount, trophyCount } = input
   const parts: string[] = []
 
-  if (totalFmv > 0) parts.push(fmtDollars(totalFmv) + " portfolio")
   if (momentCount > 0)
     parts.push(momentCount.toLocaleString() + " Moment" + (momentCount === 1 ? "" : "s"))
   if (trophyCount > 0)
@@ -117,22 +112,17 @@ export async function generateMetadata({
 
   const displayName = resolved?.bio?.display_name?.trim() || key || "Collector"
 
-  let totalFmv = 0
+  // `cached_fmv*` is deliberately NOT read here — see profileDescription.
   let momentCount = 0
   for (const w of resolved?.wallets ?? []) {
-    // Headline excludes the stale-priced portion, as the dashboard's does
-    // (2026-09-02, QA finding #6) — the meta description is what X shows
-    // under the card, so it must be the same number as the page.
-    totalFmv += (Number(w?.cached_fmv ?? 0) || 0) - (Number(w?.cached_fmv_stale ?? 0) || 0)
     momentCount += Number(w?.cached_moment_count ?? 0) || 0
   }
-  if (totalFmv < 0) totalFmv = 0
   const trophyCount = resolved?.trophies?.length ?? 0
 
   const canonical = `${BASE_URL}/profile/${encodeURIComponent(key)}`
   const ogUrl = `${BASE_URL}/api/og/profile/${encodeURIComponent(key)}`
   const title = `${displayName}'s Collection | Rip Packs City`
-  const description = profileDescription({ totalFmv, momentCount, trophyCount })
+  const description = profileDescription({ momentCount, trophyCount })
 
   // Describes what is IN the card, for screen readers and for the platforms
   // that surface alt text. Deliberately free of figures — the image withholds

@@ -1,7 +1,7 @@
 // Link-preview metadata for /profile/<username>/trophy-case.
 //
 // The shareable trophy case. The profile card answers "how big is this
-// collection" (it leads with portfolio FMV); this one answers "look at these
+// collection" (moment count; no dollar figure since 2026-09-29); this one answers "look at these
 // six", so it gets its own card and its own copy rather than reusing the
 // profile's. Until 2026-08-14 the only trophy-case export was a PDF, which
 // cannot unfurl at all — pasting one into X or Discord produces a file, not a
