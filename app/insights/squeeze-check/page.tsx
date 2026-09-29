@@ -102,7 +102,6 @@ export default function SqueezeCheckPage() {
   // any other wallet. Runs once, after the session resolves.
   const own = useOwnFlowWallet()
   const autoRanRef = useRef(false)
-  const [showingOwn, setShowingOwn] = useState(false)
   useEffect(() => {
     if (typeof window === "undefined") return
     const url = new URL(window.location.href)
@@ -117,14 +116,12 @@ export default function SqueezeCheckPage() {
     if (autoRanRef.current || own.loading || !own.wallet) return
     autoRanRef.current = true
     setWallet(own.wallet)
-    setShowingOwn(true)
     runCheck(own.wallet)
   }, [own.loading, own.wallet])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     autoRanRef.current = true // a search typed before the session resolved wins
-    setShowingOwn(!!own.wallet && wallet.trim().toLowerCase() === own.wallet)
     await runCheck(wallet)
   }
 
@@ -163,11 +160,6 @@ export default function SqueezeCheckPage() {
           </button>
         </form>
         {error ? <div className="rpc-sc-error">{error}</div> : null}
-        {showingOwn && !error ? (
-          <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-muted)" }}>
-            Showing your wallet — enter another to check it.
-          </div>
-        ) : null}
       </section>
 
       {summary ? (

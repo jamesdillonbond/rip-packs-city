@@ -63,6 +63,8 @@ for (const [name, Page, path] of [
       render(<Page />)
       await waitFor(() => expect(apiCalls(f, path).some((u) => u.includes(`wallet=${OWN}`))).toBe(true))
       expect((screen.getByLabelText(/Flow wallet address/i) as HTMLInputElement).value).toBe(OWN)
+      // Assumed, never announced (Trevor 2026-09-29).
+      expect(document.body.textContent).not.toMatch(/Showing your wallet/)
     })
     it("a ?wallet= in the URL wins over your own", async () => {
       window.history.replaceState({}, "", `/insights/${name}?wallet=${OTHER}`)

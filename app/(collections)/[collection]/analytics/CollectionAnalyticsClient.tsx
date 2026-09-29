@@ -1751,12 +1751,6 @@ function AnalyticsInner() {
             </button>
           </form>
 
-          {own.wallet && activeWallet.toLowerCase() === own.wallet && (
-            <div className="mb-4 -mt-3 text-[12px] text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-              Showing your wallet — enter another to analyze it.
-            </div>
-          )}
-
           {error && <div className="mb-4 rounded-lg border border-red-900/40 bg-red-950/20 p-3 text-sm text-red-300">{error}</div>}
 
           {!data && !loading && !error && (

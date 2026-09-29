@@ -1190,7 +1190,8 @@ describe("CollectionAnalyticsClient — Market-tab panels never claim emptiness 
       const urls = fetchMock.mock.calls.map((c) => String(c[0]))
       expect(urls.some((u) => u.startsWith("/api/analytics?") && u.includes(`wallet=${OWN}`))).toBe(true)
     })
-    await waitFor(() => expect(screen.getByText(/Showing your wallet/)).toBeTruthy())
+    // Your own wallet is assumed, never announced (Trevor 2026-09-29).
+    expect(document.body.textContent).not.toMatch(/Showing your wallet/)
   })
   it("a ?wallet= in the URL wins over your own", async () => {
     routes["/api/profile/me"] = () => json(200, { user: { id: "u1", wallet_addr: OWN } })

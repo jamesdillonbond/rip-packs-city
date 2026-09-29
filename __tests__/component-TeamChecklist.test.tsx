@@ -366,12 +366,16 @@ describe("TeamChecklist", () => {
     () => res(true, { user: { id: "u1", wallet_addr, ...extra } })
   const ownedProgress = { ...anonProgress, owned: 12, completion_pct: 12, wallet_cached: true }
 
-  it("signed in with a linked wallet: tracks it automatically and never asks for a paste", async () => {
+  // Trevor 2026-09-29: your own wallet is ASSUMED — "we shouldn't even mention
+  // the tracking portion". So: owned counts, and NO wallet line of any kind.
+  it("signed in with a linked wallet: shows YOUR owned counts and says nothing about tracking", async () => {
     fetchMock = routeFetch({ checklist: () => res(true, [tile]), progress: () => res(true, ownedProgress), me: signedIn(OWN) })
     vi.stubGlobal("fetch", fetchMock)
-    const { getByText, queryByText, queryByPlaceholderText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
-    await waitFor(() => expect(getByText(/Tracking your wallet/)).toBeTruthy())
-    expect(getByText("12 / 100")).toBeTruthy()
+    const { getByText, queryByText, queryByPlaceholderText, container } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    await waitFor(() => expect(getByText("12 / 100")).toBeTruthy())
+    expect(container.textContent).not.toMatch(/Tracking/i)
+    expect(container.textContent).not.toContain("0x1111…4444")
+    expect(queryByText(/Track a different wallet/)).toBeNull()
     expect(queryByText(/Paste your wallet/)).toBeNull()
     expect(queryByPlaceholderText("0x…")).toBeNull()
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes(`wallet=${OWN}`))).toBe(true)
@@ -379,15 +383,12 @@ describe("TeamChecklist", () => {
     expect(window.localStorage.getItem("rpc_checklist_wallet")).toBeNull()
   })
 
-  it("'Track a different wallet' opens the paste box; Cancel returns to your own", async () => {
-    fetchMock = routeFetch({ checklist: () => res(true, [tile]), progress: () => res(true, ownedProgress), me: signedIn(OWN) })
+  it("your own wallet still indexing: the status line shows, with no 'tracking' copy", async () => {
+    fetchMock = routeFetch({ checklist: () => res(true, [tile]), progress: () => res(true, { ...ownedProgress, wallet_cached: false }), me: signedIn(OWN) })
     vi.stubGlobal("fetch", fetchMock)
-    const { getByText, queryByPlaceholderText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
-    fireEvent.click(await waitFor(() => getByText("Track a different wallet")))
-    expect(queryByPlaceholderText("0x…")).toBeTruthy()
-    fireEvent.click(getByText("Cancel"))
-    expect(queryByPlaceholderText("0x…")).toBeNull()
-    expect(getByText(/Tracking your wallet/)).toBeTruthy()
+    const { findByText, container } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    await findByText(/Indexing your collection/)
+    expect(container.textContent).not.toMatch(/Tracking/i)
   })
 
   it("a previously pasted wallet wins over the profile wallet; clearing it falls back to your own", async () => {
@@ -396,9 +397,12 @@ describe("TeamChecklist", () => {
     vi.stubGlobal("fetch", fetchMock)
     const { getByText, queryByText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
     await waitFor(() => expect(getByText("0xaaaa…dddd")).toBeTruthy())
-    expect(queryByText(/Tracking your wallet/)).toBeNull()
     fireEvent.click(getByText("Back to my wallet"))
-    await waitFor(() => expect(getByText(/Tracking your wallet/)).toBeTruthy())
+    await waitFor(() => expect(queryByText("0xaaaa…dddd")).toBeNull())
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes(`wallet=${OWN}`)).length).toBeGreaterThan(0),
+    )
+    expect(queryByText(/Tracking/)).toBeNull()
     expect(window.localStorage.getItem("rpc_checklist_wallet")).toBeNull()
   })
 
@@ -408,7 +412,7 @@ describe("TeamChecklist", () => {
       vi.stubGlobal("fetch", fetchMock)
       const { getByText, queryByText, unmount } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
       await waitFor(() => expect(getByText(/Paste your wallet/)).toBeTruthy())
-      expect(queryByText(/Tracking your wallet/)).toBeNull()
+      expect(queryByText(/Tracking/)).toBeNull()
       unmount()
     }
   })
