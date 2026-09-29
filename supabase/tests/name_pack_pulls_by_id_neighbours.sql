@@ -13,12 +13,15 @@
 --   R2 an EMPTY build never wipes the corpus (a failed read is not "no moments").
 --   R3 an id no source names any more is deleted, after the write.
 --
+--   I1 (2026-09-29) an inferred name is re-derived each run: cleared when its
+--      neighbours no longer agree, moved when they now agree on another edition.
 --   S1 (2026-09-29) sales feed the corpus through topshot_sale_id_editions; an
 --      id whose sales disagree is marked NULL for good and never enters it.
 --
 -- The function DDL below is VERBATIM from the committed migrations
 -- (supabase/migrations/20260929130700_audit_20260929_topshot_pack_pulls_named_by_id_neighbours.sql,
---  supabase/migrations/20260929143000_audit_20260929_id_neighbour_corpus_reads_sales.sql).
+--  supabase/migrations/20260929143000_audit_20260929_id_neighbour_corpus_reads_sales.sql,
+--  supabase/migrations/20260929145500_audit_20260929_inferred_pull_names_rederived_each_run.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -36,7 +39,8 @@ CREATE TABLE public.moments (collection_id uuid, nft_id text, edition_id uuid);
 CREATE TABLE public.topshot_ownership (nft_id text, edition_external_id text);
 CREATE TABLE public.nft_edition_map (collection_id uuid, nft_id text, edition_external_id text);
 CREATE TABLE public.pack_open_pulls (collection_id uuid, pack_nft_id text, nft_id text, opener_address text,
-  edition_id uuid, resolved_via text, resolved_at timestamptz, PRIMARY KEY (collection_id, pack_nft_id, nft_id));
+  edition_id uuid, resolved_via text, resolved_at timestamptz, local_checked_at timestamptz,
+  PRIMARY KEY (collection_id, pack_nft_id, nft_id));
 CREATE TABLE public.pack_open_pull_values (collection_id uuid, pack_nft_id text, opener_address text,
   n_pulls int, n_resolved int, n_priced int, pull_value_usd numeric, priced_at timestamptz,
   n_inferred int NOT NULL DEFAULT 0, PRIMARY KEY (collection_id, pack_nft_id));
@@ -181,11 +185,55 @@ AS $function$
 DECLARE
   v_started timestamptz := clock_timestamp();
   v_ts constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
-  v_cand int := 0; v_named int := 0; v_packs int := 0;
+  v_cand int := 0; v_named int := 0; v_packs int := 0; v_cleared int := 0;
 BEGIN
   IF NOT pg_try_advisory_xact_lock(hashtext('name_pack_pulls_by_id_neighbours')) THEN
     RETURN jsonb_build_object('ok', true, 'skipped', 'another run holds the lock');
   END IF;
+
+  -- (0) 2026-09-29: an inference is only as good as the corpus it was drawn
+  -- from. Re-derive every inferred name against today's corpus and clear the
+  -- ones it no longer backs (neighbours now disagree / too far, or a record
+  -- now names the id itself), so they are named again below or by a record.
+  -- The corpus gaining sales moved 14 of 11,554 to another edition and left
+  -- 47 unsupported.
+  WITH inf AS MATERIALIZED (
+    SELECT o.pack_nft_id, o.nft_id, o.nft_id::bigint AS id, e.external_id AS cur
+      FROM public.pack_open_pulls o
+      JOIN public.editions e ON e.id = o.edition_id
+     WHERE o.collection_id = v_ts AND o.resolved_via = 'id_neighbours'
+  ), chk AS (
+    SELECT i.*, lo.id AS lo_id, lo.edition_external_id AS lo_ext, hi.id AS hi_id, hi.edition_external_id AS hi_ext,
+           EXISTS (SELECT 1 FROM public.topshot_moment_id_editions x WHERE x.id = i.id) AS has_record
+    FROM inf i
+    LEFT JOIN LATERAL (
+      SELECT t.id, t.edition_external_id FROM public.topshot_moment_id_editions t
+       WHERE t.id < i.id ORDER BY t.id DESC LIMIT 1
+    ) lo ON true
+    LEFT JOIN LATERAL (
+      SELECT t.id, t.edition_external_id FROM public.topshot_moment_id_editions t
+       WHERE t.id > i.id ORDER BY t.id ASC LIMIT 1
+    ) hi ON true
+  ), stale AS (
+    SELECT c.pack_nft_id, c.nft_id FROM chk c
+     WHERE c.has_record
+        OR NOT (coalesce(c.lo_ext = c.hi_ext, false)
+                AND c.id - c.lo_id <= 50 AND c.hi_id - c.id <= 50
+                AND c.lo_ext = c.cur)
+  ), clr AS (
+    UPDATE public.pack_open_pulls o
+       SET edition_id = NULL, resolved_via = NULL, resolved_at = NULL, local_checked_at = NULL
+      FROM stale s
+     WHERE o.collection_id = v_ts AND o.pack_nft_id = s.pack_nft_id AND o.nft_id = s.nft_id
+       AND o.resolved_via = 'id_neighbours'
+    RETURNING o.pack_nft_id
+  ), rq AS (
+    UPDATE public.pack_open_pull_values v SET priced_at = '-infinity'
+      FROM (SELECT DISTINCT pack_nft_id FROM clr) c
+     WHERE v.collection_id = v_ts AND v.pack_nft_id = c.pack_nft_id
+    RETURNING 1
+  )
+  SELECT count(*) INTO v_cleared FROM clr;
 
   SELECT count(*) INTO v_cand FROM public.pack_open_pulls
    WHERE collection_id = v_ts AND edition_id IS NULL AND nft_id ~ '^[0-9]{1,15}$';
@@ -214,6 +262,8 @@ BEGIN
     WHERE p.lo_ext = p.hi_ext
       AND p.id - p.lo_id <= 50
       AND p.hi_id - p.id <= 50
+      -- an id a record names is the pull lane's to name, never inferred
+      AND NOT EXISTS (SELECT 1 FROM public.topshot_moment_id_editions x WHERE x.id = p.id)
   ), upd AS (
     UPDATE public.pack_open_pulls o
        SET edition_id = n.edition_id, resolved_via = 'id_neighbours', resolved_at = now()
@@ -221,6 +271,13 @@ BEGIN
      WHERE o.collection_id = v_ts AND o.pack_nft_id = n.pack_nft_id AND o.nft_id = n.nft_id
        AND o.edition_id IS NULL
     RETURNING o.pack_nft_id
+  ), rq AS (
+    -- a pack whose inferred name changed edition keeps the same n_inferred,
+    -- so it is requeued here, not only by the count below
+    UPDATE public.pack_open_pull_values v SET priced_at = '-infinity'
+      FROM (SELECT DISTINCT pack_nft_id FROM upd) u
+     WHERE v.collection_id = v_ts AND v.pack_nft_id = u.pack_nft_id
+    RETURNING 1
   )
   SELECT count(*) INTO v_named FROM upd;
 
@@ -246,8 +303,9 @@ BEGIN
 
   PERFORM public.log_pipeline_run('pack-pulls-id-neighbours', v_started, v_cand, v_named, v_cand - v_named, true, NULL,
     'nba_top_shot', NULL, NULL,
-    jsonb_build_object('unnamed_candidates', v_cand, 'named', v_named, 'packs_requeued', v_packs));
-  RETURN jsonb_build_object('ok', true, 'unnamed_candidates', v_cand, 'named', v_named, 'packs_requeued', v_packs);
+    jsonb_build_object('unnamed_candidates', v_cand, 'named', v_named, 'packs_requeued', v_packs, 'inferred_cleared', v_cleared));
+  RETURN jsonb_build_object('ok', true, 'unnamed_candidates', v_cand, 'named', v_named, 'packs_requeued', v_packs,
+                            'inferred_cleared', v_cleared);
 END;
 $function$;
 -- <<< END verbatim <<<
@@ -322,6 +380,30 @@ BEGIN
   PERFORM _assert(v->>'named' = '0' AND v->>'packs_requeued' = '0', 'a second run is a no-op');
 END $$;
 
+-- I1: the corpus changes under two inferred names.
+-- 112 (between 100 and 120, both 1:1) makes 110's neighbours 100 (1:1) / 112 (1:2) -> cleared.
+-- 210 and 220 (both 1:3) now sit either side of 215 (was 1:2) -> renamed 1:3, PK3 requeued.
+INSERT INTO public.wallet_moments_cache VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '112', '1:2'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '210', '1:3'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '220', '1:3');
+UPDATE public.pack_open_pull_values SET priced_at = now();
+DO $$
+DECLARE v jsonb;
+BEGIN
+  PERFORM public.refresh_topshot_moment_id_editions();
+  v := public.name_pack_pulls_by_id_neighbours();
+  PERFORM _assert_eq(v->>'inferred_cleared', '2', 'I1 both inferred names are re-derived and cleared');
+  PERFORM _assert((SELECT edition_id IS NULL AND resolved_via IS NULL FROM public.pack_open_pulls WHERE nft_id = '110'),
+                  'I1 110: neighbours now disagree -> unnamed again, never left standing');
+  PERFORM _assert((SELECT e.external_id = '1:3' AND o.resolved_via = 'id_neighbours' FROM public.pack_open_pulls o JOIN public.editions e ON e.id = o.edition_id WHERE o.nft_id = '215'),
+                  'I1 215: neighbours now agree on 1:3 -> renamed 1:3');
+  PERFORM _assert((SELECT priced_at = '-infinity' FROM public.pack_open_pull_values WHERE pack_nft_id = 'PK3'), 'I1 PK3 (same n_inferred) is requeued to reprice');
+  PERFORM _assert((SELECT priced_at = '-infinity' AND n_inferred = 0 FROM public.pack_open_pull_values WHERE pack_nft_id = 'PK1'), 'I1 PK1 lost its inferred name: requeued, n_inferred 0');
+  v := public.name_pack_pulls_by_id_neighbours();
+  PERFORM _assert(v->>'inferred_cleared' = '0' AND v->>'named' = '0', 'I1 a second run is stable');
+END $$;
+
 -- R2: an empty build leaves the corpus alone
 DELETE FROM public.wallet_moments_cache; DELETE FROM public.topshot_ownership; DELETE FROM public.nft_edition_map; DELETE FROM public.moments;
 DO $$
@@ -329,7 +411,7 @@ DECLARE v jsonb;
 BEGIN
   v := public.refresh_topshot_moment_id_editions();
   PERFORM _assert(NOT (v->>'ok')::boolean, 'an empty build reports failure');
-  PERFORM _assert_eq((SELECT count(*)::text FROM public.topshot_moment_id_editions), '9', 'R2 and wipes nothing');
+  PERFORM _assert_eq((SELECT count(*)::text FROM public.topshot_moment_id_editions), '12', 'R2 and wipes nothing');
   PERFORM _assert((SELECT NOT ok FROM public.pipeline_runs_stub WHERE pipeline = 'topshot-moment-id-editions' ORDER BY ctid DESC LIMIT 1), 'its pipeline row says ok = false');
 END $$;
 

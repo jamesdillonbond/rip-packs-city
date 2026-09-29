@@ -21,7 +21,8 @@ const PINS = [
     // 50. Pins agree + gap, never overwriting a record, and n_inferred.
     fn: "name_pack_pulls_by_id_neighbours",
     test: "supabase/tests/name_pack_pulls_by_id_neighbours.sql",
-    migration: "supabase/migrations/20260929130700_audit_20260929_topshot_pack_pulls_named_by_id_neighbours.sql",
+    // 2026-09-29: inferred names re-derived every run.
+    migration: "supabase/migrations/20260929145500_audit_20260929_inferred_pull_names_rederived_each_run.sql",
   },
   {
     // Its corpus: drops ids two sources disagree on; an empty build never wipes it.
