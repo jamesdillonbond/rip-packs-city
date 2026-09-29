@@ -18,6 +18,8 @@
 --       before 2023-11-08"), never bisected; not held -> bisect.
 --   F2. Floor checks dispatch before bisections within a node's cap.
 --   R1. A failed call retries in half-size batches (1,000 >> attempts).
+--   F3. Dispatch is round-robin across wallets: one wallet's many narrow
+--       intervals cannot take every slot from another wallet's wide one.
 --   S1. The saved-wallet seed takes only unexplained held Top Shot moments
 --       (not an NFT pack pull, no pack-pull record, not a recorded purchase)
 --       at the floor, never another collection's id, never twice.
@@ -26,7 +28,7 @@
 -- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
 -- seed_saved_wallet_chain_arrivals from
 -- 20260929180000_audit_20260929_chain_arrivals_for_every_saved_wallet_floor_check_first.sql;
--- run_chain_arrival_lane from 20260929181500_audit_20260929_chain_arrival_retries_in_half_size_batches.sql).
+-- run_chain_arrival_lane from 20260929190500_audit_20260929_chain_arrival_dispatch_round_robin_across_wallets.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -91,7 +93,7 @@ SET statement_timeout TO '110s'
 AS $function$
 DECLARE
   v_started  timestamptz := clock_timestamp();
-  v_per_node constant int := 12;
+  v_per_node constant int := 16;
   v_max_att  constant int := 6;
   -- last height of mainnet24..27; a window never straddles one
   v_ends     constant bigint[] := ARRAY[85981134, 88226266, 130290658, 137390145]::bigint[];
@@ -286,10 +288,17 @@ BEGIN
                   WHEN c.at_h <= 137390145 THEN 'http://access-001.mainnet27.nodes.onflow.org:8070'
                   ELSE 'https://rest-mainnet.onflow.org' END AS node
         FROM calls c
-    ), ranked AS (
-      -- floor checks first: one call settles 1,000 ids arrived before the floor
-      SELECT rt.*, row_number() OVER (PARTITION BY rt.node ORDER BY (rt.status <> 'floor'), rt.hi - rt.lo, rt.lo) AS rn
+    ), per_wallet AS (
+      -- 2026-09-29: each wallet's own queue, narrowest first
+      SELECT rt.*, row_number() OVER (PARTITION BY rt.node, rt.wallet ORDER BY (rt.status <> 'floor'), rt.hi - rt.lo, rt.lo) AS wrn
         FROM routed rt
+    ), ranked AS (
+      -- floor checks first (one call settles 1,000 ids arrived before the
+      -- floor), then ROUND-ROBIN across wallets: narrowest-first alone let one
+      -- wallet's hundreds of narrowing intervals take every slot while 26
+      -- wallets' wide intervals never started (2026-09-29)
+      SELECT pw.*, row_number() OVER (PARTITION BY pw.node ORDER BY (pw.status <> 'floor'), pw.wrn, pw.hi - pw.lo, pw.lo) AS rn
+        FROM per_wallet pw
     )
     SELECT * FROM ranked WHERE rn <= v_per_node
   LOOP
@@ -516,10 +525,10 @@ DELETE FROM public.chain_arrival_probes WHERE status IN ('bisect', 'window');
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status) VALUES
   ('0x00000000000000bb', 20, 100000000, 166000000, 'floor'),
   ('0x00000000000000bb', 21, 100000000, 166000000, 'floor');
--- 12 narrower bisections on the same node: without floor priority they fill
--- mainnet26's cap of 12 and the floor check waits
+-- 16 narrower bisections on the same node: without floor priority they fill
+-- mainnet26's cap of 16 and the floor check waits
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
-SELECT '0x00000000000000dd', 900 + g, 100000000 + g * 10000, 100000000 + g * 10000 + 5000, 'bisect' FROM generate_series(1, 12) g;
+SELECT '0x00000000000000bb', 900 + g, 100000000 + g * 10000, 100000000 + g * 10000 + 5000, 'bisect' FROM generate_series(1, 16) g;
 DO $$
 DECLARE v jsonb; v_req bigint;
 BEGIN
@@ -531,7 +540,7 @@ BEGIN
                   'F1: a floor call reads AT lo');
   PERFORM _assert((SELECT url FROM net.calls WHERE id = v_req) = 'http://access-001.mainnet26.nodes.onflow.org:8070/v1/scripts?block_height=100000000',
                   'F1: on the node serving lo');
-  PERFORM _assert((SELECT count(*) = 12 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'), 'F2: the node''s cap of 12 binds');
+  PERFORM _assert((SELECT count(*) = 16 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'), 'F2: the node''s cap of 16 binds');
   PERFORM _assert(v_req IS NOT NULL, 'F2: the floor check is inside the cap, ahead of narrower bisections');
   INSERT INTO net._http_response (id, status_code, content)
   VALUES (v_req, 200, to_jsonb(translate(encode(convert_to('{"type":"Array","value":[{"type":"UInt64","value":"20"}]}', 'UTF8'), 'base64'), E'\n', ''))::text);
@@ -561,6 +570,22 @@ BEGIN
   PERFORM public.run_chain_arrival_lane();
   PERFORM _assert((SELECT count(*) = 3 FROM net.calls), 'R1: after a failure, 500 a call');
   PERFORM _assert((SELECT max(cardinality(pg_temp.call_ids(id))) = 500 FROM net.calls), 'R1: no call carries more than 500 ids');
+END $$;
+
+-- F3: wallet A holds 20 narrow mainnet26 intervals, wallet B one wide one
+DELETE FROM net.calls;
+DELETE FROM public.chain_arrival_probes;
+DELETE FROM public.chain_arrival_requests;
+INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
+SELECT '0x000000000000000a', g, 100000000 + g * 10000, 100000000 + g * 10000 + 5000, 'bisect' FROM generate_series(1, 20) g;
+INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
+VALUES ('0x000000000000000b', 99, 100000000, 129000000, 'bisect');
+DO $$
+BEGIN
+  PERFORM public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT count(*) = 16 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'), 'F3: the cap binds');
+  PERFORM _assert((SELECT request_id IS NOT NULL FROM public.chain_arrival_probes WHERE wallet = '0x000000000000000b'),
+                  'F3: the wide interval of the other wallet is dispatched despite 20 narrower ones');
 END $$;
 
 -- S1

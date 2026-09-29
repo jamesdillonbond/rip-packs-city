@@ -70,7 +70,9 @@ const PINS = [
     // 2026-09-29: the events parse is MATERIALIZED (an 11.9 MB window timed out);
     // then a 'floor' check first, dispatched ahead of bisections; then a
     // failed call retries in half-size batches (1,000 held ids -> HTTP 500).
-    migration: "supabase/migrations/20260929181500_audit_20260929_chain_arrival_retries_in_half_size_batches.sql",
+    // then round-robin dispatch across wallets, 16 per node.
+    migration:
+      "supabase/migrations/20260929190500_audit_20260929_chain_arrival_dispatch_round_robin_across_wallets.sql",
   },
   {
     // Seeds every saved wallet's unexplained held Top Shot moment at the floor.
