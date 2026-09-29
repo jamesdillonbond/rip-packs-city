@@ -62,6 +62,9 @@ const INGEST_TOKEN = process.env.INGEST_SECRET_TOKEN;
 const BASE = "https://nft.paniniamerica.net";
 
 // Pack pages: /marketplace-details/subpack-<x>-<pack_id>.html  (Hobby pack_id 1038 confirmed).
+// MULTI-PRODUCT (2026-09-28): the pack list now comes from the DB (panini_pack_pages, served by the
+// ingest route's GET as `pack_urls`) plus whatever pack links this walk harvests. This array is only
+// the FALLBACK for when that read fails, so a registry outage keeps today's WC coverage.
 // WC2026 Prizm World Cup Soccer packs (both captured live via Chrome 2026-07-16):
 const PACK_URLS = [
   `${BASE}/marketplace-details/subpack-5270763-1038.html`, // Hobby  (pack_id 1038) — live: ~9,504 unopened, floor ~$249
@@ -130,7 +133,8 @@ function appendBackup(line) {
   } catch {}
 }
 async function post(payload) {
-  const n = (payload.cards?.length || 0) + (payload.packs?.length || 0) + (payload.serials?.length || 0) + (payload.sales?.length || 0);
+  const n = (payload.cards?.length || 0) + (payload.packs?.length || 0) + (payload.serials?.length || 0) + (payload.sales?.length || 0)
+    + (payload.products?.length || 0) + (payload.pack_pages?.length || 0);
   // An enum-only payload carries no rows but IS worth posting: it is the only record of how much
   // of the grid this walk actually enumerated, and that number previously existed nowhere except
   // a console line nobody reads and a size-capped local JSONL that rotates. A walk that enumerates
@@ -171,9 +175,16 @@ async function fetchWalkOrder() {
     const r = await fetch(INGEST_URL, { headers: { Authorization: `Bearer ${INGEST_TOKEN}` } });
     if (!r.ok) { console.log(`[panini-runner] walk-order GET -> ${r.status}; falling back to shuffle`); return { list: [], complete: false }; }
     const j = await r.json();
-    const list = Array.isArray(j?.pskus) ? j.pskus.filter((x) => typeof x === "string" && x.startsWith(WC_PREFIX)) : [];
+    // Walk scope first: the route says which products' cards to walk. Absent (an older deploy) or
+    // empty -> the historical WC-only scope, never "everything".
+    const sids = Array.isArray(j?.walk_set_ids) ? j.walk_set_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
+    if (sids.length) WALK_SETS = new Set(sids);
+    if (Array.isArray(j?.discovery_sports) && j.discovery_sports.length) DISCOVERY_SPORTS = j.discovery_sports.filter((x) => typeof x === "string" && x);
+    if (Array.isArray(j?.full_enum_sports) && j.full_enum_sports.length) FULL_ENUM_SPORTS = new Set(j.full_enum_sports.filter((x) => typeof x === "string"));
+    if (Array.isArray(j?.pack_urls)) SERVED_PACK_URLS = j.pack_urls.filter((x) => typeof x === "string" && x.startsWith(BASE + "/"));
+    const list = Array.isArray(j?.pskus) ? j.pskus.filter((x) => typeof x === "string" && isWalked(x)) : [];
     const complete = j?.complete === true;
-    console.log(`[panini-runner] walk order: ${list.length} known pskus, stalest first, complete=${complete} (oldest last_seen_at ${j?.oldest_last_seen_at ?? "?"})`);
+    console.log(`[panini-runner] walk order: ${list.length} known pskus, stalest first, complete=${complete} (oldest last_seen_at ${j?.oldest_last_seen_at ?? "?"}); walk sets=[${[...WALK_SETS].join(",")}] sports=[${DISCOVERY_SPORTS.join(",")}] pack pages=${SERVED_PACK_URLS ? SERVED_PACK_URLS.length : "fallback"}`);
     return { list, complete };
   } catch (e) {
     console.log(`[panini-runner] walk-order GET failed: ${e.message}; falling back to shuffle`);
@@ -181,7 +192,23 @@ async function fetchWalkOrder() {
   }
 }
 
-const WC_PREFIX = "packcard-2332_"; // WC2026 Prizm World Cup Soccer setId (verified live 2026-07-16)
+// (WC_PREFIX "packcard-2332_" retired 2026-09-28: the product gate is WALK_SETS / isWalked below;
+// 2332 = WC2026 Prizm World Cup Soccer, verified live 2026-07-16.)
+// MULTI-PRODUCT (2026-09-28). A psku's field 1 is its card PRODUCT (2332 = WC Prizm). The runner
+// sees every product each sport's grid serves (and reports them — that is how the panini_products
+// registry fills), but only WALKS the products the ingest route names in walk_set_ids. The defaults
+// below are the pre-registry behaviour, used whenever the route cannot be read.
+let WALK_SETS = new Set([2332]);
+let DISCOVERY_SPORTS = ["Soccer"];
+let FULL_ENUM_SPORTS = new Set(["Soccer"]);
+let SERVED_PACK_URLS = null; // null = the route did not answer -> PACK_URLS fallback
+function setIdOf(psku) {
+  const m = typeof psku === "string" ? psku.match(/^packcard-(\d+)_/) : null;
+  return m ? Number(m[1]) : null;
+}
+function isWalked(psku) { const sid = setIdOf(psku); return sid !== null && WALK_SETS.has(sid); }
+// Pack links on any page the walk visits: marketplace subpack pages and /pack-<name>.html drop pages.
+const PACK_LINK_RE = /^https:\/\/nft\.paniniamerica\.net\/(?:marketplace-details\/subpack-\d+-\d+|pack-[^/?#]+)\.html$/;
 
 async function main() {
   const CDP = process.env.PANINI_CDP_URL; // e.g. http://localhost:9222 — connect to YOUR real logged-in Chrome
@@ -215,7 +242,8 @@ async function main() {
 
   let cards = [], packs = [], serials = [], sales = [];
   const enumPskus = new Set();
-  let currentPackId = null; // set before each PACK_URLS goto so packs get their real id
+  let currentPackId = null; // set before each pack-page goto so packs get their real id
+  let currentPackUrl = null; // ...and the page they came from (panini_pack_state.page_url)
   const nationByPsku = {}; // psku -> country (only the grid list carries team; per-card API does not)
   let opCount = 0; const dataKeys = new Set();
   let salesRecords = 0, salesPages = 0, salesTabMissed = 0;
@@ -227,6 +255,30 @@ async function main() {
   // products — so WC cards arrive in clumps and a WC-only progress signal reads a run of
   // non-WC pages as "no new cards" and stops the walk while the server is still serving.
   let gridSeen = 0, gridPages = 0;
+  // Product sightings for the registry: setId -> { sport, items } (the sport whose grid served it
+  // most this walk). Fed by BOTH enumeration sources, for EVERY product, walked or not.
+  let currentSport = null;
+  const sightings = new Map();
+  function sight(psku) {
+    const sid = setIdOf(psku);
+    if (sid === null) return;
+    const k = `${sid}|${currentSport ?? "?"}`;
+    sightings.set(k, (sightings.get(k) || 0) + 1);
+  }
+  // Pack links harvested from every page the walk visits (discovery -> panini_pack_pages).
+  const harvestedPackUrls = new Set();
+  async function harvestPackLinks() {
+    let hrefs = [];
+    try {
+      hrefs = await page.evaluate(() => Array.from(document.querySelectorAll("a[href]")).map((a) => a.href || ""));
+    } catch { return 0; }
+    let added = 0;
+    for (const h of hrefs) {
+      const u = String(h).split("#")[0].split("?")[0];
+      if (PACK_LINK_RE.test(u) && !harvestedPackUrls.has(u)) { harvestedPackUrls.add(u); added++; }
+    }
+    return added;
+  }
   const DEBUG = process.env.PANINI_DEBUG === "1";
   // Recursively find every realized-sale record in an nftSalesData payload. Keyed on the FIELDS
   // that were verified live (url_key + txn_amount) rather than a nesting path, because the op was
@@ -305,7 +357,7 @@ async function main() {
     const d = j?.data; if (!d) return;
     opCount++; for (const k in d) dataKeys.add(k);
     if (d.getCardMarketStats?.data) { const cd = d.getCardMarketStats.data; if (cd.psku && nationByPsku[cd.psku]) cd.__nation = nationByPsku[cd.psku]; cards.push(cd); }
-    if (d.getPackMarketStats?.data) { const pk = d.getPackMarketStats.data; if (currentPackId) pk.__pack_id = currentPackId; packs.push(pk); }
+    if (d.getPackMarketStats?.data) { const pk = d.getPackMarketStats.data; if (currentPackId) pk.__pack_id = currentPackId; if (currentPackUrl) pk.__page_url = currentPackUrl; packs.push(pk); }
     const prods = d.getPskuTotalCardsList?.data?.products;
     if (Array.isArray(prods)) serials.push(...prods);
     const saleRecs = []; findSaleRecords(d, 0, saleRecs);
@@ -316,8 +368,12 @@ async function main() {
     const gridItems = d.products?.items;
     if (Array.isArray(gridItems)) { gridSeen += gridItems.length; gridPages++; }
     const items = []; findItems(d, 0, items);
-    for (const it of items) if (it?.psku && String(it.psku).startsWith(WC_PREFIX)) { enumPskus.add(it.psku); if (it.team) nationByPsku[it.psku] = it.team; }
-    if (DEBUG && items.length) console.log(`[panini-runner][debug] onepanini keys=${Object.keys(d).join(",")} items=${items.length} wc=${[...enumPskus].length}`);
+    for (const it of items) {
+      if (!it?.psku) continue;
+      if (Array.isArray(gridItems) && gridItems.includes(it)) sight(String(it.psku));
+      if (isWalked(String(it.psku))) { enumPskus.add(it.psku); if (it.team) nationByPsku[it.psku] = it.team; }
+    }
+    if (DEBUG && items.length) console.log(`[panini-runner][debug] onepanini keys=${Object.keys(d).join(",")} items=${items.length} walked=${[...enumPskus].length}`);
   });
 
   // (b) DOM harvest — the documented fallback enumeration source. The virtualized grid
@@ -345,7 +401,7 @@ async function main() {
       const m = src.match(/packcard-[0-9]+_[0-9]+_[0-9]+_[0-9]+/);
       if (!m) continue;
       const psku = m[0];
-      if (psku.startsWith(WC_PREFIX) && !enumPskus.has(psku)) { enumPskus.add(psku); added++; }
+      if (isWalked(psku) && !enumPskus.has(psku)) { enumPskus.add(psku); added++; }
     }
     return added;
   }
@@ -490,8 +546,29 @@ async function main() {
     }
   }
 
-  // --- 1. ENUMERATE: walk the Soccer grid, scroll to paginate, collect WC Prizm pskus ---
-  await page.goto(`${BASE}/marketplace/nfts.html?sport=Soccer`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
+  // --- 0.9 WALK SCOPE: read the walk order FIRST (multi-product, 2026-09-28) — it carries which
+  //     products to walk (walk_set_ids), which sports to enumerate and which pack pages to open, and
+  //     enumeration below filters on the first. It used to be read after enumeration; the catalogue
+  //     it returns is the same either way.
+  const { list: known, complete: knownComplete } = await fetchWalkOrder();
+
+  // Home page first: a cheap pass for pack links (new drops are linked from it), nothing else.
+  await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
+  await page.waitForTimeout(2500);
+  await harvestPackLinks();
+
+  // --- 1. ENUMERATE: walk each sport's grid, scroll to paginate. Walked products' pskus go to the
+  //     walk set; EVERY product's setId is recorded as a sighting. Sports holding a walked product
+  //     get the full budget; the rest get a short DISCOVERY pass — it only has to see which setIds
+  //     exist, so a new product (a WNBA release, say) is in the registry the next morning. ---
+  const DISCOVERY_BUDGET_MS = Number(process.env.PANINI_DISCOVERY_BUDGET_MIN || 3) * 60000;
+  const sportStats = [];
+  let domAdded = 0;
+  for (const sport of DISCOVERY_SPORTS) {
+  currentSport = sport;
+  const full = FULL_ENUM_SPORTS.has(sport);
+  const gridSeen0 = gridSeen, gridPages0 = gridPages, enum0 = enumPskus.size;
+  await page.goto(`${BASE}/marketplace/nfts.html?sport=${encodeURIComponent(sport)}`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
   await page.waitForTimeout(2500);
   // Stop when the GRID stops yielding, not when the WC subset stops yielding. Progress is the
   // composite (WC pskus found + total products the grid has served): a stretch of non-WC soccer
@@ -509,9 +586,9 @@ async function main() {
   // a wall-clock budget, and the stability counter. All three are env-overridable for a probe.
   const ENUM_STABLE = Number(process.env.PANINI_ENUM_STABLE || 8);
   const ENUM_MAX_ITERS = Number(process.env.PANINI_ENUM_MAX_ITERS || 200);
-  const ENUM_BUDGET_MS = Number(process.env.PANINI_ENUM_BUDGET_MIN || 10) * 60000;
+  const ENUM_BUDGET_MS = full ? Number(process.env.PANINI_ENUM_BUDGET_MIN || 10) * 60000 : DISCOVERY_BUDGET_MS;
   const tEnum = Date.now();
-  let last = -1, stable = 0, domAdded = 0, enumIters = 0, enumBudgetHit = false;
+  let last = -1, stable = 0, enumIters = 0, enumBudgetHit = false;
   for (let i = 0; i < ENUM_MAX_ITERS && stable < ENUM_STABLE; i++) {
     if (Date.now() - tEnum > ENUM_BUDGET_MS) { enumBudgetHit = true; break; }
     enumIters++;
@@ -522,7 +599,28 @@ async function main() {
     last = st.last; stable = st.stable;
   }
   domAdded += await harvestDomPskus(); // final sweep for the last-rendered rows
+  await harvestPackLinks();
   const enumStop = enumStopReason({ budgetHit: enumBudgetHit, stable, stableThreshold: ENUM_STABLE });
+  sportStats.push({
+    sport, full, enum_stop: enumStop, enum_iters: enumIters, enum_ms: Date.now() - tEnum,
+    grid_pages: gridPages - gridPages0, grid_items: gridSeen - gridSeen0, walked_pskus_added: enumPskus.size - enum0,
+    set_ids: [...new Set([...sightings.keys()].filter((k) => k.endsWith(`|${sport}`)).map((k) => Number(k.split("|")[0])))].sort((a, b) => a - b),
+  });
+  console.log(`[panini-runner][diag] sport=${sport} (${full ? "full" : "discovery"}) enum_stop=${enumStop} grid_pages=${gridPages - gridPages0} grid_items=${gridSeen - gridSeen0} walked_pskus+=${enumPskus.size - enum0} set_ids=[${sportStats.at(-1).set_ids.join(",")}]`);
+  }
+  currentSport = null;
+  // Registry sightings: one row per setId, attributed to the sport whose grid served it most.
+  const bestBySet = new Map();
+  for (const [k, n] of sightings) {
+    const [sid, sp] = k.split("|");
+    const prev = bestBySet.get(sid);
+    if (!prev || n > prev.grid_items) bestBySet.set(sid, { set_id: Number(sid), sport: sp, grid_items: n });
+  }
+  const productSightings = [...bestBySet.values()];
+  // The first sport pass is the historical Soccer walk; its figures keep the legacy field names below.
+  const s0 = sportStats[0] || { enum_stop: "none", enum_iters: 0, enum_ms: 0 };
+  const enumStop = s0.enum_stop, enumIters = s0.enum_iters;
+  const tEnum = Date.now() - s0.enum_ms;
   // wc_share closes the one question the 2026-08-15 filing could not measure: what fraction of the
   // grid AT DEPTH is WC-Prizm. A static scan of page 1 read 48%; if the walk-wide share is far
   // lower, scoping the grid to the cardset (rather than scrolling the mixed grid) is the next fix.
@@ -555,7 +653,6 @@ async function main() {
   // external_id), and the per-card walk below navigates straight to /marketplace-details/<psku>
   // — it never needed the grid to have surfaced that card in this run. So: the grid keeps
   // discovery, our own catalogue supplies refresh, oldest first.
-  const { list: known, complete: knownComplete } = await fetchWalkOrder();
   const discovered = enumPskus.size > 0 ? [...enumPskus] : fileList;
   let pskus, orderMode;
   if (known.length > 0) {
@@ -583,17 +680,34 @@ async function main() {
   // Post the enumeration record BEFORE the long per-card walk, so it lands even if the walk is
   // later killed (laptop sleep / unplug / rate-limit). Fire-and-forget semantics: post() already
   // swallows its own failures, and telemetry must never break the ingest it measures.
-  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, known_complete: knownComplete } });
+  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size } });
+  // Registry upkeep: every product the grids served + every pack link found. Never admits a
+  // product or disables a page — the route only records sightings and new pages.
+  await post({ products: productSightings, pack_pages: [...harvestedPackUrls].map((url) => ({ url, discovered: true })) });
 
   // --- 2. PACKS --- (post IMMEDIATELY after this walk so pack data lands even if the long
   //     per-card walk below stalls; 2.5s wait gives getPackMarketStats time to fire on load)
-  for (const url of PACK_URLS) {
-    currentPackId = (url.match(/-(\d+)\.html/) || [])[1] || null;
+  //     MULTI-PRODUCT (2026-09-28): the page list is the registry's (panini_pack_pages) plus this
+  //     walk's harvested links; subpack pages first, so a product that has one keeps its numeric id
+  //     (the route also maps a repeat pack_sku onto the existing row). Each visit is reported back
+  //     as walked/captured — a page type that never fires getPackMarketStats shows up as
+  //     last_walked_at without last_captured_at, instead of as a pack that silently never updates.
+  const packUrlList = [...new Set([...(SERVED_PACK_URLS ?? PACK_URLS), ...harvestedPackUrls])]
+    .sort((a, b) => Number(b.includes("/subpack-")) - Number(a.includes("/subpack-")));
+  const PACK_PAGES_MAX = Number(process.env.PANINI_PACK_PAGES_MAX || 40);
+  const packVisits = [];
+  for (const url of packUrlList.slice(0, PACK_PAGES_MAX)) {
+    currentPackId = (url.match(/subpack-\d+-(\d+)\.html$/) || [])[1] || null;
+    currentPackUrl = url;
+    const before = packs.length;
     await page.goto(url, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(2500);
+    const got = packs.slice(before);
+    packVisits.push({ url, walked: true, captured: got.length > 0, pack_id: got.length ? String(got[0].__pack_id ?? got[0].pack_sku ?? "") || null : null });
   }
-  currentPackId = null;
-  if (packs.length) { console.log(`[panini-runner] posting ${packs.length} pack(s) up front`); await post({ packs }); packs = []; }
+  currentPackId = null; currentPackUrl = null;
+  console.log(`[panini-runner] pack pages: ${packVisits.length} visited (${packUrlList.length} known), ${packVisits.filter((v) => v.captured).length} captured`);
+  if (packs.length || packVisits.length) { console.log(`[panini-runner] posting ${packs.length} pack(s) up front`); await post({ packs, pack_pages: packVisits }); packs = []; }
 
   // --- 3. Per-card detail (getCardMarketStats + getPskuTotalCardsList serials) ---
   // Walk pacing: wait for THIS psku's /onepanini payload to actually arrive rather than for

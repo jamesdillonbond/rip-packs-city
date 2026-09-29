@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parallelFamily, toEditionRow, toFmvRow, toFmvRowV11, PANINI_ASK_ONLY_MULT, toPackRow, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID } from "@/lib/chains/panini/ingest-normalize"
+import { parallelFamily, toEditionRow, toFmvRow, toFmvRowV11, PANINI_ASK_ONLY_MULT, toPackRow, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID, pskuSetId } from "@/lib/chains/panini/ingest-normalize"
 
 const NOW = "2026-07-16T00:00:00.000Z"
 
@@ -245,5 +245,24 @@ describe("isStrictIsoUtc", () => {
     expect(isStrictIsoUtc("2026-08-02T10:08:02+00:00")).toBe(false)
     expect(isStrictIsoUtc("2026-08-02T10:08:02Z,id.gt.0")).toBe(false)
     expect(isStrictIsoUtc("last tuesday")).toBe(false)
+  })
+})
+
+describe("pskuSetId (multi-product, 2026-09-28)", () => {
+  it("reads the card product from every id shape that carries it", () => {
+    expect(pskuSetId("packcard-2332_486966_12578893_467")).toBe(2332) // edition psku
+    expect(pskuSetId("packcard-2332_486966_12578893_467__1_11")).toBe(2332) // edition sku / fmv edition_id
+    expect(pskuSetId("packcard-4100_1_2_3__10_10")).toBe(4100) // serial sku / sale url_key
+  })
+  it("is null for anything that is not a card psku — never a guessed product", () => {
+    for (const v of ["1038", "subpack-5270763-1038", "packcard-_1_2", "", null, undefined, 2332]) expect(pskuSetId(v)).toBeNull()
+  })
+})
+
+describe("toPackRow product identity (multi-product, 2026-09-28)", () => {
+  it("carries the published product name, sport, page url and the resolved setId", () => {
+    const r = toPackRow({ __pack_id: "WNBA-FOTL", __page_url: "https://nft.paniniamerica.net/pack-x.html", pack_name: "2026 Panini NFT Prizm WNBA FOTL Packs", collection_name: " 2026 Panini NFT Prizm WNBA ", sport: "BASKETBALL" }, NOW, null)
+    expect(r).toMatchObject({ id: "WNBA-FOTL", product_name: "2026 Panini NFT Prizm WNBA", sport: "BASKETBALL", product_set_id: null, page_url: "https://nft.paniniamerica.net/pack-x.html", pack_type: "fotl" })
+    expect(toPackRow({ __pack_id: "1038", collection_name: "WC" }, NOW, 2332).product_set_id).toBe(2332)
   })
 })

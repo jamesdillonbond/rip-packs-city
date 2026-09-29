@@ -29,6 +29,10 @@ const st = vi.hoisted(() => ({
   // 2026-09-25: order of the fmv writes, so a test can pin insert-BEFORE-delete.
   fmvOps: [] as string[],
   fmvDelete: { data: null, error: null as null | { message: string } },
+  // Multi-product gate (2026-09-28): the panini_products registry read, and every registry write.
+  products: { data: [{ set_id: 2332, name: "2026 Panini NFT Prizm World Cup Soccer", walk_cards: true }] as unknown[] | null, error: null as null | { message: string } },
+  registryUpserts: [] as { table: string; rows: any; opts: any }[],
+  packRowsArgs: [] as unknown[][],
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -47,9 +51,10 @@ vi.mock("@/lib/supabase", () => ({
       let isUpdate = false
       let isInsert = false
       let isDelete = false
+      let isUpsert = false
       let rec: (typeof st.updates)[number] | null = null
       const b: any = {
-        upsert: () => b,
+        upsert: (rows: any, opts: any) => { isUpsert = true; if (table === "panini_products" || table === "panini_pack_pages" || table === "panini_pack_state") st.registryUpserts.push({ table, rows, opts }); return b },
         insert: () => { isInsert = true; if (table === "panini_fmv_snapshots") st.fmvOps.push("insert"); return b },
         delete: () => { if (table === "panini_fmv_snapshots") { st.fmvOps.push("delete"); isDelete = true } return b },
         in: () => b, gte: () => b,
@@ -58,6 +63,8 @@ vi.mock("@/lib/supabase", () => ({
         eq: (_c: string, v: any) => { if (rec) rec.sku = v; return b },
         or: (expr: string) => { if (rec) rec.or = expr; return b },
         select: async () => {
+          if (table === "panini_products" && !isUpsert) return st.products
+          if (table === "panini_products" || table === "panini_pack_pages") return { data: [{ id: "r" }], error: null }
           if (isUpdate) return (rec?.sku != null && st.saleUpdate[rec.sku]) || st.saleUpdateDefault
           if (isInsert && table === "panini_fmv_snapshots") return st.fmvInsert
           if (table === "panini_pack_state") return st.packUpsert
@@ -73,7 +80,10 @@ vi.mock("@/lib/chains/panini/ingest-normalize", () => ({
   toEditionRow: (c: any) => { if (st.throwInWalk) throw new Error("normalize boom"); return { external_id: c.sku, collection_id: "p1" } },
   toFmvRow: (c: any) => (c.fmv ? { edition_id: c.sku, fmv_usd: c.fmv, algo_version: "panini-1.0.0" } : null),
   toFmvRowV11: (c: { sku: string; fmv?: number }, _n: string, r?: { fmv_usd: number } | null) => (c.fmv ? { edition_id: c.sku, fmv_usd: r?.fmv_usd ?? c.fmv, algo_version: "panini-1.1.0" } : null),
-  toPackRow: (p: any) => ({ id: p.pack_sku }),
+  toPackRow: (p: any, _n: string, sid: number | null = null) => { st.packRowsArgs.push([p, sid]); return { id: p.pack_sku, product_set_id: sid } },
+  // The real parser, except that the fixtures' short skus ("c1", "a") stand for WC cards — the
+  // product the route has always written — so every pre-existing case keeps its meaning.
+  pskuSetId: (k: unknown) => { const m = typeof k === "string" ? k.match(/^packcard-(\d+)_/) : null; return m ? Number(m[1]) : (typeof k === "string" && !k.startsWith("packcard-") ? 2332 : null) },
   toSerialRow: (s: any) => ({ sku: s.sku, edition_external_id: s.ed }),
   // Reducer + filter guard are unit-tested for real in panini-ingest-normalize.test.ts; here they
   // are stubbed so the route's write behaviour is what the assertions are about.
@@ -96,6 +106,8 @@ beforeEach(() => {
   st.updates = []; st.runs = []; st.captured = null; st.throwInWalk = false
   st.recent = { data: [], error: null }; st.recentCalls = []
   st.fmvOps = []; st.fmvDelete = { data: null, error: null }
+  st.products = { data: [{ set_id: 2332, name: "2026 Panini NFT Prizm World Cup Soccer", walk_cards: true }], error: null }
+  st.registryUpserts = []; st.packRowsArgs = []
   delete process.env.PANINI_FMV_ENGINE
 })
 afterEach(() => { delete process.env.CRON_SECRET })
@@ -411,5 +423,95 @@ describe("panini-ingest — the after() walk", () => {
     await st.captured!()
     expect(st.runs[0].p_ok).toBe(false)
     expect(st.runs[0].p_error).toContain("normalize boom")
+  })
+})
+
+// Multi-product gate (2026-09-28). Only products with walk_cards=true may reach panini_editions /
+// _card_serials / _fmv_snapshots, because every Panini board and the WC pack-EV model still read
+// those tables as "the WC catalogue". A card from any other product written there would be averaged
+// into World Cup EV — so the gate is what keeps a widened runner from publishing a substitution.
+describe("panini-ingest — product gate", () => {
+  const run = async (body: unknown) => {
+    const res = await POST(makeReq({ url, auth: "Bearer ingest", body }))
+    expect(res.status).toBe(202)
+    if (st.captured) await st.captured()
+    return st.runs[st.runs.length - 1]
+  }
+
+  it("holds back cards/serials/sales of a product that is not admitted, and counts them by setId", async () => {
+    const r = await run({
+      cards: [{ sku: "packcard-2332_1_1_1", psku: "packcard-2332_1_1_1" }, { sku: "packcard-4100_1_1_1", psku: "packcard-4100_1_1_1" }],
+      serials: [{ sku: "packcard-4100_1_1_1__1_10", ed: "packcard-4100_1_1_1" }],
+    })
+    expect(r.p_extra.skipped_by_set).toEqual({ "4100": 2 })
+    expect(r.p_extra.admitted_set_ids).toEqual([2332])
+    expect(r.p_ok).toBe(true)
+  })
+
+  it("admits a product once the registry says walk_cards=true", async () => {
+    st.products = { data: [{ set_id: 2332, name: "WC", walk_cards: true }, { set_id: 4100, name: "WNBA", walk_cards: true }], error: null }
+    const r = await run({ cards: [{ sku: "packcard-4100_1_1_1", psku: "packcard-4100_1_1_1" }] })
+    expect(r.p_extra.skipped_by_set).toEqual({})
+  })
+
+  it("a registry read failure admits ONLY the historical WC product and fails the run loudly", async () => {
+    st.products = { data: null, error: { message: "registry down" } }
+    const r = await run({ cards: [{ sku: "packcard-2332_1_1_1", psku: "packcard-2332_1_1_1" }, { sku: "packcard-4100_1_1_1", psku: "packcard-4100_1_1_1" }] })
+    expect(r.p_extra.admitted_set_ids).toEqual([2332])
+    expect(r.p_extra.skipped_by_set).toEqual({ "4100": 1 })
+    expect(r.p_ok).toBe(false)
+    expect(r.p_error).toMatch(/registry down/)
+  })
+
+  it("resolves a pack's product by its published name; unknown products stay null (NOT MODELED)", async () => {
+    await run({ packs: [
+      { pack_sku: "1039", collection_name: "2026 Panini NFT Prizm World Cup Soccer" },
+      { pack_sku: "WNBA-FOTL", collection_name: "2026 Panini NFT Prizm WNBA" },
+    ] })
+    expect(st.packRowsArgs.map((a) => a[1])).toEqual([2332, null])
+  })
+
+  it("⚠ a registry read failure does NOT write product_set_id at all — a null would un-model WC packs", async () => {
+    st.products = { data: null, error: { message: "registry down" } }
+    await run({ packs: [{ pack_sku: "1039", collection_name: "2026 Panini NFT Prizm World Cup Soccer" }] })
+    const up = st.registryUpserts.find((u) => u.table === "panini_pack_state")
+    expect(up).toBeTruthy()
+    expect("product_set_id" in up!.rows[0]).toBe(false)
+  })
+})
+
+describe("panini-ingest — discovery registry", () => {
+  it("records sightings without ever admitting a product, and logs under the enum pipeline", async () => {
+    const res = await POST(makeReq({ url, auth: "Bearer ingest", body: { products: [{ set_id: 4100, sport: "Basketball", grid_items: 30 }, { set_id: 4100, sport: "Soccer", grid_items: 2 }, { set_id: "x" }] } }))
+    expect(res.status).toBe(202)
+    const up = st.registryUpserts.find((u) => u.table === "panini_products")!
+    expect(up.rows).toHaveLength(1)
+    expect(up.rows[0]).toMatchObject({ set_id: 4100, last_grid_items: 30, last_grid_sport: "Basketball" })
+    expect("walk_cards" in up.rows[0]).toBe(false)
+    expect(st.runs.at(-1).p_pipeline).toBe("panini-ingest-enum")
+    expect(st.runs.every((r) => r.p_pipeline !== "panini-ingest")).toBe(true)
+  })
+
+  it("keeps only Panini-hosted pack links, inserts discoveries without overwriting, stamps captures", async () => {
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { pack_pages: [
+      { url: "https://nft.paniniamerica.net/pack-2026_X.html", discovered: true },
+      { url: "https://evil.example/pack-1.html", discovered: true },
+      { url: "https://nft.paniniamerica.net/marketplace-details/subpack-1-1038.html", walked: true, captured: true, pack_id: "1038" },
+    ] } }))
+    const up = st.registryUpserts.find((u) => u.table === "panini_pack_pages")!
+    expect(up.rows).toEqual([{ url: "https://nft.paniniamerica.net/pack-2026_X.html", source: "discovered" }])
+    expect(up.opts.ignoreDuplicates).toBe(true)
+    const upd = st.updates.find((u) => u.table === "panini_pack_pages")!
+    expect(upd.patch).toMatchObject({ last_pack_id: "1038" })
+    expect(upd.patch.last_captured_at).toBeTruthy()
+  })
+})
+
+describe("panini-ingest — one pack product, one row", () => {
+  it("dedupes two captures of the same pack id within a batch (an upsert may not touch a row twice)", async () => {
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { packs: [{ pack_sku: "A", collection_name: "x" }, { pack_sku: "A", collection_name: "x" }] } }))
+    if (st.captured) await st.captured()
+    const up = st.registryUpserts.find((u) => u.table === "panini_pack_state")!
+    expect(up.rows).toHaveLength(1)
   })
 })

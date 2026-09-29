@@ -85,14 +85,30 @@ export function toFmvRowV11(c: PaniniCardStats, nowIso: string, recent?: { fmv_u
   return { edition_id: String(c?.sku ?? c?.psku), fmv_usd: fmv, confidence, algo_version: "panini-1.1.0", computed_at: nowIso };
 }
 
+// The card PRODUCT a psku belongs to: field 1 of packcard-<setId>_<parallelSetId>_<cardId>_<playerId>
+// (2332 = 2026 Panini NFT Prizm World Cup Soccer). Every edition id, serial sku and FMV edition_id
+// carries it as a prefix, so this is the one place product identity is parsed. null = not a card psku.
+export function pskuSetId(psku: unknown): number | null {
+  const m = typeof psku === "string" ? psku.match(/^packcard-(\d+)_/) : null;
+  return m ? Number(m[1]) : null;
+}
+
 // getPackMarketStats.data -> panini_pack_state row. Pack id prefers the runner's __pack_id (parsed from
 // the pack URL) so FOTL 1039 doesn't collide with Hobby 1038. Secondary price captured for net rip-EV.
-export function toPackRow(p: any, nowIso: string) {
+// Multi-product (2026-09-28): product_name / sport come from the payload itself (collection_name,
+// sport); product_set_id is resolved by the route against panini_products (a pack payload carries no
+// card setId), and stays null — i.e. NOT MODELED — until a product row names it.
+export function toPackRow(p: any, nowIso: string, productSetId: number | null = null) {
   const ms = p?.market_stats ?? p ?? {};
   const packId = String(p?.__pack_id ?? p?.pack_sku ?? p?.collection_name ?? "");
+  const productName = typeof p?.collection_name === "string" && p.collection_name.trim() ? p.collection_name.trim() : null;
   return {
     id: packId,
     collection_id: PANINI_UUID,
+    product_name: productName,
+    sport: typeof p?.sport === "string" && p.sport.trim() ? p.sport.trim() : null,
+    product_set_id: productSetId,
+    page_url: typeof p?.__page_url === "string" ? p.__page_url : null,
     pack_type: /fotl|first off/i.test(p?.pack_name ?? "") || packId === "1039" ? "fotl" : "hobby",
     price_usd: null,
     cards_per_pack: Number(p?.cards_per_subpack) || null,

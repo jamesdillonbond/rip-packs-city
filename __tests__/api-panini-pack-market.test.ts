@@ -38,6 +38,9 @@ const HOBBY = {
   cards_per_pack: 4, packs_total: 50480, packs_remaining: 5785, packs_ripped_pct: 88.5, actual_ev_usd: 150,
   typical_ev_usd: 30, silver_ev: 4, base_parallel_ev: 65, insert_ev: 91, fotl_exclusive_ev: 114,
   net_rip_edge_usd: 6, model_note: "panini-pack-ev-0.4 · REMAINING-BASIS", updated_at: FRESH,
+  // Re-pinned 2026-09-28: the board carries product identity, and EV is served only where the view
+  // says the model applies (ev_modeled). WC is the modeled product.
+  product_name: "2026 Panini NFT Prizm World Cup Soccer", sport: "SOCCER", product_set_id: 2332, ev_modeled: true,
 }
 const FOTL = { ...HOBBY, id: "1039", pack_type: "fotl", cards_per_pack: 5, pack_cost_usd: 261, floor_usd: 261, updated_at: FRESH }
 
@@ -165,3 +168,46 @@ describe("parsePackDetails", () => {
     }
   })
 })
+
+// Multi-product (2026-09-28). The board now carries packs of products the pack-EV model does not
+// price. The substitution this pins: a WNBA pack must never show a number — not WC's EV (the view's
+// old CROSS JOIN), not $0 — and must say it is not modeled. The route is the second line of defence:
+// it serves EV only on an explicit ev_modeled=true, so a view regression cannot leak figures.
+describe("GET /api/panini-pack-market — products the model does not price", () => {
+  const WNBA = {
+    ...FOTL, id: "PZM-WNBA-FOTL", product_name: "2026 Panini NFT Prizm WNBA", sport: "BASKETBALL", product_set_id: null,
+    ev_modeled: false, model_note: "not modeled · no pack-EV model exists for this product yet",
+    // Deliberately leaked EV figures, as a regressed view would serve them — the route must drop them.
+    actual_ev_usd: 150, typical_ev_usd: 30, net_rip_edge_usd: 6,
+  }
+
+  it("serves the pack's market stats but NO EV figure, and flags it not modeled", async () => {
+    state.panini_pack_ev_board = { data: [WNBA, HOBBY], error: null }
+    const { json } = await body()
+    const w = json.products.find((p: any) => p.id === "PZM-WNBA-FOTL")
+    expect(w.evModeled).toBe(false)
+    expect(w.costUsd).toBe(261)
+    expect(w.typicalEvUsd).toBeNull()
+    expect(w.actualEvUsd).toBeNull()
+    expect(w.netRipEdgeUsd).toBeNull()
+    expect(Object.values(w.legs).every((v) => v === null)).toBe(true)
+    expect(w.productName).toBe("2026 Panini NFT Prizm WNBA")
+  })
+
+  it("a row with no ev_modeled column at all is treated as NOT modeled (strict)", async () => {
+    const legacy: Record<string, unknown> = { ...HOBBY }
+    delete legacy.ev_modeled
+    state.panini_pack_ev_board = { data: [legacy], error: null }
+    const { json } = await body()
+    expect(json.products[0].evModeled).toBe(false)
+    expect(json.products[0].actualEvUsd).toBeNull()
+  })
+
+  it("orders the modeled (WC) packs first", async () => {
+    state.panini_pack_ev_board = { data: [WNBA, FOTL, HOBBY], error: null }
+    const { json } = await body()
+    // WC first; within a product, pack_type order (fotl < hobby) — what the view's ORDER BY served before.
+    expect(json.products.map((p: any) => p.id)).toEqual(["1039", "1038", "PZM-WNBA-FOTL"])
+  })
+})
+

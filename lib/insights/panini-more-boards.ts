@@ -87,7 +87,10 @@ export async function fetchPaniniMoreBoards(
         .limit(PANINI_BOARD_LIMIT),
       "panini_deal_board",
     ),
-    read(db.from("panini_pack_ev_board").select(PACK_COLS).order("pack_type", { ascending: true }), "panini_pack_ev_board"),
+    // WC-only board: since 2026-09-28 panini_pack_ev_board also carries packs of products the model
+    // does not price (NULL EV, ev_modeled=false). They belong on the Packs tab, which says "not
+    // modeled"; here they would be EV rows with no EV. Filter on the view's own discriminator.
+    read(db.from("panini_pack_ev_board").select(PACK_COLS).eq("ev_modeled", true).order("pack_type", { ascending: true }), "panini_pack_ev_board"),
     read(
       db.from("panini_special_serials_board").select(SPECIAL_COLS)
         .eq("is_listed", true)

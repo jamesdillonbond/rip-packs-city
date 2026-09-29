@@ -19,6 +19,8 @@ function product(over: Record<string, unknown> = {}) {
     typicalEvUsd: 30, actualEvUsd: 150, netRipEdgeUsd: 6,
     legs: { silver: 4, baseParallel: 65, insert: 91, fotlExclusive: null },
     modelNote: "panini-pack-ev-0.4 · REMAINING-BASIS", updatedAt: RECENT, stale: false,
+    // Re-pinned 2026-09-28: EV renders only for a product the model prices (explicit true).
+    productName: "2026 Panini NFT Prizm World Cup Soccer", sport: "SOCCER", evModeled: true,
     ...over,
   }
 }
@@ -118,3 +120,45 @@ describe("PaniniPackMarket", () => {
     expect(c.textContent).toContain("Coverage figures couldn")
   })
 })
+
+// Multi-product (2026-09-28): a pack whose product the model does not price must show its market
+// stats and say "Not modeled" — never an EV number (a leaked WC figure) and never a bare "—" tile
+// that reads as "worth nothing". The fixture deliberately carries EV figures, as a regressed payload
+// would, to prove the component itself refuses to render them.
+describe("PaniniPackMarket — unmodeled products", () => {
+  const wnba = product({
+    id: "PZM-WNBA-FOTL", packType: "fotl", label: "FOTL", name: "2026 Panini NFT Prizm WNBA FOTL Packs",
+    productName: "2026 Panini NFT Prizm WNBA", sport: "BASKETBALL", evModeled: false,
+    typicalEvUsd: 777, actualEvUsd: 888, netRipEdgeUsd: 99, costUsd: 199, floorUsd: 199,
+    legs: { silver: 4, baseParallel: 65, insert: 91, fotlExclusive: 114 }, modelNote: "not modeled · x",
+  })
+
+  it("renders cost and supply, says Not modeled, and shows no EV figure or EV legs", async () => {
+    mockFetch(200, payload({ products: [product(), wnba] }))
+    const c = await mount()
+    const card = c.querySelector('[data-testid="panini-pack-PZM-WNBA-FOTL"]')!
+    expect(card.getAttribute("data-ev-modeled")).toBe("false")
+    const t = card.textContent ?? ""
+    expect(t).toContain("Not modeled")
+    expect(t).toContain("$199")
+    for (const leaked of ["$777", "$888", "+$99", "EV legs", "Typical pull"]) expect(t).not.toContain(leaked)
+    const wc = c.querySelector('[data-testid="panini-pack-1038"]')!
+    expect(wc.getAttribute("data-ev-modeled")).toBe("true")
+    expect(wc.textContent).toContain("Typical pull")
+  })
+
+  it("names the product in the price trail when two products' packs share a type", async () => {
+    mockFetch(200, payload({
+      products: [product({ id: "1039", packType: "fotl", label: "FOTL" }), wnba],
+      history: [
+        { packId: "PZM-WNBA-FOTL", packType: "fotl", observedAt: RECENT, floorUsd: 199, recentSaleUsd: 190, avgSaleUsd: 180, packsRemaining: 100 },
+        { packId: "1039", packType: "fotl", observedAt: RECENT, floorUsd: 245, recentSaleUsd: 261, avgSaleUsd: 300, packsRemaining: 1480 },
+      ],
+    }))
+    const c = await mount()
+    const rows = [...c.querySelectorAll("tbody tr")].map((r) => r.textContent ?? "").filter((t) => t.includes("PT"))
+    expect(rows.some((r) => r.includes("2026 Panini NFT Prizm WNBA · FOTL"))).toBe(true)
+    expect(rows.some((r) => r.includes("FOTL") && !r.includes("WNBA"))).toBe(true)
+  })
+})
+

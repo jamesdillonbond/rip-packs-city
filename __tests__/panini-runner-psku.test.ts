@@ -79,8 +79,16 @@ describe("panini-runner source-drift guard", () => {
     expect(src).toContain("/packcard-[0-9]+_[0-9]+_[0-9]+_[0-9]+/")
   })
 
-  it("still gates harvested pskus by WC_PREFIX before adding them to the walk set", () => {
-    expect(src).toMatch(/psku\.startsWith\(WC_PREFIX\)[\s\S]*enumPskus\.add\(psku\)/)
+  // Re-pinned 2026-09-28 (multi-product): the gate was psku.startsWith(WC_PREFIX); it is now the
+  // route-served walk scope (walk_set_ids, default {2332}). The PROPERTY is unchanged — a harvested
+  // psku reaches the walk set only through the product gate — so the pin follows the new spelling.
+  it("still gates harvested pskus by the walked-product scope before adding them to the walk set", () => {
+    expect(src).toMatch(/isWalked\(psku\)[\s\S]*enumPskus\.add\(psku\)/)
+    expect(src).toMatch(/let WALK_SETS = new Set\(\[2332\]\);/)
+  })
+
+  it("never widens the walk scope when the route omits it (empty walk_set_ids keeps the default)", () => {
+    expect(src).toMatch(/if \(sids\.length\) WALK_SETS = new Set\(sids\);/)
   })
 })
 

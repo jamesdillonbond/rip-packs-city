@@ -12,6 +12,7 @@ type Res = { data?: unknown; error?: unknown; count?: number | null }
 function db(over: Record<string, Res> = {}) {
   const selects: Record<string, string[]> = {}
   const orders: Record<string, string[]> = {}
+  const eqs: Record<string, string[]> = {}
   const base: Record<string, Res> = {
     panini_deal_board: { data: [{ sku: "a", deal_basis: "fmv_and_recent_sales" }] },
     panini_pack_ev_board: { data: [{ pack_type: "hobby" }] },
@@ -22,6 +23,7 @@ function db(over: Record<string, Res> = {}) {
   }
   return {
     selects,
+    eqs,
     orders,
     from(table: string) {
       const b: any = {
@@ -29,7 +31,10 @@ function db(over: Record<string, Res> = {}) {
           ;(selects[table] ??= []).push(cols)
           return b
         },
-        eq: () => b,
+        eq: (col: string, v: unknown) => {
+          ;(eqs[table] ??= []).push(`${col}=${String(v)}`)
+          return b
+        },
         order: (col: string) => {
           ;(orders[table] ??= []).push(col)
           return b
@@ -85,3 +90,15 @@ describe("fetchPaniniMoreBoards", () => {
     expect(r.payload.deals_capped).toBe(true)
   })
 })
+
+// Multi-product (2026-09-28): panini_pack_ev_board now also carries packs the model does not price.
+// This snapshot feeds the WC Pack EV board, so it must read only modeled rows — by the view's own
+// discriminator, not by a product id the snapshot would have to know.
+describe("fetchPaniniMoreBoards — pack EV rows are the modeled product's only", () => {
+  it("filters the pack board on ev_modeled=true", async () => {
+    const d = db()
+    await fetchPaniniMoreBoards(d as any)
+    expect(d.eqs.panini_pack_ev_board).toEqual(["ev_modeled=true"])
+  })
+})
+

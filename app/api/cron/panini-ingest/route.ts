@@ -38,7 +38,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
-import { toEditionRow, toFmvRow, toFmvRowV11, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc } from "@/lib/chains/panini/ingest-normalize";
+import { toEditionRow, toFmvRow, toFmvRowV11, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc, pskuSetId } from "@/lib/chains/panini/ingest-normalize";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 
 export const dynamic = "force-dynamic";
@@ -68,6 +68,109 @@ type RecentFmvRpc = {
   }>;
 };
 
+// ── MULTI-PRODUCT (2026-09-28) ────────────────────────────────────────────────────────────────
+// Panini sells many card products; until today this plane walked ONE (WC Prizm, setId 2332) and
+// every board assumed it. `panini_products` is the registry: the runner reports every setId its
+// grid walks see (POST `products`), and `walk_cards=true` is what admits a product's cards to
+// panini_editions / _card_serials / _fmv_snapshots. Phase 1 admits only 2332, because every Panini
+// board and the pack-EV model still read those tables as "the WC catalogue" — a WNBA card written
+// there today would be averaged into WC's pack EV and listed on WC's boards. Product scoping of those
+// readers is Phase 2; flipping walk_cards before it lands is the substitution defect by another door.
+//
+// ⚠ FAIL CLOSED TO THE HISTORICAL SCOPE. If the registry read fails, only 2332 is admitted (what
+// this route has always written) and the run reports `products_error` — never "admit everything".
+const PANINI_LEGACY_SET_ID = 2332;
+
+// The marketplace grid is filtered by `?sport=<value>` and the runner enumerates each value below.
+// "Soccer" is the only value verified live (2026-07-16). The others are the marketplace's sport
+// names as best known; a value the site does not recognise shows up as grid_items=0 (or the
+// unfiltered grid) in that sport's `panini-ingest-enum` marker — read it before assuming coverage.
+// Override without a code change: PANINI_DISCOVERY_SPORTS="Soccer,Basketball,…" on Vercel.
+const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Football", "Baseball"];
+function discoverySports(): string[] {
+  const env = (process.env.PANINI_DISCOVERY_SPORTS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return env.length ? env : PANINI_DISCOVERY_SPORTS;
+}
+
+type ProductRow = { set_id: number; name: string | null; walk_cards: boolean; last_grid_sport?: string | null };
+async function readProducts(): Promise<{ rows: ProductRow[]; error: string | null }> {
+  try {
+    const { data, error } = await (supabaseAdmin as any).from("panini_products").select("set_id,name,walk_cards,last_grid_sport");
+    if (error) return { rows: [], error: error.message ?? String(error) };
+    return { rows: (data ?? []) as ProductRow[], error: null };
+  } catch (e) {
+    return { rows: [], error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+const PANINI_HOST = "https://nft.paniniamerica.net/";
+// A pack page URL is only ever a Panini URL. The runner harvests links from pages it visits, so the
+// host check is what keeps an off-site link from becoming a page the next walk navigates to.
+function packPageUrl(u: unknown): string | null {
+  if (typeof u !== "string") return null;
+  const s = u.trim().split("#")[0];
+  return s.startsWith(PANINI_HOST) && s.length <= 500 ? s : null;
+}
+
+// products: [{ set_id, sport, grid_items }] — one per setId a sport's grid served this walk.
+// pack_pages: [{ url, discovered?, walked?, captured?, pack_id? }].
+// New products land with walk_cards=false (the column default) — discovery never admits a product.
+// An existing product's name / walk_cards / note are never touched here; only the sighting fields.
+async function upsertRegistry(products: any[], packPages: any[], nowIso: string) {
+  const errors: string[] = [];
+  let written = 0;
+  const extra: Record<string, unknown> = {};
+  const db = supabaseAdmin as any;
+
+  const prodRows = new Map<number, Record<string, unknown>>();
+  for (const p of products) {
+    const sid = Number(p?.set_id);
+    if (!Number.isInteger(sid) || sid <= 0) continue;
+    const prev = prodRows.get(sid);
+    const items = Number.isFinite(+p?.grid_items) ? +p.grid_items : null;
+    // One setId can appear under two sports' grids; keep the sighting with more items.
+    if (prev && (prev.last_grid_items as number | null ?? -1) >= (items ?? -1)) continue;
+    prodRows.set(sid, { set_id: sid, last_seen_at: nowIso, last_grid_items: items, last_grid_sport: typeof p?.sport === "string" ? p.sport.slice(0, 40) : null });
+  }
+  if (prodRows.size) {
+    const { data, error } = await db.from("panini_products").upsert([...prodRows.values()], { onConflict: "set_id" }).select("set_id");
+    if (error) errors.push(`products: ${error.message}`);
+    else { written += data?.length ?? 0; extra.products = data?.length ?? 0; }
+  }
+  extra.products_offered = prodRows.size;
+
+  const discovered = new Set<string>();
+  const results: { url: string; walked: boolean; captured: boolean; pack_id: string | null }[] = [];
+  for (const pg of packPages) {
+    const url = packPageUrl(pg?.url);
+    if (!url) continue;
+    if (pg?.discovered) discovered.add(url);
+    if (pg?.walked) results.push({ url, walked: true, captured: pg?.captured === true, pack_id: typeof pg?.pack_id === "string" ? pg.pack_id.slice(0, 120) : null });
+  }
+  if (discovered.size) {
+    // ignoreDuplicates: a discovered link never overwrites a seeded/manual row's source or enabled flag.
+    const { data, error } = await db.from("panini_pack_pages")
+      .upsert([...discovered].map((url) => ({ url, source: "discovered" })), { onConflict: "url", ignoreDuplicates: true })
+      .select("url");
+    if (error) errors.push(`pack_pages discovered: ${error.message}`);
+    else { written += data?.length ?? 0; extra.pack_pages_new = data?.length ?? 0; }
+  }
+  extra.pack_pages_discovered = discovered.size;
+  let walkedWritten = 0;
+  for (const r of results) {
+    const patch: Record<string, unknown> = { last_walked_at: nowIso };
+    if (r.captured) { patch.last_captured_at = nowIso; if (r.pack_id) patch.last_pack_id = r.pack_id; }
+    const { data, error } = await db.from("panini_pack_pages").update(patch).eq("url", r.url).select("url");
+    if (error) { errors.push(`pack_pages walked: ${error.message}`); break; }
+    walkedWritten += data?.length ?? 0;
+  }
+  written += walkedWritten;
+  extra.pack_pages_walked = results.length;
+  extra.pack_pages_captured = results.filter((r) => r.captured).length;
+  extra.pack_pages_walk_written = walkedWritten;
+  return { written, errors, extra };
+}
+
 async function logRun(startedAtIso: string, found: number, written: number, ok: boolean, error: string | null, extra: any, pipeline: string = PIPELINE) {
   try {
     await (supabaseAdmin as any).rpc("log_pipeline_run", {
@@ -92,6 +195,11 @@ export async function POST(req: NextRequest) {
   const packs: any[] = Array.isArray(body.packs) ? body.packs : [];
   const serials: any[] = Array.isArray(body.serials) ? body.serials : [];
   const sales: any[] = Array.isArray(body.sales) ? body.sales : [];
+  // Multi-product discovery (2026-09-28): the setIds each sport's grid served, and the pack pages
+  // the walk found or visited. Both are registry upkeep, not ingested rows, so they stay out of
+  // `found` — same reasoning as `enum` below.
+  const products: any[] = Array.isArray(body.products) ? body.products : [];
+  const packPages: any[] = Array.isArray(body.pack_pages) ? body.pack_pages : [];
   const found = cards.length + packs.length + serials.length + sales.length;
   // Per-walk enumeration telemetry (2026-08-15). The runner posts this ONCE per walk, before the
   // per-card walk, and it is the only DB-visible record of how much of the grid was enumerated.
@@ -103,8 +211,16 @@ export async function POST(req: NextRequest) {
   // rows happen to be present would split the same telemetry across two pipelines, and a later
   // reader would have to know to union them.
   if (enumStats) await logRun(startedAtIso, 0, 0, true, null, { enum: enumStats }, PIPELINE_ENUM);
+  // Registry upkeep runs inline (two small writes) and reports under PIPELINE_ENUM, the walk's
+  // telemetry pipeline — a discovery payload is not an ingest tick and must not refresh
+  // `panini-ingest`'s liveness arm (see PIPELINE_ENUM above).
+  if (products.length || packPages.length) {
+    const reg = await upsertRegistry(products, packPages, startedAtIso);
+    await logRun(startedAtIso, products.length + packPages.length, reg.written, reg.errors.length === 0,
+      reg.errors.length ? reg.errors.join(" | ") : null, { registry: reg.extra }, PIPELINE_ENUM);
+  }
   if (!found) {
-    if (enumStats) return NextResponse.json({ accepted: true, logged: "enum" }, { status: 202 });
+    if (enumStats || products.length || packPages.length) return NextResponse.json({ accepted: true, logged: "discovery" }, { status: 202 });
     await logRun(startedAtIso, 0, 0, true, null, { skip: "empty" });
     return NextResponse.json({ accepted: false, skipped: "empty" }, { status: 202 });
   }
@@ -140,11 +256,31 @@ export async function POST(req: NextRequest) {
     let fmvError: string | null = null;
     let fmvWritten = 0;
     let packsError: string | null = null;
+    let productsError: string | null = null;
+    let packIdMapError: string | null = null;
     try {
       const nowIso = new Date().toISOString();
+      // PRODUCT GATE (see MULTI-PRODUCT above). Resolve which setIds may be written, and the
+      // pack-name -> setId map, once per batch.
+      const prod = await readProducts();
+      productsError = prod.error;
+      const admitted = new Set<number>(prod.error ? [PANINI_LEGACY_SET_ID] : prod.rows.filter((r) => r.walk_cards).map((r) => Number(r.set_id)));
+      const setIdByName = new Map<string, number>();
+      for (const r of prod.rows) if (r.name) setIdByName.set(r.name.trim().toLowerCase(), Number(r.set_id));
+      const skippedBySet: Record<string, number> = {};
+      const admit = (key: unknown) => {
+        const sid = pskuSetId(key);
+        if (sid !== null && admitted.has(sid)) return true;
+        const k = sid === null ? "unparsed" : String(sid);
+        skippedBySet[k] = (skippedBySet[k] || 0) + 1;
+        return false;
+      };
+      const cardsIn = cards.filter((c) => admit(c?.psku ?? c?.sku));
+      const serialsIn = serials.filter((s) => admit(s?.psku ?? s?.sku ?? s?.url_key));
+      const salesIn = sales.filter((s) => admit(s?.url_key ?? s?.sku));
       // editions (dedup by external_id within the batch)
       const byKey = new Map<string, any>();
-      for (const c of cards) { const r = toEditionRow(c, nowIso); if (r.external_id) byKey.set(r.external_id, r); }
+      for (const c of cardsIn) { const r = toEditionRow(c, nowIso); if (r.external_id) byKey.set(r.external_id, r); }
       const editionRows = [...byKey.values()];
       for (let i = 0; i < editionRows.length; i += CHUNK) {
         const { data, error } = await (supabaseAdmin as any).from("panini_editions").upsert(editionRows.slice(i, i + CHUNK), { onConflict: "external_id,collection_id" }).select("id");
@@ -156,15 +292,37 @@ export async function POST(req: NextRequest) {
       // packs.length (rows OFFERED) beside three counts that had just been made honest.
       let packsWritten = 0;
       if (packs.length) {
-        const packRows = packs.map((p) => toPackRow(p, nowIso));
+        // product_set_id from the registry by the pack's published product name. When the registry
+        // read FAILED the key is dropped from the row rather than written null: a null would flip a
+        // modeled pack (WC 1038/1039) to "not modeled" on the strength of a read error.
+        // ONE PRODUCT, ONE ROW. The same pack can be captured from a marketplace-details subpack
+        // page (id = the numeric pack id in its URL, e.g. 1038) and from a /pack-<name>.html page
+        // (no numeric id -> pack_sku). Without this a second row would appear on the Packs tab for
+        // the same product. An existing row with the same raw.pack_sku keeps its id.
+        const idBySku = new Map<string, string>();
+        {
+          const { data: ex, error: exErr } = await (supabaseAdmin as any).from("panini_pack_state").select("id,pack_sku:raw->>pack_sku");
+          if (exErr) { packIdMapError = exErr.message; console.log(`[${PIPELINE}] pack id map read: ${exErr.message}`); }
+          for (const e of (ex ?? []) as { id: string; pack_sku: string | null }[]) if (e.pack_sku) idBySku.set(String(e.pack_sku), String(e.id));
+        }
+        const packRowsAll = packs.map((p) => {
+          const name = typeof p?.collection_name === "string" ? p.collection_name.trim().toLowerCase() : "";
+          const row: Record<string, unknown> = toPackRow(p, nowIso, setIdByName.get(name) ?? null);
+          if (prod.error) delete row.product_set_id;
+          const existing = typeof p?.pack_sku === "string" ? idBySku.get(p.pack_sku) : undefined;
+          if (existing && existing !== row.id) row.id = existing;
+          return row;
+        });
+        // One row per id (the latest capture wins): an upsert may not touch the same row twice.
+        const packRows = [...new Map(packRowsAll.map((r) => [String(r.id), r])).values()];
         const { data, error } = await (supabaseAdmin as any).from("panini_pack_state").upsert(packRows, { onConflict: "id" }).select("id");
         if (error) { packsError = error.message; console.log(`[${PIPELINE}] pack state upsert: ${error.message}`); } else packsWritten += data?.length ?? 0;
       }
       // serials -> panini_card_serials (dedup by sku within the batch; upsert on sku)
       let serialsWritten = 0;
-      if (serials.length) {
+      if (serialsIn.length) {
         const bySku = new Map<string, any>();
-        for (const sp of serials) { const r = toSerialRow(sp, nowIso); if (r.sku && r.edition_external_id) bySku.set(r.sku, r); }
+        for (const sp of serialsIn) { const r = toSerialRow(sp, nowIso); if (r.sku && r.edition_external_id) bySku.set(r.sku, r); }
         const serialRows = [...bySku.values()];
         for (let i = 0; i < serialRows.length; i += CHUNK) {
           const { data, error } = await (supabaseAdmin as any).from("panini_card_serials").upsert(serialRows.slice(i, i + CHUNK), { onConflict: "sku" }).select("id");
@@ -176,7 +334,7 @@ export async function POST(req: NextRequest) {
       // upsert on an unknown sku would fail the NOT NULLs (or worse, half-create a serial row).
       // A miss therefore means "we have not walked that serial yet", which sales_missed reports.
       let salesApplied = 0, salesMissed = 0;
-      const latestSales = [...latestSalesBySku(sales).values()];
+      const latestSales = [...latestSalesBySku(salesIn).values()];
       for (let i = 0; i < latestSales.length; i += SALES_CONCURRENCY) {
         const slice = latestSales.slice(i, i + SALES_CONCURRENCY);
         const applied = await Promise.all(slice.map(async (s) => {
@@ -210,14 +368,14 @@ export async function POST(req: NextRequest) {
       const FMV_ENGINE = process.env.PANINI_FMV_ENGINE === "1.0" ? "1.0" : "1.1";
       let fmvRecentError: string | null = null;
       const recentByEdition = new Map<string, { fmv_usd: number; n_recent: number }>();
-      if (FMV_ENGINE === "1.1" && cards.length) {
-        const ids = [...new Set(cards.map((c) => String(c?.sku ?? c?.psku ?? "")).filter(Boolean))];
+      if (FMV_ENGINE === "1.1" && cardsIn.length) {
+        const ids = [...new Set(cardsIn.map((c) => String(c?.sku ?? c?.psku ?? "")).filter(Boolean))];
         const { data: rec, error: recErr } = await (supabaseAdmin as unknown as RecentFmvRpc).rpc("panini_recent_sales_fmv", { p_edition_ids: ids });
         if (recErr) { fmvRecentError = recErr.message ?? String(recErr); console.log(`[${PIPELINE}] recent-sales fmv: ${fmvRecentError}`); }
         else for (const r of rec ?? []) recentByEdition.set(String(r.edition_id), { fmv_usd: Number(r.fmv_usd), n_recent: Number(r.n_recent) });
       }
       const useV11 = FMV_ENGINE === "1.1" && !fmvRecentError;
-      const fmvRows = cards
+      const fmvRows = cardsIn
         .map((c) => (useV11 ? toFmvRowV11(c, nowIso, recentByEdition.get(String(c?.sku ?? c?.psku ?? ""))) : toFmvRow(c, nowIso)))
         .filter(Boolean) as any[];
       // INSERT FIRST, then delete the SAME-DAY rows this insert supersedes (computed_at < nowIso; the
@@ -247,6 +405,8 @@ export async function POST(req: NextRequest) {
         fmvError ? `fmv: ${fmvError}` : null,
         fmvRecentError ? `fmv_recent: ${fmvRecentError}` : null,
         packsError ? `packs: ${packsError}` : null,
+        packIdMapError ? `pack id map (a pack seen under a new page may have written a duplicate row): ${packIdMapError}` : null,
+        productsError ? `products (gate fell back to ${PANINI_LEGACY_SET_ID} only): ${productsError}` : null,
         salesError ? `sales: ${salesError}` : null,
       ].filter(Boolean) as string[];
       await logRun(startedAtIso, found, written, writeErrors.length === 0, writeErrors.length ? writeErrors.join(" | ") : null, {
@@ -255,6 +415,10 @@ export async function POST(req: NextRequest) {
         fmv_engine: useV11 ? "panini-1.1.0" : "panini-1.0.0", fmv_recent_error: fmvRecentError, fmv_recent_hits: recentByEdition.size,
         packs: packsWritten, packs_offered: packs.length, packs_error: packsError,
         serials: serialsWritten, serials_error: serialsError,
+        // Rows held back by the product gate, by setId: a non-empty map is a product the grid is
+        // serving whose cards are not admitted yet (walk_cards=false), never a failure.
+        packs_id_map_error: packIdMapError,
+        products_error: productsError, admitted_set_ids: [...admitted], skipped_by_set: skippedBySet,
         sales_seen: sales.length, sales_serials: latestSales.length, sales_applied: salesApplied,
         sales_missed: salesMissed, sales_errors: salesErrors, sales_error: salesError,
       });
@@ -339,8 +503,38 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "walk_order_unavailable" }, { status: 503 });
   }
 
-  const rows = trim ? paged.rows.slice(0, trim) : paged.rows;
+  // MULTI-PRODUCT: which products the runner walks cards for, which sports it enumerates for
+  // discovery, and which pack pages it opens. Both reads fail SOFT to the historical WC scope —
+  // the runner keeps its old behaviour — and say so in *_error, so a registry outage can narrow a
+  // walk but never widen one.
+  const [prod, pagesRes] = await Promise.all([
+    readProducts(),
+    (async () => {
+      try {
+        const { data, error } = await (supabaseAdmin as any).from("panini_pack_pages").select("url").eq("enabled", true).order("url", { ascending: true });
+        return error ? { urls: null as string[] | null, error: error.message as string } : { urls: ((data ?? []) as { url: string }[]).map((r) => r.url), error: null };
+      } catch (e) { return { urls: null as string[] | null, error: e instanceof Error ? e.message : String(e) }; }
+    })(),
+  ]);
+  const walkSetIds = prod.error ? [PANINI_LEGACY_SET_ID] : prod.rows.filter((r) => r.walk_cards).map((r) => Number(r.set_id)).sort((a, b) => a - b);
+  const walkSet = new Set(walkSetIds);
+  // A catalogue row of a product that has since been switched off leaves the walk list; the row
+  // itself stays (its history is real).
+  const inScope = paged.rows.filter((r) => { const sid = pskuSetId(r.external_id); return sid !== null && walkSet.has(sid); });
+
+  const rows = trim ? inScope.slice(0, trim) : inScope;
   return NextResponse.json({
+    walk_set_ids: walkSetIds,
+    products_error: prod.error,
+    discovery_sports: discoverySports(),
+    // Sports whose grid gets the FULL enumeration budget (discovery of walked products' new
+    // editions); every other sport gets a short discovery pass that only has to see its setIds.
+    // Soccer always (the WC walk predates the registry); plus the sport each walked product was
+    // last sighted in.
+    full_enum_sports: [...new Set(["Soccer", ...(prod.error ? [] : prod.rows.filter((r) => r.walk_cards && r.last_grid_sport).map((r) => String(r.last_grid_sport)))])],
+    // null (not []) when the read failed: the runner then keeps its built-in pack list.
+    pack_urls: pagesRes.urls,
+    pack_urls_error: pagesRes.error,
     as_of: new Date().toISOString(),
     order: "last_seen_at_asc",
     count: rows.length,

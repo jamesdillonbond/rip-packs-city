@@ -15,6 +15,10 @@
 //     renders as "couldn't load", never as "none"
 //   · the listing-gated coverage disclosure always renders (the EV legs are priced
 //     off FMV on an index that sees a card only once it has been listed)
+//   · MULTI-PRODUCT (2026-09-28): a pack whose product the EV model does not price
+//     (evModeled !== true — WNBA, NBA, NFL… as they are discovered) shows its market
+//     stats and says EV is NOT MODELED; it never renders an EV figure, a "—" that
+//     could read as "worthless", or the EV-legs table
 
 import { useEffect, useState } from "react"
 import { fetchJson } from "@/lib/analytics/fetch-json"
@@ -28,6 +32,11 @@ export interface PaniniPackProduct {
   packType: string
   label: string
   name: string | null
+  /** Panini's product (collection) name, e.g. "2026 Panini NFT Prizm WNBA". */
+  productName?: string | null
+  sport?: string | null
+  /** True only when the pack-EV model prices this pack's product (today: WC Prizm). */
+  evModeled?: boolean
   imageUrl?: string | null
   labels: PaniniPackLabel[]
   cardsPerPack: number | null
@@ -53,7 +62,7 @@ export interface PaniniPackProduct {
 export interface PaniniPackMarketResponse {
   products: PaniniPackProduct[]
   details_error: boolean
-  history: { packType: string; observedAt: string | null; floorUsd: number | null; recentSaleUsd: number | null; avgSaleUsd: number | null; packsRemaining: number | null }[] | null
+  history: { packId?: string; packType: string; observedAt: string | null; floorUsd: number | null; recentSaleUsd: number | null; avgSaleUsd: number | null; packsRemaining: number | null }[] | null
   history_error: boolean
   history_days: number
   stale_after_hours: number
@@ -115,9 +124,11 @@ const td: React.CSSProperties = { padding: "6px 8px", fontFamily: mono, fontSize
 
 function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterHours: number }) {
   const costLabel = p.costBasis === "avg_sale" ? "Cost (avg sale — no floor)" : "Floor"
+  const modeled = p.evModeled === true
   return (
     <section
-      data-testid={`panini-pack-${p.packType}`}
+      data-testid={`panini-pack-${p.id}`}
+      data-ev-modeled={modeled ? "true" : "false"}
       style={{ marginTop: 20, padding: "16px 16px 12px", background: "var(--rpc-surface-raised, var(--rpc-surface))", border: "1px solid var(--rpc-border)", borderRadius: 10 }}
     >
       <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
@@ -130,7 +141,7 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
           <h2 style={{ fontFamily: display, fontWeight: 800, fontSize: 18, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: "0 0 4px" }}>
             {p.label} pack{p.cardsPerPack !== null ? ` · ${p.cardsPerPack} cards` : ""}
           </h2>
-          {p.name ? <Note>{p.name}</Note> : null}
+          {p.name ? <Note>{p.name}</Note> : p.productName ? <Note>{p.productName}</Note> : null}
         </div>
       </div>
       {p.stale ? (
@@ -143,8 +154,14 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
         <Tile label={costLabel} value={usd(p.costUsd)} sub={p.recentSaleUsd !== null ? `recent sale ${usd(p.recentSaleUsd)}` : undefined} lead />
-        <Tile label="Typical pull" value={usd(p.typicalEvUsd)} sub="what the median pack holds" />
-        <Tile label="EV (mean)" value={usd(p.actualEvUsd)} sub={p.netRipEdgeUsd !== null ? `${signedUsd(p.netRipEdgeUsd)} vs cost` : undefined} />
+        {modeled ? (
+          <>
+            <Tile label="Typical pull" value={usd(p.typicalEvUsd)} sub="what the median pack holds" />
+            <Tile label="EV (mean)" value={usd(p.actualEvUsd)} sub={p.netRipEdgeUsd !== null ? `${signedUsd(p.netRipEdgeUsd)} vs cost` : undefined} />
+          </>
+        ) : (
+          <Tile label="Pack EV" value="Not modeled" sub="RPC doesn't price this product's cards yet" />
+        )}
         <Tile
           label="Sealed"
           value={count(p.packsRemaining)}
@@ -158,10 +175,14 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
             <tr><td style={td}>Average sale</td><td style={td}>{usd(p.avgSaleUsd)}</td></tr>
             <tr><td style={td}>Top sale</td><td style={td}>{usd(p.topSaleUsd)}</td></tr>
             <tr><td style={td}>Market listings (Panini&apos;s count)</td><td style={td}>{count(p.listedCount)}</td></tr>
-            <tr><td style={td}>EV legs — Base Silver</td><td style={td}>{usd(p.legs.silver)}</td></tr>
-            <tr><td style={td}>EV legs — Base non-Silver parallel</td><td style={td}>{usd(p.legs.baseParallel)}</td></tr>
-            <tr><td style={td}>EV legs — Insert</td><td style={td}>{usd(p.legs.insert)}</td></tr>
-            {p.packType === "fotl" ? (
+            {modeled ? (
+              <>
+                <tr><td style={td}>EV legs — Base Silver</td><td style={td}>{usd(p.legs.silver)}</td></tr>
+                <tr><td style={td}>EV legs — Base non-Silver parallel</td><td style={td}>{usd(p.legs.baseParallel)}</td></tr>
+                <tr><td style={td}>EV legs — Insert</td><td style={td}>{usd(p.legs.insert)}</td></tr>
+              </>
+            ) : null}
+            {modeled && p.packType === "fotl" ? (
               <tr><td style={td}>EV legs — FOTL-exclusive parallel</td><td style={td}>{usd(p.legs.fotlExclusive)}</td></tr>
             ) : null}
           </tbody>
@@ -184,10 +205,18 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
       ) : null}
 
       <div style={{ marginTop: 10 }}>
-        <Note>Updated {ptStamp(p.updatedAt)}{p.modelNote ? ` · model ${p.modelNote.split(" · ")[0]}` : ""}</Note>
+        <Note>Updated {ptStamp(p.updatedAt)}{modeled && p.modelNote ? ` · model ${p.modelNote.split(" · ")[0]}` : ""}</Note>
       </div>
     </section>
   )
+}
+
+/** "FOTL" alone is ambiguous once two products each have a FOTL pack — name the product when it isn't WC. */
+function historyLabel(h: { packId?: string; packType: string }, products: PaniniPackProduct[]): string {
+  const type = h.packType === "fotl" ? "FOTL" : h.packType === "hobby" ? "Hobby" : h.packType
+  const prod = h.packId ? products.find((p) => p.id === h.packId) : undefined
+  if (!prod || prod.evModeled === true) return type
+  return prod.productName ? `${prod.productName} · ${type}` : prod.name ?? type
 }
 
 export default function PaniniPackMarket() {
@@ -236,8 +265,9 @@ export default function PaniniPackMarket() {
         Panini — Pack Market
       </h1>
       <Note>
-        2026 Panini NFT Prizm World Cup sealed packs, bought and sold on Panini&apos;s own marketplace. Prices and supply are Panini&apos;s market
-        stats as of RPC&apos;s last walk. Read the typical pull first: it is what the median pack holds. The mean is dragged up by chase cards most
+        Sealed Panini NFT packs, bought and sold on Panini&apos;s own marketplace. Prices and supply are Panini&apos;s market
+        stats as of RPC&apos;s last walk. Pack EV is modeled for 2026 Prizm World Cup packs only; other products show market stats and
+        say so. Read the typical pull first: it is what the median pack holds. The mean is dragged up by chase cards most
         packs never contain, and it is priced off FMV on a listing-fed index, so it is indicative pull value, not what the cards would sell for.
       </Note>
 
@@ -280,9 +310,9 @@ export default function PaniniPackMarket() {
               </thead>
               <tbody>
                 {history.slice(0, 40).map((h, i) => (
-                  <tr key={`${h.packType}-${h.observedAt}-${i}`}>
+                  <tr key={`${h.packId ?? h.packType}-${h.observedAt}-${i}`}>
                     <td style={td}>{ptStamp(h.observedAt)}</td>
-                    <td style={td}>{h.packType === "fotl" ? "FOTL" : h.packType === "hobby" ? "Hobby" : h.packType}</td>
+                    <td style={td}>{historyLabel(h, data.products)}</td>
                     <td style={td}>{usd(h.floorUsd)}</td>
                     <td style={td}>{usd(h.recentSaleUsd)}</td>
                     <td style={td}>{count(h.packsRemaining)}</td>

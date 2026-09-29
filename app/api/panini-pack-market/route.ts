@@ -29,6 +29,12 @@
 //     every pack-EV surface).
 //   · No per-user panel: Panini owners are platform usernames with no public
 //     holdings read, so there is no "your sealed packs" to show.
+//   · MULTI-PRODUCT (2026-09-28): the board now carries every Panini pack the
+//     runner captures (WNBA, NBA, NFL… as they are discovered), but the pack-EV
+//     model prices ONLY 2026 WC Prizm. `ev_modeled=false` packs arrive with NULL
+//     EV and are sent as `evModeled:false` — the client says "not modeled", never
+//     "$0" and never WC's figures. WC packs sort first; history rows carry the
+//     pack id so two products' FOTL packs cannot merge in the trail.
 
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -55,7 +61,7 @@ const MAX_HISTORY_ROWS = 500
 const EV_COLS =
   "id,pack_type,pack_cost_usd,floor_usd,avg_sale_usd,recent_sale_usd,cards_per_pack,packs_total,packs_remaining," +
   "packs_ripped_pct,actual_ev_usd,typical_ev_usd,silver_ev,base_parallel_ev,insert_ev,fotl_exclusive_ev," +
-  "net_rip_edge_usd,model_note,updated_at"
+  "net_rip_edge_usd,model_note,updated_at,product_name,sport,product_set_id,ev_modeled"
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null
@@ -77,7 +83,7 @@ export async function GET() {
       boundedRead(
         db
           .from("panini_pack_state_history")
-          .select("pack_type,observed_at,floor_usd,recent_sale_usd,avg_sale_usd,packs_remaining")
+          .select("id,pack_type,observed_at,floor_usd,recent_sale_usd,avg_sale_usd,packs_remaining")
           .gte("observed_at", new Date(now - PANINI_PACK_HISTORY_DAYS * 86_400_000).toISOString())
           .order("observed_at", { ascending: false })
           .order("pack_type", { ascending: true })
@@ -104,11 +110,17 @@ export async function GET() {
       const floor = num(p.floor_usd)
       const d = details.get(String(p.id)) ?? null
       const packType = String(p.pack_type ?? "")
+      // Strict: only an explicit true is "modeled". A row from before the column existed, or a
+      // null, is not — withholding EV is the safe failure, publishing another product's is not.
+      const evModeled = p.ev_modeled === true
       return {
         id: String(p.id),
         packType,
         label: packLabel(packType),
         name: d?.name ?? null,
+        productName: str(p.product_name),
+        sport: str(p.sport),
+        evModeled,
         imageUrl: d?.imageUrl ?? null,
         labels: d?.labels ?? [],
         cardsPerPack: num(p.cards_per_pack),
@@ -123,24 +135,31 @@ export async function GET() {
         packsTotal: num(p.packs_total),
         packsRemaining: num(p.packs_remaining),
         rippedPct: num(p.packs_ripped_pct),
-        typicalEvUsd: num(p.typical_ev_usd),
-        actualEvUsd: num(p.actual_ev_usd),
-        netRipEdgeUsd: num(p.net_rip_edge_usd),
+        typicalEvUsd: evModeled ? num(p.typical_ev_usd) : null,
+        actualEvUsd: evModeled ? num(p.actual_ev_usd) : null,
+        netRipEdgeUsd: evModeled ? num(p.net_rip_edge_usd) : null,
         legs: {
-          silver: num(p.silver_ev),
-          baseParallel: num(p.base_parallel_ev),
-          insert: num(p.insert_ev),
-          fotlExclusive: packType === "fotl" ? num(p.fotl_exclusive_ev) : null,
+          silver: evModeled ? num(p.silver_ev) : null,
+          baseParallel: evModeled ? num(p.base_parallel_ev) : null,
+          insert: evModeled ? num(p.insert_ev) : null,
+          fotlExclusive: evModeled && packType === "fotl" ? num(p.fotl_exclusive_ev) : null,
         },
         modelNote: str(p.model_note),
         updatedAt,
         stale: ageHours === null || ageHours > PANINI_PACK_STALE_HOURS,
       }
     })
+    // Modeled (WC) first, then by product and pack type — a stable order as products arrive.
+    products.sort((a, b) =>
+      Number(b.evModeled) - Number(a.evModeled) ||
+      (a.productName ?? a.name ?? "").localeCompare(b.productName ?? b.name ?? "") ||
+      a.packType.localeCompare(b.packType) ||
+      a.id.localeCompare(b.id))
 
     const history = histRes.error
       ? null
       : ((histRes.data ?? []) as Record<string, unknown>[]).map((h) => ({
+          packId: String(h.id ?? ""),
           packType: String(h.pack_type ?? ""),
           observedAt: str(h.observed_at),
           floorUsd: num(h.floor_usd),
