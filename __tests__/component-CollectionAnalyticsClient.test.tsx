@@ -540,6 +540,31 @@ describe("CollectionAnalyticsClient — portfolio read failures and truncation",
     expect(document.body.textContent).not.toContain(" of 12,000")
   })
 
+  it("says how much of the wallet the acquisition split covers", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
+    routes["/api/analytics"] = () => json(200, {
+      ...WALLET_BODY,
+      total_moments: 9880,
+      acquisition: { pack_pull_count: 2, marketplace_count: 2968, challenge_reward_count: 0, gift_count: 0, trade_count: 1014, total_tracked: 3984 },
+      acquisition_failed: false,
+    })
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("Based on 3,984 of 9,880 moments with a recorded acquisition."))
+  })
+
+  it("CONTROL: no coverage line when every item has a recorded acquisition", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
+    routes["/api/analytics"] = () => json(200, {
+      ...WALLET_BODY,
+      total_moments: 14,
+      acquisition: { pack_pull_count: 4, marketplace_count: 9, challenge_reward_count: 1, gift_count: 0, total_tracked: 14 },
+      acquisition_failed: false,
+    })
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("Portfolio Origin Story"))
+    expect(document.body.textContent).not.toContain("with a recorded acquisition")
+  })
+
   it("CONTROL: a fully read wallet carries no truncation notice", async () => {
     searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
     routes["/api/analytics"] = () => json(200, { ...WALLET_BODY, truncated: false })

@@ -200,9 +200,13 @@ const DEFAULT_SORT: SortKey = "price_asc"
 // tick. There is no listing time to sort by, so the option could only ever
 // show an arbitrary refresh batch under a label that promised recency — and
 // "Recently repriced" would be just as false. Dropped rather than relabelled.
+// ⛔ Disney Pinnacle too (2026-09-28): its market rows are pinnacle_catalog
+// floors, whose `floor_ask_updated_at` is the marketplace SWEEP's stamp — all
+// 2,413 listed pins carried ONE identical timestamp (measured).
+const NO_LISTING_TIME = new Set(["nba-top-shot", "disney-pinnacle"])
 export function sortKeysFor(collectionId: string | null | undefined): SortKey[] {
   const keys = Object.keys(SORT_LABELS) as SortKey[]
-  return collectionId === "nba-top-shot" ? keys.filter((k) => k !== "recent") : keys
+  return collectionId != null && NO_LISTING_TIME.has(collectionId) ? keys.filter((k) => k !== "recent") : keys
 }
 
 // TIER_COLORS extracted to @/lib/market-format (imported above).

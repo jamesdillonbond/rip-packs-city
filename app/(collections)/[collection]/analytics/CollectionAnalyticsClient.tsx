@@ -1811,6 +1811,15 @@ function AnalyticsInner() {
                           {pctGift > 0 && <span>Gift {pctGift.toFixed(0)}%</span>}
                           {pctTrade > 0 && <span>Trade {pctTrade.toFixed(0)}%</span>}
                         </div>
+                        {/* 2026-09-28: the split covers only the items with a
+                            RECORDED acquisition (3,984 of 9,880 pins on the
+                            audited Pinnacle wallet) — say so, or the bar reads
+                            as the whole wallet's composition. */}
+                        {data.total_moments > acqTotal && (
+                          <div className="mt-2 text-[11px] text-[color:var(--rpc-text-muted)]">
+                            Based on {acqTotal.toLocaleString("en-US")} of {data.total_moments.toLocaleString("en-US")} {labels.units.toLowerCase()} with a recorded acquisition.
+                          </div>
+                        )}
                       </div>
                     )}
                   </>

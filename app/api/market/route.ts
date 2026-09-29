@@ -317,9 +317,11 @@ async function fetchPinnacleModernListings(
     // computes discount and sorts authoritatively.
     // ⛔ A failed read returns NULL, never [] — cached_listings holds ZERO
     // Pinnacle rows, so [] fell through to a confident "no listings".
-    const discountSort = s === "discount_desc" || s === "discount_asc"
+    // 2026-09-28: EVERY sort pages the whole live catalog, not only discount.
+    // A single 1,000-row page capped the board's total at 1,000 and left pages
+    // past row 1,000 empty while 2,413 pins were listed (measured).
     const PAGE = 1000
-    const MAX_PAGES = discountSort ? 10 : 1
+    const MAX_PAGES = 10
     const data: any[] = []
     for (let page = 0; page < MAX_PAGES; page++) {
       const { data: rows, error } = await boundedRead(
@@ -332,10 +334,10 @@ async function fetchPinnacleModernListings(
       }
       data.push(...(rows ?? []))
       if ((rows?.length ?? 0) < PAGE) break
-      // A discount sort that fills every page is a PARTIAL population ranked as
-      // if whole — refuse it rather than publish it (4× today's live count).
-      if (discountSort && page === MAX_PAGES - 1) {
-        console.log(`[/api/market] pinnacle catalog exceeded ${MAX_PAGES * PAGE} rows under a discount sort — refusing a partial ranking`)
+      // A read that fills every page is a PARTIAL population presented as
+      // whole — refuse it rather than publish it (4× today's live count).
+      if (page === MAX_PAGES - 1) {
+        console.log(`[/api/market] pinnacle catalog exceeded ${MAX_PAGES * PAGE} rows — refusing a partial board`)
         return null
       }
     }

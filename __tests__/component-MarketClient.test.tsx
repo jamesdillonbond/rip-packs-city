@@ -1107,6 +1107,15 @@ describe("MarketClient — the sort list is honest per collection", () => {
     expect(urls.some((u) => u.includes("sort=price_asc"))).toBe(true)
   })
 
+  it("Disney Pinnacle offers no 'Recently listed' either (one sweep stamp on every pin)", async () => {
+    const { sortKeysFor } = await import("@/app/(collections)/[collection]/market/MarketClient")
+    expect(sortKeysFor("disney-pinnacle")).not.toContain("recent")
+    expect(sortKeysFor("nba-top-shot")).not.toContain("recent")
+    // CONTROL: collections with a real listing time keep it.
+    expect(sortKeysFor("nfl-all-day")).toContain("recent")
+    expect(sortKeysFor(null)).toContain("recent")
+  })
+
   it("All Day keeps 'Recently listed', and a chosen one survives into the URL", async () => {
     PARAMS.collection = "nfl-all-day"
     try {

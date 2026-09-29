@@ -356,6 +356,22 @@ describe("GET /api/market — Pinnacle modern (catalog) path", () => {
     const body = await (await GET(req(`https://t/api/market?collectionId=${PINNACLE}&sort=discount_desc`))).json()
     expect(body.listings[0].editionKey).toBe("r5000")
   })
+
+  // 2026-09-28 — every OTHER sort read one 1,000-row page, so with 2,413 pins
+  // listed the board's total stopped at 1,000 and deep pages came back empty.
+  it("a price sort pages past the 1,000-row cap too: the total counts the whole live catalog", async () => {
+    const row = (i: number, ask: number) => ({
+      render_id: `r${String(i).padStart(5, "0")}`, character_name: `C${i}`, set_name: "S", series_name: "1", variant: "Standard",
+      total_minted: 100, floor_ask: ask, fmv_usd: ask * 2, fmv_confidence: "HIGH", thumbnail_url: null,
+      floor_ask_updated_at: "2026-09-26T00:00:00Z",
+    })
+    const page1 = Array.from({ length: 1000 }, (_, i) => row(i, 10))
+    const page2 = Array.from({ length: 5 }, (_, i) => row(5000 + i, 20))
+    install({ pinnacle_catalog: [{ data: page1, error: null }, { data: page2, error: null }], editions: { data: [], error: null } })
+    const body = await (await GET(req(`https://t/api/market?collectionId=${PINNACLE}&sort=price_asc&limit=50`))).json()
+    expect(body.pagination.total).toBe(1005)
+    expect(body.pagination.hasMore).toBe(true)
+  })
 })
 
 describe("GET /api/market — Top Shot FMV display guard", () => {
