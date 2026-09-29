@@ -8,7 +8,10 @@
 - **The 37 rows Cowork filled are correct.** A chain read found all 37 held on Top Shot by the stored wallet (34/34 + 3/3), so they stay.
 - **Fix shipped:** `app/api/wallet-search/route.ts`. An All Day id no longer reaches either Top Shot upstream or any Top-Shot-keyed read or write (wmc fill, wmc upsert, edition seed, acquisition read/classify). Test: `__tests__/wallet-search-allday-ids-never-touch-top-shot.test.ts`. It includes a positive control, and it fails 3/3 on the old code, which also put a Top Shot player's name on All Day rows.
 - **Migration history reconciled:** both MCP-applied migrations were recovered byte-exactly (md5-verified) into `supabase/migrations/`. That includes the feeder. Parity needs a file for every applied name, so the "do not create a repo file" note below is overruled. The ad-hoc DROP is now recorded as `audit_20260929_drop_wmc_null_hydrate_feeder`, a no-op on prod.
-- **Cleanup + monitor:** see the ledger entry of the same date.
+- **Cleanup (done):** 1,679 non-Top-Shot rows deleted into `audit_20260929_wmc_allday_ids_in_topshot_cache`, driven by a per-row chain census (`scripts/wmc-null-key-chain-census.mjs`). Top Shot NULL-key rows 1,681 → 2 (both real).
+- **Same class, also fixed:** `upsert_wmc_batch` wrote a NULL key/serial over a known one; `/api/wallet-cache` echoed degraded page rows into it. Writer fixed (`20260929203000`), route no longer sends key-less rows, 50 wiped All Day rows restored from chain (`20260929204000`).
+- **Monitor (done):** `rpc_ops_snapshot().wmc_null_edition_key` → `check_wmc_null_edition_key(25, 100)`. It is a threshold, not ban-at-zero, because a key-less insert can be a real holding. It lives in the ops snapshot rather than `v_rpc_trust_health`, per database.md (the 49 KB view has no data-driven threshold path).
+- **Open:** no moment_id-keyed healer names a genuine key-less Top Shot row (09-22 handoff); 7 May-era All Day NULL rows read absent on chain, which is not proof of sale for All Day (locked = custodial).
 
 ---
 
