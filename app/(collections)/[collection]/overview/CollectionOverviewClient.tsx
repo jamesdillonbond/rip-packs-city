@@ -436,7 +436,7 @@ export default function CollectionOverviewClient({ collection }: { collection: s
             <span className="rpc-label">
               {collection === "disney-pinnacle" ? "Cheapest Available Asks" : "Top 5 Sniper Deals"}
             </span>
-            <Link href={basePath + "/sniper"} className="rpc-mono" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
+            <Link href={basePath + "/sniper"} className="rpc-mono rpc-tap44" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
               View all {"\u2192"}
             </Link>
           </div>
@@ -552,7 +552,7 @@ export default function CollectionOverviewClient({ collection }: { collection: s
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--tier-legendary)" }} />
             <span className="rpc-label">Recent Top Sales</span>
-            <Link href={hasSniperTab ? basePath + "/sniper" : collection === "candy-mlb" ? "/insights/candy-mlb" : isPanini ? "/insights/panini-squeeze" : basePath + "/overview"} className="rpc-mono" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
+            <Link href={hasSniperTab ? basePath + "/sniper" : collection === "candy-mlb" ? "/insights/candy-mlb" : isPanini ? "/insights/panini-squeeze" : basePath + "/overview"} className="rpc-mono rpc-tap44" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
               View all {"\u2192"}
             </Link>
           </div>

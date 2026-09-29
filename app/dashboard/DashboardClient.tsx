@@ -33,7 +33,7 @@ import { occupantOfSlot, reorderByDelta, reorderByTarget } from "@/lib/trophy/re
 import { savedWalletChains } from "@/lib/trophy-picker-format";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
-import { proxyIpfsUrl } from "@/lib/ipfs-media";
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -1432,7 +1432,7 @@ function ProfilePageInner() {
                 const cMeta = collectionMetaByUuid(a.collection_id);
                 return (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 6 }}>
-                    {a.thumbnail_url && <img src={proxyIpfsUrl(a.thumbnail_url) ?? undefined} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />}
+                    {a.thumbnail_url && <img src={proxyIpfsImageUrl(a.thumbnail_url, 160) ?? undefined} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {a.followee_username ?? "someone"} {a.role === "seller" ? "sold" : "bought"} {a.player_name ?? "a moment"}{a.serial_number ? ` #${a.serial_number}` : ""}
@@ -1728,7 +1728,7 @@ function HeroMomentImage({ imageUrl, playerName, tier, tc }: { imageUrl: string 
       </div>
     );
   }
-  return <img src={proxyIpfsUrl(imageUrl) ?? undefined} alt={playerName ?? ""} onError={() => setFailed(true)} style={commonStyle} />;
+  return <img src={proxyIpfsImageUrl(imageUrl, 640) ?? undefined} alt={playerName ?? ""} onError={() => setFailed(true)} style={commonStyle} />;
 }
 
 function EmptyHeroState({ wallets, indexing, onPickSlot }: { wallets: SavedWallet[]; indexing: boolean; onPickSlot: (slot: number) => void }) {
@@ -2583,7 +2583,7 @@ function PickerCard({ m, disabled, onClick }: { m: TopMoment; disabled: boolean;
     >
       <div style={{ position: "relative", aspectRatio: "1/1", background: "var(--rpc-surface)" }}>
         {m.image_url ? (
-          <img src={proxyIpfsUrl(m.image_url) ?? undefined} alt={m.player_name ?? ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img src={proxyIpfsImageUrl(m.image_url, 320) ?? undefined} alt={m.player_name ?? ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: tc, fontSize: 32, fontFamily: condensedFont, fontWeight: 900 }}>●</div>
         )}
@@ -2789,7 +2789,7 @@ function VerifyByListingModal({
               {target.image_url && (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                  src={proxyIpfsUrl(target.image_url) ?? undefined}
+                  src={proxyIpfsImageUrl(target.image_url, 640) ?? undefined}
                   alt={target.player_name ?? "Moment"}
                   width={56}
                   height={56}

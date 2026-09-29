@@ -92,6 +92,7 @@ export default function TeamFollowButton({ league, teamShortSlug, teamPath, dark
     return (
       <a
         href={`/login?next=${encodeURIComponent(teamPath)}`}
+        className="rpc-tap44"
         style={{ ...baseStyle, color: dark ? "#fff" : "var(--rpc-text-primary)", background: dark ? "rgba(0,0,0,0.30)" : "transparent", border: `1px solid ${dark ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.16)"}` }}
       >
         ★ Sign in to follow

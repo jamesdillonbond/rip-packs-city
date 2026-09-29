@@ -116,7 +116,7 @@ export function CollectionBanner({ collection }: { collection: Collection }) {
     <div style={{ background: "var(--rpc-header-bg)", borderBottom: `1px solid ${collection.accent}33` }}>
       <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 24px" }}>
         <div style={{ padding: "10px 0 0", display: "flex", alignItems: "center", gap: 6 }}>
-          <Link href="/" style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textDecoration: "none" }}>RPC</Link>
+          <Link href="/" className="rpc-tap44" style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textDecoration: "none" }}>RPC</Link>
           <span style={{ color: "var(--rpc-text-ghost)", fontSize: 10 }}>›</span>
           <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>{collection.label}</span>
         </div>

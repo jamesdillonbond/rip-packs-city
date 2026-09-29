@@ -11,7 +11,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { EM_DASH, fmtCount, fmtUsd } from "./_shared"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 
 export interface PlayerTile {
   name: string
@@ -167,7 +167,7 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
                 // /api/public/ipfs-media — flagged in the ledger for Trevor.
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={(p.headshot_url ?? proxyIpfsUrl(p.portrait_thumbnail)) ?? undefined}
+                  src={(p.headshot_url ?? proxyIpfsImageUrl(p.portrait_thumbnail, 320)) ?? undefined}
                   alt={p.name}
                   width={200}
                   height={200}

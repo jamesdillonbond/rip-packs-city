@@ -7,7 +7,7 @@ import { render, cleanup, screen } from "@testing-library/react"
 vi.mock("next/image", () => ({ default: (props: any) => {
   return null
 } }))
-vi.mock("@/lib/ipfs-media", () => ({ proxyIpfsUrl: (u: string) => u }))
+vi.mock("@/lib/ipfs-media", () => ({ proxyIpfsUrl: (u: string) => u, proxyIpfsImageUrl: (u: string) => u, thumbWidthFor: () => 640 }))
 
 import EditionGrid, { formatUsd, formatCirculation } from "@/components/analytics/EditionGrid"
 import type { SetsDetailEdition } from "@/lib/analytics-types"

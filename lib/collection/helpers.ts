@@ -2,7 +2,7 @@
 // (app/(collections)/[collection]/collection/page.tsx). Extracted verbatim in
 // the Phase 1 structural refactor — behavior-preserving, no logic change.
 import { normalizeParallel } from "@/lib/wallet-normalize"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { isAskDerivedFmv } from "@/lib/fmv-basis"
 import type { MomentRow, CollectionSeriesEntry, SortKey } from "./types"
 
@@ -171,7 +171,7 @@ export function proxyTopShotThumb(url: string): string {
 export function getThumbnailUrl(row: MomentRow, collectionSlug?: string): string | null {
   // UFC moments store slow ipfs.io URLs on the edition — route them through the
   // edge-cached same-origin proxy so they paint reliably (P3).
-  if (collectionSlug === "ufc") return proxyIpfsUrl(row.thumbnailUrl) ?? null
+  if (collectionSlug === "ufc") return proxyIpfsImageUrl(row.thumbnailUrl, 320) ?? null
   // ⚠ `/api/moment-thumbnail` is `assets.nbatopshot.com/media/<flowId>` — a TOP
   // SHOT resource keyed on a TOP SHOT moment id. Measured 2026-09-06 on the
   // founder's wallet, real Chromium: on /laliga-golazos/collection 45 of 47
@@ -182,7 +182,7 @@ export function getThumbnailUrl(row: MomentRow, collectionSlug?: string): string
   // Shot renders its own edition art; only Top Shot goes through the proxy.
   if (collectionSlug && collectionSlug !== "nba-top-shot") {
     if (!row.thumbnailUrl) return null
-    return proxyIpfsUrl(row.thumbnailUrl) ?? row.thumbnailUrl
+    return proxyIpfsImageUrl(row.thumbnailUrl, 320) ?? row.thumbnailUrl
   }
   // Always route through the proxy — the CDN returns non-error responses for
   // hotlink blocks, so <img onError> fallbacks never fire.

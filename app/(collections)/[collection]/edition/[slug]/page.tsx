@@ -32,7 +32,7 @@ import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import PackThumb from "@/components/packs/PackThumb"
 import { slugifyName } from "@/lib/entity-labels"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
@@ -668,7 +668,7 @@ export default async function EditionPage(
   // Route slow public ipfs.io gateway URLs (UFC, legacy) through our edge-cached
   // same-origin proxy so heavy assets paint reliably instead of timing out.
   const heroImageCandidates = [tsHeroImg, detail.thumbnail_url]
-    .map(proxyIpfsUrl)
+    .map((u) => proxyIpfsImageUrl(u, 960))
     .filter((u): u is string => !!u)
 
   // Team moments carry no player_name — the subject is the team. Fall back to
@@ -1099,7 +1099,7 @@ export default async function EditionPage(
                   className="rpc-card"
                   style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block", border: s.is_self ? "1px solid var(--rpc-red)" : "1px solid var(--rpc-border)" }}
                 >
-                  <IpfsThumb src={proxyIpfsUrl(s.thumbnail_url)} alt={name} label={name} />
+                  <IpfsThumb src={proxyIpfsImageUrl(s.thumbnail_url, 320)} alt={name} label={name} />
                   <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, marginBottom: 4 }}>
                     <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: s.is_self ? "var(--rpc-red)" : "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2 }}>{name}</span>
                     {s.is_self && <span className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red)" }}>viewing</span>}
@@ -1325,7 +1325,7 @@ async function EditionBottomSections({
                 className="rpc-card"
                 style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block", border: "1px solid var(--rpc-red)" }}
               >
-                <IpfsThumb src={proxyIpfsUrl(p.thumbnail_url)} alt={p.set_name ?? "parallel"} label={p.set_name ?? "parallel"} />
+                <IpfsThumb src={proxyIpfsImageUrl(p.thumbnail_url, 320)} alt={p.set_name ?? "parallel"} label={p.set_name ?? "parallel"} />
                 <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
                   {p.set_name ?? "—"}
                 </div>
@@ -1356,7 +1356,7 @@ async function EditionBottomSections({
                     className="rpc-card"
                     style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block" }}
                   >
-                    <IpfsThumb src={proxyIpfsUrl(r.thumbnail_url)} alt={`${name} — ${r.set_name ?? ""}`} label={r.set_name ?? name} />
+                    <IpfsThumb src={proxyIpfsImageUrl(r.thumbnail_url, 320)} alt={`${name} — ${r.set_name ?? ""}`} label={r.set_name ?? name} />
                     <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 2 }}>
                       {name}
                     </div>

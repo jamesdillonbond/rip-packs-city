@@ -32,7 +32,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { searchKindLabel } from "@/lib/search/href";
-import { proxyIpfsUrl } from "@/lib/ipfs-media";
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 
 interface Hit {
   kind: string;
@@ -172,7 +172,7 @@ export default function GlobalSearch() {
             >
               {h.thumbnailUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={proxyIpfsUrl(h.thumbnailUrl) ?? undefined} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
+                <img src={proxyIpfsImageUrl(h.thumbnailUrl, 160) ?? undefined} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
               ) : (
                 <span style={{ width: 28, height: 28, borderRadius: 4, flexShrink: 0, background: "var(--rpc-surface)" }} />
               )}
@@ -202,6 +202,7 @@ export default function GlobalSearch() {
         value={q}
         placeholder="Search players, sets, teams…"
         aria-label="Search the catalog"
+        className="rpc-tap44"
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}

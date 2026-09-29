@@ -4,7 +4,7 @@
 // measured by either coverage gate). Bodies are byte-identical to the originals;
 // the component imports them.
 
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl, thumbWidthFor } from "@/lib/ipfs-media"
 import { isUsdPegged } from "@/lib/usd-format"
 import { usdSignFirst } from "@/lib/usd-format"
 
@@ -109,7 +109,7 @@ export function resizedThumb(url: string | null | undefined, width: number = 900
   // ⚠ A PUBLIC IPFS GATEWAY URL GOES THROUGH OUR PROXY (lib/ipfs-media.ts). The
   // Top Shot resize branch above is untouched, and a non-gateway url passes
   // through unchanged, so this is strictly-no-worse for every other collection.
-  return proxyIpfsUrl(url) ?? url
+  return proxyIpfsImageUrl(url, thumbWidthFor(width)) ?? url
 }
 
 /* Tier display-name → CSS token key (drives `var(--tier-*)`). Extracted verbatim

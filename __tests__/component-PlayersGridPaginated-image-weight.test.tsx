@@ -58,7 +58,7 @@ describe("PlayersGridPaginated image weight", () => {
   it("routes the IPFS portrait through the same-origin proxy", () => {
     const { container } = mount([tile()])
     expect(container.querySelector("img")!.getAttribute("src")).toBe(
-      "/api/public/ipfs-media/QmPORTRAIT",
+      "/api/public/ipfs-thumb/QmPORTRAIT?w=320",
     )
   })
 

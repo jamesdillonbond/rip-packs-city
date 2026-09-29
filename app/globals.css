@@ -53,6 +53,13 @@ select optgroup {
   .rpc-rb-pill {
     min-height: 44px;
   }
+
+  /* 09-29 sweep: header, search, breadcrumb, follow, View all under 44px on touch */
+  .rpc-tap44 {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
 }
 
 /* The insights boards' filter pills and sort selects. Measured 2026-09-20 at

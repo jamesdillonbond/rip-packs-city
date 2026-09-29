@@ -5,7 +5,7 @@
 // sees a pack's per-edition EV, pull odds, and sale prices, and each carries a
 // documented prior regression.
 
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { usdSignFirst } from "@/lib/usd-format"
 
 /** Split an "Player — Set" edition name on the em-dash, guarding null / no-dash. */
@@ -127,5 +127,5 @@ export function tsTileImg(
   // `ipfs.io` url and 5 of 6 sampled TIMED OUT at 15 s, so a raw render is a
   // broken tile. `proxyIpfsUrl` passes a non-gateway url through untouched, so
   // Top Shot / All Day / Golazos / Pinnacle art cannot change.
-  return proxyIpfsUrl(thumbnailUrl) ?? null
+  return proxyIpfsImageUrl(thumbnailUrl, 640) ?? null
 }

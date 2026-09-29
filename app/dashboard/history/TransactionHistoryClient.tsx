@@ -18,7 +18,7 @@ import { fmtUsd, relativeTime, truncAddr } from "@/lib/dashboard/format"
 import { currencySuffix } from "@/lib/usd-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import {
   fetchVerifiedWallets,
   VERIFIED_WALLETS_UNAVAILABLE,
@@ -380,7 +380,7 @@ function TimelineRow({ e }: { e: TxEvent }) {
       <div style={{ width: 44, height: 44, borderRadius: 5, background: "#1a1a1d", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", fontFamily: monoFont, fontSize: 16 }}>
         {e.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={proxyIpfsUrl(e.thumbnail_url) ?? undefined} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img src={proxyIpfsImageUrl(e.thumbnail_url, 320) ?? undefined} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : isPack ? "▣" : "?"}
       </div>
 

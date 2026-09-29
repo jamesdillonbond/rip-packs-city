@@ -59,6 +59,7 @@ export default function SignOutButton() {
     return (
       <Link
         href="/login"
+        className="rpc-tap44"
         style={{
           background: "rgba(224,58,47,0.15)",
           border: "1px solid rgba(224,58,47,0.4)",

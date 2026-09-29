@@ -18,7 +18,7 @@ import SerialFmvBadge from "@/components/SerialFmvBadge";
 import NetOfFeesNote from "@/components/sniper/NetOfFeesNote";
 import { type LeagueValue } from "@/components/filters/LeagueFilter";
 import { track } from "@/lib/telemetry/track";
-import { proxyIpfsUrl } from "@/lib/ipfs-media";
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 import { useMobile } from "@/components/collection/use-mobile";
 import { SniperThumbnailPreview } from "@/components/sniper/SniperThumbnailPreview";
 import { SerialBadge } from "@/components/sniper/SerialBadge";
@@ -1230,7 +1230,7 @@ function SniperMomentsBody() {
                         {(deal.playerName || "?").trim().charAt(0).toUpperCase() || "?"}
                         {deal.thumbnailUrl ? (
                           <img
-                            src={proxyIpfsUrl(deal.thumbnailUrl) ?? undefined}
+                            src={proxyIpfsImageUrl(deal.thumbnailUrl, 640) ?? undefined}
                             alt={deal.playerName}
                             width={36}
                             height={36}
@@ -1449,7 +1449,7 @@ function SniperMomentsBody() {
                         {deal.thumbnailUrl ? (
                           <SniperThumbnailPreview thumbUrl={deal.thumbnailUrl} playerName={deal.playerName} tierColor={resolveTierColor(deal.tier, isAllDay)} backgroundColor={isAllDay ? "var(--rpc-surface-raised)" : undefined}>
                             <img
-                              src={proxyIpfsUrl(isAllDay ? deal.thumbnailUrl.replace("width=256", "width=512") : deal.thumbnailUrl) ?? undefined}
+                              src={proxyIpfsImageUrl(isAllDay ? deal.thumbnailUrl.replace("width=256", "width=512") : deal.thumbnailUrl, 640) ?? undefined}
                               alt={deal.playerName}
                               width={56}
                               height={56}

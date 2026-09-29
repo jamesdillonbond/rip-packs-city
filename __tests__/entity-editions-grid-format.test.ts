@@ -158,7 +158,7 @@ describe("buildEditionImageCandidates", () => {
       { rep_nft_id: null, thumbnail_url: "https://ipfs.io/ipfs/CID999" },
       "laliga-golazos",
     )
-    expect(out).toEqual(["/api/public/ipfs-media/CID999"])
+    expect(out).toEqual(["/api/public/ipfs-thumb/CID999?w=640"])
   })
   it("no thumbnail and no TS media → empty candidate list", () => {
     expect(buildEditionImageCandidates({ rep_nft_id: null, thumbnail_url: null }, "ufc")).toEqual([])
@@ -177,7 +177,8 @@ describe("buildEditionImageCandidates", () => {
     )
     expect(out).toEqual([
       "https://assets.nbatopshot.com/media/12345/image?width=144",
-      "/api/public/ipfs-media/CID1",
+      // 2026-09-29: the IPFS fallback honours the width too (resized by /api/public/ipfs-thumb).
+      "/api/public/ipfs-thumb/CID1?w=160",
     ])
   })
 })

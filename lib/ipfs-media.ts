@@ -29,6 +29,34 @@ export function proxyIpfsUrl(url: string | null | undefined): string | null {
   return `/api/public/ipfs-media/${m[1]}`;
 }
 
+// The widths /api/public/ipfs-thumb/<cid>?w= serves. A fixed set so a caller cannot mint
+// unbounded cache variants; each (CID, width) is resized once and then CDN-cached.
+export const IPFS_THUMB_WIDTHS = [160, 320, 640, 960] as const;
+export type IpfsThumbWidth = (typeof IPFS_THUMB_WIDTHS)[number];
+export const IPFS_THUMB_DEFAULT_WIDTH: IpfsThumbWidth = 640;
+
+/** The smallest allowed thumb width that covers `px` device pixels (the largest, if none does). */
+export function thumbWidthFor(px: number): IpfsThumbWidth {
+  for (const w of IPFS_THUMB_WIDTHS) if (w >= px) return w;
+  return IPFS_THUMB_WIDTHS[IPFS_THUMB_WIDTHS.length - 1];
+}
+
+// ⛔ IMAGES ONLY. The RESIZED variant of proxyIpfsUrl, for an <img> of IPFS art (known-issues #162:
+// every UFC image is a 3.7–4.4 MB PNG, and a 60–120 px tile downloaded all of it). It must never be
+// given a VIDEO url — the same CID form carries both, and a video fed to the resizer 302s back to
+// the original (fail-open), so it costs a wasted round trip. Non-IPFS URLs (the typed CDN art of
+// Top Shot / All Day / Golazos / Pinnacle) pass through untouched, exactly as proxyIpfsUrl does.
+// Width: the rendered CSS size × device pixel ratio, rounded UP to the next allowed width.
+export function proxyIpfsImageUrl(
+  url: string | null | undefined,
+  width: IpfsThumbWidth = IPFS_THUMB_DEFAULT_WIDTH,
+): string | null {
+  if (!url) return null;
+  const m = url.match(IPFS_GATEWAY_RE);
+  if (!m) return url;
+  return `/api/public/ipfs-thumb/${m[1]}?w=${width}`;
+}
+
 // Absolute-URL variant for contexts that require a fully-qualified URL rather
 // than a same-origin path — notably JSON-LD structured data and OG/meta image
 // fields, where a relative path is invalid. Rewrites slow ipfs.io CIDs to the

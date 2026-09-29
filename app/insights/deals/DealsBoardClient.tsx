@@ -19,7 +19,7 @@ import type { DegradedSummary } from "@/lib/insights/board-status"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { feeNetDeal } from "@/lib/marketplace-fees"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { askAgeTitle, askStampKind } from "@/lib/market/ask-freshness"
 import { usdSignFirst } from "@/lib/usd-format"
 
@@ -571,7 +571,7 @@ export default function DealsBoardClient({
                       {r.thumbnail_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={proxyIpfsUrl(r.thumbnail_url) ?? undefined}
+                          src={proxyIpfsImageUrl(r.thumbnail_url, 640) ?? undefined}
                           alt={title}
                           className="rpc-dl-edition-thumb"
                           loading="lazy"

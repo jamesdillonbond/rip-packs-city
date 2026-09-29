@@ -76,7 +76,7 @@ import { editionHref } from "@/lib/entity-href"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsUrl, proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { joinMetaParts, metaField } from "@/lib/format"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
@@ -1532,7 +1532,7 @@ export default async function MomentPage(
                   {p.thumbnail_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={proxyIpfsUrl(p.thumbnail_url) ?? undefined}
+                      src={proxyIpfsImageUrl(p.thumbnail_url, 320) ?? undefined}
                       alt={p.player_name ?? "parallel"}
                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
                       loading="lazy"
@@ -1592,7 +1592,7 @@ export default async function MomentPage(
                   {s.thumbnail_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={proxyIpfsUrl(s.thumbnail_url) ?? undefined}
+                      src={proxyIpfsImageUrl(s.thumbnail_url, 320) ?? undefined}
                       alt={s.player_name ?? "moment"}
                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
                       loading="lazy"
@@ -1749,7 +1749,7 @@ function PinnacleDisambiguation({ renders }: { renders: PinnacleRender[] }) {
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={proxyIpfsUrl(r.thumbnail_url) ?? `/api/public/pinnacle-image/${encodeURIComponent(r.render_id)}`}
+                src={proxyIpfsImageUrl(r.thumbnail_url, 320) ?? `/api/public/pinnacle-image/${encodeURIComponent(r.render_id)}`}
                 alt={r.character_name ?? "Pinnacle pin"}
                 width={72}
                 height={72}

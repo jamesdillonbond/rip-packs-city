@@ -825,7 +825,7 @@ export default function ProfileClient(props: {
                     {w.username && (
                       <Link
                         href={loadHref}
-                        className="rpc-chip"
+                        className="rpc-chip rpc-tap44"
                         style={{ textDecoration: "none", flexShrink: 0 }}
                       >
                         LOAD →

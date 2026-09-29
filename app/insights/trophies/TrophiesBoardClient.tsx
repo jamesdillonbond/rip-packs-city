@@ -22,7 +22,7 @@ import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { useIpfsRetry } from "@/lib/media/use-ipfs-retry"
 import { fromDbSlug } from "@/lib/collections"
 import { usdSignFirst } from "@/lib/usd-format"
@@ -151,7 +151,7 @@ function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
           // eslint-disable-next-line @next/next/no-img-element
           <img
             key={imgKey}
-            src={proxyIpfsUrl(r.thumbnail_url) ?? undefined}
+            src={proxyIpfsImageUrl(r.thumbnail_url, 640) ?? undefined}
             alt={title}
             className="rpc-tr-img"
             loading="lazy"

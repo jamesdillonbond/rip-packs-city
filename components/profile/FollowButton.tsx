@@ -120,6 +120,7 @@ export default function FollowButton({ username, accentColor }: Props) {
     return (
       <a
         href={"/login?next=" + encodeURIComponent("/profile/" + username)}
+        className="rpc-tap44"
         style={{
           ...baseStyle,
           color: "var(--rpc-text-primary)",

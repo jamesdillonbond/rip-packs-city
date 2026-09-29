@@ -27,7 +27,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { avatarDisplayUrl } from "@/lib/media/avatar-proxy"
 import { fromDbSlug } from "@/lib/collections"
 import { usdSignFirst } from "@/lib/usd-format"
@@ -167,7 +167,7 @@ function tierColor(tier: string | null): string {
 // origin avatar proxy (lib/media/avatar-proxy.ts). Two cards per anon load were
 // blocked by CSP and rendered blank; route the URL through the proxy instead.
 function displayImg(url: string | null | undefined): string | null {
-  const viaIpfs = proxyIpfsUrl(url)
+  const viaIpfs = proxyIpfsImageUrl(url, 640)
   if (!viaIpfs) return null
   return avatarDisplayUrl(viaIpfs) || null
 }

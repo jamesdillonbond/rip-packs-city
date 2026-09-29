@@ -23,7 +23,7 @@ import EditionsGridPaginated, { type EditionTile } from "@/components/entity/Edi
 import { buildPlayerSetCards } from "@/lib/player-page-view"
 import PlayerSeasonStats from "@/components/entity/PlayerSeasonStats"
 import type { SeasonStatsResult } from "@/lib/player-page-season-stats"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { editionRouteHref } from "@/lib/entity-href"
 import { fetchPaniniPlayerSales, type PaniniPlayerSale } from "@/lib/panini/player-sales"
 import { saleSerialLabel } from "@/lib/entity/sale-serial-label"
@@ -391,7 +391,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
   const editionsOk = editionsRes.ok
 
   // Portrait fallback chain: headshot_url → first edition thumbnail → none.
-  const portrait = detail.headshot_url ?? proxyIpfsUrl(editions[0]?.thumbnail_url) ?? null
+  const portrait = detail.headshot_url ?? proxyIpfsImageUrl(editions[0]?.thumbnail_url, 640) ?? null
   // ⚠ THE DENYLIST IS ENFORCED AT THE DESTINATION, SO IT MUST BE ENFORCED HERE.
   // /[collection]/team/[slug] (and its layout) notFound() the 12 exhibition
   // rosters, and the sitemap and PopularOnCollection both filter them -- but the

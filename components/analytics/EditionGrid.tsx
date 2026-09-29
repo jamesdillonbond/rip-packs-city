@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import type { FmvConfidence, SetsDetailEdition } from "@/lib/analytics-types"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { usdSignFirst } from "@/lib/usd-format"
 
 interface Props {
@@ -173,7 +173,7 @@ export default function EditionGrid({ editions, collection }: Props) {
               {e.thumbnail_url ? (
                 <div className="relative h-32 w-full overflow-hidden rounded-md bg-[var(--rpc-surface)] mb-3">
                   <Image
-                    src={proxyIpfsUrl(e.thumbnail_url) || e.thumbnail_url}
+                    src={proxyIpfsImageUrl(e.thumbnail_url, 320) || e.thumbnail_url}
                     alt={e.name || "edition"}
                     fill
                     className="object-cover"

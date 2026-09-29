@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
 import { render, cleanup, screen, fireEvent, waitFor } from "@testing-library/react"
 
 vi.mock("next/image", () => ({ default: () => null }))
-vi.mock("@/lib/ipfs-media", () => ({ proxyIpfsUrl: (u: string) => u }))
+vi.mock("@/lib/ipfs-media", () => ({ proxyIpfsUrl: (u: string) => u, proxyIpfsImageUrl: (u: string) => u, thumbWidthFor: () => 640 }))
 
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 

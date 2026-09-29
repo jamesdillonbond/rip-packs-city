@@ -50,7 +50,9 @@ const THUMB =
  * source and fails if one stops rewriting, which is what stops this list from
  * becoming a set of exemptions nobody re-checks.
  */
-const REWRITERS = /(proxyIpfsUrl|getThumbnailUrl|thumbnailSrc|resizedThumb|tsTileImg|hiResThumb)/
+// 2026-09-29: proxyIpfsImageUrl is the RESIZED rewrite (/api/public/ipfs-thumb, known-issues #162),
+// pinned in __tests__/ipfs-thumb-resizes-and-fails-open.test.ts; it rewrites the same IPFS urls.
+const REWRITERS = /(proxyIpfsUrl|proxyIpfsImageUrl|getThumbnailUrl|thumbnailSrc|resizedThumb|tsTileImg|hiResThumb)/
 
 /** Helpers whose OWN body must contain the rewrite for the exemption to hold. */
 const REWRITER_SOURCES: Array<[string, string]> = [
@@ -129,8 +131,8 @@ describe("a Moment thumbnail cannot reach an <img> without the IPFS proxy", () =
       // finding; it was caught by mutating it rather than by reading it.
       const src = stripComments(fs.readFileSync(path.join(process.cwd(), file), "utf8"))
       expect(src, `${file} no longer defines ${fn}`).toContain(fn)
-      expect(src, `${fn} no longer rewrites IPFS urls — its exemption is now a hole`).toContain(
-        "proxyIpfsUrl(",
+      expect(src, `${fn} no longer rewrites IPFS urls — its exemption is now a hole`).toMatch(
+        /proxyIpfs(Image)?Url\(/,
       )
     }
   })

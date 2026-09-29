@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, type ReactNode } from "react";
-import { proxyIpfsUrl } from "@/lib/ipfs-media";
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 
 // Hover-to-enlarge thumbnail wrapper for the sniper deal table/cards.
 // Extracted verbatim in the Phase 1 refactor of the sniper page.
@@ -8,7 +8,7 @@ export function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, backgr
   const [hovered, setHovered] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
-  const previewUrl = thumbUrl ? proxyIpfsUrl(thumbUrl.replace(/width=\d+/, "width=400")) : null;
+  const previewUrl = thumbUrl ? proxyIpfsImageUrl(thumbUrl.replace(/width=\d+/, "width=400"), 640) : null;
   function onEnter() {
     if (!ref.current) return;
     const r = ref.current.getBoundingClientRect();

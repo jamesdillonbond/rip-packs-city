@@ -143,7 +143,7 @@ describe("proxyTopShotThumb / getThumbnailUrl", () => {
     // Top Shot keeps the proxy
     expect(getThumbnailUrl(row({ momentId: "999" }), "nba-top-shot")).toBe("/api/moment-thumbnail?flowId=999&width=180")
     // ipfs-hosted art (UFC-style) on any collection still goes through the ipfs proxy
-    expect(getThumbnailUrl(row({ momentId: "1", thumbnailUrl: "https://ipfs.io/ipfs/QmABC" }), "disney-pinnacle")).toBe("/api/public/ipfs-media/QmABC")
+    expect(getThumbnailUrl(row({ momentId: "1", thumbnailUrl: "https://ipfs.io/ipfs/QmABC" }), "disney-pinnacle")).toBe("/api/public/ipfs-thumb/QmABC?w=320")
   })
 })
 

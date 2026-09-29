@@ -61,7 +61,7 @@ describe("HeroMontage image weight", () => {
     const srcs = [...container.querySelectorAll("img")].map((i) => i.getAttribute("src"))
     // Tile survives, now served from the proxy; sibling untouched.
     expect(srcs).toEqual([
-      "/api/public/ipfs-media/QmAAA",
+      "/api/public/ipfs-thumb/QmAAA?w=320",
       "https://assets.nbatopshot.com/media/45381151/image?width=144",
     ])
   })
@@ -81,7 +81,7 @@ describe("HeroMontage image weight", () => {
         collectionUrlSlug="ufc"
       />,
     )
-    expect(container.querySelector("img")!.getAttribute("src")).toBe("/api/public/ipfs-media/QmUFC")
+    expect(container.querySelector("img")!.getAttribute("src")).toBe("/api/public/ipfs-thumb/QmUFC?w=320")
   })
 
   it("renders nothing when there are no thumbnails", () => {

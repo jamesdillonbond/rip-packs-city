@@ -25,7 +25,7 @@
 
 import { useEffect, useState } from "react";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
-import { proxyIpfsUrl } from "@/lib/ipfs-media";
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 
 const MONO = "var(--font-mono)";
 const DISPLAY = "var(--font-display)";
@@ -178,7 +178,7 @@ export default function AvatarMomentPicker({
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={proxyIpfsUrl(m.image_url as string) ?? undefined}
+                    src={proxyIpfsImageUrl(m.image_url as string, 320) ?? undefined}
                     alt={momentLabel(m)}
                     style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 6 }}
                   />

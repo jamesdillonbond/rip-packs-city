@@ -10,7 +10,7 @@
 // pack-mode "exhausted / pulled out" section, breaks Load-more pagination, or
 // drops the Top Shot per-moment image fallback.
 
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl, thumbWidthFor } from "@/lib/ipfs-media"
 
 export type EditionSortKey = "fmv_desc" | "circ_asc" | "series_desc" | "alpha"
 
@@ -171,7 +171,7 @@ export function buildEditionImageCandidates(
   const sized = tsSizedMomentImage(collectionUrlSlug, e.rep_nft_id, width)
   if (sized) out.push(sized)
   if (e.thumbnail_url) {
-    const t = proxyIpfsUrl(e.thumbnail_url)
+    const t = proxyIpfsImageUrl(e.thumbnail_url, thumbWidthFor(width))
     if (t) out.push(t)
   }
   return out
