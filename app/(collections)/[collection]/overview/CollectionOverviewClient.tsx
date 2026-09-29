@@ -138,8 +138,8 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
   ],
   "panini-blockchain": [
     {
-      title: "Panini Prizm World Cup 2026",
-      body: "Panini's digital Prizm World Cup 2026 cards live on Panini's own marketplace. RPC walks that marketplace continuously, prices every edition it has seen, and tracks the live asks against those prices.",
+      title: "Panini NFT Cards",
+      body: "Panini's digital cards live on Panini's own marketplace. RPC walks it continuously: 2026 Prizm World Cup in full, plus other Panini products (NBA, NFL and more) for the cards that are listed or held by linked collectors. It prices every edition it has seen and tracks the live asks against those prices.",
     },
     {
       title: "What RPC Can and Cannot See",

@@ -315,7 +315,7 @@ export const COLLECTIONS: Collection[] = [
     published: true,
     openSeaSlug: "paniniblockchain",
     supabaseCollectionId: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",
-    pitch: "Panini Prizm World Cup 2026 on Panini's digital platform — every edition RPC has seen listed, priced, with live asks. Listing-based coverage: a floor, not a census.",
+    pitch: "Panini's digital cards on Panini's own platform — 2026 Prizm World Cup in full, other Panini products as RPC walks them. Every edition RPC has seen, priced, with live asks. Listing-based coverage: a floor, not a census.",
   },
   {
     id: "candy-mlb",

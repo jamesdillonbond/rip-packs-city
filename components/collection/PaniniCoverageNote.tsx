@@ -36,7 +36,10 @@ export default function PaniniCoverageNote({
         <b>listed for sale on Panini&rsquo;s marketplace</b>. Cards that have never been listed are invisible to us.
         {coverage ? (
           <>
-            {" "}RPC indexes <b>{formatCount(coverage.total_editions)}</b> editions
+            {/* The figures below come from panini_coverage_summary, which is 2026 Prizm World Cup ONLY
+                (panini_wc_editions, 2026-09-28). Since other Panini products are walked too, the count
+                must say which catalogue it measures, or it reads as the size of everything listed here. */}
+            {" "}RPC indexes <b>{formatCount(coverage.total_editions)}</b> 2026 Prizm World Cup editions
             {coverage.listing_gated_editions != null && coverage.listing_gated_editions > 0 ? (
               <>
                 ; <b>{formatCount(coverage.listing_gated_editions)}</b> of them sit in parallels we can see only while
@@ -60,6 +63,8 @@ export default function PaniniCoverageNote({
         ) : failed ? (
           <> Coverage figures couldn&rsquo;t be loaded right now.</>
         ) : null}{" "}
+        Other Panini products (NBA, NFL and more) are walked too, but only for cards that are listed or held by a
+        collector linked to RPC, so their coverage is thinner than World Cup&rsquo;s and not included in these figures.
         Sale prices are not a complete feed: RPC records the last sale of each card it checks, not every sale.
       </div>
     </section>
