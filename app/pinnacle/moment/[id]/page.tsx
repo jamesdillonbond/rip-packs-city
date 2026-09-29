@@ -27,6 +27,8 @@ import { WalletLink } from "@/components/entity/_shared"
 import PinnacleFmvChart from "@/components/pinnacle/PinnacleFmvChart"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
 import SiteFooter from "@/components/SiteFooter"
+import { CollectionTicker, CollectionBanner } from "@/components/collection-chrome"
+import { getCollection } from "@/lib/collections"
 import SupportChatConnected from "@/components/SupportChatConnected"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -514,9 +516,21 @@ function Detail({ label, value }: { label: string; value: string }) {
 // orphaned — matches the sticky header + footer + mobile nav + concierge that
 // every collection page gets.
 function PinnacleShell({ children }: { children: ReactNode }) {
+  // The same collection chrome every /<collection>/* page gets from
+  // app/(collections)/[collection]/layout.tsx — ticker, breadcrumb, header,
+  // collection switcher and tab strip — so a pin page reads as part of Disney
+  // Pinnacle rather than a separate site (2026-09-27 live sweep: no header, no
+  // tabs, no breadcrumb; its only way back was the scarcity board).
+  const pinnacle = getCollection("disney-pinnacle")
   return (
-    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
+    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }} data-collection="disney-pinnacle">
       <GlobalSiteHeader />
+      {pinnacle ? (
+        <>
+          <CollectionTicker collection={pinnacle} />
+          <CollectionBanner collection={pinnacle} />
+        </>
+      ) : null}
       {children}
       <SiteFooter />
       <SupportChatConnected />
