@@ -89,3 +89,20 @@ It bridges every admitted NON-WC product into `editions` / `sets` / `players` / 
 It writes nothing until the 29 products' cards arrive (first walk after 2026-09-28 11:31 PM PT). Proven
 in a rolled-back transaction; see the migration header. Still open from the list above: **naming**
 (needs `panini_products.sample`, i.e. a walk on a runner that has pulled `e8c76f4d2`) and **pack EV**.
+
+### 2026-09-29 11:46 AM PT — held-edition queue: served, not yet reached
+
+- The walk-order GET now serves the linked founder's held, uncatalogued editions: the 10:35 AM PT
+  run's `known_order` was 5,776 (catalogue ~5,624 at start + his held pskus), up from 5,458.
+- **None walked yet (0 of 136 catalogued / bridged / priced; trophy slot 2 still no FMV).** Cause:
+  the runner walks brand-new GRID discoveries before the known list (3,900 new this run, 1,464 and
+  3,044 the two before), and one ~4 h run walks ~660 editions (197 in its first 71 min). The held
+  pskus sit at the FRONT of the known list, so they are reached once a run's new discoveries fall
+  under its capacity — the admitted products' grids are finite (~3,150 listed items), so that
+  pool drains within roughly a day of runs.
+- Not changed: making held pskus jump the new discoveries is a runner edit, and the box only runs
+  new runner code after `main` is pulled there (`panini-run.bat` never pulls), so it would not land
+  sooner than the drain.
+- WC freshness (`panini_coverage_summary`): p50 20.8 h → 27.3 → 29.5 → **33.0 h**, p90 40.4 → 46.8
+  → 49.0 → **52.5 h**, stale-45d still 0.0%. Drifting as predicted while new products are
+  enumerated; the narrow-the-list trigger (p90 ≈ 96 h or stale-45d > 0) is not near.
