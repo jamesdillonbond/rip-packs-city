@@ -15,8 +15,9 @@ if not exist "%CHROME%" set "CHROME=C:\Program Files (x86)\Google\Chrome\Applica
 set "PROFILE=%USERPROFILE%\panini-cdp-profile"
 set "PANINI_CDP_URL=http://localhost:9222"
 set "RPC_PANINI_COLLECTOR_WALK_URL=https://www.rippackscity.com/api/cron/panini-collector-walk"
-REM The box owner's own username, walked whether or not it is linked on rippackscity.com.
-if not defined PANINI_COLLECTOR_TARGETS set "PANINI_COLLECTOR_TARGETS=Jamesdillonbond"
+REM Always-walked usernames, whether or not they are linked on rippackscity.com:
+REM the box owner's own, plus spinotronpc (tracked on Flow as seeded_wallets id 45, added 2026-09-28).
+if not defined PANINI_COLLECTOR_TARGETS set "PANINI_COLLECTOR_TARGETS=Jamesdillonbond,spinotronpc"
 set "PANINI_LOG=%USERPROFILE%\panini-collector-walk.log"
 
 cd /d "%USERPROFILE%\rip-packs-city"
