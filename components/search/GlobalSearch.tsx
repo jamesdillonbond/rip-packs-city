@@ -202,7 +202,7 @@ export default function GlobalSearch() {
         value={q}
         placeholder="Search players, sets, teams…"
         aria-label="Search the catalog"
-        className="rpc-tap44"
+        className="rpc-gs-input"
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}

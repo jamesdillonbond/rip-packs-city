@@ -54,11 +54,9 @@ select optgroup {
     min-height: 44px;
   }
 
-  /* 09-29 sweep: header, search, breadcrumb, follow, View all under 44px on touch */
-  .rpc-tap44 {
+  /* The catalog search field: an input cannot carry .rpc-tap44's ::after */
+  .rpc-gs-input {
     min-height: 44px;
-    display: inline-flex;
-    align-items: center;
   }
 }
 
