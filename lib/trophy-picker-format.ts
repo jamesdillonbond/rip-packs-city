@@ -233,6 +233,21 @@ export function emptyPoolCopy(
   return `No ${filterLabel} Moments found in your saved wallets — ${MANUAL}`
 }
 
+/**
+ * Empty copy for the Panini chip. Panini cards are read by the usernames the
+ * collector LINKED (not a wallet), so "none" has two truths and the copy must
+ * say which — and only when it knows (`linked` null = the count read failed).
+ */
+export function paniniEmptyPoolCopy(linked: number | null): string {
+  if (linked === 0) {
+    return 'You haven’t linked a Panini username yet. Add it under “Panini Username” on your dashboard — once RPC reads your public Panini profile, your cards show up here.'
+  }
+  if (linked != null && linked > 0) {
+    return 'RPC hasn’t read any cards under your linked Panini username yet. Your public Panini profile is read on a schedule — check back after the next read. (A private Panini profile can’t be read.)'
+  }
+  return 'No Panini cards to show yet. If you haven’t linked your Panini username, add it on your dashboard.'
+}
+
 /** Collapse saved wallet addresses to the dbChain vocabulary the picker uses. */
 export function savedWalletChains(addrs: readonly string[], detect: (a: string) => string): string[] {
   const out = new Set<string>()

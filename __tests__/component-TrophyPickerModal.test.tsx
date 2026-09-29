@@ -324,13 +324,54 @@ describe("TrophyPickerModal — manual lookup + grid pin + row variants", () => 
   })
 
   // 2026-09-27 — Candy MLB (Solana) holdings are in the trophy pool, so the
-  // picker offers a Candy chip. Panini (dbChain null, holdings unindexed) must
-  // NOT get one: its chip could only ever answer "you own none".
-  it("offers a Candy MLB chip and no Panini chip", async () => {
+  // picker offers a Candy chip.
+  // ⚠ INVERTED 2026-09-28: Panini was held OUT because its holdings were not in
+  // the pool and its chip could only answer "you own none". The pool now reads
+  // the collector's LINKED Panini usernames, so the chip is offered — and its
+  // empty state must say WHICH "none" it is (the three tests below).
+  it("offers a Candy MLB chip and a Panini chip", async () => {
     const { container } = render(<TrophyPickerModal {...baseProps} />)
     const titles = Array.from(container.querySelectorAll("button[title]")).map((b) => b.getAttribute("title"))
     expect(titles).toContain("Candy")
-    expect(titles.some((t) => /panini/i.test(t ?? ""))).toBe(false)
+    expect(titles).toContain("Panini")
+  })
+
+  it("asks the route for Panini rows (panini=1) — the one picker that can pin them", async () => {
+    stubFetch({ moments: [] })
+    render(<TrophyPickerModal {...baseProps} />)
+    await waitFor(() =>
+      expect((fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes("panini=1"))).toBe(true),
+    )
+  })
+
+  const openPanini = async (payload: { moments: PickerMoment[]; paniniUsernamesLinked: number | null }) => {
+    stubFetch(payload)
+    const utils = render(<TrophyPickerModal {...baseProps} savedChains={["flow"]} />)
+    const chip = Array.from(utils.container.querySelectorAll("button[title]")).find((b) => b.getAttribute("title") === "Panini")
+    fireEvent.click(chip!)
+    await waitFor(() =>
+      expect((fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes("collection=panini-blockchain"))).toBe(true),
+    )
+    return utils
+  }
+
+  it("an empty Panini filter with NO username linked says to link one — not 'none found'", async () => {
+    const { findByText, queryByText } = await openPanini({ moments: [], paniniUsernamesLinked: 0 })
+    expect(await findByText(/haven’t linked a Panini username/)).toBeTruthy()
+    // savedChains=["flow"] must not leak the Flow wallet copy into the Panini chip.
+    expect(queryByText(/No Panini Moments found in your saved wallets/)).toBeNull()
+  })
+
+  it("an empty Panini filter WITH a username linked says it has not been read yet, not 'link one'", async () => {
+    const { findByText, queryByText } = await openPanini({ moments: [], paniniUsernamesLinked: 1 })
+    expect(await findByText(/hasn’t read any cards under your linked Panini username/)).toBeTruthy()
+    expect(queryByText(/haven’t linked a Panini username/)).toBeNull()
+  })
+
+  it("an empty Panini filter with the link count UNKNOWN hedges — never 'you haven't linked'", async () => {
+    const { findByText, queryByText } = await openPanini({ moments: [], paniniUsernamesLinked: null })
+    expect(await findByText(/If you haven’t linked your Panini username/)).toBeTruthy()
+    expect(queryByText(/You haven’t linked a Panini username yet/)).toBeNull()
   })
 
   it("an empty Candy filter says how to add a Solana wallet, not just 'none found'", async () => {

@@ -140,9 +140,12 @@ describe("trophy art is allowlisted, not accepted", () => {
     const { readFileSync } = await import("node:fs")
     const { join } = await import("node:path")
     const src = readFileSync(join(process.cwd(), "app/api/profile/trophy/route.ts"), "utf8")
-    expect(src).toMatch(/thumbnail_url:\s*sanitizeTrophyThumbnail\(thumbnailUrl\)/)
+    // Re-pinned 2026-09-28: a Panini pin takes art from the server-resolved card
+    // (lib/trophy/panini-card.ts) — still THROUGH the sanitizer.
+    expect(src).toMatch(/thumbnail_url:\s*sanitizeTrophyThumbnail\(panini \? panini\.thumbnailUrl : thumbnailUrl\)/)
     expect(src).not.toMatch(/thumbnail_url:\s*thumbnailUrl\s*\?\?/)
-    // …and the serial prefers the value resolved from the moment index.
-    expect(src).toMatch(/serial_number:\s*verifiedSerial\s*\?\?\s*serialNumber/)
+    // …and the serial prefers the value resolved from the moment index — or, for
+    // Panini, from the linked username's card, never the body.
+    expect(src).toMatch(/serial_number:\s*panini \? panini\.serialNumber : verifiedSerial\s*\?\?\s*serialNumber/)
   })
 })

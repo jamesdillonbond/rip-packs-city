@@ -891,7 +891,10 @@ const PINS = [
   {
     fn: "get_user_top_owned_moments",
     test: "supabase/tests/get_user_top_owned_moments.sql",
-    migration: "supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql",
+    // Repointed 2026-09-28: a second branch offers the cards under the Panini
+    // usernames the user linked (saved_collector_identities), so Panini can be
+    // pinned to the trophy case.
+    migration: "supabase/migrations/20260929021709_audit_20260928_trophy_picker_offers_linked_panini_cards.sql",
   },
   {
     fn: "get_trophy_slab_data",

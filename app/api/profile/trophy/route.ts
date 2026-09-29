@@ -13,6 +13,8 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { sanitizeTrophyThumbnail } from "@/lib/profile/trophy-thumbnail";
 import { logTrophyFunnelEvent } from "@/lib/trophy/funnel-event";
+import { resolvePaniniTrophyCard, type PaniniTrophyCard } from "@/lib/trophy/panini-card";
+import { PANINI_COLLECTION_ID } from "@/lib/trophy/slab-href";
 
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
@@ -94,6 +96,25 @@ export async function POST(req: NextRequest) {
   // wallet_moments_cache, so this closes the forge for the real path; a manual
   // pin of a moment we have never indexed keeps the submitted value rather than
   // losing it, which is the status quo and not a regression.
+  // PANINI: every display field is derived server-side from the card the user
+  // holds under a linked Panini username — see lib/trophy/panini-card.ts for why
+  // (most Panini cards have no live `editions` side for the slab to coalesce to).
+  let panini: PaniniTrophyCard | null = null;
+  if (resolvedCollectionId === PANINI_COLLECTION_ID) {
+    const res = await resolvePaniniTrophyCard(supabase, user.id, String(momentId));
+    if (!res.ok) {
+      console.error("[trophy POST] panini card resolve failed");
+      return apiErrorResponse(res.error, "api/profile/trophy", "Couldn't verify that card right now — try again in a moment.");
+    }
+    if (!res.card) {
+      return NextResponse.json(
+        { error: "That card isn't under a Panini username linked to your profile." },
+        { status: 403 }
+      );
+    }
+    panini = res.card;
+  }
+
   let verifiedSerial: number | null = null;
   try {
     const { data: wmcRow } = await supabase
@@ -121,22 +142,22 @@ export async function POST(req: NextRequest) {
         slot,
         moment_id: momentId,
         collection_id: resolvedCollectionId,
-        edition_id: editionId ?? null,
-        player_name: playerName ?? null,
-        set_name: setName ?? null,
-        serial_number: verifiedSerial ?? serialNumber ?? null,
-        circulation_count: circulationCount ?? null,
-        tier: tier ?? null,
+        edition_id: panini ? panini.editionId : editionId ?? null,
+        player_name: panini ? panini.playerName : playerName ?? null,
+        set_name: panini ? panini.setName : setName ?? null,
+        serial_number: panini ? panini.serialNumber : verifiedSerial ?? serialNumber ?? null,
+        circulation_count: panini ? panini.circulationCount : circulationCount ?? null,
+        tier: panini ? panini.tier : tier ?? null,
         // ART: allowlisted. This URL is rendered on a public profile AND fetched
         // SERVER-SIDE by /api/og/profile/[username], which inlines trophy art as
         // data URIs — so an arbitrary value is both an arbitrary image on
         // someone's public page and a server-side fetch of a host they chose.
         // Rejected values become null and the slab falls back, rather than 400ing
         // a pin that is otherwise fine.
-        thumbnail_url: sanitizeTrophyThumbnail(thumbnailUrl),
-        video_url: videoUrl ?? null,
-        fmv: fmv ?? null,
-        badges: badges ?? null,
+        thumbnail_url: sanitizeTrophyThumbnail(panini ? panini.thumbnailUrl : thumbnailUrl),
+        video_url: panini ? null : videoUrl ?? null,
+        fmv: panini ? null : fmv ?? null,
+        badges: panini ? null : badges ?? null,
         note: note ?? null,
         pinned_at: new Date().toISOString(),
       },

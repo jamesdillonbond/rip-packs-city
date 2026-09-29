@@ -154,4 +154,44 @@ describe("GET /api/profile/top-moments", () => {
     await GET(req("https://t/api/profile/top-moments"))
     expect(state.rpcArgs.p_collection_id).toBeNull()
   })
+
+  // ── PANINI (2026-09-28) ──────────────────────────────────────────────────
+  // The RPC also returns cards under the user's LINKED Panini usernames. Only the
+  // trophy picker can pin one, so they are opt-in; and a Panini-filtered answer
+  // says how many usernames are linked so an empty list can say WHICH "none".
+  const PANINI = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
+  const mixed = [
+    { moment_id: "m1", collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd", fmv_usd: 100 },
+    { moment_id: "packcard-1_2_3_4__1_25", collection_id: PANINI, fmv_usd: null },
+  ]
+
+  it("leaves Panini rows OUT for a caller that did not opt in (hero / avatar pickers)", async () => {
+    state.single = { data: { user_id: "u1" }, error: null }
+    state.rpc = { data: mixed, error: null }
+    const body = await (await GET(req("https://t/api/profile/top-moments?ownerKey=trevor"))).json()
+    expect(body.moments.map((m: any) => m.moment_id)).toEqual(["m1"])
+  })
+
+  it("keeps Panini rows with panini=1 (the trophy picker)", async () => {
+    state.single = { data: { user_id: "u1" }, error: null }
+    state.rpc = { data: mixed, error: null }
+    const body = await (await GET(req("https://t/api/profile/top-moments?ownerKey=trevor&panini=1"))).json()
+    expect(body.moments).toHaveLength(2)
+  })
+
+  it("a Panini-filtered answer passes the Panini collection id and reports the linked-username count", async () => {
+    state.single = { data: { user_id: "u1" }, error: null, count: 1 } as any
+    state.rpc = { data: [], error: null }
+    const body = await (await GET(req("https://t/api/profile/top-moments?ownerKey=trevor&collection=panini-blockchain"))).json()
+    expect(state.rpcArgs.p_collection_id).toBe(PANINI)
+    expect(body.moments).toEqual([])
+    expect(body.paniniUsernamesLinked).toBe(1)
+  })
+
+  it("an unreadable linked-username count is null, never 0 (0 would say 'you haven't linked one')", async () => {
+    state.single = { data: { user_id: "u1" }, error: null } // no count on the head read
+    state.rpc = { data: [], error: null }
+    const body = await (await GET(req("https://t/api/profile/top-moments?ownerKey=trevor&collection=panini-blockchain"))).json()
+    expect(body.paniniUsernamesLinked).toBeNull()
+  })
 })

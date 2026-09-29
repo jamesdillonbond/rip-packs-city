@@ -133,5 +133,47 @@ export async function GET(req: NextRequest) {
     return apiErrorResponse(error, "api/profile/top-moments");
   }
 
-  return NextResponse.json({ moments: data ?? [] });
+  // PANINI ROWS ARE OPT-IN (2026-09-28). The RPC now also returns cards under
+  // the user's linked Panini usernames, but only the trophy picker can pin one
+  // (the hero and avatar pickers resolve a Moment by its RPC moment page, which
+  // a Panini card does not have). So an unfiltered caller gets them only with
+  // `panini=1`. ⚠ Dropping them here can leave an opted-out list shorter than
+  // `limit` when Panini cards rank inside it — it never adds a Panini row.
+  const includePanini =
+    collectionSlug === "panini-blockchain" || req.nextUrl.searchParams.get("panini") === "1";
+  const rows = ((data ?? []) as { collection_id?: string }[]).filter(
+    (r) => includePanini || r.collection_id !== COLLECTION_UUID_BY_SLUG["panini-blockchain"]
+  );
+
+  // PANINI (2026-09-28): the Panini branch of the RPC reads the usernames the
+  // user LINKED, not a wallet. An empty Panini list has two different truths —
+  // "no username linked" (go link one) vs "linked, but nothing read under it
+  // yet" — so the filtered response says which. null = the count read failed:
+  // the picker then says neither, rather than guessing.
+  if (collectionSlug === "panini-blockchain") {
+    const linked = await countLinkedPaniniUsernames(supabase, userId);
+    return NextResponse.json({ moments: rows, paniniUsernamesLinked: linked });
+  }
+
+  return NextResponse.json({ moments: rows });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function countLinkedPaniniUsernames(db: any, userId: string): Promise<number | null> {
+  try {
+    const { count, error } = await db
+      .from("saved_collector_identities")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("collection_id", COLLECTION_UUID_BY_SLUG["panini-blockchain"])
+      .eq("identity_kind", "username");
+    if (error) {
+      console.error("[profile/top-moments] panini username count failed", error.message);
+      return null;
+    }
+    return typeof count === "number" ? count : null;
+  } catch (err) {
+    console.error("[profile/top-moments] panini username count failed", err instanceof Error ? err.message : err);
+    return null;
+  }
 }

@@ -32,6 +32,7 @@ import {
   presentTiers,
   filterSortMoments,
   emptyPoolCopy,
+  paniniEmptyPoolCopy,
 } from "@/lib/trophy-picker-format";
 import { NEUTRAL_TIER_COLOR, tierColorAlpha } from "@/lib/tier-color";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
@@ -42,6 +43,11 @@ const ACCENT_RED = "var(--rpc-red)";
 
 // Chains whose holdings are in wallet_moments_cache, the trophy pool.
 const TROPHY_INDEXED_CHAINS = new Set<string>(["flow", "solana"]);
+
+// Collections the pool reads by a LINKED USERNAME rather than a wallet
+// (get_user_top_owned_moments' Panini branch over saved_collector_identities,
+// 2026-09-28). Panini's dbChain is null, so the chain rule above cannot see it.
+const TROPHY_USERNAME_COLLECTIONS = new Set<string>(["panini-blockchain"]);
 
 // Top Shot collection UUID — used to gate the NBA/WNBA league badge so it only
 // renders on Top Shot rows. Other collections store NULL in wmc.league.
@@ -55,7 +61,8 @@ export interface PickerMoment {
   moment_id: string;
   collection_id: string;
   collection_slug: string;
-  wallet_address: string;
+  /** null for a Panini card: its owner is a USERNAME, not an address. */
+  wallet_address: string | null;
   player_name: string | null;
   set_name: string | null;
   team_name?: string | null;
@@ -151,6 +158,8 @@ export default function TrophyPickerModal({
    * points them at the manual tab to type an id for a Moment we did not load.
    */
   const [momentsLoadFailed, setMomentsLoadFailed] = useState(false);
+  /** Linked Panini usernames, read with a Panini-filtered list; null = unknown. */
+  const [paniniLinked, setPaniniLinked] = useState<number | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -183,7 +192,10 @@ export default function TrophyPickerModal({
     let cancelled = false;
     setMoments(null);
     setMomentsLoadFailed(false);
-    const params = new URLSearchParams({ limit: String(PICKER_LIMIT) });
+    setPaniniLinked(null);
+    // panini=1: the trophy case is the one picker that can pin a Panini card
+    // (the route leaves them out for the hero/avatar pickers).
+    const params = new URLSearchParams({ limit: String(PICKER_LIMIT), panini: "1" });
     if (ownerKey) params.set("ownerKey", ownerKey);
     if (leagueFilter !== "all") params.set("league", leagueFilter);
     if (collectionFilter !== "all") params.set("collection", collectionFilter);
@@ -203,6 +215,7 @@ export default function TrophyPickerModal({
           return;
         }
         setMoments((d.moments as PickerMoment[]) ?? []);
+        setPaniniLinked(typeof d.paniniUsernamesLinked === "number" ? d.paniniUsernamesLinked : null);
       })
       .catch(() => {
         // `fetch` THROWS on a network failure rather than resolving non-ok.
@@ -583,7 +596,9 @@ export default function TrophyPickerModal({
                 {moments.length === 0
                   ? /* "None" is either "owns nothing here" or "no wallet saved on
                        this chain" — the helper says which only when it KNOWS. */
-                    emptyPoolCopy(selectedChain, selectedLabel, savedChains ?? null)
+                    collectionFilter === "panini-blockchain"
+                    ? paniniEmptyPoolCopy(paniniLinked)
+                    : emptyPoolCopy(selectedChain, selectedLabel, savedChains ?? null)
                   : atCap
                     ? `Nothing in your top ${PICKER_LIMIT} by value matches. A lower-value Moment won't be listed here — use the manual tab if you know its ID.`
                     : "No moments match the current filter."}
@@ -1076,7 +1091,8 @@ function CollectionPicker({
     // too. A chain NOT in that cache (Panini, unindexed) would filter to an
     // empty list every time, which reads as "you own none" when the truth is
     // "not indexed here", so it stays out until its holdings are.
-    ...publishedCollections().filter((c) => c.dbChain != null && TROPHY_INDEXED_CHAINS.has(c.dbChain)).map((c) => ({
+    // Panini (2026-09-28) is read by the collector's LINKED username instead.
+    ...publishedCollections().filter((c) => (c.dbChain != null && TROPHY_INDEXED_CHAINS.has(c.dbChain)) || TROPHY_USERNAME_COLLECTIONS.has(c.id)).map((c) => ({
       key: c.id,
       label: c.shortLabel,
       icon: c.icon,

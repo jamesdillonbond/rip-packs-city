@@ -37,6 +37,12 @@
 // ⭐ Which is the point of re-running it: a COUNT moving while MEMBERSHIP holds
 // is the case where "the numbers changed, so the list must be stale" and "the
 // numbers are the same, so nothing changed" are BOTH wrong. Diff the set.
+//
+// ✅ WIDENED 2026-09-28 FROM THE QUERY, for Panini trophies: all 5,124 Panini
+// `editions` thumbnails and all 146 walked `panini_user_holdings.image_url` are
+// on `assets.paniniamerica.net` (the host lib/panini/assets.ts measured). The
+// Panini pin route builds the URL server-side through paniniAssetUrl anyway;
+// this entry is what lets that URL survive the sanitizer.
 const ALLOWED_HOSTS = new Set([
   "assets.nbatopshot.com",
   "media.nflallday.com",
@@ -45,6 +51,7 @@ const ALLOWED_HOSTS = new Set([
   "ipfs.io",
   "arweave.net",
   "storage.googleapis.com",
+  "assets.paniniamerica.net",
 ]);
 
 /**

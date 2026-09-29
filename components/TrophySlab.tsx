@@ -14,6 +14,7 @@ import {
   hiResThumb,
 } from "@/lib/trophy/slab-style";
 import { usdSignFirst } from "@/lib/usd-format"
+import { trophySlabHref, type TrophySlabHref } from "@/lib/trophy/slab-href"
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -59,6 +60,36 @@ export type TrophySlabData = {
   acquired_price: number | null;
   acquisition_method: string | null;
 };
+
+/**
+ * The slab's outer link. A Moment links to its RPC moment page; a Panini card
+ * has none, so it links out to Panini's marketplace in a new tab — or, with no
+ * valid edition key, renders the same box unlinked rather than a dead link
+ * (lib/trophy/slab-href.ts).
+ */
+function SlabLink({
+  target,
+  style,
+  children,
+  ...rest
+}: {
+  target: TrophySlabHref;
+  style: React.CSSProperties;
+  children: React.ReactNode;
+  "aria-label"?: string;
+}) {
+  if (target.kind === "internal") {
+    return <Link href={target.href} style={style} {...rest}>{children}</Link>;
+  }
+  if (target.kind === "external") {
+    return (
+      <a href={target.href} target="_blank" rel="noopener noreferrer" style={style} {...rest}>
+        {children}
+      </a>
+    );
+  }
+  return <div style={style}>{children}</div>;
+}
 
 export type TrophySlabProps = {
   slab: TrophySlabData | null;
@@ -156,8 +187,8 @@ function FilledSlab({
   const extraBadgeCount = sortedBadges.length > 3 ? sortedBadges.length - 2 : 0;
 
   return (
-    <Link
-      href={"/moment/" + slab.moment_id}
+    <SlabLink
+      target={trophySlabHref(slab)}
       // Row alignment: the Link fills its grid cell (a grid item stretches to
       // the row; in the dashboard's flex-column cell, flex:1 does the same) and
       // the slab body fills the Link. The label absorbs the slack (see
@@ -274,7 +305,7 @@ function FilledSlab({
             point of a caption is that visitors read it. */}
         {slab.note && <SlabNote note={slab.note} />}
       </div>
-    </Link>
+    </SlabLink>
   );
 }
 
