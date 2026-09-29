@@ -12,7 +12,7 @@
 --      unpriced (current_fmv NULL), and the totals count exactly that.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926180000_audit_20260926_wallet_pack_pulls_rpc_names_what_a_pack_really_yielded.sql).
+-- (supabase/migrations/20260929133500_audit_20260929_pack_pull_list_names_what_the_value_was_priced_from.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -25,7 +25,8 @@ CREATE TABLE public.editions (id uuid PRIMARY KEY, collection_id uuid, external_
 CREATE TABLE public.moments (nft_id text, collection_id uuid, edition_id uuid, serial_number int);
 CREATE TABLE public.wallet_moments_cache (wallet_address text, moment_id text, collection_id uuid, edition_key text, serial_number int);
 CREATE TABLE public.fmv_snapshots (collection_id uuid, edition_id uuid, fmv_usd numeric, confidence text, computed_at timestamptz);
-CREATE TABLE public.pack_open_pulls (collection_id uuid, pack_nft_id text, nft_id text, opener_address text);
+CREATE TABLE public.pack_open_pulls (collection_id uuid, pack_nft_id text, nft_id text, opener_address text,
+  edition_id uuid, resolved_via text);
 CREATE TABLE public.wallet_reconstructed_rips (wallet text, collection_id uuid, burst_id text, nft_ids text[]);
 
 -- >>> BEGIN verbatim get_wallet_pack_pulls (body byte-identical to the migration) >>>
@@ -45,6 +46,7 @@ DECLARE
   v_total int;
   v_identified int;
   v_priced int;
+  v_inferred int;
 BEGIN
   IF v_wallet = '' OR coalesce(p_pack_nft_id, '') = '' THEN
     RETURN jsonb_build_object('error', 'wallet and pack required');
@@ -84,11 +86,30 @@ BEGIN
            'circulation_count', e.circulation_count,
            'thumbnail_url', e.thumbnail_url,
            'current_fmv', f.fmv_usd,
-           'confidence', f.confidence
+           'confidence', f.confidence,
+           -- 2026-09-29: how the pull was named -- 'record' (a row we hold about
+           -- that moment id), 'id_neighbours' (inferred from the ids minted
+           -- beside it; 99 % measured), NULL when unnamed
+           'named_by', CASE WHEN e.id IS NULL THEN NULL
+                            WHEN po.edition_id IS NOT NULL AND po.resolved_via = 'id_neighbours' THEN 'id_neighbours'
+                            ELSE 'record' END
          ) ORDER BY u.ord), '[]'::jsonb),
-         count(*), count(e.id), count(f.fmv_usd)
-    INTO v_pulls, v_total, v_identified, v_priced
+         count(*), count(e.id), count(f.fmv_usd),
+         count(*) FILTER (WHERE e.id IS NOT NULL AND po.resolved_via = 'id_neighbours')
+    INTO v_pulls, v_total, v_identified, v_priced, v_inferred
   FROM unnest(v_ids) WITH ORDINALITY AS u(nft_id, ord)
+  -- 2026-09-29: the pull lane's own name first (it also reads sales, the
+  -- ownership walk, the edition map, Atlas and the id-neighbour inference), so
+  -- this list names what the pack's VALUE was priced from -- before, a pull
+  -- the lane had named from a sale showed as unknown here.
+  LEFT JOIN LATERAL (
+    SELECT o.edition_id, o.resolved_via FROM public.pack_open_pulls o
+     WHERE v_source = 'dapper_pulls'
+       AND o.collection_id = v_coll AND o.pack_nft_id = p_pack_nft_id
+       AND o.opener_address = v_wallet AND o.nft_id = u.nft_id
+       AND o.edition_id IS NOT NULL
+     LIMIT 1
+  ) po ON true
   LEFT JOIN LATERAL (
     SELECT m.edition_id, m.serial_number FROM public.moments m
      WHERE m.nft_id = u.nft_id AND m.collection_id = v_coll AND m.edition_id IS NOT NULL
@@ -100,7 +121,7 @@ BEGIN
      WHERE w.moment_id = u.nft_id AND w.collection_id = v_coll AND w.edition_key IS NOT NULL
      LIMIT 1
   ) wm ON mo.edition_id IS NULL
-  LEFT JOIN public.editions e ON e.id = coalesce(mo.edition_id, wm.edition_id)
+  LEFT JOIN public.editions e ON e.id = coalesce(po.edition_id, mo.edition_id, wm.edition_id)
   LEFT JOIN LATERAL (
     SELECT CASE WHEN s.fmv_usd > 0 THEN s.fmv_usd END AS fmv_usd,
            CASE WHEN s.fmv_usd > 0 THEN s.confidence::text END AS confidence
@@ -111,7 +132,8 @@ BEGIN
   ) f ON true;
 
   RETURN jsonb_build_object('source', v_source, 'pulls', v_pulls,
-                            'pulls_total', v_total, 'pulls_identified', v_identified, 'pulls_priced', v_priced);
+                            'pulls_total', v_total, 'pulls_identified', v_identified, 'pulls_priced', v_priced,
+                            'pulls_inferred', v_inferred);
 END;
 $function$;
 -- <<< END verbatim <<<
@@ -163,6 +185,26 @@ BEGIN
   PERFORM _assert((public.get_wallet_pack_pulls('0xw', 'nba_top_shot', 'NOPE'))->>'source' IS NULL, 'unknown pack -> nothing, not a guess');
   PERFORM _assert((public.get_wallet_pack_pulls('0xw', 'nope', 'PK1'))->>'error' = 'unknown collection', 'unknown collection refused');
   PERFORM _assert((public.get_wallet_pack_pulls('', 'nba_top_shot', 'PK1'))->>'error' IS NOT NULL, 'empty wallet refused');
+END $$;
+
+-- 2026-09-29: the lane's own names come first, and an inferred one says so.
+-- PK3: 21 named by the lane from a sale (in neither moments nor the cache),
+-- 22 named by id neighbours, 23 unnamed everywhere.
+INSERT INTO public.pack_open_pulls VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PK3', '21', '0xw', '00000000-0000-0000-0000-0000000000a1', 'sales'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PK3', '22', '0xw', '00000000-0000-0000-0000-0000000000a1', 'id_neighbours'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PK3', '23', '0xw', NULL, NULL);
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.get_wallet_pack_pulls('0xw', 'nba_top_shot', 'PK3');
+  PERFORM _assert_eq(r->>'pulls_identified', '2', 'the lane''s names (a sale, an inference) are used -- before, both read unknown');
+  PERFORM _assert_eq(r->'pulls'->0->>'named_by', 'record', '21 named from a record');
+  PERFORM _assert_eq(r->'pulls'->1->>'named_by', 'id_neighbours', '22 says it is inferred');
+  PERFORM _assert(r->'pulls'->2->>'named_by' IS NULL AND r->'pulls'->2->>'player_name' IS NULL, '23 unnamed stays unnamed');
+  PERFORM _assert_eq(r->>'pulls_inferred', '1', 'one inferred name, counted');
+  r := public.get_wallet_pack_pulls('0xW', 'nba-top-shot', 'PK1');
+  PERFORM _assert(r->>'pulls_inferred' = '0' AND r->'pulls'->0->>'named_by' = 'record', 'PK1 unchanged: record names, none inferred');
 END $$;
 
 ROLLBACK;

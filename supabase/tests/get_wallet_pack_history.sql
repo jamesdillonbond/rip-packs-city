@@ -60,7 +60,7 @@
 --      sold inside its window is judged by the sale, as before the mint arm (P77).
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929070500_audit_20260928_wallet_pack_history_allday_mint_only_inside_the_window.sql).
+-- (supabase/migrations/20260929133500_audit_20260929_pack_pull_list_names_what_the_value_was_priced_from.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -108,7 +108,8 @@ CREATE TABLE public.wallet_reconstructed_rips (wallet text, collection_id uuid, 
   moments_pulled int, nft_ids text[] DEFAULT '{}', n_resolved int, n_priced int, pull_value_usd numeric(14,2));
 CREATE TABLE public.pack_open_pull_values (
   collection_id uuid, pack_nft_id text, opener_address text, n_pulls int, n_resolved int, n_priced int,
-  pull_value_usd numeric(14,2), priced_at timestamptz DEFAULT now(), PRIMARY KEY (collection_id, pack_nft_id));
+  pull_value_usd numeric(14,2), priced_at timestamptz DEFAULT now(), n_inferred int NOT NULL DEFAULT 0,
+  PRIMARY KEY (collection_id, pack_nft_id));
 
 -- 2026-09-26 (v10): retail normalisation helper + All Day drop prices
 CREATE OR REPLACE FUNCTION public.pack_retail_usd(p_raw text)
@@ -389,6 +390,8 @@ BEGIN
       COALESCE(pov.n_pulls,    wr.rc_pulls)    AS pulls_total,
       COALESCE(pov.n_resolved, wr.rc_resolved) AS pulls_identified,
       COALESCE(pov.n_priced,   wr.rc_priced)   AS pulls_priced,
+      -- v18: how many of the pack's pulls are named by inference (id neighbours)
+      pov.n_inferred                           AS pulls_inferred,
       wr.rip_source,
       -- Dapper's own index of the pack (pack_nft_identity, filled by the
       -- pack-nft-identity lane): current owner + Sealed/Opened, as of checked_at.
@@ -729,7 +732,9 @@ BEGIN
            -- v15: an All Day pack's mint in Dapper's index, when no marketplace
            -- sale by anyone else precedes this wallet's (mint-on-demand drops:
            -- the purchase itself; a pre-minted drop: days before it opened)
-           'primary_minted_at', primary_minted_at)
+           'primary_minted_at', primary_minted_at,
+           -- v18: how many of the pack's pulls are named by inference (id neighbours)
+           'pulls_inferred', pulls_inferred)
       ORDER BY latest_event_at DESC NULLS LAST, collection_id, pack_nft_id
     ), '[]'::jsonb)
   INTO v_total, v_packs
@@ -749,7 +754,7 @@ BEGIN
       'opens', 'pack_rips (Top Shot, All Day) + golazos_pack_opens + pinnacle_pack_opens',
       'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = Dapper''s index date while the index names this wallet, else -- All Day -- the pack''s mint in Dapper''s index (primary_minted_at) when no one else sold it on the marketplace before this wallet''s sale / open, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16, dates from Dapper''s distribution record), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack''s price is in tickets, not dollars: NULL. An All Day distribution Dapper types REWARD is $0 (reward); any other All Day price of 0 is unknown. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
       'reconstructed', 'wallet_reconstructed_rips: Top Shot packs opened with NO pack NFT (custodial packs, 2021 on), rebuilt from the wallet''s pack-pull moment deliveries (a gap > 3 s starts a new reveal; 114 of 115 bursts overlapping a known pack matched its moment list exactly). rip_source = reconstructed; no distribution, no price paid; covers deliveries seeded into moment_acquisitions (through 2026-03)',
-      'pulls', 'pack_open_pull_values: every pack this wallet opened, priced from the moments Dapper''s searchPackNft.nfts says it yielded (current FMV, whole-pack: NULL unless every moment is priced; pulls_priced / pulls_total say how close). Refreshed by the wallet-pack-pulls lane; pull_value_source = rip_record where only the rip row''s value is held',
+      'pulls', 'pack_open_pull_values: every pack this wallet opened, priced from the moments Dapper''s searchPackNft.nfts says it yielded (current FMV, whole-pack: NULL unless every moment is priced; pulls_priced / pulls_total say how close; pulls_inferred of them are Top Shot pulls no record names, named from the moment ids minted beside them -- both neighbours the same edition within 50 ids, 99 % right when measured). Refreshed by the wallet-pack-pulls lane; pull_value_source = rip_record where only the rip row''s value is held',
       'marketplace', 'topshot_pack_sales_history / allday_pack_sales_history / golazos_pack_sales_history: Dapper marketplace secondary sales (seller = storefront_address), Top Shot from 2023-09, All Day from 2022-12; ingest is bursty and can lag days',
       'identity', 'pack_nft_identity: Dapper searchPackNft index (dist_id, Sealed/Opened, current owner, acquired_at) filled by the pack-nft-identity lane and the per-wallet sync; identity_sync says when this wallet''s holdings were last confirmed (NULL completed_at = not yet, the list is what we hold so far). An ownership claim is trusted only at or after identity_sync.last_clean_sync_at, the start of the last clean full walk: a row older than that names a pack the wallet no longer holds, is excluded from the held/ripped counts, and carries identity_departed = true'
     ),
@@ -1511,6 +1516,18 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P77';
   PERFORM _assert(row_->>'status' = 'sold' AND row_->>'buy_usd' = '9.00' AND row_->>'realized_pl_usd' = '6.00',
                   'P77 pre-minted, sold inside the window -> the sale bound still infers $9 (a pre-window mint must not veto it)');
+END $$;
+
+-- v18 (2026-09-29): pulls_inferred rides on the row; 0 when every name is a record.
+UPDATE public.pack_open_pull_values SET n_inferred = 2 WHERE pack_nft_id = 'R1b';
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xo', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'R1b';
+  PERFORM _assert_eq(row_->>'pulls_inferred', '2', 'R1b two of its pulls are named by inference');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'R1c';
+  PERFORM _assert_eq(row_->>'pulls_inferred', '0', 'R1c none');
 END $$;
 
 ROLLBACK;

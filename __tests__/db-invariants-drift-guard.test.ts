@@ -278,8 +278,9 @@ const PINS = [
     // for a 3-moment pack. Collection-scoped editions; FMV 0 is unpriced.
     fn: "get_wallet_pack_pulls",
     test: "supabase/tests/get_wallet_pack_pulls.sql",
+    // 2026-09-29: the pull lane's names first; named_by + pulls_inferred.
     migration:
-      "supabase/migrations/20260926180000_audit_20260926_wallet_pack_pulls_rpc_names_what_a_pack_really_yielded.sql",
+      "supabase/migrations/20260929133500_audit_20260929_pack_pull_list_names_what_the_value_was_priced_from.sql",
   },
   {
     // Added 2026-09-26. Pins the reconstruction of packs opened with NO pack NFT
@@ -379,7 +380,7 @@ const PINS = [
     // All Day drops are pre-minted days before they open. v17: and a mint
     // BEFORE the window is ignored (the sale / open bound decides).
     migration:
-      "supabase/migrations/20260929070500_audit_20260928_wallet_pack_history_allday_mint_only_inside_the_window.sql",
+      "supabase/migrations/20260929133500_audit_20260929_pack_pull_list_names_what_the_value_was_priced_from.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
