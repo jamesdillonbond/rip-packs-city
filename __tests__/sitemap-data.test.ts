@@ -166,7 +166,9 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 82 → 83 on 2026-09-27: Panini gained its Sets tab (/api/panini-set-progress).
     // 83 → 84 on 2026-09-27: Panini gained its Collection tab (by username).
     // 84 → 85 on 2026-09-28: Panini gained its Sniper tab (panini-boards deal snapshot).
-    expect(s).toHaveLength(85)
+    // 85 → 86 on 2026-09-28: Panini gained its Analytics tab (panini_sales).
+    expect(s).toHaveLength(86)
+    expect(s.find((x) => x.url === `${BASE}/panini-blockchain/analytics`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/sniper`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/collection`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/packs`)).toBeTruthy()

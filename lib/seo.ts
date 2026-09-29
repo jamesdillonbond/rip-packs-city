@@ -239,6 +239,11 @@ const PAGE_META_OVERRIDES: Record<string, PageMeta> = {
     description:
       'Panini Prizm World Cup serials listed at least 15% under FMV, with #1, jersey-number and perfect-mint premiums applied and recent sales alongside — from every card RPC has seen listed on Panini.',
   },
+  [`analytics:${PANINI_ID}`]: {
+    title: 'Sales Analytics — {label} Sales, Volume & Top Sales',
+    description:
+      'Panini Prizm World Cup sales analytics: sales and volume per day, top sales, most-traded editions and prices by rarity and parallel — with how completely each day is on record.',
+  },
   [`packs:${PANINI_ID}`]: {
     title: 'Pack Market — {label} Pack Asks & EV',
     description:

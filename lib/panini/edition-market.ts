@@ -15,6 +15,8 @@
 //     panini_set_progress); the timestamp travels with it so the page can age it.
 //   · Last sales are ONE per card — the most recent sale Panini showed when the
 //     walk last read that card. It is not a sales history, and the page says so.
+//     Since 2026-09-28 the page reads fetchPaniniEditionSales (every sale on
+//     record, with its coverage) instead.
 //   · No owner username is selected: nothing here needs a person's handle.
 
 import { supabaseAdmin } from "@/lib/supabase"
@@ -137,6 +139,118 @@ export async function fetchPaniniEditionSerials(
     listed: listedRes.error ? null : ((listedRes.data ?? []) as Record<string, unknown>[]).map(toSerialRow),
     sales: salesRes.error ? null : ((salesRes.data ?? []) as Record<string, unknown>[]).map(toSerialRow),
   }
+}
+
+// ── Sales history (2026-09-28) ──────────────────────────────────────────────
+// panini_sales (migration 20260929020655) keeps EVERY sale the walk reads — each card's Top-20
+// and Recent-20 SALES HISTORY lists — where panini_card_serials kept one last sale per card.
+// panini_sales_reads says how complete the edition's history is, as a measurement:
+//   complete_since = -infinity → every sale of this edition is on record
+//   complete_since = <t>       → every sale since <t> is on record
+//   no row                     → RPC has not read this edition's Recent list yet
+const HISTORY_LIMIT = 20
+
+export interface PaniniEditionSale {
+  sku: string
+  serial: number | null
+  mintCap: number | null
+  amountUsd: number
+  soldAt: string
+  flags: string[]
+}
+
+export type PaniniSalesCoverage =
+  | { kind: "all" ; lastReadAt: string | null }
+  | { kind: "since"; since: string; lastReadAt: string | null }
+  | { kind: "unread" }
+
+export interface PaniniEditionSales {
+  sales: PaniniEditionSale[] | null
+  totalOnRecord: number | null
+  coverage: PaniniSalesCoverage | null
+}
+
+/** Serial and cap from a serial sku ("<psku>__<serial>_<cap>"). */
+export function serialOfSku(sku: string): { serial: number | null; mintCap: number | null } {
+  const m = /__(\d{1,6})_(\d{1,6})$/.exec(sku)
+  return m ? { serial: Number(m[1]), mintCap: Number(m[2]) } : { serial: null, mintCap: null }
+}
+
+export function coverageOf(row: Record<string, unknown> | null | undefined): PaniniSalesCoverage {
+  if (!row) return { kind: "unread" }
+  const since = typeof row.complete_since === "string" ? row.complete_since : null
+  const lastReadAt = typeof row.last_recent_read_at === "string" ? row.last_recent_read_at : null
+  if (since === "-infinity") return { kind: "all", lastReadAt }
+  if (since) return { kind: "since", since, lastReadAt }
+  return { kind: "unread" }
+}
+
+/**
+ * The edition's sales on record (newest first), how many there are, and how complete they are.
+ * Each part fails on its own to null — a failed read is never "no sales" or "complete".
+ */
+export async function fetchPaniniEditionSales(
+  externalId: string,
+  db: any = supabaseAdmin, // eslint-disable-line @typescript-eslint/no-explicit-any
+): Promise<PaniniEditionSales> {
+  const [salesRes, countRes, readRes] = await Promise.all([
+    withQueryDeadline<RawRows>(
+      db.from("panini_sales").select("sku,sold_at,amount_usd")
+        .eq("edition_external_id", externalId)
+        .order("sold_at", { ascending: false })
+        .order("sku", { ascending: true })
+        .limit(HISTORY_LIMIT),
+      "edition/panini-sales-history",
+      apiReadTimeoutMs(),
+    ).catch((e: unknown) => ({ data: null, error: e })),
+    withQueryDeadline<RawRows>(
+      db.from("panini_sales").select("sku", { count: "exact", head: true }).eq("edition_external_id", externalId),
+      "edition/panini-sales-count",
+      apiReadTimeoutMs(),
+    ).catch((e: unknown) => ({ data: null, error: e, count: null })),
+    withQueryDeadline<RawRows>(
+      db.from("panini_sales_reads").select("complete_since,last_recent_read_at").eq("edition_external_id", externalId).limit(1),
+      "edition/panini-sales-reads",
+      apiReadTimeoutMs(),
+    ).catch((e: unknown) => ({ data: null, error: e })),
+  ])
+  let sales: PaniniEditionSale[] | null = null
+  if (!salesRes.error) {
+    sales = []
+    for (const r of (salesRes.data ?? []) as Record<string, unknown>[]) {
+      const sku = typeof r.sku === "string" ? r.sku : null
+      const amount = num(r.amount_usd)
+      const soldAt = typeof r.sold_at === "string" ? r.sold_at : null
+      if (!sku || amount === null || !soldAt) continue
+      const { serial, mintCap } = serialOfSku(sku)
+      const flags: string[] = []
+      if (serial === 1) flags.push("#1")
+      if (serial != null && mintCap != null && serial === mintCap) flags.push("last_mint")
+      sales.push({ sku, serial, mintCap, amountUsd: amount, soldAt, flags })
+    }
+    // Jersey-number serials are a per-card flag on panini_card_serials. A failed read here only
+    // leaves that flag off — it never adds a claim.
+    const skus = [...new Set(sales.map((x) => x.sku))]
+    if (skus.length) {
+      try {
+        const { data, error } = await withQueryDeadline<RawRows>(
+          db.from("panini_card_serials").select("sku").in("sku", skus).eq("is_jersey_mint", true),
+          "edition/panini-sales-jersey",
+          apiReadTimeoutMs(),
+        )
+        if (!error) {
+          const jersey = new Set(((data ?? []) as Record<string, unknown>[]).map((r) => String(r.sku)))
+          for (const x of sales) if (jersey.has(x.sku)) x.flags.push("jersey")
+        }
+      } catch {
+        // flag stays off
+      }
+    }
+  }
+  const countRaw = (countRes as { count?: unknown }).count
+  const totalOnRecord = countRes.error || typeof countRaw !== "number" ? null : countRaw
+  const coverage = readRes.error ? null : coverageOf(((readRes.data ?? []) as Record<string, unknown>[])[0])
+  return { sales, totalOnRecord, coverage }
 }
 
 // Lives in the client-safe lib/panini/edition-url.ts — re-exported for server callers.

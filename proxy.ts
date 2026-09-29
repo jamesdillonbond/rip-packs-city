@@ -397,8 +397,9 @@ export const RETIRED_COLLECTION_TABS: ReadonlySet<string> = new Set([
     // `sets` left 2026-09-27: Panini's Sets tab is in `pages` (/api/panini-set-progress).
     // `collection` left 2026-09-27: by username (/api/panini-collection).
     // `sniper` left 2026-09-28: the hourly panini-boards deal snapshot.
+    // `analytics` left 2026-09-28: sales analytics over panini_sales.
     "pack-sniper", "challenges", "hot-floors",
-    "play", "analytics", "badges", "fast-break", "road-to-the-ring", "series", "profile",
+    "play", "badges", "fast-break", "road-to-the-ring", "series", "profile",
   ].map((tab) => `panini-blockchain/${tab}`),
 ])
 
@@ -964,7 +965,8 @@ export function isPublicPath(pathname: string, method: string): boolean {
       pathname === "/panini-blockchain/packs" ||
       pathname === "/panini-blockchain/sets" ||
       pathname === "/panini-blockchain/collection" ||
-      pathname === "/panini-blockchain/sniper")
+      pathname === "/panini-blockchain/sniper" ||
+      pathname === "/panini-blockchain/analytics")
   ) {
     return true
   }

@@ -194,6 +194,7 @@ const TABLE: Row[] = [
   ["/panini-blockchain/market", "POST", false, "GET/HEAD only"],
   ["/panini-blockchain/sniper", "GET", true, "Panini Sniper tab over the panini-boards deal snapshot (2026-09-28)"],
   ["/panini-blockchain/sniper", "POST", false, "GET/HEAD only"],
+  ["/panini-blockchain/analytics", "GET", true, "Panini sales analytics over panini_sales (2026-09-28)"],
   ["/panini-blockchain/pack-sniper", "GET", false, "not a Panini tab: never opened anonymously (the proxy 307s it to /overview)"],
   ["/panini-blockchain/collection", "GET", true, "Panini Collection tab by username (2026-09-27)"],
   ["/panini-blockchain/challenges", "GET", false, "not a Panini tab"],

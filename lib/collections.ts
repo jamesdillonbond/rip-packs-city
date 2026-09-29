@@ -307,7 +307,11 @@ export const COLLECTIONS: Collection[] = [
     // shared Sniper is a Flow feed. Candy has NO sniper on purpose: its FMV is
     // capped at the cheapest confirmed ask (lib/fmv-candy-ceiling.ts), so a
     // listing below FMV cannot exist (0 of 1,881 active asks, 2026-09-28).
-    pages: ["overview", "market", "collection", "packs", "sets", "sniper"],
+    //
+    // 2026-09-28 — ANALYTICS added: sales analytics over panini_sales (every sale the
+    // walk reads, kept since 2026-09-28) via panini_sales_analytics, with per-day
+    // coverage so a day is called complete only when it is. Its own component.
+    pages: ["overview", "market", "collection", "packs", "sets", "sniper", "analytics"],
     published: true,
     openSeaSlug: "paniniblockchain",
     supabaseCollectionId: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",

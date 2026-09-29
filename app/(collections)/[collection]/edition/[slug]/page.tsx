@@ -68,11 +68,13 @@ import { dapperMarketEditionUrl } from "@/lib/collections"
 import {
   fetchPaniniEditionAsk,
   fetchPaniniEditionSerials,
+  fetchPaniniEditionSales,
   paniniEditionUrl,
   paniniSubjectIsPlayer,
   PANINI_ASK_CONFIRMED_DAYS,
   type PaniniEditionAsk,
   type PaniniSerialRow,
+  type PaniniEditionSales,
 } from "@/lib/panini/edition-market"
 
 export const revalidate = 600
@@ -1222,7 +1224,7 @@ async function EditionBottomSections({
   // market section replaces Activity + Special Serials.
   const na = <T,>() => Promise.resolve({ rows: new Array<T>(), ok: true })
   const noPacks = (): Promise<PackRow[]> => Promise.resolve(new Array<PackRow>())
-  const [salesRes, offersRes, parallels, packs, notableRes, packProvenance, topOwners, related, paniniSerials] = await Promise.all([
+  const [salesRes, offersRes, parallels, packs, notableRes, packProvenance, topOwners, related, paniniSerials, paniniSales] = await Promise.all([
     // ⚠ The catch fallbacks carry ok:false. Returning a bare [] here would put the
     // failure back exactly where it was erased before — see fetchSalesResult.
     (isPanini ? na<SaleRow>() : fetchSalesResult(detail.collection_id, slug, SALES_PAGE_SIZE, 0)).catch(() => ({ rows: [] as SaleRow[], ok: false })),
@@ -1243,6 +1245,11 @@ async function EditionBottomSections({
       ? fetchPaniniEditionSerials(detail.external_id)
       : Promise.resolve(null)
     ).catch(() => ({ listed: null, sales: null })),
+    // Every sale on record for the edition, with how complete it is (panini_sales, 2026-09-28).
+    (isPanini && detail.external_id
+      ? fetchPaniniEditionSales(detail.external_id)
+      : Promise.resolve(null)
+    ).catch((): PaniniEditionSales => ({ sales: null, totalOnRecord: null, coverage: null })),
   ])
   // Rows for rendering; the `ok` halves travel separately to the Activity block
   // so a degraded read can never be published as "No sales yet."
@@ -1282,7 +1289,10 @@ async function EditionBottomSections({
       {/* Sales reuses the paginated SalesTablePaginated (no regression);
           Offers is the live standing-bid list from get_edition_offers. */}
       {isPanini ? (
-        <PaniniEditionMarketSection serials={paniniSerials ?? { listed: null, sales: null }} />
+        <PaniniEditionMarketSection
+          serials={paniniSerials ?? { listed: null, sales: null }}
+          history={paniniSales ?? { sales: null, totalOnRecord: null, coverage: null }}
+        />
       ) : (
       <Section title="Activity">
         <EditionActivity
@@ -1528,10 +1538,19 @@ async function EditionBottomSections({
 // Panini's market for this edition, from panini_card_serials (2026-09-27). Three
 // states per list: a failed read says so; an empty read says what is empty; rows
 // render. Never "No sales yet." — RPC does not record every Panini sale.
+/** Absolute PT date for a coverage boundary — the reader's clock never enters render. */
+function ptDateOf(iso: string): string {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return "—"
+  return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles" }) + " PT"
+}
+
 function PaniniEditionMarketSection({
   serials,
+  history,
 }: {
   serials: { listed: PaniniSerialRow[] | null; sales: PaniniSerialRow[] | null }
+  history: PaniniEditionSales
 }) {
   const cell: React.CSSProperties = { padding: "6px 8px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", borderBottom: "1px solid var(--rpc-border-subtle, var(--rpc-border))" }
   const head: React.CSSProperties = { ...cell, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }
@@ -1568,25 +1587,38 @@ function PaniniEditionMarketSection({
               </div>
             )}
       </Section>
-      <Section title="Last Sales Seen">
+      <Section title="Sales">
         <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
-          The most recent sale Panini showed for each card when RPC last checked it — one per card, not a complete sales history.
+          {history.coverage === null
+            ? "Sales on record for this edition, newest first."
+            : history.coverage.kind === "all"
+              ? "Every sale of this edition is on record — newest first."
+              : history.coverage.kind === "since"
+                ? `Every sale since ${ptDateOf(history.coverage.since)} is on record; anything earlier shown here is partial. Newest first.`
+                : "Sales on record so far, newest first — RPC keeps every sale it reads since Sep 28, and this edition's full recent history fills in when the walk next reads it."}
+          {history.totalOnRecord != null && history.sales && history.totalOnRecord > history.sales.length
+            ? ` Showing the latest ${history.sales.length} of ${history.totalOnRecord.toLocaleString("en-US")}.`
+            : ""}
         </div>
-        {serials.sales === null
+        {history.sales === null
           ? note("Sales couldn't be loaded — refresh to try again.")
-          : serials.sales.length === 0
-            ? note("RPC hasn't seen a sale price on any card of this edition yet.")
+          : history.sales.length === 0
+            ? note(
+                history.coverage?.kind === "all"
+                  ? "This edition has no recorded sale on Panini's marketplace."
+                  : "RPC hasn't recorded a sale of this edition yet.",
+              )
             : (
               <div className="rpc-scroll-x">
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 380 }}>
                   <thead><tr><th style={head}>Serial</th><th style={head}>Sold for</th><th style={head}>When</th><th style={head}>Special</th></tr></thead>
                   <tbody>
-                    {serials.sales.map((r, i) => (
-                      <tr key={`${r.serial}-${i}`}>
-                        <td style={cell}>{serialLabel(r)}</td>
-                        <td style={{ ...cell, color: "var(--rpc-text-primary)" }}>{fmtUsd(r.lastSaleUsd)}</td>
-                        <td style={cell}>{r.lastSaleAt ? relTime(r.lastSaleAt) : "—"}</td>
-                        <td style={cell}>{flagLabel(r) || "—"}</td>
+                    {history.sales.map((r) => (
+                      <tr key={`${r.sku}|${r.soldAt}`}>
+                        <td style={cell}>{r.serial == null ? "—" : r.mintCap != null ? `#${r.serial}/${r.mintCap}` : `#${r.serial}`}</td>
+                        <td style={{ ...cell, color: "var(--rpc-text-primary)" }}>{fmtUsd(r.amountUsd)}</td>
+                        <td style={cell}>{relTime(r.soldAt)}</td>
+                        <td style={cell}>{r.flags.map(notableTagLabel).join(", ") || "—"}</td>
                       </tr>
                     ))}
                   </tbody>

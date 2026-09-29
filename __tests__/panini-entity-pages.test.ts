@@ -15,6 +15,9 @@ vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 import {
   fetchPaniniEditionAsk,
   fetchPaniniEditionSerials,
+  fetchPaniniEditionSales,
+  serialOfSku,
+  coverageOf,
   paniniEditionUrl,
   toSerialRow,
 } from "@/lib/panini/edition-market"
@@ -29,7 +32,7 @@ function fakeDb(byTable: Record<string, Res | Res[]>) {
       const entry = byTable[table]
       const res = Array.isArray(entry) ? entry[i] ?? entry[entry.length - 1] : entry
       const b: any = {
-        select: () => b, eq: () => b, gt: () => b, gte: () => b, not: () => b, order: () => b, limit: () => b,
+        select: () => b, eq: () => b, gt: () => b, gte: () => b, not: () => b, order: () => b, limit: () => b, in: () => b,
         then: (resolve: any) => resolve(res ?? { data: [], error: null }),
       }
       return b
@@ -81,6 +84,34 @@ describe("fetchPaniniEditionAsk — three states", () => {
   })
 })
 
+describe("fetchPaniniEditionSales — history + measured coverage", () => {
+  it("parses serial/cap/flags from the sku and reads coverage as all / since / unread", async () => {
+    expect(serialOfSku("packcard-1__1_10")).toEqual({ serial: 1, mintCap: 10 })
+    expect(serialOfSku("odd")).toEqual({ serial: null, mintCap: null })
+    expect(coverageOf({ complete_since: "-infinity", last_recent_read_at: "t" })).toEqual({ kind: "all", lastReadAt: "t" })
+    expect(coverageOf({ complete_since: "2026-09-01T00:00:00+00:00", last_recent_read_at: null })).toEqual({ kind: "since", since: "2026-09-01T00:00:00+00:00", lastReadAt: null })
+    expect(coverageOf(undefined)).toEqual({ kind: "unread" })
+  })
+  it("rows map newest-first with #1 / perfect flags; a failed coverage read is null, never 'complete'", async () => {
+    const db = fakeDb({
+      panini_sales: [
+        { data: [{ sku: "p__10_10", sold_at: "2026-09-28T00:00:00Z", amount_usd: "50" }, { sku: "p__1_10", sold_at: "2026-09-27T00:00:00Z", amount_usd: 900 }], error: null },
+        { data: null, error: null },
+      ],
+      panini_sales_reads: { data: null, error: { message: "boom" } },
+      panini_card_serials: { data: [{ sku: "p__1_10" }], error: null },
+    })
+    const out = await fetchPaniniEditionSales("p", db)
+    expect(out.sales?.map((x) => [x.serial, x.amountUsd, x.flags])).toEqual([[10, 50, ["last_mint"]], [1, 900, ["#1", "jersey"]]])
+    expect(out.coverage).toBeNull()
+  })
+  it("a failed sales read is null — never 'no sales'", async () => {
+    const out = await fetchPaniniEditionSales("p", fakeDb({ panini_sales: { data: null, error: { message: "x" } }, panini_sales_reads: { data: [], error: null } }))
+    expect(out.sales).toBeNull()
+    expect(out.coverage).toEqual({ kind: "unread" })
+  })
+})
+
 describe("fetchPaniniEditionSerials — a failed list is null, an empty list is []", () => {
   it("failed reads are null, per list", async () => {
     const db = fakeDb({ panini_card_serials: [{ data: null, error: { message: "boom" } }, { data: [], error: null }] })
@@ -113,7 +144,13 @@ describe("the edition page's Panini arms (source facts)", () => {
     // …and the Panini section never says "No sales yet."
     const section = src.slice(src.indexOf("function PaniniEditionMarketSection"), src.indexOf("function EditionUnavailable"))
     expect(section).not.toContain("No sales yet")
-    expect(section).toContain("not a complete sales history")
+    // 2026-09-28: the section reads panini_sales and states its MEASURED completeness — all,
+    // since a date, or not yet read — instead of a blanket "not a complete history".
+    expect(section).toContain("Every sale of this edition is on record")
+    expect(section).toContain("anything earlier shown here is partial")
+    expect(section).toContain("fills in when the walk next reads it")
+    // an empty list only says "no recorded sale" when the whole history was read
+    expect(section).toMatch(/coverage\?\.kind === "all"\s*\?\s*"This edition has no recorded sale/)
   })
   it("offers no FMV/ask alert on Panini (the dispatcher cannot see Panini asks)", () => {
     expect(src).toContain("{!isPinnacle && !isPanini && detail.external_id && (")

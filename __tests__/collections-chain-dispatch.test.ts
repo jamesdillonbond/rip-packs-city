@@ -111,7 +111,8 @@ describe("dbChain registry invariant", () => {
     // /api/panini-collection over panini_owner_cards. Pinned below.
     // ⭐ `sniper` joined 2026-09-28 — an ARM: the panini-boards deal snapshot,
     // server-seeded into PaniniSniper. Pinned below.
-    "": ["overview", "market", "packs", "sets", "collection", "sniper"],
+    // ⭐ `analytics` joined 2026-09-28 — an ARM over panini_sales. Pinned below.
+    "": ["overview", "market", "packs", "sets", "collection", "sniper", "analytics"],
   }
 
   it("every published NON-Flow collection exposes only pages that have a dispatch for its chain", () => {
@@ -204,6 +205,15 @@ describe("dbChain registry invariant", () => {
     const route = read("app/api/panini-collection/route.ts")
     expect(route).toContain('rpc("panini_owner_cards"')
     expect(route).toContain("normalizePaniniUsername(raw)")
+  })
+
+  it("⚠ Panini's `analytics` permission is backed by a Panini arm over panini_sales", () => {
+    const read = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8")
+    const page = read("app/(collections)/[collection]/analytics/page.tsx")
+    expect(page).toContain('collection === "panini-blockchain"')
+    expect(page).toContain("fetchPaniniSalesAnalytics()")
+    expect(read("lib/panini/sales-analytics-read.ts")).toContain('db.rpc("panini_sales_analytics"')
+    expect(page).toContain("<PaniniAnalytics")
   })
 
   it("⚠ Panini's `sniper` permission is backed by a Panini arm over the deal snapshot", () => {
