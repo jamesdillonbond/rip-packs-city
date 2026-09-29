@@ -1,3 +1,5 @@
+> ✅ **RESOLVED 2026-09-29 (Claude Code).** The 19,625-row spike was pruned before 09-29. The residual NULL-key population was mostly **All Day ids written into the Top Shot cache by `/api/wallet-search`** (fixed; 1,679 rows removed). The "missing re-check path" below is now `heal_topshot_wmc_null_keys()`, job 640, hourly: it names a key-less Top Shot row from a chain read of its own wallet. Top Shot key-less rows: 0. Detail: [handoff-2026-09-29-wmc-null-edition-key-drain-leak.md](handoff-2026-09-29-wmc-null-edition-key-drain-leak.md) and the 09-29 ledger entries.
+
 # Handoff — Top Shot `wallet_moments_cache` NULL-`edition_key` spike (2026-09-22)
 
 **Source:** weekly data-quality sweep (`docs/overnight/data-quality-sweep-2026-09-22.md`, check 3b).
