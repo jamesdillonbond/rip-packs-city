@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs"
 import { join, dirname } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // ⛔ `lib/supabase.ts` builds the SERVICE-ROLE client at module load. In a browser
 // SUPABASE_SERVICE_ROLE_KEY is undefined, supabase-js throws
@@ -66,7 +67,10 @@ function chainTo(root: string): string[] | null {
   return null
 }
 
-const isClient = (p: string) => /^\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/\s*)*\s*["']use client["']/.test(readFileSync(join(ROOT, p), "utf8"))
+// Leading comments are removed by the SHARED stripper (a local regex stripper is
+// banned by guards-use-the-shared-comment-stripper); the directive must then be
+// the first statement.
+const isClient = (p: string) => /^\s*["']use client["']/.test(stripComments(readFileSync(join(ROOT, p), "utf8")))
 
 describe("no client module can load lib/supabase.ts", () => {
   const clients = [...walkDir("app"), ...walkDir("components")].filter(isClient)
