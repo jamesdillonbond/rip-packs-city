@@ -24,7 +24,7 @@
 --     all and a junk stored URL rendered as a blank slab with no recourse.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260913040000_audit_20260913_trophy_art_falls_back_to_the_live_edition_render.sql);
+-- (supabase/migrations/20260929061743_audit_20260928_trophy_still_held_state.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -48,7 +48,14 @@ CREATE TABLE public.editions (
   jersey_number smallint, play_category text, team_name text, series smallint,
   thumbnail_url text);
 CREATE TABLE public.wallet_moments_cache (
-  moment_id text, collection_id uuid, edition_key text);
+  moment_id text, collection_id uuid, edition_key text, wallet_address text);
+-- held_state fixtures (2026-09-28)
+CREATE TABLE public.saved_wallets (user_id uuid, wallet_addr text);
+CREATE TABLE public.wmc_clean_walks (wallet_address text, collection_id uuid, last_clean_walk_at timestamptz, observed_count int);
+CREATE TABLE public.saved_collector_identities (user_id uuid, collection_id uuid, identity_kind text, identity_value text);
+CREATE TABLE public.panini_collector_walks (username text, last_complete_at timestamptz, profile_state text);
+CREATE TABLE public.panini_user_holdings (username text, url_key text);
+CREATE TABLE public.panini_card_serials (sku text, owner text, serial_state text, captured_at timestamptz);
 CREATE TABLE public.fmv_snapshots (
   edition_id uuid, fmv_usd numeric, confidence text, computed_at timestamptz);
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text, name text);
@@ -152,6 +159,12 @@ BEGIN
       e.team_name AS team_name,
       e.series AS series,
       tm.pinned_at,
+      -- Is the trophy still in the collector's indexed holdings? THREE states
+      -- (2026-09-28): 'held' / 'not_held' / 'unknown'. 'not_held' needs a CLEAN
+      -- walk after the pin for every relevant wallet or linked username; without
+      -- one the answer is 'unknown', never a guess.
+      hs.held_state,
+      hs.held_checked_at,
       (
         SELECT ma.buy_price FROM moment_acquisitions ma
         WHERE ma.nft_id = tm.moment_id
@@ -186,6 +199,79 @@ BEGIN
       LIMIT 1
     ) f ON true
     LEFT JOIN collections c ON c.id = tm.collection_id
+    LEFT JOIN LATERAL (
+      WITH uw AS (
+        SELECT DISTINCT sw.wallet_addr FROM saved_wallets sw WHERE sw.user_id = tm.user_id
+      ),
+      -- FLOW / SOLANA: the moment under any of the user's saved wallets.
+      w_present AS (
+        SELECT EXISTS (
+          SELECT 1 FROM wallet_moments_cache w
+          JOIN uw ON uw.wallet_addr = w.wallet_address
+          WHERE w.moment_id = tm.moment_id AND w.collection_id = tm.collection_id
+        ) AS present
+      ),
+      -- The wallets that hold anything in this collection (or were cleanly
+      -- walked for it). Each must have a clean walk AFTER the pin, and a recent
+      -- one: prune_stale_wmc drops rows unseen for 14 days, and a clean walk
+      -- refreshes every held row, so a floor older than 13 days could be
+      -- looking at a pruned-but-held moment.
+      w_relevant AS (
+        SELECT uw.wallet_addr, cw.last_clean_walk_at
+        FROM uw
+        LEFT JOIN wmc_clean_walks cw
+          ON cw.wallet_address = uw.wallet_addr AND cw.collection_id = tm.collection_id
+        WHERE cw.wallet_address IS NOT NULL
+           OR EXISTS (SELECT 1 FROM wallet_moments_cache w2
+                      WHERE w2.wallet_address = uw.wallet_addr AND w2.collection_id = tm.collection_id)
+      ),
+      -- PANINI: cards under the usernames the user linked.
+      p_names AS (
+        SELECT sci.identity_value AS username, pw.last_complete_at, pw.profile_state
+        FROM saved_collector_identities sci
+        LEFT JOIN panini_collector_walks pw ON pw.username = sci.identity_value
+        WHERE sci.user_id = tm.user_id AND sci.collection_id = tm.collection_id
+          AND sci.identity_kind = 'username'
+      ),
+      p_present AS (
+        SELECT EXISTS (
+          SELECT 1 FROM panini_user_holdings h JOIN p_names n ON n.username = h.username
+          WHERE h.url_key = tm.moment_id
+        ) OR EXISTS (
+          SELECT 1 FROM panini_card_serials s JOIN p_names n ON s.owner <> '' AND lower(s.owner) = n.username
+          WHERE s.sku = tm.moment_id AND COALESCE(s.serial_state, '') <> 'BURNT'
+            AND (n.last_complete_at IS NULL OR s.captured_at > n.last_complete_at)
+        ) AS present
+      )
+      SELECT
+        CASE
+          WHEN c.slug = 'panini_blockchain' THEN
+            CASE
+              WHEN (SELECT present FROM p_present) THEN 'held'
+              WHEN EXISTS (SELECT 1 FROM p_names)
+               AND NOT EXISTS (SELECT 1 FROM p_names n
+                               WHERE n.last_complete_at IS NULL OR n.last_complete_at <= tm.pinned_at
+                                  OR n.profile_state IS DISTINCT FROM 'public')
+              THEN 'not_held'
+              ELSE 'unknown'
+            END
+          ELSE
+            CASE
+              WHEN (SELECT present FROM w_present) THEN 'held'
+              WHEN EXISTS (SELECT 1 FROM w_relevant)
+               AND NOT EXISTS (SELECT 1 FROM w_relevant r
+                               WHERE r.last_clean_walk_at IS NULL
+                                  OR r.last_clean_walk_at <= tm.pinned_at
+                                  OR r.last_clean_walk_at < now() - interval '13 days')
+              THEN 'not_held'
+              ELSE 'unknown'
+            END
+        END AS held_state,
+        CASE
+          WHEN c.slug = 'panini_blockchain' THEN (SELECT min(n.last_complete_at) FROM p_names n)
+          ELSE (SELECT min(r.last_clean_walk_at) FROM w_relevant r)
+        END AS held_checked_at
+    ) hs ON true
     WHERE tm.user_id = p_user_id
     ORDER BY tm.slot ASC
   )
@@ -315,6 +401,63 @@ SELECT _assert((public.get_trophy_slab_data(:U3::uuid) -> 1 ->> 'circulation_cou
 -- a reader that returned NULL for everything would satisfy the two pins above.
 SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 1 ->> 'circulation_count'), '100',
   'control: a POSSIBLE pair still takes the live edition circulation');
+
+-- ── 9. held_state: held / not_held / unknown (2026-09-28) ─────────────────────
+-- 'not_held' is a claim that a trophy LEFT the collector's wallets, so it needs a
+-- clean walk after the pin (and a recent one); every other shape is 'unknown'.
+\set U4 '''40000000-0000-0000-0000-000000000004'''
+\set U5 '''50000000-0000-0000-0000-000000000005'''
+\set U7 '''70000000-0000-0000-0000-000000000007'''
+\set AD '''dee28451-5d62-409e-a1ad-a83f763ac070'''
+\set GZ '''06248cc4-b85f-47cd-af67-1855d14acd75'''
+\set CM '''209ade70-32c5-4470-bc7c-4793d660f713'''
+\set UF '''9b4824a8-736d-4a96-b450-8dcc0c46b023'''
+\set PN '''d1a0a7f5-609a-49f4-a1a7-4eaac55b020b'''
+INSERT INTO public.collections (id, slug, name) VALUES
+  (:AD::uuid, 'nfl_all_day', 'All Day'), (:GZ::uuid, 'laliga_golazos', 'Golazos'),
+  (:CM::uuid, 'candy_mlb', 'Candy'), (:UF::uuid, 'ufc_strike', 'UFC'), (:PN::uuid, 'panini_blockchain', 'Panini');
+INSERT INTO public.saved_wallets VALUES (:U4::uuid, 'w4');
+INSERT INTO public.wallet_moments_cache (moment_id, collection_id, edition_key, wallet_address) VALUES
+  ('h1', :TS::uuid, NULL, 'w4'),        -- h1 still cached -> held
+  ('other', :TS::uuid, NULL, 'w4'),     -- w4 is relevant to Top Shot
+  ('x', :AD::uuid, NULL, 'w4'), ('g', :GZ::uuid, NULL, 'w4'), ('y', :CM::uuid, NULL, 'w4');
+INSERT INTO public.wmc_clean_walks VALUES
+  ('w4', :TS::uuid, now() - interval '1 hour', 1),   -- after the pin, recent
+  ('w4', :AD::uuid, now() - interval '5 days', 1),   -- BEFORE h3's pin
+  ('w4', :GZ::uuid, now() - interval '20 days', 1);  -- after h4's pin but too old (prune window)
+-- Candy (CM): no clean walk ever (its refresh is add-only). UFC: no wallet holds anything.
+INSERT INTO public.trophy_moments (id, slot, moment_id, collection_id, user_id, pinned_at) VALUES
+  (gen_random_uuid(), 1, 'h1', :TS::uuid, :U4::uuid, now() - interval '2 days'),
+  (gen_random_uuid(), 2, 'h2', :TS::uuid, :U4::uuid, now() - interval '2 days'),
+  (gen_random_uuid(), 3, 'h3', :AD::uuid, :U4::uuid, now() - interval '1 day'),
+  (gen_random_uuid(), 4, 'h4', :GZ::uuid, :U4::uuid, now() - interval '30 days'),
+  (gen_random_uuid(), 5, 'h5', :CM::uuid, :U4::uuid, now() - interval '2 days'),
+  (gen_random_uuid(), 6, 'h6', :UF::uuid, :U4::uuid, now() - interval '2 days');
+SELECT _assert_eq((public.get_trophy_slab_data(:U4::uuid) -> 0 ->> 'held_state'), 'held', 'h1 still under a saved wallet -> held');
+SELECT _assert_eq((public.get_trophy_slab_data(:U4::uuid) -> 1 ->> 'held_state'), 'not_held', 'h2 absent after a clean walk that post-dates the pin -> not_held');
+SELECT _assert((public.get_trophy_slab_data(:U4::uuid) -> 1 ->> 'held_checked_at') IS NOT NULL, 'not_held carries the clean-walk time it rests on');
+SELECT _assert_eq((public.get_trophy_slab_data(:U4::uuid) -> 2 ->> 'held_state'), 'unknown', 'h3: the only clean walk is OLDER than the pin -> unknown, not sold');
+SELECT _assert_eq((public.get_trophy_slab_data(:U4::uuid) -> 3 ->> 'held_state'), 'unknown', 'h4: clean walk older than 13 days (prune window) -> unknown');
+SELECT _assert_eq((public.get_trophy_slab_data(:U4::uuid) -> 4 ->> 'held_state'), 'unknown', 'h5: a collection with no clean-walk stamp (Candy) -> unknown');
+SELECT _assert_eq((public.get_trophy_slab_data(:U4::uuid) -> 5 ->> 'held_state'), 'unknown', 'h6: no wallet relevant to the collection -> unknown');
+
+-- Panini: U5 links 'pn' (complete public walk 1h ago), U7 links 'priv' (private profile).
+INSERT INTO public.saved_collector_identities VALUES
+  (:U5::uuid, :PN::uuid, 'username', 'pn'), (:U7::uuid, :PN::uuid, 'username', 'priv');
+INSERT INTO public.panini_collector_walks VALUES ('pn', now() - interval '1 hour', 'public'), ('priv', now() - interval '1 hour', 'private');
+INSERT INTO public.panini_user_holdings VALUES ('pn', 'p1');
+INSERT INTO public.panini_card_serials VALUES
+  ('p3', 'PN', 'AVAILABLE', now()),                       -- seen under the name AFTER the walk -> held
+  ('p2', 'pn', 'AVAILABLE', now() - interval '3 hours');  -- seen BEFORE the walk, absent from it -> gone
+INSERT INTO public.trophy_moments (id, slot, moment_id, collection_id, user_id, pinned_at) VALUES
+  (gen_random_uuid(), 1, 'p1', :PN::uuid, :U5::uuid, now() - interval '1 day'),
+  (gen_random_uuid(), 2, 'p2', :PN::uuid, :U5::uuid, now() - interval '1 day'),
+  (gen_random_uuid(), 3, 'p3', :PN::uuid, :U5::uuid, now() - interval '1 day'),
+  (gen_random_uuid(), 1, 'p4', :PN::uuid, :U7::uuid, now() - interval '1 day');
+SELECT _assert_eq((public.get_trophy_slab_data(:U5::uuid) -> 0 ->> 'held_state'), 'held', 'Panini p1 on the walked profile -> held');
+SELECT _assert_eq((public.get_trophy_slab_data(:U5::uuid) -> 1 ->> 'held_state'), 'not_held', 'Panini p2 absent after a complete public walk post-pin -> not_held');
+SELECT _assert_eq((public.get_trophy_slab_data(:U5::uuid) -> 2 ->> 'held_state'), 'held', 'Panini p3 seen under the name after the walk -> held');
+SELECT _assert_eq((public.get_trophy_slab_data(:U7::uuid) -> 0 ->> 'held_state'), 'unknown', 'a private Panini profile -> unknown, never sold');
 
 SELECT '✓ get_trophy_slab_data: all assertions passed' AS result;
 

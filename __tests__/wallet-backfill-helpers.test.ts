@@ -43,6 +43,9 @@ const H = vi.hoisted(() => {
     }>,
     // Forces the delete chain to return an error, to drive the partial path.
     deleteError: null as any,
+    // wmc_clean_walks upserts (the clean-walk stamp, 2026-09-28) + a forced error.
+    cleanWalkUpserts: [] as any[],
+    cleanWalkError: null as any,
   }
 
   function resolveRead(ctx: any) {
@@ -71,6 +74,7 @@ const H = vi.hoisted(() => {
     if (ctx.table === "seeded_wallets" && ctx.op !== "update") {
       return { data: state.seededWalletRows, error: null }
     }
+    if (ctx.table === "wmc_clean_walks") return { data: null, error: state.cleanWalkError }
     // seeded_wallets update, everything else
     return { data: null, error: null }
   }
@@ -86,6 +90,7 @@ const H = vi.hoisted(() => {
         ]) {
           b[m] = (...a: any[]) => {
             if (m === "update") ctx.op = "update"
+            if (m === "upsert" && table === "wmc_clean_walks") state.cleanWalkUpserts.push(a[0])
             if (m === "delete") {
               ctx.op = "delete"
               ctx.deleteRec = { options: a[0], filters: [], ids: [] as string[] }
@@ -224,6 +229,8 @@ beforeEach(() => {
   H.state.rpcCalls = []
   H.state.wmcDeletes = []
   H.state.deleteError = null
+  H.state.cleanWalkUpserts = []
+  H.state.cleanWalkError = null
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://proj.supabase.co"
   process.env.INGEST_SECRET_TOKEN = "test-ingest-token"
   vi.stubGlobal("fetch", vi.fn())
@@ -1326,6 +1333,49 @@ describe("deleteUnseenWmcRows (direct)", () => {
     const out = await call({ observedIds: new Set(["a"]), cachedIds: new Set(["a", "b"]) })
     expect(out.deleted).toBe(0)
     expect(out.error).toContain("boom")
+  })
+
+  // ── the clean-walk stamp (2026-09-28) ──────────────────────────────────────
+  // wmc_clean_walks is the ONLY record that makes "absent from wmc" mean "not
+  // held" (trophy held_state). It must be written on exactly the passes where
+  // delete-not-seen really ran, and on none of the others.
+  it("stamps a clean walk when the delete ran fully", async () => {
+    H.state.cleanWalkUpserts = []
+    const out = await call({ observedIds: new Set(["a"]), cachedIds: new Set(["a", "b"]) })
+    expect(out.deleted).toBe(1)
+    expect(H.state.cleanWalkUpserts).toHaveLength(1)
+    expect(H.state.cleanWalkUpserts[0]).toMatchObject({ wallet_address: WALLET, collection_id: ALLDAY_COLLECTION_UUID, observed_count: 1 })
+  })
+
+  it("stamps a clean walk when nothing left the wallet", async () => {
+    H.state.cleanWalkUpserts = []
+    const out = await call({ observedIds: new Set(["a"]), cachedIds: new Set(["a"]) })
+    expect(out).toEqual({ deleted: 0 })
+    expect(H.state.cleanWalkUpserts).toHaveLength(1)
+  })
+
+  it("does NOT stamp an empty-observed or suspiciously-large skip", async () => {
+    H.state.cleanWalkUpserts = []
+    H.state.cachedRows = [{ moment_id: "1" }]
+    await call({ observedIds: new Set<string>() })
+    H.state.cachedRows = Array.from({ length: 200 }, (_, i) => ({ moment_id: "m" + i }))
+    await call({ observedIds: new Set(["m0"]) })
+    expect(H.state.cleanWalkUpserts).toHaveLength(0)
+  })
+
+  it("does NOT stamp when a delete chunk failed — sold rows may still be cached", async () => {
+    H.state.cleanWalkUpserts = []
+    H.state.deleteError = { message: "boom" }
+    await call({ observedIds: new Set(["a"]), cachedIds: new Set(["a", "b"]) })
+    expect(H.state.cleanWalkUpserts).toHaveLength(0)
+  })
+
+  it("a failed stamp is reported, not thrown, and not counted as a failed delete", async () => {
+    H.state.cleanWalkError = { message: "stamp down" }
+    const out = await call({ observedIds: new Set(["a"]), cachedIds: new Set(["a", "b"]) })
+    expect(out.deleted).toBe(1)
+    expect(out.error).toBeUndefined()
+    expect(unseenDeleteExtra(out)).toMatchObject({ unseen_deleted: 1, clean_walk_stamp_error: "stamp down" })
   })
 
   it("unseenDeleteExtra always carries unseen_deleted, and a skip says WHY", () => {

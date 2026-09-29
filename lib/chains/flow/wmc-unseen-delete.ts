@@ -53,6 +53,43 @@ export interface UnseenDeleteOutcome {
   deleted: number
   skippedReason?: string
   error?: string
+  /** The wmc_clean_walks stamp failed to write (the walk itself was fine). */
+  cleanWalkStampError?: string
+}
+
+/**
+ * Record that this (wallet, collection) was just CLEANLY walked: delete-not-seen
+ * ran over a non-empty observed set, was not skipped, and every delete chunk
+ * succeeded. This is the ONLY stamp that makes "absent from wmc" mean "not held"
+ * (get_trophy_slab_data's held_state, migration 20260929061743_audit_20260928_trophy_still_held_state).
+ * seeded_wallets.last_refreshed_per_collection and wallet_backfill_state are both
+ * written on timeouts and degraded runs too, so neither can carry that claim.
+ *
+ * ⚠ A failed stamp is REPORTED, never thrown: the walk's own work landed, and a
+ * missing stamp only leaves the trophy marker at 'unknown' (fail-open).
+ */
+async function stampCleanWalk(wallet: string, collectionUuid: string, observedCount: number): Promise<string | undefined> {
+  try {
+    // deno-lint-ignore no-explicit-any
+    const { error } = await (supabaseAdmin as any)
+      .from("wmc_clean_walks")
+      .upsert(
+        {
+          wallet_address: wallet,
+          collection_id: collectionUuid,
+          last_clean_walk_at: new Date().toISOString(),
+          observed_count: observedCount,
+        },
+        { onConflict: "wallet_address,collection_id" },
+      )
+    return error ? String(error.message ?? error) : undefined
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err)
+  }
+}
+
+function withStamp(outcome: UnseenDeleteOutcome, stampError: string | undefined): UnseenDeleteOutcome {
+  return stampError ? { ...outcome, cleanWalkStampError: stampError } : outcome
 }
 
 /**
@@ -121,7 +158,10 @@ export async function deleteUnseenWmcRows(args: {
   const cached = cachedIds ? new Set(cachedIds) : await loadCachedMomentIds(wallet, collectionUuid)
   const toDelete: string[] = []
   for (const id of cached) if (!observedIds.has(id)) toDelete.push(id)
-  if (toDelete.length === 0) return { deleted: 0 }
+  // Nothing left the wallet: still a clean walk — the cache matches the chain.
+  if (toDelete.length === 0) {
+    return withStamp({ deleted: 0 }, await stampCleanWalk(wallet, collectionUuid, observedIds.size))
+  }
 
   if (cached.size > 100 && toDelete.length > cached.size * 0.9) {
     console.warn(
@@ -157,7 +197,8 @@ export async function deleteUnseenWmcRows(args: {
       `[${pipelineName}] unseen_deleted wallet=${wallet} deleted=${deleted}/${toDelete.length} cached=${cached.size}`,
     )
   }
-  return firstError ? { deleted, error: firstError } : { deleted }
+  if (firstError) return { deleted, error: firstError } // a failed chunk is NOT a clean walk
+  return withStamp({ deleted }, await stampCleanWalk(wallet, collectionUuid, observedIds.size))
 }
 
 /**
@@ -171,5 +212,6 @@ export function unseenDeleteExtra(outcome: UnseenDeleteOutcome): Record<string, 
     unseen_deleted: outcome.deleted,
     ...(outcome.skippedReason ? { unseen_delete_skipped: outcome.skippedReason } : {}),
     ...(outcome.error ? { unseen_delete_error: outcome.error.slice(0, 200) } : {}),
+    ...(outcome.cleanWalkStampError ? { clean_walk_stamp_error: outcome.cleanWalkStampError.slice(0, 200) } : {}),
   }
 }

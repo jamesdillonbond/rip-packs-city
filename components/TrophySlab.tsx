@@ -59,6 +59,14 @@ export type TrophySlabData = {
   pinned_at: string | null;
   acquired_price: number | null;
   acquisition_method: string | null;
+  /**
+   * Is the trophy still in the collector's indexed holdings (2026-09-28)?
+   * 'not_held' rests on a CLEAN walk after the pin (get_trophy_slab_data); every
+   * shape it cannot prove is 'unknown' and draws nothing. Optional: older
+   * payloads and the OG/PDF readers do not carry it.
+   */
+  held_state?: "held" | "not_held" | "unknown" | null;
+  held_checked_at?: string | null;
 };
 
 /**
@@ -295,6 +303,10 @@ function FilledSlab({
 
         {/* Row 3 — footer stat strip */}
         <SlabFooter slab={slab} />
+
+        {slab.held_state === "not_held" && (
+          <HeldNotice mode={mode} checkedAt={slab.held_checked_at ?? null} />
+        )}
 
         {/* Row 4 — the collector's own caption.
             The ONE field on a trophy the owner writes themselves; everything
@@ -978,6 +990,42 @@ function SlabSkeleton() {
       <div className="rpc-skeleton" style={{ height: 56, borderRadius: 6 }} />
       <div className="rpc-skeleton" style={{ flex: 1, minHeight: 220, borderRadius: 6 }} />
       <div className="rpc-skeleton" style={{ height: 28, borderRadius: 4 }} />
+    </div>
+  );
+}
+
+/**
+ * "Not in saved wallets" — shown only when the slab RPC proved it: a clean walk
+ * of every relevant wallet (or a complete public Panini profile read) after the
+ * pin, and the trophy absent. Worded as what RPC can see, not "sold": it may have
+ * been transferred, or held in a wallet the collector never saved.
+ */
+function HeldNotice({ mode, checkedAt }: { mode: "owner" | "public"; checkedAt: string | null }) {
+  const when = checkedAt ? new Date(checkedAt).toLocaleDateString() : null;
+  const text = mode === "owner" ? "Not in your saved wallets" : "Not in this collector\u2019s saved wallets";
+  return (
+    <div
+      role="note"
+      title={
+        (mode === "owner"
+          ? "RPC re-read your saved wallets after you pinned this and didn\u2019t find it."
+          : "RPC re-read this collector\u2019s saved wallets after it was pinned and didn\u2019t find it.") +
+        (when ? " Checked " + when + "." : "")
+      }
+      style={{
+        marginTop: 6,
+        padding: "4px 8px",
+        border: "1px dashed var(--rpc-border)",
+        borderRadius: 6,
+        fontFamily: "var(--font-mono)",
+        fontSize: 10,
+        letterSpacing: "0.04em",
+        color: "var(--rpc-text-muted)",
+        textAlign: "center",
+      }}
+    >
+      {text}
+      {when ? <> · checked {when}</> : null}
     </div>
   );
 }

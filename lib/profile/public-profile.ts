@@ -293,6 +293,10 @@ async function getPublicProfileUncached(
     badges: t.badges ?? null,
     note: t.note ?? null,
     pinned_at: t.pinned_at ?? null,
+    // Still in the collector's indexed holdings? Carried for the share page's
+    // "Not in saved wallets" marker (2026-09-28). Not cost basis; safe to publish.
+    held_state: t.held_state ?? null,
+    held_checked_at: t.held_checked_at ?? null,
   }))
 
   if (bioErr) {

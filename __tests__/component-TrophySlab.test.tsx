@@ -378,3 +378,34 @@ describe("TrophySlab — Panini", () => {
     expect(Array.from(container.querySelectorAll("a")).some((a) => a.getAttribute("href") === "/moment/m123")).toBe(true)
   })
 })
+
+// "Not in saved wallets" (2026-09-28). The slab RPC says 'not_held' only after a
+// clean walk post-pin; 'unknown' and 'held' must draw nothing, and the notice is
+// worded as what RPC can see — never "sold".
+describe("TrophySlab — held_state marker", () => {
+  it("not_held draws the notice with the check date (owner wording)", () => {
+    const { container } = render(
+      <TrophySlab slab={{ ...base, held_state: "not_held", held_checked_at: "2026-09-28T12:00:00Z" }} slot={3} mode="owner" />,
+    )
+    const note = container.querySelector('[role="note"]')
+    expect(note?.textContent).toMatch(/^Not in your saved wallets · checked /)
+  })
+
+  it("public wording names the collector, not the viewer", () => {
+    const { container } = render(<TrophySlab slab={{ ...base, held_state: "not_held" }} slot={3} mode="public" />)
+    expect(container.querySelector('[role="note"]')?.textContent).toBe("Not in this collector’s saved wallets")
+  })
+
+  it("unknown, held and an absent field draw nothing — unknown is never shown as gone", () => {
+    for (const held_state of ["unknown", "held", undefined, null] as const) {
+      const { container } = render(<TrophySlab slab={{ ...base, held_state }} slot={3} mode="owner" />)
+      expect(container.querySelector('[role="note"]')).toBeNull()
+      cleanup()
+    }
+  })
+
+  it("never says sold", () => {
+    const { container } = render(<TrophySlab slab={{ ...base, held_state: "not_held" }} slot={3} mode="public" />)
+    expect(container.textContent).not.toMatch(/\bsold\b/i)
+  })
+})

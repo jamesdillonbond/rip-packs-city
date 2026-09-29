@@ -930,8 +930,10 @@ const PINS = [
     // ⚠ REPOINTED 2026-09-27: both moment_acquisitions reads are scoped to the
     // trophy's collection_id (a moment_id is unique only within a collection;
     // 55 nft_ids already span collections in that table).
+    // ⚠ REPOINTED 2026-09-28: held_state / held_checked_at — 'not_held' only on a
+    // clean walk (wmc_clean_walks, or a complete public Panini walk) after the pin.
     migration:
-      "supabase/migrations/20260927174800_audit_20260927_trophy_slab_acquisition_is_scoped_to_the_trophys_collection.sql",
+      "supabase/migrations/20260929061743_audit_20260928_trophy_still_held_state.sql",
   },
   {
     fn: "get_moment_detail",
