@@ -1473,10 +1473,23 @@ export async function POST(req: NextRequest) {
       // deliberate second attempt — so on a 429 the old shape slept 2 s TWICE
       // per moment for nothing. Settling once keeps every value the attempt did
       // obtain and halves the load this route puts on an upstream that is down.
-      const [gqlSettled, metaSettled] = await Promise.allSettled([
-        fetchMomentGraphQL(String(id)),
-        getMomentMetadata(wallet, id),
-      ])
+      //
+      // ⛔ Both legs are TOP SHOT lookups. On an All Day request `id` is an All
+      // Day id, and a moment id is unique only within a collection (#142): the
+      // Top Shot metadata script cannot find it ("no nft"), and Top Shot GraphQL,
+      // when it answers, returns a DIFFERENT moment that happens to share the
+      // number. So an All Day id never goes to either leg; the row takes the
+      // degraded shape below, which is what it rendered as anyway.
+      const notTopShot = new Error("Top Shot enrichment does not apply to an All Day moment id")
+      const [gqlSettled, metaSettled] = isAllDay
+        ? ([
+            { status: "rejected", reason: notTopShot },
+            { status: "rejected", reason: notTopShot },
+          ] as [PromiseSettledResult<Awaited<ReturnType<typeof fetchMomentGraphQL>>>, PromiseSettledResult<Awaited<ReturnType<typeof getMomentMetadata>>>])
+        : await Promise.allSettled([
+            fetchMomentGraphQL(String(id)),
+            getMomentMetadata(wallet, id),
+          ])
       try {
       if (gqlSettled.status === "rejected") { stage = "enrich-gql"; throw gqlSettled.reason }
       if (metaSettled.status === "rejected") { stage = "flow-metadata"; throw metaSettled.reason }
@@ -1523,7 +1536,8 @@ export async function POST(req: NextRequest) {
       } catch (momentErr: any) {
         const reason = ((momentErr?.message ?? "unknown") as string).slice(0, 80)
         const walletShort = wallet ? wallet.slice(0, 10) : "none"
-        console.warn(
+        // An All Day id skipped the Top Shot legs on purpose — not a failure.
+        if (!isAllDay) console.warn(
           `[wallet-search] moment-fail momentId=${id} ` +
             `wallet=${walletShort} ` +
             `stage=${stage} ` +
@@ -1584,7 +1598,8 @@ export async function POST(req: NextRequest) {
     // caller the rows it already has.
     try {
       const wmcCollectionId = await getCollectionId()
-      if (wmcCollectionId) await fillFromWalletCache(baseRows, wallet, wmcCollectionId)
+      // Top Shot cache only — an All Day id would read another collection's row (#142).
+      if (wmcCollectionId && !isAllDay) await fillFromWalletCache(baseRows, wallet, wmcCollectionId)
     } catch (e) {
       console.warn(
         `[wallet-search] wmc fill threw: ${e instanceof Error ? e.message : String(e)}`,
@@ -1624,10 +1639,17 @@ export async function POST(req: NextRequest) {
 
     // Enrich with acquisition method data
     topLevelStage = "acquisition_enrich"
-    const rows = await enrichWithAcquisitionData(fmvEnriched, wallet)
+    // ⛔ Everything from here to the response is keyed to TOP SHOT: the wmc
+    // cache writes below pin the Top Shot collection id, and the acquisition
+    // reads/writes key on a bare moment id. On an All Day request those ids are
+    // All Day ids, so each one read or wrote a Top Shot row for a moment the
+    // wallet does not hold on Top Shot. From 2026-09-07 every All Day collection
+    // page load wrote its 50 ids into the Top Shot cache as nameless
+    // `edition_key IS NULL` "Unknown Set" rows (1,681 by 09-29).
+    const rows = isAllDay ? fmvEnriched : await enrichWithAcquisitionData(fmvEnriched, wallet)
 
     // Fire-and-forget — progressively reclassify unknown acquisitions
-    progressivelyClassify(rows, wallet)
+    if (!isAllDay) progressivelyClassify(rows, wallet)
 
     const totalTssPoints = rows.reduce(function(sum, r) {
       return sum + (r.tssPoints ?? 0)
@@ -1635,11 +1657,11 @@ export async function POST(req: NextRequest) {
 
     // Fire-and-forget — seeds all editions regardless of price
     getCollectionId().then((collectionId) => {
-      if (collectionId) seedEditionsToSupabase(rows, collectionId).catch(() => {})
+      if (collectionId && !isAllDay) seedEditionsToSupabase(rows, collectionId).catch(() => {})
     })
 
     // Fire-and-forget — upsert wallet moments into cache for fallback
-    upsertWalletMomentsCache(wallet, rows).catch(() => {})
+    if (!isAllDay) upsertWalletMomentsCache(wallet, rows).catch(() => {})
 
     // Fire-and-forget — persist cost basis from wallet-search purchase data
     const acquisitionRows = baseRows
