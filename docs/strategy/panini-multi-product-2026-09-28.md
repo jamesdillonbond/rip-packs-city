@@ -70,3 +70,22 @@ Needed: (a) bridge admitted non-WC editions into `editions` (Panini `collection_
 computation over `panini_sales` for them, with confidence from sale count. First consumer: slot 2
 of `/profile/jamesdillonbond` (Rayan Rupert, 1941, #1/1 — a 1/1 will stay thin on sales; LOW or
 NULL is the honest answer there).
+
+## 2026-09-28 (~11:50 PM PT) — the per-product pricing bridge is BUILT
+
+`sync_panini_products_bridge()` (migration `20260929064132`; pg_cron `rpc-panini-products-bridge`
+at :24/:54 as `cron_heavy`; pipeline `panini-products-bridge`, on the cadence watchlist at `info`).
+It bridges every admitted NON-WC product into `editions` / `sets` / `players` / `fmv_snapshots` /
+`edition_fmv_current`. The WC bridge and its 1.0% gate are untouched.
+
+- **Freshness is per edition:** walked within 45 days or not bridged (`stale_skipped` counts them).
+- **Sets are namespaced** `panini-p<setId>-<slug>` and named "<product> · <set>" ("Panini product
+  <setId> · …" until the registry names the product; the name follows the registry on the next run).
+- **Players** share WC's `panini-<slug>` namespace, insert-only; an ambiguous slug is never linked
+  (`player_slug_collisions`).
+- **FMV** is the ingest route's existing panini-1.1.0 snapshot for each card, copied as the WC bridge
+  copies it.
+
+It writes nothing until the 29 products' cards arrive (first walk after 2026-09-28 11:31 PM PT). Proven
+in a rolled-back transaction; see the migration header. Still open from the list above: **naming**
+(needs `panini_products.sample`, i.e. a walk on a runner that has pulled `e8c76f4d2`) and **pack EV**.
