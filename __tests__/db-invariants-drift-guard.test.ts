@@ -33,8 +33,17 @@ const PINS = [
     // LAST non-wallet withdraw as the delivery, and 429-not-a-failure.
     fn: "run_chain_arrival_lane",
     test: "supabase/tests/run_chain_arrival_lane.sql",
-    // 2026-09-29: the events parse is MATERIALIZED (an 11.9 MB window timed out).
-    migration: "supabase/migrations/20260929173000_audit_20260929_chain_arrival_events_parse_materialized.sql",
+    // 2026-09-29: the events parse is MATERIALIZED (an 11.9 MB window timed out);
+    // then a 'floor' check first, dispatched ahead of bisections.
+    migration:
+      "supabase/migrations/20260929180000_audit_20260929_chain_arrivals_for_every_saved_wallet_floor_check_first.sql",
+  },
+  {
+    // Seeds every saved wallet's unexplained held Top Shot moment at the floor.
+    fn: "seed_saved_wallet_chain_arrivals",
+    test: "supabase/tests/run_chain_arrival_lane.sql",
+    migration:
+      "supabase/migrations/20260929180000_audit_20260929_chain_arrivals_for_every_saved_wallet_floor_check_first.sql",
   },
   {
     fn: "enqueue_chain_arrivals",

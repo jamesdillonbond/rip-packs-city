@@ -14,10 +14,17 @@
 --   W2. No withdraw in the window -> done, saying so (a mint), never a sender.
 --   H1. A 429 is a free retry; any other error counts an attempt, ok=false.
 --   E1. Enqueue refuses an interval below the mainnet24 root or inverted.
+--   F1. A 'floor' probe is ONE script at lo: held there -> done ("arrived
+--       before 2023-11-08"), never bisected; not held -> bisect.
+--   F2. Floor checks dispatch before bisections within a node's cap.
+--   S1. The saved-wallet seed takes only unexplained held Top Shot moments
+--       (not an NFT pack pull, no pack-pull record, not a recorded purchase)
+--       at the floor, never another collection's id, never twice.
 --
 -- The function DDL below is VERBATIM from the committed migration
 -- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
--- run_chain_arrival_lane from 20260929173000_audit_20260929_chain_arrival_events_parse_materialized.sql).
+-- run_chain_arrival_lane + seed_saved_wallet_chain_arrivals from
+-- 20260929180000_audit_20260929_chain_arrivals_for_every_saved_wallet_floor_check_first.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -45,11 +52,11 @@ DECLARE v bigint := nextval('net.req_seq');
 BEGIN INSERT INTO net.calls VALUES (v, url, NULL); RETURN v; END $$;
 
 CREATE TABLE public.chain_arrival_requests (
-  request_id bigint PRIMARY KEY, kind text NOT NULL CHECK (kind IN ('owned', 'events')), wallet text,
+  request_id bigint PRIMARY KEY, kind text NOT NULL CHECK (kind IN ('owned', 'events', 'floor')), wallet text,
   lo bigint NOT NULL, hi bigint NOT NULL, height bigint, node text NOT NULL, dispatched_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE public.chain_arrival_probes (
   wallet text NOT NULL, nft_id bigint NOT NULL, lo bigint NOT NULL, hi bigint NOT NULL,
-  status text NOT NULL DEFAULT 'bisect' CHECK (status IN ('bisect', 'window', 'done', 'failed')),
+  status text NOT NULL DEFAULT 'bisect' CHECK (status IN ('floor', 'bisect', 'window', 'done', 'failed')),
   request_id bigint, attempts int NOT NULL DEFAULT 0, arrived_height bigint, arrived_at timestamptz, tx_id text,
   from_address text, last_error text, created_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz,
   PRIMARY KEY (wallet, nft_id));
@@ -106,6 +113,7 @@ access(all) fun main(owner: Address, ids: [UInt64]): [UInt64] {
   v_body jsonb; v_owned bigint[]; v_req bigint; v_mid bigint; v_node text; v_n int;
   v_collected int := 0; v_bisected int := 0; v_windows_done int := 0; v_found int := 0; v_not_found int := 0;
   v_failed int := 0; v_throttled int := 0; v_expired int := 0; v_dispatched int := 0;
+  v_floor_held int := 0; v_floor_passed int := 0;
   v_last_error text := NULL;
 BEGIN
   IF NOT pg_try_advisory_xact_lock(hashtext('run_chain_arrival_lane')) THEN
@@ -123,15 +131,15 @@ BEGIN
     v_body := NULL;
     IF r.h_status = 200 AND pg_input_is_valid(r.h_content, 'jsonb') THEN
       BEGIN
-        v_body := CASE r.kind
-          WHEN 'owned' THEN convert_from(decode(r.h_content::jsonb #>> '{}', 'base64'), 'UTF8')::jsonb
+        v_body := CASE WHEN r.kind IN ('owned', 'floor')
+          THEN convert_from(decode(r.h_content::jsonb #>> '{}', 'base64'), 'UTF8')::jsonb
           ELSE r.h_content::jsonb END;
       EXCEPTION WHEN others THEN v_body := NULL;
       END;
     END IF;
 
     IF v_body IS NULL
-       OR (r.kind = 'owned' AND v_body->>'type' IS DISTINCT FROM 'Array')
+       OR (r.kind IN ('owned', 'floor') AND v_body->>'type' IS DISTINCT FROM 'Array')
        OR (r.kind = 'events' AND jsonb_typeof(v_body) IS DISTINCT FROM 'array') THEN
       IF r.h_status = 429 THEN
         UPDATE public.chain_arrival_probes SET request_id = NULL, last_error = 'http 429'
@@ -150,7 +158,22 @@ BEGIN
       CONTINUE;
     END IF;
 
-    IF r.kind = 'owned' THEN
+    IF r.kind = 'floor' THEN
+      -- 2026-09-29: held at the floor -> it arrived before the oldest spork we
+      -- can read: done, saying so, never bisected; else bisect it
+      SELECT coalesce(array_agg((x->>'value')::bigint), '{}') INTO v_owned
+        FROM jsonb_array_elements(coalesce(v_body->'value', '[]'::jsonb)) x;
+      UPDATE public.chain_arrival_probes p
+         SET status = CASE WHEN p.nft_id = ANY (v_owned) THEN 'done' ELSE 'bisect' END,
+             last_error = CASE WHEN p.nft_id = ANY (v_owned)
+                               THEN 'held at the floor: arrived before 2023-11-08 (mainnet24 root)' END,
+             finished_at = CASE WHEN p.nft_id = ANY (v_owned) THEN now() END,
+             request_id = NULL
+       WHERE p.request_id = r.request_id;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      v_floor_held := v_floor_held + cardinality(v_owned);
+      v_floor_passed := v_floor_passed + v_n - cardinality(v_owned);
+    ELSIF r.kind = 'owned' THEN
       SELECT coalesce(array_agg((x->>'value')::bigint), '{}') INTO v_owned
         FROM jsonb_array_elements(coalesce(v_body->'value', '[]'::jsonb)) x;
       -- held at the midpoint -> it arrived at or before it; else after it
@@ -234,10 +257,12 @@ BEGIN
     WITH pend AS (
       SELECT p.status, p.wallet, p.lo, p.hi, p.nft_id,
              -- the midpoint; an interval straddling a spork end splits AT it
+             -- (a floor check reads AT lo)
+             CASE WHEN p.status = 'floor' THEN p.lo ELSE
              coalesce((SELECT min(e) FROM unnest(v_ends) e WHERE e > p.lo AND e < p.hi AND p.status = 'bisect'),
-                      (p.lo + p.hi) / 2) AS mid
+                      (p.lo + p.hi) / 2) END AS mid
         FROM public.chain_arrival_probes p
-       WHERE p.request_id IS NULL AND p.status IN ('bisect', 'window')
+       WHERE p.request_id IS NULL AND p.status IN ('floor', 'bisect', 'window')
     ), grp AS (
       SELECT status, wallet, lo, hi, mid,
              (row_number() OVER (PARTITION BY status, wallet, lo, hi ORDER BY nft_id) - 1) / 1000 AS chunk,
@@ -245,7 +270,7 @@ BEGIN
         FROM pend
     ), calls AS (
       SELECT status, wallet, lo, hi, mid, chunk, array_agg(nft_id ORDER BY nft_id) AS ids,
-             CASE WHEN status = 'bisect' THEN mid ELSE lo + 1 END AS at_h
+             CASE WHEN status IN ('bisect', 'floor') THEN mid ELSE lo + 1 END AS at_h
         FROM grp
        GROUP BY status, wallet, lo, hi, mid, chunk
     ), routed AS (
@@ -257,12 +282,13 @@ BEGIN
                   ELSE 'https://rest-mainnet.onflow.org' END AS node
         FROM calls c
     ), ranked AS (
-      SELECT rt.*, row_number() OVER (PARTITION BY rt.node ORDER BY rt.hi - rt.lo, rt.lo) AS rn
+      -- floor checks first: one call settles 1,000 ids arrived before the floor
+      SELECT rt.*, row_number() OVER (PARTITION BY rt.node ORDER BY (rt.status <> 'floor'), rt.hi - rt.lo, rt.lo) AS rn
         FROM routed rt
     )
     SELECT * FROM ranked WHERE rn <= v_per_node
   LOOP
-    IF r.status = 'bisect' THEN
+    IF r.status IN ('bisect', 'floor') THEN
       SELECT net.http_post(
         url := r.node || '/v1/scripts?block_height=' || r.mid,
         body := jsonb_build_object(
@@ -275,7 +301,7 @@ BEGIN
         timeout_milliseconds := 30000
       ) INTO v_req;
       INSERT INTO public.chain_arrival_requests (request_id, kind, wallet, lo, hi, height, node)
-      VALUES (v_req, 'owned', r.wallet, r.lo, r.hi, r.mid, r.node);
+      VALUES (v_req, CASE WHEN r.status = 'floor' THEN 'floor' ELSE 'owned' END, r.wallet, r.lo, r.hi, r.mid, r.node);
     ELSE
       SELECT net.http_get(
         url := r.node || '/v1/events?type=A.0b2a3299cc857e29.TopShot.Withdraw&start_height=' || (r.lo + 1) || '&end_height=' || r.hi,
@@ -296,17 +322,80 @@ BEGIN
     'nba_top_shot', NULL, NULL,
     jsonb_build_object('bisected', v_bisected, 'windows_read', v_windows_done, 'found', v_found,
                        'not_found', v_not_found, 'failed', v_failed, 'throttled', v_throttled,
-                       'expired', v_expired, 'dispatched', v_dispatched)
+                       'expired', v_expired, 'dispatched', v_dispatched,
+                       'floor_held', v_floor_held, 'floor_passed', v_floor_passed)
   );
 
   RETURN jsonb_build_object('ok', v_failed = 0, 'collected', v_collected, 'bisected', v_bisected,
                             'windows_read', v_windows_done, 'found', v_found, 'not_found', v_not_found,
                             'failed', v_failed, 'throttled', v_throttled, 'expired', v_expired,
-                            'dispatched', v_dispatched, 'last_error', v_last_error);
+                            'dispatched', v_dispatched, 'floor_held', v_floor_held,
+                            'floor_passed', v_floor_passed, 'last_error', v_last_error);
 END;
 $function$;
 -- <<< END verbatim <<<
 
+
+-- seed stubs
+CREATE TABLE public.saved_wallets (wallet_addr text);
+CREATE TABLE public.wallet_moments_cache (wallet_address text, moment_id text, collection_id uuid);
+CREATE TABLE public.pack_open_pulls (collection_id uuid, pack_nft_id text, nft_id text);
+CREATE TABLE public.moment_acquisitions (wallet text, collection_id uuid, nft_id text, acquisition_method text);
+CREATE TABLE public.sales (collection_id uuid, nft_id text, buyer_address text);
+CREATE FUNCTION public.flow_height_estimate(p_at timestamptz) RETURNS bigint LANGUAGE sql AS $$ SELECT 166000000::bigint $$;
+
+-- >>> BEGIN verbatim seed_saved_wallet_chain_arrivals (body byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.seed_saved_wallet_chain_arrivals()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '300s'
+AS $function$
+DECLARE
+  v_started timestamptz := clock_timestamp();
+  v_ts      constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+  v_floor   constant bigint := 65300000;       -- just past the mainnet24 root
+  v_hi      bigint := public.flow_height_estimate(now() - interval '15 minutes');
+  v_seeded  int := 0; v_wallets int := 0;
+BEGIN
+  IF v_hi IS NULL OR v_hi <= v_floor THEN
+    PERFORM public.log_pipeline_run('chain-arrivals-seed', v_started, 0, 0, 0, false, 'no height estimate for now()',
+      'nba_top_shot', NULL, NULL, '{}'::jsonb);
+    RETURN jsonb_build_object('ok', false, 'reason', 'no height estimate for now()');
+  END IF;
+
+  -- every held Top Shot moment of a saved wallet we cannot already explain:
+  -- not a known NFT pack pull, no pack-pull record, not a recorded purchase.
+  -- It starts at the FLOOR check (held at the mainnet24 root -> done).
+  WITH w AS (
+    SELECT DISTINCT lower(trim(wallet_addr)) AS wallet FROM public.saved_wallets
+     WHERE lower(trim(wallet_addr)) ~ '^0x[0-9a-f]{16}$'
+  ), ids AS (
+    SELECT w.wallet, m.moment_id::bigint AS nft_id
+      FROM w
+      JOIN public.wallet_moments_cache m
+        ON m.wallet_address = w.wallet AND m.collection_id = v_ts AND m.moment_id ~ '^[0-9]{1,15}$'
+     WHERE NOT EXISTS (SELECT 1 FROM public.pack_open_pulls o WHERE o.collection_id = v_ts AND o.nft_id = m.moment_id)
+       AND NOT EXISTS (SELECT 1 FROM public.moment_acquisitions a
+                        WHERE a.wallet = w.wallet AND a.collection_id = v_ts AND a.nft_id = m.moment_id
+                          AND a.acquisition_method = 'pack_pull')
+       AND NOT EXISTS (SELECT 1 FROM public.sales s
+                        WHERE s.collection_id = v_ts AND s.nft_id = m.moment_id AND s.buyer_address = w.wallet)
+  ), ins AS (
+    INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
+    SELECT wallet, nft_id, v_floor, v_hi, 'floor' FROM ids
+    ON CONFLICT (wallet, nft_id) DO NOTHING
+    RETURNING wallet
+  )
+  SELECT count(*), count(DISTINCT wallet) INTO v_seeded, v_wallets FROM ins;
+
+  PERFORM public.log_pipeline_run('chain-arrivals-seed', v_started, v_seeded, v_seeded, 0, true, NULL,
+    'nba_top_shot', NULL, NULL, jsonb_build_object('seeded', v_seeded, 'wallets', v_wallets, 'hi', v_hi));
+  RETURN jsonb_build_object('ok', true, 'seeded', v_seeded, 'wallets', v_wallets, 'hi', v_hi);
+END;
+$function$;
+-- <<< END verbatim <<<
 
 -- helpers
 CREATE FUNCTION pg_temp.call_ids(p_id bigint) RETURNS bigint[] LANGUAGE sql AS $$
@@ -412,6 +501,65 @@ BEGIN
   PERFORM _assert((SELECT attempts = 1 AND last_error LIKE 'http 400%' FROM public.chain_arrival_probes WHERE nft_id = 3), 'H1: a 400 counts an attempt');
   PERFORM _assert(NOT (v->>'ok')::boolean AND (v->>'throttled')::int = 1 AND (v->>'failed')::int = 1, 'H1: ok=false, one throttled, one failed');
   PERFORM _assert((SELECT request_id IS NOT NULL FROM public.chain_arrival_probes WHERE nft_id = 1), 'H1: the throttled probe is re-dispatched');
+END $$;
+
+-- F1 / F2: a floor probe on mainnet26's node beside a pending bisection there
+DELETE FROM net.calls;
+UPDATE public.chain_arrival_probes SET request_id = NULL WHERE request_id IS NOT NULL;
+DELETE FROM public.chain_arrival_requests;
+DELETE FROM public.chain_arrival_probes WHERE status IN ('bisect', 'window');
+INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status) VALUES
+  ('0x00000000000000bb', 20, 100000000, 166000000, 'floor'),
+  ('0x00000000000000bb', 21, 100000000, 166000000, 'floor');
+-- 12 narrower bisections on the same node: without floor priority they fill
+-- mainnet26's cap of 12 and the floor check waits
+INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
+SELECT '0x00000000000000dd', 900 + g, 100000000 + g * 10000, 100000000 + g * 10000 + 5000, 'bisect' FROM generate_series(1, 12) g;
+DO $$
+DECLARE v jsonb; v_req bigint;
+BEGIN
+  v := public.run_chain_arrival_lane();
+  SELECT request_id INTO v_req FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000bb' AND nft_id = 20;
+  PERFORM _assert(v_req IS NOT NULL AND v_req = (SELECT request_id FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000bb' AND nft_id = 21),
+                  'F1: the floor probes share one call');
+  PERFORM _assert((SELECT kind = 'floor' AND height = 100000000 FROM public.chain_arrival_requests WHERE request_id = v_req),
+                  'F1: a floor call reads AT lo');
+  PERFORM _assert((SELECT url FROM net.calls WHERE id = v_req) = 'http://access-001.mainnet26.nodes.onflow.org:8070/v1/scripts?block_height=100000000',
+                  'F1: on the node serving lo');
+  PERFORM _assert((SELECT count(*) = 12 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'), 'F2: the node''s cap of 12 binds');
+  PERFORM _assert(v_req IS NOT NULL, 'F2: the floor check is inside the cap, ahead of narrower bisections');
+  INSERT INTO net._http_response (id, status_code, content)
+  VALUES (v_req, 200, to_jsonb(translate(encode(convert_to('{"type":"Array","value":[{"type":"UInt64","value":"20"}]}', 'UTF8'), 'base64'), E'\n', ''))::text);
+  v := public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT status = 'done' AND last_error LIKE 'held at the floor%' AND from_address IS NULL
+                     FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000bb' AND nft_id = 20),
+                  'F1: held at the floor -> done, saying so');
+  PERFORM _assert((SELECT status = 'bisect' AND lo = 100000000 AND hi = 166000000
+                     FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000bb' AND nft_id = 21),
+                  'F1: not held at the floor -> bisected over the same interval');
+  PERFORM _assert_eq(v->>'floor_held', '1', 'F1: counted');
+END $$;
+
+-- S1
+INSERT INTO public.saved_wallets VALUES ('0x00000000000000CC '), ('not-an-address');
+INSERT INTO public.wallet_moments_cache VALUES
+  ('0x00000000000000cc', '501', '95f28a17-224a-4025-96ad-adf8a4c63bfd'),   -- unexplained -> seeded
+  ('0x00000000000000cc', '502', '95f28a17-224a-4025-96ad-adf8a4c63bfd'),   -- an NFT pack pull
+  ('0x00000000000000cc', '503', '95f28a17-224a-4025-96ad-adf8a4c63bfd'),   -- a CSV pack pull
+  ('0x00000000000000cc', '504', '95f28a17-224a-4025-96ad-adf8a4c63bfd'),   -- a recorded purchase
+  ('0x00000000000000cc', '505', 'dee28451-5d62-409e-a1ad-a83f763ac070');   -- All Day
+INSERT INTO public.pack_open_pulls VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PK', '502');
+INSERT INTO public.moment_acquisitions VALUES ('0x00000000000000cc', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '503', 'pack_pull');
+INSERT INTO public.sales VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '504', '0x00000000000000cc');
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.seed_saved_wallet_chain_arrivals();
+  PERFORM _assert_eq(v->>'seeded', '1', 'S1: only the unexplained Top Shot moment');
+  PERFORM _assert((SELECT status = 'floor' AND lo = 65300000 AND hi = 166000000
+                     FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000cc' AND nft_id = 501),
+                  'S1: seeded at the floor, up to now');
+  PERFORM _assert_eq((public.seed_saved_wallet_chain_arrivals())->>'seeded', '0', 'S1: never twice');
 END $$;
 
 ROLLBACK;
