@@ -184,6 +184,26 @@ describe("hybrid-custody-backfill carries the child-side probe", () => {
     expect(edge).not.toMatch(/if \(!r\.hasManager\) return;/)
   })
 
+  it("the pg_cron gate: ?key= is checked against Vault via cron_gate_key, and a failed read DENIES", () => {
+    const fn = edge.slice(edge.indexOf("async function authOk"), edge.indexOf("async function authOk") + 1200)
+    expect(fn).toMatch(/supabase\.rpc\("cron_gate_key", \{ p_fn: "hybrid-custody-backfill" \}\)/)
+    // fail closed: the error branch returns false, and there is no `return true`
+    // after the Vault read other than the constant-time comparison itself.
+    expect(fn).toMatch(/if \(error \|\| typeof data !== "string" \|\| !data\) \{[\s\S]*?return false;/)
+    expect(fn).toMatch(/return timingSafeEqual\(key, data\);/)
+    expect(fn.split("return true").length - 1).toBe(1) // only the Bearer arm
+    expect(edge).toMatch(/if \(!\(await authOk\(req, url\)\)\)/)
+  })
+
+  it("the migration that schedules it GENERATES the key in-DB and sends scope=wallets", () => {
+    const mig = readFileSync(
+      join(root, "supabase/migrations/20260929234000_audit_20260929_hybrid_custody_backfill_daily_wallets_lane.sql"),
+      "utf8",
+    )
+    expect(mig).toMatch(/vault\.create_secret\(\s*encode\(extensions\.gen_random_bytes\(32\), 'hex'\)/)
+    expect(mig).toMatch(/hybrid-custody-backfill\?key=' \|\| public\.cron_gate_key\('hybrid-custody-backfill'\) \|\| '&scope=wallets'/)
+  })
+
   it("the run's ok is DERIVED from probe errors and failed writes, never hardcoded true", () => {
     expect(edge).toMatch(/const ok = probeErrors === 0 && pairsFailed === 0;/)
     expect(edge).not.toMatch(/ok: true,\s*\n\s*error: probeErrors/)

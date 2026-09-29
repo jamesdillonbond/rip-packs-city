@@ -15,17 +15,24 @@
 // links on saved+seeded wallets (and 65 of 67 on a 400-trader sample) absent.
 // The child side (OwnedAccount redeemed parents) closes it.
 //
-// Trigger: ad-hoc POST, NOT cron. Returns 202 immediately and runs in
-// EdgeRuntime.waitUntil() until completion or the platform deadline. The full
-// candidate set (~6.8k) outruns one invocation, so page it:
-//   body {"scope":"wallets"}                 saved+seeded only
-//   body {"scope":"all","offset":0,"limit":1500}  the RPC set, one page
+// Triggers (both return 202 and run in EdgeRuntime.waitUntil()):
+//   - pg_cron daily, scope=wallets (job rpc-hybrid-custody-backfill-wallets):
+//     GET ?key=<cron_gate_key('hybrid-custody-backfill')>&scope=wallets. A
+//     wallet saved AFTER the event cursor started, whose link predates it, is
+//     otherwise never seen.
+//   - ad hoc, Authorization: Bearer <INGEST_SECRET_TOKEN>, POST body or query.
+// The full candidate set (~6.6k) outruns one invocation, so page it:
+//   {"scope":"wallets"}                        saved+seeded only (~0.3k, ~9 s)
+//   {"scope":"all","offset":0,"limit":3000}    the RPC set, one page (~80 s)
 // extra.next_offset in pipeline_runs names the next page (null = done).
 //
-// Idempotency: record_link_state with p_event_block=null only writes when no
-// event-based row exists yet (or when the prior row was also script-sourced).
-// Re-running the backfill never overrides real chain events with stale script
-// reads.
+// Idempotency: record_link_state upserts on (parent, child). A script write
+// carries p_event_block=null, which record_link_state treats as current state:
+// it sets active=true (keeping source='event' on an event row). That is right
+// only because this function writes a pair solely when the chain says the link
+// is redeemed NOW. It never writes active=false, so a link removed before the
+// event cursor started is not retired here; every later removal is an
+// AccountUpdated(active:false) the event ingester applies.
 
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
@@ -148,11 +155,29 @@ const SCRIPT_B64 = btoa(CADENCE_SCRIPT);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function authOk(req: Request): boolean {
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// Bearer INGEST_SECRET_TOKEN (ad hoc), or ?key= equal to the Vault gate key the
+// pg_cron job sends. The Vault value was generated inside Postgres and is read
+// here through the service-role client, so no copy of it exists anywhere else.
+// A failed Vault read DENIES (fail closed), never falls through to allow.
+async function authOk(req: Request, url: URL): Promise<boolean> {
   const h = req.headers.get("Authorization") ?? "";
   const m = h.match(/^Bearer\s+(.+)$/i);
-  if (!m) return false;
-  return m[1].trim() === INGEST_TOKEN;
+  if (m && timingSafeEqual(m[1].trim(), INGEST_TOKEN!)) return true;
+  const key = url.searchParams.get("key");
+  if (!key) return false;
+  const { data, error } = await supabase.rpc("cron_gate_key", { p_fn: "hybrid-custody-backfill" });
+  if (error || typeof data !== "string" || !data) {
+    console.log(`[hybrid-custody-backfill] gate key read failed: ${error?.message?.slice(0, 120) ?? "empty"}`);
+    return false;
+  }
+  return timingSafeEqual(key, data);
 }
 
 function encodeAddressArg(addr: string): string {
@@ -493,17 +518,21 @@ async function run(startedAtIso: string, opts: RunOpts): Promise<void> {
 }
 
 Deno.serve(async (req: Request) => {
-  if (!authOk(req)) {
+  const url = new URL(req.url);
+  if (!(await authOk(req, url))) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  let body: Record<string, unknown> = {};
+  // Params from the query string (pg_cron GET) overlaid by a JSON body (POST).
+  let body: Record<string, unknown> = Object.fromEntries(
+    ["scope", "offset", "limit"].flatMap((k) => url.searchParams.has(k) ? [[k, url.searchParams.get(k)]] : []),
+  );
   try {
-    const text = await req.text();
-    if (text.trim()) body = JSON.parse(text);
+    const text = req.method === "GET" ? "" : await req.text();
+    if (text.trim()) body = { ...body, ...JSON.parse(text) };
   } catch {
     return new Response(JSON.stringify({ error: "body must be JSON" }), {
       status: 400,
