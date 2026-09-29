@@ -426,6 +426,10 @@ export async function GET(req: NextRequest) {
     //     rows not present in the supplied set. This is the authoritative reconcile.
     //   · `prune_stale_wmc()` — pg_cron jobid 199, weekly, Sundays.
     //   · `purge_candy_wmc_ghost_rows()` — pg_cron jobid 201, daily.
+    //   · ⚠ ADDED 2026-09-28 — this list had missed the MAIN one: `deleteUnseenWmcRows`
+    //     (lib/chains/flow/wmc-unseen-delete.ts), run by every Flow wallet-backfill runner on a
+    //     complete pass. It is also the only writer of `wmc_clean_walks`, the floor the trophy
+    //     "Not in saved wallets" marker rests on.
     // This route is the INCREMENTAL stub path. It inserts and enriches; it has never deleted, and
     // `grep -n '\.delete('` over this file returns nothing. The key is kept at a literal 0 rather
     // than dropped so the response shape is unchanged (it has no reader in this repo — checked),

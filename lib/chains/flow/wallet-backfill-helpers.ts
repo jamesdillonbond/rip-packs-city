@@ -498,10 +498,16 @@ const STATS_MAX_AGE_MS = 6 * 60 * 60 * 1000
 //      5 children fire-and-forget (only AllDay + Pinnacle are sync), so it has
 //      no point at which all five are known to be done.
 //
-//   2. seeded_wallets.last_refreshed_per_collection[slug] — CHEAP, and the
-//      freshness marker the multi-collection cron uses to find stale wallets
-//      per collection. It means "we checked", not "something changed", so it is
-//      written unconditionally on every call, including skipped ones.
+//   2. seeded_wallets.last_refreshed_per_collection[slug] — CHEAP. It means
+//      "we checked", not "something changed", so it is written unconditionally
+//      on every call, including skipped ones (and on timeouts / degraded runs).
+//      ⚠ NOT PER-COLLECTION IN PRACTICE (measured 2026-09-28: 262 of 280 rows
+//      hold ONE key, 18 hold none): the `.update({ [slug]: ts })` below REPLACES
+//      the whole jsonb, so it holds only the LAST collection walked. Harmless
+//      today — its one reader, seed-wallet-refresh `lastWalkMs`, takes the MAX
+//      over keys, which the last write always is. ⛔ Do not build a per-slug
+//      reader on it without merging here first, and do not read it as proof of
+//      a COMPLETE walk: that is `wmc_clean_walks` (wmc-unseen-delete.ts).
 async function stampLastRefreshed(wallet: string, slug: string, changedRows?: number) {
   let refreshStats = true
   if (changedRows === 0) {
