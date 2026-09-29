@@ -275,14 +275,18 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
   const [detail, setDetail] = useState<{ pool: PoolRow[]; claims: ClaimRow[] } | null>(null)
   const [open, setOpen] = useState(drop.status === "open")
   const [msg, setMsg] = useState<string | null>(null)
+  // A failed DETAIL read has its own line: it must never overwrite an action's result
+  // (a Verify report replaced by "HTTP 500" would hide which recipients failed).
+  const [detailError, setDetailError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     const r = await call(`/api/admin/giveaways/${drop.id}`)
     if (!r.ok) {
-      setMsg(String(r.body?.error ?? `HTTP ${r.status}`))
+      setDetailError(String(r.body?.error ?? `HTTP ${r.status}`))
       return
     }
+    setDetailError(null)
     setDetail({ pool: (r.body?.pool as PoolRow[]) ?? [], claims: (r.body?.claims as ClaimRow[]) ?? [] })
   }, [call, drop.id])
 
@@ -291,7 +295,7 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
     let live = true
     void call(`/api/admin/giveaways/${drop.id}`).then((r) => {
       if (!live) return
-      if (!r.ok) setMsg(String(r.body?.error ?? `HTTP ${r.status}`))
+      if (!r.ok) setDetailError(String(r.body?.error ?? `HTTP ${r.status}`))
       else setDetail({ pool: (r.body?.pool as PoolRow[]) ?? [], claims: (r.body?.claims as ClaimRow[]) ?? [] })
     })
     return () => {
@@ -367,6 +371,9 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
         </button>
       </div>
       {msg ? <p style={{ fontSize: 13, fontFamily: MONO, color: "var(--rpc-text-secondary)", margin: "8px 0 0" }}>{msg}</p> : null}
+      {open && detailError ? (
+        <p style={{ fontSize: 13, fontFamily: MONO, color: "var(--rpc-danger)", margin: "8px 0 0" }}>Couldn&apos;t load the checklist: {detailError}</p>
+      ) : null}
       {open && detail ? (
         <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
           <thead>
