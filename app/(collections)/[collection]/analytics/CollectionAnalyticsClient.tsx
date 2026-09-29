@@ -591,7 +591,8 @@ function OrderBookCard({ short }: { short: string }) {
   )
 }
 
-function FmvHealthCard({ short }: { short: string }) {
+// `countNoun`: what one priced row is — an edition, or (Pinnacle) a pin.
+function FmvHealthCard({ short, countNoun }: { short: string; countNoun: string }) {
   const [rows, setRows] = useState<FmvTierRow[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
@@ -649,7 +650,7 @@ function FmvHealthCard({ short }: { short: string }) {
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
             <span style={{ color: "var(--rpc-warning)" }}>{totals.low.toLocaleString("en-US")} low</span>
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
-            <span className="text-[color:var(--rpc-text-muted)]">{totals.edition.toLocaleString("en-US")} editions</span>
+            <span className="text-[color:var(--rpc-text-muted)]">{totals.edition.toLocaleString("en-US")} {countNoun}</span>
           </div>
         </>
       )}
@@ -725,7 +726,7 @@ function PackEvCard({ short, urlSlug }: { short: string; urlSlug: string }) {
   )
 }
 
-function LiquidityHeatmapCard({ short }: { short: string }) {
+function LiquidityHeatmapCard({ short, countNoun }: { short: string; countNoun: string }) {
   type Row = {
     collection: string
     l5: number; l4: number; l3: number; l2: number; l1: number; l0: number
@@ -777,7 +778,7 @@ function LiquidityHeatmapCard({ short }: { short: string }) {
         </div>
         {row && (
           <div className="text-[11px] text-[color:var(--rpc-text-secondary)]" style={{ fontFamily: "var(--font-mono)" }}>
-            {total.toLocaleString("en-US")} editions · {fmt(fmv)} reliable FMV
+            {total.toLocaleString("en-US")} {countNoun} · {fmt(fmv)} reliable FMV
           </div>
         )}
       </div>
@@ -972,6 +973,8 @@ function AnalyticsInner() {
   const isPinnacle = collection === "disney-pinnacle"
   // Pinnacle says Character, not Player (lib/entity-labels.ts).
   const labels = getEntityLabels(collection)
+  // Pinnacle prices each PIN (pinnacle_catalog), not an edition.
+  const pricedNoun = labels.units === "Pins" ? "pins" : "editions"
 
   // Sync tab to URL.
   const switchTab = useCallback((next: "market" | "portfolio") => {
@@ -1242,13 +1245,13 @@ function AnalyticsInner() {
           {/* 2x2 grid of new cards */}
           <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
             <OrderBookCard short={short} />
-            <FmvHealthCard short={short} />
+            <FmvHealthCard short={short} countNoun={pricedNoun} />
             <PackEvCard short={short} urlSlug={collection} />
           </section>
 
           {/* Liquidity heatmap (full-width — needs the room for the 6-bucket mini-grid) */}
           <div className="mb-6">
-            <LiquidityHeatmapCard short={short} />
+            <LiquidityHeatmapCard short={short} countNoun={pricedNoun} />
           </div>
 
           {/* Whale leaderboard */}

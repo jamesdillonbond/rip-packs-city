@@ -209,6 +209,20 @@ const PINS = [
       "supabase/migrations/20260929021346_audit_20260928_pinnacle_wmc_fmv_follows_the_catalog_to_null.sql",
   },
   {
+    fn: "analytics_fmv_tier_pulse",
+    test: "supabase/tests/analytics_fmv_tier_pulse.sql",
+    // 2026-09-28: Pinnacle FMV Health reads pinnacle_catalog (never snapshots).
+    migration:
+      "supabase/migrations/20260929022013_audit_20260928_pinnacle_analytics_fmv_health_and_order_book.sql",
+  },
+  {
+    fn: "analytics_listings_summary",
+    test: "supabase/tests/analytics_listings_summary.sql",
+    // 2026-09-28: Pinnacle Order Book Depth reads pinnacle_live_listings.
+    migration:
+      "supabase/migrations/20260929022013_audit_20260928_pinnacle_analytics_fmv_health_and_order_book.sql",
+  },
+  {
     // Added 2026-09-26. The pulls a wallet's pack row shows: Dapper's list for
     // THIS pack and opener, else the wallet's own reconstructed burst, else
     // nothing -- never the moment_acquisitions linkage that listed 95 "pulls"
