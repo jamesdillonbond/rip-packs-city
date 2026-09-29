@@ -1851,23 +1851,39 @@ async function computeSniperFeed(opts: {
   ).size;
   if (tsListings.length < TS_GQL_SPARSE_THRESHOLD || tsDistinctEditions < TS_GQL_SPARSE_THRESHOLD) {
     console.log(`[sniper-feed] TS pool sparse (${tsListings.length} listings over ${tsDistinctEditions} editions) — augmenting with get_topshot_sniper_deals RPC`);
-    const { data: rpcRows, error: rpcErr } = await boundedRead(
+    // p_team is one exact label, so a franchise pick asks once per label it has
+    // carried (measured 10-30 ms a call) — else the edition-level rows, which
+    // dominate a sparse board, would be the picked label's alone.
+    const rpcTeams = team === "all" ? ["all"] : Array.from(teamLabels ?? [team]);
+    const rpcReads = await Promise.all(rpcTeams.map((t) => boundedRead(
       (supabase as any).rpc("get_topshot_sniper_deals", {
         p_min_discount: minDiscount,
         p_max_price: maxPrice,
         p_rarity: rarity === "all" ? "all" : rarity,
-        p_team: team === "all" ? "all" : team,
+        p_team: t,
         p_sort_by: sortBy,
         p_limit: 200,
       }),
       "get_topshot_sniper_deals",
-    );
+    )));
+    const rpcErr = rpcReads.find((r) => r.error)?.error ?? null;
+    const seenRpc = new Set<string>();
+    const rpcRows = rpcReads.flatMap((r) => (r.data ?? []) as any[]).filter((r) => {
+      const k = String(r.moment_id ?? "");
+      if (!k) return true;
+      if (seenRpc.has(k)) return false;
+      seenRpc.add(k);
+      return true;
+    });
     if (rpcErr) {
       console.error(`[sniper-feed] get_topshot_sniper_deals error: ${rpcErr.message}`);
       // Reached only when the GQL pool is already sparse, so this failure is
       // the difference between a populated board and an apparently quiet one.
       sink.note("topshot-deals-rpc");
-    } else {
+    }
+    // A franchise pick's labels are read separately; the ones that answered
+    // still render (the failed one is reported above).
+    {
       // No usable FMV -> no row. `Number(r.fmv_usd) || 0` below would emit
       // baseFmv/adjustedFmv 0 — a literal $0.00 fair value (see hasUsableFmv).
       rpcDeals = (rpcRows ?? []).filter(hasUsableFmv).map((r: any) => {

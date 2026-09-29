@@ -22,7 +22,8 @@ type Call = { table: string; ops: Op[] }
 const fx = vi.hoisted(() => ({
   calls: [] as Array<{ table: string; ops: Array<[string, unknown[]]> }>,
   resolve: (() => ({ data: [], error: null })) as (table: string, ops: Array<[string, unknown[]]>) => { data: unknown; error: unknown },
-  rpc: {} as Record<string, { data: unknown; error: unknown }>,
+  rpc: {} as Record<string, { data: unknown; error: unknown } | ((args: any) => { data: unknown; error: unknown })>,
+  rpcCalls: [] as Array<{ name: string; args: any }>,
 }))
 
 vi.mock("@/lib/cache", () => ({
@@ -47,7 +48,11 @@ vi.mock("@/lib/supabase", () => {
   return {
     supabaseAdmin: {
       from: (t: string) => builder(t),
-      rpc: async (name: string) => fx.rpc[name] ?? { data: [], error: null },
+      rpc: async (name: string, args?: any) => {
+        fx.rpcCalls.push({ name, args })
+        const v = fx.rpc[name]
+        return typeof v === "function" ? v(args) : v ?? { data: [], error: null }
+      },
     },
   }
 })
@@ -99,6 +104,7 @@ function defaultResolve(poolRows: unknown[]) {
 
 beforeEach(() => {
   fx.calls = []
+  fx.rpcCalls = []
   fx.rpc = {
     get_editions_latest_fmv_wide: {
       data: EDITIONS.map((e) => ({
@@ -177,6 +183,27 @@ describe("sniper-feed ?team= covers every label of the franchise", () => {
     const teams = new Set(body.deals.map((d: { teamName: string }) => d.teamName))
     expect(teams).toEqual(new Set(["LA Clippers", "Los Angeles Clippers"]))
     expect(body.teamApplied).toBe("LA Clippers")
+  })
+
+  it("the sparse-board edition fallback is asked once per franchise label and merges them", async () => {
+    fx.rpc.team_franchise_slugs = { data: ["la-clippers", "los-angeles-clippers"], error: null }
+    const edRow = (moment_id: string, team_name: string) => ({
+      moment_id, player_name: "Clipper", team_name, set_name: "Base Set", series_name: "4", tier: "COMMON",
+      circulation_count: 1000, ask_price: 50, fmv_usd: 100, confidence: "HIGH", listed_at: "2026-09-29T00:00:00Z",
+    })
+    fx.rpc.get_topshot_sniper_deals = (args: { p_team: string }) => ({
+      data: args.p_team === "LA Clippers" ? [edRow("11:12", "LA Clippers")]
+        : args.p_team === "Los Angeles Clippers" ? [edRow("13:14", "Los Angeles Clippers"), edRow("11:12", "LA Clippers")]
+        : [],
+      error: null,
+    })
+    fx.resolve = defaultResolve(pool) // 2 editions: sparse, so the fallback runs
+    const body = await (await GET(get(`?collection=nba-top-shot&team=${encodeURIComponent("LA Clippers")}`))).json()
+    const asked = fx.rpcCalls.filter((c) => c.name === "get_topshot_sniper_deals").map((c) => c.args.p_team).sort()
+    expect(asked).toEqual(["LA Clippers", "Los Angeles Clippers"])
+    const edIds = body.deals.filter((d: { flowId: string }) => !d.flowId).map((d: { momentId: string }) => d.momentId).sort()
+    expect(edIds).toEqual(["11:12", "13:14"]) // merged, and 11:12 once
+    expect(body.degraded).toBe(false)
   })
 
   it("a failed franchise lookup falls back to the exact label AND reports the board as narrowed", async () => {
