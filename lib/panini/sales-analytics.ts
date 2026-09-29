@@ -4,7 +4,7 @@
 // missing its coverage block, its daily series or its window is REJECTED (null) so the tab says
 // "couldn't load" instead of rendering zeros; a missing number inside a row is null, never 0.
 
-import type { PaniniSalesAnalytics, PaniniDay, PaniniSaleRow, PaniniTradedRow, PaniniGroupRow, PaniniPlayerRow } from "@/components/collection/PaniniAnalytics"
+import type { PaniniSalesAnalytics, PaniniDay, PaniniSaleRow, PaniniTradedRow, PaniniGroupRow, PaniniPlayerRow, PaniniSerialPremiumRow, PaniniSerialKind } from "@/components/collection/PaniniAnalytics"
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null
@@ -62,6 +62,13 @@ export function parsePaniniSalesAnalytics(raw: unknown): PaniniSalesAnalytics | 
     if (!name || n === null || eds === null) return null
     return { player_name: name, sales: n, volume_usd: num(x.volume_usd), median_usd: num(x.median_usd), editions_traded: eds }
   }
+  const KINDS: readonly string[] = ["serial_1", "last", "serial_2_10", "other"]
+  const premium = (x: Record<string, unknown>): PaniniSerialPremiumRow | null => {
+    const kind = str(x.kind), run = str(x.print_run), n = num(x.sales), m = num(x.median_multiple)
+    // A row without its multiple is dropped — never rendered as 0x or 1x.
+    if (!kind || !KINDS.includes(kind) || !run || n === null || m === null) return null
+    return { kind: kind as PaniniSerialKind, print_run: run, sales: n, median_multiple: m, p25_multiple: num(x.p25_multiple), p75_multiple: num(x.p75_multiple) }
+  }
   const keep = <T,>(xs: (T | null)[]) => xs.filter((x): x is T => x !== null)
   return {
     generated_at: str(o.generated_at),
@@ -80,5 +87,6 @@ export function parsePaniniSalesAnalytics(raw: unknown): PaniniSalesAnalytics | 
     by_parallel: keep(arr(o.by_parallel).map(group("parallel"))),
     // Absent key (a payload from before 20260929130614) is null — "not computed", never "no sales".
     by_player: Array.isArray(o.by_player) ? keep(arr(o.by_player).map(player)) : null,
+    serial_premium: Array.isArray(o.serial_premium) ? keep(arr(o.serial_premium).map(premium)) : null,
   }
 }

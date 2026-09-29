@@ -36,6 +36,8 @@ export interface PaniniSaleRow {
 }
 export interface PaniniTradedRow { edition_external_id: string; player_name: string | null; set_name: string | null; tier: string | null; sales: number; volume_usd: Num; median_usd: Num }
 export interface PaniniPlayerRow { player_name: string; sales: number; volume_usd: Num; median_usd: Num; editions_traded: number }
+export type PaniniSerialKind = "serial_1" | "last" | "serial_2_10" | "other"
+export interface PaniniSerialPremiumRow { kind: PaniniSerialKind; print_run: string; sales: number; median_multiple: number; p25_multiple: Num; p75_multiple: Num }
 export interface PaniniGroupRow { sales: number; volume_usd: Num; median_usd: Num; tier?: string; parallel?: string }
 export interface PaniniSalesAnalytics {
   generated_at: string | null
@@ -59,6 +61,8 @@ export interface PaniniSalesAnalytics {
   by_parallel: PaniniGroupRow[]
   /** null = this payload does not carry the list (the section is hidden), never "no sales". */
   by_player: PaniniPlayerRow[] | null
+  /** null = this payload does not carry the table (the section is hidden). */
+  serial_premium: PaniniSerialPremiumRow[] | null
 }
 
 /** The share of active editions whose sales RPC must hold for a day to count as complete. */
@@ -126,6 +130,15 @@ function Table({ head, children }: { head: string[]; children: React.ReactNode }
 }
 function editionHref(key: string) {
   return `/panini-blockchain/edition/${encodeURIComponent(key)}`
+}
+const SERIAL_KIND_LABEL: Record<PaniniSerialKind, string> = {
+  serial_1: "#1",
+  last: "Last serial (e.g. #25/25)",
+  serial_2_10: "#2–10",
+  other: "Every other serial",
+}
+function multiple(n: Num | undefined): string {
+  return n == null ? "—" : `${n.toFixed(2)}×`
 }
 function playerHref(name: string) {
   return `/panini-blockchain/player/${encodeURIComponent(slugifyPlayerName(name))}`
@@ -301,6 +314,25 @@ export default function PaniniAnalytics({ data }: { data: PaniniSalesAnalytics |
         </Table>
       )}
       <Note>Players ranked by the sales RPC holds from these days; cards outside RPC&apos;s catalogue are not in this list.</Note>
+      </>) : null}
+
+      {data.serial_premium && data.serial_premium.length > 0 ? (<>
+      <H2>Serial premiums · all sales on record</H2>
+      <Table head={["Print run", "Serial", "Sales", "Typical price", "Middle half"]}>
+        {data.serial_premium.map((r) => (
+          <tr key={`${r.print_run}|${r.kind}`} data-serial-kind={r.kind}>
+            <td style={td}>/{r.print_run}</td>
+            <td style={{ ...td, color: "var(--rpc-text-primary)" }}>{SERIAL_KIND_LABEL[r.kind]}</td>
+            <td style={td}>{int(r.sales)}</td>
+            <td style={td}>{multiple(r.median_multiple)}</td>
+            <td style={td}>{r.p25_multiple != null && r.p75_multiple != null ? `${multiple(r.p25_multiple)} – ${multiple(r.p75_multiple)}` : "—"}</td>
+          </tr>
+        ))}
+      </Table>
+      <Note>
+        What a serial sells for as a multiple of the same card&apos;s usual price — the median of its other sales, excluding #1 and the last serial, on
+        cards with at least 3 such sales on record. 1.00× means no premium. A typical multiple, not a price for any one card.
+      </Note>
       </>) : null}
 
       <H2>By rarity · last {data.days} days</H2>

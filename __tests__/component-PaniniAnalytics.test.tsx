@@ -31,6 +31,10 @@ function payload(over: Partial<PaniniSalesAnalytics> = {}): PaniniSalesAnalytics
     by_tier: [{ tier: "COMMON", sales: 500, volume_usd: 2500, median_usd: 4 }],
     by_parallel: [{ parallel: "Base", sales: 400, volume_usd: 2000, median_usd: 4 }],
     by_player: [{ player_name: "Kylian Mbappé", sales: 22, volume_usd: 5742, median_usd: 115, editions_traded: 8 }],
+    serial_premium: [
+      { kind: "serial_1", print_run: "100+", sales: 216, median_multiple: 2.18, p25_multiple: 1.2, p75_multiple: 5.73 },
+      { kind: "serial_2_10", print_run: "100+", sales: 1356, median_multiple: 1, p25_multiple: 0.83, p75_multiple: 1.43 },
+    ],
     ...over,
   }
 }
@@ -110,6 +114,17 @@ describe("PaniniAnalytics", () => {
     expect(p?.by_player).toBeNull()
   })
 
+  it("serial premiums render as multiples with their spread; an absent table is hidden, not '1.00x'", () => {
+    const c = render(<PaniniAnalytics data={payload()} />).container
+    const one = c.querySelector('[data-serial-kind="serial_1"]')!
+    expect(one.textContent).toContain("2.18×")
+    expect(one.textContent).toContain("1.20× – 5.73×")
+    expect(c.querySelector('[data-serial-kind="serial_2_10"]')!.textContent).toContain("1.00×")
+    const hidden = render(<PaniniAnalytics data={payload({ serial_premium: null })} />).container
+    expect(hidden.textContent).not.toContain("Serial premiums")
+    expect(hidden.querySelector("[data-serial-kind]")).toBeNull()
+  })
+
   it("COMPLETE_PCT is the bar a day must clear", () => {
     expect(isCompleteDay({ day: "d", sales: 1, volume_usd: 1, median_usd: 1, covered_pct: COMPLETE_PCT })).toBe(true)
     expect(isCompleteDay({ day: "d", sales: 1, volume_usd: 1, median_usd: 1, covered_pct: COMPLETE_PCT - 0.1 })).toBe(false)
@@ -132,6 +147,14 @@ describe("parsePaniniSalesAnalytics", () => {
     expect(p?.coverage.sales_held).toBe(52202)
     expect(p?.daily[0].covered_pct).toBe(0)
     expect(p?.top_sales_all_time[0].serial_number).toBeNull()
+    // a premium row missing its multiple (or of an unknown kind) is dropped, never shown as 0x
+    const sp = parsePaniniSalesAnalytics({ ...raw, serial_premium: [
+      { kind: "serial_1", print_run: "1-10", sales: 142, median_multiple: 1.62, p25_multiple: 1, p75_multiple: 2.14 },
+      { kind: "serial_1", print_run: "11-25", sales: 5, median_multiple: null },
+      { kind: "jersey", print_run: "1-10", sales: 5, median_multiple: 3 },
+    ] })
+    expect(sp?.serial_premium).toEqual([{ kind: "serial_1", print_run: "1-10", sales: 142, median_multiple: 1.62, p25_multiple: 1, p75_multiple: 2.14 }])
+    expect(p?.serial_premium).toBeNull()
     // a nameless player row is dropped, never rendered as a blank link
     expect(p?.by_player).toEqual([{ player_name: "Lamine Yamal", sales: 42, volume_usd: 42319, median_usd: 251.5, editions_traded: 15 }])
   })
