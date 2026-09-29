@@ -15,6 +15,21 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-29. A Top Shot pull no record names takes its edition from
+    // its nearest known ids (batch mint = consecutive ids) ONLY when both sides
+    // agree within 50 ids -- 99.3 % right on 3,189 validation pulls, 81 % past
+    // 50. Pins agree + gap, never overwriting a record, and n_inferred.
+    fn: "name_pack_pulls_by_id_neighbours",
+    test: "supabase/tests/name_pack_pulls_by_id_neighbours.sql",
+    migration: "supabase/migrations/20260929130700_audit_20260929_topshot_pack_pulls_named_by_id_neighbours.sql",
+  },
+  {
+    // Its corpus: drops ids two sources disagree on; an empty build never wipes it.
+    fn: "refresh_topshot_moment_id_editions",
+    test: "supabase/tests/name_pack_pulls_by_id_neighbours.sql",
+    migration: "supabase/migrations/20260929130700_audit_20260929_topshot_pack_pulls_named_by_id_neighbours.sql",
+  },
+  {
     // Added 2026-09-27. The Pinnacle wallet-backfill post-pass named holdings
     // from the SET-LEVEL pinnacle_editions key: 769 held pins read "Unknown"
     // (the trophy picker showed Dolly that way) and ~31k read another
