@@ -413,3 +413,64 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     expect(body.deals).toEqual([])
   })
 })
+
+// 2026-09-29 — an All Day team pick covers every label its franchise has carried
+// (as on Top Shot): get_allday_sniper_deals takes ONE exact p_team, so the route
+// asks once per label and merges, re-sorted and deduped by listing.
+describe("All Day team pick covers the franchise", () => {
+  const row = (flow_id: string, team_name: string, ask_price: number) => ({
+    flow_id, moment_id: `m-${flow_id}`, tier: "COMMON", confidence: "HIGH", player_name: "P",
+    team_name, ask_price, fmv_usd: 100, discount_pct: 10,
+  })
+  function franchiseRpc(over: Record<string, (p: any) => any> = {}) {
+    return async (name: string, params?: any) => {
+      if (over[name]) return over[name](params)
+      if (name === "team_franchise_slugs") return { data: ["las-vegas-raiders", "oakland-raiders", "los-angeles-raiders"], error: null }
+      if (name === "league_team_abbr") return { data: [{ team_name: "Oakland Raiders" }, { team_name: "Los Angeles Raiders" }, { team_name: "Las Vegas Raiders" }], error: null }
+      if (name === "get_teams_for_league") return { data: [{ team_name: "Las Vegas Raiders", has_moments: true }, { team_name: "Buffalo Bills", has_moments: true }], error: null }
+      if (name === "get_allday_sniper_deals") {
+        const byTeam: Record<string, any[]> = {
+          "Las Vegas Raiders": [row("lv1", "Las Vegas Raiders", 30), row("lv2", "Las Vegas Raiders", 5)],
+          "Oakland Raiders": [row("oak1", "Oakland Raiders", 12), row("lv2", "Las Vegas Raiders", 5)],
+          "Los Angeles Raiders": [row("la1", "Los Angeles Raiders", 1)],
+        }
+        return { data: byTeam[params?.p_team] ?? [], error: null }
+      }
+      return defaultRpc(name, params)
+    }
+  }
+  beforeEach(() => { delete process.env.ALLDAY_MARKETPLACE_GQL })
+  const teamQs = `?collection=nfl-all-day&sortBy=price_asc&team=${encodeURIComponent("Las Vegas Raiders")}`
+
+  it("asks once per franchise label, merges deduped, re-sorts, and echoes the pick", async () => {
+    rpc.mockImplementation(franchiseRpc())
+    const body = await (await GET(get(teamQs))).json()
+    const asked = rpc.mock.calls.filter(([n]) => n === "get_allday_sniper_deals").map(([, p]) => p.p_team).sort()
+    expect(asked).toEqual(["Las Vegas Raiders", "Los Angeles Raiders", "Oakland Raiders"])
+    expect(body.deals.map((d: any) => d.flowId)).toEqual(["la1", "lv2", "oak1", "lv1"]) // price_asc, lv2 once
+    expect(body.degraded).toBe(false)
+    expect(body.teamApplied).toBe("Las Vegas Raiders")
+    expect(body.teamOptions).toEqual(["Buffalo Bills", "Las Vegas Raiders"])
+  })
+
+  it("one label's call failing still renders the others and reports the board degraded", async () => {
+    rpc.mockImplementation(franchiseRpc({
+      get_allday_sniper_deals: (p) => p.p_team === "Oakland Raiders"
+        ? { data: null, error: { message: "timeout" } }
+        : { data: p.p_team === "Las Vegas Raiders" ? [row("lv1", "Las Vegas Raiders", 30)] : [], error: null },
+    }))
+    const body = await (await GET(get(teamQs))).json()
+    expect(body.deals.map((d: any) => d.flowId)).toEqual(["lv1"])
+    expect(body.sourcesFailed).toContain("allday-deals-rpc")
+    expect(body.degraded).toBe(true)
+  })
+
+  it("a failed franchise lookup falls back to the exact label and reports the board as narrowed", async () => {
+    rpc.mockImplementation(franchiseRpc({ team_franchise_slugs: () => ({ data: null, error: { message: "boom" } }) }))
+    const body = await (await GET(get(teamQs))).json()
+    const asked = rpc.mock.calls.filter(([n]) => n === "get_allday_sniper_deals").map(([, p]) => p.p_team)
+    expect(asked).toEqual(["Las Vegas Raiders"])
+    expect(body.sourcesFailed).toContain("team-franchise")
+    expect(body.degraded).toBe(true)
+  })
+})

@@ -486,16 +486,21 @@ function teamSlug(name: string): string {
 // registry the team pages use); names from the registries that slug came from.
 // On any failed read the pick falls back to its own label and `error` is set, so
 // the caller reports a NARROWED board rather than presenting it as the franchise.
+// Per collection: the registries its team labels live in — league_team_abbr
+// (historic names) and teams_master via get_teams_for_league (current names).
+type TeamLeagues = { collectionId: string; abbr: readonly string[]; master: readonly string[] };
+const TOPSHOT_LEAGUES: TeamLeagues = { collectionId: TOPSHOT_COLLECTION_ID, abbr: ["nba", "wnba"], master: ["NBA", "WNBA"] };
+const ALLDAY_LEAGUES: TeamLeagues = { collectionId: "dee28451-5d62-409e-a1ad-a83f763ac070", abbr: ["nfl"], master: ["NFL"] };
+
 async function resolveFranchiseLabels(
   supabase: SupabaseClient,
+  leagues: TeamLeagues,
   team: string,
 ): Promise<{ labels: string[]; error: ReadEnvelope["error"] }> {
   const [slugs, ...names] = await Promise.all([
-    boundedRead((supabase as any).rpc("team_franchise_slugs", { p_collection_id: TOPSHOT_COLLECTION_ID, p_team_slug: teamSlug(team) }), "team-franchise-slugs"),
-    boundedRead((supabase as any).rpc("league_team_abbr", { p_league: "nba" }), "team-labels-nba"),
-    boundedRead((supabase as any).rpc("league_team_abbr", { p_league: "wnba" }), "team-labels-wnba"),
-    boundedRead((supabase as any).rpc("get_teams_for_league", { p_league: "NBA" }), "team-labels-NBA"),
-    boundedRead((supabase as any).rpc("get_teams_for_league", { p_league: "WNBA" }), "team-labels-WNBA"),
+    boundedRead((supabase as any).rpc("team_franchise_slugs", { p_collection_id: leagues.collectionId, p_team_slug: teamSlug(team) }), "team-franchise-slugs"),
+    ...leagues.abbr.map((lg) => boundedRead((supabase as any).rpc("league_team_abbr", { p_league: lg }), `team-labels-${lg}`)),
+    ...leagues.master.map((lg) => boundedRead((supabase as any).rpc("get_teams_for_league", { p_league: lg }), `team-labels-${lg}`)),
   ]);
   const failed = [slugs, ...names].find((r) => r.error);
   if (failed) return { labels: [team], error: failed.error };
@@ -545,13 +550,13 @@ async function readTeamPoolRows(
   return { rows: rows.slice(0, TS_POOL_LIMIT), teamByPair, error: null };
 }
 
-// Every current NBA + WNBA team, so the Team dropdown can offer a team whose
-// listings are not on the default board (the client merges in board teams, which
-// covers historic names). Enrichment: a failed read returns [] and the dropdown
-// falls back to board-derived teams.
-async function fetchTopShotTeamOptions(supabase: SupabaseClient): Promise<string[]> {
+// Every current team of the collection's leagues (Top Shot: NBA + WNBA; All
+// Day: NFL), so the Team dropdown can offer a team whose listings are not on the
+// default board (the client merges in board teams, which covers historic names).
+// Enrichment: a failed read returns [] and the dropdown falls back to board teams.
+async function fetchLeagueTeamOptions(supabase: SupabaseClient, leagues: TeamLeagues): Promise<string[]> {
   const reads = await Promise.all(
-    (["NBA", "WNBA"] as const).map((league) =>
+    leagues.master.map((league) =>
       boundedRead((supabase as any).rpc("get_teams_for_league", { p_league: league }), `teams-${league}`)),
   );
   const names = new Set<string>();
@@ -581,7 +586,7 @@ async function fetchTopShotPool(
     let teamByPair = new Map<string, string>();
     let teamLabels: Set<string> | null = null;
     if (teamPick) {
-      const franchise = await resolveFranchiseLabels(supabase, teamPick);
+      const franchise = await resolveFranchiseLabels(supabase, TOPSHOT_LEAGUES, teamPick);
       if (franchise.error) {
         console.error("[sniper-feed] franchise labels unavailable:", franchise.error.message);
         sink.note("team-franchise");
@@ -1203,7 +1208,7 @@ export async function GET(req: Request) {
   const baseCacheKey = `sniper-feed:${JSON.stringify(params)}`;
   const CACHE_TTL = 25_000;
 
-  function buildComputeFn() {
+  function buildComputeFn(): () => Promise<unknown> {
     if (collection === "nfl-all-day") {
       return () => computeAllDaySniperFeed({ minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy });
     }
@@ -1352,7 +1357,20 @@ async function computeAllDaySniperFeed(opts: {
   const sink = createSourceFailureSink();
   const { minDiscount, rarity, team, maxPrice } = opts;
   const supabase = supabaseAdmin;
-  const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070";
+  const ALLDAY_COLLECTION_ID = ALLDAY_LEAGUES.collectionId;
+
+  // A team pick covers every label its franchise has carried (Washington
+  // Commanders + Football Team + Redskins; Raiders in Oakland/LA/Las Vegas), and
+  // the dropdown offers every NFL team. Both as on Top Shot; see resolveFranchiseLabels.
+  const [franchise, teamOptions] = await Promise.all([
+    team !== "all" ? resolveFranchiseLabels(supabase, ALLDAY_LEAGUES, team) : Promise.resolve(null),
+    fetchLeagueTeamOptions(supabase, ALLDAY_LEAGUES).catch(() => [] as string[]),
+  ]);
+  if (franchise?.error) {
+    console.error("[sniper-feed] AD franchise labels unavailable:", franchise.error.message);
+    sink.note("team-franchise");
+  }
+  const teamLabels = franchise ? new Set(franchise.labels) : null;
 
   // 1. Build FMV map keyed on external_id (integer edition flow ID as string).
   //
@@ -1499,18 +1517,35 @@ async function computeAllDaySniperFeed(opts: {
     if (alldayMarketplaceGqlEnabled()) {
       console.log(`[sniper-feed] AD GQL empty — falling back to get_allday_sniper_deals RPC`);
     }
-    const { data: rows, error } = await boundedRead(
+    // p_team is one exact label (ILIKE), so a franchise pick asks once per label
+    // (measured 40-150 ms a call) and merges, deduped by listing.
+    const adTeams = teamLabels ? Array.from(teamLabels) : ["all"];
+    const adReads = await Promise.all(adTeams.map((t) => boundedRead(
       (supabase as any).rpc("get_allday_sniper_deals", {
         p_min_discount: minDiscount,
         p_max_price: maxPrice,
         p_rarity: rarity === "all" ? "all" : rarity,
-        p_team: team === "all" ? "all" : team,
+        p_team: t,
         p_sort_by: opts.sortBy,
         p_limit: 200,
       }),
       "get_allday_sniper_deals",
-    );
-    if (error) {
+    )));
+    const answered = adReads.filter((r) => !r.error);
+    const error = adReads.find((r) => r.error)?.error ?? null;
+    const seenAd = new Set<string>();
+    const rows = answered.flatMap((r) => (r.data ?? []) as any[]).filter((r) => {
+      const k = String(r.flow_id ?? "") || `${r.moment_id ?? ""}#${r.serial_number ?? ""}`;
+      if (seenAd.has(k)) return false;
+      seenAd.add(k);
+      return true;
+    });
+    // One franchise label failing still renders the others, reported degraded.
+    if (error && answered.length > 0) {
+      console.error(`[sniper-feed] get_allday_sniper_deals error (partial): ${error.message}`);
+      sink.note("allday-deals-rpc");
+    }
+    if (error && answered.length === 0) {
       console.error(`[sniper-feed] get_allday_sniper_deals error: ${error.message}`);
       sink.note("allday-deals-rpc");
       // ⚠ `lastRefreshed: null`, NOT the clock. This is the FAILED-read return, and
@@ -1587,12 +1622,15 @@ async function computeAllDaySniperFeed(opts: {
         isLowestAsk: false,
       };
     });
+    // Several franchise labels arrive as separately-ordered lists: re-sort the merge.
+    const fallbackDeals = adTeams.length > 1 ? sortSniperDeals(fallback, opts.sortBy) : fallback;
     return {
-      count: fallback.length,
+      count: fallbackDeals.length,
       tsCount: 0,
-      flowtyCount: fallback.length,
+      flowtyCount: fallbackDeals.length,
       lastRefreshed: new Date().toISOString(),
-      deals: fallback,
+      deals: fallbackDeals,
+      teamOptions,
       // With the GQL leg ON, a failure there that sent us down this path is
       // still named here. With it OFF (the default since 2026-09-28) this lists
       // only real failures, e.g. the FMV map.
@@ -1774,7 +1812,7 @@ async function computeAllDaySniperFeed(opts: {
     filtered = filtered.filter((d) => d.tier.toUpperCase() === want);
   }
   if (team && team !== "all") {
-    filtered = filtered.filter((d) => d.teamName === team);
+    filtered = filtered.filter((d) => (teamLabels ? teamLabels.has(d.teamName) : d.teamName === team));
   }
   if (minDiscount > 0) filtered = filtered.filter((d) => d.discount >= minDiscount);
 
@@ -1801,6 +1839,7 @@ async function computeAllDaySniperFeed(opts: {
     flowtyCount: filtered.length,
     lastRefreshed: new Date().toISOString(),
     deals: filtered,
+    teamOptions,
     sourcesFailed: sink.failed,
   };
 }
@@ -1985,7 +2024,7 @@ async function computeSniperFeed(opts: {
     ),
     fetchJerseyNumbers(supabase, allPlayerNames).catch(() => new Map<string, string>()),
     fetchRetiredMomentIds(supabase).catch(() => new Set<string>()),
-    fetchTopShotTeamOptions(supabase).catch(() => [] as string[]),
+    fetchLeagueTeamOptions(supabase, TOPSHOT_LEAGUES).catch(() => [] as string[]),
   ]);
   console.log(`[sniper-feed] retiredIds size=${retiredIds.size}`);
 
