@@ -325,3 +325,56 @@ describe("TrophySlab", () => {
     expect(screen.style.flexShrink).toBe("0")
   })
 })
+
+// Panini trophies (2026-09-28). A Panini card's moment_id is a Panini SKU and RPC
+// has no per-card page, so `/moment/<sku>` would 404. The slab links out to the
+// card's Panini marketplace page instead — or, with no valid edition key, is not
+// a link at all. And an uncatalogued card (no FMV, no tier) must not render as $0.
+describe("TrophySlab — Panini", () => {
+  const PANINI = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
+  const panini: TrophySlabData = {
+    ...base,
+    moment_id: "packcard-1941_377959_9989801_273__1_1",
+    edition_id: "packcard-1941_377959_9989801_273",
+    player_name: "Rayan Rupert",
+    set_name: "Base Rookies Artist Proof Black",
+    serial_number: 1,
+    circulation_count: 1,
+    tier: null,
+    fmv: null,
+    fmv_confidence: null,
+    collection_id: PANINI,
+    collection_slug: "panini_blockchain",
+    collection_display_name: "Panini Blockchain",
+    team_name: null,
+    series: null,
+    thumbnail_url: "https://assets.paniniamerica.net/catalog/product/pack/828/thumbnail/x.png",
+  }
+
+  it("links to the card's Panini marketplace page in a new tab — never /moment/<sku>", () => {
+    const { container } = render(<TrophySlab slab={panini} slot={2} mode="public" />)
+    const links = Array.from(container.querySelectorAll("a"))
+    expect(links.some((a) => (a.getAttribute("href") ?? "").startsWith("/moment/"))).toBe(false)
+    const out = links.find((a) => a.getAttribute("href") === "https://nft.paniniamerica.net/marketplace-details/packcard-1941_377959_9989801_273.html")
+    expect(out).toBeDefined()
+    expect(out!.getAttribute("target")).toBe("_blank")
+    expect(out!.getAttribute("rel")).toContain("noopener")
+  })
+
+  it("with no valid edition key the slab is not a link at all, not a dead one", () => {
+    const { container } = render(<TrophySlab slab={{ ...panini, edition_id: null }} slot={2} mode="public" />)
+    expect(container.textContent).toContain("Rayan Rupert")
+    expect(Array.from(container.querySelectorAll("a")).some((a) => /moment|paniniamerica/.test(a.getAttribute("href") ?? ""))).toBe(false)
+  })
+
+  it("an uncatalogued card (no FMV, no tier) renders without a $0", () => {
+    const { container } = render(<TrophySlab slab={panini} slot={2} mode="public" />)
+    expect(container.textContent).toContain("#1/1")
+    expect(container.textContent).not.toMatch(/\$0(?:\.00)?\b/)
+  })
+
+  it("a Flow Moment still links to its RPC moment page (control)", () => {
+    const { container } = render(<TrophySlab slab={base} slot={3} mode="public" />)
+    expect(Array.from(container.querySelectorAll("a")).some((a) => a.getAttribute("href") === "/moment/m123")).toBe(true)
+  })
+})

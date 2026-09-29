@@ -375,8 +375,9 @@ function loadLogo() {
 // Per-collection watermark motifs — faint monoline glyphs drawn behind each
 // slab's art (original RPC shapes, not league marks): basketball (Top Shot),
 // football (All Day), soccer ball (Golazos), pin-crest (Pinnacle), cage
-// octagon (UFC), baseball (Candy MLB). Rendered once per (collection, accent)
-// and cached.
+// octagon (UFC), baseball (Candy MLB), trading card (Panini — added 2026-09-28
+// with Panini trophies; without an entry a Panini slab was the one with no
+// glyph). Rendered once per (collection, accent) and cached.
 const WATERMARK_BODY: Record<string, string> = {
   nba_top_shot: `<circle cx="12" cy="12" r="9"/><path d="M3 12 H21 M12 3 V21 M5.2 5.8 C8 8.4 8 15.6 5.2 18.2 M18.8 5.8 C16 8.4 16 15.6 18.8 18.2"/>`,
   nfl_all_day: `<ellipse cx="12" cy="12" rx="9.5" ry="6" transform="rotate(-32 12 12)"/><path d="M8.6 13.8 L15.4 10.2 M10 15.4 L14.8 12.9 M9.2 12.2 L14 9.7" transform="rotate(-3 12 12)"/>`,
@@ -384,6 +385,7 @@ const WATERMARK_BODY: Record<string, string> = {
   disney_pinnacle: `<path d="M12 2.6 L19 6 V12.2 C19 16.6 16 20 12 21.8 C8 20 5 16.6 5 12.2 V6 Z"/><circle cx="12" cy="11.6" r="2.2"/>`,
   ufc_strike: `<path d="M8 3 H16 L21 8 V16 L16 21 H8 L3 16 V8 Z"/><path d="M9 5.4 H15 L18.6 9 V15 L15 18.6 H9 L5.4 15 V9 Z" opacity="0.6"/>`,
   candy_mlb: `<circle cx="12" cy="12" r="9"/><path d="M7.4 4.4 C9.6 8 9.6 16 7.4 19.6 M16.6 4.4 C14.4 8 14.4 16 16.6 19.6"/><path d="M7.9 7.6 L9.3 7.2 M8.5 10.4 L9.9 10.2 M8.5 13.6 L9.9 13.8 M7.9 16.4 L9.3 16.8 M16.1 7.6 L14.7 7.2 M15.5 10.4 L14.1 10.2 M15.5 13.6 L14.1 13.8 M16.1 16.4 L14.7 16.8"/>`,
+  panini_blockchain: `<rect x="6" y="3" width="12" height="18" rx="1.6"/><rect x="8" y="5.2" width="8" height="9.6" rx="0.6"/><path d="M8 17.4 H16 M9.5 19.2 H14.5"/>`,
 };
 const wmCache = new Map<string, Buffer | null>();
 async function watermarkArt(collSlug: string, accentHex: string): Promise<Buffer | null> {
