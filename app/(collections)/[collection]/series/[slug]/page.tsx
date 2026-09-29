@@ -25,6 +25,7 @@ import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotal
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
+import { isTeamMoment, momentSubjectHref } from "@/lib/entity-href"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -81,7 +82,8 @@ async function fetchEditions(collectionId: string, slug: string, limit: number, 
 }
 
 interface SetRollupRow { set_slug: string; set_name: string; edition_count: number; fmv_total: number }
-interface PlayerRollupRow { player_slug: string; player_name: string; edition_count: number; fmv_total: number }
+// team_name is set ONLY when the subject is the team itself (get_series_rollups, 2026-09-29).
+interface PlayerRollupRow { player_slug: string; player_name: string; edition_count: number; fmv_total: number; team_name?: string | null }
 interface SeriesRollups { sets: SetRollupRow[]; players: PlayerRollupRow[] }
 
 // Three-state. `ok` distinguishes "the rollup RPC failed" from "it answered and
@@ -203,10 +205,10 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
   // If the RPC fails, fall back to grouping the fetched page of editions —
   // partial (pre-B5 behavior) but better than hiding the sections.
   let setCards: Array<{ setSlug: string; setName: string; count: number; fmvTotal: number }>
-  let topPlayers: Array<{ playerSlug: string; playerName: string; count: number; fmvTotal: number }>
+  let topPlayers: Array<{ playerSlug: string; playerName: string; teamName: string | null; count: number; fmvTotal: number }>
   if (rollups) {
     setCards = rollups.sets.map(s => ({ setSlug: s.set_slug, setName: s.set_name, count: s.edition_count, fmvTotal: s.fmv_total ?? 0 }))
-    topPlayers = rollups.players.map(p => ({ playerSlug: p.player_slug, playerName: p.player_name, count: p.edition_count, fmvTotal: p.fmv_total ?? 0 }))
+    topPlayers = rollups.players.map(p => ({ playerSlug: p.player_slug, playerName: p.player_name, teamName: p.team_name ?? null, count: p.edition_count, fmvTotal: p.fmv_total ?? 0 }))
   } else if (editionsOk) {
     const setMap = new Map<string, { setSlug: string; setName: string; count: number; fmvTotal: number }>()
     for (const e of editions) {
@@ -221,7 +223,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
     }
     setCards = Array.from(setMap.values()).sort((a, b) => b.fmvTotal - a.fmvTotal)
 
-    const playerMap = new Map<string, { playerSlug: string; playerName: string; count: number; fmvTotal: number }>()
+    const playerMap = new Map<string, { playerSlug: string; playerName: string; teamName: string | null; count: number; fmvTotal: number }>()
     for (const e of editions) {
       const ps = e.player_slug ?? null
       const pn = e.player_name ?? null
@@ -231,7 +233,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
         existing.count += 1
         existing.fmvTotal += e.fmv_usd ?? 0
       } else {
-        playerMap.set(ps, { playerSlug: ps, playerName: pn, count: 1, fmvTotal: e.fmv_usd ?? 0 })
+        playerMap.set(ps, { playerSlug: ps, playerName: pn, teamName: isTeamMoment(pn, e.team_name) ? (e.team_name ?? null) : null, count: 1, fmvTotal: e.fmv_usd ?? 0 })
       }
     }
     topPlayers = Array.from(playerMap.values()).sort((a, b) => b.fmvTotal - a.fmvTotal).slice(0, 12)
@@ -367,7 +369,9 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
                 {topPlayers.map(p => (
                   <Link
                     key={p.playerSlug}
-                    href={`/${collection}/player/${encodeURIComponent(p.playerSlug)}`}
+                    // A team moment's subject is the franchise: /team/, never a /player/ page that
+                    // 404s (/nba-top-shot/player/los-angeles-lakers, link crawl 2026-09-29).
+                    href={(p.teamName && momentSubjectHref(collection, p.playerName, p.teamName)) || `/${collection}/player/${encodeURIComponent(p.playerSlug)}`}
                     className="rpc-card"
                     style={{ padding: 12, textDecoration: "none", color: "inherit", display: "block" }}
                   >

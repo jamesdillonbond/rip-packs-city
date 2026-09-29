@@ -274,7 +274,7 @@ const PINS = [
     fn: "get_series_rollups",
     test: "supabase/tests/get_series_editions.sql",
     migration:
-      "supabase/migrations/20260926193906_audit_20260926_pinnacle_series_pages_count_every_pin.sql",
+      "supabase/migrations/20260930000000_audit_20260929_series_rollups_name_a_team_moments_franchise.sql",
   },
   {
     // Added 2026-09-26. Pinnacle character pages list the render catalog: 36 of

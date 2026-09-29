@@ -9,10 +9,12 @@
 --   3. Rollups: sets by trimmed name, top characters by the Characters trait
 --      (whose pages exist), FMV-ordered.
 --   4. An unknown series is [] / empty lists.
+--   5. Non-Pinnacle rollups name a team moment's franchise (team_name), so it links to /team/.
 --
 -- The function DDL below is VERBATIM from the committed migration
 -- (get_team_activity / get_team_checklist / get_team_top_editions / get_series_editions:
--- supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql; the rest:)
+-- supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql; get_series_rollups:
+-- supabase/migrations/20260930000000_audit_20260929_series_rollups_name_a_team_moments_franchise.sql; the rest:)
 -- (supabase/migrations/20260926193906_audit_20260926_pinnacle_series_pages_count_every_pin.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -284,6 +286,7 @@ BEGIN
         CASE WHEN e.player_name IS NULL THEN NULL
              ELSE regexp_replace(lower(trim(e.player_name)), '[^a-z0-9]+', '-', 'g') END AS player_slug,
         e.player_name,
+        e.team_name,
         c.fmv_usd
       FROM editions e
       LEFT JOIN edition_fmv_current c ON c.edition_id = e.id
@@ -297,7 +300,10 @@ BEGIN
       GROUP BY set_slug, set_name
     ),
     p AS (
-      SELECT player_slug, player_name, count(*) AS edition_count, COALESCE(sum(fmv_usd), 0) AS fmv_total
+      SELECT player_slug, player_name, count(*) AS edition_count, COALESCE(sum(fmv_usd), 0) AS fmv_total,
+             -- 2026-09-29: a TEAM moment's subject is its franchise (/team/), not a player page.
+             min(btrim(team_name)) FILTER (WHERE btrim(team_name) = btrim(player_name)
+                                              OR starts_with(btrim(team_name), btrim(player_name) || ' ')) AS team_name
       FROM ed WHERE player_slug IS NOT NULL AND player_name IS NOT NULL
       GROUP BY player_slug, player_name
       ORDER BY fmv_total DESC LIMIT 12
@@ -315,6 +321,7 @@ BEGIN
         CASE WHEN e.player_name IS NULL THEN NULL
              ELSE regexp_replace(lower(trim(e.player_name)), '[^a-z0-9]+', '-', 'g') END AS player_slug,
         e.player_name,
+        e.team_name,
         fmv.fmv_usd
       FROM editions e
       LEFT JOIN LATERAL (
@@ -331,7 +338,10 @@ BEGIN
       GROUP BY set_slug, set_name
     ),
     p AS (
-      SELECT player_slug, player_name, count(*) AS edition_count, COALESCE(sum(fmv_usd), 0) AS fmv_total
+      SELECT player_slug, player_name, count(*) AS edition_count, COALESCE(sum(fmv_usd), 0) AS fmv_total,
+             -- 2026-09-29: a TEAM moment's subject is its franchise (/team/), not a player page.
+             min(btrim(team_name)) FILTER (WHERE btrim(team_name) = btrim(player_name)
+                                              OR starts_with(btrim(team_name), btrim(player_name) || ' ')) AS team_name
       FROM ed WHERE player_slug IS NOT NULL AND player_name IS NOT NULL
       GROUP BY player_slug, player_name
       ORDER BY fmv_total DESC LIMIT 12
@@ -377,5 +387,37 @@ SELECT _assert_eq((SELECT x->>'pin_name' || '|' || (x->>'player_name') FROM json
   'The Duel|Maleficent', 'pin_name = the pin''s own name; player_name stays the first character');
 SELECT _assert_eq(public.get_series_editions('7dd9dd11-e8b6-45c4-ac99-71331f959714', '1999')::text, '[]', 'unknown series: empty grid');
 SELECT _assert_eq(public.get_series_rollups('7dd9dd11-e8b6-45c4-ac99-71331f959714', '1999')::text, '{"sets": [], "players": []}', 'unknown series: empty lists');
+
+-- 5 (2026-09-29): non-Pinnacle rollups carry team_name ONLY for a team moment (player_name is the
+-- franchise, or its city prefix as All Day stores it), so the page links it to /team/ — a link crawl
+-- found /nba-top-shot/player/los-angeles-lakers 404ing from /nba-top-shot/series/series-4.
+-- Both branches: edition_fmv_current (Top Shot here) and the fmv_snapshots fallback (All Day here).
+CREATE TABLE public.editions (id uuid, collection_id uuid, series int, set_name text, player_name text, team_name text, thumbnail_url text);
+CREATE TABLE public.edition_fmv_current (edition_id uuid, collection_id uuid, fmv_usd numeric);
+CREATE TABLE public.fmv_snapshots (edition_id uuid, fmv_usd numeric, computed_at timestamptz);
+CREATE FUNCTION public.series_chain_numbers(p_collection_id uuid, p_series_number int) RETURNS int[]
+LANGUAGE sql AS $$ SELECT ARRAY[p_series_number] $$;
+INSERT INTO public.collection_series VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 4, 'Series 4', '2022'),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 1, 'Series 1', '2021');
+INSERT INTO public.editions VALUES
+  ('00000000-0000-0000-0000-000000000001', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 4, 'Squad Goals', 'Los Angeles Lakers', 'Los Angeles Lakers', 't'),
+  ('00000000-0000-0000-0000-000000000002', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 4, 'Base Set', 'LeBron James', 'Los Angeles Lakers', 't'),
+  ('00000000-0000-0000-0000-000000000003', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 4, 'Base Set', 'Los Angeles', 'Los Angeles Lakers', 't'),
+  ('00000000-0000-0000-0000-000000000004', 'dee28451-5d62-409e-a1ad-a83f763ac070', 1, 'Team Melt', 'Denver', 'Denver Broncos', 't'),
+  ('00000000-0000-0000-0000-000000000005', 'dee28451-5d62-409e-a1ad-a83f763ac070', 1, 'Base', 'Denver Smith', 'Denver Broncos', 't');
+INSERT INTO public.edition_fmv_current VALUES
+  ('00000000-0000-0000-0000-000000000001', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 30),
+  ('00000000-0000-0000-0000-000000000002', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 20),
+  ('00000000-0000-0000-0000-000000000003', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 10);
+INSERT INTO public.fmv_snapshots VALUES
+  ('00000000-0000-0000-0000-000000000004', 9, now()),
+  ('00000000-0000-0000-0000-000000000005', 4, now());
+SELECT _assert_eq(
+  (SELECT string_agg((p->>'player_slug') || '|' || COALESCE(p->>'team_name', '-'), ',' ORDER BY ord) FROM jsonb_array_elements(public.get_series_rollups('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'series-4')->'players') WITH ORDINALITY t(p, ord)),
+  'los-angeles-lakers|Los Angeles Lakers,lebron-james|-,los-angeles|Los Angeles Lakers', 'edition_fmv_current branch: team_name only on a team moment (exact name or city prefix)');
+SELECT _assert_eq(
+  (SELECT string_agg((p->>'player_slug') || '|' || COALESCE(p->>'team_name', '-'), ',' ORDER BY ord) FROM jsonb_array_elements(public.get_series_rollups('dee28451-5d62-409e-a1ad-a83f763ac070', 'series-1')->'players') WITH ORDINALITY t(p, ord)),
+  'denver|Denver Broncos,denver-smith|-', 'fmv_snapshots branch: city prefix is a team; a player whose name merely starts with the city is not');
 
 ROLLBACK;
