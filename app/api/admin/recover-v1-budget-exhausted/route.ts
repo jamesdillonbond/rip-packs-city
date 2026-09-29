@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
+import { decodeV1SaleTx, decodeV1MultiSaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 
 // ── AllDay V1-Dapper price recovery (Phase 2 of the unmapped-residue drain) ────
 //
@@ -46,6 +46,10 @@ const TX_DECODE_DELAY_MS = 80
 const CANDIDATE_LIMIT = 500
 const ELAPSED_BUDGET_MS = 200_000
 const PROMOTE_LIMIT = 1000
+const ALLDAY_NFT_TYPE = "A.e4cf4bdc1751c65d.AllDay.NFT"
+// Multi-NFT pass (2026-09-29): whole transactions per tick. One decode prices
+// every NFT in the cart, so this is ~2.4 rows per Flow round-trip.
+const MULTI_TX_LIMIT = 150
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -77,6 +81,10 @@ async function run(startedAt: string, startedMs: number) {
     still_uncertain: 0,
     promoted: 0,
     fail_reasons: {} as Record<string, number>,
+    multi_txs: 0,
+    multi_rows_priced: 0,
+    multi_rows_uncertain: 0,
+    multi_fail_reasons: {} as Record<string, number>,
     fatal: null as string | null,
   }
   let ok = true
@@ -184,6 +192,84 @@ async function run(startedAt: string, startedMs: number) {
             continue
           }
           summary.updated_unmapped = (summary.updated_unmapped as number) + 1
+        }
+      }
+
+      // ── MULTI-NFT PASS (2026-09-29) ──────────────────────────────────────────
+      // Cart purchases of several moments in one tx were "unsplittable" above.
+      // attributeV1MultiSalePrices splits them per listing (see its header in
+      // lib/chains/flow/dapper-v1-tx-decode.ts). A row it cannot price keeps its
+      // price_extraction marker AND gets `multi_price_attempted_at`, which the
+      // claim skips for 30 days — without that stamp a tx that never prices
+      // would sit at the head of the (transaction_hash-ordered) walk forever.
+      if (Date.now() < startedMs + ELAPSED_BUDGET_MS) {
+        const { data: mData, error: mErr } = await (supabaseAdmin as any).rpc(
+          "claim_allday_v1_multi_price_recovery_candidates",
+          { p_tx_limit: MULTI_TX_LIMIT },
+        )
+        if (mErr) {
+          // The singleton pass above may have done real work; report, do not throw.
+          summary.multi_fatal = `select:${mErr.message?.slice(0, 200)}`
+          ok = false
+        } else {
+          const mGroups = new Map<string, UnmappedRow[]>()
+          for (const r of (mData ?? []) as UnmappedRow[]) {
+            const arr = mGroups.get(r.transaction_hash) ?? []
+            arr.push(r)
+            mGroups.set(r.transaction_hash, arr)
+          }
+          const bump = (key: string, n: number) => {
+            const m = summary.multi_fail_reasons as Record<string, number>
+            m[key] = (m[key] ?? 0) + n
+          }
+          for (const [txHash, group] of mGroups) {
+            if (Date.now() > startedMs + ELAPSED_BUDGET_MS) break
+            summary.multi_txs = (summary.multi_txs as number) + 1
+            const decoded = await decodeV1MultiSaleTx(txHash, {
+              depositEventType: ALLDAY_DEPOSIT_EVENT,
+              withdrawEventType: ALLDAY_WITHDRAW_EVENT,
+              nftType: ALLDAY_NFT_TYPE,
+            })
+            await delay(TX_DECODE_DELAY_MS)
+            const attemptedAt = new Date().toISOString()
+            for (const row of group) {
+              const p = decoded.perNft.get(String(row.nft_id))
+              if (p && p.priceCertain && p.priceDuc != null && p.priceDuc > 0) {
+                const cleaned: Record<string, unknown> = { ...(row.resolution_hint ?? {}) }
+                delete cleaned.price_extraction
+                delete cleaned.sample_duc_amounts
+                delete cleaned.multi_price_attempted_at
+                delete cleaned.multi_price_reason
+                cleaned.price_source = "v1_multi_nft_segment"
+                const upd: Record<string, unknown> = { price_usd: p.priceDuc, price_native: p.priceDuc, resolution_hint: cleaned }
+                // Seller only: the Deposit target in these txs is often a custodial
+                // account (the AllDay contract / 0xddfbe…), so it is not written as a
+                // buyer here — the singleton path does not write one either.
+                if (p.seller) upd.seller_address = p.seller
+                const { error: umErr } = await (supabaseAdmin as any).from("unmapped_sales").update(upd).eq("id", row.id)
+                if (umErr) {
+                  console.log(`[${PIPELINE_NAME}] multi unmapped update err id=${row.id}: ${umErr.message}`)
+                  continue
+                }
+                summary.multi_rows_priced = (summary.multi_rows_priced as number) + 1
+                summary.updated_unmapped = (summary.updated_unmapped as number) + 1
+              } else {
+                const reason = !decoded.ok ? decoded.reason : p ? p.priceReason : "nft_not_purchased_in_tx"
+                bump(reason, 1)
+                summary.multi_rows_uncertain = (summary.multi_rows_uncertain as number) + 1
+                const stamped: Record<string, unknown> = {
+                  ...(row.resolution_hint ?? {}),
+                  multi_price_attempted_at: attemptedAt,
+                  multi_price_reason: reason,
+                }
+                const { error: stErr } = await (supabaseAdmin as any)
+                  .from("unmapped_sales")
+                  .update({ resolution_hint: stamped })
+                  .eq("id", row.id)
+                if (stErr) console.log(`[${PIPELINE_NAME}] multi stamp err id=${row.id}: ${stErr.message}`)
+              }
+            }
+          }
         }
       }
 

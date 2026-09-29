@@ -223,6 +223,189 @@ export async function decodeV1SaleTx(
   }
 }
 
+// ── Multi-NFT V1 Dapper tx: price PER NFT ────────────────────────────────────
+//
+// decodeV1SaleTx returns the transaction's GROSS DUC, which is one NFT's price
+// only when the tx moved one NFT. A cart purchase of several moments in one tx
+// (6,292 two-NFT + 3,585 three-NFT + 31 four-NFT All Day txs were parked as
+// "unsplittable" on 2026-09-28, ~23.5k rows) was treated as unpriceable.
+//
+// ⭐ It is splittable, because each listing is purchased in its own block of
+// events, in order. Measured on real txs (fixtures in
+// __tests__/fixtures/flow-v1-multi/):
+//
+//   ListingAvailable(nftID)
+//   DapperUtilityCoin.TokensWithdrawn(amount, from = DUC contract)   ← THIS listing's gross
+//   <collection>.Withdraw(id, from = seller)
+//   DapperUtilityCoin.TokensWithdrawn(amount, from = null)           ← downstream split(s)
+//   …TokenForwarding / Deposits…
+//   NFTStorefront.ListingCompleted(nftID, purchased = true)          ← closes the block
+//   <collection>.Deposit(id, to = buyer)
+//
+// So walking events by event_index and cutting a segment at every
+// ListingCompleted attributes each contract-sourced payment to the NFT whose
+// listing it paid for — e.g. $0.67 / $0.67 / $0.66 in one tx, not "$2.00 / 3".
+//
+// ⛔ CONSERVATIVE BY CONSTRUCTION — a guess here becomes a `sales` row, i.e.
+// FMV input. A segment's price is certain ONLY when it holds exactly ONE
+// contract-sourced payment and its downstream splits match it (the same 1¢
+// rule as the single decoder). And the whole tx must reconcile: every
+// contract-sourced payment in the tx must land in some purchased segment, or
+// NOTHING in the tx is certain (a payment outside every listing block means
+// the shape is not the one this relies on).
+
+export const V1_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefront.ListingCompleted"
+
+export type MultiPriceReason =
+  | "matched"
+  | "matched_no_splits"
+  | "segment_gross_count" // 0 or >1 contract-sourced payments in the segment
+  | "split_sum_mismatch"
+  | "unattributed_payment" // tx-level: a payment outside every purchased segment
+  | "duplicate_nft_in_tx"
+  | "tx_fetch_failed"
+  | "tx_no_events"
+
+export interface V1MultiNftPrice {
+  priceDuc: number | null
+  priceCertain: boolean
+  priceReason: MultiPriceReason
+  buyer: string | null
+  seller: string | null
+}
+
+export interface V1MultiDecodeResult {
+  ok: boolean
+  reason: MultiPriceReason | "ok"
+  /** Per purchased NFT of `nftType` in the tx, keyed by nftID. */
+  perNft: Map<string, V1MultiNftPrice>
+}
+
+type RawEvent = { type: string; payload: string; event_index: number }
+
+/** Pure: attribute each purchased listing's payment to its NFT. Exported for tests. */
+export function attributeV1MultiSalePrices(
+  events: RawEvent[],
+  config: { depositEventType: string; withdrawEventType: string; nftType: string },
+): V1MultiDecodeResult {
+  const out: V1MultiDecodeResult = { ok: false, reason: "tx_no_events", perNft: new Map() }
+  if (events.length === 0) return out
+
+  const sorted = [...events].sort((a, b) => a.event_index - b.event_index)
+  const buyers = new Map<string, string | null>()
+  const sellers = new Map<string, string>()
+  let seg = { gross: 0, grossCount: 0, split: 0 }
+  let txGross = 0
+  let attributedGross = 0
+  const seen = new Set<string>()
+  const dup = new Set<string>()
+
+  for (const evt of sorted) {
+    let p: Record<string, any> | null = null
+    try {
+      p = unwrapCdc(JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))) as Record<string, any>
+    } catch {
+      continue
+    }
+    if (!p) continue
+
+    if (evt.type === DUC_TOKENS_WITHDRAWN) {
+      const amount = parseFloat(String(p.amount ?? "0"))
+      if (!Number.isFinite(amount) || amount <= 0) continue
+      if (typeof p.from === "string" && p.from === DUC_CONTRACT_ADDRESS) {
+        seg.gross += amount
+        seg.grossCount += 1
+        txGross += amount
+      } else {
+        seg.split += amount
+      }
+      continue
+    }
+    if (evt.type === config.depositEventType) {
+      const to = p.to
+      if (typeof to === "string" && to.length > 0) buyers.set(String(p.id), isCustodialDepositTarget(to) ? null : to)
+      continue
+    }
+    if (evt.type === config.withdrawEventType) {
+      const from = p.from
+      if (typeof from === "string" && from.length > 0) sellers.set(String(p.id), from)
+      continue
+    }
+    if (evt.type === V1_LISTING_COMPLETED) {
+      const typeId = (p.nftType as { staticType?: { typeID?: string } } | undefined)?.staticType?.typeID
+      const nftId = p.nftID != null ? String(p.nftID) : null
+      if (p.purchased === true && nftId && typeId === config.nftType) {
+        if (seen.has(nftId)) dup.add(nftId)
+        seen.add(nftId)
+        const certain =
+          seg.grossCount === 1 && (seg.split === 0 || Math.abs(seg.split - seg.gross) <= PRICE_TOLERANCE)
+        const reason: MultiPriceReason =
+          seg.grossCount !== 1 ? "segment_gross_count"
+          : !certain ? "split_sum_mismatch"
+          : seg.split === 0 ? "matched_no_splits" : "matched"
+        out.perNft.set(nftId, {
+          priceDuc: certain ? Math.round(seg.gross * 1e8) / 1e8 : null,
+          priceCertain: certain,
+          priceReason: reason,
+          buyer: null,
+          seller: null,
+        })
+        attributedGross += seg.gross
+      } else if (p.purchased === true) {
+        // Another collection's purchase in the same tx consumed this segment's
+        // payment — count it as attributed so the tx still reconciles.
+        attributedGross += seg.gross
+      }
+      seg = { gross: 0, grossCount: 0, split: 0 }
+      continue
+    }
+  }
+
+  for (const [nftId, r] of out.perNft) {
+    r.buyer = buyers.has(nftId) ? buyers.get(nftId)! : null
+    r.seller = sellers.get(nftId) ?? null
+    if (dup.has(nftId)) {
+      r.priceDuc = null
+      r.priceCertain = false
+      r.priceReason = "duplicate_nft_in_tx"
+    }
+  }
+
+  // Tx-level reconciliation: a contract-sourced payment that no purchased
+  // listing closed over means the event shape is not the one relied on.
+  if (Math.abs(txGross - attributedGross) > PRICE_TOLERANCE) {
+    for (const r of out.perNft.values()) {
+      r.priceDuc = null
+      r.priceCertain = false
+      r.priceReason = "unattributed_payment"
+    }
+    out.reason = "unattributed_payment"
+    return out
+  }
+  out.ok = true
+  out.reason = "ok"
+  return out
+}
+
+/** Fetch a V1 tx and attribute each purchased NFT's price. Never throws. */
+export async function decodeV1MultiSaleTx(
+  txId: string,
+  config: { depositEventType: string; withdrawEventType: string; nftType: string },
+  fetchTimeoutMs = 8000,
+): Promise<V1MultiDecodeResult> {
+  try {
+    const clean = txId.replace(/^0x/, "")
+    const res = await fetch(`${FLOW_REST}/v1/transaction_results/${clean}`, {
+      signal: AbortSignal.timeout(fetchTimeoutMs),
+    })
+    if (!res.ok) return { ok: false, reason: "tx_fetch_failed", perNft: new Map() }
+    const json = (await res.json()) as { events?: RawEvent[] }
+    return attributeV1MultiSalePrices(json.events ?? [], config)
+  } catch {
+    return { ok: false, reason: "tx_fetch_failed", perNft: new Map() }
+  }
+}
+
 // ── Top Shot sale tx decoder (buyer + execution accounts) ────────────────────
 //
 // The TopShotMarketV3.MomentPurchased event carries id/price/seller but NOT the

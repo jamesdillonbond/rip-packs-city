@@ -29,12 +29,18 @@ const state = vi.hoisted(() => ({
   sb: null as unknown,
   decodeByTx: {} as Record<string, { priceCertain: boolean; priceDuc: number | null; priceReason: string }>,
   decodeCalls: [] as string[],
+  multiByTx: {} as Record<string, { ok: boolean; reason: string; perNft: Map<string, { priceDuc: number | null; priceCertain: boolean; priceReason: string; buyer: string | null; seller: string | null }> }>,
+  multiCalls: [] as string[],
 }))
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy({}, { get: (_t, p) => (state.sb as Record<PropertyKey, unknown>)[p] }),
 }))
 vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({
+  decodeV1MultiSaleTx: async (tx: string) => {
+    state.multiCalls.push(tx)
+    return state.multiByTx[tx] ?? { ok: false, reason: "tx_fetch_failed", perNft: new Map() }
+  },
   decodeV1SaleTx: async (tx: string) => {
     state.decodeCalls.push(tx)
     const d = state.decodeByTx[tx] ?? { priceCertain: false, priceDuc: null, priceReason: "tx_fetch_failed" }
@@ -79,6 +85,8 @@ beforeEach(() => {
   process.env.CRON_SECRET = "cron-token"
   state.decodeByTx = {}
   state.decodeCalls = []
+  state.multiByTx = {}
+  state.multiCalls = []
 })
 
 describe("recover-v1-budget-exhausted — auth", () => {
@@ -184,5 +192,94 @@ describe("recover-v1-budget-exhausted — recovery", () => {
       multi_nft_tx_total_unsplittable: 2,
       split_sum_mismatch: 1,
     })
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The MULTI-NFT pass (2026-09-29). Cart purchases were "unsplittable"; the
+// attribution itself is pinned against real txs in
+// lib-v1-multi-sale-attribution.test.ts. Pinned here: the WIRING.
+describe("recover-v1-budget-exhausted — multi-NFT pass", () => {
+  const TX = "0x" + "e".repeat(64)
+  const priced = (price: number | null, certain: boolean, reason = "matched") => ({
+    priceDuc: price, priceCertain: certain, priceReason: reason, buyer: "0xe4cf4bdc1751c65d", seller: "0x909a0fd879c9891e",
+  })
+
+  it("prices each NFT of a cart from ITS segment, strips the marker, writes the seller but not the buyer", async () => {
+    state.multiByTx[TX] = { ok: true, reason: "ok", perNft: new Map([["1", priced(0.67, true)], ["2", priced(0.66, true)]]) }
+    const spy = install({
+      "rpc:claim_allday_v1_price_recovery_candidates": { data: [], error: null },
+      "rpc:claim_allday_v1_multi_price_recovery_candidates": {
+        data: [umRow({ id: "m1", nft_id: "1", transaction_hash: TX }), umRow({ id: "m2", nft_id: "2", transaction_hash: TX })],
+        error: null,
+      },
+      "rpc:promote_unmapped_sales": { data: { promoted: 2 }, error: null },
+    })
+    const body = await (await POST(req("Bearer ingest-token"))).json()
+    expect(state.multiCalls).toEqual([TX]) // ONE decode for the whole cart
+    expect(body).toMatchObject({ ok: true, multi_txs: 1, multi_rows_priced: 2, multi_rows_uncertain: 0, updated_unmapped: 2 })
+    const ups = (spy.writes.unmapped_sales ?? []).filter((w) => w.method === "update").map((w) => w.rows[0])
+    expect(ups.map((u) => u.price_usd)).toEqual([0.67, 0.66])
+    for (const u of ups) {
+      expect(u.seller_address).toBe("0x909a0fd879c9891e")
+      expect(u).not.toHaveProperty("buyer_address")
+      expect(u.resolution_hint).toEqual({ backfill: "allday_v1_history", price_source: "v1_multi_nft_segment" })
+    }
+  })
+
+  it("⛔ an uncertain NFT keeps its marker and is STAMPED so the claim moves past it", async () => {
+    state.multiByTx[TX] = { ok: true, reason: "ok", perNft: new Map([["1", priced(0.67, true)], ["2", priced(null, false, "split_sum_mismatch")]]) }
+    const spy = install({
+      "rpc:claim_allday_v1_price_recovery_candidates": { data: [], error: null },
+      "rpc:claim_allday_v1_multi_price_recovery_candidates": {
+        data: [umRow({ id: "m1", nft_id: "1", transaction_hash: TX }), umRow({ id: "m2", nft_id: "2", transaction_hash: TX })],
+        error: null,
+      },
+      "rpc:promote_unmapped_sales": { data: { promoted: 1 }, error: null },
+    })
+    const body = await (await POST(req("Bearer ingest-token"))).json()
+    expect(body).toMatchObject({ multi_rows_priced: 1, multi_rows_uncertain: 1, multi_fail_reasons: { split_sum_mismatch: 1 } })
+    const stamp = (spy.writes.unmapped_sales ?? []).filter((w) => w.method === "update").map((w) => w.rows[0]).find((u) => !("price_usd" in u))!
+    const hint = stamp.resolution_hint as Record<string, unknown>
+    expect(hint.price_extraction).toBe("v1_tx_decode_budget_exhausted") // still recoverable later
+    expect(hint.multi_price_reason).toBe("split_sum_mismatch")
+    expect(typeof hint.multi_price_attempted_at).toBe("string")
+  })
+
+  it("stamps every row of a tx that failed to decode at all, and of an NFT the tx did not purchase", async () => {
+    const TX2 = "0x" + "f".repeat(64)
+    state.multiByTx[TX] = { ok: false, reason: "tx_fetch_failed", perNft: new Map() }
+    state.multiByTx[TX2] = { ok: true, reason: "ok", perNft: new Map([["9", priced(1, true)]]) }
+    const spy = install({
+      "rpc:claim_allday_v1_price_recovery_candidates": { data: [], error: null },
+      "rpc:claim_allday_v1_multi_price_recovery_candidates": {
+        data: [
+          umRow({ id: "a", nft_id: "1", transaction_hash: TX }),
+          umRow({ id: "b", nft_id: "2", transaction_hash: TX }),
+          umRow({ id: "c", nft_id: "7", transaction_hash: TX2 }),
+        ],
+        error: null,
+      },
+      "rpc:promote_unmapped_sales": { data: { promoted: 0 }, error: null },
+    })
+    const body = await (await POST(req("Bearer ingest-token"))).json()
+    expect(body.multi_fail_reasons).toEqual({ tx_fetch_failed: 2, nft_not_purchased_in_tx: 1 })
+    expect(body.multi_rows_priced).toBe(0)
+    const stamps = (spy.writes.unmapped_sales ?? []).filter((w) => w.method === "update")
+    expect(stamps).toHaveLength(3)
+  })
+
+  it("⛔ a failed multi claim fails the run but keeps the singleton pass's work", async () => {
+    const tx = "0x" + "a".repeat(64)
+    state.decodeByTx[tx] = { priceCertain: true, priceDuc: 3, priceReason: "matched" }
+    const spy = install({
+      "rpc:claim_allday_v1_price_recovery_candidates": { data: [umRow()], error: null },
+      "rpc:claim_allday_v1_multi_price_recovery_candidates": { data: null, error: { message: "statement timeout" } },
+      "rpc:promote_unmapped_sales": { data: { promoted: 1 }, error: null },
+    })
+    const body = await (await POST(req("Bearer ingest-token"))).json()
+    expect(body.updated_unmapped).toBe(1)
+    expect(body.multi_fatal).toMatch(/statement timeout/)
+    expect(log(spy.rpcCalls)).toMatchObject({ p_ok: false })
   })
 })
