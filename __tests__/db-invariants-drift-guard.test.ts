@@ -361,9 +361,10 @@ const PINS = [
     // index (pack_index_mints) -- a SOLD pack included -- unless someone else
     // sold it first; the index's acquisition date only while it names this wallet.
     // v16 (same night): the wallet's own index date outranks the mint -- some
-    // All Day drops are pre-minted days before they open.
+    // All Day drops are pre-minted days before they open. v17: and a mint
+    // BEFORE the window is ignored (the sale / open bound decides).
     migration:
-      "supabase/migrations/20260929065000_audit_20260928_wallet_pack_history_own_index_date_before_allday_mint.sql",
+      "supabase/migrations/20260929070500_audit_20260928_wallet_pack_history_allday_mint_only_inside_the_window.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
@@ -373,7 +374,7 @@ const PINS = [
     test: "supabase/tests/get_wallet_pack_summary.sql",
     // 2026-09-28: inferred_primary_* take the same All Day mint rule.
     migration:
-      "supabase/migrations/20260929065100_audit_20260928_wallet_pack_summary_own_index_date_before_allday_mint.sql",
+      "supabase/migrations/20260929070600_audit_20260928_wallet_pack_summary_allday_mint_only_inside_the_window.sql",
   },
   {
     // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists

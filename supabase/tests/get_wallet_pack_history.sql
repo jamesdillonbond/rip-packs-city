@@ -56,9 +56,11 @@
 --      the BUYER's (P75).
 --  10. (v16, same night) The wallet's OWN index date outranks the mint: some
 --      All Day drops are pre-minted days before they open (P76).
+--  11. (v17, same night) A mint BEFORE the window is ignored: a pre-minted pack
+--      sold inside its window is judged by the sale, as before the mint arm (P77).
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929065000_audit_20260928_wallet_pack_history_own_index_date_before_allday_mint.sql).
+-- (supabase/migrations/20260929070500_audit_20260928_wallet_pack_history_allday_mint_only_inside_the_window.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -554,7 +556,15 @@ BEGIN
               AND ((ds.drop_start IS NOT NULL
                     AND (r.collection_id = v_ts
                          OR (r.collection_id = v_ad AND ds.drop_start >= timestamptz '2022-12-16'))
-                    AND COALESCE(wa.at, am.minted_at, LEAST(r.sold_at, r.ripped_at))
+                    -- v17: the mint only when it lies INSIDE the window. A mint
+                    -- before the window (a pre-minted drop) says nothing about
+                    -- when the wallet got it, so the sale / open bound decides,
+                    -- as it did before v15.
+                    AND COALESCE(wa.at,
+                                 CASE WHEN am.minted_at BETWEEN ds.drop_start - interval '1 day'
+                                                            AND ds.drop_start + interval '30 days'
+                                      THEN am.minted_at END,
+                                 LEAST(r.sold_at, r.ripped_at))
                           BETWEEN ds.drop_start - interval '1 day' AND ds.drop_start + interval '30 days')
                    OR mt.minted_at IS NOT NULL), false) AS inferable
     ) inf
@@ -1488,6 +1498,19 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P76';
   PERFORM _assert(row_->>'status' = 'held' AND row_->>'buy_usd' = '9.00' AND row_->>'buy_price_source' = 'retail_inferred',
                   'P76 pre-minted before its drop, bought 1 minute in per the wallet''s own index date -> $9 inferred (the mint must not outrank it)');
+END $$;
+
+-- v17: P77 a PRE-MINTED pack the wallet SOLD 5 days into the drop, no index date of its own.
+INSERT INTO public.allday_pack_sales_history VALUES ('tx-p77', 'P77', 15, true, '0xbuyer', '0xwallet7', 'AM4', '2024-09-24');
+INSERT INTO public.pack_index_mints (collection_id, pack_nft_id, in_index, minted_at, mint_tx) VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P77', true, '2024-09-17 21:53:47+00', 'tx-mint-77');
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet7', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P77';
+  PERFORM _assert(row_->>'status' = 'sold' AND row_->>'buy_usd' = '9.00' AND row_->>'realized_pl_usd' = '6.00',
+                  'P77 pre-minted, sold inside the window -> the sale bound still infers $9 (a pre-window mint must not veto it)');
 END $$;
 
 ROLLBACK;

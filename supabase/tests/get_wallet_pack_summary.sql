@@ -12,7 +12,7 @@
 -- rows. Pinned by the separate 0xshopper wallet below.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929065100_audit_20260928_wallet_pack_summary_own_index_date_before_allday_mint.sql).
+-- (supabase/migrations/20260929070600_audit_20260928_wallet_pack_summary_allday_mint_only_inside_the_window.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -350,7 +350,13 @@ BEGIN
       -- marketplace history covers that window ...
       AND ((ds.drop_start IS NOT NULL
             AND (k.collection_id = v_ts OR (k.collection_id = v_ad AND ds.drop_start >= timestamptz '2022-12-16'))
-            AND COALESCE(i.acquired_at, am.minted_at, k.first_at)
+            -- v17: the mint only when it lies INSIDE the window (a pre-minted
+            -- drop's mint says nothing about when the wallet got it)
+            AND COALESCE(i.acquired_at,
+                         CASE WHEN am.minted_at BETWEEN ds.drop_start - interval '1 day'
+                                                    AND ds.drop_start + interval '30 days'
+                              THEN am.minted_at END,
+                         k.first_at)
                   BETWEEN ds.drop_start - interval '1 day' AND ds.drop_start + interval '30 days')
            -- ... or (v11, Top Shot) Dapper minted it straight into this wallet
            -- at the index's acquisition instant (pack_nft_mints)
@@ -766,6 +772,17 @@ BEGIN
   t := public.get_wallet_pack_summary('0xsum8')->'totals';
   PERFORM _assert_eq(t->>'inferred_primary_count', '1', 'S4 bought inside its window per its own index date, though pre-minted');
   PERFORM _assert_eq(t->>'inferred_primary_spent_usd', '9.00', 'S4 at $9');
+END $$;
+
+-- v17: S5 a PRE-MINTED pack SOLD 5 days into its drop, no index date of the wallet's own.
+INSERT INTO public.allday_pack_sales_history VALUES ('tx-s5', 'S5', 15, true, '0xbuyer', '0xsum9', 'SM4', '2024-09-24');
+INSERT INTO public.pack_index_mints (collection_id, pack_nft_id, in_index, minted_at, mint_tx) VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'S5', true, '2024-09-17 21:53:47+00', 'tx-m5');
+DO $$
+DECLARE t jsonb;
+BEGIN
+  t := public.get_wallet_pack_summary('0xsum9')->'totals';
+  PERFORM _assert_eq(t->>'inferred_primary_count', '1', 'S5 sold inside its window -> inferred; a pre-window mint must not veto it');
 END $$;
 
 ROLLBACK;
