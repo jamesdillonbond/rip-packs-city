@@ -260,7 +260,11 @@ export async function fetchOnChainIds(cadence: string, wallet: string): Promise<
     signal: AbortSignal.timeout(20_000),
   })
   if (!res.ok) {
-    throw new Error(`Flow script HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    // ⚠ Keep the WHOLE cause. Flow nests the reason (e.g. `[Error Code: 1110] computation limit
+    // exceeded`) ~400 characters in, behind two layers of `rpc error: code = InvalidArgument`; a
+    // 200-char cut kept only the wrapper, so every classifier below read a script-limit failure as
+    // a generic error (2026-09-29, the 0xb6f2… pack-inventory wallet, red twice a day since July).
+    throw new Error(`Flow script HTTP ${res.status}: ${(await res.text()).slice(0, 2000)}`)
   }
   const raw = await res.text()
   const decoded = JSON.parse(atob(raw.trim().replace(/^"|"$/g, "")))
@@ -292,7 +296,8 @@ export function isStorageLimitError(err: unknown): boolean {
 // counting as a pipeline failure.
 export function isComputationLimitError(err: unknown): boolean {
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
-  return /\b1110\b/.test(msg) || /computation exceeds limit/.test(msg)
+  // Flow's current wording is "computation limit exceeded"; "computation exceeds limit" is older.
+  return /\b1110\b/.test(msg) || /computation exceeds limit/.test(msg) || /computation limit exceeded/.test(msg)
 }
 
 // AllDay's GET_UNLOCKED_MOMENT_DETAILS exhibits a different failure shape
@@ -324,6 +329,9 @@ export function isNoCollectionCapabilityError(err: unknown, elapsedMs?: number):
   const msg = err instanceof Error ? err.message : String(err)
   const hasShape = /Flow script HTTP 400/i.test(msg) && /code\s*=\s*InvalidArgument/i.test(msg)
   if (!hasShape) return false
+  // A script-limit failure arrives in the same fast 400 InvalidArgument wrapper. It is a wallet
+  // too LARGE to read, the opposite of one with nothing to read.
+  if (isComputationLimitError(err)) return false
   if (typeof elapsedMs === "number" && elapsedMs > 10_000) return false
   return true
 }
@@ -1999,6 +2007,33 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
     return { rowsFound: onChainIds.length, complete: isComplete, nextStartIndex }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    // ⛔ getIDs() ITSELF over the script limit: no script can enumerate this wallet, so pagination
+    // (which starts from getIDs) cannot either, and retrying changes nothing. A wallet PROPERTY, like
+    // no_collection_capability, not a failed run: logged with its own reason instead of pagination_failed.
+    // 0xb6f2481eba4df97b (Top Shot's pack-distribution account) used 146,171 of 100,000 units on getIDs()
+    // and even getLength() on 2026-09-29. Nothing is written and wmc_clean_walks is NOT stamped, so no
+    // surface can read "absent" as "not held".
+    if (onChainIds.length === 0 && totalUpserted === 0 && isComputationLimitError(err)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "unenumerable_getids_over_script_limit",
+          flagged_unenumerable: true,
+          recovered_from: parentTerminatedReason,
+          error_excerpt: msg.slice(0, 600),
+          skip_cached: skipCached,
+          force: !!force,
+          elapsed_ms: Date.now() - startedMs,
+          mode: fullMode,
+        },
+      })
+      console.warn(`[${config.pipelineName}] unenumerable wallet=${wallet}: getIDs() exceeds the Flow script limit`)
+      return { rowsFound: 0, complete: true, nextStartIndex: null }
+    }
     await logRun({
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,

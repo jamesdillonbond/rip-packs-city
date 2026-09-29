@@ -237,6 +237,19 @@ beforeEach(() => {
 })
 
 // ── error classifiers (pure) ─────────────────────────────────────────────────
+
+// The real shape of a Flow REST 400 for a script over the computation limit (0xb6f2… 2026-09-29):
+// the cause sits behind two InvalidArgument wrappers, several hundred characters in.
+const FLOW_1110_BODY = JSON.stringify({
+  code: 400,
+  message:
+    "Invalid Flow argument: failed to execute the script on the execution node execution-002.mainnet28.nodes.onflow.org:3569: " +
+    "rpc error: code = InvalidArgument desc = failed to execute script: [Error Code: 1110] failed to execute script at block " +
+    "(d763184c226fa09d24709ec2c52135646ece2925ecb3ac84b052cff4f4c524f1): [Error Code: 1110] error caused by: 1 error occurred:\n" +
+    "\t* [Error Code: 1101] cadence runtime error: Execution failed:\n --> 6:12\n  let ids = ref!.getIDs()\n\n" +
+    "error: computation error: [Error Code: 1110] computation limit exceeded (used: 146171, limit: 100000)",
+})
+
 describe("error classifiers", () => {
   it("isFlowQueryTimeout matches the flow_query_timeout marker only", () => {
     expect(isFlowQueryTimeout(new Error("flow_query_timeout: X exceeded 35000ms"))).toBe(true)
@@ -250,6 +263,10 @@ describe("error classifiers", () => {
     expect(isStorageLimitError(new Error("storage used exceeds the limit"))).toBe(true)
     expect(isStorageLimitError("plain 11060 not a word boundary")).toBe(false)
     expect(isStorageLimitError(new Error("unrelated"))).toBe(false)
+  })
+
+  it("isComputationLimitError matches Flow's current 'computation limit exceeded' wording", () => {
+    expect(isComputationLimitError(new Error("error: computation error: computation limit exceeded (used: 146171, limit: 100000)"))).toBe(true)
   })
 
   it("isComputationLimitError matches 1110 / computation-exceeds phrasing", () => {
@@ -426,6 +443,19 @@ describe("fetchOnChainIds", () => {
   it("throws on a non-2xx Flow script response", async () => {
     ;(fetch as any).mockResolvedValue({ ok: false, status: 500, text: async () => "boom" })
     await expect(fetchOnChainIds("main(){}", WALLET)).rejects.toThrow(/Flow script HTTP 500/)
+  })
+
+  // 2026-09-29. Flow nests the cause behind two InvalidArgument wrappers; the body was cut at 200
+  // characters, which kept only the wrapper, so a script-limit failure could not be classified.
+  it("keeps the nested cause of a 400, well past the first 200 characters", async () => {
+    ;(fetch as any).mockResolvedValue({ ok: false, status: 400, text: async () => FLOW_1110_BODY })
+    const err = await fetchOnChainIds("main(){}", WALLET).catch((e) => e)
+    // Faithful to production: NEITHER signal survives a 200-character cut.
+    expect(FLOW_1110_BODY.indexOf("computation limit exceeded")).toBeGreaterThan(200)
+    expect(FLOW_1110_BODY.indexOf("1110")).toBeGreaterThan(200)
+    expect(String(err.message)).toContain("computation limit exceeded")
+    expect(isComputationLimitError(err)).toBe(true)
+    expect(isNoCollectionCapabilityError(err, 1_000)).toBe(false)
   })
 })
 
@@ -965,6 +995,28 @@ describe("runPaginatedDetailsBackfill", () => {
     parentTerminatedReason: "computation_limit_exceeded",
     parentErrorExcerpt: "boom",
     ...over,
+  })
+
+  // 2026-09-29. A wallet whose getIDs() ITSELF exceeds the script limit cannot be enumerated by any
+  // script (0xb6f2481eba4df97b, Top Shot's pack-distribution account). That is a property of the
+  // wallet, logged with its own reason, not a failed run.
+  it("a getIDs() over the script limit is logged as unenumerable, not pagination_failed", async () => {
+    ;(fetch as any).mockResolvedValue({ ok: false, status: 400, text: async () => FLOW_1110_BODY })
+    const out = await runPaginatedDetailsBackfill(pagArgs())
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    const log = lastLog()
+    expect(log.p_extra.terminated_reason).toBe("unenumerable_getids_over_script_limit")
+    expect(log.p_extra.flagged_unenumerable).toBe(true)
+    expect(log.p_ok).toBe(true)
+    expect(H.state.rpcCalls.some((c: any) => c.name === "upsert_wmc_batch")).toBe(false)
+  })
+
+  it("control: any OTHER getIDs() failure is still pagination_failed and ok=false", async () => {
+    ;(fetch as any).mockResolvedValue({ ok: false, status: 400, text: async () => "Invalid Flow argument: code = InvalidArgument desc = something else" })
+    await runPaginatedDetailsBackfill(pagArgs())
+    const log = lastLog()
+    expect(log.p_extra.terminated_reason).toBe("pagination_failed")
+    expect(log.p_ok).toBe(false)
   })
 
   it("logs no_more_moments when getIDs() returns empty", async () => {
