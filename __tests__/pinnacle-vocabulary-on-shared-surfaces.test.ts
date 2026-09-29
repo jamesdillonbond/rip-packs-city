@@ -83,3 +83,16 @@ describe("Analytics KPI — Pinnacle counts pins", () => {
     expect(src).not.toMatch(/label="Unique Editions"/)
   })
 })
+
+// 2026-09-28 (#157): a Pinnacle sub-pool's detail page shows the PACK's EV.
+describe("Pack detail page — Pinnacle drop-grain EV", () => {
+  it("substitutes the drop EV, reports its read in the degraded notice, and never shows the pool's EV as the headline", async () => {
+    const { readFileSync } = await import("node:fs")
+    const src = readFileSync("app/(collections)/[collection]/pack/dist/[distId]/page.tsx", "utf8")
+    expect(src).toMatch(/const pinDropRes = await fetchPinnacleDropEv\(collection, distId\)/)
+    expect(src).toMatch(/const grossEv = usePinDrop\s*\?\s*num\(pinDrop!\.gross_ev\)/)
+    expect(src).toMatch(/boardStatus\("Pack EV", pinDropRes\.ok\)/)
+    expect(src).toMatch(/const grailPremiumComparable = !useCorrectedEv && !usePinDrop/)
+    expect(src).toMatch(/const isSentinelEv = !usePinDrop && /)
+  })
+})

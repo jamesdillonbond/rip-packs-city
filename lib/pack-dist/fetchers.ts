@@ -557,6 +557,48 @@ export async function fetchAllDayCorrectedEv(
   return { data: (data as AllDayCorrectedEvRow | null) ?? null, ok: true }
 }
 
+/** Disney Pinnacle pack EV at DROP grain (v_pinnacle_pack_drop_ev, #157). */
+export interface PinnacleDropEvRow {
+  drop_title: string | null
+  pool_name: string | null
+  drop_pools: number | null
+  pool_share_pct: number | null
+  pool_gross_ev: number | null
+  gross_ev: number | null
+  sales_backed_ev: number | null
+  ask_value_share_pct: number | null
+  is_positive_ev: boolean | null
+  low_confidence_ev: boolean | null
+  ev_method: string | null
+}
+
+/**
+ * A Pinnacle "Standard" pack is one product whose supply Studio splits into
+ * sub-distributions; a buyer cannot choose a pool, so the page shows the
+ * DROP's EV (pools weighted by pack count). ok:true + null for every other
+ * collection, and for a Pinnacle dist the view does not price.
+ */
+export async function fetchPinnacleDropEv(
+  collectionSlug: string,
+  distId: string,
+  db: Db = supabaseAdmin,
+): Promise<RowResult<PinnacleDropEvRow>> {
+  if (collectionSlug !== "disney-pinnacle") return { data: null, ok: true }
+  const { data, error } = await bounded(
+    db
+      .from("v_pinnacle_pack_drop_ev")
+      .select("drop_title, pool_name, drop_pools, pool_share_pct, pool_gross_ev, gross_ev, sales_backed_ev, ask_value_share_pct, is_positive_ev, low_confidence_ev, ev_method")
+      .eq("dist_id", distId)
+      .maybeSingle(),
+    "pinnacle_drop_ev",
+  )
+  if (error) {
+    console.error("[pack-detail] pinnacle_drop_ev error", error.message)
+    return { data: null, ok: false }
+  }
+  return { data: (data as PinnacleDropEvRow | null) ?? null, ok: true }
+}
+
 const PACK_MARKET_VIEW: Record<string, string> = {
   "nfl-all-day": "v_allday_pack_market",
   "nba-top-shot": "v_topshot_pack_market",

@@ -68,7 +68,7 @@ import {
   fetchDistFallback,
   fetchPackLifecycle,
   fetchPackRealizedEv,
-  fetchAllDayCorrectedEv,
+  fetchAllDayCorrectedEv, fetchPinnacleDropEv,
   fetchPackMarket,
   fetchEvContributors,
   fetchTopPulls,
@@ -273,6 +273,9 @@ export default async function PackDetailPage(
   // connection pool") in-process before surfacing — a transient pool blip no
   // longer flips a real dist to the retryable error boundary on the first miss.
   const { bundle, error: bundleErr } = await fetchPackDetailBundle(coll.id, distId, collection)
+  // Disney Pinnacle: the pack's EV at DROP grain (#157). A no-op for every
+  // other collection (returns ok:true, null without a read).
+  const pinDropRes = await fetchPinnacleDropEv(collection, distId)
   const row = bundle.pack_row ?? null
   const fallback = bundle.dist_fallback ?? null
   if (!row && !fallback) {
@@ -379,7 +382,13 @@ export default async function PackDetailPage(
   // odds/median-robust corrected gross so every downstream site uses it. The
   // NET/ratio/margin verdict is derived lower down against the live secondary
   // ask ONLY (never retail/primary) — see secondaryAskAnchor below.
-  const grossEv = useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : grossEvRaw
+  // Disney Pinnacle (#157): a sub-pool's own EV is not a pack's — a $4.99
+  // Standard pack draws from every pool of its drop. Substitute the DROP EV.
+  const pinDrop = pinDropRes.data
+  const usePinDrop = pinDrop != null && pinDrop.gross_ev != null
+  const grossEv = usePinDrop
+    ? num(pinDrop!.gross_ev)
+    : useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : grossEvRaw
   // Typical Pull EV (2026-07-16) — slots × weighted-MEDIAN moment value over the
   // remaining pool. Where Actual EV (grossEv, the weighted MEAN) swings as grails
   // deplete, Typical Pull sits near the common floor and barely moves; the gap is
@@ -400,7 +409,7 @@ export default async function PackDetailPage(
   // Actual EV and Typical Pull are only differenceable when both come from the
   // SAME pack_ev_latest row. The AllDay corrected-EV substitution replaces Actual
   // from v_allday_pack_info, so the gap would be a model artefact, not a premium.
-  const grailPremiumComparable = !useCorrectedEv
+  const grailPremiumComparable = !useCorrectedEv && !usePinDrop
   const fmvCoverage = merged.fmv_coverage_pct
   const depletion = merged.depletion_pct
   const totalUnopened = num(merged.total_unopened)
@@ -447,7 +456,10 @@ export default async function PackDetailPage(
   // The exhausted count has no place of its own to say "unknown" — it renders as
   // a bare number in a section header — so a failed count is surfaced through the
   // shared degraded notice rather than published as a measured zero.
-  const shellDegraded = summarizeDegraded([boardStatus("Exhausted pool count", exhaustedRes.ok)])
+  const shellDegraded = summarizeDegraded([
+    boardStatus("Exhausted pool count", exhaustedRes.ok),
+    boardStatus("Pack EV", pinDropRes.ok),
+  ])
 
   // Reward / quest packs ship with retail_price_usd = 0 (Pack D1). Value-ratio
   // and EV-margin verdicts divide by retail, so they produce garbage on free
@@ -485,7 +497,7 @@ export default async function PackDetailPage(
   // fmv_coverage null|0). Rendering "$0.00 Gross EV / Net +$0.00" reads as
   // "this pack is worthless" and contradicts the empty state below; show an
   // em-dash + "awaiting pool data" and suppress the Net line instead.
-  const isSentinelEv = !hasDropPool && ((editionCount ?? 0) === 0 || !fmvCoverage)
+  const isSentinelEv = !usePinDrop && !hasDropPool && ((editionCount ?? 0) === 0 || !fmvCoverage)
 
   // Typical Pull display: show whenever the complete-pool median EV is present and
   // the pack isn't a holding/sentinel construct. Unlike Actual EV, it stays honest
@@ -1196,6 +1208,31 @@ export default async function PackDetailPage(
               ? ` ~${Math.round(stale)}% of pack value rests on sparse or missing sales data — treat as a rough estimate.`
               : " It rests on thin AllDay FMV — treat as a rough estimate."
           })()}
+        </div>
+      )}
+
+      {/* ── Disney Pinnacle drop-grain EV provenance (#157) ─────────────────── */}
+      {usePinDrop && (
+        <div
+          data-testid="pinnacle-drop-ev-note"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            lineHeight: 1.5,
+            padding: "10px 12px",
+            borderRadius: 8,
+            border: "1px solid var(--rpc-border)",
+            background: "var(--rpc-surface)",
+            color: pinDrop!.low_confidence_ev ? "var(--rpc-warning)" : "var(--rpc-text-muted)",
+          }}
+        >
+          {pinDrop!.low_confidence_ev && <strong>⚠ Rough estimate. </strong>}
+          {pinDrop!.drop_title && (pinDrop!.drop_pools ?? 0) >= 2
+            ? <>This is one of {pinDrop!.drop_pools} pools that make up {pinDrop!.drop_title}, sold as one pack — a buyer draws from all of them, so the EV shown is the pack&apos;s, weighted by each pool&apos;s number of packs{pinDrop!.pool_share_pct != null ? <> (this pool is {num(pinDrop!.pool_share_pct)}% of them{num(pinDrop!.pool_gross_ev) != null ? <>; on its own it would be {fmtUsd(num(pinDrop!.pool_gross_ev))}</> : null})</> : null}.</>
+            : <>EV weights each pin by its supply, valued at its median FMV.</>}
+          {num(pinDrop!.ask_value_share_pct) != null && num(pinDrop!.ask_value_share_pct)! >= 50 && (
+            <> {Math.round(num(pinDrop!.ask_value_share_pct)!)}% of it rests on asking prices for pins that have barely traded{num(pinDrop!.sales_backed_ev) != null ? <>; {fmtUsd(num(pinDrop!.sales_backed_ev))} is backed by sales</> : null}.</>
+          )}
         </div>
       )}
 

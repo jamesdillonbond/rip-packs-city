@@ -30,6 +30,7 @@ import {
   fetchPackLifecycle,
   fetchPackRealizedEv,
   fetchAllDayCorrectedEv,
+  fetchPinnacleDropEv,
   fetchPackMarket,
   fetchEvContributors,
   fetchTopPulls,
@@ -543,5 +544,29 @@ describe("bounds — a hung read is not an unindexed pack", () => {
     const res = await fetchEvContributors("nfl-all-day", "d1", hangingDb())
 
     expect(res).toEqual({ rows: [], ok: true })
+  })
+})
+
+// 2026-09-28 (#157): the Pinnacle pack page reads the DROP-grain EV.
+describe("fetchPinnacleDropEv", () => {
+  it("reads v_pinnacle_pack_drop_ev for disney-pinnacle", async () => {
+    const { db, calls } = makeDb({
+      v_pinnacle_pack_drop_ev: { data: { gross_ev: 36.07, drop_title: "Summer Splash - Standard", drop_pools: 6 }, error: null },
+    })
+    const res = await fetchPinnacleDropEv("disney-pinnacle", "8537", db)
+    expect(res.ok).toBe(true)
+    expect(res.data).toMatchObject({ gross_ev: 36.07, drop_pools: 6 })
+    expect(calls).toEqual(["v_pinnacle_pack_drop_ev"])
+  })
+
+  it("reports a failed read as ok:false, never as 'no EV'", async () => {
+    const { db } = makeDb({ v_pinnacle_pack_drop_ev: { data: null, error: DB_ERR } })
+    expect(await fetchPinnacleDropEv("disney-pinnacle", "8537", db)).toEqual({ data: null, ok: false })
+  })
+
+  it("issues no query for another collection", async () => {
+    const { db, calls } = makeDb({})
+    expect(await fetchPinnacleDropEv("nba-top-shot", "1", db)).toEqual({ data: null, ok: true })
+    expect(calls).toEqual([])
   })
 })

@@ -2908,3 +2908,8 @@ The Wall Kills arm pairs a `<pipeline>-heartbeat` row with a terminal row whose 
 ## Displaced from CLAUDE.md 2026-09-28 (verbatim) — WHO generated a surprising finding
 
 - ⚠ **When an instrument's first finding is SURPRISING, establish WHO generated it before believing WHAT it says** — 17 "user-facing" client errors were ONE headless crawler, `ua` in the payload all along (#69). **A `count(*)` over an OPEN endpoint counts REQUESTS, not READERS.**
+
+## Added 2026-09-28 — a stamp another writer can advance is not evidence of the WORK (#158)
+
+`seeded_wallets.last_refreshed_at` was read as "this wallet was walked" by the refresh sweep's low-priority gate. But a stats-only reconciler (`rpc-reconcile-seeded-wallet-stats`) also writes it, and it targets exactly the wallets whose stamp is stalest. So the reconciler refreshed the stamp, the gate skipped the wallet, and the next day the reconciler picked it again. The wallets that most needed a walk were the only ones that never got one (5 days; 4 wallets), and every job in the loop reported success. **Gate on a stamp only the work itself writes** (here `last_refreshed_per_collection`, written by each child walk). Before reading any `*_at` as proof of work, grep its WRITERS (see "Name the caller" above). A repair job that stamps what it did not do turns itself into the cause of the staleness it exists to fix.
+

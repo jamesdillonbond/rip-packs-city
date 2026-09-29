@@ -260,10 +260,11 @@ describe("seed-wallet-refresh — low-priority interval gate", () => {
     install({
       seeded_wallets: {
         data: [
-          // Low priority + fresh walk -> gated out of this wave.
-          seeded({ id: 1, username: "lowpri-fresh", wallet_address: "0x1111111111111111", priority: 5, last_refreshed_at: oneHourAgo }),
+          // Low priority + fresh walk -> gated out of this wave. (The WALK stamp
+          // is the per-collection one; re-pinned 2026-09-28, see below.)
+          seeded({ id: 1, username: "lowpri-fresh", wallet_address: "0x1111111111111111", priority: 5, last_refreshed_at: oneHourAgo, last_refreshed_per_collection: { nba_top_shot: oneHourAgo } }),
           // Low priority but stale past the 24h interval -> refreshed.
-          seeded({ id: 2, username: "lowpri-stale", wallet_address: "0x2222222222222222", priority: 5, last_refreshed_at: thirtyHoursAgo }),
+          seeded({ id: 2, username: "lowpri-stale", wallet_address: "0x2222222222222222", priority: 5, last_refreshed_at: thirtyHoursAgo, last_refreshed_per_collection: { nba_top_shot: thirtyHoursAgo } }),
           // High priority + fresh -> ALWAYS refreshed (never gated).
           seeded({ id: 3, username: "highpri", wallet_address: "0x3333333333333333", priority: 1, last_refreshed_at: oneHourAgo }),
         ],
@@ -276,6 +277,29 @@ describe("seed-wallet-refresh — low-priority interval gate", () => {
 
     const wallets = dispatchBodies(fetchMock!).map((b) => b.wallet).sort()
     expect(wallets).toEqual(["0x2222222222222222", "0x3333333333333333"])
+  })
+
+  // ⛔ 2026-09-28 — the starvation loop. The daily stats reconciler stamps
+  // last_refreshed_at WITHOUT walking; read by this gate, that skipped the same
+  // wallets on every wave and they went 5 days unwalked.
+  it("⛔ a fresh last_refreshed_at from a STATS refresh does not gate a wallet whose last WALK is old", async () => {
+    const oneHourAgo = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString()
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+    install({
+      seeded_wallets: {
+        data: [
+          seeded({ id: 1, username: "reconciled-not-walked", wallet_address: "0x6666666666666666", priority: 4, last_refreshed_at: oneHourAgo, last_refreshed_per_collection: { disney_pinnacle: fiveDaysAgo } }),
+          seeded({ id: 2, username: "stamped-never-walked", wallet_address: "0x7777777777777777", priority: 5, last_refreshed_at: oneHourAgo, last_refreshed_per_collection: null }),
+        ],
+        error: null,
+      },
+    })
+
+    await GET(req())
+    await runDeferred()
+
+    const wallets = dispatchBodies(fetchMock!).map((b) => b.wallet).sort()
+    expect(wallets).toEqual(["0x6666666666666666", "0x7777777777777777"])
   })
 
   it("a truncation-signature count bypasses the gate even on a fresh low-priority wallet (repair first)", async () => {

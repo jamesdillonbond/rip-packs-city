@@ -328,6 +328,16 @@ const BACKSTOP_FRESH_MS =
 
 // Most recent walk of any collection for this wallet, as epoch ms; NaN when
 // the wallet has never been walked (or the stamps are unparseable).
+//
+// ⛔ 2026-09-28: judged ONLY by the per-collection stamps, which a child writes
+// when it actually WALKS the wallet. `last_refreshed_at` is not a walk stamp:
+// refresh_seeded_wallet_stats writes it, and the daily pg_cron reconciler
+// (`rpc-reconcile-seeded-wallet-stats`, 09:28 UTC) calls that on the stalest
+// wallets WITHOUT walking them. Read here, that stamp made the 24 h
+// low-priority gate skip exactly those wallets on both waves, the reconciler
+// re-stamped them the next morning, and they were never walked again — three
+// seeded wallets had gone 5 days with no walk (measured). A wallet with no
+// walk stamp at all reads as never walked, so it is walked.
 function lastWalkMs(row: {
   last_refreshed_at: string | null
   last_refreshed_per_collection: Record<string, string> | null
@@ -338,7 +348,6 @@ function lastWalkMs(row: {
     const t = Date.parse(raw)
     if (Number.isFinite(t) && (!Number.isFinite(best) || t > best)) best = t
   }
-  consider(row.last_refreshed_at)
   const per = row.last_refreshed_per_collection
   if (per && typeof per === "object") for (const v of Object.values(per)) consider(v)
   return best
@@ -864,11 +873,11 @@ export async function GET(req: NextRequest) {
         if (
           !forceFull &&
           LOW_PRIORITY_INTERVAL_MS > 0 &&
-          isLowPriority(row.priority) &&
-          row.last_refreshed_at
+          isLowPriority(row.priority)
         ) {
-          const ageMs = nowMs - new Date(row.last_refreshed_at).getTime()
-          if (ageMs >= 0 && ageMs < LOW_PRIORITY_INTERVAL_MS) {
+          // The WALK stamp (see lastWalkMs), never last_refreshed_at.
+          const ageMs = nowMs - lastWalkMs(row)
+          if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < LOW_PRIORITY_INTERVAL_MS) {
             lowPrioritySkipped++
             return false
           }
