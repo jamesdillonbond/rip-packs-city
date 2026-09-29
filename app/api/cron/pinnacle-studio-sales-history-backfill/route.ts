@@ -150,6 +150,13 @@ type RenderResult = {
   error: string | null
 }
 
+/** A Flow address compared across feeds: lowercase, no 0x (the studio feed omits it). */
+function normBuyer(addr: string | null | undefined): string | null {
+  if (!addr) return null
+  const a = String(addr).trim().toLowerCase().replace(/^0x/, "")
+  return a === "" ? null : a
+}
+
 async function drainRender(
   renderId: string,
   studioEditionId: string,
@@ -235,31 +242,36 @@ async function drainRender(
   // sale the on-chain indexers already hold arrived under a DIFFERENT id —
   // 25,802 twins (same nft, price and buyer; median 0.34 h apart), counting
   // $617k of volume twice. A candidate whose nft already has a non-studio sale
-  // at the same price within ±2 days is that sale again: a dupe, not a row.
+  // at the same price within ±2 days, to the SAME BUYER, is that sale again: a
+  // dupe, not a row. ⚠ The buyer is part of the identity (2026-09-29): 7 of the
+  // 9 unpaired rows were real same-price resales to a DIFFERENT buyer inside the
+  // window, which a nft+price+time match would drop. The studio feed stores the
+  // buyer without 0x, so both sides are compared normalized; a side with no
+  // buyer cannot disprove the match.
   const remainingNfts = Array.from(new Set(
     Array.from(candidates.values())
       .filter((r) => !existing.has(r.id))
       .map((r) => r.nft_id)
       .filter((n): n is string => n != null),
   ))
-  const twinsByNft = new Map<string, Array<{ price: number; ms: number }>>()
+  const twinsByNft = new Map<string, Array<{ price: number; ms: number; buyer: string | null }>>()
   for (let i = 0; i < remainingNfts.length; i += READ_CHUNK) {
     const chunk = remainingNfts.slice(i, i + READ_CHUNK)
     const { data, error } = await supabaseAdmin
       .from("pinnacle_sales")
-      .select("nft_id, sale_price_usd, sold_at")
+      .select("nft_id, sale_price_usd, sold_at, buyer_address")
       .in("nft_id", chunk)
       .neq("source", SOURCE_TAG)
     if (error) {
       return { status: attempts + 1 >= MAX_ATTEMPTS ? "error" : "pending", studioTotal, found, inserted: 0, dupes: 0, pages, error: `twin_read: ${error.message.slice(0, 160)}` }
     }
-    for (const r of (data ?? []) as Array<{ nft_id: string | number; sale_price_usd: number | string | null; sold_at: string | null }>) {
+    for (const r of (data ?? []) as Array<{ nft_id: string | number; sale_price_usd: number | string | null; sold_at: string | null; buyer_address?: string | null }>) {
       const ms = r.sold_at ? Date.parse(r.sold_at) : NaN
       const price = Number(r.sale_price_usd)
       if (!Number.isFinite(ms) || !Number.isFinite(price)) continue
       const k = String(r.nft_id)
       const list = twinsByNft.get(k) ?? []
-      list.push({ price, ms })
+      list.push({ price, ms, buyer: normBuyer(r.buyer_address) })
       twinsByNft.set(k, list)
     }
   }
@@ -267,8 +279,12 @@ async function drainRender(
   const hasTwin = (row: PinSaleRow): boolean => {
     const ms = Date.parse(row.sold_at)
     if (row.nft_id == null) return false
+    const buyer = normBuyer(row.buyer_address)
     return (twinsByNft.get(row.nft_id) ?? []).some(
-      (t) => Math.abs(t.price - row.sale_price_usd) < 1e-9 && Math.abs(t.ms - ms) <= TWIN_WINDOW_MS,
+      (t) =>
+        Math.abs(t.price - row.sale_price_usd) < 1e-9 &&
+        Math.abs(t.ms - ms) <= TWIN_WINDOW_MS &&
+        (buyer == null || t.buyer == null || buyer === t.buyer),
     )
   }
 

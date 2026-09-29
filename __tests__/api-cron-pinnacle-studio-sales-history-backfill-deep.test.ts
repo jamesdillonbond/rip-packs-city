@@ -373,6 +373,42 @@ describe("pinnacle-studio-sales-history-backfill — on-chain twins (#22)", () =
     expect(await res.json()).toMatchObject({ sales_inserted: 2, dupes_skipped: 1 })
   })
 
+  it("⛔ a same-price resale to a DIFFERENT buyer inside the window is a real sale, not a twin", async () => {
+    fetchMock = installFetchMock([
+      studioStub([
+        histPage([
+          goodNode({ nft_id: "111", receiver_address: "abcabcabcabcabca", created_at: { block_time: "2025-06-01T00:00:00Z", transaction_hash: "0xa" } }),
+          goodNode({ nft_id: "222", receiver_address: "1111222233334444", created_at: { block_time: "2025-06-01T00:00:00Z", transaction_hash: "0xb" } }),
+        ]),
+      ]),
+    ])
+    const spy = install({
+      [PROGRESS_TABLE]: [
+        { data: [target()], error: null },
+        { data: null, error: null },
+        { data: null, error: null, count: 0 } as never,
+      ],
+      pinnacle_sales: [
+        { data: [], error: null },
+        {
+          data: [
+            // same buyer, written WITH 0x on-chain and without it by the studio feed → twin
+            { nft_id: "111", sale_price_usd: 2.5, sold_at: "2025-06-01T02:00:00Z", buyer_address: "0xABCABCABCABCABCA" },
+            // same nft, price and window, DIFFERENT buyer → a real resale
+            { nft_id: "222", sale_price_usd: 2.5, sold_at: "2025-06-01T02:00:00Z", buyer_address: "0x9999888877776666" },
+          ],
+          error: null,
+        },
+        { data: null, error: null }, // insert ok
+      ],
+    })
+
+    const res = await POST(req())
+    const rows = (spy.writes.pinnacle_sales ?? []).flatMap((w) => w.rows)
+    expect(rows.map((r) => (r as { id: string }).id)).toEqual(["0xb_222"])
+    expect(await res.json()).toMatchObject({ sales_inserted: 1, dupes_skipped: 1 })
+  })
+
   it("a failed twin read inserts NOTHING and stays retryable", async () => {
     fetchMock = installFetchMock([studioStub([histPage([goodNode()])])])
     const spy = install({

@@ -347,6 +347,6 @@ Built for the trophy-case campaign ([ledger](../overnight/ledger.md), 2026-09-27
   - `listed_count` and `fmv_ask_derived_usd` on `get_set_detail` / `get_player_detail` / `get_team_detail` / `get_series_detail`, plus the `series_detail_rollup` columns. Pinnacle `floor_total_usd` is now LIVE ASKS ONLY; it used to add each unlisted pin's FMV. `fmv_ask_derived_usd` is the ASK_ONLY part of the FMV total (77% catalog-wide on 09-28).
 - ⛔ **`pinnacle_sales` sources are NOT disjoint (2026-09-28, [known-issues #159](known-issues.md)).** The studio-history backfill (`pinnacle_studio_history_v1`) keys rows on the studio feed's tx hash and time, which are not the on-chain sale's. So an id dedupe let 25,793 twins of on-chain sales in, all sold before 2026-06-26.
   - The twins were removed. Their backup is `pinnacle_sales_studio_twins_20260928` (RLS on, no grants). It is safe to drop once nothing needs the revert.
-  - 9 many-to-one twins remain on purpose.
-  - The writer now skips any candidate whose NFT has a non-studio sale at the same price within ±2 days.
+  - Of 9 rows left unpaired, **7 are real same-price resales to a different buyer**, correctly kept. **2 are twins still in the table:** one wallet bought nft `163827235222471` twice on 06-24 at $2. Their delete was refused by the session permission check (09-29) and is pending Trevor.
+  - The writer now skips any candidate whose NFT has a non-studio sale at the same price within ±2 days **to the same buyer**, comparing addresses normalized without `0x`. The buyer was added 09-29, after those 7 resales showed that NFT + price + time alone drops real sales.
   - ⚠ Any new cross-source sales writer needs the same identity check: NFT, price, buyer and time window.
