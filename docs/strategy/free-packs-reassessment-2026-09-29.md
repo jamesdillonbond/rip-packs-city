@@ -122,7 +122,31 @@ A real on-chain pack (a resource holding the NFTs, opened by the owner) is the ~
 3. **Who can claim?** Signed-in users with a saved Flow wallet, one per account, 18+, excluding the `internal_accounts` population.
 4. **First step if yes:** one real low-value moment sent through the existing transfer path to a Dapper-custodial account. That turns the delivery inference into a measurement, which is the step the July addendum listed first and nobody has run yet.
 
-## Sources
+---
+
+## 5. A repack launchpad (added 2026-09-29, Trevor: "I could also see it be a repack launchpad type of feature")
+
+A launchpad means other people (collectors, communities, creators) build and drop packs of their own moments using RPC's tooling. What decides whether this works is whether each creator's packs are **sold** or **free**.
+
+| Shape | Legal | Custody | Verdict |
+|---|---|---|---|
+| **Paid random packs by creators** | Every drop is prize + chance + payment. RPC would be *promoting* it, and NY Penal Law § 225.05 names promoting gambling on its own. This is the shelved shape, repeated once per creator. | Creators' NFTs and buyers' money must sit somewhere trusted, so a contract plus payments. | **No.** |
+| **Free giveaway packs by creators** | Each drop is a sweepstakes. The compliance in §2.2 applies to each creator, and RPC as the platform should require it: rules template, $5,000 cap per drop, age gate. | The creator's moments go into an **on-chain escrow contract**, and the claimer opens the pack. RPC never holds them. This needs the escrow-in-pack contract from the June spec: ~3–4 weeks plus an audit. | **Yes, after RPC's own free drops (§3) prove the claim and reveal flow.** |
+| **Paid transparent bundles** ("these 3 exact moments, FMV $47, price $38") | No chance, so it's ordinary commerce. | RPC becomes a marketplace: bundle listings, settlement, disputes. The on-chain storefront doesn't do multi-NFT bundles natively. | Possible later. It's a marketplace decision, not a pack decision. |
+| **RPC as the verifier for anyone's drop** (no hosting) | None. | None. `score_external_pack_drop()` already prices any pool: mean vs median EV, coverage. | Already built. The only operator has been dormant since 07-22, so there's little to verify today. |
+
+**What a free launchpad adds over RPC-only drops:**
+- **Creators bring the inventory**, so RPC's inventory budget goes away.
+- **Creators bring their audiences.**
+- **Every pool gets priced by RPC FMV before it goes live:** a "Verified by RPC" badge with the pool value and a typical-pack value. That's our moat doing the work.
+
+**New problems a launchpad brings:**
+- **Claim farming.** Free packs attract multi-account farming. Creators will want gates like wallet age, one claim per Top Shot account, or captcha. ⚠ **"Must hold X to claim" is risky:** if X has to be bought, a lawyer could argue it counts as payment. Keep holder gates out until a lawyer has looked at them.
+- **Creator honesty.** Escrow proves the pool exists and is locked. Publishing the pool with RPC FMV before claims open proves what's in it.
+- **Moderation.** Creators must not pay claimers, sell unopened claims, or run "donate for extra entries" drops. Put that in the creator terms and enforce it.
+
+**Order:** (1) RPC's own free drop on the no-contract design (§3.1). (2) If claims and reveal land well, the escrow contract and creator-side tools, free drops only. (3) Revisit paid transparent bundles only when the 100-WAU gate is met.
+
 
 - Vaultopolis drops API (live, 2026-09-29, via `pg_net`); CoinGecko FLOW/USD 90-day chart.
 - [New York Targets Valve's Loot Boxes as Illegal Gambling (Nat'l Law Review)](https://natlawreview.com/article/new-york-targets-valves-loot-boxes-illegal-gambling)
