@@ -97,6 +97,11 @@ export interface FeedResult {
   sourcesFailed?: string[];
   /** `sourcesFailed.length > 0`. Sent by the route so clients need not derive it. */
   degraded?: boolean;
+  /**
+   * Every team the collection's Team filter can offer, beyond those on the
+   * current board (Top Shot: NBA + WNBA). Absent when not known.
+   */
+  teamOptions?: string[];
 }
 
 export type SortOption =

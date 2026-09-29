@@ -18,6 +18,9 @@ describe("sniperTeamOptions / filterSniperDeals({ team })", () => {
   it("options are the board's distinct teams, sorted, without the Unknown placeholder", () => {
     expect(sniperTeamOptions([deal("Star Wars"), deal("Pocahontas"), deal("Star Wars"), deal("Unknown"), deal("")])).toEqual(["Pocahontas", "Star Wars"])
   })
+  it("known teams (the feed's teamOptions) are offered even with no listing on the board", () => {
+    expect(sniperTeamOptions([deal("Boston Celtics")], "all", ["Portland Trail Blazers", "Boston Celtics"])).toEqual(["Boston Celtics", "Portland Trail Blazers"])
+  })
   it("a selected team that left the board stays listed", () => {
     expect(sniperTeamOptions([deal("Pocahontas")], "Toy Story")).toEqual(["Pocahontas", "Toy Story"])
   })

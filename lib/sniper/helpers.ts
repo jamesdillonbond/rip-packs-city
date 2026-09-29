@@ -65,8 +65,15 @@ export function isDealOwned(d: SniperDeal, ownedIds: Set<string>): boolean {
  * value that has dropped off the board stays listed so the control never shows
  * a selection it cannot display.
  */
-export function sniperTeamOptions(deals: Pick<SniperDeal, "teamName">[], selected?: string | null): string[] {
+export function sniperTeamOptions(
+  deals: Pick<SniperDeal, "teamName">[],
+  selected?: string | null,
+  known?: readonly string[] | null,
+): string[] {
   const set = new Set<string>();
+  // `known` = teams the feed says the collection has (FeedResult.teamOptions),
+  // so a team with no listing on the current board is still pickable.
+  for (const t of known ?? []) if (t && t.trim()) set.add(t.trim());
   for (const d of deals) {
     const t = (d.teamName ?? "").trim();
     if (t && t.toLowerCase() !== "unknown") set.add(t);

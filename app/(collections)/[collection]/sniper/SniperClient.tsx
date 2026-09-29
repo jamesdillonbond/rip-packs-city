@@ -105,6 +105,9 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "serial_asc",  label: "Lowest Serial" },
 ];
 
+// Collections whose /api/sniper-feed honours `team` over the full pool.
+const SERVER_TEAM_FILTER = new Set(["nba-top-shot", "nfl-all-day"]);
+
 function SniperMomentsBody() {
   const routeParams = useParams();
   const collectionSlug = routeParams.collection as string;
@@ -160,7 +163,10 @@ function SniperMomentsBody() {
   // Studio + Chasers-only (Disney Pinnacle's deals carry `studio`/`isChaser`;
   // the controls hide themselves on boards without them) follow the same rule.
   type BoardFilters = { slug: string; team: string; studio: string; chaserOnly: boolean };
-  const [boardSel, setBoardSel] = useState<BoardFilters>({ slug: collectionSlug, team: "all", studio: "all", chaserOnly: false });
+  // `?team=` seeds the pick, so a team's board is linkable
+  // (/nba-top-shot/sniper?team=Portland%20Trail%20Blazers).
+  const initialTeam = useSearchParams()?.get("team")?.trim() || "all";
+  const [boardSel, setBoardSel] = useState<BoardFilters>({ slug: collectionSlug, team: initialTeam, studio: "all", chaserOnly: false });
   const board = boardSel.slug === collectionSlug ? boardSel : { slug: collectionSlug, team: "all", studio: "all", chaserOnly: false };
   const teamFilter = board.team;
   const studioFilter = board.studio;
@@ -468,9 +474,13 @@ function SniperMomentsBody() {
     if (badgeOnly) params.set("badgeOnly", "true");
     if (flowWalletOnly) params.set("flowWalletOnly", "true");
     if (collectionSlug === "nba-top-shot" && leagueFilter !== "all") params.set("league", leagueFilter);
+    // Top Shot and All Day filter by team SERVER-side, over the whole listing
+    // pool. Client-side alone, a team pick only searched the ~200 listings
+    // already loaded, so most teams' listings were unreachable.
+    if (SERVER_TEAM_FILTER.has(collectionSlug) && teamFilter !== "all") params.set("team", teamFilter);
     params.set("sortBy", sortBy);
     return `${feedEndpoint}?${params}`;
-  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint, feedCollection, collectionSlug, leagueFilter]);
+  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint, feedCollection, collectionSlug, leagueFilter, teamFilter]);
 
   const feedKey = buildFeedUrl();
 
@@ -725,7 +735,7 @@ function SniperMomentsBody() {
   // group). Headline "hot"/avg-discount reflect the VERIFIED subset only so the
   // top-of-page numbers can't be inflated by thin-FMV fake bargains. Extracted to
   // lib/sniper/helpers (filterSniperDeals / sortByVerifiedFirst / computeSniperStats).
-  const teamOptions = sniperTeamOptions(data?.deals ?? [], teamFilter);
+  const teamOptions = sniperTeamOptions(data?.deals ?? [], teamFilter, data?.teamOptions);
   const studioOptions = sniperStudioOptions(data?.deals ?? [], studioFilter);
   const hasChasers = sniperHasChasers(data?.deals ?? []) || chaserOnly;
   const boardFilterOpts = { team: teamFilter, studio: studioFilter, chaserOnly };
