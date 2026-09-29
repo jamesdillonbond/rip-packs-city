@@ -659,6 +659,32 @@ describe("MarketClient — controls", () => {
     })
   })
 
+  // 2026-09-29 mobile report: the Team list painted SEE-THROUGH over the Owned
+  // chips and was CLIPPED at the filter card's bottom edge.
+  it("opens a multi-select list that is opaque and not clipped by the filter card", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.click(screen.getAllByRole("button", { name: /Any ▾/ })[0])
+    const box = await screen.findByRole("listbox")
+    expect(box.style.background).toBe("var(--rpc-surface)")
+    let el: HTMLElement | null = box.parentElement
+    while (el && el !== document.body) {
+      expect(el.style.overflow, "an ancestor of the listbox clips it").not.toBe("hidden")
+      if (el.tagName === "SECTION") break
+      el = el.parentElement
+    }
+  })
+
+  it("loads Top Shot table thumbnails through the resize CDN, not the 2880px master", async () => {
+    const master = "https://assets.nbatopshot.com/editions/6_wnba_2024_common/abc/play_abc_capture_Hero_2880_2880_Transparent.png"
+    marketResponse = () => json(200, market({ listings: [LISTING({ thumbnailUrl: master })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const srcs = Array.from(document.querySelectorAll("img")).map((i) => i.getAttribute("src") ?? "")
+    expect(srcs.some((s) => s.includes("/resize/editions/") && s.includes("width=160"))).toBe(true)
+    expect(srcs).not.toContain(master)
+  })
+
   it("disables a multi-select that has no options in the current results", async () => {
     marketResponse = () => json(200, market({ listings: [LISTING({ setName: null, seriesName: null, teamName: null, badgeSlugs: [] })] }))
     render(<MarketClient />)

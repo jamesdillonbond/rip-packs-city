@@ -33,8 +33,8 @@ import { filterListingsByOwned, collectBadgeOptions, countActiveFilters } from "
 import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid, collectionHasLocking, collectionHasBadges } from "@/lib/collections"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import IpfsImg from "@/components/media/IpfsImg"
+import { resizedThumb } from "@/lib/pack-lifecycle-format"
 import { paniniSubjectIsPlayer } from "@/lib/panini/subjects"
 import { fmvBasis } from "@/lib/fmv-basis"
 import { askAgeStamp } from "@/lib/market/ask-freshness"
@@ -573,7 +573,9 @@ function MarketInner() {
       {/* ── Filter bar ── */}
       <section
         className="rpc-card rpc-thead-scanline"
-        style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12, position: "relative", overflow: "hidden" }}
+        // ⚠ NO overflow:hidden here — it clipped every MultiSelectChip listbox to the
+        // card's bottom edge (Team dropdown cut off mid-list, 2026-09-29 mobile report).
+        style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12, position: "relative" }}
       >
         {/* Row 1: tier chips + sort + view toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -870,7 +872,9 @@ function MultiSelectChip({
             top: "calc(100% + 4px)",
             left: 0,
             zIndex: 50,
-            background: "var(--rpc-surface-raised)",
+            // ⚠ OPAQUE token. --rpc-surface-raised is a 3% tint, so the open list
+            // painted see-through over the Owned chips + "50 of 500+" beneath it.
+            background: "var(--rpc-surface)",
             border: "1px solid var(--rpc-border)",
             borderRadius: "var(--radius-sm)",
             boxShadow: "0 6px 18px rgba(0,0,0,0.6)",
@@ -988,7 +992,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
       <div style={{ aspectRatio: "1 / 1", background: "var(--rpc-surface)", position: "relative", overflow: "hidden" }}>
         {hasThumb ? (
           <IpfsImg
-            src={proxyIpfsUrl(listing.thumbnailUrl) ?? undefined}
+            src={resizedThumb(listing.thumbnailUrl, 512) ?? undefined}
             alt={listing.playerName ?? ""}
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           />
@@ -1109,7 +1113,6 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 11 }}>
         <thead className="rpc-thead-scanline">
           <tr style={{ borderBottom: "1px solid var(--rpc-border)", color: "var(--rpc-text-muted)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.14em" }}>
-            <th style={th}></th>
             <th style={th}>{getEntityLabels(collectionUrlSlug).player}</th>
             <th style={th}>{getEntityLabels(collectionUrlSlug).tier}</th>
             <th style={th}>Series</th>
@@ -1143,12 +1146,18 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 onMouseEnter={(e) => { e.currentTarget.style.background = `${accent}11` }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = "transparent" }}
               >
-                <td style={td}>
-                  {l.thumbnailUrl ? (
-                    <IpfsImg src={proxyIpfsUrl(l.thumbnailUrl) ?? undefined} alt="" width={80} height={80} style={{ borderRadius: 8, objectFit: "cover" }} />
-                  ) : null}
-                </td>
                 <td style={{ ...td, color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", fontWeight: 700 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {/* Thumb sits LEFT of the name, as on Sniper + Collection. ⚠ SIZED:
+                      the raw Top Shot art is a 2880px multi-MB PNG — 50 of them per
+                      page failed/stalled on iOS and IpfsImg rendered nothing (the
+                      column showed empty). resizedThumb → Top Shot's resize CDN. */}
+                  <div style={{ width: 56, height: 56, flexShrink: 0, borderRadius: 6, background: "var(--rpc-surface)", overflow: "hidden" }}>
+                    {l.thumbnailUrl ? (
+                      <IpfsImg src={resizedThumb(l.thumbnailUrl, 160) ?? undefined} alt="" width={56} height={56} style={{ width: 56, height: 56, objectFit: "cover", display: "block" }} />
+                    ) : null}
+                  </div>
+                  <span style={{ minWidth: 0 }}>
                   {l.playerName && (!entityLinks || (collectionUrlSlug === "panini-blockchain" && !paniniSubjectIsPlayer(l.playerName, l.setName))) ? (
                     // Panini dual-player cards, Team Badges and World Cup Posters
                     // have no player page (2026-09-27) — name, no 404 link.
@@ -1174,6 +1183,8 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   ) : (
                     "—"
                   )}
+                  </span>
+                  </div>
                 </td>
                 <td style={{ ...td, color: dot }}>{tier || "—"}</td>
                 <td style={{ ...td, color: "var(--rpc-text-muted)" }}>{l.seriesName ? marketSeriesLabel(l.seriesName, collectionUrlSlug) : "—"}</td>
@@ -1290,10 +1301,10 @@ const th: React.CSSProperties = {
 const td: React.CSSProperties = {
   padding: "9px 12px",
   verticalAlign: "middle",
-  // `height` on a table cell acts as a MIN row height, so an 80px moment thumb
-  // (source art is 512px natural → lossless upscale) sits comfortably and
-  // thumbnail-less rows keep the same vertical rhythm instead of crowding.
-  height: 96,
+  // `height` on a table cell acts as a MIN row height, so the 56px moment thumb
+  // beside the name sits comfortably and thumbnail-less rows keep the same
+  // vertical rhythm instead of crowding.
+  height: 72,
 }
 
 function EmptyState({ collectionId, thinVolume, filtersActive = false }: { collectionId: string; thinVolume: boolean; filtersActive?: boolean }) {
