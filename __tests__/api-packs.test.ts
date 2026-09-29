@@ -247,18 +247,23 @@ describe("GET /api/packs", () => {
     expect(d1.ev_margin_pct).toBe(8500) // preserved because ratio was null
   })
 
-  // ── Disney Pinnacle corrected merge (entirely uncovered branch) ─────────
-  it("overlays Pinnacle corrected EV onto matching dists", async () => {
+  // ── Disney Pinnacle drop-grain merge (#157, 2026-09-28) ─────────────────
+  it("overlays the DROP's EV onto every sub-pool of a Pinnacle drop, with the pool's own EV and share", async () => {
     tables.pack_table_rows = {
       data: [
-        { dist_id: "p1", title: "Summer Splash", gross_ev: 531, pack_ev: 520, value_ratio: 100, ev_margin_pct: 9900 },
+        { dist_id: "p1", title: "Summer Splash - Standard - Quinova", gross_ev: 4050, pack_ev: 4045, value_ratio: 811, ev_margin_pct: 81000 },
         { dist_id: "p2", title: "Plain Pin Pack", gross_ev: 5, pack_ev: 2, value_ratio: 1.1, ev_margin_pct: 10 },
       ],
       count: 2,
       error: null,
     }
-    tables.v_pinnacle_pack_ev_corrected = {
-      data: [{ dist_id: "p1", corrected_gross_ev: 14, corrected_net_ev: 8, corrected_value_ratio: 1.5, ev_method: "median_within_supply", low_confidence_ev: true }],
+    tables.v_pinnacle_pack_drop_ev = {
+      data: [{
+        dist_id: "p1", drop_title: "Summer Splash - Standard", pool_name: "Quinova", drop_pools: 6,
+        pool_share_pct: 0.2, pool_gross_ev: 4050, gross_ev: 36.07, net_ev: 31.08, value_ratio: 7.229,
+        sales_backed_ev: 6.22, ask_value_share_pct: 82.8, is_positive_ev: true, low_confidence_ev: true,
+        ev_method: "drop_pool_weighted",
+      }],
       error: null,
     }
     const res = await GET(req("https://t/api/packs?collection=disney-pinnacle"))
@@ -266,23 +271,32 @@ describe("GET /api/packs", () => {
     const body = await res.json()
     const p1 = body.rows.find((r: any) => r.dist_id === "p1")
     const p2 = body.rows.find((r: any) => r.dist_id === "p2")
-    expect(p1.gross_ev).toBe(14)
-    expect(p1.pack_ev).toBe(8)
-    expect(p1.value_ratio).toBe(1.5)
-    expect(p1.ev_margin_pct).toBeCloseTo(50) // (1.5 - 1) * 100
+    // ⛔ The pool's 811x is not the pack's value.
+    expect(p1.value_ratio).not.toBe(811)
+    expect(p1.gross_ev).toBe(36.07)
+    expect(p1.pack_ev).toBe(31.08)
+    expect(p1.value_ratio).toBe(7.229)
+    expect(p1.ev_margin_pct).toBeCloseTo(622.9)
+    expect(p1.is_positive_ev).toBe(true)
     expect(p1.low_confidence_ev).toBe(true)
-    expect(p1.ev_method).toBe("median_within_supply")
-    expect(p2.gross_ev).toBe(5) // no corrected row -> untouched
+    expect(p1.ev_method).toBe("drop_pool_weighted")
+    expect(p1).toMatchObject({ drop_title: "Summer Splash - Standard", pool_name: "Quinova", drop_pools: 6, pool_share_pct: 0.2, pool_gross_ev: 4050, sales_backed_ev: 6.22, ask_value_share_pct: 82.8 })
+    expect(p2.gross_ev).toBe(5) // no drop row -> untouched
     // Pinnacle has no drop-pool basis -> ev_basis null
     expect(body.ev_basis).toBeNull()
   })
 
-  it("keeps modeled EV when the Pinnacle corrected view errors (non-fatal)", async () => {
-    tables.pack_table_rows = { data: [{ dist_id: "p1", title: "Pin", gross_ev: 531 }], count: 1, error: null }
-    tables.v_pinnacle_pack_ev_corrected = { data: null, error: { message: "pin corr boom" } }
+  it("⛔ WITHHOLDS Pinnacle EV when the drop view errors — never falls back to the per-pool model", async () => {
+    tables.pack_table_rows = { data: [{ dist_id: "p1", title: "Pin", gross_ev: 4050, pack_ev: 4045, value_ratio: 811, ev_margin_pct: 81000 }], count: 1, error: null }
+    tables.v_pinnacle_pack_drop_ev = { data: null, error: { message: "pin drop boom" } }
     const res = await GET(req("https://t/api/packs?collection=disney-pinnacle"))
     expect(res.status).toBe(200)
-    expect((await res.json()).rows[0].gross_ev).toBe(531)
+    const row = (await res.json()).rows[0]
+    expect(row.gross_ev).toBeNull()
+    expect(row.value_ratio).toBeNull()
+    expect(row.ev_margin_pct).toBeNull()
+    expect(row.is_positive_ev).toBeNull()
+    expect(row.ev_unavailable).toBe(true)
   })
 
   // ── availability disclosure + counts ───────────────────────────────────

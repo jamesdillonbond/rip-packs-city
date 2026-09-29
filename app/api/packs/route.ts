@@ -16,8 +16,8 @@ const supabase: any = createClient(
 )
 
 // disney-pinnacle added 2026-07-06 — render-keyed supply-weighted pack EV via
-// the compute-pinnacle-pack-ev pipeline (no TS/AllDay corrected-EV merge; uses
-// the base modeled EV from pack_table_rows / mv_pack_ev_latest).
+// the compute-pinnacle-pack-ev pipeline; since 2026-09-28 its EV is merged at
+// DROP grain from v_pinnacle_pack_drop_ev (below).
 // laliga-golazos re-added 2026-07-07 — the compute-golazos-pack-ev pipeline is
 // the AllDay v8 clone (supply/circulation-weighted EV baked into the writer), so
 // the base EV in pack_table_rows is already odds-aware; no corrected-EV merge.
@@ -181,40 +181,60 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Corrected EV (Disney Pinnacle only): the raw modeled EV from pack_table_rows
-  // is a supply-weighted MEAN of render FMVs, which a single ASK_ONLY chase render
-  // over-states on tiny sold-out packs (the 531x "Summer Splash" case).
-  // v_pinnacle_pack_ev_corrected recomputes a median-within-supply-group EV and
-  // flags low-confidence packs; overwrite the display columns with it (mirrors the
-  // TS calibrated + AllDay corrected merges) and attach low_confidence_ev/ev_method
-  // for the caveat chip. Non-fatal.
+  // Disney Pinnacle: EV at DROP grain (v_pinnacle_pack_drop_ev, #157). A
+  // Pinnacle "Standard" pack is one product whose supply Studio splits into
+  // sub-distributions ("Summer Splash - Standard - LE Standard / Quinova / …");
+  // a buyer cannot choose a pool, so a pool's own EV (the 5-pack Quinova pool
+  // read 811x) is not a pack's EV. Every member row carries the DROP's EV,
+  // weighted by each pool's pack count, plus the pool's own EV and its share.
+  // "+EV" = the sales-backed part of the EV (value not resting on asking
+  // prices) beats the price. ⚠ A FAILED read withholds the EV — the fallback
+  // used to be the raw per-pool model, the exact inflated number this replaces.
   if (collection === "disney-pinnacle" && rows.length) {
     const { data: corr, error: corrError } = await boundedRead(supabase
-      .from("v_pinnacle_pack_ev_corrected")
-      .select("dist_id, corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, low_confidence_ev")
-      .in("dist_id", distIds), "api/packs/v_pinnacle_pack_ev_corrected")
+      .from("v_pinnacle_pack_drop_ev")
+      .select("dist_id, drop_title, pool_name, drop_pools, pool_share_pct, pool_gross_ev, gross_ev, net_ev, value_ratio, sales_backed_ev, ask_value_share_pct, is_positive_ev, low_confidence_ev, ev_method")
+      .in("dist_id", distIds), "api/packs/v_pinnacle_pack_drop_ev")
     if (corrError) {
-      console.error("[api/packs] pinnacle corrected merge", corrError.message)
-    } else if (corr?.length) {
+      console.error("[api/packs] pinnacle drop EV read", corrError.message)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rows = (rows as any[]).map((r) => ({
+        ...r,
+        gross_ev: null,
+        pack_ev: null,
+        value_ratio: null,
+        ev_margin_pct: null,
+        is_positive_ev: null,
+        ev_unavailable: true,
+      }))
+    } else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const corrMap = new Map<string, any>(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (corr as any[]).map((c) => [String(c.dist_id), c]),
+        ((corr ?? []) as any[]).map((c) => [String(c.dist_id), c]),
       )
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       rows = (rows as any[]).map((r) => {
         const c = corrMap.get(String(r.dist_id))
-        if (!c || c.corrected_gross_ev == null) return r
-        const ratio = c.corrected_value_ratio == null ? null : Number(c.corrected_value_ratio)
+        if (!c || c.gross_ev == null) return r
+        const ratio = c.value_ratio == null ? null : Number(c.value_ratio)
         return {
           ...r,
-          gross_ev: c.corrected_gross_ev,
-          pack_ev: c.corrected_net_ev,
-          value_ratio: c.corrected_value_ratio,
+          gross_ev: c.gross_ev,
+          pack_ev: c.net_ev,
+          value_ratio: c.value_ratio,
           // Same scale the AllDay block uses: (net/price)*100 = (value_ratio-1)*100.
           ev_margin_pct: ratio === null ? r.ev_margin_pct : (ratio - 1) * 100,
+          is_positive_ev: c.is_positive_ev,
           low_confidence_ev: c.low_confidence_ev,
           ev_method: c.ev_method,
+          sales_backed_ev: c.sales_backed_ev,
+          ask_value_share_pct: c.ask_value_share_pct,
+          drop_title: c.drop_title,
+          drop_pools: c.drop_pools,
+          pool_name: c.pool_name,
+          pool_share_pct: c.pool_share_pct,
+          pool_gross_ev: c.pool_gross_ev,
         }
       })
     }

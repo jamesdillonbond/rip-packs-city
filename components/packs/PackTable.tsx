@@ -80,6 +80,13 @@ export interface PackRow {
   editionCount?: number | null
   /** True when the pack draws from a single ultra-rare edition rather than a probabilistic pool. */
   isRareSinglePack?: boolean
+  /** Disney Pinnacle (#157): this row is ONE sub-pool of a drop that sells as
+   *  a single pack. grossEV/packEvDollar/evMarginPct are the DROP's (what a
+   *  buyer's pack is worth); the pool's own EV is only in the chip's title. */
+  dropPool?: { dropTitle: string; pools: number; poolName: string | null; sharePct: number | null; poolEv: number | null } | null
+  /** Per-row explanation for the "⚠ thin FMV" chip when the reason differs
+   *  from the All Day default (Pinnacle: value resting on asking prices). */
+  lowConfidenceTitle?: string | null
   /** Cached `total_unopened` from pack_ev_latest — packs remaining in the
    *  distribution. Drives the "remaining" sort. Null when EV not yet computed. */
   totalUnopened?: number | null
@@ -193,6 +200,17 @@ const CALIBRATED_TITLE =
 
 const LOW_CONFIDENCE_TITLE =
   'This EV is odds-corrected (tiers valued by median FMV, weighted by pull odds), but ≥50% of the pack value rests on stale or no-data FMV. Treat it as a rough estimate.'
+
+/** Chip text + title for a Pinnacle sub-pool row (#157). */
+export function dropPoolChip(d: NonNullable<PackRow['dropPool']>): { label: string; title: string } {
+  const share = d.sharePct == null ? null : d.sharePct < 1 ? d.sharePct.toFixed(1) : String(Math.round(d.sharePct))
+  const label = `${d.poolName ?? 'Pool'} · ${share != null ? `${share}% of packs` : `1 of ${d.pools} pools`}`
+  const poolEv = d.poolEv == null ? '' : ` This pool alone would be worth $${d.poolEv.toLocaleString('en-US', { maximumFractionDigits: 2 })} a pack, but a buyer cannot choose it.`
+  return {
+    label,
+    title: `One of ${d.pools} pools that make up ${d.dropTitle}, sold as one pack. A buyer draws from all ${d.pools}, so the EV shown is the pack's, weighted by each pool's number of packs.${poolEv}`,
+  }
+}
 
 const GRAIL_PREMIUM_TITLE =
   'Grail premium = Actual EV − Typical Pull. Actual EV (the mean) is inflated by rare grails; a typical pull is worth ~the Typical Pull figure. A large gap means the pack is lottery-shaped.'
@@ -478,12 +496,23 @@ export default function PackTable({
                     )}
                     {r.lowConfidenceEv && (
                       <span
-                        title={LOW_CONFIDENCE_TITLE}
+                        title={r.lowConfidenceTitle ?? LOW_CONFIDENCE_TITLE}
                         className="inline-block rounded border border-amber-900 bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300"
                       >
                         ⚠ thin FMV
                       </span>
                     )}
+                    {r.dropPool && (() => {
+                      const chip = dropPoolChip(r.dropPool)
+                      return (
+                        <span
+                          title={chip.title}
+                          className="inline-block rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--rpc-text-secondary)]"
+                        >
+                          {chip.label}
+                        </span>
+                      )
+                    })()}
                     {r.isRareSinglePack && (
                       <span
                         title={RARE_SINGLE_TITLE}
@@ -622,12 +651,23 @@ export default function PackTable({
                 )}
                 {r.lowConfidenceEv && (
                   <div
-                    title={LOW_CONFIDENCE_TITLE}
+                    title={r.lowConfidenceTitle ?? LOW_CONFIDENCE_TITLE}
                     className="mt-1 inline-block rounded border border-amber-900 bg-amber-950/40 px-1.5 py-0.5 text-[9px] font-semibold text-amber-300"
                   >
                     ⚠ thin FMV
                   </div>
                 )}
+                {r.dropPool && (() => {
+                  const chip = dropPoolChip(r.dropPool)
+                  return (
+                    <div
+                      title={chip.title}
+                      className="mt-1 inline-block rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 text-[9px] font-semibold text-[color:var(--rpc-text-secondary)]"
+                    >
+                      {chip.label}
+                    </div>
+                  )
+                })()}
                 {r.isRareSinglePack && (
                   <div
                     title={RARE_SINGLE_TITLE}

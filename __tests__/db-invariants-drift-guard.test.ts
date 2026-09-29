@@ -229,6 +229,18 @@ const PINS = [
     migration: "supabase/migrations/20260929022535_audit_20260928_pinnacle_unique_editions_count_pins.sql",
   },
   {
+    fn: "analytics_packs_summary",
+    test: "supabase/tests/pinnacle_pack_drop_ev.sql",
+    // 2026-09-28 (#157): Pinnacle packs at DROP grain (v_pinnacle_pack_drop_ev).
+    migration: "supabase/migrations/20260929025310_audit_20260928_pinnacle_pack_ev_at_drop_grain.sql",
+  },
+  {
+    fn: "analytics_packs_top_ev",
+    test: "supabase/tests/pinnacle_pack_drop_ev.sql",
+    // 2026-09-28 (#157): no Pinnacle sub-pool or ask-driven drop on the leaderboard.
+    migration: "supabase/migrations/20260929025310_audit_20260928_pinnacle_pack_ev_at_drop_grain.sql",
+  },
+  {
     // Added 2026-09-26. The pulls a wallet's pack row shows: Dapper's list for
     // THIS pack and opener, else the wallet's own reconstructed burst, else
     // nothing -- never the moment_acquisitions linkage that listed 95 "pulls"

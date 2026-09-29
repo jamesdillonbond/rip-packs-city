@@ -95,6 +95,15 @@ interface ApiRow {
    *  EV rests on stale/thin FMV (≥50% of value STALE/NO_DATA or coverage <70%). */
   low_confidence_ev?: boolean | null
   ev_method?: string | null
+  /** Disney Pinnacle only (#157): the row is one sub-pool of a drop sold as a
+   *  single pack; gross_ev/pack_ev/value_ratio are already the DROP's. */
+  drop_title?: string | null
+  drop_pools?: number | null
+  pool_name?: string | null
+  pool_share_pct?: number | null
+  pool_gross_ev?: number | null
+  sales_backed_ev?: number | null
+  ask_value_share_pct?: number | null
 }
 
 interface ApiResponse {
@@ -255,6 +264,19 @@ function toPackRow(
     secondaryAvailable,
     calibrationApplied,
     lowConfidenceEv: r.low_confidence_ev === true,
+    dropPool: r.drop_title && r.drop_pools != null && Number(r.drop_pools) >= 2
+      ? {
+          dropTitle: r.drop_title,
+          pools: Number(r.drop_pools),
+          poolName: r.pool_name ?? null,
+          sharePct: r.pool_share_pct == null ? null : Number(r.pool_share_pct),
+          poolEv: r.pool_gross_ev == null ? null : Number(r.pool_gross_ev),
+        }
+      : null,
+    // Pinnacle's low-confidence reason is ask-driven value, not stale FMV.
+    lowConfidenceTitle: r.ask_value_share_pct != null && Number(r.ask_value_share_pct) >= 50
+      ? `${Math.round(Number(r.ask_value_share_pct))}% of this pack's EV rests on asking prices for pins that have barely traded${r.sales_backed_ev != null ? `; $${Number(r.sales_backed_ev).toFixed(2)} of it is backed by sales` : ''}. Treat it as a rough estimate.`
+      : null,
   }
 }
 

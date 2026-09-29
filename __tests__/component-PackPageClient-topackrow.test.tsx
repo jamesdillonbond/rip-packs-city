@@ -40,6 +40,8 @@ vi.mock("@/components/packs/PackTable", () => ({
           packEvDollar: r.packEvDollar,
           evMarginPct: r.evMarginPct,
           calibrationApplied: r.calibrationApplied,
+          dropPool: r.dropPool,
+          lowConfidenceTitle: r.lowConfidenceTitle,
         })),
       )}
     />
@@ -165,5 +167,35 @@ describe("PackPageClient toPackRow — calibrated EV overlay", () => {
     const [row] = readRows(render(<PackPageClient {...props()} />).container)
     expect(row.grossEV).toBe(25) // calibrated wins over the raw 20
     expect(row.calibrationApplied).toBe(true)
+  })
+})
+
+// 2026-09-28 (#157) — a Pinnacle sub-pool row carries its drop, and its
+// low-confidence reason is ask-driven value, not All Day's stale FMV.
+describe("PackPageClient toPackRow — Pinnacle drop pools", () => {
+  it("maps drop_title/drop_pools/pool_* into dropPool and names the ask share", () => {
+    warm.packs = { data: { rows: [apiRow({
+      drop_title: "Summer Splash - Standard", drop_pools: 6, pool_name: "Quinova",
+      pool_share_pct: 0.2, pool_gross_ev: 4050, sales_backed_ev: 6.22, ask_value_share_pct: 82.8,
+      low_confidence_ev: true,
+    })], total: 1 }, loading: false, error: null }
+    const [row] = readRows(render(<PackPageClient {...props()} />).container)
+    expect(row.dropPool).toEqual({ dropTitle: "Summer Splash - Standard", pools: 6, poolName: "Quinova", sharePct: 0.2, poolEv: 4050 })
+    expect(row.lowConfidenceTitle).toContain("83% of this pack's EV rests on asking prices")
+    expect(row.lowConfidenceTitle).toContain("$6.22 of it is backed by sales")
+  })
+
+  it("CONTROL: a pack that is not a sub-pool has no dropPool and keeps the default caveat text", () => {
+    warm.packs = { data: { rows: [apiRow({ drop_title: null, drop_pools: 1, ask_value_share_pct: 10 })], total: 1 }, loading: false, error: null }
+    const [row] = readRows(render(<PackPageClient {...props()} />).container)
+    expect(row.dropPool).toBeNull()
+    expect(row.lowConfidenceTitle).toBeNull()
+  })
+
+  it("names the ask share even when the sales-backed figure is unknown", () => {
+    warm.packs = { data: { rows: [apiRow({ ask_value_share_pct: 60, sales_backed_ev: null })], total: 1 }, loading: false, error: null }
+    const [row] = readRows(render(<PackPageClient {...props()} />).container)
+    expect(row.lowConfidenceTitle).toContain("60% of this pack's EV")
+    expect(row.lowConfidenceTitle).not.toContain("backed by sales")
   })
 })

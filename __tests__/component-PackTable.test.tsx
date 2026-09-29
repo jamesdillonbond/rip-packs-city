@@ -233,6 +233,35 @@ describe("PackTable — EV-cell badges", () => {
     expect(container.textContent).toContain("thin FMV")
   })
 
+  // 2026-09-28 (#157): a Pinnacle sub-pool row names its pool and share.
+  it("renders the drop-pool chip with the pool's own EV only in its title", () => {
+    const { container } = render(
+      <PackTable rows={[row({ title: "Summer Splash - Standard - Quinova", dropPool: { dropTitle: "Summer Splash - Standard", pools: 6, poolName: "Quinova", sharePct: 0.2, poolEv: 4050 } })]} />,
+    )
+    expect(container.textContent).toContain("Quinova · 0.2% of packs")
+    const chip = Array.from(container.querySelectorAll("[title]")).find((el) => el.textContent === "Quinova · 0.2% of packs")
+    expect(chip?.getAttribute("title")).toContain("One of 6 pools that make up Summer Splash - Standard")
+    expect(chip?.getAttribute("title")).toContain("$4,050")
+    // The pool's value never appears as a visible figure.
+    expect(container.textContent).not.toContain("4,050")
+  })
+
+  it("drop-pool chip: whole-number share, and '1 of N pools' when the share is unknown", async () => {
+    const { dropPoolChip } = await import("@/components/packs/PackTable")
+    expect(dropPoolChip({ dropTitle: "D", pools: 2, poolName: "LE Standard", sharePct: 85.4, poolEv: null }).label).toBe("LE Standard · 85% of packs")
+    const unknown = dropPoolChip({ dropTitle: "D", pools: 3, poolName: null, sharePct: null, poolEv: null })
+    expect(unknown.label).toBe("Pool · 1 of 3 pools")
+    expect(unknown.title).not.toContain("alone would be worth")
+  })
+
+  it("uses the row's own low-confidence reason when one is given", () => {
+    const { container } = render(
+      <PackTable rows={[row({ title: "Ask Pack", lowConfidenceEv: true, lowConfidenceTitle: "83% of this pack's EV rests on asking prices" })]} />,
+    )
+    const chip = Array.from(container.querySelectorAll("[title]")).find((el) => el.textContent?.includes("thin FMV"))
+    expect(chip?.getAttribute("title")).toBe("83% of this pack's EV rests on asking prices")
+  })
+
   it("renders the single-rare-edition badge when isRareSinglePack is set", () => {
     const { container } = render(
       <PackTable rows={[row({ title: "Grail Pack", isRareSinglePack: true })]} />,
