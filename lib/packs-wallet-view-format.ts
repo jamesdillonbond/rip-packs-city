@@ -177,8 +177,12 @@ export function packPullLabel(row: {
   pulls_priced?: number | null
   /** 2026-09-29: pulls named by inference (id neighbours), not by a record. */
   pulls_inferred?: number | null
+  /** 2026-09-29: packs a BOX yielded (a box yields packs, not moments). */
+  box_packs?: number | null
 }): string {
   if (!row.has_rip && row.status !== "ripped") return "—"
+  // A box has no moment pull value of its own: say what it yielded.
+  if ((row.box_packs ?? 0) > 0 && row.pull_value_usd == null) return `Box · ${row.box_packs} pack${row.box_packs === 1 ? "" : "s"}`
   // A value that rests on inferred pull names reads as an estimate ("≈").
   if (row.pull_value_usd != null) return (row.pulls_inferred ?? 0) > 0 ? `≈${fmtPackUsd(row.pull_value_usd)}` : fmtPackUsd(row.pull_value_usd)
   if (row.pulls_total != null && row.pulls_total > 0 && row.pulls_priced != null) {

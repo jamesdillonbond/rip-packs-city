@@ -246,6 +246,11 @@ describe("packPullLabel (2026-09-26)", () => {
     expect(label).toBe("— (2/3 priced)")
     expect(label).not.toMatch(/\$0/)
   })
+  it("a box says what it yielded instead of an unpriced moment count", () => {
+    expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null, box_packs: 8 })).toBe("Box · 8 packs")
+    expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null, box_packs: 1 })).toBe("Box · 1 pack")
+    expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null, box_packs: 0, pulls_total: 3, pulls_priced: 2 })).toBe("— (2/3 priced)")
+  })
   it("a value resting on inferred pull names reads as an estimate", () => {
     expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: 12.5, pulls_inferred: 2 })).toBe(`≈${fmtPackUsd(12.5)}`)
     expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: 12.5, pulls_inferred: 0 })).toBe(fmtPackUsd(12.5))

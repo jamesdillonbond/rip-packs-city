@@ -243,6 +243,7 @@ interface HistoryRow {
   pulls_total?: number | null
   pulls_priced?: number | null
   pulls_inferred?: number | null
+  box_packs?: number | null
   // 2026-09-26 (v9): "reconstructed" = a pack opened with no pack NFT, rebuilt
   // from its moment deliveries (its pack_name says so too).
   rip_source?: "rip" | "reconstructed" | null
