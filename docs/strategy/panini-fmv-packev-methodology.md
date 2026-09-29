@@ -48,6 +48,13 @@ as a transparency signal.
 **Two things ground this model:** the published pack contents/odds, and the fact that EV is computed on the
 pool that is **still in packs** (unopened), not on total mint.
 
+> ⛔ **CORRECTED 2026-09-29 (model v0.5, migration `20260929224922`): Hobby is 4 cards and FOTL 5, not 5 and 6.**
+> Panini's own pack data says so twice: `panini_pack_state.raw.cards_per_subpack` = 4 (1038) / 5 (1039), and the
+> description reads "contain 4 cards per pack … 2 Base Silver (#/259), 1 Base Non-Silver Parallel, 1 additional Base
+> Non-Silver Parallel - OR - a 35% chance at an Insert". The label's "1 Other Card" IS that either/or slot, not a
+> separate common — so the model carried one phantom Silver-tier card per pack (weight 3 → 2). Effect at the switch:
+> Hobby actual 148 → 144 / typical 27 → 25; FOTL 261 → 257 / 43 → 41. The 07-18 reading below is kept as written.
+
 **Contents + odds — confirmed** from the live product pages (nft.paniniamerica.net — Hobby subpack 1038 /
 FOTL subpack 1039, read 2026-07-18):
 - **Hobby ($212), 5 cards:** 2 base silver (#/259) · 1 base non-silver parallel (#/124→1/1, guaranteed) ·
