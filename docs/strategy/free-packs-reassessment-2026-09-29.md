@@ -1,0 +1,137 @@
+# RPC Packs, reassessed: free packs, not sold ones
+
+**Date:** 2026-09-29 (PT)
+**Asked by:** Trevor, 2026-09-29: "Are we able to wrap and create our own packs of the NFTs we support?" and then "do all that [re-measure the market, get a legal read]. We don't need to sell it."
+**Base docs:** [repack-drops-feature-scope-2026-06-19.md](repack-drops-feature-scope-2026-06-19.md) (contract spec) and [repack-drops-addendum-2026-07-18.md](repack-drops-addendum-2026-07-18.md) (market + legal as of July).
+**Status:** Research only. Nothing built. The ledger's "Declined — do not re-suggest" entry for RPC Packs is Trevor's to edit; this doc does not change it.
+
+_Not legal advice. I'm not a lawyer. §2 summarizes the public rules. It is enough to decide whether a lawyer is needed, not to replace one._
+
+---
+
+## 0. Summary
+
+1. **The paid re-pack market is still tiny, and it has gone quiet.** Vaultopolis has had one new drop since July (Gold Rush, 26 of 30 sold). Nothing has been created since 07-22 and no sale has run since 08-06. Lifetime: **66 non-test packs, ≈ $755 gross.**
+2. **Not selling removes the main legal problem.** Gambling needs a prize, chance, and consideration (a payment or something of value) all at once. A free pack has no consideration. It becomes a **sweepstakes/giveaway**, which is legal in every US state with ordinary compliance: official rules, age limits, "void where prohibited", plus registration and a bond in NY and FL if the total prize value is over $5,000.
+3. **Our FMV no longer counts against us.** In July, the risk was that RPC's own FMV proves the prize is worth real money. In a free giveaway that is harmless. It only matters for the $5,000 threshold and for prize tax forms.
+4. **The legal risk comes back if the packs are only "free" in name.** Pro-only packs, packs that need purchasable points, or packs that need a purchase all bring consideration back. Free has to mean free to everyone on the same odds.
+5. **The engineering is smaller than the July estimate, because a free pack needs no contract.** RPC's wallet holds the moments. A claim picks a pack by verifiable randomness, and the hot wallet transfers the moments. The pack is a reveal in the UI, not an on-chain object.
+6. **Two things only you can decide:** (a) this makes RPC act on-chain, which amends the "RPC is read-only" rule. (b) RPC pays for the inventory.
+
+---
+
+## 1. Market, re-measured 2026-09-29
+
+The source is Vaultopolis's open API (`data.vaultopolis.com/api/drops`), fetched live through the database's `pg_net` because the sandbox cannot reach it. FLOW/USD comes from CoinGecko over the last 90 days.
+
+| Drop | Created (UTC) | Packs | Sold | Sell-through | Price (FLOW) | Status |
+|---|---|---|---|---|---|---|
+| 1 Test Drop | 05-07 | 5 | 0* | – | 1 | listed |
+| 2 Test Drop 2 | 06-09 | 21 | 0* | – | 5 | listed |
+| 3 Finals Pack | 06-13 | 0 | 0 | – | 170 | cancelled |
+| 4 Finals Pack | 06-13 | 15 | 12 | 80% | 170 | minted |
+| 5 Heat Check | 06-25 | 20 | 20 | 100% | 432 | minted |
+| 6 First Class | 07-09 | 0 | 0 | – | 432 | cancelled |
+| 7 WNBA First Class | 07-12 | 40 | 8 | 20% | 369.4 | minted |
+| **8 Gold Rush** (new) | **07-22** | **30** | **26** | **87%** | **495** | minted; sale 07-30 → 08-06 |
+
+\* The API now reports `soldCount = 0` for the two test drops. In July it reported 5 and 21. Their counters changed, not their history, so the July "66 including tests" and today's "66 excluding tests" are not the same 66.
+
+- **Sold drops only:** 12 + 20 + 8 + 26 = **66 packs**. Revenue is 26,505 FLOW. That is about $365 for drops 4–7 at ~$0.027 and about $390 for Gold Rush at ~$0.030, so **≈ $755 lifetime**.
+- **Demand hasn't grown:** the best drop cleared 26. That is barely above July's "~20 per drop" ceiling.
+- **The operator seems to have stopped:** no drop has been created in the 69 days since 07-22. That could be a pause or an exit; the API doesn't say which.
+- FLOW has traded between $0.026 and $0.031 over the last 90 days (it was $0.031 today).
+
+**What this means:** if the goal were to sell packs, the case is weaker than in July. The goal is to give them away, though, so the paid market is the wrong yardstick. What matters for a free pack is what it costs RPC and what it earns in attention (claims, returning users, shares), not what people would pay for it.
+
+⚠ `external_pack_drops` in our database was last refreshed 2026-07-19 and is missing drop 8. No cron updates it. The numbers above come from the live API, not from that table.
+
+---
+
+## 2. Legal read for a free pack
+
+### 2.1 Why "free" changes the answer
+
+US lottery and gambling law requires **prize + chance + consideration** together. Remove any one and it isn't a lottery. A randomized pack given away for free keeps prize and chance and drops consideration. Legally it is a **sweepstakes**, the same category as every "NO PURCHASE NECESSARY" brand giveaway, including NFT ones (Obey Giant and 100 Thieves both ran NFT sweepstakes under standard official rules).
+
+The NY AG v. Valve case (filed 2026-02-25) targets *paid* loot boxes under the NY Constitution and Penal Law §§ 225.05/225.10. Valve's motion to dismiss (filed 2026-05-21) was still pending as of 2026-09-01. Whichever way it goes, it is about paid boxes. It does not reach a free giveaway.
+
+### 2.2 What a compliant free pack needs
+
+| Requirement | What it means for RPC |
+|---|---|
+| **Official rules** | Sponsor (RPC), eligibility, start/end dates, prize description and approximate retail value (our FMV works here), odds, how winners are picked, how prizes are delivered, "void where prohibited". Posted before launch and linked from the claim page. |
+| **No purchase necessary, with equal odds** | Every claimer gets the same odds whether or not they pay RPC anything. |
+| **Age** | 18+ (the Top Shot terms already require it). |
+| **NY + FL registration and bond** | Only if **total announced prize value exceeds $5,000** per promotion (NY GBL § 369-e, filed 30 days ahead; FL § 849.094, filed 7 days ahead, plus a bond equal to the prize value). **Keep each promotion under $5,000** or exclude NY/FL residents. At commons-heavy pack values that is thousands of packs, so it won't bind early. |
+| **Prize tax** | Report any winner who receives ≥ $600 of prizes in a year on a 1099-MISC. Keep per-person value low and cap claims per account. |
+| **IP / affiliation** | Giving away the NFT itself is a transfer, which the Top Shot terms allow. Do not use NBA/NFL/league or player marks in the *promotion* copy beyond naming the moment, and state "not affiliated with or endorsed by the NBA, Dapper Labs, …". |
+
+### 2.3 The ways it becomes paid again (avoid all of them)
+
+- **Pro-only packs.** Pro is a paid subscription, so that is consideration. A Pro perk can be *extra* only if the free path has the same odds and the same prize pool.
+- **Packs bought with purchasable points.** Points earned from activity are generally fine. If points can ever be bought, they are consideration.
+- **"Buy X, get a pack."** Consideration.
+- **Selling or trading packs before they are opened.** An unopened pack NFT that can be listed recreates a secondary lottery market. This favors the no-contract design in §3: there is nothing to trade before the reveal.
+- **Heavy required effort.** A few states have treated substantial non-monetary effort as consideration. Signing in and connecting a wallet is not that. A long survey or a paid referral would be.
+
+### 2.4 What still needs a lawyer
+
+For a first run under $5,000 with no purchase path, the table above is standard practice. An hour with a promotions lawyer to review the official rules is cheap and worth it before the first public drop. It is no longer a blocker for building anything.
+
+---
+
+## 3. What "wrap and create our own packs" takes when free
+
+### 3.1 Recommended shape: an RPC-held pool with a verifiable random claim and delivery on transfer
+
+- **Inventory:** RPC's wallet holds the moments for a drop. Publish the full pool list with our FMV before claims open (the transparency the July addendum wanted).
+- **Randomness:** assign packs to claims with Flow's on-chain randomness (`RandomBeaconHistory`, already drafted for the VRF shuffle in the breaks code). Alternatively, commit a hash of the pack manifest before launch and reveal the salt afterwards, as Vaultopolis does. Either way anyone can check that RPC didn't pick who got the good pack.
+- **Claim:** signed-in user, one claim per account and wallet, recipient is their saved Flow wallet.
+- **Delivery:** the hot wallet transfers the pack's moments. The chunked, idempotent transfer code in `app/api/breaks/[id]/distribute` + `BREAK_MULTI_TRANSFER_TS` is the starting point.
+- **Reveal:** a pack-opening animation in the UI. No pack NFT exists, so nothing is sellable before it opens (§2.3).
+
+This needs no new Cadence contract, no audit, and no payment code.
+
+### 3.2 A pack NFT, only if you want one later
+
+A real on-chain pack (a resource holding the NFTs, opened by the owner) is the ~3–4 week, audited contract in the June scope doc. For a free giveaway it adds cost and creates a tradeable unopened pack (§2.3). Not recommended.
+
+### 3.3 Which collections
+
+- **Top Shot + All Day:** ready. FMV is deep enough to publish honest pack values, and delivery to Dapper-custodial accounts goes through the public receiver (inferred from 235 wallets in July, not yet proven by a real transfer, see §4).
+- **Mixed-collection packs:** the recipient must already have each collection set up in their account, or the transfer fails. Start with single-collection packs, or check every receiver before assigning a pack.
+- **Golazos, UFC:** FMV is too thin to publish a value. Pinnacle is priced on a different grain.
+- **Candy MLB (Solana):** RPC has no Solana write path. Treat it as a separate program.
+
+### 3.4 What isn't ready (measured today)
+
+- `moment_gifts`: **0 rows.** RPC has never completed a real on-chain transfer through the gift path.
+- `break*` tables: **not in production** (migration never applied).
+- Payer wallet `0x73f55c4450b8d466`: the July addendum says it must be re-funded and its balance cron un-paused before any Cadence write ships.
+- Points shop: 10 items, **1 redemption ever**, 19 users with points.
+
+**Rough effort:** a few days for one Top Shot drop, most of it in the claim page, the randomness and a first real test transfer, not in new infrastructure.
+
+---
+
+## 4. Decisions for Trevor
+
+1. **Amend the read-only rule?** Concierge rule #1 and the product principle say RPC never acts on-chain. Free packs mean RPC transfers NFTs. A narrow carve-out would be: "RPC may give away moments it owns; it still never trades, sells, or custodies user assets."
+2. **Inventory budget.** Each drop costs whatever RPC pays for the moments. The pool FMV is published, so the cost is visible upfront.
+3. **Who can claim?** Signed-in users with a saved Flow wallet, one per account, 18+, excluding the `internal_accounts` population.
+4. **First step if yes:** one real low-value moment sent through the existing transfer path to a Dapper-custodial account. That turns the delivery inference into a measurement, which is the step the July addendum listed first and nobody has run yet.
+
+## Sources
+
+- Vaultopolis drops API (live, 2026-09-29, via `pg_net`); CoinGecko FLOW/USD 90-day chart.
+- [New York Targets Valve's Loot Boxes as Illegal Gambling (Nat'l Law Review)](https://natlawreview.com/article/new-york-targets-valves-loot-boxes-illegal-gambling)
+- [Valve files motion to dismiss (gHacks, 2026-05-21)](https://www.ghacks.net/2026/05/21/valve-files-motion-to-dismiss-new-york-counter-strike-loot-box-lawsuit-compares-item-cases-to-baseball-cards/)
+- [New York and Washington Take On the Final Boss of Loot Boxes (FKKS)](https://technologylaw.fkks.com/post/102mnkh/new-york-and-washington-take-on-the-final-boss-of-loot-boxes)
+- [How to Legally Run a Contest, Giveaway, or Sweepstakes in the USA (KickoffLabs)](https://kickofflabs.com/blog/usa-giveaway-sweepstakes-laws/)
+- [A Primer for The Legality of Loot Boxes (Nat'l Law Review)](https://natlawreview.com/article/legality-loot-boxes-primer)
+- [Sweepstakes Registration and Bonding Requirements (Klein Moynihan)](https://kleinmoynihan.com/sweepstakes-registration-and-bonding-requirements-2/)
+- [Florida Game Promotions/Sweepstakes (FDACS)](https://www.fdacs.gov/Business-Services/Game-Promotions-Sweepstakes)
+- [Be Careful with NFT Giveaways (Robert Freund Law)](https://robertfreundlaw.com/los-angeles-false-avertising-litigation-attorney/be-careful-with-nft-giveaways/)
+- [NFT / Puzzle Giveaway official rules (Obey Giant)](https://obeygiant.com/nft/sweepstakes-official-rules/) · [NFT Giveaway Terms (100 Thieves)](https://100thieves.com/pages/nftrules)
+- [NBA Top Shot Terms](https://nbatopshot.com/terms)
