@@ -19,7 +19,7 @@ REM Always-walked usernames, whether or not they are linked on rippackscity.com:
 REM the box owner's own, plus collectors Trevor tracks (added 2026-09-28; each is also a
 REM seeded_wallets row on Flow). Their Panini names are ASSUMED to match their Top Shot ones -
 REM a name Panini does not know logs as not_found in the walk log; fix the spelling here.
-if not defined PANINI_COLLECTOR_TARGETS set "PANINI_COLLECTOR_TARGETS=Jamesdillonbond,spinotronpc,Rigged,MikeG503,Scottyj111,Alexthedon,PDX_Blazer,Sdb,Philthy503,Juiceshack,Cazsreyem,YWRR"
+if not defined PANINI_COLLECTOR_TARGETS set "PANINI_COLLECTOR_TARGETS=Jamesdillonbond,spinotronpc,Rigged,MikeG503,Scottyj111,Alexthedon,PDX_Blazer,Sdb,Philthy503,Juiceshack,Cazsreyem,YWRR,TimDunkin"
 set "PANINI_LOG=%USERPROFILE%\panini-collector-walk.log"
 
 cd /d "%USERPROFILE%\rip-packs-city"
