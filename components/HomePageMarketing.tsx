@@ -5,6 +5,7 @@ import Link from "next/link";
 import { trackFunnelEvent } from "@/lib/track-funnel";
 import WalletSearch from "@/components/WalletSearch";
 import RpcLogo from "@/components/RpcLogo";
+import GlobalSearch from "@/components/search/GlobalSearch";
 import SiteFooter from "@/components/SiteFooter";
 import PinwheelDivider from "@/components/visual/PinwheelDivider";
 import HomeFmvPreview from "@/components/HomeFmvPreview";
@@ -55,6 +56,10 @@ function HomeHeader() {
           </div>
         </Link>
         <div style={{ flex: 1 }} />
+        {/* 2026-09-28: the bottom bar's SEARCH tab was retired in favour of the
+            header's search box, and this header had none — on a phone every nav
+            link below is hidden, so it was a bare logo. */}
+        <GlobalSearch />
         <nav
           className="rpc-home-nav"
           style={{ display: "flex", alignItems: "center", gap: 14 }}

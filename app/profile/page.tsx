@@ -34,6 +34,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import WalletSearch from "@/components/WalletSearch"
+import GlobalSiteHeader from "@/components/GlobalSiteHeader"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 
 export const dynamic = "force-dynamic" // reads the session cookie
@@ -63,6 +64,8 @@ export default async function ProfileEntryPage() {
   if (user) redirect("/dashboard")
 
   return (
+    <>
+    <GlobalSiteHeader />
     <main
       style={{
         maxWidth: 720,
@@ -220,5 +223,6 @@ export default async function ProfileEntryPage() {
         ))}
       </nav>
     </main>
+    </>
   )
 }

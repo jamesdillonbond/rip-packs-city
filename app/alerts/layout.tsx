@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import GlobalSiteHeader from "@/components/GlobalSiteHeader";
 
 export const metadata: Metadata = {
   title: "Alerts",
@@ -8,5 +9,11 @@ export const metadata: Metadata = {
 };
 
 export default function AlertsLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  // The site header was absent here until 2026-09-28 (see app/dashboard/layout.tsx).
+  return (
+    <>
+      <GlobalSiteHeader />
+      {children}
+    </>
+  );
 }

@@ -19,6 +19,7 @@ vi.mock("@/components/SiteFooter", () => ({ default: () => <div data-testid="sit
 vi.mock("@/components/MobileNav", () => ({ default: () => <div data-testid="mobile-nav" /> }))
 vi.mock("@/components/RpcLogo", () => ({ default: () => <div data-testid="rpc-logo" /> }))
 vi.mock("@/components/visual/PinwheelDivider", () => ({ default: () => <div data-testid="pinwheel" /> }))
+vi.mock("@/components/search/GlobalSearch", () => ({ default: () => <div data-testid="global-search" /> }))
 
 beforeEach(() => funnelMock.mockClear())
 afterEach(() => {

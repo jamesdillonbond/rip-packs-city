@@ -8,6 +8,7 @@ import type { Metadata } from "next"
 import InsightsEmailCapture from "@/components/insights/InsightsEmailCapture"
 import FunnelTracker from "@/components/FunnelTracker"
 import SiteFooter from "@/components/SiteFooter"
+import GlobalSiteHeader from "@/components/GlobalSiteHeader"
 import SupportChatConnected from "@/components/SupportChatConnected"
 import WalletSearchBand from "@/components/WalletSearchBand"
 import { TWITTER_INHERITED, BRAND_TITLE_TEMPLATE } from "@/lib/seo"
@@ -61,6 +62,10 @@ export default function InsightsLayout({ children }: { children: React.ReactNode
           navigations) re-fires insights_view for the hub AND each surface as
           the pathname changes. */}
       <FunnelTracker eventType="insights_view" perPath />
+      {/* 2026-09-28: ~30 boards and no site header — no logo home, no search,
+          no sign-in on the largest anonymous surface. Mounted at the layout
+          (it persists across /insights/*), same reasoning as the bar below. */}
+      <GlobalSiteHeader />
       {/* Wallet-lookup wedge for the whole /insights subtree. Mounted in the
           layout because the hub is only ~18% of insights_view — first-mint,
           squeeze, pack-sniper and the other ~30 boards are the rest, and each

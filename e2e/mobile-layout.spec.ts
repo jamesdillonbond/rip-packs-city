@@ -112,7 +112,7 @@ test.describe("mobile layout", () => {
       const nav = document.querySelector(".rpc-mobile-nav")
       if (!nav) return null
       return Array.from(nav.children)
-        .filter((c) => c.tagName === "A" || c.tagName === "BUTTON")
+        .filter((c) => c.tagName === "A" || c.tagName === "BUTTON" || c.tagName === "SPAN")
         .map((c) => {
           const b = c.getBoundingClientRect()
           return {
@@ -126,7 +126,7 @@ test.describe("mobile layout", () => {
     // Positive control: an empty nav must FAIL, not pass quietly. A selector that
     // stops matching is the "guard silently measuring nothing" shape.
     expect(tabs, ".rpc-mobile-nav rendered no tab elements").not.toBeNull()
-    expect(tabs!.length).toBeGreaterThanOrEqual(5)
+    expect(tabs!.length).toBeGreaterThanOrEqual(4)
 
     const tooSmall = tabs!.filter((t) => t.w < 44 || t.h < 44)
     expect(

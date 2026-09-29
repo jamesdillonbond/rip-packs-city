@@ -1,297 +1,209 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from "vitest"
-import { render, cleanup, fireEvent } from "@testing-library/react"
+import { render, cleanup } from "@testing-library/react"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 
-// MobileNav (0% before this) is the bottom mobile tab bar + the slide-up
-// Collections sheet. Drives its OWN code: the pathname->active-tab derivation,
-// the tab render (link tabs + the Collections button tab), and the sheet
-// open/close state machine (role=dialog "Collections").
+// MobileNav is the bottom mobile tab bar. Drives its OWN code: the
+// pathname->active-tab derivation, the collection resolution behind the Market
+// and Sniper hrefs, and the inert-tab rule for a collection lacking a page.
 
-const nav = { pathname: "/nba-top-shot/collection", push: vi.fn() }
+const nav = { pathname: "/nba-top-shot/collection" }
 vi.mock("next/navigation", () => ({
   usePathname: () => nav.pathname,
-  useRouter: () => ({ push: nav.push, replace: vi.fn(), prefetch: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
 }))
 
 import MobileNav, { activeTabFor } from "@/components/MobileNav"
 
 afterEach(() => {
   cleanup()
-  nav.push.mockClear()
+  nav.pathname = "/nba-top-shot/collection"
 })
 
+const bar = (c: HTMLElement) => c.querySelector("nav.rpc-mobile-nav") as HTMLElement
+const hrefs = (c: HTMLElement) => Array.from(bar(c).querySelectorAll("a")).map((a) => a.getAttribute("href"))
+const tab = (c: HTMLElement, label: string) =>
+  Array.from(bar(c).querySelectorAll("a, span[aria-disabled]")).find(
+    (e) => (e.textContent ?? "").trim() === label,
+  ) as HTMLElement
+
 describe("MobileNav", () => {
-  // ⭐ RE-SLOTTED 2026-09-12: HOME · SEARCH · SNIPER · MY STUFF · COLLECTIONS.
-  // Was PROFILE · SNIPER · PACKS · WALLET · COLLECTIONS — four of five slots on
-  // one collection's sub-pages, no way back to the homepage, no entry to search
-  // at all, and the centre (best thumb position) spent on Packs.
-  it("renders the re-slotted bottom tab bar", () => {
-    const { getByText, container } = render(<MobileNav />)
-    expect(container.querySelector("nav.rpc-mobile-nav")).toBeTruthy()
-    for (const label of ["HOME", "SEARCH", "SNIPER", "MY STUFF", "COLLECTIONS"]) {
-      expect(getByText(label), label).toBeTruthy()
-    }
+  // ⭐ RE-SLOTTED 2026-09-28 (Trevor): HOME · MY BINDER · MARKET · SNIPER.
+  // Was HOME · SEARCH · SNIPER · MY STUFF · COLLECTIONS — two of the five were
+  // sheets duplicating chrome the page already carries (the header's search box,
+  // the collection switcher + tab bar).
+  it("renders the four tabs, in order", () => {
+    const { container } = render(<MobileNav />)
+    const labels = Array.from(bar(container).children)
+      .filter((c) => c.tagName === "A" || c.tagName === "SPAN")
+      .map((c) => (c.textContent ?? "").trim())
+    expect(labels).toEqual(["HOME", "MY BINDER", "MARKET", "SNIPER"])
   })
 
-  // ⛔ THE ONE HREF THAT MUST NOT DRIFT. /dashboard is auth-gated, and this is the
-  // tab a first-run visitor scans first: the measured chain used to be
-  // `/profile → 308 → /dashboard → 307 → /login?next=…`, two hops into a login
-  // wall from the first tap. app/profile/page.tsx exists specifically to end that
-  // (register R36) — it is PUBLIC (proxy.ts allows it explicitly) and
-  // server-redirects a signed-in visitor onward. Re-pointing MY STUFF at
-  // /dashboard silently reinstates the wall, and nothing else would catch it.
-  it("⛔ MY STUFF points at the PUBLIC /profile, never at auth-gated /dashboard", () => {
+  it("renders no sheet or dialog — every tab is a destination", () => {
     const { container } = render(<MobileNav />)
-    const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement
-    const links = Array.from(bar.querySelectorAll("a")).map((a) => a.getAttribute("href"))
-    expect(links).toContain("/profile")
-    expect(links).not.toContain("/dashboard")
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(bar(container).querySelector("button")).toBeNull()
+  })
+
+  // ⛔ THE ONE HREF THAT MUST NOT DRIFT. /dashboard is auth-gated; the measured
+  // chain used to be `/profile → 308 → /dashboard → 307 → /login?next=…`, two
+  // hops into a login wall from the first tap. app/profile/page.tsx is PUBLIC and
+  // server-redirects a signed-in visitor onward (register R36).
+  it("⛔ MY BINDER points at the PUBLIC /profile, never at auth-gated /dashboard", () => {
+    const { container } = render(<MobileNav />)
+    expect(tab(container, "MY BINDER").getAttribute("href")).toBe("/profile")
+    expect(hrefs(container)).not.toContain("/dashboard")
+  })
+
+  it("scopes Market and Sniper to the collection in the URL", () => {
+    nav.pathname = "/nfl-all-day/overview"
+    const { container } = render(<MobileNav />)
+    expect(tab(container, "MARKET").getAttribute("href")).toBe("/nfl-all-day/market")
+    expect(tab(container, "SNIPER").getAttribute("href")).toBe("/nfl-all-day/sniper")
   })
 
   it("on a Disney Pinnacle pin page (/pinnacle/moment/<id>) Sniper goes to Pinnacle's Sniper", () => {
-    const prev = nav.pathname
     nav.pathname = "/pinnacle/moment/OEEV1-EXPD-MINN-E2"
-    try {
-      const { container } = render(<MobileNav />)
-      const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement
-      const links = Array.from(bar.querySelectorAll("a")).map((a) => a.getAttribute("href"))
-      expect(links).toContain("/disney-pinnacle/sniper")
-      expect(links).not.toContain("/nba-top-shot/sniper")
-    } finally {
-      nav.pathname = prev
+    const { container } = render(<MobileNav />)
+    expect(hrefs(container)).toContain("/disney-pinnacle/sniper")
+    expect(hrefs(container)).not.toContain("/nba-top-shot/sniper")
+  })
+
+  it("gives the bar a way home", () => {
+    const { container } = render(<MobileNav />)
+    expect(hrefs(container)).toContain("/")
+  })
+
+  // An emoji ignores `color`, so with the old 🏠 🔍 ⚡ 👤 🗂 set the active
+  // state reached only the caption. The glyph must follow currentColor.
+  it("draws every icon as a currentColor SVG, never an emoji", () => {
+    const { container } = render(<MobileNav />)
+    const tabs = Array.from(bar(container).children).filter((c) => c.tagName !== "STYLE")
+    expect(tabs.length).toBe(4)
+    for (const t of tabs) {
+      const svg = t.querySelector("svg")
+      expect(svg, t.textContent ?? "").not.toBeNull()
+      expect(svg!.getAttribute("stroke")).toBe("currentColor")
+      expect(t.textContent ?? "").not.toMatch(/\p{Extended_Pictographic}/u)
     }
   })
 
-  it("gives the bar a way home, which it did not have", () => {
-    const { container } = render(<MobileNav />)
-    const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement
-    expect(Array.from(bar.querySelectorAll("a")).map((a) => a.getAttribute("href"))).toContain("/")
-  })
-
-  // ⚠ MEASURED, then pinned. In Chromium at 390x844 the five tabs were
-  // 37x32 / 32x32 / **26x32** / 32x32 / 58x32 — under the 44px floor (§9,
-  // WCAG 2.5.5) in BOTH axes, on the product's most-tapped control set, inside
-  // a bar that was already 60px tall. jsdom cannot measure a box, so what is
-  // pinned here is the three style facts that PRODUCE the 44px: the bar is
-  // tall enough, each tab stretches to it, and each tab is at least 44 wide.
-  // Drop any one and the target silently shrinks back with every test green.
+  // ⚠ MEASURED 2026-08-22 at 390x844: tabs as small as 26x32, under the 44px
+  // floor in BOTH axes. jsdom cannot measure a box, so what is pinned is the
+  // three style facts that PRODUCE the 44px.
   it("gives every bottom tab a >=44px tap target in both axes", () => {
     const { container } = render(<MobileNav />)
-    const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement
-    // 1. Stretching is only worth anything if the bar clears the floor itself.
-    expect(parseInt(bar.style.height, 10)).toBeGreaterThanOrEqual(44)
-
-    const tabs = Array.from(bar.children).filter(
-      (c) => c.tagName === "A" || c.tagName === "BUTTON",
-    ) as HTMLElement[]
-    expect(tabs.length).toBe(5)
-
-    for (const tab of tabs) {
-      const label = (tab.textContent ?? "").trim()
-      // 2. Fills the bar's height — NOT a hardcoded px, so this stays true if
-      //    NAV_HEIGHT moves.
-      expect(`${label}:${tab.style.alignSelf}`).toBe(`${label}:stretch`)
-      // 3. Clears the floor horizontally. The narrowest ("PACKS") measured 26px.
-      expect(`${label}:${parseInt(tab.style.minWidth, 10) >= 44}`).toBe(`${label}:true`)
-      // Assert the ABSENCE of the zero padding that caused this: a tab hugging
-      // its 8px caption is the defect, whatever the rest of the style says.
-      expect(`${label}:${tab.style.padding}`).not.toBe(`${label}:0px`)
+    expect(parseInt(bar(container).style.height, 10)).toBeGreaterThanOrEqual(44)
+    const tabs = Array.from(bar(container).children).filter((c) => c.tagName !== "STYLE") as HTMLElement[]
+    expect(tabs.length).toBe(4)
+    for (const t of tabs) {
+      const label = (t.textContent ?? "").trim()
+      expect(`${label}:${t.style.alignSelf}`).toBe(`${label}:stretch`)
+      expect(`${label}:${parseInt(t.style.minWidth, 10) >= 44}`).toBe(`${label}:true`)
+      expect(`${label}:${t.style.padding}`).not.toBe(`${label}:0px`)
     }
-  })
-
-  it("opens the Collections sheet from the collections tab and closes it", () => {
-    const { getByText, getByLabelText, container } = render(<MobileNav />)
-    // Sheet is closed initially.
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
-    fireEvent.click(getByText("COLLECTIONS").closest("button")!)
-    // Sheet (role=dialog aria-label="Collections") is now open.
-    const dialog = container.querySelector('[role="dialog"]')
-    expect(dialog).toBeTruthy()
-    expect(dialog?.getAttribute("aria-label")).toBe("Collections")
-    fireEvent.click(getByLabelText("Close collections"))
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
-  })
-
-  // Modal a11y wired via useModalA11y (previously the sheet had a backdrop/×
-  // close but no keyboard or focus handling).
-  it("closes the Collections sheet on Escape", () => {
-    const { getByText, container } = render(<MobileNav />)
-    fireEvent.click(getByText("COLLECTIONS").closest("button")!)
-    expect(container.querySelector('[role="dialog"]')).toBeTruthy()
-    fireEvent.keyDown(window, { key: "Escape" })
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
-  })
-
-  // ⚠ THIS TEST FORCES requestAnimationFrame SYNCHRONOUS, and that is load-bearing
-  // — useModalA11y defers `focusFirst` to the next frame. Read the pass for what
-  // it is: the hook's LOGIC is correct (it finds the first focusable and focuses
-  // it). It is not evidence about frame timing in a real browser.
-  // ⚠⚠ AND DO NOT TRY TO CONFIRM IT THE OBVIOUS WAY. Attempted 2026-09-12 against
-  // production and the sheet appeared to never take focus — no focusin fired at
-  // all. The cause was the MEASUREMENT: the Chrome window was occluded behind
-  // another app, and Chrome suspends rAF entirely in a hidden tab
-  // (`document.visibilityState === "hidden"`, and a probe rAF never fired in
-  // 1500ms). Every rAF-dependent behaviour in this app is UNMEASURABLE through a
-  // backgrounded browser and will read as broken. Raise the window first, or the
-  // finding is about the harness and not the product.
-  it("moves focus into the sheet when opened and marks it aria-modal", () => {
-    const rafSpy = vi
-      .spyOn(window, "requestAnimationFrame")
-      .mockImplementation((cb: FrameRequestCallback) => {
-        cb(0)
-        return 1
-      })
-    const cafSpy = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {})
-    const { getByText, container } = render(<MobileNav />)
-    fireEvent.click(getByText("COLLECTIONS").closest("button")!)
-    const dialog = container.querySelector('[role="dialog"]')!
-    expect(dialog.getAttribute("aria-modal")).toBe("true")
-    expect(dialog.contains(document.activeElement)).toBe(true)
-    rafSpy.mockRestore()
-    cafSpy.mockRestore()
   })
 })
 
-describe("MobileNav — thin collections (2026-09-06)", () => {
-  it("renders the tabs a thin collection lacks as INERT, never as links to a page that does not exist", () => {
+describe("MobileNav — thin collections", () => {
+  it("renders the tabs a collection lacks as INERT, never as links to a page that does not exist", () => {
+    // UFC has neither a market nor a sniper page.
+    nav.pathname = "/ufc/overview"
+    const { container } = render(<MobileNav />)
+    for (const dead of ["/ufc/market", "/ufc/sniper"]) expect(hrefs(container), dead).not.toContain(dead)
+    // ⛔ and never SUBSTITUTES another collection's page for the missing one.
+    expect(hrefs(container).filter((h) => h?.endsWith("/market") || h?.endsWith("/sniper"))).toEqual([])
+    const inert = Array.from(bar(container).querySelectorAll("[aria-disabled='true']"))
+    expect(inert.map((e) => (e.textContent ?? "").trim())).toEqual(["MARKET", "SNIPER"])
+    expect(hrefs(container)).toContain("/profile")
+  })
+
+  it("inerts only the page a collection is missing", () => {
+    // Candy MLB has a market but no sniper.
     nav.pathname = "/candy-mlb/overview"
     const { container } = render(<MobileNav />)
-    const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement
-    const links = Array.from(bar.querySelectorAll("a")).map((a) => a.getAttribute("href"))
-    expect(links).toContain("/profile")
-    for (const dead of ["/candy-mlb/sniper", "/candy-mlb/packs", "/candy-mlb/collection"]) {
-      expect(links, dead).not.toContain(dead)
-    }
-    // After the 2026-09-12 re-slot only ONE tab is collection-scoped (Sniper);
-    // Home, Search, My Stuff and Collections are not, so a thin collection can
-    // only ever render one inert tab.
-    const inert = Array.from(bar.querySelectorAll("[aria-disabled='true']"))
-    expect(inert.length).toBe(1)
-    nav.pathname = "/nba-top-shot/collection"
+    expect(hrefs(container)).toContain("/candy-mlb/market")
+    expect(hrefs(container)).not.toContain("/candy-mlb/sniper")
+    expect(bar(container).querySelectorAll("[aria-disabled='true']").length).toBe(1)
   })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The active-tab map (2026-09-12)
+// The active-tab map
 //
-// ⚠ TWO MEASURED DEFECTS, both from deriving "active" by string coincidence
-// (`segments[1] === key`, plus `startsWith("/profile")` for one tab):
-//
-//   (a) NO TAB WAS ACTIVE ON MOST OF THE APP — not on /dashboard, not on
-//       /dashboard/packs, not on a collection's own /overview landing tab, not
-//       on /alerts, /rewards, /my-teams, /insights/* or /. Confirmed live on
-//       /nba-top-shot/overview: five identical glyphs, none active, on the most
-//       common entry point in the product.
-//   (b) ON /dashboard/packs THE PACKS TAB LIT UP POINTING SOMEWHERE ELSE —
-//       `segments[1]` is "packs" there, while the tab's href is
-//       /{collection}/packs, the market page. Tapping the active tab left it.
-//
-// These drive `activeTabFor` directly so the map is pinned independently of how
-// the bar happens to render it.
+// ⚠ Pre-2026-09-12 "active" was derived by string coincidence (`segments[1] ===
+// key`): no tab lit on most of the app, and on /dashboard/packs a Packs tab lit
+// whose href was the MARKET page — tapping the active tab left. The map is by
+// DESTINATION: a route lights the tab whose href lands there, or none.
 describe("MobileNav — which tab owns the route", () => {
-  it("lights Sniper on the sniper page, and hands every other collection page to the sheet", () => {
-    expect(activeTabFor("/nba-top-shot/sniper", "sniper", true)).toBe("sniper")
-    // Packs and Wallet left the bar in the re-slot; the Collections sheet is how
-    // you move between a collection's pages, so it owns them.
-    expect(activeTabFor("/nba-top-shot/packs", "packs", true)).toBe("collections")
-    expect(activeTabFor("/nba-top-shot/collection", "collection", true)).toBe("collections")
-  })
-
-  it("⚠ lights a tab on a collection's own /overview — the gap the re-slot closed", () => {
-    // Overview is the most common entry point in the product and was never one
-    // of the five tabs, so before 2026-09-12 it lit nothing at all. Confirmed
-    // live that day: five identical glyphs, none active.
-    expect(activeTabFor("/nba-top-shot/overview", "overview", true)).toBe("collections")
-  })
-
   it("lights Home on the homepage", () => {
     expect(activeTabFor("/", "", false)).toBe("home")
   })
 
-  it("⚠ does NOT light a collection tab on /dashboard/packs — that tab links elsewhere", () => {
-    // `segments[1]` is "packs" here, and the old rule lit the Packs tab, whose
-    // href is /{collection}/packs — the market page. Tapping the active tab left.
-    expect(activeTabFor("/dashboard/packs", "packs", false)).toBe("mystuff")
+  it("lights Sniper on the sniper pages, including Pack Sniper behind its sub-toggle", () => {
+    expect(activeTabFor("/nba-top-shot/sniper", "sniper", true)).toBe("sniper")
+    expect(activeTabFor("/nba-top-shot/pack-sniper", "pack-sniper", true)).toBe("sniper")
   })
 
-  it("⚠ lights My Stuff on every account surface, not just /profile", () => {
+  it("lights Market on the market and the pages folded into it", () => {
+    for (const p of ["market", "packs", "hot-floors"]) {
+      expect(activeTabFor(`/nba-top-shot/${p}`, p, true), p).toBe("market")
+    }
+  })
+
+  it("lights nothing on a collection page no tab leads to", () => {
+    // Overview, Wallet, Sets, Analytics are reached through the collection's own
+    // switcher + tab bar. No bottom tab goes there, so none may claim to.
+    for (const p of ["overview", "collection", "sets", "analytics"]) {
+      expect(activeTabFor(`/nba-top-shot/${p}`, p, true), p).toBeNull()
+    }
+  })
+
+  it("⚠ does NOT light a collection tab on /dashboard/packs — that tab links elsewhere", () => {
+    expect(activeTabFor("/dashboard/packs", "packs", false)).toBe("binder")
+  })
+
+  it("lights My Binder on every account surface, not just /profile", () => {
     for (const p of ["/profile", "/profile/someone", "/dashboard", "/dashboard/history", "/alerts", "/rewards", "/my-teams"]) {
-      expect(activeTabFor(p, "", false), p).toBe("mystuff")
+      expect(activeTabFor(p, "", false), p).toBe("binder")
     }
   })
 
   it("does not claim a tab for a route none of them own", () => {
-    // /insights/* genuinely belongs to no tab — it is cross-collection. Returning
-    // null is the honest answer; the bug was that every COLLECTION page did too.
     expect(activeTabFor("/insights/candy-mlb", "candy-mlb", false)).toBeNull()
     expect(activeTabFor("/blog", "", false)).toBeNull()
   })
 
   it("⚠ a prefix match must not swallow an unrelated route", () => {
-    // "/profiles-of-note" starts with "/profile" as a STRING but is not under it.
     expect(activeTabFor("/profiles-of-note", "", false)).toBeNull()
   })
 
   it("renders the active tab in the brand red and the rest at the readable token", () => {
-    // ⚠ MEASURED: `--rpc-text-ghost` is rgba(255,255,255,0.2) = **1.80 : 1**
-    // against the nav's own #0d0d0d, on 8px labels. WCAG AA wants 4.5:1.
-    // `--rpc-text-secondary` measures 6.25 : 1 on the same ground, and it is
-    // theme-aware so it holds in light mode. Assert the ABSENCE of the
-    // unreadable token, which is the thing that was wrong.
-    nav.pathname = "/nba-top-shot/collection"
+    // ⚠ `--rpc-text-ghost` measures 1.80 : 1 on the nav's own #0d0d0d.
+    nav.pathname = "/nba-top-shot/market"
     const { container } = render(<MobileNav />)
-    const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement
-    const html = bar.innerHTML
+    const html = bar(container).innerHTML
     expect(html).not.toContain("--rpc-text-ghost")
-    expect(html).toContain("--rpc-text-secondary")
-    expect(html).toContain("--rpc-red")
+    expect(tab(container, "MARKET").style.color).toBe("var(--rpc-red)")
+    expect(tab(container, "HOME").style.color).toBe("var(--rpc-text-secondary)")
   })
 
   it("pads the BAR itself for the home indicator, not just the body", () => {
-    // The body already reserved `60px + env(safe-area-inset-bottom)`; the bar did
-    // not, so its content was centred inside a box whose lower strip is the
-    // indicator. content-box keeps the 60px content height and puts the inset
-    // below it, so nothing moves on a device without one.
     const { container } = render(<MobileNav />)
-    // ⚠ Asserted on the component's own stylesheet, not on `bar.style`: jsdom's
-    // CSS parser DROPS an inline `env(...)` value, so the inline form reads as
-    // absent here and the test would pin nothing.
+    // Asserted on the stylesheet: jsdom DROPS an inline `env(...)` value.
     const css = container.querySelector("nav.rpc-mobile-nav style")?.textContent ?? ""
     expect(css).toContain("padding-bottom: env(safe-area-inset-bottom")
     expect(css).toContain("box-sizing: content-box")
   })
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// The active tab has to be announced, not just COLOURED (2026-09-12)
-//
-// Measured in production the day the re-slot shipped: on /nba-top-shot/overview
-// the COLLECTIONS tab rendered in the active red and carried `aria-pressed=
-// "false"` with no `aria-current` — so the one tab that WAS the answer told a
-// screen reader it was not pressed, and no tab anywhere exposed "you are here".
-// Colour was the entire active signal, which is also the signal that fails for
-// anyone who cannot separate #e03a2f from 55% white.
-//
-// ⚠ The two attributes answer DIFFERENT questions on COLLECTIONS and both are
-// correct at once: `aria-pressed` is about the SHEET (a disclosure control),
-// `aria-current` is about the LOCATION. A test that conflates them would push
-// someone to "fix" it by making aria-pressed track the route, which would then
-// lie about whether the sheet is open.
 describe("MobileNav — the active tab is announced, not just coloured", () => {
-  // ⚠ Scoped to the BAR. An unscoped text match finds the Search SHEET's own
-  // "SEARCH" heading first — the sheet renders ahead of the nav in the DOM — so
-  // the assertion would silently be about a heading that has no aria at all.
-  const tab = (c: HTMLElement, label: string) =>
-    Array.from(
-      c.querySelectorAll("nav.rpc-mobile-nav a, nav.rpc-mobile-nav button, nav.rpc-mobile-nav span"),
-    ).find((e) => (e.textContent ?? "").includes(label)) as HTMLElement
-
-  it("marks the active LINK tab with aria-current=page", () => {
+  it("marks the active tab with aria-current=page", () => {
     nav.pathname = "/profile/settings"
     const { container } = render(<MobileNav />)
-    expect(tab(container, "MY STUFF").getAttribute("aria-current")).toBe("page")
+    expect(tab(container, "MY BINDER").getAttribute("aria-current")).toBe("page")
     expect(tab(container, "HOME").getAttribute("aria-current")).toBeNull()
     expect(tab(container, "SNIPER").getAttribute("aria-current")).toBeNull()
   })
@@ -300,27 +212,13 @@ describe("MobileNav — the active tab is announced, not just coloured", () => {
     nav.pathname = "/"
     const { container } = render(<MobileNav />)
     expect(tab(container, "HOME").getAttribute("aria-current")).toBe("page")
-    expect(tab(container, "MY STUFF").getAttribute("aria-current")).toBeNull()
+    expect(bar(container).querySelectorAll('[aria-current="page"]').length).toBe(1)
   })
 
-  // The case that was measured wrong in production.
-  it("⚠ marks COLLECTIONS on a collection page while aria-pressed still describes the SHEET", () => {
+  it("marks nothing on a page no tab leads to", () => {
     nav.pathname = "/nba-top-shot/overview"
     const { container } = render(<MobileNav />)
-    const t = tab(container, "COLLECTIONS")
-    expect(t.getAttribute("aria-current")).toBe("page")
-    // Closed sheet — the two attributes disagree, and that is CORRECT.
-    expect(t.getAttribute("aria-pressed")).toBe("false")
-  })
-
-  // SEARCH is a pure disclosure: it is never a location, so it never claims one.
-  it("never marks SEARCH as the current page, even while its sheet is open", () => {
-    nav.pathname = "/nba-top-shot/overview"
-    const { container, getByText } = render(<MobileNav />)
-    fireEvent.click(getByText("SEARCH").closest("button")!)
-    const t = tab(container, "SEARCH")
-    expect(t.getAttribute("aria-pressed")).toBe("true")
-    expect(t.getAttribute("aria-current")).toBeNull()
+    expect(bar(container).querySelectorAll('[aria-current="page"]').length).toBe(0)
   })
 })
 
@@ -391,55 +289,28 @@ describe("MobileNav — the single mount", () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The Search sheet (2026-09-12)
-//
-// The bar had NO entry to search at all. `GlobalSearch` is the header's search
-// box — already wired to /api/search with its own keyboard handling — and on a
-// phone the header is collapsed, so there was no way to reach it. Reused rather
-// than reimplemented, inside the same sheet pattern (Escape, focus trap, focus
-// restore) the Collections sheet already uses.
-describe("MobileNav — the Search sheet", () => {
-  // ⚠ Queried through the DOM, not `getByRole`: the sheets carry
-  // `.rpc-mobile-sheet { display: none !important }` outside the mobile media
-  // query, jsdom applies it, and a display:none node is absent from the a11y
-  // tree — so `queryByRole("dialog")` never matches here. The file's existing
-  // sheet tests already do it this way.
-  const dialogNamed = (c: HTMLElement, name: string) =>
-    Array.from(c.querySelectorAll('[role="dialog"]')).find((d) => d.getAttribute("aria-label") === name) ?? null
+// Search left the bar on 2026-09-28 BECAUSE the header carries it. That is only
+// true where the header is mounted — so pin the mounts on the surfaces that had
+// NONE before that day (Trevor's screenshot: /dashboard with no top bar), plus
+// the home header's own search box. Drop any of these and search silently
+// vanishes from that surface on a phone.
+describe("MobileNav — search lives in the header now", () => {
+  const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8")
 
-  it("opens a labelled modal from the Search tab and closes it again", () => {
-    const { getByText, getByLabelText, container } = render(<MobileNav />)
-    expect(dialogNamed(container, "Search")).toBeNull()
-    fireEvent.click(getByText("SEARCH").closest("button")!)
-    expect(dialogNamed(container, "Search")).toBeTruthy()
-    fireEvent.click(getByLabelText("Close search"))
-    expect(dialogNamed(container, "Search")).toBeNull()
+  it("the site header mounts on the account surfaces and /insights", () => {
+    for (const p of [
+      "app/dashboard/layout.tsx",
+      "app/alerts/layout.tsx",
+      "app/profile/page.tsx",
+      "app/profile/edit/page.tsx",
+      "app/insights/layout.tsx",
+    ]) {
+      expect(read(p), p).toContain("<GlobalSiteHeader />")
+    }
   })
 
-  it("puts the real search input in it, not a placeholder", () => {
-    const { getByText, getByLabelText } = render(<MobileNav />)
-    fireEvent.click(getByText("SEARCH").closest("button")!)
-    // GlobalSearch's own input, by its own aria-label.
-    expect(getByLabelText("Search the catalog")).toBeTruthy()
-  })
-
-  it("⚠ the two sheets are mutually exclusive — one bar, one surface at a time", () => {
-    const { getByText, container } = render(<MobileNav />)
-    fireEvent.click(getByText("COLLECTIONS").closest("button")!)
-    expect(dialogNamed(container, "Collections")).toBeTruthy()
-    fireEvent.click(getByText("SEARCH").closest("button")!)
-    expect(dialogNamed(container, "Search")).toBeTruthy()
-    expect(dialogNamed(container, "Collections")).toBeNull()
-    fireEvent.click(getByText("COLLECTIONS").closest("button")!)
-    expect(dialogNamed(container, "Collections")).toBeTruthy()
-    expect(dialogNamed(container, "Search")).toBeNull()
-  })
-
-  it("closes on Escape like the Collections sheet", () => {
-    const { getByText, container } = render(<MobileNav />)
-    fireEvent.click(getByText("SEARCH").closest("button")!)
-    expect(dialogNamed(container, "Search")).toBeTruthy()
-    fireEvent.keyDown(window, { key: "Escape" })
-    expect(dialogNamed(container, "Search")).toBeNull()
+  it("the site header and the home header both carry the search box", () => {
+    expect(read("components/GlobalSiteHeader.tsx")).toContain("<GlobalSearch />")
+    expect(read("components/HomePageMarketing.tsx")).toContain("<GlobalSearch />")
   })
 })

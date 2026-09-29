@@ -15,6 +15,7 @@
 
 import type { Metadata } from "next"
 import ProfileEditClient from "./ProfileEditClient"
+import GlobalSiteHeader from "@/components/GlobalSiteHeader"
 
 // The tab read as the generic site title until 2026-09-02 (onboarding QA #9);
 // a signed-in-only form should also never be indexed.
@@ -24,5 +25,10 @@ export const metadata: Metadata = {
 }
 
 export default function EditProfilePage() {
-  return <ProfileEditClient />
+  return (
+    <>
+      <GlobalSiteHeader />
+      <ProfileEditClient />
+    </>
+  )
 }
