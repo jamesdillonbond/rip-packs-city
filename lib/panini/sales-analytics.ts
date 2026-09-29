@@ -4,7 +4,7 @@
 // missing its coverage block, its daily series or its window is REJECTED (null) so the tab says
 // "couldn't load" instead of rendering zeros; a missing number inside a row is null, never 0.
 
-import type { PaniniSalesAnalytics, PaniniDay, PaniniSaleRow, PaniniTradedRow, PaniniGroupRow } from "@/components/collection/PaniniAnalytics"
+import type { PaniniSalesAnalytics, PaniniDay, PaniniSaleRow, PaniniTradedRow, PaniniGroupRow, PaniniPlayerRow } from "@/components/collection/PaniniAnalytics"
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null
@@ -57,6 +57,11 @@ export function parsePaniniSalesAnalytics(raw: unknown): PaniniSalesAnalytics | 
     if (!k || n === null) return null
     return { [key]: k, sales: n, volume_usd: num(x.volume_usd), median_usd: num(x.median_usd) }
   }
+  const player = (x: Record<string, unknown>): PaniniPlayerRow | null => {
+    const name = str(x.player_name), n = num(x.sales), eds = num(x.editions_traded)
+    if (!name || n === null || eds === null) return null
+    return { player_name: name, sales: n, volume_usd: num(x.volume_usd), median_usd: num(x.median_usd), editions_traded: eds }
+  }
   const keep = <T,>(xs: (T | null)[]) => xs.filter((x): x is T => x !== null)
   return {
     generated_at: str(o.generated_at),
@@ -73,5 +78,7 @@ export function parsePaniniSalesAnalytics(raw: unknown): PaniniSalesAnalytics | 
     most_traded: keep(arr(o.most_traded).map(traded)),
     by_tier: keep(arr(o.by_tier).map(group("tier"))),
     by_parallel: keep(arr(o.by_parallel).map(group("parallel"))),
+    // Absent key (a payload from before 20260929130614) is null — "not computed", never "no sales".
+    by_player: Array.isArray(o.by_player) ? keep(arr(o.by_player).map(player)) : null,
   }
 }

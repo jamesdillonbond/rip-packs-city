@@ -30,6 +30,7 @@ function payload(over: Partial<PaniniSalesAnalytics> = {}): PaniniSalesAnalytics
     most_traded: [{ edition_external_id: "packcard-3", player_name: "Kylian Mbappe", set_name: "Base", tier: "COMMON", sales: 40, volume_usd: 200, median_usd: 5 }],
     by_tier: [{ tier: "COMMON", sales: 500, volume_usd: 2500, median_usd: 4 }],
     by_parallel: [{ parallel: "Base", sales: 400, volume_usd: 2000, median_usd: 4 }],
+    by_player: [{ player_name: "Kylian Mbappé", sales: 22, volume_usd: 5742, median_usd: 115, editions_traded: 8 }],
     ...over,
   }
 }
@@ -84,6 +85,31 @@ describe("PaniniAnalytics", () => {
     expect(c.textContent).not.toMatch(/buyer|seller/i)
   })
 
+  it("top players link the player page, and a partial window reads their counts AND volume as floors", () => {
+    const c = render(<PaniniAnalytics data={payload()} />).container
+    expect(c.querySelector('a[href="/panini-blockchain/player/kylian-mbappe"]')?.textContent).toBe("Kylian Mbappé")
+    expect(c.textContent).toContain("≥ $5,742")
+    expect(c.textContent).toContain("≥ 22")
+    // grouped tables: a partial window's volume is a floor too, never a total
+    expect(c.textContent).toContain("≥ $2,500")
+    expect(c.textContent).not.toMatch(/(?<!≥ )\$5,742/)
+  })
+
+  it("control: a complete window shows the players' volume without a floor", () => {
+    const d = payload()
+    d.daily[2].covered_pct = 99
+    const c = render(<PaniniAnalytics data={d} />).container
+    expect(c.textContent).toContain("$5,742")
+    expect(c.textContent).not.toContain("≥ $5,742")
+  })
+
+  it("a payload without the players list hides the section — it never says 'no sale'", () => {
+    const c = render(<PaniniAnalytics data={payload({ by_player: null })} />).container
+    expect(c.textContent).not.toContain("Top players")
+    const p = parsePaniniSalesAnalytics({ ...payload(), by_player: undefined })
+    expect(p?.by_player).toBeNull()
+  })
+
   it("COMPLETE_PCT is the bar a day must clear", () => {
     expect(isCompleteDay({ day: "d", sales: 1, volume_usd: 1, median_usd: 1, covered_pct: COMPLETE_PCT })).toBe(true)
     expect(isCompleteDay({ day: "d", sales: 1, volume_usd: 1, median_usd: 1, covered_pct: COMPLETE_PCT - 0.1 })).toBe(false)
@@ -99,12 +125,15 @@ describe("parsePaniniSalesAnalytics", () => {
     window: { sales: 9952, volume_usd: 249802, median_usd: 3, editions_traded: 2187, cards_traded: 9952 },
     top_sales_window: [], top_sales_all_time: [{ sku: "a__1_1", edition_external_id: "a", sold_at: "2026-06-29T19:03:01+00:00", amount_usd: 100010 }],
     most_traded: [], by_tier: [{ tier: "COMMON", sales: 1, volume_usd: 1, median_usd: 1 }], by_parallel: [],
+    by_player: [{ player_name: "Lamine Yamal", sales: 42, volume_usd: 42319, median_usd: 251.5, editions_traded: 15 }, { player_name: null, sales: 3, volume_usd: 9, median_usd: 3, editions_traded: 1 }],
   }
   it("parses the live shape (measured 2026-09-28)", () => {
     const p = parsePaniniSalesAnalytics(raw)
     expect(p?.coverage.sales_held).toBe(52202)
     expect(p?.daily[0].covered_pct).toBe(0)
     expect(p?.top_sales_all_time[0].serial_number).toBeNull()
+    // a nameless player row is dropped, never rendered as a blank link
+    expect(p?.by_player).toEqual([{ player_name: "Lamine Yamal", sales: 42, volume_usd: 42319, median_usd: 251.5, editions_traded: 15 }])
   })
   it("a payload missing its coverage, window or daily series is rejected, not zeros", () => {
     const without = (k: string) => { const o: Record<string, unknown> = { ...raw }; delete o[k]; return o }

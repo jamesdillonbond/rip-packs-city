@@ -18,6 +18,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
+import { slugifyPlayerName } from "@/lib/entity-labels"
 
 type Num = number | null
 
@@ -34,6 +35,7 @@ export interface PaniniSaleRow {
   mint_cap: Num
 }
 export interface PaniniTradedRow { edition_external_id: string; player_name: string | null; set_name: string | null; tier: string | null; sales: number; volume_usd: Num; median_usd: Num }
+export interface PaniniPlayerRow { player_name: string; sales: number; volume_usd: Num; median_usd: Num; editions_traded: number }
 export interface PaniniGroupRow { sales: number; volume_usd: Num; median_usd: Num; tier?: string; parallel?: string }
 export interface PaniniSalesAnalytics {
   generated_at: string | null
@@ -55,6 +57,8 @@ export interface PaniniSalesAnalytics {
   most_traded: PaniniTradedRow[]
   by_tier: PaniniGroupRow[]
   by_parallel: PaniniGroupRow[]
+  /** null = this payload does not carry the list (the section is hidden), never "no sales". */
+  by_player: PaniniPlayerRow[] | null
 }
 
 /** The share of active editions whose sales RPC must hold for a day to count as complete. */
@@ -122,6 +126,9 @@ function Table({ head, children }: { head: string[]; children: React.ReactNode }
 }
 function editionHref(key: string) {
   return `/panini-blockchain/edition/${encodeURIComponent(key)}`
+}
+function playerHref(name: string) {
+  return `/panini-blockchain/player/${encodeURIComponent(slugifyPlayerName(name))}`
 }
 
 /** Daily sales for COMPLETE days only; a partial day is an empty slot carrying its coverage. */
@@ -267,12 +274,34 @@ export default function PaniniAnalytics({ data }: { data: PaniniSalesAnalytics |
               </td>
               <td style={td}>{r.set_name ?? "—"}</td>
               <td style={td}>{`${atLeast ? "≥ " : ""}${int(r.sales)}`}</td>
-              <td style={td}>{usd(r.volume_usd)}</td>
+              <td style={td}>{`${atLeast ? "≥ " : ""}${usd(r.volume_usd)}`}</td>
               <td style={td}>{usd(r.median_usd)}</td>
             </tr>
           ))}
         </Table>
       )}
+
+      {data.by_player ? (<>
+      <H2>Top players by volume · last {data.days} days</H2>
+      {data.by_player.length === 0 ? (
+        <Note>No sale on record in this window.</Note>
+      ) : (
+        <Table head={["Player", "Sales", "Volume", "Median", "Editions traded"]}>
+          {data.by_player.map((r) => (
+            <tr key={r.player_name}>
+              <td style={{ ...td, color: "var(--rpc-text-primary)" }}>
+                <Link href={playerHref(r.player_name)} style={{ color: "inherit" }}>{r.player_name}</Link>
+              </td>
+              <td style={td}>{`${atLeast ? "≥ " : ""}${int(r.sales)}`}</td>
+              <td style={td}>{`${atLeast ? "≥ " : ""}${usd(r.volume_usd)}`}</td>
+              <td style={td}>{usd(r.median_usd)}</td>
+              <td style={td}>{`${atLeast ? "≥ " : ""}${int(r.editions_traded)}`}</td>
+            </tr>
+          ))}
+        </Table>
+      )}
+      <Note>Players ranked by the sales RPC holds from these days; cards outside RPC&apos;s catalogue are not in this list.</Note>
+      </>) : null}
 
       <H2>By rarity · last {data.days} days</H2>
       <Table head={["Rarity", "Sales", "Volume", "Median"]}>
@@ -280,7 +309,7 @@ export default function PaniniAnalytics({ data }: { data: PaniniSalesAnalytics |
           <tr key={r.tier}>
             <td style={td}>{r.tier === "UNKNOWN" ? "Not in RPC's catalogue" : (r.tier ?? "—").charAt(0) + (r.tier ?? "").slice(1).toLowerCase()}</td>
             <td style={td}>{`${atLeast ? "≥ " : ""}${int(r.sales)}`}</td>
-            <td style={td}>{usd(r.volume_usd)}</td>
+            <td style={td}>{`${atLeast ? "≥ " : ""}${usd(r.volume_usd)}`}</td>
             <td style={td}>{usd(r.median_usd)}</td>
           </tr>
         ))}
@@ -292,7 +321,7 @@ export default function PaniniAnalytics({ data }: { data: PaniniSalesAnalytics |
           <tr key={r.parallel}>
             <td style={td}>{r.parallel}</td>
             <td style={td}>{`${atLeast ? "≥ " : ""}${int(r.sales)}`}</td>
-            <td style={td}>{usd(r.volume_usd)}</td>
+            <td style={td}>{`${atLeast ? "≥ " : ""}${usd(r.volume_usd)}`}</td>
             <td style={td}>{usd(r.median_usd)}</td>
           </tr>
         ))}
