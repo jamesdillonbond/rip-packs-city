@@ -8,7 +8,7 @@
 --       every pull a record names, or below the floor, is not.
 --   D1. mainnet24 packs get the pre-Cadence-1.0 script on the mainnet24 node;
 --       later ones the Cadence 1.0 script on their own spork's node; the read
---       asks for EVERY pull of the pack; <= 8 per node per tick.
+--       asks for EVERY pull of the pack; <= 20 per node per tick.
 --   C1. A landed read names an unnamed pull (resolved_via chain_history),
 --       replaces an inference, corrects a record naming another edition (a
 --       parallel filed under its base), leaves an agreeing record alone, and
@@ -19,7 +19,8 @@
 --       never lands expires after 30 minutes.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929160000_audit_20260929_topshot_pulls_named_by_reading_the_chain_at_the_open_block.sql).
+-- (supabase/migrations/20260929160000_audit_20260929_topshot_pulls_named_by_reading_the_chain_at_the_open_block.sql;
+-- the 20-per-node cap from 20260929161000_audit_20260929_chain_pull_lane_20_reads_per_node.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -75,7 +76,7 @@ DECLARE
   v_started   timestamptz := clock_timestamp();
   v_ts        constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
   v_floor     constant bigint := 65264619;   -- mainnet24 root: older sporks no longer resolve
-  v_per_node  constant int := 8;
+  v_per_node  constant int := 20;
   v_max_att   constant int := 6;
   -- mainnet24 still executes pre-Cadence-1.0 scripts
   v_src_pre   constant text := 'import TopShot from 0x0b2a3299cc857e29
@@ -377,11 +378,11 @@ INSERT INTO public.pack_open_pull_values (collection_id, pack_nft_id, priced_at,
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P24', now(), 1),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P26', now(), 0),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PDONE', now(), 0);
--- ten more mainnet26 packs to exercise the per-node cap (P26 has the highest priority)
+-- 22 more mainnet26 packs to exercise the per-node cap (P26 has the highest priority)
 INSERT INTO public.pack_rips
-SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Q' || g, '0x00000000000000cc', 100000100 + g FROM generate_series(1, 10) g;
+SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Q' || g, '0x00000000000000cc', 100000100 + g FROM generate_series(1, 22) g;
 INSERT INTO public.pack_open_pulls (collection_id, pack_nft_id, nft_id, opener_address)
-SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Q' || g, (5000 + g)::text, '0x00000000000000cc' FROM generate_series(1, 10) g;
+SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Q' || g, (5000 + g)::text, '0x00000000000000cc' FROM generate_series(1, 22) g;
 
 -- ── run 1: enqueue + dispatch ──────────────────────────────────────────────
 DO $t$
@@ -396,11 +397,11 @@ BEGIN
     RAISE EXCEPTION 'E1: P26 not enqueued with priority 2'; END IF;
   IF EXISTS (SELECT 1 FROM public.topshot_pull_chain_requests WHERE pack_nft_id IN ('PLOW', 'PDONE')) THEN
     RAISE EXCEPTION 'E1: a pack below the floor or fully record-named was enqueued'; END IF;
-  IF (v->>'enqueued')::int <> 12 THEN RAISE EXCEPTION 'E1: enqueued % (want 12)', v->>'enqueued'; END IF;
+  IF (v->>'enqueued')::int <> 24 THEN RAISE EXCEPTION 'E1: enqueued % (want 24)', v->>'enqueued'; END IF;
 
   -- D1: the per-node cap
-  IF (SELECT count(*) FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%') <> 8 THEN
-    RAISE EXCEPTION 'D1: mainnet26 got % reads in one tick (cap 8)', (SELECT count(*) FROM net.calls WHERE url LIKE '%mainnet26%'); END IF;
+  IF (SELECT count(*) FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%') <> 20 THEN
+    RAISE EXCEPTION 'D1: mainnet26 got % reads in one tick (cap 20)', (SELECT count(*) FROM net.calls WHERE url LIKE '%mainnet26%'); END IF;
   IF (SELECT status FROM public.topshot_pull_chain_requests WHERE pack_nft_id = 'P26') <> 'in_flight' THEN
     RAISE EXCEPTION 'D1: the highest-priority mainnet26 pack was not dispatched'; END IF;
 

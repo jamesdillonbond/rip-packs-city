@@ -22,8 +22,8 @@ const PINS = [
     // that a parallel we do not carry is never folded into its base.
     fn: "run_topshot_pull_chain_lane",
     test: "supabase/tests/run_topshot_pull_chain_lane.sql",
-    migration:
-      "supabase/migrations/20260929160000_audit_20260929_topshot_pulls_named_by_reading_the_chain_at_the_open_block.sql",
+    // 2026-09-29: 20 reads per node per tick (was 8).
+    migration: "supabase/migrations/20260929161000_audit_20260929_chain_pull_lane_20_reads_per_node.sql",
   },
   {
     // Added 2026-09-29. A Top Shot pull no record names takes its edition from
