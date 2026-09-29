@@ -347,7 +347,7 @@ const PINS = [
     fn: "collect_wallet_pack_pulls",
     test: "supabase/tests/collect_wallet_pack_pulls.sql",
     migration:
-      "supabase/migrations/20260926234000_audit_20260926_pack_pulls_that_left_the_wallet_named_from_sales_and_ownership.sql",
+      "supabase/migrations/20260929134500_audit_20260929_box_packs_yield_packs_not_moments.sql",  // 2026-09-29: box packs yield packs
   },
   {
     // Added 2026-09-18. Pins the FIX for "my wallet shows 0 sold packs when I have
@@ -380,7 +380,7 @@ const PINS = [
     // All Day drops are pre-minted days before they open. v17: and a mint
     // BEFORE the window is ignored (the sale / open bound decides).
     migration:
-      "supabase/migrations/20260929133500_audit_20260929_pack_pull_list_names_what_the_value_was_priced_from.sql",
+      "supabase/migrations/20260929134500_audit_20260929_box_packs_yield_packs_not_moments.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

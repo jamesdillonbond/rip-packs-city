@@ -23,7 +23,7 @@
 --      a Top Shot sale; an 'nfl' Atlas event never names a Top Shot pull).
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926234000_audit_20260926_pack_pulls_that_left_the_wallet_named_from_sales_and_ownership.sql).
+-- (supabase/migrations/20260929134500_audit_20260929_box_packs_yield_packs_not_moments.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -69,6 +69,8 @@ CREATE TABLE public.pack_open_pull_values (
   n_pulls int NOT NULL, n_resolved int NOT NULL, n_priced int NOT NULL, pull_value_usd numeric(14,2),
   priced_at timestamptz NOT NULL, PRIMARY KEY (collection_id, pack_nft_id),
   CONSTRAINT pack_open_pull_values_whole_pack CHECK (pull_value_usd IS NULL OR n_priced = n_pulls));
+CREATE TABLE public.pack_box_contents (collection_id uuid NOT NULL, box_pack_nft_id text NOT NULL, pack_nft_id text NOT NULL,
+  opener_address text NOT NULL, first_seen_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (collection_id, box_pack_nft_id, pack_nft_id));
 CREATE TABLE public.pack_pull_wallet_state (
   wallet text PRIMARY KEY, requested_at timestamptz, completed_at timestamptz,
   pages int NOT NULL DEFAULT 0, packs int NOT NULL DEFAULT 0, pulls int NOT NULL DEFAULT 0, last_error text);
@@ -159,6 +161,28 @@ BEGIN
     END IF;
 
     IF r.kind = 'wallet' THEN
+      -- 2026-09-29: a BOX yields packs, not moments ("A.<addr>.PackNFT.<id>",
+      -- e.g. "2026 NBA Finals Box" -> 8 PackNFTs). Those go to
+      -- pack_box_contents; before, each was stored as an unnamed moment and the
+      -- box read "0 of 8 priced" for ever (430 Top Shot boxes, 12 wallets).
+      INSERT INTO public.pack_box_contents (collection_id, box_pack_nft_id, pack_nft_id, opener_address)
+      SELECT DISTINCT
+             CASE e->'node'->>'type_name'
+               WHEN 'A.0b2a3299cc857e29.PackNFT.NFT' THEN v_ts
+               WHEN 'A.e4cf4bdc1751c65d.PackNFT.NFT' THEN v_ad
+               WHEN 'A.87ca73a41bb50ad5.PackNFT.NFT' THEN v_gz
+             END,
+             e->'node'->>'id',
+             split_part(t.tok, '.', 4),
+             r.wallet
+      FROM jsonb_array_elements(v_edges) e
+      CROSS JOIN LATERAL regexp_split_to_table(coalesce(e->'node'->>'nfts', ''), '\s*,\s*') AS t(tok)
+      WHERE e->'node'->>'status' = 'Opened'
+        AND e->'node'->>'id' IS NOT NULL
+        AND e->'node'->>'type_name' IN ('A.0b2a3299cc857e29.PackNFT.NFT', 'A.e4cf4bdc1751c65d.PackNFT.NFT', 'A.87ca73a41bb50ad5.PackNFT.NFT')
+        AND t.tok ~ '^A\.[0-9a-f]+\.PackNFT\.[0-9]+$'
+      ON CONFLICT (collection_id, box_pack_nft_id, pack_nft_id) DO NOTHING;
+
       -- "A.<addr>.<Contract>.<id>" per pulled moment; the collection is the
       -- PACK's contract (a pack only ever yields its own collection's moments).
       WITH ins AS (
@@ -178,6 +202,7 @@ BEGIN
           AND e->'node'->>'id' IS NOT NULL
           AND e->'node'->>'type_name' IN ('A.0b2a3299cc857e29.PackNFT.NFT', 'A.e4cf4bdc1751c65d.PackNFT.NFT', 'A.87ca73a41bb50ad5.PackNFT.NFT')
           AND t.tok ~ '^A\.[0-9a-f]+\.[A-Za-z]+\.[0-9]+$'
+          AND split_part(t.tok, '.', 3) <> 'PackNFT'
         ON CONFLICT (collection_id, pack_nft_id, nft_id) DO NOTHING
         RETURNING pack_nft_id
       )
@@ -655,6 +680,23 @@ BEGIN
                      '00000000-0000-0000-0000-0000000000a9 atlas_market_events', '409 via a Standard Atlas event');
   PERFORM _assert_eq((SELECT pull_value_usd::text FROM public.pack_open_pull_values WHERE pack_nft_id = 'T3'), '12.25',
                      'T3 repriced once both departed pulls are named: 5.00 + 7.25');
+END $$;
+
+-- 2026-09-29: a BOX yields PACKS. Its PackNFT tokens go to pack_box_contents,
+-- never pack_open_pulls; a mixed pack keeps its moments as pulls.
+INSERT INTO public.pack_pull_wallet_state (wallet, requested_at) VALUES ('0xboxer', now());
+INSERT INTO public.pack_pull_requests (request_id, kind, wallet, page) VALUES (77, 'wallet', '0xboxer', 1);
+INSERT INTO net._http_response VALUES (77, 200, $j${"data":{"searchPackNft":{"totalCount":2,"pageInfo":{"endCursor":"b1","hasNextPage":false},"edges":[
+  {"node":{"id":"BOX1","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Opened","nfts":"A.0b2a3299cc857e29.PackNFT.14293653849969,A.0b2a3299cc857e29.PackNFT.15393165469487"}},
+  {"node":{"id":"MIX1","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Opened","nfts":"A.0b2a3299cc857e29.PackNFT.48378514315134,A.0b2a3299cc857e29.TopShot.101"}}
+]}}}$j$, NULL);
+DO $$
+BEGIN
+  PERFORM public.collect_wallet_pack_pulls();
+  PERFORM _assert_eq((SELECT count(*)::text FROM public.pack_box_contents WHERE opener_address = '0xboxer'), '3', 'three inner packs recorded as packs');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_open_pulls WHERE pack_nft_id = 'BOX1'), 'a box''s inner packs are never moment pulls');
+  PERFORM _assert_eq((SELECT string_agg(nft_id, ',') FROM public.pack_open_pulls WHERE pack_nft_id = 'MIX1'), '101', 'a mixed pack keeps its moment, drops its pack');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_open_pull_values WHERE pack_nft_id = 'BOX1'), 'a box gets no moment pull value (never "0 of 2 priced", never $0)');
 END $$;
 
 ROLLBACK;

@@ -60,7 +60,7 @@
 --      sold inside its window is judged by the sale, as before the mint arm (P77).
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929133500_audit_20260929_pack_pull_list_names_what_the_value_was_priced_from.sql).
+-- (supabase/migrations/20260929134500_audit_20260929_box_packs_yield_packs_not_moments.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -106,6 +106,8 @@ CREATE TABLE public.golazos_pack_opens (pack_nft_id text, dist_id text, opener_a
 CREATE TABLE public.pinnacle_pack_opens (LIKE public.golazos_pack_opens);
 CREATE TABLE public.wallet_reconstructed_rips (wallet text, collection_id uuid, burst_id text, opened_at timestamptz,
   moments_pulled int, nft_ids text[] DEFAULT '{}', n_resolved int, n_priced int, pull_value_usd numeric(14,2));
+CREATE TABLE public.pack_box_contents (collection_id uuid NOT NULL, box_pack_nft_id text NOT NULL, pack_nft_id text NOT NULL,
+  opener_address text NOT NULL, first_seen_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (collection_id, box_pack_nft_id, pack_nft_id));
 CREATE TABLE public.pack_open_pull_values (
   collection_id uuid, pack_nft_id text, opener_address text, n_pulls int, n_resolved int, n_priced int,
   pull_value_usd numeric(14,2), priced_at timestamptz DEFAULT now(), n_inferred int NOT NULL DEFAULT 0,
@@ -643,6 +645,10 @@ BEGIN
       -- valued opens (pack_observed_values), with the count behind it.
       obs.avg_value_usd                               AS pack_opened_avg_usd,
       obs.n_valued                                    AS pack_opened_n,
+      -- 2026-09-29 (v19): a BOX yields packs, not moments -- how many
+      (SELECT count(*) FROM public.pack_box_contents bx
+        WHERE bx.collection_id = p.collection_id AND bx.box_pack_nft_id = p.pack_nft_id
+          AND bx.opener_address = v_wallet)::int     AS box_packs,
       ev.snapshotted_at                               AS ev_snapshotted_at,
       lsale.sale_price                                AS last_sale_usd,
       lsale.sealed_at                                 AS last_sale_at
@@ -734,7 +740,9 @@ BEGIN
            -- the purchase itself; a pre-minted drop: days before it opened)
            'primary_minted_at', primary_minted_at,
            -- v18: how many of the pack's pulls are named by inference (id neighbours)
-           'pulls_inferred', pulls_inferred)
+           'pulls_inferred', pulls_inferred,
+           -- v19: packs this BOX yielded (0 = not a box)
+           'box_packs', box_packs)
       ORDER BY latest_event_at DESC NULLS LAST, collection_id, pack_nft_id
     ), '[]'::jsonb)
   INTO v_total, v_packs
@@ -1528,6 +1536,21 @@ BEGIN
   PERFORM _assert_eq(row_->>'pulls_inferred', '2', 'R1b two of its pulls are named by inference');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'R1c';
   PERFORM _assert_eq(row_->>'pulls_inferred', '0', 'R1c none');
+END $$;
+
+-- v19 (2026-09-29): a box row says how many packs it yielded; others say 0.
+INSERT INTO public.pack_box_contents (collection_id, box_pack_nft_id, pack_nft_id, opener_address) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1a', 'inner1', '0xo'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1a', 'inner2', '0xo'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1c', 'inner3', '0xsomeoneelse');
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xo', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'R1a';
+  PERFORM _assert_eq(row_->>'box_packs', '2', 'R1a yielded two packs');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'R1c';
+  PERFORM _assert_eq(row_->>'box_packs', '0', 'R1c: another opener''s box contents are not this wallet''s');
 END $$;
 
 ROLLBACK;
