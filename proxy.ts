@@ -465,6 +465,13 @@ export function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/sniper") return true
   // /market — the cross-collection Market hub, the bottom bar's MARKET tab.
   if (pathname === "/market") return true
+  // /giveaways/<slug> + /api/giveaways/<slug> — community pack giveaways
+  // (2026-09-29). Anyone may READ a drop. A claim (POST) needs a signed-in
+  // account, which the route checks itself (401 "Sign in to claim") — it does
+  // NOT need allow-list approval: a giveaway is how someone new arrives.
+  // Drafts are 404 in the route; the admin surface is /api/admin/giveaways.
+  if (pathname.startsWith("/giveaways/")) return true
+  if (pathname.startsWith("/api/giveaways/")) return true
   // /blog + subpaths — force-static long-form marketing content built for SEO.
   // Linked from the public TopNav, so anon clicks must not bounce to /login.
   // Read-only static; sitemap lists the index + posts. (2026-06-08)

@@ -15,6 +15,25 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-29. Community pack giveaways (v1, one admin). Pins that a
+    // draft copies only the admin's own UNLOCKED same-collection cache rows, a
+    // seal covers the pool exactly once, and a claim is open-only, one per
+    // account and per recipient, never to the admin, never a pack twice.
+    fn: "claim_giveaway_pack",
+    test: "supabase/tests/giveaways.sql",
+    migration: "supabase/migrations/20260929192842_audit_20260929_community_pack_giveaways.sql",
+  },
+  {
+    fn: "create_giveaway_draft",
+    test: "supabase/tests/giveaways.sql",
+    migration: "supabase/migrations/20260929192842_audit_20260929_community_pack_giveaways.sql",
+  },
+  {
+    fn: "seal_giveaway_drop",
+    test: "supabase/tests/giveaways.sql",
+    migration: "supabase/migrations/20260929192842_audit_20260929_community_pack_giveaways.sql",
+  },
+  {
     // Added 2026-09-29. Disney Pinnacle pack openers read from the open tx's
     // Pinnacle.Deposit events (90,105 opens held NO opener). Pins the in-tx
     // scope (never a later transfer), spork-clamped windows, re-reads for

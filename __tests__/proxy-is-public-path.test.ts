@@ -90,6 +90,13 @@ const TABLE: Row[] = [
   ["/early-access", "GET", true],
   ["/pricing", "GET", true],
   ["/about", "GET", true],
+  // Community pack giveaways (2026-09-29): readable by anyone; the claim POST
+  // checks sign-in in the route (401), never allow-list approval.
+  ["/giveaways/blazers-fall-drop", "GET", true, "giveaway page is public"],
+  ["/api/giveaways/blazers-fall-drop", "GET", true, "giveaway read is public"],
+  ["/api/giveaways/blazers-fall-drop", "POST", true, "claim: the route requires sign-in itself"],
+  ["/giveaways", "GET", false, "no index page — only /giveaways/<slug> is public"],
+  ["/api/admin/giveaways", "GET", true, "the admin API is token-gated in the route, like every /api/admin path"],
   ["/blog", "GET", true],
   ["/blog/why-fmv", "GET", true],
   ["/privacy", "GET", true],

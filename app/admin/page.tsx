@@ -63,6 +63,11 @@ const TOOLS: Tool[] = [
     title: "Rewards Ops",
     blurb: "Fulfill redemptions, refund, adjust balances, toggle catalog. Economy liability view.",
   },
+  {
+    href: "/admin/giveaways",
+    title: "Pack Giveaways",
+    blurb: "Build free packs from your unlocked Top Shot moments, seal, open, close, and verify deliveries on chain.",
+  },
 ];
 
 export default function AdminIndexPage() {
