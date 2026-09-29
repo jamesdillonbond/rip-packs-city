@@ -31,6 +31,7 @@ export interface CollectorHolding {
 
 export type CollectorWalkOp =
   | { op: "plan"; limit: number }
+  | { op: "rotation"; limit: number }
   | { op: "heartbeat"; username: string; walkStartedAt: string }
   | {
       op: "ingest"
@@ -71,10 +72,12 @@ function toHolding(v: unknown): CollectorHolding | null {
 export function parseCollectorWalkBody(body: unknown): { ok: true; value: CollectorWalkOp } | { ok: false; reason: string } {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { ok: false, reason: "body must be a JSON object" }
   const b = body as Record<string, unknown>
-  if (b.op === "plan") {
+  // plan = linked usernames (opt-in); rotation = Panini owners who are also Top Shot usernames,
+  // a few a night, least-recently-walked first (Trevor's call, 2026-09-28; migration 20260929015334).
+  if (b.op === "plan" || b.op === "rotation") {
     const limit = typeof b.limit === "number" && Number.isInteger(b.limit) ? b.limit : NaN
     if (!(limit >= 1 && limit <= MAX_PLAN_TARGETS)) return { ok: false, reason: `limit must be an integer from 1 to ${MAX_PLAN_TARGETS}` }
-    return { ok: true, value: { op: "plan", limit } }
+    return { ok: true, value: { op: b.op, limit } }
   }
   const username = typeof b.username === "string" ? b.username.trim().replace(/^@/, "") : ""
   if (!USERNAME.test(username)) return { ok: false, reason: "username must be 2–16 letters, numbers, . _ -" }
@@ -108,5 +111,5 @@ export function parseCollectorWalkBody(body: unknown): { ok: true; value: Collec
     }
   }
 
-  return { ok: false, reason: "op must be plan, heartbeat or ingest" }
+  return { ok: false, reason: "op must be plan, rotation, heartbeat or ingest" }
 }

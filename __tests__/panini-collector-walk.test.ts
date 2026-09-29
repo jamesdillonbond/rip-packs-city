@@ -21,6 +21,7 @@ import {
   signedInNickname,
   findKey,
   isComplete,
+  mayStartWalk,
   mergeTargets,
   operationOf,
   parseTargets,
@@ -119,6 +120,21 @@ describe("targets", () => {
   })
   it("merges the receiver's plan without walking a folded name twice", () => {
     expect(mergeTargets(["Jamesdillonbond"], [{ nickname: "jamesdillonbond" }, { nickname: "AdlCards" }, { nickname: "bad name!" }, null])).toEqual(["Jamesdillonbond", "AdlCards"])
+  })
+  it("puts the rotation AFTER the explicit and linked names, so the budget cuts the rotation first", () => {
+    const withPlan = mergeTargets(["Jamesdillonbond"], [{ nickname: "AdlCards" }])
+    expect(mergeTargets(withPlan, [{ nickname: "CBark" }, { nickname: "adlcards" }])).toEqual(["Jamesdillonbond", "AdlCards", "CBark"])
+  })
+})
+
+describe("mayStartWalk", () => {
+  const t0 = 1_000_000
+  it("stops STARTING walks once the budget has elapsed", () => {
+    expect(mayStartWalk(t0, t0 + 39 * 60_000, "40")).toBe(true)
+    expect(mayStartWalk(t0, t0 + 40 * 60_000, "40")).toBe(false)
+  })
+  it("no budget set means no budget, never 'budget of 0 minutes'", () => {
+    for (const b of [undefined, null, "", "0", "-5", "abc"]) expect(mayStartWalk(t0, t0 + 999 * 60_000, b)).toBe(true)
   })
 })
 

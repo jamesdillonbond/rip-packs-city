@@ -27,7 +27,9 @@
 // retires cards that left a profile only on a walk it also judges complete).
 //
 // ⚠ WHO IS WALKED. Usernames users LINKED to their RPC profile (the receiver's `plan`, opt-in),
-// plus PANINI_COLLECTOR_TARGETS set on this box by its owner. Never a name typed on the site.
+// plus PANINI_COLLECTOR_TARGETS set on this box by its owner, plus (PANINI_COLLECTOR_ROTATION)
+// a few of the Panini owners who are also Top Shot usernames RPC knows, which Trevor chose to
+// walk on 2026-09-28. Never a name typed on the site.
 //
 // Env:
 //   RPC_PANINI_COLLECTOR_WALK_URL  https://www.rippackscity.com/api/cron/panini-collector-walk
@@ -35,6 +37,10 @@
 //   PANINI_CDP_URL                 optional: drive an existing Chrome (the runner's debug profile)
 //   PANINI_COLLECTOR_TARGETS       optional explicit usernames, comma/semicolon separated
 //   PANINI_COLLECTOR_PLAN          N linked usernames to ask the receiver for, default 25 (0 = none)
+//   PANINI_COLLECTOR_ROTATION      N rotation names to ask for — Panini owners who are also Top Shot
+//                                  usernames, least-recently-walked first — default 0 (none)
+//   PANINI_COLLECTOR_BUDGET_MIN    stop STARTING new walks after this many minutes (the walk in
+//                                  progress finishes); unset = no budget, the watchdog alone
 //   PANINI_COLLECTOR_MAX_PAGES     per collection, default 200 (30 cards a page)
 //   PANINI_COLLECTOR_HARD_MIN      watchdog: exit 3 after this many minutes, default 30
 //   DRY_RUN=1                      walk and report, write nothing
@@ -194,6 +200,16 @@ export function mergeTargets(explicit, planRows) {
     out.push(nick)
   }
   return out
+}
+
+/**
+ * May another walk START? A walk runs to the end once started (a half walk is posted incomplete
+ * and retires nothing), so the budget only stops new ones — keep it a walk's length under the
+ * watchdog. No budget (null / non-positive / NaN) always answers yes.
+ */
+export function mayStartWalk(startedMs, nowMs, budgetMin) {
+  if (!(Number(budgetMin) > 0)) return true
+  return nowMs - startedMs < Number(budgetMin) * 60_000
 }
 
 /** The GraphQL operation a /onepanini request carries, or null. */
@@ -496,7 +512,17 @@ async function main() {
     if (plan.ok && Array.isArray(plan.data?.targets)) planRows = plan.data.targets
     else log(`plan failed (http ${plan.status}): ${plan.data?.error ?? "no targets"} — walking the explicit list only`)
   }
-  const targets = mergeTargets(explicit, planRows)
+  const rotationN = Number(process.env.PANINI_COLLECTOR_ROTATION || 0)
+  let rotationRows = []
+  if (rotationN > 0 && url && token) {
+    const rot = await post(url, token, { op: "rotation", limit: Math.min(rotationN, 50) })
+    if (rot.ok && Array.isArray(rot.data?.targets)) rotationRows = rot.data.targets
+    else log(`rotation failed (http ${rot.status}): ${rot.data?.error ?? "no targets"} — skipping the rotation tonight`)
+  }
+  // Explicit and linked names first: when the budget runs out, the rotation is what waits.
+  const targets = mergeTargets(mergeTargets(explicit, planRows), rotationRows)
+  const budgetMin = process.env.PANINI_COLLECTOR_BUDGET_MIN
+  const runStartedMs = Date.now()
   if (targets.length === 0) {
     log("no targets (nobody has linked a Panini username, and PANINI_COLLECTOR_TARGETS is empty)")
     return
@@ -512,7 +538,11 @@ async function main() {
   const summary = []
   let anyFailed = false
   try {
-    for (const nickname of targets) {
+    for (const [i, nickname] of targets.entries()) {
+      if (!mayStartWalk(runStartedMs, Date.now(), budgetMin)) {
+        log(`budget of ${budgetMin} min reached — not starting: ${targets.slice(i).join(", ")} (the rotation picks them up next run)`)
+        break
+      }
       const walkStartedAt = new Date().toISOString()
       if (!dry) {
         const hb = await post(url, token, { op: "heartbeat", username: nickname, walk_started_at: walkStartedAt })

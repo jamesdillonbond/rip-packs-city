@@ -10,11 +10,15 @@
 // service-role key.
 //
 // ⚠ WHO IS WALKED. `plan` answers the usernames users LINKED to their RPC profile
-// (panini_collector_walk_targets) — opt-in. The box may add an explicit list; nothing here walks
-// a name a stranger typed into the Collection tab.
+// (panini_collector_walk_targets) — opt-in. The box may add an explicit list, and `rotation`
+// (panini_collector_rotation_targets) answers Panini owners who are also Top Shot usernames RPC
+// knows, which Trevor chose to walk on 2026-09-28. Nothing here walks a name a stranger typed
+// into the Collection tab.
 //
 // Three ops (body.op), all bearer-guarded:
 //   plan      — linked usernames, stalest complete walk first
+//   rotation  — Panini owners who are also Top Shot usernames, least-recently-walked first
+//               (Trevor's call 2026-09-28: he chose to walk these public profiles)
 //   heartbeat — a `panini-collector-walk-heartbeat` marker BEFORE a username's walk
 //   ingest    — the whole walk in ONE call (the RPC retires by set), then its pipeline_runs row.
 //               Returns what the RPC says it WROTE and whether the DB judged the walk complete.
@@ -64,6 +68,17 @@ export async function POST(req: NextRequest) {
   const v = parsed.value
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabaseAdmin as any
+
+  if (v.op === "rotation") {
+    const { data, error } = await boundedRpc(db, "panini_collector_rotation_targets", { p_limit: v.limit })
+    if (error) return apiErrorResponse(error, "api/cron/panini-collector-walk")
+    if (!Array.isArray(data)) return NextResponse.json({ error: "rotation returned no list" }, { status: 502 })
+    const targets = (data as Array<Record<string, unknown>>)
+      .filter((r) => typeof r.username === "string" && typeof r.nickname === "string")
+      .slice(0, v.limit)
+      .map((r) => ({ username: r.username as string, nickname: r.nickname as string, last_walk_at: (r.last_walk_at as string | null) ?? null }))
+    return NextResponse.json({ targets })
+  }
 
   if (v.op === "plan") {
     const { data, error } = await boundedRpc(db, "panini_collector_walk_targets", {})

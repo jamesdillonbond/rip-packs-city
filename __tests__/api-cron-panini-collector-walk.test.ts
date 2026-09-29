@@ -107,6 +107,34 @@ describe("plan", () => {
   })
 })
 
+describe("rotation", () => {
+  it("asks the rotation RPC with the limit and returns its names, capped", async () => {
+    results.panini_collector_rotation_targets = {
+      data: [
+        { username: "cbark", nickname: "CBark", cards_seen: 3887, last_walk_at: null },
+        { username: "xenuity", nickname: "Xenuity", cards_seen: 669, last_walk_at: "2026-09-20T00:00:00Z" },
+      ],
+      error: null,
+    }
+    const r = await POST(req({ op: "rotation", limit: 1 }))
+    expect(await r.json()).toEqual({ targets: [{ username: "cbark", nickname: "CBark", last_walk_at: null }] })
+    expect(calls).toEqual([{ fn: "panini_collector_rotation_targets", args: { p_limit: 1 } }])
+  })
+  it("never reads the opt-in plan list, and the plan never reads the rotation", async () => {
+    await POST(req({ op: "rotation", limit: 3 }))
+    await POST(req({ op: "plan", limit: 3 }))
+    expect(calls.map((c) => c.fn)).toEqual(["panini_collector_rotation_targets", "panini_collector_walk_targets"])
+  })
+  it("a failed rotation read is a non-2xx, not an empty rotation", async () => {
+    results.panini_collector_rotation_targets = { data: null, error: { message: "boom" } }
+    expect((await POST(req({ op: "rotation", limit: 5 }))).status).toBeGreaterThanOrEqual(500)
+  })
+  it("rejects a limit outside 1..50", () => {
+    expect(parseCollectorWalkBody({ op: "rotation", limit: 0 })).toMatchObject({ ok: false, reason: /limit/ })
+    expect(parseCollectorWalkBody({ op: "rotation", limit: 51 })).toMatchObject({ ok: false, reason: /limit/ })
+  })
+})
+
 describe("heartbeat", () => {
   it("writes the marker at the walk's start; a miss is a 503", async () => {
     expect((await POST(req({ op: "heartbeat", ...base }))).status).toBe(200)

@@ -20,6 +20,12 @@ REM the box owner's own, plus collectors Trevor tracks (added 2026-09-28; each i
 REM seeded_wallets row on Flow). Their Panini names are ASSUMED to match their Top Shot ones -
 REM a name Panini does not know logs as not_found in the walk log; fix the spelling here.
 if not defined PANINI_COLLECTOR_TARGETS set "PANINI_COLLECTOR_TARGETS=Jamesdillonbond,spinotronpc,Rigged,MikeG503,Scottyj111,Alexthedon,PDX_Blazer,Sdb,Philthy503,Juiceshack,Cazsreyem,YWRR,TimDunkin"
+REM Rotation (2026-09-28): each run also walks a few Panini owners who are also Top Shot usernames
+REM RPC knows (panini_collector_rotation_targets - never walked first, biggest first, then oldest walk).
+REM The budget stops STARTING walks after 40 min; the watchdog (55) leaves room for the one in progress.
+if not defined PANINI_COLLECTOR_ROTATION set "PANINI_COLLECTOR_ROTATION=6"
+if not defined PANINI_COLLECTOR_BUDGET_MIN set "PANINI_COLLECTOR_BUDGET_MIN=40"
+if not defined PANINI_COLLECTOR_HARD_MIN set "PANINI_COLLECTOR_HARD_MIN=55"
 set "PANINI_LOG=%USERPROFILE%\panini-collector-walk.log"
 
 cd /d "%USERPROFILE%\rip-packs-city"
