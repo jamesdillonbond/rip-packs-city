@@ -30,7 +30,7 @@
 // error fallback only.
 
 import { useState } from "react"
-import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl, thumbWidthFor } from "@/lib/ipfs-media"
 import { tsSizedMomentImage } from "@/lib/entity-editions-grid-format"
 
 interface MontageItem {
@@ -75,7 +75,7 @@ export default function HeroMontage({
       style={{ display: "flex", gap: 6, flexWrap: "nowrap", overflow: "hidden" }}
     >
       {shown.map(({ it, i }) => {
-        const proxied = proxyIpfsImageUrl(it.thumbnail_url, 320)
+        const proxied = proxyIpfsImageUrl(it.thumbnail_url, thumbWidthFor(REQUEST_PX))
         const sized = fellBack.has(i)
           ? null
           : tsSizedMomentImage(collectionUrlSlug, it.rep_nft_id, REQUEST_PX)
