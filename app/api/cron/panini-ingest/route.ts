@@ -90,7 +90,10 @@ const PANINI_LEGACY_SET_ID = 2332;
 // Override without a code change: PANINI_DISCOVERY_SPORTS="Soccer,Basketball,…" on Vercel.
 // "WNBA" was tried 2026-09-29 and removed the same day: the 10:10 AM PT walk's "WNBA" grid served
 // the same setIds as Basketball (the filter value is not recognised), so it only cost 3 minutes.
-const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Football", "Baseball"];
+// "Womens Basketball" added 2026-09-29 PT: Panini's own packDetails tags the WNBA packs (1055/1056)
+// sport "WOMENS BASKETBALL", the way the WC packs are "SOCCER" ↔ the verified "Soccer" filter. If
+// its grid serves the Basketball setIds too (~55+), the value is not recognised either — remove it.
+const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Womens Basketball", "Football", "Baseball"];
 function discoverySports(): string[] {
   const env = (process.env.PANINI_DISCOVERY_SPORTS || "").split(",").map((s) => s.trim()).filter(Boolean);
   return env.length ? env : PANINI_DISCOVERY_SPORTS;
