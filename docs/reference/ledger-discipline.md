@@ -308,6 +308,14 @@ untouched, the count holds, and the swallowed-heading detector only looks for `#
 multi-line entry's `Shipped:` line (the case above) is already a non-heading line, which is why
 the 09-13 in-place corrections passed.
 
+⚠ **UPDATE, same evening (`9549ba216`): the guard now TOLERATES an in-place edit that keeps the
+entry's identity** — its `### <date>` and its first `**bold title**`. The detector counts that
+`date|title` key before and after, so an edited heading passes while a deleted entry (its key count
+drops), a RETITLED entry, and a dropped duplicate still fail. All four of that evening's reds
+(the three above plus `b5e0c2cb1`) pass under it. **The follow-up line above is still the
+preferred form** — it leaves the original text intact for a reader — and a heading with NO bold
+title (most pre-September entries) keeps the old rule: any rewording reds `main`.
+
 ⭐ **AND THE GENERALISATION, which is this repo's own rule pointed at its own bookkeeping:
 *a recorded fact has a shelf life, and the entry most likely to be stale is the one nobody
 re-reads because they wrote it.*** The measurement discipline in CLAUDE.md says re-derive a
