@@ -465,6 +465,20 @@ describe("All Day team pick covers the franchise", () => {
     expect(body.degraded).toBe(true)
   })
 
+  // 2026-09-29 (migration 20260930013059): the player is searched IN the RPC.
+  // Filtering its top 200 afterwards found 1 Mahomes listing of 88.
+  it("a player search is pushed into the RPC as p_player (and absent on the default board)", async () => {
+    rpc.mockImplementation(franchiseRpc())
+    await GET(get("?collection=nfl-all-day&sortBy=price_asc&player=Mahomes"))
+    const withPlayer = rpc.mock.calls.filter(([n]) => n === "get_allday_sniper_deals").map(([, p]) => p)
+    expect(withPlayer.length).toBeGreaterThan(0)
+    for (const p of withPlayer) expect(p.p_player).toBe("Mahomes")
+
+    rpc.mockClear()
+    await GET(get("?collection=nfl-all-day&sortBy=price_asc"))
+    for (const [n, p] of rpc.mock.calls) if (n === "get_allday_sniper_deals") expect(p.p_player).toBeUndefined()
+  })
+
   it("a failed franchise lookup falls back to the exact label and reports the board as narrowed", async () => {
     rpc.mockImplementation(franchiseRpc({ team_franchise_slugs: () => ({ data: null, error: { message: "boom" } }) }))
     const body = await (await GET(get(teamQs))).json()

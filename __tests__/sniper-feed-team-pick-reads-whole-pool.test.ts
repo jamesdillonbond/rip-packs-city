@@ -249,6 +249,50 @@ describe("sniper-feed a team pick always gets every edition's floor", () => {
   })
 })
 
+describe("sniper-feed ?player= reads the player's listings from the whole pool (2026-09-29)", () => {
+  // "Lillard" answered 0 deals live while 54 Lillard listings were open: the
+  // player filter ran over the finished newest-200 board, and the edition-floor
+  // read was never told the player.
+  const tatum = (i: number) => ({ ...listing(i, 5, 7), player_name: "Jayson Tatum" })
+  const pool = [...Array.from({ length: 40 }, (_, i) => tatum(i)), ...Array.from({ length: 3 }, (_, i) => listing(i + 50, 1, 2))]
+  const resolve = (table: string, ops: Op[]) => {
+    if (table === "editions") return { data: EDITIONS, error: null }
+    if (table === "ts_listings") {
+      const like = opArgs(ops, "ilike").find((a) => a[0] === "player_name")?.[1] as string | undefined
+      const needle = like ? like.replace(/^%|%$/g, "").toLowerCase() : null
+      return { data: needle ? pool.filter((r) => r.player_name.toLowerCase().includes(needle)) : pool.slice(0, 40), error: null }
+    }
+    return { data: [], error: null }
+  }
+
+  it("asks ts_listings for the player, tells the floor read the player, and returns only that player", async () => {
+    fx.resolve = resolve
+    const body = await (await GET(get("?collection=nba-top-shot&player=Lillard"))).json()
+    const ts = tsCalls()
+    expect(ts.length).toBeGreaterThan(0)
+    for (const c of ts) expect(opArgs(c.ops, "ilike")).toContainEqual(["player_name", "%Lillard%"])
+    const floor = fx.rpcCalls.filter((c) => c.name === "get_topshot_sniper_deals")
+    expect(floor.map((c) => c.args.p_player)).toEqual(["Lillard"])
+    expect(body.deals.length).toBeGreaterThan(0)
+    for (const d of body.deals) expect(d.playerName).toBe("Damian Lillard")
+  })
+
+  it("escapes LIKE wildcards in what was typed", async () => {
+    fx.resolve = resolve
+    await GET(get(`?collection=nba-top-shot&player=${encodeURIComponent("50%_off")}`))
+    const like = opArgs(tsCalls()[0].ops, "ilike")[0]?.[1]
+    expect(like).toBe("%50\\%\\_off%")
+  })
+
+  it("the default board still reads the unscoped newest slice (control)", async () => {
+    fx.resolve = resolve
+    await GET(get("?collection=nba-top-shot"))
+    expect(tsCalls().some((c) => opArgs(c.ops, "ilike").length === 0)).toBe(true)
+    // (this pool is one edition, so the sparse fallback may run — never scoped to a player)
+    for (const c of fx.rpcCalls.filter((c) => c.name === "get_topshot_sniper_deals")) expect(c.args.p_player).toBeUndefined()
+  })
+})
+
 describe("sniper-feed default board carries team names and the league's teams", () => {
   it("pool deals take their edition's team, and teamOptions lists teams not on the board", async () => {
     fx.resolve = defaultResolve(Array.from({ length: 26 }, (_, i) => listing(i, 5, 7)))

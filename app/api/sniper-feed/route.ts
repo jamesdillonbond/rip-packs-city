@@ -514,9 +514,15 @@ async function resolveFranchiseLabels(
   return { labels: Array.from(labels), error: null };
 }
 
+// A LIKE pattern matching `text` literally anywhere (its %, _ and \ escaped).
+function ilikeContains(text: string): string {
+  return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
 async function readTeamPoolRows(
   supabase: SupabaseClient,
   labels: string[],
+  player: string | null = null,
 ): Promise<{ rows: any[]; teamByPair: Map<string, string>; error: ReadEnvelope["error"] }> {
   const teamByPair = new Map<string, string>();
   const eds = await readTopshotEditionTeams(supabase, { teams: labels }, "ts-team-editions");
@@ -532,10 +538,12 @@ async function readTeamPoolRows(
   for (let i = 0; i < playList.length; i += TS_PLAY_CHUNK) {
     // Each chunk's newest TS_POOL_LIMIT is a superset of its share of the
     // overall newest TS_POOL_LIMIT, so the merge below loses nothing.
-    const { data, error } = await boundedRead((supabase as any)
+    let q = (supabase as any)
       .from("ts_listings")
       .select(TS_POOL_COLUMNS)
-      .in("play_id", playList.slice(i, i + TS_PLAY_CHUNK))
+      .in("play_id", playList.slice(i, i + TS_PLAY_CHUNK));
+    if (player) q = q.ilike("player_name", ilikeContains(player));
+    const { data, error } = await boundedRead(q
       .order("ingested_at", { ascending: false })
       .order("listing_id", { ascending: true })
       .limit(TS_POOL_LIMIT), "ts_listings-team");
@@ -576,9 +584,15 @@ async function fetchTopShotPool(
   supabase: SupabaseClient,
   sink: SourceFailureSink,
   team: string = "all",
+  player: string = "",
 ): Promise<{ listings: RawListing[]; tsCount: number; teamLabels: Set<string> | null }> {
   try {
     const teamPick = team !== "all" ? team : null;
+    // 2026-09-29 — a PLAYER search reads that player's listings from the whole
+    // pool, like a team pick. It used to filter the finished board (the newest
+    // 200 listings) after the fact: "Lillard" answered 0 deals while 54 Lillard
+    // listings were open and 67 Lillard editions had a priced floor.
+    const playerPick = player.trim() || null;
     // Team per (set, play). ts_listings carries no team, so every pool row had
     // teamName "" and the Team dropdown only ever listed the RPC-augment rows'
     // teams. On the default board this is enrichment, not deal-bearing: a failed
@@ -594,15 +608,16 @@ async function fetchTopShotPool(
       teamLabels = new Set(franchise.labels);
     }
     const { data, error } = teamPick
-      ? await readTeamPoolRows(supabase, Array.from(teamLabels ?? [])).then((r) => {
+      ? await readTeamPoolRows(supabase, Array.from(teamLabels ?? []), playerPick).then((r) => {
         teamByPair = r.teamByPair;
         return { data: r.rows, error: r.error };
       })
-      : await boundedRead((supabase as any)
-        .from("ts_listings")
-        .select(TS_POOL_COLUMNS)
+      : await boundedRead((playerPick
+        ? (supabase as any).from("ts_listings").select(TS_POOL_COLUMNS).ilike("player_name", ilikeContains(playerPick))
+        : (supabase as any).from("ts_listings").select(TS_POOL_COLUMNS))
         .order("ingested_at", { ascending: false })
-        .limit(TS_POOL_LIMIT), "ts_listings");
+        .order("listing_id", { ascending: true })
+        .limit(TS_POOL_LIMIT), playerPick ? "ts_listings-player" : "ts_listings");
 
     if (error) {
       console.error("[sniper-feed] ts_listings fetch error:", error.message);
@@ -1210,7 +1225,7 @@ export async function GET(req: Request) {
 
   function buildComputeFn(): () => Promise<unknown> {
     if (collection === "nfl-all-day") {
-      return () => computeAllDaySniperFeed({ minDiscount, rarity: effectiveRarity, team, maxPrice, sortBy });
+      return () => computeAllDaySniperFeed({ minDiscount, rarity: effectiveRarity, team, player, maxPrice, sortBy });
     }
     if (collection === "disney-pinnacle") {
       // Pinnacle has its own data source (pinnacle_fmv_snapshots + direct
@@ -1250,7 +1265,7 @@ export async function GET(req: Request) {
         sourcesFailed: [] as string[],
       });
     }
-    return () => computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy, league: params.league });
+    return () => computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, player, badgeOnly, serialFilter, maxPrice, sortBy, league: params.league });
   }
 
   type FeedResult = { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean; sourcesFailed?: string[]; teamOptions?: string[] };
@@ -1353,6 +1368,8 @@ const ALLDAY_THUMBNAIL_BASE = "https://media.nflallday.com/editions/";
 // path when the live feed returns zero edges (proxy down, CF block, etc.).
 async function computeAllDaySniperFeed(opts: {
   minDiscount: number; rarity: string; team: string; maxPrice: number; sortBy: string;
+  /** substring of the player name, pushed into the RPC (also re-applied to the board) */
+  player?: string;
 }) {
   const sink = createSourceFailureSink();
   const { minDiscount, rarity, team, maxPrice } = opts;
@@ -1528,6 +1545,9 @@ async function computeAllDaySniperFeed(opts: {
         p_team: t,
         p_sort_by: opts.sortBy,
         p_limit: 200,
+        // 2026-09-29 (migration 20260930013059): the player is searched IN the
+        // RPC. Filtering its top 200 afterwards found 1 Mahomes listing of 88.
+        ...((opts.player ?? "").trim() ? { p_player: (opts.player ?? "").trim() } : {}),
       }),
       "get_allday_sniper_deals",
     )));
@@ -1848,8 +1868,11 @@ async function computeSniperFeed(opts: {
   minDiscount: number; rarity: string; team: string;
   badgeOnly: boolean; serialFilter: string; maxPrice: number; sortBy: string;
   league?: "NBA" | "WNBA";
+  /** substring of the player name; also applied to the board after the build */
+  player?: string;
 }) {
   const { minDiscount, rarity, team, badgeOnly, serialFilter, maxPrice, sortBy } = opts;
+  const player = (opts.player ?? "").trim();
 
   const sink = createSourceFailureSink();
   const supabase = supabaseAdmin;
@@ -1863,7 +1886,7 @@ async function computeSniperFeed(opts: {
   //    firehose (open Dapper-marketplace listings verified in the last 24 h;
   //    migration 20260907020428). Before 2026-09-07 this table held one row
   //    from May and the feed was edition-level only.
-  const { listings: tsListings, tsCount, teamLabels } = await fetchTopShotPool(supabase as any, sink, team);
+  const { listings: tsListings, tsCount, teamLabels } = await fetchTopShotPool(supabase as any, sink, team, player);
 
   console.log(`[sniper-feed] fetched ts=${tsListings.length}`);
 
@@ -1893,9 +1916,11 @@ async function computeSniperFeed(opts: {
   // sparseness alone, the board's COVERAGE depended on how many editions those
   // 200 happened to span: 8 of 65 teams (Lakers 37, Liberty 32…) cleared 25 and
   // got a newest-200 slice instead of every edition's floor.
-  const teamPicked = team !== "all";
+  // A player search augments on the same terms: its floors are every edition
+  // of that player with an ask, which the listing pool alone cannot promise.
+  const teamPicked = team !== "all" || player !== "";
   if (teamPicked || tsListings.length < TS_GQL_SPARSE_THRESHOLD || tsDistinctEditions < TS_GQL_SPARSE_THRESHOLD) {
-    console.log(`[sniper-feed] TS augment (${teamPicked ? `team pick` : `sparse`}: ${tsListings.length} listings over ${tsDistinctEditions} editions) — get_topshot_sniper_deals RPC`);
+    console.log(`[sniper-feed] TS augment (${teamPicked ? `team/player pick` : `sparse`}: ${tsListings.length} listings over ${tsDistinctEditions} editions) — get_topshot_sniper_deals RPC`);
     // p_team is one exact label, so a franchise pick asks once per label it has
     // carried (measured 10-30 ms a call) — else the edition-level rows, which
     // dominate a sparse board, would be the picked label's alone.
@@ -1907,6 +1932,7 @@ async function computeSniperFeed(opts: {
         p_rarity: rarity === "all" ? "all" : rarity,
         p_team: t,
         p_sort_by: sortBy,
+        ...(player ? { p_player: player } : {}),
         // A team pick reads EVERY priced edition of the team (at most 504
         // editions; the Knicks' 467 floors measured 37 ms). At 200 the board was
         // the top 200 by DISCOUNT — the RPC has no listed_desc order — so a
