@@ -155,6 +155,54 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     expect(j.pskus).toHaveLength(2)
   })
 
+  // ── BOOTSTRAP (2026-09-30) ────────────────────────────────────────────────
+  // 2420 (2026 Prizm WNBA) was admitted with 0 catalogue rows and 0 cards were written 3 hours
+  // later: fresh discoveries queue behind the held list and every other sport's new cards.
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+  it("narrows the walk to a just-admitted product with NO catalogue rows that the grid lists", async () => {
+    st.total = 4
+    st.products = { data: [
+      { set_id: 2332, name: "WC", walk_cards: true },
+      { set_id: 2420, name: "WNBA", walk_cards: true, last_grid_items: 1580, walk_cards_since: hoursAgo(3) },
+    ], error: null }
+    st.holdings = [{ psku: "packcard-2332_9_9_9" }, { psku: "packcard-2420_1_2_3" }]
+    const j = await (await GET(req())).json()
+    expect(j.walk_set_ids).toEqual([2420])
+    expect(j.bootstrap_set_ids).toEqual([2420])
+    // Nothing of the other products is served, so the runner's fresh 2420 discoveries go first.
+    expect(j.pskus).toEqual(["packcard-2420_1_2_3"])
+    expect(j.priority_pskus).toEqual(["packcard-2420_1_2_3"])
+    expect(j.complete).toBe(true)
+  })
+
+  it("does NOT bootstrap once the product has a catalogue row, when it is off the grid, or after the age bound", async () => {
+    for (const [p2420, setIdAt] of [
+      [{ last_grid_items: 1580, walk_cards_since: hoursAgo(3) }, (i: number) => (i === 0 ? 2420 : 2332)], // has a row
+      [{ last_grid_items: 0, walk_cards_since: hoursAgo(3) }, () => 2332],                                // not on the grid
+      [{ last_grid_items: 1580, walk_cards_since: hoursAgo(13) }, () => 2332],                            // admitted > 12 h ago
+      [{ last_grid_items: 1580, walk_cards_since: null }, () => 2332],                                    // no admission stamp
+    ] as const) {
+      st.total = 4
+      st.setIdAt = setIdAt
+      st.products = { data: [{ set_id: 2332, name: "WC", walk_cards: true }, { set_id: 2420, name: "WNBA", walk_cards: true, ...p2420 }], error: null }
+      const j = await (await GET(req())).json()
+      expect(j.bootstrap_set_ids).toEqual([])
+      expect(j.walk_set_ids).toEqual([2332, 2420])
+    }
+  })
+
+  it("never bootstraps off a TRUNCATED catalogue — it cannot prove a count of zero", async () => {
+    st.total = 25_000
+    st.products = { data: [
+      { set_id: 2332, name: "WC", walk_cards: true },
+      { set_id: 2420, name: "WNBA", walk_cards: true, last_grid_items: 1580, walk_cards_since: hoursAgo(1) },
+    ], error: null }
+    const j = await (await GET(req())).json()
+    expect(j.truncated).toBe(true)
+    expect(j.bootstrap_set_ids).toEqual([])
+    expect(j.walk_set_ids).toEqual([2332, 2420])
+  })
+
   it("a pack-pages read failure is pack_urls:null (runner keeps its built-in list), not []", async () => {
     st.pages = { data: null, error: { message: "nope" } }
     const j = await (await GET(req())).json()

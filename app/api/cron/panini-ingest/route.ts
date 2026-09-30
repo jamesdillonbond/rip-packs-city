@@ -82,6 +82,7 @@ type RecentFmvRpc = {
 // ⚠ FAIL CLOSED TO THE HISTORICAL SCOPE. If the registry read fails, only 2332 is admitted (what
 // this route has always written) and the run reports `products_error` — never "admit everything".
 const PANINI_LEGACY_SET_ID = 2332;
+const PANINI_BOOTSTRAP_HOURS = 12;
 
 // The marketplace grid is filtered by `?sport=<value>` and the runner enumerates each value below.
 // "Soccer" is the only value verified live (2026-07-16). The others are the marketplace's sport
@@ -99,10 +100,13 @@ function discoverySports(): string[] {
   return env.length ? env : PANINI_DISCOVERY_SPORTS;
 }
 
-type ProductRow = { set_id: number; name: string | null; walk_cards: boolean; last_grid_sport?: string | null };
+type ProductRow = {
+  set_id: number; name: string | null; walk_cards: boolean; last_grid_sport?: string | null;
+  last_grid_items?: number | null; walk_cards_since?: string | null;
+};
 async function readProducts(): Promise<{ rows: ProductRow[]; error: string | null }> {
   try {
-    const { data, error } = await (supabaseAdmin as any).from("panini_products").select("set_id,name,walk_cards,last_grid_sport");
+    const { data, error } = await (supabaseAdmin as any).from("panini_products").select("set_id,name,walk_cards,last_grid_sport,last_grid_items,walk_cards_since");
     if (error) return { rows: [], error: error.message ?? String(error) };
     return { rows: (data ?? []) as ProductRow[], error: null };
   } catch (e) {
@@ -565,7 +569,28 @@ export async function GET(req: NextRequest) {
       } catch (e) { return { urls: null as string[] | null, error: e instanceof Error ? e.message : String(e) }; }
     })(),
   ]);
-  const walkSetIds = prod.error ? [PANINI_LEGACY_SET_ID] : prod.rows.filter((r) => r.walk_cards).map((r) => Number(r.set_id)).sort((a, b) => a - b);
+  const admittedIds = prod.error ? [PANINI_LEGACY_SET_ID] : prod.rows.filter((r) => r.walk_cards).map((r) => Number(r.set_id)).sort((a, b) => a - b);
+  // BOOTSTRAP (2026-09-30). A newly admitted product has no catalogue rows, so every one of its
+  // cards is a fresh grid discovery — and the runner walks fresh discoveries only AFTER the held
+  // priority list (1,183 on 09-30) and in enumeration order behind every other sport's new cards,
+  // at ~660 cards a run. Measured: 2420 (2026 Prizm WNBA) admitted 8:30 AM PT, 0 cards written by
+  // 11:40 AM PT. So while an admitted product has ZERO catalogue rows, is on the grid, and was
+  // admitted < PANINI_BOOTSTRAP_HOURS ago, the walk is narrowed to it: the runner filters `pskus`
+  // and `priority_pskus` by walk_set_ids, so that run walks only the new product's cards. It ends
+  // by itself — the first run writes rows (count > 0) — and the age bound means a product whose
+  // cards cannot be walked narrows at most a few runs, never starves the rest indefinitely.
+  // Only on a COMPLETE catalogue read: a truncated one cannot prove a count of zero.
+  const catCount = new Map<number, number>();
+  for (const r of paged.rows) { const sid = pskuSetId(r.external_id); if (sid !== null) catCount.set(sid, (catCount.get(sid) ?? 0) + 1); }
+  const nowMs = Date.now();
+  const bootstrapIds = prod.error || paged.truncated ? [] : prod.rows
+    .filter((r) => {
+      if (!r.walk_cards || !((r.last_grid_items ?? 0) > 0) || (catCount.get(Number(r.set_id)) ?? 0) > 0) return false;
+      const since = r.walk_cards_since ? Date.parse(r.walk_cards_since) : NaN;
+      return Number.isFinite(since) && nowMs - since < PANINI_BOOTSTRAP_HOURS * 3_600_000;
+    })
+    .map((r) => Number(r.set_id)).sort((a, b) => a - b);
+  const walkSetIds = bootstrapIds.length ? bootstrapIds : admittedIds;
   const walkSet = new Set(walkSetIds);
   // A catalogue row of a product that has since been switched off leaves the walk list; the row
   // itself stays (its history is real).
@@ -610,6 +635,8 @@ export async function GET(req: NextRequest) {
   const pskus = trim ? [...heldNew, ...rows.map((r) => r.external_id)].slice(0, trim) : [...heldNew, ...rows.map((r) => r.external_id)];
   return NextResponse.json({
     walk_set_ids: walkSetIds,
+    // Non-empty = this run is narrowed to newly admitted products with no catalogue yet (above).
+    bootstrap_set_ids: bootstrapIds,
     products_error: prod.error,
     discovery_sports: discoverySports(),
     // Sports whose grid gets the FULL enumeration budget (discovery of walked products' new
