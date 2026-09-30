@@ -458,6 +458,46 @@ async function getHistoricTeamSlugs(collectionIds: string[]): Promise<Set<string
   return out
 }
 
+/**
+ * The set slugs the set page can RESOLVE, per collection: `get_set_detail`
+ * reads the `sets_summary` materialized view (refreshed hourly at :50), so a
+ * set whose editions were ingested after the last refresh 404s until the next
+ * one. Segment 3 derives set URLs from `editions.set_name` LIVE, so it used to
+ * advertise that set for up to an hour as a page that did not exist — caught
+ * 2026-09-30 by the E2E DOM smoke: /panini-blockchain/set/dominance-prizms-green,
+ * created 4 minutes after the 6:50 AM PT refresh, 404 on production. Listing
+ * only resolvable slugs makes the sitemap agree with the page by construction;
+ * the set appears on the next build after the refresh.
+ *
+ * Returns `${urlSlug}|${setSlug}` keys. A failed or partial read throws — the
+ * segment fails rather than publish a partial list (this file's contract).
+ */
+async function getRoutableSetSlugs(): Promise<Set<string>> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new SitemapReadIncomplete('routable set slugs: supabase env missing, so nothing could be read')
+  const sb: any = createClient(url, key)
+  const PAGE = 1000
+  const out = new Set<string>()
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .from('sets_summary')
+      .select('collection_id, set_slug')
+      .order('collection_id', { ascending: true })
+      .order('set_slug', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw new SitemapReadIncomplete('sets_summary read failed: ' + error.message)
+    if (!Array.isArray(data)) throw new SitemapReadIncomplete('sets_summary returned no list')
+    for (const r of data as Array<{ collection_id?: unknown; set_slug?: unknown }>) {
+      if (typeof r.collection_id !== 'string' || typeof r.set_slug !== 'string' || !r.set_slug) continue
+      const coll = getCollectionByUuid(r.collection_id)
+      if (coll) out.add(`${coll.urlSlug}|${r.set_slug}`)
+    }
+    if (data.length < PAGE) break
+  }
+  return out
+}
+
 async function getCollectionSeries(): Promise<SeriesRow[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -685,6 +725,7 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
     const editions = dropTsFossils(await getEditionRows())
     const aliasMap = await getPlayerAliasMap()
     const historicTeams = await getHistoricTeamSlugs(EDITION_COLLECTION_IDS)
+    const routableSets = await getRoutableSetSlugs()
 
     // /moment/<edition uuid> is NO LONGER LISTED (2026-09-06, Search Console).
     // Every one of those URLs canonicalises to /<collection>/edition/<slug>
@@ -709,8 +750,11 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
       const ts = e.last_updated_at ? new Date(e.last_updated_at) : null
       if (e.set_name) {
         const k = `${coll.urlSlug}|${slugifyName(e.set_name)}`
-        const prev = setMap.get(k)
-        if (newer(prev, ts)) setMap.set(k, ts)
+        // Only a set the page can resolve (see getRoutableSetSlugs).
+        if (routableSets.has(k)) {
+          const prev = setMap.get(k)
+          if (newer(prev, ts)) setMap.set(k, ts)
+        }
       }
       // ⚠ A TEAM Moment stores its franchise in player_name (Squad Goals, Season
       // Rewind, WNBA Skyline: 44 distinct names / 431 editions on 2026-09-06).

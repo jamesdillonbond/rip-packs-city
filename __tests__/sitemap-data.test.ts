@@ -363,6 +363,7 @@ describe("segment 3 — set/player/team entities + top moments", () => {
         player_name: null, set_name: null, team_name: "Team LeBron",
       },
     ])
+    h.t.sets_summary = ok([{ collection_id: TS_ID, set_slug: "a-set" }, { collection_id: TS_ID, set_slug: "shared-set" }])
     const s = await buildSitemapSegment(3)
     const moments = s.filter((x) => x.url.includes("/moment/"))
     const sets = s.filter((x) => x.url.includes("/set/"))
@@ -382,6 +383,35 @@ describe("segment 3 — set/player/team entities + top moments", () => {
     // Real franchise kept, exhibition "Team LeBron" excluded.
     expect(teams.map((x) => x.url)).toEqual([`${BASE}/nba-top-shot/team/portland-trail-blazers`])
     expect(teams[0].priority).toBe(0.55)
+  })
+
+  it("lists only sets the set page can RESOLVE (sets_summary), never one ingested after its last refresh (2026-09-30)", async () => {
+    // E2E DOM smoke, 2026-09-30: /panini-blockchain/set/dominance-prizms-green
+    // was listed from editions.set_name 4 minutes after the hourly sets_summary
+    // refresh, and its page 404'd until the next one. Assert the ABSENCE of the
+    // 404 URL, with a control that a resolvable set in the same run is kept.
+    h.t.editions = ok([
+      { id: "s1", external_id: "1:1", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "Old Set", team_name: null },
+      { id: "s2", external_id: "2:2", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "Brand New Set", team_name: null },
+    ])
+    h.t.sets_summary = ok([{ collection_id: TS_ID, set_slug: "old-set" }])
+    const sets = (await buildSitemapSegment(3)).filter((x) => x.url.includes("/set/")).map((x) => x.url)
+    expect(sets).not.toContain(`${BASE}/nba-top-shot/set/brand-new-set`)
+    expect(sets).toEqual([`${BASE}/nba-top-shot/set/old-set`])
+  })
+
+  it("a sets_summary read FAILURE rejects — it must not fall back to listing unresolvable sets, nor publish none", async () => {
+    h.t.editions = ok([{ id: "s1", external_id: "1:1", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "Old Set", team_name: null }])
+    h.t.sets_summary = err("boom")
+    await expect(buildSitemapSegment(3)).rejects.toThrow(SitemapReadIncomplete)
+  })
+
+  it("pages sets_summary past PostgREST's 1,000-row cap — a set on the second page is still listed", async () => {
+    const rows = Array.from({ length: 1200 }, (_, i) => ({ collection_id: TS_ID, set_slug: `s-${String(i).padStart(4, "0")}` }))
+    h.t.sets_summary = ok(rows)
+    h.t.editions = ok([{ id: "p1", external_id: "1:1", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "S 1150", team_name: null }])
+    const sets = (await buildSitemapSegment(3)).filter((x) => x.url.includes("/set/")).map((x) => x.url)
+    expect(sets).toEqual([`${BASE}/nba-top-shot/set/s-1150`])
   })
 
   it("routes a TEAM Moment (player_name === team_name) to /team/ only, never /player/ — and unaccents player slugs", async () => {
@@ -468,6 +498,7 @@ describe("segment 3 — set/player/team entities + top moments", () => {
       { id: "x1", external_id: "1:1", collection_id: TS_ID, updated_at: "2026-06-01T00:00:00.000Z", player_name: null, set_name: "Shared Set", team_name: null },
       { id: "x2", external_id: "2:2", collection_id: TS_ID, updated_at: "2026-07-10T00:00:00.000Z", player_name: null, set_name: "Shared Set", team_name: null },
     ])
+    h.t.sets_summary = ok([{ collection_id: TS_ID, set_slug: "a-set" }, { collection_id: TS_ID, set_slug: "shared-set" }])
     const s = await buildSitemapSegment(3)
     const sets = s.filter((x) => x.url.includes("/set/"))
     expect(sets).toHaveLength(1)
@@ -481,6 +512,7 @@ describe("segment 3 — set/player/team entities + top moments", () => {
         player_name: null, set_name: "A Set", team_name: null,
       }))
     )
+    h.t.sets_summary = ok([{ collection_id: TS_ID, set_slug: "a-set" }, { collection_id: TS_ID, set_slug: "shared-set" }])
     const s = await buildSitemapSegment(3)
     expect(s.filter((x) => x.url.includes("/moment/"))).toHaveLength(0)
     // …while the segment still emits SOMETHING for those rows (a walk that
