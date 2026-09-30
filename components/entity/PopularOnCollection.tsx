@@ -235,7 +235,10 @@ const loadPopularCached = unstable_cache(
     if (!result.linkRes.ok || !result.hubRes.ok) throw new PopularReadFailed(result)
     return result
   },
-  ["popular-on-collection-v1"],
+  // The cache stores the COMPUTED links (hrefs, labels), and the Data Cache outlives a deploy: a
+  // change to how a link is built stays invisible for up to an hour unless this key is bumped
+  // (2026-09-29: the accent-free player slug shipped READY and prod kept serving the old href).
+  ["popular-on-collection-v2"],
   { revalidate: 3600, tags: ["popular-on-collection"] },
 )
 
