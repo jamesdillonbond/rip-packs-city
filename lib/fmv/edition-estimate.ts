@@ -25,7 +25,10 @@
 // but the page gates only on `estimate != null`.
 
 import { supabaseAdmin } from "@/lib/supabase"
-import { boundedRead } from "@/lib/api/bounded-read"
+// withQueryDeadline, not boundedRead: this read sits in the edition page's BLOCKING
+// shell fan-out, and the page's bound is the one scripts/check-unbounded-server-
+// reads.mjs recognises (same timeout-to-error shape, no retry).
+import { withQueryDeadline } from "@/lib/analytics/rpc-with-retry"
 
 export interface EditionFmvEstimate {
   edition_id: string
@@ -122,7 +125,7 @@ export async function fetchEditionFmvEstimate(
 ): Promise<{ estimate: EditionFmvEstimate | null; ok: boolean }> {
   if (!editionId) return { estimate: null, ok: true }
   try {
-    const { data, error } = await boundedRead(
+    const { data, error } = await withQueryDeadline(
       supabaseAdmin.from("edition_fmv_estimates").select(COLUMNS).eq("edition_id", editionId).maybeSingle(),
       "edition/fmv-estimate",
       3_000,
