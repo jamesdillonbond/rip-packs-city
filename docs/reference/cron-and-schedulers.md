@@ -1935,6 +1935,8 @@ that, removing the schedule means someone must restore it if the operator-gated 
 (the deeper 2021 → 2025-12-29 tail is only reachable through it). Near-zero either way, and churning
 deployment config for near-zero is how a config drifts away from what anyone can explain.
 
+⚠ **Corrected 2026-09-30:** the 2023-11-08 → 2025-12-29 part of that tail is reachable TODAY without the spork-proxy — pg_net reaches the historical access nodes `access-001.mainnet24–27…:8070` directly (events ≤250 blocks per call; four lanes already read them). Only 2021 → 2023-11-08 (mainnet23 and older: DNS dead) still needs another source. Detail: [apis-and-cadence.md](apis-and-cadence.md) ("Past heights").
+
 ⚠ **The enumeration that had to happen first, because it is the trap this repo has already recorded:**
 the route ends with `fireNextPipelineStep("/api/cron/allday-resolve-unmapped")`, so deleting its
 schedule also deletes 8 daily triggers of the unmapped resolver. That would have been the real cost —

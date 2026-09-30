@@ -241,6 +241,15 @@ Flowty Pinnacle emits uniform $1 floor across 10k+ listings (`upstream_floor_onl
 
 Each argument must be `btoa(JSON.stringify({type, value}))` — NOT raw object. Response: `atob(raw.trim().replace(/^"|"$/g, ""))` → `JSON.parse`. `access(all)` required (not `pub`). Use `Buffer.from(str, 'utf8').toString('base64')` for Cadence encoding (NOT `btoa()` — breaks on Unicode).
 
+### ⭐ Past heights: Flow's historical spork nodes still answer — back to 2023-11-08 (2026-09-29/30, PT)
+
+**"Before the 2025-12-29 spork is unreachable" is WRONG.** `http://access-001.mainnet24|25|26|27.nodes.onflow.org:8070` serve the same REST API (scripts at `?block_height=N`, `/v1/events` ≤250 blocks, `/v1/transaction_results/{tx}?block_height=h`) — reachable from **pg_net**, not from the sandbox. Ends: 24 ≤ 85,981,134 · 25 ≤ 88,226,266 · 26 ≤ 130,290,658 · 27 ≤ 137,390,145; mainnet28 = `rest-mainnet.onflow.org`. **The floor is mainnet24's root, 65,264,619 (2023-11-08)** — mainnet23 and older fail DNS. Gotchas, each measured:
+- ⚠ **Syntax is per NODE, not per height** — mainnet24 runs pre-Cadence-1.0 (`pub fun`, `getCapability(p).borrow<…>()`); mainnet25 rejects `pub`, so 25–28 take Cadence 1.0.
+- ⛔ **mainnet25 runs NO script on 85,981,135..86,031,699** (`400 "node version is incompatible with data for block"`, bisected to the block 2026-09-30); every height from 86,031,700 works, and its **events** read that gap fine. Split any script bisection at 86,031,700; walk the gap by events.
+- ⚠ **Rate limits:** a burst of 105 on mainnet26 drew 85 × 429, 20 were clean — cap per node per tick. **A 429 and a 503 (`upstream connect error … connection failure`, a 4-minute outage 09-30 05:04 AM PT that spent 159 probes' whole retry budget) are free retries, not failed reads.**
+- ⚠ A 1,000-id holdings script on a wallet that holds most of them returns **500** (compute limit); 300 pass — retry in halves. An events window can be ~12 MB (21,794 events): MATERIALIZE the parse CTEs.
+- Lanes built on it: `run_topshot_pull_chain_lane`, `run_chain_arrival_lane`, `run_pinnacle_opener_lane`, `run_pack_mint_probe_lane`. Full case + results: [packs.md](packs.md) ("Reading the chain at a past height", "Custodial rips on chain").
+
 ### RPC FMV API
 
 - `GET /api/fmv?edition={setID:playID}[&serial=N]`
