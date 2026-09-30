@@ -200,6 +200,35 @@ export default function FmvMethodologyPage() {
         </li>
       </ul>
 
+      <h2 id="estimates" style={H2}>Estimated Value for Rarely-Traded Parallels</h2>
+      <p style={P}>
+        Some low-supply Top Shot parallels (a /10 Jukebox, say) go months
+        without a sale, so their own FMV rests on a handful of old sales —
+        sometimes all to the same collector. For those editions, when the full
+        edition they are a parallel of still trades, we also show a separate{" "}
+        <strong style={STRONG}>Estimated value</strong>: the full edition&rsquo;s
+        FMV multiplied by the typical premium that parallel type carries over
+        its full edition, and a likely range from the middle half of that
+        premium.
+      </p>
+      <ul style={UL}>
+        <li>
+          The premium is measured from real sales: each parallel&rsquo;s monthly
+          median price against its full edition&rsquo;s median in the same month,
+          over the last year, pooled by parallel type and tier.
+        </li>
+        <li>
+          We only use a premium that held up when tested on editions it was not
+          built from (typically within 1.5×) and that rests on at least 30
+          editions. Noisy combinations get no estimate at all.
+        </li>
+        <li>
+          An estimate is never above the lowest live ask, and it is always
+          labelled with its basis. It is a guide, not a market price: it is not
+          the FMV, and it is not used in portfolio values, deal boards or alerts.
+        </li>
+      </ul>
+
       <h2 style={H2}>What FMV Does NOT Account For</h2>
       <ul style={UL}>
         <li>

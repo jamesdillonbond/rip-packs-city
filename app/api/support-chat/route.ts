@@ -35,6 +35,7 @@ import {
   fetchPinnacleFmvDistribution,
   type FmvDistributionResult,
 } from "@/lib/concierge/fmv-distribution";
+import { fetchEditionFmvEstimate, estimateForModel } from "@/lib/fmv/edition-estimate";
 import { checkFeatureQuota, recordFeatureUsage } from "@/lib/pro-tier";
 import {
   GREETING_RE,
@@ -315,7 +316,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_fmv",
-    description: "Get catalog Fair Market Value from editions + fmv_snapshots (NOT current listings). Returns one of two shapes: 'single' (one edition matched) or 'distribution' ({count, median_fmv, p10, p90, min_fmv, max_fmv, sample_editions[]}). Use this for any price-comparison question — 'is $X fair for [player] [tier]?', 'what's a [player] [tier] worth?'. The catalog is independent of current listings, so a non-empty FMV exists even when nothing is for sale right now. Provide editionKey for a specific edition, or any combination of playerName/characterName + tier + setName for a filtered distribution. CRITICAL: when the user names a specific person, ALWAYS pass that exact name as playerName (sports) or characterName (Pinnacle). Every single-edition result and every sample edition ALSO carries the edition's badges (Top Shot moment tags), team, series, parallel and supply (circulation / burned / locked / squeeze %) — factor those into any 'why is this worth more' or ranking answer; read badges_status before saying an edition has no badges.",
+    description: "Get catalog Fair Market Value from editions + fmv_snapshots (NOT current listings). Returns one of two shapes: 'single' (one edition matched) or 'distribution' ({count, median_fmv, p10, p90, min_fmv, max_fmv, sample_editions[]}). Use this for any price-comparison question — 'is $X fair for [player] [tier]?', 'what's a [player] [tier] worth?'. The catalog is independent of current listings, so a non-empty FMV exists even when nothing is for sale right now. Provide editionKey for a specific edition, or any combination of playerName/characterName + tier + setName for a filtered distribution. CRITICAL: when the user names a specific person, ALWAYS pass that exact name as playerName (sports) or characterName (Pinnacle). Every single-edition result and every sample edition ALSO carries the edition's badges (Top Shot moment tags), team, series, parallel and supply (circulation / burned / locked / squeeze %) — factor those into any 'why is this worth more' or ranking answer; read badges_status before saying an edition has no badges. A single Top Shot parallel that rarely trades may ALSO carry value_estimate (full-edition FMV × the typical premium for that parallel type): quote it as an estimate with its basis and range, separately from the FMV, and never call it the FMV.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -1276,7 +1277,20 @@ async function formatDistributionWithMetadata(
   if (result.status === "no_results") return formatDistributionForModel(result, collectionId);
   if (result.mode === "single") {
     const meta = await fetchEditionMetadata(supabase, collectionUuid, [result.edition.external_id]);
-    return formatDistributionForModel(result, collectionId, meta);
+    const out = formatDistributionForModel(result, collectionId, meta);
+    // Thin Top Shot parallel: attach the separate value ESTIMATE (2026-09-30,
+    // lib/fmv/edition-estimate.ts) — never merged into the FMV. A failed or
+    // absent read attaches nothing.
+    const ext = result.edition.external_id;
+    if (collectionUuid === COLLECTION_UUID_BY_SLUG["nba-top-shot"] && typeof ext === "string" && ext.includes("::")) {
+      const { estimate } = await fetchEditionFmvEstimate(result.edition.edition_id);
+      if (estimate) {
+        try {
+          return JSON.stringify({ ...JSON.parse(out), value_estimate: estimateForModel(estimate) });
+        } catch { /* formatter output not JSON — return it unchanged */ }
+      }
+    }
+    return out;
   }
   // 2026-09-25: read badges across EVERY priced edition, not just the sample, so
   // a badged edition is named even when the recency/max sample missed it —

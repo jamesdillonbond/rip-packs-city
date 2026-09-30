@@ -63,6 +63,7 @@ import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { isMarketClosed } from "@/lib/market-closed"
 import { fmvBasis } from "@/lib/fmv-basis"
+import { fetchEditionFmvEstimate, estimateBasisText, type EditionFmvEstimate } from "@/lib/fmv/edition-estimate"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import { dapperMarketEditionUrl } from "@/lib/collections"
@@ -503,8 +504,13 @@ export default async function EditionPage(
   // unexpected throw below can never read as "no ask") and a non-applicable
   // success everywhere else.
   let paniniAskRes: { ask: PaniniEditionAsk | null; ok: boolean } = { ask: null, ok: !isPanini }
+  // Thin-parallel value ESTIMATE (2026-09-30) — Top Shot `::` parallels only; a
+  // separate labelled number, never the FMV (lib/fmv/edition-estimate.ts). A
+  // failed or absent read renders nothing.
+  const isTopShotParallel = collection === "nba-top-shot" && typeof detail.external_id === "string" && detail.external_id.includes("::")
+  let estimateRes: { estimate: EditionFmvEstimate | null; ok: boolean } = { estimate: null, ok: !isTopShotParallel }
   try {
-    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes] = await Promise.all([
+    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     // high_offer + subedition (parallel) ladder + IPFS assets in ONE round-trip.
     fetchMarketBundle(detail.id, detail.external_id),
@@ -525,6 +531,9 @@ export default async function EditionPage(
     isPanini && detail.external_id
       ? fetchPaniniEditionAsk(detail.external_id)
       : Promise.resolve({ ask: null, ok: true }),
+    isTopShotParallel
+      ? fetchEditionFmvEstimate(detail.id)
+      : Promise.resolve({ estimate: null, ok: true }),
     ])
   } catch (e) {
     // ⚠ Must NOT return a whole-page view. The declared defaults above are
@@ -960,6 +969,36 @@ export default async function EditionPage(
           />
         )}
       </section>
+
+      {/* ── Value estimate for a thin parallel (2026-09-30) ─────────────────
+          NOT the FMV and never presented as one: its own label, its basis in
+          plain words, and a range. Shown only when the edition's own FMV rests
+          on stale or no sales (refresh_edition_fmv_estimates decides that) and
+          never on a closed market. Absent or failed → nothing rendered. */}
+      {estimateRes.estimate && !marketClosed && (
+        <div
+          data-fmv-estimate
+          className="rpc-card"
+          style={{ marginTop: 10, padding: "10px 14px", display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 12px" }}
+        >
+          <span className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+            Estimated value
+          </span>
+          <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 20, color: "var(--rpc-text-primary)" }}>
+            ≈ {fmtUsd(estimateRes.estimate.estimate_usd)}
+          </span>
+          {estimateRes.estimate.range_low_usd != null && estimateRes.estimate.range_high_usd != null && (
+            <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>
+              likely {fmtUsd(estimateRes.estimate.range_low_usd)}–{fmtUsd(estimateRes.estimate.range_high_usd)}
+            </span>
+          )}
+          <span className="rpc-mono" style={{ flexBasis: "100%", fontSize: 11, lineHeight: 1.5, color: "var(--rpc-text-muted)" }}>
+            This printing rarely trades, so its own sales say little. Estimate from the{" "}
+            {estimateBasisText(estimateRes.estimate, (n) => fmtUsd(n))}. A guide, not a market price.{" "}
+            <Link href="/legal/fmv-methodology#estimates" style={{ color: "var(--rpc-text-muted)" }}>How this works →</Link>
+          </span>
+        </div>
+      )}
 
       {/* ⚠ THIS USED TO READ "No recent market activity" AND THAT IS A CLAIM ABOUT
           THE MARKET MANUFACTURED FROM A GAP IN OUR PRICING (2026-08-22). The
