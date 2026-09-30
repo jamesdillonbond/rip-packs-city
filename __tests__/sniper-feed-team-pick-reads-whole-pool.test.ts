@@ -293,6 +293,37 @@ describe("sniper-feed ?player= reads the player's listings from the whole pool (
   })
 })
 
+describe("sniper-feed narrowing filters reach the whole pool (2026-09-29)", () => {
+  // The Legendary tab answered 0 deals live while 699 Legendary listings were
+  // open and ≥1,000 Legendary editions had a priced floor: the tier filtered
+  // the newest-200 pool, and a non-sparse pool skipped the edition-floor read.
+  const eds30 = Array.from({ length: 30 }, (_, i) => ({ id: `u${i}`, external_id: `${300 + i}:${400 + i}`, set_id_onchain: 300 + i, play_id_onchain: 400 + i, team_name: BLAZERS, thumbnail_url: null }))
+  const pool = eds30.map((e, i) => listing(i, e.set_id_onchain, e.play_id_onchain)) // 30 editions: not sparse
+  const resolve = (table: string) =>
+    table === "editions" ? { data: eds30, error: null } : table === "ts_listings" ? { data: pool, error: null } : { data: [], error: null }
+  const floorCalls = () => fx.rpcCalls.filter((c) => c.name === "get_topshot_sniper_deals")
+
+  it("a tier tab scopes the pool to that tier and always reads every edition floor of it", async () => {
+    fx.resolve = resolve
+    await GET(get("?collection=nba-top-shot&tier=legendary"))
+    for (const c of tsCalls()) expect(opArgs(c.ops, "eq")).toContainEqual(["moment_tier", "LEGENDARY"])
+    expect(floorCalls().map((c) => [c.args.p_rarity, c.args.p_limit])).toEqual([["legendary", 1000]])
+  })
+
+  it("a minimum discount always reads the edition floors (the pool cannot be filtered by discount)", async () => {
+    fx.resolve = resolve
+    await GET(get("?collection=nba-top-shot&minDiscount=30"))
+    expect(floorCalls().map((c) => c.args.p_min_discount)).toEqual([30])
+  })
+
+  it("a max price is pushed into the pool read, and on its own does not force the floor read", async () => {
+    fx.resolve = resolve
+    await GET(get("?collection=nba-top-shot&maxPrice=5"))
+    for (const c of tsCalls()) expect(opArgs(c.ops, "lte")).toContainEqual(["price_usd", 5])
+    expect(floorCalls()).toHaveLength(0)
+  })
+})
+
 describe("sniper-feed default board carries team names and the league's teams", () => {
   it("pool deals take their edition's team, and teamOptions lists teams not on the board", async () => {
     fx.resolve = defaultResolve(Array.from({ length: 26 }, (_, i) => listing(i, 5, 7)))

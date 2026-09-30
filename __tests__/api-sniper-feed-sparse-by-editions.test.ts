@@ -29,7 +29,7 @@ vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     from(table: string) {
       const b: any = {
-        select: () => b, eq: () => b, order: () => b, in: () => b, gt: () => b, limit: () => b,
+        select: () => b, eq: () => b, order: () => b, in: () => b, gt: () => b, lte: () => b, ilike: () => b, limit: () => b,
         range: () => b,
         then: (resolve: any) => {
           if (table === "ts_listings") return resolve(st.tsListings)

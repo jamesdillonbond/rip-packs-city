@@ -43,7 +43,7 @@ vi.mock("@/lib/supabase", () => ({
     from(table: string) {
       let range: [number, number] | null = null
       const b: any = {
-        select: () => b, eq: () => b, order: () => b, in: () => b, gt: () => b,
+        select: () => b, eq: () => b, order: () => b, in: () => b, gt: () => b, lte: () => b, ilike: () => b,
         limit: () => b,
         range: (from: number, to: number) => { range = [from, to]; return b },
         then: (resolve: any) => {

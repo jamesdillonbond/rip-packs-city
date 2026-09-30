@@ -514,6 +514,20 @@ async function resolveFranchiseLabels(
   return { labels: Array.from(labels), error: null };
 }
 
+// What a narrowed board asks the listing pool for. Every narrowing filter is
+// pushed INTO the pool read — applied afterwards, it only ever searched the
+// newest 200 listings (the Legendary tab answered 0 deals with 699 open).
+type PoolScope = { player: string | null; tier: string | null; maxPrice: number };
+
+function scopePoolQuery(q: any, scope: PoolScope): any {
+  let out = q;
+  if (scope.player) out = out.ilike("player_name", ilikeContains(scope.player));
+  // ts_listings.moment_tier is COMMON | FANDOM | RARE | LEGENDARY | ULTIMATE.
+  if (scope.tier) out = out.eq("moment_tier", scope.tier.toUpperCase());
+  if (scope.maxPrice > 0) out = out.lte("price_usd", scope.maxPrice);
+  return out;
+}
+
 // A LIKE pattern matching `text` literally anywhere (its %, _ and \ escaped).
 function ilikeContains(text: string): string {
   return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -522,7 +536,7 @@ function ilikeContains(text: string): string {
 async function readTeamPoolRows(
   supabase: SupabaseClient,
   labels: string[],
-  player: string | null = null,
+  scope: PoolScope = { player: null, tier: null, maxPrice: 0 },
 ): Promise<{ rows: any[]; teamByPair: Map<string, string>; error: ReadEnvelope["error"] }> {
   const teamByPair = new Map<string, string>();
   const eds = await readTopshotEditionTeams(supabase, { teams: labels }, "ts-team-editions");
@@ -542,7 +556,7 @@ async function readTeamPoolRows(
       .from("ts_listings")
       .select(TS_POOL_COLUMNS)
       .in("play_id", playList.slice(i, i + TS_PLAY_CHUNK));
-    if (player) q = q.ilike("player_name", ilikeContains(player));
+    q = scopePoolQuery(q, scope);
     const { data, error } = await boundedRead(q
       .order("ingested_at", { ascending: false })
       .order("listing_id", { ascending: true })
@@ -585,6 +599,8 @@ async function fetchTopShotPool(
   sink: SourceFailureSink,
   team: string = "all",
   player: string = "",
+  tier: string = "all",
+  maxPrice: number = 0,
 ): Promise<{ listings: RawListing[]; tsCount: number; teamLabels: Set<string> | null }> {
   try {
     const teamPick = team !== "all" ? team : null;
@@ -593,6 +609,8 @@ async function fetchTopShotPool(
     // 200 listings) after the fact: "Lillard" answered 0 deals while 54 Lillard
     // listings were open and 67 Lillard editions had a priced floor.
     const playerPick = player.trim() || null;
+    const scope: PoolScope = { player: playerPick, tier: tier !== "all" ? tier : null, maxPrice };
+    const scoped = !!(scope.player || scope.tier || scope.maxPrice > 0);
     // Team per (set, play). ts_listings carries no team, so every pool row had
     // teamName "" and the Team dropdown only ever listed the RPC-augment rows'
     // teams. On the default board this is enrichment, not deal-bearing: a failed
@@ -608,16 +626,14 @@ async function fetchTopShotPool(
       teamLabels = new Set(franchise.labels);
     }
     const { data, error } = teamPick
-      ? await readTeamPoolRows(supabase, Array.from(teamLabels ?? []), playerPick).then((r) => {
+      ? await readTeamPoolRows(supabase, Array.from(teamLabels ?? []), scope).then((r) => {
         teamByPair = r.teamByPair;
         return { data: r.rows, error: r.error };
       })
-      : await boundedRead((playerPick
-        ? (supabase as any).from("ts_listings").select(TS_POOL_COLUMNS).ilike("player_name", ilikeContains(playerPick))
-        : (supabase as any).from("ts_listings").select(TS_POOL_COLUMNS))
+      : await boundedRead(scopePoolQuery((supabase as any).from("ts_listings").select(TS_POOL_COLUMNS), scope)
         .order("ingested_at", { ascending: false })
         .order("listing_id", { ascending: true })
-        .limit(TS_POOL_LIMIT), playerPick ? "ts_listings-player" : "ts_listings");
+        .limit(TS_POOL_LIMIT), scoped ? "ts_listings-scoped" : "ts_listings");
 
     if (error) {
       console.error("[sniper-feed] ts_listings fetch error:", error.message);
@@ -1886,7 +1902,7 @@ async function computeSniperFeed(opts: {
   //    firehose (open Dapper-marketplace listings verified in the last 24 h;
   //    migration 20260907020428). Before 2026-09-07 this table held one row
   //    from May and the feed was edition-level only.
-  const { listings: tsListings, tsCount, teamLabels } = await fetchTopShotPool(supabase as any, sink, team, player);
+  const { listings: tsListings, tsCount, teamLabels } = await fetchTopShotPool(supabase as any, sink, team, player, rarity, maxPrice);
 
   console.log(`[sniper-feed] fetched ts=${tsListings.length}`);
 
@@ -1918,9 +1934,14 @@ async function computeSniperFeed(opts: {
   // got a newest-200 slice instead of every edition's floor.
   // A player search augments on the same terms: its floors are every edition
   // of that player with an ask, which the listing pool alone cannot promise.
-  const teamPicked = team !== "all" || player !== "";
+  // …and so does a filter that can cut the pool down to a handful (2026-09-29):
+  // a tier, a minimum discount, badges-only. The Legendary tab answered 0 deals
+  // while ≥1,000 Legendary editions had a priced floor, because a non-sparse
+  // pool skipped the one read that has them. (A max price alone is not in this
+  // list: it is pushed into the pool read, and cheap listings dominate the pool.)
+  const teamPicked = team !== "all" || player !== "" || rarity !== "all" || minDiscount > 0 || badgeOnly;
   if (teamPicked || tsListings.length < TS_GQL_SPARSE_THRESHOLD || tsDistinctEditions < TS_GQL_SPARSE_THRESHOLD) {
-    console.log(`[sniper-feed] TS augment (${teamPicked ? `team/player pick` : `sparse`}: ${tsListings.length} listings over ${tsDistinctEditions} editions) — get_topshot_sniper_deals RPC`);
+    console.log(`[sniper-feed] TS augment (${teamPicked ? `narrowed board` : `sparse`}: ${tsListings.length} listings over ${tsDistinctEditions} editions) — get_topshot_sniper_deals RPC`);
     // p_team is one exact label, so a franchise pick asks once per label it has
     // carried (measured 10-30 ms a call) — else the edition-level rows, which
     // dominate a sparse board, would be the picked label's alone.
