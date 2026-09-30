@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { lostHeadings, headingBody } from "../scripts/find-clobbered-ledger-headings.mjs"
+import { lostHeadings, headingBody, entryKey } from "../scripts/find-clobbered-ledger-headings.mjs"
 
 // The CI "Ledger no-clobber guard" reports entries that existed in HEAD~1 and are
 // gone in HEAD — the concurrent-session clobber, where a session writes back a
@@ -73,6 +73,48 @@ describe("the ledger clobber detector", () => {
     // then only be exempted by an identical dateless heading, and a heading that
     // LOSES its date reads as a wording change and stays reported.
     expect(headingBody("### no date here")).toBe("### no date here")
+  })
+
+  // 2026-09-29: four reds on main that evening, each a session appending "verified live"
+  // to its OWN one-line entry. Identity = date + bold title, counted, so an edit passes
+  // and a removal (the clobber) still fails.
+  describe("an entry EDITED IN PLACE (date + bold title survive)", () => {
+    const TITLED =
+      entry("### 2026-09-29 · SHIPPED — **Alpha fix** · did a thing. Revert: x.") +
+      entry("### 2026-09-29 · SHIPPED — **Beta fix** · did another. Revert: y.") +
+      entry("### 2026-09-28 · SHIPPED — **Beta fix** · same title, different day.")
+
+    it("does NOT report an in-place edit that keeps the date and bold title", () => {
+      const after = TITLED.replace(
+        "**Alpha fix** · did a thing. Revert: x.",
+        "**Alpha fix** · did a thing, verified live 6:40 PM PT. Revert: x. · signed",
+      )
+      expect(lostHeadings(TITLED, after)).toEqual([])
+    })
+
+    it("REPORTS a titled entry that was deleted outright", () => {
+      const after = TITLED.replace("### 2026-09-29 · SHIPPED — **Alpha fix** · did a thing. Revert: x.\n", "")
+      expect(lostHeadings(TITLED, after)).toEqual(["### 2026-09-29 · SHIPPED — **Alpha fix** · did a thing. Revert: x."])
+    })
+
+    it("REPORTS an edit that changes the bold title (identity not preserved)", () => {
+      const after = TITLED.replace("**Alpha fix**", "**Alpha fix, renamed**")
+      expect(lostHeadings(TITLED, after)).toHaveLength(1)
+    })
+
+    it("REPORTS a clobber that drops one of two same-titled entries on one date", () => {
+      const dup =
+        entry("### 2026-09-29 · SHIPPED — **Gamma** · first run.") +
+        entry("### 2026-09-29 · SHIPPED — **Gamma** · second run.")
+      const after = dup.replace("### 2026-09-29 · SHIPPED — **Gamma** · second run.\n", "")
+      expect(lostHeadings(dup, after)).toEqual(["### 2026-09-29 · SHIPPED — **Gamma** · second run."])
+    })
+
+    it("a dateless or title-less heading keeps the old rule (rewording is reported)", () => {
+      expect(entryKey("### 2026-09-29 · no bold here")).toBeNull()
+      expect(entryKey("### **Title** but no date")).toBeNull()
+      expect(entryKey("### 2026-09-29 · x — **Title** · y")).toBe("2026-09-29|Title")
+    })
   })
 
   it("is not vacuous: it finds every heading in a realistic file", () => {
