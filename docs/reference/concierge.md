@@ -120,3 +120,8 @@ Mitigation shipped 2026-08-15: the alert DM in `/api/cron/alerts-send` now tells
   (`username_not_resolved`); an upstream error, timeout or non-2xx is `username_lookup_failed` with copy
   that says nothing about whether the handle exists. Why: key-files-and-honesty.md, "`{found: false}`
   has two reasons".
+
+## `get_fmv` value estimate + the feedback lifecycle (2026-09-30)
+
+- A single-edition `get_fmv` answer for a thin Top Shot `::` parallel may carry `value_estimate` (full-edition FMV × the typical premium for that parallel type, a likely range, the cell size) with a `how_to_use` instruction: quote it as an ESTIMATE with its basis, beside — never as — the FMV. Source and rules: schema-truth.md (end), `lib/fmv/edition-estimate.ts`.
+- **Close the loop on feedback the concierge logs.** `log_bug` / `log_feature_request` rows land as `category='beta_feedback', feedback_status='new'`; when the fix ships, set `feedback_status='shipped'`, `shipped_at`, and an `admin_note` naming the commit. A duplicate logged in the same session is `feedback_status='duplicate', duplicate_of=<id>` (the admin triage UI's own vocabulary). 09-29's four requests (#10142/#10153/#10154/#10158) were closed this way on 09-30.

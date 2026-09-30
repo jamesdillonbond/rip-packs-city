@@ -2587,3 +2587,7 @@ internal-account filter matching one shape misses the other (the founder's rows 
 people from `usage_events.user_id` or the service-role view `user_activity`; `wallet_address` stays only for
 its legacy readers (`check_feature_quota`, `/api/admin/beta-activity`, `/api/admin/resend-welcome-batch`).
 Older concierge rows cannot be re-attributed and stay `anon`.
+
+## A sitemap must derive from the SAME source the page resolves through (2026-09-30)
+
+The sitemap built set URLs from `editions.set_name` LIVE; `get_set_detail` resolves through the `sets_summary` matview (refreshed hourly at :50). A set ingested 4 minutes after a refresh (`/panini-blockchain/set/dominance-prizms-green`) was advertised for up to an hour as a page that 404'd — caught by the E2E DOM smoke, and daily Panini ingest would repeat it. Fix (`6fcd6acbc`): segment 3 lists a set only if `sets_summary` has its slug (paged, deterministic order; a failed read throws `SitemapReadIncomplete`). ⭐ General form: **when a page resolves through a cache or matview, its sitemap/link producer must read that cache too, or it advertises the cache's lag as 404s.**

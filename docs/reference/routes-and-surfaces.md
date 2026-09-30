@@ -170,3 +170,9 @@ curl -X POST 'https://www.rippackscity.com/api/wallet-backfill?force=true' \
 ⓘ Also displaced the same day, from `Frequently used commands`, so the shortened comment there does not lose its case:
 
 > `npm ci` — ⚠ RUN FIRST in a fresh web/cloud sandbox — there is NO `node_modules`. Without it `npx vitest`/`npx tsc` die on `MODULE_NOT_FOUND … vitest.config.ts`, **which reads like a broken config** and has sent more than one session looking for a config defect that does not exist.
+
+## Team checklist "Full editions" view + trophy special-serial marks (2026-09-29/30)
+
+- `/[collection]/team/[slug]` checklist: chips **All moments** / **Full editions** (Trevor 09-30, replacing a one-night "Ignore parallels" play grouping). Full editions removes every `::` subedition parallel; each full edition is owned and priced on its own (floor, else FMV) — holding a parallel does NOT check off its full edition; unpriced missing editions are reported, never $0. URL `?view=full` (the 09-29 `?parallels=exclude` link still opens it). Shown only when the collection's data has `::` keys (probe, not a slug list). Route `GET /api/entity/team-checklist-full-editions` (refuses a partial read: any failed page, or distinct editions ≠ `get_team_checklist_progress.total`); helper `lib/entity/checklist-full-editions.ts`.
+- Trophy slab (`components/TrophySlab.tsx`): a special serial (#1 / jersey match / perfect mint, canonical `specialCats()`) is a gold serial chip plus one labelled gold mark per reason, matching the OG cards and PDF; wide slabs (container ≥ 250 / 270 px) use a larger type scale.
+- Top Shot `::` edition pages may show an **Estimated value** card (schema-truth.md, end).

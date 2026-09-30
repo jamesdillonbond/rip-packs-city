@@ -3504,3 +3504,11 @@ Before pushing a rewrite of `CollectionProfileClient.tsx` I ran every test that 
 
 ### ⚠ A planted defect that does not red the test may be a mis-PLANTED defect — count occurrences first
 Pinning the binder's "no second account-level seed" test, the planted seed passed the test. The test was fine: the plant's `}, [ownerKey])` → `}, [ownerKey, own.wallet])` replacement hit the FIRST of two identical dependency arrays, so the seed effect never re-ran. Re-planted on the right occurrence, it reds. **Before concluding a test is vacuous, assert the plant's anchor count (CLAUDE.md's scripted-replace rule applies to plants too) and grep that the defect landed where you meant.**
+
+## The CI `TypeScript` job runs six node scripts after `tsc` — run them locally too (2026-09-30)
+
+`tsc`, `lint:ratchet` and vitest all passed locally and CI still went red twice, on `scripts/check-unbounded-server-reads.mjs` (step 10 of the `TypeScript` job). Before pushing a page/lib change, run all six: `for s in check-brand-tokens check-driver-message-leaks check-unhandled-third-state check-responsive-flex-basis check-unbounded-server-reads check-lane-egress; do node scripts/$s.mjs >/dev/null 2>&1; echo "$s=$?"; done`.
+
+- ⚠ **Its BOUNDED list is curated: `boundedRead` is NOT on it.** A server page reaching a read wrapped only in `boundedRead` counts as unbounded. On the edition page use `withQueryDeadline` (same timeout-to-`{error}` shape, no retry).
+- ⚠ **A nested generic defeats its matcher.** `withQueryDeadline<Record<string, unknown>>(` does not match `(?:<[^>]*>)?\s*\(` (the first `>` closes the group), so the call reads as unbounded. Drop the type argument or use a single-level one.
+- ⚠ **The E2E DOM smoke picks entity URLs from the live sitemap**, so it can go red on a deploy for a URL no commit in it touched — reproduce the URL before attributing (09-30: a Panini set the sitemap listed before its page could resolve; key-files-and-honesty.md, end).

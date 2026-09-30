@@ -2053,3 +2053,7 @@ In the web sandbox, `www.rippackscity.com` is **denied by the egress policy** (t
 3. **Render the markup locally**: Playwright (`executablePath: '/opt/pw-browsers/chromium'`) + `page.setContent` with the component's inline styles at 390 and 320 px; assert `scrollWidth <= clientWidth` per card. That measures layout, not data.
 
 ⚠ `apply_migration` registers the version at APPLY time. Name the migration file after `supabase_migrations.schema_migrations.version` (`select version … where name = '<name>'`) read back after applying, or migration-parity reds.
+
+## `git mv` STAGES the rename — a later `git add <one file> && git commit` commits it too (2026-09-30)
+
+`git commit` commits the whole INDEX, not just what the preceding `git add` named. Renames done with `git mv` were already staged, so "commit the ledger first" swept them into the ledger commit (`d552a6592`), leaving an intermediate commit that did not build and a revert path that needs two commits. Before a ledger-first commit, `git diff --cached --stat` must list ONLY the ledger; stage renames with the code commit (or `git mv` after the ledger commit).
