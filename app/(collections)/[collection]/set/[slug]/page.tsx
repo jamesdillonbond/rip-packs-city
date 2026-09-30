@@ -18,6 +18,8 @@ import EditionsGridPaginated, { type EditionTile } from "@/components/entity/Edi
 import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
+import { fetchPaniniSetSales, type PaniniSetSales } from "@/lib/panini/set-sales"
+import PaniniSetSalesBody from "@/components/entity/PaniniSetSales"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -169,6 +171,9 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   // failed read would render "couldn't load" over a feed that does not exist.
   const isPanini = collection === "panini-blockchain"
   const wantsActivity = !isPinnacleUrlSlug(collection) && !isPanini
+  // Panini's own sales (2026-09-30): panini_sales via panini_set_sales. Bounded and never throws;
+  // null = the read failed, and the section says so.
+  const paniniSalesP: Promise<PaniniSetSales | null> | null = isPanini ? fetchPaniniSetSales(setNames) : null
   try {
     ;[editionsRes, tierMix, activityRes] = await Promise.all([
       structuralSection<EditionTile>("set editions", fetchEditions(coll.id, slug, PAGE_SIZE, 0)),
@@ -180,6 +185,7 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   }
   const editions = editionsRes.rows
   const editionsOk = editionsRes.ok
+  const paniniSales = paniniSalesP ? await paniniSalesP : null
 
   const minLabel = detail.min_series !== null ? seriesDisplay(detail.min_series, collection) : null
   const maxLabel = detail.max_series !== null ? seriesDisplay(detail.max_series, collection) : null
@@ -316,6 +322,13 @@ export default async function SetPage(props: { params: Promise<{ collection: str
         </Section>
       )}
 
+      {/* ── Panini: sales on record (2026-09-30) ─────────────────────────── */}
+      {isPanini && (
+        <Section title="Sales">
+          <PaniniSetSalesBody collection={collection} res={paniniSales} />
+        </Section>
+      )}
+
       {/* ── Editions grid ────────────────────────────────────────────────── */}
       <Section title="Editions">
         {editionsOk ? (
@@ -399,3 +412,4 @@ function SetUnavailable({ collection, slug }: { collection: string; slug: string
     </main>
   )
 }
+
