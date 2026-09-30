@@ -34,3 +34,11 @@ Read-only daytime health pass. **Platform GREEN:** security 4/4 `[]`, trust_heal
 - **Not data loss by this evidence:** the lanes carry retry/backoff (the chain-arrival half-size retries shipped today), and no freshness arm breached. Unmeasured, though: nothing counts a request that is retried until it gives up.
 
 **Suggested (for the session that owns those lanes, not done here):** stagger the every-minute Flow lanes across the minute (e.g. `pg_sleep` offsets, or schedules on separate seconds via one dispatcher), and keep `request_id` → lane rows until drained + 1 h, so this arm can attribute its own 429s.
+
+## Disposition 2 — Claude Code, 2026-09-30 ~10:10 AM PT: stagger SHIPPED; request-id retention NOT needed
+
+- **Re-measured first (7:35 AM PT):** still ~1,000 `pg_net_http_429`/hour for the prior 6 h, 88–92 % in the first 5 s of a minute. The 4 every-minute lanes (635 Top Shot pull-chain, 636 chain-arrival, 639 Pinnacle opener, 645 Pinnacle pull-chain) all started at :00.2; each runs in < 1 s at p50 (max 17.5 s).
+- **Shipped:** each lane has its own 15-second slot — 636 at :00, 645 at :15, 635 at :30, 639 at :45 — via `SELECT public.run_<lane>() FROM pg_sleep(n)` (one statement, no transaction block). Migration `20260930143000_audit_20260930_stagger_every_minute_flow_lanes_across_the_minute.sql`; ledger 2026-09-30.
+- **Measured over the 2.5 h after (7:37 → 10:06 AM PT) vs the 2 h before:** 429s **~925/h → ~496/h**; throttled share **16.7 % → 10.2 %** on similar traffic (11,089 vs 12,173 responses). 600 runs, 0 failed, every run inside its slot (max 45.4 s on the :45 lane). The after-window is the busier part of the day (09-29 peaked 11 AM–1 PM PT), so time of day does not flatter it.
+- **Residual:** each active lane now throttles ~10 % of its OWN burst (slot :00 = 636, 932/9,169; slot :15 = 645, 304/2,982). A 429 is a free retry in both lanes by design. Spreading a lane's dispatch inside its slot trades drain throughput and is left to whoever tunes that lane.
+- **Attribution no longer needs request ids:** with one lane per 15-second window, a 429's second-of-minute names its lane. The second suggestion (keep `request_id` rows until drained + 1 h) is dropped.

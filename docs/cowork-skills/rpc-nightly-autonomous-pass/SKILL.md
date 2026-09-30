@@ -70,7 +70,7 @@ Hand-evaluate the new logic against the real payload. Demand a **positive contro
 
 ## 6. Output contract
 
-Ledger entry (append at top, dated, with revert paths) · `metrics-latest.json` · a handoff at `docs/handoff-YYYY-MM-DD-<topic>.md` **carrying the scope line from §0** · migration files committed (or on the laptop if every push path is dead) · memory writes for anything durable · release the LOCK.
+Ledger entry (ONE `### YYYY-MM-DD · …` line spliced in above the first line-start `### `, with revert paths; ⛔ never appended at the END of the file, which is where the 09-30 NO-PUSH pass left it) · `metrics-latest.json` · a handoff at `docs/handoff-YYYY-MM-DD-<topic>.md` **carrying the scope line from §0** · migration files committed (or on the laptop if every push path is dead) · memory writes for anything durable · release the LOCK.
 
 ⚠ The `remote-devices` server can drop mid-session, taking memory and mount writes with it — **mirror the handoff to the claude.ai Project** (`project_write`), which persists regardless. ⚠ The Project has a 2M-token knowledge cap: write ONE handoff per session, never metrics JSON, ledger paste-readies, migration SQL, patches or per-block progress notes (those belong in the repo or the laptop folder).
 

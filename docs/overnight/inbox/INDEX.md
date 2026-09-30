@@ -1,4 +1,4 @@
-# Inbox index — 552 live filings
+# Inbox index — 553 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,14 +30,15 @@ failure it documents.
 
 ---
 
-## 2026-09-30 — 2 filings
+## 2026-09-30 — 3 filings
 
+- [🟢 **panini-collector-walk `usernotfound` on 3 targets — RESOLVED: Philthy503, Juiceshack, Cazsreyem dropped from the walk list (their Top Shot names are not Panini names)**](2026-09-30T1509Z-daytime-monitor-panini-collector-walk-usernotfound.md) — *(daytime monitor, ~8:09 AM PT, left uncommitted; filed + disposition by Claude Code ~10:25 AM PT.)* Health otherwise GREEN. The walk records `extra.username` per run, so the failing names were read straight from `pipeline_runs`.
 - [🟢 **edition_integrity_flags BREACH (308 vs 250) — 301 new Panini editions with tier NULL — RESOLVED: data backfilled by Cowork, `Common` added to the ingest tier map**](2026-09-30T0303Z-daytime-monitor-edition-integrity-breach-panini-fresh-editions-missing-tier.md) — *(daytime monitor, ~8:03 PM PT.)* Cause: `lib/chains/panini/ingest-normalize.ts` mapped Uncommon/Rare/Ultra Rare/Epic/Legendary but not `Common`, so every Common-rarity card ingested tier-less. Cowork backfilled the 301 rows (0 tier-nulls left, gate back to 7); Claude Code shipped the map fix + a test (handoff `docs/handoff-2026-09-29-panini-common-tier-map.md`), ~9:30 PM PT.
 - [🟢 **TS active-listings feeder dark ~25.8 h + atlas-editions 403 watch — RESOLVED: the Windows task's headless Chromium was challenged by Cloudflare; the ingest now defaults to installed Chrome**](2026-09-30T0013Z-daytime-monitor.md) — *(daytime monitor, ~5:13 PM PT.)* The task did fire every 3 h; every run from 3:13 AM PT got Cloudflare's 403 on the bundled Chromium. Claude Code switched `scripts/run-active-listings-ingest.ps1` to installed Chrome (~5:30 PM PT); a full run landed 387 listings, 0 skipped. The atlas-editions 403 item was a watch-only note (self-healing re-walk).
 
 ## 2026-09-29 — 1 filing
 
-- [🟡 **pg_net 429 surge (2,285 / 2 h) — ATTRIBUTED: Flow REST access-node limiter (envoy), 88 % in the first 5 s of a minute, from today's every-minute Flow lanes**](2026-09-29T2110Z-daytime-monitor-off-window-pg_net-429-volume-symptom.md) — *(daytime monitor, ~2:10 PM PT; disposition appended by Claude Code ~3:45 PM PT.)* Not fixed here: stagger the lanes and keep their request ids so the arm can attribute its own 429s.
+- [🟡 **pg_net 429 surge (2,285 / 2 h) — ATTRIBUTED: Flow REST access-node limiter (envoy), 88 % in the first 5 s of a minute, from today's every-minute Flow lanes**](2026-09-29T2110Z-daytime-monitor-off-window-pg_net-429-volume-symptom.md) — *(daytime monitor, ~2:10 PM PT; disposition appended by Claude Code ~3:45 PM PT.)* Not fixed here: stagger the lanes and keep their request ids so the arm can attribute its own 429s. **✅ Stagger SHIPPED 09-30 ~7:40 AM PT** (lanes at :00/:15/:30/:45; 429s ~925/h → ~496/h, 0 failed runs; disposition 2). Request-id retention dropped: a 429's second-of-minute now names its lane.
 
 ## 2026-09-28 — 1 filing
 
