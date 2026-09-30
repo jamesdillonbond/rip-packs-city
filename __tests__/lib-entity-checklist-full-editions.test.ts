@@ -1,27 +1,25 @@
 import { describe, it, expect } from "vitest"
 import {
   checklistHasParallels,
-  computePlayProgress,
-  groupChecklistByPlay,
+  computeFullEditionProgress,
+  editionPrice,
+  fullEditionTiles,
   isParallelKey,
-  parseParallelsMode,
-  playKeyOf,
-  versionPrice,
+  parseChecklistView,
   type ChecklistEditionRow,
-} from "@/lib/entity/checklist-plays"
+} from "@/lib/entity/checklist-full-editions"
 
-// The "Ignore parallels" checklist mode (concierge request 2026-09-29): a play
-// is collected when ANY version is owned; a missing play costs its CHEAPEST
-// priced version; an unpriced missing play is never counted as $0.
+// The "Full editions" checklist view (Trevor, 2026-09-30): the checklist at the
+// full-edition level — subedition parallels removed from view, each full
+// edition owned and priced on its own, and an unpriced missing edition never
+// counted as $0.
 
 const row = (route_slug: string, o: Partial<ChecklistEditionRow> = {}): ChecklistEditionRow => ({
   route_slug, tier: "COMMON", fmv_usd: null, floor_usd: null, fmv_confidence: "HIGH", owned: false, owned_count: 0, owned_locked: false, ...o,
 })
 
-describe("play keys", () => {
-  it("folds a Top Shot parallel key onto its play and leaves a base key alone", () => {
-    expect(playKeyOf("10:106::3")).toBe("10:106")
-    expect(playKeyOf("10:106")).toBe("10:106")
+describe("parallel keys", () => {
+  it("recognises a Top Shot subedition key and leaves a full-edition key alone", () => {
     expect(isParallelKey("10:106::3")).toBe(true)
     expect(isParallelKey("10:106")).toBe(false)
   })
@@ -30,125 +28,99 @@ describe("play keys", () => {
     expect(checklistHasParallels([{ route_slug: "10:106" }, { route_slug: "10:106::3" }])).toBe(true)
     expect(checklistHasParallels([])).toBe(false)
   })
-  it("parses the URL mode, defaulting anything unknown to all", () => {
-    expect(parseParallelsMode("exclude")).toBe("exclude")
-    expect(parseParallelsMode(null)).toBe("all")
-    expect(parseParallelsMode("EXCLUDE")).toBe("all")
+})
+
+describe("parseChecklistView", () => {
+  it("?view=full is the full-edition view; anything else is all", () => {
+    expect(parseChecklistView("full")).toBe("full")
+    expect(parseChecklistView(null)).toBe("all")
+    expect(parseChecklistView("FULL")).toBe("all")
+    expect(parseChecklistView("all")).toBe("all")
+  })
+  it("the 09-29 ?parallels=exclude link still opens it, but an explicit view wins", () => {
+    expect(parseChecklistView(null, "exclude")).toBe("full")
+    expect(parseChecklistView("all", "exclude")).toBe("all")
+    expect(parseChecklistView(null, "other")).toBe("all")
   })
 })
 
-describe("versionPrice", () => {
+describe("editionPrice", () => {
   it("uses floor, then FMV, and never invents a price", () => {
-    expect(versionPrice({ floor_usd: 5, fmv_usd: 9 })).toBe(5)
-    expect(versionPrice({ floor_usd: null, fmv_usd: 9 })).toBe(9)
-    expect(versionPrice({ floor_usd: 0, fmv_usd: 0 })).toBeNull()
-    expect(versionPrice({ floor_usd: null, fmv_usd: null })).toBeNull()
+    expect(editionPrice({ floor_usd: 5, fmv_usd: 9 })).toBe(5)
+    expect(editionPrice({ floor_usd: null, fmv_usd: 9 })).toBe(9)
+    expect(editionPrice({ floor_usd: 0, fmv_usd: 0 })).toBeNull()
+    expect(editionPrice({ floor_usd: null, fmv_usd: null })).toBeNull()
   })
 })
 
-describe("groupChecklistByPlay", () => {
+describe("fullEditionTiles", () => {
   const editions = [
     row("1:1", { floor_usd: 10, fmv_usd: 12 }),
     row("1:1::2", { floor_usd: 4, fmv_usd: 6, owned: true, owned_count: 2, owned_locked: true }),
     row("1:1::3", { floor_usd: 30 }),
-    row("1:2", { floor_usd: 20, fmv_usd: 25 }),
+    row("1:2", { floor_usd: 20, fmv_usd: 25, owned: true, owned_count: 1 }),
     row("1:2::2", { fmv_usd: 8, fmv_confidence: "LOW" }),
     row("1:3"),
   ]
 
-  it("counts a play owned when only a PARALLEL is owned, and the base tile represents it", () => {
-    const plays = groupChecklistByPlay(editions, true)
-    expect(plays).toHaveLength(3)
-    const p1 = plays.find((p) => p.play_key === "1:1")!
-    expect(p1.route_slug).toBe("1:1") // the standard edition, not the parallel
-    expect(p1.owned).toBe(true)
-    expect(p1.owned_versions).toBe(1)
-    expect(p1.owned_count).toBe(2)
-    expect(p1.owned_locked).toBe(true)
-    expect(p1.version_count).toBe(3)
+  it("removes every subedition parallel from view", () => {
+    const tiles = fullEditionTiles(editions, true)
+    expect(tiles.map((t) => t.route_slug).sort()).toEqual(["1:1", "1:2", "1:3"])
+    expect(tiles.some((t) => isParallelKey(t.route_slug))).toBe(false)
   })
 
-  it("prices a play at its CHEAPEST version, carrying that version's confidence", () => {
-    const plays = groupChecklistByPlay(editions, true)
-    const p2 = plays.find((p) => p.play_key === "1:2")!
-    expect(p2.owned).toBe(false)
-    expect(p2.play_cost_usd).toBe(8)
-    expect(p2.fmv_confidence).toBe("LOW")
-    expect(plays.find((p) => p.play_key === "1:3")!.play_cost_usd).toBeNull()
+  it("owning only a PARALLEL does not check off its full edition", () => {
+    const t = fullEditionTiles(editions, true).find((x) => x.route_slug === "1:1")!
+    expect(t.owned).toBe(false)
+    expect(t.owned_locked).toBe(false)
   })
 
-  it("leaves ownership unknown (null) without a wallet", () => {
-    const plays = groupChecklistByPlay(editions, false)
-    for (const p of plays) {
-      expect(p.owned).toBeNull()
-      expect(p.owned_versions).toBeNull()
+  it("prices each full edition by its OWN floor/FMV, never a cheaper parallel's", () => {
+    const t = fullEditionTiles(editions, true).find((x) => x.route_slug === "1:1")!
+    expect(t.edition_cost_usd).toBe(10)
+  })
+
+  it("without a wallet, ownership is unknown (null), not false", () => {
+    for (const t of fullEditionTiles(editions, false)) {
+      expect(t.owned).toBeNull()
+      expect(t.owned_locked).toBeNull()
     }
   })
 
-  it("falls back to the lowest key when the scope holds only parallels of a play", () => {
-    const plays = groupChecklistByPlay([row("9:9::4"), row("9:9::2")], false)
-    expect(plays).toHaveLength(1)
-    expect(plays[0].route_slug).toBe("9:9::2")
+  it("orders missing before owned, then by FMV, deterministically", () => {
+    expect(fullEditionTiles(editions, true).map((t) => t.route_slug)).toEqual(["1:1", "1:3", "1:2"])
   })
 
-  it("orders missing before owned with a wallet, and is deterministic", () => {
-    const plays = groupChecklistByPlay(editions, true)
-    expect(plays[plays.length - 1].play_key).toBe("1:1")
-    expect(groupChecklistByPlay([...editions].reverse(), true).map((p) => p.play_key)).toEqual(plays.map((p) => p.play_key))
-  })
-
-  it("is the identity grouping for a collection with no parallels", () => {
-    const plain = [row("1", { floor_usd: 3 }), row("2", { floor_usd: 4 })]
-    expect(groupChecklistByPlay(plain, true).map((p) => p.version_count)).toEqual([1, 1])
+  it("a duplicated row is counted once", () => {
+    expect(fullEditionTiles([row("1:1"), row("1:1")], false)).toHaveLength(1)
   })
 })
 
-describe("computePlayProgress", () => {
+describe("computeFullEditionProgress", () => {
   const editions = [
-    row("1:1", { floor_usd: 10 }),
-    row("1:1::2", { floor_usd: 4, owned: true, owned_locked: true }),
-    row("1:2", { floor_usd: 20, tier: "RARE" }),
-    row("1:2::2", { fmv_usd: 8, tier: "RARE" }),
-    row("1:3"),
+    row("1:1", { floor_usd: 10, tier: "RARE" }),
+    row("1:1::2", { floor_usd: 4, owned: true }),
+    row("1:2", { floor_usd: 20, owned: true, owned_locked: true }),
+    row("1:3", { fmv_confidence: "NO_DATA" }),
   ]
 
-  it("counts plays, not editions, and costs only the missing plays at their cheapest version", () => {
-    const pr = computePlayProgress(groupChecklistByPlay(editions, true), true)
-    expect(pr.total).toBe(3)
-    expect(pr.owned).toBe(1)
-    expect(pr.locked_owned).toBe(1)
-    expect(pr.missing_count).toBe(2)
-    expect(pr.completion_pct).toBe(33.3)
-    // 1:1 owned via its parallel → $0 needed; 1:2 → $8 (its parallel); 1:3 → unpriced.
-    expect(pr.cost_to_complete_usd).toBe(8)
-    expect(pr.unpriced_missing_count).toBe(1)
+  it("counts full editions only, and an unpriced missing edition is not $0", () => {
+    const p = computeFullEditionProgress(fullEditionTiles(editions, true), true)
+    expect(p.total).toBe(3)
+    expect(p.owned).toBe(1)
+    expect(p.locked_owned).toBe(1)
+    expect(p.missing_count).toBe(2)
+    expect(p.cost_to_complete_usd).toBe(10)
+    expect(p.unpriced_missing_count).toBe(1)
+    expect(p.completion_pct).toBe(33.3)
+    expect(p.stale_missing_pct).toBe(50)
+    expect(p.by_tier.map((t) => t.tier)).toEqual(["RARE", "COMMON"])
   })
 
-  it("never counts an unpriced missing play as $0 — it is reported, not summed", () => {
-    const pr = computePlayProgress(groupChecklistByPlay([row("5:5"), row("5:5::1")], true), true)
-    expect(pr.cost_to_complete_usd).toBe(0)
-    expect(pr.unpriced_missing_count).toBe(1)
-    expect(pr.stale_missing_pct).toBe(100)
-  })
-
-  it("breaks down by the standard edition's tier", () => {
-    const pr = computePlayProgress(groupChecklistByPlay(editions, true), true)
-    const rare = pr.by_tier.find((t) => t.tier === "RARE")!
-    expect(rare).toEqual({ tier: "RARE", total: 1, owned: 0, cost_usd: 8 })
-    expect(pr.by_tier[0].tier).toBe("RARE") // tier rank order: RARE before COMMON
-  })
-
-  it("without a wallet: nothing owned, full cost, locked count unknown", () => {
-    const pr = computePlayProgress(groupChecklistByPlay(editions, false), false)
-    expect(pr.owned).toBe(0)
-    expect(pr.locked_owned).toBeNull()
-    expect(pr.cost_to_complete_usd).toBe(4 + 8)
-  })
-
-  it("an empty scope has no completion percentage rather than a fabricated one", () => {
-    const pr = computePlayProgress([], true)
-    expect(pr.total).toBe(0)
-    expect(pr.completion_pct).toBeNull()
-    expect(pr.stale_missing_pct).toBeNull()
+  it("an empty list has no completion % (not 0%)", () => {
+    const p = computeFullEditionProgress([], true)
+    expect(p.total).toBe(0)
+    expect(p.completion_pct).toBeNull()
+    expect(p.stale_missing_pct).toBeNull()
   })
 })

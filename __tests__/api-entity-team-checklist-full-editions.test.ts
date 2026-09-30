@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 /**
- * /api/entity/team-checklist-plays — the "Ignore parallels" checklist. Grouping
- * is only correct over the WHOLE scoped list, so the route must REFUSE a partial
- * read (a failed page, or fewer distinct editions than the progress total) and
- * never publish a play count / cost built from part of the list.
+ * /api/entity/team-checklist-full-editions — the "Full editions" checklist view.
+ * The header is only correct over the WHOLE scoped list, so the route must
+ * REFUSE a partial read (a failed page, or fewer distinct editions than the
+ * progress total) and never publish a count / cost built from part of the list.
  */
 
 let progressTotal = 3
@@ -29,19 +29,19 @@ vi.mock("@/lib/supabase", () => ({
   },
 }))
 
-import { GET } from "@/app/api/entity/team-checklist-plays/route"
+import { GET } from "@/app/api/entity/team-checklist-full-editions/route"
 
-const req = (q: string) => new Request(`https://t/api/entity/team-checklist-plays?${q}`)
+const req = (q: string) => new Request(`https://t/api/entity/team-checklist-full-editions?${q}`)
 const W = "0x0123456789abcdef"
 
 beforeEach(() => { rpcCalls.length = 0; pages = []; progressTotal = 3; probeRows = [] })
 
-describe("GET /api/entity/team-checklist-plays", () => {
-  it("groups the complete list: a play owned via its parallel counts, cost is the cheapest missing version", async () => {
+describe("GET /api/entity/team-checklist-full-editions", () => {
+  it("removes parallels: owning only a parallel does not own the full edition, cost is each missing edition's own price", async () => {
     pages = [{ data: [
       { route_slug: "1:1", floor_usd: 10, owned: false },
       { route_slug: "1:1::2", floor_usd: 4, owned: true, owned_count: 1 },
-      { route_slug: "1:2", floor_usd: 20, owned: false },
+      { route_slug: "1:2", floor_usd: 20, owned: true, owned_count: 1 },
     ], error: null }]
     const r = await GET(req(`collection=nba-top-shot&slug=detroit-pistons&wallet=${W}`))
     expect(r.status).toBe(200)
@@ -49,22 +49,22 @@ describe("GET /api/entity/team-checklist-plays", () => {
     expect(j.has_parallels).toBe(true)
     expect(j.progress.total).toBe(2)
     expect(j.progress.owned).toBe(1)
-    expect(j.progress.cost_to_complete_usd).toBe(20)
+    expect(j.progress.cost_to_complete_usd).toBe(10)
     expect(j.progress.wallet_cached).toBe(true)
-    expect(j.plays).toHaveLength(2)
+    expect(j.editions.map((e: { route_slug: string }) => e.route_slug)).toEqual(["1:1", "1:2"])
   })
 
-  it("REFUSES a read shorter than the progress total — no plays, no cost", async () => {
+  it("REFUSES a read shorter than the progress total — no editions, no cost", async () => {
     progressTotal = 5
     pages = [{ data: [{ route_slug: "1:1", floor_usd: 10 }], error: null }]
     const r = await GET(req(`collection=nba-top-shot&slug=detroit-pistons`))
     expect(r.status).toBeGreaterThanOrEqual(500)
     const j = await r.json()
-    expect(j.plays).toBeUndefined()
+    expect(j.editions).toBeUndefined()
     expect(j.progress).toBeUndefined()
   })
 
-  it("REFUSES when a later page fails, rather than grouping the first page", async () => {
+  it("REFUSES when a later page fails, rather than summing the first page", async () => {
     progressTotal = 250
     pages = [
       { data: Array.from({ length: 200 }, (_, i) => ({ route_slug: `1:${i}` })), error: null },
@@ -72,7 +72,7 @@ describe("GET /api/entity/team-checklist-plays", () => {
     ]
     const r = await GET(req(`collection=nba-top-shot&slug=detroit-pistons`))
     expect(r.status).toBeGreaterThanOrEqual(500)
-    expect((await r.json()).plays).toBeUndefined()
+    expect((await r.json()).editions).toBeUndefined()
     expect(rpcCalls.filter((c) => c.fn === "get_team_checklist").map((c) => c.args.p_offset)).toEqual([0, 200])
   })
 
