@@ -8,6 +8,7 @@
 --   4. moments.nft_id        (bigint input)                  → kind 'moment'
 --   5. wallet_moments_cache  (bigint input, TS wins ties)    → kind 'moment'
 --   6. cached_listings_v2    (bigint input, active > done)   → kind 'edition'
+--   6a. TS live listings     (bigint input, board table > Atlas pool) → kind 'moment'  (2026-09-29)
 --   6b. sales                (bigint input, TS wins ties, newest) → kind 'moment'  (2026-09-29)
 --   7. wallet_moments_cache  (BASE58 input, Solana/Candy)     → kind 'moment'
 -- Three subtle invariants this pins: the wmc fallback PREFERS Top Shot on a
@@ -26,7 +27,7 @@
 -- step-5 arms stay exactly as they were, as the no-change control.
 --
 -- DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260929260000_audit_20260929_resolve_moment_id_falls_back_to_sales.sql),
+-- (supabase/migrations/20260930001000_audit_20260929_resolve_moment_id_resolves_a_live_topshot_listing.sql),
 -- which is byte-identical to live prod (verified via pg_get_functiondef).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
@@ -46,6 +47,10 @@ CREATE TABLE public.cached_listings_v2 (
   flow_id bigint, edition_id uuid, completed_at timestamptz, listed_at timestamptz);
 CREATE TABLE public.sales (
   nft_id text, edition_id uuid, serial_number int, collection_id uuid, sold_at timestamptz);
+CREATE TABLE public.topshot_active_listings (
+  edition_id uuid, serial_number int, nft_id text, last_seen_at timestamptz);
+CREATE TABLE public.ts_listings (
+  flow_id text, set_id int, play_id int, parallel_id int, serial_number int, ingested_at timestamptz);
 
 -- >>> BEGIN verbatim resolve_moment_id (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.resolve_moment_id(p_id text)
@@ -140,6 +145,32 @@ BEGIN
     LIMIT 1;
     IF FOUND THEN RETURN; END IF;
 
+    -- live Top Shot listings fallback (2026-09-29): /insights/underpriced-serials links /moment/<nft_id>
+    -- for every listing on its board, and 388 of the 973 rows in topshot_active_listings resolved
+    -- nowhere above (a listed moment held by an untracked wallet). The listing knows the edition and
+    -- the serial: the board's own table first, then the Atlas pool (ts_listings, keyed set:play or
+    -- set:play::parallel, verified 26,144 / 26,144 rows map to an edition). Probe on
+    -- idx_ts_listings_flow_id; topshot_active_listings is ~1k rows.
+    RETURN QUERY
+    SELECT 'moment'::TEXT, NULL::UUID, x.edition_id, x.serial_number,
+           c.id, c.slug::TEXT, NULL::TEXT
+    FROM (
+      SELECT tal.edition_id, tal.serial_number, 0 AS src, tal.last_seen_at AS seen
+      FROM topshot_active_listings tal
+      WHERE tal.nft_id = p_id AND tal.edition_id IS NOT NULL
+      UNION ALL
+      SELECT e.id, tl.serial_number, 1, tl.ingested_at
+      FROM ts_listings tl
+      JOIN editions e ON e.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+       AND e.external_id = tl.set_id || ':' || tl.play_id
+                           || CASE WHEN COALESCE(tl.parallel_id, 0) <> 0 THEN '::' || tl.parallel_id ELSE '' END
+      WHERE tl.flow_id = p_id
+    ) x
+    JOIN collections c ON c.id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+    ORDER BY x.src, x.seen DESC NULLS LAST
+    LIMIT 1;
+    IF FOUND THEN RETURN; END IF;
+
     -- sales fallback (2026-09-29): a SOLD moment now held by an untracked wallet is in none of
     -- moments / wmc / live listings, so the /moment/<nft_id> links the insights boards publish
     -- (top-sales, serial-premiums, underpriced-serials) 404'd: 24 of them on one crawl, every one
@@ -210,7 +241,9 @@ BEGIN
     ('22222222-2222-2222-2222-222222222222', ts, 'ekey-eo'),   -- edition-by-uuid
     ('33333333-3333-3333-3333-333333333333', ad, 'ekey-clA'),  -- clv active
     ('44444444-4444-4444-4444-444444444444', ad, 'ekey-clD'),  -- clv completed
-    ('55555555-5555-5555-5555-555555555555', cdy, 'junior-caminero-pink');  -- base58/wmc
+    ('55555555-5555-5555-5555-555555555555', cdy, 'junior-caminero-pink'),  -- base58/wmc
+    ('66666666-6666-6666-6666-666666666666', ts, '228:7659'),      -- TS base edition (listing)
+    ('77777777-7777-7777-7777-777777777777', ts, '228:7659::5');   -- its parallel 5
 
   -- moment A: hit by both its UUID (scenario 2) and its nft_id 700700 (scenario 4)
   INSERT INTO public.moments VALUES
@@ -243,6 +276,16 @@ BEGIN
     ('950950', 'a0000000-0000-0000-0000-000000000001', 11, ts, now() - interval '10 day'),
     ('950950', 'a0000000-0000-0000-0000-000000000001', 12, ts, now() - interval '5 day'),
     ('950950', NULL,                                   99, ts, now());
+  -- 6a. live TS listings: 505050 is on the board's table AND in the Atlas pool (board wins, serial 1);
+  -- 606060 only in the Atlas pool, a PARALLEL (must key set:play::parallel, not the base edition);
+  -- 950950 also in the pool would out-rank its sale — and 800800 in the pool must still lose to wmc.
+  INSERT INTO public.topshot_active_listings VALUES
+    ('66666666-6666-6666-6666-666666666666', 1, '505050', now());
+  INSERT INTO public.ts_listings VALUES
+    ('505050', 228, 7659, 0, 44, now()),
+    ('606060', 228, 7659, 5, 3, now()),
+    ('800800', 228, 7659, 0, 31, now());
+  INSERT INTO public.sales VALUES ('606060', '22222222-2222-2222-2222-222222222222', 88, ts, now());
   -- an earlier step still wins: 800800 is in wmc AND has a sale; wmc's answer (serial 5) must hold.
   INSERT INTO public.sales VALUES ('800800', '22222222-2222-2222-2222-222222222222', 77, ts, now());
 END $seed$;
@@ -292,6 +335,9 @@ SELECT _assert_eq((SELECT kind FROM resolve_moment_id('950950')), 'moment', 'sal
 SELECT _assert_eq((SELECT collection_slug FROM resolve_moment_id('950950')), 'nba_top_shot', 'sales collision resolves to Top Shot');
 SELECT _assert_eq((SELECT serial_number::text FROM resolve_moment_id('950950')), '12', 'newest Top Shot sale with an edition (not the edition-less 99)');
 SELECT _assert_eq((SELECT serial_number::text FROM resolve_moment_id('800800')), '5', 'an earlier step (wmc) still wins over a sale');
+-- 6a. live Top Shot listings.
+SELECT _assert_eq((SELECT kind || '|' || collection_slug || '|' || serial_number FROM resolve_moment_id('505050')), 'moment|nba_top_shot|1', 'listed moment resolves; the board table outranks the Atlas pool');
+SELECT _assert_eq((SELECT edition_id::text || '|' || serial_number FROM resolve_moment_id('606060')), '77777777-7777-7777-7777-777777777777|3', 'Atlas listing of a PARALLEL keys set:play::parallel, and outranks its sale');
 SELECT _assert_eq((SELECT count(*)::text FROM resolve_moment_id('123456789')), '0', 'unknown numeric id → no rows');
 SELECT _assert_eq((SELECT count(*)::text FROM resolve_moment_id('no-such-id')), '0', 'unknown text id → no rows');
 

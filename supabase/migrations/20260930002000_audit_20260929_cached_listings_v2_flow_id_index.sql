@@ -1,0 +1,11 @@
+-- 2026-09-29 (PT): index cached_listings_v2(flow_id) for resolve_moment_id's step 6.
+-- Step 6 (since 2026-07-04) probes `cached_listings_v2 WHERE flow_id = <bigint>` for every numeric
+-- /moment/<id> that moments and wmc do not answer, and no index carries flow_id: each such call is a
+-- parallel seq scan of the 245k-row / 90 MB table, 7,974 buffers (measured on a miss, warm). pgss
+-- for the PostgREST call: 64,664 calls, 645 blocks/call mean, consistent with ~8 % of calls reaching the scan (inferred, not split).
+-- The index makes the probe ~3 buffers. Write-side: 78 % of the table's updates are HOT. No DB
+-- function updates flow_id; the indexer's upsert (onConflict listing_resource_id,source) re-sends the
+-- SAME flow_id for a listing, and HOT only breaks when an indexed value CHANGES, so HOT survives.
+-- Plain (non-CONCURRENT) build: a 245k-row btree, a sub-second write lock.
+-- Revert: DROP INDEX public.idx_cl_v2_flow_id;
+CREATE INDEX IF NOT EXISTS idx_cl_v2_flow_id ON public.cached_listings_v2 (flow_id);
