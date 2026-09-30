@@ -294,6 +294,20 @@ see this. ⚠ **Correct it IN PLACE** — do not add a second heading for it, or
 that guards this file starts reporting growth for a correction. (Verified 2026-09-13: heading
 count held at 1919 across both in-place corrections.)
 
+🚨 **BUT "IN PLACE" MUST NOT MEAN EDITING THE `### ` LINE ITSELF when the entry is a one-line
+heading (most are).** The no-clobber guard compares heading LINES between `HEAD~1` and `HEAD`, and
+`find-clobbered-ledger-headings.mjs` deliberately reports a *reworded* heading (it is
+indistinguishable from a delete-plus-add). So appending a result, a verification or a
+correction to your own one-line entry reds `main` even though the count holds — **2026-09-29:
+three commits (`541cabc91`, `392afeb68`, `873a213d2`) each appended "verified …" text to an entry
+written earlier the same session, and each failed `Ledger no-clobber guard` with the entry listed
+as DISAPPEARED.** Reverting the text afterwards rewords the line again and reds it a fourth time,
+so leave it. **Put a follow-up on its own NON-heading line directly under the entry** (a line
+that does not start with `### `, e.g. `↳ 2026-09-29 ~6:50 PM PT verified: …`). The heading is
+untouched, the count holds, and the swallowed-heading detector only looks for `### ` mid-line. A
+multi-line entry's `Shipped:` line (the case above) is already a non-heading line, which is why
+the 09-13 in-place corrections passed.
+
 ⭐ **AND THE GENERALISATION, which is this repo's own rule pointed at its own bookkeeping:
 *a recorded fact has a shelf life, and the entry most likely to be stale is the one nobody
 re-reads because they wrote it.*** The measurement discipline in CLAUDE.md says re-derive a
