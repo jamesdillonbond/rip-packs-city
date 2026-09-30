@@ -753,6 +753,11 @@ A dated snapshot. The item text in [known-issues.md](known-issues.md) wins over 
 - **#137 (c), after 10-01:** drop the `audit_20260924_*` / `audit_20260925_*` backup tables and the retired `wmc_series_backfill_state` + `backfill_wmc_series_batch`.
 - **#136:** closes once the Maradona Silver re-walk is verified. The week-one Panini review is scheduled for 09-30 9 AM PT.
 
+## Decision waiting on Trevor — Panini FMV input (added 2026-09-30, PT)
+
+- **Switch `panini_recent_sales_fmv` from `panini_card_serials` (one last sale per serial) to `panini_sales` (every sale the walk reads)?** Measured by `panini_sales_fmv_backtest` 2026-09-30 7:45 AM PT on covered editions: n=677, MdAPE 16.7 % vs 16.2 %, within-25 % 62.9 vs 61.9, p90 67 vs 68 — a TIE. The only gain is COVERAGE: 187 more covered targets priced (+28 %) at 28.6 % MdAPE / 48.7 % within-25. `chain-strategy.md` forbids switching on the superset argument alone, so it is held for Trevor: is +28 % priced at ~29 % MdAPE worth it? Re-read the view (0.7 s since `20260930144208`) before deciding — covered n grows ~1,800 editions/day.
+- **Not a decision, a date:** the Panini Analytics daily chart stays "building" until the walk re-reads editions (1,800 of ~4,900 active read by 09-30, none re-read; a full pass ≈ 5 days), so the first complete days should appear ~Oct 3–4. If it is still "building" after ~Oct 6, check `panini_sales_reads` for `last_recent_read_at > first_recent_read_at` (re-reads) before anything else.
+
 ## LOW-label split — decided 2026-09-25 (Trevor: split; the per-edition badge half deferred, "do what you think is best")
 
 - **Shipped:** the public FMV methodology page states both meanings of LOW ("too few sales" / "sales disagree") with thresholds read from `lib/fmv-confidence.ts` (`7e0d670cb`). Public per-edition confidence chips stay banned (`invariants-no-confidence-chips`); busy LOW editions already show the cleaned 30d range there.
