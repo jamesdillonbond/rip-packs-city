@@ -1154,6 +1154,12 @@ export function isPublicPath(pathname: string, method: string): boolean {
 // on fcl-discovery.onflow.org. Only that page's policy gains the host.
 const WALLET_DISCOVERY_PAGES = ["/admin/giveaways"]
 const WALLET_DISCOVERY_HOST = "https://fcl-discovery.onflow.org"
+// WalletConnect (lists the Flow Wallet mobile app): relay + RPC, the verify
+// iframe, and the QR modal's API/images. Same one page only.
+const WALLETCONNECT_CONNECT =
+  "wss://relay.walletconnect.com wss://relay.walletconnect.org https://rpc.walletconnect.com https://rpc.walletconnect.org https://verify.walletconnect.com https://verify.walletconnect.org https://pulse.walletconnect.org https://api.web3modal.org https://api.web3modal.com"
+const WALLETCONNECT_FRAMES = "https://verify.walletconnect.com https://verify.walletconnect.org"
+const WALLETCONNECT_IMAGES = "https://api.web3modal.org https://api.web3modal.com https://explorer-api.walletconnect.com"
 
 export function walletDiscoveryAllowed(pathname: string | undefined): boolean {
   return !!pathname && WALLET_DISCOVERY_PAGES.some((p) => pathname === p || pathname.startsWith(p + "/"))
@@ -1185,12 +1191,12 @@ function applySecurityHeaders(response: NextResponse, pathname?: string) {
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "img-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://cdn.nba.com https://cdn.wnba.com https://*.supabase.co https://arweave.net https://*.arweave.net https://assets.paniniamerica.net",
+      "img-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://cdn.nba.com https://cdn.wnba.com https://*.supabase.co https://arweave.net https://*.arweave.net https://assets.paniniamerica.net" + (wallet ? ` ${WALLETCONNECT_IMAGES}` : ""),
       "media-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://arweave.net https://*.arweave.net https://assets.paniniamerica.net",
       "font-src 'self' https://fonts.gstatic.com",
       "connect-src 'self' https://*.supabase.co https://public-api.nbatopshot.com https://public-api.nflallday.com https://public-api.laligagolazos.com https://api2.flowty.io https://rest-mainnet.onflow.org https://access-mainnet.onflow.org https://pinnacle-proxy.tdillonbond.workers.dev https://topshot-proxy.tdillonbond.workers.dev wss://*.supabase.co" +
-        (wallet ? ` ${WALLET_DISCOVERY_HOST}` : ""),
-      ...(wallet ? [`frame-src 'self' ${WALLET_DISCOVERY_HOST}`] : []),
+        (wallet ? ` ${WALLET_DISCOVERY_HOST} ${WALLETCONNECT_CONNECT}` : ""),
+      ...(wallet ? [`frame-src 'self' ${WALLET_DISCOVERY_HOST} ${WALLETCONNECT_FRAMES}`] : []),
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

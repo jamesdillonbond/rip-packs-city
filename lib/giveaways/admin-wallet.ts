@@ -20,6 +20,26 @@ import type { DeliveryBatch } from "@/lib/giveaways/deliver"
 
 const DISCOVERY = "https://fcl-discovery.onflow.org/authn"
 
+/**
+ * WalletConnect is what lists the Flow Wallet MOBILE app in the picker (the
+ * desktop extension appears on its own; without WalletConnect a phone sees only
+ * Blocto — Trevor, 2026-09-29). FCL loads its WalletConnect plugin when
+ * `walletconnect.projectId` is configured, asynchronously, so it is set when this
+ * module loads (it is imported only by the admin giveaway console) rather than
+ * at click time, when the picker would open before the plugin registered.
+ * NEXT_PUBLIC_WALLETCONNECT_ID is a public project id (already in Vercel).
+ */
+export const WALLETCONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_ID ?? ""
+
+export function prepareWalletConnect(projectId: string = WALLETCONNECT_PROJECT_ID): boolean {
+  if (typeof window === "undefined" || !projectId) return false
+  initFcl()
+  fcl.config().put("walletconnect.projectId", projectId)
+  return true
+}
+
+prepareWalletConnect()
+
 /** Opens Flow's wallet picker; resolves to the connected address. */
 export async function connectAdminWallet(): Promise<string> {
   initFcl()

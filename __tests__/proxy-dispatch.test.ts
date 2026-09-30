@@ -118,9 +118,15 @@ describe("proxy() — security headers", () => {
     const admin = (await proxy(req("/admin/giveaways"))).headers.get("Content-Security-Policy")!
     expect(admin).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
     expect(admin).toMatch(/connect-src [^;]*https:\/\/fcl-discovery\.onflow\.org/)
+    // WalletConnect lists the Flow Wallet MOBILE app: relay, verify frame, modal images
+    expect(admin).toMatch(/connect-src [^;]*wss:\/\/relay\.walletconnect\.org/)
+    expect(admin).toMatch(/frame-src [^;]*https:\/\/verify\.walletconnect\.org/)
+    expect(admin).toMatch(/img-src [^;]*https:\/\/api\.web3modal\.org/)
     for (const path of ["/", "/admin", "/admin/rewards", "/giveaways/fall-drop", "/admin/giveaways-evil"]) {
       const csp = (await proxy(req(path))).headers.get("Content-Security-Policy")!
       expect(csp, path).not.toContain("fcl-discovery")
+      expect(csp, path).not.toContain("walletconnect")
+      expect(csp, path).not.toContain("web3modal")
     }
   })
 })

@@ -23,7 +23,7 @@ const fcl = vi.hoisted(() => {
 vi.mock("@onflow/fcl", () => fcl)
 vi.mock("@/lib/chains/flow/flow", () => ({ initFcl: vi.fn() }))
 
-import { connectAdminWallet, disconnectAdminWallet, sendDeliveryBatch } from "@/lib/giveaways/admin-wallet"
+import { connectAdminWallet, disconnectAdminWallet, prepareWalletConnect, sendDeliveryBatch } from "@/lib/giveaways/admin-wallet"
 import { DELIVER_BATCH_CADENCE, DELIVER_GAS_LIMIT } from "@/lib/giveaways/deliver-cadence"
 
 beforeEach(() => {
@@ -32,7 +32,22 @@ beforeEach(() => {
 
 describe("giveaways/admin-wallet", () => {
   it("importing the module configures no wallet discovery", () => {
+    expect(fcl.put).not.toHaveBeenCalledWith("discovery.wallet", expect.anything())
+  })
+
+  it("WalletConnect (the Flow Wallet mobile app) is configured in the browser when a project id exists", () => {
+    // this suite runs in node: no window, so nothing is configured
+    expect(prepareWalletConnect("abc")).toBe(false)
     expect(fcl.put).not.toHaveBeenCalled()
+    vi.stubGlobal("window", {})
+    try {
+      expect(prepareWalletConnect("")).toBe(false)
+      expect(fcl.put).not.toHaveBeenCalled()
+      expect(prepareWalletConnect("abc")).toBe(true)
+      expect(fcl.put).toHaveBeenCalledWith("walletconnect.projectId", "abc")
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it("connect sets discovery, authenticates, and returns the lowercased address", async () => {
