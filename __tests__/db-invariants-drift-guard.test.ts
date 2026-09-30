@@ -91,11 +91,12 @@ const PINS = [
     migration: "supabase/migrations/20260930183000_audit_20260930_chain_arrival_aligned_bisection_shares_calls.sql",
   },
   {
-    // Seeds every saved wallet's unexplained held Top Shot moment at the floor.
+    // Seeds every saved wallet's unexplained held Top Shot moment at the floor;
+    // 2026-09-30: and every one it SOLD since the floor (hi = just before the sale).
     fn: "seed_saved_wallet_chain_arrivals",
     test: "supabase/tests/run_chain_arrival_lane.sql",
     migration:
-      "supabase/migrations/20260929180000_audit_20260929_chain_arrivals_for_every_saved_wallet_floor_check_first.sql",
+      "supabase/migrations/20260930190000_audit_20260930_chain_arrivals_seed_sold_moments.sql",
   },
   {
     fn: "enqueue_chain_arrivals",

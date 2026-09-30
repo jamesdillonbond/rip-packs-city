@@ -29,6 +29,8 @@
 --   A1. A bisect's mid is the ALIGNED point of (lo, hi) (most trailing zero
 --       bits), and holdings calls group by (wallet, mid): one wallet's probes
 --       with different intervals share a call; each moves by its own interval.
+--   S2. It also takes each unexplained Top Shot moment the wallet SOLD after
+--       2023-11-09, hi = just before its FIRST sale; a held row wins.
 --   S1. The saved-wallet seed takes only unexplained held Top Shot moments
 --       (not an NFT pack pull, no pack-pull record, not a recorded purchase)
 --       at the floor, never another collection's id, never twice.
@@ -36,7 +38,7 @@
 -- The function DDL below is VERBATIM from the committed migration
 -- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
 -- seed_saved_wallet_chain_arrivals from
--- 20260929180000_audit_20260929_chain_arrivals_for_every_saved_wallet_floor_check_first.sql;
+-- 20260930190000_audit_20260930_chain_arrivals_seed_sold_moments.sql;
 -- run_chain_arrival_lane from 20260930183000_audit_20260930_chain_arrival_aligned_bisection_shares_calls.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -424,7 +426,7 @@ CREATE TABLE public.saved_wallets (wallet_addr text);
 CREATE TABLE public.wallet_moments_cache (wallet_address text, moment_id text, collection_id uuid);
 CREATE TABLE public.pack_open_pulls (collection_id uuid, pack_nft_id text, nft_id text);
 CREATE TABLE public.moment_acquisitions (wallet text, collection_id uuid, nft_id text, acquisition_method text);
-CREATE TABLE public.sales (collection_id uuid, nft_id text, buyer_address text);
+CREATE TABLE public.sales (collection_id uuid, nft_id text, buyer_address text, seller_address text, sold_at timestamptz, block_height bigint);
 CREATE FUNCTION public.flow_height_estimate(p_at timestamptz) RETURNS bigint LANGUAGE sql AS $$ SELECT 166000000::bigint $$;
 
 -- >>> BEGIN verbatim seed_saved_wallet_chain_arrivals (body byte-identical to the migration) >>>
@@ -440,7 +442,7 @@ DECLARE
   v_ts      constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
   v_floor   constant bigint := 65300000;       -- just past the mainnet24 root
   v_hi      bigint := public.flow_height_estimate(now() - interval '15 minutes');
-  v_seeded  int := 0; v_wallets int := 0;
+  v_seeded  int := 0; v_wallets int := 0; v_sold int := 0;
 BEGIN
   IF v_hi IS NULL OR v_hi <= v_floor THEN
     PERFORM public.log_pipeline_run('chain-arrivals-seed', v_started, 0, 0, 0, false, 'no height estimate for now()',
@@ -454,8 +456,8 @@ BEGIN
   WITH w AS (
     SELECT DISTINCT lower(trim(wallet_addr)) AS wallet FROM public.saved_wallets
      WHERE lower(trim(wallet_addr)) ~ '^0x[0-9a-f]{16}$'
-  ), ids AS (
-    SELECT w.wallet, m.moment_id::bigint AS nft_id
+  ), held AS (
+    SELECT w.wallet, m.moment_id::bigint AS nft_id, v_hi AS hi
       FROM w
       JOIN public.wallet_moments_cache m
         ON m.wallet_address = w.wallet AND m.collection_id = v_ts AND m.moment_id ~ '^[0-9]{1,15}$'
@@ -465,17 +467,44 @@ BEGIN
                           AND a.acquisition_method = 'pack_pull')
        AND NOT EXISTS (SELECT 1 FROM public.sales s
                         WHERE s.collection_id = v_ts AND s.nft_id = m.moment_id AND s.buyer_address = w.wallet)
+  ), sold AS (
+    -- 2026-09-30: a moment the wallet SOLD after the floor is traceable too:
+    -- it was held just before its first sale, so hi = that height - 100 (the
+    -- estimate is within 22 blocks of the real height; 300 of 300 rips,
+    -- 2023-26). Only held moments were seeded before, so a pull flipped
+    -- between two seeds was never traced. Same exclusions as held.
+    SELECT s.seller_address AS wallet, s.nft_id::bigint AS nft_id,
+           coalesce(min(s.block_height), public.flow_height_estimate(min(s.sold_at))) - 100 AS hi
+      FROM w
+      JOIN public.sales s ON s.seller_address = w.wallet
+     WHERE s.collection_id = v_ts AND s.nft_id ~ '^[0-9]{1,15}$' AND s.sold_at > timestamptz '2023-11-09'
+     GROUP BY 1, 2
+  ), sold_ok AS (
+    SELECT so.wallet, so.nft_id, so.hi
+      FROM sold so
+     WHERE so.hi > v_floor
+       AND NOT EXISTS (SELECT 1 FROM public.pack_open_pulls o WHERE o.collection_id = v_ts AND o.nft_id = so.nft_id::text)
+       AND NOT EXISTS (SELECT 1 FROM public.moment_acquisitions a
+                        WHERE a.wallet = so.wallet AND a.collection_id = v_ts AND a.nft_id = so.nft_id::text
+                          AND a.acquisition_method = 'pack_pull')
+       AND NOT EXISTS (SELECT 1 FROM public.sales b
+                        WHERE b.collection_id = v_ts AND b.nft_id = so.nft_id::text AND b.buyer_address = so.wallet)
+  ), ids AS (
+    SELECT wallet, nft_id, hi, false AS is_sold FROM held
+    UNION ALL
+    SELECT wallet, nft_id, hi, true FROM sold_ok
   ), ins AS (
     INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
-    SELECT wallet, nft_id, v_floor, v_hi, 'floor' FROM ids
+    SELECT DISTINCT ON (wallet, nft_id) wallet, nft_id, v_floor, hi, 'floor' FROM ids
+     ORDER BY wallet, nft_id, is_sold
     ON CONFLICT (wallet, nft_id) DO NOTHING
-    RETURNING wallet
+    RETURNING wallet, hi
   )
-  SELECT count(*), count(DISTINCT wallet) INTO v_seeded, v_wallets FROM ins;
+  SELECT count(*), count(DISTINCT wallet), count(*) FILTER (WHERE hi <> v_hi) INTO v_seeded, v_wallets, v_sold FROM ins;
 
   PERFORM public.log_pipeline_run('chain-arrivals-seed', v_started, v_seeded, v_seeded, 0, true, NULL,
-    'nba_top_shot', NULL, NULL, jsonb_build_object('seeded', v_seeded, 'wallets', v_wallets, 'hi', v_hi));
-  RETURN jsonb_build_object('ok', true, 'seeded', v_seeded, 'wallets', v_wallets, 'hi', v_hi);
+    'nba_top_shot', NULL, NULL, jsonb_build_object('seeded', v_seeded, 'sold', v_sold, 'wallets', v_wallets, 'hi', v_hi));
+  RETURN jsonb_build_object('ok', true, 'seeded', v_seeded, 'sold', v_sold, 'wallets', v_wallets, 'hi', v_hi);
 END;
 $function$;
 -- <<< END verbatim <<<
@@ -794,6 +823,37 @@ BEGIN
                      FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000cc' AND nft_id = 501),
                   'S1: seeded at the floor, up to now');
   PERFORM _assert_eq((public.seed_saved_wallet_chain_arrivals())->>'seeded', '0', 'S1: never twice');
+END $$;
+
+-- S2 (2026-09-30): a moment the wallet SOLD after the floor is seeded too, at
+-- the floor with hi = just before its first sale; same exclusions; held wins.
+INSERT INTO public.sales (collection_id, nft_id, buyer_address, seller_address, sold_at, block_height) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '601', '0x00000000000000dd', '0x00000000000000cc', '2025-06-01', 120000000), -- seeded, hi = 119,999,900
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '601', '0x00000000000000ee', '0x00000000000000cc', '2025-07-01', 125000000), -- a later re-sale: the FIRST sale bounds it
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '602', '0x00000000000000dd', '0x00000000000000cc', '2025-06-01', 120000000), -- an NFT pack pull
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '603', '0x00000000000000cc', '0x00000000000000dd', '2024-06-01', 100000000), -- bought by the wallet ...
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '603', '0x00000000000000ee', '0x00000000000000cc', '2025-06-01', 120000000), -- ... then sold: not a pull
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '604', '0x00000000000000dd', '0x00000000000000cc', '2023-06-01', 60000000),  -- sold before the floor
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '605', '0x00000000000000dd', '0x00000000000000cc', '2026-01-01', NULL),       -- no height: estimate - 100
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '501', '0x00000000000000dd', '0x00000000000000cc', '2025-06-01', 120000000), -- also held: already seeded
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', '606', '0x00000000000000dd', '0x00000000000000cc', '2025-06-01', 120000000); -- All Day
+INSERT INTO public.pack_open_pulls VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PK2', '602');
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.seed_saved_wallet_chain_arrivals();
+  PERFORM _assert_eq(v->>'seeded', '2', 'S2: two sold moments seeded (601, 605)');
+  PERFORM _assert_eq(v->>'sold', '2', 'S2: and counted as sold');
+  PERFORM _assert((SELECT status = 'floor' AND lo = 65300000 AND hi = 119999900
+                     FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000cc' AND nft_id = 601),
+                  'S2: hi = the FIRST sale''s height - 100');
+  PERFORM _assert((SELECT hi = 165999900 FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000cc' AND nft_id = 605),
+                  'S2: no recorded height -> flow_height_estimate(sold_at) - 100');
+  PERFORM _assert((SELECT count(*) = 0 FROM public.chain_arrival_probes WHERE nft_id IN (602, 603, 604, 606)),
+                  'S2: never a pack pull, a bought moment, a pre-floor sale or another collection');
+  PERFORM _assert((SELECT hi = 166000000 FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000cc' AND nft_id = 501),
+                  'S2: an existing (held) probe is untouched');
+  PERFORM _assert_eq((public.seed_saved_wallet_chain_arrivals())->>'seeded', '0', 'S2: never twice');
 END $$;
 
 ROLLBACK;
