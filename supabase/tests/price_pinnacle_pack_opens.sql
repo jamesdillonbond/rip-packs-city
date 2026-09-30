@@ -3,15 +3,16 @@
 --
 -- Pins:
 --   * a pull is named by its mint event; where there is none (every open before the 2025-12-29
---     spork), by the Pinnacle wallet_moments_cache row for that nft_id — never another collection's
---     row (a moment_id is unique only WITHIN a collection), never when two cache rows disagree;
+--     spork), by what every other record of that nft_id names — the Pinnacle wallet_moments_cache
+--     row (never another collection's: a moment_id is unique only WITHIN a collection), a recorded
+--     pinnacle_sales row, a pinnacle_live_listings row — and only when they ALL name one render;
 --   * the mint event wins over the cache when both exist;
 --   * a pack is priced only when EVERY pull is named and priced — never a partial sum;
 --   * candidates go least-recently-tried first, so an old never-tried open is not starved by
 --     newer opens that are re-eligible every 6 h (the pre-2026-09-29 order was opened_at DESC).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260929270000_audit_20260929_pinnacle_pack_opens_priced_via_held_pins.sql);
+-- (supabase/migrations/20260930004000_audit_20260929_pinnacle_pack_opens_priced_via_sales_and_listings.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -26,6 +27,8 @@ CREATE TABLE public.pinnacle_mint_events (nft_id text PRIMARY KEY, render_id tex
 CREATE TABLE public.pinnacle_catalog (render_id text PRIMARY KEY, fmv_usd numeric);
 CREATE TABLE public.wallet_moments_cache (
   wallet_address text, collection_id uuid, moment_id text, render_id text);
+CREATE TABLE public.pinnacle_sales (nft_id text, render_id text);
+CREATE TABLE public.pinnacle_live_listings (nft_id text PRIMARY KEY, render_id text);
 
 -- >>> BEGIN verbatim price_pinnacle_pack_opens (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.price_pinnacle_pack_opens(p_limit integer DEFAULT 3000)
@@ -51,18 +54,26 @@ BEGIN
     SELECT c.pack_nft_id, c.moments_pulled, u.nft_id
       FROM _pppo c CROSS JOIN LATERAL unnest(c.nft_ids) AS u(nft_id)
   ), named AS (
-    -- the pin: its mint event, else the pin a wallet walk read off the NFT (pre-spork opens)
+    -- the pin: its mint event, else (pre-spork opens) what every other record of that nft_id names —
+    -- a wallet walk, a recorded sale, a live listing — only when they all name ONE render
     SELECT p.pack_nft_id, p.moments_pulled, COALESCE(m.render_id, w.render_id) AS render_id
       FROM pulls p
       LEFT JOIN public.pinnacle_mint_events m ON m.nft_id = p.nft_id
       LEFT JOIN LATERAL (
-        SELECT min(wm.render_id) AS render_id
-          FROM public.wallet_moments_cache wm
+        SELECT min(x.render_id) AS render_id
+          FROM (
+            SELECT wm.render_id FROM public.wallet_moments_cache wm
+             WHERE wm.collection_id = '7dd9dd11-e8b6-45c4-ac99-71331f959714'::uuid
+               AND wm.moment_id = p.nft_id AND wm.render_id IS NOT NULL
+            UNION ALL
+            SELECT s.render_id FROM public.pinnacle_sales s
+             WHERE s.nft_id = p.nft_id AND s.render_id IS NOT NULL
+            UNION ALL
+            SELECT l.render_id FROM public.pinnacle_live_listings l
+             WHERE l.nft_id = p.nft_id AND l.render_id IS NOT NULL
+          ) x
          WHERE m.render_id IS NULL
-           AND wm.collection_id = '7dd9dd11-e8b6-45c4-ac99-71331f959714'::uuid
-           AND wm.moment_id = p.nft_id
-           AND wm.render_id IS NOT NULL
-        HAVING count(DISTINCT wm.render_id) = 1
+        HAVING count(DISTINCT x.render_id) = 1
       ) w ON true
   ), pv AS (
     SELECT n.pack_nft_id, SUM(pc.fmv_usd)::numeric(14,2) AS v
@@ -103,7 +114,12 @@ INSERT INTO public.wallet_moments_cache VALUES
   ('0xw1', '7dd9dd11-e8b6-45c4-ac99-71331f959714', 'n_split', 'R_B'),
   ('0xw2', '7dd9dd11-e8b6-45c4-ac99-71331f959714', 'n_split', 'R_C'),
   ('0xw1', '7dd9dd11-e8b6-45c4-ac99-71331f959714', 'n_pre2',  'R_C'),
-  ('0xw1', '7dd9dd11-e8b6-45c4-ac99-71331f959714', 'n_nofmv', 'R_NOFMV');
+  ('0xw1', '7dd9dd11-e8b6-45c4-ac99-71331f959714', 'n_nofmv', 'R_NOFMV'),
+  ('0xw1', '7dd9dd11-e8b6-45c4-ac99-71331f959714', 'n_conf',  'R_B');
+-- SALE: named only by a recorded sale (sold twice, same pin). LIST: only by a live listing.
+-- CONF: the cache says R_B, a sale says R_C -> the sources disagree -> unnamed -> NULL.
+INSERT INTO public.pinnacle_sales VALUES ('n_sale', 'R_C'), ('n_sale', 'R_C'), ('n_conf', 'R_C'), ('n_win', 'R_X');
+INSERT INTO public.pinnacle_live_listings VALUES ('n_list', 'R_B');
 INSERT INTO public.pinnacle_pack_opens (pack_nft_id, moments_pulled, nft_ids, opened_at) VALUES
   ('POST',  1, ARRAY['n_post'],            '2026-03-01'),
   ('PRE',   1, ARRAY['n_pre'],             '2024-03-01'),
@@ -112,7 +128,10 @@ INSERT INTO public.pinnacle_pack_opens (pack_nft_id, moments_pulled, nft_ids, op
   ('SPLIT', 1, ARRAY['n_split'],           '2024-03-03'),
   ('PART',  2, ARRAY['n_post', 'n_gone'],  '2024-03-04'),
   ('MULTI', 2, ARRAY['n_post', 'n_pre2'],  '2024-03-05'),
-  ('NOFMV', 1, ARRAY['n_nofmv'],           '2024-03-06');
+  ('NOFMV', 1, ARRAY['n_nofmv'],           '2024-03-06'),
+  ('SALE',  1, ARRAY['n_sale'],            '2024-03-07'),
+  ('LIST',  1, ARRAY['n_list'],            '2024-03-08'),
+  ('CONF',  1, ARRAY['n_conf'],            '2024-03-09');
 
 SELECT public.price_pinnacle_pack_opens(100);
 
@@ -126,6 +145,9 @@ SELECT _assert_eq((SELECT pull_value_usd::text FROM pinnacle_pack_opens WHERE pa
 -- ── 4. never another collection's row, never an ambiguous one ────────────────
 SELECT _assert((SELECT pull_value_usd IS NULL FROM pinnacle_pack_opens WHERE pack_nft_id='XCOL'), 'a Top Shot cache row with the same id does not name a Pinnacle pull');
 SELECT _assert((SELECT pull_value_usd IS NULL FROM pinnacle_pack_opens WHERE pack_nft_id='SPLIT'), 'cache rows naming two renders do not name the pull');
+SELECT _assert_eq((SELECT pull_value_usd::text FROM pinnacle_pack_opens WHERE pack_nft_id='SALE'), '7.00', 'a pull named only by its recorded sales is priced');
+SELECT _assert_eq((SELECT pull_value_usd::text FROM pinnacle_pack_opens WHERE pack_nft_id='LIST'), '5.00', 'a pull named only by a live listing is priced');
+SELECT _assert((SELECT pull_value_usd IS NULL FROM pinnacle_pack_opens WHERE pack_nft_id='CONF'), 'a cache row and a sale naming different renders leave the pull unnamed');
 -- ── 5. never a partial sum ───────────────────────────────────────────────────
 SELECT _assert((SELECT pull_value_usd IS NULL FROM pinnacle_pack_opens WHERE pack_nft_id='PART'), 'one unnamed pull leaves the whole pack NULL, not $10');
 SELECT _assert((SELECT pull_value_usd IS NULL FROM pinnacle_pack_opens WHERE pack_nft_id='NOFMV'), 'a named pull with no FMV leaves the pack NULL');

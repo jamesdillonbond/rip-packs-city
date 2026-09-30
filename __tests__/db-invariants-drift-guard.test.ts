@@ -996,10 +996,10 @@ const PINS = [
     migration: "supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql",
   },
   {
-    // 2026-09-29: pre-spork Pinnacle pulls named via the Pinnacle wallet cache; least-recently-tried first.
+    // 2026-09-29: pre-spork Pinnacle pulls named via the wallet cache, sales and live listings (unanimous); least-recently-tried first.
     fn: "price_pinnacle_pack_opens",
     test: "supabase/tests/price_pinnacle_pack_opens.sql",
-    migration: "supabase/migrations/20260929270000_audit_20260929_pinnacle_pack_opens_priced_via_held_pins.sql",
+    migration: "supabase/migrations/20260930004000_audit_20260929_pinnacle_pack_opens_priced_via_sales_and_listings.sql",
   },
   {
     fn: "get_team_detail",
