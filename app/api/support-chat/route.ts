@@ -5521,8 +5521,9 @@ export async function POST(req: NextRequest) {
           try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await (supabase as any).from("usage_events").insert({
-              wallet_address: userWallet ?? "anon",
-              // Same uniform identity column /api/telemetry writes (2026-09-29).
+              // Same keys /api/telemetry writes (2026-09-29): a signed-in user with no
+              // allow_list wallet is `user:<id>`, never "anon" (it was, until then).
+              wallet_address: userWallet ?? (userId ? `user:${userId}` : "anon"),
               user_id: userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId) ? userId : null,
               feature_name: "concierge_prompt_cache",
               metadata: { read: cacheRead, write: cacheWrite, iterations: iterationTraces.length, smoke: isSmokeTest },
