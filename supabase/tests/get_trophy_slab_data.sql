@@ -22,9 +22,12 @@
 --     and a NULL stored thumbnail falls back to the edition's render. The
 --     fallback half is new on 2026-09-12; until then there was no live side at
 --     all and a junk stored URL rendered as a blank slab with no recourse.
+--   * jersey_number (2026-09-29) is the live edition's number, NULL when the
+--     edition does not resolve AND NULL when it is 0 (0 = no number on file,
+--     never jersey #0 — specialCats() would otherwise need to know).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260929061743_audit_20260928_trophy_still_held_state.sql);
+-- (supabase/migrations/20260930060000_audit_20260929_trophy_slab_exposes_jersey_number_for_special_serial_marks.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -158,6 +161,9 @@ BEGIN
       e.play_category AS play_description,
       e.team_name AS team_name,
       e.series AS series,
+      -- Special-serial jersey match (lib/badges/glyphs.ts specialCats). NULL
+      -- unless > 0: 0 means no number on file, never jersey #0.
+      (CASE WHEN e.jersey_number > 0 THEN e.jersey_number END) AS jersey_number,
       tm.pinned_at,
       -- Is the trophy still in the collector's indexed holdings? THREE states
       -- (2026-09-28): 'held' / 'not_held' / 'unknown'. 'not_held' needs a CLEAN
@@ -458,6 +464,15 @@ SELECT _assert_eq((public.get_trophy_slab_data(:U5::uuid) -> 0 ->> 'held_state')
 SELECT _assert_eq((public.get_trophy_slab_data(:U5::uuid) -> 1 ->> 'held_state'), 'not_held', 'Panini p2 absent after a complete public walk post-pin -> not_held');
 SELECT _assert_eq((public.get_trophy_slab_data(:U5::uuid) -> 2 ->> 'held_state'), 'held', 'Panini p3 seen under the name after the walk -> held');
 SELECT _assert_eq((public.get_trophy_slab_data(:U7::uuid) -> 0 ->> 'held_state'), 'unknown', 'a private Panini profile -> unknown, never sold');
+
+-- ── 10. jersey_number for the special-serial marks (2026-09-29) ──────────────
+-- ⚠ Both directions plus the 0 case: a live number comes through, an unresolved
+-- edition gives NULL, and 0 (no number on file) is NEVER published as a number.
+SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 1 ->> 'jersey_number'), '5', 'mA: jersey_number from the live edition');
+SELECT _assert((public.get_trophy_slab_data(:U1::uuid) -> 0 ->> 'jersey_number') IS NULL, 'mB (no edition): jersey_number NULL, not guessed');
+SELECT _assert((public.get_trophy_slab_data(:U1::uuid) -> 0) ? 'jersey_number', 'the key is present even when NULL');
+UPDATE public.editions SET jersey_number = 0 WHERE id = 'e3333333-3333-3333-3333-333333333333'::uuid;
+SELECT _assert((public.get_trophy_slab_data(:U3::uuid) -> 0 ->> 'jersey_number') IS NULL, 'mC: jersey 0 (no number on file) is NULL, never "0"');
 
 SELECT '✓ get_trophy_slab_data: all assertions passed' AS result;
 

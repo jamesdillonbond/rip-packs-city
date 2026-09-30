@@ -1077,8 +1077,10 @@ const PINS = [
     // 55 nft_ids already span collections in that table).
     // ⚠ REPOINTED 2026-09-28: held_state / held_checked_at — 'not_held' only on a
     // clean walk (wmc_clean_walks, or a complete public Panini walk) after the pin.
+    // ⚠ REPOINTED 2026-09-29: jersey_number (NULL unless > 0) for the trophy
+    // slab's special-serial marks — the one input specialCats() lacked.
     migration:
-      "supabase/migrations/20260929061743_audit_20260928_trophy_still_held_state.sql",
+      "supabase/migrations/20260930060000_audit_20260929_trophy_slab_exposes_jersey_number_for_special_serial_marks.sql",
   },
   {
     fn: "get_moment_detail",

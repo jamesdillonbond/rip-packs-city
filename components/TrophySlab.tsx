@@ -16,6 +16,8 @@ import {
 import { usdSignFirst } from "@/lib/usd-format"
 import { trophySlabHref, type TrophySlabHref } from "@/lib/trophy/slab-href"
 import { momentSubjectName } from "@/lib/entity-href"
+import { specialCats, SPECIAL_CAT_LABEL, GOLD_HEX, type SpecialCat } from "@/lib/badges/glyphs"
+import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -68,6 +70,13 @@ export type TrophySlabData = {
    */
   held_state?: "held" | "not_held" | "unknown" | null;
   held_checked_at?: string | null;
+  /**
+   * The edition's jersey number, NULL unless > 0 (get_trophy_slab_data,
+   * 2026-09-29) — the one input the special-serial marks need that serial /
+   * circulation do not carry. Optional: absent means "no jersey mark", never a
+   * guess; #1 and perfect mint still draw.
+   */
+  jersey_number?: number | null;
 };
 
 /**
@@ -207,7 +216,7 @@ function FilledSlab({
       aria-label={`View ${slab.player_name ?? "moment"}`}
     >
       <div
-        className={holo}
+        className={(holo ? holo + " " : "") + "rpc-slab"}
         onMouseEnter={onEnter}
         onMouseLeave={onLeave}
         style={{
@@ -216,6 +225,8 @@ function FilledSlab({
           flex: "1 1 auto",
           display: "flex",
           flexDirection: "column",
+          // Size container for the footer/caption type scale (SLAB_LABEL_CSS).
+          containerType: "inline-size",
           background: "var(--rpc-surface)",
           border: "1px solid " + border,
           borderRadius: 14,
@@ -340,6 +351,7 @@ function SlabNote({ note }: { note: string }) {
     >
       <span
         aria-hidden
+        className="rpc-slab-note"
         style={{ fontSize: 9, lineHeight: 1.35, color: "var(--rpc-text-ghost)", flexShrink: 0 }}
       >
         &ldquo;
@@ -349,6 +361,7 @@ function SlabNote({ note }: { note: string }) {
         // but the clamp is kept independently: a slab in a narrow column can
         // run a legal caption past two lines, and an unbounded one would push
         // the slabs in a grid row out of alignment with each other.
+        className="rpc-slab-note"
         style={{
           fontFamily: "var(--font-mono)",
           fontSize: 9,
@@ -390,6 +403,10 @@ function SlabLabel({
   reserveCorner?: boolean;
 }) {
   const tierLabel = (slab.tier ?? "COMMON").toUpperCase();
+  // #1 / jersey match / perfect mint — the canonical definition, same one the
+  // share cards and PDF draw from, so the page cannot disagree with its own
+  // OG image. A special serial gets a gold serial and a gold mark per reason.
+  const specials = specialCats(slab.serial_number, slab.circulation_count, slab.jersey_number ?? null);
   const serial =
     slab.serial_number != null
       ? "#" + slab.serial_number + (slab.circulation_count != null ? "/" + slab.circulation_count : "")
@@ -443,6 +460,7 @@ function SlabLabel({
       {/* Middle column — player + meta */}
       <div className="rpc-slab-label-main" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
         <div
+          className="rpc-slab-label-name"
           style={{
             fontFamily: "var(--font-display)",
             fontWeight: 500,
@@ -513,18 +531,30 @@ function SlabLabel({
         <div className="rpc-slab-label-serial" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
           {serial && (
             <div
+              className="rpc-slab-label-serialnum"
+              data-special-serial={specials.length > 0 ? specials.join(" ") : undefined}
+              title={specials.length > 0 ? specials.map((c) => SPECIAL_CAT_LABEL[c]).join(" · ") : undefined}
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: 8,
                 color: "#0a0a0a",
-                fontWeight: 500,
+                fontWeight: specials.length > 0 ? 700 : 500,
                 letterSpacing: "0.04em",
+                // Gold chip for a special serial — the same gold as the marks,
+                // with dark text (gold text on the silver label is unreadable).
+                ...(specials.length > 0
+                  ? { background: GOLD_HEX, borderRadius: 3, padding: "1px 4px", boxShadow: "0 0 0 1px rgba(0,0,0,0.25)" }
+                  : null),
               }}
             >
               {serial}
             </div>
           )}
+          {specials.length > 0 && (
+            <SpecialMarks cats={specials} collection={slab.collection_slug ?? slab.collection_id} />
+          )}
           <div
+            className="rpc-slab-label-tier"
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: 7,
@@ -628,7 +658,72 @@ const SLAB_LABEL_CSS = `
   .rpc-slab-label-team { white-space: normal !important; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .rpc-slab-label-set { -webkit-line-clamp: 3 !important; }
 }
+/* Readable type on a WIDE slab (2026-09-29, collector feedback #10154: "the
+   text could be bigger, hard to read" on the desktop trophy case). The base
+   sizes were set for the narrow dashboard / 2-up phone slab and stay there;
+   a slab with room — the 3-up desktop case is ~330px — steps up. Keyed on the
+   slab's own width (container queries), never the viewport, so the same
+   component reads right in every grid it is dropped into. */
+@container (min-width: 250px) {
+  .rpc-slab-label-name { font-size: 15px !important; }
+  .rpc-slab-label-team { font-size: 10px !important; }
+  .rpc-slab-label-set { font-size: 10px !important; }
+  .rpc-slab-label-serialnum { font-size: 11px !important; }
+  .rpc-slab-label-tier { font-size: 9px !important; }
+  .rpc-slab-label-meta { min-width: 64px !important; }
+  .rpc-slab-mark { width: 18px !important; height: 18px !important; }
+}
+@container (min-width: 270px) {
+  .rpc-slab-foot-cap { font-size: 9px !important; }
+  .rpc-slab-foot-fmv { font-size: 17px !important; }
+  .rpc-slab-foot-est { font-size: 10px !important; }
+  .rpc-slab-foot-acq { font-size: 14px !important; }
+  .rpc-slab-foot-right { font-size: 11px !important; }
+  .rpc-slab-note { font-size: 11px !important; }
+}
 `;
+
+/**
+ * One gold chip per special-serial reason (#1 / jersey match / perfect mint),
+ * drawn with the platform's official art where it exists (SpecialSerialGlyph).
+ * Labelled for assistive tech: the chips are the only place the REASON is
+ * stated, the gold serial alone only says "special".
+ */
+function SpecialMarks({ cats, collection }: { cats: SpecialCat[]; collection: string | null }) {
+  return (
+    <div
+      className="rpc-slab-marks"
+      role="list"
+      aria-label="Special serial"
+      style={{ display: "flex", gap: 3, marginTop: 3, justifyContent: "flex-end" }}
+    >
+      {cats.map((c) => (
+        <span
+          key={c}
+          role="listitem"
+          className="rpc-slab-mark"
+          data-special={c}
+          title={SPECIAL_CAT_LABEL[c]}
+          aria-label={SPECIAL_CAT_LABEL[c]}
+          style={{
+            width: 15,
+            height: 15,
+            borderRadius: "50%",
+            background: GOLD_HEX,
+            color: "#0a0a0a",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 1px 1.5px rgba(0,0,0,0.45)",
+            flexShrink: 0,
+          }}
+        >
+          <SpecialSerialGlyph tag={c} size={10} collection={collection} />
+        </span>
+      ))}
+    </div>
+  );
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Moment screen
@@ -766,6 +861,7 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
       {/* Left — FMV */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
         <span
+          className="rpc-slab-foot-cap"
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: 6,
@@ -777,6 +873,7 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <span
+            className="rpc-slab-foot-fmv"
             style={{
               fontFamily: "var(--font-display)",
               fontWeight: 500,
@@ -794,6 +891,7 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
         {slab.serial_fmv && (
           <span
             title={`${slab.serial_fmv.label} — ${slab.serial_fmv.multiplier}× edition FMV. Estimate, not a quote.`}
+            className="rpc-slab-foot-est"
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -828,6 +926,7 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
           {showAcquired ? (
             <>
               <span
+                className="rpc-slab-foot-cap"
                 style={{
                   fontFamily: "var(--font-mono)",
                   fontSize: 6,
@@ -838,6 +937,7 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
                 ACQUIRED
               </span>
               <span
+                className="rpc-slab-foot-acq"
                 style={{
                   fontFamily: "var(--font-display)",
                   fontWeight: 500,
@@ -851,6 +951,7 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
             </>
           ) : (
             <span
+              className="rpc-slab-foot-right"
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: 9,

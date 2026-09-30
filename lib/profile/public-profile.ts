@@ -297,6 +297,9 @@ async function getPublicProfileUncached(
     // "Not in saved wallets" marker (2026-09-28). Not cost basis; safe to publish.
     held_state: t.held_state ?? null,
     held_checked_at: t.held_checked_at ?? null,
+    // Edition jersey number (NULL unless > 0, get_trophy_slab_data 2026-09-29):
+    // the slab's jersey-match mark. Public roster fact, not cost basis.
+    jersey_number: t.jersey_number != null ? Number(t.jersey_number) : null,
   }))
 
   if (bioErr) {
