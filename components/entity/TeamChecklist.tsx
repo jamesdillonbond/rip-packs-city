@@ -25,8 +25,17 @@
 //   collection's chain (never on a Solana checklist). A degraded identity read
 //   leaves walletAddr unknown, so the paste box stays — never a false "yours".
 //
+// - Parallels toggle (2026-09-29, concierge feature request): "All moments"
+//   (every edition and parallel, the default) vs "Ignore parallels", where a
+//   PLAY is collected when ANY version of it is owned and cost-to-complete
+//   prices each missing play at its cheapest version. Shown only when the
+//   collection's data carries parallel editions (probe, not a slug list).
+//   Persisted as ?parallels=exclude so the view is shareable.
+//
 // Data: /api/entity/team-checklist (paginated tiles) +
-//       /api/entity/team-checklist-progress (header + cost-to-complete).
+//       /api/entity/team-checklist-progress (header + cost-to-complete);
+//       "Ignore parallels" reads /api/entity/team-checklist-plays (whole
+//       grouped list + header, grouping in lib/entity/checklist-plays.ts).
 // Brand tokens only (var(--rpc-*), var(--font-display)).
 
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -39,6 +48,7 @@ import { getCollection, collectionHasLocking } from "@/lib/collections"
 import { checklistWalletStorageKey, isSolanaChecklist, parseChecklistWallet } from "@/lib/entity/checklist-wallet"
 import { editionRouteHref } from "@/lib/entity-href"
 import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
+import { parseParallelsMode, type ParallelsMode } from "@/lib/entity/checklist-plays"
 
 interface ChecklistTile extends EditionTile {
   owned?: boolean | null
@@ -47,6 +57,10 @@ interface ChecklistTile extends EditionTile {
   // green (owned+locked) vs white (owned) tile parity with Top Shot. Null when
   // no wallet is tracked.
   owned_locked?: boolean | null
+  // "Ignore parallels" mode only (a play tile — see lib/entity/checklist-plays.ts).
+  version_count?: number
+  owned_versions?: number | null
+  play_cost_usd?: number | null
 }
 
 interface TierBreakdown {
@@ -69,6 +83,16 @@ interface Progress {
   wallet_cached: boolean
   scope: string
   by_tier: TierBreakdown[]
+  // "Ignore parallels" mode only: missing plays with no priced version, which
+  // are NOT in cost_to_complete_usd (never counted as $0).
+  unpriced_missing_count?: number
+}
+
+interface PlaysResponse {
+  has_parallels: boolean
+  progress: Progress
+  // Play tiles: the RPC edition row of the standard edition + PlayTile fields.
+  plays: ChecklistTile[]
 }
 
 interface Props {
@@ -79,6 +103,7 @@ interface Props {
 }
 
 const PAGE_SIZE = 24
+const PARALLELS_LS_KEY = "rpc:team-checklist:parallels"  // per collection: a choice on Top Shot must not follow the reader to a collection without parallels
 const MAX_INDEX_POLLS = 6
 const INDEX_POLL_MS = 12_000
 
@@ -117,6 +142,14 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
   const [pageFailed, setPageFailed] = useState(false)
   const [seriesOptions, setSeriesOptions] = useState<number[]>(seriesProp ?? [])
   const [indexing, setIndexing] = useState(false)
+  const [mode, setMode] = useState<ParallelsMode>("all")
+  const [modeReady, setModeReady] = useState(false)
+  // Does this collection carry parallel editions at all? null = not known (probe
+  // pending or failed) — the toggle then shows only if the URL already asks for it.
+  const [collectionHasParallels, setCollectionHasParallels] = useState<boolean | null>(null)
+  // "Ignore parallels" reads the whole grouped list at once and pages it locally.
+  const [allPlays, setAllPlays] = useState<ChecklistTile[]>([])
+  const [visible, setVisible] = useState(PAGE_SIZE)
 
   const session = useSessionOwner()
   const ownParsed = session.walletAddr ? parseChecklistWallet(session.walletAddr, dbChain) : null
@@ -125,6 +158,43 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
   const reqIdRef = useRef(0)
   const indexFiredRef = useRef<Set<string>>(new Set())
   const pollCountRef = useRef(0)
+
+  // Parallels mode: the URL wins (a shared link), then this viewer's last choice.
+  useEffect(() => {
+    try {
+      const fromUrl = new URLSearchParams(window.location.search).get("parallels")
+      if (fromUrl != null) setMode(parseParallelsMode(fromUrl))
+      else setMode(parseParallelsMode(window.localStorage.getItem(`${PARALLELS_LS_KEY}:${collectionUrlSlug}`)))
+    } catch { /* URL/localStorage unavailable — stay on "all" */ }
+    // The first load waits for this, so a shared ?parallels=exclude link does
+    // not first fetch (and flash) the per-edition view.
+    setModeReady(true)
+  }, [collectionUrlSlug])
+
+  // Whether to offer the toggle is a property of the data, not of the slug.
+  useEffect(() => {
+    let cancelled = false
+    const p = new URLSearchParams({ collection: collectionUrlSlug, probe: "1" })
+    fetch(`/api/entity/team-checklist-plays?${p.toString()}`, { cache: "no-store" })
+      .then(async r => {
+        if (!r.ok) return
+        const j = await r.json()
+        if (!cancelled && j && typeof j.has_parallels === "boolean") setCollectionHasParallels(j.has_parallels)
+      })
+      .catch(() => { /* unknown: the toggle stays hidden unless the URL asked for it */ })
+    return () => { cancelled = true }
+  }, [collectionUrlSlug])
+
+  function changeMode(next: ParallelsMode) {
+    setMode(next)
+    try {
+      const u = new URL(window.location.href)
+      if (next === "exclude") u.searchParams.set("parallels", "exclude")
+      else u.searchParams.delete("parallels")
+      window.history.replaceState(window.history.state, "", u.toString())
+    } catch { /* ignore */ }
+    try { window.localStorage.setItem(`${PARALLELS_LS_KEY}:${collectionUrlSlug}`, next) } catch { /* ignore */ }
+  }
 
   // Restore a previously-pasted wallet so it carries across team pages.
   useEffect(() => {
@@ -162,10 +232,58 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
     return `/api/entity/team-checklist-progress?${p.toString()}`
   }, [collectionUrlSlug, teamSlug])
 
-  // Primary load (page 0) + progress for the active (scope, wallet).
-  const loadScope = useCallback(async (s: Scope, w: string | null) => {
+  const playsUrl = useCallback((s: Scope, w: string | null) => {
+    const p = new URLSearchParams({ collection: collectionUrlSlug, slug: teamSlug, scope: s })
+    if (w) p.set("wallet", w)
+    return `/api/entity/team-checklist-plays?${p.toString()}`
+  }, [collectionUrlSlug, teamSlug])
+
+  const deriveSeries = useCallback((s: Scope, safe: ChecklistTile[]) => {
+    // Derive series chips from the first all_time fetch (when not provided).
+    if (s === "all_time" && (!seriesProp || seriesProp.length === 0)) {
+      setSeriesOptions(prev => {
+        if (prev.length > 0) return prev
+        const seen = new Set<number>()
+        for (const r of safe) {
+          if (typeof r.series_num === "number") seen.add(r.series_num)
+        }
+        const arr = Array.from(seen)
+        if (isTopShot) {
+          return arr.sort((a, b) => TOPSHOT_SERIES_ORDER.indexOf(a) - TOPSHOT_SERIES_ORDER.indexOf(b))
+        }
+        return arr.sort((a, b) => b - a)
+      })
+    }
+  }, [seriesProp, isTopShot])
+
+  // Primary load (page 0) + progress for the active (scope, wallet, mode).
+  const loadScope = useCallback(async (s: Scope, w: string | null, m: ParallelsMode) => {
     const myReq = ++reqIdRef.current
     setLoading(true)
+    if (m === "exclude") {
+      // ONE read feeds both the header and the tiles here, so it gates both: a
+      // failed read shows the failure state, never a "0 plays / $0" header.
+      try {
+        const r = await fetch(playsUrl(s, w), { cache: "no-store" })
+        const j: PlaysResponse | null = r.ok ? await r.json() : null
+        if (myReq !== reqIdRef.current) return
+        const ok = !!j && Array.isArray(j.plays) && !!j.progress
+        const plays = ok ? j!.plays : []
+        setFailed(!ok)
+        setPageFailed(false)
+        setAllPlays(plays)
+        setVisible(PAGE_SIZE)
+        setRows(plays.slice(0, PAGE_SIZE))
+        setExhausted(plays.length <= PAGE_SIZE)
+        setProgress(ok ? j!.progress : null)
+        if (ok) deriveSeries(s, plays)
+      } catch {
+        if (myReq === reqIdRef.current) { setFailed(true); setRows([]); setAllPlays([]); setProgress(null); setExhausted(true) }
+      } finally {
+        if (myReq === reqIdRef.current) setLoading(false)
+      }
+      return
+    }
     try {
       const [cRes, pRes] = await Promise.all([
         fetch(checklistUrl(s, w, 0), { cache: "no-store" }),
@@ -183,30 +301,18 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
       setRows(safe)
       setExhausted(safe.length < PAGE_SIZE)
       setProgress(pJson)
-
-      // Derive series chips from the first all_time fetch (when not provided).
-      if (s === "all_time" && (!seriesProp || seriesProp.length === 0)) {
-        setSeriesOptions(prev => {
-          if (prev.length > 0) return prev
-          const seen = new Set<number>()
-          for (const r of safe) {
-            if (typeof r.series_num === "number") seen.add(r.series_num)
-          }
-          const arr = Array.from(seen)
-          if (isTopShot) {
-            return arr.sort((a, b) => TOPSHOT_SERIES_ORDER.indexOf(a) - TOPSHOT_SERIES_ORDER.indexOf(b))
-          }
-          return arr.sort((a, b) => b - a)
-        })
-      }
+      deriveSeries(s, safe)
     } catch {
       if (myReq === reqIdRef.current) { setFailed(true); setRows([]); setProgress(null); setExhausted(true) }
     } finally {
       if (myReq === reqIdRef.current) setLoading(false)
     }
-  }, [checklistUrl, progressUrl, seriesProp, isTopShot])
+  }, [checklistUrl, progressUrl, playsUrl, deriveSeries])
 
-  useEffect(() => { loadScope(scope, wallet) }, [scope, wallet, loadScope])
+  useEffect(() => {
+    if (!modeReady) return
+    loadScope(scope, wallet, mode)
+  }, [scope, wallet, mode, modeReady, loadScope])
 
   // Indexing flow: a wallet that isn't cached yet → warm wmc via the existing
   // public wallet-search path (fire-once per wallet), then poll progress back.
@@ -235,13 +341,21 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
     if (pollCountRef.current >= MAX_INDEX_POLLS) { setIndexing(false); return }
     const id = window.setTimeout(() => {
       pollCountRef.current += 1
-      loadScope(scope, wallet)
+      loadScope(scope, wallet, mode)
     }, INDEX_POLL_MS)
     return () => window.clearTimeout(id)
-  }, [wallet, progress, scope, collectionUrlSlug, loadScope, isSolana])
+  }, [wallet, progress, scope, mode, collectionUrlSlug, loadScope, isSolana])
 
   async function loadMore() {
     if (loadingMore || exhausted || loading) return
+    if (mode === "exclude") {
+      // The whole grouped list is already here — reveal the next slice.
+      const next = visible + PAGE_SIZE
+      setVisible(next)
+      setRows(allPlays.slice(0, next))
+      setExhausted(next >= allPlays.length)
+      return
+    }
     setLoadingMore(true)
     try {
       const r = await fetch(checklistUrl(scope, wallet, rows.length), { cache: "no-store" })
@@ -308,6 +422,12 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
   // index is warming, when the status line is the only honest thing to show.
   const hideWalletCard = hidePasteWhileResolving || (trackingOwn && !indexing && !walletError)
   const staleNote = progress && progress.stale_missing_pct != null && progress.stale_missing_pct >= 15
+  const excluding = mode === "exclude"
+  const unit = excluding ? "plays" : "editions"
+  const unpricedMissing = excluding ? (progress?.unpriced_missing_count ?? 0) : 0
+  // Offer the switch when the data has parallels — and always once a link has
+  // turned it on, so the reader can turn it back off.
+  const showParallelsToggle = collectionHasParallels === true || excluding
 
   return (
     <div>
@@ -326,6 +446,19 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
         })}
       </div>
 
+      {/* ── Parallels toggle ───────────────────────────────────────────────── */}
+      {showParallelsToggle && (
+        <div role="group" aria-label="Count parallels" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+          <ScopeChip active={!excluding} onClick={() => changeMode("all")}>All moments</ScopeChip>
+          <ScopeChip active={excluding} onClick={() => changeMode("exclude")}>Ignore parallels</ScopeChip>
+          {excluding && (
+            <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
+              A play counts as collected when you own any version of it.
+            </span>
+          )}
+        </div>
+      )}
+
       {/* ── Progress header ───────────────────────────────────────────────── */}
       {progress && progress.total > 0 && (
         <div className="rpc-card" style={{ padding: 16, marginBottom: 14, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -335,7 +468,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
                 {hasWallet ? "Owned" : "Checklist"}
               </div>
               <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>
-                {hasWallet ? `${fmtCount(progress.owned)} / ${fmtCount(progress.total)}` : `${fmtCount(progress.total)} editions`}
+                {hasWallet ? `${fmtCount(progress.owned)} / ${fmtCount(progress.total)}` : `${fmtCount(progress.total)} ${unit}`}
                 {hasWallet && (
                   <span className="rpc-mono" style={{ fontSize: 13, color: "var(--rpc-red)", marginLeft: 8 }}>{pct}%</span>
                 )}
@@ -353,6 +486,11 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
               <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>
                 {fmtUsd(progress.cost_to_complete_usd)}
               </div>
+              {unpricedMissing > 0 && (
+                <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 2 }}>
+                  + {fmtCount(unpricedMissing)} unpriced {unpricedMissing === 1 ? "play" : "plays"} not included
+                </div>
+              )}
             </div>
           </div>
 
@@ -385,7 +523,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
 
           {staleNote && (
             <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
-              {progress!.stale_missing_pct}% of missing editions have stale or low-confidence pricing — cost-to-complete is an estimate from recent lows and FMV, not a quote.
+              {progress!.stale_missing_pct}% of missing {unit} have stale or low-confidence pricing — cost-to-complete is an estimate from recent lows and FMV, not a quote.
             </div>
           )}
         </div>
@@ -443,7 +581,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
       ) : failed ? (
         <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>Couldn&apos;t load the checklist right now. This is a temporary load failure, not an empty scope — reload shortly.</div>
       ) : rows.length === 0 ? (
-        <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No editions for this scope.</div>
+        <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No {unit} for this scope.</div>
       ) : (
         <>
           {/* Three-state legend (mirrors Top Shot's owned/locked/missing). */}
@@ -520,7 +658,8 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
   const locked = owned && e.owned_locked === true && collectionHasLocking(collectionUrlSlug)
   const ownState: OwnState = locked ? "locked" : owned ? "owned" : "missing"
   const badgeStyle = OWN_STYLE[ownState]
-  const addCost = e.floor_usd ?? e.fmv_usd ?? null
+  // A play tile quotes its cheapest version; an edition tile its own floor/FMV.
+  const addCost = e.play_cost_usd !== undefined ? e.play_cost_usd : (e.floor_usd ?? e.fmv_usd ?? null)
   // Missing tiles are dimmed slightly so owned pops against them.
   const dim = hasWallet && !owned
 
@@ -570,6 +709,13 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
         <TierBadge tier={e.tier} />
         {e.series_label && <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{e.series_label}</span>}
+        {typeof e.version_count === "number" && e.version_count > 1 && (
+          <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
+            {hasWallet && typeof e.owned_versions === "number"
+              ? `${e.owned_versions}/${e.version_count} versions`
+              : `${e.version_count} versions`}
+          </span>
+        )}
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>

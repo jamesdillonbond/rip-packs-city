@@ -49,6 +49,10 @@ function routeFetch(opts: { checklist: (url: string) => Promise<Response>; progr
   return vi.fn((url: string, init?: any) => {
     if (url.includes("/api/profile/me")) return (opts.me ?? (() => res(true, { user: null })))()
     if (url.includes("/api/wallet-search")) return (opts.walletSearch ?? (() => res(true, {})))()
+    // The parallels-toggle probe (2026-09-29) — its own route, answered here so it
+    // never consumes a scripted checklist response. Toggle cases live in
+    // component-TeamChecklist-parallels.test.tsx.
+    if (url.includes("team-checklist-plays")) return res(true, { has_parallels: false })
     if (url.includes("team-checklist-progress")) return opts.progress(url)
     return opts.checklist(url)
   })
