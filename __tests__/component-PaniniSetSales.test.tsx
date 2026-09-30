@@ -25,7 +25,7 @@ afterEach(cleanup)
 describe("PaniniSetSalesBody", () => {
   it("a failed read says couldn't load — no counts, no $0, no 'no sale'", () => {
     const c = render(<PaniniSetSalesBody collection="panini-blockchain" res={null} />).container
-    expect(c.querySelector('[role="alert"]')?.textContent).toContain("not the same as there being no sales")
+    expect(c.querySelector('[role="alert"]')?.textContent).toContain("does not mean the set has no sales")
     expect(c.textContent).not.toMatch(/\$0\b|No sale|Sales · 30 days/)
   })
 

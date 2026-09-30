@@ -14,7 +14,7 @@ import type { PaniniSetSales, PaniniSetSale } from "@/lib/panini/set-sales"
 export default function PaniniSetSalesBody({ collection, res }: { collection: string; res: PaniniSetSales | null }) {
   const muted: React.CSSProperties = { padding: "4px 0 8px", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }
   if (res === null) {
-    return <div role="alert" style={muted}>Couldn&rsquo;t load this set&rsquo;s sales — refresh to try again. This is not the same as there being no sales.</div>
+    return <div role="alert" style={muted}>Couldn&rsquo;t load this set&rsquo;s sales — refresh to try again. This does not mean the set has no sales.</div>
   }
   const ptDay = (iso: string) => {
     const t = Date.parse(iso)
