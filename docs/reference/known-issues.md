@@ -458,6 +458,8 @@ File size is #14's subject, not this one's. ⓘ Earlier opening follows. — **O
     | **invoked, but writes no `pipeline_runs` row of its own** | **3** | `enrich-ufc-wallet` (← `lib/chains/flow/wallet-backfill-helpers.ts`), `topshot-insider-detect-patterns` (← `app/api/cron/…/route.ts`), `ingest-topshot-atlas-pool` (← `scripts/atlas-pool-harvest.ps1`, i.e. the Task-Scheduler caller CLAUDE.md warns is invisible to every catalogue) |
     | **dormant — no pg_cron job, no repo caller** | **8** | `backfill-allday-listing-serials`, `backfill-topshot-base-parallel-probe`, `hybrid-custody-backfill`, `scan-pinnacle-wallet`, `scan-ufc-wallet`, `seed-allday-pack-distributions`, `seed-topshot-pack-distributions`, `special-serial-sweep` |
 
+    ↳ **2026-09-29: `hybrid-custody-backfill` is no longer dormant** — pg_cron jobs 642 (daily) and 646–648 (weekly pages), deployed from `main` via `edge-fn-deploy.yml` (read-back verified). The table above is the dated snapshot; its count is left as measured.
+
     🚨 **THE RISK IS THE MIDDLE ROW, AND IT IS THREE, NOT TWENTY.** Those three are provably running code that is not `main` **and** are invisible to the pipeline board, so their staleness shows on neither instrument — the drift detector says *drifted* without saying *invoked*, and `pipeline_runs` says nothing at all.
 
     ✅ **The top row REFUTES the workflow's own framing for 9 of 20.** Its failure message says omitting the import map *"turns a stale function into a hard-down one"* — but these nine are executing at 88–100% ok. The deployed artifacts were built when their sources did not need a map; the sources have since gained a bare specifier. **Stale, not down.** ⛔ Do not quote "20 functions are broken" — nothing measured says that.
