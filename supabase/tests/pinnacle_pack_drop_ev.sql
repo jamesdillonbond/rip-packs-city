@@ -20,8 +20,11 @@
 --   5. analytics_packs_top_ev lists a Pinnacle drop once, never a sub-pool,
 --      and never an ask-driven drop.
 --
--- The view and function DDL below are VERBATIM from the committed migration
--- (supabase/migrations/20260929025310_audit_20260928_pinnacle_pack_ev_at_drop_grain.sql).
+-- The view and function DDL below are VERBATIM from the committed migrations
+-- (supabase/migrations/20260929025310_audit_20260928_pinnacle_pack_ev_at_drop_grain.sql;
+-- analytics_packs_summary since
+-- supabase/migrations/20260930003500_audit_20260929_analytics_packs_summary_reads_latest_snapshot_index_only.sql).
+--   6. analytics_packs_summary reads each pack at its NEWEST snapshot (2026-09-29).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -146,9 +149,19 @@ AS $function$
 DECLARE
   result jsonb;
 BEGIN
-  WITH latest AS (
-    -- Latest snapshot per pack via the (pack_listing_id, snapshotted_at DESC)
-    -- index; replaces the full-table ROW_NUMBER window sort.
+  WITH latest_key AS MATERIALIZED (
+    -- Each pack's newest snapshot, found on the (pack_listing_id, snapshotted_at DESC)
+    -- index alone. 2026-09-29: selecting every column inside this DISTINCT ON made the
+    -- planner heap-fetch all ~408k history rows to keep ~4.7k (412k buffers a call,
+    -- 2,027 calls, max 30 s = the service_role timeout); the key pass is index-only
+    -- (~9.7k buffers) and only the winners are fetched below (~25k in all).
+    SELECT DISTINCT ON (h.pack_listing_id) h.pack_listing_id, h.snapshotted_at
+    FROM pack_ev_history h
+    ORDER BY h.pack_listing_id, h.snapshotted_at DESC
+  ),
+  latest AS (
+    -- (pack_listing_id, snapshotted_at) is unique today (407,735 rows / keys) but no
+    -- constraint says so; the DISTINCT ON keeps one row per pack if that ever changes.
     SELECT DISTINCT ON (pe.pack_listing_id)
       pe.collection_id,
       pe.pack_listing_id,
@@ -160,8 +173,10 @@ BEGIN
       pe.total_unopened,
       pe.depletion_pct,
       pe.snapshotted_at
-    FROM pack_ev_history pe
-    ORDER BY pe.pack_listing_id, pe.snapshotted_at DESC
+    FROM latest_key k
+    JOIN pack_ev_history pe
+      ON pe.pack_listing_id = k.pack_listing_id AND pe.snapshotted_at = k.snapshotted_at
+    ORDER BY pe.pack_listing_id
   ),
   named AS (
     SELECT
@@ -360,6 +375,10 @@ INSERT INTO public.v_pinnacle_pack_ev_corrected VALUES
 INSERT INTO public.pack_ev_history (collection_id, pack_listing_id, pack_name, pack_price, pack_ev, value_ratio, is_positive_ev, fmv_coverage_pct, edition_count, total_unopened) VALUES
   (:PIN::uuid, 'plid-a3', 'Splash - Standard - Quinova', 4.99, 1995.01, 400.8, true, 100, 4, 1),
   (:TS::uuid,  'plid-ts', 'Base Set', 9.99, 5, 1.5, true, 100, 20, 50);
+-- 2026-09-29: an OLDER snapshot of the same Top Shot listing at another price. The summary
+-- must count the pack once and read its NEWEST snapshot (9.99), never the older 3.99.
+INSERT INTO public.pack_ev_history (collection_id, pack_listing_id, pack_name, pack_price, pack_ev, value_ratio, is_positive_ev, fmv_coverage_pct, edition_count, total_unopened, snapshotted_at) VALUES
+  (:TS::uuid,  'plid-ts', 'Base Set', 3.99, 5, 1.2, true, 100, 20, 60, now() - interval '1 day');
 
 -- Claim 1: (90*10 + 9*40 + 1*2000) / 100 = 32.60, on every member.
 SELECT _assert_eq((SELECT string_agg(DISTINCT gross_ev::text, ',') FROM public.v_pinnacle_pack_drop_ev WHERE drop_title = 'Splash - Standard'), '32.60', 'drop EV is the pack-weighted mean of its pools');
@@ -378,6 +397,7 @@ SELECT _assert_eq((public.analytics_packs_summary(NULL)->'collections' ? 'disney
 SELECT _assert_eq((public.analytics_packs_summary(ARRAY['pinnacle'])->'collections'->'pinnacle'->>'positive_ev_packs'), '2', 'Splash (sales-backed) and Treasures are +EV; Dusk is not');
 SELECT _assert_eq((public.analytics_packs_summary(ARRAY['pinnacle'])->'collections'->'pinnacle'->>'avg_value_ratio'), '2.00', 'the average ratio is over non-ask-driven packs only (Treasures 99.90/49.95)');
 SELECT _assert_eq((public.analytics_packs_summary(ARRAY['topshot'])->'collections'->'topshot'->>'packs_tracked'), '1', 'CONTROL: Top Shot unchanged');
+SELECT _assert_eq((public.analytics_packs_summary(ARRAY['topshot'])->'collections'->'topshot'->>'median_pack_price') || '/' || (public.analytics_packs_summary(ARRAY['topshot'])->'collections'->'topshot'->>'total_unopened'), '9.99/50', 'each pack is read at its NEWEST snapshot');
 
 -- Claim 5: no sub-pool, no ask-driven drop; the single pack is listed.
 SELECT _assert_eq((SELECT count(*)::text FROM public.analytics_packs_top_ev(ARRAY['pinnacle'], 0, 5000, 0, 0, 'pumping', 25) WHERE pack_name ILIKE '%Quinova%'), '0', 'no sub-pool row');

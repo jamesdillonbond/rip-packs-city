@@ -353,7 +353,7 @@ const PINS = [
     fn: "analytics_packs_summary",
     test: "supabase/tests/pinnacle_pack_drop_ev.sql",
     // 2026-09-28 (#157): Pinnacle packs at DROP grain (v_pinnacle_pack_drop_ev).
-    migration: "supabase/migrations/20260929025310_audit_20260928_pinnacle_pack_ev_at_drop_grain.sql",
+    migration: "supabase/migrations/20260930003500_audit_20260929_analytics_packs_summary_reads_latest_snapshot_index_only.sql",
   },
   {
     fn: "analytics_packs_top_ev",
