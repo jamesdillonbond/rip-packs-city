@@ -1641,7 +1641,7 @@ const PINS = [
     fn: "record_link_state",
     test: "supabase/tests/record_link_state.sql",
     migration:
-      "supabase/migrations/20260802000200_audit_20260802_snapshot_record_link_state.sql",
+      "supabase/migrations/20260929235500_audit_20260929_record_link_state_script_write_keeps_event_provenance.sql",
   },
   {
     fn: "fulfill_redemption",

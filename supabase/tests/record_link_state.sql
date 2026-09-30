@@ -5,10 +5,11 @@
 -- captures first_linked_at while active=false leaves it NULL; state advances ONLY
 -- on a >= block-height event (an out-of-order lower-block replay never reverts a
 -- link); first_linked_at is captured once and never overwritten; source priority
--- never downgrades (event > script > manual); link_uuid is COALESCEd, never nulled.
+-- never downgrades (event > script > manual); link_uuid is COALESCEd, never nulled;
+-- a NULL-block (script) write never touches last_event_at/tx/block (2026-09-29).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260802000200_audit_20260802_snapshot_record_link_state.sql);
+-- (supabase/migrations/20260929235500_audit_20260929_record_link_state_script_write_keeps_event_provenance.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -81,24 +82,31 @@ BEGIN
     link_uuid        = COALESCE(EXCLUDED.link_uuid, linked_accounts.link_uuid),
     -- first_linked_at is captured on the first observed active=true event and never overwritten
     first_linked_at  = COALESCE(linked_accounts.first_linked_at, EXCLUDED.first_linked_at),
-    -- last_event fields advance monotonically by block height
+    -- last_event fields advance monotonically by block height, and ONLY on an
+    -- event: a NULL-block write (a script read of current state) never touches
+    -- them, so it cannot wipe an event row's provenance or re-stamp the
+    -- last_event_at that resolve_canonical_owner orders parents by (2026-09-29:
+    -- the backfill NULLed block/tx on 36 event rows).
     last_event_at    = CASE
+      WHEN p_event_block IS NULL
+      THEN linked_accounts.last_event_at
       WHEN linked_accounts.last_event_block IS NULL
-        OR p_event_block IS NULL
         OR p_event_block >= linked_accounts.last_event_block
       THEN EXCLUDED.last_event_at
       ELSE linked_accounts.last_event_at
     END,
     last_event_tx    = CASE
+      WHEN p_event_block IS NULL
+      THEN linked_accounts.last_event_tx
       WHEN linked_accounts.last_event_block IS NULL
-        OR p_event_block IS NULL
         OR p_event_block >= linked_accounts.last_event_block
       THEN EXCLUDED.last_event_tx
       ELSE linked_accounts.last_event_tx
     END,
     last_event_block = CASE
+      WHEN p_event_block IS NULL
+      THEN linked_accounts.last_event_block
       WHEN linked_accounts.last_event_block IS NULL
-        OR p_event_block IS NULL
         OR p_event_block >= linked_accounts.last_event_block
       THEN EXCLUDED.last_event_block
       ELSE linked_accounts.last_event_block
@@ -180,6 +188,31 @@ SELECT _assert_eq((SELECT source FROM linked_accounts WHERE parent_addr='0xCC'),
 SELECT record_link_state('0xCC','0xcc','owned',true, NULL, 'txc3', 300, 'manual', '2026-01-03T00:00:00Z');
 SELECT _assert_eq((SELECT source FROM linked_accounts WHERE parent_addr='0xCC'), 'event',
   'event is never downgraded to manual');
+
+-- ── a NULL-block (script) write never touches an EVENT row's provenance ─────
+-- 2026-09-29: the child-side backfill NULLed last_event_block/tx and re-stamped
+-- last_event_at on 36 event rows. It may still set current state (active).
+SELECT record_link_state('0xDD','0xdd','restricted',false, NULL, 'txd', 500, 'event', '2026-02-01T00:00:00Z');
+SELECT record_link_state('0xDD','0xdd','restricted',true, NULL, NULL, NULL, 'script', '2026-09-29T00:00:00Z');
+SELECT _assert_eq((SELECT last_event_block::text FROM linked_accounts WHERE parent_addr='0xDD'), '500',
+  'script write keeps the event row''s last_event_block');
+SELECT _assert_eq((SELECT last_event_tx FROM linked_accounts WHERE parent_addr='0xDD'), 'txd',
+  'script write keeps the event row''s last_event_tx');
+SELECT _assert_eq((SELECT to_char(last_event_at AT TIME ZONE 'UTC','YYYY-MM-DD') FROM linked_accounts WHERE parent_addr='0xDD'),
+  '2026-02-01', 'script write keeps the event row''s last_event_at');
+SELECT _assert_eq((SELECT active::text FROM linked_accounts WHERE parent_addr='0xDD'), 'true',
+  'script write still sets current state (active)');
+SELECT _assert_eq((SELECT source FROM linked_accounts WHERE parent_addr='0xDD'), 'event', 'source stays event');
+-- a later real event still advances past it
+SELECT record_link_state('0xDD','0xdd','restricted',false, NULL, 'txd2', 600, 'event', '2026-10-01T00:00:00Z');
+SELECT _assert_eq((SELECT last_event_block::text FROM linked_accounts WHERE parent_addr='0xDD'), '600',
+  'a newer event still advances last_event_block');
+
+-- ── a repeat script write keeps a script row's last_event_at (stable ordering) ─
+SELECT record_link_state('0xEE','0xee','restricted',true, NULL, NULL, NULL, 'script', '2026-09-29T00:00:00Z');
+SELECT record_link_state('0xEE','0xee','restricted',true, NULL, NULL, NULL, 'script', '2026-09-30T00:00:00Z');
+SELECT _assert_eq((SELECT to_char(last_event_at AT TIME ZONE 'UTC','YYYY-MM-DD') FROM linked_accounts WHERE parent_addr='0xEE'),
+  '2026-09-29', 'a re-probe does not re-stamp last_event_at');
 
 SELECT '✓ record_link_state invariants pass' AS result;
 ROLLBACK;
