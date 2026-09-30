@@ -46,8 +46,17 @@ export interface EditionFmvEstimate {
 const COLUMNS =
   "edition_id, estimate_usd, range_low_usd, range_high_usd, basis, base_edition_id, base_fmv_usd, ratio, subedition_name, tier, cell_n, capped_at_ask, computed_at"
 
-/** An estimate older than this is not shown — the base FMV it multiplies has moved on. */
-export const ESTIMATE_MAX_AGE_HOURS = 72
+/**
+ * An estimate older than this is not shown — the base FMV it multiplies has
+ * moved on. The refresh is daily, so this tolerates exactly one missed run.
+ */
+export const ESTIMATE_MAX_AGE_HOURS = 48
+
+/**
+ * Below this an estimate is not worth a card: a "$0.22" guess for a common
+ * parallel informs no decision and dilutes the ones that do (Trevor, 09-30).
+ */
+export const ESTIMATE_MIN_USD = 1
 
 const num = (v: unknown): number | null => {
   const n = typeof v === "string" ? Number(v) : v
@@ -67,7 +76,7 @@ export function parseEstimateRow(row: unknown, now: number = Date.now()): Editio
   const ratio = num(r.ratio)
   const cellN = num(r.cell_n)
   const computedAt = typeof r.computed_at === "string" ? r.computed_at : null
-  if (estimate == null || estimate <= 0 || base == null || base <= 0 || ratio == null || ratio <= 0) return null
+  if (estimate == null || estimate < ESTIMATE_MIN_USD || base == null || base <= 0 || ratio == null || ratio <= 0) return null
   if (cellN == null || cellN <= 0 || r.basis !== "parallel_ratio") return null
   if (typeof r.edition_id !== "string" || typeof r.base_edition_id !== "string") return null
   if (typeof r.subedition_name !== "string" || !r.subedition_name.trim()) return null

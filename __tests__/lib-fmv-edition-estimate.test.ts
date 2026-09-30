@@ -17,6 +17,7 @@ vi.mock("@/lib/supabase", () => ({
 
 import {
   ESTIMATE_MAX_AGE_HOURS,
+  ESTIMATE_MIN_USD,
   estimateBasisText,
   estimateForModel,
   fetchEditionFmvEstimate,
@@ -57,6 +58,7 @@ describe("parseEstimateRow", () => {
   it.each([
     ["no estimate", { estimate_usd: null }],
     ["zero estimate", { estimate_usd: 0 }],
+    ["sub-$1 estimate", { estimate_usd: "0.22", range_low_usd: "0.1", range_high_usd: "0.4" }],
     ["no base FMV", { base_fmv_usd: null }],
     ["no ratio", { ratio: null }],
     ["no cell size", { cell_n: 0 }],
@@ -79,6 +81,12 @@ describe("parseEstimateRow", () => {
     expect(e.estimate_usd).toBe(34.84)
     expect(e.range_low_usd).toBeNull()
     expect(e.range_high_usd).toBeNull()
+  })
+
+  it("the minimum is inclusive at $1 and the age limit tolerates one missed daily run", () => {
+    expect(ESTIMATE_MIN_USD).toBe(1)
+    expect(ESTIMATE_MAX_AGE_HOURS).toBe(48)
+    expect(parseEstimateRow(row({ estimate_usd: 1, range_low_usd: 0.8, range_high_usd: 1.2 }), NOW)).not.toBeNull()
   })
 
   it("null / non-object input is no estimate", () => {

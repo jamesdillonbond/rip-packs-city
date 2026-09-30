@@ -15,6 +15,21 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-30. A separate, labelled ESTIMATE for thin Top Shot parallels
+    // (base FMV x typical parallel premium). Pins the time-matched ratio cells, the
+    // leave-one-edition-out error on both parity branches, the n>=30 / ln(1.5) gate,
+    // the fresh-ask cap, write-first-then-retire, fail-closed on stale cells, and a
+    // recorded 57014. Never touches fmv_snapshots / edition_fmv_current.
+    fn: "compute_topshot_parallel_ratio_cells",
+    test: "supabase/tests/refresh_edition_fmv_estimates.sql",
+    migration: "supabase/migrations/20260930133000_audit_20260930_edition_fmv_estimates_from_parallel_ratios.sql",
+  },
+  {
+    fn: "refresh_edition_fmv_estimates",
+    test: "supabase/tests/refresh_edition_fmv_estimates.sql",
+    migration: "supabase/migrations/20260930133000_audit_20260930_edition_fmv_estimates_from_parallel_ratios.sql",
+  },
+  {
     // Added 2026-09-29. Community pack giveaways (v1, one admin). Pins that a
     // draft copies only the admin's own UNLOCKED same-collection cache rows, a
     // seal covers the pool exactly once, and a claim is open-only, one per

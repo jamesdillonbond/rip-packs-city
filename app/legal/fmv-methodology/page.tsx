@@ -220,7 +220,9 @@ export default function FmvMethodologyPage() {
         <li>
           We only use a premium that held up when tested on editions it was not
           built from (typically within 1.5×) and that rests on at least 30
-          editions. Noisy combinations get no estimate at all.
+          editions. Noisy combinations get no estimate at all, and neither do
+          one-of-ones — a 1/1 is priced by who wants that card, not by a
+          multiple of its full edition.
         </li>
         <li>
           An estimate is never above the lowest live ask, and it is always
