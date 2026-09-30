@@ -10,6 +10,13 @@ interface Tool {
   href: string;
   title: string;
   blurb: string;
+  /**
+   * Open with a FULL page load. A client-side <Link> keeps THIS page's
+   * Content-Security-Policy, and proxy.ts gives /admin/giveaways its own (the
+   * only policy that allows Flow's wallet picker). Via <Link>, Chrome refused
+   * to frame fcl-discovery.onflow.org under /admin's policy (Trevor, 2026-09-29).
+   */
+  fullLoad?: boolean;
 }
 
 const TOOLS: Tool[] = [
@@ -67,6 +74,7 @@ const TOOLS: Tool[] = [
     href: "/admin/giveaways",
     title: "Pack Giveaways",
     blurb: "Build free packs from your unlocked Top Shot moments, seal, open, close, and verify deliveries on chain.",
+    fullLoad: true,
   },
 ];
 
@@ -98,18 +106,15 @@ export default function AdminIndexPage() {
           </div>
         </header>
         <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {TOOLS.map((tool) => (
-            <Link
-              key={tool.href}
-              href={tool.href}
-              className="rpc-card"
-              style={{
-                padding: "16px 18px",
-                textDecoration: "none",
-                color: "inherit",
-                display: "block",
-              }}
-            >
+          {TOOLS.map((tool) => {
+            const cardStyle = {
+              padding: "16px 18px",
+              textDecoration: "none",
+              color: "inherit",
+              display: "block",
+            };
+            const body = (
+              <>
               <div
                 className="rpc-heading"
                 style={{ fontSize: 18, color: "var(--rpc-red)", marginBottom: 4 }}
@@ -136,8 +141,18 @@ export default function AdminIndexPage() {
               >
                 {tool.href}
               </div>
-            </Link>
-          ))}
+              </>
+            );
+            return tool.fullLoad ? (
+              <a key={tool.href} href={tool.href} className="rpc-card" style={cardStyle}>
+                {body}
+              </a>
+            ) : (
+              <Link key={tool.href} href={tool.href} className="rpc-card" style={cardStyle}>
+                {body}
+              </Link>
+            );
+          })}
         </section>
       </main>
     </div>

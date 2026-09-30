@@ -45,6 +45,10 @@ describe("giveaways/admin-wallet", () => {
       expect(fcl.put).not.toHaveBeenCalled()
       expect(prepareWalletConnect("abc")).toBe(true)
       expect(fcl.put).toHaveBeenCalledWith("walletconnect.projectId", "abc")
+      // the WC loader queries discovery at once; unset, FCL throws an INVARIANT at page load
+      expect(fcl.put).toHaveBeenCalledWith("discovery.authn.endpoint", "https://fcl-discovery.onflow.org/api/authn")
+      const keys = fcl.put.mock.calls.map((c: unknown[]) => c[0])
+      expect(keys.indexOf("discovery.authn.endpoint")).toBeLessThan(keys.indexOf("walletconnect.projectId"))
     } finally {
       vi.unstubAllGlobals()
     }

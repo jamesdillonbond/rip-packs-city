@@ -31,9 +31,18 @@ const DISCOVERY = "https://fcl-discovery.onflow.org/authn"
  */
 export const WALLETCONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_ID ?? ""
 
+/**
+ * FCL's WalletConnect loader asks the discovery API which wallets exist as soon
+ * as the project id is set; without this endpoint it throws `INVARIANT
+ * "discovery.authn.endpoint" in config must be defined` at page load (Trevor's
+ * console, 2026-09-29). The host is already in this page's connect-src.
+ */
+export const DISCOVERY_AUTHN_ENDPOINT = "https://fcl-discovery.onflow.org/api/authn"
+
 export function prepareWalletConnect(projectId: string = WALLETCONNECT_PROJECT_ID): boolean {
   if (typeof window === "undefined" || !projectId) return false
   initFcl()
+  fcl.config().put("discovery.authn.endpoint", DISCOVERY_AUTHN_ENDPOINT)
   fcl.config().put("walletconnect.projectId", projectId)
   return true
 }
