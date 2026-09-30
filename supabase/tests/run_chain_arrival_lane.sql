@@ -28,7 +28,7 @@
 -- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
 -- seed_saved_wallet_chain_arrivals from
 -- 20260929180000_audit_20260929_chain_arrivals_for_every_saved_wallet_floor_check_first.sql;
--- run_chain_arrival_lane from 20260929190500_audit_20260929_chain_arrival_dispatch_round_robin_across_wallets.sql).
+-- run_chain_arrival_lane from 20260930003000_audit_20260929_chain_arrival_24_calls_per_node.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -93,7 +93,7 @@ SET statement_timeout TO '110s'
 AS $function$
 DECLARE
   v_started  timestamptz := clock_timestamp();
-  v_per_node constant int := 16;
+  v_per_node constant int := 24;
   v_max_att  constant int := 6;
   -- last height of mainnet24..27; a window never straddles one
   v_ends     constant bigint[] := ARRAY[85981134, 88226266, 130290658, 137390145]::bigint[];
@@ -525,10 +525,10 @@ DELETE FROM public.chain_arrival_probes WHERE status IN ('bisect', 'window');
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status) VALUES
   ('0x00000000000000bb', 20, 100000000, 166000000, 'floor'),
   ('0x00000000000000bb', 21, 100000000, 166000000, 'floor');
--- 16 narrower bisections on the same node: without floor priority they fill
--- mainnet26's cap of 16 and the floor check waits
+-- 24 narrower bisections on the same node: without floor priority they fill
+-- mainnet26's cap of 24 and the floor check waits
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
-SELECT '0x00000000000000bb', 900 + g, 100000000 + g * 10000, 100000000 + g * 10000 + 5000, 'bisect' FROM generate_series(1, 16) g;
+SELECT '0x00000000000000bb', 900 + g, 100000000 + g * 10000, 100000000 + g * 10000 + 5000, 'bisect' FROM generate_series(1, 24) g;
 DO $$
 DECLARE v jsonb; v_req bigint;
 BEGIN
@@ -540,7 +540,7 @@ BEGIN
                   'F1: a floor call reads AT lo');
   PERFORM _assert((SELECT url FROM net.calls WHERE id = v_req) = 'http://access-001.mainnet26.nodes.onflow.org:8070/v1/scripts?block_height=100000000',
                   'F1: on the node serving lo');
-  PERFORM _assert((SELECT count(*) = 16 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'), 'F2: the node''s cap of 16 binds');
+  PERFORM _assert((SELECT count(*) = 24 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'), 'F2: the node''s cap of 24 binds');
   PERFORM _assert(v_req IS NOT NULL, 'F2: the floor check is inside the cap, ahead of narrower bisections');
   INSERT INTO net._http_response (id, status_code, content)
   VALUES (v_req, 200, to_jsonb(translate(encode(convert_to('{"type":"Array","value":[{"type":"UInt64","value":"20"}]}', 'UTF8'), 'base64'), E'\n', ''))::text);
@@ -572,20 +572,20 @@ BEGIN
   PERFORM _assert((SELECT max(cardinality(pg_temp.call_ids(id))) = 500 FROM net.calls), 'R1: no call carries more than 500 ids');
 END $$;
 
--- F3: wallet A holds 20 narrow mainnet26 intervals, wallet B one wide one
+-- F3: wallet A holds 30 narrow mainnet26 intervals, wallet B one wide one
 DELETE FROM net.calls;
 DELETE FROM public.chain_arrival_probes;
 DELETE FROM public.chain_arrival_requests;
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
-SELECT '0x000000000000000a', g, 100000000 + g * 10000, 100000000 + g * 10000 + 5000, 'bisect' FROM generate_series(1, 20) g;
+SELECT '0x000000000000000a', g, 100000000 + g * 10000, 100000000 + g * 10000 + 5000, 'bisect' FROM generate_series(1, 30) g;
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
 VALUES ('0x000000000000000b', 99, 100000000, 129000000, 'bisect');
 DO $$
 BEGIN
   PERFORM public.run_chain_arrival_lane();
-  PERFORM _assert((SELECT count(*) = 16 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'), 'F3: the cap binds');
+  PERFORM _assert((SELECT count(*) = 24 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'), 'F3: the cap binds');
   PERFORM _assert((SELECT request_id IS NOT NULL FROM public.chain_arrival_probes WHERE wallet = '0x000000000000000b'),
-                  'F3: the wide interval of the other wallet is dispatched despite 20 narrower ones');
+                  'F3: the wide interval of the other wallet is dispatched despite 30 narrower ones');
 END $$;
 
 -- S1
