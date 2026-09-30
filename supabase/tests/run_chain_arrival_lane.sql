@@ -26,6 +26,9 @@
 --   G2. An interval wholly inside that gap, wider than 250 blocks, is WALKED:
 --       events of its top 250 blocks; no withdraw -> hi drops to the window's
 --       bottom; a withdraw -> done with that delivery; the bottom -> done.
+--   A1. A bisect's mid is the ALIGNED point of (lo, hi) (most trailing zero
+--       bits), and holdings calls group by (wallet, mid): one wallet's probes
+--       with different intervals share a call; each moves by its own interval.
 --   S1. The saved-wallet seed takes only unexplained held Top Shot moments
 --       (not an NFT pack pull, no pack-pull record, not a recorded purchase)
 --       at the floor, never another collection's id, never twice.
@@ -34,7 +37,7 @@
 -- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
 -- seed_saved_wallet_chain_arrivals from
 -- 20260929180000_audit_20260929_chain_arrivals_for_every_saved_wallet_floor_check_first.sql;
--- run_chain_arrival_lane from 20260930174000_audit_20260930_chain_arrival_walks_mainnet25s_script_gap_and_retries_503.sql).
+-- run_chain_arrival_lane from 20260930183000_audit_20260930_chain_arrival_aligned_bisection_shares_calls.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -302,21 +305,39 @@ BEGIN
              (1000 >> least(p.attempts, 4)) AS batch,
              -- the midpoint; an interval straddling a spork end splits AT it
              -- (a floor check reads AT lo)
+             -- 2026-09-30: otherwise the ALIGNED point of (lo, hi): the height in
+             -- it with the most trailing zero bits (clear every bit of hi - 1
+             -- below the highest bit where lo and hi - 1 differ). Probes with
+             -- different intervals then meet at the same heights, so a sold
+             -- moment (hi = just before ITS sale) shares calls with its
+             -- wallet's others instead of bisecting alone.
              CASE WHEN p.status = 'floor' THEN p.lo ELSE
              coalesce((SELECT min(e) FROM unnest(v_ends || v_dark_end) e WHERE e > p.lo AND e < p.hi AND p.status = 'bisect'),
-                      (p.lo + p.hi) / 2) END AS mid
+                      CASE WHEN p.status = 'bisect' AND p.hi - p.lo >= 2
+                           THEN ((p.hi - 1) >> (64 - position('1' IN (p.lo # (p.hi - 1))::bit(64)::text)))
+                                            << (64 - position('1' IN (p.lo # (p.hi - 1))::bit(64)::text))
+                           ELSE (p.lo + p.hi) / 2 END) END AS mid
         FROM public.chain_arrival_probes p
        WHERE p.request_id IS NULL AND p.status IN ('floor', 'bisect', 'window', 'walk')
-    ), grp AS (
-      SELECT status, wallet, lo, hi, mid, batch,
-             (row_number() OVER (PARTITION BY status, wallet, lo, hi, batch ORDER BY nft_id) - 1) / batch AS chunk,
-             nft_id
+    ), keyed AS (
+      -- 2026-09-30: a holdings script asks "held at mid?", which does not
+      -- depend on the interval, so bisect and floor calls group by (wallet,
+      -- mid); an events read (window, walk) still needs one (lo, hi)
+      SELECT pend.*,
+             CASE WHEN status IN ('window', 'walk') THEN lo ELSE mid END AS gk_lo,
+             CASE WHEN status IN ('window', 'walk') THEN hi ELSE mid END AS gk_hi
         FROM pend
+    ), grp AS (
+      SELECT status, wallet, lo, hi, gk_lo, gk_hi, mid, batch,
+             (row_number() OVER (PARTITION BY status, wallet, gk_lo, gk_hi, mid, batch ORDER BY nft_id) - 1) / batch AS chunk,
+             nft_id
+        FROM keyed
     ), calls AS (
-      SELECT status, wallet, lo, hi, mid, batch, chunk, array_agg(nft_id ORDER BY nft_id) AS ids,
-             CASE WHEN status IN ('bisect', 'floor') THEN mid WHEN status = 'walk' THEN hi ELSE lo + 1 END AS at_h
+      SELECT status, wallet, min(lo) AS lo, max(hi) AS hi, min(hi - lo) AS width, mid, batch, chunk,
+             array_agg(nft_id ORDER BY nft_id) AS ids,
+             CASE WHEN status IN ('bisect', 'floor') THEN mid WHEN status = 'walk' THEN max(hi) ELSE min(lo) + 1 END AS at_h
         FROM grp
-       GROUP BY status, wallet, lo, hi, mid, batch, chunk
+       GROUP BY status, wallet, gk_lo, gk_hi, mid, batch, chunk
     ), routed AS (
       SELECT c.*,
              CASE WHEN c.at_h <= 85981134  THEN 'http://access-001.mainnet24.nodes.onflow.org:8070'
@@ -327,14 +348,14 @@ BEGIN
         FROM calls c
     ), per_wallet AS (
       -- 2026-09-29: each wallet's own queue, narrowest first
-      SELECT rt.*, row_number() OVER (PARTITION BY rt.node, rt.wallet ORDER BY (rt.status <> 'floor'), rt.hi - rt.lo, rt.lo) AS wrn
+      SELECT rt.*, row_number() OVER (PARTITION BY rt.node, rt.wallet ORDER BY (rt.status <> 'floor'), rt.width, rt.lo) AS wrn
         FROM routed rt
     ), ranked AS (
       -- floor checks first (one call settles 1,000 ids arrived before the
       -- floor), then ROUND-ROBIN across wallets: narrowest-first alone let one
       -- wallet's hundreds of narrowing intervals take every slot while 26
       -- wallets' wide intervals never started (2026-09-29)
-      SELECT pw.*, row_number() OVER (PARTITION BY pw.node ORDER BY (pw.status <> 'floor'), pw.wrn, pw.hi - pw.lo, pw.lo) AS rn
+      SELECT pw.*, row_number() OVER (PARTITION BY pw.node ORDER BY (pw.status <> 'floor'), pw.wrn, pw.width, pw.lo) AS rn
         FROM per_wallet pw
     )
     SELECT * FROM ranked WHERE rn <= v_per_node
@@ -498,7 +519,7 @@ BEGIN
   -- B1
   PERFORM _assert(pg_temp.req_of(1) = pg_temp.req_of(2), 'B1: ids sharing an interval share one call');
   PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_of(1))
-                  = 'http://access-001.mainnet26.nodes.onflow.org:8070/v1/scripts?block_height=100000500', 'B1: the midpoint on the mainnet26 node');
+                  = 'http://access-001.mainnet26.nodes.onflow.org:8070/v1/scripts?block_height=100000768', 'B1: the ALIGNED point of (100000000, 100001000) on the mainnet26 node');
   PERFORM _assert(pg_temp.call_ids(pg_temp.req_of(1)) = ARRAY[1, 2]::bigint[], 'B1: the call asks for both ids');
   PERFORM _assert(convert_from(decode((SELECT body->>'script' FROM net.calls WHERE id = pg_temp.req_of(1)), 'base64'), 'UTF8') LIKE '%access(all) fun main%',
                   'B1: Cadence 1.0 on mainnet26');
@@ -534,8 +555,8 @@ DO $$
 DECLARE v jsonb;
 BEGIN
   v := public.run_chain_arrival_lane();
-  PERFORM _assert((SELECT lo = 100000000 AND hi = 100000500 FROM public.chain_arrival_probes WHERE nft_id = 1), 'B1: held at mid -> hi = mid');
-  PERFORM _assert((SELECT lo = 100000500 AND hi = 100001000 FROM public.chain_arrival_probes WHERE nft_id = 2), 'B1: not held -> lo = mid');
+  PERFORM _assert((SELECT lo = 100000000 AND hi = 100000768 FROM public.chain_arrival_probes WHERE nft_id = 1), 'B1: held at mid -> hi = mid');
+  PERFORM _assert((SELECT lo = 100000768 AND hi = 100001000 FROM public.chain_arrival_probes WHERE nft_id = 2), 'B1: not held -> lo = mid');
   PERFORM _assert((SELECT lo = 85981134 AND hi = 85990000 FROM public.chain_arrival_probes WHERE nft_id = 3), 'B2: after the split the interval lies in mainnet25');
   PERFORM _assert((SELECT status = 'done' AND from_address = '0xb5b717909b9c5ea5' AND tx_id = 'TXC' AND arrived_height = 100000050
                           AND arrived_at = '2025-01-01 00:01:00+00'
@@ -634,6 +655,42 @@ BEGIN
   PERFORM _assert((SELECT count(*) = 24 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'), 'F3: the cap binds');
   PERFORM _assert((SELECT request_id IS NOT NULL FROM public.chain_arrival_probes WHERE wallet = '0x000000000000000b'),
                   'F3: the wide interval of the other wallet is dispatched despite 30 narrower ones');
+END $$;
+
+-- A1: ALIGNED bisection. Three probes of one wallet with DIFFERENT intervals
+-- (sold moments: each hi is just before its own sale) meet at one aligned
+-- height and share ONE call; each then moves by its OWN interval. The same
+-- interval in another wallet is its own call. (lo + hi) / 2 would have made
+-- three calls here: 100,350,000 / 100,450,000 / 100,450,000 on differing (lo, hi).
+DELETE FROM net.calls;
+DELETE FROM net._http_response;
+DELETE FROM public.chain_arrival_probes;
+DELETE FROM public.chain_arrival_requests;
+INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status) VALUES
+  ('0x00000000000000aa', 201, 100000000, 100700000, 'bisect'),
+  ('0x00000000000000aa', 202, 100000000, 100900000, 'bisect'),
+  ('0x00000000000000aa', 203, 100100000, 100800000, 'bisect'),
+  ('0x00000000000000cc', 204, 100000000, 100700000, 'bisect');
+DO $$
+BEGIN
+  PERFORM public.run_chain_arrival_lane();
+  PERFORM _assert(pg_temp.req_of(201) = pg_temp.req_of(202) AND pg_temp.req_of(202) = pg_temp.req_of(203),
+                  'A1: three different intervals of one wallet share one call');
+  PERFORM _assert(pg_temp.call_ids(pg_temp.req_of(201)) = ARRAY[201, 202, 203]::bigint[], 'A1: the call asks for all three ids');
+  PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_of(201))
+                  = 'http://access-001.mainnet26.nodes.onflow.org:8070/v1/scripts?block_height=100663296',
+                  'A1: at the aligned height 100,663,296 (= 2^26 * 1.5), inside every interval');
+  PERFORM _assert((SELECT request_id FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000cc') IS DISTINCT FROM pg_temp.req_of(201),
+                  'A1: another wallet never rides the call');
+  PERFORM _assert((SELECT count(*) = 2 FROM net.calls), 'A1: two calls in all, not four');
+END $$;
+SELECT pg_temp.plant_owned(pg_temp.req_of(201), ARRAY[201]::bigint[]);
+DO $$
+BEGIN
+  PERFORM public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT lo = 100000000 AND hi = 100663296 FROM public.chain_arrival_probes WHERE nft_id = 201), 'A1: held -> hi = the aligned height');
+  PERFORM _assert((SELECT lo = 100663296 AND hi = 100900000 FROM public.chain_arrival_probes WHERE nft_id = 202), 'A1: not held -> lo = it, own hi kept');
+  PERFORM _assert((SELECT lo = 100663296 AND hi = 100800000 FROM public.chain_arrival_probes WHERE nft_id = 203), 'A1: not held -> lo = it, own hi kept (different lo before)');
 END $$;
 
 -- U1 / G1 / G2: mainnet25's script gap (85,981,135..86,031,699)

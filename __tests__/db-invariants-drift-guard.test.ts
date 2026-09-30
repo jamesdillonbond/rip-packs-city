@@ -86,8 +86,9 @@ const PINS = [
     // then a 'floor' check first, dispatched ahead of bisections; then a
     // failed call retries in half-size batches (1,000 held ids -> HTTP 500).
     // then round-robin dispatch across wallets; 24 per node; 2026-09-30: a 503
-    // is a free retry and mainnet25's script gap (<86,031,700) is walked by events.
-    migration: "supabase/migrations/20260930174000_audit_20260930_chain_arrival_walks_mainnet25s_script_gap_and_retries_503.sql",
+    // is a free retry and mainnet25's script gap (<86,031,700) is walked by events;
+    // then ALIGNED bisection + holdings calls grouped by (wallet, height).
+    migration: "supabase/migrations/20260930183000_audit_20260930_chain_arrival_aligned_bisection_shares_calls.sql",
   },
   {
     // Seeds every saved wallet's unexplained held Top Shot moment at the floor.
