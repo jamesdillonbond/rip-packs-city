@@ -275,7 +275,7 @@ function toPackRow(
       : null,
     // Pinnacle's low-confidence reason is ask-driven value, not stale FMV.
     lowConfidenceTitle: r.ask_value_share_pct != null && Number(r.ask_value_share_pct) >= 50
-      ? `${Math.round(Number(r.ask_value_share_pct))}% of this pack's EV rests on asking prices for pins that have barely traded${r.sales_backed_ev != null ? `; $${Number(r.sales_backed_ev).toFixed(2)} of it is backed by sales` : ''}. Treat it as a rough estimate.`
+      ? `${Math.round(Number(r.ask_value_share_pct))}% of this pack's EV rests on asking prices for pins that have barely traded${r.sales_backed_ev != null ? (Number(r.sales_backed_ev) === 0 ? '; none of it is backed by sales' : `; $${Number(r.sales_backed_ev).toFixed(2)} of it is backed by sales`) : ''}. Treat it as a rough estimate.`
       : null,
   }
 }

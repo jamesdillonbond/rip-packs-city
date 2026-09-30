@@ -1231,7 +1231,7 @@ export default async function PackDetailPage(
             ? <>This is one of {pinDrop!.drop_pools} pools that make up {pinDrop!.drop_title}, sold as one pack — a buyer draws from all of them, so the EV shown is the pack&apos;s, weighted by each pool&apos;s number of packs{pinDrop!.pool_share_pct != null ? <> (this pool is {num(pinDrop!.pool_share_pct)}% of them{num(pinDrop!.pool_gross_ev) != null ? <>; on its own it would be {fmtUsd(num(pinDrop!.pool_gross_ev))}</> : null})</> : null}.</>
             : <>EV weights each pin by its supply, valued at its median FMV.</>}
           {num(pinDrop!.ask_value_share_pct) != null && num(pinDrop!.ask_value_share_pct)! >= 50 && (
-            <> {Math.round(num(pinDrop!.ask_value_share_pct)!)}% of it rests on asking prices for pins that have barely traded{num(pinDrop!.sales_backed_ev) != null ? <>; {fmtUsd(num(pinDrop!.sales_backed_ev))} is backed by sales</> : null}.</>
+            <> {Math.round(num(pinDrop!.ask_value_share_pct)!)}% of it rests on asking prices for pins that have barely traded{num(pinDrop!.sales_backed_ev) != null ? (num(pinDrop!.sales_backed_ev) === 0 ? <>; none of it is backed by sales</> : <>; {fmtUsd(num(pinDrop!.sales_backed_ev))} is backed by sales</>) : null}.</>
           )}
         </div>
       )}

@@ -192,6 +192,20 @@ describe("PackPageClient toPackRow — Pinnacle drop pools", () => {
     expect(row.lowConfidenceTitle).toBeNull()
   })
 
+  // 2026-09-29 mobile sweep: an EV resting 100% on asks read "…; $0.00 of it is backed by sales".
+  it("says none is backed by sales when the sales-backed figure is exactly zero", () => {
+    warm.packs = { data: { rows: [apiRow({ ask_value_share_pct: 100, sales_backed_ev: 0 })], total: 1 }, loading: false, error: null }
+    const [row] = readRows(render(<PackPageClient {...props()} />).container)
+    expect(row.lowConfidenceTitle).toContain("none of it is backed by sales")
+    expect(row.lowConfidenceTitle).not.toContain("$0.00")
+  })
+
+  it("the pack detail page carries the same zero case (server copy, asserted on source)", async () => {
+    const { readFileSync } = await import("node:fs")
+    const src = readFileSync("app/(collections)/[collection]/pack/dist/[distId]/page.tsx", "utf8")
+    expect(src).toMatch(/num\(pinDrop!\.sales_backed_ev\) === 0 \? <>; none of it is backed by sales<\/>/)
+  })
+
   it("names the ask share even when the sales-backed figure is unknown", () => {
     warm.packs = { data: { rows: [apiRow({ ask_value_share_pct: 60, sales_backed_ev: null })], total: 1 }, loading: false, error: null }
     const [row] = readRows(render(<PackPageClient {...props()} />).container)
