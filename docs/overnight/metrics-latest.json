@@ -1,59 +1,63 @@
 {
-  "generated_at_pt": "2026-09-28 ~1:20 AM PT",
-  "generated_at_utc": "2026-09-28T08:20Z",
-  "pass": "overnight autonomous pass (Cowork cloud + laptop VM). PUSH-CAPABLE via Path A (laptop VM + .rpc-git-cred). Genuine overnight (real time confirmed via DB now() vs app-stamped rows; no clock skew). 0 shipped, 0 reverted, 0 new queued — honest quiet night.",
+  "generated_at_pt": "2026-09-30 ~1:10 AM PT",
+  "generated_at_utc": "2026-09-30T08:10Z",
+  "pass": "overnight autonomous pass (Cowork cloud). NO-PUSH MODE (no pushurl token on mount, cloud proxy declines repo, VM disk 99%, computer-use ungranted). Genuine overnight (DB now() 08:08Z vs app-stamped rows, no clock skew). 0 shipped, 0 reverted, 0 new queued — honest quiet night. Continuity docs -> mount + claude.ai Project (uncommitted, push unavailable).",
   "shipped": 0,
   "reverted": 0,
-  "verdict": "GREEN. Security all []; trust_health 38/38 ok, 0 breaches; timeout_blind 0; pgcron_recent_failures []; sentinel_ts_uuid_editions_48h 0. Stalled_pipelines [] (topshot-active-listings-ingest RECOVERED, last run 07:13Z). Circulation-sampler watch CLOSED PASS (03:25Z tick 50/50 ok, 0x429). Pack-seller drain complete (10,236/10,236) + jobs unscheduled. alerts zero-yield still genuine quiet (0 pending/0 stuck). Vercel 6h: 3 known/benign groups, no ERROR deploys, last READY e6321790.",
+  "verdict": "GREEN. Security all []; trust_health 38/38 ok, 0 breaches; stalled_pipelines []; sentinel_ts_uuid_editions_48h 0; structural-drift arms all []. edition_integrity_flags back to 7 (Panini Common-tier fix verified: 0/7479 tier-nulls). Vercel 24h: 21 groups all benign/chronic/transient, no new cluster; last prod deploy cc79e2132 READY.",
   "health": {
     "security_invariants": "clean (invariants, anon_write_holes, rls_off_base_tables, secdef_anon_violations all [])",
     "trust_health_breaches": 0,
-    "timeout_blind": 0,
-    "pgcron_recent_failures": "[]",
-    "stalled_pipelines": "[] (topshot-active-listings-ingest recovered)",
-    "pgcron_fails_24h": "atlas-market-feed 11, sync-nba-projections 8 (#8 shelved), atlas-editions-refresh 7, wallet-backfill golazos/allday 2/2, candy-listings-indexer 1 - all upstream 0, known/transient",
+    "stalled_pipelines": "[]",
+    "sentinel_ts_uuid_editions_48h": 0,
+    "structural_drift_arms": "all [] (cross_collection_mat_staleness, function_search_path_drift, procedure pins, backward_cursor_rewinds, suppression_parked_claim_drift, wmc_null_edition_key)",
+    "pgcron_fails_24h": "atlas-editions-refresh 57, pinnacle-pack-openers 48, atlas-market-feed 46, chain-arrivals 15, sync-nba-projections 8 (#8 shelved) - all upstream 0, known/transient",
     "pipeline_alerts": [
-      "unmapped-sales-nfl_all_day info (7015 open, non-stationary drain)",
-      "atlas-editions-upstream-403 info (designed, self-healing)",
-      "atlas-market-upstream-403 info (designed, self-healing, last drain fresh)",
+      "pg_net_http_403 critical (1 call, Cloudflare challenge, known unattributable arm)",
+      "pg_net_http_429 high (~1379/2h, Flow REST envoy limiter - attributed, QUEUED lane-hygiene fix)",
+      "atlas-editions-upstream-403 info (Cloudflare challenge, self-healing)",
+      "atlas-market-upstream-403 info (self-healing, last drain 08:09Z fresh vs newest event 08:08Z)",
+      "unmapped-sales-nfl_all_day info (22866 actionable, non-stationary drain, ~5.1d)",
       "flow-rest-moment-moved-400 info (designed borrowMoment panic)"
     ],
-    "zero_yield_lanes": "alerts-send / alerts-dispatch (genuine quiet market; 0 pending/0 stuck deliveries; unchanged disposition)",
-    "sentry_new_24h": "n/a (Sentry dark since 08-18, decided no spend)",
-    "vercel": "6h: DEP0169 warning 21, AllDay GQL 403 WAF 7, set_activity timeout->empty 1; no ERROR deploys; last READY e6321790; public_board_empty 0, public_board_slow 0",
-    "db_size_mb": 22082
+    "sentry_new_24h": "n/a (Sentry dark, decided no spend)",
+    "vercel": "24h: 21 groups all benign/chronic/transient (DEP0169 warning 511, pack-detail cold-scan timeouts count 1 each since 08-23, IPFS net-lost 5, /api/sets username-unavailable 2 @01:09Z upstream CF530 outage, scratch-table RLS-off smoke 09-29 15:xxZ self-resolved); no ERROR deploy; last READY cc79e2132; public_board_empty 0, public_board_slow 0",
+    "db_size_mb": 27929
   },
   "fmv_high_med": {
-    "nba_top_shot": 8148,
-    "nfl_all_day": 1553,
-    "disney_pinnacle": 825,
-    "panini_blockchain": 1846,
-    "candy_mlb": 24,
-    "laliga_golazos": 3,
+    "nba_top_shot": 8230,
+    "nfl_all_day": 1615,
+    "disney_pinnacle": 844,
+    "panini_blockchain": 2420,
+    "candy_mlb": 31,
+    "laliga_golazos": 2,
     "ufc_strike": 0
   },
   "editions_by_collection": {
-    "nba_top_shot": 14460,
+    "nba_top_shot": 14469,
     "nfl_all_day": 6190,
-    "panini_blockchain": 5111,
+    "panini_blockchain": 7479,
     "laliga_golazos": 575,
     "ufc_strike": 518,
     "candy_mlb": 125
   },
   "sentinels": {
     "sentinel_ts_uuid_editions_48h": 0,
-    "unmapped_resolution_backlog_max": 2,
+    "unmapped_resolution_backlog_max": 0,
     "edition_integrity_flags": 7
   },
-  "deltas_vs_prev": "FMV HIGH+MED vs 09-27 08:10Z: nba_top_shot 8043->8148 (+105), nfl_all_day 1522->1553 (+31), disney_pinnacle 823->825 (+2), panini_blockchain 1846 flat, candy_mlb 23->24 (+1), laliga_golazos 4->3 (-1 noise). Editions panini 5101->5111 (+10). db_size 29433->22082 MB (-7.3 GB, reclamation; nothing dropped).",
+  "deltas_vs_prev": "vs 09-28 08:20Z (09-29 update never persisted - push failed). FMV HIGH+MED: nba 8148->8230 (+82), nfl 1553->1615 (+62), pinnacle 825->844 (+19), panini 1846->2420 (+574, multi-product walk wave), candy 24->31 (+7), golazos 3->2 (-1 noise), ufc 0. Editions panini 5111->7479 (+2368), nba 14460->14469 (+9). db 22082->27929 MB (+5.8GB over 2d, panini walk + concurrent new tables; within normal).",
   "open_watches": [
-    "None new. Circulation-sampler watch closed PASS this run. topshot-active-listings-ingest recovered on its own; re-check it stays fed if it dips again."
+    "429 surge lane hygiene (Flow every-minute lanes bursting at :00) - QUEUED, re-measure next pass.",
+    "atlas-editions upstream 403 self-heal - re-check sets-behind stays near 0."
   ],
   "needs_trevor": [
+    "429 lane hygiene: stagger every-minute Flow lanes + retain request_ids",
     "rotate ATLAS_POOL_INGEST_KEY (#144)",
-    "wrangler deploy pack-events-ingest residual / enrich-ufc-wallet CLI (verify vs 09-27 session log; may be closed)",
+    "wrangler deploy pack-events-ingest / enrich-ufc-wallet residuals (verify vs recent logs)",
     "#22 (credential-purge residue / Dapper session), #64 (Panini is_active), #140",
-    "paste the 09-27 Panini freshness-check prompt update in Claude Desktop (device-bound)"
+    "paste 09-27 Panini freshness-check prompt in Claude Desktop (device-bound)",
+    "restore a push-capable route (VM disk 99% full, no pushurl token on mount, computer-use ungranted)"
   ],
-  "housekeeping": "inbox left append-only (INDEX CI gates archival). No new candidates since 09-26. Concurrent Claude Code session shipped Pinnacle/Panini overnight; reviewed, no regression."
+  "housekeeping": "inbox left append-only (CI-gated). 3 new candidates all pre-resolved by concurrent Claude Code. Concurrent session shipped panini map + username lanes + trophy marks + telemetry overnight; reviewed, no regression."
 }
