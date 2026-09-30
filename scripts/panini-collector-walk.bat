@@ -19,7 +19,9 @@ REM Always-walked usernames, whether or not they are linked on rippackscity.com:
 REM the box owner's own, plus collectors Trevor tracks (added 2026-09-28; each is also a
 REM seeded_wallets row on Flow). Their Panini names are ASSUMED to match their Top Shot ones -
 REM a name Panini does not know logs as not_found in the walk log; fix the spelling here.
-if not defined PANINI_COLLECTOR_TARGETS set "PANINI_COLLECTOR_TARGETS=Jamesdillonbond,MikeG503,Scottyj111,Alexthedon,Sdb,Philthy503,Juiceshack,Cazsreyem,YWRR,TimDunkin,mbl267,PDXBLAZER,spinotron"
+REM Dropped 2026-09-30: Philthy503, Juiceshack, Cazsreyem - Panini redirected all three to
+REM /usernotfound on their first walk (09-30). Put one back only with its real Panini spelling.
+if not defined PANINI_COLLECTOR_TARGETS set "PANINI_COLLECTOR_TARGETS=Jamesdillonbond,MikeG503,Scottyj111,Alexthedon,Sdb,YWRR,TimDunkin,mbl267,PDXBLAZER,spinotron"
 REM Rotation (2026-09-28): each run also walks a few Panini owners who are also Top Shot usernames
 REM RPC knows (panini_collector_rotation_targets - never walked first, biggest first, then oldest walk).
 REM The budget stops STARTING walks after 40 min; the watchdog (55) leaves room for the one in progress.
