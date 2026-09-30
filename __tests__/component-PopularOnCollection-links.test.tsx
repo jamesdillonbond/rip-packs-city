@@ -56,6 +56,24 @@ describe("distinctSlugLinks", () => {
     const out = distinctSlugLinks(["St. John's"], "nba-top-shot", "team", 10)
     expect(out[0].href).toBe("/nba-top-shot/team/st-john-s")
   })
+
+  // 2026-09-29 link crawl: /nba-top-shot/overview linked /player/no-mie-brochant, a 404.
+  it("drops accents from a player slug, the form the player page resolves", () => {
+    const out = distinctSlugLinks(["Noémie Brochant"], "nba-top-shot", "player", 12)
+    expect(out[0].href).toBe("/nba-top-shot/player/noemie-brochant")
+    expect(out[0].href).not.toContain("no-mie")
+  })
+
+  it("the players row skips a team moment (its subject is the franchise; /player/ 404s)", async () => {
+    const { readFileSync } = await import("node:fs")
+    const src = readFileSync("components/entity/PopularOnCollection.tsx", "utf8")
+    expect(src).toMatch(/\.filter\(\(r\) => !isTeamMoment\(r\.player_name, r\.team_name\)\)\s*\n\s*\.map\(\(r\) => r\.player_name\)/)
+  })
+
+  it("keeps slugifyName for a Pinnacle character (its pages' slug)", () => {
+    const out = distinctSlugLinks(["Stitch"], "disney-pinnacle", "player", 12)
+    expect(out[0].href).toBe("/disney-pinnacle/player/stitch")
+  })
 })
 
 // 2026-09-24 — the edition tiles are one per subject + set. The lowest-mint

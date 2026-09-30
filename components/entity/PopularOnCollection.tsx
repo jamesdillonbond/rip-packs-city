@@ -22,8 +22,8 @@ import { unstable_cache } from "next/cache"
 import { getCollection } from "@/lib/collections"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchHubRows, fetchLinkRows, fetchPinnacleHubRows } from "@/lib/entity/popular-on-collection-fetchers"
-import { slugifyName, getEntityLabels } from "@/lib/entity-labels"
-import { pinnacleRenderHref } from "@/lib/entity-href"
+import { slugifyName, slugifyPlayerName, getEntityLabels } from "@/lib/entity-labels"
+import { isTeamMoment, pinnacleRenderHref } from "@/lib/entity-href"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { tileSubject } from "./_shared"
 
@@ -64,7 +64,10 @@ export function distinctSlugLinks(
   for (const raw of names) {
     const name = (raw ?? "").trim()
     if (!name) continue
-    const slug = slugifyName(name)
+    // A player page's slug drops accents ("Noémie" → noemie); slugifyName alone built
+    // /nba-top-shot/player/no-mie-brochant, a 404 (link crawl 2026-09-29). Pinnacle
+    // character pages keep slugifyName (lib/entity-href.ts pinnacle character href).
+    const slug = segment === "player" && collection !== "disney-pinnacle" ? slugifyPlayerName(name) : slugifyName(name)
     if (!slug || seen.has(slug)) continue
     if (dropExhibition && isExhibitionTeamSlug(slug)) continue
     seen.add(slug)
@@ -91,6 +94,8 @@ async function loadHubs(collection: string): Promise<{ hubs: Hubs; ok: boolean; 
       players: distinctSlugLinks(
         data.editions
           .filter((r) => collection !== "panini-blockchain" || paniniSubjectIsPlayer(r.player_name, r.set_name))
+          // A team moment's subject is the franchise — the teams row links it; /player/ 404s.
+          .filter((r) => !isTeamMoment(r.player_name, r.team_name))
           .map((r) => r.player_name),
         collection,
         "player",
