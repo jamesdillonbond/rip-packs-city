@@ -101,3 +101,22 @@ Mitigation shipped 2026-08-15: the alert DM in `/api/cron/alerts-send` now tells
 3. **RPC is READ-ONLY** — no cart, no gifting, no trading. Never offer an action the product lacks.
 4. **An errored tool is NOT an empty result** — `status:"error"` and `status:"no_results"` are distinct claims; their prompt rules must stay distinct.
 5. **A tool cannot observe its own health** — it can only report how old its data is. Never let copy reassure that a feed is fine.
+
+### `manage_watchlist` / `manage_alerts` / the username tools — contracts as of 2026-09-29
+
+- **Both write tools call cookie-authed routes** (`/api/watchlist` → `requireOwnedKey`, `/api/alerts` →
+  the session user) and now forward the READER's cookie (`readerCookieHeader()`). Every answer is
+  derived from the response (`selfApiFailure`): a 401/403 answers `not_signed_in` + "nothing was
+  changed"; a failed LIST concludes nothing about what is on the list. Before this, neither had ever
+  worked (known-issues #164 — **not yet observed working from a signed-in session**).
+- **`manage_alerts` speaks the route's types** — `price_below` · `discount_above` · `fmv_below` ·
+  `fmv_above` (the old `below_price` / `below_fmv_pct` are accepted and mapped), passes the
+  `collection_id` of the conversation (an edition key is unique only within a collection), gates on a
+  signed-in USER (`ctx.userId`), and removes by listing the reader's alerts then `DELETE ?id=` per match.
+- **Bot DMs carry no cookie**, so these two answer `not_signed_in` there. `manage_deal_subscriptions`
+  resolves identity server-side and is the path that works from a linked bot chat.
+- **Username → wallet** (`check_wallet`, `analyze_wallet_holdings`, `check_wallet_squeeze`) goes
+  through `resolveUsernameLive()`: only `reason: username_not_found_on_topshot` is a miss
+  (`username_not_resolved`); an upstream error, timeout or non-2xx is `username_lookup_failed` with copy
+  that says nothing about whether the handle exists. Why: key-files-and-honesty.md, "`{found: false}`
+  has two reasons".

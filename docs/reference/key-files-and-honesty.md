@@ -2505,3 +2505,68 @@ The Atlas firehose re-reports Top Shot listings only when they CHANGE (#85). Eve
 **The tempting fix is wrong.** Widening the window to the older rows publishes closures nobody reported: a hand verification of 30 affected editions found **39 of 198 (20 %) "open" listings older than 24 h were actually closed** (264:9191::20 — the $21 and $29 "undercutters" were gone; the floor is $39). Only an edition VERIFICATION (the full Atlas book) answers both directions, and it re-priced every edition that answered.
 
 **Rules.** (1) A value derived from a re-observation window is a claim about RECENT ACTIVITY, not about the book — label it so, or publish it only when the window provably holds the whole book (no open row older than the window). (2) When an unconfirmed older row contradicts the window, publish NULL (unknown), never either number. (3) Close the gap with verification, prioritised to the NULLs (`rpc-ts-edition-verify-undercut`), not by trusting age. (4) Find the others by grepping READERS of the window (`ts_listings`, `_open24`, `interval '24 hours'` on `topshot_atlas_market_events`), not by the copy.
+
+### A filter applied AFTER a capped read searches the CAP, not the market (2026-09-29, the Sniper)
+
+Trevor: *"I don't see a clean way, as a user, to go look for Blazers moments in sniper."* The Top Shot
+Sniper built its board from the newest 200 of ~27,000 open `ts_listings` rows, and every narrowing
+control then ran over those 200 — some client-side, some in the route after the build. Nothing failed,
+so every honesty helper above was satisfied, and each control answered a question about the CAP while
+reading as a question about the MARKET. Measured live the same evening:
+
+| control | answered | the market held |
+|---|---|---|
+| Team = Portland Trail Blazers | whatever of the newest 200 was Blazers (usually none) | 915 open listings |
+| Player = "Lillard" | **0 deals** | 54 open listings, 67 priced edition floors |
+| Tier tab = Legendary | **0 deals** | 699 open listings, ≥1,000 priced floors |
+| Sort = Best discount | 28 recent deals re-ranked | the best verified discounts, all outside the 200 |
+| All Day player = "Mahomes" | 1 deal | 88 listings |
+
+The read that COULD answer each (`get_topshot_sniper_deals`, the edition floors — it already took
+`p_team`, `p_rarity`, `p_player`) ran only when the pool was "sparse" (<25 editions), so its coverage
+depended on how many editions the newest 200 happened to span. Fixed by pushing every narrowing filter
+INTO the reads (`app/api/sniper-feed/route.ts`: the pool read takes team → play ids, player, tier, max
+price; any team / player / tier / min discount / badges-only / non-"Recently listed" sort always runs the
+floor read at 1,000 rows) and by a `p_player` on `get_allday_sniper_deals` (`20260930013059`).
+
+**Rules.**
+1. ⛔ **A `LIMIT` before a filter turns "no match" into "none in the first N".** Where a control narrows
+   a capped read, the filter goes into the read, or the surface says it searched a sample.
+2. ⚠ **A FALLBACK gated on sparseness makes coverage a function of the unfiltered data** — the same
+   request is complete on one tick and a slice on the next. Gate it on what was ASKED.
+3. ⚠ **The tell is a count that barely moves when you change the filter's argument** (every team pick
+   returned a handful; "Lillard" and a nonsense string both returned 0). Probe a filter with a value you
+   KNOW is in the market and compare its count against a direct query.
+4. ⚠ **A team LABEL is not a franchise here either** — a pick resolves `team_franchise_slugs` so "LA
+   Clippers" includes "Los Angeles Clippers" (and each label is asked separately where an RPC takes one
+   exact `p_team`).
+
+### `{found: false}` has two reasons — and a lookup that could not LOOK is not a miss (2026-09-29)
+
+`/api/resolve-topshot-username` answers HTTP 200 `{found:false}` for BOTH a genuine miss
+(`reason: username_not_found_on_topshot`) and an upstream failure (`reason: topshot_gql_error`). Callers
+branched on `found` alone, so an outage told the reader "I don't have a wallet for that username on
+file" (concierge) or "Check the username and try again" (Set Trackers), and a GENUINE typo on the wallet
+search got "Failed to fetch wallet data. Please try again" — a retry that can never succeed. Ten routes
+also carried private resolver copies that went cache → a dead GraphQL host, so an uncached username
+never resolved at all.
+
+**Rules.** (1) ⛔ **Branch on the REASON, not on `found`.** A miss is a 4xx "check the spelling"; a failure
+to look is a 503 that concludes nothing. (2) ⭐ **One entry point:** `resolveToFlowAddress` in
+`lib/chains/flow/flow-resolve.ts` (shared ladder: cache → live Atlas → GQL) — it throws
+`UsernameLookupUnavailableError` for a failure to look, answered by `usernameLookupUnavailableResponse()`;
+a miss throws the "Could not resolve …" error `isUnresolvedIdentifierError` already classifies. Never a
+fresh copy — `__tests__/dead-topshot-host-consumers-only-decrease.test.ts` counts the rest (12 on 09-29).
+(3) ⚠ **A test fixture that returns a shape the route never sends certifies nothing** — the wallet-search
+"genuine miss" component test used a 200 `{walletAddress:null}` the route never produced (it 500'd), so
+in production every typo read "Couldn't search just now".
+
+### A server-side call made ON A READER'S BEHALF needs the reader's session, and its `res.ok` (2026-09-29)
+
+The concierge's `manage_watchlist` / `manage_alerts` fetched the cookie-authed `/api/watchlist` and
+`/api/alerts` from the server with no cookie, and never read `res.ok`, so every "Added …" / "Alert set …"
+was a 401 or 400 — `watchlist` and `fmv_alerts` held zero rows, ever. The sniper's "Save search" POSTed
+a body the watchlist route rejects (400) and told signed-in readers to sign in. Both fixed (known-issues
+#164). ⛔ **A write's confirmation copy is derived from the response, never from having sent the
+request** — the write-side twin of this file's first rule. ⚠ **The count of rows in the target table is
+the one-query check** a feature like this is alive: zero rows over months is the finding.

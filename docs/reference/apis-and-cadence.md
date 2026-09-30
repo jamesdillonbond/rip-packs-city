@@ -107,6 +107,17 @@ every 2 min (pipeline `atlas-market-feed`), and the two-phase RPCs `atlas_resolv
 listing that vanishes without a sale is only seen by re-reading `{editionId}`; open-listing truth for the
 sniper needs a per-edition refresher, not the firehose alone.
 
+⭐ **Username → wallet has ONE app entry point (2026-09-29):** `resolveToFlowAddress` in
+`lib/chains/flow/flow-resolve.ts` → `resolveTopShotUsernameCacheAware` (cached layers → the Atlas
+`ProfileService` read above → the dead Top Shot GQL only as a last resort). It throws
+`UsernameLookupUnavailableError` when it could not LOOK (answer with `usernameLookupUnavailableResponse()`,
+a 503) and the "Could not resolve …" error on a confirmed miss. Ten routes used to carry private copies
+that went cache → a dead GraphQL host (Set Trackers, collection tab, analytics cards); all now use this
+one. A Dapper username names one Flow address across collections, so All Day routes use it too.
+⚠ **Measured the same evening: a 6-request probe burst plus a few route calls took `ProfileService` to
+6/6 `Just a moment…` for ~5 minutes, then a single request answered cleanly** — #65's burst rule applies
+to this endpoint too, and the routes honestly answer 503 while it lasts. Never probe it in parallel.
+
 🚨 **pg_net SENDS ONLY AFTER THE ENQUEUING TRANSACTION COMMITS** (measured 09-06: a request posted and
 polled inside one transaction is never answered and rolls back with it — a migration's in-transaction
 positive control timed out on a call that answers in 4 s from `execute_sql`). A "synchronous" post+await
@@ -213,7 +224,7 @@ Cloudflare WAF on **both** hostnames blocks Vercel + Supabase egress, so both go
 
 - `https://public-api.nflallday.com/graphql` — wallet/marketplace queries (`searchMomentNFTsV2`, `searchMarketplaceEditions`). Worker route `/allday`.
 - `https://nflallday.com/consumer/graphql` — only endpoint that hosts `getMintedMoment(momentId)` and related per-moment lookups. Worker route `/allday-consumer` (added 2026-05-05). Same `X-Proxy-Secret`.
-- Vercel routes that hit consumer/graphql directly (`lib/alldayGraphql.ts`, allday-wallet-search, allday-sets) work because Vercel egress isn't WAF-blocked there. Edge functions and other non-Vercel egress need the worker.
+- Vercel routes that hit consumer/graphql directly (`lib/alldayGraphql.ts`, allday-wallet-search, allday-sets) work because Vercel egress isn't WAF-blocked there. Edge functions and other non-Vercel egress need the worker. ⚠ **Unverified and contradicted, 2026-09-29:** the line above conflicts with this section's opening ("blocks Vercel + Supabase egress") and with the sniper route's own record of All Day GQL 403s from Vercel egress; re-measure before relying on it. `allday-sets` no longer resolves usernames here (it uses `lib/chains/flow/flow-resolve.ts`); `allday-wallet-search` still does and has no in-app caller (known-issues #163).
 
 ### Flowty API
 
