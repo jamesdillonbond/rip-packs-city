@@ -56,8 +56,9 @@ vi.mock("@/lib/supabase", () => ({
 
 vi.mock("@/lib/auth/supabase-server", () => ({ getCurrentUser: async () => null }))
 vi.mock("@/lib/rewards", () => ({ awardPoints: async () => {} }))
+const resolveReason = vi.hoisted(() => ({ value: "username_not_found_on_topshot" }))
 vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
-  resolveTopShotUsernameCacheAware: async () => ({ found: false }),
+  resolveTopShotUsernameCacheAware: async () => ({ found: false, reason: resolveReason.value }),
 }))
 
 const { POST } = await import("@/app/api/wallet-search/route")
@@ -322,13 +323,30 @@ describe("POST /api/wallet-search — enrichment body", () => {
     expect(body.summary.totalMoments).toBe(0)
   })
 
-  it("resolves a username via the layered resolver and errors cleanly when unresolved", async () => {
+  // 2026-09-29 — INVERTED. This pinned a 500 "Failed to fetch wallet data.
+  // Please try again." for a username Top Shot does not know: a retry that can
+  // never succeed. A genuine miss is a 404 that says check the spelling; only a
+  // lookup that could not reach Top Shot is a (503) failure.
+  it("a username Top Shot does not know is a 404 'check the spelling', not a retryable 500", async () => {
     install(baseFixtures())
+    resolveReason.value = "username_not_found_on_topshot"
     const res = await POST(post({ input: "some-username" }))
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(404)
     const body = await res.json()
-    expect(body.error).toContain("Failed to fetch wallet data")
+    expect(body.code).toBe("username_not_found")
+    expect(body.error).not.toMatch(/try again/i)
     expect(body.rows).toHaveLength(0)
+  })
+
+  it("a lookup that could not reach Top Shot is a 503 that concludes nothing about the handle", async () => {
+    install(baseFixtures())
+    resolveReason.value = "topshot_gql_error"
+    const res = await POST(post({ input: "some-username" }))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.code).toBe("username_lookup_unavailable")
+    expect(body.error).not.toMatch(/spelling/)
+    resolveReason.value = "username_not_found_on_topshot"
   })
 
   it("populates the #1-serial trait for a serial-1 moment", async () => {

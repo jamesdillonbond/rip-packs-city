@@ -1519,6 +1519,38 @@ type PlayerScope = { typed: string; labels: string[] | null; playerId: string | 
 const PLAYER_SCOPED_TOOLS = new Set(["search_live_deals", "search_catalog_deals", "get_edition_listings", "search_serial_deals", "get_special_serial_owners", "get_badge_info"]);
 const TOP_SHOT_ONLY_TOOLS = new Set(["search_serial_deals", "get_special_serial_owners", "get_badge_info"]);
 
+// ── Live Top Shot username → wallet (2026-09-29) ─────────────────────────────
+// /api/resolve-topshot-username answers 200 {found:false} for BOTH a genuine
+// miss (username_not_found_on_topshot) and an upstream failure
+// (topshot_gql_error), and the three tools that call it also swallowed a
+// timeout / non-2xx into the same branch — so an outage told the reader "I
+// don't have a wallet for that username on file". Only a genuine miss is a miss.
+const USERNAME_LOOKUP_FAILED_COPY =
+  "I couldn't reach Top Shot to look up that username just now, so I can't say whether it exists. Try again in a moment, or share the wallet address (starts with 0x and 16 hex chars) and I'll pull it up directly.";
+
+async function resolveUsernameLive(
+  base: string,
+  username: string,
+): Promise<{ wallet: string } | { miss: true } | { failed: string }> {
+  try {
+    const res = await fetch(`${base}/api/resolve-topshot-username`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.INGEST_SECRET_TOKEN ?? ""}`,
+      },
+      body: JSON.stringify({ username }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const body: any = await res.json().catch(() => null);
+    if (body?.found === true && typeof body.wallet_address === "string") return { wallet: body.wallet_address };
+    if (res.ok && body?.found === false && body?.reason === "username_not_found_on_topshot") return { miss: true };
+    return { failed: `HTTP ${res.status}${body?.reason ? ` ${body.reason}` : ""}` };
+  } catch (err) {
+    return { failed: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 // ── Self-API calls made ON THE READER'S BEHALF (2026-09-29) ──────────────────
 // /api/watchlist and /api/alerts authorise from the SESSION COOKIE. These tools
 // fetched them server-to-server with no cookie, so every call was a 401 (or a
@@ -2069,18 +2101,11 @@ async function executeToolInner(
           // GQL via resolveTopShotUsernameCacheAware. If THAT also misses,
           // wallet-search returns 200 with an error string; we surface a
           // graceful unresolved-username message so the bot doesn't lie.
-          const liveRes = await fetch(`${base}/api/resolve-topshot-username`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${process.env.INGEST_SECRET_TOKEN ?? ""}`,
-            },
-            body: JSON.stringify({ username: inputAddr }),
-            signal: AbortSignal.timeout(8000),
-          }).catch(() => null);
-          const liveBody = liveRes ? await liveRes.json().catch(() => null) : null;
-          if (liveBody?.found === true && typeof liveBody.wallet_address === "string") {
-            resolvedAddr = liveBody.wallet_address;
+          const live = await resolveUsernameLive(base, inputAddr);
+          if ("wallet" in live) {
+            resolvedAddr = live.wallet;
+          } else if ("failed" in live) {
+            return JSON.stringify({ status: "username_lookup_failed", wallet: inputAddr, message: USERNAME_LOOKUP_FAILED_COPY });
           } else {
             return JSON.stringify({
               status: "username_not_resolved",
@@ -2243,18 +2268,11 @@ async function executeToolInner(
             ? rpcResult.wallet_address
             : `0x${rpcResult.wallet_address}`;
         } else {
-          const liveRes = await fetch(`${base}/api/resolve-topshot-username`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${process.env.INGEST_SECRET_TOKEN ?? ""}`,
-            },
-            body: JSON.stringify({ username: inputAddr }),
-            signal: AbortSignal.timeout(8000),
-          }).catch(() => null);
-          const liveBody = liveRes ? await liveRes.json().catch(() => null) : null;
-          if (liveBody?.found === true && typeof liveBody.wallet_address === "string") {
-            resolvedAddr = liveBody.wallet_address;
+          const live = await resolveUsernameLive(base, inputAddr);
+          if ("wallet" in live) {
+            resolvedAddr = live.wallet;
+          } else if ("failed" in live) {
+            return JSON.stringify({ status: "username_lookup_failed", wallet: inputAddr, message: USERNAME_LOOKUP_FAILED_COPY });
           } else {
             return JSON.stringify({
               status: "username_not_resolved",
@@ -2331,18 +2349,11 @@ async function executeToolInner(
             ? rpcResult.wallet_address
             : `0x${rpcResult.wallet_address}`;
         } else {
-          const liveRes = await fetch(`${base}/api/resolve-topshot-username`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${process.env.INGEST_SECRET_TOKEN ?? ""}`,
-            },
-            body: JSON.stringify({ username: inputAddr }),
-            signal: AbortSignal.timeout(8000),
-          }).catch(() => null);
-          const liveBody = liveRes ? await liveRes.json().catch(() => null) : null;
-          if (liveBody?.found === true && typeof liveBody.wallet_address === "string") {
-            resolvedAddr = liveBody.wallet_address;
+          const live = await resolveUsernameLive(base, inputAddr);
+          if ("wallet" in live) {
+            resolvedAddr = live.wallet;
+          } else if ("failed" in live) {
+            return JSON.stringify({ status: "username_lookup_failed", wallet: inputAddr, message: USERNAME_LOOKUP_FAILED_COPY });
           } else {
             return JSON.stringify({
               status: "username_not_resolved",

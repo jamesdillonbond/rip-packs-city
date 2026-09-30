@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { isUnresolvedIdentifierError, unresolvedIdentifierResponse } from "@/lib/api-error"
-import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { isUpstreamDown, noteUpstreamFailure, noteUpstreamSuccess } from "@/lib/upstream/host-circuit"
 import { getCollection } from "@/lib/collections"
 import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
-import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
+import { resolveToFlowAddress, UsernameLookupUnavailableError } from "@/lib/chains/flow/flow-resolve"
 import { fetchEditionTypes } from "@/lib/pinnacle/edition-types"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { pinnacleSerialFmv, pinnacleSerialFmvData, toMultiplierMap } from "@/lib/pinnacle/serial-fmv"
@@ -141,42 +140,24 @@ function isWalletAddress(value: string): boolean {
   return (v.startsWith("0x") && v.length === 18) || isSupportedAddress(v)
 }
 
-type UsernameProfileResponse = {
-  getUserProfileByUsername?: {
-    publicInfo?: {
-      flowAddress?: string | null
-    } | null
-  } | null
-}
-
 async function resolveWalletAddress(input: string): Promise<string> {
   const trimmed = input.trim()
   if (isWalletAddress(trimmed)) return trimmed
 
-  const cleanedUsername = trimmed.replace(/^@+/, "")
-  // 2026-09-04: the cached username ladder FIRST (the live host below is dead — see lookupCachedTopShotUsername).
-  const cachedWallet = await lookupCachedTopShotUsername(supabaseAdmin as any, cleanedUsername)
-  if (cachedWallet) return cachedWallet
-  const query = `
-    query GetUserProfileByUsername($username: String!) {
-      getUserProfileByUsername(input: { username: $username }) {
-        publicInfo { flowAddress }
-      }
-    }
-  `
-  let data: UsernameProfileResponse | null = null
+  // 2026-09-29: the shared ladder (cache → live Atlas → Top Shot GQL). The local
+  // copy went cache → the dead Top Shot host only, so every username not already
+  // cached came back "lookup unavailable". A confirmed miss still throws
+  // "Could not resolve …"; a failure to look keeps its UsernameLookupUnavailable tag.
   try {
-    data = await topshotGraphql<UsernameProfileResponse>(query, { username: cleanedUsername })
+    return await resolveToFlowAddress(trimmed)
   } catch (err) {
-    // The live lookup FAILED — that is not "no such username", and it must not
-    // read as "check the spelling". Tagged so the outer catch can say so.
-    const e = new Error("Username lookup unavailable: " + (err instanceof Error ? err.message : String(err)))
-    e.name = "UsernameLookupUnavailable"
-    throw e
+    if (err instanceof UsernameLookupUnavailableError) {
+      const e = new Error("Username lookup unavailable: " + err.message)
+      e.name = "UsernameLookupUnavailable"
+      throw e
+    }
+    throw err
   }
-  const rawWallet = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
-  if (!rawWallet) throw new Error("Could not resolve username to wallet address.")
-  return rawWallet.startsWith("0x") ? rawWallet : `0x${rawWallet}`
 }
 
 export async function GET(req: NextRequest) {

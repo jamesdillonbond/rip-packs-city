@@ -16,7 +16,7 @@ import { describe, it, expect, vi } from "vitest"
 const gql = vi.fn()
 vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: (...a: any[]) => gql(...a) }))
 
-import { resolveToFlowAddress } from "@/lib/chains/flow/flow-resolve"
+import { resolveToFlowAddress, UsernameLookupUnavailableError } from "@/lib/chains/flow/flow-resolve"
 
 describe("resolveToFlowAddress — address short-circuit", () => {
   it("returns a valid 0x-prefixed 16-hex address unchanged without any network call", async () => {
@@ -81,9 +81,13 @@ describe("resolveToFlowAddress — username resolution", () => {
     expect(gql.mock.calls[1][1]).toEqual({ username: "mixedcase" })
   })
 
-  it("swallows a GraphQL error (treated as a miss) and then throws could-not-resolve", async () => {
+  // 2026-09-29 — INVERTED. This pinned the defect: a GraphQL ERROR was swallowed
+  // into a miss, so an outage threw "Could not resolve … Check the username" —
+  // a claim about the handle manufactured from a failure to look (and /api/sets
+  // turned it into a 500). A failure to look is now its own error, which the
+  // sets routes answer with a 503 that concludes nothing.
+  it("a GraphQL error is a failure to LOOK, never 'could not resolve … check the username'", async () => {
     gql.mockReset()
-    // Synchronous throw so tryResolve's try/catch handles it cleanly.
     gql.mockImplementation(() => { throw new Error("network") })
     let err: any
     try {
@@ -91,7 +95,8 @@ describe("resolveToFlowAddress — username resolution", () => {
     } catch (e) {
       err = e
     }
-    expect(String(err?.message)).toMatch(/Could not resolve/)
+    expect(err).toBeInstanceOf(UsernameLookupUnavailableError)
+    expect(String(err?.message)).not.toMatch(/Could not resolve|Check the username/)
   })
 
   it("throws could-not-resolve when the profile has no flowAddress and no case retry applies", async () => {

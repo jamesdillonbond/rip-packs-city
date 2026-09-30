@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   playerByPlay: {} as Record<string, string>,
   askBySetPlay: {} as Record<string, number | null>,
   usernameToAddr: {} as Record<string, string>,
+  usernameLookupDown: false,
 }))
 
 vi.mock("@/lib/chains/flow/flow", () => ({
@@ -46,6 +47,17 @@ vi.mock("@/lib/chains/flow/flow", () => ({
   },
 }))
 
+// 2026-09-29: usernames resolve through the shared ladder (flow-resolve →
+// resolveTopShotUsernameCacheAware), not All Day GraphQL — same fixture map.
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
+  resolveTopShotUsernameCacheAware: async (_db: unknown, username: string) => {
+    if (state.usernameLookupDown) return { found: false, reason: "topshot_gql_error", detail: "atlas: down" }
+    const addr = state.usernameToAddr[username]
+    return addr
+      ? { found: true, walletAddress: addr, username, source: "atlas", cacheLayer: "atlas_live" }
+      : { found: false, reason: "username_not_found_on_topshot" }
+  },
+}))
 vi.mock("@/lib/chains/flow/allday", () => ({
   alldayGraphql: async (query: string, vars: Record<string, unknown>) => {
     if (query.includes("ResolveUserByUsername")) {
@@ -215,6 +227,16 @@ describe("allday-sets — resolution + guards", () => {
     const body = await res.json()
     expect(body.code).toBe("not_found")
     expect(body.error).toMatch(/wallet or username/i)
+  })
+
+  it("503s — and concludes nothing about the username — when the lookup cannot reach its source", async () => {
+    state.usernameLookupDown = true
+    const res = await GET(req("?wallet=someone"))
+    state.usernameLookupDown = false
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.code).toBe("upstream_unavailable")
+    expect(body.error).not.toMatch(/check the spelling/i)
   })
 
   it("400s without a wallet param; an empty wallet returns the zero-state envelope", async () => {

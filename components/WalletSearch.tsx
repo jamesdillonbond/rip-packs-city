@@ -217,7 +217,16 @@ export default function WalletSearch({
       // advises them to change what they typed, out of an outage. That is the
       // "diagnoses a cause it cannot know" shape.
       if (!res.ok) {
-        setError("Couldn't search just now — this says nothing about that wallet. Try again shortly.")
+        // A 404 username_not_found IS an answer about what was typed (the
+        // route says so only when Top Shot confirmed the handle does not exist);
+        // every other non-2xx is us failing to look.
+        let code: unknown = null
+        try { code = (await res.json())?.code } catch { /* no body: stays a failure */ }
+        setError(
+          res.status === 404 && code === "username_not_found"
+            ? "Couldn't find that Top Shot username. Check the spelling, or enter the wallet address."
+            : "Couldn't search just now — this says nothing about that wallet. Try again shortly.",
+        )
         return
       }
       const data = await res.json().catch(() => null)

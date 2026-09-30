@@ -17,6 +17,19 @@ vi.mock("@/lib/supabase", () => {
   return { supabaseAdmin: { from: () => b } }
 })
 vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => state.gql }))
+// 2026-09-29: the route resolves usernames through the shared ladder
+// (lib/chains/flow/flow-resolve → resolveTopShotUsernameCacheAware), so that is
+// the seam mocked here — found / confirmed miss / failure to look.
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
+  lookupCachedTopShotUsername: async () => null,
+  resolveTopShotUsernameCacheAware: async () => {
+    if (state.gql?.down) return { found: false, reason: "topshot_gql_error", detail: "atlas: down" }
+    const a = state.gql?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
+    return a
+      ? { found: true, walletAddress: a.startsWith("0x") ? a : `0x${a}`, username: "u", source: "atlas", cacheLayer: "atlas_live" }
+      : { found: false, reason: "username_not_found_on_topshot" }
+  },
+}))
 
 import { GET } from "@/app/api/wallet-sales-history/route"
 
@@ -139,7 +152,7 @@ describe("GET /api/wallet-sales-history — Pinnacle (text id) path", () => {
 })
 
 describe("GET /api/wallet-sales-history — username resolution", () => {
-  it("resolves a @username to its flowAddress via topshotGraphql", async () => {
+  it("resolves a @username to its flowAddress via the shared ladder", async () => {
     state.gql = { getUserProfileByUsername: { publicInfo: { flowAddress: "bd94cade097e50ac" } } } // no 0x → route prefixes
     state.rows = { data: [], error: null }
     const body = await (await GET(req("https://t/api/wallet-sales-history?wallet=@trevor&collection=nba-top-shot"))).json()
@@ -153,5 +166,14 @@ describe("GET /api/wallet-sales-history — username resolution", () => {
     const body = await res.json()
     expect(body.code).toBe("not_found")
     expect(body.error).toMatch(/wallet or username/i)
+  })
+
+  it("503s — concluding nothing about the username — when the lookup cannot reach its source", async () => {
+    state.gql = { down: true }
+    const res = await GET(req("https://t/api/wallet-sales-history?wallet=someone&collection=nba-top-shot"))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.code).toBe("upstream_unavailable")
+    expect(body.error).not.toMatch(/check the spelling/i)
   })
 })

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { apiErrorResponse } from "@/lib/api-error"
+import { apiErrorResponse, isUnresolvedIdentifierError } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
-import { isWalletAddress, lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
+import { isWalletAddress } from "@/lib/chains/flow/topshot-username-resolve"
+import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve"
 import { isSupportedAddress, isValidAddressForChain } from "@/lib/address"
 import { getCollectionByUuid, getCollectionUuid } from "@/lib/collections"
 
@@ -63,19 +64,22 @@ export async function GET(req: NextRequest) {
   // index. `isSupportedAddress` recognises Cadence, EVM and base58, and the
   // username ladder now runs only for input that is not an address at all.
   if (!isWalletAddress(address) && !isSupportedAddress(address)) {
-    let resolved: string | null = null
+    // 2026-09-29: the shared ladder (cache → live Atlas → Top Shot GQL), the same
+    // one /api/collection-moments now uses — the collection tab calls both, and a
+    // cache-only lookup here would 404 the summary of a wallet whose moments the
+    // other route had just resolved and shown.
     try {
-      resolved = await lookupCachedTopShotUsername(supabase as any, address)
+      address = await resolveToFlowAddress(address)
     } catch (e) {
+      if (e instanceof UsernameLookupUnavailableError) return usernameLookupUnavailableResponse()
+      if (isUnresolvedIdentifierError(e)) {
+        return NextResponse.json(
+          { error: "unresolved", message: "We couldn't find that Top Shot username. Check the spelling, or try the 0x wallet address." },
+          { status: 404, headers: { "Cache-Control": "no-store" } }
+        )
+      }
       return apiErrorResponse(e, "api/wallet-summary/resolve-username")
     }
-    if (!resolved) {
-      return NextResponse.json(
-        { error: "unresolved", message: "That Top Shot username is not in our index yet — try the 0x wallet address." },
-        { status: 404, headers: { "Cache-Control": "no-store" } }
-      )
-    }
-    address = resolved
   }
 
   // ⛔ 2026-09-25 — a Flow address against Candy MLB (or a Solana address

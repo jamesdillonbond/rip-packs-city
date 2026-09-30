@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import {safeApiError, isUnresolvedIdentifierError, unresolvedIdentifierResponse} from "@/lib/api-error";
-import { topshotGraphql } from "@/lib/chains/flow/topshot"
-import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
-import { supabaseAdmin } from "@/lib/supabase"
+import { resolveToFlowAddress } from "@/lib/chains/flow/flow-resolve"
 
 const STUDIO_GRAPHQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
 
@@ -37,14 +35,6 @@ const OWNED_PACKS_QUERY = `
   }
 `
 
-type UsernameProfileResponse = {
-  getUserProfileByUsername?: {
-    publicInfo?: {
-      flowAddress?: string | null
-    } | null
-  } | null
-}
-
 type OwnedPackNode = {
   dist_id: { key: string; value: string }
   distribution: {
@@ -64,34 +54,10 @@ type GraphQLResponse = {
   errors?: { message: string }[]
 }
 
-function isWalletAddress(value: string) {
-  return /^0x[a-fA-F0-9]{16}$/.test(value.trim())
-}
-
-function ensureFlowPrefix(v: string) {
-  return v.startsWith("0x") ? v : "0x" + v
-}
-
-async function resolveWallet(input: string): Promise<string> {
-  const trimmed = input.trim()
-  if (isWalletAddress(trimmed)) return ensureFlowPrefix(trimmed)
-
-  const cleanedUsername = trimmed.replace(/^@+/, "")
-  // 2026-09-04: the cached username ladder FIRST (the live host below is dead — see lookupCachedTopShotUsername).
-  const cachedWallet = await lookupCachedTopShotUsername(supabaseAdmin as any, cleanedUsername)
-  if (cachedWallet) return cachedWallet
-  const query = `
-    query GetUserProfileByUsername($username: String!) {
-      getUserProfileByUsername(input: { username: $username }) {
-        publicInfo { flowAddress }
-      }
-    }
-  `
-  const data = await topshotGraphql<UsernameProfileResponse>(query, { username: cleanedUsername })
-  const rawWallet = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
-  if (!rawWallet) throw new Error("Could not resolve username to wallet address.")
-  return ensureFlowPrefix(rawWallet)
-}
+// 2026-09-29: usernames resolve through the shared ladder (cache → live Atlas →
+// Top Shot GQL). The local copy went cache → the dead Top Shot host only, so a
+// username not already cached could never resolve here.
+const resolveWallet = resolveToFlowAddress
 
 export async function GET(req: NextRequest) {
   try {

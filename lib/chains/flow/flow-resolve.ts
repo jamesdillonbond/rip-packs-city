@@ -1,6 +1,6 @@
-import { topshotGraphql } from "@/lib/chains/flow/topshot";
-import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve";
+import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve";
 import { supabaseAdmin } from "@/lib/supabase";
+import { NextResponse } from "next/server";
 
 const resolveCache = new Map<string, { addr: string; expiresAt: number }>();
 const RESOLVE_TTL_MS = 5 * 60 * 1000;
@@ -13,12 +13,37 @@ function ensureFlowPrefix(v: string) {
   return v.startsWith("0x") ? v : "0x" + v;
 }
 
-type TopShotUserProfileResponse = {
-  getUserProfileByUsername?: {
-    publicInfo?: { flowAddress?: string | null; username?: string | null } | null;
-  } | null;
-};
+/**
+ * Thrown when a username lookup could not REACH its source — as opposed to the
+ * "Could not resolve …" error, which means the source answered and there is no
+ * such user. Its message deliberately does not match isUnresolvedIdentifierError.
+ */
+export class UsernameLookupUnavailableError extends Error {
+  constructor(detail: string) {
+    super(`username lookup unavailable: ${detail}`);
+    this.name = "UsernameLookupUnavailableError";
+  }
+}
 
+/** The publishable 503 for the above: fixed copy, concludes nothing about the handle. */
+export function usernameLookupUnavailableResponse(): NextResponse {
+  return NextResponse.json(
+    {
+      error: "We couldn't reach Top Shot to look up that username, so this says nothing about it. Try again shortly, or enter the wallet address.",
+      code: "upstream_unavailable" as const,
+      retryable: true,
+    },
+    { status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "30" } },
+  );
+}
+
+// 2026-09-29 — resolves through the shared cache-aware ladder (cached layers,
+// then a live Atlas read, then Top Shot GQL). This used to run its own copy:
+// the cache, then ONLY the Top Shot GraphQL host — decommissioned, per the note
+// in app/api/sets/route.ts — with every thrown error swallowed into `null`. So
+// any username not already cached, on any day, came back "Could not resolve …
+// Check the username", and an outage read the same way. Now a miss says so and
+// a failure to look throws UsernameLookupUnavailableError.
 export async function resolveToFlowAddress(input: string): Promise<string> {
   const trimmed = input.trim();
   if (isWalletAddress(trimmed)) return ensureFlowPrefix(trimmed);
@@ -26,30 +51,13 @@ export async function resolveToFlowAddress(input: string): Promise<string> {
   const cached = resolveCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.addr;
 
-  const cleanedUsername = trimmed.replace(/^@+/, "").trim();
-  // 2026-09-04: the cached username ladder FIRST (see lookupCachedTopShotUsername).
-  const cachedWallet = await lookupCachedTopShotUsername(supabaseAdmin as any, cleanedUsername);
-  if (cachedWallet) { resolveCache.set(cacheKey, { addr: cachedWallet, expiresAt: Date.now() + RESOLVE_TTL_MS }); return cachedWallet; }
-  const query = `
-    query ResolveUserByUsername($username: String!) {
-      getUserProfileByUsername(input: { username: $username }) {
-        publicInfo { flowAddress username }
-      }
-    }
-  `;
-  const tryResolve = async (username: string): Promise<string | null> => {
-    try {
-      const data = await topshotGraphql<TopShotUserProfileResponse>(query, { username });
-      const raw = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null;
-      return raw ? ensureFlowPrefix(raw) : null;
-    } catch { return null; }
-  };
-
-  let addr = await tryResolve(cleanedUsername);
-  if (!addr && cleanedUsername.toLowerCase() !== cleanedUsername) {
-    addr = await tryResolve(cleanedUsername.toLowerCase());
+  const outcome = await resolveTopShotUsernameCacheAware(supabaseAdmin as any, trimmed);
+  if (outcome.found) {
+    resolveCache.set(cacheKey, { addr: outcome.walletAddress, expiresAt: Date.now() + RESOLVE_TTL_MS });
+    return outcome.walletAddress;
   }
-  if (!addr) throw new Error('Could not resolve "' + trimmed + '" to a Flow address. Check the username and try again.');
-  resolveCache.set(cacheKey, { addr, expiresAt: Date.now() + RESOLVE_TTL_MS });
-  return addr;
+  if (outcome.reason === "topshot_gql_error") {
+    throw new UsernameLookupUnavailableError(outcome.detail ?? outcome.reason);
+  }
+  throw new Error('Could not resolve "' + trimmed + '" to a Flow address. Check the username and try again.');
 }

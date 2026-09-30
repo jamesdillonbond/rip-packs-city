@@ -8,7 +8,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { safeApiError, statusForSafeError } from "@/lib/api-error";
-import { resolveToFlowAddress } from "@/lib/chains/flow/flow-resolve";
+import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve";
+import { isUnresolvedIdentifierError, unresolvedIdentifierResponse } from "@/lib/api-error";
 import { detectAddressChain, isSupportedAddress } from "@/lib/address";
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
@@ -412,6 +413,10 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     // Full detail stays in the server log — that is where it belongs.
     console.error("[/api/sets] error:", err);
+    // A username the source confirmed does not exist is the caller's 400; one
+    // we could not LOOK UP is our 503. Both used to fall to the generic 500.
+    if (err instanceof UsernameLookupUnavailableError) return usernameLookupUnavailableResponse();
+    if (isUnresolvedIdentifierError(err)) return unresolvedIdentifierResponse();
     // ⚠ Do NOT return err.message. The sets page renders `body.error` verbatim
     // under an "ERROR" heading, so passing the driver message through put
     // "canceling statement due to statement timeout" in front of anonymous

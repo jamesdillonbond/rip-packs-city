@@ -60,6 +60,19 @@ vi.mock("@/lib/chains/flow/topshot", () => ({
   },
 }))
 
+// 2026-09-29: the route resolves usernames through the shared ladder
+// (lib/chains/flow/flow-resolve → resolveTopShotUsernameCacheAware), so that is
+// the seam mocked here — found / confirmed miss / failure to look.
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
+  lookupCachedTopShotUsername: async () => null,
+  resolveTopShotUsernameCacheAware: async () => {
+    if (state.resolveThrows) return { found: false, reason: "topshot_gql_error", detail: state.resolveThrows }
+    if (!state.resolvedAddress) return { found: false, reason: "username_not_found_on_topshot" }
+    const a = state.resolvedAddress
+    return { found: true, walletAddress: a.startsWith("0x") ? a : `0x${a}`, username: "u", source: "atlas", cacheLayer: "atlas_live" }
+  },
+}))
+
 const { GET } = await import("@/app/api/analytics/route")
 
 const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -121,8 +134,11 @@ describe("GET /api/analytics — guards + wallet resolution", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toContain("Could not resolve username")
 
+    // A failure to LOOK is not "could not resolve": 503, concluding nothing.
     state.resolveThrows = "topshot gql down"
-    expect((await GET(req("?wallet=ghost&collection_id=nba-top-shot"))).status).toBe(500)
+    const down = await GET(req("?wallet=ghost&collection_id=nba-top-shot"))
+    expect(down.status).toBe(503)
+    expect((await down.json()).error).not.toContain("Could not resolve")
   })
 })
 

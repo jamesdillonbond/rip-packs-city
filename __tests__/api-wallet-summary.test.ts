@@ -11,19 +11,28 @@ const rpc: { data: any; error: any; lastArgs: any } = { data: null, error: null,
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({ rpc: async (_n: string, args: any) => { rpc.lastArgs = args; return { data: rpc.data, error: rpc.error } } }),
 }))
-const resolver = { result: null as string | null, calls: [] as string[] }
+const resolver = { result: null as string | null, calls: [] as string[], down: false }
+// 2026-09-29: the route resolves usernames through the shared ladder
+// (lib/chains/flow/flow-resolve → resolveTopShotUsernameCacheAware), so that is
+// the seam mocked here — found / confirmed miss / failure to look.
 vi.mock("@/lib/chains/flow/topshot-username-resolve", async (orig) => {
   const real = await orig<typeof import("@/lib/chains/flow/topshot-username-resolve")>()
   return {
     ...real,
-    lookupCachedTopShotUsername: async (_c: unknown, u: string) => { resolver.calls.push(u); return resolver.result },
+    resolveTopShotUsernameCacheAware: async (_c: unknown, u: string) => {
+      resolver.calls.push(u)
+      if (resolver.down) return { found: false, reason: "topshot_gql_error", detail: "atlas: down" }
+      return resolver.result
+        ? { found: true, walletAddress: resolver.result, username: u, source: "atlas", cacheLayer: "atlas_live" }
+        : { found: false, reason: "username_not_found_on_topshot" }
+    },
   }
 })
 
 import { GET } from "@/app/api/wallet-summary/route"
 const req = (u: string) => ({ nextUrl: new URL(u) }) as any
 
-beforeEach(() => { rpc.data = null; rpc.error = null; rpc.lastArgs = null; resolver.result = null; resolver.calls = [] })
+beforeEach(() => { rpc.data = null; rpc.error = null; rpc.lastArgs = null; resolver.result = null; resolver.calls = []; resolver.down = false })
 
 describe("GET /api/wallet-summary", () => {
   it("400s without a wallet", async () => {
@@ -145,6 +154,14 @@ describe("GET /api/wallet-summary", () => {
     const body = await res.json()
     expect(body.error).toBe("unresolved")
     expect(body).not.toHaveProperty("wallet_fmv")
+  })
+
+  it("a lookup that cannot reach its source is a 503 — never 'unresolved', and the RPC is never asked", async () => {
+    resolver.down = true
+    const res = await GET(req("https://t/api/wallet-summary?wallet=someone"))
+    expect(res.status).toBe(503)
+    expect(rpc.lastArgs).toBeNull()
+    expect((await res.json()).error).not.toBe("unresolved")
   })
 })
 

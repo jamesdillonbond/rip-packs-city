@@ -12,11 +12,20 @@ const state: { data: any; error: any; rpcCalls: number; resolveCalls: string[] }
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { rpc: async () => { state.rpcCalls++; return { data: state.data, error: state.error } } },
 }))
+const LookupDown = vi.hoisted(() => class LookupDown extends Error {})
 vi.mock("@/lib/chains/flow/flow-resolve", () => ({
   // ⚠ Identity, so this file cannot prove the "dead Top Shot host is not
   // called" half. What it CAN prove is that the non-Flow branch returns BEFORE
   // anything downstream runs — hence the call counters above.
-  resolveToFlowAddress: async (w: string) => { state.resolveCalls.push(w); return w },
+  resolveToFlowAddress: async (w: string) => {
+    state.resolveCalls.push(w)
+    if (w === "lookup-down") throw new LookupDown("username lookup unavailable: atlas down")
+    if (w === "no-such-user") throw new Error('Could not resolve "no-such-user" to a Flow address. Check the username and try again.')
+    return w
+  },
+  UsernameLookupUnavailableError: LookupDown,
+  usernameLookupUnavailableResponse: () =>
+    new Response(JSON.stringify({ code: "upstream_unavailable", error: "We couldn't reach Top Shot to look up that username, so this says nothing about it." }), { status: 503 }),
 }))
 
 import { GET } from "@/app/api/sets/route"
@@ -103,6 +112,24 @@ describe("GET /api/sets", () => {
     expect(body.wallet).toBe("0xabc")
     expect(body.totalSets).toBe(0)
     expect(body.sets).toEqual([])
+  })
+
+  // 2026-09-29: both used to reach the generic catch as a 500 "Failed to load sets."
+  it("a username the source confirmed does not exist is a 400 'check the spelling'", async () => {
+    const res = await GET(req("https://t/api/sets?wallet=no-such-user"))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.code).toBe("not_found")
+    expect(body.error).toMatch(/Check the spelling/)
+  })
+
+  it("a username lookup that could not reach its source is a 503 that concludes nothing", async () => {
+    const res = await GET(req("https://t/api/sets?wallet=lookup-down"))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.code).toBe("upstream_unavailable")
+    expect(body.error).not.toMatch(/spelling/i)
+    expect(state.rpcCalls).toBe(0)
   })
 
   it("500s WITHOUT leaking the driver message when the progress RPC errors", async () => {

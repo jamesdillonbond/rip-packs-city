@@ -186,7 +186,7 @@ describe("concierge tools (extra) — dispatch + light success/branch paths", ()
 
   it("check_wallet: an unresolvable username returns a graceful unresolved message, not a lie", async () => {
     install({ "rpc:resolve_topshot_username": { data: { found: false }, error: null } })
-    stubFetch([jsonRoute("/api/resolve-topshot-username", { found: false })])
+    stubFetch([jsonRoute("/api/resolve-topshot-username", { found: false, reason: "username_not_found_on_topshot" })])
     script("check_wallet", { walletAddress: "ghostuser" })
     await POST(post("check ghostuser"))
     const r = toolResult()

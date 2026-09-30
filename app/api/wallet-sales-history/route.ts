@@ -13,17 +13,12 @@ import { NextRequest, NextResponse } from "next/server"
 import {apiErrorResponse, isUnresolvedIdentifierError, unresolvedIdentifierResponse} from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
-import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { isFlowAddress } from "@/lib/postgrest-safe"
-import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
+import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve"
 
 const TOPSHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const PINNACLE_UUID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
-
-type UsernameProfileResponse = {
-  getUserProfileByUsername?: { publicInfo?: { flowAddress?: string | null } | null } | null
-}
 
 async function resolveWallet(input: string): Promise<string> {
   const t = input.trim()
@@ -33,20 +28,11 @@ async function resolveWallet(input: string): Promise<string> {
   // parens) through into the filter grammar. A non-matching value falls through
   // to username resolution (server/API-sourced, safe).
   if (isFlowAddress(t)) return t
-  const query = `
-    query GetUserProfileByUsername($username: String!) {
-      getUserProfileByUsername(input: { username: $username }) {
-        publicInfo { flowAddress }
-      }
-    }
-  `
-  // 2026-09-04: the cached username ladder FIRST (the live host below is dead — see lookupCachedTopShotUsername).
-  const cachedWallet = await lookupCachedTopShotUsername(supabaseAdmin as any, t)
-  if (cachedWallet) return cachedWallet
-  const data = await topshotGraphql<UsernameProfileResponse>(query, { username: t.replace(/^@+/, "") })
-  const raw = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
-  if (!raw) throw new Error("Could not resolve username to wallet address.")
-  return raw.startsWith("0x") ? raw : `0x${raw}`
+  // 2026-09-29: the shared ladder (cache → live Atlas → Top Shot GQL). The local
+  // copy went cache → the dead Top Shot host only, so a username not already
+  // cached could never resolve here. A miss throws "Could not resolve …"; a
+  // failure to look throws UsernameLookupUnavailableError (answered 503).
+  return resolveToFlowAddress(t)
 }
 
 type SaleRow = {
@@ -141,6 +127,7 @@ export async function GET(req: NextRequest) {
     )
   } catch (err) {
     console.log("[wallet-sales-history] error:", err instanceof Error ? err.message : String(err))
+    if (err instanceof UsernameLookupUnavailableError) return usernameLookupUnavailableResponse();
     if (isUnresolvedIdentifierError(err)) return unresolvedIdentifierResponse();
     return apiErrorResponse(err, "api/wallet-sales-history");
   }

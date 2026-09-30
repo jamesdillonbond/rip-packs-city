@@ -227,6 +227,32 @@ async function withRetry<T>(fn: () => Promise<T>, delayMs = 2000): Promise<T> {
   }
 }
 
+// 2026-09-29 — a username lookup has TWO failure answers, and they need opposite
+// copy. A handle Top Shot does not know is an answer about the handle ("check
+// the spelling"); a lookup that could not reach Top Shot is us failing to look
+// ("try again"). Both used to throw the same error, and the main path turned it
+// into a 500 "Failed to fetch wallet data. Please try again." — advising a retry
+// that can never succeed for a misspelt handle, while the Golazos path said
+// "Could not resolve" for an outage.
+class UsernameLookupError extends Error {
+  constructor(readonly kind: "not_found" | "unavailable") {
+    super(kind === "not_found" ? "Could not resolve username to wallet address." : "Top Shot username lookup unavailable.")
+  }
+}
+
+function usernameLookupResponse(err: UsernameLookupError) {
+  return NextResponse.json(
+    {
+      rows: [],
+      summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+      ...(err.kind === "not_found"
+        ? { error: "We couldn't find that Top Shot username. Check the spelling, or enter the wallet address.", code: "username_not_found" }
+        : { error: "We couldn't reach Top Shot to look up that username, so this says nothing about it. Try again shortly, or enter the wallet address.", code: "username_lookup_unavailable" }),
+    } satisfies WalletSearchResponse & { code: string },
+    { status: err.kind === "not_found" ? 404 : 503 },
+  )
+}
+
 async function resolveWalletFromInput(input: string): Promise<string> {
   const trimmed = input.trim()
   if (isWalletAddress(trimmed)) return ensureFlowPrefix(trimmed)
@@ -239,9 +265,9 @@ async function resolveWalletFromInput(input: string): Promise<string> {
   // and was dropped to keep username-to-wallet a single source of truth.
   const outcome = await resolveTopShotUsernameCacheAware(supabaseAdmin, trimmed)
   if (outcome.found) return outcome.walletAddress
-  // Surface the same error message clients have always received for unresolved
-  // usernames so the UI's existing copy ("Username not found...") still fires.
-  throw new Error("Could not resolve username to wallet address.")
+  throw new UsernameLookupError(
+    outcome.reason === "username_not_found_on_topshot" || outcome.reason === "empty_username" ? "not_found" : "unavailable",
+  )
 }
 
 async function getOwnedMomentIds(wallet: string): Promise<number[]> {
@@ -1288,15 +1314,9 @@ export async function POST(req: NextRequest) {
       let gWallet: string
       try {
         gWallet = await resolveWalletFromInput(input)
-      } catch {
-        return NextResponse.json(
-          {
-            rows: [],
-            summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
-            error: "Could not resolve username to wallet address.",
-          } satisfies WalletSearchResponse,
-          { status: 200 }
-        )
+      } catch (err) {
+        if (err instanceof UsernameLookupError) return usernameLookupResponse(err)
+        throw err
       }
 
       const { data: gData, error: gErr } = await (supabaseAdmin as any).rpc(
@@ -1362,6 +1382,7 @@ export async function POST(req: NextRequest) {
       topLevelStage = "fetch_owned_ids"
       ids = isAllDay ? await getAllDayOwnedIds(wallet) : await getOwnedMomentIds(wallet)
     } catch (err) {
+      if (err instanceof UsernameLookupError) return usernameLookupResponse(err)
       const detail = err instanceof Error ? err.message : String(err)
       console.error("[wallet-search] Failed to resolve wallet or fetch owned IDs:", detail)
       // ⛔ "Please try again" IS A FALSE CLAIM FOR A COMPUTATION-LIMIT FAILURE.

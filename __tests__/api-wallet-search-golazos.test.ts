@@ -25,7 +25,9 @@ vi.mock("@/lib/auth/supabase-server", () => ({ getCurrentUser: async () => null 
 vi.mock("@/lib/rewards", () => ({ awardPoints: async () => {} }))
 vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
   resolveTopShotUsernameCacheAware: async () =>
-    state.resolveFound ? { found: true, walletAddress: "0xc4ab4a06ade1fd0f" } : { found: false },
+    state.resolveFound
+      ? { found: true, walletAddress: "0xc4ab4a06ade1fd0f" }
+      : { found: false, reason: (state as { resolveReason?: string }).resolveReason ?? "username_not_found_on_topshot" },
 }))
 
 import { POST } from "@/app/api/wallet-search/route"
@@ -144,13 +146,29 @@ describe("POST /api/wallet-search — Golazos wmc path", () => {
     expect(body.error).toContain("Failed to fetch")
   })
 
-  it("returns the resolve error for an unresolvable username", async () => {
+  // 2026-09-29: a handle Top Shot does not know and a lookup that could not
+  // reach Top Shot need opposite copy; both used to answer "Could not resolve".
+  it("a username Top Shot does not know is a 404 that says check the spelling", async () => {
     state.resolveFound = false
+    ;(state as { resolveReason?: string }).resolveReason = "username_not_found_on_topshot"
     const res = await POST(req({ input: "nosuchuser", collection: "laliga-golazos" }))
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(404)
     const body = await res.json()
-    expect(body.error).toContain("Could not resolve")
+    expect(body.code).toBe("username_not_found")
+    expect(body.error).toMatch(/Check the spelling/)
     expect(body.rows).toEqual([])
+  })
+
+  it("a lookup that could not reach Top Shot is a 503 that concludes nothing", async () => {
+    state.resolveFound = false
+    ;(state as { resolveReason?: string }).resolveReason = "topshot_gql_error"
+    const res = await POST(req({ input: "someone", collection: "laliga-golazos" }))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.code).toBe("username_lookup_unavailable")
+    expect(body.error).toMatch(/says nothing about it/)
+    expect(body.error).not.toMatch(/spelling/)
+    ;(state as { resolveReason?: string }).resolveReason = undefined
   })
 
   it("resolves a username via the shared resolver, then serves that wallet's wmc rows", async () => {

@@ -14,13 +14,10 @@ import {
   GET_EDITION_DATA,
   GET_PLAY_DATA,
 } from "@/lib/chains/flow/allday-cadence";
-import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve";
-import { supabaseAdmin } from "@/lib/supabase";
+import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve";
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
 
-const resolveCache = new Map<string, { addr: string; expiresAt: number }>();
-const RESOLVE_TTL_MS = 5 * 60 * 1000;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -85,14 +82,6 @@ interface SetsResponse {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function isWalletAddress(v: string) {
-  return /^0x[a-fA-F0-9]{16}$/.test(v.trim());
-}
-
-function ensureFlowPrefix(v: string) {
-  return v.startsWith("0x") ? v : "0x" + v;
-}
 
 function toNum(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -190,46 +179,10 @@ function sleep(ms: number) {
 
 // ── Resolve ────────────────────────────────────────────────────────────────────
 
-type UserProfileResponse = {
-  getUserProfileByUsername?: {
-    publicInfo?: { flowAddress?: string | null; username?: string | null } | null;
-  } | null;
-};
-
-async function resolveToFlowAddress(input: string): Promise<string> {
-  const trimmed = input.trim();
-  if (isWalletAddress(trimmed)) return ensureFlowPrefix(trimmed);
-  const cacheKey = trimmed.toLowerCase();
-  const cached = resolveCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return cached.addr;
-
-  const cleanedUsername = trimmed.replace(/^@+/, "").trim();
-  // 2026-09-04: the cached username ladder FIRST (see lookupCachedTopShotUsername).
-  const cachedWallet = await lookupCachedTopShotUsername(supabaseAdmin as any, cleanedUsername);
-  if (cachedWallet) { resolveCache.set(cacheKey, { addr: cachedWallet, expiresAt: Date.now() + RESOLVE_TTL_MS }); return cachedWallet; }
-  const query = `
-    query ResolveUserByUsername($username: String!) {
-      getUserProfileByUsername(input: { username: $username }) {
-        publicInfo { flowAddress username }
-      }
-    }
-  `;
-  const tryResolve = async (username: string): Promise<string | null> => {
-    try {
-      const data = await alldayGraphql<UserProfileResponse>(query, { username });
-      const raw = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null;
-      return raw ? ensureFlowPrefix(raw) : null;
-    } catch { return null; }
-  };
-
-  let addr = await tryResolve(cleanedUsername);
-  if (!addr && cleanedUsername.toLowerCase() !== cleanedUsername) {
-    addr = await tryResolve(cleanedUsername.toLowerCase());
-  }
-  if (!addr) throw new Error('Could not resolve "' + trimmed + '" to a Flow address. Check the username and try again.');
-  resolveCache.set(cacheKey, { addr, expiresAt: Date.now() + RESOLVE_TTL_MS });
-  return addr;
-}
+// Usernames resolve through the shared ladder (lib/chains/flow/flow-resolve):
+// a Dapper username names ONE Flow address across collections. The local copy
+// here went cache → All Day GraphQL (blocked from Vercel egress), swallowing
+// every error, so an uncached username always read "not found".
 
 // ── FCL — owned moment IDs ────────────────────────────────────────────────────
 
@@ -669,6 +622,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[/api/allday-sets] error:", err);
+    if (err instanceof UsernameLookupUnavailableError) return usernameLookupUnavailableResponse();
     if (isUnresolvedIdentifierError(err)) return unresolvedIdentifierResponse();
     return apiErrorResponse(err, "api/allday-sets");
   }

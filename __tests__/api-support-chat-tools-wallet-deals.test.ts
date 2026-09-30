@@ -117,7 +117,7 @@ const HEX = "0x1234567890abcdef"
 describe("analyze_wallet_holdings", () => {
   it("returns username_not_resolved when a non-hex handle resolves nowhere (never invents a wallet)", async () => {
     install({ "rpc:resolve_topshot_username": { data: { found: false }, error: null } })
-    stubFetch([jsonRoute("/api/resolve-topshot-username", { found: false })])
+    stubFetch([jsonRoute("/api/resolve-topshot-username", { found: false, reason: "username_not_found_on_topshot" })])
     script("analyze_wallet_holdings", { walletAddress: "ghost_user" })
     await POST(post("break down ghost_user"))
     expect(toolResult()).toMatchObject({ status: "username_not_resolved", wallet: "ghost_user" })
@@ -163,9 +163,30 @@ describe("analyze_wallet_holdings", () => {
 })
 
 describe("check_wallet_squeeze", () => {
+  // 2026-09-29: the route answers 200 {found:false} for an upstream failure too
+  // (reason topshot_gql_error), and a timeout used to fall into the same branch —
+  // so an outage told the reader the username had no wallet. Only a genuine miss
+  // (username_not_found_on_topshot) may say so.
+  it("an upstream lookup failure is reported as a failed lookup, never 'not on file'", async () => {
+    install({ "rpc:resolve_topshot_username": { data: { found: false }, error: null } })
+    stubFetch([jsonRoute("/api/resolve-topshot-username", { found: false, reason: "topshot_gql_error", detail: "503" })])
+    script("check_wallet_squeeze", { walletAddress: "somebody" })
+    await POST(post("squeeze for somebody"))
+    expect(toolResult()).toMatchObject({ status: "username_lookup_failed", wallet: "somebody" })
+    expect(String(toolResult().message)).not.toMatch(/don't have a wallet/)
+  })
+
+  it("a lookup that errors outright (non-2xx) is a failed lookup too", async () => {
+    install({ "rpc:resolve_topshot_username": { data: { found: false }, error: null } })
+    stubFetch([jsonRoute("/api/resolve-topshot-username", { error: "unauthorized" }, { status: 401 })])
+    script("analyze_wallet_holdings", { walletAddress: "somebody_else" })
+    await POST(post("break down somebody_else"))
+    expect(toolResult()).toMatchObject({ status: "username_lookup_failed" })
+  })
+
   it("returns username_not_resolved for an unknown handle", async () => {
     install({ "rpc:resolve_topshot_username": { data: { found: false }, error: null } })
-    stubFetch([jsonRoute("/api/resolve-topshot-username", { found: false })])
+    stubFetch([jsonRoute("/api/resolve-topshot-username", { found: false, reason: "username_not_found_on_topshot" })])
     script("check_wallet_squeeze", { walletAddress: "nobody" })
     await POST(post("squeeze for nobody"))
     expect(toolResult()).toMatchObject({ status: "username_not_resolved" })

@@ -32,8 +32,11 @@ import { join, relative, sep } from "node:path"
 // (#65) — a dead fallback behind a live primary is harmless and honest. Decide
 // per consumer; the ratchet only insists the count never grows.
 
-/** The importers as of 2026-09-13, after wallet-search's partial re-point. */
-const BASELINE = 19
+/** The importers as of 2026-09-29: 19 → 12 after flow-resolve (the Set
+ *  Tracker), analytics, wallet-sales-history, wallet-cost-basis,
+ *  wallet-hold-time, wallet-packs and collection-moments moved their username
+ *  lookups onto the shared ladder. */
+const BASELINE = 12
 
 const ROOTS = ["app", "lib", "scripts", "workers", "supabase"]
 /** The module that legitimately OWNS the dead endpoint. */

@@ -95,6 +95,29 @@ describe("WalletSearch — an outage is not a missing wallet", () => {
   })
 })
 
+describe("WalletSearch — a CONFIRMED miss from the route (2026-09-29)", () => {
+  // The route used to answer a username Top Shot does not know with a 500, so
+  // the "genuine miss" above never happened in production: a misspelt handle
+  // read "Couldn't search just now". It now answers 404 username_not_found.
+  it("a 404 username_not_found says check the spelling — not 'couldn't search'", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: false, status: 404,
+      json: async () => ({ rows: [], code: "username_not_found", error: "We couldn't find that Top Shot username." }),
+    }) as any))
+    render(<WalletSearch surface="test" />)
+    submit("misspelt_handle")
+    await waitFor(() => expect(screen.getByText(/Couldn't find that Top Shot username/)).toBeTruthy())
+    expect(screen.queryByText(/Couldn't search just now/)).toBeNull()
+  })
+
+  it("a 404 WITHOUT that code (any other not-found) is still treated as a failure to look", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 404, json: async () => ({ error: "Not Found" }) }) as any))
+    render(<WalletSearch surface="test" />)
+    submit("someone")
+    await waitFor(() => expect(screen.getByText(/Couldn't search just now/)).toBeTruthy())
+  })
+})
+
 describe("both wallet-search sites carry the status check", () => {
   it("ShareEmptyState has the same guard, ordered before the parse", async () => {
     // Asserted at source: this component redirects on success and is awkward to
@@ -117,13 +140,17 @@ describe("both wallet-search sites carry the status check", () => {
     // slightly wider than it was stated there: it is enough for EITHER needle to
     // recur. Contiguity sidesteps the question: guard, then parse, nothing
     // between.
-    const guardThenParse =
-      "if (!res.ok) {\n" +
-      '        setError("Couldn\'t search just now — this says nothing about that wallet. Try again shortly.");\n' +
-      "        return;\n" +
-      "      }\n" +
-      "      const data = await res.json().catch(() => null);"
-    expect(src).toContain(guardThenParse)
+    // 2026-09-29: the guard now tells a CONFIRMED miss (404 username_not_found)
+    // from a failure, so its body grew; still guard first, parse of the success
+    // body after, nothing else between the guard's return and that parse.
+    const guard = src.indexOf("if (!res.ok) {")
+    const parse = src.indexOf("const data = await res.json().catch(() => null);", guard)
+    expect(guard).toBeGreaterThan(-1)
+    expect(parse).toBeGreaterThan(guard)
+    const between = src.slice(guard, parse)
+    expect(between).toContain("Couldn't search just now — this says nothing about that wallet. Try again shortly.")
+    expect(between).toContain('res.status === 404 && code === "username_not_found"')
+    expect(between.trimEnd().endsWith("return;\n      }")).toBe(true)
     // The honest not-found copy survives here too.
     expect(src).toContain("Couldn't find that. Try a Flow wallet address")
   })

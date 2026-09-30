@@ -38,6 +38,19 @@ vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async () => state.username,
 }))
 
+// 2026-09-29: the route resolves usernames through the shared ladder
+// (lib/chains/flow/flow-resolve → resolveTopShotUsernameCacheAware), so that is
+// the seam mocked here — found / confirmed miss / failure to look.
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
+  lookupCachedTopShotUsername: async () => null,
+  resolveTopShotUsernameCacheAware: async () => {
+    const a = (state.username as any)?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
+    return a
+      ? { found: true, walletAddress: a, username: "u", source: "atlas", cacheLayer: "atlas_live" }
+      : { found: false, reason: "username_not_found_on_topshot" }
+  },
+}))
+
 import { GET } from "@/app/api/wallet-hold-time/route"
 
 const req = (qs: string) => ({ nextUrl: new URL("https://t/api/wallet-hold-time" + qs) }) as any
