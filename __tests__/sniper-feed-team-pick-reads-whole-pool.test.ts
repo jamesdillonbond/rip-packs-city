@@ -316,9 +316,22 @@ describe("sniper-feed narrowing filters reach the whole pool (2026-09-29)", () =
     expect(floorCalls().map((c) => c.args.p_min_discount)).toEqual([30])
   })
 
+  it("a market-wide sort (best discount, cheapest, highest FMV) reads the floors; 'Recently listed' does not", async () => {
+    for (const sort of ["discount", "price_asc", "fmv_desc"]) {
+      fx.rpcCalls = []
+      fx.resolve = resolve
+      await GET(get(`?collection=nba-top-shot&sortBy=${sort}`))
+      expect(floorCalls().map((c) => [c.args.p_sort_by, c.args.p_limit])).toEqual([[sort, 1000]])
+    }
+    fx.rpcCalls = []
+    fx.resolve = resolve
+    await GET(get("?collection=nba-top-shot&sortBy=listed_desc"))
+    expect(floorCalls()).toHaveLength(0)
+  })
+
   it("a max price is pushed into the pool read, and on its own does not force the floor read", async () => {
     fx.resolve = resolve
-    await GET(get("?collection=nba-top-shot&maxPrice=5"))
+    await GET(get("?collection=nba-top-shot&maxPrice=5&sortBy=listed_desc"))
     for (const c of tsCalls()) expect(opArgs(c.ops, "lte")).toContainEqual(["price_usd", 5])
     expect(floorCalls()).toHaveLength(0)
   })

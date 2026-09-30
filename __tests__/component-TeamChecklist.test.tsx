@@ -378,7 +378,10 @@ describe("TeamChecklist", () => {
     expect(queryByText(/Track a different wallet/)).toBeNull()
     expect(queryByText(/Paste your wallet/)).toBeNull()
     expect(queryByPlaceholderText("0x…")).toBeNull()
-    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes(`wallet=${OWN}`))).toBe(true)
+    // Awaited: the progress mock answers "12 / 100" for the un-scoped read too,
+    // so under full-suite load the text can render before the wallet-scoped
+    // request fires (it failed once that way, 2026-09-29).
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes(`wallet=${OWN}`))).toBe(true))
     // Following the session is not a saved paste.
     expect(window.localStorage.getItem("rpc_checklist_wallet")).toBeNull()
   })

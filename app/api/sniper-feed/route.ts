@@ -1939,7 +1939,12 @@ async function computeSniperFeed(opts: {
   // while ≥1,000 Legendary editions had a priced floor, because a non-sparse
   // pool skipped the one read that has them. (A max price alone is not in this
   // list: it is pushed into the pool read, and cheap listings dominate the pool.)
-  const teamPicked = team !== "all" || player !== "" || rarity !== "all" || minDiscount > 0 || badgeOnly;
+  // A sort other than "Recently listed" is a market-wide question too: "Best
+  // discount" re-ranked the ~28 priced deals among the newest 200 listings,
+  // while the market's best verified discounts (58 %, MEDIUM) sat in the
+  // edition floors the default board never read.
+  const teamPicked = team !== "all" || player !== "" || rarity !== "all" || minDiscount > 0 || badgeOnly
+    || sortBy !== "listed_desc";
   if (teamPicked || tsListings.length < TS_GQL_SPARSE_THRESHOLD || tsDistinctEditions < TS_GQL_SPARSE_THRESHOLD) {
     console.log(`[sniper-feed] TS augment (${teamPicked ? `narrowed board` : `sparse`}: ${tsListings.length} listings over ${tsDistinctEditions} editions) — get_topshot_sniper_deals RPC`);
     // p_team is one exact label, so a franchise pick asks once per label it has
