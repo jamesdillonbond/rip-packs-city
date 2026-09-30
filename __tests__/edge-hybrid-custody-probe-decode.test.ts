@@ -204,8 +204,30 @@ describe("hybrid-custody-backfill carries the child-side probe", () => {
     expect(mig).toMatch(/hybrid-custody-backfill\?key=' \|\| public\.cron_gate_key\('hybrid-custody-backfill'\) \|\| '&scope=wallets'/)
   })
 
+  it("the scheduled LAST page fails (ok=false) when candidates remain past it — never a silent unread tail", () => {
+    expect(edge).toMatch(/const outgrew = opts\.lastPage && nextOffset !== null;/)
+    expect(edge).toMatch(/\["scope", "offset", "limit", "last_page"\]/)
+    const mig = readFileSync(
+      join(root, "supabase/migrations/20260929235900_audit_20260929_hybrid_custody_backfill_weekly_full_pages.sql"),
+      "utf8",
+    )
+    // exactly one page carries last_page=1, and it is the highest offset
+    const pages = [...mig.matchAll(/scope=all&offset=(\d+)&limit=(\d+)(&last_page=1)?/g)].map((m) => ({
+      offset: Number(m[1]), limit: Number(m[2]), last: !!m[3],
+    }))
+    expect(pages.length).toBe(3)
+    expect(pages.filter((p) => p.last).length).toBe(1)
+    const sorted = [...pages].sort((a, b) => a.offset - b.offset)
+    expect(sorted[sorted.length - 1].last).toBe(true)
+    // pages overlap or touch: no candidate index falls between two pages
+    for (let i = 1; i < sorted.length; i++) {
+      expect(sorted[i].offset).toBeLessThanOrEqual(sorted[i - 1].offset + sorted[i - 1].limit)
+    }
+    expect(sorted[0].offset).toBe(0)
+  })
+
   it("the run's ok is DERIVED from probe errors and failed writes, never hardcoded true", () => {
-    expect(edge).toMatch(/const ok = probeErrors === 0 && pairsFailed === 0;/)
+    expect(edge).toMatch(/const ok = probeErrors === 0 && pairsFailed === 0 && !outgrew;/)
     expect(edge).not.toMatch(/ok: true,\s*\n\s*error: probeErrors/)
   })
 })

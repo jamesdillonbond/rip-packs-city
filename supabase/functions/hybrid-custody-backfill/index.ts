@@ -20,6 +20,11 @@
 //     GET ?key=<cron_gate_key('hybrid-custody-backfill')>&scope=wallets. A
 //     wallet saved AFTER the event cursor started, whose link predates it, is
 //     otherwise never seen.
+//   - pg_cron weekly, scope=all in three fixed pages (jobs
+//     rpc-hybrid-custody-backfill-all-p{1,2,3}, Sunday ~3:40-4:00 AM PT):
+//     offsets 0 / 2950 / 5900, limit 3000 (50-row overlaps absorb the set moving
+//     between pages). The last carries last_page=1: if candidates remain past
+//     it, the run is ok=false and names the unread count ("add a page").
 //   - ad hoc, Authorization: Bearer <INGEST_SECRET_TOKEN>, POST body or query.
 // The full candidate set (~6.6k) outruns one invocation, so page it:
 //   {"scope":"wallets"}                        saved+seeded only (~0.3k, ~9 s)
@@ -437,6 +442,10 @@ interface RunOpts {
   scope: Scope;
   offset: number;
   limit: number;
+  // The scheduler's LAST fixed page. Candidates left beyond it mean the set
+  // outgrew the schedule: the run reports ok=false instead of leaving the tail
+  // unread with every page green.
+  lastPage: boolean;
 }
 
 async function run(startedAtIso: string, opts: RunOpts): Promise<void> {
@@ -488,7 +497,11 @@ async function run(startedAtIso: string, opts: RunOpts): Promise<void> {
   const nextOffset = opts.offset + candidates.length < total ? opts.offset + candidates.length : null;
   // ok means every probe was read AND every link it proved was written — a run
   // with probe errors or failed writes has left links out and must not read green.
-  const ok = probeErrors === 0 && pairsFailed === 0;
+  const outgrew = opts.lastPage && nextOffset !== null;
+  const ok = probeErrors === 0 && pairsFailed === 0 && !outgrew;
+  const errors: string[] = [];
+  if (probeErrors > 0 || pairsFailed > 0) errors.push(`probe_errors=${probeErrors} pairs_failed=${pairsFailed}`);
+  if (outgrew) errors.push(`candidate set outgrew the scheduled pages: ${total - (nextOffset ?? total)} candidates from offset ${nextOffset} were not read; add a page`);
 
   await writePipelineRun({
     startedAt: startedAtIso,
@@ -496,11 +509,12 @@ async function run(startedAtIso: string, opts: RunOpts): Promise<void> {
     rowsWritten: pairsWritten,
     rowsSkipped: pairsFailed,
     ok,
-    error: ok ? null : `probe_errors=${probeErrors} pairs_failed=${pairsFailed}`,
+    error: ok ? null : errors.join(" | "),
     extra: {
       scope: opts.scope,
       offset: opts.offset,
       limit: opts.limit,
+      last_page: opts.lastPage,
       candidates_total: total,
       candidates: candidates.length,
       next_offset: nextOffset,
@@ -528,7 +542,7 @@ Deno.serve(async (req: Request) => {
 
   // Params from the query string (pg_cron GET) overlaid by a JSON body (POST).
   let body: Record<string, unknown> = Object.fromEntries(
-    ["scope", "offset", "limit"].flatMap((k) => url.searchParams.has(k) ? [[k, url.searchParams.get(k)]] : []),
+    ["scope", "offset", "limit", "last_page"].flatMap((k) => url.searchParams.has(k) ? [[k, url.searchParams.get(k)]] : []),
   );
   try {
     const text = req.method === "GET" ? "" : await req.text();
@@ -542,9 +556,10 @@ Deno.serve(async (req: Request) => {
   const scope: Scope = body.scope === "wallets" ? "wallets" : "all";
   const offset = Math.max(0, Math.floor(Number(body.offset ?? 0)) || 0);
   const limit = Math.min(MAX_LIMIT, Math.max(1, Math.floor(Number(body.limit ?? DEFAULT_LIMIT)) || DEFAULT_LIMIT));
+  const lastPage = body.last_page === true || body.last_page === "1" || body.last_page === "true";
 
   const startedAtIso = new Date().toISOString();
-  const work = run(startedAtIso, { scope, offset, limit }).catch((err) => {
+  const work = run(startedAtIso, { scope, offset, limit, lastPage }).catch((err) => {
     const msg = err instanceof Error ? err.message : String(err);
     console.log(`[hybrid-custody-backfill] fatal: ${msg.slice(0, 400)}`);
   });
