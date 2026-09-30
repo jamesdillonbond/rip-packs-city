@@ -219,6 +219,34 @@ describe("GET /api/check-alerts — deferred sweep", () => {
     expect(log).toMatchObject({ p_pipeline: "check-alerts", p_ok: true, p_rows_skipped: 1, p_rows_written: 1 })
   })
 
+  // 2026-09-29: fmv_alerts stores discount_above (the /api/alerts contract and
+  // check_triggered_fmv_alerts); the email only knew "below_fmv_pct", so a real
+  // alert read "Threshold 25 hit (discount_above)" with the % shown as $25.00.
+  it("an fmv_alerts discount_above alert is described as a percentage, not dollars", async () => {
+    install({
+      "rpc:get_pipeline_alerts": { data: [], error: null },
+      "rpc:check_triggered_fmv_alerts": {
+        data: {
+          total_triggered: 1,
+          triggered_alerts: [{
+            alert_id: "a-disc", player_name: "Scoot Henderson", alert_type: "discount_above", threshold: 25,
+            notification_email: "user@example.com", channel: "email", last_triggered_at: null, lowest_ask: 12.5, current_fmv: 20,
+          }],
+        },
+        error: null,
+      },
+      fmv_alerts: { data: null, error: null },
+    })
+    const f = stubFetch([telegramOk, resendOk])
+    await GET(reqAuthed())
+    await runDeferred()
+    const html = String(JSON.parse(String(f.calls.find((c) => c.url.includes("api.resend.com"))?.init?.body)).html)
+    expect(html).toContain("Discount vs FMV reached 25% or more")
+    expect(html).toContain(">25%<")
+    expect(html).not.toContain("$25.00")
+    expect(html).not.toContain("hit (discount_above)")
+  })
+
   it("a throw inside the sweep still writes a pipeline_runs row (2026-06-11 fatal-catch class)", async () => {
     const { rpcCalls } = install(
       {

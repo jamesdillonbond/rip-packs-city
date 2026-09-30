@@ -23,6 +23,15 @@ describe("describeAlert", () => {
   it("describes an above_fmv alert with a dollar threshold", () => {
     expect(describeAlert("above_fmv", 99.99)).toBe("FMV rises above $99.99")
   })
+  // 2026-09-29: fmv_alerts stores price_below | discount_above | fmv_below |
+  // fmv_above (the /api/alerts contract) — the names above are older aliases.
+  // Every real alert used to fall through to "price_below ≥ 20".
+  it("describes fmv_alerts' own types, the % one as a percentage", () => {
+    expect(describeAlert("price_below", 12.5)).toBe("Lowest ask drops to or below $12.50")
+    expect(describeAlert("discount_above", 15)).toBe("Discount vs FMV exceeds 15%")
+    expect(describeAlert("fmv_below", 40)).toBe("FMV drops below $40.00")
+    expect(describeAlert("fmv_above", 99.99)).toBe("FMV rises above $99.99")
+  })
   it("falls back to '<type> ≥ <threshold>' for an unknown alert type", () => {
     expect(describeAlert("mystery", 7)).toBe("mystery ≥ 7")
   })

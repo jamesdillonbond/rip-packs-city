@@ -8,13 +8,19 @@ import { fmtDollars } from "@/components/profile/_shared";
 // Human-readable description of an alert's trigger condition. The default arm
 // covers any alert_type the switch doesn't recognize.
 export function describeAlert(alert_type: string, threshold: number): string {
+  // fmv_alerts' own types first (price_below | discount_above | fmv_below |
+  // fmv_above — the /api/alerts contract); the older names stay as aliases.
   switch (alert_type) {
+    case "price_below":
     case "below_price":
       return "Lowest ask drops to or below " + fmtDollars(Number(threshold));
+    case "discount_above":
     case "below_fmv_pct":
       return "Discount vs FMV exceeds " + threshold + "%";
+    case "fmv_below":
     case "below_fmv":
       return "FMV drops below " + fmtDollars(Number(threshold));
+    case "fmv_above":
     case "above_fmv":
       return "FMV rises above " + fmtDollars(Number(threshold));
     default:

@@ -27,6 +27,12 @@ vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
   return { ...actual, after: () => {} }
 })
+// The reader's session cookie, which the watchlist/alerts tools forward to the
+// cookie-authed self-API (null = no request scope, e.g. a bot DM).
+const H = vi.hoisted(() => ({ cookie: "sb-access-token=reader" as string | null }))
+vi.mock("next/headers", () => ({
+  headers: async () => new Headers(H.cookie ? { cookie: H.cookie } : {}),
+}))
 vi.mock("@/lib/auth/supabase-server", () => ({
   getSupabaseServer: async () => ({
     auth: {
@@ -190,14 +196,20 @@ describe("concierge tools — watchlist/alerts self-API bridge", () => {
     expect(String(toolResult().message)).toContain("watchlist is empty")
   })
 
-  it("alerts set POSTs the threshold subscription", async () => {
+  // 2026-09-29 — INVERTED. This case pinned the defect: it asserted the body
+  // carried owner_key and alert_type "below_price", which /api/alerts rejects
+  // (400: its types are price_below | fmv_below | fmv_above | discount_above)
+  // and it keys alerts on the session user, not a body field. With the mock
+  // answering 200, the concierge's "Alert set" was never tested against the
+  // route it calls; fmv_alerts has held zero rows, ever.
+  it("alerts set sends a type the route accepts, the collection, and the reader's cookie", async () => {
     signIn()
-    const f = stubFetch([jsonRoute("/api/alerts", { ok: true })])
+    const f = stubFetch([jsonRoute("/api/alerts", { id: "a1" }, { status: 201 })])
     script("manage_alerts", {
       action: "set",
       edition_key: "3:45",
       player_name: "Dame",
-      alert_type: "below_price",
+      alert_type: "below_price", // the tool's old name, still accepted
       threshold: 20,
       channel: "email",
     })
@@ -205,11 +217,56 @@ describe("concierge tools — watchlist/alerts self-API bridge", () => {
 
     expect(toolResult()).toMatchObject({ status: "ok" })
     const call = f.calls.find((c) => c.url.includes("/api/alerts") && c.init?.method === "POST")
-    expect(JSON.parse(String(call?.init?.body))).toMatchObject({
-      owner_key: WALLET,
-      alert_type: "below_price",
-      threshold: 20,
-    })
+    const body = JSON.parse(String(call?.init?.body))
+    expect(body).toMatchObject({ edition_key: "3:45", alert_type: "price_below", threshold: 20 })
+    expect(body.owner_key).toBeUndefined()
+    expect(new Headers(call?.init?.headers).get("cookie")).toBe("sb-access-token=reader")
+  })
+
+  it("a refused write is reported as a failure — never 'Added' / 'Alert set'", async () => {
+    signIn()
+    stubFetch([jsonRoute("/api/watchlist", { error: "Authentication required" }, { status: 401 })])
+    script("manage_watchlist", { action: "add", edition_key: "3:45", player_name: "Damian Lillard" })
+    await POST(post("add dame"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String(toolResult().message)).toMatch(/not_signed_in.*Nothing was changed/)
+    expect(String(toolResult().message)).not.toContain("Added")
+
+    A.createCalls.length = 0
+    fetchMock?.restore()
+    signIn()
+    stubFetch([jsonRoute("/api/alerts", { error: "bad type" }, { status: 400 })])
+    script("manage_alerts", { action: "set", edition_key: "3:45", player_name: "Dame", alert_type: "price_below", threshold: 20 })
+    await POST(post("alert me"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String(toolResult().message)).toContain("HTTP 400")
+    expect(String(toolResult().message)).not.toContain("Alert set")
+  })
+
+  it("a failed list read concludes nothing — never 'Your watchlist is empty'", async () => {
+    signIn()
+    stubFetch([jsonRoute("/api/watchlist", { error: "Authentication required" }, { status: 401 })])
+    script("manage_watchlist", { action: "list" })
+    await POST(post("show my watchlist"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String(toolResult().message)).not.toContain("empty")
+    expect(String(toolResult().message)).toContain("says nothing about what is on it")
+  })
+
+  it("alerts remove deletes this edition's alerts BY ID (the route's contract), and reports the count", async () => {
+    signIn()
+    const f = stubFetch([
+      {
+        match: (url, init) => url.includes("/api/alerts") && (init?.method ?? "GET") === "GET",
+        respond: () => ({ json: [{ id: "a1", edition_key: "3:45" }, { id: "a2", edition_key: "9:9" }, { id: "a3", edition_key: "3:45" }] }),
+      },
+      jsonRoute("/api/alerts?id=", { ok: true, deleted: 1 }),
+    ])
+    script("manage_alerts", { action: "remove", edition_key: "3:45" })
+    await POST(post("stop alerting me on dame"))
+    const deletes = f.calls.filter((c) => c.init?.method === "DELETE").map((c) => c.url)
+    expect(deletes.map((u) => new URL(u, "https://t").searchParams.get("id"))).toEqual(["a1", "a3"])
+    expect(toolResult()).toMatchObject({ status: "ok", removed: 2 })
   })
 })
 

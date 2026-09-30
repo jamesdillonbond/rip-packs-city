@@ -16,6 +16,7 @@ export const maxDuration = 60;
 import { fetchChallengeFeed } from "@/lib/challenges/hub-fetchers";
 import { isSolanaAddress } from "@/lib/address";
 import { NextRequest, NextResponse, after } from "next/server";
+import { headers } from "next/headers";
 import { fitTelegramText } from "@/lib/telegram-message";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
@@ -407,7 +408,11 @@ const TOOLS: Anthropic.Tool[] = [
         action: { type: "string", enum: ["set", "remove", "list"] },
         edition_key: { type: "string" },
         player_name: { type: "string" },
-        alert_type: { type: "string", enum: ["below_fmv_pct", "below_price"] },
+        alert_type: {
+          type: "string",
+          enum: ["price_below", "discount_above", "fmv_below", "fmv_above"],
+          description: "price_below = ask at or under threshold USD; discount_above = ask at least threshold % under FMV; fmv_below / fmv_above = FMV crosses threshold USD.",
+        },
         threshold: { type: "number" },
         channel: { type: "string", enum: ["email", "telegram", "both"] },
       },
@@ -1514,6 +1519,34 @@ type PlayerScope = { typed: string; labels: string[] | null; playerId: string | 
 const PLAYER_SCOPED_TOOLS = new Set(["search_live_deals", "search_catalog_deals", "get_edition_listings", "search_serial_deals", "get_special_serial_owners", "get_badge_info"]);
 const TOP_SHOT_ONLY_TOOLS = new Set(["search_serial_deals", "get_special_serial_owners", "get_badge_info"]);
 
+// ── Self-API calls made ON THE READER'S BEHALF (2026-09-29) ──────────────────
+// /api/watchlist and /api/alerts authorise from the SESSION COOKIE. These tools
+// fetched them server-to-server with no cookie, so every call was a 401 (or a
+// 400: alert types and the remove shape never matched the route) — and the tool
+// never read `res.ok`, so it told the reader "Added …", "Alert set …", "Removed"
+// or "Your watchlist is empty" regardless. Both tables held ZERO rows, ever.
+// The reader's own cookie now rides along, and every answer is derived from the
+// response: a failed write says nothing changed, a failed read concludes nothing.
+async function readerCookieHeader(): Promise<Record<string, string>> {
+  try {
+    const cookie = (await headers()).get("cookie");
+    return cookie ? { cookie } : {};
+  } catch {
+    return {}; // no request scope (a bot DM): the route will say 401, reported below
+  }
+}
+
+function selfApiFailure(what: string, status: number, wrote: boolean): string {
+  const tail = wrote ? " Nothing was changed." : " This says nothing about what is on it.";
+  if (status === 401 || status === 403) {
+    return JSON.stringify({ status: "error", message: `not_signed_in: ${what} needs you signed in on rippackscity.com.${tail}` });
+  }
+  return JSON.stringify({ status: "error", message: `${what} failed (HTTP ${status}).${tail}` });
+}
+
+// The tool's pre-2026-09-29 alert type names, still accepted from the model.
+const LEGACY_ALERT_TYPES: Record<string, string> = { below_price: "price_below", below_fmv_pct: "discount_above" };
+
 async function executeTool(toolName: string, toolInput: any, ctx: ToolCtx): Promise<string> {
   const scope: PlayerScope = { typed: "", labels: null, playerId: null, identity: null };
   if (PLAYER_SCOPED_TOOLS.has(toolName) && toolInput && typeof toolInput === "object") {
@@ -2405,8 +2438,10 @@ async function executeToolInner(
       if (warn) return warn;
     }
     try {
+      const auth = await readerCookieHeader();
       if (toolInput.action === "list") {
-        const res = await fetch(`${base}/api/watchlist?owner_key=${encodeURIComponent(ctx.userWallet)}`, { signal: AbortSignal.timeout(8000) });
+        const res = await fetch(`${base}/api/watchlist?owner_key=${encodeURIComponent(ctx.userWallet)}`, { headers: auth, signal: AbortSignal.timeout(8000) });
+        if (!res.ok) return selfApiFailure("Reading your watchlist", res.status, false);
         const data = await res.json();
         const items = data.watchlist || data.items || data || [];
         if (!Array.isArray(items) || items.length === 0) {
@@ -2417,7 +2452,7 @@ async function executeToolInner(
       if (toolInput.action === "add") {
         const res = await fetch(`${base}/api/watchlist`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...auth },
           body: JSON.stringify({
             owner_key: ctx.userWallet, edition_key: toolInput.edition_key,
             player_name: toolInput.player_name, set_name: toolInput.set_name,
@@ -2425,17 +2460,18 @@ async function executeToolInner(
           }),
           signal: AbortSignal.timeout(8000),
         });
+        if (!res.ok) return selfApiFailure("Adding to your watchlist", res.status, true);
         const data = await res.json();
         return JSON.stringify({ status: "ok", message: `Added ${toolInput.player_name || "moment"} to your watchlist.`, data });
       }
       if (toolInput.action === "remove") {
         const res = await fetch(`${base}/api/watchlist`, {
           method: "DELETE",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...auth },
           body: JSON.stringify({ owner_key: ctx.userWallet, edition_key: toolInput.edition_key }),
           signal: AbortSignal.timeout(8000),
         });
-        await res.json();
+        if (!res.ok) return selfApiFailure("Removing from your watchlist", res.status, true);
         return JSON.stringify({ status: "ok", message: "Removed from your watchlist." });
       }
       return JSON.stringify({ status: "error", message: "Invalid action." });
@@ -2445,14 +2481,20 @@ async function executeToolInner(
   }
 
   if (toolName === "manage_alerts") {
-    if (!ctx.userWallet) return JSON.stringify({ status: "error", message: "owner_key_missing" });
+    // fmv_alerts is keyed on the signed-in USER (the route ignores any owner_key),
+    // so a session is what this needs — not a connected wallet.
+    if (!ctx.userId) return JSON.stringify({ status: "error", message: "owner_key_missing" });
     if (toolInput.action !== "list") {
       const warn = editionKeyMismatchWarning(toolInput.edition_key);
       if (warn) return warn;
     }
     try {
+      const auth = await readerCookieHeader();
+      // The route keys alerts on the SESSION user; owner_key in the URL is ignored.
+      const listAlerts = () => fetch(`${base}/api/alerts`, { headers: auth, signal: AbortSignal.timeout(8000) });
       if (toolInput.action === "list") {
-        const res = await fetch(`${base}/api/alerts?owner_key=${encodeURIComponent(ctx.userWallet)}`, { signal: AbortSignal.timeout(8000) });
+        const res = await listAlerts();
+        if (!res.ok) return selfApiFailure("Reading your alerts", res.status, false);
         const data = await res.json();
         const alerts = data.alerts || data.items || data || [];
         if (!Array.isArray(alerts) || alerts.length === 0) {
@@ -2461,27 +2503,43 @@ async function executeToolInner(
         return JSON.stringify({ status: "ok", results: alerts });
       }
       if (toolInput.action === "set") {
+        const alertType = LEGACY_ALERT_TYPES[toolInput.alert_type] ?? toolInput.alert_type;
         const res = await fetch(`${base}/api/alerts`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...auth },
           body: JSON.stringify({
-            owner_key: ctx.userWallet, edition_key: toolInput.edition_key,
-            player_name: toolInput.player_name, alert_type: toolInput.alert_type,
+            edition_key: toolInput.edition_key,
+            player_name: toolInput.player_name, alert_type: alertType,
             threshold: toolInput.threshold, channel: toolInput.channel,
+            // An edition key is unique only within its collection.
+            collection_id: effectiveCollectionUuid ?? undefined,
           }),
           signal: AbortSignal.timeout(8000),
         });
+        if (!res.ok) return selfApiFailure("Setting the alert", res.status, true);
         const data = await res.json();
         return JSON.stringify({ status: "ok", message: `Alert set for ${toolInput.player_name || "moment"}.`, data });
       }
       if (toolInput.action === "remove") {
-        await fetch(`${base}/api/alerts`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ owner_key: ctx.userWallet, edition_key: toolInput.edition_key }),
-          signal: AbortSignal.timeout(8000),
-        });
-        return JSON.stringify({ status: "ok", message: "Alert removed." });
+        // The route deletes by alert id (?id=), so find this edition's alerts first.
+        const listed = await listAlerts();
+        if (!listed.ok) return selfApiFailure("Removing the alert", listed.status, true);
+        const rows = (await listed.json()) as Array<{ id?: string; edition_key?: string }>;
+        const ids = (Array.isArray(rows) ? rows : [])
+          .filter((a) => a.edition_key === toolInput.edition_key && a.id)
+          .map((a) => String(a.id));
+        if (ids.length === 0) {
+          return JSON.stringify({ status: "ok", message: "You have no alert on that moment, so there was nothing to remove.", removed: 0 });
+        }
+        let removed = 0;
+        for (const id of ids) {
+          const res = await fetch(`${base}/api/alerts?id=${encodeURIComponent(id)}`, { method: "DELETE", headers: auth, signal: AbortSignal.timeout(8000) });
+          if (!res.ok) {
+            return JSON.stringify({ status: "error", message: `Removed ${removed} of ${ids.length} alerts on that moment; the next failed (HTTP ${res.status}).`, removed });
+          }
+          removed++;
+        }
+        return JSON.stringify({ status: "ok", message: removed === 1 ? "Alert removed." : `${removed} alerts removed.`, removed });
       }
       return JSON.stringify({ status: "error", message: "Invalid action." });
     } catch (err: any) {

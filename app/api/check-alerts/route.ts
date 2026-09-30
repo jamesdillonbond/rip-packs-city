@@ -33,14 +33,22 @@ function fmtUsd(n: number | null | undefined): string {
   return "$" + Number(n).toFixed(2);
 }
 
+// fmv_alerts.alert_type is price_below | discount_above | fmv_below | fmv_above
+// (the /api/alerts contract and check_triggered_fmv_alerts). This switch knew
+// only older names, so every real alert fell to the generic line and a
+// discount_above threshold was printed as dollars. The old names stay as aliases.
 function describeAlert(alert_type: string, threshold: number): string {
   switch (alert_type) {
+    case "price_below":
     case "below_price":
       return `Lowest ask dropped to or below ${fmtUsd(threshold)}`;
+    case "discount_above":
     case "below_fmv_pct":
       return `Discount vs FMV reached ${threshold}% or more`;
+    case "fmv_below":
     case "below_fmv":
       return `FMV dropped below ${fmtUsd(threshold)}`;
+    case "fmv_above":
     case "above_fmv":
       return `FMV climbed above ${fmtUsd(threshold)}`;
     default:
@@ -61,7 +69,7 @@ function buildHtml(a: any, sniperUrl: string): string {
     <div style="padding:20px 24px;">
       <p style="margin:0 0 14px;font-size:14px;color:#cbd5e1;">${escapeHtml(desc)}.</p>
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <tr><td style="padding:6px 0;color:#9ca3af;">Threshold</td><td style="padding:6px 0;text-align:right;font-family:ui-monospace,Menlo,monospace;color:#fff;">${escapeHtml(String(a.alert_type === "below_fmv_pct" ? a.threshold + "%" : fmtUsd(Number(a.threshold))))}</td></tr>
+        <tr><td style="padding:6px 0;color:#9ca3af;">Threshold</td><td style="padding:6px 0;text-align:right;font-family:ui-monospace,Menlo,monospace;color:#fff;">${escapeHtml(String(a.alert_type === "discount_above" || a.alert_type === "below_fmv_pct" ? a.threshold + "%" : fmtUsd(Number(a.threshold))))}</td></tr>
         <tr><td style="padding:6px 0;color:#9ca3af;">Current price</td><td style="padding:6px 0;text-align:right;font-family:ui-monospace,Menlo,monospace;color:#22c55e;font-weight:700;">${escapeHtml(current)}</td></tr>
         ${a.current_fmv != null ? `<tr><td style="padding:6px 0;color:#9ca3af;">Current FMV</td><td style="padding:6px 0;text-align:right;font-family:ui-monospace,Menlo,monospace;color:#fff;">${escapeHtml(fmtUsd(a.current_fmv))}</td></tr>` : ""}
       </table>
