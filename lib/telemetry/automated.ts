@@ -5,7 +5,10 @@
 // Measured that day: ~320 anon page-views per /insights page in 48 h, in bursts
 // every few minutes around the clock, while Vercel Web Analytics (which filters
 // bots) saw ~20 page-views an hour; every anon client_error in the prior 14 days
-// but two came from `Lightpanda/1.0`, a headless scraping browser. So a beacon
+// but two came from `Lightpanda/1.0`, a headless scraping browser.
+// 🔁 CORRECTED the same evening from `automated_by`: the flood is MOSTLY OUR OWN
+// E2E DOM smoke (Playwright, run after every production deploy, dozens a day) —
+// 110 of the first 118 tagged rows; Lightpanda was 8. So a beacon
 // from a known automated user agent — or one whose page reported
 // navigator.webdriver — is WRITTEN with `automated: true`, not dropped: the rows
 // stay countable, and a human count filters on the tag. The client's own

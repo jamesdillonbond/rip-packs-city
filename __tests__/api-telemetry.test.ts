@@ -172,8 +172,9 @@ describe("POST /api/telemetry", () => {
     expect(state.insert.metadata._bytes).toBeGreaterThan(4096)
   })
 
-  // 2026-09-29: ~320 anon page-views per /insights page in 48 h came from a headless
-  // scraper (Lightpanda), indistinguishable from a collector. The tag is what lets a
+  // 2026-09-29: ~320 anon page-views per /insights page in 48 h were automated —
+  // mostly our own post-deploy Playwright smoke, plus a Lightpanda scraper —
+  // and indistinguishable from a collector. The tag is what lets a
   // human count exclude them — and a human beacon must NOT carry it.
   describe("automated-traffic tag", () => {
     it("does not tag a real browser's beacon", async () => {
