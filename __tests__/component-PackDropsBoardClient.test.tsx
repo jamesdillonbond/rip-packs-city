@@ -65,6 +65,17 @@ describe("PackDropsBoardClient", () => {
     expect(container.textContent).toMatch(/RPC priced/i)
   })
 
+  // 2026-09-29 link crawl: "Jaime Jaquez Jr." linked /player/jaime-jaquez-jr (404); the page and
+  // the sitemap key it as `jaime-jaquez-jr-`, so the edge hyphen must not be trimmed.
+  it("links a player whose name ends in a period to the slug the player page resolves", () => {
+    const { container } = render(
+      <PackDropsBoardClient initialDrops={[drop({ rows: [edition({ player: "Jaime Jaquez Jr." })] })]} initialFetchedAt={null} />,
+    )
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(hrefs).toContain("/nba-top-shot/player/jaime-jaquez-jr-")
+    expect(hrefs).not.toContain("/nba-top-shot/player/jaime-jaquez-jr")
+  })
+
   it("resolves the viewer id via /api/profile/me for the share ref link", async () => {
     render(<PackDropsBoardClient initialDrops={[drop()]} initialFetchedAt={null} />)
     await waitFor(() => expect(fetchFn.mock.calls.some((c) => String(c[0]).includes("/api/profile/me"))).toBe(true))

@@ -106,8 +106,11 @@ function editionHref(r: ScoredEdition): string | null {
   // unaccented form resolves — the measured 09-06 case of 4 of 1,413 Top Shot
   // player URLs 404ing in the sitemap. The Vaultopolis name is a THIRD
   // spelling of the same player, so it is exactly that risk. Do not re-inline.
-  const slug = slugifyPlayerName(r.player).replace(/^-+|-+$/g, "")
-  if (!slug) return null
+  // ⚠ No trimming of edge hyphens: the player page and the sitemap key "Jaime Jaquez Jr."
+  // as `jaime-jaquez-jr-` (trailing hyphen from the period), and the trimmed form 404'd
+  // (link crawl, 2026-09-29). A name that slugifies to hyphens only still gets no link.
+  const slug = slugifyPlayerName(r.player)
+  if (!slug.replace(/-/g, "")) return null
   return `/nba-top-shot/player/${slug}`
 }
 
