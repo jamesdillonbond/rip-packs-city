@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { checklistRows, checklistState } from "@/lib/giveaways/checklist"
 import { claimOutcomeResponse } from "@/lib/giveaways/claim-copy"
 import { parseDraftBody } from "@/lib/giveaways/draft-input"
-import { deliveryLabel, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
+import { deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
 import { commitmentHash } from "@/lib/giveaways/seal"
 import { execFileSync } from "node:child_process"
 import type { ClaimRow, PoolRow } from "@/lib/giveaways/store"
@@ -132,5 +132,22 @@ describe("giveaways/view-format", () => {
     const manifest = "1:10,20;2:40,30"
     const out = execFileSync("sh", ["-c", verifyCommand(salt, manifest)]).toString()
     expect(out.split(" ")[0]).toBe(commitmentHash(salt, manifest))
+  })
+})
+
+describe("giveaways/view-format errorText", () => {
+  it("never renders a wallet rejection as [object Object]", () => {
+    expect(errorText({ code: 5000, message: "User rejected the request." })).toBe("User rejected the request. (code 5000)")
+    expect(errorText({ reason: "Declined: Externally Halted" })).toBe("Declined: Externally Halted")
+    expect(errorText({ foo: 1 })).toBe('{"foo":1}')
+    for (const e of [{ code: 1, message: "x" }, { foo: 1 }, {}]) expect(errorText(e)).not.toContain("[object Object]")
+  })
+
+  it("passes Errors and strings through, and names an empty one", () => {
+    expect(errorText(new Error("boom"))).toBe("boom")
+    expect(errorText(new TypeError(""))).toBe("TypeError")
+    expect(errorText("Declined")).toBe("Declined")
+    expect(errorText("")).toBe("(empty error)")
+    expect(errorText(undefined)).toBe("undefined")
   })
 })

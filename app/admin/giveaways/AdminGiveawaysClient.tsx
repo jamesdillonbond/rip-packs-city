@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useAdminResource } from "@/lib/admin/use-admin-resource"
-import { usd, ptTime } from "@/lib/giveaways/view-format"
+import { usd, ptTime, errorText } from "@/lib/giveaways/view-format"
 import { checklistRows, type ChecklistRow } from "@/lib/giveaways/checklist"
 import type { Candidate, ClaimRow, DropRow, PoolRow } from "@/lib/giveaways/store"
 import type { DeliveryPlan } from "@/lib/giveaways/deliver"
@@ -425,7 +425,7 @@ function DeliverAll({ drop, call, onDone }: { drop: DropRow; call: Call; onDone:
     try {
       setWallet(await connectAdminWallet())
     } catch (e) {
-      note(`Wallet: ${e instanceof Error ? e.message : String(e)}`)
+      note(`Wallet: ${errorText(e)}`)
     }
   }
 
@@ -461,7 +461,7 @@ function DeliverAll({ drop, call, onDone }: { drop: DropRow; call: Call; onDone:
           const sent = await sendDeliveryBatch(plan, b)
           note(`Batch ${i + 1}: sealed · ${b.momentIDs.length} moment(s) · tx ${sent.txId}`)
         } catch (e) {
-          note(`Batch ${i + 1} NOT sent: ${e instanceof Error ? e.message : String(e)}`)
+          note(`Batch ${i + 1} NOT sent: ${errorText(e)}`)
           break
         }
       }

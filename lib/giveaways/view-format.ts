@@ -49,3 +49,24 @@ export function deliveryLabel(delivered: boolean, lastChecked: string | null): s
   if (delivered) return "Delivered: in your Top Shot account"
   return lastChecked ? `Awaiting the sponsor's gift (last checked ${ptTime(lastChecked)})` : "Awaiting the sponsor's gift"
 }
+
+/**
+ * Readable text for anything a wallet throws. FCL and WalletConnect reject with
+ * plain objects ({ code, message }) and bare strings as often as with Errors, and
+ * `String(obj)` renders "[object Object]" — the admin would see no reason at all.
+ */
+export function errorText(e: unknown): string {
+  if (e instanceof Error) return e.message || e.name
+  if (typeof e === "string") return e || "(empty error)"
+  if (e && typeof e === "object") {
+    const o = e as { message?: unknown; code?: unknown; reason?: unknown }
+    const msg = typeof o.message === "string" && o.message ? o.message : typeof o.reason === "string" && o.reason ? o.reason : null
+    if (msg) return o.code != null ? `${msg} (code ${String(o.code)})` : msg
+    try {
+      return JSON.stringify(e)
+    } catch {
+      return Object.prototype.toString.call(e)
+    }
+  }
+  return String(e)
+}
