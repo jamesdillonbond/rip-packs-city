@@ -232,8 +232,10 @@ describe("sniper-feed a team pick always gets every edition's floor", () => {
       return { data: [], error: null }
     }
     await GET(get(`?collection=nba-top-shot&team=${encodeURIComponent(BLAZERS)}`))
-    const asked = fx.rpcCalls.filter((c) => c.name === "get_topshot_sniper_deals").map((c) => c.args.p_team)
-    expect(asked).toEqual([BLAZERS])
+    const calls = fx.rpcCalls.filter((c) => c.name === "get_topshot_sniper_deals")
+    expect(calls.map((c) => c.args.p_team)).toEqual([BLAZERS])
+    // Every priced edition of the team (<= 504), not the top 200 by discount.
+    expect(calls[0].args.p_limit).toBe(1000)
   })
 
   it("the default board still skips it when the pool is not sparse (control)", async () => {

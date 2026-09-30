@@ -634,6 +634,35 @@ describe("SniperClient — the filter controls reach the feed request", () => {
   })
 })
 
+describe("SniperClient — rows render in pages of 100 (2026-09-29)", () => {
+  // A team pick reads every priced edition of the team (~470 for the Lakers);
+  // every row used to render at once. The count shown must be honest.
+  const many = (n: number) => Array.from({ length: n }, (_, i) =>
+    deal({ flowId: `F${i}`, momentId: `m-${i}`, editionKey: `1:${i}`, playerName: `Player ${i}`, discount: 75 - (i % 50) }))
+  const rows = () => document.querySelectorAll('[id^="sniper-row-"]').length
+
+  it("shows 100 of 250, says so, and SHOW MORE adds the next 100", async () => {
+    warm = { data: feed({ deals: many(250) }), loading: false, error: null, refresh: vi.fn() }
+    render(<SniperClient />)
+    await waitFor(() => expect(rows()).toBe(100))
+    expect(screen.getByText(/SHOWING 100 OF 250/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /SHOW 100 MORE/ }))
+    await waitFor(() => expect(rows()).toBe(200))
+    fireEvent.click(screen.getByRole("button", { name: /SHOW 50 MORE/ }))
+    await waitFor(() => expect(rows()).toBe(250))
+    expect(screen.queryByText(/SHOWING/)).toBeNull()
+  })
+
+  it("a deep-linked deal beyond the first page is still rendered", async () => {
+    searchParams = new URLSearchParams("highlight=F180")
+    window.history.replaceState(null, "", "/nba-top-shot/sniper?highlight=F180")
+    warm = { data: feed({ deals: many(250) }), loading: false, error: null, refresh: vi.fn() }
+    render(<SniperClient />)
+    await waitFor(() => expect(document.getElementById("sniper-row-F180")).toBeTruthy())
+    window.history.replaceState(null, "", "/")
+  })
+})
+
 describe("SniperClient — COPY LINK (replaced SAVE SEARCH, 2026-09-29)", () => {
   // SAVE SEARCH POSTed to /api/watchlist without the owner_key/edition_key that
   // route requires: a 400 on every click, shown as "Sign in to save searches"

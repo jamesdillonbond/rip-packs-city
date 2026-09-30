@@ -108,6 +108,9 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "serial_asc",  label: "Lowest Serial" },
 ];
 
+// Rows rendered per page (SHOW MORE adds another page).
+const SNIPER_PAGE = 100;
+
 // Collections whose /api/sniper-feed honours `team` over the full pool.
 const SERVER_TEAM_FILTER = new Set(["nba-top-shot", "nfl-all-day"]);
 
@@ -754,6 +757,16 @@ function SniperMomentsBody() {
   );
   const stats = computeSniperStats(visibleDeals);
 
+  // Rows render in pages of SNIPER_PAGE: a team pick reads every priced edition
+  // of the team (up to ~470), and every row was rendered at once. The page count
+  // resets whenever the board or a filter changes (keyed, not reset in an
+  // effect), and always reaches a deep-linked (highlighted) deal.
+  const pageKey = `${feedKey}|${search}|${showVerifiedOnly}|${ownedFilter}|${boardFilterOpts.team}|${studioFilter}|${chaserOnly}`;
+  const [pageSel, setPageSel] = useState<{ key: string; n: number }>({ key: pageKey, n: SNIPER_PAGE });
+  const highlightedIndex = highlightedId ? visibleDeals.findIndex((d) => d.flowId === highlightedId) : -1;
+  const shownCount = Math.max(pageSel.key === pageKey ? pageSel.n : SNIPER_PAGE, highlightedIndex + 1);
+  const shownDeals = visibleDeals.slice(0, shownCount);
+
   // How many listings pass every OTHER filter and are hidden solely by the
   // default-on Verified-FMV gate (deep-audit D4). On Top Shot this is routinely
   // the whole board: the feed is dominated by ask-derived rows where FMV *is*
@@ -1214,7 +1227,7 @@ function SniperMomentsBody() {
 
         {visibleDeals.length > 0 && isMobile && (
           <div className="flex flex-col gap-2">
-            {visibleDeals.map((deal) => {
+            {shownDeals.map((deal) => {
               return (
                 <div key={`m-${deal.source}-${deal.flowId}`} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; router.push(dealHref(deal)); }} className="rpc-card p-3 flex flex-col gap-1.5 cursor-pointer">
                   {/* Row 1: Thumbnail + Player + Tier + Source */}
@@ -1443,7 +1456,7 @@ function SniperMomentsBody() {
                     </tr>
                   );
                 })}
-                {visibleDeals.map((deal) => (
+                {shownDeals.map((deal) => (
                   <React.Fragment key={`${deal.source}-${deal.flowId}-${deal.listingResourceID}`}>
                   <tr
                     id={`sniper-row-${deal.flowId}`}
@@ -1840,6 +1853,18 @@ function SniperMomentsBody() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {visibleDeals.length > shownDeals.length && (
+          <div className="flex items-center justify-center gap-3 flex-wrap" style={{ marginTop: 12, fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", color: "var(--rpc-text-muted)" }}>
+            <span>SHOWING {shownDeals.length} OF {visibleDeals.length}</span>
+            <button
+              className="rpc-chip min-h-[44px]"
+              onClick={() => setPageSel({ key: pageKey, n: shownDeals.length + SNIPER_PAGE })}
+            >
+              SHOW {Math.min(SNIPER_PAGE, visibleDeals.length - shownDeals.length)} MORE
+            </button>
           </div>
         )}
 

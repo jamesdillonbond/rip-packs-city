@@ -1907,7 +1907,12 @@ async function computeSniperFeed(opts: {
         p_rarity: rarity === "all" ? "all" : rarity,
         p_team: t,
         p_sort_by: sortBy,
-        p_limit: 200,
+        // A team pick reads EVERY priced edition of the team (at most 504
+        // editions; the Knicks' 467 floors measured 37 ms). At 200 the board was
+        // the top 200 by DISCOUNT — the RPC has no listed_desc order — so a
+        // "Recently listed" team board silently left out 263 Lakers editions.
+        // 1000 is PostgREST's row cap. The default board keeps 200.
+        p_limit: teamPicked ? 1000 : 200,
       }),
       "get_topshot_sniper_deals",
     )));
