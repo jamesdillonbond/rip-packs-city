@@ -39,7 +39,10 @@ param(
   [string]$MaxTargets = "",
   [switch]$DryRun,
   [string]$AtlasFetchMode = "browser",   # browser | curl (curl is challenged since 2026-09-19)
-  [string]$BrowserChannel = "",          # "" = Playwright's bundled Chromium; "chrome" = installed Google Chrome
+  # 2026-09-29: default is the INSTALLED Chrome. From the 3 AM run that day every headless landing
+  # in the bundled Chromium got Cloudflare's 403 "Just a moment..." (5 runs, 0 rows); installed
+  # Chrome, headless, landed 200 with 0 skipped the same evening. "" = bundled Chromium.
+  [string]$BrowserChannel = "chrome",    # "chrome" = installed Google Chrome; "" = Playwright's bundled Chromium
   [switch]$Headful
 )
 
