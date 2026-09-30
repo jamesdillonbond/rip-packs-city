@@ -93,12 +93,13 @@ describe("fetchPaniniMoreBoards", () => {
 
 // Multi-product (2026-09-28): panini_pack_ev_board now also carries packs the model does not price.
 // This snapshot feeds the WC Pack EV board, so it must read only modeled rows — by the view's own
-// discriminator, not by a product id the snapshot would have to know.
+// discriminator — AND on the WC product since 2026-09-30, when a second product (2420, 2026 Prizm
+// WNBA) got a model: ev_modeled=true alone would put a WNBA pack on this WC board.
 describe("fetchPaniniMoreBoards — pack EV rows are the modeled product's only", () => {
-  it("filters the pack board on ev_modeled=true", async () => {
+  it("filters the pack board on ev_modeled=true AND the WC product", async () => {
     const d = db()
     await fetchPaniniMoreBoards(d as any)
-    expect(d.eqs.panini_pack_ev_board).toEqual(["ev_modeled=true"])
+    expect(d.eqs.panini_pack_ev_board).toEqual(["ev_modeled=true", "product_set_id=2332"])
   })
 })
 

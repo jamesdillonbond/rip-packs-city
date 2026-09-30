@@ -266,8 +266,8 @@ export default function PaniniPackMarket() {
       </h1>
       <Note>
         Sealed Panini NFT packs, bought and sold on Panini&apos;s own marketplace. Prices and supply are Panini&apos;s market
-        stats as of RPC&apos;s last walk. Pack EV is modeled for 2026 Prizm World Cup packs only; other products show market stats and
-        say so. Read the typical pull first: it is what the median pack holds. The mean is dragged up by chase cards most
+        stats as of RPC&apos;s last walk. Pack EV is modeled per product, and only once every card family in the pack is priced from real sales
+        (2026 Prizm World Cup; 2026 Prizm WNBA Hobby); other packs show market stats and say so. Read the typical pull first: it is what the median pack holds. The mean is dragged up by chase cards most
         packs never contain, and it is priced off FMV on a listing-fed index, so it is indicative pull value, not what the cards would sell for.
       </Note>
 

@@ -90,7 +90,9 @@ export async function fetchPaniniMoreBoards(
     // WC-only board: since 2026-09-28 panini_pack_ev_board also carries packs of products the model
     // does not price (NULL EV, ev_modeled=false). They belong on the Packs tab, which says "not
     // modeled"; here they would be EV rows with no EV. Filter on the view's own discriminator.
-    read(db.from("panini_pack_ev_board").select(PACK_COLS).eq("ev_modeled", true).order("pack_type", { ascending: true }), "panini_pack_ev_board"),
+    // ⚠ AND on the product (2026-09-30): ev_modeled alone stopped meaning "WC" when the 2026 Prizm
+    // WNBA Hobby pack (2420) got a model — on this WC board it would be a WNBA pack posing as WC.
+    read(db.from("panini_pack_ev_board").select(PACK_COLS).eq("ev_modeled", true).eq("product_set_id", 2332).order("pack_type", { ascending: true }), "panini_pack_ev_board"),
     read(
       db.from("panini_special_serials_board").select(SPECIAL_COLS)
         .eq("is_listed", true)

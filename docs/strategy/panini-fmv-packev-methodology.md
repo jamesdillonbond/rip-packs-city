@@ -112,3 +112,21 @@ Re-fit as sales accumulate.
 Data is a point-in-time snapshot per runner pass. Staleness is monitored via `pipeline_cadence_watchlist`
 row `panini-ingest` (STAGED INACTIVE, 360 min / info) — flip `is_active=true` once the Task Scheduler job
 (`scripts/panini-run.bat`) is live. Everything recomputes on the next `panini-replay`/run.
+
+## Pack EV — 2026 Prizm WNBA (`panini_pack_ev_model_wnba_2026`, v0.1, 2026-09-30)
+
+Product setId **2420** (packs: FOTL 1055 $150 drop, Hobby 1056 $30 drop). Same remaining-pool basis as the
+WC model. Contents per Panini's pack_label/description (read 2026-09-29): **Hobby 4 cards** = 2 Base Silver #/296
++ 1 non-Silver base parallel (#/169→1/1) + 1 more base parallel **or** an insert (1 in 4 packs) → 2 silver + 1.75
+base + 0.25 insert. **FOTL 5 cards** = Hobby + 1 exclusive (Cherry Blossom #/17, Plum Blossom #/8, Lotus Flower #/3).
+Families from `set_name` (migration `20260930222440`).
+
+**Accuracy gate (new for this model):** a pack is `ev_modeled` only when every family in it has ≥3 editions priced
+from SALES (HIGH/MEDIUM/LOW). At build (~3:30 PM PT 09-30, first walk of 2420 still running) Hobby passed
+(silver 61 / base 55 / insert 9 sale-backed) and FOTL did not: its exclusive family had 2 sale-backed of 15 priced,
+the rest ask-derived (top: a $600 ask-derived Cherry Blossom). So the board shows **Hobby: mean $32, typical $19 vs
+$30**, and FOTL "not modeled yet".
+
+FOTL off-board reading at build, for the record (not published): mean $181 / typical $69 using ask-derived exclusive
+prices; with the exclusive leg valued on its 2 sale-backed editions only (~$28) the mean is ~$58. Every basis sits
+far below the $150 drop price.
