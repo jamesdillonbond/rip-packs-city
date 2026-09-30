@@ -96,6 +96,9 @@ const ctx = await browser.newContext({
       // difference between the two runs is WIDTH and nothing else.
       ? { ...devices["iPhone 13"], viewport: { width: 320, height: 568 } }
       : { viewport: { width: 1280, height: 900 } }),
+  // Self-identify (2026-09-30), same as playwright.config.ts: without this every
+  // sweep page view landed in funnel_events as bot_ua=false, i.e. as a human.
+  userAgent: `${mode === "desktop" ? devices["Desktop Chrome"].userAgent : devices["iPhone 13"].userAgent} RPC-QA-MobileSweep (playwright)`,
   locale: "en-US",
   timezoneId: "America/Los_Angeles",
   ...(process.env.RPC_QA_STATE ? { storageState: process.env.RPC_QA_STATE } : {}),

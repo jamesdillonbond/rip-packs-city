@@ -25,8 +25,34 @@
 // ⚠ Slice by this BEFORE slicing by time. That is the whole lesson.
 export const BOT_UA = /bot|crawl|spider|slurp|bingpreview|headless|phantomjs|puppeteer|playwright|curl|wget|python-requests|httpx|axios|go-http-client|java\/|scrapy|facebookexternalhit|embedly|whatsapp|telegrambot|discordbot|semrush|ahrefs|mj12|dotbot|petalbot|bytespider|gptbot|claudebot|ccbot|perplexity|amazonbot|applebot|yandex|baiduspider|duckduckbot|lightpanda/i
 
-/** True when the User-Agent SELF-IDENTIFIES as automated. Never a certainty. */
+// ── Impossible iOS/Safari pairing (2026-09-30) ──────────────────────────────
+// MEASURED 14 days to 2026-09-30: 940 events / 930 sessions (1.01 per session,
+// 0 referrers) carried `iPhone OS 15_0 … Version/26.5` — ~80% of everything
+// that passed the human filter. That is Playwright's `devices["iPhone 13"]`
+// descriptor verbatim: Playwright keeps the device's old iOS string but stamps
+// the bundled WebKit's Safari version (1.63 sends `Version/26.6`). Our own
+// scripts/qa/mobile-sweep.mjs used it, and so do Playwright-built crawlers.
+//
+// A REAL Safari cannot produce it. Safari 26+ runs only on iOS 26+, and Apple
+// FROZE the UA's OS token at 18_x from Safari 26 on — so a real iPhone reads
+// `iPhone OS 18_6 … Version/26.0`. The rule is therefore narrow: an iOS token
+// BELOW 18 paired with Safari 26+. Real iOS ≤17 Safari reports Version ≤17,
+// and in-app webviews / CriOS carry no `Version/` token, so neither can match.
+//
+// ⚠ NOT caught, by design: `iPhone OS 15_0 … Version/15.0` (older Playwright's
+// iPhone 13) is byte-identical to a real iOS 15.0 Safari. Flagging it would
+// delete a real visitor, which is the worse error (see the control test).
+const IOS_SAFARI = /\((?:iPhone|iPad|iPod)[^)]*?\bOS (\d+)_\d+[^)]*\).*?\bVersion\/(\d+)/
+
+function isImpossibleIosSafari(ua: string): boolean {
+  const m = IOS_SAFARI.exec(ua)
+  if (!m) return false
+  return Number(m[1]) < 18 && Number(m[2]) >= 26
+}
+
+/** True when the User-Agent SELF-IDENTIFIES as automated, or claims an
+ *  iOS/Safari pairing no real device can send. Never a certainty. */
 export function isBotUserAgent(ua: string | null | undefined): boolean {
   if (!ua) return false
-  return BOT_UA.test(ua)
+  return BOT_UA.test(ua) || isImpossibleIosSafari(ua)
 }

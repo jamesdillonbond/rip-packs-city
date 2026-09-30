@@ -71,6 +71,39 @@ describe("R23 — bot_ua classification", () => {
     }
   })
 
+  // 2026-09-30: ~80% of "human" funnel rows over 14 days were Playwright's
+  // iPhone 13 descriptor — old iOS token, bundled-WebKit Safari version.
+  it("flags an iOS/Safari pairing no real device can send (Playwright device emulation)", async () => {
+    const { isBotUserAgent } = await import("@/app/api/track-funnel/route")
+    for (const ua of [
+      // The exact production UA (Playwright 1.61 iPhone 13).
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1",
+      // Playwright 1.63 iPhone 13 and iPhone SE.
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 10_3_1 like Mac OS X) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/26.6 Mobile/14E304 Safari/602.1",
+      "Mozilla/5.0 (iPad; CPU OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1",
+    ]) {
+      expect(isBotUserAgent(ua), ua).toBe(true)
+    }
+  })
+
+  it("does NOT flag real iPhones, including the frozen iOS 26 UA", async () => {
+    const { isBotUserAgent } = await import("@/app/api/track-funnel/route")
+    for (const ua of [
+      // Real iOS 26 Safari: Apple froze the OS token at 18_x while Version is 26.
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1",
+      // A genuine iOS 15.0 Safari — indistinguishable from old Playwright, so it stays human.
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+      // Chrome on iOS and in-app webviews carry no Version/ token.
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/140.0.0.0 Mobile/15E148 Safari/604.1",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 16_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Twitter for iPhone/10.0",
+    ]) {
+      expect(isBotUserAgent(ua), ua).toBe(false)
+    }
+  })
+
   it("treats a missing user-agent as UNKNOWN, not as a bot", async () => {
     const { isBotUserAgent } = await import("@/app/api/track-funnel/route")
     expect(isBotUserAgent(null)).toBe(false)
