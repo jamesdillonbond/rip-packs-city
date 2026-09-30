@@ -85,8 +85,9 @@ const PINS = [
     // 2026-09-29: the events parse is MATERIALIZED (an 11.9 MB window timed out);
     // then a 'floor' check first, dispatched ahead of bisections; then a
     // failed call retries in half-size batches (1,000 held ids -> HTTP 500).
-    // then round-robin dispatch across wallets; 24 per node.
-    migration: "supabase/migrations/20260930003000_audit_20260929_chain_arrival_24_calls_per_node.sql",
+    // then round-robin dispatch across wallets; 24 per node; 2026-09-30: a 503
+    // is a free retry and mainnet25's script gap (<86,031,700) is walked by events.
+    migration: "supabase/migrations/20260930174000_audit_20260930_chain_arrival_walks_mainnet25s_script_gap_and_retries_503.sql",
   },
   {
     // Seeds every saved wallet's unexplained held Top Shot moment at the floor.

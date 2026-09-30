@@ -20,6 +20,12 @@
 --   R1. A failed call retries in half-size batches (1,000 >> attempts).
 --   F3. Dispatch is round-robin across wallets: one wallet's many narrow
 --       intervals cannot take every slot from another wallet's wide one.
+--   U1. A 503 (the node's upstream down) is a free retry, like a 429.
+--   G1. An interval straddling 86,031,700 (the first height mainnet25 runs a
+--       script at) splits AT it, never reading a script below it.
+--   G2. An interval wholly inside that gap, wider than 250 blocks, is WALKED:
+--       events of its top 250 blocks; no withdraw -> hi drops to the window's
+--       bottom; a withdraw -> done with that delivery; the bottom -> done.
 --   S1. The saved-wallet seed takes only unexplained held Top Shot moments
 --       (not an NFT pack pull, no pack-pull record, not a recorded purchase)
 --       at the floor, never another collection's id, never twice.
@@ -28,7 +34,7 @@
 -- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
 -- seed_saved_wallet_chain_arrivals from
 -- 20260929180000_audit_20260929_chain_arrivals_for_every_saved_wallet_floor_check_first.sql;
--- run_chain_arrival_lane from 20260930003000_audit_20260929_chain_arrival_24_calls_per_node.sql).
+-- run_chain_arrival_lane from 20260930174000_audit_20260930_chain_arrival_walks_mainnet25s_script_gap_and_retries_503.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -56,11 +62,11 @@ DECLARE v bigint := nextval('net.req_seq');
 BEGIN INSERT INTO net.calls VALUES (v, url, NULL); RETURN v; END $$;
 
 CREATE TABLE public.chain_arrival_requests (
-  request_id bigint PRIMARY KEY, kind text NOT NULL CHECK (kind IN ('owned', 'events', 'floor')), wallet text,
+  request_id bigint PRIMARY KEY, kind text NOT NULL CHECK (kind IN ('owned', 'events', 'floor', 'walk')), wallet text,
   lo bigint NOT NULL, hi bigint NOT NULL, height bigint, node text NOT NULL, dispatched_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE public.chain_arrival_probes (
   wallet text NOT NULL, nft_id bigint NOT NULL, lo bigint NOT NULL, hi bigint NOT NULL,
-  status text NOT NULL DEFAULT 'bisect' CHECK (status IN ('floor', 'bisect', 'window', 'done', 'failed')),
+  status text NOT NULL DEFAULT 'bisect' CHECK (status IN ('floor', 'bisect', 'window', 'walk', 'done', 'failed')),
   request_id bigint, attempts int NOT NULL DEFAULT 0, arrived_height bigint, arrived_at timestamptz, tx_id text,
   from_address text, last_error text, created_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz,
   PRIMARY KEY (wallet, nft_id));
@@ -97,6 +103,11 @@ DECLARE
   v_max_att  constant int := 6;
   -- last height of mainnet24..27; a window never straddles one
   v_ends     constant bigint[] := ARRAY[85981134, 88226266, 130290658, 137390145]::bigint[];
+  -- 2026-09-30: mainnet25's node runs no script below this height ("node
+  -- version is incompatible with data for block" on 85,981,135..86,031,699);
+  -- its events there read fine. An interval splits here too, and one wholly
+  -- inside that gap is WALKED by events from the top down, 250 blocks a call.
+  v_dark_end constant bigint := 86031700;
   v_src_pre  constant text := 'import TopShot from 0x0b2a3299cc857e29
 pub fun main(owner: Address, ids: [UInt64]): [UInt64] {
   let out: [UInt64] = []
@@ -117,7 +128,7 @@ access(all) fun main(owner: Address, ids: [UInt64]): [UInt64] {
   v_body jsonb; v_owned bigint[]; v_req bigint; v_mid bigint; v_node text; v_n int;
   v_collected int := 0; v_bisected int := 0; v_windows_done int := 0; v_found int := 0; v_not_found int := 0;
   v_failed int := 0; v_throttled int := 0; v_expired int := 0; v_dispatched int := 0;
-  v_floor_held int := 0; v_floor_passed int := 0;
+  v_floor_held int := 0; v_floor_passed int := 0; v_unavailable int := 0; v_walked int := 0;
   v_last_error text := NULL;
 BEGIN
   IF NOT pg_try_advisory_xact_lock(hashtext('run_chain_arrival_lane')) THEN
@@ -144,11 +155,18 @@ BEGIN
 
     IF v_body IS NULL
        OR (r.kind IN ('owned', 'floor') AND v_body->>'type' IS DISTINCT FROM 'Array')
-       OR (r.kind = 'events' AND jsonb_typeof(v_body) IS DISTINCT FROM 'array') THEN
+       OR (r.kind IN ('events', 'walk') AND jsonb_typeof(v_body) IS DISTINCT FROM 'array') THEN
       IF r.h_status = 429 THEN
         UPDATE public.chain_arrival_probes SET request_id = NULL, last_error = 'http 429'
          WHERE request_id = r.request_id;
         v_throttled := v_throttled + 1;
+      ELSIF r.h_status = 503 THEN
+        -- 2026-09-30: the node's proxy lost its upstream ("upstream connect
+        -- error ... connection failure", 05:04-05:08 AM PT): an outage, not a
+        -- wrong read -- 159 probes spent all 6 attempts in 4 minutes on it
+        UPDATE public.chain_arrival_probes SET request_id = NULL, last_error = 'http 503'
+         WHERE request_id = r.request_id;
+        v_unavailable := v_unavailable + 1;
       ELSE
         v_last_error := left(coalesce(r.h_error, 'http ' || coalesce(r.h_status::text, 'null') || ': ' || r.h_content), 300);
         UPDATE public.chain_arrival_probes
@@ -221,14 +239,27 @@ BEGIN
       )
       SELECT count(*) INTO v_n FROM upd;
       v_found := v_found + v_n;
-      -- no Withdraw in the window: it was deposited without one (a mint)
-      UPDATE public.chain_arrival_probes p
-         SET status = 'done', request_id = NULL, finished_at = now(),
-             last_error = 'no TopShot.Withdraw in (lo, hi]: minted in or unread'
-       WHERE p.request_id = r.request_id;
-      GET DIAGNOSTICS v_n = ROW_COUNT;
-      v_not_found := v_not_found + v_n;
-      v_windows_done := v_windows_done + 1;
+      IF r.kind = 'walk' THEN
+        -- a walk read (r.lo, r.hi] at the top of its interval: no withdraw
+        -- there -> the interval shrinks to (lo, r.lo]; done only at its bottom
+        UPDATE public.chain_arrival_probes p
+           SET hi = r.lo, request_id = NULL,
+               status = CASE WHEN r.lo <= p.lo THEN 'done' ELSE 'walk' END,
+               finished_at = CASE WHEN r.lo <= p.lo THEN now() END,
+               last_error = CASE WHEN r.lo <= p.lo THEN 'no TopShot.Withdraw in (lo, hi]: minted in or unread' END
+         WHERE p.request_id = r.request_id;
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+        v_walked := v_walked + 1;
+      ELSE
+        -- no Withdraw in the window: it was deposited without one (a mint)
+        UPDATE public.chain_arrival_probes p
+           SET status = 'done', request_id = NULL, finished_at = now(),
+               last_error = 'no TopShot.Withdraw in (lo, hi]: minted in or unread'
+         WHERE p.request_id = r.request_id;
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+        v_not_found := v_not_found + v_n;
+        v_windows_done := v_windows_done + 1;
+      END IF;
     END IF;
     DELETE FROM public.chain_arrival_requests WHERE request_id = r.request_id;
   END LOOP;
@@ -254,6 +285,12 @@ BEGIN
    WHERE p.status = 'bisect' AND p.request_id IS NULL AND p.hi - p.lo <= 250
      AND NOT EXISTS (SELECT 1 FROM unnest(v_ends) e WHERE e >= p.lo + 1 AND e < p.hi);
 
+  -- wider, but wholly inside mainnet25's script gap: walk it
+  UPDATE public.chain_arrival_probes p
+     SET status = 'walk'
+   WHERE p.status = 'bisect' AND p.request_id IS NULL AND p.hi - p.lo > 250
+     AND p.lo >= 85981134 AND p.hi <= v_dark_end;
+
   -- (2) Dispatch. Pending probes group by (kind, wallet, lo, hi): one call per
   -- group of <= 1,000 ids (an events window is wallet-agnostic but is read per
   -- wallet to keep the bookkeeping simple). <= v_per_node calls per node.
@@ -266,10 +303,10 @@ BEGIN
              -- the midpoint; an interval straddling a spork end splits AT it
              -- (a floor check reads AT lo)
              CASE WHEN p.status = 'floor' THEN p.lo ELSE
-             coalesce((SELECT min(e) FROM unnest(v_ends) e WHERE e > p.lo AND e < p.hi AND p.status = 'bisect'),
+             coalesce((SELECT min(e) FROM unnest(v_ends || v_dark_end) e WHERE e > p.lo AND e < p.hi AND p.status = 'bisect'),
                       (p.lo + p.hi) / 2) END AS mid
         FROM public.chain_arrival_probes p
-       WHERE p.request_id IS NULL AND p.status IN ('floor', 'bisect', 'window')
+       WHERE p.request_id IS NULL AND p.status IN ('floor', 'bisect', 'window', 'walk')
     ), grp AS (
       SELECT status, wallet, lo, hi, mid, batch,
              (row_number() OVER (PARTITION BY status, wallet, lo, hi, batch ORDER BY nft_id) - 1) / batch AS chunk,
@@ -277,7 +314,7 @@ BEGIN
         FROM pend
     ), calls AS (
       SELECT status, wallet, lo, hi, mid, batch, chunk, array_agg(nft_id ORDER BY nft_id) AS ids,
-             CASE WHEN status IN ('bisect', 'floor') THEN mid ELSE lo + 1 END AS at_h
+             CASE WHEN status IN ('bisect', 'floor') THEN mid WHEN status = 'walk' THEN hi ELSE lo + 1 END AS at_h
         FROM grp
        GROUP BY status, wallet, lo, hi, mid, batch, chunk
     ), routed AS (
@@ -316,6 +353,15 @@ BEGIN
       ) INTO v_req;
       INSERT INTO public.chain_arrival_requests (request_id, kind, wallet, lo, hi, height, node)
       VALUES (v_req, CASE WHEN r.status = 'floor' THEN 'floor' ELSE 'owned' END, r.wallet, r.lo, r.hi, r.mid, r.node);
+    ELSIF r.status = 'walk' THEN
+      -- the top 250 blocks of the interval: the first delivery found walking
+      -- down is the last one
+      SELECT net.http_get(
+        url := r.node || '/v1/events?type=A.0b2a3299cc857e29.TopShot.Withdraw&start_height=' || (greatest(r.lo, r.hi - 250) + 1) || '&end_height=' || r.hi,
+        timeout_milliseconds := 30000
+      ) INTO v_req;
+      INSERT INTO public.chain_arrival_requests (request_id, kind, wallet, lo, hi, height, node)
+      VALUES (v_req, 'walk', r.wallet, greatest(r.lo, r.hi - 250), r.hi, NULL, r.node);
     ELSE
       SELECT net.http_get(
         url := r.node || '/v1/events?type=A.0b2a3299cc857e29.TopShot.Withdraw&start_height=' || (r.lo + 1) || '&end_height=' || r.hi,
@@ -337,14 +383,16 @@ BEGIN
     jsonb_build_object('bisected', v_bisected, 'windows_read', v_windows_done, 'found', v_found,
                        'not_found', v_not_found, 'failed', v_failed, 'throttled', v_throttled,
                        'expired', v_expired, 'dispatched', v_dispatched,
-                       'floor_held', v_floor_held, 'floor_passed', v_floor_passed)
+                       'floor_held', v_floor_held, 'floor_passed', v_floor_passed,
+                       'unavailable', v_unavailable, 'walked', v_walked)
   );
 
   RETURN jsonb_build_object('ok', v_failed = 0, 'collected', v_collected, 'bisected', v_bisected,
                             'windows_read', v_windows_done, 'found', v_found, 'not_found', v_not_found,
                             'failed', v_failed, 'throttled', v_throttled, 'expired', v_expired,
                             'dispatched', v_dispatched, 'floor_held', v_floor_held,
-                            'floor_passed', v_floor_passed, 'last_error', v_last_error);
+                            'floor_passed', v_floor_passed, 'unavailable', v_unavailable,
+                            'walked', v_walked, 'last_error', v_last_error);
 END;
 $function$;
 -- <<< END verbatim <<<
@@ -587,6 +635,87 @@ BEGIN
   PERFORM _assert((SELECT request_id IS NOT NULL FROM public.chain_arrival_probes WHERE wallet = '0x000000000000000b'),
                   'F3: the wide interval of the other wallet is dispatched despite 30 narrower ones');
 END $$;
+
+-- U1 / G1 / G2: mainnet25's script gap (85,981,135..86,031,699)
+DELETE FROM net.calls;
+DELETE FROM public.chain_arrival_probes;
+DELETE FROM public.chain_arrival_requests;
+CREATE FUNCTION pg_temp.req_dd(p_id bigint) RETURNS bigint LANGUAGE sql AS $$
+  SELECT request_id FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = p_id $$;
+CREATE FUNCTION pg_temp.plant_events(p_req bigint, p_blocks jsonb) RETURNS void LANGUAGE sql AS $$
+  INSERT INTO net._http_response (id, status_code, content) VALUES (p_req, 200, p_blocks::text) $$;
+INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status) VALUES
+  ('0x00000000000000dd', 1, 85981134, 86051294, 'bisect'),   -- the 0x28be… interval
+  ('0x00000000000000dd', 2, 85981134, 85982000, 'bisect'),   -- inside the gap, 866 wide
+  ('0x00000000000000dd', 3, 85981134, 85981500, 'bisect');   -- inside the gap, 366 wide
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_dd(1))
+                  = 'http://access-001.mainnet25.nodes.onflow.org:8070/v1/scripts?block_height=86031700',
+                  'G1: an interval straddling the gap''s end splits AT 86,031,700, never at its midpoint 86,016,214');
+  PERFORM _assert((SELECT status = 'walk' FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 2),
+                  'G2: wholly inside the gap and wider than 250 -> walk');
+  PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_dd(2))
+                  = 'http://access-001.mainnet25.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.TopShot.Withdraw&start_height=85981751&end_height=85982000',
+                  'G2: a walk reads the TOP 250 blocks by events, on mainnet25');
+  PERFORM _assert((SELECT kind = 'walk' AND lo = 85981750 AND hi = 85982000 FROM public.chain_arrival_requests WHERE request_id = pg_temp.req_dd(2)),
+                  'G2: the call records the window it read');
+  PERFORM _assert((SELECT count(*) = 0 FROM net.calls WHERE url LIKE '%scripts?block_height=8598%' OR url ~ 'scripts\?block_height=8601'
+                                                         OR url ~ 'scripts\?block_height=86031[0-6]'),
+                  'G1: no script is sent into the gap');
+END $$;
+
+-- 1 held at 86,031,700 -> (85981134, 86031700], all gap; 2 and 3: no withdraw on top
+SELECT pg_temp.plant_owned(pg_temp.req_dd(1), ARRAY[1]::bigint[]);
+SELECT pg_temp.plant_events(pg_temp.req_dd(2), '[]'::jsonb);
+SELECT pg_temp.plant_events(pg_temp.req_dd(3), jsonb_build_array(jsonb_build_object('block_height', '85981400',
+  'block_timestamp', '2024-09-01T00:00:00Z', 'events', jsonb_build_array(pg_temp.wd(3, '0x00000000000000dd', 'TXSELF', 0)))));
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT status = 'walk' AND lo = 85981134 AND hi = 86031700 FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 1),
+                  'G1: held at the split -> the gap remains, and is walked');
+  PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_dd(1))
+                  = 'http://access-001.mainnet25.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.TopShot.Withdraw&start_height=86031451&end_height=86031700',
+                  'G1: the walk starts at the split');
+  PERFORM _assert((SELECT status = 'walk' AND hi = 85981750 AND finished_at IS NULL AND from_address IS NULL
+                     FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 2),
+                  'G2: no withdraw on top -> hi drops to the window''s bottom, not done');
+  PERFORM _assert((SELECT status = 'walk' AND hi = 85981250 AND from_address IS NULL
+                     FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 3),
+                  'G2: the wallet''s OWN withdraw is not a delivery');
+  PERFORM _assert_eq(v->>'walked', '2', 'G2: two walk reads collected');
+  PERFORM _assert_eq(v->>'not_found', '0', 'G2: a walk step concludes nothing');
+END $$;
+
+-- 2: a seller's withdraw one step down; 3: nothing at the bottom; 1: a 503
+SELECT pg_temp.plant_events(pg_temp.req_dd(2), jsonb_build_array(jsonb_build_object('block_height', '85981700',
+  'block_timestamp', '2024-09-01T01:00:00Z', 'events', jsonb_build_array(pg_temp.wd(2, '0x3333333333333333', 'TXW', 2)))));
+SELECT pg_temp.plant_events(pg_temp.req_dd(3), '[]'::jsonb);
+INSERT INTO net._http_response (id, status_code, content)
+VALUES (pg_temp.req_dd(1), 503, 'upstream connect error or disconnect/reset before headers. reset reason: connection failure');
+DO $$
+DECLARE v jsonb;
+BEGIN
+  PERFORM _assert((SELECT lo = 85981134 AND hi = 85981250 FROM public.chain_arrival_requests WHERE request_id = pg_temp.req_dd(3)),
+                  'G2: the last step is clamped at lo');
+  v := public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT status = 'done' AND from_address = '0x3333333333333333' AND tx_id = 'TXW' AND arrived_height = 85981700
+                     FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 2),
+                  'G2: a withdraw found walking down is the delivery');
+  PERFORM _assert((SELECT status = 'done' AND from_address IS NULL AND last_error LIKE 'no TopShot.Withdraw%'
+                     FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 3),
+                  'G2: the bottom reached with nothing -> done, no sender invented');
+  PERFORM _assert((SELECT attempts = 0 AND last_error = 'http 503' AND status = 'walk' AND request_id IS NOT NULL
+                     FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 1),
+                  'U1: a 503 costs no attempt and is re-dispatched');
+  PERFORM _assert((v->>'ok')::boolean AND (v->>'unavailable')::int = 1 AND (v->>'failed')::int = 0,
+                  'U1: an outage is not a failed read');
+END $$;
+DELETE FROM public.chain_arrival_probes;
 
 -- S1
 INSERT INTO public.saved_wallets VALUES ('0x00000000000000CC '), ('not-an-address');
