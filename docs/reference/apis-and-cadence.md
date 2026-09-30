@@ -94,7 +94,7 @@ WAF-blocked (known-issues #20), so every read is DB-side; from Next.js use `lib/
 | same | `+ {editionId, completed:true}` | that edition's sales history |
 | same | `+ {nftId}` | one Moment's listing + sale history — the verification-by-listing check |
 | same | `+ {sellerAddress}` | a wallet's listings (0x optional) |
-| `ProfileService/SearchUserProfiles` | `{product:'nba', username}` | `userProfiles[0].flowAddress` (+ `username`, `profileImageUrl`, `favoriteTeamIds`, `createdAt`); `flow_addresses` is the reverse lookup |
+| `ProfileService/SearchUserProfiles` | `{product:'nba', username}` | `userProfiles[0].flowAddress` (+ `username`, `profileImageUrl`, `favoriteTeamIds`, `createdAt`); `flow_addresses` is the reverse lookup: `{product:'nba', flow_addresses:[…]}` answers up to **25** addresses in ONE request (26+ → `400 invalid_argument: too many identifiers: max 25`, measured 2026-09-29); a wallet with no Dapper profile is simply absent, so key hits on the echoed `flowAddress`. Used by pg_cron `rpc-member-wallet-usernames-atlas` → `wallet_usernames` |
 | `EditionService/SearchEditions` | `{product, setId:[…], limit, offset}` | the edition catalogue (the badge lane, `atlas_editions_*`) |
 
 ⚠ **Unknown keys are IGNORED, no error** — a misspelled filter silently returns the firehose; assert on the

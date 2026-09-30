@@ -2570,3 +2570,20 @@ a body the watchlist route rejects (400) and told signed-in readers to sign in. 
 #164). ⛔ **A write's confirmation copy is derived from the response, never from having sent the
 request** — the write-side twin of this file's first rule. ⚠ **The count of rows in the target table is
 the one-query check** a feature like this is alive: zero rows over months is the finding.
+
+### A fallback identity that names the WRONG STATE: signed-in usage written as `anon` (2026-09-29)
+
+support-chat's `concierge_prompt_cache` row wrote `wallet_address: userWallet ?? "anon"`. `userWallet` is the
+allow_list wallet, so every SIGNED-IN user without one was recorded as SIGNED OUT, and a count of anonymous
+concierge use silently included members. Found only because the new `usage_events.user_id` (the auth uid on
+every signed-in row) disagreed with the legacy key on 2 rows within minutes of deploying. `/api/telemetry` had
+the right fallback all along (`wallet ?? user:<id> ?? anon`); the second writer of the same column did not.
+
+**Rules.** (1) ⛔ **A fallback must degrade the IDENTIFIER, never the STATE** — "no wallet" is `user:<id>`, not
+"signed out". (2) Where TWO routes write one identity column, pin them to ONE fallback chain (the CLAUDE.md
+write-side rule: grep the column's WRITERS, PIN BOTH). (3) ⭐ **A key with several SHAPES in one column
+(`0x…` / `user:<uuid>` / `anon`) is not an identity** — the same person appears under two keys and an
+internal-account filter matching one shape misses the other (the founder's rows are wallet-keyed). Read
+people from `usage_events.user_id` or the service-role view `user_activity`; `wallet_address` stays only for
+its legacy readers (`check_feature_quota`, `/api/admin/beta-activity`, `/api/admin/resend-welcome-batch`).
+Older concierge rows cannot be re-attributed and stay `anon`.

@@ -2177,7 +2177,7 @@ one dead**, and nothing visible from this side distinguishes them.
 Ran the pre-flight above across all 70 `app/api/cron/**/route.ts` files (52 distinct pipeline names)
 on 2026-09-02. Fourteen had no runs. After triage:
 
-- 🚨 **`wallet-username-resolver`** — genuinely stopped, `wallet_usernames` frozen at the same instant.
+- 🚨 **`wallet-username-resolver`** — genuinely stopped, `wallet_usernames` frozen at the same instant. ✅ **Its QUEUE is drained again since 2026-09-29, by a different lane — the route is still NOT re-enabled** (per the ⛔ above): pg_cron `rpc-member-wallet-usernames-atlas` (`resolve_member_wallet_usernames_via_atlas`, every 10 min, pipeline `member-wallet-usernames-atlas`) sends ONE Atlas `SearchUserProfiles {flow_addresses}` request per tick — member wallets first, and on the :08/:38 ticks only, the first 25 of `wallet_usernames_unresolved()` (1,443 queued that night; building the queue costs ~2.5 s / ~27k buffers per call, hence twice an hour). Each tick collects the previous tick's response (two-phase over pg_net); a non-200 writes nothing and logs `ok=false`; `extra.leg` names the queue served.
 - ⚠ **`cadence-payer-balance-check`** — a monitoring gap: nothing watches the payer wallet balance.
 - ✅ **The other 12 are fine, across SEVEN distinct causes:** dead upstream marketplace (×2), closed
   collection market, redundant producer switched off, **renamed driver (×3)**, feature-flag disabled
