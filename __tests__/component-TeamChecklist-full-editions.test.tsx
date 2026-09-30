@@ -61,7 +61,7 @@ describe("TeamChecklist full-editions toggle", () => {
     await waitFor(() => expect(getByText("213 editions")).toBeTruthy())
     expect(getByText("$4,100")).toBeTruthy()
     expect(getByText(/3 unpriced editions not included/)).toBeTruthy()
-    expect(getByText(/Subedition parallels hidden/)).toBeTruthy()
+    expect(getByText(/owning any parallel checks off its edition/)).toBeTruthy()
     // The play-grouping vocabulary is gone.
     expect(queryByText(/versions/)).toBeNull()
     expect(queryByText(/plays/)).toBeNull()

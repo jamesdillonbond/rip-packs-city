@@ -10,9 +10,10 @@ import {
 } from "@/lib/entity/checklist-full-editions"
 
 // The "Full editions" checklist view (Trevor, 2026-09-30): the checklist at the
-// full-edition level — subedition parallels removed from view, each full
-// edition owned and priced on its own, and an unpriced missing edition never
-// counted as $0.
+// full-edition level — subedition parallels removed from view, a full edition
+// checked off when the wallet holds it OR ANY of its parallels ("owning any
+// parallel should check it off"), a missing one priced at its cheapest version,
+// and an unpriced missing edition never counted as $0.
 
 const row = (route_slug: string, o: Partial<ChecklistEditionRow> = {}): ChecklistEditionRow => ({
   route_slug, tier: "COMMON", fmv_usd: null, floor_usd: null, fmv_confidence: "HIGH", owned: false, owned_count: 0, owned_locked: false, ...o,
@@ -69,15 +70,32 @@ describe("fullEditionTiles", () => {
     expect(tiles.some((t) => isParallelKey(t.route_slug))).toBe(false)
   })
 
-  it("owning only a PARALLEL does not check off its full edition", () => {
+  // INVERTED 2026-09-30 (Trevor): this pinned "owning only a parallel does NOT
+  // check off its full edition" for one morning. Inverted, never deleted.
+  it("owning only a PARALLEL checks off its full edition (and carries its lock + count)", () => {
     const t = fullEditionTiles(editions, true).find((x) => x.route_slug === "1:1")!
-    expect(t.owned).toBe(false)
-    expect(t.owned_locked).toBe(false)
+    expect(t.owned).toBe(true)
+    expect(t.owned_locked).toBe(true)
+    expect(t.owned_count).toBe(2)
+    expect(t.owned_parallels).toBe(1)
   })
 
-  it("prices each full edition by its OWN floor/FMV, never a cheaper parallel's", () => {
-    const t = fullEditionTiles(editions, true).find((x) => x.route_slug === "1:1")!
-    expect(t.edition_cost_usd).toBe(10)
+  it("an edition with no owned version stays missing (control)", () => {
+    const t = fullEditionTiles(editions, true).find((x) => x.route_slug === "1:3")!
+    expect(t.owned).toBe(false)
+    expect(t.owned_parallels).toBe(0)
+  })
+
+  it("a missing full edition costs its CHEAPEST version — any version completes it", () => {
+    const t = fullEditionTiles(editions.map((e) => ({ ...e, owned: false })), true).find((x) => x.route_slug === "1:1")!
+    expect(t.edition_cost_usd).toBe(4)
+    // an unpriced full edition with a priced parallel is priced by the parallel
+    const u = fullEditionTiles([row("2:1"), row("2:1::5", { fmv_usd: 7 })], false)[0]
+    expect(u.edition_cost_usd).toBe(7)
+  })
+
+  it("a parallel whose full edition is not in scope is dropped, not shown", () => {
+    expect(fullEditionTiles([row("9:9::2", { owned: true })], true)).toEqual([])
   })
 
   it("without a wallet, ownership is unknown (null), not false", () => {
@@ -88,7 +106,7 @@ describe("fullEditionTiles", () => {
   })
 
   it("orders missing before owned, then by FMV, deterministically", () => {
-    expect(fullEditionTiles(editions, true).map((t) => t.route_slug)).toEqual(["1:1", "1:3", "1:2"])
+    expect(fullEditionTiles(editions, true).map((t) => t.route_slug)).toEqual(["1:3", "1:2", "1:1"])
   })
 
   it("a duplicated row is counted once", () => {
@@ -104,16 +122,17 @@ describe("computeFullEditionProgress", () => {
     row("1:3", { fmv_confidence: "NO_DATA" }),
   ]
 
-  it("counts full editions only, and an unpriced missing edition is not $0", () => {
+  it("counts full editions only (a parallel checks its edition off), and an unpriced missing edition is not $0", () => {
     const p = computeFullEditionProgress(fullEditionTiles(editions, true), true)
     expect(p.total).toBe(3)
-    expect(p.owned).toBe(1)
+    // 1:1 owned via its parallel, 1:2 owned directly; 1:3 missing and unpriced
+    expect(p.owned).toBe(2)
     expect(p.locked_owned).toBe(1)
-    expect(p.missing_count).toBe(2)
-    expect(p.cost_to_complete_usd).toBe(10)
+    expect(p.missing_count).toBe(1)
+    expect(p.cost_to_complete_usd).toBe(0)
     expect(p.unpriced_missing_count).toBe(1)
-    expect(p.completion_pct).toBe(33.3)
-    expect(p.stale_missing_pct).toBe(50)
+    expect(p.completion_pct).toBe(66.7)
+    expect(p.stale_missing_pct).toBe(100)
     expect(p.by_tier.map((t) => t.tier)).toEqual(["RARE", "COMMON"])
   })
 

@@ -3,8 +3,10 @@
 // The team checklist's "Full editions" view (Trevor, 2026-09-30, replacing the
 // one-night "Ignore parallels" play grouping): the checklist is read at the FULL
 // EDITION level, so every subedition parallel is removed from view. Each tile is
-// one full edition; it is owned when the wallet holds THAT edition, and a
-// missing one costs its own price. Nothing is folded together.
+// one full edition, and it is CHECKED OFF when the wallet holds that edition OR
+// ANY of its subedition parallels (Trevor, 2026-09-30: "owning any parallel
+// should check it off the checklist for that overall edition"). A missing one
+// costs its CHEAPEST version, because buying any version completes it.
 //
 // HOW A PARALLEL IS IDENTIFIED. By the edition key, never by collection slug. A
 // Top Shot subedition parallel is its own edition keyed `setID:playID::subID`;
@@ -15,11 +17,15 @@
 // parallels, so `hasParallels` is false and the toggle is hidden: the switch is
 // derived from the DATA, not a slug list.
 //
-// PRICING RULE for a missing edition: the same one the "All moments" figure uses
-// per edition — floor (lowest ask) when there is one, otherwise FMV
+// PRICING RULE for a missing edition: the cheapest price among the full edition
+// and its parallels in scope, each priced the way the "All moments" figure
+// prices an edition — floor (lowest ask) when there is one, otherwise FMV
 // (get_team_checklist_progress: COALESCE(floor_usd, fmv_usd)). An edition with
-// NO price is NOT counted as $0: it is excluded from the sum and reported in
-// `unpriced_missing_count`, so the UI can say the total is a lower bound.
+// NO priced version is NOT counted as $0: it is excluded from the sum and
+// reported in `unpriced_missing_count`, so the UI can say the total is a lower
+// bound. A parallel whose full edition is not in scope has no tile to check off
+// and is dropped (measured 2026-09-29: every Top Shot parallel has its full
+// edition).
 //
 // Pure — no I/O. The route (app/api/entity/team-checklist-full-editions)
 // fetches the complete scoped checklist and hands it here.
@@ -37,8 +43,10 @@ export interface ChecklistEditionRow {
 }
 
 export interface FullEditionTile extends ChecklistEditionRow {
-  /** This edition's price (floor, else FMV); null when it has neither. */
+  /** Cheapest price among this full edition and its parallels (floor, else FMV); null when none is priced. */
   edition_cost_usd: number | null
+  /** Parallels of this full edition the wallet holds (null without a wallet). */
+  owned_parallels: number | null
 }
 
 export interface TierBreakdown {
@@ -62,6 +70,12 @@ export interface FullEditionProgress {
 }
 
 const STALE_CONFIDENCE = new Set(["STALE", "LOW", "NO_DATA"])
+
+/** The full edition a key belongs to: everything before the first "::". */
+export function fullEditionKeyOf(editionKey: string): string {
+  const i = editionKey.indexOf("::")
+  return i === -1 ? editionKey : editionKey.slice(0, i)
+}
 
 /** True for a subedition parallel's key (`setID:playID::subID`). */
 export function isParallelKey(editionKey: string): boolean {
@@ -87,23 +101,46 @@ const TIER_RANK: Record<string, number> = {
 }
 
 /**
- * The full editions in a checklist, parallels removed. `hasWallet` decides
- * whether ownership is known at all: without one `owned` stays null, as in the
- * per-edition read. Ownership is the edition's own — holding a parallel does
- * not check off its full edition.
+ * The full editions in a checklist, parallels removed from view but COUNTED:
+ * a full edition is owned when the wallet holds it or any of its parallels.
+ * `hasWallet` decides whether ownership is known at all: without one `owned`
+ * stays null, as in the per-edition read.
  */
 export function fullEditionTiles(rows: readonly ChecklistEditionRow[], hasWallet: boolean): FullEditionTile[] {
-  const seen = new Set<string>()
-  const out: FullEditionTile[] = []
+  const full = new Map<string, ChecklistEditionRow>()
+  const parallels = new Map<string, ChecklistEditionRow[]>()
   for (const r of rows) {
     if (typeof r.route_slug !== "string" || r.route_slug === "") continue
-    if (isParallelKey(r.route_slug) || seen.has(r.route_slug)) continue
-    seen.add(r.route_slug)
+    if (isParallelKey(r.route_slug)) {
+      const k = fullEditionKeyOf(r.route_slug)
+      const g = parallels.get(k)
+      if (g) g.push(r)
+      else parallels.set(k, [r])
+    } else if (!full.has(r.route_slug)) {
+      full.set(r.route_slug, r)
+    }
+  }
+
+  const out: FullEditionTile[] = []
+  for (const [key, r] of full) {
+    const pars = parallels.get(key) ?? []
+    let cheapest = editionPrice(r)
+    for (const p of pars) {
+      const pr = editionPrice(p)
+      if (pr != null && (cheapest == null || pr < cheapest)) cheapest = pr
+    }
+    const ownedPars = pars.filter((p) => p.owned === true)
+    const ownsFull = r.owned === true
     out.push({
       ...r,
-      owned: hasWallet ? r.owned === true : null,
-      owned_locked: hasWallet ? r.owned_locked === true : null,
-      edition_cost_usd: editionPrice(r),
+      owned: hasWallet ? ownsFull || ownedPars.length > 0 : null,
+      owned_locked: hasWallet ? r.owned_locked === true || ownedPars.some((p) => p.owned_locked === true) : null,
+      owned_count: hasWallet
+        ? (ownsFull ? (typeof r.owned_count === "number" ? r.owned_count : 1) : 0) +
+          ownedPars.reduce((n, p) => n + (typeof p.owned_count === "number" ? p.owned_count : 1), 0)
+        : r.owned_count ?? null,
+      owned_parallels: hasWallet ? ownedPars.length : null,
+      edition_cost_usd: cheapest,
     })
   }
 

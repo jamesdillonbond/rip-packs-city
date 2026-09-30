@@ -37,21 +37,24 @@ const W = "0x0123456789abcdef"
 beforeEach(() => { rpcCalls.length = 0; pages = []; progressTotal = 3; probeRows = [] })
 
 describe("GET /api/entity/team-checklist-full-editions", () => {
-  it("removes parallels: owning only a parallel does not own the full edition, cost is each missing edition's own price", async () => {
+  it("removes parallels from view but counts them: owning only a parallel checks off its full edition; a missing edition costs its cheapest version", async () => {
+    progressTotal = 5
     pages = [{ data: [
       { route_slug: "1:1", floor_usd: 10, owned: false },
       { route_slug: "1:1::2", floor_usd: 4, owned: true, owned_count: 1 },
-      { route_slug: "1:2", floor_usd: 20, owned: true, owned_count: 1 },
+      { route_slug: "1:2", floor_usd: 20, owned: false },
+      { route_slug: "1:2::3", floor_usd: 15, owned: false },
+      { route_slug: "1:3", floor_usd: 30, owned: true, owned_count: 1 },
     ], error: null }]
     const r = await GET(req(`collection=nba-top-shot&slug=detroit-pistons&wallet=${W}`))
     expect(r.status).toBe(200)
     const j = await r.json()
     expect(j.has_parallels).toBe(true)
-    expect(j.progress.total).toBe(2)
-    expect(j.progress.owned).toBe(1)
-    expect(j.progress.cost_to_complete_usd).toBe(10)
+    expect(j.progress.total).toBe(3)
+    expect(j.progress.owned).toBe(2)
+    expect(j.progress.cost_to_complete_usd).toBe(15)
     expect(j.progress.wallet_cached).toBe(true)
-    expect(j.editions.map((e: { route_slug: string }) => e.route_slug)).toEqual(["1:1", "1:2"])
+    expect(j.editions.map((e: { route_slug: string }) => e.route_slug).sort()).toEqual(["1:1", "1:2", "1:3"])
   })
 
   it("REFUSES a read shorter than the progress total — no editions, no cost", async () => {

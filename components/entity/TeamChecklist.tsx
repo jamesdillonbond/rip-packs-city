@@ -28,8 +28,8 @@
 // - View toggle (Trevor, 2026-09-30; concierge feature request 09-29): "All
 //   moments" (every edition and subedition parallel, the default) vs "Full
 //   editions", which reads the checklist at the full-edition level — parallels
-//   are removed from view, and owned / % / cost-to-complete count full editions
-//   only. Shown only when the collection's data carries parallel editions
+//   are removed from view, and owned / % / cost-to-complete count full editions;
+//   owning ANY parallel checks its full edition off (Trevor, 09-30). Shown only when the collection's data carries parallel editions
 //   (probe, not a slug list). Persisted as ?view=full so it is shareable (the
 //   09-29 ?parallels=exclude link still opens it).
 //
@@ -61,6 +61,9 @@ interface ChecklistTile extends EditionTile {
   // "Full editions" view only: this edition's price (floor, else FMV), null when
   // it has neither — see lib/entity/checklist-full-editions.ts.
   edition_cost_usd?: number | null
+  // "Full editions" view only: parallels of this edition the wallet holds —
+  // any one of them checks the edition off (Trevor, 2026-09-30).
+  owned_parallels?: number | null
 }
 
 interface TierBreakdown {
@@ -456,7 +459,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
           <ScopeChip active={fullView} onClick={() => changeMode("full")}>Full editions</ScopeChip>
           {fullView && (
             <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
-              Subedition parallels hidden.
+              Parallels hidden — owning any parallel checks off its edition.
             </span>
           )}
         </div>
@@ -691,7 +694,10 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
         {/* ownership badge — tri-state (green=owned+locked, white=owned, gray=missing) */}
         {hasWallet && (
           <div
-            title={locked ? "Owned + locked" : owned ? "Owned" : "Missing"}
+            title={
+              (locked ? "Owned + locked" : owned ? "Owned" : "Missing") +
+              (owned && typeof e.owned_parallels === "number" && e.owned_parallels > 0 ? " (includes a parallel)" : "")
+            }
             style={{
               position: "absolute", top: 6, right: 6, padding: "3px 7px", borderRadius: 999,
               fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.04em",
