@@ -131,6 +131,14 @@ function Table({ head, children }: { head: string[]; children: React.ReactNode }
 function editionHref(key: string) {
   return `/panini-blockchain/edition/${encodeURIComponent(key)}`
 }
+// A row whose edition is not in our catalogue has no player name (every one of the 7,208
+// panini_editions rows has one; the name comes from that join), and no edition page:
+// /panini-blockchain/edition/packcard-2305_4544702_12015358_1 was a 404 linked from this
+// board (link crawl, 2026-09-29). Such a row shows its dash as plain text, not a dead link.
+function EditionLink({ edition, name }: { edition: string; name: string | null }) {
+  if (!name) return <>—</>
+  return <Link href={editionHref(edition)} style={{ color: "inherit" }}>{name}</Link>
+}
 const SERIAL_KIND_LABEL: Record<PaniniSerialKind, string> = {
   serial_1: "#1",
   last: "Last serial (e.g. #25/25)",
@@ -263,7 +271,7 @@ export default function PaniniAnalytics({ data }: { data: PaniniSalesAnalytics |
           {topRows.map((r) => (
             <tr key={`${r.sku}|${r.sold_at}`}>
               <td style={{ ...td, color: "var(--rpc-text-primary)" }}>
-                <Link href={editionHref(r.edition_external_id)} style={{ color: "inherit" }}>{r.player_name ?? "—"}</Link>
+                <EditionLink edition={r.edition_external_id} name={r.player_name} />
               </td>
               <td style={td}>{r.set_name ?? "—"}</td>
               <td style={td}>{r.serial_number != null ? `#${r.serial_number}${r.mint_cap != null ? `/${r.mint_cap}` : ""}` : "—"}</td>
@@ -283,7 +291,7 @@ export default function PaniniAnalytics({ data }: { data: PaniniSalesAnalytics |
           {data.most_traded.map((r) => (
             <tr key={r.edition_external_id}>
               <td style={{ ...td, color: "var(--rpc-text-primary)" }}>
-                <Link href={editionHref(r.edition_external_id)} style={{ color: "inherit" }}>{r.player_name ?? "—"}</Link>
+                <EditionLink edition={r.edition_external_id} name={r.player_name} />
               </td>
               <td style={td}>{r.set_name ?? "—"}</td>
               <td style={td}>{`${atLeast ? "≥ " : ""}${int(r.sales)}`}</td>

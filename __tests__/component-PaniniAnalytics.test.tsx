@@ -89,6 +89,23 @@ describe("PaniniAnalytics", () => {
     expect(c.textContent).not.toMatch(/buyer|seller/i)
   })
 
+  // 2026-09-29 link crawl: a sale whose edition is not in our catalogue (no player name, since
+  // the name comes from the panini_editions join) linked /panini-blockchain/edition/<key>, a 404.
+  it("a sale or edition with no catalogue entry shows a plain dash, not a link to a 404", () => {
+    const orphan = { sku: "packcard-9__1_10", edition_external_id: "packcard-9", sold_at: "2026-09-28T19:00:00Z", amount_usd: 500, player_name: null, set_name: null, tier: null, serial_number: 1, mint_cap: 10 }
+    const d = payload({
+      top_sales_window: [...payload().top_sales_window, orphan],
+      most_traded: [...payload().most_traded, { edition_external_id: "packcard-8", player_name: null, set_name: null, tier: null, sales: 3, volume_usd: 30, median_usd: 10 }],
+    })
+    const c = render(<PaniniAnalytics data={d} />).container
+    expect(c.textContent).toContain("$500")
+    expect(c.querySelector('a[href="/panini-blockchain/edition/packcard-9"]')).toBeNull()
+    expect(c.querySelector('a[href="/panini-blockchain/edition/packcard-8"]')).toBeNull()
+    // control: a catalogued edition still links
+    expect(c.querySelector('a[href="/panini-blockchain/edition/packcard-1"]')).not.toBeNull()
+    expect(c.querySelector('a[href="/panini-blockchain/edition/packcard-3"]')).not.toBeNull()
+  })
+
   it("top players link the player page, and a partial window reads their counts AND volume as floors", () => {
     const c = render(<PaniniAnalytics data={payload()} />).container
     expect(c.querySelector('a[href="/panini-blockchain/player/kylian-mbappe"]')?.textContent).toBe("Kylian Mbappé")
