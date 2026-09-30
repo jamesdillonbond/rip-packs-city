@@ -10,9 +10,11 @@
 --       (a CSV or flowty record stands).
 --   A3. Each wallet written for is rebuilt once; a wallet with nothing new is
 --       not; a second run writes nothing (idempotent).
+--   A5. 0xfa57101aa0d55954 is a Dapper delivery source (added 2026-09-30:
+--       its moments move only in txs 0xe1f2... alone signs).
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929175000_audit_20260929_custodial_pulls_found_on_chain_become_pack_pull_acquisitions.sql).
+-- (supabase/migrations/20260930180000_audit_20260930_custodial_pulls_0xfa57_is_a_dapper_delivery_source.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -50,7 +52,10 @@ DECLARE
   v_started   timestamptz := clock_timestamp();
   v_ts        constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
   -- Dapper delivery accounts (evidence above); a collector wallet is never one
-  v_dapper    constant text[] := ARRAY['0xe1f2a091f7bb5245', '0xb6f2481eba4df97b'];
+  -- 2026-09-30: + 0xfa57101aa0d55954, a Dapper-controlled source: its moments
+  -- leave in txs signed ONLY by 0xe1f2... (Dapper's delivery script), 43 of
+  -- its 60 beside 0xe1f2... moments in the same reveal
+  v_dapper    constant text[] := ARRAY['0xe1f2a091f7bb5245', '0xb6f2481eba4df97b', '0xfa57101aa0d55954'];
   v_inserted int := 0; v_wallets int := 0; v_rips int := 0;
   w record; v_res jsonb;
 BEGIN
@@ -107,6 +112,7 @@ INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status, arrived
   ('0xaa', 6, 0, 1, 'done', 400, '2025-01-04 00:00:00+00', 'T4', '0xe1f2a091f7bb5245'),   -- already a CSV pull
   ('0xaa', 8, 0, 1, 'done', 450, '2025-01-04 12:00:00+00', 'T6', '0xb5b717909b9c5ea5'),   -- a collector wallet (sold 644)
   ('0xcc', 9, 0, 1, 'done', 460, '2026-05-01 00:00:00+00', 'T7', '0xb6f2481eba4df97b'),   -- PDS delivery
+  ('0xcc', 10, 0, 1, 'done', 470, '2024-09-01 00:00:00+00', 'T8', '0xfa57101aa0d55954'),  -- a Dapper-signed shard delivery
   ('0xbb', 7, 0, 1, 'done', 500, '2025-01-05 00:00:00+00', 'T5', '0x2222222222222222');   -- nothing custodial
 INSERT INTO public.pack_open_pulls VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PK', '4');
 INSERT INTO public.moment_acquisitions (nft_id, wallet, collection_id, acquired_date, source, acquisition_method)
@@ -116,7 +122,10 @@ DO $$
 DECLARE v jsonb;
 BEGIN
   v := public.apply_chain_arrival_pack_pulls();
-  PERFORM _assert_eq(v->>'pack_pulls_inserted', '3', 'A1: the two 0xe1f2 reveals and the PDS delivery, nothing else');
+  PERFORM _assert_eq(v->>'pack_pulls_inserted', '4', 'A1: the two 0xe1f2 reveals, the PDS and the 0xfa57 delivery, nothing else');
+  PERFORM _assert((SELECT count(*) = 1 FROM public.moment_acquisitions WHERE nft_id = '10' AND source_address = '0xfa57101aa0d55954'
+                      AND acquisition_method = 'pack_pull' AND transaction_hash = 'T8'),
+                  'A5: 0xfa57 (moves only in txs 0xe1f2 alone signs) is a Dapper delivery source');
   PERFORM _assert((SELECT count(*) = 2 FROM public.moment_acquisitions
                     WHERE source = 'chain_history' AND acquisition_method = 'pack_pull' AND acquisition_confidence = 'verified'
                       AND wallet = '0xaa' AND nft_id IN ('1', '2') AND transaction_hash = 'T1'

@@ -72,7 +72,7 @@ const PINS = [
     fn: "apply_chain_arrival_pack_pulls",
     test: "supabase/tests/apply_chain_arrival_pack_pulls.sql",
     migration:
-      "supabase/migrations/20260929175000_audit_20260929_custodial_pulls_found_on_chain_become_pack_pull_acquisitions.sql",
+      "supabase/migrations/20260930180000_audit_20260930_custodial_pulls_0xfa57_is_a_dapper_delivery_source.sql",
   },
   {
     // Added 2026-09-29. When and from whom a wallet got a Top Shot moment,
