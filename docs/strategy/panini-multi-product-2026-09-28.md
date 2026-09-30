@@ -152,3 +152,20 @@ Read at 12:10–12:40 PM PT 09-29 (about 2 days before the planned Oct 1 check; 
   founder's held editions: **135 of 136** are catalogued, bridged into `editions` and have `fmv_usd > 0`. The one left is
   `packcard-2263_…` (set 2263). Set 2263 is **not an admitted product**, so the route correctly never queues it. Trophy
   slot 2 (Rupert #1/1) now shows **$25, confidence LOW** (floor NULL), labelled honestly.
+
+### 2026-09-29 ~4:15 PM PT — where this thread leaves the switch-on checklist
+
+- **Step 2 (naming): still open. It needs Trevor, not code.** All 30 admitted products now have `panini_products.sample`,
+  but 29 have `name` NULL. **No recorded source carries the product name.** Every stored `panini_card_serials.raw`
+  row for the 29 has the Panini API's `collection` / `year` / `sport_name` keys set to **null**. The only product
+  names in the DB are from pack pages (`panini_pack_state.product_name`: World Cup + WNBA only). The public card
+  detail page shows nothing without a sign-in. So naming is: open one sample psku per set in the signed-in Panini
+  Chrome, read the product title, then `update panini_products set name = '<title>', sport = '<SPORT>' where set_id = …`.
+  Names must match the pack payload's `collection_name` exactly (case-insensitive) if a pack of that product is ever
+  captured. Do **not** derive names from the sample's `cardset` (that is the parallel, e.g. "Base Prizms Silver",
+  not the product). Until then these cards display as "set <id> · …", which is honest.
+- **Step 5 (pack EV):** still "not modeled" for the 29. It needs each product's published odds. No change.
+- **Pricing depth:** of the founder's 135 priced held editions, **31 are HIGH/MEDIUM** and 104 LOW (Rupert #1/1: $25
+  LOW, floor NULL). The next pass should check whether the LOW ones have captured sales/listings the model isn't
+  using. Diagnose before changing anything.
+- **Set 2263** (the founder's one unpriced edition) is not admitted; admitting it is Trevor's call (step 1 capacity).
