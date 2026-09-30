@@ -5,7 +5,9 @@
 
 export const PANINI_UUID = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b";
 
-const TIER: Record<string, string> = { Uncommon: "COMMON", Rare: "RARE", "Ultra Rare": "RARE", Epic: "LEGENDARY", Legendary: "ULTIMATE" };
+// 2026-09-29: `Common` was missing, so 301 Common-rarity cards ingested with tier NULL and breached the
+// edition_integrity_flags trust gate (308 vs 250). Panini has no UNCOMMON tier; Uncommon already maps to COMMON.
+const TIER: Record<string, string> = { Common: "COMMON", Uncommon: "COMMON", Rare: "RARE", "Ultra Rare": "RARE", Epic: "LEGENDARY", Legendary: "ULTIMATE" };
 const FOTL = /aguila|maple leaf|old glory|nebula/i;
 
 const posOrNull = (x: any): number | null => (Number.isFinite(+x) && +x > 0 ? +x : null);

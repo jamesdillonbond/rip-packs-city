@@ -28,6 +28,18 @@ describe("toEditionRow", () => {
     expect(r.collection_id).toBe(PANINI_UUID)
     expect(r.parallel_family).toBe("base")
   })
+  // 2026-09-29: 301 Common-rarity cards ingested with tier NULL (edition_integrity_flags breach).
+  it("maps every observed Panini rarity label, including Common", () => {
+    const tierOf = (card_rarity: string) => toEditionRow({ psku: "packcard-1_1_1_1", athlete: "A", cardset: "Base", card_rarity }, NOW).tier
+    expect(tierOf("Common")).toBe("COMMON")
+    expect(tierOf("Uncommon")).toBe("COMMON")
+    expect(tierOf("Rare")).toBe("RARE")
+    expect(tierOf("Ultra Rare")).toBe("RARE")
+    expect(tierOf("Epic")).toBe("LEGENDARY")
+    expect(tierOf("Legendary")).toBe("ULTIMATE")
+    // an unknown label stays null (the trust gate is what surfaces it), never a guessed tier
+    expect(tierOf("Mythic")).toBeNull()
+  })
   it("reads market fields at TOP LEVEL when market_stats absent (live grid shape)", () => {
     const r = toEditionRow({ psku: "p", cardset: "Base Prizms Silver", rarity: "Uncommon", end_seq: 259, with_collectors_count: 201, unopened_pack_count: 58 }, NOW)
     expect(r.tier).toBe("COMMON")
