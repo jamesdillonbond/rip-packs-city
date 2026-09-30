@@ -4,7 +4,8 @@ import path from "node:path"
 // A plain .mjs script — TS resolves it under allowJs, so no directive is needed.
 // ⚠ An `@ts-expect-error` here is itself a tsc ERROR (TS2578, "unused directive"): green
 // vitest, red typecheck, the repo's most-repeated CI breakage met from a new angle.
-import { buildRow, parseAtlasBoundary, atlasBoundaryBody, dedupeRows } from "../scripts/ingest-topshot-active-listings.mjs"
+import { buildRow, parseAtlasBoundary, atlasBoundaryBody, dedupeRows, withTimeout } from "../scripts/ingest-topshot-active-listings.mjs"
+import { readFileSync } from "node:fs"
 
 // `scripts/ingest-topshot-active-listings.mjs` IS the whole of the
 // `topshot-active-listings-ingest` workflow, and it had no test. It is one of only two
@@ -260,5 +261,26 @@ describe("dedupeRows — one row per (edition_id, serial_number) before an upser
   it("is a no-op on an already-unique buffer and preserves order", () => {
     const rows = [1, 2, 3].map((n) => buildRow(one, { serialNumber: n, priceCents: n }, n === 1))
     expect(dedupeRows(rows).map((r) => r.serial_number)).toEqual([1, 2, 3])
+  })
+})
+
+// 2026-09-29: DEADLINE_MS is only checked between targets and page.evaluate had no node-side
+// bound, so one call that never settled would hold the run — and the Windows task's IgnoreNew
+// setting would then skip every later run. Two bounds now exist; both are pinned here.
+describe("a hung browser call cannot hold the run", () => {
+  it("withTimeout rejects a promise that never settles", async () => {
+    const never = new Promise(() => {})
+    await expect(withTimeout(never, 20, "atlas page.evaluate")).rejects.toThrow(/atlas page\.evaluate timed out after 20ms/)
+  })
+
+  it("withTimeout passes a settled value through", async () => {
+    await expect(withTimeout(Promise.resolve(7), 1000, "x")).resolves.toBe(7)
+  })
+
+  it("the browser call is wrapped, and a direct run arms (and clears) a process watchdog", () => {
+    const src = readFileSync(path.join(process.cwd(), "scripts", "ingest-topshot-active-listings.mjs"), "utf8")
+    expect(src).toMatch(/return withTimeout\(page\.evaluate\(/)
+    expect(src).toMatch(/const watchdog = setTimeout\(\(\) => \{[\s\S]{0,400}process\.exit\(1\)/)
+    expect(src).toMatch(/\.finally\(\(\) => clearTimeout\(watchdog\)\)/)
   })
 })

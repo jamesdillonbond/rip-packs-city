@@ -115,6 +115,18 @@ const EGRESS_PROBE_N = process.env.EGRESS_PROBE_N ? Number(process.env.EGRESS_PR
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// A node-side bound for a promise that has none of its own. page.evaluate's in-page
+// AbortController bounds the fetch, not the evaluate: a wedged renderer would never
+// answer at all (2026-09-29, see the watchdog at the bottom of this file).
+const EVALUATE_TIMEOUT_MS = 45_000;
+function withTimeout(promise, ms, label) {
+  let t;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
+
 // ── our Vercel route (plain fetch; not WAF-blocked) ──────────────────────────
 async function getTargets() {
   const res = await fetch(`${ROUTE}?phase=targets&floor=${FLOOR}`, {
@@ -234,7 +246,7 @@ async function closeBrowser() {
 }
 async function atlasViaBrowser(body) {
   const page = await browserPage();
-  return page.evaluate(
+  return withTimeout(page.evaluate(
     async ({ url, body }) => {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 30_000);
@@ -251,7 +263,7 @@ async function atlasViaBrowser(body) {
       }
     },
     { url: ATLAS_URL, body }
-  );
+  ), EVALUATE_TIMEOUT_MS, "atlas page.evaluate");
 }
 
 // ── Atlas boundary: curl (default) or browser ────────────────────────────────
@@ -510,10 +522,22 @@ const isDirectRun =
   process.argv[1] != null && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isDirectRun) {
-  mainAndClose().catch((e) => {
-    console.error("[listings-ingest] FATAL", e);
+  // ⛔ HARD WALL CLOCK (2026-09-29). DEADLINE_MS is checked only BETWEEN targets, so one
+  // await that never settles would outlive it, and the Windows task runs with IgnoreNew:
+  // a hung run skips every later one (the class that already cost the Panini task days on
+  // this box). No hang of THIS script has been observed — this closes the gap before one.
+  // The timer fires whatever is stuck, says so, and exits 1 so the next run can start.
+  const hardKillMs = DEADLINE_MS + 6 * 60 * 1000;
+  const watchdog = setTimeout(() => {
+    console.error(`[listings-ingest] WATCHDOG: still running ${Math.round(hardKillMs / 1000)}s after start (deadline ${Math.round(DEADLINE_MS / 1000)}s) — a call hung; exiting 1`);
     process.exit(1);
-  });
+  }, hardKillMs);
+  mainAndClose()
+    .catch((e) => {
+      console.error("[listings-ingest] FATAL", e);
+      process.exit(1);
+    })
+    .finally(() => clearTimeout(watchdog));
 }
 
-export { buildRow, parseAtlasBoundary, atlasBoundaryBody, dedupeRows };
+export { buildRow, parseAtlasBoundary, atlasBoundaryBody, dedupeRows, withTimeout };
