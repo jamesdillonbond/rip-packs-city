@@ -14,6 +14,14 @@ const AUTOMATED_UA =
   /lightpanda|headlesschrome|phantomjs|playwright|puppeteer|selenium|webdriver|lighthouse|pagespeed|chrome-lighthouse|(?<!cu)bot\b|bot\/|crawler|spider|slurp|curl\/|wget\/|python-requests|python-urllib|axios\/|node-fetch|undici|go-http-client|okhttp|java\//i
 
 export function isAutomatedUserAgent(ua: string | null | undefined): boolean {
-  if (!ua) return true // a real browser always sends one
-  return AUTOMATED_UA.test(ua)
+  return automatedReason(ua) !== null
+}
+
+// WHICH rule matched, stored beside the tag (`automated_by`) so an over-match is
+// auditable from the rows: 09-29's first check could see that real visitors got
+// through untagged, but not whether any were caught — no UA is stored.
+export function automatedReason(ua: string | null | undefined): string | null {
+  if (!ua) return "no-ua" // a real browser always sends one
+  const m = AUTOMATED_UA.exec(ua)
+  return m ? m[0].toLowerCase() : null
 }

@@ -185,7 +185,7 @@ describe("POST /api/telemetry", () => {
     it("tags a Lightpanda beacon (the measured 09-29 scraper) and keeps the row", async () => {
       await post(req({ feature: "page-view", metadata: { path: "/insights" } }, false, "Lightpanda/1.0"))
       expect(state.insert.feature_name).toBe("page-view")
-      expect(state.insert.metadata).toEqual({ path: "/insights", automated: true })
+      expect(state.insert.metadata).toEqual({ path: "/insights", automated: true, automated_by: "lightpanda" })
     })
 
     it("tags headless Chrome, crawlers and HTTP clients", async () => {
@@ -198,7 +198,8 @@ describe("POST /api/telemetry", () => {
       ]) {
         state.insert = null
         await post(req({ feature: "page-view" }, false, ua))
-        expect(state.insert.metadata, ua).toEqual({ automated: true })
+        expect(state.insert.metadata.automated, ua).toBe(true)
+        expect(typeof state.insert.metadata.automated_by, ua).toBe("string")
       }
     })
 
@@ -210,18 +211,19 @@ describe("POST /api/telemetry", () => {
 
     it("tags a beacon with no user-agent at all", async () => {
       await post(req({ feature: "page-view" }, false, null))
-      expect(state.insert.metadata).toEqual({ automated: true })
+      expect(state.insert.metadata).toEqual({ automated: true, automated_by: "no-ua" })
     })
 
     it("tags a page that reported navigator.webdriver, even from a browser UA", async () => {
       await post(req({ feature: "page-view", metadata: { path: "/", webdriver: true } }))
       expect(state.insert.metadata.automated).toBe(true)
+      expect(state.insert.metadata.automated_by).toBe("webdriver")
     })
 
     it("a client cannot claim to be human: its own `automated` key is discarded", async () => {
-      await post(req({ feature: "page-view", metadata: { automated: false } }, false, "Lightpanda/1.0"))
-      expect(state.insert.metadata).toEqual({ automated: true })
-      await post(req({ feature: "page-view", metadata: { path: "/", automated: true } }))
+      await post(req({ feature: "page-view", metadata: { automated: false, automated_by: "x" } }, false, "Lightpanda/1.0"))
+      expect(state.insert.metadata).toEqual({ automated: true, automated_by: "lightpanda" })
+      await post(req({ feature: "page-view", metadata: { path: "/", automated: true, automated_by: "x" } }))
       expect(state.insert.metadata).toEqual({ path: "/" })
     })
   })
