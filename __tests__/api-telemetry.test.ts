@@ -160,6 +160,43 @@ describe("POST /api/telemetry", () => {
     expect(state.insert.wallet_address).toBe("anon")
   })
 
+  // 2026-09-29: user_id is the ONE identity column — the auth uid on every signed-in
+  // row, whichever shape wallet_address took. Before it, one person could appear as
+  // both `0x…` and `user:<uuid>`, and a report of "who was on" had to re-resolve both.
+  describe("uniform user_id", () => {
+    const UID = "307c4d03-2b65-4244-8b8c-96cd6d364bbd"
+
+    it("writes the auth uid on a wallet-keyed (allow_list) row, not only on user:<id> rows", async () => {
+      state.user = { id: UID, email: "a@x.com" }
+      state.allowRow = { wallet_addr: "0xabc" }
+      await post(req({ feature: "view" }))
+      expect(state.insert.wallet_address).toBe("0xabc")
+      expect(state.insert.user_id).toBe(UID)
+    })
+
+    it("writes the same auth uid on a user:<id>-keyed row", async () => {
+      state.user = { id: UID, email: "a@x.com" }
+      await post(req({ feature: "view" }))
+      expect(state.insert.wallet_address).toBe(`user:${UID}`)
+      expect(state.insert.user_id).toBe(UID)
+    })
+
+    it("is null for a signed-out caller and when identity resolution throws", async () => {
+      await post(req({ feature: "view" }))
+      expect(state.insert.user_id).toBeNull()
+      state.userThrows = true
+      await post(req({ feature: "view" }))
+      expect(state.insert.user_id).toBeNull()
+    })
+
+    it("is null, not a failed insert, when the id is not a uuid (the column is uuid-typed)", async () => {
+      state.user = { id: "u1", email: "a@x.com" }
+      await post(req({ feature: "view" }))
+      expect(state.insert.wallet_address).toBe("user:u1")
+      expect(state.insert.user_id).toBeNull()
+    })
+  })
+
   it("keeps small JSON-safe metadata", async () => {
     await post(req({ feature: "view", metadata: { tab: "market", n: 3 } }))
     expect(state.insert.metadata).toEqual({ tab: "market", n: 3 })

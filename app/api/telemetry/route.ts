@@ -25,6 +25,7 @@ export const dynamic = "force-dynamic"
 
 const MAX_FEATURE_LEN = 80
 const MAX_METADATA_BYTES = 4096
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function normalizeFeature(input: unknown): string | null {
   if (typeof input !== "string") return null
@@ -62,9 +63,14 @@ export async function POST(req: NextRequest) {
   // Resolve identity. Authed users get their allow_list wallet_addr or
   // a "user:<uuid>" sentinel; unauthed get "anon".
   let walletAddress = "anon"
+  // The uniform identity: the auth uid on EVERY signed-in row, whichever shape
+  // wallet_address took (2026-09-29). NULL = signed out. wallet_address keeps its
+  // legacy three-shape key because check_feature_quota and two admin routes read it.
+  let userId: string | null = null
   try {
     const user = await getCurrentUser()
     if (user) {
+      userId = typeof user.id === "string" && UUID_RE.test(user.id) ? user.id : null
       let walletFromAllowList: string | null = null
       if (user.email) {
         const { data } = await (supabaseAdmin as any)
@@ -104,6 +110,7 @@ export async function POST(req: NextRequest) {
   after(async () => {
     const { error } = await (supabaseAdmin as any).from("usage_events").insert({
       wallet_address: walletAddress,
+      user_id: userId,
       feature_name: feature,
       metadata,
     })
