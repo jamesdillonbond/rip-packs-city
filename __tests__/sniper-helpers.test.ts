@@ -172,7 +172,11 @@ describe("trackClick", () => {
   it("maps a flowty deal to the flowty_listing destination", () => {
     const fetchMock = stubBrowser()
     expect(() =>
-      trackClick(deal({ source: "flowty", momentId: "9", editionKey: "e", buyUrl: "https://flowty.io/x" }), "0xabc")
+      trackClick(
+        deal({ source: "flowty", momentId: "9", editionKey: "e", buyUrl: "https://flowty.io/x" }),
+        "0xabc",
+        { collection: "nba-top-shot", href: "https://nbatopshot.com/moment/9", linkKind: "listing" },
+      )
     ).not.toThrow()
     const body = JSON.parse((fetchMock.mock.calls[0] as any[])[1].body)
     expect(body.destination).toBe("flowty_listing")
@@ -182,14 +186,63 @@ describe("trackClick", () => {
 
   it("maps a non-flowty deal to the topshot_listing destination", () => {
     const fetchMock = stubBrowser()
-    trackClick(deal({ source: "topshot", momentId: "9", editionKey: null as any, buyUrl: "https://nbatopshot.com/m/9" }), null)
+    trackClick(
+      deal({ source: "topshot", momentId: "9", editionKey: null as any, buyUrl: "https://nbatopshot.com/m/9" }),
+      null,
+      { collection: "nba-top-shot", href: "https://nbatopshot.com/m/9", linkKind: "listing" },
+    )
     const body = JSON.parse((fetchMock.mock.calls[0] as any[])[1].body)
     expect(body.destination).toBe("topshot_listing")
     expect(body.editionKey).toBeNull()
   })
 
+  // audit_20260930 — the click must be matchable to the sale that follows it.
+  it("carries the caller's collection and linkKind, and logs the href ACTUALLY opened — not deal.buyUrl", () => {
+    const fetchMock = stubBrowser()
+    trackClick(
+      deal({ source: "allday", flowId: "123", momentId: "ed-9", editionKey: "ed-9", buyUrl: "https://flowty.io/dead" }),
+      null,
+      { collection: "nfl-all-day", href: "https://nflallday.com/moments/123", linkKind: "listing" },
+    )
+    const body = JSON.parse((fetchMock.mock.calls[0] as any[])[1].body)
+    expect(body.collection).toBe("nfl-all-day")
+    expect(body.linkKind).toBe("listing")
+    expect(body.buyUrl).toBe("https://nflallday.com/moments/123")
+    expect(body.buyUrl).not.toContain("flowty")
+    // the on-chain id, not the edition-grain deal.momentId
+    expect(body.momentId).toBe("123")
+  })
+
+  it("labels a Dapper click dapper_market_listing — never topshot_listing", () => {
+    const fetchMock = stubBrowser()
+    trackClick(
+      deal({ source: "topshot", flowId: "5", momentId: "1:2", editionKey: "1:2" }),
+      null,
+      { collection: "nba-top-shot", href: "https://dapper.market/nba/moment/5", linkKind: "dapper" },
+    )
+    const body = JSON.parse((fetchMock.mock.calls[0] as any[])[1].body)
+    expect(body.destination).toBe("dapper_market_listing")
+    expect(body.destination).not.toBe("topshot_listing")
+    expect(body.linkKind).toBe("dapper")
+  })
+
+  it("does not invent a collection or a Top Shot destination when neither is known", () => {
+    const fetchMock = stubBrowser()
+    trackClick(
+      deal({ source: undefined, flowId: "", momentId: "9", editionKey: "e" }),
+      null,
+      { collection: null, href: "https://example.test/x", linkKind: "listing" },
+    )
+    const body = JSON.parse((fetchMock.mock.calls[0] as any[])[1].body)
+    expect(body.collection).toBeNull()
+    expect(body.destination).toBe("native_listing")
+    expect(body.momentId).toBeNull()
+  })
+
   it("is a silent no-op outside a browser (no window)", () => {
-    expect(() => trackClick(deal({ source: "topshot", momentId: "9" }), null)).not.toThrow()
+    expect(() =>
+      trackClick(deal({ source: "topshot", momentId: "9" }), null, { collection: "nba-top-shot", href: "https://nbatopshot.com/m/9", linkKind: "listing" })
+    ).not.toThrow()
   })
 })
 

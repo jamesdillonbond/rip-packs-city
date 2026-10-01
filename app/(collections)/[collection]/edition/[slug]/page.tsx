@@ -1036,6 +1036,8 @@ export default async function EditionPage(
             href={dapperEditionUrl}
             payload={{
               surface: "edition",
+              collection: coll.dbSlug,
+              linkKind: "edition",
               destination: "dapper_market_edition",
               editionKey: detail.external_id,
               playerName: detail.player_name,
@@ -1073,6 +1075,8 @@ export default async function EditionPage(
             href={paniniEditionUrl(detail.external_id)!}
             payload={{
               surface: "edition",
+              collection: coll.dbSlug,
+              linkKind: "edition",
               destination: "panini_marketplace_edition",
               editionKey: detail.external_id,
               playerName: detail.player_name,

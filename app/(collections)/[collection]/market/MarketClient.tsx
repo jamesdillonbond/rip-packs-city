@@ -226,14 +226,37 @@ export function sortKeysFor(collectionId: string | null | undefined): SortKey[] 
 // Resolve the outbound marketplace URL for a listing. Flowty links are dead,
 // so prefer a live native link: the listing's own buyUrl when it isn't a
 // Flowty URL, otherwise the collection's native moment page.
-// Log an outbound "View Listing" click to outbound_clicks. Fire-and-forget.
-function trackListingClick(listing: Listing, buyUrl: string | null) {
+// Log an outbound "View Listing" / "Dapper" click to outbound_clicks.
+// Fire-and-forget. `collection` is the board's registry id (the match key the
+// click-attribution job pairs with momentId — a moment id is unique only
+// within a collection); `href` is the URL ACTUALLY opened.
+//
+// destination: the Dapper link is "dapper_market_listing" (it was logged as
+// "topshot_listing" before, on every collection); the native link is the
+// listing's own marketplace URL ("<collection>_listing") when one was used,
+// else the collection's native moment page.
+function trackListingClick(
+  listing: Listing,
+  href: string,
+  collection: string,
+  kind: "listing" | "dapper",
+) {
   const isNativeMarketplace = !!listing.buyUrl?.trim() && !listing.buyUrl.includes("flowty.io")
   trackOutboundClick({
     surface: "market",
-    destination: isNativeMarketplace ? "topshot_listing" : "native_moment_page",
+    collection,
+    linkKind: kind,
+    destination:
+      kind === "dapper"
+        ? "dapper_market_listing"
+        : isNativeMarketplace
+          ? `${collection}_listing`
+          : "native_moment_page",
     editionKey: listing.editionKey,
-    momentId: listing.momentId,
+    // The ON-CHAIN id (what `sales.nft_id` holds), not listing.momentId —
+    // cached_listings.moment_id is an edition-grain key on several arms. Null
+    // at edition grain, where the attribution job falls back to editionKey.
+    momentId: listing.flowId ?? null,
     playerName: listing.playerName,
     setName: listing.setName,
     tier: listing.tier,
@@ -241,7 +264,7 @@ function trackListingClick(listing: Listing, buyUrl: string | null) {
     askPrice: listing.askPrice,
     fmv: listing.fmv,
     discount: listing.discount,
-    buyUrl,
+    buyUrl: href,
   })
 }
 
@@ -973,7 +996,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
       href={editionHref ?? buy ?? "#"}
       target={editionHref ? undefined : buy ? "_blank" : undefined}
       rel={editionHref ? undefined : buy ? "noopener noreferrer" : undefined}
-      onClick={editionHref ? undefined : buy ? () => trackListingClick(listing, buy) : undefined}
+      onClick={editionHref ? undefined : buy ? () => trackListingClick(listing, buy, collectionUrlSlug, "listing") : undefined}
       className="rpc-binder-slot"
       style={{
         textDecoration: "none",
@@ -1072,8 +1095,8 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
           <span
             role="link"
             tabIndex={0}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, buy); window.open(buy, "_blank", "noopener,noreferrer") }}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, buy); window.open(buy, "_blank", "noopener,noreferrer") } }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, buy, collectionUrlSlug, "listing"); window.open(buy, "_blank", "noopener,noreferrer") }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, buy, collectionUrlSlug, "listing"); window.open(buy, "_blank", "noopener,noreferrer") } }}
             className="rpc-mono"
             style={{ marginTop: 6, alignSelf: "flex-start", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-primary)", border: `1px solid ${accent}`, borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}
           >
@@ -1087,8 +1110,8 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
           <span
             role="link"
             tabIndex={0}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, dapper); window.open(dapper, "_blank", "noopener,noreferrer") }}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, dapper); window.open(dapper, "_blank", "noopener,noreferrer") } }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, dapper, collectionUrlSlug, "dapper"); window.open(dapper, "_blank", "noopener,noreferrer") }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, dapper, collectionUrlSlug, "dapper"); window.open(dapper, "_blank", "noopener,noreferrer") } }}
             className="rpc-mono"
             style={{ marginTop: 6, alignSelf: "flex-start", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: accent, border: `1px solid ${accent}40`, borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}
           >
@@ -1263,7 +1286,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                         href={buy}
                         target="_blank"
                         rel="noopener noreferrer"
-                        onClick={() => trackListingClick(l, buy)}
+                        onClick={() => trackListingClick(l, buy, collectionUrlSlug, "listing")}
                         className="rpc-chip"
                         style={{ color: accent, borderColor: accent, background: `${accent}14` }}
                       >
@@ -1275,7 +1298,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                         href={dapper}
                         target="_blank"
                         rel="noopener noreferrer"
-                        onClick={() => trackListingClick(l, dapper)}
+                        onClick={() => trackListingClick(l, dapper, collectionUrlSlug, "dapper")}
                         className="rpc-chip"
                         style={{ color: accent, borderColor: `${accent}40`, background: "transparent" }}
                       >

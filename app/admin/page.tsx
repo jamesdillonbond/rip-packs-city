@@ -71,6 +71,11 @@ const TOOLS: Tool[] = [
     blurb: "Fulfill redemptions, refund, adjust balances, toggle catalog. Economy liability view.",
   },
   {
+    href: "/admin/click-purchases",
+    title: "Click → Purchase",
+    blurb: "RPC marketplace clicks (site + alerts) and the presumed purchases that followed, by confidence.",
+  },
+  {
     href: "/admin/giveaways",
     title: "Pack Giveaways",
     blurb: "Build free packs from your unlocked Top Shot moments, seal, open, close, and verify deliveries on chain.",

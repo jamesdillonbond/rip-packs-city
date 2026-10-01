@@ -5,12 +5,15 @@ import { track } from "@/lib/telemetry/track";
 import { tierColorAlpha } from "@/lib/tier-color";
 import { parseRichText, isExternalHref } from "@/lib/concierge/rich-text";
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
+import { trackOutboundClick } from "@/lib/track-click";
 
 interface MomentCard {
   playerName: string; setName?: string; tier?: string; series?: string;
   price: number; fmv?: number; discountPct?: number; badgeNames?: string[];
   serialNumber?: number; mintCount?: number; thumbnailUrl?: string;
   buyUrl?: string; source?: string; editionKey?: string;
+  /** Registry id or long-form slug of the card's collection. */
+  collection?: string | null;
 }
 
 interface ChatMessage {
@@ -92,7 +95,31 @@ function MomentCardUI({ card }: { card: MomentCard }) {
           {card.serialNumber && <span style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>#{card.serialNumber}{card.mintCount ? `/${card.mintCount}` : ""}</span>}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          {card.buyUrl && <a href={card.buyUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, fontWeight: 600, color: "var(--rpc-text-primary)", background: "var(--rpc-surface-hover)", border: "1px solid var(--rpc-border)", padding: "4px 10px", borderRadius: 6, textDecoration: "none", cursor: "pointer" }}>Buy →</a>}
+          {card.buyUrl && <a
+            href={card.buyUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => trackOutboundClick({
+              surface: "concierge_card",
+              // ⚠ null when the card carries none — never a guess. NO server
+              // path emits `momentCards` today (grep app/api +
+              // lib for momentCards/moment_cards: 0 hits, 2026-09-30) — so
+              // there is no builder to add one to. Whoever revives the card must
+              // add `collection` to it and pass it here. Never default to Top Shot.
+              collection: card.collection ?? null,
+              linkKind: "listing",
+              destination: card.source ? `${card.source}_listing` : "native_listing",
+              editionKey: card.editionKey ?? null,
+              playerName: card.playerName,
+              setName: card.setName ?? null,
+              tier: card.tier ?? null,
+              serial: card.serialNumber ?? null,
+              askPrice: card.price ?? null,
+              fmv: card.fmv ?? null,
+              discount: card.discountPct ?? null,
+              buyUrl: card.buyUrl,
+            })}
+            style={{ fontSize: 11, fontWeight: 600, color: "var(--rpc-text-primary)", background: "var(--rpc-surface-hover)", border: "1px solid var(--rpc-border)", padding: "4px 10px", borderRadius: 6, textDecoration: "none", cursor: "pointer" }}>Buy →</a>}
         </div>
       </div>
     </div>

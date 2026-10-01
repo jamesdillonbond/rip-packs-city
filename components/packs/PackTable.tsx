@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import React, { useEffect, useMemo, useState } from 'react'
 import { derivePackAvailability } from '@/lib/pack-availability'
+import { trackOutboundClick } from '@/lib/track-click'
 
 // PackTable — unified pack listings/EV row renderer shared by Top Shot and
 // NFL All Day packs pages.
@@ -164,6 +165,10 @@ export type SortKey =
 
 export interface PackTableProps {
   rows: PackRow[]
+  /** The collection every row belongs to (registry id). Carried on the
+   *  outbound "Buy ↗" click so it can be matched to the pack sale that
+   *  follows — required, never defaulted. */
+  collection: string
   defaultSort?: SortKey
   defaultDir?: 'asc' | 'desc'
   emptyMessage?: string
@@ -352,8 +357,28 @@ export function PackThumb({ url, tier, title, size = 40 }: { url: string | null;
   )
 }
 
+// Outbound "Buy ↗" click → outbound_clicks. A pack has no moment id, so the
+// dist id (PackRow.id = dist_id) goes in editionKey.
+function trackPackBuyClick(collection: string, r: PackRow, href: string, surface: string) {
+  trackOutboundClick({
+    surface,
+    collection,
+    linkKind: 'pack',
+    destination: 'pack_listing',
+    editionKey: r.id,
+    setName: r.title,
+    tier: r.tier,
+    // buyUrl opens the SECONDARY listing, so its ask is secondaryAsk — not
+    // `price`, which is the retail price (0 when unknown).
+    askPrice: r.secondaryAsk ?? null,
+    fmv: r.grossEV ?? null,
+    buyUrl: href,
+  })
+}
+
 export default function PackTable({
   rows,
+  collection,
   defaultSort = 'evMarginPct',
   defaultDir = 'desc',
   emptyMessage = 'No packs to display.',
@@ -582,6 +607,7 @@ export default function PackTable({
                       href={r.buyUrl}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => trackPackBuyClick(collection, r, r.buyUrl!, 'pack_table')}
                       className="rounded border border-emerald-700 bg-emerald-900/40 px-3 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-900/70 transition inline-block"
                       title="Open active listing on the marketplace"
                     >
@@ -740,6 +766,7 @@ export default function PackTable({
                   href={r.buyUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => trackPackBuyClick(collection, r, r.buyUrl!, 'pack_table_mobile')}
                   className="ml-auto rounded border border-emerald-700 bg-emerald-900/40 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-900/70 transition"
                 >
                   Buy ↗

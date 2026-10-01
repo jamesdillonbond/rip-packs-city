@@ -677,6 +677,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
 
       <PackTable
         rows={packRows}
+        collection={collection}
         defaultSort={tableSortDefault.key}
         defaultDir={tableSortDefault.dir}
         emptyMessage={loading ? 'Loading packs…' : 'No packs match your filters.'}

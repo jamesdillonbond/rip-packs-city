@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
 import { fmvBasis } from "@/lib/fmv-basis";
 import { classifySerial } from "@/lib/serials/fun-patterns";
+import { trackOutboundClick } from "@/lib/track-click";
 
 // Was HALF migrated: the three UFC tiers read tokens while the six Flow tiers
 // were still literals -- and literals that disagreed with every other surface
@@ -83,6 +84,32 @@ export interface MomentDetailModalProps {
    */
   dapperUrl?: string | null;
   onClose: () => void;
+}
+
+// Outbound click → outbound_clicks. `collectionUrlSlug` is the caller's
+// active collection (registry id); passed through as-is, never defaulted —
+// a moment id is unique only within a collection.
+function trackModalClick(
+  moment: NonNullable<MomentDetailModalProps["moment"]>,
+  collection: string | null,
+  href: string,
+  kind: "listing" | "dapper",
+) {
+  trackOutboundClick({
+    surface: "moment_modal",
+    collection,
+    linkKind: kind,
+    destination: kind === "dapper" ? "dapper_market_listing" : "native_listing",
+    editionKey: moment.editionKey ?? null,
+    momentId: moment.flowId ?? null,
+    playerName: moment.playerName,
+    setName: moment.setName ?? null,
+    tier: moment.tier ?? null,
+    serial: moment.serialNumber ?? null,
+    askPrice: moment.listingPrice ?? null,
+    fmv: moment.fmv ?? null,
+    buyUrl: href,
+  })
 }
 
 function truncateAddress(addr: string): string {
@@ -524,6 +551,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
               href={moment.buyUrl}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => trackModalClick(moment, collectionUrlSlug ?? null, moment.buyUrl!, "listing")}
               style={{
                 marginTop: "auto",
                 display: "inline-block",
@@ -550,6 +578,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
               href={dapperUrl}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => trackModalClick(moment, collectionUrlSlug ?? null, dapperUrl, "dapper")}
               style={{
                 marginTop: moment.buyUrl ? 8 : "auto",
                 display: "inline-block",

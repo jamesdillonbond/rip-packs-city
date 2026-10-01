@@ -19,6 +19,7 @@ import { momentSubjectName } from "@/lib/entity-href"
 import { specialCats, SPECIAL_CAT_LABEL, type SpecialCat } from "@/lib/badges/glyphs"
 import { specialSerialStyle } from "@/lib/badges/official-art"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
+import { trackOutboundClick } from "@/lib/track-click"
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -90,11 +91,13 @@ function SlabLink({
   target,
   style,
   children,
+  slab,
   ...rest
 }: {
   target: TrophySlabHref;
   style: React.CSSProperties;
   children: React.ReactNode;
+  slab: TrophySlabData;
   "aria-label"?: string;
 }) {
   if (target.kind === "internal") {
@@ -102,7 +105,30 @@ function SlabLink({
   }
   if (target.kind === "external") {
     return (
-      <a href={target.href} target="_blank" rel="noopener noreferrer" style={style} {...rest}>
+      <a
+        href={target.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        // An "external" target exists ONLY for a Panini trophy (trophySlabHref),
+        // so the collection is known, not defaulted. momentId = the card SKU
+        // (Panini's moment_id), which panini_sales keys a card by.
+        onClick={() => trackOutboundClick({
+          surface: "trophy_slab",
+          collection: "panini_blockchain",
+          linkKind: "edition",
+          destination: "panini_marketplace_edition",
+          momentId: slab.moment_id,
+          editionKey: slab.edition_id,
+          playerName: slab.player_name,
+          setName: slab.set_name,
+          tier: slab.tier,
+          serial: slab.serial_number,
+          fmv: slab.fmv,
+          buyUrl: target.href,
+        })}
+        style={style}
+        {...rest}
+      >
         {children}
       </a>
     );
@@ -208,6 +234,7 @@ function FilledSlab({
   return (
     <SlabLink
       target={trophySlabHref(slab)}
+      slab={slab}
       // Row alignment: the Link fills its grid cell (a grid item stretches to
       // the row; in the dashboard's flex-column cell, flex:1 does the same) and
       // the slab body fills the Link. The label absorbs the slack (see

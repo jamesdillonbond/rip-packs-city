@@ -9,6 +9,7 @@ import { getOwnerKey, getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/ow
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection";
 import { setEntityHref } from "@/lib/entity-href";
 import MomentMedia from "@/components/MomentMedia";
+import { trackOutboundClick } from "@/lib/track-click";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
 
 // ── Types (mirrors API response) ─────────────────────────────────────────────
@@ -638,6 +639,9 @@ export default function CollectionSetsClient({ collection }: { collection: strin
                           playerName={piece.playerName}
                           meta={`#${piece.serialNumber ?? "—"} · ${piece.tier}`}
                           colors={colors}
+                          collection={collectionSlug}
+                          tier={piece.tier}
+                          askPrice={null}
                         />
                       ))}
                     </div>
@@ -657,6 +661,9 @@ export default function CollectionSetsClient({ collection }: { collection: strin
                           playerName={piece.playerName}
                           meta={`${piece.tier}${piece.lowestAsk != null ? ` · ~${fmt$(piece.lowestAsk)}` : ""}`}
                           colors={colors}
+                          collection={collectionSlug}
+                          tier={piece.tier}
+                          askPrice={piece.lowestAsk}
                           muted
                         />
                       ))}
@@ -674,6 +681,36 @@ export default function CollectionSetsClient({ collection }: { collection: strin
 }
 
 // ── Subcomponents ────────────────────────────────────────────────────────────
+
+// Outbound click on a set piece → outbound_clicks. The set-progress APIs carry
+// no moment id for a piece (playId + a marketplace search/listing URL only), so
+// the click records the collection, the URL opened and the descriptive fields.
+// askPrice is the MISSING piece's lowest ask (null for an owned piece).
+// ⚠ `topshotUrl` is NOT always external: Candy (editionHref) and Pinnacle
+// (pinnacleRenderHref) set it to an internal RPC route, and sets-db sends "".
+// Only an absolute http(s) URL is an outbound click.
+function trackSetPieceClick(
+  collection: string,
+  href: string,
+  playerName: string,
+  tier: string | null,
+  askPrice: number | null,
+  surface: string,
+) {
+  if (!/^https?:\/\//i.test(href)) return;
+  trackOutboundClick({
+    surface,
+    collection,
+    // ufc/allday set-progress send a marketplace SEARCH url; the others a
+    // moment / edition listing page.
+    linkKind: /\/search\?/.test(href) ? "search" : "listing",
+    destination: "native_marketplace",
+    playerName,
+    tier,
+    askPrice,
+    buyUrl: href,
+  });
+}
 
 function SummaryCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent: string }) {
   const c = makeColors(accent);
@@ -703,6 +740,9 @@ function ModalRow({
   meta,
   colors,
   muted,
+  collection,
+  tier,
+  askPrice,
 }: {
   href: string;
   thumbnailUrl: string | null;
@@ -710,12 +750,16 @@ function ModalRow({
   meta: string;
   colors: ReturnType<typeof makeColors>;
   muted?: boolean;
+  collection: string;
+  tier: string | null;
+  askPrice: number | null;
 }) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={() => trackSetPieceClick(collection, href, playerName, tier, askPrice, "sets_modal")}
       style={{ display: "flex", alignItems: "center", gap: 12, padding: 8, borderRadius: 6, background: colors.card, border: "1px solid " + colors.cardBorder, textDecoration: "none", opacity: muted ? 0.85 : 1, transition: "border-color 0.15s ease" }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.cardHover)}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.cardBorder)}
@@ -923,7 +967,7 @@ function SetCard({
             </div>
           )}
           {detail && (
-            <DetailGrid set={detail} accent={accent} />
+            <DetailGrid set={detail} accent={accent} collection={collectionSlug} />
           )}
         </div>
       )}
@@ -931,7 +975,7 @@ function SetCard({
   );
 }
 
-function DetailGrid({ set, accent }: { set: SetProgress; accent: string }) {
+function DetailGrid({ set, accent, collection }: { set: SetProgress; accent: string; collection: string }) {
   const c = makeColors(accent);
   return (
     <>
@@ -949,6 +993,9 @@ function DetailGrid({ set, accent }: { set: SetProgress; accent: string }) {
                 badge={p.serialNumber != null ? `#${p.serialNumber}` : null}
                 href={p.topshotUrl}
                 accent={accent}
+                collection={collection}
+                tier={p.tier}
+                askPrice={null}
               />
             ))}
           </div>
@@ -969,6 +1016,9 @@ function DetailGrid({ set, accent }: { set: SetProgress; accent: string }) {
                 href={p.topshotUrl}
                 accent={accent}
                 muted
+                collection={collection}
+                tier={p.tier}
+                askPrice={p.lowestAsk}
               />
             ))}
           </div>
@@ -989,6 +1039,9 @@ function DetailTile({
   href,
   accent,
   muted,
+  collection,
+  tier,
+  askPrice,
 }: {
   thumbnailUrl: string | null;
   playerName: string;
@@ -996,6 +1049,9 @@ function DetailTile({
   href: string;
   accent: string;
   muted?: boolean;
+  collection: string;
+  tier: string | null;
+  askPrice: number | null;
 }) {
   const c = makeColors(accent);
   return (
@@ -1003,6 +1059,7 @@ function DetailTile({
       href={href}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={() => trackSetPieceClick(collection, href, playerName, tier, askPrice, "sets_detail")}
       style={{
         display: "block", textDecoration: "none",
         borderRadius: 6, overflow: "hidden",

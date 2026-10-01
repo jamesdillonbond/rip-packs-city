@@ -16,6 +16,7 @@ import { collectionHasPage, getCollection, type CollectionPage } from "@/lib/col
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
 import { momentSubjectName } from "@/lib/entity-href"
+import { trackOutboundClick } from "@/lib/track-click";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -71,6 +72,10 @@ interface SniperDealPreview {
 }
 
 // ── Constants ─────────────────────────────────────────────────────
+// The collection /api/sniper-feed answers when no `collection` param is sent
+// (its feedParamsSchema default). The profile's "Live Sniper Deals" fetch
+// sends none, so its rows belong to this collection whatever page they render on.
+const PROFILE_SNIPER_FEED_COLLECTION = "nba-top-shot";
 const monoFont = "var(--font-mono)";
 const condensedFont = "var(--font-display)";
 
@@ -886,7 +891,33 @@ export default function CollectionProfileClient({
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {sniperDeals.map(function(deal, i) {
               return (
-                <a key={i} href={deal.buyUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                <a
+                  key={i}
+                  href={deal.buyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={function() {
+                    trackOutboundClick({
+                      surface: "profile_sniper",
+                      // NOT this page's `collection`: the fetch above sends no
+                      // collection param, and /api/sniper-feed's schema defaults
+                      // it to "nba-top-shot" (feedParamsSchema, z.string().default)
+                      // — so these rows ARE Top Shot deals on every collection's
+                      // profile page. Tagging them with the page's collection would
+                      // mis-attribute the click.
+                      collection: PROFILE_SNIPER_FEED_COLLECTION,
+                      linkKind: "listing",
+                      destination: deal.source ? deal.source + "_listing" : "native_listing",
+                      playerName: deal.playerName,
+                      tier: deal.tier,
+                      askPrice: deal.askPrice,
+                      fmv: deal.adjustedFmv,
+                      discount: deal.discount,
+                      buyUrl: deal.buyUrl,
+                    });
+                  }}
+                  style={{ textDecoration: "none" }}
+                >
                   <div style={{ ...cardStyle, display: "grid", gridTemplateColumns: "1fr auto auto", gap: 12, padding: "10px 14px", alignItems: "center" }}>
                     <div>
                       <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "var(--rpc-text-primary)", letterSpacing: "0.02em" }}>{deal.playerName}</div>

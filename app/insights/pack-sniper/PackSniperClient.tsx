@@ -64,6 +64,26 @@ type ApiResponse = {
 
 type Collection = "nba-top-shot" | "nfl-all-day"
 
+// The collection a deal ROW belongs to, read off the row itself (the server
+// builds detailHref as `/${collection}/pack/dist/${distId}` — lib/packs/
+// pack-deals.ts). NOT the `collection` state: after a pill switch the board
+// still shows the previous collection's rows until the refetch lands, so the
+// state would tag a Top Shot click as All Day (or the reverse). Null when the
+// href does not carry one — never a default.
+function dealCollection(d: { detailHref: string }): string | null {
+  const m = /^\/([a-z0-9-]+)\/pack\/dist\//.exec(d.detailHref ?? "")
+  return m ? m[1] : null
+}
+
+// Where the primary "View Listing" link goes. buyUrlFor() sends Top Shot to
+// nbatopshot.com and NFL All Day to dapper.market — so labelling every click
+// "topshot" (the old literal) misfiled every All Day click.
+function packBuyDestination(collection: string | null): string | null {
+  if (collection === "nba-top-shot") return "topshot"
+  if (collection === "nfl-all-day") return "dapper_market_packs"
+  return null
+}
+
 const COLLECTION_LABEL: Record<Collection, string> = {
   "nba-top-shot": "NBA Top Shot",
   "nfl-all-day": "NFL All Day",
@@ -680,7 +700,10 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
                     href={d.buyUrl}
                     payload={{
                       surface: "pack-sniper",
-                      destination: "topshot",
+                      collection: dealCollection(d),
+                      linkKind: "pack",
+                      destination: packBuyDestination(dealCollection(d)),
+                      editionKey: d.distId,
                       setName: d.title.trim() || null,
                       tier: d.tier ?? null,
                       askPrice: Number.isFinite(d.lowestAsk) ? d.lowestAsk : null,
@@ -762,7 +785,10 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
                       href={d.buyUrl}
                       payload={{
                         surface: "pack-sniper",
-                        destination: "topshot",
+                        collection: dealCollection(d),
+                        linkKind: "pack",
+                        destination: packBuyDestination(dealCollection(d)),
+                        editionKey: d.distId,
                         setName: d.title.trim() || null,
                         tier: d.tier ?? null,
                         askPrice: Number.isFinite(d.lowestAsk) ? d.lowestAsk : null,
@@ -779,7 +805,10 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
                         href={d.dapperUrl}
                         payload={{
                           surface: "pack-sniper",
+                          collection: dealCollection(d),
+                          linkKind: "pack",
                           destination: "dapper_market_packs",
+                          editionKey: d.distId,
                           setName: d.title.trim() || null,
                           tier: d.tier ?? null,
                           askPrice: Number.isFinite(d.lowestAsk) ? d.lowestAsk : null,

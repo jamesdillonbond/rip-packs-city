@@ -920,9 +920,15 @@ export default async function PackDetailPage(
                   href={buyUrl}
                   payload={{
                     surface: "pack_dist",
+                    collection,
+                    linkKind: "pack",
                     destination: "topshot",
+                    // A pack has no moment id — the dist id is the key the
+                    // click-attribution job matches pack sales on.
+                    editionKey: distId,
                     setName: title,
                     tier,
+                    askPrice: Number.isFinite(livePrice as number) ? (livePrice as number) : null,
                     fmv: Number.isFinite(livePrice as number) ? (livePrice as number) : null,
                     buyUrl,
                   }}
@@ -948,7 +954,10 @@ export default async function PackDetailPage(
                   href={dapperPackUrl}
                   payload={{
                     surface: "pack_dist",
+                    collection,
+                    linkKind: "pack",
                     destination: "dapper_market_packs",
+                    editionKey: distId,
                     setName: title,
                     tier,
                     fmv: null,

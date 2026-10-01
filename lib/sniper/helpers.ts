@@ -263,16 +263,57 @@ export function computeSniperStats(visibleDeals: SniperDeal[]): SniperStats {
 
 // ─── Click tracking helper ────────────────────────────────────────────────────
 
-export function trackClick(deal: SniperDeal, walletAddress: string | null) {
+/** The deal's on-chain moment id, or null when flowId is not one: empty, a
+ *  synthetic "<edition>-<suffix>" key, or equal to the edition key (the All Day
+ *  GraphQL arm sets flowId = editionFlowID). Not a digit test — a Candy MLB
+ *  mint is base58. */
+export function onChainMomentId(deal: Pick<SniperDeal, "flowId" | "editionKey">): string | null {
+  const id = (deal.flowId ?? "").trim();
+  if (!id || /[-:]/.test(id) || id === deal.editionKey) return null;
+  return id;
+}
+
+export interface TrackClickTarget {
+  /** The collection the deal belongs to — the feed's registry id
+   *  ("nba-top-shot", "disney-pinnacle", …). The click-attribution job matches
+   *  on (collection, moment id); a moment id is unique only within a
+   *  collection. Null only when the caller genuinely does not know — never a
+   *  Top Shot default. */
+  collection: string | null;
+  /** The URL actually opened (resolveViewUrl / resolveDapperUrl output) — NOT
+   *  deal.buyUrl, which resolveViewUrl often rejects (Flowty, the dead
+   *  editionFlowID form, Pinnacle's landing page) in favour of another URL. */
+  href: string;
+  /** Which link was clicked. "dapper" = the dapper.market second link. */
+  linkKind: "listing" | "dapper";
+  surface?: string;
+}
+
+// destination: the Dapper link is "dapper_market_listing" (it was logged as
+// "topshot_listing" before — on every collection). The native link keeps the
+// historical per-source labels ("topshot_listing", "flowty_listing", …) and is
+// "native_listing" when the deal carries no source rather than assuming Top
+// Shot.
+export function trackClick(deal: SniperDeal, walletAddress: string | null, target: TrackClickTarget) {
   const destination =
-    (deal.source ?? "topshot") === "flowty"
-      ? "flowty_listing"
-      : "topshot_listing";
+    target.linkKind === "dapper"
+      ? "dapper_market_listing"
+      : deal.source
+        ? `${deal.source}_listing`
+        : "native_listing";
   trackOutboundClick({
-    surface: "sniper",
+    surface: target.surface ?? "sniper",
+    collection: target.collection,
+    linkKind: target.linkKind,
     destination,
     editionKey: deal.editionKey || null,
-    momentId: deal.momentId,
+    // The ON-CHAIN id (what `sales.nft_id` / `pinnacle_sales.nft_id` hold).
+    // deal.momentId is NOT that on every arm — the Top Shot RPC path sets it to
+    // the edition key (setID:playID) and the All Day GraphQL path to the
+    // editionFlowID — and flowId can be "", a synthetic "<edition>-1" /
+    // "<edition>-jersey", or (All Day GraphQL) the edition id itself. See
+    // onChainMomentId; null sends the attribution job to editionKey instead.
+    momentId: onChainMomentId(deal),
     playerName: deal.playerName,
     setName: deal.setName,
     tier: deal.tier,
@@ -281,7 +322,7 @@ export function trackClick(deal: SniperDeal, walletAddress: string | null) {
     fmv: deal.adjustedFmv,
     discount: deal.discount,
     walletAddress,
-    buyUrl: deal.buyUrl,
+    buyUrl: target.href,
   });
 }
 

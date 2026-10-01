@@ -8,6 +8,7 @@ import InsiderSignalsPanel from "@/components/InsiderSignalsPanel"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { toolCardDesc } from "@/lib/collection/closed-market-chrome"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
+import { trackOutboundClick } from "@/lib/track-click"
 import type { PaniniCoverage } from "@/lib/panini/coverage"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -477,7 +478,30 @@ export default function CollectionOverviewClient({ collection }: { collection: s
                 )
                 const rowStyle = { display: "grid", gridTemplateColumns: gridCols, gap: 12, padding: "8px 12px", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", alignItems: "center", textDecoration: "none" } as const
                 return deal.buy_url ? (
-                  <a key={i} href={deal.buy_url} target="_blank" rel="noopener noreferrer" style={rowStyle}>
+                  <a
+                    key={i}
+                    href={deal.buy_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    // get_collection_stats' sniper_deals carry no moment id / edition
+                    // key (read 2026-09-30) — the click carries the collection and
+                    // buy_url, which is all this row has to match on.
+                    onClick={() => trackOutboundClick({
+                      surface: "collection_overview",
+                      collection,
+                      linkKind: "listing",
+                      destination: "native_listing",
+                      playerName: deal.player_name ?? deal.character_name ?? null,
+                      setName: deal.set_name ?? null,
+                      tier: deal.tier ?? null,
+                      serial: deal.serial_number ?? null,
+                      askPrice: deal.ask_price > 0 ? deal.ask_price : null,
+                      fmv: deal.fmv ?? null,
+                      discount: deal.discount ?? null,
+                      buyUrl: deal.buy_url,
+                    })}
+                    style={rowStyle}
+                  >
                     {content}
                   </a>
                 ) : (

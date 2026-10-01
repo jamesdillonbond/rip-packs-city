@@ -51,4 +51,28 @@ describe("TrackedOutboundLink", () => {
     fireEvent.click(container.querySelector("a")!)
     expect(trackMock).toHaveBeenCalledWith(expect.objectContaining({ buyUrl: "https://real/buy" }))
   })
+
+  // audit_20260930: the click is matched to the sale that follows it on
+  // (collection, moment id). The wrapper must forward the collection it was
+  // given — and must NOT invent one when the caller passed null.
+  it("forwards the payload's collection to the beacon", () => {
+    const { container } = render(
+      <TrackedOutboundLink href="https://nflallday.com/moments/1" payload={{ surface: "moment", collection: "nfl_all_day", momentId: "1" }}>
+        go
+      </TrackedOutboundLink>
+    )
+    fireEvent.click(container.querySelector("a")!)
+    expect(trackMock).toHaveBeenCalledWith(expect.objectContaining({ collection: "nfl_all_day", momentId: "1" }))
+  })
+
+  it("keeps an explicit null collection null — never defaults it (e.g. to Top Shot)", () => {
+    const { container } = render(
+      <TrackedOutboundLink href="https://nbatopshot.com/moment/1" payload={{ surface: "moment", collection: null }}>
+        go
+      </TrackedOutboundLink>
+    )
+    fireEvent.click(container.querySelector("a")!)
+    const sent = trackMock.mock.calls[0][0]
+    expect(sent.collection).toBeNull()
+  })
 })

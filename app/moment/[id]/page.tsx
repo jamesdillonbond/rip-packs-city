@@ -1120,6 +1120,8 @@ export default async function MomentPage(
               href={marketplaceUrl}
               payload={{
                 surface: "moment",
+                collection: e.collection_slug,
+                linkKind: "moment",
                 destination: `${collectionSlugUrl}_listing`,
                 editionKey: e.external_id,
                 momentId: marketplaceNftId,
@@ -1127,6 +1129,9 @@ export default async function MomentPage(
                 setName: e.set_name,
                 tier: e.tier,
                 serial,
+                // THIS serial's live ask (cached_listings_v2 / Candy) — null when
+                // it has no open listing; never the edition floor.
+                askPrice: activeListingAsk,
                 fmv: f?.fmv_usd ?? null,
               }}
               style={{
@@ -1157,6 +1162,8 @@ export default async function MomentPage(
               href={dapperUrl}
               payload={{
                 surface: "moment",
+                collection: e.collection_slug,
+                linkKind: "dapper",
                 destination: "dapper_market_listing",
                 editionKey: e.external_id,
                 momentId: marketplaceNftId,
@@ -1164,6 +1171,9 @@ export default async function MomentPage(
                 setName: e.set_name,
                 tier: e.tier,
                 serial,
+                // THIS serial's live ask (cached_listings_v2 / Candy) — null when
+                // it has no open listing; never the edition floor.
+                askPrice: activeListingAsk,
                 fmv: f?.fmv_usd ?? null,
               }}
               style={{
@@ -1194,6 +1204,8 @@ export default async function MomentPage(
               href={dapperEditionUrl}
               payload={{
                 surface: "moment",
+                collection: e.collection_slug,
+                linkKind: "edition",
                 destination: "dapper_market_edition",
                 editionKey: e.external_id,
                 playerName: e.player_name,

@@ -28,7 +28,7 @@ export function ActionCell({
           href={viewUrl}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={() => trackClick(deal, null)}
+          onClick={() => trackClick(deal, null, { collection: collectionSlug, href: viewUrl, linkKind: "listing" })}
           className="rpc-btn-ghost"
           style={{ padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }}
         >
@@ -40,7 +40,7 @@ export function ActionCell({
           href={dapperUrl}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={() => trackClick(deal, null)}
+          onClick={() => trackClick(deal, null, { collection: collectionSlug, href: dapperUrl, linkKind: "dapper" })}
           className="rpc-btn-ghost"
           style={{ padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }}
         >

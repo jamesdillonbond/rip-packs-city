@@ -23,6 +23,7 @@ import Link from "next/link"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
 import { paniniEditionUrl } from "@/lib/panini/edition-url"
+import { trackOutboundClick } from "@/lib/track-click"
 
 type Num = number | null
 
@@ -239,7 +240,29 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
                         <td style={td}>{ptWhen(r.ask_confirmed_at, false)}</td>
                         <td style={td}>
                           {ext ? (
-                            <a href={ext} target="_blank" rel="noopener noreferrer" style={{ color: "var(--rpc-text-primary)" }}>
+                            <a
+                              href={ext}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              // momentId = the SKU: panini_sales keys a card by sku, and the
+                              // click-attribution job matches Panini on (sku, then edition).
+                              onClick={() => trackOutboundClick({
+                                surface: "panini_sniper",
+                                collection: "panini-blockchain",
+                                linkKind: "edition",
+                                destination: "panini_marketplace_edition",
+                                momentId: r.sku,
+                                editionKey: ek,
+                                playerName: r.player_name,
+                                tier: r.tier,
+                                serial: r.serial_number ?? null,
+                                askPrice: r.ask_usd ?? null,
+                                fmv: r.fmv_usd ?? null,
+                                discount: r.discount_pct ?? null,
+                                buyUrl: ext,
+                              })}
+                              style={{ color: "var(--rpc-text-primary)" }}
+                            >
                               View on Panini ↗
                             </a>
                           ) : null}

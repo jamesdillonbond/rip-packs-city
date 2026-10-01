@@ -61,6 +61,7 @@ import {
   shouldShowAskBadge,
 } from "@/lib/collection-moment-cells"
 import { fmvBasis } from "@/lib/fmv-basis"
+import { trackOutboundClick } from "@/lib/track-click"
 
 // The one sanctioned per-value FMV honesty marker: plain-words "from asks" for
 // an ASK_ONLY FMV (0.9x a single seller's ask, never traded). Never the
@@ -101,6 +102,27 @@ export function momentMarketplaceLink(collectionSlug: string, momentId: string):
   if (!href) return null
   const name = MARKETPLACE_NAME[collectionSlug] ?? getCollection(collectionSlug)?.label ?? collectionSlug
   return { href, label: "View on " + name }
+}
+
+// Outbound "View on <marketplace>" click → outbound_clicks. collectionSlug is
+// the table's own collection (the match key with momentId — a moment id is
+// unique only within a collection). No askPrice: these are HELD moments, and
+// the row carries no listing price for them.
+function trackMomentRowClick(collectionSlug: string, row: MomentRow, href: string, surface: string) {
+  trackOutboundClick({
+    surface,
+    collection: collectionSlug,
+    linkKind: "moment",
+    destination: "native_moment_page",
+    momentId: row.momentId,
+    editionKey: row.editionKey ?? null,
+    playerName: row.playerName,
+    setName: row.setName,
+    tier: row.tier ?? null,
+    serial: row.serialNumber ?? row.serial ?? null,
+    fmv: row.fmv ?? null,
+    buyUrl: href,
+  })
 }
 
 // Disney Pinnacle: Open / Open Event / Starter editions carry no serial numbers
@@ -387,7 +409,7 @@ export default function CollectionMomentTable(props: {
                         <div className="rpc-expand-section-eyebrow">Links</div>
                         <div className="flex flex-wrap gap-2">
                           <Link href={momentRowHref(collectionSlug, row)} prefetch={false} onClick={function(e) { e.stopPropagation() }} className="rpc-expand-link">View on RPC</Link>
-                          {(function() { const m = momentMarketplaceLink(collectionSlug, row.momentId); return m ? <a href={m.href} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">{m.label}</a> : null })()}
+                          {(function() { const m = momentMarketplaceLink(collectionSlug, row.momentId); return m ? <a href={m.href} target="_blank" rel="noopener noreferrer" onClick={function() { trackMomentRowClick(collectionSlug, row, m.href, "collection_table_mobile") }} className="rpc-expand-link">{m.label}</a> : null })()}
                         </div>
                       </div>
                       <div className="rpc-expand-section">
@@ -923,7 +945,7 @@ export default function CollectionMomentTable(props: {
                               <div className="rpc-expand-section-eyebrow">Links</div>
                               <div className="flex flex-wrap gap-2">
                                 <Link href={momentRowHref(collectionSlug, row)} prefetch={false} className="rpc-expand-link">View on RPC</Link>
-                                {(function() { const m = momentMarketplaceLink(collectionSlug, row.momentId); return m ? <a href={m.href} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">{m.label}</a> : null })()}
+                                {(function() { const m = momentMarketplaceLink(collectionSlug, row.momentId); return m ? <a href={m.href} target="_blank" rel="noopener noreferrer" onClick={function() { trackMomentRowClick(collectionSlug, row, m.href, "collection_table") }} className="rpc-expand-link">{m.label}</a> : null })()}
                                 {summary && collectionSlug === "nba-top-shot" && (
                                   <a href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(input.trim())} className="rpc-expand-link rpc-expand-link--muted">View Set Progress →</a>
                                 )}

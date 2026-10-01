@@ -34,6 +34,7 @@ import type {
 } from "@/lib/underpriced-serials-board"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { usdSignFirst } from "@/lib/usd-format"
+import { trackOutboundClick } from "@/lib/track-click"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -231,7 +232,28 @@ function BoardRow({ r, rank }: { r: Row; rank: number }) {
             target="_blank"
             rel="noopener noreferrer"
             className="rpc-us-buy"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation()
+              trackOutboundClick({
+                surface: "underpriced_serials",
+                // The board reads topshot_underpriced_serials_board
+                // (lib/underpriced-serials-board.ts BOARD_TABLE) — every row
+                // is a Top Shot moment by construction, not by default.
+                collection: "nba-top-shot",
+                linkKind: "listing",
+                destination: "topshot_listing",
+                momentId: r.nft_id,
+                editionKey: r.external_id,
+                playerName: r.player_name,
+                setName: r.set_name,
+                tier: r.tier,
+                serial: r.serial_number,
+                askPrice: r.ask_usd,
+                fmv: r.serial_fmv_usd,
+                discount: r.discount_pct,
+                buyUrl: r.listing_url,
+              })
+            }}
           >
             Buy {fmtMoney(r.ask_usd)} →
           </a>

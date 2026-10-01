@@ -28,6 +28,7 @@ import SniperFilterBar from "@/components/sniper/SniperFilterBar";
 import SniperStatsBar from "@/components/sniper/SniperStatsBar";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
 import { sniperSubtitle } from "@/lib/sniper/header-copy";
+import { trackOutboundClick } from "@/lib/track-click";
 import type { SniperDeal, FeedResult, SortOption } from "@/lib/sniper/types";
 import {
   sniperFeedDegraded,
@@ -1114,7 +1115,28 @@ function SniperMomentsBody() {
                             <td style={{ padding: "6px 8px", textAlign: "right", color: "#00e882" }}>{disc}%</td>
                             <td style={{ padding: "6px 8px" }}>
                               {d.buy_url ? (
-                                <a href={d.buy_url} target="_blank" rel="noopener noreferrer" className="rpc-chip" style={{ borderColor: `${accent}66`, color: accent, padding: "2px 8px", fontSize: "var(--text-xs)" }}>
+                                // get_relative_deals returns no moment id / edition key
+                                // (only player/set/serial/ask/buy_url — read 2026-09-30),
+                                // so this click carries the collection + buy_url and the
+                                // descriptive fields; the attribution job can only use it
+                                // if a moment id is ever added to that RPC.
+                                <a
+                                  href={d.buy_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={() => trackOutboundClick({
+                                    surface: "sniper_relative",
+                                    collection: collectionSlug,
+                                    linkKind: "listing",
+                                    destination: "native_listing",
+                                    playerName: d.player_name,
+                                    setName: d.set_name,
+                                    tier: d.tier,
+                                    serial: d.serial_number,
+                                    askPrice: Number.isFinite(ask) && ask > 0 ? ask : null,
+                                    buyUrl: d.buy_url,
+                                  })}
+                                  className="rpc-chip" style={{ borderColor: `${accent}66`, color: accent, padding: "2px 8px", fontSize: "var(--text-xs)" }}>
                                   View →
                                 </a>
                               ) : null}
@@ -1379,7 +1401,7 @@ function SniperMomentsBody() {
                               href={viewUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              onClick={(e) => { e.stopPropagation(); trackClick(deal, null); }}
+                              onClick={(e) => { e.stopPropagation(); trackClick(deal, null, { collection: feedCollection, href: viewUrl, linkKind: "listing" }); }}
                               className="rpc-btn-ghost"
                               style={{ padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }}
                             >
@@ -1391,7 +1413,7 @@ function SniperMomentsBody() {
                               href={dapperUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              onClick={(e) => { e.stopPropagation(); trackClick(deal, null); }}
+                              onClick={(e) => { e.stopPropagation(); trackClick(deal, null, { collection: feedCollection, href: dapperUrl, linkKind: "dapper" }); }}
                               className="rpc-btn-ghost"
                               style={{ padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }}
                             >
@@ -1835,8 +1857,8 @@ function SniperMomentsBody() {
                                       const ddDapper = resolveDapperUrl(dd, feedCollection);
                                       return (
                                         <span className="flex items-center gap-3">
-                                          {ddUrl && <a href={ddUrl} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "none" }}>View →</a>}
-                                          {ddDapper && <a href={ddDapper} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "none" }}>Dapper ↗</a>}
+                                          {ddUrl && <a href={ddUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackClick(dd, null, { collection: feedCollection, href: ddUrl, linkKind: "listing", surface: "sniper_depth" })} style={{ color: accent, textDecoration: "none" }}>View →</a>}
+                                          {ddDapper && <a href={ddDapper} target="_blank" rel="noopener noreferrer" onClick={() => trackClick(dd, null, { collection: feedCollection, href: ddDapper, linkKind: "dapper", surface: "sniper_depth" })} style={{ color: accent, textDecoration: "none" }}>Dapper ↗</a>}
                                         </span>
                                       );
                                     })()}
