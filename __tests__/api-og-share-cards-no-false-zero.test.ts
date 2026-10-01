@@ -402,9 +402,13 @@ describe("/api/og/profile — every pinned Moment shows what it has earned", () 
     mockPostgrest({ trophies: [CLINGAN], rips: 503 })
     await renderProfile()
     const glyphs = drawnGlyphs()
-    // Two marks: the gold #1 medal (serial 1) and the Three-Star Rookie badge.
+    // Two marks: the #1 medal (serial 1) and the Three-Star Rookie badge.
     expect(glyphs).toHaveLength(2)
-    expect(glyphs.filter((g) => g.includes("#F59E0B"))).toHaveLength(1) // the gold one
+    // RE-PINNED 2026-09-30 (Trevor: special serials wear the platform's NATIVE
+    // colour). This is a Top Shot Moment, so the medal is Top Shot blue — and
+    // NOT RPC gold, which is now only for collections with no platform badge.
+    expect(glyphs.filter((g) => g.includes("#5677F1"))).toHaveLength(1)
+    expect(glyphs.filter((g) => g.includes("#F59E0B"))).toHaveLength(0)
     // ⭐ And the edition badge is OFFICIAL Top Shot art, not RPC's drawing.
     // This is the reconciliation the 09-12 badge work was for: the PDF and the
     // share card of the SAME Moment now draw the same badge. The #1 medal is

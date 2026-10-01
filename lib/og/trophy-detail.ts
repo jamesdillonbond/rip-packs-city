@@ -44,6 +44,7 @@
 // field renders every row at the same height.
 
 import { specialCats } from "@/lib/badges/glyphs"
+import { specialSerialStyle } from "@/lib/badges/official-art"
 
 export interface TrophyDetailSource {
   serial_number?: number | null
@@ -52,6 +53,9 @@ export interface TrophyDetailSource {
   set_name?: string | null
   series?: number | string | null
   play_description?: string | null
+  /** Picks the native special-serial colour; slug first, UUID fallback. */
+  collection_slug?: string | null
+  collection_id?: string | null
 }
 
 export interface TrophyDetail {
@@ -65,9 +69,14 @@ export interface TrophyDetail {
   context: string
   /**
    * True when the serial is a #1, a perfect mint, or (caller-supplied) a
-   * jersey match — i.e. when the serial line should be drawn GOLD.
+   * jersey match — i.e. when the serial line should be drawn in the accent.
    */
   special: boolean
+  /**
+   * The accent for a special serial on a dark card: the platform's native
+   * colour (Top Shot blue, All Day purple), RPC gold elsewhere.
+   */
+  specialColor: string
 }
 
 /**
@@ -189,5 +198,6 @@ export function trophyDetail(
     set: clip(row.set_name ?? "", budget),
     context: clip(contextLine(row.series, row.play_description), budget),
     special,
+    specialColor: specialSerialStyle(row.collection_slug ?? row.collection_id ?? null).accentOnDark,
   }
 }

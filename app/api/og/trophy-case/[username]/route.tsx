@@ -31,7 +31,6 @@ import { boundedRead } from "@/lib/api/bounded-read"
 import { editionKey, trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks"
 import { withOfficialArt } from "@/lib/og/official-mark-art"
 import { trophyDetail } from "@/lib/og/trophy-detail"
-import { GOLD_HEX } from "@/lib/badges/glyphs"
 import { getPublicProfile } from "@/lib/profile/public-profile"
 import { borderCosmetic } from "@/lib/cosmetics"
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style"
@@ -270,6 +269,9 @@ export async function GET(
           set_name: (t.set_name as string | null) ?? null,
           series: (t.series as number | string | null) ?? null,
           play_description: (t.play_description as string | null) ?? null,
+          // Picks the special serial's native colour (Top Shot blue, All Day purple).
+          collection_slug: (t.collection_slug as string | null) ?? null,
+          collection_id: (t.collection_id as string | null) ?? null,
         },
         jerseyFor(t),
         lineBudget,
@@ -466,7 +468,7 @@ export async function GET(
                   >
                     <span
                       style={{
-                        color: t.detail.special ? GOLD_HEX : "rgba(255,255,255,0.72)",
+                        color: t.detail.special ? t.detail.specialColor : "rgba(255,255,255,0.72)",
                         fontWeight: t.detail.special ? 900 : 400,
                       }}
                     >

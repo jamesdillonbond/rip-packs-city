@@ -16,7 +16,8 @@ import {
 import { usdSignFirst } from "@/lib/usd-format"
 import { trophySlabHref, type TrophySlabHref } from "@/lib/trophy/slab-href"
 import { momentSubjectName } from "@/lib/entity-href"
-import { specialCats, SPECIAL_CAT_LABEL, GOLD_HEX, type SpecialCat } from "@/lib/badges/glyphs"
+import { specialCats, SPECIAL_CAT_LABEL, type SpecialCat } from "@/lib/badges/glyphs"
+import { specialSerialStyle } from "@/lib/badges/official-art"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -405,8 +406,11 @@ function SlabLabel({
   const tierLabel = (slab.tier ?? "COMMON").toUpperCase();
   // #1 / jersey match / perfect mint — the canonical definition, same one the
   // share cards and PDF draw from, so the page cannot disagree with its own
-  // OG image. A special serial gets a gold serial and a gold mark per reason.
+  // OG image. A special serial gets a native-colour serial chip and one mark per reason.
   const specials = specialCats(slab.serial_number, slab.circulation_count, slab.jersey_number ?? null);
+  // Native colour per platform (Trevor, 2026-09-30): Top Shot blue, All Day's
+  // purple ring, RPC gold where the platform has no special-serial badge.
+  const specialStyle = specialSerialStyle(slab.collection_slug ?? slab.collection_id);
   const serial =
     slab.serial_number != null
       ? "#" + slab.serial_number + (slab.circulation_count != null ? "/" + slab.circulation_count : "")
@@ -537,13 +541,14 @@ function SlabLabel({
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: 8,
-                color: "#0a0a0a",
+                color: specials.length > 0 ? specialStyle.chipFg : "#0a0a0a",
                 fontWeight: specials.length > 0 ? 700 : 500,
                 letterSpacing: "0.04em",
-                // Gold chip for a special serial — the same gold as the marks,
-                // with dark text (gold text on the silver label is unreadable).
+                // Chip for a special serial in the platform's native colour (the
+                // same style as the marks); a filled chip keeps it readable on
+                // the silver label.
                 ...(specials.length > 0
-                  ? { background: GOLD_HEX, borderRadius: 3, padding: "1px 4px", boxShadow: "0 0 0 1px rgba(0,0,0,0.25)" }
+                  ? { background: specialStyle.chipBg, borderRadius: 3, padding: "1px 4px", boxShadow: `0 0 0 1px ${specialStyle.chipBorder}` }
                   : null),
               }}
             >
@@ -684,12 +689,13 @@ const SLAB_LABEL_CSS = `
 `;
 
 /**
- * One gold chip per special-serial reason (#1 / jersey match / perfect mint),
+ * One native-colour chip per special-serial reason (#1 / jersey match / perfect mint),
  * drawn with the platform's official art where it exists (SpecialSerialGlyph).
  * Labelled for assistive tech: the chips are the only place the REASON is
- * stated, the gold serial alone only says "special".
+ * stated, the coloured serial alone only says "special".
  */
 function SpecialMarks({ cats, collection }: { cats: SpecialCat[]; collection: string | null }) {
+  const style = specialSerialStyle(collection);
   return (
     <div
       className="rpc-slab-marks"
@@ -709,12 +715,12 @@ function SpecialMarks({ cats, collection }: { cats: SpecialCat[]; collection: st
             width: 15,
             height: 15,
             borderRadius: "50%",
-            background: GOLD_HEX,
-            color: "#0a0a0a",
+            background: style.markBg,
+            color: style.markFg,
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            boxShadow: "0 1px 1.5px rgba(0,0,0,0.45)",
+            boxShadow: `0 0 0 1px ${style.markBorder}, 0 1px 1.5px rgba(0,0,0,0.45)`,
             flexShrink: 0,
           }}
         >

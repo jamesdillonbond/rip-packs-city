@@ -419,7 +419,8 @@ describe("trophyDetail", () => {
     // neighbours before the badge row was height-reserved. A fixed-shape return
     // is what lets the caller reserve every line.
     const d = trophyDetail({})
-    expect(d).toEqual({ serial: "", tier: "", set: "", context: "", special: false })
+    // specialColor: no collection → no platform badge → RPC gold (2026-09-30).
+    expect(d).toEqual({ serial: "", tier: "", set: "", context: "", special: false, specialColor: "#F59E0B" })
   })
 })
 

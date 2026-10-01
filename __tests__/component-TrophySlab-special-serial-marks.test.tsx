@@ -75,3 +75,37 @@ describe("TrophySlab special-serial marks", () => {
     expect(container.querySelector('[title="Rookie Year"]')).not.toBeNull()
   })
 })
+
+// 2026-09-30 — Trevor: a special serial wears "its native color" (webz_80:
+// "i do prefer the special serial badge being blue like it is on TS"). Values
+// were sampled live from nbatopshot.com / nflallday.com; see
+// specialSerialStyle in lib/badges/official-art.ts.
+describe("TrophySlab special-serial colour is the platform's native one", () => {
+  const bgOf = (el: Element | null) => (el as HTMLElement | null)?.style.background ?? ""
+  const rgb = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16)
+    return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
+  }
+
+  it("Top Shot: blue chip and blue marks, never gold", () => {
+    const { container } = render(<TrophySlab slab={{ ...base, serial_number: 1 }} slot={1} mode="public" />)
+    expect(bgOf(serialEl(container))).toBe(rgb("#2752ED"))
+    expect(bgOf(container.querySelector("[data-special]"))).toBe(rgb("#2752ED"))
+    expect(container.innerHTML).not.toContain(rgb("#F59E0B"))
+  })
+
+  it("All Day: dark pill with its purple ring, never gold", () => {
+    const slab = { ...base, serial_number: 1, collection_slug: "nfl_all_day", collection_display_name: "NFL All Day" }
+    const { container } = render(<TrophySlab slab={slab} slot={1} mode="public" />)
+    const mark = container.querySelector("[data-special]") as HTMLElement
+    expect(bgOf(mark)).toBe(rgb("#212127"))
+    expect(mark.style.boxShadow.toUpperCase()).toContain("#7A4DE1")
+    expect(container.innerHTML).not.toContain(rgb("#F59E0B"))
+  })
+
+  it("a collection with no platform special-serial badge keeps RPC gold", () => {
+    const slab = { ...base, serial_number: 1, collection_slug: "laliga_golazos", collection_display_name: "LaLiga Golazos" }
+    const { container } = render(<TrophySlab slab={slab} slot={1} mode="public" />)
+    expect(bgOf(serialEl(container))).toBe(rgb("#F59E0B"))
+  })
+})

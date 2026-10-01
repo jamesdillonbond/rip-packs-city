@@ -36,13 +36,12 @@ import { badgeColor } from "@/lib/trophy/slab-style"
 import {
   badgeGlyphDataUri,
   glyphDataUri,
-  GOLD_HEX,
   specialCats,
   specialGlyphDataUri,
   SPECIAL_CAT_LABEL,
   type SpecialCat,
 } from "@/lib/badges/glyphs"
-import { officialBadgeArtUrl, officialSpecialSerialArt } from "@/lib/badges/official-art"
+import { officialBadgeArtUrl, officialSpecialSerialArt, specialSerialStyle } from "@/lib/badges/official-art"
 
 /** The subset of a trophy row these marks are derived from. */
 export interface TrophyMarkSource {
@@ -121,7 +120,8 @@ export function trophyMarks(
     // in the repo (lib/badges/official-art.ts). All Day gets a URL to prefetch.
     // Everything else keeps the RPC glyph, which on those platforms is the only
     // honest mark there is.
-    const official = officialSpecialSerialArt(cat, collection, GOLD_HEX)
+    // Native colour (Trevor, 2026-09-30): Top Shot's glyph in its own blue.
+    const official = officialSpecialSerialArt(cat, collection, specialSerialStyle(collection).glyphColor)
     out.push({
       uri: official?.kind === "inline" ? glyphDataUri(official.svg) : specialGlyphDataUri(cat),
       officialUrl: official?.kind === "url" ? official.url : null,

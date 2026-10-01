@@ -56,7 +56,6 @@ import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style";
 import { editionKey, trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks";
 import { withOfficialArt } from "@/lib/og/official-mark-art";
 import { clip, monoCharBudget, trophyDetail } from "@/lib/og/trophy-detail";
-import { GOLD_HEX } from "@/lib/badges/glyphs";
 import {
   brandFonts,
   brandFamilies,
@@ -1117,7 +1116,7 @@ export async function GET(
                       >
                         <span
                           style={{
-                            color: t.detail.special ? GOLD_HEX : "rgba(255,255,255,0.75)",
+                            color: t.detail.special ? t.detail.specialColor : "rgba(255,255,255,0.75)",
                             fontWeight: t.detail.special ? 900 : 400,
                           }}
                         >

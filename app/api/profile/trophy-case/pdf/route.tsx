@@ -60,6 +60,20 @@ import {
   SPECIAL_GLYPH_BODY,
   glyphSvg,
 } from "@/lib/badges/glyphs";
+import { badgePlatform, specialSerialStyle } from "@/lib/badges/official-art";
+
+// Special serials wear the platform's NATIVE colour (Trevor, 2026-09-30):
+// Top Shot blue, All Day purple, RPC gold where there is no platform badge.
+// One icon set per platform, keyed `<platform>|<cat>`.
+const SPECIAL_PLATFORMS = ["topshot", "allday", "other"] as const;
+const platformSample: Record<(typeof SPECIAL_PLATFORMS)[number], string | null> = {
+  topshot: "nba_top_shot",
+  allday: "nfl_all_day",
+  other: null,
+};
+function specialPlatformKey(collection: string | null | undefined): (typeof SPECIAL_PLATFORMS)[number] {
+  return badgePlatform(collection) ?? "other";
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -589,9 +603,12 @@ export async function GET(req: NextRequest) {
     resolveBadgeIcons(badgePairs),
     (async () => {
       const m = new Map<string, Buffer>();
-      for (const [cat, body] of Object.entries(SPECIAL_GLYPH_BODY)) {
-        const png = await svgToPng(GLYPH(body, GOLD_HEX));
-        if (png) m.set(cat, png);
+      for (const p of SPECIAL_PLATFORMS) {
+        const color = specialSerialStyle(platformSample[p]).glyphColor;
+        for (const [cat, body] of Object.entries(SPECIAL_GLYPH_BODY)) {
+          const png = await svgToPng(GLYPH(body, color));
+          if (png) m.set(`${p}|${cat}`, png);
+        }
       }
       return m;
     })(),
@@ -632,7 +649,6 @@ export async function GET(req: NextRequest) {
   const gray = rgb(0.61, 0.64, 0.69);
   const ghost = rgb(0.42, 0.45, 0.5);
   const red = hexToRgb(RPC_RED_HEX);
-  const gold = hexToRgb(GOLD_HEX);
 
   // Pre-embed repeated images.
   const embeddedBadge = new Map<string, PDFImage>();
@@ -782,8 +798,11 @@ export async function GET(req: NextRequest) {
       page.drawText(truncate(mno, ansi(setLine), 7.5, cellW - pad * 2), { x: x + pad, y: y + 45, size: 7.5, font: mno, color: gray });
     }
 
-    // Serial hero — the flex. Gold when the serial is special.
-    const serialColor = chips.length > 0 ? gold : hexToRgb(tierHex(s.tier));
+    // Serial hero — the flex. The platform's native special colour when special.
+    const specialCollection = s.collection_slug || s.collection_id;
+    const serialColor = chips.length > 0
+      ? hexToRgb(specialSerialStyle(specialCollection).accentOnDark)
+      : hexToRgb(tierHex(s.tier));
     const serialTxt = s.serial_number
       ? `#${s.serial_number}${s.circulation_count ? ` / ${s.circulation_count}` : ""}`
       : (s.circulation_count ? `${s.circulation_count} MINTED` : "");
@@ -798,11 +817,11 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Icon row: gold special glyphs, then real badge art.
+    // Icon row: native-colour special glyphs, then real badge art.
     const iconSize = 15;
     let ix = x + pad;
     for (const cat of chips) {
-      const img = embeddedSpecial.get(cat);
+      const img = embeddedSpecial.get(`${specialPlatformKey(specialCollection)}|${cat}`);
       if (!img || ix + iconSize > x + cellW - 76) continue;
       page.drawImage(img, { x: ix, y: y + 6, width: iconSize, height: iconSize });
       ix += iconSize + 5;

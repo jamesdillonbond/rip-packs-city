@@ -91,7 +91,7 @@
 // directions, so an added row and a removed one both red.
 
 import { normalizeBadgeKey } from "./normalize"
-import type { SpecialCat } from "./glyphs"
+import { GOLD_HEX, type SpecialCat } from "./glyphs"
 
 /** The two platforms that publish their own badge art. */
 export type BadgePlatform = "topshot" | "allday"
@@ -125,6 +125,73 @@ export function badgePlatform(
   if (c === "nba-top-shot" || c === "nba_top_shot" || c === "topshot") return "topshot"
   if (c === "nfl-all-day" || c === "nfl_all_day" || c === "allday") return "allday"
   return null
+}
+
+// ── Special-serial colour, per platform ─────────────────────────────────────
+//
+// Trevor, 2026-09-30, on collector feedback (webz_80): a special serial should
+// wear "its native color". Values SAMPLED LIVE that evening from the platforms'
+// own moment pages (installed Chrome, computed styles), never guessed:
+//
+//   NBA Top Shot  nbatopshot.com/moment/2149353 (#1/12000): the special pill is
+//                 `border-[#2752ED]`, glyph segment `bg-[#2752ED]` with a white
+//                 glyph, serial segment `bg-[#2752ED]/25`, glow `#5677F180`.
+//   NFL All Day   nflallday.com/moments/9597415 (#1/2500): `border-[#7A4DE1]`
+//                 on the dark `bg-card` (#212127), no fill, glow
+//                 rgba(122,77,225,0.75); the glyph is their own gradient art
+//                 (white → #EB22E2 → #7A4DE1), which RPC already serves.
+//
+// Every other collection has no platform special-serial badge (07-11), so it
+// keeps RPC gold. Satori-safe hex only.
+
+export const TOPSHOT_SPECIAL_BLUE = "#2752ED"
+/** Top Shot's own glow tint: the readable blue for text on a dark card. */
+export const TOPSHOT_SPECIAL_GLOW = "#5677F1"
+export const ALLDAY_SPECIAL_PURPLE = "#7A4DE1"
+/** All Day's `bg-card`, the dark pill its purple ring sits on. */
+export const ALLDAY_SPECIAL_CARD = "#212127"
+
+export interface SpecialSerialStyle {
+  /** Serial-number chip on a light surface (the slab label). */
+  chipBg: string
+  chipFg: string
+  chipBorder: string
+  /** Disc behind each special glyph. */
+  markBg: string
+  markFg: string
+  markBorder: string
+  /** Text accent on a DARK card (OG share cards). */
+  accentOnDark: string
+  /** Text/ink accent on a LIGHT page (the PDF). */
+  accentOnLight: string
+  /** Colour to draw an RPC/Top Shot glyph in when it stands alone. */
+  glyphColor: string
+}
+
+export function specialSerialStyle(collection: string | null | undefined): SpecialSerialStyle {
+  const platform = badgePlatform(collection)
+  if (platform === "topshot") {
+    return {
+      chipBg: TOPSHOT_SPECIAL_BLUE, chipFg: "#FFFFFF", chipBorder: TOPSHOT_SPECIAL_BLUE,
+      markBg: TOPSHOT_SPECIAL_BLUE, markFg: "#FFFFFF", markBorder: TOPSHOT_SPECIAL_BLUE,
+      accentOnDark: TOPSHOT_SPECIAL_GLOW, accentOnLight: TOPSHOT_SPECIAL_BLUE,
+      glyphColor: TOPSHOT_SPECIAL_GLOW,
+    }
+  }
+  if (platform === "allday") {
+    return {
+      chipBg: ALLDAY_SPECIAL_CARD, chipFg: "#FFFFFF", chipBorder: ALLDAY_SPECIAL_PURPLE,
+      markBg: ALLDAY_SPECIAL_CARD, markFg: "#FFFFFF", markBorder: ALLDAY_SPECIAL_PURPLE,
+      accentOnDark: ALLDAY_SPECIAL_PURPLE, accentOnLight: ALLDAY_SPECIAL_PURPLE,
+      glyphColor: ALLDAY_SPECIAL_PURPLE,
+    }
+  }
+  return {
+    chipBg: GOLD_HEX, chipFg: "#0a0a0a", chipBorder: GOLD_HEX,
+    markBg: GOLD_HEX, markFg: "#0a0a0a", markBorder: GOLD_HEX,
+    accentOnDark: GOLD_HEX, accentOnLight: GOLD_HEX,
+    glyphColor: GOLD_HEX,
+  }
 }
 
 // ── Edition-wide badges ─────────────────────────────────────────────────────
