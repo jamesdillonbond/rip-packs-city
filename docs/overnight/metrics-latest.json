@@ -48,14 +48,12 @@
   },
   "deltas_vs_prev": "vs 09-28 08:20Z (09-29 update never persisted - push failed). FMV HIGH+MED: nba 8148->8230 (+82), nfl 1553->1615 (+62), pinnacle 825->844 (+19), panini 1846->2420 (+574, multi-product walk wave), candy 24->31 (+7), golazos 3->2 (-1 noise), ufc 0. Editions panini 5111->7479 (+2368), nba 14460->14469 (+9). db 22082->27929 MB (+5.8GB over 2d, panini walk + concurrent new tables; within normal).",
   "open_watches": [
-    "429 surge lane hygiene (Flow every-minute lanes bursting at :00) - QUEUED, re-measure next pass.",
+    "429 lane stagger SHIPPED 09-30 ~7:40 AM PT (lanes :00/:15/:30/:45; 429s ~925/h -> ~496/h) - confirm the lower 429 rate holds. Request-id retention dropped by design: a 429's second-of-minute names its lane.",
     "atlas-editions upstream 403 self-heal - re-check sets-behind stays near 0."
   ],
   "needs_trevor": [
-    "429 lane hygiene: stagger every-minute Flow lanes + retain request_ids",
-    "rotate ATLAS_POOL_INGEST_KEY (#144)",
-    "wrangler deploy pack-events-ingest / enrich-ufc-wallet residuals (verify vs recent logs)",
-    "#22 (credential-purge residue / Dapper session), #64 (Panini is_active), #140",
+    "rotate ATLAS_POOL_INGEST_KEY (#144; the ?key= arm was already removed 09-26)",
+    "#22 (credential-purge residue: GitHub Support GC + rotate the Dapper session)",
     "paste 09-27 Panini freshness-check prompt in Claude Desktop (device-bound)",
     "restore a push-capable route (VM disk 99% full, no pushurl token on mount, computer-use ungranted)"
   ],
