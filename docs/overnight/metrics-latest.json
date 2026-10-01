@@ -48,8 +48,10 @@
   },
   "deltas_vs_prev": "vs 09-28 08:20Z (09-29 update never persisted - push failed). FMV HIGH+MED: nba 8148->8230 (+82), nfl 1553->1615 (+62), pinnacle 825->844 (+19), panini 1846->2420 (+574, multi-product walk wave), candy 24->31 (+7), golazos 3->2 (-1 noise), ufc 0. Editions panini 5111->7479 (+2368), nba 14460->14469 (+9). db 22082->27929 MB (+5.8GB over 2d, panini walk + concurrent new tables; within normal).",
   "open_watches": [
-    "429 lane stagger SHIPPED 09-30 ~7:40 AM PT (lanes :00/:15/:30/:45; 429s ~925/h -> ~496/h) - confirm the lower 429 rate holds. Request-id retention dropped by design: a 429's second-of-minute names its lane.",
-    "atlas-editions upstream 403 self-heal - re-check sets-behind stays near 0."
+    "429 lane stagger SHIPPED 09-30 ~7:40 AM PT (lanes :00/:15/:30/:45; 429s ~925/h -> ~496/h) - confirm the lower 429 rate holds. Request-id retention dropped by design: a 429's second-of-minute names its lane. ⚠ 2026-09-30 8:30 PM PT (Cowork): the ~496/h reading is SUPERSEDED, not regressed — chain-arrival went to 5 slots/min at ~3:10 PM PT (:08/:23/:38/:53), raising Flow REST volume to ~13–18k req/h; 429s now ~1.3–1.7k/h (~10 %), spread evenly across every burst slot incl. the new ones (so that change's 60/60 probe did not hold at production rate). Designed: the lanes count them as `throttled` and requeue — chain-arrivals 900 runs / 0 failed in 3 h.",
+    "atlas-editions upstream 403 self-heal - re-check sets-behind stays near 0.",
+    "Panini FMV panini-1.2.0 (LOW from last sales) shipped 09-30 ~8:25 PM PT — confirm the next walk logs fmv_engine panini-1.2.0, fmv_last_hits > 0, ok; measure live at 10-07 with panini_published_fmv_backtest (1.2.0 LOW vs the 1.1.0 LOW row, ratio ~2.5 on n=19).",
+    "Panini freshness check Escalation 5 (old catalogue >7 d without a re-price) is expected to FIRE ~10-03 PT if the new-product bootstrap keeps the walk off old editions (09-30 7 PM: max age 141.9 h, 0 old re-priced in 24 h) — a real signal, not a check defect."
   ],
   "needs_trevor": [
     "rotate ATLAS_POOL_INGEST_KEY (#144; the ?key= arm was already removed 09-26)",
