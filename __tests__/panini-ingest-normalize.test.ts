@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parallelFamily, toEditionRow, toFmvRow, toFmvRowV11, PANINI_ASK_ONLY_MULT, toPackRow, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID, pskuSetId } from "@/lib/chains/panini/ingest-normalize"
+import { parallelFamily, toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, PANINI_ASK_ONLY_MULT, toPackRow, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID, pskuSetId } from "@/lib/chains/panini/ingest-normalize"
 
 const NOW = "2026-07-16T00:00:00.000Z"
 
@@ -98,6 +98,25 @@ describe("toFmvRowV11", () => {
   })
   it("ignores an unusable recent row rather than publishing it", () => {
     expect(toFmvRowV11(card({ volume_txns: 5, recent_sale: 9, avg_sale: 12 }), NOW, { fmv_usd: 0, n_recent: 3 })).toMatchObject({ fmv_usd: 12, confidence: "LOW" })
+  })
+})
+
+// panini-1.2.0 (2026-09-30): only the LOW tier changes — last <=3 sales at any age, not the lifetime
+// average (backtest: MdAPE 82.5% -> 15.0% on fully-read editions).
+describe("toFmvRowV12", () => {
+  const card = (ms: any) => ({ sku: "p__1_10", psku: "p", market_stats: ms })
+  const lifetime = { volume_txns: 40, recent_sale: 20, avg_sale: 60 }
+  it("LOW prices from the last sales, NOT the lifetime average", () => {
+    expect(toFmvRowV12(card(lifetime), NOW, null, { fmv_usd: 22, n_sales: 3 })).toMatchObject({ fmv_usd: 22, confidence: "LOW", algo_version: "panini-1.2.0" })
+  })
+  it("falls back to the lifetime average only when no sale is on record (or the row is unusable)", () => {
+    expect(toFmvRowV12(card(lifetime), NOW, null, null)).toMatchObject({ fmv_usd: 60, confidence: "LOW" })
+    expect(toFmvRowV12(card(lifetime), NOW, null, { fmv_usd: 0, n_sales: 3 })).toMatchObject({ fmv_usd: 60, confidence: "LOW" })
+  })
+  it("leaves HIGH / MEDIUM and ASK_ONLY exactly as 1.1.0 prices them", () => {
+    expect(toFmvRowV12(card(lifetime), NOW, { fmv_usd: 21, n_recent: 3 }, { fmv_usd: 5, n_sales: 3 })).toMatchObject({ fmv_usd: 21, confidence: "HIGH" })
+    expect(toFmvRowV12(card({ volume_txns: 0, floor_price: 100 }), NOW, null, { fmv_usd: 5, n_sales: 1 })).toMatchObject({ confidence: "ASK_ONLY", fmv_usd: 100 * PANINI_ASK_ONLY_MULT })
+    expect(toFmvRowV12(card({ volume_txns: 0, floor_price: 0 }), NOW, null, null)).toBeNull()
   })
 })
 

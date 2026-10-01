@@ -87,6 +87,27 @@ export function toFmvRowV11(c: PaniniCardStats, nowIso: string, recent?: { fmv_u
   return { edition_id: String(c?.sku ?? c?.psku), fmv_usd: fmv, confidence, algo_version: "panini-1.1.0", computed_at: nowIso };
 }
 
+// panini-1.2.0 (2026-09-30, Trevor approved) — 1.1.0 with ONE change: the LOW tier (sales exist, none in
+// 30 d) prices at the median of the edition's last <=3 non-special sales at ANY age
+// (panini_last_sales_fmv), not Panini's LIFETIME avg_sale. Backtest 2026-09-30, 45 d of panini_sales,
+// targets whose edition had no sale in the prior 30 d: fully-read editions n=597 — lifetime average
+// MdAPE 82.5% / median ratio 1.83, last-3 median 15.0% / 1.00; partially-read editions n=1,871 —
+// 70.4% / 1.68 vs 66.7% / 1.65 (never worse). avg_sale stays the fallback when no sale is on record.
+// HIGH / MEDIUM / ASK_ONLY are unchanged. `last` is panini_last_sales_fmv(ids) for this edition.
+export function toFmvRowV12(
+  c: PaniniCardStats,
+  nowIso: string,
+  recent?: { fmv_usd: number; n_recent: number } | null,
+  last?: { fmv_usd: number; n_sales: number } | null,
+) {
+  const row = toFmvRowV11(c, nowIso, recent);
+  if (!row) return null;
+  if (row.confidence === "LOW" && last && last.n_sales >= 1 && Number.isFinite(Number(last.fmv_usd)) && Number(last.fmv_usd) > 0) {
+    row.fmv_usd = Number(last.fmv_usd);
+  }
+  return { ...row, algo_version: "panini-1.2.0" };
+}
+
 // The card PRODUCT a psku belongs to: field 1 of packcard-<setId>_<parallelSetId>_<cardId>_<playerId>
 // (2332 = 2026 Panini NFT Prizm World Cup Soccer). Every edition id, serial sku and FMV edition_id
 // carries it as a prefix, so this is the one place product identity is parsed. null = not a card psku.
