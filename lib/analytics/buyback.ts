@@ -31,6 +31,41 @@ import { usdSignFirst } from "@/lib/usd-format"
 /** Calendar-to-date windows the API accepts. Mirrors BUYBACK_PERIODS. */
 export type BuybackPeriod = "week" | "month" | "year" | "all"
 
+/**
+ * Collections with buyback tracking (2026-09-30, register #161). The route
+ * refuses any other value. ⚠ Keep in step with the `buyback_wallets` registry:
+ * `rpc_buyback_analytics` raises 22023 for a collection with no wallets.
+ */
+export const BUYBACK_COLLECTIONS = ["nba_top_shot", "nfl_all_day"] as const
+export type BuybackCollection = (typeof BUYBACK_COLLECTIONS)[number]
+
+/**
+ * Per-collection copy. Both say the same thing about counting: a buyback is a
+ * market sale everywhere else on RPC (Trevor, 2026-09-30) and is tracked here
+ * IN ADDITION — this page is not where buybacks are excluded from anything.
+ */
+export const BUYBACK_COLLECTION_COPY: Record<
+  BuybackCollection,
+  { tab: string; title: string; blurb: string }
+> = {
+  nba_top_shot: {
+    tab: "Top Shot",
+    title: "Top Shot Buyback Wallets",
+    blurb:
+      "Top Shot repurchases moments off the secondary market and re-stuffs them into future " +
+      "packs, so every purchase is a signal about which players and sets are being elevated. " +
+      "These purchases also count as market sales everywhere else on RPC; this page tracks them separately.",
+  },
+  nfl_all_day: {
+    tab: "NFL All Day",
+    title: "NFL All Day Pack Buybacks",
+    blurb:
+      "NFL All Day buys moments back from collectors through pack buyback offers, moving them into " +
+      "the AllDay issuer account at Dapper-set prices. These purchases also count as market sales " +
+      "everywhere else on RPC; this page tracks them separately.",
+  },
+}
+
 export interface BuybackTotals {
   purchases: number
   priced_purchases: number
@@ -87,6 +122,7 @@ export interface BuybackDay {
 }
 
 export interface BuybackPayload {
+  collection?: BuybackCollection
   period: BuybackPeriod
   window_start: string | null
   window_end: string | null

@@ -211,3 +211,22 @@ describe("BuybackDashboard", () => {
     expect(container.textContent).toContain("2026-08-16")
   })
 })
+
+// 2026-09-30 (register #161): the board tracks NFL All Day buybacks too, and both
+// collections say buybacks still count as market sales elsewhere on RPC.
+describe("BuybackDashboard — collection switch", () => {
+  it("fetches All Day when its tab is chosen, and retitles the board", async () => {
+    const { fireEvent } = await import("@testing-library/react")
+    fetchMock.mockReturnValue(jsonResp(payload))
+    render(<BuybackDashboard />)
+    await waitFor(() => expect(screen.getByText("Top Shot Buyback Wallets")).toBeTruthy())
+    expect(String(fetchMock.mock.calls[0][0])).toContain("collection=nba_top_shot")
+
+    fireEvent.click(screen.getByRole("tab", { name: "NFL All Day" }))
+    await waitFor(() => expect(screen.getByText("NFL All Day Pack Buybacks")).toBeTruthy())
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(urls.some((u) => u.includes("collection=nfl_all_day"))).toBe(true)
+    // The page must not read as the place buybacks are excluded from market data.
+    expect(screen.getByText(/also count as market sales/i)).toBeTruthy()
+  })
+})

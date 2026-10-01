@@ -11,11 +11,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 //   2. a failure never returns 200-with-empty, and never leaks the driver
 //      message.
 
-const rpc: { data: any; error: any; throws?: boolean } = { data: null, error: null }
+const rpc: { data: any; error: any; throws?: boolean; calls: Array<{ name: string; args: any }> } = { data: null, error: null, calls: [] }
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
-    rpc: async () => {
+    rpc: async (name: string, args: any) => {
+      rpc.calls.push({ name, args })
       if (rpc.throws) throw new Error("connection reset")
       return { data: rpc.data, error: rpc.error }
     },
@@ -60,6 +61,7 @@ beforeEach(() => {
   rpc.data = null
   rpc.error = null
   rpc.throws = false
+  rpc.calls = []
 })
 
 describe("GET /api/analytics/buyback", () => {
@@ -152,5 +154,32 @@ describe("GET /api/analytics/buyback", () => {
     const res = await GET(req("https://t/api/analytics/buyback?period=week"))
     expect(res.status).toBe(200)
     expect((await res.json()).totals.purchases).toBe(0)
+  })
+})
+
+// 2026-09-30 (register #161): buyback tracking covers Top Shot AND All Day from the sales table.
+describe("GET /api/analytics/buyback — collection", () => {
+  it("an ABSENT collection means Top Shot, the page's original subject", async () => {
+    rpc.data = payload
+    const res = await GET(req("https://t/api/analytics/buyback?period=all"))
+    expect(res.status).toBe(200)
+    expect(rpc.calls).toEqual([{ name: "rpc_buyback_analytics", args: { p_collection: "nba_top_shot", p_period: "all", p_limit: 10 } }])
+  })
+
+  it("passes All Day through to the RPC", async () => {
+    rpc.data = { ...payload, collection: "nfl_all_day" }
+    const res = await GET(req("https://t/api/analytics/buyback?collection=nfl_all_day&period=year"))
+    expect(res.status).toBe(200)
+    expect(rpc.calls[0].args).toMatchObject({ p_collection: "nfl_all_day", p_period: "year" })
+  })
+
+  it("⛔ REFUSES an unknown collection before any read — never answers with another collection's buybacks", async () => {
+    rpc.data = payload
+    const res = await GET(req("https://t/api/analytics/buyback?collection=candy_mlb"))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.code).toBe("bad_request")
+    expect(body.totals).toBeUndefined()
+    expect(rpc.calls).toHaveLength(0)
   })
 })

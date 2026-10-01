@@ -27,6 +27,9 @@ import { ShieldAlert, Info, AlertTriangle } from "lucide-react"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import {
   BUYBACK_PERIOD_LABELS,
+  BUYBACK_COLLECTIONS,
+  BUYBACK_COLLECTION_COPY,
+  type BuybackCollection,
   formatCount,
   formatUsd,
   observationNotice,
@@ -107,6 +110,7 @@ function Kpi({
 }
 
 export default function BuybackDashboard() {
+  const [collection, setCollection] = useState<BuybackCollection>("nba_top_shot")
   const [period, setPeriod] = useState<BuybackPeriod>("month")
   const [data, setData] = useState<BuybackPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -118,7 +122,7 @@ export default function BuybackDashboard() {
     setLoading(true)
     void (async () => {
       const res = await fetchJson<BuybackPayload>(
-        `/api/analytics/buyback?period=${period}&limit=10`
+        `/api/analytics/buyback?collection=${collection}&period=${period}&limit=10`
       )
       if (cancelled) return
       setLoading(false)
@@ -136,7 +140,7 @@ export default function BuybackDashboard() {
     return () => {
       cancelled = true
     }
-  }, [period])
+  }, [collection, period])
 
   const coverageNotice = data ? spendCoverageNotice(data.totals, data.coverage) : null
   const obsNotice = data ? observationNotice(data.period, data.coverage) : null
@@ -150,14 +154,36 @@ export default function BuybackDashboard() {
           style={{ fontFamily: "var(--font-display)", color: "var(--rpc-text-primary)" }}
         >
           <ShieldAlert size={20} style={{ color: "var(--rpc-red)" }} aria-hidden />
-          Top Shot Buyback Wallets
+          {BUYBACK_COLLECTION_COPY[collection].title}
         </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--rpc-text-secondary)" }}>
-          Top Shot repurchases moments off the secondary market and re-stuffs them into future
-          packs. Every confirmed purchase is a curatorial signal about which players and sets are
-          being elevated. Counts below are verified marketplace purchases only.
+          {BUYBACK_COLLECTION_COPY[collection].blurb}
         </p>
       </header>
+
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Collection">
+        {BUYBACK_COLLECTIONS.map((c) => {
+          const active = c === collection
+          return (
+            <button
+              key={c}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setCollection(c)}
+              className="rounded px-3 py-1.5 text-xs uppercase tracking-wide transition-colors"
+              style={{
+                background: active ? "var(--rpc-red-bg)" : "var(--rpc-surface)",
+                border: `1px solid ${active ? "var(--rpc-red-border)" : "var(--rpc-border)"}`,
+                color: active ? "var(--rpc-red)" : "var(--rpc-text-secondary)",
+                fontFamily: "var(--font-display)",
+              }}
+            >
+              {BUYBACK_COLLECTION_COPY[c].tab}
+            </button>
+          )
+        })}
+      </div>
 
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Time period">
         {PERIODS.map((p) => {

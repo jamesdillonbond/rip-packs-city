@@ -1,4 +1,13 @@
-// GET /api/analytics/buyback?period=week|month|year|all&limit=1..50
+// GET /api/analytics/buyback?collection=nba_top_shot|nfl_all_day&period=week|month|year|all&limit=1..50
+//
+// ⭐ 2026-09-30 — BASIS MOVED TO `sales`, BOTH COLLECTIONS (register #161). Trevor: "Buybacks
+// should still count as market sales on both, but should be tracked additionally." This route now
+// reads rpc_buyback_analytics, an MV over `sales` joined to the `buyback_wallets` registry. The
+// old basis (topshot_insider_buybacks, fed by a 2026 insert trigger) missed every backfilled
+// source: it published 2,968 purchases / $73k "all time" against 94,997 / $2.63M in `sales`.
+// The notes below describe that old basis and are kept as history. An ABSENT collection means
+// Top Shot (the page's original subject); an UNKNOWN one is refused, never substituted.
+//
 //
 // Analytics for the NBA Top Shot secondary-BUYBACK wallets — the accounts Top
 // Shot uses to repurchase moments off the secondary market and re-stuff them
@@ -43,6 +52,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { apiErrorResponse } from "@/lib/api-error"
+import { BUYBACK_COLLECTIONS, type BuybackCollection } from "@/lib/analytics/buyback"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 900
@@ -80,12 +90,25 @@ export async function GET(req: NextRequest) {
     }
 
     const period = periodRaw as BuybackPeriod
+
+    const collRaw = url.searchParams.get("collection")
+    const collection = collRaw == null || collRaw === "" ? "nba_top_shot" : collRaw.toLowerCase()
+    if (!(BUYBACK_COLLECTIONS as readonly string[]).includes(collection)) {
+      return NextResponse.json(
+        {
+          error: `Unknown collection. Use one of: ${BUYBACK_COLLECTIONS.join(", ")}.`,
+          code: "bad_request",
+          retryable: false,
+        },
+        { status: 400, headers: { "Cache-Control": "no-store" } }
+      )
+    }
     const limit = parseLimit(url.searchParams.get("limit"))
 
     const { data, error } = await rpcWithRetry<Record<string, unknown>>(
       supabaseAdmin,
-      "rpc_topshot_buyback_analytics",
-      { p_period: period, p_limit: limit }
+      "rpc_buyback_analytics",
+      { p_collection: collection as BuybackCollection, p_period: period, p_limit: limit }
     )
 
     if (error) {
@@ -102,14 +125,14 @@ export async function GET(req: NextRequest) {
     // route exists to avoid.
     if (data == null) {
       return apiErrorResponse(
-        new Error("rpc_topshot_buyback_analytics returned no payload"),
+        new Error("rpc_buyback_analytics returned no payload"),
         "api/analytics/buyback",
         "Buyback analytics are unavailable right now."
       )
     }
 
     console.log(
-      `[analytics/buyback] ok elapsed=${Date.now() - t0}ms period=${period} limit=${limit}`
+      `[analytics/buyback] ok elapsed=${Date.now() - t0}ms collection=${collection} period=${period} limit=${limit}`
     )
 
     return NextResponse.json(data, {

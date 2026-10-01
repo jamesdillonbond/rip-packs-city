@@ -384,9 +384,9 @@ export default async function AnalyticsOverviewPage() {
       // coverage caveats this surface needs are rendered inline on the board
       // itself, where the numbers they qualify actually appear.
       href: "/analytics/buyback",
-      label: "Buyback Wallets",
+      label: "Buybacks",
       description:
-        "What Top Shot's secondary-buyback wallets are accumulating by week, month and year — most-acquired moments, priced spend, and who they buy from.",
+        "What Top Shot's buyback wallets and NFL All Day's pack buybacks are accumulating by week, month and year — most-bought moments, spend, and who they buy from.",
       icon: ShieldAlert,
       status: "live",
     },
