@@ -897,6 +897,14 @@ const PINS = [
     migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
   },
   {
+    // Click → sale attribution (audit_20260930): matches an RPC outbound click to the marketplace
+    // sale that followed it. Its output is a number nobody can check by eye, so the matching rules
+    // (collection scope, windows, ask caps, buyer-is-clicker, bot skip) are pinned.
+    fn: "attribute_outbound_clicks",
+    test: "supabase/tests/attribute_outbound_clicks.sql",
+    migration: "supabase/migrations/20261001033000_audit_20260930_rpc_clicks_are_attributed_to_the_marketplace_sales_that_follow_them.sql",
+  },
+  {
     fn: "mcp_get_fmv",
     test: "supabase/tests/mcp_get_fmv.sql",
     migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
