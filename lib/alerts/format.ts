@@ -34,7 +34,22 @@ function absUrl(detail: string | null | undefined): string {
   return detail.startsWith("http") ? detail : `${SITE}${detail}`;
 }
 
-type Deal = DealPayload["deal"];
+export type Deal = DealPayload["deal"];
+
+// ── Buy links go through a TRACKED redirect (audit_20260930) ─────────────────
+// Every marketplace link in an alert is `/go/a/<delivery id>?l=buy|dapper`. That
+// route re-derives the destination from the delivery row (nativeBuyLink / dapperUrl
+// below — never from the URL, so it is not an open redirect), records the click in
+// outbound_clicks (source "alert"), and 302s. Without it an alert-driven purchase is
+// invisible: alert links went straight to the marketplace and logged nothing.
+// The RPC detail link stays direct on purpose — it is the first link in a Telegram
+// message, so it is the one the link-preview bot fetches.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function trackedHref(d: Delivery, kind: "buy" | "dapper", direct: string): string {
+  // A delivery without a real id (never in production — the id is the row's PK)
+  // keeps the direct link rather than a redirect that could not resolve.
+  return UUID_RE.test(String(d.id ?? "")) ? `${SITE}/go/a/${d.id}?l=${kind}` : direct;
+}
 
 // ── Per-source field resolvers ───────────────────────────────────────────────
 // The `deal` payload comes from two boards (edition-level + per-serial), so
@@ -42,13 +57,13 @@ type Deal = DealPayload["deal"];
 // shape. Per-serial deals carry ask_usd / serial_fmv_usd / moment_url; the
 // edition-level board carries low_ask / fmv_usd / detail_url.
 
-function dealAsk(d: Deal): number | null | undefined {
+export function dealAsk(d: Deal): number | null | undefined {
   return d.ask_usd ?? d.low_ask;
 }
-function dealFmv(d: Deal): number | null | undefined {
+export function dealFmv(d: Deal): number | null | undefined {
   return d.serial_fmv_usd ?? d.fmv_usd;
 }
-function dealDetailUrl(d: Deal): string {
+export function dealDetailUrl(d: Deal): string {
   return absUrl(d.moment_url ?? d.detail_url);
 }
 function dealSerialTag(d: Deal): string {
@@ -106,7 +121,7 @@ const BUY_LABELS: Record<string, string> = {
   "laliga-golazos": "Golazos",
   "disney-pinnacle": "Pinnacle",
 };
-function nativeBuyLink(d: Deal): { url: string; label: string } | null {
+export function nativeBuyLink(d: Deal): { url: string; label: string } | null {
   if (!d.nft_id) return null;
   const regId = (d.collection_slug ?? "").replace(/_/g, "-");
   const url = marketplaceMomentUrl(regId, String(d.nft_id));
@@ -114,7 +129,7 @@ function nativeBuyLink(d: Deal): { url: string; label: string } | null {
   return { url, label: BUY_LABELS[regId] ?? "Marketplace" };
 }
 // Dapper marketplace listing (per-serial deals only; already absolute).
-function dapperUrl(d: Deal): string | null {
+export function dapperUrl(d: Deal): string | null {
   return d.listing_url && d.listing_url.startsWith("http") ? d.listing_url : null;
 }
 function dealTitle(d: Deal): string {
@@ -193,8 +208,8 @@ export function buildTelegramMessage(deliveries: Delivery[], now: Date = new Dat
       const native = nativeBuyLink(deal);
       const dapper = dapperUrl(deal);
       const buyLinks = [
-        native ? `<a href="${native.url}">Buy on ${native.label} ↗</a>` : "",
-        dapper ? `<a href="${dapper}">Dapper ↗</a>` : "",
+        native ? `<a href="${trackedHref(d, "buy", native.url)}">Buy on ${native.label} ↗</a>` : "",
+        dapper ? `<a href="${trackedHref(d, "dapper", dapper)}">Dapper ↗</a>` : "",
       ].filter(Boolean);
       lines.push(
         `\n<a href="${dealDetailUrl(deal)}">${title}</a>` +
@@ -241,8 +256,8 @@ export function buildDiscordEmbeds(deliveries: Delivery[], now: Date = new Date(
         fields.push({ name: "Discount", value: pct(deal.discount_pct), inline: true });
       }
       const buyLinks = [
-        native ? `[${native.label} ↗](${native.url})` : "",
-        dapper ? `[Dapper ↗](${dapper})` : "",
+        native ? `[${native.label} ↗](${trackedHref(d, "buy", native.url)})` : "",
+        dapper ? `[Dapper ↗](${trackedHref(d, "dapper", dapper)})` : "",
       ].filter(Boolean);
       if (buyLinks.length) fields.push({ name: "Buy", value: buyLinks.join(" · "), inline: true });
       // The ask's age, when known — a 23-hour-old ask is a different claim from
@@ -300,10 +315,10 @@ export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()
         : "";
       const buyLinks = [
         native
-          ? `<a href="${native.url}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Buy on ${native.label} ↗</a>`
+          ? `<a href="${trackedHref(d, "buy", native.url)}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Buy on ${native.label} ↗</a>`
           : "",
         dapper
-          ? `<a href="${dapper}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Dapper ↗</a>`
+          ? `<a href="${trackedHref(d, "dapper", dapper)}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Dapper ↗</a>`
           : "",
       ].filter(Boolean);
       return `
@@ -366,8 +381,8 @@ export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()
     const clause = dealFmvClause(deal);
     textLines.push(`• ${dealTitle(deal)}${sub ? ` (${sub})` : ""} — ${money(dealAsk(deal))}${clause ? ` (${clause})` : ""}`);
     textLines.push(`  Details: ${dealDetailUrl(deal)}`);
-    if (native) textLines.push(`  Buy on ${native.label}: ${native.url}`);
-    if (dapper) textLines.push(`  Dapper: ${dapper}`);
+    if (native) textLines.push(`  Buy on ${native.label}: ${trackedHref(d, "buy", native.url)}`);
+    if (dapper) textLines.push(`  Dapper: ${trackedHref(d, "dapper", dapper)}`);
   }
   for (const d of fmvs) {
     const p = d.payload;

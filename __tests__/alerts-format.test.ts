@@ -12,6 +12,10 @@ import type { Delivery, DealPayload, FmvPayload } from "@/lib/alerts"
 // normalization + Pinnacle-has-no-nft_id rule). A regression sends collectors
 // broken links or malformed money into their notifications.
 
+// ⚠ id "d1" is NOT a UUID, so these cases exercise the DIRECT-link fallback of
+// `trackedHref` — which is how they keep pinning the RESOLVERS (marketplace URL,
+// slug normalisation). Production ids are UUIDs and get the tracked /go/a/<id>
+// redirect instead: __tests__/alerts-buy-links-are-tracked.test.ts pins that.
 function dealDelivery(deal: Partial<DealPayload["deal"]> = {}): Delivery {
   return {
     id: "d1",

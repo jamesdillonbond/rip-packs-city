@@ -532,6 +532,12 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // auth gate. The route clamps + validates every field server-side; the
   // proxy /api/ rate limiter (60/min/IP) still applies.
   if (pathname === "/api/track-click") return true
+  // /go/a/<alert delivery id> — the tracked redirect behind every alert buy link
+  // (audit_20260930). Tapped from Telegram / Discord / email by people who are
+  // usually NOT signed in on that device, so it must bypass the auth gate. The
+  // route reads only a UUID and a two-value switch, re-derives the destination
+  // from the delivery row (not an open redirect), and writes one outbound_clicks row.
+  if (pathname.startsWith("/go/a/")) return true
   // /api/track-funnel — fire-and-forget top-of-funnel logger (home / share /
   // insights views + wallet-pastes). Anon visitors on the marketing home and
   // public surfaces fire it, so it must bypass the auth gate. The route

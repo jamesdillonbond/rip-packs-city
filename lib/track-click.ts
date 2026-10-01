@@ -12,6 +12,16 @@
 
 export type OutboundClickPayload = {
   surface?: string | null
+  // The collection the clicked thing belongs to — a registry id ("nba-top-shot")
+  // or long-form slug ("nba_top_shot"); the server normalises it. REQUIRED in
+  // practice (audit_20260930): a moment id is unique only WITHIN a collection,
+  // so a click without one cannot be matched to the sale that followed it
+  // (click_attributed_purchases). Optional in the type only so a legacy caller
+  // still compiles; __tests__/outbound-clicks-carry-their-collection.test.ts
+  // walks the tree and reds a call site that omits it.
+  collection?: string | null
+  // What the link opened: "listing" | "moment" | "edition" | "pack" | "dapper" | …
+  linkKind?: string | null
   destination?: string | null
   editionKey?: string | null
   momentId?: string | number | null

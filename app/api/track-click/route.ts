@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { safeApiError } from "@/lib/api-error"
+import { getCurrentUser } from "@/lib/auth/supabase-server"
+import { buildOutboundClickRow } from "@/lib/outbound-click-row"
 
 type TrackClickBody = {
   surface?: string | null;
   destination?: string | null;
+  collection?: string | null;
+  linkKind?: string | null;
   editionKey?: string | null;
   momentId?: string | number | null;
   playerName?: string | null;
@@ -31,52 +35,29 @@ type TrackClickBody = {
 // This route is publicly reachable (see proxy.ts isPublicPath) so anon
 // visitors on /insights + the marketing home can log outbound clicks. It
 // inserts with the service-role key, which BYPASSES the anon_insert_outbound_
-// clicks RLS CHECK caps — so we replicate those caps here defensively to keep
-// a public endpoint from writing oversized/garbage rows. Limits mirror the
-// DB policy exactly.
-function clampStr(v: unknown, max: number): string | null {
-  if (v == null) return null;
-  const s = String(v);
-  if (!s) return null;
-  return s.slice(0, max);
-}
-
-function clampNum(v: unknown, min: number, max: number): number | null {
-  if (v == null) return null;
-  const n = typeof v === "number" ? v : Number(v);
-  if (!Number.isFinite(n)) return null;
-  if (n < min) return min;
-  if (n > max) return max;
-  return n;
-}
-
+// clicks RLS CHECK caps — so the row builder (lib/outbound-click-row.ts)
+// replicates those caps, and is shared with the alert redirect (/go/a/<id>).
+//
+// audit_20260930: the row now carries its COLLECTION, the signed-in user (from
+// the session cookie the beacon sends — never from the body), the user agent and
+// a bot flag, so public.attribute_outbound_clicks can match it to the marketplace
+// sale that followed and say whether the buyer was the clicker's own wallet.
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as TrackClickBody;
 
-    // Fire-and-forget Supabase insert — never block the response
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const serial = clampNum(body.serial, 0, 10_000_000);
-    const row = {
-      surface: clampStr(body.surface, 64),
-      destination: clampStr(body.destination, 256),
-      edition_key: clampStr(body.editionKey, 64),
-      moment_id: clampStr(body.momentId, 64),
-      player_name: clampStr(body.playerName, 256),
-      set_name: clampStr(body.setName, 256),
-      tier: clampStr(body.tier, 32),
-      serial: serial != null ? Math.round(serial) : null,
-      ask_price_usd: clampNum(body.askPrice, 0, 10_000_000),
-      fmv_usd: clampNum(body.fmv, 0, 10_000_000),
-      discount_pct: clampNum(body.discount, -100, 100),
-      wallet_address: clampStr(body.walletAddress, 32),
-      session_id: clampStr(body.sessionId, 64),
-      buy_url: clampStr(body.buyUrl, 4096),
-    };
+    const user = await getCurrentUser();
+    const row = buildOutboundClickRow({
+      source: "site",
+      ...body,
+      userId: user?.id ?? null,
+      userAgent: req.headers?.get?.("user-agent") ?? null,
+    });
 
     // Await the insert — on Vercel the lambda freezes as soon as the response
     // returns, so a non-awaited (.then) insert never flushes and the row is
@@ -84,7 +65,15 @@ export async function POST(req: NextRequest) {
     // this reason). The client fires this via sendBeacon/keepalive and never
     // waits on the response, so awaiting one fast insert costs the user nothing.
     const { error: insertError } = await supabase.from("outbound_clicks").insert(row);
-    if (insertError) console.error("[track-click] Supabase insert failed:", insertError.message);
+    if (insertError) {
+      // ⚠ audit_20260930: this used to log and still answer { ok: true } — a
+      // failed write reported as a recorded click. `ok` now means the row landed.
+      console.error("[track-click] Supabase insert failed:", insertError.message);
+      return NextResponse.json(
+        { ok: false, ...safeApiError(insertError, "Click tracking failed.") },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e) {
