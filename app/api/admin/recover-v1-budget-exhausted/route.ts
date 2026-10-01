@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { decodeV1SaleTx, decodeV1MultiSaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
+import { decodeV1SaleTx, decodeV1MultiSaleTx, isCustodialDepositTarget } from "@/lib/chains/flow/dapper-v1-tx-decode"
 
 // ── AllDay V1-Dapper price recovery (Phase 2 of the unmapped-residue drain) ────
 //
@@ -247,10 +247,13 @@ async function run(startedAt: string, startedMs: number) {
                 delete cleaned.multi_price_reason
                 cleaned.price_source = "v1_multi_nft_segment"
                 const upd: Record<string, unknown> = { price_usd: p.priceDuc, price_native: p.priceDuc, resolution_hint: cleaned }
-                // Seller only: the Deposit target in these txs is often a custodial
-                // account (the AllDay contract / 0xddfbe…), so it is not written as a
-                // buyer here — the singleton path does not write one either.
                 if (p.seller) upd.seller_address = p.seller
+                // Buyer = the Deposit target UNLESS it is a custodian (0xddfbe…, which
+                // re-forwards). ⛔ The AllDay issuer 0xe4cf4bdc1751c65d is NOT one: in a
+                // pack-buyback cart it is the moment's final holder (register #161), and
+                // Trevor's 2026-09-30 rule is that buybacks count as market sales AND are
+                // tracked — which a NULL buyer would make impossible once promoted.
+                if (p.buyer && !isCustodialDepositTarget(p.buyer)) upd.buyer_address = p.buyer
                 const { error: umErr } = await (supabaseAdmin as any).from("unmapped_sales").update(upd).eq("id", row.id)
                 if (umErr) {
                   console.log(`[${PIPELINE_NAME}] multi unmapped update err id=${row.id}: ${umErr.message}`)
@@ -292,7 +295,7 @@ async function run(startedAt: string, startedMs: number) {
           .select("id", { count: "exact", head: true })
           .eq("collection_id", ALLDAY_COLLECTION_ID)
           .is("resolved_at", null)
-          .eq("resolution_hint->>price_extraction", "v1_tx_decode_budget_exhausted")
+          .in("resolution_hint->>price_extraction", ["v1_tx_decode_budget_exhausted", "v1_tx_decode_multi_nft_unsplittable"])
           .or(`resolution_hint->>multi_price_attempted_at.is.null,resolution_hint->>multi_price_attempted_at.lt."${cutoff}"`)
         if (cErr || typeof count !== "number") {
           summary.eligible_backlog = null

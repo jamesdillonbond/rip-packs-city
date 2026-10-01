@@ -37,6 +37,8 @@ vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy({}, { get: (_t, p) => (state.sb as Record<PropertyKey, unknown>)[p] }),
 }))
 vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({
+  // Real semantics, inlined: only the Dapper custodian is custodial.
+  isCustodialDepositTarget: (a: string) => a.toLowerCase().replace(/^0x/, "") === "ddfbe848a81b2236",
   decodeV1MultiSaleTx: async (tx: string) => {
     state.multiCalls.push(tx)
     return state.multiByTx[tx] ?? { ok: false, reason: "tx_fetch_failed", perNft: new Map() }
@@ -205,7 +207,7 @@ describe("recover-v1-budget-exhausted — multi-NFT pass", () => {
     priceDuc: price, priceCertain: certain, priceReason: reason, buyer: "0xe4cf4bdc1751c65d", seller: "0x909a0fd879c9891e",
   })
 
-  it("prices each NFT of a cart from ITS segment, strips the marker, writes the seller but not the buyer", async () => {
+  it("prices each NFT of a cart from ITS segment, strips the marker, writes the seller AND the issuer buyer (#161)", async () => {
     state.multiByTx[TX] = { ok: true, reason: "ok", perNft: new Map([["1", priced(0.67, true)], ["2", priced(0.66, true)]]) }
     const spy = install({
       "rpc:claim_allday_v1_price_recovery_candidates": { data: [], error: null },
@@ -222,7 +224,9 @@ describe("recover-v1-budget-exhausted — multi-NFT pass", () => {
     expect(ups.map((u) => u.price_usd)).toEqual([0.67, 0.66])
     for (const u of ups) {
       expect(u.seller_address).toBe("0x909a0fd879c9891e")
-      expect(u).not.toHaveProperty("buyer_address")
+      // INVERTED 2026-09-30: the AllDay issuer is a buyback cart's final holder,
+      // not a custodian (#161) — a NULL buyer would make the buyback untrackable.
+      expect(u.buyer_address).toBe("0xe4cf4bdc1751c65d")
       expect(u.resolution_hint).toEqual({ backfill: "allday_v1_history", price_source: "v1_multi_nft_segment" })
     }
   })
@@ -334,5 +338,33 @@ describe("recover-v1-budget-exhausted — empty claims vs an eligible backlog", 
     const body = await (await POST(req("Bearer ingest-token"))).json()
     expect(body.ok).toBe(true)
     expect(body).not.toHaveProperty("eligible_backlog")
+  })
+})
+
+describe("recover-v1-budget-exhausted — buyer attribution in multi carts (#161)", () => {
+  const TX = "0x" + "b".repeat(64)
+  it("⛔ never writes a CUSTODIAL deposit target as the buyer", async () => {
+    state.multiByTx[TX] = {
+      ok: true,
+      reason: "ok",
+      perNft: new Map([["1", { priceDuc: 2, priceCertain: true, priceReason: "matched", buyer: "0xddfbe848a81b2236", seller: "0x01" }]]),
+    }
+    const spy = install({
+      "rpc:claim_allday_v1_price_recovery_candidates": { data: [], error: null },
+      "rpc:claim_allday_v1_multi_price_recovery_candidates": { data: [umRow({ id: "x1", nft_id: "1", transaction_hash: TX })], error: null },
+      "rpc:promote_unmapped_sales": { data: { promoted: 0 }, error: null },
+    })
+    await POST(req("Bearer ingest-token"))
+    const up = (spy.writes.unmapped_sales ?? []).find((w) => w.method === "update")!.rows[0]
+    expect(up.price_usd).toBe(2)
+    expect(up).not.toHaveProperty("buyer_address")
+  })
+
+  it("the stall count covers BOTH markers the multi claim takes", async () => {
+    const { readFileSync } = await import("node:fs")
+    const src = readFileSync("app/api/admin/recover-v1-budget-exhausted/route.ts", "utf8")
+    const countCall = src.slice(src.indexOf("claim_empty_with_backlog") - 1500, src.indexOf("claim_empty_with_backlog"))
+    expect(countCall).toContain("v1_tx_decode_budget_exhausted")
+    expect(countCall).toContain("v1_tx_decode_multi_nft_unsplittable")
   })
 })
