@@ -29,11 +29,18 @@
 -- fixture matches itself. That check belongs against the live catalog, not here.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260816161500_audit_20260816_price_only_alerts.sql);
+-- (supabase/migrations/20261001021708_audit_20261001_alert_filters_run_before_the_candidate_cap.sql
+-- since 2026-10-01; originally 20260816161500_audit_20260816_price_only_alerts.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from
 -- it. Verified 2026-08-17 that the migration's body is byte-identical to the
 -- LIVE prosrc (md5 f17cfe05e4ab8d88e05fd56f7ce021c8, 8,943 chars) — a pin
 -- against a stale migration would pin something production does not run.
+-- Re-verified 2026-09-30 PT after the audit_20261001 apply: live = migration =
+-- this copy, md5 26cffec8dc8ea4bd4ab92b2e39f57c6c, 10,291 chars.
+--
+-- ⚠ ALSO PINNED (2026-10-01, audit_20261001, #165): team and badge filters
+-- find their match from behind 501 cheaper unrelated asks — the old body capped
+-- the pool at 500 BEFORE those filters and fails both assertions.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 

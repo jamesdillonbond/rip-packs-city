@@ -46,6 +46,10 @@
 --      COUNTED in the return jsonb rather than silent. Asserted in both
 --      directions — the same rows deliver once re-stamped — and at the boundary
 --      (13 h blocked, 11 h delivered), so a widened window cannot pass.
+--   8. A FILTER NEVER RUNS BEHIND A CAP (added 2026-10-01, audit_20261001, #165).
+--      Team and badge subs each receive their one match from behind 501 cheaper
+--      unrelated asks, and ONLY that match. The old body (LIMIT 500 before the
+--      team/parallel/badge filters) fails both.
 --
 -- ⚠ NOT pinned, recorded so nobody adds a vacuous version: `bucket` is
 -- to_char(now(),'YYYY-MM-DD'), so a same-transaction second call always lands in
@@ -79,12 +83,16 @@
 --   • `AND p.alertable` dropped from pass 1                       → case 7
 --   • `WHERE b.alertable` dropped from pass 2                     → case 7 (serial)
 --   • either pool's `alertable` column hardcoded to `true`        → case 7
+--   • (2026-10-01) the 20260913061500 body, i.e. the pre-filter cap → case 8
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260816161500_audit_20260816_price_only_alerts.sql);
+-- (supabase/migrations/20261001021708_audit_20261001_alert_filters_run_before_the_candidate_cap.sql
+-- since 2026-10-01; originally 20260816161500_audit_20260816_price_only_alerts.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from
 -- it. Verified 2026-08-17 that the migration's body is byte-identical to the
--- LIVE prosrc (md5 24ab9e7953c0005b10e987cbea62307e, 13,203 chars).
+-- LIVE prosrc (md5 24ab9e7953c0005b10e987cbea62307e, 13,203 chars). Re-verified
+-- 2026-09-30 PT after the audit_20261001 apply: live = migration = this copy,
+-- md5 6efaab1e6571d5e207683aed9ea79c4e, 15,876 chars.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
