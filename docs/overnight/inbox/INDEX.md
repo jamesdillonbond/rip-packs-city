@@ -1,4 +1,4 @@
-# Inbox index — 553 live filings
+# Inbox index — 554 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -29,6 +29,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-10-01 — 1 filing
+
+- [🟡 **Special-serial badges should use each platform's NATIVE colour (Top Shot blue, All Day official art), not RPC gold — needs a live browser to sample Top Shot's exact blue**](2026-10-01T0141Z-special-serial-badges-native-platform-color.md) — *(Claude Code, ~6:41 PM PT 09-30, Trevor's decision on webz_80's Discord feedback.)* `GOLD_HEX` in `lib/badges/glyphs.ts` colours every trophy slab, PDF and OG special-serial mark; the sandbox cannot reach nbatopshot.com, so the hex is left to a Cowork session with Chrome. Golazos/UFC/Pinnacle/Panini/Candy keep gold (no native badge).
 
 ## 2026-09-30 — 3 filings
 
