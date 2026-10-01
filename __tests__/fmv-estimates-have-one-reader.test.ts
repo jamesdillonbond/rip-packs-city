@@ -25,7 +25,9 @@ function walk(dir: string, out: string[]) {
     const p = join(dir, n)
     const st = statSync(p)
     if (st.isDirectory()) walk(p, out)
-    else if (/\.(ts|tsx|js|mjs)$/.test(n)) out.push(p)
+    // POSIX separators: path.join gives `lib\fmv\…` on Windows, which never
+    // equals THE_READER, so both assertions failed on a Windows checkout.
+    else if (/\.(ts|tsx|js|mjs)$/.test(n)) out.push(p.split("\\").join("/"))
   }
 }
 

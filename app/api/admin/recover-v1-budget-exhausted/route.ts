@@ -205,6 +205,7 @@ async function run(startedAt: string, startedMs: number) {
       // price_extraction marker AND gets `multi_price_attempted_at`, which the
       // claim skips for 30 days — without that stamp a tx that never prices
       // would sit at the head of the (transaction_hash-ordered) walk forever.
+      let multiClaimed: number | null = null
       if (Date.now() < startedMs + ELAPSED_BUDGET_MS) {
         const { data: mData, error: mErr } = await (supabaseAdmin as any).rpc(
           "claim_allday_v1_multi_price_recovery_candidates",
@@ -215,6 +216,7 @@ async function run(startedAt: string, startedMs: number) {
           summary.multi_fatal = `select:${mErr.message?.slice(0, 200)}`
           ok = false
         } else {
+          multiClaimed = ((mData ?? []) as UnmappedRow[]).length
           const mGroups = new Map<string, UnmappedRow[]>()
           for (const r of (mData ?? []) as UnmappedRow[]) {
             const arr = mGroups.get(r.transaction_hash) ?? []
@@ -272,6 +274,37 @@ async function run(startedAt: string, startedMs: number) {
                 if (stErr) console.log(`[${PIPELINE_NAME}] multi stamp err id=${row.id}: ${stErr.message}`)
               }
             }
+          }
+        }
+      }
+
+      // ⛔ BOTH CLAIMS EMPTY WHILE ELIGIBLE ROWS WAIT IS A STALL, NOT A QUIET TICK
+      // (#160 d). On 2026-09-28 duplicate rows made the singleton claim return
+      // nothing for days and every run logged ok — "0 candidates" read the same
+      // as "backlog drained". The count below is the claims' eligibility minus
+      // the tx-shape split: a marked, open row with no multi stamp younger than
+      // 30 days is claimable by one claim or the other. Unknown count → null and
+      // the run is NOT failed on it (a failed read must not become an alarm).
+      if (rows.length === 0 && multiClaimed === 0) {
+        const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+        const { count, error: cErr } = await (supabaseAdmin as any)
+          .from("unmapped_sales")
+          .select("id", { count: "exact", head: true })
+          .eq("collection_id", ALLDAY_COLLECTION_ID)
+          .is("resolved_at", null)
+          .eq("resolution_hint->>price_extraction", "v1_tx_decode_budget_exhausted")
+          .or(`resolution_hint->>multi_price_attempted_at.is.null,resolution_hint->>multi_price_attempted_at.lt."${cutoff}"`)
+        if (cErr || typeof count !== "number") {
+          summary.eligible_backlog = null
+          if (cErr) summary.eligible_backlog_error = String(cErr.message ?? cErr).slice(0, 200)
+        } else {
+          summary.eligible_backlog = count
+          if (count > 0) {
+            // pipeline_runs carries the failure (that is what the alarms read);
+            // the HTTP status does not — see `stalled` in handle().
+            ok = false
+            summary.stalled = true
+            summary.fatal = `claim_empty_with_backlog:${count}`
           }
         }
       }
@@ -344,7 +377,12 @@ async function handle(req: NextRequest) {
 
   const startedAt = new Date().toISOString()
   const { ok, summary } = await run(startedAt, Date.now())
-  return NextResponse.json({ ok, pipeline: PIPELINE_NAME, ...summary }, { status: ok ? 200 : 500 })
+  // A STALL is not an execution failure: the run worked and found nothing it
+  // could claim. A 500 here would teach cron-job.org to AUTO-DISABLE the entry
+  // after enough of them — switching off the recovery lane because it reported
+  // that the recovery lane is stuck. The body still says ok:false.
+  const status = ok || summary.stalled === true ? 200 : 500
+  return NextResponse.json({ ok, pipeline: PIPELINE_NAME, ...summary }, { status })
 }
 
 export async function POST(req: NextRequest) {

@@ -283,3 +283,56 @@ describe("recover-v1-budget-exhausted — multi-NFT pass", () => {
     expect(log(spy.rpcCalls)).toMatchObject({ p_ok: false })
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #160 (d), 2026-09-30: "both claims returned nothing" must not read as "the
+// backlog is drained" when it is not. On 09-28 duplicate rows made the singleton
+// claim return 0 for days and every run logged ok. Three states, never two:
+// stalled (eligible rows exist) · drained (count 0) · unknown (count read failed).
+describe("recover-v1-budget-exhausted — empty claims vs an eligible backlog", () => {
+  const empty = {
+    "rpc:claim_allday_v1_price_recovery_candidates": { data: [], error: null },
+    "rpc:claim_allday_v1_multi_price_recovery_candidates": { data: [], error: null },
+    "rpc:promote_unmapped_sales": { data: { promoted: 0 }, error: null },
+  }
+
+  it("⛔ fails the RUN when both claims are empty but eligible rows wait — yet keeps HTTP 200 for the scheduler", async () => {
+    const spy = install({ ...empty, unmapped_sales: { data: null, error: null, count: 5 } })
+    const res = await POST(req("Bearer ingest-token"))
+    // 200, not 500: cron-job.org auto-disables an entry after repeated failures,
+    // which would switch off the recovery lane for reporting that it is stuck.
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({ ok: false, stalled: true, eligible_backlog: 5, fatal: "claim_empty_with_backlog:5" })
+    expect(log(spy.rpcCalls)).toMatchObject({ p_ok: false, p_error: "claim_empty_with_backlog:5" })
+  })
+
+  it("a genuinely drained backlog is a clean ok run with a MEASURED zero", async () => {
+    const spy = install({ ...empty, unmapped_sales: { data: null, error: null, count: 0 } })
+    const res = await POST(req("Bearer ingest-token"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({ ok: true, eligible_backlog: 0 })
+    expect(body.stalled).toBeUndefined()
+    expect(log(spy.rpcCalls)).toMatchObject({ p_ok: true })
+  })
+
+  it("a FAILED count read is unknown (null), not a stall and not a zero", async () => {
+    const spy = install({ ...empty, unmapped_sales: { data: null, error: { message: "statement timeout" }, count: null } })
+    const body = await (await POST(req("Bearer ingest-token"))).json()
+    expect(body.ok).toBe(true)
+    expect(body.eligible_backlog).toBeNull()
+    expect(body.eligible_backlog_error).toMatch(/statement timeout/)
+    expect(body.stalled).toBeUndefined()
+    expect(log(spy.rpcCalls)).toMatchObject({ p_ok: true })
+  })
+
+  it("does not run the backlog check when a claim returned work", async () => {
+    const tx = "0x" + "a".repeat(64)
+    state.decodeByTx[tx] = { priceCertain: true, priceDuc: 2, priceReason: "matched" }
+    install({ ...empty, "rpc:claim_allday_v1_price_recovery_candidates": { data: [umRow()], error: null }, unmapped_sales: { data: null, error: null, count: 99 } })
+    const body = await (await POST(req("Bearer ingest-token"))).json()
+    expect(body.ok).toBe(true)
+    expect(body).not.toHaveProperty("eligible_backlog")
+  })
+})
