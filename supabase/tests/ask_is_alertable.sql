@@ -59,7 +59,7 @@
 -- reach for, it passes cases 1-3 intact, and only the hyphen case sees it.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260913061500_audit_20260912_an_alert_is_never_built_from_an_unconfirmed_ask.sql).
+-- (supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql).
 
 BEGIN;
 
@@ -75,11 +75,23 @@ STABLE
 SET search_path TO 'public', 'pg_temp'
 AS $function$
   SELECT CASE
+    -- CANDIDATE SCAN ONLY (audit_20260930): alert_candidate_verify_dispatch()
+    -- sets this transaction-locally to ask the preview which asks WOULD match a
+    -- subscription at any age, so it can re-check them on Atlas BEFORE they are
+    -- sent. It never sends anything; the sender never sets it.
+    WHEN current_setting('rpc.alert_candidate_scan', true) = 'on' THEN true
     -- EXEMPT: event-sourced open-listing books. The stamp is the seller's
     -- listing date, not a confirmation, and the row leaves the view when the
     -- listing closes. See the header -- gating these deletes correct rows.
     WHEN p_collection_slug IN ('nfl_all_day', 'laliga_golazos') THEN true
-    -- Everything else must have been CONFIRMED inside ASK_STALE_HOURS (12 h,
+    -- Top Shot EDITION asks: confirmed within ALERT_TOPSHOT_ASK_MAX_AGE_HOURS
+    -- (1 h, lib/market/ask-freshness.ts). The stamp is
+    -- edition_offers.low_ask_confirmed_at, which the alert-candidate re-check
+    -- lane refreshes. Both spellings, so a convention slip is STRICTER, not looser.
+    WHEN p_collection_slug IN ('nba_top_shot', 'nba-top-shot') THEN
+      p_ask_at IS NOT NULL AND p_ask_at > p_now - interval '1 hours'
+    -- Everything else (Pinnacle, the Top Shot serial board 'nba_top_shot:serial',
+    -- anything new) must have been CONFIRMED inside ASK_STALE_HOURS (12 h,
     -- lib/market/ask-freshness.ts). Unknown (NULL) is not alertable.
     ELSE p_ask_at IS NOT NULL AND p_ask_at > p_now - interval '12 hours'
   END
@@ -90,15 +102,43 @@ $function$;
 DO $$
 DECLARE t timestamptz := '2026-09-13 06:00:00+00';
 BEGIN
-  -- (1) the threshold, from both sides and ON the edge
-  PERFORM _assert(public.ask_is_alertable('nba_top_shot', t - interval '11 hours', t),
-    'an ask confirmed 11 h ago is alertable');
-  PERFORM _assert(NOT public.ask_is_alertable('nba_top_shot', t - interval '13 hours', t),
-    'an ask confirmed 13 h ago is NOT alertable');
-  PERFORM _assert(NOT public.ask_is_alertable('nba_top_shot', t - interval '12 hours', t),
-    'exactly 12 h is NOT alertable -- the boundary matches isAskStale (>= ASK_STALE_HOURS)');
+  -- (1) THE TOP SHOT EDITION WINDOW IS 1 h (audit_20260930), from both sides and ON the edge
+  PERFORM _assert(public.ask_is_alertable('nba_top_shot', t - interval '59 minutes', t),
+    'a Top Shot edition ask confirmed 59 min ago is alertable');
+  PERFORM _assert(NOT public.ask_is_alertable('nba_top_shot', t - interval '61 minutes', t),
+    'a Top Shot edition ask confirmed 61 min ago is NOT alertable');
+  PERFORM _assert(NOT public.ask_is_alertable('nba_top_shot', t - interval '1 hour', t),
+    'exactly 1 h is NOT alertable -- same edge convention as isAskStale (>=)');
+  PERFORM _assert(NOT public.ask_is_alertable('nba_top_shot', t - interval '11 hours', t),
+    'an 11 h Top Shot edition ask -- legal under the old 12 h gate -- is NOT alertable');
   PERFORM _assert(public.ask_is_alertable('nba_top_shot', t, t),
     'and one confirmed this instant is');
+  PERFORM _assert(NOT public.ask_is_alertable('nba-top-shot', t - interval '2 hours', t),
+    'the HYPHEN spelling gets the 1 h window too -- a convention slip is STRICTER, never looser');
+
+  -- (1b) EVERY OTHER GATED ARM KEEPS 12 h, incl. the Top Shot SERIAL board under its own token
+  PERFORM _assert(public.ask_is_alertable('nba_top_shot:serial', t - interval '11 hours', t),
+    'a serial listing seen 11 h ago is alertable -- its sweep runs every 3 h, it keeps 12 h');
+  PERFORM _assert(NOT public.ask_is_alertable('nba_top_shot:serial', t - interval '13 hours', t),
+    'a serial listing seen 13 h ago is NOT alertable');
+  PERFORM _assert(NOT public.ask_is_alertable('nba_top_shot:serial', t - interval '12 hours', t),
+    'exactly 12 h is NOT alertable -- the boundary matches isAskStale (>= ASK_STALE_HOURS)');
+  PERFORM _assert(public.ask_is_alertable('disney_pinnacle', t - interval '11 hours', t),
+    'Pinnacle: 11 h alertable');
+  PERFORM _assert(NOT public.ask_is_alertable('disney_pinnacle', t - interval '13 hours', t),
+    'Pinnacle: 13 h NOT alertable');
+
+  -- (1c) THE CANDIDATE-SCAN FLAG: widens the age test ONLY when exactly 'on', and only
+  -- transaction-locally (alert_candidate_verify_dispatch sets it; nothing that sends does).
+  PERFORM set_config('rpc.alert_candidate_scan', 'on', true);
+  PERFORM _assert(public.ask_is_alertable('nba_top_shot', t - interval '40 hours', t),
+    'under the candidate scan a 40 h ask is a CANDIDATE -- that is what gets re-checked');
+  PERFORM set_config('rpc.alert_candidate_scan', 'true', true);
+  PERFORM _assert(NOT public.ask_is_alertable('nba_top_shot', t - interval '40 hours', t),
+    'any value but exactly ''on'' is ignored');
+  PERFORM set_config('rpc.alert_candidate_scan', 'off', true);
+  PERFORM _assert(NOT public.ask_is_alertable('nba_top_shot', t - interval '40 hours', t),
+    'and switched off, the gate is the gate again');
 
   -- (2) unknown fails CLOSED
   PERFORM _assert(NOT public.ask_is_alertable('nba_top_shot', NULL, t),
@@ -119,6 +159,8 @@ BEGIN
   -- (4) everything else fails CLOSED
   PERFORM _assert(NOT public.ask_is_alertable('nba-top-shot', t - interval '13 hours', t),
     'the HYPHEN spelling is gated -- a convention slip must not disable the gate');
+  PERFORM _assert(NOT public.ask_is_alertable('nba_top_shot:serial', NULL, t),
+    'the serial token is gated too -- NULL is not alertable there either');
   PERFORM _assert(NOT public.ask_is_alertable('some_new_collection', t - interval '13 hours', t),
     'and so is a collection nobody has added to this function yet');
   -- The positive half of the same property: fail-closed must not mean
@@ -126,7 +168,7 @@ BEGIN
   PERFORM _assert(public.ask_is_alertable('some_new_collection', t - interval '1 hour', t),
     'a collection this function has never heard of still alerts on a FRESH ask');
 
-  RAISE NOTICE '✓ ask_is_alertable: threshold, fail-closed, and the two exempt arms';
+  RAISE NOTICE '✓ ask_is_alertable: 1 h Top Shot editions, 12 h elsewhere, scan flag, fail-closed, two exempt arms';
 END $$;
 
 ROLLBACK;

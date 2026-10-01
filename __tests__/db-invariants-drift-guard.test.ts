@@ -884,7 +884,17 @@ const PINS = [
     // ⚠ 2026-09-19 11:2x AM: re-pointed a SECOND time — commit 14f38e53c (a concurrent session) wrote this file from a stale copy and silently reverted both entries; main was red for ~35 min.
     // 2026-09-26: a 24 h floor undercut by an older open listing under half its price is written NULL (unknown), never published as the floor (20260926192206);
     //             then the same test on a STORED floor the 24 h window no longer re-observes (20260926192947).
-    migration: "supabase/migrations/20260926192947_audit_20260926_a_stored_floor_is_held_to_the_same_undercut_test.sql",
+    // 2026-09-30: stamps low_ask_confirmed_at with the floor listing's last OBSERVATION and re-confirms an
+    //             unchanged floor Atlas re-observed (step a1) — the 1 h Top Shot alert window reads it.
+    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
+  },
+  {
+    // The trigger that keeps every OTHER edition_offers writer honest about low_ask_confirmed_at
+    // (an offer-only write must not refresh an ask's confirmation). Embedded in the sync pin, which
+    // owns the fixture table.
+    fn: "edition_offers_stamp_low_ask_confirmed",
+    test: "supabase/tests/sync_edition_offers_from_atlas.sql",
+    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
   },
   {
     fn: "mcp_get_fmv",
@@ -1314,7 +1324,7 @@ const PINS = [
     // sender is gated against is the 2026-08-16 defect one level up.
     fn: "build_deal_alerts_for_subscription",
     test: "supabase/tests/build_deal_alerts_for_subscription.sql",
-    migration: "supabase/migrations/20261001021708_audit_20261001_alert_filters_run_before_the_candidate_cap.sql",
+    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
   },
   {
     // The SENDING half of the same pipeline, pinned 2026-08-17. Its preview
@@ -1323,7 +1333,7 @@ const PINS = [
     // rule that `enqueued` counts writes rather than matches.
     fn: "dispatch_due_deal_alerts",
     test: "supabase/tests/dispatch_due_deal_alerts.sql",
-    migration: "supabase/migrations/20261001021708_audit_20261001_alert_filters_run_before_the_candidate_cap.sql",
+    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
   },
   {
     // ⚠ THREE ENTRIES, ONE FUNCTION, AND THAT IS THE POINT. `ask_is_alertable`
@@ -1334,17 +1344,17 @@ const PINS = [
     // every copy gets an entry.
     fn: "ask_is_alertable",
     test: "supabase/tests/ask_is_alertable.sql",
-    migration: "supabase/migrations/20260913061500_audit_20260912_an_alert_is_never_built_from_an_unconfirmed_ask.sql",
+    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
   },
   {
     fn: "ask_is_alertable",
     test: "supabase/tests/dispatch_due_deal_alerts.sql",
-    migration: "supabase/migrations/20260913061500_audit_20260912_an_alert_is_never_built_from_an_unconfirmed_ask.sql",
+    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
   },
   {
     fn: "ask_is_alertable",
     test: "supabase/tests/build_deal_alerts_for_subscription.sql",
-    migration: "supabase/migrations/20260913061500_audit_20260912_an_alert_is_never_built_from_an_unconfirmed_ask.sql",
+    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
   },
   {
     fn: "detect_concentration_buys",

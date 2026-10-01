@@ -52,6 +52,19 @@
 export const ASK_STALE_HOURS = 12
 
 /**
+ * The ALERT window for a Top Shot EDITION ask (audit_20260930, Trevor's call): a
+ * deal alert is built only from an ask whose floor listing was OBSERVED on Atlas
+ * within this many hours (`edition_offers.low_ask_confirmed_at`), and the
+ * `rpc-ts-alert-candidate-verify` lane re-checks would-be alerts so they clear it.
+ * The SQL gate (`ask_is_alertable`) states the same number;
+ * `__tests__/alert-ask-gate-matches-the-site-wide-stale-marker.test.ts` reds if
+ * they drift. Every other gated arm — Pinnacle, and the Top Shot SERIAL board,
+ * whose sweep runs every 3 h — keeps ASK_STALE_HOURS. This is a send rule, not
+ * a display rule: the boards' stale marker stays at ASK_STALE_HOURS.
+ */
+export const ALERT_TOPSHOT_ASK_MAX_AGE_HOURS = 1
+
+/**
  * Age of an ask in hours, or `null` when it cannot be known.
  *
  * ⚠ THREE STATES, NOT TWO — the caller must be able to tell them apart:

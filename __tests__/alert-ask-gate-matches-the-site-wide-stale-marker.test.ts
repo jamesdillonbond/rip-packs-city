@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import { ASK_STALE_HOURS, isAskStale } from "@/lib/market/ask-freshness"
+import { ALERT_TOPSHOT_ASK_MAX_AGE_HOURS, ASK_STALE_HOURS, isAskStale } from "@/lib/market/ask-freshness"
 
 // 🚨 WHY THIS EXISTS (2026-09-13, audit_20260912).
 //
@@ -23,8 +23,10 @@ import { ASK_STALE_HOURS, isAskStale } from "@/lib/market/ask-freshness"
 // unit test in the blocking job, it must run with no database, and the pin file
 // + __tests__/db-invariants-drift-guard.test.ts already tie the migration to the
 // live object. Chaining those two is what makes this a real check on production.
+// Re-pointed 2026-09-30 to the migration that last defines the gate
+// (audit_20260930: Top Shot edition asks get ALERT_TOPSHOT_ASK_MAX_AGE_HOURS).
 const MIGRATION =
-  "supabase/migrations/20260913061500_audit_20260912_an_alert_is_never_built_from_an_unconfirmed_ask.sql"
+  "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql"
 
 function gateSource(): string {
   const src = readFileSync(path.join(process.cwd(), MIGRATION), "utf8")
@@ -38,16 +40,25 @@ function gateSource(): string {
 }
 
 describe("the alert freshness gate and the site-wide stale marker are the same threshold", () => {
-  it("the migration's window is exactly ASK_STALE_HOURS", () => {
-    const body = gateSource()
-    const m = /interval\s+'(\d+)\s+hours'/.exec(body)
-    expect(m, "no `interval 'N hours'` in the gate — was it rewritten?").not.toBeNull()
+  // audit_20260930: TWO windows, each stated exactly once and each tied to its
+  // TS constant. The ELSE arm (Pinnacle, the serial board, anything new) is the
+  // site-wide ASK_STALE_HOURS; the Top Shot EDITION arm is the alert-only 1 h.
+  it("the migration's ELSE window is exactly ASK_STALE_HOURS", () => {
+    const m = /ELSE p_ask_at IS NOT NULL AND p_ask_at > p_now - interval\s+'(\d+)\s+hours'/.exec(gateSource())
+    expect(m, "no ELSE `interval 'N hours'` in the gate — was it rewritten?").not.toBeNull()
     expect(Number(m![1])).toBe(ASK_STALE_HOURS)
   })
 
-  it("states the window ONCE, so there is no second number to drift", () => {
-    const hits = gateSource().match(/interval\s+'\d+\s+hours'/g) ?? []
-    expect(hits.length).toBe(1)
+  it("the Top Shot edition window is exactly ALERT_TOPSHOT_ASK_MAX_AGE_HOURS, for BOTH spellings", () => {
+    const m = /WHEN p_collection_slug IN \('nba_top_shot', 'nba-top-shot'\) THEN\s+p_ask_at IS NOT NULL AND p_ask_at > p_now - interval\s+'(\d+)\s+hours'/.exec(gateSource())
+    expect(m, "the Top Shot arm changed shape — re-read the migration header").not.toBeNull()
+    expect(Number(m![1])).toBe(ALERT_TOPSHOT_ASK_MAX_AGE_HOURS)
+    expect(ALERT_TOPSHOT_ASK_MAX_AGE_HOURS).toBeLessThan(ASK_STALE_HOURS)
+  })
+
+  it("states each window ONCE, so there is no third number to drift", () => {
+    const hits = gateSource().match(/interval\s+'\d+\s+hours?'/g) ?? []
+    expect(hits.length).toBe(2)
   })
 
   it("the two agree on the BOUNDARY, not just the number", () => {

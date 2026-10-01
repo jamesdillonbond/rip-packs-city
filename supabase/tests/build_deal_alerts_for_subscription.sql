@@ -29,7 +29,7 @@
 -- fixture matches itself. That check belongs against the live catalog, not here.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261001021708_audit_20261001_alert_filters_run_before_the_candidate_cap.sql
+-- (supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql
 -- since 2026-10-01; originally 20260816161500_audit_20260816_price_only_alerts.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from
 -- it. Verified 2026-08-17 that the migration's body is byte-identical to the
@@ -160,11 +160,23 @@ STABLE
 SET search_path TO 'public', 'pg_temp'
 AS $function$
   SELECT CASE
+    -- CANDIDATE SCAN ONLY (audit_20260930): alert_candidate_verify_dispatch()
+    -- sets this transaction-locally to ask the preview which asks WOULD match a
+    -- subscription at any age, so it can re-check them on Atlas BEFORE they are
+    -- sent. It never sends anything; the sender never sets it.
+    WHEN current_setting('rpc.alert_candidate_scan', true) = 'on' THEN true
     -- EXEMPT: event-sourced open-listing books. The stamp is the seller's
     -- listing date, not a confirmation, and the row leaves the view when the
     -- listing closes. See the header -- gating these deletes correct rows.
     WHEN p_collection_slug IN ('nfl_all_day', 'laliga_golazos') THEN true
-    -- Everything else must have been CONFIRMED inside ASK_STALE_HOURS (12 h,
+    -- Top Shot EDITION asks: confirmed within ALERT_TOPSHOT_ASK_MAX_AGE_HOURS
+    -- (1 h, lib/market/ask-freshness.ts). The stamp is
+    -- edition_offers.low_ask_confirmed_at, which the alert-candidate re-check
+    -- lane refreshes. Both spellings, so a convention slip is STRICTER, not looser.
+    WHEN p_collection_slug IN ('nba_top_shot', 'nba-top-shot') THEN
+      p_ask_at IS NOT NULL AND p_ask_at > p_now - interval '1 hours'
+    -- Everything else (Pinnacle, the Top Shot serial board 'nba_top_shot:serial',
+    -- anything new) must have been CONFIRMED inside ASK_STALE_HOURS (12 h,
     -- lib/market/ask-freshness.ts). Unknown (NULL) is not alertable.
     ELSE p_ask_at IS NOT NULL AND p_ask_at > p_now - interval '12 hours'
   END
@@ -306,11 +318,11 @@ BEGIN
       ) AS d
       FROM public.topshot_underpriced_serials_board b
       WHERE b.estimate_quality = 'tight' AND b.ask_usd > 0
-        -- ⚠ The LONG-FORM slug on purpose: this board's payload says
-        -- 'nba-top-shot' (hyphens) and the gate's exempt-list is long-form, so
-        -- passing the payload's spelling would gate correctly by accident here
-        -- and read as an endorsement of mixing the two conventions.
-        AND public.ask_is_alertable('nba_top_shot', b.last_seen_at)
+        -- ⚠ 'nba_top_shot:serial' (audit_20260930), the same token as the
+        -- sender's serial pool: this board's stamp comes from a 3-hourly sweep,
+        -- so it keeps the 12 h window while Top Shot EDITION asks get 1 h. Never
+        -- the payload's 'nba-top-shot' hyphen spelling.
+        AND public.ask_is_alertable('nba_top_shot:serial', b.last_seen_at)
         AND b.discount_pct >= COALESCE(v_sub.min_discount, 25)
         AND (v_sub.max_price IS NULL OR b.ask_usd <= v_sub.max_price)
         AND (v_sub.min_price IS NULL OR b.ask_usd >= v_sub.min_price)
@@ -631,6 +643,30 @@ BEGIN
   PERFORM _assert_eq((r->'deals'->0->>'external_id'), '901:2', 'and it is the badged row');
 
   RAISE NOTICE '✓ build_deal_alerts_for_subscription: filters run before any truncation';
+END $$;
+
+-- ── (9) audit_20260930: 1 h FOR TOP SHOT EDITION ASKS, 12 h FOR THE SERIAL BOARD ─────────────
+-- The preview must apply the sender's windows, arm by arm: an edition ask confirmed 2 h ago is
+-- no longer previewed (it was under the old 12 h), one confirmed 59 min ago is; and a serial
+-- listing seen 11 h ago IS previewed — the serial board passes 'nba_top_shot:serial' and keeps
+-- 12 h. Mutation-verified 2026-09-30: passing 'nba_top_shot' on the serial arm fails the last.
+DO $$
+DECLARE r jsonb;
+BEGIN
+  UPDATE edition_current_ask SET ask_updated_at = now() - interval '2 hours' WHERE external_id = '901:1';
+  r := public.build_deal_alerts_for_subscription('88888888-8888-8888-8888-888888888881');
+  PERFORM _assert_eq((r->>'deals_count'), '0',
+    'a Top Shot edition ask confirmed 2 h ago is not previewed -- the 1 h window');
+  UPDATE edition_current_ask SET ask_updated_at = now() - interval '59 minutes' WHERE external_id = '901:1';
+  r := public.build_deal_alerts_for_subscription('88888888-8888-8888-8888-888888888881');
+  PERFORM _assert_eq((r->>'deals_count'), '1', 'and at 59 min it is');
+
+  UPDATE topshot_underpriced_serials_board SET last_seen_at = now() - interval '11 hours' WHERE nft_id = 'nft-2';
+  r := public.build_deal_alerts_for_subscription('22222222-2222-2222-2222-222222222222');
+  PERFORM _assert_eq((r->>'serial_deals_count'), '2',
+    'a serial listing seen 11 h ago IS previewed -- the serial board keeps 12 h under its own token');
+
+  RAISE NOTICE '✓ build_deal_alerts_for_subscription: per-arm freshness windows';
 END $$;
 
 ROLLBACK;
