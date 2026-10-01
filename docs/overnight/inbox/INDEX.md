@@ -32,7 +32,7 @@ failure it documents.
 
 ## 2026-10-01 — 1 filing
 
-- [🟡 **Special-serial badges should use each platform's NATIVE colour (Top Shot blue, All Day official art), not RPC gold — needs a live browser to sample Top Shot's exact blue**](2026-10-01T0141Z-special-serial-badges-native-platform-color.md) — *(Claude Code, ~6:41 PM PT 09-30, Trevor's decision on webz_80's Discord feedback.)* `GOLD_HEX` in `lib/badges/glyphs.ts` colours every trophy slab, PDF and OG special-serial mark; the sandbox cannot reach nbatopshot.com, so the hex is left to a Cowork session with Chrome. Golazos/UFC/Pinnacle/Panini/Candy keep gold (no native badge).
+- [🟢 **Special-serial badges should use each platform's NATIVE colour — RESOLVED: sampled live (Top Shot #2752ED, All Day #7A4DE1 ring), shipped to trophy slab, PDF and OG cards**](2026-10-01T0141Z-special-serial-badges-native-platform-color.md) — *(Claude Code, ~6:41 PM PT 09-30, Trevor's decision on webz_80's Discord feedback.)* `GOLD_HEX` in `lib/badges/glyphs.ts` colours every trophy slab, PDF and OG special-serial mark; the sandbox cannot reach nbatopshot.com, so the hex is left to a Cowork session with Chrome. Golazos/UFC/Pinnacle/Panini/Candy keep gold (no native badge). **Disposition (Claude Code, Windows box, ~8:15 PM PT):** this box reaches both sites, so the colours were read from computed styles and shipped via `specialSerialStyle` in `lib/badges/official-art.ts`.
 
 ## 2026-09-30 — 3 filings
 

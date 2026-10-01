@@ -43,3 +43,35 @@
 - Check one All Day #1 shows the official art with no gold chip behind it.
 
 **Risk:** low. Presentational only; no data, pricing or auth involved. Not on the night pass's off-limits list.
+
+---
+
+## ✅ Disposition — SHIPPED by Claude Code (Windows box), 2026-09-30 ~8:15 PM PT
+
+This box could reach both platforms, so it was not left for Cowork. Colours were **sampled live** with installed Chrome (computed styles plus the class strings):
+
+- **NBA Top Shot**, nbatopshot.com/moment/2149353 (#1/12000):
+  - pill `border-[#2752ED]`;
+  - glyph segment `bg-[#2752ED]` with a white glyph;
+  - serial segment `bg-[#2752ED]/25`, white text;
+  - glow `#5677F180`.
+- **NFL All Day**, nflallday.com/moments/9597415 (#1/2500):
+  - pill `border-[#7A4DE1]` on `bg-card` (#212127), with no fill;
+  - glow rgba(122,77,225,0.75);
+  - the glyph is All Day's own gradient art (white → #EB22E2 → #7A4DE1). RPC already serves that art.
+
+**Shipped:**
+- `specialSerialStyle(collection)` in `lib/badges/official-art.ts`:
+  - Top Shot: blue chip and marks; `#5677F1` for text on dark cards.
+  - All Day: dark pill with a purple ring; purple accent.
+  - Everything else: RPC gold.
+- It is wired into:
+  - `TrophySlab`: the serial chip and the marks;
+  - the trophy-case PDF: the serial hero and per-platform glyph icons. The 1-of-1 slab accent stays gold, as asked;
+  - both OG cards: the serial accent, and the Top Shot glyph tint via `trophy-marks`.
+- Tests:
+  - re-pinned `api-og-share-cards-no-false-zero` (the Top Shot #1 medal is blue, and gold is now asserted ABSENT) and the `trophyDetail` shape;
+  - new: `lib-badges-special-serial-style` and 3 slab colour cases.
+  - Planted defect (Top Shot → gold) turned 3 suites red.
+
+**Checked, not changed:** the moment page, edition page, sniper chips, owners board and collection `SerialBadge` draw `SpecialSerialGlyph` in `currentColor` inside RPC's own coloured pills (purple, teal, red). None of them is gold, so none was in the gold list this decision covered.
