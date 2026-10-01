@@ -1314,7 +1314,7 @@ const PINS = [
     // sender is gated against is the 2026-08-16 defect one level up.
     fn: "build_deal_alerts_for_subscription",
     test: "supabase/tests/build_deal_alerts_for_subscription.sql",
-    migration: "supabase/migrations/20260913061500_audit_20260912_an_alert_is_never_built_from_an_unconfirmed_ask.sql",
+    migration: "supabase/migrations/20261001021708_audit_20261001_alert_filters_run_before_the_candidate_cap.sql",
   },
   {
     // The SENDING half of the same pipeline, pinned 2026-08-17. Its preview
@@ -1323,7 +1323,7 @@ const PINS = [
     // rule that `enqueued` counts writes rather than matches.
     fn: "dispatch_due_deal_alerts",
     test: "supabase/tests/dispatch_due_deal_alerts.sql",
-    migration: "supabase/migrations/20260913061500_audit_20260912_an_alert_is_never_built_from_an_unconfirmed_ask.sql",
+    migration: "supabase/migrations/20261001021708_audit_20261001_alert_filters_run_before_the_candidate_cap.sql",
   },
   {
     // ⚠ THREE ENTRIES, ONE FUNCTION, AND THAT IS THE POINT. `ask_is_alertable`

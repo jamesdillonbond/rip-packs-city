@@ -349,8 +349,8 @@ BEGIN
     -- Pass 1: edition-level deals (skipped entirely for serial-only subs).
     -- 2026-07-11: team_names + badges now filter pass 1 too (previously serial-
     -- pass-only, so a team/badge sub got unfiltered edition deals = spam).
-    -- Cheap predicates narrow to 500 candidates first so the per-row badge fn
-    -- is bounded; team/badge EXISTS then applies before the final LIMIT 25.
+    -- audit_20261001: every filter but badges runs before any truncation, and
+    -- badges (the one per-row function) runs last, lazily, under LIMIT 25.
     IF NOT COALESCE(v_sub.serial_only, false) THEN
     FOR v_deal IN
       SELECT jsonb_build_object(
@@ -400,23 +400,33 @@ BEGIN
             SELECT 1 FROM unnest(v_sub.set_names) sx
             WHERE lower(p.set_name) LIKE '%' || lower(sx) || '%'
           ))
+          -- audit_20261001: team + parallel filter HERE, before anything can
+          -- truncate. Until now they ran AFTER a LIMIT 500 over the cheap
+          -- predicates, so a team sub silently lost every match ranked below the
+          -- 500th row of the WHOLE collection: live, a $0.25 Blazers rookie ask
+          -- sat behind 504 cheaper Top Shot asks and was never sent.
+          AND (v_sub.parallel_names IS NULL OR lower(COALESCE(
+                (SELECT NULLIF(be.parallel_name,'') FROM public.badge_editions be
+                   WHERE be.external_id = p.external_id AND be.parallel_name NOT IN ('','Standard') LIMIT 1),
+                CASE WHEN p.collection_slug = 'disney_pinnacle' THEN p.tier END
+              )) = ANY(ARRAY(SELECT lower(x) FROM unnest(v_sub.parallel_names) x)))
+          AND (v_sub.team_names IS NULL OR EXISTS (
+            SELECT 1 FROM public.editions e
+            JOIN public.collections c ON c.id = e.collection_id
+            WHERE e.external_id = p.external_id
+              AND c.slug = p.collection_slug
+              AND lower(e.team_name) = ANY(ARRAY(SELECT lower(x) FROM unnest(v_sub.team_names) x))
+          ))
         ORDER BY p.discount_pct DESC NULLS LAST,
                  (CASE WHEN v_price_only THEN p.low_ask END) ASC
-        LIMIT 500
+        -- ⚠ OFFSET 0 is a FENCE, not a no-op: it stops the planner pushing the
+        -- per-row badge function below into this scan, so badges are evaluated
+        -- only on rows that survived every cheaper filter, in rank order, and
+        -- the outer LIMIT 25 can stop as soon as 25 match. There is NO cap here
+        -- on purpose -- a cap ahead of a filter is the defect being removed.
+        OFFSET 0
       ) b
-      WHERE (v_sub.parallel_names IS NULL OR lower(COALESCE(
-              (SELECT NULLIF(be.parallel_name,'') FROM public.badge_editions be
-                 WHERE be.external_id = b.external_id AND be.parallel_name NOT IN ('','Standard') LIMIT 1),
-              CASE WHEN b.collection_slug = 'disney_pinnacle' THEN b.tier END
-            )) = ANY(ARRAY(SELECT lower(x) FROM unnest(v_sub.parallel_names) x)))
-        AND (v_sub.team_names IS NULL OR EXISTS (
-          SELECT 1 FROM public.editions e
-          JOIN public.collections c ON c.id = e.collection_id
-          WHERE e.external_id = b.external_id
-            AND c.slug = b.collection_slug
-            AND lower(e.team_name) = ANY(ARRAY(SELECT lower(x) FROM unnest(v_sub.team_names) x))
-        ))
-        AND (v_sub.badges IS NULL OR EXISTS (
+      WHERE (v_sub.badges IS NULL OR EXISTS (
           SELECT 1 FROM public.editions e
           JOIN public.collections c ON c.id = e.collection_id
           CROSS JOIN LATERAL jsonb_array_elements(public.get_edition_badges_unified(e.id)) AS bj(elem)
@@ -886,6 +896,87 @@ BEGIN
     'the unstamped row is still barred -- re-stamping its neighbours did not relax it');
 
   RAISE NOTICE '✓ dispatch_due_deal_alerts: the freshness gate opens as well as closes';
+END $$;
+
+-- ── (8) A FILTER MUST NOT RUN BEHIND A CAP (audit_20261001) ────────────────
+--
+-- 🚨 THE LIVE MISS, REPRODUCED. Until 2026-10-01 pass 1 took the collection-wide
+-- top 500 of the cheap predicates and only THEN applied team / parallel /
+-- badges, so a filtered sub saw only the matches ranked inside that 500. On
+-- 2026-09-30 a "Blazers rookie ≤ $0.50" sub missed a $0.25 Greg Brown III ask
+-- because 504 cheaper Top Shot asks filled every slot.
+--
+-- ⚠ 501 FILLER ROWS, NOT 500: the target must rank strictly OUTSIDE the old cap
+-- or this case passes against the defect. The fillers belong to no team and
+-- carry no badge, so only the filters stand between them and the two subs.
+-- Mutation-verified: restoring the 20260913061500 body fails BOTH assertions.
+INSERT INTO edition_current_ask
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+SELECT '900:' || g, 'Filler', 'Filler Player ' || g, 'Base Set', 'COMMON', 50000,
+       NULL, NULL, 0.05, NULL, NULL, now(),
+       'nba_top_shot', 'NBA Top Shot', NULL, NULL, NULL, NULL, NULL, false
+FROM generate_series(1, 501) g;
+
+INSERT INTO edition_current_ask
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES
+  ('901:1', 'Team Target', 'Greg Brown III', 'Hustle and Show', 'COMMON', 9000,
+   NULL, NULL, 0.25, NULL, NULL, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, NULL, NULL, NULL, NULL, false),
+  ('901:2', 'Badge Target', 'Some Rookie', 'Base Set', 'COMMON', 9000,
+   NULL, NULL, 0.26, NULL, NULL, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, NULL, NULL, NULL, NULL, false);
+
+INSERT INTO editions (id, collection_id, external_id, player_name, set_name, team_name)
+VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000001', '95f28a17-224a-4025-96ad-adf8a4c63bfd',
+   '901:1', 'Greg Brown III', 'Hustle and Show', 'Portland Trail Blazers'),
+  ('aaaaaaaa-0000-0000-0000-000000000002', '95f28a17-224a-4025-96ad-adf8a4c63bfd',
+   '901:2', 'Some Rookie', 'Base Set', 'Somewhere Else');
+
+-- The stub above returns '[]' for every edition; give exactly ONE a badge.
+CREATE OR REPLACE FUNCTION public.get_edition_badges_unified(p_edition_id uuid)
+RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE WHEN p_edition_id = 'aaaaaaaa-0000-0000-0000-000000000002'
+              THEN '[{"title":"Rookie Year"}]'::jsonb ELSE '[]'::jsonb END $$;
+
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-team', 'email', 'team@example.test', true),
+       ('owner-badge', 'email', 'badge@example.test', true);
+
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, max_price, active, serial_only, team_names, badges)
+VALUES ('88888888-8888-8888-8888-888888888881', 'owner-team', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 0, 0.50, true, false,
+        ARRAY['Portland Trail Blazers'], NULL),
+       ('88888888-8888-8888-8888-888888888882', 'owner-badge', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 0, 0.50, true, false,
+        NULL, ARRAY['rookieyear']);
+
+DO $$
+BEGIN
+  PERFORM public.dispatch_due_deal_alerts();
+
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-team' AND subject_key = 'nba_top_shot:901:1'),
+    'a team-filtered sub receives its match even with 501 cheaper asks ranked ahead of it');
+  PERFORM _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key = 'owner-team'), '1',
+    'and receives ONLY that match -- the team filter still excludes the fillers');
+
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-badge' AND subject_key = 'nba_top_shot:901:2'),
+    'a badge-filtered sub receives its match from behind the same 501 rows');
+  PERFORM _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key = 'owner-badge'), '1',
+    'and ONLY that match -- the badge filter still excludes everything else');
+
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: filters run before any truncation';
 END $$;
 
 ROLLBACK;
