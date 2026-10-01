@@ -130,3 +130,11 @@ $30**, and FOTL "not modeled yet".
 FOTL off-board reading at build, for the record (not published): mean $181 / typical $69 using ask-derived exclusive
 prices; with the exclusive leg valued on its 2 sale-backed editions only (~$28) the mean is ~$58. Every basis sits
 far below the $150 drop price.
+
+> ⛔ **CORRECTED 2026-09-30 ~7:15 PM PT (v0.2, migration `20261001020609`): the count gate was not enough.** By 7 PM
+> (387 editions) FOTL passed "≥3 sale-backed" and the board published **+$20** (FOTL) and **+$6** (Hobby) edges, but
+> sale-backed editions carried only **15%** of the exclusive family's remaining-weighted value, **33%** of base and
+> **20%** of insert (silver 90%). Valued on sale-backed editions alone: Hobby ~$21 vs $30, FOTL ~$114 vs $150 — the
+> edges were ask artefacts. Gate is now: every family in the pack needs ≥3 sale-backed editions **and** sale-backed
+> editions carrying **≥50% of its value** (`*_sale_share` columns). WC families sit at 81–100%, so the WC board is
+> unaffected. Both WNBA packs read "not modeled yet" until their markets trade.
