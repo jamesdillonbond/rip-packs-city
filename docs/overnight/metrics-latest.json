@@ -54,7 +54,6 @@
   "needs_trevor": [
     "rotate ATLAS_POOL_INGEST_KEY (#144; the ?key= arm was already removed 09-26)",
     "#22 (credential-purge residue: GitHub Support GC + rotate the Dapper session)",
-    "paste 09-27 Panini freshness-check prompt in Claude Desktop (device-bound)",
     "restore a push-capable route (VM disk 99% full, no pushurl token on mount, computer-use ungranted)"
   ],
   "housekeeping": "inbox left append-only (CI-gated). 3 new candidates all pre-resolved by concurrent Claude Code. Concurrent session shipped panini map + username lanes + trophy marks + telemetry overnight; reviewed, no regression."
