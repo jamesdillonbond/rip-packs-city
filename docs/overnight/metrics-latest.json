@@ -54,8 +54,8 @@
     "Panini freshness check Escalation 5 (old catalogue >7 d without a re-price) is expected to FIRE ~10-03 PT if the new-product bootstrap keeps the walk off old editions (09-30 7 PM: max age 141.9 h, 0 old re-priced in 24 h) — a real signal, not a check defect."
   ],
   "needs_trevor": [
-    "rotate ATLAS_POOL_INGEST_KEY (#144) — double-click Rip Packs City/cowork-2026-09-30/rotate-atlas-pool-ingest-key.cmd (sets edge secret + user env var, verifies, logs fingerprints only)",
-    "#22 — paste Rip Packs City/cowork-2026-09-30/github-support-request-22.md into support.github.com/contact (commit 1c3e01a8f still loads publicly 09-30); rotate the Dapper session",
+    "rotate ATLAS_POOL_INGEST_KEY (#144) — run `npx supabase login` once on the laptop, then double-click Rip Packs City/cowork-2026-09-30/rotate-atlas-pool-ingest-key.cmd (first run 09-30 8:28 PM failed safely: CLI not logged in, nothing changed)",
+    "#22 — GitHub Support ticket FILED 09-30 ~8:45 PM PT (dereference 15 pre-purge PRs + GC); watch tdillonbond@gmail.com for the reply, then re-test commit/1c3e01a8f (expect 404); rotate the Dapper session",
     "laptop VM /sessions reset 09-30 8:19 PM PT (99% -> 1%) — delete sessiondata.vhdx.bak-20260930-2019 (~10 GB, and any older .bak) under %LOCALAPPDATA%\\Packages\\Claude_*\\LocalCache\\Roaming\\Claude\\vm_bundles\\claudevm.bundle. Unattended nightly passes still cannot push (no repo attachment on the trigger)."
   ],
   "housekeeping": "inbox left append-only (CI-gated). 3 new candidates all pre-resolved by concurrent Claude Code. Concurrent session shipped panini map + username lanes + trophy marks + telemetry overnight; reviewed, no regression."
