@@ -28,6 +28,7 @@ const st = vi.hoisted(() => ({
   recentCalls: [] as unknown[],
   // 2026-09-25: order of the fmv writes, so a test can pin insert-BEFORE-delete.
   fmvOps: [] as string[],
+  fmvInserted: [] as any[][],
   fmvDelete: { data: null, error: null as null | { message: string } },
   // Multi-product gate (2026-09-28): the panini_products registry read, and every registry write.
   products: { data: [{ set_id: 2332, name: "2026 Panini NFT Prizm World Cup Soccer", walk_cards: true }] as unknown[] | null, error: null as null | { message: string } },
@@ -59,7 +60,7 @@ vi.mock("@/lib/supabase", () => ({
       let rec: (typeof st.updates)[number] | null = null
       const b: any = {
         upsert: (rows: any, opts: any) => { isUpsert = true; if (table === "panini_products" || table === "panini_pack_pages" || table === "panini_pack_state") st.registryUpserts.push({ table, rows, opts }); return b },
-        insert: () => { isInsert = true; if (table === "panini_fmv_snapshots") st.fmvOps.push("insert"); return b },
+        insert: (rows: any) => { isInsert = true; if (table === "panini_fmv_snapshots") { st.fmvOps.push("insert"); st.fmvInserted.push(rows) } return b },
         delete: () => { if (table === "panini_fmv_snapshots") { st.fmvOps.push("delete"); isDelete = true } return b },
         in: () => b, gte: () => b,
         lt: (c: string) => { if (isDelete && table === "panini_fmv_snapshots") st.fmvOps.push(`lt:${c}`); return isDelete ? Promise.resolve(st.fmvDelete) : b },
@@ -109,7 +110,7 @@ beforeEach(() => {
   st.saleUpdate = {}; st.saleUpdateDefault = { data: [{ id: "u1" }], error: null }
   st.updates = []; st.runs = []; st.captured = null; st.throwInWalk = false
   st.recent = { data: [], error: null }; st.recentCalls = []
-  st.fmvOps = []; st.fmvDelete = { data: null, error: null }
+  st.fmvOps = []; st.fmvInserted = []; st.fmvDelete = { data: null, error: null }
   st.products = { data: [{ set_id: 2332, name: "2026 Panini NFT Prizm World Cup Soccer", walk_cards: true }], error: null }
   st.registryUpserts = []; st.packRowsArgs = []
   st.salesHist = { data: { valid: 0, stored_new: 0, refreshed: 0, recent_reads: 0, gaps_now: 0 }, error: null }; st.salesHistCalls = []
@@ -314,6 +315,16 @@ describe("panini-ingest — the after() walk", () => {
     expect(st.runs[0].p_extra.fmv).toBe(1)
     expect(st.runs[0].p_extra.fmv_error).toBe("delete: del boom")
     expect(st.runs[0].p_ok).toBe(false)
+  })
+
+  // 2026-09-30: the same psku twice in one batch wrote two identical rows with the same computed_at,
+  // which the supersede-delete (computed_at < nowIso) can never remove.
+  it("writes ONE fmv row per edition when a card arrives twice in a batch (last copy wins)", async () => {
+    await accept({ cards: [{ sku: "c1", fmv: 5 }, { sku: "c2", fmv: 7 }, { sku: "c1", fmv: 6 }] }); await st.captured!()
+    const rows = st.fmvInserted.flat()
+    expect(rows.map((r) => r.edition_id).sort()).toEqual(["c1", "c2"])
+    expect(rows.find((r) => r.edition_id === "c1").fmv_usd).toBe(6)
+    expect(st.runs[0].p_extra.fmv_offered).toBe(2)
   })
 
   // FMV engine panini-1.1.0 (2026-09-24).

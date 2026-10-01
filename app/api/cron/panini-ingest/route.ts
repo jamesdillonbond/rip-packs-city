@@ -425,9 +425,14 @@ export async function POST(req: NextRequest) {
         else for (const r of rec ?? []) recentByEdition.set(String(r.edition_id), { fmv_usd: Number(r.fmv_usd), n_recent: Number(r.n_recent) });
       }
       const useV11 = FMV_ENGINE === "1.1" && !fmvRecentError;
-      const fmvRows = cardsIn
+      // ONE row per edition per batch (2026-09-30). A card can arrive twice in one walk batch (the
+      // multi-product walk serves the same psku from the held queue AND the grid); each copy became
+      // its own row with the same computed_at, which the supersede-delete (computed_at < nowIso)
+      // cannot remove — 2 such duplicate pairs in panini_fmv_snapshots 09-29/30. Last copy wins,
+      // matching the editions upsert's byKey above.
+      const fmvRows = [...new Map((cardsIn
         .map((c) => (useV11 ? toFmvRowV11(c, nowIso, recentByEdition.get(String(c?.sku ?? c?.psku ?? ""))) : toFmvRow(c, nowIso)))
-        .filter(Boolean) as any[];
+        .filter(Boolean) as any[]).map((r) => [String(r.edition_id), r])).values()];
       // INSERT FIRST, then delete the SAME-DAY rows this insert supersedes (computed_at < nowIso; the
       // new rows carry computed_at = nowIso exactly). Until 2026-09-25 this was delete-then-insert,
       // and a batch whose insert failed ("TypeError: fetch failed", 6:36 AM PT) had already deleted
