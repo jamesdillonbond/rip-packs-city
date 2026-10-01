@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react"
-import CollectionSetsClient from "@/app/(collections)/[collection]/sets/CollectionSetsClient"
+import CollectionSetsClient, { momentIdFromListingUrl } from "@/app/(collections)/[collection]/sets/CollectionSetsClient"
 
 // `[collection]/sets` converted to a `*Client.tsx` so the component gate measures it.
 //
@@ -412,5 +412,16 @@ describe("CollectionSetsClient — no wallet", () => {
     await waitFor(() => expect(f.mock.calls.some((c) => String(c[0]).includes("0xsaved"))).toBe(true))
     vi.doUnmock("@/lib/owner-key")
     vi.doUnmock("@/lib/profile/saved-wallet-for-collection")
+  })
+})
+
+// audit_20260930: a missing piece's buy link carries its moment's on-chain id; the click
+// reads it off the URL so the purchase that follows can be matched.
+describe("momentIdFromListingUrl", () => {
+  it("reads the id from a moment/listing URL and nothing else", () => {
+    expect(momentIdFromListingUrl("https://nbatopshot.com/listings/moment/16818")).toBe("16818")
+    expect(momentIdFromListingUrl("https://nflallday.com/moments/9597415?x=1")).toBe("9597415")
+    expect(momentIdFromListingUrl("https://nbatopshot.com/search?query=Lillard")).toBeNull()
+    expect(momentIdFromListingUrl("https://nbatopshot.com/listings/moment/abc")).toBeNull()
   })
 })

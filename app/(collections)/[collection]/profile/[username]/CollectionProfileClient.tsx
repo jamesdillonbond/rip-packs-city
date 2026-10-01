@@ -17,6 +17,7 @@ import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
 import { momentSubjectName } from "@/lib/entity-href"
 import { trackOutboundClick } from "@/lib/track-click";
+import { onChainMomentId } from "@/lib/sniper/helpers";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -69,13 +70,20 @@ interface SniperDealPreview {
   discount: number;
   buyUrl: string;
   source: string;
+  // For click attribution: the on-chain id (via onChainMomentId) and edition key.
+  flowId?: string | null;
+  editionKey?: string | null;
 }
 
 // ── Constants ─────────────────────────────────────────────────────
-// The collection /api/sniper-feed answers when no `collection` param is sent
-// (its feedParamsSchema default). The profile's "Live Sniper Deals" fetch
-// sends none, so its rows belong to this collection whatever page they render on.
-const PROFILE_SNIPER_FEED_COLLECTION = "nba-top-shot";
+// The sniper feed collection for a profile page: the SAME value the collection's
+// own /sniper tab sends (SniperClient `feedCollection`). ⛔ Until 2026-09-30 the
+// profile's "Live Sniper Deals" fetch sent NO collection, /api/sniper-feed
+// defaulted it to Top Shot, and every collection's profile showed Top Shot deals
+// under its own heading — a substituted subject (CLAUDE.md "SUBSTITUTION").
+export function profileSniperFeedCollection(collection: string): string {
+  return collection === "pinnacle" ? "disney-pinnacle" : collection;
+}
 const monoFont = "var(--font-mono)";
 const condensedFont = "var(--font-display)";
 
@@ -626,7 +634,7 @@ export default function CollectionProfileClient({
   useEffect(function() {
     setSniperLoading(true);
     setFailed(function(f) { return { ...f, sniper: false }; });
-    fetch("/api/sniper-feed?limit=3")
+    fetch("/api/sniper-feed?limit=3&collection=" + encodeURIComponent(profileSniperFeedCollection(collection)))
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
         // "No live deals available right now." is a claim about the MARKET.
@@ -636,7 +644,7 @@ export default function CollectionProfileClient({
       })
       .catch(function() { setFailed(function(f) { return { ...f, sniper: true }; }); })
       .finally(function() { setSniperLoading(false); });
-  }, []);
+  }, [collection]);
 
   // Avatar change handler
   const handleAvatarChange = useCallback(function(url: string) {
@@ -899,13 +907,11 @@ export default function CollectionProfileClient({
                   onClick={function() {
                     trackOutboundClick({
                       surface: "profile_sniper",
-                      // NOT this page's `collection`: the fetch above sends no
-                      // collection param, and /api/sniper-feed's schema defaults
-                      // it to "nba-top-shot" (feedParamsSchema, z.string().default)
-                      // — so these rows ARE Top Shot deals on every collection's
-                      // profile page. Tagging them with the page's collection would
-                      // mis-attribute the click.
-                      collection: PROFILE_SNIPER_FEED_COLLECTION,
+                      // The feed is now fetched FOR this collection, so the rows
+                      // are this collection's deals and the click carries it.
+                      collection: profileSniperFeedCollection(collection),
+                      editionKey: deal.editionKey ?? null,
+                      momentId: onChainMomentId({ flowId: deal.flowId ?? "", editionKey: deal.editionKey ?? "" }),
                       linkKind: "listing",
                       destination: deal.source ? deal.source + "_listing" : "native_listing",
                       playerName: deal.playerName,

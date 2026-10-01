@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react"
 import DashboardAlertsClient from "@/app/dashboard/alerts/DashboardAlertsClient"
-import CollectionProfileClient from "@/app/(collections)/[collection]/profile/[username]/CollectionProfileClient"
+import CollectionProfileClient, { profileSniperFeedCollection } from "@/app/(collections)/[collection]/profile/[username]/CollectionProfileClient"
 
 // Two more client pages converted for coverage. Both were already hardened — recorded so
 // nobody re-sweeps them — and both carry a claim about the READER'S OWN ACCOUNT, which is
@@ -1091,5 +1091,26 @@ describe("CollectionProfileClient", () => {
     })
     await waitFor(() => expect(document.body.textContent).toMatch(/Stephen Curry/))
     expect(document.body.textContent).toMatch(/-75%/)
+  })
+
+  // ⛔ 2026-09-30: the sniper fetch sent NO collection, /api/sniper-feed defaulted it to
+  // Top Shot, and every collection's profile rendered Top Shot deals under "LIVE SNIPER
+  // DEALS" — a substituted subject. The fetch must name THIS page's collection, the same
+  // value its own /sniper tab sends.
+  it("asks the sniper feed for THIS page's collection, never the Top Shot default", async () => {
+    const f = vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.includes("sniper")) return json(200, { deals: [] })
+      if (url.includes("/api/public/profile/")) return json(200, { username: "trevor", trophies: [], bio: null, wallets: [], wallet_count: 0 })
+      return json(200, {})
+    })
+    vi.stubGlobal("fetch", f)
+    render(<CollectionProfileClient collection="nfl-all-day" username="trevor" />)
+    await waitFor(() => expect(f.mock.calls.some((c) => String(c[0]).includes("sniper-feed"))).toBe(true))
+    const sniperCalls = f.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("sniper-feed"))
+    expect(sniperCalls.every((u) => u.includes("collection=nfl-all-day"))).toBe(true)
+    expect(sniperCalls.some((u) => !u.includes("collection="))).toBe(false)
+    expect(profileSniperFeedCollection("pinnacle")).toBe("disney-pinnacle")
+    expect(profileSniperFeedCollection("laliga-golazos")).toBe("laliga-golazos")
   })
 })

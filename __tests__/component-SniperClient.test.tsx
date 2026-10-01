@@ -1742,6 +1742,41 @@ describe("SniperClient — suggestions before the market has loaded", () => {
   })
 })
 
+// audit_20260930: the relative-deals cache still carries flowty.io URLs (Flowty shut
+// 2026-05). The table must apply the same dead-link filter as every other listing link
+// and fall back to the native moment page via the row's on-chain id — never link Flowty.
+describe("SniperClient — relative deals never link a dead Flowty listing", () => {
+  function mountWith(row: Record<string, unknown>) {
+    routeCollection = "laliga-golazos"
+    warm = { data: feed({ deals: [], tsCount: 0 }), loading: false, error: null, refresh: vi.fn() }
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const u = String(input)
+      if (u.startsWith("/api/relative-deals")) {
+        return { ok: true, status: 200, json: async () => ({ deals: [{
+          player_name: "Joaquín", set_name: "Aficionados", tier: "FANDOM", serial_number: 10645,
+          ask_price: 0.4, tier_median: 1, discount_pct: 60, fmv_usd: 0.21, confidence: "LOW", ...row,
+        }] }) }
+      }
+      if (u.startsWith("/api/tier-pricing-benchmarks")) return { ok: true, status: 200, json: async () => ({ benchmarks: {} }) }
+      return { ok: true, status: 200, json: async () => ({ ids: [] }) }
+    })
+    render(<SniperClient />)
+  }
+
+  it("a Flowty URL with an on-chain id links the native moment page instead", async () => {
+    mountWith({ buy_url: "https://www.flowty.io/asset/0x87ca/Golazos/NFT/1169727139", nft_id: "1169727139", edition_key: "e1" })
+    const link = (await screen.findByText(/View →/)).closest("a")!
+    expect(link.getAttribute("href")).not.toMatch(/flowty/)
+    expect(link.getAttribute("href")).toMatch(/1169727139/)
+  })
+
+  it("a Flowty URL with no on-chain id renders no link at all", async () => {
+    mountWith({ buy_url: "https://www.flowty.io/asset/0x87ca/Golazos/NFT/1", nft_id: null })
+    expect(await screen.findByText(/Joaquín/)).toBeTruthy()
+    expect(screen.queryByText(/View →/)).toBeNull()
+  })
+})
+
 describe("SniperClient — relative deals with missing fields", () => {
   it("renders em-dashes rather than fabricating names or prices", async () => {
     routeCollection = "ufc"

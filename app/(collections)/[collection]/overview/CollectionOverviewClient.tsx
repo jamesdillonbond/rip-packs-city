@@ -37,6 +37,9 @@ interface SniperDeal {
   thumbnail_url?: string | null
   badge_slugs?: string[] | null
   serial_number?: number | null
+  // get_collection_stats names it flow_id, but it is the EDITION key (editions.external_id;
+  // Pinnacle: the render id) — sent as editionKey for click attribution.
+  flow_id?: string | null
 }
 
 interface CollectionStats {
@@ -483,14 +486,15 @@ export default function CollectionOverviewClient({ collection }: { collection: s
                     href={deal.buy_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    // get_collection_stats' sniper_deals carry no moment id / edition
-                    // key (read 2026-09-30) — the click carries the collection and
-                    // buy_url, which is all this row has to match on.
+                    // get_collection_stats' sniper_deals carry the EDITION key in a
+                    // field named flow_id (no moment id), so the click is matched at
+                    // edition grain.
                     onClick={() => trackOutboundClick({
                       surface: "collection_overview",
                       collection,
                       linkKind: "listing",
                       destination: "native_listing",
+                      editionKey: deal.flow_id ?? null,
                       playerName: deal.player_name ?? deal.character_name ?? null,
                       setName: deal.set_name ?? null,
                       tier: deal.tier ?? null,

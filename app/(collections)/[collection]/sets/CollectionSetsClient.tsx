@@ -683,12 +683,21 @@ export default function CollectionSetsClient({ collection }: { collection: strin
 // ── Subcomponents ────────────────────────────────────────────────────────────
 
 // Outbound click on a set piece → outbound_clicks. The set-progress APIs carry
-// no moment id for a piece (playId + a marketplace search/listing URL only), so
-// the click records the collection, the URL opened and the descriptive fields.
+// no moment id FIELD for a piece (playId + a marketplace URL), but a MISSING piece
+// with a live listing links to that listing's moment (Top Shot:
+// /listings/moment/<nft id>), so the moment id is read off the URL for attribution.
+// An OWNED piece's link is the collector's own moment — not a purchase — so it
+// sends none.
 // askPrice is the MISSING piece's lowest ask (null for an owned piece).
 // ⚠ `topshotUrl` is NOT always external: Candy (editionHref) and Pinnacle
 // (pinnacleRenderHref) set it to an internal RPC route, and sets-db sends "".
 // Only an absolute http(s) URL is an outbound click.
+/** The on-chain moment id in a marketplace moment/listing URL, or null. */
+export function momentIdFromListingUrl(href: string): string | null {
+  const m = /\/(?:listings\/moment|moments?)\/(\d+)(?:[/?#]|$)/.exec(href);
+  return m ? m[1] : null;
+}
+
 function trackSetPieceClick(
   collection: string,
   href: string,
@@ -701,6 +710,7 @@ function trackSetPieceClick(
   trackOutboundClick({
     surface,
     collection,
+    momentId: askPrice != null ? momentIdFromListingUrl(href) : null,
     // ufc/allday set-progress send a marketplace SEARCH url; the others a
     // moment / edition listing page.
     linkKind: /\/search\?/.test(href) ? "search" : "listing",

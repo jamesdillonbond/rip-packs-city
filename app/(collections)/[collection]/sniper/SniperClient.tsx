@@ -5,7 +5,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
-import { getCollection, COLLECTION_UUID_BY_SLUG, collectionHasLocking } from "@/lib/collections";
+import { getCollection, COLLECTION_UUID_BY_SLUG, collectionHasLocking, marketplaceMomentUrl } from "@/lib/collections";
+import { resolveListingUrl } from "@/lib/market-format";
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav";
 import PackSniperClient from "@/app/insights/pack-sniper/PackSniperClient";
 import { getOwnerKey } from "@/lib/owner-key";
@@ -312,6 +313,9 @@ function SniperMomentsBody() {
     confidence: string | null
     serial_number: number | null
     buy_url: string | null
+    // audit_20260930: get_relative_deals now returns the ids a click needs.
+    edition_key?: string | null
+    nft_id?: string | null
   }
   interface TierBenchmark {
     count: number
@@ -1114,14 +1118,18 @@ function SniperMomentsBody() {
                             <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--rpc-text-muted)" }}>${med.toFixed(2)}</td>
                             <td style={{ padding: "6px 8px", textAlign: "right", color: "#00e882" }}>{disc}%</td>
                             <td style={{ padding: "6px 8px" }}>
-                              {d.buy_url ? (
-                                // get_relative_deals returns no moment id / edition key
-                                // (only player/set/serial/ask/buy_url — read 2026-09-30),
-                                // so this click carries the collection + buy_url and the
-                                // descriptive fields; the attribution job can only use it
-                                // if a moment id is ever added to that RPC.
+                              {(() => {
+                                // The SAME dead-link filter every other listing link uses
+                                // (Flowty shut 2026-05; this cache still carries flowty.io
+                                // URLs), falling back to the native moment page when the
+                                // row has its on-chain id. No live link → no button.
+                                const href = resolveListingUrl(
+                                  { buyUrl: d.buy_url, flowId: d.nft_id ?? null },
+                                  (id) => marketplaceMomentUrl(collectionSlug, id),
+                                );
+                                return href ? (
                                 <a
-                                  href={d.buy_url}
+                                  href={href}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   onClick={() => trackOutboundClick({
@@ -1129,17 +1137,20 @@ function SniperMomentsBody() {
                                     collection: collectionSlug,
                                     linkKind: "listing",
                                     destination: "native_listing",
+                                    editionKey: d.edition_key ?? null,
+                                    momentId: d.nft_id ?? null,
                                     playerName: d.player_name,
                                     setName: d.set_name,
                                     tier: d.tier,
                                     serial: d.serial_number,
                                     askPrice: Number.isFinite(ask) && ask > 0 ? ask : null,
-                                    buyUrl: d.buy_url,
+                                    buyUrl: href,
                                   })}
                                   className="rpc-chip" style={{ borderColor: `${accent}66`, color: accent, padding: "2px 8px", fontSize: "var(--text-xs)" }}>
                                   View →
                                 </a>
-                              ) : null}
+                                ) : null;
+                              })()}
                             </td>
                           </tr>
                         );
