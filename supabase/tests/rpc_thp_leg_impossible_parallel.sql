@@ -20,7 +20,9 @@
 -- count over the CURRENT MONTH only. Four 600 s kills at four slots proved the whole-history read
 -- does not fit this instance's IO; the closed years are immutable except by deliberate
 -- re-keys, which the rotation picks up within days. A missing closed month makes
--- the leg publish 999 — unmeasured, never a partial sum as the whole.
+-- the leg publish 999 — unmeasured, never a partial sum as the whole. Since 20261002142107 the
+-- ONE exception is the just-closed month (no row until the 19:22Z rotation on the 1st): it is
+-- counted live, so a month boundary no longer reads 999 for three ticks.
 --
 -- The function DDL below is VERBATIM from its committed migration.
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
@@ -79,6 +81,7 @@ INSERT INTO public.sales (edition_id, serial_number, sold_at) VALUES
   ('11111111-1111-1111-1111-111111111111', 100, date_trunc('month', now()) + interval '3 days'),  -- exactly at circulation: LEGAL
   ('11111111-1111-1111-1111-111111111111',  50, date_trunc('month', now()) + interval '4 days'),  -- legal
   ('11111111-1111-1111-1111-111111111111', 300, '2023-06-01'),                                       -- impossible, CLOSED MONTH -> baseline only
+  ('11111111-1111-1111-1111-111111111111', 120, date_trunc('month', now()) - interval '10 days'),  -- impossible, JUST-CLOSED month -> baseline, or live until its row lands
   ('22222222-2222-2222-2222-222222222222', 999, date_trunc('month', now()) + interval '5 hours'),   -- base-keyed  -> excluded
   ('33333333-3333-3333-3333-333333333333',   1, date_trunc('month', now()) + interval '5 hours'),   -- circ 0      -> excluded
   ('44444444-4444-4444-4444-444444444444', 999, date_trunc('month', now()) + interval '5 hours');   -- AllDay      -> excluded
@@ -166,19 +169,26 @@ CREATE OR REPLACE FUNCTION public.rpc_thp_leg_impossible_parallel()
  RETURNS void LANGUAGE plpgsql SECURITY DEFINER
  SET search_path TO 'public','pg_temp' SET statement_timeout TO '480s'
 AS $fn$
-DECLARE t1 timestamptz := clock_timestamp(); v numeric; v_base numeric; v_months int; v_want int;
+DECLARE t1 timestamptz := clock_timestamp(); v numeric; v_base numeric; v_months int; v_want int; v_cut date;
 BEGIN
   BEGIN
     -- Every closed month (2020-01 .. last month) must have a baseline row, or the arm is
-    -- unmeasured (999) — never a partial sum published as the whole.
-    v_want := (extract(year FROM now())::int - 2020) * 12 + extract(month FROM now())::int - 1;
+    -- unmeasured (999) — never a partial sum published as the whole. ONE exception: the
+    -- just-closed month, whose row the daily rotation only inserts at 19:22Z on the 1st, is
+    -- counted live until then (v_cut moves back a month), so a month boundary is not a 999.
+    v_cut := date_trunc('month', now())::date;
+    IF NOT EXISTS (SELECT 1 FROM public.rpc_impossible_parallel_baseline
+                   WHERE period_start = (v_cut - interval '1 month')::date) THEN
+      v_cut := (v_cut - interval '1 month')::date;
+    END IF;
+    v_want := (extract(year FROM v_cut)::int - 2020) * 12 + extract(month FROM v_cut)::int - 1;
     SELECT count(*), coalesce(sum(b.value), 0) INTO v_months, v_base
     FROM public.rpc_impossible_parallel_baseline b
-    WHERE b.period_start >= '2020-01-01' AND b.period_start < date_trunc('month', now())::date;
+    WHERE b.period_start >= '2020-01-01' AND b.period_start < v_cut;
     IF v_months <> v_want THEN
       RAISE EXCEPTION 'impossible-parallel baseline incomplete: % of % closed months', v_months, v_want;
     END IF;
-    v := v_base + public.rpc_impossible_parallel_count(date_trunc('month', now()), '2100-01-01'::timestamptz);
+    v := v_base + public.rpc_impossible_parallel_count(v_cut::timestamptz, '2100-01-01'::timestamptz);
     INSERT INTO public.rpc_trust_health_precompute (metric, value, computed_at, duration_ms)
     VALUES ('topshot_impossible_parallel_serials', v, now(),
             round(EXTRACT(epoch FROM clock_timestamp() - t1) * 1000))
@@ -225,11 +235,28 @@ SELECT _assert_eq((public.rpc_impossible_parallel_refresh_stalest_baseline(60)->
   'a second run refreshes every month again — each is older than that run''s start, and the '
   'budget fits them all here; a run never re-refreshes a month it wrote itself (the 9,074 bug)');
 
--- With the baseline complete: value = baseline + live = 1 + 2.
+-- With the baseline complete: value = baseline + live = (2023-06 + last month) + this month = 2 + 2.
 SELECT public.rpc_thp_leg_impossible_parallel();
 SELECT _assert_eq((SELECT value::text FROM public.rpc_trust_health_precompute
-                    WHERE metric='topshot_impossible_parallel_serials'), '3',
-  'baseline (closed months) + live (this month): 1 + 2');
+                    WHERE metric='topshot_impossible_parallel_serials'), '4',
+  'baseline (closed months) + live (this month): 2 + 2');
+
+-- ── MONTH BOUNDARY (2026-10-01 filing): the just-closed month has no row until the 19:22Z
+-- rotation on the 1st. The leg counts it live instead of publishing 999 for three ticks.
+SAVEPOINT boundary;
+DELETE FROM public.rpc_impossible_parallel_baseline
+ WHERE period_start = (date_trunc('month', now()) - interval '1 month')::date;
+SELECT public.rpc_thp_leg_impossible_parallel();
+SELECT _assert_eq((SELECT value::text FROM public.rpc_trust_health_precompute
+                    WHERE metric='topshot_impossible_parallel_serials'), '4',
+  'a missing JUST-CLOSED month is counted live (its impossible sale still counts), not a 999');
+-- …but an OLDER gap is still unmeasured: the fallback reaches back exactly one month.
+DELETE FROM public.rpc_impossible_parallel_baseline WHERE period_start = '2023-06-01';
+SELECT public.rpc_thp_leg_impossible_parallel();
+SELECT _assert_eq((SELECT value::text FROM public.rpc_trust_health_precompute
+                    WHERE metric='topshot_impossible_parallel_serials'), '999',
+  'a missing OLDER closed month still publishes 999 — never a partial sum as the whole');
+ROLLBACK TO SAVEPOINT boundary;
 
 -- The boundary is `>`, not `>=`: serial N of an edition of N is the LAST MINT, the
 -- most collectible serial there is. Counting it would flag every last mint on the
