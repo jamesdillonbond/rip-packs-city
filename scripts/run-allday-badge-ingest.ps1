@@ -4,12 +4,12 @@
 #
 # WHY THIS EXISTS: the Dapper Atlas API (atlas.v1.EditionService/SearchEditions,
 # the source of real per-moment NFL badges) WAF-blocks DATACENTER IPs regardless
-# of client — Vercel (undici) AND GitHub-Actions runners (curl) both get the
+# of client - Vercel (undici) AND GitHub-Actions runners (curl) both get the
 # block page. Only a residential IP passes. So the ingest runs here, on a home
 # machine, on a schedule (Windows Task Scheduler, ~daily).
 #
 # It loads the bearer token from .env.local (prefers INGEST_SECRET_TOKEN, falls
-# back to CRON_SECRET — the route accepts either), then runs the Node runner,
+# back to CRON_SECRET - the route accepts either), then runs the Node runner,
 # which curls Atlas for every NFL edition's badges and POSTs the rows to
 # /api/cron/allday-badge-ingest (all DB I/O stays on Vercel).
 #

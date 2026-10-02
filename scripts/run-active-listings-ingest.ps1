@@ -3,13 +3,13 @@
 # Home-machine runner for the underpriced-#1s deal-board ingest.
 #
 # WHY THIS EXISTS: the Dapper Atlas API (the per-serial TS ask feed) WAF-blocks
-# DATACENTER IPs regardless of client — Vercel (undici) AND the GitHub-Actions
+# DATACENTER IPs regardless of client - Vercel (undici) AND the GitHub-Actions
 # runner (curl) both get the block page (verified 2026-06-17). Only a
 # residential IP passes. So the ingest runs here, on a home machine, on a
 # schedule (Windows Task Scheduler, ~every 3h). The GH workflow is disabled.
 #
 # It loads the bearer token from .env.local (prefers INGEST_SECRET_TOKEN, falls
-# back to CRON_SECRET — the route accepts either), then runs the Node runner,
+# back to CRON_SECRET - the route accepts either), then runs the Node runner,
 # which fetches Atlas (browser page since 2026-09-19; curl before) for each candidate's #1/perfect serial and POSTs the rows to
 # /api/cron/topshot-active-listings-ingest (all DB I/O stays on Vercel).
 #
@@ -50,7 +50,7 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 
-# ── token from .env.local (INGEST_SECRET_TOKEN preferred, CRON_SECRET fallback) ──
+# -- token from .env.local (INGEST_SECRET_TOKEN preferred, CRON_SECRET fallback) --
 $envFile = Join-Path $RepoRoot ".env.local"
 if (-not (Test-Path $envFile)) { Write-Error "missing $envFile"; exit 1 }
 $ingest = ""; $cron = ""
@@ -79,7 +79,7 @@ if (-not $BrowserChannel -and $AtlasFetchMode -eq "browser") {
 $env:ATLAS_BROWSER_CHANNEL  = $BrowserChannel
 $env:ATLAS_BROWSER_HEADLESS = if ($Headful) { "0" } else { "1" }
 
-# ── run + log (single rolling log under LOCALAPPDATA) ────────────────────────
+# -- run + log (single rolling log under LOCALAPPDATA) ------------------------
 $stamp  = Get-Date -Format "yyyy-MM-ddTHH-mm-ssK"
 $logDir = Join-Path $env:LOCALAPPDATA "rpc-deal-board-ingest"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
