@@ -1,62 +1,66 @@
 {
-  "generated_at_pt": "2026-09-30 ~1:10 AM PT",
-  "generated_at_utc": "2026-09-30T08:10Z",
-  "pass": "overnight autonomous pass (Cowork cloud). NO-PUSH MODE (no pushurl token on mount, cloud proxy declines repo, VM disk 99%, computer-use ungranted). Genuine overnight (DB now() 08:08Z vs app-stamped rows, no clock skew). 0 shipped, 0 reverted, 0 new queued — honest quiet night. Continuity docs -> mount + claude.ai Project (uncommitted, push unavailable).",
-  "shipped": 0,
+  "generated_at_pt": "2026-10-02 ~8:25 AM PT",
+  "generated_at_utc": "2026-10-02T15:25Z",
+  "pass": "daytime autonomous pass (Claude Code, cloud, push GREEN via dry-run). Trevor: 'run a health check then … find things to work on autonomously for the next 4 hours'. 4 migrations shipped and committed; 0 reverted. Concurrent sessions active (Cowork monitor pass 7:42 AM PT; Panini wake scripts + CI guards).",
+  "shipped": 4,
   "reverted": 0,
-  "verdict": "GREEN. Security all []; trust_health 38/38 ok, 0 breaches; stalled_pipelines []; sentinel_ts_uuid_editions_48h 0; structural-drift arms all []. edition_integrity_flags back to 7 (Panini Common-tier fix verified: 0/7479 tier-nulls). Vercel 24h: 21 groups all benign/chronic/transient, no new cluster; last prod deploy cc79e2132 READY.",
+  "verdict": "GREEN. Security invariants 0, anon write surface 0, secdef/search_path/R118 drift all []; trust 37/38 ok (public_board_slow_count 1 = panini_sale_feed_status ~6 s, Cowork-filed); pg_cron 24 h 1 fail / ~17k (fixed); get_pipeline_alerts no high/critical at 8:10 AM PT after the two alarm fixes; Vercel 24 h chronic pack-detail cold scans + two whale-wallet 8 s bursts; E2E DOM Smoke green. Panini residential lanes asleep since 7:49 PM PT 10-01 (wake scripts shipped by the concurrent session).",
   "health": {
-    "security_invariants": "clean (invariants, anon_write_holes, rls_off_base_tables, secdef_anon_violations all [])",
-    "trust_health_breaches": 0,
-    "stalled_pipelines": "[]",
-    "sentinel_ts_uuid_editions_48h": 0,
-    "structural_drift_arms": "all [] (cross_collection_mat_staleness, function_search_path_drift, procedure pins, backward_cursor_rewinds, suppression_parked_claim_drift, wmc_null_edition_key)",
-    "pgcron_fails_24h": "atlas-editions-refresh 57, pinnacle-pack-openers 48, atlas-market-feed 46, chain-arrivals 15, sync-nba-projections 8 (#8 shelved) - all upstream 0, known/transient",
-    "pipeline_alerts": [
-      "pg_net_http_403 critical (1 call, Cloudflare challenge, known unattributable arm)",
-      "pg_net_http_429 high (~1379/2h, Flow REST envoy limiter - attributed, QUEUED lane-hygiene fix)",
-      "atlas-editions-upstream-403 info (Cloudflare challenge, self-healing)",
-      "atlas-market-upstream-403 info (self-healing, last drain 08:09Z fresh vs newest event 08:08Z)",
-      "unmapped-sales-nfl_all_day info (22866 actionable, non-stationary drain, ~5.1d)",
-      "flow-rest-moment-moved-400 info (designed borrowMoment panic)"
+    "security_invariants": "clean (check_public_security_invariants 0 rows, check_anon_write_surface 0 rows, check_secdef_anon_exec_drift [], check_function_search_path_drift [])",
+    "r118_when_others_blind": "[] after 20261002145919 (was 3 at 7:21 AM PT: the three chain lanes' v_body := NULL parse guards)",
+    "trust_health_breaches": 1,
+    "trust_health_breach_detail": "public_board_slow_count = 1 (panini_sale_feed_status ~6 s; Cowork monitor handoff 2026-10-02 07:45 PT)",
+    "stalled_pipelines": "panini-ingest-enum info (residential box asleep since 7:49 PM PT 10-01)",
+    "pgcron_fails_24h": "1 of ~17,000: rpc-wallet-reconstructed-rips statement_timeout at 120 s (3:37 AM PT) — fixed 20261002144052; catch-up run 8:14 AM PT ok 33 wallets / 22,118 rows / 118.7 s",
+    "pipeline_alerts_after_fixes": [
+      "atlas-editions-upstream-403 info (Cloudflare base rate, 0 sets stalled)",
+      "atlas-market-upstream-403 info (last drain fresh)",
+      "flow-rest-moment-moved-400 info (designed borrowMoment panic)",
+      "unmapped-sales-nfl_all_day info (28,069 actionable, ~5.4 d to clear)",
+      "panini-ingest-enum cron_silent info (box asleep)",
+      "RESOLVED this pass: cursor_stalled high topshot_offer_fill_backfill (bounded suppression, live indexer carries the data); pg_net_http_403 critical (username lane now attributed as atlas-usernames-upstream-403 info)"
     ],
     "sentry_new_24h": "n/a (Sentry dark, decided no spend)",
-    "vercel": "24h: 21 groups all benign/chronic/transient (DEP0169 warning 511, pack-detail cold-scan timeouts count 1 each since 08-23, IPFS net-lost 5, /api/sets username-unavailable 2 @01:09Z upstream CF530 outage, scratch-table RLS-off smoke 09-29 15:xxZ self-resolved); no ERROR deploy; last READY cc79e2132; public_board_empty 0, public_board_slow 0",
-    "db_size_mb": 27929
+    "vercel": "24 h: DEP0169 warning (chronic), pack-detail drop_pool/lifecycle/table_rows/realized_ev 5 s timeouts (1-2 each, chronic since 08-23), collection-snapshot + wallet-intel 8 s timeouts 2 bursts (00:50, 02:08 AM PT) with 3x /api/edition-floor 503 in the same second (one whale wallet), popular-on-collection nfl-all-day 8 s once; last prod deploy fd9c7b6d2 READY (later commits docs/scripts)",
+    "db_size_mb": 33810
   },
   "fmv_high_med": {
-    "nba_top_shot": 8230,
-    "nfl_all_day": 1615,
-    "disney_pinnacle": 844,
-    "panini_blockchain": 2420,
-    "candy_mlb": 31,
-    "laliga_golazos": 2,
+    "nba_top_shot": 8222,
+    "nfl_all_day": 1635,
+    "disney_pinnacle": "not in edition_fmv_current (pinnacle_fmv_high_med_share_pct trust arm covers it)",
+    "panini_blockchain": 3243,
+    "candy_mlb": 27,
+    "laliga_golazos": 6,
     "ufc_strike": 0
   },
+  "fmv_high_med_definition": "count(*) FROM edition_fmv_current WHERE confidence IN ('HIGH','MEDIUM') GROUP BY collection (stated 2026-10-02 so the figure is reproducible; the 09-30 pass did not record its query, so the delta below may compare two definitions)",
   "editions_by_collection": {
-    "nba_top_shot": 14469,
+    "nba_top_shot": 14478,
     "nfl_all_day": 6190,
-    "panini_blockchain": 7479,
+    "panini_blockchain": 11438,
     "laliga_golazos": 575,
     "ufc_strike": 518,
     "candy_mlb": 125
   },
   "sentinels": {
-    "sentinel_ts_uuid_editions_48h": 0,
-    "unmapped_resolution_backlog_max": 0,
-    "edition_integrity_flags": 7
+    "edition_integrity_flags": 6,
+    "r118_blind_handlers": 0,
+    "zero_yield_lanes": 0
   },
-  "deltas_vs_prev": "vs 09-28 08:20Z (09-29 update never persisted - push failed). FMV HIGH+MED: nba 8148->8230 (+82), nfl 1553->1615 (+62), pinnacle 825->844 (+19), panini 1846->2420 (+574, multi-product walk wave), candy 24->31 (+7), golazos 3->2 (-1 noise), ufc 0. Editions panini 5111->7479 (+2368), nba 14460->14469 (+9). db 22082->27929 MB (+5.8GB over 2d, panini walk + concurrent new tables; within normal).",
+  "deltas_vs_prev": "vs 09-30 ~1:10 AM PT: FMV HIGH+MED nba 8230->8222, nfl 1615->1635, panini 2420->3243 (+823, multi-product walk), candy 31->27, golazos 2->6 (definition caveat above). Editions panini 7479->11438 (+3,959), nba 14469->14478. edition_integrity_flags 7->6. db 27,929->33,810 MB (+5.9 GB: Panini walk + chain-arrival probes).",
   "open_watches": [
-    "429 lane stagger SHIPPED 09-30 ~7:40 AM PT (lanes :00/:15/:30/:45; 429s ~925/h -> ~496/h) - confirm the lower 429 rate holds. Request-id retention dropped by design: a 429's second-of-minute names its lane. ⚠ 2026-09-30 8:30 PM PT (Cowork): the ~496/h reading is SUPERSEDED, not regressed — chain-arrival went to 5 slots/min at ~3:10 PM PT (:08/:23/:38/:53), raising Flow REST volume to ~13–18k req/h; 429s now ~1.3–1.7k/h (~10 %), spread evenly across every burst slot incl. the new ones (so that change's 60/60 probe did not hold at production rate). Designed: the lanes count them as `throttled` and requeue — chain-arrivals 900 runs / 0 failed in 3 h.",
-    "atlas-editions upstream 403 self-heal - re-check sets-behind stays near 0.",
-    "Panini FMV panini-1.2.0 (LOW from last sales) shipped 09-30 ~8:25 PM PT — confirm the next walk logs fmv_engine panini-1.2.0, fmv_last_hits > 0, ok; measure live at 10-07 with panini_published_fmv_backtest (1.2.0 LOW vs the 1.1.0 LOW row, ratio ~2.5 on n=19).",
-    "Panini freshness check Escalation 5 (old catalogue >7 d without a re-price) is expected to FIRE ~10-03 PT if the new-product bootstrap keeps the walk off old editions (09-30 7 PM: max age 141.9 h, 0 old re-priced in 24 h) — a real signal, not a check defect."
+    "10-03 3:37 AM PT rpc-wallet-reconstructed-rips: a pipeline_runs row must exist (ok, or ok=false naming stopped_at) — first run under the 600 s COMMAND budget; input grows ~7k pack_pull rows/day for the 33 saved wallets",
+    "next member-username Atlas 403 (~5/day): get_pipeline_alerts shows atlas-usernames-upstream-403 info and NO pg_net_http_403 row (attribution proven only on the next challenge)",
+    "check_when_others_timeout_blind() stays [] as the chain lanes keep being redefined",
+    "topshot_offer_fill_backfill suppression predicate (in the row): topshot_offers cursor < 30 min, offer_fill sales ingested in 24 h >= 1, backfill ok runs in 48 h >= 1 — any FALSE means a real stall",
+    "Carried from 09-30: Panini 1.2.0 LOW accuracy + pack EV at the 10-07 review; Escalation 5 expected ~10-03; 429 rate on the 5-slot chain lanes (~10%, requeued)"
   ],
   "needs_trevor": [
-    "rotate ATLAS_POOL_INGEST_KEY (#144) — run `npx supabase login` once on the laptop, then double-click Rip Packs City/cowork-2026-09-30/rotate-atlas-pool-ingest-key.cmd (first run 09-30 8:28 PM failed safely: CLI not logged in, nothing changed)",
-    "#22 — GitHub Support ticket FILED 09-30 ~8:45 PM PT (dereference 15 pre-purge PRs + GC); watch tdillonbond@gmail.com for the reply, then re-test commit/1c3e01a8f (expect 404); rotate the Dapper session",
-    "laptop VM /sessions reset 09-30 8:19 PM PT (99% -> 1%) — delete sessiondata.vhdx.bak-20260930-2019 (~10 GB, and any older .bak) under %LOCALAPPDATA%\\Packages\\Claude_*\\LocalCache\\Roaming\\Claude\\vm_bundles\\claudevm.bundle. Unattended nightly passes still cannot push (no repo attachment on the trigger)."
+    "DROP FUNCTION public.zz_r118_probe_blind(); — inert no-op cruft from this pass (the Supabase MCP holds any DROP for a human confirmation; unattended it times out)",
+    "move .github/workflows/offer-fill-backfill.yml to cron-job.org (console), then remove the topshot_offer_fill_backfill suppression row",
+    "rotate ATLAS_POOL_INGEST_KEY (#144) — npx supabase login once, then Rip Packs City/cowork-2026-09-30/rotate-atlas-pool-ingest-key.cmd",
+    "#22 — watch tdillonbond@gmail.com for GitHub Support's reply, then re-test commit/1c3e01a8f (expect 404); rotate the Dapper session",
+    "from the Cowork monitor pass: pack-mint-probes 20 s timeouts (~45% since 10-01 1:13 PM PT) and panini_sale_feed_status ~6 s (public_board_slow_count)"
   ],
-  "housekeeping": "inbox left append-only (CI-gated). 3 new candidates all pre-resolved by concurrent Claude Code. Concurrent session shipped panini map + username lanes + trophy marks + telemetry overnight; reviewed, no regression."
+  "housekeeping": "inbox left append-only; no new filings (all four findings went straight to migrations + ledger). tooling-gotchas.md gained the MCP destructive-confirmation hold. docs/sessions/2026-10.md started."
 }
