@@ -175,7 +175,7 @@ for (const [tx, rows] of byTx) {
     pending.push({ tbl: r.tbl, row_id: r.id, buyer })
   }
   if (pending.length >= 500) await flush()
-  if (stats.txs % 500 === 0) console.log(`progress ${stats.txs}/${byTx.size} resolved=${stats.rows_resolved} written=${stats.written}`)
+  if (stats.txs % 500 === 0) console.log(`progress ${stats.txs}/${byTx.size} resolved=${stats.rows_resolved} written=${stats.written} no_deposit=${stats.no_deposit} custodial=${stats.custodial} tx_errors=${JSON.stringify(stats.tx_errors)}`)
 }
 await flush()
 
