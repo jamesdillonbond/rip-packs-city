@@ -1,8 +1,8 @@
 {
-  "generated_at_pt": "2026-10-02 ~9:25 AM PT (last update; pass began 7:15 AM PT)",
+  "generated_at_pt": "2026-10-02 ~8:45 AM PT (last update; pass began 7:15 AM PT; earlier stamps 8:45–9:45 were an hour fast and were corrected against migration versions)",
   "generated_at_utc": "2026-10-02T15:25Z",
   "pass": "daytime autonomous pass (Claude Code, cloud, push GREEN via dry-run). Trevor: 'run a health check then … find things to work on autonomously for the next 4 hours'. 4 migrations shipped and committed; 0 reverted. Concurrent sessions active (Cowork monitor pass 7:42 AM PT; Panini wake scripts + CI guards).",
-  "shipped": 8,
+  "shipped": 9,
   "reverted": 0,
   "verdict": "GREEN. Security invariants 0, anon write surface 0, secdef/search_path/R118 drift all []; trust 37/38 ok (public_board_slow_count 1 = panini_sale_feed_status ~6 s, Cowork-filed); pg_cron 24 h 1 fail / ~17k (fixed); get_pipeline_alerts no high/critical at 8:10 AM PT after the two alarm fixes; Vercel 24 h chronic pack-detail cold scans + two whale-wallet 8 s bursts; E2E DOM Smoke green. Panini residential lanes asleep since 7:49 PM PT 10-01 (wake scripts shipped by the concurrent session).",
   "health": {
@@ -49,7 +49,8 @@
   },
   "deltas_vs_prev": "vs 09-30 ~1:10 AM PT: FMV HIGH+MED nba 8230->8222, nfl 1615->1635, panini 2420->3243 (+823, multi-product walk), candy 31->27, golazos 2->6 (definition caveat above). Editions panini 7479->11438 (+3,959), nba 14469->14478. edition_integrity_flags 7->6. db 27,929->33,810 MB (+5.9 GB: Panini walk + chain-arrival probes).",
   "open_watches": [
-    "Vercel 24 h error groups: the collection-snapshot / wallet-intel 8 s timeouts (2 bursts 10-01/02) should not recur — both share-card RPCs now read 6-11x fewer buffers on whale wallets (ledger 10-02 ~8:45-9:20 AM)",
+    "Vercel 24 h error groups: the chronic [pack-detail] pack_lifecycle 5 s timeout (1-2/day since 08-23) should stop recurring after 20261002154837 (function 97k -> 29k buffers); if it persists, size drop_pool / pack_table_rows next (not this RPC)",
+    "Vercel 24 h error groups: the collection-snapshot / wallet-intel 8 s timeouts (2 bursts 10-01/02) should not recur — both share-card RPCs now read 6-11x fewer buffers on whale wallets (ledger 10-02 ~8:20-8:35 AM PT)",
     "1:48 PM PT rpc-thp-leg-board-liveness: public_board_slow_count returns to 0 (panini_sale_feed_status now 724 ms warm on the new index); if not, read public_board_liveness_state.elapsed_ms for the view",
     "10-03 3:37 AM PT rpc-wallet-reconstructed-rips: a pipeline_runs row must exist (ok, or ok=false naming stopped_at) — first run under the 600 s COMMAND budget; input grows ~7k pack_pull rows/day for the 33 saved wallets",
     "next member-username Atlas 403 (~5/day): get_pipeline_alerts shows atlas-usernames-upstream-403 info and NO pg_net_http_403 row (attribution proven only on the next challenge)",
@@ -63,7 +64,7 @@
     "rotate ATLAS_POOL_INGEST_KEY (#144) — npx supabase login once, then Rip Packs City/cowork-2026-09-30/rotate-atlas-pool-ingest-key.cmd",
     "#22 — watch tdillonbond@gmail.com for GitHub Support's reply, then re-test commit/1c3e01a8f (expect 404); rotate the Dapper session",
     "from the Cowork monitor pass: pack-mint-probes 20 s timeouts — ATTRIBUTED (ledger 10-02 ~8:15 AM): the mainnet24 historical node answers slowly on ~0.5% of probes, retried by design; a run reads not-ok when any of its 25 probes timed out. Decide: raise the mainnet24 timeout (20 → 40 s) or let the run's ok mean dispatch+collect. panini_sale_feed_status 6 s is FIXED (index).",
-    "get_pack_lifecycle_row on big dists: 97k buffers / 11.8 s cold (dist 8552) = the chronic pack_lifecycle 5 s timeout. Pick (a) a covering pack_rips index for the anti-join (~25%) or (b) a dist-scoped anti-join (20x) after counting misattributed rips (ledger 10-02 ~9:45 AM)"
+    "get_pack_lifecycle_row: SHIPPED 20261002154837 (~8:50 AM PT) 97,477 -> 29,207 buffers with the two-step anti-join, same predicate. Optional follow-up only: INCLUDE (pack_nft_id) on idx_pack_rips_dist_agg_v2 (~+40 MB, 20x on the leg) needs a DROP of the old index — your call; nothing is waiting on it"
   ],
   "housekeeping": "inbox left append-only; no new filings (all four findings went straight to migrations + ledger). tooling-gotchas.md gained the MCP destructive-confirmation hold. docs/sessions/2026-10.md started. database.md gained the per-wallet-plan lesson (SQL fn + heavy-tailed param -> EXECUTE … USING)."
 }
