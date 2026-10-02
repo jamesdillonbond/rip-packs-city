@@ -138,3 +138,28 @@ far below the $150 drop price.
 > edges were ask artefacts. Gate is now: every family in the pack needs ≥3 sale-backed editions **and** sale-backed
 > editions carrying **≥50% of its value** (`*_sale_share` columns). WC families sit at 81–100%, so the WC board is
 > unaffected. Both WNBA packs read "not modeled yet" until their markets trade.
+
+### Independent check — player × parallel sales model (2026-10-02 ~7:45 AM PT, not on the board)
+
+Bypasses the FMV layer entirely. Inputs: all **1,310** recorded WNBA 2420 sales (`panini_sales`, 09-26 → 10-01) and
+1,398 catalogued editions with `still_in_packs`. Model: log(sale) = player effect + parallel effect, fit by
+alternating least squares (40 iterations). The liquid parallels (Silver 172/196 editions sold, Purple 155/187) pin
+each player; the rare-parallel sales pin each parallel's multiplier. That predicts a price for every edition in the
+pool, including the ~85% of rare-parallel editions that never sold. Fitting per-edition averages instead would price
+a random pull like the stars who sold first (Plum Blossom: 8 of 83 sold, two of them $1,000 Miles / Clark).
+In-sample log RMSE 0.2–0.7 per parallel. Average-player prices: Silver $1.29 · Purple $2.40 · Pink Velocity $3.88 ·
+Cherry Blossom $8.53 · Mojo $9.71 · Gold $21.63 · Plum Blossom $34.12 · Black Gold $51.98 · Gold Vinyl $245.
+Imputed: unsold insert Golds = mean of sold insert Golds; Dual Color Blast = Abstract/Color Blast mean; **Lotus Flower
+(1 sale, $15) set to Black Gold's level** (deliberately generous).
+
+Monte-Carlo, 20,000 packs: slot draws ∝ `still_in_packs`, Panini odds (2 Silver + base + 0.75 base / 0.25 insert
+[+ 1 exclusive]), residuals bootstrapped from the fit:
+
+| Pack | Price | Mean | Median | P(pack ≥ price) |
+|---|---|---|---|---|
+| FOTL 1055 | $150 | **$45** (analytic, per-family smearing: $56) | **$26** | **3.6%** (p90 $81, p99 $374) |
+| Hobby 1056 | $30 | **$16** (analytic: $22) | **$10** | **9.8%** |
+
+Daily sale medians are flat to falling since the Hobby drop opened 09-30 (Silver mean $3.14 on 09-28 → $1.88 on
+10-01). Prices are gross of any marketplace fee. A candidate for the board's model (it removes the ask-share problem
+the v0.2 gate guards against), not shipped — build it deliberately.
