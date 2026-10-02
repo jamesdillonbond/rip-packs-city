@@ -1,9 +1,9 @@
-# scripts/panini-schedule-harden.ps1 — make the residential Panini tasks survive a sleeping PC.
+# scripts/panini-schedule-harden.ps1 - make the residential Panini tasks survive a sleeping PC.
 #
 # WHY (2026-10-02): panini-schedule.bat / panini-team-walk-schedule.bat register their tasks with
 # plain `schtasks /create`, which cannot set "wake the computer to run this task" or "run the task
 # as soon as possible after a scheduled start is missed". Measured: the 2026-10-01 ~7:49 PM PT walk
-# stopped mid-run with no error, and the 10 PM / 2 AM / 6 AM PT runs left no trace at all — every
+# stopped mid-run with no error, and the 10 PM / 2 AM / 6 AM PT runs left no trace at all - every
 # residential Panini lane went silent together while the cloud lanes kept running. That is the
 # machine asleep, and with neither setting a missed run never catches up.
 #
@@ -15,7 +15,7 @@
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\panini-schedule-harden.ps1
 # Safe to re-run. Undo per task: (Get-ScheduledTask "<name>").Settings.WakeToRun = $false, then Set-ScheduledTask.
 #
-# ⚠ Windows only honours WakeToRun if wake timers are allowed in the power plan
+# WARNING: Windows only honours WakeToRun if wake timers are allowed in the power plan
 #   (Control Panel > Power Options > Change plan settings > Advanced > Sleep > Allow wake timers = Enable).
 #   It wakes the PC to START a run; it does not stop the PC from sleeping again mid-run.
 
@@ -37,7 +37,7 @@ foreach ($t in $tasks) {
     Write-Host ("{0}: WakeToRun={1} StartWhenAvailable={2} MultipleInstances={3}" -f $t.TaskName, $s.WakeToRun, $s.StartWhenAvailable, $s.MultipleInstances)
     if (-not ($s.WakeToRun -and $s.StartWhenAvailable)) { $failed++ }
   } catch {
-    Write-Warning ("{0}: not updated — {1}" -f $t.TaskName, $_.Exception.Message)
+    Write-Warning ("{0}: not updated - {1}" -f $t.TaskName, $_.Exception.Message)
     $failed++
   }
 }
