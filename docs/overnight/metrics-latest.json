@@ -1,5 +1,5 @@
 {
-  "generated_at_pt": "2026-10-02 ~8:45 AM PT (last update; pass began 7:15 AM PT; earlier stamps 8:45–9:45 were an hour fast and were corrected against migration versions)",
+  "generated_at_pt": "2026-10-02 ~9:15 AM PT (last update; pass began 7:15 AM PT)",
   "generated_at_utc": "2026-10-02T15:25Z",
   "pass": "daytime autonomous pass (Claude Code, cloud, push GREEN via dry-run). Trevor: 'run a health check then … find things to work on autonomously for the next 4 hours'. 4 migrations shipped and committed; 0 reverted. Concurrent sessions active (Cowork monitor pass 7:42 AM PT; Panini wake scripts + CI guards).",
   "shipped": 11,
@@ -49,7 +49,7 @@
   },
   "deltas_vs_prev": "vs 09-30 ~1:10 AM PT: FMV HIGH+MED nba 8230->8222, nfl 1615->1635, panini 2420->3243 (+823, multi-product walk), candy 31->27, golazos 2->6 (definition caveat above). Editions panini 7479->11438 (+3,959), nba 14469->14478. edition_integrity_flags 7->6. db 27,929->33,810 MB (+5.9 GB: Panini walk + chain-arrival probes).",
   "open_watches": [
-    "resolve-topshot-stubs after 20261002160733 (9:07 AM PT): runs at :09/:39 stamp 50 each until v_topshot_stub_queue.due = 0 (~11:39 AM PT), then every run logs targets_found 0 / \"no stub targets\" in ~1 s instead of 12-30 s; 2026-11-01 the first rests expire and ~8 editions/day are re-asked",
+    "resolve-topshot-stubs after 20261002160733 (9:07 AM PT): MEASURED 9:09 AM PT run: targets 50, stamped 50, due 226 -> 175 (resting 51). Runs at :39/:09 continue until due = 0 (~11:09 AM PT), then every run logs targets_found 0 / \"no stub targets\" in ~1 s instead of 12-30 s; 2026-11-01 the first rests expire and ~8 editions/day are re-asked",
     "Next large chain-arrival seed (rpc-chain-arrivals-seed 4:13 AM PT, or a new saved wallet): the four gated slots must wake — cron.job_run_details for rpc-chain-arrival-lane-08/23/38/53 should show 8-53 s runs again while chain_arrival_probes has non-terminal rows (20261002155614)",
     "Vercel 24 h error groups: the chronic [pack-detail] pack_lifecycle 5 s timeout (1-2/day since 08-23) should stop recurring after 20261002154837 (function 97k -> 29k buffers); if it persists, size drop_pool / pack_table_rows next (not this RPC)",
     "Vercel 24 h error groups: the collection-snapshot / wallet-intel 8 s timeouts (2 bursts 10-01/02) should not recur — both share-card RPCs now read 6-11x fewer buffers on whale wallets (ledger 10-02 ~8:20-8:35 AM PT)",

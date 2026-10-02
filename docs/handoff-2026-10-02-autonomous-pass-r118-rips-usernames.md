@@ -1,4 +1,4 @@
-# Handoff — 2026-10-02 autonomous pass (~7:15 → ~8:45 AM PT, continuing) · Claude Code (cloud)
+# Handoff — 2026-10-02 autonomous pass (~7:15 → ~9:15 AM PT) · Claude Code (cloud)
 
 > ⚠ Every environment note below is specific to **this cloud session**. Trevor's machine and Claude Code push normally via Git Credential Manager; the Supabase MCP confirmation hold described here only bites an UNATTENDED session. **Commit these files as usual.**
 
@@ -29,6 +29,7 @@
 - Watch: the 8 s `collection-snapshot` / `wallet-intel` timeouts should leave the Vercel 24 h groups.
 
 ## Needs Trevor (none urgent)
+0. Nothing new from the second half: the chain-arrival gate and the stub rest both carry their revert in the file header; the stub revert needs a human DROP TABLE / DROP VIEW only if you want it undone.
 1. **One `DROP FUNCTION public.zz_r118_probe_blind();`** — inert cruft (`LANGUAGE sql`, no-op, REVOKEd, commented) left by a bisecting CREATE; the MCP cannot run a DROP unattended.
 2. **Move `offer-fill-backfill.yml` to cron-job.org** (console) and then remove the suppression row — GHA cannot deliver above ~0.3 ticks/h (ledger 2026-09-13).
 3. Carry-forward unchanged: #144 key rotation (`npx supabase login` then the 09-30 `.cmd`), #22 GitHub Support reply watch.
@@ -36,7 +37,7 @@
 5. Decide on pack-mint-probes (raise the mainnet24 request timeout 20 → 40 s, or let a run's `ok` mean dispatch+collect with `probes_failed` in `extra`).
 
 ## Post-ship watch
-- `resolve-topshot-stubs`: runs at :09/:39 stamp 50 each until `v_topshot_stub_queue.due` = 0 (~11:39 AM PT), then `targets_found: 0` / "no stub targets" in ~1 s. First rests expire 2026-11-01 (~8 re-asks a day after that).
+- `resolve-topshot-stubs`: the 9:09 AM PT run stamped 50 of 50 (due 226 → 175, resting 51); runs at :39/:09 continue until `v_topshot_stub_queue.due` = 0 (~11:09 AM PT), then `targets_found: 0` / "no stub targets" in ~1 s. First rests expire 2026-11-01 (~8 re-asks a day after that).
 - Next large chain-arrival seed: the gated slots must wake (8–53 s runs return in `cron.job_run_details` while non-terminal probes exist). Idle, `pipeline_runs` now gets 1 `chain-arrivals` row a minute instead of 5.
 - Vercel 24 h: the chronic `[pack-detail] pack_lifecycle` 5 s timeout (1–2/day since 08-23) should stop after `20261002154837`; `drop_pool` / `pack_table_rows` timeouts in the same groups are a different lever, not sized.
 - 10-03 3:37 AM PT: `pipeline_runs` row for `wallet-reconstructed-rips` (ok, or ok=false naming the wallet it stopped at) — the kill path is by construction + both R118 guards, not yet exercised live.
