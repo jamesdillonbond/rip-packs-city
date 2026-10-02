@@ -1,0 +1,9 @@
+{
+  "//": "TEST-ONLY import map for `deno test` over the edge functions (see auth_gate_test.ts). Every remote dependency is redirected to a local recording stub, so the suite needs no network and can SEE a database call or upstream fetch a handler makes. Never used by deploy: edge-fn-deploy.yml passes supabase/functions/deno.json.",
+  "imports": {
+    "@supabase/supabase-js": "./stubs/supabase-js.ts",
+    "https://esm.sh/@supabase/supabase-js@2": "./stubs/supabase-js.ts",
+    "std/http/server.ts": "./stubs/std-http-server.ts",
+    "@supabase/functions-js/edge-runtime.d.ts": "./stubs/empty.ts"
+  }
+}

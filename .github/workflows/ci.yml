@@ -1192,6 +1192,16 @@ jobs:
       # __tests__/edge-function-deps-are-locked.test.ts.
       - name: deno check (type + import resolution)
         run: deno check --config supabase/functions/deno.json --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts
+      # The only step that EXECUTES an edge function (2026-10-02). Every function
+      # is deployed --no-verify-jwt, so its own first lines are its only gate:
+      # this imports each index.ts with Deno.serve, fetch and supabase-js swapped
+      # for recorders and asserts an anonymous caller is refused with no database
+      # call or upstream fetch first. Its own --config remaps every remote import
+      # to a local stub, so it needs no network and no lock (--no-lock).
+      # Read supabase/functions/_tests/auth_gate_test.ts before touching this.
+      - name: deno test (every function refuses anonymous callers)
+        if: ${{ !cancelled() }}
+        run: deno test --config supabase/functions/_tests/deno.json --unstable-sloppy-imports --no-lock --allow-read --allow-env supabase/functions/_tests/
       # RATCHET since 2026-09-25 (was `|| true`, which could never fail). The 17
       # findings present that day live in DEPLOYED functions, and edge:drift:check
       # compares the repo against the deployed copies, so they are pinned per

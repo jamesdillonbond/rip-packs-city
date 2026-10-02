@@ -5,9 +5,12 @@ import path from "node:path"
 // RATCHET: an edge function must have SOME behaviour a test can actually reach.
 //
 // ── WHY ────────────────────────────────────────────────────────────────────
-// CI's `edge-deno` job runs `deno check` + a ratcheted `deno lint`. There is
-// NO Deno test run, so nothing inside a `supabase/functions/*/index.ts` is ever
-// EXECUTED by a test. Behaviour is reachable in exactly two ways:
+// CI's `edge-deno` job runs `deno check` + a ratcheted `deno lint`, and since
+// 2026-10-02 ONE `deno test` suite (supabase/functions/_tests/auth_gate_test.ts)
+// that executes each index.ts only far enough to prove an anonymous caller is
+// refused. That reaches the GATE, never the work behind it, so for this
+// ratchet's purpose nothing past a function's auth check is EXECUTED by a test.
+// Behaviour is reachable in exactly two ways:
 //
 //   1. the function IMPORTS from `_shared`, which vitest can import directly; or
 //   2. the function keeps an INLINE copy that is mirrored in `_shared` and pinned
