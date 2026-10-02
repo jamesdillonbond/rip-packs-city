@@ -20,11 +20,16 @@
 - `idx_panini_serials_feed_status` (24 MB, built CONCURRENTLY by a one-off pg_cron job, recorded as `20261002151400_idx_panini_serials_feed_status.sql`): `panini_sale_feed_status` 7.7 s / 179k buffers → 0.72 s / 83k buffers. `public_board_slow_count` re-measures 1:28 / 1:48 PM PT.
 - Two findings, measured not changed (ledger ~8:15–8:20 AM PT): the pack-mint-probe "45 % failing runs" is the mainnet24 node's slow answers on ~0.5 % of probes (retried by design; a run is marked not-ok when any of 25 probes times out); the whale-wallet share card's two RPCs cost ~1.2M buffers with spilled sorts, which is where the 8 s timeouts come from.
 
+## Also shipped ~8:45–9:20 AM PT — the whale share card
+- `get_wallet_intel_summary` (`20261002152115` + `20261002152419`): FMV from `edition_fmv_current` (D27/R3), then a plpgsql `EXECUTE … USING` wrapper so each wallet is planned on its own estimate — Rigged 420,797 → 40,472 buffers, founder 171,534 → 22,326, output byte-identical.
+- `get_wallet_collection_snapshot` (`20261002153028`, pinned; pin + drift-guard registration re-pointed, 8 invariants pass locally on PG 16): same per-wallet plan, series labels once per distinct series, FMV confidence once per distinct edition — Rigged 744,517 → 68,104 buffers (2.18 s → 0.48 s), founder 344,100 → 55,306; key-by-key equal to the old body on production data.
+- Watch: the 8 s `collection-snapshot` / `wallet-intel` timeouts should leave the Vercel 24 h groups.
+
 ## Needs Trevor (none urgent)
 1. **One `DROP FUNCTION public.zz_r118_probe_blind();`** — inert cruft (`LANGUAGE sql`, no-op, REVOKEd, commented) left by a bisecting CREATE; the MCP cannot run a DROP unattended.
 2. **Move `offer-fill-backfill.yml` to cron-job.org** (console) and then remove the suppression row — GHA cannot deliver above ~0.3 ticks/h (ledger 2026-09-13).
 3. Carry-forward unchanged: #144 key rotation (`npx supabase login` then the 09-30 `.cmd`), #22 GitHub Support reply watch.
-4. Decide on pack-mint-probes (raise the mainnet24 request timeout 20 → 40 s, or let a run's `ok` mean dispatch+collect with `probes_failed` in `extra`) and on the whale-wallet share-card cost (precompute per saved wallet vs covering index).
+4. Decide on pack-mint-probes (raise the mainnet24 request timeout 20 → 40 s, or let a run's `ok` mean dispatch+collect with `probes_failed` in `extra`).
 
 ## Post-ship watch
 - 10-03 3:37 AM PT: `pipeline_runs` row for `wallet-reconstructed-rips` (ok, or ok=false naming the wallet it stopped at) — the kill path is by construction + both R118 guards, not yet exercised live.

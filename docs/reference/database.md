@@ -2884,3 +2884,30 @@ Accent and case variants fold (`unaccent` + `lower`). Two different names for on
 ## ⚠ A per-target correlated look-up scales with the TARGET table — index its (key, time) pair early (2026-09-30)
 
 `panini_sales_fmv_backtest` (a view: for each of ~14k target sales, the median of the edition's prior ≤3 sales) answered in seconds on 09-28 and was cancelled at a 55 s timeout on 09-30, once `panini_sales` reached ~91k rows, exactly when enough data had arrived to make the decision it exists for. EXPLAIN showed the serial-side look-up as a **BitmapAnd of two single-column indexes** (`edition_external_id` and `last_sale_at`): ~10.9k index rows per target, 460k buffers. A partial composite index `(edition_external_id, last_sale_at DESC) WHERE last_sale_at IS NOT NULL` turned it into a few-row index scan, and the whole view fell to 0.7 s with identical output (`20260930144208`). **The tell is a BitmapAnd inside a `loops=N` subplan.** A CTE referenced from inside a correlated subquery (`NOT EXISTS (SELECT 1 FROM special …)`) is the second shape to replace, with a probe on the unique key.
+
+
+## ⭐ A SQL-language function with a heavy-tailed parameter is planned for the AVERAGE key — measure `SELECT fn(whale)`, never the body with a literal (2026-10-02)
+
+`get_wallet_intel_summary` and `get_wallet_collection_snapshot` (the two RPCs behind `/share/[wallet]`) read
+**420,797 and 744,517 buffers** for one 43k-row wallet through `SELECT fn(…)`, while the IDENTICAL body run as a
+statement with the wallet written in read 38,087 and 178,715. Inside the function the wallet is a parameter, the
+planner estimates a typical wallet (a few hundred cache rows) and joins `editions` / `badge_editions` /
+`edition_fmv_current` by per-row NESTED LOOPS — right for most wallets, 4–11× the buffers for a whale, where hash
+joins over the 14k Top Shot editions are cheap. Cold, that was the 8 s `RPC_READ_TIMEOUT` pair in the Vercel log.
+
+- **Fix shape:** a plpgsql wrapper that runs the body via `EXECUTE $q$ … WHERE wallet_address = $1 … $q$ INTO v USING
+  p_wallet`. `EXECUTE` plans every call with the parameter's VALUE, so the estimate — and the join strategy — is the
+  wallet's own (migrations `20261002152419`, `20261002153028`). Keep the body unchanged; the wrapper is the fix.
+- **Measurement trap:** an `EXPLAIN` on the body with a literal measures a plan the function NEVER runs. The
+  10-02 first attempt optimised a leg 5× (50.6k → 10.5k) and moved the whole function by ~0 %, because the
+  function's plan was not the body's plan. `EXPLAIN (ANALYZE, BUFFERS) SELECT fn('<whale>')` is the only honest
+  before/after; the body's plan is a floor, not a forecast.
+- **Two per-row legs that hide in a CTE-heavy body:** a labelling function called per MOMENT when the distinct
+  values number 8 (`series_display_label`, 38,666 calls → 77.5k buffers; aggregate the distinct keys first), and a
+  LATERAL `LIMIT 1` probe per moment into a table whose key is UNIQUE (resolve once per distinct key in a CTE and
+  join — same row by construction). Both were in a PINNED function: the pin's verbatim DDL block, its registration
+  in `db-invariants-drift-guard`, and a local throwaway PG 16 run of the pin (tooling-gotchas recipe; the
+  `postgres` user cannot traverse the scratchpad, so the data dir went under `/tmp`) are the three moves.
+- **Equivalence on production, not on fixtures:** run the OLD body as a statement and the NEW function in ONE
+  statement and compare `jsonb_each` key by key (a whole-document md5 across two statements differs on FMV refresh
+  timing and on tie order in `ORDER BY fmv_usd DESC LIMIT 5`, and reads as a defect that is not there).
