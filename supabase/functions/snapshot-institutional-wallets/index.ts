@@ -183,7 +183,8 @@ async function releaseLock(key: string): Promise<void> {
   }
 }
 
-async function loadSignalWallets(startedAtIso: string): Promise<SignalWallet[]> {
+/** null when the read FAILED (its ok=false row is already written); [] only when there are genuinely none. */
+async function loadSignalWallets(startedAtIso: string): Promise<SignalWallet[] | null> {
   const res = await withRetry<SignalWallet[]>("loadSignalWallets", async () => {
     // deno-lint-ignore no-explicit-any
     const { data, error } = await (supabase as any)
@@ -201,7 +202,7 @@ async function loadSignalWallets(startedAtIso: string): Promise<SignalWallet[]> 
       err: res.error,
       attempts: res.attempts,
     })
-    return []
+    return null
   }
   return res.data ?? []
 }
@@ -448,6 +449,11 @@ async function runWork(startedAtIso: string, started: number) {
 
   // Step 2: load the snapshot pool (wallets that ARE fully enriched).
   const wallets = await loadSignalWallets(startedAtIso)
+  // A failed read already logged its ok=false exhaustion row. Stop there: it
+  // used to fall through as [] and write a SECOND row, same started_at, with
+  // ok=true "no_fully_enriched_signal_wallets", so the latest row for the run
+  // read as a success (supabase/functions/_tests/failed_run_honesty_test.ts).
+  if (wallets === null) return
   if (wallets.length === 0) {
     await logRun({
       startedAt: startedAtIso,

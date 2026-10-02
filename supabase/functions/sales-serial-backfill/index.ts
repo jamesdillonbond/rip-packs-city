@@ -300,6 +300,8 @@ interface CollectionStats {
   noop: number;
   failed: number;
   failures_by_reason: Record<string, number>;
+  /** Set when the TARGET read failed: the lane did not run, which is not "no targets". */
+  read_error?: string;
 }
 
 async function applyResult(
@@ -361,6 +363,10 @@ async function runCollection(collectionId: string, batchSize: number): Promise<C
   });
   if (error) {
     console.log(`[backfill] rpc err collection=${collectionId} ${error.message}`);
+    // Returned as a FAILURE, not empty stats: empty stats read exactly like a
+    // lane with nothing to do, and the sweep logged ok=true on a target read
+    // that never happened (supabase/functions/_tests/failed_run_honesty_test.ts).
+    stats.read_error = error.message.slice(0, 200);
     return stats;
   }
   const targets = (data ?? []) as BackfillTarget[];
@@ -430,6 +436,9 @@ async function runSweep(collectionId: string | null, batchSize: number, startedA
     try {
       const s = await runCollection(c, batchSize);
       perCollection[SLUG_BY_ID[c] ?? c] = s;
+      if (s.read_error) {
+        sweepError = sweepError ?? `${SLUG_BY_ID[c] ?? c}: get_serial_backfill_targets failed: ${s.read_error}`;
+      }
       // A lane whose EVERY target failed on TRANSPORT (borrow_error / unknown —
       // a dead host, a broken script, a failing RPC) is a pipeline failure, not
       // an expected per-target miss. This is the shape the Top Shot lane wore

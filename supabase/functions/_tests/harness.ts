@@ -1,7 +1,7 @@
 // Loads an edge function's module with its server, its database client and the
 // network replaced by recorders, then probes its handler. Used by
 // auth_gate_test.ts; see that file's header for why.
-import { type Call, calls, reset, served } from "./stubs/recorder.ts"
+import { background, type Call, calls, reset, served } from "./stubs/recorder.ts"
 
 export const FN_ROOT = new URL("../", import.meta.url)
 
@@ -34,7 +34,11 @@ export function install(files: URL[]) {
     return { finished: Promise.resolve(), shutdown() {}, ref() {}, unref() {}, addr: {} }
   }
   // deno-lint-ignore no-explicit-any
-  ;(globalThis as any).EdgeRuntime = { waitUntil() {} }
+  ;(globalThis as any).EdgeRuntime = {
+    waitUntil(p: Promise<unknown>) {
+      background.push(Promise.resolve(p).catch(() => {}))
+    },
+  }
   globalThis.fetch = (input: RequestInfo | URL) => {
     const url = input instanceof Request ? input.url : String(input)
     calls.push({ kind: "fetch", what: url.slice(0, 80) })
@@ -102,4 +106,72 @@ export async function probe(handler: (req: Request) => Promise<Response>, label:
 /** Refused (a 4xx) and did no work before refusing. */
 export function refused(p: Probe): boolean {
   return typeof p.status === "number" && p.status >= 400 && p.status < 500 && p.work.length === 0
+}
+
+/**
+ * The minimum input a function needs before it does any work. Without it the
+ * admitted probe gets a 400 and exercises nothing. Wallet / ids are inert:
+ * every read fails here regardless.
+ */
+const INPUTS: Record<string, { query?: string; body?: unknown; method?: "GET" | "POST" }> = {
+  "enrich-ufc-wallet": { query: "wallet=0x0123456789abcdef" },
+  "scan-pinnacle-wallet": { query: "wallet=0x0123456789abcdef" },
+  "scan-ufc-wallet": { body: { wallet: "0x0123456789abcdef" } },
+  "backfill-pack-opens-api": { query: "collection=topshot" },
+  "ingest-topshot-atlas-pool": { method: "GET", query: "mode=targets" },
+  "flowty-proxy": { body: { contractAddress: "0x0b2a3299cc857e29", contractName: "TopShot", payload: {} } },
+}
+
+export type AdmittedRun = {
+  /** The env var whose test value got past the gate (`VAULT_GATE_KEY` for a Vault key). */
+  via: string
+  status: number | "TIMEOUT"
+  body: string
+  calls: Call[]
+  /** How many promises the handler left running through EdgeRuntime.waitUntil. */
+  background: number
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Get past the function's gate WITHOUT knowing its scheme: every env var it
+ * reads holds `test-value-<NAME>` (see install), so present each value in every
+ * slot a gate in this fleet reads (Bearer, ?key=, apikey, x-gate-key) until one
+ * is not refused. Then let any background work finish, so the run's own
+ * pipeline_runs write is in `calls`. Null when no value is admitted.
+ */
+export async function admit(name: string, handler: (req: Request) => Promise<Response>): Promise<AdmittedRun | null> {
+  const src = Deno.readTextFileSync(new URL(`${name}/index.ts`, FN_ROOT))
+  const envs = [...new Set([...src.matchAll(/Deno\.env\.get\(\s*["']([A-Z0-9_]+)["']\s*\)/g)].map((m) => m[1]))]
+  const input = INPUTS[name] ?? {}
+  for (const via of [...envs, "VAULT_GATE_KEY"]) {
+    const v = `test-value-${via}`
+    const method = input.method ?? "POST"
+    const qs = new URLSearchParams(input.query ?? "")
+    qs.set("key", v)
+    const req = new Request(`http://localhost/functions/v1/${name}?${qs}`, {
+      method,
+      headers: { "content-type": "application/json", authorization: `Bearer ${v}`, apikey: v, "x-gate-key": v },
+      body: method === "POST" ? JSON.stringify(input.body ?? {}) : undefined,
+    })
+    reset()
+    let status: number | "TIMEOUT" = 500
+    let body = ""
+    try {
+      const r = await Promise.race([handler(req), sleep(8_000).then(() => "TIMEOUT" as const)])
+      if (r === "TIMEOUT") status = r
+      else {
+        status = r.status
+        body = await r.text()
+      }
+    } catch (e) {
+      body = `THREW ${String(e)}`
+    }
+    if (status === 401 || status === 403) continue
+    await Promise.race([Promise.allSettled([...background]), sleep(6_000)])
+    await sleep(200) // fire-and-forget work not handed to waitUntil
+    return { via, status, body, calls: [...calls], background: background.length }
+  }
+  return null
 }

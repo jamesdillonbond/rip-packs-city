@@ -141,11 +141,18 @@ Deno.serve(async (req: Request) => {
 
   // Pull existing wallet rows including image_url so the COALESCE can prefer
   // an already-populated thumbnail over editions.thumbnail_url.
-  const { data: moments } = await supabase.from("wallet_moments_cache")
+  const { data: moments, error: momentsErr } = await supabase.from("wallet_moments_cache")
     .select("moment_id, image_url")
     .eq("wallet_address", wallet)
     .eq("collection_id", UFC_COLLECTION_ID)
     .order("moment_id");
+  // A failed read is not "No moments". That answer carries no nextStart, so the
+  // caller (triggerUfcEnrichmentChain) recorded the wallet done:true with
+  // nothing enriched. A 500 makes it stop with done:false and leave the wallet
+  // to the drain cron (supabase/functions/_tests/failed_run_honesty_test.ts).
+  if (momentsErr) {
+    return new Response(JSON.stringify({ ok: false, error: `wallet_moments_cache read: ${momentsErr.message.slice(0, 200)}` }), { status: 500 });
+  }
   const allMoments = (moments ?? []) as Array<{ moment_id: string; image_url: string | null }>;
   if (!allMoments.length) return new Response(JSON.stringify({ ok: true, message: "No moments" }));
   const allIds = allMoments.map(m => m.moment_id);

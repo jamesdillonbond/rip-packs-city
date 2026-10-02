@@ -2,6 +2,21 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ AND EVERY EDGE FUNCTION'S FAILED RUN IS CHECKED FOR A FALSE SUCCESS (2026-10-02)
+
+**`supabase/functions/_tests/failed_run_honesty_test.ts`** is the write-side honesty rule (R120/R123) *executed* against the edge fleet, rather than grepped for. `harness.admit()` gets each function past its own gate: every env var holds `test-value-<NAME>`, and each value is presented in every slot the fleet's gates read. The run happens with **every database call failing and every upstream answering 503**, and the suite waits for its `EdgeRuntime.waitUntil` work to finish. Then:
+- **No `pipeline_runs` write may claim success.** Every read failed, so `p_ok=true` / `ok=true` can only be a failure misrecorded.
+- **A synchronous body may not claim success.** An `accepted`/`queued` body with work still running is honest; its outcome is in the run row.
+- **Every function must be admitted.** One the probe cannot get past would be unseen, so it reds.
+
+**Measured 10-02:** ~25 functions record `ok:false` with the real error even when they answer 200 or 202. Seven did not. **The three with a live caller were fixed and deployed the same day:**
+- `sales-serial-backfill` (Vercel cron, every 2 h): a failed target read returned empty stats → `ok=true`.
+- `snapshot-institutional-wallets`: a failed read wrote `ok=false`, **then a second row with the same `started_at` and `ok=true`**.
+- `enrich-ufc-wallet` (user wallet backfill): a failed read answered `{"ok":true,"message":"No moments"}`, and the caller marked the wallet `done`.
+
+The four with no caller found sit in the suite's `KNOWN` map, which can only shrink: `topshot-insider-detect-patterns` (dormant), `seed-ufc-editions`, `special-serial-delta` and `scan-ufc-wallet`.
+- ⚠ **Silent about** a function that records nothing and claims nothing. Two exist: `resolve-allday-rip-dist-api` (hourly pg_cron) answers `{"note":"none"}` after 5 failed reads, and `backfill-allday-pack-supply` answers `done:true` with `pageErrs=1`. It is also silent about partial failure.
+
 ## ⭐ CI NOW EXECUTES EVERY EDGE FUNCTION'S AUTH GATE (2026-10-02)
 
 **`supabase/functions/_tests/auth_gate_test.ts`** is the first `deno test` in this repo, and it runs in `ci.yml` → `edge-deno`. Before it, CI only ran `deno check` and `deno lint` on the edge functions, and none of them was ever **executed**.
