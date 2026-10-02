@@ -1,4 +1,4 @@
-# Inbox index — 554 live filings
+# Inbox index — 555 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-10-01 — 1 filing
+## 2026-10-01 — 2 filings
+
+- [🟢 **`topshot_impossible_parallel_serials` arm read 999 at the month boundary — RESOLVED: the rotation had already filled 2026-09; the leg now counts the just-closed month live, so the boundary no longer reads 999**](2026-10-01T0314Z-daytime-monitor-impossible-parallel-arm-blind-at-month-boundary.md) — *(daytime monitor, ~8:14 PM PT 09-30, left uncommitted on the mount (no-push); disposition appended by Claude Code ~7:25 AM PT 10-02.)* The filing said the rotation never inserts a newly closed month. That was wrong: it puts missing months first and upserts them, and wrote 2026-09 at 12:22 PM PT 10-01. The real gap is midnight UTC on the 1st until the 19:22Z rotation, which gave three 999 ticks every month. Fixed in `20261002142107`. Data was clean throughout (0).
 
 - [🟢 **Special-serial badges should use each platform's NATIVE colour — RESOLVED: sampled live (Top Shot #2752ED, All Day #7A4DE1 ring), shipped to trophy slab, PDF and OG cards**](2026-10-01T0141Z-special-serial-badges-native-platform-color.md) — *(Claude Code, ~6:41 PM PT 09-30, Trevor's decision on webz_80's Discord feedback.)* `GOLD_HEX` in `lib/badges/glyphs.ts` colours every trophy slab, PDF and OG special-serial mark; the sandbox cannot reach nbatopshot.com, so the hex is left to a Cowork session with Chrome. Golazos/UFC/Pinnacle/Panini/Candy keep gold (no native badge). **Disposition (Claude Code, Windows box, ~8:15 PM PT):** this box reaches both sites, so the colours were read from computed styles and shipped via `specialSerialStyle` in `lib/badges/official-art.ts`.
 
