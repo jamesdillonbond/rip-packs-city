@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { execSync } from "node:child_process"
 import { readFileSync } from "node:fs"
+import { repoRelative, walkSourceFiles } from "./helpers/source-files"
 
 // Windows PowerShell 5.1 (the `powershell.exe` every scheduled task here runs) reads a .ps1 WITHOUT a
 // byte-order mark as Windows-1252, not UTF-8. A UTF-8 em dash (E2 80 94) then decodes as "â€”", and
@@ -22,7 +22,10 @@ export function ps1EncodingProblems(bytes: Buffer): Array<{ line: number; char: 
   return out
 }
 
-const files = execSync("git ls-files '*.ps1' '*.psm1'", { encoding: "utf8" }).split("\n").filter(Boolean)
+// In-process walk, not `git ls-files`: under cmd.exe the single-quoted globs match nothing, so on
+// Windows this guard inspected ZERO files (its floor caught it), and guards-do-not-shell-out-to-grep
+// bans the shell-out. Every .ps1 lives under scripts/ (2026-10-02); the floor below catches a move.
+const files = walkSourceFiles("scripts", (n) => /\.psm?1$/.test(n)).map(repoRelative).sort()
 
 describe("PowerShell scripts parse under Windows PowerShell 5.1", () => {
   it("inspects the tracked .ps1 files (not vacuous)", () => {
