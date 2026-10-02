@@ -2,6 +2,17 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ A TREE-WIDE CREDENTIAL SCAN, AND A PLANTED-DEFECT TEST FOR AN UNTESTED GATE (2026-10-02)
+
+**`__tests__/no-credential-literals-in-tracked-files.test.ts`** scans every `git ls-files` text file, `docs/` included. Until 10-02 **nothing in CI scanned the tree for a credential shape**: no gitleaks, trufflehog or CodeQL, and `edge-fn-no-hardcoded-gate-keys` reads only `supabase/functions/*/index.ts`. Both of this public repo's leaks were outside that scope: D2's gate keys mirrored into ~9 docs, and #22's `github_pat_`.
+- **Ban at zero:** 7,067 files, 0 hits across 12 vendor-prefixed shapes (GitHub, Anthropic, OpenAI, `rpc_pls_`, `sb_secret_`, AWS, Stripe live, Slack, Telegram, private-key blocks, any JWT).
+- ⛔ **The report carries `file:line pattern len=N`, never the match.** A CI log is as public as the repo. Each planted case asserts the secret is absent from the report.
+- It runs on **docs-only pushes too**, because `docs-tests` selects every test file that mentions `docs/`.
+- ⚠ **It is silent about** keys with no prefix (the Flow private key has the same 64-hex shape as every tx hash), git history, and untracked `.env*` files. Read its header before trusting a pass.
+- Proven 10-02 by staging a fake `rpc_pls_` key in a `docs/` file: red, named `file:line`, no key text in the output.
+
+**`__tests__/check-responsive-flex-basis-planted-defects.test.ts`** covers the one CI gate script no test touched. It runs the real script against seven fixture trees, including its 08-22 first-cut brace bug and the Tailwind arm its header had contradicted itself about. Re-planting the brace bug reds 6 of the 7 cases.
+
 ## ⭐ CI NOW BUILDS AND RENDERS THE APP, AND LINTS ITS OWN WORKFLOWS (2026-09-25)
 
 Two new `ci.yml` jobs close two gaps that nothing covered before.
@@ -1984,7 +1995,7 @@ verified empty afterwards** — a probe left behind is a defect shipped by an au
 | `check-brand-tokens` | hardcoded `#E03A2F` + `'Barlow Condensed'` in a component | ✅ | surface counts `=== 0` |
 | `check-driver-message-leaks` | ungated `GET` returning `err.message` | ✅ **named the file** | `handlersInspected < 100`; **gated-leak count `=== 0`** |
 | `check-unhandled-third-state` | — (**self-testing**) | ✅ **by construction** | **runs a synthetic fixture that MUST flag, before reporting on the real tree** |
-| `check-responsive-flex-basis` | `md:flex-row` + inline `flex: "1 1 320px"` | ✅ | asserts files + media blocks inspected |
+| `check-responsive-flex-basis` | `md:flex-row` + inline `flex: "1 1 320px"` | ✅ | asserts files + media blocks inspected; ⭐ **since 2026-10-02 re-proven on every run** by `__tests__/check-responsive-flex-basis-planted-defects.test.ts` (7 fixture cases, mutation-checked) |
 | `check-memory-doc-links` | broken relative link appended to a reference doc | ✅ | `files === 0 \|\| linksChecked === 0`, plus "implausibly few" |
 | `check-unbounded-server-reads` | async server page with a bare `.from().select()` | ✅ **named the file** | `INSTRUMENT BROKEN` on empty walk |
 

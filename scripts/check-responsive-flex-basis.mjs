@@ -32,8 +32,11 @@
 // (11 files use such a utility, none of them carries an inline length basis), so
 // closing it cost nothing and keeps that zero from drifting upward unnoticed.
 //   * It only knows the media queries written in CSS text in this repo —
-//     template literals and .css files. A Tailwind responsive direction utility
-//     (`flex-col sm:flex-row`) is NOT parsed.
+//     template literals and .css files — plus the Tailwind responsive direction
+//     utilities above. A direction set any other way is outside it. (Until
+//     2026-10-02 this bullet said the Tailwind arm was "NOT parsed", which
+//     contradicted the paragraph above it; case (2) of
+//     __tests__/check-responsive-flex-basis-planted-defects.test.ts runs it.)
 //   * It flags a co-occurrence, not a proven parent/child relationship, so a
 //     hit is a thing to LOOK AT, not automatically a defect. Say so in the
 //     output rather than calling every hit a bug.
