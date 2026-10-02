@@ -8,7 +8,7 @@
 - pg_cron 24 h: 1 failure (`rpc-wallet-reconstructed-rips`, fixed below) in ~17k runs. Vercel 24 h: chronic pack-detail cold-scan timeouts; two bursts (00:50, 02:08 AM PT) of `get_wallet_collection_snapshot` / `get_wallet_intel_summary` > 8 s + 3× `/api/edition-floor` 503 in the same second — one whale wallet's share-card load, not sized.
 - Panini residential lanes silent since 7:49 PM PT 10-01 (box asleep); the concurrent session shipped and ran the wake/keep-awake scripts.
 
-## Shipped (DB, 5 migrations, files committed)
+## Shipped (DB, 6 migrations, files committed)
 | migration | what | revert |
 |---|---|---|
 | `20261002144052` reconstructed rips | daily job budget on the pg_cron COMMAND (`SET statement_timeout='600s'; …` — the function-header SET was INERT: killed at 120 s with it in place); smallest wallets first; per-wallet sub-txn; `WHEN query_canceled` record-and-exit; `WHEN OTHERS` per wallet continues. Catch-up run 8:14 AM PT: ok, 33 wallets, 22,118 rows, 118.7 s | header REVERT block |
@@ -16,6 +16,7 @@
 | `20261002145919` R118 shape rule | `r118_blind_handler_count(text)` + guard reads `<ident> := NULL` handlers as parse guards; controls on literal bodies; the 3 chain lanes clear; `collect_pack_nft_identity` off the name list | re-apply 20260920144120 body |
 | `20261002150259` username-lane 403s | `member_wallet_username_requests` + drained_at/status_code/error, marked not deleted, pruned 24 h; `check_edge_fn_http_failures()` lane `usernames` (info; high when no 200 in 6 h). Proven on the NEXT Cloudflare challenge: board shows `atlas-usernames-upstream-403 · info`, no `pg_net_http_403` | header REVERT block |
 | `20261002154837` pack-dist lifecycle | `get_pack_lifecycle_row` "packs sealed" anti-join in two steps, same predicate (a same-dist-only filter was measured and rejected: 113 cross-dist rips on dist 8552 would read as sealed). Function 97,477 → 29,207 buffers; equivalence 40/40 dists before and after the apply (~8:50 AM PT) | re-apply the body from `20260801204912` |
+| `20261002155614` chain-arrival slots | the four 09-30 staggered slots (`FROM pg_sleep(8/23/38/53)`) gate the sleep on pending work (`WHERE EXISTS …`, planned as a One-Time Filter so `pg_sleep` is never executed when idle). The backlog they were added for is done (132,478 probes all `done`, requests empty); they were holding 2 of 32 cron workers 24/7. Idle runs 8–53 s → 0.11–0.19 s measured at 8:57 AM PT; the :00 heartbeat lane is untouched | `cron.alter_job` back to the bare `pg_sleep(n)` form (header) |
 
 ## Also shipped ~8:15 AM PT — the trust breach
 - `idx_panini_serials_feed_status` (24 MB, built CONCURRENTLY by a one-off pg_cron job, recorded as `20261002151400_idx_panini_serials_feed_status.sql`): `panini_sale_feed_status` 7.7 s / 179k buffers → 0.72 s / 83k buffers. `public_board_slow_count` re-measures 1:28 / 1:48 PM PT.
@@ -34,6 +35,7 @@
 5. Decide on pack-mint-probes (raise the mainnet24 request timeout 20 → 40 s, or let a run's `ok` mean dispatch+collect with `probes_failed` in `extra`).
 
 ## Post-ship watch
+- Next large chain-arrival seed: the gated slots must wake (8–53 s runs return in `cron.job_run_details` while non-terminal probes exist). Idle, `pipeline_runs` now gets 1 `chain-arrivals` row a minute instead of 5.
 - Vercel 24 h: the chronic `[pack-detail] pack_lifecycle` 5 s timeout (1–2/day since 08-23) should stop after `20261002154837`; `drop_pool` / `pack_table_rows` timeouts in the same groups are a different lever, not sized.
 - 10-03 3:37 AM PT: `pipeline_runs` row for `wallet-reconstructed-rips` (ok, or ok=false naming the wallet it stopped at) — the kill path is by construction + both R118 guards, not yet exercised live.
 - Next username-lane 403 (base rate ~5/day): `get_pipeline_alerts()` carries `atlas-usernames-upstream-403 · info`, never `pg_net_http_403`.
