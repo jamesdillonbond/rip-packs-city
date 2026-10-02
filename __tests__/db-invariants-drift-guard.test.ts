@@ -1133,8 +1133,9 @@ const PINS = [
   {
     fn: "get_wallet_collection_snapshot",
     test: "supabase/tests/get_wallet_collection_snapshot.sql",
-    // re-pointed 2026-09-25: stale_count pairs with stale_fmv (closed markets out of both).
-    migration: "supabase/migrations/20260925182927_audit_20260925_share_snapshot_stale_count_pairs_with_stale_fmv.sql",
+    // re-pointed 2026-10-02: plpgsql EXECUTE … USING (per-wallet plan), labels and confidence
+    // resolved once per distinct value; same eight invariants.
+    migration: "supabase/migrations/20261002153028_audit_20261002_share_snapshot_plans_per_wallet_and_resolves_labels_and_confidence_once.sql",
   },
   {
     fn: "get_pack_detail_bundle",

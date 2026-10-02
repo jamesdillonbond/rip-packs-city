@@ -12,10 +12,13 @@
 --     Top Shot "Series 1"); another collection's series never leaks in;
 --   * perCollection rollup ordered by moment count desc;
 --   * rarest = smallest positive mint_count (FMV-desc tiebreak);
---   * an empty wallet -> zeros / '[]' / NULL rarest, never an error.
+--   * an empty wallet -> zeros / '[]' / NULL rarest, never an error;
+--   * (2026-10-02) the body runs through EXECUTE … USING so each wallet is planned on its own
+--     row estimate; series labels resolve once per distinct series and the stale confidence
+--     once per distinct edition — the SAME answers as the per-moment forms they replaced.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260925182927_audit_20260925_share_snapshot_stale_count_pairs_with_stale_fmv.sql);
+-- (supabase/migrations/20261002153028_audit_20261002_share_snapshot_plans_per_wallet_and_resolves_labels_and_confidence_once.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -85,15 +88,22 @@ $function$;
 -- >>> BEGIN verbatim get_wallet_collection_snapshot (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_collection_snapshot(p_wallet text)
  RETURNS jsonb
- LANGUAGE sql
- SECURITY DEFINER
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
+DECLARE
+  v jsonb;
+BEGIN
+  -- 2026-10-02: dynamic SQL on purpose. EXECUTE … USING plans the statement with the
+  -- wallet's REAL row estimate, so an 18k-moment wallet gets hash joins where the
+  -- SQL-language body's generic plan gave it per-row nested loops (744k buffers).
+  EXECUTE $q$
   WITH w AS (
     SELECT player_name, set_name, tier, serial_number, edition_key,
            image_url, series_number, fmv_usd, mint_count, collection_id
     FROM wallet_moments_cache
-    WHERE wallet_address = p_wallet
+    WHERE wallet_address = $1
   ),
   top5 AS (
     SELECT jsonb_agg(t) AS arr FROM (
@@ -122,12 +132,19 @@ AS $function$
   series_rows AS (
     -- 2026-09-25: grouped by LABEL — on-chain 0 and a stored 1 are both Top Shot
     -- "Series 1" and drew two bars.
-    SELECT min(w.series_number) AS series_number,
-           COALESCE(public.series_display_label(w.collection_id, w.series_number::int), 'SUnknown') AS label,
-           count(*)::int AS cnt
-    FROM w
-    WHERE w.collection_id = (SELECT collection_id FROM series_coll)
-    GROUP BY w.collection_id, COALESCE(public.series_display_label(w.collection_id, w.series_number::int), 'SUnknown')
+    -- 2026-10-02: labelled per DISTINCT (collection, series_number), not per
+    -- moment — series_display_label ran 38,666 times (77k buffers) on one wallet
+    -- for 8 distinct values.
+    SELECT min(d.series_number) AS series_number,
+           COALESCE(public.series_display_label(d.collection_id, d.series_number::int), 'SUnknown') AS label,
+           sum(d.cnt)::int AS cnt
+    FROM (
+      SELECT w.collection_id, w.series_number, count(*) AS cnt
+      FROM w
+      WHERE w.collection_id = (SELECT collection_id FROM series_coll)
+      GROUP BY w.collection_id, w.series_number
+    ) d
+    GROUP BY d.collection_id, COALESCE(public.series_display_label(d.collection_id, d.series_number::int), 'SUnknown')
   ),
   series AS (
     SELECT jsonb_object_agg(label, cnt) AS obj FROM series_rows
@@ -141,6 +158,18 @@ AS $function$
     SELECT count(DISTINCT be.external_id)::int AS c
     FROM badge_editions be
     WHERE be.external_id IN (SELECT DISTINCT edition_key FROM w WHERE edition_key IS NOT NULL)
+  ),
+  -- 2026-10-02: each held edition's CURRENT confidence, resolved ONCE per distinct
+  -- (edition_key, collection) instead of a LATERAL probe per moment (58k buffers
+  -- on one wallet). editions(external_id, collection_id) is unique, so this is the
+  -- same row the LIMIT 1 probe returned.
+  conf AS (
+    SELECT e.external_id AS edition_key, e.collection_id, l.confidence
+    FROM editions e
+    JOIN edition_fmv_current l ON l.edition_id = e.id
+    WHERE (e.external_id, e.collection_id) IN (
+      SELECT DISTINCT w.edition_key, w.collection_id FROM w WHERE w.edition_key IS NOT NULL
+    )
   ),
   per_coll AS (
     SELECT jsonb_agg(pc ORDER BY (pc->>'moments')::int DESC) AS arr FROM (
@@ -159,10 +188,7 @@ AS $function$
                'market_closed_at', c.market_closed_at
              ) AS pc
       FROM w JOIN collections c ON c.id = w.collection_id
-      LEFT JOIN LATERAL (
-        SELECT l.confidence FROM editions e JOIN edition_fmv_current l ON l.edition_id = e.id
-         WHERE e.external_id = w.edition_key AND e.collection_id = w.collection_id LIMIT 1
-      ) l ON true
+      LEFT JOIN conf l ON l.edition_key = w.edition_key AND l.collection_id = w.collection_id
       GROUP BY c.slug, c.name, c.market_closed_at
     ) x
   ),
@@ -179,8 +205,7 @@ AS $function$
         WHERE w.collection_id NOT IN (SELECT id FROM collections WHERE market_closed_at IS NOT NULL)
       )::int AS stale_count
     FROM w
-    JOIN editions e ON e.external_id = w.edition_key AND e.collection_id = w.collection_id
-    JOIN edition_fmv_current l ON l.edition_id = e.id
+    JOIN conf l ON l.edition_key = w.edition_key AND l.collection_id = w.collection_id
     WHERE l.confidence = 'STALE'
   ),
   rarest AS (
@@ -199,7 +224,7 @@ AS $function$
     ) r
   )
   SELECT jsonb_build_object(
-    'wallet', p_wallet,
+    'wallet', $1,
     'totalMoments', (SELECT count(*)::int FROM w),
     -- Grand FMV excludes collections whose market has closed; their moments
     -- still count in totalMoments (real holdings), but their dead-market value
@@ -217,7 +242,10 @@ AS $function$
     'rarest', (SELECT obj FROM rarest),
     'staleFmv', COALESCE((SELECT stale_fmv FROM stale), 0),
     'staleCount', COALESCE((SELECT stale_count FROM stale), 0)
-  );
+  )
+  $q$ INTO v USING p_wallet;
+  RETURN v;
+END
 $function$;
 -- <<< END verbatim get_wallet_collection_snapshot <<<
 
