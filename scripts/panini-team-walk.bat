@@ -31,6 +31,12 @@ cd /d "%USERPROFILE%\rip-packs-city"
 echo. >> "%PANINI_LOG%"
 echo ==== %DATE% %TIME% team walk start ==== >> "%PANINI_LOG%"
 
+REM Hold the PC awake for the whole run: a timer-woken PC re-sleeps after ~2 min otherwise.
+REM scripts\panini-keep-awake.ps1 holds the request while this flag exists, capped at 215 min.
+set "AWAKE_FLAG=%TEMP%\panini-awake-team-walk.flag"
+echo %DATE% %TIME% > "%AWAKE_FLAG%"
+start "" /b powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File scripts\panini-keep-awake.ps1 -Flag "%AWAKE_FLAG%" -MaxMinutes 215
+
 node scripts\panini-cdp-preflight.mjs >> "%PANINI_LOG%" 2>&1
 if %ERRORLEVEL% EQU 0 goto :run
 
@@ -42,6 +48,7 @@ timeout /t 16 /nobreak >nul
 node scripts\panini-cdp-preflight.mjs >> "%PANINI_LOG%" 2>&1
 if %ERRORLEVEL% NEQ 0 (
   echo [panini-team-walk] ABORT: Chrome still not drivable after restart >> "%PANINI_LOG%"
+  del "%AWAKE_FLAG%" >nul 2>&1
   endlocal
   exit /b 2
 )
@@ -53,4 +60,5 @@ echo ==== %DATE% %TIME% team walk end rc=%RC% ==== >> "%PANINI_LOG%"
 REM Then the collector walk (Panini Collection tab, 2026-09-27) in the same Chrome. Its own
 REM log is %USERPROFILE%\panini-collector-walk.log; its result does not change this task's rc.
 call scripts\panini-collector-walk.bat
+del "%AWAKE_FLAG%" >nul 2>&1
 endlocal & exit /b %RC%

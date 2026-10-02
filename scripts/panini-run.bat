@@ -43,6 +43,12 @@ cd /d "%USERPROFILE%\rip-packs-city"
 echo. >> "%PANINI_LOG%"
 echo ==== %DATE% %TIME% run start ==== >> "%PANINI_LOG%"
 
+REM Hold the PC awake for the whole run: a timer-woken PC re-sleeps after ~2 min otherwise.
+REM scripts\panini-keep-awake.ps1 holds the request while this flag exists, capped at 125 min.
+set "AWAKE_FLAG=%TEMP%\panini-awake-run.flag"
+echo %DATE% %TIME% > "%AWAKE_FLAG%"
+start "" /b powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File scripts\panini-keep-awake.ps1 -Flag "%AWAKE_FLAG%" -MaxMinutes 125
+
 REM 1) Is the debug Chrome actually DRIVABLE? (not merely listening)
 node scripts\panini-cdp-preflight.mjs >> "%PANINI_LOG%" 2>&1
 if %ERRORLEVEL% EQU 0 goto :run
@@ -63,6 +69,7 @@ REM    re-login — bail loudly rather than walking cards against a dead session
 node scripts\panini-cdp-preflight.mjs >> "%PANINI_LOG%" 2>&1
 if %ERRORLEVEL% NEQ 0 (
   echo [panini-run] ABORT: Chrome still not drivable after restart - re-login may be required >> "%PANINI_LOG%"
+  del "%AWAKE_FLAG%" >nul 2>&1
   endlocal
   exit /b 2
 )
@@ -75,4 +82,5 @@ REM The Panini NBA/MLB TEAM WALK used to run here (2026-09-24, a few hours). It 
 REM its own daily task — scripts\panini-team-walk.bat — so it cannot eat into this task's
 REM 2-hour limit or keep it waiting.
 echo ==== %DATE% %TIME% run end rc=%RC% ==== >> "%PANINI_LOG%"
+del "%AWAKE_FLAG%" >nul 2>&1
 endlocal & exit /b %RC%
