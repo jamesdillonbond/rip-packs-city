@@ -26,6 +26,9 @@ if %errorlevel%==0 (
   echo Scheduled "%TASK%" to run every 4 hours starting 06:00.
   echo Run it now to test:   schtasks /run /tn "%TASK%"
   echo Remove it later with: schtasks /delete /tn "%TASK%" /f
+  echo.
+  echo THEN, once: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\panini-schedule-harden.ps1
+  echo   ^(wake-to-run + catch up a missed run; schtasks cannot set either^)
 ) else (
   echo Failed to create the task ^(errorlevel %errorlevel%^).
 )
