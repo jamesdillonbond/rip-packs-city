@@ -1,15 +1,15 @@
 {
-  "generated_at_pt": "2026-10-02 ~8:25 AM PT",
+  "generated_at_pt": "2026-10-02 ~8:25 AM PT (index + findings added ~8:30 AM PT)",
   "generated_at_utc": "2026-10-02T15:25Z",
   "pass": "daytime autonomous pass (Claude Code, cloud, push GREEN via dry-run). Trevor: 'run a health check then … find things to work on autonomously for the next 4 hours'. 4 migrations shipped and committed; 0 reverted. Concurrent sessions active (Cowork monitor pass 7:42 AM PT; Panini wake scripts + CI guards).",
-  "shipped": 4,
+  "shipped": 5,
   "reverted": 0,
   "verdict": "GREEN. Security invariants 0, anon write surface 0, secdef/search_path/R118 drift all []; trust 37/38 ok (public_board_slow_count 1 = panini_sale_feed_status ~6 s, Cowork-filed); pg_cron 24 h 1 fail / ~17k (fixed); get_pipeline_alerts no high/critical at 8:10 AM PT after the two alarm fixes; Vercel 24 h chronic pack-detail cold scans + two whale-wallet 8 s bursts; E2E DOM Smoke green. Panini residential lanes asleep since 7:49 PM PT 10-01 (wake scripts shipped by the concurrent session).",
   "health": {
     "security_invariants": "clean (check_public_security_invariants 0 rows, check_anon_write_surface 0 rows, check_secdef_anon_exec_drift [], check_function_search_path_drift [])",
     "r118_when_others_blind": "[] after 20261002145919 (was 3 at 7:21 AM PT: the three chain lanes' v_body := NULL parse guards)",
     "trust_health_breaches": 1,
-    "trust_health_breach_detail": "public_board_slow_count = 1 (panini_sale_feed_status ~6 s; Cowork monitor handoff 2026-10-02 07:45 PT)",
+    "trust_health_breach_detail": "public_board_slow_count = 1 (panini_sale_feed_status 6,007 ms) — FIXED 8:14 AM PT by idx_panini_serials_feed_status (7.7 s → 0.72 s); the arm re-measures at the 1:28 PM PT sweep / 1:48 PM PT leg",
     "stalled_pipelines": "panini-ingest-enum info (residential box asleep since 7:49 PM PT 10-01)",
     "pgcron_fails_24h": "1 of ~17,000: rpc-wallet-reconstructed-rips statement_timeout at 120 s (3:37 AM PT) — fixed 20261002144052; catch-up run 8:14 AM PT ok 33 wallets / 22,118 rows / 118.7 s",
     "pipeline_alerts_after_fixes": [
@@ -49,6 +49,7 @@
   },
   "deltas_vs_prev": "vs 09-30 ~1:10 AM PT: FMV HIGH+MED nba 8230->8222, nfl 1615->1635, panini 2420->3243 (+823, multi-product walk), candy 31->27, golazos 2->6 (definition caveat above). Editions panini 7479->11438 (+3,959), nba 14469->14478. edition_integrity_flags 7->6. db 27,929->33,810 MB (+5.9 GB: Panini walk + chain-arrival probes).",
   "open_watches": [
+    "1:48 PM PT rpc-thp-leg-board-liveness: public_board_slow_count returns to 0 (panini_sale_feed_status now 724 ms warm on the new index); if not, read public_board_liveness_state.elapsed_ms for the view",
     "10-03 3:37 AM PT rpc-wallet-reconstructed-rips: a pipeline_runs row must exist (ok, or ok=false naming stopped_at) — first run under the 600 s COMMAND budget; input grows ~7k pack_pull rows/day for the 33 saved wallets",
     "next member-username Atlas 403 (~5/day): get_pipeline_alerts shows atlas-usernames-upstream-403 info and NO pg_net_http_403 row (attribution proven only on the next challenge)",
     "check_when_others_timeout_blind() stays [] as the chain lanes keep being redefined",
@@ -60,7 +61,8 @@
     "move .github/workflows/offer-fill-backfill.yml to cron-job.org (console), then remove the topshot_offer_fill_backfill suppression row",
     "rotate ATLAS_POOL_INGEST_KEY (#144) — npx supabase login once, then Rip Packs City/cowork-2026-09-30/rotate-atlas-pool-ingest-key.cmd",
     "#22 — watch tdillonbond@gmail.com for GitHub Support's reply, then re-test commit/1c3e01a8f (expect 404); rotate the Dapper session",
-    "from the Cowork monitor pass: pack-mint-probes 20 s timeouts (~45% since 10-01 1:13 PM PT) and panini_sale_feed_status ~6 s (public_board_slow_count)"
+    "from the Cowork monitor pass: pack-mint-probes 20 s timeouts — ATTRIBUTED (ledger 10-02 ~8:15 AM): the mainnet24 historical node answers slowly on ~0.5% of probes, retried by design; a run reads not-ok when any of its 25 probes timed out. Decide: raise the mainnet24 timeout (20 → 40 s) or let the run's ok mean dispatch+collect. panini_sale_feed_status 6 s is FIXED (index).",
+    "whale-wallet share card (collection-snapshot + wallet-intel RPCs ≈ 1.2M buffers, spilled sorts) is the source of the 8 s timeouts — a per-saved-wallet precompute or covering index is a design choice (ledger 10-02 ~8:20 AM)"
   ],
   "housekeeping": "inbox left append-only; no new filings (all four findings went straight to migrations + ledger). tooling-gotchas.md gained the MCP destructive-confirmation hold. docs/sessions/2026-10.md started."
 }

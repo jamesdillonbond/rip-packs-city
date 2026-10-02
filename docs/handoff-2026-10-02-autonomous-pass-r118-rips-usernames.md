@@ -16,10 +16,15 @@
 | `20261002145919` R118 shape rule | `r118_blind_handler_count(text)` + guard reads `<ident> := NULL` handlers as parse guards; controls on literal bodies; the 3 chain lanes clear; `collect_pack_nft_identity` off the name list | re-apply 20260920144120 body |
 | `20261002150259` username-lane 403s | `member_wallet_username_requests` + drained_at/status_code/error, marked not deleted, pruned 24 h; `check_edge_fn_http_failures()` lane `usernames` (info; high when no 200 in 6 h). Proven on the NEXT Cloudflare challenge: board shows `atlas-usernames-upstream-403 · info`, no `pg_net_http_403` | header REVERT block |
 
+## Also shipped ~8:15 AM PT — the trust breach
+- `idx_panini_serials_feed_status` (24 MB, built CONCURRENTLY by a one-off pg_cron job, recorded as `20261002151400_idx_panini_serials_feed_status.sql`): `panini_sale_feed_status` 7.7 s / 179k buffers → 0.72 s / 83k buffers. `public_board_slow_count` re-measures 1:28 / 1:48 PM PT.
+- Two findings, measured not changed (ledger ~8:15–8:20 AM PT): the pack-mint-probe "45 % failing runs" is the mainnet24 node's slow answers on ~0.5 % of probes (retried by design; a run is marked not-ok when any of 25 probes times out); the whale-wallet share card's two RPCs cost ~1.2M buffers with spilled sorts, which is where the 8 s timeouts come from.
+
 ## Needs Trevor (none urgent)
 1. **One `DROP FUNCTION public.zz_r118_probe_blind();`** — inert cruft (`LANGUAGE sql`, no-op, REVOKEd, commented) left by a bisecting CREATE; the MCP cannot run a DROP unattended.
 2. **Move `offer-fill-backfill.yml` to cron-job.org** (console) and then remove the suppression row — GHA cannot deliver above ~0.3 ticks/h (ledger 2026-09-13).
-3. Carry-forward unchanged: #144 key rotation (`npx supabase login` then the 09-30 `.cmd`), #22 GitHub Support reply watch, the Cowork monitor's pack-mint-probe timeouts and `panini_sale_feed_status` 6 s.
+3. Carry-forward unchanged: #144 key rotation (`npx supabase login` then the 09-30 `.cmd`), #22 GitHub Support reply watch.
+4. Decide on pack-mint-probes (raise the mainnet24 request timeout 20 → 40 s, or let a run's `ok` mean dispatch+collect with `probes_failed` in `extra`) and on the whale-wallet share-card cost (precompute per saved wallet vs covering index).
 
 ## Post-ship watch
 - 10-03 3:37 AM PT: `pipeline_runs` row for `wallet-reconstructed-rips` (ok, or ok=false naming the wallet it stopped at) — the kill path is by construction + both R118 guards, not yet exercised live.
