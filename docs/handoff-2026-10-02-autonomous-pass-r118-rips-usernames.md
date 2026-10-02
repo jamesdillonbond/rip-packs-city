@@ -29,7 +29,8 @@
 1. **One `DROP FUNCTION public.zz_r118_probe_blind();`** — inert cruft (`LANGUAGE sql`, no-op, REVOKEd, commented) left by a bisecting CREATE; the MCP cannot run a DROP unattended.
 2. **Move `offer-fill-backfill.yml` to cron-job.org** (console) and then remove the suppression row — GHA cannot deliver above ~0.3 ticks/h (ledger 2026-09-13).
 3. Carry-forward unchanged: #144 key rotation (`npx supabase login` then the 09-30 `.cmd`), #22 GitHub Support reply watch.
-4. Decide on pack-mint-probes (raise the mainnet24 request timeout 20 → 40 s, or let a run's `ok` mean dispatch+collect with `probes_failed` in `extra`).
+4. `get_pack_lifecycle_row` on the biggest dists (ledger ~9:45 AM): 22k anti-join probes = 97k buffers, 11.8 s cold — the chronic `pack_lifecycle` 5 s timeout. Two options with numbers in the ledger entry; (b) needs a misattribution count first.
+5. Decide on pack-mint-probes (raise the mainnet24 request timeout 20 → 40 s, or let a run's `ok` mean dispatch+collect with `probes_failed` in `extra`).
 
 ## Post-ship watch
 - 10-03 3:37 AM PT: `pipeline_runs` row for `wallet-reconstructed-rips` (ok, or ok=false naming the wallet it stopped at) — the kill path is by construction + both R118 guards, not yet exercised live.

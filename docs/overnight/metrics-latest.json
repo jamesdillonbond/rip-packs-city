@@ -62,7 +62,8 @@
     "move .github/workflows/offer-fill-backfill.yml to cron-job.org (console), then remove the topshot_offer_fill_backfill suppression row",
     "rotate ATLAS_POOL_INGEST_KEY (#144) — npx supabase login once, then Rip Packs City/cowork-2026-09-30/rotate-atlas-pool-ingest-key.cmd",
     "#22 — watch tdillonbond@gmail.com for GitHub Support's reply, then re-test commit/1c3e01a8f (expect 404); rotate the Dapper session",
-    "from the Cowork monitor pass: pack-mint-probes 20 s timeouts — ATTRIBUTED (ledger 10-02 ~8:15 AM): the mainnet24 historical node answers slowly on ~0.5% of probes, retried by design; a run reads not-ok when any of its 25 probes timed out. Decide: raise the mainnet24 timeout (20 → 40 s) or let the run's ok mean dispatch+collect. panini_sale_feed_status 6 s is FIXED (index)."
+    "from the Cowork monitor pass: pack-mint-probes 20 s timeouts — ATTRIBUTED (ledger 10-02 ~8:15 AM): the mainnet24 historical node answers slowly on ~0.5% of probes, retried by design; a run reads not-ok when any of its 25 probes timed out. Decide: raise the mainnet24 timeout (20 → 40 s) or let the run's ok mean dispatch+collect. panini_sale_feed_status 6 s is FIXED (index).",
+    "get_pack_lifecycle_row on big dists: 97k buffers / 11.8 s cold (dist 8552) = the chronic pack_lifecycle 5 s timeout. Pick (a) a covering pack_rips index for the anti-join (~25%) or (b) a dist-scoped anti-join (20x) after counting misattributed rips (ledger 10-02 ~9:45 AM)"
   ],
   "housekeeping": "inbox left append-only; no new filings (all four findings went straight to migrations + ledger). tooling-gotchas.md gained the MCP destructive-confirmation hold. docs/sessions/2026-10.md started. database.md gained the per-wallet-plan lesson (SQL fn + heavy-tailed param -> EXECUTE … USING)."
 }
