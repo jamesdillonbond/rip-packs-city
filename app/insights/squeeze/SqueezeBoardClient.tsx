@@ -18,6 +18,7 @@ import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
+import { sectionUnavailableCopy } from "@/lib/entity/section-empty-copy"
 import { usdSignFirst } from "@/lib/usd-format"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -605,9 +606,16 @@ export default function SqueezeBoardClient({
           <div className="rpc-sq-state">Loading…</div>
         ) : filtered.length === 0 ? (
           <div className="rpc-sq-state">
-            {teamFilter && teamResolution?.status === "none"
-              ? `No Top Shot team matches “${teamFilter}”.`
-              : "No editions match those filters."}
+            {/* ⚠ The KPI strip above already knew this was a failed read (R94);
+                the empty state did not, and told the reader "No editions match
+                those filters." under the failed-read banner — found by the
+                2026-10-03 cold pass of the built app. Same helper as the
+                scarcity boards' empty states. */}
+            {(degraded?.failed?.length ?? 0) > 0
+              ? sectionUnavailableCopy("Squeeze board")
+              : teamFilter && teamResolution?.status === "none"
+                ? `No Top Shot team matches “${teamFilter}”.`
+                : "No editions match those filters."}
           </div>
         ) : (
           <table className="rpc-sq-table">

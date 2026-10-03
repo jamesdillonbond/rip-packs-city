@@ -206,7 +206,12 @@ export async function fetchCandyMlbDefault(
       players: players.rows,
       parallel: parallel.rows,
       degraded: summarizeDegraded(sections),
-      fetchedAt: new Date().toISOString(),
+      // ⚠ null when the PRIMARY (Market) read failed — the same section `ok` gates
+      // on below. The page renders this as "Updated …"; a render-time stamp over a
+      // failed read certifies data nobody fetched (R95 class). Found by the
+      // built-render smoke's fabricated-freshness check, 2026-10-03 cold pass:
+      // "Updated Oct 3, 2026, 20:10 UTC" over ten failed sections.
+      fetchedAt: rows.ok ? new Date().toISOString() : null,
     },
     ok: rows.ok, // gate on the primary Market section (see doc comment above)
     rowCount: rows.rows.length,

@@ -10,6 +10,9 @@ import {
   withPrerendered,
   sessionCookie,
   TEST_ACCESS_TOKEN,
+  fabricatedStamps,
+  KNOWN_FABRICATED_STAMP,
+  score,
 } from "../scripts/qa/built-render-smoke.mjs"
 
 // scripts/qa/built-render-smoke.mjs renders every page route of the BUILT app in
@@ -103,5 +106,30 @@ describe("build-render CI job", () => {
   it("points Supabase at the local stub and uses no secrets", () => {
     expect(job.env.NEXT_PUBLIC_SUPABASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
     expect(JSON.stringify(job)).not.toContain("secrets.")
+  })
+})
+
+// R94/R95, 2026-10-03: with every read failing, a <time> stamped after the build
+// began can only have come from the clock. The cold pass found two such pages.
+describe("built-render-smoke fabricated-freshness check", () => {
+  const since = Date.parse("2026-10-03T19:00:00Z")
+  it("flags a render-time stamp (the candy-mlb shape)", () => {
+    const html = '<p>Updated <time dateTime="2026-10-03T20:10:41.907Z">Oct 3, 2026, 20:10 UTC</time></p>'
+    expect(fabricatedStamps(html, since)).toEqual(["2026-10-03T20:10:41.907Z"])
+  })
+  it("ignores an old stamp, a date-only publish date and midnight UTC", () => {
+    const html =
+      '<time dateTime="2026-09-01T12:00:00.000Z">x</time><time dateTime="2026-10-03">y</time>' +
+      '<time dateTime="2026-10-04T00:00:00.000Z">z</time>'
+    expect(fabricatedStamps(html, since)).toEqual([])
+  })
+  it("the honest failed-read form (an em dash, no <time>) passes", () => {
+    expect(fabricatedStamps("<p>Updated —</p>", since)).toEqual([])
+  })
+  it("a stamped page is BAD unless allowlisted, and the allowlist starts empty", () => {
+    expect(KNOWN_FABRICATED_STAMP.size).toBe(0)
+    const r = { pattern: "/insights/x", path: "/insights/x", status: 200, dsu: false, stamps: ["2026-10-03T20:10:41.907Z"] }
+    expect(score([r]).bad).toHaveLength(1)
+    expect(score([{ ...r, stamps: [] }]).bad).toHaveLength(0)
   })
 })

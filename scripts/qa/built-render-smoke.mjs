@@ -38,7 +38,7 @@
 //   node scripts/qa/built-render-smoke.mjs --list     # print the URL set, no requests
 
 import { spawn } from "node:child_process"
-import { readFileSync, existsSync } from "node:fs"
+import { readFileSync, existsSync, statSync } from "node:fs"
 import http from "node:http"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -50,6 +50,18 @@ const EXTERNAL = process.env.BASE_URL
 const BASE = (EXTERNAL || `http://127.0.0.1:${PORT}`).replace(/\/$/, "")
 const TIMEOUT_MS = Number(process.env.RENDER_SMOKE_TIMEOUT_MS || 45_000)
 const CONCURRENCY = Number(process.env.RENDER_SMOKE_CONCURRENCY || 4)
+// The earliest moment a page could have stamped from the clock: when this BUILD
+// began (ISR pages prerendered by `next build` under the same failed reads count
+// too). BUILD_ID is written during the build, so back off generously; a real
+// data timestamp cannot exist in this run at all, so the window only has to
+// exclude static content dates, which the detector already exempts.
+const STAMP_SINCE_MS = (() => {
+  try {
+    return statSync(path.join(ROOT, ".next", "BUILD_ID")).mtimeMs - 60 * 60 * 1000
+  } catch {
+    return Date.now() - 60 * 60 * 1000
+  }
+})()
 
 // Routes that answer 5xx against an unreachable DB TODAY, each with why. Keyed on
 // the ROUTE PATTERN (manifest value), not the URL. Empty is the goal.
@@ -61,6 +73,28 @@ export const KNOWN_5XX = new Map([
       "(app/edition/[id]/page.tsx). A 500 there is the honest failed-read state, not a crash.",
   ],
 ])
+
+// ── FABRICATED FRESHNESS (register R94/R95, 2026-10-03) ─────────────────────
+// In this run EVERY data read fails, so no page can know when its data was last
+// good. A `<time dateTime>` stamped at or after the build started can therefore
+// only have come from the CLOCK — a render-time "Updated …" vouching for a read
+// that failed. The 2026-10-03 cold pass found two (/insights/candy-mlb and
+// /insights/rookies, "Updated Oct 3, 2026, 20:10 UTC" over ten failed sections).
+// Date-only values (midnight UTC, e.g. a blog post's publish date) are exempt.
+// Keyed on ROUTE PATTERN, each with a reason; a fixed entry fails the ratchet.
+export const KNOWN_FABRICATED_STAMP = new Map([])
+
+/** `<time dateTime>` values in `html` that name a moment at/after `sinceMs`. Pure. */
+export function fabricatedStamps(html, sinceMs) {
+  const out = []
+  for (const m of html.matchAll(/<time[^>]*\sdateTime="([^"]+)"/gi)) {
+    const v = m[1]
+    if (/T00:00:00(\.000)?Z$/.test(v) || /^\d{4}-\d{2}-\d{2}$/.test(v)) continue
+    const t = Date.parse(v)
+    if (Number.isFinite(t) && t >= sinceMs) out.push(v)
+  }
+  return out
+}
 
 // Placeholder for a non-collection dynamic segment. Shaped to be valid-looking
 // for the common id kinds so a route reaches its data read rather than an early
@@ -236,7 +270,8 @@ async function probe(target, cookie) {
         continue
       }
       const body = await r.text()
-      return { ...target, status: r.status, ms: Date.now() - t0, dsu: body.includes("DYNAMIC_SERVER_USAGE"), hops }
+      const stamps = r.status >= 200 && r.status < 300 ? fabricatedStamps(body, STAMP_SINCE_MS) : []
+      return { ...target, status: r.status, ms: Date.now() - t0, dsu: body.includes("DYNAMIC_SERVER_USAGE"), hops, stamps }
     }
     return { ...target, status: 0, ms: Date.now() - t0, dsu: false, hops, error: "redirect loop" }
   } catch (e) {
@@ -257,7 +292,13 @@ async function runAll(targets, cookie) {
 
 /** Score one pass. Pure. */
 export function score(results) {
-  const bad = results.filter((r) => r.dsu || r.status === 0 || (r.status >= 500 && !KNOWN_5XX.has(r.pattern)))
+  const bad = results.filter(
+    (r) =>
+      r.dsu ||
+      r.status === 0 ||
+      (r.status >= 500 && !KNOWN_5XX.has(r.pattern)) ||
+      (r.stamps?.length > 0 && !KNOWN_FABRICATED_STAMP.has(r.pattern)),
+  )
   const byStatus = {}
   for (const r of results) {
     const k = r.gated ? "login-gated" : r.external ? "external-redirect" : String(r.status)
@@ -272,7 +313,13 @@ function report(label, results, s) {
   const slow = results.filter((r) => r.ms > 10_000)
   if (slow.length) console.log(`    slow (>10s): ${slow.map((r) => `${r.path} ${r.ms}ms`).join(", ")}`)
   for (const r of s.bad) {
-    const why = r.dsu ? "DYNAMIC_SERVER_USAGE in body" : r.status === 0 ? `no response (${r.error})` : `HTTP ${r.status}`
+    const why = r.dsu
+      ? "DYNAMIC_SERVER_USAGE in body"
+      : r.status === 0
+        ? `no response (${r.error})`
+        : r.status >= 500
+          ? `HTTP ${r.status}`
+          : `fabricated freshness: <time dateTime="${r.stamps[0]}"> on a page whose every read failed`
     console.log(`    ✗ ${r.path}  [${r.pattern}]  ${why}`)
   }
 }
@@ -344,6 +391,11 @@ async function main() {
       const rs = all.filter((r) => r.pattern === p && !r.gated)
       return rs.length > 0 && rs.every((r) => r.status > 0 && r.status < 500)
     })
+    const stampHealed = [...KNOWN_FABRICATED_STAMP.keys()].filter((p) => {
+      const rs = all.filter((r) => r.pattern === p && !r.gated && r.status >= 200 && r.status < 300)
+      return rs.length > 0 && rs.every((r) => !r.stamps?.length)
+    })
+    for (const p of stampHealed) healed.push(`${p} (KNOWN_FABRICATED_STAMP)`)
     const dsuInLog = serverLog.includes("DYNAMIC_SERVER_USAGE")
 
     // State the count inspected, every run — a guard that goes quiet has not passed.
@@ -375,7 +427,8 @@ async function main() {
       exitCode = 1
       if (server) console.log(`\n--- next start log (tail) ---\n${serverLog.split("\n").slice(-60).join("\n")}`)
     } else {
-      console.log("  ✓ no 5xx, no DYNAMIC_SERVER_USAGE")
+      const stamped = all.filter((r) => r.stamps?.length).length
+      console.log(`  ✓ no 5xx, no DYNAMIC_SERVER_USAGE, no fabricated freshness stamp (${all.length} renders inspected, ${stamped} allowlisted)`)
     }
   } finally {
     server?.kill("SIGTERM")

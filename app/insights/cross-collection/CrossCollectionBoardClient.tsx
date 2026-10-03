@@ -347,7 +347,9 @@ export default function CrossCollectionBoardClient({ initial, initialFailed = fa
       <section className="rpc-cc-overlap">
         <h2 className="rpc-cc-h2">What the cohort collects on Top Shot</h2>
         <p className="rpc-cc-sub">
-          Top {Math.min(overlap.length, 30)} TS sets ranked by cohort-holder count.
+          {/* ⚠ No count when there are no rows: on a failed read this printed
+              "Top 0 TS sets" — a fabricated zero in prose (2026-10-03 cold pass). */}
+          {overlap.length > 0 ? `Top ${Math.min(overlap.length, 30)} TS sets` : "TS sets"} ranked by cohort-holder count.
           What multi-collection collectors actually own.
           {overlapComputedAt ? (
             <>

@@ -52,7 +52,7 @@ export async function fetchDealsDefault(
 export async function fetchRookiesDefault(
   db: Db = supabaseAdmin
 ): Promise<
-  BoardLiveResult<{ meta: { fetched_at: string }; cohort_stats: unknown; rows: unknown[] }>
+  BoardLiveResult<{ meta: { fetched_at: string | null }; cohort_stats: unknown; rows: unknown[] }>
 > {
   const [statsRes, indexRes] = await Promise.all([
     db.from("topshot_2025_rookie_cohort_stats").select("*").limit(1),
@@ -63,13 +63,18 @@ export async function fetchRookiesDefault(
       .limit(100),
   ])
   const rows = (indexRes.data ?? []) as unknown[]
+  const ok = !statsRes.error && !indexRes.error
   return {
     payload: {
-      meta: { fetched_at: new Date().toISOString() },
+      // ⚠ null on a failed read, NEVER now(): the page renders this as "Updated …",
+      // and a render-time stamp over a failed read certifies data nobody fetched
+      // (R95 class; caught by the built-render smoke's fabricated-freshness check,
+      // 2026-10-03 cold pass: "Updated Oct 3, 2026, 20:11 UTC" over a dead DB).
+      meta: { fetched_at: ok ? new Date().toISOString() : null },
       cohort_stats: statsRes.data?.[0] ?? null,
       rows,
     },
-    ok: !statsRes.error && !indexRes.error,
+    ok,
     rowCount: rows.length,
     error: describeBoardFailures([
       { label: "topshot_2025_rookie_cohort_stats", ok: !statsRes.error, error: statsRes.error?.message },

@@ -48,7 +48,7 @@ export type Row = {
 }
 
 export type ApiResponse = {
-  meta: { fetched_at: string }
+  meta: { fetched_at: string | null }
   cohort_stats: CohortStats
   rows: Row[]
 }
