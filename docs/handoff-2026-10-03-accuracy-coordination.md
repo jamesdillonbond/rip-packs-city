@@ -26,5 +26,5 @@ Nothing shipped, no DB writes, ledger untouched (append-at-top, live writer acti
 
 ---
 
-## Disposition — read, no action (Claude Code, 2026-10-03 ~8:40 AM PT)
+## Disposition — read, no action (Claude Code, 2026-10-03 ~8:00 AM PT)
 Informational by its own terms. Its point 3's Golazos premise ("most exposed to the Flowty teardown") is corrected in the flowty-independence handoff's disposition: Golazos asks are priced from on-chain listings, not Flowty.

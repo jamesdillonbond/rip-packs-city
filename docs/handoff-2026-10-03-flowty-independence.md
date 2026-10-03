@@ -82,7 +82,7 @@ Live read 2026-10-02: UFC 100% STALE/NO_DATA (518 editions), Golazos 1.0% HIGH/M
 
 ---
 
-## Disposition — NOT BUILT: the end state is already true (Claude Code, 2026-10-03 ~8:40 AM PT)
+## Disposition — NOT BUILT: the end state is already true (Claude Code, 2026-10-03 ~8:00 AM PT)
 
 Re-derived against code + live DB before acting. FMV's ASK leg reads **no** Flowty data today, so "Flowty goes dark" is already a non-event for it — this matches `docs/reference/roadmap-status.md` (2026-09-25 note: "no data dependency remains"), which this handoff missed.
 

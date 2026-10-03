@@ -64,7 +64,7 @@ Revert the commit(s). No destructive DB ops. If `funnel_events.event_type` neede
 
 ---
 
-## Disposition — SHIPPED, narrowed after re-deriving (Claude Code, 2026-10-03 ~8:40 AM PT)
+## Disposition — SHIPPED, narrowed after re-deriving (Claude Code, 2026-10-03 ~8:00 AM PT)
 
 Two of the spec's premises were already built: **Gap B** (share nudge at activation) exists as the dashboard's `PublicProfileCard` (→ `ShareProfileButtons`) and the collection tab's post-search Share button; and **share→visit attribution** exists — `lib/track-funnel.ts` records an arrival's `utm_*` and `share_ref` on every funnel event of that session, so no `share_referral_visit` event or `funnel_events` CHECK migration is needed. The real gap was narrower: the two **anonymous `/share/<wallet>` card buttons** copied a bare URL (the card page copied `window.location.href`, re-sharing the copier's own utm), so a card-share visit was the one share arrival that could not be attributed — and both said "copied" even when the copy failed.
 
