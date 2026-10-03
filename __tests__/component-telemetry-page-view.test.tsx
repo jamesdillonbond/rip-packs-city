@@ -26,6 +26,18 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe("TelemetryPageView", () => {
+  it("a null pathname (pre-hydration) is logged as the root, not skipped or sent as null", () => {
+    pathname = null
+    render(<TelemetryPageView />)
+    expect(track).toHaveBeenCalledWith("page-view", { path: "/" })
+  })
+
+  it("sends ref + vid without a sid when session storage is unavailable", () => {
+    ctx.value = { sessionId: null, referrer: "utm_source=x", visitorId: "vid-abcdef12" }
+    render(<TelemetryPageView />)
+    expect(track).toHaveBeenCalledWith("page-view", { path: "/nba-top-shot/sniper", ref: "utm_source=x", vid: "vid-abcdef12" })
+  })
+
   it("carries the returning-visitor id when one exists (absent under GPC/DNT)", () => {
     ctx.value = { sessionId: "sess-1", referrer: null, visitorId: "vid-abcdef12" }
     render(<TelemetryPageView />)

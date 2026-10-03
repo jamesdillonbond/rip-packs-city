@@ -41,6 +41,25 @@ describe("InsightsEmailCapture — validation gate", () => {
     submit()
     expect(fetchMock).not.toHaveBeenCalled()
   })
+  // The two tests above exercise only the BROWSER's gate (jsdom's native
+  // constraint validation swallows the click), so the component's OWN gate was
+  // never run — a browser that skips native validation (or a programmatic
+  // submit) relies on it. Submit the form element directly to reach it.
+  it("the component's own gate refuses an address with no @ and says so, without a POST", async () => {
+    const { container } = render(<InsightsEmailCapture />)
+    type("not-an-email")
+    fireEvent.submit(container.querySelector("form")!)
+    await waitFor(() => expect(screen.getByText("Enter a valid email.")).toBeTruthy())
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("the component's own gate refuses a blank (whitespace-only) address", async () => {
+    const { container } = render(<InsightsEmailCapture />)
+    type("   ")
+    fireEvent.submit(container.querySelector("form")!)
+    await waitFor(() => expect(screen.getByText("Enter a valid email.")).toBeTruthy())
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })
 
 describe("InsightsEmailCapture — submit", () => {

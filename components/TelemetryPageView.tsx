@@ -29,7 +29,6 @@ export default function TelemetryPageView() {
   const pathname = usePathname() ?? "/"
 
   useEffect(() => {
-    if (!pathname) return
     if (SKIP_PREFIXES.some((p) => pathname.startsWith(p))) return
     const { sessionId, referrer, visitorId } = getFunnelContext()
     track("page-view", {

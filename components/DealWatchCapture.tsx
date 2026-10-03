@@ -30,8 +30,8 @@ export default function DealWatchCapture({ wallet }: { wallet: string }) {
   const focusedRef = useRef(false)
 
   useEffect(() => {
-    const el = boxRef.current
-    if (!el) return
+    // The <section> carrying the ref renders unconditionally, so it is set here.
+    const el = boxRef.current as HTMLElement
     if (typeof IntersectionObserver === "undefined") return
     let fired = false
     const io = new IntersectionObserver(

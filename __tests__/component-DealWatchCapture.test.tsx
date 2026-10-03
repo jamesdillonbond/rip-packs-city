@@ -58,6 +58,13 @@ describe("DealWatchCapture — seen → engaged instrumentation", () => {
     expect(trackMock).toHaveBeenCalledWith("deal-watch-shown", { surface: "share" })
   })
 
+  it("a browser without IntersectionObserver logs no impression rather than a false one", () => {
+    vi.stubGlobal("IntersectionObserver", undefined)
+    render(<DealWatchCapture wallet="0xW" />)
+    expect(io.cb).toBeNull()
+    expect(trackMock).not.toHaveBeenCalled()
+  })
+
   it("logs deal-watch-focus once on the first focus of the field", () => {
     const { getByLabelText } = render(<DealWatchCapture wallet="0xW" />)
     fireEvent.focus(getByLabelText("Email address"))
@@ -111,6 +118,18 @@ describe("DealWatchCapture", () => {
     fireEvent.change(getByLabelText("Email address"), { target: { value: "me@x.com" } })
     submit(container)
     await waitFor(() => expect(getByText("already subscribed")).toBeTruthy())
+    expect(funnelMock).not.toHaveBeenCalled()
+  })
+
+  it("a server error with no message (or a 200 that says success:false) gets the generic retry copy, never 'sent'", async () => {
+    fetchMock.mockReturnValueOnce(
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ success: false }) } as Response),
+    )
+    const { container, getByLabelText, getByText, queryByText } = render(<DealWatchCapture wallet="0xW" />)
+    fireEvent.change(getByLabelText("Email address"), { target: { value: "me@x.com" } })
+    submit(container)
+    await waitFor(() => expect(getByText("Something went wrong — try again.")).toBeTruthy())
+    expect(queryByText(/Check your inbox/)).toBeNull()
     expect(funnelMock).not.toHaveBeenCalled()
   })
 
