@@ -438,7 +438,8 @@ const PINS = [
     fn: "run_pack_mint_probe_lane",
     test: "supabase/tests/run_pack_mint_probe_lane.sql",
     // 2026-09-29: floor = mainnet24 root; per-spork node routing, 25/node, 429 free.
-    migration: "supabase/migrations/20260929162000_audit_20260929_pack_mint_probes_read_the_historical_sporks.sql",
+    // 2026-10-02: 90 s on historical nodes (20261003023303) 503ed whole batches; reverted, same body as 0929.
+    migration: "supabase/migrations/20261003030546_audit_20261002_revert_pack_mint_probes_90s_timeout.sql",
   },
   {
     // Added 2026-09-26. The height estimate the mint-probe lane aims with.

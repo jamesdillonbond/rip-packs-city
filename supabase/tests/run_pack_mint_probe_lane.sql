@@ -18,7 +18,8 @@
 --
 -- The function DDL below is VERBATIM from the committed migration
 -- (supabase/migrations/20260926200000_audit_20260926_pack_nft_mints_name_packs_dapper_minted_straight_into_a_wallet.sql;
--- run_pack_mint_probe_lane from 20260929162000_audit_20260929_pack_mint_probes_read_the_historical_sporks.sql).
+-- run_pack_mint_probe_lane from 20261003030546_audit_20261002_revert_pack_mint_probes_90s_timeout.sql, which restores the
+-- 20260929162000 body verbatim after 20261003023303 (90 s on historical nodes) 503ed whole batches).
 --
 -- 2026-09-29 additions: the floor is mainnet24's root (2023-11-08 / 65,264,619);
 --   6. each window goes to the node serving its spork and never crosses that
