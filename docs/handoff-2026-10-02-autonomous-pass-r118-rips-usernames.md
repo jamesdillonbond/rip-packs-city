@@ -1,4 +1,4 @@
-# Handoff — 2026-10-02 autonomous pass (~7:15 → ~9:15 AM PT; evening continuation 5:48 → 6:20 PM PT) · Claude Code (cloud)
+# Handoff — 2026-10-02 autonomous pass (~7:15 → ~9:15 AM PT; evening continuation 5:48 → 6:30 PM PT) · Claude Code (cloud)
 
 > ⚠ Every environment note below is specific to **this cloud session**. Trevor's machine and Claude Code push normally via Git Credential Manager; the Supabase MCP confirmation hold described here only bites an UNATTENDED session. **Commit these files as usual.**
 
@@ -31,6 +31,8 @@
 ## Evening continuation (5:48 → 6:20 PM PT, Trevor: "Keep going")
 - Health at 5:48 PM: no alerts, R118 and secdef drift `[]`, trust breaches none (the morning index cleared `public_board_slow_count`), stub queue fully resting (runs ~260 ms), gated chain-arrival slots at ~0.1 s, no pack-lifecycle timeout in 9 h. The other session dropped `zz_r118_probe_blind` (Needs-Trevor item 1 is done).
 - **Shipped (3 migrations, R107 residual):** `fmv_snapshots.updated_at` + partial index + the incremental refresh window `computed_at UNION updated_at` — a corrected FMV now reaches the cache within the hour (was up to 24 h); the six live drift rows (max $1,349.55) are gone after a one-off full reconcile (3.8 s). Watch + falsifier in the ledger.
+- **Shipped (2 indexes, 6:21–6:25 PM PT):** the two biggest disk readers on the instance were full scans of the 1.5 GB `panini_card_serials` heap — the health sentinel's 26 h serial count (191,849 → 31,667 buffers) and the squeeze MV's per-edition aggregate (191,784 → 69,581, index-only). ⚠ Cadence question for you: `rpc-refresh-panini-squeeze` refreshes every 30 min while its inputs land 4-hourly.
+- R108 (register) was already shipped 09-19; its row is now marked resolved from today's numbers.
 - **Tooling correction:** the MCP hold also catches a legitimate function body (pre-existing DELETE) and a plain UPDATE in a DO block; discriminator `DO $$ EXECUTE pg_get_functiondef(...) $$`; honest route = guarded splice, stated as adding no destructive statement (tooling-gotchas.md).
 
 ## Needs Trevor (none urgent)
