@@ -697,7 +697,16 @@ export async function GET(req: NextRequest) {
     if (Number.isFinite(seen) && seen >= agedCutoff) break; // stalest-first: everything after is fresher
     if (!heldSet.has(r.external_id)) agedPriority.push(r.external_id);
   }
-  const priority = [...heldNew, ...agedPriority];
+  // INTERLEAVED 1:1, aged first (2026-10-03 ~4:40 PM PT). Held-first starved the aged list: the
+  // collector walk now names 4,164 held-but-uncatalogued pskus (10 collectors) against a run that
+  // refreshes ~300-370 editions, so not one aged edition was reached and editions > 6 days old rose
+  // 1,113 -> 1,350 in two hours. Alternating keeps both moving — the stalest catalogue edition is
+  // never more than one slot behind a held card, and held cards still enter at half the run.
+  const priority: string[] = [];
+  for (let i = 0; i < Math.max(agedPriority.length, heldNew.length); i++) {
+    if (i < agedPriority.length) priority.push(agedPriority[i]);
+    if (i < heldNew.length) priority.push(heldNew[i]);
+  }
 
   const rows = trim ? inScope.slice(0, trim) : inScope;
   const pskus = trim ? [...heldNew, ...rows.map((r) => r.external_id)].slice(0, trim) : [...heldNew, ...rows.map((r) => r.external_id)];

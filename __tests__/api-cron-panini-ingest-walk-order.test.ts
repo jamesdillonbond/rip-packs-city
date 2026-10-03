@@ -213,17 +213,32 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
   // A runner that walks every fresh discovery before any known edition stopped refreshing the
   // catalogue after 22 products were admitted (514 editions > 6 days old). Every runner walks
   // priority_pskus first, so editions past the age line are served there, stalest first, capped.
-  it("serves catalogue editions older than 5 days in priority_pskus, stalest first, after the held", async () => {
+  // RE-PINNED 2026-10-03 ~4:40 PM PT: aged and held now ALTERNATE (aged first). Held-first starved the
+  // aged list once the collector walk named 4,164 held pskus against ~300-370 refreshed per run.
+  it("serves catalogue editions older than 5 days in priority_pskus, stalest first, alternating with the held", async () => {
     st.total = 6
     st.baseMs = Date.now() - 6 * 86_400_000 // rows 0..5 are ~6 days old
     st.products = { data: [{ set_id: 2332, name: "WC", walk_cards: true }, { set_id: 1941, name: null, walk_cards: true }], error: null }
     st.holdings = [{ psku: "packcard-1941_377959_9989801_273" }]
     const j = await (await GET(req())).json()
-    expect(j.priority_pskus[0]).toBe("packcard-1941_377959_9989801_273")
-    expect(j.priority_pskus.slice(1)).toEqual(Array.from({ length: 6 }, (_, i) => `packcard-2332_1_${i}_1`))
+    expect(j.priority_pskus).toEqual([
+      "packcard-2332_1_0_1", "packcard-1941_377959_9989801_273",
+      ...Array.from({ length: 5 }, (_, i) => `packcard-2332_1_${i + 1}_1`),
+    ])
     expect(j.aged_priority).toBe(6)
     expect(j.held_uncatalogued).toBe(1)
     expect(j.complete).toBe(true)
+  })
+
+  it("a FLOOD of held cards cannot starve the aged list: half of any run-sized prefix is aged", async () => {
+    st.total = 400
+    st.baseMs = Date.now() - 10 * 86_400_000
+    st.products = { data: [{ set_id: 2332, name: "WC", walk_cards: true }, { set_id: 1941, name: null, walk_cards: true }], error: null }
+    st.holdings = Array.from({ length: 4000 }, (_, i) => ({ psku: `packcard-1941_9_${i}_9` }))
+    const j = await (await GET(req())).json()
+    const run = (j.priority_pskus as string[]).slice(0, 340) // ~one run's refreshes, measured 10-03
+    expect(run.filter((p) => p.startsWith("packcard-2332_")).length).toBe(170)
+    expect(run[0]).toBe("packcard-2332_1_0_1") // the stalest edition leads
   })
 
   it("serves NO aged priority while every edition is fresher than 5 days", async () => {
