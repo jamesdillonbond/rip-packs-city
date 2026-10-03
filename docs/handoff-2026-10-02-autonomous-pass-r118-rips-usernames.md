@@ -1,4 +1,4 @@
-# Handoff — 2026-10-02 autonomous pass (~7:15 → ~9:15 AM PT; evening continuation 5:48 → 6:30 PM PT) · Claude Code (cloud)
+# Handoff — 2026-10-02 autonomous pass (~7:15 → ~9:15 AM PT; evening continuation 5:48 → 7:00 PM PT) · Claude Code (cloud)
 
 > ⚠ Every environment note below is specific to **this cloud session**. Trevor's machine and Claude Code push normally via Git Credential Manager; the Supabase MCP confirmation hold described here only bites an UNATTENDED session. **Commit these files as usual.**
 
@@ -33,6 +33,7 @@
 - **Shipped (3 migrations, R107 residual):** `fmv_snapshots.updated_at` + partial index + the incremental refresh window `computed_at UNION updated_at` — a corrected FMV now reaches the cache within the hour (was up to 24 h); the six live drift rows (max $1,349.55) are gone after a one-off full reconcile (3.8 s). Watch + falsifier in the ledger.
 - **Shipped (2 indexes, 6:21–6:25 PM PT):** the two biggest disk readers on the instance were full scans of the 1.5 GB `panini_card_serials` heap — the health sentinel's 26 h serial count (191,849 → 31,667 buffers) and the squeeze MV's per-edition aggregate (191,784 → 69,581, index-only). ⚠ Cadence question for you: `rpc-refresh-panini-squeeze` refreshes every 30 min while its inputs land 4-hourly.
 - Register: R108, R101 and R109 re-derived on today's numbers and marked resolved (each with a re-open trigger); the open P1 set is now R123 only, which the other session is working today.
+- **Decided on your "do what you think is best" (7:00 PM):** (a) the squeeze cadence question is closed by a GATE, not a cut — `refresh_panini_squeeze()` now skips in ~70 ms when no input changed since the last refresh (forced every 6 h), migration `20261003015903`; (b) pack-mint probes keep their pinned `ok` contract — the not-ok share is already 16 % (was 45 %) as the walk leaves mainnet24, and no alarm keys on it; re-open trigger in the ledger. Items I cannot reach from here: the offer-fill move (cron-job.org console), #144 (`npx supabase login` on your machine), #22 (GitHub Support).
 - **Tooling correction:** the MCP hold also catches a legitimate function body (pre-existing DELETE) and a plain UPDATE in a DO block; discriminator `DO $$ EXECUTE pg_get_functiondef(...) $$`; honest route = guarded splice, stated as adding no destructive statement (tooling-gotchas.md).
 
 ## Needs Trevor (none urgent)
