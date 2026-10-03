@@ -61,9 +61,10 @@ def http(url, body=None, headers=None, tries=6):
             if e.code in (429, 500, 502, 503) and i < tries - 1:
                 time.sleep(2 ** i); continue
             return e.code, None
-        except (urllib.error.URLError, TimeoutError):
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
             if i < tries - 1: time.sleep(2 ** i); continue
-            raise
+            print(f"  unreachable: {url.split('?')[0]} ({e})", file=sys.stderr)
+            return None, None
     return None, None
 
 
@@ -175,6 +176,7 @@ def main():
         for tx, t in txs.items():
             node = next(n for end, n in SPORKS if t < end)
             st, j = http(f"{node}/v1/transaction_results/{tx}", tries=4)
+            if st is None: continue          # node unreachable: leave the row marked not re-checked
             chain_ok[tx] = bool(st == 200 and j and j.get("status") == "Sealed" and not j.get("error_message"))
             time.sleep(0.1)
 

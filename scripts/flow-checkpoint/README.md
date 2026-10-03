@@ -15,6 +15,7 @@ records (Flowty Funding / storefront listings, NFT collections) are fully recove
 | `decode_flags.py <dir> <out.json>` | funding id → (repaid, settled) at that snapshot |
 | `decode_wallet.py <dir> <owner_hex> <out.json>` | an account's NFT ids per collection + storefront listings |
 | `decode_rentals.py <dir> <out.json>` | `FlowtyRentals.Rental` → renter / owner, returned / settled, start, term, fee, deposit, NFT (rentals persist with flags, so every snapshot carries the whole book: 586 at mainnet-24) |
+| `decode_old_wallet.py <dir> <owner_hex> <out.json>` | holdings in the PRE-atree format (mainnet-6..14, 2021-03..10): reads each collection register's `ownedNFTs` key array (authoritative; standalone `…/ownedNFTs/<id>` registers can be empty-value tombstones). Old CBOR uses location `{0:addr,1:name}`. |
 | `match_purchases.py [out.csv]` | moments that entered a wallet between snapshots × purchased Flowty listings (expects `w{spork}_{owner}.json` and `L{spork}/` in cwd) |
 
 Run a full checkpoint as 16 parallel processes (one per part, or 16 byte ranges of a single file):
