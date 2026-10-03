@@ -10,7 +10,11 @@
 // Fail CLOSED when unset: the guard below rejects every request rather than
 // accepting an empty ?key=. Rotate with:
 //   supabase secrets set ALLDAY_RIP_DIST_GATE_KEY=<new-random>
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+// Bare specifier through supabase/functions/deno.json (jsr:@supabase/supabase-js@2),
+// like the other functions. It was the one raw esm.sh URL in the fleet, which
+// left edge-fn-drift unable to classify it, so edge-fn-deploy.yml's read-back
+// could never pass for it (2026-10-02).
+import { createClient } from "@supabase/supabase-js"
 const GATE = Deno.env.get("ALLDAY_RIP_DIST_GATE_KEY") ?? ""
 // Transitional SECOND key, read from its own secret — never a literal (this repo is PUBLIC).
 // During a key rotation, set ALLDAY_RIP_DIST_GATE_KEY_OLD to the OUTGOING key: both are then accepted, so the

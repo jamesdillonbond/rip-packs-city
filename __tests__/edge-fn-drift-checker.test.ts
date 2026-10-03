@@ -126,9 +126,12 @@ describe("edge-fn drift detector — tier 1 is a proof", () => {
     // this detector cannot see either (it compares repo-vs-deployed for slugs the
     // repo HAS). The count in this file's header comment moved 37 -> 38 for the
     // same reason.
+    // resolve-allday-rip-dist-api LEFT the list on 2026-10-02: it was moved to
+    // the import map because a url-only function reads `unclassifiable`, and
+    // edge-fn-deploy.yml's read-back (which needs `clean`) failed on it. The two
+    // below will hit the same wall on their next deploy.
     expect(res.inapplicable.sort()).toEqual([
       "flowty-proxy",
-      "resolve-allday-rip-dist-api",
       "sync-nba-games",
     ])
     expect(res.clean.sort()).toEqual([...WITH_MAP].sort())
