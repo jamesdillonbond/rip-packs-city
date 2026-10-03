@@ -1,6 +1,6 @@
 {
-  "generated_at_pt": "2026-10-03 ~3:36 PM PT (daytime autonomous pass, Cowork cloud, Trevor present; eighth block)",
-  "generated_at_utc": "2026-10-03T22:36Z",
+  "generated_at_pt": "2026-10-03 ~3:58 PM PT (daytime autonomous pass, Cowork cloud, Trevor present; ninth block)",
+  "generated_at_utc": "2026-10-03T22:58Z",
   "pass": "daytime health + Search Console + scheduler audit + live QA, then 'keep going' (Cowork cloud, push-capable via add_repo). 15 code/docs commits, 11 migrations (20261003152533, 20261003163012, 20261003180241, 20261003180606, 20261003181445, 20261003182955, 20261003184026, 20261003184843, 20261003185621, 20261003192013, 20261003202149 — data-only; 20261003211704 beta_feedback_stats view), 1 pg_cron schedule (682 concentration refresh), 2 pg_cron unschedules (475, 673), 5 GSC validations + sitemap resubmit. Handoff: docs/handoff-2026-10-03-daytime-audit-gsc-schedulers.md",
   "shipped": 20,
   "reverted": 0,
@@ -70,7 +70,23 @@
     "overrule check (optional): sniper fee gate default-on was a delegated product call — revert 5bf46cced to undo; team-named player slugs stay 404 (decided)",
     "product call (optional): an ask/offer price-history SERIES would need a new snapshot lane; the chart states today that none exists",
     "#22: GitHub Support #4811268 (open since 09-30, no reply) — after they act, re-test commit/1c3e01a8f (expect 404) and rotate the Dapper session",
-    "R77: say the word for a live test page (a public GitHub issue) to prove the no-secret pager end to end; add TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID as repo secrets whenever you like for the second channel"
+    "R77: say the word for a live test page (a public GitHub issue) to prove the no-secret pager end to end; add TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID as repo secrets whenever you like for the second channel",
+    "R125 (methodology): Top Shot FMV = 7-day-half-life WAP trails a last-3 median out of sample and ran 5-20% high for four weeks; shorter half-life and/or median is the lever (#140 territory)"
   ],
-  "housekeeping": "offer-fill-backfill.yml move to cron-job.org RETIRED as an item (its header explains the GHA loop; caught-up trailing re-walk). pg_cron 475 spent one-shot unscheduled. cron-schedule.md re-verified 10-03. The 10 retired cron-job.org entries were deleted by Trevor ~2:25 PM PT (78 entries / 71 active / 7 inactive). Register OPEN 88 -> 52: 36 self-marked-resolved rows moved to RESOLVED (260dfbe22)."
+  "housekeeping": "offer-fill-backfill.yml move to cron-job.org RETIRED as an item (its header explains the GHA loop; caught-up trailing re-walk). pg_cron 475 spent one-shot unscheduled. cron-schedule.md re-verified 10-03. The 10 retired cron-job.org entries were deleted by Trevor ~2:25 PM PT (78 entries / 71 active / 7 inactive). Register OPEN 88 -> 52: 36 self-marked-resolved rows moved to RESOLVED (260dfbe22).",
+  "fmv_backtest_topshot_7d": {
+    "published": {
+      "n": 17134,
+      "median_abs_err_pct": 14.3,
+      "within_25_pct": 70.3,
+      "median_ratio": 1.0
+    },
+    "last3_median_30d": {
+      "n": 17134,
+      "median_abs_err_pct": 12.5,
+      "within_25_pct": 72.1,
+      "median_ratio": 1.0
+    },
+    "definition": "topshot_fmv_backtest(7) at 2026-10-03 ~3:45 PM PT; sales serial>25, no Dapper sell-backs, FMV published >=1 day before the sale; register R125"
+  }
 }

@@ -119,12 +119,19 @@ Trevor's answer to the third block's queue was to build it. All four verified ag
 - **#22 — nothing a session can move.** Re-tested: `commit/1c3e01a8f` still loads, the 15 closed PRs still hold the refs; Support ticket **#4811268** is Open with no reply after 3 days (read in your signed-in Chrome; the earlier #4626897 is archived). What remains is GitHub's action, then the Dapper session rotation, which needs your Dapper login.
 - **Red `main` fixed (`0447d373a`):** the other session's market-cap tiles (`17d6c93`, 3:03 PM) put the edition / player / team / set pages on an unbounded path to the RPC-read module through two pure helpers and two types imported by `MarketCapTile.tsx`. Helpers moved to the pure `market-cap-format.ts`, types taken from the bounded fetcher; `check-unbounded-server-reads` 0 / 94; CI green.
 
+## Ninth block (~3:36–3:58 PM PT): "Keep going" — Top Shot FMV measured against what collectors actually paid
+
+- **The gate metric was a confidence share; this is the first out-of-sample measurement of the Top Shot PRICE.** `topshot_fmv_backtest(p_days)` (`20261003223807`, ops-only; register **R125**; roadmap-status block) compares each Top Shot sale (serial > 25, Dapper sell-backs excluded) with the FMV published ≥ 1 day earlier and with a naive "median of the last 3 prior sales".
+- **Numbers (PT weeks, 10-03):** week 0 (n 17,134) published median abs error **14.3 %**, 70 % within ±25 %, ratio **1.000**; the naive median 12.5 % / 72 % / 1.000. Weeks 1–4 the published price ran **5–20 % high** (ratio 1.045–1.200) while the naive median stayed ≈ 1.0. By tier: HIGH at parity (10.0 vs 9.1 %); MEDIUM 15.0 vs 13.0; LOW 21.8 vs 16.7. ASK_ONLY 55 % at ratio 1.55.
+- **Attributed the same hour, read against the code:** it is not the ask blend (98.9 % of matched snapshots had no ask). `fmv_usd` = `wapWithoutOutliers` (7-day-half-life weighted mean) and `published / asp` = 1.000 — the outlier filter removes almost nothing. A 7-day-half-life MEAN lags a falling market and is pulled up by high prints (`asp / price` 1.18 liquid, 1.20 thin, 1.375 very thin); the last-3 MEDIAN wins exactly there. **Lever: shorter half-life and/or a median — a methodology call, yours (#140). No pricing change shipped.**
+
 ## Needs Trevor (carried + new)
 
 - ~~Delete the 10 retired cron-job.org entries~~ — DONE by Trevor ~2:25 PM PT (console reads 78 entries / 71 active / 7 inactive; ledger entry by the other session).
 - Rotate `ATLAS_POOL_INGEST_KEY` (#144); #22 — waiting on GitHub Support #4811268, then the Dapper session rotation. ~~Scratch Flowty jobs 673/680~~ — both gone (673 unscheduled by this session after reading its state tables: nothing left to dispatch).
 - `sync-nba-projections` (#8) — mute now expires 10-28.
 - Both product calls from the first block were MADE under delegation (sniper fee gate shipped; team-named player slugs stay 404). Overrule by reverting `5bf46cced`.
+- **New, yours:** R125 — the Top Shot FMV estimator (7-day-half-life WAP) trails a last-3-sales median out of sample and ran 5–20 % high for four weeks; a shorter half-life and/or a median is the lever. Re-run `select * from topshot_fmv_backtest(7)` after any change.
 - ~~Flip 10231 + 10233; decide on 10256 and the chart overlays~~ — DONE in the fourth block (Trevor: "Do everything mentioned"); the only open product call is whether an ask/offer price-history SERIES is worth a new snapshot lane (today nothing keeps it, so the chart does not pretend to).
 
 ## Memory / docs written
