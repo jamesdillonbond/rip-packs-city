@@ -48,6 +48,8 @@ Run security invariants, `detect_stalled_pipelines`, `get_pipeline_alerts`, trus
 - ⚠ **A failures-only query reads as 100% failing.** Always carry the denominator. A window straddling a deploy measures neither state.
 - ⚠ `pipeline_runs` retains ~73h — check `pipeline_runs_daily` first (its column is `pipeline`).
 
+- ⭐ **Accuracy is the gate, and a confidence share is not accuracy (2026-10-03, R125).** Once a pass, read the PRICE against what collectors paid: `select * from fmv_sales_backtest('nba_top_shot', 7)` and `('nfl_all_day', 7)` (ops-only, ~10 s each; `median_abs_err_pct`, `median_ratio`, and for All Day the `median_abs_err_usd` column — 93 % of its sales are under $1). Record `published` ALL vs `last3_median_30d` ALL in the handoff; a `median_ratio` drifting past 1.10 or under 0.90 is the estimator lagging the market, not a pipeline fault — check snapshot age and ingestion lag before saying otherwise.
+
 Cost triage recipe: `sum(end_time - start_time)` per job over 24h, split by status. Worker-seconds spent on runs that wrote nothing is the cheapest headroom on the board.
 
 ## 3. Before shipping any lever
