@@ -5118,7 +5118,10 @@ export async function POST(req: NextRequest) {
   // page that embeds a fetch to this public route is refused before any
   // identity work or model spend (2026-10-03 audit).
   const browserOrigin = req.headers.get("origin");
-  if (!isAllowedBrowserOrigin(browserOrigin, req.headers.get("x-forwarded-host") ?? req.nextUrl.host, ALLOWED_ORIGINS)) {
+  // Host from the headers first: a harness may hand this handler a plain
+  // Request with no `nextUrl`, and Vercel sets x-forwarded-host on every hop.
+  const requestHost = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl?.host ?? null;
+  if (!isAllowedBrowserOrigin(browserOrigin, requestHost, ALLOWED_ORIGINS)) {
     return NextResponse.json({ error: "Origin not allowed" }, { status: 403 });
   }
   const identity = await deriveIdentity();
