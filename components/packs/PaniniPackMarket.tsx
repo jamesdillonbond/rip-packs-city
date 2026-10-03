@@ -213,7 +213,7 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
 
 /** "FOTL" alone is ambiguous once two products each have a FOTL pack — name the product when it isn't WC. */
 function historyLabel(h: { packId?: string; packType: string }, products: PaniniPackProduct[]): string {
-  const type = h.packType === "fotl" ? "FOTL" : h.packType === "hobby" ? "Hobby" : h.packType
+  const type = h.packType === "fotl" ? "FOTL" : h.packType ? h.packType.charAt(0).toUpperCase() + h.packType.slice(1) : h.packType
   const prod = h.packId ? products.find((p) => p.id === h.packId) : undefined
   if (!prod || prod.evModeled === true) return type
   return prod.productName ? `${prod.productName} · ${type}` : prod.name ?? type

@@ -116,6 +116,17 @@ export function pskuSetId(psku: unknown): number | null {
   return m ? Number(m[1]) : null;
 }
 
+// The pack's type, from its own published name (2026-10-03). Every non-FOTL pack used to be labelled
+// "hobby" — right for Panini's plain "<product> Packs" (the WC and WNBA standard packs), wrong for the
+// Blaster / Mega / Premium packs the secondary-market pack grid now brings in.
+const PACK_TYPE_WORDS = /\b(blaster|mega|premium|elite|deluxe|jumbo|retail|starter|super|mini|hobby)\b/i;
+export function paniniPackType(packName: unknown, packId: string): string {
+  const name = typeof packName === "string" ? packName : "";
+  if (/fotl|first off/i.test(name) || packId === "1039") return "fotl";
+  const m = name.match(PACK_TYPE_WORDS);
+  return m ? m[1].toLowerCase() : "hobby";
+}
+
 // getPackMarketStats.data -> panini_pack_state row. Pack id prefers the runner's __pack_id (parsed from
 // the pack URL) so FOTL 1039 doesn't collide with Hobby 1038. Secondary price captured for net rip-EV.
 // Multi-product (2026-09-28): product_name / sport come from the payload itself (collection_name,
@@ -132,7 +143,7 @@ export function toPackRow(p: any, nowIso: string, productSetId: number | null = 
     sport: typeof p?.sport === "string" && p.sport.trim() ? p.sport.trim() : null,
     product_set_id: productSetId,
     page_url: typeof p?.__page_url === "string" ? p.__page_url : null,
-    pack_type: /fotl|first off/i.test(p?.pack_name ?? "") || packId === "1039" ? "fotl" : "hobby",
+    pack_type: paniniPackType(p?.pack_name, packId),
     // Panini's PRIMARY (drop) price, from a drop page's packDetails.subpack_price. Absent on the
     // marketplace pages (getPackMarketStats), where the secondary floor below is the price.
     price_usd: posOrNull(p?.subpack_price),

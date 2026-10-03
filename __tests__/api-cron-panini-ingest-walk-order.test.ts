@@ -31,6 +31,7 @@ const st = vi.hoisted(() => ({
   // Epoch ms of catalogue row 0's last_seen_at (rows ascend 1 s apart). Recent by default, so the
   // aged-priority rule (2026-10-03) stays out of tests about something else.
   baseMs: 0,
+  pageOrder: [] as Array<[string, unknown]>,
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -52,7 +53,7 @@ vi.mock("@/lib/supabase", () => ({
       }
       if (table === "panini_products" || table === "panini_pack_pages") {
         const res = table === "panini_products" ? st.products : st.pages
-        const r: any = { select: () => r, eq: () => r, order: () => r, then: (f: any, g: any) => Promise.resolve(res).then(f, g) }
+        const r: any = { select: () => r, eq: () => r, order: (col: string, o: unknown) => { if (table === "panini_pack_pages") st.pageOrder.push([col, o]); return r }, then: (f: any, g: any) => Promise.resolve(res).then(f, g) }
         return r
       }
       const b: any = {
@@ -88,6 +89,7 @@ beforeEach(async () => {
   st.holdings = []
   st.holdingsError = null
   st.baseMs = Date.now() - 3_600_000
+  st.pageOrder = []
   process.env.INGEST_SECRET_TOKEN = "tok"
   ;({ GET } = await import("@/app/api/cron/panini-ingest/route"))
 })
@@ -238,6 +240,13 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     expect(j.aged_priority).toBe(300)
     expect(j.priority_pskus[0]).toBe("packcard-2332_1_0_1") // the stalest
     expect(j.priority_pskus).toHaveLength(300)
+  })
+
+  it("pack pages are served stalest-walk first, so pages past the runner's per-run cap still rotate in", async () => {
+    // 2026-10-03: the secondary-market pack grid can register more pages than PANINI_PACK_PAGES_MAX
+    // (40). Ordered by url alone, every page past the cap would never be opened.
+    await GET(req())
+    expect(st.pageOrder[0]).toEqual(["last_walked_at", { ascending: true, nullsFirst: true }])
   })
 
   it("a pack-pages read failure is pack_urls:null (runner keeps its built-in list), not []", async () => {

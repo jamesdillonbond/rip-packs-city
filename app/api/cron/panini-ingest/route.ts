@@ -610,7 +610,11 @@ export async function GET(req: NextRequest) {
     readProducts(),
     (async () => {
       try {
-        const { data, error } = await (supabaseAdmin as any).from("panini_pack_pages").select("url").eq("enabled", true).order("url", { ascending: true });
+        // Stalest walk first (never-walked first of all): the runner opens at most PANINI_PACK_PAGES_MAX
+        // pages a run, and the secondary-market pack grid (2026-10-03) can register more pages than
+        // that. Ordered by url, the pages past the cap would never be opened.
+        const { data, error } = await (supabaseAdmin as any).from("panini_pack_pages").select("url").eq("enabled", true)
+          .order("last_walked_at", { ascending: true, nullsFirst: true }).order("url", { ascending: true });
         return error ? { urls: null as string[] | null, error: error.message as string } : { urls: ((data ?? []) as { url: string }[]).map((r) => r.url), error: null };
       } catch (e) { return { urls: null as string[] | null, error: e instanceof Error ? e.message : String(e) }; }
     })(),

@@ -58,6 +58,9 @@ import { enumProgress, stepStability, enumStopReason } from "./panini-enum-progr
 import { tagSaleRecords } from "./panini-sales-list.mjs";
 import { buildWalkOrder } from "./panini-walk-order.mjs";
 import { createStallWatchdog } from "./panini-stall-watchdog.mjs";
+import { isPackishEvidence, subpackUrlsFromHtml, packGridCandidates } from "./panini-pack-grid.mjs";
+
+const RUN_STARTED_AT = Date.now();
 
 const USER_DATA_DIR = process.env.PANINI_USER_DATA_DIR;
 const INGEST_URL = process.env.RPC_PANINI_INGEST_URL;
@@ -307,18 +310,21 @@ async function main() {
   // Pack links harvested from every page the walk visits (discovery -> panini_pack_pages).
   const harvestedPackUrls = new Set();
   const packishUnmatched = new Set();
+  const navHrefs = new Set(); // every on-site link seen on the home page + first grid: pack-grid candidates
   async function harvestPackLinks() {
     let hrefs = [];
     try {
       hrefs = await page.evaluate(() => Array.from(document.querySelectorAll("a[href]")).map((a) => a.href || ""));
     } catch { return 0; }
     let added = 0;
+    if (navHrefs.size < 2000) for (const h of hrefs) navHrefs.add(String(h));
     for (const h of hrefs) {
       const u = String(h).split("#")[0].split("?")[0];
       if (PACK_LINK_RE.test(u)) { const k = packPageKey(u); if (!harvestedPackUrls.has(k)) { harvestedPackUrls.add(k); added++; } }
       // Evidence for the pattern itself (0 links matched on 2026-09-28): keep a few pack-ish hrefs
       // that did NOT match, so a wrong PACK_LINK_RE is visible in the enum marker.
-      else if (/pack/i.test(u) && packishUnmatched.size < 15) packishUnmatched.add(u.slice(0, 200));
+      // /packcard- links are CARD pages; they filled all 15 slots on every walk and hid real pack links.
+      else if (isPackishEvidence(u) && packishUnmatched.size < 15) packishUnmatched.add(u.slice(0, 200));
     }
     return added;
   }
@@ -692,6 +698,45 @@ async function main() {
   console.log(`[panini-runner][diag] sport=${sport} (${full ? "full" : "discovery"}) enum_stop=${enumStop} grid_pages=${gridPages - gridPages0} grid_items=${gridSeen - gridSeen0} walked_pskus+=${enumPskus.size - enum0} set_ids=[${sportStats.at(-1).set_ids.join(",")}]`);
   }
   currentSport = null;
+
+  // --- 1.5 SECONDARY PACK GRID (2026-10-03) — see scripts/panini-pack-grid.mjs. Finds subpack
+  //     listings for every product with packs on the secondary market, not only current drops. ---
+  const packGrid = [];
+  if (process.env.PANINI_PACK_GRID !== "0") {
+    const extra = String(process.env.PANINI_PACK_GRID_URLS || "").split(",").map((x) => x.trim()).filter(Boolean);
+    const GRID_ITERS = Number(process.env.PANINI_PACK_GRID_ITERS || 40);
+    // Whole-step budget: the run already ends ~1h52m into the task's 2 h limit (measured 10-03).
+    const GRID_BUDGET_MS = Number(process.env.PANINI_PACK_GRID_BUDGET_MIN || 4) * 60000;
+    const tGrid = Date.now();
+    for (const url of packGridCandidates([...navHrefs], extra)) {
+      if (Date.now() - tGrid > GRID_BUDGET_MS) { packGrid.push({ url, skipped: "budget" }); continue; }
+      watchdog.mark("pack-grid", url.slice(-80));
+      const before = harvestedPackUrls.size;
+      packVisitOps = {};
+      let status = null, finalUrl = null, iters = 0;
+      try {
+        const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+        status = resp ? resp.status() : null;
+      } catch { status = "nav-error"; }
+      await page.waitForTimeout(3000);
+      try { finalUrl = page.url(); } catch {}
+      let last = -1, stable = 0;
+      for (; iters < GRID_ITERS && stable < 6 && Date.now() - tGrid <= GRID_BUDGET_MS; iters++) {
+        watchdog.mark("pack-grid", url.slice(-80));
+        await harvestPackLinks();
+        let html = "";
+        try { html = await page.content(); } catch {}
+        for (const u of subpackUrlsFromHtml(html)) harvestedPackUrls.add(u);
+        if (harvestedPackUrls.size === last) stable++; else { stable = 0; last = harvestedPackUrls.size; }
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+        await page.waitForTimeout(1200);
+      }
+      packGrid.push({ url, status, final_url: finalUrl ? finalUrl.slice(0, 200) : null, iters, subpack_added: harvestedPackUrls.size - before, ops: packVisitOps });
+      packVisitOps = null;
+      console.log(`[panini-runner][diag] pack grid ${url} -> status=${status} final=${finalUrl} +${harvestedPackUrls.size - before} pack links in ${iters} scrolls`);
+    }
+  }
+
   // Registry sightings: one row per setId, attributed to the sport whose grid served it most.
   const bestBySet = new Map();
   for (const [k, n] of sightings) {
@@ -757,7 +802,7 @@ async function main() {
   // Post the enumeration record BEFORE the long per-card walk, so it lands even if the walk is
   // later killed (laptop sleep / unplug / rate-limit). Fire-and-forget semantics: post() already
   // swallows its own failures, and telemetry must never break the ingest it measures.
-  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, priority_order: priorityPskus.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size, packish_unmatched: [...packishUnmatched] } });
+  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, priority_order: priorityPskus.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size, packish_unmatched: [...packishUnmatched], pack_grid: packGrid } });
   // Registry upkeep: every product the grids served + every pack link found. Never admits a
   // product or disables a page — the route only records sightings and new pages.
   await post({ products: productSightings, pack_pages: [...harvestedPackUrls].map((url) => ({ url, discovered: true })) });
@@ -799,9 +844,13 @@ async function main() {
   // takes <=10 min, so a 75 min walk (+ the observed <=10 min last-batch overrun) ends ~95 min in.
   const WALK_BUDGET_MS = Number(process.env.PANINI_WALK_BUDGET_MIN || 75) * 60000;
   const tWalk = Date.now();
+  // Whole-RUN ceiling (2026-10-03): the scheduled task kills the run at 2 h, which loses the last
+  // batch. The card walk also stops once the run is RUN_BUDGET_MIN old, so time spent earlier (the
+  // pack grid, more pack pages, a slow enumeration) comes out of the walk, not past the kill.
+  const RUN_DEADLINE = RUN_STARTED_AT + Number(process.env.PANINI_RUN_BUDGET_MIN || 110) * 60000;
   let walked = 0, captured = 0, missed = 0;
   for (const psku of pskus) {
-    if (Date.now() - tWalk > WALK_BUDGET_MS) {
+    if (Date.now() - tWalk > WALK_BUDGET_MS || Date.now() > RUN_DEADLINE) {
       console.log(`[panini-runner] walk budget hit (${Math.round((Date.now()-tWalk)/60000)}m) — stopping cleanly at ${walked}/${pskus.length}; the un-walked tail is the STALEST, so the next run resumes there`);
       break;
     }

@@ -48,5 +48,5 @@ export function parsePackDetails(raw: unknown): { name: string | null; imageUrl:
 }
 
 export function packLabel(t: string): string {
-  return t === "fotl" ? "FOTL" : t === "hobby" ? "Hobby" : t
+  return t === "fotl" ? "FOTL" : t ? t.charAt(0).toUpperCase() + t.slice(1) : t
 }
