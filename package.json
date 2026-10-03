@@ -38,7 +38,8 @@
     "inbox:index:fix": "node scripts/fix-inbox-index-counts.mjs",
     "lanes:egress:check": "node scripts/check-lane-egress.mjs",
     "inbox:index:check": "node scripts/fix-inbox-index-counts.mjs --check",
-    "docs:issues-index": "node scripts/gen-known-issues-index.mjs"
+    "docs:issues-index": "node scripts/gen-known-issues-index.mjs",
+    "ci:guards": "node scripts/run-ci-guards.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
