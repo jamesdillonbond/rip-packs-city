@@ -1,10 +1,10 @@
 {
-  "generated_at_pt": "2026-10-03 ~10:40 AM PT (daytime autonomous pass, Cowork cloud, Trevor present; close-out after the second 'keep going' block)",
-  "generated_at_utc": "2026-10-03T17:40Z",
-  "pass": "daytime health + Search Console + scheduler audit + live QA, then 'keep going' (Cowork cloud, push-capable via add_repo). 8 code/docs commits, 2 migrations (20261003152533, 20261003163012), 1 pg_cron unschedule (475), 5 GSC validations + sitemap resubmit. Handoff: docs/handoff-2026-10-03-daytime-audit-gsc-schedulers.md",
-  "shipped": 8,
+  "generated_at_pt": "2026-10-03 ~12:00 PM PT (daytime autonomous pass, Cowork cloud, Trevor present; third block closed)",
+  "generated_at_utc": "2026-10-03T19:00Z",
+  "pass": "daytime health + Search Console + scheduler audit + live QA, then 'keep going' (Cowork cloud, push-capable via add_repo). 10 code/docs commits, 5 migrations (20261003152533, 20261003163012, 20261003180241, 20261003180606, 20261003181445), 1 pg_cron unschedule (475), 5 GSC validations + sitemap resubmit. Handoff: docs/handoff-2026-10-03-daytime-audit-gsc-schedulers.md",
+  "shipped": 10,
   "reverted": 0,
-  "verdict": "GREEN. security/structural/trust all clean (38/38, 0 breaches, precompute 5.0h); stalled []; R118 0; pg_cron 0 failures/24h (189 jobs); cron-job.org 71/71 active Successful; Vercel chronic groups only; GHA red 8:16-~9:00 AM PT from the other session's 679520534 (coverage gate), resolved by its owner; green on 605a5001f. Live QA 35 paths x 2 viewports clean after the Panini marketplace-status fix. GSC: robots.txt was blocking the 16,720 sitemap-submitted Panini URLs + the page-image proxies — fixed f8a73b6d9. Second block: UUID-form Top Shot edition 404s now 308 (4,447 mapped; verified live), sniper 'DEALS AFTER FEES' default-on gate, header nav wrap at 768-1000px fixed; post-ship 10:28 AM PT: pg_cron 0/3,720 fails in 3h, security 0, stalled [], no new Vercel cluster.",
+  "verdict": "GREEN. security/structural/trust all clean (38/38, 0 breaches, precompute 5.0h); stalled []; R118 0; pg_cron 0 failures/24h (189 jobs); cron-job.org 71/71 active Successful; Vercel chronic groups only; GHA red 8:16-~9:00 AM PT from the other session's 679520534 (coverage gate), resolved by its owner; green on 605a5001f. Live QA 35 paths x 2 viewports clean after the Panini marketplace-status fix. GSC: robots.txt was blocking the 16,720 sitemap-submitted Panini URLs + the page-image proxies — fixed f8a73b6d9. Second block: UUID-form Top Shot edition 404s now 308 (4,447 mapped; verified live), sniper 'DEALS AFTER FEES' default-on gate, header nav wrap at 768-1000px fixed; post-ship 10:28 AM PT: pg_cron 0/3,720 fails in 3h, security 0, stalled [], no new Vercel cluster. Third block: team checklist cost = live ask (two cuts; FMV required), squeeze board min floors + franchise team filter — both verified live.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
     "structural": "clean (function_search_path_drift [], procedure_txn_control_pins [], procedure_search_path_unpinned [], cross_collection_mat_staleness [], backward_cursor_rewinds [], wmc_null_edition_key [], suppression_parked_claim_drift [])",
@@ -57,7 +57,9 @@
     "pack-mint-probes medium failure_rate stays lit while the walk is on mainnet24 (#166, by design).",
     "Trevor scratch Flowty jobs 673/680 still running (his export).",
     "Fossil 308: /nba-top-shot/edition/<uuid>:<uuid> -> 308 verified live 10:2x AM PT (dd057f708 + the other session's withBoardBudget follow-up). Watch: no new 5xx on /[collection]/edition/[slug]; the lookup is bounded at 2 s and falls back to 404.",
-    "Sniper 'DEALS AFTER FEES' default-on (5bf46cced): watch sniper pageviews / empty-state beacon for a board that is EMPTY after the gate on a thin collection (UFC, Golazos) — the empty state names the toggle, but if it is empty most of the day the default should flip per collection."
+    "Sniper 'DEALS AFTER FEES' default-on (5bf46cced): watch sniper pageviews / empty-state beacon for a board that is EMPTY after the gate on a thin collection (UFC, Golazos) — the empty state names the toggle, but if it is empty most of the day the default should flip per collection.",
+    "Team checklist cost rule (20261003180606): watch for a team whose cost-to-complete jumps >2x week-over-week — a connected (<=3x FMV) but wrong ask; the per-tile badge names the source so a tester can report which.",
+    "Squeeze board team filter: a 'many' resolution shows all matched franchises; if testers find that confusing, narrow to primary_name only."
   ],
   "needs_trevor": [
     "delete the 10 retired cron-job.org entries (ids in docs/operations/cron-schedule.md) — optional hygiene; the console Delete is blocked for Cowork",
@@ -65,7 +67,8 @@
     "#22 GitHub Support reply / Dapper session rotation",
     "unschedule scratch Flowty jobs 673/680 when the export is done",
     "sync-nba-projections (#8) mute now expires 10-28",
-    "overrule check (optional): sniper fee gate default-on was a delegated product call — revert 5bf46cced to undo; team-named player slugs stay 404 (decided)"
+    "overrule check (optional): sniper fee gate default-on was a delegated product call — revert 5bf46cced to undo; team-named player slugs stay 404 (decided)",
+    "flip beta_feedback_inbox 10231/10233 to shipped (write refused for this session); product call on 10256 holder-concentration + the chart overlays"
   ],
   "housekeeping": "offer-fill-backfill.yml move to cron-job.org RETIRED as an item (its header explains the GHA loop; caught-up trailing re-walk). pg_cron 475 spent one-shot unscheduled. cron-schedule.md re-verified 10-03."
 }
