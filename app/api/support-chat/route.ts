@@ -5108,6 +5108,7 @@ function isSmokeTestRequest(req: NextRequest): boolean {
 // header validates AND pageContext is "bot_dm", the route trusts the
 // bridge-resolved ownerKey from the body (the bridge resolves it from the
 // verified channel link, so it is not client-spoofable).
+let botSecretModeLogged = false;
 function isTrustedBotRequest(req: NextRequest): boolean {
   const presented = req.headers.get("x-rpc-bot-secret");
   if (!presented) return false;
@@ -5119,6 +5120,13 @@ function isTrustedBotRequest(req: NextRequest): boolean {
   // the legacy pair keeps the bridge working.
   const dedicated = process.env.BOT_BRIDGE_SECRET;
   const candidates = dedicated ? [dedicated] : [process.env.INGEST_SECRET_TOKEN, process.env.CRON_SECRET];
+  // One line per cold start, no secret material: which path this deployment
+  // authenticates the bridge on. The switch-over to the dedicated secret is
+  // then readable in the function logs instead of inferred from a deploy time.
+  if (!botSecretModeLogged) {
+    botSecretModeLogged = true;
+    console.log(`[support-chat] bot bridge auth mode: ${dedicated ? "BOT_BRIDGE_SECRET" : "legacy ingest/cron pair"}`);
+  }
   for (const expected of candidates) {
     if (!expected) continue;
     const a = Buffer.from(presented);
