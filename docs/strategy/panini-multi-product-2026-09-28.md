@@ -283,3 +283,20 @@ What this thread added (each has a ledger entry with its revert path):
   has a 4-min budget, so the added pages come out of the walk instead of past the task's 2 h kill.
 - Pack EV for these products stays "not modeled" until a product's families are priced from sales (the open item #2
   above — generalize the model per product, don't copy it).
+
+### 2026-10-03 ~3:10 PM PT — CORRECTION: the 10:00 AM run CRASHED (closed Chrome tab), it did not hang
+
+- Trevor read `%USERPROFILE%\panini-run.log` on the box: the 10:00 AM run passed the walk-order read and **exited 1 at
+  10:01:33** on `fatal: page.waitForTimeout: Target page, context or browser has been closed` (runner line 662, the
+  enumeration loop). The debug Chrome's tab/browser went away under it. Not a hang and not sleep, so the watchdog (which it did not
+  have yet) had nothing to report. The "hung vs asleep" framing in the ~11:30 AM section above was a guess from server-side
+  silence. **A crash is the third case, and only the box log separates it.**
+- The 2:00 PM run is healthy: its first CDP preflight timed out, `panini-run.bat` restarted the debug Chrome, and it was
+  working through the grids at 2:51 PM (Soccer, Basketball, Womens Basketball, Football each stopped at their budget). So
+  enumeration now runs ~45+ min before the enum marker; silence at 45 min is NOT by itself a fault.
+- **Shipped:** the runner survives a closed tab/browser. All 13 `page.waitForTimeout` calls became a plain timer, and
+  before every navigation `ensurePage()` returns the same tab if it is open, else a new tab, else (CDP) a fresh connection
+  to the debug Chrome, with the capture listener re-attached. Recoveries are counted in `enum.page_recoveries`. Guard:
+  `__tests__/panini-runner-survives-a-closed-page.test.ts`. An unreachable Chrome still ends the run.
+- Open question for the box: **why** the debug Chrome closed at ~10:01 AM (Chrome auto-update restart, a crash, a window
+  closed by hand?). A non-zero `page_recoveries` on later runs says it keeps happening.
