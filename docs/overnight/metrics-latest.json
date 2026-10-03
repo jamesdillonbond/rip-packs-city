@@ -88,5 +88,20 @@
       "median_ratio": 1.0
     },
     "definition": "topshot_fmv_backtest(7) at 2026-10-03 ~3:45 PM PT; sales serial>25, no Dapper sell-backs, FMV published >=1 day before the sale; register R125"
+  },
+  "fmv_backtest_allday_7d": {
+    "published": {
+      "n": 4992,
+      "median_abs_err_pct": 26.7,
+      "median_abs_err_usd": 0.05,
+      "within_25_pct": 47.0,
+      "median_ratio": 1.2
+    },
+    "drop_week_0912_0919": {
+      "n": 5759,
+      "median_abs_err_pct": 45.0,
+      "median_ratio": 0.571
+    },
+    "definition": "fmv_sales_backtest('nfl_all_day', 7) at 2026-10-03 ~3:48 PM PT; register R125"
   }
 }
