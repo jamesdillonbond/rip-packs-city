@@ -3,12 +3,13 @@ import { NextRequest } from "next/server"
 import { makeInstrumentedSupabaseFixture } from "./helpers/route-harness"
 import type { ScriptTurn } from "./helpers/anthropic-fixture"
 
-// 2026-10-02: from 10:49 AM PT every concierge call was refused by Anthropic
-// ("Your credit balance is too low", HTTP 403 → mode credit_balance). Users got
-// the canned "temporarily unavailable" line for ~10 h and NOTHING recorded it:
-// only model_error wrote a pipeline_runs row. These cases pin that a billing /
-// key refusal now leaves an ok=false `concierge-billing-error` row, that a model
-// retirement still writes its own row, and that a rate limit writes neither.
+// 2026-10-02: only model_error wrote a pipeline_runs row, so a real billing /
+// key refusal from Anthropic (HTTP 401/402/403, "credit balance is too low")
+// would be invisible. These cases pin that a REAL refusal leaves an ok=false
+// `concierge-billing-error` row, that a model retirement still writes its own
+// row, that the smoke suite's SYNTHETIC credit_balance probe writes NOTHING
+// (mistaking it for an outage is how this file's first cut went wrong), and
+// that a rate limit writes nothing.
 
 const A = vi.hoisted(() => ({
   state: { script: [] as ScriptTurn[], cursor: 0 },
@@ -48,10 +49,10 @@ process.env.ANTHROPIC_API_KEY = "test-key"
 
 const { POST } = await import("@/app/api/support-chat/route")
 
-function post(message: string): NextRequest {
+function post(message: string, headers: Record<string, string> = {}): NextRequest {
   return new NextRequest("https://t/api/support-chat", {
     method: "POST",
-    headers: new Headers({ "content-type": "application/json" }),
+    headers: new Headers({ "content-type": "application/json", ...headers }),
     body: JSON.stringify({ message, sessionId: `bill-${Math.random()}` }),
   })
 }
@@ -95,6 +96,29 @@ describe("concierge upstream-refusal telemetry", () => {
   it("a model retirement still writes concierge-model-error, not the billing row", async () => {
     const { telemetry } = await run({ message: "model: claude-x not found", status: 404, type: "not_found_error" })
     expect(telemetry.map((c) => (c.args as Record<string, unknown>).p_pipeline)).toEqual(["concierge-model-error"])
+  })
+
+  it("the smoke suite's SYNTHETIC credit_balance error writes no row (it is not an outage)", async () => {
+    // The graceful-degradation probe throws a synthetic 403 credit_balance every
+    // ~40 min. The first cut of this telemetry recorded it, and the 10-02
+    // "concierge billing outage" was that probe, not Anthropic.
+    process.env.INGEST_SECRET_TOKEN = "probe-secret"
+    const spy = makeInstrumentedSupabaseFixture({})
+    A.sb = spy.fixture
+    A.pending.length = 0
+    A.state.script = [{ text: "unused" }]
+    A.state.cursor = 0
+    const res = await POST(
+      post("degradation probe", { "x-rpc-test-error-mode": "credit_balance", "x-rpc-test-secret": "probe-secret" }),
+    )
+    const body = await res.json()
+    await Promise.all(A.pending)
+    delete process.env.INGEST_SECRET_TOKEN
+    expect(String(body.response)).toContain("temporarily unavailable")
+    const telemetry = spy.rpcCalls.filter(
+      (c) => c.name === "log_pipeline_run" && String((c.args as Record<string, unknown> | undefined)?.p_pipeline ?? "").startsWith("concierge-"),
+    )
+    expect(telemetry).toHaveLength(0)
   })
 
   it("a rate limit is transient and writes no refusal row", async () => {

@@ -109,6 +109,11 @@ const CONCIERGE_MODEL = "claude-sonnet-4-6";
 // pipeline_runs, the sentinel or the monitors could see it. It now writes an
 // ok=false `concierge-billing-error` row per failed request.
 function reportConciergeModelError(err: any, mode: "model_error" | "credit_balance" = "model_error"): void {
+  // ⚠ The smoke suite's graceful-degradation probe THROWS a synthetic
+  // credit_balance error (x-rpc-test-error-mode) ~every 40 min. Recording it
+  // would publish a billing outage that never happened — which is exactly what
+  // the first cut of this did on 10-02. Synthetic errors are never telemetry.
+  if (err?.synthetic === true) return;
   try {
     const detail = String(
       err?.error?.error?.message ?? err?.error?.message ?? err?.message ?? err ?? ""
@@ -139,7 +144,13 @@ function reportConciergeModelError(err: any, mode: "model_error" | "credit_balan
   }
 }
 
-function buildSyntheticError(mode: string): Error & { status?: number; type?: string } {
+function buildSyntheticError(mode: string): Error & { status?: number; type?: string; synthetic?: true } {
+  const e = buildSyntheticErrorInner(mode) as Error & { status?: number; type?: string; synthetic?: true };
+  e.synthetic = true;
+  return e;
+}
+
+function buildSyntheticErrorInner(mode: string): Error & { status?: number; type?: string } {
   if (mode === "credit_balance") {
     const e: any = new Error("Your credit balance is too low to access the Anthropic API.");
     e.status = 403;
@@ -5612,6 +5623,9 @@ export async function POST(req: NextRequest) {
     console.log("[sc_err] status", err?.status ?? "");
     console.log("[sc_err] name", err?.name ?? "");
     console.log("[sc_err] mode", mode);
+    // A synthetic smoke-probe error logs these same lines; say so, so a log
+    // reader cannot mistake the degradation probe for a real outage (10-02).
+    if (err?.synthetic === true) console.log("[sc_err] synthetic smoke probe (x-rpc-test-error-mode) — not a real Anthropic error");
     console.log("[sc_err] m1", m.slice(0, 40));
     console.log("[sc_err] m2", m.slice(40, 120));
 
