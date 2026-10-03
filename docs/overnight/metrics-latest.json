@@ -24,7 +24,8 @@
     "pipeline_fails_24h": "pack-mint-probes 274 (mainnet24 walk, by design); sync-nba-projections 8/8 (#8 shelved, all_upstreams_failed 403, fails safe); topshot-pack-supply-backfill 2 (budget_hit rows LANDING — 30s budget fix working, lane no longer silent); atlas-market-feed 2, member-wallet-usernames-atlas 2, wallet-backfill-golazos 2, atlas-editions-refresh 2 (upstream, by design); concierge-billing-error 1 (the one known pre-fix 8:47 PM PT 10-02 row, no new since the synthetic-ignore fix)",
     "sentry": "n/a (Sentry dark since 08-18, decided no spend). Health read from Vercel + beacon, not Sentry.",
     "vercel_24h": "9 error groups: DEP0169 url.parse DeprecationWarning (186, chronic since 06-16, queued cleanup); insights/pack-drops drop-5 TimeoutError x2 (chronic); pack-detail drop_pool/pack_table_rows/pack_sales_history 5s x1 each (chronic cold since 08-23); collection-snapshot 8s x1; edition get_edition_recent_sales timeout x1 (cold tail; #142 index helped the common path); profile resolve 6s x1; pack-reality ranker 8s x1. NO new cluster, NO 5xx spike, NO /api/support-chat errors (concierge up). || 3h at 10:28 AM PT: scratch_flip_probe smoke failure 8:53-9:09 AM PT (other session, closed by its RLS fix; none since), DEP0169 x2 on the pre-fix deployment, pack_realized_ev 5s x1 cold.",
-    "db_size_mb": 24030
+    "db_size_mb": 24030,
+    "post_migration_read_2_55pm_pt": "after the other session's five 2:30–2:50 PM PT migrations: pg_cron 0 failures / 2 h; secdef-anon [], search-path drift [], R118 [], running-not-succeeding []; wall-kills offender only panini-team-walk (3:52 AM PT kill, fixed by its owner 5371a12b9); Vercel 5xx in 90 min = one classified collection-stats 503."
   },
   "fmv_high_med": {
     "nba_top_shot": 8205,
@@ -64,12 +65,11 @@
     "Layered reset (8b18dccc6): every page under the 8 layouts now renders its Tailwind p-*/m-* for the first time — a surface that looks too padded is a per-page width tuning (as PackTable's name cell was), never a reason to re-unlayer. Mobile sweep 8/8 clean at ship; the weekly surface QA should look at /dashboard, /profile, /login, /admin/* signed in."
   ],
   "needs_trevor": [
-    "delete the 10 retired cron-job.org entries (ids in docs/operations/cron-schedule.md) — optional hygiene; the console Delete is blocked for Cowork",
     "rotate ATLAS_POOL_INGEST_KEY (#144)",
     "#22 GitHub Support reply / Dapper session rotation",
     "sync-nba-projections (#8) mute now expires 10-28",
     "overrule check (optional): sniper fee gate default-on was a delegated product call — revert 5bf46cced to undo; team-named player slugs stay 404 (decided)",
     "product call (optional): an ask/offer price-history SERIES would need a new snapshot lane; the chart states today that none exists"
   ],
-  "housekeeping": "offer-fill-backfill.yml move to cron-job.org RETIRED as an item (its header explains the GHA loop; caught-up trailing re-walk). pg_cron 475 spent one-shot unscheduled. cron-schedule.md re-verified 10-03."
+  "housekeeping": "offer-fill-backfill.yml move to cron-job.org RETIRED as an item (its header explains the GHA loop; caught-up trailing re-walk). pg_cron 475 spent one-shot unscheduled. cron-schedule.md re-verified 10-03. The 10 retired cron-job.org entries were deleted by Trevor ~2:25 PM PT (78 entries / 71 active / 7 inactive)."
 }

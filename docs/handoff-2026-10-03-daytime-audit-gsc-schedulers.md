@@ -109,7 +109,7 @@ Trevor's answer to the third block's queue was to build it. All four verified ag
 
 ## Needs Trevor (carried + new)
 
-- Delete the 10 retired cron-job.org entries above (optional hygiene).
+- ~~Delete the 10 retired cron-job.org entries~~ — DONE by Trevor ~2:25 PM PT (console reads 78 entries / 71 active / 7 inactive; ledger entry by the other session).
 - Rotate `ATLAS_POOL_INGEST_KEY` (#144); #22 (GitHub Support). ~~Scratch Flowty jobs 673/680~~ — both gone (673 unscheduled by this session after reading its state tables: nothing left to dispatch).
 - `sync-nba-projections` (#8) — mute now expires 10-28.
 - Both product calls from the first block were MADE under delegation (sniper fee gate shipped; team-named player slugs stay 404). Overrule by reverting `5bf46cced`.
