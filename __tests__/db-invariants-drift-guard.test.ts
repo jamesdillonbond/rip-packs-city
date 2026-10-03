@@ -2726,6 +2726,15 @@ const PINS = [
     migration:
       "supabase/migrations/20260913173355_audit_20260913_claim_excludes_topshot_marketplace_because_the_rearm_dissolved_its_bounded_argument.sql",
   },
+  {
+    // Added 2026-10-02. The pack-dist page's EV-contributor list: latest Top Shot
+    // snapshot per pool edition by index probe (was a DISTINCT ON that spilled
+    // to temp), another collection's newer snapshot ignored, ordering + p_limit.
+    fn: "get_pack_ev_contributors",
+    test: "supabase/tests/get_pack_ev_contributors.sql",
+    migration:
+      "supabase/migrations/20261003031302_audit_20261002_pack_ev_contributors_latest_fmv_by_index_probe.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version
