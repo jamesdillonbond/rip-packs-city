@@ -64,7 +64,7 @@
     "Carried from 09-30: Panini 1.2.0 LOW accuracy + pack EV at the 10-07 review; Escalation 5 expected ~10-03; 429 rate on the 5-slot chain lanes (~10%, requeued)"
   ],
   "needs_trevor": [
-    "TOP UP Anthropic API credits (console.anthropic.com → Billing; the key in Vercel ANTHROPIC_API_KEY) — the concierge has answered every user with \"temporarily unavailable\" since ~10:49 AM PT 10-02 (403 credit balance too low). concierge-billing-error rows now record each refusal; the failure_rate alarm will read high until 3 days of rollup age out after the top-up.",
+    "Anthropic API credits: concierge restored 10-02 ~9:00 PM PT at $7.13 balance (~days of runway at 6.5M tokens/7d) — turn on auto-reload in console.anthropic.com so it cannot silently run dry again (outage 10-02 10:49 AM to ~9 PM).",
     "move .github/workflows/offer-fill-backfill.yml to cron-job.org (console), then remove the topshot_offer_fill_backfill suppression row",
     "rotate ATLAS_POOL_INGEST_KEY (#144) — npx supabase login once, then Rip Packs City/cowork-2026-09-30/rotate-atlas-pool-ingest-key.cmd",
     "#22 — watch tdillonbond@gmail.com for GitHub Support's reply, then re-test commit/1c3e01a8f (expect 404); rotate the Dapper session",
