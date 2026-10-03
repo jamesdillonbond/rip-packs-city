@@ -44,10 +44,17 @@ export type Row = {
   confidence: string | null
   game_date: string | null
   thumbnail_url: string | null
+  /** Appended 2026-10-03 (team filter, beta feedback 10253). Absent on rows cached before it. */
+  team_name?: string | null
 }
 
 type ApiResponse = {
-  meta: { fetched_at: string; total_rows: number; elapsed_ms: number }
+  meta: {
+    fetched_at: string
+    total_rows: number
+    elapsed_ms: number
+    filters?: { team?: string | null; team_resolution?: { status: string; current_name: string | null; labels: number } | null }
+  }
   rows: Row[]
 }
 
@@ -136,6 +143,17 @@ export default function SqueezeBoardClient({
   // Trophy-circulation filter — exposes the API's max_circulation param so
   // users can drill straight to LEGENDARY / ULTIMATE-size editions.
   const [maxCirculation, setMaxCirculation] = useState<number | null>(null)
+  // Floors (beta feedback 10250/10252, 2026-10-03): the top of the board is
+  // 1/1s and Ultimates that are 100 % squeezed by arithmetic — not a signal.
+  // Two separate floors, as asked: TOTAL mint and the supply actually buyable.
+  const [minCirculation, setMinCirculation] = useState<number | null>(null)
+  const [minBuyable, setMinBuyable] = useState<number | null>(null)
+  // Team (beta feedback 10253): typed text, resolved on the SERVER to the
+  // franchise's every label (historic names included) — a label is not a
+  // franchise. `teamInput` is what the box shows; `teamFilter` is what was sent.
+  const [teamInput, setTeamInput] = useState("")
+  const [teamFilter, setTeamFilter] = useState<string | null>(null)
+  const [teamResolution, setTeamResolution] = useState<{ status: string; current_name: string | null; labels: number } | null>(null)
   const [sort, setSort] = useState<SortKey>("squeeze")
   // Pre-filter to a specific set or player when arriving from another
   // surface (set-squeeze / cross-collection / rookies / first-mint).
@@ -151,6 +169,15 @@ export default function SqueezeBoardClient({
       const p = url.searchParams.get("player")
       if (s) setSetFilter(s)
       if (p) setPlayerFilter(p)
+      const t = url.searchParams.get("team")?.trim()
+      if (t) {
+        setTeamInput(t)
+        setTeamFilter(t)
+      }
+      const mc = Number(url.searchParams.get("min_circulation"))
+      if (Number.isFinite(mc) && mc > 0) setMinCirculation(mc)
+      const mb = Number(url.searchParams.get("min_buyable"))
+      if (Number.isFinite(mb) && mb > 0) setMinBuyable(mb)
     }
   }, [])
 
@@ -187,7 +214,7 @@ export default function SqueezeBoardClient({
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (sort === "squeeze" && !setFilter && !playerFilter) {
+      if (sort === "squeeze" && !setFilter && !playerFilter && !teamFilter && minCirculation == null && minBuyable == null) {
         return
       }
     }
@@ -215,6 +242,9 @@ export default function SqueezeBoardClient({
         if (tier !== "ALL") params.set("tier", tier)
         if (maxBuyable != null) params.set("max_buyable", String(maxBuyable))
         if (maxCirculation != null) params.set("max_circulation", String(maxCirculation))
+        if (minCirculation != null) params.set("min_circulation", String(minCirculation))
+        if (minBuyable != null) params.set("min_buyable", String(minBuyable))
+        if (teamFilter) params.set("team", teamFilter)
         const r = await fetch(`/api/public/insights/squeeze?${params.toString()}`, {
           signal: ctrl.signal,
           cache: "no-store",
@@ -223,6 +253,7 @@ export default function SqueezeBoardClient({
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
         setFetchedAt(j.meta?.fetched_at ?? null)
+        setTeamResolution(teamFilter ? (j.meta?.filters?.team_resolution ?? null) : null)
         setDegraded(null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
@@ -233,16 +264,35 @@ export default function SqueezeBoardClient({
     }
     run()
     return () => ctrl.abort()
-  }, [sort, setFilter, playerFilter, tier, maxBuyable, maxCirculation])
+  }, [sort, setFilter, playerFilter, tier, maxBuyable, maxCirculation, minCirculation, minBuyable, teamFilter])
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (tier !== "ALL" && normalizeTier(r.tier) !== tier) return false
       if (maxBuyable != null && (r.effectively_buyable ?? Infinity) > maxBuyable) return false
       if (maxCirculation != null && (r.circulation ?? Infinity) > maxCirculation) return false
+      if (minCirculation != null && (r.circulation ?? -Infinity) < minCirculation) return false
+      if (minBuyable != null && (r.effectively_buyable ?? -Infinity) < minBuyable) return false
       return true
     })
-  }, [rows, tier, maxBuyable, maxCirculation])
+  }, [rows, tier, maxBuyable, maxCirculation, minCirculation, minBuyable])
+
+  // Persist the new filters in the URL the way set/player already are, so a
+  // filtered board is shareable and survives a reload.
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const url = new URL(window.location.href)
+    const setOrDel = (k: string, v: string | null) => (v ? url.searchParams.set(k, v) : url.searchParams.delete(k))
+    setOrDel("team", teamFilter)
+    setOrDel("min_circulation", minCirculation != null ? String(minCirculation) : null)
+    setOrDel("min_buyable", minBuyable != null ? String(minBuyable) : null)
+    if (url.toString() !== window.location.href) window.history.replaceState({}, "", url.toString())
+  }, [teamFilter, minCirculation, minBuyable])
+
+  function applyTeam() {
+    const t = teamInput.trim()
+    setTeamFilter(t === "" ? null : t)
+  }
 
   const kpis = useMemo(() => {
     // ⛔ A FAILED READ HAS NO KPIs. Screenshot-verified in production during the
@@ -418,6 +468,75 @@ export default function SqueezeBoardClient({
           ))}
         </div>
 
+        <div className="rpc-sq-pill-group" aria-label="Min circulation">
+          <span className="rpc-sq-pill-label">MIN MINT</span>
+          {[
+            { val: null, label: "Any" },
+            { val: 100, label: "≥ 100" },
+            { val: 500, label: "≥ 500" },
+            { val: 1000, label: "≥ 1K" },
+            { val: 5000, label: "≥ 5K" },
+          ].map((m) => (
+            <button
+              key={String(m.val)}
+              className={`rpc-sq-pill ${minCirculation === m.val ? "rpc-sq-pill-active" : ""}`}
+              onClick={() => setMinCirculation(m.val)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="rpc-sq-pill-group" aria-label="Min effectively buyable">
+          <span className="rpc-sq-pill-label">MIN BUYABLE</span>
+          {[
+            { val: null, label: "Any" },
+            { val: 10, label: "≥ 10" },
+            { val: 50, label: "≥ 50" },
+            { val: 250, label: "≥ 250" },
+          ].map((m) => (
+            <button
+              key={String(m.val)}
+              className={`rpc-sq-pill ${minBuyable === m.val ? "rpc-sq-pill-active" : ""}`}
+              onClick={() => setMinBuyable(m.val)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        <form
+          className="rpc-sq-team"
+          aria-label="Team"
+          onSubmit={(e) => {
+            e.preventDefault()
+            applyTeam()
+          }}
+        >
+          <span className="rpc-sq-pill-label">TEAM</span>
+          <input
+            className="rpc-sq-team-input"
+            type="search"
+            placeholder="e.g. Clippers"
+            aria-label="Team name"
+            value={teamInput}
+            onChange={(e) => setTeamInput(e.target.value)}
+            onBlur={applyTeam}
+          />
+          {teamFilter ? (
+            <button
+              type="button"
+              className="rpc-sq-active-clear"
+              onClick={() => {
+                setTeamInput("")
+                setTeamFilter(null)
+              }}
+            >
+              Clear ✕
+            </button>
+          ) : null}
+        </form>
+
         <label className="rpc-sq-sort">
           <span className="rpc-sq-pill-label">SORT</span>
           <select
@@ -432,6 +551,16 @@ export default function SqueezeBoardClient({
           </select>
         </label>
       </section>
+
+      {teamFilter && !loading && !error && teamResolution ? (
+        <div className="rpc-sq-team-note rpc-mono" aria-live="polite">
+          {teamResolution.status === "one"
+            ? `Team: ${teamResolution.current_name ?? teamFilter} — every label this franchise has minted under${teamResolution.labels > 1 ? ` (${teamResolution.labels} names, historic included)` : ""}.`
+            : teamResolution.status === "many"
+              ? `“${teamFilter}” matches several teams — showing all of them (${teamResolution.labels} labels). Type the full name to narrow.`
+              : `No Top Shot team matches “${teamFilter}” — nothing is substituted.`}
+        </div>
+      ) : null}
 
       {/* ── KPI strip ─────────────────────────────────────────────────── */}
       <section className="rpc-sq-kpi-row" aria-label="Summary">
@@ -460,7 +589,11 @@ export default function SqueezeBoardClient({
         ) : loading ? (
           <div className="rpc-sq-state">Loading…</div>
         ) : filtered.length === 0 ? (
-          <div className="rpc-sq-state">No editions match those filters.</div>
+          <div className="rpc-sq-state">
+            {teamFilter && teamResolution?.status === "none"
+              ? `No Top Shot team matches “${teamFilter}”.`
+              : "No editions match those filters."}
+          </div>
         ) : (
           <table className="rpc-sq-table">
             <thead>
@@ -738,6 +871,24 @@ const CSS = `
   color: var(--rpc-red);
 }
 .rpc-sq-sort { display: inline-flex; align-items: center; gap: 8px; }
+.rpc-sq-team { display: inline-flex; align-items: center; gap: 8px; }
+.rpc-sq-team-input {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 1px;
+  background: transparent;
+  border: 1px solid var(--rpc-border);
+  color: var(--rpc-text-primary);
+  padding: 7px 10px;
+  border-radius: 2px;
+  width: 150px;
+}
+.rpc-sq-team-note {
+  max-width: 1180px;
+  margin: -8px auto 14px;
+  font-size: 11px;
+  color: var(--rpc-text-muted);
+}
 .rpc-sq-select {
   font-family: var(--font-mono);
   font-size: 12px;

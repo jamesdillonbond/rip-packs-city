@@ -24,9 +24,60 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Db = any
+
 /** Columns both consumers select. Duplicating this list was the drift risk. */
 export const SQUEEZE_COLS =
-  "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, low_ask_disconnected, fmv_usd, confidence, game_date, thumbnail_url"
+  "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, low_ask_disconnected, fmv_usd, confidence, game_date, thumbnail_url, team_name"
+
+/** Top Shot's collection row — the only collection this board serves. */
+export const SQUEEZE_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+
+export interface TeamResolution {
+  /** "one" = a franchise; "many" = several matched (all their labels are used); "none" = no team label matched. */
+  status: "one" | "many" | "none"
+  /** Every team_name label the matched franchise(s) have minted under (historic names included). */
+  labels: string[]
+  /** The franchise's current name, when exactly one matched. */
+  currentName: string | null
+}
+
+/**
+ * Resolve a typed team to its FRANCHISE's labels through resolve_team_name()
+ * (beta feedback 10253, 2026-10-03). A team label is not a franchise: "LA
+ * Clippers", "Los Angeles Clippers" and "Buffalo Braves" are one team, so a
+ * filter on the typed label alone would silently drop the historic eras
+ * (CLAUDE.md concierge rule 2). Several franchises matching ("New York") all
+ * count — the board then shows all of them, the same breadth the player ilike
+ * gives. No match → `none` with no labels; the caller answers an honest empty
+ * board naming the query, never the unfiltered one. A failed RPC is returned
+ * as an error, never as "no team".
+ */
+export async function resolveSqueezeTeam(
+  team: string,
+  db: Db = supabaseAdmin,
+): Promise<{ data: TeamResolution | null; error: { message: string } | null }> {
+  const { data, error } = await db.rpc("resolve_team_name", { p_collection_id: SQUEEZE_COLLECTION_ID, p_name: team })
+  if (error) return { data: null, error }
+  // Shapes (measured 2026-10-03): status "one" carries `names[]` + `current_name`;
+  // status "ambiguous" carries `franchises[]`, each with its own `names[]`;
+  // status "none" carries nothing. Anything else is treated as no match.
+  const r = (data ?? {}) as {
+    status?: string
+    names?: { team_name?: string }[]
+    current_name?: string | null
+    franchises?: { names?: { team_name?: string }[] }[]
+  }
+  const fromNames = (ns: { team_name?: string }[] | undefined) =>
+    (ns ?? []).map((n) => n.team_name).filter((x): x is string => typeof x === "string" && x.trim() !== "")
+  if (r.status === "one") return { data: { status: "one", labels: fromNames(r.names), currentName: r.current_name ?? null }, error: null }
+  if (r.status === "ambiguous") {
+    const labels = [...new Set((r.franchises ?? []).flatMap((f) => fromNames(f.names)))]
+    return { data: { status: "many", labels, currentName: null }, error: null }
+  }
+  return { data: { status: "none", labels: [], currentName: null }, error: null }
+}
 
 export interface SqueezeBoardOptions {
   tier?: string | null
@@ -36,12 +87,16 @@ export interface SqueezeBoardOptions {
   minSqueeze?: number
   maxBuyable?: number | null
   maxCirculation?: number | null
+  /** Floor on circulation — hides 1/1s and other ultra-low mints that are 100 % squeezed by arithmetic (beta feedback 10250/10252). */
+  minCirculation?: number | null
+  /** Floor on effectively_buyable — same ask, on the supply that is actually buyable. */
+  minBuyable?: number | null
+  /** team_name labels to keep (a franchise's every label — see resolveSqueezeTeam). An EMPTY list matches nothing. */
+  teamNames?: string[] | null
   sort?: string
   limit: number
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Db = any
 
 /**
  * Build and run the board query.
@@ -63,6 +118,9 @@ export async function fetchSqueezeBoard(
     minSqueeze = 50,
     maxBuyable = null,
     maxCirculation = null,
+    minCirculation = null,
+    minBuyable = null,
+    teamNames = null,
     sort = "squeeze",
     limit,
   } = opts
@@ -74,6 +132,11 @@ export async function fetchSqueezeBoard(
   if (player) q = q.ilike("player_name", `%${player}%`)
   if (maxBuyable != null && Number.isFinite(maxBuyable)) q = q.lte("effectively_buyable", maxBuyable)
   if (maxCirculation != null && Number.isFinite(maxCirculation)) q = q.lte("circulation", maxCirculation)
+  if (minCirculation != null && Number.isFinite(minCirculation)) q = q.gte("circulation", minCirculation)
+  if (minBuyable != null && Number.isFinite(minBuyable)) q = q.gte("effectively_buyable", minBuyable)
+  // A resolved team with NO labels must match nothing — never fall through to
+  // the unfiltered board (a filter that silently widens is the #146 shape).
+  if (teamNames != null) q = q.in("team_name", teamNames)
 
   // ⚠ EVERY sort carries a SECONDARY ordering, and they are not decoration.
   // Without a tiebreak, rows equal on the primary key order arbitrarily, so the

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 
-import { fetchSqueezeBoard, SQUEEZE_COLS } from "@/lib/insights/squeeze-board"
+import { fetchSqueezeBoard, resolveSqueezeTeam, SQUEEZE_COLLECTION_ID, SQUEEZE_COLS } from "@/lib/insights/squeeze-board"
 import { fetchTrophiesBoard, TROPHIES_COLS } from "@/lib/insights/trophies-board"
 import { fetchSetSqueezeBoard, SET_SQUEEZE_COLS } from "@/lib/insights/set-squeeze-board"
 import { fetchOfferSpreadBoard, OFFER_SPREAD_COLS } from "@/lib/insights/offer-spread-board"
@@ -35,7 +35,7 @@ type Call = { fn: string; args: unknown[] }
 function recordingDb() {
   const calls: Call[] = []
   const q: Record<string, unknown> = {}
-  for (const fn of ["select", "gte", "gt", "eq", "ilike", "lte", "order"]) {
+  for (const fn of ["select", "gte", "gt", "eq", "ilike", "lte", "in", "order"]) {
     q[fn] = (...args: unknown[]) => {
       calls.push({ fn, args })
       return q
@@ -141,6 +141,28 @@ describe("fetchSqueezeBoard", () => {
     expect(has(full.calls, "ilike", "player_name")).toBe(true)
     expect(has(full.calls, "lte", "effectively_buyable")).toBe(true)
     expect(has(full.calls, "lte", "circulation")).toBe(true)
+    // The 2026-10-03 floors + team labels (beta feedback 10250/10252/10253) are
+    // absent on the bare query and present only when supplied.
+    expect(has(bare.calls, "in")).toBe(false)
+    expect(bare.calls.filter((c) => c.fn === "gte").map((c) => c.args[0])).toEqual(["squeeze_pct"])
+  })
+
+  it("floors on circulation and effectively_buyable only when supplied, and never as a cap", async () => {
+    const { db, calls } = recordingDb()
+    await fetchSqueezeBoard({ limit: 10, minCirculation: 500, minBuyable: 50 }, db)
+    expect(calls.filter((c) => c.fn === "gte").map((c) => c.args)).toEqual([["squeeze_pct", 50], ["circulation", 500], ["effectively_buyable", 50]])
+    expect(has(calls, "lte")).toBe(false)
+  })
+
+  it("a team filter is the franchise's label LIST — and an empty list matches nothing rather than widening", async () => {
+    const some = recordingDb()
+    await fetchSqueezeBoard({ limit: 10, teamNames: ["LA Clippers", "Los Angeles Clippers", "Buffalo Braves"] }, some.db)
+    expect(some.calls.find((c) => c.fn === "in")?.args).toEqual(["team_name", ["LA Clippers", "Los Angeles Clippers", "Buffalo Braves"]])
+    const none = recordingDb()
+    await fetchSqueezeBoard({ limit: 10, teamNames: [] }, none.db)
+    expect(none.calls.find((c) => c.fn === "in")?.args).toEqual(["team_name", []])
+    // the shared column list carries the column the filter reads
+    expect(SQUEEZE_COLS.split(",").map((c) => c.trim())).toContain("team_name")
   })
 
   it("returns supabase's { data, error } untouched so callers keep their own policy", async () => {
@@ -283,5 +305,48 @@ describe("fetchPinnacleScarcityBoard", () => {
     const { db, calls } = recordingDb()
     await fetchPinnacleScarcityBoard({ limit: 100, maxMint: Number("abc") }, db)
     expect(has(calls, "lte")).toBe(false)
+  })
+})
+
+describe("resolveSqueezeTeam — a label is not a franchise", () => {
+  const rpcDb = (payload: unknown, error: { message: string } | null = null) => {
+    const calls: unknown[] = []
+    return {
+      calls,
+      db: { rpc: (name: string, args: unknown) => { calls.push([name, args]); return Promise.resolve({ data: payload, error }) } },
+    }
+  }
+
+  it("one franchise → every label it minted under, historic names included", async () => {
+    const { db, calls } = rpcDb({
+      status: "one", current_name: "LA Clippers",
+      names: [{ team_name: "LA Clippers" }, { team_name: "Los Angeles Clippers" }, { team_name: "Buffalo Braves" }],
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = await resolveSqueezeTeam("clippers", db as any)
+    expect(calls).toEqual([["resolve_team_name", { p_collection_id: SQUEEZE_COLLECTION_ID, p_name: "clippers" }]])
+    expect(r.error).toBeNull()
+    expect(r.data).toEqual({ status: "one", labels: ["LA Clippers", "Los Angeles Clippers", "Buffalo Braves"], currentName: "LA Clippers" })
+  })
+
+  it("several franchises (\"New York\") → all of their labels, status many", async () => {
+    const { db } = rpcDb({
+      status: "ambiguous",
+      franchises: [{ names: [{ team_name: "New York Knicks" }] }, { names: [{ team_name: "New York Liberty" }] }],
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = await resolveSqueezeTeam("New York", db as any)
+    expect(r.data).toEqual({ status: "many", labels: ["New York Knicks", "New York Liberty"], currentName: null })
+  })
+
+  it("no match → status none with NO labels (nothing is substituted), and an RPC failure is an error, not 'none'", async () => {
+    const { db } = rpcDb({ status: "none" })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((await resolveSqueezeTeam("zzzz", db as any)).data).toEqual({ status: "none", labels: [], currentName: null })
+    const failed = rpcDb(null, { message: "canceling statement due to statement timeout" })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = await resolveSqueezeTeam("clippers", failed.db as any)
+    expect(r.data).toBeNull()
+    expect(r.error?.message).toContain("timeout")
   })
 })

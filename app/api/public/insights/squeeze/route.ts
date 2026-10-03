@@ -22,6 +22,9 @@
 //   min_squeeze=<number>                              floor on squeeze_pct (default 50)
 //   max_buyable=<number>                              cap on effectively_buyable (e.g. 10 for trophy-tier)
 //   max_circulation=<number>                          cap on circulation (e.g. 100 for trophies)
+//   min_circulation=<number>                          floor on circulation (cuts 1/1s and Ultimates out of the top)
+//   min_buyable=<number>                              floor on effectively_buyable
+//   team=<text>                                       a team; resolved to its FRANCHISE's every label (historic names too)
 //   set=<text>                                        ilike match on set_name
 //   player=<text>                                     ilike match on player_name
 //   sort=squeeze|circulation|fmv|buyable              default squeeze
@@ -41,7 +44,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
-import { fetchSqueezeBoard } from "@/lib/insights/squeeze-board";
+import { fetchSqueezeBoard, resolveSqueezeTeam } from "@/lib/insights/squeeze-board";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]);
@@ -60,6 +63,13 @@ export async function GET(req: NextRequest) {
   // Optional: limit to "trophy circ" editions (e.g. max_circulation=100
   // surfaces only Ultimate/Legendary tier editions).
   const maxCirculation = sp.get("max_circulation") ? Number(sp.get("max_circulation")) : null;
+  // Floors (beta feedback 10250/10252): the top of the board is 1/1s and
+  // Ultimates that are 100 % squeezed by arithmetic; a collector wants to cut
+  // under them on TOTAL mint and on the supply that is actually buyable.
+  const minCirculation = sp.get("min_circulation") ? Number(sp.get("min_circulation")) : null;
+  const minBuyable = sp.get("min_buyable") ? Number(sp.get("min_buyable")) : null;
+  // Team (beta feedback 10253): resolved to the FRANCHISE's labels below.
+  const teamFilter = sp.get("team")?.trim() || null;
   const sort = sp.get("sort") ?? "squeeze";
   const limit = Math.max(1, Math.min(200, Number(sp.get("limit")) || 50));
 
@@ -72,6 +82,11 @@ export async function GET(req: NextRequest) {
   if (!Number.isFinite(minSqueeze) || minSqueeze < 0) {
     return NextResponse.json({ error: "min_squeeze must be a non-negative number" }, { status: 400 });
   }
+  for (const [name, v] of [["min_circulation", minCirculation], ["min_buyable", minBuyable]] as const) {
+    if (v != null && (!Number.isFinite(v) || v < 0)) {
+      return NextResponse.json({ error: `${name} must be a non-negative number` }, { status: 400 });
+    }
+  }
   if (!VALID_SORTS.has(sort)) {
     return NextResponse.json(
       { error: `sort must be one of ${[...VALID_SORTS].join(",")}` },
@@ -82,8 +97,22 @@ export async function GET(req: NextRequest) {
   // The QUERY lives in lib/insights/squeeze-board.ts, shared with
   // app/insights/squeeze/page.tsx so the server-rendered board and this route
   // cannot drift. This route keeps its own failure policy (boardUnavailable).
+  // A typed team is a label; the board filters on the franchise's EVERY label
+  // (historic names included). A failed resolution is a failed read — 503,
+  // never the unfiltered board under a team heading.
+  let teamNames: string[] | null = null;
+  let teamResolution: { status: string; current_name: string | null; labels: number } | null = null;
+  if (teamFilter) {
+    const { data: tr, error: terr } = await resolveSqueezeTeam(teamFilter, supabase);
+    if (terr || !tr) {
+      return boardUnavailable(terr ?? { message: "team resolution returned nothing" }, "insights/squeeze");
+    }
+    teamNames = tr.labels;
+    teamResolution = { status: tr.status, current_name: tr.currentName, labels: tr.labels.length };
+  }
+
   const { data, error } = await fetchSqueezeBoard(
-    { tier, set: setFilter, player: playerFilter, minSqueeze, maxBuyable, maxCirculation, sort, limit },
+    { tier, set: setFilter, player: playerFilter, minSqueeze, maxBuyable, maxCirculation, minCirculation, minBuyable, teamNames, sort, limit },
     supabase,
   );
   if (error) {
@@ -106,8 +135,12 @@ export async function GET(req: NextRequest) {
         min_squeeze: minSqueeze,
         max_buyable: maxBuyable,
         max_circulation: maxCirculation,
+        min_circulation: minCirculation,
+        min_buyable: minBuyable,
         set: setFilter,
         player: playerFilter,
+        team: teamFilter,
+        team_resolution: teamResolution,
         sort,
         limit,
       },

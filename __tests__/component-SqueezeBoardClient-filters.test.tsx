@@ -90,11 +90,21 @@ function stubServerFiltering(all: ReturnType<typeof row>[]) {
     const tier = u.searchParams.get("tier")
     const maxB = u.searchParams.get("max_buyable")
     const maxC = u.searchParams.get("max_circulation")
+    const minC = u.searchParams.get("min_circulation")
+    const minB = u.searchParams.get("min_buyable")
+    const team = u.searchParams.get("team")
+    // The server resolves a typed team to the FRANCHISE's labels; this stub
+    // plays that: "clippers" → both Clippers labels, anything else → none.
+    const labels = team == null ? null : /clippers/i.test(team) ? ["LA Clippers", "Los Angeles Clippers"] : []
     const out = all.filter((r) =>
       (!tier || r.tier === tier) &&
       (maxB == null || (r.effectively_buyable as number) <= Number(maxB)) &&
-      (maxC == null || (r.circulation as number) <= Number(maxC)))
-    return Promise.resolve({ ok: true, json: async () => ({ rows: out, meta: { fetched_at: FETCHED, total_rows: out.length } }) } as Response)
+      (maxC == null || (r.circulation as number) <= Number(maxC)) &&
+      (minC == null || (r.circulation as number) >= Number(minC)) &&
+      (minB == null || (r.effectively_buyable as number) >= Number(minB)) &&
+      (labels == null || labels.includes(String((r as { team_name?: string }).team_name))))
+    const team_resolution = team == null ? null : labels!.length > 0 ? { status: "one", current_name: "LA Clippers", labels: labels!.length } : { status: "none", current_name: null, labels: 0 }
+    return Promise.resolve({ ok: true, json: async () => ({ rows: out, meta: { fetched_at: FETCHED, total_rows: out.length, filters: { team, team_resolution } } }) } as Response)
   })
   vi.stubGlobal("fetch", fn)
   return fn
@@ -180,6 +190,55 @@ describe("SqueezeBoardClient — filters are sent to the server", () => {
       const { container } = render(<SqueezeBoardClient initialRows={trollRows} initialFetchedAt={FETCHED} />)
       expect(container.textContent).toMatch(/10.{0,3}. this edition.{0,3}s FMV/i)
     })
+  })
+
+  // 2026-10-03 (beta feedback 10250 / 10252): the top of the board is 1/1s and
+  // Ultimates that are 100 % squeezed by arithmetic. Two FLOORS, sent to the
+  // server like every other control.
+  it("floors on total mint (MIN MINT) and on effectively buyable (MIN BUYABLE), each sent to the server", async () => {
+    const fn = stubServerFiltering(rows)
+    const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    // ≥ 100 keeps Common(15000), drops Legend(circ 99) + Ultimate(circ 8)
+    fireEvent.click(within(group(container, "Min circulation")).getByText("≥ 100"))
+    await waitFor(() => expect(container.textContent).not.toMatch(/Ultimate Guy/))
+    expect(squeezeCalls(fn).at(-1)?.searchParams.get("min_circulation")).toBe("100")
+    expect(container.textContent).toMatch(/Common Guy/)
+    expect(container.textContent).not.toMatch(/Legend Guy/)
+    // ≥ 250 buyable keeps only Common(500 buyable)
+    fireEvent.click(within(group(container, "Min effectively buyable")).getByText("≥ 250"))
+    await waitFor(() => expect(squeezeCalls(fn).at(-1)?.searchParams.get("min_buyable")).toBe("250"))
+    expect(window.location.search).toContain("min_circulation=100")
+    expect(window.location.search).toContain("min_buyable=250")
+  })
+
+  // 2026-10-03 (beta feedback 10253): a TEAM filter. The typed text goes to the
+  // server, which resolves the FRANCHISE (historic labels included); the note
+  // says what was matched, and a miss is an honest empty board, never the
+  // unfiltered one.
+  it("sends the typed team to the server, names the resolved franchise, and clears", async () => {
+    const teamRows = rows.map((r, i) => ({ ...r, team_name: i === 0 ? "Los Angeles Clippers" : "Boston Celtics" }))
+    const fn = stubServerFiltering(teamRows)
+    const { container } = render(<SqueezeBoardClient initialRows={teamRows} initialFetchedAt={FETCHED} />)
+    const box = within(group(container, "Team")).getByLabelText("Team name") as HTMLInputElement
+    fireEvent.change(box, { target: { value: "clippers" } })
+    fireEvent.submit(group(container, "Team"))
+    await waitFor(() => expect(squeezeCalls(fn).at(-1)?.searchParams.get("team")).toBe("clippers"))
+    await waitFor(() => expect(container.textContent).toMatch(/Team: LA Clippers — every label this franchise has minted under \(2 names, historic included\)/))
+    expect(container.textContent).toMatch(new RegExp(teamRows[0].player_name as string))
+    expect(container.textContent).not.toMatch(new RegExp(teamRows[1].player_name as string))
+    expect(window.location.search).toContain("team=clippers")
+    fireEvent.click(within(group(container, "Team")).getByText("Clear ✕"))
+    await waitFor(() => expect(window.location.search).not.toContain("team="))
+    expect(box.value).toBe("")
+  })
+
+  it("a team nothing matches reads as an honest empty board naming the query — not 'no editions match those filters'", async () => {
+    stubServerFiltering(rows.map((r) => ({ ...r, team_name: "Boston Celtics" })))
+    const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    fireEvent.change(within(group(container, "Team")).getByLabelText("Team name"), { target: { value: "zzzz" } })
+    fireEvent.submit(group(container, "Team"))
+    await waitFor(() => expect(container.textContent).toMatch(/No Top Shot team matches “zzzz”/))
+    expect(container.textContent).not.toMatch(/No editions match those filters/)
   })
 
   it("filters by max circulation (trophy-scarce)", async () => {
