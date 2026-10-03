@@ -8,10 +8,20 @@
 //
 // Static asset paths and in-page hash navigations are
 // intentionally skipped so the beacon stream stays signal.
+//
+// 2026-10-03: each beacon also carries `sid` (the per-tab "rpc_sess" id that
+// funnel_events and outbound_clicks already use, same key the client_error
+// beacon writes) and `ref` (the session's landing attribution: our utm_* /
+// share_ref params and the external referrer's origin+path, resolved once per
+// session by lib/track-funnel). Without them a page view could not be joined
+// to the visit it belonged to — one ChatGPT-referred visitor on 10-03 showed
+// up as 23 unrelated rows. Nothing new is collected: both values are already
+// sent by the funnel tracker on the same page.
 
 import { useEffect } from "react"
 import { usePathname } from "next/navigation"
 import { track } from "@/lib/telemetry/track"
+import { getFunnelContext } from "@/lib/track-funnel"
 
 const SKIP_PREFIXES = ["/_next", "/api", "/favicon", "/robots", "/sitemap", "/icons"]
 
@@ -21,7 +31,12 @@ export default function TelemetryPageView() {
   useEffect(() => {
     if (!pathname) return
     if (SKIP_PREFIXES.some((p) => pathname.startsWith(p))) return
-    track("page-view", { path: pathname })
+    const { sessionId, referrer } = getFunnelContext()
+    track("page-view", {
+      path: pathname,
+      ...(sessionId ? { sid: sessionId } : {}),
+      ...(referrer ? { ref: referrer } : {}),
+    })
   }, [pathname])
 
   return null

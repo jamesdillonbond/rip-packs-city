@@ -11,11 +11,14 @@ vi.mock("next/navigation", () => ({ usePathname: () => pathname }))
 
 const track = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/telemetry/track", () => ({ track }))
+const ctx = vi.hoisted(() => ({ value: { sessionId: null as string | null, referrer: null as string | null } }))
+vi.mock("@/lib/track-funnel", () => ({ getFunnelContext: () => ctx.value }))
 
 import TelemetryPageView from "@/components/TelemetryPageView"
 
 beforeEach(() => {
   pathname = "/nba-top-shot/sniper"
+  ctx.value = { sessionId: null, referrer: null }
   track.mockClear()
 })
 afterEach(() => cleanup())
@@ -25,6 +28,24 @@ describe("TelemetryPageView", () => {
     const { container } = render(<TelemetryPageView />)
     expect(container.firstChild).toBeNull()
     expect(track).toHaveBeenCalledWith("page-view", { path: "/nba-top-shot/sniper" })
+  })
+
+  it("joins the beacon to the visit: carries the funnel session id and landing attribution", () => {
+    ctx.value = { sessionId: "sess-123", referrer: "utm_source=chatgpt.com" }
+    render(<TelemetryPageView />)
+    expect(track).toHaveBeenCalledWith("page-view", {
+      path: "/nba-top-shot/sniper",
+      sid: "sess-123",
+      ref: "utm_source=chatgpt.com",
+    })
+  })
+
+  it("omits sid/ref rather than sending nulls when storage is unavailable", () => {
+    render(<TelemetryPageView />)
+    const meta = track.mock.calls[0][1] as Record<string, unknown>
+    expect(meta).toEqual({ path: "/nba-top-shot/sniper" })
+    expect("sid" in meta).toBe(false)
+    expect("ref" in meta).toBe(false)
   })
 
   it("skips asset/api prefixes", () => {
