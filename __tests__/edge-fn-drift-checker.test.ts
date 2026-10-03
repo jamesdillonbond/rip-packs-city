@@ -7,6 +7,7 @@ import {
   requiresImportMap,
   classifyImportMapDrift,
   hasImportMap,
+  slugVerdict,
   normaliseSource,
   runContentCensus,
   matchDialects,
@@ -166,6 +167,39 @@ describe("edge-fn drift detector — tier 1 reads the import-map PATH, not only 
     expect(hasImportMap({ import_map: false, import_map_path: "file:///a/deno.json" })).toBe(true)
     expect(hasImportMap({ import_map: false })).toBe(false)
     expect(hasImportMap({ import_map: null, import_map_path: null })).toBe(false)
+  })
+})
+
+describe("edge-fn drift detector — a url-only function is clean only on POSITIVE content evidence", () => {
+  // 2026-10-02: flowty-proxy / sync-nba-games (and resolve-allday-rip-dist-api
+  // until it moved to the import map) have no tier-1 verdict. They read
+  // `unclassifiable` even when tier 2 read and matched their body, so
+  // edge-fn-deploy.yml's read-back (which needs `clean`) could never pass.
+  const t1 = { proven: ["p"], clean: ["c"], inapplicable: ["u"], notDeployed: [] }
+  const none = { contentDrift: [], eszipMisses: [] }
+
+  it("url-only + census matched its body → clean", () => {
+    expect(slugVerdict("u", { t1, ...none, contentMatched: ["u"], tier2Ran: true })).toBe("clean")
+  })
+
+  it("url-only without a match, or without a census, stays unclassifiable (absence is not evidence)", () => {
+    expect(slugVerdict("u", { t1, ...none, contentMatched: [], tier2Ran: true })).toBe("unclassifiable")
+    expect(slugVerdict("u", { t1, ...none, contentMatched: ["u"], tier2Ran: false })).toBe("unclassifiable")
+  })
+
+  it("drift still outranks everything, and tier-1 verdicts are unchanged", () => {
+    expect(slugVerdict("u", { t1, contentDrift: [{ slug: "u" }], eszipMisses: [], contentMatched: [], tier2Ran: true })).toBe("content_drifted")
+    expect(slugVerdict("p", { t1, ...none, contentMatched: ["p"], tier2Ran: true })).toBe("proven_drifted")
+    expect(slugVerdict("c", { t1, ...none, tier2Ran: false })).toBe("clean_tier1_only")
+    expect(slugVerdict("x", { t1, ...none, tier2Ran: true })).toBe("not_in_repo")
+  })
+
+  it("the census records a matched body in contentMatched, and a drifted one not", async () => {
+    const repo = [{ slug: "a", src: "const x = 1" }, { slug: "b", src: "const y = 2" }]
+    const deployed = [{ slug: "a" }, { slug: "b" }]
+    const r = await runContentCensus({ repo, deployed, fetchBody: async (slug: string) => (slug === "a" ? "const x = 999" : "const y = 2") })
+    expect(r.contentMatched).toEqual(["b"])
+    expect(r.contentDrift.map((c: { slug: string }) => c.slug)).toEqual(["a"])
   })
 })
 

@@ -109,6 +109,22 @@ export function requiresImportMap(src) {
   return moduleSpecifiers(src).some((s) => specifierKind(s) === "bare")
 }
 
+/**
+ * One deployed slug's verdict, in precedence order. A url-only function has no
+ * tier-1 verdict; it reads `clean` only when tier 2 READ its body and MATCHED it
+ * (contentMatched). Until 2026-10-02 it read `unclassifiable` even then, so
+ * edge-fn-deploy.yml's read-back could never pass for it.
+ */
+export function slugVerdict(slug, { t1, contentDrift, eszipMisses, contentMatched = [], tier2Ran }) {
+  if (t1.proven.includes(slug)) return "proven_drifted"
+  if (contentDrift.some((c) => c.slug === slug)) return "content_drifted"
+  if (eszipMisses.some((m) => m.slug === slug)) return "eszip_uncontained"
+  // Only claim "clean" if the census actually looked at this one.
+  if (t1.clean.includes(slug)) return tier2Ran ? "clean" : "clean_tier1_only"
+  if (t1.inapplicable.includes(slug)) return tier2Ran && contentMatched.includes(slug) ? "clean" : "unclassifiable"
+  return "not_in_repo"
+}
+
 /** A deployed function resolves bare specifiers if EITHER signal says it has a map (see TIER 1). */
 export function hasImportMap(dep) {
   return dep.import_map === true || (typeof dep.import_map_path === "string" && dep.import_map_path !== "")
@@ -364,6 +380,10 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
   const bodyFailures = []
   const eszipMisses = []
   const parseMismatches = []
+  // Slugs whose deployed body was READ and MATCHED the repo source. Positive
+  // evidence, not "absent from every failure list": a url-only function has no
+  // tier-1 verdict, and this is the only thing that can call it clean.
+  const contentMatched = []
   const parseMatchModes = { verbatim: 0, normalised: 0, canonical: 0, canonical_tight: 0 }
   let bodiesRead = 0
   let bodiesFailed = 0
@@ -371,7 +391,7 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
   let eszipParsed = 0
   let eszipAttempted = false
 
-  if (!attempted) return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, parseMismatches, parseMatchModes, eszipParsed, ran: false }
+  if (!attempted) return { contentDrift, contentMatched, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, parseMismatches, parseMatchModes, eszipParsed, ran: false }
 
   const bySlug = new Map(deployed.map((d) => [d.slug, d]))
   for (const { slug, src } of repo) {
@@ -397,8 +417,10 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
         bodiesRead++
         eszipParsed++
         const mode = await matchDialects(src, depSrc, canonicalise)
-        if (mode) parseMatchModes[mode]++
-        else parseMismatches.push({ slug, version: dep.version, updated_at: dep.updated_at })
+        if (mode) {
+          parseMatchModes[mode]++
+          contentMatched.push(slug)
+        } else parseMismatches.push({ slug, version: dep.version, updated_at: dep.updated_at })
         continue
       }
       // ── ESZIP CONTAINMENT MODE (2026-08-30; FALLBACK ONLY since parse mode) ─
@@ -419,6 +441,7 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
           eszipMisses.push({ slug, version: bySlug.get(slug).version, updated_at: bySlug.get(slug).updated_at })
         } else {
           eszipContained++
+          contentMatched.push(slug)
         }
         continue
       }
@@ -434,6 +457,8 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
       bodiesRead++
       if (normaliseSource(depSrc) !== normaliseSource(src)) {
         contentDrift.push({ slug, version: bySlug.get(slug).version, updated_at: bySlug.get(slug).updated_at })
+      } else {
+        contentMatched.push(slug)
       }
     } catch (e) {
       bodiesFailed++
@@ -483,11 +508,12 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
       )
     }
     parseMismatches.length = 0
+    contentMatched.length = 0
   } else {
     for (const m of parseMismatches) contentDrift.push(m)
   }
 
-  return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, parseMismatches, parseMatchModes, eszipParsed, ran: bodiesRead > 0 }
+  return { contentDrift, contentMatched, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, parseMismatches, parseMatchModes, eszipParsed, ran: bodiesRead > 0 }
 }
 
 class AuthError extends Error {}
@@ -572,7 +598,7 @@ async function main() {
     parseEszip: extractEntrypointSource,
     canonicalise: canonicaliseSource,
   })
-  const { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, parseMatchModes, eszipParsed, ran: tier2Ran } = census
+  const { contentDrift, contentMatched, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, parseMatchModes, eszipParsed, ran: tier2Ran } = census
   const parseMatched = Object.values(parseMatchModes ?? {}).reduce((a, b) => a + b, 0)
 
   if (tier2Attempted && !tier2Ran) {
@@ -641,20 +667,7 @@ async function main() {
         updated_at: d.updated_at ?? null,
         import_map: d.import_map ?? null,
         in_repo: repo.some((r) => r.slug === d.slug),
-        verdict: t1.proven.includes(d.slug)
-          ? "proven_drifted"
-          : contentDrift.some((c) => c.slug === d.slug)
-            ? "content_drifted"
-            : eszipMisses.some((m) => m.slug === d.slug)
-              ? "eszip_uncontained"
-              : t1.clean.includes(d.slug)
-              ? // Only claim "clean" if the census actually looked at this one.
-                tier2Ran
-                ? "clean"
-                : "clean_tier1_only"
-              : t1.inapplicable.includes(d.slug)
-                ? "unclassifiable"
-                : "not_in_repo",
+        verdict: slugVerdict(d.slug, { t1, contentDrift, eszipMisses, contentMatched, tier2Ran }),
       }))
       .sort((a, b) => a.slug.localeCompare(b.slug)),
     in_repo_not_deployed: t1.notDeployed.sort(),
