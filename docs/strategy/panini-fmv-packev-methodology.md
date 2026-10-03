@@ -163,3 +163,15 @@ Monte-Carlo, 20,000 packs: slot draws ∝ `still_in_packs`, Panini odds (2 Silve
 Daily sale medians are flat to falling since the Hobby drop opened 09-30 (Silver mean $3.14 on 09-28 → $1.88 on
 10-01). Prices are gross of any marketplace fee. A candidate for the board's model (it removes the ask-share problem
 the v0.2 gate guards against), not shipped — build it deliberately.
+
+### ✅ SHIPPED 2026-10-02 ~6:10 PM PT — the sales model now drives the WNBA board (`panini-pack-ev-wnba-sales-1.0`)
+
+`refresh_panini_pack_ev_sales_model(2420)` (pg_cron `rpc-panini-pack-ev-sales-model`, :46 hourly) runs the player ×
+parallel fit above in-database and writes `panini_pack_ev_sales_parallels` / `_families`;
+`panini_pack_ev_model_wnba_2026_sales` turns those into pack EVs and `panini_pack_ev_board` reads it for 2420.
+Imputation is generic, with no parallel named: no sale → same family + print run; < 3 sales → floored at the best
+larger-print-run parallel of its family. Gate: ≥ 10 sales in every family of the pack and a fit < 6 h old.
+First fit: 1,315 sales → **Hobby 22 / typical 9 vs 30 (edge −8); FOTL 55 / typical 18 vs 150 (edge −95).**
+The FMV-based `panini_pack_ev_model_wnba_2026` (v0.2) stays as a diagnostic and is no longer read by the board.
+"Typical" is the sum of family medians (same convention as WC); the Monte-Carlo pack median is higher
+(FOTL ~$26), so treat the board's typical as conservative.
