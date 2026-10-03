@@ -3,6 +3,7 @@ import { checklistRows, checklistState } from "@/lib/giveaways/checklist"
 import { claimOutcomeResponse } from "@/lib/giveaways/claim-copy"
 import { parseDraftBody } from "@/lib/giveaways/draft-input"
 import { deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
+import { chaseMomentId, openedKey, revealOrder, topShotMomentImage } from "@/lib/giveaways/reveal"
 import { commitmentHash } from "@/lib/giveaways/seal"
 import { execFileSync } from "node:child_process"
 import type { ClaimRow, PoolRow } from "@/lib/giveaways/store"
@@ -149,5 +150,32 @@ describe("giveaways/view-format errorText", () => {
     expect(errorText("Declined")).toBe("Declined")
     expect(errorText("")).toBe("(empty error)")
     expect(errorText(undefined)).toBe("undefined")
+  })
+})
+
+describe("giveaways/reveal", () => {
+  it("orders lowest value first, unpriced first, ties by id, never mutating the input", () => {
+    const input = [
+      { moment_id: "b", fmv_usd: 5 },
+      { moment_id: "a", fmv_usd: 5 },
+      { moment_id: "z", fmv_usd: null },
+      { moment_id: "c", fmv_usd: 1 },
+    ]
+    expect(revealOrder(input).map((m) => m.moment_id)).toEqual(["z", "c", "a", "b"])
+    expect(input[0].moment_id).toBe("b")
+  })
+
+  it("names a chase card only when one card is worth strictly more than every other", () => {
+    expect(chaseMomentId([{ moment_id: "1", fmv_usd: 1 }, { moment_id: "2", fmv_usd: 9 }])).toBe("2")
+    expect(chaseMomentId([{ moment_id: "1", fmv_usd: 9 }, { moment_id: "2", fmv_usd: 9 }])).toBeNull()
+    expect(chaseMomentId([{ moment_id: "1", fmv_usd: 9 }])).toBeNull()
+    expect(chaseMomentId([{ moment_id: "1", fmv_usd: 9 }, { moment_id: "2", fmv_usd: null }])).toBeNull()
+  })
+
+  it("builds Top Shot art only for a numeric Flow id; keys the opened flag per pack", () => {
+    expect(topShotMomentImage("47724526")).toBe("https://assets.nbatopshot.com/media/47724526/image?width=480")
+    expect(topShotMomentImage("123", 199.6)).toBe("https://assets.nbatopshot.com/media/123/image?width=200")
+    expect(topShotMomentImage("abc")).toBeNull()
+    expect(openedKey("fall-drop", 4)).toBe("rpc_giveaway_opened:fall-drop:4")
   })
 })

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import type { PublicDropView } from "@/lib/giveaways/store"
 import { deliveryLabel, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
+import PackRevealClient from "./PackRevealClient"
 
 type View = PublicDropView & { signed_in: boolean }
 type Load = { kind: "loading" } | { kind: "not_found" } | { kind: "error" } | { kind: "ok"; view: View }
@@ -125,19 +126,21 @@ export default function GiveawayClient({ slug }: { slug: string }) {
         <section style={{ ...card, borderColor: "var(--rpc-red-border)" }}>
           <h2 style={h2}>Your pack · #{me.pack_no}</h2>
           <p style={muted}>
-            Claimed {ptTime(me.claimed_at)} for Top Shot user <strong>@{me.topshot_username}</strong>. The sponsor gifts each Moment to that account in
-            the Top Shot app; this page marks it delivered once it shows up there on chain.
+            Claimed {ptTime(me.claimed_at)} for Top Shot user <strong>@{me.topshot_username}</strong>. The sponsor sends each Moment to that
+            account; this page marks it delivered once it shows up there on chain.
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
-            {me.moments.map((m) => (
-              <div key={m.moment_id} style={{ ...card, background: "var(--rpc-surface-raised)" }}>
-                <MomentLine m={m} />
-                <div style={{ ...muted, marginTop: 6, color: m.delivered ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}>
-                  {deliveryLabel(m.delivered, m.last_checked_at)}
+          <PackRevealClient slug={slug} packNo={me.pack_no} moments={me.moments}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+              {me.moments.map((m) => (
+                <div key={m.moment_id} style={{ ...card, background: "var(--rpc-surface-raised)" }}>
+                  <MomentLine m={m} />
+                  <div style={{ ...muted, marginTop: 6, color: m.delivered ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}>
+                    {deliveryLabel(m.delivered, m.last_checked_at)}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </PackRevealClient>
         </section>
       ) : drop.status === "open" && left > 0 ? (
         <section style={card}>

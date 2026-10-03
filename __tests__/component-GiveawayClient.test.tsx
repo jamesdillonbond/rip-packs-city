@@ -39,6 +39,7 @@ function json(body: unknown, status = 200) {
 
 afterEach(() => {
   cleanup()
+  localStorage.clear()
   vi.unstubAllGlobals()
 })
 
@@ -126,8 +127,13 @@ describe("GiveawayClient — claiming", () => {
     expect(await screen.findByText(/Your pack · #2/)).toBeTruthy()
     const post = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")!
     expect(JSON.parse((post[1] as RequestInit).body as string)).toEqual({ username: "alice", agree: true })
+    // the pack arrives SEALED; "Show all" skips straight to the delivery grid
+    expect(screen.getByText("Pack #2")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Show all" }))
     expect(screen.getByText(/Delivered: in your Top Shot account/)).toBeTruthy()
     expect(screen.getByText("Awaiting the sponsor's gift")).toBeTruthy()
+    // ...and stays opened for this browser
+    expect(localStorage.getItem("rpc_giveaway_opened:fall-drop:2")).toBe("1")
   })
 
   it("a refused claim shows the route's own copy", async () => {

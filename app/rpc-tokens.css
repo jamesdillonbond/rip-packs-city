@@ -309,6 +309,20 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
   animation: skeletonPulse 1.8s ease-in-out infinite;
 }
 
+/* ── Giveaway pack reveal (app/giveaways/[slug]/PackRevealClient.tsx) ── */
+@keyframes rpcPackCardIn {
+  0% { opacity: 0; transform: rotateY(90deg) scale(0.92); }
+  100% { opacity: 1; transform: rotateY(0deg) scale(1); }
+}
+
+.rpc-pack-card-in {
+  animation: rpcPackCardIn 420ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rpc-pack-card-in { animation: none; }
+}
+
 /* ── Utility Classes ──────────────────────────────────────── */
 .rpc-label {
   font-size: var(--text-xs);
