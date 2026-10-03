@@ -912,9 +912,11 @@ const PINS = [
     // Click → sale attribution (audit_20260930): matches an RPC outbound click to the marketplace
     // sale that followed it. Its output is a number nobody can check by eye, so the matching rules
     // (collection scope, windows, ask caps, buyer-is-clicker, bot skip) are pinned.
+    // Re-pointed 2026-10-03: a match made while the sale's buyer was NULL is re-checked once the
+    // buyer lands, so the clicker's own purchase is upgraded to confirmed (was stuck at "likely").
     fn: "attribute_outbound_clicks",
     test: "supabase/tests/attribute_outbound_clicks.sql",
-    migration: "supabase/migrations/20261001033000_audit_20260930_rpc_clicks_are_attributed_to_the_marketplace_sales_that_follow_them.sql",
+    migration: "supabase/migrations/20261003160654_click_attribution_rechecks_a_buyer_filled_in_after_the_match.sql",
   },
   {
     fn: "mcp_get_fmv",

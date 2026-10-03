@@ -8,10 +8,14 @@
 --   * a sale BEFORE the click, or after the window, never attributes; a bot click is skipped;
 --   * the collection falls back to the destination host when the writer did not say;
 --   * pinnacle_sales and panini_sales are read for their collections;
---   * a second run writes nothing (one row per click).
+--   * a second run writes nothing (one row per click);
+--   * (2026-10-03) a match made while the sale's buyer was still NULL is RE-CHECKED: once the
+--     buyer is known it is written, and the clicker's own purchase is upgraded to confirmed;
+--   * a re-checked buyer who is NOT the clicker keeps the click-time confidence, and a row whose
+--     buyer is already known is never re-touched (a third run re-checks nothing).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261001033000_audit_20260930_rpc_clicks_are_attributed_to_the_marketplace_sales_that_follow_them.sql);
+-- (supabase/migrations/20261003160654_click_attribution_rechecks_a_buyer_filled_in_after_the_match.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 
 BEGIN;
@@ -48,6 +52,7 @@ DECLARE
   v_started timestamptz := clock_timestamp();
   v_scanned int := 0;
   v_written int := 0;
+  v_rechecked int := 0;
   v_err text;
 BEGIN
   BEGIN
@@ -167,15 +172,68 @@ BEGIN
       RETURNING 1
     )
     SELECT count(*) INTO v_written FROM ins;
+
+    -- RE-CHECK (2026-10-03). An on-chain sale lands with buyer_address NULL and the buyer is
+    -- filled in later, so a row attributed in that gap was stamped buyer_is_clicker=false for
+    -- good -- a "not the clicker" read off an UNKNOWN (Trevor's two 10-01 alert buys sat at
+    -- "likely" with his own wallet as the buyer). Every row still carrying a NULL buyer is
+    -- re-read from its sale for 14 days: the buyer is filled in, buyer_is_clicker recomputed
+    -- with the same wallet rule as above, and a clicker's purchase upgraded to confirmed.
+    -- A buyer who is NOT the clicker leaves the confidence as the click-time rules set it.
+    WITH known AS (
+      SELECT a.click_id, sb.buyer_address
+        FROM public.click_attributed_purchases a
+        CROSS JOIN LATERAL (
+          -- (id, sold_at) is the partitioned table's primary key: an index probe with pruning.
+          -- The CASE keeps a non-uuid ref from another source from ever reaching the cast.
+          SELECT sa.buyer_address::text AS buyer_address FROM public.sales sa
+           WHERE a.sale_source = 'sales'
+             AND sa.id = (CASE WHEN a.sale_source = 'sales' THEN a.sale_ref END)::uuid
+             AND sa.sold_at = a.sold_at
+          UNION ALL
+          SELECT ps.buyer_address::text FROM public.pinnacle_sales ps
+           WHERE a.sale_source = 'pinnacle_sales' AND ps.id = a.sale_ref
+          UNION ALL
+          SELECT pn.buyer::text FROM public.panini_sales pn
+           WHERE a.sale_source = 'panini_sales' AND pn.sku || '@' || pn.sold_at::text = a.sale_ref
+        ) sb
+       WHERE a.buyer_address IS NULL
+         AND a.clicked_at > now() - interval '14 days'
+         AND sb.buyer_address IS NOT NULL
+    ), judged AS (
+      SELECT k.click_id, k.buyer_address,
+             EXISTS (
+               SELECT 1 FROM (
+                 SELECT oc.wallet_address AS w
+                 UNION ALL
+                 SELECT sw.wallet_addr FROM public.saved_wallets sw WHERE oc.user_id IS NOT NULL AND sw.user_id = oc.user_id
+               ) ws
+               WHERE ws.w IS NOT NULL
+                 AND CASE WHEN k.buyer_address ~* '^0x' THEN lower(ws.w) = lower(k.buyer_address)
+                          ELSE ws.w = k.buyer_address END
+             ) AS is_clicker
+        FROM known k
+        JOIN public.outbound_clicks oc ON oc.id = k.click_id
+    ), upd AS (
+      UPDATE public.click_attributed_purchases a
+         SET buyer_address = j.buyer_address,
+             buyer_is_clicker = j.is_clicker,
+             confidence = CASE WHEN j.is_clicker THEN 'confirmed' ELSE a.confidence END
+        FROM judged j
+       WHERE a.click_id = j.click_id
+      RETURNING 1
+    )
+    SELECT count(*) INTO v_rechecked FROM upd;
   EXCEPTION WHEN query_canceled OR OTHERS THEN
     v_err := left(SQLERRM, 300);
   END;
   -- ok is derived from whether the work ran; rows_written counts rows actually inserted.
   PERFORM public.log_pipeline_run('attribute-outbound-clicks', v_started, v_scanned, v_written, 0, v_err IS NULL, v_err,
     NULL, NULL, NULL,
-    jsonb_build_object('clicks_scanned', v_scanned, 'attributed', v_written, 'lookback_hours', p_lookback_hours,
+    jsonb_build_object('clicks_scanned', v_scanned, 'attributed', v_written, 'buyer_rechecked', v_rechecked,
+                       'lookback_hours', p_lookback_hours,
                        'via', 'pg_cron', 'duration_ms', (extract(epoch FROM clock_timestamp() - v_started) * 1000)::int));
-  RETURN jsonb_build_object('clicks_scanned', v_scanned, 'attributed', v_written, 'error', v_err);
+  RETURN jsonb_build_object('clicks_scanned', v_scanned, 'attributed', v_written, 'buyer_rechecked', v_rechecked, 'error', v_err);
 END
 $function$;
 -- <<< END verbatim attribute_outbound_clicks <<<
@@ -210,7 +268,12 @@ INSERT INTO public.outbound_clicks (id, created_at, surface, moment_id, edition_
   -- 10: Panini card by sku, bought by the click's own wallet                           -> confirmed
   (10, now() - interval '5 hours', 'panini', 'SKU10', NULL, 3.00, '0xpanini', NULL, 'panini_blockchain', 'site', NULL, false),
   -- 11: TS moment bought within 2 h but at 2x the ask clicked                          -> possible (not likely)
-  (11, now() - interval '5 hours', 'sniper', 'N11', NULL, 1.00, NULL, NULL, 'nba_top_shot', 'site', NULL, false);
+  (11, now() - interval '5 hours', 'sniper', 'N11', NULL, 1.00, NULL, NULL, 'nba_top_shot', 'site', NULL, false),
+  -- 12: alert click by the signed-in user; the sale lands with buyer NULL (filled in later
+  --     with the user's saved wallet)                                                   -> likely, then confirmed
+  (12, now() - interval '5 hours', 'alert', 'N12', NULL, 0.26, NULL, NULL, 'nba_top_shot', 'alert', 'bbbbbbbb-0000-0000-0000-000000000001', false),
+  -- 13: same shape, but the buyer filled in later is a stranger                         -> likely, stays likely
+  (13, now() - interval '5 hours', 'alert', 'N13', NULL, 0.41, NULL, NULL, 'nba_top_shot', 'alert', 'bbbbbbbb-0000-0000-0000-000000000001', false);
 
 INSERT INTO public.sales (id, collection_id, edition_id, nft_id, sold_at, price_usd, buyer_address) VALUES
   ('cccccccc-0000-0000-0000-000000000001', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'aaaaaaaa-0000-0000-0000-000000000001', 'N1', now() - interval '4 hours 30 minutes', 0.32, '0xstranger'),
@@ -221,13 +284,15 @@ INSERT INTO public.sales (id, collection_id, edition_id, nft_id, sold_at, price_
   ('cccccccc-0000-0000-0000-000000000006', 'dee28451-5d62-409e-a1ad-a83f763ac070', NULL, 'N1', now() - interval '4 hours 40 minutes', 2.00, '0xad'),
   ('cccccccc-0000-0000-0000-000000000007', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'aaaaaaaa-0000-0000-0000-000000000001', 'N70', now() - interval '4 hours 10 minutes', 0.39, '0xed'),
   ('cccccccc-0000-0000-0000-000000000008', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'aaaaaaaa-0000-0000-0000-000000000001', 'N80', now() - interval '19 hours', 0.50, '0xed'),
-  ('cccccccc-0000-0000-0000-000000000011', '95f28a17-224a-4025-96ad-adf8a4c63bfd', NULL, 'N11', now() - interval '4 hours', 2.00, '0xother');
+  ('cccccccc-0000-0000-0000-000000000011', '95f28a17-224a-4025-96ad-adf8a4c63bfd', NULL, 'N11', now() - interval '4 hours', 2.00, '0xother'),
+  ('cccccccc-0000-0000-0000-000000000012', '95f28a17-224a-4025-96ad-adf8a4c63bfd', NULL, 'N12', now() - interval '4 hours 59 minutes', 0.26, NULL),
+  ('cccccccc-0000-0000-0000-000000000013', '95f28a17-224a-4025-96ad-adf8a4c63bfd', NULL, 'N13', now() - interval '4 hours 59 minutes', 0.41, NULL);
 INSERT INTO public.pinnacle_sales VALUES ('pin-9', 'P9', 'R9', now() - interval '4 hours', 20.00, '0xpinbuyer');
 INSERT INTO public.panini_sales VALUES ('SKU10', 'E10', now() - interval '4 hours 55 minutes', 3.00, '0xPANINI');
 
 -- ── assertions ───────────────────────────────────────────────────────────────────────────────────
-SELECT _assert_eq((SELECT (j->>'clicks_scanned') || '/' || (j->>'attributed') FROM (SELECT public.attribute_outbound_clicks(72) j) s), '10/8',
-  '10 non-bot clicks scanned (click 4 too: the lookback is 72 h), 8 attributed');
+SELECT _assert_eq((SELECT (j->>'clicks_scanned') || '/' || (j->>'attributed') FROM (SELECT public.attribute_outbound_clicks(72) j) s), '12/10',
+  '12 non-bot clicks scanned (click 4 too: the lookback is 72 h), 10 attributed');
 SELECT _assert_eq((SELECT string_agg(click_id || ':' || match || ':' || confidence || ':' || sale_ref, ' ' ORDER BY click_id) FROM public.click_attributed_purchases),
   '1:same_moment:likely:cccccccc-0000-0000-0000-000000000001 '
   || '2:same_moment:confirmed:cccccccc-0000-0000-0000-000000000002 '
@@ -236,7 +301,9 @@ SELECT _assert_eq((SELECT string_agg(click_id || ':' || match || ':' || confiden
   || '7:same_edition:possible:cccccccc-0000-0000-0000-000000000001 '
   || '9:same_moment:likely:pin-9 '
   || '10:same_moment:confirmed:SKU10@' || (SELECT sold_at::text FROM public.panini_sales) || ' '
-  || '11:same_moment:possible:cccccccc-0000-0000-0000-000000000011',
+  || '11:same_moment:possible:cccccccc-0000-0000-0000-000000000011 '
+  || '12:same_moment:likely:cccccccc-0000-0000-0000-000000000012 '
+  || '13:same_moment:likely:cccccccc-0000-0000-0000-000000000013',
   'each click lands on exactly the sale and confidence the rules say');
 SELECT _assert((SELECT NOT EXISTS (SELECT 1 FROM public.click_attributed_purchases WHERE click_id IN (4, 5, 8))),
   'a sale BEFORE the click or past 48 h, a bot click, and an above-ask edition sale never attribute');
@@ -246,7 +313,21 @@ SELECT _assert_eq((SELECT collection_slug FROM public.click_attributed_purchases
   'the hyphen registry spelling resolves to the long-form slug');
 SELECT _assert_eq((SELECT minutes_after_click::text FROM public.click_attributed_purchases WHERE click_id = 1), '30',
   'minutes_after_click is measured click -> sale');
-SELECT _assert_eq((SELECT (j->>'attributed') FROM (SELECT public.attribute_outbound_clicks(72) j) s), '0',
-  'a second run writes nothing -- one row per click');
+SELECT _assert((SELECT buyer_address IS NULL AND NOT buyer_is_clicker FROM public.click_attributed_purchases WHERE click_id = 12),
+  'precondition: matched while the buyer was still unknown');
+SELECT _assert_eq((SELECT (j->>'attributed') || '/' || (j->>'buyer_rechecked') FROM (SELECT public.attribute_outbound_clicks(72) j) s), '0/0',
+  'a second run writes nothing -- one row per click -- and with no buyer filled in, re-checks nothing');
+
+-- the buyers land after the match
+UPDATE public.sales SET buyer_address = '0xabcdef0123456789' WHERE id = 'cccccccc-0000-0000-0000-000000000012';
+UPDATE public.sales SET buyer_address = '0xstranger13' WHERE id = 'cccccccc-0000-0000-0000-000000000013';
+SELECT _assert_eq((SELECT (j->>'attributed') || '/' || (j->>'buyer_rechecked') FROM (SELECT public.attribute_outbound_clicks(72) j) s), '0/2',
+  'the two NULL-buyer rows are re-checked once their buyers are known');
+SELECT _assert_eq((SELECT confidence || ':' || buyer_is_clicker || ':' || buyer_address FROM public.click_attributed_purchases WHERE click_id = 12),
+  'confirmed:true:0xabcdef0123456789', 'the clicker''s own purchase is upgraded to confirmed (saved wallet, case-insensitive)');
+SELECT _assert_eq((SELECT confidence || ':' || buyer_is_clicker || ':' || buyer_address FROM public.click_attributed_purchases WHERE click_id = 13),
+  'likely:false:0xstranger13', 'a stranger buyer is recorded and keeps the click-time confidence');
+SELECT _assert_eq((SELECT (j->>'buyer_rechecked') FROM (SELECT public.attribute_outbound_clicks(72) j) s), '0',
+  'a row whose buyer is already known is never re-touched');
 
 ROLLBACK;
