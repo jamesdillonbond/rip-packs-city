@@ -51,6 +51,8 @@ export default function SniperFilterBar(props: {
   onBadgeOnlyChange: (b: boolean) => void;
   showVerifiedOnly: boolean;
   onVerifiedChange: (b: boolean) => void;
+  afterFeesOnly: boolean;
+  onAfterFeesChange: (b: boolean) => void;
   ownedFilter: "all" | "owned" | "not-owned";
   onOwnedFilterChange: (value: "all" | "owned" | "not-owned") => void;
   ownedCount: number;
@@ -74,6 +76,7 @@ export default function SniperFilterBar(props: {
     sortBy, sortOptions, onSortChange,
     badgeOnly, onBadgeOnlyChange,
     showVerifiedOnly, onVerifiedChange,
+    afterFeesOnly, onAfterFeesChange,
     ownedFilter, onOwnedFilterChange, ownedCount,
     leagueFilter, onLeagueChange,
     copyLinkMsg, onCopyLink,
@@ -257,6 +260,18 @@ export default function SniperFilterBar(props: {
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
             VERIFIED FMV ONLY
           </span>
+        </label>
+        <label
+          className="flex items-center gap-1.5 cursor-pointer select-none"
+          style={{ color: "var(--rpc-text-muted)" }}
+          title="Hide listings that would lose money on a resale at FMV once the marketplace fee is paid"
+        >
+          <input
+            type="checkbox"
+            checked={afterFeesOnly}
+            onChange={(e) => onAfterFeesChange(e.target.checked)}
+          />
+          DEALS AFTER FEES
         </label>
         {!isAllDay && ownedCount > 0 && (
           <select

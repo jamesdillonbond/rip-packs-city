@@ -27,6 +27,7 @@ function makeProps(over: Record<string, any> = {}) {
     onSortChange: vi.fn(),
     onBadgeOnlyChange: vi.fn(),
     onVerifiedChange: vi.fn(),
+    onAfterFeesChange: vi.fn(),
     onOwnedFilterChange: vi.fn(),
     onLeagueChange: vi.fn(),
     onCopyLink: vi.fn(),
@@ -37,7 +38,7 @@ function makeProps(over: Record<string, any> = {}) {
     showFilters: true, playerInput: "", tierTab: "all", tabs: ["all", "rare", "legendary"],
     minDiscount: 0, maxPrice: 0, search: "", serialFilter: "all",
     sortBy: "discount", sortOptions: [{ value: "discount", label: "Best Discount" }, { value: "price", label: "Price" }],
-    badgeOnly: false, showVerifiedOnly: false, ownedFilter: "all", ownedCount: 0,
+    badgeOnly: false, showVerifiedOnly: false, afterFeesOnly: false, ownedFilter: "all", ownedCount: 0,
     leagueFilter: "all", copyLinkMsg: null,
     ...cb, ...over,
   }
@@ -128,5 +129,16 @@ describe("SniperFilterBar — mobile", () => {
     expect(screen.queryByPlaceholderText("e.g. LeBron")).toBeNull()
     // gear button shows the count of active filters (minDiscount, maxPrice, search = 3)
     expect(screen.getByText(/FILTERS \(3\)/)).toBeTruthy()
+  })
+})
+
+describe("DEALS AFTER FEES toggle (2026-10-03)", () => {
+  it("renders checked when afterFeesOnly is on and reports the change", () => {
+    const { props, cb } = makeProps({ afterFeesOnly: true })
+    render(<SniperFilterBar {...props} />)
+    const box = screen.getByLabelText(/DEALS AFTER FEES/i) as HTMLInputElement
+    expect(box.checked).toBe(true)
+    fireEvent.click(box)
+    expect(cb.onAfterFeesChange).toHaveBeenCalledWith(false)
   })
 })

@@ -15,6 +15,9 @@ import {
   variantLabel,
   discountColor,
   countHiddenByVerifiedGate,
+  countHiddenByFeeGate,
+  isUnderWaterAfterFees,
+  filterSniperDeals,
 } from "@/lib/sniper/helpers"
 import type { SniperDeal } from "@/lib/sniper/types"
 
@@ -348,5 +351,52 @@ describe("countHiddenByVerifiedGate (deep-audit D4)", () => {
   it("is 0 when every row is verified (the healthy board)", () => {
     const deals = [full({ confidence: "high" }), full({ confidence: "medium" })]
     expect(countHiddenByVerifiedGate(deals, { showVerifiedOnly: true })).toBe(0)
+  })
+})
+
+describe("deals-after-fees gate (2026-10-03 product decision)", () => {
+  // Measured on the live Top Shot sniper under the default "Recently Listed":
+  // the first screen was $0.24–0.33 commons at "net +$0.00 / −$0.01 after 5%
+  // fee" — gross discounts of 2–5% that the seller fee erases. The gate hides a
+  // listing whose fee-net margin is <= 0, keeps a listing with NO fee verdict
+  // (null netOfFees — absence of a fee table is not evidence), never changes
+  // order, and reports what it alone is hiding so the empty state can name it.
+  function full(o: Partial<SniperDeal> = {}): SniperDeal {
+    return { discount: 3, playerName: "x", setName: "s", teamName: "t", confidence: "high", ...o } as SniperDeal
+  }
+  const net = (netMarginUsd: number): SniperDeal["netOfFees"] =>
+    ({ feePct: 0.05, netIfResold: 1, netMarginUsd, netMarginPct: 0, flipsNegative: netMarginUsd <= 0 })
+
+  const underWater = full({ playerName: "under", netOfFees: net(-0.01) })
+  const breakEven = full({ playerName: "even", netOfFees: net(0) })
+  const real = full({ playerName: "real", netOfFees: net(0.4) })
+  const noVerdict = full({ playerName: "noverdict", netOfFees: null })
+  const deals = [underWater, breakEven, real, noVerdict]
+
+  it("isUnderWaterAfterFees: <= 0 margin is under water; a null verdict is not", () => {
+    expect(isUnderWaterAfterFees(underWater)).toBe(true)
+    expect(isUnderWaterAfterFees(breakEven)).toBe(true)
+    expect(isUnderWaterAfterFees(real)).toBe(false)
+    expect(isUnderWaterAfterFees(noVerdict)).toBe(false)
+  })
+
+  it("hides only the under-water rows when on, keeps the null-verdict row, keeps order", () => {
+    expect(filterSniperDeals(deals, { afterFeesOnly: true }).map((d) => d.playerName)).toEqual(["real", "noverdict"])
+  })
+
+  it("is a no-op when off (and when unset)", () => {
+    expect(filterSniperDeals(deals, { afterFeesOnly: false }).length).toBe(4)
+    expect(filterSniperDeals(deals, {}).length).toBe(4)
+  })
+
+  it("countHiddenByFeeGate counts the gate alone — not rows other filters already dropped", () => {
+    const withNegativeDiscount = [...deals, full({ discount: -5, netOfFees: net(-1) })]
+    expect(countHiddenByFeeGate(withNegativeDiscount, { afterFeesOnly: true })).toBe(2)
+    expect(countHiddenByFeeGate(withNegativeDiscount, { afterFeesOnly: false })).toBe(0)
+    expect(countHiddenByFeeGate(withNegativeDiscount, {})).toBe(0)
+  })
+
+  it("planted defect: a verdict with a positive margin is never hidden", () => {
+    expect(filterSniperDeals([real], { afterFeesOnly: true })).toHaveLength(1)
   })
 })

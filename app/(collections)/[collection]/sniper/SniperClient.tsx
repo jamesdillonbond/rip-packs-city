@@ -66,6 +66,7 @@ import {
   holoClass,
   discountColor,
   countHiddenByVerifiedGate,
+  countHiddenByFeeGate,
 } from "@/lib/sniper/helpers";
 import { sniperTierTabs } from "@/lib/collection-tiers";
 
@@ -200,6 +201,13 @@ function SniperMomentsBody() {
   // P2.5 — default ON: the credible verified-FMV view leads. Users can toggle
   // it off to also see thin-data deals (demoted + flagged, never headlined).
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(true);
+  // 2026-10-03 (product decision): hide listings that lose money on a resale at
+  // FMV once the marketplace fee is paid. Measured on the live Top Shot board:
+  // the first screen was $0.24–0.33 commons at "net +$0.00 / −$0.01 after 5%
+  // fee" — gross discounts of 2–5% that the fee erases. A sniper whose top rows
+  // are not deals after fees is noise. Off switch in the filter bar; the empty
+  // state names this gate when it is the reason nothing shows.
+  const [afterFeesOnly, setAfterFeesOnly] = useState(true);
   const [ownedFilter, setOwnedFilter] = useState<"all" | "owned" | "not-owned">("all");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   // Fast Break deep-link state (?moment= / ?momentId=). Distinct from the
@@ -758,7 +766,7 @@ function SniperMomentsBody() {
   const hasChasers = sniperHasChasers(data?.deals ?? []) || chaserOnly;
   const boardFilterOpts = { team: sniperClientTeamFilter(teamFilter, data?.teamApplied), studio: studioFilter, chaserOnly };
   const visibleDeals = sortByVerifiedFirst(
-    filterSniperDeals(data?.deals ?? [], { search, showVerifiedOnly, ownedFilter, ownedIds, ...boardFilterOpts }),
+    filterSniperDeals(data?.deals ?? [], { search, showVerifiedOnly, afterFeesOnly, ownedFilter, ownedIds, ...boardFilterOpts }),
   );
   const stats = computeSniperStats(visibleDeals);
 
@@ -766,7 +774,7 @@ function SniperMomentsBody() {
   // of the team (up to ~470), and every row was rendered at once. The page count
   // resets whenever the board or a filter changes (keyed, not reset in an
   // effect), and always reaches a deep-linked (highlighted) deal.
-  const pageKey = `${feedKey}|${search}|${showVerifiedOnly}|${ownedFilter}|${boardFilterOpts.team}|${studioFilter}|${chaserOnly}`;
+  const pageKey = `${feedKey}|${search}|${showVerifiedOnly}|${afterFeesOnly}|${ownedFilter}|${boardFilterOpts.team}|${studioFilter}|${chaserOnly}`;
   const [pageSel, setPageSel] = useState<{ key: string; n: number }>({ key: pageKey, n: SNIPER_PAGE });
   const highlightedIndex = highlightedId ? visibleDeals.findIndex((d) => d.flowId === highlightedId) : -1;
   const shownCount = Math.max(pageSel.key === pageKey ? pageSel.n : SNIPER_PAGE, highlightedIndex + 1);
@@ -786,6 +794,16 @@ function SniperMomentsBody() {
   const hiddenByVerifiedGate = countHiddenByVerifiedGate(data?.deals ?? [], {
     search,
     showVerifiedOnly,
+    afterFeesOnly,
+    ownedFilter,
+    ownedIds,
+    ...boardFilterOpts,
+  });
+  // What the deals-after-fees gate alone is hiding (0 when it is off).
+  const hiddenByFeeGate = countHiddenByFeeGate(data?.deals ?? [], {
+    search,
+    showVerifiedOnly,
+    afterFeesOnly,
     ownedFilter,
     ownedIds,
     ...boardFilterOpts,
@@ -991,6 +1009,8 @@ function SniperMomentsBody() {
             onBadgeOnlyChange={setBadgeOnly}
             showVerifiedOnly={showVerifiedOnly}
             onVerifiedChange={setShowVerifiedOnly}
+            afterFeesOnly={afterFeesOnly}
+            onAfterFeesChange={setAfterFeesOnly}
             ownedFilter={ownedFilter}
             onOwnedFilterChange={setOwnedFilter}
             ownedCount={ownedIds.size}
@@ -1206,7 +1226,8 @@ function SniperMomentsBody() {
             <p className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>
               {feedDegraded
                 ? SNIPER_DEGRADED_EMPTY_HEADING
-                : hiddenByVerifiedGate > 0 ? "NO VERIFIED-FMV DEALS RIGHT NOW" : "THE FLOOR IS QUIET"}
+                : hiddenByVerifiedGate > 0 ? "NO VERIFIED-FMV DEALS RIGHT NOW"
+                : hiddenByFeeGate > 0 ? "NOTHING BEATS THE FEE RIGHT NOW" : "THE FLOOR IS QUIET"}
             </p>
             {feedDegraded && hiddenByVerifiedGate > 0 && (
               <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.5 }}>
@@ -1220,6 +1241,13 @@ function SniperMomentsBody() {
                 have no recent sales to price against, so their FMV is derived from the ask itself —
                 the &ldquo;discount&rdquo; is 0% by construction, not a deal. You can still browse them.
               </p>
+            ) : hiddenByFeeGate > 0 ? (
+              <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.5 }}>
+                {hiddenByFeeGate} listing{hiddenByFeeGate === 1 ? " is" : "s are"} hidden by
+                the <strong>Deals after fees</strong> filter, which is on by default. Those listings sit
+                below FMV, but once the marketplace fee comes out of a resale at FMV there is nothing
+                left — the discount does not survive the fee. You can still browse them.
+              </p>
             ) : (
               <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.5 }}>
                 {sniperEmptyCopy(sourcesFailed, "No deals match your filters. Try widening your search.")}
@@ -1231,6 +1259,14 @@ function SniperMomentsBody() {
                 className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accent }}
               >
                 SHOW ASK-PRICED LISTINGS
+              </button>
+            )}
+            {hiddenByVerifiedGate === 0 && hiddenByFeeGate > 0 && (
+              <button
+                onClick={() => setAfterFeesOnly(false)}
+                className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accent }}
+              >
+                SHOW LISTINGS THE FEE ERASES
               </button>
             )}
             {feedDegraded ? (

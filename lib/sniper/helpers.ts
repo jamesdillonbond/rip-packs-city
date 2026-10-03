@@ -47,6 +47,21 @@ export interface SniperDealFilterOpts {
   studio?: string | null;
   /** keep only chase editions (`isChaser === true`) */
   chaserOnly?: boolean;
+  /**
+   * Deals-after-fees toggle (2026-10-03, on by default in the sniper UI): hide
+   * a listing whose fee-net margin is <= 0 — i.e. reselling at the
+   * serial-adjusted FMV would not recover the ask once the marketplace takes
+   * its cut. A row with NO fee verdict (`netOfFees` null: the collection has no
+   * verified published rate) is KEPT — absence of a fee table is not evidence
+   * the deal is under water. Pure visibility: never changes discount or order.
+   */
+  afterFeesOnly?: boolean;
+}
+
+/** Fee verdict says this listing loses money on a resale at FMV. Null verdict → false. */
+export function isUnderWaterAfterFees(d: SniperDeal): boolean {
+  const n = d.netOfFees;
+  return !!n && Number.isFinite(n.netMarginUsd) && n.netMarginUsd <= 0;
 }
 
 /** Does the viewer own the edition this deal is for? Checks both key forms. */
@@ -199,6 +214,7 @@ export function filterSniperDeals(deals: SniperDeal[], opts: SniperDealFilterOpt
         return false;
     }
     if (showVerifiedOnly && !isVerifiedDeal(d)) return false;
+    if (opts.afterFeesOnly && isUnderWaterAfterFees(d)) return false;
     if (ownedFilter !== "all") {
       const owned = isDealOwned(d, ownedIds ?? new Set());
       if (ownedFilter === "owned" && !owned) return false;
@@ -227,6 +243,23 @@ export function countHiddenByVerifiedGate(
   if (!opts.showVerifiedOnly) return 0;
   const withGate = filterSniperDeals(deals, opts).length;
   const withoutGate = filterSniperDeals(deals, { ...opts, showVerifiedOnly: false }).length;
+  return withoutGate - withGate;
+}
+
+// How many listings pass every filter EXCEPT the deals-after-fees gate — what
+// that default-on toggle is hiding. Measured 2026-10-03 on the live Top Shot
+// sniper: the first screen under "Recently Listed" was $0.24–0.33 commons at
+// "net +$0.00 / −$0.01 after 5% fee" — listings that are 2–5% under FMV gross
+// and worth nothing or less once the fee is paid. Same shape as the Verified
+// gate: the toggle is right and stays on, and the empty state must name it.
+// Returns 0 when the gate is off, so the caller needs no separate guard.
+export function countHiddenByFeeGate(
+  deals: SniperDeal[],
+  opts: SniperDealFilterOpts = {},
+): number {
+  if (!opts.afterFeesOnly) return 0;
+  const withGate = filterSniperDeals(deals, opts).length;
+  const withoutGate = filterSniperDeals(deals, { ...opts, afterFeesOnly: false }).length;
   return withoutGate - withGate;
 }
 
