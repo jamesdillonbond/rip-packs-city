@@ -11,6 +11,8 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { parseChecklistWallet } from "@/lib/entity/checklist-wallet"
+import { getCollection } from "@/lib/collections"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -104,6 +106,28 @@ export async function GET(req: Request) {
     })
     if (error) return apiErrorResponse(error, "api/entity/edition")
     return NextResponse.json(data ?? [])
+  }
+
+  // The viewer's OWN buys of this edition, for the chart's "my buys" overlay
+  // (beta feedback 10263, 2026-10-03). The wallet is parsed for the
+  // collection's chain exactly as the team checklist parses it (Flow folded,
+  // Solana verbatim); a key that is not an address of that chain is a 400, and
+  // a wallet with no buys is an honest []. days=0 means all time.
+  if (part === "wallet-purchases") {
+    // The chain comes from the REGISTRY (lib/collections dbChain), the same
+    // source the team-checklist routes use — the slug table carries no chain.
+    const parsed = parseChecklistWallet(url.searchParams.get("wallet"), getCollection(collectionUrlSlug)?.dbChain)
+    if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+    if (!parsed.wallet) return NextResponse.json({ error: "wallet param required" }, { status: 400 })
+    const days = clamp(parseInt(url.searchParams.get("days") ?? "0", 10), 0, 4000)
+    const { data, error } = await supa.rpc("get_edition_wallet_purchases", {
+      p_collection_id: coll.id,
+      p_route_slug: routeSlug,
+      p_wallet: parsed.wallet,
+      p_days: days,
+    })
+    if (error) return apiErrorResponse(error, "api/entity/edition")
+    return NextResponse.json(data ?? [], { headers: { "Cache-Control": "private, no-store" } })
   }
 
   if (part === "sales") {
