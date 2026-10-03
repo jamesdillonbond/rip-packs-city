@@ -8,6 +8,72 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
+import {
+  buildFeedbackShippedSubject,
+  buildFeedbackShippedHtml,
+  buildFeedbackShippedText,
+} from "@/lib/emails/feedback-shipped-email";
+
+// ── "Your request shipped" (2026-10-03) ──────────────────────────────────────
+// On the FIRST transition to `shipped`, the reader who logged the row is
+// emailed once. Idempotent on support_conversations.shipped_notified_at; never
+// sent for smoke/probe rows or rows with no email. A send failure never fails
+// the PATCH — it is returned in the response as `notify.sent=false` with the
+// reason, so the admin UI can show it rather than the row silently claiming a
+// closed loop that never closed.
+const SHIPPED_FROM = "rpc-support@rippackscity.com";
+
+type NotifyResult = { attempted: boolean; sent: boolean; reason?: string };
+
+async function notifyShipped(row: {
+  id: number;
+  user_email: string | null;
+  feedback_type: string | null;
+  feedback_summary: string | null;
+  page_context: string | null;
+  admin_note: string | null;
+  is_smoke_test: boolean | null;
+  shipped_notified_at: string | null;
+}): Promise<NotifyResult> {
+  if (row.shipped_notified_at) return { attempted: false, sent: false, reason: "already notified" };
+  if (row.is_smoke_test) return { attempted: false, sent: false, reason: "smoke/probe row" };
+  const to = (row.user_email ?? "").trim();
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return { attempted: false, sent: false, reason: "no user email on the row" };
+  const summary = (row.feedback_summary ?? "").trim();
+  if (!summary) return { attempted: false, sent: false, reason: "no summary on the row" };
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return { attempted: true, sent: false, reason: "RESEND_API_KEY missing" };
+  const opts = { feedbackType: row.feedback_type, summary, pageContext: row.page_context, note: row.admin_note, link: null };
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: SHIPPED_FROM,
+        to,
+        reply_to: SHIPPED_FROM,
+        subject: buildFeedbackShippedSubject(opts),
+        html: buildFeedbackShippedHtml(opts),
+        text: buildFeedbackShippedText(opts),
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return { attempted: true, sent: false, reason: `resend ${res.status}${body ? `: ${body.slice(0, 160)}` : ""}` };
+    }
+    // The receipt is the send: a failed receipt write is reported, not hidden.
+    const { error: stampErr } = await supabaseAdmin
+      .from("support_conversations")
+      .update({ shipped_notified_at: new Date().toISOString() })
+      .eq("id", row.id)
+      .is("shipped_notified_at", null);
+    if (stampErr) return { attempted: true, sent: true, reason: `sent, but the receipt write failed: ${stampErr.message}` };
+    return { attempted: true, sent: true };
+  } catch (e) {
+    return { attempted: true, sent: false, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -154,11 +220,26 @@ export async function PATCH(
     return NextResponse.json({ error: "No updatable fields supplied" }, { status: 400 });
   }
 
+  // Read the pre-update status so "transition TO shipped" is a fact, not the
+  // caller's claim (a re-save of an already-shipped row must not re-send).
+  let wasShipped = false;
+  if (update.feedback_status === "shipped") {
+    const { data: before, error: beforeErr } = await supabaseAdmin
+      .from("support_conversations")
+      .select("feedback_status")
+      .eq("id", idNum)
+      .maybeSingle();
+    if (beforeErr) {
+      return NextResponse.json({ error: beforeErr.message }, { status: 500 });
+    }
+    wasShipped = before?.feedback_status === "shipped";
+  }
+
   const { data, error } = await supabaseAdmin
     .from("support_conversations")
     .update(update)
     .eq("id", idNum)
-    .select(SELECT_COLUMNS)
+    .select(`${SELECT_COLUMNS},user_email,is_smoke_test,shipped_notified_at` as string)
     .maybeSingle();
 
   if (error) {
@@ -168,5 +249,13 @@ export async function PATCH(
     return NextResponse.json({ error: "Row not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ row: data });
+  let notify: NotifyResult | undefined;
+  if (update.feedback_status === "shipped" && !wasShipped) {
+    notify = await notifyShipped(data as unknown as Parameters<typeof notifyShipped>[0]);
+  }
+
+  // user_email stays out of the response row (the admin UI never showed it).
+  const { user_email: _email, ...row } = data as unknown as Record<string, unknown>;
+  void _email;
+  return NextResponse.json(notify ? { row, notify } : { row });
 }

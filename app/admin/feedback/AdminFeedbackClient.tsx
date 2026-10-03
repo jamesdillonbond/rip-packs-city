@@ -468,6 +468,15 @@ function Dashboard({
           return null;
         }
         const data = await res.json();
+        // 2026-10-03: moving a row to `shipped` emails the reader once. A send
+        // that was attempted and failed is shown here, not swallowed — the row
+        // is updated either way, but the loop is not closed until they hear.
+        const notify = data?.notify as { attempted?: boolean; sent?: boolean; reason?: string } | undefined;
+        if (notify?.attempted && !notify.sent) {
+          setError(`Row updated, but the "shipped" email was not sent: ${notify.reason ?? "unknown"}`);
+        } else if (notify?.sent && notify.reason) {
+          setError(`Email sent; ${notify.reason}`);
+        }
         return (data.row as Row) ?? null;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Network error");
