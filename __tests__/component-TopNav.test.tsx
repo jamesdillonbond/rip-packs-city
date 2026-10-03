@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { render, cleanup, waitFor } from "@testing-library/react"
 
 // TopNav is the desktop primary nav. It carries two branches only a test can pin:
@@ -127,5 +129,13 @@ describe("TopNav — active-route detection", () => {
       (a) => a.textContent === "Analytics",
     )!
     expect(analytics.className).toContain("text-emerald-400")
+  })
+})
+
+describe("tablet-landscape fit (2026-10-03)", () => {
+  it("the nav never shrinks and its labels never wrap; md padding is tighter than lg", async () => {
+    const src = readFileSync(join(process.cwd(), "components/TopNav.tsx"), "utf8")
+    expect(src).toMatch(/<nav className="hidden md:flex items-center shrink-0 md:gap-0 lg:gap-1 text-sm">/)
+    expect(src).toContain("md:px-1.5 lg:px-2.5 py-1.5 whitespace-nowrap")
   })
 })

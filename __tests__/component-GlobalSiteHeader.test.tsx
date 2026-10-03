@@ -90,3 +90,20 @@ describe("GlobalSiteHeader — the site-wide nav contract", () => {
     expect(label?.textContent).toBe("@RIPPACKSCITY")
   })
 })
+
+describe("tablet-landscape fit (2026-10-03): the nav must not wrap its own labels", () => {
+  // Measured at 900/1000 px in headless Chromium and at 995 px in Chrome: the
+  // row squeezed the desktop nav and "Top Shot" / "All Day" wrapped INSIDE
+  // their links (two link rows). jsdom has no layout, so what is pinned is the
+  // CSS that produces the fit — on the header (md-only handle hide + tighter
+  // gaps) and on the nav (unshrinkable, nowrap labels, tighter md padding).
+  it("hides the handle and tightens the gaps between 768 and 1023 px", () => {
+    const { container } = render(<GlobalSiteHeader />)
+    const css = Array.from(container.querySelectorAll("style")).map((s) => s.textContent ?? "").join("\n")
+    const md = css.split("@media (min-width: 768px) and (max-width: 1023.98px)")[1] ?? ""
+    expect(md, "md-only block present").not.toBe("")
+    const block = md.slice(0, md.indexOf("}\n        }") + 1)
+    expect(block).toContain(".rpc-gsh-row { gap: 10px !important; }")
+    expect(block).toContain(".rpc-gsh-label { display: none !important; }")
+  })
+})
