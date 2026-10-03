@@ -730,3 +730,101 @@ describe("AdminFeedbackClient — triage actions", () => {
     expect(fetchMock.mock.calls.length).toBe(before)
   })
 })
+
+// ─── 2026-10-03: shipped rows whose reader was never emailed ──────────────────
+// A status set by a MIGRATION bypasses the per-transition email. The page is
+// the only place that can say a reader is still owed one, and it must not
+// render a failed COUNT as "nobody is owed".
+
+describe("AdminFeedbackClient — shipped-but-unnotified readers", () => {
+  it("shows the count and the send button when readers are owed an email", async () => {
+    await mountDashboard(() => json(200, PAYLOAD({ stats: { ...STATS, shipped_unnotified: 6, shipped_unnotified_error: null } })))
+    const banner = await screen.findByTestId("shipped-unnotified")
+    expect(banner.textContent).toContain("6")
+    expect(banner.textContent).toMatch(/hasn.t been emailed/)
+    expect(screen.getByTestId("send-shipped-backlog")).toBeTruthy()
+    expect(screen.queryByTestId("shipped-unnotified-unknown")).toBeNull()
+  })
+
+  it("shows nothing when the count is a genuine 0", async () => {
+    await mountDashboard(() => json(200, PAYLOAD({ stats: { ...STATS, shipped_unnotified: 0, shipped_unnotified_error: null } })))
+    await screen.findByText("Open Bugs")
+    expect(screen.queryByTestId("shipped-unnotified")).toBeNull()
+    expect(screen.queryByTestId("shipped-unnotified-unknown")).toBeNull()
+  })
+
+  it("says the count FAILED rather than rendering it as 0", async () => {
+    await mountDashboard(() => json(200, PAYLOAD({ stats: { ...STATS, shipped_unnotified: null, shipped_unnotified_error: "count down" } })))
+    const unknown = await screen.findByTestId("shipped-unnotified-unknown")
+    expect(unknown.textContent).toContain("count down")
+    expect(unknown.textContent).toMatch(/may be readers owed/)
+    expect(screen.queryByTestId("shipped-unnotified")).toBeNull()
+  })
+
+  it("the send button POSTs the backlog route with the bearer token and reports the per-reader result", async () => {
+    let posted: RequestInit | undefined
+    fetchMock.mockImplementation(async (input: unknown, init?: RequestInit) => {
+      if (String(input).includes("/notify-shipped-backlog")) {
+        posted = init
+        return json(200, { readers: 1, results: [{ reader: "m…@example.test", items: 6, sent: true, stamped: 6 }] })
+      }
+      return json(200, PAYLOAD({ stats: { ...STATS, shipped_unnotified: 6, shipped_unnotified_error: null } }))
+    })
+    render(<AdminFeedbackClient />)
+    await screen.findByText("Beta Feedback Triage")
+    fireEvent.click(await screen.findByTestId("send-shipped-backlog"))
+    const result = await screen.findByTestId("shipped-backlog-result")
+    expect(result.textContent).toContain("Emailed 1 reader about 6 items")
+    expect(posted?.method).toBe("POST")
+    expect((posted?.headers as Record<string, string>).Authorization).toBe("Bearer admin-token")
+  })
+
+  it("a reader whose send failed is named with the route's reason, not folded into a success", async () => {
+    fetchMock.mockImplementation(async (input: unknown) => {
+      if (String(input).includes("/notify-shipped-backlog")) {
+        return json(200, {
+          readers: 2,
+          results: [
+            { reader: "a…@example.test", items: 2, sent: true, stamped: 2 },
+            { reader: "b…@example.test", items: 1, sent: false, stamped: 0, reason: "resend 500" },
+          ],
+        })
+      }
+      return json(200, PAYLOAD({ stats: { ...STATS, shipped_unnotified: 3, shipped_unnotified_error: null } }))
+    })
+    render(<AdminFeedbackClient />)
+    await screen.findByText("Beta Feedback Triage")
+    fireEvent.click(await screen.findByTestId("send-shipped-backlog"))
+    const result = await screen.findByTestId("shipped-backlog-result")
+    expect(result.textContent).toContain("1 of 2 readers emailed (2 items)")
+    expect(result.textContent).toContain("b…@example.test — resend 500")
+  })
+
+  it("a sent email whose receipt write failed is flagged, so it is not resent blindly", async () => {
+    fetchMock.mockImplementation(async (input: unknown) => {
+      if (String(input).includes("/notify-shipped-backlog")) {
+        return json(200, { readers: 1, results: [{ reader: "a…@example.test", items: 2, sent: true, stamped: 0, reason: "sent, but the receipt write failed: db" }] })
+      }
+      return json(200, PAYLOAD({ stats: { ...STATS, shipped_unnotified: 2, shipped_unnotified_error: null } }))
+    })
+    render(<AdminFeedbackClient />)
+    await screen.findByText("Beta Feedback Triage")
+    fireEvent.click(await screen.findByTestId("send-shipped-backlog"))
+    const result = await screen.findByTestId("shipped-backlog-result")
+    expect(result.textContent).toContain("Receipt not recorded for: a…@example.test")
+    expect(result.textContent).toContain("do not resend without checking")
+  })
+
+  it("a failed POST is reported as a failure, not as nothing-to-send", async () => {
+    fetchMock.mockImplementation(async (input: unknown) => {
+      if (String(input).includes("/notify-shipped-backlog")) return json(503, { error: "RESEND_API_KEY missing" })
+      return json(200, PAYLOAD({ stats: { ...STATS, shipped_unnotified: 2, shipped_unnotified_error: null } }))
+    })
+    render(<AdminFeedbackClient />)
+    await screen.findByText("Beta Feedback Triage")
+    fireEvent.click(await screen.findByTestId("send-shipped-backlog"))
+    const result = await screen.findByTestId("shipped-backlog-result")
+    expect(result.textContent).toContain("RESEND_API_KEY missing")
+    expect(result.textContent).not.toContain("Nothing to send")
+  })
+})

@@ -7,7 +7,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // parsing, the q-search branch, the STATUS_RANK ordering, and the buildStats
 // open/triaged/wontfix/shipped tallies.
 
-const st = vi.hoisted(() => ({ authed: true, rows: { data: [] as any[] | null, error: null as any }, stats: { data: [] as any[] | null, error: null as any } }))
+const st = vi.hoisted(() => ({
+  authed: true,
+  rows: { data: [] as any[] | null, error: null as any },
+  stats: { data: [] as any[] | null, error: null as any },
+  // 2026-10-03: the head-count of shipped rows whose reader was never emailed.
+  unnotified: { count: 0 as number | null, error: null as any },
+}))
 vi.mock("@/lib/admin-auth", () => ({
   verifyAdminRequest: () => st.authed,
   adminUnauthorizedResponse: () => new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }),
@@ -16,8 +22,10 @@ vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     from(table: string) {
       const b: any = {}
-      for (const m of ["select", "not", "in", "eq", "or", "order", "limit"]) b[m] = () => b
-      b.then = (resolve: any) => resolve(table === "support_conversations" ? st.rows : st.stats)
+      let head = false
+      for (const m of ["not", "in", "eq", "or", "order", "limit", "is"]) b[m] = () => b
+      b.select = (_cols: string, opts?: { head?: boolean }) => { head = opts?.head === true; return b }
+      b.then = (resolve: any) => resolve(table !== "support_conversations" ? st.stats : head ? st.unnotified : st.rows)
       return b
     },
   },
@@ -32,6 +40,7 @@ beforeEach(() => {
   st.authed = true
   st.rows = { data: [row()], error: null }
   st.stats = { data: [], error: null }
+  st.unnotified = { count: 0, error: null }
 })
 
 describe("GET /api/admin/feedback", () => {
@@ -87,5 +96,28 @@ describe("GET /api/admin/feedback", () => {
     expect(s.wontfix_total).toBe(3)
     expect(s.shipped_last_7d).toBe(2)
     expect(s.total_triaged).toBe(5) // wontfix 3 + shipped 2
+  })
+
+  // 2026-10-03: a row flipped to `shipped` by a migration never fires the
+  // per-transition email; the page can only say so if the GET counts them.
+  it("reports the shipped-but-unnotified count beside the stats", async () => {
+    st.unnotified = { count: 6, error: null }
+    const s = (await (await GET(get())).json()).stats
+    expect(s.shipped_unnotified).toBe(6)
+    expect(s.shipped_unnotified_error).toBeNull()
+  })
+  it("a failed unnotified count is null with its error — never a 0 that reads 'nobody is owed an email'", async () => {
+    st.unnotified = { count: null, error: { message: "count down" } }
+    const res = await GET(get())
+    expect(res.status).toBe(200) // the inbox still renders; only the count degrades
+    const s = (await res.json()).stats
+    expect(s.shipped_unnotified).toBeNull()
+    expect(s.shipped_unnotified_error).toBe("count down")
+  })
+  it("a count the driver did not return is null, not 0", async () => {
+    st.unnotified = { count: null, error: null }
+    const s = (await (await GET(get())).json()).stats
+    expect(s.shipped_unnotified).toBeNull()
+    expect(s.shipped_unnotified_error).toBe("count unavailable")
   })
 })

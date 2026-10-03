@@ -179,5 +179,22 @@ export async function GET(req: NextRequest) {
 
   const stats = buildStats((statsRows ?? []) as StatsRow[]);
 
-  return NextResponse.json({ rows, stats });
+  // 2026-10-03: a row flipped to `shipped` OUTSIDE this page (three data
+  // migrations today) never fires the per-transition email, and nothing here
+  // said a reader was still owed one — the backlog digest was fired by hand
+  // after a DB query noticed. Count the rows a reader can still be emailed
+  // about so the page can say so and offer the send. A failed count is `null`
+  // with its own `_error`, never 0: a 0 here reads "nobody is owed an email".
+  const unnotified = await supabaseAdmin
+    .from("support_conversations")
+    .select("id", { count: "exact", head: true })
+    .eq("feedback_status", "shipped")
+    .is("shipped_notified_at", null)
+    .not("feedback_type", "is", null)
+    .not("user_email", "is", null)
+    .eq("is_smoke_test", false);
+  const shipped_unnotified = unnotified.error ? null : typeof unnotified.count === "number" ? unnotified.count : null;
+  const shipped_unnotified_error = unnotified.error ? unnotified.error.message : shipped_unnotified == null ? "count unavailable" : null;
+
+  return NextResponse.json({ rows, stats: { ...stats, shipped_unnotified, shipped_unnotified_error } });
 }

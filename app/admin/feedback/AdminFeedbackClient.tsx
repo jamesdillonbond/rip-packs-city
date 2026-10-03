@@ -62,6 +62,10 @@ interface Stats {
   wontfix_total: number;
   total_triaged: number;
   total_open: number;
+  /** 2026-10-03: shipped rows whose reader has not been emailed (status set
+   *  outside this page, e.g. by a migration). `null` = the count failed. */
+  shipped_unnotified?: number | null;
+  shipped_unnotified_error?: string | null;
 }
 
 interface Filter {
@@ -375,6 +379,8 @@ function Dashboard({
   const [debouncedQ, setDebouncedQ] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [backlogState, setBacklogState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [backlogMsg, setBacklogMsg] = useState<string | null>(null);
 
   // Reauth signal: if any request returns 401 we clear the token and revert.
   const handleUnauthorized = useCallback(() => {
@@ -485,6 +491,62 @@ function Dashboard({
     },
     [handleUnauthorized]
   );
+
+  // 2026-10-03: send the "shipped" email to every reader still owed one — rows
+  // moved to `shipped` outside this page (a migration) never fire the
+  // per-transition email. One digest per reader; the route stamps the receipt
+  // only after Resend answers 2xx and reports per reader with the address
+  // masked. A failed send is shown, never swallowed.
+  const sendShippedBacklog = useCallback(async () => {
+    const t = getAdminToken();
+    if (!t) {
+      handleUnauthorized();
+      return;
+    }
+    setBacklogState("sending");
+    setBacklogMsg(null);
+    try {
+      const res = await fetch("/api/admin/feedback/notify-shipped-backlog", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
+        body: JSON.stringify({}),
+      });
+      if (res.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setBacklogState("failed");
+        setBacklogMsg(data?.error || `HTTP ${res.status}`);
+        return;
+      }
+      const results = (data?.results ?? []) as { reader?: string; items?: number; sent?: boolean; stamped?: number; reason?: string }[];
+      const sent = results.filter((r) => r.sent);
+      const failed = results.filter((r) => !r.sent);
+      const items = sent.reduce((n, r) => n + (r.items ?? 0), 0);
+      if (failed.length > 0) {
+        setBacklogState("failed");
+        setBacklogMsg(
+          `${sent.length} of ${results.length} reader${results.length === 1 ? "" : "s"} emailed (${items} item${items === 1 ? "" : "s"}); ` +
+            `${failed.length} failed: ${failed.map((r) => `${r.reader ?? "?"} — ${r.reason ?? "unknown"}`).join("; ")}`
+        );
+      } else {
+        const receiptIssues = sent.filter((r) => r.reason).map((r) => `${r.reader ?? "?"} — ${r.reason}`);
+        setBacklogState(receiptIssues.length ? "failed" : "sent");
+        setBacklogMsg(
+          results.length === 0
+            ? "Nothing to send — no shipped row has a reader still owed an email."
+            : `Emailed ${sent.length} reader${sent.length === 1 ? "" : "s"} about ${items} item${items === 1 ? "" : "s"}.` +
+                (receiptIssues.length ? ` Receipt not recorded for: ${receiptIssues.join("; ")} — they will show here again; do not resend without checking.` : "")
+        );
+      }
+      fetchRows();
+    } catch (err) {
+      setBacklogState("failed");
+      setBacklogMsg(err instanceof Error ? err.message : "Network error");
+    }
+  }, [handleUnauthorized, fetchRows]);
 
   const onRowUpdated = useCallback((updated: Row) => {
     setRows((prev) => {
@@ -606,6 +668,37 @@ function Dashboard({
             />
             <StatTile label="Total Open" value={stats.total_open} color="#fff" />
           </section>
+        )}
+
+        {/* 2026-10-03: shipped rows whose reader was never emailed. A status set
+            by a migration bypasses the per-transition email; this is the only
+            place that says so. A failed COUNT is reported, not rendered as 0. */}
+        {stats && stats.shipped_unnotified == null && (
+          <section className="rpc-section" role="status" data-testid="shipped-unnotified-unknown" style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+            Couldn&rsquo;t count the shipped items whose reader hasn&rsquo;t been emailed
+            {stats.shipped_unnotified_error ? ` (${stats.shipped_unnotified_error})` : ""}. There may be readers owed a &ldquo;shipped&rdquo; email.
+          </section>
+        )}
+        {stats && typeof stats.shipped_unnotified === "number" && stats.shipped_unnotified > 0 && (
+          <section className="rpc-section" role="status" data-testid="shipped-unnotified" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, fontSize: 13 }}>
+            <span>
+              <strong>{stats.shipped_unnotified}</strong> shipped item{stats.shipped_unnotified === 1 ? "" : "s"} whose reader hasn&rsquo;t been emailed
+              (status set outside this page). One digest per reader; nothing goes to smoke rows or rows with no email.
+            </span>
+            <button
+              onClick={sendShippedBacklog}
+              disabled={backlogState === "sending"}
+              style={ghostBtnStyle}
+              data-testid="send-shipped-backlog"
+            >
+              {backlogState === "sending" ? "Sending…" : "Send the shipped emails"}
+            </button>
+          </section>
+        )}
+        {backlogMsg && (
+          <div role="status" data-testid="shipped-backlog-result" style={{ fontSize: 13, color: backlogState === "failed" ? "#fca5a5" : "rgba(255,255,255,0.75)" }}>
+            {backlogMsg}
+          </div>
         )}
 
         {/* Filters + search */}
