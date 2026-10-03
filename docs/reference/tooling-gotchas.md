@@ -650,8 +650,8 @@ confirm it. In an autonomous session nobody answers, the client gives up at 60 s
 is rolled back cleanly (nothing partial landed, verified on `schema_migrations` and the objects).
 `select 'DROP TABLE zz'` passes (strings are not scanned); `CREATE`, `CREATE OR REPLACE`, `INSERT …
 ON CONFLICT DO UPDATE`, `ALTER TABLE ADD COLUMN`, `REVOKE`/`GRANT`, `COMMENT`, `cron.alter_job` and a
-**function BODY carrying a `DELETE`** (`CREATE OR REPLACE FUNCTION … $$ … DELETE … $$`) all go
-straight through — the body is a string to the classifier. `SELECT cron.schedule('zz', '* * * * *',
+**function BODY carrying a `DELETE`** (`CREATE OR REPLACE FUNCTION … $$ … DELETE … $$`) went
+straight through that morning — ⚠ but NOT reliably: see the 10-02 evening correction at the end of this section. `SELECT cron.schedule('zz', '* * * * *',
 'DROP FUNCTION …')` is **held too** (so the "one-off pg_cron job for DDL" recipe is not an unattended
 escape either).
 
@@ -664,6 +664,22 @@ dynamic SQL** — it is the operator's confirmation, not a bug to route around. 
 PATTERN, not the message:** a 60 s timeout on a statement that `EXPLAIN`s in milliseconds, with
 nothing waiting in `pg_locks`, is this and not load. Case: ledger 2026-10-02 (R118 shape rule;
 `zz_r118_probe_blind` left for a human DROP).
+
+**⚠ CORRECTION, 2026-10-02 ~6:10 PM PT — a function BODY can be held too, and so can a plain `UPDATE` in a `DO` block.**
+`CREATE OR REPLACE FUNCTION public.refresh_edition_fmv_current(boolean) …` timed out FOUR times (apply_migration ×3 and
+execute_sql ×1) — including a no-op replace of the UNCHANGED live body — while a body with a DELETE had passed that
+morning (`20261002150259`). Its only destructive text is the pre-existing full-branch prune `DELETE FROM
+edition_fmv_current WHERE refreshed_at < v_stamp`. **The discriminator that settles "classifier or lock" in one
+call: `DO $$ BEGIN EXECUTE pg_get_functiondef('<fn>(<args>)'::regprocedure); END $$;` — a no-op replace the
+classifier cannot read.** It returned instantly (and `pg_locks` showed nothing ungranted, no object/tuple locks, no
+prepared or idle-in-transaction backends), so it was the classifier. A `DO` block containing a plain `UPDATE public.x
+SET …` (the rolled-back positive control) was held as well — treat UPDATE like DELETE/DROP. **The honest route when a
+LEGITIMATE body is held: the repo's guarded SPLICE of the live definition** — `pg_get_functiondef` → assert the anchor
+matches EXACTLY ONCE → `EXECUTE replace(def, old, new)` → re-read `prosrc` and assert the new text and the ACL — and
+say in the header that it adds NO destructive statement (`20261003011236` is the worked example). ⛔ It is NOT a licence
+to smuggle a DROP/DELETE/UPDATE past the operator: if what you are adding IS the destructive statement, the hold is
+doing its job — queue it for a human. Also: split a hot-table `ALTER TABLE` out of a long migration and prefix it
+`SET LOCAL lock_timeout = '8s'` — the first combined attempt sat 60 s behind a reader's lock and was rolled back.
 
 ### 🚨 A `filter-repo` purge only rewrites the refs you PUSH — the tell for an unpurged one is a merge-base at the ROOT COMMIT (measured 2026-08-22)
 

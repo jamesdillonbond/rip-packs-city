@@ -1,8 +1,8 @@
 {
-  "generated_at_pt": "2026-10-02 ~9:15 AM PT (last update; pass began 7:15 AM PT)",
+  "generated_at_pt": "2026-10-02 ~6:20 PM PT (evening continuation; morning pass 7:15-9:15 AM PT)",
   "generated_at_utc": "2026-10-02T15:25Z",
   "pass": "daytime autonomous pass (Claude Code, cloud, push GREEN via dry-run). Trevor: 'run a health check then … find things to work on autonomously for the next 4 hours'. 4 migrations shipped and committed; 0 reverted. Concurrent sessions active (Cowork monitor pass 7:42 AM PT; Panini wake scripts + CI guards).",
-  "shipped": 11,
+  "shipped": 14,
   "reverted": 0,
   "verdict": "GREEN. Security invariants 0, anon write surface 0, secdef/search_path/R118 drift all []; trust 37/38 ok (public_board_slow_count 1 = panini_sale_feed_status ~6 s, Cowork-filed); pg_cron 24 h 1 fail / ~17k (fixed); get_pipeline_alerts no high/critical at 8:10 AM PT after the two alarm fixes; Vercel 24 h chronic pack-detail cold scans + two whale-wallet 8 s bursts; E2E DOM Smoke green. Panini residential lanes asleep since 7:49 PM PT 10-01 (wake scripts shipped by the concurrent session).",
   "health": {
@@ -49,6 +49,7 @@
   },
   "deltas_vs_prev": "vs 09-30 ~1:10 AM PT: FMV HIGH+MED nba 8230->8222, nfl 1615->1635, panini 2420->3243 (+823, multi-product walk), candy 31->27, golazos 2->6 (definition caveat above). Editions panini 7479->11438 (+3,959), nba 14469->14478. edition_integrity_flags 7->6. db 27,929->33,810 MB (+5.9 GB: Panini walk + chain-arrival probes).",
   "open_watches": [
+    "R107 residual (20261003005833/005846/011236, 6:14 PM PT): check_edition_fmv_current_source_drift() must stay [] BETWEEN daily reconciles; falsifier = a non-empty read > 1 h after any fmv_snapshots row with updated_at - computed_at > 2 h (first such row = the real positive control, the in-migration one was held by the MCP)",
     "resolve-topshot-stubs after 20261002160733 (9:07 AM PT): MEASURED 9:09 AM PT run: targets 50, stamped 50, due 226 -> 175 (resting 51). Runs at :39/:09 continue until due = 0 (~11:09 AM PT), then every run logs targets_found 0 / \"no stub targets\" in ~1 s instead of 12-30 s; 2026-11-01 the first rests expire and ~8 editions/day are re-asked",
     "Next large chain-arrival seed (rpc-chain-arrivals-seed 4:13 AM PT, or a new saved wallet): the four gated slots must wake — cron.job_run_details for rpc-chain-arrival-lane-08/23/38/53 should show 8-53 s runs again while chain_arrival_probes has non-terminal rows (20261002155614)",
     "Vercel 24 h error groups: the chronic [pack-detail] pack_lifecycle 5 s timeout (1-2/day since 08-23) should stop recurring after 20261002154837 (function 97k -> 29k buffers); if it persists, size drop_pool / pack_table_rows next (not this RPC)",
