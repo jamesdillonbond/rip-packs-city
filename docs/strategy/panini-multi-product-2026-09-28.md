@@ -202,6 +202,8 @@ What this thread added (each has a ledger entry with its revert path):
 3. **Naming (step 2 above)** — still needs Trevor's signed-in Chrome; 2420 is the only non-WC product with a name.
 4. The board's "typical" for 2420 is the sum of family medians (WC convention); a Monte-Carlo pack median runs higher
    (FOTL ~26 vs 18). Fine as a conservative figure; revisit if the Packs tab copy promises "what the median pack holds".
+   **Done 10-03 ~1:20 PM PT:** it did promise that (Packs tab tile + note, and the /insights/panini-squeeze note). Both now
+   say what the figure is: each card slot's median card, added up — not a simulated median pack. Number unchanged.
 
 
 ### 2026-10-02 ~11:00 PM PT — tier 1 bootstrapped; walk order now interleaves new and known
