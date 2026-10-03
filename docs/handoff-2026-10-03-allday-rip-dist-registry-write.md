@@ -1,3 +1,5 @@
+✅ **DONE 2026-10-03 ~9:58 AM PT — applied outside the cloud session; verified: `edge_lane_watch` → `pipeline_runs / allday-rip-dist-resolve`, watchlist row active, Edge Lane Observability 18 fresh / 1 unchecked / 0 stale. Nothing left to do here.**
+
 # Handoff → Cowork: apply one small DB write (All Day dist-resolver observability)
 
 **Written** 2026-10-03 ~9:45 AM PT by Claude Code (cloud session). **HEAD at writing:** `2d8366445` or later.
