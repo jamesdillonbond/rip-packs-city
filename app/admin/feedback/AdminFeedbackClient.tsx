@@ -571,7 +571,11 @@ function Dashboard({
       }}
     >
       <style>{`
-        *{box-sizing:border-box;margin:0;padding:0;}
+        /* 2026-10-03: this reset MUST sit in @layer base. Unlayered, it outranks every Tailwind utility
+           (cascade layers lose to unlayered rules regardless of specificity), so p-*/m-* classes
+           rendered as 0 on every page under it. Tailwind preflight already carries the same reset
+           in @layer base; this keeps the declaration where it was, in the layer it must be in. */
+        @layer base{*{box-sizing:border-box;margin:0;padding:0;}}
         .rpc-section { background:#18181b; border:1px solid #27272a; border-radius:10px; padding:16px 18px; }
         .rpc-section-title { font-family:${condensedFont}; font-weight:800; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:rgba(255,255,255,0.7); margin-bottom:12px; }
         .rpc-pill { padding:7px 14px; border-radius:18px; font-family:${condensedFont}; font-weight:700; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; border:1px solid #27272a; background:#0d0d0d; color:rgba(255,255,255,0.6); }

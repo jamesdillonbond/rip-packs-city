@@ -78,7 +78,11 @@ export default function LoginClient() {
       fontFamily: "var(--font-body)",
     }}>
       <style>{`
-        *{box-sizing:border-box;margin:0;padding:0;}
+        /* 2026-10-03: this reset MUST sit in @layer base. Unlayered, it outranks every Tailwind utility
+           (cascade layers lose to unlayered rules regardless of specificity), so p-*/m-* classes
+           rendered as 0 on every page under it. Tailwind preflight already carries the same reset
+           in @layer base; this keeps the declaration where it was, in the layer it must be in. */
+        @layer base{*{box-sizing:border-box;margin:0;padding:0;}}
         input::placeholder{color:rgba(255,255,255,0.28);}
       `}</style>
 

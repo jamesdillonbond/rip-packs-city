@@ -424,7 +424,11 @@ export default function ProfileClient(props: {
       {/* Brand fonts are loaded once app-wide from the root layout <head>
           (app/layout.tsx), so no per-page font <link>/@import is needed here. */}
       <style>{`
-        *{box-sizing:border-box;margin:0;padding:0;}
+        /* 2026-10-03: this reset MUST sit in @layer base. Unlayered, it outranks every Tailwind utility
+           (cascade layers lose to unlayered rules regardless of specificity), so p-*/m-* classes
+           rendered as 0 on every page under it. Tailwind preflight already carries the same reset
+           in @layer base; this keeps the declaration where it was, in the layer it must be in. */
+        @layer base{*{box-sizing:border-box;margin:0;padding:0;}}
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
       `}</style>
 

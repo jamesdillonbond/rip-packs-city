@@ -864,7 +864,11 @@ function ProfilePageInner() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", paddingBottom: 80 }}>
       <style>{`
-        *{box-sizing:border-box;margin:0;padding:0;}
+        /* 2026-10-03: this reset MUST sit in @layer base. Unlayered, it outranks every Tailwind utility
+           (cascade layers lose to unlayered rules regardless of specificity), so p-*/m-* classes
+           rendered as 0 on every page under it. Tailwind preflight already carries the same reset
+           in @layer base; this keeps the declaration where it was, in the layer it must be in. */
+        @layer base{*{box-sizing:border-box;margin:0;padding:0;}}
         .rpc-section { background:var(--rpc-surface); border:1px solid var(--rpc-border); border-radius:10px; padding:16px 18px; }
         .rpc-section-title { font-family:${condensedFont}; font-weight:800; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:var(--rpc-text-secondary); margin-bottom:12px; }
         .rpc-wallet-card { transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease; }

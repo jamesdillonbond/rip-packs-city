@@ -477,7 +477,12 @@ export default function PackTable({
                   ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                 }}
               >
-                <td className="p-3">
+                {/* 2026-10-03: the cell's p-3 only started rendering today (the
+                    layout's universal reset was unlayered and zeroed every
+                    Tailwind padding). With real padding the title + badge on
+                    ONE line left the title ~50 px at tablet widths; the badge
+                    now sits under the title, and the column keeps a floor. */}
+                <td className="p-3 min-w-[240px]">
                   <div className="flex items-center gap-3">
                     {r.detailHref ? (
                       <Link href={r.detailHref} prefetch={false} aria-label={r.title} className="flex-shrink-0">
@@ -486,14 +491,16 @@ export default function PackTable({
                     ) : (
                       <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={40} />
                     )}
-                    {r.detailHref ? (
-                      <Link href={r.detailHref} prefetch={false} className="font-medium text-[color:var(--rpc-text-primary)] hover:underline">
-                        {r.title}
-                      </Link>
-                    ) : (
-                      <span className="font-medium text-[color:var(--rpc-text-primary)]">{r.title}</span>
-                    )}
-                    <AvailabilityBadge row={r} />
+                    <div className="min-w-0">
+                      {r.detailHref ? (
+                        <Link href={r.detailHref} prefetch={false} className="font-medium text-[color:var(--rpc-text-primary)] hover:underline">
+                          {r.title}
+                        </Link>
+                      ) : (
+                        <span className="font-medium text-[color:var(--rpc-text-primary)]">{r.title}</span>
+                      )}
+                      <div className="mt-1"><AvailabilityBadge row={r} /></div>
+                    </div>
                   </div>
                 </td>
                 <td className="p-3">
