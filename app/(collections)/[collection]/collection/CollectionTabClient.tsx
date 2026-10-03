@@ -47,6 +47,7 @@ import { computeCollectionTotals } from "@/lib/collection/totals"
 import { computeFilteredSortedRows } from "@/lib/collection/filter-sort"
 import { resolveSeriesParam } from "@/lib/collection/series-param"
 import { ASK_STALE_HOURS, fmtAskAge } from "@/lib/market/ask-freshness"
+import { shareWalletCard } from "@/lib/share-link"
 import {
   buildPlayerOptions,
   buildSetOptions,
@@ -1273,9 +1274,11 @@ function WalletMomentsBody() {
             </button>
             {rows.length > 0 && input.trim() && (
               <button
-                onClick={function() {
-                  const shareUrl = "https://www.rippackscity.com/share/" + encodeURIComponent(input.trim())
-                  navigator.clipboard.writeText(shareUrl)
+                onClick={async function() {
+                  // Tagged share link + native sheet on touch (lib/share-link.ts);
+                  // "copied" only when the copy or share actually happened.
+                  const r = await shareWalletCard(input.trim())
+                  if (r !== "copied" && r !== "shared") return
                   setCopied(true)
                   setTimeout(function() { setCopied(false) }, 2000)
                 }}

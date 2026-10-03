@@ -579,7 +579,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
 
         {/* Action buttons */}
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 32 }}>
-          <ShareButton />
+          <ShareButton wallet={wallet} />
           <a
             href={`/insights/tc-report?wallet=${encodeURIComponent(wallet)}`}
             style={{ padding: "12px 24px", border: "1px solid var(--rpc-red)", borderRadius: 8, color: "var(--rpc-red)", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.04em" }}

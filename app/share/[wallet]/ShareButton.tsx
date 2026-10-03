@@ -1,16 +1,27 @@
 "use client"
 
 import { useState } from "react"
+import { shareWalletCard, type ShareOutcome } from "@/lib/share-link"
 
-export default function ShareButton() {
-  const [copied, setCopied] = useState(false)
+// Shares THIS card with share attribution (lib/share-link.ts). It used to copy
+// window.location.href — untagged, and carrying whatever utm the copier had
+// arrived with.
+export default function ShareButton({ wallet }: { wallet: string }) {
+  const [outcome, setOutcome] = useState<ShareOutcome | null>(null)
+
+  const label =
+    outcome === "copied" ? "Link Copied!"
+    : outcome === "shared" ? "Shared!"
+    : outcome === "failed" ? "Copy failed"
+    : "Share"
 
   return (
     <button
-      onClick={() => {
-        navigator.clipboard.writeText(window.location.href)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
+      onClick={async () => {
+        const r = await shareWalletCard(wallet)
+        if (r === "cancelled") return
+        setOutcome(r)
+        setTimeout(() => setOutcome(null), 2000)
       }}
       style={{
         padding: "12px 24px",
@@ -25,7 +36,7 @@ export default function ShareButton() {
         letterSpacing: "0.04em",
       }}
     >
-      {copied ? "Link Copied!" : "Share"}
+      {label}
     </button>
   )
 }
