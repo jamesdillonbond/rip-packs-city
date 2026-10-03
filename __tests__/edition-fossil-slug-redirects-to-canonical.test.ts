@@ -121,6 +121,17 @@ describe("edition page: both fossil gates consult the redirect before they 404",
     }
   })
 
+  it("the segment LAYOUT — the gate that actually runs first — consults the lookup before its own 404", () => {
+    const layout = readFileSync(join(process.cwd(), "app/(collections)/[collection]/edition/[slug]/layout.tsx"), "utf8")
+    expect(layout).toContain('from "@/lib/edition/fossil-redirect"')
+    const after = layout.split('if (collection === "nba-top-shot" && slug.includes("-"))').slice(1)
+    expect(after.length).toBe(1)
+    const window = after[0].slice(0, 400)
+    expect(window).toContain("await lookupTopShotFossilRedirect(slug)")
+    expect(window).toMatch(/if \(canonical\) permanentRedirect\(`\/\$\{collection\}\/edition\/\$\{encodeURIComponent\(canonical\)\}`\)/)
+    expect(window).toContain("notFound()")
+  })
+
   it("a fossil with no mapping still 404s (notFound / NOT_FOUND_METADATA remain after the lookup)", () => {
     const gates = src.split("isTopShotFossilSlug(collection, slug)").slice(1)
     expect(gates[0].slice(0, 600)).toContain("return NOT_FOUND_METADATA")

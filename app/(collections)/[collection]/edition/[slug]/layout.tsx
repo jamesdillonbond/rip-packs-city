@@ -17,9 +17,10 @@
 // (it cannot invent a 404) and it costs no extra round trip. It FAILS OPEN on
 // any RPC error.
 
-import { notFound } from "next/navigation"
+import { notFound, permanentRedirect } from "next/navigation"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { entityResolves, decodeSlugOrNull } from "@/lib/entity-detail-gate"
+import { lookupTopShotFossilRedirect } from "@/lib/edition/fossil-redirect"
 
 interface LayoutProps {
   children: React.ReactNode
@@ -45,7 +46,15 @@ export default async function EditionSegmentLayout({ children, params }: LayoutP
   // The ~6,404 inert UUID-keyed Top Shot fossil editions: canonical TS slugs are
   // `setID:playID` (no hyphen), fossils are `<uuid>:<uuid>` (hyphenated). The
   // page already 404s these; doing it here makes it a real 404.
-  if (collection === "nba-top-shot" && slug.includes("-")) notFound()
+  // 2026-10-03 (Search Console): a fossil whose canonical twin is UNAMBIGUOUS
+  // 308s to it instead (topshot_edition_uuid_redirects, 4,447 rows) — and it
+  // has to happen HERE, because this gate runs before the page's own arm. A
+  // miss, an error or a timeout is the same 404 as before.
+  if (collection === "nba-top-shot" && slug.includes("-")) {
+    const canonical = await lookupTopShotFossilRedirect(slug)
+    if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
+    notFound()
+  }
 
   if (!(await entityResolves("edition", coll.id, slug))) notFound()
 
