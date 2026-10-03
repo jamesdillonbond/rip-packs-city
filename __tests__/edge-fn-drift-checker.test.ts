@@ -6,6 +6,7 @@ import {
   specifierKind,
   requiresImportMap,
   classifyImportMapDrift,
+  hasImportMap,
   normaliseSource,
   runContentCensus,
   matchDialects,
@@ -139,6 +140,32 @@ describe("edge-fn drift detector — tier 1 is a proof", () => {
     expect(res.proven.length).toBe(repo.length - res.clean.length - res.inapplicable.length)
     expect(res.proven).toContain("snapshot-institutional-wallets")
     expect(res.proven).toContain("compute-topshot-pack-ev")
+  })
+})
+
+describe("edge-fn drift detector — tier 1 reads the import-map PATH, not only the sticky flag", () => {
+  // 2026-10-02: resolve-allday-rip-dist-api v38 was deployed by the CLI with
+  // deno.json, imports by bare specifier, and served its 6:17 PM PT cron 200 —
+  // but its `import_map` flag stayed false (it was first created without a map).
+  // Keyed on the flag alone, tier 1 called a correct deploy proven_drifted.
+  const repo = [{ slug: "fn", src: 'import { createClient } from "@supabase/supabase-js"' }]
+
+  it("a deploy with import_map:false but an import_map_path is CLEAN", () => {
+    const r = classifyImportMapDrift(repo, [{ slug: "fn", import_map: false, import_map_path: "file:///x/supabase/functions/deno.json" }])
+    expect(r.clean).toEqual(["fn"])
+    expect(r.proven).toEqual([])
+  })
+
+  it("no flag and no path is still PROVEN drifted (the original signal survives)", () => {
+    expect(classifyImportMapDrift(repo, [{ slug: "fn", import_map: false }]).proven).toEqual(["fn"])
+    expect(classifyImportMapDrift(repo, [{ slug: "fn", import_map: false, import_map_path: "" }]).proven).toEqual(["fn"])
+  })
+
+  it("hasImportMap accepts either signal", () => {
+    expect(hasImportMap({ import_map: true })).toBe(true)
+    expect(hasImportMap({ import_map: false, import_map_path: "file:///a/deno.json" })).toBe(true)
+    expect(hasImportMap({ import_map: false })).toBe(false)
+    expect(hasImportMap({ import_map: null, import_map_path: null })).toBe(false)
   })
 })
 

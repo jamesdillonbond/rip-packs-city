@@ -21,9 +21,18 @@
 // TIER 1 — IMPORT-MAP PROOF (cheap, zero false positives, needs only metadata)
 //   A BARE specifier (`@supabase/supabase-js`, `std/http/server.ts`) cannot
 //   resolve without an import map. So if the repo source imports one and the
-//   deployed function reports `import_map: false`, the deployed artifact CANNOT
-//   be a build of the current repo source — it would have failed to boot. Drift
-//   is CERTAIN, not inferred.
+//   deployed function has NO import map, the deployed artifact CANNOT be a build
+//   of the current repo source — it would have failed to boot. Drift is CERTAIN,
+//   not inferred.
+//
+//   ⚠ "HAS NO IMPORT MAP" IS `import_map:false` AND NO `import_map_path`, NOT THE
+//   FLAG ALONE (corrected 2026-10-02). The flag is STICKY: a function first
+//   created without a map keeps `import_map:false` after a CLI deploy that
+//   uploads deno.json and sets `import_map_path`. Measured: resolve-allday-rip-
+//   dist-api v38 read `import_map:false` with the path set, imports by bare
+//   specifier, and answered the 6:17 PM PT cron 200. Keyed on the flag alone,
+//   tier 1 called it `proven_drifted`, its "zero false positives" claim was
+//   false, and edge-fn-deploy.yml failed a correct deploy.
 //
 //   ⚠ RELATIVE `../_shared/…` IMPORTS ARE DELIBERATELY *NOT* PART OF THIS PROOF,
 //   even though a same-day analysis proposed folding them in. A relative
@@ -100,8 +109,13 @@ export function requiresImportMap(src) {
   return moduleSpecifiers(src).some((s) => specifierKind(s) === "bare")
 }
 
+/** A deployed function resolves bare specifiers if EITHER signal says it has a map (see TIER 1). */
+export function hasImportMap(dep) {
+  return dep.import_map === true || (typeof dep.import_map_path === "string" && dep.import_map_path !== "")
+}
+
 /**
- * Tier 1. `repo` = [{slug, src}], `deployed` = [{slug, import_map}].
+ * Tier 1. `repo` = [{slug, src}], `deployed` = [{slug, import_map, import_map_path?}].
  * Returns {proven, clean, notDeployed, inapplicable}.
  */
 export function classifyImportMapDrift(repo, deployed) {
@@ -111,7 +125,7 @@ export function classifyImportMapDrift(repo, deployed) {
     const dep = bySlug.get(slug)
     if (!dep) { notDeployed.push(slug); continue }
     if (!requiresImportMap(src)) { inapplicable.push(slug); continue }
-    ;(dep.import_map ? clean : proven).push(slug)
+    ;(hasImportMap(dep) ? clean : proven).push(slug)
   }
   return { proven, clean, notDeployed, inapplicable }
 }
