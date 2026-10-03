@@ -203,3 +203,17 @@ What this thread added (each has a ledger entry with its revert path):
 4. The board's "typical" for 2420 is the sum of family medians (WC convention); a Monte-Carlo pack median runs higher
    (FOTL ~26 vs 18). Fine as a conservative figure; revisit if the Packs tab copy promises "what the median pack holds".
 
+
+### 2026-10-02 ~11:00 PM PT — tier 1 bootstrapped; walk order now interleaves new and known
+
+- **Bootstrap worked:** the 8:09 PM PT run walked only the 22 (`walk_set_ids` = 22, 4,447 new pskus queued). By 10:50 PM
+  every tier-1 product had catalogue rows (1–62 each). Catalogue 12,329, 0 editions older than 7 days, 4,837 older than 4.
+- ⚠ **A bootstrap run can log `shuffled (walk-order endpoint unavailable)`.** At 10:00 PM the GET (200) narrowed
+  `walk_set_ids` to the 7 products still at 0 rows, so its `pskus` list was legitimately EMPTY. The runner reads an empty
+  known list as "endpoint unavailable" and shuffles that run's discoveries. The effect was the intended one (only those 7
+  were walked); only the label lies. Not a failure: the GET returned 200 in the Vercel logs.
+- **Starvation risk fixed in code (`scripts/panini-walk-order.mjs`):** the runner walked EVERY new discovery before ANY
+  known edition. With ~4,400 queued at ~600 a run, that is about a day of zero catalogue refresh. New and stalest-known
+  are now interleaved 1:1 after the held-priority list (tests incl. a 4,400-vs-12,000 flood case). **Takes effect only
+  after Trevor pulls on the runner box** (`panini-run.bat` does not pull). Until then, the old order still holds.
+- Tier 2 remains gated on the morning freshness read (item 1 of the open list above).

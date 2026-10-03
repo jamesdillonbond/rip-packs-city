@@ -15,6 +15,12 @@
 //      also absent, so promotion is gated on `knownComplete`.
 //   3. KNOWN (stalest first), then anything else enumerated.
 //
+// ⚠ 2026-10-02: FRESH and KNOWN are INTERLEAVED 1:1, not fresh-then-known. Admitting 22 products put
+// ~4,400 brand-new discoveries in front of the known list at ~600 cards a run: about a day with ZERO
+// refresh of the existing catalogue, while 4,837 editions were already 4+ days old. Interleaving
+// keeps both moving: new cards still enter at half the walk rate, and the stalest known card is never
+// more than one slot behind a discovery.
+//
 // Each psku appears once, at its earliest position.
 /**
  * @param {{ priority?: string[], known?: string[], knownComplete?: boolean, discovered?: string[] }} args
@@ -28,11 +34,18 @@ export function buildWalkOrder({ priority = [], known = [], knownComplete = fals
   let priorityCount = 0;
   let freshCount = 0;
   for (const p of priority) if (!seen.has(p)) { seen.add(p); pskus.push(p); priorityCount++; }
-  for (const p of fresh) if (!seen.has(p)) { seen.add(p); pskus.push(p); freshCount++; }
+  const freshLeft = fresh.filter((p) => !seen.has(p));
+  const knownLeft = known.filter((p) => !seen.has(p));
+  for (let i = 0; i < Math.max(freshLeft.length, knownLeft.length); i++) {
+    const f = freshLeft[i];
+    if (f !== undefined && !seen.has(f)) { seen.add(f); pskus.push(f); freshCount++; }
+    const k = knownLeft[i];
+    if (k !== undefined && !seen.has(k)) { seen.add(k); pskus.push(k); }
+  }
   for (const p of [...known, ...discovered]) if (!seen.has(p)) { seen.add(p); pskus.push(p); }
   const pri = priorityCount ? `${priorityCount} held-priority + ` : "";
   const orderMode = knownComplete
-    ? `stalest-first (${pri}${freshCount} new + ${known.length} known)`
+    ? `stalest-first, interleaved (${pri}${freshCount} new + ${known.length} known)`
     : `stalest-first, PARTIAL list (${pri}${known.length} known; new-first promotion disabled)`;
   return { pskus, orderMode, priorityCount, freshCount };
 }
