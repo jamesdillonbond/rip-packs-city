@@ -138,6 +138,16 @@ is the same WAP unfiltered, so a 1.000 ratio says the outlier filter removes alm
 MEAN still lags a falling market and is pulled up by high prints — `asp / realized price` 1.18 for editions
 with ≥ 10 sales / 30 d, 1.20 for 3–9, 1.375 for < 3 — which is exactly where the last-3 MEDIAN wins. The
 lever is a shorter half-life and/or a median, not the ask.
+
+**All Day, same instrument (`fmv_sales_backtest('nfl_all_day', 7)`, `20261003224946`):** 93 % of All Day sales are
+under $1 (daily median price $0.15–0.50, 5-cent ticks), so the PERCENT error misreads a penny market — read the
+dollar column. Week 0 (n 4,992): published median abs error 26.7 % = **$0.05**, ratio 1.200; week 1 25.0 % / 0.882;
+**week 2 (09-12 → 09-19, the drop week, n 5,759): 45.0 % / ratio 0.571** — the published price was 43 % BELOW what
+collectors paid across 2,800+ editions, liquid ones included ($0.75 low on $1–5 items, $4 low on ≥ $5 items);
+week 3 33.3 % / 0.741. Snapshots were fresh (median 1.5 d) and sales ingestion lag is minutes, so this is the
+estimator lagging a market that moved ~2× in days around a drop — not a pipeline artefact. The last-3 median
+lagged too (0.789 that week), only less. ⭐ **M2's bar is a confidence share; this says the All Day PRICE is
+systematically wrong in drop weeks regardless of the share.**
 ⛔ **No model change shipped** — the thin-edition window is Trevor's methodology call (#140).
 
 ## ⭐ NEW 2026-09-20 — A REFRESH-ORDER CHANGE MOVES A CONFIDENCE SHARE WITHOUT ANY PRICING CHANGE (Panini, measured; a trap for every other collection)
