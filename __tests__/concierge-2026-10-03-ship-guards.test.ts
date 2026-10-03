@@ -170,3 +170,23 @@ describe("no tool hands the model a raw error string", () => {
     expect((body.match(/safeApiError\(/g) ?? []).length).toBeGreaterThan(20)
   })
 })
+
+describe("the bot bridge and the route agree on which env var authenticates the DM path", () => {
+  // BOT_BRIDGE_SECRET was set in Vercel on 10-03 and no Telegram DM has
+  // exercised the bridge since (last tg: turn 09-03). Until a real DM proves
+  // it, the only guarantee that the bridge's header and the route's check
+  // derive from the SAME variable is this pin: the bridge SENDS the dedicated
+  // secret first, and the route ACCEPTS only the dedicated secret once set.
+  // A drift here (one side renamed, one side not) would read as "the Telegram
+  // bot stopped replying" with nothing in the logs but a 400.
+  it("the bridge sends BOT_BRIDGE_SECRET first and the route prefers it exclusively", () => {
+    const BRIDGE = src(join("lib", "alerts", "concierge-bridge.ts"))
+    expect(BRIDGE).toContain('"x-rpc-bot-secret": process.env.BOT_BRIDGE_SECRET ?? process.env.INGEST_SECRET_TOKEN ?? ""')
+    expect(ROUTE).toContain("const dedicated = process.env.BOT_BRIDGE_SECRET;")
+    expect(ROUTE).toContain("const candidates = dedicated ? [dedicated] : [process.env.INGEST_SECRET_TOKEN, process.env.CRON_SECRET];")
+    // The fallback pairs match too: the bridge's second choice is in the route's legacy list.
+    expect(ROUTE).toContain("process.env.INGEST_SECRET_TOKEN")
+    // And the DM path is the only consumer of the header name — one spelling, both sides.
+    expect(ROUTE).toContain('req.headers.get("x-rpc-bot-secret")')
+  })
+})
