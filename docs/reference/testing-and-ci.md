@@ -2,6 +2,17 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ A DEPENDENCY CHANGE MAY NOT ADD A HIGH/CRITICAL PRODUCTION ADVISORY (2026-10-02)
+
+Until 10-02 **nothing in CI read `npm audit`**. Every `npm ci` log printed "29 vulnerabilities (… 1 critical)", and every job went green under it.
+- **`.github/workflows/dependency-audit.yml`** runs `scripts/check-prod-dep-audit.mjs` on any push or PR that changes `package.json` / `package-lock.json`, and on demand. It reads `npm audit --omit=dev`, reduced to **root** advisories (not the packages that only inherit one), at high/critical, and compares them to `prod-dep-audit-baseline.json`.
+  - Exit 1 on a new advisory, **or on a baseline entry no longer reported** (the baseline, at the repo root because `scripts/*.json` is gitignored, is shrink-only).
+  - Exit 2 when the audit returned no readable report.
+  - Not on every push: the advisory DB moves daily. New disclosures on installed packages are Dependabot's job.
+- **Baseline at ship: ONE advisory**, `braces` (CSS build tooling under `dependencies`; no in-range fix). A concurrent session had just shipped the production bumps (`97ee418e0` ws/defu/viem, `f2d33ceee` sharp 0.35.5 + `@vercel/og` dropped), which took production highs from 11 to 7, all of them `braces` and its inheritors. Remaining: **14 dev-tree highs** (vite, undici, js-yaml, brace-expansion, browserslist, postcss-cli…), outside this gate; in-range `npm update` clears most of them.
+- ⚠ **Regenerate the lockfile with npm 11 (Node 24, as `engines` and every workflow pin).** On 10-02, npm 10.9 (the web sandbox's Node 22) crashed inside `npm audit fix` / `npm update` (`Cannot read properties of null (reading 'edgesOut')`). It also rejects an npm-11 lockfile in `npm ci` (`Missing: @noble/hashes@2.4.0`). Use `npx -y npm@11 …` there.
+- Planted-defect proof: removing one baseline entry reddened the live audit and named the advisory. `__tests__/prod-dep-audit-gate.test.ts` runs the same check offline.
+
 ## ⭐ AND EVERY EDGE FUNCTION'S FAILED RUN IS CHECKED FOR A FALSE SUCCESS (2026-10-02)
 
 **`supabase/functions/_tests/failed_run_honesty_test.ts`** is the write-side honesty rule (R120/R123) *executed* against the edge fleet, rather than grepped for. `harness.admit()` gets each function past its own gate: every env var holds `test-value-<NAME>`, and each value is presented in every slot the fleet's gates read. The run happens with **every database call failing and every upstream answering 503**, and the suite waits for its `EdgeRuntime.waitUntil` work to finish. Then:

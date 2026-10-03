@@ -1,0 +1,9 @@
+{
+  "//": "Accepted high/critical ROOT advisories in the production tree, each with why it cannot be fixed yet. Read by scripts/check-prod-dep-audit.mjs (npm audit --omit=dev). Shrink-only: an entry npm audit stops reporting reds the gate until it is removed. Measured 2026-10-02 with npm 11 against the tree after 97ee418e0 (ws/defu/viem) and f2d33ceee (sharp 0.35.5, @vercel/og dropped).",
+  "advisories": {
+    "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm": {
+      "package": "braces",
+      "reason": "Reached only through tailwindcss / chokidar / postcss-cli / micromatch, i.e. CSS build tooling listed under dependencies. No fixed braces satisfies their declared ranges (npm audit: fixAvailable=false)."
+    }
+  }
+}

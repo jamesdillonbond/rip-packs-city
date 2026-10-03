@@ -1,0 +1,48 @@
+name: Dependency audit (production tree)
+# 2026-10-02. A dependency change may not bring a NEW high/critical advisory into
+# the production tree. Until this workflow, nothing in CI read `npm audit`: every
+# `npm ci` log printed "29 vulnerabilities (… 1 critical)" and every job went
+# green under it. Dependabot raises PRs for new disclosures against installed
+# packages; this blocks a push that ADDS one.
+#
+# Runs ONLY when the dependency set changes (and on demand), never on every
+# push: the advisory database moves daily, so a nightly disclosure would
+# otherwise red an unrelated commit. Accepted advisories, each with its reason,
+# live in prod-dep-audit-baseline.json (shrink-only).
+#
+# No `npm ci`: `npm audit` reads package-lock.json and posts it to the registry.
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - package-lock.json
+      - scripts/check-prod-dep-audit.mjs
+      - prod-dep-audit-baseline.json
+      - .github/workflows/dependency-audit.yml
+  pull_request:
+    paths:
+      - package.json
+      - package-lock.json
+      - scripts/check-prod-dep-audit.mjs
+      - prod-dep-audit-baseline.json
+      - .github/workflows/dependency-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prod-dep-audit:
+    name: npm audit (production, high+) vs baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      # Exit 1 = a new advisory or a stale baseline entry; exit 2 = the audit
+      # produced no readable report (registry down). Both fail the job.
+      - name: Audit the production tree against the baseline
+        run: node scripts/check-prod-dep-audit.mjs
