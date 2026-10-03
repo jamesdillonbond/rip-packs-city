@@ -1,17 +1,17 @@
 {
-  "generated_at_pt": "2026-10-03 ~1:15 AM PT (overnight autonomous pass, cowork opus-4-8)",
-  "generated_at_utc": "2026-10-03T08:13Z",
-  "pass": "nightly autonomous pass (Cowork cloud). Genuine overnight window (01:1x AM PT; shell clock == DB now() == app-stamped rows, no skew). Push-capable via the VM credential path (cloud push 403-blocked this session; VM path 1 dry-run exit 0). Device bridge + Supabase + Vercel all alive. No FREEZE. Previous run (10-02 14:52Z) was off-hours no-push; its two queued items are both RESOLVED (see ledger). 0 shipped tonight, 0 reverted.",
-  "shipped": 0,
+  "generated_at_pt": "2026-10-03 ~10:05 AM PT (daytime autonomous pass, Cowork cloud, Trevor present)",
+  "generated_at_utc": "2026-10-03T17:05Z",
+  "pass": "daytime health + Search Console + scheduler audit + live QA (Cowork cloud, push-capable via add_repo). 4 code/docs commits, 1 migration (20261003152533), 1 pg_cron unschedule (475). Handoff: docs/handoff-2026-10-03-daytime-audit-gsc-schedulers.md",
+  "shipped": 4,
   "reverted": 0,
-  "verdict": "GREEN. Security invariants/anon-write/rls-off/secdef all [] ; trust_health 38/38 ok, 0 breaches (the 10-02 public_board_slow_count breach has cleared to 0); stalled_pipelines [] ; r118_blind [] ; zero_yield offenders [] ; ts_uuid_editions_48h 0 ; edition_integrity_flags 7 (breach 250). pg_cron: pack-mint-probes medium failure_rate is BY DESIGN (#166 12-attempt node-fault retry verified live). pg_net_http_429 HIGH = the known Flow-envoy limiter on the staggered every-minute lanes (dispositioned 09-30) plus extra load from Trevor's in-flight scratch Flowty export (jobs 673/674, still progressing). Vercel 24h: 9 chronic groups (DEP0169 url.parse warning + 1-2-count cold pack-detail/insights timeouts), NO new cluster, concierge answering (no /api/support-chat errors). sync-nba-projections 8/8 fail = known-issue #8 (shelved, muted to 10-13, fails safe).",
+  "verdict": "GREEN. security/structural/trust all clean (38/38, 0 breaches, precompute 5.0h); stalled []; R118 0; pg_cron 0 failures/24h (189 jobs); cron-job.org 71/71 active Successful; Vercel chronic groups only; GHA 0 failures in last 100 runs until the other session's 679520534 (component branch coverage 81.92% < 81.95%, NOT this pass). Live QA 35 paths x 2 viewports clean after the Panini marketplace-status fix. GSC: robots.txt was blocking the 16,720 sitemap-submitted Panini URLs + the page-image proxies — fixed f8a73b6d9.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
     "structural": "clean (function_search_path_drift [], procedure_txn_control_pins [], procedure_search_path_unpinned [], cross_collection_mat_staleness [], backward_cursor_rewinds [], wmc_null_edition_key [], suppression_parked_claim_drift [])",
     "r118_when_others_blind": "[] (0)",
     "zero_yield_lanes": "offenders [] (307 inspected, 3 suppressed, 0 excluded_by_writes)",
     "trust_health_breaches": 0,
-    "trust_precompute_max_age_hours": 5.38,
+    "trust_precompute_max_age_hours": 5.01,
     "stalled_pipelines": "[]",
     "pipeline_alerts": [
       "pack-mint-probes failure_rate MEDIUM (270/650 over 3 cal-days, Timeout 20000 ms) — BY DESIGN; #166 shipped 10-02 gives a node fault 12 retries; alarm is TRUE while the walk is on the mainnet24 historical node and clears when it leaves. Verified live: a probe reached attempt 5 (pre-#166 max was 4); failed=6 (window-missed class only).",
@@ -24,7 +24,7 @@
     "pipeline_fails_24h": "pack-mint-probes 274 (mainnet24 walk, by design); sync-nba-projections 8/8 (#8 shelved, all_upstreams_failed 403, fails safe); topshot-pack-supply-backfill 2 (budget_hit rows LANDING — 30s budget fix working, lane no longer silent); atlas-market-feed 2, member-wallet-usernames-atlas 2, wallet-backfill-golazos 2, atlas-editions-refresh 2 (upstream, by design); concierge-billing-error 1 (the one known pre-fix 8:47 PM PT 10-02 row, no new since the synthetic-ignore fix)",
     "sentry": "n/a (Sentry dark since 08-18, decided no spend). Health read from Vercel + beacon, not Sentry.",
     "vercel_24h": "9 error groups: DEP0169 url.parse DeprecationWarning (186, chronic since 06-16, queued cleanup); insights/pack-drops drop-5 TimeoutError x2 (chronic); pack-detail drop_pool/pack_table_rows/pack_sales_history 5s x1 each (chronic cold since 08-23); collection-snapshot 8s x1; edition get_edition_recent_sales timeout x1 (cold tail; #142 index helped the common path); profile resolve 6s x1; pack-reality ranker 8s x1. NO new cluster, NO 5xx spike, NO /api/support-chat errors (concierge up).",
-    "db_size_mb": 23721
+    "db_size_mb": 24030
   },
   "fmv_high_med": {
     "nba_top_shot": 8205,
@@ -52,21 +52,19 @@
   },
   "deltas_vs_prev": "vs 10-02 ~7:25 PM PT metrics: FMV HIGH+MED nba 8222->8205 (-17), nfl 1635->1653 (+18), panini 3243->3263 (+20), candy 27->29, golazos 6->6 (all noise/continued walk). Editions panini 11438->12544 (+1,106, tier-1 walk continuing), nba 14478->14485. edition_integrity_flags 6->7 (within breach_at 250). db_size 33,810->23,721 MB (-10.1 GB: pg_net VACUUM FULL reclaim + autovacuum). trust breaches 1->0 (slow-board cleared).",
   "open_watches": [
-    "topshot-pack-supply-backfill: the 10-03 ~1:15 AM PT cron row should land with extra.budget_hit (budget fix). 10-02 runs already show budget_hit=true, processed=4 — lane landing rows vs silent 09-26..10-02.",
-    "pack-mint-probes #166: medium failure_rate stays TRUE while the walk is on mainnet24, clears when the cursor passes 85,981,134. failed-for-good count should stay ~6 (window-missed only) as the 12-attempt retry absorbs node faults.",
-    "net._http_response daily VACUUM FULL (jobid 542, 2:16 AM PT) and arm-unwatched-pipelines (3:19 AM PT): both ran clean (arm armed 24 pipelines at 04:20Z).",
-    "Trevor's scratch Flowty export (jobs 673/674): still progressing (walk_iv 50 open + 498 window + 15,736 pending points; loan-dating 18 non-terminal). pg_net_http_429 HIGH clears when these are unscheduled on completion. NOT mine to unschedule (Trevor's in-flight export).",
-    "rpc-wallet-reconstructed-rips 10-03 3:37 AM PT: first run under the 600s COMMAND budget should leave a pipeline_runs row (filing dispositioned 10-02, fixed by 20261002144052).",
-    "Carried: Panini 1.2.0 LOW accuracy + pack EV at the 10-07 review; sync-nba-projections #8 mute expires 10-13 (provider decision is Trevor's)."
+    "GSC \"Blocked by robots.txt\" (1,472 at the 9/20 data) should stop climbing and Panini editions should start indexing after Google re-fetches robots.txt (live since ~8:45 AM PT 10-03).",
+    "Panini pages: the \"Marketplace status uncertain\" banner must stay gone (v_collection_marketplace_status row, 20261003152533).",
+    "CI on main red at 679520534 (telemetry, other session) — component branch coverage threshold; 4cd704f88 inherits it.",
+    "pack-mint-probes medium failure_rate stays lit while the walk is on mainnet24 (#166, by design).",
+    "Trevor scratch Flowty jobs 673/680 still running (his export)."
   ],
   "needs_trevor": [
-    "move .github/workflows/offer-fill-backfill.yml to cron-job.org (console), then remove the topshot_offer_fill_backfill suppression row",
-    "rotate ATLAS_POOL_INGEST_KEY (#144) — npx supabase login once, then Rip Packs City/cowork-2026-09-30/rotate-atlas-pool-ingest-key.cmd",
-    "#22 — watch tdillonbond@gmail.com for GitHub Support's reply, then re-test commit/1c3e01a8f (expect 404); rotate the Dapper session",
-    "concierge Anthropic credit: auto-reload ENABLED by Trevor 2026-10-03 (the durable fix); no concierge-billing-error rows since 2026-10-02 8:47 PM PT, last answer 2026-10-03 2:08 AM PT.",
-    "scratch Flowty export jobs 673/674 are still running at 30s cadence (your 10-02 data export). Unschedule when the export is done — cleanup SQL is in the 10-02 ledger entries. They add load to mainnet24 (shared with pack-mint-probes) and drive the pg_net_http_429 HIGH arm.",
-    "sync-nba-projections (#8) alert mute expires 10-13 — paid-provider decision before NBA season.",
-    "docs/overnight/focus.md is ~2 weeks stale (steers from mid-Sept, all self-marked closed/resolved). Its own rule says trim spent steers to the ledger; left untouched this pass (no current steer to replace it with)."
+    "delete the 10 retired cron-job.org entries (ids in docs/operations/cron-schedule.md) — optional hygiene; the console Delete is blocked for Cowork",
+    "rotate ATLAS_POOL_INGEST_KEY (#144)",
+    "#22 GitHub Support reply / Dapper session rotation",
+    "unschedule scratch Flowty jobs 673/680 when the export is done",
+    "sync-nba-projections (#8) mute now expires 10-28",
+    "product: sniper minimum-spread ranking; team-named player slugs (/nfl-all-day/player/denver)"
   ],
-  "housekeeping": "Inbox NOT archived (556 live filings): INDEX.md documents that date-based archival was considered and REJECTED (the night pass drains this dir; no per-item drained state; archiving is Trevor's call, guarded by inbox-index-lists-every-filing.test.ts). The recent candidates (429 limiter, impossible-parallel blind arm, wallet-reconstructed-rips, sync-nba) are all dispositioned. Lock: taken 08:09Z (prior RELEASED, 17h stale), released at end of run."
+  "housekeeping": "offer-fill-backfill.yml move to cron-job.org RETIRED as an item (its header explains the GHA loop; caught-up trailing re-walk). pg_cron 475 spent one-shot unscheduled. cron-schedule.md re-verified 10-03."
 }

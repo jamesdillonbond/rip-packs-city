@@ -1,0 +1,59 @@
+# Handoff — 2026-10-03 daytime autonomous pass: health, Search Console, scheduler audit, live QA (Cowork cloud)
+
+> ⚠ **Environment scope:** this cloud session could push (the repo was attached mid-session with `add_repo`; `git push --dry-run` exit 0, five pushes landed). Trevor's machine and Claude Code push normally. **Nothing is stranded; commit normally.** One blocker was specific to **this session's permission layer**: the cron-job.org console's irreversible *Delete* is refused, so the 10 retired console entries are listed below for a human click.
+
+**Run:** ~7:45–10:30 AM PT. Trevor present and steering (three asks: the pass itself; "audit and clean up our pipelines on cron job, vercel, github, chrome, locally, and anywhere else"; "use chrome and go into Google Search Console, and look for improvements"). No FREEZE. A concurrent Claude Code session was committing throughout (8:16–9:30 AM PT); every push here was rebased onto its tip first.
+
+## Verdict
+
+**Health GREEN.** Security invariants / anon-write / rls-off / secdef all `[]`; structural checks all `[]`; trust health 38/38 ok, 0 breaches, precompute age 5.0 h; stalled pipelines `[]`; R118 blind handlers 0; `check_pgcron_recent_failures()` empty; pg_cron 0 failures in 24 h across 189 jobs; Vercel 24 h = the chronic groups only (DEP0169 ×179 — since silenced by the other session's `serverExternalPackages` commit; 1–2-count cold timeouts); cron-job.org 71/71 active entries `Successful` on last execution; GHA 0 failures in the last 100 runs **until** `679520534` (below); laptop Task Scheduler lanes alive by their `pipeline_runs` rows. Supabase advisors: nothing outside the estate's own allowlists (391 `rls_enabled_no_policy` = the intended deny-all; the three anon-executable SECURITY DEFINER fns are the allowlisted public readers; the two "mutable search_path" procedures carry transaction control and cannot `SET`).
+
+## Shipped (4 commits + 1 migration + 1 pg_cron change)
+
+| what | where | revert |
+|---|---|---|
+| **robots.txt stops blocking the published Panini collection** — `Disallow: /panini-blockchain/` ("unpublished collection", 04-26) outlived the 09-25 publish and the 09-27 sitemap enumeration, so the sitemap was submitting **16,720** indexable Panini URLs that robots forbade (GSC: 1,472 "Blocked by robots.txt", climbing) | `f8a73b6d9` `app/robots.ts` + guard `__tests__/robots-never-blocks-a-published-collection.test.ts` (bans any `published: true` registry slug at zero; planted defect fails it) | `git revert f8a73b6d9` |
+| **page-image proxies carved out of `Disallow: /api/`** — `/api/public/ipfs-media/`, `ipfs-thumb/`, `pinnacle-image/`, `team-logo`, `avatar-media` (GSC's Blocked-by-robots examples led with ipfs-media; same split as the 09-12 og:image fix, one layer in) | same commit; live `robots.txt` verified ~8:45 AM PT | same |
+| **pg_cron 475 `rpc-dune-free-tier-sunset` unscheduled** — the calendar one-shot fired 09-23 (1 run, succeeded, `dune_budget_state.paused = true`) and would re-fire every 23 September | `SELECT cron.unschedule(475)`; docs `b744419d0` | `cron.schedule('rpc-dune-free-tier-sunset','0 12 23 9 *', <UPDATE in cron-and-schedulers.md>)` |
+| **cron-job.org registry corrected** — fresh verification stamp; the two retired rows the active table still listed marked retired with ids; both "double-fire" claims closed (neither `pinnacle-sync` nor `compute-laliga-pack-ev` is in `vercel.json`); the 11 scheduled workflows the GHA table omitted added; #124 shedding re-measured; `run-active-listings-ingest.ps1` comment corrected (the GH workflow is a live backstop, not disabled) | `b744419d0` | `git revert b744419d0` |
+| **`v_collection_marketplace_status` carries `panini_blockchain`** — every Panini page rendered *"MARKETPLACE STATUS UNCERTAIN — buy flows are disabled"* above a live Panini ask (the Candy defect of 09-06, repeated by the publish). Row: healthy · `panini_native` · `buy_ctas_enabled=false` (read-only) · measured 86,820 listed serials, 1,758 sales/7 d | migration `20261003152533` applied + file `4cd704f88`; banner verified gone live ~9:40 AM PT | re-apply the body from `20260906193616` `WITH (security_invoker = true)` |
+
+## Search Console read (data to 9/20; Performance to 9/29)
+
+31.8K indexed / 17.6K not. Buckets and dispositions:
+
+- **Blocked by robots.txt 1,472** → the Panini + image-proxy fix above. **Falsifier:** the count stops climbing after Google's next robots fetch; Panini editions appear under Indexed.
+- **Not found (404) 326** → 285 are UUID-form `/nba-top-shot/edition/<setUUID>:<playUUID>` (the 09-08-purged non-canonical keys; still crawled 09-21), 17 `/profile/<address>` (by design since 09-06), the rest `?dpl=`-rotated chunk/font URLs (noise). **Queued, not shipped:** a 308 map is feasible — `audit_20260908_ts_noncanonical_editions` × `sets.external_id` (uuid → `set_id_onchain`) + name/set join resolves **4,886 of 6,597** UUID keys to a canonical key (5,683 pairs, so some are ambiguous). With 9 clicks/28 d site-wide the equity is small; do it only if a cheap `topshot_edition_uuid_redirects` table + a route arm fits a code session.
+- **Page with redirect 117 · 5xx 23 · Duplicate-no-canonical 61 · Google-chose-canonical 17** → the legacy `/moment/<uuid>` and UUID-edition classes; all 308 to the edition page now (verified live). Nothing to do but wait for a re-crawl.
+- **Crawled – not indexed 5,033 (rising) · Discovered – not indexed 3,171** → the edition/pack-dist long tail (306+549 Top Shot editions, 210+122 All Day editions, 155+128 pack dists per 1,000 examples). Google's quality call; #66's sitemap-pruning item is unchanged. One curiosity in the examples: `/nfl-all-day/player/denver` (a team name as a player slug).
+- **noindex 867** → `?wallet=` permutations + the unresolvable-slug fallback. By design.
+- **Performance 28 d:** 9 clicks / 1.4K impressions / position 15.3. Top queries `mlb candy` (35 impr, pos 18.7), `wnba gold slots`, `nba rookies`, `nba top shot value` (pos 8.3), `ufc strike`. Still #66's zero-external-links problem — not code.
+- Sitemap index read 10-02 OK (37,171 discovered; the live index is 51,347 URLs since Panini). Breadcrumbs 434 valid / 0 invalid. CWV: not enough CrUX data. No manual actions. ⚠ GSC's own UI icons (`content_copy`/`open_in_new`/`search` ligatures) leak into copied cell text as U+E14D/E89E/E8B6 — strip `[-]` before treating a scraped URL as real.
+
+## Scheduler audit (Trevor's ask) — every plane, measured
+
+- **pg_cron** 189 jobs: 0 failures/24 h; 23 with 0 runs are weekly/Sunday or the two ledger-recorded pauses (16, 491); the three `pg_sleep`-padded every-minute lanes (635/639/645) are 130k of the day's busy-seconds BY DESIGN; the 50+ zero-write lanes over 7 d are finished/standby backfills already judged by `check_zero_yield_lanes()` (offenders []).
+- **cron-job.org** 88 entries: 71 active all `Successful`; 17 inactive = the deliberate set. **10 are deletion candidates** (lanes RETIRED under #81 on 09-23, or moved to Vercel 08-02): Compute Topshot Pack EV 7526594 · Topshot Moments Hydrator 7617630 · Populate Pinnacle WMC FMV 7584781 · Refresh Pack Grail Metrics MV 7619844 · Resolve Wallet Usernames 7776245 · TopShot Deal Floor Serials 7850139 · TopShot FMV Populate 7658302 · Offers Sweep 7712610 · EVM Transfers Ingest 7595696 · V1-Dapper Recovery 7818270. Harmless disabled rows if left.
+- **Vercel** 36 crons: no dead entries found; 24 h errors = chronic only.
+- **GitHub Actions** 22 scheduled workflows: 0 failures in the last 100 runs; every high-frequency schedule still delivered at ~6–8 runs/day (gaps 3–7 h re-measured over the last 40 scheduled runs each — #124). **Dispositioned:** the carried "move `offer-fill-backfill.yml` to cron-job.org" item is RETIRED — the workflow's own header says why it is on GHA (each tick loops bounded ~20 k-block `?sync=1` calls up to ~200 s; the console has a 30 s cap and the route's `after()` tail is unreliable), the lane is a caught-up trailing re-walk, and the 12-31 suppression carries that predicate. `ops-monitor.yml` keeps its GHA schedule beside the two console entries because its `ci-status` job has no console twin (~8 duplicate curls/day, accepted).
+- **Laptop (Windows Task Scheduler):** RPC Panini Ingest (4-hourly), Panini Team Walk (3:35 AM, ran ok today), chained Collector Walk (ran 6:15–6:51 AM PT; its 3 "fails" are the per-walk 10-min cap on 5k+-card collectors — partial by design), RPC Deal Board Ingest (every 3 h, ok), RPC AllDay Badge Ingest (daily, ok). The Pinnacle Render Cache Fill task is retired (#90) — if it still exists in Task Scheduler it is a no-op to delete.
+- **Cloudflare workers:** one scheduled (`sales-counterparty-backfill` */5); hydrator cron removed 09-23.
+
+## Live-site QA (real Chromium, 1280 px + 390 px, 35 paths)
+
+0 overflow · 0 broken images · 0 stuck loading states · 0 honest-error copy · 0 5xx. Findings: the Panini banner (fixed above); one upstream 404 image on `/nfl-all-day/player/mecole-hardman` (All Day's CDN, edition 171 — not ours); the Top Shot sniper's first screen is $0.24–0.33 commons at "net +$0.00 after 5 % fee" (product observation: a deal board whose top rows are two-cent spreads reads thin — Trevor's call on a minimum-spread or minimum-price filter for the *ranking*, not FMV); in Trevor's own Chrome at ~995 px the signed-in header nav wraps onto two lines ("Top Shot / All Day" and "My Teams" break) — a tablet-landscape width the sweep does not cover (it runs 1280 and 390); worth one `narrow`-desktop breakpoint check in a code session.
+
+## ⚠ CI on `main` is RED — not from this pass
+
+`679520534` ("telemetry: visitor journeys…", the other session, 8:16 AM PT) fails **Component coverage**: branches **81.92 % vs the 81.95 % threshold** (296/296 files pass). `4cd704f88` inherits it. Needs one more covered branch or a re-pin by the owner of that change.
+
+## Needs Trevor (carried + new)
+
+- Delete the 10 retired cron-job.org entries above (optional hygiene).
+- Rotate `ATLAS_POOL_INGEST_KEY` (#144); #22 (GitHub Support); unschedule the scratch Flowty jobs 673/680 when the export is done.
+- `sync-nba-projections` (#8) — mute now expires 10-28.
+- Product calls: sniper minimum-spread ranking; whether `/nfl-all-day/player/denver`-style team-named player slugs should 404 or redirect.
+
+## Memory / docs written
+
+Ledger entries ×3 (robots, scheduler audit, Panini marketplace row), `docs/operations/cron-schedule.md`, `docs/reference/cron-and-schedulers.md`, this handoff (also mirrored to the claude.ai Project). Memory: the `add_repo` push path (the nightly skill's "add_repo is not exposed" line is stale) and the GSC icon-ligature trap.
