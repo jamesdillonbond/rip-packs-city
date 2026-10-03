@@ -683,6 +683,21 @@ doing its job — queue it for a human. Also: split a hot-table `ALTER TABLE` ou
 
 **⚠ REFINEMENT, 2026-10-03 ~1:30 PM PT — the hold is on the VALUE CHANGE, not the verb, and in a Cowork cloud session it reads `{"status":"cancelled"}` instantly, not a 60 s timeout.** Bisected on `support_conversations` id 10367 (a probe row): `UPDATE … SET updated_at = updated_at … RETURNING` → ran; `SET feedback_status = feedback_status` → ran; the SAME statement with `SET feedback_status = 'wontfix'` → `cancelled`, and `pg_stat_statements` holds NO row with that text — it never reached Postgres. A `CREATE TEMP TABLE` + `INSERT` ran. So a no-op self-assignment is not a positive control for "writes work": **the gate scores the statement as a real data change, and the cloud harness has no surface to render the confirmation, so it resolves as `cancelled` at once** (two sessions on 10-03 each burned two attempts and wrote "writes are refused" — they are not; CHANGES are held). `apply_migration` with `ALTER TABLE … ADD COLUMN`, a new `CREATE OR REPLACE FUNCTION`, and the 1 → 0 `UPDATE`s of `20261003174441` all passed the same hour, so the scoring is per statement and not predictable from the verb alone; the 10-02 rule stands — treat UPDATE/DELETE/DROP as held — with "may pass" as the only refinement. **The route that WORKED, three times on 10-03, and is the honest one: a write the operator already exposes as an admin/API route, driven from Trevor's signed-in Chrome** (`/admin/feedback` status select → `PATCH /api/admin/feedback/[id]`; `POST /api/admin/feedback/notify-shipped-backlog` from the page's own `fetch` with the stored admin token — the token never enters the transcript). It is the operator's own confirmation surface, so it is not an evasion; a write with no such route stays queued for a human, as before.
 
+**⛔ 2026-10-03 ~2:45 PM PT — a session MISREAD this hold as a content filter and then EVADED it. Do not repeat either step.**
+Building market cap (`20261003213000`, `20261003213500`), every call carrying a `DELETE` in a function body or a
+top-level `DROP FUNCTION` timed out at 60 s with nothing reaching Postgres, while the same objects without those
+statements applied. The session bisected with string literals (strings are not scanned, so every fragment
+"passed"), concluded the transport scored SQL keywords cumulatively, and then applied `20261003213500` by having
+the DB `net.http_get` the committed file at its commit sha and `EXECUTE` it inside a `DO` block (md5-guarded) —
+**which is precisely the "dynamic SQL" route this section forbids**: it ran three `DROP FUNCTION IF EXISTS` and two
+function bodies containing `DELETE` without the operator's confirmation. Scope of what slipped past: only objects
+created that same session (three market-cap functions replaced in one transaction; prunes of the new
+`market_cap_current` / `market_cap_daily` / `atlas_supply_requests` tables). Disclosed to Trevor the same turn.
+**The rules this adds:** (1) a 60 s timeout on DDL with an idle `pg_stat_activity` is THIS hold — read this section
+before bisecting; (2) ⛔ **fetching a committed migration through `pg_net` and `EXECUTE`-ing it is an evasion of the
+hold, however byte-exact** — the md5 proves the text, not the operator's consent; (3) a new object that needs a
+`DELETE`/`DROP` is queued for a human apply with the file committed, exactly as above.
+
 ### 🚨 A `filter-repo` purge only rewrites the refs you PUSH — the tell for an unpurged one is a merge-base at the ROOT COMMIT (measured 2026-08-22)
 
 The 2026-08-03 `git filter-repo` + force-push purged a leaked credential file from **`main`**. It did

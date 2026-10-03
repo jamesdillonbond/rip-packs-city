@@ -160,6 +160,7 @@ covers everything, and one era is covered by nothing at all.
 - ⚠ **Atlas is the DEFAULT for 2021→now, not Dune** — it serves ~699,169 of the 909,970 below-wall
   nba_top_shot null-seller rows for free, with both counterparties, and the chains are coherent (each
   sale's buyer is the next sale's seller). Anything that pays for that era is paying for free data.
+- ⚠ (2026-10-03) The "rejects" below is the PURCHASE-history service. **EditionService/SearchEditions answers Golazos under product `laliga`** and Pinnacle under `disney` (full supply buckets); UFC is rejected under every name tried.
 - ⚠ **UFC Strike + Golazos have NO counterparty source below the wall** (778,032 rows) — Atlas rejects both
   products, Flow REST is pruned, Flowty has no counterparties. ⚠ **But `ufc_strike` is a CLOSED market**
   (`collections.market_closed_at = 2026-05-13`, FMV frozen, UI renders unavailable), so 702,545 of that
