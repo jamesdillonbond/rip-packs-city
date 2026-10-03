@@ -18,14 +18,15 @@
 --
 -- The function DDL below is VERBATIM from the committed migration
 -- (supabase/migrations/20260926200000_audit_20260926_pack_nft_mints_name_packs_dapper_minted_straight_into_a_wallet.sql;
--- run_pack_mint_probe_lane from 20261003030546_audit_20261002_revert_pack_mint_probes_90s_timeout.sql, which restores the
--- 20260929162000 body verbatim after 20261003023303 (90 s on historical nodes) 503ed whole batches).
+-- run_pack_mint_probe_lane from 20261003045659_audit_20261002_pack_mint_probes_node_faults_retry_12_times.sql).
 --
 -- 2026-09-29 additions: the floor is mainnet24's root (2023-11-08 / 65,264,619);
 --   6. each window goes to the node serving its spork and never crosses that
 --      spork's last height;
 --   7. at most 25 dispatches per node per tick;
 --   8. a 429 returns the probe to pending without counting an attempt.
+-- 2026-10-02 (#166): 9. a node fault (timeout, 5xx, no response) gets 12 attempts;
+--   every other failure keeps 4.
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -112,6 +113,11 @@ DECLARE
   v_floor     constant bigint := 65264619;
   v_floor_at  constant timestamptz := '2023-11-08 00:00:00+00';
   v_per_node  constant int := 25;
+  -- 2026-10-02: a node fault (timeout, 5xx, no response) is the node's, not the
+  -- probe's: it may retry up to 12 times (~1 h at one try per tick); any other
+  -- failure keeps the cap of 4.
+  v_cap_transient constant int := 12;
+  v_cap int;
   v_node text; v_end bigint; v_throttled int := 0;
   v_ts uuid; v_ad uuid;
   r record;
@@ -141,9 +147,9 @@ BEGIN
     IF NOT r.landed THEN
       IF r.dispatched_at < now() - interval '30 minutes' THEN
         UPDATE public.pack_mint_probes
-           SET status = CASE WHEN attempts + 1 >= 4 THEN 'failed' ELSE 'pending' END,
+           SET status = CASE WHEN attempts + 1 >= v_cap_transient THEN 'failed' ELSE 'pending' END,
                attempts = attempts + 1, last_error = 'no_response',
-               finished_at = CASE WHEN attempts + 1 >= 4 THEN now() END
+               finished_at = CASE WHEN attempts + 1 >= v_cap_transient THEN now() END
          WHERE collection_id = r.collection_id AND probe_at = r.probe_at;
         v_expired := v_expired + 1;
       END IF;
@@ -162,10 +168,11 @@ BEGIN
     END IF;
     IF v_body IS NULL OR jsonb_typeof(v_body) IS DISTINCT FROM 'array' OR jsonb_array_length(v_body) = 0 THEN
       v_last_error := left(coalesce(r.h_error, 'http ' || coalesce(r.h_status::text, 'null') || ': ' || r.h_content), 200);
+      v_cap := CASE WHEN r.h_error IS NOT NULL OR r.h_status >= 500 THEN v_cap_transient ELSE 4 END;
       UPDATE public.pack_mint_probes
-         SET status = CASE WHEN attempts + 1 >= 4 THEN 'failed' ELSE 'pending' END,
+         SET status = CASE WHEN attempts + 1 >= v_cap THEN 'failed' ELSE 'pending' END,
              attempts = attempts + 1, last_error = v_last_error,
-             finished_at = CASE WHEN attempts + 1 >= 4 THEN now() END
+             finished_at = CASE WHEN attempts + 1 >= v_cap THEN now() END
        WHERE collection_id = r.collection_id AND probe_at = r.probe_at;
       v_failed := v_failed + 1;
       CONTINUE;
@@ -432,6 +439,39 @@ BEGIN
                      FROM public.pack_mint_probes WHERE probe_at = '2026-04-24 11:15:00+00'),
                   'after 4 attempts a missing window is failed with its reason');
   PERFORM _assert((SELECT count(*) = 0 FROM public.pack_nft_mints WHERE pack_nft_id = 'P3'), 'a failed probe claims nothing');
+END $$;
+
+-- claim 9 (2026-10-02, #166): a node fault (timeout, 5xx, no response) retries
+-- up to 12 attempts; any other failure keeps the cap of 4.
+INSERT INTO public.pack_mint_probes (collection_id, probe_at, status, start_height, request_id, attempts, dispatched_at) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:01+00', 'in_flight', 100000000, 990001, 3,  now()),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:02+00', 'in_flight', 100000000, 990002, 11, now()),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:03+00', 'in_flight', 100000000, 990003, 3,  now()),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:04+00', 'in_flight', 100000000, 990004, 3,  now() - interval '31 minutes'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:05+00', 'in_flight', 100000000, 990005, 3,  now());
+INSERT INTO net._http_response VALUES
+  (990001, NULL, NULL, 'Timeout of 20000 ms reached. Total time: 20000.1 ms'),
+  (990002, 503, 'upstream connect error or disconnect/reset before headers', NULL),
+  (990003, 404, 'not found', NULL),
+  (990005, 200, '[]', NULL);
+DO $$
+BEGIN
+  PERFORM public.run_pack_mint_probe_lane();
+  PERFORM _assert((SELECT status <> 'failed' AND attempts = 4 AND last_error LIKE 'Timeout%'
+                     FROM public.pack_mint_probes WHERE probe_at = '2025-06-01 00:00:01+00'),
+                  'a 4th timeout is retried, not failed (claim 9)');
+  PERFORM _assert((SELECT status = 'failed' AND attempts = 12 AND finished_at IS NOT NULL
+                     FROM public.pack_mint_probes WHERE probe_at = '2025-06-01 00:00:02+00'),
+                  'a 12th node fault fails the probe with its reason (claim 9)');
+  PERFORM _assert((SELECT status = 'failed' AND attempts = 4 AND last_error LIKE 'http 404%'
+                     FROM public.pack_mint_probes WHERE probe_at = '2025-06-01 00:00:03+00'),
+                  'a 4th non-node failure (4xx) still fails at the cap of 4 (claim 9)');
+  PERFORM _assert((SELECT status <> 'failed' AND attempts = 4 AND last_error = 'no_response'
+                     FROM public.pack_mint_probes WHERE probe_at = '2025-06-01 00:00:04+00'),
+                  'a 4th no-response is retried, not failed (claim 9)');
+  PERFORM _assert((SELECT status = 'failed' AND attempts = 4
+                     FROM public.pack_mint_probes WHERE probe_at = '2025-06-01 00:00:05+00'),
+                  'a 4th empty-body answer still fails at the cap of 4 (claim 9)');
 END $$;
 
 -- claim 7: 30 pending mainnet26 instants -> at most 25 dispatched in one tick
