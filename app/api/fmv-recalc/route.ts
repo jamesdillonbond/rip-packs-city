@@ -8,6 +8,7 @@ import { staleTouchDaysSinceSale } from "@/lib/fmv-stale-touch"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { rpcWithRetry, queryWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { topShotAskObservedAt } from "@/lib/market/ask-freshness"
 
 // ── FMV Recalc Route ──────────────────────────────────────────────────────────
 //
@@ -669,7 +670,7 @@ export async function POST(req: NextRequest) {
         const slice = extIds.slice(i, i + ASK_CHUNK)
         const { data: askRows, error: askErr } = await supabaseAdmin
           .from("edition_offers")
-          .select("external_id, low_ask, updated_at")
+          .select("external_id, low_ask, updated_at, low_ask_confirmed_at")
           .in("external_id", slice)
           .gt("low_ask", 0)
         if (askErr) {
@@ -679,11 +680,15 @@ export async function POST(req: NextRequest) {
         for (const row of askRows ?? []) {
           const ask = Number((row as any).low_ask)
           if (!(ask > 0)) continue
-          // edition_offers.updated_at is NOT NULL in the schema, so null here means an
-          // UNPARSEABLE value rather than a missing one — and it is passed through
-          // rather than coalesced, because escalateConfidence treats "I could not date
-          // this ask" as NOT corroborating. Substituting 0 would publish it as fresh.
-          const rawAskAt = (row as any).updated_at
+          // AGE = WHEN THE ASK WAS LAST SEEN, not when its price last changed
+          // (register R103, 2026-10-03). updated_at alone is a last-CHANGED stamp,
+          // so a stable ask aged out of corroboration while Atlas was still seeing
+          // it; low_ask_confirmed_at is the re-observation stamp. The helper takes
+          // the later parseable one and returns null only when neither parses —
+          // passed through rather than coalesced, because escalateConfidence treats
+          // "I could not date this ask" as NOT corroborating. Substituting 0 would
+          // publish it as fresh.
+          const rawAskAt = topShotAskObservedAt(row as any)
           const askAtMs = rawAskAt ? Date.parse(String(rawAskAt)) : NaN
           const askAgeHours = Number.isNaN(askAtMs) ? null : (Date.now() - askAtMs) / 3_600_000
           for (const edId of extIdToEditionIds.get(String((row as any).external_id)) ?? []) {
@@ -794,9 +799,11 @@ export async function POST(req: NextRequest) {
     // the 1,545 do NOT agree and stay LOW.
     //
     // 🚨 AGE: THE ALL DAY ASK HAS NO POLL TIMESTAMP, AND listed_at IS NOT ONE.
-    // Top Shot's age comes from edition_offers.updated_at, and THAT COLUMN IS A
-    // LAST-CHANGED STAMP, not the "when we last re-confirmed this ask exists" sweep
-    // time this comment claimed until 2026-09-13. `sync_edition_offers_from_atlas()`
+    // Top Shot's age came from edition_offers.updated_at until 2026-10-03 (R103), and
+    // THAT COLUMN IS A LAST-CHANGED STAMP, not the "when we last re-confirmed this ask
+    // exists" sweep time this comment claimed until 2026-09-13. It now comes from
+    // topShotAskObservedAt() — the later of updated_at and low_ask_confirmed_at, the
+    // re-observation stamp added 2026-10-01 — see Step 2a-ter above. `sync_edition_offers_from_atlas()`
     // bumps it only under `ON CONFLICT … WHERE low_ask IS DISTINCT FROM
     // EXCLUDED.low_ask`, so an unchanged floor keeps an old stamp however recently
     // the Atlas verifier re-observed it (register #98; `lib/market/ask-freshness.ts`

@@ -105,10 +105,11 @@ describe("fmv-recalc supplies the ask age", () => {
     expect(src).toContain('.from("edition_offers")')
   })
 
-  it("selects updated_at, so the age is knowable at all", () => {
-    // Without this column the route CANNOT date an ask, and the gate would silently
-    // fall through to the legacy path on every edition.
-    expect(src).toMatch(/\.select\("external_id, low_ask, updated_at"\)/)
+  it("selects both age stamps, so the age is knowable at all", () => {
+    // Without these columns the route CANNOT date an ask, and the gate would silently
+    // fall through to the legacy path on every edition. low_ask_confirmed_at is the
+    // re-observation stamp (R103); updated_at is the fallback when it is missing.
+    expect(src).toMatch(/\.select\("external_id, low_ask, updated_at, low_ask_confirmed_at"\)/)
   })
 
   it("passes the age to escalateConfidence, so the legacy path is not production", () => {

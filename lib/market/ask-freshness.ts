@@ -238,3 +238,44 @@ export function askAgeStamp(
   }
 }
 
+
+/**
+ * WHEN A TOP SHOT ASK WAS LAST SEEN, for PRICING (register R103, 2026-10-03).
+ *
+ * `edition_offers.updated_at` is a LAST-CHANGED stamp (see `askStampKind` above):
+ * an ask that has sat at the same price for eight days reads eight days old even
+ * when Atlas saw it an hour ago. `fmv-recalc` dated asks by it, so measured
+ * 2026-10-03 **4,868 of 13,657 Top Shot asks (35.6%)** sat past
+ * `MAX_ASK_AGE_HOURS_CORROBORATION` and could not corroborate a price. Most of
+ * them were live.
+ *
+ * `edition_offers.low_ask_confirmed_at` (migration `20261001030000`) is the
+ * re-observation stamp: WHEN the floor listing was last OBSERVED, bumped on
+ * re-observation and set on a price change. By it, **2,575 (18.9%)** are past
+ * the same bound. That is the question the corroboration gate asks ("is this
+ * ask still evidence?"), so pricing reads it.
+ *
+ * Returns the LATER of the two parseable stamps, so a row the confirm stamp
+ * has not reached (NULL, or unparseable) keeps its old behaviour rather than
+ * losing its age. Returns null only when NEITHER parses, and null stays
+ * "I could not date this ask", which the gate treats as NOT corroborating.
+ * ⛔ Never substitute `now()` for a missing stamp: that publishes an undatable
+ * ask as fresh.
+ */
+export function topShotAskObservedAt(row: {
+  low_ask_confirmed_at?: string | null
+  updated_at?: string | null
+}): string | null {
+  let best: string | null = null
+  let bestMs = Number.NEGATIVE_INFINITY
+  for (const iso of [row.low_ask_confirmed_at, row.updated_at]) {
+    if (!iso) continue
+    const ms = Date.parse(String(iso))
+    if (Number.isNaN(ms)) continue
+    if (ms > bestMs) {
+      bestMs = ms
+      best = String(iso)
+    }
+  }
+  return best
+}
