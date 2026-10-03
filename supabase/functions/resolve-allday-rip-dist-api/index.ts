@@ -30,13 +30,34 @@ const sb=createClient(Deno.env.get("SUPABASE_URL")??"",Deno.env.get("SUPABASE_SE
 const H={"Content-Type":"application/json","Origin":"https://nflallday.com","Referer":"https://nflallday.com/","User-Agent":"RipPacksCity/1.0"}
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms))
 async function raw(query:string,variables?:any){ const r=await fetch(EP,{method:"POST",headers:H,body:JSON.stringify({query,variables}),signal:AbortSignal.timeout(25000)}); return await r.json().catch(()=>null) }
-async function dbg(p:any){ await sb.from("api_probe_debug").upsert({id:1,payload:p,at:new Date().toISOString()}) }
 const Q=`query($i: SearchPackNftsInput!){ searchPackNft(searchInput:$i){ edges{ node{ id dist_id status } } } }`
 async function lookup(ids:string[]){ return await raw(Q,{ i:{ first: ids.length, filters:[{ id:{ in: ids } }] } }) }
+
+// One pipeline_runs row per run (2026-10-03). Until now this hourly lane (pg_cron
+// jobid 26, :17) left no trace on success: its only record was an upsert into
+// `api_probe_debug`, a table that does not exist, so that write failed silently on
+// every run and the sentinel's edge-lane registry could not say what this lane
+// writes. It writes `pack_rips.dist_id` for All Day rips Dapper's index can name.
+// `rows_written` counts updates that LANDED (the update result was never read, so
+// `resolved` counted attempts).
+const PIPELINE="allday-rip-dist-resolve"
+async function logRun(startedAt:number, ok:boolean, found:number|null, written:number|null, skipped:number|null, error:string|null, extra:Record<string,unknown>){
+  try{
+    const { error:logErr }=await (sb as any).rpc("log_pipeline_run",{
+      p_pipeline:PIPELINE, p_started_at:new Date(startedAt).toISOString(),
+      p_rows_found:found, p_rows_written:written, p_rows_skipped:skipped,
+      p_ok:ok, p_error:error, p_collection_slug:"nfl_all_day",
+      p_cursor_before:null, p_cursor_after:null,
+      p_extra:{ ...extra, elapsed_ms:Date.now()-startedAt },
+    })
+    if(logErr) console.error(`[${PIPELINE}] log_pipeline_run failed: ${logErr.message}`)
+  }catch(e){ console.error(`[${PIPELINE}] log_pipeline_run threw: ${e instanceof Error?e.message:String(e)}`) }
+}
 
 Deno.serve(async(req)=>{
   const url=new URL(req.url)
   if(!gateKeyOk(url.searchParams.get("key"))) return new Response(JSON.stringify({error:"forbidden"}),{status:403})
+  const startedAt=Date.now()
   // Bounded at PostgREST's 1,000-row cap (was .limit(3000), a bound PostgREST
   // clamps to 1,000 anyway; folded down on 2026-10-02 with the read-error fix,
   // as the old comment's EXIT asked). The queue is tens of rows an hour; a
@@ -46,12 +67,35 @@ Deno.serve(async(req)=>{
   // wrote nothing anywhere, so an hourly lane with a dead read looked exactly
   // like one with an empty queue. The 500 lands in net._http_response.
   // (supabase/functions/_tests/failed_run_honesty_test.ts)
-  if(rowsErr){ return new Response(JSON.stringify({ok:false,error:`pack_rips read: ${rowsErr.message.slice(0,200)}`}),{status:500,headers:{"content-type":"application/json"}}) }
+  if(rowsErr){
+    const error=`pack_rips read: ${rowsErr.message.slice(0,200)}`
+    await logRun(startedAt,false,null,null,null,error,{stage:"targets"})
+    return new Response(JSON.stringify({ok:false,error}),{status:500,headers:{"content-type":"application/json"}})
+  }
   const ids=(rows??[]).map((r:any)=>String(r.pack_nft_id))
-  if(url.searchParams.get("mode")==='probe'){ const j=await lookup(ids.slice(0,3)); await dbg({probe:true,resp:j}); return new Response(JSON.stringify({ok:true}),{headers:{"content-type":"application/json"}}) }
-  if(ids.length===0){ return new Response(JSON.stringify({note:'none'}),{headers:{"content-type":"application/json"}}) }
-  let resolved=0, statuses:Record<string,number>={}, err:any=null, matched=0
-  for(let i=0;i<ids.length;i+=50){ const j=await lookup(ids.slice(i,i+50)); if(j?.errors?.length){ err=j.errors[0].message; break } for(const e of (j?.data?.searchPackNft?.edges??[])){ const n=e.node; if(!n?.id) continue; matched++; statuses[n.status||'?']=(statuses[n.status||'?']||0)+1; if(n.dist_id){ await sb.from("pack_rips").update({dist_id:String(n.dist_id)}).eq("collection_id",ALLDAY).eq("pack_nft_id",String(n.id)); resolved++ } } await sleep(120) }
-  await dbg({candidates:ids.length,matched,resolved,statuses,err})
-  return new Response(JSON.stringify({candidates:ids.length,matched,resolved,err}),{headers:{"content-type":"application/json"}})
+  if(url.searchParams.get("mode")==='probe'){ const j=await lookup(ids.slice(0,3)).catch((e)=>({fetch_error:String(e)})); return new Response(JSON.stringify({probe:true,resp:j}),{headers:{"content-type":"application/json"}}) }
+  if(ids.length===0){
+    await logRun(startedAt,true,0,0,0,null,{note:"none"})
+    return new Response(JSON.stringify({note:'none'}),{headers:{"content-type":"application/json"}})
+  }
+  let resolved=0, matched=0, updErrors=0, err:string|null=null, updErr:string|null=null
+  const statuses:Record<string,number>={}
+  for(let i=0;i<ids.length;i+=50){
+    let j:any
+    try{ j=await lookup(ids.slice(i,i+50)) }catch(e){ err=`lookup: ${e instanceof Error?e.message:String(e)}`; break }
+    if(!j){ err="lookup: not-json"; break }
+    if(j?.errors?.length){ err=String(j.errors[0].message); break }
+    for(const e of (j?.data?.searchPackNft?.edges??[])){
+      const n=e.node; if(!n?.id) continue
+      matched++; statuses[n.status||'?']=(statuses[n.status||'?']||0)+1
+      if(n.dist_id){
+        const { error:uErr }=await sb.from("pack_rips").update({dist_id:String(n.dist_id)}).eq("collection_id",ALLDAY).eq("pack_nft_id",String(n.id))
+        if(uErr){ updErrors++; updErr=updErr??uErr.message.slice(0,200) } else resolved++
+      }
+    }
+    await sleep(120)
+  }
+  const error=err??(updErr?`pack_rips update: ${updErr}`:null)
+  await logRun(startedAt,!error,ids.length,resolved,ids.length-resolved,error,{matched,statuses,update_errors:updErrors})
+  return new Response(JSON.stringify({candidates:ids.length,matched,resolved,update_errors:updErrors,err:error}),{headers:{"content-type":"application/json"}})
 })
