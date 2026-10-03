@@ -19,7 +19,7 @@ vi.mock("@/lib/supabase", () => ({
 }))
 
 import MarketCapTile, { MarketCapTileBody } from "@/components/entity/MarketCapTile"
-import { sevenDayChange, type MarketCapEntityRow } from "@/lib/insights/market-cap-board"
+import { sevenDayChange, staleSince, type MarketCapEntityRow } from "@/lib/insights/market-cap-board"
 
 afterEach(cleanup)
 beforeEach(() => {
@@ -113,6 +113,29 @@ describe("MarketCapTile — series pages", () => {
     const { container } = await renderTile({ group: "series", collectionDbSlug: "nba_top_shot", match: "2" })
     expect(state.calls[0].args).toEqual({ p_group: "series", p_collection: "nba_top_shot", p_match: "2" })
     expect(container.textContent).toContain("of 8 series in NBA Top Shot")
+  })
+})
+
+describe("MarketCapTile — freshness", () => {
+  const NOW = Date.parse("2026-10-04T06:00:00Z")
+  it("staleSince: fresh → null, older than 6 h → the PT time, no stamp → unknown", () => {
+    expect(staleSince("2026-10-04T01:00:00Z", NOW)).toBeNull()
+    expect(staleSince("2026-10-03T22:41:00Z", NOW)).toBe("Oct 3, 3:41 PM PT")
+    expect(staleSince(null, NOW)).toBe("unknown")
+    expect(staleSince("not a date", NOW)).toBe("unknown")
+  })
+  it("fresh figures carry no warning", () => {
+    const { container } = render(<MarketCapTileBody group="player" row={ROW} stale={null} />)
+    expect(container.textContent).not.toMatch(/out of date/)
+  })
+  it("stale figures say when they are from", () => {
+    const { container } = render(<MarketCapTileBody group="player" row={ROW} stale="Oct 3, 3:41 PM PT" />)
+    expect(container.textContent).toContain("These figures are from Oct 3, 3:41 PM PT")
+    expect(container.textContent).toMatch(/refresh is behind/)
+  })
+  it("a missing refresh stamp is not read as fresh", () => {
+    const { container } = render(<MarketCapTileBody group="player" row={ROW} stale="unknown" />)
+    expect(container.textContent).toMatch(/not recorded/)
   })
 })
 

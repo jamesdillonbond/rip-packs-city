@@ -266,3 +266,20 @@ export async function fetchMarketCapEntity(
     refreshed_at: strOrNull(r.refreshed_at),
   }
 }
+
+/** The refresh runs every 2 hours; three missed runs (6 h) is "behind". */
+export const STALE_AFTER_MS = 6 * 60 * 60 * 1000
+
+/**
+ * null = fresh; "unknown" = no refresh stamp; otherwise the PT time the figures are
+ * from. Formatted in a fixed zone so a server render is deterministic.
+ */
+export function staleSince(refreshedAt: string | null, now: number): string | null {
+  if (!refreshedAt) return "unknown"
+  const t = Date.parse(refreshedAt)
+  if (!Number.isFinite(t)) return "unknown"
+  if (now - t <= STALE_AFTER_MS) return null
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  }).format(new Date(t)) + " PT"
+}

@@ -9,6 +9,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import {
   fetchMarketCapEntity,
+  staleSince,
   type MarketCapEntityGroup,
   type MarketCapEntityRow,
 } from "@/lib/insights/market-cap-board"
@@ -21,6 +22,7 @@ export async function fetchMarketCapTileRow(
   group: MarketCapEntityGroup,
   collectionDbSlug: string,
   match: string,
-): Promise<MarketCapEntityRow | null> {
-  return withBoardBudget(fetchMarketCapEntity(supabaseAdmin, group, collectionDbSlug, match), `market-cap ${group}`)
+): Promise<{ row: MarketCapEntityRow | null; stale: string | null }> {
+  const row = await withBoardBudget(fetchMarketCapEntity(supabaseAdmin, group, collectionDbSlug, match), `market-cap ${group}`)
+  return { row, stale: row ? staleSince(row.refreshed_at, Date.now()) : null }
 }

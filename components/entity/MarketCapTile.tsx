@@ -40,9 +40,12 @@ function fmtPct(x: number | null, signed = false): string {
 export function MarketCapTileBody({
   row,
   group,
+  stale = null,
 }: {
   row: MarketCapEntityRow
   group: MarketCapEntityGroup
+  /** From staleSince(): null = fresh, "unknown" = no stamp, else the PT time the figures are from. */
+  stale?: string | null
 }) {
   const known = row.mcap_usd != null
   const hc = known && row.mcap_usd! > 0 && row.mcap_high_conf_usd != null ? row.mcap_high_conf_usd / row.mcap_usd! : null
@@ -79,6 +82,13 @@ export function MarketCapTileBody({
           sub={change != null ? `from ${fmtUsdCompact(row.mcap_usd_7d_ago)}` : "history began Oct 3, 2026"}
         />
       </div>
+      {stale && (
+        <div className="rpc-mono" role="status" style={{ marginTop: 10, fontSize: 11, lineHeight: 1.5, color: "var(--rpc-red)" }}>
+          {stale === "unknown"
+            ? "When these figures were computed is not recorded — treat them as possibly out of date."
+            : `These figures are from ${stale} — the market-cap refresh is behind, so they may be out of date.`}
+        </div>
+      )}
       <div className="rpc-mono" style={{ marginTop: 10, fontSize: 10, lineHeight: 1.6, color: "var(--rpc-text-muted)" }}>
         FMV × collector-held supply — burned Moments and the issuer&apos;s sealed / unreleased stock taken out.
         {partial && group !== "edition" && (
@@ -101,8 +111,11 @@ export default async function MarketCapTile({
 }) {
   if (!match) return null
   let row: MarketCapEntityRow | null
+  let stale: string | null = null
   try {
-    row = await fetchMarketCapTileRow(group, collectionDbSlug, match)
+    const got = await fetchMarketCapTileRow(group, collectionDbSlug, match)
+    row = got.row
+    stale = got.stale
   } catch (e) {
     console.error(`[market-cap tile] ${group} ${collectionDbSlug}/${match}`, e instanceof Error ? e.message : e)
     return (
@@ -114,7 +127,7 @@ export default async function MarketCapTile({
   if (!row) return null
   return (
     <Section title="Market Cap">
-      <MarketCapTileBody row={row} group={group} />
+      <MarketCapTileBody row={row} group={group} stale={stale} />
     </Section>
   )
 }
