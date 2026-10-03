@@ -4,8 +4,11 @@
 // feedback_status='shipped' AND shipped_notified_at IS NULL. Bearer
 // RPC_ADMIN_TOKEN (same gate as the rest of /api/admin/feedback).
 //
-// Body: { note?: string, dryRun?: boolean }. dryRun lists what WOULD be sent
-// (reader count, items per reader, no addresses) and sends nothing.
+// Body: { note?: string, dryRun?: boolean, ids?: number[], skipIds?: number[] }.
+// dryRun lists what WOULD be sent (reader count, items per reader, no
+// addresses) and sends nothing. `ids` restricts the run to those rows;
+// `skipIds` stamps those rows as notified WITHOUT sending (for items shipped so
+// long ago that a "just shipped" email would mislead) — both from the dry run.
 //
 // Honesty: the receipt (shipped_notified_at) is stamped per row only after
 // Resend answers 2xx; a failed send leaves the rows unstamped and is returned
@@ -32,10 +35,14 @@ type Row = { id: number; user_email: string | null; feedback_type: string | null
 
 export async function POST(req: NextRequest) {
   if (!verifyAdminRequest(req)) return adminUnauthorizedResponse();
-  let body: { note?: unknown; dryRun?: unknown } = {};
+  let body: { note?: unknown; dryRun?: unknown; ids?: unknown; skipIds?: unknown } = {};
   try { body = await req.json(); } catch { /* empty body is fine */ }
   const note = typeof body.note === "string" ? body.note.trim().slice(0, 600) : null;
   const dryRun = body.dryRun === true;
+  const idList = (v: unknown): number[] | null =>
+    Array.isArray(v) ? v.map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 500) : null;
+  const onlyIds = idList(body.ids);
+  const skipIds = idList(body.skipIds) ?? [];
 
   const { data, error } = await boundedRead(
     supabaseAdmin
@@ -55,7 +62,10 @@ export async function POST(req: NextRequest) {
   const byEmail = new Map<string, Row[]>();
   let skippedSmoke = 0;
   let skippedNoEmail = 0;
+  let skippedById = 0;
   for (const r of rows) {
+    if (skipIds.includes(r.id)) { skippedById++; continue; }
+    if (onlyIds && !onlyIds.includes(r.id)) continue;
     if (r.is_smoke_test) { skippedSmoke++; continue; }
     const to = (r.user_email ?? "").trim().toLowerCase();
     if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || !(r.feedback_summary ?? "").trim()) { skippedNoEmail++; continue; }
@@ -63,10 +73,25 @@ export async function POST(req: NextRequest) {
   }
 
   const plan = [...byEmail.entries()].map(([to, items]) => ({ reader: to.replace(/^(.).*@/, "$1…@"), items: items.length, ids: items.map((i) => i.id) }));
-  if (dryRun) return NextResponse.json({ dryRun: true, readers: plan.length, skipped_smoke: skippedSmoke, skipped_no_email: skippedNoEmail, plan });
+  if (dryRun) return NextResponse.json({ dryRun: true, readers: plan.length, skipped_smoke: skippedSmoke, skipped_no_email: skippedNoEmail, skipped_by_id: skippedById, plan });
+
+  // Explicitly skipped rows are stamped so they never re-enter the backlog;
+  // the note on the row says why, so the stamp cannot be mistaken for a send.
+  let stampedSkipped = 0;
+  if (skipIds.length) {
+    const { data: sk, error: skErr } = await supabaseAdmin
+      .from("support_conversations")
+      .update({ shipped_notified_at: new Date().toISOString() })
+      .in("id", skipIds)
+      .eq("feedback_status", "shipped")
+      .is("shipped_notified_at", null)
+      .select("id");
+    if (skErr) return apiErrorResponse(skErr, "api/admin/feedback/notify-shipped-backlog");
+    stampedSkipped = Array.isArray(sk) ? sk.length : 0;
+  }
 
   const key = process.env.RESEND_API_KEY;
-  if (!key) return NextResponse.json({ error: "RESEND_API_KEY missing" }, { status: 503 });
+  if (!key) return NextResponse.json({ error: "RESEND_API_KEY missing", stamped_skipped: stampedSkipped }, { status: 503 });
 
   const results: Array<{ reader: string; items: number; sent: boolean; stamped: number; reason?: string }> = [];
   for (const [to, items] of byEmail) {
@@ -95,5 +120,5 @@ export async function POST(req: NextRequest) {
       results.push({ reader, items: items.length, sent: false, stamped: 0, reason: e instanceof Error ? e.message : String(e) });
     }
   }
-  return NextResponse.json({ readers: results.length, skipped_smoke: skippedSmoke, skipped_no_email: skippedNoEmail, results });
+  return NextResponse.json({ readers: results.length, skipped_smoke: skippedSmoke, skipped_no_email: skippedNoEmail, skipped_by_id: skippedById, stamped_skipped: stampedSkipped, results });
 }

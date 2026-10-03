@@ -89,3 +89,13 @@ describe("the backlog digest route is admin-gated, idempotent, and reports per r
     expect(src).toContain('to.replace(/^(.).*@/, "$1…@")')
   })
 })
+
+describe("the backlog route can be narrowed (ids) and can retire rows without sending (skipIds)", () => {
+  const src = readFileSync(join(process.cwd(), "app/api/admin/feedback/notify-shipped-backlog/route.ts"), "utf8")
+  it("filters by ids, stamps skipIds only when still shipped+unnotified, and reports both counts", () => {
+    expect(src).toContain("if (skipIds.includes(r.id)) { skippedById++; continue; }")
+    expect(src).toContain("if (onlyIds && !onlyIds.includes(r.id)) continue;")
+    expect(src).toContain('.in("id", skipIds)\n      .eq("feedback_status", "shipped")\n      .is("shipped_notified_at", null)')
+    expect(src).toContain("stamped_skipped: stampedSkipped")
+  })
+})
