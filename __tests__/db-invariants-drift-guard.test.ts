@@ -15,6 +15,14 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-10-03. Market cap = FMV x COLLECTOR-HELD supply at every grain.
+    // Pins burned + issuer-held exclusion, unknown supply → NULL cap (never $0),
+    // an unknown collection → zero rows, and known caps ranking ahead of unknown.
+    fn: "get_market_cap_board",
+    test: "supabase/tests/get_market_cap_board.sql",
+    migration: "supabase/migrations/20261003201018_audit_20261003_market_cap_board_on_collector_held_supply.sql",
+  },
+  {
     // Added 2026-09-30. A separate, labelled ESTIMATE for thin Top Shot parallels
     // (base FMV x typical parallel premium). Pins the time-matched ratio cells, the
     // leave-one-edition-out error on both parity branches, the n>=30 / ln(1.5) gate,
