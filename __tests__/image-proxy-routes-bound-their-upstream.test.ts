@@ -81,9 +81,10 @@ const UNBOUNDED = ROWS.filter((r) => !r.bound)
  * Measured 2026-09-03: 28 files under `app/api/**` (excluding the OG tree) call
  * `fetch` with no bound anywhere in the file. `badge-image` and
  * `moment-thumbnail` were converted in the same commit, taking it to 26.
+ * 26 → 25 on 2026-10-03: `moment-market` / `market-feed` deleted (#163).
  * Lower this when you convert one. NEVER raise it.
  */
-const BUDGET = 26
+const BUDGET = 25
 
 describe("image proxies bound their upstream, and the wider class only shrinks", () => {
   it("is not vacuous — the walk found API routes, and found some that ARE bound", () => {

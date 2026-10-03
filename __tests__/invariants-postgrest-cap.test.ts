@@ -186,7 +186,7 @@ const RAW_FMV_DESC_ALLOWLIST: ReadonlySet<string> = new Set([
   // "no editions matched" and the caller wrote bare rows (edition_key NULL,
   // serial NULL) for every moment — 5,426/5,477 on one wallet.
   // Removed 2026-07-29 (migrated to the fmv_current view — the 1000-row-cap fix):
-  // allday-pack-ev, allday-wallet-search, cache-refresh, golazos-sniper-feed,
+  // allday-pack-ev, allday-wallet-search (route deleted 2026-10-03, #163), cache-refresh, golazos-sniper-feed,
   // pack-ev, wallet-search. sniper-feed + fmv/route STAY: they retain a legitimate
   // raw fmv_snapshots read the guard still matches (fmv/route GET is .limit(1);
   // sniper-feed keeps "fmv_snapshots" confidenceSource literals + an unrelated

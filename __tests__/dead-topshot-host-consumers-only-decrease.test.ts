@@ -35,8 +35,9 @@ import { join, relative, sep } from "node:path"
 /** The importers as of 2026-09-29: 19 → 12 after flow-resolve (the Set
  *  Tracker), analytics, wallet-sales-history, wallet-cost-basis,
  *  wallet-hold-time, wallet-packs and collection-moments moved their username
- *  lookups onto the shared ladder. */
-const BASELINE = 12
+ *  lookups onto the shared ladder. 12 → 10 on 2026-10-03: moment-market and
+ *  allday-wallet-search deleted outright (#163 — no caller, dead host). */
+const BASELINE = 10
 
 const ROOTS = ["app", "lib", "scripts", "workers", "supabase"]
 /** The module that legitimately OWNS the dead endpoint. */

@@ -218,7 +218,7 @@ export async function resolveTopShotUsernameCacheAware(
 // ~2026-08-28, and NINE routes carried their OWN copy of the live
 // `getUserProfileByUsername` resolver with no cache in front of it
 // (collection-moments, wallet-packs, wallet-sales-history, wallet-cost-basis,
-// wallet-hold-time, analytics, allday-sets, allday-wallet-search,
+// wallet-hold-time, analytics, allday-sets, allday-wallet-search (deleted 2026-10-03, #163),
 // lib/chains/flow/flow-resolve). Every username search on the collection tab —
 // the most-visited page — was a 500 in 0.27 s while the same wallet by ADDRESS
 // worked, and the public profile's "ANALYZE <name>'S WALLET →" link sends the
