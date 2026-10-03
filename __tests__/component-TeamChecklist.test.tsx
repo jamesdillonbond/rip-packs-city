@@ -267,7 +267,7 @@ describe("TeamChecklist", () => {
       { ...tile, route_slug: "missing-unpriced", owned: false, floor_usd: null, fmv_usd: null },
       // Full-edition shape: the cheapest way in is a PARALLEL's live ask (the
       // Joe Dumars case — $62 on the tile, $148 on the edition page).
-      { ...tile, route_slug: "missing-par", owned: false, floor_usd: 148, fmv_usd: 83, edition_cost_usd: 62, edition_cost_source: "ask", edition_cost_from_parallel: true },
+      { ...tile, route_slug: "missing-par", owned: false, floor_usd: 148, fmv_usd: 83, edition_cost_usd: 62, edition_cost_source: "ask", edition_cost_from_parallel: true, high_offer_usd: 52 },
     ]
     fetchMock = routeFetch({
       checklist: () => res(true, walletTiles),
@@ -287,6 +287,12 @@ describe("TeamChecklist", () => {
     expect(container.querySelector('a[href*="missing"] [title^="Missing — cheapest way in: $42.00 (live low ask)"]')).toBeTruthy()
     expect(container.querySelector('a[href*="missing-fmv"] [title^="Missing — cheapest way in: $83.00 (FMV — no live ask)"]')).toBeTruthy()
     expect(text).toContain("+ $62.00 PAR")
+    // Ask + offer on the card (10235): present only when they exist, never $0.
+    const par = container.querySelector('a[href*="missing-par"] [data-testid="tile-market"]')
+    expect(par?.textContent).toContain("ASK $148")
+    expect(par?.textContent).toContain("OFFER $52.00")
+    expect(container.querySelector('a[href*="missing-fmv"] [data-testid="tile-market"]')).toBeNull()
+    expect(container.querySelector('a[href*="missing-unpriced"] [data-testid="tile-market"]')).toBeNull()
     expect(container.querySelector('a[href*="missing-par"] [title="Missing — cheapest way in: $62.00 (live low ask, a parallel of this edition)"]')).toBeTruthy()
     // The old unlabelled form is gone.
     expect(text).not.toMatch(/\+ \$42\.00(?! ASK)/)

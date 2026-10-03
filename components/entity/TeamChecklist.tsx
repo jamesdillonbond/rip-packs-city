@@ -84,6 +84,10 @@ interface ChecklistTile extends EditionTile {
   // feedback 10231/10233, 2026-10-01).
   edition_cost_source?: "ask" | "fmv" | null
   edition_cost_from_parallel?: boolean
+  // The standing high offer on the marketplace row (<= 7 d), from
+  // get_team_checklist since 20261003182955 (beta feedback 10235). A bid, shown
+  // as OFFER; never a price claim.
+  high_offer_usd?: number | null
   // "Full editions" view only: parallels of this edition the wallet holds —
   // any one of them checks the edition off (Trevor, 2026-09-30).
   owned_parallels?: number | null
@@ -886,6 +890,15 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
           <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--rpc-text-primary)" }}>{fmtUsd(e.fmv_usd)}</div>
         </div>
         {/* ConfidencePill removed 2026-07-11 — confidence is build-time signal. */}
+        {/* Ask + offer on the card (beta feedback 10235, 2026-10-03): the live
+            low ask the badge already prices from, and the standing high offer.
+            Each only when it exists — a missing one is absent, never "$0". */}
+        {(typeof e.floor_usd === "number" && e.floor_usd > 0) || (typeof e.high_offer_usd === "number" && e.high_offer_usd > 0) ? (
+          <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", textAlign: "right", lineHeight: 1.5 }} data-testid="tile-market">
+            {typeof e.floor_usd === "number" && e.floor_usd > 0 ? <div>ASK {fmtUsd(e.floor_usd)}</div> : null}
+            {typeof e.high_offer_usd === "number" && e.high_offer_usd > 0 ? <div>OFFER {fmtUsd(e.high_offer_usd)}</div> : null}
+          </div>
+        ) : null}
       </div>
       <div style={{ marginTop: 6, display: "flex", justifyContent: "flex-end" }}>
         <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>

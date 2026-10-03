@@ -19,7 +19,10 @@
 -- (supabase/migrations/20260926211121_audit_20260926_pinnacle_franchise_checklist_sees_what_a_wallet_holds.sql);
 -- generic-arm floor_usd re-pinned 2026-10-03 to the LIVE low ask by
 -- supabase/migrations/20261003180606_audit_20261003_team_checklist_cost_live_ask_needs_an_fmv_to_check_it_against.sql
--- (both functions, verbatim from that file).
+-- (get_team_checklist_progress, verbatim from that file); get_team_checklist's
+-- rows also carry high_offer_usd since
+-- supabase/migrations/20261003182955_audit_20261003_team_checklist_rows_carry_the_high_offer.sql
+-- (verbatim from that file).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -238,6 +241,11 @@ BEGIN
               ELSE EXTRACT(year FROM e.game_date)::int - 1 END) AS play_season,
         fmv.fmv_usd,
         ask.live_ask                                       AS floor_usd,
+        -- 2026-10-03 (beta feedback 10235): the standing high offer, so a tile
+        -- can show ask + offer without a click-through. Same marketplace row as
+        -- the ask, <= 7 d; NULL when none. Not gated on FMV — an offer is a bid,
+        -- not a price claim, and the tile labels it OFFER.
+        hi.high_offer_usd,
         fmv.confidence::text                               AS fmv_confidence,
         fmv.computed_at                                    AS fmv_computed_at
       FROM editions e
@@ -280,6 +288,12 @@ BEGIN
         ) a
         WHERE fmv.fmv_usd IS NOT NULL AND a.ask <= fmv.fmv_usd * 3
       ) ask ON true
+      LEFT JOIN LATERAL (
+        SELECT eo.highest_offer AS high_offer_usd
+        FROM edition_offers eo
+        WHERE eo.collection_id = e.collection_id AND eo.external_id = e.external_id
+          AND eo.highest_offer > 0 AND eo.updated_at > now() - interval '7 days'
+      ) hi ON true
       WHERE e.collection_id = p_collection_id
         AND e.team_name = ANY(v_team_variants)
         AND e.thumbnail_url IS NOT NULL
@@ -296,7 +310,7 @@ BEGIN
       SELECT
         s.route_slug, s.player_name, s.name, s.set_name, s.set_slug, s.tier, s.tier_rank,
         s.series_label, s.series_num, s.circulation_count, s.thumbnail_url, s.video_url, s.team_name, s.play_type,
-        s.fmv_usd, s.floor_usd, s.fmv_confidence, s.fmv_computed_at,
+        s.fmv_usd, s.floor_usd, s.high_offer_usd, s.fmv_confidence, s.fmv_computed_at,
         -- Per-wallet ownership + lock state from wmc (is_locked). owned_locked
         -- drives the green (owned+locked) vs white (owned) tile parity with TS.
         CASE WHEN p_wallet IS NULL THEN NULL ELSE COALESCE(ok.cnt, 0) > 0 END AS owned,

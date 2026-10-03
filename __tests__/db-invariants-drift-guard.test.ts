@@ -243,11 +243,12 @@ const PINS = [
     // the pin held (render_id), the progress aggregates and the fallback's
     // corrected legacy-key join. Re-pointed 2026-10-03: the generic arm's
     // floor_usd is the LIVE low ask (<= 7 d, <= 3x FMV, FMV required), never
-    // fmv_snapshots' historical floor — beta feedback 10231/10233.
+    // fmv_snapshots' historical floor — beta feedback 10231/10233. Rows also
+    // carry high_offer_usd (10235) since 20261003182955.
     fn: "get_team_checklist",
     test: "supabase/tests/get_team_checklist.sql",
     migration:
-      "supabase/migrations/20261003180606_audit_20261003_team_checklist_cost_live_ask_needs_an_fmv_to_check_it_against.sql",
+      "supabase/migrations/20261003182955_audit_20261003_team_checklist_rows_carry_the_high_offer.sql",
   },
   {
     fn: "get_team_checklist_progress",
