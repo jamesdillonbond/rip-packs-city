@@ -26,7 +26,12 @@ access(all) var other: Test.TestAccount = Test.createAccount()
 access(all) fun setup() {
     Test.expect(Test.deployContract(name: "ExampleNFT", path: "../contracts/imports/ExampleNFT.cdc", arguments: []), Test.beNil())
     Test.expect(Test.deployContract(name: "ExampleNFT2", path: "contracts/ExampleNFT2.cdc", arguments: []), Test.beNil())
+    // Hybrid Custody (onflow/hybrid-custody main; see contracts/hybrid-custody/README.md)
+    for name in ["CapabilityFactory", "CapabilityFilter", "CapabilityDelegator", "HybridCustody"] {
+        Test.expect(Test.deployContract(name: name, path: "contracts/hybrid-custody/".concat(name).concat(".cdc"), arguments: []), Test.beNil())
+    }
     Test.expect(Test.deployContract(name: "RPCGiveawayPacks", path: "../contracts/RPCGiveawayPacks.cdc", arguments: []), Test.beNil())
+    tx("transactions/hc_setup_factory_and_filter.cdc", admin, [])
 }
 
 access(all) fun beforeEach() {
@@ -90,6 +95,29 @@ access(all) fun sealPack(_ n: Int): [UInt64] {
     return [packID].concat(minted)
 }
 
+// `child` becomes a REDEEMED Hybrid Custody child of `parent` (both sign, as in a real account link).
+access(all) fun link(child: Test.TestAccount, parent: Test.TestAccount) {
+    let r = Test.executeTransaction(Test.Transaction(
+        code: Test.readFile("transactions/hc_link_child_to_parent.cdc"),
+        authorizers: [child.address, parent.address],
+        signers: [child, parent],
+        arguments: [nil as Address?, admin.address, admin.address]
+    ))
+    Test.expect(r, Test.beSucceeded())
+}
+
+access(all) fun linkStatus(child: Test.TestAccount, parent: Test.TestAccount): [Bool] {
+    let r = Test.executeScript(Test.readFile("scripts/hc_link_status.cdc"), [child.address, parent.address])
+    Test.expect(r, Test.beSucceeded())
+    return r.returnValue! as! [Bool]
+}
+
+access(all) fun canOpen(_ packID: UInt64, _ opener: Test.TestAccount): Bool {
+    let r = Test.executeScript(Test.readFile("scripts/giveaway_can_open.cdc"), [packID, opener.address])
+    Test.expect(r, Test.beSucceeded())
+    return r.returnValue! as! Bool
+}
+
 access(all) fun expectFail(_ r: Test.TransactionResult, _ fragment: String) {
     Test.expect(r, Test.beFailed())
     Test.assert(r.error!.message.contains(fragment), message: "expected '".concat(fragment).concat("' in: ").concat(r.error!.message))
@@ -120,9 +148,10 @@ access(all) fun testWinnerOpensToTheirOwnWallet() {
 }
 
 access(all) fun testWinnerMayDirectTheMomentsToTheirLinkedAccount() {
-    // `linked` stands in for the winner's Dapper account
+    // `linked` stands in for the winner's Dapper account, linked to the winner's Flow Wallet
     let linked = Test.createAccount()
     tx("transactions/setup_example_nft_collection.cdc", linked, [])
+    link(child: linked, parent: winner)
     let s = sealPack(2)
     tx("transactions/giveaway_assign.cdc", sponsor, [s[0], winner.address])
     tx("transactions/giveaway_open_as_winner.cdc", winner, [s[0], linked.address])
@@ -134,35 +163,79 @@ access(all) fun testOnlyTheWinnerCanOpenAs() {
     let s = sealPack(1)
     tx("transactions/giveaway_assign.cdc", sponsor, [s[0], winner.address])
     // a stranger with their own Winner identity cannot open someone else's pack, even to the winner
-    expectFail(run("transactions/giveaway_open_as_winner.cdc", other, [s[0], other.address]), "Only this pack's winner can open it")
-    expectFail(run("transactions/giveaway_open_as_winner.cdc", other, [s[0], winner.address]), "Only this pack's winner can open it")
+    expectFail(run("transactions/giveaway_open_as_winner.cdc", other, [s[0], other.address]), "Only this pack's winner")
+    expectFail(run("transactions/giveaway_open_as_winner.cdc", other, [s[0], winner.address]), "Only this pack's winner")
     Test.assertEqual([s[1]], getPack(s[0])!.momentIDs)
 }
 
-access(all) fun testNobodyElseOpensBeforeTheGracePeriod() {
+access(all) fun testNoOneElseCanEverOpenIt() {
+    // "These packs are only for the recipient": no grace period, no fallback opener
     let s = sealPack(1)
     tx("transactions/giveaway_assign.cdc", sponsor, [s[0], winner.address])
-    expectFail(run("transactions/giveaway_open.cdc", other, [s[0]]), "until the grace period ends")
+    Test.moveTime(by: 31536000.0) // a year later
+    expectFail(run("transactions/giveaway_open_as_winner.cdc", other, [s[0], winner.address]), "Only this pack's winner")
+    Test.assertEqual(false, canOpen(s[0], other))
     Test.assertEqual([s[1]], getPack(s[0])!.momentIDs)
 }
 
-access(all) fun testAfterTheGracePeriodAnyoneOpensToTheWinnerOnly() {
+access(all) fun testLinkedFlowWalletOpensAPackWonByItsDapperAccount() {
+    // the pack was assigned to `dapper`; its linked Flow Wallet opens it
+    let dapper = Test.createAccount()
+    let flowWallet = Test.createAccount()
+    tx("transactions/setup_example_nft_collection.cdc", dapper, [])
+    link(child: dapper, parent: flowWallet)
+    Test.assertEqual([true, true], linkStatus(child: dapper, parent: flowWallet))
     let s = sealPack(2)
-    let packID = s[0]
-    tx("transactions/giveaway_assign.cdc", sponsor, [packID, winner.address])
-    Test.assertEqual(winner.address, getPack(packID)!.recipient!)
-    Test.moveTime(by: 1209601.0)
-    // a stranger triggers the open and pays the fee; the NFTs still go to the winner
-    tx("transactions/giveaway_open.cdc", other, [packID])
-    let got = ids(winner)
-    Test.assert(got.contains(s[1]) && got.contains(s[2]), message: "winner did not receive the pack")
-    Test.assertEqual(0, ids(other).length)
-    Test.assertEqual(nil as RPCGiveawayPacks.PackView?, getPack(packID))
+    tx("transactions/giveaway_assign.cdc", sponsor, [s[0], dapper.address])
+    Test.assertEqual(true, canOpen(s[0], flowWallet))
+    // the moments flow straight into the Dapper account
+    tx("transactions/giveaway_open_as_winner.cdc", flowWallet, [s[0], dapper.address])
+    Test.assert(ids(dapper).contains(s[1]) && ids(dapper).contains(s[2]), message: "moments did not reach the Dapper account")
+}
+
+access(all) fun testLinkedFlowWalletMayKeepTheMomentsItself() {
+    let dapper = Test.createAccount()
+    let flowWallet = Test.createAccount()
+    tx("transactions/setup_example_nft_collection.cdc", flowWallet, [])
+    link(child: dapper, parent: flowWallet)
+    let s = sealPack(1)
+    tx("transactions/giveaway_assign.cdc", sponsor, [s[0], dapper.address])
+    tx("transactions/giveaway_open_as_winner.cdc", flowWallet, [s[0], flowWallet.address])
+    Test.assert(ids(flowWallet).contains(s[1]), message: "moment did not reach the Flow Wallet")
+}
+
+access(all) fun testAnOfferedButUnredeemedLinkDoesNotCount() {
+    // an offer already lists the parent (and isChildOf() is true); the contract must require a REDEEMED link
+    let dapper = Test.createAccount()
+    let flowWallet = Test.createAccount()
+    tx("transactions/setup_example_nft_collection.cdc", flowWallet, [])
+    tx("transactions/hc_offer_only.cdc", dapper, [flowWallet.address, admin.address, admin.address])
+    Test.assertEqual([true, false], linkStatus(child: dapper, parent: flowWallet))
+    let s = sealPack(1)
+    tx("transactions/giveaway_assign.cdc", sponsor, [s[0], dapper.address])
+    Test.assertEqual(false, canOpen(s[0], flowWallet))
+    expectFail(run("transactions/giveaway_open_as_winner.cdc", flowWallet, [s[0], flowWallet.address]), "Only this pack's winner")
+}
+
+access(all) fun testAWalletLinkedToSomeoneElseCannotOpen() {
+    let dapper = Test.createAccount()
+    let flowWallet = Test.createAccount()
+    link(child: dapper, parent: flowWallet)
+    let s = sealPack(1)
+    tx("transactions/giveaway_assign.cdc", sponsor, [s[0], winner.address])
+    expectFail(run("transactions/giveaway_open_as_winner.cdc", flowWallet, [s[0], winner.address]), "Only this pack's winner")
+}
+
+access(all) fun testTheMomentsOnlyGoToTheWinnersOwnAccounts() {
+    let s = sealPack(1)
+    tx("transactions/giveaway_assign.cdc", sponsor, [s[0], winner.address])
+    expectFail(run("transactions/giveaway_open_as_winner.cdc", winner, [s[0], other.address]), "winner's own accounts")
+    Test.assertEqual([s[1]], getPack(s[0])!.momentIDs)
 }
 
 access(all) fun testOpenBeforeAssignFails() {
     let packID = sealPack(1)[0]
-    expectFail(run("transactions/giveaway_open.cdc", other, [packID]), "no winner yet")
+    expectFail(run("transactions/giveaway_open_as_winner.cdc", winner, [packID, winner.address]), "no winner yet")
 }
 
 access(all) fun testOnlyTheSealingSponsorCanAssignOrReclaim() {
@@ -198,8 +271,7 @@ access(all) fun testOpenFailsCleanlyWhenTheWinnerCannotReceive() {
     let s = sealPack(1)
     let noCollection = Test.createAccount()
     tx("transactions/giveaway_assign.cdc", sponsor, [s[0], noCollection.address])
-    Test.moveTime(by: 1209601.0)
-    expectFail(run("transactions/giveaway_open.cdc", other, [s[0]]), "cannot receive")
+    expectFail(run("transactions/giveaway_open_as_winner.cdc", noCollection, [s[0], noCollection.address]), "cannot receive")
     // the pack is intact, still sealed
     Test.assertEqual([s[1]], getPack(s[0])!.momentIDs)
 }

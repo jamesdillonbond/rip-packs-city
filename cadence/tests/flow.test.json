@@ -70,6 +70,34 @@
       "aliases": {
         "testing": "0000000000000007"
       }
+    },
+    "CapabilityFactory": {
+      "source": "cadence/tests/contracts/hybrid-custody/CapabilityFactory.cdc",
+      "aliases": {
+        "testing": "0000000000000007",
+        "mainnet": "d8a7e05a7ac670c0"
+      }
+    },
+    "CapabilityFilter": {
+      "source": "cadence/tests/contracts/hybrid-custody/CapabilityFilter.cdc",
+      "aliases": {
+        "testing": "0000000000000007",
+        "mainnet": "d8a7e05a7ac670c0"
+      }
+    },
+    "CapabilityDelegator": {
+      "source": "cadence/tests/contracts/hybrid-custody/CapabilityDelegator.cdc",
+      "aliases": {
+        "testing": "0000000000000007",
+        "mainnet": "d8a7e05a7ac670c0"
+      }
+    },
+    "HybridCustody": {
+      "source": "cadence/tests/contracts/hybrid-custody/HybridCustody.cdc",
+      "aliases": {
+        "testing": "0000000000000007",
+        "mainnet": "d8a7e05a7ac670c0"
+      }
     }
   },
   "networks": {
