@@ -61,6 +61,9 @@ import { createStallWatchdog } from "./panini-stall-watchdog.mjs";
 import { isPackishEvidence, subpackUrlsFromHtml, packGridCandidates } from "./panini-pack-grid.mjs";
 
 const RUN_STARTED_AT = Date.now();
+// A plain timer. page.waitForTimeout THROWS once the page is closed, which is how a closed tab
+// became a fatal crash (2026-10-03); waiting never needed the page.
+const wait = (ms) => new Promise((res) => setTimeout(res, ms));
 
 const USER_DATA_DIR = process.env.PANINI_USER_DATA_DIR;
 const INGEST_URL = process.env.RPC_PANINI_INGEST_URL;
@@ -398,7 +401,7 @@ async function main() {
   }
   // Native response interception — resp.text() then JSON.parse (some content-types aren't application/json,
   // so resp.json() can throw; parse text ourselves).
-  page.on("response", async (resp) => {
+  async function onResponse(resp) {
     if (!resp.url().includes("/onepanini")) return;
     let j = null; try { j = JSON.parse(await resp.text()); } catch {}
     captureOp(resp, j); // non-200s (e.g. the 426 wall) are informative — captured too
@@ -447,7 +450,30 @@ async function main() {
       if (isWalked(String(it.psku))) { enumPskus.add(it.psku); if (it.team) nationByPsku[it.psku] = it.team; }
     }
     if (DEBUG && items.length) console.log(`[panini-runner][debug] onepanini keys=${Object.keys(d).join(",")} items=${items.length} walked=${[...enumPskus].length}`);
-  });
+  }
+  const listened = new WeakSet();
+  function listen(pg) { if (!listened.has(pg)) { listened.add(pg); pg.on("response", onResponse); } }
+  listen(page);
+
+  // PAGE RECOVERY (2026-10-03). The 10:00 AM PT run died 90 s in on
+  // "page.waitForTimeout: Target page, context or browser has been closed" (exit 1): the debug
+  // Chrome's tab or browser went away under it, and every later step used the dead `page`. Before
+  // each navigation the walk now gets a live page — the same tab if it is still open, else a new
+  // tab, else (CDP) a fresh connection to the debug Chrome — with the capture listener re-attached.
+  // A Chrome that cannot be reached at all still ends the run, as before.
+  let pageRecoveries = 0;
+  async function ensurePage(where) {
+    if (page && !page.isClosed()) return page;
+    pageRecoveries++;
+    if (CDP && (!browser || !browser.isConnected())) {
+      browser = await chromium.connectOverCDP(CDP);
+      ctx = browser.contexts()[0] || await browser.newContext();
+    }
+    page = ctx.pages().find((pg) => !pg.isClosed()) || await ctx.newPage();
+    listen(page);
+    console.log(`[panini-runner] page was closed (${where}) - recovered #${pageRecoveries}`);
+    return page;
+  }
 
   // (b) DOM harvest — the documented fallback enumeration source. The virtualized grid
   // renders each card as an <img> whose URL embeds the full psku
@@ -500,7 +526,7 @@ async function main() {
         await el.waitFor({ state: "visible", timeout: 1200 });
         await el.click({ timeout: 2500 });
         const deadline = Date.now() + 5000;
-        while (Date.now() < deadline && sales.length === before) await page.waitForTimeout(150);
+        while (Date.now() < deadline && sales.length === before) await wait(150);
         if (sales.length > before) return true;
       } catch { /* locator absent / not clickable — try the next shape */ }
     }
@@ -527,10 +553,10 @@ async function main() {
       // the CDP window), while the same two elements clicked via el.click() fire it every time —
       // which is exactly how the switch was probed live before shipping.
       await page.locator("button.dropdown-toggle").filter({ hasText: /^\s*top\s*sales\s*$/i }).first().evaluate((el) => el.click(), undefined, { timeout: 2500 });
-      await page.waitForTimeout(400);
+      await wait(400);
       await page.locator("a.dropdown-item").filter({ hasText: /^\s*recent\s*sales\s*$/i }).first().evaluate((el) => el.click(), undefined, { timeout: 2500 });
       const deadline = Date.now() + 5000;
-      while (Date.now() < deadline && sales.length === before) await page.waitForTimeout(150);
+      while (Date.now() < deadline && sales.length === before) await wait(150);
       return sales.length > before;
     } catch { return false; }
   }
@@ -578,7 +604,7 @@ async function main() {
         return { pages, stop };
       }, { max: SERIAL_PAGES_MAX, wait: SERIAL_PAGE_WAIT_MS });
     } catch { r = { pages: 0, stop: "error" }; }
-    if (r.pages > 0) { serialExtraPages += r.pages; serialPagedCards++; await page.waitForTimeout(400); } // let the last response land in the listener
+    if (r.pages > 0) { serialExtraPages += r.pages; serialPagedCards++; await wait(400); } // let the last response land in the listener
     serialStops[r.stop] = (serialStops[r.stop] || 0) + 1;
   }
 
@@ -609,7 +635,7 @@ async function main() {
     console.log("[panini-runner] >>> In the Chrome window, browse: (a) any set/checklist/collection view, (b) the marketplace grid WITH a cardset filter applied, (c) a card detail page. <<<");
     const tHold = Date.now();
     while (Date.now() - tHold < HOLD_MIN * 60000) {
-      await page.waitForTimeout(15000);
+      await wait(15000);
       console.log(`[panini-runner] discovery hold ${Math.round((Date.now() - tHold) / 60000)}/${HOLD_MIN} min — ops captured so far: ${opCount}`);
     }
     if (process.env.PANINI_DISCOVERY_ONLY === "1") {
@@ -641,8 +667,9 @@ async function main() {
   watchdog.mark("walk-order");
 
   // Home page first: a cheap pass for pack links (new drops are linked from it), nothing else.
+  await ensurePage("home");
   await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
-  await page.waitForTimeout(2500);
+  await wait(2500);
   await harvestPackLinks();
 
   // --- 1. ENUMERATE: walk each sport's grid, scroll to paginate. Walked products' pskus go to the
@@ -656,8 +683,9 @@ async function main() {
   currentSport = sport;
   const full = FULL_ENUM_SPORTS.has(sport);
   const gridSeen0 = gridSeen, gridPages0 = gridPages, enum0 = enumPskus.size;
+  await ensurePage(`enum ${sport}`);
   await page.goto(`${BASE}/marketplace/nfts.html?sport=${encodeURIComponent(sport)}`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
-  await page.waitForTimeout(2500);
+  await wait(2500);
   // Stop when the GRID stops yielding, not when the WC subset stops yielding. Progress is the
   // composite (WC pskus found + total products the grid has served): a stretch of non-WC soccer
   // still advances it, so dilution can no longer end the walk early, while a genuinely exhausted
@@ -681,8 +709,9 @@ async function main() {
     if (Date.now() - tEnum > ENUM_BUDGET_MS) { enumBudgetHit = true; break; }
     watchdog.mark("enum", sport);
     enumIters++;
+    await ensurePage(`enum ${sport}`);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
-    await page.waitForTimeout(1200);
+    await wait(1200);
     domAdded += await harvestDomPskus(); // (b) merge DOM-visible pskus before the stability check
     const st = stepStability({ last, stable }, enumProgress(enumPskus.size, gridSeen));
     last = st.last; stable = st.stable;
@@ -715,10 +744,11 @@ async function main() {
       packVisitOps = {};
       let status = null, finalUrl = null, iters = 0;
       try {
+        await ensurePage("pack grid");
         const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
         status = resp ? resp.status() : null;
       } catch { status = "nav-error"; }
-      await page.waitForTimeout(3000);
+      await wait(3000);
       try { finalUrl = page.url(); } catch {}
       let last = -1, stable = 0;
       for (; iters < GRID_ITERS && stable < 6 && Date.now() - tGrid <= GRID_BUDGET_MS; iters++) {
@@ -729,7 +759,7 @@ async function main() {
         for (const u of subpackUrlsFromHtml(html)) harvestedPackUrls.add(u);
         if (harvestedPackUrls.size === last) stable++; else { stable = 0; last = harvestedPackUrls.size; }
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
-        await page.waitForTimeout(1200);
+        await wait(1200);
       }
       packGrid.push({ url, status, final_url: finalUrl ? finalUrl.slice(0, 200) : null, iters, subpack_added: harvestedPackUrls.size - before, ops: packVisitOps });
       packVisitOps = null;
@@ -802,7 +832,7 @@ async function main() {
   // Post the enumeration record BEFORE the long per-card walk, so it lands even if the walk is
   // later killed (laptop sleep / unplug / rate-limit). Fire-and-forget semantics: post() already
   // swallows its own failures, and telemetry must never break the ingest it measures.
-  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, priority_order: priorityPskus.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size, packish_unmatched: [...packishUnmatched], pack_grid: packGrid } });
+  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, priority_order: priorityPskus.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size, packish_unmatched: [...packishUnmatched], pack_grid: packGrid, page_recoveries: pageRecoveries } });
   // Registry upkeep: every product the grids served + every pack link found. Never admits a
   // product or disables a page — the route only records sightings and new pages.
   await post({ products: productSightings, pack_pages: [...harvestedPackUrls].map((url) => ({ url, discovered: true })) });
@@ -824,8 +854,9 @@ async function main() {
     watchdog.mark("packs", url.slice(-80));
     const before = packs.length;
     packVisitOps = {}; packVisitPackLike = null;
+    await ensurePage("pack page");
     await page.goto(url, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
-    await page.waitForTimeout(2500);
+    await wait(2500);
     const got = packs.slice(before);
     packVisits.push({ url, walked: true, captured: got.length > 0, pack_id: got.length ? String(got[0].__pack_id ?? got[0].pack_sku ?? "") || null : null, ops: packVisitOps, pack_like: packVisitPackLike });
     packVisitOps = null;
@@ -859,14 +890,15 @@ async function main() {
     let got = false;
     for (let attempt = 0; attempt < 2 && !got; attempt++) {
       try {
+        await ensurePage("card walk");
         await page.goto(`${BASE}/marketplace-details/${psku}.html`, { waitUntil: "domcontentloaded", timeout: 20000 });
       } catch { /* transient nav failure — one retry below */ }
       const deadline = Date.now() + 6000;
-      while (Date.now() < deadline && cards.length + serials.length === before) await page.waitForTimeout(150);
+      while (Date.now() < deadline && cards.length + serials.length === before) await wait(150);
       got = cards.length + serials.length > before;
       // getCardMarketStats and getPskuTotalCardsList land separately; give the sibling call a moment
       // so we don't navigate away with only half this psku's data.
-      if (got) await page.waitForTimeout(800);
+      if (got) await wait(800);
     }
     // Serial pages 2..N first (the SALES HISTORY click may swap the panel), then realized sales —
     // both only worth doing on a page that actually rendered this card's data.
