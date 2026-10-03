@@ -183,6 +183,21 @@ describe("SupportChat", () => {
     expect(container.textContent).not.toContain("still in the queue")
   })
 
+  it("says '1 request' (singular, no '+more') and drops the list when no item is named", async () => {
+    const one = await openWith({
+      returningBetaTester: true,
+      recentlyShipped: { count: 1, since: "2026-10-03T16:00:00Z", items: [{ feedback_summary: "Tier toggle" }] },
+    })
+    await waitFor(() => expect(one.container.textContent).toContain('Since your last visit, 1 of your request shipped: "Tier toggle".'))
+    expect(one.container.textContent).not.toContain("more)")
+    cleanup()
+    const unnamed = await openWith({
+      returningBetaTester: true,
+      recentlyShipped: { count: 2, since: "2026-10-03T16:00:00Z" },
+    })
+    await waitFor(() => expect(unnamed.container.textContent).toContain("Since your last visit, 2 of your requests shipped. Ask me"))
+  })
+
   it("a null recentlyShipped (read failed) falls back to the last-row line — never to 'nothing shipped'", async () => {
     const { container } = await openWith({
       returningBetaTester: true,
