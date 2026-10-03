@@ -116,6 +116,7 @@ describe("fetchSqueezeBoard", () => {
     ["circulation", ["circulation", "squeeze_pct"]],
     ["fmv", ["fmv_usd", "squeeze_pct"]],
     ["buyable", ["effectively_buyable", "squeeze_pct"]],
+    ["concentration", ["top5_share_pct", "squeeze_pct"]],
   ])("keeps the squeeze_pct tiebreak on sort=%s", async (sort, expected) => {
     const { db, calls } = recordingDb()
     await fetchSqueezeBoard({ limit: 200, sort }, db)
@@ -163,6 +164,14 @@ describe("fetchSqueezeBoard", () => {
     expect(none.calls.find((c) => c.fn === "in")?.args).toEqual(["team_name", []])
     // the shared column list carries the column the filter reads
     expect(SQUEEZE_COLS.split(",").map((c) => c.trim())).toContain("team_name")
+  })
+
+  it("sort=concentration puts editions WITHOUT a census last — unknown is not 0 (beta feedback 10256)", async () => {
+    const { db, calls } = recordingDb()
+    await fetchSqueezeBoard({ limit: 10, sort: "concentration" }, db)
+    const first = calls.find((c) => c.fn === "order")
+    expect(first?.args).toEqual(["top5_share_pct", { ascending: false, nullsFirst: false }])
+    for (const col of ["top5_share_pct", "holders"]) expect(SQUEEZE_COLS.split(",").map((c) => c.trim())).toContain(col)
   })
 
   it("returns supabase's { data, error } untouched so callers keep their own policy", async () => {

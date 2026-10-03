@@ -49,6 +49,12 @@ describe("GET /api/public/insights/squeeze", () => {
     expect((await res.json()).error).toContain("min_squeeze must be a non-negative")
   })
 
+  it("accepts sort=concentration (beta feedback 10256)", async () => {
+    const res = await GET(req(`${BASE}?sort=concentration`))
+    expect(res.status).toBe(200)
+    expect(state.calls.find((c) => c.fn === "order")?.args).toEqual(["top5_share_pct", { ascending: false, nullsFirst: false }])
+  })
+
   it("400s on an invalid sort", async () => {
     const res = await GET(req(`${BASE}?sort=nope`))
     expect(res.status).toBe(400)

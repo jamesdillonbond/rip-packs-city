@@ -29,7 +29,7 @@ type Db = any
 
 /** Columns both consumers select. Duplicating this list was the drift risk. */
 export const SQUEEZE_COLS =
-  "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, low_ask_disconnected, fmv_usd, confidence, game_date, thumbnail_url, team_name"
+  "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, low_ask_disconnected, fmv_usd, confidence, game_date, thumbnail_url, team_name, top5_share_pct, holders"
 
 /** Top Shot's collection row — the only collection this board serves. */
 export const SQUEEZE_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -152,6 +152,12 @@ export async function fetchSqueezeBoard(
       .order("squeeze_pct", { ascending: false })
   } else if (sort === "buyable") {
     q = q.order("effectively_buyable", { ascending: true }).order("squeeze_pct", { ascending: false })
+  } else if (sort === "concentration") {
+    // Beta feedback 10256 (2026-10-03): editions where a few wallets hold the
+    // supply. NULL (no complete owner census) sorts LAST — it is unknown, not 0.
+    q = q
+      .order("top5_share_pct", { ascending: false, nullsFirst: false })
+      .order("squeeze_pct", { ascending: false })
   } else {
     q = q.order("squeeze_pct", { ascending: false }).order("circulation", { ascending: true })
   }

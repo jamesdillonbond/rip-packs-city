@@ -257,6 +257,35 @@ describe("SqueezeBoardClient — filters are sent to the server", () => {
 // so the populated + client-filter passes never touched it. A sort change or a
 // set/player drill-down is the only thing that hits the server round-trip, its loading
 // swap, the error path, and the min_squeeze=50-vs-0 branch.
+// 2026-10-03 (beta feedback 10256): holder concentration. A row without a
+// complete owner census is UNKNOWN — an em-dash with a reason, never "0%".
+describe("SqueezeBoardClient — Top 5 hold column", () => {
+  it("prints the share with its holder count, an em-dash + reason without a census, and counts coverage from the rows in hand", () => {
+    const r = [
+      row({ edition_id: "k", external_id: "141:5", player_name: "Known Census Guy", top5_share_pct: 62.5, holders: 41 }),
+      row({ edition_id: "n", external_id: "141:6", player_name: "No Census Guy", top5_share_pct: null, holders: null }),
+    ]
+    const { container } = render(<SqueezeBoardClient initialRows={r} initialFetchedAt={FETCHED} />)
+    const cells = [...container.querySelectorAll('[data-testid="top5-share"]')]
+    expect(cells).toHaveLength(2)
+    expect(cells[0].textContent).toMatch(/63%/)
+    expect(cells[0].querySelector("span")?.getAttribute("title")).toMatch(/41 holders/)
+    expect(cells[1].textContent).toBe("—")
+    expect(cells[1].querySelector(".rpc-sq-census-missing")?.getAttribute("title")).toMatch(/unknown, not zero/i)
+    // the missing-census cell carries no percentage at all
+    expect(cells[1].textContent).not.toMatch(/%/)
+    expect(container.textContent).toMatch(/\(1 of 2 of the rows shown\)/)
+  })
+
+  it("offers the concentration sort and sends it to the server", async () => {
+    const fn = stubSqueezeFetch({ rows: [row({ edition_id: "c", external_id: "141:9", player_name: "Concentrated Guy", top5_share_pct: 90 })] })
+    const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    fireEvent.change(container.querySelector(".rpc-sq-select")!, { target: { value: "concentration" } })
+    await waitFor(() => expect(container.textContent).toMatch(/Concentrated Guy/))
+    expect(String(fn.mock.calls.find((c) => String(c[0]).includes("/api/public/insights/squeeze"))?.[0])).toMatch(/sort=concentration/)
+  })
+})
+
 describe("SqueezeBoardClient — refetch on sort", () => {
   it("refetches with the new sort param and swaps the returned rows in", async () => {
     const fetchMock = stubSqueezeFetch({

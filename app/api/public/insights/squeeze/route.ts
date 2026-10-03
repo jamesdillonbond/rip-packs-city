@@ -27,7 +27,7 @@
 //   team=<text>                                       a team; resolved to its FRANCHISE's every label (historic names too)
 //   set=<text>                                        ilike match on set_name
 //   player=<text>                                     ilike match on player_name
-//   sort=squeeze|circulation|fmv|buyable              default squeeze
+//   sort=squeeze|circulation|fmv|buyable|concentration  default squeeze (concentration = top-5 holder share, census-less rows last)
 //   limit=<1..200>                                    default 50
 //
 // Response:
@@ -48,7 +48,7 @@ import { fetchSqueezeBoard, resolveSqueezeTeam } from "@/lib/insights/squeeze-bo
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]);
-const VALID_SORTS = new Set(["squeeze", "circulation", "fmv", "buyable"]);
+const VALID_SORTS = new Set(["squeeze", "circulation", "fmv", "buyable", "concentration"]);
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();

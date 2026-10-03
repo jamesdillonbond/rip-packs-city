@@ -46,6 +46,12 @@ export type Row = {
   thumbnail_url: string | null
   /** Appended 2026-10-03 (team filter, beta feedback 10253). Absent on rows cached before it. */
   team_name?: string | null
+  /** Appended 2026-10-03 (beta feedback 10256): the top 5 COLLECTOR wallets' combined
+   *  share of circulation, from the on-chain owner census. NULL = no complete census
+   *  for this edition yet (unknown, never 0). Pack-distribution + buyback sinks excluded. */
+  top5_share_pct?: number | null
+  /** Distinct collector wallets holding the edition; NULL without a complete census. */
+  holders?: number | null
 }
 
 type ApiResponse = {
@@ -59,7 +65,7 @@ type ApiResponse = {
 }
 
 type TierFilter = "ALL" | "COMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
-type SortKey = "squeeze" | "circulation" | "fmv" | "buyable"
+type SortKey = "squeeze" | "circulation" | "fmv" | "buyable" | "concentration"
 
 // Normalize the dirty tier vocabulary in the view. Some rows are tagged with
 // MOMENT_TIER_RARE / MOMENT_TIER_LEGENDARY (older catalog inserts); collapse
@@ -293,6 +299,14 @@ export default function SqueezeBoardClient({
     const t = teamInput.trim()
     setTeamFilter(t === "" ? null : t)
   }
+
+  // "N of M" rows carrying a holder census — counted from the rows in hand,
+  // never baked (the census grows weekly; a baked number would rot).
+  const censusCoverage = useMemo(() => {
+    if (filtered.length === 0) return null
+    const n = filtered.filter((r) => typeof r.top5_share_pct === "number").length
+    return `${fmtInt(n)} of ${fmtInt(filtered.length)}`
+  }, [filtered])
 
   const kpis = useMemo(() => {
     // ⛔ A FAILED READ HAS NO KPIs. Screenshot-verified in production during the
@@ -548,6 +562,7 @@ export default function SqueezeBoardClient({
             <option value="buyable">Effectively buyable (asc)</option>
             <option value="circulation">Circulation (asc)</option>
             <option value="fmv">FMV (desc)</option>
+            <option value="concentration">Top-5 holder share (desc)</option>
           </select>
         </label>
       </section>
@@ -605,6 +620,7 @@ export default function SqueezeBoardClient({
                 <th className="rpc-sq-th-num">Burned</th>
                 <th className="rpc-sq-th-num rpc-sq-th-emph">Squeeze</th>
                 <th className="rpc-sq-th-num rpc-sq-th-emph">Buyable</th>
+                <th className="rpc-sq-th-num" title="Combined share of circulation held by the 5 largest collector wallets (on-chain owner census; unopened-pack and buyback accounts excluded). — = no complete census for this edition yet.">Top 5 hold</th>
                 <th className="rpc-sq-th-num">FMV</th>
                 <th className="rpc-sq-th-num">Low ask</th>
               </tr>
@@ -646,6 +662,17 @@ export default function SqueezeBoardClient({
                   <td className="rpc-sq-td-num">{fmtInt(r.burned)}</td>
                   <td className="rpc-sq-td-num rpc-sq-td-emph">{fmtPct(r.squeeze_pct)}</td>
                   <td className="rpc-sq-td-num rpc-sq-td-emph">{fmtInt(r.effectively_buyable)}</td>
+                  {/* Holder concentration (beta feedback 10256). A missing census is
+                      UNKNOWN and reads as an em-dash with a reason — never as 0 %. */}
+                  <td className="rpc-sq-td-num" data-testid="top5-share">
+                    {typeof r.top5_share_pct === "number" ? (
+                      <span title={`${fmtPct(r.top5_share_pct)} of circulation is held by the 5 largest collector wallets${typeof r.holders === "number" ? ` · ${fmtInt(r.holders)} holders` : ""}`}>
+                        {fmtPct(r.top5_share_pct)}
+                      </span>
+                    ) : (
+                      <span className="rpc-sq-census-missing" title="No complete on-chain owner census for this edition yet — the share is unknown, not zero.">—</span>
+                    )}
+                  </td>
                   <td className="rpc-sq-td-num">{fmtUsd(r.fmv_usd)}</td>
                   {/* A raw troll ask used to render here as if it were the
                       market: "2022-23 Season Rewind" LEGENDARY showed $5000k
@@ -690,6 +717,16 @@ export default function SqueezeBoardClient({
             average-sales-price model (recency-weighted) with
             outlier filtering; <em>—</em> indicates fewer than the minimum
             sale-count threshold for a confidence score.
+          </p>
+          <p>
+            <strong>Top 5 hold</strong> = the combined share of circulation held
+            by the five largest <em>collector</em> wallets, from the on-chain
+            owner census (Top Shot&rsquo;s unopened-pack account and Dapper&rsquo;s
+            buyback account are excluded &mdash; neither is a collector). It is
+            shown only for editions whose census is complete
+            {censusCoverage ? ` (${censusCoverage} of the rows shown)` : ""};
+            an em-dash means the census has not reached that edition yet, which
+            is unknown, not 0%. Refreshed every 6 hours.
           </p>
           <p>
             <strong>Low ask</strong> is the lowest live listing. A listing more
@@ -872,6 +909,7 @@ const CSS = `
 }
 .rpc-sq-sort { display: inline-flex; align-items: center; gap: 8px; }
 .rpc-sq-team { display: inline-flex; align-items: center; gap: 8px; }
+.rpc-sq-census-missing { color: var(--rpc-text-ghost); cursor: help; }
 .rpc-sq-team-input {
   font-family: var(--font-mono);
   font-size: 12px;
