@@ -2031,6 +2031,11 @@ Pipe the output through a redacting `sed`, and never `cat` the file.
   `C:/Program Files/Git/insights/set-squeeze`, which surfaces as `net::ERR_NAME_NOT_RESOLVED`.
 - **Print WHAT a hit-test landed on**, not a count. See the third `elementFromPoint` false positive in
   [testing-and-ci.md](testing-and-ci.md) (the fixed mobile nav, #133).
+- ⛔ **(2026-10-03) `Response.text()`, `page.title()`, `page.evaluate()` and `close()` have NO timeout** — only
+  `goto`/`waitFor*` are bounded. Over CDP, a Cloudflare challenge tab that stops answering parks them forever: 3 of 5
+  Panini team walks sat ~130 min until the run watchdog. In any long-running walker, wrap them in
+  `scripts/lib/with-deadline.mjs` and abandon a hung tab for a fresh one; pause with `sleep`, not
+  `page.waitForTimeout`. Pinned for the team walk by `__tests__/panini-team-walk-deadlines.test.ts`.
 
 ### 5 · (2026-09-24) A commit with later pushes on top of it gets NO deployment of its own
 
