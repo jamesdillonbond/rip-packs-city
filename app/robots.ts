@@ -42,7 +42,28 @@ export default function robots(): MetadataRoute.Robots {
         // (9 chars) beats `Disallow: /api/` (6) under longest-match-wins, which
         // every major crawler implements. The rest of /api/ stays blocked,
         // which is what the 08-06 crawler-load work wanted.
-        allow: ['/', '/_next/static/', '/_next/image', '/api/og/'],
+        // 2026-10-03 (Search Console): the same split again, one layer in. GSC's
+        // "Blocked by robots.txt" examples led with `/api/public/ipfs-media/<cid>`
+        // — the IMAGE proxies the pages render through (`proxyIpfsImageUrl` on
+        // UFC/pack-lifecycle art, `/api/public/pinnacle-image/<render_id>` on
+        // Pinnacle moment pages, `/api/public/team-logo`, the avatar proxy).
+        // `Disallow: /api/` kept Googlebot from fetching the pictures on those
+        // pages exactly as it had kept it from the og:image. The four media
+        // routes are read-only, CID/key-addressed and edge-cached (immutable or
+        // s-maxage), so crawl load is a cache hit; the rest of /api/ stays
+        // blocked. Pinned by `__tests__/seo-search-console-2026-09-06-pins.test.ts`
+        // (og) and `robots-never-blocks-a-published-collection.test.ts` (media).
+        allow: [
+          '/',
+          '/_next/static/',
+          '/_next/image',
+          '/api/og/',
+          '/api/public/ipfs-media/',
+          '/api/public/ipfs-thumb/',
+          '/api/public/pinnacle-image/',
+          '/api/public/team-logo',
+          '/api/public/avatar-media',
+        ],
         disallow: [
           '/api/',
           '/_next/',
@@ -63,8 +84,16 @@ export default function robots(): MetadataRoute.Robots {
           '/*?owner=',
           '/*?owner_key=',
           '/*?address=',
-          // unpublished collection
-          '/panini-blockchain/',
+          // 2026-10-03 (Search Console): `Disallow: /panini-blockchain/` REMOVED.
+          // It was added 2026-04-26 as "unpublished collection" and never
+          // revisited when Panini was PUBLISHED on 2026-09-25 (ledger, #64) and
+          // its ~16.7K edition/player/set URLs entered the sitemap on 09-27.
+          // GSC read 10-03: 1,472 URLs "Blocked by robots.txt" and climbing —
+          // every one a sitemap-submitted, `index, follow`, self-canonical 200.
+          // A published collection's pages are never listed here; the guard is
+          // `__tests__/robots-never-blocks-a-published-collection.test.ts`,
+          // which bans ANY published registry slug at zero (so the next
+          // collection to flip `published` cannot repeat this).
         ],
       },
       // AI-crawler blocks REMOVED 2026-08-01 (Trevor). GPTBot / ClaudeBot /
@@ -75,7 +104,7 @@ export default function robots(): MetadataRoute.Robots {
       // PRIMARY discovery channel, not a leak — blocking them was
       // self-sabotage at WAU 0. Those agents now fall under the wildcard '*'
       // rule above, so every path-level Disallow (/api/, /admin/, /dashboard,
-      // /share/, the user-scoped query-param permutations, /panini-blockchain/)
+      // /share/, the user-scoped query-param permutations)
       // still applies to them exactly as it does to Googlebot. Re-adding a
       // blanket block is a traffic decision, not a hygiene one — do not
       // reintroduce it without one.
