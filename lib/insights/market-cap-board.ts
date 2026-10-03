@@ -23,6 +23,7 @@ import { getCollectionByDbSlug, getCollectionByUrlSlug } from "@/lib/collection-
 import { editionHref, setEntityHref } from "@/lib/entity-href"
 import { slugifyName, slugifyPlayerName } from "@/lib/entity-labels"
 import { analyticsSeriesLabel } from "@/lib/series-label"
+import { collectionDisplayName } from "./market-cap-format"
 
 export { fmtCount, fmtUsdCompact } from "@/lib/insights/market-cap-format"
 
@@ -154,9 +155,10 @@ export async function fetchMarketCapBoard(
   return { group, collection, rows: (data as Record<string, unknown>[]).map(shapeRow) }
 }
 
-export function collectionDisplayName(dbSlug: string): string {
-  return getCollectionByDbSlug(dbSlug)?.displayName ?? dbSlug
-}
+// Re-exported for the board client and the OG route; the helper itself lives in
+// market-cap-format.ts so a page can label a collection without reaching this
+// module's reads (check-unbounded-server-reads, 2026-10-03).
+export { collectionDisplayName, sevenDayChange } from "./market-cap-format"
 
 /** The row's display label — series numbers decoded per collection, collections named. */
 export function rowLabel(r: MarketCapRow, group: MarketCapGroup): string {
@@ -201,10 +203,6 @@ export function highConfidenceShare(r: MarketCapRow): number | null {
 }
 
 /** Fractional change vs 7 days ago, or null when either side is unknown or the base is 0. */
-export function sevenDayChange(now: number | null, ago: number | null): number | null {
-  if (now == null || ago == null || !Number.isFinite(now) || !Number.isFinite(ago) || ago <= 0) return null
-  return now / ago - 1
-}
 
 // ── Entity tile (edition / player / team / set pages) ─────────────────────────
 

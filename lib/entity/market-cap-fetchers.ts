@@ -13,6 +13,10 @@ import {
   type MarketCapEntityRow,
 } from "@/lib/insights/market-cap-board"
 
+// Re-exported so the tile (and any other server component) can take its types
+// from THIS bounded module instead of importing from the one that holds the reads.
+export type { MarketCapEntityGroup, MarketCapEntityRow }
+
 export async function fetchMarketCapTileRow(
   group: MarketCapEntityGroup,
   collectionDbSlug: string,

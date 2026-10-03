@@ -14,14 +14,13 @@
 // RPC tokens only — no hardcoded hex.
 
 import Link from "next/link"
-import { collectionDisplayName } from "@/lib/insights/market-cap-board"
 import { fetchMarketCapTileRow } from "@/lib/entity/market-cap-fetchers"
-import {
-  sevenDayChange,
-  type MarketCapEntityGroup,
-  type MarketCapEntityRow,
-} from "@/lib/insights/market-cap-board"
-import { fmtCount, fmtUsdCompact } from "@/lib/insights/market-cap-format"
+// ⚠ Nothing here imports from market-cap-board.ts: that module holds the RPC
+// reads, and a value import from it would put every page that mounts this tile
+// on an unbounded path to them (check-unbounded-server-reads, 2026-10-03). The
+// types come via the bounded fetcher module; the helpers from the pure one.
+import type { MarketCapEntityGroup, MarketCapEntityRow } from "@/lib/entity/market-cap-fetchers"
+import { collectionDisplayName, fmtCount, fmtUsdCompact, sevenDayChange } from "@/lib/insights/market-cap-format"
 import { Section, SectionUnavailable, StatCell } from "@/components/entity/_shared"
 
 const GRAIN_NOUN: Record<MarketCapEntityGroup, string> = {
