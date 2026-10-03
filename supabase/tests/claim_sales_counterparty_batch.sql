@@ -20,7 +20,7 @@
 -- DROPPED, and the call must still succeed. A function that scans cannot.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260913173355_audit_20260913_claim_excludes_topshot_marketplace_because_the_rearm_dissolved_its_bounded_argument.sql);
+-- (supabase/migrations/20261003201845_counterparty_lane_claims_topshot_rows_missing_only_the_buyer.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -32,6 +32,7 @@ BEGIN;
 CREATE TABLE sales (
   id               uuid PRIMARY KEY,
   seller_address   text,
+  buyer_address    text,
   collection       text,
   transaction_hash text,
   sold_at          timestamptz,
@@ -118,38 +119,81 @@ BEGIN
     v_cursor := NULL;
   END IF;
 
+  -- TWO LEGS (2026-10-03), each its own ordered index scan, merged newest-first:
+  --   1. NULL-seller rows, as before (idx_sales_<year>_nullseller_soldat).
+  --   2. BUYER-ONLY Top Shot rows: seller known, buyer NULL (idx_sales_<year>_ts_nullbuyer_soldat).
+  --      Top Shot is the one collection whose buyer is in the sale tx (TopShot.Deposit.to); the
+  --      worker already decodes it and apply_sales_counterparty already fills a NULL buyer, but
+  --      leg 1's `seller_address IS NULL` meant these rows were never CLAIMED — 105k Top Shot
+  --      sales, nearly all 2025 (ts_history_backfill_v1 97k, dune_settlement_ingest 7.9k), sat
+  --      buyer-less for good; a 16-row sample decoded 16/16 (1 withdraw + 1 deposit each), 4 of
+  --      them sell-backs to Dapper (#167). `sold_at >= 2025-01-01` is a CONSTANT so the planner
+  --      prunes 2020–2024 (which hold none of these rows and have no index for this leg).
   IF v_cursor IS NULL THEN
     RETURN QUERY
-      SELECT s.id, s.transaction_hash::text, s.sold_at
-      FROM public.sales s
-      WHERE s.seller_address IS NULL
-        AND s.collection IN ('nba_top_shot', 'nfl_all_day', 'ufc_strike')
-        AND s.transaction_hash ~ '^[0-9a-f]{64}$'
-        AND s.sold_at >= v_floor
-        -- NULL-SAFE: `NOT IN` yields NULL for a NULL source, which EXCLUDES the row. IS DISTINCT FROM
-        -- yields TRUE, so an unlabelled row is ATTEMPTED. Attempt-unless-known-undecodable is the
-        -- right default; the other way a new writer that forgets `source` disappears silently.
-        AND s.source IS DISTINCT FROM 'allday_studio_history_v1'
-        AND s.source IS DISTINCT FROM 'ufc_studio_history_v1'
-        -- KNOWN-UNDECODABLE (20260913, this migration): 4,959 rows, 0.00% conversion measured as a
-        -- WHOLE POPULATION over 11 days and at least two full walks, against 5,507 recovered from
-        -- other sources in the same 24 h. Excluded only because the re-arm made the walk cyclic.
-        AND s.source IS DISTINCT FROM 'topshot_marketplace'
-      ORDER BY s.sold_at DESC
+      SELECT u.sid, u.tx, u.sat FROM (
+        (SELECT s.id AS sid, s.transaction_hash::text AS tx, s.sold_at AS sat
+           FROM public.sales s
+          WHERE s.seller_address IS NULL
+            AND s.collection IN ('nba_top_shot', 'nfl_all_day', 'ufc_strike')
+            AND s.transaction_hash ~ '^[0-9a-f]{64}$'
+            AND s.sold_at >= v_floor
+            -- NULL-SAFE: `NOT IN` yields NULL for a NULL source, which EXCLUDES the row. IS DISTINCT FROM
+            -- yields TRUE, so an unlabelled row is ATTEMPTED. Attempt-unless-known-undecodable is the
+            -- right default; the other way a new writer that forgets `source` disappears silently.
+            AND s.source IS DISTINCT FROM 'allday_studio_history_v1'
+            AND s.source IS DISTINCT FROM 'ufc_studio_history_v1'
+            -- KNOWN-UNDECODABLE (20260913): 4,959 rows, 0.00% conversion measured as a WHOLE
+            -- POPULATION over 11 days and at least two full walks. Excluded because the re-arm made
+            -- the walk cyclic.
+            AND s.source IS DISTINCT FROM 'topshot_marketplace'
+          ORDER BY s.sold_at DESC
+          LIMIT v_limit)
+        UNION ALL
+        (SELECT s.id, s.transaction_hash::text, s.sold_at
+           FROM public.sales s
+          WHERE s.collection = 'nba_top_shot'
+            AND s.buyer_address IS NULL
+            AND s.seller_address IS NOT NULL
+            AND s.transaction_hash ~ '^[0-9a-f]{64}$'
+            AND s.sold_at >= '2025-01-01T00:00:00Z'::timestamptz
+            AND s.sold_at >= v_floor
+            AND s.source IS DISTINCT FROM 'topshot_marketplace'
+          ORDER BY s.sold_at DESC
+          LIMIT v_limit)
+      ) u
+      ORDER BY u.sat DESC
       LIMIT v_limit;
   ELSE
     RETURN QUERY
-      SELECT s.id, s.transaction_hash::text, s.sold_at
-      FROM public.sales s
-      WHERE s.seller_address IS NULL
-        AND s.collection IN ('nba_top_shot', 'nfl_all_day', 'ufc_strike')
-        AND s.transaction_hash ~ '^[0-9a-f]{64}$'
-        AND s.sold_at < v_cursor
-        AND s.sold_at >= v_floor
-        AND s.source IS DISTINCT FROM 'allday_studio_history_v1'
-        AND s.source IS DISTINCT FROM 'ufc_studio_history_v1'
-        AND s.source IS DISTINCT FROM 'topshot_marketplace'
-      ORDER BY s.sold_at DESC
+      SELECT u.sid, u.tx, u.sat FROM (
+        (SELECT s.id AS sid, s.transaction_hash::text AS tx, s.sold_at AS sat
+           FROM public.sales s
+          WHERE s.seller_address IS NULL
+            AND s.collection IN ('nba_top_shot', 'nfl_all_day', 'ufc_strike')
+            AND s.transaction_hash ~ '^[0-9a-f]{64}$'
+            AND s.sold_at < v_cursor
+            AND s.sold_at >= v_floor
+            AND s.source IS DISTINCT FROM 'allday_studio_history_v1'
+            AND s.source IS DISTINCT FROM 'ufc_studio_history_v1'
+            AND s.source IS DISTINCT FROM 'topshot_marketplace'
+          ORDER BY s.sold_at DESC
+          LIMIT v_limit)
+        UNION ALL
+        (SELECT s.id, s.transaction_hash::text, s.sold_at
+           FROM public.sales s
+          WHERE s.collection = 'nba_top_shot'
+            AND s.buyer_address IS NULL
+            AND s.seller_address IS NOT NULL
+            AND s.transaction_hash ~ '^[0-9a-f]{64}$'
+            AND s.sold_at >= '2025-01-01T00:00:00Z'::timestamptz
+            AND s.sold_at < v_cursor
+            AND s.sold_at >= v_floor
+            AND s.source IS DISTINCT FROM 'topshot_marketplace'
+          ORDER BY s.sold_at DESC
+          LIMIT v_limit)
+      ) u
+      ORDER BY u.sat DESC
       LIMIT v_limit;
   END IF;
 
@@ -225,6 +269,25 @@ UPDATE sales_counterparty_backfill_state
    SET cursor_sold_at = '2020-01-01 00:00:00+00', exhausted_at = NULL, rearm_after = interval '2 hours'
  WHERE id = 1;
 SELECT _assert_eq((SELECT count(*)::text FROM claim_sales_counterparty_batch(10)), '2', 'a cursor below the floor self-heals to the top-scan');
+
+-- ── F. BUYER-ONLY TOP SHOT ROWS ARE CLAIMED (2026-10-03) ───────────────────
+-- Seller known, buyer NULL: Top Shot's buyer is in the sale tx, so these are claimable; the
+-- old body's `seller_address IS NULL` never reached them (105k rows, nearly all 2025). Added
+-- AFTER sections A–E so their counts stand. Each excluded shape is its own row:
+INSERT INTO sales (id, seller_address, buyer_address, collection, transaction_hash, sold_at, source) VALUES
+  ('55555555-5555-5555-5555-555555555555', '0xseller', NULL,    'nba_top_shot', repeat('e',64), '2025-08-01 00:00:00+00', 'ts_history_backfill_v1'), -- claimed
+  ('66666666-6666-6666-6666-666666666666', '0xseller', NULL,    'nfl_all_day',  repeat('f',64), '2025-08-02 00:00:00+00', 'onchain_dapper_v2'),      -- All Day: buyer is a custodian, never claimed
+  ('77777777-7777-7777-7777-777777777777', '0xseller', NULL,    'nba_top_shot', repeat('1',64), '2024-08-01 00:00:00+00', 'ts_history_backfill_v1'), -- before 2025: pruned leg, not claimed
+  ('88888888-8888-8888-8888-888888888888', '0xseller', '0xbuy', 'nba_top_shot', repeat('2',64), '2025-09-01 00:00:00+00', 'ts_history_backfill_v1'), -- buyer known
+  ('99999999-9999-9999-9999-999999999999', '0xseller', NULL,    'nba_top_shot', repeat('3',64), '2025-09-02 00:00:00+00', 'topshot_marketplace');    -- known-undecodable source
+UPDATE sales_counterparty_backfill_state SET cursor_sold_at = NULL, exhausted_at = NULL WHERE id = 1;
+SELECT _assert_eq((SELECT string_agg(sale_id::text, ',' ORDER BY sold_at DESC) FROM claim_sales_counterparty_batch(10)),
+  '11111111-1111-1111-1111-111111111111,22222222-2222-2222-2222-222222222222,55555555-5555-5555-5555-555555555555',
+  'both legs merge newest-first: the NULL-seller rows, then the buyer-only Top Shot row — and no All Day, pre-2025, buyer-known or marketplace row');
+SELECT _assert_eq((SELECT sale_id::text FROM claim_sales_counterparty_batch(1)), '11111111-1111-1111-1111-111111111111', 'p_limit bounds the MERGED batch, newest first');
+UPDATE sales_counterparty_backfill_state SET cursor_sold_at = '2026-01-01 00:00:00+00' WHERE id = 1;
+SELECT _assert_eq((SELECT string_agg(sale_id::text, ',') FROM claim_sales_counterparty_batch(10)), '55555555-5555-5555-5555-555555555555',
+  'the buyer-only leg honours the cursor too');
 
 SELECT '✓ claim_sales_counterparty_batch invariants pass' AS result;
 ROLLBACK;

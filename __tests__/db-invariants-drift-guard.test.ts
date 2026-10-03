@@ -2748,7 +2748,7 @@ const PINS = [
     fn: "claim_sales_counterparty_batch",
     test: "supabase/tests/claim_sales_counterparty_batch.sql",
     migration:
-      "supabase/migrations/20260913173355_audit_20260913_claim_excludes_topshot_marketplace_because_the_rearm_dissolved_its_bounded_argument.sql",
+      "supabase/migrations/20261003201845_counterparty_lane_claims_topshot_rows_missing_only_the_buyer.sql",
   },
   {
     // Added 2026-10-02. The pack-dist page's EV-contributor list: latest Top Shot
