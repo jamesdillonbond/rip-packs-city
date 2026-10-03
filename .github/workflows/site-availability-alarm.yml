@@ -57,6 +57,7 @@ on:
 
 permissions:
   contents: read
+  issues: write   # the runner-side page that needs no new secret (R77, 2026-10-03)
 
 jobs:
   availability:
@@ -65,6 +66,7 @@ jobs:
     timeout-minutes: 6
     steps:
       - name: Read site availability from the database
+        id: avail
         env:
           SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -135,6 +137,7 @@ jobs:
               echo "::warning::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not GitHub secrets, so no message was sent."
             fi
             echo "::error::Could not read check_site_availability (HTTP ${CODE:-none}). The site's state is UNKNOWN, not healthy."
+            { echo "page_title=RPC DATABASE UNREADABLE from GitHub Actions"; echo "page_body=$MSG"; } >> "${GITHUB_OUTPUT:-/dev/null}"
             exit 1
           fi
 
@@ -156,6 +159,7 @@ jobs:
 
           if [ -z "$PROBES" ] || [ -z "$STREAK" ] || [ -z "$FAILED" ]; then
             echo "::error::check_site_availability returned an unreadable payload — UNKNOWN, not healthy."
+            { echo "page_title=RPC SITE ALARM BLIND — unreadable availability payload"; echo "page_body=check_site_availability answered HTTP 200 with a payload this alarm could not read (probes / consecutive_fails / failed missing). Site state UNKNOWN, not healthy."; } >> "${GITHUB_OUTPUT:-/dev/null}"
             exit 1
           fi
 
@@ -164,6 +168,7 @@ jobs:
           # say so rather than reporting green.
           if [ "$PROBES" -eq 0 ]; then
             echo "::error::site_probe recorded ZERO probes in the window — the availability prober itself is not running (pg_cron job rpc-site-availability-probe). This alarm is BLIND; the site's state is unknown."
+            { echo "page_title=RPC SITE ALARM BLIND — zero probes in the window"; echo "page_body=site_probe recorded ZERO probes in the last $WINDOW: the availability prober (pg_cron rpc-site-availability-probe) is not running, so this alarm cannot see the site. State UNKNOWN, not healthy."; } >> "${GITHUB_OUTPUT:-/dev/null}"
             exit 1
           fi
 
@@ -180,6 +185,7 @@ jobs:
             else
               echo "::warning::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not GitHub secrets, so no message was sent. The bot token currently lives only in Vercel env — the exact plane that disappears in this outage. Adding them here makes the alert path fully Vercel-independent."
             fi
+            { echo "page_title=RPC SITE DOWN — consecutive failed probes"; echo "page_body=$MSG"; } >> "${GITHUB_OUTPUT:-/dev/null}"
             echo "::error::$MSG"
             exit 1
           fi
@@ -198,8 +204,23 @@ jobs:
             else
               echo "::warning::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not GitHub secrets, so no message was sent."
             fi
+            { echo "page_title=RPC SITE WAS DOWN — failed probes in the window"; echo "page_body=$MSG"; } >> "${GITHUB_OUTPUT:-/dev/null}"
             echo "::error::$MSG"
             exit 1
           fi
 
           echo "Site is serving — $PROBES probes in window, $STREAK consecutive failures, $FAILED failed in $WINDOW."
+
+      # ⭐ 2026-10-03: THE PAGE THAT WORKS TODAY (register R77). Every branch
+      # above that exits red writes page_title / page_body first; this step
+      # delivers them through GitHub's own notification plane with the
+      # workflow's token — no Telegram secrets, no Vercel, no Supabase. One
+      # OPEN issue per title, a dated comment per repeat. Never changes the
+      # job's result (the step above already set it).
+      - name: Page via GitHub issue (no secret needed)
+        if: always() && steps.avail.outputs.page_title != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGE_TITLE: ${{ steps.avail.outputs.page_title }}
+          PAGE_BODY: ${{ steps.avail.outputs.page_body }}
+        run: bash scripts/ci/page-via-github-issue.sh

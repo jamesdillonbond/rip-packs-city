@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  issues: write   # the runner-side page that needs no new secret (R77, 2026-10-03)
 
 jobs:
   sentinel:
@@ -225,6 +226,26 @@ jobs:
             2*) echo "paged Telegram from the runner (HTTP $TG)" ;;
             *)  echo "::warning::Telegram did NOT accept the runner's page (HTTP ${TG:-none}) — the outage is in this log only." ;;
           esac
+
+      # ⭐ 2026-10-03: THE PAGE THAT WORKS TODAY. The Telegram step above is inert
+      # until a human adds two secrets (the Actions secrets API is closed to the
+      # autonomous sessions, and a bot token must never pass through a
+      # transcript). GitHub is a pager that needs no new secret: an issue that
+      # @-mentions the owner is delivered by GitHub's own notification plane,
+      # which is neither Vercel nor Supabase. One OPEN issue per title; each
+      # tick while unreachable is a dated comment. Never changes the job result.
+      - name: Page via GitHub issue (no secret needed)
+        if: always() && steps.sentinel.outputs.unreachable == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HTTP_CODE: ${{ steps.sentinel.outputs.http_code }}
+          MARKER: ${{ steps.sentinel.outputs.marker }}
+        run: |
+          SAFE_CODE=$(printf '%s' "$HTTP_CODE" | tr -cd '0-9') || SAFE_CODE=""
+          SAFE_MARKER=$(printf '%s' "$MARKER" | tr -cd 'a-z_') || SAFE_MARKER=""
+          PAGE_TITLE="RPC SENTINEL UNREACHABLE — the fleet alarm could not run" \
+          PAGE_BODY="/api/sentinel answered HTTP ${SAFE_CODE:-0} (${SAFE_MARKER:-none}) on 3 of 3 attempts. The fleet alarm could not run, so nothing else in the estate will page about this. Close this issue when the route answers again." \
+          bash scripts/ci/page-via-github-issue.sh
 
       # The other half of the three-state record: the runner saw the route fail to
       # answer, so it writes the `sentinel` lane's OUTCOME from outside the thing
