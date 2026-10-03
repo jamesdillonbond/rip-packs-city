@@ -63,7 +63,7 @@
     "move .github/workflows/offer-fill-backfill.yml to cron-job.org (console), then remove the topshot_offer_fill_backfill suppression row",
     "rotate ATLAS_POOL_INGEST_KEY (#144) — npx supabase login once, then Rip Packs City/cowork-2026-09-30/rotate-atlas-pool-ingest-key.cmd",
     "#22 — watch tdillonbond@gmail.com for GitHub Support's reply, then re-test commit/1c3e01a8f (expect 404); rotate the Dapper session",
-    "concierge Anthropic credit: topped to $7.13 on 10-02 (~days of runway); auto-reload is the durable fix (console.anthropic.com -> Billing). Concierge is answering now.",
+    "concierge Anthropic credit: auto-reload ENABLED by Trevor 2026-10-03 (the durable fix); no concierge-billing-error rows since 2026-10-02 8:47 PM PT, last answer 2026-10-03 2:08 AM PT.",
     "scratch Flowty export jobs 673/674 are still running at 30s cadence (your 10-02 data export). Unschedule when the export is done — cleanup SQL is in the 10-02 ledger entries. They add load to mainnet24 (shared with pack-mint-probes) and drive the pg_net_http_429 HIGH arm.",
     "sync-nba-projections (#8) alert mute expires 10-13 — paid-provider decision before NBA season.",
     "docs/overnight/focus.md is ~2 weeks stale (steers from mid-Sept, all self-marked closed/resolved). Its own rule says trim spent steers to the ledger; left untouched this pass (no current steer to replace it with)."
