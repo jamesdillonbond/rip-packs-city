@@ -46,8 +46,10 @@ describe("attempt deadline ordering", () => {
   })
 })
 
-describe("the walker bounds every call that has no timeout of its own", () => {
-  const src = stripComments(readFileSync(join(process.cwd(), "scripts/panini-team-walk.mjs"), "utf8"))
+// Both laptop walkers share the debug Chrome and the 3:35 AM task; the collector walk was
+// hardened the same day (it runs after the team walk inside the same 3.5 h task limit).
+describe.each(["scripts/panini-team-walk.mjs", "scripts/panini-collector-walk.mjs"])("%s bounds every call that has no timeout of its own", (file) => {
+  const src = stripComments(readFileSync(join(process.cwd(), file), "utf8"))
   const lines = src.split("\n")
 
   it("inspects a non-empty walker", () => {

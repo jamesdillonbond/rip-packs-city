@@ -50,6 +50,7 @@
 //   CHROMIUM_PATH                  optional executablePath when launching (no CDP)
 
 import { pathToFileURL } from "node:url"
+import { TIMED_OUT, sleep, withDeadline } from "./lib/with-deadline.mjs"
 
 export const PROFILE_BASE = "https://nft.paniniamerica.net/public-profile/collections.html"
 export const PAGE_SIZE = 30
@@ -331,7 +332,9 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
     if (!op) return
     let json = null
     try {
-      json = JSON.parse(await r.text())
+      const text = await withDeadline(r.text(), 30_000)
+      if (text === TIMED_OUT) throw new Error("body not readable in 30s")
+      json = JSON.parse(text)
     } catch {
       if (op === "userCollectedNftsV2" || op === "collectionList") log(`  ${nickname}: ${op} answered non-JSON (status=${r.status()})`)
       return
@@ -399,9 +402,9 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
   const scrollForNext = async (kind) => {
     for (let attempt = 1; attempt <= 4; attempt++) {
       const next = nextAnswer(kind, attempt === 1 ? 15_000 : 25_000)
-      await page.evaluate(() => window.scrollTo(0, Math.max(0, document.documentElement.scrollHeight - 1600))).catch(() => {})
-      await page.waitForTimeout(300)
-      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)).catch(() => {})
+      await withDeadline(page.evaluate(() => window.scrollTo(0, Math.max(0, document.documentElement.scrollHeight - 1600))).catch(() => {}), 10_000)
+      await sleep(300)
+      await withDeadline(page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)).catch(() => {}), 10_000)
       const n = await next
       if (n !== undefined) return n
     }
@@ -427,8 +430,8 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
       if (/\/usernotfound/i.test(page.url())) break
     }
     if (got === undefined || got === null) {
-      const title = await page.title().catch(() => "?")
-      const body = await page.evaluate(() => (document.body?.innerText || "").slice(0, 160)).catch(() => "?")
+      const title = await withDeadline(page.title().catch(() => "?"), 10_000).then((v) => (v === TIMED_OUT ? "(tab not answering)" : v))
+      const body = await withDeadline(page.evaluate(() => (document.body?.innerText || "").slice(0, 160)).catch(() => "?"), 10_000).then((v) => (v === TIMED_OUT ? "(tab not answering)" : v))
       error = `no collection list (url=${page.url()} title=${JSON.stringify(title)} body=${JSON.stringify(String(body).replace(/\s+/g, " "))})`
     } else {
       while (lastListLen != null && lastListLen >= PAGE_SIZE && (collectionTotal == null || collections.length < collectionTotal)) {
@@ -463,7 +466,7 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
             if (pages >= maxPages || capped()) break
             n = await scrollForNext("cards")
             if (n !== undefined && n !== null) pages += 1
-            await page.waitForTimeout(500)
+            await sleep(500)
           }
         }
         const read = holdings.size - before
@@ -478,7 +481,7 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
       if (unopenedPacks == null && !capHit) {
         clubPacks = undefined
         await page.goto(UNOPENED_PACKS_URL(nickname), { waitUntil: "domcontentloaded", timeout: 60_000 }).catch(() => {})
-        for (let i = 0; i < 30 && unopenedPacks == null && clubPacks === undefined; i++) await page.waitForTimeout(1_000)
+        for (let i = 0; i < 30 && unopenedPacks == null && clubPacks === undefined; i++) await sleep(1_000)
         const self = signedIn != null && signedIn.toLowerCase() === nickname.toLowerCase()
         if (unopenedPacks == null && self && clubPacks != null) unopenedPacks = clubPacks
         if (unopenedPacks == null) {
@@ -489,7 +492,7 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
     }
   } finally {
     finalUrl = page.url()
-    await page.close().catch(() => {})
+    await withDeadline(page.close().catch(() => {}), 10_000)
   }
   const total = reportedCardTotal(collections, collectionTotal)
   const profileState = profileStateOf({ url: finalUrl, profileInfo, collectedSeen: collectedSeen || (collections != null && collections.length === 0 && collectionTotal === 0) })
@@ -614,7 +617,7 @@ async function main() {
     }
   } finally {
     // Over CDP, browser.close() DISCONNECTS and leaves the runner's debug Chrome open.
-    await browser.close().catch(() => {})
+    await withDeadline(browser.close().catch(() => {}), 15_000)
   }
   if (dry) console.log(JSON.stringify({ dry_run: true, summary }, null, 2))
   if (anyFailed) process.exitCode = 1
