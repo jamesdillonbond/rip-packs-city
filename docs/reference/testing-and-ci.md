@@ -15,7 +15,8 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 - `enrich-ufc-wallet` (user wallet backfill): a failed read answered `{"ok":true,"message":"No moments"}`, and the caller marked the wallet `done`.
 
 The four with no caller found sit in the suite's `KNOWN` map, which can only shrink: `topshot-insider-detect-patterns` (dormant), `seed-ufc-editions`, `special-serial-delta` and `scan-ufc-wallet`.
-- ⚠ **Silent about** a function that records nothing and claims nothing. Two exist: `resolve-allday-rip-dist-api` (hourly pg_cron) answers `{"note":"none"}` after 5 failed reads, and `backfill-allday-pack-supply` answers `done:true` with `pageErrs=1`. It is also silent about partial failure.
+- ⭐ **Rule (3), added the same evening, covers "records nothing and claims nothing".** An admitted run that answers **2xx** while everything failed must write an **`ok=false` row**; a non-2xx answer counts as a trace of its own. This is the shape `ingest-allday-pack-opens` fixed on 08-13 (HTTP 200, no row, a "succeeded" cron run), and **its Top Shot sibling still had it**: `ingest-topshot-pack-opens-history` (pg_cron, every 15 min) answered `tip_unreachable` with 200 and no row. `resolve-allday-rip-dist-api` (hourly) answered `{"note":"none"}` after a failed read. Both were fixed and deployed 10-02, and each was proven red on its old code. Three that write **no run row on any outcome** are in `KNOWN_TRACELESS` (`seed-topshot-pack-distributions`, which is live at :13; `special-serial-sweep`; `backfill-allday-pack-supply`). Fixing those means a new pipeline lane, which is a monitoring decision.
+- ⚠ **Silent about** partial failure: here everything fails at once.
 
 ## ⭐ CI NOW EXECUTES EVERY EDGE FUNCTION'S AUTH GATE (2026-10-02)
 

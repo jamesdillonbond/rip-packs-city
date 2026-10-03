@@ -366,7 +366,16 @@ Deno.serve(async (req) => {
   const maxBlocks = Number(url.searchParams.get("blocks") ?? MAX_BLOCKS)
   const startMs = Date.now()
   const t = await tip()
-  if (!t) return new Response(JSON.stringify({ error: "tip_unreachable" }), { status: 200, headers: { "content-type": "application/json" } })
+  if (!t) {
+    // Ported from ingest-allday-pack-opens (2026-08-13), which fixed this exact
+    // shape there: the return sits OUTSIDE the try, so an unreachable tip left
+    // HTTP 200, NO pipeline_runs row and a "succeeded" cron run. Every
+    // instrument read clean while the walk did nothing. Stays 200 so the
+    // scheduler does not count it as a dispatch failure; the row is the trace.
+    // (supabase/functions/_tests/failed_run_honesty_test.ts)
+    await logRun(`topshot-pack-opens-history-${mode}`, startMs, false, 0, 0, 0, null, null, { tip_unreachable: true }, "tip_unreachable")
+    return new Response(JSON.stringify({ error: "tip_unreachable" }), { status: 200, headers: { "content-type": "application/json" } })
+  }
 
   try {
     if (mode === "probe") {

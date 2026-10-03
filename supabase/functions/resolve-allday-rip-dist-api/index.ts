@@ -33,13 +33,16 @@ async function lookup(ids:string[]){ return await raw(Q,{ i:{ first: ids.length,
 Deno.serve(async(req)=>{
   const url=new URL(req.url)
   if(!gateKeyOk(url.searchParams.get("key"))) return new Response(JSON.stringify({error:"forbidden"}),{status:403})
-  // postgrest-cap: intentional — 0 AllDay pack_rips rows have a null dist_id
-  // (measured 2026-09-09), so nothing is truncated today. The number is kept
-  // rather than lowered only because this is a supabase/functions file: changing
-  // it without a deploy creates repo-vs-deployed drift, and it does not earn a
-  // deploy on its own. EXIT: fold the bound down to 1,000 into the next real
-  // deploy of this function.
-  const { data:rows }=await sb.from("pack_rips").select("pack_nft_id").eq("collection_id",ALLDAY).is("dist_id",null).limit(3000)
+  // Bounded at PostgREST's 1,000-row cap (was .limit(3000), a bound PostgREST
+  // clamps to 1,000 anyway; folded down on 2026-10-02 with the read-error fix,
+  // as the old comment's EXIT asked). The queue is tens of rows an hour; a
+  // backlog past 1,000 drains over successive ticks.
+  const { data:rows, error:rowsErr }=await sb.from("pack_rips").select("pack_nft_id").eq("collection_id",ALLDAY).is("dist_id",null).limit(1000)
+  // A failed read is not "none". It answered {note:'none'} with HTTP 200 and
+  // wrote nothing anywhere, so an hourly lane with a dead read looked exactly
+  // like one with an empty queue. The 500 lands in net._http_response.
+  // (supabase/functions/_tests/failed_run_honesty_test.ts)
+  if(rowsErr){ return new Response(JSON.stringify({ok:false,error:`pack_rips read: ${rowsErr.message.slice(0,200)}`}),{status:500,headers:{"content-type":"application/json"}}) }
   const ids=(rows??[]).map((r:any)=>String(r.pack_nft_id))
   if(url.searchParams.get("mode")==='probe'){ const j=await lookup(ids.slice(0,3)); await dbg({probe:true,resp:j}); return new Response(JSON.stringify({ok:true}),{headers:{"content-type":"application/json"}}) }
   if(ids.length===0){ return new Response(JSON.stringify({note:'none'}),{headers:{"content-type":"application/json"}}) }

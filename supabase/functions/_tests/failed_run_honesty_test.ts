@@ -19,7 +19,12 @@
 //       success in its body (ok:true / status:"ok"). An `accepted` / `queued`
 //       body with work still running is honest by construction: its outcome
 //       belongs in pipeline_runs, which (1) reads.
-//   (3) every function must be admitted. One that no probe can get past is
+//   (3) the failure must leave a TRACE: an admitted run answering 2xx must
+//       write an ok=false pipeline_runs row. A 2xx with no row is the shape
+//       ingest-allday-pack-opens recorded on 2026-08-13: HTTP 200, no row, and a
+//       "succeeded" cron run, so every instrument read clean while it did
+//       nothing. A non-2xx answer is a trace of its own.
+//   (4) every function must be admitted. One that no probe can get past is
 //       one this suite cannot see; it reds rather than passing unseen.
 //
 // ⭐ MEASURED 2026-10-02: 36 of 43 passed as found. ~25 record `ok:false` with
@@ -33,14 +38,14 @@
 //     {"ok":true,"message":"No moments"}, so the caller marked the wallet done.
 // The four with no caller found are KNOWN below. The list can only shrink: a
 // listed function that starts passing reds until it is removed.
+// Rule (3), added the same evening, failed 5 functions. The two on pg_cron were
+// fixed: ingest-topshot-pack-opens-history (every 15 min: tip_unreachable
+// answered 200 with no row; the All Day sibling had this fix since 08-13) and
+// resolve-allday-rip-dist-api (hourly: a failed read answered {"note":"none"}).
+// The three that write no run row on ANY outcome are KNOWN_TRACELESS.
 //
 // ⚠ WHAT IT IS STRUCTURALLY SILENT ABOUT:
-//   * A function that records NOTHING and claims nothing: there is no claim to
-//     falsify. Two found 10-02: resolve-allday-rip-dist-api (hourly pg_cron)
-//     answers {"note":"none"} after 5 failed reads, and backfill-allday-pack-supply
-//     answers 200 done:true with pageErrs=1.
-//   * Partial failure. Here everything fails at once; a run where half the reads
-//     fail is a different, per-function question.
+//   * Partial failure: here everything fails at once.
 //   * Whether a lane's ok=false is SEEN: that is the sentinel's job.
 // ─────────────────────────────────────────────────────────────────────────────
 import { admit, FN_ROOT, functionNames, install, load } from "./harness.ts"
@@ -52,6 +57,14 @@ const KNOWN: Record<string, string> = {
   "seed-ufc-editions": "no caller found 10-02. Every Flowty page fails → body ok:true with errors[], no pipeline_runs row",
   "special-serial-delta": "no caller found 10-02. Holders read error → body status:\"ok\" scanned=0 failed=0, no pipeline_runs row",
   "scan-ufc-wallet": "no caller found 10-02. The ids script 503s → body ok:true momentsFound=0 with the error in errors[]",
+}
+
+/** name → how it answers 2xx with no ok=false row. Rule (3) only; shrink-only like KNOWN. */
+const KNOWN_TRACELESS: Record<string, string> = {
+  "seed-topshot-pack-distributions":
+    "writes NO pipeline_runs row on any outcome (console only); 202 accepted, then a failed catalog walk just logs. Scheduled at :13 (topshot-active-listings-ingest.yml's minute census). Fix = a new pipeline lane, which is a monitoring decision.",
+  "special-serial-sweep": "no pipeline_runs row on any outcome; 202 accepted, per-collection rpc errors only logged. No caller found 10-02.",
+  "backfill-allday-pack-supply": "no pipeline_runs row; 200 done:true with pageErrs=1. No caller found 10-02.",
 }
 
 const names = functionNames()
@@ -84,11 +97,29 @@ function verdicts(run: NonNullable<Awaited<ReturnType<typeof admit>>>): string[]
   return out
 }
 
+/** Rule (3): a 2xx answer to a run in which everything failed must come with an ok=false row. */
+function traceless(run: NonNullable<Awaited<ReturnType<typeof admit>>>): string | null {
+  if (typeof run.status !== "number" || run.status < 200 || run.status >= 300) return null
+  for (const c of run.calls) {
+    if (!c.payload) continue
+    if (!(c.what === "rpc(log_pipeline_run)" || /^from\(pipeline_runs\)\.(insert|upsert|update)\(\)$/.test(c.what))) continue
+    try {
+      const parsed = JSON.parse(c.payload)
+      const p = Array.isArray(parsed) ? parsed[0] ?? {} : parsed
+      if (p.p_ok === false || p.ok === false) return null
+    } catch {
+      // unreadable payload: not a trace
+    }
+  }
+  return `HTTP ${run.status} and no ok=false pipeline_runs row: ${run.body.slice(0, 120)}`
+}
+
+
 Deno.test({
   name: "KNOWN names only functions that exist",
   ...opts,
   fn() {
-    const stale = Object.keys(KNOWN).filter((k) => !names.includes(k))
+    const stale = [...Object.keys(KNOWN), ...Object.keys(KNOWN_TRACELESS)].filter((k) => !names.includes(k))
     if (stale.length) throw new Error(`KNOWN lists functions not in the tree: ${stale.join(", ")}`)
   },
 })
@@ -124,6 +155,16 @@ for (const name of names) {
       const run = await admit(name, await load(new URL(`${name}/index.ts`, FN_ROOT)))
       if (!run) throw new Error(`${name}: no test credential got past its gate, so this suite cannot see it — teach harness.admit its scheme`)
       const v = verdicts(run)
+      const t = traceless(run)
+      if (KNOWN_TRACELESS[name]) {
+        if (!t) throw new Error(`${name} is listed in KNOWN_TRACELESS but now leaves a trace. Remove it (and note the fix).`)
+      } else if (t && !KNOWN[name]) {
+        // A KNOWN false-success already fails rule (1)/(2); do not double-list it.
+        throw new Error(
+          `${name} ran with every database call and upstream failing and left NO trace (via ${run.via}): ${t}\n` +
+            `Write an ok=false pipeline_runs row, or answer non-2xx.`,
+        )
+      }
       if (KNOWN[name]) {
         if (v.length === 0) {
           throw new Error(`${name} is listed in KNOWN but now records the failure honestly. Remove it from KNOWN (and note the fix).`)
