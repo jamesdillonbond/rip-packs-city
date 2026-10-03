@@ -208,3 +208,7 @@ docs/overnight/.lock
 
 # Cowork QA scratch on the device mount (screenshots, patch bundles) — never part of the tree
 _to_delete/
+
+# Python bytecode — never committed (a .pyc carries NUL bytes; the tree-corruption guard reads it as corruption)
+__pycache__/
+*.pyc

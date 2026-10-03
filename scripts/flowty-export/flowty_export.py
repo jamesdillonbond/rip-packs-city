@@ -44,6 +44,12 @@ TOKENS = {"FiatToken": "USDC", "USDCFlow": "USDC (USDCFlow)", "FlowToken": "FLOW
           "DapperUtilityCoin": "DUC (Dapper USD)", "FlowUtilityToken": "FUT (Dapper FLOW)", "FUT": "FUT (Dapper FLOW)"}
 
 
+def key_headers(key):
+    # The web API key goes in a HEADER, never the query string: request logs
+    # record full URLs (repo guard no-env-secret-in-fetch-url, 2026-10-03).
+    return {"x-goog-api-key": key}
+
+
 def http(url, body=None, headers=None, tries=6):
     data = json.dumps(body).encode() if body is not None else None
     h = {"Content-Type": "application/json", **(headers or {})}
@@ -78,9 +84,9 @@ def pull(key, wallets):
     inlist = {"arrayValue": {"values": [{"stringValue": w} for w in wallets]}}
     for coll, field in QUERIES:
         where = {"fieldFilter": {"field": {"fieldPath": field}, "op": "IN", "value": inlist}}
-        st, agg = http(f"{BASE}:runAggregationQuery?key={key}", {"structuredAggregationQuery": {
+        st, agg = http(f"{BASE}:runAggregationQuery", {"structuredAggregationQuery": {
             "aggregations": [{"alias": "n", "count": {}}],
-            "structuredQuery": {"from": [{"collectionId": coll}], "where": where}}})
+            "structuredQuery": {"from": [{"collectionId": coll}], "where": where}}}, headers=key_headers(key))
         if st != 200: sys.exit(f"count failed {coll}/{field}: HTTP {st}")
         want = int(agg[0]["result"]["aggregateFields"]["n"]["integerValue"])
         got, cursor = 0, None
@@ -88,7 +94,7 @@ def pull(key, wallets):
             q = {"from": [{"collectionId": coll}], "where": where, "limit": 300,
                  "orderBy": [{"field": {"fieldPath": "__name__"}, "direction": "ASCENDING"}]}
             if cursor: q["startAt"] = {"values": [{"referenceValue": cursor}], "before": False}
-            st, page = http(f"{BASE}:runQuery?key={key}", {"structuredQuery": q})
+            st, page = http(f"{BASE}:runQuery", {"structuredQuery": q}, headers=key_headers(key))
             if st != 200: sys.exit(f"page failed {coll}/{field}: HTTP {st}")
             rows = [p["document"] for p in page if "document" in p]
             if not rows: break
