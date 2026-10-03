@@ -27,11 +27,14 @@ describe("mineFilter", () => {
   })
 })
 
+// Source under test: app/api/support-chat/history/route
 describe("the history route is cookie-scoped and never deletes logged feedback", () => {
-  const src = readFileSync(join(process.cwd(), "app", "api", "support-chat", "history", "route.ts"), "utf8")
+  const src = readFileSync(join(process.cwd(), "app/api/support-chat/history/route.ts"), "utf8")
   it("401s without a session email, deletes only feedback_type IS NULL rows, anonymises the rest", () => {
     expect(src).toContain('{ error: "Sign in to delete your chat history." }, { status: 401 }')
-    expect(src).toContain('.delete()\n      .is("feedback_type", null)')
+    expect(src).toContain('.delete()\n        .is("feedback_type", null)')
+    // every statement is bounded (api-routes-that-degrade-honestly-also-bound-their-reads)
+    expect((src.match(/boundedRead\(/g) ?? []).length).toBe(3)
     expect(src).toContain('.not("feedback_type", "is", null)')
     expect(src).not.toMatch(/req\.(json|nextUrl|body)/)
     expect(src).not.toContain("searchParams")

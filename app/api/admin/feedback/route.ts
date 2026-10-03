@@ -126,6 +126,8 @@ export async function GET(req: NextRequest) {
     .from("support_conversations")
     .select(SELECT_COLUMNS)
     .not("feedback_type", "is", null)
+    // 2026-10-03: smoke / probe sessions never reach the triage inbox.
+    .eq("is_smoke_test", false)
     .in("feedback_status", statuses);
 
   if (types) query = query.in("feedback_type", types);

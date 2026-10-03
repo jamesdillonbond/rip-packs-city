@@ -311,7 +311,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_team_checklist",
-    description: "The team checklist exactly as the public /[collection]/team/[slug] page computes it: every edition the franchise has minted, grouped by series and tier, with the signed-in (or named) wallet's owned / missing split, cost to complete, and the most valuable missing editions. CALL THIS before answering or logging anything about a team checklist — 'Series 1 looks short', 'how many Pistons Legendaries are there', 'what am I missing for the Lakers', 'what would it cost to finish the Blazers' — so the answer carries the catalog's own counts instead of the user's guess. Top Shot series are the on-chain numbers: 0 is Series 1, 2 is Series 2, 3 is Summer 2021, 4 is Series 3, 5 is Series 4, 6/7/8 are the 2023-24 / 2024-25 / 2025-26 seasons; say the label, not the raw number. Defaults to the signed-in wallet; pass wallet to look at another collector (public on-chain holdings). Not for Pinnacle (no teams).",
+    description: "The team checklist exactly as the public /[collection]/team/[slug] page computes it: every edition the franchise has minted, grouped by series and tier, with the signed-in (or named) wallet's owned / missing split, cost to complete, and the most valuable missing editions. CALL THIS before answering or logging anything about a team checklist — 'Series 1 looks short', 'how many Pistons Legendaries are there', 'what am I missing for the Lakers', 'what would it cost to finish the Blazers' — so the answer carries the catalog's own counts instead of the user's guess. Top Shot series are the on-chain numbers: 0 is Series 1, 2 is Series 2, 3 is Summer 2021, 4 is Series 3, 5 is Series 4, 6/7/8 are the 2023-24 / 2024-25 / 2025-26 seasons; say the label, not the raw number. Defaults to the signed-in wallet; pass wallet to look at another collector (public on-chain holdings). Not for Pinnacle (no teams). ⚠ This IS the read the page renders: when the user says they see fewer editions than this tool returns, the page they are looking at is stale or on a different view/scope (Full editions vs All moments, Contemporary vs All-Time, or a cached load) — ask them to reload with the view named, quote the catalog counts, and log a bug ONLY if the reloaded page still disagrees. Do not log 'the checklist is cutting off editions' on the strength of one description.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -1391,7 +1391,7 @@ async function logBetaFeedback(args: {
   feedbackType: "bug" | "feature_request" | "general_feedback";
   summary: string;
   details: string;
-  ctx: { sessionId: string; ownerKey?: string | null; userWallet?: string | null; userEmail?: string | null; pageContext?: string | null };
+  ctx: { sessionId: string; ownerKey?: string | null; userWallet?: string | null; userEmail?: string | null; pageContext?: string | null; isSmokeTest?: boolean };
 }): Promise<{ id: number | null }> {
   try {
     const { data, error } = await supabase
@@ -1412,6 +1412,9 @@ async function logBetaFeedback(args: {
         feedback_summary: args.summary,
         feedback_details: args.details,
         feedback_status: "new",
+        // 2026-10-03: a probe / smoke session's log_* row used to land with the
+        // default false and sit in the triage inbox as a real report (id 10367).
+        is_smoke_test: args.ctx.isSmokeTest ?? false,
       })
       .select("id")
       .maybeSingle();
@@ -1588,7 +1591,7 @@ async function resolveTeamName(collectionUuid: string, partial: string): Promise
   return { status: "ambiguous", candidates: names.slice(0, 10) };
 }
 
-type ToolCtx = { sessionId: string; ownerKey?: string | null; userWallet?: string | null; userEmail?: string | null; userId?: string | null; collectionId?: string | null; pageContext?: string | null };
+type ToolCtx = { sessionId: string; ownerKey?: string | null; userWallet?: string | null; userEmail?: string | null; userId?: string | null; collectionId?: string | null; pageContext?: string | null; isSmokeTest?: boolean };
 
 // 2026-09-25 (batch 59): the label-keyed player tools — deal boards on
 // cached_listings, the special-serial boards, get_edition_listings, the badge
@@ -1728,7 +1731,7 @@ async function executeToolInner(
       feedbackType: "bug",
       summary,
       details: detailsBlock,
-      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, userEmail: ctx.userEmail, pageContext: page },
+      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, userEmail: ctx.userEmail, pageContext: page, isSmokeTest: ctx.isSmokeTest },
     });
     return JSON.stringify({
       status: id ? "logged" : "logged_offline",
@@ -1751,7 +1754,7 @@ async function executeToolInner(
       feedbackType: "feature_request",
       summary,
       details: detailsBlock,
-      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, userEmail: ctx.userEmail, pageContext: ctx.pageContext },
+      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, userEmail: ctx.userEmail, pageContext: ctx.pageContext, isSmokeTest: ctx.isSmokeTest },
     });
     return JSON.stringify({
       status: id ? "logged" : "logged_offline",
@@ -1773,7 +1776,7 @@ async function executeToolInner(
       feedbackType: "general_feedback",
       summary,
       details: detailsBlock,
-      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, userEmail: ctx.userEmail, pageContext: ctx.pageContext },
+      ctx: { sessionId: ctx.sessionId, ownerKey: ctx.ownerKey, userWallet: ctx.userWallet, userEmail: ctx.userEmail, pageContext: ctx.pageContext, isSmokeTest: ctx.isSmokeTest },
     });
     return JSON.stringify({
       status: id ? "logged" : "logged_offline",
@@ -5681,6 +5684,7 @@ export async function POST(req: NextRequest) {
                 userId: userId ?? null,
                 collectionId: collectionId ?? null,
                 pageContext: pageContext ?? null,
+                isSmokeTest,
               }),
               new Promise<string>((resolve) =>
                 setTimeout(() => {

@@ -22,6 +22,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
 import { mineFilter } from "@/lib/concierge/history-filter";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -54,29 +55,43 @@ export async function DELETE() {
   const filter = mineFilter(identity.email, identity.ownerKey);
   try {
     // 1. Transcript turns → deleted.
-    const { data: deleted, error: delErr } = await supabase
-      .from("support_conversations")
-      .delete()
-      .is("feedback_type", null)
-      .or(filter)
-      .select("id");
+    // Each statement is bounded: an overrun resolves into the error branch
+    // (lib/api/bounded-read.ts) instead of a platform 504 after the work.
+    const { data: deleted, error: delErr } = await boundedRead(
+      supabase
+        .from("support_conversations")
+        .delete()
+        .is("feedback_type", null)
+        .or(filter)
+        .select("id"),
+      "api/support-chat/history/delete-turns",
+      8000,
+    );
     if (delErr) return apiErrorResponse(delErr, "api/support-chat/history");
 
     // 2. Logged feedback → anonymised, kept for triage.
-    const { data: anonymised, error: anonErr } = await supabase
-      .from("support_conversations")
-      .update({ user_email: null, owner_key: null, user_wallet: null, session_id: "deleted-by-user" })
-      .not("feedback_type", "is", null)
-      .or(filter)
-      .select("id");
+    const { data: anonymised, error: anonErr } = await boundedRead(
+      supabase
+        .from("support_conversations")
+        .update({ user_email: null, owner_key: null, user_wallet: null, session_id: "deleted-by-user" })
+        .not("feedback_type", "is", null)
+        .or(filter)
+        .select("id"),
+      "api/support-chat/history/anonymise-feedback",
+      8000,
+    );
     if (anonErr) return apiErrorResponse(anonErr, "api/support-chat/history");
 
     // 3. Session memory → identity + recalled topics cleared.
-    const { data: sessions, error: sessErr } = await supabase
-      .from("chat_sessions")
-      .update({ user_email: null, owner_key: null, user_wallet: null, last_topics: [], last_player_searched: null })
-      .or(filter)
-      .select("session_id");
+    const { data: sessions, error: sessErr } = await boundedRead(
+      supabase
+        .from("chat_sessions")
+        .update({ user_email: null, owner_key: null, user_wallet: null, last_topics: [], last_player_searched: null })
+        .or(filter)
+        .select("session_id"),
+      "api/support-chat/history/clear-sessions",
+      8000,
+    );
     if (sessErr) return apiErrorResponse(sessErr, "api/support-chat/history");
 
     return NextResponse.json({

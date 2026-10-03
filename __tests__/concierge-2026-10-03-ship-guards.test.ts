@@ -145,3 +145,13 @@ describe("explain_ui_field answers from the dictionary and the prompt points at 
     expect(ROUTE).toContain("call explain_ui_field first")
   })
 })
+
+describe("a probe session's logged feedback never reaches the triage inbox", () => {
+  it("log_* rows carry the request's is_smoke_test and the admin inbox filters on it", () => {
+    expect(ROUTE).toContain("is_smoke_test: args.ctx.isSmokeTest ?? false,")
+    // every log_* caller forwards the flag
+    expect((ROUTE.match(/isSmokeTest: ctx\.isSmokeTest/g) ?? []).length).toBeGreaterThanOrEqual(3)
+    const ADMIN = src(join("app", "api", "admin", "feedback", "route.ts"))
+    expect(ADMIN).toContain('.eq("is_smoke_test", false)')
+  })
+})
