@@ -50,8 +50,10 @@ def scan(buf, base, seen, out):
                     plen = int.from_bytes(buf[p:p+4], "big"); ptype = int.from_bytes(buf[p+4:p+6], "big")
                     parts.append((ptype, buf[p+6:p+4+plen])); p += 4 + plen
                 if p - i == klen:
-                    vlen = int.from_bytes(buf[p:p+4], "big")
-                    val = buf[p+4:p+4+vlen]
+                    vlen = int.from_bytes(buf[p:p+4], "big"); voff = 4
+                    if vlen == 0 and int.from_bytes(buf[p+4:p+8], "big"):   # mainnet-16 and older: u64 value length
+                        vlen = int.from_bytes(buf[p:p+8], "big"); voff = 8
+                    val = buf[p+voff:p+voff+vlen]
                     if len(val) == vlen and vlen < 64 * 1024 * 1024:
                         key = parts[-1][1].hex()
                         k = (name, key)
