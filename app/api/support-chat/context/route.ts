@@ -180,6 +180,63 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── 1c. What shipped since the reader was last here ────────────────────────
+  // The greeting named only the LAST row logged (by created_at): a tester whose
+  // twelve requests shipped in one day was told the newest one "is still in
+  // the queue" (2026-10-03). This read answers the question a returning reader
+  // actually has. "Last here" = the owner's latest support_conversations row:
+  // this fetch runs before the first message of THIS visit, so the latest row
+  // is the previous visit's last turn; a reader with no prior turn gets the
+  // last 14 days. A failed read is `null` (unknown) — never `{ count: 0 }`,
+  // which would read "nothing shipped for you".
+  let recentlyShipped: {
+    count: number;
+    since: string;
+    items: { id: number; feedback_type: string | null; feedback_summary: string; shipped_at: string | null }[];
+  } | null = null;
+  if (ownerKey) {
+    try {
+      const { data: lastTurn, error: lastErr } = await supabase
+        .from("support_conversations")
+        .select("created_at")
+        .eq("owner_key", ownerKey)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastErr) throw lastErr;
+      const lastAt = lastTurn && typeof lastTurn.created_at === "string" ? Date.parse(lastTurn.created_at) : NaN;
+      const since = new Date(Number.isFinite(lastAt) ? lastAt : Date.now() - 14 * 86_400_000).toISOString();
+      const { data, error, count } = await supabase
+        .from("support_conversations")
+        .select("id, feedback_type, feedback_summary, shipped_at", { count: "exact" })
+        .eq("owner_key", ownerKey)
+        .eq("feedback_status", "shipped")
+        .not("feedback_type", "is", null)
+        .not("feedback_summary", "is", null)
+        .gt("shipped_at", since)
+        .order("shipped_at", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      type ShippedRow = { id: number; feedback_type: string | null; feedback_summary: string | null; shipped_at: string | null };
+      const rows = ((Array.isArray(data) ? data : []) as ShippedRow[]).filter(
+        (r) => typeof r?.feedback_summary === "string" && r.feedback_summary.trim().length > 0,
+      );
+      recentlyShipped = {
+        count: typeof count === "number" ? count : rows.length,
+        since,
+        items: rows.slice(0, 3).map((r) => ({
+          id: r.id,
+          feedback_type: r.feedback_type ?? null,
+          feedback_summary: String(r.feedback_summary).trim(),
+          shipped_at: r.shipped_at ?? null,
+        })),
+      };
+    } catch (err) {
+      console.error("[context] recently-shipped lookup error:", err);
+      recentlyShipped = null;
+    }
+  }
+
   // ── 2 + 3. Market context (gated behind includeMarketStatus) ───────────────
   // During beta the chat opens with a personalized greeting only — no
   // auto-firing market-pulse / dailyDeal follow-up. The bot still has live
@@ -303,7 +360,9 @@ export async function GET(req: NextRequest) {
   // client-side voice.
 
   let pageWelcome = "Free beta — I'm here for support, Q&A, and feedback for the team. Deals, FMV, wallet analysis, and live market data (top sales, movers, rookies, scarcity) too if you want.";
-  if (returningBetaTester && lastOpenFeedback?.feedback_summary) {
+  if (returningBetaTester && recentlyShipped && recentlyShipped.count > 0) {
+    pageWelcome = `Welcome back. ${shippedSinceLine(recentlyShipped)}`;
+  } else if (returningBetaTester && lastOpenFeedback?.feedback_summary) {
     const status = String(lastOpenFeedback.feedback_status ?? "new");
     if (status === "shipped") {
       pageWelcome = `Welcome back. Your feedback "${lastOpenFeedback.feedback_summary}" shipped — thanks for the catch.`;
@@ -332,7 +391,18 @@ export async function GET(req: NextRequest) {
     lastTopics,
     lastPlayerSearched,
     lastOpenFeedback,
+    recentlyShipped,
     pageWelcome,
     pageSuggestions: suggestions,
   });
+}
+
+/** "Since your last visit, 3 of your requests shipped: "A", "B" (+1 more)." — the
+ *  count is the DB's, the quoted items are the newest three. */
+function shippedSinceLine(rs: { count: number; items: { feedback_summary: string }[] }): string {
+  const n = rs.count;
+  const named = rs.items.map((i) => `"${i.feedback_summary}"`);
+  const more = n - named.length;
+  const list = named.length ? `: ${named.join(", ")}${more > 0 ? ` (+${more} more)` : ""}` : "";
+  return `Since your last visit, ${n} of your request${n === 1 ? "" : "s"} shipped${list}. Ask me "what shipped?" for the full list.`;
 }

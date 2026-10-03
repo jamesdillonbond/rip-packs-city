@@ -171,6 +171,35 @@ describe("SupportChat", () => {
     expect(container.textContent).toContain("Welcome back, dana.")
   })
 
+  // 2026-10-03: what shipped since the last visit outranks the newest row's status.
+  it("leads with what shipped since the last visit when the context carries it", async () => {
+    const { container } = await openWith({
+      returningBetaTester: true,
+      lastOpenFeedback: { feedback_summary: "newest, still queued", feedback_status: "new" },
+      recentlyShipped: { count: 4, since: "2026-10-03T16:00:00Z", items: [{ feedback_summary: "Tier toggle" }, { feedback_summary: "Hide owned" }, { feedback_summary: "Full editions" }] },
+    })
+    await waitFor(() => expect(container.textContent).toContain('Since your last visit, 4 of your requests shipped: "Tier toggle", "Hide owned", "Full editions" (+1 more)'))
+    expect(container.textContent).toContain("Welcome back, dana.")
+    expect(container.textContent).not.toContain("still in the queue")
+  })
+
+  it("a null recentlyShipped (read failed) falls back to the last-row line — never to 'nothing shipped'", async () => {
+    const { container } = await openWith({
+      returningBetaTester: true,
+      lastOpenFeedback: { feedback_summary: "idea", feedback_status: "new" },
+      recentlyShipped: null,
+    })
+    await waitFor(() => expect(container.textContent).toContain("still in the queue"))
+    expect(container.textContent).not.toContain("Since your last visit")
+    cleanup()
+    const zero = await openWith({
+      returningBetaTester: true,
+      lastOpenFeedback: { feedback_summary: "idea", feedback_status: "new" },
+      recentlyShipped: { count: 0, since: "2026-10-03T16:00:00Z", items: [] },
+    })
+    await waitFor(() => expect(zero.container.textContent).toContain("still in the queue"))
+  })
+
   it("rewrites the welcome for in-progress / triaged / queued feedback statuses", async () => {
     const inProg = await openWith({ returningBetaTester: true, lastOpenFeedback: { feedback_summary: "slow page", feedback_status: "in_progress" } })
     await waitFor(() => expect(inProg.container.textContent).toContain("is in progress"))

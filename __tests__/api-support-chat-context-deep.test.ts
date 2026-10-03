@@ -62,7 +62,8 @@ describe("GET /api/support-chat/context — signed-in beta tester", () => {
     state.authUser = { email: "me@x.com" }
     install({
       allow_list: { data: { username: "collector", wallet_addr: "0xabc" }, error: null },
-      support_conversations: { count: 3, error: null },
+      // 1: cross-session count · 2: last turn · 3: shipped-since (none)
+      support_conversations: [{ count: 3, error: null }, { data: null, error: null }, { data: [], count: 0, error: null }],
       beta_feedback_inbox: {
         data: {
           id: 7,
@@ -82,6 +83,81 @@ describe("GET /api/support-chat/context — signed-in beta tester", () => {
     expect(body.pageWelcome).toContain("shipped")
     expect(body.pageWelcome).toContain("dark mode toggle")
     expect(body.pageSuggestions).toContain("Find me a deal")
+    expect(body.recentlyShipped).toEqual({ count: 0, since: expect.any(String), items: [] })
+  })
+
+  // 2026-10-03: the greeting answers "what shipped since I was last here", not
+  // "what is the status of the newest row". A tester whose twelve requests
+  // shipped in a day was being told the newest one "is still in the queue".
+  it("leads with what shipped since the reader's last turn, naming the newest three and counting the rest", async () => {
+    state.authUser = { email: "me@x.com" }
+    install({
+      allow_list: { data: { username: "collector", wallet_addr: "0xabc" }, error: null },
+      support_conversations: [
+        { count: 9, error: null },
+        { data: { created_at: "2026-10-03T16:00:00Z" }, error: null },
+        {
+          data: [
+            { id: 10244, feedback_type: "feature_request", feedback_summary: "Edition-level collect-them-all view", shipped_at: "2026-10-03T20:21:00Z" },
+            { id: 10239, feedback_type: "feature_request", feedback_summary: "Hide owned moments toggle", shipped_at: "2026-10-03T20:21:00Z" },
+            { id: 10237, feedback_type: "feature_request", feedback_summary: "Tier toggle", shipped_at: "2026-10-03T20:21:00Z" },
+            { id: 10256, feedback_type: "feature_request", feedback_summary: "Top-5 holder share", shipped_at: "2026-10-03T19:20:00Z" },
+          ],
+          count: 4,
+          error: null,
+        },
+      ],
+      beta_feedback_inbox: {
+        data: { id: 10373, feedback_type: "bug", feedback_summary: "newest row, still queued", feedback_status: "new", created_at: "2026-10-03T21:00:00Z" },
+        error: null,
+      },
+    })
+    const body = await (await GET(req("https://t/api/support-chat/context"))).json()
+    expect(body.recentlyShipped.count).toBe(4)
+    expect(body.recentlyShipped.since).toBe("2026-10-03T16:00:00.000Z")
+    expect(body.recentlyShipped.items.map((i: any) => i.id)).toEqual([10244, 10239, 10237])
+    expect(body.pageWelcome).toContain("Since your last visit, 4 of your requests shipped")
+    expect(body.pageWelcome).toContain('"Edition-level collect-them-all view", "Hide owned moments toggle", "Tier toggle" (+1 more)')
+    expect(body.pageWelcome).not.toContain("still in the queue")
+  })
+
+  it("a reader with no prior turn is measured over the last 14 days, and the DB count wins over the page of items", async () => {
+    state.authUser = { email: "me@x.com" }
+    install({
+      allow_list: { data: { username: "collector", wallet_addr: "0xabc" }, error: null },
+      support_conversations: [
+        { count: 0, error: null },
+        { data: null, error: null },
+        { data: [{ id: 1, feedback_type: "bug", feedback_summary: "one", shipped_at: "2026-10-01T00:00:00Z" }], count: 25, error: null },
+      ],
+      beta_feedback_inbox: { data: null, error: null },
+    })
+    const body = await (await GET(req("https://t/api/support-chat/context"))).json()
+    const sinceMs = Date.parse(body.recentlyShipped.since)
+    expect(Date.now() - sinceMs).toBeGreaterThan(13.9 * 86_400_000)
+    expect(Date.now() - sinceMs).toBeLessThan(14.1 * 86_400_000)
+    expect(body.recentlyShipped.count).toBe(25)
+    expect(body.recentlyShipped.items).toHaveLength(1)
+  })
+
+  it("a FAILED shipped-since read is null (unknown), not {count: 0}, and the greeting falls back to the last-row line", async () => {
+    state.authUser = { email: "me@x.com" }
+    install({
+      allow_list: { data: { username: "collector", wallet_addr: "0xabc" }, error: null },
+      support_conversations: [
+        { count: 3, error: null },
+        { data: { created_at: "2026-10-03T16:00:00Z" }, error: null },
+        { data: null, error: { message: "timeout" } },
+      ],
+      beta_feedback_inbox: {
+        data: { id: 7, feedback_type: "bug", feedback_summary: "dark mode toggle", feedback_status: "new", created_at: "2026-07-15T00:00:00Z" },
+        error: null,
+      },
+    })
+    const body = await (await GET(req("https://t/api/support-chat/context"))).json()
+    expect(body.recentlyShipped).toBeNull()
+    expect(body.pageWelcome).toContain("still in the queue")
+    expect(body.pageWelcome).not.toContain("Since your last visit")
   })
 })
 

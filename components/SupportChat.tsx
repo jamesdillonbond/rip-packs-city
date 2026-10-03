@@ -487,7 +487,16 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
           const open = ctx.lastOpenFeedback;
           let nameLine = ownerKey ? `Welcome back, ${ownerKey}.` : "Welcome back.";
           let statusLine: string | null = null;
-          if (open?.feedback_summary) {
+          // 2026-10-03: what shipped SINCE THEY WERE LAST HERE outranks the
+          // status of the single newest row. `null` = the read failed (unknown),
+          // so it falls through to the last-row line, never to "nothing shipped".
+          const rs = ctx.recentlyShipped as { count?: number; items?: { feedback_summary?: string }[] } | null | undefined;
+          if (rs && typeof rs.count === "number" && rs.count > 0) {
+            const named = (rs.items ?? []).map((i) => i.feedback_summary).filter((t): t is string => typeof t === "string" && t.length > 0).map((t) => `"${t}"`);
+            const more = rs.count - named.length;
+            const list = named.length ? `: ${named.join(", ")}${more > 0 ? ` (+${more} more)` : ""}` : "";
+            statusLine = `Since your last visit, ${rs.count} of your request${rs.count === 1 ? "" : "s"} shipped${list}. Ask me "what shipped?" for the full list.`;
+          } else if (open?.feedback_summary) {
             const status = String(open.feedback_status ?? "new");
             if (status === "shipped") {
               statusLine = `Your last feedback ("${open.feedback_summary}") shipped — thanks for the catch.`;
