@@ -43,7 +43,7 @@ export default function GlobalSiteHeader() {
           .rpc-gsh-label { display: none !important; }
         }
         @media (min-width: 768px) and (max-width: 1023.98px) {
-          .rpc-gsh-row { gap: 10px !important; }
+          .rpc-gsh-row { gap: 8px !important; } /* 10 → 8 on 2026-10-03 PM: see TopNav.tsx */
           .rpc-gsh-label { display: none !important; }
         }
       `}</style>

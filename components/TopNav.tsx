@@ -65,6 +65,12 @@ export default function TopNav() {
     // nav + search ≥ 110 px + toggle + SIGN IN) still fits at 768 px with the
     // signed-in extras (My Teams, Alerts). Simulated on the live header before
     // shipping: 0 overflow and one link row at every width 768–1100.
+    // ⚠ 2026-10-03 PM: that simulation measured md:px-1.5 at ZERO — the
+    // collections layout's unlayered universal padding reset outranked every utility
+    // (fixed 8b18dccc6). With the padding real, the signed-in row (11 links)
+    // overflowed 792 px by 46 px; md:px-1 + md:tracking-normal + the header's
+    // 8 px md gap bring the last control to 764 px — measured in Chrome at
+    // 796 px, which is exactly the 768 px client width.
     <nav className="hidden md:flex items-center shrink-0 md:gap-0 lg:gap-1 text-sm">
       {links.map((l) => {
         const active = l.matchPrefix
@@ -77,7 +83,7 @@ export default function TopNav() {
             key={l.href}
             href={l.href}
             className={
-              "rounded-md md:px-1.5 lg:px-2.5 py-1.5 whitespace-nowrap transition-colors font-medium tracking-wide " +
+              "rounded-md md:px-1 lg:px-2.5 py-1.5 whitespace-nowrap transition-colors font-medium md:tracking-normal lg:tracking-wide " +
               (active
                 ? isAnalytics
                   ? "text-emerald-400 bg-emerald-500/10"

@@ -136,6 +136,10 @@ describe("tablet-landscape fit (2026-10-03)", () => {
   it("the nav never shrinks and its labels never wrap; md padding is tighter than lg", async () => {
     const src = readFileSync(join(process.cwd(), "components/TopNav.tsx"), "utf8")
     expect(src).toMatch(/<nav className="hidden md:flex items-center shrink-0 md:gap-0 lg:gap-1 text-sm">/)
-    expect(src).toContain("md:px-1.5 lg:px-2.5 py-1.5 whitespace-nowrap")
+    // 2026-10-03 PM re-pin: md:px-1.5 was measured at ZERO (unlayered reset,
+    // 8b18dccc6); with real padding the signed-in row needs px-1 + normal
+    // tracking at md to fit 768 px. The PROPERTY pinned: md padding < lg.
+    expect(src).toContain("md:px-1 lg:px-2.5 py-1.5 whitespace-nowrap")
+    expect(src).toContain("md:tracking-normal lg:tracking-wide")
   })
 })

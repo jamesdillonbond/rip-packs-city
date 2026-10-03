@@ -103,7 +103,7 @@ describe("tablet-landscape fit (2026-10-03): the nav must not wrap its own label
     const md = css.split("@media (min-width: 768px) and (max-width: 1023.98px)")[1] ?? ""
     expect(md, "md-only block present").not.toBe("")
     const block = md.slice(0, md.indexOf("}\n        }") + 1)
-    expect(block).toContain(".rpc-gsh-row { gap: 10px !important; }")
+    expect(block).toMatch(/\.rpc-gsh-row \{ gap: 8px !important; \}/) // 10 → 8 on 2026-10-03 PM (TopNav.tsx note)
     expect(block).toContain(".rpc-gsh-label { display: none !important; }")
   })
 })
