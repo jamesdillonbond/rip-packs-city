@@ -79,3 +79,19 @@ Live read 2026-10-02: UFC 100% STALE/NO_DATA (518 editions), Golazos 1.0% HIGH/M
 - This no-push note is specific to the Cowork cloud session; your machine + Claude Code push normally via Git Credential Manager. Never re-embed a PAT in `remote.origin.pushurl` (dead since 2026-08-16).
 
 **End state:** `cross-market-floor` is source-agnostic and degrades cleanly to `null` Flowty; Golazos (then All Day, TS) on-chain ask parity proven; UFC indexer staged; Flowty teardown becomes a config flip, not an accuracy regression. Ledger entry per shipped piece.
+
+---
+
+## Disposition — NOT BUILT: the end state is already true (Claude Code, 2026-10-03 ~8:40 AM PT)
+
+Re-derived against code + live DB before acting. FMV's ASK leg reads **no** Flowty data today, so "Flowty goes dark" is already a non-event for it — this matches `docs/reference/roadmap-status.md` (2026-09-25 note: "no data dependency remains"), which this handoff missed.
+
+- `lib/cross-market-floor.ts` exports `selectCrossMarketFloor` (not `choose…`); its only caller `app/api/edition-floor/route.ts` already stubs `fetchFlowtyFloor()` to `{floor:null}`.
+- `fmv-recalc` reads `edition_offers` (Top Shot, Atlas), `allday_edition_floor_ask` (on-chain v2), `cached_listings_v2` (liveness only), `topshot_parallel_asks`, `badge_editions`. Current HIGH/MEDIUM/ASK_ONLY editions carrying a Flowty-derived ask algo: **0**.
+- Per collection, non-Flowty ask paths are live and fresh: Top Shot (Atlas → `edition_offers`), All Day (v2 `direct_v2`/`storefront_v2` + 6-hourly pg_cron), Golazos (`refresh_golazos_ask_fmv_from_listings`, `golazos-listing-ask-v1` on 296 editions — §5's "Golazos depends on the Flowty ask" is false), Pinnacle (`direct` + indexer). UFC has no ask source from anyone, Flowty included (`ufc-listing-cache` has not run; no UFC sales since 2026-05-13).
+- `flowty-proxy` is not the single choke point: `ufc-listing-cache`, `seed-ufc-editions` and `lib/pinnacle/*` call `api2.flowty.io` directly.
+- Live Flowty lanes: `topshot-`, `allday-`, `golazos-listing-cache` (~144 runs / 48 h each) → v1 `cached_listings` only (~100 rows per collection).
+
+**Not to build:** §3 steps 1–4 (source-agnostic floor, UFC indexer, parity check, precedence flip).
+**Teardown on the day Flowty goes dark** (unchanged from the 09-25 note): retire the three sweeps and their schedulers (All Day + Golazos are presumably cron-job.org — not visible from pg_cron/vercel.json/GHA), then `flowty-proxy`; check the v1 display readers (`get_cross_collection_deals`, `get_platform_stats`).
+**One open observation, not actioned (FMV-adjacent, needs a decider):** `golazos-listing-cache` still calls `update_badge_low_ask_from_cached_listings` (route.ts ~418–445), a SECOND writer of Golazos `badge_editions.low_ask` beside the on-chain `refresh_golazos_badge_low_ask` (pg_cron :10/:40), which overwrites it. Removing the Flowty call would leave one writer; Flowty dying removes it anyway.

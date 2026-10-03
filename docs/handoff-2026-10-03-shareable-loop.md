@@ -61,3 +61,12 @@ Revert the commit(s). No destructive DB ops. If `funnel_events.event_type` neede
 - No-push note is specific to the Cowork cloud session; your box pushes normally. Never re-embed a PAT in `remote.origin.pushurl`.
 
 **End state:** share clicks and share-driven visits are tracked and attributed, mobile uses the native share sheet, and users are nudged to share at the moment they pin — turning the proven activation loop into a measurable acquisition channel, with no promo spend and no paywall. Ledger entry per shipped piece.
+
+---
+
+## Disposition — SHIPPED, narrowed after re-deriving (Claude Code, 2026-10-03 ~8:40 AM PT)
+
+Two of the spec's premises were already built: **Gap B** (share nudge at activation) exists as the dashboard's `PublicProfileCard` (→ `ShareProfileButtons`) and the collection tab's post-search Share button; and **share→visit attribution** exists — `lib/track-funnel.ts` records an arrival's `utm_*` and `share_ref` on every funnel event of that session, so no `share_referral_visit` event or `funnel_events` CHECK migration is needed. The real gap was narrower: the two **anonymous `/share/<wallet>` card buttons** copied a bare URL (the card page copied `window.location.href`, re-sharing the copier's own utm), so a card-share visit was the one share arrival that could not be attributed — and both said "copied" even when the copy failed.
+
+Shipped: `lib/share-link.ts` (`walletShareUrl` → `?utm_source=share&utm_medium=copy|native`, same vocabulary as the profile path; `shareWalletCard` → native share sheet on touch devices only, clipboard otherwise, honest outcome), used by `app/share/[wallet]/ShareButton.tsx` and the collection tab. Test: `__tests__/lib-share-link.test.tsx` (planted "always copied" defect reds 2).
+**Not built:** a `share_click` event (needs a CHECK migration; inbound `utm_source=share` already measures what shares produce). Read: `funnel_events` rows whose `referrer` contains `utm_source=share&utm_medium=copy|native` on a `share_view` surface.
