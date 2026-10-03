@@ -2801,6 +2801,13 @@ const PINS = [
     test: "supabase/tests/run_topshot_sellback_walk.sql",
     migration: "supabase/migrations/20261003204900_topshot_sellback_walk_backfills_2025_buybacks.sql",
   },
+  {
+    // Added 2026-10-03 (#167). Names the walk's staged sell-backs from a chain read of the
+    // buy-back wallet: window reads, a per-block fallback, a parallel never folded into its base.
+    fn: "run_topshot_sellback_edition_reads",
+    test: "supabase/tests/run_topshot_sellback_edition_reads.sql",
+    migration: "supabase/migrations/20261003211651_topshot_sellback_edition_reads_name_staged_sellbacks_from_the_chain.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version
