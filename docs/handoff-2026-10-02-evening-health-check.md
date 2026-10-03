@@ -36,3 +36,9 @@ Vercel's top error group (1,828 events / 850 users in 7 days) is `[DEP0169] Depr
 1. Find the caller: grep `app lib workers` for `url.parse(` / `from "url"`; otherwise the shared dependency of those routes (the Flow/FCL HTTP transport is the likely suspect). `node --trace-deprecation` on one handler is the fastest proof.
 2. Ours → `new URL(...)` (mind relative URLs) + a test. A dependency → an in-range update via `npx -y npm@11 update <pkg>` (npm 10 crashes on `update`); never downgrade or patch `node_modules`; if no fix exists, record it in known-issues.
 3. tsc / `npm test` / `npm run lint:ratchet`; ledger; push; confirm deploy + CI.
+
+---
+
+## Status 2026-10-03 (Claude Code, Windows box) — both task prompts above are DONE
+- **#163:** routes + four tests deleted, `MARKET_FEED_TOKEN` dropped, ratchets lowered (dead-host 12 → 10, image-proxy budget 26 → 25, eslint 696 → 695). Commits `f58e9a926` (the deletions landed here) + `af62218f9`.
+- **`url.parse()` DEP0169:** not ours. Emitted by node-fetch@2, which cross-fetch@4 uses under `@onflow/transport-http`; Node 24 stays silent while the caller is inside `node_modules`, and Next's bundling removed that path. Fixed by `serverExternalPackages: ["node-fetch"]` (`c7ba872c7`), guard `__tests__/next-config-externalizes-node-fetch.test.ts`. Verified: 33 events in the ~2 h before the deploy, 0 after, including on a forced cold start of `/api/owned-flow-ids`.
