@@ -1,6 +1,6 @@
 # Rip Packs City — Cron Schedule Reference
 
-**Last verified:** July 21, 2026 — cron-job.org read live from the console (**86 entries: 79 active, 7 inactive** after `RPC Pipeline Runs Cleanup` was deleted); pg_cron from `cron.job` (64 active); GHA from `.github/workflows/` (16). Supersedes the 2026-06-07 regen (69 entries / pg_cron 34).
+**Last verified:** 2026-10-03 ~8:30 AM PT — cron-job.org read live from the console in Claude in Chrome: **88 entries, 71 active, 17 inactive**; every one of the 71 active entries read `Successful` on its last execution; the 17 inactive are the deliberate set listed below (10 of them belong to lanes since RETIRED and are deletion candidates — see the 2026-10-03 note under *Inactive cron-job.org entries*). pg_cron `cron.job` 189 rows / 187 active (16 and 491 inactive by ledger-recorded pause; 475 unscheduled 10-03 as a spent one-shot). GHA `ls .github/workflows` = 28 files, 22 scheduled. Vercel `vercel.json` 36 crons. The earlier stamp follows. — July 21, 2026 — cron-job.org read live from the console (**86 entries: 79 active, 7 inactive** after `RPC Pipeline Runs Cleanup` was deleted); pg_cron from `cron.job` (64 active); GHA from `.github/workflows/` (16). Supersedes the 2026-06-07 regen (69 entries / pg_cron 34).
 **Platform:** cron-job.org (free tier, 30s hard client timeout) + Supabase edge functions + workers + GitHub Actions + pg_cron.
 
 > **Provenance of schedules:** unchanged jobs carry their exact anchors from the 06-07 dashboard read. Jobs marked **⟨exec-derived⟩** are NEW or MOVED since 06-07 — their anchors are *derived from the live execution times* (last + next) observed on the dashboard on 07-21, not read from the edit grid. They're dashboard-sourced; confirm on the grid if treating as canonical. **If this file disagrees with the dashboard, the dashboard wins — update this file, never trust it blind.**
@@ -41,7 +41,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Drain FMV Cold Tail | /api/admin/drain-fmv-cold-tail?collection=all&limit=200 | 17,47 |
 | RPC Prune Pipeline Runs (daily) | /api/admin/prune-pipeline-runs | daily 06:00 UTC |
 | RPC Recalc Ultimate FMV | /api/admin/recalc-ultimate-fmv | daily 06:35 UTC |
-| RPC V1-Dapper Recovery | /api/admin/recover-v1-budget-exhausted | 43 */3 ⟨exec-derived⟩ — was daily `43 5` at 06-07 (moved) |
+| ~~RPC V1-Dapper Recovery~~ | /api/admin/recover-v1-budget-exhausted | ⛔ **RETIRED 08-02 — the console row is INACTIVE (job 7818270)**; the route runs on the `vercel.json` cron `*/20 * * * *` instead. Was 43 */3 ⟨exec-derived⟩ |
 | RPC All Day Listing Cache | /api/allday-listing-cache | 14,34,54 |
 | RPC AllDay Listings Indexer | /api/allday-listings-indexer | 2,17,32,47 |
 | RPC AllDay Listings Retry | /api/allday-listings-retry | 8,23,38,53 |
@@ -56,15 +56,15 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Pack Pull Source Rip ID Backfill | /api/cron/backfill-pack-pull-source-rip-id | 11,41 |
 | RPC Backfill Pack Rip Metadata | /api/cron/backfill-pack-rip-metadata | hourly :53 |
 | RPC Classify Acquisitions Multi-Collection | /api/cron/classify-acquisitions-multicollection | hourly :06 |
-| RPC Compute Laliga Pack EV | /api/cron/compute-laliga-pack-ev | daily 05:00 UTC — ⚠ **double-fire** w/ vercel.json (30 5 = 05:30) |
+| RPC Compute Laliga Pack EV | /api/cron/compute-laliga-pack-ev | daily 05:00 UTC — ✅ no longer a double-fire: the `vercel.json` entry was removed 2026-08-27 (verified absent 2026-10-03) |
 | RPC Daily Portfolio Snapshot | /api/cron/daily-portfolio-snapshot | daily 07:05 UTC ⚠ Since `20260920023318` this is the FIRST RETRY, not the primary: pg_cron `rpc-portfolio-snapshot-primary` (jobid 546, 06:46Z) lands the day first and the function is scoped to users without today's row, so this call finds the day done and returns in ms (`already_snapshotted` = the user count, `inserted` 0). It only does the aggregate on a day the primary died. |
-| RPC EVM Transfers Ingest | /api/cron/evm-transfers-ingest | hourly :19 |
+| ~~RPC EVM Transfers Ingest~~ | /api/cron/evm-transfers-ingest | ⛔ **RETIRED 08-02 — the console row is INACTIVE (job 7595696)**; the route runs on the `vercel.json` cron `4,14,…,54 * * * *` instead. Was hourly :19 |
 | RPC Lock Check Batch | /api/cron/lock-check-batch | 8,38 — ✅ FIXED (was brushing 30s cap) |
 | RPC Offers Sweep | /api/cron/offers-sweep | ~~2,22,42~~ **INACTIVE 2026-09-07 02:5xZ** (job 7712610, console) | Dead host (530 since 08-28) — the breaker made every tick `ok=true skipped`, which read as health. Replaced: `edition_offers.low_ask` from Atlas every 2 min (`20260907022120`/`024130`), `highest_offer` from job 7735311 (on-chain) + Atlas for verified editions. Watchlist row retired `20260907024754`. Re-enable in the console = revert. |
 | RPC Ownership On-chain Walk | /api/cron/ownership-onchain-walk | daily 13:30 UTC ⟨exec-derived⟩ — NEW |
 | RPC Pinnacle Events Ingest | /api/cron/pinnacle-events-ingest | 4,19,34,49 |
 | RPC Pinnacle Metadata Backfill | /api/cron/pinnacle-metadata-backfill | hourly :22 |
-| RPC Pinnacle Sync | /api/cron/pinnacle-sync | daily 10:07 UTC — ⚠ **double-fire** w/ vercel.json (0 6 = 06:00); backstop kept deliberately (dropout history) |
+| RPC Pinnacle Sync | /api/cron/pinnacle-sync | daily 10:07 UTC — ✅ no longer a double-fire: `pinnacle-sync` is not in `vercel.json` (verified absent 2026-10-03); this console entry is now its only scheduler |
 | RPC wmc Render-id Remap | /api/cron/pinnacle-wmc-render-id | hourly :37 |
 | RPC Populate Pinnacle WMC FMV | /api/cron/populate-pinnacle-wmc-fmv | hourly :03  ⚠ 2026-08-30: the RPC returns early (`catalog_unchanged`) unless `pinnacle_catalog.fmv_computed_at` moved past its watermark (migration 20260830153801); the ~4 working ticks after a catalog recompute need > the route's 125 s under daytime IO — `cron_heavy` now has EXECUTE (20260830154447) → ✅ 2026-08-30 16:17Z MOVED: pg_cron jobid 408 `rpc-populate-pinnacle-wmc-fmv` (cron_heavy, `9 * * * *`, wrapper `run_populate_pinnacle_wmc_fmv_job` writes the same terminal row + catches cancels; migration 20260830161744). **This cron-job.org entry is INACTIVE since 16:4xZ (console)** — jobid 408 is the only scheduler now; the route stays deployed as the manual/revert path. |
 | RPC Prune Log Tables | /api/cron/prune-logs | daily 04:23 UTC |
@@ -136,6 +136,8 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 
 **Dead-host pause of 2026-08-30 (`public-api.nbatopshot.com` 530 since 08-28; migration `20260830034312`, suppression re-bound to 2026-10-05 by `20260914144523`)** — last executions 08/29–08/30: Compute Topshot Pack EV · Topshot Moments Hydrator · Populate Pinnacle WMC FMV · Refresh Pack Grail Metrics MV · Resolve Wallet Usernames · TopShot Deal Floor Serials · TopShot FMV Populate. **Same host, disabled 2026-09-07:** Offers Sweep (job 7712610). **Retired lanes:** EVM Transfers Ingest (08-02, with its `vercel.json` entry) · V1-Dapper Recovery (08-02; the route is on Vercel cron `*/20` instead). **Long-standing, intentional:** Backfill Offer-Fill Sales · All Day FMV Populate · Cadence Payer Balance Check (payer wallet empty by design) · Pinnacle Listings Reconcile · Refresh Special Serial Owners MV · UFC Listings Indexer · UFC Strike Pipeline.
 
+**2026-10-03 note — 10 of the 17 belong to lanes that have since been RETIRED and are deletion candidates (console ACTIONS → Delete; a Cowork session cannot do it — its permission layer blocks the irreversible delete):** Compute Topshot Pack EV (7526594) · Topshot Moments Hydrator (7617630) · Populate Pinnacle WMC FMV (7584781) · Refresh Pack Grail Metrics MV (7619844) · Resolve Wallet Usernames (7776245) · TopShot Deal Floor Serials (7850139) · TopShot FMV Populate (7658302) — the #81 dead-host set, RETIRED 2026-09-23 (decided; pg_cron 15 is the one kept probe) · Offers Sweep (7712610, same decision) · EVM Transfers Ingest (7595696) and V1-Dapper Recovery (7818270) — both on Vercel cron since 08-02. The other seven ("long-standing, intentional") stay as they are.
+
 ⚠ The 2026-09-12 note above says "twenty-six inactive, seventeen deliberate"; nine were then re-enabled, so the console now shows exactly the seventeen deliberate ones. **Identify a real outage by a `Failed (HTTP error)` cluster on a date, never by inactivity.** One ACTIVE entry was failing at this read: `RPC Smoke Concierge Daily` (`Failed (timeout)` 30 s at 02:08 PT 09-19, `200` 15.46 s the day before) — the 30 s cap inside the night IO spell, sample size 2; no change made.
 
 (`RPC Pipeline Runs Cleanup` was **deleted 2026-07-21** — its work was never dark; `run_weekly_db_maintenance()` is a wrapper around `run_weekly_log_purges()`, which runs on pg_cron jobid 198 `rpc-weekly-log-purges` daily **11:46 UTC** (moved off 09:54Z on 2026-08-30 — that hour carried 191 startup timeouts in 7 days; migration 20260830000048). A `pipeline_cadence_watchlist` row (`weekly-db-maintenance`) now monitors it — `audit_20260721_watchlist_weekly_db_maintenance`. This closes the long-open 🔴 "Pipeline Runs Cleanup failing every weekly run" item from the 2026-07-11 audit.)
@@ -204,16 +206,32 @@ Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `
 | snapshot-institutional-wallets-backstop.yml | daily 07:29 UTC | ✅ MOVED 2026-07-26 (was 07:07 — :07 is the heaviest minute, 11 jobs). ⚠ Its primary moved 06:37→10:07, so this backstop now LEADS the primary by ~2h38m instead of trailing it — still idempotent + lock-guarded, but re-trailing it is an open cadence call. |
 | badge-sync.yml | 15 */6 + :45 of 02/08/14/20 | ⚠ 2026-08-30: both jobs now `needs: upstream-probe` — a 15 s POST to public-api.nbatopshot.com/graphql; a 52x/530 or connection failure SKIPS the tick (warning annotation), anything else runs it. Self-resumes when the host returns; no re-enable step. |
 | topshot-active-listings-ingest.yml | 29 */3 | 🔴 **2026-09-19: skipping every run (Atlas pre-probe 0/3 — Cloudflare JS challenge) and the residential arm is challenged too — known-issues #125.** ✅ MOVED 2026-07-26 (was 13 */3; :13 is the 2nd-heaviest minute, 9 jobs, and this is a 15–18 min Atlas sweep). |
-| smoke-tests.yml | daily 12:11 UTC + every push | |
+| smoke-tests.yml | daily 12:11 UTC + deployment_status | 2026-10-02: the schedule asks for the one hard "answered or fallback" concierge probe only; Sundays and dispatch run the full battery |
+| dead-lane-backstop.yml | 12,27,42,57 | Backstop for alerts-dispatch/alerts-send and the listings/events/ownership lanes whose primaries are console entries; the offers-sweep step is commented out (#81) |
+| site-availability-alarm.yml | 4,19,33,49 | ⛔ Must stay on GitHub — the plane that survives a Vercel pause (#76). Telegram alert via `check_site_availability` |
+| e2e-smoke.yml | 51 */6 + deployment_status | Playwright DOM smoke against prod — the only client-side instrument besides the beacon (#69) |
+| scheduler-liveness.yml | daily 08:17 UTC | `scripts/check-scheduler-liveness.mjs` — expected-vs-delivered per workflow (MAX_SILENT_HOURS 24) |
+| clock-sweep.yml | daily 08:20 UTC | wall-clock-dependent tests |
+| db-pin-staleness.yml | daily 07:20 UTC | `db:pins:check`, `badges:art:check` |
+| edge-fn-drift.yml | daily 06:40 UTC | `edge:drift:check` — deployed edge source vs repo |
+| migration-autorecover.yml | 07:25, 15:35, 23:35 UTC | `db:migrations:recover` + checks |
+| migration-parity.yml | 07:40, 15:50, 23:50 UTC | `db:migrations:check` |
+| player-identities-sync.yml | daily 10:17 UTC | POST /api/cron/player-identities-sync per league |
+| player-stats-sync.yml | 23 */6 | `scripts/sync-player-stats.mjs` (ESPN season stats through the league-id crosswalk) |
+| edge-fn-deploy.yml | dispatch-only | CLI deploy from committed files (rpc-edge-fn-deploy §4) |
 | ci.yml | event-driven only (push/PR) | |
+| dependency-audit.yml | event-driven only (push/PR) | |
+
+⚠ **GitHub delivers every high-frequency schedule at ~6–8 runs/day whatever the cron asks** (#124, re-measured 2026-10-03: `rpc-pipeline`, `sales-indexers-backstop`, `topshot-sales-history-backfill`, `dead-lane-backstop`, `offer-fill-backfill`, `site-availability-alarm` all show 3–7 h gaps between scheduled runs over the last 40). A shed schedule is a defect only if the lane is backlog-bound. ⚠ `run-active-listings-ingest.ps1` says "the GH workflow is disabled" — it is not: `topshot-active-listings-ingest.yml` still runs `29 */3` as a backstop that skips when its Atlas probe fails.
 
 ## Known issues / watch-list (2026-07-21)
 
+- **2026-10-03 — pg_cron jobid 475 `rpc-dune-free-tier-sunset` UNSCHEDULED**: the calendar one-shot (`0 12 23 9 *`) fired 2026-09-23 and did its job (`dune_budget_state.paused = true`); left in place it would have re-fired every 23 September. Spent, removed; revert path in `docs/reference/cron-and-schedulers.md`.
 - **2026-08-30 — pg_cron jobid 16 `rpc-backfill-pack-pool` is PAUSED** (`cron.alter_job(16, active => false)`, migration `20260830021817`): its target `public-api.nbatopshot.com` has been 530/1033 since 08-28 ~17Z; 277 runs/day were paying a 9.6 s / 1,565-disk-read `get_topshot_pool_backfill_targets()` each before failing. No watchlist row covers it, so the pause is silent by construction. **Re-enable** (`cron.alter_job(16, active => true)`) when the host answers non-5xx on two consecutive probes or the function is ported to Studio.
 
 - ✅ **Analytics Smoke** / **Lock Check Batch** — both previously ⚠ (>30s); now clean. Resolved.
 - ✅ **Weekly DB maintenance** — was NOT dark (see the inactive-table note); the broken `Pipeline Runs Cleanup` external entry is deleted, and `weekly-db-maintenance` is now watchlisted. Closes the 🔴 item carried since the 2026-07-11 audit.
-- ♻️ **Double-fires (OPEN — needs intended-primary decision):** `pinnacle-sync` (cron-job.org 10:07 UTC + vercel.json 06:00) and `compute-laliga-pack-ev` (cron-job.org 05:00 + vercel.json 05:30). `pinnacle-sync`'s dual schedule is a deliberate dropout backstop — likely keep both. `compute-laliga` — decide primary; if de-duping, keep the Vercel-native leg (cron-job.org is the dropout-prone side) and remove the cron-job.org entry.
+- ✅ **Double-fires — CLOSED 2026-10-03:** neither `pinnacle-sync` nor `compute-laliga-pack-ev` is in `vercel.json` any more (laliga removed 08-27; pinnacle-sync absent at the 10-03 read), so the console entries are each lane's only scheduler. The original note follows. — ♻️ **Double-fires (OPEN — needs intended-primary decision):** `pinnacle-sync` (cron-job.org 10:07 UTC + vercel.json 06:00) and `compute-laliga-pack-ev` (cron-job.org 05:00 + vercel.json 05:30). `pinnacle-sync`'s dual schedule is a deliberate dropout backstop — likely keep both. `compute-laliga` — decide primary; if de-duping, keep the Vercel-native leg (cron-job.org is the dropout-prone side) and remove the cron-job.org entry.
 - 🧹 **`(TEMP)` buyer backfills** — keep running; buyer coverage is 66.79% (230k NULL), not complete.
 
 ## Changes since the 2026-06-07 regen

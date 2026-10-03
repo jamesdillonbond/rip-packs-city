@@ -6,7 +6,10 @@
 # DATACENTER IPs regardless of client - Vercel (undici) AND the GitHub-Actions
 # runner (curl) both get the block page (verified 2026-06-17). Only a
 # residential IP passes. So the ingest runs here, on a home machine, on a
-# schedule (Windows Task Scheduler, ~every 3h). The GH workflow is disabled.
+# schedule (Windows Task Scheduler, ~every 3h). The GH workflow
+# (topshot-active-listings-ingest.yml, 29 */3) still runs as a BACKSTOP that
+# skips itself when its Atlas pre-probe is challenged (2026-10-03 correction;
+# it is not disabled).
 #
 # It loads the bearer token from .env.local (prefers INGEST_SECRET_TOKEN, falls
 # back to CRON_SECRET - the route accepts either), then runs the Node runner,
