@@ -100,6 +100,13 @@ Trevor's answer to the third block's queue was to build it. All four verified ag
 
 **Lesson promoted (memory + ledger):** "verified live" for a CSS change under those layouts meant nothing until today — the 10:10 AM header simulation measured `md:px-1.5` at zero and concluded "fits". Any earlier layout fix in the collections tree that relied on a Tailwind spacing class was verified against a page where that class did nothing.
 
+## Sixth block (~2:14–2:25 PM PT): thread close — "fix anything still unresolved"
+
+- **Signed-in surfaces QA'd in Chrome after the reset fix** (the tab had been hidden earlier): `/profile/jamesdillonbond`, `/dashboard`, `/admin/feedback` all render as designed.
+- **Found and fixed there:** `/admin/feedback` said "TOTAL OPEN 2 · OPEN BUGS 1 · OPEN FEATURES 1" over an empty "All open" list — the stat tiles' view `beta_feedback_stats` counted the two QA probe sessions the list had excluded since the morning's `is_smoke_test` filter. `20261003211704` gives the view the same predicate (`security_invoker` re-asserted; verify block proves stats = list on `new`). Reloaded: 0 / 0 / 0, 22 shipped this week.
+- **Verified before close:** `8b18dccc6` + `9051cbc19` + `5d2f59469` deploys READY and aliased; served HTML carries the layered reset, `md:px-1`, `gap: 8px`; CI green on every code commit of mine (the afternoon's docs-only reds were the inherited-status check seeing the other session's `c27d2fd02`, since fixed by it in `37d75c5f4`); pg_cron 0 failures / 3 h; 0 client-error beacons / 8 h; `topshot-edition-concentration` first cold tick ok.
+- **Docs:** this handoff (six blocks) mirrored to the Project; `docs/sessions/2026-10.md` entry; `metrics-latest.json`; `docs/reference/architecture-notes.md` (the cascade lesson); `docs/reference/testing-and-ci.md` (`ci:guards` pointer); memory files `an-unlayered-rule-beats-every-tailwind-layer`, `a-historical-minimum-sale-is-not-a-cost-to-buy`, `a-segment-layout-gate-fires-before-the-page`, the delegated-decisions area (chart + inbox decisions), the GSC read.
+
 ## Needs Trevor (carried + new)
 
 - Delete the 10 retired cron-job.org entries above (optional hygiene).
