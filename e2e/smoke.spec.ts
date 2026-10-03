@@ -81,6 +81,7 @@ const PAGES: PageCheck[] = [
   { path: "/insights/market", name: "insights · market" },
   { path: "/insights/squeeze", name: "insights · squeeze" },
   { path: "/insights/set-completers", name: "insights · set completers" },
+  { path: "/insights/market-cap", name: "insights · market cap" },
   { path: "/insights/account-value", name: "insights · account value" },
   { path: "/insights/allday-pack-market", name: "insights · all day pack market" },
   { path: "/insights/allday-pack-reality", name: "insights · all day pack reality" },

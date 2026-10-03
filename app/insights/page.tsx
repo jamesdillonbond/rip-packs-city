@@ -114,6 +114,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/market-cap",
+    eyebrow: "Live",
+    title: "Market Cap",
+    blurb:
+      "What every collection, player, team, set and badge is worth on the supply collectors actually hold — fair market value times circulating copies, burned Moments and unopened packs taken out.",
+    cta: "Open market cap",
+    available: true,
+  },
+  {
     slug: "/insights/set-completers",
     eyebrow: "Ownership · Live",
     title: "Set Completers",

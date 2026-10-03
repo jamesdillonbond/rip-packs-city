@@ -170,7 +170,8 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 86 → 87 on 2026-09-28: /sniper, the cross-collection Sniper hub (the bottom
     // bar's SNIPER tab), entered the static list.
     // 87 → 88 on 2026-09-28: /market, the cross-collection Market hub.
-    expect(s).toHaveLength(88)
+    // 88 → 89 on 2026-10-03: /insights/market-cap (market cap on collector-held supply).
+    expect(s).toHaveLength(89)
     expect(s.find((x) => x.url === `${BASE}/sniper`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/market`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/analytics`)).toBeTruthy()

@@ -90,6 +90,7 @@ const CARDS: Array<{ path: string; query?: string; params?: Record<string, strin
   { path: "app/api/og/insights/rookies/route" },
   { path: "app/api/og/insights/serial-premiums/route" },
   { path: "app/api/og/insights/set-completers/route" },
+  { path: "app/api/og/insights/market-cap/route" },
   { path: "app/api/og/insights/set-squeeze/route" },
   { path: "app/api/og/insights/squeeze/route" },
   { path: "app/api/og/insights/squeeze-check/route" },

@@ -912,6 +912,7 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
     'market-pulse',
     'new-collectors',
     'set-completers',
+    'market-cap',
     'underpriced-serials',
     'pack-drops',
     'squeeze-check',
