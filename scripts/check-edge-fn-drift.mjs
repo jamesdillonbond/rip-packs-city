@@ -114,6 +114,13 @@ export function requiresImportMap(src) {
  * tier-1 verdict; it reads `clean` only when tier 2 READ its body and MATCHED it
  * (contentMatched). Until 2026-10-02 it read `unclassifiable` even then, so
  * edge-fn-deploy.yml's read-back could never pass for it.
+ *
+ * @param {string} slug
+ * @param {{ t1: { proven: string[], clean: string[], inapplicable: string[] },
+ *   contentDrift: { slug: string }[], eszipMisses: { slug: string }[],
+ *   contentMatched?: string[], tier2Ran: boolean }} census
+ *   (Typed because tsc reads this file: an untyped `contentMatched = []`
+ *   defaults to never[], which red every caller's `tsc` on 2026-10-02.)
  */
 export function slugVerdict(slug, { t1, contentDrift, eszipMisses, contentMatched = [], tier2Ran }) {
   if (t1.proven.includes(slug)) return "proven_drifted"
