@@ -2,10 +2,25 @@
 // Internal endpoint: searches badge_editions + fmv_snapshots for deals matching bot queries.
 // Called by the support-chat route as a fallback when the live sniper feed is unavailable.
 // NOT rate-limited (internal use only) — keep it server-side only.
+//
+// 2026-10-03: "server-side only" was a comment, not a check. proxy.ts marks
+// every /api/support-chat/* path public, the concierge route no longer calls
+// this one, and a live anonymous POST returned 200 — so any caller could drive
+// get_top_deals with an unbounded p_limit. It now requires the server secret
+// pair (Bearer INGEST_SECRET_TOKEN or CRON_SECRET, constant-time) and clamps
+// its inputs; nothing user-facing reaches it.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { safeApiError, statusForSafeError } from "@/lib/api-error";
+import { secretEquals } from "@/lib/concierge/request-guards";
+
+function isServerCaller(req: NextRequest): boolean {
+  const auth = req.headers.get("authorization") ?? "";
+  const presented = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!presented) return false;
+  return secretEquals(presented, process.env.INGEST_SECRET_TOKEN) || secretEquals(presented, process.env.CRON_SECRET);
+}
 
 export const maxDuration = 15;
 
@@ -71,17 +86,22 @@ function tierLabel(raw: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  if (!isServerCaller(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const body: SearchDealsParams = await req.json();
-    const {
-      player,
-      team,
-      tier,
-      maxPrice,
-      minDiscount = 0,
-      hasBadge,
-      limit = 8,
-    } = body;
+    const str = (v: unknown, max = 80): string | undefined =>
+      typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined;
+    const num = (v: unknown): number | undefined =>
+      typeof v === "number" && Number.isFinite(v) ? v : undefined;
+    const player = str(body.player);
+    const team = str(body.team);
+    const tier = str(body.tier, 20);
+    const maxPrice = num(body.maxPrice);
+    const minDiscount = num(body.minDiscount) ?? 0;
+    const hasBadge = body.hasBadge === true;
+    const limit = Math.min(Math.max(Math.trunc(num(body.limit) ?? 8), 1), 40);
 
     // Use get_top_deals RPC instead of broken nested select
     const { data, error } = await supabase.rpc("get_top_deals", {

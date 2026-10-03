@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route integration test for POST /api/support-chat/search-deals. Internal
-// (no-auth) endpoint that wraps the get_top_deals RPC. Empty data → { deals: [] }.
+// (server-secret) endpoint that wraps the get_top_deals RPC. Empty data → { deals: [] }.
 //
 // This file used to assert that an RPC error "is swallowed to a 200
 // { deals: [], error }". That contract was retired 2026-08-09 (deep-audit D11
@@ -18,9 +18,24 @@ vi.mock("@supabase/supabase-js", () => ({
 
 import { POST } from "@/app/api/support-chat/search-deals/route"
 
-const req = (body: any) => ({ json: async () => body }) as any
+// 2026-10-03: the route is server-only in fact, not only in its comment —
+// every call carries the ingest token; an unauthenticated POST is 401.
+process.env.INGEST_SECRET_TOKEN = "test-ingest-token"
+const req = (body: any, auth: string | null = "Bearer test-ingest-token") =>
+  ({ json: async () => body, headers: new Headers(auth ? { authorization: auth } : {}) }) as any
 
 beforeEach(() => { state.data = []; state.error = null })
+
+describe("POST /api/support-chat/search-deals — server callers only", () => {
+  it("401s without the server secret, with a wrong one, and the body carries no deals", async () => {
+    state.data = [{ player_name: "x", ask_price: 1, fmv: 2 }]
+    for (const auth of [null, "Bearer nope", "Basic abc"]) {
+      const res = await POST(req({ limit: 1 }, auth))
+      expect(res.status).toBe(401)
+      expect(await res.json()).toEqual({ error: "Unauthorized" })
+    }
+  })
+})
 
 describe("POST /api/support-chat/search-deals", () => {
   it("returns an empty deals list when the RPC yields no rows", async () => {
