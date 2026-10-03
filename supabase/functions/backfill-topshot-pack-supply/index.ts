@@ -114,8 +114,21 @@ async function backfillSupply(limit: number, conc: number) {
   }
   const rows = (targets ?? []) as Array<{ dist_id: string; uuid: string }>
   let ok = 0, fail = 0, applyErr: string | null = null, gqlErr: string | null = null
+  // Wall-clock budget (2026-10-02). The request is synchronous and the gateway
+  // kills it at ~150 s, BEFORE the logPipelineRun below — so a batch that does
+  // not fit wrote no run row at all. 09-26..10-02 the candidate set grew 2 -> 498,
+  // every daily run was 504-killed after ~20 dists, and the lane went silent
+  // while still failing. Stop starting chunks after BUDGET_MS and report the
+  // remainder as not attempted, so the row always lands. Sized for the WORST
+  // chunk, not the typical one: gql() can take 6 x 15 s timeouts + 12 s of
+  // backoff = ~102 s, so a chunk started at 30 s still ends by ~135 s.
+  const BUDGET_MS = 30_000
+  const t0 = Date.now()
+  let attempted = 0
   for (let i = 0; i < rows.length; i += conc) {
+    if (Date.now() - t0 > BUDGET_MS) break
     const chunk = rows.slice(i, i + conc)
+    attempted += chunk.length
     await Promise.all(chunk.map(async (row) => {
       const r = await gql(DYNAMIC_QUERY, { input: { packListingId: row.uuid } })
       if (!r.ok) { gqlErr = gqlErr || String(r.error); await supabase.rpc("apply_topshot_supply", { p_dist_id: row.dist_id, p_ok: false, p_err: String(r.error).slice(0, 120) }); fail++; return }
@@ -127,8 +140,9 @@ async function backfillSupply(limit: number, conc: number) {
     }))
     await sleep(300)
   }
-  await logPipelineRun("topshot-pack-supply-backfill", { startedAt, rowsFound: rows.length, rowsWritten: ok, rowsSkipped: fail, ok: !applyErr && !gqlErr, error: applyErr ?? gqlErr, extra: { mode: "supply", limit, conc, processed: rows.length, ok_count: ok, fail_count: fail } })
-  return { processed: rows.length, ok, fail, applyErr, gqlErr }
+  const notAttempted = rows.length - attempted
+  await logPipelineRun("topshot-pack-supply-backfill", { startedAt, rowsFound: rows.length, rowsWritten: ok, rowsSkipped: fail, ok: !applyErr && !gqlErr, error: applyErr ?? gqlErr, extra: { mode: "supply", limit, conc, processed: attempted, not_attempted: notAttempted, budget_hit: notAttempted > 0, ok_count: ok, fail_count: fail } })
+  return { processed: attempted, not_attempted: notAttempted, ok, fail, applyErr, gqlErr }
 }
 
 async function backfillPool(limit: number, conc: number) {
