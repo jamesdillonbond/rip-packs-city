@@ -18,11 +18,11 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
   {
     id: "team-checklist.add-cost-badge",
     surface: "team checklist (/[collection]/team/[slug])",
-    field: "\"+ $X\" badge in a card's top-right corner (only when a wallet is scored)",
-    aliases: ["+ $", "+$", "plus dollar", "top right", "top-right", "$ value", "value number", "number on the card", "add cost", "+ add"],
+    field: "\"+ $X ASK\" / \"+ $X FMV\" / \"+ $X PAR\" badge in a card's top-right corner (only when a wallet is scored)",
+    aliases: ["+ $", "+$", "plus dollar", "top right", "top-right", "$ value", "value number", "number on the card", "add cost", "+ add", "ask fmv par", "par badge", "cheapest way in"],
     meaning:
-      "The cost to ADD that missing edition to the collection, i.e. its contribution to the checklist's cost-to-complete. It is RPC's INDEXED floor ask for the edition when one is on file, otherwise the edition FMV; it is not the live marketplace low ask and not the high offer, so it can differ from both. In the \"Full editions\" view it is the CHEAPEST price among the base edition and its parallels, which is why it can sit below the base edition's own FMV. \"+ add\" means no price is on file for it. Owned cards show ✓ (×N for multiples) and 🔒 when the owned copy is locked.",
-    source: "components/entity/TeamChecklist.tsx (addCost) + lib/entity/checklist-full-editions.ts (editionPrice, cheapest)",
+      "The cheapest way IN to that missing edition — its contribution to the checklist's cost-to-complete. The suffix says what the figure is: ASK = the LIVE low ask for the edition (used when it is within 3× FMV); FMV = the edition's FMV because nothing is listed; PAR = the price of a PARALLEL of this edition (the \"Full editions\" view counts owning any parallel as collected, so the cheapest parallel is the cheapest way in). It is therefore not the high offer and, when the suffix is FMV or PAR, not this edition's own low ask either. \"+ add\" means no price is on file. Hovering the badge spells it out. Owned cards show ✓ (×N for multiples) and 🔒 when the owned copy is locked. (Before 2026-10-03 ~1:00 PM PT the badge was an unlabelled \"+ $X\" — the question that produced this entry.)",
+    source: "components/entity/TeamChecklist.tsx (addLabel / addTitle, 8e5435d) + lib/entity/checklist-full-editions.ts (edition_cost_source, edition_cost_from_parallel)",
   },
   {
     id: "team-checklist.cost-to-complete",
@@ -30,8 +30,8 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
     field: "Cost to complete",
     aliases: ["cost to complete", "completion cost", "how much to finish"],
     meaning:
-      "The sum of the per-edition add costs over every missing edition that HAS a price (indexed floor, else FMV; cheapest-of-parallels in the Full editions view). Editions with no price on file are counted separately as unpriced and are NOT in the total, so the true cost is at least this number.",
-    source: "lib/entity/checklist-full-editions.ts (progress: cost, unpriced_missing_count)",
+      "The sum of the per-edition add costs over every missing edition that HAS a price: the live low ask where one is listed (within 3× FMV), else FMV; cheapest-of-parallels in the Full editions view. Editions with no price on file are counted separately as unpriced and are NOT in the total, so the true cost is at least this number. An estimate, not a quote.",
+    source: "lib/entity/checklist-full-editions.ts (progress: cost, unpriced_missing_count; 8e5435d)",
   },
   {
     id: "team-checklist.views",
