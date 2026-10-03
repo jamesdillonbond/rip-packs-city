@@ -2735,6 +2735,15 @@ const PINS = [
     migration:
       "supabase/migrations/20261003031302_audit_20261002_pack_ev_contributors_latest_fmv_by_index_probe.sql",
   },
+  {
+    // Added 2026-10-02. The edition page's recent-sales table: newest first,
+    // the #142 serial ceiling, Top Shot parallel names scoped to Top Shot
+    // editions (the body scoped nothing before), 'Parallel #N' fallback.
+    fn: "get_edition_recent_sales",
+    test: "supabase/tests/get_edition_recent_sales.sql",
+    migration:
+      "supabase/migrations/20261003033402_audit_20261002_edition_recent_sales_sub_names_reads_only_the_page_s_subeditions.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version
