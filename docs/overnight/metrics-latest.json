@@ -54,7 +54,7 @@
   "open_watches": [
     "GSC \"Blocked by robots.txt\" (1,472 at the 9/20 data) should stop climbing and Panini editions should start indexing after Google re-fetches robots.txt (live since ~8:45 AM PT 10-03).",
     "Panini pages: the \"Marketplace status uncertain\" banner must stay gone (v_collection_marketplace_status row, 20261003152533).",
-    "CI on main red at 679520534 (telemetry, other session) — component branch coverage threshold; 4cd704f88 inherits it.",
+    "RESOLVED 10-03 ~9:00 AM PT: component branch coverage back over threshold (82.04%) via component-VisitorJourneysClient-states.test.tsx — confirm CI green on the next code push.",
     "pack-mint-probes medium failure_rate stays lit while the walk is on mainnet24 (#166, by design).",
     "Trevor scratch Flowty jobs 673/680 still running (his export)."
   ],
