@@ -89,6 +89,17 @@ Trevor's answer to the third block's queue was to build it. All four verified ag
 
 **Still `new` in the inbox:** 10 rows, none from today's batch — the other session closed 10237/10239/10244/10247 through the admin surface.
 
+## Fifth block (~1:17–2:05 PM PT): "Keep going" — the inbox to zero, a guard for my own red, and the biggest visual defect on the site
+
+| what | where | verified live | revert |
+|---|---|---|---|
+| **`npm run ci:guards`** — the six CI TypeScript-job tree guards as one local command, list pinned to the workflow in both directions. Exists because `8c4f654af` passed tsc/vitest/ratchet locally and reddened `main` for 20 min on `check-brand-tokens`; the loop was already written in testing-and-ci.md and still skipped. | `scripts/run-ci-guards.mjs`, `__tests__/ci-guards-script-matches-the-workflow.test.ts`; `10f71b391` | planted defect (dropped guard) fails the pin | `git revert 10f71b391` |
+| **Beta inbox at ZERO `new`** — 10237 / 10239 / 10244 were already-live features (tier + ownership toggles `f70257086` 9:42 AM; "Full editions" view since 09-30) with nobody closing the rows; `20261003202149` flips them with notes naming the live control. 10367 / 10373 are QA probes (`is_smoke_test`), invisible to the inbox. | migration file `839d73d27` | `support_conversations` new-and-not-smoke = 0 | migration header |
+| **Every Tailwind spacing utility was DEAD under 8 layouts** — `app/(collections)/layout.tsx`, dashboard, login, profile ×2, admin ×2, `HomePageMarketing` injected `*{box-sizing:border-box;margin:0;padding:0;}` UNLAYERED through an inline `<style>`; an unlayered rule outranks every `@layer`, so `p-*`/`m-*` computed to 0 on every collection page for the life of those files. Found doing real-browser QA of the chart chips: the header nav read "Top ShotAll DayPinnacle" because the morning's `md:px-1.5` never rendered. Measured first (fresh `p-4` → 0 px; `w-4` → 16 px; a new `@layer` → 0; unlayered → wins), then the fix simulated in-page on five production pages before shipping (packs document 25.6k → 56.8k px — its `p-3` table cells had never rendered). Shipped: the reset in `@layer base{…}` (where Tailwind preflight already keeps it), PackTable name cell stacks badge under title with a 240 px floor, tree-walk guard (planted defect proven). Then the header: with real padding the signed-in md nav overflowed 792 px by 46 px → `md:px-1 md:tracking-normal` + 8 px row gap, last control at 764 px. | `8b18dccc6` (+ `9051cbc19` header); `__tests__/no-unlayered-universal-reset.test.ts`; memory `an-unlayered-rule-beats-every-tailwind-layer` | deploy `dpl_5tVSvxt6…` READY 1:53 PM PT; Chrome at 796 px: packs filter bar + table, analytics cards, team checklist, header all as designed; Playwright iPhone-13 sweep 8/8 200, 0 overflow, 0 broken images | `git revert 8b18dccc6` (do not — a page that got worse is a width-tuning issue on that page) |
+| **Concentration lane's first cold tick** — pg_cron 682 fired 1:58:00 PM PT: ok, 2,261 rows, 1.6 s, 0 deleted. | `pipeline_runs` | the OUTCOME table, not the self-report | — |
+
+**Lesson promoted (memory + ledger):** "verified live" for a CSS change under those layouts meant nothing until today — the 10:10 AM header simulation measured `md:px-1.5` at zero and concluded "fits". Any earlier layout fix in the collections tree that relied on a Tailwind spacing class was verified against a page where that class did nothing.
+
 ## Needs Trevor (carried + new)
 
 - Delete the 10 retired cron-job.org entries above (optional hygiene).
