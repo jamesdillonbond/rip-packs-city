@@ -61,6 +61,14 @@ Every counter in a record is a hypothesis; the screenshot is the evidence.
   this is a known reveal artifact; in this headless Chromium it is a real finding.
 - A reading taken while the subject changed (a deploy landing mid-sweep) is not a
   reading — check `git log` / the Vercel deploy list against the run's timestamps.
+- **Known-legitimate hits (read in place 2026-10-03, 219-path stratified sitemap sample):**
+  `/insights/offer-spread` "$0.00" is the bid − floor spread when the bid equals the ask;
+  `/insights/pack-reality` "$0" is the "delivered nothing" bucket; `/ufc/analytics`
+  "TOTAL VOLUME $0.00" is true (UFC dormant since 2026-05-13, scanners retired 08-27).
+  An anonymous `401 /api/profile/saved-wallets?collectionId=…` on every `/<c>/collection`
+  and `/<c>/sets` page is the signed-in probe (`lib/profile/saved-wallet-for-collection.ts`;
+  no client session hook exists), not a failure. A `404 media.nflallday.com/editions/<id>`
+  is All Day's CDN missing that edition's art (`DeadImageGuard` handles it).
 
 ## What it does not do
 
