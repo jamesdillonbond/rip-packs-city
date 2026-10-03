@@ -126,6 +126,11 @@ Trevor's answer to the third block's queue was to build it. All four verified ag
 - **Attributed the same hour, read against the code:** it is not the ask blend (98.9 % of matched snapshots had no ask). `fmv_usd` = `wapWithoutOutliers` (7-day-half-life weighted mean) and `published / asp` = 1.000 — the outlier filter removes almost nothing. A 7-day-half-life MEAN lags a falling market and is pulled up by high prints (`asp / price` 1.18 liquid, 1.20 thin, 1.375 very thin); the last-3 MEDIAN wins exactly there. **Lever: shorter half-life and/or a median — a methodology call, yours (#140). No pricing change shipped.**
 - **All Day, same instrument generalised (`fmv_sales_backtest(collection, days)`, `20261003224946`, adds a dollar-error column):** 93 % of All Day sales are under $1, so read dollars — last week's published error is 26.7 % = **$0.05**. But the drop week (09-12 → 09-19, 5,759 sales) the published price was **43 % below** what collectors paid across 2,800+ editions, liquid ones included; snapshots were fresh and ingestion lag is minutes, so it's the estimator lagging a ~2× move around a drop. M2's bar is a confidence share; this says the All Day *price* is systematically wrong in drop weeks regardless of the share. (A DROP to fold the Top Shot function into a wrapper was refused by the permission layer — both stand.)
 
+## Tenth block (~3:44–4:10 PM PT): "Keep doing what you can" — the backtest for every collection, the nightly pass reads it, and a second red fixed
+
+- `fmv_sales_backtest(collection, days)` (`20261003224946`) + the All Day reading (ninth block); the nightly skill now reads both backtests each pass (`docs/cowork-skills/rpc-nightly-autonomous-pass`, repacked, bundle guard green).
+- **Red `main` fixed again (`dab7077c7`):** the other session's `scripts/flowty-export` (`bf60c5be0`) committed a `__pycache__/*.pyc` (NUL bytes → tree-corruption guard) and put the Firebase web API key in the URL (`?key=` → `no-env-secret-in-fetch-url`). Key moved to the `x-goog-api-key` header, bytecode dropped and ignored. CI green.
+
 ## Needs Trevor (carried + new)
 
 - ~~Delete the 10 retired cron-job.org entries~~ — DONE by Trevor ~2:25 PM PT (console reads 78 entries / 71 active / 7 inactive; ledger entry by the other session).
