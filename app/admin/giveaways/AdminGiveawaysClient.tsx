@@ -100,8 +100,8 @@ export default function AdminGiveawaysClient() {
         </Link>
         <h1 style={{ fontFamily: DISPLAY, textTransform: "uppercase", margin: "6px 0" }}>Pack giveaways</h1>
         <p style={{ color: "var(--rpc-text-muted)", fontSize: 13, margin: 0 }}>
-          Draft → Seal (on-chain check + shuffle + published fingerprint) → Open → Close. You gift each claimed Moment in the Top Shot app; Verify reads the
-          chain and marks what arrived.
+          Draft → Seal (on-chain check + shuffle + published fingerprint) → Open → Close. Deliver all sends the claimed Moments from your account with one
+          approval in your linked Flow Wallet; Verify reads the chain and marks what arrived.
         </p>
       </div>
       {res.error ? (

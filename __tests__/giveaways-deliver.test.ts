@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { chunk, planDelivery } from "@/lib/giveaways/deliver"
+import { chunk, nothingSendable, planDelivery } from "@/lib/giveaways/deliver"
 import { DELIVER_SIMULATION_SCRIPT, PROVIDER_CONTROLLERS_SCRIPT } from "@/lib/giveaways/deliver-cadence"
 import type { CdcArg, CdcValue } from "@/lib/giveaways/flow-script"
 import type { DropRow } from "@/lib/giveaways/store"
@@ -101,6 +101,24 @@ describe("giveaways/deliver — planDelivery", () => {
       { moment_id: "2", reason: "locked" },
       { moment_id: "4", reason: "not_held" },
     ])
+  })
+
+  it("an all-sent-but-unverified drop is not called 'moved or locked' (2026-10-03)", async () => {
+    const err = await planDelivery(db(POOL, CLAIMS), DROP, PARENT, { read: held({}, ["1", "2", "4"]), run: runner(["70"]) }).catch((e) => e)
+    expect(err).toMatchObject({ code: "nothing_to_deliver" })
+    expect(err.message).toContain("Verify deliveries")
+    expect(err.message).not.toMatch(/moved|locked/)
+  })
+
+  it("names locked and missing counts separately when nothing can be sent", () => {
+    expect(nothingSendable([{ moment_id: "1", reason: "locked" }])).toMatch(/^All 1 claimed moment\(s\) still in your account are locked/)
+    const mixed = nothingSendable([
+      { moment_id: "1", reason: "locked" },
+      { moment_id: "2", reason: "not_held" },
+      { moment_id: "3", reason: "not_held" },
+    ])
+    expect(mixed).toContain("2 no longer in your account")
+    expect(mixed).toContain("1 locked on chain")
   })
 
   it("splits into batches of at most 50", async () => {

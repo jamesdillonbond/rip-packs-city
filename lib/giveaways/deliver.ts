@@ -52,6 +52,24 @@ function boolArray(v: CdcValue): boolean[] {
   return (v.value as CdcValue[]).map((x) => x.value === true)
 }
 
+/**
+ * Why a plan has nothing to send, by reason. A moment no longer in the admin's
+ * account is usually one ALREADY SENT whose delivery Verify has not stamped yet;
+ * calling that "moved or locked" told Trevor his finished drop had failed
+ * (2026-10-03, after all 8 test1 moments arrived).
+ */
+export function nothingSendable(skipped: DeliveryPlan["skipped"]): string {
+  const gone = skipped.filter((s) => s.reason === "not_held").length
+  const locked = skipped.filter((s) => s.reason === "locked").length
+  if (locked === 0) {
+    return "None of the claimed moments are still in your account. If they were already sent, click Verify deliveries to mark them delivered."
+  }
+  if (gone === 0) {
+    return `All ${locked} claimed moment(s) still in your account are locked on chain; unlock them in Top Shot, then try again.`
+  }
+  return `Nothing can be sent right now: ${gone} no longer in your account (already sent? click Verify deliveries), ${locked} locked on chain.`
+}
+
 export async function planDelivery(db: SupabaseClient, drop: DropRow, parent: string, deps: DeliverDeps = {}): Promise<DeliveryPlan> {
   const read = deps.read ?? readTopShotHoldings
   const run = deps.run ?? runFlowScript
@@ -79,7 +97,7 @@ export async function planDelivery(db: SupabaseClient, drop: DropRow, parent: st
     else return true
     return false
   })
-  if (ready.length === 0) throw new GiveawayError("None of the claimed moments can be sent right now (moved or locked).", 409, "nothing_to_deliver")
+  if (ready.length === 0) throw new GiveawayError(nothingSendable(skipped), 409, "nothing_to_deliver")
 
   const controllers = uintArray(await run(PROVIDER_CONTROLLERS_SCRIPT, [addr(parent), addr(drop.admin_wallet)]))
   if (controllers.length === 0) {
