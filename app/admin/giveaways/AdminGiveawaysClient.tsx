@@ -131,6 +131,7 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
   const [wallet, setWallet] = useState(readStoredWallet)
   const [candidates, setCandidates] = useState<Candidate[] | null>(null)
   const [excluded, setExcluded] = useState<{ locked: number; not_held: number } | null>(null)
+  const [resolvedFrom, setResolvedFrom] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [form, setForm] = useState({ slug: "", title: "", sponsor_name: "", description: "", pack_count: 5, moments_per_pack: 2 })
   const [msg, setMsg] = useState<string | null>(null)
@@ -138,10 +139,9 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
 
   const loadCandidates = async () => {
     setMsg(null)
-    const w = wallet.trim().toLowerCase()
-    try {
-      localStorage.setItem(WALLET_KEY, w)
-    } catch {}
+    // an 0x address is lowercased; a Top Shot username goes as typed and the route resolves it
+    const raw = wallet.trim()
+    const w = /^0x/i.test(raw) ? raw.toLowerCase() : raw
     const r = await call(`/api/admin/giveaways?candidates=${encodeURIComponent(w)}`)
     if (!r.ok) {
       setCandidates(null)
@@ -153,6 +153,13 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
       setMsg("The candidate list came back malformed.")
       return
     }
+    // the draft is created with the RESOLVED address, never the username
+    const resolved = typeof r.body.wallet === "string" ? r.body.wallet : w
+    setWallet(resolved)
+    try {
+      localStorage.setItem(WALLET_KEY, resolved)
+    } catch {}
+    setResolvedFrom(typeof r.body.username === "string" ? r.body.username : null)
     setCandidates(r.body.candidates as Candidate[])
     setExcluded((r.body.excluded as { locked: number; not_held: number }) ?? null)
     setPicked(new Set())
@@ -205,8 +212,17 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
       <h2 style={{ fontFamily: DISPLAY, textTransform: "uppercase", margin: "0 0 8px" }}>New draft</h2>
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
         <label style={{ fontSize: 12, color: "var(--rpc-text-muted)", display: "flex", flexDirection: "column", gap: 2 }}>
-          Your Top Shot wallet (the moments come from here)
-          <input value={wallet} onChange={(e) => setWallet(e.target.value)} placeholder="0x…" style={{ ...input, width: 220 }} />
+          Your Top Shot username or wallet (the moments come from here)
+          <input
+            value={wallet}
+            onChange={(e) => {
+              setWallet(e.target.value)
+              setResolvedFrom(null)
+            }}
+            placeholder="username or 0x…"
+            style={{ ...input, width: 220 }}
+          />
+          {resolvedFrom ? <span style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>@{resolvedFrom} → {wallet}</span> : null}
         </label>
         <button type="button" style={btn} onClick={loadCandidates}>
           Load giftable moments (checks the chain)

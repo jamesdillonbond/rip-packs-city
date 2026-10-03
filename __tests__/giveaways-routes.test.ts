@@ -197,9 +197,30 @@ describe("/api/admin/giveaways", () => {
     expect(store.listCheckedCandidates).toHaveBeenCalledWith({}, "0x00000000000000aa")
     store.listCheckedCandidates.mockRejectedValueOnce(new Error("Flow script HTTP 500"))
     expect((await adminList.GET(new NextRequest("http://x/api/admin/giveaways?candidates=0x00000000000000aa", { headers: auth }))).status).toBe(500)
-    expect((await adminList.GET(new NextRequest("http://x/api/admin/giveaways?candidates=nope", { headers: auth }))).status).toBe(400)
+    expect((await adminList.GET(new NextRequest("http://x/api/admin/giveaways?candidates=not%20a%20wallet!", { headers: auth }))).status).toBe(400)
     store.listDrops.mockRejectedValueOnce({ message: "x" })
     expect((await adminList.GET(new NextRequest("http://x/api/admin/giveaways", { headers: auth }))).status).toBe(500)
+  })
+
+  it("candidates accepts a Top Shot username and resolves it (2026-10-03)", async () => {
+    const checked = { wallet: "0x00000000000000aa", candidates: [], excluded: { locked: 0, not_held: 0 }, cache_count: 0 }
+    store.listCheckedCandidates.mockResolvedValue(checked)
+    resolve.mockResolvedValueOnce({ found: true, walletAddress: "0x00000000000000AA", username: "jamesdillonbond" })
+    const ok = await adminList.GET(new NextRequest("http://x/api/admin/giveaways?candidates=%40jamesdillonbond", { headers: auth }))
+    expect(ok.status).toBe(200)
+    expect(await ok.json()).toEqual({ ...checked, username: "jamesdillonbond" })
+    expect(resolve).toHaveBeenCalledWith({}, "@jamesdillonbond")
+    expect(store.listCheckedCandidates).toHaveBeenCalledWith({}, "0x00000000000000aa")
+
+    // an unknown username is a 404 that names it; a FAILED lookup is not "not found"
+    resolve.mockResolvedValueOnce({ found: false, reason: "username_not_found_on_topshot" })
+    const missing = await adminList.GET(new NextRequest("http://x/api/admin/giveaways?candidates=ghost_user", { headers: auth }))
+    expect(missing.status).toBe(404)
+    expect((await missing.json()).error).toContain('"ghost_user"')
+    resolve.mockResolvedValueOnce({ found: false, reason: "topshot_gql_error", detail: "timeout" })
+    const down = await adminList.GET(new NextRequest("http://x/api/admin/giveaways?candidates=jamesdillonbond", { headers: auth }))
+    expect(down.status).toBe(502)
+    expect((await down.json()).error).not.toMatch(/no top shot account|not found/i)
   })
 
   it("creates a draft; a validation or refusal message reaches the operator", async () => {

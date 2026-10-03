@@ -93,7 +93,7 @@ describe("AdminGiveawaysClient — building a draft", () => {
     })
     render(<AdminGiveawaysClient />)
     await screen.findByText("No drops yet.")
-    fireEvent.change(screen.getByPlaceholderText("0x…"), { target: { value: "0x00000000000000AA" } })
+    fireEvent.change(screen.getByPlaceholderText("username or 0x…"), { target: { value: "0x00000000000000AA" } })
     fireEvent.click(screen.getByRole("button", { name: /load giftable moments/i }))
     expect(await screen.findByText(/33 the cache called unlocked are locked on chain/)).toBeTruthy()
     expect(localStorage.getItem("rpc_giveaway_admin_wallet")).toBe("0x00000000000000aa")
@@ -129,6 +129,38 @@ describe("AdminGiveawaysClient — building a draft", () => {
     expect((created as { moment_ids: string[] }).moment_ids.sort()).toEqual(["10", "11"])
   })
 
+  it("a Top Shot username loads and the draft uses the RESOLVED address (2026-10-03)", async () => {
+    let created: unknown = null
+    let asked = ""
+    stub((url, init) => {
+      if (url.startsWith("/api/admin/giveaways?candidates=")) {
+        asked = decodeURIComponent(url.split("candidates=")[1])
+        return json({ ...CANDIDATES, username: "JamesDillonBond" })
+      }
+      if (init?.method === "POST") {
+        created = JSON.parse(String(init.body))
+        return json({ id: "d1" })
+      }
+      return json({ drops: [] })
+    })
+    render(<AdminGiveawaysClient />)
+    await screen.findByText("No drops yet.")
+    fireEvent.change(screen.getByPlaceholderText("username or 0x…"), { target: { value: "JamesDillonBond" } })
+    fireEvent.click(screen.getByRole("button", { name: /load giftable moments/i }))
+    await screen.findByText(/33 the cache called unlocked/)
+    expect(asked).toBe("JamesDillonBond") // a username is not lowercased or rejected client-side
+    expect(screen.getByText("@JamesDillonBond → 0x00000000000000aa")).toBeTruthy()
+    expect((screen.getByPlaceholderText("username or 0x…") as HTMLInputElement).value).toBe("0x00000000000000aa")
+    expect(localStorage.getItem("rpc_giveaway_admin_wallet")).toBe("0x00000000000000aa")
+    const numbers = screen.getAllByRole("spinbutton")
+    fireEvent.change(numbers[0], { target: { value: "1" } })
+    fireEvent.change(numbers[1], { target: { value: "1" } })
+    fireEvent.click(screen.getByText("Lillard"))
+    fireEvent.click(screen.getByRole("button", { name: /create draft \(1\/1\)/i }))
+    await screen.findByText("Draft created.")
+    expect(created).toMatchObject({ admin_wallet: "0x00000000000000aa" })
+  })
+
   it("a refused draft shows the server's reason", async () => {
     stub((url, init) => {
       if (url.startsWith("/api/admin/giveaways?candidates=")) return json(CANDIDATES)
@@ -137,7 +169,7 @@ describe("AdminGiveawaysClient — building a draft", () => {
     })
     render(<AdminGiveawaysClient />)
     await screen.findByText("No drops yet.")
-    fireEvent.change(screen.getByPlaceholderText("0x…"), { target: { value: "0x00000000000000aa" } })
+    fireEvent.change(screen.getByPlaceholderText("username or 0x…"), { target: { value: "0x00000000000000aa" } })
     fireEvent.click(screen.getByRole("button", { name: /load giftable moments/i }))
     await screen.findByText(/33 the cache called unlocked/)
     const numbers = screen.getAllByRole("spinbutton")

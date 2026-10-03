@@ -2,7 +2,8 @@
 //
 // Trevor-only (RPC_ADMIN_TOKEN). Community pack giveaways, v1.
 //   GET                      -> { drops }            every drop, newest first
-//   GET ?candidates=<wallet> -> CheckedCandidates    that wallet's giftable Top Shot moments (cache, then re-checked on chain)
+//   GET ?candidates=<wallet> -> CheckedCandidates    that wallet's giftable Top Shot moments (cache, then re-checked on chain);
+//                                                     <wallet> may be a Top Shot USERNAME (resolved; `username` echoed)
 //   POST {draft fields}      -> { id }               create a draft (create_giveaway_draft)
 // Background: docs/strategy/free-packs-reassessment-2026-09-29.md §8.
 
@@ -12,6 +13,10 @@ import { apiErrorResponse } from "@/lib/api-error"
 import { supabaseAdmin } from "@/lib/supabase"
 import { createDraft, GiveawayError, listCheckedCandidates, listDrops } from "@/lib/giveaways/store"
 import { FLOW_WALLET, parseDraftBody } from "@/lib/giveaways/draft-input"
+import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve"
+
+// A Top Shot username, optionally @-prefixed (Trevor typed "jamesdillonbond", 2026-10-03).
+const TOPSHOT_USERNAME = /^@?[A-Za-z0-9_.-]{2,40}$/
 
 export const dynamic = "force-dynamic"
 // the candidate list makes Flow script calls (20 s bound each)
@@ -22,10 +27,28 @@ export async function GET(req: NextRequest) {
   const wallet = req.nextUrl.searchParams.get("candidates")
   try {
     if (wallet != null) {
-      const w = wallet.trim().toLowerCase()
-      if (!FLOW_WALLET.test(w)) return NextResponse.json({ error: "candidates must be a Flow 0x address" }, { status: 400 })
+      const raw = wallet.trim()
+      let w = raw.toLowerCase()
+      let username: string | null = null
+      if (!FLOW_WALLET.test(w)) {
+        if (!TOPSHOT_USERNAME.test(raw)) {
+          return NextResponse.json({ error: "Enter a Flow 0x address or a Top Shot username." }, { status: 400 })
+        }
+        const r = await resolveTopShotUsernameCacheAware(supabaseAdmin, raw)
+        if (!r.found) {
+          // a failed LOOKUP is not an absent account: never tell the admin a username doesn't exist when Top Shot didn't answer
+          if (r.reason === "topshot_gql_error") {
+            return NextResponse.json({ error: "Couldn't reach Top Shot to look up that username. Try again, or paste the 0x address." }, { status: 502 })
+          }
+          return NextResponse.json({ error: `No Top Shot account found for "${raw.replace(/^@+/, "")}".` }, { status: 404 })
+        }
+        w = r.walletAddress.toLowerCase()
+        username = r.username
+        if (!FLOW_WALLET.test(w)) return NextResponse.json({ error: "The username resolved to an address that is not a Flow 0x address." }, { status: 502 })
+      }
       // re-checked on chain: the cache's lock flag has been measured stale
-      return NextResponse.json(await listCheckedCandidates(supabaseAdmin, w), { headers: { "Cache-Control": "no-store" } })
+      const checked = await listCheckedCandidates(supabaseAdmin, w)
+      return NextResponse.json(username ? { ...checked, username } : checked, { headers: { "Cache-Control": "no-store" } })
     }
     return NextResponse.json({ drops: await listDrops(supabaseAdmin) }, { headers: { "Cache-Control": "no-store" } })
   } catch (err) {
