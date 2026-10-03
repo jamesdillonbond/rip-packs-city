@@ -291,7 +291,7 @@ async function main() {
   // Pack-page evidence (2026-09-28): the WNBA /pack-<name>.html page was walked and captured
   // nothing, so record WHAT each pack-page visit fired, and the first response object that looks
   // like pack data from ANY operation. Read back as panini_pack_pages.last_ops / last_pack_like.
-  let packVisitOps = null, packVisitPackLike = null;
+  let packVisitOps = null, packVisitPackLike = null, packVisitSetIds = null;
   function opNameOf(resp) {
     try {
       const pj = JSON.parse(resp.request().postData() || "null");
@@ -411,6 +411,14 @@ async function main() {
     if (packVisitOps) {
       const op = opNameOf(resp);
       packVisitOps[op] = (packVisitOps[op] || 0) + 1;
+      // EVIDENCE (2026-10-03): which card products this pack page shows (sneak-peek images and any
+      // other card reference carry "packcard-<setId>_…"). Counted per set id and stored with the pack
+      // (raw.__set_ids) so a pack can later be tied to its product's set id — and the product named
+      // from Panini's own collection_name — once real pages show the field is reliably there.
+      if (packVisitSetIds && op !== "getPackMarketStats") {
+        let txt = ""; try { txt = JSON.stringify(d); } catch {}
+        for (const m of txt.matchAll(/packcard-(\d+)_/g)) packVisitSetIds[m[1]] = (packVisitSetIds[m[1]] || 0) + 1;
+      }
       if (!packVisitPackLike) { const pl = findPackLike(d, 0); if (pl) packVisitPackLike = { op, keys: Object.keys(pl).slice(0, 60), pack_sku: pl.pack_sku ?? null, pack_name: pl.pack_name ?? null }; }
       // Drop pages (/pack-<name>.html) carry their data in op packDetails, not getPackMarketStats
       // (measured 2026-09-29 on the WNBA FOTL page), and findPackLike saw no pack_sku in it. Keep a
@@ -858,13 +866,14 @@ async function main() {
     currentPackUrl = url;
     watchdog.mark("packs", url.slice(-80));
     const before = packs.length;
-    packVisitOps = {}; packVisitPackLike = null;
+    packVisitOps = {}; packVisitPackLike = null; packVisitSetIds = {};
     await ensurePage("pack page");
     await page.goto(url, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
     await wait(2500);
     const got = packs.slice(before);
+    for (const pk of got) pk.__set_ids = packVisitSetIds;
     packVisits.push({ url, walked: true, captured: got.length > 0, pack_id: got.length ? String(got[0].__pack_id ?? got[0].pack_sku ?? "") || null : null, ops: packVisitOps, pack_like: packVisitPackLike });
-    packVisitOps = null;
+    packVisitOps = null; packVisitSetIds = null;
   }
   currentPackId = null; currentPackUrl = null;
   console.log(`[panini-runner] pack pages: ${packVisits.length} visited (${packUrlList.length} known), ${packVisits.filter((v) => v.captured).length} captured`);

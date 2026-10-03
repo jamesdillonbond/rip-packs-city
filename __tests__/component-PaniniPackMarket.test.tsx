@@ -69,6 +69,37 @@ describe("PaniniPackMarket", () => {
     expect(text).not.toContain("may not be current")
   })
 
+  it("an un-typed secondary-market pack heads with its own name, never 'Pack pack', and says EV is not modeled", async () => {
+    // 2026-10-03: the secondary pack grid brought in ~40 packs of ~15 products; one product can carry
+    // a dozen distinct packs, so the pack's own published name is what tells them apart.
+    mockFetch(200, payload({ products: [product({
+      id: "1", packType: "pack", label: "Pack", name: "2020-21 Panini NFT Blockchain Prizm NBA Red Mosaic Packs",
+      productName: "2021 Panini Blockchain NBA Packs Entertainment", sport: "BASKETBALL", evModeled: false, cardsPerPack: 3,
+      labels: [{ label: "GUARANTEED", lines: ["3 Red Mosaic Parallel NFTs"] }],
+    })] }))
+    const c = await mount()
+    const h = c.querySelector('[data-testid="panini-pack-1"] h2')?.textContent ?? ""
+    expect(h).toBe("2020-21 Panini NFT Blockchain Prizm NBA Red Mosaic Packs · 3 cards")
+    const text = c.querySelector('[data-testid="panini-pack-1"]')?.textContent ?? ""
+    expect(text).not.toMatch(/Pack pack/i)
+    expect(text).not.toContain("Hobby")
+    expect(text).toContain("2021 Panini Blockchain NBA Packs Entertainment")
+    expect(text).toContain("Not modeled")
+    expect(text).toContain("3 Red Mosaic Parallel NFTs")
+  })
+
+  it("the price trail names a secondary pack by its own name, even on a history row stamped 'hobby' before 10-03", async () => {
+    mockFetch(200, payload({
+      products: [product({ id: "1", packType: "pack", label: "Pack", name: "2020-21 Panini NFT Blockchain Prizm NBA Red Mosaic Packs", productName: "2021 Panini Blockchain NBA Packs Entertainment", evModeled: false })],
+      history: [{ packId: "1", packType: "hobby", observedAt: RECENT, floorUsd: 19900, recentSaleUsd: 15500, avgSaleUsd: 4179, packsRemaining: 32 }],
+    }))
+    const c = await mount()
+    const rows = [...c.querySelectorAll("tr")].map((r) => r.textContent ?? "")
+    const trail = rows.find((r) => r.includes("$19,900"))
+    expect(trail).toContain("Red Mosaic Packs")
+    expect(trail).not.toContain("Hobby")
+  })
+
   it("renders pack art only when the product carries an image URL", async () => {
     mockFetch(200, payload({ products: [product({ imageUrl: "https://assets.paniniamerica.net/catalog/product/pack/pack_enh_bc_1038.png" }), product({ id: "1039", packType: "fotl", label: "FOTL", imageUrl: null })] }))
     const c = await mount()

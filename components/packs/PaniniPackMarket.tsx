@@ -125,6 +125,11 @@ const td: React.CSSProperties = { padding: "6px 8px", fontFamily: mono, fontSize
 function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterHours: number }) {
   const costLabel = p.costBasis === "avg_sale" ? "Cost (avg sale — no floor)" : p.costBasis === "primary" ? "Panini drop price" : "Floor"
   const modeled = p.evModeled === true
+  // A typed pack (Hobby, FOTL, Blaster…) heads with its type; an un-typed secondary-market pack
+  // ("pack", 2026-10-03) heads with its own published name — "Pack pack" says nothing, and one product
+  // can carry a dozen distinct packs (Red Mosaic, Gold Vinyl, Base Wave 3…).
+  const title = p.packType === "pack" && p.name ? p.name : `${p.label} pack`
+  const subtitle = title === p.name ? p.productName : (p.name ?? p.productName)
   return (
     <section
       data-testid={`panini-pack-${p.id}`}
@@ -134,14 +139,14 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
       <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
         {p.imageUrl ? (
           <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", flex: "0 0 auto" }}>
-            <MomentMedia thumbnailUrl={p.imageUrl} alt={`${p.label} pack`} size={64} rounded={8} />
+            <MomentMedia thumbnailUrl={p.imageUrl} alt={title} size={64} rounded={8} />
           </div>
         ) : null}
         <div>
           <h2 style={{ fontFamily: display, fontWeight: 800, fontSize: 18, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: "0 0 4px" }}>
-            {p.label} pack{p.cardsPerPack !== null ? ` · ${p.cardsPerPack} cards` : ""}
+            {title}{p.cardsPerPack !== null ? ` · ${p.cardsPerPack} cards` : ""}
           </h2>
-          {p.name ? <Note>{p.name}</Note> : p.productName ? <Note>{p.productName}</Note> : null}
+          {subtitle ? <Note>{subtitle}</Note> : null}
         </div>
       </div>
       {p.stale ? (
@@ -213,9 +218,14 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
 
 /** "FOTL" alone is ambiguous once two products each have a FOTL pack — name the product when it isn't WC. */
 function historyLabel(h: { packId?: string; packType: string }, products: PaniniPackProduct[]): string {
-  const type = h.packType === "fotl" ? "FOTL" : h.packType ? h.packType.charAt(0).toUpperCase() + h.packType.slice(1) : h.packType
   const prod = h.packId ? products.find((p) => p.id === h.packId) : undefined
+  // The pack's CURRENT type, not the one stamped on an old history row (rows captured before
+  // 2026-10-03 call every secondary pack "hobby").
+  const t = prod?.packType ?? h.packType
+  const type = t === "fotl" ? "FOTL" : t ? t.charAt(0).toUpperCase() + t.slice(1) : t
   if (!prod || prod.evModeled === true) return type
+  // An un-typed secondary pack is named by itself — "<product> · Pack" names a dozen packs at once.
+  if (t === "pack" && prod.name) return prod.name
   return prod.productName ? `${prod.productName} · ${type}` : prod.name ?? type
 }
 
