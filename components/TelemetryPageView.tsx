@@ -31,11 +31,13 @@ export default function TelemetryPageView() {
   useEffect(() => {
     if (!pathname) return
     if (SKIP_PREFIXES.some((p) => pathname.startsWith(p))) return
-    const { sessionId, referrer } = getFunnelContext()
+    const { sessionId, referrer, visitorId } = getFunnelContext()
     track("page-view", {
       path: pathname,
       ...(sessionId ? { sid: sessionId } : {}),
       ...(referrer ? { ref: referrer } : {}),
+      // returning-visitor id (rpc_vid; absent under GPC/DNT) — lib/track-funnel.ts
+      ...(visitorId ? { vid: visitorId } : {}),
     })
   }, [pathname])
 

@@ -51,6 +51,11 @@ const TOOLS: Tool[] = [
     blurb: "Per-user 7d page-view + last-seen + top features rollup.",
   },
   {
+    href: "/admin/visitor-journeys",
+    title: "Visitor Journeys",
+    blurb: "One timeline per human visit: source (incl. AI assistants), views, pastes, concierge, returning.",
+  },
+  {
     href: "/admin/fmv-health",
     title: "FMV Health",
     blurb: "Thin-sales guard cap audit — what got downgraded, when, and why.",

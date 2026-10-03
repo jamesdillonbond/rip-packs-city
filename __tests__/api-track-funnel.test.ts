@@ -5,8 +5,11 @@ import { describe, it, expect, vi } from "vitest"
 // (200 { ok: false }); an allowed type awaits a service-role insert → { ok: true }.
 // Mocks @supabase/supabase-js.
 
+const db = vi.hoisted(() => ({ rows: [] as any[], error: null as null | { message: string } }))
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({ from: () => ({ insert: async () => ({ error: null }) }) }),
+  createClient: () => ({
+    from: () => ({ insert: async (row: any) => { db.rows.push(row); return { error: db.error } } }),
+  }),
 }))
 
 import { POST } from "@/app/api/track-funnel/route"
@@ -25,6 +28,25 @@ describe("POST /api/track-funnel", () => {
     const res = await POST(req({ eventType: "home_view", surface: "home" }))
     expect(res.status).toBe(200)
     expect((await res.json()).ok).toBe(true)
+  })
+
+  it("stores a well-formed visitorId and drops a malformed one", async () => {
+    db.rows.length = 0
+    await POST(req({ eventType: "home_view", visitorId: "11111111-2222-3333-4444-555555555555" }))
+    await POST(req({ eventType: "home_view", visitorId: "<script>alert(1)</script>" }))
+    expect(db.rows[0].visitor_id).toBe("11111111-2222-3333-4444-555555555555")
+    expect(db.rows[1].visitor_id).toBeNull()
+  })
+
+  it("does not report ok:true when the insert failed (write-side honesty)", async () => {
+    db.error = { message: "insert failed" }
+    try {
+      const res = await POST(req({ eventType: "home_view" }))
+      expect(res.status).toBe(200) // a beacon caller never retries; status stays 200
+      expect((await res.json()).ok).toBe(false)
+    } finally {
+      db.error = null
+    }
   })
 
   it("500s on a malformed body", async () => {

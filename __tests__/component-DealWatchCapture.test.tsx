@@ -12,6 +12,17 @@ import DealWatchCapture from "@/components/DealWatchCapture"
 const funnelMock = vi.fn()
 vi.mock("@/lib/track-funnel", () => ({ trackFunnelEvent: (...a: unknown[]) => funnelMock(...a) }))
 
+const trackMock = vi.hoisted(() => vi.fn())
+vi.mock("@/lib/telemetry/track", () => ({ track: trackMock }))
+
+// Captures the IntersectionObserver so a test can scroll the box into view.
+const io = vi.hoisted(() => ({ cb: null as null | ((e: Array<{ isIntersecting: boolean }>) => void) }))
+class FakeIO {
+  constructor(cb: (e: Array<{ isIntersecting: boolean }>) => void) { io.cb = cb }
+  observe() {}
+  disconnect() {}
+}
+
 let fetchMock: ReturnType<typeof vi.fn>
 const okJson = (b: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(b) } as Response)
 
@@ -19,6 +30,9 @@ beforeEach(() => {
   fetchMock = vi.fn()
   vi.stubGlobal("fetch", fetchMock)
   funnelMock.mockClear()
+  trackMock.mockClear()
+  io.cb = null
+  vi.stubGlobal("IntersectionObserver", FakeIO)
 })
 afterEach(() => {
   cleanup()
@@ -31,6 +45,27 @@ afterEach(() => {
 function submit(container: HTMLElement) {
   fireEvent.submit(container.querySelector("form")!)
 }
+
+describe("DealWatchCapture — seen → engaged instrumentation", () => {
+  it("logs deal-watch-shown only once it is actually in view, and only once", () => {
+    render(<DealWatchCapture wallet="0xW" />)
+    expect(trackMock).not.toHaveBeenCalled() // rendered below the fold is not "shown"
+    io.cb!([{ isIntersecting: false }])
+    expect(trackMock).not.toHaveBeenCalled()
+    io.cb!([{ isIntersecting: true }])
+    io.cb!([{ isIntersecting: true }])
+    expect(trackMock).toHaveBeenCalledTimes(1)
+    expect(trackMock).toHaveBeenCalledWith("deal-watch-shown", { surface: "share" })
+  })
+
+  it("logs deal-watch-focus once on the first focus of the field", () => {
+    const { getByLabelText } = render(<DealWatchCapture wallet="0xW" />)
+    fireEvent.focus(getByLabelText("Email address"))
+    fireEvent.blur(getByLabelText("Email address"))
+    fireEvent.focus(getByLabelText("Email address"))
+    expect(trackMock.mock.calls.filter((c) => c[0] === "deal-watch-focus")).toHaveLength(1)
+  })
+})
 
 describe("DealWatchCapture", () => {
   it("rejects an email with no @ locally and does NOT hit the network", async () => {

@@ -77,6 +77,7 @@ import {
 } from "@/lib/fmv-confidence";
 import { slugifyName, slugifyPlayerName } from "@/lib/entity-labels";
 import { isExhibitionTeamSlug } from "@/lib/team-denylist";
+import { sanitizeVisitSessionId, sanitizeVisitReferrer, isInternalCheckSessionId } from "@/lib/concierge/visit-link";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -4840,6 +4841,8 @@ async function persistConversation(row: {
   user_email?: string | null;
   page_context?: string | null;
   is_smoke_test?: boolean;
+  visit_session_id?: string | null;
+  visit_referrer?: string | null;
 }) {
   try {
     const { error } = await supabase.from("support_conversations").insert({
@@ -5012,7 +5015,11 @@ export async function POST(req: NextRequest) {
   // support_conversations.is_smoke_test (and chat_sessions.is_smoke_test).
   // Real anonymous traffic from the in-product chat will not present this
   // header and will continue to land with is_smoke_test=false (the default).
-  const isSmokeTest = isSmokeTestRequest(req);
+  let isSmokeTest = isSmokeTestRequest(req);
+  // The funnel-session join (lib/concierge/visit-link.ts). Parsed with the
+  // body; null on the error path when the body never parsed.
+  let visitSessionId: string | null = null;
+  let visitReferrer: string | null = null;
   // Cookie is the trust boundary — derive the user's email server-side and
   // resolve owner_key + user_wallet from allow_list. Client-passed values
   // are intentionally ignored to prevent spoofed identity.
@@ -5061,6 +5068,11 @@ export async function POST(req: NextRequest) {
     const userEmail = identity.email;
     const walletConnected = !!userWallet;
     parsedSessionId = sessionId;
+    // Internal checks (cowork-/smoke-/qa- session ids) are tests even without
+    // the smoke token — see isInternalCheckSessionId.
+    if (!isSmokeTest && isInternalCheckSessionId(sessionId)) isSmokeTest = true;
+    visitSessionId = sanitizeVisitSessionId(body.visitSessionId);
+    visitReferrer = sanitizeVisitReferrer(body.visitReferrer);
     parsedMessage = message;
     parsedOwnerKey = ownerKey;
     parsedUserWallet = userWallet;
@@ -5167,6 +5179,8 @@ export async function POST(req: NextRequest) {
           user_email: userEmail ?? null,
           page_context: pageContext ?? null,
           is_smoke_test: isSmokeTest,
+          visit_session_id: visitSessionId,
+          visit_referrer: visitReferrer,
         })
       );
 
@@ -5577,6 +5591,8 @@ export async function POST(req: NextRequest) {
           user_email: userEmail ?? null,
           page_context: pageContext ?? null,
           is_smoke_test: isSmokeTest,
+          visit_session_id: visitSessionId,
+          visit_referrer: visitReferrer,
         });
         await updateSession(
           sessionId,
@@ -5644,6 +5660,8 @@ export async function POST(req: NextRequest) {
           user_email: parsedUserEmail,
           page_context: parsedPageContext,
           is_smoke_test: isSmokeTest,
+          visit_session_id: visitSessionId,
+          visit_referrer: visitReferrer,
         })
       );
     } catch { /* best-effort */ }

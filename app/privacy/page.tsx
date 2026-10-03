@@ -132,8 +132,16 @@ export default function PrivacyPage() {
           <Section title="Cookies and storage">
             We use a Supabase auth cookie to keep you signed in. We use
             localStorage on your device to remember UI preferences (like
-            dismissing the welcome modal) &mdash; this never leaves your browser.
-            We do not use third-party tracking cookies.
+            dismissing the welcome modal) &mdash; those never leave your browser.
+            To understand how the site is used, we also keep two random,
+            first-party identifiers that are sent with our own page-view and
+            usage events: a per-visit id (cleared when you close the tab) and a
+            visitor id in localStorage that lets us count a returning browser
+            as one visitor. Neither is derived from your device, shared with
+            anyone, or used for advertising. If your browser sends Global
+            Privacy Control or Do Not Track, we don&apos;t create or send the
+            visitor id; clearing your site data removes both. We do not use
+            third-party tracking cookies.
           </Section>
 
           <Section title="Children">
@@ -161,7 +169,7 @@ export default function PrivacyPage() {
             limited liability company.
           </Section>
 
-          <LastUpdated text="Last updated: May 2026." />
+          <LastUpdated text="Last updated: October 2026." />
         </div>
       </main>
 

@@ -11,19 +11,27 @@ vi.mock("next/navigation", () => ({ usePathname: () => pathname }))
 
 const track = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/telemetry/track", () => ({ track }))
-const ctx = vi.hoisted(() => ({ value: { sessionId: null as string | null, referrer: null as string | null } }))
+const ctx = vi.hoisted(() => ({
+  value: { sessionId: null as string | null, referrer: null as string | null, visitorId: null as string | null },
+}))
 vi.mock("@/lib/track-funnel", () => ({ getFunnelContext: () => ctx.value }))
 
 import TelemetryPageView from "@/components/TelemetryPageView"
 
 beforeEach(() => {
   pathname = "/nba-top-shot/sniper"
-  ctx.value = { sessionId: null, referrer: null }
+  ctx.value = { sessionId: null, referrer: null, visitorId: null }
   track.mockClear()
 })
 afterEach(() => cleanup())
 
 describe("TelemetryPageView", () => {
+  it("carries the returning-visitor id when one exists (absent under GPC/DNT)", () => {
+    ctx.value = { sessionId: "sess-1", referrer: null, visitorId: "vid-abcdef12" }
+    render(<TelemetryPageView />)
+    expect(track).toHaveBeenCalledWith("page-view", { path: "/nba-top-shot/sniper", sid: "sess-1", vid: "vid-abcdef12" })
+  })
+
   it("fires a page-view beacon with the pathname and renders nothing", () => {
     const { container } = render(<TelemetryPageView />)
     expect(container.firstChild).toBeNull()
@@ -31,7 +39,7 @@ describe("TelemetryPageView", () => {
   })
 
   it("joins the beacon to the visit: carries the funnel session id and landing attribution", () => {
-    ctx.value = { sessionId: "sess-123", referrer: "utm_source=chatgpt.com" }
+    ctx.value = { sessionId: "sess-123", referrer: "utm_source=chatgpt.com", visitorId: null }
     render(<TelemetryPageView />)
     expect(track).toHaveBeenCalledWith("page-view", {
       path: "/nba-top-shot/sniper",

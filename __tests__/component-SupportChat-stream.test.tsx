@@ -76,6 +76,19 @@ describe("SupportChat streaming path", () => {
     expect(getByText("Victor Wembanyama")).toBeTruthy()
   })
 
+  it("joins the chat to the visit: sends the funnel rpc_sess id + attribution, distinct from the chat's own session", async () => {
+    sessionStorage.setItem("rpc_sess", "visit-sid-0001")
+    sessionStorage.setItem("rpc_attr", "utm_source=chatgpt.com&ref=https://chatgpt.com/")
+    let sent: any = null
+    vi.stubGlobal("fetch", routeFetch((b) => { sent = b; return streamRes("ok", { messageId: "m1" }) }))
+    const { getByText } = await openAndSend("hello")
+    await waitFor(() => expect(getByText("ok")).toBeTruthy())
+    expect(sent.visitSessionId).toBe("visit-sid-0001")
+    expect(sent.visitReferrer).toBe("utm_source=chatgpt.com&ref=https://chatgpt.com/")
+    // the chat's capability-token session is its own id, not the visit id
+    expect(sent.sessionId).not.toBe("visit-sid-0001")
+  })
+
   it("shows a connection-issue message when the request throws", async () => {
     vi.stubGlobal("fetch", routeFetch(() => Promise.reject(new Error("network down"))))
     const { getByText } = await openAndSend("boom")

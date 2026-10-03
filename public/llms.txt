@@ -58,10 +58,16 @@ Every collection exposes wallet analytics, FMV pricing, marketplace browser, and
 - **Wallet Analytics**: Any Flow wallet — moment inventory, FMV totals, cost basis, P&L, acquisition history, badge detection.
 - **Set Completion**: Track owned vs needed, bottleneck finder, cheapest completion path.
 - **Pack Tools**: Pack browser with EV calculator, tier breakdown, buy/skip signal.
-- **Email Sign-In (Phase 1)**: Magic-link authentication required for every collection tool. Users sign in at /login. Public /profile/[username] shareable pages remain open.
+- **Email Sign-In**: Optional magic-link sign-in at /login adds a private dashboard, saved wallets and alerts. The collection pages, /insights and public /profile/[username] pages can be browsed without an account.
 - **Multi-Collection Profile (Phase 4)**: Hero Holo Moment card, saved wallets across collections, 6-slot trophy case, favorite collections (drives per-collection news feed), follows system, friend activity feed (last 20 sales over 7 days from followed users' wallets), recent searches.
 - **AI Concierge v2 (Phase 4)**: Claude Sonnet-powered, multi-collection aware. Knows which collection you're browsing from the URL and scopes queries accordingly. New search_across_collections tool handles cross-collection lookups (e.g. "does RPC have Messi?"). Tools: search_live_deals, search_catalog_deals, get_fmv, check_wallet, search_across_collections, plus watchlist/alerts/escalation.
 - **Public Profiles**: Shareable collector profiles at /profile/[username] with trophy case, bio, and privacy-stripped saved-wallet summaries. No auth required to view.
+
+## Quick answers
+- **"What is my Top Shot / All Day / Pinnacle collection worth?"** Paste any Flow wallet address into the search box on https://www.rippackscity.com — RPC builds a free collection card with total FMV, moment count and badges at /share/[wallet]. No account needed.
+- **"Is this moment underpriced?"** Each collection's Sniper tab (e.g. /nba-top-shot/sniper) lists live listings priced below FMV.
+- **"Which packs are +EV?"** /analytics/packs and each collection's Packs tab compare pack price with the FMV of what it can pull.
+- **Can I buy through RPC?** No. RPC is read-only intelligence; purchases happen on the marketplace a listing links to.
 
 ## FMV Methodology
 Weighted average price from recent on-chain sales with recency decay. Confidence tiers: HIGH (multiple recent sales), MEDIUM (sparse data), LOW (single sale or stale). Serial premiums applied for #1, jersey match, and perfect mint serials. Badge premiums are market-baked and not applied as multipliers.
@@ -69,7 +75,7 @@ Weighted average price from recent on-chain sales with recency decay. Confidence
 ## Technical Stack
 - Next.js 16 App Router, React 19, TypeScript 5, Tailwind 4
 - Supabase (PostgreSQL) — editions, FMV snapshots, listings cache, wallet cache
-- Flow blockchain via FCL — on-chain reads, cart/purchase via Dapper
+- Flow blockchain via FCL — read-only on-chain reads. RPC never connects a wallet, holds funds or executes a purchase; listing links open the collection's own marketplace.
 - Vercel Pro deployment
 - Data pipelines via cron-job.org (every 20 minutes)
 

@@ -374,3 +374,19 @@ Migration `20260929061743_audit_20260928_trophy_still_held_state`. Pin: `supabas
 - **FANDOM parallels get no estimate — not by rule, by the same accuracy gate every tier faces** (measured 2026-09-30): all 7 FANDOM cells fail it — leave-one-out typical miss **1.56×–2.41×** vs the 1.5× limit, middle-half spread **2.2×–5.2×** (e.g. Galactic FANDOM premium 25×–130× its full edition) against **1.1×–2.1×** for the 15 eligible cells; and they are small (32–53 editions vs 247–532 for the Common cells). Some Common and Rare cells fail too (Halftone, Coded, and every cell under 30 editions). Loosening the gate for FANDOM would publish ~2× misses; the lever, if wanted, is a wider range or a per-edition basis, not the gate.
 - Both tables: RLS on, no anon/authenticated access; both functions SECDEF, service_role only. Migration `20260930133000`; pin `supabase/tests/refresh_edition_fmv_estimates.sql`. Cron: `cron-and-schedulers.md` (jobs 651 / 652).
 - Trophy slab: `get_trophy_slab_data` returns `jersey_number` (NULL unless > 0 — 0 means no number on file) since `20260930060000`, for the special-serial marks.
+
+## Visit / visitor join keys (2026-10-03)
+
+One visit = one `rpc_sess` id (sessionStorage, dies with the tab; `lib/track-funnel.ts`). One returning browser = one `rpc_vid` (localStorage, random UUID; NOT minted or sent under Global Privacy Control / Do Not Track; disclosed on `/privacy`). Where each stream carries them:
+
+| stream | visit key | visitor key |
+|---|---|---|
+| `funnel_events` | `session_id` | `visitor_id` (migration `20261003150031`) |
+| `usage_events` | `metadata->>'sid'` — stamped on EVERY beacon by `lib/telemetry/track.ts` (page views since commit 1a67ea598, 10-03 morning; every feature since the visit-journeys commit) | `metadata->>'vid'` |
+| `outbound_clicks` | `session_id` | — |
+| `support_conversations` | `visit_session_id` (+ `visit_referrer`); `session_id` is the CHAT's own capability token, NOT the visit | — |
+
+- ⛔ **`support_conversations.session_id` ≠ the visit.** Join a chat to a visit on `visit_session_id`. Rows before 2026-10-03 have it NULL — no backfill is possible.
+- **Reader:** `public.admin_visitor_journeys(hours, max_sessions)` → `/admin/visitor-journeys`. Excludes `bot_ua`, `usage_events.metadata.automated`, smoke-test chats and `internal_accounts` sessions, and COUNTS what it excluded. AI arrivals classified by `public.referrer_ai_source(text)` (host at a boundary). Pin: `supabase/tests/admin_visitor_journeys.sql`.
+- **Internal checks are tests by session-id PREFIX:** `/api/support-chat` sets `is_smoke_test=true` for `cowork-` / `smoke-` / `qa-` / `test-` / `internal-` session ids (`lib/concierge/visit-link.ts`), with or without the smoke token. Name a Cowork/QA chat probe with one of those prefixes.
+- `deal-watch-shown` / `deal-watch-focus` (usage_events) + `email_capture_submitted` (funnel) = the share-page capture's seen → engaged → submitted funnel.

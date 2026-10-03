@@ -41,7 +41,15 @@ type TrackFunnelBody = {
   surface?: string | null;
   referrer?: string | null;
   sessionId?: string | null;
+  visitorId?: string | null;
 };
+
+// rpc_vid (lib/track-funnel.ts getVisitorId): a random UUID or the v_ fallback.
+// Anything else is dropped rather than stored — this is a public endpoint.
+const VISITOR_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+function visitorIdOrNull(v: unknown): string | null {
+  return typeof v === "string" && VISITOR_ID_RE.test(v) ? v : null;
+}
 
 // Bot classification (deep-audit R23) lives in lib/bot-ua.ts — shared with the
 // trophy funnel writer. Re-exported here because tests import it from the route.
@@ -84,7 +92,12 @@ export async function POST(req: NextRequest) {
       surface: clampStr(body.surface, 80),
       referrer: clampStr(body.referrer, 512),
     };
-    const row = { ...baseRow, user_agent: userAgent, bot_ua: isBotUserAgent(userAgent) };
+    const row = {
+      ...baseRow,
+      user_agent: userAgent,
+      bot_ua: isBotUserAgent(userAgent),
+      visitor_id: visitorIdOrNull(body.visitorId),
+    };
 
     // Await the insert — on Vercel the lambda is frozen as soon as the response
     // returns, so a non-awaited (.then) insert never flushes and the row is
@@ -112,7 +125,9 @@ export async function POST(req: NextRequest) {
     }
     if (insertError) console.error("[track-funnel] Supabase insert failed:", insertError.message);
 
-    return NextResponse.json({ ok: true });
+    // `ok` is whether the row LANDED — a hardcoded true here published every
+    // failed insert as a logged arrival. Status stays 200: a beacon never retries.
+    return NextResponse.json(insertError ? { ok: false, error: "insert failed" } : { ok: true });
   } catch (e) {
     return NextResponse.json(
       // Shape-preserving: consumers branch on `ok`.

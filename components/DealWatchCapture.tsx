@@ -10,8 +10,15 @@
 
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { trackFunnelEvent } from "@/lib/track-funnel"
+import { track } from "@/lib/telemetry/track"
+
+// Seen → engaged → submitted (2026-10-03). Until now only the submit was
+// logged, so a paste-then-leave visit (0xba14…, 10-02) could not say whether
+// the capture was ever on screen. `deal-watch-shown` fires once when half the
+// box is in view; `deal-watch-focus` once on the first focus of the field.
+// Both ride usage_events with the visit's sid/vid (lib/telemetry/track.ts).
 
 type Status = "idle" | "sending" | "sent" | "error"
 
@@ -19,6 +26,34 @@ export default function DealWatchCapture({ wallet }: { wallet: string }) {
   const [email, setEmail] = useState("")
   const [status, setStatus] = useState<Status>("idle")
   const [error, setError] = useState("")
+  const boxRef = useRef<HTMLElement | null>(null)
+  const focusedRef = useRef(false)
+
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el) return
+    if (typeof IntersectionObserver === "undefined") return
+    let fired = false
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (fired) return
+        if (entries.some((e) => e.isIntersecting)) {
+          fired = true
+          track("deal-watch-shown", { surface: "share" })
+          io.disconnect()
+        }
+      },
+      { threshold: 0.5 }
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+
+  function handleFocus() {
+    if (focusedRef.current) return
+    focusedRef.current = true
+    track("deal-watch-focus", { surface: "share" })
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -61,7 +96,7 @@ export default function DealWatchCapture({ wallet }: { wallet: string }) {
   }
 
   return (
-    <section className="rpc-dw-capture">
+    <section className="rpc-dw-capture" ref={boxRef}>
       <style>{CSS}</style>
       {status === "sent" ? (
         <div className="rpc-dw-done">
@@ -89,6 +124,7 @@ export default function DealWatchCapture({ wallet }: { wallet: string }) {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              onFocus={handleFocus}
               placeholder="you@example.com"
               disabled={status === "sending"}
               className="rpc-dw-input"

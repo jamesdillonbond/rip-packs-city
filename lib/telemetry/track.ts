@@ -9,6 +9,8 @@
 //
 // Failures are silent. Telemetry never blocks UI.
 
+import { getVisitIds } from "@/lib/track-funnel"
+
 const DEBOUNCE_MS = 350
 const FLUSH_INTERVAL_MS = 5000
 
@@ -60,7 +62,18 @@ export function track(feature: string, metadata?: Record<string, unknown>): void
   // An automation-driven page says so (navigator.webdriver); the server tags the
   // row `automated` so human counts can exclude it (see app/api/telemetry/route.ts).
   const driven = typeof navigator !== "undefined" && (navigator as { webdriver?: boolean }).webdriver === true
-  const meta = driven ? { ...(metadata ?? {}), webdriver: true } : metadata
+  let meta = driven ? { ...(metadata ?? {}), webdriver: true } : metadata
+  // Every beacon carries the visit (rpc_sess) and returning-visitor (rpc_vid)
+  // ids, so a usage_events row joins the same visit as that visitor's funnel
+  // events, outbound clicks and concierge chats (2026-10-03). A caller's own
+  // sid/vid wins; either is omitted when unavailable (storage blocked, GPC/DNT).
+  try {
+    const { sessionId, visitorId } = getVisitIds()
+    if (sessionId && meta?.sid == null) meta = { ...(meta ?? {}), sid: sessionId }
+    if (visitorId && meta?.vid == null) meta = { ...(meta ?? {}), vid: visitorId }
+  } catch {
+    // Instrumentation never blocks the beacon.
+  }
   // Coalesce repeated firings of the same feature in the debounce window.
   pending.set(feature, { feature, metadata: meta })
   schedule()

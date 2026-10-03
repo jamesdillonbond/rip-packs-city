@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { track } from "@/lib/telemetry/track";
+import { getFunnelContext } from "@/lib/track-funnel";
 import { tierColorAlpha } from "@/lib/tier-color";
 import { parseRichText, isExternalHref } from "@/lib/concierge/rich-text";
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
@@ -517,6 +518,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
         content: m.role === "system" ? `[system] ${m.text}` : m.text,
       }));
     setMessages((prev) => [...prev, { id: "typing", role: "system", text: "...", timestamp: new Date() }]);
+    const visit = getFunnelContext();
     try {
       const res = await fetch("/api/support-chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -531,6 +533,10 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
           walletConnected: !!walletConnected,
           conversationHistory: history,
           stream: true,
+          // Joins this chat to the visit's other beacons (page views, funnel
+          // events, outbound clicks) — lib/concierge/visit-link.ts.
+          visitSessionId: visit.sessionId,
+          visitReferrer: visit.referrer,
         }),
       });
       if (res.status === 429) {

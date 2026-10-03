@@ -9,6 +9,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { track } from "@/lib/telemetry/track"
 
+// The visit join keys are stamped onto every beacon; null here so the payload
+// assertions below pin the coalescing/transport contract on its own. The
+// stamping itself is pinned in its own describe at the end.
+const visit = vi.hoisted(() => ({ ids: { sessionId: null as string | null, visitorId: null as string | null } }))
+vi.mock("@/lib/track-funnel", () => ({ getVisitIds: () => visit.ids }))
+
 let sendBeaconMock: ReturnType<typeof vi.fn>
 let fetchMock: ReturnType<typeof vi.fn>
 
@@ -133,5 +139,25 @@ describe("track", () => {
     expect(sendBeaconMock).not.toHaveBeenCalled()
     vi.advanceTimersByTime(150)
     expect(sendBeaconMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("track — visit join keys (2026-10-03)", () => {
+  afterEach(() => { visit.ids = { sessionId: null, visitorId: null } })
+
+  it("stamps sid + vid onto every beacon so usage_events joins the visit", async () => {
+    visit.ids = { sessionId: "sess-1", visitorId: "vid-1" }
+    track("deal-watch-shown", { surface: "share" })
+    vi.advanceTimersByTime(400)
+    const [, blob] = sendBeaconMock.mock.calls[0]
+    expect(JSON.parse(await blobText(blob)).metadata).toEqual({ surface: "share", sid: "sess-1", vid: "vid-1" })
+  })
+
+  it("a caller's own sid wins, and missing ids are omitted rather than sent as null", async () => {
+    visit.ids = { sessionId: "sess-1", visitorId: null }
+    track("x", { sid: "explicit" })
+    vi.advanceTimersByTime(400)
+    const [, blob] = sendBeaconMock.mock.calls[0]
+    expect(JSON.parse(await blobText(blob)).metadata).toEqual({ sid: "explicit" })
   })
 })

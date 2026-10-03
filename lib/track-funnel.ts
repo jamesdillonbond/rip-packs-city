@@ -144,6 +144,58 @@ function getAttribution(): string | null {
   }
 }
 
+// ── Returning-visitor id (2026-10-03) ───────────────────────────
+// rpc_sess dies with the tab, so a collector who comes back tomorrow is a new
+// stranger and "do anon visitors return?" was unanswerable. rpc_vid is a random
+// first-party id in localStorage — no fingerprinting, no third party, nothing
+// derived from the device — that lets visits from the same browser be counted
+// as one visitor. Disclosed on /privacy ("Cookies and storage").
+//
+// Honours Global Privacy Control and Do Not Track: with either set we neither
+// mint nor send one (an id minted before the signal was turned on is dropped).
+const VISITOR_KEY = "rpc_vid"
+const VISITOR_RE = /^[A-Za-z0-9_-]{8,64}$/
+
+function privacySignalSet(): boolean {
+  try {
+    if (typeof navigator === "undefined") return false
+    const nav = navigator as Navigator & { globalPrivacyControl?: boolean }
+    return nav.globalPrivacyControl === true || nav.doNotTrack === "1"
+  } catch {
+    return false
+  }
+}
+
+export function getVisitorId(): string | null {
+  try {
+    if (typeof window === "undefined") return null
+    if (privacySignalSet()) {
+      try { window.localStorage.removeItem(VISITOR_KEY) } catch { /* ignore */ }
+      return null
+    }
+    let id = window.localStorage.getItem(VISITOR_KEY)
+    if (!id || !VISITOR_RE.test(id)) {
+      const cryptoObj = window.crypto
+      id =
+        cryptoObj && "randomUUID" in cryptoObj
+          ? cryptoObj.randomUUID()
+          : `v_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e9).toString(36)}`
+      window.localStorage.setItem(VISITOR_KEY, id)
+    }
+    return id
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Just the two join keys (visit + returning visitor), for stamping onto every
+ * usage_events beacon (lib/telemetry/track.ts). Never throws.
+ */
+export function getVisitIds(): { sessionId: string | null; visitorId: string | null } {
+  return { sessionId: getSessionId(), visitorId: getVisitorId() }
+}
+
 /**
  * The session id + resolved campaign attribution, for a SERVER route that logs
  * its own funnel event (trophy_pinned / trophy_removed — the public beacon may
@@ -151,17 +203,23 @@ function getAttribution(): string | null {
  * the request body so the server row joins the same session as the beacons.
  * Never throws; either field is null when unavailable.
  */
-export function getFunnelContext(): { sessionId: string | null; referrer: string | null } {
-  return { sessionId: getSessionId(), referrer: getAttribution() }
+export function getFunnelContext(): {
+  sessionId: string | null
+  referrer: string | null
+  visitorId: string | null
+} {
+  return { sessionId: getSessionId(), referrer: getAttribution(), visitorId: getVisitorId() }
 }
 
 export function trackFunnelEvent(payload: FunnelEventPayload): void {
   try {
     if (typeof window === "undefined") return
-    const event: FunnelEventPayload & { sessionId?: string | null } = {
+    const event: FunnelEventPayload & { sessionId?: string | null; visitorId?: string | null } = {
       sessionId: getSessionId(),
       ...payload,
     }
+    const visitorId = getVisitorId()
+    if (visitorId) event.visitorId = visitorId
     // An explicit referrer from the caller wins; otherwise stamp the session's
     // resolved campaign attribution onto every event.
     if (event.referrer == null) {

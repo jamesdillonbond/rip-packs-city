@@ -2745,6 +2745,23 @@ const PINS = [
     migration:
       "supabase/migrations/20261003033402_audit_20261002_edition_recent_sales_sub_names_reads_only_the_page_s_subeditions.sql",
   },
+  {
+    // Added 2026-10-03. /admin/visitor-journeys: four streams join into one
+    // visit; bot / smoke / internal sessions are excluded from the list but
+    // COUNTED; returning = the visitor id seen in an earlier session <= 30 d.
+    fn: "admin_visitor_journeys",
+    test: "supabase/tests/admin_visitor_journeys.sql",
+    migration:
+      "supabase/migrations/20261003150031_visitor_journeys_concierge_visit_link_returning_visitor_id.sql",
+  },
+  {
+    // Same test file: the AI-assistant classifier the board's referral counts use
+    // (host matched at a boundary — a look-alike domain must not count).
+    fn: "referrer_ai_source",
+    test: "supabase/tests/admin_visitor_journeys.sql",
+    migration:
+      "supabase/migrations/20261003150031_visitor_journeys_concierge_visit_link_returning_visitor_id.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version
