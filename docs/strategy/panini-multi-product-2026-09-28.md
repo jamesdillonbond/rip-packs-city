@@ -259,3 +259,27 @@ What this thread added (each has a ledger entry with its revert path):
   **Takes effect when the box pulls** (the runner loads code at run start). No row + silence after a pull = the process
   died or the box was off — neither a hang nor a timer-visible sleep.
 - Tier 2 stays held (unchanged condition: a run logging `interleaved` and stale > 7 d still 0).
+
+### 2026-10-03 ~2:00 PM PT — secondary-market packs: the runner now looks for them
+
+- Trevor: "They have plenty of other packs that are selling on the secondary, they just don't have frequent pack drops."
+  `panini_pack_pages` held 4 pages (WC Hobby/FOTL, WNBA Hobby/FOTL drops). Pack links were only harvested from the pages
+  the CARD walk visits (home page = current drops, card grids = cards), and the 15-slot `packish_unmatched` evidence list
+  was filled every run by `/packcard-` CARD links, so a missed pack link could never show.
+- Panini 403s data-center traffic (`pg_net` GET of `/marketplace/nfts.html` → 403 block page, 10-03), so the pack
+  listing's URL cannot be read from here. **Shipped (`scripts/panini-pack-grid.mjs` + runner step 1.5):** after
+  enumeration the runner visits up to 4 candidate pack-listing pages (on-site nav links whose path names a pack
+  marketplace, `PANINI_PACK_GRID_URLS`, then the guess `/marketplace/packs.html`), scrolls each, and harvests every
+  `/marketplace-details/subpack-<n>-<pack_id>` link (anchors AND raw HTML). Harvested pages go to the registry and are
+  opened that run (`getPackMarketStats` → `panini_pack_state`, attributed to a product by name; EV "not modeled").
+  `packish_unmatched` no longer keeps `/packcard-` links.
+- **Read the answer:** `extra->'enum'->'pack_grid'` on the next `panini-ingest-enum` row — per candidate: HTTP status,
+  final URL, scrolls, `subpack_added`, and the `/onepanini` ops it fired. `subpack_added = 0` on every candidate means
+  the listing lives elsewhere: read `packish_unmatched` (now real pack-ish links only) and the ops, or set
+  `PANINI_PACK_GRID_URLS` on the box once the URL is known.
+- Supporting changes: pack pages are served **stalest-walk first** (they were ordered by URL — past the 40-page cap the
+  tail would never open); pack type comes from the pack's own name (Blaster / Mega / Premium …, plain "Packs" = hobby —
+  WC and WNBA unchanged); the card walk also stops at **110 min of run time** (`PANINI_RUN_BUDGET_MIN`) and the grid step
+  has a 4-min budget, so the added pages come out of the walk instead of past the task's 2 h kill.
+- Pack EV for these products stays "not modeled" until a product's families are priced from sales (the open item #2
+  above — generalize the model per product, don't copy it).
