@@ -110,11 +110,48 @@ access(all) fun testSealMovesNFTsIntoThePack() {
     Test.assertEqual(UInt32(1), p.packNo)
 }
 
-access(all) fun testAssignThenAnyoneOpensToTheWinnerOnly() {
+access(all) fun testWinnerOpensToTheirOwnWallet() {
+    let s = sealPack(2)
+    tx("transactions/giveaway_assign.cdc", sponsor, [s[0], winner.address])
+    tx("transactions/giveaway_open_as_winner.cdc", winner, [s[0], winner.address])
+    let got = ids(winner)
+    Test.assert(got.contains(s[1]) && got.contains(s[2]), message: "winner did not receive the pack")
+    Test.assertEqual(nil as RPCGiveawayPacks.PackView?, getPack(s[0]))
+}
+
+access(all) fun testWinnerMayDirectTheMomentsToTheirLinkedAccount() {
+    // `linked` stands in for the winner's Dapper account
+    let linked = Test.createAccount()
+    tx("transactions/setup_example_nft_collection.cdc", linked, [])
+    let s = sealPack(2)
+    tx("transactions/giveaway_assign.cdc", sponsor, [s[0], winner.address])
+    tx("transactions/giveaway_open_as_winner.cdc", winner, [s[0], linked.address])
+    Test.assert(ids(linked).contains(s[1]) && ids(linked).contains(s[2]), message: "moments did not reach the chosen account")
+    Test.assertEqual(0, ids(winner).length)
+}
+
+access(all) fun testOnlyTheWinnerCanOpenAs() {
+    let s = sealPack(1)
+    tx("transactions/giveaway_assign.cdc", sponsor, [s[0], winner.address])
+    // a stranger with their own Winner identity cannot open someone else's pack, even to the winner
+    expectFail(run("transactions/giveaway_open_as_winner.cdc", other, [s[0], other.address]), "Only this pack's winner can open it")
+    expectFail(run("transactions/giveaway_open_as_winner.cdc", other, [s[0], winner.address]), "Only this pack's winner can open it")
+    Test.assertEqual([s[1]], getPack(s[0])!.momentIDs)
+}
+
+access(all) fun testNobodyElseOpensBeforeTheGracePeriod() {
+    let s = sealPack(1)
+    tx("transactions/giveaway_assign.cdc", sponsor, [s[0], winner.address])
+    expectFail(run("transactions/giveaway_open.cdc", other, [s[0]]), "until the grace period ends")
+    Test.assertEqual([s[1]], getPack(s[0])!.momentIDs)
+}
+
+access(all) fun testAfterTheGracePeriodAnyoneOpensToTheWinnerOnly() {
     let s = sealPack(2)
     let packID = s[0]
     tx("transactions/giveaway_assign.cdc", sponsor, [packID, winner.address])
     Test.assertEqual(winner.address, getPack(packID)!.recipient!)
+    Test.moveTime(by: 1209601.0)
     // a stranger triggers the open and pays the fee; the NFTs still go to the winner
     tx("transactions/giveaway_open.cdc", other, [packID])
     let got = ids(winner)
@@ -161,6 +198,7 @@ access(all) fun testOpenFailsCleanlyWhenTheWinnerCannotReceive() {
     let s = sealPack(1)
     let noCollection = Test.createAccount()
     tx("transactions/giveaway_assign.cdc", sponsor, [s[0], noCollection.address])
+    Test.moveTime(by: 1209601.0)
     expectFail(run("transactions/giveaway_open.cdc", other, [s[0]]), "cannot receive")
     // the pack is intact, still sealed
     Test.assertEqual([s[1]], getPack(s[0])!.momentIDs)

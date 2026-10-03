@@ -54,7 +54,7 @@ cadence/
 
 ## RPCGiveawayPacks (added 2026-10-03)
 
-`RPCGiveawayPacks_test.cdc` covers the DRAFT sealed-pack escrow (`cadence/contracts/RPCGiveawayPacks.cdc`, undeployed): sealing moves the NFTs, only the sealing sponsor assigns or reclaims, assignment happens once, anyone can open but only to the winner, the 30-day reclaim delay, a receiver-less winner leaves the pack intact, and mixed-type and empty packs are refused. It runs in the same CI job:
+`RPCGiveawayPacks_test.cdc` covers the DRAFT sealed-pack escrow (`cadence/contracts/RPCGiveawayPacks.cdc`, undeployed): sealing moves the NFTs, only the sealing sponsor assigns or reclaims, assignment happens once, only the winner opens before the 14-day grace period (to a destination they choose, e.g. their linked Dapper account), after it anyone can open but only to the winner, the 30-day reclaim delay, a receiver-less winner leaves the pack intact, and mixed-type and empty packs are refused. It runs in the same CI job:
 
 ```bash
 flow test -f cadence/tests/flow.test.json cadence/tests/RPCTradeEscrow_test.cdc cadence/tests/RPCGiveawayPacks_test.cdc

@@ -330,14 +330,15 @@ Tests: `cadence/tests/RPCGiveawayPacks_test.cdc` has 11, and they gate CI. Plant
 1. **Seal** (sponsor, Flow Wallet via Hybrid Custody): moments go from the sponsor's Dapper account into the contract's packs.
 2. **Claim** (winner): sign in to RPC as today, connect Flow Wallet, and claim. RPC draws a random unclaimed pack. The winner's connected Flow Wallet address is the recipient, so there is no typed address and no typo.
 3. **Assign** (sponsor): batch-assign claimed packs to their winners. One approval per batch, like Deliver all.
-4. **Open** (winner, signs in their own Flow Wallet): the reveal on the claim page IS the open transaction. It also sets up a Top Shot collection in the winner's Flow Wallet if missing, so it can't fail on "can't receive". The winner pays the fee (Flow Wallet usually sponsors it) and RPC signs nothing, so **the read-only exception does not widen**.
+4. **Choose, then open** (winner, signs in their own Flow Wallet). Before opening, the claim page asks where the moments should go (Trevor, 2026-10-03: "an option before opening the pack that allows them to have the moments flow directly to their linked dapper wallet instead of to their flow wallet"):
+   - **My Flow Wallet.** The open transaction also sets up a Top Shot collection there if missing.
+   - **My linked Dapper account.** Offered only when the page reads (view-only, Hybrid Custody) that the connected Flow Wallet is a parent of a Dapper account. The moments land straight in Top Shot.
+
+   The reveal on the claim page IS the `openAs()` transaction. The contract checks the signer is the pack's winner and sends the moments where the winner signed for. The winner pays the fee (Flow Wallet usually sponsors it) and RPC signs nothing, so **the read-only exception does not widen**. For liveness, anyone may open a still-sealed pack after a 14-day grace period, but only to the winner's assigned address. Until then, nobody can take the choice (or the reveal) away.
 
 **Decisions this needs (Trevor):**
 - **Wallet connect on a public page.** The claim page becomes the second place FCL connects a wallet, and the first for non-admins. The guard grows one named exception (claim page, Flow Wallet only). The Dapper reason behind the rule stays intact.
-- **Where the moments land.**
-  - **Option A (simplest): the winner's Flow Wallet.** Self-custody: they can list on Flowty and move them anywhere. **Expected, not yet verified:** the Top Shot app and marketplace only show the Dapper account, so moments in a Flow Wallet would not appear there.
-  - **Option B: the winner's own Dapper account, proven by their Flow Wallet.** A winner whose Flow Wallet is linked as parent of their Dapper account (Hybrid Custody, as Trevor's is) proves it at claim. The pack is assigned to the Dapper address, and the open drops the moments straight into Top Shot. Needs the winner to have linked accounts, which many collectors haven't.
-  - **Recommendation:** A as the default, plus B for winners who have a linked Dapper account. The claim page offers B when it detects the link, read-only via the same `PROVIDER_CONTROLLERS_SCRIPT` shape.
+- ~~Where the moments land~~ **Decided 2026-10-03: the winner chooses at open**, between their Flow Wallet and their linked Dapper account (step 4). The contract supports it (`openAs`, tests `testWinnerMayDirectTheMomentsToTheirLinkedAccount`, `testOnlyTheWinnerCanOpenAs`, `testNobodyElseOpensBeforeTheGracePeriod`). **Expected, not yet verified:** moments left in a Flow Wallet don't show in the Top Shot app or marketplace, so the page should say so beside that option.
 - **Contract go-ahead.** Still the §9 gate: audit, dedicated deploy account, deploy.
 
 **Until the contract is deployed**, today's v1 (claim by Top Shot username → Deliver all into the Dapper account) keeps working unchanged.

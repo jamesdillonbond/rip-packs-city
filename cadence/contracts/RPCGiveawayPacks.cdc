@@ -17,11 +17,19 @@
 //                 winner's collection receives that type (Top Shot:
 //                 /public/MomentCollection).
 //   2. assign()   The SAME sponsor names the pack's winner (an address). Once.
-//   3. open()     ANYONE may trigger it (a winner on a custodial wallet can't
-//                 sign; the sponsor or RPC pays the fee). The NFTs can only go
-//                 to the assigned winner's receiver at the pack's path, so
-//                 whoever triggers it gains nothing. The Pack is destroyed.
-//   4. reclaim()  The sponsor takes the NFTs back from a pack that is
+//   3. openAs()   The WINNER opens their own pack, signing in their own Flow
+//                 Wallet, and CHOOSES where the NFTs go: their Flow Wallet, or
+//                 their linked Dapper account (Trevor, 2026-10-03: "an option
+//                 before opening the pack ... directly to their linked dapper
+//                 wallet"). The winner proves who they are with a Winner
+//                 resource stored in their own account (borrowed with the Open
+//                 entitlement, which only that account's signer can do).
+//   4. open()     Liveness fallback: ANYONE may open an assigned pack once
+//                 OPEN_GRACE has passed since assignment; the NFTs can only go
+//                 to the winner's receiver at the pack's path. Before the grace
+//                 period no one but the winner can open it, so nobody can take
+//                 the destination choice (or the reveal) away from them.
+//   5. reclaim()  The sponsor takes the NFTs back from a pack that is
 //                 UNASSIGNED, or ASSIGNED but unopened for RECLAIM_DELAY
 //                 seconds (a winner whose collection can't receive).
 //
@@ -34,8 +42,12 @@
 //
 // SECURITY PROPERTIES
 //   - No admin, no drain: nothing in this contract lets the contract account,
-//     RPC, or any caller withdraw a pack's NFTs except open() (to the winner)
-//     and reclaim() (to the sealing sponsor, under the rules above).
+//     RPC, or any caller withdraw a pack's NFTs except openAs() (the winner,
+//     to a destination the winner signs for), open() (to the winner, after the
+//     grace period) and reclaim() (to the sealing sponsor, under the rules above).
+//   - The winner's destination is the winner's call: a signed openAs() may send
+//     the NFTs to any receiver, exactly as the winner could after receiving
+//     them. The pack itself still can't be transferred or traded.
 //   - Sponsor binding: every pack records the uuid of the Sponsor resource that
 //     sealed it; assign() and reclaim() require that same resource, reached
 //     through the Manage entitlement (only its owner can borrow it so).
@@ -54,10 +66,13 @@ access(all) contract RPCGiveawayPacks {
 
     // ── Paths, entitlements, limits ────────────────────────────────────────
     access(all) let SponsorStoragePath: StoragePath
+    access(all) let WinnerStoragePath: StoragePath
     access(all) entitlement Manage
+    access(all) entitlement Open
 
     access(all) let MAX_MOMENTS_PER_PACK: Int
     access(all) let RECLAIM_DELAY: UFix64
+    access(all) let OPEN_GRACE: UFix64
 
     // ── State ──────────────────────────────────────────────────────────────
     access(self) let packs: @{UInt64: Pack}
@@ -66,7 +81,7 @@ access(all) contract RPCGiveawayPacks {
     // ── Events ─────────────────────────────────────────────────────────────
     access(all) event PackSealed(packID: UInt64, sponsorID: UInt64, dropID: String, packNo: UInt32, nftType: String, momentIDs: [UInt64])
     access(all) event PackAssigned(packID: UInt64, recipient: Address)
-    access(all) event PackOpened(packID: UInt64, recipient: Address, momentIDs: [UInt64])
+    access(all) event PackOpened(packID: UInt64, recipient: Address, deliveredTo: Address?, openedByWinner: Bool, momentIDs: [UInt64])
     access(all) event PackReclaimed(packID: UInt64, sponsorID: UInt64, momentIDs: [UInt64])
 
     // ── Read model ─────────────────────────────────────────────────────────
@@ -198,17 +213,43 @@ access(all) contract RPCGiveawayPacks {
         return <- create Sponsor()
     }
 
-    // ── Open: permissionless, destination fixed ────────────────────────────
+    // ── Winner identity ────────────────────────────────────────────────────
+    // Holds nothing; its OWNER is the proof. A reference with the Open
+    // entitlement can only come from the storing account's own signer (or a
+    // capability that account deliberately issued).
+    access(all) resource Winner {}
+
+    access(all) fun createWinner(): @Winner {
+        return <- create Winner()
+    }
+
+    // ── Open by the winner, to the destination they choose ─────────────────
+    access(all) fun openAs(packID: UInt64, winner: auth(Open) &Winner, to: &{NonFungibleToken.Receiver}) {
+        let pack = self.borrowPack(packID) ?? panic("No such pack")
+        let recipient = pack.recipient ?? panic("This pack has no winner yet")
+        let caller = winner.owner?.address ?? panic("The Winner resource must be stored in the winner's account")
+        assert(caller == recipient, message: "Only this pack's winner can open it")
+        let p <- self.packs.remove(key: packID)!
+        let ids = p.drainTo(to)
+        destroy p
+        emit PackOpened(packID: packID, recipient: recipient, deliveredTo: to.owner?.address, openedByWinner: true, momentIDs: ids)
+    }
+
+    // ── Open by anyone after the grace period, destination fixed ───────────
     access(all) fun open(packID: UInt64) {
         let pack = self.borrowPack(packID) ?? panic("No such pack")
         let recipient = pack.recipient ?? panic("This pack has no winner yet")
+        assert(
+            getCurrentBlock().timestamp >= pack.assignedAt! + self.OPEN_GRACE,
+            message: "Only the winner can open this pack until the grace period ends"
+        )
         let receiver = getAccount(recipient).capabilities
             .borrow<&{NonFungibleToken.Receiver}>(pack.receiverPath)
             ?? panic("The winner's account cannot receive this pack's NFTs yet")
         let p <- self.packs.remove(key: packID)!
         let ids = p.drainTo(receiver)
         destroy p
-        emit PackOpened(packID: packID, recipient: recipient, momentIDs: ids)
+        emit PackOpened(packID: packID, recipient: recipient, deliveredTo: recipient, openedByWinner: false, momentIDs: ids)
     }
 
     // ── Reads ──────────────────────────────────────────────────────────────
@@ -229,8 +270,10 @@ access(all) contract RPCGiveawayPacks {
 
     init() {
         self.SponsorStoragePath = /storage/RPCGiveawayPacksSponsor
+        self.WinnerStoragePath = /storage/RPCGiveawayPacksWinner
         self.MAX_MOMENTS_PER_PACK = 50
         self.RECLAIM_DELAY = 2592000.0 // 30 days
+        self.OPEN_GRACE = 1209600.0 // 14 days
         self.packs <- {}
         self.nextPackID = 1
     }
