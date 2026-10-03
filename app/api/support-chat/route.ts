@@ -2538,9 +2538,11 @@ async function executeToolInner(
         summary,
       });
     } catch (err: unknown) {
+      // 2026-10-03: the one tool that handed the model a raw error string
+      // (Postgres / fetch internals); every other tool classifies.
       return JSON.stringify({
         status: "error",
-        message: err instanceof Error ? err.message : String(err),
+        message: safeApiError(err, "check_wallet_squeeze failed").error,
       });
     }
   }

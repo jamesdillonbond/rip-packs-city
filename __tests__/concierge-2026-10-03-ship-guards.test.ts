@@ -155,3 +155,18 @@ describe("a probe session's logged feedback never reaches the triage inbox", () 
     expect(ADMIN).toContain('.eq("is_smoke_test", false)')
   })
 })
+
+describe("no tool hands the model a raw error string", () => {
+  it("every tool catch classifies through safeApiError (the resolver's internal `failed` never reaches the model)", () => {
+    const start = ROUTE.indexOf("async function executeToolInner(")
+    const end = ROUTE.indexOf("async function persistConversation(")
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBeGreaterThan(start)
+    const body = ROUTE.slice(start, end)
+    // The raw-message shape, inside a JSON.stringify({ status: "error" ... }) return.
+    const raw = [...body.matchAll(/message:\s*err instanceof Error \? err\.message : String\(err\)/g)]
+    expect(`raw error messages returned to the model: ${raw.length}`).toBe("raw error messages returned to the model: 0")
+    // positive control: the block really does classify errors
+    expect((body.match(/safeApiError\(/g) ?? []).length).toBeGreaterThan(20)
+  })
+})
