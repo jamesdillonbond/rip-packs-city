@@ -78,6 +78,12 @@ interface ChecklistTile extends EditionTile {
   // "Full editions" view only: this edition's price (floor, else FMV), null when
   // it has neither — see lib/entity/checklist-full-editions.ts.
   edition_cost_usd?: number | null
+  // "Full editions" view only: what that price IS ("ask" = a live low ask,
+  // "fmv" = no connected ask) and whether it is a PARALLEL's price. The badge
+  // labels the figure so it never reads as an unexplained "+$62" (beta
+  // feedback 10231/10233, 2026-10-01).
+  edition_cost_source?: "ask" | "fmv" | null
+  edition_cost_from_parallel?: boolean
   // "Full editions" view only: parallels of this edition the wallet holds —
   // any one of them checks the edition off (Trevor, 2026-09-30).
   owned_parallels?: number | null
@@ -645,7 +651,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
 
           {staleNote && (
             <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
-              {header.stale_missing_pct}% of missing {unit} have stale or low-confidence pricing — cost-to-complete is an estimate from recent lows and FMV, not a quote.
+              {header.stale_missing_pct}% of missing {unit} have stale or low-confidence pricing — cost-to-complete sums live low asks (within 3× FMV) and FMV where nothing is listed; an estimate, not a quote.
             </div>
           )}
         </div>
@@ -805,8 +811,20 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
   const ownState: OwnState = locked ? "locked" : owned ? "owned" : "missing"
   const badgeStyle = OWN_STYLE[ownState]
   // The full-edition view carries the price the header summed; the all-moments
-  // tile quotes its own floor/FMV the same way.
+  // tile quotes its own floor/FMV the same way. `floor_usd` is the LIVE low ask
+  // (get_team_checklist, 2026-10-03), so the badge can say which it is.
   const addCost = e.edition_cost_usd !== undefined ? e.edition_cost_usd : (e.floor_usd ?? e.fmv_usd ?? null)
+  const addSource: "ask" | "fmv" | null =
+    e.edition_cost_usd !== undefined
+      ? (e.edition_cost_source ?? null)
+      : (typeof e.floor_usd === "number" && e.floor_usd > 0 ? "ask" : typeof e.fmv_usd === "number" && e.fmv_usd > 0 ? "fmv" : null)
+  const addFromParallel = e.edition_cost_from_parallel === true
+  const addLabel = addCost
+    ? `+ ${fmtUsd(addCost)} ${addFromParallel ? "PAR" : addSource === "ask" ? "ASK" : "FMV"}`
+    : "+ add"
+  const addTitle = addCost
+    ? `Missing — cheapest way in: ${fmtUsd(addCost)} (${addSource === "ask" ? "live low ask" : "FMV — no live ask"}${addFromParallel ? ", a parallel of this edition" : ""})`
+    : "Missing — no price yet"
   // Missing tiles are dimmed slightly so owned pops against them.
   const dim = hasWallet && !owned
 
@@ -835,8 +853,10 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
         {hasWallet && (
           <div
             title={
-              (locked ? "Owned + locked" : owned ? "Owned" : "Missing") +
-              (owned && typeof e.owned_parallels === "number" && e.owned_parallels > 0 ? " (includes a parallel)" : "")
+              owned
+                ? (locked ? "Owned + locked" : "Owned") +
+                  (typeof e.owned_parallels === "number" && e.owned_parallels > 0 ? " (includes a parallel)" : "")
+                : addTitle
             }
             style={{
               position: "absolute", top: 6, right: 6, padding: "3px 7px", borderRadius: 999,
@@ -846,7 +866,7 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
           >
             {owned
               ? `✓${e.owned_count && e.owned_count > 1 ? ` ×${e.owned_count}` : ""}${locked ? " 🔒" : ""}`
-              : (addCost ? `+ ${fmtUsd(addCost)}` : "+ add")}
+              : addLabel}
           </div>
         )}
       </div>

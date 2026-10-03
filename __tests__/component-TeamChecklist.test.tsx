@@ -261,6 +261,13 @@ describe("TeamChecklist", () => {
       { ...tile, route_slug: "owned-locked", owned: true, owned_locked: true, owned_count: 3, thumbnail_url: "https://x/a.png" },
       { ...tile, route_slug: "owned-plain", owned: true, owned_locked: false },
       { ...tile, route_slug: "missing", owned: false, floor_usd: 42 },
+      // No live ask → the figure is FMV, and the badge SAYS so (beta feedback
+      // 10231/10233: an unlabelled "+$62" matched nothing on the edition page).
+      { ...tile, route_slug: "missing-fmv", owned: false, floor_usd: null, fmv_usd: 83 },
+      { ...tile, route_slug: "missing-unpriced", owned: false, floor_usd: null, fmv_usd: null },
+      // Full-edition shape: the cheapest way in is a PARALLEL's live ask (the
+      // Joe Dumars case — $62 on the tile, $148 on the edition page).
+      { ...tile, route_slug: "missing-par", owned: false, floor_usd: 148, fmv_usd: 83, edition_cost_usd: 62, edition_cost_source: "ask", edition_cost_from_parallel: true },
     ]
     fetchMock = routeFetch({
       checklist: () => res(true, walletTiles),
@@ -274,7 +281,15 @@ describe("TeamChecklist", () => {
     const text = container.textContent ?? ""
     expect(text).toContain("×3") // owned_count > 1
     expect(text).toContain("🔒") // locked
-    expect(text).toContain("+ $42") // missing tile shows add-cost
+    expect(text).toContain("+ $42.00 ASK") // missing tile shows add-cost, labelled as the live ask
+    expect(text).toContain("+ $83.00 FMV") // no live ask → FMV, said so
+    expect(text).toContain("+ add") // unpriced → no figure, never $0
+    expect(container.querySelector('a[href*="missing"] [title^="Missing — cheapest way in: $42.00 (live low ask)"]')).toBeTruthy()
+    expect(container.querySelector('a[href*="missing-fmv"] [title^="Missing — cheapest way in: $83.00 (FMV — no live ask)"]')).toBeTruthy()
+    expect(text).toContain("+ $62.00 PAR")
+    expect(container.querySelector('a[href*="missing-par"] [title="Missing — cheapest way in: $62.00 (live low ask, a parallel of this edition)"]')).toBeTruthy()
+    // The old unlabelled form is gone.
+    expect(text).not.toMatch(/\+ \$42\.00(?! ASK)/)
     // owned-locked tile carried a thumbnail → an <img> rendered
     expect(container.querySelector('a[href*="owned-locked"] img')).toBeTruthy()
   })

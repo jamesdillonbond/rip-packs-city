@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
+  allEditionTiles,
   checklistHasParallels,
   computeFullEditionProgress,
   editionPrice,
@@ -89,9 +90,24 @@ describe("fullEditionTiles", () => {
   it("a missing full edition costs its CHEAPEST version — any version completes it", () => {
     const t = fullEditionTiles(editions.map((e) => ({ ...e, owned: false })), true).find((x) => x.route_slug === "1:1")!
     expect(t.edition_cost_usd).toBe(4)
+    // …and the tile SAYS the price is a parallel's live ask (beta feedback 10231/10233)
+    expect(t.edition_cost_source).toBe("ask")
+    expect(t.edition_cost_from_parallel).toBe(true)
     // an unpriced full edition with a priced parallel is priced by the parallel
     const u = fullEditionTiles([row("2:1"), row("2:1::5", { fmv_usd: 7 })], false)[0]
     expect(u.edition_cost_usd).toBe(7)
+    expect(u.edition_cost_source).toBe("fmv")
+    expect(u.edition_cost_from_parallel).toBe(true)
+  })
+
+  it("labels the price source: a live ask is 'ask', an FMV-only edition is 'fmv', unpriced is null (and not a parallel)", () => {
+    const [ask, fmv, none] = fullEditionTiles([row("3:1", { floor_usd: 20, fmv_usd: 15 }), row("3:2", { fmv_usd: 9 }), row("3:3")], false)
+    expect([ask.edition_cost_source, ask.edition_cost_from_parallel]).toEqual(["ask", false])
+    expect([fmv.edition_cost_source, fmv.edition_cost_from_parallel]).toEqual(["fmv", false])
+    expect([none.edition_cost_usd, none.edition_cost_source, none.edition_cost_from_parallel]).toEqual([null, null, false])
+    // the all-moments list carries the same label, never a parallel flag
+    const all = allEditionTiles([row("3:1", { floor_usd: 20, fmv_usd: 15 }), row("3:1::2", { fmv_usd: 1 })], false)
+    expect(all.map((t) => [t.route_slug, t.edition_cost_source, t.edition_cost_from_parallel])).toEqual([["3:1", "ask", false], ["3:1::2", "fmv", false]])
   })
 
   it("a parallel whose full edition is not in scope is dropped, not shown", () => {

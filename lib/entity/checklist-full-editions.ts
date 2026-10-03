@@ -19,8 +19,9 @@
 //
 // PRICING RULE for a missing edition: the cheapest price among the full edition
 // and its parallels in scope, each priced the way the "All moments" figure
-// prices an edition — floor (lowest ask) when there is one, otherwise FMV
-// (get_team_checklist_progress: COALESCE(floor_usd, fmv_usd)). An edition with
+// prices an edition — the LIVE low ask when there is a connected one (since
+// 2026-10-03: <= 7 d old and <= 3x FMV, never a historical minimum sale),
+// otherwise FMV (get_team_checklist_progress: COALESCE(floor_usd, fmv_usd)). An edition with
 // NO priced version is NOT counted as $0: it is excluded from the sum and
 // reported in `unpriced_missing_count`, so the UI can say the total is a lower
 // bound. A parallel whose full edition is not in scope has no tile to check off
@@ -42,9 +43,16 @@ export interface ChecklistEditionRow {
   [k: string]: unknown
 }
 
+/** What a checklist price IS: a live low ask, or FMV because no (connected) ask exists. */
+export type EditionPriceSource = "ask" | "fmv"
+
 export interface FullEditionTile extends ChecklistEditionRow {
   /** Cheapest price among this full edition and its parallels (floor, else FMV); null when none is priced. */
   edition_cost_usd: number | null
+  /** Where edition_cost_usd came from; null when unpriced. */
+  edition_cost_source: EditionPriceSource | null
+  /** True when the cheapest way in is one of this edition's PARALLELS, not the full edition. */
+  edition_cost_from_parallel: boolean
   /** Parallels of this full edition the wallet holds (null without a wallet). */
   owned_parallels: number | null
 }
@@ -95,6 +103,18 @@ export function editionPrice(r: Pick<ChecklistEditionRow, "floor_usd" | "fmv_usd
   return null
 }
 
+/**
+ * Which of the two the price IS. Since 2026-10-03 `floor_usd` from
+ * get_team_checklist is the LIVE low ask (<= 7 d, <= 3x FMV), so a tile can
+ * say "ask" or "FMV" instead of an unlabelled "+$62" (beta feedback 10231/10233).
+ */
+export function editionPriceSource(r: Pick<ChecklistEditionRow, "floor_usd" | "fmv_usd">): EditionPriceSource | null {
+  const ok = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0
+  if (ok(r.floor_usd)) return "ask"
+  if (ok(r.fmv_usd)) return "fmv"
+  return null
+}
+
 const TIER_RANK: Record<string, number> = {
   ULTIMATE: 1, LEGENDARY: 2, CHAMPION: 3, CHALLENGER: 4, CONTENDER: 5,
   RARE: 6, UNCOMMON: 7, FANDOM: 8, COMMON: 9,
@@ -140,6 +160,8 @@ export function allEditionTiles(rows: readonly ChecklistEditionRow[], hasWallet:
       owned_count: r.owned_count ?? null,
       owned_parallels: null,
       edition_cost_usd: editionPrice(r),
+      edition_cost_source: editionPriceSource(r),
+      edition_cost_from_parallel: false,
     })
   }
   return sortChecklistTiles(out, hasWallet)
@@ -170,9 +192,15 @@ export function fullEditionTiles(rows: readonly ChecklistEditionRow[], hasWallet
   for (const [key, r] of full) {
     const pars = parallels.get(key) ?? []
     let cheapest = editionPrice(r)
+    let cheapestSource = editionPriceSource(r)
+    let cheapestFromParallel = false
     for (const p of pars) {
       const pr = editionPrice(p)
-      if (pr != null && (cheapest == null || pr < cheapest)) cheapest = pr
+      if (pr != null && (cheapest == null || pr < cheapest)) {
+        cheapest = pr
+        cheapestSource = editionPriceSource(p)
+        cheapestFromParallel = true
+      }
     }
     const ownedPars = pars.filter((p) => p.owned === true)
     const ownsFull = r.owned === true
@@ -186,6 +214,8 @@ export function fullEditionTiles(rows: readonly ChecklistEditionRow[], hasWallet
         : r.owned_count ?? null,
       owned_parallels: hasWallet ? ownedPars.length : null,
       edition_cost_usd: cheapest,
+      edition_cost_source: cheapestSource,
+      edition_cost_from_parallel: cheapestFromParallel,
     })
   }
 
