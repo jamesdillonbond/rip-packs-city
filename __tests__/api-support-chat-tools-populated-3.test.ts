@@ -145,7 +145,11 @@ describe("concierge tools — get_collection_snapshot", () => {
 })
 
 describe("concierge tools — escalate_to_human", () => {
+  // 2026-10-03: the live page is reachable only by a SIGNED-IN caller
+  // (isHigh = wantsHigh && !!ctx.userId). The two HIGH cases below sign in;
+  // the anonymous case pins that no channel is touched and the user is told.
   it("pages both channels on HIGH urgency and reports delivery", async () => {
+    A.authedEmail = "collector@example.com"
     process.env.TELEGRAM_BOT_TOKEN = "tok"
     process.env.TELEGRAM_CHAT_ID = "chat"
     process.env.RESEND_API_KEY = "resend"
@@ -158,9 +162,32 @@ describe("concierge tools — escalate_to_human", () => {
     await POST(post("escalate now"))
     const r = toolResult()
     expect(r.status).toBe("escalated")
+    expect(r.paged).toBe(true)
+  })
+
+  it("does NOT page an ANONYMOUS caller on HIGH — logged, told to sign in, no channel touched", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "tok"
+    process.env.TELEGRAM_CHAT_ID = "chat"
+    process.env.RESEND_API_KEY = "resend"
+    process.env.ALERT_EMAIL = "ops@example.com"
+    const fm = stubFetch([
+      jsonRoute("api.telegram.org", { ok: true }),
+      jsonRoute("api.resend.com", { id: "email-1" }),
+    ])
+    const spy = install({})
+    script("escalate_to_human", { reason: "site down", category: "bug", urgency: "high" })
+    await POST(post("anon escalate"))
+    const r = toolResult()
+    expect(r.status).toBe("escalated")
+    expect(r.paged).toBe(false)
+    expect(String(r.message)).toContain("sign in")
+    const hit = fm.calls.filter((c) => /api\.telegram\.org|api\.resend\.com/.test(c.url))
+    expect(hit).toHaveLength(0)
+    expect(spy.rpcCalls.find((c) => c.name === "log_pipeline_run")).toBeUndefined()
   })
 
   it("logs a pipeline failure when BOTH page channels fail on HIGH", async () => {
+    A.authedEmail = "collector@example.com"
     process.env.TELEGRAM_BOT_TOKEN = "tok"
     process.env.TELEGRAM_CHAT_ID = "chat"
     process.env.RESEND_API_KEY = "resend"

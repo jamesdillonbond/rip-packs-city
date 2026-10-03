@@ -402,6 +402,8 @@ describe("concierge tools — feedback intake + escalation", () => {
   })
 
   it("HIGH-urgency escalation pages Telegram and reports paged", async () => {
+    // 2026-10-03: the live page is sign-in gated (isHigh = wantsHigh && !!ctx.userId).
+    A.authedEmail = "collector@example.com"
     const f = stubFetch([
       jsonRoute("api.telegram.org", { ok: true }),
       jsonRoute("api.resend.com", { id: "email-1" }),
