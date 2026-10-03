@@ -162,13 +162,42 @@ function buildRow(distId: string, node: PackNode) {
 // The full seed: GQL pagination (up to 20 pages × 30s) + chunked upserts.
 // Routinely exceeds 30s, so it runs in the background (see handler) rather
 // than blocking the HTTP response and tripping cron-job.org's 30s client cap.
+// Every exit writes exactly one pipeline_runs row (2026-10-02). Before, this
+// lane wrote NONE on any outcome: a broken catalog walk was a console line and
+// a 202, invisible to every sentinel arm, while it feeds the pack-distribution
+// catalog behind Top Shot pack EV. Found by
+// supabase/functions/_tests/failed_run_honesty_test.ts (rule 3).
+async function logRun(startedAt: number, ok: boolean, written: number, found: number, error: string | null, extra: Record<string, unknown>) {
+  try {
+    // deno-lint-ignore no-explicit-any
+    const { error: logErr } = await (supabase as any).rpc("log_pipeline_run", {
+      p_pipeline: "seed-topshot-pack-distributions",
+      p_started_at: new Date(startedAt).toISOString(),
+      p_rows_found: found,
+      p_rows_written: written,
+      p_rows_skipped: 0,
+      p_ok: ok,
+      p_error: error,
+      p_collection_slug: "nba_top_shot",
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: { ...extra, elapsed_ms: Date.now() - startedAt },
+    });
+    if (logErr) console.error(`${LOG_PREFIX} log_pipeline_run failed:`, logErr.message);
+  } catch (e) {
+    console.error(`${LOG_PREFIX} log_pipeline_run threw:`, e instanceof Error ? e.message : String(e));
+  }
+}
+
 async function runSeed(): Promise<void> {
   const startedAt = Date.now();
+  let page = 0;
+  let found = 0;
+  let upserted = 0;
   try {
     const nodesByDist = new Map<string, PackNode>();
     let cursor: string | null = null;
     let hasNext = true;
-    let page = 0;
 
     while (hasNext && page < 20) {
       const { nodes, hasNextPage, endCursor } = await fetchPage(cursor);
@@ -186,8 +215,12 @@ async function runSeed(): Promise<void> {
       buildRow(distId, node),
     );
 
+    found = rows.length;
     if (rows.length === 0) {
+      // Top Shot always has sealed-pack distributions: zero means the walk
+      // read nothing, not that there is nothing to seed.
       console.log(`${LOG_PREFIX} no distributions found`);
+      await logRun(startedAt, false, 0, 0, "no_distributions_returned", { pages: page });
       return;
     }
 
@@ -195,7 +228,6 @@ async function runSeed(): Promise<void> {
     // ON CONFLICT DO UPDATE that preserves total_minted/total_opened and MERGES
     // metadata (existing || incoming) — unlike a raw .upsert(), which reset
     // supply to 0 and replaced metadata on every catalog re-seed.
-    let upserted = 0;
     for (let i = 0; i < rows.length; i += 500) {
       const chunk = rows.slice(i, i + 500);
       const { error } = await supabase.rpc("seed_topshot_pack_distributions", {
@@ -210,9 +242,12 @@ async function runSeed(): Promise<void> {
 
     const elapsed = Date.now() - startedAt;
     console.log(`${LOG_PREFIX} upserted=${upserted} in ${elapsed}ms pages=${page}`);
+    await logRun(startedAt, true, upserted, found, null, { pages: page });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`${LOG_PREFIX} failed:`, msg);
+    // rows_written = what landed before the failure (chunks are all-or-nothing).
+    await logRun(startedAt, false, upserted, found, msg.slice(0, 300), { pages: page });
   }
 }
 

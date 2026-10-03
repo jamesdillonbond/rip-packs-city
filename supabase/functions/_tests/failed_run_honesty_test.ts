@@ -42,7 +42,12 @@
 // fixed: ingest-topshot-pack-opens-history (every 15 min: tip_unreachable
 // answered 200 with no row; the All Day sibling had this fix since 08-13) and
 // resolve-allday-rip-dist-api (hourly: a failed read answered {"note":"none"}).
-// The three that write no run row on ANY outcome are KNOWN_TRACELESS.
+// Three wrote no run row on ANY outcome. The one with a live caller,
+// seed-topshot-pack-distributions (every 4 h at :13; feeds the Top Shot pack EV
+// distribution catalog), was fixed the same night: one log_pipeline_run row per
+// run, plus a cadence-watchlist row. Decision rule for what stays listed: edge
+// logs showed 0 invocations in 24 h, so a code change would buy no user benefit
+// and a deploy of code nobody calls. Fix one if it is revived.
 //
 // ⚠ WHAT IT IS STRUCTURALLY SILENT ABOUT:
 //   * Partial failure: here everything fails at once.
@@ -53,18 +58,16 @@ import { admit, FN_ROOT, functionNames, install, load } from "./harness.ts"
 /** name → what it does when every read fails. ⛔ Remove an entry when it is fixed; never add one to make a new function pass. */
 const KNOWN: Record<string, string> = {
   "topshot-insider-detect-patterns":
-    "DORMANT (no caller, zero pipeline_runs ever). loadRecentBuybacks error returns [] → log_pipeline_run p_ok=true no_recent_buybacks",
-  "seed-ufc-editions": "no caller found 10-02. Every Flowty page fails → body ok:true with errors[], no pipeline_runs row",
-  "special-serial-delta": "no caller found 10-02. Holders read error → body status:\"ok\" scanned=0 failed=0, no pipeline_runs row",
-  "scan-ufc-wallet": "no caller found 10-02. The ids script 503s → body ok:true momentsFound=0 with the error in errors[]",
+    "DORMANT (no caller, zero pipeline_runs ever; 0 invocations in 24 h, 10-02). loadRecentBuybacks error returns [] → log_pipeline_run p_ok=true no_recent_buybacks",
+  "seed-ufc-editions": "0 invocations in 24 h (function_edge_logs, 10-02). Every Flowty page fails → body ok:true with errors[], no pipeline_runs row",
+  "special-serial-delta": "0 invocations in 24 h (function_edge_logs, 10-02). Holders read error → body status:\"ok\" scanned=0 failed=0, no pipeline_runs row",
+  "scan-ufc-wallet": "0 invocations in 24 h (function_edge_logs, 10-02). The ids script 503s → body ok:true momentsFound=0 with the error in errors[]",
 }
 
 /** name → how it answers 2xx with no ok=false row. Rule (3) only; shrink-only like KNOWN. */
 const KNOWN_TRACELESS: Record<string, string> = {
-  "seed-topshot-pack-distributions":
-    "writes NO pipeline_runs row on any outcome (console only); 202 accepted, then a failed catalog walk just logs. Scheduled at :13 (topshot-active-listings-ingest.yml's minute census). Fix = a new pipeline lane, which is a monitoring decision.",
-  "special-serial-sweep": "no pipeline_runs row on any outcome; 202 accepted, per-collection rpc errors only logged. No caller found 10-02.",
-  "backfill-allday-pack-supply": "no pipeline_runs row; 200 done:true with pageErrs=1. No caller found 10-02.",
+  "special-serial-sweep": "no pipeline_runs row on any outcome; 202 accepted, per-collection rpc errors only logged. 0 invocations in 24 h (function_edge_logs, 10-02).",
+  "backfill-allday-pack-supply": "no pipeline_runs row; 200 done:true with pageErrs=1. 0 invocations in 24 h (function_edge_logs, 10-02).",
 }
 
 const names = functionNames()
