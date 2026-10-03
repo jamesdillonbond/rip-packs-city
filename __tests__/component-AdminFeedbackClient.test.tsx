@@ -828,3 +828,70 @@ describe("AdminFeedbackClient — shipped-but-unnotified readers", () => {
     expect(result.textContent).not.toContain("Nothing to send")
   })
 })
+
+describe("AdminFeedbackClient — shipped-but-unnotified, the remaining arms", () => {
+  const withBacklog = (reply: () => Response, unnotified: number | null = 1, err: string | null = null) => {
+    fetchMock.mockImplementation(async (input: unknown) => {
+      if (String(input).includes("/notify-shipped-backlog")) return reply()
+      return json(200, PAYLOAD({ stats: { ...STATS, shipped_unnotified: unnotified, shipped_unnotified_error: err } }))
+    })
+    render(<AdminFeedbackClient />)
+    return screen.findByText("Beta Feedback Triage")
+  }
+
+  it("singular copy for one item; a failed count with no message still says it failed", async () => {
+    await withBacklog(() => json(200, { results: [] }), 1)
+    const banner = await screen.findByTestId("shipped-unnotified")
+    expect(banner.textContent).toContain("1 shipped item whose")
+    cleanup()
+    await withBacklog(() => json(200, { results: [] }), null, null)
+    const unknown = await screen.findByTestId("shipped-unnotified-unknown")
+    expect(unknown.textContent).toContain("Couldn’t count")
+    expect(unknown.textContent).not.toContain("(")
+  })
+
+  it("'nothing to send' only when the route answered with zero readers", async () => {
+    await withBacklog(() => json(200, { readers: 0, results: [] }))
+    fireEvent.click(await screen.findByTestId("send-shipped-backlog"))
+    expect((await screen.findByTestId("shipped-backlog-result")).textContent).toContain("Nothing to send")
+  })
+
+  it("plural readers, singular item, and a failed reader with no name or reason", async () => {
+    await withBacklog(() =>
+      json(200, {
+        readers: 3,
+        results: [
+          { reader: "a…@x", items: 1, sent: true, stamped: 1 },
+          { reader: "b…@x", items: 0, sent: true, stamped: 0 },
+          { sent: false, stamped: 0 },
+        ],
+      }),
+    )
+    fireEvent.click(await screen.findByTestId("send-shipped-backlog"))
+    const result = await screen.findByTestId("shipped-backlog-result")
+    expect(result.textContent).toContain("2 of 3 readers emailed (1 item)")
+    expect(result.textContent).toContain("? — unknown")
+  })
+
+  it("a non-OK reply without an error body falls back to the status; a thrown fetch to its message; a non-Error throw to 'Network error'", async () => {
+    await withBacklog(() => json(500, {}))
+    fireEvent.click(await screen.findByTestId("send-shipped-backlog"))
+    expect((await screen.findByTestId("shipped-backlog-result")).textContent).toContain("HTTP 500")
+    cleanup()
+    await withBacklog(() => { throw new Error("socket closed") })
+    fireEvent.click(await screen.findByTestId("send-shipped-backlog"))
+    expect((await screen.findByTestId("shipped-backlog-result")).textContent).toContain("socket closed")
+    cleanup()
+    await withBacklog(() => { throw "weird" })
+    fireEvent.click(await screen.findByTestId("send-shipped-backlog"))
+    expect((await screen.findByTestId("shipped-backlog-result")).textContent).toContain("Network error")
+  })
+
+  it("a 401 from the backlog route drops the operator back to the gate", async () => {
+    const reload = vi.fn()
+    Object.defineProperty(window, "location", { value: { ...window.location, reload }, writable: true })
+    await withBacklog(() => json(401, { error: "unauthorized" }))
+    fireEvent.click(await screen.findByTestId("send-shipped-backlog"))
+    await waitFor(() => expect(storedToken).toBeNull())
+  })
+})
