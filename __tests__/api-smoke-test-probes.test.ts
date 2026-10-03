@@ -364,15 +364,38 @@ describe("smoke-test — envelope + crash guards", () => {
     expect(r.notes?.warn).toBe("page_timeout_transient")
   })
 
-  it("arms the live-concierge probes on every explicit query value", async () => {
-    for (const q of ["?concierge=1", "?concierge=true", "?concierge=full", "?concierge=live"]) {
+  it("arms the live-concierge probes on every explicit query value, at the right level", async () => {
+    for (const [q, level] of [
+      ["?concierge=1", "alive"],
+      ["?concierge=true", "alive"],
+      ["?concierge=live", "alive"],
+      ["?concierge=full", "full"],
+    ] as const) {
       install(greenFixtures())
       installSmokeFetch(greenStubs())
-      expect((await run(q)).liveConcierge).toBe(true)
+      const env = await run(q)
+      expect(env.liveConcierge).toBe(true)
+      expect((env as unknown as { liveConciergeLevel: string }).liveConciergeLevel).toBe(level)
     }
     install(greenFixtures())
     installSmokeFetch(greenStubs())
     expect((await run("?concierge=0")).liveConcierge).toBe(false)
+  })
+
+  // 2026-10-02: the ~09:00-09:24 UTC fallback window is gone. It armed the FULL
+  // paid battery for any caller that ticked inside it, on top of the scheduled
+  // run (~2 paid batteries/day). An un-queried run at 09:10 UTC must spend nothing.
+  it("an un-queried run inside the old 09:00-09:24 UTC window does not arm any live probe", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-10-03T09:10:00Z"))
+    try {
+      install(greenFixtures())
+      installSmokeFetch(greenStubs())
+      const env = await run()
+      expect(env.liveConcierge).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("answers 200 with a failing result when the battery itself crashes, on GET and POST", async () => {

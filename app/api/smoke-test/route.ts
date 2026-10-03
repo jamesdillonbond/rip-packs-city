@@ -667,12 +667,24 @@ async function checkPublicPage(page: string, timeoutMs = 15_000): Promise<TestRe
 // The 3 live `/api/support-chat` probes each make a real Claude Sonnet + 5-tool
 // round-trip — measured at ~99.7% of the RPC product's Anthropic API Console
 // spend (the smoke suite ran them every ~20-40 min). They now run only when
-// `liveConcierge` is set (daily window / ?concierge=1), NOT on the per-tick run.
+// the live level is set (?concierge=1 → the alive probe only, daily; ?concierge=full
+// → all four, weekly + manual), NOT on the per-tick run.
 // Per-tick router-regression coverage is preserved by the two direct
 // searchPinnacleDeals lib tests + the synthetic-4xx graceful-degradation probe,
 // none of which call the model.
-async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
-  const liveConcierge = opts.liveConcierge ?? false;
+// 2026-10-02 (Trevor: "Do it all" — spend less of the Anthropic balance on our
+// own checks): the live battery is now TWO levels. "alive" runs ONLY the hard
+// "did it answer or hand back a fallback" probe — one model call, the one that
+// can page. "full" adds the three content probes (Pinnacle routing, Goofy and
+// LeBron name filters: multi-iteration tool loops, most of the battery's cost).
+// The daily scheduled run asks for "alive"; Sundays and manual dispatch ask for
+// "full" (.github/workflows/smoke-tests.yml).
+type LiveConciergeLevel = "off" | "alive" | "full";
+
+async function runSmokeTests(opts: { liveConcierge?: LiveConciergeLevel } = {}) {
+  const liveLevel: LiveConciergeLevel = opts.liveConcierge ?? "off";
+  const liveConcierge = liveLevel !== "off";
+  const liveContent = liveLevel === "full";
   const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
   const settled = await Promise.allSettled<TestResult>([
@@ -1991,7 +2003,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       expected: "category-not-degraded",
     }) ] : []),
 
-    ...(liveConcierge ? [ time(async () => {
+    ...(liveContent ? [ time(async () => {
       const meta = {
         name: "concierge resolves Pinnacle query (collectionId routing)",
         endpoint: "/api/support-chat",
@@ -2124,7 +2136,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
     // query-shape risk at runtime.
 
     // Concierge name-filter regression — Pinnacle Goofy — LIVE LLM call, gated.
-    ...(liveConcierge ? [ time(async () => {
+    ...(liveContent ? [ time(async () => {
       const meta = {
         name: "concierge filters by character name (Pinnacle Goofy probe)",
         endpoint: "/api/support-chat",
@@ -2191,7 +2203,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
     // searchPinnacleDeals), so TS end-to-end concierge coverage lives in this
     // daily-only probe; per-tick the route plumbing is still covered by the
     // graceful-degradation probe below.
-    ...(liveConcierge ? [ time(async () => {
+    ...(liveContent ? [ time(async () => {
       const meta = {
         name: "concierge filters by player name (Top Shot LeBron probe)",
         endpoint: "/api/support-chat",
@@ -2396,7 +2408,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
     .join(",");
   const headline =
     `SMOKE-TEST ${allPassed ? "ALL PASSED" : "FAILURES DETECTED"}` +
-    `${liveConcierge ? " [+live-concierge]" : ""}` +
+    `${liveConcierge ? ` [+live-concierge:${liveLevel}]` : ""}` +
     ` hard ${hardPassed}/${hardTotal} overall ${passed}/${total}` +
     (failures.length > 0 ? ` failing=[${failingEndpointsBrief}]` : "") +
     (softFailures.length > 0 ? ` soft_failing=[${softFailingEndpointsBrief}]` : "");
@@ -2429,27 +2441,30 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
     hardTotal,
     softFailures: softFailures.length,
     liveConcierge,
+    liveConciergeLevel: liveLevel,
     ranAt,
     results,
   }, { status: 200 });
 }
 
-// The live `/api/support-chat` LLM probes run only when explicitly requested
-// (?concierge=1 — wire a once-daily cron-job.org call) OR inside a narrow daily
-// UTC window so a broken concierge still trips at least once/day even before the
-// operator wires that cron. Default (per-tick run) skips them entirely.
-function wantsLiveConcierge(req: Request): boolean {
+// The live `/api/support-chat` LLM probes run only when explicitly requested.
+//   ?concierge=full                  → "full" (alive + the three content probes)
+//   ?concierge=1 | true | live       → "alive" (the one hard answer-or-fallback probe)
+//   anything else / absent           → "off"
+// 2026-10-02: the old ~09:00-09:24 UTC fallback window is GONE. It armed the
+// FULL battery for any caller that happened to tick inside it, on top of the
+// scheduled GHA run, so the paid probes ran ~twice a day (16 runs of each in 7 d)
+// and were most of the Anthropic spend. The GHA schedule is the one deterministic
+// caller now; the free synthetic graceful-degradation probe still runs per tick.
+function wantsLiveConcierge(req: Request): LiveConciergeLevel {
   try {
     const q = (new URL(req.url).searchParams.get("concierge") ?? "").toLowerCase();
-    if (q === "1" || q === "true" || q === "full" || q === "live") return true;
+    if (q === "full") return "full";
+    if (q === "1" || q === "true" || q === "live") return "alive";
   } catch {
-    /* fall through to the time window */
+    /* unparseable URL → off */
   }
-  const now = new Date();
-  // ~09:00–09:24 UTC (≈02:00 PT). Cadence is ~20-40 min, so a tick lands here
-  // ~once/day (rarely twice — still a ~99% cut from per-tick). If the operator
-  // wires the explicit ?concierge=1 daily cron, that is the reliable path.
-  return now.getUTCHours() === 9 && now.getUTCMinutes() < 25;
+  return "off";
 }
 
 export async function POST(req: Request) {

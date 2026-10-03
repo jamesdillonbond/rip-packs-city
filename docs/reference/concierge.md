@@ -125,3 +125,13 @@ Mitigation shipped 2026-08-15: the alert DM in `/api/cron/alerts-send` now tells
 
 - A single-edition `get_fmv` answer for a thin Top Shot `::` parallel may carry `value_estimate` (full-edition FMV × the typical premium for that parallel type, a likely range, the cell size) with a `how_to_use` instruction: quote it as an ESTIMATE with its basis, beside — never as — the FMV. Source and rules: schema-truth.md (end), `lib/fmv/edition-estimate.ts`.
 - **Close the loop on feedback the concierge logs.** `log_bug` / `log_feature_request` rows land as `category='beta_feedback', feedback_status='new'`; when the fix ships, set `feedback_status='shipped'`, `shipped_at`, and an `admin_note` naming the commit. A duplicate logged in the same session is `feedback_status='duplicate', duplicate_of=<id>` (the admin triage UI's own vocabulary). 09-29's four requests (#10142/#10153/#10154/#10158) were closed this way on 09-30.
+
+## Live concierge probes: alive daily, full battery weekly (2026-10-02)
+
+Trevor wanted us to spend less of the Anthropic balance on our own checks. `/api/smoke-test` now has two live levels:
+- `?concierge=1` (also `true` / `live`) is **alive**. It runs only the HARD "did it answer or hand back a fallback" probe: one model call, and the one probe that can page.
+- `?concierge=full` adds the three SOFT content probes (Pinnacle routing, the Goofy and LeBron name filters). Those are multi-iteration tool loops, and they were most of the spend.
+
+`smoke-tests.yml` runs alive daily, and the full battery on Sundays (UTC) and on manual dispatch. **The 09:00–09:24 UTC fallback window is removed.** It armed the full battery for any caller that ticked inside it, on top of the scheduled run, so the paid probes ran about twice a day (16 runs of each in the 7 days to 10-02). The free synthetic graceful-degradation probe still runs every tick.
+
+⚠ **That synthetic probe throws a `credit_balance` 403 that looks exactly like Anthropic's.** Its `[sc_err]` log lines now say "synthetic smoke probe", and `concierge-billing-error` telemetry skips it (`err.synthetic`). A Cowork pass misread it as a ~10 h billing outage on 10-02. Read `is_smoke_test` / `smoke-degradation-*` before calling a concierge outage. Pinned in `__tests__/api-smoke-test-deep.test.ts`, `__tests__/api-smoke-test-probes.test.ts` and `__tests__/api-support-chat-billing-error-telemetry.test.ts`.

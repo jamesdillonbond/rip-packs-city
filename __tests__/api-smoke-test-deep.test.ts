@@ -919,13 +919,40 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     }
   })
 
-  it("?concierge=1 arms the 4 live-LLM probes (60 total) and reports liveConcierge in the envelope", async () => {
+  // 2026-10-02: ?concierge=1 (the DAILY scheduled run) arms ONLY the hard
+  // answer-or-fallback probe — one model call. The three content probes are the
+  // multi-iteration tool loops that were most of the Anthropic spend; they run
+  // in the FULL battery only (Sundays + manual dispatch).
+  it("?concierge=1 arms ONLY the hard alive probe (57 total), not the three content probes", async () => {
     install(greenFixtures())
     installSmokeFetch(greenStubs())
 
     const env = await run("?concierge=1")
 
     expect(env.liveConcierge).toBe(true)
+    expect((env as unknown as { liveConciergeLevel: string }).liveConciergeLevel).toBe("alive")
+    expect(env.total).toBe(57) // 56 + the alive probe
+    const alive = findResult(env, "concierge answers rather than returning a fallback (live)")
+    expect(alive.passed).toBe(true)
+    expect(alive.soft).toBeFalsy()
+    const names = (env as unknown as { results: Array<{ name: string }> }).results.map((r) => r.name)
+    for (const name of [
+      "concierge resolves Pinnacle query (collectionId routing)",
+      "concierge filters by character name (Pinnacle Goofy probe)",
+      "concierge filters by player name (Top Shot LeBron probe)",
+    ]) {
+      expect(names).not.toContain(name)
+    }
+  })
+
+  it("?concierge=full arms the 4 live-LLM probes (60 total) and reports liveConcierge in the envelope", async () => {
+    install(greenFixtures())
+    installSmokeFetch(greenStubs())
+
+    const env = await run("?concierge=full")
+
+    expect(env.liveConcierge).toBe(true)
+    expect((env as unknown as { liveConciergeLevel: string }).liveConciergeLevel).toBe("full")
     expect(env.total).toBe(60) // 56 + the 4 live-LLM probes
     expect(env.allPassed).toBe(true)
     for (const name of [

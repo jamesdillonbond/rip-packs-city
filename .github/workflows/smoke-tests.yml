@@ -67,10 +67,21 @@ jobs:
           # daily live probe was INCIDENTAL — and this job, the one guaranteed
           # caller, runs at 12:11 UTC and missed it entirely. One scheduled call a
           # day makes it deterministic for fractions of a cent.
+          #
+          # 2026-10-02 (Trevor: spend less of the Anthropic balance on our own
+          # checks): the daily run asks for ?concierge=1 = the ONE hard
+          # "answered or fallback" probe (a single model call). The three content
+          # probes (multi-iteration tool loops, most of the cost) run only in the
+          # FULL battery: Sundays (UTC) and manual dispatch.
           URL="https://www.rippackscity.com/api/smoke-test"
           if [ "$EVT" = "schedule" ] || [ "$EVT" = "workflow_dispatch" ]; then
-            URL="${URL}?concierge=1"
-            echo "Live concierge probe ENABLED (event=${EVT})"
+            if [ "$EVT" = "workflow_dispatch" ] || [ "$(date -u +%u)" = "7" ]; then
+              URL="${URL}?concierge=full"
+              echo "Live concierge battery: FULL (event=${EVT})"
+            else
+              URL="${URL}?concierge=1"
+              echo "Live concierge probe: ALIVE only (event=${EVT}; the full battery runs Sundays UTC and on dispatch)"
+            fi
           else
             echo "Live concierge probe skipped (event=${EVT}, deploy ${DEPLOY_SHA:-?} at ${DEPLOY_URL:-?} — see comment above)"
           fi
