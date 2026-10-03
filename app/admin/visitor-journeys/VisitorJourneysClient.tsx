@@ -62,8 +62,10 @@ export interface VisitorJourneysPayload {
     with_visitor_id: number;
     from_ai: number;
   };
-  ai_referrals_window: Array<{ source: string; sessions: number }>;
-  ai_referrals_30d: Array<{ source: string; sessions: number }>;
+  /** sessions = tabs (an assistant opens each cited link in a new tab); browsers = distinct
+   *  visitor id where the visit has one (since 2026-10-03), else the session — an upper bound on people. */
+  ai_referrals_window: Array<{ source: string; sessions: number; browsers?: number }>;
+  ai_referrals_30d: Array<{ source: string; sessions: number; browsers?: number }>;
   sessions: JourneySession[];
 }
 
@@ -80,6 +82,13 @@ const PT_TIME = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
   second: "2-digit",
 });
+
+/** "chatgpt 84 tabs · ≤ 31 browsers" — a session is a tab, so the tab count is never read as people. */
+export function aiLabel(r: { source: string; sessions: number; browsers?: number }): string {
+  return r.browsers == null || r.browsers === r.sessions
+    ? `${r.source} ${r.sessions} tabs`
+    : `${r.source} ${r.sessions} tabs · ≤ ${r.browsers} browsers`;
+}
 
 export function fmtPt(iso: string | null): string {
   if (!iso) return "—";
@@ -196,11 +205,11 @@ export default function VisitorJourneysClient() {
             <p style={{ ...mono, color: dim, margin: "0 0 8px" }}>
               This window:{" "}
               {data.ai_referrals_window.length
-                ? data.ai_referrals_window.map((r) => `${r.source} ${r.sessions}`).join(" · ")
+                ? data.ai_referrals_window.map(aiLabel).join(" · ")
                 : "none"}
               {"  ·  "}30 days (human funnel visits):{" "}
               {data.ai_referrals_30d.length
-                ? data.ai_referrals_30d.map((r) => `${r.source} ${r.sessions}`).join(" · ")
+                ? data.ai_referrals_30d.map(aiLabel).join(" · ")
                 : "none"}
             </p>
           </Section>

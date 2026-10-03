@@ -2763,10 +2763,11 @@ const PINS = [
     // Added 2026-10-03. /admin/visitor-journeys: four streams join into one
     // visit; bot / smoke / internal sessions are excluded from the list but
     // COUNTED; returning = the visitor id seen in an earlier session <= 30 d.
+    // Re-pointed 2026-10-03: AI-referral lists also count browsers (a session is a tab).
     fn: "admin_visitor_journeys",
     test: "supabase/tests/admin_visitor_journeys.sql",
     migration:
-      "supabase/migrations/20261003150031_visitor_journeys_concierge_visit_link_returning_visitor_id.sql",
+      "supabase/migrations/20261003181338_visitor_journeys_ai_referrals_count_browsers_not_only_tabs.sql",
   },
   {
     // Same test file: the AI-assistant classifier the board's referral counts use

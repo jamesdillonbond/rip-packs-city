@@ -13,14 +13,14 @@ vi.mock("@/lib/admin/use-admin-resource", () => ({
   useAdminResource: (url: string) => { urls.push(url); return resource },
 }))
 
-import VisitorJourneysClient, { sourceLabel, fmtPt, type VisitorJourneysPayload } from "@/app/admin/visitor-journeys/VisitorJourneysClient"
+import VisitorJourneysClient, { sourceLabel, fmtPt, aiLabel, type VisitorJourneysPayload } from "@/app/admin/visitor-journeys/VisitorJourneysClient"
 
 const payload: VisitorJourneysPayload = {
   generated_at: "2026-10-03T15:00:00Z",
   window_hours: 24,
   totals: { sessions_seen: 5361, sessions_human: 2, sessions_excluded_bot: 5358, sessions_excluded_internal: 1, sessions_shown: 2, with_concierge: 1, with_wallet_paste: 1, with_email_capture: 0, signed_in: 0, returning: 1, with_visitor_id: 1, from_ai: 1 },
   ai_referrals_window: [{ source: "chatgpt", sessions: 1 }],
-  ai_referrals_30d: [{ source: "chatgpt", sessions: 84 }],
+  ai_referrals_30d: [{ source: "chatgpt", sessions: 84, browsers: 31 }],
   sessions: [
     { sid: "H", visitor_id: "V1", returning: true, first_at: "2026-10-03T14:00:24Z", last_at: "2026-10-03T14:14:25Z", n_events: 2, landing_ref: "utm_source=chatgpt.com", ai_source: "chatgpt", landing_path: "/nba-top-shot/collection", wallet: "0xba14e24d976f8484", signed_in: false, chatted: true, pasted: true, captured: false, clicked_out: false,
       events: [
@@ -77,6 +77,14 @@ describe("VisitorJourneysClient", () => {
     expect(sourceLabel({ ai_source: null, landing_ref: "ref=https://t.co/abc" })).toBe("ref · t.co")
     expect(sourceLabel({ ai_source: null, landing_ref: null })).toBe("direct / unknown")
     expect(fmtPt(null)).toBe("—")
+  })
+
+  it("AI referrals read as TABS, with the browser upper bound when it differs — never as people", () => {
+    expect(aiLabel({ source: "chatgpt", sessions: 84, browsers: 31 })).toBe("chatgpt 84 tabs · ≤ 31 browsers")
+    expect(aiLabel({ source: "chatgpt", sessions: 2, browsers: 2 })).toBe("chatgpt 2 tabs")
+    expect(aiLabel({ source: "claude", sessions: 3 })).toBe("claude 3 tabs")
+    render(<VisitorJourneysClient />)
+    expect(screen.getByText(/chatgpt 84 tabs · ≤ 31 browsers/)).toBeTruthy()
   })
 
   it("asks for the token before reading", () => {

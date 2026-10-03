@@ -9,11 +9,14 @@
 --      totals — the board says what it left out instead of silently shrinking.
 --   3. A visitor_id seen in an EARLIER session within 30 days marks the visit
 --      returning; one seen only longer ago, or never, does not.
+--   5. AI-referral lists count SESSIONS (tabs) and BROWSERS (distinct visitor id, else session):
+--      two ChatGPT tabs from one browser are 2 sessions, 1 browser.
 --   4. referrer_ai_source classifies the attribution string by host at a
 --      boundary: chatgpt / perplexity / claude; a look-alike host does not match.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261003150031_visitor_journeys_concierge_visit_link_returning_visitor_id.sql).
+-- (admin_visitor_journeys: supabase/migrations/20261003181338_visitor_journeys_ai_referrals_count_browsers_not_only_tabs.sql;
+-- referrer_ai_source: supabase/migrations/20261003150031_visitor_journeys_concierge_visit_link_returning_visitor_id.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -126,7 +129,12 @@ picked AS (
   SELECT h.* FROM human h, win ORDER BY h.last_at DESC LIMIT (SELECT max_sessions FROM win)
 ),
 ai30 AS (
-  SELECT public.referrer_ai_source(fe.referrer) AS source, count(DISTINCT fe.session_id) AS sessions
+  -- sessions = tabs: an assistant opens every link in a NEW tab, and rpc_sess is per tab, so one
+  -- person reading five answers is five sessions (09-17: 29 sessions from 4 UAs). browsers =
+  -- distinct rpc_vid where the visit carries one (since 2026-10-03), else the session -- an UPPER
+  -- bound on people that tightens as visitor ids accumulate.
+  SELECT public.referrer_ai_source(fe.referrer) AS source, count(DISTINCT fe.session_id) AS sessions,
+         count(DISTINCT coalesce(fe.visitor_id, fe.session_id)) AS browsers
     FROM funnel_events fe
    WHERE fe.created_at >= now() - interval '30 days'
      AND fe.bot_ua = false
@@ -152,11 +160,12 @@ SELECT jsonb_build_object(
     'from_ai', (SELECT count(*) FROM human WHERE ai_source IS NOT NULL)
   ),
   'ai_referrals_window', coalesce((
-    SELECT jsonb_agg(jsonb_build_object('source', ai_source, 'sessions', n) ORDER BY n DESC)
-      FROM (SELECT ai_source, count(*) AS n FROM human WHERE ai_source IS NOT NULL GROUP BY ai_source) x
+    SELECT jsonb_agg(jsonb_build_object('source', ai_source, 'sessions', n, 'browsers', nb) ORDER BY n DESC)
+      FROM (SELECT ai_source, count(*) AS n, count(DISTINCT coalesce(vid, sid)) AS nb
+              FROM human WHERE ai_source IS NOT NULL GROUP BY ai_source) x
   ), '[]'::jsonb),
   'ai_referrals_30d', coalesce((
-    SELECT jsonb_agg(jsonb_build_object('source', source, 'sessions', sessions) ORDER BY sessions DESC) FROM ai30
+    SELECT jsonb_agg(jsonb_build_object('source', source, 'sessions', sessions, 'browsers', browsers) ORDER BY sessions DESC) FROM ai30
   ), '[]'::jsonb),
   'sessions', coalesce((
     SELECT jsonb_agg(jsonb_build_object(
@@ -199,6 +208,9 @@ INSERT INTO public.funnel_events (event_type, wallet_address, session_id, surfac
   -- V3's only earlier visit is 40 days old: outside the 30-day lookback, so R is NOT returning
   ('home_view', NULL, 'OLD40', '/', NULL, now() - interval '40 days', false, 'V3'),
   ('home_view', NULL, 'R', '/', NULL, now() - interval '25 min', false, 'V3'),
+  -- claim 5: one browser (V9) opened two ChatGPT links 3 days ago, in two tabs
+  ('collection_view', NULL, 'C1', '/nba-top-shot/edition/1:1', 'utm_source=chatgpt.com', now() - interval '3 days', false, 'V9'),
+  ('collection_view', NULL, 'C2', '/nba-top-shot/edition/1:2', 'utm_source=chatgpt.com', now() - interval '3 days' + interval '2 min', false, 'V9'),
   -- bot B, internal I
   ('home_view', NULL, 'B', '/', NULL, now() - interval '20 min', true, NULL),
   ('home_view', NULL, 'I', '/', NULL, now() - interval '20 min', false, NULL);
@@ -232,6 +244,10 @@ BEGIN
   PERFORM _assert_eq((SELECT e->>'returning' FROM jsonb_array_elements(v->'sessions') e WHERE e->>'sid' = 'G'), 'false', 'V2 has no earlier session (claim 3)');
   PERFORM _assert_eq((SELECT e->>'returning' FROM jsonb_array_elements(v->'sessions') e WHERE e->>'sid' = 'R'), 'false', 'an earlier visit 40 days back is outside the lookback (claim 3)');
   PERFORM _assert_eq(v->'ai_referrals_window'->0->>'source', 'chatgpt', 'AI referral board (claim 4)');
+  PERFORM _assert_eq((v->'ai_referrals_window'->0->>'sessions') || '/' || (v->'ai_referrals_window'->0->>'browsers'), '1/1',
+                     'window: H is one session, one browser (claim 5)');
+  PERFORM _assert_eq((v->'ai_referrals_30d'->0->>'sessions') || '/' || (v->'ai_referrals_30d'->0->>'browsers'), '3/2',
+                     '30 d: H + two V9 tabs = 3 sessions but 2 browsers (claim 5)');
 
   PERFORM _assert_eq(public.referrer_ai_source('ref=https://www.perplexity.ai/search'), 'perplexity', 'perplexity (claim 4)');
   PERFORM _assert_eq(public.referrer_ai_source('ref=https://claude.ai/chat/x'), 'claude', 'claude (claim 4)');
