@@ -14,7 +14,7 @@ collection"). WC Prizm (card setId **2332**) was the only product walked until t
 | view | `panini_wc_editions` | WC editions only. Every WC-only reader reads this (migration `20260929024339` lists them). |
 | gate | `/api/cron/panini-ingest` POST | cards / serials / sales (incl. sales history) of non-admitted products are held back, counted in `extra.skipped_by_set`; a registry read failure falls back to 2332 only and fails the run. |
 | walk | `/api/cron/panini-ingest` GET | serves `walk_set_ids`, `discovery_sports`, `full_enum_sports`, `pack_urls` to the runner. |
-| pack EV | `panini_pack_ev_board` | EV only where `product_set_id = 2332`; other packs: NULL EV, `ev_modeled=false`, "not modeled" on the Packs tab. |
+| pack EV | `panini_pack_ev_board` | ⚠ UPDATED 2026-10-02: 2332 from `panini_pack_ev_model` (FMV-based, v0.5); **2420 (2026 Prizm WNBA) from the SALES model** `panini_pack_ev_model_wnba_2026_sales` (see the 10-02 section below); every other product: NULL EV, `ev_modeled=false`, "not modeled". |
 
 Unverified from any sandbox (Panini is egress-blocked): the marketplace `?sport=` values other than
 `Soccer`, and whether `/pack-<name>.html` pages fire `getPackMarketStats`. Read the answers from the
@@ -169,3 +169,37 @@ Read at 12:10–12:40 PM PT 09-29 (about 2 days before the planned Oct 1 check; 
   LOW, floor NULL). The next pass should check whether the LOW ones have captured sales/listings the model isn't
   using. Diagnose before changing anything.
 - **Set 2263** (the founder's one unpriced edition) is not admitted; admitting it is Trevor's call (step 1 capacity).
+
+## 2026-10-02 (~7:30 PM PT) — WNBA live end to end, tier-1 admission, what the next thread inherits
+
+**State now (verify; these are dated samples):** 53 of 145 known products admitted (`walk_cards=true`) — WC 2332,
+the founder's 29, WNBA 2420, and 22 "tier 1" products (≥ 50 active listings; `note` contains
+`tier 1 (>=50 active listings)`). ~12k catalogued editions, 0 older than 7 days before tier 1 landed.
+
+What this thread added (each has a ledger entry with its revert path):
+- **Discovery:** `?sport=Womens Basketball` is a real grid filter (8 WNBA setIds; `WNBA` is NOT — it serves the
+  unfiltered grid). In `PANINI_DISCOVERY_SPORTS` (`app/api/cron/panini-ingest/route.ts`).
+- **Bootstrap walk** (`e7fdba7c4`): an admitted product with **0** catalogue rows, on the grid, admitted < 12 h ago
+  (`panini_products.walk_cards_since`, stamped by trigger on every false→true flip) narrows the walk-order GET's
+  `walk_set_ids` to it, so its fresh cards are walked first instead of queuing behind the held list. Ends by itself.
+  Without it, 2420 had 0 rows 3 h after admission; with it, 223 in the first run.
+- **Pack EV for 2420 from SALES, not FMV:** the FMV-based view `panini_pack_ev_model_wnba_2026` (gated v0.2) could not
+  price the packs (sale-backed value share 10–22%); `refresh_panini_pack_ev_sales_model(2420)` (pg_cron
+  `rpc-panini-pack-ev-sales-model`, :46 hourly) fits log(sale) = player + parallel on every sale and feeds
+  `panini_pack_ev_model_wnba_2026_sales` → the board. Method, numbers and gates:
+  `docs/strategy/panini-fmv-packev-methodology.md` (2026-10-02 sections). First live: FOTL 55/18 vs 150, Hobby 22/9 vs 30.
+- **Residential runner hardening:** `scripts/panini-schedule-harden.ps1` (WakeToRun + StartWhenAvailable; Trevor ran it
+  10-02) after an overnight sleep killed every residential lane; `.ps1` files must be ASCII or BOM (guard test).
+
+**Open — in order:**
+1. **Tier-1 verification** (a fresh-session routine is scheduled for 10-03 ~8:15 AM PT): did the bootstrap give the 22
+   rows; did older products stay < 7 days stale. If freshness held → **tier 2** (25 products, 10–49 listings), same
+   `update … set walk_cards=true` + note + ledger. Tier 3 (67 products, < 10 listings) only if capacity clearly allows —
+   they are near-dead markets.
+2. **Pack EV for another product** = new pack pages appear (only WC + WNBA are live drops on 10-02; the home-page
+   harvest finds 1 pack link). Reuse the sales model: generalize the family CASE + odds (today WNBA-specific) into a
+   per-product config before a second product, don't copy the function.
+3. **Naming (step 2 above)** — still needs Trevor's signed-in Chrome; 2420 is the only non-WC product with a name.
+4. The board's "typical" for 2420 is the sum of family medians (WC convention); a Monte-Carlo pack median runs higher
+   (FOTL ~26 vs 18). Fine as a conservative figure; revisit if the Packs tab copy promises "what the median pack holds".
+
