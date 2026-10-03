@@ -1,6 +1,17 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
+  // 2026-10-03 — DEP0169 (`url.parse()`), Vercel's top runtime-error group for
+  // months (1,828 events / 7 d), on every route whose graph loads `@onflow/fcl`.
+  // The emitter is node-fetch@2: `@onflow/transport-http` and `fcl-core` fetch
+  // through cross-fetch@4, whose Node build is node-fetch, whose `parseURL()`
+  // calls `Url.parse` on EVERY request. Node 24 suppresses DEP0169 when the
+  // caller sits inside `node_modules` — so it is silent locally and fired only
+  // because Next BUNDLED node-fetch into `.next/server`, erasing that path
+  // (proved by running the identical file from outside node_modules: it warns).
+  // Externalizing loads the same code from node_modules at runtime. Requests are
+  // unchanged; only the noise that buried real errors goes.
+  serverExternalPackages: ["node-fetch"],
   images: {
     remotePatterns: [
       // Top Shot — primary CDN + the preview/thumbnail host used by pack OG cards
