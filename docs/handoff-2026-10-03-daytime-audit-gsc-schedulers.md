@@ -2,7 +2,7 @@
 
 > ⚠ **Environment scope:** this cloud session could push (the repo was attached mid-session with `add_repo`; `git push --dry-run` exit 0, five pushes landed). Trevor's machine and Claude Code push normally. **Nothing is stranded; commit normally.** One blocker was specific to **this session's permission layer**: the cron-job.org console's irreversible *Delete* is refused, so the 10 retired console entries are listed below for a human click.
 
-**Run:** ~7:45 AM–12:00 PM PT (three blocks; the second and third under Trevor's "keep going… make product decisions yourself"). Trevor present and steering (three asks: the pass itself; "audit and clean up our pipelines on cron job, vercel, github, chrome, locally, and anywhere else"; "use chrome and go into Google Search Console, and look for improvements"). No FREEZE. A concurrent Claude Code session was committing throughout (8:16–9:30 AM PT); every push here was rebased onto its tip first.
+**Run:** ~7:45–11:30 AM PT (three blocks; the second and third under Trevor's "keep going… make product decisions yourself"). Trevor present and steering (three asks: the pass itself; "audit and clean up our pipelines on cron job, vercel, github, chrome, locally, and anywhere else"; "use chrome and go into Google Search Console, and look for improvements"). No FREEZE. A concurrent Claude Code session was committing throughout (8:16–9:30 AM PT); every push here was rebased onto its tip first.
 
 ## Verdict
 
@@ -59,7 +59,7 @@
 
 **Post-ship health (10:28 AM PT):** security invariants 0 rows; R118 0; stalled `[]`; pg_cron **0 / 3,720** failures in 3 h; Vercel 3 h = the other session's `scratch_flip_probe` smoke failure (8:53–9:09 AM PT, closed by its RLS fix, none since), DEP0169 ×2 pre-fix deploy, one cold `pack_realized_ev` 5 s. Alert rows: `pack-mint-probes` 46.8 % pooled over 3 calendar days (R124 — the 10-02 node spell + #166's 12-retry design; not live), `pg_net_http_429` HIGH = exactly one 20-request burst at 8:53 AM PT from the scratch wallet walk (jobid 673) + 1 at 9:35, clears from the 2 h window by ~10:55 AM PT; the four INFO rows by design.
 
-## Third block (~10:45 AM–12:00 PM PT): "Keep going" — the beta tester's concierge feedback
+## Third block (~10:45–11:30 AM PT): "Keep going" — the beta tester's concierge feedback
 
 The 10-01 feedback batch (`beta_feedback_inbox`, 14 rows `new`, from the Pistons collector) was the richest untouched source of user-stated work. Shipped two of its threads, both verified against production:
 
