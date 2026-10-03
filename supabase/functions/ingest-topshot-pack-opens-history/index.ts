@@ -348,12 +348,20 @@ async function writeRips(rips: RipBuild[]): Promise<{ written: number; candidate
 }
 
 async function logRun(pipeline: string, startMs: number, ok: boolean, found: number, written: number, skipped: number, cb: number | null, ca: number | null, extra: any, error: string | null) {
-  await supabase.from("pipeline_runs").insert({
-    pipeline, started_at: new Date(startMs).toISOString(),
-    rows_found: found, rows_written: written, rows_skipped: skipped,
-    cursor_before: cb != null ? String(cb) : null,
-    cursor_after: ca != null ? String(ca) : null, ok, error, extra,
-  })
+  // R123 residual (2026-10-03), ported from ingest-allday-pack-opens: the run
+  // row is this lane's ONLY observation, so a rejected insert must be loud in
+  // the fn logs rather than discarded. Same greppable prefixes as the sibling.
+  try {
+    const { error: logErr } = await supabase.from("pipeline_runs").insert({
+      pipeline, started_at: new Date(startMs).toISOString(),
+      rows_found: found, rows_written: written, rows_skipped: skipped,
+      cursor_before: cb != null ? String(cb) : null,
+      cursor_after: ca != null ? String(ca) : null, ok, error, extra,
+    })
+    if (logErr) console.error(`[pipeline_runs-insert-failed] ${pipeline}: ${logErr.message}`)
+  } catch (e) {
+    console.error(`[pipeline_runs-insert-threw] ${pipeline}: ${e instanceof Error ? e.message : String(e)}`)
+  }
 }
 
 Deno.serve(async (req) => {
@@ -431,7 +439,9 @@ Deno.serve(async (req) => {
           scanned_floor: scannedFloor, resolved_floor: resolvedFloor, resolve_exhausted: exhausted,
           rows_deduped: rowsSkipped, start, end, floor, spork_available: SPORK_AVAILABLE,
           routed: end < CURRENT_SPORK_MIN ? "spork" : "rest" },
-        ok ? null : (err || rerr))
+        // A failed cursor write alone makes ok=false; name it, or the row reads
+        // ok=false with an empty error (R123 residual, 2026-10-03).
+        ok ? null : (err || rerr || (cursorWriteErr ? `cursor write: ${cursorWriteErr}` : null)))
       return new Response(JSON.stringify({ mode, start, end, opens: opens.length, rips_written: ripsWritten, rows_deduped: rowsSkipped, cursor_after: after, progressed, queries, tx_fetched: fetched, scan_err: err, resolve_err: rerr, transient: anyTransient, skipped_permanent: skippedPermanent, spork_available: SPORK_AVAILABLE, routed: end < CURRENT_SPORK_MIN ? "spork" : "rest" }), { headers: { "content-type": "application/json" } })
     }
 
