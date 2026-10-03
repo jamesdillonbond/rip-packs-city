@@ -217,3 +217,13 @@ What this thread added (each has a ledger entry with its revert path):
   are now interleaved 1:1 after the held-priority list (tests incl. a 4,400-vs-12,000 flood case). **Takes effect only
   after Trevor pulls on the runner box** (`panini-run.bat` does not pull). Until then, the old order still holds.
 - Tier 2 remains gated on the morning freshness read (item 1 of the open list above).
+
+### 2026-10-03 ~8:20 AM PT — tier 2 HELD: the runner box has not pulled the interleave
+
+- Walks ran every ~4 h overnight (8:09 PM, 10:32 PM, 2:31 AM, 6:37 AM PT). Tier 1: 1,216 editions across the 22.
+  Catalogue 13,181. Stale > 7 d: 0. But > 5 d: 3,704, and the oldest edition was last seen 2026-09-27 2:58 AM PT.
+- The 2:31 AM and 6:37 AM runs still logged `stalest-first (… new + … known)` without "interleaved", so the runner box is
+  on the OLD walk order. 3,681–5,245 new discoveries per run are walked before ANY known edition, so the known catalogue
+  is barely refreshing. **Without a `git pull` on the runner box, editions start crossing 7 days ~3 AM PT 10-04.**
+- **Tier 2 held** until the box pulls and a run logs `interleaved` with stale > 7 d still 0. Then admit tier 2 per the
+  open list (item 1).
