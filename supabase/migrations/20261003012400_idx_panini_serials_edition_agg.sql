@@ -1,0 +1,37 @@
+-- 2026-10-02 · idx_panini_serials_edition_agg — the Panini squeeze MV refresh stops reading
+-- 1.5 GB of heap every 30 minutes
+--
+-- REPO RECORD of an object created OUTSIDE the migration channel (same recipe as
+-- 20261003012100: one-off pg_cron job 669, 'zz-idx-panini-serials-edition-agg-20261002',
+-- single-statement CIC, ran 6:24:00 → 6:24:45 PM PT, `CREATE INDEX`, then unscheduled).
+-- IF NOT EXISTS so it is a no-op wherever the index already exists.
+--
+-- WHY. The 2-hourly `audit_20260830_pgss_snap` delta (3:05 → 5:05 PM PT) ranked
+-- `refresh_panini_squeeze()` (`rpc-refresh-panini-squeeze`, 18,48 * * * *, 48 runs/day,
+-- 8.4 s avg) the #1 DISK READER on the instance: 771,283 blocks read in 4 calls. The MV's
+-- `serial_agg` CTE —
+--   SELECT edition_external_id, bool_or(nft_type ~~ '%rookie card%'), bool_or(nft_type ~~
+--   '%debut card%'), count(*) FILTER (WHERE last_sale_usd IS NOT NULL)
+--   FROM panini_card_serials GROUP BY edition_external_id
+-- — needs three narrow columns of every row and no index carried them, so it was a Parallel
+-- Seq Scan of the 1,499 MB heap (191,784 buffers read, 1.8 s warm) 48 times a day ≈ 72 GB of
+-- reads a day. The rest of the MV is per-edition probes (`panini_fmv_snapshots` LATERAL,
+-- `panini_coverage_audit`), already cheap.
+--
+-- WHAT. B-tree on `(edition_external_id) INCLUDE (nft_type, last_sale_usd)` over all rows
+-- (79 MB): the aggregate becomes a Parallel Index Only Scan in group order (no hash step).
+--
+-- MEASURED, EXPLAIN (ANALYZE, BUFFERS), same statement, before → after:
+--     Parallel Seq Scan + HashAggregate ..... 191,784 read + 152 hit · 1,803 ms
+--     Parallel Index Only Scan + GroupAggregate  2,064 read + 67,517 hit ·   907 ms   (2.8× fewer buffers)
+--   Heap Fetches 165,711 of 1,143,760: the walks rewrite ~14 % of rows a day, so the
+--   visibility map is never complete on this table; the gain grows after each autovacuum
+--   and will not reach the 25× the page counts alone suggest. ⚠ The honest larger lever on
+--   this lane is CADENCE: the MV's inputs change only when the 4-hourly residential walks
+--   land, yet it refreshes every 30 minutes — Trevor's call, not taken here.
+--
+-- Revert: DROP INDEX CONCURRENTLY IF EXISTS public.idx_panini_serials_edition_agg;
+--   (a human — the MCP holds a DROP).
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_panini_serials_edition_agg
+  ON public.panini_card_serials (edition_external_id) INCLUDE (nft_type, last_sale_usd);
