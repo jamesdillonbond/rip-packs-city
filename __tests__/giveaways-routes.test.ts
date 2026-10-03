@@ -12,6 +12,7 @@ const { store, getCurrentUser, resolve } = vi.hoisted(() => ({
   claimPack: vi.fn(),
   listDrops: vi.fn(),
   listCheckedCandidates: vi.fn(),
+  listCandidatesAcross: vi.fn(),
   createDraft: vi.fn(),
   sealDrop: vi.fn(),
   setStatus: vi.fn(),
@@ -20,6 +21,8 @@ const { store, getCurrentUser, resolve } = vi.hoisted(() => ({
   },
 }))
 const { planDelivery } = vi.hoisted(() => ({ planDelivery: vi.fn() }))
+const { discover } = vi.hoisted(() => ({ discover: vi.fn() }))
+vi.mock("@/lib/giveaways/linked-accounts", () => ({ discoverAccounts: (...a: unknown[]) => discover(...a) }))
 vi.mock("@/lib/giveaways/deliver", () => ({ planDelivery: (...a: unknown[]) => planDelivery(...a) }))
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 vi.mock("@/lib/giveaways/store", async (orig) => {
@@ -64,6 +67,7 @@ beforeEach(() => {
   for (const f of Object.values(store)) f.mockReset()
   getCurrentUser.mockReset()
   resolve.mockReset()
+  discover.mockReset()
   process.env.RPC_ADMIN_TOKEN = "tok"
   vi.spyOn(console, "error").mockImplementation(() => {})
 })
@@ -238,6 +242,63 @@ describe("/api/admin/giveaways", () => {
     expect(await refused.json()).toMatchObject({ error: "giveaway: locked: 2" })
     store.createDraft.mockRejectedValueOnce({ message: "db down" })
     expect((await adminList.POST(post("http://x/api/admin/giveaways", body, auth))).status).toBe(500)
+  })
+
+  it("accounts_for: the connected wallet and its linked accounts, giftable moments from each (2026-10-03)", async () => {
+    const accounts = [
+      { address: "0x00000000000000bb", role: "flow_wallet", topshot_count: 0 },
+      { address: "0x00000000000000aa", role: "linked", topshot_count: 15547 },
+    ]
+    discover.mockResolvedValueOnce(accounts)
+    store.listCandidatesAcross.mockResolvedValueOnce({ candidates: [{ moment_id: "1", source_wallet: "0x00000000000000aa" }], accounts: [] })
+    const r = await adminList.GET(new NextRequest("http://x/api/admin/giveaways?accounts_for=0x00000000000000BB", { headers: auth }))
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ parent: "0x00000000000000bb", candidates: [{ moment_id: "1", source_wallet: "0x00000000000000aa" }], accounts: [] })
+    expect(discover).toHaveBeenCalledWith("0x00000000000000bb")
+    expect(store.listCandidatesAcross).toHaveBeenCalledWith({}, accounts)
+    expect((await adminList.GET(new NextRequest("http://x/api/admin/giveaways?accounts_for=bob", { headers: auth }))).status).toBe(400)
+    // the chain read's own message reaches the operator; never an empty account list
+    discover.mockRejectedValueOnce(new FlowScriptError("Flow script HTTP 503", 503))
+    const down = await adminList.GET(new NextRequest("http://x/api/admin/giveaways?accounts_for=0x00000000000000bb", { headers: auth }))
+    expect(down.status).toBe(502)
+    expect(await down.json()).toMatchObject({ error: "Flow script HTTP 503" })
+    discover.mockRejectedValueOnce(new GiveawayError("The linked-accounts lookup returned an unexpected shape.", 502, "flow_shape"))
+    expect((await adminList.GET(new NextRequest("http://x/api/admin/giveaways?accounts_for=0x00000000000000bb", { headers: auth }))).status).toBe(502)
+  })
+
+  it("a multi-account draft is created only when every source is the wallet or an account it has linked, read on chain", async () => {
+    const body = {
+      slug: "fall-drop",
+      title: "Fall drop",
+      sponsor_name: "Trevor",
+      admin_wallet: "0x00000000000000bb",
+      pack_count: 1,
+      moments_per_pack: 2,
+      moment_ids: ["1", "2"],
+      source_wallets: ["0x00000000000000aa", "0x00000000000000cc"],
+    }
+    discover.mockResolvedValueOnce([
+      { address: "0x00000000000000bb", role: "flow_wallet", topshot_count: 0 },
+      { address: "0x00000000000000aa", role: "linked", topshot_count: 3 },
+    ])
+    const foreign = await adminList.POST(post("http://x/api/admin/giveaways", body, auth))
+    expect(foreign.status).toBe(400)
+    expect(await foreign.json()).toMatchObject({ code: "not_linked", error: expect.stringContaining("0x00000000000000cc") })
+    expect(store.createDraft).not.toHaveBeenCalled()
+
+    discover.mockResolvedValueOnce([
+      { address: "0x00000000000000bb", role: "flow_wallet", topshot_count: 0 },
+      { address: "0x00000000000000aa", role: "linked", topshot_count: 3 },
+      { address: "0x00000000000000cc", role: "linked", topshot_count: 1 },
+    ])
+    store.createDraft.mockResolvedValueOnce("new-id")
+    const ok = await adminList.POST(post("http://x/api/admin/giveaways", body, auth))
+    expect(ok.status).toBe(201)
+    expect(discover).toHaveBeenLastCalledWith("0x00000000000000bb")
+    expect(store.createDraft).toHaveBeenCalledWith({}, expect.objectContaining({ source_wallets: ["0x00000000000000aa", "0x00000000000000cc"] }))
+
+    discover.mockRejectedValueOnce(new FlowScriptError("Flow script HTTP 503", 503))
+    expect((await adminList.POST(post("http://x/api/admin/giveaways", body, auth))).status).toBe(502)
   })
 
   it("one drop: detail, and each action", async () => {

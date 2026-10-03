@@ -70,3 +70,32 @@ export function errorText(e: unknown): string {
   }
   return String(e)
 }
+
+export interface AccountLineInput {
+  address: string
+  role: "flow_wallet" | "linked"
+  onchain_count: number | null
+  cache_count: number
+  giftable: number
+}
+
+const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+
+/** "Flow Wallet 0x3d0b…3484" / "Linked account 0xbd94…50ac" */
+export function accountName(a: { address: string; role: "flow_wallet" | "linked" }): string {
+  return `${a.role === "flow_wallet" ? "Flow Wallet" : "Linked account"} ${shortAddr(a.address)}`
+}
+
+/**
+ * One line per account the pool can draw from. An account holding moments on
+ * chain that RPC hasn't indexed reads as NOT INDEXED — never as empty — because
+ * the picker lists cached moments only.
+ */
+export function accountLine(a: AccountLineInput): string {
+  const name = accountName(a)
+  if (a.onchain_count == null) return `${name}: no Top Shot collection`
+  if (a.onchain_count === 0) return `${name}: 0 Top Shot moments`
+  const held = `${a.onchain_count.toLocaleString("en-US")} Top Shot moments on chain`
+  if (a.cache_count === 0) return `${name}: ${held}, not indexed by RPC yet, so none can be picked here`
+  return `${name}: ${held} · ${a.giftable.toLocaleString("en-US")} unlocked and giftable now`
+}

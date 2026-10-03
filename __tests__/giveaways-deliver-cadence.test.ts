@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest"
 import {
+  BORROW_OWN_PROVIDER,
   BORROW_PROVIDER,
+  DELIVER_OWN_BATCH_CADENCE,
+  DELIVER_OWN_SIMULATION_SCRIPT,
+  LINKED_ACCOUNTS_SCRIPT,
   DELIVER_BATCH_CADENCE,
   DELIVER_GAS_LIMIT,
   DELIVER_SIMULATION_SCRIPT,
@@ -61,5 +65,32 @@ describe("giveaways/deliver-cadence", () => {
   it("the controller lookup only returns controllers the parent can actually resolve", () => {
     expect(PROVIDER_CONTROLLERS_SCRIPT).toContain("getCapability(controllerID: ctl.capabilityID")
     expect(PROVIDER_CONTROLLERS_SCRIPT).toContain("if cap != nil")
+  })
+})
+
+describe("giveaways/deliver-cadence — moments in the connected Flow Wallet itself (2026-10-03)", () => {
+  it("the own transaction and its simulation share the provider borrow and the transfer loop verbatim", () => {
+    expect(DELIVER_OWN_BATCH_CADENCE).toContain(BORROW_OWN_PROVIDER)
+    expect(DELIVER_OWN_SIMULATION_SCRIPT).toContain(BORROW_OWN_PROVIDER)
+    expect(DELIVER_OWN_BATCH_CADENCE).toContain(deliverLoop("self.provider"))
+    expect(DELIVER_OWN_SIMULATION_SCRIPT).toContain(deliverLoop("provider"))
+  })
+
+  it("withdraws from the SIGNER's own Top Shot collection — no Hybrid Custody leg, no child argument", () => {
+    expect(BORROW_OWN_PROVIDER).toContain("owner.storage")
+    expect(BORROW_OWN_PROVIDER).toContain("from: /storage/MomentCollection")
+    expect(BORROW_OWN_PROVIDER).not.toContain("HybridCustody")
+    expect(DELIVER_OWN_BATCH_CADENCE).toContain("transaction(momentIDs: [UInt64], recipients: [Address])")
+    expect(DELIVER_OWN_SIMULATION_SCRIPT).toContain("getAuthAccount<auth(BorrowValue) &Account>(ownerAddress)")
+    expect(BORROW_OWN_PROVIDER).toContain(`<= ${MAX_DELIVERY_BATCH}`)
+  })
+})
+
+describe("giveaways/deliver-cadence — LINKED_ACCOUNTS_SCRIPT", () => {
+  it("admits a child only on a REDEEMED link, read from the child's own record (an offer is not a link)", () => {
+    expect(LINKED_ACCOUNTS_SCRIPT).toContain("getRedeemedStatus(addr: parent) == true")
+    expect(LINKED_ACCOUNTS_SCRIPT).toContain("HybridCustody.OwnedAccountPublicPath")
+    expect(LINKED_ACCOUNTS_SCRIPT).not.toMatch(/isChildOf/)
+    expect(LINKED_ACCOUNTS_SCRIPT).toContain("import HybridCustody from 0xd8a7e05a7ac670c0")
   })
 })

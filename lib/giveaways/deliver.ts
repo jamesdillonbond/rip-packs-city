@@ -1,31 +1,41 @@
 // lib/giveaways/deliver.ts
 //
 // Planning a one-signature delivery. Server-only; RPC signs nothing. The plan
-// names the admin's parent wallet, the linked (Dapper) account the moments sit
-// in, the withdraw capability to use, and the batches — and every batch has
-// already been SIMULATED against live mainnet state (DELIVER_SIMULATION_SCRIPT
-// runs the exact withdraw → deposit in memory), so the admin is only ever asked
-// to sign a transaction that just worked.
+// names the admin's connected Flow Wallet and the batches; every batch has
+// already been SIMULATED against live mainnet state, so the admin is only ever
+// asked to sign a transaction that just worked.
+//
+// A pool can span the Flow Wallet and the accounts it has linked (2026-10-03),
+// so batches are per SOURCE account:
+//   kind "own"    — moments in the connected Flow Wallet itself; it withdraws
+//                   from its own collection (DELIVER_OWN_*).
+//   kind "linked" — moments in a Hybrid Custody child (e.g. the Dapper account);
+//                   the Flow Wallet withdraws through its child capability
+//                   (DELIVER_BATCH_CADENCE / DELIVER_SIMULATION_SCRIPT).
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 import {
+  DELIVER_OWN_SIMULATION_SCRIPT,
   DELIVER_SIMULATION_SCRIPT,
   MAX_DELIVERY_BATCH,
   PROVIDER_CONTROLLERS_SCRIPT,
 } from "@/lib/giveaways/deliver-cadence"
 import { addr, arrayOf, runFlowScript, u64, type CdcValue } from "@/lib/giveaways/flow-script"
 import { readTopShotHoldings, type Holding } from "@/lib/giveaways/topshot-holdings"
-import { getClaims, getPool, GiveawayError, type DropRow } from "@/lib/giveaways/store"
+import { bySource, getClaims, getPool, GiveawayError, readHoldingsBySource, type DropRow } from "@/lib/giveaways/store"
 
 export interface DeliveryBatch {
+  /** The account the moments leave from. */
+  source: string
+  kind: "own" | "linked"
+  /** Set for kind "linked": the child's withdraw capability the parent uses. */
+  providerControllerID: string | null
   momentIDs: string[]
   recipients: string[]
 }
 
 export interface DeliveryPlan {
   parent: string
-  child: string
-  providerControllerID: string
   batches: DeliveryBatch[]
   /** Claimed, undelivered moments left out, and why. */
   skipped: { moment_id: string; reason: "not_held" | "locked" }[]
@@ -77,9 +87,6 @@ export async function planDelivery(db: SupabaseClient, drop: DropRow, parent: st
   if (drop.status !== "open" && drop.status !== "closed") {
     throw new GiveawayError(`Nothing to deliver on a ${drop.status} drop.`, 409, "wrong_status")
   }
-  if (parent === drop.admin_wallet) {
-    throw new GiveawayError("Connect the Flow Wallet LINKED to this account, not the account itself.", 400, "bad_parent")
-  }
 
   const [pool, claims] = await Promise.all([getPool(db, drop.id), getClaims(db, drop.id)])
   const recipientByPack = new Map(claims.map((c) => [c.pack_no, c.recipient_address]))
@@ -88,7 +95,10 @@ export async function planDelivery(db: SupabaseClient, drop: DropRow, parent: st
     .sort((a, b) => (a.pack_no ?? 0) - (b.pack_no ?? 0) || (a.slot ?? 0) - (b.slot ?? 0))
   if (pending.length === 0) throw new GiveawayError("Every claimed moment is already delivered.", 409, "nothing_to_deliver")
 
-  const holdings = await read(drop.admin_wallet, pending.map((m) => m.moment_id))
+  const { holdings, failed } = await readHoldingsBySource(pending, drop.admin_wallet, read)
+  if (failed.length) {
+    throw new GiveawayError(`Couldn't read the chain for ${failed.join(", ")}; nothing was planned. Try again.`, 502, "chain_read_failed")
+  }
   const skipped: DeliveryPlan["skipped"] = []
   const ready = pending.filter((m) => {
     const h = holdings[m.moment_id]
@@ -99,29 +109,44 @@ export async function planDelivery(db: SupabaseClient, drop: DropRow, parent: st
   })
   if (ready.length === 0) throw new GiveawayError(nothingSendable(skipped), 409, "nothing_to_deliver")
 
-  const controllers = uintArray(await run(PROVIDER_CONTROLLERS_SCRIPT, [addr(parent), addr(drop.admin_wallet)]))
-  if (controllers.length === 0) {
-    throw new GiveawayError(`${parent} cannot withdraw from ${drop.admin_wallet}: connect a Flow Wallet linked to that account.`, 409, "not_parent")
+  const batches: DeliveryBatch[] = []
+  for (const [source, moments] of bySource(ready, drop.admin_wallet)) {
+    let kind: DeliveryBatch["kind"] = "own"
+    let providerControllerID: string | null = null
+    if (source !== parent) {
+      kind = "linked"
+      const controllers = uintArray(await run(PROVIDER_CONTROLLERS_SCRIPT, [addr(parent), addr(source)]))
+      if (controllers.length === 0) {
+        throw new GiveawayError(`${parent} cannot withdraw from ${source}: connect the Flow Wallet linked to that account.`, 409, "not_parent")
+      }
+      providerControllerID = controllers[0]
+    }
+    for (const part of chunk(moments, MAX_DELIVERY_BATCH)) {
+      batches.push({
+        source,
+        kind,
+        providerControllerID,
+        momentIDs: part.map((m) => m.moment_id),
+        recipients: part.map((m) => recipientByPack.get(m.pack_no as number) as string),
+      })
+    }
   }
-  const providerControllerID = controllers[0]
 
-  const batches = chunk(ready, MAX_DELIVERY_BATCH).map((b) => ({
-    momentIDs: b.map((m) => m.moment_id),
-    recipients: b.map((m) => recipientByPack.get(m.pack_no as number) as string),
-  }))
   for (const [i, b] of batches.entries()) {
-    const ok = boolArray(
-      await run(DELIVER_SIMULATION_SCRIPT, [
-        addr(parent),
-        addr(drop.admin_wallet),
-        u64(providerControllerID),
-        arrayOf(b.momentIDs.map(u64)),
-        arrayOf(b.recipients.map(addr)),
-      ]),
-    )
+    const sim =
+      b.kind === "own"
+        ? await run(DELIVER_OWN_SIMULATION_SCRIPT, [addr(parent), arrayOf(b.momentIDs.map(u64)), arrayOf(b.recipients.map(addr))])
+        : await run(DELIVER_SIMULATION_SCRIPT, [
+            addr(parent),
+            addr(b.source),
+            u64(b.providerControllerID as string),
+            arrayOf(b.momentIDs.map(u64)),
+            arrayOf(b.recipients.map(addr)),
+          ])
+    const ok = boolArray(sim)
     if (ok.length !== b.momentIDs.length || ok.some((x) => !x)) {
       throw new GiveawayError(`Batch ${i + 1}: the simulated transfer did not land every moment; not asking you to sign it.`, 409, "simulation_failed")
     }
   }
-  return { parent, child: drop.admin_wallet, providerControllerID, batches, skipped }
+  return { parent, batches, skipped }
 }

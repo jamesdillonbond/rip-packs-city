@@ -58,6 +58,8 @@ export interface PoolRow {
   last_checked_at: string | null
   last_check_recipient_holds: boolean | null
   last_check_admin_holds: boolean | null
+  /** The account this moment sits in until delivery: the sponsor's Flow Wallet or a linked account. */
+  source_wallet: string
 }
 
 export interface ClaimRow {
@@ -83,7 +85,7 @@ export class GiveawayError extends Error {
 const DROP_COLUMNS =
   "id, slug, title, description, sponsor_name, collection_id, admin_wallet, status, pack_count, moments_per_pack, seal_hash, seal_salt, sealed_at, opened_at, closed_at, created_at"
 const POOL_COLUMNS =
-  "moment_id, pack_no, slot, edition_key, player_name, set_name, team_name, tier, serial_number, fmv_usd, image_url, delivered_at, last_checked_at, last_check_recipient_holds, last_check_admin_holds"
+  "moment_id, pack_no, slot, edition_key, player_name, set_name, team_name, tier, serial_number, fmv_usd, image_url, delivered_at, last_checked_at, last_check_recipient_holds, last_check_admin_holds, source_wallet"
 
 function num(v: unknown): number | null {
   if (v == null) return null
@@ -93,6 +95,40 @@ function num(v: unknown): number | null {
 
 function toPool(rows: Record<string, unknown>[]): PoolRow[] {
   return rows.map((r) => ({ ...(r as unknown as PoolRow), fmv_usd: num(r.fmv_usd) }))
+}
+
+type HoldingsReader = (address: string, ids: string[]) => Promise<Record<string, Holding>>
+
+/** Pool moments grouped by the account each sits in (a v1 row without a source is the admin wallet's). */
+export function bySource<T extends { moment_id: string; source_wallet?: string | null }>(rows: readonly T[], fallback: string): Map<string, T[]> {
+  const out = new Map<string, T[]>()
+  for (const r of rows) {
+    const src = r.source_wallet || fallback
+    out.set(src, [...(out.get(src) ?? []), r])
+  }
+  return out
+}
+
+/**
+ * Reads each moment's holdings from ITS OWN source account. Returns the merged
+ * holdings plus the sources whose read failed (their moments are absent from
+ * `holdings`, which a caller must not read as "not held").
+ */
+export async function readHoldingsBySource(
+  rows: readonly { moment_id: string; source_wallet?: string | null }[],
+  fallback: string,
+  read: HoldingsReader,
+): Promise<{ holdings: Record<string, Holding>; failed: string[] }> {
+  const holdings: Record<string, Holding> = {}
+  const failed: string[] = []
+  for (const [src, ms] of bySource(rows, fallback)) {
+    try {
+      Object.assign(holdings, await read(src, ms.map((m) => m.moment_id)))
+    } catch {
+      failed.push(src)
+    }
+  }
+  return { holdings, failed }
 }
 
 export async function listDrops(db: SupabaseClient): Promise<DropRow[]> {
@@ -177,6 +213,48 @@ export async function listCheckedCandidates(
   return { wallet, candidates, excluded, cache_count: cached.length }
 }
 
+export interface AccountSummary {
+  address: string
+  role: "flow_wallet" | "linked"
+  /** Top Shot moments on chain right now; null = no Top Shot collection there. */
+  onchain_count: number | null
+  /** Unlocked moments RPC's cache lists for it (the candidates come from these). */
+  cache_count: number
+  giftable: number
+  excluded: { locked: number; not_held: number }
+}
+
+export type SourcedCandidate = CheckedCandidates["candidates"][number] & { source_wallet: string }
+
+/**
+ * Giftable moments across the connected Flow Wallet AND every account it has
+ * linked (Trevor, 2026-10-03: "it pulls all my assets across both wallets").
+ * Each account is listed and chain-checked on its own; a per-account summary
+ * says how many moments it holds on chain, so an account RPC hasn't indexed
+ * reads as "not indexed", never as "empty".
+ */
+export async function listCandidatesAcross(
+  db: SupabaseClient,
+  accounts: readonly { address: string; role: "flow_wallet" | "linked"; topshot_count: number | null }[],
+  read: HoldingsReader = readTopShotHoldings,
+): Promise<{ candidates: SourcedCandidate[]; accounts: AccountSummary[] }> {
+  const candidates: SourcedCandidate[] = []
+  const summaries: AccountSummary[] = []
+  for (const a of accounts) {
+    const r = await listCheckedCandidates(db, a.address, read)
+    for (const c of r.candidates) candidates.push({ ...c, source_wallet: a.address })
+    summaries.push({
+      address: a.address,
+      role: a.role,
+      onchain_count: a.topshot_count,
+      cache_count: r.cache_count,
+      giftable: r.candidates.length,
+      excluded: r.excluded,
+    })
+  }
+  return { candidates, accounts: summaries }
+}
+
 /** The admin's Top Shot moments the CACHE calls held and unlocked — a hint; see listCheckedCandidates. */
 export async function listCandidates(db: SupabaseClient, wallet: string): Promise<Candidate[]> {
   const { data, error } = await db
@@ -200,6 +278,8 @@ export interface DraftInput {
   pack_count: number
   moments_per_pack: number
   moment_ids: string[]
+  /** One per moment_ids entry: the account it comes from. Absent = every moment from admin_wallet. */
+  source_wallets?: string[]
 }
 
 /** Postgres "invalid parameter" — the draft/seal functions' own refusals. */
@@ -208,7 +288,7 @@ function isRefusal(err: { code?: string } | null): boolean {
 }
 
 export async function createDraft(db: SupabaseClient, input: DraftInput): Promise<string> {
-  const { data, error } = await db.rpc("create_giveaway_draft", {
+  const { data, error } = await db.rpc("create_giveaway_draft_multi", {
     p_slug: input.slug,
     p_title: input.title,
     p_description: input.description,
@@ -218,6 +298,7 @@ export async function createDraft(db: SupabaseClient, input: DraftInput): Promis
     p_pack_count: input.pack_count,
     p_moments_per_pack: input.moments_per_pack,
     p_moment_ids: input.moment_ids,
+    p_source_wallets: input.source_wallets ?? null,
   })
   if (error) {
     if (isRefusal(error)) throw new GiveawayError(error.message, 400, "refused")
@@ -248,7 +329,10 @@ export async function sealDrop(
   const ids = pool.map((p) => p.moment_id)
   const unpriced = pool.filter((p) => p.fmv_usd == null).map((p) => p.moment_id)
   const poolFmv = Math.round(pool.reduce((s, p) => s + (p.fmv_usd ?? 0), 0) * 100) / 100
-  const holdings = await read(drop.admin_wallet, ids)
+  const { holdings, failed } = await readHoldingsBySource(pool, drop.admin_wallet, read)
+  if (failed.length) {
+    throw new GiveawayError(`Couldn't read the chain for ${failed.join(", ")}; nothing was sealed. Try again.`, 502, "chain_read_failed")
+  }
   const check: SealCheck = {
     unpriced,
     not_held: ids.filter((id) => !holdings[id]?.held),
@@ -262,7 +346,7 @@ export async function sealDrop(
     throw new GiveawayError(`Pool FMV $${poolFmv} is over the $${PRIZE_VALUE_CAP_USD} NY/FL registration line.`, 409, "over_cap")
   }
   if (check.not_held.length) {
-    throw new GiveawayError(`The admin wallet no longer holds: ${check.not_held.join(", ")}`, 409, "not_held")
+    throw new GiveawayError(`Your accounts no longer hold: ${check.not_held.join(", ")}`, 409, "not_held")
   }
   if (check.locked.length) {
     throw new GiveawayError(`Locked on chain (a locked Moment can't be gifted): ${check.locked.join(", ")}`, 409, "locked")
@@ -353,23 +437,21 @@ export async function verifyDeliveries(
     }
   }
 
-  let adminHoldings: Record<string, Holding> | null = null
-  if (undelivered.length) {
-    try {
-      adminHoldings = await read(drop.admin_wallet, undelivered.map((m) => m.moment_id))
-    } catch {
-      adminHoldings = null
-    }
-  }
+  // the sponsor side, read from each moment's OWN source account
+  const sponsorSide = undelivered.length
+    ? await readHoldingsBySource(undelivered, drop.admin_wallet, read)
+    : { holdings: {} as Record<string, Holding>, failed: [] as string[] }
+  const failedSources = new Set(sponsorSide.failed)
 
   const now = new Date().toISOString()
   for (const { m, recipientHolds } of results) {
-    // An undelivered moment whose admin-side read failed is not classifiable: skip it entirely.
-    if (!recipientHolds && adminHoldings == null) {
-      report.failed_recipients.push(`${drop.admin_wallet} (for ${m.moment_id})`)
+    const src = m.source_wallet || drop.admin_wallet
+    // An undelivered moment whose source-side read failed is not classifiable: skip it entirely.
+    if (!recipientHolds && failedSources.has(src)) {
+      report.failed_recipients.push(`${src} (for ${m.moment_id})`)
       continue
     }
-    const adminHolds = recipientHolds ? false : adminHoldings![m.moment_id]?.held === true
+    const adminHolds = recipientHolds ? false : sponsorSide.holdings[m.moment_id]?.held === true
     report.checked += 1
     if (recipientHolds) report.delivered += 1
     else if (adminHolds) report.pending += 1

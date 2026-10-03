@@ -91,6 +91,84 @@ ${deliverLoop("provider")}
 }
 `
 
+// ── Moments in the signing wallet ITSELF (the sponsor's Flow Wallet) ──────────
+// A pool can span the Flow Wallet and its linked accounts (2026-10-03). For the
+// Flow Wallet's own moments there is no Hybrid Custody leg: the signer borrows
+// its own collection. Same deliverLoop, same simulate-then-sign discipline.
+
+// `owner` is an `auth(BorrowValue) &Account`; binds `provider`.
+export const BORROW_OWN_PROVIDER = `
+        assert(momentIDs.length == recipients.length, message: "momentIDs and recipients differ in length")
+        assert(momentIDs.length > 0 && momentIDs.length <= ${MAX_DELIVERY_BATCH}, message: "a batch holds 1 to ${MAX_DELIVERY_BATCH} moments")
+        let provider = owner.storage
+            .borrow<auth(NonFungibleToken.Withdraw) &{NonFungibleToken.Provider}>(from: /storage/MomentCollection)
+            ?? panic("The signing wallet has no Top Shot collection")`
+
+export const DELIVER_OWN_BATCH_CADENCE = `${IMPORTS}
+
+transaction(momentIDs: [UInt64], recipients: [Address]) {
+    let provider: auth(NonFungibleToken.Withdraw) &{NonFungibleToken.Provider}
+
+    prepare(owner: auth(BorrowValue) &Account) {${BORROW_OWN_PROVIDER}
+        self.provider = provider
+    }
+
+    execute {${deliverLoop("self.provider")}
+    }
+}
+`
+
+export const DELIVER_OWN_SIMULATION_SCRIPT = `${IMPORTS}
+
+access(all) fun main(ownerAddress: Address, momentIDs: [UInt64], recipients: [Address]): [Bool] {
+        let owner = getAuthAccount<auth(BorrowValue) &Account>(ownerAddress)${BORROW_OWN_PROVIDER}
+${deliverLoop("provider")}
+        let out: [Bool] = []
+        var j = 0
+        while j < momentIDs.length {
+            let col = getAccount(recipients[j]).capabilities
+                .borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+            out.append(col != nil && col!.borrowMoment(id: momentIDs[j]) != nil)
+            j = j + 1
+        }
+        return out
+}
+`
+
+/**
+ * The connected wallet and every account it has linked: the wallet's own Top
+ * Shot count, then one entry per Hybrid Custody child it has REDEEMED (read
+ * from the child's own OwnedAccount record — a merely offered link is excluded).
+ * -1 = no Top Shot collection there. Read-only; verified on mainnet 2026-10-03
+ * against Trevor's Flow Wallet (itself + 2 redeemed children) and a control
+ * address (itself only).
+ */
+export const LINKED_ACCOUNTS_SCRIPT = `import HybridCustody from 0xd8a7e05a7ac670c0
+import TopShot from 0x0b2a3299cc857e29
+
+access(all) fun main(parent: Address): {Address: Int} {
+    let out: {Address: Int} = {}
+    out[parent] = topShotCount(parent)
+    if let manager = getAccount(parent).capabilities.borrow<&{HybridCustody.ManagerPublic}>(HybridCustody.ManagerPublicPath) {
+        for child in manager.getChildAddresses() {
+            if let owned = getAccount(child).capabilities.borrow<&{HybridCustody.OwnedAccountPublic}>(HybridCustody.OwnedAccountPublicPath) {
+                if owned.getRedeemedStatus(addr: parent) == true {
+                    out[child] = topShotCount(child)
+                }
+            }
+        }
+    }
+    return out
+}
+
+access(all) fun topShotCount(_ a: Address): Int {
+    if let c = getAccount(a).capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection) {
+        return c.getIDs().length
+    }
+    return -1
+}
+`
+
 /**
  * Which of the linked account's Top Shot capability controllers the parent can
  * resolve as a withdraw provider. Verified 2026-09-29 (read-only) on Trevor's

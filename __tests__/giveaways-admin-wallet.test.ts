@@ -24,7 +24,7 @@ vi.mock("@onflow/fcl", () => fcl)
 vi.mock("@/lib/chains/flow/flow", () => ({ initFcl: vi.fn() }))
 
 import { connectAdminWallet, disconnectAdminWallet, prepareWalletConnect, sendDeliveryBatch } from "@/lib/giveaways/admin-wallet"
-import { DELIVER_BATCH_CADENCE, DELIVER_GAS_LIMIT } from "@/lib/giveaways/deliver-cadence"
+import { DELIVER_BATCH_CADENCE, DELIVER_GAS_LIMIT, DELIVER_OWN_BATCH_CADENCE } from "@/lib/giveaways/deliver-cadence"
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -75,7 +75,13 @@ describe("giveaways/admin-wallet", () => {
   it("sends the batch transaction with the plan's arguments in order, and waits for the seal", async () => {
     fcl.mutate.mockResolvedValueOnce("tx1")
     fcl.onceSealed.mockResolvedValueOnce({ statusCode: 0, errorMessage: "" })
-    const r = await sendDeliveryBatch({ child: "0x00000000000000aa", providerControllerID: "70" }, { momentIDs: ["1", "2"], recipients: ["0x01", "0x02"] })
+    const r = await sendDeliveryBatch({
+      source: "0x00000000000000aa",
+      kind: "linked",
+      providerControllerID: "70",
+      momentIDs: ["1", "2"],
+      recipients: ["0x01", "0x02"],
+    })
     expect(r).toEqual({ txId: "tx1" })
     const call = fcl.mutate.mock.calls[0][0] as { cadence: string; limit: number; args: (a: typeof fcl.arg, t: typeof fcl.t) => unknown[] }
     expect(call.cadence).toBe(DELIVER_BATCH_CADENCE)
@@ -89,16 +95,28 @@ describe("giveaways/admin-wallet", () => {
     expect(fcl.tx).toHaveBeenCalledWith("tx1")
   })
 
+  it("an 'own' batch (moments in the connected Flow Wallet) sends the own-collection transaction, with no child or controller", async () => {
+    fcl.mutate.mockResolvedValueOnce("tx-own")
+    fcl.onceSealed.mockResolvedValueOnce({ statusCode: 0, errorMessage: "" })
+    await sendDeliveryBatch({ source: "0x00000000000000bb", kind: "own", providerControllerID: null, momentIDs: ["9"], recipients: ["0x03"] })
+    const call = fcl.mutate.mock.calls.at(-1)![0] as { cadence: string; args: (a: typeof fcl.arg, t: typeof fcl.t) => unknown[] }
+    expect(call.cadence).toBe(DELIVER_OWN_BATCH_CADENCE)
+    expect(call.args(fcl.arg, fcl.t)).toEqual([
+      { value: ["9"], type: "Array(UInt64)" },
+      { value: ["0x03"], type: "Array(Address)" },
+    ])
+  })
+
   it("a reverted transaction is an error, never 'sent'", async () => {
     fcl.mutate.mockResolvedValueOnce("tx2")
     fcl.onceSealed.mockResolvedValueOnce({ statusCode: 1, errorMessage: "panic: Cannot withdraw: Moment is locked" })
     await expect(
-      sendDeliveryBatch({ child: "0x00000000000000aa", providerControllerID: "70" }, { momentIDs: ["1"], recipients: ["0x01"] }),
+      sendDeliveryBatch({ source: "0x00000000000000aa", kind: "linked", providerControllerID: "70", momentIDs: ["1"], recipients: ["0x01"] }),
     ).rejects.toThrow(/tx2 failed: panic: Cannot withdraw/)
     fcl.mutate.mockResolvedValueOnce("tx3")
     fcl.onceSealed.mockResolvedValueOnce({ statusCode: 1 })
     await expect(
-      sendDeliveryBatch({ child: "0x00000000000000aa", providerControllerID: "70" }, { momentIDs: ["1"], recipients: ["0x01"] }),
+      sendDeliveryBatch({ source: "0x00000000000000aa", kind: "linked", providerControllerID: "70", momentIDs: ["1"], recipients: ["0x01"] }),
     ).rejects.toThrow(/tx3 failed: status 1/)
   })
 })

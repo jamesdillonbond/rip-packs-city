@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { chunk, nothingSendable, planDelivery } from "@/lib/giveaways/deliver"
-import { DELIVER_SIMULATION_SCRIPT, PROVIDER_CONTROLLERS_SCRIPT } from "@/lib/giveaways/deliver-cadence"
+import { DELIVER_OWN_SIMULATION_SCRIPT, DELIVER_SIMULATION_SCRIPT, PROVIDER_CONTROLLERS_SCRIPT } from "@/lib/giveaways/deliver-cadence"
 import type { CdcArg, CdcValue } from "@/lib/giveaways/flow-script"
 import type { DropRow } from "@/lib/giveaways/store"
 import type { Holding } from "@/lib/giveaways/topshot-holdings"
@@ -41,12 +41,13 @@ function db(pool: unknown[], claims: unknown[]) {
   } as unknown as SupabaseClient
 }
 
-const pm = (id: string, pack: number, slot: number, delivered_at: string | null = null) => ({
+const pm = (id: string, pack: number, slot: number, delivered_at: string | null = null, source_wallet = "0x00000000000000aa") => ({
   moment_id: id,
   pack_no: pack,
   slot,
   fmv_usd: 1,
   delivered_at,
+  source_wallet,
 })
 const POOL = [pm("4", 2, 2), pm("1", 1, 1), pm("2", 1, 2), pm("3", 2, 1, "2026-09-29T20:00:00Z")]
 const CLAIMS = [
@@ -62,8 +63,9 @@ const arr = (type: string, vs: unknown[]): CdcValue => ({ type: "Array", value: 
 function runner(controllers: string[], sim: (ids: string[]) => boolean[] = (ids) => ids.map(() => true)) {
   return vi.fn(async (script: string, args: CdcArg[]) => {
     if (script === PROVIDER_CONTROLLERS_SCRIPT) return arr("UInt64", controllers)
-    if (script === DELIVER_SIMULATION_SCRIPT) {
-      const ids = ((args[3] as { value: CdcArg[] }).value as { value: string }[]).map((a) => a.value)
+    if (script === DELIVER_SIMULATION_SCRIPT || script === DELIVER_OWN_SIMULATION_SCRIPT) {
+      const at = script === DELIVER_SIMULATION_SCRIPT ? 3 : 1
+      const ids = ((args[at] as { value: CdcArg[] }).value as { value: string }[]).map((a) => a.value)
       return arr("Bool", sim(ids))
     }
     throw new Error("unexpected script")
@@ -77,9 +79,15 @@ describe("giveaways/deliver — planDelivery", () => {
     const plan = await planDelivery(db(POOL, CLAIMS), DROP, PARENT, { read, run })
     expect(plan).toEqual({
       parent: PARENT,
-      child: "0x00000000000000aa",
-      providerControllerID: "70",
-      batches: [{ momentIDs: ["1", "2", "4"], recipients: ["0x0000000000000001", "0x0000000000000001", "0x0000000000000002"] }],
+      batches: [
+        {
+          source: "0x00000000000000aa",
+          kind: "linked",
+          providerControllerID: "70",
+          momentIDs: ["1", "2", "4"],
+          recipients: ["0x0000000000000001", "0x0000000000000001", "0x0000000000000002"],
+        },
+      ],
       skipped: [],
     })
     // delivered moment 3 is never re-sent; the simulation ran with the planned batch
@@ -155,7 +163,6 @@ describe("giveaways/deliver — planDelivery", () => {
   it("refuses bad input and states with nothing to send", async () => {
     const deps = { read: held(), run: runner(["70"]) }
     await expect(planDelivery(db(POOL, CLAIMS), DROP, "0xnope", deps)).rejects.toMatchObject({ code: "bad_parent" })
-    await expect(planDelivery(db(POOL, CLAIMS), DROP, DROP.admin_wallet, deps)).rejects.toMatchObject({ code: "bad_parent" })
     await expect(planDelivery(db(POOL, CLAIMS), { ...DROP, status: "sealed" }, PARENT, deps)).rejects.toMatchObject({ code: "wrong_status" })
     await expect(planDelivery(db([pm("3", 2, 1, "t")], CLAIMS), DROP, PARENT, deps)).rejects.toMatchObject({ code: "nothing_to_deliver" })
     await expect(planDelivery(db(POOL, CLAIMS), DROP, PARENT, { ...deps, read: held({}, ["1", "2", "4"]) })).rejects.toMatchObject({
@@ -163,5 +170,28 @@ describe("giveaways/deliver — planDelivery", () => {
     })
     // a closed drop can still be delivered
     expect((await planDelivery(db(POOL, CLAIMS), { ...DROP, status: "closed" }, PARENT, deps)).batches).toHaveLength(1)
+  })
+
+  it("a pool across the Flow Wallet and a linked account plans one batch per source, each simulated its own way (2026-10-03)", async () => {
+    const mixed = [pm("1", 1, 1, null, PARENT), pm("2", 1, 2), pm("4", 2, 2, null, PARENT)]
+    const run = runner(["70"])
+    const read = held()
+    const plan = await planDelivery(db(mixed, CLAIMS), { ...DROP, admin_wallet: PARENT }, PARENT, { read, run })
+    expect(plan.batches).toEqual([
+      { source: PARENT, kind: "own", providerControllerID: null, momentIDs: ["1", "4"], recipients: ["0x0000000000000001", "0x0000000000000002"] },
+      { source: "0x00000000000000aa", kind: "linked", providerControllerID: "70", momentIDs: ["2"], recipients: ["0x0000000000000001"] },
+    ])
+    // holdings are read from each moment's own source
+    expect(read).toHaveBeenCalledWith(PARENT, ["1", "4"])
+    expect(read).toHaveBeenCalledWith("0x00000000000000aa", ["2"])
+    // the own batch is simulated from the wallet's own collection; no controller lookup for it
+    const ownSim = run.mock.calls.find((c) => c[0] === DELIVER_OWN_SIMULATION_SCRIPT)!
+    expect(ownSim[1][0]).toEqual({ type: "Address", value: PARENT })
+    expect(run.mock.calls.filter((c) => c[0] === PROVIDER_CONTROLLERS_SCRIPT).map((c) => c[1][1])).toEqual([{ type: "Address", value: "0x00000000000000aa" }])
+  })
+
+  it("a failed chain read plans nothing (never a plan built on a read that didn't happen)", async () => {
+    const read = vi.fn(async () => Promise.reject(new Error("Flow script HTTP 500")))
+    await expect(planDelivery(db(POOL, CLAIMS), DROP, PARENT, { read, run: runner(["70"]) })).rejects.toMatchObject({ code: "chain_read_failed", status: 502 })
   })
 })

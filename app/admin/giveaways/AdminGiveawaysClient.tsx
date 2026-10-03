@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useAdminResource } from "@/lib/admin/use-admin-resource"
-import { usd, ptTime, errorText } from "@/lib/giveaways/view-format"
+import { usd, ptTime, errorText, accountLine, accountName, type AccountLineInput } from "@/lib/giveaways/view-format"
 import { checklistRows, type ChecklistRow } from "@/lib/giveaways/checklist"
 import type { Candidate, ClaimRow, DropRow, PoolRow } from "@/lib/giveaways/store"
 import type { DeliveryPlan } from "@/lib/giveaways/deliver"
@@ -127,9 +127,14 @@ export default function AdminGiveawaysClient() {
 
 type Call = (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number; body: Record<string, unknown> | null }>
 
+type SourcedCandidate = Candidate & { source_wallet?: string }
+
 function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void }) {
   const [wallet, setWallet] = useState(readStoredWallet)
-  const [candidates, setCandidates] = useState<Candidate[] | null>(null)
+  // set when the pool comes from a connected Flow Wallet and its linked accounts
+  const [connected, setConnected] = useState<string | null>(null)
+  const [accounts, setAccounts] = useState<(AccountLineInput & { address: string })[] | null>(null)
+  const [candidates, setCandidates] = useState<SourcedCandidate[] | null>(null)
   const [excluded, setExcluded] = useState<{ locked: number; not_held: number } | null>(null)
   const [resolvedFrom, setResolvedFrom] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -137,8 +142,41 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  // Sign in with Flow Wallet: candidates across the wallet AND every account it has linked (2026-10-03)
+  const connectAndLoad = async () => {
+    setMsg(null)
+    let parent: string
+    try {
+      parent = await connectAdminWallet()
+    } catch (e) {
+      setMsg(`Wallet: ${errorText(e)}`)
+      return
+    }
+    const r = await call(`/api/admin/giveaways?accounts_for=${encodeURIComponent(parent)}`)
+    if (!r.ok) {
+      setCandidates(null)
+      setAccounts(null)
+      setMsg(String(r.body?.error ?? `HTTP ${r.status}`))
+      return
+    }
+    if (!Array.isArray(r.body?.candidates) || !Array.isArray(r.body?.accounts)) {
+      setCandidates(null)
+      setAccounts(null)
+      setMsg("The account list came back malformed.")
+      return
+    }
+    setConnected(parent)
+    setAccounts(r.body.accounts as (AccountLineInput & { address: string })[])
+    setCandidates(r.body.candidates as SourcedCandidate[])
+    setExcluded(null)
+    setResolvedFrom(null)
+    setPicked(new Set())
+  }
+
   const loadCandidates = async () => {
     setMsg(null)
+    setConnected(null)
+    setAccounts(null)
     // an 0x address is lowercased; a Top Shot username goes as typed and the route resolves it
     const raw = wallet.trim()
     const w = /^0x/i.test(raw) ? raw.toLowerCase() : raw
@@ -181,10 +219,12 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
   const create = async () => {
     setBusy(true)
     setMsg(null)
-    const r = await call("/api/admin/giveaways", {
-      method: "POST",
-      body: JSON.stringify({ ...form, admin_wallet: wallet.trim().toLowerCase(), moment_ids: [...picked] }),
-    })
+    const ids = [...picked]
+    const sourceOf = new Map((candidates ?? []).map((c) => [c.moment_id, c.source_wallet]))
+    const body = connected
+      ? { ...form, admin_wallet: connected, moment_ids: ids, source_wallets: ids.map((id) => sourceOf.get(id)) }
+      : { ...form, admin_wallet: wallet.trim().toLowerCase(), moment_ids: ids }
+    const r = await call("/api/admin/giveaways", { method: "POST", body: JSON.stringify(body) })
     setBusy(false)
     if (!r.ok) {
       setMsg(String(r.body?.error ?? `HTTP ${r.status}`))
@@ -210,9 +250,22 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
   return (
     <section style={box}>
       <h2 style={{ fontFamily: DISPLAY, textTransform: "uppercase", margin: "0 0 8px" }}>New draft</h2>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+        <button type="button" style={btn} onClick={connectAndLoad}>
+          Connect Flow Wallet (loads it and every linked account)
+        </button>
+        {connected ? <span style={{ fontSize: 12, color: "var(--rpc-text-muted)" }}>Connected {connected}</span> : null}
+      </div>
+      {accounts ? (
+        <ul style={{ margin: "0 0 8px", paddingLeft: 18, fontSize: 12, color: "var(--rpc-text-secondary)" }}>
+          {accounts.map((a) => (
+            <li key={a.address}>{accountLine(a)}</li>
+          ))}
+        </ul>
+      ) : null}
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
         <label style={{ fontSize: 12, color: "var(--rpc-text-muted)", display: "flex", flexDirection: "column", gap: 2 }}>
-          Your Top Shot username or wallet (the moments come from here)
+          Or one account by Top Shot username or wallet
           <input
             value={wallet}
             onChange={(e) => {
@@ -249,6 +302,7 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
                   <th style={th}>Serial</th>
                   <th style={th}>Team</th>
                   <th style={th}>FMV</th>
+                  {connected ? <th style={th}>From</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -263,6 +317,11 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
                     <td style={td}>{c.serial_number ?? "—"}</td>
                     <td style={td}>{c.team_name ?? "—"}</td>
                     <td style={td}>{usd(c.fmv_usd)}</td>
+                    {connected ? (
+                      <td style={td}>
+                        {c.source_wallet ? accountName({ address: c.source_wallet, role: c.source_wallet === connected ? "flow_wallet" : "linked" }) : "—"}
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -467,14 +526,15 @@ function DeliverAll({ drop, call, onDone }: { drop: DropRow; call: Call; onDone:
       }
       const n = plan.batches.reduce((s, b) => s + b.momentIDs.length, 0)
       for (const sk of plan.skipped) note(`Skipped ${sk.moment_id}: ${sk.reason === "locked" ? "locked on chain" : "no longer in your account"}`)
-      if (!window.confirm(`Send ${n} moment(s) from ${plan.child} in ${plan.batches.length} transaction(s)? Your Flow Wallet will ask you to approve each one.`)) {
+      const from = [...new Set(plan.batches.map((b) => b.source))].join(", ")
+      if (!window.confirm(`Send ${n} moment(s) from ${from} in ${plan.batches.length} transaction(s)? Your Flow Wallet will ask you to approve each one.`)) {
         note("Cancelled; nothing was sent.")
         return
       }
       for (const [i, b] of plan.batches.entries()) {
         note(`Batch ${i + 1}/${plan.batches.length}: waiting for your wallet…`)
         try {
-          const sent = await sendDeliveryBatch(plan, b)
+          const sent = await sendDeliveryBatch(b)
           note(`Batch ${i + 1}: sealed · ${b.momentIDs.length} moment(s) · tx ${sent.txId}`)
         } catch (e) {
           note(`Batch ${i + 1} NOT sent: ${errorText(e)}`)

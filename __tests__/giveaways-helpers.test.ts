@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { checklistRows, checklistState } from "@/lib/giveaways/checklist"
 import { claimOutcomeResponse } from "@/lib/giveaways/claim-copy"
 import { parseDraftBody } from "@/lib/giveaways/draft-input"
-import { deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
+import { accountLine, accountName, deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
 import { chaseMomentId, openedKey, revealOrder, topShotMomentImage } from "@/lib/giveaways/reveal"
 import { commitmentHash } from "@/lib/giveaways/seal"
 import { execFileSync } from "node:child_process"
@@ -25,6 +25,7 @@ function pm(id: string, over: Partial<PoolRow> = {}): PoolRow {
     last_checked_at: null,
     last_check_recipient_holds: null,
     last_check_admin_holds: null,
+    source_wallet: "0x00000000000000aa",
     ...over,
   }
 }
@@ -177,5 +178,40 @@ describe("giveaways/reveal", () => {
     expect(topShotMomentImage("123", 199.6)).toBe("https://assets.nbatopshot.com/media/123/image?width=200")
     expect(topShotMomentImage("abc")).toBeNull()
     expect(openedKey("fall-drop", 4)).toBe("rpc_giveaway_opened:fall-drop:4")
+  })
+})
+
+describe("giveaways/draft-input — a pool across linked accounts (2026-10-03)", () => {
+  const base = { slug: "fall-drop", title: "Fall drop", sponsor_name: "Trevor", admin_wallet: "0x00000000000000BB", pack_count: 2, moments_per_pack: 1, moment_ids: ["1", "2"] }
+  it("keeps one lowercased source per moment", () => {
+    expect(parseDraftBody({ ...base, source_wallets: ["0x00000000000000AA", "0x00000000000000bb"] })).toMatchObject({
+      admin_wallet: "0x00000000000000bb",
+      source_wallets: ["0x00000000000000aa", "0x00000000000000bb"],
+    })
+  })
+  it("refuses a wrong count, a non-array, or a malformed address", () => {
+    for (const source_wallets of [["0x00000000000000aa"], "0x00000000000000aa", ["0x00000000000000aa", "nope"]]) {
+      expect(parseDraftBody({ ...base, source_wallets })).toBe("source_wallets must list one Flow 0x address per moment")
+    }
+  })
+  it("a body without sources has none (single-account draft)", () => {
+    expect(parseDraftBody(base)).not.toHaveProperty("source_wallets")
+  })
+})
+
+describe("giveaways/view-format — account lines (2026-10-03)", () => {
+  const a = (over: Partial<Parameters<typeof accountLine>[0]>) =>
+    accountLine({ address: "0x3d0b274c80263484", role: "flow_wallet", onchain_count: 0, cache_count: 0, giftable: 0, ...over })
+  it("names the account by role and a short address", () => {
+    expect(accountName({ address: "0xbd94cade097e50ac", role: "linked" })).toBe("Linked account 0xbd94…50ac")
+    expect(accountName({ address: "0x3d0b274c80263484", role: "flow_wallet" })).toBe("Flow Wallet 0x3d0b…3484")
+  })
+  it("distinguishes no collection, empty, NOT INDEXED, and giftable — never calls an unindexed account empty", () => {
+    expect(a({ onchain_count: null })).toBe("Flow Wallet 0x3d0b…3484: no Top Shot collection")
+    expect(a({ onchain_count: 0 })).toBe("Flow Wallet 0x3d0b…3484: 0 Top Shot moments")
+    expect(a({ onchain_count: 12, cache_count: 0 })).toBe("Flow Wallet 0x3d0b…3484: 12 Top Shot moments on chain, not indexed by RPC yet, so none can be picked here")
+    expect(a({ role: "linked", onchain_count: 15547, cache_count: 34, giftable: 28 })).toBe(
+      "Linked account 0x3d0b…3484: 15,547 Top Shot moments on chain · 28 unlocked and giftable now",
+    )
   })
 })

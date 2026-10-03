@@ -8,6 +8,7 @@ import {
   getDrop,
   GiveawayError,
   listCandidates,
+  listCandidatesAcross,
   listCheckedCandidates,
   listDrops,
   sealDrop,
@@ -100,6 +101,7 @@ function pm(id: string, over: Partial<PoolRow> = {}): PoolRow {
     last_checked_at: null,
     last_check_recipient_holds: null,
     last_check_admin_holds: null,
+    source_wallet: "0x00000000000000aa",
     ...over,
   }
 }
@@ -148,6 +150,28 @@ describe("giveaways/store — listCheckedCandidates", () => {
     const f = fakeDb(() => ({ data: [{ moment_id: "1", fmv_usd: 1 }], error: null }))
     await expect(listCheckedCandidates(f.db, "0x00000000000000aa", async () => Promise.reject(new Error("HTTP 403")))).rejects.toThrow(/403/)
   })
+  it("listCandidatesAcross lists each account on its own and tags every candidate with its source (2026-10-03)", async () => {
+    const f = fakeDb((q) =>
+      q.eq.wallet_address === "0x00000000000000bb" ? { data: [{ moment_id: "9", fmv_usd: 2 }], error: null } : { data: [], error: null },
+    )
+    const read = vi.fn(allHeld)
+    const r = await listCandidatesAcross(
+      f.db,
+      [
+        { address: "0x00000000000000aa", role: "flow_wallet", topshot_count: 0 },
+        { address: "0x00000000000000bb", role: "linked", topshot_count: 15 },
+        { address: "0x00000000000000cc", role: "linked", topshot_count: null },
+      ],
+      read,
+    )
+    expect(r.candidates.map((c) => `${c.moment_id}@${c.source_wallet}`)).toEqual(["9@0x00000000000000bb"])
+    expect(r.accounts.map((a) => [a.address, a.onchain_count, a.cache_count, a.giftable])).toEqual([
+      ["0x00000000000000aa", 0, 0, 0],
+      ["0x00000000000000bb", 15, 1, 1],
+      ["0x00000000000000cc", null, 0, 0],
+    ])
+    expect(read).toHaveBeenCalledTimes(1) // empty caches make no chain call
+  })
   it("an empty cache makes no chain call", async () => {
     const read = vi.fn()
     const r = await listCheckedCandidates(fakeDb(() => ({ data: [], error: null })).db, "0x00000000000000aa", read)
@@ -170,8 +194,16 @@ describe("giveaways/store — createDraft", () => {
   it("returns the new id", async () => {
     const f = fakeDb(() => ({ data: null, error: null }), () => ({ data: "new-id", error: null }))
     expect(await createDraft(f.db, input)).toBe("new-id")
-    expect(f.rpcs[0].name).toBe("create_giveaway_draft")
+    expect(f.rpcs[0].name).toBe("create_giveaway_draft_multi")
     expect(f.rpcs[0].args.p_collection_id).toBe(GIVEAWAY_COLLECTION_ID)
+    // a single-account draft sends no sources: every moment comes from admin_wallet
+    expect(f.rpcs[0].args.p_source_wallets).toBeNull()
+  })
+  it("a multi-account draft sends one source per moment (2026-10-03)", async () => {
+    const f = fakeDb(() => ({ data: null, error: null }), () => ({ data: "new-id", error: null }))
+    const sources = input.moment_ids.map((_, i) => (i % 2 ? "0x00000000000000bb" : "0x00000000000000aa"))
+    await createDraft(f.db, { ...input, source_wallets: sources })
+    expect(f.rpcs[0].args.p_source_wallets).toEqual(sources)
   })
   it("a refusal (22023) or a duplicate slug (23505) becomes a 400 with the function's own message", async () => {
     for (const code of ["22023", "23505"]) {
@@ -234,8 +266,24 @@ describe("giveaways/store — sealDrop", () => {
 
   it("a failed chain read fails the seal (never seals on a read that didn't happen)", async () => {
     const f = dbWithPool(pool)
-    await expect(sealDrop(f.db, DROP, async () => Promise.reject(new Error("Flow script HTTP 500")))).rejects.toThrow(/HTTP 500/)
+    await expect(sealDrop(f.db, DROP, async () => Promise.reject(new Error("Flow script HTTP 500")))).rejects.toMatchObject({
+      name: "GiveawayError",
+      status: 502,
+      code: "chain_read_failed",
+    })
     expect(f.rpcs).toHaveLength(0)
+  })
+
+  it("a pool across linked accounts is checked against EACH moment's own source (2026-10-03)", async () => {
+    const mixed = [pm("1"), pm("2"), pm("3", { source_wallet: "0x00000000000000bb" }), pm("4", { source_wallet: "0x00000000000000bb" })]
+    const read = vi.fn(allHeld)
+    await sealDrop(dbWithPool(mixed).db, DROP, read)
+    expect(read).toHaveBeenCalledWith("0x00000000000000aa", ["1", "2"])
+    expect(read).toHaveBeenCalledWith("0x00000000000000bb", ["3", "4"])
+    // and a moment held only by the OTHER account is not held
+    const crossed = async (a: string, ids: string[]) =>
+      Object.fromEntries(ids.map((id) => [id, { held: a === "0x00000000000000aa", locked: false }])) as Record<string, Holding>
+    await expect(sealDrop(dbWithPool(mixed).db, DROP, crossed)).rejects.toMatchObject({ code: "not_held", message: expect.stringContaining("3, 4") })
   })
 
   it("maps the seal function's refusal to a 409 and rethrows anything else", async () => {
@@ -344,6 +392,25 @@ describe("giveaways/store — verifyDeliveries", () => {
     expect(r.checked).toBe(0)
     expect(f.queries.filter((q) => q.op === "update")).toHaveLength(0)
     expect(r.failed_recipients.length).toBe(4)
+  })
+
+  it("the sponsor side is read from each moment's OWN source; one failed source leaves the others classified", async () => {
+    const mixed = [
+      pm("1", { pack_no: 1, slot: 1 }),
+      pm("2", { pack_no: 1, slot: 2, source_wallet: "0x00000000000000bb" }),
+      pm("3", { pack_no: 2, slot: 1 }),
+      pm("4", { pack_no: 2, slot: 2, source_wallet: "0x00000000000000bb" }),
+    ]
+    const f = db(mixed)
+    const read = async (addr: string, ids: string[]) => {
+      if (addr === "0x00000000000000bb") throw new Error("HTTP 500")
+      if (addr === "0x00000000000000aa") return Object.fromEntries(ids.map((id) => [id, { held: true, locked: false }])) as Record<string, Holding>
+      return {} as Record<string, Holding> // recipients hold nothing yet
+    }
+    const r = await verifyDeliveries(f.db, OPEN, read)
+    expect(r).toMatchObject({ checked: 2, pending: 2, missing: 0 })
+    expect(r.failed_recipients.sort()).toEqual(["0x00000000000000bb (for 2)", "0x00000000000000bb (for 4)"])
+    expect(f.queries.filter((q) => q.op === "update").map((q) => q.eq.moment_id).sort()).toEqual(["1", "3"])
   })
 
   it("an unclaimed pack is not checked at all", async () => {

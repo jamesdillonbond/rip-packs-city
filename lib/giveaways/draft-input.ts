@@ -33,6 +33,13 @@ export function parseDraftBody(body: unknown): DraftInput | string {
   if (ids.length !== pack_count * moments_per_pack) {
     return `${ids.length} moments selected; ${pack_count} packs of ${moments_per_pack} need ${pack_count * moments_per_pack}`
   }
-  return { slug, title, description: description || null, sponsor_name, admin_wallet, pack_count, moments_per_pack, moment_ids: ids }
+  const base = { slug, title, description: description || null, sponsor_name, admin_wallet, pack_count, moments_per_pack, moment_ids: ids }
+  if (b.source_wallets === undefined) return base
+  // a pool across the connected Flow Wallet and its linked accounts: one source per moment
+  const sources = Array.isArray(b.source_wallets) ? b.source_wallets.map((x) => String(x).trim().toLowerCase()) : null
+  if (!sources || sources.length !== ids.length || sources.some((w) => !FLOW_WALLET.test(w))) {
+    return "source_wallets must list one Flow 0x address per moment"
+  }
+  return { ...base, source_wallets: sources }
 }
 

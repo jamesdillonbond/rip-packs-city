@@ -4,6 +4,8 @@
 //   GET                      -> { drops }            every drop, newest first
 //   GET ?candidates=<wallet> -> CheckedCandidates    that wallet's giftable Top Shot moments (cache, then re-checked on chain);
 //                                                     <wallet> may be a Top Shot USERNAME (resolved; `username` echoed)
+//   GET ?accounts_for=<0x>   -> { parent, accounts, candidates }  the connected Flow Wallet AND every account it has
+//                                                     linked (Hybrid Custody, read on chain), giftable moments from each
 //   POST {draft fields}      -> { id }               create a draft (create_giveaway_draft)
 // Background: docs/strategy/free-packs-reassessment-2026-09-29.md §8.
 
@@ -11,7 +13,9 @@ import { NextRequest, NextResponse } from "next/server"
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth"
 import { apiErrorResponse } from "@/lib/api-error"
 import { supabaseAdmin } from "@/lib/supabase"
-import { createDraft, GiveawayError, listCheckedCandidates, listDrops } from "@/lib/giveaways/store"
+import { createDraft, GiveawayError, listCandidatesAcross, listCheckedCandidates, listDrops } from "@/lib/giveaways/store"
+import { discoverAccounts } from "@/lib/giveaways/linked-accounts"
+import { FlowScriptError } from "@/lib/giveaways/flow-script"
 import { FLOW_WALLET, parseDraftBody } from "@/lib/giveaways/draft-input"
 import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve"
 
@@ -25,7 +29,15 @@ export const maxDuration = 60
 export async function GET(req: NextRequest) {
   if (!verifyAdminRequest(req)) return adminUnauthorizedResponse()
   const wallet = req.nextUrl.searchParams.get("candidates")
+  const parent = req.nextUrl.searchParams.get("accounts_for")
   try {
+    if (parent != null) {
+      const p = parent.trim().toLowerCase()
+      if (!FLOW_WALLET.test(p)) return NextResponse.json({ error: "accounts_for must be a Flow 0x address" }, { status: 400 })
+      const accounts = await discoverAccounts(p)
+      const across = await listCandidatesAcross(supabaseAdmin, accounts)
+      return NextResponse.json({ parent: p, ...across }, { headers: { "Cache-Control": "no-store" } })
+    }
     if (wallet != null) {
       const raw = wallet.trim()
       let w = raw.toLowerCase()
@@ -52,6 +64,9 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({ drops: await listDrops(supabaseAdmin) }, { headers: { "Cache-Control": "no-store" } })
   } catch (err) {
+    // our own copy, or the chain read's own message (operator-facing, token-gated)
+    if (err instanceof GiveawayError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status })
+    if (err instanceof FlowScriptError) return NextResponse.json({ error: err.message, code: "flow_script" }, { status: 502 })
     return apiErrorResponse(err, "api/admin/giveaways GET")
   }
 }
@@ -67,11 +82,23 @@ export async function POST(req: NextRequest) {
   const input = parseDraftBody(body)
   if (typeof input === "string") return NextResponse.json({ error: input }, { status: 400 })
   try {
+    if (input.source_wallets) {
+      // every source must be the connected wallet or an account it has REDEEMED — read on chain, not trusted from the body
+      const mine = new Set((await discoverAccounts(input.admin_wallet)).map((a) => a.address))
+      const foreign = [...new Set(input.source_wallets)].filter((w) => !mine.has(w))
+      if (foreign.length) {
+        return NextResponse.json(
+          { error: `Not your Flow Wallet or an account it has linked: ${foreign.join(", ")}`, code: "not_linked" },
+          { status: 400 },
+        )
+      }
+    }
     const id = await createDraft(supabaseAdmin, input)
     return NextResponse.json({ id }, { status: 201 })
   } catch (err) {
     // Our own refusal copy (the draft function's RAISE text) — operator-facing, token-gated.
     if (err instanceof GiveawayError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status })
+    if (err instanceof FlowScriptError) return NextResponse.json({ error: err.message, code: "flow_script" }, { status: 502 })
     return apiErrorResponse(err, "api/admin/giveaways POST")
   }
 }

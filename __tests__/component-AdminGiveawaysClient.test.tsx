@@ -305,14 +305,86 @@ describe("AdminGiveawaysClient — drops", () => {
   })
 })
 
+describe("AdminGiveawaysClient — sign in with Flow Wallet to build a pool (2026-10-03)", () => {
+  const ACROSS = {
+    parent: "0x00000000000000bb",
+    accounts: [
+      { address: "0x00000000000000bb", role: "flow_wallet", onchain_count: 0, cache_count: 0, giftable: 0, excluded: { locked: 0, not_held: 0 } },
+      { address: "0x00000000000000aa", role: "linked", onchain_count: 15547, cache_count: 2, giftable: 2, excluded: { locked: 0, not_held: 0 } },
+      { address: "0x00000000000000cc", role: "linked", onchain_count: 12, cache_count: 0, giftable: 0, excluded: { locked: 0, not_held: 0 } },
+    ],
+    candidates: CANDIDATES.candidates.map((c) => ({ ...c, source_wallet: "0x00000000000000aa" })),
+  }
+
+  beforeEach(() => {
+    wallet.connect.mockReset()
+  })
+
+  it("lists every account honestly, labels where each moment comes from, and drafts with one source per moment", async () => {
+    let created: Record<string, unknown> | null = null
+    let asked = ""
+    stub((url, init) => {
+      if (url.includes("accounts_for=")) {
+        asked = decodeURIComponent(url.split("accounts_for=")[1])
+        return json(ACROSS)
+      }
+      if (init?.method === "POST") {
+        created = JSON.parse(String(init.body))
+        return json({ id: "d1" }, 201)
+      }
+      return json({ drops: [] })
+    })
+    wallet.connect.mockResolvedValue("0x00000000000000bb")
+    render(<AdminGiveawaysClient />)
+    await screen.findByText("No drops yet.")
+    fireEvent.click(screen.getByRole("button", { name: /connect flow wallet \(loads it and every linked account\)/i }))
+    expect(await screen.findByText("Flow Wallet 0x0000…00bb: 0 Top Shot moments")).toBeTruthy()
+    expect(asked).toBe("0x00000000000000bb")
+    expect(screen.getByText("Linked account 0x0000…00aa: 15,547 Top Shot moments on chain · 2 unlocked and giftable now")).toBeTruthy()
+    // held on chain but not in RPC's cache: never shown as empty
+    expect(screen.getByText(/Linked account 0x0000…00cc: 12 Top Shot moments on chain, not indexed by RPC yet/)).toBeTruthy()
+    expect(screen.getAllByText("Linked account 0x0000…00aa").length).toBe(2) // the "From" column, one per candidate
+    const numbers = screen.getAllByRole("spinbutton")
+    fireEvent.change(numbers[0], { target: { value: "1" } })
+    fireEvent.change(numbers[1], { target: { value: "2" } })
+    fireEvent.click(screen.getByText("Lillard"))
+    fireEvent.click(screen.getAllByRole("checkbox")[1]) // the unnamed moment's row
+    fireEvent.click(screen.getByRole("button", { name: /create draft \(2\/2\)/i }))
+    await screen.findByText("Draft created.")
+    expect(created).toMatchObject({ admin_wallet: "0x00000000000000bb", source_wallets: ["0x00000000000000aa", "0x00000000000000aa"] })
+    expect((created as unknown as { moment_ids: string[] }).moment_ids.sort()).toEqual(["10", "11"])
+  })
+
+  it("a refused wallet connection or a failed lookup is shown, never an empty pool", async () => {
+    stub((url) => (url.includes("accounts_for=") ? json({ error: "Flow script HTTP 503" }, 502) : json({ drops: [] })))
+    wallet.connect.mockRejectedValueOnce({ code: 5000, message: "User rejected" })
+    render(<AdminGiveawaysClient />)
+    await screen.findByText("No drops yet.")
+    const connect = screen.getByRole("button", { name: /connect flow wallet \(loads/i })
+    fireEvent.click(connect)
+    expect(await screen.findByText("Wallet: User rejected (code 5000)")).toBeTruthy()
+    wallet.connect.mockResolvedValueOnce("0x00000000000000bb")
+    fireEvent.click(connect)
+    expect(await screen.findByText("Flow script HTTP 502".replace("502", "503"))).toBeTruthy()
+    expect(screen.queryByText(/Top Shot moments/)).toBeNull()
+  })
+
+  it("a malformed account list is an error", async () => {
+    stub((url) => (url.includes("accounts_for=") ? json({ parent: "x" }) : json({ drops: [] })))
+    wallet.connect.mockResolvedValueOnce("0x00000000000000bb")
+    render(<AdminGiveawaysClient />)
+    await screen.findByText("No drops yet.")
+    fireEvent.click(screen.getByRole("button", { name: /connect flow wallet \(loads/i }))
+    expect(await screen.findByText("The account list came back malformed.")).toBeTruthy()
+  })
+})
+
 describe("AdminGiveawaysClient — deliver all (one signature per batch)", () => {
   const PLAN = {
     parent: "0x00000000000000bb",
-    child: "0x00000000000000aa",
-    providerControllerID: "70",
     batches: [
-      { momentIDs: ["1", "2"], recipients: ["0x01", "0x02"] },
-      { momentIDs: ["3"], recipients: ["0x03"] },
+      { source: "0x00000000000000aa", kind: "linked", providerControllerID: "70", momentIDs: ["1", "2"], recipients: ["0x01", "0x02"] },
+      { source: "0x00000000000000aa", kind: "linked", providerControllerID: "70", momentIDs: ["3"], recipients: ["0x03"] },
     ],
     skipped: [
       { moment_id: "9", reason: "locked" },
@@ -345,7 +417,7 @@ describe("AdminGiveawaysClient — deliver all (one signature per batch)", () =>
   async function connected() {
     wallet.connect.mockResolvedValue("0x00000000000000bb")
     render(<AdminGiveawaysClient />)
-    fireEvent.click(await screen.findByRole("button", { name: /connect flow wallet/i }))
+    fireEvent.click(await screen.findByRole("button", { name: "Connect Flow Wallet" }))
     return screen.findByText(/Flow Wallet 0x00000000000000bb/)
   }
 
@@ -353,7 +425,7 @@ describe("AdminGiveawaysClient — deliver all (one signature per batch)", () =>
     stub(() => json({ drops: [DROP({ id: "d1", title: "Draft one" }), DROP({ id: "d2", status: "sealed", title: "Sealed one" })] }))
     render(<AdminGiveawaysClient />)
     await screen.findByText("Draft one")
-    expect(screen.queryByRole("button", { name: /connect flow wallet/i })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Connect Flow Wallet" })).toBeNull()
   })
 
   it("plans with the connected wallet, signs each batch in order, then verifies on chain", async () => {
@@ -363,8 +435,8 @@ describe("AdminGiveawaysClient — deliver all (one signature per batch)", () =>
     fireEvent.click(screen.getByRole("button", { name: /deliver claimed moments/i }))
     expect(await screen.findByText(/Verified on chain: 3 delivered, 0 still with you, 0 missing/)).toBeTruthy()
     expect(posts[0]).toEqual({ action: "deliver_plan", parent: "0x00000000000000bb" })
-    expect(wallet.send.mock.calls.map((c) => (c[1] as { momentIDs: string[] }).momentIDs)).toEqual([["1", "2"], ["3"]])
-    expect(wallet.send.mock.calls[0][0]).toMatchObject({ child: "0x00000000000000aa", providerControllerID: "70" })
+    expect(wallet.send.mock.calls.map((c) => (c[0] as { momentIDs: string[] }).momentIDs)).toEqual([["1", "2"], ["3"]])
+    expect(wallet.send.mock.calls[0][0]).toMatchObject({ source: "0x00000000000000aa", kind: "linked", providerControllerID: "70" })
     expect(screen.getByText(/Batch 1: sealed · 2 moment\(s\) · tx tx1/)).toBeTruthy()
     expect(screen.getByText(/Skipped 9: locked on chain/)).toBeTruthy()
     expect(screen.getByText(/Skipped 8: no longer in your account/)).toBeTruthy()
@@ -417,13 +489,13 @@ describe("AdminGiveawaysClient — deliver all (one signature per batch)", () =>
     server(json({ ok: true, plan: PLAN }))
     wallet.connect.mockRejectedValueOnce(new Error("Popup closed"))
     render(<AdminGiveawaysClient />)
-    fireEvent.click(await screen.findByRole("button", { name: /connect flow wallet/i }))
+    fireEvent.click(await screen.findByRole("button", { name: "Connect Flow Wallet" }))
     expect(await screen.findByText("Wallet: Popup closed")).toBeTruthy()
     wallet.connect.mockResolvedValueOnce("0x00000000000000bb")
-    fireEvent.click(screen.getByRole("button", { name: /connect flow wallet/i }))
+    fireEvent.click(screen.getByRole("button", { name: "Connect Flow Wallet" }))
     await screen.findByText(/Flow Wallet 0x00000000000000bb/)
     wallet.disconnect.mockResolvedValueOnce(undefined)
     fireEvent.click(screen.getByRole("button", { name: /disconnect/i }))
-    expect(await screen.findByRole("button", { name: /connect flow wallet/i })).toBeTruthy()
+    expect(await screen.findByRole("button", { name: "Connect Flow Wallet" })).toBeTruthy()
   })
 })
