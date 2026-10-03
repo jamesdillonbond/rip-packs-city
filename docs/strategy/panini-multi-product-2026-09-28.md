@@ -238,3 +238,22 @@ What this thread added (each has a ledger entry with its revert path):
   `extra.enum.order_mode` should read `… N held-priority + …` with N up to ~300, and editions older than 7 days should stay 0
   past ~3 AM PT 10-04 (the oldest was last seen 09-27 2:58 AM PT).
 - After the box pulls (`interleaved` appears) AND stale > 7 d is still 0 → admit tier 2.
+
+### 2026-10-03 ~11:30 AM PT — the 10:00 AM run went silent after its walk-order read; runner now reports hang vs sleep
+
+- The 10:00 AM PT run did its auth preflight (10:00:10) and walk-order GET (10:00:11, 200, the aged-priority response),
+  then nothing: no enum marker (the last three runs posted theirs 32-37 min in), no card batch, no request, 85+ min.
+  Measured run shape for reference: enum marker ~35 min in, card walk until ~1h50m in (6:00 AM run: 6:37 enum, last
+  batch 7:52). The task's 2-hour limit ends a hung run, so the 2:00 PM run is not blocked.
+- From the server a HUNG runner (a `page.evaluate` into a frozen tab has no timeout) and a SLEEPING PC are the same silence.
+  **Shipped:** `scripts/panini-stall-watchdog.mjs` (armed after the walk-order read). The runner marks progress per
+  enumeration step, pack page and card; a 60 s check reports either
+  - `stall` — ticks on time, no progress for 15 min (`PANINI_STALL_MIN`): posted as a FAILED `panini-ingest-enum` row
+    with `runner hung: … in phase=<enum|packs|walk> (<sport / pack / n of N>)`, then the runner exits 4 so the next run's
+    Chrome preflight restarts a frozen browser; or
+  - `slept` — the clock jumped > 5 min between ticks: an ok `panini-ingest-enum` row with `extra.stall.kind = slept`;
+    the walk carries on.
+  Read it: `select started_at, ok, error, extra->'stall' from pipeline_runs where pipeline='panini-ingest-enum' and extra ? 'stall'`.
+  **Takes effect when the box pulls** (the runner loads code at run start). No row + silence after a pull = the process
+  died or the box was off — neither a hang nor a timer-visible sleep.
+- Tier 2 stays held (unchanged condition: a run logging `interleaved` and stale > 7 d still 0).
