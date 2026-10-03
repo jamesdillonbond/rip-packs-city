@@ -334,3 +334,10 @@ What this thread added (each has a ledger entry with its revert path):
   rotation. Keeping every edition < 7 days old is NOT reachable by ordering; the levers are per-card time (~13 s:
   serial paging + SALES HISTORY clicks), more runs, or narrowing which editions must stay fresh (e.g. held + listed).
   **Tier 2 stays held** until that is decided — admitting 25 more products only lengthens the rotation.
+- **~5:10 PM PT — Trevor chose "more runs".** Shipped: the walk-order GET serves `run_mode` (`lib/chains/panini/run-mode.ts`):
+  **full** at the old 2/6/10 AM-PM PT slots (grids + pack grid + pack pages + cards), **walk** at 12/4/8 AM-PM PT (cards
+  only, 105-min walk budget, still capped at 110 min of run time); a bootstrap run and a late catch-up start are always
+  full. The runner honours it (old runners ignore it → full). **On the box, once:** `git pull`, then
+  `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\panini-schedule-every-2h.ps1` (changes only the trigger
+  interval to PT2H; keeps WakeToRun / StartWhenAvailable / IgnoreNew / the 2 h limit; `-Hours 4` undoes). Expected: ~12
+  runs/day, ~2× the card-walk minutes. Measure after a day: editions refreshed per day (`last_seen_at`), and `> 6 d` count.
