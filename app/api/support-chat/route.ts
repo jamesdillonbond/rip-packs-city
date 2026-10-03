@@ -101,18 +101,28 @@ const CONCIERGE_MODEL = "claude-sonnet-4-6";
 // `concierge-model-error` pipeline_runs row puts it in front of the daytime
 // monitor + night-pass health sweep immediately. Best-effort — never throws
 // into the request path.
-function reportConciergeModelError(err: any): void {
+//
+// 2026-10-02: the same signal for a BILLING / KEY failure (`credit_balance`:
+// 401/402/403, "credit balance is too low", invalid key). That mode had no
+// telemetry at all — the concierge answered every user with the canned
+// "temporarily unavailable" line from 10:49 AM PT on 10-02 while nothing in
+// pipeline_runs, the sentinel or the monitors could see it. It now writes an
+// ok=false `concierge-billing-error` row per failed request.
+function reportConciergeModelError(err: any, mode: "model_error" | "credit_balance" = "model_error"): void {
   try {
     const detail = String(
       err?.error?.error?.message ?? err?.error?.message ?? err?.message ?? err ?? ""
     ).slice(0, 300);
+    const billing = mode === "credit_balance";
     after(() =>
       supabase
         .rpc("log_pipeline_run", {
-          p_pipeline: "concierge-model-error",
+          p_pipeline: billing ? "concierge-billing-error" : "concierge-model-error",
           p_started_at: new Date().toISOString(),
           p_ok: false,
-          p_error: `concierge model ${CONCIERGE_MODEL} rejected by Anthropic (likely retired): ${detail}`,
+          p_error: billing
+            ? `concierge call refused by Anthropic (billing / API key): ${detail}`
+            : `concierge model ${CONCIERGE_MODEL} rejected by Anthropic (likely retired): ${detail}`,
           p_extra: {
             model: CONCIERGE_MODEL,
             status: Number(err?.status ?? 0),
@@ -5575,7 +5585,7 @@ export async function POST(req: NextRequest) {
           await runLoop();
         } catch (err: any) {
           conciergeErrorMode = classifyAnthropicError(err);
-          if (conciergeErrorMode === "model_error") reportConciergeModelError(err);
+          if (conciergeErrorMode === "model_error" || conciergeErrorMode === "credit_balance") reportConciergeModelError(err, conciergeErrorMode);
           console.log("[support-chat] runLoop streaming error:", err?.status ?? "", err?.name ?? "", conciergeErrorMode, (err?.message ?? String(err)).slice(0, 120));
           try {
             await streamWriter!.write(encoder.encode("\n" + CONCIERGE_ERROR_MESSAGES[conciergeErrorMode].response));
@@ -5596,7 +5606,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     const m = String(err?.message ?? err);
     const mode = classifyAnthropicError(err);
-    if (mode === "model_error") reportConciergeModelError(err);
+    if (mode === "model_error" || mode === "credit_balance") reportConciergeModelError(err, mode);
     const meta = CONCIERGE_ERROR_MESSAGES[mode];
     const category = resolveCategory(parsedMessage ?? "", mode);
     console.log("[sc_err] status", err?.status ?? "");
