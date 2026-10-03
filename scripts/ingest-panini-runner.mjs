@@ -190,13 +190,14 @@ async function fetchWalkOrder() {
     if (sids.length) WALK_SETS = new Set(sids);
     if (Array.isArray(j?.discovery_sports) && j.discovery_sports.length) DISCOVERY_SPORTS = j.discovery_sports.filter((x) => typeof x === "string" && x);
     if (Array.isArray(j?.full_enum_sports) && j.full_enum_sports.length) FULL_ENUM_SPORTS = new Set(j.full_enum_sports.filter((x) => typeof x === "string"));
+    if (j?.run_mode === "walk") RUN_MODE = "walk";
     if (Array.isArray(j?.pack_urls)) SERVED_PACK_URLS = j.pack_urls.filter((x) => typeof x === "string" && x.startsWith(BASE + "/"));
     const list = Array.isArray(j?.pskus) ? j.pskus.filter((x) => typeof x === "string" && isWalked(x)) : [];
     const complete = j?.complete === true;
     // Held-but-uncatalogued editions (2026-09-29): walked BEFORE fresh discoveries. Absent (an
     // older deploy) -> [] and the order is exactly what it was.
     const priority = Array.isArray(j?.priority_pskus) ? j.priority_pskus.filter((x) => typeof x === "string" && isWalked(x)) : [];
-    console.log(`[panini-runner] walk order: ${list.length} known pskus, stalest first, complete=${complete} (oldest last_seen_at ${j?.oldest_last_seen_at ?? "?"}); walk sets=[${[...WALK_SETS].join(",")}] sports=[${DISCOVERY_SPORTS.join(",")}] pack pages=${SERVED_PACK_URLS ? SERVED_PACK_URLS.length : "fallback"} priority=${priority.length}`);
+    console.log(`[panini-runner] walk order: ${list.length} known pskus, stalest first, complete=${complete} (oldest last_seen_at ${j?.oldest_last_seen_at ?? "?"}); walk sets=[${[...WALK_SETS].join(",")}] sports=[${DISCOVERY_SPORTS.join(",")}] pack pages=${SERVED_PACK_URLS ? SERVED_PACK_URLS.length : "fallback"} priority=${priority.length} run=${RUN_MODE}`);
     return { list, complete, priority };
   } catch (e) {
     console.log(`[panini-runner] walk-order GET failed: ${e.message}; falling back to shuffle`);
@@ -214,6 +215,9 @@ let WALK_SETS = new Set([2332]);
 let DISCOVERY_SPORTS = ["Soccer"];
 let FULL_ENUM_SPORTS = new Set(["Soccer"]);
 let SERVED_PACK_URLS = null; // null = the route did not answer -> PACK_URLS fallback
+// "full" | "walk" (2026-10-03, lib/chains/panini/run-mode.ts): a WALK run skips the sport grids, the
+// pack grid and the pack pages and spends the whole run on cards. Unknown/absent -> full, as before.
+let RUN_MODE = "full";
 function setIdOf(psku) {
   const m = typeof psku === "string" ? psku.match(/^packcard-(\d+)_/) : null;
   return m ? Number(m[1]) : null;
@@ -687,7 +691,7 @@ async function main() {
   const DISCOVERY_BUDGET_MS = Number(process.env.PANINI_DISCOVERY_BUDGET_MIN || 3) * 60000;
   const sportStats = [];
   let domAdded = 0;
-  for (const sport of DISCOVERY_SPORTS) {
+  for (const sport of RUN_MODE === "walk" ? [] : DISCOVERY_SPORTS) {
   currentSport = sport;
   const full = FULL_ENUM_SPORTS.has(sport);
   const gridSeen0 = gridSeen, gridPages0 = gridPages, enum0 = enumPskus.size;
@@ -739,7 +743,7 @@ async function main() {
   // --- 1.5 SECONDARY PACK GRID (2026-10-03) — see scripts/panini-pack-grid.mjs. Finds subpack
   //     listings for every product with packs on the secondary market, not only current drops. ---
   const packGrid = [];
-  if (process.env.PANINI_PACK_GRID !== "0") {
+  if (process.env.PANINI_PACK_GRID !== "0" && RUN_MODE !== "walk") {
     const extra = String(process.env.PANINI_PACK_GRID_URLS || "").split(",").map((x) => x.trim()).filter(Boolean);
     const GRID_ITERS = Number(process.env.PANINI_PACK_GRID_ITERS || 40);
     // Whole-step budget: the run already ends ~1h52m into the task's 2 h limit (measured 10-03).
@@ -843,7 +847,7 @@ async function main() {
   // Post the enumeration record BEFORE the long per-card walk, so it lands even if the walk is
   // later killed (laptop sleep / unplug / rate-limit). Fire-and-forget semantics: post() already
   // swallows its own failures, and telemetry must never break the ingest it measures.
-  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, priority_order: priorityPskus.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size, packish_unmatched: [...packishUnmatched], pack_grid: packGrid, page_recoveries: pageRecoveries } });
+  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, priority_order: priorityPskus.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size, packish_unmatched: [...packishUnmatched], pack_grid: packGrid, page_recoveries: pageRecoveries, run_mode: RUN_MODE } });
   // Registry upkeep: every product the grids served + every pack link found. Never admits a
   // product or disables a page — the route only records sightings and new pages.
   await post({ products: productSightings, pack_pages: [...harvestedPackUrls].map((url) => ({ url, discovered: true })) });
@@ -861,7 +865,7 @@ async function main() {
   // 3.5 min (~5 s each). Pages rotate stalest-walk first (route GET), so the rest follow next run.
   const PACK_PAGES_MAX = Number(process.env.PANINI_PACK_PAGES_MAX || 60);
   const packVisits = [];
-  for (const url of packUrlList.slice(0, PACK_PAGES_MAX)) {
+  for (const url of RUN_MODE === "walk" ? [] : packUrlList.slice(0, PACK_PAGES_MAX)) {
     currentPackId = (url.match(/subpack-\d+-(\d+)\.html$/) || [])[1] || null;
     currentPackUrl = url;
     watchdog.mark("packs", url.slice(-80));
@@ -887,7 +891,8 @@ async function main() {
   // 50 -> 75 min (2026-09-23): serial paging (loadAllSerialPages) adds ~6,900 page loads per full
   // catalogue rotation (~2 s each, ~27% more time per card). Ticks are 4 h apart and enumeration
   // takes <=10 min, so a 75 min walk (+ the observed <=10 min last-batch overrun) ends ~95 min in.
-  const WALK_BUDGET_MS = Number(process.env.PANINI_WALK_BUDGET_MIN || 75) * 60000;
+  // A WALK run has no grid phase in front of it, so the card walk gets the run (RUN_DEADLINE still caps it).
+  const WALK_BUDGET_MS = Number(process.env.PANINI_WALK_BUDGET_MIN || (RUN_MODE === "walk" ? 105 : 75)) * 60000;
   const tWalk = Date.now();
   // Whole-RUN ceiling (2026-10-03): the scheduled task kills the run at 2 h, which loses the last
   // batch. The card walk also stops once the run is RUN_BUDGET_MIN old, so time spent earlier (the

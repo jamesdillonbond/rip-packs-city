@@ -41,6 +41,7 @@ import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc, pskuSetId } from "@/lib/chains/panini/ingest-normalize";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 import { parseStall } from "@/lib/chains/panini/stall-report";
+import { paniniRunMode } from "@/lib/chains/panini/run-mode";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -715,6 +716,10 @@ export async function GET(req: NextRequest) {
     // Non-empty = this run is narrowed to newly admitted products with no catalogue yet (above).
     bootstrap_set_ids: bootstrapIds,
     products_error: prod.error,
+    // "full" | "walk" (2026-10-03, lib/chains/panini/run-mode.ts). A bootstrap run is always full: it
+    // exists to DISCOVER a just-admitted product's cards, which only the grids can do. A runner older
+    // than this field ignores it and does a full run, as before.
+    run_mode: bootstrapIds.length ? "full" : paniniRunMode(new Date()),
     discovery_sports: discoverySports(),
     // Sports whose grid gets the FULL enumeration budget (discovery of walked products' new
     // editions); every other sport gets a short discovery pass that only has to see its setIds.

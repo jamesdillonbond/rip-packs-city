@@ -1,7 +1,7 @@
 @echo off
 REM ============================================================================
 REM One-time setup: registers the Panini ingest runner as a Windows scheduled
-REM task (every 4 hours). Double-click this file ONCE. No admin needed — it runs
+REM task (every 2 hours). Double-click this file ONCE. No admin needed — it runs
 REM in your own user session (the home-machine pattern; needs you logged in).
 REM
 REM PREREQUISITES (do these first, once):
@@ -20,10 +20,11 @@ if not exist "%RUN%" (
   pause & exit /b 1
 )
 
-schtasks /create /f /tn "%TASK%" /tr "\"%RUN%\"" /sc hourly /mo 4 /st 06:00
+REM Every 2 h since 2026-10-03: FULL runs at 2/6/10 AM-PM PT, WALK-only runs between (lib/chains/panini/run-mode.ts).
+schtasks /create /f /tn "%TASK%" /tr "\"%RUN%\"" /sc hourly /mo 2 /st 06:00
 if %errorlevel%==0 (
   echo.
-  echo Scheduled "%TASK%" to run every 4 hours starting 06:00.
+  echo Scheduled "%TASK%" to run every 2 hours starting 06:00.
   echo Run it now to test:   schtasks /run /tn "%TASK%"
   echo Remove it later with: schtasks /delete /tn "%TASK%" /f
   echo.

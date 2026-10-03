@@ -257,6 +257,24 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     expect(j.priority_pskus).toHaveLength(300)
   })
 
+  it("serves run_mode (walk-only runs between the full ones), and a bootstrap run is always full", async () => {
+    process.env.PANINI_RUN_MODE = "walk"
+    try {
+      expect((await (await GET(req())).json()).run_mode).toBe("walk")
+      // Bootstrap exists to DISCOVER a just-admitted product's cards — only the grids do that.
+      st.total = 4
+      st.products = { data: [
+        { set_id: 2332, name: "WC", walk_cards: true },
+        { set_id: 2420, name: "WNBA", walk_cards: true, last_grid_items: 1580, walk_cards_since: new Date(Date.now() - 3 * 3_600_000).toISOString() },
+      ], error: null }
+      const j = await (await GET(req())).json()
+      expect(j.bootstrap_set_ids).toEqual([2420])
+      expect(j.run_mode).toBe("full")
+    } finally {
+      delete process.env.PANINI_RUN_MODE
+    }
+  })
+
   it("pack pages are served stalest-walk first, so pages past the runner's per-run cap still rotate in", async () => {
     // 2026-10-03: the secondary-market pack grid can register more pages than PANINI_PACK_PAGES_MAX
     // (40). Ordered by url alone, every page past the cap would never be opened.
