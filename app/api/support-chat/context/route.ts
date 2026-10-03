@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
+import { isWellFormedSessionId, isBotSessionId } from "@/lib/concierge/request-guards";
 
 export const maxDuration = 10;
 // force-dynamic is REQUIRED, not decorative: GET reads req.nextUrl.searchParams,
@@ -69,7 +70,12 @@ function tierLabel(raw: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  const sessionId = req.nextUrl.searchParams.get("sessionId");
+  // Only the web widget calls this route. The session id keys a chat_sessions
+  // read + upsert, so it is bounded to the widget's own shape and the bot
+  // bridge's `tg:` / `dc:` DM keys are refused — a web caller must not read
+  // or bump another user's DM session row (2026-10-03 audit).
+  const rawSessionId = req.nextUrl.searchParams.get("sessionId");
+  const sessionId = isWellFormedSessionId(rawSessionId) && !isBotSessionId(rawSessionId) ? rawSessionId : null;
   // Beta posture: market-status / movers / dailyDeal are NOT included by default.
   // The chat widget no longer auto-fires a market-pulse follow-up message after
   // the greeting, and the bot can fetch live market data via its existing tools

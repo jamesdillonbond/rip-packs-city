@@ -30,13 +30,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { createClient } from "@supabase/supabase-js"
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags"
-
-const ALLOWED_ORIGINS = [
-  "https://rip-packs-city.vercel.app",
-  "https://rippackscity.com",
-  "https://www.rippackscity.com",
-  "http://localhost:3000",
-]
+import { ALLOWED_ORIGINS } from "@/lib/allowed-origins"
 
 const CORS_API_PATHS = ["/api/fmv", "/api/sniper-feed", "/api/health"]
 
