@@ -14,13 +14,14 @@
 // RPC tokens only — no hardcoded hex.
 
 import Link from "next/link"
-import { fetchMarketCapTileRow } from "@/lib/entity/market-cap-fetchers"
+import { fetchIssuerSplitTileRow, fetchMarketCapTileRow } from "@/lib/entity/market-cap-fetchers"
 // ⚠ Nothing here imports from market-cap-board.ts: that module holds the RPC
 // reads, and a value import from it would put every page that mounts this tile
 // on an unbounded path to them (check-unbounded-server-reads, 2026-10-03). The
 // types come via the bounded fetcher module; the helpers from the pure one.
-import type { MarketCapEntityGroup, MarketCapEntityRow } from "@/lib/entity/market-cap-fetchers"
+import type { IssuerSplitEditionRow, MarketCapEntityGroup, MarketCapEntityRow } from "@/lib/entity/market-cap-fetchers"
 import { collectionDisplayName, fmtCount, fmtUsdCompact, sevenDayChange } from "@/lib/insights/market-cap-format"
+import { isSplitKnown, splitStatusShort } from "@/lib/insights/topshot-issuer-split-format"
 import { Section, SectionUnavailable, StatCell } from "@/components/entity/_shared"
 
 const GRAIN_NOUN: Record<MarketCapEntityGroup, string> = {
@@ -37,15 +38,43 @@ function fmtPct(x: number | null, signed = false): string {
   return `${signed && v > 0 ? "+" : ""}${v}%`
 }
 
+/**
+ * A Top Shot edition's issuer-held split, read separately from the cap. `failed` =
+ * that read died (the cap still renders); `row` = it worked. Absent = not a Top
+ * Shot edition, or not a Top Shot edition the split knows — no cell at all.
+ */
+export type IssuerSplitState = { kind: "failed" } | { kind: "row"; row: IssuerSplitEditionRow }
+
+function IssuerSplitCell({ split }: { split: IssuerSplitState }) {
+  if (split.kind === "failed") {
+    return <StatCell label="Issuer-Held" value="—" sub="couldn't load the pack / reserve split" />
+  }
+  const r = split.row
+  const known = isSplitKnown(r)
+  return (
+    <StatCell
+      label="Issuer-Held"
+      value={fmtCount(r.hidden)}
+      sub={
+        known
+          ? `${fmtCount(r.in_packs)} in unopened packs${r.drops_with_packs ? ` (${fmtCount(r.drops_with_packs)} drop${r.drops_with_packs === 1 ? "" : "s"})` : ""} · ${fmtCount(r.reserve)} reserve, never packed`
+          : splitStatusShort(r.split_status)
+      }
+    />
+  )
+}
+
 export function MarketCapTileBody({
   row,
   group,
   stale = null,
+  split,
 }: {
   row: MarketCapEntityRow
   group: MarketCapEntityGroup
   /** From staleSince(): null = fresh, "unknown" = no stamp, else the PT time the figures are from. */
   stale?: string | null
+  split?: IssuerSplitState | null
 }) {
   const known = row.mcap_usd != null
   const hc = known && row.mcap_usd! > 0 && row.mcap_high_conf_usd != null ? row.mcap_high_conf_usd / row.mcap_usd! : null
@@ -81,6 +110,7 @@ export function MarketCapTileBody({
           value={change != null ? fmtPct(change, true) : "—"}
           sub={change != null ? `from ${fmtUsdCompact(row.mcap_usd_7d_ago)}` : "history began Oct 3, 2026"}
         />
+        {split && <IssuerSplitCell split={split} />}
       </div>
       {stale && (
         <div className="rpc-mono" role="status" style={{ marginTop: 10, fontSize: 11, lineHeight: 1.5, color: "var(--rpc-red)" }}>
@@ -110,13 +140,15 @@ export default async function MarketCapTile({
   match: string | null | undefined
 }) {
   if (!match) return null
-  let row: MarketCapEntityRow | null
-  let stale: string | null = null
-  try {
-    const got = await fetchMarketCapTileRow(group, collectionDbSlug, match)
-    row = got.row
-    stale = got.stale
-  } catch (e) {
+  // The issuer-held split exists for Top Shot editions only; read it alongside the
+  // cap so neither waits on the other, and so its failure cannot hide the cap.
+  const wantSplit = group === "edition" && collectionDbSlug === "nba_top_shot"
+  const [capRes, splitRes] = await Promise.allSettled([
+    fetchMarketCapTileRow(group, collectionDbSlug, match),
+    wantSplit ? fetchIssuerSplitTileRow(match) : Promise.resolve(null),
+  ])
+  if (capRes.status === "rejected") {
+    const e = capRes.reason
     console.error(`[market-cap tile] ${group} ${collectionDbSlug}/${match}`, e instanceof Error ? e.message : e)
     return (
       <Section title="Market Cap">
@@ -124,10 +156,19 @@ export default async function MarketCapTile({
       </Section>
     )
   }
+  const { row, stale } = capRes.value
   if (!row) return null
+  let split: IssuerSplitState | null = null
+  if (splitRes.status === "rejected") {
+    const e = splitRes.reason
+    console.error(`[market-cap tile] issuer split ${match}`, e instanceof Error ? e.message : e)
+    split = { kind: "failed" }
+  } else if (splitRes.value) {
+    split = { kind: "row", row: splitRes.value }
+  }
   return (
     <Section title="Market Cap">
-      <MarketCapTileBody row={row} group={group} stale={stale} />
+      <MarketCapTileBody row={row} group={group} stale={stale} split={split} />
     </Section>
   )
 }

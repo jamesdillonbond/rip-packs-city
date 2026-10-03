@@ -15,6 +15,14 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-10-03. One Top Shot edition's issuer-held split for the edition
+    // tile: one row or zero, only this printing's rows of each drop's current pass,
+    // NULL + status until provable, an unkeyable parallel → unknown.
+    fn: "get_topshot_issuer_held_split_edition",
+    test: "supabase/tests/get_topshot_issuer_held_split_edition.sql",
+    migration: "supabase/migrations/20261003232935_audit_20261003_topshot_issuer_held_split_one_edition.sql",
+  },
+  {
     // Added 2026-10-03. Atlas DistributionService walk for Top Shot pack supply: a
     // steady 2-request trickle that backs off while the market lane is 403'd; an
     // edition pass lands under its summary and closes on the page reaching totalCount.

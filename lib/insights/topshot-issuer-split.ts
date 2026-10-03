@@ -2,34 +2,22 @@
 //
 // Top Shot's issuer-held supply, split into Moments inside unopened packs (sold or
 // unsold) and reserve never put into any pack. Reads get_topshot_issuer_held_split()
-// (migration 20261003224608), which sums Atlas DistributionService pack summaries
-// against badge_editions.hidden_in_packs.
+// (migration 20261003224608) and get_topshot_issuer_held_split_edition()
+// (20261003232935), which sum Atlas DistributionService pack data against
+// badge_editions.hidden_in_packs. Types + display helpers: topshot-issuer-split-format.ts.
 //
 // ⚠ HONESTY — three states, never two:
-//   · the read FAILED            → fetchTopShotIssuerSplit throws; the page says so;
+//   · the read FAILED            → the fetchers throw; the caller says so;
 //   · the read worked, split NOT provable yet (first walk under way, a drop with packs
 //     left unread or > 48 h old) → split_status starts "pending:" and in_packs /
 //     reserve are null. That is "not known yet", NOT zero — render the status;
 //   · split_status "ok"          → in_packs and reserve are numbers.
 // Every nullable numeric stays null through `numOrNull`; nothing defaults to 0.
 
-export interface IssuerSplitRow {
-  /** null on the collection-total row. */
-  tier: string | null
-  editions: number
-  hidden: number | null
-  in_packs: number | null
-  reserve: number | null
-  editions_split_known: number
-  /** Issuer-held rows older than 36 h, EXCLUDED from `hidden` and disclosed here. */
-  editions_stale: number
-  hidden_stale: number
-  packs_unopened: number | null
-  packs_owned_by_collectors: number | null
-  split_status: string
-  /** Oldest summary read among drops with packs left — the split is no newer than this. */
-  as_of: string | null
-}
+import type { IssuerSplitEditionRow, IssuerSplitRow } from "@/lib/insights/topshot-issuer-split-format"
+
+export type { IssuerSplitEditionRow, IssuerSplitRow }
+export { isSplitKnown, splitStatusCopy, splitStatusShort, tierLabel } from "@/lib/insights/topshot-issuer-split-format"
 
 function numOrNull(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null
@@ -43,9 +31,13 @@ function int(v: unknown): number {
   return n
 }
 
+function strOrNull(v: unknown): string | null {
+  return v == null || v === "" ? null : String(v)
+}
+
 export function shapeIssuerSplitRow(r: Record<string, unknown>): IssuerSplitRow {
   return {
-    tier: r.tier == null || r.tier === "" ? null : String(r.tier),
+    tier: strOrNull(r.tier),
     editions: int(r.editions),
     hidden: numOrNull(r.hidden),
     in_packs: numOrNull(r.in_packs),
@@ -56,7 +48,7 @@ export function shapeIssuerSplitRow(r: Record<string, unknown>): IssuerSplitRow 
     packs_unopened: numOrNull(r.packs_unopened),
     packs_owned_by_collectors: numOrNull(r.packs_owned_by_collectors),
     split_status: String(r.split_status ?? ""),
-    as_of: r.as_of == null || r.as_of === "" ? null : String(r.as_of),
+    as_of: strOrNull(r.as_of),
   }
 }
 
@@ -76,22 +68,26 @@ export async function fetchTopShotIssuerSplit(
   return rows
 }
 
-export function isSplitKnown(r: IssuerSplitRow): boolean {
-  return r.split_status === "ok" && r.in_packs != null && r.reserve != null
-}
-
-/** "Common", "Legendary"… for the tier key Atlas uses (COMMON, LEGENDARY…). */
-export function tierLabel(tier: string | null): string {
-  if (tier == null) return "All tiers"
-  return tier.charAt(0) + tier.slice(1).toLowerCase()
-}
-
-/** Reader-facing status line for a split that is not "ok". */
-export function splitStatusCopy(status: string): string {
-  if (status === "ok") return ""
-  if (status.startsWith("pending:")) {
-    return `Not known yet — the pack-supply walk is still reading Top Shot's drops (${status.slice("pending:".length).trim()}).`
+/**
+ * One Top Shot edition's split. `null` = the read worked and the id is not a Top
+ * Shot edition (render nothing); a failed read THROWS.
+ */
+export async function fetchTopShotIssuerSplitEdition(
+  supabase: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  externalId: string,
+): Promise<IssuerSplitEditionRow | null> {
+  const { data, error } = await supabase.rpc("get_topshot_issuer_held_split_edition", { p_external_id: externalId })
+  if (error) throw new Error(error.message)
+  if (!Array.isArray(data)) throw new Error("issuer-split: edition RPC returned no row set")
+  const r = data[0] as Record<string, unknown> | undefined
+  if (!r) return null
+  return {
+    edition_external_id: String(r.edition_external_id ?? externalId),
+    hidden: numOrNull(r.hidden),
+    in_packs: numOrNull(r.in_packs),
+    reserve: numOrNull(r.reserve),
+    drops_with_packs: numOrNull(r.drops_with_packs),
+    split_status: String(r.split_status ?? ""),
+    as_of: strOrNull(r.as_of),
   }
-  if (status.startsWith("contradicted:")) return "Not shown — the pack count and the issuer-held count disagree."
-  return `Unknown — ${status.replace(/^unknown:\s*/, "")}.`
 }

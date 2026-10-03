@@ -10,7 +10,7 @@
 import type { CSSProperties } from "react"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { fmtCount } from "@/lib/insights/market-cap-format"
-import { isSplitKnown, splitStatusCopy, tierLabel, type IssuerSplitRow } from "@/lib/insights/topshot-issuer-split"
+import { isSplitKnown, splitStatusCopy, tierLabel, type IssuerSplitRow } from "@/lib/insights/topshot-issuer-split-format"
 
 const th = (align: "left" | "right"): CSSProperties => ({
   textAlign: align, padding: "10px 12px", fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.1em",

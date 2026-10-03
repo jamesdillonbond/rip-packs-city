@@ -7,12 +7,14 @@ import { render, cleanup } from "@testing-library/react"
 // unknown cap reads "Unknown" with its minted-supply bound (never $0) — plus the
 // rank / 7-day figures and the exact RPC arguments the page sends.
 
-const state: { calls: Array<{ fn: string; args: any }>; data: any; error: any } = { calls: [], data: [], error: null }
+const state: { calls: Array<{ fn: string; args: any }>; data: any; error: any; byFn: Record<string, { data: any; error: any }> } =
+  { calls: [], data: [], error: null, byFn: {} }
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     rpc: async (fn: string, args: any) => {
       state.calls.push({ fn, args })
+      if (state.byFn[fn]) return state.byFn[fn]
       return { data: state.error ? null : state.data, error: state.error }
     },
   },
@@ -26,6 +28,7 @@ beforeEach(() => {
   state.calls = []
   state.data = []
   state.error = null
+  state.byFn = {}
 })
 
 const ROW: MarketCapEntityRow = {
@@ -136,6 +139,53 @@ describe("MarketCapTile — freshness", () => {
   it("a missing refresh stamp is not read as fresh", () => {
     const { container } = render(<MarketCapTileBody group="player" row={ROW} stale="unknown" />)
     expect(container.textContent).toMatch(/not recorded/)
+  })
+})
+
+describe("MarketCapTile — Top Shot edition issuer-held split", () => {
+  const SPLIT_FN = "get_topshot_issuer_held_split_edition"
+  const ED = { ...ROW, group_label: "Jalen Brunson 2026 NBA Finals", editions: 1, editions_supply_known: 1, issuer_held: 50 }
+
+  it("reads the split for a Top Shot edition, with the page's own external id", async () => {
+    state.data = [ED]
+    state.byFn[SPLIT_FN] = { data: [{ edition_external_id: "261:8705", hidden: 50, in_packs: null, reserve: null, drops_with_packs: null, split_status: "pending: 4210 distribution(s) never read", as_of: null }], error: null }
+    await renderTile({ group: "edition", collectionDbSlug: "nba_top_shot", match: "261:8705" })
+    expect(state.calls.find((c) => c.fn === SPLIT_FN)?.args).toEqual({ p_external_id: "261:8705" })
+  })
+
+  it("a pending split shows the issuer-held count and says the split is not known — no 0 in packs", async () => {
+    state.data = [ED]
+    state.byFn[SPLIT_FN] = { data: [{ edition_external_id: "261:8705", hidden: 50, in_packs: null, reserve: null, drops_with_packs: null, split_status: "pending: x", as_of: null }], error: null }
+    const { container } = await renderTile({ group: "edition", collectionDbSlug: "nba_top_shot", match: "261:8705" })
+    const t = container.textContent ?? ""
+    expect(t).toContain("Issuer-Held")
+    expect(t).toContain("pack / reserve split not known yet")
+    expect(t).not.toContain("0 in unopened packs")
+    expect(t).not.toMatch(/reserve, never packed/)
+  })
+
+  it("a known split renders in-packs, drop count and reserve", async () => {
+    state.data = [ED]
+    state.byFn[SPLIT_FN] = { data: [{ edition_external_id: "261:8705", hidden: 50, in_packs: 6, reserve: 44, drops_with_packs: 2, split_status: "ok", as_of: "2026-10-05T16:00:00Z" }], error: null }
+    const { container } = await renderTile({ group: "edition", collectionDbSlug: "nba_top_shot", match: "261:8705" })
+    expect(container.textContent).toContain("6 in unopened packs (2 drops) · 44 reserve, never packed")
+  })
+
+  it("a FAILED split read says so — and the cap still renders", async () => {
+    state.data = [ED]
+    state.byFn[SPLIT_FN] = { data: null, error: { message: "57014" } }
+    const { container } = await renderTile({ group: "edition", collectionDbSlug: "nba_top_shot", match: "261:8705" })
+    const t = container.textContent ?? ""
+    expect(t).toContain("$4.50M")
+    expect(t).toContain("couldn't load the pack / reserve split")
+    expect(t).not.toContain("57014")
+  })
+
+  it("no split read for other collections or grains", async () => {
+    state.data = [ROW]
+    await renderTile({ group: "edition", collectionDbSlug: "nfl_all_day", match: "abc" })
+    await renderTile({ group: "player", collectionDbSlug: "nba_top_shot", match: "lebron-james" })
+    expect(state.calls.some((c) => c.fn === SPLIT_FN)).toBe(false)
   })
 })
 

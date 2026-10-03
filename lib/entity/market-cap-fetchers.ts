@@ -13,10 +13,12 @@ import {
   type MarketCapEntityGroup,
   type MarketCapEntityRow,
 } from "@/lib/insights/market-cap-board"
+import { fetchTopShotIssuerSplitEdition } from "@/lib/insights/topshot-issuer-split"
+import type { IssuerSplitEditionRow } from "@/lib/insights/topshot-issuer-split-format"
 
 // Re-exported so the tile (and any other server component) can take its types
 // from THIS bounded module instead of importing from the one that holds the reads.
-export type { MarketCapEntityGroup, MarketCapEntityRow }
+export type { MarketCapEntityGroup, MarketCapEntityRow, IssuerSplitEditionRow }
 
 export async function fetchMarketCapTileRow(
   group: MarketCapEntityGroup,
@@ -25,4 +27,12 @@ export async function fetchMarketCapTileRow(
 ): Promise<{ row: MarketCapEntityRow | null; stale: string | null }> {
   const row = await withBoardBudget(fetchMarketCapEntity(supabaseAdmin, group, collectionDbSlug, match), `market-cap ${group}`)
   return { row, stale: row ? staleSince(row.refreshed_at, Date.now()) : null }
+}
+
+/**
+ * One Top Shot edition's issuer-held split (inside unopened packs vs reserve), same
+ * budget. `null` = not a Top Shot edition; THROWS on a failed or slow read.
+ */
+export async function fetchIssuerSplitTileRow(externalId: string): Promise<IssuerSplitEditionRow | null> {
+  return withBoardBudget(fetchTopShotIssuerSplitEdition(supabaseAdmin, externalId), "issuer-held split edition")
 }
