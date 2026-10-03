@@ -29,6 +29,8 @@
 
 ## Item 2: drop the scratch table (Supabase MCP; Trevor approves the prompt)
 
+✅ **DONE 2026-10-03 ~1:21 PM PT (Claude Code, Windows box):** count 88 → `DROP TABLE` → `to_regclass` NULL. Ledger entry of the same stamp. Item 1 still open: the Dune account is on `visitor_fluid_engine` with a 0-credit quota, so the query cannot run without a plan decision.
+
 `public.scratch_flip_probe` is a finished 88-row hand control from 2026-10-03. Its comparison is done: the lane's 87 + 1 matched it. RLS is on and anon/authenticated access is revoked, so it is not exposed. It just shouldn't sit in `public`.
 
 1. `SELECT count(*) FROM public.scratch_flip_probe;`: expect 88. If it is not 88, stop: someone else is using it.
