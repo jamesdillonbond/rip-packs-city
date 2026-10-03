@@ -500,8 +500,10 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial,
               {showRange && (
                 <Area yAxisId="usd" type="monotone" dataKey="range" name="range" stroke="none" fill="#E03A2F" fillOpacity={0.12} connectNulls isAnimationActive={false} />
               )}
+              {/* brand-exception: recharts SVG stroke can't resolve var(--rpc-red) */}
               <Line yAxisId="usd" type="monotone" dataKey="value" name="value" stroke="#E03A2F" strokeWidth={2} dot={false} isAnimationActive={false} />
               {showAsp && source === "fmv" && (
+                /* brand-exception: recharts SVG stroke can't resolve theme tokens */
                 <Line yAxisId="usd" type="monotone" dataKey="asp" name="asp" stroke={light ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.65)"} strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls isAnimationActive={false} />
               )}
               {showMa && (
