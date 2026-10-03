@@ -50,7 +50,9 @@ export async function conciergeReply(
         // ownerKey (there's no auth cookie on a server-to-server call) and
         // rebuild DM conversation history server-side. Verified timing-safe
         // against INGEST_SECRET_TOKEN in the route.
-        "x-rpc-bot-secret": process.env.INGEST_SECRET_TOKEN ?? "",
+        // Dedicated bridge secret first (2026-10-03); the ingest token keeps
+        // working until BOT_BRIDGE_SECRET is set on both sides.
+        "x-rpc-bot-secret": process.env.BOT_BRIDGE_SECRET ?? process.env.INGEST_SECRET_TOKEN ?? "",
       },
       body: JSON.stringify({
         message: text.slice(0, 2000),

@@ -123,3 +123,17 @@ describe("the context route cannot read or bump a bot DM session row", () => {
     expect(CTX).not.toContain('const sessionId = req.nextUrl.searchParams.get("sessionId");')
   })
 })
+
+describe("get_team_checklist reads the same API the public team page renders", () => {
+  it("fetches /api/entity/team-checklist-full-editions, resolves the franchise, and never fabricates a zero FMV", () => {
+    const start = ROUTE.indexOf('if (toolName === "get_team_checklist") {')
+    expect(start).toBeGreaterThan(0)
+    const body = ROUTE.slice(start, start + 6000)
+    expect(body).toContain("/api/entity/team-checklist-full-editions?")
+    expect(body).toContain("await resolveTeamName(uuid, teamIn)")
+    expect(body).toContain('fmv: typeof e.fmv_usd === "number" && e.fmv_usd > 0 ? e.fmv_usd : null')
+    expect(body).toContain("0 = Series 1")
+    // A per-tool budget must exist, or the 6 s default races an ~1.2 s read on a cold lambda too tightly.
+    expect(ROUTE).toContain("get_team_checklist: 10000,")
+  })
+})

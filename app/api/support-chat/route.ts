@@ -297,6 +297,22 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "get_team_checklist",
+    description: "The team checklist exactly as the public /[collection]/team/[slug] page computes it: every edition the franchise has minted, grouped by series and tier, with the signed-in (or named) wallet's owned / missing split, cost to complete, and the most valuable missing editions. CALL THIS before answering or logging anything about a team checklist — 'Series 1 looks short', 'how many Pistons Legendaries are there', 'what am I missing for the Lakers', 'what would it cost to finish the Blazers' — so the answer carries the catalog's own counts instead of the user's guess. Top Shot series are the on-chain numbers: 0 is Series 1, 2 is Series 2, 3 is Summer 2021, 4 is Series 3, 5 is Series 4, 6/7/8 are the 2023-24 / 2024-25 / 2025-26 seasons; say the label, not the raw number. Defaults to the signed-in wallet; pass wallet to look at another collector (public on-chain holdings). Not for Pinnacle (no teams).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        team: { type: "string", description: "Team name or partial ('Pistons', 'Blazers', 'Chiefs'). Resolves to the franchise like get_team_intel." },
+        collectionId: { type: "string", description: "nba-top-shot, nfl-all-day, laliga-golazos or ufc. Defaults to the page's active collection, else nba-top-shot." },
+        wallet: { type: "string", description: "Optional wallet (0x + 16 hex) to score the checklist against. Defaults to the signed-in user's wallet; omit for the unscored catalog view." },
+        scope: { type: "string", enum: ["all_time", "contemporary"], description: "all_time (default) includes every era the franchise minted under; contemporary is the current-label era only." },
+        view: { type: "string", enum: ["all", "full"], description: "all (default) = every edition including parallels; full = the base editions only (one row per play)." },
+        missingLimit: { type: "number", description: "How many of the most valuable missing editions to list (default 15, max 40)." },
+      },
+      required: ["team"],
+    },
+  },
+  {
     name: "get_my_feedback_status",
     description: "The signed-in user's own logged bugs, feature requests and feedback, newest first, with the team's triage status for each (new / reviewed / in_progress / shipped / duplicate / wontfix) and when a shipped item went live. Call it when the user asks what happened to something they reported, whether a request shipped, or what they have logged. Bound to the signed-in account — never takes a username or wallet. For an anonymous user it answers that sign-in is required.",
     input_schema: {
@@ -4764,6 +4780,91 @@ async function executeToolInner(
   }
 
   // ── Team roster / squeeze / recent sales ──────────────────────────────────
+  // 2026-10-03: the team checklist the public page renders, so the concierge can
+  // CHECK a "Series 1 looks short" report against the catalog instead of
+  // asking the user to diagnose it (the #168 report took five turns to log
+  // and the catalog had the answer in one read).
+  if (toolName === "get_team_checklist") {
+    try {
+      const teamIn = String(toolInput.team ?? "").trim();
+      if (!teamIn) return JSON.stringify({ status: "error", message: "team is required." });
+      const slug = effectiveCollectionId ?? "nba-top-shot";
+      if (isPinnacle(slug)) return JSON.stringify({ status: "error", message: "Disney Pinnacle has no teams." });
+      const uuid = COLLECTION_UUID_BY_SLUG[slug] ?? null;
+      if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
+      const resolved = await resolveTeamName(uuid, teamIn);
+      if (resolved.status === "error") return JSON.stringify({ status: "error", message: resolved.safeCopy });
+      if (resolved.status === "no_results") {
+        return JSON.stringify({ status: "no_results", team: teamIn, collectionId: slug, message: `No team in ${slug} matches "${teamIn}". If the user is on a different sport's page, switch collectionId.` });
+      }
+      if (resolved.status === "ambiguous") {
+        return JSON.stringify({ status: "ambiguous", team: teamIn, collectionId: slug, candidates: resolved.candidates, message: "More than one FRANCHISE matches — ask the user which, then call again with that primary_name." });
+      }
+      const teamName = resolved.name;
+      const teamSlug = slugifyName(teamName);
+      const scope = toolInput.scope === "contemporary" ? "contemporary" : "all_time";
+      const view = toolInput.view === "full" ? "full" : "all";
+      const missingLimit = Math.min(Math.max(Math.trunc(Number(toolInput.missingLimit ?? 15)) || 15, 1), 40);
+      const walletIn = String(toolInput.wallet ?? ctx.userWallet ?? "").trim();
+      const wallet = /^0x[0-9a-f]{16}$/i.test(walletIn) ? walletIn.toLowerCase() : null;
+      const params = new URLSearchParams({ collection: slug, slug: teamSlug, scope, view });
+      if (wallet) params.set("wallet", wallet);
+      const res = await fetch(`${base}/api/entity/team-checklist-full-editions?${params.toString()}`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) {
+        return JSON.stringify({ status: "error", message: `The team checklist read failed (HTTP ${res.status}) — the catalog count could not be confirmed. Link the page: ${base}/${slug}/team/${teamSlug}` });
+      }
+      const body = await res.json();
+      const editions: any[] = Array.isArray(body?.editions) ? body.editions : [];
+      const progress = body?.progress ?? null;
+      // by series × tier, owned vs total
+      const bySeries: Record<string, Record<string, { total: number; owned: number }>> = {};
+      for (const e of editions) {
+        const sKey = String(e.series_num ?? e.series_label ?? "unknown");
+        const tier = String(e.tier ?? "UNKNOWN");
+        const row = (bySeries[sKey] ??= {});
+        const cell = (row[tier] ??= { total: 0, owned: 0 });
+        cell.total += 1;
+        if (e.owned) cell.owned += 1;
+      }
+      const missing = editions
+        .filter((e) => !e.owned)
+        .map((e) => ({
+          player: e.player_name ?? null,
+          set: e.set_name ?? null,
+          tier: e.tier ?? null,
+          series_num: e.series_num ?? null,
+          fmv: typeof e.fmv_usd === "number" && e.fmv_usd > 0 ? e.fmv_usd : null,
+          fmv_confidence: e.fmv_confidence ?? null,
+          floor_ask: typeof e.floor_usd === "number" && e.floor_usd > 0 ? e.floor_usd : null,
+          url: e.route_slug ? editionUrlFor(slug, String(e.route_slug)) : null,
+        }))
+        .sort((a, b) => (b.fmv ?? -1) - (a.fmv ?? -1))
+        .slice(0, missingLimit);
+      return JSON.stringify({
+        status: editions.length ? "ok" : "no_results",
+        collectionId: slug,
+        team: teamName,
+        team_url: `${base}/${slug}/team/${teamSlug}`,
+        scope,
+        view,
+        scored_wallet: wallet,
+        total_editions: editions.length,
+        progress,
+        by_series: bySeries,
+        series_note: slug === "nba-top-shot"
+          ? "Top Shot series_num is on-chain: 0 = Series 1, 2 = Series 2, 3 = Summer 2021, 4 = Series 3, 5 = Series 4, 6 = 2023-24, 7 = 2024-25, 8 = 2025-26. There is no series 1."
+          : "series_num is the collection's own series number.",
+        most_valuable_missing: missing,
+        message: wallet ? undefined : "No wallet scored — counts are the catalog; owned is 0 everywhere by construction.",
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: safeApiError(err, "get_team_checklist failed").error });
+    }
+  }
+
   if (toolName === "get_team_intel") {
     try {
       const teamIn = String(toolInput.team ?? "").trim();
@@ -4977,9 +5078,15 @@ function isSmokeTestRequest(req: NextRequest): boolean {
 function isTrustedBotRequest(req: NextRequest): boolean {
   const presented = req.headers.get("x-rpc-bot-secret");
   if (!presented) return false;
-  // Accept INGEST_SECRET_TOKEN or CRON_SECRET — the same server-secret pair
-  // every cron/admin route (and the proxy bypass) treats as equivalent.
-  for (const expected of [process.env.INGEST_SECRET_TOKEN, process.env.CRON_SECRET]) {
+  // 2026-10-03: a dedicated BOT_BRIDGE_SECRET is preferred — this header is a
+  // full impersonation key for the DM path (it lets the body set ownerId /
+  // ownerKey), and sharing it with the cron/ingest pair means every cron
+  // caller holds it too. When BOT_BRIDGE_SECRET is set, ONLY it is accepted;
+  // until it is set in Vercel (and lib/alerts/concierge-bridge.ts sends it),
+  // the legacy pair keeps the bridge working.
+  const dedicated = process.env.BOT_BRIDGE_SECRET;
+  const candidates = dedicated ? [dedicated] : [process.env.INGEST_SECRET_TOKEN, process.env.CRON_SECRET];
+  for (const expected of candidates) {
     if (!expected) continue;
     const a = Buffer.from(presented);
     const b = Buffer.from(expected);
@@ -5532,6 +5639,7 @@ export async function POST(req: NextRequest) {
               get_player_editions: 10000,
               resolve_player_name: 10000,
               get_team_intel: 10000,
+              get_team_checklist: 10000,
             };
             const toolBudget = TOOL_TIMEOUT_MS[tb.name] ?? 6000;
             const result = await Promise.race([

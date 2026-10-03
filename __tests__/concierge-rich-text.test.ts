@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parseRichText, safeHref, isExternalHref, type RichToken } from "@/lib/concierge/rich-text"
+import { parseRichText, safeHref, isExternalHref, isOffSiteHref, type RichToken } from "@/lib/concierge/rich-text"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // The concierge bubble used to render its message as a raw string, so every
@@ -206,6 +206,20 @@ describe("isExternalHref", () => {
     expect(isExternalHref("https://nbatopshot.com/x")).toBe(true)
     expect(isExternalHref("http://x.com")).toBe(true)
     expect(isExternalHref("/insights/deals")).toBe(false)
+  })
+})
+
+describe("isOffSiteHref (2026-10-03: the bubble marks links that leave the site)", () => {
+  it("is false for site paths and for absolute rippackscity.com links", () => {
+    expect(isOffSiteHref("/insights/deals")).toBe(false)
+    expect(isOffSiteHref("https://rippackscity.com/insights/trophies")).toBe(false)
+    expect(isOffSiteHref("https://www.rippackscity.com/nba-top-shot/edition/272:9030")).toBe(false)
+  })
+  it("is true for a marketplace, a look-alike host, and an unparseable absolute URL", () => {
+    expect(isOffSiteHref("https://nbatopshot.com/listings/p2p/x")).toBe(true)
+    expect(isOffSiteHref("https://rippackscity.com.evil.example/x")).toBe(true)
+    expect(isOffSiteHref("https://evil.example/rippackscity.com")).toBe(true)
+    expect(isOffSiteHref("https://%zz")).toBe(true)
   })
 })
 

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { track } from "@/lib/telemetry/track";
 import { getFunnelContext } from "@/lib/track-funnel";
 import { tierColorAlpha } from "@/lib/tier-color";
-import { parseRichText, isExternalHref } from "@/lib/concierge/rich-text";
+import { parseRichText, isExternalHref, isOffSiteHref } from "@/lib/concierge/rich-text";
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 import { trackOutboundClick } from "@/lib/track-click";
 
@@ -140,14 +140,21 @@ function MessageText({ text }: { text: string }) {
         if (t.type === "bold") return <strong key={i} style={{ fontWeight: 700 }}>{t.text}</strong>;
         if (t.type === "link") {
           const external = isExternalHref(t.href);
+          // An off-site destination is marked so a reader can tell a marketplace
+          // / explorer link from an RPC page before clicking (2026-10-03).
+          const offSite = isOffSiteHref(t.href);
+          let offSiteHost: string | null = null;
+          if (offSite) { try { offSiteHost = new URL(t.href).host; } catch { offSiteHost = null; } }
           return (
             <a
               key={i}
               href={t.href}
               {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+              {...(offSite ? { title: offSiteHost ? `Opens ${offSiteHost} (leaves Rip Packs City)` : "Leaves Rip Packs City", "data-offsite": "1" } : {})}
               style={{ color: "var(--rpc-red)", textDecoration: "underline", textUnderlineOffset: 2, wordBreak: "break-word" }}
             >
               {t.text}
+              {offSite ? <span aria-hidden="true" style={{ fontSize: "0.85em", marginLeft: 2 }}>↗</span> : null}
             </a>
           );
         }
@@ -307,6 +314,27 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // "delete my history" (2026-10-03): DELETE /api/support-chat/history is
+  // cookie-scoped — nothing in the request selects rows — and the widget only
+  // offers it to a signed-in reader. The local transcript is cleared on
+  // success so the panel does not keep showing turns the server no longer has.
+  const [historyDeleteState, setHistoryDeleteState] = useState<"idle" | "working" | "done" | "failed">("idle");
+  const deleteMyHistory = async () => {
+    if (historyDeleteState === "working") return;
+    const ok = typeof window !== "undefined"
+      ? window.confirm("Delete your concierge chat history from RPC? Bug reports and feature requests you logged stay in the team's queue with your account detached from them. This cannot be undone.")
+      : false;
+    if (!ok) return;
+    setHistoryDeleteState("working");
+    try {
+      const res = await fetch("/api/support-chat/history", { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setMessages([]);
+      setHistoryDeleteState("done");
+    } catch {
+      setHistoryDeleteState("failed");
+    }
+  };
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId] = useState(() => getOrCreateSessionId());
@@ -654,6 +682,21 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
               <div style={{ fontSize: 14, fontWeight: 700, color: "var(--rpc-text-primary)", letterSpacing: "-0.01em" }}>RPC Concierge</div>
               <div style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 1 }}>
                 {signedInLabel ? `Signed in as ${signedInLabel}` : "Beta support · Powered by Claude"}
+                {signedInLabel ? (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      onClick={deleteMyHistory}
+                      disabled={historyDeleteState === "working"}
+                      aria-label="Delete my chat history"
+                      title="Deletes your past concierge conversations from RPC. Bug reports and feature requests you logged are kept, with your account detached from them."
+                      style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "var(--rpc-text-muted)", textDecoration: "underline", textUnderlineOffset: 2, cursor: historyDeleteState === "working" ? "default" : "pointer" }}
+                    >
+                      {historyDeleteState === "working" ? "deleting…" : historyDeleteState === "done" ? "history deleted" : historyDeleteState === "failed" ? "delete failed — try again" : "delete my history"}
+                    </button>
+                  </>
+                ) : null}
               </div>
             </div>
             <button onClick={() => setIsOpen(false)} aria-label="Close chat" style={{ background: "none", border: "none", color: "var(--rpc-text-muted)", cursor: "pointer", padding: 4, fontSize: 18, lineHeight: 1, borderRadius: 6 }}>✕</button>

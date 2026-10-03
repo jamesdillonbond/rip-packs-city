@@ -174,3 +174,20 @@ export function parseRichText(input: string): RichToken[] {
 export function isExternalHref(href: string): boolean {
   return /^https?:\/\//i.test(href);
 }
+
+const SITE_HOSTS = new Set(["rippackscity.com", "www.rippackscity.com", "rip-packs-city.vercel.app"]);
+
+/**
+ * True when the href resolves to a host that is NOT this site — the case the
+ * bubble marks visibly (2026-10-03). An absolute rippackscity.com link opens
+ * in a new tab like any absolute URL but is not "off-site". Anything that
+ * fails to parse is treated as off-site, never as ours.
+ */
+export function isOffSiteHref(href: string): boolean {
+  if (!isExternalHref(href)) return false;
+  try {
+    return !SITE_HOSTS.has(new URL(href).host.toLowerCase());
+  } catch {
+    return true;
+  }
+}
