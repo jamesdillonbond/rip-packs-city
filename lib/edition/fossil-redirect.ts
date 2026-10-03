@@ -18,6 +18,7 @@
 // short race so a stuck pool cannot hold the page.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 
 export const FOSSIL_REDIRECT_TIMEOUT_MS = 2_000
 
@@ -34,15 +35,22 @@ export async function lookupTopShotFossilRedirect(decodedSlug: string): Promise<
   if (!isTopShotFossilKeyShape(decodedSlug)) return null
   const key = decodedSlug.toLowerCase()
   try {
-    const read = supabaseAdmin
-      .from("topshot_edition_uuid_redirects")
-      .select("canonical_slug")
-      .eq("fossil_slug", key)
-      .maybeSingle()
-    const timeout = new Promise<{ data: null; error: { message: string } }>((resolve) =>
-      setTimeout(() => resolve({ data: null, error: { message: "fossil redirect lookup timed out" } }), FOSSIL_REDIRECT_TIMEOUT_MS),
+    // The estate's shared bound (withBoardBudget): it rejects on timeout, which
+    // the catch below turns into null — the honest 404 — and it clears its
+    // timer, which the hand-rolled race this replaced (2026-10-03) did not.
+    // check-unbounded-server-reads recognises this helper, not a local race.
+    const { data, error } = await withBoardBudget(
+      Promise.resolve(
+        supabaseAdmin
+          .from("topshot_edition_uuid_redirects")
+          .select("canonical_slug")
+          .eq("fossil_slug", key)
+          .maybeSingle(),
+      ),
+      "fossil-redirect",
+      FOSSIL_REDIRECT_TIMEOUT_MS,
+      "edition/",
     )
-    const { data, error } = await Promise.race([read, timeout])
     if (error || !data) return null
     const canonical = (data as { canonical_slug?: unknown }).canonical_slug
     return typeof canonical === "string" && /^[0-9]+:[0-9]+$/.test(canonical) ? canonical : null
