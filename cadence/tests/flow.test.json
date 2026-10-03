@@ -1,6 +1,6 @@
 {
   "_comment_purpose": "Committed, secrets-free Flow CLI config for the RPCTradeEscrow test suite (flow test). The production hot-wallet flow.json (gitignored) is intentionally untouched. Run from the repo root: flow test -f cadence/tests/flow.test.json cadence/tests/RPCTradeEscrow_test.cdc",
-  "_comment_setup": "Populate the gitignored cadence/contracts/imports/ first: bash scripts/fetch-cadence-escrow-test-deps.sh — see cadence/tests/README.md. Source paths below are repo-root-relative (matching the tests/cadence/flow.test.json lint convention).",
+  "_comment_setup": "Populate the gitignored cadence/contracts/imports/ first: bash scripts/fetch-cadence-escrow-test-deps.sh \u2014 see cadence/tests/README.md. Source paths below are repo-root-relative (matching the tests/cadence/flow.test.json lint convention).",
   "contracts": {
     "RPCTradeEscrow": {
       "source": "cadence/contracts/RPCTradeEscrow.cdc",
@@ -63,6 +63,12 @@
         "testing": "0000000000000001",
         "testnet": "9a0766d93b6608b7",
         "mainnet": "f233dcee88fe0abe"
+      }
+    },
+    "RPCGiveawayPacks": {
+      "source": "cadence/contracts/RPCGiveawayPacks.cdc",
+      "aliases": {
+        "testing": "0000000000000007"
       }
     }
   },

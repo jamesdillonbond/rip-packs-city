@@ -52,6 +52,16 @@ cadence/
         └── trade_id_exists.cdc
 ```
 
+## RPCGiveawayPacks (added 2026-10-03)
+
+`RPCGiveawayPacks_test.cdc` covers the DRAFT sealed-pack escrow (`cadence/contracts/RPCGiveawayPacks.cdc`, undeployed): sealing moves the NFTs, only the sealing sponsor assigns or reclaims, assignment happens once, anyone can open but only to the winner, the 30-day reclaim delay, a receiver-less winner leaves the pack intact, and mixed-type and empty packs are refused. It runs in the same CI job:
+
+```bash
+flow test -f cadence/tests/flow.test.json cadence/tests/RPCTradeEscrow_test.cdc cadence/tests/RPCGiveawayPacks_test.cdc
+```
+
+⚠ **A sandbox's older Flow CLI (v2.2.8, seen 2026-10-03) fails on master's MetadataViews** (`cannot find type in this scope: MetadataViews`). Locally, swap the three gitignored standard imports for flow-nft's `lib/go/contracts/v1.2.2/contracts/{NonFungibleToken,MetadataViews,ViewResolver}.cdc`. CI installs the latest CLI and keeps master.
+
 ## Setup & run
 
 Everything needed is committed except the standard-contract sources

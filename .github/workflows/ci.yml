@@ -395,8 +395,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Fetch test contract dependencies
         run: bash scripts/fetch-cadence-escrow-test-deps.sh
-      - name: Run RPCTradeEscrow test suite
-        run: flow test -f cadence/tests/flow.test.json cadence/tests/RPCTradeEscrow_test.cdc
+      # RPCGiveawayPacks (2026-10-03): the DRAFT sealed-pack escrow, undeployed;
+      # gates its no-drain / sponsor-binding / reclaim-delay properties.
+      - name: Run RPCTradeEscrow + RPCGiveawayPacks test suites
+        run: flow test -f cadence/tests/flow.test.json cadence/tests/RPCTradeEscrow_test.cdc cadence/tests/RPCGiveawayPacks_test.cdc
 
   # Vitest unit suites (__tests__/**). Previously the suites existed but nothing
   # ran them in CI — a break in the FMV engine, the pack-EV math, the slug↔DB

@@ -294,6 +294,32 @@ At median prices, 25 packs of 3 commons cost about **$25**. Add 5 rare "hits" fo
 4. **Only if manual gifting is the bottleneck:** the linked-wallet batch transaction (§7.2). That needs the first real mainnet test and the narrow read-only exception.
 5. **Only if admins not delivering becomes a real problem:** the escrow contract (§5).
 
+## 9. A real pack (2026-10-03, Trevor: "Would we ever be able to do an actual pack?" → "Do it all")
+
+**Shipped first, no contract:** the claim page now shows a sealed pack the claimer opens card by card, lowest value first and the chase card last (`app/giveaways/[slug]/PackRevealClient.tsx`). It is presentation only; the pack was dealt and fingerprinted at sealing.
+
+**The Dapper question, measured (read-only mainnet script via pg_net, 2026-10-03):** 21 Top Shot accounts (20 sampled from `wallet_usernames` + Trevor's) hold **100+ NFT collection types from dozens of contract accounts**, many third-party (FLOAT, MFL, Gaia, Flovatar, FlowtyWrapped, Seussibles…). So these accounts *can* hold new types. The chain can't show which are Dapper-custodial or whether each type needed Dapper's approval.
+
+**The contract sidesteps it:** `cadence/contracts/RPCGiveawayPacks.cdc` (DRAFT, NOT deployed). A pack is not a token in the winner's account. It lives in the contract and opens straight into the winner's EXISTING collection, so:
+- a custodial account needs no new collection set up;
+- an unopened pack can't be listed or traded (the lottery-shaped design §2.3 rules out).
+
+How it works:
+- **seal:** the sponsor moves 1–50 same-type NFTs in; they leave the sponsor's account then.
+- **assign:** only the sealing sponsor can name the winner, and only once.
+- **open:** anyone can trigger it, but the NFTs can only go to the winner.
+- **reclaim:** for an unassigned pack, or an assigned one unopened for 30 days.
+- **No admin and no drain path.**
+
+Tests: `cadence/tests/RPCGiveawayPacks_test.cdc` has 11, and they gate CI. Planted defects (sponsor check removed, reclaim delay removed) are caught.
+
+**Before mainnet (Trevor's call):**
+1. An external audit.
+2. A dedicated deploy account; consider revoking its keys after the audit, so the rules can't change under a sealed pack.
+3. A seal transaction through Hybrid Custody, the same legs as Deliver all.
+4. Wire `open` into the claim flow. Who pays the open fee (the sponsor in Deliver all, or an RPC key) widens the read-only exception if it's RPC.
+5. Pack contents are public on chain from sealing. Fairness rests on the claim drawing a random unclaimed pack, and `claim_giveaway_pack` already does (`ORDER BY gen_random_uuid() LIMIT 1`, checked 2026-10-03). Keep it that way: a claim that let people choose a pack number would let them pick the chase.
+
 ## Sources
 
 - Vaultopolis drops API (live, 2026-09-29, via `pg_net`); CoinGecko FLOW/USD 90-day chart.
