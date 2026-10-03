@@ -1,11 +1,15 @@
 -- DB invariant: community pack giveaways — create_giveaway_draft, seal_giveaway_drop,
--- claim_giveaway_pack (supabase/migrations/20260929192842_audit_20260929_community_pack_giveaways.sql).
+-- claim_giveaway_pack (supabase/migrations/20260929192842_audit_20260929_community_pack_giveaways.sql;
+-- create_giveaway_draft (now a pass-through) + claim_giveaway_pack redefined and create_giveaway_draft_multi added by
+-- 20261003230716_audit_20261003_giveaway_pool_spans_linked_wallets.sql: a pool spans the sponsor's linked accounts).
 -- The properties that matter:
 --   * a draft copies ONLY the admin's own, UNLOCKED, same-collection cache rows
 --     (a moment_id is unique only within a collection);
 --   * a seal covers the pool exactly once, and only a draft can be sealed;
 --   * a claim is refused unless the drop is open, is one per account and per
 --     recipient, never to the admin's own wallet, and never hands out a pack twice.
+--   * a multi-account pool checks every (moment, source) pair against THAT source's
+--     cache rows, stores the source, and a claim can't target any pool source.
 -- The function DDL below is a VERBATIM copy of the migration;
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if it drifts.
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -61,6 +65,7 @@ CREATE TABLE IF NOT EXISTS public.giveaway_pack_moments (
   last_checked_at           timestamptz,
   last_check_recipient_holds boolean,
   last_check_admin_holds     boolean,
+  source_wallet             text NOT NULL CHECK (source_wallet ~ '^0x[0-9a-f]{16}$'),
   PRIMARY KEY (drop_id, moment_id),
   CONSTRAINT giveaway_pack_moments_pack_and_slot_together CHECK ((pack_no IS NULL) = (slot IS NULL))
 );
@@ -111,7 +116,10 @@ BEGIN
     RETURN QUERY SELECT NULL::int, 'not_open'::text; RETURN;
   END IF;
 
-  IF v_recipient = v_drop.admin_wallet THEN
+  -- the sponsor's own wallet, or any account the pool is drawn from
+  IF v_recipient = v_drop.admin_wallet
+     OR EXISTS (SELECT 1 FROM public.giveaway_pack_moments m
+                 WHERE m.drop_id = p_drop_id AND m.source_wallet = v_recipient) THEN
     RETURN QUERY SELECT NULL::int, 'admin_recipient'::text; RETURN;
   END IF;
 
@@ -139,6 +147,105 @@ END;
 $function$;
 -- <<< END verbatim claim_giveaway_pack <<<
 
+-- >>> BEGIN verbatim create_giveaway_draft_multi (keep byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.create_giveaway_draft_multi(
+  p_slug text,
+  p_title text,
+  p_description text,
+  p_sponsor_name text,
+  p_collection_id uuid,
+  p_admin_wallet text,
+  p_pack_count int,
+  p_moments_per_pack int,
+  p_moment_ids text[],
+  p_source_wallets text[]
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_id uuid;
+  v_wallet text := lower(trim(p_admin_wallet));
+  v_ids text[] := ARRAY(SELECT DISTINCT unnest(p_moment_ids));
+  v_sources text[];
+  v_found int;
+  v_missing text[];
+  v_locked text[];
+BEGIN
+  IF cardinality(v_ids) <> cardinality(p_moment_ids) THEN
+    RAISE EXCEPTION 'giveaway: the pool lists a moment twice' USING ERRCODE = '22023';
+  END IF;
+  IF cardinality(v_ids) <> p_pack_count * p_moments_per_pack THEN
+    RAISE EXCEPTION 'giveaway: % moments selected; % packs of % need %',
+      cardinality(v_ids), p_pack_count, p_moments_per_pack, p_pack_count * p_moments_per_pack
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_source_wallets IS NULL THEN
+    v_sources := array_fill(v_wallet, ARRAY[cardinality(p_moment_ids)]);
+  ELSE
+    IF cardinality(p_source_wallets) <> cardinality(p_moment_ids) THEN
+      RAISE EXCEPTION 'giveaway: % moments but % source wallets', cardinality(p_moment_ids), cardinality(p_source_wallets)
+        USING ERRCODE = '22023';
+    END IF;
+    v_sources := ARRAY(SELECT lower(trim(s)) FROM unnest(p_source_wallets) WITH ORDINALITY AS u(s, n) ORDER BY n);
+    IF EXISTS (SELECT 1 FROM unnest(v_sources) s WHERE s IS NULL OR s !~ '^0x[0-9a-f]{16}$') THEN
+      RAISE EXCEPTION 'giveaway: a source wallet is not a Flow 0x address' USING ERRCODE = '22023';
+    END IF;
+  END IF;
+
+  SELECT ARRAY(SELECT p.mid || '@' || p.src FROM unnest(p_moment_ids, v_sources) AS p(mid, src)
+                WHERE NOT EXISTS (SELECT 1 FROM public.wallet_moments_cache w
+                                   WHERE w.wallet_address = p.src
+                                     AND w.collection_id = p_collection_id
+                                     AND w.moment_id = p.mid))
+    INTO v_missing;
+  IF cardinality(v_missing) > 0 THEN
+    RAISE EXCEPTION 'giveaway: not held per the cache (moment@wallet): %', array_to_string(v_missing, ',')
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT ARRAY(SELECT DISTINCT w.moment_id FROM unnest(p_moment_ids, v_sources) AS p(mid, src)
+                 JOIN public.wallet_moments_cache w
+                   ON w.wallet_address = p.src
+                  AND w.collection_id = p_collection_id
+                  AND w.moment_id = p.mid
+                WHERE w.is_locked IS NOT FALSE)
+    INTO v_locked;
+  IF cardinality(v_locked) > 0 THEN
+    RAISE EXCEPTION 'giveaway: locked (or lock unknown), cannot be gifted: %', array_to_string(v_locked, ',')
+      USING ERRCODE = '22023';
+  END IF;
+
+  INSERT INTO public.giveaway_drops
+    (slug, title, description, sponsor_name, collection_id, admin_wallet, pack_count, moments_per_pack)
+  VALUES
+    (lower(trim(p_slug)), trim(p_title), nullif(trim(p_description), ''), trim(p_sponsor_name),
+     p_collection_id, v_wallet, p_pack_count, p_moments_per_pack)
+  RETURNING id INTO v_id;
+
+  INSERT INTO public.giveaway_pack_moments
+    (drop_id, moment_id, source_wallet, edition_key, player_name, set_name, team_name, tier, serial_number, fmv_usd, image_url)
+  SELECT DISTINCT ON (p.mid)
+         v_id, p.mid, p.src, w.edition_key, w.player_name, w.set_name, w.team_name, w.tier,
+         w.serial_number, w.fmv_usd, w.image_url
+    FROM unnest(p_moment_ids, v_sources) AS p(mid, src)
+    JOIN public.wallet_moments_cache w
+      ON w.wallet_address = p.src
+     AND w.collection_id = p_collection_id
+     AND w.moment_id = p.mid
+   ORDER BY p.mid, w.last_seen_at DESC NULLS LAST;
+
+  GET DIAGNOSTICS v_found = ROW_COUNT;
+  IF v_found <> cardinality(v_ids) THEN
+    RAISE EXCEPTION 'giveaway: copied % of % pool moments', v_found, cardinality(v_ids) USING ERRCODE = 'P0001';
+  END IF;
+  RETURN v_id;
+END;
+$function$;
+-- <<< END verbatim create_giveaway_draft_multi <<<
+
 -- >>> BEGIN verbatim create_giveaway_draft (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.create_giveaway_draft(
   p_slug text,
@@ -155,68 +262,10 @@ RETURNS uuid
 LANGUAGE plpgsql
 SET search_path TO 'public'
 AS $function$
-DECLARE
-  v_id uuid;
-  v_wallet text := lower(trim(p_admin_wallet));
-  v_ids text[] := ARRAY(SELECT DISTINCT unnest(p_moment_ids));
-  v_found int;
-  v_missing text[];
-  v_locked text[];
 BEGIN
-  IF cardinality(v_ids) <> cardinality(p_moment_ids) THEN
-    RAISE EXCEPTION 'giveaway: the pool lists a moment twice' USING ERRCODE = '22023';
-  END IF;
-  IF cardinality(v_ids) <> p_pack_count * p_moments_per_pack THEN
-    RAISE EXCEPTION 'giveaway: % moments selected; % packs of % need %',
-      cardinality(v_ids), p_pack_count, p_moments_per_pack, p_pack_count * p_moments_per_pack
-      USING ERRCODE = '22023';
-  END IF;
-
-  SELECT ARRAY(SELECT i FROM unnest(v_ids) i
-                WHERE NOT EXISTS (SELECT 1 FROM public.wallet_moments_cache w
-                                   WHERE w.wallet_address = v_wallet
-                                     AND w.collection_id = p_collection_id
-                                     AND w.moment_id = i))
-    INTO v_missing;
-  IF cardinality(v_missing) > 0 THEN
-    RAISE EXCEPTION 'giveaway: not held by % per the cache: %', v_wallet, array_to_string(v_missing, ',')
-      USING ERRCODE = '22023';
-  END IF;
-
-  SELECT ARRAY(SELECT w.moment_id FROM public.wallet_moments_cache w
-                WHERE w.wallet_address = v_wallet
-                  AND w.collection_id = p_collection_id
-                  AND w.moment_id = ANY (v_ids)
-                  AND w.is_locked IS NOT FALSE)
-    INTO v_locked;
-  IF cardinality(v_locked) > 0 THEN
-    RAISE EXCEPTION 'giveaway: locked (or lock unknown), cannot be gifted: %', array_to_string(v_locked, ',')
-      USING ERRCODE = '22023';
-  END IF;
-
-  INSERT INTO public.giveaway_drops
-    (slug, title, description, sponsor_name, collection_id, admin_wallet, pack_count, moments_per_pack)
-  VALUES
-    (lower(trim(p_slug)), trim(p_title), nullif(trim(p_description), ''), trim(p_sponsor_name),
-     p_collection_id, v_wallet, p_pack_count, p_moments_per_pack)
-  RETURNING id INTO v_id;
-
-  INSERT INTO public.giveaway_pack_moments
-    (drop_id, moment_id, edition_key, player_name, set_name, team_name, tier, serial_number, fmv_usd, image_url)
-  SELECT DISTINCT ON (w.moment_id)
-         v_id, w.moment_id, w.edition_key, w.player_name, w.set_name, w.team_name, w.tier,
-         w.serial_number, w.fmv_usd, w.image_url
-    FROM public.wallet_moments_cache w
-   WHERE w.wallet_address = v_wallet
-     AND w.collection_id = p_collection_id
-     AND w.moment_id = ANY (v_ids)
-   ORDER BY w.moment_id, w.last_seen_at DESC NULLS LAST;
-
-  GET DIAGNOSTICS v_found = ROW_COUNT;
-  IF v_found <> cardinality(v_ids) THEN
-    RAISE EXCEPTION 'giveaway: copied % of % pool moments', v_found, cardinality(v_ids) USING ERRCODE = 'P0001';
-  END IF;
-  RETURN v_id;
+  -- v1 call: every moment comes from the admin wallet
+  RETURN public.create_giveaway_draft_multi(p_slug, p_title, p_description, p_sponsor_name, p_collection_id,
+                                            p_admin_wallet, p_pack_count, p_moments_per_pack, p_moment_ids, NULL);
 END;
 $function$;
 -- <<< END verbatim create_giveaway_draft <<<
@@ -386,6 +435,49 @@ SELECT pg_temp._claim('a3', '00000000-0000-0000-0000-000000000001', '0x000000000
 SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'late'), 'not_open', 'C8 a closed drop refuses new claims');
 SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'a3'), 'already_claimed', 'C8 an existing claimer can still read their pack after close');
 
-SELECT '✓ giveaways: draft refusals (size, duplicate, locked, unknown lock, other collection, other wallet), seal coverage, claim outcomes' AS result;
+SELECT _assert_eq((SELECT string_agg(DISTINCT source_wallet, ',') FROM giveaway_pack_moments), '0x00000000000000aa',
+                  'D8 a v1 call (no sources) records every moment as from the admin wallet');
+
+-- M1..M5: a pool across the sponsor's linked accounts (2026-10-03)
+DELETE FROM giveaway_drops;
+INSERT INTO wallet_moments_cache (wallet_address, moment_id, collection_id, player_name, fmv_usd, is_locked, last_seen_at) VALUES
+  ('0x00000000000000bb', '9', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'I', 9.00, true, now());
+CREATE OR REPLACE FUNCTION pg_temp._try_multi(p_label text, p_ids text[], p_sources text[]) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM create_giveaway_draft_multi('m-' || p_label, 'Multi drop', NULL, 'Sponsor', '95f28a17-224a-4025-96ad-adf8a4c63bfd',
+                                '0x00000000000000ff', 2, 2, p_ids, p_sources);
+  INSERT INTO _gw_raised VALUES ('m-' || p_label, NULL);
+EXCEPTION WHEN OTHERS THEN
+  INSERT INTO _gw_raised VALUES ('m-' || p_label, SQLERRM);
+END $$;
+SELECT pg_temp._try_multi('wrongsource', ARRAY['1','2','3','8'], ARRAY['0x00000000000000aa','0x00000000000000aa','0x00000000000000aa','0x00000000000000aa']);
+-- both accounts are sources, but each moment is attributed to the WRONG one
+SELECT pg_temp._try_multi('swapped', ARRAY['1','2','3','8'], ARRAY['0x00000000000000bb','0x00000000000000aa','0x00000000000000aa','0x00000000000000aa']);
+SELECT pg_temp._try_multi('lengths', ARRAY['1','2','3','8'], ARRAY['0x00000000000000aa','0x00000000000000bb']);
+SELECT pg_temp._try_multi('badaddr', ARRAY['1','2','3','8'], ARRAY['0x00000000000000aa','0x00000000000000aa','0x00000000000000aa','bb']);
+SELECT pg_temp._try_multi('lockedsrc', ARRAY['1','2','3','9'], ARRAY['0x00000000000000aa','0x00000000000000aa','0x00000000000000aa','0x00000000000000bb']);
+SELECT _assert((SELECT msg LIKE '%not held%8@0x00000000000000aa%' FROM _gw_raised WHERE label = 'm-wrongsource'), 'M1 a moment is checked against ITS source, not any linked account');
+SELECT _assert((SELECT msg LIKE '%1@0x00000000000000bb%8@0x00000000000000aa%' FROM _gw_raised WHERE label = 'm-swapped'),
+               'M1 pairs, not sets: a moment held by ANOTHER of the pool''s sources is still refused');
+SELECT _assert((SELECT msg LIKE '%source wallets%' FROM _gw_raised WHERE label = 'm-lengths'), 'M2 one source per moment');
+SELECT _assert((SELECT msg LIKE '%not a Flow 0x address%' FROM _gw_raised WHERE label = 'm-badaddr'), 'M2 a malformed source is refused');
+SELECT _assert((SELECT msg LIKE '%locked%' FROM _gw_raised WHERE label = 'm-lockedsrc'), 'M3 a locked moment in a linked account is refused');
+SELECT _assert_eq((SELECT count(*)::text FROM giveaway_drops), '0', 'M3 refused multi-account drafts leave nothing behind');
+
+SELECT pg_temp._try_multi('ok', ARRAY['1','2','3','8'], ARRAY['0x00000000000000AA','0x00000000000000aa','0x00000000000000aa','0x00000000000000bb']);
+SELECT _assert_eq((SELECT msg FROM _gw_raised WHERE label = 'm-ok'), NULL, 'M4 a pool across two accounts is created');
+SELECT _assert_eq((SELECT admin_wallet FROM giveaway_drops), '0x00000000000000ff', 'M4 the sponsor is the connected wallet');
+SELECT _assert_eq((SELECT string_agg(moment_id || '@' || source_wallet, ',' ORDER BY moment_id) FROM giveaway_pack_moments),
+                  '1@0x00000000000000aa,2@0x00000000000000aa,3@0x00000000000000aa,8@0x00000000000000bb', 'M4 each moment keeps its own source (lowercased)');
+
+UPDATE giveaway_drops SET status = 'open', seal_hash = repeat('a', 64), seal_salt = repeat('b', 64), sealed_at = now(), opened_at = now();
+SELECT pg_temp._claim('srcbb', '00000000-0000-0000-0000-000000000011', '0x00000000000000BB');
+SELECT pg_temp._claim('sponsor', '00000000-0000-0000-0000-000000000012', '0x00000000000000ff');
+SELECT pg_temp._claim('fan', '00000000-0000-0000-0000-000000000013', '0x0000000000000013');
+SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'srcbb'), 'admin_recipient', 'M5 a pack can not be claimed to a linked account the pool comes from');
+SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'sponsor'), 'admin_recipient', 'M5 nor to the sponsor wallet');
+SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'fan'), 'claimed', 'M5 anyone else still claims');
+
+SELECT '✓ giveaways: draft refusals (size, duplicate, locked, unknown lock, other collection, other wallet), seal coverage, claim outcomes, multi-account pools' AS result;
 
 ROLLBACK;

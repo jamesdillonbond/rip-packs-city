@@ -80,12 +80,17 @@ const PINS = [
     // account and per recipient, never to the admin, never a pack twice.
     fn: "claim_giveaway_pack",
     test: "supabase/tests/giveaways.sql",
-    migration: "supabase/migrations/20260929192842_audit_20260929_community_pack_giveaways.sql",
+    migration: "supabase/migrations/20261003230716_audit_20261003_giveaway_pool_spans_linked_wallets.sql",
   },
   {
     fn: "create_giveaway_draft",
     test: "supabase/tests/giveaways.sql",
-    migration: "supabase/migrations/20260929192842_audit_20260929_community_pack_giveaways.sql",
+    migration: "supabase/migrations/20261003230716_audit_20261003_giveaway_pool_spans_linked_wallets.sql",
+  },
+  {
+    fn: "create_giveaway_draft_multi",
+    test: "supabase/tests/giveaways.sql",
+    migration: "supabase/migrations/20261003230716_audit_20261003_giveaway_pool_spans_linked_wallets.sql",
   },
   {
     fn: "seal_giveaway_drop",
