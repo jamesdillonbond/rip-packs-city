@@ -10,6 +10,8 @@
 //   · dollars count each sale ONCE however many clicks preceded it, and only
 //     confirmed + likely; a capped purchase list says it was capped.
 //   · bot clicks (link-preview fetchers) are shown apart from human ones.
+//   · the headline counts are SALES, not clicks, and EXTERNAL only: internal accounts'
+//     own buys (every confirmed one so far was the founder's) are stated apart.
 
 import { useState } from "react";
 import { useAdminResource } from "@/lib/admin/use-admin-resource";
@@ -28,6 +30,9 @@ export interface ClickPurchasesPayload {
     purchases_possible: number;
     sales_confirmed_or_likely: number;
     usd_confirmed_or_likely: number;
+    /** Distinct sales clicked only by internal accounts (founder / brand / QA) — not traction. */
+    purchases_internal: number;
+    usd_internal: number;
   };
   purchases_truncated: boolean;
   funnel: FunnelRow[];
@@ -145,7 +150,9 @@ export default function ClickPurchasesClient() {
             clicker&apos;s own wallet; <b>likely</b> = that exact moment sold within 2 h at about the clicked ask;{" "}
             <b>possible</b> = a sale followed the click, nothing more. Dollars count each sale once, confirmed + likely only.
             {" "}All clicks {data.totals.clicks} · bots {data.totals.clicks - data.totals.clicks_human} · internal{" "}
-            {data.totals.clicks_internal}. Matching runs hourly. Generated {fmtPt(data.generated_at)}.
+            {data.totals.clicks_internal}. Headline counts are distinct sales by non-internal clickers; internal
+            accounts&apos; own buys: {data.totals.purchases_internal} ({fmtUsd(data.totals.usd_internal)}). The
+            by-surface table counts clicks. Matching runs hourly. Generated {fmtPt(data.generated_at)}.
             {data.purchases_truncated && (
               <span style={{ display: "block", color: "#eab308" }}>
                 The purchase list hit its row cap — the dollar total and the list below are a lower bound.
@@ -167,7 +174,7 @@ export default function ClickPurchasesClient() {
               rows={data.purchases.map((p) => [
                 fmtPt(p.clicked_at),
                 [p.player_name, p.set_name].filter(Boolean).join(" · ") || p.nft_id || "—",
-                [p.source, p.surface, p.channel].filter(Boolean).join(" · "),
+                [p.source, p.surface, p.channel, p.internal ? "internal" : null].filter(Boolean).join(" · "),
                 <span key="c" style={{ color: CONF_COLOR[p.confidence] }}>
                   {p.confidence}
                   {p.match === "same_edition" ? " (edition)" : ""}

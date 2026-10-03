@@ -16,7 +16,7 @@ const payload: ClickPurchasesPayload = {
   generated_at: "2026-10-01T04:00:00Z",
   days: 30,
   since_day_pt: "2026-08-31",
-  totals: { clicks: 9, clicks_human: 7, clicks_internal: 1, purchases_confirmed: 1, purchases_likely: 1, purchases_possible: 0, sales_confirmed_or_likely: 1, usd_confirmed_or_likely: 0.25 },
+  totals: { clicks: 9, clicks_human: 7, clicks_internal: 1, purchases_confirmed: 1, purchases_likely: 1, purchases_possible: 0, sales_confirmed_or_likely: 1, usd_confirmed_or_likely: 0.25, purchases_internal: 2, usd_internal: 0.67 },
   purchases_truncated: false,
   funnel: [
     { day_pt: "2026-09-30", source: "alert", surface: "alert", collection_slug: "nba_top_shot", clicks: 5, clicks_human: 4, clicks_internal: 1, purchases_confirmed: 1, purchases_likely: 0, purchases_possible: 0, sales_confirmed_or_likely: 1, usd_confirmed_or_likely: 0.25 },
@@ -24,7 +24,8 @@ const payload: ClickPurchasesPayload = {
     { day_pt: "2026-09-29", source: "site", surface: "sniper", collection_slug: "nba_top_shot", clicks: 2, clicks_human: 2, clicks_internal: 0, purchases_confirmed: 0, purchases_likely: 0, purchases_possible: 0, sales_confirmed_or_likely: 0, usd_confirmed_or_likely: 0 },
   ],
   purchases: [
-    { click_id: 1, clicked_at: "2026-10-01T03:00:00Z", collection_slug: "nba_top_shot", sale_source: "sales", sale_ref: "s1", nft_id: "16818", sold_at: "2026-10-01T03:04:00Z", price_usd: 0.25, match: "same_moment", confidence: "confirmed", buyer_is_clicker: true, minutes_after_click: 4, surface: "alert", source: "alert", channel: "telegram", player_name: "Greg Brown III", set_name: "Hustle and Show", ask_price_usd: 0.25 },
+    { click_id: 1, clicked_at: "2026-10-01T03:00:00Z", collection_slug: "nba_top_shot", sale_source: "sales", sale_ref: "s1", nft_id: "16818", sold_at: "2026-10-01T03:04:00Z", price_usd: 0.25, match: "same_moment", confidence: "confirmed", buyer_is_clicker: true, minutes_after_click: 4, surface: "alert", source: "alert", channel: "telegram", player_name: "Greg Brown III", set_name: "Hustle and Show", ask_price_usd: 0.25, internal: false },
+    { click_id: 2, clicked_at: "2026-10-01T03:20:00Z", collection_slug: "nba_top_shot", sale_source: "sales", sale_ref: "s2", nft_id: "17931743", sold_at: "2026-10-01T03:21:00Z", price_usd: 0.41, match: "same_moment", confidence: "confirmed", buyer_is_clicker: true, minutes_after_click: 1, surface: "alert", source: "alert", channel: "telegram", player_name: "Jarrett Jack", set_name: "Archive Set", ask_price_usd: 0.41, internal: true },
   ],
 }
 
@@ -53,6 +54,13 @@ describe("ClickPurchasesClient", () => {
     expect(screen.getByText(/Greg Brown III · Hustle and Show/)).toBeTruthy()
     expect(screen.getByText("$0.25 → $0.25")).toBeTruthy()
     expect(screen.queryByText(/row cap/)).toBeNull()
+  })
+
+  it("states internal accounts' own buys apart from the headline, and tags the row", () => {
+    render(<ClickPurchasesClient />)
+    expect(screen.getByText(/own buys: 2 \(\$0\.67\)/)).toBeTruthy()
+    expect(screen.getByText("alert · alert · telegram · internal")).toBeTruthy()
+    expect(screen.getByText("alert · alert · telegram")).toBeTruthy()
   })
 
   it("a capped list says the total is a lower bound", () => {

@@ -63,6 +63,43 @@ export interface PurchaseRow {
   player_name: string | null;
   set_name: string | null;
   ask_price_usd: number | null;
+  /** The click came from an internal_accounts user (founder / brand / QA): not traction. */
+  internal: boolean;
+}
+
+const CONF_RANK: Record<string, number> = { confirmed: 3, likely: 2, possible: 1 };
+
+/**
+ * Headline purchase counts, per SALE and EXTERNAL only (2026-10-03).
+ *
+ * The totals used to be the view's per-CLICK counts summed: two taps on one alert
+ * (Trevor, Jarrett Jack #8982, 10-01) read as two confirmed purchases. And every
+ * confirmed purchase so far was the founder's own — internal_accounts are excluded
+ * from traction everywhere else (CLAUDE.md), so they are counted apart here too.
+ * A sale clicked by both an internal and an external user counts as external.
+ */
+export function purchaseTotals(purchases: PurchaseRow[]) {
+  const ext = new Map<string, PurchaseRow>();
+  const int = new Map<string, PurchaseRow>();
+  for (const p of purchases) {
+    const key = `${p.sale_source}:${p.sale_ref}`;
+    const m = p.internal ? int : ext;
+    const cur = m.get(key);
+    if (!cur || (CONF_RANK[p.confidence] ?? 0) > (CONF_RANK[cur.confidence] ?? 0)) m.set(key, p);
+  }
+  for (const k of ext.keys()) int.delete(k);
+  const count = (m: Map<string, PurchaseRow>, c: string) => [...m.values()].filter((p) => p.confidence === c).length;
+  const usd = (m: Map<string, PurchaseRow>) =>
+    Math.round([...m.values()].filter((p) => p.confidence !== "possible").reduce((a, p) => a + (p.price_usd ?? 0), 0) * 100) / 100;
+  return {
+    purchases_confirmed: count(ext, "confirmed"),
+    purchases_likely: count(ext, "likely"),
+    purchases_possible: count(ext, "possible"),
+    sales_confirmed_or_likely: count(ext, "confirmed") + count(ext, "likely"),
+    usd_confirmed_or_likely: usd(ext),
+    purchases_internal: int.size,
+    usd_internal: usd(int),
+  };
 }
 
 /** PT calendar date `days` ago, as YYYY-MM-DD (the view's day_pt is a PT date). */
@@ -81,19 +118,23 @@ export async function GET(req: NextRequest) {
   const sb = supabaseAdmin as any;
 
   try {
-    const [funnelRes, purchRes] = await Promise.all([
+    const [funnelRes, purchRes, internalRes] = await Promise.all([
       sb.from("click_purchase_funnel_daily").select("*").gte("day_pt", sinceDay).order("day_pt", { ascending: false }).limit(1000),
       sb
         .from("click_attributed_purchases")
         .select(
-          "click_id, clicked_at, collection_slug, sale_source, sale_ref, nft_id, sold_at, price_usd, match, confidence, buyer_is_clicker, minutes_after_click, outbound_clicks(surface, source, channel, player_name, set_name, ask_price_usd)"
+          "click_id, clicked_at, collection_slug, sale_source, sale_ref, nft_id, sold_at, price_usd, match, confidence, buyer_is_clicker, minutes_after_click, outbound_clicks(surface, source, channel, player_name, set_name, ask_price_usd, user_id)"
         )
         .gte("clicked_at", sinceIso)
         .order("clicked_at", { ascending: false })
         .limit(PURCHASE_CAP),
+      sb.from("internal_accounts").select("user_id").limit(1000),
     ]);
     if (funnelRes.error) throw new Error(`click_purchase_funnel_daily: ${funnelRes.error.message}`);
     if (purchRes.error) throw new Error(`click_attributed_purchases: ${purchRes.error.message}`);
+    // A failed internal read would move the founder's buys into traction — fail, never guess.
+    if (internalRes.error) throw new Error(`internal_accounts: ${internalRes.error.message}`);
+    const internalIds = new Set<string>(((internalRes.data ?? []) as Array<{ user_id: string }>).map((r) => r.user_id));
 
     const funnel = (funnelRes.data ?? []).map((r: any) => ({
       ...r,
@@ -113,21 +154,12 @@ export async function GET(req: NextRequest) {
         surface: c.surface ?? null, source: c.source ?? null, channel: c.channel ?? null,
         player_name: c.player_name ?? null, set_name: c.set_name ?? null,
         ask_price_usd: c.ask_price_usd == null ? null : Number(c.ask_price_usd),
+        internal: typeof c.user_id === "string" && internalIds.has(c.user_id),
       };
     });
 
     const sum = (k: keyof FunnelRow) => funnel.reduce((a, r) => a + (Number(r[k]) || 0), 0);
-    // Dollars: each SALE once, however many clicks preceded it (and however many
-    // surface/day groups it would otherwise be summed in).
-    const seen = new Set<string>();
-    let usd = 0;
-    for (const p of purchases) {
-      if (p.confidence === "possible") continue;
-      const key = `${p.sale_source}:${p.sale_ref}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      usd += p.price_usd ?? 0;
-    }
+    const pt = purchaseTotals(purchases);
 
     return NextResponse.json({
       generated_at: new Date().toISOString(),
@@ -137,11 +169,7 @@ export async function GET(req: NextRequest) {
         clicks: sum("clicks"),
         clicks_human: sum("clicks_human"),
         clicks_internal: sum("clicks_internal"),
-        purchases_confirmed: sum("purchases_confirmed"),
-        purchases_likely: sum("purchases_likely"),
-        purchases_possible: sum("purchases_possible"),
-        sales_confirmed_or_likely: seen.size,
-        usd_confirmed_or_likely: Math.round(usd * 100) / 100,
+        ...pt,
       },
       purchases_truncated: purchases.length >= PURCHASE_CAP,
       funnel,

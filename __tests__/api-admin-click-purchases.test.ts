@@ -26,11 +26,11 @@ import { GET, ptDateDaysAgo } from "@/app/api/admin/click-purchases/route"
 const authed = (qs = "") =>
   ({ headers: new Headers({ authorization: "Bearer tok" }), nextUrl: new URL(`https://x.test/api/admin/click-purchases${qs}`) }) as any
 
-const P = (click_id: number, sale_ref: string, confidence: string, price: number) => ({
+const P = (click_id: number, sale_ref: string, confidence: string, price: number, user_id: string | null = null) => ({
   click_id, clicked_at: "2026-09-30T20:00:00Z", collection_slug: "nba_top_shot", sale_source: "sales", sale_ref,
   nft_id: "1", sold_at: "2026-09-30T20:10:00Z", price_usd: price, match: "same_moment", confidence,
   buyer_is_clicker: confidence === "confirmed", minutes_after_click: 10,
-  outbound_clicks: { surface: "alert", source: "alert", channel: "telegram", player_name: "A", set_name: "B", ask_price_usd: price },
+  outbound_clicks: { surface: "alert", source: "alert", channel: "telegram", player_name: "A", set_name: "B", ask_price_usd: price, user_id },
 })
 
 beforeEach(() => {
@@ -49,6 +49,7 @@ beforeEach(() => {
       data: [P(1, "s1", "confirmed", 2), P(2, "s1", "likely", 2), P(3, "s2", "possible", 9)],
       error: null,
     },
+    internal_accounts: { data: [{ user_id: "founder" }], error: null },
   }
 })
 
@@ -58,15 +59,46 @@ describe("GET /api/admin/click-purchases", () => {
     expect(res.status).toBe(401)
   })
 
-  it("totals: clicks summed, dollars count each sale once and exclude possible", async () => {
+  // Re-pinned 2026-10-03: purchase counts are per SALE (best confidence), no longer per
+  // click — two clicks on s1 used to read as one confirmed AND one likely purchase.
+  it("totals: clicks summed; purchases and dollars count each SALE once at its best confidence", async () => {
     const body = await (await GET(authed())).json()
     expect(body.totals).toMatchObject({
       clicks: 8, clicks_human: 7, clicks_internal: 1,
-      purchases_confirmed: 1, purchases_likely: 1, purchases_possible: 1,
+      purchases_confirmed: 1, purchases_likely: 0, purchases_possible: 1,
       sales_confirmed_or_likely: 1, usd_confirmed_or_likely: 2,
+      purchases_internal: 0, usd_internal: 0,
     })
     expect(body.purchases[0]).toMatchObject({ surface: "alert", channel: "telegram", ask_price_usd: 2 })
     expect(body.purchases_truncated).toBe(false)
+  })
+
+  it("an internal account's own buys are not traction: counted apart, flagged on the row", async () => {
+    state.tables.click_attributed_purchases.data = [
+      P(1, "s1", "confirmed", 0.26, "founder"),
+      P(2, "s9", "confirmed", 0.41, "founder"),
+      P(3, "s9", "confirmed", 0.41, "founder"), // the same buy, clicked twice
+      P(4, "s4", "likely", 1.5, "someone"),
+    ]
+    const body = await (await GET(authed())).json()
+    expect(body.totals).toMatchObject({
+      purchases_confirmed: 0, purchases_likely: 1, sales_confirmed_or_likely: 1, usd_confirmed_or_likely: 1.5,
+      purchases_internal: 2, usd_internal: 0.67,
+    })
+    expect(body.purchases.map((p: any) => p.internal)).toEqual([true, true, true, false])
+  })
+
+  it("a sale an external user also clicked is external, not internal", async () => {
+    state.tables.click_attributed_purchases.data = [P(1, "s1", "likely", 2, "founder"), P(2, "s1", "possible", 2, "someone")]
+    const body = await (await GET(authed())).json()
+    expect(body.totals).toMatchObject({ purchases_possible: 1, purchases_internal: 0 })
+  })
+
+  it("a FAILED internal_accounts read is a 500 — the founder's buys never leak into traction", async () => {
+    state.tables.internal_accounts = { data: null, error: { message: "boom" } }
+    const res = await GET(authed())
+    expect(res.status).toBe(500)
+    expect((await res.json()).totals).toBeUndefined()
   })
 
   it("a FAILED funnel read is a 500 — never an empty board reading as zero purchases", async () => {
