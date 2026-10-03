@@ -90,6 +90,7 @@ import {
   MAX_MESSAGE_CHARS,
 } from "@/lib/concierge/request-guards";
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins";
+import { lookupUiField } from "@/lib/concierge/ui-field-dictionary";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -294,6 +295,18 @@ const TOOLS: Anthropic.Tool[] = [
         sentiment: { type: "string", enum: ["positive", "neutral", "negative"], description: "Overall vibe of the feedback." },
       },
       required: ["summary", "details", "sentiment"],
+    },
+  },
+  {
+    name: "explain_ui_field",
+    description: "What a number, badge, label or toggle on an RPC page MEANS, read from the rendering code — '+ $62.00 in the top right of a checklist card', 'what does the colour of the FMV mean', 'what is cost to complete', 'what is DEALS AFTER FEES', 'what is high offer'. CALL THIS FIRST when a user asks what something on the page is or says a figure does not match another figure; answer from the entry, cite the surface, and only then decide whether anything needs logging. Returns the best-matching entries with their meaning and the source file; an empty result means the field is not documented yet — say so, and log a feedback item so it gets added.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        question: { type: "string", description: "The user's words about the field, e.g. 'the +62.00 in the top right', 'why is FMV a different colour'." },
+        surface: { type: "string", description: "Optional: the page or component, e.g. 'team checklist', 'edition page', 'sniper', 'trophy case'. Defaults to the current page context." },
+      },
+      required: ["question"],
     },
   },
   {
@@ -1021,7 +1034,7 @@ Keep responses concise — most users are on mobile. Short paragraphs, not bulle
 ## Capturing Feedback (read this carefully — CHECK first, log ONCE, ask at most ONE question)
 When the user describes something that sounds like a bug — error messages, blank pages, wrong numbers, broken buttons, things that don't behave as expected — your job is to capture it cleanly AND, wherever you can, to tell them what is actually true. The three rules, in order:
 
-1. **Check before you ask.** If the report is about something a tool can read — an FMV, a listing, a wallet's holdings, a set or team's editions, a board row, a badge — run the tool FIRST and lead with what you found ("I count 17 Pistons Series 1 editions in the catalog: 6 Legendary, 9 Rare, 2 Common — so the checklist is short by 6"). Never ask the user to diagnose the product for you ("does the number match FMV?", "is Series 1 blank or missing?") when you can look it up. Put your finding in the log's details — a row that says "user reports X; catalog shows Y" is what the team can act on.
+1. **Check before you ask.** If the question is what a number, badge or toggle on the page MEANS, call explain_ui_field first. If the report is about something a tool can read — an FMV, a listing, a wallet's holdings, a set or team's editions (get_team_checklist), a board row, a badge — run the tool FIRST and lead with what you found ("I count 17 Pistons Series 1 editions in the catalog: 6 Legendary, 9 Rare, 2 Common — so the checklist is short by 6"). Never ask the user to diagnose the product for you ("does the number match FMV?", "is Series 1 blank or missing?") when you can look it up. Put your finding in the log's details — a row that says "user reports X; catalog shows Y" is what the team can act on.
 2. **Log on the first message when it already carries the surface and the symptom.** A URL, a page name, or the page you are on (the Current Page section) IS the surface. "Trophy case isn't showing special-serial badges — Debut and Rookie Year show fine" is loggable as-is. Device/browser, "what did you expect", and severity are things you note as "not stated" — they never block a log. Ask **at most one** clarifying question, and only when logging without the answer would produce a row the team cannot act on (no surface at all, or two different things it could mean). "I found a bug" with nothing else is the one case that always needs the question.
 3. **Log exactly once**, with a clean one-liner summary that captures the actual bug (e.g. "Sniper feed shows blank on iPhone Safari", NOT "I found a bug"), details that include the user's words plus whatever you verified, the page, and a severity guess (high = blocking, medium = degraded, low = cosmetic). Then confirm in ONE line what you captured. Do not ask follow-up questions after logging unless the user raises something new; do not open a second round of "and is it mobile or desktop?".
 
@@ -4784,6 +4797,23 @@ async function executeToolInner(
   // CHECK a "Series 1 looks short" report against the catalog instead of
   // asking the user to diagnose it (the #168 report took five turns to log
   // and the catalog had the answer in one read).
+  if (toolName === "explain_ui_field") {
+    const question = String(toolInput.question ?? "").trim();
+    if (!question) return JSON.stringify({ status: "error", message: "question is required." });
+    const surface = String(toolInput.surface ?? ctx.pageContext ?? "").trim() || null;
+    const hits = lookupUiField(question, surface, 3);
+    if (!hits.length) {
+      return JSON.stringify({ status: "no_results", question, surface, message: "That field is not in the UI dictionary yet. Say so plainly, and log a feedback item ('UI field needs a tooltip: …') so it gets documented." });
+    }
+    return JSON.stringify({
+      status: "ok",
+      question,
+      surface,
+      entries: hits.map((h) => ({ surface: h.surface, field: h.field, meaning: h.meaning, source: h.source })),
+      note: "Each meaning was read from the named source file. Quote the meaning; name the surface; do not invent fields that are not listed.",
+    });
+  }
+
   if (toolName === "get_team_checklist") {
     try {
       const teamIn = String(toolInput.team ?? "").trim();

@@ -137,3 +137,11 @@ describe("get_team_checklist reads the same API the public team page renders", (
     expect(ROUTE).toContain("get_team_checklist: 10000,")
   })
 })
+
+describe("explain_ui_field answers from the dictionary and the prompt points at it", () => {
+  it("is wired as a tool and named in the check-first rule", () => {
+    expect(ROUTE).toContain('if (toolName === "explain_ui_field") {')
+    expect(ROUTE).toContain("lookupUiField(question, surface, 3)")
+    expect(ROUTE).toContain("call explain_ui_field first")
+  })
+})
