@@ -106,6 +106,12 @@ describe("AlertsClient — the three legs fail independently", () => {
     mount({ channels: () => json(500, {}, false) })
     await waitFor(() => expect(document.body.textContent).toMatch(/Couldn't load your channel status/))
     expect(document.body.textContent).toMatch(/says nothing about what you have\s+linked/)
+    // ⚠ STRENGTHENED 2026-10-03: this test's title is a negative claim, and until
+    // today it asserted only the banner — while the list under it still said
+    // "not linked" with a Link button for every channel. Assert the ABSENCE.
+    expect(document.body.textContent).not.toMatch(/not linked/)
+    expect(screen.queryByRole("button", { name: /^Link (Email|Telegram|Discord)$/ })).toBeNull()
+    expect(document.body.textContent).toMatch(/status unavailable/)
     // The other two legs loaded and must still render.
     expect(document.body.textContent).toMatch(/Blazers under \$10/)
     expect(document.body.textContent).toMatch(/Damian Lillard/)
@@ -275,6 +281,29 @@ describe("AlertsClient — subscriptions and watched editions", () => {
 })
 
 describe("AlertsClient — delivery channels", () => {
+  // 2026-10-03, seen live: for ~2 s on every load, an account with all three
+  // channels linked read "Email not linked · Link Email" (×3). Before the read
+  // returns the page knows nothing, so it may claim nothing.
+  it("claims nothing about channels while the read is still in flight", async () => {
+    let release!: (r: Response) => void
+    const pending = new Promise<Response>((r) => { release = r })
+    const f = vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.includes("/api/alerts/channels")) return pending
+      if (url.includes("/api/alerts/subscriptions")) return json(200, { subscriptions: [] })
+      return json(200, [])
+    })
+    vi.stubGlobal("fetch", f)
+    render(<AlertsClient />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/checking…/))
+    expect(document.body.textContent).not.toMatch(/not linked/)
+    expect(screen.queryByRole("button", { name: /^Link (Email|Telegram|Discord)$/ })).toBeNull()
+    // Once it answers, the real state renders.
+    release(json(200, CHANNELS))
+    await waitFor(() => expect(document.body.textContent).toMatch(/✓ linked/))
+    expect(document.body.textContent).not.toMatch(/checking…/)
+  })
+
   it("shows a linked channel as linked", async () => {
     mount()
     await waitFor(() => expect(document.body.textContent).toMatch(/email/i))

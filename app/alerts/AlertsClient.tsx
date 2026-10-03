@@ -155,6 +155,12 @@ const EMPTY_FORM: FormState = {
 
 export default function AlertsClient() {
   const [channels, setChannels] = useState<ChannelState[]>([]);
+  // Whether `channels` holds a SUCCESSFUL read. Until it does — first load, or a
+  // failed reload — the channel list makes no claim: "not linked" + a Link button
+  // for a collector whose Telegram IS linked is a false statement about their own
+  // account (seen live 2026-10-03: every channel read "not linked" for ~2 s on
+  // load, for an account with all three linked).
+  const [channelsKnown, setChannelsKnown] = useState(false);
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [fmvAlerts, setFmvAlerts] = useState<FmvAlert[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -182,8 +188,13 @@ export default function AlertsClient() {
       // !ok response is what made an OUTAGE indistinguishable from "you have
       // none" — and every claim on this page is about the reader's OWN account,
       // which is the worst case for that conflation.
-      if (chRes.ok) setChannels((await chRes.json()).channels ?? []);
-      else setFailed((f) => ({ ...f, channels: true }));
+      if (chRes.ok) {
+        setChannels((await chRes.json()).channels ?? []);
+        setChannelsKnown(true);
+      } else {
+        setChannelsKnown(false);
+        setFailed((f) => ({ ...f, channels: true }));
+      }
 
       if (subRes.ok) setSubs((await subRes.json()).subscriptions ?? []);
       else setFailed((f) => ({ ...f, subs: true }));
@@ -197,6 +208,7 @@ export default function AlertsClient() {
     } catch {
       // A thrown fetch takes down all three legs of the Promise.all, so none of
       // the state below can be trusted.
+      setChannelsKnown(false);
       setFailed({ channels: true, subs: true, fmv: true });
     } finally {
       setLoading(false);
@@ -377,7 +389,11 @@ export default function AlertsClient() {
                 <div key={name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                   <div>
                     <span style={{ fontWeight: 700 }}>{label}</span>{" "}
-                    {st?.verified ? (
+                    {!channelsKnown ? (
+                      <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 12 }}>
+                        {failed.channels ? "status unavailable" : "checking…"}
+                      </span>
+                    ) : st?.verified ? (
                       <span style={{ color: "#34d399", fontSize: 12, fontFamily: MONO }}>
                         ✓ linked {st.target ? `(${st.target})` : ""}
                       </span>
@@ -386,7 +402,7 @@ export default function AlertsClient() {
                     )}
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
-                    {st?.verified ? (
+                    {!channelsKnown ? null : st?.verified ? (
                       <button onClick={() => unlink(name)} style={btnGhost}>Unlink</button>
                     ) : (
                       <button onClick={() => startLink(name)} style={btnGhost}>Link {label}</button>
