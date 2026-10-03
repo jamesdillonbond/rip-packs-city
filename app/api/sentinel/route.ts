@@ -13,6 +13,12 @@ import { summariseWallKills } from "@/lib/sentinel/wall-kills";
 import { summariseProbeCost } from "@/lib/sentinel/probe-cost";
 import { summarisePgNet } from "@/lib/sentinel/pg-net";
 import { summariseMaintenanceLoad } from "@/lib/sentinel/maintenance-load";
+import { summariseContinuity, CONTINUITY_CHECK_NAME } from "@/lib/sentinel/continuity";
+import {
+  summariseCorrelatedTickLoss,
+  CORRELATED_TICK_LOSS_CHECK_NAME,
+  CORRELATED_TICK_LOSS_DEFAULT_WARN_AT,
+} from "@/lib/sentinel/correlated-tick-loss";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { createWallBudgetFetch, type WallBudgetClock } from "@/lib/sentinel/wall-budget";
 import { currentSentinelClock, withSentinelClock } from "@/lib/sentinel/clock-store";
@@ -304,7 +310,9 @@ const SENTINEL_MAX_DELTA_NAMES = 6;
  */
 export type SentinelPrevious =
   | { ok: true; names: string[]; at: string | null }
-  | { ok: false; reason: string };
+  // `at` is present when a previous sweep row WAS read but its names were not
+  // usable: the delta is unavailable, the gap is still measurable (R77).
+  | { ok: false; reason: string; at?: string | null };
 
 // The previous-sweep read is the ONE terminal-phase request that runs before
 // delivery, so its bound is part of the delivery guarantee: with the checks
@@ -351,8 +359,14 @@ async function queryPreviousSweep(supabase: any, nowIso: string): Promise<Sentin
       .eq("pipeline", "sentinel")
       .lt("started_at", nowIso)
       .order("started_at", { ascending: false })
-      .limit(1);
-    const prevRow = Array.isArray(prevRows) ? prevRows[0] : null;
+      .limit(5);
+    // ⚠ Skip rows the GitHub RUNNER wrote (`extra.source = 'github-actions'`):
+    // those record that the route did NOT complete (pipeline-sentinel.yml's
+    // unreachable path), so they carry no check names and must not count as a
+    // sweep — for the header delta or for Alarm Continuity (R77).
+    const prevRow = Array.isArray(prevRows)
+      ? (prevRows.find((r: any) => (r?.extra as any)?.source !== "github-actions") ?? null)
+      : null;
     const prevExtra = (prevRow?.extra ?? null) as Record<string, any> | null;
     if (prevErr) {
       previous = { ok: false, reason: `read failed: ${prevErr.message}` };
@@ -367,7 +381,7 @@ async function queryPreviousSweep(supabase: any, nowIso: string): Promise<Sentin
     ) {
       // A row whose `extra` carries neither key is not a measured zero: older
       // rows predate those keys, and a partial write leaves them absent.
-      previous = { ok: false, reason: "earlier sweep stored no check names" };
+      previous = { ok: false, reason: "earlier sweep stored no check names", at: prevRow.started_at ?? null };
     } else {
       const w = Array.isArray(prevExtra.warn) ? prevExtra.warn : [];
       const c = Array.isArray(prevExtra.critical) ? prevExtra.critical : [];
@@ -2922,6 +2936,41 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     },
   });
 
+  // ── CORRELATED TICK LOSS (R77, 2026-10-03) ───────────────────────────────
+  // A dip small per lane and large across the fleet — 28 pipelines each
+  // missing one tick on 09-01 — is invisible to every per-pipeline arm above.
+  // Argument + calibration: lib/sentinel/correlated-tick-loss.ts and migration
+  // 20261003191353. ~7,500 buffers per sweep.
+  tailArms.push({
+    name: CORRELATED_TICK_LOSS_CHECK_NAME,
+    run: async () => {
+  try {
+    const { data: ctData, error: ctErr } = await supabase.rpc("check_correlated_tick_loss");
+    if (ctErr) {
+      const sat = isSaturationError(ctErr.message);
+      tailChecks.push({
+        name: CORRELATED_TICK_LOSS_CHECK_NAME,
+        status: "warn",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(ctErr.message)}`,
+      });
+    } else {
+      const verdict = summariseCorrelatedTickLoss(
+        ctData as any,
+        thr(CORRELATED_TICK_LOSS_CHECK_NAME, "warn_at", CORRELATED_TICK_LOSS_DEFAULT_WARN_AT),
+        formatPT,
+      );
+      tailChecks.push({ name: CORRELATED_TICK_LOSS_CHECK_NAME, status: verdict.status, detail: verdict.detail, value: verdict.value });
+    }
+  } catch (e: any) {
+    tailChecks.push({
+      name: CORRELATED_TICK_LOSS_CHECK_NAME,
+      status: "warn",
+      detail: exceptionDetail(e),
+    });
+  }
+    },
+  });
+
   for (const arm of rotateStarvedTail(tailArms, now.getTime())) {
     await arm.run();
   }
@@ -2962,6 +3011,45 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       status: "warn",
       detail: exceptionDetail(e),
     });
+  }
+
+  // Every query-issuing arm has run (or been refused). From here the
+  // previous-sweep read, delivery and the terminal write get whatever wall
+  // remains and are never refused: a sweep that spent its budget must still be
+  // able to say so. ⚠ Placed BEFORE the ack pass (moved 2026-10-03, R77) so
+  // `Alarm Continuity`, which reuses the previous-sweep read, is ackable and
+  // disable-able like every other arm; the ack, disable and blackout passes
+  // below issue no query, so the delivery guarantee is unchanged.
+  clock.phase = "terminal";
+
+  // The previous sweep's non-ok arm names, for the header delta. Read BEFORE
+  // this run is logged and strictly `.lt(now)`, so it can never read itself.
+  //
+  // ⚠ Every failure arm returns `ok: false` with a reason rather than an empty
+  // list. An empty list means "the last sweep was clean", which is a strong
+  // claim about the fleet — and in 21 runs of retention it has never once been
+  // true. Manufacturing it out of a failed read would put this repo's worst
+  // defect class inside the alarm itself.
+  //
+  // ⛔ BOUNDED TO PREVIOUS_SWEEP_READ_MS, NOT TO "WHATEVER THE WALL HAS LEFT"
+  // (R77, 2026-10-03). This read sits BETWEEN the checks and DELIVERY, and the
+  // terminal phase hands every request the whole remaining wall — so when the
+  // database HANGS rather than fails fast, this one header-garnish read can eat
+  // the interval Telegram and email were reserved, and the kill lands before
+  // either send. On 2026-09-18 (#122) GitHub fired this route at 16:38Z and got
+  // `504 FUNCTION_INVOCATION_TIMEOUT` three times running while Supabase
+  // answered Cloudflare `522`: the alarm RAN during the outage and died at its
+  // wall. ⚠ Which await ate that wall is NOT established (Vercel's logs for the
+  // day are gone) — this removes the one path that provably could, it does not
+  // claim to be the one that did. The delta line is worth a few seconds; it is
+  // not worth the page.
+  const previous = await readPreviousSweep(supabase, now.toISOString());
+
+  // The sentinel's own blind window (R77) — the one outage no other arm can
+  // report. Issues no query: it reuses the read above. See lib/sentinel/continuity.ts.
+  {
+    const v = summariseContinuity(previous, now.toISOString(), formatPT);
+    checks.push({ name: CONTINUITY_CHECK_NAME, status: v.status, detail: v.detail, value: v.value });
   }
 
   // A critical check with an UNEXPIRED ack is downgraded to warn — visible, reasoned,
@@ -3016,33 +3104,6 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     value: blackout.blind,
   });
 
-  // Every arm has run (or been refused). From here the previous-sweep read,
-  // delivery and the terminal write get whatever wall remains and are never
-  // refused: a sweep that spent its budget must still be able to say so.
-  clock.phase = "terminal";
-
-  // The previous sweep's non-ok arm names, for the header delta. Read BEFORE
-  // this run is logged and strictly `.lt(now)`, so it can never read itself.
-  //
-  // ⚠ Every failure arm returns `ok: false` with a reason rather than an empty
-  // list. An empty list means "the last sweep was clean", which is a strong
-  // claim about the fleet — and in 21 runs of retention it has never once been
-  // true. Manufacturing it out of a failed read would put this repo's worst
-  // defect class inside the alarm itself.
-  //
-  // ⛔ BOUNDED TO PREVIOUS_SWEEP_READ_MS, NOT TO "WHATEVER THE WALL HAS LEFT"
-  // (R77, 2026-10-03). This read sits BETWEEN the checks and DELIVERY, and the
-  // terminal phase hands every request the whole remaining wall — so when the
-  // database HANGS rather than fails fast, this one header-garnish read can eat
-  // the interval Telegram and email were reserved, and the kill lands before
-  // either send. On 2026-09-18 (#122) GitHub fired this route at 16:38Z and got
-  // `504 FUNCTION_INVOCATION_TIMEOUT` three times running while Supabase
-  // answered Cloudflare `522`: the alarm RAN during the outage and died at its
-  // wall. ⚠ Which await ate that wall is NOT established (Vercel's logs for the
-  // day are gone) — this removes the one path that provably could, it does not
-  // claim to be the one that did. The delta line is worth a few seconds; it is
-  // not worth the page.
-  const previous = await readPreviousSweep(supabase, now.toISOString());
 
   const hasCritical = checks.some((c) => c.status === "critical");
   const hasWarn = checks.some((c) => c.status === "warn");

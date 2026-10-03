@@ -152,6 +152,18 @@ function greenFixtures(): Fixtures {
       },
       error: null,
     },
+    // Correlated Tick Loss (R77, 2026-10-03). Healthy: a real clock population,
+    // the worst hour well under warn_at. Supplied explicitly — an omitted or
+    // empty payload is UNMEASURED by design, so leaving it out fails loudly.
+    "rpc:check_correlated_tick_loss": {
+      data: {
+        clock_pipelines: 132,
+        recent: "03:00:00",
+        history: "72:00:00",
+        hours: [{ due_hour: "2026-10-03T18:00:00Z", pipelines: 1, ticks: 1, sample: ["pinnacle-nft-resolver"] }],
+      },
+      error: null,
+    },
     "rpc:check_maintenance_load": {
       data: { vacuums: [], clusters: [], index_builds: [], autovacuum_workers: 0, autovacuum_max_workers: 3, io_waiters: 1, measured_at: "2026-09-13T18:56:01Z" },
       error: null,

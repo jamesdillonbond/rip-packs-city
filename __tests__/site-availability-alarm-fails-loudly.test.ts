@@ -209,6 +209,23 @@ describe("site-availability-alarm.yml", () => {
     expect(r.out).not.toMatch(/::warning::.*TELEGRAM_BOT_TOKEN/)
   })
 
+  // R77 (2026-10-03): an unreadable database is the outage every in-estate
+  // alarm shares, so this branch PAGES rather than only going red. On 09-18
+  // it fired with HTTP 522 and the red badge was the only record.
+  it("⭐ PAGES Telegram when the database cannot be read, and still fails", () => {
+    const r = run("<!DOCTYPE html><title>522</title> secret-ish body", { TELEGRAM_BOT_TOKEN: "tok", TELEGRAM_CHAT_ID: "123" }, "522")
+    expect(r.code).toBe(1)
+    expect(r.out).toMatch(/telegram HTTP 200/)
+    expect(r.out).toMatch(/UNKNOWN, not healthy/)
+  })
+
+  it("without the secrets, the unreadable-database branch says no page went out", () => {
+    const r = run("", {}, "522")
+    expect(r.code).toBe(1)
+    expect(r.out).toMatch(/::warning::.*TELEGRAM_BOT_TOKEN/)
+    expect(r.out).not.toMatch(/telegram HTTP/)
+  })
+
   it("schedules on minutes no other workflow in this repo uses", () => {
     const mine = new Set(String(doc.on.schedule[0].cron).split(" ")[0].split(",").map((m) => m.trim()))
     const others = new Set<string>()

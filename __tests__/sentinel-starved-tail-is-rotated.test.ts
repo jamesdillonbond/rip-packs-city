@@ -108,6 +108,7 @@ describe("the route wires the rotation, not just imports it", () => {
       "CADENCE_CHECK_NAME",
       "WALL_KILLS_CHECK_NAME",
       "PG_NET_CHECK_NAME",
+      "CORRELATED_TICK_LOSS_CHECK_NAME",
     ])
   })
 
