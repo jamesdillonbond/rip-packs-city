@@ -13,7 +13,7 @@
     "react-hooks/exhaustive-deps": 21,
     "import/no-anonymous-default-export": 18,
     "react-hooks/static-components": 15,
-    "prefer-const": 13,
+    "prefer-const": 12,
     "@typescript-eslint/no-require-imports": 10,
     "no-var": 9,
     "react-hooks/purity": 6,
