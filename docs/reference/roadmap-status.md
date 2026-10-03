@@ -107,6 +107,33 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
+## ⭐ NEW 2026-10-03 — TOP SHOT FMV MEASURED OUT OF SAMPLE FOR THE FIRST TIME: the published price trails a naive last-3-sales median every week, and ran high in a falling market
+
+**The gate metric M1 is a confidence SHARE — a property of the population sampled. This is the first
+measurement of the PRICE against what collectors actually paid.** Instrument: `topshot_fmv_backtest(p_days)`
+(`20261003223807`, ops-only; register R125). Each Top Shot sale (serial > 25, Dapper sell-backs to
+`0xe1f2…` excluded) is compared with the FMV we had published ≥ 1 day before it, and with a naive
+comparator — the median of the edition's last 3 prior sales in the 30 days before the same cut-off.
+
+| PT week (2026-10-03) | n | published: median abs err / median ratio | last-3 median: err / ratio |
+|---|---|---|---|
+| week 0 (last 7 d) | 17,134 | **14.3 % / 1.000** | 12.5 % / 1.000 |
+| week 1 | 13,835 | 15.0 % / 1.045 | 13.0 % / 1.000 |
+| week 2 | 14,163 | 17.6 % / 1.100 | 13.0 % / 1.000 |
+| week 3 | 17,722 | 24.8 % / 1.200 | 17.5 % / 1.100 |
+| week 4 | 16,274 | 20.0 % / 1.136 | 15.0 % / 1.042 |
+
+By tier, last 7 d (published vs last-3): **HIGH 10.0 % / 84.0 % within ±25 % vs 9.1 % / 82.5 % — parity**;
+MEDIUM 15.0 / 67.9 vs 13.0 / 69.8; LOW 21.8 / 56.4 vs 16.7 / 63.0; ASK_ONLY 54.9 % at ratio **1.549**.
+
+⭐ **Two readings, one unsettled.** (1) The confidence tiers ORDER correctly — HIGH is the most
+accurate, ASK_ONLY the least — so the label is not overclaiming the way Panini's was (09-23). (2) The
+published FMV trails the naive comparator by 2–7 pts every week, and the gap lives in MEDIUM / LOW —
+the thin editions where non-sale inputs (asks) carry weight — while the four weeks before this one ran
+5–20 % HIGH. **Not attributed here:** ask-blend vs lag in a falling market. The instrument separates
+them (re-run at 7 / 28 / 56 d after any model change; split by `top_shot_ask IS NOT NULL`).
+⛔ **No model change shipped** — the thin-edition window is Trevor's methodology call (#140).
+
 ## ⭐ NEW 2026-09-20 — A REFRESH-ORDER CHANGE MOVES A CONFIDENCE SHARE WITHOUT ANY PRICING CHANGE (Panini, measured; a trap for every other collection)
 
 🚨 **The finding in one line: Panini's HIGH/MEDIUM share fell 83–93% → ~61% in one day, NO pricing
