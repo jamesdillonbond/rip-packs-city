@@ -57,6 +57,7 @@ import readline from "node:readline";
 import { enumProgress, stepStability, enumStopReason } from "./panini-enum-progress.mjs";
 import { tagSaleRecords } from "./panini-sales-list.mjs";
 import { buildWalkOrder } from "./panini-walk-order.mjs";
+import { createStallWatchdog } from "./panini-stall-watchdog.mjs";
 
 const USER_DATA_DIR = process.env.PANINI_USER_DATA_DIR;
 const INGEST_URL = process.env.RPC_PANINI_INGEST_URL;
@@ -141,7 +142,7 @@ async function post(payload) {
   // of the grid this walk actually enumerated, and that number previously existed nowhere except
   // a console line nobody reads and a size-capped local JSONL that rotates. A walk that enumerates
   // far less than usual is otherwise indistinguishable from a walk that ran normally.
-  if (!n && !payload.enum) return;
+  if (!n && !payload.enum && !payload.stall) return;
   // ALWAYS append the batch to a local backup first — a captured walk is never lost to a bad token;
   // scripts/panini-replay.mjs can POST the file once auth is fixed (no re-walk).
   appendBackup(JSON.stringify(payload) + "\n");
@@ -616,7 +617,22 @@ async function main() {
   //     products to walk (walk_set_ids), which sports to enumerate and which pack pages to open, and
   //     enumeration below filters on the first. It used to be read after enumeration; the catalogue
   //     it returns is the same either way.
+  // STALL WATCHDOG (2026-10-03) — see scripts/panini-stall-watchdog.mjs. Armed here, after the
+  // interactive login grace and discovery hold (both wait on a person, not on progress). A hang is
+  // reported to the route (`panini-ingest-enum`, ok=false) and ends the run so the next run's Chrome
+  // preflight can restart a frozen browser; a sleep is reported and the run carries on.
+  const watchdog = createStallWatchdog({ idleLimitMs: Number(process.env.PANINI_STALL_MIN || 15) * 60000 });
+  const watchTimer = setInterval(async () => {
+    const v = watchdog.check();
+    if (!v) return;
+    console.log(`[panini-runner] WATCHDOG ${v.kind}: phase=${v.phase} detail=${v.detail ?? "-"} ${v.kind === "slept" ? `clock jumped ${v.gap_min}m` : `no progress for ${v.idle_min}m`}`);
+    await post({ stall: v });
+    if (v.kind === "stall") process.exit(4);
+  }, 60000);
+  watchTimer.unref();
+
   const { list: known, complete: knownComplete, priority: priorityPskus } = await fetchWalkOrder();
+  watchdog.mark("walk-order");
 
   // Home page first: a cheap pass for pack links (new drops are linked from it), nothing else.
   await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
@@ -657,6 +673,7 @@ async function main() {
   let last = -1, stable = 0, enumIters = 0, enumBudgetHit = false;
   for (let i = 0; i < ENUM_MAX_ITERS && stable < ENUM_STABLE; i++) {
     if (Date.now() - tEnum > ENUM_BUDGET_MS) { enumBudgetHit = true; break; }
+    watchdog.mark("enum", sport);
     enumIters++;
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
     await page.waitForTimeout(1200);
@@ -759,6 +776,7 @@ async function main() {
   for (const url of packUrlList.slice(0, PACK_PAGES_MAX)) {
     currentPackId = (url.match(/subpack-\d+-(\d+)\.html$/) || [])[1] || null;
     currentPackUrl = url;
+    watchdog.mark("packs", url.slice(-80));
     const before = packs.length;
     packVisitOps = {}; packVisitPackLike = null;
     await page.goto(url, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
@@ -787,6 +805,7 @@ async function main() {
       console.log(`[panini-runner] walk budget hit (${Math.round((Date.now()-tWalk)/60000)}m) — stopping cleanly at ${walked}/${pskus.length}; the un-walked tail is the STALEST, so the next run resumes there`);
       break;
     }
+    watchdog.mark("walk", `${walked}/${pskus.length}`);
     const before = cards.length + serials.length;
     let got = false;
     for (let attempt = 0; attempt < 2 && !got; attempt++) {
@@ -819,6 +838,7 @@ async function main() {
   console.log(`[panini-runner] serial paging: cards_paged=${serialPagedCards} extra_pages=${serialExtraPages} stops=${JSON.stringify(serialStops)}${SERIAL_PAGES_MAX > 0 ? "" : " (DISABLED via PANINI_SERIAL_PAGES=0)"}`);
   console.log(`[panini-runner] sales capture: tab_opened=${salesPages} tab_missed=${salesTabMissed} records=${salesRecords} top=${salesByList.top} recent=${salesByList.recent} untagged=${salesByList.untagged}${SALES_HISTORY ? "" : " (DISABLED via PANINI_SALES_HISTORY=0)"}`);
   await post({ cards, packs, serials, sales });
+  clearInterval(watchTimer);
   if (CDP) { await browser.close().catch(() => {}); } // disconnects; leaves your Chrome open
   else { await ctx.close(); }
 }

@@ -40,6 +40,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc, pskuSetId } from "@/lib/chains/panini/ingest-normalize";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
+import { parseStall } from "@/lib/chains/panini/stall-report";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -253,13 +254,24 @@ export async function POST(req: NextRequest) {
   // Registry upkeep runs inline (two small writes) and reports under PIPELINE_ENUM, the walk's
   // telemetry pipeline — a discovery payload is not an ingest tick and must not refresh
   // `panini-ingest`'s liveness arm (see PIPELINE_ENUM above).
+  // Runner watchdog report (2026-10-03, scripts/panini-stall-watchdog.mjs). "stall" = the runner
+  // hung (ticks on time, no progress) and is exiting: a failed walk, so ok=false with the phase it
+  // hung in. "slept" = the PC's clock jumped mid-run; the walk carries on, so it is recorded, not
+  // failed. Without this the two are indistinguishable from here — both are just silence.
+  const stall = parseStall(body.stall);
+  if (stall) {
+    const where = `phase=${stall.phase}${stall.detail ? ` (${stall.detail})` : ""}`;
+    await logRun(startedAtIso, 0, 0, stall.kind !== "stall",
+      stall.kind === "stall" ? `runner hung: no progress for ${stall.minutes} min in ${where}; exited` : null,
+      { stall }, PIPELINE_ENUM);
+  }
   if (products.length || packPages.length) {
     const reg = await upsertRegistry(products, packPages, startedAtIso);
     await logRun(startedAtIso, products.length + packPages.length, reg.written, reg.errors.length === 0,
       reg.errors.length ? reg.errors.join(" | ") : null, { registry: reg.extra }, PIPELINE_ENUM);
   }
   if (!found) {
-    if (enumStats || products.length || packPages.length) return NextResponse.json({ accepted: true, logged: "discovery" }, { status: 202 });
+    if (enumStats || stall || products.length || packPages.length) return NextResponse.json({ accepted: true, logged: "discovery" }, { status: 202 });
     await logRun(startedAtIso, 0, 0, true, null, { skip: "empty" });
     return NextResponse.json({ accepted: false, skipped: "empty" }, { status: 202 });
   }

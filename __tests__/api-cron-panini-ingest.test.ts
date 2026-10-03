@@ -221,6 +221,51 @@ describe("panini-ingest — the enumeration marker must not silence the stall ar
   })
 })
 
+/**
+ * The runner's watchdog report (2026-10-03, scripts/panini-stall-watchdog.mjs). The 10:00 AM PT
+ * walk read its walk order and then went silent for 80+ min, and from the server a hung runner and
+ * a sleeping PC were the same silence. The runner now posts which one it was, and where.
+ */
+describe("panini-ingest — the runner's stall/slept report", () => {
+  const WATCHED_PIPELINE = "panini-ingest"
+
+  it("a STALL is a failed walk under the enum pipeline, naming the phase it hung in", async () => {
+    const res = await POST(makeReq({ url, auth: "Bearer ingest", body: { stall: { kind: "stall", phase: "enum", detail: "Basketball", idle_min: 16 } } }))
+    expect(res.status).toBe(202)
+    expect(st.runs).toHaveLength(1)
+    expect(st.runs[0].p_pipeline).toBe("panini-ingest-enum")
+    expect(st.runs[0].p_ok).toBe(false)
+    expect(st.runs[0].p_error).toContain("phase=enum (Basketball)")
+    expect(st.runs[0].p_error).toContain("16 min")
+    expect(st.runs[0].p_rows_found).toBe(0)
+  })
+
+  it("a SLEEP is recorded, not failed — the walk carries on after the PC wakes", async () => {
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { stall: { kind: "slept", phase: "walk", detail: "120/900", gap_min: 47 } } }))
+    expect(st.runs[0].p_pipeline).toBe("panini-ingest-enum")
+    expect(st.runs[0].p_ok).toBe(true)
+    expect(st.runs[0].p_extra.stall).toEqual({ kind: "slept", phase: "walk", detail: "120/900", minutes: 47 })
+  })
+
+  it("never refreshes the watched pipeline (a hung walk must still read as silent there)", async () => {
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { stall: { kind: "stall", phase: "walk", detail: null, idle_min: 15 } } }))
+    expect(st.runs.map((r: any) => r.p_pipeline)).not.toContain(WATCHED_PIPELINE)
+  })
+
+  it.each([
+    ["an unknown kind", { kind: "crashed", phase: "enum", idle_min: 3 }],
+    ["no minutes", { kind: "stall", phase: "enum" }],
+    ["no phase", { kind: "stall", idle_min: 3 }],
+    ["an array", [1]],
+  ])("treats %s as no report (empty no-op), never a half-read row", async (_l, value) => {
+    const res = await POST(makeReq({ url, auth: "Bearer ingest", body: { stall: value } }))
+    expect((await res.json()).accepted).toBe(false)
+    expect(st.runs).toHaveLength(1)
+    expect(st.runs[0].p_pipeline).toBe(WATCHED_PIPELINE)
+    expect(st.runs[0].p_extra.skip).toBe("empty")
+  })
+})
+
 describe("panini-ingest — the after() walk", () => {
   async function accept(body: any) {
     const res = await POST(makeReq({ url, auth: "Bearer ingest", body }))
