@@ -132,10 +132,12 @@ published FMV trails the naive comparator by 2–7 pts every week, and the gap l
 the thin editions where non-sale inputs (asks) carry weight — while the four weeks before this one ran
 5–20 % HIGH. **Attributed the same hour — it is NOT the ask blend.** Over weeks 1–4 (46,897 sales) 98.9 % of the
 matched snapshots carried no `top_shot_ask`, and `published / asp_usd` = **1.000** at the median in every
-liquidity band: **the published Top Shot FMV is the trailing 30-day average sale price.** A trailing mean
-runs high in a falling market and is pulled up by outliers — `asp / realized price` 1.18 for editions with
-≥ 10 sales / 30 d, 1.20 for 3–9, 1.375 for < 3 — which is exactly where the last-3 MEDIAN wins. The lever
-is the estimator's recency and robustness (median / recency weight), not the ask.
+liquidity band: **the published Top Shot FMV is the WAP** — read against `app/api/fmv-recalc/route.ts`,
+`fmv_usd` = `wapWithoutOutliers` (recency-weighted average, 7-day half-life, 30-day window) and `asp_usd`
+is the same WAP unfiltered, so a 1.000 ratio says the outlier filter removes almost nothing. A 7-day-half-life
+MEAN still lags a falling market and is pulled up by high prints — `asp / realized price` 1.18 for editions
+with ≥ 10 sales / 30 d, 1.20 for 3–9, 1.375 for < 3 — which is exactly where the last-3 MEDIAN wins. The
+lever is a shorter half-life and/or a median, not the ask.
 ⛔ **No model change shipped** — the thin-edition window is Trevor's methodology call (#140).
 
 ## ⭐ NEW 2026-09-20 — A REFRESH-ORDER CHANGE MOVES A CONFIDENCE SHARE WITHOUT ANY PRICING CHANGE (Panini, measured; a trap for every other collection)
