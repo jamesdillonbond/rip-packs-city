@@ -17,13 +17,13 @@ New DB pins: `supabase/tests/get_pack_ev_contributors.sql`, `supabase/tests/get_
 
 ## Needs Trevor
 
-1. **#163 — retire three dead-host routes.** 0 requests in a 24 h Vercel read (positive control 12,402). The item's exit ("0 hits over 30 days") is unmeasurable on Pro's 24 h log retention — restate it or accept the weekly-caller risk. Task prompt below.
-2. **pack-mint-probes.** The mainnet24 Flow node swings between ~0 % and ~85 % per tick on its own (measured 8:23–9:08 PM PT; a single light request is always fine). 25 concurrent vs 5–10 concurrent did not separate cleanly — **per-node concurrency is NOT established as the lever**. The 8:15 AM PT entry's two options (longer timeout — now measured harmful; or `ok` meaning dispatch+collect worked) remain your call. Failed probes are requeueable (SQL in the ledger); 69 were requeued at 9:09 PM PT.
+1. **#163 — DECIDED: delete (execution pending a session that can `git rm`).** 0 requests in a 24 h Vercel read (positive control 12,402). The item's exit ("0 hits over 30 days") is unmeasurable on Pro's 24 h log retention — restate it or accept the weekly-caller risk. Task prompt below.
+2. **pack-mint-probes — DECIDED + SHIPPED (#166, `20261003045659`): node faults retry 12 times, others 4; run `ok` unchanged.** Earlier note, for context: The mainnet24 Flow node swings between ~0 % and ~85 % per tick on its own (measured 8:23–9:08 PM PT; a single light request is always fine). 25 concurrent vs 5–10 concurrent did not separate cleanly — **per-node concurrency is NOT established as the lever**. The 8:15 AM PT entry's two options (longer timeout — now measured harmful; or `ok` meaning dispatch+collect worked) remain your call. Failed probes are requeueable (SQL in the ledger); 69 were requeued at 9:09 PM PT.
 3. **`get_pack_realized_ev_row`** — 4.9 s cold on the largest dist (7800, 22k attributed rips), but production is 17–293 ms / call and 4 page timeouts in 7 days. A ~150 MB covering index on `pack_rips` (1.2M non-HOT updates) is not justified by that; the hourly MV is not equivalent (stale means). Decided: no change.
 
 ## Task prompt — #163 (run in any session that can `git rm`)
 
-Rip Packs City repo (push straight to `main` per CLAUDE.md). Close known-issues #163 **after Trevor decides the exit rule**:
+Rip Packs City repo (push straight to `main` per CLAUDE.md). Close known-issues #163. **DECIDED 2026-10-02 ~10:00 PM PT under Trevor's delegation: delete — the 24 h read is the accepted exit.** Also delete the `MARKET_FEED_TOKEN=` line from `.env.example` (only `app/api/market-feed` reads it):
 1. Re-grep callers of `/api/moment-market`, `/api/market-feed`, `/api/allday-wallet-search` across `app/ components/ lib/ workers/ scripts/ .github/ vercel.json`, `cron.job` commands, and `href` builders.
 2. `git rm -r app/api/moment-market app/api/market-feed app/api/allday-wallet-search __tests__/api-market-feed.test.ts __tests__/api-market-feed-integration.test.ts __tests__/api-moment-market.test.ts __tests__/api-allday-wallet-search.test.ts`.
 3. Lower `BASELINE` in `__tests__/dead-topshot-host-consumers-only-decrease.test.ts`; tidy the comments at `__tests__/invariants-postgrest-cap.test.ts:189` and `lib/chains/flow/topshot-username-resolve.ts:221`.
