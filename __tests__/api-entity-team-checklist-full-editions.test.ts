@@ -57,6 +57,20 @@ describe("GET /api/entity/team-checklist-full-editions", () => {
     expect(j.editions.map((e: { route_slug: string }) => e.route_slug).sort()).toEqual(["1:1", "1:2", "1:3"])
   })
 
+  it("view=all returns every edition and parallel ungrouped, totalled over the complete list (reader filters, 2026-10-01)", async () => {
+    progressTotal = 3
+    pages = [{ data: [
+      { route_slug: "1:1", tier: "ULTIMATE", floor_usd: 3000, owned: false },
+      { route_slug: "1:1::2", tier: "ULTIMATE", floor_usd: 400, owned: true },
+      { route_slug: "1:2", tier: "COMMON", floor_usd: 5, owned: false },
+    ], error: null }]
+    const r = await GET(req(`collection=nba-top-shot&slug=detroit-pistons&view=all&wallet=${W}`))
+    expect(r.status).toBe(200)
+    const j = await r.json()
+    expect(j.editions.map((e: { route_slug: string }) => e.route_slug).sort()).toEqual(["1:1", "1:1::2", "1:2"])
+    expect(j.progress).toMatchObject({ total: 3, owned: 1, cost_to_complete_usd: 3005 })
+  })
+
   it("REFUSES a read shorter than the progress total — no editions, no cost", async () => {
     progressTotal = 5
     pages = [{ data: [{ route_slug: "1:1", floor_usd: 10 }], error: null }]

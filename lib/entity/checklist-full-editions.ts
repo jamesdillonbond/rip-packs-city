@@ -100,6 +100,51 @@ const TIER_RANK: Record<string, number> = {
   RARE: 6, UNCOMMON: 7, FANDOM: 8, COMMON: 9,
 }
 
+// Same order as get_team_checklist: missing before owned (with a wallet), then
+// most valuable first, then a unique tiebreak so the order is deterministic.
+function sortChecklistTiles<T extends ChecklistEditionRow>(out: T[], hasWallet: boolean): T[] {
+  out.sort((a, b) => {
+    if (hasWallet) {
+      const ao = a.owned === true ? 1 : 0
+      const bo = b.owned === true ? 1 : 0
+      if (ao !== bo) return ao - bo
+    }
+    const af = typeof a.fmv_usd === "number" ? a.fmv_usd : null
+    const bf = typeof b.fmv_usd === "number" ? b.fmv_usd : null
+    if (af !== bf) {
+      if (af == null) return 1
+      if (bf == null) return -1
+      return bf - af
+    }
+    return a.route_slug < b.route_slug ? -1 : a.route_slug > b.route_slug ? 1 : 0
+  })
+  return out
+}
+
+/**
+ * The COMPLETE "All moments" checklist as tiles (every edition and parallel,
+ * nothing grouped), each priced the way the header sums it. The component reads
+ * this when a tier or ownership filter is on: a filtered header is only correct
+ * over the whole list, never over the 24-row page on screen (webz, 2026-10-01).
+ */
+export function allEditionTiles(rows: readonly ChecklistEditionRow[], hasWallet: boolean): FullEditionTile[] {
+  const seen = new Set<string>()
+  const out: FullEditionTile[] = []
+  for (const r of rows) {
+    if (typeof r.route_slug !== "string" || r.route_slug === "" || seen.has(r.route_slug)) continue
+    seen.add(r.route_slug)
+    out.push({
+      ...r,
+      owned: hasWallet ? r.owned === true : null,
+      owned_locked: hasWallet ? r.owned === true && r.owned_locked === true : null,
+      owned_count: r.owned_count ?? null,
+      owned_parallels: null,
+      edition_cost_usd: editionPrice(r),
+    })
+  }
+  return sortChecklistTiles(out, hasWallet)
+}
+
 /**
  * The full editions in a checklist, parallels removed from view but COUNTED:
  * a full edition is owned when the wallet holds it or any of its parallels.
@@ -144,28 +189,12 @@ export function fullEditionTiles(rows: readonly ChecklistEditionRow[], hasWallet
     })
   }
 
-  // Same order as get_team_checklist: missing before owned (with a wallet), then
-  // most valuable first, then a unique tiebreak so the order is deterministic.
-  out.sort((a, b) => {
-    if (hasWallet) {
-      const ao = a.owned === true ? 1 : 0
-      const bo = b.owned === true ? 1 : 0
-      if (ao !== bo) return ao - bo
-    }
-    const af = typeof a.fmv_usd === "number" ? a.fmv_usd : null
-    const bf = typeof b.fmv_usd === "number" ? b.fmv_usd : null
-    if (af !== bf) {
-      if (af == null) return 1
-      if (bf == null) return -1
-      return bf - af
-    }
-    return a.route_slug < b.route_slug ? -1 : a.route_slug > b.route_slug ? 1 : 0
-  })
-  return out
+  return sortChecklistTiles(out, hasWallet)
 }
 
 /** Header numbers for the full-edition checklist. */
-export function computeFullEditionProgress(tiles: readonly FullEditionTile[], hasWallet: boolean): FullEditionProgress {
+export type ProgressTile = Pick<ChecklistEditionRow, "tier" | "owned" | "owned_locked" | "fmv_confidence"> & { edition_cost_usd?: number | null }
+export function computeFullEditionProgress(tiles: readonly ProgressTile[], hasWallet: boolean): FullEditionProgress {
   const total = tiles.length
   let owned = 0
   let locked = 0
@@ -176,7 +205,7 @@ export function computeFullEditionProgress(tiles: readonly FullEditionTile[], ha
 
   for (const t of tiles) {
     const isOwned = hasWallet && t.owned === true
-    const tier = typeof t.tier === "string" && t.tier ? t.tier : "UNKNOWN"
+    const tier = tierKey(t.tier)
     const agg = tiers.get(tier) ?? { total: 0, owned: 0, cost: 0 }
     agg.total += 1
     if (isOwned) {
@@ -222,4 +251,49 @@ export function parseChecklistView(view: string | null | undefined, legacyParall
   if (view === "full") return "full"
   if (view == null && legacyParallels === "exclude") return "full"
   return "all"
+}
+
+// ── Reader filters (webz, 2026-10-01) ─────────────────────────────────────────
+// "No chance I can collect all the Ultimates": a reader can leave whole tiers
+// out of the checklist — tiles AND header (owned / % / cost-to-complete) — and
+// can show only the ownership states they want ("only the ones I'm missing").
+
+/** The tier a tile/breakdown row is grouped under; a missing tier is "UNKNOWN", as in the header. */
+export function tierKey(tier: unknown): string {
+  return typeof tier === "string" && tier ? tier : "UNKNOWN"
+}
+
+export type ChecklistOwnState = "locked" | "owned" | "missing"
+export const CHECKLIST_OWN_STATES: readonly ChecklistOwnState[] = ["locked", "owned", "missing"]
+
+/** A tile's ownership state. "locked" only where the collection has locking — elsewhere it reads as "owned". */
+export function checklistOwnState(t: Pick<ChecklistEditionRow, "owned" | "owned_locked">, hasLocking: boolean): ChecklistOwnState {
+  if (t.owned !== true) return "missing"
+  return hasLocking && t.owned_locked === true ? "locked" : "owned"
+}
+
+/**
+ * The tiles a reader asked to see. `shownStates` null = no ownership filter
+ * (always the case without a wallet — ownership is unknown, so it cannot filter).
+ */
+export function filterChecklistTiles<T extends Pick<ChecklistEditionRow, "tier" | "owned" | "owned_locked">>(
+  tiles: readonly T[],
+  opts: { hiddenTiers: ReadonlySet<string>; shownStates: ReadonlySet<ChecklistOwnState> | null; hasLocking: boolean },
+): T[] {
+  return tiles.filter((t) => {
+    if (opts.hiddenTiers.has(tierKey(t.tier))) return false
+    if (opts.shownStates && !opts.shownStates.has(checklistOwnState(t, opts.hasLocking))) return false
+    return true
+  })
+}
+
+/** Hidden tiers as saved in localStorage (a JSON string array); anything else reads as none hidden. */
+export function parseHiddenTiers(raw: string | null | undefined): string[] {
+  if (!raw) return []
+  try {
+    const v: unknown = JSON.parse(raw)
+    return Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === "string" && x !== ""))] : []
+  } catch {
+    return []
+  }
 }

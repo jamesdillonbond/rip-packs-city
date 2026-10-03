@@ -33,13 +33,21 @@
 //   (probe, not a slug list). Persisted as ?view=full so it is shareable (the
 //   09-29 ?parallels=exclude link still opens it).
 //
+// - Reader filters (webz, 2026-10-01): the per-tier chips are toggles — a hidden
+//   tier leaves the tiles AND the header (owned / % / cost-to-complete), e.g.
+//   "no chance I can collect all the Ultimates". Remembered per collection in
+//   localStorage. With a wallet, the owned+locked / owned / missing legend is a
+//   toggle too ("view only the ones I'm missing"). Any filter reads the COMPLETE
+//   list (the full-editions route, ?view=all in "All moments") and filters and
+//   re-totals it locally — a filtered header over a 24-row page would be false.
+//
 // Data: /api/entity/team-checklist (paginated tiles) +
 //       /api/entity/team-checklist-progress (header + cost-to-complete);
 //       "Full editions" reads /api/entity/team-checklist-full-editions (whole
 //       filtered list + header; lib/entity/checklist-full-editions.ts).
 // Brand tokens only (var(--rpc-*), var(--font-display)).
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import type { EditionTile } from "./EditionsGridPaginated"
@@ -49,7 +57,16 @@ import { getCollection, collectionHasLocking } from "@/lib/collections"
 import { checklistWalletStorageKey, isSolanaChecklist, parseChecklistWallet } from "@/lib/entity/checklist-wallet"
 import { editionRouteHref } from "@/lib/entity-href"
 import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
-import { parseChecklistView, type ChecklistView } from "@/lib/entity/checklist-full-editions"
+import {
+  CHECKLIST_OWN_STATES,
+  computeFullEditionProgress,
+  filterChecklistTiles,
+  parseChecklistView,
+  parseHiddenTiers,
+  tierKey,
+  type ChecklistOwnState,
+  type ChecklistView,
+} from "@/lib/entity/checklist-full-editions"
 
 interface ChecklistTile extends EditionTile {
   owned?: boolean | null
@@ -107,6 +124,7 @@ interface Props {
 
 const PAGE_SIZE = 24
 const VIEW_LS_KEY = "rpc:team-checklist:view"  // per collection: a choice on Top Shot must not follow the reader to a collection without parallels
+const HIDDEN_TIERS_LS_KEY = "rpc:team-checklist:hidden-tiers"  // per collection: tier vocabularies differ
 const MAX_INDEX_POLLS = 6
 const INDEX_POLL_MS = 12_000
 
@@ -150,9 +168,14 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
   // Does this collection carry parallel editions at all? null = not known (probe
   // pending or failed) — the toggle then shows only if the URL already asks for it.
   const [collectionHasParallels, setCollectionHasParallels] = useState<boolean | null>(null)
-  // "Full editions" reads the whole filtered list at once and pages it locally.
+  // "Full editions" — and any reader filter — reads the whole scoped list at
+  // once and pages it locally. completeFor names the read it holds, so a
+  // filtered header is never re-totalled from another scope's / wallet's list.
   const [allFull, setAllFull] = useState<ChecklistTile[]>([])
+  const [completeFor, setCompleteFor] = useState<string | null>(null)
   const [visible, setVisible] = useState(PAGE_SIZE)
+  const [hiddenTiers, setHiddenTiers] = useState<string[]>([])
+  const [shownStates, setShownStates] = useState<ChecklistOwnState[]>([...CHECKLIST_OWN_STATES])
 
   const session = useSessionOwner()
   const ownParsed = session.walletAddr ? parseChecklistWallet(session.walletAddr, dbChain) : null
@@ -189,6 +212,35 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
       .catch(() => { /* unknown: the toggle stays hidden unless the URL asked for it */ })
     return () => { cancelled = true }
   }, [collectionUrlSlug])
+
+  useEffect(() => {
+    try { setHiddenTiers(parseHiddenTiers(window.localStorage.getItem(`${HIDDEN_TIERS_LS_KEY}:${collectionUrlSlug}`))) }
+    catch { /* localStorage unavailable — nothing hidden */ }
+  }, [collectionUrlSlug])
+
+  function toggleTier(tier: string) {
+    setHiddenTiers(prev => {
+      const next = prev.includes(tier) ? prev.filter(t => t !== tier) : [...prev, tier]
+      try {
+        const k = `${HIDDEN_TIERS_LS_KEY}:${collectionUrlSlug}`
+        if (next.length > 0) window.localStorage.setItem(k, JSON.stringify(next))
+        else window.localStorage.removeItem(k)
+      } catch { /* ignore */ }
+      return next
+    })
+    setVisible(PAGE_SIZE)
+  }
+
+  function showAllTiers() {
+    setHiddenTiers([])
+    try { window.localStorage.removeItem(`${HIDDEN_TIERS_LS_KEY}:${collectionUrlSlug}`) } catch { /* ignore */ }
+    setVisible(PAGE_SIZE)
+  }
+
+  function toggleOwnState(st: ChecklistOwnState) {
+    setShownStates(prev => prev.includes(st) ? prev.filter(x => x !== st) : [...prev, st])
+    setVisible(PAGE_SIZE)
+  }
 
   function changeMode(next: ChecklistView) {
     setMode(next)
@@ -238,9 +290,11 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
     return `/api/entity/team-checklist-progress?${p.toString()}`
   }, [collectionUrlSlug, teamSlug])
 
-  const fullUrl = useCallback((s: Scope, w: string | null) => {
+  const fullUrl = useCallback((s: Scope, w: string | null, m: ChecklistView) => {
     const p = new URLSearchParams({ collection: collectionUrlSlug, slug: teamSlug, scope: s })
     if (w) p.set("wallet", w)
+    // "All moments" with a filter on: the complete list, ungrouped.
+    if (m === "all") p.set("view", "all")
     return `/api/entity/team-checklist-full-editions?${p.toString()}`
   }, [collectionUrlSlug, teamSlug])
 
@@ -263,14 +317,16 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
   }, [seriesProp, isTopShot])
 
   // Primary load (page 0) + progress for the active (scope, wallet, mode).
-  const loadScope = useCallback(async (s: Scope, w: string | null, m: ChecklistView) => {
+  // `complete`: read the whole scoped list ("Full editions", or a filter is on).
+  const loadScope = useCallback(async (s: Scope, w: string | null, m: ChecklistView, complete: boolean) => {
     const myReq = ++reqIdRef.current
     setLoading(true)
-    if (m === "full") {
+    if (complete) {
       // ONE read feeds both the header and the tiles here, so it gates both: a
       // failed read shows the failure state, never a "0 editions / $0" header.
+      setCompleteFor(null)
       try {
-        const r = await fetch(fullUrl(s, w), { cache: "no-store" })
+        const r = await fetch(fullUrl(s, w, m), { cache: "no-store" })
         const j: FullEditionsResponse | null = r.ok ? await r.json() : null
         if (myReq !== reqIdRef.current) return
         const ok = !!j && Array.isArray(j.editions) && !!j.progress
@@ -278,13 +334,12 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
         setFailed(!ok)
         setPageFailed(false)
         setAllFull(eds)
+        setCompleteFor(ok ? `${s}|${w ?? ""}|${m}` : null)
         setVisible(PAGE_SIZE)
-        setRows(eds.slice(0, PAGE_SIZE))
-        setExhausted(eds.length <= PAGE_SIZE)
         setProgress(ok ? j!.progress : null)
         if (ok) deriveSeries(s, eds)
       } catch {
-        if (myReq === reqIdRef.current) { setFailed(true); setRows([]); setAllFull([]); setProgress(null); setExhausted(true) }
+        if (myReq === reqIdRef.current) { setFailed(true); setAllFull([]); setProgress(null) }
       } finally {
         if (myReq === reqIdRef.current) setLoading(false)
       }
@@ -315,10 +370,17 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
     }
   }, [checklistUrl, progressUrl, fullUrl, deriveSeries])
 
+  // A filter is "on" only where it can change something: ownership filters need
+  // a wallet, and "locked" exists only where the collection has locking.
+  const relevantStates = CHECKLIST_OWN_STATES.filter(st => hasLocking || st !== "locked")
+  const ownFilterOn = !!wallet && relevantStates.some(st => !shownStates.includes(st))
+  const tierFilterOn = hiddenTiers.length > 0
+  const completeMode = mode === "full" || tierFilterOn || ownFilterOn
+
   useEffect(() => {
     if (!modeReady) return
-    loadScope(scope, wallet, mode)
-  }, [scope, wallet, mode, modeReady, loadScope])
+    loadScope(scope, wallet, mode, completeMode)
+  }, [scope, wallet, mode, modeReady, completeMode, loadScope])
 
   // Indexing flow: a wallet that isn't cached yet → warm wmc via the existing
   // public wallet-search path (fire-once per wallet), then poll progress back.
@@ -347,19 +409,16 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
     if (pollCountRef.current >= MAX_INDEX_POLLS) { setIndexing(false); return }
     const id = window.setTimeout(() => {
       pollCountRef.current += 1
-      loadScope(scope, wallet, mode)
+      loadScope(scope, wallet, mode, completeMode)
     }, INDEX_POLL_MS)
     return () => window.clearTimeout(id)
-  }, [wallet, progress, scope, mode, collectionUrlSlug, loadScope, isSolana])
+  }, [wallet, progress, scope, mode, completeMode, collectionUrlSlug, loadScope, isSolana])
 
   async function loadMore() {
-    if (loadingMore || exhausted || loading) return
-    if (mode === "full") {
-      // The whole filtered list is already here — reveal the next slice.
-      const next = visible + PAGE_SIZE
-      setVisible(next)
-      setRows(allFull.slice(0, next))
-      setExhausted(next >= allFull.length)
+    if (loadingMore || shownExhausted || loading) return
+    if (completeMode) {
+      // The whole list is already here — reveal the next slice.
+      setVisible(visible + PAGE_SIZE)
       return
     }
     setLoadingMore(true)
@@ -417,8 +476,30 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
     ...(isTopShot ? [{ key: "contemporary", label: "Contemporary" }] : []),
   ]
 
-  const pct = progress?.completion_pct ?? 0
   const hasWallet = !!wallet
+  const hiddenSet = useMemo(() => new Set(hiddenTiers), [hiddenTiers])
+  const loadedKey = `${scope}|${wallet ?? ""}|${mode}`
+  const completeReady = completeMode && completeFor === loadedKey
+  const filteredAll = useMemo(
+    () => completeMode
+      ? filterChecklistTiles(allFull, { hiddenTiers: hiddenSet, shownStates: ownFilterOn ? new Set(shownStates) : null, hasLocking })
+      : [],
+    [completeMode, allFull, hiddenSet, ownFilterOn, shownStates, hasLocking],
+  )
+  const shownRows = completeMode ? filteredAll.slice(0, visible) : rows
+  const shownExhausted = completeMode ? visible >= filteredAll.length : exhausted
+  // The header re-totalled without the hidden tiers. The tier chips keep the
+  // unfiltered breakdown, so a hidden tier stays on screen to turn back on.
+  // Ownership filters change only the tiles: the header is still the checklist.
+  const header: Progress | null = useMemo(() => {
+    if (!progress || !tierFilterOn || !completeReady) return progress
+    const kept = allFull.filter(t => !hiddenSet.has(tierKey(t.tier)))
+    return { ...progress, ...computeFullEditionProgress(kept, hasWallet), by_tier: progress.by_tier }
+  }, [progress, tierFilterOn, completeReady, allFull, hiddenSet, hasWallet])
+  // First toggle in "All moments": the complete list is still loading, so the
+  // numbers on screen are not yet filtered — dim them rather than imply they are.
+  const headerPending = tierFilterOn && !completeReady
+  const pct = header?.completion_pct ?? 0
   const trackingOwn = hasWallet && wallet === ownWallet
   // Signed-in readers: hold the paste box until the session resolves, so it
   // does not flash and then vanish once their own wallet is picked up.
@@ -427,10 +508,11 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
   // assumed and is just extra noise"). No card at all — except while a first
   // index is warming, when the status line is the only honest thing to show.
   const hideWalletCard = hidePasteWhileResolving || (trackingOwn && !indexing && !walletError)
-  const staleNote = progress && progress.stale_missing_pct != null && progress.stale_missing_pct >= 15
+  const staleNote = header && header.stale_missing_pct != null && header.stale_missing_pct >= 15
   const fullView = mode === "full"
   const unit = "editions"
-  const unpricedMissing = fullView ? (progress?.unpriced_missing_count ?? 0) : 0
+  const unpricedMissing = header?.unpriced_missing_count ?? 0
+  const hiddenLabel = progress?.by_tier.filter(t => hiddenSet.has(tierKey(t.tier))).map(t => tierLabel(t.tier)) ?? []
   // Offer the switch when the data has parallels — and always once a link has
   // turned it on, so the reader can turn it back off.
   const showViewToggle = collectionHasParallels === true || fullView
@@ -466,22 +548,23 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
       )}
 
       {/* ── Progress header ───────────────────────────────────────────────── */}
-      {progress && progress.total > 0 && (
-        <div className="rpc-card" style={{ padding: 16, marginBottom: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+      {progress && header && progress.total > 0 && (
+        <div className="rpc-card" aria-busy={headerPending || undefined} style={{ padding: 16, marginBottom: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, opacity: headerPending ? 0.45 : 1, transition: "opacity 150ms ease" }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end", justifyContent: "space-between" }}>
             <div>
               <div className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
                 {hasWallet ? "Owned" : "Checklist"}
               </div>
               <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>
-                {hasWallet ? `${fmtCount(progress.owned)} / ${fmtCount(progress.total)}` : `${fmtCount(progress.total)} ${unit}`}
+                {hasWallet ? `${fmtCount(header.owned)} / ${fmtCount(header.total)}` : `${fmtCount(header.total)} ${unit}`}
                 {hasWallet && (
                   <span className="rpc-mono" style={{ fontSize: 13, color: "var(--rpc-red)", marginLeft: 8 }}>{pct}%</span>
                 )}
               </div>
-              {hasWallet && hasLocking && progress.locked_owned != null && (
+              {hasWallet && hasLocking && header.locked_owned != null && (
                 <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 2 }}>
-                  {fmtCount(progress.locked_owned)} locked
+                  {fmtCount(header.locked_owned)} locked
                 </div>
               )}
             </div>
@@ -490,7 +573,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
                 {hasWallet ? "Est. cost to complete" : "Est. cost to complete (all)"}
               </div>
               <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>
-                {fmtUsd(progress.cost_to_complete_usd)}
+                {fmtUsd(header.cost_to_complete_usd)}
               </div>
               {unpricedMissing > 0 && (
                 <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 2 }}>
@@ -510,26 +593,59 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
             }} />
           </div>
 
-          {/* per-tier breakdown */}
+          </div>
+
+          {/* per-tier breakdown — each chip toggles its tier in/out of the checklist */}
           {progress.by_tier && progress.by_tier.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {progress.by_tier.map(t => (
-                <div key={t.tier} className="rpc-mono" style={{
-                  display: "flex", alignItems: "center", gap: 6, fontSize: 10,
-                  padding: "4px 8px", borderRadius: 4,
-                  border: "1px solid var(--rpc-border)", color: "var(--rpc-text-secondary)",
-                }}>
-                  <TierBadge tier={t.tier} />
-                  <span>{hasWallet ? `${t.owned}/${t.total}` : `${t.total}`}</span>
-                  {t.cost_usd > 0 && <span style={{ color: "var(--rpc-text-muted)" }}>{fmtUsd(t.cost_usd)}</span>}
-                </div>
-              ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div role="group" aria-label="Tiers in this checklist" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {progress.by_tier.map(t => {
+                  const key = tierKey(t.tier)
+                  const hidden = hiddenSet.has(key)
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      aria-pressed={!hidden}
+                      title={hidden ? `Add ${tierLabel(t.tier)} back to the checklist` : `Leave ${tierLabel(t.tier)} out of the checklist`}
+                      onClick={() => toggleTier(key)}
+                      className="rpc-mono"
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6, fontSize: 10,
+                        padding: "4px 8px", borderRadius: 4, cursor: "pointer",
+                        background: "transparent", font: "inherit",
+                        border: hidden ? "1px dashed var(--rpc-border)" : "1px solid var(--rpc-border)",
+                        color: "var(--rpc-text-secondary)",
+                        opacity: hidden ? 0.45 : 1,
+                        textDecoration: hidden ? "line-through" : undefined,
+                      }}
+                    >
+                      <TierBadge tier={t.tier} />
+                      <span>{hasWallet ? `${t.owned}/${t.total}` : `${t.total}`}</span>
+                      {t.cost_usd > 0 && <span style={{ color: "var(--rpc-text-muted)" }}>{fmtUsd(t.cost_usd)}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                {hiddenLabel.length > 0 ? (
+                  <>
+                    <span>Excluding {hiddenLabel.join(", ")} from the totals above.</span>
+                    <button type="button" className="rpc-mono" onClick={showAllTiers}
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 10, color: "var(--rpc-red)" }}>
+                      Show all tiers
+                    </button>
+                  </>
+                ) : (
+                  <span>Tap a tier to leave it out of the checklist.</span>
+                )}
+              </div>
             </div>
           )}
 
           {staleNote && (
             <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
-              {progress!.stale_missing_pct}% of missing {unit} have stale or low-confidence pricing — cost-to-complete is an estimate from recent lows and FMV, not a quote.
+              {header.stale_missing_pct}% of missing {unit} have stale or low-confidence pricing — cost-to-complete is an estimate from recent lows and FMV, not a quote.
             </div>
           )}
         </div>
@@ -586,24 +702,31 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
         <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>Loading checklist…</div>
       ) : failed ? (
         <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>Couldn&apos;t load the checklist right now. This is a temporary load failure, not an empty scope — reload shortly.</div>
-      ) : rows.length === 0 ? (
+      ) : (completeMode ? allFull.length === 0 : rows.length === 0) ? (
         <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No {unit} for this scope.</div>
       ) : (
         <>
-          {/* Three-state legend (mirrors Top Shot's owned/locked/missing). */}
+          {/* Three-state legend (mirrors Top Shot's owned/locked/missing) —
+              each entry toggles that state's tiles on/off. */}
           {hasWallet && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 10 }}>
-              {hasLocking && <LegendDot kind="locked" label="Owned + locked" />}
-              <LegendDot kind="owned" label="Owned" />
-              <LegendDot kind="missing" label="Missing" />
+            <div role="group" aria-label="Show tiles" style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 10 }}>
+              {relevantStates.map(st => (
+                <LegendToggle key={st} kind={st} label={OWN_LABEL[st]} on={shownStates.includes(st)} onClick={() => toggleOwnState(st)} />
+              ))}
             </div>
           )}
+          {shownRows.length === 0 ? (
+            <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+              Nothing matches these filters — {ownFilterOn ? "turn a state above back on" : "add a tier back"} to see more.
+            </div>
+          ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
-            {rows.map((e, idx) => (
+            {shownRows.map((e, idx) => (
               <ChecklistCard key={`${e.route_slug}-${idx}`} collectionUrlSlug={collectionUrlSlug} e={e} hasWallet={hasWallet} eager={idx < 12} />
             ))}
           </div>
-          {!exhausted && (
+          )}
+          {!shownExhausted && (
             <div style={{ marginTop: 14, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
               {pageFailed && (
                 <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-red)" }}>
@@ -624,21 +747,38 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
 // ── Ownership tri-state palette (shared by tile badge + legend) ───────────────
 // green = owned + locked, white = owned (unlocked), gray = missing. Mirrors Top
 // Shot's checklist legend.
-type OwnState = "locked" | "owned" | "missing"
+type OwnState = ChecklistOwnState
 const OWN_STYLE: Record<OwnState, { bg: string; border: string; dot: string; text: string }> = {
   locked:  { bg: "rgba(52,211,153,0.16)", border: "1px solid rgba(52,211,153,0.45)", dot: "#34D399", text: "#34D399" },
   owned:   { bg: "var(--rpc-surface-hover)", border: "1px solid var(--rpc-border-hover)", dot: "var(--rpc-text-primary)", text: "var(--rpc-text-primary)" },
   missing: { bg: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border-hover)", dot: "var(--rpc-text-muted)", text: "var(--rpc-text-primary)" },
 }
 
-function LegendDot({ kind, label }: { kind: OwnState; label: string }) {
+const OWN_LABEL: Record<OwnState, string> = { locked: "Owned + locked", owned: "Owned", missing: "Missing" }
+
+function LegendToggle({ kind, label, on, onClick }: { kind: OwnState; label: string; on: boolean; onClick: () => void }) {
   const s = OWN_STYLE[kind]
   return (
-    <span className="rpc-mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: "var(--rpc-text-secondary)" }}>
-      <span style={{ width: 10, height: 10, borderRadius: 999, background: s.bg, border: s.border, display: "inline-block" }} />
+    <button
+      type="button"
+      aria-pressed={on}
+      title={on ? `Hide ${label.toLowerCase()} tiles` : `Show ${label.toLowerCase()} tiles`}
+      onClick={onClick}
+      className="rpc-mono"
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: "var(--rpc-text-secondary)",
+        background: "none", border: "none", padding: 0, cursor: "pointer",
+        opacity: on ? 1 : 0.45, textDecoration: on ? undefined : "line-through",
+      }}
+    >
+      <span style={{ width: 10, height: 10, borderRadius: 999, background: on ? s.bg : "transparent", border: s.border, display: "inline-block" }} />
       {label}
-    </span>
+    </button>
   )
+}
+
+function tierLabel(tier: string | null | undefined): string {
+  return tier ? tier.charAt(0).toUpperCase() + tier.slice(1).toLowerCase() : "Unknown"
 }
 
 // ── Scope chip ────────────────────────────────────────────────────────────────

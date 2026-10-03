@@ -8,6 +8,10 @@
 //   GET /api/entity/team-checklist-full-editions?collection=<urlSlug>&slug=<teamSlug>
 //        &scope=<all_time|contemporary|series_N>&wallet=<0x.. | base58 on a Solana collection>
 //     → { has_parallels, progress: FullEditionProgress & { wallet_cached, scope }, editions: FullEditionTile[] }
+//   …&view=all → the same shape over EVERY edition and parallel, ungrouped
+//     (lib allEditionTiles). The component reads it when a tier or ownership
+//     filter is on in "All moments" (webz, 2026-10-01): a filtered header is only
+//     correct over the whole list, never over the paged grid.
 //   GET /api/entity/team-checklist-full-editions?collection=<urlSlug>&probe=1
 //     → { has_parallels } — does this collection carry ANY parallel edition key?
 //       The component shows the toggle only when it does (derived from data,
@@ -31,6 +35,7 @@ import { boundedRead } from "@/lib/api/bounded-read"
 import { getCollection } from "@/lib/collections"
 import { parseChecklistWallet } from "@/lib/entity/checklist-wallet"
 import {
+  allEditionTiles,
   checklistHasParallels,
   computeFullEditionProgress,
   fullEditionTiles,
@@ -121,7 +126,7 @@ export async function GET(req: Request) {
 
   const editions = [...byKey.values()]
   const hasWallet = wallet != null
-  const tiles = fullEditionTiles(editions, hasWallet)
+  const tiles = url.searchParams.get("view") === "all" ? allEditionTiles(editions, hasWallet) : fullEditionTiles(editions, hasWallet)
   const progress = computeFullEditionProgress(tiles, hasWallet)
   return NextResponse.json({
     has_parallels: checklistHasParallels(editions),
