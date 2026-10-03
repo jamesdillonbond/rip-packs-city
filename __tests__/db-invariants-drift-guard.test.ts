@@ -20,7 +20,43 @@ const PINS = [
     // an unknown collection → zero rows, and known caps ranking ahead of unknown.
     fn: "get_market_cap_board",
     test: "supabase/tests/get_market_cap_board.sql",
-    migration: "supabase/migrations/20261003201018_audit_20261003_market_cap_board_on_collector_held_supply.sql",
+    migration: "supabase/migrations/20261003213500_audit_20261003_market_cap_current_daily_history_and_four_more_supply_sources.sql",
+  },
+  {
+    // Added 2026-10-03. The ONE per-edition supply x FMV row set the board, the
+    // entity tile and the daily snapshot all read.
+    fn: "market_cap_edition_rows",
+    test: "supabase/tests/get_market_cap_board.sql",
+    migration: "supabase/migrations/20261003213500_audit_20261003_market_cap_current_daily_history_and_four_more_supply_sources.sql",
+  },
+  {
+    // Added 2026-10-03. One entity's cap + rank for the edition/player/team/set
+    // tile: matched by each page's own slug rule; no match → zero rows, never $0.
+    fn: "get_market_cap_entity",
+    test: "supabase/tests/get_market_cap_board.sql",
+    migration: "supabase/migrations/20261003213500_audit_20261003_market_cap_current_daily_history_and_four_more_supply_sources.sql",
+  },
+  {
+    // Added 2026-10-03. Recomputes market_cap_current (entity tiles) + the PT-dated
+    // market_cap_daily history. Write-first upsert, unchanged rows untouched, an
+    // empty stage refuses to wipe the table.
+    fn: "refresh_market_cap_current",
+    test: "supabase/tests/get_market_cap_board.sql",
+    migration: "supabase/migrations/20261003213500_audit_20261003_market_cap_current_daily_history_and_four_more_supply_sources.sql",
+  },
+  {
+    // Added 2026-10-03. Atlas EditionService walk for Golazos ('laliga') + Pinnacle
+    // ('disney') supply. One walk in flight per product.
+    fn: "atlas_supply_dispatch",
+    test: "supabase/tests/atlas_supply_drain.sql",
+    migration: "supabase/migrations/20261003213000_audit_20261003_atlas_edition_supply_for_golazos_and_pinnacle.sql",
+  },
+  {
+    // Added 2026-10-03. Upserts only editions carrying all six buckets; a failed page
+    // is recorded on its request row and makes the run not-ok.
+    fn: "atlas_supply_drain",
+    test: "supabase/tests/atlas_supply_drain.sql",
+    migration: "supabase/migrations/20261003213000_audit_20261003_atlas_edition_supply_for_golazos_and_pinnacle.sql",
   },
   {
     // Added 2026-09-30. A separate, labelled ESTIMATE for thin Top Shot parallels
