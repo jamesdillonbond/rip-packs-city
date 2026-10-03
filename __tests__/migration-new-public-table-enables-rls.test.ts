@@ -110,8 +110,12 @@ const stripCommentsAndLiterals = (sql: string): string =>
  * requiring an ALTER for one would be noise. 85 of the 98 hits in an earlier
  * revision were exactly this.
  */
+// The name may not be followed by `.` (then it is a SCHEMA — `flowty_archive.x` is not a
+// public table) nor by another identifier char (stops the regex backtracking into a shorter,
+// fake name like `flowty_archiv`). Found 2026-10-03 when a flowty_archive table read as
+// "public.flowty_archive".
 const CREATE_TABLE_RX =
-  /CREATE\s+(?:UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\s*\.\s*)?"?([A-Za-z_][A-Za-z0-9_]*)"?/gi
+  /CREATE\s+(?:UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\s*\.\s*)?(?!IF\s+NOT\s+EXISTS\b)"?([A-Za-z_][A-Za-z0-9_]*)"?(?![A-Za-z0-9_"]|\s*\.)/gi
 
 function tableNames(sql: string): string[] {
   const out = new Set<string>()
@@ -159,6 +163,11 @@ describe("migrations must enable RLS on every public table they create", () => {
     expect(tableNames(`CREATE TABLE IF NOT EXISTS public.real_thing (id uuid);`)).toEqual([
       "real_thing",
     ])
+    // A table in ANOTHER schema is not a public table (and must not read as its schema name)…
+    expect(tableNames(`CREATE TABLE IF NOT EXISTS flowty_archive.some_table (id uuid);`)).toEqual([])
+    expect(tableNames(`CREATE TABLE "flowty_archive"."some_table" (id uuid);`)).toEqual([])
+    // …while an unqualified table (public by search_path) is still checked.
+    expect(tableNames(`CREATE TABLE bare_thing (id uuid);`)).toEqual(["bare_thing"])
   })
 
   it("every non-grandfathered CREATE TABLE enables RLS (or carries an explicit opt-out)", () => {
