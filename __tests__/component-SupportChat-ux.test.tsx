@@ -89,10 +89,25 @@ describe("SupportChat — the bot's links are clickable", () => {
       if (!a) throw new Error("no anchor")
       return a as HTMLAnchorElement
     })
-    expect(link.textContent).toBe("Top Shot")
+    // 2026-10-03: an off-site link carries a ↗ marker (aria-hidden) and a title
+    // naming the host, so a reader can tell a marketplace link from an RPC page.
+    expect(link.textContent).toBe("Top Shot↗")
+    expect(link.getAttribute("data-offsite")).toBe("1")
+    expect(link.getAttribute("title")).toContain("nbatopshot.com")
     expect(link.getAttribute("target")).toBe("_blank")
     // noopener is what stops the opened tab reaching back via window.opener.
     expect(link.getAttribute("rel")).toContain("noopener")
+  })
+
+  it("does not mark an absolute rippackscity.com link as off-site", async () => {
+    const { container } = await openAndSend("site link", "The trophy board is at [trophies](https://www.rippackscity.com/insights/trophies).")
+    const link = await waitFor(() => {
+      const a = container.querySelector('a[href="https://www.rippackscity.com/insights/trophies"]')
+      if (!a) throw new Error("no anchor")
+      return a as HTMLAnchorElement
+    })
+    expect(link.textContent).toBe("trophies")
+    expect(link.getAttribute("data-offsite")).toBeNull()
   })
 
   // The security property. Model output quotes tool results, which carry
