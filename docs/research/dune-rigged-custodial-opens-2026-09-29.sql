@@ -9,9 +9,15 @@
 -- may be nested under an Optional wrapper).
 --
 -- Validation arm: from 2023-11 on, nft_pack=false + sender 0xe1f2... should match
--- RPC's chain_arrival_probes (2,343 txs as of 2026-09-29 ~11:57 AM PT, still
--- growing). Months before 2023-11 are the part RPC cannot read at all. This query
--- also catches packs whose pulls he has since SOLD, which the RPC bisect cannot.
+-- RPC's chain_arrival_probes (2,343 txs as of 2026-09-29 ~11:57 AM PT; 7,088 by
+-- 2026-10-03 with the queue drained, plus the flip lane's finds -- re-count with
+-- the query in docs/reference/packs.md). Months before 2023-11 are the part RPC
+-- cannot read at all. This query also catches packs whose pulls he has since
+-- SOLD: RPC traces a sold pull only when `sales` holds his sale of it, and
+-- 2026-10-03 showed he often sells a whole custodial pack back to Dapper (buyer
+-- 0xe1f2...) within ~30 s, where `sales` held 1 of the pack's 3 moments. A pack
+-- none of whose moments reached `sales` is invisible to RPC and visible here.
+-- Expect this query's post-2023-11 custodial count to EXCEED RPC's for that reason.
 
 WITH ev AS (
   SELECT transaction_hash, block_time, element_at(topics, 1) AS topic, data
