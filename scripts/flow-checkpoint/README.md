@@ -14,6 +14,7 @@ records (Flowty Funding / storefront listings, NFT collections) are fully recove
 | `decode_fundings.py "<dir>/*.jsonl" <out.csv>` | `Flowty.Funding` → lender / borrower addresses (from the raw `access(contract)` capabilities) |
 | `decode_flags.py <dir> <out.json>` | funding id → (repaid, settled) at that snapshot |
 | `decode_wallet.py <dir> <owner_hex> <out.json>` | an account's NFT ids per collection + storefront listings |
+| `decode_rentals.py <dir> <out.json>` | `FlowtyRentals.Rental` → renter / owner, returned / settled, start, term, fee, deposit, NFT (rentals persist with flags, so every snapshot carries the whole book: 586 at mainnet-24) |
 | `match_purchases.py [out.csv]` | moments that entered a wallet between snapshots × purchased Flowty listings (expects `w{spork}_{owner}.json` and `L{spork}/` in cwd) |
 
 Run a full checkpoint as 16 parallel processes (one per part, or 16 byte ranges of a single file):
