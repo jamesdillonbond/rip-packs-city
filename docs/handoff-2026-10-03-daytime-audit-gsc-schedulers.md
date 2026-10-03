@@ -113,10 +113,16 @@ Trevor's answer to the third block's queue was to build it. All four verified ag
 - **Register hygiene (`260dfbe22`):** 36 of the OPEN section's 88 rows carried their own RESOLVED / FIXED / CLOSED / SHIPPED marker; moved to RESOLVED by script with every cell carried (rule + mapping recorded in the file's header), R77 and every partial row left in OPEN. `register:check --before origin/main` passes; OPEN is now 52 rows — the list a pass actually reads.
 - Trevor deleted the 10 retired cron-job.org entries himself (~2:25 PM PT); struck from the list below.
 
+## Eighth block (~3:02–3:35 PM PT): "Figure out if you can do 22 and the R77 stuff"
+
+- **R77 — done without the secrets (`f4684ec80`).** The Actions secrets API is closed to the sessions (`gh secret list` → 403 at the proxy) and a bot token must never pass through a transcript, so the two Telegram secrets stay yours. But the runner can page TODAY: `scripts/ci/page-via-github-issue.sh` opens (or comments on) a GitHub issue that @-mentions you with the workflow's own `GITHUB_TOKEN` — delivered by GitHub's notification plane, which is neither Vercel nor Supabase. Wired into `pipeline-sentinel.yml` (same condition as the Telegram step) and `site-availability-alarm.yml` (every runtime red: DB unreadable, blind payload, zero probes, site down, site was down); one open issue per title, a dated comment per repeat, never changes the job result. Test executes the script with `gh` shadowed and pins both workflows. ⚠ Not yet proven with a live page — a deliberate test issue is a public post, so it waits for your word. Add the Telegram pair whenever you like; it lights the second channel.
+- **#22 — nothing a session can move.** Re-tested: `commit/1c3e01a8f` still loads, the 15 closed PRs still hold the refs; Support ticket **#4811268** is Open with no reply after 3 days (read in your signed-in Chrome; the earlier #4626897 is archived). What remains is GitHub's action, then the Dapper session rotation, which needs your Dapper login.
+- **Red `main` fixed (`0447d373a`):** the other session's market-cap tiles (`17d6c93`, 3:03 PM) put the edition / player / team / set pages on an unbounded path to the RPC-read module through two pure helpers and two types imported by `MarketCapTile.tsx`. Helpers moved to the pure `market-cap-format.ts`, types taken from the bounded fetcher; `check-unbounded-server-reads` 0 / 94; CI green.
+
 ## Needs Trevor (carried + new)
 
 - ~~Delete the 10 retired cron-job.org entries~~ — DONE by Trevor ~2:25 PM PT (console reads 78 entries / 71 active / 7 inactive; ledger entry by the other session).
-- Rotate `ATLAS_POOL_INGEST_KEY` (#144); #22 (GitHub Support). ~~Scratch Flowty jobs 673/680~~ — both gone (673 unscheduled by this session after reading its state tables: nothing left to dispatch).
+- Rotate `ATLAS_POOL_INGEST_KEY` (#144); #22 — waiting on GitHub Support #4811268, then the Dapper session rotation. ~~Scratch Flowty jobs 673/680~~ — both gone (673 unscheduled by this session after reading its state tables: nothing left to dispatch).
 - `sync-nba-projections` (#8) — mute now expires 10-28.
 - Both product calls from the first block were MADE under delegation (sniper fee gate shipped; team-named player slugs stay 404). Overrule by reverting `5bf46cced`.
 - ~~Flip 10231 + 10233; decide on 10256 and the chart overlays~~ — DONE in the fourth block (Trevor: "Do everything mentioned"); the only open product call is whether an ask/offer price-history SERIES is worth a new snapshot lane (today nothing keeps it, so the chart does not pretend to).
