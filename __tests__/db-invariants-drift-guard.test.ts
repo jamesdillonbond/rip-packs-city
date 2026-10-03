@@ -15,6 +15,28 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-10-03. Atlas DistributionService walk for Top Shot pack supply: a
+    // steady 2-request trickle that backs off while the market lane is 403'd; an
+    // edition pass lands under its summary and closes on the page reaching totalCount.
+    fn: "topshot_pack_supply_tick",
+    test: "supabase/tests/topshot_pack_supply_tick.sql",
+    migration: "supabase/migrations/20261003224608_audit_20261003_topshot_pack_supply_from_atlas_distribution_service.sql",
+  },
+  {
+    // Added 2026-10-03. Per-edition issuer-held split (in sealed packs vs reserve):
+    // NULL until every drop is read and every drop with packs left reconciles exactly.
+    fn: "topshot_issuer_held_split_editions",
+    test: "supabase/tests/topshot_pack_supply_tick.sql",
+    migration: "supabase/migrations/20261003224608_audit_20261003_topshot_pack_supply_from_atlas_distribution_service.sql",
+  },
+  {
+    // Added 2026-10-03. Per-tier issuer-held split from the drop summaries; stale
+    // issuer-held rows are excluded AND disclosed; contradicted never goes negative.
+    fn: "get_topshot_issuer_held_split",
+    test: "supabase/tests/topshot_pack_supply_tick.sql",
+    migration: "supabase/migrations/20261003224608_audit_20261003_topshot_pack_supply_from_atlas_distribution_service.sql",
+  },
+  {
     // Added 2026-10-03. Market cap = FMV x COLLECTOR-HELD supply at every grain.
     // Pins burned + issuer-held exclusion, unknown supply → NULL cap (never $0),
     // an unknown collection → zero rows, and known caps ranking ahead of unknown.

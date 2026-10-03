@@ -11,6 +11,8 @@ import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { fetchBoardForPage } from "@/lib/insights/board-page-fetch"
 import { fetchMarketCapBoard, type MarketCapBoard } from "@/lib/insights/market-cap-board"
+import IssuerHeldSplitPanel from "@/components/insights/IssuerHeldSplitPanel"
+import { fetchTopShotIssuerSplit, type IssuerSplitRow } from "@/lib/insights/topshot-issuer-split"
 
 // Computed per call from FMV + supply tables; 15-min ISR matches the route's edge cache.
 export const revalidate = 900
@@ -19,7 +21,7 @@ const DEFAULT_DRILL_COLLECTION = "nba_top_shot"
 const DEFAULT_DRILL_GROUP = "player" as const
 
 export default async function MarketCapPage() {
-  const [collections, drill] = await Promise.all([
+  const [collections, drill, split] = await Promise.all([
     fetchBoardForPage<MarketCapBoard>(
       "Market cap",
       { group: "collection", collection: null, rows: [] },
@@ -30,6 +32,7 @@ export default async function MarketCapPage() {
       { group: DEFAULT_DRILL_GROUP, collection: DEFAULT_DRILL_COLLECTION, rows: [] },
       (db) => fetchMarketCapBoard(db, DEFAULT_DRILL_GROUP, DEFAULT_DRILL_COLLECTION, 50),
     ),
+    fetchBoardForPage<IssuerSplitRow[]>("Top Shot issuer-held split", [], (db) => fetchTopShotIssuerSplit(db)),
   ])
   return (
     <>
@@ -37,6 +40,7 @@ export default async function MarketCapPage() {
         summary={summarizeDegraded([
           boardStatus("Collection market caps", collections.ok),
           boardStatus("Market cap drill-down", drill.ok),
+          boardStatus("Top Shot issuer-held split", split.ok),
         ])}
       />
       {/* Each panel also carries its own failed flag: the banner is not a substitute
@@ -48,6 +52,7 @@ export default async function MarketCapPage() {
         initialDrillFailed={!drill.ok}
         initialFetchedAt={collections.ok ? collections.fetchedAt : null}
       />
+      <IssuerHeldSplitPanel rows={split.data} failed={!split.ok} />
     </>
   )
 }
