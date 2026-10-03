@@ -1,0 +1,314 @@
+-- topshot_sellback_walk_backfills_2025_buybacks
+-- anon-exec: revoked (run_topshot_sellback_walk) — NEW SECDEF fn; REVOKE FROM PUBLIC, anon, authenticated in one statement below; pg_cron runs it as postgres.
+--
+-- 2026-10-03 (known-issues #167; Trevor: "Do it all"). Top Shot sales bought by Dapper's buy-back
+-- wallet 0xe1f2a091f7bb5245 between Jul and Oct 2025 are ABSENT from `sales` — whatever loaded
+-- 2025 history skipped them. Measured on chain, 2025-09-15 9:20 AM–12:24 PM PT: 102
+-- TopShotMarketV3.MomentPurchased events — 65 to collectors (65/65 in `sales`), 37 to the buy-back
+-- wallet (0/37 in `sales`). `sales` per month for that buyer: Jun 2,440 · Jul 89 · Aug 151 · Sep 0 ·
+-- Oct 0 · Nov 3,307. Current ingest is complete (2026-09-21: 106/106).
+--
+-- WHAT THIS DOES: a throttled pg_cron walk over blocks 118,100,000 (2025-06-30) .. 131,330,000
+-- (2025-11-01), mainnet26 then mainnet27 (each historical node only serves its own spork), in
+-- 250-block pages of two event types: TopShotMarketV3.MomentPurchased (price, seller) and
+-- TopShot.Deposit (kept only when `to` = the buy-back wallet). A purchase whose moment is deposited
+-- into the buy-back wallet in the same tx is a sell-back.
+--   * ≤ 16 requests in flight (the node returns 429 above ~20 concurrent — measured today);
+--     a failed page is retried, and closed as `failed` after 8 attempts so it stays visible.
+--   * ~13.2M blocks ≈ 106k requests ≈ 4–5 days at one tick per minute.
+--   * PROMOTION into `sales` only when the edition resolves from a source the live indexer already
+--     resolved (moments, then another sale of the same moment) and `sales` has no row for that
+--     moment within ±1 h; source = 'onchain_sellback_backfill_2025'. Measured on the sample: 7 of
+--     37 resolve that way — repacked commons rarely appear elsewhere. The rest stay STAGED with
+--     promote_outcome = 'unresolved_edition': the complete population (tx, moment, seller, price,
+--     time) for pack-open reconstruction and seller history, never written with a guessed edition.
+--   * The lane unschedules itself when every range is walked and every page closed.
+--
+-- REVERT:
+--   SELECT cron.unschedule('rpc-topshot-sellback-walk');
+--   DELETE FROM public.sales WHERE source = 'onchain_sellback_backfill_2025';   -- the only rows it wrote
+--   DROP FUNCTION public.run_topshot_sellback_walk(integer);
+--   DROP TABLE public.topshot_sellback_walk_pages, public.topshot_sellback_walk_purchases,
+--              public.topshot_sellback_walk_deposits, public.topshot_sellback_walk_state;
+
+CREATE TABLE IF NOT EXISTS public.topshot_sellback_walk_state (
+  id          int PRIMARY KEY CHECK (id = 1),
+  next_height bigint NOT NULL,
+  end_height  bigint NOT NULL,
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO public.topshot_sellback_walk_state (id, next_height, end_height)
+VALUES (1, 118100000, 131330000)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS public.topshot_sellback_walk_pages (
+  kind         text   NOT NULL CHECK (kind IN ('purchase', 'deposit')),
+  start_height bigint NOT NULL,
+  req_id       bigint,
+  issued_at    timestamptz,
+  attempts     int    NOT NULL DEFAULT 0,
+  last_status  int,
+  last_error   text,
+  failed       boolean NOT NULL DEFAULT false,
+  done_at      timestamptz,
+  PRIMARY KEY (kind, start_height)
+);
+CREATE INDEX IF NOT EXISTS topshot_sellback_walk_pages_open_idx
+  ON public.topshot_sellback_walk_pages (attempts DESC, start_height) WHERE done_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS public.topshot_sellback_walk_purchases (
+  tx              text NOT NULL,
+  nft_id          text NOT NULL,
+  price_usd       numeric,
+  seller          text,
+  block_height    bigint,
+  sold_at         timestamptz,
+  promoted_at     timestamptz,
+  promote_outcome text,
+  PRIMARY KEY (tx, nft_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.topshot_sellback_walk_deposits (
+  tx           text NOT NULL,
+  nft_id       text NOT NULL,
+  block_height bigint,
+  deposited_at timestamptz,
+  PRIMARY KEY (tx, nft_id)
+);
+
+ALTER TABLE public.topshot_sellback_walk_state     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.topshot_sellback_walk_pages     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.topshot_sellback_walk_purchases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.topshot_sellback_walk_deposits  ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.topshot_sellback_walk_state, public.topshot_sellback_walk_pages,
+              public.topshot_sellback_walk_purchases, public.topshot_sellback_walk_deposits
+  FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.run_topshot_sellback_walk(p_max_inflight integer DEFAULT 16)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  c_buyback   CONSTANT text := '0xe1f2a091f7bb5245';
+  c_ts        CONSTANT uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+  c_m26_end   CONSTANT bigint := 130290658;
+  v_started   timestamptz := clock_timestamp();
+  v_state     public.topshot_sellback_walk_state%ROWTYPE;
+  v_harvested int := 0;
+  v_retried   int := 0;
+  v_failed    int := 0;
+  v_issued    int := 0;
+  v_inflight  int := 0;
+  v_room      int := 0;
+  v_purch     int := 0;
+  v_dep       int := 0;
+  v_promoted  int := 0;
+  v_page      record;
+  v_err       text;
+BEGIN
+  BEGIN
+    SELECT * INTO v_state FROM public.topshot_sellback_walk_state WHERE id = 1 FOR UPDATE;
+
+    -- 1. HARVEST every in-flight page whose response has arrived. A 200 is parsed and closed;
+    --    anything else (429, 5xx, a pg_net timeout row with NULL status) is re-queued, and a
+    --    page that has failed 8 times is closed as FAILED so it is visible, never silently lost.
+    FOR v_page IN
+      SELECT p.kind, p.start_height, p.req_id, r.status_code, r.content, r.timed_out, r.error_msg
+        FROM public.topshot_sellback_walk_pages p
+        JOIN net._http_response r ON r.id = p.req_id
+       WHERE p.done_at IS NULL AND p.req_id IS NOT NULL
+    LOOP
+      IF v_page.status_code = 200 THEN
+        IF v_page.kind = 'purchase' THEN
+          INSERT INTO public.topshot_sellback_walk_purchases (tx, nft_id, price_usd, seller, block_height, sold_at)
+          SELECT e->>'transaction_id',
+                 (SELECT fl->'value'->>'value' FROM jsonb_array_elements(pl->'value'->'fields') fl WHERE fl->>'name' = 'id'),
+                 (SELECT (fl->'value'->>'value')::numeric FROM jsonb_array_elements(pl->'value'->'fields') fl WHERE fl->>'name' = 'price'),
+                 (SELECT coalesce(fl->'value'->'value'->>'value', fl->'value'->>'value') FROM jsonb_array_elements(pl->'value'->'fields') fl WHERE fl->>'name' = 'seller'),
+                 (b->>'block_height')::bigint,
+                 (b->>'block_timestamp')::timestamptz
+            FROM jsonb_array_elements(v_page.content::jsonb) b,
+                 jsonb_array_elements(b->'events') e,
+                 LATERAL (SELECT convert_from(decode(e->>'payload', 'base64'), 'utf8')::jsonb AS pl) x
+          ON CONFLICT (tx, nft_id) DO NOTHING;
+        ELSE
+          -- Deposits are kept ONLY when they land in the buy-back wallet: that is the population.
+          INSERT INTO public.topshot_sellback_walk_deposits (tx, nft_id, block_height, deposited_at)
+          SELECT d.tx, d.nft_id, d.h, d.ts
+            FROM (
+              SELECT e->>'transaction_id' AS tx,
+                     (SELECT fl->'value'->>'value' FROM jsonb_array_elements(pl->'value'->'fields') fl WHERE fl->>'name' = 'id') AS nft_id,
+                     (SELECT coalesce(fl->'value'->'value'->>'value', fl->'value'->>'value') FROM jsonb_array_elements(pl->'value'->'fields') fl WHERE fl->>'name' = 'to') AS to_addr,
+                     (b->>'block_height')::bigint AS h,
+                     (b->>'block_timestamp')::timestamptz AS ts
+                FROM jsonb_array_elements(v_page.content::jsonb) b,
+                     jsonb_array_elements(b->'events') e,
+                     LATERAL (SELECT convert_from(decode(e->>'payload', 'base64'), 'utf8')::jsonb AS pl) x
+            ) d
+           WHERE d.to_addr = c_buyback
+          ON CONFLICT (tx, nft_id) DO NOTHING;
+        END IF;
+        UPDATE public.topshot_sellback_walk_pages
+           SET done_at = now(), last_status = 200
+         WHERE kind = v_page.kind AND start_height = v_page.start_height;
+        v_harvested := v_harvested + 1;
+      ELSE
+        UPDATE public.topshot_sellback_walk_pages
+           SET req_id = NULL,
+               attempts = attempts + 1,
+               last_status = v_page.status_code,
+               last_error = left(coalesce(v_page.error_msg, CASE WHEN v_page.timed_out THEN 'timed out' END, 'HTTP ' || v_page.status_code), 200),
+               done_at = CASE WHEN attempts + 1 >= 8 THEN now() END,
+               failed = (attempts + 1 >= 8)
+         WHERE kind = v_page.kind AND start_height = v_page.start_height;
+        IF v_page.status_code IS DISTINCT FROM 200 THEN v_retried := v_retried + 1; END IF;
+      END IF;
+    END LOOP;
+
+    -- A request whose response row never appeared (pg_net drops rows after its TTL) is re-queued
+    -- after 15 minutes rather than waiting forever.
+    UPDATE public.topshot_sellback_walk_pages
+       SET req_id = NULL, attempts = attempts + 1, last_error = 'no response row after 15 min'
+     WHERE done_at IS NULL AND req_id IS NOT NULL AND issued_at < now() - interval '15 minutes'
+       AND NOT EXISTS (SELECT 1 FROM net._http_response r WHERE r.id = req_id);
+
+    SELECT count(*) FILTER (WHERE failed) INTO v_failed FROM public.topshot_sellback_walk_pages;
+
+    -- 2. ENQUEUE new ranges (both event kinds per 250-block page) until the queue is ahead of the
+    --    issue rate, then ISSUE: retries first, then the oldest new pages, never more than
+    --    p_max_inflight requests outstanding (the historical node 429s above ~20 concurrent).
+    IF v_state.next_height <= v_state.end_height
+       AND (SELECT count(*) FROM public.topshot_sellback_walk_pages WHERE done_at IS NULL AND req_id IS NULL) < p_max_inflight THEN
+      INSERT INTO public.topshot_sellback_walk_pages (kind, start_height)
+      SELECT k, s
+        FROM generate_series(v_state.next_height, LEAST(v_state.next_height + 250 * 8 - 1, v_state.end_height), 250) s,
+             unnest(ARRAY['purchase', 'deposit']) k
+      ON CONFLICT DO NOTHING;
+      UPDATE public.topshot_sellback_walk_state
+         SET next_height = LEAST(v_state.next_height + 250 * 8, v_state.end_height + 1), updated_at = now()
+       WHERE id = 1;
+    END IF;
+
+    SELECT count(*) INTO v_inflight FROM public.topshot_sellback_walk_pages WHERE done_at IS NULL AND req_id IS NOT NULL;
+    v_room := GREATEST(p_max_inflight - v_inflight, 0);
+
+    WITH next_pages AS (
+      SELECT kind, start_height
+        FROM public.topshot_sellback_walk_pages
+       WHERE done_at IS NULL AND req_id IS NULL
+       ORDER BY attempts DESC, start_height
+       LIMIT v_room
+    ), issued AS (
+      UPDATE public.topshot_sellback_walk_pages p
+         SET req_id = net.http_get(
+               format('%s/v1/events?type=%s&start_height=%s&end_height=%s',
+                      CASE WHEN p.start_height <= c_m26_end THEN 'http://access-001.mainnet26.nodes.onflow.org:8070'
+                           ELSE 'http://access-001.mainnet27.nodes.onflow.org:8070' END,
+                      CASE p.kind WHEN 'purchase' THEN 'A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased'
+                                  ELSE 'A.0b2a3299cc857e29.TopShot.Deposit' END,
+                      p.start_height,
+                      -- a page never straddles the spork boundary: each node only knows its own blocks
+                      CASE WHEN p.start_height <= c_m26_end THEN LEAST(p.start_height + 249, c_m26_end)
+                           ELSE p.start_height + 249 END),
+               '{}'::jsonb, '{}'::jsonb, 20000),
+             issued_at = now()
+        FROM next_pages n
+       WHERE p.kind = n.kind AND p.start_height = n.start_height
+      RETURNING 1
+    )
+    SELECT count(*) INTO v_issued FROM issued;
+
+    -- 3. PROMOTE: a V3 purchase whose moment was deposited into the buy-back wallet in the same
+    --    tx is a sell-back. It goes into `sales` only when its edition resolves from a source the
+    --    live indexer already resolved (moments, then another sale of the same moment), and only
+    --    if `sales` does not already hold that (tx, moment). Unresolved rows stay staged and are
+    --    counted; they are never written with a guessed edition.
+    WITH cand AS (
+      SELECT p.tx, p.nft_id, p.price_usd, p.seller, p.block_height, p.sold_at,
+             coalesce(
+               (SELECT m.edition_id FROM public.moments m
+                 WHERE m.nft_id = p.nft_id AND m.collection_id = c_ts LIMIT 1),
+               (SELECT s.edition_id FROM public.sales s
+                 WHERE s.nft_id = p.nft_id AND s.collection_id = c_ts ORDER BY s.sold_at DESC LIMIT 1)
+             ) AS edition_id,
+             coalesce(
+               (SELECT m.serial_number FROM public.moments m
+                 WHERE m.nft_id = p.nft_id AND m.collection_id = c_ts LIMIT 1),
+               (SELECT s.serial_number FROM public.sales s
+                 WHERE s.nft_id = p.nft_id AND s.collection_id = c_ts AND s.serial_number IS NOT NULL ORDER BY s.sold_at DESC LIMIT 1)
+             ) AS serial_number
+        FROM public.topshot_sellback_walk_purchases p
+        JOIN public.topshot_sellback_walk_deposits d ON d.tx = p.tx AND d.nft_id = p.nft_id
+       WHERE p.promoted_at IS NULL
+         AND p.price_usd IS NOT NULL
+       LIMIT 500
+    ), ins AS (
+      INSERT INTO public.sales (edition_id, collection_id, collection, serial_number, price_usd, currency,
+                                seller_address, buyer_address, marketplace, transaction_hash, block_height,
+                                sold_at, nft_id, source)
+      SELECT c.edition_id, c_ts, 'nba_top_shot', c.serial_number, c.price_usd, 'USD',
+             c.seller, c_buyback, 'top_shot', c.tx, c.block_height, c.sold_at, c.nft_id,
+             'onchain_sellback_backfill_2025'
+        FROM cand c
+       WHERE c.edition_id IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM public.sales s
+                          WHERE s.collection_id = c_ts AND s.nft_id = c.nft_id
+                            AND s.sold_at BETWEEN c.sold_at - interval '1 hour' AND c.sold_at + interval '1 hour'
+                            AND (s.transaction_hash = c.tx OR s.transaction_hash IS NULL))
+      RETURNING nft_id, transaction_hash
+    ), marked AS (
+      UPDATE public.topshot_sellback_walk_purchases p
+         SET promoted_at = now(),
+             promote_outcome = CASE WHEN EXISTS (SELECT 1 FROM ins WHERE ins.nft_id = p.nft_id AND ins.transaction_hash = p.tx)
+                                    THEN 'inserted'
+                                    WHEN c.edition_id IS NULL THEN 'unresolved_edition'
+                                    ELSE 'already_in_sales' END
+        FROM cand c
+       WHERE p.tx = c.tx AND p.nft_id = c.nft_id
+      RETURNING 1
+    )
+    SELECT (SELECT count(*) FROM ins) INTO v_promoted;
+
+    -- 4. DONE: every range enqueued and every page closed -> the lane unschedules itself.
+    IF (SELECT next_height > end_height FROM public.topshot_sellback_walk_state WHERE id = 1)
+       AND NOT EXISTS (SELECT 1 FROM public.topshot_sellback_walk_pages WHERE done_at IS NULL)
+       AND NOT EXISTS (SELECT 1 FROM public.topshot_sellback_walk_purchases p
+                         JOIN public.topshot_sellback_walk_deposits d ON d.tx = p.tx AND d.nft_id = p.nft_id
+                        WHERE p.promoted_at IS NULL)
+       AND EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'rpc-topshot-sellback-walk') THEN
+      PERFORM cron.unschedule('rpc-topshot-sellback-walk');
+    END IF;
+
+    SELECT count(*) INTO v_purch FROM public.topshot_sellback_walk_purchases;
+    SELECT count(*) INTO v_dep FROM public.topshot_sellback_walk_deposits;
+  EXCEPTION WHEN query_canceled OR OTHERS THEN
+    v_err := left(SQLERRM, 300);
+  END;
+
+  PERFORM public.log_pipeline_run('topshot-sellback-walk', v_started, v_harvested, v_promoted, v_retried,
+    v_err IS NULL, v_err, 'nba_top_shot', NULL,
+    (SELECT next_height::text FROM public.topshot_sellback_walk_state WHERE id = 1),
+    jsonb_build_object('harvested', v_harvested, 'retried', v_retried, 'issued', v_issued, 'inflight_before', v_inflight,
+                       'failed_pages', v_failed, 'purchases', v_purch, 'buyback_deposits', v_dep,
+                       'promoted', v_promoted, 'via', 'pg_cron',
+                       'duration_ms', (extract(epoch FROM clock_timestamp() - v_started) * 1000)::int));
+  RETURN jsonb_build_object('harvested', v_harvested, 'retried', v_retried, 'issued', v_issued,
+                            'failed_pages', v_failed, 'promoted', v_promoted, 'error', v_err);
+END
+$function$;
+
+REVOKE EXECUTE ON FUNCTION public.run_topshot_sellback_walk(integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.run_topshot_sellback_walk(integer) TO postgres, service_role;
+
+DO $$
+BEGIN
+  IF has_function_privilege('anon', 'public.run_topshot_sellback_walk(integer)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'run_topshot_sellback_walk must not be executable by anon';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'rpc-topshot-sellback-walk') THEN
+    PERFORM cron.schedule('rpc-topshot-sellback-walk', '* * * * *', 'SELECT public.run_topshot_sellback_walk(16);');
+  END IF;
+END
+$$;
