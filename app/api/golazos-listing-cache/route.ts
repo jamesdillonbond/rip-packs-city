@@ -167,7 +167,6 @@ async function runListingCache() {
     upsertErrors: 0,
     editionsMapped: 0,
     fmvRpcCalled: false,
-    badge_low_ask_updated: 0,
     // ⚠ COMPLETENESS, not a row count. The dual-sort sweep below `continue`s
     // past a failed page, so a Flowty error silently removes a whole 50-listing
     // window from the run — and the stale purge that follows deletes every row
@@ -414,36 +413,16 @@ async function runListingCache() {
     console.log(`[golazos-listing-cache] fmv rpc threw: ${String(err)}`)
   }
 
-  // Backfill badge_editions.low_ask from the cached_listings we just upserted.
-  // Golazos has no per-edition GQL marketplace endpoint plumbed yet, and the
-  // moment_id field in cached_listings is a compound trait string that does
-  // not match badge_editions.external_id, so we fall back to the
-  // (player_name, set_name, tier) compound key. Coverage is partial because
-  // cached_listings is a top-N snapshot — long-tail editions with only one
-  // expensive listing won't be captured. Tracking as a follow-up to plumb
-  // the LaLiga Golazos public-api marketplace query when one is identified.
-  try {
-    const { data, error } = await supabaseAdmin.rpc(
-      "update_badge_low_ask_from_cached_listings",
-      { p_collection_id: GZ_COLLECTION_ID }
-    )
-    if (error) {
-      console.log(
-        `[golazos-listing-cache] update_badge_low_ask_from_cached_listings error: ${error.message}`
-      )
-    } else {
-      stats.badge_low_ask_updated = Number(data ?? 0) || 0
-      console.log(
-        `[golazos-listing-cache] badge_editions.low_ask updated: ${stats.badge_low_ask_updated}`
-      )
-    }
-  } catch (err) {
-    console.log(
-      `[golazos-listing-cache] badge low_ask update threw (non-fatal): ${
-        err instanceof Error ? err.message : String(err)
-      }`
-    )
-  }
+  // ⛔ REMOVED 2026-10-03: this route used to also write badge_editions.low_ask
+  // via update_badge_low_ask_from_cached_listings, keyed on (player_name,
+  // set_name, tier) — coarser than an edition — from a ~100-row Flowty snapshot.
+  // The on-chain reconciler refresh_golazos_badge_low_ask (pg_cron :10/:40)
+  // owns that column by external_id and reverted it every time: 960 Flowty
+  // writes vs 961 reconciler writes in 48 h. Of the 24 editions it matched it
+  // added NO coverage the chain lacked; 14 were equal and 10 were HIGHER than
+  // the real floor (2.01x the chain floor on average across all 24), standing
+  // for up to 30 min where FMV Steps 5/5b read them. One writer now. Do not
+  // re-add a second.
 
   } catch (err) {
     stats.ok = false
@@ -478,7 +457,6 @@ async function runListingCache() {
           total_fetched: stats.totalFetched,
           editions_mapped: stats.editionsMapped,
           fmv_rpc_called: stats.fmvRpcCalled,
-          badge_low_ask_updated: stats.badge_low_ask_updated,
           // The field an observer keys on, so the incidence of a partial sweep
           // is countable rather than only inferable from a log line.
           sweep_complete: !degradedSweep,

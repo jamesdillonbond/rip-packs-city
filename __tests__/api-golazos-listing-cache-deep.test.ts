@@ -226,13 +226,15 @@ describe("golazos-listing-cache — mapping + write contract", () => {
       expect(Date.parse(threshold)).toBeLessThanOrEqual(Date.parse(String(row.cached_at)))
     }
 
-    // Chained FMV regen + Golazos-specific badge low_ask backfill (compound-key).
+    // Chained FMV regen.
     expect(spy.rpcCalls.find((c) => c.name === "fmv_from_cached_listings")?.args).toEqual({
       p_collection_id: GZ_COLLECTION,
     })
-    expect(
-      spy.rpcCalls.find((c) => c.name === "update_badge_low_ask_from_cached_listings")?.args,
-    ).toEqual({ p_collection_id: GZ_COLLECTION })
+    // INVERTED 2026-10-03: the route must NOT write badge_editions.low_ask. Its
+    // compound-key Flowty write was a second writer fighting the on-chain
+    // reconciler (refresh_golazos_badge_low_ask), and 10 of 24 values it wrote
+    // were above the real floor. One writer owns that column.
+    expect(spy.rpcCalls.some((c) => c.name === "update_badge_low_ask_from_cached_listings")).toBe(false)
 
     const log = terminalLog(spy)
     expect(log).toMatchObject({
@@ -248,7 +250,6 @@ describe("golazos-listing-cache — mapping + write contract", () => {
       total_fetched: 4,
       editions_mapped: 1,
       fmv_rpc_called: true,
-      badge_low_ask_updated: 6,
     })
   })
 })
