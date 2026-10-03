@@ -28,6 +28,7 @@ import {
   EMPTY_MARKET_BUNDLE,
 } from "@/lib/entity/edition-market-fetchers"
 import { fetchPackProvenance, fetchOwnerUsernames, type PackProvenanceRow } from "@/lib/edition/fetchers"
+import { lookupTopShotFossilRedirect } from "@/lib/edition/fossil-redirect"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -418,7 +419,14 @@ export async function generateMetadata(
   // surface at /pinnacle/moment/<render_id> (which also disambiguates legacy
   // set-level keys). Funnel all Pinnacle edition URLs there. (Item 2, 2026-06-26.)
   if (isPinnacleUrlSlug(collection)) permanentRedirect(`/pinnacle/moment/${encodeURIComponent(slug)}`)
-  if (isTopShotFossilSlug(collection, slug)) return NOT_FOUND_METADATA
+  if (isTopShotFossilSlug(collection, slug)) {
+    // 2026-10-03 (Search Console): a purged UUID-form key with an UNAMBIGUOUS
+    // canonical twin 308s to it (lib/edition/fossil-redirect.ts); every other
+    // fossil keeps the 404. A failed lookup is the 404, never a guessed 308.
+    const canonical = await lookupTopShotFossilRedirect(slug)
+    if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
+    return NOT_FOUND_METADATA
+  }
   // ⚠ BOUNDED (deep-audit R19). Measured over 7 days to 2026-08-23:
   // "edition detail unavailable: rpc get_edition_detail timed out after 45000ms"
   // threw 15,388 times across 2,963 DISTINCT USERS, and a large share of the
@@ -454,7 +462,11 @@ export default async function EditionPage(
   // The moment page resolves a render_id directly and a legacy set-level key to a
   // disambiguation list, so no Pinnacle edition URL ever shows an arbitrary pin.
   if (isPinnacleUrlSlug(collection)) permanentRedirect(`/pinnacle/moment/${encodeURIComponent(slug)}`)
-  if (isTopShotFossilSlug(collection, slug)) notFound()
+  if (isTopShotFossilSlug(collection, slug)) {
+    const canonical = await lookupTopShotFossilRedirect(slug)
+    if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
+    notFound()
+  }
 
   // ⚠ BOUNDED (R19). Same read, same timeout. `!detail` means the RPC answered
   // and this edition does not exist (404 true); a THROW means we could not ask,
