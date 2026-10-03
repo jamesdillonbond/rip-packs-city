@@ -9,7 +9,7 @@
 --   4. never more than p_max_inflight requests are outstanding.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261003220000_topshot_sellback_walk_backfills_2025_buybacks.sql).
+-- (supabase/migrations/20261003204900_topshot_sellback_walk_backfills_2025_buybacks.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 
 BEGIN;
@@ -211,6 +211,8 @@ BEGIN
                           WHERE s.collection_id = c_ts AND s.nft_id = c.nft_id
                             AND s.sold_at BETWEEN c.sold_at - interval '1 hour' AND c.sold_at + interval '1 hour'
                             AND (s.transaction_hash = c.tx OR s.transaction_hash IS NULL))
+      -- defensive: a unique-index collision (idx_sales_tx_nft_sold) must skip the row, not abort every tick
+      ON CONFLICT DO NOTHING
       RETURNING nft_id, transaction_hash
     ), marked AS (
       UPDATE public.topshot_sellback_walk_purchases p

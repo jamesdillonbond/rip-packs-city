@@ -2793,6 +2793,14 @@ const PINS = [
     test: "supabase/tests/tag_internal_session_as_test.sql",
     migration: "supabase/migrations/20261003183547_internal_session_ids_are_tests_for_every_writer.sql",
   },
+  {
+    // Added 2026-10-03 (#167). The throttled historical walk that backfills 2025 Top Shot
+    // sell-backs: promotes into `sales` only with a resolved edition, closes a page as failed
+    // after 8 attempts, never exceeds p_max_inflight.
+    fn: "run_topshot_sellback_walk",
+    test: "supabase/tests/run_topshot_sellback_walk.sql",
+    migration: "supabase/migrations/20261003204900_topshot_sellback_walk_backfills_2025_buybacks.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version

@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS public.topshot_sellback_walk_pages (
   done_at      timestamptz,
   PRIMARY KEY (kind, start_height)
 );
+-- Pages are aligned to 250 blocks from 118,100,000, and the mainnet26 page is CLIPPED at
+-- 130,290,658 (a node only serves its own spork), so blocks 130,290,659..130,290,749 belong to no
+-- aligned page. Seed one page per kind at the mainnet27 root; its overlap with the next aligned
+-- page is harmless (both inserts are ON CONFLICT DO NOTHING).
+INSERT INTO public.topshot_sellback_walk_pages (kind, start_height)
+VALUES ('purchase', 130290659), ('deposit', 130290659)
+ON CONFLICT DO NOTHING;
 CREATE INDEX IF NOT EXISTS topshot_sellback_walk_pages_open_idx
   ON public.topshot_sellback_walk_pages (attempts DESC, start_height) WHERE done_at IS NULL;
 
@@ -257,6 +264,8 @@ BEGIN
                           WHERE s.collection_id = c_ts AND s.nft_id = c.nft_id
                             AND s.sold_at BETWEEN c.sold_at - interval '1 hour' AND c.sold_at + interval '1 hour'
                             AND (s.transaction_hash = c.tx OR s.transaction_hash IS NULL))
+      -- defensive: a unique-index collision (idx_sales_tx_nft_sold) must skip the row, not abort every tick
+      ON CONFLICT DO NOTHING
       RETURNING nft_id, transaction_hash
     ), marked AS (
       UPDATE public.topshot_sellback_walk_purchases p
