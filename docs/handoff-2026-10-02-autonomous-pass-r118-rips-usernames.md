@@ -1,4 +1,4 @@
-# Handoff — 2026-10-02 autonomous pass (~7:15 → ~9:15 AM PT; evening continuation 5:48 → 7:00 PM PT) · Claude Code (cloud)
+# Handoff — 2026-10-02 autonomous pass (~7:15 → ~9:15 AM PT; evening continuation 5:48 → 7:25 PM PT — thread closed by Trevor after this) · Claude Code (cloud)
 
 > ⚠ Every environment note below is specific to **this cloud session**. Trevor's machine and Claude Code push normally via Git Credential Manager; the Supabase MCP confirmation hold described here only bites an UNATTENDED session. **Commit these files as usual.**
 
@@ -35,6 +35,11 @@
 - Register: R108, R101 and R109 re-derived on today's numbers and marked resolved (each with a re-open trigger); the open P1 set is now R123 only, which the other session is working today.
 - **Decided on your "do what you think is best" (7:00 PM):** (a) the squeeze cadence question is closed by a GATE, not a cut — `refresh_panini_squeeze()` now skips in ~70 ms when no input changed since the last refresh (forced every 6 h), migration `20261003015903`; (b) pack-mint probes keep their pinned `ok` contract — the not-ok share is already 16 % (was 45 %) as the walk leaves mainnet24, and no alarm keys on it; re-open trigger in the ledger. Items I cannot reach from here: the offer-fill move (cron-job.org console), #144 (`npx supabase login` on your machine), #22 (GitHub Support).
 - **Tooling correction:** the MCP hold also catches a legitimate function body (pre-existing DELETE) and a plain UPDATE in a DO block; discriminator `DO $$ EXECUTE pg_get_functiondef(...) $$`; honest route = guarded splice, stated as adding no destructive statement (tooling-gotchas.md).
+
+## Closing state (7:25 PM PT)
+- Instruments: alerts none high/critical · R118 `[]` · `check_edition_fmv_current_source_drift()` 0 · stub queue 226 resting / 0 due · `panini-squeeze-mv` 7:18 PM tick skipped in 0.2 s · zz jobs 0 · every applied migration of the day has its file on `main` (the autorecover bot's 7:17 PM recovery was another session's). CI green through `44d8f6191`; later pushes are docs only.
+- Open watches, each with an exit condition and falsifier in the ledger: the 7:05 → 9:05 PM pgss delta (prediction written before the read), the FMV drift guard staying `[]` between daily reconciles, the next large chain-arrival seed waking the gated slots, the first `forced_by_age` squeeze refresh, the 10-03 3:37 AM reconstructed-rips row.
+- Durable lessons landed in `docs/reference/`: tooling-gotchas (the MCP hold correction + discriminator + splice route), database.md (pre-filter-then-exact predicate · OR→UNION window · touched-at column recipe · visibility-map bound on cold gains), cron-and-schedulers.md (two idle gates · the pgss-delta instrument · the zero-row worker-seconds column), key-files-and-honesty.md (a suppression with an age + the view that tells "no targets" from "no stubs").
 
 ## Needs Trevor (none urgent)
 0. Nothing new from the second half: the chain-arrival gate and the stub rest both carry their revert in the file header; the stub revert needs a human DROP TABLE / DROP VIEW only if you want it undone.
