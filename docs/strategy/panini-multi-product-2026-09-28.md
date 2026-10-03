@@ -316,3 +316,10 @@ What this thread added (each has a ledger entry with its revert path):
 - **Watch:** floors on thin packs are asks, not values (e.g. a 2022-23 Best of the NBA pack: floor $455,000, recent sale
   $900). The Packs tab shows them as market stats, not EV; any future "cheapest pack" or EV surface must not take a lone
   floor at face value.
+- **~4:40 PM PT:** the Packs tab heads an un-typed pack by its own name (37 rows relabelled hobby → pack in the DB).
+  **Naming lead:** every secondary pack carries Panini's official product name (`collection_name`). If a pack page's
+  responses also reference its cards (`packcard-<setId>_…`, e.g. sneak-peek images), the pack ties to a product set id
+  and the product can be named from Panini's own data, without a signed-in Chrome. The runner now records those counts
+  in `panini_pack_state.raw.__set_ids` (evidence only). **Next:** read them after the 6 PM run
+  (`select id, product_name, raw->'__set_ids' from panini_pack_state where raw ? '__set_ids'`); if one set id dominates
+  per pack, have the route set `product_set_id` from it and fill `panini_products.name` where NULL (never overwrite).
