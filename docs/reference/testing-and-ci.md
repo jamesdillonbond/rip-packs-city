@@ -2,6 +2,13 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ A NEW PIPELINE GETS A SILENCE ARM AUTOMATICALLY (2026-10-02)
+
+`pipeline_cadence_watchlist` is **opt-in**: a lane with no row has no silence or no-success alarm at all. The 2026-09-04 sweep (`20260904044417`) armed every unwatched pipeline from its own gap profile, but it ran **once**. By 10-02, **70 pipelines that ran in the last 3 days had no row**, and 24 of them met that sweep's own bar. The same evening `seed-topshot-pack-distributions` (pack-EV catalog) turned out unwatched for its whole life.
+- **`public.arm_unwatched_pipelines()`** (migration `audit_20261002_arm_unwatched_pipelines_daily`) is the 09-04 rule verbatim: 12+ active days in 14 and a run yesterday or today; thresholds from the lane's OWN gaps; `info`, which never pages; and `ON CONFLICT DO NOTHING`, so a human-retired row (`is_active=false`) is never touched. pg_cron runs it **daily at 3:19 AM PT** (`rpc-arm-unwatched-pipelines`), and it logs its own `pipeline_runs` row listing what it armed. It is not excluded from its own rule, so after 12 days it watches itself.
+- First run: **24 arms** (watchlist 188 → 212), including `atlas-editions-refresh`, `pack-nft-identity`, `allday-unmapped-atlas-resolver`, the `thp-leg-*` health legs and `sentinel`. Newer high-volume lanes (`chain-arrivals`, `pack-mint-probes`, the pull-chain lanes) arm on their own once they have 12 days.
+- ⚠ **Promotion past `info` stays a human read**, per the 09-04 rule. Security invariants were 0/0/0 after apply; `anon` cannot execute the function.
+
 ## ⭐ A DEPENDENCY CHANGE MAY NOT ADD A HIGH/CRITICAL PRODUCTION ADVISORY (2026-10-02)
 
 Until 10-02 **nothing in CI read `npm audit`**. Every `npm ci` log printed "29 vulnerabilities (… 1 critical)", and every job went green under it.
