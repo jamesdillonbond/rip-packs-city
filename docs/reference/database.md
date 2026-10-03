@@ -762,6 +762,16 @@ default, not a constraint. `SET vacuum_cost_delay = 2; VACUUM <table>;` throttle
 autovacuum is throttled, and a parent `VACUUM` **does** process its TOAST. ⛔ Neither reclaims space
 to the OS: that needs `VACUUM FULL` (ACCESS EXCLUSIVE) or `pg_repack`.
 
+⭐ **`VACUUM FULL` costs the LIVE set, not the file — measured 2026-10-02 (PT).** #75 priced the
+reclaim at "13 GB ÷ 22 MB/s ≈ 10 min of the instance's IO". It does not read the dead TOAST: it
+rewrites the heap (17 MB) and fetches only the live rows' chunks. `VACUUM FULL net._http_response`
+took the store **12 GB → 460 MB in 7.7 s** (Large tier, 432 MB live), and 14 s on 09-27. So the
+lock window and the IO scale with `sum(pg_column_size(content))`, and the file size is irrelevant.
+The same night showed the TOAST's own stats pinned again (`pg_toast_51873` `n_dead_tup` 0 against
+12 M deletes, no autovacuum since 09-20), growing ~2 GB/day, so the job (jobid 542) now runs
+**daily** at 2:16 AM PT (`20261003033000`). ⚠ Before pricing any FULL, measure the live content,
+not `pg_total_relation_size`.
+
 ## ⭐ READ `pg_stat_progress_vacuum` BEFORE BLAMING A LANE FOR A SPELL — a saturation spell's cause can be MAINTENANCE, and maintenance was invisible to every instrument (2026-09-13)
 
 **The instance:** from ~10:37 AM PT the estate read like a lane defect — `rpc-ts-listings-atlas-sync` failed **30 of 35 ticks** from 10:58, each cancelled at the 120 s budget on a DIFFERENT statement every time (`count(*)`, `CREATE TEMP TABLE _tsl_want`, `_cl_want`, the `floor` CTE, the `up` INSERT); `pg_cron Failures (6h)` 268; Trust Health / Pipeline Success / Sniper Feed INCONCLUSIVE; `/api/market` 503s; 8–19 client backends in `IO/DataFileRead`. The sentinel 504'd at its own wall. A cadence cut for the lane was one decision away.
