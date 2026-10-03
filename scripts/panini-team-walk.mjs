@@ -43,6 +43,7 @@
 //   CHROMIUM_PATH             optional executablePath when launching (no CDP)
 
 import { pathToFileURL } from "node:url"
+import { TIMED_OUT, sleep, withDeadline } from "./lib/with-deadline.mjs"
 
 export const BASE = "https://nft.paniniamerica.net/marketplace/nfts.html"
 export const DEFAULT_TARGETS = "Basketball:Portland Trail Blazers;Baseball:Detroit"
@@ -126,12 +127,68 @@ export function isProductsResponse(url, postData) {
 /** Pause before re-reading a page that answered EMPTY, to confirm it really is the end. */
 export const EMPTY_CONFIRM_WAIT_MS = 20_000
 
-async function walkTarget(page, target, { maxPages, delayMs, onFlush, log }) {
+/**
+ * Hard ceiling on ONE attempt at one page, on Node's timer. Above the goto (60 s) and
+ * products-wait (45 s) bounds, which run concurrently, plus the body read and the
+ * diagnostics — so a healthy-but-slow attempt is never cut; only a hung one is.
+ */
+export const ATTEMPT_DEADLINE_MS = 150_000
+/** Response.text() / page.title() / page.evaluate() have no timeout of their own. */
+export const BODY_READ_DEADLINE_MS = 30_000
+export const DIAGNOSTIC_DEADLINE_MS = 10_000
+
+/**
+ * `tab.page` is the live page. `freshTab()` replaces it after an attempt hangs: a tab that
+ * stopped answering (a stuck Cloudflare challenge) is abandoned, never re-driven.
+ */
+async function walkTarget(tab, freshTab, target, { maxPages, delayMs, onFlush, log }) {
   const rows = new Map()
   let pending = []
   let pages = 0
   let complete = false
   let error = null
+
+  // One attempt at one page. Resolves the items array, or null when it produced no
+  // readable products answer. Every call in here without its own timeout is bounded.
+  const attemptOnce = async (page, p, attempt) => {
+    const waitProducts = page
+      .waitForResponse((r) => isProductsResponse(r.url(), r.request().postData()), { timeout: 45_000 })
+      .then(async (r) => {
+        // Read TEXT first: a throttled products call answers HTML with a 200-series or
+        // 4xx status, and r.json() would hide which (measured 2026-09-24: Blazers p15
+        // returned "<!DOCTYPE" twice back-to-back, then JSON when re-read later).
+        const text = await withDeadline(r.text(), BODY_READ_DEADLINE_MS)
+        if (text === TIMED_OUT) {
+          log(`  p${p} attempt ${attempt}: products body not readable in ${BODY_READ_DEADLINE_MS / 1000}s (status=${r.status()})`)
+          return null
+        }
+        try {
+          return JSON.parse(text)?.data?.products?.items
+        } catch {
+          log(`  p${p} attempt ${attempt}: products answered non-JSON (status=${r.status()} ct=${r.headers()["content-type"] ?? "?"} body=${JSON.stringify(text.slice(0, 120).replace(/\s+/g, " "))})`)
+          return null
+        }
+      })
+      .catch((e) => {
+        log(`  p${p} attempt ${attempt}: no products response (${e.message.split("\n")[0]})`)
+        return null
+      })
+    const resp = await page.goto(pageUrl(target.sport, target.team, p), { waitUntil: "domcontentloaded", timeout: 60_000 }).catch((e) => {
+      log(`  p${p} attempt ${attempt}: goto failed (${e.message.split("\n")[0]})`)
+      return null
+    })
+    const got = await waitProducts
+    const items = Array.isArray(got) ? got : null
+    if (items == null) {
+      // Say WHAT came back, so a block (Cloudflare challenge, 403) is told apart from
+      // a slow page. Title + a body snippet only — never cookies or headers.
+      const title = await withDeadline(page.title().catch(() => "?"), DIAGNOSTIC_DEADLINE_MS)
+      const body = await withDeadline(page.evaluate(() => (document.body?.innerText || "").slice(0, 160)).catch(() => "?"), DIAGNOSTIC_DEADLINE_MS)
+      const show = (v) => (v === TIMED_OUT ? "(tab not answering)" : String(v).replace(/\s+/g, " "))
+      log(`  p${p} attempt ${attempt}: http=${resp ? resp.status() : "none"} title=${JSON.stringify(show(title))} body=${JSON.stringify(show(body))}`)
+    }
+    return items
+  }
 
   // One page, with backoff retries. Resolves the items array, or null when no attempt
   // produced a readable products answer.
@@ -141,45 +198,22 @@ async function walkTarget(page, target, { maxPages, delayMs, onFlush, log }) {
       const backoff = retryBackoffMs(attempt)
       if (backoff > 0) {
         log(`  p${p}: backing off ${Math.round(backoff / 1000)}s before attempt ${attempt}`)
-        await page.waitForTimeout(backoff)
+        await sleep(backoff)
       }
-      const waitProducts = page
-        .waitForResponse((r) => isProductsResponse(r.url(), r.request().postData()), { timeout: 45_000 })
-        .then(async (r) => {
-          // Read TEXT first: a throttled products call answers HTML with a 200-series or
-          // 4xx status, and r.json() would hide which (measured 2026-09-24: Blazers p15
-          // returned "<!DOCTYPE" twice back-to-back, then JSON when re-read later).
-          const text = await r.text()
-          try {
-            return JSON.parse(text)?.data?.products?.items
-          } catch {
-            log(`  p${p} attempt ${attempt}: products answered non-JSON (status=${r.status()} ct=${r.headers()["content-type"] ?? "?"} body=${JSON.stringify(text.slice(0, 120).replace(/\s+/g, " "))})`)
-            return null
-          }
-        })
-        .catch((e) => {
-          log(`  p${p} attempt ${attempt}: no products response (${e.message.split("\n")[0]})`)
-          return null
-        })
-      const resp = await page.goto(pageUrl(target.sport, target.team, p), { waitUntil: "domcontentloaded", timeout: 60_000 }).catch((e) => {
-        log(`  p${p} attempt ${attempt}: goto failed (${e.message.split("\n")[0]})`)
-        return null
-      })
-      const got = await waitProducts
-      items = Array.isArray(got) ? got : null
-      if (items == null) {
-        // Say WHAT came back, so a block (Cloudflare challenge, 403) is told apart from
-        // a slow page. Title + a body snippet only — never cookies or headers.
-        const title = await page.title().catch(() => "?")
-        const body = await page.evaluate(() => (document.body?.innerText || "").slice(0, 160)).catch(() => "?")
-        log(`  p${p} attempt ${attempt}: http=${resp ? resp.status() : "none"} title=${JSON.stringify(title)} body=${JSON.stringify(body.replace(/\s+/g, " "))}`)
+      const got = await withDeadline(attemptOnce(tab.page, p, attempt), ATTEMPT_DEADLINE_MS)
+      if (got === TIMED_OUT) {
+        log(`  p${p} attempt ${attempt}: no outcome in ${ATTEMPT_DEADLINE_MS / 1000}s — the tab hung; opening a fresh one`)
+        await freshTab()
+        items = null
+      } else {
+        items = got
       }
     }
     return items
   }
 
   // Leave the previous target's SPA state behind before the first page of this one.
-  await page.goto("about:blank").catch(() => {})
+  await withDeadline(tab.page.goto("about:blank").catch(() => {}), 30_000)
 
   for (let p = 1; p <= maxPages; p++) {
     let items = await readPage(p)
@@ -194,8 +228,8 @@ async function walkTarget(page, target, { maxPages, delayMs, onFlush, log }) {
       // listings minutes later — an empty answer that, unconfirmed, would have "completed"
       // the walk and retired every listing the team had. Wait, drop the SPA state, re-read.
       log(`  p${p}: empty — confirming after ${EMPTY_CONFIRM_WAIT_MS / 1000}s`)
-      await page.waitForTimeout(EMPTY_CONFIRM_WAIT_MS)
-      await page.goto("about:blank").catch(() => {})
+      await sleep(EMPTY_CONFIRM_WAIT_MS)
+      await withDeadline(tab.page.goto("about:blank").catch(() => {}), 30_000)
       const again = await readPage(p)
       if (again == null) {
         error = `page ${p}: answered empty, then no readable products response when re-read`
@@ -231,7 +265,7 @@ async function walkTarget(page, target, { maxPages, delayMs, onFlush, log }) {
       await onFlush(pending, false)
       pending = []
     }
-    await page.waitForTimeout(delayMs)
+    await sleep(delayMs)
   }
   if (!complete && !error) error = `hit PANINI_MAX_PAGES=${maxPages} before the end of the list`
   return { rows, pending, pages, complete, error }
@@ -280,7 +314,9 @@ async function main() {
   const delayMs = Number(process.env.PANINI_PAGE_DELAY_MS || 1500)
   const dry = process.env.DRY_RUN === "1"
   const stampFile = process.env.PANINI_TEAM_WALK_STAMP || ""
-  const log = (...a) => console.log("[panini-team-walk]", ...a)
+  // Local wall time on every line: without it a 130-min silence in the log could not be
+  // told from a fast walk that simply had nothing to report (10-03 diagnosis).
+  const log = (...a) => console.log(`[panini-team-walk] ${new Date().toTimeString().slice(0, 8)}`, ...a)
 
   const today = localDay()
   if (!dry && stampFile && fs.existsSync(stampFile) && fs.readFileSync(stampFile, "utf8").trim() === today) {
@@ -313,7 +349,16 @@ async function main() {
     ? await chromium.connectOverCDP(cdp, { timeout: 30_000 })
     : await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) })
   const ctx = cdp ? browser.contexts()[0] ?? (await browser.newContext()) : await browser.newContext({ viewport: { width: 1366, height: 900 } })
-  const page = await ctx.newPage()
+  const tab = { page: await ctx.newPage() }
+  // Abandon a hung tab for a new one. Its close is fire-and-forget under a deadline (a hung
+  // renderer may not answer the close either); a tab that cannot be OPENED ends the run.
+  const freshTab = async () => {
+    const old = tab.page
+    void withDeadline(old.close().catch(() => {}), 10_000)
+    const next = await withDeadline(ctx.newPage(), 30_000)
+    if (next === TIMED_OUT) throw new Error("could not open a fresh tab in 30s after a hung attempt")
+    tab.page = next
+  }
   const summary = []
   let anyFailed = false
   try {
@@ -356,7 +401,7 @@ async function main() {
         }
       }
       log(`walking ${label}`)
-      const res = await walkTarget(page, target, { maxPages, delayMs, onFlush, log })
+      const res = await walkTarget(tab, freshTab, target, { maxPages, delayMs, onFlush, log })
       // `complete` goes out ONLY when the list ended AND every earlier write landed:
       // retirement trusts that this walk saw everything still listed.
       const retireAllowed = res.complete && writeErrors.length === 0
@@ -385,12 +430,12 @@ async function main() {
       }
     }
   } finally {
-    await page.close().catch(() => {})
+    await withDeadline(tab.page.close().catch(() => {}), 10_000)
     // Over CDP, browser.close() DISCONNECTS and leaves the runner's debug Chrome open
     // (same call as ingest-panini-runner.mjs). Skipping it left the CDP websocket holding
     // node alive: the first laptop run finished its writes at 3:22 PM PT and then idled
     // until Task Scheduler's 2 h limit killed the whole task (LastTaskResult 267014).
-    await browser.close().catch(() => {})
+    await withDeadline(browser.close().catch(() => {}), 15_000)
   }
   if (dry) console.log(JSON.stringify({ dry_run: true, summary }, null, 2))
   if (!dry && !anyFailed && stampFile) fs.writeFileSync(stampFile, today)
