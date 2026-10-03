@@ -130,8 +130,12 @@ MEDIUM 15.0 / 67.9 vs 13.0 / 69.8; LOW 21.8 / 56.4 vs 16.7 / 63.0; ASK_ONLY 54.9
 accurate, ASK_ONLY the least — so the label is not overclaiming the way Panini's was (09-23). (2) The
 published FMV trails the naive comparator by 2–7 pts every week, and the gap lives in MEDIUM / LOW —
 the thin editions where non-sale inputs (asks) carry weight — while the four weeks before this one ran
-5–20 % HIGH. **Not attributed here:** ask-blend vs lag in a falling market. The instrument separates
-them (re-run at 7 / 28 / 56 d after any model change; split by `top_shot_ask IS NOT NULL`).
+5–20 % HIGH. **Attributed the same hour — it is NOT the ask blend.** Over weeks 1–4 (46,897 sales) 98.9 % of the
+matched snapshots carried no `top_shot_ask`, and `published / asp_usd` = **1.000** at the median in every
+liquidity band: **the published Top Shot FMV is the trailing 30-day average sale price.** A trailing mean
+runs high in a falling market and is pulled up by outliers — `asp / realized price` 1.18 for editions with
+≥ 10 sales / 30 d, 1.20 for 3–9, 1.375 for < 3 — which is exactly where the last-3 MEDIAN wins. The lever
+is the estimator's recency and robustness (median / recency weight), not the ask.
 ⛔ **No model change shipped** — the thin-edition window is Trevor's methodology call (#140).
 
 ## ⭐ NEW 2026-09-20 — A REFRESH-ORDER CHANGE MOVES A CONFIDENCE SHARE WITHOUT ANY PRICING CHANGE (Panini, measured; a trap for every other collection)
