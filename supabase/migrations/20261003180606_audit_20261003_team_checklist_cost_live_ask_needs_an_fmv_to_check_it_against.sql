@@ -1,44 +1,47 @@
--- DB invariant: public.get_team_checklist + public.get_team_checklist_progress —
--- the Pinnacle branch (the franchise checklist and its progress bar). Added
--- 2026-09-26: ownership was joined on pinnacle_editions.external_id, which
--- matched none of the keys wallets hold, so every wallet read 0 owned. Claims:
+-- 2026-10-03 beta feedback 10231 / 10233 (Detroit Pistons checklist, Joe Dumars
+-- 272:9030): the "+ $62.00" on an unowned tile matched nothing the edition page
+-- shows (FMV $81, low ask $148, high offer $50). The checklist's floor_usd — the
+-- per-tile cost-to-add AND the header's cost-to-complete sum — was
+-- fmv_snapshots.floor_price_usd, which for a sales-priced row is the minimum
+-- HISTORICAL sale (schema-truth.md: "NOT a live ask … never cap anything at it").
+-- Measured 2026-10-03 ~10:50 AM PT: on 6,700 Top Shot editions with both values
+-- the historical floor sat BELOW the live ask on 6,067 (90.5 %), median live
+-- ask / floor 1.49x; All Day 3,040 of 4,369 below, median 2.0x. So the cost a
+-- collector was told to budget was systematically under what the market asks.
 --
---   1. The checklist lists the franchise's catalog pins (™ stripped, every
---      franchise a pin names), ownership by the PIN held (render_id) — owning
---      one pin of a set-level key does not mark its siblings owned.
---   2. owned / owned_count / owned_locked per pin; no wallet -> owned NULL.
---   3. Progress counts the same pins: owned, locked, completion, cost to
---      complete over the pins NOT held (floor, else FMV), per tier.
---   4. series_<year> scopes to the pin's own series.
---   5. A franchise no catalog pin names falls through to the legacy read, and
---      its ownership now matches the legacy key the wallet holds.
+-- Fix (both functions' generic arm; the Pinnacle arms already read a live ask
+-- from their catalog): floor_usd = the LIVE low ask, resolved in the same order
+-- get_edition_high_offer uses for a base edition — allday_edition_floor_ask
+-- (All Day only), then edition_offers.low_ask, then badge_editions.low_ask, the
+-- latter two <= 7 days old — and only when it is CONNECTED to FMV (ask <= 3x
+-- FMV, the estate's disconnected-ask multiple; an edition with NO FMV gets no
+-- cost at all — see SECOND CUT). A troll ask or no live ask leaves floor_usd NULL so the readers'
+-- existing COALESCE(floor_usd, fmv_usd) prices the tile at FMV — never at a
+-- historical minimum. Under this rule the Top Shot catalogue's summed
+-- cost-to-add moves $366.6K -> $421.5K (+15 %; 71 of 6,727 asks fall to FMV).
+-- Cost: Lakers (497 editions) 41 ms / 7,963 buffers vs ~12 ms / 3,482 before —
+-- the three ask probes are one index probe each (allday_edition_floor_ask's
+-- DISTINCT ON pushes the edition_id qual down to idx_cl_v2_edition).
 --
--- The function DDL below is VERBATIM from the committed migration
--- (get_team_activity / get_team_checklist / get_team_top_editions / get_series_editions:
--- supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql; the rest:)
--- (supabase/migrations/20260926211121_audit_20260926_pinnacle_franchise_checklist_sees_what_a_wallet_holds.sql);
--- generic-arm floor_usd re-pinned 2026-10-03 to the LIVE low ask by
--- supabase/migrations/20261003180606_audit_20261003_team_checklist_cost_live_ask_needs_an_fmv_to_check_it_against.sql
--- (both functions, verbatim from that file).
--- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- Readers: app/api/entity/team-checklist*, lib/fan-teams/fetchers.ts,
+-- lib/entity/checklist-full-editions.ts (same COALESCE). Pin:
+-- supabase/tests/get_team_checklist.sql; registration:
+-- __tests__/db-invariants-drift-guard.test.ts. Same signatures -> ACLs preserved.
 --
--- Runs inside a rolled-back transaction so it leaves no residue.
+-- SECOND CUT (same hour): 20261003180241 admitted an ask whenever FMV was
+-- NULL; three STALE / NO_DATA / LOW Lakers Legendaries carrying $100,000 /
+-- $50,000 / $39,500 asks took the team's cost-to-complete $92.7K -> $287.4K.
+-- An unpriced edition stays unpriced (floor_usd NULL, FMV NULL -> counted as
+-- stale, never summed) — a lone ask with no FMV to check it against is not a
+-- cost RPC can stand behind. Lakers after this cut: see the ledger.
+--
+-- Revert: re-apply both function bodies from
+-- supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql
+-- (get_team_checklist) and
+-- supabase/migrations/20260926211121_audit_20260926_pinnacle_franchise_checklist_sees_what_a_wallet_holds.sql
+-- (get_team_checklist_progress), and point the pin + registration back at them.
 
-BEGIN;
-
-CREATE TABLE public.pinnacle_catalog (
-  render_id text PRIMARY KEY, franchises text[], characters text[], character_name text,
-  set_name text, variant text, series_name text, total_minted int, thumbnail_url text,
-  fmv_usd numeric, floor_ask numeric, fmv_confidence text, fmv_computed_at timestamptz);
-CREATE TABLE public.wallet_moments_cache (
-  wallet_address text, collection_id uuid, edition_key text, render_id text, is_locked boolean);
-CREATE TABLE public.pinnacle_editions (
-  id text PRIMARY KEY, external_id text, franchise text, character_name text, variant_type text,
-  set_name text, series_year int, mint_count int, thumbnail_url text);
-CREATE FUNCTION public.get_pinnacle_edition_fmv_collapsed(p_id text)
- RETURNS TABLE(fmv_usd numeric, floor_usd numeric, confidence text, computed_at timestamptz)
- LANGUAGE sql STABLE AS $$ SELECT 3::numeric, 2::numeric, 'LOW', now() WHERE p_id IS NOT NULL $$;
-
+-- anon-exec: unchanged (get_team_checklist) — CREATE OR REPLACE of an existing fn; ACL preserved, verified has_function_privilege anon=false.
 CREATE OR REPLACE FUNCTION public.get_team_checklist(p_collection_id uuid, p_team_slug text, p_scope text DEFAULT 'all_time'::text, p_wallet text DEFAULT NULL::text, p_limit integer DEFAULT 60, p_offset integer DEFAULT 0)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -316,6 +319,8 @@ BEGIN
   RETURN result;
 END;
 $function$;
+
+-- anon-exec: unchanged (get_team_checklist_progress) — CREATE OR REPLACE of an existing fn; ACL preserved, verified has_function_privilege anon=false.
 CREATE OR REPLACE FUNCTION public.get_team_checklist_progress(p_collection_id uuid, p_team_slug text, p_scope text DEFAULT 'all_time'::text, p_wallet text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -612,55 +617,32 @@ BEGIN
 END;
 $function$;
 
-\set pin '''7dd9dd11-e8b6-45c4-ac99-71331f959714'''
-\set w '''0xabc'''
-
--- r1 + r2 share the legacy key SW-A:Standard:1 (two pins of one set-level key).
-INSERT INTO public.pinnacle_catalog (render_id, franchises, characters, character_name, set_name, variant, series_name, total_minted, thumbnail_url, fmv_usd, floor_ask, fmv_confidence) VALUES
-  ('r1', ARRAY['Star Wars™'], ARRAY['Luke Skywalker'], 'Luke Skywalker', 'Set A', 'Standard', '2024', 100, '/img/r1', 10, 8,    'HIGH'),
-  ('r2', ARRAY['Star Wars'],  ARRAY['Leia'],           'Leia',           'Set A', 'Standard', '2024',  50, '/img/r2', 5,  NULL, 'LOW'),
-  ('r3', ARRAY['Star Wars'],  ARRAY['Han Solo'],       'Han Solo',       'Set B', 'Golden',   '2025',  10, '/img/r3', 20, 15,   'MEDIUM'),
-  ('r4', ARRAY['Moana'],      ARRAY['Moana'],          'Moana',          'Set C', 'Standard', '2025',  25, '/img/r4', 7,  6,    'MEDIUM');
--- The wallet holds r1 twice (one locked) and r4 (another franchise).
-INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, edition_key, render_id, is_locked) VALUES
-  (:w, :pin::uuid, 'SW-A:Standard:1', 'r1', true),
-  (:w, :pin::uuid, 'SW-A:Standard:1', 'r1', false),
-  (:w, :pin::uuid, 'MOA-C:Standard:1', 'r4', false),
-  (:w, :pin::uuid, 'MRV:Standard:1', NULL, false);
--- Marvel exists ONLY in pinnacle_editions (the legacy fallback); external_id is NOT the key wallets hold.
-INSERT INTO public.pinnacle_editions (id, external_id, franchise, character_name, variant_type, set_name, series_year, mint_count, thumbnail_url) VALUES
-  ('MRV:Standard:1', '12345', 'Marvel', 'Iron Man', 'Standard', 'Marvel Set', 2024, 500, '/img/m1');
-
--- ── 1+2. checklist: every Star Wars pin; ownership by the PIN held ───────────
-SELECT _assert_eq(jsonb_array_length(public.get_team_checklist(:pin::uuid, 'star-wars', 'all_time', NULL, 60, 0))::text, '3', 'lists every pin naming Star Wars, ™ or not');
-SELECT _assert(public.get_team_checklist(:pin::uuid, 'star-wars', 'all_time', NULL, 60, 0) -> 0 -> 'owned' = 'null'::jsonb, 'no wallet -> owned is null, never false');
-SELECT _assert_eq((SELECT string_agg((x->>'route_slug') || ':' || (x->>'owned') || ':' || (x->>'owned_count') || ':' || (x->>'owned_locked'), ',')
-                   FROM jsonb_array_elements(public.get_team_checklist(:pin::uuid, 'star-wars', 'all_time', :w, 60, 0)) x),
-  'r3:false:0:false,r2:false:0:false,r1:true:2:true',
-  'missing first by FMV, then held; r1 held twice and locked; r2 shares r1''s legacy key but is NOT held');
-SELECT _assert_eq((SELECT string_agg(x->>'route_slug', ',') FROM jsonb_array_elements(public.get_team_checklist(:pin::uuid, 'star-wars', 'series_2025', NULL, 60, 0)) x),
-  'r3', 'series_<year> scopes to the pin''s own series');
-
--- ── 3. progress over the same pins ────────────────────────────────────────────
--- #23 (2026-09-28): the tile TITLE is the pin's own name, never its first character.
-UPDATE public.pinnacle_catalog SET character_name = 'Rebel Salute' WHERE render_id = 'r2';
-SELECT _assert_eq((SELECT x->>'pin_name' || '|' || (x->>'player_name') FROM jsonb_array_elements(public.get_team_checklist(:pin::uuid, 'star-wars', 'all_time', :w, 60, 0)) x WHERE x->>'route_slug' = 'r2'),
-  'Rebel Salute|Leia', 'pin_name = the pin''s own name; player_name stays the character');
-SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'total'), '3', 'progress total = the checklist''s pins');
-SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'owned'), '1', 'owned = pins held (r1), not keys');
-SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'locked_owned'), '1', 'r1 has a locked copy');
-SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'cost_to_complete_usd'), '20.00', 'cost = r3 floor 15 + r2 FMV 5 (no floor)');
-SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'completion_pct'), '33.3', 'completion 1 of 3');
-SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'wallet_cached'), 'true', 'wallet_cached true for a cached wallet');
-SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'series_2025', :w) ->> 'total'), '1', 'series scope in progress too');
-SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'moana', 'all_time', :w) ->> 'owned'), '1', 'a catalog-only franchise sees the held pin');
-
--- ── 5. legacy fallback, ownership by the legacy key ───────────────────────────
-SELECT _assert_eq((public.get_team_checklist(:pin::uuid, 'marvel', 'all_time', :w, 60, 0) -> 0 ->> 'owned'), 'true', 'fallback: ownership matches the legacy key the wallet holds (was external_id: never)');
-SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'marvel', 'all_time', :w) ->> 'owned'), '1', 'fallback progress owned 1');
-SELECT _assert_eq(public.get_team_checklist(:pin::uuid, 'no-such-franchise', 'all_time', :w, 60, 0)::text, '[]', 'unknown slug -> []');
-SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'no-such-franchise', 'all_time', :w) ->> 'total'), '0', 'unknown slug -> total 0');
-
-SELECT '✓ get_team_checklist + get_team_checklist_progress: all assertions passed' AS result;
-
-ROLLBACK;
+-- Verify: both bodies carry the live-ask lateral and no longer read the
+-- historical floor; the generic arm still prices through COALESCE(floor_usd, fmv_usd).
+DO $verify$
+DECLARE
+  v_src text;
+BEGIN
+  FOR v_src IN
+    SELECT prosrc FROM pg_proc
+    WHERE proname IN ('get_team_checklist', 'get_team_checklist_progress')
+      AND pronamespace = 'public'::regnamespace
+  LOOP
+    IF position('ask.live_ask' IN v_src) = 0 THEN
+      RAISE EXCEPTION 'checklist fn missing the live-ask lateral';
+    END IF;
+    IF position('floor_price_usd' IN v_src) > 0 THEN
+      RAISE EXCEPTION 'checklist fn still reads fmv_snapshots.floor_price_usd';
+    END IF;
+    IF position('fmv.fmv_usd IS NOT NULL AND a.ask <= fmv.fmv_usd * 3' IN v_src) = 0 THEN
+      RAISE EXCEPTION 'checklist fn admits an ask with no FMV to check it against';
+    END IF;
+    IF position('COALESCE(floor_usd, fmv_usd)' IN v_src) = 0 AND position('s.floor_usd' IN v_src) = 0 THEN
+      RAISE EXCEPTION 'checklist fn lost its floor_usd read';
+    END IF;
+  END LOOP;
+  IF (SELECT count(*) FROM pg_proc WHERE proname IN ('get_team_checklist', 'get_team_checklist_progress') AND pronamespace = 'public'::regnamespace) <> 2 THEN
+    RAISE EXCEPTION 'expected exactly two checklist functions';
+  END IF;
+END
+$verify$;

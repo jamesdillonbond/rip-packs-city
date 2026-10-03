@@ -241,17 +241,19 @@ const PINS = [
     // pinnacle_editions.external_id, which matched none of the 431 keys wallets
     // hold, so every wallet read 0 owned. Pins the catalog pin list, ownership by
     // the pin held (render_id), the progress aggregates and the fallback's
-    // corrected legacy-key join.
+    // corrected legacy-key join. Re-pointed 2026-10-03: the generic arm's
+    // floor_usd is the LIVE low ask (<= 7 d, <= 3x FMV, FMV required), never
+    // fmv_snapshots' historical floor — beta feedback 10231/10233.
     fn: "get_team_checklist",
     test: "supabase/tests/get_team_checklist.sql",
     migration:
-      "supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql",
+      "supabase/migrations/20261003180606_audit_20261003_team_checklist_cost_live_ask_needs_an_fmv_to_check_it_against.sql",
   },
   {
     fn: "get_team_checklist_progress",
     test: "supabase/tests/get_team_checklist.sql",
     migration:
-      "supabase/migrations/20260926211121_audit_20260926_pinnacle_franchise_checklist_sees_what_a_wallet_holds.sql",
+      "supabase/migrations/20261003180606_audit_20261003_team_checklist_cost_live_ask_needs_an_fmv_to_check_it_against.sql",
   },
   {
     // Added 2026-09-26. The Pinnacle franchise grid and roster read
