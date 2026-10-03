@@ -1,6 +1,6 @@
 {
-  "generated_at_pt": "2026-10-03 ~2:25 PM PT (daytime autonomous pass, Cowork cloud, Trevor present; thread closed)",
-  "generated_at_utc": "2026-10-03T21:25Z",
+  "generated_at_pt": "2026-10-03 ~3:12 PM PT (daytime autonomous pass, Cowork cloud, Trevor present; seventh block)",
+  "generated_at_utc": "2026-10-03T22:12Z",
   "pass": "daytime health + Search Console + scheduler audit + live QA, then 'keep going' (Cowork cloud, push-capable via add_repo). 15 code/docs commits, 11 migrations (20261003152533, 20261003163012, 20261003180241, 20261003180606, 20261003181445, 20261003182955, 20261003184026, 20261003184843, 20261003185621, 20261003192013, 20261003202149 — data-only; 20261003211704 beta_feedback_stats view), 1 pg_cron schedule (682 concentration refresh), 2 pg_cron unschedules (475, 673), 5 GSC validations + sitemap resubmit. Handoff: docs/handoff-2026-10-03-daytime-audit-gsc-schedulers.md",
   "shipped": 20,
   "reverted": 0,
@@ -71,5 +71,5 @@
     "overrule check (optional): sniper fee gate default-on was a delegated product call — revert 5bf46cced to undo; team-named player slugs stay 404 (decided)",
     "product call (optional): an ask/offer price-history SERIES would need a new snapshot lane; the chart states today that none exists"
   ],
-  "housekeeping": "offer-fill-backfill.yml move to cron-job.org RETIRED as an item (its header explains the GHA loop; caught-up trailing re-walk). pg_cron 475 spent one-shot unscheduled. cron-schedule.md re-verified 10-03. The 10 retired cron-job.org entries were deleted by Trevor ~2:25 PM PT (78 entries / 71 active / 7 inactive)."
+  "housekeeping": "offer-fill-backfill.yml move to cron-job.org RETIRED as an item (its header explains the GHA loop; caught-up trailing re-walk). pg_cron 475 spent one-shot unscheduled. cron-schedule.md re-verified 10-03. The 10 retired cron-job.org entries were deleted by Trevor ~2:25 PM PT (78 entries / 71 active / 7 inactive). Register OPEN 88 -> 52: 36 self-marked-resolved rows moved to RESOLVED (260dfbe22)."
 }

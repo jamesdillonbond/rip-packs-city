@@ -107,6 +107,12 @@ Trevor's answer to the third block's queue was to build it. All four verified ag
 - **Verified before close:** `8b18dccc6` + `9051cbc19` + `5d2f59469` deploys READY and aliased; served HTML carries the layered reset, `md:px-1`, `gap: 8px`; CI green on every code commit of mine (the afternoon's docs-only reds were the inherited-status check seeing the other session's `c27d2fd02`, since fixed by it in `37d75c5f4`); pg_cron 0 failures / 3 h; 0 client-error beacons / 8 h; `topshot-edition-concentration` first cold tick ok.
 - **Docs:** this handoff (six blocks) mirrored to the Project; `docs/sessions/2026-10.md` entry; `metrics-latest.json`; `docs/reference/architecture-notes.md` (the cascade lesson); `docs/reference/testing-and-ci.md` (`ci:guards` pointer); memory files `an-unlayered-rule-beats-every-tailwind-layer`, `a-historical-minimum-sale-is-not-a-cost-to-buy`, `a-segment-layout-gate-fires-before-the-page`, the delegated-decisions area (chart + inbox decisions), the GSC read.
 
+## Seventh block (~2:52–3:12 PM PT): "keep going" — post-migration health read + register hygiene
+
+- **Health after the other session's five 2:30–2:50 PM migrations:** pg_cron 0 failures / 2 h; secdef-anon [], search-path drift [], R118 [], running-not-succeeding []; wall-kills names only the panini-team-walk kill of 3:52 AM PT (fixed by its owner); Vercel 5xx in 90 min = one classified collection-stats 503; CI green on every commit of mine (`260dfbe22` latest).
+- **Register hygiene (`260dfbe22`):** 36 of the OPEN section's 88 rows carried their own RESOLVED / FIXED / CLOSED / SHIPPED marker; moved to RESOLVED by script with every cell carried (rule + mapping recorded in the file's header), R77 and every partial row left in OPEN. `register:check --before origin/main` passes; OPEN is now 52 rows — the list a pass actually reads.
+- Trevor deleted the 10 retired cron-job.org entries himself (~2:25 PM PT); struck from the list below.
+
 ## Needs Trevor (carried + new)
 
 - ~~Delete the 10 retired cron-job.org entries~~ — DONE by Trevor ~2:25 PM PT (console reads 78 entries / 71 active / 7 inactive; ledger entry by the other session).
