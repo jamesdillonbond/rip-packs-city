@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { scoreDrop } from "@/lib/pack-drops-board"
+import { scoreDrop, PackDropsIncompleteError } from "@/lib/pack-drops-board"
 import type {
   VaultopolisComposition,
   VaultopolisAsset,
@@ -93,13 +93,14 @@ describe("scoreDrop — rollup & matching", () => {
     expect(s.rpc_pool_usd).toBe(15)
   })
 
-  it("an RPC error degrades to their-estimate pricing without throwing", async () => {
+  // ⛔ INVERTED 2026-10-03 (was "an RPC error degrades to their-estimate pricing
+  // without throwing"): that was a substitution — Vaultopolis's numbers rendered
+  // as RPC's board. A failed pricing read now fails the board.
+  it("an RPC error fails the board instead of pricing off their estimate", async () => {
     const c = comp([asset({ estimatedValue: 12 })])
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     const sb = fakeSb(null, { message: "boom" })
-    const s = await scoreDrop(sb, c, null, null)
-    expect(s.matched_count).toBe(0)
-    expect(s.rpc_pool_usd).toBe(12)
+    await expect(scoreDrop(sb, c, null, null)).rejects.toBeInstanceOf(PackDropsIncompleteError)
     errSpy.mockRestore()
   })
 })

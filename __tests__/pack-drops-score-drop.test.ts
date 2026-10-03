@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { scoreDrop } from "@/lib/pack-drops-board"
+import { scoreDrop, PackDropsIncompleteError } from "@/lib/pack-drops-board"
 import type {
   VaultopolisComposition,
   VaultopolisAsset,
@@ -119,11 +119,28 @@ describe("scoreDrop — grouping, pricing, pool & EV", () => {
     expect(captured.p_eds[0]).not.toHaveProperty("set")
   })
 
-  it("survives an RPC error by pricing everything off the operator estimate", async () => {
+  // ⛔ INVERTED 2026-10-03 (was "survives an RPC error by pricing everything off
+  // the operator estimate"). That test pinned a SUBSTITUTION: a failed pricing
+  // read rendered as a successful RPC-scored board built from Vaultopolis's
+  // numbers. A failed read now fails the board, like a failed composition read.
+  it("a FAILED pricing read fails the board — it never prices off the operator estimate", async () => {
     const assets = [asset({ playerName: "Curry", setName: "Set B", series: 4, estimatedValue: 20 })]
-    const res = await scoreDrop(sbWithPricing([], { error: "boom" }), comp({ assets: { TopShot: assets } }), null, 1)
+    await expect(
+      scoreDrop(sbWithPricing([], { error: "boom" }), comp({ assets: { TopShot: assets } }), null, 1),
+    ).rejects.toBeInstanceOf(PackDropsIncompleteError)
+  })
+
+  it("a thrown pricing read (network) fails the board too", async () => {
+    const assets = [asset({ playerName: "Curry", setName: "Set B", series: 4, estimatedValue: 20 })]
+    const sb: any = { rpc: async () => { throw new TypeError("fetch failed") } }
+    await expect(scoreDrop(sb, comp({ assets: { TopShot: assets } }), null, 1)).rejects.toThrow(/pricing read failed: fetch failed/)
+  })
+
+  it("NO-CHANGE CONTROL: a SUCCESSFUL read that matches nothing still falls back per edition", async () => {
+    const assets = [asset({ playerName: "Curry", setName: "Set B", series: 4, estimatedValue: 20 })]
+    const res = await scoreDrop(sbWithPricing([]), comp({ assets: { TopShot: assets } }), null, 1)
     expect(res.matched_count).toBe(0)
-    expect(res.rpc_pool_usd).toBe(20) // fell back to estimatedValue
+    expect(res.rpc_pool_usd).toBe(20) // the unmatched edition's operator estimate, by design
     expect(res.rows[0].used_fallback).toBe(true)
   })
 

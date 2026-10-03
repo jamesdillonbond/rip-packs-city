@@ -184,7 +184,8 @@ async function fetchJson<T>(url: string, revalidateSec: number): Promise<T | nul
   return r.kind === "ok" ? r.data : null
 }
 
-/** A drop-list or composition read failed, so the board cannot say which drops exist. */
+/** A drop-list, composition or pricing read failed, so the board cannot say which
+ *  drops exist or what they are worth by RPC's own pricing. */
 export class PackDropsIncompleteError extends Error {
   constructor(message: string) {
     super(message)
@@ -332,14 +333,25 @@ export async function scoreDrop(
   // Price via the SECDEF RPC. NOTE: jsonb_to_recordset maps by COLUMN NAME, so
   // the input key MUST be `setname` (not `set`) — validated against drop #4.
   const pEds = aggs.map((g) => ({ player: g.player, setname: g.set, series: g.series }))
-  let priced: PricingRpcRow[] = []
+  // ⛔ A FAILED pricing read FAILS THE BOARD — it does not fall back. This used to
+  // catch, set `priced = []`, and price EVERY edition off Vaultopolis's own
+  // estimatedValue: the board then rendered as a successful RPC-scored board (and
+  // the page stamped it fresh), with the operator's numbers standing in for ours.
+  // Substitution, not degradation — nothing visibly failed. Found 2026-10-03 by
+  // the built-render smoke's fabricated-freshness check: with the DB down and
+  // Vaultopolis up (CI), /insights/pack-drops still said "Updated <now>".
+  // The per-edition fallback below is unchanged: a SUCCESSFUL read that does not
+  // match an edition still prices that one edition off the operator estimate
+  // (`used_fallback`), which is the board's stated design.
+  let priced: PricingRpcRow[]
   try {
     const { data, error } = await sb.rpc("get_pack_drop_pricing", { p_eds: pEds })
     if (error) throw new Error(error.message)
     priced = (data ?? []) as PricingRpcRow[]
   } catch (e) {
-    console.error("[pack-drops] get_pack_drop_pricing", e instanceof Error ? e.message : e)
-    priced = []
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error("[pack-drops] get_pack_drop_pricing", msg)
+    throw new PackDropsIncompleteError(`pricing read failed: ${msg}`)
   }
   const pricedByKey = new Map<string, PricingRpcRow>()
   for (const p of priced) pricedByKey.set(keyOf(p.player, p.setname, p.series), p)
