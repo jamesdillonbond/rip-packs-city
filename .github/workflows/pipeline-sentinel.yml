@@ -177,6 +177,55 @@ jobs:
             exit 1
           fi
 
+      # ⭐ THE PAGE THAT DOES NOT DEPEND ON THE THING THAT IS DOWN (register R77,
+      # 2026-10-03). Every other pager in this estate is sent BY the sentinel
+      # route — so when the route cannot finish, nothing is sent at all. On
+      # 2026-09-18 (#122) this job fired at 16:38Z, got `504` three times, went
+      # red, and the only record was this log: the write below got Cloudflare
+      # `522` from Supabase, and the route never reached its own Telegram send.
+      # This step goes runner → Telegram, touching neither Vercel nor Supabase.
+      #
+      # ⚠ IT NEEDS TWO GITHUB SECRETS, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`
+      # — the same pair the Vercel route reads. As of 2026-09-19 they were NOT
+      # set (site-availability-alarm's log shows both empty), so until they are
+      # this step only warns. Same convention as that workflow.
+      #
+      # ⚠ ONLY BOUNDED TOKENS go in the message (digits and the whitelisted
+      # marker), for the reason the sentinel step gives: no span of an error
+      # page from a layer this repo does not control is ever forwarded.
+      # ⛔ IT NEVER CHANGES THE JOB'S RESULT — the job is already red for the
+      # real reason, and a pager failing must not mask or replace that.
+      - name: Page Telegram directly from the runner
+        if: always() && steps.sentinel.outputs.unreachable == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          HTTP_CODE: ${{ steps.sentinel.outputs.http_code }}
+          MARKER: ${{ steps.sentinel.outputs.marker }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "::warning::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not GitHub secrets, so the unreachable sentinel was NOT paged. Adding them makes this alarm independent of Vercel and Supabase (register R77)."
+            exit 0
+          fi
+
+          SAFE_CODE=$(printf '%s' "$HTTP_CODE" | tr -cd '0-9') || SAFE_CODE=""
+          SAFE_MARKER=$(printf '%s' "$MARKER" | tr -cd 'a-z_') || SAFE_MARKER=""
+          WHEN=$(TZ=America/Los_Angeles date '+%b %-d %-I:%M %p PT') || WHEN="unknown time"
+
+          MSG="RPC SENTINEL UNREACHABLE - /api/sentinel answered HTTP ${SAFE_CODE:-0} (${SAFE_MARKER:-none}) on 3 of 3 attempts, ${WHEN}. The fleet alarm could not run, so nothing else will page about this. Sent from GitHub Actions, independent of Vercel and Supabase. ${RUN_URL}"
+          DATA=$(node -e "console.log(JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,text:process.argv[1],disable_web_page_preview:true}))" "$MSG") || DATA=""
+
+          TG=$(curl -s --max-time 20 -o /dev/null -w "%{http_code}" \
+            -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$DATA") || TG=""
+
+          case "$TG" in
+            2*) echo "paged Telegram from the runner (HTTP $TG)" ;;
+            *)  echo "::warning::Telegram did NOT accept the runner's page (HTTP ${TG:-none}) — the outage is in this log only." ;;
+          esac
+
       # The other half of the three-state record: the runner saw the route fail to
       # answer, so it writes the `sentinel` lane's OUTCOME from outside the thing
       # that is down. Two reasons this is not redundant with the heartbeat:

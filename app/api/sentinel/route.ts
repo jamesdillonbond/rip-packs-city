@@ -71,8 +71,8 @@ export const maxDuration = 180;
 // delayed GitHub tick by 50.8 s the same day. Two sweeps on one warm instance
 // must each keep their own start and phase, or one runs into its wall and the
 // other loses its budget; the store guarantees that, with nothing to clear.
-const SENTINEL_WALL_MS = maxDuration * 1000;
-const SENTINEL_RESERVE_MS = 40_000;
+export const SENTINEL_WALL_MS = maxDuration * 1000;
+export const SENTINEL_RESERVE_MS = 40_000;
 const SENTINEL_QUERY_CAP_MS = 45_000;
 
 const supabase: any = createClient(
@@ -194,7 +194,7 @@ type Delivery = { ok: true } | { ok: false; reason: string };
 // 10s is ~an order of magnitude above the healthy band, so it can only fire on
 // a genuinely wedged connection, and both channels plus the sweep still fit the
 // 180s budget with room to spare.
-const DELIVERY_TIMEOUT_MS = 10_000;
+export const DELIVERY_TIMEOUT_MS = 10_000;
 
 // Bounds on the per-check detail persisted into `pipeline_runs.extra.findings`
 // (see the comment at the log_pipeline_run call). Sized so a worst-case run —
@@ -305,6 +305,84 @@ const SENTINEL_MAX_DELTA_NAMES = 6;
 export type SentinelPrevious =
   | { ok: true; names: string[]; at: string | null }
   | { ok: false; reason: string };
+
+// The previous-sweep read is the ONE terminal-phase request that runs before
+// delivery, so its bound is part of the delivery guarantee: with the checks
+// budget spent (wall − reserve), this read plus both delivery bounds plus the
+// terminal margin must still fit the wall. `__tests__/sentinel-delivery-survives-a-hung-database.test.ts`
+// pins that inequality from the exported constants.
+export const PREVIOUS_SWEEP_READ_MS = 8_000;
+
+/**
+ * What the previous sweep found — answered within `timeoutMs` or reported as
+ * UNAVAILABLE. Never waits longer: a hung database must cost the header its
+ * delta line, never cost the alarm its delivery (R77). Exported so the bound is
+ * testable without driving the whole sweep.
+ */
+export async function readPreviousSweep(
+  client: any,
+  nowIso: string,
+  timeoutMs: number = PREVIOUS_SWEEP_READ_MS,
+): Promise<SentinelPrevious> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<SentinelPrevious>((resolve) => {
+    timer = setTimeout(
+      () =>
+        resolve({
+          ok: false,
+          reason: `read did not answer within ${(timeoutMs / 1000).toFixed(0)}s — skipped so delivery still runs`,
+        }),
+      timeoutMs,
+    );
+  });
+  try {
+    return await Promise.race([queryPreviousSweep(client, nowIso), deadline]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function queryPreviousSweep(supabase: any, nowIso: string): Promise<SentinelPrevious> {
+  let previous: SentinelPrevious;
+  try {
+    const { data: prevRows, error: prevErr } = await supabase
+      .from("pipeline_runs")
+      .select("started_at, extra")
+      .eq("pipeline", "sentinel")
+      .lt("started_at", nowIso)
+      .order("started_at", { ascending: false })
+      .limit(1);
+    const prevRow = Array.isArray(prevRows) ? prevRows[0] : null;
+    const prevExtra = (prevRow?.extra ?? null) as Record<string, any> | null;
+    if (prevErr) {
+      previous = { ok: false, reason: `read failed: ${prevErr.message}` };
+    } else if (!prevRow) {
+      // `pipeline_runs` retains ~73h and this sweep runs ~3-hourly, so this is
+      // a real anomaly rather than a cold start — say so instead of implying
+      // the fleet was clean.
+      previous = { ok: false, reason: "no earlier sweep in retention" };
+    } else if (
+      !prevExtra ||
+      (!Array.isArray(prevExtra.warn) && !Array.isArray(prevExtra.critical))
+    ) {
+      // A row whose `extra` carries neither key is not a measured zero: older
+      // rows predate those keys, and a partial write leaves them absent.
+      previous = { ok: false, reason: "earlier sweep stored no check names" };
+    } else {
+      const w = Array.isArray(prevExtra.warn) ? prevExtra.warn : [];
+      const c = Array.isArray(prevExtra.critical) ? prevExtra.critical : [];
+      previous = {
+        ok: true,
+        names: [...c, ...w].map((n) => String(n)),
+        at: prevRow.started_at ?? null,
+      };
+    }
+  } catch (e: any) {
+    previous = { ok: false, reason: `read threw: ${e?.message ?? "unknown"}` };
+  }
+
+  return previous;
+}
 
 /** PT, because this string is read by Trevor. Never a UTC/`Z` time. */
 export function formatPT(iso: string | null): string {
@@ -2951,43 +3029,20 @@ async function runSentinelWithin(clock: WallBudgetClock) {
   // claim about the fleet — and in 21 runs of retention it has never once been
   // true. Manufacturing it out of a failed read would put this repo's worst
   // defect class inside the alarm itself.
-  let previous: SentinelPrevious;
-  try {
-    const { data: prevRows, error: prevErr } = await supabase
-      .from("pipeline_runs")
-      .select("started_at, extra")
-      .eq("pipeline", "sentinel")
-      .lt("started_at", now.toISOString())
-      .order("started_at", { ascending: false })
-      .limit(1);
-    const prevRow = Array.isArray(prevRows) ? prevRows[0] : null;
-    const prevExtra = (prevRow?.extra ?? null) as Record<string, any> | null;
-    if (prevErr) {
-      previous = { ok: false, reason: `read failed: ${prevErr.message}` };
-    } else if (!prevRow) {
-      // `pipeline_runs` retains ~73h and this sweep runs ~3-hourly, so this is
-      // a real anomaly rather than a cold start — say so instead of implying
-      // the fleet was clean.
-      previous = { ok: false, reason: "no earlier sweep in retention" };
-    } else if (
-      !prevExtra ||
-      (!Array.isArray(prevExtra.warn) && !Array.isArray(prevExtra.critical))
-    ) {
-      // A row whose `extra` carries neither key is not a measured zero: older
-      // rows predate those keys, and a partial write leaves them absent.
-      previous = { ok: false, reason: "earlier sweep stored no check names" };
-    } else {
-      const w = Array.isArray(prevExtra.warn) ? prevExtra.warn : [];
-      const c = Array.isArray(prevExtra.critical) ? prevExtra.critical : [];
-      previous = {
-        ok: true,
-        names: [...c, ...w].map((n) => String(n)),
-        at: prevRow.started_at ?? null,
-      };
-    }
-  } catch (e: any) {
-    previous = { ok: false, reason: `read threw: ${e?.message ?? "unknown"}` };
-  }
+  //
+  // ⛔ BOUNDED TO PREVIOUS_SWEEP_READ_MS, NOT TO "WHATEVER THE WALL HAS LEFT"
+  // (R77, 2026-10-03). This read sits BETWEEN the checks and DELIVERY, and the
+  // terminal phase hands every request the whole remaining wall — so when the
+  // database HANGS rather than fails fast, this one header-garnish read can eat
+  // the interval Telegram and email were reserved, and the kill lands before
+  // either send. On 2026-09-18 (#122) GitHub fired this route at 16:38Z and got
+  // `504 FUNCTION_INVOCATION_TIMEOUT` three times running while Supabase
+  // answered Cloudflare `522`: the alarm RAN during the outage and died at its
+  // wall. ⚠ Which await ate that wall is NOT established (Vercel's logs for the
+  // day are gone) — this removes the one path that provably could, it does not
+  // claim to be the one that did. The delta line is worth a few seconds; it is
+  // not worth the page.
+  const previous = await readPreviousSweep(supabase, now.toISOString());
 
   const hasCritical = checks.some((c) => c.status === "critical");
   const hasWarn = checks.some((c) => c.status === "warn");

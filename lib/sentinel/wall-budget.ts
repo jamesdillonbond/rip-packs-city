@@ -77,10 +77,10 @@ export type QueryDeadline =
 // A request that cannot finish inside this is not worth starting.
 const MIN_QUERY_MS = 1_000;
 // The terminal phase keeps this much of the wall for the JSON response itself.
-const TERMINAL_MARGIN_MS = 3_000;
+export const TERMINAL_MARGIN_MS = 3_000;
 // And never bounds a terminal request tighter than this, so a sweep that ended
 // right at the budget still gets a real attempt at its terminal row.
-const MIN_TERMINAL_MS = 5_000;
+export const MIN_TERMINAL_MS = 5_000;
 
 const secs = (ms: number) => (ms / 1000).toFixed(1);
 
