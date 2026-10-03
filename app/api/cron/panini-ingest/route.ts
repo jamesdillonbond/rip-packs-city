@@ -89,6 +89,10 @@ type LastFmvRpc = {
 // this route has always written) and the run reports `products_error` — never "admit everything".
 const PANINI_LEGACY_SET_ID = 2332;
 const PANINI_BOOTSTRAP_HOURS = 12;
+// AGED PRIORITY (2026-10-03): catalogue editions not walked for this long are served in
+// `priority_pskus` (stalest first, at most PANINI_AGED_PRIORITY_CAP per run). See the GET below.
+const PANINI_AGED_PRIORITY_DAYS = 5;
+const PANINI_AGED_PRIORITY_CAP = 300;
 
 // The marketplace grid is filtered by `?sport=<value>` and the runner enumerates each value below.
 // "Soccer" is the only value verified live (2026-07-16). The others are the marketplace's sport
@@ -661,6 +665,24 @@ export async function GET(req: NextRequest) {
     console.error(`[${PIPELINE}] walk-order held read failed: ${heldRes.error}`);
   }
 
+  // AGED PRIORITY (2026-10-03). Runners from before the 10-02 walk-order interleave walk EVERY fresh
+  // grid discovery before ANY known edition; after admitting 22 products that was 3,681-5,245 new
+  // pskus per run at ~600 walked, so the known catalogue stopped refreshing (514 editions > 6 days old
+  // on 10-03 8:45 AM PT, crossing 7 days within a day) and the runner box had not pulled the fix.
+  // Every runner since 09-29 walks `priority_pskus` FIRST, so the stalest editions past the age line
+  // go there too (after the held ones), capped so discovery still gets most of the run. Works for old
+  // and new runners alike; a no-op while nothing is that old. `inScope` is already stalest-first.
+  const agedCutoff = Date.now() - PANINI_AGED_PRIORITY_DAYS * 86_400_000;
+  const heldSet = new Set(heldNew);
+  const agedPriority: string[] = [];
+  for (const r of inScope) {
+    if (agedPriority.length >= PANINI_AGED_PRIORITY_CAP) break;
+    const seen = r.last_seen_at ? Date.parse(r.last_seen_at) : NaN;
+    if (Number.isFinite(seen) && seen >= agedCutoff) break; // stalest-first: everything after is fresher
+    if (!heldSet.has(r.external_id)) agedPriority.push(r.external_id);
+  }
+  const priority = [...heldNew, ...agedPriority];
+
   const rows = trim ? inScope.slice(0, trim) : inScope;
   const pskus = trim ? [...heldNew, ...rows.map((r) => r.external_id)].slice(0, trim) : [...heldNew, ...rows.map((r) => r.external_id)];
   return NextResponse.json({
@@ -682,12 +704,14 @@ export async function GET(req: NextRequest) {
     count: pskus.length,
     // Held by a walked collector, in an admitted product, with no catalogue row yet — queued first.
     held_uncatalogued: heldNew.length,
+    // Catalogue editions older than PANINI_AGED_PRIORITY_DAYS served in priority_pskus (after the held).
+    aged_priority: agedPriority.length,
     // The same held pskus as their OWN list (2026-09-29). Being at the front of `pskus` was not
     // enough: the runner walks brand-new GRID discoveries before the known list (1,464–3,900 per
     // run vs ~660 walked), and it derives "new" as grid minus `pskus`, so it cannot tell the held
     // ones apart from the list alone. A runner that reads this walks them before discoveries; an
     // older runner ignores it and keeps the prepend. Trimmed with the list so ?limit stays a bound.
-    priority_pskus: trim ? heldNew.slice(0, trim) : heldNew,
+    priority_pskus: trim ? priority.slice(0, trim) : priority,
     held_error: heldRes.error ?? null,
     // ⚠ Load-bearing for correctness, not diagnostics: the runner may only treat "absent from
     // pskus" as "brand new" when this is false AND nothing was trimmed. See the note above.

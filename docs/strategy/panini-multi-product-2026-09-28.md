@@ -227,3 +227,14 @@ What this thread added (each has a ledger entry with its revert path):
   is barely refreshing. **Without a `git pull` on the runner box, editions start crossing 7 days ~3 AM PT 10-04.**
 - **Tier 2 held** until the box pulls and a run logs `interleaved` with stale > 7 d still 0. Then admit tier 2 per the
   open list (item 1).
+
+### 2026-10-03 ~9:05 AM PT — server-side fix for the stale catalogue (no runner pull needed)
+
+- The runner box still had not pulled at 8:45 AM PT (last run logged no `interleaved`), with 514 editions > 6 days old.
+  The walk-order GET now also puts catalogue editions **older than 5 days** into `priority_pskus` (after the held ones,
+  stalest first, **max 300 per run**). Every runner since 09-29 walks that list FIRST, so the stalest editions are refreshed
+  ahead of the discovery flood whatever runner version is running. The response reports it as `aged_priority`.
+- **Verify on the next run** (the runner GETs at the start of each ~4 h run): in `pipeline_runs` `panini-ingest-enum`,
+  `extra.enum.order_mode` should read `… N held-priority + …` with N up to ~300, and editions older than 7 days should stay 0
+  past ~3 AM PT 10-04 (the oldest was last seen 09-27 2:58 AM PT).
+- After the box pulls (`interleaved` appears) AND stale > 7 d is still 0 → admit tier 2.

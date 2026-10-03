@@ -28,6 +28,9 @@ const st = vi.hoisted(() => ({
   // panini_user_holdings (the collector walk) — held pskus, 2026-09-29.
   holdings: [] as Array<{ psku: string | null }>,
   holdingsError: null as null | { message: string },
+  // Epoch ms of catalogue row 0's last_seen_at (rows ascend 1 s apart). Recent by default, so the
+  // aged-priority rule (2026-10-03) stays out of tests about something else.
+  baseMs: 0,
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -63,7 +66,7 @@ vi.mock("@/lib/supabase", () => ({
             rows.push({
               external_id: `packcard-${st.setIdAt(i)}_1_${i}_1`,
               // Ascending age index doubles as the stalest-first assertion below.
-              last_seen_at: new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString(),
+              last_seen_at: new Date(st.baseMs + i * 1000).toISOString(),
             })
           }
           return { data: rows, error: null }
@@ -84,6 +87,7 @@ beforeEach(async () => {
   st.setIdAt = () => 2332
   st.holdings = []
   st.holdingsError = null
+  st.baseMs = Date.now() - 3_600_000
   process.env.INGEST_SECRET_TOKEN = "tok"
   ;({ GET } = await import("@/app/api/cron/panini-ingest/route"))
 })
@@ -201,6 +205,39 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     expect(j.truncated).toBe(true)
     expect(j.bootstrap_set_ids).toEqual([])
     expect(j.walk_set_ids).toEqual([2332, 2420])
+  })
+
+  // ── AGED PRIORITY (2026-10-03) ────────────────────────────────────────────
+  // A runner that walks every fresh discovery before any known edition stopped refreshing the
+  // catalogue after 22 products were admitted (514 editions > 6 days old). Every runner walks
+  // priority_pskus first, so editions past the age line are served there, stalest first, capped.
+  it("serves catalogue editions older than 5 days in priority_pskus, stalest first, after the held", async () => {
+    st.total = 6
+    st.baseMs = Date.now() - 6 * 86_400_000 // rows 0..5 are ~6 days old
+    st.products = { data: [{ set_id: 2332, name: "WC", walk_cards: true }, { set_id: 1941, name: null, walk_cards: true }], error: null }
+    st.holdings = [{ psku: "packcard-1941_377959_9989801_273" }]
+    const j = await (await GET(req())).json()
+    expect(j.priority_pskus[0]).toBe("packcard-1941_377959_9989801_273")
+    expect(j.priority_pskus.slice(1)).toEqual(Array.from({ length: 6 }, (_, i) => `packcard-2332_1_${i}_1`))
+    expect(j.aged_priority).toBe(6)
+    expect(j.held_uncatalogued).toBe(1)
+    expect(j.complete).toBe(true)
+  })
+
+  it("serves NO aged priority while every edition is fresher than 5 days", async () => {
+    st.total = 6
+    const j = await (await GET(req())).json()
+    expect(j.aged_priority).toBe(0)
+    expect(j.priority_pskus).toEqual([])
+  })
+
+  it("caps aged priority at 300 per run so discovery keeps most of the run", async () => {
+    st.total = 1003
+    st.baseMs = Date.now() - 10 * 86_400_000
+    const j = await (await GET(req())).json()
+    expect(j.aged_priority).toBe(300)
+    expect(j.priority_pskus[0]).toBe("packcard-2332_1_0_1") // the stalest
+    expect(j.priority_pskus).toHaveLength(300)
   })
 
   it("a pack-pages read failure is pack_urls:null (runner keeps its built-in list), not []", async () => {
