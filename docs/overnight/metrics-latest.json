@@ -1,10 +1,10 @@
 {
-  "generated_at_pt": "2026-10-03 ~10:05 AM PT (daytime autonomous pass, Cowork cloud, Trevor present)",
-  "generated_at_utc": "2026-10-03T17:05Z",
-  "pass": "daytime health + Search Console + scheduler audit + live QA (Cowork cloud, push-capable via add_repo). 4 code/docs commits, 1 migration (20261003152533), 1 pg_cron unschedule (475). Handoff: docs/handoff-2026-10-03-daytime-audit-gsc-schedulers.md",
-  "shipped": 4,
+  "generated_at_pt": "2026-10-03 ~10:40 AM PT (daytime autonomous pass, Cowork cloud, Trevor present; close-out after the second 'keep going' block)",
+  "generated_at_utc": "2026-10-03T17:40Z",
+  "pass": "daytime health + Search Console + scheduler audit + live QA, then 'keep going' (Cowork cloud, push-capable via add_repo). 8 code/docs commits, 2 migrations (20261003152533, 20261003163012), 1 pg_cron unschedule (475), 5 GSC validations + sitemap resubmit. Handoff: docs/handoff-2026-10-03-daytime-audit-gsc-schedulers.md",
+  "shipped": 8,
   "reverted": 0,
-  "verdict": "GREEN. security/structural/trust all clean (38/38, 0 breaches, precompute 5.0h); stalled []; R118 0; pg_cron 0 failures/24h (189 jobs); cron-job.org 71/71 active Successful; Vercel chronic groups only; GHA 0 failures in last 100 runs until the other session's 679520534 (component branch coverage 81.92% < 81.95%, NOT this pass). Live QA 35 paths x 2 viewports clean after the Panini marketplace-status fix. GSC: robots.txt was blocking the 16,720 sitemap-submitted Panini URLs + the page-image proxies — fixed f8a73b6d9.",
+  "verdict": "GREEN. security/structural/trust all clean (38/38, 0 breaches, precompute 5.0h); stalled []; R118 0; pg_cron 0 failures/24h (189 jobs); cron-job.org 71/71 active Successful; Vercel chronic groups only; GHA red 8:16-~9:00 AM PT from the other session's 679520534 (coverage gate), resolved by its owner; green on 605a5001f. Live QA 35 paths x 2 viewports clean after the Panini marketplace-status fix. GSC: robots.txt was blocking the 16,720 sitemap-submitted Panini URLs + the page-image proxies — fixed f8a73b6d9. Second block: UUID-form Top Shot edition 404s now 308 (4,447 mapped; verified live), sniper 'DEALS AFTER FEES' default-on gate, header nav wrap at 768-1000px fixed; post-ship 10:28 AM PT: pg_cron 0/3,720 fails in 3h, security 0, stalled [], no new Vercel cluster.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
     "structural": "clean (function_search_path_drift [], procedure_txn_control_pins [], procedure_search_path_unpinned [], cross_collection_mat_staleness [], backward_cursor_rewinds [], wmc_null_edition_key [], suppression_parked_claim_drift [])",
@@ -14,8 +14,8 @@
     "trust_precompute_max_age_hours": 5.01,
     "stalled_pipelines": "[]",
     "pipeline_alerts": [
-      "pack-mint-probes failure_rate MEDIUM (270/650 over 3 cal-days, Timeout 20000 ms) — BY DESIGN; #166 shipped 10-02 gives a node fault 12 retries; alarm is TRUE while the walk is on the mainnet24 historical node and clears when it leaves. Verified live: a probe reached attempt 5 (pre-#166 max was 4); failed=6 (window-missed class only).",
-      "pg_net_http_429 HIGH (4775/2h, endpoint unattributable — net._http_response has no url) — KNOWN Flow-envoy limiter on the every-minute Flow lanes (stagger fix 20260930143000, limiter-bound by design, free retries, no freshness breach) PLUS extra load from Trevor's scratch Flowty export jobs 673/674 (30s cadence, still progressing). Lossy req_id join confirmed 20 directly; not a platform regression, not mine to touch.",
+      "pack-mint-probes failure_rate MEDIUM (338/722 over 3 cal-days, Timeout 20000 ms) — pooled across the 10-02 node spell (R124); #166 by design; not live.",
+      "pg_net_http_429 HIGH (21/2h at 10:28 AM PT) = ONE 20-request burst at 8:53 AM PT from the scratch wallet walk (jobid 673, cap already 40->20 at 6:47 AM) + 1 at 9:35; clears from the 2h window ~10:55 AM PT. Not a production lane.",
       "unmapped-sales-nfl_all_day INFO (26073 actionable, ~4.7d to clear; was 28069 on 10-02 — draining) — by design",
       "atlas-editions-upstream-403 INFO (58/480, Cloudflare base rate, 0 sets stalled) — by design",
       "atlas-market-upstream-403 INFO (65/543, last drain fresh) — by design",
@@ -23,7 +23,7 @@
     ],
     "pipeline_fails_24h": "pack-mint-probes 274 (mainnet24 walk, by design); sync-nba-projections 8/8 (#8 shelved, all_upstreams_failed 403, fails safe); topshot-pack-supply-backfill 2 (budget_hit rows LANDING — 30s budget fix working, lane no longer silent); atlas-market-feed 2, member-wallet-usernames-atlas 2, wallet-backfill-golazos 2, atlas-editions-refresh 2 (upstream, by design); concierge-billing-error 1 (the one known pre-fix 8:47 PM PT 10-02 row, no new since the synthetic-ignore fix)",
     "sentry": "n/a (Sentry dark since 08-18, decided no spend). Health read from Vercel + beacon, not Sentry.",
-    "vercel_24h": "9 error groups: DEP0169 url.parse DeprecationWarning (186, chronic since 06-16, queued cleanup); insights/pack-drops drop-5 TimeoutError x2 (chronic); pack-detail drop_pool/pack_table_rows/pack_sales_history 5s x1 each (chronic cold since 08-23); collection-snapshot 8s x1; edition get_edition_recent_sales timeout x1 (cold tail; #142 index helped the common path); profile resolve 6s x1; pack-reality ranker 8s x1. NO new cluster, NO 5xx spike, NO /api/support-chat errors (concierge up).",
+    "vercel_24h": "9 error groups: DEP0169 url.parse DeprecationWarning (186, chronic since 06-16, queued cleanup); insights/pack-drops drop-5 TimeoutError x2 (chronic); pack-detail drop_pool/pack_table_rows/pack_sales_history 5s x1 each (chronic cold since 08-23); collection-snapshot 8s x1; edition get_edition_recent_sales timeout x1 (cold tail; #142 index helped the common path); profile resolve 6s x1; pack-reality ranker 8s x1. NO new cluster, NO 5xx spike, NO /api/support-chat errors (concierge up). || 3h at 10:28 AM PT: scratch_flip_probe smoke failure 8:53-9:09 AM PT (other session, closed by its RLS fix; none since), DEP0169 x2 on the pre-fix deployment, pack_realized_ev 5s x1 cold.",
     "db_size_mb": 24030
   },
   "fmv_high_med": {
@@ -52,11 +52,12 @@
   },
   "deltas_vs_prev": "vs 10-02 ~7:25 PM PT metrics: FMV HIGH+MED nba 8222->8205 (-17), nfl 1635->1653 (+18), panini 3243->3263 (+20), candy 27->29, golazos 6->6 (all noise/continued walk). Editions panini 11438->12544 (+1,106, tier-1 walk continuing), nba 14478->14485. edition_integrity_flags 6->7 (within breach_at 250). db_size 33,810->23,721 MB (-10.1 GB: pg_net VACUUM FULL reclaim + autovacuum). trust breaches 1->0 (slow-board cleared).",
   "open_watches": [
-    "GSC \"Blocked by robots.txt\" (1,472 at the 9/20 data) should stop climbing and Panini editions should start indexing after Google re-fetches robots.txt (live since ~8:45 AM PT 10-03).",
+    "GSC 'Validate fix' STARTED 10-03 on Blocked by robots.txt (1,472), Not found (404) (326), Page with redirect (117), Server error (5xx) (23), Duplicate without user-selected canonical (61); sitemap resubmitted 10-03. Falsifier: counts fall over ~2 weeks; the 404 bucket should shed ~285 UUID-edition rows first.",
     "Panini pages: the \"Marketplace status uncertain\" banner must stay gone (v_collection_marketplace_status row, 20261003152533).",
-    "RESOLVED 10-03 ~9:00 AM PT: component branch coverage back over threshold (82.04%) via component-VisitorJourneysClient-states.test.tsx (+ the owning session e3c8ce6f9); CI green on 605a5001f.",
     "pack-mint-probes medium failure_rate stays lit while the walk is on mainnet24 (#166, by design).",
-    "Trevor scratch Flowty jobs 673/680 still running (his export)."
+    "Trevor scratch Flowty jobs 673/680 still running (his export).",
+    "Fossil 308: /nba-top-shot/edition/<uuid>:<uuid> -> 308 verified live 10:2x AM PT (dd057f708 + the other session's withBoardBudget follow-up). Watch: no new 5xx on /[collection]/edition/[slug]; the lookup is bounded at 2 s and falls back to 404.",
+    "Sniper 'DEALS AFTER FEES' default-on (5bf46cced): watch sniper pageviews / empty-state beacon for a board that is EMPTY after the gate on a thin collection (UFC, Golazos) — the empty state names the toggle, but if it is empty most of the day the default should flip per collection."
   ],
   "needs_trevor": [
     "delete the 10 retired cron-job.org entries (ids in docs/operations/cron-schedule.md) — optional hygiene; the console Delete is blocked for Cowork",
@@ -64,7 +65,7 @@
     "#22 GitHub Support reply / Dapper session rotation",
     "unschedule scratch Flowty jobs 673/680 when the export is done",
     "sync-nba-projections (#8) mute now expires 10-28",
-    "product: sniper minimum-spread ranking; team-named player slugs (/nfl-all-day/player/denver)"
+    "overrule check (optional): sniper fee gate default-on was a delegated product call — revert 5bf46cced to undo; team-named player slugs stay 404 (decided)"
   ],
   "housekeeping": "offer-fill-backfill.yml move to cron-job.org RETIRED as an item (its header explains the GHA loop; caught-up trailing re-walk). pg_cron 475 spent one-shot unscheduled. cron-schedule.md re-verified 10-03."
 }
