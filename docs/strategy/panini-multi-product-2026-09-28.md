@@ -323,3 +323,14 @@ What this thread added (each has a ledger entry with its revert path):
   in `panini_pack_state.raw.__set_ids` (evidence only). **Next:** read them after the 6 PM run
   (`select id, product_name, raw->'__set_ids' from panini_pack_state where raw ? '__set_ids'`); if one set id dominates
   per pack, have the route set `product_set_id` from it and fill `panini_products.name` where NULL (never overwrite).
+
+### 2026-10-03 ~4:45 PM PT — held cards were starving the aged list; and the walk has a CAPACITY ceiling
+
+- `priority_pskus` = held-uncatalogued THEN aged. Collector walks now name **4,164** held pskus (10 collectors); a run
+  refreshes **~290-370 editions** (measured from `last_seen_at` per run hour) — so the 300 aged were never reached and
+  editions > 6 d rose 1,113 → 1,350 in two hours. **Shipped:** aged and held alternate 1:1, aged first (route GET,
+  live from the next run with no box pull).
+- **Capacity:** ~2,000 refreshes/day vs 22k+ catalogue editions (+4,164 held, +5,020 grid-new per run) ≈ an 11-day
+  rotation. Keeping every edition < 7 days old is NOT reachable by ordering; the levers are per-card time (~13 s:
+  serial paging + SALES HISTORY clicks), more runs, or narrowing which editions must stay fresh (e.g. held + listed).
+  **Tier 2 stays held** until that is decided — admitting 25 more products only lengthens the rotation.
