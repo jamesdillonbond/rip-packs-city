@@ -17,7 +17,7 @@
 // sitemap. 404s gracefully when neither a render nor a legacy key matches.
 
 import type { Metadata } from "next"
-import { Fragment } from "react"
+import { Fragment, Suspense } from "react"
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
@@ -25,6 +25,7 @@ import { dedupeLabelParts, joinMetaParts, metaField } from "@/lib/format"
 import { fmtList } from "@/lib/pinnacle/catalog-format"
 import { WalletLink } from "@/components/entity/_shared"
 import PinnacleFmvChart from "@/components/pinnacle/PinnacleFmvChart"
+import MarketCapTile from "@/components/entity/MarketCapTile"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
 import SiteFooter from "@/components/SiteFooter"
 import { CollectionTicker, CollectionBanner } from "@/components/collection-chrome"
@@ -372,6 +373,11 @@ export default async function PinnacleMomentPage({
           </div>
         </section>
       ) : null}
+
+      {/* Market cap (market_cap_current; streamed, renders nothing without a row). */}
+      <Suspense fallback={null}>
+        <MarketCapTile group="edition" collectionDbSlug="disney_pinnacle" match={ed.render_id} />
+      </Suspense>
 
       {fmvHistory.length > 2 ? (
         <section className="rpc-pm-detail">

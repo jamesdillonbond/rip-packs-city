@@ -25,6 +25,8 @@ import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotal
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
+import { Suspense } from "react"
+import MarketCapTile from "@/components/entity/MarketCapTile"
 import { isTeamMoment, momentSubjectHref } from "@/lib/entity-href"
 
 export const revalidate = 600
@@ -310,6 +312,16 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
         <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} sub={fmvTotalSub(detail)} />
         <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={recentLowTotalSub(detail)} />
       </section>
+
+      {/* ── Market cap (market_cap_current; streamed, renders nothing without a row).
+          Keyed like the series resolves: the on-chain series number, or Pinnacle's label. */}
+      <Suspense fallback={null}>
+        <MarketCapTile
+          group="series"
+          collectionDbSlug={coll.dbSlug}
+          match={coll.dbSlug === "disney_pinnacle" ? detail.display_label : detail.series_number != null ? String(detail.series_number) : null}
+        />
+      </Suspense>
 
       {isEmpty ? (
         <div className="rpc-card" style={{ marginTop: 14, padding: "22px 18px", textAlign: "center", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>

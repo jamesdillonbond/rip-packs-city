@@ -28,6 +28,7 @@ const GRAIN_NOUN: Record<MarketCapEntityGroup, string> = {
   player: "players",
   team: "teams",
   set: "sets",
+  series: "series",
 }
 
 function fmtPct(x: number | null, signed = false): string {

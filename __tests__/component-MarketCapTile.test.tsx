@@ -107,6 +107,15 @@ describe("MarketCapTileBody", () => {
   })
 })
 
+describe("MarketCapTile — series pages", () => {
+  it("asks for the series grain and names the grain in the rank line", async () => {
+    state.data = [{ ...ROW, group_label: "2", groups_ranked: 8, mcap_rank: 3 }]
+    const { container } = await renderTile({ group: "series", collectionDbSlug: "nba_top_shot", match: "2" })
+    expect(state.calls[0].args).toEqual({ p_group: "series", p_collection: "nba_top_shot", p_match: "2" })
+    expect(container.textContent).toContain("of 8 series in NBA Top Shot")
+  })
+})
+
 describe("sevenDayChange", () => {
   it("is null whenever either side is unknown or the base is 0", () => {
     expect(sevenDayChange(110, 100)).toBeCloseTo(0.1)

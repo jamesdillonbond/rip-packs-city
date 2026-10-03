@@ -206,7 +206,7 @@ export function highConfidenceShare(r: MarketCapRow): number | null {
 
 // ── Entity tile (edition / player / team / set pages) ─────────────────────────
 
-export type MarketCapEntityGroup = "edition" | "player" | "team" | "set"
+export type MarketCapEntityGroup = "edition" | "player" | "team" | "set" | "series"
 
 export interface MarketCapEntityRow {
   collection_slug: string

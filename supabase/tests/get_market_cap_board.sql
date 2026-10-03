@@ -60,7 +60,7 @@ CREATE TABLE public.atlas_edition_supply (
 CREATE TABLE public.edition_fmv_current (edition_id uuid, fmv_usd numeric, confidence text);
 CREATE TABLE public.pinnacle_catalog (
   render_id text, edition_id text, set_name text, edition_type text, series_name text,
-  total_minted integer, fmv_usd numeric, fmv_confidence text
+  total_minted integer, fmv_usd numeric, fmv_confidence text, characters text[], franchises text[]
 );
 CREATE TABLE public.market_cap_current (
   collection_slug        text        NOT NULL,
@@ -158,7 +158,7 @@ INSERT INTO public.edition_fmv_current VALUES
   ('00000000-0000-0000-0000-000000000e09', 3.00, 'LOW'),
   ('00000000-0000-0000-0000-000000000e10', 2.00, 'HIGH');
 
-INSERT INTO public.pinnacle_catalog VALUES ('r1', 'd1', 'Pin Set', 'Limited Edition', 'Series 1', 500, 1.00, 'LOW');
+INSERT INTO public.pinnacle_catalog VALUES ('r1', 'd1', 'Pin Set', 'Limited Edition', 'Series 1', 500, 1.00, 'LOW', '{"Minnie Mouse","Daisy Duck"}', '{"Star Wars™"}');
 
 -- >>> BEGIN verbatim market_cap_edition_rows (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.market_cap_edition_rows(p_collection text, p_badges boolean)
@@ -388,8 +388,11 @@ BEGIN
            regexp_replace(lower(extensions.unaccent(ed.player_name)), '[^a-z0-9]+', '-', 'g') AS p_ascii,
            regexp_replace(lower(ed.team_name), '[^a-z0-9]+', '-', 'g') AS t_plain,
            regexp_replace(lower(extensions.unaccent(ed.team_name)), '[^a-z0-9]+', '-', 'g') AS t_ascii,
-           (ed.player_name <> '' AND NOT coalesce(ed.is_team_moment, false)) AS is_player
+           (ed.player_name <> '' AND NOT coalesce(ed.is_team_moment, false)) AS is_player,
+           pc.characters AS pin_chars,
+           pc.franchises AS pin_fr
     FROM ed
+    LEFT JOIN public.pinnacle_catalog pc ON ed.coll = 'disney_pinnacle' AND pc.render_id = ed.ext_id
   ),
   tk AS MATERIALIZED (
     SELECT d.coll, d.t_plain,
@@ -408,6 +411,19 @@ BEGIN
      WHERE s.t_plain <> ''
     UNION ALL
     SELECT s.coll, 'set', s.set_slug, s.set_name, s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence FROM sl s WHERE s.set_slug <> ''
+    UNION ALL
+    SELECT s.coll, 'series', coalesce(s.series_num::text, nullif(s.series_name, '')),
+           coalesce(nullif(s.series_name, ''), s.series_num::text), s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence
+      FROM sl s WHERE coalesce(s.series_num::text, nullif(s.series_name, '')) IS NOT NULL
+    UNION ALL
+    SELECT s.coll, 'player', regexp_replace(lower(btrim(ch)), '[^a-z0-9]+', '-', 'g'), btrim(ch), s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence
+      FROM sl s CROSS JOIN LATERAL unnest(s.pin_chars) ch
+     WHERE s.coll = 'disney_pinnacle' AND btrim(coalesce(ch, '')) <> ''
+    UNION ALL
+    SELECT s.coll, 'team', regexp_replace(lower(btrim(regexp_replace(fr, '[™®©]', '', 'g'))), '[^a-z0-9]+', '-', 'g'),
+           btrim(regexp_replace(fr, '[™®©]', '', 'g')), s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence
+      FROM sl s CROSS JOIN LATERAL unnest(s.pin_fr) fr
+     WHERE s.coll = 'disney_pinnacle' AND btrim(coalesce(regexp_replace(fr, '[™®©]', '', 'g'), '')) <> ''
   ),
   agg AS (
     SELECT u.coll, u.grain, u.gkey,
@@ -512,7 +528,7 @@ BEGIN
     SELECT v_day, st.collection_slug, st.grain, st.group_key, st.group_label, st.editions, st.editions_supply_known,
            st.collector_held, st.mcap_usd, st.mcap_high_conf_usd, v_run
     FROM _mc_stage st
-    WHERE st.is_primary AND st.grain IN ('collection','player','team','set')
+    WHERE st.is_primary AND st.grain IN ('collection','player','team','set','series')
     ON CONFLICT (snapshot_date, collection_slug, grain, group_key) DO UPDATE
       SET group_label = EXCLUDED.group_label, editions = EXCLUDED.editions,
           editions_supply_known = EXCLUDED.editions_supply_known, collector_held = EXCLUDED.collector_held,
@@ -548,7 +564,7 @@ DECLARE
   v_keys  text[];
   v_day7  date := (now() AT TIME ZONE 'America/Los_Angeles')::date - 7;
 BEGIN
-  IF p_group IS NULL OR p_group NOT IN ('collection','edition','player','team','set') THEN
+  IF p_group IS NULL OR p_group NOT IN ('collection','edition','player','team','set','series') THEN
     RAISE EXCEPTION 'get_market_cap_entity: unknown group %', p_group USING ERRCODE = '22023';
   END IF;
   IF p_collection IS NULL OR p_match IS NULL OR btrim(p_match) = '' THEN
@@ -696,9 +712,24 @@ BEGIN
 EXCEPTION WHEN invalid_parameter_value THEN NULL;
 END $$;
 
+-- Series: keyed like each series page — the on-chain number, or Pinnacle's label.
+SELECT _assert_eq((SELECT mcap_usd || '/' || editions || '/' || mcap_rank || '/' || groups_ranked FROM get_market_cap_entity('series', 'nba_top_shot', '2')),
+  '180.00/4/1/1', 'series 2: four editions, the unsplit one counted but not capped; the only ranked series');
+SELECT _assert((SELECT mcap_usd IS NULL AND mcap_rank IS NULL FROM get_market_cap_entity('series', 'nba_top_shot', '0')),
+  'a series whose only edition is unsplit has an unknown cap');
+SELECT _assert_eq((SELECT mcap_usd::text FROM get_market_cap_entity('series', 'disney_pinnacle', 'Series 1')), '350.00',
+  'Pinnacle series are keyed by their label');
+-- Pinnacle characters + franchises: a duo pin counts for BOTH characters; ™ is stripped.
+SELECT _assert_eq((SELECT group_label || '=' || mcap_usd FROM get_market_cap_entity('player', 'disney_pinnacle', 'minnie-mouse')), 'Minnie Mouse=350.00',
+  'a Pinnacle character page reads its trait row');
+SELECT _assert_eq((SELECT group_label || '=' || mcap_usd FROM get_market_cap_entity('player', 'disney_pinnacle', 'daisy-duck')), 'Daisy Duck=350.00',
+  'a duo pin counts for both characters');
+SELECT _assert_eq((SELECT group_label || '=' || mcap_usd FROM get_market_cap_entity('team', 'disney_pinnacle', 'star-wars')), 'Star Wars=350.00',
+  'a franchise is keyed with the trademark sign removed, like pinnacleFranchiseHref');
+
 -- The daily history is written for collection/player/team/set — never for editions.
 SELECT _assert_eq((SELECT string_agg(DISTINCT grain, ',' ORDER BY grain) FROM market_cap_daily WHERE snapshot_date = (now() AT TIME ZONE 'America/Los_Angeles')::date),
-  'collection,player,set,team', 'the daily history carries collection/player/team/set primaries');
+  'collection,player,series,set,team', 'the daily history carries collection/player/team/set/series primaries');
 
 -- A second, identical run changes nothing and deletes nothing.
 SELECT _assert_eq((SELECT (r->>'changed') || '/' || (r->>'deleted') FROM (SELECT refresh_market_cap_current() r) x), '0/0',

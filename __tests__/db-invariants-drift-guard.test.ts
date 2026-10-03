@@ -34,7 +34,7 @@ const PINS = [
     // tile: matched by each page's own slug rule; no match → zero rows, never $0.
     fn: "get_market_cap_entity",
     test: "supabase/tests/get_market_cap_board.sql",
-    migration: "supabase/migrations/20261003213500_audit_20261003_market_cap_current_daily_history_and_four_more_supply_sources.sql",
+    migration: "supabase/migrations/20261003221539_audit_20261003_market_cap_series_and_pinnacle_character_franchise_tiles.sql",
   },
   {
     // Added 2026-10-03. Recomputes market_cap_current (entity tiles) + the PT-dated
@@ -42,7 +42,7 @@ const PINS = [
     // empty stage refuses to wipe the table.
     fn: "refresh_market_cap_current",
     test: "supabase/tests/get_market_cap_board.sql",
-    migration: "supabase/migrations/20261003213500_audit_20261003_market_cap_current_daily_history_and_four_more_supply_sources.sql",
+    migration: "supabase/migrations/20261003221539_audit_20261003_market_cap_series_and_pinnacle_character_franchise_tiles.sql",
   },
   {
     // Added 2026-10-03. Atlas EditionService walk for Golazos ('laliga') + Pinnacle
