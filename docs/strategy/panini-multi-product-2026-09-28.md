@@ -300,3 +300,19 @@ What this thread added (each has a ledger entry with its revert path):
   `__tests__/panini-runner-survives-a-closed-page.test.ts`. An unreachable Chrome still ends the run.
 - Open question for the box: **why** the debug Chrome closed at ~10:01 AM (Chrome auto-update restart, a crash, a window
   closed by hand?). A non-zero `page_recoveries` on later runs says it keeps happening.
+
+### 2026-10-03 ~4:20 PM PT — secondary pack grid WORKS: 64 pack pages found, 40 captured on the first run
+
+- The 2:00 PM run's `enum.pack_grid`: `/marketplace/packs.html` → HTTP 200, **redirected to `?sport=Basketball`**, 9
+  scrolls, **64 new subpack pages**; ops `products` ×3, `filters` ×3, `packFiltersMetaTimestamp`. The pack-page walk opened
+  40 (the cap) and captured **40 of 40** — `panini_pack_state` 2 → 42 rows, ~15 basketball products (2020-21 Blockchain
+  NBA, 2021-22 Prizm, 2021-22 Optic, Best of the NBA 22-23/23-24/24-25, Flawless 23-24, Hoops, Instant, Prizm 23-24/24-25,
+  Court Kings, Silhouette). Each carries floor / recent / avg sale, total and unopened supply, and Panini's GUARANTEED
+  contents (`raw.pack_label`). All attribute by product name with `product_set_id` NULL → EV "not modeled". Same run: walk
+  order `interleaved (4754 held-priority + 5020 new + 17635 known)`, 115 card batches to 3:52 PM PT.
+- **Follow-ups shipped:** one listing pass per discovery sport (`/marketplace/packs.html?sport=<sport>`; the bare listing
+  serves Basketball only), grid budget 4 → 7 min; pack pages per run 40 → 60 (rotating stalest-first); an un-typed pack is
+  labelled **"Pack"**, not "Hobby" (Hobby is claimed only for the modeled standard packs 1038 / 1056).
+- **Watch:** floors on thin packs are asks, not values (e.g. a 2022-23 Best of the NBA pack: floor $455,000, recent sale
+  $900). The Packs tab shows them as market stats, not EV; any future "cheapest pack" or EV surface must not take a lone
+  floor at face value.
