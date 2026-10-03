@@ -1,4 +1,4 @@
-# Inbox index — 557 live filings
+# Inbox index — 558 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-10-03 — 1 filing
+## 2026-10-03 — 2 filings
+
+- [🟢 **`atlas-editions-upstream-403` HIGH: 1 of 282 sets past 6 h — ROOT CAUSE FIXED by `20261003151308`: a set failing on page 0 waited a full ~82-min cycle per retry (chance at a steady ~17 % 403 rate), now retries after 5 min; same calls per tick**](2026-10-03T1504Z-daytime-monitor-atlas-editions-one-set-stalled-6h.md) — *(daytime monitor, ~8:04 AM PT; disposition appended by Claude Code ~8:15 AM PT.)* Re-open if > 0 stalled sets on two ticks ≥ 1 h apart after 9 AM PT 10-03.
 
 - [🟢 **pack-mint-probes 20 s probe timeouts near-total on 10-02 — RESOLVED by #166 (`20261003045659`): node faults retry 12 times; failed holds at 6, none at ≥12 attempts (re-checked 10-03 ~7:45 AM PT)**](2026-10-03T0006Z-daytime-monitor-pack-mint-probes-near-total-20s-timeout.md) — *(daytime monitor, ~5:06 PM PT 10-02, left untracked on the mount; disposition appended by Claude Code 10-03.)* The `failure_rate` arm stays lit by design while the backward walk is on the mainnet24 historical node.
 
