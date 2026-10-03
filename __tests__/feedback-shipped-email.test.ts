@@ -58,3 +58,34 @@ describe("the admin PATCH sends it once, on the transition to shipped, never for
     expect(src).toContain("const { user_email: _email, ...row } = data")
   })
 })
+
+describe("digest builders (one email per reader for the pre-existing shipped backlog)", () => {
+  const items = [
+    { feedbackType: "bug", summary: 'Unexplained "+$62" on cards' },
+    { feedbackType: "feature_request", summary: "Min circulation filter on the squeeze board" },
+  ]
+  it("subject counts the items, falls back to the single form for one", async () => {
+    const m = await import("@/lib/emails/feedback-shipped-email")
+    expect(m.buildFeedbackShippedDigestSubject({ items })).toBe("2 things you asked for just shipped")
+    expect(m.buildFeedbackShippedDigestSubject({ items: [items[1]] })).toMatch(/^Shipped: Min circulation/)
+    const html = m.buildFeedbackShippedDigestHtml({ items, note: "Thanks <b>" })
+    expect(html).toContain("&quot;+$62&quot;")
+    expect(html).toContain("fixed")
+    expect(html).toContain("Thanks &lt;b&gt;")
+    expect(m.buildFeedbackShippedDigestText({ items })).toContain("- [bug report] Unexplained")
+  })
+})
+
+// Source under test: app/api/admin/feedback/notify-shipped-backlog/route
+describe("the backlog digest route is admin-gated, idempotent, and reports per reader", () => {
+  const src = readFileSync(join(process.cwd(), "app/api/admin/feedback/notify-shipped-backlog/route.ts"), "utf8")
+  it("gates on the admin token, selects only unnotified shipped rows, stamps only after a 2xx", () => {
+    expect(src).toContain("if (!verifyAdminRequest(req)) return adminUnauthorizedResponse();")
+    expect(src).toContain('.eq("feedback_status", "shipped")\n      .is("shipped_notified_at", null)')
+    expect(src).toContain("if (r.is_smoke_test) { skippedSmoke++; continue; }")
+    expect(src).toContain('.is("shipped_notified_at", null)\n        .select("id")')
+    expect(src).toContain("boundedRead(")
+    // addresses never leave the route in full
+    expect(src).toContain('to.replace(/^(.).*@/, "$1…@")')
+  })
+})

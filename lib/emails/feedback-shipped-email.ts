@@ -94,3 +94,69 @@ export function buildFeedbackShippedHtml(opts: FeedbackShippedOpts): string {
   </body>
 </html>`
 }
+
+// ── Digest: several shipped items for ONE reader, one email ──────────────────
+// Used by POST /api/admin/feedback/notify-shipped-backlog for rows that reached
+// `shipped` before the per-transition email existed (2026-10-03). The row's
+// admin_note is NOT quoted here: those were written as internal log lines
+// (commit hashes, migration ids). A per-reader `note` may be passed instead.
+
+export interface FeedbackShippedDigestItem {
+  feedbackType: string | null
+  summary: string
+  shippedAt?: string | null
+}
+
+export interface FeedbackShippedDigestOpts {
+  items: FeedbackShippedDigestItem[]
+  note?: string | null
+}
+
+export function buildFeedbackShippedDigestSubject(opts: FeedbackShippedDigestOpts): string {
+  const n = opts.items.length
+  return n === 1 ? buildFeedbackShippedSubject({ feedbackType: opts.items[0].feedbackType, summary: opts.items[0].summary }) : `${n} things you asked for just shipped`
+}
+
+export function buildFeedbackShippedDigestText(opts: FeedbackShippedDigestOpts): string {
+  const lines = [`${opts.items.length} things you asked for through the RPC concierge have shipped:`, ``]
+  for (const it of opts.items) lines.push(`- [${feedbackTypeLabel(it.feedbackType)}] ${it.summary.trim()}`)
+  if (opts.note?.trim()) lines.push(``, `From the team: ${opts.note.trim()}`)
+  lines.push(``, `You're getting this once because you asked for these through the RPC concierge. Reply to this email if anything isn't right.`, ``, SITE_URL)
+  return lines.join("\n")
+}
+
+export function buildFeedbackShippedDigestHtml(opts: FeedbackShippedDigestOpts): string {
+  const note = opts.note?.trim()
+  const rows = opts.items
+    .map(
+      (it) => `<tr><td style="padding:8px 0;border-top:1px solid ${PANEL_BORDER};">
+        <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:${TEXT_SUBTLE};">${esc(feedbackTypeLabel(it.feedbackType))}${it.feedbackType === "bug" ? " &middot; fixed" : " &middot; shipped"}</div>
+        <div style="font-size:15px;line-height:1.4;color:${TEXT};margin-top:2px;">${esc(it.summary.trim())}</div>
+      </td></tr>`,
+    )
+    .join("")
+  return `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:${BG};color:${TEXT};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BG};">
+      <tr><td align="center" style="padding:32px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+          <tr><td style="padding:0 0 16px;">
+            <div style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:${ACCENT};font-weight:700;">Shipped</div>
+            <div style="font-size:22px;font-weight:700;line-height:1.25;margin-top:6px;">${opts.items.length} things you asked for just shipped</div>
+            <div style="font-size:14px;line-height:1.5;color:${TEXT_MUTED};margin-top:8px;">Every one of these came in through the concierge. Thank you &mdash; this is what the beta is for.</div>
+          </td></tr>
+          <tr><td style="background:${PANEL};border:1px solid ${PANEL_BORDER};border-radius:12px;padding:10px 20px 14px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+            ${note ? `<div style="font-size:14px;line-height:1.5;margin-top:14px;color:${TEXT_MUTED};"><span style="color:${TEXT};font-weight:600;">From the team:</span> ${esc(note)}</div>` : ""}
+          </td></tr>
+          <tr><td style="padding:18px 4px 0;font-size:12px;line-height:1.5;color:${TEXT_SUBTLE};">
+            You&rsquo;re getting this once because you asked for these through the RPC concierge. Reply to this email if anything isn&rsquo;t right.
+            <br/><a href="${SITE_URL}" style="color:${TEXT_MUTED};">rippackscity.com</a>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`
+}
