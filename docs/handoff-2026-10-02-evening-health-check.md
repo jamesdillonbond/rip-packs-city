@@ -10,7 +10,7 @@ Ledger entries for everything here are in `docs/overnight/ledger.md` under 2026-
 |---|---|---|
 | `20261003031302` | `get_pack_ev_contributors` latest FMV by index probe | dist 4184: 303 ms warm / 1,484 ms cold → 46 ms, temp spill gone; equivalent over 40 dists. Production traffic is low (10–50 calls / 2 h), so the user-visible gain is small. |
 | `20261003033052` | `idx_editions_collection_base_external_id` | the edition page's #142 serial-ceiling subquery: 3,806 → 5 buffers per execution |
-| `20261003033402` | `get_edition_recent_sales` `sub_names` scoped to Top Shot | **cost-neutral** (388 → 440 buffers, 2.1 → 1.7 ms per steady-state call); closes a latent cross-collection naming hole |
+| `20261003033402` | `get_edition_recent_sales` `sub_names` scoped to Top Shot | across 80 editions: **36 % fewer buffers, 14 % faster** (one-edition sample had read neutral, 388 → 440); closes a latent cross-collection naming hole. Production 8:50–9:50 PM PT (52 ms / 921 buffers per call) sits inside the pre-change range — traffic mix dominates |
 | `20261003023303` → `20261003030546` | probe-lane 90 s timeout, **reverted** | made things worse (whole-batch 503s); prod is on the 09-29 body |
 
 New DB pins: `supabase/tests/get_pack_ev_contributors.sql`, `supabase/tests/get_edition_recent_sales.sql`.
