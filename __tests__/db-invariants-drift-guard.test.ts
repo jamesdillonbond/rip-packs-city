@@ -2778,6 +2778,13 @@ const PINS = [
     migration:
       "supabase/migrations/20261003150031_visitor_journeys_concierge_visit_link_returning_visitor_id.sql",
   },
+  {
+    // Added 2026-10-03. Internal check sessions are tests on support_conversations and
+    // chat_sessions for EVERY writer (a tool path had inserted a qa- probe as real).
+    fn: "tag_internal_session_as_test",
+    test: "supabase/tests/tag_internal_session_as_test.sql",
+    migration: "supabase/migrations/20261003183547_internal_session_ids_are_tests_for_every_writer.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version
