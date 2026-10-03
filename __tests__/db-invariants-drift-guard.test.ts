@@ -105,6 +105,16 @@ const PINS = [
       "supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql",
   },
   {
+    // Added 2026-10-03. A sold moment delivered AND sold inside the sold seed's
+    // 100-block margin is found by reading the events up to the sale. Pins the
+    // sale = the wallet's FIRST withdraw, the delivery = the last other withdraw
+    // strictly BEFORE it (never the buyer's after), and skip-once enqueue.
+    fn: "run_chain_arrival_flip_lane",
+    test: "supabase/tests/run_chain_arrival_flip_lane.sql",
+    migration:
+      "supabase/migrations/20261003160000_audit_20261003_chain_arrival_flips_read_past_the_sale_margin.sql",
+  },
+  {
     // Added 2026-09-29. A Top Shot pull is named by READING THE CHAIN at its
     // pack's rip block on the historical spork node (269 of 269 ids read back;
     // every disagreement a parallel our record filed under its base). Pins the
