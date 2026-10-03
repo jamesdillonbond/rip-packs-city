@@ -39,6 +39,7 @@ import { slugifyName } from "@/lib/entity-labels"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { editionHref, momentSubjectHref, momentSubjectName } from "@/lib/entity-href"
 import IpfsThumb from "@/components/entity/IpfsThumb"
+import MarketCapTile from "@/components/entity/MarketCapTile"
 import { isTopShotFossilSlug, ASK_LABEL, notableTagLabel, fmvDayDelta, sortNotableSerials } from "@/lib/edition-detail-format"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 import { parallelLabelFromBadges } from "@/lib/edition-parallel"
@@ -1133,6 +1134,14 @@ export default async function EditionPage(
             setName={detail.set_name}
           />
         </div>
+      )}
+
+      {/* ── Market cap (market_cap_current; streamed, renders nothing without a row).
+          Pinnacle's canonical page is /pinnacle/moment, not this route. */}
+      {!isPinnacle && detail.external_id && (
+        <Suspense fallback={null}>
+          <MarketCapTile group="edition" collectionDbSlug={coll.dbSlug} match={detail.external_id} />
+        </Suspense>
       )}
 
       {/* ── Parallel Printings (subedition ladder) ──────────────────────── */}

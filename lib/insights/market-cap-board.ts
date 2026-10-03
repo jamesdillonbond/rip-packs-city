@@ -62,6 +62,8 @@ export interface MarketCapRow {
   mcap_usd: number | null
   mcap_high_conf_usd: number | null
   mcap_minted_usd: number | null
+  /** The same group's cap 7 PT-days ago (collection grain only); null = no history yet. */
+  mcap_usd_7d_ago: number | null
 }
 
 export interface MarketCapBoard {
@@ -72,7 +74,7 @@ export interface MarketCapBoard {
 }
 
 export const METHOD_NOTE =
-  "Market cap = each edition's fair market value x its collector-held supply: minted, minus burned, minus Moments the issuer still holds (sealed and unsold packs, and reserve never packed). Top Shot and All Day supply comes from the marketplace's own per-edition counts, Panini from its card supply. Golazos, UFC Strike, Disney Pinnacle and Candy publish no burn count we can read, so their market cap is shown as unknown, with the minted-supply figure as an upper bound. Serial premiums (#1s, jersey matches) are not included — every copy is valued at the edition's FMV."
+  "Market cap = each edition's fair market value x its collector-held supply: minted, minus burned, minus Moments the issuer still holds (sealed and unsold packs, and reserve never packed). Top Shot, All Day, LaLiga Golazos and Disney Pinnacle supply comes from the marketplace's own per-edition counts, Panini from its card supply, Candy MLB from the treasury's on-chain holdings. UFC Strike publishes no burn count we can read, so its market cap is shown as unknown, with the minted-supply figure as an upper bound. Serial premiums (#1s, jersey matches) are not included — every copy is valued at the edition's FMV."
 
 export function isMarketCapGroup(v: string | null | undefined): v is MarketCapGroup {
   return v != null && (MARKET_CAP_GROUPS as readonly string[]).includes(v)
@@ -127,6 +129,7 @@ export function shapeRow(r: Record<string, unknown>): MarketCapRow {
     mcap_usd: numOrNull(r.mcap_usd),
     mcap_high_conf_usd: numOrNull(r.mcap_high_conf_usd),
     mcap_minted_usd: numOrNull(r.mcap_minted_usd),
+    mcap_usd_7d_ago: numOrNull(r.mcap_usd_7d_ago),
   }
 }
 
@@ -195,4 +198,73 @@ export function rowHref(r: MarketCapRow, group: MarketCapGroup): string | null {
 export function highConfidenceShare(r: MarketCapRow): number | null {
   if (r.mcap_usd == null || r.mcap_high_conf_usd == null || r.mcap_usd <= 0) return null
   return r.mcap_high_conf_usd / r.mcap_usd
+}
+
+/** Fractional change vs 7 days ago, or null when either side is unknown or the base is 0. */
+export function sevenDayChange(now: number | null, ago: number | null): number | null {
+  if (now == null || ago == null || !Number.isFinite(now) || !Number.isFinite(ago) || ago <= 0) return null
+  return now / ago - 1
+}
+
+// ── Entity tile (edition / player / team / set pages) ─────────────────────────
+
+export type MarketCapEntityGroup = "edition" | "player" | "team" | "set"
+
+export interface MarketCapEntityRow {
+  collection_slug: string
+  group_label: string
+  editions: number
+  editions_supply_known: number
+  editions_priced: number
+  minted: number | null
+  burned: number | null
+  issuer_held: number | null
+  collector_held: number | null
+  mcap_usd: number | null
+  mcap_high_conf_usd: number | null
+  mcap_minted_usd: number | null
+  mcap_rank: number | null
+  groups_ranked: number
+  mcap_usd_7d_ago: number | null
+  refreshed_at: string | null
+}
+
+/**
+ * One entity's cap, read from market_cap_current (refreshed every 2 hours) by the
+ * same slug the page itself resolves. `null` = the read worked and there is no row
+ * (the tile renders nothing); a failed read THROWS so the caller can say so.
+ */
+export async function fetchMarketCapEntity(
+  supabase: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  group: MarketCapEntityGroup,
+  collectionDbSlug: string,
+  match: string,
+): Promise<MarketCapEntityRow | null> {
+  const { data, error } = await supabase.rpc("get_market_cap_entity", {
+    p_group: group,
+    p_collection: collectionDbSlug,
+    p_match: match,
+  })
+  if (error) throw new Error(error.message)
+  if (!Array.isArray(data)) throw new Error("market-cap: entity RPC returned no row set")
+  const r = data[0] as Record<string, unknown> | undefined
+  if (!r) return null
+  return {
+    collection_slug: String(r.collection_slug ?? ""),
+    group_label: String(r.group_label ?? ""),
+    editions: int(r.editions),
+    editions_supply_known: int(r.editions_supply_known),
+    editions_priced: int(r.editions_priced),
+    minted: numOrNull(r.minted),
+    burned: numOrNull(r.burned),
+    issuer_held: numOrNull(r.issuer_held),
+    collector_held: numOrNull(r.collector_held),
+    mcap_usd: numOrNull(r.mcap_usd),
+    mcap_high_conf_usd: numOrNull(r.mcap_high_conf_usd),
+    mcap_minted_usd: numOrNull(r.mcap_minted_usd),
+    mcap_rank: numOrNull(r.mcap_rank),
+    groups_ranked: int(r.groups_ranked),
+    mcap_usd_7d_ago: numOrNull(r.mcap_usd_7d_ago),
+    refreshed_at: strOrNull(r.refreshed_at),
+  }
 }

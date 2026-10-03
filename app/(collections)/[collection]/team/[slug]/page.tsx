@@ -26,6 +26,8 @@ import TeamChecklist from "@/components/entity/TeamChecklist"
 import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
 import TeamSets, { type SetRow } from "@/components/entity/TeamSets"
 import TeamSqueeze, { type SqueezeRow } from "@/components/entity/TeamSqueeze"
+import { Suspense } from "react"
+import MarketCapTile from "@/components/entity/MarketCapTile"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -302,6 +304,11 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         <StatCell label="30d Sales" value={fmtCount(detail.sales_30d)} />
         <StatCell label="30d Volume" value={fmtUsd(detail.volume_30d_usd == null ? null : Number(detail.volume_30d_usd))} />
       </section>
+
+      {/* ── Market cap (market_cap_current; streamed, renders nothing without a row) ── */}
+      <Suspense fallback={null}>
+        <MarketCapTile group="team" collectionDbSlug={coll.dbSlug} match={slug} />
+      </Suspense>
 
       {/* ── Team / Franchise Checklist (headline feature) ─────────────────── */}
       <Section title={`${labels.team} Checklist`}>

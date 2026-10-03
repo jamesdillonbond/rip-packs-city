@@ -19,7 +19,8 @@
 --     nginx 404 on 2026-10-03.
 --
 -- (The upsert lives in atlas_supply_ingest_page and the 7-day request prune in the
--- dispatcher: the single-body drain was refused by the SQL transport's filter.)
+-- dispatcher. The single-body drain timed out at 60 s: that was the Supabase MCP's
+-- human-confirmation hold on a body containing DELETE — tooling-gotchas.md.)
 --
 -- Mechanism mirrors atlas_editions_dispatch / _drain: pg_net pages, then a drain
 -- that upserts what landed. WRITE-ONLY upsert keyed (product, edition_id), stamped

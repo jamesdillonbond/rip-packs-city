@@ -12,6 +12,7 @@ const row = (over: Partial<MarketCapRow>): MarketCapRow => ({
   editions: 10, editions_supply_known: 10, editions_priced: 10,
   minted: 1000, burned: 200, issuer_held: 100, collector_held: 700,
   mcap_usd: 51_757_657.83, mcap_high_conf_usd: 26_465_891.88, mcap_minted_usd: 62_480_320.91,
+  mcap_usd_7d_ago: null,
   ...over,
 })
 

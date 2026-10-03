@@ -27,6 +27,7 @@ import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { editionRouteHref } from "@/lib/entity-href"
 import { fetchPaniniPlayerSales, type PaniniPlayerSale } from "@/lib/panini/player-sales"
 import { saleSerialLabel } from "@/lib/entity/sale-serial-label"
+import MarketCapTile from "@/components/entity/MarketCapTile"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -484,6 +485,11 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
           <span>{detail.last_minted_at ? <>Last minted {relTime(detail.last_minted_at)}</> : ""}</span>
         </div>
       )}
+
+      {/* ── Market cap (market_cap_current; streamed, renders nothing without a row) ── */}
+      <Suspense fallback={null}>
+        <MarketCapTile group="player" collectionDbSlug={coll.dbSlug} match={slug} />
+      </Suspense>
 
       {/* ── Top sales ────────────────────────────────────────────────────── */}
       {isPanini ? (

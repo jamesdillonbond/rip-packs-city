@@ -20,6 +20,8 @@ import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
 import { fetchPaniniSetSales, type PaniniSetSales } from "@/lib/panini/set-sales"
 import PaniniSetSalesBody from "@/components/entity/PaniniSetSales"
+import { Suspense } from "react"
+import MarketCapTile from "@/components/entity/MarketCapTile"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -285,6 +287,11 @@ export default async function SetPage(props: { params: Promise<{ collection: str
           <Link href={`/${collection}/sets`} style={{ color: "var(--rpc-red)", textDecoration: "none" }}>Cost to finish each set →</Link>
         </div>
       )}
+
+      {/* ── Market cap (market_cap_current; streamed, renders nothing without a row) ── */}
+      <Suspense fallback={null}>
+        <MarketCapTile group="set" collectionDbSlug={coll.dbSlug} match={slug} />
+      </Suspense>
 
       {/* ── Tier mix bar ─────────────────────────────────────────────────── */}
       {tierMixRows.length > 0 && (

@@ -15,7 +15,7 @@ const base: MarketCapRow = {
   set_name: null, tier: null, series_num: null, series_name: null, edition_external_id: null,
   editions: 1, editions_supply_known: 1, editions_priced: 1,
   minted: 100, burned: 10, issuer_held: 5, collector_held: 85,
-  mcap_usd: 850, mcap_high_conf_usd: 425, mcap_minted_usd: 1000,
+  mcap_usd: 850, mcap_high_conf_usd: 425, mcap_minted_usd: 1000, mcap_usd_7d_ago: null,
 }
 
 describe("market-cap-board helpers", () => {
