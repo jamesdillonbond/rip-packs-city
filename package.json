@@ -41,7 +41,7 @@
     "docs:issues-index": "node scripts/gen-known-issues-index.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.81.0",
+    "@anthropic-ai/sdk": "^0.131.0",
     "@onflow/fcl": "^1.21.9",
     "@onflow/react-sdk": "^0.20.0",
     "@onflow/types": "^1.5.0",
