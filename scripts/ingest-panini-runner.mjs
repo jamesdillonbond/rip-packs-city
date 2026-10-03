@@ -735,9 +735,12 @@ async function main() {
     const extra = String(process.env.PANINI_PACK_GRID_URLS || "").split(",").map((x) => x.trim()).filter(Boolean);
     const GRID_ITERS = Number(process.env.PANINI_PACK_GRID_ITERS || 40);
     // Whole-step budget: the run already ends ~1h52m into the task's 2 h limit (measured 10-03).
-    const GRID_BUDGET_MS = Number(process.env.PANINI_PACK_GRID_BUDGET_MIN || 4) * 60000;
+    const GRID_BUDGET_MS = Number(process.env.PANINI_PACK_GRID_BUDGET_MIN || 7) * 60000;
     const tGrid = Date.now();
-    for (const url of packGridCandidates([...navHrefs], extra)) {
+    // The bare listing IS the Basketball listing (it redirects to ?sport=Basketball, measured 10-03), so
+    // Basketball is left out of the per-sport passes rather than walked twice.
+    const gridSports = DISCOVERY_SPORTS.filter((sp) => sp !== "Basketball");
+    for (const url of packGridCandidates([...navHrefs], extra, 4 + gridSports.length, gridSports)) {
       if (Date.now() - tGrid > GRID_BUDGET_MS) { packGrid.push({ url, skipped: "budget" }); continue; }
       watchdog.mark("pack-grid", url.slice(-80));
       const before = harvestedPackUrls.size;
@@ -846,7 +849,9 @@ async function main() {
   //     last_walked_at without last_captured_at, instead of as a pack that silently never updates.
   const packUrlList = [...new Set([...(SERVED_PACK_URLS ?? PACK_URLS), ...harvestedPackUrls])]
     .sort((a, b) => Number(b.includes("/subpack-")) - Number(a.includes("/subpack-")));
-  const PACK_PAGES_MAX = Number(process.env.PANINI_PACK_PAGES_MAX || 40);
+  // 40 -> 60 (2026-10-03): the secondary pack grid registered 64 pages on its first run; 40 pages took
+  // 3.5 min (~5 s each). Pages rotate stalest-walk first (route GET), so the rest follow next run.
+  const PACK_PAGES_MAX = Number(process.env.PANINI_PACK_PAGES_MAX || 60);
   const packVisits = [];
   for (const url of packUrlList.slice(0, PACK_PAGES_MAX)) {
     currentPackId = (url.match(/subpack-\d+-(\d+)\.html$/) || [])[1] || null;

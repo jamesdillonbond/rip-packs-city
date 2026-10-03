@@ -39,6 +39,14 @@ describe("panini pack grid discovery", () => {
     expect(c).toEqual([`${B}/marketplace/packs.html?sport=Soccer`, `${B}/marketplace/packs.html`])
   })
 
+  it("one listing per sport after the bare one (the bare listing is Basketball only, measured 10-03)", () => {
+    expect(packGridCandidates([], [], 8, ["Football", "Womens Basketball", " ", 3 as unknown as string])).toEqual([
+      `${B}/marketplace/packs.html`,
+      `${B}/marketplace/packs.html?sport=Football`,
+      `${B}/marketplace/packs.html?sport=Womens%20Basketball`,
+    ])
+  })
+
   it("candidates are capped (each one is a page load) and always include the conventional guess when room", () => {
     expect(packGridCandidates([])).toEqual([`${B}/marketplace/packs.html`])
     const many = Array.from({ length: 10 }, (_, i) => `${B}/marketplace/packs-${i}.html`)
@@ -52,6 +60,12 @@ describe("pack type from the pack's own name", () => {
     expect(paniniPackType("2026 Panini NFT Prizm World Cup Soccer FOTL Packs", "1039")).toBe("fotl")
     expect(paniniPackType("2026 Panini NFT Prizm WNBA Packs", "1056")).toBe("hobby")
     expect(paniniPackType("2026 Panini NFT Prizm WNBA FOTL Packs", "1055")).toBe("fotl")
+  })
+
+  it("an un-typed secondary pack is just a 'pack' — Hobby is claimed only for the modeled standard packs", () => {
+    expect(paniniPackType("2020-21 Panini NFT Blockchain Prizm NBA Red Mosaic Packs", "1")).toBe("pack")
+    expect(paniniPackType("2021-22 Panini NFT Blockchain NBA Prizm Gold Vinyl Parallel Pack", "155")).toBe("pack")
+    expect(packLabel("pack")).toBe("Pack")
   })
 
   it("a Blaster / Mega pack is no longer labelled Hobby", () => {

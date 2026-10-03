@@ -32,9 +32,10 @@ export function subpackUrlsFromHtml(html) {
 /**
  * Pages that may list packs for sale: on-site nav links whose PATH names a pack marketplace (not a
  * card page, not a single pack page), then `extra` (env override), then the conventional guess.
- * Deduped on path, capped — each costs a page load.
+ * then one listing per sport (the bare listing serves Basketball only). Deduped on URL, capped —
+ * each costs a page load.
  */
-export function packGridCandidates(hrefs, extra = [], max = 4) {
+export function packGridCandidates(hrefs, extra = [], max = 4, sports = []) {
   const out = [];
   const seen = new Set();
   const add = (u) => {
@@ -52,5 +53,10 @@ export function packGridCandidates(hrefs, extra = [], max = 4) {
   }
   for (const u of extra) add(u);
   add(`${BASE}/marketplace/packs.html`);
+  // 2026-10-03 (measured): /marketplace/packs.html redirects to ?sport=Basketball and lists only that
+  // sport's packs (64 subpack links, all basketball). Every other sport is its own listing.
+  for (const sp of Array.isArray(sports) ? sports : []) {
+    if (typeof sp === "string" && sp.trim()) add(`${BASE}/marketplace/packs.html?sport=${encodeURIComponent(sp.trim())}`);
+  }
   return out;
 }
