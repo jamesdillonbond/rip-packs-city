@@ -156,7 +156,7 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
         <Tile label={costLabel} value={usd(p.costUsd)} sub={p.recentSaleUsd !== null ? `recent sale ${usd(p.recentSaleUsd)}` : undefined} lead />
         {modeled ? (
           <>
-            <Tile label="Typical pull" value={usd(p.typicalEvUsd)} sub="what the median pack holds" />
+            <Tile label="Typical pull" value={usd(p.typicalEvUsd)} sub="each card slot at its median card" />
             <Tile label="EV (mean)" value={usd(p.actualEvUsd)} sub={p.netRipEdgeUsd !== null ? `${signedUsd(p.netRipEdgeUsd)} vs cost` : undefined} />
           </>
         ) : (
@@ -267,7 +267,7 @@ export default function PaniniPackMarket() {
       <Note>
         Sealed Panini NFT packs, bought and sold on Panini&apos;s own marketplace. Prices and supply are Panini&apos;s market
         stats as of RPC&apos;s last walk. Pack EV is modeled per product, and only once every card family in the pack is priced mostly from real
-        sales, not asks; other packs show market stats and say so. Read the typical pull first: it is what the median pack holds. The mean is dragged up by chase cards most
+        sales, not asks; other packs show market stats and say so. Read the typical pull first: it adds up the median card for each slot in the pack — a stand-in for an ordinary pack, not a simulated median pack. The mean is dragged up by chase cards most
         packs never contain, and it is priced off FMV on a listing-fed index, so it is indicative pull value, not what the cards would sell for.
       </Note>
 

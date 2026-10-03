@@ -275,7 +275,7 @@ export default function PaniniBoardsTabs({
               ))}
             </Table>
             <Note>
-              Read the typical pull first: it is what the median pack holds. The mean is dragged up by chase cards most packs never contain, and it is
+              Read the typical pull first: it adds up the median card for each slot in the pack — a stand-in for an ordinary pack, not a simulated median pack. The mean is dragged up by chase cards most packs never contain, and it is
               priced off FMV on a listing-fed index, so it is indicative pull value, not what the cards would sell for. Updated {ptDate(data.packs[0]?.updated_at ?? null)}.
             </Note>
           </>
