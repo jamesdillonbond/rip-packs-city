@@ -7,10 +7,12 @@ import { NextRequest } from "next/server"
 // zeroed stats block. Pins the fail-closed 401 and the empty happy path.
 
 vi.mock("@/lib/supabase", () => {
-  const result = { data: [], error: null }
+  // `count: 0` serves the 2026-10-03 head-count of shipped-but-unnotified rows
+  // (`.is()` is on that chain); the list reads ignore it.
+  const result = { data: [], error: null, count: 0 }
   const make = () => {
     const c: any = {}
-    for (const m of ["select", "not", "in", "eq", "or", "order", "limit"]) c[m] = () => c
+    for (const m of ["select", "not", "in", "eq", "or", "order", "limit", "is"]) c[m] = () => c
     c.then = (resolve: any) => resolve(result)
     return c
   }
@@ -47,5 +49,7 @@ describe("GET /api/admin/feedback", () => {
     expect(body.rows).toEqual([])
     expect(body.stats.total_open).toBe(0)
     expect(body.stats.open_bugs).toBe(0)
+    expect(body.stats.shipped_unnotified).toBe(0)
+    expect(body.stats.shipped_unnotified_error).toBeNull()
   })
 })
