@@ -114,7 +114,10 @@ describe("proxy() — security headers", () => {
     expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'")
   })
 
-  it("only the giveaway admin console may frame Flow's wallet picker (2026-09-29)", async () => {
+  it("only the giveaway pages may frame Flow's wallet picker (2026-09-29; claim page 2026-10-03)", async () => {
+    const claim = (await proxy(req("/giveaways/fall-drop"))).headers.get("Content-Security-Policy")!
+    expect(claim).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
+    expect(claim).toMatch(/connect-src [^;]*wss:\/\/relay\.walletconnect\.org/)
     const admin = (await proxy(req("/admin/giveaways"))).headers.get("Content-Security-Policy")!
     expect(admin).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
     expect(admin).toMatch(/connect-src [^;]*https:\/\/fcl-discovery\.onflow\.org/)
@@ -122,7 +125,7 @@ describe("proxy() — security headers", () => {
     expect(admin).toMatch(/connect-src [^;]*wss:\/\/relay\.walletconnect\.org/)
     expect(admin).toMatch(/frame-src [^;]*https:\/\/verify\.walletconnect\.org/)
     expect(admin).toMatch(/img-src [^;]*https:\/\/api\.web3modal\.org/)
-    for (const path of ["/", "/admin", "/admin/rewards", "/giveaways/fall-drop", "/admin/giveaways-evil"]) {
+    for (const path of ["/", "/admin", "/admin/rewards", "/giveaways-evil", "/admin/giveaways-evil", "/api/giveaways/fall-drop"]) {
       const csp = (await proxy(req(path))).headers.get("Content-Security-Policy")!
       expect(csp, path).not.toContain("fcl-discovery")
       expect(csp, path).not.toContain("walletconnect")

@@ -8,10 +8,22 @@
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import type { PublicDropView } from "@/lib/giveaways/store"
-import { deliveryLabel, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
+import { accountName, deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
 import PackRevealClient from "./PackRevealClient"
 
 type View = PublicDropView & { signed_in: boolean }
+type ClaimAccount = { address: string; role: "flow_wallet" | "linked"; can_receive: boolean }
+
+// The claim page's ONLY wallet code, loaded on demand (it pulls in FCL). Loading it
+// when the claim form mounts — not at click time — lets FCL register WalletConnect
+// before the picker opens, so Flow Wallet's mobile app is listed.
+const loadClaimWallet = () => import("@/lib/giveaways/claim-wallet")
+
+/** The default destination: the Flow Wallet itself when it can receive, else the first linked account that can. */
+export function defaultDestination(accounts: ClaimAccount[]): string | null {
+  const own = accounts.find((a) => a.role === "flow_wallet" && a.can_receive)
+  return own?.address ?? accounts.find((a) => a.can_receive)?.address ?? null
+}
 type Load = { kind: "loading" } | { kind: "not_found" } | { kind: "error" } | { kind: "ok"; view: View }
 
 const DISPLAY = "var(--font-display)"
@@ -43,6 +55,11 @@ export default function GiveawayClient({ slug }: { slug: string }) {
   const [agree, setAgree] = useState(false)
   const [claiming, setClaiming] = useState(false)
   const [claimError, setClaimError] = useState<string | null>(null)
+  // claim with Flow Wallet (Trevor, 2026-10-03): the connected wallet + where the pack goes
+  const [flowWallet, setFlowWallet] = useState<string | null>(null)
+  const [accounts, setAccounts] = useState<ClaimAccount[] | null>(null)
+  const [destination, setDestination] = useState<string | null>(null)
+  const [connecting, setConnecting] = useState(false)
 
   const refresh = useCallback(() => {
     void fetchView(slug).then(setLoad)
@@ -58,6 +75,50 @@ export default function GiveawayClient({ slug }: { slug: string }) {
     }
   }, [slug])
 
+  const claimFormShown = load.kind === "ok" && load.view.signed_in && !load.view.me && load.view.drop.status === "open"
+  useEffect(() => {
+    if (claimFormShown) void loadClaimWallet().catch(() => undefined)
+  }, [claimFormShown])
+
+  const connectWallet = useCallback(async () => {
+    setConnecting(true)
+    setClaimError(null)
+    try {
+      const { connectClaimWallet } = await loadClaimWallet()
+      const wallet = await connectClaimWallet()
+      const res = await fetch(`/api/giveaways/${encodeURIComponent(slug)}?accounts_for=${encodeURIComponent(wallet)}`, { cache: "no-store" })
+      let parsed: unknown = null
+      try {
+        parsed = await res.json()
+      } catch {
+        parsed = null
+      }
+      const body = parsed as { accounts?: unknown; error?: unknown } | null
+      if (!res.ok || !Array.isArray(body?.accounts)) {
+        setClaimError(typeof body?.error === "string" ? body.error : "We couldn't check your Flow Wallet. Try again in a moment.")
+        return
+      }
+      const list = body.accounts as ClaimAccount[]
+      setFlowWallet(wallet)
+      setAccounts(list)
+      setDestination(defaultDestination(list))
+    } catch (e) {
+      setClaimError(`Flow Wallet: ${errorText(e)}`)
+    } finally {
+      setConnecting(false)
+    }
+  }, [slug])
+
+  const useUsernameInstead = useCallback(() => {
+    setFlowWallet(null)
+    setAccounts(null)
+    setDestination(null)
+    setClaimError(null)
+    void loadClaimWallet()
+      .then((m) => m.disconnectClaimWallet())
+      .catch(() => undefined)
+  }, [])
+
   const claim = useCallback(async () => {
     setClaiming(true)
     setClaimError(null)
@@ -65,7 +126,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
       const res = await fetch(`/api/giveaways/${encodeURIComponent(slug)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, agree }),
+        body: JSON.stringify(flowWallet ? { wallet: flowWallet, destination, agree } : { username, agree }),
       })
       if (res.ok) {
         refresh()
@@ -84,7 +145,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
     } finally {
       setClaiming(false)
     }
-  }, [slug, username, agree, refresh])
+  }, [slug, username, agree, refresh, flowWallet, destination])
 
   if (load.kind === "loading") return <p style={muted}>Loading the giveaway…</p>
   if (load.kind === "not_found") {
@@ -126,8 +187,17 @@ export default function GiveawayClient({ slug }: { slug: string }) {
         <section style={{ ...card, borderColor: "var(--rpc-red-border)" }}>
           <h2 style={h2}>Your pack · #{me.pack_no}</h2>
           <p style={muted}>
-            Claimed {ptTime(me.claimed_at)} for Top Shot user <strong>@{me.topshot_username}</strong>. The sponsor sends each Moment to that
-            account; this page marks it delivered once it shows up there on chain.
+            Claimed {ptTime(me.claimed_at)} for{" "}
+            {/^0x[0-9a-f]{16}$/.test(me.topshot_username) ? (
+              <>
+                wallet <strong>{me.topshot_username}</strong>
+              </>
+            ) : (
+              <>
+                Top Shot user <strong>@{me.topshot_username}</strong>
+              </>
+            )}
+            . The sponsor sends each Moment to that account; this page marks it delivered once it shows up there on chain.
           </p>
           <PackRevealClient slug={slug} packNo={me.pack_no} moments={me.moments}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
@@ -147,6 +217,38 @@ export default function GiveawayClient({ slug }: { slug: string }) {
           <h2 style={h2}>Claim a pack</h2>
           {signed_in ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 440 }}>
+              {flowWallet && accounts ? (
+                <fieldset style={{ border: "1px solid var(--rpc-border)", borderRadius: 6, padding: "8px 10px", margin: 0 }}>
+                  <legend style={muted}>Where should your pack go? (Flow Wallet {flowWallet})</legend>
+                  {accounts.map((a) => (
+                    <label key={a.address} style={{ ...muted, display: "flex", gap: 8, alignItems: "flex-start", opacity: a.can_receive ? 1 : 0.6 }}>
+                      <input
+                        type="radio"
+                        name="destination"
+                        value={a.address}
+                        checked={destination === a.address}
+                        disabled={!a.can_receive}
+                        onChange={() => setDestination(a.address)}
+                      />
+                      <span>
+                        {a.role === "flow_wallet" ? "My Flow Wallet" : "My linked account (e.g. Dapper, shows in Top Shot)"} · {accountName(a)}
+                        {a.can_receive ? "" : " · can't receive Top Shot moments yet"}
+                      </span>
+                    </label>
+                  ))}
+                  <button type="button" onClick={useUsernameInstead} style={{ ...linkButton, marginTop: 4 }}>
+                    Use a Top Shot username instead
+                  </button>
+                </fieldset>
+              ) : (
+                <>
+                  <button type="button" disabled={connecting} onClick={connectWallet} style={buttonStyle(connecting)}>
+                    {connecting ? "Opening Flow Wallet…" : "Claim with Flow Wallet"}
+                  </button>
+                  <span style={muted}>or enter your Top Shot username:</span>
+                </>
+              )}
+              {flowWallet ? null : (
               <label style={muted}>
                 Your Top Shot username (the account the sponsor gifts to)
                 <input
@@ -167,13 +269,20 @@ export default function GiveawayClient({ slug }: { slug: string }) {
                   }}
                 />
               </label>
+              )}
               <label style={{ ...muted, display: "flex", gap: 8, alignItems: "flex-start" }}>
                 <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
                 <span>I am 18 or older and I agree to the official rules below.</span>
               </label>
-              <button type="button" disabled={claiming || !agree || username.trim().length < 2} onClick={claim} style={buttonStyle(claiming || !agree || username.trim().length < 2)}>
-                {claiming ? "Claiming…" : "Claim my pack"}
-              </button>
+              {(() => {
+                const ready = flowWallet ? destination != null : username.trim().length >= 2
+                const off = claiming || !agree || !ready
+                return (
+                  <button type="button" disabled={off} onClick={claim} style={buttonStyle(off)}>
+                    {claiming ? "Claiming…" : "Claim my pack"}
+                  </button>
+                )
+              })()}
               {claimError ? <p style={{ color: "var(--rpc-danger)", margin: 0 }}>{claimError}</p> : null}
               <p style={muted}>Your pack is drawn at random from the packs still unclaimed. One pack per person and per Top Shot account.</p>
             </div>
@@ -256,11 +365,11 @@ export default function GiveawayClient({ slug }: { slug: string }) {
             opened (see Provably fair).
           </li>
           <li>
-            <strong>Delivery:</strong> the sponsor gifts each Moment to the Top Shot account you entered, in the Top Shot app. Prizes can&apos;t be exchanged
+            <strong>Delivery:</strong> the sponsor sends each Moment to the account you chose when claiming: the Top Shot account for the username you entered, or your Flow Wallet or an account linked to it. Prizes can&apos;t be exchanged
             for cash. Recipients are responsible for any taxes.
           </li>
           <li>
-            <strong>Your data:</strong> your Top Shot username and your pack are shared with the sponsor so they can deliver it.
+            <strong>Your data:</strong> your Top Shot username (or the wallet address you chose) and your pack are shared with the sponsor so they can deliver it.
           </li>
           <li>The sponsor may end the giveaway early; packs already claimed are still delivered.</li>
         </ol>
@@ -289,6 +398,16 @@ function MomentLine({ m }: { m: { player_name: string | null; set_name: string |
       </div>
     </>
   )
+}
+
+const linkButton: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  padding: 0,
+  color: "var(--rpc-red)",
+  cursor: "pointer",
+  fontSize: 13,
+  textAlign: "left",
 }
 
 function buttonStyle(disabled: boolean): React.CSSProperties {

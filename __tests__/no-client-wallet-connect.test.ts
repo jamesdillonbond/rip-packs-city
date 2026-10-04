@@ -37,13 +37,21 @@ const FILES = ROOTS.flatMap((r) => walk(r)).map((path) => ({
 
 const clientFiles = FILES.filter((f) => /^\s*["']use client["']/m.test(f.src))
 
-// ⚠ THE ONE EXCEPTION (Trevor, 2026-09-29: "Yes do that"): the giveaway ADMIN
-// connects their OWN Flow Wallet on /admin/giveaways to approve a delivery
-// transaction. It lives in exactly one module, and only the admin console may
-// import it (pinned below). Users still have no wallet sign-in anywhere.
-const ADMIN_WALLET_MODULE = "lib/giveaways/admin-wallet.ts"
+// ⚠ THE EXCEPTIONS, both Flow Wallet only, both on giveaways (pinned below):
+//   * the giveaway ADMIN connects their OWN Flow Wallet on /admin/giveaways to
+//     approve a delivery transaction (Trevor, 2026-09-29: "Yes do that");
+//   * a giveaway WINNER connects Flow Wallet on /giveaways/<slug> to say where
+//     their pack goes — CONNECT ONLY, it never signs (Trevor, 2026-10-03: "Let's
+//     plan on using Flow Wallet to claim instead of Dapper").
+// The wallet picker itself lives in exactly one module; each caller is imported
+// by exactly one page. Everywhere else, still no wallet sign-in.
+const CONNECT_MODULE = "lib/giveaways/flow-wallet-connect.ts"
+const CONNECT_IMPORTERS = ["lib/giveaways/admin-wallet.ts", "lib/giveaways/claim-wallet.ts"]
 const ADMIN_WALLET_IMPORTER = "app/admin/giveaways/AdminGiveawaysClient.tsx"
-const notTheException = (f: { path: string }) => f.path !== ADMIN_WALLET_MODULE
+const CLAIM_WALLET_IMPORTER = "app/giveaways/[slug]/GiveawayClient.tsx"
+const notTheException = (f: { path: string }) => f.path !== CONNECT_MODULE
+/** Static `from "x"` or dynamic `import("x")` of a module specifier. */
+const imports = (src: string, spec: string) => new RegExp(`(from\\s+|import\\(\\s*)["']${spec.replace(/[/.]/g, (c) => "\\" + c)}["']`).test(src)
 
 describe("no wallet sign-in anywhere (Trevor, 2026-08-08)", () => {
   it("has client components to scan (guards against the scan silently matching nothing)", () => {
@@ -75,15 +83,28 @@ describe("no wallet sign-in anywhere (Trevor, 2026-08-08)", () => {
     expect(offenders).toEqual([])
   })
 
-  it("the admin exception is exactly one module, imported only by the admin giveaway console", () => {
-    const mod = FILES.find((f) => f.path === ADMIN_WALLET_MODULE)
+  it("the wallet picker is exactly one module, used only by the admin and claim wallet modules", () => {
+    const mod = FILES.find((f) => f.path === CONNECT_MODULE)
     // positive control: the exception is real and still does what it is excused for
-    expect(mod, `${ADMIN_WALLET_MODULE} is missing — delete this exception instead`).toBeTruthy()
+    expect(mod, `${CONNECT_MODULE} is missing — delete this exception instead`).toBeTruthy()
     expect(mod!.src).toMatch(/\bfcl\.authenticate\s*\(/)
-    const importers = FILES.filter((f) => /from\s+["']@\/lib\/giveaways\/admin-wallet["']/.test(f.src)).map((f) => f.path)
+    const importers = FILES.filter((f) => imports(f.src, "@/lib/giveaways/flow-wallet-connect")).map((f) => f.path).sort()
+    expect(importers).toEqual(CONNECT_IMPORTERS)
+  })
+
+  it("the admin wallet module is imported only by the admin giveaway console", () => {
+    const importers = FILES.filter((f) => imports(f.src, "@/lib/giveaways/admin-wallet")).map((f) => f.path)
     expect(importers).toEqual([ADMIN_WALLET_IMPORTER])
     // and the importer is an admin page (token-gated), never a user surface
     expect(ADMIN_WALLET_IMPORTER.startsWith("app/admin/")).toBe(true)
+  })
+
+  it("the claim wallet module is imported only by the giveaway claim page, and never signs", () => {
+    const importers = FILES.filter((f) => imports(f.src, "@/lib/giveaways/claim-wallet")).map((f) => f.path)
+    expect(importers).toEqual([CLAIM_WALLET_IMPORTER])
+    const mod = FILES.find((f) => f.path === "lib/giveaways/claim-wallet.ts")!
+    // connect only: no transaction, no signature, no Cadence, not even an FCL import of its own
+    expect(mod.src).not.toMatch(/\bmutate\b|\bauthorization\b|signUserMessage|\bcadence\b|@onflow\/fcl/)
   })
 
   it("no rendered copy tells the user to connect a wallet", () => {

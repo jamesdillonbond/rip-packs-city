@@ -1149,10 +1149,13 @@ export function isPublicPath(pathname: string, method: string): boolean {
 }
 
 // ── Security headers applied to every response ──────────────────────────────
-// The giveaway admin console is the ONE page that connects a wallet (Trevor,
-// 2026-09-29; lib/giveaways/admin-wallet.ts): Flow's wallet picker is an iframe
-// on fcl-discovery.onflow.org. Only that page's policy gains the host.
-const WALLET_DISCOVERY_PAGES = ["/admin/giveaways"]
+// The giveaway pages are the ONLY pages that connect a wallet: the admin console
+// signs deliveries (Trevor, 2026-09-29; lib/giveaways/admin-wallet.ts) and the
+// public claim page lets a winner pick their Flow Wallet or a linked account
+// (2026-10-03; lib/giveaways/claim-wallet.ts — connect only, never signs).
+// Flow's wallet picker is an iframe on fcl-discovery.onflow.org. Only these
+// pages' policies gain the host.
+const WALLET_DISCOVERY_PAGES = ["/admin/giveaways", "/giveaways"]
 const WALLET_DISCOVERY_HOST = "https://fcl-discovery.onflow.org"
 // WalletConnect (lists the Flow Wallet mobile app): relay + RPC, the verify
 // iframe, and the QR modal's API/images. Same one page only.

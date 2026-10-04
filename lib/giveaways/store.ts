@@ -255,6 +255,19 @@ export async function listCandidatesAcross(
   return { candidates, accounts: summaries }
 }
 
+/**
+ * The Top Shot username RPC knows for a wallet (wallet_usernames), or null. A
+ * claim made by connecting Flow Wallet has no typed username; this labels it when
+ * one is known. Rows store the address with or without its 0x prefix.
+ */
+export async function usernameForWallet(db: SupabaseClient, address: string): Promise<string | null> {
+  const bare = address.replace(/^0x/, "")
+  const { data, error } = await db.from("wallet_usernames").select("username").in("wallet_addr", [address, bare]).limit(1)
+  if (error) throw error
+  const name = (data?.[0] as { username?: unknown } | undefined)?.username
+  return typeof name === "string" && name.trim() ? name.trim() : null
+}
+
 /** The admin's Top Shot moments the CACHE calls held and unlocked — a hint; see listCheckedCandidates. */
 export async function listCandidates(db: SupabaseClient, wallet: string): Promise<Candidate[]> {
   const { data, error } = await db

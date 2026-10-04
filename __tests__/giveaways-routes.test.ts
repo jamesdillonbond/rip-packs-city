@@ -18,6 +18,7 @@ const { store, getCurrentUser, resolve } = vi.hoisted(() => ({
   setStatus: vi.fn(),
   deleteDraft: vi.fn(),
   verifyDeliveries: vi.fn(),
+  usernameForWallet: vi.fn(),
   },
 }))
 const { planDelivery } = vi.hoisted(() => ({ planDelivery: vi.fn() }))
@@ -177,6 +178,98 @@ describe("POST /api/giveaways/[slug] (claim)", () => {
     const res = await publicRoute.POST(post(url, { username: "alice", agree: true }), slugCtx("test-drop"))
     expect(res.status).toBe(500)
     expect(JSON.stringify(await res.json())).not.toContain("boom")
+  })
+})
+
+describe("claim with Flow Wallet (Trevor, 2026-10-03)", () => {
+  const url = "http://x/api/giveaways/test-drop"
+  const FW = "0x00000000000000f1"
+  const DAPPER = "0x00000000000000d2"
+  const NOTS = "0x00000000000000e3"
+  const ACCOUNTS = [
+    { address: FW, role: "flow_wallet", topshot_count: 0 },
+    { address: DAPPER, role: "linked", topshot_count: 120 },
+    { address: NOTS, role: "linked", topshot_count: null },
+  ]
+  const get = (q: string) => publicRoute.GET(new NextRequest(`${url}?accounts_for=${q}`), slugCtx("test-drop"))
+  const claim = (body: unknown) => publicRoute.POST(post(url, body), slugCtx("test-drop"))
+  beforeEach(() => {
+    store.getDrop.mockResolvedValue(DROP)
+    getCurrentUser.mockResolvedValue({ id: "u1" })
+    discover.mockResolvedValue(ACCOUNTS)
+    store.usernameForWallet.mockResolvedValue(null)
+    store.claimPack.mockResolvedValue({ outcome: "claimed", pack_no: 1 })
+  })
+
+  it("accounts_for: signed in only, a Flow address only, and says which accounts can receive", async () => {
+    getCurrentUser.mockResolvedValueOnce(null)
+    expect((await get(FW)).status).toBe(401)
+    expect((await get("0xabc")).status).toBe(400)
+    expect(discover).not.toHaveBeenCalled()
+    const res = await get(FW.toUpperCase().replace("0X", "0x"))
+    expect(res.status).toBe(200)
+    expect(discover).toHaveBeenCalledWith(FW)
+    expect((await res.json()).accounts).toEqual([
+      { address: FW, role: "flow_wallet", can_receive: true },
+      { address: DAPPER, role: "linked", can_receive: true },
+      { address: NOTS, role: "linked", can_receive: false },
+    ])
+  })
+
+  it("accounts_for: a chain read that failed is a retryable 503, never an empty account list", async () => {
+    discover.mockRejectedValueOnce(new Error("rest-mainnet 502"))
+    const res = await get(FW)
+    expect(res.status).toBe(503)
+    expect(res.headers.get("retry-after")).toBe("30")
+    const body = await res.json()
+    expect(body.accounts).toBeUndefined()
+    expect(JSON.stringify(body)).not.toContain("502")
+  })
+
+  it("sends the pack to a LINKED account, verified on chain, labelled with its known username", async () => {
+    store.usernameForWallet.mockResolvedValueOnce("trevor")
+    const res = await claim({ wallet: FW, destination: DAPPER, agree: true })
+    expect(res.status).toBe(200)
+    expect(discover).toHaveBeenCalledWith(FW)
+    expect(store.usernameForWallet).toHaveBeenCalledWith({}, DAPPER)
+    expect(store.claimPack).toHaveBeenCalledWith({}, ID, "u1", "trevor", DAPPER)
+    expect(resolve).not.toHaveBeenCalled()
+  })
+
+  it("sends the pack to the Flow Wallet itself; no known username labels it with the address", async () => {
+    const res = await claim({ wallet: FW, destination: FW, agree: true })
+    expect(res.status).toBe(200)
+    expect(store.claimPack).toHaveBeenCalledWith({}, ID, "u1", FW, FW)
+  })
+
+  it("refuses an account the wallet has NOT linked, and one that cannot hold Top Shot moments", async () => {
+    const a = await claim({ wallet: FW, destination: "0x00000000000000aa", agree: true })
+    expect(a.status).toBe(400)
+    expect((await a.json()).code).toBe("not_linked")
+    const b = await claim({ wallet: FW, destination: NOTS, agree: true })
+    expect(b.status).toBe(400)
+    expect((await b.json()).code).toBe("cannot_receive")
+    expect(store.claimPack).not.toHaveBeenCalled()
+  })
+
+  it("a chain read that failed is a 503 — never 'not linked'", async () => {
+    discover.mockRejectedValueOnce(new Error("timeout"))
+    const res = await claim({ wallet: FW, destination: DAPPER, agree: true })
+    expect(res.status).toBe(503)
+    expect(JSON.stringify(await res.json())).not.toMatch(/linked to it|can't receive/)
+    expect(store.claimPack).not.toHaveBeenCalled()
+  })
+
+  it("bad addresses, no agreement, signed out, or a drop not open refuse before any chain read", async () => {
+    expect((await claim({ wallet: "0xabc", destination: DAPPER, agree: true })).status).toBe(400)
+    expect((await claim({ wallet: FW, agree: true })).status).toBe(400)
+    expect((await claim({ wallet: FW, destination: DAPPER })).status).toBe(400)
+    getCurrentUser.mockResolvedValueOnce(null)
+    expect((await claim({ wallet: FW, destination: DAPPER, agree: true })).status).toBe(401)
+    store.getDrop.mockResolvedValueOnce({ ...DROP, status: "closed" })
+    expect((await claim({ wallet: FW, destination: DAPPER, agree: true })).status).toBe(409)
+    expect(discover).not.toHaveBeenCalled()
+    expect(store.claimPack).not.toHaveBeenCalled()
   })
 })
 

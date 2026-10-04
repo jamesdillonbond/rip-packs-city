@@ -13,6 +13,7 @@ import {
   listDrops,
   sealDrop,
   setStatus,
+  usernameForWallet,
   verifyDeliveries,
   GIVEAWAY_COLLECTION_ID,
   type ClaimRow,
@@ -43,6 +44,7 @@ function fakeDb(onQuery: (q: Q) => Result, onRpc: (name: string, args: Record<st
         update: (p: unknown) => ((q.op = "update"), (q.payload = p), b),
         delete: () => ((q.op = "delete"), b),
         eq: (k: string, v: unknown) => ((q.eq[k] = v), b),
+        in: (k: string, v: unknown) => ((q.eq[k] = v), b),
         order: () => b,
         limit: () => b,
         maybeSingle: () => ((q.single = true), b),
@@ -487,5 +489,23 @@ describe("giveaways/store — claimPack", () => {
       message: "e",
     })
     await expect(claimPack(fakeDb(() => ({ data: null, error: null }), () => ({ data: [], error: null })).db, DROP.id, "u", "a", "0x1")).rejects.toThrow(/no outcome/)
+  })
+})
+
+describe("giveaways/store — usernameForWallet (Flow Wallet claims, 2026-10-03)", () => {
+  it("matches the address with or without 0x and trims the name", async () => {
+    const { db, queries } = fakeDb(() => ({ data: [{ username: " trevor " }], error: null }))
+    expect(await usernameForWallet(db, "0xbd94cade097e50ac")).toBe("trevor")
+    expect(queries[0]).toMatchObject({ table: "wallet_usernames", eq: { wallet_addr: ["0xbd94cade097e50ac", "bd94cade097e50ac"] } })
+  })
+
+  it("no row or a blank name is null — the claim is labelled with the address instead", async () => {
+    expect(await usernameForWallet(fakeDb(() => ({ data: [], error: null })).db, "0x00000000000000aa")).toBeNull()
+    expect(await usernameForWallet(fakeDb(() => ({ data: [{ username: "  " }], error: null })).db, "0x00000000000000aa")).toBeNull()
+  })
+
+  it("a failed read throws — never reads as 'no username'", async () => {
+    const { db } = fakeDb(() => ({ data: null, error: { message: "timeout" } }))
+    await expect(usernameForWallet(db, "0x00000000000000aa")).rejects.toMatchObject({ message: "timeout" })
   })
 })

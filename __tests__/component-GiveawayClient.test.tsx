@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, screen, cleanup, fireEvent } from "@testing-library/react"
-import GiveawayClient from "@/app/giveaways/[slug]/GiveawayClient"
+import GiveawayClient, { defaultDestination } from "@/app/giveaways/[slug]/GiveawayClient"
+
+const { connectClaimWallet, disconnectClaimWallet } = vi.hoisted(() => ({
+  connectClaimWallet: vi.fn(),
+  disconnectClaimWallet: vi.fn(),
+}))
+vi.mock("@/lib/giveaways/claim-wallet", () => ({ connectClaimWallet, disconnectClaimWallet }))
 
 // The public giveaway page. What matters for a claimer: the four load states are never
 // collapsed (a failed read is not "no such giveaway"), a claim failure shows the route's
@@ -206,5 +212,136 @@ describe("GiveawayClient — provably fair", () => {
     expect(await screen.findByText(/printf '%s' 'b{64}\|1:1,2;2:3,4;3:5,6' \| sha256sum/)).toBeTruthy()
     expect(screen.getByText("$10.00")).toBeTruthy()
     expect(screen.getByText(/Closed · 1 of 3 packs claimed/)).toBeTruthy()
+  })
+})
+
+describe("GiveawayClient — claim with Flow Wallet (2026-10-03)", () => {
+  const FW = "0x00000000000000f1"
+  const DAPPER = "0x00000000000000d2"
+  const NOTS = "0x00000000000000e3"
+  const ACCOUNTS = [
+    { address: FW, role: "flow_wallet", can_receive: true },
+    { address: DAPPER, role: "linked", can_receive: true },
+    { address: NOTS, role: "linked", can_receive: false },
+  ]
+  afterEach(() => {
+    connectClaimWallet.mockReset()
+    disconnectClaimWallet.mockReset()
+  })
+
+  function routes(accounts: Response | (() => Response), onPost?: (body: unknown) => Response) {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") return onPost ? onPost(JSON.parse(init.body as string)) : json({ ok: true, outcome: "claimed", pack_no: 1 })
+      if (url.includes("accounts_for=")) return typeof accounts === "function" ? accounts() : accounts
+      return json(BASE)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    return fetchMock
+  }
+
+  it("connects, lists the wallet and its linked accounts, and claims to the one chosen", async () => {
+    connectClaimWallet.mockResolvedValue(FW)
+    const fetchMock = routes(json({ accounts: ACCOUNTS }))
+    render(<GiveawayClient slug="fall-drop" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    expect(await screen.findByText(/Where should your pack go/)).toBeTruthy()
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes(`accounts_for=${FW}`))).toBe(true)
+    const radios = screen.getAllByRole("radio") as HTMLInputElement[]
+    expect(radios.map((r) => r.value)).toEqual([FW, DAPPER, NOTS])
+    // the Flow Wallet is chosen by default; an account that cannot hold Top Shot moments is not choosable
+    expect(radios[0].checked).toBe(true)
+    expect(radios[2].disabled).toBe(true)
+    expect(screen.getByText(/can't receive Top Shot moments yet/)).toBeTruthy()
+    // the username box is gone in wallet mode
+    expect(screen.queryByPlaceholderText("username")).toBeNull()
+    fireEvent.click(radios[1])
+    fireEvent.click(screen.getByRole("checkbox"))
+    fireEvent.click(screen.getByRole("button", { name: /claim my pack/i }))
+    await screen.findByRole("button", { name: /claim my pack/i })
+    const post = await vi.waitFor(() => {
+      const p = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")
+      if (!p) throw new Error("no POST yet")
+      return p
+    })
+    expect(JSON.parse((post[1] as RequestInit).body as string)).toEqual({ wallet: FW, destination: DAPPER, agree: true })
+  })
+
+  it("the route's refusal (not linked) is shown in its own words", async () => {
+    connectClaimWallet.mockResolvedValue(FW)
+    routes(json({ accounts: ACCOUNTS }), () => json({ error: "That account isn't your Flow Wallet or an account linked to it.", code: "not_linked" }, 400))
+    render(<GiveawayClient slug="fall-drop" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    await screen.findByText(/Where should your pack go/)
+    fireEvent.click(screen.getByRole("checkbox"))
+    fireEvent.click(screen.getByRole("button", { name: /claim my pack/i }))
+    expect(await screen.findByText(/isn't your Flow Wallet or an account linked to it/)).toBeTruthy()
+  })
+
+  it("a failed account read says so — never an empty list to choose from", async () => {
+    connectClaimWallet.mockResolvedValue(FW)
+    routes(json({ error: "We couldn't reach the Flow blockchain to check your wallet. Try again in a minute.", code: "upstream_unavailable" }, 503))
+    render(<GiveawayClient slug="fall-drop" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    expect(await screen.findByText(/couldn't reach the Flow blockchain/)).toBeTruthy()
+    expect(screen.queryByText(/Where should your pack go/)).toBeNull()
+    expect(screen.queryAllByRole("radio")).toHaveLength(0)
+    // the username path still works
+    expect(screen.getByPlaceholderText("username")).toBeTruthy()
+  })
+
+  it("a non-JSON account answer falls back to generic copy", async () => {
+    connectClaimWallet.mockResolvedValue(FW)
+    routes(() => new Response("<!DOCTYPE html>", { status: 522 }))
+    render(<GiveawayClient slug="fall-drop" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    expect(await screen.findByText(/couldn't check your Flow Wallet/)).toBeTruthy()
+  })
+
+  it("a declined connect shows why and leaves the username path", async () => {
+    connectClaimWallet.mockRejectedValue(new Error("User rejected"))
+    routes(json({ accounts: ACCOUNTS }))
+    render(<GiveawayClient slug="fall-drop" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    expect(await screen.findByText(/Flow Wallet: User rejected/)).toBeTruthy()
+    expect(screen.getByPlaceholderText("username")).toBeTruthy()
+  })
+
+  it("'Use a Top Shot username instead' disconnects and brings the username box back", async () => {
+    connectClaimWallet.mockResolvedValue(FW)
+    routes(json({ accounts: ACCOUNTS }))
+    render(<GiveawayClient slug="fall-drop" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Use a Top Shot username instead" }))
+    expect(screen.getByPlaceholderText("username")).toBeTruthy()
+    expect(screen.queryAllByRole("radio")).toHaveLength(0)
+    await vi.waitFor(() => expect(disconnectClaimWallet).toHaveBeenCalled())
+  })
+
+  it("no account can receive: nothing is chosen and the claim button stays off", async () => {
+    connectClaimWallet.mockResolvedValue(FW)
+    routes(json({ accounts: [{ address: FW, role: "flow_wallet", can_receive: false }] }))
+    render(<GiveawayClient slug="fall-drop" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    await screen.findByText(/Where should your pack go/)
+    fireEvent.click(screen.getByRole("checkbox"))
+    expect((screen.getByRole("button", { name: /claim my pack/i }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it("a pack claimed to a wallet is labelled 'wallet 0x…', not as a Top Shot user", async () => {
+    const mine = { ...BASE, me: { pack_no: 1, topshot_username: DAPPER, claimed_at: "2026-10-03T23:00:00Z", moments: [] } }
+    vi.stubGlobal("fetch", vi.fn(async () => json(mine)))
+    render(<GiveawayClient slug="fall-drop" />)
+    expect(await screen.findByText(DAPPER)).toBeTruthy()
+    expect(screen.getByText(/^Claimed .* for/).textContent).toContain(`for wallet ${DAPPER}.`)
+    expect(screen.queryByText(`@${DAPPER}`)).toBeNull()
+  })
+
+  it("defaultDestination prefers the Flow Wallet, else the first account that can receive, else none", () => {
+    const fw = { address: FW, role: "flow_wallet" as const, can_receive: true }
+    const dap = { address: DAPPER, role: "linked" as const, can_receive: true }
+    expect(defaultDestination([dap, fw])).toBe(FW)
+    expect(defaultDestination([{ ...fw, can_receive: false }, dap])).toBe(DAPPER)
+    expect(defaultDestination([{ ...fw, can_receive: false }])).toBeNull()
+    expect(defaultDestination([])).toBeNull()
   })
 })

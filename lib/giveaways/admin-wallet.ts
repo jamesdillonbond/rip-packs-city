@@ -1,67 +1,24 @@
 // lib/giveaways/admin-wallet.ts
 //
-// ⚠ THE ONE PLACE RPC CONNECTS A WALLET, and only for the giveaway ADMIN.
-//
-// RPC has no wallet sign-in for users (Trevor, 2026-08-08; pinned by
-// __tests__/no-client-wallet-connect.test.ts). On 2026-09-29 Trevor approved one
-// narrow exception: on /admin/giveaways, the admin connects THEIR OWN Flow Wallet
-// (a Hybrid Custody parent of their Dapper account) and approves one
-// transaction that delivers claimed giveaway moments. RPC never holds a key or a
-// moment. The guard allows exactly this file, and pins that only
-// app/admin/giveaways/AdminGiveawaysClient.tsx imports it.
-//
-// Wallet discovery is configured HERE, at connect time — never in
-// lib/chains/flow/flow.ts, whose import side effect runs on every page.
+// The giveaway ADMIN's wallet actions: connect their own Flow Wallet (a Hybrid
+// Custody parent of their Dapper account) and sign delivery batches. RPC never
+// holds a key or a moment (Trevor, 2026-09-29). Connecting goes through
+// lib/giveaways/flow-wallet-connect.ts, the one module that opens a wallet
+// picker; only app/admin/giveaways/AdminGiveawaysClient.tsx imports this file
+// (pinned by __tests__/no-client-wallet-connect.test.ts).
 
 import * as fcl from "@onflow/fcl"
 import { initFcl } from "@/lib/chains/flow/flow"
 import { DELIVER_BATCH_CADENCE, DELIVER_GAS_LIMIT, DELIVER_OWN_BATCH_CADENCE } from "@/lib/giveaways/deliver-cadence"
 import type { DeliveryBatch } from "@/lib/giveaways/deliver"
 
-const DISCOVERY = "https://fcl-discovery.onflow.org/authn"
-
-/**
- * WalletConnect is what lists the Flow Wallet MOBILE app in the picker (the
- * desktop extension appears on its own; without WalletConnect a phone sees only
- * Blocto — Trevor, 2026-09-29). FCL loads its WalletConnect plugin when
- * `walletconnect.projectId` is configured, asynchronously, so it is set when this
- * module loads (it is imported only by the admin giveaway console) rather than
- * at click time, when the picker would open before the plugin registered.
- * NEXT_PUBLIC_WALLETCONNECT_ID is a public project id (already in Vercel).
- */
-export const WALLETCONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_ID ?? ""
-
-/**
- * FCL's WalletConnect loader asks the discovery API which wallets exist as soon
- * as the project id is set; without this endpoint it throws `INVARIANT
- * "discovery.authn.endpoint" in config must be defined` at page load (Trevor's
- * console, 2026-09-29). The host is already in this page's connect-src.
- */
-export const DISCOVERY_AUTHN_ENDPOINT = "https://fcl-discovery.onflow.org/api/authn"
-
-export function prepareWalletConnect(projectId: string = WALLETCONNECT_PROJECT_ID): boolean {
-  if (typeof window === "undefined" || !projectId) return false
-  initFcl()
-  fcl.config().put("discovery.authn.endpoint", DISCOVERY_AUTHN_ENDPOINT)
-  fcl.config().put("walletconnect.projectId", projectId)
-  return true
-}
-
-prepareWalletConnect()
-
-/** Opens Flow's wallet picker; resolves to the connected address. */
-export async function connectAdminWallet(): Promise<string> {
-  initFcl()
-  fcl.config().put("discovery.wallet", DISCOVERY)
-  const user = (await fcl.authenticate()) as { addr?: string | null } | undefined
-  const address = user?.addr?.toLowerCase() ?? null
-  if (!address) throw new Error("The wallet did not return an address.")
-  return address
-}
-
-export async function disconnectAdminWallet(): Promise<void> {
-  await fcl.unauthenticate()
-}
+export {
+  DISCOVERY_AUTHN_ENDPOINT,
+  WALLETCONNECT_PROJECT_ID,
+  connectFlowWallet as connectAdminWallet,
+  disconnectFlowWallet as disconnectAdminWallet,
+  prepareWalletConnect,
+} from "@/lib/giveaways/flow-wallet-connect"
 
 export interface SentBatch {
   txId: string
