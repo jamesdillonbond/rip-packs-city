@@ -1,5 +1,7 @@
 -- Scratch driver for flowty_archive.promote_flowty_chain_sales (migration 20261004025556) + the
--- index verification stamps, one 250,000-block slice per tick, only once EVERY 250-block window
+-- index verification stamps, one 50,000-block slice per tick (250k slices hit the 120 s
+-- statement_timeout on dense mainnet26 ranges — 2026-10-03 ~11:30 PM PT; a logged 250k slice still
+-- covers its five sub-slices), only once EVERY 250-block window
 -- of the slice is in flowty_archive.flowty_chain_walk_coverage. Created with execute_sql (2026-10-03);
 -- kept for reproducibility. Driven by pg_cron 'flowty-promote-scratch'. A slice is promoted once
 -- per pass; to re-run after a checkpoint back-fill, move the logged rows aside
@@ -11,10 +13,10 @@ CREATE OR REPLACE FUNCTION flowty_archive.scratch_promote_tick() RETURNS jsonb L
 declare r record; v jsonb; n_sealed int; n_mis int;
 begin
   select s.a, s.b into r from (
-    select g a, least(g + 249999, sp.e) b, ceil((least(g + 249999, sp.e) - g + 1) / 250.0)::int need
+    select g a, least(g + 49999, sp.e) b, ceil((least(g + 49999, sp.e) - g + 1) / 250.0)::int need
     from (values (65264619::bigint, 85981134::bigint), (85981135, 88226266), (88226267, 130290658), (130290659, 137390145), (137390146, 152500000)) sp(s, e),
-         generate_series(sp.s, sp.e, 250000) g) s
-  where not exists (select 1 from flowty_archive.scratch_20261004_promoted p where p.slice_start = s.a)
+         generate_series(sp.s, sp.e, 50000) g) s
+  where not exists (select 1 from flowty_archive.scratch_20261004_promoted p where p.slice_start > 0 and s.a between p.slice_start and p.slice_end)
     and (select count(*) from flowty_archive.flowty_chain_walk_coverage c where c.win_start between s.a and s.b) = s.need
   order by s.a limit 1;
   if not found then return jsonb_build_object('idle', true); end if;
@@ -42,13 +44,14 @@ end $f$;
 -- mainnet24 era (per-transaction verified, migration 20261004031134): cycle the 43 weeks of
 -- 2023-11-08 .. 2024-09-04 oldest-run-first and promote whatever the verifier has sealed so far.
 -- pg_cron 'flowty-promote-tx-scratch' (every 2 minutes). Idempotent (NOT EXISTS on tx+nft).
-CREATE TABLE IF NOT EXISTS flowty_archive.scratch_20261004_promoted_tx (week_start timestamptz PRIMARY KEY,
+-- (2-day windows since ~11:30 PM PT: a 7-day window hit the 120 s statement_timeout once.)
+CREATE TABLE IF NOT EXISTS flowty_archive.scratch_20261004_promoted_tx2 (win_start timestamptz PRIMARY KEY,
   runs int NOT NULL DEFAULT 0, last_result jsonb, last_run_at timestamptz);
 CREATE OR REPLACE FUNCTION flowty_archive.scratch_promote_tx_tick() RETURNS jsonb LANGUAGE plpgsql AS $f$
 declare w timestamptz; v jsonb;
 begin
-  select week_start into w from flowty_archive.scratch_20261004_promoted_tx order by last_run_at nulls first, week_start limit 1;
-  v := flowty_archive.promote_flowty_tx_verified_sales(w, least(w + interval '7 days', '2024-09-04 12:02:35+00'::timestamptz));
-  update flowty_archive.scratch_20261004_promoted_tx set runs = runs + 1, last_result = v, last_run_at = now() where week_start = w;
+  select win_start into w from flowty_archive.scratch_20261004_promoted_tx2 order by last_run_at nulls first, win_start limit 1;
+  v := flowty_archive.promote_flowty_tx_verified_sales(w, least(w + interval '2 days', '2024-09-04 12:02:35+00'::timestamptz));
+  update flowty_archive.scratch_20261004_promoted_tx2 set runs = runs + 1, last_result = v, last_run_at = now() where win_start = w;
   return v;
 end $f$;
