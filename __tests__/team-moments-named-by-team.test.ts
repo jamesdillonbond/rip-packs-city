@@ -39,4 +39,8 @@ describe("both Top Shot name writers use it", () => {
   it("the hydrator names a team Moment by its teamName", () => {
     expect(read("lib/editions-hydrate.ts")).toMatch(/teamMomentSubject\(playerName,\s*meta\?\.teamName\)/)
   })
+
+  it("the hydrator writes the team as a team Moment's player_name (convention player_name = team_name)", () => {
+    expect(read("lib/editions-hydrate.ts")).toMatch(/player_name:\s*subject,/)
+  })
 })

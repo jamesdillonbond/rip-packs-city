@@ -578,7 +578,10 @@ export async function hydrateTopShotEditions(
       collection_id: TS_COLLECTION_ID,
       collection: "nba_top_shot",
       name,
-      player_name: playerName,
+      // A team Moment's "who" is its team: Top Shot's convention is player_name = team_name
+      // (see __tests__/moment-subject-href-team-moments.test.ts), and every reader that mints or
+      // links players excludes player_name = team_name. `ok` still means "a PLAYER resolved".
+      player_name: subject,
       set_name: setName,
       team_name: meta?.teamName ?? null,
       tier: meta?.tier ?? null,
