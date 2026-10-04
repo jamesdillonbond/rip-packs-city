@@ -134,3 +134,14 @@ assert _D.verdict(orow, {"status": "NotFound"})[1]["reason"] == "not_sealed"
 assert _D.nodes_for("2024-01-01 00:00:00+00")[0] == "mainnet24" and _D.nodes_for("2026-07-04T19:57:48Z")[0] == "mainnet28"
 assert _D.nodes_for("2025-11-01T00:00:00")[0] == "mainnet27" and len(set(_D.nodes_for("2025-11-01"))) == 5
 print("dapper verdict ok")
+# mainnet24-era OffersV2 (tx 61584a18…, read 2026-10-04): paymentVaultType is a Capability to a RESTRICTED
+# reference whose Restriction node has its own typeID "…Vault{Provider,Balance}"; the vault is the inner type.
+rcap = {"staticType": {"kind": "Capability", "type": {"kind": "Reference", "type": {"kind": "Restriction",
+        "typeID": DUC + "{A.f233dcee88fe0abe.FungibleToken.Provider,A.f233dcee88fe0abe.FungibleToken.Balance}",
+        "type": {"kind": "Resource", "type": "", "typeID": DUC}, "restrictions": []}, "authorized": False}}}
+assert _D.type_id(rcap) == DUC
+old24 = {**off, "events": off["events"][:2] + [_ev(_D.OFFER, [("purchased", "Bool", True), ("acceptingAddress", "Optional", _opt_addr("0x48a41b559e58e780")),
+        ("offerAddress", "Address", "0x53ea34e5d325ec7c"), ("offerId", "UInt64", "269380350325364"), ("offerAmount", "UFix64", "20.00000000"),
+        ("paymentVaultType", "Type", rcap), ("nftId", "Optional", {"type": "UInt64", "value": "4968648"})])]}
+assert _D.verdict(orow, old24)[0]
+print("restricted vault type ok")

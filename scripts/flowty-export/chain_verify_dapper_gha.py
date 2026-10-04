@@ -44,6 +44,9 @@ def type_id(v):
     """typeID of a JSON-CDC Type value (Resource, or a Capability / Reference to one); a String passes through."""
     if isinstance(v, str): return v
     if isinstance(v, dict):
+        # Pre-Cadence-1.0 restricted types (Capability<&Vault{Provider,Balance}>) carry their own
+        # typeID "…Vault{…}" on the Restriction node: the resource is the inner type.
+        if v.get("kind") == "Restriction" and isinstance(v.get("type"), dict): return type_id(v["type"])
         if isinstance(v.get("typeID"), str) and v["typeID"]: return v["typeID"]
         for k in ("value", "staticType", "type"):
             if k in v:
