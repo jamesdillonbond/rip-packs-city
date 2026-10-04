@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 
 // Pins lib/rewards.ts — the off-chain points economy wrappers. Every mover
 // (award_points / redeem_shop_item / admin_adjust_points) dispatches through a
@@ -15,11 +15,17 @@ vi.mock("@/lib/supabase", () => {
   return { supabase: client, supabaseAdmin: client }
 })
 
-import { awardPoints, redeemItem, getRewardsSummary, adminAdjust } from "@/lib/rewards"
+import { awardPoints, redeemItem, getRewardsSummary, adminAdjust, rewardsLive } from "@/lib/rewards"
 
+// The mapping cases below describe the LIVE programme, so they opt in. The
+// kill-switch cases at the bottom pin the default: OFF.
 beforeEach(() => {
   state.rpc = async () => ({ data: null, error: null })
   vi.spyOn(console, "log").mockImplementation(() => {})
+  process.env.REWARDS_LIVE = "true"
+})
+afterEach(() => {
+  delete process.env.REWARDS_LIVE
 })
 
 describe("awardPoints", () => {
@@ -132,5 +138,38 @@ describe("adminAdjust", () => {
   it("returns { ok:false, error } on RPC error", async () => {
     state.rpc = async () => ({ data: null, error: { message: "denied" } })
     expect(await adminAdjust("u1", 10, 0, "x")).toEqual({ ok: false, error: "denied" })
+  })
+})
+
+// ⛔ The points programme is NOT live (Trevor, 2026-10-04). With the env unset
+// — production's state — no earn or redemption may reach the DB, whatever the
+// points_rules / shop_items rows say. Asserts the ABSENCE of the RPC call, not
+// merely a falsy return, since a call that "awarded:false"s in the DB today is
+// one re-activated rule away from minting credits.
+describe("rewards kill switch (REWARDS_LIVE unset = off)", () => {
+  beforeEach(() => {
+    delete process.env.REWARDS_LIVE
+  })
+
+  it("defaults to OFF, and only the exact string 'true' turns it on", () => {
+    expect(rewardsLive()).toBe(false)
+    process.env.REWARDS_LIVE = "1"
+    expect(rewardsLive()).toBe(false)
+    process.env.REWARDS_LIVE = "true"
+    expect(rewardsLive()).toBe(true)
+  })
+
+  it("awardPoints never calls award_points while off", async () => {
+    const spy = vi.fn(async () => ({ data: { awarded: true, points: 20 }, error: null }))
+    state.rpc = spy
+    expect(await awardPoints("u1", "scout_wallet")).toEqual({ awarded: false, skipped: "rewards_not_live" })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it("redeemItem never calls redeem_shop_item while off", async () => {
+    const spy = vi.fn(async () => ({ data: { redeemed: true }, error: null }))
+    state.rpc = spy
+    expect(await redeemItem("u1", 6)).toEqual({ redeemed: false, error: "rewards_not_live" })
+    expect(spy).not.toHaveBeenCalled()
   })
 })

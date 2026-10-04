@@ -12,12 +12,27 @@
 
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 
+// ⛔ KILL SWITCH — the points programme is NOT live (Trevor, 2026-10-04: "We
+// shouldn't have this as a live feature yet"). Every earn hook kept firing
+// award_points for four months while the UI was hidden, so 23 collectors
+// banked ~13k credits for a programme that did not exist. The DB side was
+// switched off the same day (every points_rules / shop_items row tagged
+// "[paused 2026-10-04]" / metadata.paused_2026_10_04 and set inactive), and
+// this gate keeps the code side off even if a rule is re-activated in the DB.
+// To launch: set REWARDS_LIVE=true in Vercel AND re-activate the DB rows.
+// Read per call (not at module load) so it can be flipped without a rebuild
+// of any importer and so tests can toggle it.
+export function rewardsLive(): boolean {
+  return process.env.REWARDS_LIVE === "true";
+}
+
 // Award points for a named, server-verified action. The DB function enforces
 // cooldown / daily_cap / per_user_limit, so repeat calls are harmless no-ops.
 // Returns the jsonb result ({ awarded, points, status, spendable, tier, ... } or
 // { awarded:false, skipped }) or null on error / missing user.
 export async function awardPoints(userId: string, actionKey: string, ref?: string) {
   if (!userId) return null;
+  if (!rewardsLive()) return { awarded: false, skipped: "rewards_not_live" };
   const { data, error } = await (supabase as any).rpc("award_points", {
     p_user_id: userId,
     p_action_key: actionKey,
@@ -35,6 +50,7 @@ export async function awardPoints(userId: string, actionKey: string, ref?: strin
 // — but the userId MUST be the session-resolved id, never a body field.
 export async function redeemItem(userId: string, itemId: number) {
   if (!userId) return { redeemed: false, error: "unauthorized" };
+  if (!rewardsLive()) return { redeemed: false, error: "rewards_not_live" };
   const { data, error } = await (supabase as any).rpc("redeem_shop_item", {
     p_user_id: userId,
     p_item_id: itemId,

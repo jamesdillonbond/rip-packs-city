@@ -136,6 +136,13 @@ describe("no rewards promises while the programme is unshipped", () => {
       /\+\s*\d+\s*(status|credits?|points)\b/i,
       /earns?\s+\d+\s+(status|credits?|points)\b/i,
       /earn\s+(status|credits)\b/i,
+      // 2026-10-04: the concierge system prompt (a template string, so it is
+      // published copy to every chatter) told collectors "Credits accrue as you
+      // use RPC — verifying a wallet pays 500" and that verification "credits
+      // you 500". None of the three shapes above matched it.
+      /credits?\s+accrue/i,
+      /credits\s+you\s+\d+/i,
+      /\bpays\s+\d+\s*(status|credits?|points)?\b(?!\s*%)/i,
     ]
     const offenders: string[] = []
     for (const file of userFacingFiles()) {
