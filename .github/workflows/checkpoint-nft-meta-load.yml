@@ -7,16 +7,18 @@ name: Checkpoint NFT meta load (holder-independent moment -> edition map)
 # millions of rows: the agent sandbox can decode it but has no bulk path into the DB.
 # Each matrix job streams one part over HTTP Range requests (nothing is stored but the
 # decoded records), then loads them; the loader fails the job on any batch that does not land
-# in full. Decoder + controls: scripts/flow-checkpoint/ckpt_nftmeta.py and migration
+# in full. Several sporks per dispatch: an EARLIER checkpoint names NFTs burned before a later
+# one (2026-10-03: half the Top Shot / All Day NFTs Flowty sold in Sept 2024 were gone by
+# 2025-12-29), and the promotion reads each NFT at its latest spork. Decoder + controls: scripts/flow-checkpoint/ckpt_nftmeta.py and migration
 # 20261004020640_checkpoint_nft_meta.sql. workflow_dispatch only.
 
 on:
   workflow_dispatch:
     inputs:
-      spork:
-        description: "Spork number whose root checkpoint to decode (Cadence-1.0 format: 26+)"
+      sporks:
+        description: "JSON list of spork numbers whose root checkpoints to decode (Cadence-1.0 format: 25+), e.g. [28,26,25]"
         required: true
-        default: "28"
+        default: "[28]"
         type: string
 
 permissions:
@@ -34,13 +36,14 @@ jobs:
       fail-fast: false
       max-parallel: 8
       matrix:
+        spork: ${{ fromJSON(github.event.inputs.sporks) }}
         part: ["000", "001", "002", "003", "004", "005", "006", "007",
                "008", "009", "010", "011", "012", "013", "014", "015"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Decode part ${{ matrix.part }}
+      - name: Decode spork ${{ matrix.spork }} part ${{ matrix.part }}
         env:
-          SPORK: ${{ github.event.inputs.spork }}
+          SPORK: ${{ matrix.spork }}
           PART: ${{ matrix.part }}
         run: |
           set -euo pipefail
@@ -51,9 +54,9 @@ jobs:
           echo "part $PART: $SIZE bytes"
           python3 scripts/flow-checkpoint/ckpt_nftmeta.py "$URL" meta.jsonl 0 "$SIZE" | tail -n 3
           echo "records: $(wc -l < meta.jsonl)"
-      - name: Load part ${{ matrix.part }}
+      - name: Load spork ${{ matrix.spork }} part ${{ matrix.part }}
         env:
-          SPORK: ${{ github.event.inputs.spork }}
+          SPORK: ${{ matrix.spork }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |

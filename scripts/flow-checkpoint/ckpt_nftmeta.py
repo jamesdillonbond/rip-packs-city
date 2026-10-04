@@ -68,29 +68,53 @@ def untag(v):
     return v
 
 
+def _names_in(seg):
+    """(kind, field names) from one tag-249 composite type-info element, else (None, None)."""
+    q = QID.search(seg)
+    if not q: return None, None
+    name = TYPES.get(q.group(1).decode()); p = q.end()
+    for _ in range(8):           # skip the small header items between the type id and the names
+        if p >= len(seg): break
+        ib = seg[p]
+        if 0x81 <= ib <= 0x8f and p + 1 < len(seg) and 0x60 <= seg[p + 1] <= 0x77:
+            try:
+                arr, _ = item(seg, p)
+                if all(isinstance(x, str) for x in arr): return name, arr
+            except Bad: pass
+            return name, None
+        try: _, p = item(seg, p)
+        except Bad: break
+    return name, None
+
+
+TI_ANY = re.compile(rb"\xd8[\xf7\xf8\xf9]")
+
+
 def type_infos(v):
-    """Ordered [(type_kind or None, [field names])] from the slab's extra data."""
-    out = []
-    for m in TI.finditer(v):
-        seg = v[m.start():m.start() + 400]
-        q = QID.search(seg)
-        name = TYPES.get(q.group(1).decode()) if q else None
-        names = None
-        if q:
-            p = q.end()
-            for _ in range(8):           # skip the small header items between the type id and the names
-                if p >= len(seg): break
-                ib = seg[p]
-                if 0x81 <= ib <= 0x8f and p + 1 < len(seg) and 0x60 <= seg[p + 1] <= 0x77:
-                    try:
-                        arr, _ = item(seg, p)
-                        if all(isinstance(x, str) for x in arr): names = arr
-                    except Bad: pass
-                    break
-                try: _, p = item(seg, p)
-                except Bad: break
-        out.append((name, names))
-    return out
+    """Ordered [(kind or None, [field names])] = the slab's INLINED type-info list, one entry per
+    element. The list mixes composite (tag 249), dictionary (248) and array (247) type infos
+    (e.g. a Collection slab with its ownedNFTs dict inlined), and an inlined value's type index
+    counts ALL of them — counting only tag 249 shifts every later index (2026-10-03: half the
+    Top Shot / All Day NFTs Flowty sold were silently skipped that way)."""
+    m = TI_ANY.search(v)
+    if m:
+        i = m.start(); hdr = None
+        if i >= 1 and 0x81 <= v[i - 1] <= 0x97: hdr = i - 1
+        elif i >= 2 and v[i - 2] == 0x98: hdr = i - 2
+        elif i >= 3 and v[i - 3] == 0x99: hdr = i - 3
+        if hdr is not None:
+            try:
+                ib = v[hdr]
+                n = ib - 0x80 if ib < 0x98 else (v[hdr + 1] if ib == 0x98 else int.from_bytes(v[hdr + 1:hdr + 3], "big"))
+                p = i; out = []
+                for _ in range(n):
+                    _, q = item(v, p)
+                    out.append(_names_in(v[p:q]) if v[p:p + 2] == b"\xd8\xf9" else (None, None)); p = q
+                return out
+            except Bad:
+                pass
+    # fallback (no recognisable list header): every tag-249 element in order
+    return [_names_in(v[m.start():m.start() + 400]) for m in TI.finditer(v)]
 
 
 def composite(v, tinfo):
