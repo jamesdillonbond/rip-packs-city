@@ -165,3 +165,12 @@ assert v == [{"k": "ts:1:aa", "found": True, "meta": [{"c": "ts", "id": 1}]}, {"
 assert set(_S.SCRIPTS) == {(c, e) for c in ("ts", "ad", "ufc") for e in (_S.PRE, _S.C1)}
 assert all("pub fun" in _S.SCRIPTS[(c, _S.PRE)] and "access(all)" in _S.SCRIPTS[(c, _S.C1)] for c in ("ts", "ad", "ufc"))
 print("sale-block reads ok")
+# All Day view fallback (mainnet24 wallets with a generic capability): a real response for nft 300097, read 2026-10-04.
+fb = [{"key": {"type": "UInt64", "value": "300097"}, "value": {"type": "Array", "value": [
+      {"type": "String", "value": "https://media.nflallday.com/editions/395/media/image?format=jpeg&width=512"}, {"type": "String", "value": "4396"}]}}]
+assert _S.records("ad", fb) == {300097: [{"c": "ad", "id": 300097, "ed": 395, "serial": 4396}]}
+assert _S.records("ad", _dict([(1, ["4500", "88"])], "String")) == {1: [{"c": "ad", "id": 1, "ed": 4500, "serial": 88}]}
+try:
+    _S.records("ad", [{"key": {"type": "UInt64", "value": "2"}, "value": {"type": "Array", "value": [{"type": "String", "value": "https://elsewhere/x"}, {"type": "String", "value": "1"}]}}]); raise SystemExit("bad url accepted")
+except ValueError: pass
+print("all day view fallback ok")

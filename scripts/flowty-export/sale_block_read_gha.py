@@ -15,7 +15,7 @@ Env: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, RPS (default 5), WORKE
      MAX_MINUTES (default 0 = none).
 Usage: sale_block_read_gha.py <shard> <of>
 """
-import base64, hashlib, http.client, json, os, sys, time, urllib.request, urllib.error
+import base64, hashlib, http.client, json, os, re, sys, time, urllib.request, urllib.error
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from chain_verify_tx_gha import Limiter, cdc, rpc
@@ -42,12 +42,32 @@ access(all) fun main(owner: Address, ids: [UInt64]): {UInt64: [UInt32]} {
   for id in ids { if let m = col!.borrowMoment(id: id) { out[id] = [m.data.setID, m.data.playID, m.data.serialNumber, TopShot.getMomentsSubedition(nftID: id) ?? 0] } }
   return out
 }""",
+    # Many mainnet24-era wallets publish /public/AllDayNFTCollection as a GENERIC capability
+    # (&AnyResource{NonFungibleToken.CollectionPublic, Receiver, MetadataViews.ResolverCollection}, read off one
+    # 2026-10-04), so the typed borrow finds nothing. Fallback: the NFT's own MetadataViews — Medias[0] is
+    # AllDay.assetPath() = "https://media.nflallday.com/editions/<editionID>/media/…", built by the contract from
+    # self.editionID, and Serial is serialNumber. getIDs() first, so a missing id cannot panic the batch.
     ("ad", PRE): """import AllDay from 0xe4cf4bdc1751c65d
-pub fun main(owner: Address, ids: [UInt64]): {UInt64: [UInt64]} {
-  let out: {UInt64: [UInt64]} = {}
-  let col = getAccount(owner).getCapability(/public/AllDayNFTCollection).borrow<&{AllDay.MomentNFTCollectionPublic}>()
-  if col == nil { return out }
-  for id in ids { if let m = col!.borrowMomentNFT(id: id) { out[id] = [m.editionID, m.serialNumber] } }
+import NonFungibleToken from 0x1d7e57aa55817448
+import MetadataViews from 0x1d7e57aa55817448
+pub fun main(owner: Address, ids: [UInt64]): {UInt64: [String]} {
+  let out: {UInt64: [String]} = {}
+  let cap = getAccount(owner).getCapability(/public/AllDayNFTCollection)
+  if let col = cap.borrow<&{AllDay.MomentNFTCollectionPublic}>() {
+    for id in ids { if let m = col.borrowMomentNFT(id: id) { out[id] = [m.editionID.toString(), m.serialNumber.toString()] } }
+    return out
+  }
+  let pub = cap.borrow<&{NonFungibleToken.CollectionPublic}>()
+  let rc = cap.borrow<&{MetadataViews.ResolverCollection}>()
+  if pub == nil || rc == nil { return out }
+  let held = pub!.getIDs()
+  for id in ids {
+    if !held.contains(id) { continue }
+    let v = rc!.borrowViewResolver(id: id)
+    let medias = v.resolveView(Type<MetadataViews.Medias>())! as! MetadataViews.Medias
+    let serial = v.resolveView(Type<MetadataViews.Serial>())! as! MetadataViews.Serial
+    out[id] = [medias.items[0].file.uri(), serial.number.toString()]
+  }
   return out
 }""",
     ("ad", C1): """import AllDay from 0xe4cf4bdc1751c65d
@@ -80,12 +100,24 @@ access(all) fun main(owner: Address, ids: [UInt64]): {UInt64: [UInt32]} {
 def b64(s): return base64.b64encode(s.encode()).decode()
 
 
+EDITION_URL = re.compile(r"^https://media\.nflallday\.com/editions/([0-9]+)/media/")
+
+
+def edition_of(v):
+    """An integer field, or the edition id inside an All Day media URL (the view fallback)."""
+    if isinstance(v, str) and v.startswith("https://"):
+        m = EDITION_URL.match(v)
+        if not m: raise ValueError(f"unrecognised media url {v!r}")
+        return int(m.group(1))
+    return int(v)
+
+
 def records(c, value):
     """{nft_id: meta rows} from the decoded JSON-CDC dictionary a script returned."""
     out = {}
     for e in value or []:
         nid = int(cdc(e["key"]))
-        vals = [int(cdc(x)) for x in e["value"]["value"]]
+        vals = [edition_of(cdc(x)) for x in e["value"]["value"]]
         if c == "ts":
             rows = [{"c": "ts", "id": nid, "set": vals[0], "play": vals[1], "serial": vals[2]}]
             if vals[3] > 0: rows.append({"c": "tssub", "id": nid, "sub": vals[3]})
