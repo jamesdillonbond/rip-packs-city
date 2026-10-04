@@ -175,7 +175,7 @@ const PINS = [
     fn: "seed_saved_wallet_chain_arrivals",
     test: "supabase/tests/run_chain_arrival_lane.sql",
     migration:
-      "supabase/migrations/20260930190000_audit_20260930_chain_arrivals_seed_sold_moments.sql",
+      "supabase/migrations/20261004160000_audit_20261004_chain_arrivals_seed_reads_purchases_once_and_skips_probed.sql",
   },
   {
     fn: "enqueue_chain_arrivals",

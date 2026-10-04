@@ -453,20 +453,33 @@ BEGIN
   -- every held Top Shot moment of a saved wallet we cannot already explain:
   -- not a known NFT pack pull, no pack-pull record, not a recorded purchase.
   -- It starts at the FLOOR check (held at the mainnet24 root -> done).
+  --
+  -- 2026-10-04: two cost changes, same rows inserted. (1) A moment that already
+  -- has a probe row is dropped FIRST: the insert is ON CONFLICT DO NOTHING, so it
+  -- could never insert (114,140 of 176,313 held moments). (2) "not a recorded
+  -- purchase" reads the saved wallets' purchases ONCE by buyer (`bought`) and
+  -- hash-anti-joins, instead of probing all eight sales partitions per moment
+  -- (2.58 M buffers -> ~62 k). The 10-04 4:13 AM PT run hit its 300 s timeout.
   WITH w AS (
     SELECT DISTINCT lower(trim(wallet_addr)) AS wallet FROM public.saved_wallets
      WHERE lower(trim(wallet_addr)) ~ '^0x[0-9a-f]{16}$'
+  ), bought AS MATERIALIZED (
+    SELECT DISTINCT s.buyer_address::text AS wallet, s.nft_id::text AS nft_id
+      FROM w
+      JOIN public.sales s ON s.buyer_address = w.wallet
+     WHERE s.collection_id = v_ts
   ), held AS (
     SELECT w.wallet, m.moment_id::bigint AS nft_id, v_hi AS hi
       FROM w
       JOIN public.wallet_moments_cache m
         ON m.wallet_address = w.wallet AND m.collection_id = v_ts AND m.moment_id ~ '^[0-9]{1,15}$'
-     WHERE NOT EXISTS (SELECT 1 FROM public.pack_open_pulls o WHERE o.collection_id = v_ts AND o.nft_id = m.moment_id)
+     WHERE NOT EXISTS (SELECT 1 FROM public.chain_arrival_probes p
+                        WHERE p.wallet = w.wallet AND p.nft_id = m.moment_id::bigint)
+       AND NOT EXISTS (SELECT 1 FROM public.pack_open_pulls o WHERE o.collection_id = v_ts AND o.nft_id = m.moment_id)
        AND NOT EXISTS (SELECT 1 FROM public.moment_acquisitions a
                         WHERE a.wallet = w.wallet AND a.collection_id = v_ts AND a.nft_id = m.moment_id
                           AND a.acquisition_method = 'pack_pull')
-       AND NOT EXISTS (SELECT 1 FROM public.sales s
-                        WHERE s.collection_id = v_ts AND s.nft_id = m.moment_id AND s.buyer_address = w.wallet)
+       AND NOT EXISTS (SELECT 1 FROM bought b WHERE b.wallet = w.wallet AND b.nft_id = m.moment_id)
   ), sold AS (
     -- 2026-09-30: a moment the wallet SOLD after the floor is traceable too:
     -- it was held just before its first sale, so hi = that height - 100 (the
@@ -483,12 +496,13 @@ BEGIN
     SELECT so.wallet, so.nft_id, so.hi
       FROM sold so
      WHERE so.hi > v_floor
+       AND NOT EXISTS (SELECT 1 FROM public.chain_arrival_probes p
+                        WHERE p.wallet = so.wallet AND p.nft_id = so.nft_id)
        AND NOT EXISTS (SELECT 1 FROM public.pack_open_pulls o WHERE o.collection_id = v_ts AND o.nft_id = so.nft_id::text)
        AND NOT EXISTS (SELECT 1 FROM public.moment_acquisitions a
                         WHERE a.wallet = so.wallet AND a.collection_id = v_ts AND a.nft_id = so.nft_id::text
                           AND a.acquisition_method = 'pack_pull')
-       AND NOT EXISTS (SELECT 1 FROM public.sales b
-                        WHERE b.collection_id = v_ts AND b.nft_id = so.nft_id::text AND b.buyer_address = so.wallet)
+       AND NOT EXISTS (SELECT 1 FROM bought b WHERE b.wallet = so.wallet AND b.nft_id = so.nft_id::text)
   ), ids AS (
     SELECT wallet, nft_id, hi, false AS is_sold FROM held
     UNION ALL
