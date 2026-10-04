@@ -5,7 +5,7 @@
 // The public giveaway page. Four states, never collapsed: loading · not found ·
 // could not load · the drop. A claim failure shows the route's own copy.
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import type { PublicDropView } from "@/lib/giveaways/store"
 import { accountName, deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
@@ -13,6 +13,27 @@ import PackRevealClient from "./PackRevealClient"
 
 type View = PublicDropView & { signed_in: boolean }
 type ClaimAccount = { address: string; role: "flow_wallet" | "linked"; can_receive: boolean }
+type ClaimNonce = { nonce: string; issuedAt: string }
+/** The wallet's FCL account proof plus the issue time of its nonce (the server re-derives the nonce from it). */
+type ClaimProof = { address: string; nonce: string; signatures: unknown[]; issuedAt: string }
+
+/** Route codes that mean the wallet must be connected again (the proof is stale or not this user's). */
+const RECONNECT_CODES = new Set(["proof_missing", "proof_expired", "proof_mismatch", "proof_invalid"])
+
+async function fetchClaimNonce(slug: string): Promise<ClaimNonce> {
+  const res = await fetch(`/api/giveaways/${encodeURIComponent(slug)}?claim_nonce=1`, { cache: "no-store" })
+  let parsed: unknown = null
+  try {
+    parsed = await res.json()
+  } catch {
+    parsed = null
+  }
+  const body = parsed as { nonce?: unknown; issuedAt?: unknown; error?: unknown } | null
+  if (!res.ok || typeof body?.nonce !== "string" || typeof body?.issuedAt !== "string") {
+    throw new Error(typeof body?.error === "string" ? body.error : "We couldn't start the Flow Wallet sign-in. Try again in a moment.")
+  }
+  return { nonce: body.nonce, issuedAt: body.issuedAt }
+}
 
 // The claim page's ONLY wallet code, loaded on demand (it pulls in FCL). Loading it
 // when the claim form mounts — not at click time — lets FCL register WalletConnect
@@ -60,6 +81,9 @@ export default function GiveawayClient({ slug }: { slug: string }) {
   const [accounts, setAccounts] = useState<ClaimAccount[] | null>(null)
   const [destination, setDestination] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
+  const [proof, setProof] = useState<ClaimProof | null>(null)
+  // prefetched so the click opens the wallet picker with no network wait in between
+  const nonceRef = useRef<ClaimNonce | null>(null)
 
   const refresh = useCallback(() => {
     void fetchView(slug).then(setLoad)
@@ -77,29 +101,56 @@ export default function GiveawayClient({ slug }: { slug: string }) {
 
   const claimFormShown = load.kind === "ok" && load.view.signed_in && !load.view.me && load.view.drop.status === "open"
   useEffect(() => {
-    if (claimFormShown) void loadClaimWallet().catch(() => undefined)
-  }, [claimFormShown])
+    if (!claimFormShown) return
+    void loadClaimWallet().catch(() => undefined)
+    void fetchClaimNonce(slug)
+      .then((n) => {
+        nonceRef.current = n
+      })
+      .catch(() => undefined)
+  }, [claimFormShown, slug])
+
+  const forgetWallet = useCallback(() => {
+    setFlowWallet(null)
+    setAccounts(null)
+    setDestination(null)
+    setProof(null)
+  }, [])
 
   const connectWallet = useCallback(async () => {
     setConnecting(true)
     setClaimError(null)
     try {
+      // the prefetched nonce, used once; one that aged past ten minutes is refused
+      // as "sign-in expired" and the page returns to Connect, which fetches anew
+      const issued = nonceRef.current ?? (await fetchClaimNonce(slug))
+      nonceRef.current = null
       const { connectClaimWallet } = await loadClaimWallet()
-      const wallet = await connectClaimWallet()
-      const res = await fetch(`/api/giveaways/${encodeURIComponent(slug)}?accounts_for=${encodeURIComponent(wallet)}`, { cache: "no-store" })
+      const connected = await connectClaimWallet(issued.nonce)
+      if (!connected.proof) {
+        setClaimError("Your wallet didn't send the sign-in that proves it's yours. Update Flow Wallet and try again, or use your Top Shot username.")
+        return
+      }
+      const signed: ClaimProof = { ...connected.proof, issuedAt: issued.issuedAt }
+      const res = await fetch(`/api/giveaways/${encodeURIComponent(slug)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intent: "accounts", proof: signed }),
+      })
       let parsed: unknown = null
       try {
         parsed = await res.json()
       } catch {
         parsed = null
       }
-      const body = parsed as { accounts?: unknown; error?: unknown } | null
+      const body = parsed as { wallet?: unknown; accounts?: unknown; error?: unknown } | null
       if (!res.ok || !Array.isArray(body?.accounts)) {
         setClaimError(typeof body?.error === "string" ? body.error : "We couldn't check your Flow Wallet. Try again in a moment.")
         return
       }
       const list = body.accounts as ClaimAccount[]
-      setFlowWallet(wallet)
+      setFlowWallet(typeof body.wallet === "string" ? body.wallet : connected.address)
+      setProof(signed)
       setAccounts(list)
       setDestination(defaultDestination(list))
     } catch (e) {
@@ -110,14 +161,12 @@ export default function GiveawayClient({ slug }: { slug: string }) {
   }, [slug])
 
   const useUsernameInstead = useCallback(() => {
-    setFlowWallet(null)
-    setAccounts(null)
-    setDestination(null)
+    forgetWallet()
     setClaimError(null)
     void loadClaimWallet()
       .then((m) => m.disconnectClaimWallet())
       .catch(() => undefined)
-  }, [])
+  }, [forgetWallet])
 
   const claim = useCallback(async () => {
     setClaiming(true)
@@ -126,15 +175,17 @@ export default function GiveawayClient({ slug }: { slug: string }) {
       const res = await fetch(`/api/giveaways/${encodeURIComponent(slug)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(flowWallet ? { wallet: flowWallet, destination, agree } : { username, agree }),
+        body: JSON.stringify(flowWallet ? { proof, destination, agree } : { username, agree }),
       })
       if (res.ok) {
         refresh()
       } else {
         let message = "We couldn't record your claim. Try again in a moment."
         try {
-          const body = (await res.json()) as { error?: unknown }
+          const body = (await res.json()) as { error?: unknown; code?: unknown }
           if (typeof body?.error === "string") message = body.error
+          // a stale or foreign sign-in: back to the Connect button
+          if (typeof body?.code === "string" && RECONNECT_CODES.has(body.code)) forgetWallet()
         } catch {
           // not our JSON (a proxy or platform error page): keep the generic copy
         }
@@ -145,7 +196,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
     } finally {
       setClaiming(false)
     }
-  }, [slug, username, agree, refresh, flowWallet, destination])
+  }, [slug, username, agree, refresh, flowWallet, destination, proof, forgetWallet])
 
   if (load.kind === "loading") return <p style={muted}>Loading the giveaway…</p>
   if (load.kind === "not_found") {

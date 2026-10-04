@@ -11,6 +11,8 @@ import { FLOW_SCRIPTS_URL } from "@/lib/giveaways/topshot-holdings"
 export type CdcArg =
   | { type: "Address"; value: string }
   | { type: "UInt64"; value: string }
+  | { type: "String"; value: string }
+  | { type: "Int"; value: string }
   | { type: "Array"; value: CdcArg[] }
 
 export interface CdcValue {

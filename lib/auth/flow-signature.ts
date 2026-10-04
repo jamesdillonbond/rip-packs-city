@@ -87,7 +87,7 @@ export function normalizeFlowAddress(input: unknown): string | null {
  * an attacker pre-mint a challenge for someone else's address, which is the
  * one thing the nonce exists to prevent. Fail closed, loudly.
  */
-function signingSecret(): string {
+export function signingSecret(): string {
   const s = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!s || s.length < 32) {
     throw new Error("flow-signature: no signing secret available (SUPABASE_SERVICE_ROLE_KEY)")

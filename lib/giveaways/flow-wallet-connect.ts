@@ -10,7 +10,9 @@
 //   * lib/giveaways/claim-wallet.ts — a giveaway WINNER connects Flow Wallet on
 //     /giveaways/<slug> to say where their pack goes, their Flow Wallet or a
 //     Dapper account linked to it (Trevor, 2026-10-03: "Let's plan on using Flow
-//     Wallet to claim instead of Dapper"). Connect only — it never signs.
+//     Wallet to claim instead of Dapper"). It never signs a transaction; at
+//     connect the wallet signs FCL's standard ACCOUNT PROOF (a sign-in, no fee)
+//     so the server can verify the winner controls it (connectFlowWalletWithProof).
 // The guard pins this module, its two importers and theirs.
 //
 // Wallet discovery is configured HERE — never in lib/chains/flow/flow.ts, whose
@@ -62,4 +64,40 @@ export async function connectFlowWallet(): Promise<string> {
 
 export async function disconnectFlowWallet(): Promise<void> {
   await fcl.unauthenticate()
+}
+
+export interface AccountProof {
+  address: string
+  nonce: string
+  signatures: unknown[]
+}
+
+/**
+ * Connects Flow Wallet AND has it sign FCL's account proof over `nonce` (issued
+ * by the server for this RPC user) in the same popup. Starts from a clean
+ * session: an already-connected user would otherwise be handed back with no
+ * proof, or an old one. Resolves to the address and the proof the wallet
+ * returned, or `proof: null` when the wallet returned none.
+ */
+export async function connectFlowWalletWithProof(nonce: string): Promise<{ address: string; proof: AccountProof | null }> {
+  initFcl()
+  fcl.config().put("discovery.wallet", DISCOVERY)
+  await fcl.unauthenticate()
+  fcl.config().put("fcl.accountProof.resolver", async () => ({ nonce }))
+  try {
+    const user = (await fcl.authenticate()) as
+      | { addr?: string | null; services?: Array<{ type?: string; data?: { address?: string; nonce?: string; signatures?: unknown[] } }> }
+      | undefined
+    const address = user?.addr?.toLowerCase() ?? null
+    if (!address) throw new Error("The wallet did not return an address.")
+    const data = user?.services?.find((s) => s?.type === "account-proof")?.data
+    const proof =
+      data && typeof data.nonce === "string" && Array.isArray(data.signatures)
+        ? { address: String(data.address ?? address).toLowerCase(), nonce: data.nonce, signatures: data.signatures }
+        : null
+    return { address, proof }
+  } finally {
+    // the admin console shares this FCL instance only across a full page load, but never leave it armed
+    fcl.config().delete("fcl.accountProof.resolver")
+  }
 }

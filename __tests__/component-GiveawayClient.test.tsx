@@ -215,10 +215,12 @@ describe("GiveawayClient — provably fair", () => {
   })
 })
 
-describe("GiveawayClient — claim with Flow Wallet (2026-10-03)", () => {
+describe("GiveawayClient — claim with Flow Wallet, proven by account proof (2026-10-03)", () => {
   const FW = "0x00000000000000f1"
   const DAPPER = "0x00000000000000d2"
   const NOTS = "0x00000000000000e3"
+  const NONCE = { nonce: "ab".repeat(32), issuedAt: "2026-10-03T17:00:00.000Z" }
+  const PROOF = { address: FW, nonce: NONCE.nonce, signatures: [{ addr: FW, keyId: 0, signature: "cd" }] }
   const ACCOUNTS = [
     { address: FW, role: "flow_wallet", can_receive: true },
     { address: DAPPER, role: "linked", can_receive: true },
@@ -229,88 +231,132 @@ describe("GiveawayClient — claim with Flow Wallet (2026-10-03)", () => {
     disconnectClaimWallet.mockReset()
   })
 
-  function routes(accounts: Response | (() => Response), onPost?: (body: unknown) => Response) {
+  type Body = Record<string, unknown>
+  function routes(opts: { accounts?: () => Response; claim?: (b: Body) => Response; nonce?: () => Response } = {}) {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (init?.method === "POST") return onPost ? onPost(JSON.parse(init.body as string)) : json({ ok: true, outcome: "claimed", pack_no: 1 })
-      if (url.includes("accounts_for=")) return typeof accounts === "function" ? accounts() : accounts
+      if (url.includes("claim_nonce=")) return opts.nonce ? opts.nonce() : json(NONCE)
+      if (init?.method === "POST") {
+        const body = JSON.parse(init.body as string) as Body
+        if (body.intent === "accounts") return opts.accounts ? opts.accounts() : json({ wallet: FW, accounts: ACCOUNTS })
+        return opts.claim ? opts.claim(body) : json({ ok: true, outcome: "claimed", pack_no: 1 })
+      }
       return json(BASE)
     })
     vi.stubGlobal("fetch", fetchMock)
     return fetchMock
   }
+  const posts = (m: ReturnType<typeof routes>) =>
+    m.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === "POST").map((c) => JSON.parse((c[1] as RequestInit).body as string) as Body)
+  const connect = async () => fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
 
-  it("connects, lists the wallet and its linked accounts, and claims to the one chosen", async () => {
-    connectClaimWallet.mockResolvedValue(FW)
-    const fetchMock = routes(json({ accounts: ACCOUNTS }))
+  it("signs in with the server's nonce, lists the PROVEN wallet's accounts, and claims with the proof", async () => {
+    connectClaimWallet.mockResolvedValue({ address: FW, proof: PROOF })
+    const fetchMock = routes()
     render(<GiveawayClient slug="fall-drop" />)
-    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    await connect()
     expect(await screen.findByText(/Where should your pack go/)).toBeTruthy()
-    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes(`accounts_for=${FW}`))).toBe(true)
+    // the wallet signed the nonce the server issued
+    expect(connectClaimWallet).toHaveBeenCalledWith(NONCE.nonce)
+    expect(posts(fetchMock)[0]).toEqual({ intent: "accounts", proof: { ...PROOF, issuedAt: NONCE.issuedAt } })
     const radios = screen.getAllByRole("radio") as HTMLInputElement[]
     expect(radios.map((r) => r.value)).toEqual([FW, DAPPER, NOTS])
-    // the Flow Wallet is chosen by default; an account that cannot hold Top Shot moments is not choosable
     expect(radios[0].checked).toBe(true)
     expect(radios[2].disabled).toBe(true)
     expect(screen.getByText(/can't receive Top Shot moments yet/)).toBeTruthy()
-    // the username box is gone in wallet mode
     expect(screen.queryByPlaceholderText("username")).toBeNull()
     fireEvent.click(radios[1])
     fireEvent.click(screen.getByRole("checkbox"))
     fireEvent.click(screen.getByRole("button", { name: /claim my pack/i }))
-    await screen.findByRole("button", { name: /claim my pack/i })
-    const post = await vi.waitFor(() => {
-      const p = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")
-      if (!p) throw new Error("no POST yet")
-      return p
-    })
-    expect(JSON.parse((post[1] as RequestInit).body as string)).toEqual({ wallet: FW, destination: DAPPER, agree: true })
+    await vi.waitFor(() => expect(posts(fetchMock)).toHaveLength(2))
+    // the claim carries the PROOF, never a bare wallet address
+    expect(posts(fetchMock)[1]).toEqual({ proof: { ...PROOF, issuedAt: NONCE.issuedAt }, destination: DAPPER, agree: true })
   })
 
-  it("the route's refusal (not linked) is shown in its own words", async () => {
-    connectClaimWallet.mockResolvedValue(FW)
-    routes(json({ accounts: ACCOUNTS }), () => json({ error: "That account isn't your Flow Wallet or an account linked to it.", code: "not_linked" }, 400))
+  it("a wallet that returns no proof is stopped before anything is sent", async () => {
+    connectClaimWallet.mockResolvedValue({ address: FW, proof: null })
+    const fetchMock = routes()
     render(<GiveawayClient slug="fall-drop" />)
-    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    await connect()
+    expect(await screen.findByText(/didn't send the sign-in that proves it's yours/)).toBeTruthy()
+    expect(posts(fetchMock)).toHaveLength(0)
+    expect(screen.queryAllByRole("radio")).toHaveLength(0)
+    expect(screen.getByPlaceholderText("username")).toBeTruthy()
+  })
+
+  it("a refused proof shows the route's own words and never lists accounts", async () => {
+    connectClaimWallet.mockResolvedValue({ address: FW, proof: PROOF })
+    routes({ accounts: () => json({ error: "That Flow Wallet sign-in wasn't made for your RPC account. Connect Flow Wallet again.", code: "proof_mismatch" }, 400) })
+    render(<GiveawayClient slug="fall-drop" />)
+    await connect()
+    expect(await screen.findByText(/wasn't made for your RPC account/)).toBeTruthy()
+    expect(screen.queryAllByRole("radio")).toHaveLength(0)
+  })
+
+  it("a sign-in that expired before the claim sends them back to Connect", async () => {
+    connectClaimWallet.mockResolvedValue({ address: FW, proof: PROOF })
+    routes({ claim: () => json({ error: "Your Flow Wallet sign-in expired. Connect Flow Wallet again.", code: "proof_expired" }, 400) })
+    render(<GiveawayClient slug="fall-drop" />)
+    await connect()
+    await screen.findByText(/Where should your pack go/)
+    fireEvent.click(screen.getByRole("checkbox"))
+    fireEvent.click(screen.getByRole("button", { name: /claim my pack/i }))
+    expect(await screen.findByText(/sign-in expired/)).toBeTruthy()
+    expect(screen.queryAllByRole("radio")).toHaveLength(0)
+    expect(screen.getByRole("button", { name: "Claim with Flow Wallet" })).toBeTruthy()
+  })
+
+  it("other refusals (not linked) keep the choice on screen", async () => {
+    connectClaimWallet.mockResolvedValue({ address: FW, proof: PROOF })
+    routes({ claim: () => json({ error: "That account isn't your Flow Wallet or an account linked to it.", code: "not_linked" }, 400) })
+    render(<GiveawayClient slug="fall-drop" />)
+    await connect()
     await screen.findByText(/Where should your pack go/)
     fireEvent.click(screen.getByRole("checkbox"))
     fireEvent.click(screen.getByRole("button", { name: /claim my pack/i }))
     expect(await screen.findByText(/isn't your Flow Wallet or an account linked to it/)).toBeTruthy()
+    expect(screen.getAllByRole("radio")).toHaveLength(3)
+  })
+
+  it("a nonce that could not be issued says so and opens no wallet", async () => {
+    routes({ nonce: () => json({ error: "We couldn't start the Flow Wallet sign-in. Try again in a moment." }, 500) })
+    render(<GiveawayClient slug="fall-drop" />)
+    await connect()
+    expect(await screen.findByText(/couldn't start the Flow Wallet sign-in/)).toBeTruthy()
+    expect(connectClaimWallet).not.toHaveBeenCalled()
   })
 
   it("a failed account read says so — never an empty list to choose from", async () => {
-    connectClaimWallet.mockResolvedValue(FW)
-    routes(json({ error: "We couldn't reach the Flow blockchain to check your wallet. Try again in a minute.", code: "upstream_unavailable" }, 503))
+    connectClaimWallet.mockResolvedValue({ address: FW, proof: PROOF })
+    routes({ accounts: () => json({ error: "We couldn't reach the Flow blockchain to check your wallet. Try again in a minute.", code: "upstream_unavailable" }, 503) })
     render(<GiveawayClient slug="fall-drop" />)
-    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    await connect()
     expect(await screen.findByText(/couldn't reach the Flow blockchain/)).toBeTruthy()
-    expect(screen.queryByText(/Where should your pack go/)).toBeNull()
     expect(screen.queryAllByRole("radio")).toHaveLength(0)
-    // the username path still works
     expect(screen.getByPlaceholderText("username")).toBeTruthy()
   })
 
   it("a non-JSON account answer falls back to generic copy", async () => {
-    connectClaimWallet.mockResolvedValue(FW)
-    routes(() => new Response("<!DOCTYPE html>", { status: 522 }))
+    connectClaimWallet.mockResolvedValue({ address: FW, proof: PROOF })
+    routes({ accounts: () => new Response("<!DOCTYPE html>", { status: 522 }) })
     render(<GiveawayClient slug="fall-drop" />)
-    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    await connect()
     expect(await screen.findByText(/couldn't check your Flow Wallet/)).toBeTruthy()
   })
 
   it("a declined connect shows why and leaves the username path", async () => {
     connectClaimWallet.mockRejectedValue(new Error("User rejected"))
-    routes(json({ accounts: ACCOUNTS }))
+    routes()
     render(<GiveawayClient slug="fall-drop" />)
-    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    await connect()
     expect(await screen.findByText(/Flow Wallet: User rejected/)).toBeTruthy()
     expect(screen.getByPlaceholderText("username")).toBeTruthy()
   })
 
   it("'Use a Top Shot username instead' disconnects and brings the username box back", async () => {
-    connectClaimWallet.mockResolvedValue(FW)
-    routes(json({ accounts: ACCOUNTS }))
+    connectClaimWallet.mockResolvedValue({ address: FW, proof: PROOF })
+    routes()
     render(<GiveawayClient slug="fall-drop" />)
-    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    await connect()
     fireEvent.click(await screen.findByRole("button", { name: "Use a Top Shot username instead" }))
     expect(screen.getByPlaceholderText("username")).toBeTruthy()
     expect(screen.queryAllByRole("radio")).toHaveLength(0)
@@ -318,10 +364,10 @@ describe("GiveawayClient — claim with Flow Wallet (2026-10-03)", () => {
   })
 
   it("no account can receive: nothing is chosen and the claim button stays off", async () => {
-    connectClaimWallet.mockResolvedValue(FW)
-    routes(json({ accounts: [{ address: FW, role: "flow_wallet", can_receive: false }] }))
+    connectClaimWallet.mockResolvedValue({ address: FW, proof: PROOF })
+    routes({ accounts: () => json({ wallet: FW, accounts: [{ address: FW, role: "flow_wallet", can_receive: false }] }) })
     render(<GiveawayClient slug="fall-drop" />)
-    fireEvent.click(await screen.findByRole("button", { name: "Claim with Flow Wallet" }))
+    await connect()
     await screen.findByText(/Where should your pack go/)
     fireEvent.click(screen.getByRole("checkbox"))
     expect((screen.getByRole("button", { name: /claim my pack/i }) as HTMLButtonElement).disabled).toBe(true)
