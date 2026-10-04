@@ -11,6 +11,13 @@ CLAUDE.md concierge rule #1 points here. **Admin-signed giveaway delivery** is t
 - **Guards:** `__tests__/no-client-wallet-connect.test.ts` allows exactly `lib/giveaways/admin-wallet.ts`, imported only by `app/admin/giveaways/AdminGiveawaysClient.tsx`; the wallet-picker CSP host is added for `/admin/giveaways` only (`proxy.ts walletDiscoveryAllowed`).
 - **Do not widen it** (a user-facing gift, a second admin surface, a server-held key) without Trevor saying so. Background: `docs/strategy/free-packs-reassessment-2026-09-29.md` §7–8.
 
+### Second exception: the admin-only two-signer swap TEST (Trevor, 2026-10-03: "Do it all", approving trading-revisit §6)
+
+- **Who:** the ADMIN only, on `/admin/swap-test` (RPC_ADMIN_TOKEN), on Trevor's OWN two Flow Wallets. It is a test of whether two wallets can sign one swap transaction, not a trading feature. Users still have no trading anywhere, and the concierge must keep saying so.
+- **What:** `SWAP_CADENCE` (`lib/swap-test/swap-cadence.ts`): one transaction, two authorizers; side A's moments go to side B's account and B's to A's, or nothing moves. The server plans it and SIMULATES it on mainnet (`lib/swap-test/plan.ts`); wallet A signs in one session, wallet B in another, and B's signature crosses through `public.swap_test_relay` (service role only; accepts only `SWAP_CADENCE`). RPC never holds a key, a fee or a moment; no escrow.
+- **Guards:** `__tests__/no-client-wallet-connect.test.ts` allows `lib/swap-test/swap-wallet.ts`, imported only by `app/admin/swap-test/SwapTestClient.tsx`; `/admin/swap-test` joins `WALLET_DISCOVERY_PAGES` in `proxy.ts`.
+- **Do not turn it into a user feature** (a public page, trading between different people, offers, a fair-value hint) without Trevor saying so. Plan and open decisions: `docs/strategy/trading-revisit-2026-10-03.md`.
+
 ## AI Concierge
 
 Claude Sonnet chat on every page via SupportChatConnected component.
