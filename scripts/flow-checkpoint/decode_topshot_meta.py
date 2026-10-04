@@ -3,7 +3,7 @@
 Atree snapshots (mainnet-15+): the NFT composite holds `id` and a `data` slab ref -> TopShot.MomentData slab.
 Pre-atree (mainnet-6..14): the fields sit next to `id` in the same value. Join (setID, playID) to
 editions.external_id 'set:play' for player/set/tier. Usage: decode_topshot_meta.py [--merge] DIR [DIR ...]
-(writes/merges ts_meta.json in cwd). Owners are filtered to the wallets in OWNERS below; edit for others."""
+(writes/merges ts_meta.json in cwd). Control: Trevor's 2023-11-08 Top Shot set decodes 4,778/4,778. Owners are filtered to the wallets in OWNERS below; edit for others."""
 import json, glob, re, sys
 OWNERS = ("bd94cade097e50ac", "d96dc67ae64ee202")
 def uint(b,p):
@@ -25,9 +25,11 @@ for d in dirs:
             if k[:1]==b"$": slabs[(r["owner"],k[1:9])]=v
             for m in re.finditer(rb"bid\xd8\xa4", v):
                 nid,_=uint(v, m.end())
-                w=v[m.start():m.start()+120]
-                j=w.find(b"ddata\xd8\xffP")
-                if j>=0: nfts.append((r["owner"], nid, w[j+8+8:j+8+16], None))
+                lo=max(0,m.start()-120); w=v[lo:m.start()+120]     # field order varies: `data` may precede `id`
+                js=[x.start() for x in re.finditer(rb"ddata\xd8\xffP", w)]
+                if js:
+                    j=min(js, key=lambda x: abs(lo+x-m.start()))
+                    nfts.append((r["owner"], nid, w[j+8+8:j+8+16], None))
                 else:
                     w2=v[max(0,m.start()-200):m.start()+200]
                     s,p,n=field(w2,b"esetID\xd8\xa3"),field(w2,b"fplayID\xd8\xa3"),field(w2,b"lserialNumber\xd8\xa3")

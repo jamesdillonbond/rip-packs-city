@@ -17,6 +17,8 @@ records (Flowty Funding / storefront listings, NFT collections) are fully recove
 | `decode_rentals.py <dir> <out.json>` | `FlowtyRentals.Rental` → renter / owner, returned / settled, start, term, fee, deposit, NFT (rentals persist with flags, so every snapshot carries the whole book: 586 at mainnet-24) |
 | `decode_old_wallet.py <dir> <owner_hex> <out.json>` | holdings in the PRE-atree format (mainnet-6..14, 2021-03..10): reads each collection register's `ownedNFTs` key array (authoritative; standalone `…/ownedNFTs/<id>` registers can be empty-value tombstones). Old CBOR uses location `{0:addr,1:name}`. |
 | `decode_topshot_meta.py [--merge] <dir>...` | Top Shot moment id → setID/playID/serial (atree: follows the `data` slab ref to `TopShot.MomentData`; pre-atree: adjacent fields). Join `set:play` to `editions.external_id` for names (90/90 agree with known names). |
+| `decode_allday_meta.py` | All Day moment id → editionID/serial; join `editions.external_id` (611/625 agree with known names; rest are suffix spellings). |
+| `ckpt_find.py <url> <ids.json> <out> <start> <end>` | which ACCOUNT holds given Top Shot / All Day ids in a checkpoint part (any owner): matches `"id": UInt64(n)`, walks back to the payload's owner, keeps payloads naming the contract. |
 | `match_purchases.py [out.csv]` | moments that entered a wallet between snapshots × purchased Flowty listings (expects `w{spork}_{owner}.json` and `L{spork}/` in cwd) |
 
 Run a full checkpoint as 16 parallel processes (one per part, or 16 byte ranges of a single file):
