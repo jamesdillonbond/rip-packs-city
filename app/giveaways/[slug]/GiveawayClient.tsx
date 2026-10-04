@@ -289,7 +289,6 @@ export default function GiveawayClient({ slug }: { slug: string }) {
                       />
                       <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                         <strong style={{ color: "var(--rpc-text-primary)" }}>{a.dapper || a.role === "flow_wallet" ? `My ${accountKind(a)}` : accountKind(a)}</strong>
-                        {a.dapper ? <span style={muted}>Your Top Shot account: moments sent here show in the Top Shot app</span> : null}
                         <span style={{ ...muted, fontFamily: MONO, wordBreak: "break-all" }}>{a.address}</span>
                         {a.can_receive ? null : <span style={muted}>Can&apos;t receive Top Shot moments yet</span>}
                       </span>

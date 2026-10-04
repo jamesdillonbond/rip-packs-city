@@ -267,7 +267,8 @@ describe("GiveawayClient — claim with Flow Wallet, proven by account proof (20
     // every account by kind with its FULL address; the Dapper wallet is called out (Trevor, 2026-10-03)
     expect(screen.getByText("My Flow Wallet")).toBeTruthy()
     expect(screen.getByText("My Dapper wallet")).toBeTruthy()
-    expect(screen.getByText(/moments sent here show in the Top Shot app/)).toBeTruthy()
+    // no single-app copy on the Dapper row: RPC covers many collections (Trevor, 2026-10-03)
+    expect(screen.queryByText(/Top Shot app/)).toBeNull()
     expect(screen.getByText("Linked account “Creator Hub”")).toBeTruthy()
     for (const addr of [DAPPER, NOTS]) expect(screen.getByText(addr)).toBeTruthy()
     expect(screen.getAllByText(FW).length).toBe(2) // "Signed in with" + its own row
