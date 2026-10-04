@@ -1169,7 +1169,11 @@ const FLOW_TX_STATUS_STREAM = "wss://rest-mainnet.onflow.org"
 // pre-authz (who pays, who authorizes) to web.api.wallet.flow.com from THIS page.
 // Blocked, a delivery dies before the wallet prompt as a bare "Load failed"
 // (Trevor's iPhone, test2, 2026-10-03 — named by the console's network trace).
-const FLOW_WALLET_API = "https://wallet.flow.com https://*.wallet.flow.com"
+// It also still pays the network fee through its former Lilico domain: FCL POSTs
+// the payer step to lilico.app/api/wc/payer (the next block on test2, 9:10 PM PT).
+const FLOW_WALLET_API = "https://wallet.flow.com https://*.wallet.flow.com https://lilico.app https://*.lilico.app"
+// Flow Wallet's own logo, shown by FCL while it waits for the wallet. Signing pages only.
+const FLOW_WALLET_IMAGES = "https://wallet.flow.com https://*.wallet.flow.com https://lilico.app https://*.lilico.app"
 const WALLETCONNECT_FRAMES = "https://verify.walletconnect.com https://verify.walletconnect.org"
 const WALLETCONNECT_IMAGES = "https://api.web3modal.org https://api.web3modal.com https://explorer-api.walletconnect.com"
 
@@ -1203,7 +1207,7 @@ function applySecurityHeaders(response: NextResponse, pathname?: string) {
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "img-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://cdn.nba.com https://cdn.wnba.com https://*.supabase.co https://arweave.net https://*.arweave.net https://assets.paniniamerica.net" + (wallet ? ` ${WALLETCONNECT_IMAGES}` : ""),
+      "img-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://cdn.nba.com https://cdn.wnba.com https://*.supabase.co https://arweave.net https://*.arweave.net https://assets.paniniamerica.net" + (wallet ? ` ${WALLETCONNECT_IMAGES} ${FLOW_WALLET_IMAGES}` : ""),
       "media-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://arweave.net https://*.arweave.net https://assets.paniniamerica.net",
       "font-src 'self' https://fonts.gstatic.com",
       "connect-src 'self' https://*.supabase.co https://public-api.nbatopshot.com https://public-api.nflallday.com https://public-api.laligagolazos.com https://api2.flowty.io https://rest-mainnet.onflow.org https://access-mainnet.onflow.org https://pinnacle-proxy.tdillonbond.workers.dev https://topshot-proxy.tdillonbond.workers.dev wss://*.supabase.co" +

@@ -129,6 +129,10 @@ describe("proxy() — security headers", () => {
     expect(admin).toMatch(/connect-src [^;]*wss:\/\/rest-mainnet\.onflow\.org/)
     // Flow Wallet's pre-authz endpoint, POSTed from the page (test2 "Load failed", 2026-10-03)
     expect(admin).toMatch(/connect-src [^;]*https:\/\/\*\.wallet\.flow\.com/)
+    // ...and its fee payer on the former Lilico domain, plus its logo (test2, 9:10 PM PT)
+    expect(admin).toMatch(/connect-src [^;]*https:\/\/lilico\.app/)
+    expect(admin).toMatch(/img-src [^;]*https:\/\/\*\.wallet\.flow\.com/)
+    expect(claim).toMatch(/connect-src [^;]*https:\/\/lilico\.app/)
     // the admin-only two-signer swap test (2026-10-03)
     const swap = (await proxy(req("/admin/swap-test"))).headers.get("Content-Security-Policy")!
     expect(swap).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
@@ -140,6 +144,7 @@ describe("proxy() — security headers", () => {
       expect(csp, path).not.toContain("web3modal")
       expect(csp, path).not.toContain("wss://rest-mainnet.onflow.org")
       expect(csp, path).not.toContain("wallet.flow.com")
+      expect(csp, path).not.toContain("lilico")
     }
   })
 })
