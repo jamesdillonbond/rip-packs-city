@@ -341,3 +341,19 @@ What this thread added (each has a ledger entry with its revert path):
   `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\panini-schedule-every-2h.ps1` (changes only the trigger
   interval to PT2H; keeps WakeToRun / StartWhenAvailable / IgnoreNew / the 2 h limit; `-Hours 4` undoes). Expected: ~12
   runs/day, ~2× the card-walk minutes. Measure after a day: editions refreshed per day (`last_seen_at`), and `> 6 d` count.
+
+### 2026-10-03 ~8:10 PM PT — first per-sport pack pass + first WALK run (measured)
+
+- **6:00 PM PT FULL run:** enum marker 6:39 PM, `run_mode=full`, order `interleaved (4464 held-priority + 3541 new + 17635
+  known)`, `page_recoveries 0`, no stall. Pack listings: bare (Basketball) +64, **Soccer +34, Womens Basketball +12,
+  Football +224, Baseball +11** → registry `pack_pages_new 280` (346 offered); 60 pack pages opened / 60 captured (all
+  basketball this time: never-walked pages tie on `last_walked_at` NULL and fall back to url order). Rotation at 60 per
+  full run, six full runs a day ≈ one day to open all ~350. 172 batches 6:00 PM-8:05 PM PT; **295 editions refreshed**
+  (in line with the ~290-370 baseline; the first walk-only run is the comparison).
+- **8:00 PM PT WALK run started on schedule** (`run_mode=walk`, `4325 held-priority + 0 new + 17635 known`, no grid, no pack
+  pages) — the box is on the 2-hour schedule.
+- **Naming lead: NEGATIVE.** `raw.__set_ids` is `{}` on every pack captured this run — a pack page's /onepanini responses
+  carry no `packcard-<setId>_` reference, so a pack cannot be tied to a card product's set id this way. Not building the
+  route step. Product naming stays the signed-in-Chrome item (step 2).
+- Freshness at 8:06 PM PT: > 6 d **1,655**, > 7 d **0** (the oldest crosses 7 d ~3 AM PT Sunday). Measure the walk-only
+  runs' refresh count over the night before judging the 2-hour schedule.
