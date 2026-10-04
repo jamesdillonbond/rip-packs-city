@@ -109,3 +109,47 @@ end $f$;
 -- sales whose NFT no checkpoint holds and that are not in `sales` (tx + nft, nor a same-NFT sale ±10 min).
 -- pg_cron 'sbr-candidates-scratch' (job 703, every 30 s; created ~9:20 AM PT 2026-10-04). Body as created:
 -- see flowty_archive.scratch_sbr_candidates_tick() — the INSERT … SELECT of the session log 2026-10-04.
+-- 2026-10-04 ~3:25 PM PT: two walk ticks (one from each end) halve the re-promotion. Each takes a per-slice
+-- advisory xact lock and re-checks "not yet promoted" after taking it, so the two never promote one slice together
+-- (the check-then-insert promoter is not safe to run twice concurrently over the same blocks: 7 duplicates, 3:05 PM PT).
+CREATE OR REPLACE FUNCTION flowty_archive.scratch_promote_tick_dir(p_desc boolean) RETURNS jsonb LANGUAGE plpgsql AS $f$
+declare r record; c record; v jsonb; n_sealed int; n_mis int; got boolean := false;
+begin
+  for c in
+    select s.a, s.b from (
+      select g a, least(g + 49999, sp.e) b, ceil((least(g + 49999, sp.e) - g + 1) / 250.0)::int need
+      from (values (65264619::bigint, 85981134::bigint), (85981135, 88226266), (88226267, 130290658), (130290659, 137390145), (137390146, 152500000)) sp(s, e),
+           generate_series(sp.s, sp.e, 50000) g) s
+    where not exists (select 1 from flowty_archive.scratch_20261004_promoted p where p.slice_start > 0 and s.a between p.slice_start and p.slice_end)
+      and (select count(*) from flowty_archive.flowty_chain_walk_coverage cv where cv.win_start between s.a and s.b) = s.need
+    order by case when p_desc then -s.a else s.a end
+  loop
+    if pg_try_advisory_xact_lock(20261004, c.a::int)
+       and not exists (select 1 from flowty_archive.scratch_20261004_promoted p where p.slice_start > 0 and c.a between p.slice_start and p.slice_end) then
+      r := c; got := true; exit;
+    end if;
+  end loop;
+  if not got then return jsonb_build_object('idle', true); end if;
+  v := flowty_archive.promote_flowty_chain_sales(r.a, r.b);
+  with j as (
+    select i.doc_id, (i.tx_hash = c2.tx_hash and i.nft_id = c2.nft_id and i.price = c2.price
+                      and i.seller is not distinct from c2.seller and i.buyer is not distinct from c2.buyer
+                      and i.payment_vault = c2.payment_vault) exact, c2.tx_hash, c2.block_height
+      from flowty_archive.flowty_chain_listing_completed c2
+      join flowty_archive.flowty_index_sales i on i.doc_id = c2.listing_resource_id || '_STOREFRONT_PURCHASED'
+     where c2.block_height between r.a and r.b and (i.verify_status is null or i.verify_status = 'rpc_chain_match')
+  ), u as (
+    update flowty_archive.flowty_index_sales i
+       set verify_status = case when j.exact then 'chain_sealed' else 'chain_mismatch' end, verified_at = now(),
+           verify_detail = coalesce(i.verify_detail, '{}'::jsonb) || jsonb_build_object('chain_tx', j.tx_hash, 'block_height', j.block_height, 'exact', j.exact, 'method', 'walk')
+      from j where i.doc_id = j.doc_id
+    returning i.verify_status)
+  select count(*) filter (where verify_status = 'chain_sealed'), count(*) filter (where verify_status = 'chain_mismatch') into n_sealed, n_mis from u;
+  v := v || jsonb_build_object('index_chain_sealed', n_sealed, 'index_chain_mismatch', n_mis, 'dir', case when p_desc then 'desc' else 'asc' end);
+  insert into flowty_archive.scratch_20261004_promoted (slice_start, slice_end, result) values (r.a, r.b, v);
+  return v;
+end $f$;
+
+CREATE OR REPLACE FUNCTION flowty_archive.scratch_promote_tick() RETURNS jsonb LANGUAGE sql AS $f$
+  select flowty_archive.scratch_promote_tick_dir(false)
+$f$;
