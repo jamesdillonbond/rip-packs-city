@@ -13,7 +13,7 @@ Env: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, RPS (default 5), WORKE
      MAX_MINUTES (default 0 = none).
 Usage: chain_verify_tx_gha.py <shard> <of>
 """
-import base64, hashlib, json, os, sys, threading, time, urllib.request, urllib.error
+import base64, http.client, hashlib, json, os, sys, threading, time, urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor
 
 NODE = "http://access-001.mainnet24.nodes.onflow.org:8070"
@@ -76,7 +76,7 @@ def get_result(tx, lim):
         except urllib.error.HTTPError as e:
             if e.code == 404: return {"status": "NotFound"}
             if e.code not in (429, 500, 502, 503, 504): return None
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError, ValueError):
             pass
         time.sleep(min(60, 2 ** k))
     return None
@@ -91,7 +91,7 @@ def rpc(base, key, fn, args):
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             if e.code < 500 and e.code != 429: sys.exit(f"RPC {fn} HTTP {e.code}: {e.read()[:300]!r}")
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError):
             pass
         time.sleep(2 ** k)
     sys.exit(f"RPC {fn} unreachable after retries")

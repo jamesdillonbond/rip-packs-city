@@ -66,3 +66,30 @@ n, recs = records("ad_minted", [{"events": [_ev("A.e4cf4bdc1751c65d.AllDay.Momen
 assert recs == [{"c": "ad", "id": 11000001, "ed": 4500, "serial": 88}]
 assert records("ad_minted", []) == (0, [])
 print("mint records ok")
+
+# A truncated chunked body (http.client.IncompleteRead, not an OSError) is a free retry, not a crash:
+# it killed the mainnet26 88.2M job on 2026-10-04 with 963 windows unwalked.
+import http.client as _hc, chain_walk_gha as _W, chain_verify_tx_gha as _V
+class _R:
+    def __init__(self, b): self.b = b
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def read(self): return self.b
+def _flaky(body):
+    calls = []
+    def urlopen(*a, **k):
+        calls.append(1)
+        if len(calls) == 1: raise _hc.IncompleteRead(b"x" * 10)
+        return _R(body)
+    return urlopen, calls
+class _L:
+    def wait(self): pass
+_orig_sleep = _W.time.sleep; _W.time.sleep = lambda s: None
+try:
+    _W.urllib.request.urlopen, c = _flaky(b"[]")
+    assert _W.get_window("mainnet26", 1, 250, _L()) == [] and len(c) == 2
+    _V.urllib.request.urlopen, c = _flaky(b'{"status": "Sealed"}')
+    assert _V.get_result("ab", _L()) == {"status": "Sealed"} and len(c) == 2
+finally:
+    _W.time.sleep = _orig_sleep
+print("incomplete-read retry ok")

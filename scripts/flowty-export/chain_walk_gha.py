@@ -12,7 +12,7 @@ docs/reference/apis-and-cadence.md), WORKERS in flight (default 12).
 Env: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 Usage: chain_walk_gha.py <node: mainnet24..27> <start_height> <end_height>
 """
-import base64, json, os, sys, threading, time, urllib.request, urllib.error
+import base64, http.client, json, os, sys, threading, time, urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor
 
 EVENT = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
@@ -70,7 +70,7 @@ def get_window(node, a, b, lim):
             if isinstance(body, list): return body
         except urllib.error.HTTPError as e:
             if e.code not in (429, 500, 502, 503, 504): raise RuntimeError(f"HTTP {e.code} on {a}-{b}: {e.read()[:200]!r}")
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError, ValueError):
             pass
         time.sleep(min(60, 2 ** k))
     raise RuntimeError(f"window {a}-{b} never answered")
@@ -85,7 +85,7 @@ def rpc(base, key, fn, args):
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             if e.code < 500 and e.code != 429: sys.exit(f"RPC {fn} HTTP {e.code}: {e.read()[:300]!r}")
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError):
             pass
         time.sleep(2 ** k)
     sys.exit(f"RPC {fn} unreachable after retries")
@@ -103,7 +103,7 @@ def post(base, key, events, windows):
             return res
         except urllib.error.HTTPError as e:
             if e.code < 500 and e.code != 429: sys.exit(f"RPC HTTP {e.code}: {e.read()[:300]!r}")
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError):
             pass
         time.sleep(2 ** k)
     sys.exit("RPC unreachable after retries")
