@@ -1,29 +1,45 @@
--- DB invariant: public.get_edition_recent_sales — the edition page's recent
--- sales table. Added 2026-10-02 with the sub_names rewrite. Claims:
+-- 2026-10-04 (PT) — get_edition_recent_sales: cut the page inside a LATERAL so it
+-- reads the page, not every sale of the edition.
 --
---   1. Rows are the edition's sales, newest first, cut at p_limit / p_offset.
---   2. A Top Shot sale's `parallel`: subedition 0 -> 'Standard'; > 0 -> the
---      cataloged Top Shot subedition name; an uncataloged id -> 'Parallel #N';
---      another collection's edition carrying the same subedition id never
---      names it (the body scoped nothing before 2026-10-02).
---   3. #142: a sale whose serial exceeds max(edition circulation, base +
---      parallels total) is refused; one within the base+parallels total stays.
---   4. Non-Top-Shot collections carry parallel = null.
+-- WHY. Vercel, 24 h to 7:35 AM PT 10-04: four `[entity-section] edition recent sales
+-- get_edition_recent_sales failed after retries: canceling statement due to statement
+-- timeout — degrading to empty` on UFC edition pages (cache=MISS, 9:57 PM–1:08 AM PT).
+-- The section degrades honestly (lib/entity/section-empty-copy.ts), but the sales table
+-- is gone for that visitor. The function's own plan joins `ed` to `sales` and only then
+-- applies ORDER BY sold_at DESC LIMIT, so Postgres fetched EVERY sale of the edition and
+-- sorted them. Joe Lauzon UFC FN 2015 (4,357 sales): 3,612 buffers for 30 rows. Four UFC
+-- editions through the function, cold: 7.1 s, 14,913 blocks read. One cold call past the
+-- 8 s statement_timeout on a busy night is the failure above.
 --
--- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261004153000_audit_20261004_edition_recent_sales_reads_only_the_page_not_every_sale.sql).
--- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- WHAT. Only the `recent` CTE's access path moves: the sales read is a CROSS JOIN LATERAL
+-- holding the same #142 predicate, ORDER BY and LIMIT/OFFSET. `ed` is at most one row
+-- (LIMIT 1), so cutting inside the lateral is the same cut. The planner can then walk each
+-- yearly partition's (edition_id, sold_at) index newest-first and stop at the page.
+-- `(SELECT external_id FROM ed)` became `ed.external_id` (the same row). The lateral also
+-- orders by `s.id DESC` after sold_at: (id, sold_at) is the PK, so a same-second tie now has a
+-- fixed order and an OFFSET page cannot repeat or skip a sale (before, 2 of 123 sampled pages
+-- picked a different tied row at the edge; neither body was wrong, both were arbitrary). Nothing else
+-- changes: the Pinnacle branch, sub_names, enriched, the signature, RETURNS, STABLE,
+-- SECURITY DEFINER, search_path, statement_timeout and the ACLs.
 --
--- Runs inside a rolled-back transaction so it leaves no residue.
+-- MEASURED (same edition, same instrument): 3,612 -> 46 buffers for the 30 rows.
+-- Equivalence and the post-apply numbers: see the ledger entry of 2026-10-04 (~8:45 AM PT).
+-- anon-exec: unchanged (get_edition_recent_sales) — CREATE OR REPLACE of an existing fn; ACL preserved.
+--
+-- Revert: re-apply the body from
+--   supabase/migrations/20261003033402_audit_20261002_edition_recent_sales_sub_names_reads_only_the_page_s_subeditions.sql
+-- and repoint the pin (supabase/tests/get_edition_recent_sales.sql, db-invariants-drift-guard).
 
-BEGIN;
+DO $guard$
+DECLARE v_md5 text;
+BEGIN
+  SELECT md5(prosrc) INTO v_md5 FROM pg_proc WHERE oid = 'public.get_edition_recent_sales(uuid,text,integer,integer)'::regprocedure;
+  IF v_md5 IS DISTINCT FROM '5a1cd663f42938ee53ae1ff7c12ed0f0' THEN
+    RAISE EXCEPTION 'get_edition_recent_sales changed since the splice base (live md5 %) -- re-splice', v_md5;
+  END IF;
+END
+$guard$;
 
-CREATE TABLE public.editions (id uuid PRIMARY KEY, collection_id uuid, external_id varchar(100), subedition_id int, subedition_name text, circulation_count int);
-CREATE TABLE public.sales (edition_id uuid, serial_number int, price_usd numeric, marketplace text, source text, buyer_address text, seller_address text, nft_id text, transaction_hash text, sold_at timestamptz, id uuid DEFAULT gen_random_uuid());  -- id: the 2026-10-04 body tiebreaks on it
-CREATE TABLE public.topshot_moment_subeditions (nft_id text PRIMARY KEY, subedition_id int);
-CREATE TABLE public.pinnacle_sales (edition_id text, serial_number int, sale_price_usd numeric, source text, buyer_address text, seller_address text, nft_id text, sold_at timestamptz);
-
--- >>> BEGIN verbatim >>>
 CREATE OR REPLACE FUNCTION public.get_edition_recent_sales(p_collection_id uuid, p_route_slug text, p_limit integer DEFAULT 30, p_offset integer DEFAULT 0)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -149,37 +165,4 @@ BEGIN
 
   RETURN result;
 END;
-$function$;-- <<< END verbatim <<<
-
-INSERT INTO public.editions VALUES
-  ('00000000-0000-0000-0000-0000000000a1', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '10:20',    NULL, NULL,          100),  -- base
-  ('00000000-0000-0000-0000-0000000000a2', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '10:20::3', 3,    'Cosmic',      50),   -- parallel, ceiling 150
-  ('00000000-0000-0000-0000-0000000000a3', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '11:20::3', 3,    'Cosmic',      10),
-  ('00000000-0000-0000-0000-0000000000b1', 'dee28451-5d62-409e-a1ad-a83f763ac070', '77',       3,    'AAA-not-top-shot', 5),   -- other collection, same id
-  ('00000000-0000-0000-0000-0000000000b2', 'dee28451-5d62-409e-a1ad-a83f763ac070', '78',       NULL, NULL,          10);
-INSERT INTO public.topshot_moment_subeditions VALUES ('n1', 0), ('n2', 3), ('n3', 9);
-INSERT INTO public.sales VALUES
-  ('00000000-0000-0000-0000-0000000000a1', 5,   1, 'm', 's', 'b', 'x', 'n1', 't1', '2026-10-01 05:00+00'),
-  ('00000000-0000-0000-0000-0000000000a1', 120, 2, 'm', 's', 'b', 'x', 'n2', 't2', '2026-10-01 04:00+00'),  -- above base 100, within 150
-  ('00000000-0000-0000-0000-0000000000a1', 7,   3, 'm', 's', 'b', 'x', 'n3', 't3', '2026-10-01 03:00+00'),  -- uncataloged subedition 9
-  ('00000000-0000-0000-0000-0000000000a1', 999, 4, 'm', 's', 'b', 'x', 'n4', 't4', '2026-10-01 02:00+00'),  -- above 150: refused
-  ('00000000-0000-0000-0000-0000000000a1', 8,   5, 'm', 's', 'b', 'x', 'n5', 't5', '2026-10-01 01:00+00'),  -- no tms row
-  ('00000000-0000-0000-0000-0000000000b2', 1,   6, 'm', 's', 'b', 'x', 'n2', 't6', '2026-10-01 05:00+00');  -- All Day sale, nft id shared by chance
-
-DO $$
-DECLARE v jsonb;
-BEGIN
-  v := public.get_edition_recent_sales('95f28a17-224a-4025-96ad-adf8a4c63bfd', '10:20', 30, 0);
-  PERFORM _assert_eq(jsonb_array_length(v)::text, '4', 'the serial-999 sale is refused (claim 3)');
-  PERFORM _assert_eq((SELECT string_agg(e->>'transaction_hash', ',' ORDER BY o) FROM jsonb_array_elements(v) WITH ORDINALITY x(e, o)),
-                     't1,t2,t3,t5', 'newest first; serial 120 kept under the 150 base+parallels ceiling (claims 1, 3)');
-  PERFORM _assert_eq((SELECT string_agg(coalesce(e->>'parallel', 'NULL'), ',' ORDER BY o) FROM jsonb_array_elements(v) WITH ORDINALITY x(e, o)),
-                     'Standard,Cosmic,Parallel #9,Standard', 'parallel: 0 -> Standard, 3 -> the Top Shot name, 9 -> fallback, no tms row on a base id -> Standard (claim 2)');
-  PERFORM _assert_eq((SELECT string_agg(e->>'transaction_hash', ',' ORDER BY o) FROM jsonb_array_elements(public.get_edition_recent_sales('95f28a17-224a-4025-96ad-adf8a4c63bfd', '10:20', 2, 1)) WITH ORDINALITY x(e, o)),
-                     't2,t3', 'limit/offset (claim 1)');
-  v := public.get_edition_recent_sales('dee28451-5d62-409e-a1ad-a83f763ac070', '78', 30, 0);
-  PERFORM _assert((SELECT count(*) = 1 AND bool_and(e->'parallel' = 'null'::jsonb) FROM jsonb_array_elements(v) e),
-                  'a non-Top-Shot sale carries parallel = null (claim 4)');
-END $$;
-
-ROLLBACK;
+$function$;
