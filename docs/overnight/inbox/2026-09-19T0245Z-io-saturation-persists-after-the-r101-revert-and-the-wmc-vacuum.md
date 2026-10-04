@@ -47,3 +47,8 @@ Same instrument, 7:46 → 8:07 PM PT: `rpc-ts-listings-atlas-sync` **64.7 s p50 
 - **My own diagnostics were the #5 and #6 readers** — `cron.job_run_details` is 189 MB / 330k rows with no retention since 07-09. A 30-day daily purge is scheduled (`rpc-cron-log-retention`, jobid 512, first run 9:47 PM PT). ⚠ Until then, do NOT aggregate that table for diagnosis under load; read `pipeline_runs` or a single job's last N rows.
 - The other session's new pack lane is not in the top 14.
 - **The estate RELAPSED after the 8:08 PM easing:** 8:10–8:30 PM the Atlas tick failed 4 of 9 at 99.7 s p50, the drain read 39 s. Consistent with the resolver's 5-minute 740 MB walks plus the tick's own temp sorts as the standing load, with vacuums on top.
+
+
+## ✅ HISTORICAL — closed 2026-10-03 ~7:40 PM PT, Claude Code cloud
+
+A 09-19 evening IO-saturation spell on the Small instance. The instance moved to Large on 09-20 (CLAUDE.md: any pre-09-20 22 MB/s-floor finding must be re-derived). The lane it named, `rpc-ts-listings-atlas-sync`, is register R101, RESOLVED: 2,016 ticks / 7 d, 0 failed (re-derived 10-02). Nothing to ship.

@@ -83,3 +83,8 @@ A `job startup timeout` means pg_cron could not obtain a worker slot. ⛔ **The 
 👉 **THE LEVER FOLLOWS THE MECHANISM: reduce job DURATION or job COUNT (i.e. #126), or raise the worker pool — not minute placement.** ⚠ **And the second lever this filing describes gets stronger, not weaker:** with occupancy dominant, lowering `cron.max_running_jobs` toward the real slot count converts a silent starve into an honest decline — still a restart-class change, still not a sandbox action.
 
 ⚠ **MEASURED vs INFERRED, kept apart.** Measured: the settings, the 24 h histogram, the four-mid-flight/seven-refused instant, the class split. **Inferred and NOT directly observed: that the worker pool was actually exhausted at that instant** — there is no instrument here that reports free bgworker slots, so the pool-exhaustion step is read off the config plus the concurrency count, not seen. ⛔ **A future session should not upgrade that to "measured" without an instrument that shows the slots.**
+
+
+## ✅ RESOLVED IN EFFECT — re-measured 2026-10-03 ~7:40 PM PT, Claude Code cloud
+
+`cron.job_run_details`, 7 days: **0 `job startup timeout` of 132,924 pg_cron runs.** The settings did NOT change (`cron.max_running_jobs` 32, `max_worker_processes` 6, `cron.use_background_workers` off, `max_connections` 160). The starvation went away because the instance moved Small → Large on 09-20, which cut job durations (occupancy, the mechanism the 09-20 falsifier section named). Nothing to ship. Lowering `max_running_jobs` is still available as a restart-class change if starvation returns. **Re-open trigger:** any `job startup timeout` row in a 24 h window.
