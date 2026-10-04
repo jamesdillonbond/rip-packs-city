@@ -29,3 +29,20 @@
 ## Docs / memory written
 
 Ledger entries (registry write, Dune block, R103 + partial reads, register drain, R99, daytime health, thread close); register R103/R110/R107/R123/R71/R78/R120/R99; memory `topics/db-write-paths-when-mcp-writes-cancel.md`.
+
+## R103 read-back — taken 10-04 ~7:35 AM PT (Claude Code, Windows box)
+
+Neither the `send_later` nor the overnight pass took the 7:10 PM read. **The aggregate cannot answer it any more.** Top Shot `edition_fmv_current` at 6:56 AM PT 10-04 reads MEDIUM 6,384 / LOW 2,924 (baseline MEDIUM 6,618 / LOW 2,760), the falsifier's direction. But the falsifier's condition is broken: FMV 1.8.0 (`31ec4ec2b`), #169 `sales_market` (`9bb3ff3af`) and about 950k promoted Flowty sales all landed after `4dd098014`.
+
+**Per-edition split instead (one snapshot, one instrument):** Top Shot asks in `edition_offers`, bucketed by which stamp keeps them inside the 7 d bound:
+
+| bucket | asks | recomputed after R103 | MEDIUM share of MEDIUM+LOW (recomputed after) |
+|---|---:|---:|---:|
+| `updated_at` within 7 d | 8,600 | 7,471 | 75.8% |
+| **only `low_ask_confirmed_at` within 7 d (R103's marginal set)** | **2,142** | 1,144 | **65.5%** |
+| neither within 7 d | 2,924 | 1,822 | 53.7% |
+
+- **The mechanism is live.** The share of asks past the bound is 37.1% by `updated_at` alone and 21.4% with R103, against the 34.4% filed.
+- **The marginal set reads 11.8 points more MEDIUM than the stale-both control**, which is the exit direction.
+- **Caveats:** buckets come from today's stamps, not the stamps at compute time, and the verifier's re-observation may select for more active editions. So this is consistent with R103 working, not a causal size.
+- **No revert.** The aggregate MEDIUM decline belongs to the 1.8.0 / #169 / promotion window. 1.8.0's own exit read, `fmv_sales_backtest` from ~10-06, is the instrument for it.

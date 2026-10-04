@@ -1681,7 +1681,7 @@ CLAUDE.md requires **six** sources before believing a function has no caller (`p
 | task | cadence | script |
 |---|---|---|
 | `RPC Deal Board Ingest` | every 3 h from 00:13 PT | `scripts/run-active-listings-ingest.ps1` |
-| `RPC Pinnacle Render Cache Fill` | **every 15 min** | `scripts/pinnacle-render-cache-fill.mjs` |
+| ~~`RPC Pinnacle Render Cache Fill`~~ — **DELETED 2026-10-04** (retired by known-issues #90; it was still firing every 15 min, logging `needed=0`) | was every 15 min | `scripts/pinnacle-render-cache-fill.mjs` |
 | `RPC Panini Ingest` | every 4 h → **every 2 h from 2026-10-03** (once `scripts/panini-schedule-every-2h.ps1` is run on the box): FULL runs at 2/6/10 AM-PM PT, WALK-only runs (cards, no grids/packs) at 12/4/8 AM-PM PT — `lib/chains/panini/run-mode.ts` | `scripts/panini-run.bat` → `scripts/ingest-panini-runner.mjs` |
 | `RPC AllDay Badge Ingest` | daily 05:37 PT | `scripts/run-allday-badge-ingest.ps1` |
 | `RPC Panini Team Walk` (added 2026-09-24; **staging only** — writes `panini_team_listings`, hidden until the accuracy gate) | daily 03:35 PT, 5 stalest teams | `scripts/panini-team-walk.bat` · [franchise-hubs.md](../features/franchise-hubs.md) |
