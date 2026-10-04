@@ -1,6 +1,6 @@
 -- 2026-10-04 (PT) — drop the scratch objects of the Flowty / Dapper incorporation (2026-10-03/04),
 -- including the #171 re-key probes, the sale-block read lane and the UFC chain-naming lane.
--- ⚠ RUN ONLY AFTER the re-promotion ticks are unscheduled (pg_cron 707–710, zz-scratch-*-promote): this file
+-- ⚠ RUN ONLY AFTER the re-promotion ticks are unscheduled (pg_cron 707–710, zz-scratch-*-promote; 708 paused 3:02 PM PT, resumed after the walk lane): this file
 -- refuses to run while any cron.job command still references a flowty_archive scratch object.
 -- The function bodies are preserved in scripts/flowty-export/index_harvest.sql, chain_walk.sql and
 -- promote_tick.sql. The results live in public.sales (sources flowty_chain_v1 / flowty_chain_tx_v1 /
