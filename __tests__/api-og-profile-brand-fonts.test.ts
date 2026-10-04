@@ -113,6 +113,11 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://db.example.co")
   vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "svc-key")
   vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://www.rippackscity.com")
+  // The profile card is an EDGE route, so in production its fonts come over HTTP (the
+  // path these cases stub). vitest.setup.ts defaults NEXT_RUNTIME to nodejs (disk), so
+  // clear it. ⚠ Not "edge": that also switches next/og to its wasm build, which cannot
+  // load under Node.
+  vi.stubEnv("NEXT_RUNTIME", "")
 })
 
 afterEach(() => {

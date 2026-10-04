@@ -96,3 +96,16 @@ if (Number.isFinite(RPC_CLOCK_OFFSET_MS) && RPC_CLOCK_OFFSET_MS !== 0) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(globalThis as any).Date = ShiftedDate
 }
+
+// ── OG BRAND FONTS COME FROM DISK, NOT FROM PRODUCTION ─────────────────────
+// Measured 2026-10-04: every CI run made ~312 requests to
+// https://www.rippackscity.com/fonts/*.ttf (156 per face). Every test that renders an
+// OG card called lib/og/brand-fonts.ts, whose HTTP path fetches our own production
+// CDN. That was the WHOLE "~75,000 `node` requests a week" line in Vercel's
+// egress (ASN Microsoft = GitHub runners, not our lambdas), and it made the
+// suite depend on the live site (the 2026-08-29 render-sweep hang was this fetch).
+// The test process is Node, so take the loader's Node-runtime path: read
+// public/fonts from the checkout. Tests of the HTTP path itself opt out with
+// vi.stubEnv("NEXT_RUNTIME", "") (not "edge", which
+// also switches next/og to a wasm build that cannot load under Node).
+process.env.NEXT_RUNTIME ||= "nodejs"

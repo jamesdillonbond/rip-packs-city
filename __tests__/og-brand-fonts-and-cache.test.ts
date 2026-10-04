@@ -60,7 +60,13 @@ async function freshModule() {
   return import("@/lib/og/brand-fonts")
 }
 
-beforeEach(() => vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://www.rippackscity.com"))
+beforeEach(() => {
+  vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://www.rippackscity.com")
+  // The HTTP path under test runs only off the Node runtime; vitest.setup.ts sets
+  // NEXT_RUNTIME=nodejs so the rest of the suite reads fonts from disk. Cleared, not
+  // "edge" (that switches next/og to a wasm build Node cannot load).
+  vi.stubEnv("NEXT_RUNTIME", "")
+})
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
