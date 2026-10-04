@@ -229,9 +229,20 @@ function historyLabel(h: { packId?: string; packType: string }, products: Panini
   return prod.productName ? `${prod.productName} · ${type}` : prod.name ?? type
 }
 
+/** Panini's sport label ("WOMENS BASKETBALL") as a filter key; null when the pack has none. */
+function sportKey(s: string | null | undefined): string | null {
+  return typeof s === "string" && s.trim() ? s.trim().toUpperCase() : null
+}
+function sportLabel(key: string): string {
+  return key.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 export default function PaniniPackMarket() {
   const [data, setData] = useState<PaniniPackMarketResponse | null>(null)
   const [failed, setFailed] = useState(false)
+  // Sport filter (2026-10-03): the secondary pack listings brought in ~350 pack pages across five
+  // sports; one undifferentiated list stopped being readable. "" = all sports.
+  const [sport, setSport] = useState("")
 
   useEffect(() => {
     let cancelled = false
@@ -268,6 +279,13 @@ export default function PaniniPackMarket() {
   }
 
   const history = data.history
+  const sportCounts = new Map<string, number>()
+  for (const p of data.products) {
+    const sp = sportKey(p.sport)
+    if (sp) sportCounts.set(sp, (sportCounts.get(sp) ?? 0) + 1)
+  }
+  const sports = [...sportCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  const shown = sport ? data.products.filter((p) => sportKey(p.sport) === sport) : data.products
 
   return (
     <div>
@@ -290,7 +308,35 @@ export default function PaniniPackMarket() {
           <Note>No Panini pack products are tracked.</Note>
         </div>
       ) : (
-        data.products.map((p) => <ProductCard key={p.id} p={p} staleAfterHours={data.stale_after_hours} />)
+        <>
+          {sports.length > 1 ? (
+            <div role="group" aria-label="Filter packs by sport" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
+              {[["", data.products.length] as [string, number], ...sports].map(([key, n]) => (
+                <button
+                  key={key || "all"}
+                  type="button"
+                  aria-pressed={sport === key}
+                  onClick={() => setSport(key)}
+                  style={{
+                    fontFamily: mono, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer",
+                    padding: "6px 10px", borderRadius: 6, minHeight: 32,
+                    background: sport === key ? "var(--rpc-red-bg)" : "var(--rpc-surface)",
+                    border: `1px solid ${sport === key ? "var(--rpc-red-border)" : "var(--rpc-border)"}`,
+                    color: "var(--rpc-text-primary)",
+                  }}
+                >
+                  {key ? sportLabel(key) : "All"} · {n}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {sport ? (
+            <div style={{ marginTop: 8 }}>
+              <Note>Showing {shown.length} of {data.products.length} packs.</Note>
+            </div>
+          ) : null}
+          {shown.map((p) => <ProductCard key={p.id} p={p} staleAfterHours={data.stale_after_hours} />)}
+        </>
       )}
       {data.details_error ? (
         <div style={{ marginTop: 8 }}>

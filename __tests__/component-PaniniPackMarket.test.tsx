@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, cleanup, waitFor } from "@testing-library/react"
+import { render, cleanup, waitFor, fireEvent } from "@testing-library/react"
 
 vi.mock("@/components/MomentMedia", () => ({
   default: (p: { thumbnailUrl?: string | null }) => <span data-testid="pack-art" data-src={p.thumbnailUrl ?? ""} />,
@@ -98,6 +98,32 @@ describe("PaniniPackMarket", () => {
     const trail = rows.find((r) => r.includes("$19,900"))
     expect(trail).toContain("Red Mosaic Packs")
     expect(trail).not.toContain("Hobby")
+  })
+
+  it("a sport filter narrows ~350 secondary packs to one sport, and 'All' restores them", async () => {
+    mockFetch(200, payload({ products: [
+      product(),
+      product({ id: "1", packType: "pack", label: "Pack", name: "NBA Red Mosaic Packs", sport: "BASKETBALL", evModeled: false }),
+      product({ id: "2", packType: "pack", label: "Pack", name: "NFL Gold Packs", sport: "FOOTBALL", evModeled: false }),
+      product({ id: "3", packType: "pack", label: "Pack", name: "NFL Silver Packs", sport: "FOOTBALL", evModeled: false }),
+    ] }))
+    const c = await mount()
+    const ids = () => [...c.querySelectorAll('[data-testid^="panini-pack-"]')].map((e) => e.getAttribute("data-testid"))
+    expect(ids()).toHaveLength(4)
+    const chips = [...c.querySelectorAll('[role="group"] button')]
+    expect(chips.map((b) => b.textContent)).toEqual(["All · 4", "Football · 2", "Basketball · 1", "Soccer · 1"])
+    fireEvent.click(chips[1])
+    expect(ids()).toEqual(["panini-pack-2", "panini-pack-3"])
+    expect(c.textContent).toContain("Showing 2 of 4 packs.")
+    expect(chips[1].getAttribute("aria-pressed")).toBe("true")
+    fireEvent.click(chips[0])
+    expect(ids()).toHaveLength(4)
+  })
+
+  it("no filter row when every pack is one sport (nothing to choose)", async () => {
+    mockFetch(200, payload())
+    const c = await mount()
+    expect(c.querySelector('[role="group"]')).toBeNull()
   })
 
   it("renders pack art only when the product carries an image URL", async () => {
