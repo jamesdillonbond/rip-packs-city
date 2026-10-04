@@ -1,0 +1,64 @@
+name: Checkpoint NFT meta load (holder-independent moment -> edition map)
+
+# 2026-10-03. Decodes every Top Shot / All Day / Golazos / UFC Strike NFT from a Flow
+# spork-root checkpoint (public bucket flow-genesis-bootstrap, 16 parts of ~21 GB) and loads
+# the moment -> edition/serial map into public.checkpoint_nft_meta through the
+# service-role-only RPC public.ingest_checkpoint_nft_meta. Lives on GHA because the map is
+# millions of rows: the agent sandbox can decode it but has no bulk path into the DB.
+# Each matrix job streams one part over HTTP Range requests (nothing is stored but the
+# decoded records), then loads them; the loader fails the job on any batch that does not land
+# in full. Decoder + controls: scripts/flow-checkpoint/ckpt_nftmeta.py and migration
+# 20261004020640_checkpoint_nft_meta.sql. workflow_dispatch only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      spork:
+        description: "Spork number whose root checkpoint to decode (Cadence-1.0 format: 26+)"
+        required: true
+        default: "28"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checkpoint-nft-meta-load
+  cancel-in-progress: false
+
+jobs:
+  part:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        part: ["000", "001", "002", "003", "004", "005", "006", "007",
+               "008", "009", "010", "011", "012", "013", "014", "015"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Decode part ${{ matrix.part }}
+        env:
+          SPORK: ${{ github.event.inputs.spork }}
+          PART: ${{ matrix.part }}
+        run: |
+          set -euo pipefail
+          case "$SPORK" in (*[!0-9]*|'') echo "spork must be a number"; exit 2;; esac
+          URL="https://storage.googleapis.com/flow-genesis-bootstrap/mainnet-${SPORK}-execution/public-root-information/root.checkpoint.${PART}"
+          SIZE=$(curl -sfI "$URL" | awk 'tolower($1)=="content-length:"{print $2}' | tr -d '\r') || SIZE=""
+          if [ -z "$SIZE" ] || [ "$SIZE" -le 0 ]; then echo "::error::no Content-Length for $URL"; exit 2; fi
+          echo "part $PART: $SIZE bytes"
+          python3 scripts/flow-checkpoint/ckpt_nftmeta.py "$URL" meta.jsonl 0 "$SIZE" | tail -n 3
+          echo "records: $(wc -l < meta.jsonl)"
+      - name: Load part ${{ matrix.part }}
+        env:
+          SPORK: ${{ github.event.inputs.spork }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::Supabase secrets not configured"; exit 2
+          fi
+          python3 scripts/flow-checkpoint/ckpt_nftmeta_load.py "$SPORK" meta.jsonl
