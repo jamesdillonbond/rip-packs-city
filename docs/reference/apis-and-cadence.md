@@ -66,7 +66,7 @@ Each pair is two contract calls. Probed from Trevor's box 2026-09-04: **250 -> 4
 for the 9,523-row base population, ~90 s total). ⚠ The first production tick shipped at 250 and lost 38
 of 39 calls — read the ERROR BODY, not just the status: the body names the Flow error code.
 
-⚠ **`npm run test:cadence` does NOT walk `supabase/functions/**`.** `scripts/extract-cadence.mjs` covers
+⛔ **RETIRED 2026-10-03 (R99): `npm run test:cadence`, `scripts/extract-cadence.mjs` and the `Cadence lint` CI job were deleted with the dead purchase/offer templates — NOTHING lints inline Cadence now; verify against mainnet per the MCP rule.** Historical: ⚠ **`npm run test:cadence` does NOT walk `supabase/functions/**`.** `scripts/extract-cadence.mjs` covers
 inline Cadence in `app/` and `lib/` only, so a script embedded in an EDGE FUNCTION (or in a route added
 after the extractor was written) is unlinted and a green gate says nothing about it. **Verify by
 EXECUTING it on mainnet through the Cadence MCP** with a row the function will really process, and record

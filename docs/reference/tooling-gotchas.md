@@ -1873,7 +1873,6 @@ npm run test:coverage    # primary gate (what CI ratchets on)
 npm run test:coverage:components   # component gate
 npm run test:coverage:workers      # workers gate
 npm run db:pins:check    # live DB-invariant pin drift (needs service-role key)
-npm run test:cadence     # extract inline Cadence + `flow cadence lint`
 git add -A && git commit -m "feat: ..." && git push origin main   # Git Bash (MINGW64) on Windows
 # Vercel redeploy / env writes — PowerShell Invoke-WebRequest ONLY; see below
 ```

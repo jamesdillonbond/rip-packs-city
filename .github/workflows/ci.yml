@@ -289,15 +289,6 @@ jobs:
       - run: node scripts/check-lane-egress.mjs
         if: ${{ !cancelled() }}
 
-  # Cadence type-check harness for the purchase-moment transaction (canonical
-  # source: lib/chains/flow/cadence/purchase-moment.ts after the 2026-05-30
-  # Phase-D reorg; lib/cadence/purchase-moment.ts is a re-export shim).
-  # The C1/C2 compile errors that docs/cadence-testing.md once described are
-  # fixed (FungibleToken is imported; self.listing is borrowed before its price
-  # is read). Confirmed green locally on 2026-05-30: `npm run test:cadence`
-  # exits 0 (0 errors, 2 allowed string-template warnings). This job is now a
-  # true BLOCKING regression gate — any future type error in the production
-  # transaction fails the build. Revert: re-add `continue-on-error: true`.
   eslint-ratchet:
     name: ESLint ratchet
     runs-on: ubuntu-latest
@@ -335,35 +326,6 @@ jobs:
         run: |
           npx eslint . --format json -o /tmp/eslint-report.json || true
           node scripts/check-eslint-ratchet.mjs --report /tmp/eslint-report.json
-
-  cadence-lint:
-    name: Cadence lint
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      # Flow CLI install lives in .github/actions/install-flow-cli (retry loop,
-      # PATH verification, authenticated version lookup — the header there has
-      # the full history). Both Cadence jobs use the one copy.
-      - name: Install Flow CLI
-        uses: ./.github/actions/install-flow-cli
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      # Populates the gitignored imports/ directory with the mainnet contract
-      # sources (NFTStorefrontV2, FungibleToken, NonFungibleToken,
-      # MetadataViews, ViewResolver) declared in flow.test.json. Without this,
-      # `flow cadence lint` fails on unresolved imports instead of cleanly
-      # surfacing the C1/C2 semantic errors. See docs/cadence-testing.md.
-      - name: Install Cadence test dependencies
-        run: flow dependencies install -f tests/cadence/flow.test.json -y
-      - run: npm run test:cadence
 
   # RPCTradeEscrow contract test suite (cadence/tests/, 16 tests via
   # `flow test`) — first green 2026-07-17 after the two remaining test TODOs

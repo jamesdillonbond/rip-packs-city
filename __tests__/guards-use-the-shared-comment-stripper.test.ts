@@ -38,7 +38,8 @@
 //
 // The remainder are narrow readers, walkers over `supabase/migrations` (outside
 // the affected set), or tools with their own normalisation needs
-// (`extract-cadence`, `check-edge-fn-drift`). Each still deserves migrating; the
+// (`check-edge-fn-drift`; `extract-cadence` was deleted 2026-10-03 with the dead
+// purchase template, R99). Each still deserves migrating; the
 // ratchet is what keeps them visible rather than forgotten.
 
 import { describe, it, expect } from "vitest"

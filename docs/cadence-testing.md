@@ -1,5 +1,7 @@
 # Cadence Testing — purchase-moment regression net
 
+> ⛔ **RETIRED 2026-10-03 (register R99).** The purchase and offer templates (`purchase-moment.ts`, `make-offer-topshot.ts`, `make-offer-flowty.ts`), `scripts/extract-cadence.mjs`, `npm run test:cadence`, the `Cadence lint` CI job and `tests/cadence/` were deleted. RPC is read-only, the templates had no production importer, and this harness only type-checked dead code. Everything below is history. The one remaining write template is `lib/chains/flow/cadence/gift-moment.ts` (admin-signed giveaway delivery), pinned by `__tests__/cadence-transaction-templates.test.ts` and `__tests__/giveaways-deliver-cadence.test.ts`. The separate RPCTradeEscrow suite (`cadence/tests/`, `npm run test:cadence:escrow`) is unaffected.
+
 ## Scope
 
 This harness is a **type-check-only regression net** for the purchase-moment Cadence transaction. It does not execute the transaction on an emulator, does not simulate a Top Shot listing, and does not exercise the Dapper meta-transaction co-signer. Behavioral testing belongs in a future session that has access to a Dapper testnet co-signer; we do not have that today.
