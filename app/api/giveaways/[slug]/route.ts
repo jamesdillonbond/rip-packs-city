@@ -87,7 +87,13 @@ async function provenWallet(req: NextRequest, userId: string, proof: unknown): P
 
 async function accountsFor(wallet: string) {
   try {
-    const accounts = (await discoverAccounts(wallet)).map((a) => ({ address: a.address, role: a.role, can_receive: a.topshot_count != null }))
+    const accounts = (await discoverAccounts(wallet)).map((a) => ({
+      address: a.address,
+      role: a.role,
+      name: a.name,
+      dapper: a.dapper,
+      can_receive: a.topshot_count != null,
+    }))
     return NextResponse.json({ wallet, accounts }, { headers: NO_STORE })
   } catch {
     return chainUnavailable()

@@ -310,8 +310,8 @@ describe("AdminGiveawaysClient — sign in with Flow Wallet to build a pool (202
     parent: "0x00000000000000bb",
     accounts: [
       { address: "0x00000000000000bb", role: "flow_wallet", onchain_count: 0, cache_count: 0, giftable: 0, excluded: { locked: 0, not_held: 0 } },
-      { address: "0x00000000000000aa", role: "linked", onchain_count: 15547, cache_count: 2, giftable: 2, excluded: { locked: 0, not_held: 0 } },
-      { address: "0x00000000000000cc", role: "linked", onchain_count: 12, cache_count: 0, giftable: 0, excluded: { locked: 0, not_held: 0 } },
+      { address: "0x00000000000000aa", role: "linked", name: "Dapper Wallet", dapper: true, onchain_count: 15547, cache_count: 2, giftable: 2, excluded: { locked: 0, not_held: 0 } },
+      { address: "0x00000000000000cc", role: "linked", name: "Creator Hub", dapper: false, onchain_count: 12, cache_count: 0, giftable: 0, excluded: { locked: 0, not_held: 0 } },
     ],
     candidates: CANDIDATES.candidates.map((c) => ({ ...c, source_wallet: "0x00000000000000aa" })),
   }
@@ -338,12 +338,13 @@ describe("AdminGiveawaysClient — sign in with Flow Wallet to build a pool (202
     render(<AdminGiveawaysClient />)
     await screen.findByText("No drops yet.")
     fireEvent.click(screen.getByRole("button", { name: /connect flow wallet \(loads it and every linked account\)/i }))
-    expect(await screen.findByText("Flow Wallet 0x0000…00bb: 0 Top Shot moments")).toBeTruthy()
+    expect(await screen.findByText("Flow Wallet 0x00000000000000bb: 0 Top Shot moments")).toBeTruthy()
     expect(asked).toBe("0x00000000000000bb")
-    expect(screen.getByText("Linked account 0x0000…00aa: 15,547 Top Shot moments on chain · 2 unlocked and giftable now")).toBeTruthy()
+    // the Dapper account is called out by name (read on chain), with its full address
+    expect(screen.getByText("Dapper wallet 0x00000000000000aa: 15,547 Top Shot moments on chain · 2 unlocked and giftable now")).toBeTruthy()
     // held on chain but not in RPC's cache: never shown as empty
-    expect(screen.getByText(/Linked account 0x0000…00cc: 12 Top Shot moments on chain, not indexed by RPC yet/)).toBeTruthy()
-    expect(screen.getAllByText("Linked account 0x0000…00aa").length).toBe(2) // the "From" column, one per candidate
+    expect(screen.getByText(/Linked account “Creator Hub” 0x00000000000000cc: 12 Top Shot moments on chain, not indexed by RPC yet/)).toBeTruthy()
+    expect(screen.getAllByText("Dapper wallet 0x00000000000000aa").length).toBe(2) // the "From" column, one per candidate
     const numbers = screen.getAllByRole("spinbutton")
     fireEvent.change(numbers[0], { target: { value: "1" } })
     fireEvent.change(numbers[1], { target: { value: "2" } })

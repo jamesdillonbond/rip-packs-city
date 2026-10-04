@@ -222,9 +222,9 @@ describe("GiveawayClient — claim with Flow Wallet, proven by account proof (20
   const NONCE = { nonce: "ab".repeat(32), issuedAt: "2026-10-03T17:00:00.000Z" }
   const PROOF = { address: FW, nonce: NONCE.nonce, signatures: [{ addr: FW, keyId: 0, signature: "cd" }] }
   const ACCOUNTS = [
-    { address: FW, role: "flow_wallet", can_receive: true },
-    { address: DAPPER, role: "linked", can_receive: true },
-    { address: NOTS, role: "linked", can_receive: false },
+    { address: FW, role: "flow_wallet", name: null, dapper: false, can_receive: true },
+    { address: DAPPER, role: "linked", name: "Dapper Wallet", dapper: true, can_receive: true },
+    { address: NOTS, role: "linked", name: "Creator Hub", dapper: false, can_receive: false },
   ]
   afterEach(() => {
     connectClaimWallet.mockReset()
@@ -262,8 +262,16 @@ describe("GiveawayClient — claim with Flow Wallet, proven by account proof (20
     expect(radios.map((r) => r.value)).toEqual([FW, DAPPER, NOTS])
     expect(radios[0].checked).toBe(true)
     expect(radios[2].disabled).toBe(true)
-    expect(screen.getByText(/can't receive Top Shot moments yet/)).toBeTruthy()
+    expect(screen.getByText(/can't receive Top Shot moments yet/i)).toBeTruthy()
     expect(screen.queryByPlaceholderText("username")).toBeNull()
+    // every account by kind with its FULL address; the Dapper wallet is called out (Trevor, 2026-10-03)
+    expect(screen.getByText("My Flow Wallet")).toBeTruthy()
+    expect(screen.getByText("My Dapper wallet")).toBeTruthy()
+    expect(screen.getByText(/moments sent here show in the Top Shot app/)).toBeTruthy()
+    expect(screen.getByText("Linked account “Creator Hub”")).toBeTruthy()
+    for (const addr of [DAPPER, NOTS]) expect(screen.getByText(addr)).toBeTruthy()
+    expect(screen.getAllByText(FW).length).toBe(2) // "Signed in with" + its own row
+    expect(screen.queryByText(/…/)).toBeNull()
     fireEvent.click(radios[1])
     fireEvent.click(screen.getByRole("checkbox"))
     fireEvent.click(screen.getByRole("button", { name: /claim my pack/i }))

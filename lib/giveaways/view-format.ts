@@ -74,16 +74,35 @@ export function errorText(e: unknown): string {
 export interface AccountLineInput {
   address: string
   role: "flow_wallet" | "linked"
+  name?: string | null
+  dapper?: boolean
   onchain_count: number | null
   cache_count: number
   giftable: number
 }
 
-const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+export interface AccountKindInput {
+  role: "flow_wallet" | "linked"
+  /** The account's on-chain name, when it has one ("Dapper Wallet", "Creator Hub"). */
+  name?: string | null
+  /** A Dapper-created account, read on chain (lib/giveaways/linked-accounts.ts). */
+  dapper?: boolean
+}
 
-/** "Flow Wallet 0x3d0b…3484" / "Linked account 0xbd94…50ac" */
-export function accountName(a: { address: string; role: "flow_wallet" | "linked" }): string {
-  return `${a.role === "flow_wallet" ? "Flow Wallet" : "Linked account"} ${shortAddr(a.address)}`
+/**
+ * What kind of account this is, in a collector's words (Trevor, 2026-10-03:
+ * "specifically call out which is the dapper wallet"): "Dapper wallet", "Flow
+ * Wallet", or a linked account under its own on-chain name.
+ */
+export function accountKind(a: AccountKindInput): string {
+  if (a.dapper) return "Dapper wallet"
+  if (a.role === "flow_wallet") return "Flow Wallet"
+  return a.name ? `Linked account “${a.name}”` : "Linked account"
+}
+
+/** "Dapper wallet 0xbd94cade097e50ac" / "Flow Wallet 0x3d0b274c80263484": always the FULL address. */
+export function accountName(a: AccountKindInput & { address: string }): string {
+  return `${accountKind(a)} ${a.address}`
 }
 
 /**

@@ -216,6 +216,8 @@ export async function listCheckedCandidates(
 export interface AccountSummary {
   address: string
   role: "flow_wallet" | "linked"
+  name: string | null
+  dapper: boolean
   /** Top Shot moments on chain right now; null = no Top Shot collection there. */
   onchain_count: number | null
   /** Unlocked moments RPC's cache lists for it (the candidates come from these). */
@@ -235,7 +237,7 @@ export type SourcedCandidate = CheckedCandidates["candidates"][number] & { sourc
  */
 export async function listCandidatesAcross(
   db: SupabaseClient,
-  accounts: readonly { address: string; role: "flow_wallet" | "linked"; topshot_count: number | null }[],
+  accounts: readonly { address: string; role: "flow_wallet" | "linked"; topshot_count: number | null; name?: string | null; dapper?: boolean }[],
   read: HoldingsReader = readTopShotHoldings,
 ): Promise<{ candidates: SourcedCandidate[]; accounts: AccountSummary[] }> {
   const candidates: SourcedCandidate[] = []
@@ -246,6 +248,8 @@ export async function listCandidatesAcross(
     summaries.push({
       address: a.address,
       role: a.role,
+      name: a.name ?? null,
+      dapper: a.dapper === true,
       onchain_count: a.topshot_count,
       cache_count: r.cache_count,
       giftable: r.candidates.length,

@@ -319,7 +319,14 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
                     <td style={td}>{usd(c.fmv_usd)}</td>
                     {connected ? (
                       <td style={td}>
-                        {c.source_wallet ? accountName({ address: c.source_wallet, role: c.source_wallet === connected ? "flow_wallet" : "linked" }) : "—"}
+                        {c.source_wallet
+                          ? accountName(
+                              accounts?.find((a) => a.address === c.source_wallet) ?? {
+                                address: c.source_wallet,
+                                role: c.source_wallet === connected ? "flow_wallet" : "linked",
+                              },
+                            )
+                          : "—"}
                       </td>
                     ) : null}
                   </tr>

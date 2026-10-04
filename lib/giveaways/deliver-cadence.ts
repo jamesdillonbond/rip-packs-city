@@ -142,18 +142,35 @@ ${deliverLoop("provider")}
  * -1 = no Top Shot collection there. Read-only; verified on mainnet 2026-10-03
  * against Trevor's Flow Wallet (itself + 2 redeemed children) and a control
  * address (itself only).
+ *
+ * Each account also carries its on-chain NAME (the parent's display for the
+ * link, else the child's own) and whether it is a DAPPER account (it publishes a
+ * Dapper Utility Coin receiver), so a winner can tell which one is their Dapper
+ * wallet (Trevor, 2026-10-03). Mainnet, same evening: Flow Wallet ["0","",""],
+ * 0xe486… ["-1","Creator Hub",""], 0xbd94… ["15549","Dapper Wallet","dapper"].
  */
 export const LINKED_ACCOUNTS_SCRIPT = `import HybridCustody from 0xd8a7e05a7ac670c0
 import TopShot from 0x0b2a3299cc857e29
+import FungibleToken from 0xf233dcee88fe0abe
+import MetadataViews from 0x1d7e57aa55817448
+import ViewResolver from 0x1d7e57aa55817448
 
-access(all) fun main(parent: Address): {Address: Int} {
-    let out: {Address: Int} = {}
-    out[parent] = topShotCount(parent)
+/// Per account: [Top Shot moment count (-1 = no collection), on-chain name, "dapper" or ""].
+access(all) fun main(parent: Address): {Address: [String]} {
+    let out: {Address: [String]} = {}
+    out[parent] = [topShotCount(parent).toString(), "", isDapper(parent) ? "dapper" : ""]
     if let manager = getAccount(parent).capabilities.borrow<&{HybridCustody.ManagerPublic}>(HybridCustody.ManagerPublicPath) {
         for child in manager.getChildAddresses() {
-            if let owned = getAccount(child).capabilities.borrow<&{HybridCustody.OwnedAccountPublic}>(HybridCustody.OwnedAccountPublicPath) {
+            if let owned = getAccount(child).capabilities.borrow<&{HybridCustody.OwnedAccountPublic, ViewResolver.Resolver}>(HybridCustody.OwnedAccountPublicPath) {
                 if owned.getRedeemedStatus(addr: parent) == true {
-                    out[child] = topShotCount(child)
+                    // the name the parent gave the link, else the one the child set for itself
+                    var name = ""
+                    if let d = manager.getChildAccountDisplay(address: child) {
+                        name = d.name
+                    } else if let d = owned.resolveView(Type<MetadataViews.Display>()) as! MetadataViews.Display? {
+                        name = d.name
+                    }
+                    out[child] = [topShotCount(child).toString(), name, isDapper(child) ? "dapper" : ""]
                 }
             }
         }
@@ -166,6 +183,11 @@ access(all) fun topShotCount(_ a: Address): Int {
         return c.getIDs().length
     }
     return -1
+}
+
+/// A Dapper-created account publishes a Dapper Utility Coin receiver; a Flow Wallet account does not.
+access(all) fun isDapper(_ a: Address): Bool {
+    return getAccount(a).capabilities.get<&{FungibleToken.Receiver}>(/public/dapperUtilityCoinReceiver).check()
 }
 `
 

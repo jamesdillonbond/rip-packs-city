@@ -8,11 +8,11 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import type { PublicDropView } from "@/lib/giveaways/store"
-import { accountName, deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
+import { accountKind, deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
 import PackRevealClient from "./PackRevealClient"
 
 type View = PublicDropView & { signed_in: boolean }
-type ClaimAccount = { address: string; role: "flow_wallet" | "linked"; can_receive: boolean }
+type ClaimAccount = { address: string; role: "flow_wallet" | "linked"; name?: string | null; dapper?: boolean; can_receive: boolean }
 type ClaimNonce = { nonce: string; issuedAt: string }
 /** The wallet's FCL account proof plus the issue time of its nonce (the server re-derives the nonce from it). */
 type ClaimProof = { address: string; nonce: string; signatures: unknown[]; issuedAt: string }
@@ -270,9 +270,15 @@ export default function GiveawayClient({ slug }: { slug: string }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 440 }}>
               {flowWallet && accounts ? (
                 <fieldset style={{ border: "1px solid var(--rpc-border)", borderRadius: 6, padding: "8px 10px", margin: 0 }}>
-                  <legend style={muted}>Where should your pack go? (Flow Wallet {flowWallet})</legend>
+                  <legend style={muted}>Where should your pack go?</legend>
+                  <p style={{ ...muted, margin: "0 0 8px" }}>
+                    Signed in with Flow Wallet <span style={{ fontFamily: MONO, wordBreak: "break-all" }}>{flowWallet}</span>
+                  </p>
                   {accounts.map((a) => (
-                    <label key={a.address} style={{ ...muted, display: "flex", gap: 8, alignItems: "flex-start", opacity: a.can_receive ? 1 : 0.6 }}>
+                    <label
+                      key={a.address}
+                      style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "6px 0", fontSize: 14, opacity: a.can_receive ? 1 : 0.6 }}
+                    >
                       <input
                         type="radio"
                         name="destination"
@@ -281,9 +287,11 @@ export default function GiveawayClient({ slug }: { slug: string }) {
                         disabled={!a.can_receive}
                         onChange={() => setDestination(a.address)}
                       />
-                      <span>
-                        {a.role === "flow_wallet" ? "My Flow Wallet" : "My linked account (e.g. Dapper, shows in Top Shot)"} · {accountName(a)}
-                        {a.can_receive ? "" : " · can't receive Top Shot moments yet"}
+                      <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                        <strong style={{ color: "var(--rpc-text-primary)" }}>{a.dapper || a.role === "flow_wallet" ? `My ${accountKind(a)}` : accountKind(a)}</strong>
+                        {a.dapper ? <span style={muted}>Your Top Shot account: moments sent here show in the Top Shot app</span> : null}
+                        <span style={{ ...muted, fontFamily: MONO, wordBreak: "break-all" }}>{a.address}</span>
+                        {a.can_receive ? null : <span style={muted}>Can&apos;t receive Top Shot moments yet</span>}
                       </span>
                     </label>
                   ))}

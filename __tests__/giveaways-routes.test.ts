@@ -194,9 +194,9 @@ describe("claim with Flow Wallet, proven by account proof (Trevor, 2026-10-03)",
   const NOTS = "0x00000000000000e3"
   const PROOF = { address: FW, nonce: "ab".repeat(32), issuedAt: "2026-10-03T17:00:00.000Z", signatures: [] }
   const ACCOUNTS = [
-    { address: FW, role: "flow_wallet", topshot_count: 0 },
-    { address: DAPPER, role: "linked", topshot_count: 120 },
-    { address: NOTS, role: "linked", topshot_count: null },
+    { address: FW, role: "flow_wallet", topshot_count: 0, name: null, dapper: false },
+    { address: DAPPER, role: "linked", topshot_count: 120, name: "Dapper Wallet", dapper: true },
+    { address: NOTS, role: "linked", topshot_count: null, name: "Creator Hub", dapper: false },
   ]
   const claim = (body: unknown) => publicRoute.POST(post(url, body), slugCtx("test-drop"))
   const accounts = (proof: unknown = PROOF) => claim({ intent: "accounts", proof })
@@ -230,9 +230,9 @@ describe("claim with Flow Wallet, proven by account proof (Trevor, 2026-10-03)",
     expect(await res.json()).toEqual({
       wallet: FW,
       accounts: [
-        { address: FW, role: "flow_wallet", can_receive: true },
-        { address: DAPPER, role: "linked", can_receive: true },
-        { address: NOTS, role: "linked", can_receive: false },
+        { address: FW, role: "flow_wallet", name: null, dapper: false, can_receive: true },
+        { address: DAPPER, role: "linked", name: "Dapper Wallet", dapper: true, can_receive: true },
+        { address: NOTS, role: "linked", name: "Creator Hub", dapper: false, can_receive: false },
       ],
     })
   })

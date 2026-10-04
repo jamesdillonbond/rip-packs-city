@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { checklistRows, checklistState } from "@/lib/giveaways/checklist"
 import { claimOutcomeResponse } from "@/lib/giveaways/claim-copy"
 import { parseDraftBody } from "@/lib/giveaways/draft-input"
-import { accountLine, accountName, deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
+import { accountKind, accountLine, accountName, deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
 import { chaseMomentId, openedKey, revealOrder, topShotMomentImage } from "@/lib/giveaways/reveal"
 import { commitmentHash } from "@/lib/giveaways/seal"
 import { execFileSync } from "node:child_process"
@@ -202,16 +202,26 @@ describe("giveaways/draft-input — a pool across linked accounts (2026-10-03)",
 describe("giveaways/view-format — account lines (2026-10-03)", () => {
   const a = (over: Partial<Parameters<typeof accountLine>[0]>) =>
     accountLine({ address: "0x3d0b274c80263484", role: "flow_wallet", onchain_count: 0, cache_count: 0, giftable: 0, ...over })
-  it("names the account by role and a short address", () => {
-    expect(accountName({ address: "0xbd94cade097e50ac", role: "linked" })).toBe("Linked account 0xbd94…50ac")
-    expect(accountName({ address: "0x3d0b274c80263484", role: "flow_wallet" })).toBe("Flow Wallet 0x3d0b…3484")
+  it("names the account by kind and its FULL address; the Dapper wallet is called out (Trevor, 2026-10-03)", () => {
+    expect(accountName({ address: "0x3d0b274c80263484", role: "flow_wallet" })).toBe("Flow Wallet 0x3d0b274c80263484")
+    expect(accountName({ address: "0xbd94cade097e50ac", role: "linked", name: "Dapper Wallet", dapper: true })).toBe("Dapper wallet 0xbd94cade097e50ac")
+    expect(accountName({ address: "0xe48652ecda3b296d", role: "linked", name: "Creator Hub", dapper: false })).toBe(
+      "Linked account “Creator Hub” 0xe48652ecda3b296d",
+    )
+    expect(accountName({ address: "0xe48652ecda3b296d", role: "linked" })).toBe("Linked account 0xe48652ecda3b296d")
+  })
+  it("Dapper is decided by the on-chain flag, never by a name someone typed", () => {
+    expect(accountKind({ role: "linked", name: "Dapper Wallet", dapper: false })).toBe("Linked account “Dapper Wallet”")
+    expect(accountKind({ role: "linked", name: null, dapper: true })).toBe("Dapper wallet")
   })
   it("distinguishes no collection, empty, NOT INDEXED, and giftable — never calls an unindexed account empty", () => {
-    expect(a({ onchain_count: null })).toBe("Flow Wallet 0x3d0b…3484: no Top Shot collection")
-    expect(a({ onchain_count: 0 })).toBe("Flow Wallet 0x3d0b…3484: 0 Top Shot moments")
-    expect(a({ onchain_count: 12, cache_count: 0 })).toBe("Flow Wallet 0x3d0b…3484: 12 Top Shot moments on chain, not indexed by RPC yet, so none can be picked here")
-    expect(a({ role: "linked", onchain_count: 15547, cache_count: 34, giftable: 28 })).toBe(
-      "Linked account 0x3d0b…3484: 15,547 Top Shot moments on chain · 28 unlocked and giftable now",
+    expect(a({ onchain_count: null })).toBe("Flow Wallet 0x3d0b274c80263484: no Top Shot collection")
+    expect(a({ onchain_count: 0 })).toBe("Flow Wallet 0x3d0b274c80263484: 0 Top Shot moments")
+    expect(a({ onchain_count: 12, cache_count: 0 })).toBe(
+      "Flow Wallet 0x3d0b274c80263484: 12 Top Shot moments on chain, not indexed by RPC yet, so none can be picked here",
+    )
+    expect(a({ role: "linked", dapper: true, onchain_count: 15547, cache_count: 34, giftable: 28 })).toBe(
+      "Dapper wallet 0x3d0b274c80263484: 15,547 Top Shot moments on chain · 28 unlocked and giftable now",
     )
   })
 })
