@@ -1,4 +1,4 @@
-# Inbox index — 559 live filings
+# Inbox index — 561 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,11 @@ failure it documents.
 
 ---
 
-## 2026-10-04 — 1 filing
+## 2026-10-04 — 3 filings
+
+- [🟢 **Panini insight boards timing out, snapshot stale 165 min — RESOLVED: three covering indexes (`20261004123243` / `124114` / `124411`); deal board 23.8 s → 0.99 s. Not the transient the overnight pass called it.**](2026-10-04T0609Z-panini-insight-boards-timeout-and-stale-since-0407z.md) — *(daytime monitor, ~11:09 PM PT 10-03; found untracked in `archive/` and moved back by Claude Code ~7:20 AM PT 10-04.)* Snapshot rebuilding hourly since 5:52 AM PT, all ticks ok.
+
+- [🟢 **`pg_net_http_403` Firestore-shaped `PERMISSION_DENIED` cluster — ATTRIBUTED: the finished Flowty Firestore-index backfill (scratch pg_cron 689/690), not `sync-nba-projections`; 0 such 403s in the retained window**](2026-10-04T0010Z-daytime-monitor-pg_net-403-firestore-permission-denied-cluster.md) — *(daytime monitor, ~5:05 PM PT 10-03; found untracked in `archive/` and moved back by Claude Code ~7:20 AM PT 10-04.)* Also: the `topshot-pack-supply-atlas` single-request partials are the Cloudflare base rate.
 
 - [**✅ FIXED 10-04 ~6:40 AM PT — ⛔ the 75k was CI's vitest (ASN Microsoft), not our lambdas; tests now read fonts from disk; the lambda disk read (6:15) covers the ~1k/week that was ours** 🟡 **OG cards fetch their own brand fonts over HTTP ~75,000 times a week (5.5 GB of self-traffic, `node` user agent) — bundle them; NOT shipped because the loader fails SOFT and only a production render can prove the fix**](2026-10-04T0350Z-og-cards-fetch-their-own-fonts-over-http-75k-times-a-week.md) — *(Claude Code cloud, ~8:50 PM PT 10-03. Measured on Vercel observability while sizing the IPFS-art egress.)* The #3 and #6 egress lines on the site are our own lambdas fetching `/fonts/*.ttf` on every cold start (`lib/og/brand-fonts.ts`, trophy-case PDF). Fix spec + read-back in the filing.
 
