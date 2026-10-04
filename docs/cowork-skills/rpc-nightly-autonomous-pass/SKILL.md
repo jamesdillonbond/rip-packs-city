@@ -32,7 +32,7 @@ Never assume last night's environment. Establish, in one batch:
 
 ## 1. Orient
 
-Real time from the DB (`select now()`), never the prompt. Then: take the LOCK, check FREEZE, read `docs/overnight/ledger.md` **top matter** (correct it if stale — appending under a stale "Nothing shipped" header is what the next pass acts on), `metrics-latest.json`, and every un-archived file in `docs/overnight/inbox/`. Items with a SUPERSEDED banner need no action; read the banner, not the body.
+Real time from the DB (`select now()`), never the prompt. Then: take the LOCK, check FREEZE, read `docs/overnight/ledger.md` **top matter** (correct it if stale — appending under a stale "Nothing shipped" header is what the next pass acts on), `metrics-latest.json`, and the inbox **through `docs/overnight/inbox/INDEX.md`**: open every filing dated since the last pass, plus any older INDEX entry that still carries no ✅/🟢/↪ marker. ⛔ **The inbox is APPEND-ONLY — never `git mv` a filing to `archive/`** (they are cited by path from CLAUDE.md, migrations and live code; `__tests__/inbox-is-append-only-since-the-rule.test.ts` reds CI, as it did on 2026-10-04 when a pass archived one). Retire a filing by appending a ✅ RESOLVED section to it and a marker to its INDEX line. Items with a SUPERSEDED banner need no action; read the banner, not the body.
 
 ## 2. Health sweep — and the instruments that lie
 
