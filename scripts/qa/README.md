@@ -65,6 +65,11 @@ Every counter in a record is a hypothesis; the screenshot is the evidence.
   `/insights/offer-spread` "$0.00" is the bid − floor spread when the bid equals the ask;
   `/insights/pack-reality` "$0" is the "delivered nothing" bucket; `/ufc/analytics`
   "TOTAL VOLUME $0.00" is true (UFC dormant since 2026-05-13, scanners retired 08-27).
+  **Added 2026-10-04 (390 + 320 px sweeps, 228 paths):** `/insights` "9% of rips pull $0"
+  (the pack-reality stat); `/insights/market` chart axis "$0.00" and the copy "(price > $0)";
+  `/<c>/packs` the "Show $0 / reward packs" filter chip. Every "Unknown" on an entity
+  page's market-cap tile is its honest unknown-cap state ("no burn count published" /
+  "≤ $X on minted supply"), not a missing value.
   An anonymous `401 /api/profile/saved-wallets?collectionId=…` on every `/<c>/collection`
   and `/<c>/sets` page is the signed-in probe (`lib/profile/saved-wallet-for-collection.ts`;
   no client session hook exists), not a failure. A `404 media.nflallday.com/editions/<id>`
