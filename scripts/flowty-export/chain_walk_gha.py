@@ -19,6 +19,7 @@ EVENT = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
 RPS = float(os.environ.get("RPS", "6"))
 WORKERS = int(os.environ.get("WORKERS", "12"))
 POST_EVERY = 40
+MAX_MINUTES = float(os.environ.get("MAX_MINUTES", "0"))   # 0 = no budget; else stop cleanly, resume on re-dispatch
 
 
 class Limiter:
@@ -75,6 +76,21 @@ def get_window(node, a, b, lim):
     raise RuntimeError(f"window {a}-{b} never answered")
 
 
+def rpc(base, key, fn, args):
+    req = urllib.request.Request(base + fn, data=json.dumps(args).encode(), headers={
+        "apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    for k in range(7):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code < 500 and e.code != 429: sys.exit(f"RPC {fn} HTTP {e.code}: {e.read()[:300]!r}")
+        except (urllib.error.URLError, TimeoutError, OSError):
+            pass
+        time.sleep(2 ** k)
+    sys.exit(f"RPC {fn} unreachable after retries")
+
+
 def post(base, key, events, windows):
     body = json.dumps({"p_events": events, "p_windows": windows}).encode()
     req = urllib.request.Request(base + "ingest_flowty_chain_walk", data=body, headers={
@@ -98,16 +114,24 @@ def main():
     base = os.environ["NEXT_PUBLIC_SUPABASE_URL"].rstrip("/") + "/rest/v1/rpc/"
     key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
     wins = [(a, min(a + 249, end)) for a in range(start, end + 1, 250)]
+    # resume: skip windows a previous run already recorded (coverage is written atomically with events)
+    done = set(rpc(base, key, "flowty_chain_walk_covered", {"p_from": start, "p_to": end}) or [])
+    todo = [w for w in wins if w[0] not in done]
+    print(f"{node} {start}-{end}: {len(wins)} windows, {len(done)} already covered, {len(todo)} to walk", flush=True)
     lim = Limiter(RPS); t0 = time.time()
     pend_ev, pend_win = [], []; tot_ev = tot_win = tot_new = 0; lock = threading.Lock()
 
+    deadline = t0 + MAX_MINUTES * 60 if MAX_MINUTES else None
+
     def one(w):
+        if deadline and time.time() > deadline: return w, None, None
         body = get_window(node, w[0], w[1], lim)
         n_all, ev = parse(body)
         return w, n_all, ev
 
     with ThreadPoolExecutor(WORKERS) as ex:
-        for w, n_all, ev in ex.map(one, wins):
+        for w, n_all, ev in ex.map(one, todo):
+            if n_all is None: continue          # past the time budget: left for the next run
             pend_ev.extend(ev); pend_win.append({"win_start": w[0], "win_end": w[1], "n_events": n_all, "n_purchased": len(ev)})
             if len(pend_win) >= POST_EVERY:
                 res = post(base, key, pend_ev, pend_win)
@@ -117,8 +141,9 @@ def main():
     if pend_win:
         res = post(base, key, pend_ev, pend_win)
         tot_win += len(pend_win); tot_ev += len(pend_ev); tot_new += res["events"]
-    print(f"DONE {node} {start}-{end}: {tot_win}/{len(wins)} windows, {tot_ev} purchases ({tot_new} new)")
-    if tot_win != len(wins): sys.exit("incomplete")
+    left = len(todo) - tot_win
+    print(f"DONE {node} {start}-{end}: {tot_win}/{len(todo)} windows walked this run, {tot_ev} purchases ({tot_new} new); {left} left for a re-dispatch")
+    if left and not deadline: sys.exit("incomplete")
 
 
 if __name__ == "__main__":
