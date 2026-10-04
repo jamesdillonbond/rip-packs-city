@@ -1463,7 +1463,7 @@ const PINS = [
   {
     fn: "detect_concentration_buys",
     test: "supabase/tests/detect_concentration_buys.sql",
-    migration: "supabase/migrations/20260802200500_audit_20260802_snapshot_detect_concentration_buys.sql",
+    migration: "supabase/migrations/20261004004247_audit_20261003_buyer_signals_exclude_buyback_wallets.sql",
   },
   {
     fn: "detect_unusual_edition_volume",
@@ -1473,12 +1473,12 @@ const PINS = [
   {
     fn: "detect_new_edition_early_buyers",
     test: "supabase/tests/detect_new_edition_early_buyers.sql",
-    migration: "supabase/migrations/20260802201500_audit_20260802_snapshot_detect_new_edition_early_buyers.sql",
+    migration: "supabase/migrations/20261004004247_audit_20261003_buyer_signals_exclude_buyback_wallets.sql",
   },
   {
     fn: "detect_topshot_sweeps",
     test: "supabase/tests/detect_topshot_sweeps.sql",
-    migration: "supabase/migrations/20260925165425_audit_20260925_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
+    migration: "supabase/migrations/20261004004247_audit_20261003_buyer_signals_exclude_buyback_wallets.sql",
   },
   {
     fn: "compute_pinnacle_serial_fmv_multipliers",
@@ -2872,6 +2872,13 @@ const PINS = [
     fn: "run_topshot_sellback_edition_reads",
     test: "supabase/tests/run_topshot_sellback_edition_reads.sql",
     migration: "supabase/migrations/20261003211651_topshot_sellback_edition_reads_name_staged_sellbacks_from_the_chain.sql",
+  },
+  {
+    // Added 2026-10-03 (#169). The buyer board excludes registry buy-back wallets (unless contracts
+    // are asked for); the seller board keeps sell-back proceeds; the registry is per collection.
+    fn: "analytics_sales_leaderboard",
+    test: "supabase/tests/analytics_sales_leaderboard.sql",
+    migration: "supabase/migrations/20261004004247_audit_20261003_buyer_signals_exclude_buyback_wallets.sql",
   },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is

@@ -27,6 +27,16 @@ CREATE TABLE sales (
   collection_id    uuid
 );
 
+-- #169 (2026-10-03): buyer signals read public.sales_market (sales minus issuer buy-backs).
+CREATE TABLE IF NOT EXISTS public.buyback_wallets (collection_id uuid, wallet_address text, label text);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS buyer_address text;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS collection_id uuid;
+CREATE OR REPLACE VIEW public.sales_market AS
+SELECT s.* FROM public.sales s
+ WHERE NOT EXISTS (SELECT 1 FROM public.buyback_wallets b
+                    WHERE b.collection_id = s.collection_id AND b.wallet_address = s.buyer_address);
+
+
 CREATE TABLE wallet_usernames (wallet_addr text, username text);
 
 CREATE TABLE topshot_insider_alerts (
@@ -65,7 +75,7 @@ BEGIN
 
   WITH base AS (
     SELECT s.buyer_address, s.sold_at, s.edition_id, s.price_usd, e.set_name
-    FROM sales s
+    FROM public.sales_market s
     JOIN editions e ON e.id = s.edition_id
     WHERE s.collection_id = v_collection_id
       AND s.proposer_address = v_duc_proposer

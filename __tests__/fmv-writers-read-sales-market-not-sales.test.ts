@@ -122,6 +122,22 @@ describe("FMV writers read sales_market, never raw sales (#169)", () => {
     }
   })
 
+  // A function that HAND-LISTS system wallets to filter buyers (the Dapper merchant 0xc1e4… is in
+  // every such list) is making a buyer-identity judgement, so it must also apply the registry's
+  // buy-back exclusion — through sales_market or buyback_wallets — instead of hoping its own list
+  // is complete. Eight such lists lacked Dapper's buy-back wallet until 2026-10-03 (#169).
+  it("every function that hand-filters system-wallet buyers also excludes the buy-back registry", () => {
+    const READS = /\b(from|join)\s+(public\.)?sales(_market)?\b(?!_)/i
+    const handListers = [...defs].filter(([, d]) => !d.dropped)
+      .map(([fn, d]) => [fn, stripSql(d.body)] as const)
+      .filter(([, b]) => b.includes("0xc1e4f4f4c4257510") && READS.test(b))
+    expect(handListers.length).toBeGreaterThanOrEqual(8)
+    const offenders = handListers
+      .filter(([, b]) => RAW_SALES.test(b) && !/\bbuyback_wallets\b/.test(b))
+      .map(([fn]) => fn)
+    expect(offenders).toEqual([])
+  })
+
   it("the view resolves through the buyback_wallets registry, keeps NULL buyers, and is service-role only", () => {
     const viewFile = readdirSync(MIG_DIR).filter((f) => f.endsWith(".sql")).sort()
       .filter((f) => /CREATE\s+OR\s+REPLACE\s+VIEW\s+public\.sales_market\b/i.test(readFileSync(join(MIG_DIR, f), "utf8")))

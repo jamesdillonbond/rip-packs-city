@@ -30,6 +30,16 @@ CREATE TABLE sales (
   price_usd     numeric
 );
 
+-- #169 (2026-10-03): buyer signals read public.sales_market (sales minus issuer buy-backs).
+CREATE TABLE IF NOT EXISTS public.buyback_wallets (collection_id uuid, wallet_address text, label text);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS buyer_address text;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS collection_id uuid;
+CREATE OR REPLACE VIEW public.sales_market AS
+SELECT s.* FROM public.sales s
+ WHERE NOT EXISTS (SELECT 1 FROM public.buyback_wallets b
+                    WHERE b.collection_id = s.collection_id AND b.wallet_address = s.buyer_address);
+
+
 CREATE TABLE wallet_usernames (wallet_addr text, username text);
 
 CREATE TABLE topshot_insider_alerts (
@@ -62,7 +72,7 @@ BEGIN
   WITH
   _efs_recent AS (
     SELECT DISTINCT edition_id
-    FROM sales
+    FROM public.sales_market
     WHERE collection_id = v_collection_id AND edition_id IS NOT NULL
       AND sold_at > NOW() - INTERVAL '7 days'
   ),
@@ -70,11 +80,11 @@ BEGIN
     -- first-ever sale < 7d old == has a recent sale AND no older sale.
     -- Avoids the full-history GROUP BY (parity-verified 2026-07-16).
     SELECT r.edition_id,
-           (SELECT min(s2.sold_at) FROM sales s2
+           (SELECT min(s2.sold_at) FROM public.sales_market s2
              WHERE s2.edition_id = r.edition_id AND s2.collection_id = v_collection_id) AS first_sale_at
     FROM _efs_recent r
     WHERE NOT EXISTS (
-      SELECT 1 FROM sales s3
+      SELECT 1 FROM public.sales_market s3
       WHERE s3.edition_id = r.edition_id AND s3.collection_id = v_collection_id
         AND s3.sold_at <= NOW() - INTERVAL '7 days'
     )
@@ -85,7 +95,7 @@ BEGIN
       AVG(s.price_usd) AS avg_price,
       MIN(s.sold_at) AS first_buy,
       MAX(s.sold_at) AS last_buy
-    FROM sales s
+    FROM public.sales_market s
     JOIN edition_first_sale efs ON efs.edition_id = s.edition_id
     WHERE s.collection_id = v_collection_id
       AND s.sold_at <= efs.first_sale_at + (p_window_hours || ' hours')::interval

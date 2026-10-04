@@ -31,6 +31,16 @@ CREATE TABLE sales (
   collection_id uuid
 );
 
+-- #169 (2026-10-03): buyer signals read public.sales_market (sales minus issuer buy-backs).
+CREATE TABLE IF NOT EXISTS public.buyback_wallets (collection_id uuid, wallet_address text, label text);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS buyer_address text;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS collection_id uuid;
+CREATE OR REPLACE VIEW public.sales_market AS
+SELECT s.* FROM public.sales s
+ WHERE NOT EXISTS (SELECT 1 FROM public.buyback_wallets b
+                    WHERE b.collection_id = s.collection_id AND b.wallet_address = s.buyer_address);
+
+
 CREATE TABLE wallet_usernames (wallet_addr text, username text);
 
 CREATE TABLE topshot_insider_alerts (
@@ -68,7 +78,7 @@ BEGIN
       AVG(s.price_usd) AS avg_price,
       MIN(s.sold_at) AS first_buy,
       MAX(s.sold_at) AS last_buy
-    FROM sales s
+    FROM public.sales_market s
     WHERE s.collection_id = v_collection_id
       AND s.sold_at > NOW() - INTERVAL '24 hours'
       AND s.edition_id IS NOT NULL AND s.buyer_address IS NOT NULL
@@ -184,6 +194,14 @@ VALUES ('concentration_buy',
         jsonb_build_object('edition_id','00000000-0000-0000-0000-0000000000e8','buyer_address','0x00000000000000b8'),
         1, now() - interval '1 hour');
 
+-- #169: a REGISTERED issuer buy-back wallet buying 8 copies of one edition would qualify on every
+-- threshold, but a buy-back is not a collector concentrating — it must not fire (alerts stay 5).
+INSERT INTO public.buyback_wallets VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '0x00000000000000bb', 'test buy-back');
+INSERT INTO editions (id, player_name, set_name, tier) VALUES ('00000000-0000-0000-0000-0000000000ea', 'PA', 'S', 'RARE');
+INSERT INTO sales (edition_id, buyer_address, price_usd, sold_at, collection_id)
+SELECT '00000000-0000-0000-0000-0000000000ea', '0x00000000000000bb', 100, now() - interval '2 hours', '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+FROM generate_series(1, 8);
+
 -- Unknown collection → error.
 SELECT _assert_eq(detect_concentration_buys('does_not_exist')->>'error', 'collection not found', 'unknown collection → error');
 
@@ -195,6 +213,7 @@ SELECT _assert_eq((SELECT severity::text FROM topshot_insider_alerts WHERE alert
 SELECT _assert_eq((SELECT count(*)::text FROM topshot_insider_alerts WHERE alert_type='concentration_buy' AND evidence_jsonb->>'buyer_address'='0x00000000000000b2'), '0', 'B2 below tier spend → no alert');
 SELECT _assert_eq((SELECT count(*)::text FROM topshot_insider_alerts WHERE alert_type='concentration_buy' AND evidence_jsonb->>'buyer_address'='0x00000000000000b4'), '0', 'B4 below min copies → no alert');
 SELECT _assert_eq((SELECT count(*)::text FROM topshot_insider_alerts WHERE alert_type='concentration_buy' AND evidence_jsonb->>'buyer_address'='0xedf9df96c92f4595'), '0', 'contract-address buyer excluded → no alert');
+SELECT _assert_eq((SELECT count(*)::text FROM topshot_insider_alerts WHERE alert_type='concentration_buy' AND evidence_jsonb->>'buyer_address'='0x00000000000000bb'), '0', '#169: a registered buy-back wallet never fires a concentration alert');
 -- B7: exactly one alert, and it is the higher-signal edition E7b.
 SELECT _assert_eq((SELECT count(*)::text FROM topshot_insider_alerts WHERE alert_type='concentration_buy' AND evidence_jsonb->>'buyer_address'='0x00000000000000b7' AND generated_at > now() - interval '1 minute'), '1', 'B7 → exactly one alert (rn=1, not one per edition)');
 SELECT _assert_eq((SELECT evidence_jsonb->>'edition_id' FROM topshot_insider_alerts WHERE alert_type='concentration_buy' AND evidence_jsonb->>'buyer_address'='0x00000000000000b7' AND generated_at > now() - interval '1 minute'), '00000000-0000-0000-0000-000000000e7b', 'B7 alert is the higher-signal edition E7b (10 copies)');
