@@ -208,7 +208,7 @@ This is the §5 free launchpad, with **community admins** as the creators and **
 - Dapper's link filter **allows Top Shot, All Day, Golazos and UFC**, and **not Pinnacle** (`docs/research/hybrid-custody-filter-withdraw-probe-2026-07-13.md`, read-only probes).
 - ⚠ **It has never run on mainnet.** The probe executed no withdraw, and `moment_gifts` has 0 rows. The first real transfer is still the gating test.
 - The transaction moves one moment. A pack needs a batch version (several moments, several recipients, one signature), which is a small change to verified code.
-- **Requirement for admins:** a linked self-custody wallet. There are 164 linked Dapper children on chain today, a small group, but community admins are exactly the power users most likely to have one.
+- **Requirement for admins:** a linked self-custody wallet. There are 164 linked Dapper children on chain today (⚠ **superseded 2026-10-03:** a mainnet sample found 9 of 24 RPC-indexed Top Shot wallets linked, see [trading-revisit-2026-10-03.md](trading-revisit-2026-10-03.md) §3), a small group, but community admins are exactly the power users most likely to have one.
 - ⛔ The CLAUDE.md HybridCustody ban is about RPC's **hot wallet** only. It says nothing against a user signing through their own linked wallet, which is what this does.
 
 ### 7.3 The flow
