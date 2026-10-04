@@ -125,7 +125,11 @@ describe("proxy() — security headers", () => {
     expect(admin).toMatch(/connect-src [^;]*wss:\/\/relay\.walletconnect\.org/)
     expect(admin).toMatch(/frame-src [^;]*https:\/\/verify\.walletconnect\.org/)
     expect(admin).toMatch(/img-src [^;]*https:\/\/api\.web3modal\.org/)
-    for (const path of ["/", "/admin", "/admin/rewards", "/giveaways-evil", "/admin/giveaways-evil", "/api/giveaways/fall-drop"]) {
+    // the admin-only two-signer swap test (2026-10-03)
+    const swap = (await proxy(req("/admin/swap-test"))).headers.get("Content-Security-Policy")!
+    expect(swap).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
+    expect(swap).toMatch(/connect-src [^;]*wss:\/\/relay\.walletconnect\.org/)
+    for (const path of ["/", "/admin", "/admin/rewards", "/giveaways-evil", "/admin/giveaways-evil", "/admin/swap-test-evil", "/api/giveaways/fall-drop", "/api/admin/swap-test"]) {
       const csp = (await proxy(req(path))).headers.get("Content-Security-Policy")!
       expect(csp, path).not.toContain("fcl-discovery")
       expect(csp, path).not.toContain("walletconnect")

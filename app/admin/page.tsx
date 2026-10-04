@@ -86,6 +86,12 @@ const TOOLS: Tool[] = [
     blurb: "Build free packs from your unlocked Top Shot moments, seal, open, close, and verify deliveries on chain.",
     fullLoad: true,
   },
+  {
+    href: "/admin/swap-test",
+    title: "Swap Test",
+    blurb: "Admin-only: one swap transaction signed by two of your own Flow Wallets. Simulated on mainnet before you sign.",
+    fullLoad: true,
+  },
 ];
 
 export default function AdminIndexPage() {

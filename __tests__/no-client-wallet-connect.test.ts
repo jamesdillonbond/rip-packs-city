@@ -37,18 +37,21 @@ const FILES = ROOTS.flatMap((r) => walk(r)).map((path) => ({
 
 const clientFiles = FILES.filter((f) => /^\s*["']use client["']/m.test(f.src))
 
-// ⚠ THE EXCEPTIONS, both Flow Wallet only, both on giveaways (pinned below):
+// ⚠ THE EXCEPTIONS, all Flow Wallet only (pinned below):
 //   * the giveaway ADMIN connects their OWN Flow Wallet on /admin/giveaways to
 //     approve a delivery transaction (Trevor, 2026-09-29: "Yes do that");
 //   * a giveaway WINNER connects Flow Wallet on /giveaways/<slug> to say where
 //     their pack goes — CONNECT ONLY, it never signs (Trevor, 2026-10-03: "Let's
-//     plan on using Flow Wallet to claim instead of Dapper").
+//     plan on using Flow Wallet to claim instead of Dapper");
+//   * the ADMIN-ONLY two-signer swap test on /admin/swap-test: Trevor's own two
+//     Flow Wallets each sign one swap transaction (Trevor, 2026-10-03: "Do it all").
 // The wallet picker itself lives in exactly one module; each caller is imported
 // by exactly one page. Everywhere else, still no wallet sign-in.
 const CONNECT_MODULE = "lib/giveaways/flow-wallet-connect.ts"
-const CONNECT_IMPORTERS = ["lib/giveaways/admin-wallet.ts", "lib/giveaways/claim-wallet.ts"]
+const CONNECT_IMPORTERS = ["lib/giveaways/admin-wallet.ts", "lib/giveaways/claim-wallet.ts", "lib/swap-test/swap-wallet.ts"]
 const ADMIN_WALLET_IMPORTER = "app/admin/giveaways/AdminGiveawaysClient.tsx"
 const CLAIM_WALLET_IMPORTER = "app/giveaways/[slug]/GiveawayClient.tsx"
+const SWAP_WALLET_IMPORTER = "app/admin/swap-test/SwapTestClient.tsx"
 const notTheException = (f: { path: string }) => f.path !== CONNECT_MODULE
 /** Static `from "x"` or dynamic `import("x")` of a module specifier. */
 const imports = (src: string, spec: string) => new RegExp(`(from\\s+|import\\(\\s*)["']${spec.replace(/[/.]/g, (c) => "\\" + c)}["']`).test(src)
@@ -97,6 +100,14 @@ describe("no wallet sign-in anywhere (Trevor, 2026-08-08)", () => {
     expect(importers).toEqual([ADMIN_WALLET_IMPORTER])
     // and the importer is an admin page (token-gated), never a user surface
     expect(ADMIN_WALLET_IMPORTER.startsWith("app/admin/")).toBe(true)
+  })
+
+  it("the swap-test wallet module is imported only by the admin swap-test console", () => {
+    // Trevor, 2026-10-03 ("Do it all"): an ADMIN-ONLY two-signer swap test on his own
+    // wallets. Not a user surface; never widen it without his say-so.
+    const importers = FILES.filter((f) => imports(f.src, "@/lib/swap-test/swap-wallet")).map((f) => f.path)
+    expect(importers).toEqual([SWAP_WALLET_IMPORTER])
+    expect(SWAP_WALLET_IMPORTER.startsWith("app/admin/")).toBe(true)
   })
 
   it("the claim wallet module is imported only by the giveaway claim page, and never signs", () => {

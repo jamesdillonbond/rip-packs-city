@@ -1155,7 +1155,7 @@ export function isPublicPath(pathname: string, method: string): boolean {
 // (2026-10-03; lib/giveaways/claim-wallet.ts — connect only, never signs).
 // Flow's wallet picker is an iframe on fcl-discovery.onflow.org. Only these
 // pages' policies gain the host.
-const WALLET_DISCOVERY_PAGES = ["/admin/giveaways", "/giveaways"]
+const WALLET_DISCOVERY_PAGES = ["/admin/giveaways", "/giveaways", "/admin/swap-test"]
 const WALLET_DISCOVERY_HOST = "https://fcl-discovery.onflow.org"
 // WalletConnect (lists the Flow Wallet mobile app): relay + RPC, the verify
 // iframe, and the QR modal's API/images. Same one page only.
