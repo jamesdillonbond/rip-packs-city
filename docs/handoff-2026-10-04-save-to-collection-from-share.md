@@ -44,6 +44,8 @@ Nothing in this handoff is shipped yet — it is all route/`.tsx`, which Cowork 
 
 ## Item 2 (secondary, flag for Trevor's call — not specified for immediate build)
 
+> **DECIDED 11:25 AM PT 10-04 (Claude Code, under Trevor's "do what you think is best"): not built now.** The roadmap's binding rule is "accuracy is the gate; growth tactics stay removed", and it groups activation with the distribution work Trevor rejected (roadmap-2026-08-03.md). The drop this item targets is closed in-product by Item 1 (shipped 9:20 AM PT): a signed-in user on their own share card can save it in one click. Revisit when the accuracy gate is met, or if `saved_wallets` shows more open-door signups leaving with zero wallets after Item 1.
+
 Open-door signups get **no welcome email at all.** The welcome-email send (and Check 3's `welcome_email_error`) key off an `allow_list` row; open-door self-serve users have no `allow_list` row (front door opened 2026-07-20), so the entire approval→prewarm→welcome chain is skipped for them. For `serious.clearer@gmail.com` that means: no welcome, no nudge, and — until Item 1 ships — no in-product path from the share page back to their account. Worth deciding whether open-door first-login should trigger a lightweight "finish setting up — load your collection" email. This is a backend/edge change, larger scope, and needs Trevor's product call on copy/opt-in; not scoped here.
 
 ## Guardrails (repeat every handoff)
