@@ -32,7 +32,7 @@ failure it documents.
 
 ## 2026-10-04 — 1 filing
 
-- [🟡 **OG cards fetch their own brand fonts over HTTP ~75,000 times a week (5.5 GB of self-traffic, `node` user agent) — bundle them; NOT shipped because the loader fails SOFT and only a production render can prove the fix**](2026-10-04T0350Z-og-cards-fetch-their-own-fonts-over-http-75k-times-a-week.md) — *(Claude Code cloud, ~8:50 PM PT 10-03. Measured on Vercel observability while sizing the IPFS-art egress.)* The #3 and #6 egress lines on the site are our own lambdas fetching `/fonts/*.ttf` on every cold start (`lib/og/brand-fonts.ts`, trophy-case PDF). Fix spec + read-back in the filing.
+- [**✅ SHIPPED 10-04 ~6:15 AM PT (fonts read from the lambda's disk, HTTP kept as fallback; production read-back pending)** 🟡 **OG cards fetch their own brand fonts over HTTP ~75,000 times a week (5.5 GB of self-traffic, `node` user agent) — bundle them; NOT shipped because the loader fails SOFT and only a production render can prove the fix**](2026-10-04T0350Z-og-cards-fetch-their-own-fonts-over-http-75k-times-a-week.md) — *(Claude Code cloud, ~8:50 PM PT 10-03. Measured on Vercel observability while sizing the IPFS-art egress.)* The #3 and #6 egress lines on the site are our own lambdas fetching `/fonts/*.ttf` on every cold start (`lib/og/brand-fonts.ts`, trophy-case PDF). Fix spec + read-back in the filing.
 
 ## 2026-10-03 — 2 filings
 

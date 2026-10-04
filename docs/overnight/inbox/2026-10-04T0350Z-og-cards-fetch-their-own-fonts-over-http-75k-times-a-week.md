@@ -30,3 +30,14 @@ The loader is **fail-soft by design**: if the bundled path is wrong on Vercel, e
 ## Falsifier / read-back after a fix
 
 `vercel.request.count` for `route eq '/fonts/BarlowCondensed-Black.ttf'` with `client_user_agent eq 'node'` drops to ~0 within a day of the deploy, AND a production OG card's PNG bytes still differ from a fonts-off render.
+
+## ✅ SHIPPED 2026-10-04 ~6:15 AM PT (Claude Code cloud) — in a shape that cannot regress
+
+The "why not shipped" risk was removed rather than accepted. `lib/og/brand-fonts.ts` now reads `public/fonts/*.ttf` from the function's own disk on `NEXT_RUNTIME === "nodejs"`. **The HTTP fetch stays as the FALLBACK**, so a wrong path or an untraced file behaves exactly as before; it can never fall to `system-ui`. The bytes are validated the same way. `next.config.ts` `outputFileTracingIncludes` ships both files into `/api/og/**`. The 7 edge cards keep HTTP (~520/week).
+
+**Pre-push proof (local `next build` + `next start`, Node 24):**
+- All **38/38** Node OG function traces (`route.js.nft.json`) carry both fonts.
+- No edge bundle contains `node:fs`, and there are 0 "Node.js module in Edge Runtime" warnings.
+- With a preload spy on `globalThis.fetch`, rendering `/api/og/insights` logged **0** `/fonts/` requests. Positive control: the same spy saw the card's 44 data fetches. The PNG renders in Barlow Condensed + Share Tech Mono.
+
+**Still open (the falsifier above):** `vercel.request.count` for `/fonts/BarlowCondensed-Black.ttf` with `client_user_agent eq 'node'` should fall from ~10k/day to roughly the edge share within a day. The trophy-case PDF route still fetches over HTTP (low volume, not changed).
