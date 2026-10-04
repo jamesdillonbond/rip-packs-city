@@ -41,7 +41,7 @@ Example: Josh Allen Base COMMON (HIGH). FMV $0.10, pinned there since at least 0
 - **Falsify "ghost":** for a sample of the 180 floor listings, check on-chain or through Dapper that the listing is still purchasable. If most are live, the finding becomes "buyers pay 2× the floor", which would be very surprising for commons, and the ceiling is right.
 - Re-run the ratio after any change: All Day HIGH/MEDIUM should move toward 1.00 and keep a symmetric spread.
 
-## ✅ RESOLVED — re-measured 2026-10-03 ~8:20 PM PT (Claude Code cloud)
+## ✅ RESOLVED — re-measured 2026-10-03 ~7:25 PM PT (Claude Code cloud)
 
 The same instrument (`edition_fmv_current.fmv_usd` ÷ median of the edition's last 7 sales in `sales_market`, 30 d, editions with ≥ 7 sales):
 
