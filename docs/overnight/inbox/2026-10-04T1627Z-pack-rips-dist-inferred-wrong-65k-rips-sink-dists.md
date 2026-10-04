@@ -78,3 +78,8 @@ The lane pops newest-first, so the first answers are recent packs. Among the dis
 - **Writer fix (inference before identity): not changed.** `backfill_pack_rip_metadata` only fills NULLs, and pg_cron 704 overrides a wrong guess within an hour of the pack's identity landing. Today's measurements show that function's cost is environmental, so another edit to it buys nothing measurable. Revisit only if `pack-rips-chain-rekey` keeps finding a steady stream of NEW wrong guesses after the backlog drains (read its `rekeyed` per run on 10-06).
 - **96 rips with neither a purchase nor an identity:** left. They are not queueable from these tables and are noise against ~450 k Top Shot rips.
 - **Exit for this filing:** the identity queue reaches 0, `pack-rips-chain-rekey` falls to single digits per run, and dist 8552's opened count sits near its own ~21.7 k.
+
+## Follow-up scheduled (Claude Code, ~11:45 AM PT)
+
+- Identity backlog boost live (pg_cron 705, removes itself when the queue empties): queue 57,495 → 55,896 in 13 min, all requests 200.
+- **One-time cloud check at 7:45 AM PT 10-05** (routine `trig_01DvHXN2tzfAFJUcLHhDspVm`). It re-verifies the exit conditions above plus the 4:13 AM seed, the 429 arm and the rip-metadata lane, fixes small things, and appends results here. The overnight pass does not need to repeat it.
