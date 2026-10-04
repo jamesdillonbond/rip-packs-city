@@ -40,3 +40,9 @@ insert into public.ufc_chain_set_editions (set_id, set_name, max_editions, slug,
 select s.set_id, s.name, s.max_ed, s.slug, e.id, e.external_id
 from flowty_archive.scratch_20261004_ufc_sets s
 left join public.editions e on e.collection_id = '9b4824a8-736d-4a96-b450-8dcc0c46b023' and upper(e.external_id) = upper(s.slug);
+
+-- 2026-10-04 ~1:58 PM PT follow-up: the sale-block reads named 116 UFC NFTs in 12 sets the first read had not
+-- seen (509 510 518 522 529 553 555 570 601 602 611 622). The same script, one request, into
+-- flowty_archive.scratch_20261004_ufc_sets_req2 (ids = the setIds in checkpoint_nft_meta c='ufc' absent from
+-- ufc_chain_set_editions); parsed and loaded with the same slug rule, ON CONFLICT DO NOTHING. 3 of 12 match a
+-- catalog edition (509, 510, 601); 9 load with edition_id NULL (sets RPC's catalog lacks).

@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS flowty_archive.scratch_20261004_promoted_tx2 (win_sta
 CREATE OR REPLACE FUNCTION flowty_archive.scratch_promote_tx_tick() RETURNS jsonb LANGUAGE plpgsql AS $f$
 declare w timestamptz; v jsonb;
 begin
-  select win_start into w from flowty_archive.scratch_20261004_promoted_tx2 order by last_run_at nulls first, win_start limit 1;
+  select win_start into w from flowty_archive.scratch_20261004_promoted_tx2 where last_run_at is null order by win_start limit 1;
+  if not found then return jsonb_build_object('idle', true); end if;   -- 2026-10-04 ~2:00 PM PT: one pass per reset, then idle
   v := flowty_archive.promote_flowty_tx_verified_sales(w, least(w + interval '2 days', '2024-09-04 12:02:35+00'::timestamptz));
   update flowty_archive.scratch_20261004_promoted_tx2 set runs = runs + 1, last_result = v, last_run_at = now() where win_start = w;
   return v;
@@ -68,7 +69,8 @@ SELECT g FROM generate_series('2023-11-08 16:07:03+00'::timestamptz, now(), inte
 CREATE OR REPLACE FUNCTION flowty_archive.scratch_promote_dapper_tick() RETURNS jsonb LANGUAGE plpgsql AS $f$
 declare w timestamptz; v jsonb;
 begin
-  select win_start into w from flowty_archive.scratch_20261004_promoted_dapper order by last_run_at nulls first, win_start limit 1;
+  select win_start into w from flowty_archive.scratch_20261004_promoted_dapper where last_run_at is null order by win_start limit 1;
+  if not found then return jsonb_build_object('idle', true); end if;   -- 2026-10-04 ~2:00 PM PT: one pass per reset, then idle
   v := flowty_archive.promote_dapper_tx_verified_sales(w, w + interval '7 days');
   update flowty_archive.scratch_20261004_promoted_dapper set runs = runs + 1, last_result = v, last_run_at = now() where win_start = w;
   return v;
