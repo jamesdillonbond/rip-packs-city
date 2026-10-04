@@ -55,3 +55,34 @@ begin
   update flowty_archive.scratch_20261004_promoted_tx2 set runs = runs + 1, last_result = v, last_run_at = now() where win_start = w;
   return v;
 end $f$;
+
+-- Dapper-contract sales (migrations 20261004114808 + 20261004123055): cycle 7-day windows from the
+-- mainnet24 root to now, oldest-run-first, promoting whatever dapper-tx-verify.yml has sealed so far.
+-- pg_cron 'dapper-promote-scratch' (job 699, every 30 s; created 2026-10-04 ~5:30 AM PT). Idempotent:
+-- tx + nft NOT EXISTS, and a same-NFT sale within 10 minutes from ANY source is skipped (atlas rows
+-- carry no tx hash).
+CREATE TABLE IF NOT EXISTS flowty_archive.scratch_20261004_promoted_dapper (win_start timestamptz PRIMARY KEY,
+  runs int NOT NULL DEFAULT 0, last_result jsonb, last_run_at timestamptz);
+INSERT INTO flowty_archive.scratch_20261004_promoted_dapper (win_start)
+SELECT g FROM generate_series('2023-11-08 16:07:03+00'::timestamptz, now(), interval '7 days') g ON CONFLICT DO NOTHING;
+CREATE OR REPLACE FUNCTION flowty_archive.scratch_promote_dapper_tick() RETURNS jsonb LANGUAGE plpgsql AS $f$
+declare w timestamptz; v jsonb;
+begin
+  select win_start into w from flowty_archive.scratch_20261004_promoted_dapper order by last_run_at nulls first, win_start limit 1;
+  v := flowty_archive.promote_dapper_tx_verified_sales(w, w + interval '7 days');
+  update flowty_archive.scratch_20261004_promoted_dapper set runs = runs + 1, last_result = v, last_run_at = now() where win_start = w;
+  return v;
+end $f$;
+
+-- Candidate build for the Dapper-contract verifier (migration 20261004124451): one 20,000-row chunk of the
+-- unverified index rows per tick, cursor in scratch_20261004_cfg ('dapper_cand_cursor'; 'done' when the
+-- scan ends). pg_cron 'dapper-candidates-scratch' (job 700, every 30 s; created ~5:45 AM PT 2026-10-04).
+CREATE OR REPLACE FUNCTION flowty_archive.scratch_dapper_candidates_tick() RETURNS jsonb LANGUAGE plpgsql AS $f$
+declare c text; r jsonb;
+begin
+  select v into c from flowty_archive.scratch_20261004_cfg where k = 'dapper_cand_cursor';
+  if c = 'done' then return jsonb_build_object('idle', true); end if;
+  r := flowty_archive.dapper_tx_candidates_build(c, 20000);
+  update flowty_archive.scratch_20261004_cfg set v = case when (r->>'done')::boolean then 'done' else r->>'last_doc' end where k = 'dapper_cand_cursor';
+  return r;
+end $f$;
