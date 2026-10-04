@@ -1,25 +1,38 @@
--- DB invariant: public.analytics_sales_leaderboard — the buyer / seller volume board. Claims (#169):
---   1. a REGISTERED issuer buy-back wallet (buyback_wallets, per collection) is not on the BUYER board,
---      unless the caller asks for contracts (p_include_contracts) — the same switch the board's own
---      contract list uses;
---   2. the SELLER side keeps a seller's sell-back proceeds (real money to the seller);
---   3. the registry is per collection: the same address buying in a collection it is NOT registered
---      for still ranks.
+-- 2026-10-04 (PT) — analytics_sales_leaderboard: the #169 buy-back exclusion matches on the
+-- long-form collection slug, so the window read stays index-only.
 --
--- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261004004247_audit_20261003_buyer_signals_exclude_buyback_wallets.sql).
--- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- WHY. Vercel, 6 h to ~9:35 AM PT 10-04: `/api/analytics/sales/leaderboard` returned 500
+-- `canceling statement due to statement timeout` 9 times (buyer board, l30, Top Shot / All Day /
+-- Pinnacle), mostly on the first cold call after a deploy. Cold, the function took 10.1 s and
+-- 57.7 k buffers (18.4 k read). The #169 clause (20261004004247), "the buyer is not a registry
+-- buy-back wallet", joins `b.collection_id = s.collection_id`. collection_id is NOT in
+-- idx_sales_*_pulse_window (collection, sold_at DESC) INCLUDE (price_usd, buyer_address,
+-- seller_address), so every window row became a heap fetch: an Index Scan, 55.5 k buffers for the
+-- 30-day Top Shot window, against an Index Only Scan before #169.
+--
+-- WHAT. The same predicate, matched on `c.slug = s.collection` through collections (long-form
+-- slug, in the index key). Equivalence: of 399,771 sales since 2025-01-01 bought by the three
+-- buy-back wallets, 0 have a `sales.collection` that differs from their collection_id's slug.
+-- Nothing else changes.
+--
+-- MEASURED (same query shape, 30-day Top Shot buyer window): 55,508 -> ~10.9 k buffers,
+-- Index Only Scan, same 391 rows. Post-apply numbers: see the ledger entry of 2026-10-04.
+-- anon-exec: unchanged (analytics_sales_leaderboard) — CREATE OR REPLACE of an existing fn; ACL preserved.
+--
+-- Revert: re-apply the analytics_sales_leaderboard block from
+--   supabase/migrations/20261004004247_audit_20261003_buyer_signals_exclude_buyback_wallets.sql
+-- and repoint the pin (supabase/tests/analytics_sales_leaderboard.sql, db-invariants-drift-guard).
 
-BEGIN;
+DO $guard$
+DECLARE v_md5 text;
+BEGIN
+  SELECT md5(prosrc) INTO v_md5 FROM pg_proc WHERE oid = 'public.analytics_sales_leaderboard(text,timestamptz,timestamptz,text[],integer,numeric,boolean)'::regprocedure;
+  IF v_md5 IS DISTINCT FROM '0ead35a2cbbb772a214af7b8f6d6cf91' THEN
+    RAISE EXCEPTION 'analytics_sales_leaderboard changed since the splice base (live md5 %) -- re-splice', v_md5;
+  END IF;
+END
+$guard$;
 
-CREATE TABLE public.sales (buyer_address text, seller_address text, price_usd numeric, sold_at timestamptz,
-  collection text, collection_id uuid);
-CREATE TABLE public.pinnacle_sales (buyer_address text, seller_address text, sale_price_usd numeric, sold_at timestamptz);
-CREATE TABLE public.buyback_wallets (collection_id uuid, wallet_address text, label text);
--- 2026-10-04: the body matches the registry on the long-form slug through collections.
-CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
-
--- >>> BEGIN verbatim >>>
 CREATE OR REPLACE FUNCTION public.analytics_sales_leaderboard(p_role text, p_start_at timestamptz DEFAULT NULL, p_end_at timestamptz DEFAULT NULL, p_collections text[] DEFAULT NULL, p_limit integer DEFAULT 25, p_min_volume numeric DEFAULT 100, p_include_contracts boolean DEFAULT false)
 RETURNS TABLE(rank integer, addr text, sale_count bigint, total_volume_usd numeric, avg_price_usd numeric, is_returning boolean, first_seen_at timestamptz, last_seen_at timestamptz)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public','pg_temp'
@@ -111,31 +124,3 @@ BEGIN
   ORDER BY t.w_volume_usd DESC, t.w_sale_count DESC;
 END;
 $function$;
-
--- <<< END verbatim <<<
-
-INSERT INTO public.collections VALUES ('00000000-0000-0000-0000-0000000000a1', 'nba_top_shot'), ('00000000-0000-0000-0000-0000000000a2', 'nfl_all_day');
-INSERT INTO public.buyback_wallets VALUES ('00000000-0000-0000-0000-0000000000a1', '0x00000000000000bb', 'test buy-back');
-INSERT INTO public.sales VALUES
-  ('0x00000000000000c1', '0x00000000000000s1', 200, now() - interval '1 day', 'nba_top_shot', '00000000-0000-0000-0000-0000000000a1'),
-  ('0x00000000000000bb', '0x00000000000000s2', 500, now() - interval '1 day', 'nba_top_shot', '00000000-0000-0000-0000-0000000000a1'),
-  ('0x00000000000000bb', '0x00000000000000s3', 150, now() - interval '1 day', 'nfl_all_day',  '00000000-0000-0000-0000-0000000000a2');
-
-DO $do$
-BEGIN
-  PERFORM _assert_eq((SELECT string_agg(addr || ':' || total_volume_usd, ',' ORDER BY addr)
-                        FROM public.analytics_sales_leaderboard('buyer', NULL, NULL, ARRAY['topshot'], 25, 100, false)),
-    '0x00000000000000c1:200.00', 'the buy-back wallet is not a Top Shot buyer (claim 1)');
-  PERFORM _assert_eq((SELECT string_agg(addr || ':' || total_volume_usd, ',' ORDER BY addr)
-                        FROM public.analytics_sales_leaderboard('buyer', NULL, NULL, ARRAY['topshot'], 25, 100, true)),
-    '0x00000000000000bb:500.00,0x00000000000000c1:200.00', 'p_include_contracts brings it back (claim 1)');
-  PERFORM _assert_eq((SELECT string_agg(addr || ':' || total_volume_usd, ',' ORDER BY addr)
-                        FROM public.analytics_sales_leaderboard('seller', NULL, NULL, ARRAY['topshot'], 25, 100, false)),
-    '0x00000000000000s1:200.00,0x00000000000000s2:500.00', 'a seller''s sell-back proceeds still count (claim 2)');
-  PERFORM _assert_eq((SELECT string_agg(addr || ':' || total_volume_usd, ',' ORDER BY addr)
-                        FROM public.analytics_sales_leaderboard('buyer', NULL, NULL, ARRAY['allday'], 25, 100, false)),
-    '0x00000000000000bb:150.00', 'registered for Top Shot only, it still ranks in All Day (claim 3)');
-END
-$do$;
-
-ROLLBACK;

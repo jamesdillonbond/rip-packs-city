@@ -2885,7 +2885,7 @@ const PINS = [
     // are asked for); the seller board keeps sell-back proceeds; the registry is per collection.
     fn: "analytics_sales_leaderboard",
     test: "supabase/tests/analytics_sales_leaderboard.sql",
-    migration: "supabase/migrations/20261004004247_audit_20261003_buyer_signals_exclude_buyback_wallets.sql",
+    migration: "supabase/migrations/20261004165000_audit_20261004_sales_leaderboard_buyback_check_stays_index_only.sql",
   },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
