@@ -1,4 +1,4 @@
-# Inbox index — 563 live filings
+# Inbox index — 564 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-10-04 — 5 filings
+## 2026-10-04 — 6 filings
+
+- [🟢 **Candy MLB bid book empty, 2 trust arms at 999 by design — BENIGN: the 11 offers still escrowed upstream all expired Jul–Sep, the one live bid was withdrawn/filled; plus the 429 HIGH (scratch Flowty promotion + the chain-arrival catch-up, both owned and decaying) and the seed timeout (already fixed)**](2026-10-04T2112Z-candy-offers-book-zeroed-and-429-scratch-decay.md) — *(daytime monitor, ~2:10 PM PT, left untracked on the box; disposition by Claude Code ~2:55 PM PT.)* No action; the arms clear when a real Candy bid lands.
 
 - [🔴 **65,477 Top Shot pack rips carry an INFERRED `dist_id` their purchase record contradicts; sink dists (8552 reward pack: 27.5 k of 49.5 k rips are other packs'). Pack pages miscount opens / EV. Verification queued (64,930 packs); bulk purchase-copy refuted. ✅ Re-keyed BY CHAIN from 11:00 AM PT (6,262 + lane pg_cron 704, backed up)**](2026-10-04T1627Z-pack-rips-dist-inferred-wrong-65k-rips-sink-dists.md) — *(Claude Code, ~9:30 AM PT, from a post-fix `pack_lifecycle` overrun on dist 8512.)* Every writer of `pack_rips.dist_id` only fills a NULL, so a wrong inference is permanent. Repair plan in the filing: re-key by chain only once the identity lane lands, then make chain override inference.
 
