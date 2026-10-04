@@ -21,6 +21,11 @@ on:
         required: false
         default: "4"
         type: string
+      nodes:
+        description: "nodes to walk (comma-separated, exact names from mainnet24..27); the mainnet24 range walk is a RECALL sample only — its era is verified per transaction by flowty-tx-verify.yml, and its slow /v1/events reads starve that verifier"
+        required: false
+        default: "mainnet25,mainnet26,mainnet27"
+        type: string
 
 permissions:
   contents: read
@@ -53,6 +58,7 @@ jobs:
       - name: Walk ${{ matrix.node }} ${{ matrix.start }}-${{ matrix.end }}
         env:
           RPS: ${{ github.event.inputs.rps }}
+          NODES: ${{ github.event.inputs.nodes }}
           WORKERS: ${{ matrix.workers }}
           MAX_MINUTES: "320"
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -63,5 +69,6 @@ jobs:
             echo "::error::Supabase secrets not configured"; exit 2
           fi
           case "${RPS:-}" in (''|*[!0-9.]*) echo "rps must be a number"; exit 2;; esac
+          case ",${NODES}," in (*",${{ matrix.node }},"*) ;; (*) echo "${{ matrix.node }} not in nodes=${NODES} — skipped"; exit 0;; esac
           python3 scripts/flowty-export/test_chain_walk_gha.py
           python3 scripts/flowty-export/chain_walk_gha.py "${{ matrix.node }}" "${{ matrix.start }}" "${{ matrix.end }}"
