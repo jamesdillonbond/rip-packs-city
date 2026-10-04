@@ -148,7 +148,19 @@ week 3 33.3 % / 0.741. Snapshots were fresh (median 1.5 d) and sales ingestion l
 estimator lagging a market that moved ~2× in days around a drop — not a pipeline artefact. The last-3 median
 lagged too (0.789 that week), only less. ⭐ **M2's bar is a confidence share; this says the All Day PRICE is
 systematically wrong in drop weeks regardless of the share.**
-⛔ **No model change shipped** — the thin-edition window is Trevor's methodology call (#140).
+🔧 **MODEL CHANGE SHIPPED ~4:50 PM PT the same day — FMV 1.7.0 → 1.8.0: the sales-only FMV is the MEDIAN of the
+edition's 7 most recent typical sales** (`lib/fmv-recalc-math.ts` `medianOfMostRecent`, `FMV_RECENT_SALES_N = 7 =
+MIN_SALES_30D_HIGH`; `FMV_ALGO_VERSION` is now the one place the version lives). Chosen by measurement: med3 / med5 /
+med7 / med10 read identically out of sample (14 d, n 4,194: 13.0 % / ratio 1.000 each; published WAP 15.0 % / 1.045),
+so N = 7 was taken for robustness (3 bad prints) and coherence with the HIGH floor. The WAP lag is structural —
+`weightedAveragePrice` is tiered 3/2/1 over 0–7/7–14/14–30 d (the header's "7-day half-life exponential" was never the
+code; its dead constant is gone), so a 29-day print still carries a third of today's weight. Unchanged: `capValue`,
+the ask ceiling, every guard, confidence grading, the cold/thin SQL writers, and `asp_usd` / `asp_without_outliers`
+(raw / filtered WAP) — so `fmv_usd / asp_without_outliers` is now a per-edition read of what the change did.
+`/legal/fmv-methodology` states the rule (its prior copy also misdescribed 1.7.0). ⚠ **The accuracy metric M1 is a
+confidence SHARE and does not move with this; the out-of-sample backtest is the instrument that does — read
+`fmv_sales_backtest('nba_top_shot', 7)` from ~10-06, when every matched snapshot is 1.8.0.** Decided under the standing
+delegation, as #140's recency window was on 09-25. Revert: `git revert` the 1.8.0 commit; the sweep re-prices in ~1.5 d.
 
 ## ⭐ NEW 2026-09-20 — A REFRESH-ORDER CHANGE MOVES A CONFIDENCE SHARE WITHOUT ANY PRICING CHANGE (Panini, measured; a trap for every other collection)
 
