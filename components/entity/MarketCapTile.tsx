@@ -14,7 +14,7 @@
 // RPC tokens only — no hardcoded hex.
 
 import Link from "next/link"
-import { fetchIssuerSplitTileRow, fetchMarketCapTileRow } from "@/lib/entity/market-cap-fetchers"
+import { fetchCollectionMarketCapTile, fetchIssuerSplitTileRow, fetchMarketCapTileRow } from "@/lib/entity/market-cap-fetchers"
 // ⚠ Nothing here imports from market-cap-board.ts: that module holds the RPC
 // reads, and a value import from it would put every page that mounts this tile
 // on an unbounded path to them (check-unbounded-server-reads, 2026-10-03). The
@@ -25,6 +25,7 @@ import { isSplitKnown, splitStatusShort } from "@/lib/insights/topshot-issuer-sp
 import { Section, SectionUnavailable, StatCell } from "@/components/entity/_shared"
 
 const GRAIN_NOUN: Record<MarketCapEntityGroup, string> = {
+  collection: "collections",
   edition: "editions",
   player: "players",
   team: "teams",
@@ -97,7 +98,11 @@ export function MarketCapTileBody({
         <StatCell
           label="Rank"
           value={row.mcap_rank != null ? `#${fmtCount(row.mcap_rank)}` : "—"}
-          sub={`of ${fmtCount(row.groups_ranked)} ${GRAIN_NOUN[group]} in ${collectionDisplayName(row.collection_slug)}`}
+          sub={
+            group === "collection"
+              ? `of ${fmtCount(row.groups_ranked)} collections with a known cap`
+              : `of ${fmtCount(row.groups_ranked)} ${GRAIN_NOUN[group]} in ${collectionDisplayName(row.collection_slug)}`
+          }
         />
         <StatCell
           label="Collector-held"
@@ -169,6 +174,31 @@ export default async function MarketCapTile({
   return (
     <Section title="Market Cap">
       <MarketCapTileBody row={row} group={group} stale={stale} split={split} />
+    </Section>
+  )
+}
+
+/**
+ * The collection overview's tile: the whole collection's cap, ranked against every
+ * other collection whose cap is known. Same three states as the entity tile.
+ */
+export async function CollectionMarketCapTile({ collectionDbSlug }: { collectionDbSlug: string | null | undefined }) {
+  if (!collectionDbSlug) return null
+  let res: Awaited<ReturnType<typeof fetchCollectionMarketCapTile>>
+  try {
+    res = await fetchCollectionMarketCapTile(collectionDbSlug)
+  } catch (e) {
+    console.error(`[market-cap tile] collection ${collectionDbSlug}`, e instanceof Error ? e.message : e)
+    return (
+      <Section title="Market Cap">
+        <SectionUnavailable noun="market cap" />
+      </Section>
+    )
+  }
+  if (!res.row) return null
+  return (
+    <Section title="Market Cap">
+      <MarketCapTileBody row={res.row} group="collection" stale={res.stale} />
     </Section>
   )
 }

@@ -9,6 +9,9 @@
 // plain prop and the client is renderable by a test without a router.
 
 import CollectionOverviewClient from "./CollectionOverviewClient";
+import { Suspense } from "react";
+import { CollectionMarketCapTile } from "@/components/entity/MarketCapTile";
+import { getCollectionByUrlSlug } from "@/lib/collection-slug";
 
 export default async function OverviewPage({
   params,
@@ -16,5 +19,13 @@ export default async function OverviewPage({
   params: Promise<{ collection: string }>;
 }) {
   const { collection } = await params;
-  return <CollectionOverviewClient collection={collection} />;
+  // Market cap is a server read (bounded, Suspense-wrapped) handed to the client as
+  // a slot, so a slow read never holds the overview. An unknown slug gets no tile.
+  const dbSlug = getCollectionByUrlSlug(collection)?.dbSlug ?? null;
+  const marketCapSlot = dbSlug ? (
+    <Suspense fallback={null}>
+      <CollectionMarketCapTile collectionDbSlug={dbSlug} />
+    </Suspense>
+  ) : null;
+  return <CollectionOverviewClient collection={collection} marketCapSlot={marketCapSlot} />;
 }

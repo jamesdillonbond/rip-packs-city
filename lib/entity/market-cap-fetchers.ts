@@ -36,3 +36,40 @@ export async function fetchMarketCapTileRow(
 export async function fetchIssuerSplitTileRow(externalId: string): Promise<IssuerSplitEditionRow | null> {
   return withBoardBudget(fetchTopShotIssuerSplitEdition(supabaseAdmin, externalId), "issuer-held split edition")
 }
+
+/**
+ * The collection overview tile. market_cap_current ranks each collection only within
+ * itself (a 1-row partition), so the cross-collection rank is computed here from every
+ * collection row with a KNOWN cap; a collection whose cap is unknown gets no rank.
+ * THROWS on a failed read.
+ */
+export async function fetchCollectionMarketCapTile(
+  collectionDbSlug: string,
+): Promise<{ row: MarketCapEntityRow | null; stale: string | null }> {
+  const [row, all] = await withBoardBudget(
+    Promise.all([
+      fetchMarketCapEntity(supabaseAdmin, "collection", collectionDbSlug, collectionDbSlug),
+      (async () => {
+        const { data, error } = await supabaseAdmin
+          .from("market_cap_current")
+          .select("collection_slug, mcap_usd")
+          .eq("grain", "collection")
+          .eq("is_primary", true)
+          .limit(50)
+        if (error) throw new Error(error.message)
+        return (data ?? []) as Array<{ collection_slug: string; mcap_usd: number | string | null }>
+      })(),
+    ]),
+    "market-cap collection",
+  )
+  if (!row) return { row: null, stale: null }
+  const known = all
+    .map((r) => ({ slug: r.collection_slug, cap: r.mcap_usd == null ? null : Number(r.mcap_usd) }))
+    .filter((r): r is { slug: string; cap: number } => r.cap != null && Number.isFinite(r.cap))
+    .sort((a, b) => b.cap - a.cap)
+  const idx = known.findIndex((r) => r.slug === collectionDbSlug)
+  return {
+    row: { ...row, mcap_rank: row.mcap_usd != null && idx >= 0 ? idx + 1 : null, groups_ranked: known.length },
+    stale: staleSince(row.refreshed_at, Date.now()),
+  }
+}

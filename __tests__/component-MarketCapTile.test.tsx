@@ -7,8 +7,8 @@ import { render, cleanup } from "@testing-library/react"
 // unknown cap reads "Unknown" with its minted-supply bound (never $0) — plus the
 // rank / 7-day figures and the exact RPC arguments the page sends.
 
-const state: { calls: Array<{ fn: string; args: any }>; data: any; error: any; byFn: Record<string, { data: any; error: any }> } =
-  { calls: [], data: [], error: null, byFn: {} }
+const state: { calls: Array<{ fn: string; args: any }>; data: any; error: any; byFn: Record<string, { data: any; error: any }>; table: { data: any; error: any } } =
+  { calls: [], data: [], error: null, byFn: {}, table: { data: [], error: null } }
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
@@ -17,10 +17,20 @@ vi.mock("@/lib/supabase", () => ({
       if (state.byFn[fn]) return state.byFn[fn]
       return { data: state.error ? null : state.data, error: state.error }
     },
+    from: (table: string) => {
+      const q: any = { filters: [] as string[] }
+      q.select = () => q
+      q.eq = (c: string, v: unknown) => (q.filters.push(`${c}=${v}`), q)
+      q.limit = (n: number) => {
+        state.calls.push({ fn: `from:${table}`, args: { filters: q.filters, limit: n } })
+        return Promise.resolve(state.table)
+      }
+      return q
+    },
   },
 }))
 
-import MarketCapTile, { MarketCapTileBody } from "@/components/entity/MarketCapTile"
+import MarketCapTile, { CollectionMarketCapTile, MarketCapTileBody } from "@/components/entity/MarketCapTile"
 import { sevenDayChange, staleSince, type MarketCapEntityRow } from "@/lib/insights/market-cap-board"
 
 afterEach(cleanup)
@@ -29,6 +39,7 @@ beforeEach(() => {
   state.data = []
   state.error = null
   state.byFn = {}
+  state.table = { data: [], error: null }
 })
 
 const ROW: MarketCapEntityRow = {
@@ -195,5 +206,57 @@ describe("sevenDayChange", () => {
     expect(sevenDayChange(null, 100)).toBeNull()
     expect(sevenDayChange(110, null)).toBeNull()
     expect(sevenDayChange(110, 0)).toBeNull()
+  })
+})
+
+describe("CollectionMarketCapTile (collection overview)", () => {
+  const COLL = { ...ROW, group_label: "nba_top_shot", mcap_usd: 16_330_000, mcap_rank: 1, groups_ranked: 1 }
+  const CAPS = [
+    { collection_slug: "nba_top_shot", mcap_usd: "51760000" },
+    { collection_slug: "panini_nfl", mcap_usd: 16_330_000 },
+    { collection_slug: "ufc_strike", mcap_usd: null },
+  ]
+  async function renderColl(slug: string | null) {
+    const el = await CollectionMarketCapTile({ collectionDbSlug: slug })
+    return render(<>{el}</>)
+  }
+
+  it("ranks the collection against every collection with a KNOWN cap, never against unknown ones", async () => {
+    state.data = [{ ...COLL, collection_slug: "panini_nfl" }]
+    state.table = { data: CAPS, error: null }
+    const { container } = await renderColl("panini_nfl")
+    const t = container.textContent ?? ""
+    expect(t).toContain("#2")
+    expect(t).toContain("of 2 collections with a known cap")
+    expect(state.calls).toContainEqual({ fn: "get_market_cap_entity", args: { p_group: "collection", p_collection: "panini_nfl", p_match: "panini_nfl" } })
+    expect(state.calls).toContainEqual({ fn: "from:market_cap_current", args: { filters: ["grain=collection", "is_primary=true"], limit: 50 } })
+  })
+
+  it("an UNKNOWN cap gets no rank and reads Unknown — never $0", async () => {
+    state.data = [{ ...COLL, collection_slug: "ufc_strike", mcap_usd: null, mcap_high_conf_usd: null, collector_held: null }]
+    state.table = { data: CAPS, error: null }
+    const { container } = await renderColl("ufc_strike")
+    const t = container.textContent ?? ""
+    expect(t).toContain("Unknown")
+    expect(t).not.toContain("$0")
+    expect(t).not.toMatch(/#\d/)
+  })
+
+  it("a FAILED ranking read fails the tile — no rank is invented from a partial list", async () => {
+    state.data = [COLL]
+    state.table = { data: null, error: { message: "timeout" } }
+    const { container } = await renderColl("nba_top_shot")
+    const t = container.textContent ?? ""
+    expect(t).toMatch(/couldn.t load market cap/i)
+    expect(t).not.toMatch(/\$\d/)
+    expect(t).not.toMatch(/#\d/)
+  })
+
+  it("no row / no slug renders nothing", async () => {
+    state.data = []
+    expect((await renderColl("nba_top_shot")).container.textContent).toBe("")
+    state.calls = []
+    expect((await renderColl(null)).container.textContent).toBe("")
+    expect(state.calls).toHaveLength(0)
   })
 })

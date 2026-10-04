@@ -203,7 +203,14 @@ function tierColor(tier: string | null | undefined, collection: string) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function CollectionOverviewClient({ collection }: { collection: string }) {
+export default function CollectionOverviewClient({
+  collection,
+  marketCapSlot = null,
+}: {
+  collection: string
+  /** Server-rendered market-cap tile (page.tsx), already wrapped in Suspense. */
+  marketCapSlot?: React.ReactNode
+}) {
   const collectionObj = getCollection(collection)
   const accent = collectionObj?.accent ?? "var(--rpc-red)"
   const enabledPages = new Set(collectionObj?.pages ?? [])
@@ -427,6 +434,8 @@ export default function CollectionOverviewClient({ collection }: { collection: s
           </div>
         </section>
       )}
+
+      {marketCapSlot}
 
       {/* ── Sniper Deals + Pipeline Status ── */}
       <div className="rpc-ov-2col">
