@@ -541,7 +541,7 @@ function DeliverAll({ drop, call, onDone }: { drop: DropRow; call: Call; onDone:
       for (const [i, b] of plan.batches.entries()) {
         note(`Batch ${i + 1}/${plan.batches.length}: waiting for your wallet…`)
         try {
-          const sent = await sendDeliveryBatch(b)
+          const sent = await sendDeliveryBatch(b, { onSlow: (hint) => note(`Batch ${i + 1}: no answer from your wallet yet. ${hint}`) })
           note(`Batch ${i + 1}: sealed · ${b.momentIDs.length} moment(s) · tx ${sent.txId}`)
         } catch (e) {
           // a submitted transaction whose seal could not be read may have executed: never "NOT sent"

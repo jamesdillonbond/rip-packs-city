@@ -42,15 +42,66 @@ export class SealUnconfirmedError extends Error {
 
 const SEAL_READ_ATTEMPTS = 3
 
+/** How long a wallet prompt may sit unanswered before the console says where to look. */
+export const SLOW_WALLET_MS = 20_000
+
+export type WalletChannel = "phone" | "extension" | "popup" | "unknown"
+
+/**
+ * WHERE the connected wallet will ask for approval, from FCL's authz service
+ * method. Over WalletConnect (a QR-code connection) the request goes to the
+ * Flow Wallet app on the PHONE, so a desktop page just waits with nothing on
+ * screen (Trevor, test2, 2026-10-04: "It's not doing anything now").
+ */
+export function channelOf(services: unknown): WalletChannel {
+  const list = Array.isArray(services) ? (services as Array<{ type?: unknown; method?: unknown }>) : []
+  const authz = list.find((s) => s?.type === "authz") ?? list.find((s) => s?.type === "authn")
+  const m = String(authz?.method ?? "")
+  if (m === "WC/RPC") return "phone"
+  if (m === "EXT/RPC") return "extension"
+  if (m === "POP/RPC" || m === "TAB/RPC" || m === "HTTP/POST" || m === "IFRAME/RPC") return "popup"
+  return "unknown"
+}
+
+export async function walletChannel(): Promise<WalletChannel> {
+  try {
+    const user = (await fcl.currentUser.snapshot()) as { services?: unknown }
+    return channelOf(user?.services)
+  } catch {
+    return "unknown"
+  }
+}
+
+/** Where to look, said once a prompt has gone unanswered for SLOW_WALLET_MS. */
+export function slowWalletHint(channel: WalletChannel, waitingOn: string[], blocked: string[]): string {
+  const where =
+    channel === "phone"
+      ? "Open the Flow Wallet app on your phone: you connected by QR code, so the approval is waiting there."
+      : channel === "extension"
+        ? "Click the Flow Wallet extension icon in your browser toolbar: its approval window may be behind this one."
+        : channel === "popup"
+          ? "Your browser may have blocked the wallet's popup: look for a blocked-popup icon in the address bar and allow it."
+          : "Check your Flow Wallet (the phone app, or the browser extension icon) for an approval request."
+  return (
+    where +
+    (waitingOn.length ? ` Still waiting on: ${waitingOn.join(", ")}.` : "") +
+    (blocked.length ? ` Blocked by the page's security policy: ${blocked.join(", ")}.` : "")
+  )
+}
+
 /**
  * Asks the connected wallet to sign one delivery batch, then waits for the
  * transaction to SEAL. Throws if the wallet declines or the transaction
  * reverts — a batch is only reported sent when the chain says it executed.
  * A failure to READ the seal of a submitted transaction is a SealUnconfirmedError.
  */
-export async function sendDeliveryBatch(batch: DeliveryBatch): Promise<SentBatch> {
+export async function sendDeliveryBatch(batch: DeliveryBatch, opts: { onSlow?: (hint: string) => void; slowMs?: number } = {}): Promise<SentBatch> {
   initFcl()
+  const channel = await walletChannel()
   const trace = startNetworkTrace()
+  const slow = opts.onSlow
+    ? setTimeout(() => opts.onSlow?.(slowWalletHint(channel, trace.waitingOn(), trace.blocked())), opts.slowMs ?? SLOW_WALLET_MS)
+    : null
   let txId: string
   try {
     // "own": the connected Flow Wallet's own moments; "linked": a child account's, via Hybrid Custody
@@ -73,6 +124,7 @@ export async function sendDeliveryBatch(batch: DeliveryBatch): Promise<SentBatch
     // "Load failed" alone names no request; say which one died (or was blocked)
     throw new Error(errorText(e) + trace.describe())
   } finally {
+    if (slow) clearTimeout(slow)
     trace.stop()
   }
   let lastReadError = ""
@@ -118,17 +170,27 @@ function whenVisible(): Promise<void> {
  * request the page's Content-Security-Policy blocked — Safari reports both as a
  * bare "Load failed". Browser only; a no-op elsewhere.
  */
-export function startNetworkTrace(): { describe: () => string; stop: () => void } {
-  if (typeof window === "undefined" || typeof window.fetch !== "function") return { describe: () => "", stop: () => undefined }
+export function startNetworkTrace(): { describe: () => string; stop: () => void; waitingOn: () => string[]; blocked: () => string[] } {
+  if (typeof window === "undefined" || typeof window.fetch !== "function") {
+    return { describe: () => "", stop: () => undefined, waitingOn: () => [], blocked: () => [] }
+  }
   const failed: string[] = []
   const blocked: string[] = []
+  // requests sent and not yet answered: what a silent wait is actually waiting on
+  const inflight = new Map<number, string>()
+  let seq = 0
   const realFetch = window.fetch
   const traced: typeof fetch = async (input, init) => {
+    const label = `${(init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase()} ${requestLabel(input)}`
+    const id = ++seq
+    inflight.set(id, label)
     try {
       return await realFetch.call(window, input, init)
     } catch (e) {
-      failed.push(`${(init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase()} ${requestLabel(input)}`)
+      failed.push(label)
       throw e
+    } finally {
+      inflight.delete(id)
     }
   }
   const onViolation = (ev: Event) => {
@@ -147,6 +209,8 @@ export function startNetworkTrace(): { describe: () => string; stop: () => void 
       (failed.length ? ` · request failed: ${[...new Set(failed)].join(", ")}` : "") +
       (blocked.length ? ` · blocked by the page's security policy: ${[...new Set(blocked)].join(", ")}` : "") +
       (wentHidden && (failed.length || blocked.length) ? " · the page was in the background meanwhile (iOS can cut its connections)" : ""),
+    waitingOn: () => [...new Set(inflight.values())],
+    blocked: () => [...new Set(blocked)],
     stop: () => {
       if (window.fetch === traced) window.fetch = realFetch
       document.removeEventListener("securitypolicyviolation", onViolation)

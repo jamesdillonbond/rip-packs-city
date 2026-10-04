@@ -17,13 +17,14 @@ const fcl = vi.hoisted(() => {
     tx: vi.fn(() => ({ onceSealed: () => self.onceSealed() })),
     arg: vi.fn((value: unknown, type: unknown) => ({ value, type })),
     t: { Address: "Address", UInt64: "UInt64", Array: (x: string) => `Array(${x})` },
+    currentUser: { snapshot: vi.fn(async (): Promise<unknown> => ({})) },
   }
   return self
 })
 vi.mock("@onflow/fcl", () => fcl)
 vi.mock("@/lib/chains/flow/flow", () => ({ initFcl: vi.fn() }))
 
-import { SealUnconfirmedError, connectAdminWallet, disconnectAdminWallet, prepareWalletConnect, sendDeliveryBatch, startNetworkTrace } from "@/lib/giveaways/admin-wallet"
+import { SealUnconfirmedError, channelOf, slowWalletHint, connectAdminWallet, disconnectAdminWallet, prepareWalletConnect, sendDeliveryBatch, startNetworkTrace } from "@/lib/giveaways/admin-wallet"
 import { DELIVER_BATCH_CADENCE, DELIVER_GAS_LIMIT, DELIVER_OWN_BATCH_CADENCE } from "@/lib/giveaways/deliver-cadence"
 
 beforeEach(() => {
@@ -191,5 +192,50 @@ describe("giveaways/admin-wallet", () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+describe("giveaways/admin-wallet — where the wallet will ask (Trevor, test2 2026-10-04: \"It's not doing anything now\")", () => {
+  const BATCH = { source: "0x00000000000000aa", kind: "linked" as const, providerControllerID: "70", momentIDs: ["1"], recipients: ["0x01"] }
+
+  it("names the channel from FCL's authz service method", () => {
+    expect(channelOf([{ type: "authn", method: "WC/RPC" }, { type: "authz", method: "WC/RPC" }])).toBe("phone")
+    expect(channelOf([{ type: "authz", method: "EXT/RPC" }])).toBe("extension")
+    expect(channelOf([{ type: "authz", method: "POP/RPC" }])).toBe("popup")
+    expect(channelOf([{ type: "authz", method: "HTTP/POST" }])).toBe("popup")
+    expect(channelOf([{ type: "authn", method: "EXT/RPC" }])).toBe("extension") // no authz: fall back to authn
+    expect(channelOf(undefined)).toBe("unknown")
+    expect(channelOf([{ type: "authz", method: "SOMETHING/NEW" }])).toBe("unknown")
+  })
+
+  it("says where to look, and what the page is still waiting on or was blocked from", () => {
+    expect(slowWalletHint("phone", [], [])).toMatch(/Flow Wallet app on your phone/)
+    expect(slowWalletHint("extension", [], [])).toMatch(/extension icon/)
+    expect(slowWalletHint("popup", [], [])).toMatch(/blocked-popup icon/)
+    expect(slowWalletHint("unknown", [], [])).toMatch(/phone app, or the browser extension/)
+    const h = slowWalletHint("phone", ["POST lilico.app/api/wc/payer"], ["https://x.example by connect-src"])
+    expect(h).toContain("Still waiting on: POST lilico.app/api/wc/payer.")
+    expect(h).toContain("Blocked by the page's security policy: https://x.example by connect-src.")
+  })
+
+  it("a prompt left unanswered gets ONE hint naming the phone when connected by QR code; a quick answer gets none", async () => {
+    fcl.currentUser.snapshot.mockResolvedValue({ services: [{ type: "authz", method: "WC/RPC" }] })
+    let answer: (id: string) => void = () => undefined
+    fcl.mutate.mockImplementationOnce(() => new Promise<string>((r) => (answer = r)))
+    fcl.onceSealed.mockResolvedValue({ statusCode: 0, errorMessage: "" })
+    const hints: string[] = []
+    const p = sendDeliveryBatch(BATCH, { onSlow: (h) => hints.push(h), slowMs: 5 })
+    await new Promise((r) => setTimeout(r, 30))
+    expect(hints).toHaveLength(1)
+    expect(hints[0]).toMatch(/Flow Wallet app on your phone/)
+    answer("tx-slow")
+    await expect(p).resolves.toEqual({ txId: "tx-slow" })
+
+    fcl.mutate.mockResolvedValueOnce("tx-fast")
+    const quick: string[] = []
+    await sendDeliveryBatch(BATCH, { onSlow: (h) => quick.push(h), slowMs: 20 })
+    await new Promise((r) => setTimeout(r, 40))
+    expect(quick).toEqual([]) // the timer is cleared once the wallet answers
+    fcl.currentUser.snapshot.mockResolvedValue({})
   })
 })
