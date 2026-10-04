@@ -29,3 +29,17 @@ assert e["price"] == "0.26000000" and e["payment_vault"].endswith("DapperUtility
 assert e["custom_id"] is None and e["commission_receiver"] == "0x3cdbb3d569211ff3"
 assert parse([]) == (0, [])                      # an empty window is a real, recordable answer
 print("ok")
+
+# ── chain_verify_tx_gha.verdict on the same real event, as a /v1/transaction_results body ──
+from chain_verify_tx_gha import verdict
+res = {"block_id": "6a4c", "status": "Sealed", "error_message": "",
+       "events": [{"type": "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted", "payload": P1, "event_index": "18"}]}
+row = {"listing": "46179489601488", "nft_id": "47906232", "price": 0.26, "buyer": "0x0d744d23165bfb6c",
+       "seller": "0xe4db9c640c6e50ba", "vault": "A.ead892083b3e2c6c.DapperUtilityCoin.Vault"}
+ok, d = verdict(row, res); assert ok and d["event_index"] == 18, d
+ok, d = verdict({**row, "price": 0.27}, res); assert not ok and d["mismatch"] == ["price"], d
+ok, d = verdict({**row, "buyer": "0x0000000000000001"}, res); assert not ok and d["mismatch"] == ["buyer"], d
+ok, d = verdict(row, {**res, "status": "Pending"}); assert not ok and d["reason"] == "not_sealed", d   # wrong-spork answer
+ok, d = verdict({**row, "listing": "1"}, res); assert not ok and d["reason"] == "no_listing_completed_for_listing", d
+ok, d = verdict(row, {**res, "error_message": "panic"}); assert not ok and d["reason"] == "tx_error", d
+print("verdict ok")
