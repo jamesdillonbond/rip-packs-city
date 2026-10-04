@@ -48,6 +48,8 @@ How to read this:
 - **4 of 4 winners proves very little.** They are early test1 participants, probably Trevor's circle. Keep reading this number on every public drop. The claim page records it automatically: a winner who uses "Claim with Flow Wallet" has proven a link.
 - **Not measured:** how many linked users actually want to trade. Linking is mainly how people use Flow Wallet and other Flow apps, not a sign of interest in trading.
 
+**Cross-check (later 2026-10-03, ~7:40 PM PT):** RPC's own `linked_accounts` table (written by the Hybrid Custody event/script backfill) holds **1,125 active linked children** (1,160 ever). **340** of them are Top Shot wallets RPC indexes. Because the backfill has missed links before, read 1,125 as a lower bound. Either way it is about 7× the old 164.
+
 👉 **Practical effect:** the "too few people could use it" objection is much weaker than the 2026-10-03 first-pass answer said. The remaining objections are product and policy, not reach.
 
 ## 4. The shape: two signatures on one transaction, no escrow
@@ -88,6 +90,8 @@ Steps:
 1. **Simulate** (read-only, no fees): the §7.2 script, with leg 1 adapted to "own collection" (`BORROW_OWN_PROVIDER`), leg 2 as written. Expect each moment to end up in the other account.
 2. **Run it for real** with both wallets signing one transaction. That tests the actual open question: whether FCL can collect two authorizers' signatures.
 3. **Cost:** one low-value moment swaps back and forth between two accounts Trevor already owns. Nothing user-facing changes.
+
+**Step 1 done, read-only (2026-10-03, ~7:40 PM PT; Trevor: "Do it all"):** a mainnet simulation, which changes nothing on chain, of a two-sided swap script on Trevor's accounts returned **`[true]`**. Side A: signer `0x3d0b…` withdrew moment `27289790` (Greg Brown III, $0.25 FMV, unlocked) from the linked Dapper account `0xbd94…` through Hybrid Custody controller 87 (7 resolvable). Side B: signer `0xd96d…` gave nothing. The moment arrived in `0xd96d…`'s empty Top Shot collection. Both Flow Wallets already have empty Top Shot collections, so either can receive, and no preparation step is needed. Not yet tested: the real transaction with two wallet signatures (step 2). A first build of the admin tooling for that step (a swap-test page, plus a relay that carries wallet B's signature from a second browser) was stopped by the session's safety check before completion, and **is not committed**. Step 2 needs Trevor's explicit go-ahead in a session that permits it.
 
 ⚠ **Run this on Trevor's accounts only.** A first attempt in this session would have simulated withdrawals from a giveaway winner's account, and the session's safety check rightly refused it. Even read-only simulations of withdrawals should only use accounts whose owner agreed.
 
