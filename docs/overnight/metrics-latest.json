@@ -1,140 +1,55 @@
 {
-  "generated_at_pt": "2026-10-03 ~3:58 PM PT (daytime autonomous pass, Cowork cloud, Trevor present; ninth block)",
-  "generated_at_utc": "2026-10-03T22:58Z",
-  "pass": "daytime health + Search Console + scheduler audit + live QA, then 'keep going' (Cowork cloud, push-capable via add_repo). 15 code/docs commits, 11 migrations (20261003152533, 20261003163012, 20261003180241, 20261003180606, 20261003181445, 20261003182955, 20261003184026, 20261003184843, 20261003185621, 20261003192013, 20261003202149 — data-only; 20261003211704 beta_feedback_stats view), 1 pg_cron schedule (682 concentration refresh), 2 pg_cron unschedules (475, 673), 5 GSC validations + sitemap resubmit. Handoff: docs/handoff-2026-10-03-daytime-audit-gsc-schedulers.md",
-  "shipped": 20,
+  "generated_at_pt": "2026-10-04 ~1:10 AM PT (nightly autonomous pass, Cowork cloud, unattended)",
+  "generated_at_utc": "2026-10-04T08:10Z",
+  "pass": "Nightly overnight autonomous pass, push-capable via desktop-VM clone (add_repo absent, cloud-proxy push unavailable). Reviewed 3 fresh daytime-monitor candidates; nothing shipped. Handoff: docs/handoff-2026-10-04-overnight-pass.md",
+  "shipped": 0,
   "reverted": 0,
-  "verdict": "GREEN. security/structural/trust all clean (38/38, 0 breaches, precompute 5.0h); stalled []; R118 0; pg_cron 0 failures/24h (189 jobs); cron-job.org 71/71 active Successful; Vercel chronic groups only; GHA red 8:16-~9:00 AM PT from the other session's 679520534 (coverage gate), resolved by its owner; green on 605a5001f. Live QA 35 paths x 2 viewports clean after the Panini marketplace-status fix. GSC: robots.txt was blocking the 16,720 sitemap-submitted Panini URLs + the page-image proxies — fixed f8a73b6d9. Second block: UUID-form Top Shot edition 404s now 308 (4,447 mapped; verified live), sniper 'DEALS AFTER FEES' default-on gate, header nav wrap at 768-1000px fixed; post-ship 10:28 AM PT: pg_cron 0/3,720 fails in 3h, security 0, stalled [], no new Vercel cluster. Third block: team checklist cost = live ask (two cuts; FMV required), squeeze board min floors + franchise team filter, checklist cards show ASK + OFFER — all verified live. CI green again on main from 55b738540 (the other session's reds fixed). Fourth block (Trevor: \"Do everything mentioned\"): squeeze board Top 5 hold (census-backed, unknown reads as em-dash), edition chart overlays ASP/RANGE/VOLUME/MA 7/MY BUYS with a wallet-purchases RPC, 10 feedback rows closed by migration, scratch 673 unscheduled — all verified live on dpl_GqjqNBEU (8c4f654af). Fifth block: ci:guards local gate; beta inbox at 0 new (20261003202149); the unlayered universal reset that zeroed every Tailwind spacing utility under 8 layouts is in @layer base (8b18dccc6) — verified in Chrome + iPhone-13 sweep 8/8; header md follow-up 9051cbc19; concentration lane first cold tick ok (2,261 rows, 1.6 s). Sixth block (thread close): signed-in /profile, /dashboard, /admin/feedback QA'd after the reset fix; admin stat tiles now count the same population as the list (20261003211704). Eighth block: R77 runner pages via GitHub issue with no secret (f4684ec80); #22 blocked on Support #4811268 (open, no reply); the other session's unbounded-read red fixed (0447d373a, CI green).",
+  "verdict": "GREEN. Security/structural/trust clean (38/38 metrics ok, 0 breaches, precompute 5.37h); stalled []; R118 0; zero-yield 0 offenders; sentinel 0; deploys READY (932c175d6), no ERROR. All 3 candidates dispositioned without a ship: atlas-editions stall RESOLVED (20261003151308 verified, 0/282 stalled); pg_net_403 Firestore cluster ATTRIBUTED to the completed Flowty Firestore backfill (benign, 0 in retained window); panini insight boards SELF-CLEARED 06:18-06:22Z (transient IO/stats during Flowty promotion wave; WATCH re-open >180min). pipeline_alerts all by-design except panini-collector-walk MEDIUM (known 11-day rotation). Vercel chronic groups only + the stopped panini cluster. Beacon 3/24h.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
     "structural": "clean (function_search_path_drift [], procedure_txn_control_pins [], procedure_search_path_unpinned [], cross_collection_mat_staleness [], backward_cursor_rewinds [], wmc_null_edition_key [], suppression_parked_claim_drift [])",
     "r118_when_others_blind": "[] (0)",
-    "zero_yield_lanes": "offenders [] (307 inspected, 3 suppressed, 0 excluded_by_writes)",
+    "zero_yield_lanes": "offenders [] (315 inspected, 3 suppressed, 0 excluded_by_writes)",
     "trust_health_breaches": 0,
-    "trust_precompute_max_age_hours": 5.01,
+    "trust_precompute_max_age_hours": 5.37,
     "stalled_pipelines": "[]",
-    "pipeline_alerts": [
-      "pack-mint-probes failure_rate MEDIUM (338/722 over 3 cal-days, Timeout 20000 ms) — pooled across the 10-02 node spell (R124); #166 by design; not live.",
-      "pg_net_http_429 HIGH (21/2h at 10:28 AM PT) = ONE 20-request burst at 8:53 AM PT from the scratch wallet walk (jobid 673, cap already 40->20 at 6:47 AM) + 1 at 9:35; clears from the 2h window ~10:55 AM PT. Not a production lane.",
-      "unmapped-sales-nfl_all_day INFO (26073 actionable, ~4.7d to clear; was 28069 on 10-02 — draining) — by design",
-      "atlas-editions-upstream-403 INFO (58/480, Cloudflare base rate, 0 sets stalled) — by design",
-      "atlas-market-upstream-403 INFO (65/543, last drain fresh) — by design",
-      "flow-rest-moment-moved-400 INFO (63/155 'panic: no nft', sold/moved moments) — by design"
-    ],
-    "pipeline_fails_24h": "pack-mint-probes 274 (mainnet24 walk, by design); sync-nba-projections 8/8 (#8 shelved, all_upstreams_failed 403, fails safe); topshot-pack-supply-backfill 2 (budget_hit rows LANDING — 30s budget fix working, lane no longer silent); atlas-market-feed 2, member-wallet-usernames-atlas 2, wallet-backfill-golazos 2, atlas-editions-refresh 2 (upstream, by design); concierge-billing-error 1 (the one known pre-fix 8:47 PM PT 10-02 row, no new since the synthetic-ignore fix)",
-    "sentry": "n/a (Sentry dark since 08-18, decided no spend). Health read from Vercel + beacon, not Sentry.",
-    "vercel_24h": "9 error groups: DEP0169 url.parse DeprecationWarning (186, chronic since 06-16, queued cleanup); insights/pack-drops drop-5 TimeoutError x2 (chronic); pack-detail drop_pool/pack_table_rows/pack_sales_history 5s x1 each (chronic cold since 08-23); collection-snapshot 8s x1; edition get_edition_recent_sales timeout x1 (cold tail; #142 index helped the common path); profile resolve 6s x1; pack-reality ranker 8s x1. NO new cluster, NO 5xx spike, NO /api/support-chat errors (concierge up). || 3h at 10:28 AM PT: scratch_flip_probe smoke failure 8:53-9:09 AM PT (other session, closed by its RLS fix; none since), DEP0169 x2 on the pre-fix deployment, pack_realized_ev 5s x1 cold.",
-    "db_size_mb": 24030,
-    "post_migration_read_2_55pm_pt": "after the other session's five 2:30–2:50 PM PT migrations: pg_cron 0 failures / 2 h; secdef-anon [], search-path drift [], R118 [], running-not-succeeding []; wall-kills offender only panini-team-walk (3:52 AM PT kill, fixed by its owner 5371a12b9); Vercel 5xx in 90 min = one classified collection-stats 503."
+    "pipeline_alerts": "panini-collector-walk MEDIUM (10-min cap, short 1 collection — known 11-day aged/held rotation, not new); pack-mint-probes INFO (streak-split cleared); unmapped-sales-nfl_all_day INFO (23325 open, ~4d to clear); atlas-editions/atlas-market/atlas-pack-supply/flow-rest-moment-moved INFO (by-design CF/Flow base-rate 403/400).",
+    "pipeline_fails_24h": "pack-mint-probes 96 (by design); topshot-pack-supply-atlas 41 (CF-403 single-request partials, by design); sync-nba-projections 8 (muted to 10-28, all_upstreams_failed, fails safe); refresh-insights-cache 4 (panini-board stale window 05:22-06:07Z, self-cleared); others ≤6 by-design/upstream.",
+    "sentry": "n/a (dark since 08-18, no spend). Health from Vercel + beacon.",
+    "vercel_12h": "chronic groups only (pack_lifecycle 5s since 08-23, entity get_edition_recent_sales degrade-to-empty since 07-31, parallel-premiums 8s since 08-17, relative-deals, fmv-backfill) + panini board cluster (deal/special-serials/player timeouts) which STOPPED at 06:18:34Z, ~2h clean.",
+    "db_size_mb": 31973,
+    "db_size_note": "+7.9 GB vs 10-03 (24030). Attributed: flowty_index_sales 2.6GB + flowty_chain_listing_completed 980MB (Flowty promotion/index) + net._http_response 3.5GB (chronic pg_net log). Not runaway."
   },
   "fmv_high_med": {
     "nba_top_shot": 8205,
-    "nfl_all_day": 1653,
-    "disney_pinnacle": 822,
-    "panini_blockchain": 3263,
-    "candy_mlb": 29,
+    "panini_blockchain": 3405,
+    "disney_pinnacle": 854,
+    "nfl_all_day": 1729,
+    "candy_mlb": 30,
     "laliga_golazos": 6,
     "ufc_strike": 0
   },
-  "fmv_high_med_definition": "HIGH+MEDIUM from rpc_ops_snapshot().fmv_by_collection (edition_fmv_current); disney_pinnacle read from its own table (298 HIGH + 524 MED). fmv_by_collection_computed_at 2026-10-03T05:35Z for all.",
+  "fmv_high_med_definition": "HIGH+MEDIUM confidence edition count per collection from rpc_ops_snapshot fmv_by_collection (computed 05:35Z).",
   "editions_by_collection": {
-    "nba_top_shot": 14485,
+    "nba_top_shot": 14492,
+    "panini_blockchain": 14252,
     "nfl_all_day": 6190,
-    "panini_blockchain": 12544,
     "laliga_golazos": 575,
     "ufc_strike": 518,
     "candy_mlb": 125
   },
   "sentinels": {
-    "edition_integrity_flags": 7,
+    "ts_uuid_editions_48h": 0,
     "r118_blind_handlers": 0,
-    "zero_yield_lanes": 0,
-    "ts_uuid_editions_48h": 0
+    "zero_yield_offenders": 0
   },
-  "deltas_vs_prev": "vs 10-02 ~7:25 PM PT metrics: FMV HIGH+MED nba 8222->8205 (-17), nfl 1635->1653 (+18), panini 3243->3263 (+20), candy 27->29, golazos 6->6 (all noise/continued walk). Editions panini 11438->12544 (+1,106, tier-1 walk continuing), nba 14478->14485. edition_integrity_flags 6->7 (within breach_at 250). db_size 33,810->23,721 MB (-10.1 GB: pg_net VACUUM FULL reclaim + autovacuum). trust breaches 1->0 (slow-board cleared).",
+  "deltas_vs_prev": "db_size 24030→31973 MB (+7943, Flowty). trust_precompute 5.01→5.37h. zero-yield inspected 307→315. FMV counts stable. No new Vercel chronic group; panini board cluster appeared 02:52Z and cleared 06:18Z (not persistent).",
   "open_watches": [
-    "GSC 'Validate fix' STARTED 10-03 on Blocked by robots.txt (1,472), Not found (404) (326), Page with redirect (117), Server error (5xx) (23), Duplicate without user-selected canonical (61); sitemap resubmitted 10-03. Falsifier: counts fall over ~2 weeks; the 404 bucket should shed ~285 UUID-edition rows first.",
-    "Panini pages: the \"Marketplace status uncertain\" banner must stay gone (v_collection_marketplace_status row, 20261003152533).",
-    "pack-mint-probes medium failure_rate stays lit while the walk is on mainnet24 (#166, by design).",
-    "Fossil 308: /nba-top-shot/edition/<uuid>:<uuid> -> 308 verified live 10:2x AM PT (dd057f708 + the other session's withBoardBudget follow-up). Watch: no new 5xx on /[collection]/edition/[slug]; the lookup is bounded at 2 s and falls back to 404.",
-    "Sniper 'DEALS AFTER FEES' default-on (5bf46cced): watch sniper pageviews / empty-state beacon for a board that is EMPTY after the gate on a thin collection (UFC, Golazos) — the empty state names the toggle, but if it is empty most of the day the default should flip per collection.",
-    "Team checklist cost rule (20261003180606): watch for a team whose cost-to-complete jumps >2x week-over-week — a connected (<=3x FMV) but wrong ask; the per-tile badge names the source so a tester can report which.",
-    "Squeeze board team filter: a 'many' resolution shows all matched franchises; if testers find that confusing, narrow to primary_name only.",
-    "Edition chart overlays: client-only fetches (sale-history for RANGE/VOLUME on FMV ranges, wallet-purchases for MY BUYS) are visible only via the client_error beacon; a spike in /api/entity/edition part=wallet-purchases 400s means a stored wallet of the wrong chain shape.",
-    "topshot-edition-concentration (pg_cron 682, 4x/day): first cold tick 1:58 PM PT ok 2,261 rows / 1.6 s; watch rows_written tracks the census walk (+~400 editions/week).",
-    "Layered reset (8b18dccc6): every page under the 8 layouts now renders its Tailwind p-*/m-* for the first time — a surface that looks too padded is a per-page width tuning (as PackTable's name cell was), never a reason to re-unlayer. Mobile sweep 8/8 clean at ship; the weekly surface QA should look at /dashboard, /profile, /login, /admin/* signed in.",
-    "FMV 1.8.0 (median of last 7 typical sales): on a liquid edition the price can now step on each sale instead of gliding; a complaint that a price 'jumps' is the estimator working — check fmv_usd vs asp_without_outliers on that edition before touching N. Alerts: fmv_alerts fire on asks, not on this."
+    "panini insight boards: re-open if snapshot age >180min on two consecutive ticks while Flowty promotion (697/698) runs",
+    "net._http_response 3.5GB chronic pg_net bloat"
   ],
   "needs_trevor": [
-    "rotate ATLAS_POOL_INGEST_KEY (#144)",
-    "sync-nba-projections (#8) mute now expires 10-28",
-    "overrule check (optional): sniper fee gate default-on was a delegated product call — revert 5bf46cced to undo; team-named player slugs stay 404 (decided)",
-    "product call (optional): an ask/offer price-history SERIES would need a new snapshot lane; the chart states today that none exists",
-    "#22: GitHub Support #4811268 (open since 09-30, no reply) — after they act, re-test commit/1c3e01a8f (expect 404) and rotate the Dapper session",
-    "R125 (optional overrule): FMV model 1.8.0 shipped 10-03 ~4:50 PM PT under delegation (median of last 7 typical sales replaces the WAP). Judge it by fmv_sales_backtest('nba_top_shot', 7) from ~10-06; revert the 1.8.0 commit to undo (sweep re-prices in ~1.5 d)",
-    "R77: pager proven live 10-03 5:30-5:36 PM PT (issues #16/#17; dedupe bug found by the live test and fixed in 65d699f76). Close issue #16 when seen. Telegram secrets optional (second channel)."
+    "~560-file inbox archival backlog → rpc-context-hygiene pass or approve bulk archive"
   ],
-  "housekeeping": "offer-fill-backfill.yml move to cron-job.org RETIRED as an item (its header explains the GHA loop; caught-up trailing re-walk). pg_cron 475 spent one-shot unscheduled. cron-schedule.md re-verified 10-03. The 10 retired cron-job.org entries were deleted by Trevor ~2:25 PM PT (78 entries / 71 active / 7 inactive). Register OPEN 88 -> 52: 36 self-marked-resolved rows moved to RESOLVED (260dfbe22).",
-  "fmv_backtest_topshot_7d": {
-    "published": {
-      "n": 17134,
-      "median_abs_err_pct": 14.3,
-      "within_25_pct": 70.3,
-      "median_ratio": 1.0
-    },
-    "last3_median_30d": {
-      "n": 17134,
-      "median_abs_err_pct": 12.5,
-      "within_25_pct": 72.1,
-      "median_ratio": 1.0
-    },
-    "definition": "topshot_fmv_backtest(7) at 2026-10-03 ~3:45 PM PT; sales serial>25, no Dapper sell-backs, FMV published >=1 day before the sale; register R125"
-  },
-  "fmv_backtest_allday_7d": {
-    "published": {
-      "n": 4992,
-      "median_abs_err_pct": 26.7,
-      "median_abs_err_usd": 0.05,
-      "within_25_pct": 47.0,
-      "median_ratio": 1.2
-    },
-    "drop_week_0912_0919": {
-      "n": 5759,
-      "median_abs_err_pct": 45.0,
-      "median_ratio": 0.571
-    },
-    "definition": "fmv_sales_backtest('nfl_all_day', 7) at 2026-10-03 ~3:48 PM PT; register R125"
-  },
-  "fmv_model": {
-    "algo_version": "1.8.0",
-    "shipped": "2026-10-03 ~4:50 PM PT",
-    "rule": "median of the 7 most recent typical sales (FMV_RECENT_SALES_N = MIN_SALES_30D_HIGH); asp_usd/asp_without_outliers keep the raw/filtered WAP as diagnostics",
-    "selection_evidence_14d_n4194": {
-      "med3": {
-        "median_abs_err_pct": 13.0,
-        "median_ratio": 1.0
-      },
-      "med5": {
-        "median_abs_err_pct": 13.0,
-        "median_ratio": 1.0
-      },
-      "med7": {
-        "median_abs_err_pct": 13.0,
-        "median_ratio": 1.0,
-        "within_25_pct": 70.4
-      },
-      "med10": {
-        "median_abs_err_pct": 13.0,
-        "median_ratio": 1.0,
-        "within_25_pct": 70.5
-      },
-      "published_1_7_0": {
-        "median_abs_err_pct": 15.0,
-        "median_ratio": 1.045,
-        "within_25_pct": 69.9
-      }
-    },
-    "control": "fmv_sales_backtest('nba_top_shot', 7) from 2026-10-06, when every matched snapshot is 1.8.0; R125 exit = published <= last-3 on MEDIUM/LOW two weeks running",
-    "note_2026_10_03_1735pt": "#169 shipped by the Claude Code session (9bb3ff3af, migration 20261004002116): fmv-recalc and every SQL FMV writer read sales_market (sales minus buyback_wallets buyers). 1.8.0's median is over market sales only. Five 1.8.0 ticks 5:15-5:48 PM PT all ok, 16-35 s, 499 rows; vs each edition's last 1.7.0 snapshot: median ratio 1.000, p05 0.75, p95 1.15, 0 editions over 2x, 4 under 0.5x (all tracking real recent prints)."
-  }
+  "housekeeping": "3 consumed candidates archived (1 via git in clone, 2 mount-only moved on mount). Lock released."
 }
