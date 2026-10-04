@@ -2954,3 +2954,27 @@ A table `CREATE`d in `public` by `postgres` has RLS **off** and inherits the def
 - **No source:** UFC Strike only — every Atlas product name tried (`ufc`, `strike`, `ufcstrike`, `ufc_strike`) 400s. ⚠ **And the chain has no counter to read instead (checked 2026-10-03 ~6:00 PM PT, contract source fetched via pg_net from `rest-mainnet.onflow.org/v1/accounts/0x329feb3ab062d289?expand=contracts`):** `UFC_NFT` keeps `numberEditionsMintedPerSet` and `maxEditions` but NO burned or total-supply counter. A burn is visible only as the `NFTDestroyed(id)` event from `burnCallback`, so a burn count needs a full event scan, and Flow REST is pruned (see apis-and-cadence.md). Issuer-held needs an owner census of Dapper's UFC accounts, which we do not have either (`wallet_moments_cache` holds 5,229 UFC rows across 128 wallets against ~1.98 M minted). UFC stays "Unknown" with the minted-supply upper bound; do not re-chase Atlas product names.
 - ✅ **CORRECTED 2026-10-03 ~3:45 PM PT — there IS a live source, and it is now ingested.** Top Shot's own site reads pack supply from Atlas **`atlas.v1.DistributionService`**: `GetDistributionContentSummary {product:'nba', distributionId}` → `unopenedCount`, `ownedCount`, `totalPackCount`, `remainingByTier` / `originalCountsByTier` (Moments); `GetDistributionEditions {…, limit≤100, offset, hideOpened:true}` → per-edition `originalCount` / `remainingCount` + `totalCount` (8617: Σ per tier == remainingByTier exactly). ⭐ Atlas's `remaining` EXCLUDES never-sold listing inventory (3092: 2,574 = 858 unopened × 3, where the dead GraphQL said 651,115), so hidden − Σ remaining IS the reserve. Lane: `topshot_pack_supply_tick` (pg_cron every minute, ≤ 2 req/min, backs off while the market lane is mostly 403s) → `topshot_atlas_dists` / `topshot_atlas_dist_editions`; readers `get_topshot_issuer_held_split()` (per tier) and `topshot_issuer_held_split_editions()` (per edition), NULL until a full pass is complete and fresh. Migration `20261003224608`. The paragraph below is the superseded finding, kept verbatim. ⛔ **(superseded) Splitting issuer-held into "inside sealed packs" vs "reserve never packed" has NO live source (checked 2026-10-03 PT).** Top Shot `getPackListing` (the only feed of `remainingByTier`, which IS Moments — validated against `pack_rips` on 8617 / 8643 / 8609) has answered HTTP 530 since 08-26 (#81), so `topshot_pack_supply` is frozen at 06-28..08-26 stamps for 2,083 of ~3,066 dists. Atlas `DistributionService/SearchDistributions` lists 4,100 Top Shot drops but returns `totalPackCount = 0` on every one (no counts at all). `pack_nft_identity` is a 176k-pack lookup sample, not a census; `pack_purchases` has no Top Shot `primary_mint` rows. A real split needs a PackNFT mint census (on-chain mint events per dist) minus `pack_rips` opens. All Day: Σ (packnft_total − opened) × slots ≈ Atlas hidden (2,147,957 vs 2,117,395) — reserve ≈ 0 there.
 - **Consumers:** `market_cap_edition_rows()` (one row set) → `get_market_cap_board()`, and `refresh_market_cap_current()` (every 2 h) → `market_cap_current` (entity tiles via `get_market_cap_entity`) + PT-dated `market_cap_daily` (7-day change). Collector-held = minted − burned − issuer-held; unknown split → NULL cap, never 0. `market_cap_current` ranks each grain WITHIN a collection, so its collection-grain rows all read rank 1 of 1; the overview tile's cross-collection rank is computed in `fetchCollectionMarketCapTile` over KNOWN caps only (an unknown cap gets no rank and is not counted). Stall watches: `pipeline_cadence_watchlist` rows `market-cap-refresh` (270 min) and `atlas-edition-supply` (400 / 780 min). ⚠ The series + Pinnacle character/franchise grains of the refresh are NOT live — known-issues #170.
+
+## ⛔ A PRICE OR BUYER SIGNAL READS `sales_market`, NEVER `sales` — and a hand-kept wallet list beside a registry is the bug, not the fix (2026-10-03, PT, #169)
+
+`sales` holds issuer buy-backs: Dapper buying at its own offer, 710 of 79,292 Top Shot sales in 30 d,
+and 4,987 in 90 d for `0xe1f2…` alone, in bursts after drops. Counting them as market sales gave
+**64 editions with no collector sale at all a MEDIUM or LOW FMV**. Eight buyer signals also each kept a
+`NOT IN` list of system wallets, and **none** carried the buy-back wallet. It stayed out of their output
+only by luck: a quiet week. The fix is one view over the existing `buyback_wallets` registry, plus a
+guard. Rules: an FMV, price or buyer-behaviour reader reads `sales_market`. A selector or a display of
+real transactions reads `sales`. A new system wallet goes into the registry, never into a function.
+Table + guard: [schema-truth.md](schema-truth.md) (end).
+
+⚠ **A view over an RLS-protected registry must not be granted to a role that cannot see the
+registry.** `security_invoker=on` evaluates the `NOT EXISTS` as the caller. A caller blocked by RLS
+sees an EMPTY registry and gets every row back, with no error. Grant such a view to the roles that
+bypass RLS only, so the failure is LOUD.
+
+⭐ **Re-pointing N live functions without hand-copying them:** `regexp_replace(pg_get_functiondef(oid), …)`
+inside a `DO` block, guarded by `md5(prosrc)` before (base = the committed migration's body) and after
+(result = the new file's body), raising on any mismatch. First prove the regex on live with a read-only
+`md5(regexp_replace(prosrc, …))` against the file's md5s. 12 + 9 + 2 functions shipped this way on
+10-03 with zero transcription. Postgres's word boundary is `\y`; `\b` there is BACKSPACE, so a `\b`
+pattern matches nothing.
+

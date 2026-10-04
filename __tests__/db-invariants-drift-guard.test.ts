@@ -2806,14 +2806,12 @@ const PINS = [
     // fill-only semantics and that an EMPTY batch arms nothing.
     fn: "apply_sales_counterparty",
     test: "supabase/tests/apply_sales_counterparty.sql",
-    migration:
-      "supabase/migrations/20260913190927_audit_20260913_a_barren_apply_pass_arms_the_counterparty_cooldown.sql",
+    migration: "supabase/migrations/20261004005326_audit_20261003_counterparty_barren_cooldown_only_at_the_bottom.sql",
   },
   {
     fn: "claim_sales_counterparty_batch",
     test: "supabase/tests/claim_sales_counterparty_batch.sql",
-    migration:
-      "supabase/migrations/20261003201845_counterparty_lane_claims_topshot_rows_missing_only_the_buyer.sql",
+    migration: "supabase/migrations/20261004005326_audit_20261003_counterparty_barren_cooldown_only_at_the_bottom.sql",
   },
   {
     // Added 2026-10-02. The pack-dist page's EV-contributor list: latest Top Shot

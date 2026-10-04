@@ -61,7 +61,8 @@ CREATE TABLE sales_counterparty_backfill_state (
   recovered      bigint NOT NULL DEFAULT 0,
   undecodable    bigint NOT NULL DEFAULT 0,
   exhausted_at   timestamptz,
-  updated_at     timestamptz
+  updated_at     timestamptz,
+  last_claim_full boolean NOT NULL DEFAULT false
 );
 
 INSERT INTO sales (id, seller_address, buyer_address) VALUES
@@ -139,7 +140,13 @@ BEGIN
          -- claim-side alternative (arm on a partial batch) breaks that function's pinned
          -- property that a productive scan must not silence the lane. COALESCE, not now():
          -- a second barren pass must not PUSH an armed stamp or the cooldown never ends.
-         exhausted_at   = CASE WHEN v_applied = 0 THEN COALESCE(exhausted_at, now()) ELSE exhausted_at END,
+         -- …but ONLY AT THE BOTTOM (2026-10-03): after a FULL claim more claimable rows may lie
+         -- below this batch, and arming there sent the re-armed cursor back to the top every
+         -- cycle, so the walk never got past a mid-walk barren band. The cursor already moved
+         -- past this batch, so a full barren pass simply continues downward; the short pass at
+         -- the bottom still arms (claim_sales_counterparty_batch records which it was).
+         exhausted_at   = CASE WHEN v_applied = 0 AND NOT COALESCE(last_claim_full, false)
+                               THEN COALESCE(exhausted_at, now()) ELSE exhausted_at END,
          updated_at     = now()
    WHERE id = 1;
 
@@ -197,6 +204,21 @@ SELECT _assert_eq((SELECT seller_address FROM sales WHERE id='44444444-4444-4444
 -- learned nothing from the pass.
 SELECT _assert((SELECT exhausted_at IS NOT NULL FROM sales_counterparty_backfill_state WHERE id=1),
   'a pass whose every row was already filled also arms — nothing was learned');
+
+-- ── F. A BARREN pass after a FULL claim does NOT arm (2026-10-03) ──────────────
+-- More claimable rows may lie below a full batch; the cursor has already moved past it, so the
+-- walk must continue downward instead of sleeping and re-arming back to the top. (In production
+-- a mid-walk band of 893 never-decoded All Day rows did exactly that every cycle.)
+UPDATE sales_counterparty_backfill_state SET exhausted_at = NULL, last_claim_full = true WHERE id = 1;
+SELECT _assert_eq(
+  (SELECT (apply_sales_counterparty('[
+     {"sale_id":"33333333-3333-3333-3333-333333333333","seller":null,"buyer":null,"sold_at":"2025-12-01T00:00:00Z"}
+   ]'::jsonb))->>'applied'), '0', 'a barren pass after a full claim applies nothing');
+SELECT _assert((SELECT exhausted_at IS NULL FROM sales_counterparty_backfill_state WHERE id=1),
+  'a barren pass after a FULL claim leaves the lane RUNNING — the walk continues below it');
+SELECT _assert_eq((SELECT (cursor_sold_at AT TIME ZONE 'UTC')::text FROM sales_counterparty_backfill_state WHERE id=1), '2025-12-01 00:00:00',
+  'and the cursor still moves past the barren batch');
+UPDATE sales_counterparty_backfill_state SET last_claim_full = false WHERE id = 1;
 
 -- ── E. AN EMPTY BATCH RETURNS EARLY AND TOUCHES NOTHING ───────────────────────
 UPDATE sales_counterparty_backfill_state SET exhausted_at = NULL, scanned = 0 WHERE id = 1;

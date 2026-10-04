@@ -390,3 +390,38 @@ One visit = one `rpc_sess` id (sessionStorage, dies with the tab; `lib/track-fun
 - **Reader:** `public.admin_visitor_journeys(hours, max_sessions)` → `/admin/visitor-journeys`. Excludes `bot_ua`, `usage_events.metadata.automated`, smoke-test chats and `internal_accounts` sessions, and COUNTS what it excluded. AI arrivals classified by `public.referrer_ai_source(text)` (host at a boundary). Pin: `supabase/tests/admin_visitor_journeys.sql`.
 - **Internal checks are tests by session-id PREFIX:** `/api/support-chat` sets `is_smoke_test=true` for `cowork-` / `smoke-` / `qa-` / `test-` / `internal-` session ids (`lib/concierge/visit-link.ts`), with or without the smoke token. Name a Cowork/QA chat probe with one of those prefixes.
 - `deal-watch-shown` / `deal-watch-focus` (usage_events) + `email_capture_submitted` (funnel) = the share-page capture's seen → engaged → submitted funnel.
+
+## `sales` vs `sales_market` — which one a reader uses (2026-10-03, #169)
+
+`public.sales_market` is `sales` minus every row whose **buyer** is in `buyback_wallets` **for that
+collection** (an issuer buying collectors' moments at its OWN offer: Dapper's Top Shot sell-back wallet
+`0xe1f2a091f7bb5245`, All Day's issuer `0xe4cf4bdc1751c65d`, and `0x4d2c9216f1dca098`). Rows with a
+NULL buyer are kept. Created by `20261004002116`; `security_invoker=on`; SELECT is granted to
+`service_role` only, because `buyback_wallets` is RLS-protected with no policy, and a caller who
+cannot see the registry would otherwise get an UNFILTERED result silently, not an error.
+
+| reader | reads | why |
+|---|---|---|
+| anything that computes or adjusts an **FMV** (`/api/fmv-recalc`, `/api/fmv-backfill`, the cold-tail writers, clamps, thin/display guards, parallel ratios, serial models) | `sales_market` | a buy-back is not collector price discovery; the FMV backtests already measured against collector sales |
+| **buyer-behaviour signals** (whale watch, accumulators, sweep / concentration / early-buyer detectors, hot floors, insider counts) | `sales_market` | an issuer's burst of instant sell-backs is not a whale or a sweep |
+| `analytics_sales_leaderboard` | `sales` + a buyer-side registry predicate (under `p_include_contracts`) | the SELLER board must keep sell-back proceeds — real money to the seller |
+| **selectors** that pick which editions to re-price (`fmv_recalc_edition_page`, `fmv_recalc_90d_catchup_editions`, `fmv_backfill_candidates`) | `sales` | a buy-back-only edition must stay IN the recalc set so it is re-priced without them |
+| **display** of real transactions (edition charts, recent sales, moment last sale, wallet history) | `sales` | a sell-back did happen; showing it is honest |
+
+Enforced by `__tests__/fmv-writers-read-sales-market-not-sales.test.ts`: it tree-walks the newest
+definition of every migration function and fails on an `fmv`-named or `fmv_snapshots`-writing function,
+or a function that hand-lists system-wallet buyers, that reads raw `sales` without the registry.
+Suppression is a curated list, each entry with its reason. **To exclude a new buy-back wallet
+everywhere, add one row to `buyback_wallets`.** Do not add it to any function's hand list.
+
+**2025 sell-back backfill (#167):** `topshot_sellback_walk_{state,pages,purchases,deposits}` stage every
+`TopShotMarketV3.MomentPurchased` (collector purchases included) plus deposits into `0xe1f2…`, for
+blocks 118.1M–131.33M. `topshot_sellback_edition_requests` holds the chain reads that name them.
+`topshot_chain_moment_reads` rows with `owner_address = '0xe1f2a091f7bb5245'` came from that lane (set /
+play / serial / subedition are immutable, so any reader of that table may use them). Promoted rows
+carry `sales.source = 'onchain_sellback_backfill_2025'`.
+
+**`sales_counterparty_backfill_state.last_claim_full`** (`20261004005326`) records whether the last
+claim returned a FULL batch. `apply_sales_counterparty` arms the barren-pass cooldown only after a SHORT
+claim, i.e. at the bottom of the walk.
+

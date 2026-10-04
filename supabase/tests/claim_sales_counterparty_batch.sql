@@ -45,7 +45,8 @@ CREATE TABLE sales_counterparty_backfill_state (
   floor_sold_at  timestamptz,
   exhausted_at   timestamptz,
   rearm_after    interval NOT NULL DEFAULT '2 hours',
-  updated_at     timestamptz
+  updated_at     timestamptz,
+  last_claim_full boolean NOT NULL DEFAULT false
 );
 
 -- Two decodable rows well above the floor, and one STUDIO-HISTORY row below them
@@ -202,6 +203,14 @@ BEGIN
   -- shipping (3 rows -> 3, empty -> 0). A zero is the drained signal - record it, so the NEXT
   -- tick takes the free branch above instead of paying for the same discovery again.
   GET DIAGNOSTICS v_found = ROW_COUNT;
+  -- FULL OR SHORT (2026-10-03). A FULL batch means more claimable rows may lie below it; a SHORT
+  -- one means the walk reached its bottom. apply_sales_counterparty arms the cooldown on a
+  -- barren pass ONLY after a short claim — mid-walk, a barren full batch (893 never-decoded All
+  -- Day rows dated 2025-12-29..2026-02-16) armed it every cycle, the re-arm sent the cursor back
+  -- to the top, and the ~96k 2025 buyer-only rows below that band were never reached.
+  UPDATE public.sales_counterparty_backfill_state
+     SET last_claim_full = (v_found >= v_limit)
+   WHERE id = 1;
   IF v_found = 0 THEN
     UPDATE public.sales_counterparty_backfill_state
        SET exhausted_at = now(), updated_at = now()
@@ -290,4 +299,15 @@ SELECT _assert_eq((SELECT string_agg(sale_id::text, ',') FROM claim_sales_counte
   'the buyer-only leg honours the cursor too');
 
 SELECT '✓ claim_sales_counterparty_batch invariants pass' AS result;
+-- ── G. FULL OR SHORT (2026-10-03): the claim records whether its batch was FULL, so a barren
+--    pass mid-walk does not arm the cooldown (apply_sales_counterparty reads this).
+UPDATE sales_counterparty_backfill_state SET cursor_sold_at = NULL, exhausted_at = NULL WHERE id = 1;
+SELECT count(*) FROM claim_sales_counterparty_batch(1);
+SELECT _assert((SELECT last_claim_full FROM sales_counterparty_backfill_state WHERE id = 1),
+  'a claim that filled its limit is FULL — more rows may lie below');
+UPDATE sales_counterparty_backfill_state SET cursor_sold_at = NULL, exhausted_at = NULL WHERE id = 1;
+SELECT count(*) FROM claim_sales_counterparty_batch(500);
+SELECT _assert((SELECT NOT last_claim_full FROM sales_counterparty_backfill_state WHERE id = 1),
+  'a claim that returned fewer than its limit is SHORT — the walk reached its bottom');
+
 ROLLBACK;
