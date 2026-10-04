@@ -327,3 +327,11 @@ number rather than quote it. A `Shipped:` line is a number of that kind.
 - 🚨 **The commit message MUST carry `[ledger-roll]`.** Otherwise the no-clobber guard reads the removed headings as the concurrent-session clobber and reds `main`.
 - **Verify:** archive = old archive + exact block; new length = old − block; the legacy `## Declined` / `## Shipped (autonomous…)` / `## Queued — ARCHIVE` headers survive; future-dated = 0.
 - ⚠ **Rolling can move DAMAGE out of the live file, which changes a guard's expected value.** The 09-24 roll carried the three 2026-08-11 swallowed headings into the archive, so `find-swallowed-ledger-headings.awk` went **3 → 0**. Every instruction hard-coding 3 then had to change: CLAUDE.md, `tooling-gotchas.md`'s VM push loop (`= 3 ] || exit 4` would have aborted every push), `resolve-ledger-rebase-conflict.mjs`'s hint, the `rpc-audit-drain` skill, and two scheduled-task prompts. **After a roll, grep for the old count across repo, skills and task prompts.**
+
+## ⚠ MARKING AN ENTRY REVERTED: keep its first **bold** title — prepend the tag, never replace the title (2026-10-04)
+
+`find-clobbered-ledger-headings.mjs` keys an entry on `date | first **bold** span` of its `### ` heading. A heading edited in place survives the guard only if that key survives. On 2026-10-04 a Cowork session marked its own (reverted) inbox-archive entry by rewriting the heading to `↩ REVERTED … ~~old title~~ — **WRONG: …**`: the bold span changed, the key vanished, and `1f256f5` failed the **Ledger no-clobber guard** (count unchanged, 1738 → 1738).
+- **Do:** `### 2026-10-04 · ↩ REVERTED (\`815c984\`) · <original prefix> — **<original bold title, unchanged>** …` and put the reason in the body, or add a NEW entry that says the earlier one was reverted.
+- **Once it is wrong, leave it:** the guard compares each push only to its parent, so the red is confined to that one commit; "fixing" the heading back removes the NEW key and reds the next push the same way. The 10-04 heading was left as is.
+- **Before pushing a ledger edit (not an add), run the guard locally:** `git show HEAD~1:docs/overnight/ledger.md > /tmp/b && node scripts/find-clobbered-ledger-headings.mjs /tmp/b docs/overnight/ledger.md` must print `0` (run it after committing, against the commit's parent).
+
