@@ -373,3 +373,15 @@ What this thread added (each has a ledger entry with its revert path):
   are `ev_modeled` (the 10-03 view fix); every other pack, incl. 27 more soccer packs, reads not modeled.
 - **Verdict:** the 2-hour schedule is enough to keep everything under 7 days. Re-read > 6 d after the held backlog drains;
   tier 2 can be reconsidered then.
+
+### 2026-10-04 ~8:00 AM PT — naming: from collectors' collections (step 2 no longer needs a signed-in Chrome for held products)
+
+- The collector walk reads each profile collection by collection, and a collection IS a product (its `cname` is Panini's
+  product name). It now tallies (set id, collection name) over the cards it reads and posts `{product_names}` to the
+  ingest route once per walk. The route names a set id only when the top name has ≥ 3 cards and ≥ 80 % of them, and only
+  into a NULL `panini_products.name` (never overwrites a hand-set name).
+- Reach: every product a walked collector (linked + rotation) holds. A product nobody walked holds stays unnamed.
+- **Read it:** `select started_at, extra->'product_names' from pipeline_runs where pipeline='panini-ingest-enum' and extra ?
+  'product_names' order by started_at desc` and `select count(*) filter (where name is null), count(*) from
+  panini_products`. A product being named also lets its secondary packs attach (`product_set_id` by name); EV stays
+  limited to the four modeled packs.
