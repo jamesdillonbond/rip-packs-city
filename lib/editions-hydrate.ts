@@ -17,6 +17,8 @@
 // against the consumer GQL endpoint by paginating allEditions and matching.
 // One bulk pull per process; cached in-module for the run.
 
+import { teamMomentSubject } from "@/lib/topshot-edition-name"
+
 const TOPSHOT_GQL_DEFAULT = "https://public-api.nbatopshot.com/graphql"
 const ALLDAY_GQL_DEFAULT = "https://nflallday.com/consumer/graphql"
 const PER_REQUEST_TIMEOUT_MS = 8_000
@@ -561,8 +563,9 @@ export async function hydrateTopShotEditions(
 
     const playerName = meta?.playerName ?? null
     const setName = meta?.setName ?? null
-    const name =
-      playerName && setName ? `${playerName} — ${setName}` : playerName ?? setName
+    // A team Moment (no player) is named by its team, like a player Moment (R8, 2026-10-04).
+    const subject = teamMomentSubject(playerName, meta?.teamName)
+    const name = subject && setName ? `${subject} — ${setName}` : subject ?? setName
 
     // For UUID-format external_ids the int pair isn't in the key, so fall back
     // to the GQL-returned set.flowId / play.flowID. UUID-format inserts that

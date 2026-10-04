@@ -3,6 +3,7 @@ import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { hydrateTopShotEditions, toUpsertRow } from "@/lib/editions-hydrate"
+import { teamMomentSubject } from "@/lib/topshot-edition-name"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 
@@ -424,9 +425,11 @@ async function upsertEdition(
         collection_id: collectionId,
         player_id: playerId,
         set_id: setId,
-        // A team Moment has no player: its siblings are named by the set alone ("Clamps"), never
-        // "Unknown — Clamps" (2 such rows repaired 2026-09-29). A missing piece is left out, never invented.
-        name: [moment.play.stats?.playerName?.trim(), moment.set.flowName?.trim()].filter(Boolean).join(" — ") || editionKey,
+        // A team Moment has no player, so it is named by its TEAM — "Boston Celtics — Clamps", the
+        // same shape as a player Moment (2026-10-04, R8: 66 Clamps Moments all named just "Clamps"
+        // were indistinguishable). Never "Unknown — Clamps" (2 such rows repaired 2026-09-29): a
+        // missing piece is left out, never invented.
+        name: [teamMomentSubject(moment.play.stats?.playerName, moment.play.stats?.teamAtMoment), moment.set.flowName?.trim()].filter(Boolean).join(" — ") || editionKey,
         tier: tier as "COMMON" | "RARE" | "LEGENDARY" | "ULTIMATE" | "FANDOM",
         series: toNum(moment.set.flowSeriesNumber),
         edition_kind: isRetired ? "LE" : "CC",
