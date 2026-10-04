@@ -45,6 +45,31 @@ export interface SwapPlan {
 export interface PlanDeps {
   read?: (address: string, ids: string[]) => Promise<Record<string, Holding>>
   run?: typeof runFlowScript
+  /** Active (non-revoked) key weights of an account; throws when the read fails. */
+  keys?: (address: string) => Promise<number[]>
+}
+
+const FLOW_ACCOUNTS_URL = "https://rest-mainnet.onflow.org/v1/accounts"
+
+/** Reads an account's active key weights from Flow's REST API. */
+export async function readActiveKeyWeights(address: string, fetchImpl: typeof fetch = fetch): Promise<number[]> {
+  const res = await fetchImpl(`${FLOW_ACCOUNTS_URL}/${address}?expand=keys`, { signal: AbortSignal.timeout(20_000) })
+  if (!res.ok) throw new Error(`Flow account read HTTP ${res.status}`)
+  const body = (await res.json()) as { keys?: Array<{ weight?: unknown; revoked?: unknown }> }
+  if (!Array.isArray(body?.keys)) throw new Error("Flow account read returned no key list")
+  return body.keys.filter((k) => k?.revoked !== true && k?.revoked !== "true").map((k) => Number(k?.weight))
+}
+
+/**
+ * A wallet can sign this transaction on its own only if ONE active key carries the
+ * full weight (1000). An account whose weight is split, e.g. 999 + 1 (how Blocto
+ * accounts were built, with Blocto's server co-signing), cannot. This is a floor, not
+ * a guarantee: 0xd96d… (2026-10-04) splits its main key 999 + 1 but ALSO carries one
+ * active full-weight key (index 3, used twice), so it passes here even though no
+ * browser wallet may hold that key. Only the wallet itself can answer that.
+ */
+export function canSignAlone(weights: readonly number[]): boolean {
+  return weights.some((w) => Number.isFinite(w) && w >= 1000)
 }
 
 const FLOW_ADDRESS = /^0x[0-9a-f]{16}$/
@@ -85,6 +110,19 @@ function boolArray(v: CdcValue): boolean[] {
 }
 
 async function resolveSide(side: SwapSideInput, name: "A" | "B", deps: Required<PlanDeps>): Promise<SwapSide> {
+  let weights: number[]
+  try {
+    weights = await deps.keys(side.signer)
+  } catch (e) {
+    throw new SwapTestError(`Side ${name}: couldn't read ${side.signer}'s keys (${e instanceof Error ? e.message : String(e)}). Try again.`, 502, "chain_read_failed")
+  }
+  if (!canSignAlone(weights)) {
+    throw new SwapTestError(
+      `Side ${name}: ${side.signer} has no full-weight key (active weights: ${weights.join(", ") || "none"}), so it can't sign on its own. Use a Flow Wallet account.`,
+      409,
+      "cannot_sign_alone",
+    )
+  }
   if (side.ids.length) {
     let holdings: Record<string, Holding>
     try {
@@ -118,7 +156,7 @@ export function swapArgs(plan: SwapPlan) {
 }
 
 export async function planSwap(rawA: unknown, rawB: unknown, deps: PlanDeps = {}): Promise<SwapPlan> {
-  const d: Required<PlanDeps> = { read: deps.read ?? readTopShotHoldings, run: deps.run ?? runFlowScript }
+  const d: Required<PlanDeps> = { read: deps.read ?? readTopShotHoldings, run: deps.run ?? runFlowScript, keys: deps.keys ?? ((a) => readActiveKeyWeights(a)) }
   const input = validateSwapInput(rawA, rawB)
   const plan: SwapPlan = { a: await resolveSide(input.a, "A", d), b: await resolveSide(input.b, "B", d) }
   let sim: CdcValue

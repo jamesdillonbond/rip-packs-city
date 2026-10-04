@@ -46,13 +46,15 @@ const btn: React.CSSProperties = {
 const label: React.CSSProperties = { fontSize: 11, color: "var(--rpc-text-muted)", textTransform: "uppercase" }
 
 // Trevor's first run (2026-10-03): his Flow Wallet 0x3d0b… gives one $0.25 moment from
-// his linked Dapper account; his other Flow Wallet 0xd96d… gives nothing and signs.
+// his linked Dapper account. Side B is a SECOND Flow Wallet account he creates (with
+// the Top Shot collection enabled): his other linked parent 0xd96d… looks like an old
+// Blocto account (main key split 999 + 1) that he doesn't believe can sign (2026-10-04).
 const FIRST_RUN = {
   aSigner: "0x3d0b274c80263484",
   aSource: "0xbd94cade097e50ac",
   aIds: "27289790",
-  bSigner: "0xd96dc67ae64ee202",
-  bSource: "0xd96dc67ae64ee202",
+  bSigner: "",
+  bSource: "",
   bIds: "",
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { planSwap, swapArgs, SwapTestError, validateSwapInput } from "@/lib/swap-test/plan"
+import { canSignAlone, planSwap, readActiveKeyWeights, swapArgs, SwapTestError, validateSwapInput } from "@/lib/swap-test/plan"
 import { PROVIDER_CONTROLLERS_SCRIPT } from "@/lib/giveaways/deliver-cadence"
 import { SWAP_SIMULATION_SCRIPT } from "@/lib/swap-test/swap-cadence"
 import type { CdcValue } from "@/lib/giveaways/flow-script"
@@ -9,7 +9,7 @@ const B = { signer: "0xd96dc67ae64ee202", source: "0xd96dc67ae64ee202", ids: [] 
 
 const arr = (type: string, values: unknown[]): CdcValue => ({ type: "Array", value: values.map((value) => ({ type, value })) })
 
-function deps(over: { sim?: boolean[]; controllers?: string[]; held?: boolean; locked?: boolean | null; readThrows?: boolean } = {}) {
+function deps(over: { sim?: boolean[]; controllers?: string[]; held?: boolean; locked?: boolean | null; readThrows?: boolean; weights?: Record<string, number[]>; keysThrow?: boolean } = {}) {
   const run = vi.fn(async (script: string, _args: unknown[]) => {
     if (script === PROVIDER_CONTROLLERS_SCRIPT) return arr("UInt64", over.controllers ?? ["87", "4"])
     if (script === SWAP_SIMULATION_SCRIPT) return arr("Bool", over.sim ?? [true])
@@ -19,7 +19,11 @@ function deps(over: { sim?: boolean[]; controllers?: string[]; held?: boolean; l
     if (over.readThrows) throw new Error("Flow script HTTP 503")
     return Object.fromEntries(ids.map((id) => [id, { held: over.held ?? true, locked: over.held === false ? null : "locked" in over ? (over.locked as boolean | null) : false }]))
   })
-  return { run, read }
+  const keys = vi.fn(async (addr: string) => {
+    if (over.keysThrow) throw new Error("Flow account read HTTP 503")
+    return over.weights?.[addr] ?? [1000, 1000, 1000]
+  })
+  return { run, read, keys }
 }
 
 async function codeOf(p: Promise<unknown>): Promise<string> {
@@ -95,5 +99,41 @@ describe("swap-test/plan — planning against the chain", () => {
 
   it("a signer that cannot withdraw from the linked source is refused", async () => {
     expect(await codeOf(planSwap(A, B, deps({ controllers: [] })))).toBe("409:not_parent")
+  })
+})
+
+describe("swap-test/plan — can each signer sign on its own?", () => {
+  it("needs one active full-weight key; a 999 + 1 split (Blocto-style) cannot sign alone", () => {
+    expect(canSignAlone([1000])).toBe(true)
+    expect(canSignAlone([999, 1])).toBe(false)
+    expect(canSignAlone([])).toBe(false)
+    expect(canSignAlone([Number.NaN])).toBe(false)
+  })
+
+  it("refuses a signer with no full-weight key before any simulation", async () => {
+    const d = deps({ weights: { [B.signer]: [999, 1] } })
+    expect(await codeOf(planSwap(A, B, d))).toBe("409:cannot_sign_alone")
+    expect(d.run.mock.calls.some((c) => c[0] === SWAP_SIMULATION_SCRIPT)).toBe(false)
+  })
+
+  it("a failed key read is a retryable 502, never 'cannot sign'", async () => {
+    expect(await codeOf(planSwap(A, B, deps({ keysThrow: true })))).toBe("502:chain_read_failed")
+  })
+
+  it("reads ACTIVE key weights only (0xd96d… on 2026-10-04: revoked 1000 + 1 ignored)", async () => {
+    const body = {
+      keys: [
+        { index: "0", weight: "999", revoked: false },
+        { index: "1", weight: "1000", revoked: true },
+        { index: "2", weight: "1", revoked: true },
+        { index: "3", weight: "1000", revoked: false },
+        { index: "4", weight: "1", revoked: false },
+      ],
+    }
+    const f = vi.fn<(url: string) => Promise<Response>>(async () => new Response(JSON.stringify(body), { status: 200 }))
+    expect(await readActiveKeyWeights("0xd96dc67ae64ee202", f as never)).toEqual([999, 1000, 1])
+    expect(String(f.mock.calls[0][0])).toBe("https://rest-mainnet.onflow.org/v1/accounts/0xd96dc67ae64ee202?expand=keys")
+    await expect(readActiveKeyWeights("0x1", (async () => new Response("x", { status: 500 })) as never)).rejects.toThrow("HTTP 500")
+    await expect(readActiveKeyWeights("0x1", (async () => new Response("{}", { status: 200 })) as never)).rejects.toThrow("no key list")
   })
 })

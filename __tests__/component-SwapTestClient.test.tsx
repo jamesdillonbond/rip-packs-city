@@ -84,6 +84,11 @@ describe("SwapTestClient — initiator", () => {
   it("posts both sides to the planner and shows a failed simulation as an error", async () => {
     const f = stub((_u, init) => (body(init).action === "plan" ? json({ error: "Side A: locked on chain", code: "locked" }, 409) : json({})))
     render(<SwapTestClient />)
+    // side B starts empty: 0xd96d… can't sign alone, so Trevor adds a second Flow Wallet account
+    const inputs = document.querySelectorAll("main input")
+    expect((inputs[3] as HTMLInputElement).value).toBe("")
+    fireEvent.change(inputs[3], { target: { value: B } })
+    fireEvent.change(inputs[4], { target: { value: B } })
     fireEvent.click(screen.getByRole("button", { name: /simulate on mainnet/i }))
     expect(await screen.findByText(/locked on chain/)).toBeTruthy()
     const sent = body(f.mock.calls[0][1])
