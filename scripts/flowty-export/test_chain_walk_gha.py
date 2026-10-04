@@ -43,3 +43,26 @@ ok, d = verdict(row, {**res, "status": "Pending"}); assert not ok and d["reason"
 ok, d = verdict({**row, "listing": "1"}, res); assert not ok and d["reason"] == "no_listing_completed_for_listing", d
 ok, d = verdict(row, {**res, "error_message": "panic"}); assert not ok and d["reason"] == "tx_error", d
 print("verdict ok")
+
+# ── mint_walk_gha.records: JSON-CDC events shaped like the deployed signatures (read 2026-10-03) ──
+import base64 as _b64, json as _json
+from mint_walk_gha import records
+def _ev(eid, fields):
+    p = {"value": {"id": eid, "fields": [{"name": k, "value": {"type": t, "value": v}} for k, t, v in fields]}, "type": "Event"}
+    return {"type": eid, "payload": _b64.b64encode(_json.dumps(p).encode()).decode()}
+TSM = "A.0b2a3299cc857e29.TopShot.MomentMinted"
+body = [{"block_height": "140000001", "events": [
+    _ev(TSM, [("momentID", "UInt64", "50800001"), ("playID", "UInt32", "9001"), ("setID", "UInt32", "300"), ("serialNumber", "UInt32", "17"), ("subeditionID", "UInt32", "0")]),
+    _ev(TSM, [("momentID", "UInt64", "50800002"), ("playID", "UInt32", "9001"), ("setID", "UInt32", "300"), ("serialNumber", "UInt32", "4"), ("subeditionID", "UInt32", "3")])]}]
+n, recs = records("ts_minted", body)
+assert n == 2 and {"c": "ts", "id": 50800001, "set": 300, "play": 9001, "serial": 17} in recs
+assert {"c": "tssub", "id": 50800002, "sub": 3} in recs
+assert not any(r["c"] == "tssub" and r["id"] == 50800001 for r in recs)      # subedition 0 = Standard: no tssub row
+n, recs = records("ts_subedition", [{"events": [_ev("A.0b2a3299cc857e29.TopShot.SubeditionAddedToMoment",
+    [("momentID", "UInt64", "50800001"), ("subeditionID", "UInt32", "5"), ("setID", "UInt32", "300"), ("playID", "UInt32", "9001")])]}])
+assert recs == [{"c": "tssub", "id": 50800001, "sub": 5}]
+n, recs = records("ad_minted", [{"events": [_ev("A.e4cf4bdc1751c65d.AllDay.MomentNFTMinted",
+    [("id", "UInt64", "11000001"), ("editionID", "UInt64", "4500"), ("serialNumber", "UInt64", "88")])]}])
+assert recs == [{"c": "ad", "id": 11000001, "ed": 4500, "serial": 88}]
+assert records("ad_minted", []) == (0, [])
+print("mint records ok")

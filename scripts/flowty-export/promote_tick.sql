@@ -12,7 +12,7 @@ declare r record; v jsonb; n_sealed int; n_mis int;
 begin
   select s.a, s.b into r from (
     select g a, least(g + 249999, sp.e) b, ceil((least(g + 249999, sp.e) - g + 1) / 250.0)::int need
-    from (values (65264619::bigint, 85981134::bigint), (85981135, 88226266), (88226267, 130290658), (130290659, 137390145)) sp(s, e),
+    from (values (65264619::bigint, 85981134::bigint), (85981135, 88226266), (88226267, 130290658), (130290659, 137390145), (137390146, 152500000)) sp(s, e),
          generate_series(sp.s, sp.e, 250000) g) s
   where not exists (select 1 from flowty_archive.scratch_20261004_promoted p where p.slice_start = s.a)
     and (select count(*) from flowty_archive.flowty_chain_walk_coverage c where c.win_start between s.a and s.b) = s.need
@@ -26,11 +26,11 @@ begin
                       and i.payment_vault = c.payment_vault) exact, c.tx_hash, c.block_height
       from flowty_archive.flowty_chain_listing_completed c
       join flowty_archive.flowty_index_sales i on i.doc_id = c.listing_resource_id || '_STOREFRONT_PURCHASED'
-     where c.block_height between r.a and r.b and i.verify_status is null
+     where c.block_height between r.a and r.b and (i.verify_status is null or i.verify_status = 'rpc_chain_match')
   ), u as (
     update flowty_archive.flowty_index_sales i
        set verify_status = case when j.exact then 'chain_sealed' else 'chain_mismatch' end, verified_at = now(),
-           verify_detail = jsonb_build_object('chain_tx', j.tx_hash, 'block_height', j.block_height, 'exact', j.exact)
+           verify_detail = coalesce(i.verify_detail, '{}'::jsonb) || jsonb_build_object('chain_tx', j.tx_hash, 'block_height', j.block_height, 'exact', j.exact, 'method', 'walk')
       from j where i.doc_id = j.doc_id
     returning i.verify_status)
   select count(*) filter (where verify_status = 'chain_sealed'), count(*) filter (where verify_status = 'chain_mismatch') into n_sealed, n_mis from u;
