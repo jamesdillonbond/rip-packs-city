@@ -16,6 +16,9 @@
 
 ## Item 1: save and run the Dune query (Chrome, dune.com)
 
+⏸ **DEFERRED BY TREVOR, 2026-10-03 ~6:55 PM PT: "Let's try to delay paying for additional dune for now."** No Dune plan is bought, so this item stays unrun. Don't re-queue it as an open handoff. It is parked until Trevor reopens the purchase. Until then the Rigged lifetime figure stays a FLOOR (21,314 confirmed, before-2023-11-08 custodial opens unknown). The no-purchase alternative is the Flow spork-root checkpoints (`scripts/flow-checkpoint/`). They give HOLDINGS at each spork root, not open EVENTS, so they could bound pre-floor acquisitions from below but cannot count packs. Nobody has run them for Rigged.
+
+
 1. Open dune.com in Trevor's Chrome (signed in). New query, engine DuneSQL.
 2. **STEP 0 first:** run a 1-row probe of one `A.0b2a3299cc857e29.TopShot.Deposit` and one `TopShot.Withdraw` row from `flow.cadence_events` (`LIMIT 1`, recent `block_date`). Read the `data` JSON. If `to` / `from` / `id` are nested (e.g. under an Optional wrapper), fix the `json_extract_scalar` paths in the query. Don't run the full query on unchecked paths.
 3. Paste `docs/research/dune-rigged-custodial-opens-2026-09-29.sql`, with fixed paths if needed. Run it. It is aggregated: about 60 rows × 5 columns. The drafted cost note is ~46 credits.
