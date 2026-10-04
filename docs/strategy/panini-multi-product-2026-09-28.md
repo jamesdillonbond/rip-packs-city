@@ -357,3 +357,19 @@ What this thread added (each has a ledger entry with its revert path):
   route step. Product naming stays the signed-in-Chrome item (step 2).
 - Freshness at 8:06 PM PT: > 6 d **1,655**, > 7 d **0** (the oldest crosses 7 d ~3 AM PT Sunday). Measure the walk-only
   runs' refresh count over the night before judging the 2-hour schedule.
+
+### 2026-10-04 7:15 AM PT — first night on the 2-hour schedule (measured)
+
+- Six runs 8 PM-6 AM PT alternated as designed: walk 8 PM, full 10 PM, walk 12 AM, full 2 AM, walk 4 AM, full 6 AM. Full
+  runs post their enum marker 22-39 min in; walk runs at :00. **No stall rows; `page_recoveries` 0 on five runs, 1 on the
+  6 AM run** (a closed tab recovered instead of killing the run).
+- **Refreshes: 3,063 editions in 11 h (8 PM-7 AM PT) ≈ 280/h ≈ 6,700/day**, vs ~2,000/day on the 4-hour schedule (~3.3×).
+  Walk-run hours ran up to 497/h (4 AM); full-run hours dip during their grid phase (60 at 2 AM).
+- **Held backlog draining:** held-priority 4,325 → 2,784 over the night (~1,540 newly catalogued).
+- **Freshness:** > 7 d **0** through the 3 AM PT crossing (the stalest are reached first). > 6 d rose 1,575 → 2,049: half
+  the priority slots still go to held cards, and the cohort last walked ~6 days ago is large. Expect it to fall once the
+  held backlog is gone (~a day at the overnight rate), when every priority slot is aged.
+- **Packs:** 246 rows — Basketball 63, Football 131, Soccer 29, Womens Basketball 12, Baseball 11. Only 1038/1039/1055/1056
+  are `ev_modeled` (the 10-03 view fix); every other pack, incl. 27 more soccer packs, reads not modeled.
+- **Verdict:** the 2-hour schedule is enough to keep everything under 7 days. Re-read > 6 d after the held backlog drains;
+  tier 2 can be reconsidered then.
