@@ -44,6 +44,8 @@ file → update). Known-deferred, do NOT burn a risky full-file reinstall on the
   `/insights/squeeze-check` as backed by `get_wallet_squeeze`; the live function is
   `get_wallet_squeeze_exposure`. Display-only label, not an executed query.
 
+- (2026-10-03, DECIDED — option 2 of `inbox/2026-09-08T0110Z`) `rpc-qa-scorecard`'s `offsan` card is WRONG on both halves: it names the dead `offers-sweep` as its self-clear, and it asserts a self-clear that cannot happen. ~99 % of `v_offer_sanity_flags` rows are serial/subedition-grain bids that the live raiser (pg_cron jobid 216) excludes by design, so the count (1,172 on 10-03) never trends to zero. **Fix at the next interactive refresh:** retitle the card as informational — *"editions whose best chain bid is narrower than edition-level (serial/subedition)"* — drop the self-clear sentence, and stop ranking it as something that should fall. Keep the view: it is the only watch on a serial bid above the edition offer. The view's own `COMMENT` already states this. Not a user-facing bug; do not re-file the count.
+
 Fix these known items only during an interactive artifact refresh where each rebuild can be eyeballed.
 
 ## Part 2 — Live pages (Claude in Chrome, www.rippackscity.com)
