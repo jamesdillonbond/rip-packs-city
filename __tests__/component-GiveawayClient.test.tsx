@@ -1,6 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, screen, cleanup, fireEvent } from "@testing-library/react"
+import { configure } from "@testing-library/react"
+
+// findBy*/waitFor wait 5 s here, not testing-library's default 1 s. The claim flow chains
+// several awaited steps per click (nonce fetch → wallet connect → accounts fetch → re-render),
+// and on a loaded CI shard (880+ files) that chain overran 1 s twice in one night with the
+// code correct: 13f3934f8 at line 342 and bdd2af035 at line 380 (2026-10-03/04), 5/5 green
+// locally each time. A text that never appears still fails; it just fails at 5 s. Well
+// inside vitest's 30 s testTimeout.
+configure({ asyncUtilTimeout: 5_000 })
 import GiveawayClient, { defaultDestination } from "@/app/giveaways/[slug]/GiveawayClient"
 
 const { connectClaimWallet, disconnectClaimWallet } = vi.hoisted(() => ({
