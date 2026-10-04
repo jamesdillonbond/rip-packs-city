@@ -48,6 +48,16 @@ CREATE TABLE fmv_snapshots (
   fmv_usd numeric, confidence text, algo_version text, computed_at timestamptz DEFAULT now());
 CREATE TABLE sales (
   edition_id uuid, collection_id uuid, price_usd numeric, sold_at timestamptz);
+
+-- #169 (2026-10-03): FMV writers read public.sales_market (sales minus issuer buy-backs).
+CREATE TABLE IF NOT EXISTS public.buyback_wallets (collection_id uuid, wallet_address text, label text);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS buyer_address text;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS collection_id uuid;
+CREATE OR REPLACE VIEW public.sales_market AS
+SELECT s.* FROM public.sales s
+ WHERE NOT EXISTS (SELECT 1 FROM public.buyback_wallets b
+                    WHERE b.collection_id = s.collection_id AND b.wallet_address = s.buyer_address);
+
 CREATE TABLE pipeline_runs (
   id bigserial PRIMARY KEY, pipeline text, started_at timestamptz, finished_at timestamptz,
   ok boolean, extra jsonb);
@@ -98,7 +108,7 @@ BEGIN
         count(*) FILTER (WHERE s.price_usd > 0.10) AS n_real,
         percentile_cont(0.9) WITHIN GROUP (ORDER BY s.price_usd) FILTER (WHERE s.price_usd > 0.10) AS p90,
         percentile_cont(0.5) WITHIN GROUP (ORDER BY s.price_usd) FILTER (WHERE s.price_usd > 0.10) AS med
-      FROM public.sales s
+      FROM public.sales_market s
       WHERE s.collection_id = ANY(v_ids) AND s.sold_at >= now() - interval '90 days'
       GROUP BY s.edition_id
     ),
@@ -128,7 +138,7 @@ BEGIN
         count(*) FILTER (WHERE s.price_usd > 0.10) AS n_real,
         percentile_cont(0.9) WITHIN GROUP (ORDER BY s.price_usd) FILTER (WHERE s.price_usd > 0.10) AS p90,
         percentile_cont(0.5) WITHIN GROUP (ORDER BY s.price_usd) FILTER (WHERE s.price_usd > 0.10) AS med
-      FROM public.sales s
+      FROM public.sales_market s
       WHERE s.collection_id = ANY(v_ids) AND s.sold_at >= now() - interval '90 days'
       GROUP BY s.edition_id
     ),

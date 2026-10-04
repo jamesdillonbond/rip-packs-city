@@ -135,7 +135,7 @@ describe("fmv-recalc deferred sweep — happy path", () => {
     const { rpcCalls, inserted } = instrument({
       pipeline_runs: { data: null, error: null }, // cursor read -> offset 0
       "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
-      sales: {
+      sales_market: {
         data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15), sale(10, 800, 20)],
         error: null,
       },
@@ -189,7 +189,7 @@ describe("fmv-recalc deferred sweep — happy path", () => {
     const { inserted } = instrument({
       pipeline_runs: { data: null, error: null },
       "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
-      sales: {
+      sales_market: {
         data: [sale(9000, 1, 2), sale(6, 300, 1), sale(6, 400, 5), sale(6, 500, 9), sale(6, 600, 14)],
         error: null,
       },
@@ -213,7 +213,7 @@ describe("fmv-recalc deferred sweep — happy path", () => {
     const { inserted } = instrument({
       pipeline_runs: { data: null, error: null },
       "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
-      sales: {
+      sales_market: {
         // 3 impossible serials (> circ 1000) at $500 + 5 real $8 sales.
         data: [
           sale(500, 5000, 1), sale(500, 6000, 2), sale(500, 7000, 3),
@@ -244,7 +244,7 @@ describe("fmv-recalc deferred sweep — happy path", () => {
   const candyFixtures = (floor: { data: unknown; error: unknown }) => ({
     pipeline_runs: { data: null, error: null },
     "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
-    sales: {
+    sales_market: {
       data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15), sale(10, 800, 20)],
       error: null,
     },
@@ -345,7 +345,7 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
     const { rpcCalls } = instrument({
       pipeline_runs: { data: null, error: null },
       "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
-      sales: { data: null, error: { message: "canceling statement due to statement timeout" } },
+      sales_market: { data: null, error: { message: "canceling statement due to statement timeout" } },
       ...QUIET_TAIL,
     })
 
@@ -362,7 +362,7 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
     const { rpcCalls, inserted } = instrument({
       pipeline_runs: { data: null, error: null },
       "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
-      sales: {
+      sales_market: {
         data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15)],
         error: null,
       },
@@ -390,7 +390,7 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
       {
         pipeline_runs: { data: null, error: null },
         "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
-        sales: {
+        sales_market: {
           data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15)],
           error: null,
         },
@@ -443,7 +443,7 @@ const QS = (byIndex: Record<number, unknown[]>, len = 4) =>
 // fallback-specific edition ids so the main compute's own ed-1 row is ignored.
 function fallbackFixtures(qs: ReturnType<typeof QS>) {
   return {
-    sales: {
+    sales_market: {
       data: [sale(10, 300, 1), sale(11, 400, 3), sale(10, 500, 6), sale(12, 600, 10), sale(10, 700, 15)],
       error: null,
     },
@@ -475,7 +475,7 @@ describe("fmv-recalc 90d catch-up seed (offset 0)", () => {
       "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-main" }], error: null },
       // The catch-up enumeration returns one zero-30d edition to seed.
       "rpc:fmv_recalc_90d_catchup_editions": { data: [{ edition_id: "ed-catchup-1" }], error: null },
-      sales: [
+      sales_market: [
         // call 0 — Step 1b (30d) for the enumerated ed-main: a normal MEDIUM set.
         { data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15), sale(10, 800, 20)].map((s) => ({ ...s, edition_id: "ed-main" })), error: null },
         // call 1 — the 90d widening for the seeded (thin) catch-up edition: six
@@ -531,7 +531,7 @@ describe("fmv-recalc 90d catch-up seed (offset 0)", () => {
         { data: [], error: null },
         { data: [{ edition_id: "ed-ad-catchup" }], error: null },
       ],
-      sales: [
+      sales_market: [
         // call 0 — Step 1b (30d) for ed-main.
         { data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15)].map((s) => ({ ...s, edition_id: "ed-main" })), error: null },
         // call 1 — the 90d widening for the seeded All Day edition.
@@ -579,7 +579,7 @@ describe("fmv-recalc 90d catch-up seed (offset 0)", () => {
       pipeline_runs: { data: { cursor_after: "900" }, error: null },
       "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
       "rpc:fmv_recalc_90d_catchup_editions": { data: [{ edition_id: "ed-catchup-1" }], error: null },
-      sales: {
+      sales_market: {
         data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15)],
         error: null,
       },
@@ -600,7 +600,7 @@ describe("fmv-recalc 90d catch-up seed (offset 0)", () => {
       pipeline_runs: { data: null, error: null },
       "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
       "rpc:fmv_recalc_90d_catchup_editions": { data: null, error: { message: "catch-up scan timed out" } },
-      sales: {
+      sales_market: {
         data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15)],
         error: null,
       },

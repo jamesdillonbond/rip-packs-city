@@ -71,7 +71,7 @@ describe("fmv-backfill — compute + write contract", () => {
   it("computes WAP-primary FMV and INSERTs one fmv_snapshots row with the full column contract", async () => {
     const spy = install({
       "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
-      sales: { data: fiveSales(), error: null },
+      sales_market: { data: fiveSales(), error: null },
       editions: { data: [], error: null }, // no ULTIMATE in the set
     })
 
@@ -111,7 +111,7 @@ describe("fmv-backfill — compute + write contract", () => {
   it("skips ULTIMATE editions (owned by recalc_ultimate_fmv) — no snapshot written", async () => {
     const spy = install({
       "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
-      sales: { data: fiveSales(), error: null },
+      sales_market: { data: fiveSales(), error: null },
       editions: { data: [{ id: "ed-A", tier: "ULTIMATE" }], error: null },
     })
 
@@ -126,7 +126,7 @@ describe("fmv-backfill — compute + write contract", () => {
     const spy = install({
       "rpc:fmv_backfill_candidates": { data: ["ed-A"], error: null }, // bare-string candidate shape
       // sequence-aware: first read (window) is empty -> second read (all-time) has sales
-      sales: [
+      sales_market: [
         { data: [], error: null },
         { data: fiveSales(), error: null },
       ],
@@ -143,7 +143,7 @@ describe("fmv-backfill — compute + write contract", () => {
   it("reports hasMore:true + remaining:null when the batch was filled", async () => {
     install({
       "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
-      sales: { data: fiveSales(), error: null },
+      sales_market: { data: fiveSales(), error: null },
       editions: { data: [], error: null },
     })
 
@@ -211,7 +211,7 @@ describe("fmv-backfill — batch sizing + candidate shaping", () => {
   it("clamps batchSize to the 500 cap and passes it to the candidate RPC", async () => {
     const spy = install({
       "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
-      sales: { data: fiveSales(), error: null },
+      sales_market: { data: fiveSales(), error: null },
       editions: { data: [], error: null },
     })
     await POST(req({ batchSize: 999 }))
@@ -221,7 +221,7 @@ describe("fmv-backfill — batch sizing + candidate shaping", () => {
   it("defaults batchSize to 100 when the request body is invalid JSON", async () => {
     const spy = install({
       "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
-      sales: { data: fiveSales(), error: null },
+      sales_market: { data: fiveSales(), error: null },
       editions: { data: [], error: null },
     })
     const badBody = new NextRequest("https://t/api/fmv-backfill", {
@@ -254,7 +254,7 @@ describe("fmv-backfill — batch sizing + candidate shaping", () => {
         error: null,
       },
       // only ed-A has sales -> ed-B produces no snapshot, but both count as found
-      sales: { data: fiveSales(), error: null },
+      sales_market: { data: fiveSales(), error: null },
       editions: { data: [], error: null },
     })
     const res = await POST(req())
@@ -269,7 +269,7 @@ describe("fmv-backfill — empty sales + insert error paths", () => {
   it("writes nothing when both the window and all-time sales reads are empty", async () => {
     const spy = install({
       "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
-      sales: [
+      sales_market: [
         { data: [], error: null }, // 30d window empty
         { data: [], error: null }, // all-time fallback also empty
       ],
@@ -286,7 +286,7 @@ describe("fmv-backfill — empty sales + insert error paths", () => {
   it("logs but does not count a chunk whose INSERT returns an error", async () => {
     const spy = install({
       "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
-      sales: { data: fiveSales(), error: null },
+      sales_market: { data: fiveSales(), error: null },
       editions: { data: [], error: null },
       fmv_snapshots: { data: null, error: { message: "insert boom" } },
     })
@@ -304,7 +304,7 @@ describe("fmv-backfill — empty sales + insert error paths", () => {
     const spy = makeInstrumentedSupabaseFixture(
       {
         "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
-        sales: { data: fiveSales(), error: null },
+        sales_market: { data: fiveSales(), error: null },
         editions: { data: [], error: null },
       },
       { failWrites: ["fmv_snapshots"] },

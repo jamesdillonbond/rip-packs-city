@@ -411,7 +411,8 @@ export async function POST(req: NextRequest) {
         const { data: chunkSales, error: chunkErr } = await queryWithRetry<SaleRow[]>(
           () =>
             supabaseAdmin
-              .from("sales")
+              // sales minus issuer buy-backs (known-issues #169) — never `sales` here
+              .from("sales_market")
               .select("edition_id, collection_id, price_usd, sold_at, serial_number")
               .gte("sold_at", windowStart)
               .gt("price_usd", 0)
@@ -991,7 +992,8 @@ export async function POST(req: NextRequest) {
           let from = 0
           for (;;) {
             const { data: extRows, error: extErr } = await supabaseAdmin
-              .from("sales")
+              // sales minus issuer buy-backs (known-issues #169) — never `sales` here
+              .from("sales_market")
               .select("edition_id, price_usd, sold_at, serial_number")
               .gte("sold_at", extWindowStart)
               .gt("price_usd", 0)

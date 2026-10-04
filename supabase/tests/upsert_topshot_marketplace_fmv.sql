@@ -36,6 +36,16 @@ CREATE TABLE public.fmv_snapshots (
   sales_count_7d int, sales_count_30d int
 );
 CREATE TABLE public.sales (edition_id uuid, collection_id uuid, price_usd numeric, sold_at timestamptz);
+
+-- #169 (2026-10-03): FMV writers read public.sales_market (sales minus issuer buy-backs).
+CREATE TABLE IF NOT EXISTS public.buyback_wallets (collection_id uuid, wallet_address text, label text);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS buyer_address text;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS collection_id uuid;
+CREATE OR REPLACE VIEW public.sales_market AS
+SELECT s.* FROM public.sales s
+ WHERE NOT EXISTS (SELECT 1 FROM public.buyback_wallets b
+                    WHERE b.collection_id = s.collection_id AND b.wallet_address = s.buyer_address);
+
 CREATE TABLE public.badge_editions (external_id text, avg_sale_price numeric);
 
 -- TopShot editions (collection hard-coded in the fn).
@@ -144,7 +154,7 @@ BEGIN
   SELECT s.edition_id,
          COUNT(*)::int AS sales_count_90d,
          percentile_cont(0.5) WITHIN GROUP (ORDER BY s.price_usd) AS sales_median_90d
-  FROM sales s
+  FROM public.sales_market s
   WHERE s.collection_id = v_collection_id
     AND s.sold_at >= NOW() - INTERVAL '90 days'
     AND s.price_usd > 0

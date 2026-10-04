@@ -30,6 +30,16 @@ CREATE TABLE editions (
 CREATE TABLE sales (
   edition_id uuid, serial_number integer, price_usd numeric, sold_at timestamptz
 );
+
+-- #169 (2026-10-03): FMV writers read public.sales_market (sales minus issuer buy-backs).
+CREATE TABLE IF NOT EXISTS public.buyback_wallets (collection_id uuid, wallet_address text, label text);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS buyer_address text;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS collection_id uuid;
+CREATE OR REPLACE VIEW public.sales_market AS
+SELECT s.* FROM public.sales s
+ WHERE NOT EXISTS (SELECT 1 FROM public.buyback_wallets b
+                    WHERE b.collection_id = s.collection_id AND b.wallet_address = s.buyer_address);
+
 CREATE TABLE cached_listings (
   collection_id uuid, tier text, player_name text, set_name text,
   ask_price numeric, serial_number integer
@@ -81,7 +91,7 @@ BEGIN
 
   SELECT s.price_usd, s.sold_at
     INTO v_last_sale, v_last_at
-  FROM sales s
+  FROM public.sales_market s
   WHERE s.edition_id = p_edition_id
     AND s.price_usd > 0
     AND (v_skip OR NOT (s.serial_number = ANY(v_specials)))
@@ -191,4 +201,16 @@ SELECT _assert_eq((SELECT filter_skipped::text FROM compute_ultimate_non_special
 SELECT _assert_eq((SELECT last_non_special_sale_price::text FROM compute_ultimate_non_special_fmv('66666666-6666-6666-6666-666666666666')), '9999', 'E6 the special serial-1 sale is NOT excluded when filter is skipped');
 
 SELECT '✓ compute_ultimate_non_special_fmv invariants pass' AS result;
+-- 7) #169: an issuer BUY-BACK is not a market sale. A newer sale to a registered buy-back wallet of
+--    the same collection must not become the "last sale"; a NULL-buyer sale still counts.
+INSERT INTO public.buyback_wallets VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '0xbuyback', 'test buy-back');
+INSERT INTO sales (edition_id, serial_number, price_usd, sold_at, buyer_address, collection_id) VALUES
+  ('22222222-2222-2222-2222-222222222222', 4, 7, now() - interval '1 minute', '0xbuyback', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+SELECT _assert_eq((SELECT fmv_usd::text FROM compute_ultimate_non_special_fmv('22222222-2222-2222-2222-222222222222')), '300',
+  '#169: a newer buy-back sale is ignored');
+INSERT INTO sales (edition_id, serial_number, price_usd, sold_at, buyer_address, collection_id) VALUES
+  ('22222222-2222-2222-2222-222222222222', 2, 310, now() - interval '30 seconds', NULL, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+SELECT _assert_eq((SELECT fmv_usd::text FROM compute_ultimate_non_special_fmv('22222222-2222-2222-2222-222222222222')), '310',
+  '#169: a NULL-buyer sale is still a market sale');
+
 ROLLBACK;

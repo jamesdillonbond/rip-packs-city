@@ -156,7 +156,8 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < editionIds.length; i += CHUNK) {
       const chunk = editionIds.slice(i, i + CHUNK)
       const { data: salesData } = await (supabaseAdmin as any)
-        .from("sales")
+        // sales minus issuer buy-backs (known-issues #169) — never `sales` here
+        .from("sales_market")
         .select("edition_id, collection_id, price_usd, sold_at, serial_number")
         .in("edition_id", chunk)
         .gte("sold_at", windowStart)
@@ -170,7 +171,8 @@ export async function POST(req: NextRequest) {
       for (let i = 0; i < editionIds.length; i += CHUNK) {
         const chunk = editionIds.slice(i, i + CHUNK)
         const { data: salesData } = await (supabaseAdmin as any)
-          .from("sales")
+          // sales minus issuer buy-backs (known-issues #169) — never `sales` here
+          .from("sales_market")
           .select("edition_id, collection_id, price_usd, sold_at, serial_number")
           .in("edition_id", chunk)
           .gt("price_usd", 0)

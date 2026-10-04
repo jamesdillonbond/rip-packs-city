@@ -127,7 +127,7 @@ function baseFixtures(over: Fixtures = {}): Fixtures {
   return {
     pipeline_runs: { data: null, error: null },
     "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
-    sales: { data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10)], error: null },
+    sales_market: { data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10)], error: null },
     editions: EDITION_META,
     edition_offers: { data: [], error: null },
     fmv_snapshots: { data: [], error: null },
@@ -413,7 +413,7 @@ describe("fmv-recalc — the 90-day extension for thin editions", () => {
   it("adopts the wider window only when it genuinely adds depth — and still publishes the TRUE 30d count", async () => {
     const { inserted } = instrument(
       baseFixtures({
-        sales: [
+        sales_market: [
           { data: thin, error: null }, // 30-day window
           { data: [...thin, sale(9, 500, 40), sale(11, 600, 55), sale(11, 700, 70)], error: null }, // 90-day widen
           { data: [], error: null },
@@ -435,7 +435,7 @@ describe("fmv-recalc — the 90-day extension for thin editions", () => {
   it("keeps the narrower window when the widen returns no extra depth", async () => {
     const { inserted } = instrument(
       baseFixtures({
-        sales: [
+        sales_market: [
           { data: thin, error: null },
           { data: thin, error: null }, // same rows -> no new depth
           { data: [], error: null },
@@ -453,7 +453,7 @@ describe("fmv-recalc — the 90-day extension for thin editions", () => {
   it("falls back to the narrow window when the widen query errors", async () => {
     const { rpcCalls, inserted } = instrument(
       baseFixtures({
-        sales: [
+        sales_market: [
           { data: thin, error: null },
           { data: null, error: { message: "90d fetch timeout" } },
           { data: [], error: null },
@@ -472,7 +472,7 @@ describe("fmv-recalc — the 90-day extension for thin editions", () => {
   it("drops impossible serials (serial > circulation) from the widened set too", async () => {
     const { inserted } = instrument(
       baseFixtures({
-        sales: [
+        sales_market: [
           { data: thin, error: null },
           // 9999 > circulation 1000 -> a mis-keyed row, excluded on the way in.
           // Priced at $1 so that, were it adopted, it would BE the floor.

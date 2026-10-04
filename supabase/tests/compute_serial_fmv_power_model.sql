@@ -24,6 +24,16 @@ BEGIN;
 
 CREATE TABLE editions (id uuid PRIMARY KEY, tier text, circulation_count integer);
 CREATE TABLE sales (edition_id uuid, serial_number integer, price_usd numeric, collection_id uuid, sold_at timestamptz);
+
+-- #169 (2026-10-03): FMV writers read public.sales_market (sales minus issuer buy-backs).
+CREATE TABLE IF NOT EXISTS public.buyback_wallets (collection_id uuid, wallet_address text, label text);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS buyer_address text;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS collection_id uuid;
+CREATE OR REPLACE VIEW public.sales_market AS
+SELECT s.* FROM public.sales s
+ WHERE NOT EXISTS (SELECT 1 FROM public.buyback_wallets b
+                    WHERE b.collection_id = s.collection_id AND b.wallet_address = s.buyer_address);
+
 CREATE TABLE fmv_snapshots (edition_id uuid, fmv_usd numeric, confidence text, collection_id uuid, computed_at timestamptz);
 CREATE TABLE serial_fmv_power_model (
   collection_id uuid, serial_bucket text, tier text, k numeric, beta numeric,
@@ -54,7 +64,7 @@ BEGIN
       CASE WHEN s.serial_number = 1 THEN 'first'
            WHEN s.serial_number = e.circulation_count THEN 'perfect' END AS bucket,
       e.tier::text AS tier
-    FROM public.sales s
+    FROM public.sales_market s
     JOIN public.editions e ON e.id = s.edition_id
     JOIN latest_fmv lf ON lf.edition_id = s.edition_id
     WHERE s.collection_id = p_collection_id

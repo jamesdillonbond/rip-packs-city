@@ -96,7 +96,7 @@ const PINS = [
     // recorded 57014. Never touches fmv_snapshots / edition_fmv_current.
     fn: "compute_topshot_parallel_ratio_cells",
     test: "supabase/tests/refresh_edition_fmv_estimates.sql",
-    migration: "supabase/migrations/20260930133000_audit_20260930_edition_fmv_estimates_from_parallel_ratios.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
   },
   {
     fn: "refresh_edition_fmv_estimates",
@@ -846,7 +846,7 @@ const PINS = [
     // threshold changed, only scope.
     fn: "fmv_clamp_disconnected_ask",
     test: "supabase/tests/fmv_clamp_disconnected_ask.sql",
-    migration: "supabase/migrations/20260804010000_audit_20260804_fmv_clamp_disconnected_ask_all_collections.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
   },
   {
     // Re-pinned 2026-07-31: the pin ran ~2 weeks behind live (4 uncommitted
@@ -898,7 +898,7 @@ const PINS = [
   {
     fn: "refresh_topshot_fmv_display_guard",
     test: "supabase/tests/refresh_topshot_fmv_display_guard.sql",
-    migration: "supabase/migrations/20260702141000_audit_20260702_fmv_display_guard_p90_disconnected.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
   },
   {
     fn: "check_email_allowed",
@@ -1097,8 +1097,7 @@ const PINS = [
     // so leaving it on the 07-11 rename would have kept every check green while the
     // test validated a body that no longer runs anywhere. That is this mechanism's
     // documented blind spot, and it costs nothing to walk into.
-    migration:
-      "supabase/migrations/20260829013927_audit_20260828_topshot_fmv_populate_prefilters_before_the_sales_scan.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
   },
   // ── 2026-07-29: read/write RPC snapshot pins ────────────────────────────────
   // fmv_recalc_edition_page, get_edition_badges_unified, recalc_ultimate_fmv,
@@ -1745,26 +1744,22 @@ const PINS = [
   {
     fn: "compute_serial_fmv_multipliers",
     test: "supabase/tests/compute_serial_fmv_multipliers.sql",
-    migration:
-      "supabase/migrations/20260801231500_audit_20260801_snapshot_compute_serial_fmv_multipliers.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
   },
   {
     fn: "compute_ultimate_non_special_fmv",
     test: "supabase/tests/compute_ultimate_non_special_fmv.sql",
-    migration:
-      "supabase/migrations/20260801231600_audit_20260801_snapshot_compute_ultimate_non_special_fmv.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
   },
   {
     fn: "compute_serial_fmv_power_model",
     test: "supabase/tests/compute_serial_fmv_power_model.sql",
-    migration:
-      "supabase/migrations/20260801231700_audit_20260801_snapshot_compute_serial_fmv_power_model.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
   },
   {
     fn: "compute_serial_fmv_jersey_model",
     test: "supabase/tests/compute_serial_fmv_jersey_model.sql",
-    migration:
-      "supabase/migrations/20260801231800_audit_20260801_snapshot_compute_serial_fmv_jersey_model.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
   },
   {
     fn: "grant_pro_grandfather",
@@ -2266,8 +2261,7 @@ const PINS = [
     // possible answer, produced by a broken instrument.
     fn: "refresh_topshot_thin_fmv_editions",
     test: "supabase/tests/refresh_topshot_thin_fmv_editions.sql",
-    migration:
-      "supabase/migrations/20260816010000_audit_20260816_snapshot_thin_fmv_and_edition_offers_backstop.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
   },
   {
     // pg_cron `34 * * * *`. Backstop for the offers indexer, feeding

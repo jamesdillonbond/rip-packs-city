@@ -39,6 +39,16 @@ CREATE TABLE editions (
   circulation_count int DEFAULT 10,
   UNIQUE (external_id, collection_id));
 CREATE TABLE sales (id bigserial PRIMARY KEY, edition_id uuid, price_usd numeric, sold_at timestamptz);
+
+-- #169 (2026-10-03): FMV writers read public.sales_market (sales minus issuer buy-backs).
+CREATE TABLE IF NOT EXISTS public.buyback_wallets (collection_id uuid, wallet_address text, label text);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS buyer_address text;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS collection_id uuid;
+CREATE OR REPLACE VIEW public.sales_market AS
+SELECT s.* FROM public.sales s
+ WHERE NOT EXISTS (SELECT 1 FROM public.buyback_wallets b
+                    WHERE b.collection_id = s.collection_id AND b.wallet_address = s.buyer_address);
+
 CREATE TABLE edition_fmv_current (
   edition_id uuid PRIMARY KEY, collection_id uuid, fmv_usd numeric, floor_price_usd numeric,
   confidence fmv_confidence, computed_at timestamptz DEFAULT now());
@@ -136,7 +146,7 @@ BEGIN
       SELECT p.pid, p.sub, p.tier, p.bid, date_trunc('month', s.sold_at) AS m,
              percentile_cont(0.5) WITHIN GROUP (ORDER BY s.price_usd::float8) AS pmed
       FROM par p
-      JOIN sales s ON s.edition_id = p.pid
+      JOIN public.sales_market s ON s.edition_id = p.pid
       WHERE s.sold_at >= now() - interval '365 days'
         AND s.price_usd > 0
       GROUP BY 1, 2, 3, 4, 5
@@ -144,7 +154,7 @@ BEGIN
       SELECT s.edition_id AS bid, date_trunc('month', s.sold_at) AS m,
              percentile_cont(0.5) WITHIN GROUP (ORDER BY s.price_usd::float8) AS bmed,
              count(*) AS bn
-      FROM sales s
+      FROM public.sales_market s
       WHERE s.edition_id IN (SELECT DISTINCT bid FROM pm)
         AND s.sold_at >= now() - interval '365 days'
         AND s.price_usd > 0

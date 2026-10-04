@@ -35,6 +35,16 @@ CREATE TABLE sales (
   sold_at        timestamptz
 );
 
+-- #169 (2026-10-03): FMV writers read public.sales_market (sales minus issuer buy-backs).
+CREATE TABLE IF NOT EXISTS public.buyback_wallets (collection_id uuid, wallet_address text, label text);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS buyer_address text;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS collection_id uuid;
+CREATE OR REPLACE VIEW public.sales_market AS
+SELECT s.* FROM public.sales s
+ WHERE NOT EXISTS (SELECT 1 FROM public.buyback_wallets b
+                    WHERE b.collection_id = s.collection_id AND b.wallet_address = s.buyer_address);
+
+
 CREATE TABLE serial_fmv_multipliers (
   collection_id   uuid     NOT NULL,
   serial_bucket   text     NOT NULL,
@@ -60,7 +70,7 @@ BEGIN
   DELETE FROM public.serial_fmv_multipliers WHERE collection_id = p_collection_id;
   WITH ed_sales AS (
     SELECT s.edition_id, s.serial_number, s.price_usd, coalesce(e.tier::text,'UNKNOWN') AS tier, e.circulation_count AS circ
-    FROM public.sales s JOIN public.editions e ON e.id = s.edition_id
+    FROM public.sales_market s JOIN public.editions e ON e.id = s.edition_id
     WHERE s.collection_id = p_collection_id
       AND s.sold_at > now() - make_interval(days => p_lookback_days)
       AND s.price_usd > 0 AND s.serial_number IS NOT NULL AND e.circulation_count > 0
