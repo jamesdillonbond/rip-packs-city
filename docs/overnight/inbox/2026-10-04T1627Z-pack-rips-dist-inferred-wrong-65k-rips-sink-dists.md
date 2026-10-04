@@ -46,3 +46,8 @@ It is also why the 8512 lifecycle read is slow cold: 10,753 of its purchased pac
 2. **Fix the writer.** A chain identity should override an INFERRED dist, not only fill a NULL (`collect_pack_nft_identity` / `name_packs_from_identity`). Otherwise this re-accumulates. Consider having the inference prefer the purchase's dist when one exists.
 3. **Decide Chance Hit semantics** (bought-as vs converted-to) for pack pages. That is a product question if the two differ.
 4. Re-read: rip-vs-chain disagreement → ~0; 8552 opened ≈ its purchases; the 8512 lifecycle read no longer probes 10 k packs.
+
+## Addendum (~9:33 AM PT, same session)
+
+- **Partly known before.** The 2026-09-24 comment in `backfill_pack_rip_metadata` records that the pool vote "picked an OLD dist whose pool happens to contain every pulled edition when the pack's real (new) dist had no pool yet" (6,274 rips disagreed with `pack_nft_identity` then). That change made the vote FILL-ONLY, so it stopped overwriting. It did **not** repair rows already wrong, and the vote **still fills NULL-dist rips**, so a rip that reaches this function before its chain identity can still get a wrong dist. This filing's 65k is the accumulated stock.
+- **Same function, separate issue:** its `unpriced_retry` leg costs 7.9 s / 800 k buffers to find 85 rows. Stamped-NULL rips with no `moment_acquisitions` are never selected, so they stay at the head of `idx_pack_rips_unvalued_stamped` and the walk grows (the "ORDER BY decides whether a leg progresses" class). The `zero_repair` leg's 14.6 s was fixed separately (`20261004163500`, an empty partial index). The run duration had been rising 28.7 → 40.7 s against a 50 s cap.
