@@ -217,6 +217,15 @@ describe("brandFonts reads its own disk on the Node runtime (2026-10-04)", () =>
     expect(cfg).toContain('"/api/og/**/*"')
     expect(cfg).toContain("./public/fonts/BarlowCondensed-Black.ttf")
     expect(cfg).toContain("./public/fonts/ShareTechMono-Regular.ttf")
+    expect(cfg).toContain('"/api/profile/trophy-case/pdf"')
+  })
+
+  it("the trophy-case PDF reads the same files from disk before it fetches", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "app/api/profile/trophy-case/pdf/route.tsx"), "utf8")
+    const disk = src.indexOf("await readBrandFontsFromDisk()")
+    const http = src.indexOf("await fetchBytes(`${BASE_URL}/fonts/")
+    expect(disk).toBeGreaterThan(-1)
+    expect(http).toBeGreaterThan(disk)
   })
 })
 

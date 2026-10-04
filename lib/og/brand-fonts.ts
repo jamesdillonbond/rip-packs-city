@@ -126,7 +126,7 @@ export const BRAND_FONT_FILES = ["BarlowCondensed-Black.ttf", "ShareTechMono-Reg
  * worst case of this change is today's behaviour. The bytes are validated the
  * same way, so a half-written or wrong file cannot reach satori.
  */
-async function readBrandFontsFromDisk(): Promise<ArrayBuffer[] | null> {
+export async function readBrandFontsFromDisk(): Promise<ArrayBuffer[] | null> {
   // The `if (NEXT_RUNTIME === "nodejs") { await import(...) }` SHAPE is what the
   // bundler strips from edge builds; an early `return` on `!==` is not (the first
   // version of this function drew three "Node.js module in Edge Runtime" warnings).

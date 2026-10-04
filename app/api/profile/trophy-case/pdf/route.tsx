@@ -38,6 +38,7 @@ import jpeg from "jpeg-js";
 import { PNG } from "pngjs";
 import { supabase as supabaseAnon } from "@/lib/supabase";
 import { isSupportedFontBuffer } from "@/lib/og/font-bytes";
+import { readBrandFontsFromDisk } from "@/lib/og/brand-fonts";
 import {
   RPC_RED_HEX,
   GOLD_HEX,
@@ -372,10 +373,18 @@ function loadBrandFonts() {
     // the OG profile card, where the same input throws from inside a response
     // STREAM and escapes that route's try/catch entirely — see lib/og/font-bytes.
     const asFont = (b: Buffer | null) => (isSupportedFontBuffer(b) ? b : null);
-    fontsPromise = (async () => ({
-      display: asFont(await fetchBytes(`${BASE_URL}/fonts/BarlowCondensed-Black.ttf`)),
-      mono: asFont(await fetchBytes(`${BASE_URL}/fonts/ShareTechMono-Regular.ttf`)),
-    }))();
+    fontsPromise = (async () => {
+      // 2026-10-04: the files first, from this function's own disk (the shared OG
+      // loader's Node path, bytes validated there; traced in next.config.ts). The
+      // fetch below stays as the fallback. It used to be the only path, and in CI it
+      // sent every test render of this route to production for the fonts.
+      const disk = await readBrandFontsFromDisk();
+      if (disk) return { display: Buffer.from(disk[0]), mono: Buffer.from(disk[1]) };
+      return {
+        display: asFont(await fetchBytes(`${BASE_URL}/fonts/BarlowCondensed-Black.ttf`)),
+        mono: asFont(await fetchBytes(`${BASE_URL}/fonts/ShareTechMono-Regular.ttf`)),
+      };
+    })();
   }
   return fontsPromise;
 }
