@@ -49,7 +49,13 @@ function run(fixture: string, env: Record<string, string> = {}, httpCode = "200"
   expect(ghExprs.length, "run: body should carry no GitHub expressions (they live in env:)").toBe(0)
 
   try {
-    const out = execFileSync("bash", ["-e", "-c", `${shadow}\n${step.run}`], {
+    // The script goes in on STDIN, not as a `-c` argument: on Windows a long argument
+    // with nested double quotes (the Telegram `-d "$(node -e "…" "$MSG")"` line) is
+    // mangled by the command-line round-trip before bash sees it, and every case here
+    // failed with "unexpected EOF while looking for matching `\"'" while CI (Linux)
+    // passed. `bash -n` on the extracted script is clean — the workflow was never wrong.
+    const out = execFileSync("bash", ["-e", "-s"], {
+      input: `${shadow}\n${step.run}`,
       env: {
         ...process.env,
         SUPABASE_URL: "https://example.supabase.co",
@@ -64,7 +70,7 @@ function run(fixture: string, env: Record<string, string> = {}, httpCode = "200"
         ...env,
       } as NodeJS.ProcessEnv,
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     })
     return { code: 0, out }
   } catch (e: any) {
