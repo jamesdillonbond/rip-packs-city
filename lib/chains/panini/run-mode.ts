@@ -1,6 +1,6 @@
 // Which kind of run the residential Panini runner should do (2026-10-03, Trevor chose "more runs").
 //
-// The walk refreshes ~290-370 editions a run against 22k+ catalogue editions (~11-day rotation). The
+// The walk refreshes ~290-370 editions a run against ~15.7k catalogue editions (~8-day rotation). The
 // task moves from every 4 h to every 2 h, but every run also re-enumerates the sport grids first (~45
 // min, measured 10-03) — so doubling FULL runs would add as much grid time as card time. Instead the
 // runs alternate:

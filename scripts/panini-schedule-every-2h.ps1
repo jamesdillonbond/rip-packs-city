@@ -1,7 +1,7 @@
 # scripts/panini-schedule-every-2h.ps1 - run "RPC Panini Ingest" every 2 hours instead of every 4.
 #
-# WHY (2026-10-03, Trevor chose "more runs"): a run refreshes ~290-370 Panini editions against 22k+ in
-# the catalogue, an ~11-day rotation. The route now alternates FULL runs (grids + packs + cards) at the
+# WHY (2026-10-03, Trevor chose "more runs"): a run refreshes ~290-370 Panini editions against ~15.7k in
+# the catalogue, an ~8-day rotation. The route now alternates FULL runs (grids + packs + cards) at the
 # old 2/6/10 AM-PM PT slots with WALK-only runs (cards for the whole run) at 12/4/8 AM-PM PT - see
 # lib/chains/panini/run-mode.ts. The box only has to start a run every 2 hours.
 #

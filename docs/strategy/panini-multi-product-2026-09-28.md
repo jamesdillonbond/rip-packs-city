@@ -331,6 +331,8 @@ What this thread added (each has a ledger entry with its revert path):
   editions > 6 d rose 1,113 → 1,350 in two hours. **Shipped:** aged and held alternate 1:1, aged first (route GET,
   live from the next run with no box pull).
 - **Capacity:** ~2,000 refreshes/day vs 22k+ catalogue editions (+4,164 held, +5,020 grid-new per run) ≈ an 11-day
+  ⚠ **CORRECTED 10-04:** the catalogue is ~15.7k editions (`panini_editions`, 10-04 9 AM PT). "22k+" added the ~4k held cards
+  to a walk list (~17.7k) that already contains them, so the 4-hour rotation was ~8 days, not ~11. The decision stands.
   rotation. Keeping every edition < 7 days old is NOT reachable by ordering; the levers are per-card time (~13 s:
   serial paging + SALES HISTORY clicks), more runs, or narrowing which editions must stay fresh (e.g. held + listed).
   **Tier 2 stays held** until that is decided — admitting 25 more products only lengthens the rotation.
@@ -385,3 +387,36 @@ What this thread added (each has a ledger entry with its revert path):
   'product_names' order by started_at desc` and `select count(*) filter (where name is null), count(*) from
   panini_products`. A product being named also lets its secondary packs attach (`product_set_id` by name); EV stays
   limited to the four modeled packs.
+
+## HANDOFF — 2026-10-04 ~9:30 AM PT (the 10-03/04 thread is archived; start here)
+
+**State (measured 9:11 AM PT 10-04):** 53 of 146 products admitted (`walk_cards`), catalogue 15,669 editions, 4,362
+refreshed in the last 24 h, > 6 d 1,830, **> 7 d 0**; walk order `2641 held-priority + 17678 known`; 246 pack rows from
+~348 pack pages (100 not yet opened); 144 of 146 products unnamed. All Panini lanes ok in 24 h except two
+`panini-collector-walk` partial reads (the by-design 10-min per-profile cap on a 54-collection profile).
+
+**Running unattended (nothing to do unless it breaks):** the box runs every 2 h — FULL at 2/6/10 AM-PM PT, WALK-only at
+12/4/8 (`run_mode` in each `panini-ingest-enum` marker); stall watchdog (`extra ? 'stall'`), closed-tab recovery
+(`enum.page_recoveries`), per-sport secondary pack listings (`enum.pack_grid`), pack pages stalest-walk first (60 per full
+run), aged/held alternating in `priority_pskus`, `panini_pack_ev_board` models only packs 1038/1039/1055/1056.
+
+**Open — in order, each with its read:**
+1. **Product names (first pass due with the ~5:45 AM PT collector walk 10-05, if the box pulled `92b4ed6e2`).**
+   `select started_at, extra->'product_names' from pipeline_runs where pipeline='panini-ingest-enum' and extra ? 'product_names'`;
+   `select count(*) filter (where name is null), count(*) from panini_products`. Spot-check three named set ids: the name
+   should match the product of `panini_products.sample` and, where packs exist, `panini_pack_state.product_name`. Nothing
+   posted → the box has not pulled, or the walk log lacks `product names: offered …`.
+2. **Freshness after the held backlog drains** (held-priority in the latest enum marker → ~0 within ~1 day). Then > 6 d should
+   fall (every priority slot becomes aged). **> 7 d must stay 0.**
+3. **Tier 2 (25 products, 10–49 listings) — admit only if** > 7 d is 0 and > 6 d is falling with held ~0. Re-derive first:
+   refreshes/day (`last_seen_at` by run window) vs catalogue size; tier 2 adds discovery load to FULL runs only. Admit with
+   `update panini_products set walk_cards = true where …` + a note per row + a ledger entry; bootstrap narrows the next
+   run to products with 0 rows (< 12 h). Tier 3 (67 products, < 10 listings) only if capacity clearly allows.
+4. **Pack pages:** all ~348 opened by ~10-04 afternoon; then `panini_pack_state` ≈ pages captured. Football (224 pages) is
+   the bulk.
+5. **Pack EV beyond the four modeled packs:** needs (a) the product named + admitted + priced, and (b) its pack contents.
+   Many secondary packs publish GUARANTEED contents (`raw.pack_label`, e.g. "3 Red Mosaic Parallel NFTs") — deterministic
+   slots, so EV = Σ slots × that family's sale-priced value. Generalize `refresh_panini_pack_ev_sales_model` per product
+   (config, not a copy) and list each modeled pack id in the board's `model_set_id` (chain-strategy.md rule).
+6. **Not doable from the cloud:** anything about the live site (Panini 403s data-center traffic incl. `pg_net`) — instrument
+   the runner and read its marker.
