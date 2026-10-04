@@ -16,12 +16,22 @@ import { parse } from "yaml"
  * comment; none → create; gh failing → a warning and exit 0, never a changed
  * job result. The two workflows are pinned to grant `issues: write` and to
  * run the step on the same condition as their Telegram page.
+ *
+ * ⚠ 2026-10-03 LIVE TEST (pager-test.yml, runs 37165170411 / 37165210008): the
+ * first version passed here and still opened TWO issues (#16, #17), because it
+ * used `gh issue list --jq --arg t …` — gh's --jq has no --arg, gh failed,
+ * 2>/dev/null ate it, and "none open" was the result. A shadow that answers
+ * any `issue list` cannot see a flag gh would reject. So the shadow now (a)
+ * answers only `gh api repos/<repo>/issues?…` with the REST shape and (b)
+ * EXITS 1 on any `--arg`, which is the planted defect that makes the old
+ * script red here. The decision is still proven end to end only by a dispatch.
  */
 
 const ROOT = join(__dirname, "..")
 const SCRIPT = join(ROOT, "scripts/ci/page-via-github-issue.sh")
 
-function run(env: Record<string, string>, ghBehaviour: { list?: string; createFails?: boolean; commentFails?: boolean } = {}) {
+type OpenIssue = { number: number; title: string }
+function run(env: Record<string, string>, ghBehaviour: { open?: OpenIssue[]; createFails?: boolean; commentFails?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "gh-page-"))
   const log = join(dir, "gh.log")
   const gh = join(dir, "gh")
@@ -30,8 +40,11 @@ function run(env: Record<string, string>, ghBehaviour: { list?: string; createFa
     [
       "#!/usr/bin/env bash",
       `echo "$@" >> "${log}"`,
+      `for a in "$@"; do [ "$a" = "--arg" ] && { echo "unknown flag: --arg" >&2; exit 1; }; done`,
       `case "$1 $2" in`,
-      `  "issue list") printf '%s' '${ghBehaviour.list ?? ""}' ;;`,
+      `  "api repos/o/r/issues?state=open&labels=pager&per_page=50") printf '%s' '${(ghBehaviour.open ?? []).map((i) => `${i.number}\t${i.title}`).join("\n")}' ;;`,
+      `  "api "*) echo "unexpected api path: $2" >&2; exit 1 ;;`,
+      `  "issue list") echo "issue list is not used (R77 live test 2026-10-03)" >&2; exit 1 ;;`,
       `  "issue create") ${ghBehaviour.createFails ? "exit 1" : "echo https://github.com/o/r/issues/42"} ;;`,
       `  "issue comment") ${ghBehaviour.commentFails ? "exit 1" : "echo ok"} ;;`,
       `  "label create") exit 0 ;;`,
@@ -65,7 +78,7 @@ function run(env: Record<string, string>, ghBehaviour: { list?: string; createFa
 
 describe("scripts/ci/page-via-github-issue.sh", () => {
   it("creates an issue that @-mentions the owner when no open issue carries the title", () => {
-    const r = run({ PAGE_TITLE: "RPC SENTINEL UNREACHABLE", PAGE_BODY: "answered HTTP 504 (timeout)" }, { list: "" })
+    const r = run({ PAGE_TITLE: "RPC SENTINEL UNREACHABLE", PAGE_BODY: "answered HTTP 504 (timeout)" }, { open: [] })
     expect(r.code).toBe(0)
     expect(r.calls).toMatch(/issue create .*--title RPC SENTINEL UNREACHABLE/)
     expect(r.calls).toMatch(/--body @o answered HTTP 504 \(timeout\)/)
@@ -74,18 +87,36 @@ describe("scripts/ci/page-via-github-issue.sh", () => {
   })
 
   it("comments on the existing open issue instead of opening a second one", () => {
-    const r = run({ PAGE_TITLE: "RPC SITE DOWN", PAGE_BODY: "3 consecutive failed probes" }, { list: "17" })
+    const r = run(
+      { PAGE_TITLE: "RPC SITE DOWN", PAGE_BODY: "3 consecutive failed probes" },
+      { open: [{ number: 9, title: "RPC SENTINEL UNREACHABLE" }, { number: 17, title: "RPC SITE DOWN" }] },
+    )
     expect(r.code).toBe(0)
     expect(r.calls).toMatch(/issue comment 17 /)
     expect(r.calls).not.toMatch(/issue create/)
     expect(r.out).toContain("paged via GitHub issue #17")
   })
 
+  it("matches the title EXACTLY — a near-miss open issue does not swallow a different page", () => {
+    const r = run(
+      { PAGE_TITLE: "RPC PAGER TEST — close me when seen", PAGE_BODY: "x" },
+      { open: [{ number: 3, title: "RPC PAGER TEST" }, { number: 4, title: "rpc pager test — close me when seen" }] },
+    )
+    expect(r.calls).toMatch(/issue create/)
+    expect(r.calls).not.toMatch(/issue comment/)
+    // and the same title with the em dash and spaces intact IS matched
+    const r2 = run(
+      { PAGE_TITLE: "RPC PAGER TEST — close me when seen", PAGE_BODY: "x" },
+      { open: [{ number: 16, title: "RPC PAGER TEST — close me when seen" }] },
+    )
+    expect(r2.calls).toMatch(/issue comment 16 /)
+  })
+
   it("never changes the job's result: gh failing is a ::warning:: and exit 0", () => {
-    const r = run({ PAGE_TITLE: "x", PAGE_BODY: "y" }, { list: "", createFails: true })
+    const r = run({ PAGE_TITLE: "x", PAGE_BODY: "y" }, { open: [], createFails: true })
     expect(r.code).toBe(0)
     expect(r.out).toContain("::warning::")
-    const r2 = run({ PAGE_TITLE: "x", PAGE_BODY: "y" }, { list: "3", commentFails: true })
+    const r2 = run({ PAGE_TITLE: "x", PAGE_BODY: "y" }, { open: [{ number: 3, title: "x" }], commentFails: true })
     expect(r2.code).toBe(0)
     expect(r2.out).toContain("::warning::")
   })

@@ -57,9 +57,17 @@ ${WHEN} · sent from GitHub Actions with the workflow's own token — independen
 # The label may not exist yet; creating it is idempotent and its failure is not ours to surface loudly.
 gh label create "$LABEL" --repo "$REPO" --color B60205 --description "Runner-side page (register R77): the estate's own alarms could not run" >/dev/null 2>&1 || true
 
-# Exact-title match among OPEN issues carrying the label. `--search` is fuzzy, so the title is re-checked here.
-EXISTING=$(gh issue list --repo "$REPO" --state open --label "$LABEL" --limit 50 --json number,title \
-  --jq --arg t "$PAGE_TITLE" '[.[] | select(.title == $t)] | .[0].number // empty' 2>/dev/null) || EXISTING=""
+# Exact-title match among OPEN issues carrying the label, via the REST API.
+# ⚠ 2026-10-03 live test: the first version used `gh issue list --jq --arg t …`.
+# gh's `--jq` takes ONE expression and has no `--arg`, so gh exited non-zero,
+# `2>/dev/null` swallowed it, EXISTING stayed empty and the SECOND page opened a
+# second issue (#17 beside #16). The shadowed-gh unit test could not see it;
+# only the dispatch did. The title comparison now happens in bash, where the
+# value needs no quoting inside another language. `--search` is fuzzy, so it is
+# not used. LABEL must be URL-safe (it is "pager").
+EXISTING=$(gh api "repos/${REPO}/issues?state=open&labels=${LABEL}&per_page=50" \
+  --jq '.[] | "\(.number)\t\(.title)"' 2>/dev/null \
+  | awk -F'\t' -v t="$PAGE_TITLE" '$2 == t { print $1; exit }') || EXISTING=""
 
 if [ -n "$EXISTING" ]; then
   if gh issue comment "$EXISTING" --repo "$REPO" --body "$BODY" >/dev/null 2>&1; then
