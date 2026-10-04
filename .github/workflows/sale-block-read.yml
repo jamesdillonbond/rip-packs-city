@@ -1,0 +1,52 @@
+name: Sale-block reads (name sold NFTs no checkpoint holds)
+
+# 2026-10-04. For chain-verified Flowty / Dapper-contract sales whose NFT appears in no spork-root
+# checkpoint (burned after the sale), read the BUYER's collection at the sale's own block on the
+# history node of its spork, and land set / play / serial / subedition (Top Shot), edition / serial
+# (All Day) or set / serial (UFC) as public.checkpoint_nft_meta spork code 1 through
+# public.ingest_sale_block_reads (migration 20261004161541). Candidates live in
+# flowty_archive.sale_block_read_candidates; only rows without a verdict are read, so a re-run
+# resumes. Sharded by md5(candidate key). workflow_dispatch only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      rps:
+        description: "requests/second per shard"
+        required: false
+        default: "4"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sale-block-read
+  cancel-in-progress: false
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read shard ${{ matrix.shard }}/6
+        env:
+          RPS: ${{ github.event.inputs.rps }}
+          WORKERS: "12"
+          MAX_MINUTES: "320"
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::Supabase secrets not configured"; exit 2
+          fi
+          case "${RPS:-}" in (''|*[!0-9.]*) echo "rps must be a number"; exit 2;; esac
+          python3 scripts/flowty-export/test_chain_walk_gha.py
+          cd scripts/flowty-export
+          python3 sale_block_read_gha.py "${{ matrix.shard }}" 6
