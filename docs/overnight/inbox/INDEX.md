@@ -1,4 +1,4 @@
-# Inbox index — 561 live filings
+# Inbox index — 562 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-10-04 — 3 filings
+## 2026-10-04 — 4 filings
+
+- [🟢 **`rpc-chain-arrivals-seed` hit its 300 s timeout (4:13 AM PT) — FIXED: structural, not load. The purchase check probed 8 `sales` partitions per held moment (2.58 M buffers); now it reads the wallets' purchases once and skips already-probed moments (`20261004160000`, equivalent on prod: 56 = 56, 16,072 = 16,072). Catch-up 45.7 s seeded 16,143.**](2026-10-04T1505Z-chain-arrivals-seed-timeout-and-flow-pg_net-400.md) — *(daytime monitor, ~8:05 AM PT; disposition appended by Claude Code ~8:25 AM PT.)* Item 2 (two Flow "failed to convert event payload" 400s) is a Flow node fault, and the request rows were already cleared. No action.
 
 - [🟢 **Panini insight boards timing out, snapshot stale 165 min — RESOLVED: three covering indexes (`20261004123243` / `124114` / `124411`); deal board 23.8 s → 0.99 s. Not the transient the overnight pass called it.**](2026-10-04T0609Z-panini-insight-boards-timeout-and-stale-since-0407z.md) — *(daytime monitor, ~11:09 PM PT 10-03; found untracked in `archive/` and moved back by Claude Code ~7:20 AM PT 10-04.)* Snapshot rebuilding hourly since 5:52 AM PT, all ticks ok.
 
