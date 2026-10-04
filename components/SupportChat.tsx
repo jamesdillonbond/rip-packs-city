@@ -360,15 +360,29 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
   // a question" — which need opposite fixes. Open and abandon are the two reads
   // that separate them. Cheap: `track` coalesces by feature name per debounce
   // window, and failures are silent by design.
-  const openedRef = useRef(false);
+  //
+  // ⛔ TRANSITIONS ONLY (2026-10-04). This effect also depends on pageContext /
+  // collectionId / walletConnected, and the widget is mounted in LAYOUTS that
+  // survive client-side navigation ((collections), teams, my-teams). Until this
+  // date the effect fired on every run, so a panel left open while the reader
+  // clicked team → edition → team re-emitted concierge_opened per page (webz_80,
+  // 10-01: 10 "opens" in 15 min, one open panel), and after a close every
+  // navigation re-emitted concierge_closed_without_send. R73's exit/falsifier
+  // read those counts as reach. An event now fires only when isOpen CHANGES; the
+  // page props are read at that moment, so an open is attributed to the page it
+  // happened on.
+  const prevOpenRef = useRef(false);
   useEffect(() => {
+    const wasOpen = prevOpenRef.current;
+    prevOpenRef.current = isOpen;
+    if (isOpen === wasOpen) return; // a page/context change, not an open or a close
     if (isOpen) {
-      openedRef.current = true;
       track("concierge_opened", { page: pageContext ?? null, collection: collectionId ?? null, signed_in: !!walletConnected });
       return;
     }
-    // Only an actual close counts as an abandon — not the initial closed render.
-    if (openedRef.current && !sentAnyRef.current) {
+    // Only an actual close counts as an abandon — the initial closed render is
+    // not a transition (prevOpenRef starts false), so it never reaches here.
+    if (!sentAnyRef.current) {
       track("concierge_closed_without_send", { page: pageContext ?? null, collection: collectionId ?? null, suggestions_shown: quickSuggestions.length });
     }
     // quickSuggestions is read, not depended on: re-firing this effect when the
