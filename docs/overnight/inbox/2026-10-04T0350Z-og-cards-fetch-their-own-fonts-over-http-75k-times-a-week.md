@@ -41,3 +41,25 @@ The "why not shipped" risk was removed rather than accepted. `lib/og/brand-fonts
 - With a preload spy on `globalThis.fetch`, rendering `/api/og/insights` logged **0** `/fonts/` requests. Positive control: the same spy saw the card's 44 data fetches. The PNG renders in Barlow Condensed + Share Tech Mono.
 
 **Still open (the falsifier above):** `vercel.request.count` for `/fonts/BarlowCondensed-Black.ttf` with `client_user_agent eq 'node'` should fall from ~10k/day to roughly the edge share within a day. The trophy-case PDF route still fetches over HTTP (low volume, not changed).
+
+## ⛔ CORRECTION 2026-10-04 ~6:40 AM PT — the source was misattributed. It was our TEST SUITE, not our lambdas
+
+The read-back's positive control failed. Each new deploy drew ~150 `node` font requests against only ~8 `/api/og/*` requests. Splitting the font requests by `asn_name` (Vercel observability, week of 9-28, Barlow face):
+
+| source (asn) | requests | what it is |
+|---|---|---|
+| Microsoft Corporation | **71,316** | GitHub Actions runners — CI's vitest |
+| CenturyLink | 3,413 | a residential box running the suite |
+| Google LLC | 1,568 | cloud sandboxes running the suite |
+| Amazon (`node`) | **958** | our Node OG lambdas (what the 6:15 change addresses) |
+| Amazon (edge UA) | 504 | the edge cards |
+
+**~98% was vitest.** Every test that renders an OG card called `brandFonts()`, whose HTTP path fetched `https://www.rippackscity.com/fonts/*.ttf` (it is not stubbed in most suites). Measured locally with a fetch spy: one run of the OG-related test files made **312 requests to production** (156 per face). That matches the ~160-per-CI-run bursts, which landed right after each push and so read as "post-deploy".
+
+**Fixed:** `vitest.setup.ts` sets `NEXT_RUNTIME ||= "nodejs"`, so tests take the loader's disk path (`public/fonts` in the checkout). The two files that test the HTTP path opt out with `vi.stubEnv("NEXT_RUNTIME", "")`. The empty string is deliberate: `"edge"` also switches `next/og` to a wasm build that cannot load under Node. Re-measured: **0** font fetches across the 80 OG-related test files (1,394 tests green). This also removes the suite's dependency on the live site (the 2026-08-29 render-sweep hang was this fetch).
+
+The lambda change (6:15 AM PT) stays. It is correct and removes the remaining ~1k/week plus two round trips per cold Node card render. It just was not the 75k.
+
+**Falsifier now:** `asn_name eq 'Microsoft Corporation'` `node` requests for `/fonts/*.ttf` fall from ~10k/day to ~0 once CI runs on the new setup.
+
+**Lesson:** a user agent of `node` names a RUNTIME, not a caller. Before attributing self-traffic to our servers, split by `asn_name` (AWS = our functions; Microsoft = GitHub runners).
