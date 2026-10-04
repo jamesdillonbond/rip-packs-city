@@ -96,6 +96,15 @@ const PACK_READ_TIMEOUT_MS = 5_000
 // contention (the documented ~22 MB/s IO ceiling, register R46 — a capacity
 // decision already made: stay on Small), not this function. Re-derive before
 // believing either half.
+//
+// ⛔ 2026-10-04: THE "DO NOT TUNE" HALF WAS WRONG — it was measured WARM. On the
+// Large tier the lifecycle overrun was still 13 a day, 10 of them one rarely-visited
+// dist (5048). COLD, the same read was 6-12 s with 5,455 blocks read: every rip of
+// the dist was a heap fetch because the index did not carry `pack_nft_id` (and the
+// All Day view's `sealed_at`). Fixed by covering indexes, not by budget:
+// `20261004145000` (idx_pack_rips_dist_agg_v4) and `20261004150500`
+// (idx_pack_rips_priced_id, the realized-EV leg). Judge a 5 s budget on COLD
+// blocks read, never on a warm timing.
 
 /**
  * Bound one read, RESOLVING with a synthetic `error` rather than rejecting.
