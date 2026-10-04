@@ -40,3 +40,16 @@ Example: Josh Allen Base COMMON (HIGH). FMV $0.10, pinned there since at least 0
 - **Positive control, run on the same instrument:** the Top Shot rows above use the same query and come out symmetric at 1.00.
 - **Falsify "ghost":** for a sample of the 180 floor listings, check on-chain or through Dapper that the listing is still purchasable. If most are live, the finding becomes "buyers pay 2× the floor", which would be very surprising for commons, and the ceiling is right.
 - Re-run the ratio after any change: All Day HIGH/MEDIUM should move toward 1.00 and keep a symmetric spread.
+
+## ✅ RESOLVED — re-measured 2026-10-03 ~8:20 PM PT (Claude Code cloud)
+
+The same instrument (`edition_fmv_current.fmv_usd` ÷ median of the edition's last 7 sales in `sales_market`, 30 d, editions with ≥ 7 sales):
+
+| collection | tier | editions | median ratio | below ALL last-7 | above ALL last-7 | below AND = floor ask |
+|---|---|---|---|---|---|---|
+| nba_top_shot | HIGH | 1,592 | 1.000 | 37 | 10 | 0 |
+| nba_top_shot | MEDIUM | 1,342 | 1.000 | 64 | 33 | 0 |
+| **nfl_all_day** | **HIGH** | 118 | **1.000** (was 0.740) | **4** (was 41) | 0 | 0 |
+| **nfl_all_day** | **MEDIUM** | 533 | **1.000** (was 0.682) | **12** (was 142) | **27** (was 0) | 4 (was 180 of 184 overall) |
+
+The one-sided clamp is gone. All Day MEDIUM now has errors on both sides. Fix shape 3 ("fix the source") is what landed, in two steps: ghost listings whose NFT sold after listing are excluded from `allday_edition_floor_ask` (`20260922205752`, pg_cron job 596), and Flowty-fork storefront listings are marked `unpurchasable` at the data level (ledger 2026-09-25). FMV 1.8.0 (the median of the last 7 typical sales, 10-03) also feeds this ratio. Nothing to ship. Re-open only if All Day HIGH/MEDIUM `below AND = floor ask` climbs back into the dozens.
