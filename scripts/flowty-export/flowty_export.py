@@ -276,6 +276,32 @@ def main():
     wr("flowty_offers.csv", ["offered_at_pt", "outcome", "ended_at_pt", "collection", "nft_id", "offer_amount", "token", "accepted_by",
        "offer_id", "offer_tx", "end_tx"], offers, "Every offer these wallets made on Flowty.")
 
+    # listings these wallets created: sale, loan request, rental
+    listings = []
+    for e in ev:
+        d = e["d"]; lid = str(d.get("listingResourceID"))
+        if e["typ"] == "STOREFRONT_LISTED" and d.get("storefrontAddress") in W:
+            end = by[("STOREFRONT_PURCHASED", "listingResourceID")].get(lid) or by[("STOREFRONT_DELISTED", "listingResourceID")].get(lid)
+            kind, mine, price, tk = "SALE", d["storefrontAddress"], d.get("salePrice"), tok(d.get("salePaymentVaultType"))
+            out_ = ("SOLD" if end["typ"] == "STOREFRONT_PURCHASED" else "DELISTED") if end else "NO FURTHER EVENT (expired, or listed at shutdown)"
+            cp = (end or {}).get("d", {}).get("buyer", "") if end and end["typ"] == "STOREFRONT_PURCHASED" else ""
+        elif e["coll"] == "p2pEvents" and e["typ"] == "LISTED" and d.get("flowtyStorefrontAddress") in W:
+            end = next((by[(t, "listingResourceID")].get(lid) for t in ("FUNDED", "DELISTED", "EXPIRED") if by[(t, "listingResourceID")].get(lid)), None)
+            kind, mine, price, tk = "LOAN REQUEST", d["flowtyStorefrontAddress"], d.get("amount"), tok(d.get("paymentTokenType"))
+            out_ = end["typ"] if end else "NO FURTHER EVENT"
+            cp = (end or {}).get("d", {}).get("lender", "") if end and end["typ"] == "FUNDED" else ""
+        elif e["coll"] == "rentalEvents" and e["typ"] == "RENTAL_LISTED" and d.get("flowtyStorefrontAddress") in W:
+            end = by[("RENTAL_RENTED", "listingResourceID")].get(lid) or by[("RENTAL_DESTROYED", "listingResourceID")].get(lid)
+            kind, mine, price, tk = "RENTAL", d["flowtyStorefrontAddress"], d.get("amount"), tok(d.get("paymentTokenType") or d.get("paymentTokenName"))
+            out_ = ("RENTED" if end["typ"] == "RENTAL_RENTED" else "DELISTED") if end else "NO FURTHER EVENT"
+            cp = (end or {}).get("d", {}).get("renterAddress", "") if end and end["typ"] == "RENTAL_RENTED" else ""
+        else: continue
+        listings.append([pt(e["ts"]), kind, out_, pt(end["ts"]) if end else "", coll_of(d.get("nftType")), *nm(d), d.get("nftID"),
+                         price, tk, cp, mine, lid, e["tx"], end["tx"] if end else "", verif(e)])
+    wr("flowty_listings.csv", ["listed_at_pt", "listing_type", "outcome", "ended_at_pt", "collection", "title", "set", "tier", "serial",
+       "nft_id", "ask_or_principal", "token", "counterparty", "your_wallet", "listing_resource_id", "listing_tx", "end_tx", "verification"],
+       listings, "Every listing these wallets created on Flowty (sale, loan request, rental) and how it ended.")
+
     wr("flowty_all_events.csv", ["time_pt", "collection", "event", "nft_id", "fields_json", "tx_hash", "chain_event_type", "flowty_doc_id"],
        [[pt(e["ts"]), e["coll"], e["typ"], e["d"].get("nftID", ""), json.dumps(e["d"], sort_keys=True, default=str), e["tx"], e["chain"], e["id"]] for e in ev],
        "RAW: every Flowty event record touching these wallets.")

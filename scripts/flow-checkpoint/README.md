@@ -2,7 +2,8 @@
 
 Flow publishes the full ledger at every spork root in the public bucket
 `gs://flow-genesis-bootstrap/mainnet-NN-execution/public-root-information/root.checkpoint*`
-(mainnet-20…24: 16 parts, 193–339 GB; 17–19: one file; 16 and older predate atree storage).
+(mainnet-20…24: 16 parts, 193–339 GB; 1–19: one file). mainnet-15 (2021-12) onward is atree storage; mainnet-6…14
+(2021-03…10) is the older one-register-per-value format (`decode_old_wallet.py`); mainnet-1…5 parse fine.
 These scripts stream a checkpoint over HTTP Range requests (nothing is stored but matching
 payloads) and decode Cadence storage. No events — STATE only — but contracts that keep their
 records (Flowty Funding / storefront listings, NFT collections) are fully recoverable.
@@ -21,6 +22,7 @@ records (Flowty Funding / storefront listings, NFT collections) are fully recove
 | `ckpt_find.py <url> <ids.json> <out> <start> <end>` | which ACCOUNT holds given Top Shot / All Day ids in a checkpoint part (any owner): matches `"id": UInt64(n)`, walks back to the payload's owner, keeps payloads naming the contract. |
 | `match_purchases.py [out.csv]` | moments that entered a wallet between snapshots × purchased Flowty listings (expects `w{spork}_{owner}.json` and `L{spork}/` in cwd) |
 
+Atree field order inside a composite VARIES (e.g. `data` before `id`) — search both sides of an anchor field, never one.
 Run a full checkpoint as 16 parallel processes (one per part, or 16 byte ranges of a single file):
 ~20 min for mainnet-24 (334 GB) from a cloud sandbox. Validations and the leaf-payload layout:
 `docs/reference/apis-and-cadence.md` ("STATE below the floor is free and public").
