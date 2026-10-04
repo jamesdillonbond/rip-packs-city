@@ -75,3 +75,10 @@ lane's cost must be split on the change point, never pooled across it.
    or walk once with instrumentation) — **this gates everything else**.
 2. Take the 24 h warm baseline.
 3. Only then: head-reset + cadence cut, with the falsifier registered and read at 24 h, not at 7.
+
+## ✅ RESOLVED — the candidate shipped 2026-09-23, verified live 2026-10-03 ~7:51 PM PT (Claude Code cloud)
+
+- **Shipped as the HEAD-FIRST walker** (`6a74fd67a`, `supabase/functions/_shared/pack-sales-walker.ts`). Each run reads from the newest sale until a page brings nothing new, then spends the rest of its page budget on the history sweep. That decouples head freshness from lap time, which is this filing's whole point. Cadence is now `*/15` (Top Shot jobid 29) and `5,35` (All Day jobid 25).
+- **The old cost is gone, proven on the real caller:** the pre-09-23 body's full-table PostgREST count (`SELECT … FROM topshot_pack_sales_history LIMIT … OFFSET …`, ~19k disk blocks per call) has a `pg_stat_statements` call count of 5,955 (TS) / 6,118 (AD) at 7:30 PM PT, and it was **unchanged** at 7:51 PM PT after the 7:49 TS tick and the 7:35 AD tick. Those calls are the cumulative pre-change history since the 08-12 stats reset.
+- **Freshness:** Top Shot's newest pack sale is ~1 h old (150 in 24 h). All Day's newest is 2026-10-01 6:46 AM PT and every run's head page reads upstream's newest = ours (`head_new 0`). That is a quiet market (1–3/day for two weeks), not a stalled lane.
+- Not done, still optional: the warm-vs-warm 24 h IO baseline. The lever it was meant to size has shipped and its main cost term is verified gone.
