@@ -15,11 +15,15 @@ import { topShotAskObservedAt } from "@/lib/market/ask-freshness"
 // Recomputes FMV snapshots from the full 30-day sales history in the `sales`
 // table, rather than relying on the batch-level prices seen during ingest.
 //
-// Model: trimmed median (drop bottom 10% + top 10% of prices per edition)
-// WAP: recency-weighted average price (7-day half-life exponential decay)
+// Model (1.8.0, 2026-10-03): FMV = median of the edition's 7 most recent typical
+//   sales (lib/fmv-recalc-math.ts medianOfMostRecent; register R125 for the
+//   out-of-sample measurement that retired the weighted average as the FMV).
+// asp_usd / asp_without_outliers: recency-weighted average price (tiered 3/2/1
+//   weights over 0–7 / 7–14 / 14–30 days), raw and outlier-filtered — kept as
+//   diagnostics, no longer the published price.
 // Window: 30 days
 // Confidence: HIGH = >=7 sales/30d AND price dispersion <40%; MEDIUM >=5 sales/30d; else LOW
-// algo_version: "1.7.0"
+// algo_version: "1.8.0"
 //
 // Populates: fmv_usd, floor_price_usd, asp_usd, confidence,
 //            sales_count_7d (30d window), sales_count_30d, days_since_sale
@@ -38,7 +42,7 @@ import { topShotAskObservedAt } from "@/lib/market/ask-freshness"
 // Run via POST /api/fmv-recalc (token-gated, same as ingest)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ALGO_VERSION = "1.7.0"
+const ALGO_VERSION = FMV_ALGO_VERSION
 const WINDOW_DAYS = 30
 
 // ── Page size MUST stay below PostgREST's 1000-row cap ───────────────────────
@@ -94,10 +98,6 @@ const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
-// WAP half-life in seconds — 7 days means a sale from 7 days ago
-// carries ~37% of the weight of a sale from today.
-const WAP_HALF_LIFE_SECONDS = 7 * 24 * 60 * 60
-
 // FMV price-math primitives (trimmedMedian / weightedAveragePrice / liquidityRating /
 // wapWithoutOutliers / medianOf / lowSerialThreshold / isPremiumSerial / dampenGrailSpike)
 // + their tuning constants live in lib/fmv-recalc-math.ts so they can be unit-tested.
@@ -108,9 +108,12 @@ import {
   liquidityRating,
   wapWithoutOutliers,
   medianOf,
+  medianOfMostRecent,
   isPremiumSerial,
   dampenGrailSpike,
   TYPICAL_SERIAL_MIN,
+  FMV_RECENT_SALES_N,
+  FMV_ALGO_VERSION,
 } from "@/lib/fmv-recalc-math"
 
 // ── Serial-aware base FMV (2026-06-20) ───────────────────────────────────────
@@ -1140,8 +1143,8 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Step 4: Build and insert fresh snapshots ──────────────────────────────
-    // Sales-only FMV: outlier-filtered WAP (LiveToken-style averageWithoutWackos)
-    // with trimmed-median fallback. The Flowty LiveToken blend and floor-ask
+    // Sales-only FMV (1.8.0): median of the 7 most recent typical sales, with the
+    // outlier-filtered WAP then the trimmed median as fallbacks. The Flowty LiveToken blend and floor-ask
     // proxy paths were removed 2026-05-24. ⚠ Do not re-derive their removal from
     // "cached_listings is dead" — it is not; see the note at Step 2's end.
     const insertRows: Record<string, unknown>[] = []
@@ -1230,12 +1233,18 @@ export async function POST(req: NextRequest) {
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )
 
-      // Outlier-filtered WAP is the primary FMV signal — matches LiveToken's
-      // averageWithoutWackos. Falls back to trimmed median when the cleaned
-      // WAP collapses to 0 (e.g. tiny sales sets all rejected as outliers).
-      // Computed over the typical-serial set (valueSales).
+      // 1.8.0 (2026-10-03, register R125): the FMV is the median of the most
+      // recent FMV_RECENT_SALES_N typical sales. Measured out of sample against
+      // five weeks of realized Top Shot sales, the outlier-filtered WAP that was
+      // the FMV through 1.7.0 trailed this median every week and ran 4–20 % high
+      // in a falling market (see lib/fmv-recalc-math.ts). The WAP is still
+      // computed and published as asp_without_outliers (and the raw WAP as
+      // asp_usd) so the backtest can keep reading both. Falls back to the WAP,
+      // then the trimmed median, only when the recent median is 0 (all-zero
+      // prices). Computed over the typical-serial set (valueSales).
       const cleanWap = wapWithoutOutliers(valueSales, now)
-      let fmv = cleanWap > 0 ? cleanWap : median
+      const recentMedian = medianOfMostRecent(valueSales, FMV_RECENT_SALES_N)
+      let fmv = recentMedian > 0 ? recentMedian : cleanWap > 0 ? cleanWap : median
       // When the dampened set is too thin to trust the raw WAP, cap at 3x the
       // survivor median so a residual spike can't publish an absurd price.
       if (sales.length < 2 && capValue > 0) fmv = Math.min(fmv, capValue)

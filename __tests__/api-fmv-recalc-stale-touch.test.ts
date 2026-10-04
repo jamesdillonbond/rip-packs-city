@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { NextRequest } from "next/server"
 import { makeInstrumentedSupabaseFixture, type RecordedRpcCall } from "./helpers/route-harness"
+import { FMV_ALGO_VERSION } from "@/lib/fmv-recalc-math"
 
 // Two fmv-recalc sweep steps the deep-loop test doesn't reach, both of which
 // exist to stop the published FMV from LYING in a specific way:
@@ -171,7 +172,7 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
       // 40 days ago, so today the edition is 240 days cold (no sale to name).
       days_since_sale: 240,
       sales_count_30d: 0,
-      algo_version: "1.7.0",
+      algo_version: FMV_ALGO_VERSION,
     })
     // fmv_snapshots is delete-then-insert, never upsert (the write contract).
     expect((writes.fmv_snapshots ?? []).some((w) => w.method === "upsert")).toBe(false)

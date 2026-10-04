@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { NextRequest } from "next/server"
 import { makeInstrumentedSupabaseFixture, type RecordedRpcCall } from "./helpers/route-harness"
+import { FMV_ALGO_VERSION } from "@/lib/fmv-recalc-math"
 
 // Deep-loop test for /api/fmv-recalc — drives the DEFERRED sweep body (the part
 // that silently stalled on 2026-05-25) by capturing the after() callback and
@@ -164,7 +165,7 @@ describe("fmv-recalc deferred sweep — happy path", () => {
       floor_price_usd: 10,
       confidence: "MEDIUM",
       sales_count_30d: 6,
-      algo_version: "1.7.0",
+      algo_version: FMV_ALGO_VERSION,
     })
 
     // Terminal pipeline_runs row: ok=true, 1 written, cursor wraps (page < limit).

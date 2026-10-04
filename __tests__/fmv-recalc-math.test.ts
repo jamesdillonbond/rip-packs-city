@@ -5,6 +5,9 @@ import {
   liquidityRating,
   wapWithoutOutliers,
   medianOf,
+  medianOfMostRecent,
+  FMV_RECENT_SALES_N,
+  FMV_ALGO_VERSION,
   lowSerialThreshold,
   isPremiumSerial,
   dampenGrailSpike,
@@ -12,6 +15,7 @@ import {
   LOW_SERIAL_FLOOR_ABS,
   type SerialSale,
 } from "@/lib/fmv-recalc-math"
+import { MIN_SALES_30D_HIGH } from "@/lib/fmv-confidence"
 
 // Pins the FMV price-math primitives extracted from app/api/fmv-recalc/route.ts.
 // These decide the displayed fair-market value of every edition, so every branch
@@ -95,6 +99,49 @@ describe("medianOf", () => {
   it("returns 0 for empty", () => expect(medianOf([])).toBe(0))
   it("returns the middle for odd length (sorted)", () => expect(medianOf([30, 10, 20])).toBe(20))
   it("averages the middle two for even length", () => expect(medianOf([10, 20, 30, 40])).toBe(25))
+})
+
+// ── 1.8.0 (2026-10-03, register R125): the FMV is the median of the N most
+// recent typical sales. The out-of-sample backtest (`fmv_sales_backtest()`)
+// showed the recency-weighted average trailing this median every week and
+// running 4–20 % high in a falling market. These pin the PROPERTIES that made
+// the median win: it follows the market by RECENCY (not by price order), it
+// ignores a single bad print the grail guard let through, and with fewer than
+// N sales it still prices from what there is rather than returning 0.
+describe("medianOfMostRecent", () => {
+  it("returns 0 for no sales or a non-positive N", () => {
+    expect(medianOfMostRecent([], 7)).toBe(0)
+    expect(medianOfMostRecent([sale(10)], 0)).toBe(0)
+  })
+  it("takes the N most RECENT sales by soldAt, not the first N in array order", () => {
+    // oldest-first array; the three most recent are 5, 6, 7 (days 1-3) → median 6
+    const sales = [sale(100, 30), sale(90, 20), sale(80, 10), sale(7, 3), sale(6, 2), sale(5, 1)]
+    expect(medianOfMostRecent(sales, 3)).toBe(6)
+    // same sales shuffled → same answer (order-independent)
+    expect(medianOfMostRecent([...sales].reverse(), 3)).toBe(6)
+  })
+  it("follows a falling market where the weighted average lags it", () => {
+    // 20 sales at $20 over days 8-27, then 7 sales at $10 over days 1-7
+    const sales = [
+      ...Array.from({ length: 20 }, (_, i) => sale(20, 8 + i)),
+      ...Array.from({ length: 7 }, (_, i) => sale(10, 1 + i)),
+    ]
+    expect(medianOfMostRecent(sales, FMV_RECENT_SALES_N)).toBe(10)
+    const wap = wapWithoutOutliers(sales, NOW)
+    expect(wap).toBeGreaterThan(13) // the average is still being pulled up by the old prints
+  })
+  it("is not moved by one bad print among the last N", () => {
+    const sales = [sale(10, 1), sale(10, 2), sale(400, 3), sale(10, 4), sale(10, 5), sale(10, 6), sale(10, 7)]
+    expect(medianOfMostRecent(sales, 7)).toBe(10)
+  })
+  it("with fewer than N sales prices from what there is", () => {
+    expect(medianOfMostRecent([sale(4, 1), sale(8, 2)], 7)).toBe(6)
+    expect(medianOfMostRecent([sale(3, 1)], 7)).toBe(3)
+  })
+  it("N is the HIGH-confidence sales floor and the version was bumped with the model", () => {
+    expect(FMV_RECENT_SALES_N).toBe(MIN_SALES_30D_HIGH)
+    expect(FMV_ALGO_VERSION).toBe("1.8.0")
+  })
 })
 
 describe("lowSerialThreshold", () => {

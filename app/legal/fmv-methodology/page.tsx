@@ -5,6 +5,7 @@
 // the inline FmvDisclaimer "How is FMV calculated?" link.
 
 import Link from "next/link"
+import { FMV_RECENT_SALES_N } from "@/lib/fmv-recalc-math"
 import {
   ASK_CORROBORATION_BAND,
   MIN_SALES_30D_HIGH,
@@ -113,11 +114,16 @@ export default function FmvMethodologyPage() {
 
       <h3 style={H3}>Recent sales (primary signal)</h3>
       <p style={P}>
-        We pull every confirmed sale from the past 30 days, filter outliers (top
-        and bottom 5% by price), and compute an average sales price where
-        more recent sales count more than older ones (a recency-weighted average). Sales below 24 hours old
-        carry the most weight; sales 28+ days old are discounted but still
-        informative.
+        We pull every confirmed sale from the past 30 days, remove the prints that
+        are not about the edition&apos;s typical value (a serial #1 or jersey-number
+        sale carries a collector premium; a fat-finger or wash print is an outlier),
+        and publish the <strong style={STRONG}>median of the {FMV_RECENT_SALES_N} most
+        recent typical sales</strong>. A median follows a moving market within hours
+        on an actively traded edition and is not moved by a single unusual print;
+        we measured it against every realized sale each week and it beat the
+        recency-weighted average we used before, which lagged a falling market.
+        With fewer than {FMV_RECENT_SALES_N} typical sales we take the median of
+        what there is, and the confidence grade below says how thin that was.
       </p>
 
       <h3 style={H3}>Active asks (secondary signal)</h3>
@@ -273,7 +279,7 @@ export default function FmvMethodologyPage() {
       </p>
 
       <div style={FOOTNOTE}>
-        Last updated: May 2026. ·{" "}
+        Last updated: October 2026. ·{" "}
         <Link href="/" style={{ color: "var(--rpc-text-muted)" }}>
           Back to home
         </Link>

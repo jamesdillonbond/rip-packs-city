@@ -77,6 +77,32 @@ export function wapWithoutOutliers(sales: DatedSale[], now: Date): number {
   return weightedAveragePrice(filtered, now)
 }
 
+// ── Sales-only FMV = median of the N most recent typical sales (1.8.0, 2026-10-03) ──
+// Measured OUT OF SAMPLE (register R125; `fmv_sales_backtest()`): against every
+// realized Top Shot sale over five PT weeks, the published recency-weighted
+// average (wapWithoutOutliers) trailed a plain median of the edition's most
+// recent sales in every week — median abs error 14.8–24.8 % vs 12.5–18.4 %, and
+// it ran 4–20 % HIGH in a falling market (median published/price 1.045–1.200 vs
+// 1.000). The weighted average's lag is structural: a 29-day-old sale still
+// carries a third of today's weight, and a mean is pulled by every high print
+// the grail guard leaves. The median of the last N sales has an effective
+// horizon of hours on a liquid edition and tolerates up to (N-1)/2 bad prints.
+// N = 3, 5, 7 and 10 measured identically (13.0 % / ratio 1.000 on 4,194 sales,
+// 14 d); 7 is chosen for robustness and because it is the HIGH-confidence sales
+// floor, so a HIGH edition's price is the median of its last seven typical sales.
+// Fewer than N sales → the median of what there is. `asp_usd` /
+// `asp_without_outliers` still publish the two averages so `fmv / asp` stays a
+// readable diagnostic of what the change did.
+export const FMV_RECENT_SALES_N = 7
+// The algo_version every fmv-recalc snapshot is stamped with; the OG cards print it.
+export const FMV_ALGO_VERSION = "1.8.0"
+
+export function medianOfMostRecent(sales: DatedSale[], n: number): number {
+  if (sales.length === 0 || n <= 0) return 0
+  const recent = [...sales].sort((a, b) => b.soldAt.getTime() - a.soldAt.getTime()).slice(0, n)
+  return medianOf(recent.map(s => s.price))
+}
+
 // Plain median of a price array (no trimming). Returns 0 for an empty array.
 export function medianOf(prices: number[]): number {
   if (prices.length === 0) return 0

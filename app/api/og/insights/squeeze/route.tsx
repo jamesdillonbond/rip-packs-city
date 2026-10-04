@@ -14,6 +14,7 @@ import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-font
 
 import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/board-count"
 import { ogFetch } from "@/lib/og/og-fetch"
+import { FMV_ALGO_VERSION } from "@/lib/fmv-recalc-math"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -222,7 +223,7 @@ export async function GET(req: NextRequest) {
             color: "rgba(255,255,255,0.55)",
           }}
         >
-          <div style={{ display: "flex" }}>Hourly refresh · 1.7.0 FMV model</div>
+          <div style={{ display: "flex" }}>Hourly refresh · {FMV_ALGO_VERSION} FMV model</div>
           <div style={{ display: "flex" }}>rippackscity.com/insights/squeeze</div>
         </div>
       </div>
