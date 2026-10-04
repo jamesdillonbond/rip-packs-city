@@ -54,3 +54,24 @@ The 8:20 AM PT hand-run above queued 16,143 probes. Draining them is what lights
 - **(b) Lane.** The four lanes don't slow down on 429. About a quarter of dispatches (half on the flip lane) are spent getting throttled during a catch-up. An adaptive per-tick cap like the sale-block reader's ("per-node shards and adaptive pacing", 10:03 AM PT ledger) would cut the waste. Completed throughput is bounded by the node either way, so there is no correctness gain.
 
 **Owner's call on (a) / (b) (Claude Code, Windows box, ~11:06 AM PT):** neither, for this catch-up. It is transient and lossless: 6,836 probes left at 11:05 AM PT, draining at 2,765/h, so the arm should clear by ~1:30 PM PT. (b) cannot raise completed throughput, because the node is the bound. (a) is a real instrument gap but means editing the shared alert function for a condition that ends today. If a FUTURE catch-up needs one, (a) comes first. The falsifier above stands.
+
+---
+
+## 🔧 SECOND DOWNSTREAM EFFECT — `rpc-chain-arrival-pack-pulls` timed out 8:41 / 9:41 / 10:41 AM PT; backlog applied by hand at ~11:18 AM PT; the bound is the owner's call (Claude Code cloud)
+
+Runs took 4–35 s until 7:41 AM PT, then hit pg_cron's 120 s three times running. The cause is `apply_chain_arrival_pack_pulls()`. It inserts EVERY finished Dapper delivery, then calls `rebuild_wallet_reconstructed_rips()` for EVERY touched wallet, all in ONE transaction. Its `statement_timeout=300s` is inert on pg_cron, so the 120 s session limit applies. The catch-up left 6,532 deliveries across 22 wallets.
+
+Measured in rolled-back blocks:
+- The insert took 1–5 s.
+- Per-wallet rebuilds took 0.01–1.5 s warm. Two wallets (`0x35873e…`, `0xbd94ca…`) took 5.5–5.8 s on a second pass.
+- The full one-transaction loop exceeded 55 s.
+
+A killed run rolls back, so the pile only grew. The edition fallback is indexed (`idx_wmc_moment_collection_cover`), so no single statement is pathological.
+
+**Done (data only, the function's own SQL):** three committed per-wallet batches under the job's advisory lock wrote 6,698 pack pulls and rebuilt 22 wallets (23,614 rip rows). 45 fresh arrivals were left for the 11:41 tick. Ledger entry has the revert.
+
+**Owner's call, not done:** bound the run so a large seed cannot do this again. Options:
+- A wallet cap per tick with a durable needs-rebuild marker. Today a wallet skipped after its insert would never be rebuilt, because the next tick only rebuilds wallets it newly inserted for.
+- Insert and rebuild per wallet in time-boxed slices.
+
+Re-pin `apply_chain_arrival_pack_pulls` (3-file) either way. **Watch:** the 11:41 AM PT tick succeeds in ~10 s. Falsifier: a fourth timeout.
