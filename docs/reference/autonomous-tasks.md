@@ -82,6 +82,8 @@ handoff and not the INDEX header.
 
 ### What would actually unblock it
 
+⛔ **SUPERSEDED — there is nothing to unblock: the inbox is append-only (focus.md, 2026-08-17) and `__tests__/inbox-is-append-only-since-the-rule.test.ts` enforces it. A per-item marker is how a filing is RETIRED IN PLACE, not a licence to move it.** On 2026-10-04 a Cowork pass read the paragraph below as the go-ahead, archived 47 marked filings, and turned `main` red until `815c984` restored them. Kept below as history.
+
 A **per-item drained marker** written by whichever pass acts on a filing — front-matter, or a
 trailing `## Drained <date> — <what shipped>` section. Archiving then becomes mechanical: move
 anything with a marker older than N days. Until that exists the determination cannot be made from the

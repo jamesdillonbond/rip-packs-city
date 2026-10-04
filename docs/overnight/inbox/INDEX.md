@@ -12,6 +12,8 @@ every session to grep ALL of `inbox/*` before measuring anything.
 
 ## Why the files were NOT archived
 
+⛔ **Since 2026-08-17 the inbox is APPEND-ONLY and this is enforced: `__tests__/inbox-is-append-only-since-the-rule.test.ts` reds CI if any filing dated on/after 08-17 sits in `archive/`** (filings are cited by exact path from the ledger, migrations and live code). A resolution marker does NOT make a filing archivable — retire it by appending a ✅ RESOLVED section and a marker on its line below. (2026-10-04: a Cowork pass archived 47 marked filings on the reading of the paragraph below; `main` went red and they were restored in `815c984`.)
+
 Archiving by date was considered and **rejected**. The `rpc-nightly-autonomous-pass` task
 DRAINS this directory: moving a filing that was never acted on would silently remove it from
 that queue, and nothing would ever surface it again. A date is not a drained-determination, and
