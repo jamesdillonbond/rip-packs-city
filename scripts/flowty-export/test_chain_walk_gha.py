@@ -174,3 +174,12 @@ try:
     _S.records("ad", [{"key": {"type": "UInt64", "value": "2"}, "value": {"type": "Array", "value": [{"type": "String", "value": "https://elsewhere/x"}, {"type": "String", "value": "1"}]}}]); raise SystemExit("bad url accepted")
 except ValueError: pass
 print("all day view fallback ok")
+# per-node adaptive pacing: a 429 doubles the gap (capped at 10 s), successes ease it back to the floor
+L = _S.AdaptiveLimiter(4)
+assert abs(L.gap - 0.25) < 1e-9
+L.throttled(); L.throttled(); assert abs(L.gap - 1.0) < 1e-9
+for _ in range(200): L.ok()
+assert abs(L.gap - 0.25) < 1e-9
+for _ in range(20): L.throttled()
+assert L.gap == 10.0
+print("adaptive limiter ok")

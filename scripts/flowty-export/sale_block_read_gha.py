@@ -18,9 +18,14 @@ Usage: sale_block_read_gha.py <shard> <of>
 import base64, hashlib, http.client, json, os, re, sys, time, urllib.request, urllib.error
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from chain_verify_tx_gha import Limiter, cdc, rpc
+import threading
+from chain_verify_tx_gha import cdc, rpc
 
 RPS = float(os.environ.get("RPS", "5"))
+# Nodes this job reads (comma-separated; empty = all). The history nodes throttle independently —
+# mainnet26 answered 429 to two single script calls while the 6-shard run was on it (2026-10-04), so
+# each node gets its own job set and its own adaptive limiter.
+NODES = {n for n in os.environ.get("NODES", "").split(",") if n}
 WORKERS = int(os.environ.get("WORKERS", "12"))
 MAX_MINUTES = float(os.environ.get("MAX_MINUTES", "0"))
 
@@ -100,6 +105,23 @@ access(all) fun main(owner: Address, ids: [UInt64]): {UInt64: [UInt32]} {
 def b64(s): return base64.b64encode(s.encode()).decode()
 
 
+class AdaptiveLimiter:
+    """Paces calls at <= rps; a 429 doubles the gap (to at most 10 s), each success shrinks it by 3 %."""
+    def __init__(self, rps):
+        self.floor = 1.0 / rps; self.gap = self.floor; self.next = time.monotonic(); self.lock = threading.Lock()
+
+    def wait(self):
+        with self.lock:
+            now = time.monotonic(); t = max(now, self.next); self.next = t + self.gap
+        time.sleep(max(0, t - now))
+
+    def throttled(self):
+        with self.lock: self.gap = min(self.gap * 2, 10.0)
+
+    def ok(self):
+        with self.lock: self.gap = max(self.gap * 0.97, self.floor)
+
+
 EDITION_URL = re.compile(r"^https://media\.nflallday\.com/editions/([0-9]+)/media/")
 
 
@@ -138,15 +160,17 @@ def run_script(group, lim):
     args = [b64(json.dumps({"type": "Address", "value": buyer})),
             b64(json.dumps({"type": "Array", "value": [{"type": "UInt64", "value": str(i)} for i in group["ids"]]}))]
     body = json.dumps({"script": b64(SCRIPTS[(c, era)]), "arguments": args}).encode()
-    for k in range(8):
+    for k in range(12):
         lim.wait()
         try:
             req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=60) as r:
                 res = json.loads(base64.b64decode(json.loads(r.read())))
+                lim.ok()
                 return records(c, res.get("value"))
         except urllib.error.HTTPError as e:
-            if e.code not in (429, 500, 502, 503, 504): return None
+            if e.code == 429: lim.throttled(); continue
+            if e.code not in (500, 502, 503, 504): return None
         except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError, ValueError):
             pass
         time.sleep(min(60, 2 ** k))
@@ -172,17 +196,18 @@ def main():
     shard, of = int(sys.argv[1]), int(sys.argv[2])
     base = os.environ["NEXT_PUBLIC_SUPABASE_URL"].rstrip("/") + "/rest/v1/rpc/"
     key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-    lim = Limiter(RPS); t0 = time.time(); deadline = t0 + MAX_MINUTES * 60 if MAX_MINUTES else None
+    lims = defaultdict(lambda: AdaptiveLimiter(RPS)); t0 = time.time(); deadline = t0 + MAX_MINUTES * 60 if MAX_MINUTES else None
     after = ""; seen = found_n = absent_n = unanswered = 0
     with ThreadPoolExecutor(WORKERS) as ex:
         while not deadline or time.time() < deadline:
             page = rpc(base, key, "sale_block_read_page", {"p_after": after, "p_limit": 1000})
             if not page: break
             after = page[-1]["k"]
-            mine = [r for r in page if int(hashlib.md5(r["k"].encode()).hexdigest(), 16) % of == shard]
+            mine = [r for r in page if (not NODES or r["node"] in NODES)
+                    and int(hashlib.md5(r["k"].encode()).hexdigest(), 16) % of == shard]
             gs = groups_of(mine)
             out = []
-            for g, found in zip(gs, ex.map(lambda g: run_script(g, lim), gs)):
+            for g, found in zip(gs, ex.map(lambda g: run_script(g, lims[g["key"][0]]), gs)):
                 if found is None: unanswered += len(g["ks"]); continue
                 rows = verdict_rows(g, found)
                 found_n += sum(r["found"] for r in rows); absent_n += sum(not r["found"] for r in rows)

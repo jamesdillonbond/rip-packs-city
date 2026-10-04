@@ -10,12 +10,6 @@ name: Sale-block reads (name sold NFTs no checkpoint holds)
 
 on:
   workflow_dispatch:
-    inputs:
-      rps:
-        description: "requests/second per shard"
-        required: false
-        default: "4"
-        type: string
 
 permissions:
   contents: read
@@ -30,13 +24,22 @@ jobs:
     timeout-minutes: 340
     strategy:
       fail-fast: false
+      # Per NODE: the history nodes throttle independently (mainnet26 429s script bursts), so each node has
+      # its own shard set and the reader paces each node adaptively; a slow node no longer stalls the rest.
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
+        include:
+          - { nodes: "mainnet24", shard: 0, of: 3, rps: 4 }
+          - { nodes: "mainnet24", shard: 1, of: 3, rps: 4 }
+          - { nodes: "mainnet24", shard: 2, of: 3, rps: 4 }
+          - { nodes: "mainnet26", shard: 0, of: 2, rps: 3 }
+          - { nodes: "mainnet26", shard: 1, of: 2, rps: 3 }
+          - { nodes: "mainnet25,mainnet27,mainnet28", shard: 0, of: 1, rps: 2 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Read shard ${{ matrix.shard }}/6
+      - name: Read ${{ matrix.nodes }} shard ${{ matrix.shard }}/${{ matrix.of }}
         env:
-          RPS: ${{ github.event.inputs.rps }}
+          RPS: ${{ matrix.rps }}
+          NODES: ${{ matrix.nodes }}
           WORKERS: "12"
           MAX_MINUTES: "320"
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -46,7 +49,6 @@ jobs:
           if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
             echo "::error::Supabase secrets not configured"; exit 2
           fi
-          case "${RPS:-}" in (''|*[!0-9.]*) echo "rps must be a number"; exit 2;; esac
           python3 scripts/flowty-export/test_chain_walk_gha.py
           cd scripts/flowty-export
-          python3 sale_block_read_gha.py "${{ matrix.shard }}" 6
+          python3 sale_block_read_gha.py "${{ matrix.shard }}" "${{ matrix.of }}"
