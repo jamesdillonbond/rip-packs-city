@@ -63,8 +63,9 @@ pub fun main(owner: Address, ids: [UInt64]): {UInt64: [String]} {
     return out
   }
   let pub = cap.borrow<&{NonFungibleToken.CollectionPublic}>()
+  if pub == nil { return out }
   let rc = cap.borrow<&{MetadataViews.ResolverCollection}>()
-  if pub == nil || rc == nil { return out }
+  if rc == nil { return out }
   let held = pub!.getIDs()
   for id in ids {
     if !held.contains(id) { continue }
@@ -160,21 +161,29 @@ def run_script(group, lim):
     args = [b64(json.dumps({"type": "Address", "value": buyer})),
             b64(json.dumps({"type": "Array", "value": [{"type": "UInt64", "value": str(i)} for i in group["ids"]]}))]
     body = json.dumps({"script": b64(SCRIPTS[(c, era)]), "arguments": args}).encode()
+    errors = 0
     for k in range(12):
         lim.wait()
         try:
             req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=60) as r:
                 res = json.loads(base64.b64decode(json.loads(r.read())))
-                lim.ok()
-                return records(c, res.get("value"))
+            lim.ok()
+            break
         except urllib.error.HTTPError as e:
             if e.code == 429: lim.throttled(); continue
             if e.code not in (500, 502, 503, 504): return None
+            # mn24 answers some (block, script) pairs with a deterministic 500 (seen 2026-10-04 on an All
+            # Day wallet whose capability is neither typed nor CollectionPublic): three strikes, no verdict,
+            # so one such group no longer holds a page for ~5 min of backoff.
+            errors += 1
+            if errors >= 3: return None
         except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError, ValueError):
             pass
         time.sleep(min(60, 2 ** k))
-    return None
+    else:
+        return None
+    return records(c, res.get("value"))   # outside the retry: a record it cannot read is a bug, not a flake
 
 
 def groups_of(rows):

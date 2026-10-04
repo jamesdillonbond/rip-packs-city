@@ -183,3 +183,25 @@ assert abs(L.gap - 0.25) < 1e-9
 for _ in range(20): L.throttled()
 assert L.gap == 10.0
 print("adaptive limiter ok")
+# run_script: a deterministic 500 (mainnet24, 2026-10-04) gives up after 3 calls with no verdict; a 200 parses.
+import io, urllib.error, urllib.request
+class _Fast:
+    def wait(self): pass
+    def ok(self): pass
+    def throttled(self): pass
+_calls = []
+def _fail(req, timeout=None):
+    _calls.append(1); raise urllib.error.HTTPError(req.full_url, 500, "ise", {}, io.BytesIO(b""))
+_real_open, _real_sleep = urllib.request.urlopen, _S.time.sleep
+urllib.request.urlopen, _S.time.sleep = _fail, (lambda s: None)
+g = {"key": ("mainnet24", "blk", None, "0xb", "ad"), "ids": [1], "ks": [("ad:1:x", 1)]}
+assert _S.run_script(g, _Fast()) is None and len(_calls) == 3
+class _Resp(io.BytesIO):
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
+import base64 as _b64, json as _json
+_ok = _json.dumps(_b64.b64encode(_json.dumps({"type": "Dictionary", "value": _dict([(1, ["4500", "88"])], "String")}).encode()).decode()).encode()
+urllib.request.urlopen = lambda req, timeout=None: _Resp(_ok)
+assert _S.run_script(g, _Fast()) == {1: [{"c": "ad", "id": 1, "ed": 4500, "serial": 88}]}
+urllib.request.urlopen, _S.time.sleep = _real_open, _real_sleep
+print("run_script 500 strikes ok")
