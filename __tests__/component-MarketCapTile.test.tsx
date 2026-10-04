@@ -68,7 +68,7 @@ describe("MarketCapTile", () => {
     const t = container.textContent ?? ""
     expect(t).toContain("$4.50M")
     expect(t).toContain("#1")
-    expect(t).toContain("of 1,362 players in NBA Top Shot")
+    expect(t).toContain("of 1,362 players in NBA Top Shot with a known cap")
     expect(t).toContain("273,774")
     expect(t).toContain("of 310,049 minted")
     expect(t).toContain("49.6% priced from sales")
@@ -110,6 +110,10 @@ describe("MarketCapTileBody", () => {
     expect(t).toContain("≤ $12.5K on minted supply")
     expect(t).not.toMatch(/\$0\b/)
     expect(t).not.toContain("#")
+    // groups_ranked counts known caps only: with none known, the rank line must not
+    // claim the collection has zero players (it read "of 0 players in UFC Strike").
+    expect(t).not.toMatch(/of 0 players/)
+    expect(t).toContain("none in UFC Strike has a known cap")
   })
 
   it("7-day change: shown when history exists, otherwise says when history began", () => {
@@ -126,7 +130,7 @@ describe("MarketCapTile — series pages", () => {
     state.data = [{ ...ROW, group_label: "2", groups_ranked: 8, mcap_rank: 3 }]
     const { container } = await renderTile({ group: "series", collectionDbSlug: "nba_top_shot", match: "2" })
     expect(state.calls[0].args).toEqual({ p_group: "series", p_collection: "nba_top_shot", p_match: "2" })
-    expect(container.textContent).toContain("of 8 series in NBA Top Shot")
+    expect(container.textContent).toContain("of 8 series in NBA Top Shot with a known cap")
   })
 })
 

@@ -165,7 +165,9 @@ export async function runMarketCapTool(
     market_cap_status: row.mcap_usd == null ? "unknown — no published burn count" : "known",
     minted_supply_upper_bound_usd: row.mcap_usd == null ? round2(row.mcap_minted_usd) : undefined,
     rank: row.mcap_rank,
-    ranked_out_of: row.groups_ranked,
+    // Counts only the entities WITH a known cap; named so a 0 cannot be read as
+    // "the collection has no players" (2026-10-04, same fix as MarketCapTile).
+    ranked_out_of_with_known_cap: row.groups_ranked,
     high_confidence_share: row.mcap_usd && row.mcap_high_conf_usd != null ? Math.round((row.mcap_high_conf_usd / row.mcap_usd) * 1000) / 1000 : null,
     collector_held: row.collector_held,
     minted: row.minted,

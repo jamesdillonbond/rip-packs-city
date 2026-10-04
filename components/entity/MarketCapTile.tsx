@@ -98,10 +98,15 @@ export function MarketCapTileBody({
         <StatCell
           label="Rank"
           value={row.mcap_rank != null ? `#${fmtCount(row.mcap_rank)}` : "—"}
+          // groups_ranked counts only the entities WITH a known cap (count(s_mcap)),
+          // so the line must say so: "of 0 players in UFC Strike" read as a
+          // collection with no players (2026-10-04, mobile sweep).
           sub={
             group === "collection"
               ? `of ${fmtCount(row.groups_ranked)} collections with a known cap`
-              : `of ${fmtCount(row.groups_ranked)} ${GRAIN_NOUN[group]} in ${collectionDisplayName(row.collection_slug)}`
+              : row.groups_ranked > 0
+                ? `of ${fmtCount(row.groups_ranked)} ${GRAIN_NOUN[group]} in ${collectionDisplayName(row.collection_slug)} with a known cap`
+                : `none in ${collectionDisplayName(row.collection_slug)} has a known cap`
           }
         />
         <StatCell
