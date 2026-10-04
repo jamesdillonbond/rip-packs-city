@@ -125,6 +125,8 @@ describe("proxy() — security headers", () => {
     expect(admin).toMatch(/connect-src [^;]*wss:\/\/relay\.walletconnect\.org/)
     expect(admin).toMatch(/frame-src [^;]*https:\/\/verify\.walletconnect\.org/)
     expect(admin).toMatch(/img-src [^;]*https:\/\/api\.web3modal\.org/)
+    // FCL waits for a signed delivery to seal over the access node's WebSocket
+    expect(admin).toMatch(/connect-src [^;]*wss:\/\/rest-mainnet\.onflow\.org/)
     // the admin-only two-signer swap test (2026-10-03)
     const swap = (await proxy(req("/admin/swap-test"))).headers.get("Content-Security-Policy")!
     expect(swap).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
@@ -134,6 +136,7 @@ describe("proxy() — security headers", () => {
       expect(csp, path).not.toContain("fcl-discovery")
       expect(csp, path).not.toContain("walletconnect")
       expect(csp, path).not.toContain("web3modal")
+      expect(csp, path).not.toContain("wss://rest-mainnet.onflow.org")
     }
   })
 })

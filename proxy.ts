@@ -1161,6 +1161,10 @@ const WALLET_DISCOVERY_HOST = "https://fcl-discovery.onflow.org"
 // iframe, and the QR modal's API/images. Same one page only.
 const WALLETCONNECT_CONNECT =
   "wss://relay.walletconnect.com wss://relay.walletconnect.org https://rpc.walletconnect.com https://rpc.walletconnect.org https://verify.walletconnect.com https://verify.walletconnect.org https://pulse.walletconnect.org https://api.web3modal.org https://api.web3modal.com"
+// FCL watches a signed transaction until it SEALS over a WebSocket to the access
+// node (`fcl.tx(id).onceSealed()` → wss://rest-mainnet.onflow.org/v1/ws); the
+// https:// entry above does not cover the wss:// scheme. Signing pages only.
+const FLOW_TX_STATUS_STREAM = "wss://rest-mainnet.onflow.org"
 const WALLETCONNECT_FRAMES = "https://verify.walletconnect.com https://verify.walletconnect.org"
 const WALLETCONNECT_IMAGES = "https://api.web3modal.org https://api.web3modal.com https://explorer-api.walletconnect.com"
 
@@ -1198,7 +1202,7 @@ function applySecurityHeaders(response: NextResponse, pathname?: string) {
       "media-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://arweave.net https://*.arweave.net https://assets.paniniamerica.net",
       "font-src 'self' https://fonts.gstatic.com",
       "connect-src 'self' https://*.supabase.co https://public-api.nbatopshot.com https://public-api.nflallday.com https://public-api.laligagolazos.com https://api2.flowty.io https://rest-mainnet.onflow.org https://access-mainnet.onflow.org https://pinnacle-proxy.tdillonbond.workers.dev https://topshot-proxy.tdillonbond.workers.dev wss://*.supabase.co" +
-        (wallet ? ` ${WALLET_DISCOVERY_HOST} ${WALLETCONNECT_CONNECT}` : ""),
+        (wallet ? ` ${WALLET_DISCOVERY_HOST} ${WALLETCONNECT_CONNECT} ${FLOW_TX_STATUS_STREAM}` : ""),
       ...(wallet ? [`frame-src 'self' ${WALLET_DISCOVERY_HOST} ${WALLETCONNECT_FRAMES}`] : []),
       "frame-ancestors 'none'",
       "base-uri 'self'",

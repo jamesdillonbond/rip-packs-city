@@ -14,7 +14,7 @@ import { usd, ptTime, errorText, accountLine, accountName, type AccountLineInput
 import { checklistRows, type ChecklistRow } from "@/lib/giveaways/checklist"
 import type { Candidate, ClaimRow, DropRow, PoolRow } from "@/lib/giveaways/store"
 import type { DeliveryPlan } from "@/lib/giveaways/deliver"
-import { connectAdminWallet, disconnectAdminWallet, sendDeliveryBatch } from "@/lib/giveaways/admin-wallet"
+import { SealUnconfirmedError, connectAdminWallet, disconnectAdminWallet, sendDeliveryBatch } from "@/lib/giveaways/admin-wallet"
 
 const DISPLAY = "var(--font-display)"
 const MONO = "var(--font-mono)"
@@ -544,7 +544,8 @@ function DeliverAll({ drop, call, onDone }: { drop: DropRow; call: Call; onDone:
           const sent = await sendDeliveryBatch(b)
           note(`Batch ${i + 1}: sealed · ${b.momentIDs.length} moment(s) · tx ${sent.txId}`)
         } catch (e) {
-          note(`Batch ${i + 1} NOT sent: ${errorText(e)}`)
+          // a submitted transaction whose seal could not be read may have executed: never "NOT sent"
+          note(e instanceof SealUnconfirmedError ? `Batch ${i + 1} UNCONFIRMED: ${e.message}` : `Batch ${i + 1} NOT sent: ${errorText(e)}`)
           break
         }
       }

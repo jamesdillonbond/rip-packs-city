@@ -23,7 +23,7 @@ const fcl = vi.hoisted(() => {
 vi.mock("@onflow/fcl", () => fcl)
 vi.mock("@/lib/chains/flow/flow", () => ({ initFcl: vi.fn() }))
 
-import { connectAdminWallet, disconnectAdminWallet, prepareWalletConnect, sendDeliveryBatch } from "@/lib/giveaways/admin-wallet"
+import { SealUnconfirmedError, connectAdminWallet, disconnectAdminWallet, prepareWalletConnect, sendDeliveryBatch, startNetworkTrace } from "@/lib/giveaways/admin-wallet"
 import { DELIVER_BATCH_CADENCE, DELIVER_GAS_LIMIT, DELIVER_OWN_BATCH_CADENCE } from "@/lib/giveaways/deliver-cadence"
 
 beforeEach(() => {
@@ -118,5 +118,78 @@ describe("giveaways/admin-wallet", () => {
     await expect(
       sendDeliveryBatch({ source: "0x00000000000000aa", kind: "linked", providerControllerID: "70", momentIDs: ["1"], recipients: ["0x01"] }),
     ).rejects.toThrow(/tx3 failed: status 1/)
+  })
+
+  const LINKED = { source: "0x00000000000000aa", kind: "linked" as const, providerControllerID: "70", momentIDs: ["1"], recipients: ["0x01"] }
+
+  it("a transaction that was SUBMITTED but whose seal can't be read is UNCONFIRMED, never 'NOT sent' (iOS 'Load failed', 2026-10-03)", async () => {
+    fcl.mutate.mockResolvedValueOnce("tx4")
+    fcl.onceSealed.mockRejectedValue(new TypeError("Load failed"))
+    const err = await sendDeliveryBatch(LINKED).catch((e) => e)
+    fcl.onceSealed.mockReset()
+    expect(err).toBeInstanceOf(SealUnconfirmedError)
+    expect(err.txId).toBe("tx4")
+    expect(err.message).toMatch(/tx4 was submitted/)
+    expect(err.message).toMatch(/Do NOT send again/)
+    expect(err.message).toMatch(/Load failed/)
+  })
+
+  it("a lost seal read is retried, and a seal on the retry is a normal success", async () => {
+    fcl.mutate.mockResolvedValueOnce("tx5")
+    fcl.onceSealed.mockRejectedValueOnce(new TypeError("Load failed")).mockResolvedValueOnce({ statusCode: 0, errorMessage: "" })
+    expect(await sendDeliveryBatch(LINKED)).toEqual({ txId: "tx5" })
+    expect(fcl.onceSealed).toHaveBeenCalledTimes(2)
+  })
+
+  it("a revert FCL reports by REJECTING onceSealed (TransactionError) is 'failed', not unconfirmed and not retried", async () => {
+    fcl.mutate.mockResolvedValueOnce("tx6")
+    const revert = Object.assign(new Error("[Error Code: 1101] panic: Cannot withdraw: Moment is locked"), { code: 1101, type: "CADENCE_RUNTIME_ERROR" })
+    fcl.onceSealed.mockRejectedValueOnce(revert)
+    const err = await sendDeliveryBatch(LINKED).catch((e) => e)
+    expect(err).not.toBeInstanceOf(SealUnconfirmedError)
+    expect(err.message).toMatch(/tx6 failed: .*Moment is locked/)
+    expect(fcl.onceSealed).toHaveBeenCalledTimes(1)
+  })
+
+  it("a failure BEFORE submission stays a plain error (nothing was sent)", async () => {
+    fcl.mutate.mockRejectedValueOnce(new TypeError("Load failed"))
+    const err = await sendDeliveryBatch(LINKED).catch((e) => e)
+    expect(err).not.toBeInstanceOf(SealUnconfirmedError)
+    expect(err.message).toMatch(/^Load failed/)
+    expect(fcl.tx).not.toHaveBeenCalled()
+  })
+
+  it("the network trace names the request that failed and the one the CSP blocked, then restores fetch", async () => {
+    const listeners: Record<string, Array<(e: unknown) => void>> = {}
+    const doc = {
+      visibilityState: "visible",
+      addEventListener: (t: string, f: (e: unknown) => void) => ((listeners[t] ??= []).push(f)),
+      removeEventListener: (t: string, f: (e: unknown) => void) => (listeners[t] = (listeners[t] ?? []).filter((g) => g !== f)),
+    }
+    const realFetch = vi.fn((): Promise<Response> => Promise.reject(new TypeError("Load failed")))
+    const win: { fetch: (input: string, init?: RequestInit) => Promise<Response>; location: { href: string } } = { fetch: realFetch, location: { href: "https://www.rippackscity.com/admin/giveaways" } }
+    vi.stubGlobal("window", win)
+    vi.stubGlobal("document", doc)
+    try {
+      const trace = startNetworkTrace()
+      expect(win.fetch).not.toBe(realFetch)
+      await expect(win.fetch("https://rest-mainnet.onflow.org/v1/accounts/0x3d0b274c80263484?expand=keys", { method: "get" })).rejects.toThrow("Load failed")
+      for (const f of listeners.visibilitychange ?? []) {
+        doc.visibilityState = "hidden"
+        f({})
+      }
+      for (const f of listeners.securitypolicyviolation ?? []) f({ blockedURI: "https://example-payer.test/sign", effectiveDirective: "connect-src" })
+      const d = trace.describe()
+      expect(d).toContain("request failed: GET rest-mainnet.onflow.org/v1/accounts/0x3d0b274c80263484")
+      expect(d).not.toContain("expand=keys")
+      expect(d).toContain("blocked by the page's security policy: https://example-payer.test/sign by connect-src")
+      expect(d).toContain("in the background")
+      trace.stop()
+      expect(win.fetch).toBe(realFetch)
+      expect(listeners.securitypolicyviolation).toEqual([])
+      expect(listeners.visibilitychange).toEqual([])
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

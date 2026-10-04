@@ -1,8 +1,20 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
 import { render, screen, waitFor, cleanup, fireEvent, within } from "@testing-library/react"
-const wallet = vi.hoisted(() => ({ connect: vi.fn(), disconnect: vi.fn(), send: vi.fn() }))
+const wallet = vi.hoisted(() => ({
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+  send: vi.fn(),
+  SealUnconfirmedError: class SealUnconfirmedError extends Error {
+    txId: string
+    constructor(txId: string, cause: string) {
+      super(`Transaction ${txId} was submitted, but its result could not be read (${cause}). Do NOT send again: tap Verify deliveries.`)
+      this.txId = txId
+    }
+  },
+}))
 vi.mock("@/lib/giveaways/admin-wallet", () => ({
+  SealUnconfirmedError: wallet.SealUnconfirmedError,
   connectAdminWallet: () => wallet.connect(),
   disconnectAdminWallet: () => wallet.disconnect(),
   sendDeliveryBatch: (...a: unknown[]) => wallet.send(...a),
@@ -455,6 +467,16 @@ describe("AdminGiveawaysClient — deliver all (one signature per batch)", () =>
     expect(await screen.findByText(/Batch 1 NOT sent: User rejected signature/)).toBeTruthy()
     expect(wallet.send).toHaveBeenCalledTimes(1)
     expect(await screen.findByText(/chain read FAILED for 0x03/)).toBeTruthy()
+  })
+
+  it("a SUBMITTED batch whose seal couldn't be read is reported UNCONFIRMED, never 'NOT sent'", async () => {
+    server(json({ ok: true, plan: PLAN }), json({ ok: true, report: { ...REPORT, delivered: 0, pending: 3 } }))
+    await connected()
+    wallet.send.mockRejectedValueOnce(new wallet.SealUnconfirmedError("tx9", "Load failed"))
+    fireEvent.click(screen.getByRole("button", { name: /deliver claimed moments/i }))
+    expect(await screen.findByText(/Batch 1 UNCONFIRMED: Transaction tx9 was submitted/)).toBeTruthy()
+    expect(screen.queryByText(/NOT sent/)).toBeNull()
+    expect(wallet.send).toHaveBeenCalledTimes(1)
   })
 
   it("cancelling the confirm sends nothing", async () => {
