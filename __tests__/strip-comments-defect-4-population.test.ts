@@ -247,12 +247,23 @@ const MAX_FILES_WITH_STRING_DESYNC = 0
 describe("stripComments — DEFECT 4 is counted where it HAPPENS, not only at EOF", () => {
   const files = walk(ROOT)
 
-  const desync = files
-    .map((f) => {
-      const { lineStates } = stripCommentsWithState(readFileSync(f, "utf8"))
-      return { file: rel(f), lines: lineStates.filter((st) => st === "sq" || st === "dq").length }
-    })
+  // ONE pass over the tree, at collection time. 2026-10-04: the `tpl` count used to
+  // re-read and re-strip every file a second time INSIDE its `it`, which ran past
+  // the 30 s test timeout under a full local suite (twice in one day) while
+  // passing alone. Same counts, read once.
+  const perFile = files.map((f) => {
+    const { lineStates } = stripCommentsWithState(readFileSync(f, "utf8"))
+    return {
+      file: rel(f),
+      lines: lineStates.filter((st) => st === "sq" || st === "dq").length,
+      tpl: lineStates.filter((st) => st === "tpl").length,
+    }
+  })
+  const tplLinesTotal = perFile.reduce((a, r) => a + r.tpl, 0)
+
+  const desync = perFile
     .filter((r) => r.lines > 0)
+    .map(({ file, lines }) => ({ file, lines }))
     .sort((a, b) => b.lines - a.lines)
 
   it("the DETECTOR discriminates — pinned instead of read off the tree", () => {
@@ -318,9 +329,6 @@ describe("stripComments — DEFECT 4 is counted where it HAPPENS, not only at EO
     // over this very tree, proven by counting a state it DOES find.
     expect(desync.every((r) => r.file.length > 0 && r.lines > 0)).toBe(true)
 
-    const tplLines = files
-      .map((f) => stripCommentsWithState(readFileSync(f, "utf8")).lineStates.filter((s) => s === "tpl").length)
-      .reduce((a, b) => a + b, 0)
-    expect(tplLines).toBeGreaterThan(0)
+    expect(tplLinesTotal).toBeGreaterThan(0)
   })
 })
