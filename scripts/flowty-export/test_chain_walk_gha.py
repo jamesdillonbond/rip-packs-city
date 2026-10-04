@@ -145,3 +145,23 @@ old24 = {**off, "events": off["events"][:2] + [_ev(_D.OFFER, [("purchased", "Boo
         ("paymentVaultType", "Type", rcap), ("nftId", "Optional", {"type": "UInt64", "value": "4968648"})])]}
 assert _D.verdict(orow, old24)[0]
 print("restricted vault type ok")
+
+# ── sale_block_read_gha: decode a script's JSON-Cadence dictionary, group candidates per script call ──
+import sale_block_read_gha as _S
+def _dict(entries, t):
+    return [{"key": {"type": "UInt64", "value": str(k)}, "value": {"type": "Array", "value": [{"type": t, "value": str(x)} for x in v]}} for k, v in entries]
+r = _S.records("ts", _dict([(41617071, [90, 3566, 1234, 3]), (5, [2, 217, 9, 0])], "UInt32"))
+assert r[41617071] == [{"c": "ts", "id": 41617071, "set": 90, "play": 3566, "serial": 1234}, {"c": "tssub", "id": 41617071, "sub": 3}]
+assert r[5] == [{"c": "ts", "id": 5, "set": 2, "play": 217, "serial": 9}]          # subedition 0 = Standard: no tssub row
+assert _S.records("ad", _dict([(4968648, [4500, 88])], "UInt64")) == {4968648: [{"c": "ad", "id": 4968648, "ed": 4500, "serial": 88}]}
+assert _S.records("ufc", _dict([(7, [52, 10])], "UInt32")) == {7: [{"c": "ufc", "id": 7, "set": 52, "serial": 10}]}
+cands = [{"k": "ts:1:aa", "c": "ts", "id": 1, "buyer": "0xb", "node": "mainnet24", "block_id": "blk", "block_height": None},
+         {"k": "ts:2:aa", "c": "ts", "id": 2, "buyer": "0xb", "node": "mainnet24", "block_id": "blk", "block_height": None},
+         {"k": "ad:3:cc", "c": "ad", "id": 3, "buyer": "0xb", "node": "mainnet24", "block_id": "blk", "block_height": None}]
+gs = _S.groups_of(cands)
+assert sorted(len(g["ids"]) for g in gs) == [1, 2]                                  # same block + buyer + collection share a script
+v = _S.verdict_rows([g for g in gs if len(g["ids"]) == 2][0], {1: [{"c": "ts", "id": 1}]})
+assert v == [{"k": "ts:1:aa", "found": True, "meta": [{"c": "ts", "id": 1}]}, {"k": "ts:2:aa", "found": False, "meta": []}]
+assert set(_S.SCRIPTS) == {(c, e) for c in ("ts", "ad", "ufc") for e in (_S.PRE, _S.C1)}
+assert all("pub fun" in _S.SCRIPTS[(c, _S.PRE)] and "access(all)" in _S.SCRIPTS[(c, _S.C1)] for c in ("ts", "ad", "ufc"))
+print("sale-block reads ok")

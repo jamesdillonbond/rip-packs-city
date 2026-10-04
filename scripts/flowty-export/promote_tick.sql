@@ -86,3 +86,24 @@ begin
   update flowty_archive.scratch_20261004_cfg set v = case when (r->>'done')::boolean then 'done' else r->>'last_doc' end where k = 'dapper_cand_cursor';
   return r;
 end $f$;
+
+-- UFC chain-named promotion (migration 20261004160834): one 45-day slice per tick, oldest first, over
+-- 2023-11-01 .. 2026-10-05. pg_cron 'ufc-promote-scratch' (job 702, every 20 s; created ~9:08 AM PT 2026-10-04).
+create table flowty_archive.scratch_20261004_ufc_slices as
+select g as win_start, least(g + interval '45 days', '2026-10-05'::timestamptz) win_end, null::jsonb result, null::timestamptz ran_at
+from generate_series('2023-11-01'::timestamptz, '2026-10-04'::timestamptz, interval '45 days') g;
+create or replace function flowty_archive.scratch_ufc_promote_tick() returns jsonb language plpgsql as $f$
+declare w record; v jsonb;
+begin
+  select * into w from flowty_archive.scratch_20261004_ufc_slices where ran_at is null order by win_start limit 1;
+  if not found then return jsonb_build_object('idle', true); end if;
+  v := flowty_archive.promote_ufc_chain_named_sales(w.win_start, w.win_end);
+  update flowty_archive.scratch_20261004_ufc_slices set result = v, ran_at = now() where win_start = w.win_start;
+  return v;
+end $f$;
+
+-- Sale-block read candidates (migration 20261004161541): one calendar month per tick, 2023-11 .. 2026-10,
+-- from the per-tx lanes (method 'tx' / 'tx_dapper', block_id) and the chain walk (block_height), keeping only
+-- sales whose NFT no checkpoint holds and that are not in `sales` (tx + nft, nor a same-NFT sale ±10 min).
+-- pg_cron 'sbr-candidates-scratch' (job 703, every 30 s; created ~9:20 AM PT 2026-10-04). Body as created:
+-- see flowty_archive.scratch_sbr_candidates_tick() — the INSERT … SELECT of the session log 2026-10-04.
