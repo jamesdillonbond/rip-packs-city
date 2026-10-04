@@ -161,6 +161,59 @@ describe("brandFonts", () => {
   })
 })
 
+describe("brandFonts reads its own disk on the Node runtime (2026-10-04)", () => {
+  // ~75,000 self-fetches a week of /fonts/*.ttf came from our own OG lambdas
+  // (user agent `node`). On the Node runtime the loader now reads public/fonts
+  // from the function's disk; HTTP stays as the fallback and for edge cards.
+  afterEach(() => vi.doUnmock("node:fs/promises"))
+
+  it("on NEXT_RUNTIME=nodejs the faces come from disk and fetch is never called", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs")
+    stubFetch("throw")
+    const { brandFonts, DISPLAY_FONT, MONO_FONT } = await freshModule()
+    const f = await brandFonts()
+    expect(f?.map((x) => x.name)).toEqual([DISPLAY_FONT, MONO_FONT])
+    expect(f?.[0].data.byteLength).toBe(ttf("BarlowCondensed-Black.ttf").byteLength)
+    expect(f?.[1].data.byteLength).toBe(ttf("ShareTechMono-Regular.ttf").byteLength)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("a failed disk read falls back to the HTTP fetch, never to no fonts", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs")
+    vi.doMock("node:fs/promises", () => ({ readFile: async () => { throw new Error("ENOENT") } }))
+    stubFetch("font")
+    const { brandFonts } = await freshModule()
+    expect((await brandFonts())?.length).toBe(2)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it("disk bytes that are not a font fall back to HTTP too (validated, like the fetch)", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs")
+    vi.doMock("node:fs/promises", () => ({ readFile: async () => Buffer.from("<!DOCTYPE html>") }))
+    stubFetch("font")
+    const { brandFonts } = await freshModule()
+    expect((await brandFonts())?.length).toBe(2)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it("off the Node runtime (edge) it never touches the disk path", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "edge")
+    vi.doMock("node:fs/promises", () => ({ readFile: async () => { throw new Error("must not be called on edge") } }))
+    stubFetch("font")
+    const { brandFonts } = await freshModule()
+    expect((await brandFonts())?.length).toBe(2)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it("next.config traces both font files into every OG function", () => {
+    const cfg = fs.readFileSync(path.join(process.cwd(), "next.config.ts"), "utf8")
+    expect(cfg).toMatch(/outputFileTracingIncludes/)
+    expect(cfg).toContain('"/api/og/**/*"')
+    expect(cfg).toContain("./public/fonts/BarlowCondensed-Black.ttf")
+    expect(cfg).toContain("./public/fonts/ShareTechMono-Regular.ttf")
+  })
+})
+
 describe("OG card adoption ratchet", () => {
   const files = ogRouteFiles(OG_DIR)
   const sources = files.map((f) => ({ f, src: fs.readFileSync(f, "utf8") }))

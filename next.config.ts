@@ -12,6 +12,14 @@ const nextConfig: NextConfig = {
   // Externalizing loads the same code from node_modules at runtime. Requests are
   // unchanged; only the noise that buried real errors goes.
   serverExternalPackages: ["node-fetch"],
+  // 2026-10-04 — ship the two brand fonts INSIDE the OG lambdas, so
+  // lib/og/brand-fonts.ts reads them from disk instead of fetching our own
+  // /fonts/*.ttf over HTTP (~75k self-requests a week, 5.5 GB). Vercel does not
+  // put `public/` in a function unless it is traced; if this include ever stops
+  // matching, the loader falls back to the HTTP fetch, never to system-ui.
+  outputFileTracingIncludes: {
+    "/api/og/**/*": ["./public/fonts/BarlowCondensed-Black.ttf", "./public/fonts/ShareTechMono-Regular.ttf"],
+  },
   images: {
     remotePatterns: [
       // Top Shot — primary CDN + the preview/thumbnail host used by pack OG cards

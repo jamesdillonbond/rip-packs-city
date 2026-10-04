@@ -104,14 +104,57 @@ export const FONT_FETCH_TIMEOUT_MS = 5_000;
 
 let fontsPromise: Promise<ArrayBuffer[] | null> | null = null;
 
+export const BRAND_FONT_FILES = ["BarlowCondensed-Black.ttf", "ShareTechMono-Regular.ttf"] as const;
+
+/**
+ * The fonts read from the lambda's own disk, or null to fall through to HTTP.
+ *
+ * WHY (measured 2026-10-03, Vercel observability, one week): the HTTP path
+ * below was ~75,000 requests a week from user agent `node` — our own OG lambdas
+ * fetching our own static files on every cold start, 5.5 GB/week, the #3 and #6
+ * egress lines on the site — and two round trips before satori can start on the
+ * render that decides whether a shared link gets a preview at all.
+ *
+ * ⚠ NODE RUNTIME ONLY. `process.env.NEXT_RUNTIME === "nodejs"` is the guard
+ * Next uses to drop the branch from edge bundles, so the `node:fs` import never
+ * reaches the 7 edge cards (they keep the HTTP path: ~520 requests a week).
+ * The files ship inside the lambda via `outputFileTracingIncludes` in
+ * next.config.ts — Vercel does not put `public/` in a function otherwise.
+ *
+ * ⚠ FAIL-SOFT TO THE OLD PATH, NOT TO `system-ui`. A wrong path or an untraced
+ * file returns null here and the HTTP fetch runs exactly as before, so the
+ * worst case of this change is today's behaviour. The bytes are validated the
+ * same way, so a half-written or wrong file cannot reach satori.
+ */
+async function readBrandFontsFromDisk(): Promise<ArrayBuffer[] | null> {
+  // The `if (NEXT_RUNTIME === "nodejs") { await import(...) }` SHAPE is what the
+  // bundler strips from edge builds; an early `return` on `!==` is not (the first
+  // version of this function drew three "Node.js module in Edge Runtime" warnings).
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    try {
+      const { readFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      const bufs = await Promise.all(
+        BRAND_FONT_FILES.map(async (f) => {
+          const b = await readFile(join(process.cwd(), "public", "fonts", f));
+          return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
+        }),
+      );
+      return bufs.every(isSupportedFontBuffer) ? bufs : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function loadBrandFontBytes(): Promise<ArrayBuffer[] | null> {
   if (!fontsPromise) {
     fontsPromise = (async () => {
+      const fromDisk = await readBrandFontsFromDisk();
+      if (fromDisk) return fromDisk;
       try {
-        const files = [
-          `${BASE_URL}/fonts/BarlowCondensed-Black.ttf`,
-          `${BASE_URL}/fonts/ShareTechMono-Regular.ttf`,
-        ];
+        const files = BRAND_FONT_FILES.map((f) => `${BASE_URL}/fonts/${f}`);
         // ⚠ BOUNDED. CLAUDE.md: "Bound every `fetch` — no default timeout."
         // This one had none, and it is the whole render path's critical section:
         // 39 call sites await it, the promise is memoised at module scope, so a
