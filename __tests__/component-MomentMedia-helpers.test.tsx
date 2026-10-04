@@ -10,11 +10,12 @@ import MomentMedia, { getImageUrl, getVideoUrl } from "@/components/MomentMedia"
 describe("getImageUrl", () => {
   it("routes a bare IPFS-gateway URL through the same-origin proxy AS-IS (no Hero suffix)", () => {
     const out = getImageUrl("https://ipfs.io/ipfs/QmABC123")
-    expect(out).toBe("/api/public/ipfs-media/QmABC123")
+    // Re-pinned 2026-10-03: an IMAGE goes to the resizing route (known-issues #162), still same-origin, still no Hero suffix.
+    expect(out).toBe("/api/public/ipfs-thumb/QmABC123?w=640")
     expect(out).not.toContain("Hero_")
   })
   it("guards ipfs.dapperlabs.com and cloudflare-ipfs.com too", () => {
-    expect(getImageUrl("https://ipfs.dapperlabs.com/ipfs/QmXYZ")).toBe("/api/public/ipfs-media/QmXYZ")
+    expect(getImageUrl("https://ipfs.dapperlabs.com/ipfs/QmXYZ")).toBe("/api/public/ipfs-thumb/QmXYZ?w=640")
   })
   it("returns an already-extensioned image URL unchanged", () => {
     expect(getImageUrl("https://cdn/x.png")).toBe("https://cdn/x.png")
@@ -93,7 +94,7 @@ describe("MomentMedia render", () => {
   it("routes a bare IPFS-gateway thumbnail through the proxy <img> with no video", () => {
     const { container } = render(<MomentMedia thumbnailUrl="https://ipfs.io/ipfs/QmABC" />)
     const img = container.querySelector("img")
-    expect(img?.getAttribute("src")).toBe("/api/public/ipfs-media/QmABC")
+    expect(img?.getAttribute("src")).toBe("/api/public/ipfs-thumb/QmABC?w=640")
     expect(container.querySelector("video")).toBeNull()
   })
 

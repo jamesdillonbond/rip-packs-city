@@ -22,7 +22,7 @@ vi.mock("@/lib/badges/useBadgeTaxonomy", () => ({
   },
 }))
 vi.mock("next/link", () => ({ default: ({ children, ...p }: any) => <a {...p}>{children}</a> }))
-vi.mock("@/lib/ipfs-media", () => ({ proxyIpfsUrl: (u: string) => u }))
+vi.mock("@/lib/ipfs-media", () => ({ proxyIpfsUrl: (u: string) => u, proxyIpfsImageUrl: (u: string) => u }))
 
 beforeEach(() => {
   badgeState.icons = {}

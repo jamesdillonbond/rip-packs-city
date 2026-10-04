@@ -52,7 +52,7 @@ import Link from "next/link"
 import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import type { EditionTile } from "./EditionsGridPaginated"
 import { topshotSeriesLabel, TOPSHOT_SERIES_ORDER } from "@/lib/analytics/series-labels"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { getCollection, collectionHasLocking } from "@/lib/collections"
 import { checklistWalletStorageKey, isSolanaChecklist, parseChecklistWallet } from "@/lib/entity/checklist-wallet"
 import { editionRouteHref } from "@/lib/entity-href"
@@ -842,7 +842,7 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
         {e.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={proxyIpfsUrl(e.thumbnail_url) ?? undefined}
+            src={proxyIpfsImageUrl(e.thumbnail_url, 640) ?? undefined}
             alt={tileSubject(e)}
             width={200}
             height={200}

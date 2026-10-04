@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { proxyIpfsUrl } from "@/lib/ipfs-media";
+import { proxyIpfsUrl, proxyIpfsImageUrl } from "@/lib/ipfs-media";
 import { collectionHasPage, getCollection, type CollectionPage } from "@/lib/collections";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
@@ -124,7 +124,7 @@ function scoreColor(score: number): string {
 }
 
 function thumbnailSrc(url: string | null): string {
-  if (url) return proxyIpfsUrl(url) ?? url;
+  if (url) return proxyIpfsImageUrl(url, 640) ?? url;
   return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect fill='%23111' width='200' height='200'/%3E%3C/svg%3E";
 }
 

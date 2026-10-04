@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { proxyIpfsUrl } from "@/lib/ipfs-media";
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 
 // True for bare public-IPFS-gateway art (https://<gateway>/ipfs/<cid>) that
 // carries no TS-CDN resize semantics — appending the Hero_/Animated_ suffixes
@@ -27,7 +27,7 @@ export function getImageUrl(prefix: string | null | undefined): string | null {
   // append the TopShot Hero_/Animated_ suffixes below (that produced a broken
   // URL).
   if (isBareIpfsGatewayUrl(prefix)) {
-    return proxyIpfsUrl(prefix);
+    return proxyIpfsImageUrl(prefix, 640);
   }
   if (prefix.endsWith(".png") || prefix.endsWith(".webp") || prefix.endsWith(".jpg")) {
     return prefix;
