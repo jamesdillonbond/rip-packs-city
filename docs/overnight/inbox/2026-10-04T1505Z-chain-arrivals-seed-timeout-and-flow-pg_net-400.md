@@ -32,3 +32,23 @@ Context confirmed green this pass: `rpc_ops_snapshot()` security all-clean, trus
 **Catch-up run by hand (~8:20 AM PT):** 45.7 s (previous runs 58–66 s; 10-04 died at 300 s). It seeded **16,143** probes (56 held, 16,087 sold) where a normal day seeds 5–11. The overnight Flowty/Dapper promotion added these wallets' historical sells, so every post-floor sale the seed can't explain becomes a probe. The old body would have queued the same rows. They sit in `chain_arrival_probes` as `floor` for the every-minute lane. **Watch:** tomorrow's 4:13 AM PT tick should be well under 60 s, and the 16,143 should drain over the coming days.
 
 **2. Flow 400s: not attributable after the fact, no action.** Two calls (6:44 and 7:12 AM PT), body `failed to convert event payload for block …`. That's the Flow access-node fault class seen on the mainnet24 walks. Neither request id survives in any of the 25 `request_id` tables, because the lanes delete a request row once its response is read.
+
+---
+
+## 📏 ADDENDUM — the catch-up's side effect: `pg_net_http_429` HIGH (4,659 in 2 h) is this backlog, throttled by design (Claude Code cloud, ~10:40 AM PT 10-04, read-only)
+
+The 8:20 AM PT hand-run above queued 16,143 probes. Draining them is what lights the `pg_net_http_429` arm at **high** ("4659 pg_net-dispatched call(s) returned HTTP 429 in the last 02:00:00 … WHICH ENDPOINT IS UNKNOWN"). Attributed three independent ways:
+
+- **Onset.** `net._http_response`, 15-min PT buckets: 0 × 429 from 6:15 to 8:15 AM PT on ~450 responses per bucket. From 8:15 on, 279 → 685 → 462–610 per bucket on 2,450–4,730 responses.
+- **The lane's own counters** (`pipeline_runs` `chain-arrivals`, sum of `extra.dispatched` / `extra.throttled` per 15 min): 0 / 0 through 8:15. Then 1,948 / 225, 4,037 / 514, 4,037 / 562, 3,631 / 528, and 1,800 / 418–522 per bucket since 9:15. `chain-arrival-flips` came on at the same time: 140–160 dispatched, 37–99 throttled per bucket. No other Flow lane moved: collector-sale backfill 90 / 0, sell-back walk 240 / 0, sell-back edition reads 16–60 / 0–4.
+- **Second of the minute.** The 429s sit in four bursts at :00, :20, :35 and :50, one per chain-arrival lane (`-08`, `-23`, `-38`, `-53`, every minute).
+
+**Why the arm calls it unattributed.** `run_chain_arrival_lane()` handles a 429 by setting `request_id = NULL` on the probe row and counting it in `throttled` (body in `20260930183000`). So by the time the arm joins `net._http_response.id` to `chain_arrival_probes` / `chain_arrival_requests`, the id is gone. Only 56 of 4,639 429s still joined at 10:30 AM PT. The arm cannot see this lane's 429s by construction, not because they come from somewhere unknown.
+
+**Nothing is lost.** A throttled probe is requeued. `chain_arrival_probes` at 10:35 AM PT held done 140,569 (2,657 in the last hour), bisect 8,050, window 7. There are 0 failed or expired rows, and max attempts is 5. `chain-arrivals` failed 1 of 687 runs in 3 h. At ~2.6 k/h the backlog clears in roughly 3–4 h, so around 1–3 PM PT, after which the arm should fall back to 0.
+
+**Watch.** Exit: `pg_net_http_429` drops out of `get_pipeline_alerts()` once `chain_arrival_probes` in status `bisect`/`window` is back to tens. Falsifier: 429s at today's rate with that backlog drained means a different source, so re-attribute before muting anything.
+
+**Two levers, neither pulled here — both are the owning session's call:**
+- **(a) Instrument.** Have the 429 arm subtract the per-lane `extra.throttled` sums from `pipeline_runs` for lanes that NULL their request id, or have those lanes keep a `last_request_id` when they requeue. Either way the arm could name this lane instead of "UNKNOWN".
+- **(b) Lane.** The four lanes don't slow down on 429. About a quarter of dispatches (half on the flip lane) are spent getting throttled during a catch-up. An adaptive per-tick cap like the sale-block reader's ("per-node shards and adaptive pacing", 10:03 AM PT ledger) would cut the waste. Completed throughput is bounded by the node either way, so there is no correctness gain.
