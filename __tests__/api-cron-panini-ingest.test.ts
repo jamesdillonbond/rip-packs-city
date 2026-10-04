@@ -22,6 +22,7 @@ const st = vi.hoisted(() => ({
   saleUpdateDefault: { data: [{ id: "u1" }] as { id: string }[] | null, error: null as any },
   updates: [] as { table: string; patch: any; sku: string | null; or: string | null }[],
   runs: [] as any[],
+  isFilters: [] as { table: string; col: string; val: unknown }[],
   captured: null as null | (() => Promise<void>),
   throwInWalk: false,
   recent: { data: [] as unknown[] | null, error: null as null | { message: string } },
@@ -71,6 +72,7 @@ vi.mock("@/lib/supabase", () => ({
         update: (patch: any) => { isUpdate = true; rec = { table, patch, sku: null, or: null }; st.updates.push(rec); return b },
         eq: (_c: string, v: any) => { if (rec) rec.sku = v; return b },
         or: (expr: string) => { if (rec) rec.or = expr; return b },
+        is: (c: string, v: unknown) => { if (rec) st.isFilters.push({ table, col: c, val: v }); return b },
         select: async () => {
           if (table === "panini_products" && !isUpsert) return st.products
           if (table === "panini_products" || table === "panini_pack_pages") return { data: [{ id: "r" }], error: null }
@@ -114,7 +116,7 @@ beforeEach(() => {
   st.fmvInsert = { data: [{ id: "f1" }], error: null }
   st.packUpsert = { data: [{ id: "p1" }], error: null }
   st.saleUpdate = {}; st.saleUpdateDefault = { data: [{ id: "u1" }], error: null }
-  st.updates = []; st.runs = []; st.captured = null; st.throwInWalk = false
+  st.updates = []; st.runs = []; st.captured = null; st.throwInWalk = false; st.isFilters = []
   st.recent = { data: [], error: null }; st.recentCalls = []
   st.last = { data: [], error: null }; st.lastCalls = []
   st.fmvOps = []; st.fmvInserted = []; st.fmvDelete = { data: null, error: null }
@@ -263,6 +265,36 @@ describe("panini-ingest — the runner's stall/slept report", () => {
     expect(st.runs).toHaveLength(1)
     expect(st.runs[0].p_pipeline).toBe(WATCHED_PIPELINE)
     expect(st.runs[0].p_extra.skip).toBe("empty")
+  })
+})
+
+/**
+ * Product names from collectors' collections (2026-10-04, lib/chains/panini/product-names.ts): the
+ * collector walk posts (set id, collection name, cards) and the route names only unambiguous set ids,
+ * and only where the name is still NULL.
+ */
+describe("panini-ingest — product names from collections", () => {
+  it("names an unambiguous set id, only into a NULL name, and logs it under the enum pipeline", async () => {
+    const res = await POST(makeReq({ url, auth: "Bearer ingest", body: { product_names: [
+      { set_id: 1959, name: "2021-22 Panini NFT Prizm Basketball", n: 12 },
+      { set_id: 1959, name: "Something Else", n: 1 },
+      { set_id: 1574, name: "A", n: 2 }, { set_id: 1574, name: "B", n: 2 }, // ambiguous
+    ] } }))
+    expect(res.status).toBe(202)
+    const ups = st.updates.filter((u: any) => u.table === "panini_products")
+    expect(ups).toEqual([{ table: "panini_products", patch: { name: "2021-22 Panini NFT Prizm Basketball" }, sku: 1959, or: null }])
+    // Never over an existing name: the update is filtered to name IS NULL.
+    expect(st.isFilters).toEqual([{ table: "panini_products", col: "name", val: null }])
+    const run = st.runs.find((r: any) => r.p_extra?.product_names)
+    expect(run.p_pipeline).toBe("panini-ingest-enum")
+    expect(run.p_extra.product_names).toMatchObject({ offered: 4, decided: 1, ambiguous: 1 })
+    expect(st.runs.map((r: any) => r.p_pipeline)).not.toContain("panini-ingest")
+  })
+
+  it("a malformed tally names nothing and is the empty no-op", async () => {
+    const res = await POST(makeReq({ url, auth: "Bearer ingest", body: { product_names: [{ set_id: "x", name: "", n: -1 }] } }))
+    expect((await res.json()).accepted).toBe(false)
+    expect(st.updates.filter((u: any) => u.table === "panini_products")).toEqual([])
   })
 })
 

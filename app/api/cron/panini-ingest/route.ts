@@ -42,6 +42,7 @@ import { toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toPackRow, toSerialRo
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 import { parseStall } from "@/lib/chains/panini/stall-report";
 import { paniniRunMode } from "@/lib/chains/panini/run-mode";
+import { parseProductNameObservations, decideProductNames } from "@/lib/chains/panini/product-names";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -116,6 +117,27 @@ type ProductRow = {
   set_id: number; name: string | null; walk_cards: boolean; last_grid_sport?: string | null;
   last_grid_items?: number | null; walk_cards_since?: string | null;
 };
+// Fill panini_products.name for decided set ids whose name is still NULL (never overwrite). Returns
+// what was WRITTEN (the update's own returned rows), not what was offered; notUpdated = already named or
+// not in the registry (the update matched no NULL-name row).
+async function nameProducts(named: { set_id: number; name: string }[]): Promise<{ written: { set_id: number; name: string }[]; notUpdated: number; error: string | null }> {
+  if (!named.length) return { written: [], notUpdated: 0, error: null };
+  const written: { set_id: number; name: string }[] = [];
+  let notUpdated = 0;
+  try {
+    for (const d of named.slice(0, 500)) {
+      const { data, error } = await (supabaseAdmin as any).from("panini_products").update({ name: d.name })
+        .eq("set_id", d.set_id).is("name", null).select("set_id");
+      if (error) return { written, notUpdated, error: error.message ?? String(error) };
+      if (Array.isArray(data) && data.length) written.push({ set_id: d.set_id, name: d.name });
+      else notUpdated++;
+    }
+  } catch (e) {
+    return { written, notUpdated, error: e instanceof Error ? e.message : String(e) };
+  }
+  return { written, notUpdated, error: null };
+}
+
 async function readProducts(): Promise<{ rows: ProductRow[]; error: string | null }> {
   try {
     const { data, error } = await (supabaseAdmin as any).from("panini_products").select("set_id,name,walk_cards,last_grid_sport,last_grid_items,walk_cards_since");
@@ -271,8 +293,18 @@ export async function POST(req: NextRequest) {
     await logRun(startedAtIso, products.length + packPages.length, reg.written, reg.errors.length === 0,
       reg.errors.length ? reg.errors.join(" | ") : null, { registry: reg.extra }, PIPELINE_ENUM);
   }
+  // PRODUCT NAMES from collectors' collections (2026-10-04, lib/chains/panini/product-names.ts). The
+  // collector walk tallies (set id, collection name) over the cards it read inside each collection.
+  // Only an unambiguous name is taken, and only into a NULL name — never over one already set.
+  const nameObs = parseProductNameObservations(body.product_names);
+  if (nameObs.length) {
+    const { named, ambiguous } = decideProductNames(nameObs);
+    const res = await nameProducts(named);
+    await logRun(startedAtIso, named.length, res.written.length, res.error === null, res.error,
+      { product_names: { offered: nameObs.length, decided: named.length, ambiguous: ambiguous.length, named: res.written, not_updated: res.notUpdated } }, PIPELINE_ENUM);
+  }
   if (!found) {
-    if (enumStats || stall || products.length || packPages.length) return NextResponse.json({ accepted: true, logged: "discovery" }, { status: 202 });
+    if (enumStats || stall || nameObs.length || products.length || packPages.length) return NextResponse.json({ accepted: true, logged: "discovery" }, { status: 202 });
     await logRun(startedAtIso, 0, 0, true, null, { skip: "empty" });
     return NextResponse.json({ accepted: false, skipped: "empty" }, { status: 202 });
   }

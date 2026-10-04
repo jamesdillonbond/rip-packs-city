@@ -295,6 +295,38 @@ export function toHolding(p) {
   }
 }
 
+/**
+ * PRODUCT NAMES (2026-10-04, lib/chains/panini/product-names.ts). A profile is read one collection at a
+ * time, and a collection is a Panini product, so every card read inside collection `cname` is a
+ * (set id, product name) observation — the only place RPC sees a product's name without a signed-in
+ * Chrome. Tallied into `tally` (Map "<setId>|<cname>" -> count); the route decides and names.
+ */
+export function tallyCollectionNames(tally, holdings, cname) {
+  if (typeof cname !== "string" || !cname.trim()) return tally
+  for (const h of holdings) {
+    const m = typeof h?.psku === "string" ? /^packcard-(\d+)_/.exec(h.psku) : null
+    if (!m) continue
+    const k = `${m[1]}|${cname.trim()}`
+    tally.set(k, (tally.get(k) || 0) + 1)
+  }
+  return tally
+}
+
+/** The tally as the route's `product_names` rows. */
+export function nameTallyRows(tally) {
+  return [...tally.entries()].map(([k, n]) => {
+    const i = k.indexOf("|")
+    return { set_id: Number(k.slice(0, i)), name: k.slice(i + 1), n }
+  })
+}
+
+/** The Panini ingest route beside this walk's receiver (same host, same bearer). */
+export function paniniIngestUrl(collectorUrl) {
+  return typeof collectorUrl === "string" && collectorUrl.includes("/api/cron/panini-collector-walk")
+    ? collectorUrl.replace("/api/cron/panini-collector-walk", "/api/cron/panini-ingest")
+    : null
+}
+
 /** Read the collected-cards answer: { products, total } (either may be null when unreadable). */
 export function readCollected(json) {
   const node = json?.data?.userCollectedNftsV2
@@ -326,6 +358,7 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
   let capHit = null
   const page = await ctx.newPage()
   const holdings = new Map()
+  const names = new Map() // "<setId>|<cname>" -> cards read inside that collection
   let collections = null
   let collectionTotal = null
   let lastListLen = null
@@ -486,6 +519,7 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
           }
         }
         const read = holdings.size - before
+        tallyCollectionNames(names, [...holdings.values()].slice(before), c.cname)
         log(`  ${nickname}: ${c.cname} (${c.year} ${c.sport}): ${read}/${c.count} cards, ${pages} page(s)`)
         if (read < c.count) shortfalls.push(`${c.cname} ${read}/${c.count}`)
       }
@@ -513,7 +547,7 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
   const total = reportedCardTotal(collections, collectionTotal)
   const profileState = profileStateOf({ url: finalUrl, profileInfo, collectedSeen: collectedSeen || (collections != null && collections.length === 0 && collectionTotal === 0) })
   if (!error && total != null && holdings.size < total) error = `collected ${holdings.size} of ${total} cards`
-  return { holdings: [...holdings.values()], total, unopenedPacks, profileState, answers, error, sampleKeys, source, foreign }
+  return { holdings: [...holdings.values()], total, unopenedPacks, profileState, answers, error, sampleKeys, source, foreign, names }
 }
 
 /** POST one op to the receiver. Resolves { ok, status, data } — never throws. */
@@ -578,6 +612,7 @@ async function main() {
   const ctx = cdp ? browser.contexts()[0] ?? (await browser.newContext()) : await browser.newContext({ viewport: { width: 1366, height: 900 } })
   const summary = []
   let anyFailed = false
+  const allNames = new Map()
   try {
     for (const [i, nickname] of targets.entries()) {
       if (!mayStartWalk(runStartedMs, Date.now(), budgetMin)) {
@@ -627,6 +662,7 @@ async function main() {
       } else {
         line.sample = res.holdings.slice(0, 3)
       }
+      for (const [k, n] of res.names ?? []) allNames.set(k, (allNames.get(k) || 0) + n)
       if (!complete) anyFailed = true
       summary.push(line)
       log(JSON.stringify(line))
@@ -635,7 +671,16 @@ async function main() {
     // Over CDP, browser.close() DISCONNECTS and leaves the runner's debug Chrome open.
     await withDeadline(browser.close().catch(() => {}), 15_000)
   }
-  if (dry) console.log(JSON.stringify({ dry_run: true, summary }, null, 2))
+  // Product-name evidence goes to the Panini ingest route once per walk (it names only NULL names, and
+  // only when one collection name clearly dominates a set id). A failed post is logged, not fatal:
+  // the holdings above already landed, and the next walk offers the same evidence again.
+  const nameRows = nameTallyRows(allNames)
+  const ingestUrl = paniniIngestUrl(url)
+  if (!dry && nameRows.length && ingestUrl) {
+    const r = await post(ingestUrl, token, { product_names: nameRows })
+    log(`product names: offered ${nameRows.length} (set id, collection) pairs -> http ${r.status}`)
+  }
+  if (dry) console.log(JSON.stringify({ dry_run: true, summary, product_names: nameRows.slice(0, 20) }, null, 2))
   if (anyFailed) process.exitCode = 1
 }
 
