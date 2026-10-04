@@ -72,3 +72,9 @@ The lane pops newest-first, so the first answers are recent packs. Among the dis
 - **The bought-as vs chain question is answered by data: a pack does not convert.** Of 4,208 purchases disagreeing with the chain, most are `primary_withdraw` deliveries whose dist came from a drop-window match. Standard / Trade Ticket / Chance Hit / reward packs released together are different NFTs in different dists (2,436 deliveries filed 8595 "Standard" are 8601 "Trade Ticket" on chain). Only 289 copied the old rip guess. **Chain is authoritative for purchases too.**
 - **`20261004190000`:** purchases re-keyed by chain (4,322 by apply time, backup `public.audit_20261004_pack_purchases_dist_rekey_backup`, RLS on), 0 left disagreeing, invariants clean. The lane (pg_cron 704) now repairs purchases as well as rips.
 - **No full sweep of the 208,224 purchased (all opened) packs without an identity.** Where rip and purchase agree, they are both wrong 289 / 77,513 = 0.37% of the time, so about 780 expected errors would cost about 58 h of identity-lane capacity. The lane corrects any of them whose identity is fetched for other reasons.
+
+## Remaining items decided (Claude Code, ~11:35 AM PT)
+
+- **Writer fix (inference before identity): not changed.** `backfill_pack_rip_metadata` only fills NULLs, and pg_cron 704 overrides a wrong guess within an hour of the pack's identity landing. Today's measurements show that function's cost is environmental, so another edit to it buys nothing measurable. Revisit only if `pack-rips-chain-rekey` keeps finding a steady stream of NEW wrong guesses after the backlog drains (read its `rekeyed` per run on 10-06).
+- **96 rips with neither a purchase nor an identity:** left. They are not queueable from these tables and are noise against ~450 k Top Shot rips.
+- **Exit for this filing:** the identity queue reaches 0, `pack-rips-chain-rekey` falls to single digits per run, and dist 8552's opened count sits near its own ~21.7 k.
