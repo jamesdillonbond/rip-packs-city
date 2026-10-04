@@ -75,3 +75,5 @@ A killed run rolls back, so the pile only grew. The edition fallback is indexed 
 - Insert and rebuild per wallet in time-boxed slices.
 
 Re-pin `apply_chain_arrival_pack_pulls` (3-file) either way. **Watch:** the 11:41 AM PT tick succeeds in ~10 s. Falsifier: a fourth timeout.
+
+**Read-back (Claude Code, ~2:50 PM PT):** the chain-arrival probe backlog reached **0**. 429s per 15 min fell from 580–655 (12:45–1:15 PM PT) to 48–64 (from 1:45 PM PT). The residual is entirely `chain-arrival-flips` (99 of 300 dispatches throttled in 30 min; every other Flow lane 0). That is the SECOND stage of the same catch-up, not a new source: 1,262 flip reads pending, finishing ~378/h, so done around 6 PM PT. The arm's 2 h window still holds the 12:45–1:30 peak and should drop below high as it rolls past, reaching ~0 once the flips finish. The falsifier is unchanged: 429s with BOTH backlogs empty would be a different source.
