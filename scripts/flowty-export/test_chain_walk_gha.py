@@ -93,3 +93,44 @@ try:
 finally:
     _W.time.sleep = _orig_sleep
 print("incomplete-read retry ok")
+
+# ── chain_verify_dapper_gha.verdict: shapes of two real mainnet28 transactions read 2026-10-04 ──
+# (Top Shot DAPPER_MARKETPLACE listing 4a313047…, All Day OffersV2 accept 929428ae…; Flowty's index
+# had buyer NULL / seller '' on the first and seller == buyer on the second.)
+import chain_verify_dapper_gha as _D
+def _opt_addr(a): return {"type": "Address", "value": a}
+def _rtype(tid): return {"staticType": {"kind": "Resource", "type": "", "typeID": tid, "fields": [], "initializers": []}}
+DUC = "A.ead892083b3e2c6c.DapperUtilityCoin.Vault"
+TSN, ADN = "A.0b2a3299cc857e29.TopShot.NFT", "A.e4cf4bdc1751c65d.AllDay.NFT"
+lst = {"status": "Sealed", "error_message": "", "block_id": "acd5", "events": [
+    _ev("A.0b2a3299cc857e29.TopShot.Withdraw", [("id", "UInt64", "52284157"), ("from", "Optional", _opt_addr("0xd13c52b7bedcae01"))]),
+    _ev("A.1d7e57aa55817448.NonFungibleToken.Withdrawn", [("type", "String", TSN), ("id", "UInt64", "52284157"), ("from", "Optional", _opt_addr("0xd13c52b7bedcae01"))]),
+    {**_ev(_D.LISTING, [("listingResourceID", "UInt64", "8796095714525"), ("purchased", "Bool", True), ("nftType", "Type", _rtype(TSN)),
+        ("nftID", "UInt64", "52284157"), ("salePaymentVaultType", "Type", _rtype(DUC)), ("salePrice", "UFix64", "0.30000000"),
+        ("customID", "Optional", {"type": "String", "value": "DAPPER_MARKETPLACE"})]), "event_index": "20"},
+    _ev("A.1d7e57aa55817448.NonFungibleToken.Deposited", [("type", "String", TSN), ("id", "UInt64", "52284157"), ("to", "Optional", _opt_addr("0x0d744d23165bfb6c"))]),
+    _ev("A.0b2a3299cc857e29.TopShot.Deposit", [("id", "UInt64", "52284157"), ("to", "Optional", _opt_addr("0x0d744d23165bfb6c"))])]}
+row = {"kind": "listing", "listing": "8796095714525", "nft_id": "52284157", "nft_type": TSN, "price": "0.3", "vault": DUC}
+ok, d = _D.verdict(row, lst)
+assert ok and d["seller"] == "0xd13c52b7bedcae01" and d["buyer"] == "0x0d744d23165bfb6c" and d["custom_id"] == "DAPPER_MARKETPLACE", d
+assert not _D.verdict({**row, "price": "0.25"}, lst)[0]
+assert _D.verdict({**row, "listing": "1"}, lst)[1]["reason"] == "no_event_for_id"
+no_dep = {**lst, "events": [e for e in lst["events"] if "Deposit" not in e["type"]]}
+assert _D.verdict(row, no_dep)[1]["mismatch"] == ["transfer"]            # a sale with no buyer on chain is not promoted
+
+cap = {"staticType": {"kind": "Capability", "type": {"kind": "Reference", "type": {"kind": "Resource", "type": "", "typeID": DUC}}}}
+off = {"status": "Sealed", "error_message": "", "block_id": "3bb8", "events": [
+    _ev("A.e4cf4bdc1751c65d.AllDay.Withdraw", [("id", "UInt64", "4968648"), ("from", "Optional", _opt_addr("0x48a41b559e58e780"))]),
+    _ev("A.e4cf4bdc1751c65d.AllDay.Deposit", [("id", "UInt64", "4968648"), ("to", "Optional", _opt_addr("0x53ea34e5d325ec7c"))]),
+    _ev(_D.OFFER, [("purchased", "Bool", True), ("acceptingAddress", "Optional", _opt_addr("0x48a41b559e58e780")),
+        ("offerAddress", "Address", "0x53ea34e5d325ec7c"), ("offerId", "UInt64", "269380350325364"), ("nftType", "Type", _rtype(ADN)),
+        ("offerAmount", "UFix64", "20.00000000"), ("paymentVaultType", "Type", cap), ("nftId", "Optional", {"type": "UInt64", "value": "4968648"})])]}
+orow = {"kind": "offer", "listing": "269380350325364", "nft_id": "4968648", "nft_type": ADN, "price": "20", "vault": DUC}
+ok, d = _D.verdict(orow, off)
+assert ok and d["seller"] == "0x48a41b559e58e780" and d["buyer"] == "0x53ea34e5d325ec7c", d
+swapped = {**off, "events": [_ev("A.e4cf4bdc1751c65d.AllDay.Withdraw", [("id", "UInt64", "4968648"), ("from", "Optional", _opt_addr("0x53ea34e5d325ec7c"))])] + off["events"][1:]}
+assert "transfer" in _D.verdict(orow, swapped)[1]["mismatch"]
+assert _D.verdict(orow, {"status": "NotFound"})[1]["reason"] == "not_sealed"
+assert _D.nodes_for("2024-01-01 00:00:00+00")[0] == "mainnet24" and _D.nodes_for("2026-07-04T19:57:48Z")[0] == "mainnet28"
+assert _D.nodes_for("2025-11-01T00:00:00")[0] == "mainnet27" and len(set(_D.nodes_for("2025-11-01"))) == 5
+print("dapper verdict ok")
