@@ -38,3 +38,17 @@ begin
   insert into flowty_archive.scratch_20261004_promoted (slice_start, slice_end, result) values (r.a, r.b, v);
   return v;
 end $f$;
+
+-- mainnet24 era (per-transaction verified, migration 20261004031134): cycle the 43 weeks of
+-- 2023-11-08 .. 2024-09-04 oldest-run-first and promote whatever the verifier has sealed so far.
+-- pg_cron 'flowty-promote-tx-scratch' (every 2 minutes). Idempotent (NOT EXISTS on tx+nft).
+CREATE TABLE IF NOT EXISTS flowty_archive.scratch_20261004_promoted_tx (week_start timestamptz PRIMARY KEY,
+  runs int NOT NULL DEFAULT 0, last_result jsonb, last_run_at timestamptz);
+CREATE OR REPLACE FUNCTION flowty_archive.scratch_promote_tx_tick() RETURNS jsonb LANGUAGE plpgsql AS $f$
+declare w timestamptz; v jsonb;
+begin
+  select week_start into w from flowty_archive.scratch_20261004_promoted_tx order by last_run_at nulls first, week_start limit 1;
+  v := flowty_archive.promote_flowty_tx_verified_sales(w, least(w + interval '7 days', '2024-09-04 12:02:35+00'::timestamptz));
+  update flowty_archive.scratch_20261004_promoted_tx set runs = runs + 1, last_result = v, last_run_at = now() where week_start = w;
+  return v;
+end $f$;
