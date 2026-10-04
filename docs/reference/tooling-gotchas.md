@@ -2152,3 +2152,10 @@ From a claude.ai cloud session: `apply_migration` ×2 and `execute_sql` ×3 (a 2
 
 - The environment's network policy rejects `www.rippackscity.com` and `data.vaultopolis.com` at the proxy (`connect_rejected`, organization policy). **Trevor chose to leave it as is (10-03).** Read live pages with the Vercel MCP `web_fetch_vercel_url` (works for the production domain; output is large, so it lands in a tool-results file you slice). Anything fed by Vaultopolis can only be exercised end to end in CI (`build-render`), never in a local smoke here (testing-and-ci.md end).
 - `npx next build` + `node scripts/qa/built-render-smoke.mjs` DO run locally with the CI placeholder env (`NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54329` etc.): ~10 min build, ~4 min smoke, 444 renders. The build rewrites `next-env.d.ts`, so `git checkout -- next-env.d.ts` before staging.
+
+## ⚠ VERCEL OBSERVABILITY: `client_user_agent = node` NAMES A RUNTIME, NOT A CALLER — split by `asn_name` before attributing self-traffic (2026-10-04)
+
+The "~75,000 `node` requests a week" for `/fonts/*.ttf` were filed (10-03) as our OG lambdas fetching our own CDN, and a fix to the lambdas shipped. Split by `asn_name`, **~98% came from Microsoft (GitHub Actions runners)**: CI's vitest rendering OG cards against production. Our lambdas (`Amazon.com, Inc.`) were 958 of ~78k. Residential ASNs (e.g. CenturyLink) are a dev box running the suite; `Google LLC` includes cloud sandboxes.
+- **Discriminate first:** `groupBy: ["asn_name", "client_user_agent"]` on the route. `client_ip` is not a supported dimension; `asn_name`, `deployment_id`, `referrer_url` and `request_hostname` are.
+- **A burst on every deploy is not "post-deploy traffic" until you've ruled out CI.** Pushes trigger both the deploy and the CI run, so CI's requests land in the same minutes.
+- **Positive control for a read-back:** compare the count you expect to fall against the requests that should drive it (here, `/api/og/*`). ~150 font fetches against ~8 card requests was the tell.
