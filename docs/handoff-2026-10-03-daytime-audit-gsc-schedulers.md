@@ -140,12 +140,18 @@ Trevor's answer to the third block's queue was to build it. All four verified ag
 - **Live, verified:** deploy READY ~5:11 PM PT; `/legal/fmv-methodology` renders the new rule (DOM, not status); first 1.8.0 tick 5:15 PM PT — 497 rows, 26.2 s against 22–26 s on the 1.7.0 ticks before it (no cost step), median `fmv_usd / asp_without_outliers` **0.952** (60.6 % of editions priced below their WAP, 22.1 % above), p02–p98 0.58–1.23, extremes 0.32–1.70 — the same −5 % the backtest said the WAP was running high by.
 - **Control, for whoever reads next:** `select * from fmv_sales_backtest('nba_top_shot', 7)` from ~10-06 (every matched snapshot will be 1.8.0 by then; sweep ≈ 1.5 d) and `fmv_sales_backtest('nfl_all_day', 7)` read by `median_abs_err_usd`. R125's exit: published ≤ last-3 on MEDIUM / LOW two weeks running. If 1.8.0 reads WORSE than the 1.7.0 rows in R125, revert the commit — the sweep re-prices in ~1.5 d, no data migration to undo.
 
+## Twelfth block (~5:26 PM PT →): "Proceed with all"
+
+- **R77 live test:** `.github/workflows/pager-test.yml` — a `workflow_dispatch`-only workflow that runs the no-secret pager with the workflow's own token (title "RPC PAGER TEST — close me when seen"). Dispatched twice: the first run must OPEN the issue, the second must COMMENT on it (dedupe). Results below.
+- **#169 vs #161 — NOT shipped, flagged instead.** The other session's #169 (filed ~5:15 PM PT) proposes excluding Dapper sell-backs from FMV inputs and paused the sell-back backfill lanes pending that. #161 records Trevor's decision of 09-30 ~6:15 PM PT: "Buybacks should still count as market sales on both, but should be tracked additionally — ⛔ do NOT filter it out." My earlier ledger line calling #169's exclusion "the next FMV change" was wrong to say before reading #161; the register row is corrected. Under 1.8.0 the effect is sharper either way (a buy-back run inside the last 7 sales sets the price), so this is a real call — **Trevor's**: keep #161 (buy-backs are sales; FMV follows them) or reverse it (#169; then the exclusion goes into fmv-recalc's Step 1b sales read AND the cold writers, the same change in ~8 readers the #169 survey lists).
+
 ## Needs Trevor (carried + new)
 
 - ~~Delete the 10 retired cron-job.org entries~~ — DONE by Trevor ~2:25 PM PT (console reads 78 entries / 71 active / 7 inactive; ledger entry by the other session).
 - Rotate `ATLAS_POOL_INGEST_KEY` (#144); #22 — waiting on GitHub Support #4811268, then the Dapper session rotation. ~~Scratch Flowty jobs 673/680~~ — both gone (673 unscheduled by this session after reading its state tables: nothing left to dispatch).
 - `sync-nba-projections` (#8) — mute now expires 10-28.
 - Both product calls from the first block were MADE under delegation (sniper fee gate shipped; team-named player slugs stay 404). Overrule by reverting `5bf46cced`.
+- **#161 vs #169 (new, yours):** do Dapper buy-backs stay FMV inputs (your 09-30 call) or come out (the other session's #169, lanes paused on it)? Nothing shipped either way by this session.
 - ~~R125 — the estimator~~ — ACTED in the eleventh block under delegation (FMV 1.8.0 = median of the last 7 typical sales). Overrule by reverting the commit titled "fmv-recalc 1.8.0: FMV is the median of the 7 most recent typical sales"; the read that judges it is `fmv_sales_backtest('nba_top_shot', 7)` from ~10-06.
 - ~~Flip 10231 + 10233; decide on 10256 and the chart overlays~~ — DONE in the fourth block (Trevor: "Do everything mentioned"); the only open product call is whether an ask/offer price-history SERIES is worth a new snapshot lane (today nothing keeps it, so the chart does not pretend to).
 
