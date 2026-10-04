@@ -1,0 +1,42 @@
+name: Pager Test (GitHub issue page)
+
+# Manual, end-to-end test of the runner-side page that needs no secret
+# (register R77, 2026-10-03; scripts/ci/page-via-github-issue.sh). The two
+# alarm workflows (pipeline-sentinel, site-availability-alarm) only page when
+# the estate is actually unreachable, so without this there is no way to prove
+# the page DELIVERS — that the workflow's own GITHUB_TOKEN can open an issue
+# with `issues: write`, that the @-mention notifies the owner, and that a second
+# run COMMENTS on the open issue instead of opening another.
+#
+# How to read a run: the first dispatch should print "paged via new GitHub
+# issue <url>"; a second dispatch while that issue is open should print "paged
+# via GitHub issue #N (comment)". Close the test issue when done — the next
+# test then starts a fresh one, which is the same behaviour an outage gets.
+#
+# This workflow never fires on its own (no schedule) and touches nothing but
+# the issue it opens.
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: "Why this test is being run (quoted in the issue body)"
+        required: false
+        default: "manual end-to-end test of the no-secret pager"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  page:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Page via GitHub issue (no secret needed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGE_TITLE: "RPC PAGER TEST — close me when seen"
+          PAGE_BODY: "TEST of the runner-side page (register R77), not an outage: ${{ inputs.note }}. If this reached you as a notification, the no-secret pager works end to end. Close this issue; the next test (or a real page) opens a fresh one."
+        run: bash scripts/ci/page-via-github-issue.sh
