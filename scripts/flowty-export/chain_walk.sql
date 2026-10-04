@@ -1,3 +1,6 @@
+-- ⛔ SUPERSEDED 2026-10-03 ~7:25 PM PT: run from pg_net this walk stalled the SHARED pg_net worker
+-- (queue 104, 41 s with no response) — it now runs on GHA: .github/workflows/flowty-chain-walk.yml
+-- + chain_walk_gha.py (migration 20261004022627). Kept for the record; do not re-schedule it.
 -- Full block-range walk of Flowty's NFTStorefrontV2 ListingCompleted events on the Flow history
 -- nodes -> flowty_archive.flowty_chain_listing_completed. One-off scratch (execute_sql), kept
 -- for reproducibility. Table DDL: supabase/migrations/20261004015121_flowty_chain_listing_completed.sql

@@ -1,0 +1,74 @@
+name: Flowty chain walk (verify Flowty's index against the chain)
+
+# 2026-10-03. Reads every Flowty NFTStorefrontV2 ListingCompleted event from the Flow history
+# nodes (access-001.mainnet24..27, /v1/events, 250-block windows) between the mainnet24 root
+# (65,264,619, 2023-11-08) and the mainnet28 floor (137,390,145, 2025-12-29), and lands the
+# purchased ones + per-window coverage through public.ingest_flowty_chain_walk (service role).
+# It is the independent reader that verifies flowty_archive.flowty_index_sales before any
+# Flowty-venue sale reaches `sales`. Moved here from pg_net, where its slow windows stalled
+# the shared worker for every production lane (migration 20261004022627). Idempotent: a
+# re-run re-records windows and inserts nothing new. Coverage proof is the coverage table,
+# not this run's exit code. workflow_dispatch only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      rps:
+        description: "requests/second per job (nodes throttle per-second bursts)"
+        required: false
+        default: "4"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flowty-chain-walk
+  cancel-in-progress: false
+
+jobs:
+  walk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        include:
+          - { node: mainnet24, start: 65264619, end: 68717618 }
+          - { node: mainnet24, start: 68717619, end: 72170618 }
+          - { node: mainnet24, start: 72170619, end: 75623618 }
+          - { node: mainnet24, start: 75623619, end: 79076618 }
+          - { node: mainnet24, start: 79076619, end: 82529618 }
+          - { node: mainnet24, start: 82529619, end: 85981134 }
+          - { node: mainnet25, start: 85981135, end: 88226266 }
+          - { node: mainnet26, start: 88226267, end: 91731766 }
+          - { node: mainnet26, start: 91731767, end: 95237266 }
+          - { node: mainnet26, start: 95237267, end: 98742766 }
+          - { node: mainnet26, start: 98742767, end: 102248266 }
+          - { node: mainnet26, start: 102248267, end: 105753766 }
+          - { node: mainnet26, start: 105753767, end: 109259266 }
+          - { node: mainnet26, start: 109259267, end: 112764766 }
+          - { node: mainnet26, start: 112764767, end: 116270266 }
+          - { node: mainnet26, start: 116270267, end: 119775766 }
+          - { node: mainnet26, start: 119775767, end: 123281266 }
+          - { node: mainnet26, start: 123281267, end: 126786766 }
+          - { node: mainnet26, start: 126786767, end: 130290658 }
+          - { node: mainnet27, start: 130290659, end: 133840408 }
+          - { node: mainnet27, start: 133840409, end: 137390145 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Walk ${{ matrix.node }} ${{ matrix.start }}-${{ matrix.end }}
+        env:
+          RPS: ${{ github.event.inputs.rps }}
+          WORKERS: "24"
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::Supabase secrets not configured"; exit 2
+          fi
+          case "${RPS:-}" in (''|*[!0-9.]*) echo "rps must be a number"; exit 2;; esac
+          python3 scripts/flowty-export/test_chain_walk_gha.py
+          python3 scripts/flowty-export/chain_walk_gha.py "${{ matrix.node }}" "${{ matrix.start }}" "${{ matrix.end }}"
