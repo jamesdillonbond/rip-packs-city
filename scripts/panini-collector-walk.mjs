@@ -226,6 +226,22 @@ export function pastWalkCap(walkStartedMs, nowMs, capMin) {
   return nowMs - walkStartedMs >= Number(capMin) * 60_000
 }
 
+/**
+ * The order a walk reads a profile's collections in: the list rotated to start at a day-dependent
+ * index. A profile too big for the cap (2026-10-03: 30 of 128, 28 of 65, 4 of 54) used to restart
+ * at collection 0 every walk, so everything past the cap was NEVER read. Rotating the start by day
+ * makes successive capped walks cover different collections; a profile that finishes reads them
+ * all either way, and partial reads only ever add holdings.
+ */
+export function walkOrder(collections, dayIndex) {
+  const n = collections.length
+  if (n === 0) return []
+  const d = Number.isFinite(dayIndex) ? Math.trunc(dayIndex) : 0
+  // 7919 is prime, so consecutive days land far apart in any list shorter than it.
+  const start = (((d * 7919) % n) + n) % n
+  return [...collections.slice(start), ...collections.slice(0, start)]
+}
+
 /** The GraphQL operation a /onepanini request carries, or null. */
 export function operationOf(url, postData) {
   if (!String(url).includes("/onepanini")) return null
@@ -443,7 +459,7 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
       if (reported == null) error = `read ${collections.length} of ${collectionTotal ?? "?"} collections`
 
       // 2. Each collection's own card pages.
-      for (const [ci, c] of collections.entries()) {
+      for (const [ci, c] of walkOrder(collections, Math.floor(Date.now() / 86_400_000)).entries()) {
         if (c.count === 0) continue
         if (capped()) {
           capHit = `per-walk cap of ${capMin} min reached after ${ci} of ${collections.length} collections`

@@ -23,6 +23,7 @@ import {
   isComplete,
   mayStartWalk,
   pastWalkCap,
+  walkOrder,
   mergeTargets,
   operationOf,
   parseTargets,
@@ -136,6 +137,21 @@ describe("pastWalkCap", () => {
   })
   it("no cap set is never past, however long the walk", () => {
     for (const c of [undefined, null, "", "0", "-1", "abc"]) expect(pastWalkCap(t0, t0 + 999 * 60_000, c)).toBe(false)
+  })
+})
+
+describe("walkOrder", () => {
+  const list = Array.from({ length: 128 }, (_, i) => i)
+  it("keeps every collection exactly once, whatever the day", () => {
+    for (const d of [0, 1, 20_364, -3, Number.NaN]) expect([...walkOrder(list, d)].sort((a, b) => a - b)).toEqual(list)
+  })
+  it("a capped walk reaching only its first 30 does not re-read the same 30 every day", () => {
+    const seen = new Set<number>()
+    for (let d = 20_364; d < 20_364 + 10; d++) for (const c of walkOrder(list, d).slice(0, 30)) seen.add(c)
+    expect(seen.size).toBe(128)
+  })
+  it("an empty list stays empty", () => {
+    expect(walkOrder([], 5)).toEqual([])
   })
 })
 
