@@ -1,15 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, screen, cleanup, fireEvent } from "@testing-library/react"
-import { configure } from "@testing-library/react"
-
-// findBy*/waitFor wait 5 s here, not testing-library's default 1 s. The claim flow chains
-// several awaited steps per click (nonce fetch → wallet connect → accounts fetch → re-render),
-// and on a loaded CI shard (880+ files) that chain overran 1 s twice in one night with the
-// code correct: 13f3934f8 at line 342 and bdd2af035 at line 380 (2026-10-03/04), 5/5 green
-// locally each time. A text that never appears still fails; it just fails at 5 s. Well
-// inside vitest's 30 s testTimeout.
-configure({ asyncUtilTimeout: 5_000 })
 import GiveawayClient, { defaultDestination } from "@/app/giveaways/[slug]/GiveawayClient"
 
 const { connectClaimWallet, disconnectClaimWallet } = vi.hoisted(() => ({
@@ -17,6 +8,17 @@ const { connectClaimWallet, disconnectClaimWallet } = vi.hoisted(() => ({
   disconnectClaimWallet: vi.fn(),
 }))
 vi.mock("@/lib/giveaways/claim-wallet", () => ({ connectClaimWallet, disconnectClaimWallet }))
+// The module claim-wallet re-exports from, mocked too. On Node 24, about 1 run in 8 of this file
+// had a dynamic import("@/lib/giveaways/claim-wallet") resolve to the REAL module part-way
+// through (stderr printed FCL's "WalletConnect Service Plugin" banner in exactly the failing
+// test, never in a passing run). The real connectFlowWalletWithProof then waited for a wallet
+// that never answers, the page sat at "Opening Flow Wallet…" and findBy* timed out: the
+// failures on 13f3934f8, bdd2af035 and a58e57eca, all in this describe. With the module
+// beneath mocked as well, even that path lands on these fns.
+vi.mock("@/lib/giveaways/flow-wallet-connect", () => ({
+  connectFlowWalletWithProof: connectClaimWallet,
+  disconnectFlowWallet: disconnectClaimWallet,
+}))
 
 // The public giveaway page. What matters for a claimer: the four load states are never
 // collapsed (a failed read is not "no such giveaway"), a claim failure shows the route's
