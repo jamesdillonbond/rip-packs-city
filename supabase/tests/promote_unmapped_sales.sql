@@ -581,7 +581,7 @@ BEGIN
                           THEN round(v_promoted::numeric / v_eligible, 4)
                           ELSE NULL END,
     'archived', v_archived,
-    'duration_ms', EXTRACT(milliseconds FROM (clock_timestamp() - v_started_at))::integer
+    'duration_ms', (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::integer
   );
 
   PERFORM public.log_pipeline_run(

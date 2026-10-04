@@ -120,7 +120,7 @@ BEGIN
   INTO v_total, v_inserted, v_no_data, v_ask_only, v_sales_only, v_min;
 
   v_finish := clock_timestamp();
-  v_dur := EXTRACT(MILLISECONDS FROM (v_finish - v_start))::int;
+  v_dur := (EXTRACT(EPOCH FROM (v_finish - v_start)) * 1000)::int;
 
   INSERT INTO pipeline_runs (
     pipeline, started_at, finished_at,

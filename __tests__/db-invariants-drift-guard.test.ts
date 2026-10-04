@@ -1026,7 +1026,7 @@ const PINS = [
     // `migration:\s*"..."`, so a comment in that gap drops the pin from the live check.
     // Re-pointed 2026-08-30: a per-scope 20-minute minimum gap between real drains.
     migration:
-      "supabase/migrations/20260830150207_audit_20260830_promote_unmapped_sales_minimum_gap_between_drains.sql",
+      "supabase/migrations/20261004030511_audit_20261003_run_durations_no_longer_wrap_at_60_seconds.sql",
   },
   {
     // Installed for real (not stubbed) inside promote_unmapped_sales.sql: it is
@@ -1112,7 +1112,8 @@ const PINS = [
   {
     fn: "recalc_ultimate_fmv",
     test: "supabase/tests/recalc_ultimate_fmv.sql",
-    migration: "supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql",
+    // Re-pinned 2026-10-03: run duration no longer wraps at 60 s (#147).
+    migration: "supabase/migrations/20261004030511_audit_20261003_run_durations_no_longer_wrap_at_60_seconds.sql",
   },
   {
     fn: "get_edition_badges_unified",
@@ -2043,7 +2044,7 @@ const PINS = [
     fn: "prune_stale_wmc",
     test: "supabase/tests/prune_stale_wmc.sql",
     migration:
-      "supabase/migrations/20260815203700_audit_20260815_snapshot_prune_stale_wmc.sql",
+      "supabase/migrations/20261004030511_audit_20261003_run_durations_no_longer_wrap_at_60_seconds.sql",
   },
   // ── Added 2026-08-15: scheduled writers that already had a matching
   // committed migration, so they needed only a test. Worth checking for before

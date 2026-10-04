@@ -111,7 +111,7 @@ BEGIN
     'ok', true,
     'stale_cache_deleted', v_stale_cache_deleted,
     'wallets_pruned',      v_wallets_pruned,
-    'duration_ms', EXTRACT(milliseconds FROM (clock_timestamp() - v_started))::integer
+    'duration_ms', (EXTRACT(EPOCH FROM (clock_timestamp() - v_started)) * 1000)::integer
   );
 END;
 $function$;
