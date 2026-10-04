@@ -51,3 +51,12 @@ It is also why the 8512 lifecycle read is slow cold: 10,753 of its purchased pac
 
 - **Partly known before.** The 2026-09-24 comment in `backfill_pack_rip_metadata` records that the pool vote "picked an OLD dist whose pool happens to contain every pulled edition when the pack's real (new) dist had no pool yet" (6,274 rips disagreed with `pack_nft_identity` then). That change made the vote FILL-ONLY, so it stopped overwriting. It did **not** repair rows already wrong, and the vote **still fills NULL-dist rips**, so a rip that reaches this function before its chain identity can still get a wrong dist. This filing's 65k is the accumulated stock.
 - **Same function, separate issue:** its `unpriced_retry` leg costs 7.9 s / 800 k buffers to find 85 rows. Stamped-NULL rips with no `moment_acquisitions` are never selected, so they stay at the head of `idx_pack_rips_unvalued_stamped` and the walk grows (the "ORDER BY decides whether a leg progresses" class). The `zero_repair` leg's 14.6 s was fixed separately (`20261004163500`, an empty partial index). The run duration had been rising 28.7 → 40.7 s against a 50 s cap.
+
+## Early verification read (~9:45 AM PT, ~3.6 k identities in)
+
+The lane pops newest-first, so the first answers are recent packs. Among the disputed rips verified so far, chain identity sides with **neither table 533 times, the purchase 59, and the rip 0**. **`pack_purchases.pack_dist_id` is wrong on recent packs too.** Examples (rip → purchase → chain):
+- 8545 → 8549 "2026 NBA Finals: Chance Hit" → 8561 / 8571 / 8558, all "2025-26 Set Completion Reward: …" (138 / 59 / 51).
+- 8597 → 8595 "WNBA Metallic Gold LE Standard" → 8601 "… Trade Ticket Pack" (159).
+- 8521 → 8527 "WNBA Rookie Debut Chance Hit" → 8526 "… Trade Ticket pack" (43).
+
+**So the repair is chain-only for BOTH tables.** Copying either table into the other would just move the error, and the purchase-copy idea in the plan above is refuted for recent packs. Check how `pack_purchases.pack_dist_id` gets its value (the `pack_rips_propagate_dist_to_purchases` trigger copies the rip's inferred dist; `name_packs_from_identity` falls back to sales history) before trusting it anywhere, including the "purchased under 8512" framing at the top of this filing.
