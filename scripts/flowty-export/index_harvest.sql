@@ -115,3 +115,25 @@ begin
   end loop;
   return jsonb_build_object('parsed', parsed, 'fired', fired);
 end $f$;
+
+-- ── Verification stamps (2026-10-03) ─────────────────────────────────────────────────────────
+-- Pre-floor docs: verify_status = 'unverifiable_pre_floor' (one UPDATE, 11,062 rows).
+-- 2025-12-29+ docs that RPC's own chain ingest already holds (same tx + nft + collection):
+-- 'rpc_chain_match'. Too slow for one MCP call (60 s cap), so a 3-day-window cursor tick
+-- (pg_cron 'flowty-stamp-rpc-match-scratch', every minute; returns {"done":true} past 2026-06-01).
+-- Docs inside the chain walk's span get 'chain_sealed' / 'chain_mismatch' from the walk, not here.
+CREATE OR REPLACE FUNCTION flowty_archive.scratch_stamp_rpc_match_tick() RETURNS jsonb LANGUAGE plpgsql AS $f$
+declare t0 timestamptz := (select v::timestamptz from flowty_archive.scratch_20261004_cfg where k='stamp_cursor'); t1 timestamptz; n int;
+begin
+  if t0 >= '2026-06-01' then return jsonb_build_object('done', true); end if;
+  t1 := t0 + interval '3 days';
+  with m as (select i.doc_id, s.source, s.marketplace from flowty_archive.flowty_index_sales i
+             join lateral (select s.source, s.marketplace from public.sales s where s.transaction_hash=i.tx_hash and s.nft_id=i.nft_id and s.collection_id=i.collection_id and s.sold_at >= '2025-12-29' limit 1) s on true
+             where i.block_ts >= t0 and i.block_ts < t1 and i.verify_status is null),
+  u as (update flowty_archive.flowty_index_sales i set verify_status='rpc_chain_match', verified_at=now(),
+          verify_detail=jsonb_build_object('sales_source', m.source, 'sales_marketplace', m.marketplace)
+        from m where i.doc_id=m.doc_id returning 1)
+  select count(*) into n from u;
+  update flowty_archive.scratch_20261004_cfg set v = t1::text where k='stamp_cursor';
+  return jsonb_build_object('from', t0, 'to', t1, 'stamped', n);
+end $f$;
