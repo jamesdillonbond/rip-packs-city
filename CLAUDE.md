@@ -10,13 +10,13 @@
 
 ## Reference index
 
-**[docs/reference/README.md](docs/reference/README.md)** (moved 2026-09-19 — navigation data; every section below carries its own pointer). Two judgements stay here: ⚠ **`claude-md-condensed-originals.md` holds sections SHORTENED rather than moved — check there first if a detail seems missing**; **`schema-truth.md` wins over prose, but only as fresh as its stamp** (no generator — read it).
+**[docs/reference/README.md](docs/reference/README.md)** (navigation data; each section below carries its own pointer). Two judgements stay here: ⚠ **`claude-md-condensed-originals.md` holds sections SHORTENED rather than moved — check there first if a detail seems missing**; **`schema-truth.md` wins over prose, but only as fresh as its stamp** (no generator — read it).
 
 ---
 
 ## WORKING STYLE — EXECUTE, do not narrate handoffs (Trevor, 2026-06-22, emphatic)
 
-**If you identify a task you have the tools to do, DO IT in the same turn, then report it done.** Do NOT call something a "Claude Code handoff" or "operator item" and stop when you could execute it yourself. Hand off ONLY what needs access you lack — and hand off the committed artifact, never a promise. Narrating work instead of shipping it angered Trevor ("lazy antics"). Ship first, summarize second, keep talk minimal.
+**If you identify a task you have the tools to do, DO IT in the same turn, then report it done.** Do NOT call something a "Claude Code handoff" or "operator item" and stop when you could execute it yourself. Hand off ONLY what needs access you lack — and hand off the committed artifact, never a promise. Narrating instead of shipping angered Trevor ("lazy antics"). Ship first, summarize second, keep talk minimal.
 
 ## Ledger — log every change that touches `main` or prod state
 
@@ -84,7 +84,7 @@ Never omit `teamId` on a Vercel API/MCP call.
 
 ## Frequently used commands
 
-**List: [tooling-gotchas.md](docs/reference/tooling-gotchas.md)** (package.json data). ⚠ **`npm ci` FIRST in a fresh sandbox or agent worktree**, or `npx vitest`/`tsc` die on `MODULE_NOT_FOUND …`. ⭐ **`tsc --noEmit` DOES run in the laptop VM** with `--max-old-space-size=3072`; it OOMs at the default heap, and writing that off as "CI will typecheck" put a compile error on `main` (09-19).
+**List: [tooling-gotchas.md](docs/reference/tooling-gotchas.md)** (package.json data). ⚠ **`npm ci` FIRST in a fresh sandbox or agent worktree**, or `npx vitest`/`tsc` die on `MODULE_NOT_FOUND …`. ⭐ **`tsc --noEmit` DOES run in the laptop VM** with `--max-old-space-size=3072`; it OOMs at the default heap; skipping it put a compile error on `main` (09-19).
 
 
 ⚠ **Exit-code traps** (pipe status, `grep && push`, a wrapper's `exit code 0`): verbatim in tooling-gotchas.md.
@@ -124,12 +124,12 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 
 ### Guards, tests and instruments
 
-- ⚠ **`npx vitest run <file>` proves the FILE, and the SUITE is not the GATE: `npm test`+`tsc` pass trees `npm run lint:ratchet` reds (per-RULE).** A red run is not automatically yours: read the failing JOB first.
+- ⚠ **`npx vitest run <file>` proves the FILE, and the SUITE is not the GATE: `npm test`+`tsc` pass trees `npm run lint:ratchet` reds (per-RULE); run `npm run ci:guards` too.** A red run is not automatically yours: read the failing JOB first.
 - ⚠ **Ask what RUNS a guard and ASSERT THE COUNT IT INSPECTED** — a staged-only default inspected **nothing** on CI and exited 0. ⭐ **THE TELL IS SILENCE: one that normally states its count and then says nothing has not PASSED, it has not SPOKEN** (a `;` in an npm script dies in cmd.exe — use a node driver): testing-and-ci.md.
 - ⚠ **Ask what a passing guard is structurally SILENT about — its DERIVATION fixes its blast radius, and its ROOT *and stated CLASS* are CLAIMS.** **Prefer a tree walk over a curated list and a ban at zero over an allowlist; make *suppression* the curated list.** ⚠ **A control’s POPULATION must be the set the property is TRUE of, not a proxy that coincides today.** ⛔ **A SUPPRESSION IS A CLAIM that the CODE is wrong — when the GUARD is wrong it buys silence and can FAKE ANOTHER INSTRUMENT’S SIGNAL**: testing-and-ci.md.
 - ⚠ **A vacuous assertion reads as coverage everywhere, and mutation testing cannot find the worst kind** — **a test stating the contract in a comment and asserting something weaker.** The tell is the TITLE: a name carrying a negative claim or a transformation is a promise the assertion usually fails to keep. **Assert the ABSENCE of the false claim, not the PRESENCE of an error message.** 🚨 **Prove a guard with a PLANTED DEFECT, never by reading it — `\b` inside a JS template literal is U+0008, so the regex was unfalsifiable and looked right in every diff** (testing-and-ci.md).
 - ⛔ **A HAND-EDITED GENERATED BLOCK TURNS ITS OWN REGENERATOR INTO A DELETER** — `docs:issues-index`, the repair its own failure message prescribes, deletes rows whose text exists ONLY in that block (2 findings; `main` was red). **Diff a regeneration BEFORE `git add` — all `-` and no `+` is this class.** ⚠ **And a FIXER that derives its expected value FROM the state it repairs cannot detect an error in it**: `inbox:index:fix` counted a misplaced entry and agreed. Pair it with a check reading a source it never touches: testing-and-ci.md.
-- ⛔ **A header claiming it MIRRORS another implementation is an UNTESTED CLAIM — diff them** (a week of opposite verdicts): testing-and-ci.md.
+- ⛔ **A header claiming it MIRRORS another implementation, or DESCRIBES a model, is an UNTESTED CLAIM — diff it against the body** (opposite verdicts for a week; a "7-day half-life" that was tiered 3/2/1): testing-and-ci.md.
 - ⛔ **A HARDCODED ALLOWLIST BESIDE A REGISTRY GOES STALE SILENTLY** — resolve through the registry, pin the narrowing gate: testing-and-ci.md.
 - ⛔ **A REGISTRY VALUE has no file of its own — `grep -rl <value> __tests__` BEFORE the push, not the files you edited** (one tab in `lib/collections.ts` reddened two guards in files never opened); ⚠ and grep the guards that READ a file before editing it: testing-and-ci.md.
 - ⚠ **A test red because its PREMISE changed is a RE-PIN, not an inversion — but re-pinning the row is not enough: check the property is still EXERCISED** by a subject that genuinely lacks it: testing-and-ci.md.
@@ -171,7 +171,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 
 ### Windows / Git Bash
 
-**Section moved VERBATIM to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-20.** The three that bite most: ⚠ **backticks in `git commit -m` are command substitution** (write the message to a file, `git commit -F`); ⚠ **assert the occurrence count before a scripted replace, and key any backup on the FULL PATH**; 🚨 **`get_edge_function` AND `cron.job.command` hand back live gate keys — redact or hash, never echo**, and never broad-query a DOM that can hold secrets.
+**Moved VERBATIM to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-20.** The three that bite most: ⚠ **backticks in `git commit -m` are command substitution** (write the message to a file, `git commit -F`); ⚠ **assert the occurrence count before a scripted replace, and key any backup on the FULL PATH**; 🚨 **`get_edge_function` AND `cron.job.command` hand back live gate keys — redact or hash, never echo**, and never broad-query a DOM that can hold secrets.
 
 ### Database — the traps that bite most often
 
@@ -269,7 +269,7 @@ Flow CLI hot wallet `0x3aa11c84d776838f`. ⛔ **Signing MUST be ECDSA_secp256k1 
 
 **The canonical forward plan is [docs/strategy/roadmap-2026-08-03.md](docs/strategy/roadmap-2026-08-03.md).** Thesis: **accuracy is the GATE, not a phase** — growth tactics stay removed until the data beats the sites collectors already use; headline metric is the share of prices at HIGH/MEDIUM confidence. Still binding: **intelligence-first**; Cart / Trade Hub / gifting removed (**read-only product**); **no paid tier shown or considered anywhere until 100 WAU** (09-25); no infra spend pre-revenue.
 
-**Open items** — dated snapshot moved to [roadmap-status.md](docs/reference/roadmap-status.md) 2026-09-19 (status data; goes stale by nature). ⚠ **Needs TREVOR, not code:** the credential-purge residue (#22).
+**Open items** — dated snapshot in roadmap-status.md (linked below; goes stale by nature). ⚠ **Needs TREVOR, not code:** the credential-purge residue (#22).
 
 Full status + accuracy measurements: [docs/reference/roadmap-status.md](docs/reference/roadmap-status.md). Issue register: [docs/reference/known-issues.md](docs/reference/known-issues.md).
 

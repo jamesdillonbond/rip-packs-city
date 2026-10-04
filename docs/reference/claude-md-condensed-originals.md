@@ -679,3 +679,18 @@ The replacement names the mount's `.rpc-git-cred` store helper, proven 2026-09-2
 CLAUDE.md's Measurement discipline gained *"A DEFAULT UI LIST IS A SAMPLE; a UI CLICK CAN FAIL SILENTLY"* (Panini: the SALES HISTORY tab defaults to TOP sales, and a Playwright pointer click switched it to RECENT on 3 of ~300 cards while a DOM `el.click()` worked every time; full case in [panini-fmv-packev-methodology.md](../strategy/panini-fmv-packev-methodology.md)). Headroom was 13 characters, so the CI bullet below was shortened to a pointer. Its full rule already lives in `testing-and-ci.md` (§ "Every CI `run:` block is `bash -e`"). Original:
 
 > - ⚠ **Every CI `run:` block is `bash -e`: a fallible command in an ASSIGNMENT aborts the step there**, so a retry loop after it is DEAD CODE that reads as coverage. Write `X=$(…) || X=""`, then check — ⛔ `|| X="0"` is WORSE: it reports a clean read of what it never read. testing-and-ci.md.
+
+## Condensed 2026-10-03 (verbatim originals; the CLAUDE.md lines were shortened to make room for the model-comment clause and `npm run ci:guards`)
+
+- Original: `it OOMs at the default heap, and writing that off as "CI will typecheck" put a compile error on `main` (09-19).`
+  Now: `it OOMs at the default heap; skipping it put a compile error on `main` (09-19).`
+- Original: `(moved 2026-09-19 — navigation data; every section below carries its own pointer)`
+  Now: `(navigation data; each section below carries its own pointer)`
+- Original: `**Section moved VERBATIM to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-20.** The three that bite most:`
+  Now: `**Moved VERBATIM to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-20.** The three that bite most:`
+- Original: `(a week of opposite verdicts; a "7-day half-life" that was tiered 3/2/1): testing-and-ci.md.`
+  Now: `(opposite verdicts for a week; a "7-day half-life" that was tiered 3/2/1): testing-and-ci.md.`
+- Original: `Narrating work instead of shipping it angered Trevor ("lazy antics"). Ship first, summarize second, keep talk minimal.`
+  Now: `Narrating instead of shipping angered Trevor ("lazy antics"). Ship first, summarize second, keep talk minimal.`
+- Original: `**Open items** — dated snapshot moved to [roadmap-status.md](docs/reference/roadmap-status.md) 2026-09-19 (status data; goes stale by nature).`
+  Now: `**Open items** — dated snapshot in roadmap-status.md (linked below; goes stale by nature).`
