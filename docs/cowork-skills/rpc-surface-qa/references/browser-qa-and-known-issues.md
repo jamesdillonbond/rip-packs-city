@@ -35,6 +35,16 @@ DOM/served-HTML marker count, not by assuming the text capture reached them (202
 Claude-in-Chrome here. You cannot truly test sub-420; rely on the responsive CSS in markup and report
 the caveat. A real sub-420 viewport needs Playwright.
 
+**Playwright in the CLOUD container is that real viewport, and the clean anonymous control (2026-10-04).**
+A Cowork cloud session has Chromium preinstalled (`/opt/pw-browsers/chromium-<ver>/chrome-linux/chrome`;
+`npm i playwright` in a scratch dir, then `chromium.launch({ executablePath })` — never
+`playwright install`). One script per pass can load every surface at 1280 and at 390 (`isMobile:true`)
+and assert, per page: final URL + status, `div[hidden][id^="S:"]` count (unswapped Suspense segments),
+`documentElement.scrollWidth - innerWidth` (horizontal overflow), visible h1/h2 list, a visible
+"Loading/SCANNING" leaf, `pageerror` + console errors, and any same-site response >= 400. 21 surfaces
+x 2 widths ran in ~6 min on 2026-10-04, all clean. It is anonymous, so it cannot see signed-in-only
+states — use Claude-in-Chrome for those.
+
 **Two browsers, and a fallback when one is asleep (2026-09-25).** Live QA can run in either
 Claude-in-Chrome (`mcp__claude-in-chrome__*`, the extension) or the **built-in browser**
 (`mcp__remote-devices__Claude_Browser__*`, the desktop-app pane). The extension can go to sleep between
@@ -71,7 +81,15 @@ and ruled out as a shippable defect:
 - Claude Code could not reproduce it on any normal-browser axis (anonymous, extension, SSR, soft-nav),
   and anon users reveal in 2.6–5.3s.
 Conclusion: almost certainly a Cowork-browser streaming-reveal (`$RC` swap) artifact, not a real-user
-bug. **If you see it: confirm the page is SSR-correct (raw fetch), note it as the known Cowork-browser
+bug. ⚠ **2026-10-04: the same signature on `/nba-top-shot/pack/dist/901` and `/4184` in
+Claude-in-Chrome (Trevor's signed-in Chrome), including after an in-page `location.reload()`:** "Sales
+History", "What drives the remaining EV" and "Top pulls by EV" sat in `div#S:0` / `div#S:1` (hidden),
+templates `B:0` / `B:1` still in place, `window.$RC` defined and two `$RC(` calls present in the served
+HTML, no console error. The same two URLs in a clean anonymous Playwright Chromium revealed every
+section (0 hidden segments, 0 errors). So the artifact is not specific to the `loading.tsx` routes:
+any page that streams Suspense boundaries can show it in an automated, signed-in Chrome. Escalate
+only if a NORMAL signed-in browser shows it. Check with `div[hidden][id^="S:"]` (non-zero = unswapped),
+not by searching for headings. **If you see it: confirm the page is SSR-correct (raw fetch), note it as the known Cowork-browser
 artifact, and move on. Only escalate if it reproduces in a normal signed-in browser.** In
 Claude-in-Chrome (2026-09-25) `/moment/<id>` correctly client-redirected to the canonical edition URL
 and revealed all sections — the "SCANNING…" string can sit in a hidden node while content is visibly
