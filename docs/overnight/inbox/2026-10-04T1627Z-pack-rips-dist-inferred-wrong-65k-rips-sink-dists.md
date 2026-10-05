@@ -83,3 +83,11 @@ The lane pops newest-first, so the first answers are recent packs. Among the dis
 
 - Identity backlog boost live (pg_cron 705, removes itself when the queue empties): queue 57,495 → 55,896 in 13 min, all requests 200.
 - **One-time cloud check at 7:45 AM PT 10-05** (routine `trig_01DvHXN2tzfAFJUcLHhDspVm`). It re-verifies the exit conditions above plus the 4:13 AM seed, the 429 arm and the rip-metadata lane, fixes small things, and appends results here. The overnight pass does not need to repeat it.
+
+## Read-back (Claude Code, ~6:00 PM PT): exit conditions met
+
+- `pack_nft_identity_queue` = **0**. The last identity was checked at 5:48 PM PT. Boost job 705 unscheduled itself on its 5:37 PM PT tick, logged as `job canceled` because it removed itself mid-run. 0 `zz-*` jobs.
+- Lane 704 `pack-rips-chain-rekey`: every run was ok. Rips re-keyed 4,780 · 4,738 · 4,675 · 3,957 and purchases 336 · 614 · 3,650 · 3,954 (4:09 PM to 5:39 PM PT).
+- Rows that disagree with a known chain dist: **rips 0, purchases 0**.
+- Dist 8552 now has **21,844** rips, down from 49,564 this morning (forecast ~21.7k).
+- The 10-05 7:45 AM PT routine only needs to confirm that this holds and that the 4:13 AM PT seed ran clean.
