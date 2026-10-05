@@ -50,8 +50,14 @@ export function isExpired(createdAt: string, now: number): boolean {
   return !Number.isFinite(t) || now - t > RELAY_TTL_MS
 }
 
-export async function postSignable(db: SupabaseClient, cosigner: string, signable: unknown): Promise<string> {
+/** Relay rows are kept a day (for debugging a failed run), then removed. */
+export const RELAY_KEEP_MS = 24 * 60 * 60 * 1000
+
+export async function postSignable(db: SupabaseClient, cosigner: string, signable: unknown, now: number): Promise<string> {
   const s = checkSignable(cosigner, signable)
+  // housekeeping: a row outlives its transaction by far; a failed cleanup is logged and never blocks a swap
+  const { error: cleanupError } = await db.from("swap_test_relay").delete().lt("created_at", new Date(now - RELAY_KEEP_MS).toISOString())
+  if (cleanupError) console.warn("[swap-test/relay] cleanup of old relay rows failed:", cleanupError.message)
   const { data, error } = await db.from("swap_test_relay").insert({ cosigner, signable: s }).select("id").single()
   if (error) throw error
   const id = (data as { id?: unknown } | null)?.id

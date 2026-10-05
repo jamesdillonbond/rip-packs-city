@@ -57,7 +57,7 @@ describe("/api/admin/swap-test", () => {
     lib.postSignable.mockResolvedValue("rid")
     const r = await route.POST(post({ action: "relay_post", cosigner: " 0xD96DC67AE64EE202 ", signable: { a: 1 } }))
     expect(await r.json()).toEqual({ id: "rid" })
-    expect(lib.postSignable).toHaveBeenCalledWith({ tag: "admin-db" }, "0xd96dc67ae64ee202", { a: 1 })
+    expect(lib.postSignable).toHaveBeenCalledWith({ tag: "admin-db" }, "0xd96dc67ae64ee202", { a: 1 }, expect.any(Number))
     lib.postSignature.mockResolvedValue(undefined)
     const s = await route.POST(post({ action: "relay_sign", id: "rid", signature: "ab", key_id: 2 }))
     expect(await s.json()).toEqual({ ok: true })

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { checkSignable, getRelay, isExpired, postSignature, RELAY_TTL_MS } from "@/lib/swap-test/relay"
+import { checkSignable, getRelay, isExpired, postSignable, postSignature, RELAY_KEEP_MS, RELAY_TTL_MS } from "@/lib/swap-test/relay"
 import { describeSignable, parseIds, waitForRelaySignature } from "@/lib/swap-test/view"
 import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
 
@@ -50,6 +50,42 @@ function fakeDb(row: Record<string, unknown> | null, updated: unknown[] = [{ id:
   })
   return { db: { from: () => chain } as never, update, chain }
 }
+
+describe("swap-test/relay — storing a request", () => {
+  function storeDb(cleanupError: { message: string } | null) {
+    const calls: string[] = []
+    const lt = vi.fn(async () => ({ error: cleanupError }))
+    const db = {
+      from: () => ({
+        delete: () => (calls.push("delete"), { lt }),
+        insert: (row: unknown) => (calls.push("insert"), { select: () => ({ single: async () => ({ data: { id: ID, row }, error: null }) }) }),
+      }),
+    }
+    return { db: db as never, lt, calls }
+  }
+  const now = Date.parse("2026-10-04T12:00:00Z")
+
+  it("removes rows older than a day, then stores the request", async () => {
+    const f = storeDb(null)
+    expect(await postSignable(f.db, B, signable, now)).toBe(ID)
+    expect(f.calls).toEqual(["delete", "insert"])
+    expect(f.lt).toHaveBeenCalledWith("created_at", new Date(now - RELAY_KEEP_MS).toISOString())
+  })
+
+  it("a failed cleanup is logged and never blocks the swap", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const f = storeDb({ message: "permission denied" })
+    expect(await postSignable(f.db, B, signable, now)).toBe(ID)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("cleanup"), "permission denied")
+    warn.mockRestore()
+  })
+
+  it("refuses a non-swap signable before touching the table", async () => {
+    const f = storeDb(null)
+    await expect(postSignable(f.db, B, { ...signable, cadence: "x" }, now)).rejects.toMatchObject({ code: "wrong_cadence" })
+    expect(f.calls).toEqual([])
+  })
+})
 
 describe("swap-test/relay — signatures", () => {
   const fresh = { id: ID, cosigner: B, signable, signature: null, key_id: null, created_at: "2026-10-03T12:00:00Z", signed_at: null }

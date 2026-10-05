@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ landed: await verifySwap(body.plan) })
       case "relay_post": {
         const cosigner = typeof body.cosigner === "string" ? body.cosigner.trim().toLowerCase() : ""
-        return NextResponse.json({ id: await postSignable(supabaseAdmin, cosigner, body.signable) })
+        return NextResponse.json({ id: await postSignable(supabaseAdmin, cosigner, body.signable, Date.now()) })
       }
       case "relay_sign":
         await postSignature(supabaseAdmin, String(body.id ?? ""), body.signature, body.key_id, Date.now())
