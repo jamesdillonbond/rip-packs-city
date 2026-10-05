@@ -12,10 +12,9 @@ import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 // is_locked + lock_checked_at from the on-chain unlocked-id diff (whale-safe
 // chunked Cadence, lib/allday-lock.ts).
 //
-// There are only ~206 All Day wmc wallets (all seeded/saved), one Cadence diff
-// each, so a soft-deadline-bounded set per tick covers the whole population in
-// a few hours. Stalest-first ordering means the frozen (never-checked) rows are
-// dated on the very first passes.
+// There are only a few hundred All Day wmc wallets (all seeded/saved), one
+// Cadence diff each. A wallet is re-walked once a day (REVERIFY_AFTER_MS, below);
+// stalest-first ordering means never-checked rows are dated on the next tick.
 //
 // Bearer INGEST_SECRET_TOKEN or CRON_SECRET. CRON-30S: real work runs in
 // after() and returns 202 immediately, matching lock-check-batch.
@@ -24,7 +23,19 @@ export const maxDuration = 300
 export const dynamic = "force-dynamic"
 
 const PIPELINE_NAME = "allday-lock-refresh"
-const WALLET_FETCH = 60 // candidate wallets pulled per tick; the soft deadline caps how many run
+// 2026-10-04: 60 → 12, and a wallet is re-verified only once its oldest check is
+// REVERIFY_AFTER_MS old. Since the 09-28 paging fix every walk stamps EVERY row in
+// the wallet, and at 60 wallets/tick the whole population (239 wallets, 428,896
+// rows) was re-walked every ~4 h: ~2.6M lock_checked_at writes/day (≈320k before
+// 09-28) for 0–6 flips per tick. lock_checked_at sits in four indexes, so each
+// stamp is a non-HOT update touching all 20 wallet_moments_cache indexes — two of
+// them were back under 60% leaf density within 2 h of the weekly REINDEX and the
+// 10-04 wmc-reindex-verify failed. One pass a day keeps the readers' 7-day promise
+// (LOCK_MAX_AGE_DAYS) with 6× margin. Never-checked rows (NULL) are still due at
+// once, and 12/tick (288/day of capacity) spreads the passes across the day
+// instead of re-walking the population in one burst.
+const WALLET_FETCH = 12 // candidate wallets pulled per tick; the soft deadline caps how many run
+const REVERIFY_AFTER_MS = 24 * 3600_000
 // 2026-09-28: 270 s → 200 s. A wallet now walks the chain in a few calls, but a
 // whale's write phase (tens of thousands of stamped rows) runs AFTER its walk,
 // so a wallet started at 270 s could still be writing at the 300 s wall. The
@@ -128,7 +139,14 @@ async function runBatch(startedAtIso: string): Promise<void> {
     return
   }
 
-  const candidates: Array<{ wallet_address: string }> = wallets ?? []
+  // Stalest-first, so a wallet checked inside REVERIFY_AFTER_MS means every later
+  // one was too. A missing/NULL oldest_check is a never-checked row: due.
+  const reverifyCutoff = started - REVERIFY_AFTER_MS
+  const fetched: Array<{ wallet_address: string; oldest_check?: string | null }> = wallets ?? []
+  const candidates = fetched.filter(
+    (w) => w.oldest_check == null || Date.parse(w.oldest_check) < reverifyCutoff
+  )
+  const walletsFresh = fetched.length - candidates.length
   let walletsProcessed = 0
   let walletsDeferred = 0
   let rowsStamped = 0
@@ -202,6 +220,7 @@ async function runBatch(startedAtIso: string): Promise<void> {
       wallets_failed: errors.length,
       wallets_deferred: walletsDeferred,
       wallets_candidate: candidates.length,
+      wallets_fresh: walletsFresh,
       rows_examined: rowsExamined,
       write_errors: writeErrors,
       max_wallet_ms: maxWalletMs,

@@ -238,6 +238,51 @@ describe("allday-lock-refresh-batch — remaining branches", () => {
     expect(log.p_rows_skipped).toBeGreaterThan(0)
   })
 
+  // 2026-10-04: re-walking every wallet every ~4 h re-stamped all 428,896 All Day
+  // rows ~6×/day (non-HOT, 20 indexes) and the weekly wmc REINDEX could not keep up.
+  it("walks only wallets whose oldest check is a day old or never made — a fresh wallet is not re-stamped", async () => {
+    const now = Date.now()
+    const spy = install({
+      "rpc:get_allday_lock_refresh_wallets": {
+        data: [
+          { wallet_address: "0xnever", oldest_check: null },
+          { wallet_address: "0xstale", oldest_check: new Date(now - 25 * 3600_000).toISOString() },
+          { wallet_address: "0xfresh", oldest_check: new Date(now - 3 * 3600_000).toISOString() },
+        ],
+        error: null,
+      },
+    })
+    await POST(req())
+    await runDeferred()
+    const walked = state.refresh.mock.calls.map((c) => (c as unknown[])[0])
+    expect(walked).toEqual(["0xnever", "0xstale"])
+    expect(walked).not.toContain("0xfresh")
+    const log = terminalLog(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: true, p_rows_found: 2 })
+    expect(log.p_extra.wallets_fresh).toBe(1)
+  })
+
+  it("asks the picker for a small per-tick slice, not the whole population", async () => {
+    const spy = install({})
+    await POST(req())
+    await runDeferred()
+    const pick = spy.rpcCalls.find((c) => c.name === "get_allday_lock_refresh_wallets")
+    expect((pick?.args as { p_limit: number }).p_limit).toBeLessThanOrEqual(12)
+  })
+
+  it("an all-fresh slice is a clean ok run that writes nothing", async () => {
+    const spy = install({
+      "rpc:get_allday_lock_refresh_wallets": {
+        data: [{ wallet_address: "0xfresh", oldest_check: new Date().toISOString() }],
+        error: null,
+      },
+    })
+    await POST(req())
+    await runDeferred()
+    expect(state.refresh).not.toHaveBeenCalled()
+    expect(terminalLog(spy.rpcCalls)).toMatchObject({ p_ok: true, p_rows_found: 0, p_rows_written: 0 })
+  })
+
   it("logs a clean empty run when no wallets are stale", async () => {
     const spy = install({ "rpc:get_allday_lock_refresh_wallets": { data: [], error: null } })
     await POST(req())
