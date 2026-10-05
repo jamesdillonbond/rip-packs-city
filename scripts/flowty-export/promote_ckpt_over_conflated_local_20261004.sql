@@ -78,3 +78,46 @@ ins AS (
   RETURNING id, transaction_hash, nft_id, edition_id)
 SELECT ins.id AS sales_id, ins.transaction_hash, ins.nft_id, ins.edition_id, r.ck_ext, r.local_base, r.spork
   FROM ins JOIN r ON r.tx_hash = ins.transaction_hash AND r.nft_id = ins.nft_id;
+
+-- Same class in the Dapper-contract lane (verify_detail.method = 'tx_dapper'; parties from the chain, as
+-- promote_dapper_tx_verified_sales takes them): 26 Top Shot rows, none within ±10 min of a same-NFT row.
+-- Revert: DELETE FROM public.sales s USING flowty_archive.audit_20261004_ckpt_over_local_sales_dapper a WHERE s.id = a.sales_id;
+CREATE TABLE flowty_archive.audit_20261004_ckpt_over_local_sales_dapper AS
+WITH m AS (
+  SELECT i.*, lower(i.verify_detail->>'buyer') AS v_buyer, lower(i.verify_detail->>'seller') AS v_seller,
+         CASE WHEN i.chain_event LIKE '%OffersV2%' THEN 'topshot'
+              WHEN i.verify_detail->>'custom_id' = 'DAPPER_MARKETPLACE' THEN 'topshot'
+              WHEN lower(i.verify_detail->>'custom_id') = 'flowty' THEN 'flowty'
+              WHEN i.verify_detail->>'custom_id' = 'flowverse-nft-marketplace' THEN 'flowverse' END AS mkt
+    FROM flowty_archive.flowty_index_sales i
+   WHERE i.verify_status = 'chain_sealed' AND i.verify_detail->>'method' = 'tx_dapper'
+     AND i.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+     AND i.payment_vault ~ '\.(DapperUtilityCoin|FiatToken|USDCFlow)\.Vault$' AND i.price > 0 AND i.nft_id ~ '^[0-9]{1,18}$'
+     AND NOT EXISTS (SELECT 1 FROM public.sales s WHERE s.transaction_hash = i.tx_hash AND s.nft_id = i.nft_id)),
+k AS (
+  SELECT m.*, x.spork, x.serial ck_serial,
+         x.a || ':' || x.b || CASE WHEN COALESCE(sub.a, 0) > 0 THEN '::' || sub.a ELSE '' END AS ck_ext, t.base_external_id AS local_base
+    FROM m
+    JOIN LATERAL (SELECT * FROM public.checkpoint_nft_meta m0 WHERE m0.c = 'ts' AND m0.nft_id = m.nft_id::bigint ORDER BY m0.spork DESC LIMIT 1) x ON true
+    LEFT JOIN public.checkpoint_nft_meta sub ON sub.c = 'tssub' AND sub.nft_id = m.nft_id::bigint AND sub.spork = x.spork
+    JOIN public.topshot_moment_subeditions t ON t.nft_id = m.nft_id
+   WHERE t.base_external_id IS DISTINCT FROM x.a || ':' || x.b),
+r AS (
+  SELECT k.*, e.id AS edition_id
+    FROM k JOIN public.editions e ON e.collection_id = k.collection_id AND e.external_id = k.ck_ext
+   WHERE k.ck_serial > 0 AND k.ck_serial <= COALESCE(e.circulation_count, 2147483647)
+     AND k.mkt IS NOT NULL AND k.v_buyer ~ '^0x[0-9a-f]{16}$' AND k.v_seller ~ '^0x[0-9a-f]{16}$' AND k.v_buyer <> k.v_seller
+     AND NOT EXISTS (SELECT 1 FROM public.sales s WHERE s.collection = 'nba_top_shot' AND s.nft_id = k.nft_id
+                       AND s.sold_at BETWEEN k.block_ts - interval '10 minutes' AND k.block_ts + interval '10 minutes')),
+ins AS (
+  INSERT INTO public.sales (moment_id, edition_id, collection_id, serial_number, price_usd, price_native, currency,
+                            seller_address, buyer_address, marketplace, transaction_hash, block_height, sold_at,
+                            nft_id, collection, source)
+  SELECT NULL, r.edition_id, r.collection_id, r.ck_serial, r.price, r.price,
+         CASE WHEN r.payment_vault LIKE '%DapperUtilityCoin%' THEN 'DUC' ELSE 'USDC' END,
+         r.v_seller, r.v_buyer, r.mkt, r.tx_hash, NULL, r.block_ts, r.nft_id, 'nba_top_shot', 'dapper_chain_tx_v1'
+    FROM r
+  ON CONFLICT DO NOTHING
+  RETURNING id, transaction_hash, nft_id, edition_id)
+SELECT ins.id AS sales_id, ins.transaction_hash, ins.nft_id, ins.edition_id, r.ck_ext, r.local_base, r.spork
+  FROM ins JOIN r ON r.tx_hash = ins.transaction_hash AND r.nft_id = ins.nft_id;
