@@ -344,6 +344,14 @@ Tests: `cadence/tests/RPCGiveawayPacks_test.cdc` has 11, and they gate CI. Plant
 
 **Until the contract is deployed**, today's v1 (claim by Top Shot username → Deliver all into the Dapper account) keeps working unchanged.
 
+### 10.1 Status, 2026-10-04 (PT): the claim half shipped WITHOUT the contract
+
+- **Shipped (v1 + Flow Wallet):** the claim page offers "Claim with Flow Wallet" beside the username box. The winner connects, the wallet signs FCL's **account proof** (verified on mainnet for this RPC user and this site, `lib/giveaways/claim-proof.ts`), and they choose the destination: their Flow Wallet or a redeemed linked account, each with its full address and the Dapper one called out. Delivery is still the sponsor's one-signature **Deliver all**. The decision "Wallet connect on a public page" above was taken (Trevor: "Keep going"); the guard names the exception.
+- **Verified live:** Trevor's real Flow Wallet sign-in passed the proof check and listed his accounts (test2, 10-03 evening). The test2 delivery from his **iPhone** landed both moments in the winner's account (~7:28 AM PT 10-04), after two CSP additions the phone path needed (`*.wallet.flow.com` pre-authz, `lilico.app` fee payer).
+- **Open:** Deliver all from **desktop with the Flow Wallet browser extension** stalls at "waiting for your wallet" ([known-issues #172](../reference/known-issues.md)); the page now prints a diagnostic after 20 s. Deliver from the phone meanwhile.
+- **Still gated:** the `RPCGiveawayPacks` contract (audit → dedicated deploy account → deploy). Until then, "open" is the reveal on the page, and the moments move with Deliver all.
+- **Rule worth keeping:** if the winner picks the account the pool's moments come FROM (the sponsor testing on their own drop), `claim_giveaway_pack` refuses it by design.
+
 ## Sources
 
 - Vaultopolis drops API (live, 2026-09-29, via `pg_net`); CoinGecko FLOW/USD 90-day chart.

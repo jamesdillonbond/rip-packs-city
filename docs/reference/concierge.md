@@ -8,7 +8,14 @@ CLAUDE.md concierge rule #1 points here. **Admin-signed giveaway delivery** is t
 
 - **Who:** the giveaway ADMIN only, on `/admin/giveaways` (RPC_ADMIN_TOKEN). Users still have no wallet sign-in, no cart, no gifting, no trading anywhere, and the concierge must keep saying so.
 - **What:** "Deliver all" plans a batch (`lib/giveaways/deliver.ts`), SIMULATES it on mainnet as a script, and the admin's OWN Flow Wallet (a Hybrid Custody parent of their Dapper account) signs `DELIVER_BATCH_CADENCE` in the browser (`lib/giveaways/admin-wallet.ts`). RPC never holds a key, never signs, never custodies a moment.
-- **Guards:** `__tests__/no-client-wallet-connect.test.ts` allows exactly `lib/giveaways/admin-wallet.ts`, imported only by `app/admin/giveaways/AdminGiveawaysClient.tsx`; the wallet-picker CSP host is added for `/admin/giveaways` only (`proxy.ts walletDiscoveryAllowed`).
+- **Guards:** `__tests__/no-client-wallet-connect.test.ts` pins `lib/giveaways/flow-wallet-connect.ts` as the ONE module that opens a wallet picker, and names its importers (`admin-wallet.ts`, `claim-wallet.ts`, `lib/swap-test/swap-wallet.ts`), each pinned to the page that uses it. The wallet CSP hosts are added only for `WALLET_DISCOVERY_PAGES` in `proxy.ts` (`/admin/giveaways`, `/giveaways`, `/admin/swap-test`): fcl-discovery, WalletConnect, the access node's WebSocket, and Flow Wallet's own API (`*.wallet.flow.com` pre-authz, `lilico.app` fee payer, and its logo in img-src). Every other path is asserted free of them (`__tests__/proxy-dispatch.test.ts`).
+
+### The claim page connects Flow Wallet, but never signs a transaction (Trevor, 2026-10-03)
+
+- **Who/what:** a signed-in WINNER on `/giveaways/<slug>` may tap "Claim with Flow Wallet" (`lib/giveaways/claim-wallet.ts`) to choose where their pack goes: their Flow Wallet or an account it has linked (Hybrid Custody, REDEEMED, read on chain). Typing a Top Shot username still works.
+- **Proof, not trust:** the wallet signs FCL's standard ACCOUNT PROOF in the connect popup (a sign-in: no transaction, no fee). `lib/giveaways/claim-proof.ts` issues a stateless nonce (HMAC of the RPC user id + issue time, 10 min) and verifies on mainnet with `FCLCrypto.verifyAccountProofSignatures`, encoding the message with the route's OWN origin. A bare `wallet` address is refused. First real-wallet pass: Trevor, test2, 2026-10-03 evening.
+- **Labels:** each account shows its FULL address; a Dapper account is called out as "Dapper wallet" from an on-chain flag (it publishes a Dapper Utility Coin receiver), never from its name.
+- **The concierge's line** (support-chat system prompt) says the claim page is the one optional connect and that it asks for a sign-in approval only. Keep the two in step.
 - **Do not widen it** (a user-facing gift, a second admin surface, a server-held key) without Trevor saying so. Background: `docs/strategy/free-packs-reassessment-2026-09-29.md` §7–8.
 
 ### Second exception: the admin-only two-signer swap TEST (Trevor, 2026-10-03: "Do it all", approving trading-revisit §6)

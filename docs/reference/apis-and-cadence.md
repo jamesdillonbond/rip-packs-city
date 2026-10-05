@@ -410,6 +410,7 @@ The QA pass wrote down "nothing to do on our side" for two catalog gaps. Both an
 - Golazos — `refresh_golazos_ask_fmv_from_listings()`, pg_cron 614 `55 */2`, counts a listing only if `COALESCE(verified_at, listed_at)` is within 6 h (a stalled reconciler stops pricing; proven live: priced 0 with 3,336 unverified before the first stamp). `fmv_from_cached_listings` (Flowty cache) prices no Golazos or All Day.
 - All Day — `refresh_allday_ask_fmv_from_listings()`, job 19, ghost-filtered by `allday_listings_sold_after_listing`. Both lanes re-derive their OWN rows when the floor moves either way (`20260925231149`).
 
+<<<<<<< Updated upstream
 ## FCL in the browser: two signers, one session per tab (2026-10-04, PT)
 
 Learned building `/admin/swap-test` (handoff: `docs/strategy/trading-revisit-2026-10-03.md` §9).
@@ -419,3 +420,14 @@ Learned building `/admin/swap-test` (handoff: `docs/strategy/trading-revisit-202
 - ⚠ **One Flow Wallet EXTENSION holding both accounts may sign with whichever account is ACTIVE**, and the payer's envelope approval can come after the co-signer's. Run the second signer in another browser profile or on the phone. Not yet measured live.
 - **A split-key account (e.g. Blocto's 999 + 1) can't sign alone.** Check for one active key of weight ≥ 1000 (`GET /v1/accounts/{addr}?expand=keys`) before asking it to.
 
+=======
+
+## Flow Wallet from a web page: account proof, linked accounts, and the hosts it calls (2026-10-03/04, PT)
+
+Learned shipping the giveaway claim page and Deliver all (`lib/giveaways/claim-proof.ts`, `linked-accounts.ts`, `admin-wallet.ts`). Each was checked on mainnet.
+
+- **Account proof (prove a wallet is the user's, no transaction):** set `fcl.accountProof.resolver` to return `{ nonce }` (≥ 64 hex) before `fcl.authenticate()`, and `unauthenticate()` first or a cached session comes back with no proof. The proof is in `user.services` (`type: "account-proof"`, `data: { address, nonce, signatures }`). FCL signs `window.location.origin` as the appIdentifier. Verify with `FCLCrypto.verifyAccountProofSignatures` at `0xb4b82a1c9d21d284`. The message is RLP `[appIdentifier, 8-byte address, nonce]` **without** the domain tag (the contract prepends `FCL-ACCOUNT-PROOF-V0.0`), byte-equal to `fcl.WalletUtils.encodeAccountProof(data, false)`. Using `verifyUserSignatures` instead checks a different message and always fails. Negative control: a forged signature returns `Bool false`. Positive control: Trevor's real Flow Wallet, 10-03.
+- **Linked accounts:** use the parent's `HybridCustody.ManagerPublic.getChildAddresses()`, kept only where the child's own `OwnedAccountPublic.getRedeemedStatus(addr: parent) == true` (never `isChildOf`: an offered link counts there). The name comes from `manager.getChildAccountDisplay(address:)`, else the child's own `MetadataViews.Display` (Trevor's: "Dapper Wallet", "Creator Hub"). **Dapper = the account publishes `/public/dapperUtilityCoinReceiver`.** Decide it from that flag, never from the name.
+- **Hosts a Flow Wallet signature calls from THE PAGE** (CSP `connect-src`): fcl-discovery, WalletConnect relay/verify/rpc, `wss://rest-mainnet.onflow.org` (seal watch), `*.wallet.flow.com` (pre-authz), and **`lilico.app`** (the fee payer, still on Flow Wallet's former domain); its logo is in `img-src`. Each missing host failed on iPhone as a bare "Load failed", one at a time. The page's network trace now names the host (`startNetworkTrace`).
+- **Desktop extension (`EXT/RPC`) is unresolved:** see known-issues #172. Over WalletConnect (`WC/RPC`) the approval goes to the PHONE app, so a desktop page waiting on it shows nothing. The admin console now says which channel it's waiting on.
+>>>>>>> Stashed changes
