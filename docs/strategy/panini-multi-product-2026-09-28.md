@@ -432,5 +432,12 @@ run), aged/held alternating in `priority_pskus`, `panini_pack_ev_board` models o
    cap is an engine change (`panini-1.3.0`), so backtest it against `panini_published_fmv_backtest` first. Read:
    `with latest as (select distinct on (edition_id) * from panini_fmv_snapshots order by edition_id, computed_at desc)
    select count(*), sum(fmv_usd) from latest where confidence='ASK_ONLY' and fmv_usd >= 10000`.
+5c. **Watch: the 10 PM PT run of 10-04 was killed before it logged a line.** `RPC Panini Ingest` Last Result `-1073741510`
+   (`0xC000013A`, console closed or Ctrl+C), with no `run start` in `~/panini-run.log`. Every run 10 AM → 8 PM that day logged start
+   and end (`rc=0`). Task Scheduler's Operational log is disabled and the System log is empty 9:50–10:15 PM, so the cause is
+   unrecorded. NOT the 10-02 `.bat`-edit hang (tooling-gotchas.md): nothing was running, and nothing edited the `.bat`.
+   Recovered by a manual `schtasks /run` at ~11:08 PM PT (healthy: CDP + preflight 202, `complete=true`, full enum, then
+   the walk). **If it recurs:** enable the Operational log (`wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true`,
+   needs admin) and correlate with a logoff, a Windows Update restart or an interactive console close at that minute.
 6. **Not doable from the cloud:** anything about the live site (Panini 403s data-center traffic incl. `pg_net`) — instrument
    the runner and read its marker.
