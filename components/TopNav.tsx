@@ -82,6 +82,11 @@ export default function TopNav() {
           <Link
             key={l.href}
             href={l.href}
+            // 2026-10-04: /analytics is sign-in only, so for a signed-out visitor
+            // Next's viewport prefetch fetched it on every page and got 307 → /login
+            // (seen in an anonymous Playwright crawl). The link stays — it is the way
+            // in — but it is not preloaded for someone who would only be redirected.
+            prefetch={isAnalytics && !signedIn ? false : undefined}
             className={
               "rounded-md md:px-1 lg:px-2.5 py-1.5 whitespace-nowrap transition-colors font-medium md:tracking-normal lg:tracking-wide " +
               (active

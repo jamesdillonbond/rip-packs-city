@@ -143,7 +143,7 @@ export default function ParallelPremiumsBoardClient({
         <div className="rpc-label" style={{ color: "var(--rpc-red)", letterSpacing: "0.12em", fontSize: 11 }}>
           SURFACE · LIVE
         </div>
-        <h1 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px, 5vw, 44px)", margin: "6px 0 10px", lineHeight: 1.02 }}>
+        <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "clamp(28px, 5vw, 44px)", letterSpacing: "0.5px", textTransform: "uppercase", margin: "6px 0 10px", lineHeight: 1.02 }}>
           Parallel Premiums
         </h1>
         <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 720, fontSize: 15, lineHeight: 1.5 }}>
