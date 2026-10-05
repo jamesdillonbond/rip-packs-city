@@ -424,5 +424,13 @@ run), aged/held alternating in `priority_pskus`, `panini_pack_ev_board` models o
    Many secondary packs publish GUARANTEED contents (`raw.pack_label`, e.g. "3 Red Mosaic Parallel NFTs") — deterministic
    slots, so EV = Σ slots × that family's sale-priced value. Generalize `refresh_panini_pack_ev_sales_model` per product
    (config, not a copy) and list each modeled pack id in the board's `model_set_id` (chain-strategy.md rule).
+5b. **DECISION FOR TREVOR (filed 2026-10-04 ~11 PM PT): ASK_ONLY prices come from ONE listing, and a few dominate the totals.**
+   13 ask-only editions at ≥ $10k sum to **$1.03M, 27% of all Panini FMV dollars ($3.8M)**. Worst: Ousmane Dembélé Tiger
+   Stripe /12 (`packcard-2332_486999_12688101_37`) has one listing at $1,000,000 and no sales, so its FMV is
+   0.5 × $1,000,000 = **$500,000**. Options: leave as is (the price is labelled ASK_ONLY); cap ASK_ONLY at a multiple of its
+   parallel family's sale-backed median; or keep ASK_ONLY prices out of aggregates (pack EV, collection totals). Any
+   cap is an engine change (`panini-1.3.0`), so backtest it against `panini_published_fmv_backtest` first. Read:
+   `with latest as (select distinct on (edition_id) * from panini_fmv_snapshots order by edition_id, computed_at desc)
+   select count(*), sum(fmv_usd) from latest where confidence='ASK_ONLY' and fmv_usd >= 10000`.
 6. **Not doable from the cloud:** anything about the live site (Panini 403s data-center traffic incl. `pg_net`) — instrument
    the runner and read its marker.
