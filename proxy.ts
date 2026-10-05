@@ -904,6 +904,21 @@ export function isPublicPath(pathname: string, method: string): boolean {
     return true
   }
 
+  // /<collection>/packs/simulator/<distId> — the per-row "Simulate" CTA, anon-public 2026-10-04.
+  // The public /insights/pack-sniper board (every row) and the public /<collection>/packs tab
+  // (its table) both link here, and an anonymous click got 307 → /login: a link crawl of the
+  // public surfaces found 19 such CTAs on the Pack Sniper alone. The page is a server shell over
+  // a client that calls /api/pack-simulator (allowlisted below) and samples the PUBLIC drop pool
+  // in the browser — no session, no wallet, nothing personal, the same anon-safety class the
+  // 2026-07-17 audit cleared for /packs. One segment exactly, GET/HEAD only, the same five Flow
+  // slugs as the feature-tab rule above.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc)\/packs\/simulator\/[^/]+$/.test(pathname)
+  ) {
+    return true
+  }
+
   // Candy MLB's Market tab — anon-public, 2026-09-12. Collection joined it
   // 2026-09-19; see the dated note below.
   //
@@ -1058,6 +1073,10 @@ export function isPublicPath(pathname: string, method: string): boolean {
     // ZERO 307s and renders 54 rows, verified live. Widening the allowlist for a route with no
     // caller is how the surface grows without anyone deciding to grow it.
     "/api/pinnacle-sniper-feed", "/api/pack-listings",
+    // 2026-10-04: the simulator's only data call (see the page rule above). GET-only, no session
+    // read, service-role call of get_pack_for_simulator over the public drop pool — measured 14 ms
+    // mean / 55 ms and ~4.9k buffers on the largest dist (8552). /api/* stays rate-limited.
+    "/api/pack-simulator",
     "/api/allday-set-progress",
     // 🚨 2026-09-20: `/api/pinnacle-set-progress` shipped the SAME DAY as
     // Pinnacle's Sets tab and was missing from this set — the identical shape

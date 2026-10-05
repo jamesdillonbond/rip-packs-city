@@ -28,6 +28,11 @@ describe("anon-public pages can reach the APIs they actually call", () => {
     // Only 26 because most tiles carry a direct CDN URL and this is the fallback, so the failure
     // is invisible on a spot check and permanent for the Moments that need it.
     ["/nba-top-shot/collection", ["/api/moment-thumbnail", "/api/collection-moments"]],
+    // 2026-10-04, fifth instance, one hop further: the PAGE a public board links to was gated.
+    // Every Pack Sniper row and every /packs table row carries "Simulate" →
+    // /<collection>/packs/simulator/<distId>; signed out, that was 307 → /login.
+    ["/nba-top-shot/packs/simulator/1427", ["/api/pack-simulator"]],
+    ["/nfl-all-day/packs/simulator/1", ["/api/pack-simulator"]],
   ]
 
   it.each(PAGE_TO_APIS)("%s is anon-public and so are its feeds", (page, apis) => {
@@ -45,6 +50,11 @@ describe("anon-public pages can reach the APIs they actually call", () => {
     expect(isPublicPath("/api/pack-listings", "POST")).toBe(false)
     expect(isPublicPath("/api/pinnacle-sniper-feed", "POST")).toBe(false)
     expect(isPublicPath("/api/moment-thumbnail", "POST")).toBe(false)
+    expect(isPublicPath("/api/pack-simulator", "POST")).toBe(false)
+    expect(isPublicPath("/nba-top-shot/packs/simulator/1427", "POST")).toBe(false)
+    // exactly one segment after /simulator/, and only the five published Flow slugs
+    expect(isPublicPath("/nba-top-shot/packs/simulator/1427/x", "GET")).toBe(false)
+    expect(isPublicPath("/candy-mlb/packs/simulator/1", "GET")).toBe(false)
   })
 
   // ⚠ Deliberately NOT opened: both also 307, and neither has an anon-public caller.
