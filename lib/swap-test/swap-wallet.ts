@@ -27,6 +27,12 @@ import type { SwapPlan } from "@/lib/swap-test/plan"
 
 export { connectFlowWallet, disconnectFlowWallet } from "@/lib/giveaways/flow-wallet-connect"
 
+// One connected wallet PER TAB. FCL keeps the current user in localStorage by default,
+// which every tab of a browser profile shares, so a co-signer tab connecting wallet B
+// would overwrite the stored session of the tab waiting on wallet A. Set before FCL's
+// current-user actor first spawns (it reads the provider once, at spawn).
+if (typeof window !== "undefined") fcl.config().put("fcl.storage", fcl.SESSION_STORAGE)
+
 /* eslint-disable @typescript-eslint/no-explicit-any -- FCL's account/signable objects are untyped */
 
 export const sansPrefix = (a: string) => String(a ?? "").toLowerCase().replace(/^0x/, "")

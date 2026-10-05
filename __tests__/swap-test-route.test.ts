@@ -5,9 +5,9 @@ import { NextRequest } from "next/server"
 // reaches its helper with the body's fields; a helper's SwapTestError keeps its status
 // and code (a 410 expiry never becomes a 500, a 502 chain failure never a 200).
 
-const lib = vi.hoisted(() => ({ planSwap: vi.fn(), getRelay: vi.fn(), postSignable: vi.fn(), postSignature: vi.fn() }))
+const lib = vi.hoisted(() => ({ planSwap: vi.fn(), verifySwap: vi.fn(), getRelay: vi.fn(), postSignable: vi.fn(), postSignature: vi.fn() }))
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { tag: "admin-db" } }))
-vi.mock("@/lib/swap-test/plan", async (orig) => ({ ...(await orig<typeof import("@/lib/swap-test/plan")>()), planSwap: lib.planSwap }))
+vi.mock("@/lib/swap-test/plan", async (orig) => ({ ...(await orig<typeof import("@/lib/swap-test/plan")>()), planSwap: lib.planSwap, verifySwap: lib.verifySwap }))
 vi.mock("@/lib/swap-test/relay", () => ({ getRelay: lib.getRelay, postSignable: lib.postSignable, postSignature: lib.postSignature }))
 
 import * as route from "@/app/api/admin/swap-test/route"
@@ -62,6 +62,13 @@ describe("/api/admin/swap-test", () => {
     const s = await route.POST(post({ action: "relay_sign", id: "rid", signature: "ab", key_id: 2 }))
     expect(await s.json()).toEqual({ ok: true })
     expect(lib.postSignature).toHaveBeenCalledWith({ tag: "admin-db" }, "rid", "ab", 2, expect.any(Number))
+  })
+
+  it("verify: reads the chain for the sealed plan", async () => {
+    lib.verifySwap.mockResolvedValue([{ id: "1", to: "0x2", held: true }])
+    const r = await route.POST(post({ action: "verify", plan: { a: 1 } }))
+    expect(await r.json()).toEqual({ landed: [{ id: "1", to: "0x2", held: true }] })
+    expect(lib.verifySwap).toHaveBeenCalledWith({ a: 1 })
   })
 
   it("GET returns the relay row", async () => {

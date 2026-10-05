@@ -14,9 +14,9 @@ import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { useAdminResource } from "@/lib/admin/use-admin-resource"
 import { errorText } from "@/lib/giveaways/view-format"
-import type { SwapPlan } from "@/lib/swap-test/plan"
+import type { LandedMoment, SwapPlan } from "@/lib/swap-test/plan"
 import type { RelayRow } from "@/lib/swap-test/relay"
-import { describeSignable, parseIds, waitForRelaySignature } from "@/lib/swap-test/view"
+import { describeSignable, parseIds, swapBackForm, waitForRelaySignature } from "@/lib/swap-test/view"
 import { coSign, connectFlowWallet, disconnectFlowWallet, sendSwap } from "@/lib/swap-test/swap-wallet"
 
 const DISPLAY = "var(--font-display)"
@@ -127,6 +127,9 @@ function Initiator({ call }: { call: Call }) {
   const [wallet, setWallet] = useState<string | null>(null)
   const [link, setLink] = useState<string | null>(null)
   const [txId, setTxId] = useState<string | null>(null)
+  const [landed, setLanded] = useState<LandedMoment[] | null>(null)
+  const [verifyErr, setVerifyErr] = useState<string | null>(null)
+  const [donePlan, setDonePlan] = useState<SwapPlan | null>(null)
 
   const set = (k: keyof typeof FIRST_RUN) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setF({ ...f, [k]: e.target.value })
@@ -162,6 +165,27 @@ function Initiator({ call }: { call: Call }) {
     }
   }
 
+  // After the seal: read the chain. A failed read says so; it never reads as "not landed".
+  const verify = async (p: SwapPlan) => {
+    setVerifyErr(null)
+    setLanded(null)
+    const r = await call("/api/admin/swap-test", { method: "POST", body: JSON.stringify({ action: "verify", plan: p }) })
+    if (!r.ok || !Array.isArray(r.body?.landed)) return setVerifyErr(String(r.body?.error ?? `HTTP ${r.status}`))
+    setLanded(r.body.landed as LandedMoment[])
+  }
+
+  const swapBack = () => {
+    if (!donePlan) return
+    setF(swapBackForm(donePlan))
+    setPlan(null)
+    setTxId(null)
+    setLink(null)
+    setLanded(null)
+    setVerifyErr(null)
+    setDonePlan(null)
+    setMsg("Swap-back filled in: each side now gives what it received. Simulate, then sign as before.")
+  }
+
   const send = async () => {
     if (!plan) return
     setBusy(true)
@@ -182,7 +206,9 @@ function Initiator({ call }: { call: Call }) {
         },
       })
       setTxId(txId)
-      setMsg("Sealed on chain: the swap executed.")
+      setDonePlan(plan)
+      setMsg("Sealed on chain: the swap executed. Checking where each moment is now…")
+      await verify(plan)
     } catch (e) {
       setErr(errorText(e))
       setMsg(null)
@@ -219,6 +245,10 @@ function Initiator({ call }: { call: Call }) {
           Connect side A&apos;s wallet here. After you press Sign and send, a co-signer link appears: open it on the device that has side B&apos;s
           wallet (another browser or your phone), sign there, and this page submits the transaction.
         </p>
+        <p style={{ fontSize: 13, color: "var(--rpc-text-muted)" }}>
+          Use a <strong>different browser profile or your phone</strong> for side B. If both accounts sit in one Flow Wallet extension, the
+          extension may sign with whichever account is active, and wallet A may still have to approve after B.
+        </p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <button type="button" style={btn} onClick={connect} disabled={busy}>
             {wallet ? "Reconnect Flow Wallet" : "Connect Flow Wallet (side A)"}
@@ -243,6 +273,26 @@ function Initiator({ call }: { call: Call }) {
               {txId}
             </a>
           </p>
+        ) : null}
+        {landed ? (
+          <ul style={{ fontSize: 13, fontFamily: MONO, paddingLeft: 18 }}>
+            {landed.map((m) => (
+              <li key={m.id} style={{ color: m.held ? undefined : "var(--rpc-danger)" }}>
+                {m.id} {m.held ? "is now in" : "is NOT in"} {m.to}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {verifyErr ? <p style={{ color: "var(--rpc-danger)", fontSize: 13 }}>Couldn&apos;t confirm on chain: {verifyErr}</p> : null}
+        {donePlan ? (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" style={btn} onClick={() => verify(donePlan)}>
+              Verify again
+            </button>
+            <button type="button" style={btn} onClick={swapBack}>
+              Set up the swap back
+            </button>
+          </div>
         ) : null}
       </section>
       {msg ? <p style={{ fontSize: 13 }}>{msg}</p> : null}

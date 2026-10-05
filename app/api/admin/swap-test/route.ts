@@ -9,13 +9,14 @@
 //   POST { action: "relay_post", cosigner, signable } -> { id }     (initiator, wallet A)
 //   GET  ?relay=<id>                                  -> { relay }  (both sides)
 //   POST { action: "relay_sign", id, signature, key_id } -> { ok }  (co-signer, wallet B)
+//   POST { action: "verify", plan }                   -> { landed }  (after the seal: read the chain)
 
 import { NextRequest, NextResponse } from "next/server"
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth"
 import { apiErrorResponse } from "@/lib/api-error"
 import { supabaseAdmin } from "@/lib/supabase"
 import { FlowScriptError } from "@/lib/giveaways/flow-script"
-import { planSwap, SwapTestError } from "@/lib/swap-test/plan"
+import { planSwap, SwapTestError, verifySwap } from "@/lib/swap-test/plan"
 import { getRelay, postSignable, postSignature } from "@/lib/swap-test/relay"
 
 export const dynamic = "force-dynamic"
@@ -50,6 +51,8 @@ export async function POST(req: NextRequest) {
     switch (body?.action) {
       case "plan":
         return NextResponse.json({ plan: await planSwap(body.a, body.b) })
+      case "verify":
+        return NextResponse.json({ landed: await verifySwap(body.plan) })
       case "relay_post": {
         const cosigner = typeof body.cosigner === "string" ? body.cosigner.trim().toLowerCase() : ""
         return NextResponse.json({ id: await postSignable(supabaseAdmin, cosigner, body.signable) })

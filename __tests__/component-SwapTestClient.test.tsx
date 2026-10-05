@@ -107,11 +107,32 @@ describe("SwapTestClient — initiator", () => {
     expect(await screen.findByText(/unreadable response/)).toBeTruthy()
   })
 
+  let verified: unknown[] = []
+  let verifyReplies: Response[] = []
+  beforeEach(() => {
+    verified = []
+    verifyReplies = []
+  })
+
+  async function runToSeal() {
+    render(<SwapTestClient />)
+    fireEvent.click(screen.getByRole("button", { name: /simulate on mainnet/i }))
+    await screen.findByText(/every moment lands/)
+    fireEvent.click(screen.getByRole("button", { name: /connect flow wallet \(side a\)/i }))
+    await screen.findByText(A)
+    fireEvent.click(screen.getByRole("button", { name: /sign and send/i }))
+    await screen.findByText(/Sealed on chain/)
+  }
+
   it("simulates, connects wallet A, relays B's request, and reports the sealed transaction", async () => {
     const f = stub((_u, init) => {
       const b = body(init)
       if (b.action === "plan") return json({ plan: PLAN })
       if (b.action === "relay_post") return json({ id: "r1" })
+      if (b.action === "verify") {
+        verified.push(b.plan)
+        return verifyReplies.length ? verifyReplies.shift()! : json({ landed: [{ id: "27289790", to: B, held: true }] })
+      }
       return json({ relay: { ...RELAY, signature: "ab".repeat(64), key_id: 0 } })
     })
     wallet.connect.mockResolvedValue(A)
@@ -132,6 +153,53 @@ describe("SwapTestClient — initiator", () => {
     expect(screen.getByText(/swap-test\?relay=r1/)).toBeTruthy()
     expect(wallet.send.mock.calls[0][0]).toEqual(PLAN)
     expect(f.mock.calls.some((c) => String(c[0]).includes("?relay=r1"))).toBe(true)
+    // the seal is followed by a chain read of where each moment is now
+    expect(await screen.findByText(/27289790 is now in 0xd96dc67ae64ee202/)).toBeTruthy()
+    expect(verified).toEqual([PLAN])
+  })
+
+  function sealingStub() {
+    stub((_u, init) => {
+      const b = body(init)
+      if (b.action === "plan") return json({ plan: PLAN })
+      if (b.action === "relay_post") return json({ id: "r1" })
+      if (b.action === "verify") {
+        verified.push(b.plan)
+        return verifyReplies.length ? verifyReplies.shift()! : json({ landed: [{ id: "27289790", to: B, held: true }] })
+      }
+      return json({ relay: { ...RELAY, signature: "ab".repeat(64), key_id: 0 } })
+    })
+    wallet.connect.mockResolvedValue(A)
+    wallet.send.mockResolvedValue({ txId: "tx9" })
+  }
+
+  it("a chain read that fails after the seal says it couldn't confirm, and Verify again retries", async () => {
+    sealingStub()
+    verifyReplies = [json({ error: "Couldn't read 0xd96d on chain" }, 502)]
+    await runToSeal()
+    expect(await screen.findByText(/Couldn't confirm on chain/)).toBeTruthy()
+    expect(screen.queryByText(/is NOT in/)).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: /verify again/i }))
+    expect(await screen.findByText(/27289790 is now in/)).toBeTruthy()
+  })
+
+  it("names a moment that did not land", async () => {
+    sealingStub()
+    verifyReplies = [json({ landed: [{ id: "27289790", to: B, held: false }] })]
+    await runToSeal()
+    expect(await screen.findByText(/27289790 is NOT in 0xd96dc67ae64ee202/)).toBeTruthy()
+  })
+
+  it("sets up the swap back: same sides, each giving what it received", async () => {
+    sealingStub()
+    await runToSeal()
+    await screen.findByText(/27289790 is now in/)
+    fireEvent.click(screen.getByRole("button", { name: /set up the swap back/i }))
+    const inputs = [...document.querySelectorAll("main input")].map((i) => (i as HTMLInputElement).value)
+    expect(inputs).toEqual([A, "0xbd94cade097e50ac", "", B, B, "27289790"])
+    expect(screen.getByText(/Swap-back filled in/)).toBeTruthy()
+    expect((screen.getByRole("button", { name: /sign and send/i }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole("link", { name: "tx9" })).toBeNull()
   })
 
   it("warns when the connected wallet is not side A's signer, and shows a wallet failure", async () => {

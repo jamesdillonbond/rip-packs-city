@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
-import { canSignAlone, planSwap, readActiveKeyWeights, swapArgs, SwapTestError, validateSwapInput } from "@/lib/swap-test/plan"
+import { canSignAlone, planSwap, readActiveKeyWeights, swapArgs, SwapTestError, validateSwapInput, verifySwap } from "@/lib/swap-test/plan"
+import { swapBackForm } from "@/lib/swap-test/view"
 import { PROVIDER_CONTROLLERS_SCRIPT } from "@/lib/giveaways/deliver-cadence"
 import { SWAP_SIMULATION_SCRIPT } from "@/lib/swap-test/swap-cadence"
 import type { CdcValue } from "@/lib/giveaways/flow-script"
@@ -135,5 +136,28 @@ describe("swap-test/plan — can each signer sign on its own?", () => {
     expect(String(f.mock.calls[0][0])).toBe("https://rest-mainnet.onflow.org/v1/accounts/0xd96dc67ae64ee202?expand=keys")
     await expect(readActiveKeyWeights("0x1", (async () => new Response("x", { status: 500 })) as never)).rejects.toThrow("HTTP 500")
     await expect(readActiveKeyWeights("0x1", (async () => new Response("{}", { status: 200 })) as never)).rejects.toThrow("no key list")
+  })
+})
+
+describe("swap-test/plan — after the seal", () => {
+  const PLAN = { a: { ...A, kind: "linked" as const, ctl: "87" }, b: { ...B, kind: "own" as const, ctl: "0" } }
+
+  it("reads each moment at the OTHER side's account", async () => {
+    const read = vi.fn(async (_addr: string, ids: string[]) => Object.fromEntries(ids.map((id) => [id, { held: true, locked: false }])))
+    expect(await verifySwap(PLAN, { read })).toEqual([{ id: "27289790", to: B.source, held: true }])
+    expect(read).toHaveBeenCalledWith(B.source, ["27289790"])
+  })
+
+  it("a moment missing at its destination reads held:false; a failed read is a 502, never 'not landed'", async () => {
+    expect(await verifySwap(PLAN, { read: async () => ({}) })).toEqual([{ id: "27289790", to: B.source, held: false }])
+    await expect(verifySwap(PLAN, { read: async () => { throw new Error("HTTP 503") } })).rejects.toMatchObject({ status: 502, code: "chain_read_failed" })
+  })
+
+  it("refuses a malformed plan", async () => {
+    await expect(verifySwap({ a: A })).rejects.toMatchObject({ status: 400 })
+  })
+
+  it("the swap back keeps the sides and returns what each received", () => {
+    expect(swapBackForm(PLAN)).toEqual({ aSigner: A.signer, aSource: A.source, aIds: "", bSigner: B.signer, bSource: B.source, bIds: "27289790" })
   })
 })

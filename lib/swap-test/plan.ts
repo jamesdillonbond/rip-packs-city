@@ -172,3 +172,37 @@ export async function planSwap(rawA: unknown, rawB: unknown, deps: PlanDeps = {}
   }
   return plan
 }
+
+export interface LandedMoment {
+  id: string
+  /** The account the moment should now be in (the OTHER side's source). */
+  to: string
+  held: boolean
+}
+
+/**
+ * After the transaction SEALS: read the chain and confirm every moment sits in the
+ * other side's account. A read that fails throws (a 502) — it never reports a moment
+ * as "not landed", which would claim the swap failed when we simply couldn't look.
+ */
+export async function verifySwap(rawPlan: unknown, deps: Pick<PlanDeps, "read"> = {}): Promise<LandedMoment[]> {
+  const read = deps.read ?? readTopShotHoldings
+  const p = (rawPlan ?? {}) as { a?: unknown; b?: unknown }
+  const { a, b } = validateSwapInput(p.a, p.b)
+  const legs: Array<{ to: string; ids: string[] }> = [
+    { to: b.source, ids: a.ids },
+    { to: a.source, ids: b.ids },
+  ]
+  const out: LandedMoment[] = []
+  for (const leg of legs) {
+    if (!leg.ids.length) continue
+    let holdings: Record<string, Holding>
+    try {
+      holdings = await read(leg.to, leg.ids)
+    } catch (e) {
+      throw new SwapTestError(`Couldn't read ${leg.to} on chain (${e instanceof Error ? e.message : String(e)}). Try Verify again.`, 502, "chain_read_failed")
+    }
+    for (const id of leg.ids) out.push({ id, to: leg.to, held: holdings[id]?.held === true })
+  }
+  return out
+}

@@ -40,6 +40,22 @@ const io = (): RelayIO & { post: ReturnType<typeof vi.fn> } => ({
 
 beforeEach(() => vi.clearAllMocks())
 
+describe("swap-test/swap-wallet — one wallet per tab", () => {
+  it("keeps FCL's session in sessionStorage in the browser, so a co-signer tab can't overwrite the initiator's", async () => {
+    vi.resetModules()
+    const put = vi.fn()
+    fcl.config.mockReturnValue({ put, delete: vi.fn() })
+    ;(fcl as Record<string, unknown>).SESSION_STORAGE = "SESSION"
+    vi.stubGlobal("window", {})
+    try {
+      await import("@/lib/swap-test/swap-wallet")
+      expect(put).toHaveBeenCalledWith("fcl.storage", "SESSION")
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
 describe("swap-test/swap-wallet — initiator", () => {
   it("sends SWAP_CADENCE with the plan's arguments in order, wallet A first, and waits for the seal", async () => {
     fcl.currentUser.snapshot.mockResolvedValue({ addr: "0x3d0b274c80263484" })

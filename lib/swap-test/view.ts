@@ -6,6 +6,7 @@
 // the relay for the co-signer's signature.
 
 import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
+import type { SwapPlan } from "@/lib/swap-test/plan"
 
 /** "1, 2 3" -> ["1","2","3"]; blanks dropped. Validation is the server's job. */
 export function parseIds(raw: string): string[] {
@@ -76,4 +77,29 @@ export async function waitForRelaySignature(
     await sleep(RELAY_POLL_MS)
   }
   throw new Error("The co-signer didn't sign in time; the transaction would expire. Start again.")
+}
+
+export interface SwapForm {
+  aSigner: string
+  aSource: string
+  aIds: string
+  bSigner: string
+  bSource: string
+  bIds: string
+}
+
+/**
+ * The form for swapping BACK after a run: the same two wallets on the same sides (so
+ * the same device starts it), each now giving what it received. Run 1 (A gives X, B
+ * gives nothing) becomes run 2 (A gives nothing, B gives X back).
+ */
+export function swapBackForm(plan: SwapPlan): SwapForm {
+  return {
+    aSigner: plan.a.signer,
+    aSource: plan.a.source,
+    aIds: plan.b.ids.join(", "),
+    bSigner: plan.b.signer,
+    bSource: plan.b.source,
+    bIds: plan.a.ids.join(", "),
+  }
 }
