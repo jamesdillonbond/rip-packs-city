@@ -22,10 +22,18 @@
 -- returning an orphan the old form would have found. The fixture here has no FK
 -- precisely so the behaviour is visible and asserted rather than assumed.
 --
+-- RE-PINNED 2026-10-04: the 09-11 body stopped driving from `editions` -- SQL
+-- does not fix a join order, and with `editions` at ~39.6k the planner chose a
+-- Merge Semi Join over all eight `sales` partition indexes (> 55 s generic plan;
+-- 2 of the last 10 production runs hit the 60 s timeout). The body now finds the
+-- snapshot-less editions in a MATERIALIZED CTE first and probes `sales` only for
+-- those (441 ms). Same set, same FK dependency, so every assertion below is
+-- unchanged and still meaningful -- the CTE is exercised by each of them.
+--
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260912063341_audit_20260911_fmv_backfill_candidates_drives_from_editions_not_sales.sql),
--- verified byte-identical to the live prod definition by md5 of the
--- whitespace-normalised `prosrc` on 2026-09-11.
+-- (supabase/migrations/20261005001848_audit_20261004_fmv_backfill_candidates_materialize_unpriced_first.sql),
+-- verified identical to the live prod definition by md5 of the
+-- whitespace-normalised `prosrc` on 2026-10-04.
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -44,14 +52,18 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 SET statement_timeout = '60s'
 AS $$
-  SELECT e.id
-  FROM public.editions e
-  WHERE NOT EXISTS (
-      SELECT 1 FROM public.fmv_snapshots f WHERE f.edition_id = e.id
-    )
-    AND EXISTS (
+  WITH unpriced AS MATERIALIZED (
+    SELECT e.id
+    FROM public.editions e
+    WHERE NOT EXISTS (
+        SELECT 1 FROM public.fmv_snapshots f WHERE f.edition_id = e.id
+      )
+  )
+  SELECT u.id
+  FROM unpriced u
+  WHERE EXISTS (
       SELECT 1 FROM public.sales s
-      WHERE s.edition_id = e.id AND s.price_usd > 0
+      WHERE s.edition_id = u.id AND s.price_usd > 0
     )
   LIMIT GREATEST(1, LEAST(p_limit, 500));
 $$;
