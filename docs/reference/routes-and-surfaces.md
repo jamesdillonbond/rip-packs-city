@@ -115,6 +115,7 @@ Other top-level surfaces:
 
 Selected API endpoints worth knowing about:
 - `/api/edition-stats`, `/api/pack-roi`, `/api/collection-snapshot`, `/api/overview-stats`
+- `/admin/swap-test` + `/api/admin/swap-test` (2026-10-04) — ADMIN-ONLY two-signer swap test on Trevor's own Flow Wallets (plan + mainnet simulation, a relay for wallet B's signature through `swap_test_relay`, an on-chain verify after the seal). Not a user feature; the second read-only exception in [concierge.md](concierge.md). Handoff: `docs/strategy/trading-revisit-2026-10-03.md` §9.
 - `/api/admin/prune-pipeline-runs` (POST, Bearer `$INGEST_SECRET_TOKEN`; daily cron)
 - `/api/wallet-backfill[-allday|-pinnacle|-golazos|-ufc|-multicollection]` — fire-and-forget Cadence walks; `?force=true` to bypass `skip_cached`
 - `/api/seed-wallet-refresh` — orchestrator; cron-job.org still calls every 6h but an in-route gate (2026-07-18 cost lever) executes only the `utcHour % 12 < 2` waves (effective 12h cadence). `?force=1` bypasses (used by the GHA backstop — load-bearing, do not drop); env `SEED_WALLET_REFRESH_EVERY_WAVE=1` disables the gate

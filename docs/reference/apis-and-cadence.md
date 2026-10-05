@@ -410,3 +410,12 @@ The QA pass wrote down "nothing to do on our side" for two catalog gaps. Both an
 - Golazos — `refresh_golazos_ask_fmv_from_listings()`, pg_cron 614 `55 */2`, counts a listing only if `COALESCE(verified_at, listed_at)` is within 6 h (a stalled reconciler stops pricing; proven live: priced 0 with 3,336 unverified before the first stamp). `fmv_from_cached_listings` (Flowty cache) prices no Golazos or All Day.
 - All Day — `refresh_allday_ask_fmv_from_listings()`, job 19, ghost-filtered by `allday_listings_sold_after_listing`. Both lanes re-derive their OWN rows when the floor moves either way (`20260925231149`).
 
+## FCL in the browser: two signers, one session per tab (2026-10-04, PT)
+
+Learned building `/admin/swap-test` (handoff: `docs/strategy/trading-revisit-2026-10-03.md` §9).
+- ⚠ **FCL (`@onflow/fcl` 1.21.9) keeps the connected wallet in `localStorage` by default** (`storage: params.storage || LOCAL_STORAGE`), which **every tab of a browser profile shares**. A second tab that connects another wallet overwrites the stored session. Set `fcl.config().put("fcl.storage", fcl.SESSION_STORAGE)` **before the current-user actor first spawns** (it reads the provider once).
+- **A second signer from another session works through FCL's own pipeline.** Pass a custom authorization function whose `signingFunction` fetches the signature elsewhere (the relay). The payload names authorizers **by address only**, so the signer's key index is only needed for its signature entry: set it on `signable.interaction.accounts[...]` (`signable.interaction` IS FCL's interaction object) before returning. Proven with real keys in `__tests__/swap-test-fcl-two-signer.test.ts`.
+- **FCL merges duplicate authorizers by address**, so one account can't fill two `prepare(a, b)` slots.
+- ⚠ **One Flow Wallet EXTENSION holding both accounts may sign with whichever account is ACTIVE**, and the payer's envelope approval can come after the co-signer's. Run the second signer in another browser profile or on the phone. Not yet measured live.
+- **A split-key account (e.g. Blocto's 999 + 1) can't sign alone.** Check for one active key of weight ≥ 1000 (`GET /v1/accounts/{addr}?expand=keys`) before asking it to.
+

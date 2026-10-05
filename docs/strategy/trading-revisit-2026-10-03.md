@@ -1,7 +1,7 @@
 # Trading, revisited after giveaways (2026-10-03)
 
 **Asked by:** Trevor, 2026-10-03: "Would it be worth revisiting a trading feature using Flow Wallet as we start to enable Pack giveaways which I feel like would have a similar infrastructure behind?" then "Do all that makes sense."
-**Status:** Research and a decision memo. Nothing was built. The read-only rule (concierge rule 1, `docs/reference/concierge.md`) and roadmap-2026-08-03 §9.6 ("do not deploy the Trade Hub, even to testnet") still stand. Changing either is Trevor's call.
+**Status (updated 2026-10-04 at thread archive):** Decision memo, plus an **admin-only two-signer swap TEST** at `/admin/swap-test`, built 10-03/10-04 on Trevor's "Do it all". It is built and verified short of the live run, which awaits Trevor; **start at §9 HANDOFF**. No user-facing trading exists. The read-only rule (concierge rule 1) gained a second, admin-only exception (`docs/reference/concierge.md`). Roadmap-2026-08-03 §9.6 ("do not deploy the Trade Hub, even to testnet") still stands. Trading as a user feature is Trevor's call.
 **Times:** PT.
 
 ---
@@ -178,3 +178,26 @@ transaction(childA: Address, ctlA: UInt64, idsA: [UInt64], childB: Address, ctlB
 - `docs/research/topshot-gifting-account-linking-feasibility-2026-07-13.md`: why Hybrid Custody avoids the Dapper co-signer wall.
 - `docs/trade-escrow/STATUS.md`: the escrow contract (shape B), kept and not deployed.
 - `docs/strategy/roadmap-2026-08-03.md` §9.6.
+
+## 9. HANDOFF — state at thread archive (2026-10-04, ~8:45 PM PT)
+
+**Where it stands.** Every part that could be tested without Trevor's wallets has been. The live two-signature swap has **not run yet**: `public.swap_test_relay` is empty (0 rows read at handoff), so no attempt has reached the relay.
+
+**What is proven, and how:**
+| Claim | Evidence |
+|---|---|
+| The swap Cadence compiles, and Hybrid Custody withdraw → deposit works on mainnet | read-only simulation `[true]` on Trevor's accounts (§6) |
+| FCL builds a valid two-signer transaction when B's signature arrives through the relay, with B's real key index | `__tests__/swap-test-fcl-two-signer.test.ts`: the real FCL resolve, verified cryptographically |
+| Engaged collectors have linked accounts | 4/4 giveaway winners · 9/24 sampled · 1,125 active rows in `linked_accounts` (§3) |
+
+**What only the live run can answer:** whether Flow Wallet will sign as a non-paying authorizer, how its gas sponsorship interacts, and whether one extension can hold both sides (the page says to use a second browser profile or the phone).
+
+**Run it:** §6 steps. Prerequisite: a second Flow Wallet account with the NBA Top Shot collection enabled. `0xd96d…` can't be side B (main key split 999 + 1). After a seal, the page checks the chain by itself, and **Set up the swap back** fills in the return.
+
+**Code map:** `lib/swap-test/` (`swap-cadence.ts` tx + simulation share fragments · `plan.ts` validate/keys/simulate/verify · `relay.ts` · `swap-wallet.ts` initiator + co-signer · `view.ts`) · `app/admin/swap-test/` · `app/api/admin/swap-test/route.ts` · table `swap_test_relay` (migration `20261004025551`, service role only, rows deleted after 24 h) · tests `__tests__/swap-test-*.test.ts` + `component-SwapTestClient.test.tsx`. The stall hint and seal-read handling are shared with the giveaway console (`lib/giveaways/admin-wallet.ts`).
+
+**Decisions that stay Trevor's (unchanged):** trading as a USER feature. Today's exception in `docs/reference/concierge.md` is admin-only, on Trevor's own wallets. Also any fair-value hint (gated on HIGH/MEDIUM FMV, §5) and the matcher idea (held by the roadmap's accuracy gate). The escrow contract stays undeployed (roadmap §9.6).
+
+**If the live run fails,** the page shows the wallet's or network's exact error, or a "hasn't answered" hint naming the channel. Start from that text: a payer/sponsor refusal, a key mismatch and a silent extension each need a different fix, so none was built speculatively.
+
+**Incident during this thread (recorded, resolved):** commit `e6cddaeeb` carried code under a "docs:" title plus ledger conflict markers, after a chained `git stash pop` conflicted. It was repaired in `9ac78f1`. Its red was carried forward through the docs-only pushes until `16d458c51` re-ran the unit shards (green). See the ledger entries of 10-04 ~5:35–6:10 PM PT.
