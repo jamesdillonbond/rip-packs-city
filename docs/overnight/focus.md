@@ -22,10 +22,19 @@ No live steer is owed by a clock. What a night pass needs to know that the ledge
 - **The open Panini list with each read is the HANDOFF section at the end of `docs/strategy/panini-multi-product-2026-09-28.md`.** Two checks a pass can do: (1) product names from collectors' collections — `extra ? 'product_names'` rows after the ~5:45 AM PT collector walk; (2) **> 7 d must stay 0** (`panini_editions.last_seen_at`). Tier-2 admission is Trevor's call on the numbers there; do not admit from a night pass.
 - **Do NOT re-flag:** `panini-collector-walk` `ok=false` "per-walk cap of 10 min reached" on large profiles (by design; `walkOrder` rotates the start collection); 242 of 246 packs reading "not modeled" (only 1038/1039/1055/1056 have a model).
 
+<<<<<<< Updated upstream
 ## STEER — added 2026-10-04 ~8:45 PM PT (Claude Code cloud, trading/swap-test thread archived)
 
 - **`/admin/swap-test` + `public.swap_test_relay` are an admin-only test awaiting Trevor's live run.** An EMPTY relay table is the expected state (0 rows at handoff, and rows delete themselves after 24 h). It is not an unused table. **Do NOT drop it, add readers to it, or "tidy" `lib/swap-test/`.** Handoff: `docs/strategy/trading-revisit-2026-10-03.md` §9.
 - **Do NOT re-suggest user-facing trading, the Trade Hub escrow deploy, or a trade "matcher"**: each is Trevor's decision, and is held by roadmap §9.6 and the accuracy gate.
+=======
+## STEER — added 2026-10-04 ~8:50 PM PT (Claude Code cloud, thread close)
+
+- **Rewards/points are OFF on purpose** (`REWARDS_LIVE` unset → award/redeem refuse; shop/rules tagged paused). Zero point awards is the designed state, not a dead lane. Do not re-enable from a night pass.
+- **Top Shot team Moments:** all 590 are `player_id` NULL, `player_name = team_name`, `name = "<team> — <set>"`. A row with `name = set_name` or a `players` row named after a team is a REGRESSION — read player-identity.md ("A TEAM Moment has no player").
+- **Pack-identity backlog boost (job 705) is gone by design** (unscheduled itself when the queue emptied, evening 10-04); pack rips 0 disagreeing with the chain. Lane 704 keeps applying new identities.
+- **Do NOT re-flag:** `atlas-edition-supply` `failure_rate` medium — 6-hourly lane, the failed runs are Cloudflare 403s on 4–5 of 38 pages (5:18 PM PT 10-03, 11:18 AM PT 10-04) and the next run re-reads them; the 5:18 PM PT 10-04 run was clean.
+>>>>>>> Stashed changes
 
 ## ⏬ Older steers rolled to [focus-archive-2026-H2.md](focus-archive-2026-H2.md): 2026-09-14 and earlier on 2026-09-24; 2026-09-18 → 2026-09-20 on 2026-10-03. The persistent sections below (do-not-re-flag, inbox append-only, STANDING, sentinel queue, DECIDED, RETIRED STEERS) were kept.
 
