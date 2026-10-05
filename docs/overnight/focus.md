@@ -34,6 +34,12 @@ No live steer is owed by a clock. What a night pass needs to know that the ledge
 - **Pack-identity backlog boost (job 705) is gone by design** (unscheduled itself when the queue emptied, evening 10-04); pack rips 0 disagreeing with the chain. Lane 704 keeps applying new identities.
 - **Do NOT re-flag:** `atlas-edition-supply` `failure_rate` medium — 6-hourly lane, the failed runs are Cloudflare 403s on 4–5 of 38 pages (5:18 PM PT 10-03, 11:18 AM PT 10-04) and the next run re-reads them; the 5:18 PM PT 10-04 run was clean.
 
+## STEER — added 2026-10-04 ~10:45 PM PT (Claude Code, Trevor's box; save-to-collection + Panini freshness thread archived)
+
+- **Panini `NO_DATA` rows in `panini_fmv_snapshots` are NEW and CORRECT** (`d730717d6`, deployed READY ~10:30 PM PT 10-04): a walked card with no sale ever and 0 listed now retires its old ask-based price instead of serving it. **Verify once** after the first post-deploy walk (~11:45 PM PT): `count(*) where confidence='NO_DATA'` > 0, and editions with FMV `computed_at` > 7 d but `last_seen_at` < 1 d fall from 41 to ~0. **Do NOT "fix" null FMV rows that carry `NO_DATA`.** Falsifier: hundreds a day means the stats payload lost `for_sale_count`.
+- **Panini freshness check prompt edited in the repo; the routine itself is NOT yet updated** (device-bound, Trevor re-pastes). Until he does, its `absurd_24h` will keep firing on real six-figure sales (Yamal 1/1 $210k, Wembanyama Gold /10). Do not re-flag those two, and do not cap sale-backed FMV.
+- **Share-page "Save to my collection" is LIVE** (`b430828c1`). Its first real user from the 10-04 funnel watch (`1830d5fd…`) still had 0 `saved_wallets` at 10:15 PM PT. A save from them is the lift signal, not a bug.
+
 ## ⏬ Older steers rolled to [focus-archive-2026-H2.md](focus-archive-2026-H2.md): 2026-09-14 and earlier on 2026-09-24; 2026-09-18 → 2026-09-20 on 2026-10-03. The persistent sections below (do-not-re-flag, inbox append-only, STANDING, sentinel queue, DECIDED, RETIRED STEERS) were kept.
 
 ## STEER — do NOT re-flag these (current)

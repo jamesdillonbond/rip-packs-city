@@ -408,6 +408,12 @@ run), aged/held alternating in `priority_pskus`, `panini_pack_ev_board` models o
    posted → the box has not pulled, or the walk log lacks `product names: offered …`.
 2. **Freshness after the held backlog drains** (held-priority in the latest enum marker → ~0 within ~1 day). Then > 6 d should
    fall (every priority slot becomes aged). **> 7 d must stay 0.**
+   ⚠ **"> 7 d" here is WALK age (`panini_editions.last_seen_at`). FMV age is a different number, and the two disagreed on
+   10-04** (walk > 7 d 0, FMV > 7 d 39). The gap was a pricing defect, not the walk: a walked card with no sale and nothing
+   listed wrote no snapshot, so a delisted ask's ASK_ONLY price stayed current (41 editions, $396k, oldest 241 h). Fixed
+   `d730717d6` (10-04 ~10:25 PM PT): those cards now write `NO_DATA` / null FMV. **Read:** `NO_DATA` rows appear after the
+   first post-deploy walk (~11:45 PM PT 10-04), and editions with FMV > 7 d but walk < 1 d fall to ~0. Any that remain
+   = the fix did not reach them (check their payload's `for_sale_count`).
 3. **Tier 2 (25 products, 10–49 listings) — admit only if** > 7 d is 0 and > 6 d is falling with held ~0. Re-derive first:
    refreshes/day (`last_seen_at` by run window) vs catalogue size; tier 2 adds discovery load to FULL runs only. Admit with
    `update panini_products set walk_cards = true where …` + a note per row + a ledger entry; bootstrap narrows the next
