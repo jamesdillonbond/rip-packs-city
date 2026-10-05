@@ -2978,3 +2978,25 @@ inside a `DO` block, guarded by `md5(prosrc)` before (base = the committed migra
 10-03 with zero transcription. Postgres's word boundary is `\y`; `\b` there is BACKSPACE, so a `\b`
 pattern matches nothing.
 
+
+## ⚠ Rewriting a query's TEXT so it "drives from the small table" fixes no join order — growth undoes it; a `MATERIALIZED` CTE pins it (2026-10-04, PT)
+
+`fmv_backfill_candidates` returns editions with a positive-price sale and NO `fmv_snapshots` row. The
+true answer is ZERO, so a `LIMIT` never binds and every tick pays the whole plan. The 09-12 rewrite
+(`20260912063341`) reordered the SQL to "drive from `editions`" and measured ~149 ms warm. By 10-04
+`editions` had grown 21,423 → ~39,600, and the planner had chosen a Merge Semi Join of `editions_pkey`
+against a Merge Append over ALL EIGHT `sales_<year>` partition indexes (~7.07 M entries), applying the
+snapshot anti-join last. The lane took 15–60 s a run, and 2 of 10 runs hit its 60 s
+`statement_timeout`. Fix `20261005001848`: `WITH unpriced AS MATERIALIZED (editions with no snapshot)`,
+then `EXISTS`-probe `sales` for those 61 rows only. Same set by construction. Generic plan > 55 s →
+441 ms; the first production run took 4.4 s (was 15–60 s).
+
+Rules:
+- When one side of an anti/semi join is SELECTIVE and the other is a partitioned giant, put the
+  selective side in a `MATERIALIZED` CTE. Then the order is a property of the query, not of today's
+  statistics.
+- Measure a SET-carrying `LANGUAGE sql` function the way it runs: `PREPARE` + `SET plan_cache_mode =
+  force_generic_plan` + `EXPLAIN ANALYZE EXECUTE`. A literal-parameter `EXPLAIN` of the body measures a
+  custom plan the function never gets.
+- A zero-result lane is the worst case for any plan whose cost lives under a `LIMIT`. Re-measure it
+  when the driving table has roughly doubled, not only when it times out.
