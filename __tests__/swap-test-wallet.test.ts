@@ -23,7 +23,7 @@ const fcl = vi.hoisted(() => {
 vi.mock("@onflow/fcl", () => fcl)
 vi.mock("@/lib/chains/flow/flow", () => ({ initFcl: vi.fn() }))
 
-import { coSign, readComposite, relayedAuthorizer, sendSwap, type RelayIO } from "@/lib/swap-test/swap-wallet"
+import { coSign, readComposite, relayedAuthorizer, SealUnconfirmedError, sendSwap, type RelayIO } from "@/lib/swap-test/swap-wallet"
 import { SWAP_CADENCE, SWAP_GAS_LIMIT } from "@/lib/swap-test/swap-cadence"
 import type { SwapPlan } from "@/lib/swap-test/plan"
 
@@ -88,6 +88,64 @@ describe("swap-test/swap-wallet — initiator", () => {
     fcl.mutate.mockResolvedValue("tx2")
     fcl.onceSealed.mockResolvedValue({ statusCode: 1, errorMessage: "panic: Cannot withdraw: Moment is locked" })
     await expect(sendSwap(plan, io())).rejects.toThrow("Moment is locked")
+  })
+
+  it("a submitted swap whose seal can't be read is UNCONFIRMED, never 'failed' (iOS backgrounding)", async () => {
+    fcl.currentUser.snapshot.mockResolvedValue({ addr: "0x3d0b274c80263484" })
+    fcl.mutate.mockResolvedValue("tx3")
+    fcl.onceSealed.mockRejectedValue(new TypeError("Load failed"))
+    const e = await sendSwap(plan, io()).catch((x) => x)
+    expect(e).toBeInstanceOf(SealUnconfirmedError)
+    expect(e.txId).toBe("tx3")
+    expect(String(e.message)).not.toMatch(/\bfailed:/)
+    expect(fcl.onceSealed).toHaveBeenCalledTimes(3)
+  })
+
+  it("an execution error from the seal read IS a failure", async () => {
+    fcl.currentUser.snapshot.mockResolvedValue({ addr: "0x3d0b274c80263484" })
+    fcl.mutate.mockResolvedValue("tx4")
+    fcl.onceSealed.mockRejectedValue({ type: "TransactionError", message: "[Error Code: 1101] panic: Cannot withdraw" })
+    await expect(sendSwap(plan, io())).rejects.toThrow("Transaction tx4 failed")
+  })
+
+  it("the stall hint fires while wallet A is silent, never while the co-signer is signing", async () => {
+    vi.useFakeTimers()
+    try {
+      fcl.currentUser.snapshot.mockResolvedValue({ addr: "0x3d0b274c80263484" })
+      let releaseB!: () => void
+      const bSigned = new Promise<void>((r) => (releaseB = r))
+      const r: RelayIO = {
+        post: vi.fn(async () => "relay-1"),
+        onRelay: vi.fn(),
+        waitForSignature: vi.fn(async () => {
+          await bSigned
+          return { signature: SIG, keyId: 0 }
+        }),
+      }
+      let finish!: (v: string) => void
+      fcl.mutate.mockImplementation(async (opts: { authorizations: Array<(a: unknown) => Promise<{ signingFunction: (s: unknown) => Promise<unknown> }>> }) => {
+        // FCL asks the relayed authorizer (wallet B) to sign
+        const b = await opts.authorizations[1]({ role: { authorizer: true } })
+        await b.signingFunction({ message: "aa", interaction: { accounts: {} } })
+        return new Promise<string>((res) => (finish = res))
+      })
+      fcl.onceSealed.mockResolvedValue({ statusCode: 0 })
+      const onSlow = vi.fn()
+      const p = sendSwap(plan, r, { onSlow, slowMs: 1000 })
+      // waiting on the co-signer for a long time: no hint
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(onSlow).not.toHaveBeenCalled()
+      // B signs; now wallet A is up and stays silent past the threshold
+      releaseB()
+      await vi.advanceTimersByTimeAsync(1000 + 1600)
+      expect(onSlow).toHaveBeenCalledTimes(1)
+      expect(String(onSlow.mock.calls[0][0])).toMatch(/Flow Wallet/)
+      finish("tx5")
+      await vi.advanceTimersByTimeAsync(10)
+      await expect(p).resolves.toEqual({ txId: "tx5" })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("wallet B's signature comes through the relay and carries the key that signed", async () => {

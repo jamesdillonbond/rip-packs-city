@@ -96,8 +96,9 @@ describe("no wallet sign-in anywhere (Trevor, 2026-08-08)", () => {
   })
 
   it("the admin wallet module is imported only by the admin giveaway console", () => {
-    const importers = FILES.filter((f) => imports(f.src, "@/lib/giveaways/admin-wallet")).map((f) => f.path)
-    expect(importers).toEqual([ADMIN_WALLET_IMPORTER])
+    const importers = FILES.filter((f) => imports(f.src, "@/lib/giveaways/admin-wallet")).map((f) => f.path).sort()
+    // + the admin-only swap test, which reuses its stall hint and seal-read helpers (2026-10-04)
+    expect(importers).toEqual([ADMIN_WALLET_IMPORTER, "lib/swap-test/swap-wallet.ts"].sort())
     // and the importer is an admin page (token-gated), never a user surface
     expect(ADMIN_WALLET_IMPORTER.startsWith("app/admin/")).toBe(true)
   })

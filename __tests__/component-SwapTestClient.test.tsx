@@ -4,6 +4,11 @@ import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/re
 
 const wallet = vi.hoisted(() => ({ connect: vi.fn(), disconnect: vi.fn(), send: vi.fn(), coSign: vi.fn() }))
 vi.mock("@/lib/swap-test/swap-wallet", () => ({
+  SealUnconfirmedError: class SealUnconfirmedError extends Error {
+    constructor(readonly txId: string) {
+      super(`Transaction ${txId} was submitted, but its result could not be read`)
+    }
+  },
   connectFlowWallet: () => wallet.connect(),
   disconnectFlowWallet: () => wallet.disconnect(),
   sendSwap: (...a: unknown[]) => wallet.send(...a),
@@ -188,6 +193,44 @@ describe("SwapTestClient — initiator", () => {
     verifyReplies = [json({ landed: [{ id: "27289790", to: B, held: false }] })]
     await runToSeal()
     expect(await screen.findByText(/27289790 is NOT in 0xd96dc67ae64ee202/)).toBeTruthy()
+  })
+
+  it("a submitted swap whose seal can't be read says don't send again, and reads the chain", async () => {
+    sealingStub()
+    const { SealUnconfirmedError } = await import("@/lib/swap-test/swap-wallet")
+    wallet.send.mockRejectedValue(new SealUnconfirmedError("tx7", "Load failed"))
+    render(<SwapTestClient />)
+    fireEvent.click(screen.getByRole("button", { name: /simulate on mainnet/i }))
+    await screen.findByText(/every moment lands/)
+    fireEvent.click(screen.getByRole("button", { name: /connect flow wallet \(side a\)/i }))
+    await screen.findByText(A)
+    fireEvent.click(screen.getByRole("button", { name: /sign and send/i }))
+    expect(await screen.findByText(/Submitted as tx7.*Don't send again/)).toBeTruthy()
+    expect(screen.getByRole("link", { name: "tx7" })).toBeTruthy()
+    expect(await screen.findByText(/27289790 is now in/)).toBeTruthy()
+    expect(screen.queryByText(/Sealed on chain/)).toBeNull()
+    expect(verified).toHaveLength(1)
+  })
+
+  it("shows where to approve when side A's wallet goes silent", async () => {
+    sealingStub()
+    let finish!: () => void
+    wallet.send.mockImplementation(async (_p: unknown, _io: unknown, opts: { onSlow?: (h: string) => void }) => {
+      opts.onSlow?.("Click the Flow Wallet extension icon")
+      await new Promise<void>((r) => (finish = r))
+      return { txId: "tx8" }
+    })
+    render(<SwapTestClient />)
+    fireEvent.click(screen.getByRole("button", { name: /simulate on mainnet/i }))
+    await screen.findByText(/every moment lands/)
+    fireEvent.click(screen.getByRole("button", { name: /connect flow wallet \(side a\)/i }))
+    await screen.findByText(A)
+    fireEvent.click(screen.getByRole("button", { name: /sign and send/i }))
+    expect(await screen.findByText(/hasn't answered: Click the Flow Wallet extension icon/)).toBeTruthy()
+    finish()
+    expect(await screen.findByText(/Sealed on chain/)).toBeTruthy()
+    // the hint is cleared once the wallet answered
+    expect(screen.queryByText(/hasn't answered/)).toBeNull()
   })
 
   it("sets up the swap back: same sides, each giving what it received", async () => {

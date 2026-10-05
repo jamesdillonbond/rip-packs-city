@@ -24,6 +24,18 @@ import * as fcl from "@onflow/fcl"
 import { initFcl } from "@/lib/chains/flow/flow"
 import { SWAP_CADENCE, SWAP_GAS_LIMIT } from "@/lib/swap-test/swap-cadence"
 import type { SwapPlan } from "@/lib/swap-test/plan"
+import { errorText } from "@/lib/giveaways/view-format"
+import {
+  SealUnconfirmedError,
+  SLOW_WALLET_MS,
+  isExecutionError,
+  slowWalletHint,
+  startNetworkTrace,
+  walletChannel,
+  whenVisible,
+} from "@/lib/giveaways/admin-wallet"
+
+export { SealUnconfirmedError }
 
 export { connectFlowWallet, disconnectFlowWallet } from "@/lib/giveaways/flow-wallet-connect"
 
@@ -81,32 +93,107 @@ export function relayedAuthorizer(cosigner: string, io: RelayIO) {
   })
 }
 
-/** Initiator: wallet A must be connected. Resolves once the transaction SEALS without error. */
-export async function sendSwap(plan: SwapPlan, io: RelayIO): Promise<{ txId: string }> {
+export interface SendSwapOpts {
+  /** Called once wallet A has sat silent for `slowMs`, with where to look. Never while waiting on the co-signer. */
+  onSlow?: (hint: string) => void
+  slowMs?: number
+}
+
+const SEAL_READ_ATTEMPTS = 3
+
+/** Resolves to `fallback` if `p` has not settled within `ms`. */
+function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(fallback), ms)
+    p.then(
+      (v) => (clearTimeout(t), resolve(v)),
+      () => (clearTimeout(t), resolve(fallback)),
+    )
+  })
+}
+
+/**
+ * Initiator: wallet A must be connected. Resolves once the transaction SEALS without
+ * error. A transaction that was SUBMITTED but whose seal couldn't be read throws a
+ * SealUnconfirmedError (it may well have executed: never say "failed", never resend).
+ * The stall hint (shared with the giveaway console) fires only while waiting on wallet
+ * A — minutes spent waiting on the co-signer are expected, not a stall.
+ */
+export async function sendSwap(plan: SwapPlan, io: RelayIO, opts: SendSwapOpts = {}): Promise<{ txId: string }> {
   initFcl()
   const user = (await fcl.currentUser.snapshot()) as { addr?: string | null }
   if (sansPrefix(user?.addr ?? "") !== sansPrefix(plan.a.signer)) {
     throw new Error(`Connect side A's wallet (${plan.a.signer}) first; this session is connected to ${user?.addr ?? "nothing"}.`)
   }
-  const txId: string = await fcl.mutate({
-    cadence: SWAP_CADENCE,
-    args: (arg: typeof fcl.arg, t: typeof fcl.t) => [
-      arg(plan.a.source, t.Address),
-      arg(plan.a.ctl, t.UInt64),
-      arg(plan.a.ids, t.Array(t.UInt64)),
-      arg(plan.b.source, t.Address),
-      arg(plan.b.ctl, t.UInt64),
-      arg(plan.b.ids, t.Array(t.UInt64)),
-    ],
-    // order matters: prepare(a, b) — wallet A first, the relayed wallet B second
-    authorizations: [fcl.currentUser.authorization, relayedAuthorizer(plan.b.signer, io)] as any,
-    limit: SWAP_GAS_LIMIT,
-  })
-  const sealed = (await fcl.tx(txId).onceSealed()) as { errorMessage?: string; statusCode?: number }
-  if (sealed?.errorMessage || (sealed?.statusCode ?? 0) !== 0) {
-    throw new Error(`Transaction ${txId} failed: ${sealed?.errorMessage || `status ${sealed?.statusCode}`}`)
+  const trace = startNetworkTrace()
+  let onCosigner = false
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const arm = () => {
+    if (timer) clearTimeout(timer)
+    if (!opts.onSlow) return
+    timer = setTimeout(async () => {
+      if (onCosigner) return
+      const channel = await within(walletChannel(), 1_500, "unknown" as const)
+      if (!onCosigner) opts.onSlow?.(slowWalletHint(channel, trace.waitingOn(), trace.blocked(), { seen: trace.seen(), logged: trace.logged() }))
+    }, opts.slowMs ?? SLOW_WALLET_MS)
   }
-  return { txId }
+  const relay: RelayIO = {
+    post: (c, sgn) => {
+      onCosigner = true
+      if (timer) clearTimeout(timer)
+      return io.post(c, sgn)
+    },
+    onRelay: (id) => io.onRelay(id),
+    waitForSignature: async (id) => {
+      const sig = await io.waitForSignature(id)
+      // back to wallet A (its envelope approval, when it pays the fee)
+      onCosigner = false
+      arm()
+      return sig
+    },
+  }
+  arm()
+  let txId: string
+  try {
+    txId = await fcl.mutate({
+      cadence: SWAP_CADENCE,
+      args: (arg: typeof fcl.arg, t: typeof fcl.t) => [
+        arg(plan.a.source, t.Address),
+        arg(plan.a.ctl, t.UInt64),
+        arg(plan.a.ids, t.Array(t.UInt64)),
+        arg(plan.b.source, t.Address),
+        arg(plan.b.ctl, t.UInt64),
+        arg(plan.b.ids, t.Array(t.UInt64)),
+      ],
+      // order matters: prepare(a, b) — wallet A first, the relayed wallet B second
+      authorizations: [fcl.currentUser.authorization, relayedAuthorizer(plan.b.signer, relay)] as any,
+      limit: SWAP_GAS_LIMIT,
+    })
+  } catch (e) {
+    // "Load failed" alone names no request; say which one died (or was blocked)
+    throw new Error(errorText(e) + trace.describe())
+  } finally {
+    if (timer) clearTimeout(timer)
+    trace.stop()
+  }
+  let lastReadError = ""
+  for (let attempt = 1; attempt <= SEAL_READ_ATTEMPTS; attempt++) {
+    let sealed: { errorMessage?: string; statusCode?: number }
+    try {
+      await whenVisible()
+      sealed = (await fcl.tx(txId).onceSealed()) as { errorMessage?: string; statusCode?: number }
+    } catch (e) {
+      // FCL rejects onceSealed with a TransactionError when the transaction EXECUTED and reverted
+      if (isExecutionError(e)) throw new Error(`Transaction ${txId} failed: ${errorText(e)}`)
+      lastReadError = errorText(e)
+      continue
+    }
+    if (sealed?.errorMessage || (sealed?.statusCode ?? 0) !== 0) {
+      throw new Error(`Transaction ${txId} failed: ${sealed?.errorMessage || `status ${sealed?.statusCode}`}`)
+    }
+    return { txId }
+  }
+  throw new SealUnconfirmedError(txId, lastReadError)
 }
 
 /** The composite signature a wallet returns, in either shape FCL services use. */

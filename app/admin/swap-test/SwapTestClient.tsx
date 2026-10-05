@@ -17,7 +17,7 @@ import { errorText } from "@/lib/giveaways/view-format"
 import type { LandedMoment, SwapPlan } from "@/lib/swap-test/plan"
 import type { RelayRow } from "@/lib/swap-test/relay"
 import { describeSignable, parseIds, swapBackForm, waitForRelaySignature } from "@/lib/swap-test/view"
-import { coSign, connectFlowWallet, disconnectFlowWallet, sendSwap } from "@/lib/swap-test/swap-wallet"
+import { coSign, connectFlowWallet, disconnectFlowWallet, SealUnconfirmedError, sendSwap } from "@/lib/swap-test/swap-wallet"
 
 const DISPLAY = "var(--font-display)"
 const MONO = "var(--font-mono)"
@@ -130,6 +130,7 @@ function Initiator({ call }: { call: Call }) {
   const [landed, setLanded] = useState<LandedMoment[] | null>(null)
   const [verifyErr, setVerifyErr] = useState<string | null>(null)
   const [donePlan, setDonePlan] = useState<SwapPlan | null>(null)
+  const [hint, setHint] = useState<string | null>(null)
 
   const set = (k: keyof typeof FIRST_RUN) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setF({ ...f, [k]: e.target.value })
@@ -191,6 +192,7 @@ function Initiator({ call }: { call: Call }) {
     setBusy(true)
     setErr(null)
     setLink(null)
+    setHint(null)
     setMsg("Waiting for side A's wallet and the co-signer…")
     try {
       const { txId } = await sendSwap(plan, {
@@ -204,15 +206,25 @@ function Initiator({ call }: { call: Call }) {
           setLink(`${window.location.origin}/admin/swap-test?relay=${id}`)
           setMsg("Open the co-signer link with side B's wallet and sign. Waiting (about 9 minutes max)…")
         },
-      })
+      }, { onSlow: setHint })
       setTxId(txId)
       setDonePlan(plan)
       setMsg("Sealed on chain: the swap executed. Checking where each moment is now…")
       await verify(plan)
     } catch (e) {
-      setErr(errorText(e))
-      setMsg(null)
+      if (e instanceof SealUnconfirmedError) {
+        // submitted: it may well have executed. Never "failed", never send again — read the chain.
+        setTxId(e.txId)
+        setDonePlan(plan)
+        setMsg(null)
+        setErr(`Submitted as ${e.txId}, but its result couldn't be read yet. Don't send again; checking the chain…`)
+        await verify(plan)
+      } else {
+        setErr(errorText(e))
+        setMsg(null)
+      }
     } finally {
+      setHint(null)
       setBusy(false)
     }
   }
@@ -296,6 +308,7 @@ function Initiator({ call }: { call: Call }) {
         ) : null}
       </section>
       {msg ? <p style={{ fontSize: 13 }}>{msg}</p> : null}
+      {hint ? <p style={{ fontSize: 13, color: "var(--rpc-warning)" }}>Side A&apos;s wallet hasn&apos;t answered: {hint}</p> : null}
       {err ? <p style={{ color: "var(--rpc-danger)", fontSize: 13 }}>{err}</p> : null}
     </>
   )

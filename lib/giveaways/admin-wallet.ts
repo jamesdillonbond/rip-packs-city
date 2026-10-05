@@ -4,8 +4,9 @@
 // Custody parent of their Dapper account) and sign delivery batches. RPC never
 // holds a key or a moment (Trevor, 2026-09-29). Connecting goes through
 // lib/giveaways/flow-wallet-connect.ts, the one module that opens a wallet
-// picker; only app/admin/giveaways/AdminGiveawaysClient.tsx imports this file
-// (pinned by __tests__/no-client-wallet-connect.test.ts).
+// picker; only app/admin/giveaways/AdminGiveawaysClient.tsx imports this file, plus
+// lib/swap-test/swap-wallet.ts (the admin-only swap test), which reuses the stall
+// hint and seal-read helpers (pinned by __tests__/no-client-wallet-connect.test.ts).
 
 import * as fcl from "@onflow/fcl"
 import { initFcl } from "@/lib/chains/flow/flow"
@@ -176,13 +177,13 @@ export async function sendDeliveryBatch(batch: DeliveryBatch, opts: { onSlow?: (
   throw new SealUnconfirmedError(txId, lastReadError)
 }
 
-function isExecutionError(e: unknown): boolean {
+export function isExecutionError(e: unknown): boolean {
   const o = e as { type?: unknown; message?: unknown } | null
   return !!o && typeof o === "object" && (typeof o.type === "string" || /\[Error Code: \d+\]/.test(String(o.message ?? "")))
 }
 
 /** Resolves at once when the page is visible, else when the admin switches back to it. */
-function whenVisible(): Promise<void> {
+export function whenVisible(): Promise<void> {
   if (typeof document === "undefined" || document.visibilityState !== "hidden") return Promise.resolve()
   return new Promise((resolve) => {
     const on = () => {
