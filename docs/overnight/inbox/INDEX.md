@@ -1,4 +1,4 @@
-# Inbox index — 565 live filings
+# Inbox index — 566 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,8 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-10-05 — 1 filing
+## 2026-10-05 — 2 filings
 
+- [🟠 **Handoff from Claude Code (Trevor: "Hand that off to cowork"): run `dedupe_tx_lane_20261004.sql` then `drop_scratch_20261004.sql` (both guarded, AUTHORIZED by Trevor) + investigate #173 (conflated `topshot_moment_subeditions` bases, do not ship)**](2026-10-05T0410Z-flowty-thread-handoff-dedupe-drop-and-173.md) — *(Claude Code cloud, Flowty thread, ~9:10 PM PT 10-04.)* Pre/post checks and reverts in the filing.
 - [🟢 **Daytime monitor repeat: chain-arrivals seed timeout (already fixed, `20261004160000`, catch-up drained) + Candy bid book empty (benign, as in 2112Z)**](2026-10-05T031053Z.md) — *(daytime monitor, ~8:10 PM PT 10-04, left untracked on the box; disposition by Claude Code ~8:45 PM PT.)* No action; the 10-05 7:45 AM PT routine reads the 4:13 AM seed tick.
 
 ## 2026-10-04 — 6 filings
