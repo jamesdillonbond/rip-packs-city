@@ -1,38 +1,45 @@
 {
-  "generated_at_pt": "2026-10-04 ~1:10 AM PT (nightly autonomous pass, Cowork cloud, unattended)",
-  "generated_at_utc": "2026-10-04T08:10Z",
-  "pass": "Nightly overnight autonomous pass, push-capable via desktop-VM clone (add_repo absent, cloud-proxy push unavailable). Reviewed 3 fresh daytime-monitor candidates; nothing shipped. Handoff: docs/handoff-2026-10-04-overnight-pass.md",
+  "generated_at_pt": "2026-10-05 ~1:10 AM PT (nightly autonomous pass, Cowork cloud, unattended)",
+  "generated_at_utc": "2026-10-05T08:12Z",
+  "pass": "Nightly overnight autonomous pass, push-capable via desktop-VM clone (+.rpc-git-cred; add_repo absent, cloud-proxy push unavailable). 2 fresh inbox filings reviewed; 0 shipped. Handoff: docs/handoff-2026-10-05-overnight-pass.md",
   "shipped": 0,
   "reverted": 0,
-  "verdict": "GREEN. Security/structural/trust clean (38/38 metrics ok, 0 breaches, precompute 5.37h); stalled []; R118 0; zero-yield 0 offenders; sentinel 0; deploys READY (932c175d6), no ERROR. All 3 candidates dispositioned without a ship: atlas-editions stall RESOLVED (20261003151308 verified, 0/282 stalled); pg_net_403 Firestore cluster ATTRIBUTED to the completed Flowty Firestore backfill (benign, 0 in retained window); panini insight boards SELF-CLEARED 06:18-06:22Z (transient IO/stats during Flowty promotion wave; WATCH re-open >180min). pipeline_alerts all by-design except panini-collector-walk MEDIUM (known 11-day rotation). Vercel chronic groups only + the stopped panini cluster. Beacon 3/24h.",
+  "verdict": "GREEN. Security/structural/trust clean (38/38 arms ok, 0 breaches, precompute 5.38h); R118 0; zero-yield offenders [] (315 inspected, 3 suppressed); sentinel ts_uuid 0; stalled []. pgcron recent failures = only STALE pre-fix rpc-chain-arrivals-seed (last 11:13Z 10-04, predates its 16:00Z fix). pipeline_alerts all info/medium known-class. Vercel 24h chronic-only + cleared Panini board cluster (indexes holding) -> Sentry-dark zero corroborated as real health. Beacon 3/24h. Post-ship watch: fmv-backfill fix 20261005001848 holding (post-fix run 4.4s, both timeouts predate it); Panini board indexes holding. 0410Z Flowty dedupe+scratch-drop QUEUED for Trevor (destructive SQL, SQL-editor-only, MCP write-held; pre-checks verified live). #173 refined sizing filed, left open for Claude Code.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
     "structural": "clean (function_search_path_drift [], procedure_txn_control_pins [], procedure_search_path_unpinned [], cross_collection_mat_staleness [], backward_cursor_rewinds [], wmc_null_edition_key [], suppression_parked_claim_drift [])",
-    "r118_when_others_blind": "[] (0)",
+    "r118_when_others_blind": "0",
     "zero_yield_lanes": "offenders [] (315 inspected, 3 suppressed, 0 excluded_by_writes)",
     "trust_health_breaches": 0,
-    "trust_precompute_max_age_hours": 5.37,
+    "trust_precompute_max_age_hours": 5.38,
     "stalled_pipelines": "[]",
-    "pipeline_alerts": "panini-collector-walk MEDIUM (10-min cap, short 1 collection — known 11-day aged/held rotation, not new); pack-mint-probes INFO (streak-split cleared); unmapped-sales-nfl_all_day INFO (23325 open, ~4d to clear); atlas-editions/atlas-market/atlas-pack-supply/flow-rest-moment-moved INFO (by-design CF/Flow base-rate 403/400).",
-    "pipeline_fails_24h": "pack-mint-probes 96 (by design); topshot-pack-supply-atlas 41 (CF-403 single-request partials, by design); sync-nba-projections 8 (muted to 10-28, all_upstreams_failed, fails safe); refresh-insights-cache 4 (panini-board stale window 05:22-06:07Z, self-cleared); others ≤6 by-design/upstream.",
+    "pgcron_recent_failures": "rpc-chain-arrivals-seed only (last_run 11:13Z 10-04, STALE pre-fix of 20261004160000 @16:00Z; re-runs ~11:13Z 10-05, daytime 7:45 AM PT routine checks it)",
+    "pipeline_alerts": "atlas-edition-supply MEDIUM (CF-403 base rate, do-not-reflag); panini-collector-walk MEDIUM (10-min cap, by design); pack-mint-probes INFO (streak-split cleared); unmapped-sales-nfl_all_day INFO (15269 open, ~2.2d to clear, down from 23325); atlas-*-upstream-403/flow-rest-moment-moved-400 INFO (by-design).",
+    "pipeline_fails_24h": "topshot-pack-supply-atlas 115 (CF-403 single-request partials, by design); chain-arrival-flips 10 (Flow node 'failed to convert event payload' 400, upstream); sync-nba-projections 8 (muted to 10-28); wallet-backfill-golazos 5 (Flow computation_limit, Golazos market-limited); others <=3 by-design/upstream; fmv-backfill 1 (pre-fix timeout, 23:21Z 10-04).",
     "sentry": "n/a (dark since 08-18, no spend). Health from Vercel + beacon.",
-    "vercel_12h": "chronic groups only (pack_lifecycle 5s since 08-23, entity get_edition_recent_sales degrade-to-empty since 07-31, parallel-premiums 8s since 08-17, relative-deals, fmv-backfill) + panini board cluster (deal/special-serials/player timeouts) which STOPPED at 06:18:34Z, ~2h clean.",
-    "db_size_mb": 31973,
-    "db_size_note": "+7.9 GB vs 10-03 (24030). Attributed: flowty_index_sales 2.6GB + flowty_chain_listing_completed 980MB (Flowty promotion/index) + net._http_response 3.5GB (chronic pg_net log). Not runaway."
+    "vercel_24h": "14 groups, all chronic (pack_lifecycle 5s since 08-23, ipfs-media 12s since 09-03, edition special-serials degrade since 07-31, parallel-premiums 8s, relative-deals, collection-snapshot, set-activity degrade, get_set_editions structural-throw since 08-02 (1 occ 08:06Z, honest degrade)) + the cleared Panini board cluster (deal/special-serials/player timeouts, last 12:37Z 10-04). No new error group.",
+    "client_error_beacon_24h": 3,
+    "db_size_mb": 34535,
+    "db_size_note": "+2562 vs 10-04 (31973). Slowing (10-03->10-04 was +7943). Flowty index tables + chronic net._http_response log. Not runaway. Scratch drop (queued) reclaims ~185MB."
+  },
+  "accuracy_backtest_7d": {
+    "nba_top_shot_published_all": {"median_ratio": 1.000, "median_abs_err_pct": 13.0, "within_25_pct": 71.8, "n": 18581},
+    "nba_top_shot_published_high": {"median_ratio": 1.000, "median_abs_err_pct": 9.1, "within_25_pct": 87.3, "n": 4581},
+    "nfl_all_day_published_all": {"median_ratio": 1.20, "median_abs_err_pct": 26.7, "within_25_pct": 46.8, "median_abs_err_usd": 0.05, "n": 5135, "note": "sub-dollar market, 93% of sales <$1; ratio reflects penny-scale %, not a lagging estimator (snapshot fresh 05:35Z)"}
   },
   "fmv_high_med": {
-    "nba_top_shot": 8205,
-    "panini_blockchain": 3405,
-    "disney_pinnacle": 854,
-    "nfl_all_day": 1729,
-    "candy_mlb": 30,
+    "nba_top_shot": 8309,
+    "panini_blockchain": 3837,
+    "disney_pinnacle": 855,
+    "nfl_all_day": 1722,
+    "candy_mlb": 29,
     "laliga_golazos": 6,
     "ufc_strike": 0
   },
-  "fmv_high_med_definition": "HIGH+MEDIUM confidence edition count per collection from rpc_ops_snapshot fmv_by_collection (computed 05:35Z).",
+  "fmv_high_med_definition": "HIGH+MEDIUM confidence edition count per collection from rpc_ops_snapshot fmv_by_collection (computed 05:35Z 10-05).",
   "editions_by_collection": {
-    "nba_top_shot": 14492,
-    "panini_blockchain": 14252,
+    "nba_top_shot": 14494,
+    "panini_blockchain": 17859,
     "nfl_all_day": 6190,
     "laliga_golazos": 575,
     "ufc_strike": 518,
@@ -43,13 +50,18 @@
     "r118_blind_handlers": 0,
     "zero_yield_offenders": 0
   },
-  "deltas_vs_prev": "db_size 24030→31973 MB (+7943, Flowty). trust_precompute 5.01→5.37h. zero-yield inspected 307→315. FMV counts stable. No new Vercel chronic group; panini board cluster appeared 02:52Z and cleared 06:18Z (not persistent).",
+  "deltas_vs_prev": "db_size 31973->34535 MB (+2562, Flowty, slowing). trust_precompute 5.37->5.38h. zero-yield inspected 315 (same). FMV HIGH+MED: topshot 8205->8309, panini 3405->3837 (editions 14252->17859, new walks), others stable. No new Vercel group; prior panini board cluster cleared. unmapped-sales-nfl_all_day 23325->15269 (draining).",
   "open_watches": [
-    "panini insight boards: re-open if snapshot age >180min on two consecutive ticks while Flowty promotion (697/698) runs",
-    "net._http_response 3.5GB chronic pg_net bloat"
+    "fmv-backfill fix 20261005001848: next 5 runs <=10s (1 post-fix run so far, 4.4s)",
+    "chain-arrivals-seed fix: first post-fix seed tick ~11:13Z 10-05 (daytime 7:45 AM PT)",
+    "team-moment player_name: 2:50/2:55 AM PT mint/link jobs create no team 'player' (8 AM PT 10-05)",
+    "allday-lock-refresh: rows_written/day falls from 10-06; wmc-reindex-verify clears Sat 10-10",
+    "net._http_response ~3.5GB chronic pg_net bloat + overall DB growth"
   ],
   "needs_trevor": [
-    "~560-file inbox archival backlog → rpc-context-hygiene pass or approve bulk archive"
+    "0410Z: run dedupe_tx_lane_20261004.sql then drop_scratch_20261004.sql in the Supabase SQL editor (destructive, operator-gated; pre-checks verified: 7 dupes, 0 cron refs to scratch)",
+    "#173 topshot_moment_subeditions conflated bases: exact-count + writer-attribution + re-key is Claude Code's (refined sizing in the 10-05 handoff)"
   ],
-  "housekeeping": "3 consumed candidates archived (1 via git in clone, 2 mount-only moved on mount). Lock released."
+  "non_actions": "The ~560 inbox 'archival backlog' is NOT a task - the inbox is append-only and CI-pinned; archiving reds main. Intended steady state.",
+  "housekeeping": "0 shipped, 0 reverted, 0 inbox filings retired (none resolved). Handoff committed + mirrored to the claude.ai Project. Lock released."
 }
