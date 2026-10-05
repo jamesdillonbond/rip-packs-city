@@ -99,6 +99,23 @@ describe("toFmvRowV11", () => {
   it("ignores an unusable recent row rather than publishing it", () => {
     expect(toFmvRowV11(card({ volume_txns: 5, recent_sale: 9, avg_sale: 12 }), NOW, { fmv_usd: 0, n_recent: 3 })).toMatchObject({ fmv_usd: 12, confidence: "LOW" })
   })
+  // 2026-10-04: writing nothing left a delisted ask's ASK_ONLY price as the latest snapshot forever.
+  it("retires the price with a NO_DATA row when the walk read no sale and ZERO listed", () => {
+    const r = toFmvRowV11(card({ volume_txns: 0, for_sale_count: 0, floor_price: 0 }), NOW, null)!
+    expect(r).toMatchObject({ edition_id: "p__1_10", confidence: "NO_DATA", algo_version: "panini-1.1.0" })
+    expect(r.fmv_usd).toBeNull()
+    expect(toFmvRowV11(card({ for_sale_count: "0" }), NOW, null)!.confidence).toBe("NO_DATA")
+  })
+  it("writes nothing when the payload never said how many are listed (it confirmed nothing)", () => {
+    expect(toFmvRowV11(card({ volume_txns: 0 }), NOW, null)).toBeNull()
+    expect(toFmvRowV11(card({ volume_txns: 0, for_sale_count: null }), NOW, null)).toBeNull()
+    expect(toFmvRowV11(card({ volume_txns: 0, for_sale_count: "" }), NOW, null)).toBeNull()
+    expect(toFmvRowV11({ sku: "p__1_10" } as any, NOW, null)).toBeNull()
+  })
+  it("never retires a card with listings or sales on record, even if no price field parsed", () => {
+    expect(toFmvRowV11(card({ volume_txns: 0, for_sale_count: 2 }), NOW, null)).toBeNull()
+    expect(toFmvRowV11(card({ volume_txns: 3, for_sale_count: 0 }), NOW, null)).toBeNull()
+  })
 })
 
 // panini-1.2.0 (2026-09-30): only the LOW tier changes — last <=3 sales at any age, not the lifetime
@@ -117,6 +134,13 @@ describe("toFmvRowV12", () => {
     expect(toFmvRowV12(card(lifetime), NOW, { fmv_usd: 21, n_recent: 3 }, { fmv_usd: 5, n_sales: 3 })).toMatchObject({ fmv_usd: 21, confidence: "HIGH" })
     expect(toFmvRowV12(card({ volume_txns: 0, floor_price: 100 }), NOW, null, { fmv_usd: 5, n_sales: 1 })).toMatchObject({ confidence: "ASK_ONLY", fmv_usd: 100 * PANINI_ASK_ONLY_MULT })
     expect(toFmvRowV12(card({ volume_txns: 0, floor_price: 0 }), NOW, null, null)).toBeNull()
+  })
+  it("retires a delisted ask's price as NO_DATA, unless its own recorded sales make it LOW", () => {
+    const r = toFmvRowV12(card({ volume_txns: 0, for_sale_count: 0 }), NOW, null, null)!
+    expect(r).toMatchObject({ confidence: "NO_DATA", algo_version: "panini-1.2.0" })
+    expect(r.fmv_usd).toBeNull()
+    expect(toFmvRowV12(card({ volume_txns: 0, for_sale_count: 0 }), NOW, null, { fmv_usd: 0, n_sales: 2 })!.confidence).toBe("NO_DATA")
+    expect(toFmvRowV12(card({ volume_txns: 0, for_sale_count: 0 }), NOW, null, { fmv_usd: 40, n_sales: 2 })).toMatchObject({ fmv_usd: 40, confidence: "LOW" })
   })
 })
 

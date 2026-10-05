@@ -4,6 +4,8 @@ Routine `trig_01K68ddYeWqUumNN2RavC4ht` ("Panini freshness check", 11:00 AM PT d
 
 2026-09-27: added the 09-24/25 `panini-1.1.0` engine regime note, Query 6b (same-engine paired confidence drift) and Escalation 5; retired the `pct_hi_med_repeat` < ~68 gate, which fired a false alarm that morning.
 
+2026-10-04: `panini-1.2.0` is the current engine (third-regime note); `NO_DATA` retirement rows are expected (the 39-edition 7-day tail was a delisted-ask price never retired, not walk selection); `absurd_24h` counts only ask-derived prices over $100k, and sale-backed ones moved to report-only `big_sale_backed_24h`. **Re-paste into the routine.**
+
 <!-- paste everything below this line -->
 
 Read-only freshness + failure-triage check for the Rip Packs City Panini (2026 Prizm World Cup) residential ingest runner. Run this every time, self-contained. Take NO corrective action — report only.
@@ -20,6 +22,10 @@ Read-only freshness + failure-triage check for the Rip Packs City Panini (2026 P
 - **The only valid confidence gate is a SAME-ENGINE, SAME-EDITION comparison — Query 6b.** On 09-27 it read 3,004 paired editions, 36.9% → 36.9% HIGH/MEDIUM, 12 downgraded / 10 upgraded. Positive control, same day: pairing the same editions against their last 1.0.0 snapshot instead read 72.9% → 36.9%, 1,127 down / 45 up — so the gate does move when pricing semantics change.
 - On 2026-09-27 this check fired a false alarm (`pct_hi_med_repeat` 55.4 vs the stale ~68 floor) because this note did not exist yet. Do not repeat it.
 - A future engine bump (`panini-1.2.0` …) is a THIRD regime: `algo_list_24h` will show two versions and Query 6b's `n_paired` collapses. Report the engine change, skip the confidence gate until `n_paired` recovers, and do not compare across versions.
+
+⚠ **THIRD REGIME 2026-09-30 — `panini-1.2.0` is the CURRENT engine** (Trevor approved; the LOW tier prices from the median of the edition's last ≤3 sales at any age instead of Panini's lifetime average; HIGH / MEDIUM / ASK_ONLY unchanged). Since then `algo_list_24h` reads `panini-1.2.0` alone. That is normal, not a version note. Every confidence figure in this prompt measured under 1.1.0 (including the 09-27 Query 6b reading) is a 1.1.0 baseline: Query 6b pairs within one `algo_version`, so it re-bases itself and needs no edit. Do not compare a 1.2.0 cohort share to a 1.1.0 one.
+
+⚠ **NO_DATA ROWS ARE EXPECTED FROM 2026-10-04 — a price RETIRED, not a write failure.** Until then a walked card with no recent sale, no sale ever and ZERO listed wrote no snapshot at all, so its last ASK_ONLY price, set off an ask that has since been delisted, stayed the latest row and kept being served. On 10-04 that was 41 editions, $396k of FMV, the oldest 241 h, every one walked within the day; one read $250,005. That is what the 10-04 "39 old editions unpriced 7+ days" filing was: the walk reached them every day, and the edition-selection theory was wrong. The ingest now writes a `NO_DATA` row with `fmv_usd` NULL for those cards (`lib/chains/panini/ingest-normalize.ts`, `toFmvRowV11`). Sizing from the 10-04 capture: ~1 card in 360 walked. Consequences: (1) null-FMV rows WITH `confidence = 'NO_DATA'` are the fix, and Query 6 gates only on nulls WITHOUT it; (2) those 41 editions leave the 7-day-stale tail as the walk reaches them; (3) **a tail of 7+-day-old editions whose `last_seen_at` is FRESH is this defect returning. One whose `last_seen_at` is ALSO old is a selection problem.** Read `panini_editions.last_seen_at` before naming the walk order.
 
 STEP 1 — Query. Use the Supabase MCP `execute_sql` tool (if it isn't already loaded, find it with ToolSearch: query "select:execute_sql" or keyword "execute_sql supabase"). Run all EIGHT queries against project id `bxcqstmqfzmuolpuynti`, one call each (multi-statement calls return only the last result).
 
@@ -197,10 +203,12 @@ WITH s24 AS (
 SELECT
   (SELECT count(*) FROM s24)                                                   AS rows_24h,
   (SELECT count(DISTINCT edition_id) FROM s24)                                 AS eds_24h,
-  (SELECT round(100.0*count(*) FILTER (WHERE fmv_usd IS NULL)/nullif(count(*),0),1) FROM s24)  AS pct_null_fmv_24h,
-  (SELECT round(100.0*count(*) FILTER (WHERE fmv_usd IS NULL)/nullif(count(*),0),1) FROM base) AS pct_null_fmv_base,
+  (SELECT round(100.0*count(*) FILTER (WHERE fmv_usd IS NULL AND confidence <> 'NO_DATA')/nullif(count(*),0),1) FROM s24)  AS pct_null_fmv_24h,
+  (SELECT round(100.0*count(*) FILTER (WHERE fmv_usd IS NULL AND confidence <> 'NO_DATA')/nullif(count(*),0),1) FROM base) AS pct_null_fmv_base,
+  (SELECT count(*) FROM s24 WHERE confidence = 'NO_DATA')                      AS retired_no_data_24h,
   (SELECT count(*) FROM s24 WHERE fmv_usd IS NOT NULL AND fmv_usd <= 0)        AS nonpositive_24h,
-  (SELECT count(*) FROM s24 WHERE fmv_usd > 100000)                            AS absurd_24h,
+  (SELECT count(*) FROM s24 WHERE fmv_usd > 100000 AND confidence NOT IN ('HIGH','MEDIUM','LOW')) AS absurd_24h,
+  (SELECT count(*) FROM s24 WHERE fmv_usd > 100000 AND confidence IN ('HIGH','MEDIUM','LOW'))     AS big_sale_backed_24h,
   (SELECT string_agg(DISTINCT algo_version, ',') FROM s24)                      AS algo_list_24h,
   (SELECT round(100.0*count(*) FILTER (WHERE confidence IN ('HIGH','MEDIUM'))/nullif(count(*),0),1) FROM s24)  AS pct_hi_med_24h,
   (SELECT round(100.0*count(*) FILTER (WHERE confidence IN ('HIGH','MEDIUM'))/nullif(count(*),0),1) FROM base) AS pct_hi_med_base,
@@ -215,6 +223,7 @@ SELECT
 ⚠ **The strategic consequence, which belongs in any report where this comes up:** the roadmap's launch gate is the share of prices at HIGH/MEDIUM confidence, and the old ~87.5% was measuring only the easy slice. The honest catalogue-wide number is ~61% and will keep drifting toward the tail's true rate as coverage completes. **Do not treat the pre-09-19 figure as the baseline to return to.**
 - ⛔ **RETIRED 2026-09-27: the `pct_hi_med_repeat` < ~68 gate.** It was calibrated under `panini-1.0.0`; under 1.1.0 it fires every day. `pct_hi_med_*` and the cohort split are now REPORT-ONLY context — the confidence gate is Escalation 5 on Query 6b. The paragraphs above describe the 09-19 step under 1.0.0 and are history.
 - **Still gate here on:** if `pct_null_fmv_24h` exceeds `pct_null_fmv_base` by more than 5 points, or `nonpositive_24h`/`absurd_24h` > 0, or `algo_list_24h` shows more than one version outside a deploy window.
+- ⚠ **`absurd_24h` counts ONLY prices over $100k that NO sale anchors** (ASK_ONLY, i.e. 0.5× an ask). Re-scoped 2026-10-04: the old count fired on two real prices, a Lamine Yamal 1/1 last sold at $210,000 (06-25) and a Wembanyama Gold /10 whose recent non-special sales were $125k / $110k / $25k. Sale-backed six-figure FMVs are `big_sale_backed_24h`, which is report-only. `retired_no_data_24h` is report-only too (see the 10-04 NO_DATA note at the top). Expect a handful a day; hundreds would mean the stats payload lost its listing counts.
 - ⚠ `n_repeat` / `n_newly_reached` are the honesty check on the cohort split (509 / 1,674 on 09-20). If `n_repeat` is under ~100 the repeat ratio is too thin to gate on — report both raw counts and skip the gate rather than firing on noise.
 - ⚠ `serial_fmv` is 100% NULL for Panini in both the 24h window and the 15-day baseline — it is an unused column, not a regression. Compare any null rate to its own baseline before calling it a defect; a column that was always null beside a healthy `computed_at` is the defaulted-value shape, not evidence.
 - `rows_24h` should equal `eds_24h` (one snapshot per edition per walk-day). A material divergence means duplication returned — corroborate with `fmv_yield` in Query 2.
@@ -285,7 +294,7 @@ ESCALATION 4 — BAD LAST WALK (new 2026-09-20). On the most recent COMPLETED wa
 
 ESCALATION 5 — SAME-ENGINE CONFIDENCE DRIFT (new 2026-09-27; replaces the retired `pct_hi_med_repeat` floor). On Query 6b, with `n_paired` ≥ 100, fire if `downgraded − upgraded` > 3% of `n_paired` OR `pct_hm_now` < `pct_hm_prev` − 3:
 "⚠️ Panini confidence DRIFTED under the same engine — of {n_paired} editions re-priced under {algos_cur}, {downgraded} lost HIGH/MEDIUM and {upgraded} gained it ({pct_hm_prev}% → {pct_hm_now}%). Engine and edition set are both held fixed here, so this is not composition or the 09-24 engine change."
-⚠ Do NOT fire this, or anything else, off `pct_hi_med_24h`, `pct_hi_med_base` or `pct_hi_med_repeat` — those swing ~25 points a day with walk composition under 1.1.0 and are report-only. If `algo_list_24h` shows a version other than `panini-1.1.0`, report the engine change as a note instead.
+⚠ Do NOT fire this, or anything else, off `pct_hi_med_24h`, `pct_hi_med_base` or `pct_hi_med_repeat` — those swing ~25 points a day with walk composition under 1.1.0 and are report-only. If `algo_list_24h` shows a version other than `panini-1.2.0` (current since 2026-09-30), report the engine change as a note instead.
 
 PRIMARY CASES — report ONLY the first that matches:
 

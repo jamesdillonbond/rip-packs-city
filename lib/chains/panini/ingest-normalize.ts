@@ -83,8 +83,20 @@ export function toFmvRowV11(c: PaniniCardStats, nowIso: string, recent?: { fmv_u
   } else if (Number.isFinite(floor) && floor > 0) {
     fmv = Math.round(floor * PANINI_ASK_ONLY_MULT * 100) / 100; confidence = "ASK_ONLY";
   }
-  if (fmv == null) return null;
-  return { edition_id: String(c?.sku ?? c?.psku), fmv_usd: fmv, confidence, algo_version: "panini-1.1.0", computed_at: nowIso };
+  // RETIRE A PRICE WHOSE ANCHOR IS GONE (2026-10-04). Returning null here wrote NOTHING, so when an
+  // ASK_ONLY edition's only ask was delisted, its old snapshot stayed the latest and every reader kept
+  // serving it: 41 editions / $396k of FMV priced off asks no longer listed, the oldest 241 h, all
+  // walked within the last day (one $250,005). The walk positively read "no recent sale, no sale ever,
+  // zero listed", so the honest snapshot is NO_DATA with a null price, which supersedes the stale row
+  // in every latest-per-edition reader. Only on an EXPLICIT for_sale_count of 0: a stats payload
+  // that does not carry the field has confirmed nothing, so it still writes nothing (fail open).
+  if (fmv == null) {
+    const listed = ms.for_sale_count;
+    const readZeroListed = listed !== null && listed !== undefined && listed !== "" && Number(listed) === 0;
+    if (!readZeroListed || txns > 0) return null;
+    return { edition_id: String(c?.sku ?? c?.psku), fmv_usd: null as number | null, confidence, algo_version: "panini-1.1.0", computed_at: nowIso };
+  }
+  return { edition_id: String(c?.sku ?? c?.psku), fmv_usd: fmv as number | null, confidence, algo_version: "panini-1.1.0", computed_at: nowIso };
 }
 
 // panini-1.2.0 (2026-09-30, Trevor approved) — 1.1.0 with ONE change: the LOW tier (sales exist, none in
@@ -102,8 +114,15 @@ export function toFmvRowV12(
 ) {
   const row = toFmvRowV11(c, nowIso, recent);
   if (!row) return null;
-  if (row.confidence === "LOW" && last && last.n_sales >= 1 && Number.isFinite(Number(last.fmv_usd)) && Number(last.fmv_usd) > 0) {
-    row.fmv_usd = Number(last.fmv_usd);
+  const lastUsable = !!last && last.n_sales >= 1 && Number.isFinite(Number(last.fmv_usd)) && Number(last.fmv_usd) > 0;
+  if (row.confidence === "LOW" && lastUsable) {
+    row.fmv_usd = Number(last!.fmv_usd);
+  }
+  // A NO_DATA row (2026-10-04: no recent sale, Panini reports no sales, nothing listed) whose own
+  // recorded sales say otherwise is the LOW tier by 1.2.0's definition (sales exist, none in 30 d).
+  if (row.confidence === "NO_DATA" && lastUsable) {
+    row.fmv_usd = Number(last!.fmv_usd);
+    row.confidence = "LOW";
   }
   return { ...row, algo_version: "panini-1.2.0" };
 }
