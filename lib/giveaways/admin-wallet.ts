@@ -72,10 +72,32 @@ export async function walletChannel(): Promise<WalletChannel> {
   }
 }
 
+/** Resolves to `fallback` if `p` has not settled within `ms`. */
+function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(fallback), ms)
+    p.then(
+      (v) => (clearTimeout(t), resolve(v)),
+      () => (clearTimeout(t), resolve(fallback)),
+    )
+  })
+}
+
+export interface WalletTraceExtra {
+  /** FCL message types seen on the page while waiting ("FCL:VIEW:READY", …). */
+  seen?: string[]
+  /** What FCL or the wallet LOGGED (console.error/warn) without rejecting. */
+  logged?: string[]
+}
+
 /** Where to look, said once a prompt has gone unanswered for SLOW_WALLET_MS. */
-export function slowWalletHint(channel: WalletChannel, waitingOn: string[], blocked: string[]): string {
+export function slowWalletHint(channel: WalletChannel, waitingOn: string[], blocked: string[], extra: WalletTraceExtra = {}): string {
+  const seen = extra.seen ?? []
+  const logged = extra.logged ?? []
   const where =
-    channel === "phone"
+    channel === "extension" && seen.length === 0
+      ? "The Flow Wallet extension has not answered this page at all. Click its toolbar icon and unlock it if asked; if no request is waiting there, reload the extension (chrome://extensions → Flow Wallet → reload), reload this page, and try again."
+      : channel === "phone"
       ? "Open the Flow Wallet app on your phone: you connected by QR code, so the approval is waiting there."
       : channel === "extension"
         ? "Click the Flow Wallet extension icon in your browser toolbar: its approval window may be behind this one."
@@ -85,7 +107,9 @@ export function slowWalletHint(channel: WalletChannel, waitingOn: string[], bloc
   return (
     where +
     (waitingOn.length ? ` Still waiting on: ${waitingOn.join(", ")}.` : "") +
-    (blocked.length ? ` Blocked by the page's security policy: ${blocked.join(", ")}.` : "")
+    (blocked.length ? ` Blocked by the page's security policy: ${blocked.join(", ")}.` : "") +
+    (seen.length ? ` Wallet messages seen: ${seen.join(", ")}.` : "") +
+    (logged.length ? ` Logged: ${logged.join(" | ")}` : "")
   )
 }
 
@@ -97,13 +121,18 @@ export function slowWalletHint(channel: WalletChannel, waitingOn: string[], bloc
  */
 export async function sendDeliveryBatch(batch: DeliveryBatch, opts: { onSlow?: (hint: string) => void; slowMs?: number } = {}): Promise<SentBatch> {
   initFcl()
-  const channel = await walletChannel()
   const trace = startNetworkTrace()
+  // the timer starts FIRST: whatever stalls after this point, the admin still hears where to look
+  let channel: WalletChannel = "unknown"
   const slow = opts.onSlow
-    ? setTimeout(() => opts.onSlow?.(slowWalletHint(channel, trace.waitingOn(), trace.blocked())), opts.slowMs ?? SLOW_WALLET_MS)
+    ? setTimeout(
+        () => opts.onSlow?.(slowWalletHint(channel, trace.waitingOn(), trace.blocked(), { seen: trace.seen(), logged: trace.logged() })),
+        opts.slowMs ?? SLOW_WALLET_MS,
+      )
     : null
   let txId: string
   try {
+    channel = await within(walletChannel(), 1_500, "unknown")
     // "own": the connected Flow Wallet's own moments; "linked": a child account's, via Hybrid Custody
     txId = await fcl.mutate({
       cadence: batch.kind === "own" ? DELIVER_OWN_BATCH_CADENCE : DELIVER_BATCH_CADENCE,
@@ -170,10 +199,50 @@ function whenVisible(): Promise<void> {
  * request the page's Content-Security-Policy blocked — Safari reports both as a
  * bare "Load failed". Browser only; a no-op elsewhere.
  */
-export function startNetworkTrace(): { describe: () => string; stop: () => void; waitingOn: () => string[]; blocked: () => string[] } {
+export interface NetworkTrace {
+  describe: () => string
+  stop: () => void
+  waitingOn: () => string[]
+  blocked: () => string[]
+  seen: () => string[]
+  logged: () => string[]
+}
+
+const MAX_LOGGED = 3
+
+export function startNetworkTrace(): NetworkTrace {
   if (typeof window === "undefined" || typeof window.fetch !== "function") {
-    return { describe: () => "", stop: () => undefined, waitingOn: () => [], blocked: () => [] }
+    return { describe: () => "", stop: () => undefined, waitingOn: () => [], blocked: () => [], seen: () => [], logged: () => [] }
   }
+  // FCL talks to an extension or popup by window messages; which ones arrived says how far it got
+  const seenTypes = new Set<string>()
+  const onMessage = (ev: Event) => {
+    const t = (ev as MessageEvent).data?.type
+    if (typeof t === "string" && t.startsWith("FCL:")) seenTypes.add(t)
+  }
+  // FCL reports some failures only to the console and keeps waiting; keep the first few
+  const loggedLines: string[] = []
+  const realError = console.error
+  const realWarn = console.warn
+  const capture = (real: (...a: unknown[]) => void) =>
+    function (this: unknown, ...a: unknown[]) {
+      if (loggedLines.length < MAX_LOGGED) {
+        loggedLines.push(
+          a
+            .map((x) => (x instanceof Error ? x.message : typeof x === "string" ? x : (() => { try { return JSON.stringify(x) } catch { return String(x) } })()))
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .slice(0, 200),
+        )
+      }
+      real.apply(console, a)
+    }
+  const tracedError = capture(realError)
+  const tracedWarn = capture(realWarn)
+  console.error = tracedError
+  console.warn = tracedWarn
+  const canListen = typeof window.addEventListener === "function"
+  if (canListen) window.addEventListener("message", onMessage)
   const failed: string[] = []
   const blocked: string[] = []
   // requests sent and not yet answered: what a silent wait is actually waiting on
@@ -211,8 +280,13 @@ export function startNetworkTrace(): { describe: () => string; stop: () => void;
       (wentHidden && (failed.length || blocked.length) ? " · the page was in the background meanwhile (iOS can cut its connections)" : ""),
     waitingOn: () => [...new Set(inflight.values())],
     blocked: () => [...new Set(blocked)],
+    seen: () => [...seenTypes],
+    logged: () => [...loggedLines],
     stop: () => {
       if (window.fetch === traced) window.fetch = realFetch
+      if (console.error === tracedError) console.error = realError
+      if (console.warn === tracedWarn) console.warn = realWarn
+      if (canListen) window.removeEventListener("message", onMessage)
       document.removeEventListener("securitypolicyviolation", onViolation)
       document.removeEventListener("visibilitychange", onVisibility)
     },

@@ -195,6 +195,49 @@ describe("giveaways/admin-wallet", () => {
   })
 })
 
+describe("giveaways/admin-wallet — the trace records what FCL only LOGS, and the wallet's messages", () => {
+  it("captures console errors/warnings and FCL window messages while signing, then restores both", () => {
+    const handlers: Array<(e: unknown) => void> = []
+    const win = {
+      fetch: vi.fn(),
+      location: { href: "https://www.rippackscity.com/admin/giveaways" },
+      addEventListener: (_t: string, f: (e: unknown) => void) => handlers.push(f),
+      removeEventListener: (_t: string, f: (e: unknown) => void) => handlers.splice(handlers.indexOf(f), 1),
+    }
+    const doc = { visibilityState: "visible", addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    vi.stubGlobal("window", win)
+    vi.stubGlobal("document", doc)
+    const realError = console.error
+    const realWarn = console.warn
+    console.error = vi.fn()
+    console.warn = vi.fn()
+    const quietError = console.error
+    const quietWarn = console.warn
+    try {
+      const trace = startNetworkTrace()
+      console.error("FCL authz failed:", new Error("Extension not found"))
+      console.warn({ code: 7 })
+      for (let i = 0; i < 5; i++) console.error(`extra ${i}`)
+      for (const h of handlers) {
+        h({ data: { type: "FCL:VIEW:READY" } })
+        h({ data: { type: "not-fcl" } })
+        h({ data: null })
+      }
+      expect(trace.logged()).toEqual(["FCL authz failed: Extension not found", '{"code":7}', "extra 0"])
+      expect(trace.seen()).toEqual(["FCL:VIEW:READY"])
+      expect(quietError).toHaveBeenCalled() // still reaches the real console
+      trace.stop()
+      expect(console.error).toBe(quietError)
+      expect(console.warn).toBe(quietWarn)
+      expect(handlers).toHaveLength(0)
+    } finally {
+      console.error = realError
+      console.warn = realWarn
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
 describe("giveaways/admin-wallet — where the wallet will ask (Trevor, test2 2026-10-04: \"It's not doing anything now\")", () => {
   const BATCH = { source: "0x00000000000000aa", kind: "linked" as const, providerControllerID: "70", momentIDs: ["1"], recipients: ["0x01"] }
 
@@ -210,12 +253,33 @@ describe("giveaways/admin-wallet — where the wallet will ask (Trevor, test2 20
 
   it("says where to look, and what the page is still waiting on or was blocked from", () => {
     expect(slowWalletHint("phone", [], [])).toMatch(/Flow Wallet app on your phone/)
-    expect(slowWalletHint("extension", [], [])).toMatch(/extension icon/)
+    // the extension answered something but no prompt is visible: bring its window forward
+    expect(slowWalletHint("extension", [], [], { seen: ["FCL:VIEW:READY"] })).toMatch(/extension icon/)
+    // the extension never answered the page at all (Trevor's desktop, 2026-10-04): unlock / reload it
+    expect(slowWalletHint("extension", [], [])).toMatch(/has not answered this page at all.*reload the extension/)
     expect(slowWalletHint("popup", [], [])).toMatch(/blocked-popup icon/)
     expect(slowWalletHint("unknown", [], [])).toMatch(/phone app, or the browser extension/)
     const h = slowWalletHint("phone", ["POST lilico.app/api/wc/payer"], ["https://x.example by connect-src"])
     expect(h).toContain("Still waiting on: POST lilico.app/api/wc/payer.")
     expect(h).toContain("Blocked by the page's security policy: https://x.example by connect-src.")
+    const e = slowWalletHint("extension", [], [], { seen: ["FCL:VIEW:READY"], logged: ["Error: Declined: Externally Halted"] })
+    expect(e).toContain("Wallet messages seen: FCL:VIEW:READY.")
+    expect(e).toContain("Logged: Error: Declined: Externally Halted")
+  })
+
+  it("the hint still comes when reading the wallet session itself hangs (the timer starts first)", async () => {
+    fcl.currentUser.snapshot.mockImplementationOnce(() => new Promise(() => undefined))
+    let answer: (id: string) => void = () => undefined
+    fcl.mutate.mockImplementationOnce(() => new Promise<string>((r) => (answer = r)))
+    fcl.onceSealed.mockResolvedValue({ statusCode: 0, errorMessage: "" })
+    const hints: string[] = []
+    const p = sendDeliveryBatch(BATCH, { onSlow: (h) => hints.push(h), slowMs: 5 })
+    await new Promise((r) => setTimeout(r, 40))
+    expect(hints).toHaveLength(1)
+    expect(hints[0]).toMatch(/phone app, or the browser extension/)
+    await new Promise((r) => setTimeout(r, 1_600)) // the session read gives up; the send proceeds
+    answer("tx-hung-snapshot")
+    await expect(p).resolves.toEqual({ txId: "tx-hung-snapshot" })
   })
 
   it("a prompt left unanswered gets ONE hint naming the phone when connected by QR code; a quick answer gets none", async () => {
