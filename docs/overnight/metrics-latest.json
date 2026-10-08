@@ -1,46 +1,46 @@
 {
-  "generated_at_pt": "2026-10-07 ~1:25 AM PT (nightly autonomous pass, Cowork cloud, unattended)",
-  "generated_at_utc": "2026-10-07T08:25Z",
-  "pass": "Nightly overnight autonomous pass, push-capable via desktop-VM clone (+.rpc-git-cred store; cloud-container push unavailable - no add_repo tool, repo not in its authorized set). Genuine overnight (DB now 08:09Z = ~1:09 AM PT, no clock skew). 4 mount-only monitor filings folded; 1 shipped (chain-arrival re-drain). Handoff: docs/handoff-2026-10-07-overnight-pass.md",
-  "shipped": 1,
+  "generated_at_pt": "2026-10-08 ~1:15 AM PT (nightly autonomous pass, Cowork cloud, unattended)",
+  "generated_at_utc": "2026-10-08T08:15Z",
+  "pass": "Nightly overnight autonomous pass, push-capable via desktop-VM clone (+.rpc-git-cred store). Genuine overnight (DB now 08:08Z = ~1:08 AM PT, no clock skew). 1 new mount-only monitor filing folded (chain-arrival re-wedge escalation). 0 shipped - the 5th chain-arrival hand-drain was deliberately declined (treadmill). Handoff: docs/handoff-2026-10-08-overnight-pass.md",
+  "shipped": 0,
   "reverted": 0,
-  "verdict": "GREEN, 1 shipped (data-only, verified), 0 reverted. chain-arrival-pack-pulls re-wedged ~3h after the 10-06 drain (held 3 ticks; 14/14 fail last 14h) -> re-drained 4,083 deliveries/16 wallets, pending 0, fresh-subagent PASS; durable bound still QUEUED (owner lane). New: topshot-sellback-walk nft_id-null burst 10-06 09:00-15:45Z, SELF-RESOLVED (clean 16.5h), root-caused + QUEUED. Security/structural/trust clean except 1 marginal breach (public_board_slow_count = v_topshot_parallel_premiums ~2.4s, not erroring). FMV gate GREEN (TS ratio 1.000, AD 1.053 sub-dollar). Sentry-dark zero corroborated real by near-empty Vercel 24h board. Post-ship watch: allday-lock-refresh 2.6M->430k rows/day (target met), fmv-backfill holding, pack-supply-backfill still 530 (queued).",
+  "verdict": "GREEN, 0 shipped, 0 reverted. chain-arrival-pack-pulls wedged 4th consecutive night (source=chain_history max 2026-10-07 08:22:48Z = 23.9h stale; jobid 637 last 14/14 hourly ticks all failed at a flat 120.0s wall). Durable bound is off-limits (ingest route-logic) + queued P1; the daytime monitor's 10-08 filing explicitly asked to ship the bound instead of a 5th hand-drain, so this pass declined the drain (re-wedges at 11:13Z seed before Trevor wakes = no durable value, masks the stall). Security/structural/trust all clean; trust breaches 1->0 (public_board_slow_count self-cleared). FMV gate GREEN (TS published ratio 1.000, AD 1.000, both tighter than 10-07). Sentry-dark zero corroborated real by shrinking Vercel 24h board (6->4 chronic groups). Post-ship watch: allday-lock-refresh healthy, fmv-backfill holding, recon-rips 0 fails, pack-supply-backfill still 530 (queued 4 nights).",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
     "structural": "clean (function_search_path_drift [], procedure_txn_control_pins [], procedure_search_path_unpinned [], cross_collection_mat_staleness [], backward_cursor_rewinds [], wmc_null_edition_key [], suppression_parked_claim_drift [])",
-    "trust_health_breaches": 1,
-    "trust_health_breach_detail": "public_board_slow_count = 1: v_topshot_parallel_premiums ~2.4s count(*) probe (over 2s threshold) but NOT erroring - no Vercel runtime error on /insights/parallel-premiums. Marginal, not user-impacting; count(*) probe is an unreliable latency proxy per skill.",
-    "trust_precompute_max_age_hours": 5.41,
+    "trust_health_breaches": 0,
+    "trust_health_breach_detail": "0 breaches - the 10-07 marginal public_board_slow_count (v_topshot_parallel_premiums ~2.4s count-probe) cleared on its own.",
+    "trust_precompute_max_age_hours": 5.37,
     "edition_integrity_flags": 8,
     "topshot_impossible_parallel_serials": 0,
     "r118_timeout_blind": 0,
     "stalled_pipelines": "[]",
-    "zero_yield_lanes": "1 offender: ingest-pinnacle-mints-backfill (5226 recent runs, 0 written, last find 2026-09-28) - backfill likely exhausted; noted only.",
-    "pgcron_recent_failures": "rpc-chain-arrival-pack-pulls only (14/14 fails last 14h; the recurring WEDGE, re-drained this pass -> pending 0; durable bound queued). No other pg_cron failures.",
-    "pipeline_alerts": "atlas-edition-supply failure_rate HIGH (7/9 over 3d = CF-403 pages re-read next cycle; freshness OK - 0 of 282 sets un-walked >6h; known-class, do-not-reflag, WATCH - severity bumped from medium); unmapped-sales-nfl_all_day INFO (10301 open, ~2.6d, draining from 12761); atlas-*-upstream-403/flow-rest-moment-moved-400 INFO (by-design).",
-    "pipeline_fails_24h": "topshot-sellback-walk 360 (10-06 09:00-15:45Z nft_id-null burst, SELF-RESOLVED, clean since - QUEUED); topshot-pack-supply-atlas 174 (CF-403 single-request partials, re-asked, last 200 08:12Z - not a finding); topshot-pack-supply-backfill 100% HTTP 530 since 10-03 (QUEUED, 3 nights); sync-nba-projections 8 (muted to 10-28); atlas-market-feed 7 / wallet-backfill-golazos 5 / atlas-edition-supply 4 / member-wallet-usernames-atlas 3 / panini-collector-walk 2 (10-min cap, by design) / chain-arrival-flips 1 - all by-design/upstream.",
+    "zero_yield_lanes": "5 offenders, all exhausted/standby backfills (last find 09-28->09-30), noted only: pinnacle-pull-chain, ingest-pinnacle-mints-backfill, topshot-wmc-null-key-heal, wmc-edition-key-reconcile, golazos-sales-history-backfill. Write 0 because source is drained, not broken.",
+    "pgcron_recent_failures": "rpc-chain-arrival-pack-pulls only (21/24; the recurring WEDGE, 4th night, NOT re-drained this pass - durable bound queued). No other pg_cron failures.",
+    "pipeline_alerts": "atlas-edition-supply failure_rate HIGH (9/9 = CF-403 pages re-read next cycle; freshness OK - 0 of 282 sets un-walked >6h; known-class do-not-reflag, WATCH); panini-collector-walk + topshot-pack-supply-atlas medium (per-walk cap / CF partials, by design); unmapped-sales-nfl_all_day INFO (7963 open, ~2.4d, draining from 10301); pg_net_http_400 HIGH = Flow 'failed to convert event payload' node fault (upstream); atlas-*-403 / flow-moment-moved-400 INFO (by-design).",
+    "pipeline_fails_24h": "topshot-pack-supply-atlas 175 (CF partials, by design); sync-nba-projections 8 (muted to 10-28); chain-arrival-flips 7 / atlas-market-feed 6 / wallet-backfill-golazos 5 / panini-collector-walk 3 / atlas-edition-supply 3 / chain-arrivals 2 / member-wallet-usernames-atlas 2 / panini-ingest-enum 1 - all by-design/upstream; topshot-pack-supply-backfill 1 (the daily 530, QUEUED).",
     "sentry": "n/a (dark since 08-18, no spend). Health from Vercel + beacon.",
-    "vercel_24h": "6 runtime-error groups, all chronic/low-count, NO new group: ipfs-media 12s timeout x15 (chronic 09-03); panini-ingest walk-order maxPages partial x8 (by-design); insights/pack-drops composition timeout x2 (chronic 09-25); pack-detail pack_realized_ev >5s x1; collection-snapshot RPC_READ_TIMEOUT x1; edition special-serials statement-timeout->degrade x1. Latest code deploy dpl_BxonUaB5 READY. Corroborates Sentry-dark zero as real health.",
-    "client_error_beacon_24h": 2,
-    "db_size_mb": 35425,
-    "db_size_note": "+599 vs 10-06 (34826). Steady growth; chronic net._http_response log + Flowty index tables. Not runaway."
+    "vercel_24h": "4 runtime-error groups, all chronic/low-count, NO new group: panini-ingest walk-order maxPages partial x12 (by-design); ipfs-media 12s timeout x4 (chronic 09-03); insights/pack-drops composition timeout x3 (chronic 09-25); collection-snapshot RPC_READ_TIMEOUT x1 (chronic 09-11). Latest deploy dpl_BxonUaB5 READY. Corroborates Sentry-dark zero as real (6->4 groups vs 10-07).",
+    "client_error_beacon_24h": 0,
+    "db_size_mb": 35812,
+    "db_size_note": "+387 vs 10-07 (35425). Steady growth; chronic net._http_response log + Flowty index tables. Not runaway."
   },
   "accuracy_gate_7d_backtest": {
-    "nba_top_shot_published_ALL": {"ratio": 1.000, "median_abs_err_pct": 12.5, "within_25_pct": 73.0, "HIGH_within_25_pct": 87.8, "median_abs_err_usd": 0.04},
-    "nfl_all_day_published_ALL": {"ratio": 1.053, "median_abs_err_pct": 23.3, "within_25_pct": 51.5, "HIGH_within_25_pct": 75.5, "median_abs_err_usd": 0.05, "note": "ratio within 0.90-1.10 band; high err% is the sub-dollar market ($0.05 abs). Not lagging."},
+    "nba_top_shot_published_ALL": {"ratio": 1.000, "median_abs_err_pct": 12.5, "within_25_pct": 73.4, "HIGH_within_25_pct": 88.1, "median_abs_err_usd": 0.04},
+    "nfl_all_day_published_ALL": {"ratio": 1.000, "median_abs_err_pct": 24.0, "within_25_pct": 51.7, "HIGH_within_25_pct": 70.3, "median_abs_err_usd": 0.05, "note": "ratio dead-on 1.000 (tighter than 10-07's 1.053); high err% is the sub-dollar market ($0.05 abs). Not lagging."},
     "verdict": "GREEN - both estimators inside the acceptance band; no lag."
   },
   "fmv_high_med": {
-    "nba_top_shot": 8300,
-    "panini_blockchain": 6127,
-    "disney_pinnacle": 853,
-    "nfl_all_day": 1743,
-    "candy_mlb": 27,
+    "nba_top_shot": 8301,
+    "panini_blockchain": 6221,
+    "disney_pinnacle": 861,
+    "nfl_all_day": 1663,
+    "candy_mlb": 24,
     "laliga_golazos": 6,
     "ufc_strike": 0
   },
   "editions_by_collection": {
-    "panini_blockchain": 20882,
+    "panini_blockchain": 22110,
     "nba_top_shot": 14510,
     "nfl_all_day": 6190,
     "laliga_golazos": 575,
@@ -51,27 +51,27 @@
     "ts_uuid_editions_48h": 0,
     "ts_uuid_dupes_created_24h": 0
   },
-  "deltas_vs_prev": "db_size 34826->35425 MB (+599, steady). trust_precompute 5.45->5.41h. trust breaches 0->1 (public_board_slow_count, NEW, marginal/non-erroring). FMV HIGH+MED: topshot 8275->8300, panini 5220->6127 (+907, editions 19316->20882 new walks), pinnacle 861->853, nfl_all_day 1730->1743, candy 28->27, golazos 6. unmapped-sales-nfl_all_day 12761->10301 (draining). NEW: topshot-sellback-walk 10-06 nft_id burst (self-resolved). chain-arrival-pack-pulls still wedged (re-drained).",
+  "deltas_vs_prev": "db_size 35425->35812 MB (+387, steady). trust_precompute 5.41->5.37h. trust breaches 1->0 (public_board_slow_count self-cleared). FMV HIGH+MED: topshot 8300->8301, panini 6127->6221 (+editions 20882->22110 new walks), pinnacle 853->861, nfl_all_day 1743->1663, candy 27->24, golazos 6. unmapped-sales-nfl_all_day 10301->7963 (draining). chain-arrival-pack-pulls still wedged (NOT re-drained - declined 5th drain).",
   "post_ship_watch": {
-    "chain_arrival_pack_pulls_10-06_drain": "re-wedged ~3h as predicted (durable bound queued); re-drained this pass",
-    "allday_lock_refresh_10-04": "TARGET MET - rows_written/day 2.60M (10-02/03/04) -> 497k (10-05) -> 428k (10-06). wmc-reindex-verify clears Sat 10-10.",
-    "fmv_backfill_20261005001848": "HOLDING - runs 0.6-5.6s, all ok, no statement timeouts",
-    "topshot_pack_supply_backfill": "still 100% HTTP 530 (last 08:15Z 10-07, 37s) - QUEUED"
+    "chain_arrival_pack_pulls": "re-wedged as predicted; NOT re-drained this pass (declined treadmill). 23.9h stale; durable bound queued P1 (4 nights).",
+    "allday_lock_refresh_10-04": "HEALTHY - allday trust arms all ok, 1942 runs/24h. wmc-reindex-verify clears Sat 10-10.",
+    "fmv_backfill_20261005001848": "HOLDING - 5 runs/24h, 0 failed, fmv_sweep_wedge_hours 0.03",
+    "wallet_reconstructed_rips": "HEALTHY - 0 fails/26h, last ok 10-07 10:37Z (3:37 AM PT)",
+    "topshot_pack_supply_backfill": "still 100% HTTP 530 (last 08:15Z 10-07) - QUEUED (4 nights)"
   },
   "open_watches": [
-    "chain-arrival-pack-pulls: durable BOUND queued - the lane re-wedges on every 11:13Z seed until bounded (2 nights of hand-drains now)",
-    "topshot-sellback-walk: nft_id-null skip-and-log fix queued - not live (self-resolved) but will recur on the next un-id'd payload window",
-    "topshot-pack-supply-backfill: 100% HTTP 530 since 10-03 (QUEUED, 3 nights - repoint/retire/backoff)",
-    "public_board_slow_count: v_topshot_parallel_premiums ~2.4s (marginal, not erroring) - watch for escalation to a Vercel runtime error",
-    "net._http_response chronic pg_net bloat + DB growth (+599 this pass)"
+    "chain-arrival-pack-pulls: durable BOUND queued P1 - re-wedges on every 11:13Z seed until bounded (4 nights of wedge now; hand-draining proven futile)",
+    "topshot-sellback-walk: nft_id-null skip-and-log fix queued - not live (self-resolved) but recurs on the next un-id'd payload window",
+    "topshot-pack-supply-backfill: 100% HTTP 530 since 10-03 (QUEUED, 4 nights - repoint/retire/backoff)",
+    "net._http_response chronic pg_net bloat + DB growth (+387 this pass)"
   ],
   "needs_trevor": [
-    "chain-arrival-pack-pulls durable BOUND (code, ingest route-logic, off-limits): chunk apply into bounded committed batches with a cursor + per-tick cap/time budget + durable needs-rebuild marker, 3-file (migration+pin+drift-guard). The only real fix; hand-draining re-wedges same-day (now proven 2 nights).",
-    "topshot-sellback-walk nft_id-null (code, ingest route-logic): add `WHERE (id extraction) IS NOT NULL` skip-and-log to run_topshot_sellback_walk + sibling backfill fns so a NULL-id event does not roll back the whole tick's insert.",
+    "chain-arrival-pack-pulls durable BOUND (code, ingest route-logic, off-limits): chunk apply into bounded committed batches with a cursor + per-tick cap/time budget + durable needs-rebuild marker, 3-file (migration+pin+drift-guard). The ONLY real fix; hand-draining re-wedges same-day (now proven 4 nights). This pass declined the 5th hand-drain to stop masking a ~16-24h/day stall behind GREEN.",
+    "topshot-sellback-walk nft_id-null (code, ingest route-logic): add WHERE (id extraction) IS NOT NULL skip-and-log to run_topshot_sellback_walk + sibling backfill fns.",
     "topshot-pack-supply-backfill HTTP 530: repoint moved endpoint / retire if live lane covers it / add retry-backoff.",
-    "0410Z: dedupe + scratch-drop SQL in the Supabase SQL editor (destructive, operator-gated).",
+    "dedupe + scratch-drop SQL in the Supabase SQL editor (destructive, operator-gated - held writes a headless session cannot confirm).",
     "#173 topshot_moment_subeditions conflated bases (Claude Code): sizing in the 10-05 handoff."
   ],
-  "non_actions": "Inbox is append-only + CI-pinned - archiving reds main. The 4 mount-only monitor filings left as-is. atlas-edition-supply failure_rate HIGH, panini-collector-walk 10-min cap, atlas-*-403, flow-moment-moved-400, pack-mint-probes - all focus do-not-flag.",
-  "housekeeping": "1 shipped (data-only, verified), 0 reverted, 0 inbox filings archived/retired. Handoff + ledger + metrics + session entry committed + pushed to main from the desktop-VM clone (format-patch -> device_commit_files -> git am -3 -> push). Lock released. Deviation: session entry -> docs/sessions/2026-10.md per CLAUDE.md, not CLAUDE.md Recent sessions."
+  "non_actions": "Inbox is append-only + CI-pinned - archiving reds main. The 1 new mount-only monitor filing left as-is. atlas-edition-supply failure_rate HIGH, panini-collector-walk 10-min cap, atlas-*-403, flow-moment-moved-400, pack-mint-probes - all focus do-not-flag. zero-yield exhausted backfills noted only.",
+  "housekeeping": "0 shipped, 0 reverted, 0 inbox filings archived/retired (append-only). Handoff + ledger + metrics + session entry committed + pushed to main from the desktop-VM clone. Handoff mirrored to claude.ai Project. Lock released. Deviation: session entry -> docs/sessions/2026-10.md per CLAUDE.md, not CLAUDE.md Recent sessions."
 }
