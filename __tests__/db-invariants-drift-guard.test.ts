@@ -15,6 +15,30 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-10-09 (#173). The chain set:play for a Top Shot nft, only when every checkpoint spork agrees.
+    fn: "topshot_checkpoint_base",
+    test: "supabase/tests/topshot_subedition_base_from_checkpoint.sql",
+    migration: "supabase/migrations/20261009203911_audit_20261009_topshot_subedition_base_follows_the_checkpoint.sql",
+  },
+  {
+    // Added 2026-10-09 (#173). Every writer to topshot_moment_subeditions gets the checkpoint base, not one copied from a sale.
+    fn: "trg_topshot_subedition_base_from_checkpoint",
+    test: "supabase/tests/topshot_subedition_base_from_checkpoint.sql",
+    migration: "supabase/migrations/20261009203911_audit_20261009_topshot_subedition_base_follows_the_checkpoint.sql",
+  },
+  {
+    // Added 2026-10-09 (#173). One-off: collects the conflicting rows per nft-id slice.
+    fn: "audit_173_collect",
+    test: "supabase/tests/topshot_subedition_base_from_checkpoint.sql",
+    migration: "supabase/migrations/20261009203911_audit_20261009_topshot_subedition_base_follows_the_checkpoint.sql",
+  },
+  {
+    // Added 2026-10-09 (#173). One-off: re-keys sales / moments / wmc of the conflicting nfts, logging every old value.
+    fn: "fix_173_rekey_batch",
+    test: "supabase/tests/topshot_subedition_base_from_checkpoint.sql",
+    migration: "supabase/migrations/20261009203911_audit_20261009_topshot_subedition_base_follows_the_checkpoint.sql",
+  },
+  {
     // Added 2026-10-03. One Top Shot edition's issuer-held split for the edition
     // tile: one row or zero, only this printing's rows of each drop's current pass,
     // NULL + status until provable, an unkeyable parallel → unknown.
