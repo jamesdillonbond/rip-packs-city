@@ -44,6 +44,7 @@ Trevor: "do a health check and audit of the entire platform … fix any issues y
 - `pinnacle-fmv-recalc` ~8 runs/day, durations ≤ ~30 s; `pinnacle_fmv_stale_hours` stays green.
 - `pinnacle-pull-chain` ~144 runs/day; jobid 84 stays inactive; `check_zero_yield_lanes()` offenders [].
 - ✅ No-change control already in: the first Golazos run on the paged script (1:43 PM PT) matched the run before it exactly (5,875 listings, 230 sellers, 0 closed / 0 vanished, ~12.7 s).
+- ✅ First 3-hourly Pinnacle recalc ran at 3:37 PM PT: ok, 9.7 s, 2,358 renders priced. The concurrent session's young-render rule is now live: all 5 Star Wars renders read **LOW** (were HIGH). Wick is still $37 against a $20 floor, because the median of its last 5 sales (45/37/23/50/20) is $37. The LOW label is now the honest signal there.
 - ✅ Positive control in: the 2:13 PM PT `allday-storefront-reconcile` run reads `ok=true`, 1,228 / 1,228 sellers, 0 walk errors, `onchain_listings` 15,664 (was 13,778), 423 inserted, 4 closed, 101.8 s.
 - ✅ `analytics_smoke_run` at 1:43 PM PT: `freshness_fmv_per_collection` ok (only the live `pipeline_health_24h` warn remains).
 - ✅ `rpc-pinnacle-pull-chain-lane` runs the lane only on 10-minute ticks (5 runs 1:00–1:40 PM PT, all ok; 50 cron dispatches averaging 1.6 s instead of ~15 s).
