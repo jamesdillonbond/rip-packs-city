@@ -11,9 +11,14 @@
 // session-start hook (or a person) can run one command instead of opening the
 // handoff.
 //
-// ⚠ It reports a DATED SNAPSHOT, not live state. Daytime sessions close items
-// without editing the night handoff, so verify each against the ledger top
-// before acting. Items waiting 3+ nights are flagged STALE.
+// ⚠ The handoff is a DATED SNAPSHOT: daytime sessions close items without
+// editing it. So each item is cross-checked against the ledger headings written
+// AFTER that night's pass: a heading that names the item's key (its first
+// `backticked` token, or a #NNN register id) AND carries a closing status
+// (APPLIED / SHIPPED / FIXED / DONE / CLOSED / RESOLVED / VERIFIED) marks it
+// "likely closed", with the heading's line number. That is a HINT, not a
+// verdict: a heading can name a lane it only partly fixed, so read the entry.
+// Items waiting 3+ nights and not matched are flagged STALE.
 //
 // Usage: node scripts/report-ready-queue.mjs [handoff.md]   (default: newest)
 // Exit 0 always — this is an information print, never a gate.
@@ -43,6 +48,45 @@ export function parseQueued(markdown) {
   return items
 }
 
+const CLOSING = /\b(APPLIED|SHIPPED|FIXED|DONE|CLOSED|RESOLVED|VERIFIED)\b/
+
+/** The item's match keys: its first backticked token and any #NNN ids. */
+export function itemKeys(text) {
+  const keys = []
+  const tick = text.match(/`([^`]{4,})`/)
+  if (tick) keys.push(tick[1])
+  for (const m of text.matchAll(/#\d{2,4}\b/g)) keys.push(m[0])
+  return keys
+}
+
+/**
+ * Ledger headings newer than the night pass of `date` (YYYY-MM-DD): everything
+ * above that date's night-pass heading (newest-first file), stopping at any
+ * older date. Returns [{ line, text }] with 1-based line numbers.
+ */
+export function headingsAfterNightPass(ledger, date) {
+  const out = []
+  const lines = ledger.split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^### (\d{4}-\d{2}-\d{2})\b/)
+    if (!m) continue
+    if (m[1] < date) break
+    // CASE-SENSITIVE on purpose: a daytime entry ABOUT the night pass ("the night
+    // pass's ready queue") is not one; the pass itself writes `NIGHT PASS` or
+    // "(nightly overnight" in its heading (10-08 and 10-09 formats).
+    if (m[1] === date && /NIGHT PASS|\(nightly overnight/.test(lines[i])) break
+    out.push({ line: i + 1, text: lines[i] })
+  }
+  return out
+}
+
+/** First later heading that names one of the item's keys with a closing status. */
+export function likelyClosedBy(item, headings) {
+  const keys = itemKeys(item.text)
+  if (!keys.length) return null
+  return headings.find((h) => CLOSING.test(h.text) && keys.some((k) => h.text.includes(k))) ?? null
+}
+
 export function newestOvernightHandoff(docsDir) {
   const names = readdirSync(docsDir)
     .filter((f) => /^handoff-\d{4}-\d{2}-\d{2}-overnight-pass\.md$/.test(f))
@@ -58,14 +102,25 @@ function main() {
   }
   const items = parseQueued(readFileSync(file, "utf8"))
   const rel = path.relative(process.cwd(), file)
+  const date = path.basename(file).match(/\d{4}-\d{2}-\d{2}/)?.[0]
+  let headings = []
+  try {
+    headings = headingsAfterNightPass(readFileSync(path.join(process.cwd(), "docs/overnight/ledger.md"), "utf8"), date)
+  } catch {
+    console.log("[ready-queue] ledger unreadable — items shown without the closed-check")
+  }
   if (!items.length) {
     console.log(`[ready-queue] ${rel}: nothing queued for Trevor / Claude Code`)
     return
   }
-  console.log(`[ready-queue] ${items.length} item(s) from ${rel} — verify each against docs/overnight/ledger.md top before acting:`)
-  for (const it of items) {
-    const flag = it.nights != null && it.nights >= STALE_NIGHTS ? " ⚠ STALE" : ""
-    console.log(`  ${it.n}.${flag} ${it.text.slice(0, 200)}`)
+  const rows = items.map((it) => ({ it, closed: likelyClosedBy(it, headings) }))
+  const open = rows.filter((r) => !r.closed).length
+  console.log(`[ready-queue] ${items.length} item(s) from ${rel}, ${open} still open by the ledger (hints — read the entry before acting):`)
+  for (const { it, closed } of rows) {
+    const flag = closed
+      ? ` ✓ likely closed (ledger.md:${closed.line})`
+      : it.nights != null && it.nights >= STALE_NIGHTS ? " ⚠ STALE" : ""
+    console.log(`  ${it.n}.${flag} ${it.text.slice(0, closed ? 110 : 200)}`)
   }
 }
 

@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import { parseQueued, newestOvernightHandoff, STALE_NIGHTS } from "../scripts/report-ready-queue.mjs"
+import {
+  parseQueued,
+  newestOvernightHandoff,
+  STALE_NIGHTS,
+  headingsAfterNightPass,
+  likelyClosedBy,
+} from "../scripts/report-ready-queue.mjs"
 
 describe("report-ready-queue", () => {
   it("parses only the numbered items inside the Queued section, with their night counts", () => {
@@ -40,5 +46,38 @@ describe("report-ready-queue", () => {
   it("finds a newest overnight handoff in docs/", () => {
     const f = newestOvernightHandoff(path.join(process.cwd(), "docs"))
     expect(f).toMatch(/handoff-\d{4}-\d{2}-\d{2}-overnight-pass\.md$/)
+  })
+
+  describe("ledger cross-check", () => {
+    const ledger = [
+      "# ledger",
+      "### 2026-10-09 · 🔧 SHIPPED (hook) — sessions print the night pass's ready queue",
+      "### 2026-10-09 · 🗄 APPLIED — `rpc-chain-arrival-pack-pulls` UNWEDGED",
+      "### 2026-10-09 · 🔎 MEASURED — #173 re-measured, NOT shipped",
+      "### 2026-10-09 · 🟢 NIGHT PASS — 0 shipped (nightly overnight)",
+      "### 2026-10-09 · 🗄 APPLIED — `older-lane` fixed before the pass",
+      "### 2026-10-08 · 🗄 APPLIED — `chain-arrival-pack-pulls` drained",
+    ].join("\n")
+
+    it("keeps only headings written after that date's night pass", () => {
+      const h = headingsAfterNightPass(ledger, "2026-10-09")
+      expect(h.map((x: { line: number }) => x.line)).toEqual([2, 3, 4])
+    })
+
+    it("does not mistake a daytime entry ABOUT the night pass for the pass itself", () => {
+      // Regression: a case-insensitive match stopped at line 2 and returned
+      // nothing, so every item read open on the day this was written.
+      expect(headingsAfterNightPass(ledger, "2026-10-09").length).toBeGreaterThan(1)
+    })
+
+    it("marks an item closed only when a later heading names it AND carries a closing status", () => {
+      const h = headingsAfterNightPass(ledger, "2026-10-09")
+      const lane = { n: 1, nights: 5, text: "**[P1] `chain-arrival-pack-pulls` bound**" }
+      const measuredOnly = { n: 2, nights: null, text: "**[Claude Code] #173** re-key" }
+      const beforePass = { n: 3, nights: 2, text: "`older-lane` thing" }
+      expect(likelyClosedBy(lane, h)?.line).toBe(3)
+      expect(likelyClosedBy(measuredOnly, h)).toBeNull()
+      expect(likelyClosedBy(beforePass, h)).toBeNull()
+    })
   })
 })
