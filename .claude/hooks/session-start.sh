@@ -121,4 +121,10 @@ if git rev-parse --verify --quiet origin/main >/dev/null; then
   fi
 fi
 
+# 5) Surface the night pass's ready queue (dated snapshot — verify against the
+#    ledger top). 10-05 → 10-09 a P1 aged five nights in that queue because no
+#    Claude Code session ever saw it: docs/reference/autonomous-tasks.md,
+#    "Ready queue + idle labels". Never fails the hook.
+node scripts/report-ready-queue.mjs 2>/dev/null || true
+
 exit 0
