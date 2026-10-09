@@ -78,6 +78,18 @@ export const STOREFRONT_COLLECTIONS: Readonly<Record<string, StorefrontCollectio
   },
 }
 
+// ── PAGING (2026-10-09) ───────────────────────────────────────────────────
+// One script call reads listing ids [start, start+limit) of the storefront, and
+// its FIRST row is a meta row carrying the storefront's total id count and the
+// block height it read at. Measured: All Day seller 0x779ffd206566b382 failed
+// every walk from 10-09 2:13 AM PT on "computation limit exceeded (used: 100001,
+// limit: 100000)" — one call cannot visit every listing of a large storefront
+// (the id list spans every collection the seller lists, not just this one). The
+// route reads further pages AT THE FIRST PAGE'S HEIGHT, so a listing added or
+// removed between calls cannot shift the slices and drop a live listing.
+/** Listing ids one script call visits. ~65 computation units an id at the 10-09 failure; 300 keeps a page near 20k of the 100k limit. */
+export const STOREFRONT_PAGE_IDS = 300
+
 export function storefrontScriptFor(c: Pick<StorefrontCollection, "contractAddress" | "contractName">): string {
   if (!/^0x[0-9a-f]{16}$/.test(c.contractAddress) || !/^[A-Za-z][A-Za-z0-9]*$/.test(c.contractName)) {
     throw new Error("invalid storefront collection contract")
@@ -86,12 +98,22 @@ export function storefrontScriptFor(c: Pick<StorefrontCollection, "contractAddre
   return `
 import NFTStorefrontV2 from 0x4eb8a10cb9f87357
 import ${N} from ${c.contractAddress}
-access(all) fun main(seller: Address): [{String: String}] {
+access(all) fun main(seller: Address, start: Int, limit: Int): [{String: String}] {
   var out: [{String: String}] = []
   let t = Type<@${N}.NFT>()
+  let height = getCurrentBlock().height.toString()
   let sf = getAccount(seller).capabilities.borrow<&{NFTStorefrontV2.StorefrontPublic}>(NFTStorefrontV2.StorefrontPublicPath)
-  if sf == nil { return out }
-  for id in sf!.getListingIDs() {
+  if sf == nil {
+    out.append({"meta": "1", "total": "0", "height": height})
+    return out
+  }
+  let ids = sf!.getListingIDs()
+  out.append({"meta": "1", "total": ids.length.toString(), "height": height})
+  var i = start
+  let end = start + limit < ids.length ? start + limit : ids.length
+  while i < end {
+    let id = ids[i]
+    i = i + 1
     if let l = sf!.borrowListing(listingResourceID: id) {
       let d = l.getDetails()
       if d.nftType == t && !d.purchased {
@@ -132,7 +154,35 @@ export interface StorefrontListing {
   vaultType: string
 }
 
-/** Parses the script's decoded result: an array of {String: String} maps. */
+export interface StorefrontPage {
+  listings: StorefrontListing[]
+  /** The storefront's listing-id count (every collection); null when the result carried no meta row. */
+  total: number | null
+  /** The block height the page was read at; null when absent. */
+  height: string | null
+}
+
+/**
+ * Parses one page of the script's result: an optional leading meta row
+ * ({meta:"1", total, height}) and then listing rows. A result with no meta row
+ * reads as one complete page (total null), which is what the pre-paging script
+ * returned.
+ */
+export function parseStorefrontPage(rows: unknown): StorefrontPage {
+  if (!Array.isArray(rows)) throw new Error("storefront script returned a non-array")
+  const first = rows[0] as Record<string, string | undefined> | undefined
+  const hasMeta = first != null && first.meta === "1"
+  let total: number | null = null
+  let height: string | null = null
+  if (hasMeta) {
+    total = Number(first.total)
+    if (!Number.isInteger(total) || total < 0) throw new Error("storefront meta row has no valid total")
+    height = first.height && /^[0-9]+$/.test(first.height) ? first.height : null
+  }
+  return { listings: parseStorefrontListings(hasMeta ? rows.slice(1) : rows), total, height }
+}
+
+/** Parses the script's decoded listing rows: an array of {String: String} maps. */
 export function parseStorefrontListings(rows: unknown): StorefrontListing[] {
   if (!Array.isArray(rows)) throw new Error("storefront script returned a non-array")
   return rows.map((r) => {

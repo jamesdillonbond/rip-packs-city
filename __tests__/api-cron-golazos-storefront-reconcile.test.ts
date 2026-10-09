@@ -221,6 +221,52 @@ describe("/api/cron/golazos-storefront-reconcile — a run", () => {
     expect(log.p_extra).toMatchObject({ sellers_walked: 1, sellers_walk_errors: 0, inserted: 1 })
   })
 
+  // 2026-10-09: All Day seller 0x779ffd206566b382 (4,080 listing ids) failed every walk on
+  // "computation limit exceeded" — one call cannot visit a large storefront. It is read in
+  // STOREFRONT_PAGE_IDS slices, every slice after the first at the first slice's height.
+  function pagedStub(total: number, height: string, failStart: number | null = null) {
+    const calls: Array<{ url: string; start: number }> = []
+    vi.stubGlobal("fetch", async (url: string, init: any) => {
+      const body = JSON.parse(init.body)
+      const start = Number(JSON.parse(Buffer.from(body.arguments[1], "base64").toString("utf8")).value)
+      calls.push({ url, start })
+      if (start === failStart) return { ok: false, status: 400, text: async () => "computation limit exceeded" }
+      const meta = { meta: "1", total: String(total), height }
+      const listing = { listingId: `L${start}`, nftId: String(1000 + start), expiry: "9999999999", salePrice: "2.0", vault: "A.ead892083b3e2c6c.DapperUtilityCoin.Vault", live: "1", editionId: "89", serial: "1" }
+      return { ok: true, status: 200, text: async () => cdcListings([meta, listing]) }
+    })
+    return calls
+  }
+
+  it("a storefront larger than one page is read in slices, every later slice pinned to the first slice's height", async () => {
+    state.tables.cached_listings_v2 = []
+    const calls = pagedStub(650, "167241185")
+    await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))
+    await runAfter()
+
+    expect(calls.map((c) => c.start)).toEqual([0, 300, 600])
+    expect(calls[0].url).toMatch(/block_height=sealed$/)
+    expect(calls[1].url).toMatch(/block_height=167241185$/)
+    expect(calls[2].url).toMatch(/block_height=167241185$/)
+    const upsert = state.ops.find((o) => o.op === "upsert")
+    expect((upsert?.payload as any[]).map((r) => r.listing_resource_id).sort()).toEqual(["L0", "L300", "L600"])
+    const log = state.logs.at(-1)
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra).toMatchObject({ sellers_walked: 1, sellers_walk_errors: 0, onchain_listings: 3 })
+  })
+
+  it("a failed LATER slice fails the whole seller walk — a partial storefront closes nothing", async () => {
+    const calls = pagedStub(650, "167241185", 300)
+    await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))
+    await runAfter()
+
+    expect(calls.map((c) => c.start)).toEqual([0, 300])
+    expect(state.ops.filter((o) => o.op === "update" || o.op === "upsert")).toHaveLength(0)
+    const log = state.logs.at(-1)
+    expect(log.p_ok).toBe(false)
+    expect(log.p_extra).toMatchObject({ sellers_walked: 0, sellers_walk_errors: 1 })
+  })
+
   it("a failed sellers read makes the run ok=false instead of walking nobody and reporting success", async () => {
     state.sellers = { data: null, error: { message: "timeout" } }
     await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))

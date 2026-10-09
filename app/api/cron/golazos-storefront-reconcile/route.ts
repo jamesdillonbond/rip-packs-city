@@ -27,7 +27,8 @@ import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { normalizeAddress } from "@/lib/address"
 import {
   STOREFRONT_COLLECTIONS,
-  parseStorefrontListings,
+  STOREFRONT_PAGE_IDS,
+  parseStorefrontPage,
   planReconcile,
   storefrontScriptFor,
   type ListingRow,
@@ -47,6 +48,10 @@ const WALK_CONCURRENCY = 3
 const RATE_LIMIT_RETRIES = 4
 const RATE_LIMIT_BASE_MS = 400
 const PAGE = 1000
+// A storefront of more than STOREFRONT_PAGE_IDS listing ids is read in pages (see
+// lib/golazos/storefront-reconcile.ts, PAGING). The largest measured 10-09 held 4,080
+// ids (14 pages); past this many pages the walk fails rather than running unbounded.
+const MAX_STOREFRONT_PAGES = 60
 
 // bigint ids are selected as TEXT: PostgREST returns a bigint as a JSON number,
 // and the planner matches them against the storefront's string ids.
@@ -78,8 +83,7 @@ function unwrapCdc(node: unknown): unknown {
   return value
 }
 
-async function walkSeller(script: string, seller: string): Promise<StorefrontListing[]> {
-  const args = [{ type: "Address", value: seller }]
+async function runScript(script: string, args: unknown[], blockHeight: string): Promise<unknown> {
   const body = JSON.stringify({
     script: Buffer.from(script).toString("base64"),
     arguments: args.map((a) => Buffer.from(JSON.stringify(a)).toString("base64")),
@@ -87,7 +91,7 @@ async function walkSeller(script: string, seller: string): Promise<StorefrontLis
   let res: Response
   let text: string
   for (let attempt = 0; ; attempt++) {
-    res = await fetch(`${FLOW_REST}/v1/scripts?block_height=sealed`, {
+    res = await fetch(`${FLOW_REST}/v1/scripts?block_height=${blockHeight}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
@@ -100,8 +104,35 @@ async function walkSeller(script: string, seller: string): Promise<StorefrontLis
     await new Promise((r) => setTimeout(r, RATE_LIMIT_BASE_MS * 2 ** attempt + Math.floor(Math.random() * 200)))
   }
   if (!res.ok) throw new Error(`script HTTP ${res.status}: ${text.slice(0, 160)}`)
-  const decoded = JSON.parse(Buffer.from(JSON.parse(text), "base64").toString("utf8"))
-  return parseStorefrontListings(unwrapCdc(decoded))
+  return unwrapCdc(JSON.parse(Buffer.from(JSON.parse(text), "base64").toString("utf8")))
+}
+
+// Reads a seller's whole storefront, one STOREFRONT_PAGE_IDS slice per call. Every
+// page after the first is read at the FIRST page's block height, so the id list
+// cannot change between slices. Any failed page fails the whole walk: a partial
+// storefront must never be planned as a complete one (its missing listings would
+// be closed as "vanished").
+async function walkSeller(script: string, seller: string): Promise<StorefrontListing[]> {
+  const byId = new Map<string, StorefrontListing>()
+  let height = "sealed"
+  for (let page = 0; ; page++) {
+    if (page >= MAX_STOREFRONT_PAGES) throw new Error(`storefront exceeds ${MAX_STOREFRONT_PAGES} pages`)
+    const start = page * STOREFRONT_PAGE_IDS
+    const args = [
+      { type: "Address", value: seller },
+      { type: "Int", value: String(start) },
+      { type: "Int", value: String(STOREFRONT_PAGE_IDS) },
+    ]
+    const result = parseStorefrontPage(await runScript(script, args, height))
+    for (const l of result.listings) byId.set(l.listingId, l)
+    // No meta row = a single complete result; otherwise stop once the slices cover the total.
+    if (result.total == null || start + STOREFRONT_PAGE_IDS >= result.total) break
+    if (page === 0) {
+      if (!result.height) throw new Error("storefront page carried no block height; cannot pin further pages")
+      height = result.height
+    }
+  }
+  return [...byId.values()]
 }
 
 // Paged read with a deterministic order on the primary key, so no row is

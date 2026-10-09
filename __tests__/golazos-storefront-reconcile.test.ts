@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
   GOLAZOS_COLLECTION_ID,
+  STOREFRONT_COLLECTIONS,
+  STOREFRONT_PAGE_IDS,
+  parseStorefrontPage,
+  storefrontScriptFor,
   parseStorefrontListings,
   planReconcile,
   type ListingRow,
@@ -191,5 +195,37 @@ describe("parseStorefrontListings", () => {
   it("throws on a malformed result instead of reading it as an empty storefront", () => {
     expect(() => parseStorefrontListings(null)).toThrow()
     expect(() => parseStorefrontListings([{ nftId: "1" }])).toThrow()
+  })
+})
+
+describe("parseStorefrontPage — paged storefront reads (2026-10-09)", () => {
+  it("separates the leading meta row (total, height) from the listings", () => {
+    const p = parseStorefrontPage([
+      { meta: "1", total: "4080", height: "167241185" },
+      { listingId: "1", nftId: "2", expiry: "9", salePrice: "1.0", vault: "V", live: "1", editionId: "3" },
+    ])
+    expect(p.total).toBe(4080)
+    expect(p.height).toBe("167241185")
+    expect(p.listings).toHaveLength(1)
+    expect(p.listings[0]).toMatchObject({ listingId: "1", editionExternalId: "3" })
+  })
+
+  it("a result with no meta row is one complete page (total null)", () => {
+    const p = parseStorefrontPage([{ listingId: "1", nftId: "2", expiry: "9", salePrice: "1.0", vault: "V", live: "0" }])
+    expect(p.total).toBeNull()
+    expect(p.listings).toHaveLength(1)
+  })
+
+  it("a meta row without a valid total throws instead of reading as a short storefront", () => {
+    expect(() => parseStorefrontPage([{ meta: "1", total: "x", height: "1" }])).toThrow()
+  })
+
+  it("the script reads one [start, start+limit) slice and emits the meta row first", () => {
+    const src = storefrontScriptFor(STOREFRONT_COLLECTIONS.nfl_all_day)
+    expect(src).toContain("fun main(seller: Address, start: Int, limit: Int)")
+    expect(src).toContain('"meta": "1"')
+    expect(src).toContain("getCurrentBlock().height")
+    expect(src).not.toContain("for id in sf!.getListingIDs()")
+    expect(STOREFRONT_PAGE_IDS).toBeGreaterThan(0)
   })
 })
