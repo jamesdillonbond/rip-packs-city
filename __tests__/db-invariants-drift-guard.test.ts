@@ -15,6 +15,12 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-10-09 (#173 follow-up). One-off: re-keys sales / moments / wmc rows to their table row's edition, only where the checkpoint verifies it.
+    fn: "fix_173b_rekey_verified",
+    test: "supabase/tests/fix_173b_rekey_verified.sql",
+    migration: "supabase/migrations/20261009211308_audit_20261009_173b_checkpoint_verified_rows_follow_their_edition.sql",
+  },
+  {
     // Added 2026-10-09 (#173). The chain set:play for a Top Shot nft, only when every checkpoint spork agrees.
     fn: "topshot_checkpoint_base",
     test: "supabase/tests/topshot_subedition_base_from_checkpoint.sql",
