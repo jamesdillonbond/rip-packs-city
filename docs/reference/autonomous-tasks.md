@@ -117,3 +117,20 @@ detector designs that failed on the real data:
 - ⚠ **The nightly pass still fires** (e.g. 1:11 AM PT 09-24) while the local task is disabled. It is the **claude.ai cloud trigger**: cloud nightly (health + DB, cannot push, repo-set 403), desktop weekly. A Cowork session cannot see or edit that trigger's prompt. If it carries the old `remote.origin.pushurl` harvest it will keep reporting NO-PUSH; the fix is Trevor's (update it, or retire it and enable the local task).
 - **Prompt fixes landed 2026-09-24 in the local tasks:** push via the mount's `.rpc-git-cred` (nightly, monitor, hygiene, deep audit); no inbox archival; session entries to `docs/sessions/`, not CLAUDE.md; every monitor filing ships with its `INDEX.md` entry plus `fix-inbox-index-counts.mjs`; swallowed-heading expectation 0; the strategy review reads the roadmap files instead of CLAUDE.md sections that no longer exist.
 - **Installed skills drift from `docs/cowork-skills/`.** On 09-24, 8 of 11 installed RPC skills were behind the repo, including `rpc-edge-fn-deploy` without the rotator recipe. `check-cowork-skill-bundles.mjs` only proves repo bundle == repo source. Compare installed copies at `/sessions/<s>/mnt/.claude/skills/<name>/SKILL.md` against the repo, check each diff's DIRECTION before calling the repo newer, and hand Trevor the `.skill` bundles (one click each via `present_files`).
+
+## Ready queue + idle labels — keep the Claude Code lane fed (added 2026-10-09)
+
+**The failure:** 10-05 → 10-09 five night-pass handoffs read "GREEN, 0 shipped" while a P1 (`chain-arrival-pack-pulls`) aged to five nights under "Queued for Trevor / Claude Code". The work had a queue but no executor: nothing put that section in front of a Claude Code session, and a daytime session cleared it in one sitting once one looked. Commits to `main` fell from 100–400/day to 11, 2, 1, 3 over 10-05 → 10-08. (Trigger: a LinkedIn post on multi-agent idle time. Its point holds here: an empty or unseen queue is a planning problem, and an "idle" label with no reason hides different fixes.)
+
+**Shipped 2026-10-09:**
+- Night-pass output contract (`docs/cowork-skills/rpc-nightly-autonomous-pass/SKILL.md` §6, `c1af7af29`): every 0-shipped verdict carries `idle: no-work | routed-to-claude-code | routed-to-trevor | blocked` plus the age of the oldest routed item. Items routed 3+ nights go in the handoff's FIRST line. ⚠ **The installed Cowork task and the claude.ai cloud nightly trigger do NOT have this until Trevor installs `rpc-nightly-autonomous-pass.skill` / pastes the prompt.**
+- `npm run ops:ready-queue` (`scripts/report-ready-queue.mjs`, test `__tests__/script-report-ready-queue.test.ts`): prints the numbered queued items from the newest overnight handoff and flags ⚠ STALE at ≥ 3 nights. It is a dated snapshot. Daytime sessions close items without editing the handoff, so check the ledger top before acting. **Run it at the start of any "keep going" / "work what you can" session.**
+
+**OPEN — needs Trevor's explicit approval (the auto-mode classifier refuses hook edits as self-modification; "keep going" did not clear it twice):** make every cloud session print the queue at start. Add this to `.claude/hooks/session-start.sh` just above the final `exit 0`:
+
+```bash
+# 5) Surface the night pass's ready queue (dated snapshot — verify against the ledger top).
+node scripts/report-ready-queue.mjs 2>/dev/null || true
+```
+
+Approval wording that works: Trevor says, in his own words, to edit the session-start hook.
