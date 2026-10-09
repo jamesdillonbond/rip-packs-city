@@ -75,18 +75,28 @@ const PINS = [
     migration: "supabase/migrations/20261003221539_audit_20261003_market_cap_series_and_pinnacle_character_franchise_tiles.sql",
   },
   {
+    // Added 2026-10-09. The one pg_net page request + request row, shared by the
+    // dispatcher and the drain's retry.
+    fn: "atlas_supply_request_page",
+    test: "supabase/tests/atlas_supply_drain.sql",
+    migration: "supabase/migrations/20261009150802_audit_20261009_atlas_supply_retries_a_challenged_page.sql",
+  },
+  {
     // Added 2026-10-03. Atlas EditionService walk for Golazos ('laliga') + Pinnacle
-    // ('disney') supply. One walk in flight per product.
+    // ('disney') supply. One walk in flight per product. Re-pointed 2026-10-09
+    // (calls atlas_supply_request_page).
     fn: "atlas_supply_dispatch",
     test: "supabase/tests/atlas_supply_drain.sql",
-    migration: "supabase/migrations/20261003213000_audit_20261003_atlas_edition_supply_for_golazos_and_pinnacle.sql",
+    migration: "supabase/migrations/20261009150802_audit_20261009_atlas_supply_retries_a_challenged_page.sql",
   },
   {
     // Added 2026-10-03. Upserts only editions carrying all six buckets; a failed page
-    // is recorded on its request row and makes the run not-ok.
+    // is recorded on its request row and makes the run not-ok. Re-pointed 2026-10-09:
+    // a transiently refused page (403/408/429/5xx/no response) is re-asked up to 3
+    // attempts before it counts as failed.
     fn: "atlas_supply_drain",
     test: "supabase/tests/atlas_supply_drain.sql",
-    migration: "supabase/migrations/20261003213000_audit_20261003_atlas_edition_supply_for_golazos_and_pinnacle.sql",
+    migration: "supabase/migrations/20261009150802_audit_20261009_atlas_supply_retries_a_challenged_page.sql",
   },
   {
     // Added 2026-09-30. A separate, labelled ESTIMATE for thin Top Shot parallels
