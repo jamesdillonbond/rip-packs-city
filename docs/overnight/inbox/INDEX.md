@@ -1,4 +1,4 @@
-# Inbox index — 566 live filings
+# Inbox index — 567 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -31,6 +31,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-10-06 — 1 filing
+
+- [🔴 **`rpc-chain-arrival-pack-pulls` wedged: 13 consecutive 120 s statement timeouts, backlog growing, no self-heal (the 10-04 recurrence)**](2026-10-06T0013Z-chain-arrival-pack-pulls-wedged-13-consecutive-120s-timeouts-the-10-04-recurrence.md) — *(daytime monitor, ~5:13 PM PT 10-05, read-only.)* `apply_chain_arrival_pack_pulls()` inserts + rebuilds every touched wallet in ONE transaction and exceeds pg_cron’s 120 s on a large pending set. Hand-drained 10-06 and 10-07; drain declined 10-08/10-09; the durable bound is still QUEUED (P1) — see the ledger.
 
 ## 2026-10-05 — 2 filings
 
