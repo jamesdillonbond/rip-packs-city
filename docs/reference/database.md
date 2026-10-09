@@ -3000,3 +3000,5 @@ Rules:
   custom plan the function never gets.
 - A zero-result lane is the worst case for any plan whose cost lives under a `LIMIT`. Re-measure it
   when the driving table has roughly doubled, not only when it times out.
+
+- ⚠ **"FAST ALONE, SLOW IN A LOOP" IS THE PL/pgSQL PLAN CACHE (2026-10-09, `20261009165544`).** A plpgsql function timed standalone runs on a CUSTOM plan; called ≥6 times in ONE session it may switch to a cached GENERIC plan built for an average argument. `rebuild_wallet_reconstructed_rips` went 0.08 → 1.01 s, 0.34 → 4.13 s on calls 6–7 and a 32k-pull wallet hung >60 s on call 11 (1.86 s with `force_custom_plan`) — the 5-night `rpc-chain-arrival-pack-pulls` wedge. **Time a per-key function the way its caller calls it (N calls, one session), or A/B with `set_config('plan_cache_mode','force_custom_plan',true)`; the remedy is `SET plan_cache_mode TO 'force_custom_plan'` on the function** (also 20260901203559). Read past the MCP's 60 s cap with `RAISE LOG` lines in a rolled-back DO block, then `query_logs` on `postgres_logs`.
