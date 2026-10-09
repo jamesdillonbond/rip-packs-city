@@ -42,7 +42,8 @@ Trevor: "do a health check and audit of the entire platform … fix any issues y
 - `pinnacle-fmv-recalc` ~8 runs/day, durations ≤ ~30 s; `pinnacle_fmv_stale_hours` stays green.
 - `pinnacle-pull-chain` ~144 runs/day; jobid 84 stays inactive; `check_zero_yield_lanes()` offenders [].
 - ✅ No-change control already in: the first Golazos run on the paged script (1:43 PM PT) matched the run before it exactly (5,875 listings, 230 sellers, 0 closed / 0 vanished, ~12.7 s).
-- The next `allday-storefront-reconcile` run after the deploy: `ok=true`, `sellers_walk_errors 0`, `onchain_listings` back to ~14.8 k+.
-- panini-ingest: no `hit maxPages=20` in Vercel logs; the runner logs `complete=true`.
-- `analytics_smoke_run` `freshness_fmv_per_collection` reads ok from the 1:43 PM PT run (UFC listed under `quiet_markets`).
+- ✅ Positive control in: the 2:13 PM PT `allday-storefront-reconcile` run reads `ok=true`, 1,228 / 1,228 sellers, 0 walk errors, `onchain_listings` 15,664 (was 13,778), 423 inserted, 4 closed, 101.8 s.
+- ✅ `analytics_smoke_run` at 1:43 PM PT: `freshness_fmv_per_collection` ok (only the live `pipeline_health_24h` warn remains).
+- ✅ `rpc-pinnacle-pull-chain-lane` runs the lane only on 10-minute ticks (5 runs 1:00–1:40 PM PT, all ok; 50 cron dispatches averaging 1.6 s instead of ~15 s).
+- panini-ingest: not yet verified. The laptop runner made no walk-order call at 2 PM PT (its previous run was still walking at 1:45 PM PT). The next run should log no `hit maxPages=20`, and the runner should log `complete=true`.
 - #169: none of the 34 still MEDIUM on a pre-10-04 snapshot after ~4 PM PT 10-10. If so, close it.
