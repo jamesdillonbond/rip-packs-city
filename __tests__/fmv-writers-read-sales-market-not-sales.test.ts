@@ -31,8 +31,6 @@ const SUPPRESSED: Record<string, string> = {
     "selector: picks which editions to re-price; a buy-back-only edition must STAY in the set so its FMV is re-derived without the buy-backs",
   fmv_recalc_90d_catchup_editions: "selector: same reason as fmv_recalc_edition_page",
   fmv_backfill_candidates: "selector: editions with sales but no snapshot; the backfill then prices from sales_market",
-  topshot_fmv_backtest: "yardstick: excludes 0xe1f2… explicitly in its own predicate (it measures against realized sales)",
-  fmv_sales_backtest: "yardstick: excludes 0xe1f2… explicitly in its own predicate",
   get_wallet_moments_with_fmv: "display read for a wallet page, not an FMV writer",
 }
 
