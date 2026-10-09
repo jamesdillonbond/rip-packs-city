@@ -60,6 +60,21 @@ export function itemKeys(text) {
 }
 
 /**
+ * A night pass names itself in its heading's STATUS PREFIX, before the first
+ * `**`: "🟢 NIGHT PASS", "🟢 GREEN … (nightly overnight", "VERIFIED (nightly,
+ * nothing shipped)", "(overnight autonomous pass". A daytime entry mentions the
+ * night pass only in its bold summary, after that. Matching the whole line broke
+ * twice on 10-09: first on "the night pass's ready queue", then on an entry that
+ * quoted the words NIGHT PASS.
+ */
+export function isNightPassHeading(line) {
+  const prefix = line.split("**")[0]
+  // `NIGHT PASS` is case-sensitive: the pass writes it in capitals, and prose
+  // ("the night pass's queue") must not match even on a heading with no `**`.
+  return /NIGHT PASS/.test(prefix) || /\(nightly\b|overnight (autonomous )?pass/i.test(prefix)
+}
+
+/**
  * Ledger headings newer than the night pass of `date` (YYYY-MM-DD): everything
  * above that date's night-pass heading (newest-first file), stopping at any
  * older date. Returns [{ line, text }] with 1-based line numbers.
@@ -71,10 +86,7 @@ export function headingsAfterNightPass(ledger, date) {
     const m = lines[i].match(/^### (\d{4}-\d{2}-\d{2})\b/)
     if (!m) continue
     if (m[1] < date) break
-    // CASE-SENSITIVE on purpose: a daytime entry ABOUT the night pass ("the night
-    // pass's ready queue") is not one; the pass itself writes `NIGHT PASS` or
-    // "(nightly overnight" in its heading (10-08 and 10-09 formats).
-    if (m[1] === date && /NIGHT PASS|\(nightly overnight/.test(lines[i])) break
+    if (m[1] === date && isNightPassHeading(lines[i])) break
     out.push({ line: i + 1, text: lines[i] })
   }
   return out

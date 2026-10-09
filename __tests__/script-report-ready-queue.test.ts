@@ -7,7 +7,29 @@ import {
   STALE_NIGHTS,
   headingsAfterNightPass,
   likelyClosedBy,
+  isNightPassHeading,
 } from "../scripts/report-ready-queue.mjs"
+
+describe("isNightPassHeading", () => {
+  it("recognises every night-pass heading format the ledger has used", () => {
+    for (const h of [
+      "### 2026-10-09 · 🟢 NIGHT PASS — 0 shipped, 0 reverted (nightly overnight, push-capable) — **Health GREEN**",
+      "### 2026-10-08 · 🟢 GREEN — 0 shipped, 0 reverted (nightly overnight, push-capable via desktop-VM clone) — **Health clean**",
+      "### 2026-10-03 · 📏 VERIFIED (nightly, nothing shipped) — **Quiet GREEN night**",
+      "### 2026-09-26 (overnight autonomous pass, ~01:11 AM PT) · 🟢 QUEUE-ONLY, shipped 0",
+      "### 2026-09-24 · 🟢 Overnight pass (~1:10 AM PT): GREEN, shipped 0",
+    ]) expect(isNightPassHeading(h), h).toBe(true)
+  })
+
+  it("does not take a daytime entry that only MENTIONS the night pass for the pass", () => {
+    // The two real headings that broke an earlier whole-line match on 10-09.
+    for (const h of [
+      "### 2026-10-09 · 🔧 SHIPPED (hook) — **Cloud sessions now print the night pass's ready queue at start**",
+      "### 2026-10-09 · 🔧 SHIPPED (script) — **Bug caught: a case-insensitive `NIGHT PASS` match stopped early**",
+      "### 2026-10-09 · 📝 DOCS — **Night-pass output contract: \"0 shipped\" now carries an idle reason**",
+    ]) expect(isNightPassHeading(h), h).toBe(false)
+  })
+})
 
 describe("report-ready-queue", () => {
   it("parses only the numbered items inside the Queued section, with their night counts", () => {
