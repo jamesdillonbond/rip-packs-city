@@ -3599,3 +3599,5 @@ The runner-side pager (`scripts/ci/page-via-github-issue.sh`) had a seven-case u
 - **Run it many times in parallel** (8 at once on 4 cores). A 1-in-10 failure needs ~30 runs to show and ~30 clean runs to call fixed.
 - **Read the stuck DOM before naming the mechanism.** A fully mocked chain cannot take 5 s, so a state frozen past the budget means a hang. Grep stderr for a real dependency's banner in the failing test only.
 - **A mocked module's dynamic `import()` can bypass `vi.mock` on Node 24** (vitest 4.1). When a component lazy-loads a mocked wallet/SDK wrapper, mock the layer beneath it too.
+
+⚠ **A PLANTED DEFECT CAN PASS BECAUSE THE FIXTURE NEVER REACHES THE BRANCH (2026-10-09, `fix_173b_rekey_verified`).** The "no checkpoint → untouched" claim survived a planted defect that let no-checkpoint rows through, because the fixture's target edition was also uncatalogued and a LATER filter dropped it anyway. A claim needs a subject that fails ONLY that one condition; when a planted defect survives, first ask which other filter is still catching the subject.
