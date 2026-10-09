@@ -1,0 +1,41 @@
+# Handoff — 2026-10-09 daytime health pass (Claude Code cloud, ~12:45–3:45 PM PT)
+
+Trevor: "do a health check and audit of the entire platform … fix any issues you encounter … work autonomously for the next 3 hours." Push-capable (`git push --dry-run origin main` exit 0); everything below is committed to `main`. A concurrent Claude Code session was active on #173 and the chain-arrival follow-up the whole time, so neither was touched here.
+
+## Health verdict — GREEN, with three real defects found and fixed
+
+| instrument | reading |
+|---|---|
+| `check_public_security_invariants()` | 0 rows |
+| `v_rpc_trust_health` | 37 ok / 1 BREACH (`public_board_slow_count = 1`, see below) |
+| `detect_stalled_pipelines()` | [] |
+| `check_when_others_timeout_blind()` | 0 |
+| `check_zero_yield_lanes()` | 6 offenders → **0** (all six re-derived as finished work, migration below) |
+| pg_cron 24 h | 21 failed / 28,394. All 21 are `rpc-chain-arrival-pack-pulls`, at or before 9:41 AM PT. 3/3 ok since the 10 AM fix (0.07–0.10 s). |
+| Vercel 5xx, last 12 h | panini-ingest `maxPages` (fixed below) + 1 pack-drops timeout. The 24 h `pack-detail … read exceeded 5000ms` cluster was ONE burst at 3:00–3:21 PM PT 10-08: ~6 errors per page across ~19 unrelated pages. There was no DB event (no migrations; all cron OK), so it reads as a crawler fan-out and every panel degraded honestly. |
+| client-error beacon 24 h | 4, all `Lightpanda/1.0` (already tagged `automated` by design) |
+| `get_advisors` security | 0 ERROR. The two public `search_path` WARNs are the COMMIT procedures database.md says must NOT be pinned; the anon-SECDEF WARNs are allowlisted. |
+| alerts | `atlas-edition-supply` 64% failure_rate is POOLED across this morning's fix: 4/4 ok since. Atlas 403 arms are info-level and attributed. |
+
+**Accuracy (the gate), published FMV vs what collectors paid, 7 d:** Top Shot median abs err **12.0 %** (HIGH 8.7 %), ratio 1.000, n 15,500 · All Day **21.6 %**, ratio 1.000, n 3,957 · Pinnacle (hand-built: each sale vs the render's last `pinnacle_fmv_history` row before it) **10.0 %**, ratio 1.000, n 1,289. No drift. ASK_ONLY over-reads sales in both Flow sports: TS ratio 1.364 (n 141), AD 1.690 (n 66). That is the known ask-vs-clearing gap, small in dollars (median $2.30 / $0.80).
+
+## Shipped
+
+1. **Migration `20261009195532`, the zero-yield lanes plus the Pinnacle FMV cadence.** Six lanes were re-derived as finished: two are at the spork floor, four have drained queues, and each carries a positive control in its suppression reason. `rpc-pinnacle-mints-backfill` (jobid 84) is **deactivated**; it made 720 edge calls a day for 0 rows. `rpc-pinnacle-pull-chain-lane` now sleeps and runs only when there is work. `rpc-pinnacle-fmv-recalc-backstop` (jobid 200) moves `37 22 * * *` → **`37 1-22/3 * * *`**. Why: today's Star Wars drop (dist 8891, 414 opens 9:00–9:40 AM PT) had 5 new renders with 5–13 sales each by midday, but they read NO_DATA until the next 12-hourly recalc, so every pull of the drop was unpriced. It stays the FULL recalc on purpose: two instruments read `max(fmv_computed_at)`, and a second, narrower writer would mask a dead recompute. Revert: the header of the migration.
+2. **`01776cd21` panini-ingest walk-order.** `panini_editions` passed the 20 × 1,000-row read cap on 10-06 (22,110 rows today). Every run since served `truncated` / `complete:false`, so the runner stopped promoting new grid discoveries and bootstrap was disabled. Both reads now page up to 100 pages. The test cases were re-pinned, a 22,110-row case was added, and a planted cap of 20 reds them. CI green; deploy READY.
+3. **All Day storefront reconcile pages large storefronts (commit titled "storefront reconcile: page large storefronts…").** Since 2:13 AM PT every `allday-storefront-reconcile` run was `ok=false`: seller `0x779ffd206566b382` failed every walk. Reproduced through `pg_net`, the error is Cadence **"computation limit exceeded (used: 100001, limit: 100000)"**; their storefront holds 4,080 listing ids. The script now reads one 300-id slice per call, and its first row returns the total and the block height. Later slices are read at that height, so slices cannot shift. A failed slice fails the whole seller, so a partial storefront never closes listings as "vanished". Both slice shapes were verified on mainnet before shipping (page 1: 120 listings; last page at the pinned height: 56). 6 new tests; 2 planted defects caught (no height pin; a swallowed later page).
+4. **#169 exit re-measured (docs).** The 10-05 routine ran without connectors and measured nothing. Today 13 of the 66 frozen editions have been re-priced; 34 still hold a 10-03 MEDIUM with 0 collector sales in 30 d. That is the 7-day re-snapshot rule (`fmv_recalc_historical_candidates`, `p_stale_after = 7 days`): they become eligible from ~2:48 PM PT 10-10. The invariant holds (30 d `sales` − `sales_market` = 710 = buy-backs). Close-condition and falsifier are in known-issues #169.
+5. **Inbox:** the 10-06 chain-arrival filing has a ✅ RESOLVED section and its INDEX marker.
+
+## Needs Trevor (decisions, not code)
+
+- **Drop-day FMV on a falling render.** Wick (LEV1-SWHA-WICK-S6) sold 45 → 37 → 23 → 50 (#7) → 20 in its first morning and reads **$37 HIGH** against a **$21 floor**. A deals surface will rank the floor as 43 % off. This is the falling-render lag #155 describes, made acute on day one; the 30-day-max cap does not bind on a fresh render. Options: a minimum age or minimum sale count before HIGH on a new render, or capping FMV at the live floor when the floor has depth. This is a pricing-model call, so nothing was changed.
+- **`public_board_slow_count = 1`** is `panini_sale_feed_status`: an index-only scan over 2.4 M rows (~25 k blocks, read cold on each of its few calls), 1.8–3.1 s on the probe. It is already covered by `idx_panini_serials_feed_status`, and the board is rarely visited. The breach flips at its threshold on cache state, not on a regression. Materialising it is the only lever; not done.
+
+## Post-ship watch (a check-in is scheduled into this session for 10-10 4:15 PM PT)
+
+- `pinnacle-fmv-recalc` ~8 runs/day, durations ≤ ~30 s; `pinnacle_fmv_stale_hours` stays green.
+- `pinnacle-pull-chain` ~144 runs/day; jobid 84 stays inactive; `check_zero_yield_lanes()` offenders [].
+- The next `allday-storefront-reconcile` run after the deploy: `ok=true`, `sellers_walk_errors 0`, `onchain_listings` back to ~14.8 k+.
+- panini-ingest: no `hit maxPages=20` in Vercel logs; the runner logs `complete=true`.
+- #169: none of the 34 still MEDIUM on a pre-10-04 snapshot after ~4 PM PT 10-10. If so, close it.

@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-10-06 — 1 filing
 
-- [🔴 **`rpc-chain-arrival-pack-pulls` wedged: 13 consecutive 120 s statement timeouts, backlog growing, no self-heal (the 10-04 recurrence)**](2026-10-06T0013Z-chain-arrival-pack-pulls-wedged-13-consecutive-120s-timeouts-the-10-04-recurrence.md) — *(daytime monitor, ~5:13 PM PT 10-05, read-only.)* `apply_chain_arrival_pack_pulls()` inserts + rebuilds every touched wallet in ONE transaction and exceeds pg_cron’s 120 s on a large pending set. Hand-drained 10-06 and 10-07; drain declined 10-08/10-09; the durable bound is still QUEUED (P1) — see the ledger.
+- [**✅ FIXED 10-09 ~10:00 AM PT (`20261009162222` / `…165544` / `…162520`); hourly ticks 0.07–0.10 s since** 🔴 **`rpc-chain-arrival-pack-pulls` wedged: 13 consecutive 120 s statement timeouts, backlog growing, no self-heal (the 10-04 recurrence)**](2026-10-06T0013Z-chain-arrival-pack-pulls-wedged-13-consecutive-120s-timeouts-the-10-04-recurrence.md) — *(daytime monitor, ~5:13 PM PT 10-05, read-only.)* `apply_chain_arrival_pack_pulls()` inserts + rebuilds every touched wallet in ONE transaction and exceeds pg_cron’s 120 s on a large pending set. Hand-drained 10-06 and 10-07; drain declined 10-08/10-09; the durable bound is still QUEUED (P1) — see the ledger.
 
 ## 2026-10-05 — 2 filings
 
