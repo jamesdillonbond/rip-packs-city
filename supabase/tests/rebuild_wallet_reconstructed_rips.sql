@@ -13,7 +13,7 @@
 --      first, delete only what this run did not write) -- for this wallet only.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926170000_audit_20260926_wallet_reconstructed_rips_from_pack_pull_delivery_bursts.sql).
+-- (supabase/migrations/20261009165544_audit_20261009_wallet_rips_rebuild_plans_per_wallet.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -41,6 +41,7 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
 SET statement_timeout TO '110s'
+SET plan_cache_mode TO 'force_custom_plan'
 AS $function$
 DECLARE
   v_wallet text := lower(trim(coalesce(p_wallet, '')));

@@ -158,10 +158,14 @@ const PINS = [
     // verified custodial pack-pull acquisition. Pins the allowlist (collector
     // wallets 0xb5b7.../0xf2b9... that sold on the marketplace are excluded),
     // the NFT-pack exclusion, and that existing pack-pull records stand.
+    // Re-pointed 2026-10-09: each probe is checked once per finish (a marker at
+    // the finished_at it saw), in 2,000-probe chunks under a 45 s budget, and
+    // wallets wait in chain_arrival_rebuild_queue until rebuilt (75 s cutoff) --
+    // the unbounded re-check of history wedged the 120 s pg_cron wall 5 nights.
     fn: "apply_chain_arrival_pack_pulls",
     test: "supabase/tests/apply_chain_arrival_pack_pulls.sql",
     migration:
-      "supabase/migrations/20260930180000_audit_20260930_custodial_pulls_0xfa57_is_a_dapper_delivery_source.sql",
+      "supabase/migrations/20261009162222_audit_20261009_chain_arrival_pack_pulls_checks_each_probe_once.sql",
   },
   {
     // Added 2026-09-29. When and from whom a wallet got a Top Shot moment,
@@ -497,10 +501,13 @@ const PINS = [
     // (custodial Top Shot packs) from pack-pull delivery bursts: the 3 s burst
     // rule, that a burst overlapping a KNOWN rip is never reconstructed, whole-
     // pack pricing, and write-first / retire-only-this-wallet.
+    // Re-pointed 2026-10-09: SET plan_cache_mode = force_custom_plan. From the 6th
+    // call in one session the generic plan took over and a 32k-pull wallet hung
+    // past 120 s -- the chain-arrival-pack-pulls wedge.
     fn: "rebuild_wallet_reconstructed_rips",
     test: "supabase/tests/rebuild_wallet_reconstructed_rips.sql",
     migration:
-      "supabase/migrations/20260926170000_audit_20260926_wallet_reconstructed_rips_from_pack_pull_delivery_bursts.sql",
+      "supabase/migrations/20261009165544_audit_20261009_wallet_rips_rebuild_plans_per_wallet.sql",
   },
   {
     // Added 2026-09-26. Rebuilds what each drop's opened packs yielded (mean
@@ -2871,9 +2878,11 @@ const PINS = [
     // Added 2026-10-03 (#167). The throttled historical walk that backfills 2025 Top Shot
     // sell-backs: promotes into `sales` only with a resolved edition, closes a page as failed
     // after 8 attempts, never exceeds p_max_inflight.
+    // Re-pointed 2026-10-09: a 200 page with an id-less event is re-queued, not
+    // read (it aborted every tick for ~6 h on 10-06 and 10-08).
     fn: "run_topshot_sellback_walk",
     test: "supabase/tests/run_topshot_sellback_walk.sql",
-    migration: "supabase/migrations/20261003204900_topshot_sellback_walk_backfills_2025_buybacks.sql",
+    migration: "supabase/migrations/20261009162520_audit_20261009_sellback_walk_retries_a_page_with_idless_events.sql",
   },
   {
     // Added 2026-10-03 (#167). Names the walk's staged sell-backs from a chain read of the

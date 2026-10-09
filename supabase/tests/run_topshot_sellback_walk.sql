@@ -6,10 +6,13 @@
 --      buyer = the buy-back wallet, source 'onchain_sellback_backfill_2025'; an unresolvable one is
 --      staged as 'unresolved_edition', never written; one already in `sales` is not duplicated;
 --   3. a non-200 page is re-queued with attempts+1; after 8 failures it is closed as failed;
---   4. never more than p_max_inflight requests are outstanding.
+--   4. never more than p_max_inflight requests are outstanding;
+--   5. (2026-10-09) a 200 page carrying an event with no id is NOT read as complete: nothing from it
+--      is kept, it is re-queued with attempts+1 and the reason, the run does not abort, and a clean
+--      re-fetch then lands the page.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261003204900_topshot_sellback_walk_backfills_2025_buybacks.sql).
+-- (supabase/migrations/20261009162520_audit_20261009_sellback_walk_retries_a_page_with_idless_events.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 
 BEGIN;
@@ -61,6 +64,8 @@ DECLARE
   v_promoted  int := 0;
   v_page      record;
   v_err       text;
+  v_noid      int := 0;
+  v_noid_pages int := 0;
 BEGIN
   BEGIN
     SELECT * INTO v_state FROM public.topshot_sellback_walk_state WHERE id = 1 FOR UPDATE;
@@ -74,7 +79,19 @@ BEGIN
         JOIN net._http_response r ON r.id = p.req_id
        WHERE p.done_at IS NULL AND p.req_id IS NOT NULL
     LOOP
+      -- 2026-10-09: a 200 page carrying an event with no `id` field cannot be keyed (nft_id is
+      -- NOT NULL). It used to abort the whole run on every tick until pg_net expired the response
+      -- row (~6 h: 10-06 and 10-08, ~360 failed ticks each). Such a page is NOT read as complete:
+      -- it takes the retry path below (re-fetched, closed as failed after 8 attempts).
+      v_noid := 0;
       IF v_page.status_code = 200 THEN
+        SELECT count(*) INTO v_noid
+          FROM jsonb_array_elements(v_page.content::jsonb) b,
+               jsonb_array_elements(b->'events') e,
+               LATERAL (SELECT convert_from(decode(e->>'payload', 'base64'), 'utf8')::jsonb AS pl) x
+         WHERE (SELECT fl->'value'->>'value' FROM jsonb_array_elements(pl->'value'->'fields') fl WHERE fl->>'name' = 'id') IS NULL;
+      END IF;
+      IF v_page.status_code = 200 AND v_noid = 0 THEN
         IF v_page.kind = 'purchase' THEN
           INSERT INTO public.topshot_sellback_walk_purchases (tx, nft_id, price_usd, seller, block_height, sold_at)
           SELECT e->>'transaction_id',
@@ -113,11 +130,13 @@ BEGIN
            SET req_id = NULL,
                attempts = attempts + 1,
                last_status = v_page.status_code,
-               last_error = left(coalesce(v_page.error_msg, CASE WHEN v_page.timed_out THEN 'timed out' END, 'HTTP ' || v_page.status_code), 200),
+               last_error = left(CASE WHEN v_noid > 0 THEN v_noid || ' event(s) without an id in a 200 page'
+                                      ELSE coalesce(v_page.error_msg, CASE WHEN v_page.timed_out THEN 'timed out' END, 'HTTP ' || v_page.status_code) END, 200),
                done_at = CASE WHEN attempts + 1 >= 8 THEN now() END,
                failed = (attempts + 1 >= 8)
          WHERE kind = v_page.kind AND start_height = v_page.start_height;
-        IF v_page.status_code IS DISTINCT FROM 200 THEN v_retried := v_retried + 1; END IF;
+        v_retried := v_retried + 1;
+        IF v_noid > 0 THEN v_noid_pages := v_noid_pages + 1; END IF;
       END IF;
     END LOOP;
 
@@ -248,7 +267,7 @@ BEGIN
     (SELECT next_height::text FROM public.topshot_sellback_walk_state WHERE id = 1),
     jsonb_build_object('harvested', v_harvested, 'retried', v_retried, 'issued', v_issued, 'inflight_before', v_inflight,
                        'failed_pages', v_failed, 'purchases', v_purch, 'buyback_deposits', v_dep,
-                       'promoted', v_promoted, 'via', 'pg_cron',
+                       'promoted', v_promoted, 'pages_with_idless_events', v_noid_pages, 'via', 'pg_cron',
                        'duration_ms', (extract(epoch FROM clock_timestamp() - v_started) * 1000)::int));
   RETURN jsonb_build_object('harvested', v_harvested, 'retried', v_retried, 'issued', v_issued,
                             'failed_pages', v_failed, 'promoted', v_promoted, 'error', v_err);
@@ -302,6 +321,25 @@ BEGIN
    WHERE req_id IS NOT NULL AND done_at IS NULL AND NOT EXISTS (SELECT 1 FROM net._http_response r WHERE r.id = p.req_id);
   r := public.run_topshot_sellback_walk(3);
   PERFORM _assert((SELECT bool_or(failed) FROM public.topshot_sellback_walk_pages WHERE start_height = 118100250), 'an 8th failure closes the page as failed (claim 3)');
+
+  -- claim 5: a 200 purchase page with one good event (555) and one with no id
+  INSERT INTO public.topshot_sellback_walk_pages (kind, start_height, req_id, issued_at) VALUES ('purchase', 118200000, 5000, now());
+  INSERT INTO net._http_response (id, status_code, content) VALUES (5000, 200, '[{"block_height": "118200010", "block_timestamp": "2025-07-02T00:00:00Z", "events": [{"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx5", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICI1NTUifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiMy4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czUifX19XX19"}, {"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx6", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogInByaWNlIiwgInZhbHVlIjogeyJ0eXBlIjogIlVGaXg2NCIsICJ2YWx1ZSI6ICI0LjAwMDAwMDAwIn19LCB7Im5hbWUiOiAic2VsbGVyIiwgInZhbHVlIjogeyJ0eXBlIjogIk9wdGlvbmFsIiwgInZhbHVlIjogeyJ0eXBlIjogIkFkZHJlc3MiLCAidmFsdWUiOiAiMHhzNiJ9fX1dfX0="}]}]');
+  r := public.run_topshot_sellback_walk(3);
+  PERFORM _assert(r->>'error' IS NULL, 'claim 5: an id-less event does not abort the run');
+  PERFORM _assert_eq((SELECT (done_at IS NULL)::text || ':' || attempts || ':' || last_status || ':' || last_error
+                        FROM public.topshot_sellback_walk_pages WHERE start_height = 118200000),
+    'true:1:200:1 event(s) without an id in a 200 page', 'claim 5: the page is re-queued with the reason, not closed');
+  PERFORM _assert_eq((SELECT count(*)::text FROM public.topshot_sellback_walk_purchases WHERE tx IN ('tx5', 'tx6')), '0',
+    'claim 5: nothing from a page that cannot be read whole is kept');
+  -- the re-fetch is clean: the page lands
+  UPDATE public.topshot_sellback_walk_pages SET req_id = 5001, issued_at = now() WHERE start_height = 118200000;
+  INSERT INTO net._http_response (id, status_code, content) VALUES (5001, 200, '[{"block_height": "118200010", "block_timestamp": "2025-07-02T00:00:00Z", "events": [{"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx5", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICI1NTUifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiMy4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czUifX19XX19"}]}]');
+  r := public.run_topshot_sellback_walk(3);
+  PERFORM _assert_eq((SELECT (done_at IS NOT NULL)::text FROM public.topshot_sellback_walk_pages WHERE start_height = 118200000), 'true',
+    'claim 5: a clean re-fetch closes the page');
+  PERFORM _assert_eq((SELECT string_agg(nft_id, ',') FROM public.topshot_sellback_walk_purchases WHERE tx = 'tx5'), '555',
+    'claim 5: and its purchase lands');
 END
 $do$;
 
