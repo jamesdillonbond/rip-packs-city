@@ -2,6 +2,33 @@
 
 Trevor: "do a health check and audit of the entire platform … fix any issues you encounter … work autonomously for the next 3 hours." Push-capable (`git push --dry-run origin main` exit 0); everything below is committed to `main`. A concurrent Claude Code session was active on #173 and the chain-arrival follow-up the whole time, so neither was touched here.
 
+## ▶ RESUME HERE (written 10-09 ~4:15 PM PT; Trevor travelling, back at his PC 10-10)
+
+**State at hand-off:** everything below is on `main`, CI green, deploys READY. Health GREEN: security 0, stalled lanes only the one false alarm below, zero-yield offenders 0, pg_cron failures 0. The one trust breach (`public_board_slow_count`) is the cold Panini status view.
+
+**Do first, in order:**
+1. **Apply the HELD SQL (needs Trevor, ~1 min).** Paste the whole of `supabase/migrations/20261009230500_audit_20261009_cadence_watchlist_follows_todays_schedule_changes.sql` into the Supabase SQL editor. It retires the `ingest-pinnacle-mints-backfill` cadence row (now a false "silent" stall alarm, since its job was deactivated) and tightens `pinnacle-fmv-recalc` to 400/800 min for the 3-hourly schedule. The MCP confirmation gate held it (60 s timeout, nothing landed). Both UPDATEs are guarded, so a second paste is a no-op. Verify: `detect_stalled_pipelines()` no longer lists `ingest-pinnacle-mints-backfill`.
+2. **Close #169** if none of the 34 frozen editions still reads MEDIUM on a pre-10-04 snapshot after ~4 PM PT 10-10. They become eligible for the 7-day re-snapshot at ~2:48 PM PT. Query + close-condition + falsifier: known-issues #169, the 10-09 "EXIT RE-MEASURED" note. Close it, re-run `npm run docs:issues-index` (diff before `git add`), add a ledger entry, push.
+3. **Confirm panini-ingest reads the whole catalogue.** In Vercel logs, no `hit maxPages=20` after 10-09 1:05 PM PT, and the runner's log line shows `complete=true`. At 4 PM PT 10-09 the runner was walking (sentinel: last walk 0.0 h) but had not re-requested walk-order since the deploy.
+4. **Watch items** (each should read as below):
+   - `allday-storefront-reconcile`: `ok=true`, `sellers_walk_errors 0`.
+   - `pinnacle-fmv-recalc`: ~8 runs/day.
+   - `pinnacle-pull-chain`: ~144 runs/day.
+   - jobid 84: still inactive.
+   - `check_zero_yield_lanes()`: offenders [].
+   - `analytics_smoke_run` `freshness_fmv_per_collection`: ok.
+
+**Decisions for Trevor (nothing changed):**
+- **Golazos:** 0 sales for 184 h. It is genuinely silent on chain: 0 Withdraw/Deposit events in a 5,000-block sample, while 5,875 listings sit live. That alone keeps the hourly sentinel at WARN ("Golazos … >168h!"). Choose one: mark Golazos closed in `lib/market-closed.ts` (changes its public pages), raise its silence ceiling in `sentinel_ingest_watch`, or leave the WARN as the honest signal.
+- **`public_board_slow_count`:** the only lever is materialising `panini_sale_feed_status` (a cold 2.4M-row index-only scan behind a rarely visited board).
+
+**Housekeeping:** a self check-in (`trig_01LUjGCHUVv9BbNnwueooHAP`, 10-10 4:15 PM PT) fires into the ORIGINAL thread (session_01V7wSyjqNm8RwtFjxMMGUDR) with items 2–4 above. If you resume in a new thread, do them there and delete that routine, or let it run; it is idempotent.
+
+**Where else this session is recorded:**
+- ledger: the 10-09 entries tagged "daytime health pass"
+- session log: `docs/sessions/2026-10.md`, top entry
+- lessons promoted to cron-and-schedulers.md (watchlist follows schedule), apis-and-cadence.md (page whole-account Cadence scripts) and database.md (paged-reader ceilings)
+
 ## Health verdict — GREEN, with three real defects found and fixed
 
 | instrument | reading |
