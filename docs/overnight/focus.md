@@ -40,6 +40,12 @@ No live steer is owed by a clock. What a night pass needs to know that the ledge
 - **Panini freshness check: the repo prompt now mirrors the LIVE routine plus the 10-04 edits** (the repo copy had been stale since 09-27 while the live prompt was edited on 10-01). **The routine itself is NOT yet updated:** a content update is refused with a 403 even from this laptop's Claude Code, so Trevor pastes it from Claude Desktop. Until then its `absurd_24h` fires on real six-figure sales (Yamal 1/1 $210k, Wembanyama Gold /10) and Escalation 5 calls the walked-but-not-repriced editions "STARVING". Do not re-flag either, and do not cap sale-backed FMV. The ONE genuinely absurd row (Dembélé Tiger Stripe /12, $500k ASK_ONLY off a $1M listing) is filed as a Trevor decision in the Panini handoff (item 5b). Do not cap it from a night pass.
 - **Share-page "Save to my collection" is LIVE** (`b430828c1`). Its first real user from the 10-04 funnel watch (`1830d5fd…`) still had 0 `saved_wallets` at 10:15 PM PT. A save from them is the lift signal, not a bug.
 
+## STEER — added 2026-10-09 ~4:10 PM PT (Claude Code cloud; Trevor traveling until 10-10)
+
+- **Night pass: label every "0 shipped".** The verdict line carries `idle: no-work | routed-to-claude-code | routed-to-trevor | blocked` and the oldest routed item's age. An item routed 3+ nights goes in the handoff's first line. 10-05 → 10-09 a P1 aged five nights under "GREEN, 0 shipped" (detail: `docs/reference/autonomous-tasks.md`, "Ready queue + idle labels").
+- **Any Claude Code session told "keep going" runs `npm run ops:ready-queue` first.** It prints the newest night handoff's queue (⚠ STALE at ≥ 3 nights). Verify each item against the ledger top before acting.
+- **Pending Trevor:** approve the one-line session-start hook edit (text in autonomous-tasks.md), and install the updated `rpc-nightly-autonomous-pass.skill`.
+
 ## STEER — added 2026-10-09 ~4:30 PM PT (Claude Code cloud; Trevor traveling 10-09 → 10-10)
 
 - **Pick-up file: `docs/handoff-2026-10-09-claude-code-afternoon.md`** (shipped list, one HELD prod fix, watch list in date order).
