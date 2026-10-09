@@ -32,7 +32,7 @@ No live steer is owed by a clock. What a night pass needs to know that the ledge
 - **Rewards/points are OFF on purpose** (`REWARDS_LIVE` unset → award/redeem refuse; shop/rules tagged paused). Zero point awards is the designed state, not a dead lane. Do not re-enable from a night pass.
 - **Top Shot team Moments:** all 590 are `player_id` NULL, `player_name = team_name`, `name = "<team> — <set>"`. A row with `name = set_name` or a `players` row named after a team is a REGRESSION — read player-identity.md ("A TEAM Moment has no player").
 - **Pack-identity backlog boost (job 705) is gone by design** (unscheduled itself when the queue emptied, evening 10-04); pack rips 0 disagreeing with the chain. Lane 704 keeps applying new identities.
-- **Do NOT re-flag:** `atlas-edition-supply` `failure_rate` medium — 6-hourly lane, the failed runs are Cloudflare 403s on 4–5 of 38 pages (5:18 PM PT 10-03, 11:18 AM PT 10-04) and the next run re-reads them; the 5:18 PM PT 10-04 run was clean.
+- **FIXED 2026-10-09 (`20261009150802`), no longer a do-not-reflag:** `atlas-edition-supply` read 80 % failed because Cloudflare 403s 2–12 of each walk’s 38 pages. The drain now re-asks a transiently refused page (403/408/429/5xx/no response) up to 3 attempts; only a page out of attempts (or a bad 200 / other 4xx) fails the run. **A `failure_rate` row on this lane after 10-12 is REAL** — before then it pools pre-fix runs, so split at 8:08 AM PT 10-09 first.
 
 ## STEER — added 2026-10-04 ~10:45 PM PT (Claude Code, Trevor's box; save-to-collection + Panini freshness thread archived)
 
