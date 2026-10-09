@@ -16,7 +16,7 @@
 --   * confidence / counts / days are unchanged; no sales → NULL price, NO_DATA.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/supabase/migrations/20260927203001_audit_20260927_pinnacle_fmv_recency_weighted_median.sql);
+-- (supabase/migrations/20261009205054_audit_20261009_pinnacle_young_render_fmv_last5_and_no_drop_day_high.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -34,6 +34,7 @@ AS $function$
 DECLARE
   v_wap numeric; v_wmed numeric; v_s7 int; v_s30 int; v_days int; v_conf text; v_liq int;
   v_max30 numeric;
+  v_age numeric; v_n90 int;
 BEGIN
   SELECT
     ROUND(SUM(sale_price_usd * weight) / NULLIF(SUM(weight), 0), 4),
@@ -66,6 +67,22 @@ BEGIN
     ) c;
   END IF;
 
+  -- A YOUNG render (first sale < 7 days ago) prices at the median of its LAST 5 sales (2026-10-09).
+  -- Drop-week sales fall fast and the 90-day median lags them: backtest over renders first sold
+  -- 06-01..09-20, engine at day d vs the median sale on days d+3..d+11 -- median |log err| day 1
+  -- 0.405 -> 0.365, day 2 0.347 -> 0.288, day 3 0.223 -> 0.172, day 5 0.223 -> 0.140 (better / worse
+  -- 33/16, 75/43, 97/39, 87/52); neutral by day 7 (65/64), so mature renders are unchanged.
+  SELECT EXTRACT(EPOCH FROM NOW() - MIN(sold_at)) / 86400.0 INTO v_age
+  FROM pinnacle_sales WHERE render_id = p_render_id AND sale_price_usd > 0;
+  SELECT COUNT(*) INTO v_n90
+  FROM pinnacle_sales WHERE render_id = p_render_id AND sold_at > NOW() - interval '90 days' AND sale_price_usd > 0;
+  IF v_age IS NOT NULL AND v_age < 7 AND v_n90 >= 5 THEN
+    SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY l.sale_price_usd) INTO v_wmed
+    FROM (SELECT sale_price_usd FROM pinnacle_sales
+           WHERE render_id = p_render_id AND sold_at > NOW() - interval '90 days' AND sale_price_usd > 0
+           ORDER BY sold_at DESC LIMIT 5) l;
+  END IF;
+
   -- Capped at the 30-day MAX SALE when the render has 2+ sales in 30 days
   -- (2026-09-29). On a falling render the 90-day median lags: Nemo priced $9.50
   -- over 30-day sales of $3-$6, and ranking deals by discount surfaces exactly
@@ -89,6 +106,17 @@ BEGIN
     WHEN v_s30 >= 1 THEN 'LOW'
     WHEN v_wap IS NOT NULL AND v_wap > 0 THEN 'STALE'
     ELSE 'NO_DATA' END;
+  -- 2026-10-09: a young render cannot be HIGH. Same backtest: "5+ sales on day one" priced the
+  -- render 1.19x where it settled (median |log err| 0.318, 38% over 1.5x) vs mature HIGH 1.00x
+  -- (0.154, 6%). Under 3 days: biased ~+20% and >1.5x off ~40% of the time -> at most LOW;
+  -- 3-6 days: unbiased but ~2x the mature error -> at most MEDIUM; 7+ days: as before.
+  IF v_age IS NOT NULL THEN
+    IF v_age < 3 AND v_conf IN ('HIGH', 'MEDIUM') THEN
+      v_conf := 'LOW';
+    ELSIF v_age < 7 AND v_conf = 'HIGH' THEN
+      v_conf := 'MEDIUM';
+    END IF;
+  END IF;
   v_liq := CASE
     WHEN v_s30 >= 20 THEN 5 WHEN v_s30 >= 10 THEN 4 WHEN v_s30 >= 5 THEN 3
     WHEN v_s30 >= 2 THEN 2 WHEN v_s30 >= 1 THEN 1 ELSE 0 END;
@@ -128,12 +156,12 @@ INSERT INTO public.pinnacle_sales VALUES
 
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R1')->>'fmv_usd')::numeric::text, '10.0000', 'R1: the price is the weighted MEDIAN (10), not the mean');
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R1')->>'wap_usd')::numeric::text, '32.5000', 'R1: wap_usd stays the untrimmed weighted mean');
-SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R1')->>'confidence'), 'MEDIUM', 'R1: 4 sales in 30d, 1 day old → MEDIUM');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R1')->>'confidence'), 'LOW', 'R1: 4 sales in 30d would be MEDIUM, but the render is 1 day old → at most LOW (2026-10-09)');
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R2')->>'fmv_usd')::numeric::text, '3.0000', 'R2: a FALLING render prices at its recent sales, not the trimmed old level');
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R3')->>'fmv_usd'), NULL, 'R3: no in-window positive sale → NULL price');
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R3')->>'confidence'), 'NO_DATA', 'R3: → NO_DATA');
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R4')->>'fmv_usd')::numeric::text, '7.0000', 'R4: weighted median of 5..9 (weights .94/.91/.89/.86/.84 → half the total is reached at 7); the $0 sale ignored');
-SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R4')->>'confidence'), 'HIGH', 'R4: 5 sales in 30d, newest 2 days → HIGH');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R4')->>'confidence'), 'MEDIUM', 'R4: 5 sales in 30d would be HIGH, but the render is 6 days old → at most MEDIUM (2026-10-09)');
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R4')->>'sales_count_30d'), '5', 'R4: counts ignore the $0 sale');
 
 SELECT '✓ pinnacle_fmv_recalc_render invariants pass' AS result;
@@ -154,5 +182,21 @@ SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R5')->>'fmv_usd')::numeric
 SELECT _assert_eq(((public.pinnacle_fmv_recalc_render('R5')->>'wap_usd')::numeric > 8)::text, 'true', 'R5: wap_usd is not capped');
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R6')->>'fmv_usd')::numeric::text, '20.0000', 'R6: ONE recent sale never caps (the backtest found that worse)');
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R1')->>'fmv_usd')::numeric::text, '10.0000', 'R1 control: a median below the 30-day max is untouched');
+
+-- 2026-10-09: young renders. R7 MATURE (first sale 40 d ago) with 5 sales this week keeps HIGH and the
+-- weighted median; R8 YOUNG (2 d) and falling prices at its last 5 sales and is at most LOW.
+INSERT INTO public.pinnacle_sales VALUES
+  ('R7', 30, now() - interval '40 days'),
+  ('R7', 5, now() - interval '2 days'), ('R7', 6, now() - interval '3 days'), ('R7', 7, now() - interval '4 days'),
+  ('R7', 8, now() - interval '5 days'), ('R7', 9, now() - interval '6 days');
+INSERT INTO public.pinnacle_sales VALUES
+  ('R8', 50, now() - interval '2 days 6 hours'), ('R8', 45, now() - interval '2 days 5 hours'), ('R8', 40, now() - interval '2 days 4 hours'),
+  ('R8', 24, now() - interval '1 day 5 hours'), ('R8', 23, now() - interval '1 day 4 hours'), ('R8', 22, now() - interval '1 day 3 hours'),
+  ('R8', 21, now() - interval '1 day 2 hours'), ('R8', 20, now() - interval '1 day 1 hour');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R7')->>'confidence'), 'HIGH', 'R7: a MATURE render with 5 recent sales is still HIGH');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R7')->>'fmv_usd')::numeric::text, '7.0000', 'R7: a mature render keeps the weighted median (last-5 rule does not apply)');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R8')->>'fmv_usd')::numeric::text, '22.0000', 'R8: a 2-day-old falling render prices at the median of its last 5 sales (22), not all 8 (24)');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R8')->>'confidence'), 'LOW', 'R8: 8 sales in 30 d, but 2 days old → LOW');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R8')->>'sales_count_30d'), '8', 'R8: counts unchanged by the young-render rule');
 
 ROLLBACK;

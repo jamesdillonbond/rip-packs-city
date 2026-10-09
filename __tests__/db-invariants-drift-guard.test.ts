@@ -972,7 +972,8 @@ const PINS = [
     test: "supabase/tests/pinnacle_fmv_recalc_render.sql",
     // 2026-09-27 (#155): price = recency-weighted MEDIAN, not a WAP-centred trim.
     // 2026-09-29: capped at the 30-day max sale when the render has 2+ sales in 30 d.
-    migration: "supabase/migrations/20260929131423_audit_20260929_pinnacle_fmv_capped_at_30d_max_sale.sql",
+    // 2026-10-09: a render < 7 d old prices at its last 5 sales; < 3 d at most LOW, 3-6 d at most MEDIUM.
+    migration: "supabase/migrations/20261009205054_audit_20261009_pinnacle_young_render_fmv_last5_and_no_drop_day_high.sql",
   },
   {
     fn: "panini_serial_premium_mult",
