@@ -19,7 +19,7 @@ Trevor: "do a health check and audit of the entire platform … fix any issues y
 
 **Accuracy (the gate), published FMV vs what collectors paid, 7 d:** Top Shot median abs err **12.0 %** (HIGH 8.7 %), ratio 1.000, n 15,500 · All Day **21.6 %**, ratio 1.000, n 3,957 · Pinnacle (hand-built: each sale vs the render's last `pinnacle_fmv_history` row before it) **10.0 %**, ratio 1.000, n 1,289. No drift. ASK_ONLY over-reads sales in both Flow sports: TS ratio 1.364 (n 141), AD 1.690 (n 66). That is the known ask-vs-clearing gap, small in dollars (median $2.30 / $0.80).
 
-**Gate metric (`rpc_trust_health_precompute`, 12:48 PM PT), HIGH/MED share of latest FMV rows:** Top Shot **57.2 %** (39.2 % on 08-27, the decided all-rows denominator; 75.0 % of those fresh in 24 h) · All Day 26.6 % · Pinnacle 31.6 % · Candy 22.4 % · Golazos 1.0 % (a near-silent market) · UFC 0.0 % (frozen).
+**Gate metric (`rpc_trust_health_precompute`, 12:48 PM PT), HIGH/MED share of latest FMV rows:** Top Shot **57.2 %** (39.2 % on 08-27, the decided all-rows denominator; 75.0 % of those fresh in 24 h) · All Day 26.6 % · Pinnacle 31.6 % · Candy 22.4 % · Golazos 1.0 % (a silent market, re-verified on chain at 2:35 PM PT: 0 `Golazos.Withdraw` / `Deposit` events vs 31 `AllDay.Withdraw` over the same 5,000 blocks; last Golazos sale 10-01, while the indexer's cursor advances and it sees 90–230 storefront events a tick) · UFC 0.0 % (frozen).
 
 ## Shipped
 
