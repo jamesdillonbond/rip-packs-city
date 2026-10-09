@@ -2,6 +2,8 @@
 
 Trevor is traveling 10-09 → 10-10 and asked: *"work on anything you can from here, then update any relevant documentation so that you have this saved and can pick this back up later when home from another thread."* This file is the pick-up point. Everything listed as shipped is on `main` with a ledger entry. Times are PT.
 
+**The other pick-up file:** `docs/handoff-2026-10-09-daytime-health-pass.md` ("RESUME HERE" block: its own held SQL, #169, panini-ingest). Do both.
+
 **To resume:** read §3 (watch list, in date order) and §2 (the one held fix). Then run the §4 alert read again before trusting any number here, because each figure is a dated sample.
 
 ## 1. Shipped today by this thread (all on `main`, all in the ledger)
