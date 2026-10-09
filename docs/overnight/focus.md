@@ -44,7 +44,7 @@ No live steer is owed by a clock. What a night pass needs to know that the ledge
 
 - **Night pass: label every "0 shipped".** The verdict line carries `idle: no-work | routed-to-claude-code | routed-to-trevor | blocked` and the oldest routed item's age. An item routed 3+ nights goes in the handoff's first line. 10-05 → 10-09 a P1 aged five nights under "GREEN, 0 shipped" (detail: `docs/reference/autonomous-tasks.md`, "Ready queue + idle labels").
 - **Any Claude Code session told "keep going" runs `npm run ops:ready-queue` first.** It prints the newest night handoff's queue (⚠ STALE at ≥ 3 nights). Verify each item against the ledger top before acting.
-- **Pending Trevor:** approve the one-line session-start hook edit (text in autonomous-tasks.md), and install the updated `rpc-nightly-autonomous-pass.skill`.
+- ✅ Session-start hook prints the queue (approved 10-09 ~4:30 PM PT). **Still pending Trevor:** install the updated `rpc-nightly-autonomous-pass.skill` in Cowork and the cloud nightly trigger.
 
 ## STEER — added 2026-10-09 ~4:30 PM PT (Claude Code cloud; Trevor traveling 10-09 → 10-10)
 

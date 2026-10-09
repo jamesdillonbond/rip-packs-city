@@ -126,7 +126,7 @@ detector designs that failed on the real data:
 - Night-pass output contract (`docs/cowork-skills/rpc-nightly-autonomous-pass/SKILL.md` §6, `c1af7af29`): every 0-shipped verdict carries `idle: no-work | routed-to-claude-code | routed-to-trevor | blocked` plus the age of the oldest routed item. Items routed 3+ nights go in the handoff's FIRST line. ⚠ **The installed Cowork task and the claude.ai cloud nightly trigger do NOT have this until Trevor installs `rpc-nightly-autonomous-pass.skill` / pastes the prompt.**
 - `npm run ops:ready-queue` (`scripts/report-ready-queue.mjs`, test `__tests__/script-report-ready-queue.test.ts`): prints the numbered queued items from the newest overnight handoff and flags ⚠ STALE at ≥ 3 nights. It is a dated snapshot. Daytime sessions close items without editing the handoff, so check the ledger top before acting. **Run it at the start of any "keep going" / "work what you can" session.**
 
-**OPEN — needs Trevor's explicit approval (the auto-mode classifier refuses hook edits as self-modification; "keep going" did not clear it twice):** make every cloud session print the queue at start. Add this to `.claude/hooks/session-start.sh` just above the final `exit 0`:
+**✅ DONE 2026-10-09 ~4:30 PM PT (Trevor approved; the hook now runs this line). History: it needed Trevor's explicit approval (the auto-mode classifier refuses hook edits as self-modification; "keep going" did not clear it twice):** make every cloud session print the queue at start. Add this to `.claude/hooks/session-start.sh` just above the final `exit 0`:
 
 ```bash
 # 5) Surface the night pass's ready queue (dated snapshot — verify against the ledger top).
