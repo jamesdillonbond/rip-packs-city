@@ -1170,9 +1170,10 @@ const PINS = [
   },
   {
     // 2026-09-29: pre-spork Pinnacle pulls named by a chain read, else the wallet cache / sales / live listings (unanimous); least-recently-tried first.
+    // 2026-10-09: unpriced opens re-tried after 1 h (was 6 h).
     fn: "price_pinnacle_pack_opens",
     test: "supabase/tests/price_pinnacle_pack_opens.sql",
-    migration: "supabase/migrations/20260930010000_audit_20260929_pinnacle_pulls_named_by_reading_the_chain_at_the_open_block.sql",
+    migration: "supabase/migrations/20261009204812_audit_20261009_pinnacle_pack_opens_retry_hourly.sql",
   },
   {
     // 2026-09-29: Pinnacle pack pulls named by reading each pin's editionID on chain at the open block.

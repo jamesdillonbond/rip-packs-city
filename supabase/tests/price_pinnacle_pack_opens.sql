@@ -9,10 +9,12 @@
 --   * the mint event wins over a chain read, and a chain read over the secondary sources;
 --   * a pack is priced only when EVERY pull is named and priced — never a partial sum;
 --   * candidates go least-recently-tried first, so an old never-tried open is not starved by
---     newer opens that are re-eligible every 6 h (the pre-2026-09-29 order was opened_at DESC).
+--     newer opens that are re-eligible every hour (the pre-2026-09-29 order was opened_at DESC);
+--   * an unpriced open is re-tried after 1 h (6 h until 2026-10-09), so a new drop's pulls price soon
+--     after their renders gain an FMV.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260930010000_audit_20260929_pinnacle_pulls_named_by_reading_the_chain_at_the_open_block.sql);
+-- (supabase/migrations/20261009204812_audit_20261009_pinnacle_pack_opens_retry_hourly.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -45,7 +47,8 @@ BEGIN
   SELECT o.pack_nft_id, o.moments_pulled, o.nft_ids
     FROM public.pinnacle_pack_opens o
    WHERE o.pull_value_usd IS NULL AND o.moments_pulled > 0
-     AND (o.priced_at IS NULL OR o.priced_at < now() - interval '6 hours')
+     -- re-tried hourly (was 6 h until 2026-10-09): a drop's pulls price within ~1 h of their pins gaining an FMV
+     AND (o.priced_at IS NULL OR o.priced_at < now() - interval '1 hour')
    -- least-recently-tried first: an order on a column this job writes, so no row is starved
    ORDER BY o.priced_at NULLS FIRST, o.opened_at DESC NULLS LAST
    LIMIT LEAST(GREATEST(COALESCE(p_limit, 3000), 1), 10000);
@@ -176,11 +179,22 @@ SELECT _assert((SELECT bool_and(priced_at IS NOT NULL) FROM pinnacle_pack_opens)
 INSERT INTO public.pinnacle_pack_opens (pack_nft_id, moments_pulled, nft_ids, opened_at, priced_at) VALUES
   ('NEWTRIED', 1, ARRAY['n_gone'], '2026-09-01', now() - interval '7 hours'),
   ('OLDNEVER', 1, ARRAY['n_gone'], '2023-12-01', NULL);
-UPDATE public.pinnacle_pack_opens SET priced_at = now() - interval '1 hour'
+UPDATE public.pinnacle_pack_opens SET priced_at = now() - interval '30 minutes'
  WHERE pack_nft_id NOT IN ('NEWTRIED', 'OLDNEVER');
 SELECT public.price_pinnacle_pack_opens(1);
 SELECT _assert((SELECT priced_at > now() - interval '1 minute' FROM pinnacle_pack_opens WHERE pack_nft_id='OLDNEVER'), 'the never-tried old open is taken first');
 SELECT _assert((SELECT priced_at < now() - interval '6 hours' FROM pinnacle_pack_opens WHERE pack_nft_id='NEWTRIED'), 'the recently-tried newer open waits its turn');
+
+-- ── 8. the retry gate is 1 hour (2026-10-09; was 6) ─────────────────────────
+-- TRIED90: tried 90 min ago -> eligible again (it was not under the 6 h gate).
+-- TRIED30: tried 30 min ago -> still waits.
+INSERT INTO public.pinnacle_pack_opens (pack_nft_id, moments_pulled, nft_ids, opened_at, priced_at) VALUES
+  ('TRIED90', 1, ARRAY['n_gone'], '2026-10-09', now() - interval '90 minutes'),
+  ('TRIED30', 1, ARRAY['n_gone'], '2026-10-09', now() - interval '30 minutes');
+UPDATE public.pinnacle_pack_opens SET priced_at = now() WHERE pack_nft_id NOT IN ('TRIED90', 'TRIED30');
+SELECT public.price_pinnacle_pack_opens(10);
+SELECT _assert((SELECT priced_at > now() - interval '1 minute' FROM pinnacle_pack_opens WHERE pack_nft_id='TRIED90'), 'an open tried 90 min ago is re-tried');
+SELECT _assert((SELECT priced_at < now() - interval '29 minutes' FROM pinnacle_pack_opens WHERE pack_nft_id='TRIED30'), 'an open tried 30 min ago still waits');
 
 SELECT '✓ price_pinnacle_pack_opens: all assertions passed' AS result;
 
