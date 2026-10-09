@@ -128,11 +128,19 @@ describe("GET /api/cron/panini-ingest — walk order", () => {
   })
 
   it("a catalogue larger than maxPages reports truncated, not a silent short list", async () => {
-    st.total = 25_000 // 20 pages x 1,000 is the helper's ceiling
+    st.total = 105_000 // 100 pages x 1,000 is the route's ceiling (was 20 until 2026-10-09)
     const j = await (await GET(req())).json()
-    expect(j.count).toBe(20_000)
+    expect(j.count).toBe(100_000)
     expect(j.truncated).toBe(true)
     expect(j.complete).toBe(false)
+  })
+
+  it("a catalogue past the OLD 20-page ceiling (22,110 rows on 2026-10-09) is served complete", async () => {
+    st.total = 22_110
+    const j = await (await GET(req())).json()
+    expect(j.count).toBe(22_110)
+    expect(j.truncated).toBe(false)
+    expect(j.complete).toBe(true)
   })
 })
 
@@ -198,7 +206,7 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
   })
 
   it("never bootstraps off a TRUNCATED catalogue — it cannot prove a count of zero", async () => {
-    st.total = 25_000
+    st.total = 105_000 // past the route's 100-page ceiling
     st.products = { data: [
       { set_id: 2332, name: "WC", walk_cards: true },
       { set_id: 2420, name: "WNBA", walk_cards: true, last_grid_items: 1580, walk_cards_since: hoursAgo(1) },

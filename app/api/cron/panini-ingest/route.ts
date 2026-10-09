@@ -603,6 +603,14 @@ export async function POST(req: NextRequest) {
 // PostgREST CLAMPS any .limit() above 1,000 with no error (known-issues #71), so completeness
 // here requires paging — `fetchAllPaged` is the one place that workaround lives. `truncated` is
 // forwarded rather than swallowed, and the runner degrades to a safe ordering when it is true.
+// The two catalogue reads page 1,000 rows at a time up to this many pages. It was 20 (20k rows)
+// until 2026-10-09: panini_editions passed 20,000 on 10-06 (22,110 on 10-09), so every run since
+// served `truncated: true, complete: false` — the runner stopped promoting new grid discoveries
+// and bootstrap was disabled, while the route logged "hit maxPages=20" as an error each run.
+// 100k rows is ~4.5x today's catalogue at ~100 ms a page; `truncated` still reports honestly
+// if the catalogue ever outgrows it.
+const WALK_ORDER_MAX_PAGES = 100
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") || "";
   const ingest = process.env.INGEST_SECRET_TOKEN;
@@ -626,7 +634,7 @@ export async function GET(req: NextRequest) {
         .order("last_seen_at", { ascending: true, nullsFirst: true })
         .order("external_id", { ascending: true })
         .range(from, to),
-    { pageSize: 1000, maxPages: 20, label: `${PIPELINE}/walk-order` },
+    { pageSize: 1000, maxPages: WALK_ORDER_MAX_PAGES, label: `${PIPELINE}/walk-order` },
   );
 
   if (paged.error) {
@@ -697,7 +705,7 @@ export async function GET(req: NextRequest) {
         .order("username", { ascending: true })
         .order("url_key", { ascending: true })
         .range(from, to),
-    { pageSize: 1000, maxPages: 20, label: `${PIPELINE}/walk-order-held` },
+    { pageSize: 1000, maxPages: WALK_ORDER_MAX_PAGES, label: `${PIPELINE}/walk-order-held` },
   );
   const heldNew: string[] = [];
   if (!heldRes.error) {
