@@ -40,6 +40,13 @@ No live steer is owed by a clock. What a night pass needs to know that the ledge
 - **Panini freshness check: the repo prompt now mirrors the LIVE routine plus the 10-04 edits** (the repo copy had been stale since 09-27 while the live prompt was edited on 10-01). **The routine itself is NOT yet updated:** a content update is refused with a 403 even from this laptop's Claude Code, so Trevor pastes it from Claude Desktop. Until then its `absurd_24h` fires on real six-figure sales (Yamal 1/1 $210k, Wembanyama Gold /10) and Escalation 5 calls the walked-but-not-repriced editions "STARVING". Do not re-flag either, and do not cap sale-backed FMV. The ONE genuinely absurd row (Dembélé Tiger Stripe /12, $500k ASK_ONLY off a $1M listing) is filed as a Trevor decision in the Panini handoff (item 5b). Do not cap it from a night pass.
 - **Share-page "Save to my collection" is LIVE** (`b430828c1`). Its first real user from the 10-04 funnel watch (`1830d5fd…`) still had 0 `saved_wallets` at 10:15 PM PT. A save from them is the lift signal, not a bug.
 
+## STEER — added 2026-10-09 ~4:30 PM PT (Claude Code cloud; Trevor traveling 10-09 → 10-10)
+
+- **Pick-up file: `docs/handoff-2026-10-09-claude-code-afternoon.md`** (shipped list, one HELD prod fix, watch list in date order).
+- **`atlas-edition-supply` `failure_rate` (high) is a POOLED reading — do NOT re-fix.** The retry fix `20261009150802` landed 10-09 ~8 AM PT; every run since is `ok`. The arm pools 3 days, so it clears by itself ~10-12 5:18 AM PT. Re-open only on an `ok=false` run after 10-09 8:13 AM PT.
+- **`pg_net_http_400` "height range 5000 exceeds maximum allowed of 250" at 10-09 2:22 PM PT was a one-off manual chain probe** (the daytime session's Golazos check), not a lane. Re-open only if it RECURS.
+- **#175 holds a ready-to-run 3-sale re-key (Wembanyama Diced `152:5370`) that a night pass must NOT run on its own** — Trevor's go-ahead first (the handoff §2 has the block).
+
 ## ⏬ Older steers rolled to [focus-archive-2026-H2.md](focus-archive-2026-H2.md): 2026-09-14 and earlier on 2026-09-24; 2026-09-18 → 2026-09-20 on 2026-10-03. The persistent sections below (do-not-re-flag, inbox append-only, STANDING, sentinel queue, DECIDED, RETIRED STEERS) were kept.
 
 ## STEER — do NOT re-flag these (current)
