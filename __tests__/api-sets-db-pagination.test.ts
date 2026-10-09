@@ -95,6 +95,38 @@ describe("GET /api/sets-db — pagination (1000-row cap)", () => {
   })
 })
 
+describe("GET /api/sets-db — the paging ceiling (2026-10-09)", () => {
+  // Two editions; the ONLY moment of e1 is the wallet's LAST row, so any read that
+  // stops early scores the set 50 % instead of 100 %.
+  const seed = (owned: number) => {
+    tableData.editions = [
+      { id: "e0", set_id: "s1", set_name: "S", player_name: "P", tier: "COMMON", thumbnail_url: null, external_id: "ext0" },
+      { id: "e1", set_id: "s1", set_name: "S", player_name: "Q", tier: "COMMON", thumbnail_url: null, external_id: "ext1" },
+    ]
+    tableData.sets = [{ id: "s1", name: "S" }]
+    tableData.wallet_moments_cache = Array.from({ length: owned }, (_, i) => ({
+      moment_id: `m${i}`, edition_key: i === owned - 1 ? "ext1" : "ext0", serial_number: i + 1, is_locked: false,
+    }))
+  }
+
+  it("reads a 69,520-moment wallet (the largest measured) in full — the old 60,000 cap returned a partial list", async () => {
+    seed(69_520)
+    const res = await GET(req("https://t/api/sets-db?wallet=0xabc&collection=nfl-all-day"))
+    expect(res.status).toBe(200)
+    const s1 = (await res.json()).sets.find((s: any) => s.setId === "s1")
+    expect(s1.ownedCount).toBe(2)
+    expect(s1.completionPct).toBe(100)
+  })
+
+  it("a wallet past the ceiling gets an error, never a completion scored from a partial list", async () => {
+    seed(200_000)
+    const res = await GET(req("https://t/api/sets-db?wallet=0xabc&collection=nfl-all-day"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body.sets).toBeUndefined()
+  })
+})
+
 describe("GET /api/sets-db — ownership aggregation", () => {
   it("dedupes duplicate-copy ownership, counts locked vs tradeable, and ignores an unknown edition_key", async () => {
     // 5 editions in one set. e0 has NULL tier + NULL player_name (fallback paths).

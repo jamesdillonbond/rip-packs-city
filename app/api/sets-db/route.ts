@@ -43,7 +43,7 @@ export const dynamic = "force-dynamic"
 async function fetchAllPaged<T = any>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   buildPage: (from: number, to: number) => any,
-  maxRows = 60000,
+  maxRows = 200000,
 ): Promise<T[]> {
   const PAGE = 1000
   const out: T[] = []
@@ -52,9 +52,13 @@ async function fetchAllPaged<T = any>(
     if (error) throw error
     const rows: T[] = data ?? []
     out.push(...rows)
-    if (rows.length < PAGE) break
+    if (rows.length < PAGE) return out
   }
-  return out
+  // Reached the ceiling on a FULL page: the list is partial, and a partial owned
+  // list would be scored as a lower completion with nothing saying so. Fail
+  // instead (2026-10-09: the cap was 60,000 and returned what it had; the largest
+  // wallets held 69,520 All Day and 61,512 Top Shot moments).
+  throw new Error(`paged read reached its ${maxRows}-row ceiling; refusing a partial list`)
 }
 
 export async function GET(req: NextRequest) {
