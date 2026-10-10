@@ -41,6 +41,23 @@ const TX_DECODE_DELAY_MS = 40
 // unaffected (~270/day new-null inflow ≪ capacity).
 const MAX_RUN_MS = 600_000
 
+// ── Exec-account fill (2026-10-10) ───────────────────────────────────────────
+// The buyer lanes select `buyer_address IS NULL`, so a sale whose BUYER another
+// writer filled first was never decoded for payer/proposer — the execution-venue
+// signal that makes a new front-end visible. Measured 2026-10-09: 4,948 of 13,366
+// Top Shot `onchain` sales over 7 days had a buyer and no payer, and daily payer
+// coverage sat at 33–75 % for three weeks without rising as rows aged. This phase
+// runs after the buyer loop and fills payer/proposer ONLY, gated on
+// `payer_address IS NULL`, over a short recent window.
+// Why the window and not a cursor: the payer comes from the tx envelope
+// (parseTopShotSaleTxJson), so any fetchable tx yields one and a row cannot stay
+// payer-null for a decoded reason — only a fetch failure, which ages out of the
+// window instead of being re-decoded forever (the treadmill the historical lane
+// documents). Capacity: 80 × ~48 runs/day ≈ 3,800 ≫ the ~1,000/day inflow
+// (3-day backlog 2,979 on 2026-10-10; batch read ~113 buffers, backlog count ~4k).
+const EXEC_FILL_BATCH = 80
+const EXEC_FILL_WINDOW_DAYS = 3
+
 // ── Historical (spork) lane (2026-06-19, INERT by default) ───────────────────
 // The forward lane above decodes via the CURRENT mainnet REST node, which only
 // serves current-spork txs (~late-2024 onward) — so it can never resolve the
@@ -332,6 +349,12 @@ export async function POST(req: NextRequest) {
     let bailedEarly = false
     let ok = true
     let errMsg: string | null = null
+    let execFillFound = 0
+    let execFilled = 0
+    let execFillFailed = 0
+    // -1 = the count itself failed (never published as a measured 0).
+    let execFillBacklog = -1
+    let execFillError: string | null = null
 
     try {
       // Resume cursor from the last run.
@@ -421,6 +444,72 @@ export async function POST(req: NextRequest) {
       // Short batch ⇒ reached the bottom of the null-buyer set for this pass;
       // wrap the cursor so the next run starts a fresh top-down sweep.
       cursorAfter = rows.length < BATCH ? null : minSoldAt
+
+      // Exec-account fill (see EXEC_FILL_BATCH). Skipped when the buyer loop
+      // already spent the run budget; its rows stay in the window for next run.
+      if (!bailedEarly) {
+        const windowStart = new Date(Date.now() - EXEC_FILL_WINDOW_DAYS * 86_400_000).toISOString()
+        const { data: execData, error: execErr } = await (supabaseAdmin as any)
+          .from("sales")
+          .select("id, nft_id, transaction_hash, sold_at")
+          .eq("collection", "nba_top_shot")
+          .not("buyer_address", "is", null)
+          .is("payer_address", null)
+          .not("transaction_hash", "is", null)
+          .gte("sold_at", windowStart)
+          .order("sold_at", { ascending: false })
+          .order("id", { ascending: true })
+          .limit(EXEC_FILL_BATCH)
+        if (execErr) {
+          execFillError = execErr.message
+        } else {
+          const execRows = (execData ?? []) as Array<{ id: string; nft_id: string; transaction_hash: string }>
+          execFillFound = execRows.length
+          for (const row of execRows) {
+            if (Date.now() - startedAt > MAX_RUN_MS) { bailedEarly = true; break }
+            try {
+              const dec = await decodeTopShotSaleTx(String(row.transaction_hash), String(row.nft_id))
+              const patch: Record<string, unknown> = {}
+              if (dec.payer) patch.payer_address = dec.payer
+              if (dec.proposer) patch.proposer_address = dec.proposer
+              if (Object.keys(patch).length === 0) {
+                execFillFailed++
+              } else {
+                const { error: upErr } = await (supabaseAdmin as any)
+                  .from("sales")
+                  .update(patch)
+                  .eq("id", row.id)
+                  .is("payer_address", null)
+                if (upErr) {
+                  execFillFailed++
+                  if (!execFillError) execFillError = upErr.message
+                } else {
+                  execFilled++
+                }
+              }
+            } catch {
+              execFillFailed++
+            }
+            await delay(TX_DECODE_DELAY_MS)
+          }
+        }
+        // What is still waiting after this run, counted (head: true) not assumed.
+        const { count: backlogCount, error: backlogErr } = await (supabaseAdmin as any)
+          .from("sales")
+          .select("id", { count: "exact", head: true })
+          .eq("collection", "nba_top_shot")
+          .not("buyer_address", "is", null)
+          .is("payer_address", null)
+          .not("transaction_hash", "is", null)
+          .gte("sold_at", windowStart)
+        execFillBacklog = backlogErr ? -1 : (backlogCount ?? -1)
+        // A failed read or write in this phase fails the RUN: `ok` must say the
+        // lanes worked, not merely that the route got to the end.
+        if (execFillError) {
+          ok = false
+          errMsg = `exec fill: ${execFillError}`
+        }
+      }
     } catch (err) {
       ok = false
       errMsg = err instanceof Error ? err.message : String(err)
@@ -447,6 +536,11 @@ export async function POST(req: NextRequest) {
             decode_failed: decodeFailed,
             wrapped: cursorAfter === null,
             bailed_early: bailedEarly,
+            exec_fill_found: execFillFound,
+            exec_fill_written: execFilled,
+            exec_fill_failed: execFillFailed,
+            exec_fill_backlog: execFillBacklog,
+            exec_fill_error: execFillError,
             duration_ms: Date.now() - startedAt,
           },
         })

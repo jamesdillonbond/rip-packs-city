@@ -269,6 +269,96 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
     const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
     expect(runRow).toMatchObject({ ok: false, error: "select boom", rows_found: 0, rows_written: 0 })
   })
+
+  // Exec-account fill (2026-10-10): a sale whose buyer another writer filled
+  // first was never decoded for payer/proposer, because both buyer lanes select
+  // buyer IS NULL. The phase fills ONLY payer/proposer on those rows.
+  it("exec fill: decodes buyer-set / payer-null rows and patches payer + proposer ONLY, never the buyer", async () => {
+    const spy = install({
+      pipeline_runs: { data: null, error: null },
+      sales: [
+        { data: [], error: null }, // buyer lane: nothing null-buyer
+        {
+          data: [
+            { id: "e1", nft_id: "901", transaction_hash: "txe1", sold_at: "2026-10-09T12:00:00Z" },
+            { id: "e2", nft_id: "902", transaction_hash: "txe2", sold_at: "2026-10-09T11:00:00Z" },
+          ],
+          error: null,
+        },
+        { data: null, error: null }, // update e1
+        { data: null, error: null, count: 7 }, // backlog count (e2 decoded nothing)
+      ],
+    })
+    // The decoder also returns a buyer and a seller; the phase must not write them.
+    state.decodeResults["txe1"] = {
+      buyer: "0xnotmine", seller: "0xnotmine", payer: "0xpay1", proposer: "0xprop1", ok: true,
+    }
+
+    await tsRoute.POST(
+      adminReq("https://t/api/admin/backfill-topshot-buyers", { authorization: "Bearer ingest-secret" }),
+    )
+    await runDeferred()
+
+    expect(state.tsDecodeCalls).toEqual([
+      { tx: "txe1", nftId: "901" },
+      { tx: "txe2", nftId: "902" },
+    ])
+    const updates = (spy.writes.sales ?? []).filter((w) => w.method === "update")
+    expect(updates).toHaveLength(1)
+    expect(updates[0].rows[0]).toEqual({ payer_address: "0xpay1", proposer_address: "0xprop1" })
+
+    const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
+    // The buyer lane's own counts are untouched by the phase.
+    expect(runRow).toMatchObject({ ok: true, error: null, rows_found: 0, rows_written: 0 })
+    expect(runRow.extra).toMatchObject({
+      exec_fill_found: 2,
+      exec_fill_written: 1,
+      exec_fill_failed: 1,
+      exec_fill_backlog: 7,
+      exec_fill_error: null,
+    })
+  })
+
+  it("exec fill: a failed read fails the RUN (ok=false) instead of reading as nothing to fill", async () => {
+    const spy = install({
+      pipeline_runs: { data: null, error: null },
+      sales: [
+        { data: [], error: null },
+        { data: null, error: { message: "exec boom" } },
+        { data: null, error: null, count: 0 },
+      ],
+    })
+
+    await tsRoute.POST(
+      adminReq("https://t/api/admin/backfill-topshot-buyers", { authorization: "Bearer ingest-secret" }),
+    )
+    await runDeferred()
+
+    const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
+    expect(runRow).toMatchObject({ ok: false, error: "exec fill: exec boom" })
+    expect(runRow.extra).toMatchObject({ exec_fill_found: 0, exec_fill_written: 0, exec_fill_error: "exec boom" })
+  })
+
+  it("exec fill: a failed backlog count reports -1, never a measured 0", async () => {
+    const spy = install({
+      pipeline_runs: { data: null, error: null },
+      sales: [
+        { data: [], error: null },
+        { data: [], error: null },
+        { data: null, error: { message: "count boom" } },
+      ],
+    })
+
+    await tsRoute.POST(
+      adminReq("https://t/api/admin/backfill-topshot-buyers", { authorization: "Bearer ingest-secret" }),
+    )
+    await runDeferred()
+
+    const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
+    const extra = runRow.extra as Record<string, unknown>
+    expect(extra.exec_fill_backlog).toBe(-1)
+    expect(extra.exec_fill_backlog).not.toBe(0)
+  })
 })
 
 describe("POST /api/admin/backfill-topshot-buyers?mode=historical (spork lane)", () => {
