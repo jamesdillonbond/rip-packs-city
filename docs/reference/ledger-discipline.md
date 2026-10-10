@@ -335,3 +335,9 @@ number rather than quote it. A `Shipped:` line is a number of that kind.
 - **Once it is wrong, leave it:** the guard compares each push only to its parent, so the red is confined to that one commit; "fixing" the heading back removes the NEW key and reds the next push the same way. The 10-04 heading was left as is.
 - **Before pushing a ledger edit (not an add), run the guard locally:** `git show HEAD~1:docs/overnight/ledger.md > /tmp/b && node scripts/find-clobbered-ledger-headings.mjs /tmp/b docs/overnight/ledger.md` must print `0` (run it after committing, against the commit's parent).
 
+### ⚠ A closing heading must NAME every queue item it closes (2026-10-10)
+
+`npm run ops:ready-queue` (and the night pass that reads it) marks a queued item "likely closed" only when a later
+ledger HEADING contains the item's first backticked token plus a closing status word. On 10-09 one heading closed three
+queue items but named only `chain-arrival-pack-pulls`, so the 10-10 night pass carried `topshot-sellback-walk` and
+`topshot-pack-supply-backfill` as open for another night. **Put each closed item's own token in the heading.**

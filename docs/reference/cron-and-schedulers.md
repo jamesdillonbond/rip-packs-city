@@ -625,6 +625,14 @@ silent arms (a row alerting ten minutes after it was added). Migration `20260904
 
 Live after apply: **0 rows** (was 1, and that 1 was the brand-new pipeline).
 
+## 2026-10-10 — a weekly lane's failure DETAIL must live where retention cannot purge it
+
+`wmc-reindex-verify` (weekly) failed 10-03 with a generic error, and the per-index detail it logged in
+`pipeline_runs.extra` was gone by the time anyone looked (~73 h retention, 7-day period). **The only
+long-lived record is `pipeline_runs_daily.last_error`**, so a weekly or slower lane must NAME its failing
+subject in the error string itself. `20261010164558` does that for this lane ("under 60% leaf density:
+<index> NN.N%; INVALID left: <name>"). Apply the same rule to any lane whose period exceeds ~3 days.
+
 ## 2026-09-04 — `topshot-circulation-onchain`: the Vercel cron that replaced the dead catalog walker's circulation half
 
 Route `app/api/cron/topshot-circulation-onchain`, `vercel.json` `5 4 * * *` (04:05Z). Reads

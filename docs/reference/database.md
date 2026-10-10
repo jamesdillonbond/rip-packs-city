@@ -3010,3 +3010,12 @@ Rules:
 ⚠ **Also 10-09: the accuracy-gate backtests (`fmv_sales_backtest`, `topshot_fmv_backtest`) were the last hand-kept buy-back list** (one Top Shot wallet against a 3-wallet registry). They now read `sales_market` (`20261009212009`), and their guard suppressions are gone. See the `sales_market` section above.
 
 ⚠ **A ROW'S `updated_at` IS NOT A FRESHNESS STAMP FOR ONE OF ITS FIELDS (2026-10-10, known-issues #184).** `edition_offers.updated_at` moves when the floor CHANGES and also when the same row's `highest_offer` changes; an ask re-observed unchanged keeps its old stamp. So "`low_ask` with `updated_at` ≤ 7 d" both dropped 2,490 asks seen this week and passed 350 nobody had seen for ~10 days (31 of them below the live badge ask, which they outranked). The field's own observation time is `low_ask_confirmed_at`. Before writing "fresh within N days" on a multi-field row, read the WRITER and find the column that means "this field was last seen" — and if none exists, the rule cannot be written honestly.
+
+### ⚠ An index fixes a FILTERED read, never a whole-table aggregate (2026-10-10)
+
+`panini_sale_feed_status` (five aggregates incl. `count(*)` over all of `panini_card_serials`) went 7.7 s → 0.72 s with
+a covering index on 10-02, then back to 4.8 s by 10-09: the table grew 1.07 M → 2.48 M rows and an index-only scan
+still reads every entry (270k buffers). **A status/summary row over a growing table wants a STORED row refreshed on
+a schedule, with a freshness-gated LIVE fallback** (`20261010053847`: snapshot served only while < 75 min old, else
+computed live, and `status_source` says which). Staleness then degrades to slow-but-true, never fast-but-frozen, and a
+dead refresher resurfaces as the same slow-board alarm.
