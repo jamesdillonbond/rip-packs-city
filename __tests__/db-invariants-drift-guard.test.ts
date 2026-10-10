@@ -2973,7 +2973,8 @@ const PINS = [
     // maps from agreeing Atlas events (parallel-safe), reads Atlas {nftId} for the rest.
     fn: "resolve_topshot_misattrib_via_atlas",
     test: "supabase/tests/resolve_topshot_misattrib_via_atlas.sql",
-    migration: "supabase/migrations/20261010182920_audit_20261010_topshot_misattrib_candidates_resolved_from_atlas.sql",
+    // 2026-10-10 (#171): held unknown parallels are queued for the chain lane.
+    migration: "supabase/migrations/20261010183509_audit_20261010_misattrib_resolver_queues_unknown_parallels_for_the_chain.sql",
   },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is

@@ -10,10 +10,12 @@
 --   3. a candidate with no events and no attempt in 30 days gets one {nftId} read, tagged
 --      '__misattrib__<id>', and an attempt row; one attempted within 30 days does not; an
 --      already-mapped candidate is ignored;
---   4. a re-run with nothing new maps and dispatches nothing; a failure is logged ok=false.
+--   4. a re-run with nothing new maps and dispatches nothing; a failure is logged ok=false;
+--   5. (2026-10-10, #171) a held parallel with no subedition row is queued there as pending (NULL),
+--      so the chain lane resolves it and a later tick maps it.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261010182920_audit_20261010_topshot_misattrib_candidates_resolved_from_atlas.sql).
+-- (supabase/migrations/20261010183509_audit_20261010_misattrib_resolver_queues_unknown_parallels_for_the_chain.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 
 BEGIN;
@@ -48,6 +50,7 @@ DECLARE
   v_open    int := 0;
   v_mapped  int := 0;
   v_held    int := 0;
+  v_queued  int := 0;
   v_n       int := 0;
   v_req     bigint;
   r         record;
@@ -86,9 +89,20 @@ BEGIN
       SELECT ok.nft_id, ok.s, ok.p, ok.ser, now(), 'atlas_nft_events' FROM ok
       ON CONFLICT (nft_id) DO NOTHING
       RETURNING 1
+    ), queued AS (
+      -- a held PARALLEL the subedition table has never seen is queued there (subedition NULL =
+      -- pending; base = the set:play Atlas names) for the chain lane (backfill-topshot-subeditions,
+      -- TopShot.getMomentsSubedition) to resolve; the next tick then maps it. (2026-10-10, #171)
+      INSERT INTO public.topshot_moment_subeditions (nft_id, base_external_id, subedition_id)
+      SELECT ev.nft_id, ev.s::text || ':' || ev.p::text, NULL FROM ev
+       WHERE NOT ev.std
+         AND NOT EXISTS (SELECT 1 FROM public.topshot_moment_subeditions sb WHERE sb.nft_id = ev.nft_id)
+      ON CONFLICT (nft_id) DO NOTHING
+      RETURNING 1
     )
-    SELECT (SELECT count(*) FROM open_t), (SELECT count(*) FROM ins), (SELECT count(*) FROM ev) - (SELECT count(*) FROM ok)
-      INTO v_open, v_mapped, v_held;
+    SELECT (SELECT count(*) FROM open_t), (SELECT count(*) FROM ins), (SELECT count(*) FROM ev) - (SELECT count(*) FROM ok),
+           (SELECT count(*) FROM queued)
+      INTO v_open, v_mapped, v_held, v_queued;
 
     -- 2. DISPATCH. Up to p_max open targets that have NO Atlas events and no attempt in 30 days
     --    get one {nftId} read; atlas_market_drain ingests the answer into the events table and the
@@ -121,17 +135,17 @@ BEGIN
     END LOOP;
   EXCEPTION WHEN query_canceled OR OTHERS THEN
     v_err := left(SQLERRM, 300);
-    v_mapped := 0; v_n := 0;
+    v_mapped := 0; v_n := 0; v_queued := 0;
   END;
 
   PERFORM public.log_pipeline_run(
     'topshot-misattrib-atlas-resolver', v_started, v_open, v_mapped, v_held,
     v_err IS NULL, v_err, 'nba_top_shot', NULL, NULL,
     jsonb_build_object('open', v_open, 'mapped', v_mapped, 'held_parallel_or_contradicted', v_held,
-                       'dispatched', v_n, 'via', 'pg_cron',
+                       'queued_for_subedition', v_queued, 'dispatched', v_n, 'via', 'pg_cron',
                        'duration_ms', (extract(epoch FROM clock_timestamp() - v_started) * 1000)::int));
   RETURN jsonb_build_object('ok', v_err IS NULL, 'open', v_open, 'mapped', v_mapped, 'held', v_held,
-                            'dispatched', v_n, 'error', v_err);
+                            'queued', v_queued, 'dispatched', v_n, 'error', v_err);
 END
 $function$;
 
@@ -151,6 +165,9 @@ SELECT _assert_eq((SELECT string_agg(nft_id || '=' || set_id_onchain || ':' || p
                      FROM public.topshot_misattrib_onchain_map WHERE nft_id <> '109'),
   '101=10:1#7/atlas_nft_events,102=20:5#9/atlas_nft_events', 'c1/c2 the agreeing Standard and the known parallel, nothing else');
 SELECT _assert_eq((SELECT extra->>'held_parallel_or_contradicted' FROM public._runs ORDER BY ctid DESC LIMIT 1), '2', 'c2 the unknown parallel and the contradicted Standard are held');
+SELECT _assert_eq((SELECT string_agg(nft_id || '=' || base_external_id || '/' || coalesce(subedition_id::text, 'NULL'), ',' ORDER BY nft_id)
+                     FROM public.topshot_moment_subeditions WHERE nft_id NOT IN ('102', '104')),
+  '103=20:7/NULL', 'c2 (#171) the held unknown parallel is queued for the chain lane, pending (NULL), base from Atlas');
 SELECT _assert_eq((SELECT string_agg(body->>'nftId', ',' ORDER BY id) FROM net._sent), '106,108',
   'c3 no events + no recent attempt -> one read each; recent attempt (107), events (101-105) and mapped (109) skipped');
 SELECT _assert_eq((SELECT string_agg(error, ',' ORDER BY request_id) FROM public.topshot_atlas_market_requests), '__misattrib__106,__misattrib__108', 'c3 tagged requests');
