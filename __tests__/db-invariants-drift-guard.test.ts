@@ -2968,6 +2968,13 @@ const PINS = [
     test: "supabase/tests/atlas_edition_verify_dispatch.sql",
     migration: "supabase/migrations/20261010181823_audit_20261010_edition_verify_incomplete_wait_exceeds_the_rotation.sql",
   },
+  {
+    // Added 2026-10-10 (#101). The independent resolver for Top Shot misattribution candidates:
+    // maps from agreeing Atlas events (parallel-safe), reads Atlas {nftId} for the rest.
+    fn: "resolve_topshot_misattrib_via_atlas",
+    test: "supabase/tests/resolve_topshot_misattrib_via_atlas.sql",
+    migration: "supabase/migrations/20261010182920_audit_20261010_topshot_misattrib_candidates_resolved_from_atlas.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version
