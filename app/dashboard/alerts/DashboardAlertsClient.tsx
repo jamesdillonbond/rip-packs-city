@@ -335,6 +335,10 @@ interface EditionMatch {
   player_name: string | null;
   set_name: string | null;
   collection_slug?: string | null;
+  // /api/search-editions returns it for every match (editions span all
+  // collections). It MUST reach POST /api/alerts, which otherwise defaults to
+  // Top Shot and keys the alert to whatever Top Shot edition shares the key.
+  collection_id?: string | null;
   fmv?: number | null;
 }
 
@@ -431,6 +435,7 @@ function CreateAlertModal({
         body: JSON.stringify({
           owner_key: ownerKey,
           edition_key: picked.edition_key,
+          collection_id: picked.collection_id ?? null,
           player_name: picked.player_name,
           set_name: picked.set_name,
           alert_type: alertType,

@@ -448,6 +448,25 @@ describe("DashboardAlertsClient", () => {
     // (alerts-post-vocabulary-matches-the-route.test.ts holds the vocabulary.)
   })
 
+  // 2026-10-10 review: search-editions spans every collection and returns each
+  // match's collection_id, but the POST dropped it, so /api/alerts defaulted to
+  // Top Shot and an All Day pick was saved against whatever Top Shot edition
+  // shares the key. The picked edition's collection must ride the POST.
+  it("sends the picked edition's collection_id, never letting it default to Top Shot", async () => {
+    const ALL_DAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
+    const f = await pickAndConfigure({
+      search: () => json(200, { editions: [EDITION({ collection_id: ALL_DAY, collection_slug: "nfl-all-day" })] }),
+    })
+    fireEvent.change(screen.getByPlaceholderText("10.00"), { target: { value: "5" } })
+    fireEvent.change(screen.getByPlaceholderText("you@example.com"), { target: { value: "t@example.test" } })
+    fireEvent.click(submitBtn())
+    await waitFor(() =>
+      expect(f.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === "POST")).toBe(true),
+    )
+    const post = f.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")!
+    expect(JSON.parse(String((post[1] as RequestInit).body))).toMatchObject({ collection_id: ALL_DAY })
+  })
+
   // ⚠ A 402 is a PAYWALL, not an error. Rendering it as "HTTP 402" tells a collector
   // something broke when in fact they need to upgrade — a dead end instead of a path.
   it("renders a 402 as the upgrade prompt, not as a failure", async () => {
