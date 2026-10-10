@@ -19,7 +19,20 @@ vi.mock("@/lib/cache", () => ({ getOrSetCache: (_k: string, _t: number, fn: () =
 vi.mock("@/lib/chains/flow/flow", () => ({ default: { query: async () => [] } }))
 vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { from: () => ({}), rpc: async () => state.rpc },
+  supabaseAdmin: {
+    from: () => ({}),
+    // The durable dedup counter (2026-10-10) is keyed by bucket+key; everything
+    // else is the wmc read.
+    rpc: async (fn: string, args: any) => {
+      if (fn !== "bump_anon_action_rate") return state.rpc
+      const g = globalThis as any
+      if (g.__rateError) return { data: null, error: { message: "timeout" } }
+      g.__rate = g.__rate ?? {}
+      const k = `${args.p_bucket}|${args.p_key}`
+      g.__rate[k] = (g.__rate[k] ?? 0) + 1
+      return { data: { allowed: g.__rate[k] <= args.p_limit }, error: null }
+    },
+  },
 }))
 vi.mock("@/lib/auth/supabase-server", () => ({ getCurrentUser: async () => null }))
 vi.mock("@/lib/rewards", () => ({ awardPoints: async () => {} }))
@@ -179,5 +192,39 @@ describe("POST /api/wallet-search — Golazos wmc path", () => {
     expect(body.walletAddress).toBe("0xc4ab4a06ade1fd0f")
     expect(body.rows).toHaveLength(1)
     expect(body.rows[0].momentId).toBe("1006747815")
+  })
+})
+
+// 2026-10-10: an anonymous search of a wallet with no Golazos rows (any random
+// address) re-triggered the Golazos backfill on EVERY call. Durable dedup now.
+describe("POST /api/wallet-search — Golazos backfill trigger is deduped", () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0))
+  it("two searches of the same empty wallet dispatch ONE backfill", async () => {
+    process.env.INGEST_SECRET_TOKEN = "t"
+    ;(globalThis as any).__rate = {}
+    ;(globalThis as any).__rateError = false
+    const fetchSpy = vi.fn(async () => new Response("{}"))
+    vi.stubGlobal("fetch", fetchSpy)
+    state.rpc = { data: [{ moments: [], total_count: 0 }], error: null }
+    await POST(req({ input: ADDR, collection: "laliga-golazos" }))
+    await flush()
+    await POST(req({ input: ADDR, collection: "laliga-golazos" }))
+    await flush()
+    const dispatches = fetchSpy.mock.calls.filter((c: any[]) => String(c[0]).includes("/api/wallet-backfill-golazos"))
+    expect(dispatches).toHaveLength(1)
+    vi.unstubAllGlobals()
+  })
+
+  it("an unreadable counter dispatches NOTHING (fail closed)", async () => {
+    process.env.INGEST_SECRET_TOKEN = "t"
+    ;(globalThis as any).__rateError = true
+    const fetchSpy = vi.fn(async () => new Response("{}"))
+    vi.stubGlobal("fetch", fetchSpy)
+    state.rpc = { data: [{ moments: [], total_count: 0 }], error: null }
+    await POST(req({ input: "0x00000000000000aa", collection: "laliga-golazos" }))
+    await flush()
+    expect(fetchSpy.mock.calls.filter((c: any[]) => String(c[0]).includes("/api/wallet-backfill-golazos"))).toHaveLength(0)
+    ;(globalThis as any).__rateError = false
+    vi.unstubAllGlobals()
   })
 })

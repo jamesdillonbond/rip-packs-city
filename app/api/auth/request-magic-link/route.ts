@@ -24,6 +24,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { safeRedirectPath } from "@/lib/auth/safe-redirect"
 import { createClient } from "@supabase/supabase-js"
 import { supabaseAdmin } from "@/lib/supabase"
+import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
 
 function buildCallbackUrl(req: NextRequest, redirect?: string | null): string {
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? ""
@@ -72,6 +73,31 @@ export async function POST(req: NextRequest) {
       { ok: false, reason: "not_on_allow_list" },
       { status: 403 }
     )
+  }
+
+  // ⛔ DURABLE CAPS (2026-10-10). The allow-list is allow-by-default, so this
+  // anonymous route sent a Supabase auth mail (and created an auth.users row) for
+  // ANY address, capped only by proxy.ts's per-instance limiter — mail to
+  // arbitrary people, and a way to exhaust the project's auth-email quota and
+  // block real logins. Per IP 10/h, per address 5/h; FAIL CLOSED, like the
+  // allow-list check above.
+  {
+    const ip = anonIpKey(req.headers)
+    const verdict = await bumpAnonRates([
+      ...(ip ? [{ bucket: "magic_link:ip", key: ip, limit: 10, windowSecs: 3600 }] : []),
+      { bucket: "magic_link:email", key: email, limit: 5, windowSecs: 3600 },
+    ])
+    if (!verdict.allowed) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: verdict.failed
+            ? "Sign-in service is temporarily unavailable. Please try again in a moment."
+            : "Too many sign-in links requested. Please wait a few minutes and check your inbox.",
+        },
+        { status: verdict.failed ? 503 : 429 },
+      )
+    }
   }
 
   // Allow-listed — send the magic link from a server-side anon client.

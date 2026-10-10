@@ -23,7 +23,7 @@ vi.mock("@supabase/supabase-js", () => {
     maybeSingle: async () => ({ data: null }),
     insert: async () => ({ error: null }),
   }
-  return { createClient: () => ({ from: () => b, rpc: async () => ({ data: null, error: null }) }) }
+  return { createClient: () => ({ from: () => b, rpc: async (fn?: string) => fn === "bump_anon_action_rate" ? { data: { allowed: true, count: 1 }, error: null } : ({ data: null, error: null }) }) }
 })
 
 import { POST } from "@/app/api/support-chat/route"

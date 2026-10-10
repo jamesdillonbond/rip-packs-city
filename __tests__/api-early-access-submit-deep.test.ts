@@ -32,7 +32,11 @@ vi.mock("next/server", async (importOriginal) => {
 import { POST } from "@/app/api/early-access/submit/route"
 
 function install(fixtures: Record<string, unknown>) {
-  const spy = makeInstrumentedSupabaseFixture(fixtures as never)
+  // The durable anonymous cap (2026-10-10) answers "allowed" unless a test says otherwise.
+  const spy = makeInstrumentedSupabaseFixture({
+    "rpc:bump_anon_action_rate": { data: { allowed: true, count: 1 }, error: null },
+    ...fixtures,
+  } as never)
   state.sb = spy.fixture
   state.rpcCalls = spy.rpcCalls
   state.writes = spy.writes
@@ -266,5 +270,31 @@ describe("POST /api/early-access/submit — deferred on-chain re-score + Telegra
     stubFetch(okFetch(1))
     await POST(req(VALID))
     await expect(cap.fn!()).resolves.toBeUndefined()
+  })
+})
+
+// 2026-10-10 anonymous-write audit: each NEW email paged the operator, walked the
+// named wallet, and on auto-approval seeded it and mailed a welcome — capped only
+// by proxy.ts's per-instance limiter. Durable caps now, failing CLOSED.
+describe("POST /api/early-access/submit — durable abuse caps", () => {
+  it("a refused cap writes NOTHING (no submit RPC, no Telegram, no prewarm)", async () => {
+    install({ "rpc:bump_anon_action_rate": { data: { allowed: false, count: 6 }, error: null } })
+    const res = await POST(req({ email: "victim@example.com", wallet: "0xbd94cade097e50ac" }))
+    expect(res.status).toBe(429)
+    expect(state.rpcCalls.map((c) => c.name)).toEqual(["bump_anon_action_rate"])
+  })
+
+  it("an unreadable counter FAILS CLOSED (503), never 'allowed'", async () => {
+    install({ "rpc:bump_anon_action_rate": { data: null, error: { message: "timeout" } } })
+    const res = await POST(req({ email: "a@example.com", wallet: "0xbd94cade097e50ac" }))
+    expect(res.status).toBe(503)
+    expect(state.rpcCalls.some((c) => c.name === "submit_allow_list_request")).toBe(false)
+  })
+
+  it("rejects a non-address email and an unbounded username before any write", async () => {
+    install({})
+    expect((await POST(req({ email: "a@b", wallet: "0xbd94cade097e50ac" }))).status).toBe(400)
+    expect((await POST(req({ email: "a@example.com", username: "x".repeat(65) }))).status).toBe(400)
+    expect(state.rpcCalls).toHaveLength(0)
   })
 })

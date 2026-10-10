@@ -314,7 +314,7 @@ function wmcPage(rows: unknown[]) {
 function installWmc(rows: unknown[], opts: { resolve?: unknown } = {}) {
   A.sb = {
     from: () => wmcPage(rows),
-    rpc: async () => ({ data: opts.resolve ?? { found: false }, error: null }),
+    rpc: async (fn?: string) => fn === "bump_anon_action_rate" ? { data: { allowed: true, count: 1 }, error: null } : ({ data: opts.resolve ?? { found: false }, error: null }),
   }
 }
 
@@ -373,7 +373,7 @@ describe("concierge — find_quirky_serials", () => {
         q.range = () => Promise.resolve({ data: fullPage, error: null })
         return q
       },
-      rpc: async () => ({ data: { found: false }, error: null }),
+      rpc: async (fn?: string) => fn === "bump_anon_action_rate" ? { data: { allowed: true, count: 1 }, error: null } : ({ data: { found: false }, error: null }),
     }
     script("find_quirky_serials", { walletAddress: "0x1234567890abcdef" })
     await POST(post("fun serials"))
@@ -412,7 +412,7 @@ describe("concierge — find_quirky_serials", () => {
         }
         return wmcPage(wmcRows)
       },
-      rpc: async () => ({ data: { found: false }, error: null }),
+      rpc: async (fn?: string) => fn === "bump_anon_action_rate" ? { data: { allowed: true, count: 1 }, error: null } : ({ data: { found: false }, error: null }),
     }
   }
 
@@ -466,7 +466,7 @@ describe("concierge — find_quirky_serials", () => {
         q.range = () => Promise.resolve({ data: null, error: { message: "canceling statement due to statement timeout" } })
         return q
       },
-      rpc: async () => ({ data: { found: false }, error: null }),
+      rpc: async (fn?: string) => fn === "bump_anon_action_rate" ? { data: { allowed: true, count: 1 }, error: null } : ({ data: { found: false }, error: null }),
     }
     script("find_quirky_serials", { walletAddress: "0x1234567890abcdef" })
     await POST(post("fun serials"))

@@ -13,10 +13,18 @@
 // the server. skip_cached=true makes already-indexed wallets near-no-ops.
 //
 // A small per-instance recent-wallet guard avoids re-dispatching the heavy
-// orchestrator for the same wallet on rapid repeat submits; the edge limiter in
-// front of /api/public/* is the real rate ceiling.
+// orchestrator for the same wallet on rapid repeat submits.
+//
+// ⛔ DURABLE CAPS (2026-10-10). "The edge limiter in front of /api/public/* is
+// the real rate ceiling" was not true: proxy.ts's limiter is per lambda and in
+// memory, and one request here fans out to ~6 long lambdas (the orchestrator plus
+// five per-collection backfills). Random valid addresses never repeat, so the
+// per-instance dedup never fired for them. Three durable caps now sit in front of
+// the dispatch (lib/abuse/anon-rate.ts), and they FAIL CLOSED: per wallet one
+// dispatch per 6 h, per IP 20/h, globally 300/h.
 
 import { NextRequest, NextResponse, after } from "next/server"
+import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -61,6 +69,24 @@ export async function POST(req: NextRequest) {
 
   if (recentlyQueued(wallet)) {
     return NextResponse.json({ queued: true, wallet, deduped: true }, { status: 202 })
+  }
+
+  const ip = anonIpKey(req.headers)
+  const verdict = await bumpAnonRates([
+    { bucket: "queue_wallet:wallet", key: wallet, limit: 1, windowSecs: 6 * 3600 },
+    ...(ip ? [{ bucket: "queue_wallet:ip", key: ip, limit: 20, windowSecs: 3600 }] : []),
+    { bucket: "queue_wallet:global", key: "*", limit: 300, windowSecs: 3600 },
+  ])
+  if (!verdict.allowed) {
+    if (verdict.refusedBucket === "queue_wallet:wallet" && !verdict.failed) {
+      // Dispatched within the last 6 h — the walk is already running or done.
+      RECENT.set(wallet, Date.now())
+      return NextResponse.json({ queued: true, wallet, deduped: true }, { status: 202 })
+    }
+    return NextResponse.json(
+      { queued: false, wallet, reason: verdict.failed ? "unavailable" : "rate_limited" },
+      { status: verdict.failed ? 202 : 429 },
+    )
   }
   RECENT.set(wallet, Date.now())
 

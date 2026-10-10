@@ -43,6 +43,15 @@ describe("POST /api/track-click", () => {
     expect(state.rows.every((r) => r.source === "site")).toBe(true)
   })
 
+  // 2026-10-10: the body was spread AFTER source:"site", so an anonymous POST
+  // could forge alert-attributed clicks (source/alertDeliveryId/channel).
+  it("a body claiming to be an ALERT click is recorded as a site click with no delivery", async () => {
+    state.error = null
+    state.rows.length = 0
+    await POST(req({ surface: "insights", destination: "https://x", source: "alert", alertDeliveryId: "d-123", channel: "telegram" }))
+    expect(state.rows[0]).toMatchObject({ source: "site", alert_delivery_id: null, channel: null })
+  })
+
   it("500s on a malformed body", async () => {
     const res = await POST(req(null, true))
     expect(res.status).toBe(500)

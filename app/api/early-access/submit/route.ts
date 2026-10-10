@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { fitTelegramText } from "@/lib/telegram-message"
+import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
 import { createHash } from "node:crypto"
 import { supabaseAdmin } from "@/lib/supabase"
 
@@ -257,7 +258,7 @@ export async function POST(req: NextRequest) {
   }
 
   const email = typeof data.email === "string" ? data.email.trim().toLowerCase() : ""
-  if (!email || !email.includes("@")) {
+  if (!email || !/^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/.test(email)) {
     return NextResponse.json({ ok: false, error: "Email is required." }, { status: 400 })
   }
 
@@ -271,6 +272,9 @@ export async function POST(req: NextRequest) {
   }
 
   const usernameRaw = typeof data.username === "string" ? data.username.trim() : ""
+  if (usernameRaw.length > 64) {
+    return NextResponse.json({ ok: false, error: "Username is too long." }, { status: 400 })
+  }
   const username = usernameRaw.length > 0 ? usernameRaw : null
 
   if (!wallet && !username) {
@@ -298,6 +302,30 @@ export async function POST(req: NextRequest) {
     collectionsValidated.length > 0
       ? collectionsValidated
       : [...ALL_PUBLISHED_COLLECTIONS]
+
+  // ⛔ DURABLE CAPS (2026-10-10). Anonymous, and each NEW email pages the
+  // operator on Telegram, walks the named wallet, and on auto-approval seeds that
+  // wallet for permanent 6-hourly walks and mails a welcome to the address — none
+  // of it was capped beyond proxy.ts's per-instance limiter. Per IP 5/day,
+  // globally 200/day; FAIL CLOSED (lib/abuse/anon-rate.ts).
+  {
+    const ip = anonIpKey(req.headers)
+    const verdict = await bumpAnonRates([
+      ...(ip ? [{ bucket: "early_access:ip", key: ip, limit: 5, windowSecs: 86400 }] : []),
+      { bucket: "early_access:global", key: "*", limit: 200, windowSecs: 86400 },
+    ])
+    if (!verdict.allowed) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: verdict.failed
+            ? "We couldn't take your request right now. Please try again in a few minutes."
+            : "Too many requests from this network today. Please try again tomorrow.",
+        },
+        { status: verdict.failed ? 503 : 429 },
+      )
+    }
+  }
 
   // Dedup: reject when (lower(username), wallet_addr) already has an active
   // allow_list row under a different email. Catches the samwise222

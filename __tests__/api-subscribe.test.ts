@@ -18,6 +18,9 @@ const db = vi.hoisted(() => ({
   updateError: null as any,
   inserts: [] as any[],
   updates: [] as any[],
+  // the durable anonymous cap (2026-10-10)
+  rate: { allowed: true } as { allowed: boolean } | null,
+  rateError: null as any,
 }))
 
 vi.mock("@/lib/supabase", () => {
@@ -34,6 +37,7 @@ vi.mock("@/lib/supabase", () => {
       db.updates.push(patch)
       return { eq: async () => ({ error: db.updateError }) }
     },
+    rpc: async () => ({ data: db.rate, error: db.rateError }),
   }
   return { supabaseAdmin: b }
 })
@@ -55,6 +59,8 @@ beforeEach(() => {
   db.updateError = null
   db.inserts = []
   db.updates = []
+  db.rate = { allowed: true }
+  db.rateError = null
   process.env.RESEND_API_KEY = "test-key"
   fetchSpy = vi.fn(async () => new Response("{}"))
   vi.stubGlobal("fetch", fetchSpy)
@@ -144,5 +150,31 @@ describe("POST /api/subscribe — an EXISTING row is never rewritten", () => {
     expect(db.updates).toEqual([])
     expect(db.inserts).toEqual([])
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+})
+
+// 2026-10-10 anonymous-write audit: every new address got a Resend mail, and an
+// existing unverified one every 10 minutes forever, with no durable cap.
+describe("POST /api/subscribe — durable caps", () => {
+  it("a refused cap sends NOTHING and still answers success (no subscription oracle)", async () => {
+    db.rate = { allowed: false }
+    const res = await POST(post(JSON.stringify({ email: "victim@example.com" })))
+    expect(res.status).toBe(200)
+    expect((await res.json()).success).toBe(true)
+    expect(db.inserts).toHaveLength(0)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it("an unreadable counter FAILS CLOSED — no row, no mail", async () => {
+    db.rateError = { message: "timeout" }
+    const res = await POST(post(JSON.stringify({ email: "a@example.com" })))
+    expect(res.status).toBe(503)
+    expect(db.inserts).toHaveLength(0)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it("rejects a non-address email before any write", async () => {
+    const res = await POST(post(JSON.stringify({ email: "a@b" })))
+    expect(res.status).toBe(400)
   })
 })

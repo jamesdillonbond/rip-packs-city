@@ -9,12 +9,17 @@ import { NextRequest } from "next/server"
 // @supabase/supabase-js (the anon send client).
 
 const gate: { data: any; error: any } = { data: true, error: null }
+// the durable send cap (2026-10-10)
+const rate = vi.hoisted(() => ({ verdict: { data: { allowed: true }, error: null } as { data: any; error: any }, sends: 0 }))
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { rpc: async () => ({ data: gate.data, error: gate.error }) },
+  supabaseAdmin: {
+    rpc: async (fn: string) =>
+      fn === "bump_anon_action_rate" ? rate.verdict : { data: gate.data, error: gate.error },
+  },
 }))
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({ auth: { signInWithOtp: async () => ({ error: null }) } }),
+  createClient: () => ({ auth: { signInWithOtp: async () => { rate.sends++; return { error: null } } } }),
 }))
 
 import { POST } from "@/app/api/auth/request-magic-link/route"
@@ -30,6 +35,8 @@ function req(raw?: string): NextRequest {
 beforeEach(() => {
   gate.data = true
   gate.error = null
+  rate.verdict = { data: { allowed: true }, error: null }
+  rate.sends = 0
 })
 
 describe("POST /api/auth/request-magic-link", () => {
@@ -62,5 +69,20 @@ describe("POST /api/auth/request-magic-link", () => {
     const res = await POST(req(JSON.stringify({ email: "user@example.com" })))
     expect(res.status).toBe(200)
     expect((await res.json()).ok).toBe(true)
+  })
+
+  // 2026-10-10: allow-by-default, so this mailed ANY address with no durable cap.
+  it("a refused send cap sends NO mail (429)", async () => {
+    rate.verdict = { data: { allowed: false }, error: null }
+    const res = await POST(req(JSON.stringify({ email: "victim@example.com" })))
+    expect(res.status).toBe(429)
+    expect(rate.sends).toBe(0)
+  })
+
+  it("an unreadable cap FAILS CLOSED (503), no mail", async () => {
+    rate.verdict = { data: null, error: { message: "timeout" } }
+    const res = await POST(req(JSON.stringify({ email: "user@example.com" })))
+    expect(res.status).toBe(503)
+    expect(rate.sends).toBe(0)
   })
 })

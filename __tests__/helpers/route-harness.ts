@@ -181,7 +181,13 @@ export function makeSupabaseFixture(
   }
   return {
     from: (table: string) => makeBuilder(table),
-    rpc: async (name: string) => payload(`rpc:${name}`),
+    // The durable anonymous cap (lib/abuse/anon-rate.ts, 2026-10-10) answers
+    // "allowed" unless a test supplies its own `rpc:bump_anon_action_rate`
+    // fixture. Its refusal and fail-closed paths are pinned in the routes' own tests.
+    rpc: async (name: string) =>
+      name === "bump_anon_action_rate" && !("rpc:bump_anon_action_rate" in fixtures)
+        ? { data: { allowed: true, count: 1 }, error: null }
+        : payload(`rpc:${name}`),
   }
 }
 
@@ -241,7 +247,13 @@ export function makeInstrumentedSupabaseFixture(
   const deletes: Record<string, RecordedDelete[]> = {}
   const baseRpc = fixture.rpc.bind(fixture)
   fixture.rpc = async (name, args) => {
-    rpcCalls.push({ name, args })
+    // The durable anonymous cap (lib/abuse/anon-rate.ts) is infrastructure every
+    // anonymous request now passes through; it is recorded only when the test
+    // supplies its own `rpc:bump_anon_action_rate` fixture (i.e. is ABOUT the cap),
+    // so "the route made exactly these RPC calls" assertions keep their meaning.
+    if (name !== "bump_anon_action_rate" || "rpc:bump_anon_action_rate" in (fixtures as object)) {
+      rpcCalls.push({ name, args })
+    }
     return baseRpc(name, args)
   }
   const baseFrom = fixture.from.bind(fixture)

@@ -21,6 +21,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { randomUUID } from "crypto"
 import { supabaseAdmin } from "@/lib/supabase"
 import { safeApiError, errorLogDetail } from "@/lib/api-error"
+import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
 
 const FROM = "rpc-alerts@rippackscity.com"
 // One verification mail per address per 10 minutes, however often it is POSTed.
@@ -72,8 +73,28 @@ export async function POST(req: NextRequest) {
   try { body = await req.json() } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }) }
 
   const email = String(body.email ?? "").trim().toLowerCase()
-  if (!email || !email.includes("@")) {
+  if (!email || !/^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/.test(email)) {
     return NextResponse.json({ error: "Invalid email" }, { status: 400 })
+  }
+
+  // ⛔ DURABLE CAPS (2026-10-10). Anonymous, and every new address gets a Resend
+  // mail; an existing unverified one was re-mailed every 10 minutes forever. So:
+  // per IP 10/day, per address 3/day, globally 500/day — FAIL CLOSED. A refusal
+  // answers the same `{ success: true }` (the route never reveals whether an
+  // address is subscribed) but sends nothing.
+  {
+    const ip = anonIpKey(req.headers)
+    const verdict = await bumpAnonRates([
+      ...(ip ? [{ bucket: "subscribe:ip", key: ip, limit: 10, windowSecs: 86400 }] : []),
+      { bucket: "subscribe:email", key: email, limit: 3, windowSecs: 86400 },
+      { bucket: "subscribe:global", key: "*", limit: 500, windowSecs: 86400 },
+    ])
+    if (!verdict.allowed) {
+      if (verdict.failed) {
+        return NextResponse.json({ success: false, error: "Couldn't sign you up right now." }, { status: 503 })
+      }
+      return NextResponse.json({ success: true })
+    }
   }
 
   const origin = new URL(req.url).origin

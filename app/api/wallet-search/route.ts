@@ -17,6 +17,7 @@ import { awardPoints } from "@/lib/rewards"
 import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
 import { bucketAcquisitionCounts, acquisitionMethodLabel } from "@/lib/analytics/shape"
 import { ownLookup } from "@/lib/safe-lookup"
+import { bumpAnonRates } from "@/lib/abuse/anon-rate"
 
 type WalletRow = {
   momentId: string
@@ -1150,7 +1151,7 @@ const GOLAZOS_COLLECTION_UUID = "06248cc4-b85f-47cd-af67-1855d14acd75"
 // Cadence). Never blocks or throws into the response path; no-op without the
 // internal token. Mirrors how Top Shot / AllDay self-warm wmc on every walk —
 // Golazos has no inline walk here, so it delegates to its backfill route.
-function triggerGolazosBackfill(req: NextRequest, wallet: string): void {
+async function triggerGolazosBackfill(req: NextRequest, wallet: string): Promise<void> {
   const token = process.env.INGEST_SECRET_TOKEN
   if (!token) return
   let origin: string
@@ -1159,6 +1160,15 @@ function triggerGolazosBackfill(req: NextRequest, wallet: string): void {
   } catch {
     return
   }
+  // ⛔ DURABLE DEDUP (2026-10-10). This route is anonymous, and a wallet with no
+  // Golazos rows (any random address — it never fills) re-triggered the backfill
+  // on EVERY search. One dispatch per wallet per 6 h and 300/h globally; a
+  // counter that cannot be read skips the dispatch (fail closed).
+  const verdict = await bumpAnonRates([
+    { bucket: "golazos_backfill:wallet", key: wallet, limit: 1, windowSecs: 6 * 3600 },
+    { bucket: "golazos_backfill:global", key: "*", limit: 300, windowSecs: 3600 },
+  ])
+  if (!verdict.allowed) return
   void fetch(`${origin}/api/wallet-backfill-golazos`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -1356,7 +1366,7 @@ export async function POST(req: NextRequest) {
 
       // Genuine miss → warm wmc for next time. Never on a populated wallet, so a
       // repeated lookup of a real wallet doesn't re-trigger the walk each call.
-      if (gTotal === 0) triggerGolazosBackfill(req, gWallet)
+      if (gTotal === 0) void triggerGolazosBackfill(req, gWallet)
 
       return NextResponse.json(
         {

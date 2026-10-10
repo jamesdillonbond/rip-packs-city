@@ -25,7 +25,8 @@ vi.mock("@/lib/supabase", () => {
   return {
     supabaseAdmin: {
       from: () => b,
-      rpc: async () => state.submit,
+      rpc: async (fn: string) =>
+        fn === "bump_anon_action_rate" ? { data: { allowed: true, count: 1 }, error: null } : state.submit,
     },
   }
 })

@@ -52,9 +52,17 @@ export async function POST(req: NextRequest) {
     );
 
     const user = await getCurrentUser();
+    // ⛔ The attribution fields are SERVER-SET (2026-10-10). The body used to be
+    // spread AFTER `source: "site"`, so an anonymous POST could write
+    // `source: "alert"` with any alertDeliveryId / channel and forge
+    // alert-attributed clicks into attribute_outbound_clicks ("alerts drove
+    // sales"). Alert clicks are recorded only by the /go/a redirect
+    // (lib/alerts/tracked-redirect.ts); this beacon is always a site click.
     const row = buildOutboundClickRow({
-      source: "site",
       ...body,
+      source: "site",
+      alertDeliveryId: null,
+      channel: null,
       userId: user?.id ?? null,
       userAgent: req.headers?.get?.("user-agent") ?? null,
     });

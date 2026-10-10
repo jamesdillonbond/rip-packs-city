@@ -21,6 +21,7 @@ import { fitTelegramText } from "@/lib/telegram-message";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG, marketplaceMomentUrl, fromDbSlug, getCollectionUuid } from "@/lib/collections";
+import { bumpAnonRate } from "@/lib/abuse/anon-rate";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
 import {
   isPinnacle,
@@ -5518,6 +5519,24 @@ export async function POST(req: NextRequest) {
           /* fail-open — a limiter error must never block a real user — but say so */
           console.error("[support-chat] concierge IP limiter threw (failing OPEN):", e instanceof Error ? e.message : String(e));
         }
+      }
+      // ⛔ GLOBAL anonymous budget (2026-10-10). The per-IP cap above is linear in
+      // IPs and fails open by decision, so anonymous paid-model spend had no
+      // ceiling at all (~$0.3–0.5 per message worst case). A durable 600 messages
+      // per hour across ALL anonymous callers, failing CLOSED — when the counter
+      // cannot be read the database is down and the concierge's tools are too.
+      const anonBudget = await bumpAnonRate({ bucket: "concierge:anon_global", key: "*", limit: 600, windowSecs: 3600 });
+      if (!anonBudget.allowed) {
+        return NextResponse.json(
+          {
+            response: anonBudget.failed
+              ? "The assistant is unavailable right now. Please try again in a few minutes."
+              : "The assistant is very busy right now. Sign in for priority access, or try again shortly.",
+            escalated: false,
+            category: "rate_limit",
+          },
+          { status: anonBudget.failed ? 503 : 429 },
+        );
       }
     }
 

@@ -262,3 +262,22 @@ describe("persistConversation — a failed write must not fail the reply", () =>
     expect(res.status).toBe(200)
   })
 })
+
+// 2026-10-10 anonymous-write audit: the per-IP cap is linear in IPs and fails
+// open by decision, so anonymous paid-model spend had no ceiling. A durable global
+// anonymous budget now sits behind it and fails CLOSED.
+describe("anonymous global budget", () => {
+  it("a spent global budget refuses BEFORE any model call", async () => {
+    install({ "rpc:bump_anon_action_rate": { data: { allowed: false, count: 601 }, error: null } })
+    const res = await send(post({ "x-forwarded-for": "198.51.100.9" }, { message: "what is the fmv of a lebron rare" }))
+    expect(res.status).toBe(429)
+    expect(A.createCalls).toHaveLength(0)
+  })
+
+  it("an unreadable budget counter FAILS CLOSED (503), no model call", async () => {
+    install({ "rpc:bump_anon_action_rate": { data: null, error: { message: "timeout" } } })
+    const res = await send(post({ "x-forwarded-for": "198.51.100.9" }, { message: "what is the fmv of a lebron rare" }))
+    expect(res.status).toBe(503)
+    expect(A.createCalls).toHaveLength(0)
+  })
+})
