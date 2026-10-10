@@ -115,6 +115,11 @@ it is `hidden`, the read is VOID: force `if(window.$RB&&$RB.length)$RV($RB)` via
 wait, or bring the window to the front. Nested `fallback={null}` readers (`AutoSearchReader`, the
 `?wallet=` reader) need the same forcing before their effects fire, so "the URL wallet did nothing" in a
 hidden tab is void too. Playwright and the E2E DOM Smoke render visible pages and never see this.
+`$RV($RB)` only reveals the HTML — hydration of that boundary is retried through `_reactRetry`, also
+rAF-scheduled — so after forcing the reveal, walk the comment nodes
+(`document.createTreeWalker(document.body, NodeFilter.SHOW_COMMENT)`) and call each one's
+`_reactRetry()`; the `?wallet=` search then fires and rows render. Recipe: force `$RV($RB)` a few
+times → `_reactRetry` on every comment node → wait 10–15 s → read the DOM.
 
 ## Output contract — the digest
 
