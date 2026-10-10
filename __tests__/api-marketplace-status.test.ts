@@ -25,6 +25,15 @@ describe("GET /api/marketplace-status", () => {
     expect((await res.json()).error).toBe("collection param required")
   })
 
+  // 2026-10-09: a failed read must not be cached as "unknown — buy flows disabled".
+  it("a failed status read answers 503 no-store, never a cached unknown verdict", async () => {
+    state.status = { status: "unknown", readFailed: true }
+    const res = await GET(req("https://t/api/marketplace-status?collection=nba_top_shot"))
+    expect(res.status).toBe(503)
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+    expect((await res.json()).status).toBeUndefined()
+  })
+
   it("returns the status payload for a collection", async () => {
     const res = await GET(req("https://t/api/marketplace-status?collection=nba_top_shot"))
     expect(res.status).toBe(200)

@@ -32,6 +32,12 @@ export interface MarketplaceStatus {
   packSecondaryVenue: string | null
   lastVerifiedAt: string | null
   notes: string | null
+  /**
+   * true when the status READ failed (not "no row"). The values are then the
+   * unknown fallback, which must not be cached or shown as a verdict: the
+   * banner would tell a healthy collection "buy flows are disabled".
+   */
+  readFailed?: boolean
 }
 
 const UNKNOWN_FALLBACK: MarketplaceStatus = {
@@ -67,7 +73,14 @@ async function readMarketplaceStatus(dbSlug: string): Promise<MarketplaceStatus>
     .eq("slug", dbSlug)
     .maybeSingle()
 
-  if (error || !data) {
+  // ⛔ A failed read THROWS so `unstable_cache` does not store it (it caches a
+  // resolved value, never a rejection). Until 2026-10-09 an error returned the
+  // unknown fallback, which was cached for 5 min (then 5 more at the CDN, then
+  // for the session in the client Map) as "Marketplace status uncertain — buy
+  // flows disabled" on healthy collections. A genuinely missing row (`!data`
+  // with no error) is a real answer and stays cached.
+  if (error) throw new Error(`marketplace status read failed: ${error.message ?? "unknown"}`)
+  if (!data) {
     return { ...UNKNOWN_FALLBACK, slug: dbSlug }
   }
 
@@ -107,5 +120,10 @@ export async function getMarketplaceStatus(
 ): Promise<MarketplaceStatus> {
   const dbSlug = normaliseSlug(collectionSlug)
   if (!dbSlug) return { ...UNKNOWN_FALLBACK }
-  return cachedReadMarketplaceStatus(dbSlug)
+  try {
+    return await cachedReadMarketplaceStatus(dbSlug)
+  } catch {
+    // Not cached anywhere: the caller sees readFailed and must not render a verdict.
+    return { ...UNKNOWN_FALLBACK, slug: dbSlug, readFailed: true }
+  }
 }

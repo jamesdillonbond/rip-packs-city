@@ -550,6 +550,32 @@ describe("GET /api/market — Candy MLB (Solana) arm", () => {
     expect(body.retry).toBe(true)
   })
 
+  // 2026-10-09: Top Shot and All Day had the same hole. Their fetchers returned []
+  // on an RPC error, so the handler fell through to cached_listings (0 TS rows,
+  // ~2-week-stale All Day rows) and shipped that with the 90 s success cache.
+  it("503s no-store when the Top Shot modern read FAILS — never a cached legacy board", async () => {
+    install({
+      "rpc:get_topshot_sniper_deals": { data: null, error: { message: "canceling statement due to statement timeout" } },
+      cached_listings: { data: [{ id: "stale" }], error: null },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req(`https://t/api/market?collectionId=${TS}`))
+    expect(res.status).toBe(503)
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+    expect((await res.json()).error).toBe("market_unavailable")
+  })
+
+  it("503s no-store when the All Day modern read FAILS", async () => {
+    install({
+      "rpc:get_allday_market_editions": { data: null, error: { message: "read exceeded 8000ms" } },
+      cached_listings: { data: [{ id: "stale" }], error: null },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req(`https://t/api/market?collectionId=${ALLDAY}`))
+    expect(res.status).toBe(503)
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+  })
+
   // The converse: a genuine zero is a 200 with an empty board, and it must carry
   // the SAME envelope the populated path returns. A flat {total, has_more} would
   // leave `pagination.total` undefined and the client would render its loading

@@ -112,9 +112,16 @@ describe("getMarketplaceStatus — mapping & fallbacks", () => {
     expect(s.collectionId).toBe("")
   })
 
-  it("returns the unknown fallback on a DB error", async () => {
+  it("returns the unknown fallback on a DB error — FLAGGED readFailed, so no caller renders it as a verdict", async () => {
     state.single = { data: ROW, error: { message: "boom" } }
-    expect((await getMarketplaceStatus("ufc")).status).toBe("unknown")
+    const s = await getMarketplaceStatus("ufc")
+    expect(s.status).toBe("unknown")
+    expect(s.readFailed).toBe(true)
+  })
+
+  it("a genuinely missing row is a real answer, not a failed read", async () => {
+    state.single = { data: null, error: null }
+    expect((await getMarketplaceStatus("ufc")).readFailed).toBeUndefined()
   })
 
   it("returns a bare unknown fallback (no DB read) for an empty slug", async () => {

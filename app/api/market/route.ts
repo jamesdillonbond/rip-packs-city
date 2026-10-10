@@ -391,6 +391,13 @@ async function fetchPinnacleModernListings(
 // cached_listings_v2 rows in SQL — grouping the 500-capped per-listing feed
 // in-route would miss floors for ~90% of editions). editionKey = external_id
 // (the canonical wmc edition_key shape for AllDay).
+// A Top Shot / All Day modern read that FAILED (error or timeout). Thrown rather
+// than returned as [] (indistinguishable from "no listings", and the legacy
+// fall-through then served a dead/stale cached_listings board at HTTP 200 with
+// the 90 s success cache) or as null (which already means "this collection has
+// no modern arm"). The handler answers 503 no-store, like Candy/Panini/Pinnacle.
+class MarketModernReadFailed extends Error {}
+
 async function fetchAllDayMarketEditions(
   filters: {
     tier: string; team: string; maxPrice: number; sortBy: string; limit: number
@@ -420,7 +427,7 @@ async function fetchAllDayMarketEditions(
   }), "api/market/get_allday_market_editions")
   if (error) {
     console.log("[/api/market] allday editions fetch err:", error.message)
-    return []
+    throw new MarketModernReadFailed(`get_allday_market_editions: ${error.message}`)
   }
   return (data ?? []).map((r: any) => ({
     id: `allday-ed:${r.external_id ?? r.edition_id}`,
@@ -843,7 +850,7 @@ async function fetchModernListings(
   }), `api/market/${rpcName}`)
   if (error) {
     console.log(`[/api/market] modern fetch err (${rpcName}):`, error.message)
-    return []
+    throw new MarketModernReadFailed(`${rpcName}: ${error.message}`)
   }
 
   // Reshape sniper RPC rows into the cached_listings field shape the rest of
@@ -962,24 +969,33 @@ export async function GET(req: NextRequest) {
     // Modern-source dispatch (Phase 3.5). TS + AllDay come from sniper RPCs
     // that read badge_editions / cached_listings_v2 respectively. Other
     // collections fall through to the legacy cached_listings query below.
-    const modernRows = await fetchModernListings(collectionId, {
-      tier: tiers[0] ?? "all",
-      team: teams[0] ?? "all",
-      maxPrice: Number.isFinite(maxPrice) ? maxPrice : 0,
-      minDiscount: Number.isFinite(minDiscount) ? minDiscount : 0,
-      sortBy: sort,
-      // ⚠ A Min-discount filter runs IN APP over the fetched window (the RPCs take
-      // p_min_discount 0 — a serial-adjusted FMV can raise a row's discount above
-      // the RPC's, so pre-filtering there would drop real matches). With Price ↑ +
-      // Min 30 % the window was the 500 cheapest editions, and the page showed only
-      // the 30 %-off rows among THOSE (known-issues #146 (2)). Pull the full 1,000
-      // (PostgREST's cap) whenever the filter is set; the total stays a floor.
-      limit: hasMinDiscountFilter ? MAX_LIMIT : limit,
-      sets,
-      seriesList,
-      player,
-      minPrice: Number.isFinite(minPrice) ? minPrice : 0,
-    })
+    let modernRows: any[] | null
+    try {
+      modernRows = await fetchModernListings(collectionId, {
+        tier: tiers[0] ?? "all",
+        team: teams[0] ?? "all",
+        maxPrice: Number.isFinite(maxPrice) ? maxPrice : 0,
+        minDiscount: Number.isFinite(minDiscount) ? minDiscount : 0,
+        sortBy: sort,
+        // ⚠ A Min-discount filter runs IN APP over the fetched window (the RPCs take
+        // p_min_discount 0 — a serial-adjusted FMV can raise a row's discount above
+        // the RPC's, so pre-filtering there would drop real matches). With Price ↑ +
+        // Min 30 % the window was the 500 cheapest editions, and the page showed only
+        // the 30 %-off rows among THOSE (known-issues #146 (2)). Pull the full 1,000
+        // (PostgREST's cap) whenever the filter is set; the total stays a floor.
+        limit: hasMinDiscountFilter ? MAX_LIMIT : limit,
+        sets,
+        seriesList,
+        player,
+        minPrice: Number.isFinite(minPrice) ? minPrice : 0,
+      })
+    } catch (e) {
+      if (!(e instanceof MarketModernReadFailed)) throw e
+      return NextResponse.json(
+        { error: "market_unavailable", retry: true, collection_id: collectionId },
+        { status: 503, headers: { "Cache-Control": "no-store" } }
+      )
+    }
     // Fall through to the legacy cached_listings query when modern returns
     // empty. The sniper RPCs inner-join FMV, so collections with sparse FMV
     // (notably AllDay's ~341 priced rows vs ~34k v2 listings) come back 0;

@@ -22,6 +22,15 @@ export async function GET(req: NextRequest) {
     )
   }
   const status = await getMarketplaceStatus(collection)
+  // A failed read is not a status: answer 503, uncached, so the client hook keeps
+  // its optimistic no-banner state and asks again, instead of caching "unknown —
+  // buy flows disabled" for a healthy collection (2026-10-09).
+  if (status.readFailed) {
+    return NextResponse.json(
+      { error: "marketplace status temporarily unavailable" },
+      { status: 503, headers: { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" } }
+    )
+  }
   return NextResponse.json(status, {
     headers: {
       "Cache-Control": "s-maxage=300, stale-while-revalidate=60",
