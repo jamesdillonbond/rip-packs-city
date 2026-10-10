@@ -382,8 +382,33 @@ describe("allday-listing-cache — degradation + fatal honesty", () => {
       p_rows_found: 2,
       p_rows_written: 0,
       p_rows_skipped: 2,
-      p_ok: true, // batch errors degrade, they don't flip the run to failed
+      // INVERTED 2026-10-09: "batch errors degrade, they don't flip the run" was
+      // the defect — a failed upsert is a failed write, and its listings were not
+      // refreshed (the purge then deleted them as stale on a partial failure).
+      p_ok: false,
     })
+    expect(String(terminalLog(spy)?.p_error)).toContain("failed to upsert")
+  })
+
+  // 2026-10-09: ONE failed batch beside a successful one used to satisfy
+  // `upserted > 0`, and the purge then deleted the failed batch's live listings
+  // (they kept the previous run's cached_at) as "stale".
+  it("a PARTIAL upsert failure (one batch fails, one lands) skips the purge and reports ok=false", async () => {
+    const nfts = Array.from({ length: 60 }, (_, i) => adNft({ flowId: String(1000 + i), lrid: `L${i}`, ask: 5 + i }))
+    fetchMock = installFetchMock([proxyStub({ asc: { 0: nfts }, desc: { 0: [] } })])
+    const spy = install({
+      editions: { data: [], error: null },
+      cached_listings: [
+        { data: null, error: { message: "statement timeout" } }, // batch 1 (50 rows) fails
+        { data: null, error: null }, // batch 2 (10 rows) lands
+        { data: null, error: null }, // a purge, if one (wrongly) followed
+      ],
+    })
+    await POST(req("POST"))
+    expect(spy.deletes).toHaveLength(0)
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_ok: false, p_rows_skipped: 50 })
+    expect(Number(log?.p_rows_written)).toBeGreaterThan(0)
   })
 
   it("fatal (upsert THROWS) -> ok=false with the error message, run still logged via log_pipeline_run", async () => {

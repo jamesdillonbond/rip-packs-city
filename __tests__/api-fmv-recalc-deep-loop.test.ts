@@ -301,6 +301,50 @@ describe("fmv-recalc deferred sweep — happy path", () => {
   })
 })
 
+describe("fmv-recalc Step 4 — a failed snapshot insert holds the cursor (2026-10-09)", () => {
+  // Step 3 has already purged today's rows for the page, so a failed insert used
+  // to leave those editions on yesterday's snapshot while the run logged ok:true
+  // and moved the sweep cursor on (~1.5 d until the sweep came back round).
+  it("logs ok=false with step4_insert_failed and p_cursor_after = the SAME offset", async () => {
+    const { rpcCalls } = instrument({
+      pipeline_runs: { data: { cursor_after: "3000" }, error: null }, // resume at offset 3000
+      "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
+      sales_market: {
+        data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15), sale(10, 800, 20)],
+        error: null,
+      },
+      editions: EDITION_META,
+      edition_offers: { data: [], error: null },
+      fmv_snapshots: { data: [], error: null },
+      ...QUIET_TAIL,
+    })
+    // Fail ONLY the fmv_snapshots INSERT (reads of the table still succeed).
+    const sb = state.sb as { from: (t: string) => Record<string, unknown> }
+    const baseFrom = sb.from.bind(sb)
+    sb.from = (t: string) => {
+      const b = baseFrom(t)
+      if (t === "fmv_snapshots") {
+        b.insert = () => Promise.resolve({ data: null, error: { code: "57014", message: "statement timeout" } })
+      }
+      return b
+    }
+
+    await POST(req())
+    await runDeferred()
+
+    const log = terminalLog(rpcCalls)
+    expect(log).toMatchObject({
+      p_pipeline: "fmv-recalc",
+      p_ok: false,
+      p_rows_written: 0,
+      p_cursor_before: "3000",
+      p_cursor_after: "3000",
+    })
+    expect(String(log?.p_error)).toContain("step4_insert_failed")
+    expect((log?.p_extra as Record<string, unknown>).step4_insert_rows_failed).toBe(1)
+  })
+})
+
 describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 incident class)", () => {
   it("Step 1a edition-page failure logs ok=false with the stage marker and writes no snapshots", async () => {
     const { rpcCalls, inserted } = instrument({

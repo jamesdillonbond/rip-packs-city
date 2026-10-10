@@ -453,7 +453,10 @@ async function runListingCache() {
   // ⚠ `upserted > 0` alone was NOT enough: a sweep that reads page 0 and then
   // errors on page 1 satisfies it while holding a partial book, and the purge
   // then deletes every listing that lived on the pages it never reached.
-  if (stats.upserted > 0 && stats.sweepComplete) {
+  // ⛔ AND no upsert batch failed (2026-10-09): a failed batch leaves its live
+  // listings with the PREVIOUS run's cached_at, so the purge below deleted them
+  // as "stale" and sniper / deals / floors went without them until the next tick.
+  if (stats.upserted > 0 && stats.sweepComplete && stats.upsertErrors === 0) {
     const { error: delErr, count: delCount } = await supabaseAdmin
       .from("cached_listings")
       .delete({ count: "exact" })
@@ -539,12 +542,15 @@ async function runListingCache() {
     // precedent) instead of hiding it behind a healthy-looking `upserted`.
     // A real fatal error keeps precedence over the degradation message.
     const degradedSweep = !stats.sweepComplete
-    const okFinal = stats.ok && !degradedSweep
+    // A failed upsert batch is a failed WRITE: those listings were not refreshed.
+    const okFinal = stats.ok && !degradedSweep && stats.upsertErrors === 0
     const errorFinal =
       stats.errorMsg ??
       (degradedSweep
         ? `sweep incomplete: ${stats.sweepError ?? "unknown truncation"} — stale purge skipped, cache may hold delisted rows`
-        : null)
+        : stats.upsertErrors > 0
+          ? `${stats.upsertErrors} listing row(s) failed to upsert — stale purge skipped`
+          : null)
     try {
       await (supabaseAdmin as any).rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,

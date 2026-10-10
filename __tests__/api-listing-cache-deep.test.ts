@@ -254,10 +254,13 @@ describe("listing-cache — TopShot Flowty ingest happy path", () => {
 })
 
 describe("listing-cache — upsert error degradation", () => {
-  it("falls back to row-by-row on a failed chunk, keeps honest inserted/error accounting, still purges (inserted > 0), logs ok=false", async () => {
+  // INVERTED 2026-10-09: "still purges (inserted > 0)" was the defect — the row
+  // that failed kept the previous run's cached_at, so the purge deleted that live
+  // listing as stale. A row that still fails after the retry now blocks the purge.
+  it("falls back to row-by-row on a failed chunk, keeps honest inserted/error accounting, SKIPS the purge (a row still failed), logs ok=false", async () => {
     fetchMock = installFetchMock([proxyStub([lillardNft, simonsNft])])
     const spy = install({
-      // Sequence: chunk upsert errors -> row0 errors -> row1 ok -> purge delete ok.
+      // Sequence: chunk upsert errors -> row0 errors -> row1 ok (no purge follows).
       cached_listings: [
         { data: null, error: { message: "chunk exploded" } },
         { data: null, error: { message: "row is bad" } },
@@ -271,8 +274,8 @@ describe("listing-cache — upsert error degradation", () => {
     const body = await res.json()
     expect(body).toMatchObject({ ok: true, cached: 1, errors: 1, mapped: 2 })
 
-    // One good row got through -> the stale purge still runs.
-    expect(spy.deletes).toHaveLength(1)
+    // One row is still failing -> no purge: its live listing must survive.
+    expect(spy.deletes).toHaveLength(0)
 
     const run = pipelineRow(spy)
     expect(run).toMatchObject({

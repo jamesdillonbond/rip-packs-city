@@ -441,6 +441,9 @@ export async function POST(req: NextRequest) {
 
     let inserted = 0;
     let insertErrors = 0;
+    // Rows that still failed after the one-by-one retry: their live listings kept
+    // the previous run's cached_at, so a purge would delete them as "stale".
+    let rowsStillFailed = 0;
     for (let i = 0; i < listings.length; i += 25) {
       const chunk = listings.slice(i, i + 25);
       const result = await supabase.from("cached_listings").upsert(chunk, { onConflict: "flow_id" });
@@ -451,6 +454,7 @@ export async function POST(req: NextRequest) {
         for (let j = 0; j < chunk.length; j++) {
           const single = await supabase.from("cached_listings").upsert([chunk[j]], { onConflict: "flow_id" });
           if (single.error) {
+            rowsStillFailed++;
             console.log("[listing-cache] Bad row " + (i + j) + " id=" + chunk[j].id + ": " + single.error.message);
           } else {
             inserted++;
@@ -469,7 +473,7 @@ export async function POST(req: NextRequest) {
     // and flattened, so one surviving page out of five satisfies it while the
     // run holds a book missing four pages — and the purge then deletes exactly
     // the listings those four pages would have refreshed.
-    if (inserted > 0 && sweepComplete) {
+    if (inserted > 0 && sweepComplete && rowsStillFailed === 0) {
       const delResult = await supabase.from("cached_listings").delete()
         .eq("source", "flowty")
         .eq("collection_id", config.collectionId)
@@ -482,9 +486,11 @@ export async function POST(req: NextRequest) {
       // "0 rows upserted", which would now misreport a partial sweep as an empty
       // one, the same conflation this change exists to remove.
       console.log(
-        inserted > 0
-          ? "[listing-cache] " + pageErrors + " page fetch error(s) — sweep is partial, skipping stale purge to preserve existing cache"
-          : "[listing-cache] 0 rows upserted — skipping stale purge to preserve existing cache"
+        inserted > 0 && rowsStillFailed > 0
+          ? "[listing-cache] " + rowsStillFailed + " row(s) failed to upsert — skipping stale purge to preserve existing cache"
+          : inserted > 0
+            ? "[listing-cache] " + pageErrors + " page fetch error(s) — sweep is partial, skipping stale purge to preserve existing cache"
+            : "[listing-cache] 0 rows upserted — skipping stale purge to preserve existing cache"
       );
     }
 

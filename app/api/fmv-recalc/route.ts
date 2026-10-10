@@ -1298,6 +1298,13 @@ export async function POST(req: NextRequest) {
 
     const CHUNK_SIZE = 100
     let snapshotsUpdated = 0
+    // ⛔ Step 3 has ALREADY deleted today's rows for this page. A failed insert
+    // here used to be a console.error while the run logged ok:true and moved the
+    // sweep cursor on, so those editions fell back to yesterday's snapshot until
+    // the sweep wrapped (~1.5 d). Now the run holds the cursor at this page, as
+    // the Step 3 failure path does, and reports the failure (2026-10-09).
+    let step4RowsFailed = 0
+    let step4InsertError: string | null = null
 
     for (let i = 0; i < insertRows.length; i += CHUNK_SIZE) {
       const chunk = insertRows.slice(i, i + CHUNK_SIZE)
@@ -1307,6 +1314,8 @@ export async function POST(req: NextRequest) {
 
       if (insertError) {
         console.error("DB write failed:", insertError, { chunkIndex: i, chunkSize: chunk.length })
+        step4RowsFailed += chunk.length
+        step4InsertError = step4InsertError ?? insertError.message
       } else {
         snapshotsUpdated += chunk.length
       }
@@ -2636,15 +2645,19 @@ export async function POST(req: NextRequest) {
         p_started_at: new Date(startTime).toISOString(),
         p_rows_found: editionIds.length,
         p_rows_written: snapshotsUpdated,
-        p_rows_skipped: 0,
-        p_ok: true,
-        p_error: null,
+        p_rows_skipped: step4RowsFailed,
+        // A failed Step 4 insert holds the cursor on this page (its today rows
+        // were purged in Step 3); the next tick re-prices it.
+        p_ok: step4RowsFailed === 0,
+        p_error: step4RowsFailed > 0 ? `step4_insert_failed: ${step4InsertError ?? "unknown"}` : null,
         p_collection_slug: null,
         p_cursor_before: String(offset),
-        p_cursor_after: hasMore ? String(offset + limit) : null,
+        p_cursor_after: step4RowsFailed > 0 ? String(offset) : (hasMore ? String(offset + limit) : null),
         p_extra: {
           algo_version: ALGO_VERSION,
           duration_ms: duration,
+          step4_insert_rows_failed: step4RowsFailed,
+          step4_insert_error: step4InsertError,
           // 2026-08-03: extra recorded haircut/wash-trade/clamp counts but NOT
           // the pagination state, so a sweep that never advanced looked healthy
           // for 20 hours. These three are the ones that would have shown it.

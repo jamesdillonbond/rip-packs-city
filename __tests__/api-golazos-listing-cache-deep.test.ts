@@ -326,7 +326,7 @@ describe("golazos-listing-cache — degradation + fatal honesty", () => {
       p_rows_found: 1,
       p_rows_written: 0,
       p_rows_skipped: 1,
-      p_ok: true,
+      p_ok: false, // INVERTED 2026-10-09: a failed upsert is a failed write
     })
   })
 

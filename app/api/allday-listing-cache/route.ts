@@ -385,7 +385,10 @@ async function runListingCache() {
   // ⚠ `upserted > 0` alone was NOT enough: one failed page out of twenty still
   // satisfies it while the run holds a book with a 50-listing hole in it, and
   // the purge then deletes exactly the listings that lived in that hole.
-  if (stats.upserted > 0 && stats.pageErrors === 0) {
+  // ⛔ AND no upsert batch failed (2026-10-09): a failed batch leaves its live
+  // listings with the PREVIOUS run's cached_at, so the purge below deleted them
+  // as "stale" and sniper / deals / floors went without them until the next tick.
+  if (stats.upserted > 0 && stats.pageErrors === 0 && stats.upsertErrors === 0) {
     const { error: delErr } = await supabaseAdmin
       .from("cached_listings")
       .delete()
@@ -402,7 +405,9 @@ async function runListingCache() {
     console.log(
       stats.pageErrors > 0
         ? `[allday-listing-cache] ${stats.pageErrors} page fetch error(s) — sweep is partial, preserving prior cache`
-        : "[allday-listing-cache] 0 rows upserted — preserving prior cache"
+        : stats.upsertErrors > 0
+          ? `[allday-listing-cache] ${stats.upsertErrors} row(s) failed to upsert — preserving prior cache`
+          : "[allday-listing-cache] 0 rows upserted — preserving prior cache"
     )
   }
 
@@ -467,12 +472,15 @@ async function runListingCache() {
     // precedent) instead of hiding it behind a healthy-looking `upserted`.
     // A real fatal error keeps precedence over the degradation message.
     const degradedSweep = stats.pageErrors > 0
-    const okFinal = stats.ok && !degradedSweep
+    // A failed upsert batch is a failed WRITE: those listings were not refreshed.
+    const okFinal = stats.ok && !degradedSweep && stats.upsertErrors === 0
     const errorFinal =
       stats.errorMsg ??
       (degradedSweep
         ? `sweep incomplete: ${stats.pageErrors} page fetch error(s), last ${stats.sweepError ?? "unknown"} — stale purge skipped, cache may hold delisted rows`
-        : null)
+        : stats.upsertErrors > 0
+          ? `${stats.upsertErrors} listing row(s) failed to upsert — stale purge skipped`
+          : null)
     try {
       await (supabaseAdmin as any).rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
