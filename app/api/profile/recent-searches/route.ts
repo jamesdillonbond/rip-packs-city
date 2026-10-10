@@ -7,6 +7,7 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { isSupportedAddress } from "@/lib/address";
+import { getCollectionByUuid } from "@/lib/collection-slug";
 
 const VALID_TYPES = ["wallet", "moment", "edition", "player", "set"];
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
@@ -53,6 +54,11 @@ export async function POST(req: NextRequest) {
   const { query, queryType, collectionId } = body;
   if (!query) {
     return NextResponse.json({ error: "query required" }, { status: 400 });
+  }
+  // Absent → the Top Shot default; present → must be a registry collection
+  // (an unknown UUID was stored and re-ran under Top Shot — 2026-10-10 audit).
+  if (collectionId != null && (typeof collectionId !== "string" || !getCollectionByUuid(collectionId))) {
+    return NextResponse.json({ error: "unknown_collection" }, { status: 400 });
   }
   const resolvedType = VALID_TYPES.includes(queryType) ? queryType : inferType(query);
 

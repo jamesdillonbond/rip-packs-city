@@ -807,7 +807,11 @@ export default function ProfileClient(props: {
                 // row's LOAD → went to /nba-top-shot regardless of collection.
                 const rowCollection = w.collection_id ? getCollectionByUuid(w.collection_id) : undefined;
                 const rowClosed = rowCollection ? isMarketClosed(rowCollection.id) : false;
-                const loadHref = "/" + (rowCollection?.id ?? "nba-top-shot") + "/collection?wallet=" + encodeURIComponent(w.username ?? "");
+                // A row with NO collection_id is a legacy Top Shot save. One whose
+                // collection_id names no registry collection gets no LOAD link — it
+                // used to open Top Shot under that row's label (2026-10-10).
+                const loadSlug = w.collection_id ? rowCollection?.id ?? null : "nba-top-shot";
+                const loadHref = loadSlug ? "/" + loadSlug + "/collection?wallet=" + encodeURIComponent(w.username ?? "") : null;
                 return (
                   <div key={i} style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 16, padding: "12px 16px" }}>
                     <div style={{ width: 4, height: 28, borderRadius: 2, background: w.accent_color || "var(--rpc-red)", flexShrink: 0 }} />
@@ -826,7 +830,7 @@ export default function ProfileClient(props: {
                         </div>
                       </div>
                     )}
-                    {w.username && (
+                    {w.username && loadHref && (
                       <Link
                         href={loadHref}
                         className="rpc-chip rpc-tap44"

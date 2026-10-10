@@ -198,6 +198,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "walletAddr required" }, { status: 400 });
   }
   walletAddr = normalizeAddress(String(walletAddr));
+  // An ABSENT collectionId keeps the Top Shot default. A PRESENT one must be a
+  // registry collection: an unknown UUID skipped the chain gate below (no
+  // collection, no check) and was stored, and the profile's LOAD link then
+  // sent it to /nba-top-shot/collection (2026-10-10 audit).
+  if (collectionId != null && (typeof collectionId !== "string" || !getCollectionByUuid(collectionId))) {
+    return NextResponse.json({ error: "unknown_collection" }, { status: 400 });
+  }
   const resolvedCollectionId = collectionId ?? NBA_TOP_SHOT_UUID;
 
   // Per-collection address-shape gate. `isValidAddressForChain` has existed in

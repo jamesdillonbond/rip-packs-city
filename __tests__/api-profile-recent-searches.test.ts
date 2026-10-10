@@ -102,9 +102,19 @@ describe("/api/profile/recent-searches", () => {
     state.user = { id: "u1" }
     state.single = { data: { id: 1, query_type: "edition" }, error: null }
     const res = await POST(
-      req("https://t/api/profile/recent-searches", { query: "anything", queryType: "edition", collectionId: "coll-2" }),
+      req("https://t/api/profile/recent-searches", { query: "anything", queryType: "edition", collectionId: "dee28451-5d62-409e-a1ad-a83f763ac070" }),
     )
     expect(res.status).toBe(200)
+  })
+
+  // 2026-10-10: an unknown collectionId was stored and later re-ran under Top Shot.
+  it("POST refuses a present but unknown collectionId", async () => {
+    state.user = { id: "u1" }
+    state.single = { data: { id: 1 }, error: null }
+    for (const collectionId of ["coll-2", "00000000-0000-4000-8000-000000000000", 7]) {
+      const res = await POST(req("https://t/api/profile/recent-searches", { query: "anything", collectionId }))
+      expect(res.status).toBe(400)
+    }
   })
 
   it("POST infers the type for various queries (address/handle → wallet, S\\d → edition, name → player)", async () => {

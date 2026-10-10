@@ -348,6 +348,18 @@ describe("POST /api/profile/saved-wallets — deep cross-collection warm", () =>
     expect((await res.json()).error).toBe("address_chain_mismatch")
   })
 
+  // 2026-10-10: an unknown UUID skipped the chain gate (no collection → no
+  // check) and was stored; the profile LOAD link then sent it to Top Shot.
+  it("400s a present but unknown collectionId instead of storing it", async () => {
+    state.user = { id: "u1" }
+    install({ saved_wallets: [{ data: [], error: null }] })
+    const res = await POST(
+      req("https://t/api/profile/saved-wallets", { walletAddr: "0xabcdef0123456789", collectionId: "00000000-0000-4000-8000-000000000000" }),
+    )
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("unknown_collection")
+  })
+
   it("accepts a case-sensitive base58 Candy address under Candy, case INTACT", async () => {
     state.user = { id: "u1" }
     const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
