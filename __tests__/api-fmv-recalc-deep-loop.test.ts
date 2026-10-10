@@ -402,6 +402,32 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
     expect((log?.p_extra as Record<string, unknown>)?.stage).toBe("step1b_refetch_empty")
   })
 
+  // 2026-10-10: a page that fails AFTER another page succeeded used to `break`
+  // and price the page from the partial sales set (newest sales dropped, order
+  // is by id), persisting it under ok:true. Any failed chunk now skips the page.
+  it("Step 1b PARTIAL refetch (page 1 ok, page 2 failed) writes NO snapshots and holds the cursor", async () => {
+    const fullPage = Array.from({ length: 1000 }, (_, k) => sale(10 + (k % 7), k + 1, 1 + (k % 20)))
+    const { rpcCalls, inserted } = instrument({
+      pipeline_runs: { data: null, error: null },
+      "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
+      sales_market: [
+        { data: fullPage, error: null },
+        { data: null, error: { message: "canceling statement due to statement timeout" } },
+      ],
+      ...QUIET_TAIL,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = terminalLog(rpcCalls)
+    expect(log).toMatchObject({ p_pipeline: "fmv-recalc", p_ok: false })
+    expect(String(log?.p_error)).toContain("sales_refetch_failed")
+    expect((log?.p_extra as Record<string, unknown>)?.stage).toBe("step1b_refetch_partial")
+    expect(log?.p_cursor_after).toBe(log?.p_cursor_before)
+    expect(inserted.fmv_snapshots ?? []).toHaveLength(0)
+  })
+
   it("Step 3 today-purge hard failure logs step3_delete_chunk_failed and aborts before inserting", async () => {
     const { rpcCalls, inserted } = instrument({
       pipeline_runs: { data: null, error: null },

@@ -1444,6 +1444,11 @@ export async function POST(req: NextRequest) {
           const allowed = new Set<string>()
           const PAGE = 1000
           let leagueErr: { message?: string } | null = null
+          // ⚠ The 60,000 ceiling is a runaway guard, not a size: the largest Top
+          // Shot wallet held 61,512 moments (2026-10-09). Leaving the loop with
+          // every page full means `allowed` is a PREFIX, and filtering on it
+          // would hide owned moments. Treat that exit like an error: no filter.
+          let leagueComplete = false
           for (let from = 0; from < 60000; from += PAGE) {
             const { data: leagueIds, error } = await (supabaseAdmin as any)
               .from("wallet_moments_cache")
@@ -1456,7 +1461,10 @@ export async function POST(req: NextRequest) {
             if (error) { leagueErr = error; break }
             const pageRows: Array<{ moment_id: unknown }> = Array.isArray(leagueIds) ? leagueIds : []
             for (const r of pageRows) allowed.add(String(r.moment_id))
-            if (pageRows.length < PAGE) break
+            if (pageRows.length < PAGE) { leagueComplete = true; break }
+          }
+          if (!leagueErr && !leagueComplete) {
+            leagueErr = { message: `league set exceeded the ${allowed.size}-row read ceiling; filter skipped` }
           }
           if (!leagueErr) {
             ids = ids.filter((id) => allowed.has(String(id)))

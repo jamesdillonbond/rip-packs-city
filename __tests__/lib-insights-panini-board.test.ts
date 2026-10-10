@@ -8,6 +8,7 @@ import { fetchPaniniSqueezeDefault } from "@/lib/insights/panini-board"
 function fakeDb(opts: {
   boardPages?: any[][] // one array per .range() page
   boardErrorAtPage?: number // page index that returns an error
+  orders?: Array<[string, unknown]> // records every .order() call
   coverage?: { data: any; error: any }
   totals?: { data: any; error: any }
 }) {
@@ -19,7 +20,10 @@ function fakeDb(opts: {
       const qb: any = {
         select: () => qb,
         not: () => qb,
-        order: () => qb,
+        order: (col: string, o: unknown) => {
+          opts.orders?.push([col, o])
+          return qb
+        },
         range: (from: number) => {
           const i = Math.floor(from / 1000)
           if (opts.boardErrorAtPage === i) {
@@ -43,6 +47,15 @@ function fakeDb(opts: {
 const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ fmv_usd: 1000 - i }))
 
 describe("fetchPaniniSqueezeDefault", () => {
+  // 2026-10-10: fmv_usd ties are the norm on this board (4,988 of 5,217 rows),
+  // so paging needs a unique tiebreak or pages repeat and skip rows.
+  it("pages on fmv_usd DESC with the unique id as a tiebreak", async () => {
+    const orders: Array<[string, unknown]> = []
+    await fetchPaniniSqueezeDefault(fakeDb({ boardPages: [rows(1000), rows(10)], orders }))
+    const cols = orders.map(([c]) => c)
+    expect(cols.slice(0, 2)).toEqual(["fmv_usd", "id"])
+  })
+
   it("assembles a COMPLETE board (short final page) and is ok", async () => {
     // page 0 = 1000 rows, page 1 = 200 rows (short → stop). Complete.
     const res = await fetchPaniniSqueezeDefault(fakeDb({ boardPages: [rows(1000), rows(200)] }))

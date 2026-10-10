@@ -252,6 +252,16 @@ describe("wallet-search — league filter", () => {
     expect(spy).toBeTruthy()
   })
 
+  // 2026-10-10: the 60,000-row ceiling sits below the largest Top Shot wallet
+  // (61,512). Leaving the walk with every page full made `allowed` a PREFIX,
+  // and filtering on it hid owned moments. That exit now skips the filter.
+  it("abandons the filter when the league walk hits its read ceiling (never a prefix-filtered wallet)", async () => {
+    const fullPage = Array.from({ length: 1000 }, (_, i) => ({ moment_id: String(800000 + i) }))
+    install(baseFixtures({ wallet_moments_cache: { data: fullPage, error: null } }))
+    const body = await (await POST(post({ input: WALLET, league: "NBA" }))).json()
+    expect(body.summary.totalMoments).toBe(2) // unfiltered, not 0
+  })
+
   it("abandons the filter on a page error rather than showing a false-empty wallet", async () => {
     install(baseFixtures({ wallet_moments_cache: { data: null, error: { message: "wmc timeout" } } }))
     const body = await (await POST(post({ input: WALLET, league: "NBA" }))).json()

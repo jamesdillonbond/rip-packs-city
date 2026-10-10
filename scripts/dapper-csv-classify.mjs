@@ -281,6 +281,7 @@ async function fetchInferredRows() {
       .eq("acquisition_confidence", "inferred_no_signal")
       .eq("collection_id", COLLECTION_ID)
       .order("acquired_date", { ascending: true })
+      .order("id", { ascending: true }) // acquired_date ties; id is the PK
       .range(from, from + PAGE - 1)
     if (error) throw error
     if (!data || data.length === 0) break

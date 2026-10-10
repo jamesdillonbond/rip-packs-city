@@ -115,7 +115,7 @@ async function main() {
   if (!force) {
     let offset = 0;
     while (true) {
-      const { data: rows } = await supabase
+      const { data: rows, error: pageErr } = await supabase
         .from("fmv_snapshots").select("edition_id")
         .eq("collection_id", COLLECTION_ID)
         // ⚠ R26, and this is the SHARPEST instance in the repo: these pages
@@ -126,6 +126,9 @@ async function main() {
         .order("id", { ascending: true })
         .order("computed_at", { ascending: true })
         .range(offset, offset + 999);
+      // A failed page read as "no more rows" cut the skip set short, and the
+      // .delete() + .insert() below then overwrote FMV it was told to keep.
+      if (pageErr) throw new Error(`existing-FMV skip-set read failed at offset ${offset}: ${pageErr.message}`);
       if (!rows?.length) break;
       for (const r of rows) existingIds.add(r.edition_id);
       if (rows.length < 1000) break;

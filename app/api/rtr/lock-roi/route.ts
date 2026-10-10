@@ -61,8 +61,9 @@ interface LockRoiPayload {
   totalAvailable: number
   moments: LockRoiRow[]
   /**
-   * true when the edition or FMV read failed: moments with no cached FMV fell
-   * out of the ranking, so the list is a partial one. Never cached.
+   * true when the edition or FMV read failed (moments with no cached FMV fell
+   * out of the ranking) or the wallet read hit its page ceiling (the ranking
+   * covers a prefix of the wallet): the list is a partial one. Never cached.
    */
   degraded?: boolean
 }
@@ -128,6 +129,11 @@ export async function POST(req: NextRequest) {
     }
     const rows: WmcRow[] = []
     const WMC_PAGE = 1000
+    // The 60,000 ceiling is a runaway guard, not a wallet size: the largest Top
+    // Shot wallet held 61,512 moments (2026-10-09). Leaving with every page full
+    // means the ranking covers a PREFIX of the wallet, so it is flagged degraded
+    // (and not cached) below instead of ranked as the whole wallet.
+    let walletReadComplete = false
     for (let from = 0; from < 60000; from += WMC_PAGE) {
       const { data: page, error: cacheErr } = await supabase
         .from("wallet_moments_cache")
@@ -145,7 +151,7 @@ export async function POST(req: NextRequest) {
       }
       const pageRows = (page ?? []) as WmcRow[]
       rows.push(...pageRows)
-      if (pageRows.length < WMC_PAGE) break
+      if (pageRows.length < WMC_PAGE) { walletReadComplete = true; break }
     }
     if (rows.length === 0) {
       const empty: LockRoiPayload = { walletAddr, rowCount: 0, totalAvailable: 0, moments: [] }
@@ -158,7 +164,7 @@ export async function POST(req: NextRequest) {
     // A failed read here is NOT "no fresh FMV": moments without a cached FMV
     // would silently drop out of the ranking, and the partial list was then
     // cached for 5 minutes. Record it, flag the payload, and skip the cache.
-    let degraded = false
+    let degraded = !walletReadComplete
     const editionByExt = new Map<string, string>()
     for (let i = 0; i < editionKeys.length; i += CHUNK) {
       const slice = editionKeys.slice(i, i + CHUNK)

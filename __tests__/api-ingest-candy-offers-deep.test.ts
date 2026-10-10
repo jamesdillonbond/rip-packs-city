@@ -237,6 +237,33 @@ describe("candy-offers — sweep ladder", () => {
     expect((log?.p_extra as Record<string, unknown>).bidder_fetch_errors).toBe(1)
   })
 
+  // 2026-10-10: the standing-offer bidder read never bound its error, so a
+  // failed page read as a SHORT page — a partial bidder set, and the stale pass
+  // could then deactivate live offers of bidders it never swept.
+  it("a FAILED standing-offer bidder read suppresses stale deactivation and fails the run", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("/activities", [{ signature: "s", type: "bid", buyer: "bidder1", blockTime: RECENT }]),
+      jsonRoute("/offers_made", []),
+    ])
+    const spy = install({
+      candy_offers: [
+        { data: null, error: { message: "canceling statement due to statement timeout" } }, // active-buyer union FAILS
+        { data: null, error: null, count: 0 }, // active-book count (ratio guard)
+        { data: [], error: null }, // expiry deactivate (the ONLY update expected)
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const updates = (spy.writes.candy_offers ?? []).filter((w) => w.method === "update")
+    expect(updates).toHaveLength(1) // stale pass gated off; expiry pass still ran
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("standing-offer bidder read failed")
+    expect((log?.p_extra as Record<string, unknown>).active_book_read_error).toContain("statement timeout")
+  })
+
   it("a fatal ME activities error logs ok=false with the message", async () => {
     fetchMock = installFetchMock([
       jsonRoute("/activities", { error: "rate limited" }, { status: 429, ok: false }),

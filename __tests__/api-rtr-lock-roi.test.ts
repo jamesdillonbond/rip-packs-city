@@ -304,6 +304,20 @@ describe("POST /api/rtr/lock-roi — cache + failure + FMV join", () => {
     expect(b2.moments.map((m: any) => m.momentId).sort()).toEqual(["a", "b"])
   })
 
+  // 2026-10-10: the 60,000-row read ceiling is below the largest Top Shot
+  // wallet (61,512). Leaving the walk with every page full ranks a PREFIX of
+  // the wallet; it must be flagged degraded and not cached.
+  it("a wallet that fills the 60,000-row read ceiling is flagged degraded and NOT cached", async () => {
+    state.tables.wallet_moments_cache = Array.from({ length: 60500 }, (_, i) => ({
+      moment_id: `w${String(i).padStart(6, "0")}`, edition_key: "E1", player_name: "P", set_name: "S",
+      tier: "COMMON", is_locked: false, fmv_usd: 5, serial_number: i + 1,
+    }))
+    const first = await (await POST(body("0x00000000000000ca"))).json()
+    expect(first.degraded).toBe(true)
+    const second = await POST(body("0x00000000000000ca"))
+    expect(second.headers.get("X-RPC-Cache")).not.toBe("hit")
+  })
+
   it("lower-cases the submitted wallet in the payload", async () => {
     state.tables.wallet_moments_cache = []
     const b = await (await POST(post(JSON.stringify({ walletAddr: "0x00000000000000C8" })))).json()

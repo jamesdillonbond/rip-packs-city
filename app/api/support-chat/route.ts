@@ -4524,6 +4524,9 @@ async function executeToolInner(
             .eq("collection_id", collectionUuid)
             .not("serial_number", "is", null)
             .order("serial_number", { ascending: true })
+            // unique tiebreak: serials repeat across editions, so pages of a
+            // wallet over 1,000 moments overlapped and skipped (2026-10-10)
+            .order("moment_id", { ascending: true })
             .range(from, to),
         { pageSize: 1000, maxPages: 8, label: "concierge/find_quirky_serials" }
       );

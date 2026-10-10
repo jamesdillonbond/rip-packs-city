@@ -378,13 +378,24 @@ async function handleSweep(req: NextRequest) {
       //    last_seen_at rides along to drive the rotation order below.
       phase = "discovery_active_buyers"
       const lastSeenByBidder = new Map<string, string>()
+      // ⛔ 2026-10-10: the error was never read, so a failed page read as a
+      // short page and ended the walk with a PARTIAL bidder set. Bidders whose
+      // only activity is a standing offer were then never swept, and step 5
+      // could deactivate their live offers as "not seen". A failed page now
+      // suppresses deactivation and fails the run.
+      let activeBookReadError: string | null = null
       for (let from = 0; from < 10_000; from += 1000) {
-        const { data: activeBuyers } = await (supabaseAdmin as any)
+        const { data: activeBuyers, error: activeBuyersErr } = await (supabaseAdmin as any)
           .from("candy_offers")
           .select("buyer, last_seen_at")
           .eq("is_active", true)
           .order("pda_address", { ascending: true })
           .range(from, from + 999)
+        // paged-partial: intentional — the partial set is FLAGGED: activeBookReadError gates stale deactivation off and fails the run.
+        if (activeBuyersErr) {
+          activeBookReadError = String(activeBuyersErr.message ?? activeBuyersErr)
+          break
+        }
         for (const row of activeBuyers ?? []) {
           if (!row?.buyer) continue
           bidders.add(row.buyer)
@@ -642,7 +653,7 @@ async function handleSweep(req: NextRequest) {
         (offersBefore >= SWEEP_GUARD_MIN_BOOK && found < offersBefore * MIN_SWEEP_RATIO)
 
       const nowIso = new Date().toISOString()
-      if (bidderFetchErrors === 0 && !biddersTruncated && !degradedSweep && !deadlineHit && !rawCapped) {
+      if (activeBookReadError == null && bidderFetchErrors === 0 && !biddersTruncated && !degradedSweep && !deadlineHit && !rawCapped) {
         const { data: gone } = await (supabaseAdmin as any)
           .from("candy_offers")
           .update({ is_active: false })
@@ -664,7 +675,9 @@ async function handleSweep(req: NextRequest) {
       // skipped above, so `is_active` silently drifts toward stale-live. Report
       // it as a failure so it surfaces in health instead of hiding behind the
       // healthy-looking `offers_upserted` count.
-      const truncErr = rawCapped
+      const truncErr = activeBookReadError != null
+        ? `standing-offer bidder read failed (${activeBookReadError}) — bidder set is partial, deactivation skipped`
+        : rawCapped
         ? `raw offer collection hit MAX_RAW_OFFERS ${MAX_RAW_OFFERS} — sweep is partial, deactivation skipped`
         : biddersTruncated
         ? `bidder sweep truncated: ${allBidders.length} discovered > MAX_BIDDERS ${MAX_BIDDERS} — deactivation skipped, is_active is stale`
@@ -693,6 +706,7 @@ async function handleSweep(req: NextRequest) {
         bidders_truncated: biddersTruncated,
         deadline_hit: deadlineHit,
         bidder_fetch_errors: bidderFetchErrors,
+        active_book_read_error: activeBookReadError,
         pack_offers_seen: packOffersSeen,
         // NULL, not 0, when the count could not be read. CLAUDE.md: fixing a
         // guard without fixing the field an observer keys on leaves the

@@ -39,6 +39,10 @@ async function fetchRows(
       .select(COLS)
       .not("fmv_usd", "is", null)
       .order("fmv_usd", { ascending: false })
+      // Unique tiebreak (2026-10-10): 4,988 of 5,217 rows share an FMV with
+      // another row (one value with 520), so fmv_usd alone let page N+1
+      // repeat some rows and skip others across the 6-page walk.
+      .order("id", { ascending: true })
       .range(p * PAGE, p * PAGE + PAGE - 1)
     if (error) {
       console.error("[panini-squeeze] backing view error:", error.message)

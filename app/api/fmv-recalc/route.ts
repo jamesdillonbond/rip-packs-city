@@ -438,9 +438,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (salesPage.length === 0) {
+    // ⛔ 2026-10-10: ANY failed chunk skips the page, not only a fully empty
+    // one. A failed page mid-walk used to `break` and fall through here with the
+    // other chunks' sales, so FMV was computed from a PARTIAL set — ordered by
+    // id, the newest sales were the ones dropped — and persisted (today's rows
+    // deleted, the partial-set rows inserted) under ok:true. Skipping holds the
+    // cursor, and the next tick re-reads the page whole.
+    if (salesPage.length === 0 || salesFetchErrors > 0) {
       console.warn(
-        `[FMV-RECALC] Edition page returned ${pageEditionIds.length} ids but no in-window sales survived re-fetch — skipping`
+        salesFetchErrors > 0
+          ? `[FMV-RECALC] ${salesFetchErrors} sales chunk fetch error(s) — the page's sales set is partial; skipping without writing`
+          : `[FMV-RECALC] Edition page returned ${pageEditionIds.length} ids but no in-window sales survived re-fetch — skipping`
       )
       // 2026-06-10: previously a SILENT unlogged exit. Under DB saturation every
       // Step-1b chunk fetch errors -> empty salesPage -> this path, which is how
@@ -458,7 +466,12 @@ export async function POST(req: NextRequest) {
           p_collection_slug: null,
           p_cursor_before: String(offset),
           p_cursor_after: String(offset),
-          p_extra: { algo_version: ALGO_VERSION, stage: "step1b_refetch_empty", sales_fetch_errors: salesFetchErrors },
+          p_extra: {
+            algo_version: ALGO_VERSION,
+            stage: salesPage.length === 0 ? "step1b_refetch_empty" : "step1b_refetch_partial",
+            sales_fetch_errors: salesFetchErrors,
+            sales_rows_read_before_failure: salesPage.length,
+          },
         })
       } catch (logErr) {
         console.warn("[FMV-RECALC] step1b-empty log failed:", logErr)
@@ -990,6 +1003,7 @@ export async function POST(req: NextRequest) {
           const slice = thinIds.slice(i, i + EXT_IN_CHUNK)
           const byEdition = new Map<string, { price: number; soldAt: Date; serial: number | null }[]>()
           let from = 0
+          let extSliceFailed = false
           for (;;) {
             const { data: extRows, error: extErr } = await supabaseAdmin
               // sales minus issuer buy-backs (known-issues #169) — never `sales` here
@@ -1006,6 +1020,7 @@ export async function POST(req: NextRequest) {
                 `[FMV-RECALC] 90d extension fetch error (slice ${i}, range ${from}):`,
                 extErr.message,
               )
+              extSliceFailed = true
               break
             }
             const batch = (extRows as { edition_id: string; price_usd: number | string; sold_at: string; serial_number: number | null }[] | null) ?? []
@@ -1021,6 +1036,11 @@ export async function POST(req: NextRequest) {
             if (batch.length < EXT_PAGE) break
             from += EXT_PAGE
           }
+          // ⛔ A failed page leaves this slice's 90d sets PARTIAL (newest rows
+          // missing, order is by id). Adopting one because it is "longer than the
+          // 30d set" persisted FMV and latestSoldAt from a truncated set. Keep
+          // the slice's honest 30d sets instead (2026-10-10).
+          if (extSliceFailed) continue
           for (const [edId, widenedSales] of byEdition.entries()) {
             const data = editionSalesMap.get(edId)
             if (!data) continue
