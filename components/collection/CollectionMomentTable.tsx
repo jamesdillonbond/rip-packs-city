@@ -328,6 +328,8 @@ export default function CollectionMomentTable(props: {
                     </span>
                     {row.lowAsk != null ? (
                       <span className="text-xs text-[color:var(--rpc-text-secondary)]">Ask ${row.lowAsk.toFixed(2)}</span>
+                    ) : row.editionLowAsk != null ? (
+                      <span className="text-xs text-[color:var(--rpc-text-secondary)]" title="The edition's lowest live listing">Floor ${row.editionLowAsk.toFixed(2)}</span>
                     ) : row.recentLow30d != null ? (
                       <span className="text-xs text-[color:var(--rpc-text-muted)]" title="Lowest sale in the FMV window — not a listing">30d low ${row.recentLow30d.toFixed(2)}</span>
                     ) : null}

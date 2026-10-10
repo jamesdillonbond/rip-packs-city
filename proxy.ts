@@ -1148,9 +1148,15 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // pages call it for every badge chip; before this line each call was
   // 307 → POST /login → 405 (7 console errors per anon sniper load, measured),
   // and the badge art/tooltips never arrived for signed-out visitors.
+  //
+  // 2026-10-10: /api/best-asks joins it (#182) — the binder's live-ask batch read,
+  // the twin of /api/best-offers. Verified: its handler only reads (editions,
+  // edition_fmv_current, the ask tables), no write path, and it refuses an
+  // unknown collection.
   if (
     (pathname === "/api/fmv" ||
       pathname === "/api/best-offers" ||
+      pathname === "/api/best-asks" ||
       pathname === "/api/edition-floor" ||
       pathname === "/api/pack-ev" ||
       pathname === "/api/badge-taxonomy") &&

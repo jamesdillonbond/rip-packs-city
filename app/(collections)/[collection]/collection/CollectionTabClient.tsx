@@ -539,6 +539,38 @@ function WalletMomentsBody() {
       // edition offer).
       const serials = chunk.map(function(r) { return r.serial ?? null })
       const collectionId = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? ""
+      // #182 (2026-10-10): the EDITION's live low ask, from the same source chain
+      // the team checklist uses (/api/best-asks). It fills editionLowAsk, which the
+      // table already renders as "$x floor"; lowAsk stays "THIS moment is listed",
+      // so the LISTED filter and the listing price are not touched. A failed read
+      // leaves the field empty, which claims nothing.
+      const askKeys = Array.from(new Set(editionKeys.filter(function(k) { return k.length > 0 })))
+      if (collectionId && askKeys.length > 0) {
+        fetch("/api/best-asks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ collectionId, editionKeys: askKeys }),
+        })
+          // A failed read throws to the catch and sets nothing; it is never
+          // collapsed into an empty result.
+          .then(function(r) { if (!r.ok) throw new Error("best-asks " + r.status); return r.json() })
+          .then(function(d) {
+            if (!d || !Array.isArray(d.results) || d.results.length === 0) return
+            const askByKey = new Map<string, number>()
+            for (const res of d.results) {
+              if (typeof res.editionKey === "string" && typeof res.ask === "number" && res.ask > 0) askByKey.set(res.editionKey, res.ask)
+            }
+            if (!askByKey.size) return
+            setRows(function(prev) {
+              return prev.map(function(row) {
+                const a = row.editionKey ? askByKey.get(row.editionKey) : undefined
+                if (a == null || row.editionLowAsk != null) return row
+                return { ...row, editionLowAsk: a }
+              })
+            })
+          })
+          .catch(function() {})
+      }
       fetch("/api/best-offers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
