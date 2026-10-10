@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
-import { execSync } from "node:child_process"
+import { walkSourceFiles, repoRelative } from "./helpers/source-files"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // Every client that POSTs to /api/alerts must send an alert_type the route
@@ -21,13 +21,9 @@ function routeAlertTypes(): string[] {
 }
 
 function postingFiles(): string[] {
-  const out = execSync(
-    `git ls-files 'app/**/*.tsx' 'app/**/*.ts' 'components/**/*.tsx' 'components/**/*.ts' 'lib/**/*.ts' 'lib/**/*.tsx'`,
-    { encoding: "utf8" },
-  )
-  return out
-    .split("\n")
-    .filter(Boolean)
+  return ["app", "components", "lib"]
+    .flatMap((root) => walkSourceFiles(root, (n) => /\.tsx?$/.test(n)))
+    .map(repoRelative)
     .filter((f) => f !== ROUTE)
     .filter((f) => {
       const src = readFileSync(f, "utf8")

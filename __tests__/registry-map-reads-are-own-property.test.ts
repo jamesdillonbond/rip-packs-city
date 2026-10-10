@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
-import { execSync } from "node:child_process"
+import { walkSourceFiles, repoRelative } from "./helpers/source-files"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // The collection registry's bridge maps are plain objects, so a bracket read
@@ -21,12 +21,9 @@ const MAPS = ["COLLECTION_UUID_BY_SLUG", "SLUG_TO_DB_SLUG", "DB_SLUG_TO_SLUG"]
 const BARE = new RegExp(`\\b(${MAPS.join("|")})\\[(?!\\s*["'][^"']*["']\\s*\\])`)
 
 function sources(): string[] {
-  return execSync(
-    `git ls-files 'app/**/*.ts' 'app/**/*.tsx' 'lib/**/*.ts' 'lib/**/*.tsx' 'components/**/*.ts' 'components/**/*.tsx'`,
-    { encoding: "utf8" },
-  )
-    .split("\n")
-    .filter(Boolean)
+  return ["app", "lib", "components"]
+    .flatMap((root) => walkSourceFiles(root, (n) => /\.tsx?$/.test(n)))
+    .map(repoRelative)
 }
 
 describe("registry bridge maps are read by own property only", () => {
