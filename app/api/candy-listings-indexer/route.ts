@@ -505,6 +505,9 @@ async function handleSweep(req: NextRequest) {
             expiry: l.expiry && l.expiry > 0 ? new Date(l.expiry * 1000).toISOString() : null,
             last_seen_at: new Date().toISOString(),
             is_active: true,
+            // Pinned, not defaulted: the OpenSea listings feed writes this table
+            // too, and an upsert that omits the column keeps the row's old venue.
+            venue: "magic_eden",
             // first_seen_at defaulted on insert, preserved on conflict.
           })
         }

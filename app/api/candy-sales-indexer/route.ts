@@ -223,10 +223,14 @@ async function handleIndex(req: NextRequest) {
     let cursorAfter: string | null = null
     try {
       // Incremental high-water mark: the most recent Candy sale we already have.
+      // ⛔ SCOPED TO magic_eden (2026-10-10). /api/candy-opensea-sales-indexer
+      // writes Candy sales too; an unscoped max(sold_at) would let a newer
+      // OpenSea sale jump this cursor past Magic Eden trades it has not read yet.
       const { data: latest, error: latestErr } = await (supabaseAdmin as any)
         .from("sales")
         .select("sold_at")
         .eq("collection_id", CANDY_MLB_UUID)
+        .eq("marketplace", "magic_eden")
         .order("sold_at", { ascending: false })
         .limit(1)
       // ⛔ THIS READ IS THE CURSOR. supabase-js RETURNS its errors, so a failed

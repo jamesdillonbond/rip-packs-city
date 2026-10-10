@@ -42,7 +42,8 @@ vi.mock("@/lib/chains/solana/das", () => ({
   solUsd: async () => state.rate,
 }))
 
-const { GET, POST, osPrice } = await import("@/app/api/candy-opensea-listings-indexer/route")
+const { GET, POST } = await import("@/app/api/candy-opensea-listings-indexer/route")
+const { osPrice } = await import("@/lib/chains/solana/opensea")
 
 const CANDY_UUID = "209ade70-32c5-4470-bc7c-4793d660f713"
 const PROGRAM = "OSprogram111"

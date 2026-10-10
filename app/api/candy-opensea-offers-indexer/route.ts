@@ -1,54 +1,25 @@
-// app/api/candy-opensea-listings-indexer/route.ts
+// app/api/candy-opensea-offers-indexer/route.ts
 //
-// Candy (Solana) secondary LISTINGS from OPENSEA — the second ask feed beside
-// /api/candy-listings-indexer (Magic Eden). OpenSea added Solana NFT trading
-// ~2026-08-31 with Candy Digital as a named launch partner; until this route, a
-// Candy ask standing on OpenSea was captured NOWHERE, so the deals / market /
-// floor family could read "no ask" where a real one stood.
-// See docs/overnight/inbox/2026-09-02T0400Z-candy-secondary-is-no-longer-magic-eden-only-*.md
+// Candy (Solana) standing OFFERS (bids) placed on OPENSEA — the second bid feed
+// beside /api/ingest/candy-offers (Magic Eden). Writes `candy_offers` rows with
+// venue='opensea'. Plumbing and spec provenance: lib/chains/solana/opensea.ts.
 //
-// ── THE SHAPE, FROM OPENSEA'S OWN OPENAPI SPEC (@opensea/api-types 0.16.0) ──────
-// Their API and docs host are unreachable from the build sandbox, so every field
-// below is read from the published spec, not inferred from the Panini (Ethereum)
-// route:
-//   · A Solana order has NO `order_hash`. It carries `svm_order`
-//     { id = "creation_signature:order_state", order_state, creation_signature,
-//       asset_id?, maker }. `order_state` is the on-chain account holding the
-//     order — the Solana analogue of Magic Eden's `pdaAddress`, so it is what this
-//     route writes into `pda_address`.
-//   · `price.current` { currency, decimals, value } is what a BUYER pays through
-//     OpenSea — for a listing ingested from another marketplace it may INCLUDE
-//     OpenSea's fee. Stated so nobody reads an OpenSea ask as the seller's net.
-//   · OpenSea's feed AGGREGATES other Solana marketplaces ("listings and offers
-//     created on other Solana marketplaces can be read"). So this feed WILL
-//     return asks Magic Eden's sweep already holds — see DEDUP below.
-//   · Every v2 endpoint requires `x-api-key` (spec `security: ApiKeyAuth`).
+// Source: GET /api/v2/offers/collection/{slug}/all (spec `Offer`: svm_order,
+// asset, criteria, price {currency, decimals, value}, status, protocol_address).
 //
-// ── DEDUP: ONE LIVE ASK PER 1-OF-1 ───────────────────────────────────────────────
-// A Candy card is a 1-of-1 Metaplex Core asset, and a Magic Eden listing MOVES it
-// into ME's escrow (lib/chains/solana/escrow.ts), so it cannot simultaneously be
-// listed by its owner anywhere else. Hence: for a mint that already has an ACTIVE
-// venue='magic_eden' row, an OpenSea-reported ask is the SAME listing seen
-// through the aggregator (or a stale echo of it) — it is SKIPPED and counted
-// (`skipped_me_active`), never written twice. Only asks for mints with no active
-// ME row are written, as venue='opensea'. `matched_me_pda` counts how many
-// reported order_state values equal an ME pda_address outright — the first ticks
-// measure whether the two identities coincide.
+//   · candy_offers is MINT-grain (token_mint NOT NULL). A collection or trait
+//     offer has no single mint, so it is counted (`collection_offers`), never
+//     written — inventing a mint for it would be a fabricated row.
+//   · DEDUP: OpenSea aggregates other marketplaces' bids. An offer whose
+//     order_state equals a Magic Eden pda_address is the same on-chain bid and
+//     is skipped (`matched_me_pda`). Unlike a listing, a bid does not escrow the
+//     card, so a bidder CAN hold one bid per venue; any residual duplicate cannot
+//     move the readers' signal (best offer = max, distinct_bidders = distinct).
+//   · RETIREMENT is evidence-only, exactly as on the listings feed: an unseen
+//     venue='opensea' row is retired only on a terminal get-order status.
 //
-// ── RETIREMENT IS EVIDENCE-BASED, NEVER ABSENCE-BASED ───────────────────────────
-// The rule this estate learned the hard way (a short Magic Eden answer once wiped
-// 419 live asks): a row this sweep did not see is NOT dead. For each active
-// venue='opensea' row the sweep did not re-see, the route asks OpenSea's
-// get-order endpoint for THAT order and retires it only on a terminal status
-// (FULFILLED / CANCELLED / EXPIRED / INACTIVE). A failed or ambiguous lookup
-// retires nothing. The Magic Eden indexer's supersede pass and the shared
-// `candy_retire_listings_sold_since_seen` RPC also retire these rows on their
-// own positive evidence (a newer live listing for the mint; a recorded sale).
-//
-// ── HONESTY ─────────────────────────────────────────────────────────────────────
-// A listing is an ASK, never FMV (same constraint as the Magic Eden route).
-// A missing OPENSEA_API_KEY is OUR misconfiguration: it is logged ok=false with
-// that exact cause, never as a clean "0 listings" run.
+// HONESTY CONSTRAINT (shared with the Magic Eden route): a bid is a BEST-OFFER
+// signal, never FMV.
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -71,17 +42,12 @@ import {
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
-const PIPELINE_NAME = "candy-opensea-listings-indexer"
-// 50 x 200 = 10,000 asks — far above the whole Candy book (~1,500 active on ME),
-// so a cursor that ends is what ends the sweep, not this cap.
+const PIPELINE_NAME = "candy-opensea-offers-indexer"
 const MAX_PAGES = 50
-// Whole-sweep budget, under the 300 s wall so `logRun` always gets to run.
 const SWEEP_BUDGET_MS = 240_000
-// Bound on per-order status lookups per tick (the retirement pass). The rest
-// wait for the next tick — no evidence means no retirement, never the reverse.
 const MAX_STATUS_CHECKS = 150
 
-type OsListing = OsOrder & { price?: { current?: OsPrice } }
+type OsOffer = OsOrder & { price?: OsPrice }
 
 async function logRun(
   startedAtIso: string,
@@ -136,8 +102,6 @@ async function handleSweep(req: NextRequest) {
   const startedAtIso = new Date().toISOString()
   const startedMs = Date.now()
 
-  // Separate `-heartbeat` pipeline name: a kill inside after() then reads as
-  // "heartbeat, no terminal row" instead of "the cron never fired".
   await writeInvocationHeartbeat({
     pipeline: PIPELINE_NAME,
     startedAtMs: startedMs,
@@ -146,9 +110,7 @@ async function handleSweep(req: NextRequest) {
 
   const apiKey = openSeaApiKey()
   if (!apiKey) {
-    // Ours, not OpenSea's: every v2 call 401s without a key. ok=false with the
-    // cause named, so the run row cannot read as an empty OpenSea book.
-    console.error(`[${PIPELINE_NAME}] OPENSEA_API_KEY is not set — no OpenSea Candy asks can be read`)
+    console.error(`[${PIPELINE_NAME}] OPENSEA_API_KEY is not set — no OpenSea Candy offers can be read`)
     await logRun(startedAtIso, 0, 0, 0, false, "OPENSEA_API_KEY not set (misconfiguration, not an OpenSea outage)", {
       skip_reason: "opensea_key_missing",
     })
@@ -163,36 +125,30 @@ async function handleSweep(req: NextRequest) {
     let written = 0
     let skipped = 0
     let retired = 0
+    let pages = 0
     let sweepComplete = false
     let budgetExhausted = false
-    let pages = 0
     let slug: string | null = null
-    let slugHow: string | null = null
-    let sampleUrl: string | null = null
     const writeErrors: string[] = []
     try {
       const d = await discoverCandyOpenSeaSlug(supabaseAdmin, apiKey)
       slug = d.slug
-      slugHow = d.how
-      sampleUrl = d.sampleUrl
       if (!slug) {
         await logRun(startedAtIso, 0, 0, 0, false, `OpenSea collection slug not found (${d.how})`, {
           skip_reason: "slug_not_found",
           slug_discovery: d.how,
-          duration_ms: Date.now() - startedMs,
         })
         return
       }
-
       const rate = await solUsd()
 
-      // ── 1. Walk the OpenSea book ──────────────────────────────────────────
+      // ── 1. Walk the OpenSea bid book ──────────────────────────────────────
       let rawSeen = 0
       let notActive = 0
+      let collectionOffers = 0
       let noIdentity = 0
-      let unpriced = 0
       const protocols: Record<string, number> = {}
-      const reported: Array<{ l: OsListing; mint: string; state: string }> = []
+      const reported: Array<{ o: OsOffer; mint: string; state: string }> = []
       let next: string | null = null
       for (; pages < MAX_PAGES; pages++) {
         if (Date.now() - startedMs > SWEEP_BUDGET_MS) {
@@ -200,23 +156,27 @@ async function handleSweep(req: NextRequest) {
           break
         }
         const qs = `limit=${OS_PAGE_LIMIT}${next ? `&next=${encodeURIComponent(next)}` : ""}`
-        const { json } = await osGet(`/listings/collection/${encodeURIComponent(slug)}/all?${qs}`, apiKey)
-        const listings = (json?.listings ?? []) as OsListing[]
-        rawSeen += listings.length
-        for (const l of listings) {
-          const key = l.protocol ?? "(none)"
+        const { json } = await osGet(`/offers/collection/${encodeURIComponent(slug)}/all?${qs}`, apiKey)
+        const offers = (json?.offers ?? []) as OsOffer[]
+        rawSeen += offers.length
+        for (const o of offers) {
+          const key = o.protocol ?? "(none)"
           protocols[key] = (protocols[key] ?? 0) + 1
-          if ((l.status && l.status !== "ACTIVE") || (l.remaining_quantity != null && l.remaining_quantity <= 0)) {
+          if ((o.status && o.status !== "ACTIVE") || (o.remaining_quantity != null && o.remaining_quantity <= 0)) {
             notActive++
             continue
           }
-          const mint = orderMint(l)
-          const state = l.svm_order?.order_state
-          if (!mint || !state) {
+          const mint = orderMint(o)
+          if (!mint) {
+            collectionOffers++
+            continue
+          }
+          const state = o.svm_order?.order_state
+          if (!state) {
             noIdentity++
             continue
           }
-          reported.push({ l, mint, state })
+          reported.push({ o, mint, state })
         }
         next = json?.next ?? null
         if (!next) {
@@ -226,7 +186,7 @@ async function handleSweep(req: NextRequest) {
         }
       }
 
-      // ── 2. Resolve mints → Candy editions (cards) / packs, batched ────────
+      // ── 2. Resolve mints → Candy editions ─────────────────────────────────
       const mints = [...new Set(reported.map((r) => r.mint))]
       const keyByMint = new Map<string, string>()
       for (let i = 0; i < mints.length; i += 200) {
@@ -235,7 +195,6 @@ async function handleSweep(req: NextRequest) {
           .select("moment_id, edition_key")
           .eq("collection_id", CANDY_MLB_UUID)
           .in("moment_id", mints.slice(i, i + 200))
-        // THROW: a failed read must not classify a real Candy ask "not Candy".
         if (error) throw new Error(`wmc batch lookup failed: ${error.message}`)
         for (const r of (data ?? []) as Array<{ moment_id: string; edition_key: string | null }>) {
           if (r.edition_key && !keyByMint.has(r.moment_id)) keyByMint.set(r.moment_id, r.edition_key)
@@ -255,24 +214,12 @@ async function handleSweep(req: NextRequest) {
         }
       }
 
-      // ── 3. Dedup against the Magic Eden book ──────────────────────────────
-      const cardMints = mints.filter((m) => keyByMint.has(m))
-      const meActive = new Set<string>()
-      for (let i = 0; i < cardMints.length; i += 200) {
-        const { data, error } = await (supabaseAdmin as any)
-          .from("candy_listings")
-          .select("token_mint")
-          .eq("venue", "magic_eden")
-          .eq("is_active", true)
-          .in("token_mint", cardMints.slice(i, i + 200))
-        if (error) throw new Error(`ME active-ask read failed: ${error.message}`)
-        for (const r of (data ?? []) as Array<{ token_mint: string }>) meActive.add(r.token_mint)
-      }
+      // ── 3. Same on-chain bid already held from Magic Eden? ────────────────
       const states = [...new Set(reported.map((r) => r.state))]
       const mePdas = new Set<string>()
       for (let i = 0; i < states.length; i += 200) {
         const { data, error } = await (supabaseAdmin as any)
-          .from("candy_listings")
+          .from("candy_offers")
           .select("pda_address")
           .eq("venue", "magic_eden")
           .in("pda_address", states.slice(i, i + 200))
@@ -280,42 +227,38 @@ async function handleSweep(req: NextRequest) {
         for (const r of (data ?? []) as Array<{ pda_address: string }>) mePdas.add(r.pda_address)
       }
 
-      // ── 4. Build rows ─────────────────────────────────────────────────────
+      // ── 4. Rows ───────────────────────────────────────────────────────────
       let notCandy = 0
-      let skippedMeActive = 0
       let matchedMePda = 0
+      let unpriced = 0
       const rows: Record<string, unknown>[] = []
-      const seenStates = new Set<string>()
+      const seen = new Set<string>()
       const nowIso = new Date().toISOString()
-      for (const { l, mint, state } of reported) {
-        if (mePdas.has(state)) matchedMePda++
+      for (const { o, mint, state } of reported) {
         const key = keyByMint.get(mint)
         if (!key) {
-          // Not a Candy CARD. Sealed packs are left to the Magic Eden route's
-          // candy_pack_listings (no venue column there yet) — counted, not written.
           notCandy++
           continue
         }
-        if (meActive.has(mint) || mePdas.has(state)) {
-          skippedMeActive++
+        if (mePdas.has(state)) {
+          matchedMePda++
           continue
         }
-        if (seenStates.has(state)) continue
-        const price = osPrice(l.price?.current, rate)
+        if (seen.has(state)) continue
+        const price = osPrice(o.price, rate)
         if (!price) {
           unpriced++
           continue
         }
-        seenStates.add(state)
+        seen.add(state)
         found++
         rows.push({
           pda_address: state,
           token_mint: mint,
           edition_id: idByKey.get(key) ?? null,
           collection_id: CANDY_MLB_UUID,
-          seller: l.svm_order?.maker ?? null,
-          // The settling program, so the protocol vocabulary is measurable.
-          auction_house: l.protocol_address ?? null,
+          buyer: o.svm_order?.maker ?? null,
+          auction_house: o.protocol_address ?? null,
           price_sol: price.sol,
           price_usd: price.usd,
           token_size: 1,
@@ -323,37 +266,34 @@ async function handleSweep(req: NextRequest) {
           last_seen_at: nowIso,
           is_active: true,
           venue: "opensea",
-          venue_order_id: l.svm_order?.id ?? null,
+          venue_order_id: o.svm_order?.id ?? null,
         })
       }
+      skipped = notCandy + matchedMePda + unpriced
 
       for (let i = 0; i < rows.length; i += 100) {
         const batch = rows.slice(i, i + 100)
         const { error } = await (supabaseAdmin as any)
-          .from("candy_listings")
+          .from("candy_offers")
           .upsert(batch, { onConflict: "pda_address" })
         if (error) {
-          writeErrors.push(`candy_listings upsert: ${error.message}`)
+          writeErrors.push(`candy_offers upsert: ${error.message}`)
           skipped += batch.length
         } else written += batch.length
       }
 
-      // ── 5. Evidence-based retirement of OpenSea rows this sweep did not see ─
-      // ⚠ Reads only rows last seen BEFORE this sweep, so nothing written above
-      // can be retired by its own tick.
+      // ── 5. Evidence-based retirement of unseen OpenSea bids ───────────────
       let statusChecked = 0
       let statusUnknown = 0
       let statusTerminal = 0
       let retireCandidates: number | null = null
       const { data: stale, error: staleErr } = await (supabaseAdmin as any)
-        .from("candy_listings")
+        .from("candy_offers")
         .select("pda_address, venue_order_id, auction_house")
         .eq("venue", "opensea")
         .eq("is_active", true)
         .lt("last_seen_at", startedAtIso)
-        // ⚠ Oldest-first, so a row whose status lookup keeps failing stays at the
-        // head. It cannot starve the pass until MORE than MAX_STATUS_CHECKS such
-        // rows pile up; `status_unknown` in the run row is the watch for that.
+        // Oldest-first; `status_unknown` is the watch for rows that never resolve.
         .order("last_seen_at", { ascending: true })
         .order("pda_address", { ascending: true })
         .limit(MAX_STATUS_CHECKS)
@@ -370,7 +310,6 @@ async function handleSweep(req: NextRequest) {
           }
           const status = await fetchOrderStatus(r.auction_house, r.venue_order_id, apiKey)
           if (status == null) {
-            // No evidence → no retirement. A 404 is NOT read as "gone".
             statusUnknown++
             continue
           }
@@ -380,14 +319,14 @@ async function handleSweep(req: NextRequest) {
         statusTerminal = dead.length
         for (let i = 0; i < dead.length; i += 200) {
           const { data: gone, error: goneErr } = await (supabaseAdmin as any)
-            .from("candy_listings")
+            .from("candy_offers")
             .update({ is_active: false })
             .eq("venue", "opensea")
             .eq("is_active", true)
             .in("pda_address", dead.slice(i, i + 200))
             .lt("last_seen_at", startedAtIso)
             .select("pda_address")
-          if (goneErr) writeErrors.push(`candy_listings retire: ${goneErr.message}`)
+          if (goneErr) writeErrors.push(`candy_offers retire: ${goneErr.message}`)
           else retired += (gone ?? []).length
         }
       }
@@ -401,25 +340,23 @@ async function handleSweep(req: NextRequest) {
         writeErrors.length ? `${writeErrors.length} rejected write(s): ${writeErrors.slice(0, 3).join(" | ")}`.slice(0, 500) : null,
         {
           slug,
-          slug_discovery: slugHow,
-          sample_opensea_url: sampleUrl,
-          raw_listings_seen: rawSeen,
-          listings_found: found,
-          listings_upserted: written,
-          write_errors: writeErrors.length,
+          slug_discovery: d.how,
+          raw_offers_seen: rawSeen,
+          offers_found: found,
+          offers_upserted: written,
           not_active: notActive,
+          collection_offers: collectionOffers,
           no_identity: noIdentity,
           not_candy_card: notCandy,
-          unpriced,
-          skipped_me_active: skippedMeActive,
           matched_me_pda: matchedMePda,
+          unpriced,
           protocols,
           retire_candidates: retireCandidates,
           status_checked: statusChecked,
           status_unknown: statusUnknown,
-          // Orders OpenSea called terminal; `retired` is how many rows that retired.
           status_terminal: statusTerminal,
           retired,
+          write_errors: writeErrors.length,
           sweep_complete: sweepComplete,
           budget_exhausted: budgetExhausted,
           pages_walked: pages,
@@ -430,9 +367,8 @@ async function handleSweep(req: NextRequest) {
     } catch (e) {
       await logRun(startedAtIso, found, written, skipped, false, e instanceof Error ? e.message : String(e), {
         slug,
-        slug_discovery: slugHow,
-        listings_found: found,
-        listings_upserted: written,
+        offers_found: found,
+        offers_upserted: written,
         retired,
         sweep_complete: sweepComplete,
         pages_walked: pages,

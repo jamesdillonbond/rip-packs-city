@@ -388,6 +388,9 @@ async function handleSweep(req: NextRequest) {
         const { data: activeBuyers, error: activeBuyersErr } = await (supabaseAdmin as any)
           .from("candy_offers")
           .select("buyer, last_seen_at")
+          // venue-scoped (2026-10-10): OpenSea bidders are swept by
+          // /api/candy-opensea-offers-indexer, not against Magic Eden.
+          .eq("venue", "magic_eden")
           .eq("is_active", true)
           .order("pda_address", { ascending: true })
           .range(from, from + 999)
@@ -589,6 +592,9 @@ async function handleSweep(req: NextRequest) {
           expiry: o.expiry && o.expiry > 0 ? new Date(o.expiry * 1000).toISOString() : null,
           last_seen_at: nowIsoRow,
           is_active: true,
+          // Pinned, not defaulted: the OpenSea offers feed writes this table too,
+          // and an upsert that omits the column keeps whatever venue the row had.
+          venue: "magic_eden",
           // first_seen_at deliberately omitted: defaulted on insert,
           // preserved on conflict.
         })
@@ -638,6 +644,7 @@ async function handleSweep(req: NextRequest) {
       const { count: activeOffersBefore, error: activeOffersErr } = await (supabaseAdmin as any)
         .from("candy_offers")
         .select("pda_address", { count: "exact", head: true })
+        .eq("venue", "magic_eden")
         .eq("is_active", true)
       const bookSizeUnknown = Boolean(activeOffersErr) || typeof activeOffersBefore !== "number"
       if (bookSizeUnknown) {
@@ -654,9 +661,13 @@ async function handleSweep(req: NextRequest) {
 
       const nowIso = new Date().toISOString()
       if (activeBookReadError == null && bidderFetchErrors === 0 && !biddersTruncated && !degradedSweep && !deadlineHit && !rawCapped) {
+        // ⛔ venue-scoped (2026-10-10). This retirement is ABSENCE-based: "the
+        // Magic Eden sweep did not see it". That is evidence about Magic Eden bids
+        // only — unscoped, every tick would kill every OpenSea bid.
         const { data: gone } = await (supabaseAdmin as any)
           .from("candy_offers")
           .update({ is_active: false })
+          .eq("venue", "magic_eden")
           .eq("is_active", true)
           .lt("last_seen_at", startedAtIso)
           .select("pda_address")
