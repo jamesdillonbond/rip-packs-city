@@ -21,6 +21,9 @@
 --   F3. Dispatch is round-robin across wallets: one wallet's many narrow
 --       intervals cannot take every slot from another wallet's wide one.
 --   U1. A 503 (the node's upstream down) is a free retry, like a 429.
+--   U2. No HTTP answer at all (a handshake that never completed: zero request
+--       time; or DNS / connect failure) is a free retry too; a call that
+--       connected and THEN timed out still counts an attempt.
 --   G1. An interval straddling 86,031,700 (the first height mainnet25 runs a
 --       script at) splits AT it, never reading a script below it.
 --   G2. An interval wholly inside that gap, wider than 250 blocks, is WALKED:
@@ -39,7 +42,7 @@
 -- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
 -- seed_saved_wallet_chain_arrivals from
 -- 20260930190000_audit_20260930_chain_arrivals_seed_sold_moments.sql;
--- run_chain_arrival_lane from 20260930183000_audit_20260930_chain_arrival_aligned_bisection_shares_calls.sql).
+-- run_chain_arrival_lane from 20261010104104_audit_20261010_chain_arrival_transport_outage_is_a_free_retry.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -170,6 +173,18 @@ BEGIN
         -- error ... connection failure", 05:04-05:08 AM PT): an outage, not a
         -- wrong read -- 159 probes spent all 6 attempts in 4 minutes on it
         UPDATE public.chain_arrival_probes SET request_id = NULL, last_error = 'http 503'
+         WHERE request_id = r.request_id;
+        v_unavailable := v_unavailable + 1;
+      ELSIF r.h_status IS NULL AND r.h_error IS NOT NULL
+            AND (r.h_error ~ 'HTTP Request/Response time: 0\.0+ ms'
+                 OR r.h_error ~* 'couldn''t (resolve host|connect to server)') THEN
+        -- 2026-10-10: no HTTP answer at all -- the connection never completed
+        -- (a 30 s TCP/SSL handshake timeout with zero request time, or DNS /
+        -- connect refused). An outage, like a 503: 526 probes spent all 6
+        -- attempts in 6 minutes on one (4:13-4:19 AM PT 10-09) and, the seed
+        -- skipping any probed id, were never tried again. A call that DID
+        -- connect and then timed out still counts (its batch must halve).
+        UPDATE public.chain_arrival_probes SET request_id = NULL, last_error = left(r.h_error, 300)
          WHERE request_id = r.request_id;
         v_unavailable := v_unavailable + 1;
       ELSE
@@ -627,6 +642,24 @@ BEGIN
   PERFORM _assert((SELECT attempts = 1 AND last_error LIKE 'http 400%' FROM public.chain_arrival_probes WHERE nft_id = 3), 'H1: a 400 counts an attempt');
   PERFORM _assert(NOT (v->>'ok')::boolean AND (v->>'throttled')::int = 1 AND (v->>'failed')::int = 1, 'H1: ok=false, one throttled, one failed');
   PERFORM _assert((SELECT request_id IS NOT NULL FROM public.chain_arrival_probes WHERE nft_id = 1), 'H1: the throttled probe is re-dispatched');
+END $$;
+
+-- U2: a handshake that never completed vs a call that connected and then timed out
+INSERT INTO net._http_response (id, status_code, content, error_msg) VALUES (pg_temp.req_of(1), NULL, NULL,
+  'Timeout of 30000 ms reached. Total time: 30001.388000 ms (DNS time: 0.013000 ms, TCP/SSL handshake time: 30001.375000 ms, HTTP Request/Response time: 0.000000 ms)');
+INSERT INTO net._http_response (id, status_code, content, error_msg) VALUES (pg_temp.req_of(3), NULL, NULL,
+  'Timeout of 30000 ms reached. Total time: 30001.000000 ms (DNS time: 0.013000 ms, TCP/SSL handshake time: 40.000000 ms, HTTP Request/Response time: 29961.000000 ms)');
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT attempts = 0 AND last_error LIKE 'Timeout of 30000 ms%' AND status <> 'failed' AND request_id IS NOT NULL
+                     FROM public.chain_arrival_probes WHERE nft_id = 1),
+                  'U2: a connection that never completed costs no attempt and is re-dispatched');
+  PERFORM _assert((SELECT attempts = 2 FROM public.chain_arrival_probes WHERE nft_id = 3),
+                  'U2: a call that connected and then timed out still counts an attempt');
+  PERFORM _assert((v->>'unavailable')::int = 1 AND (v->>'failed')::int = 1,
+                  'U2: one outage, one failed read');
 END $$;
 
 -- F1 / F2: a floor probe on mainnet26's node beside a pending bisection there
