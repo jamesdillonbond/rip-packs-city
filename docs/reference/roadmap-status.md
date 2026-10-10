@@ -204,6 +204,31 @@ invisible to every standing instrument and was found only by the `panini-freshne
 task. **Panini's confidence share has no owner in the trust-health precompute — that is the open
 item this block raises.** Nothing about M1/M2 changed; Panini never fed them.
 
+## ⭐ HEADLINE METRIC — re-read live 2026-10-10 ~3:05 PM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 09-18 block below)
+
+Same instrument as 09-18 (the six-hourly precompute legs; never mixed with a hand-derivation). Weeks start Monday.
+
+| gate | bar | wk 09-14 | wk 09-21 | wk 09-28 | wk 10-05 (23 legs) | verdict |
+|---|---|---|---|---|---|---|
+| **M1** Top Shot HIGH/MED | ≥ 50 % | 50.7 (18/28 legs at bar) | 55.2 (28/28) | 56.7 (28/28) | **57.2 (23/23)** | 🟢 **MET: 79 of 79 legs since 09-21** |
+| **M2** All Day HIGH/MED | ≥ 30 % | 28.6 (9/28) | 27.9 (7/28) | 26.3 (0/28) | **27.3 (0/23)** | 🔴 **NOT MET, and further from it than on 09-18: 0 legs at bar in two weeks** |
+
+⛔ **The 09-18 block's hope that M2 was crossing the bar did not hold.** NFL season volume arrived and M2 still settled at 26–28 %. The binding constraint is no longer volume alone; re-cost a lever from All Day's actual LOW / ASK_ONLY population before pulling one.
+
+**That population, sized the same afternoon** (latest snapshot per edition, last 3 days, 4,605 editions): HIGH 130 · MEDIUM 1,516 · LOW 1,661 · STALE 607 · ASK_ONLY 483 · NO_DATA 204. Of the LOW: **1,307 have only 1–4 sales in 30 d** (a volume floor no code moves), 66 have none, and **269 have 7+ sales but fail the 0.35 dispersion gate**. Those 269 have a median FMV of about $1, where one-cent ticks are a large share of the price. So the only code-shaped lever is that dispersion arm, and loosening it for cheap editions would trade an honest label for a share point: a 5-cent miss on a 20-cent moment IS 25 %. That is a product decision, not a fix. STALE (median FMV $72.90) is the illiquid high end, and only sales move it.
+
+**Accuracy against realised sales, the other half of "accuracy is the gate"** (`fmv_sales_backtest`, R125; median absolute error, published vs a naive last-3 median):
+- Top Shot, since 10-05: 13.0 % vs 13.0 % overall; MEDIUM 13.0 vs 14.8; LOW 25.0 vs 24.4.
+- All Day: 21.1 % vs 25.0 %.
+- Candy (14 d): 26.8 % vs 31.1 %.
+
+On every collection measured, the published FMV now matches or beats the naive estimator.
+
+**The other three:**
+- **Pinnacle:** 31.5 % (flat for three weeks).
+- **Golazos:** 1.0 %.
+- **Candy MLB:** 21.4 %. ⚠ This is DOWN from ~60 % before 09-20, and it is NOT a defect. Same algorithm (1.7.0), but on 09-20 PT (154 Candy sales that day) about 55 editions went MEDIUM/HIGH → LOW while their sales counts held and their last sale got MORE recent. That is `escalateConfidence`'s dispersion arm: 7+ sales and price dispersion ≥ 0.35 gives LOW ("noisy despite volume"). Candy's LOW prices really are the worse ones (27.0 % error vs MEDIUM 19.4 %, 14 d, n 588 / 78), so the label tells the truth. ⛔ Do not "fix" the share by loosening the gate for Candy.
+
 ## ⭐ HEADLINE METRIC — re-read live 2026-09-18 as a **27-LEG SERIES**, and **THE 09-10 BLOCK'S CENTRAL CLAIM HAS REVERSED** (supersedes the 09-10 22:34 PT block below)
 
 🚨 **READ THE SERIES, NOT THE LEG — and this block exists because the leg I first wrote it from was
