@@ -1567,6 +1567,17 @@ a stop. The fix while unpushed is `git reset --soft origin/main && git reset`, t
 deliberately. (Same family as the `.gitignore` swallow: *a clean `git status` afterwards is consistent
 with both outcomes.*)
 
+### 4. A FAILED `git stash pop` does not stop a `;`-joined script, and `git add` stages the conflict MARKERS (2026-10-10)
+
+`git stash -u && git pull && git stash pop; …; git add docs/reference/known-issues.md && git commit … && git push`: the pop
+hit a conflict in the generated status line of known-issues.md, exited 1, and **the `;` ran everything after it**. `git add`
+on an unmerged (`UU`) file resolves it AS-IS, so `<<<<<<< Updated upstream` reached `main` in `912e02698` (fixed by
+regenerating the index in `c7342478b`, ~4 min later).
+
+➡ **Gate every step after a pop on its exit code** (`git stash pop || exit 1`), and before any `git add` of a shared file run
+`git diff --name-only --diff-filter=U` (must print nothing). A generated block that conflicts is resolved by **regenerating it**,
+never by picking a side: here both sides were stale (upstream had moved another item to partial).
+
 ## 🚨 `innerText` RETURNS CSS-TRANSFORMED TEXT — a case-sensitive DOM substring probe is a FALSE-NEGATIVE MACHINE (2026-09-07)
 
 **This matters more here than the bug count suggests: CLAUDE.md records that the scheduled `E2E DOM Smoke` badge is the ENTIRE client-side detection surface** (Sentry has dropped every event since 08-18, Vercel sees only server execution, no `window.onerror`). A probe method that silently answers "absent" is therefore the failure mode with the least backstop on the platform.
