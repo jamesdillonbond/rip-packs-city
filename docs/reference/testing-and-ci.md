@@ -3538,6 +3538,7 @@ The diffs were clean, tested and honest by construction. The defects lived in th
 The fix made the fixture column NOT NULL as live. With that, the previous body fails the pin with the byte-identical production error, which is the planted-defect proof.
 
 ⚠ **"Minimal fixtures (only the columns the function reads/writes)" must still include every constraint the function can VIOLATE on those columns:** NOT NULL, CHECK, UNIQUE. A constraint-free fixture turns an abort into a silent write.
+⚠ **Second instance, worse, 2026-10-10 (`refresh_atlas_pack_ev`):** the fixture lacked prod's `is_positive_ev NOT NULL`, `pack_listing_id NOT NULL` and the `pack_ev` CHECK. So the pin didn't merely miss the NULL flag on an ask-less pack, it **ASSERTED it as a documented property** ("the flag is NULL, not FALSE"). Each of the three was fatal to the whole hourly sweep, and they stayed latent only while the swept population (57 Atlas pools) happened to avoid them. Widening the population to ~820 dists (#65) hit all three on the first run. **Before pinning a value as a property, check the live column can HOLD it** (`information_schema.columns.is_nullable`, `pg_constraint`).
 
 ### The client failure-collapse ratchet counts the IDIOM, not the defect (2026-09-26)
 
