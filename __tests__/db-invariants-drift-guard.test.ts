@@ -15,6 +15,12 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-10-10 (#181). While mainnet24's node is parked dark, a chain-arrival floor probe is re-floored on mainnet27's live root.
+    fn: "run_chain_arrival_refloor",
+    test: "supabase/tests/run_chain_arrival_refloor.sql",
+    migration: "supabase/migrations/20261010231932_audit_20261010_chain_arrival_refloors_on_the_live_root_while_mainnet24_is_dark.sql",
+  },
+  {
     // Added 2026-10-09 (#173 follow-up). One-off: re-keys sales / moments / wmc rows to their table row's edition, only where the checkpoint verifies it.
     fn: "fix_173b_rekey_verified",
     test: "supabase/tests/fix_173b_rekey_verified.sql",
