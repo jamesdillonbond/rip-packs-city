@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { newRowInsertFailureTally, recordRowInsertFailure, rowInsertFailureExtra } from "@/lib/pipeline/row-insert-failures"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
@@ -706,6 +707,11 @@ export async function POST(req: NextRequest) {
       // would discard every co-batched NEW row (permanent — the block cursor
       // advances past them below regardless). Retry row-by-row on ANY error so
       // real dupes fail individually while new rows land.
+      //
+      // ⛔ A failed row used to vanish (`if (!se) rowsWritten++`, nothing else) while
+      // the cursor advanced and the run said ok:true. Only a 23505 is a duplicate;
+      // a transient failure holds the cursor below, a permanent one fails the run.
+      const insertFailures = newRowInsertFailureTally()
       for (let i = 0; i < salesRows.length; i += 100) {
         const batch = salesRows.slice(i, i + 100)
         const { error } = await (supabaseAdmin as any).from("sales").insert(batch)
@@ -716,6 +722,7 @@ export async function POST(req: NextRequest) {
           for (const row of batch) {
             const { error: se } = await (supabaseAdmin as any).from("sales").insert(row)
             if (!se) rowsWritten++
+            else recordRowInsertFailure(insertFailures, se)
           }
         } else {
           rowsWritten += batch.length
@@ -732,10 +739,21 @@ export async function POST(req: NextRequest) {
           for (const row of batch) {
             const { error: se } = await (supabaseAdmin as any).from("unmapped_sales").insert(row)
             if (!se) rowsSkipped++
+            else recordRowInsertFailure(insertFailures, se)
           }
         } else {
           rowsSkipped += batch.length
         }
+      }
+
+      Object.assign(extra, rowInsertFailureExtra(insertFailures))
+      // A transient insert failure is recoverable only if the cursor holds: throw,
+      // the run logs ok:false with the cursor unmoved, and the next tick re-reads.
+      if (insertFailures.transient > 0) {
+        throw new Error(
+          `${insertFailures.transient} row insert(s) failed transiently (first: ${insertFailures.firstError}) — ` +
+            `holding the cursor so the next tick re-reads them`,
+        )
       }
 
       // Cap the cursor to just before the first failed chunk (targetHeight when
@@ -754,6 +772,13 @@ export async function POST(req: NextRequest) {
       // catch marks the run ok:false and leaves `cursorAfter` at its real value.
       if (cursorWriteErr) throw new Error(`cursor advance failed: ${cursorWriteErr.message}`)
       cursorAfter = String(cursorTarget)
+      // A permanent (non-retryable) failure cannot be cured by holding the cursor
+      // (one poison row would stall the lane), so it fails the run, loudly.
+      if (insertFailures.permanent > 0) {
+        ok = false
+        errorMsg = `${insertFailures.permanent} row insert(s) failed permanently (first: ${insertFailures.firstError})`
+        rowsSkipped += insertFailures.permanent
+      }
 
       extra.blocks_scanned = cursorTarget - lastBlock
       if (firstFailedChunkStart !== null) {

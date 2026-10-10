@@ -124,6 +124,7 @@ function withDupeAwareInsert(
   table: string,
   isDupeRow: (row: Record<string, unknown>) => boolean,
   batchCode = "23505",
+  rowCode = "23505",
 ) {
   const fixture = spy.fixture as { from: (t: string) => Record<string, unknown> }
   const baseFrom = fixture.from.bind(fixture)
@@ -142,7 +143,7 @@ function withDupeAwareInsert(
           return Promise.resolve({ data: null, error: null })
         }
         if (isDupeRow(rows as Record<string, unknown>)) {
-          return Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } })
+          return Promise.resolve({ data: null, error: { code: rowCode, message: rowCode === "23505" ? "duplicate key" : "row failed" } })
         }
         return Promise.resolve({ data: null, error: null })
       }
@@ -583,6 +584,58 @@ describe("sales-indexer — resolution ladder", () => {
     const res = await POST(new NextRequest("https://t/api/sales-indexer", { method: "POST" }))
     expect(res.status).toBe(401)
     expect(state.afterCbs).toHaveLength(0)
+  })
+})
+
+describe("sales-indexer — only a 23505 is a duplicate (2026-10-09)", () => {
+  const fixtures = () => ({
+    event_cursor: { data: { last_processed_block: 1000 }, error: null },
+    topshot_moment_subeditions: { data: [], error: null },
+    wallet_moments_cache: {
+      data: [
+        { moment_id: "9101", edition_key: "3:45", serial_number: 21 },
+        { moment_id: "9102", edition_key: "3:45", serial_number: 22 },
+      ],
+      error: null,
+    },
+    editions: { data: [{ id: "uuid-345", external_id: "3:45" }], error: null },
+    sales: { data: null, error: null },
+  })
+  const drive = async (rowCode: string) => {
+    const tx1 = "a".repeat(64)
+    const tx2 = "b".repeat(64)
+    state.eventsByType[STOREFRONT_EVENT] = [
+      storefrontSale("9101", "5.00", tx1, DAPPER_MERCHANT),
+      storefrontSale("9102", "6.00", tx2, DAPPER_MERCHANT),
+    ]
+    const spy = withDupeAwareInsert(install(fixtures()), "sales", (row) => row.nft_id === "9101", "57014", rowCode)
+    const res = await POST(req())
+    expect(res.status).toBe(202)
+    await runDeferred()
+    return spy
+  }
+
+  it("a TRANSIENT row failure (statement timeout) is not 'duped': the cursor HOLDS and the run is ok:false", async () => {
+    const spy = await drive("57014")
+    const run = pipelineRun(spy)
+    expect(run?.ok).toBe(false)
+    expect(String(run?.error)).toContain("failed transiently")
+    expect(run?.cursor_after ?? null).toBeNull()
+    const cursorWrites = (spy.writes.event_cursor ?? []).filter((w) => w.method === "update")
+    expect(cursorWrites).toEqual([])
+  })
+
+  it("a PERMANENT row failure (CHECK violation) advances the cursor but reports ok:false with the code", async () => {
+    const spy = await drive("23514")
+    const run = pipelineRun(spy)
+    expect(run?.ok).toBe(false)
+    expect(String(run?.error)).toContain("23514")
+    expect(run?.rows_written).toBe(1)
+    const extra = run?.extra as Record<string, unknown>
+    expect(extra.insert_failed_permanent).toBe(1)
+    expect(extra.duped).toBe(0)
+    // positive control for the transient case's "no cursor write" assertion
+    expect((spy.writes.event_cursor ?? []).filter((w) => w.method === "update").length).toBeGreaterThan(0)
   })
 })
 

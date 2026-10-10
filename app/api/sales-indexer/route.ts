@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { newRowInsertFailureTally, recordRowInsertFailure, rowInsertFailureExtra } from "@/lib/pipeline/row-insert-failures"
 import * as Report from "@/lib/observability/report"
 import fcl from "@/lib/chains/flow/flow"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -927,16 +928,22 @@ export async function POST(req: NextRequest) {
     // every co-batched NEW sale — permanently, because the cursor advances past
     // those blocks below regardless. Row-by-row lets the real dupes fail alone
     // while genuinely new sales land.
+    //
+    // ⛔ ONLY A 23505 IS A DUPLICATE. Every failed row used to count as `duped`,
+    // so a timeout or pool failure dropped the sale for good while the run said
+    // ok:true. The tally keeps transient failures (the cursor holds below) and
+    // permanent ones (the run reports ok:false) apart from real duplicates.
+    const insertFailures = newRowInsertFailureTally()
     const insertIndividually = async (batch: unknown[]) => {
       for (const sale of batch) {
         try {
           const { error: singleErr } = await (supabaseAdmin as any)
             .from("sales")
             .insert(sale)
-          if (singleErr) duped++
-          else inserted++
-        } catch {
-          duped++
+          if (!singleErr) inserted++
+          else if (recordRowInsertFailure(insertFailures, singleErr) === "duplicate") duped++
+        } catch (e) {
+          recordRowInsertFailure(insertFailures, e)
         }
       }
     }
@@ -1112,6 +1119,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // A sale that failed on a transient error (timeout, connection, resources)
+    // is not lost if the cursor holds: throw, the outer catch logs ok:false with
+    // cursorAfter null, and the next tick re-reads the range (dupes 23505-skip).
+    if (insertFailures.transient > 0) {
+      throw new Error(
+        `${insertFailures.transient} sale insert(s) failed transiently (first: ${insertFailures.firstError}) — ` +
+          `holding the cursor so the next tick re-reads them`,
+      )
+    }
+
     // Step 7: Update cursor (capped if a chunk fetch failed).
     const { error: cursorAnchorErr2 } = await (supabaseAdmin as any)
       .from("event_cursor")
@@ -1124,13 +1141,18 @@ export async function POST(req: NextRequest) {
       startedAt: startedAtIso,
       rowsFound: matchingEvents.length,
       rowsWritten: inserted,
-      rowsSkipped: duped + unresolvedIds.length,
-      ok: true,
-      error: null,
+      rowsSkipped: duped + unresolvedIds.length + insertFailures.permanent,
+      // A permanent (non-retryable) insert failure cannot be fixed by holding the
+      // cursor, which would stall the lane on one poison row; it is reported.
+      ok: insertFailures.permanent === 0,
+      error: insertFailures.permanent > 0
+        ? `${insertFailures.permanent} sale insert(s) failed permanently (first: ${insertFailures.firstError})`
+        : null,
       cursorBefore: lastBlock,
       cursorAfter: cursorTarget,
       extra: {
         ...partialScanExtra,
+        ...rowInsertFailureExtra(insertFailures),
         sales_resolved: salesBatch.length,
         gql_resolved: gqlResolvedMap.size,
         serials_resolved: serialsResolved,
