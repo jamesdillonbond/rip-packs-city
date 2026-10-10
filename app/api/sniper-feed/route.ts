@@ -1355,7 +1355,14 @@ export async function GET(req: Request) {
         teamApplied: team !== "all" && (collection === "nba-top-shot" || collection === "nfl-all-day") ? team : null,
       },
       {
-        headers: { "Cache-Control": "public, max-age=0, s-maxage=90, stale-while-revalidate=60" },
+        // A degraded feed is evicted from the lambda cache above; it must not be
+        // held at the CDN either, or every visitor inherits this request's outage
+        // for s-maxage + stale-while-revalidate (2026-10-09).
+        headers: {
+          "Cache-Control": sniperFeedDegraded(sourcesFailed)
+            ? "no-store"
+            : "public, max-age=0, s-maxage=90, stale-while-revalidate=60",
+        },
       }
     );
   } catch (err: any) {

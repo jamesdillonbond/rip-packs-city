@@ -32,12 +32,15 @@ export async function GET(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabaseAdmin as any
   let detail: Record<string, any> | null = null
+  // A failed read is not "no such edition": its placeholder must not be cached for a day.
+  let readFailed = false
   try {
-    const { data } = await boundedRead(sb.rpc("get_edition_detail", { p_collection_id: coll.id, p_route_slug: slug }), "og/edition/get_edition_detail", OG_FETCH_TIMEOUT_MS)
+    const { data, error } = await boundedRead(sb.rpc("get_edition_detail", { p_collection_id: coll.id, p_route_slug: slug }), "og/edition/get_edition_detail", OG_FETCH_TIMEOUT_MS)
+    if (error) readFailed = true
     detail = Array.isArray(data) ? (data[0] ?? null) : (data ?? null)
-  } catch { /* fall through to default */ }
+  } catch { readFailed = true }
 
-  if (!detail) return renderEntityOg({ eyebrow: label.toUpperCase(), title: "Edition", images: [], accent })
+  if (!detail) return renderEntityOg({ eyebrow: label.toUpperCase(), title: "Edition", images: [], accent, readFailed })
 
   const fmv = detail.fmv && typeof detail.fmv === "object" ? Number(detail.fmv.fmv_usd) : null
   // No "Current FMV" figure on a closed market (UFC) — the carried-forward value

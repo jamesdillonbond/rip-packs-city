@@ -260,9 +260,11 @@ export async function GET(req: NextRequest) {
 
     const response = NextResponse.json(body)
 
+    // A panel that failed THIS request must not be served from the CDN for the
+    // next ~7 minutes (2026-10-09): degraded responses are not cached.
     response.headers.set(
       "Cache-Control",
-      "public, s-maxage=300, stale-while-revalidate=120"
+      degraded.length > 0 ? "no-store" : "public, s-maxage=300, stale-while-revalidate=120"
     )
 
     return response

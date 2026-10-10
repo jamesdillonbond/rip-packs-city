@@ -264,6 +264,7 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  res.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=60");
+  // A partial failure (some legs in meta.errors) is not cached at the CDN (2026-10-09).
+  res.headers.set("Cache-Control", errors.length > 0 ? "no-store" : "public, s-maxage=300, stale-while-revalidate=60");
   return res;
 }

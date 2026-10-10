@@ -36,16 +36,19 @@ export async function GET(req: NextRequest) {
   const sb = supabaseAdmin as any
   let detail: Record<string, any> | null = null
   let images: string[] = []
+  // A failed detail read is not "no such team": its placeholder must not be cached for a day.
+  let readFailed = false
   try {
     const [d, eds] = await Promise.all([
       boundedRead(sb.rpc("get_team_detail", { p_collection_id: coll.id, p_team_slug: slug }), "og/team/get_team_detail", OG_FETCH_TIMEOUT_MS),
       boundedRead(sb.rpc("get_team_top_editions", { p_collection_id: coll.id, p_team_slug: slug, p_limit: 4, p_offset: 0 }), "og/team/get_team_top_editions", OG_FETCH_TIMEOUT_MS),
     ])
+    if (d.error) readFailed = true
     detail = Array.isArray(d.data) ? (d.data[0] ?? null) : (d.data ?? null)
     images = thumbs(eds.data)
-  } catch { /* fall through */ }
+  } catch { readFailed = true }
 
-  if (!detail) return renderEntityOg({ eyebrow: label.toUpperCase(), title: "Team", images, accent })
+  if (!detail) return renderEntityOg({ eyebrow: label.toUpperCase(), title: "Team", images, accent, readFailed })
 
   const isFranchise = detail.is_franchise === true
   const edCount = detail.edition_count != null ? Number(detail.edition_count) : null

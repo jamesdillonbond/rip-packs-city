@@ -232,3 +232,38 @@ describe("the profile and trophy-case cards too — the fix is per PANEL, not pe
     expect(ccOf(c)).toBe(OG_CACHE_HEADERS["Cache-Control"])
   }, 30_000)
 })
+
+// 2026-10-09: the same rule for a failed DETAIL read. A timed-out
+// get_*_detail left `detail` null and rendered the generic "Player"/"Edition"
+// placeholder with the LONG cache, so a shared link unfurled blank for ~25 h.
+describe("a failed DETAIL read is degraded too — never a day-long generic card", () => {
+  function mockDetail(result: { data: unknown; error: unknown }) {
+    vi.doMock("@/lib/supabase", () => ({
+      supabaseAdmin: { rpc: async () => result },
+    }))
+  }
+
+  it("player: a timed-out detail read gets the SHORT cache", async () => {
+    mockDetail({ data: null, error: { code: "57014", message: "read exceeded 3000ms" } })
+    stubFetch([])
+    const { GET } = await import("@/app/api/og/player/route")
+    await GET(new NextRequest("https://www.rippackscity.com/api/og/player?collection=nba-top-shot&slug=lebron-james"))
+    expect(ccOf(capture.c!)).toBe(OG_DEGRADED_CACHE_HEADERS["Cache-Control"])
+  })
+
+  it("edition: a timed-out detail read gets the SHORT cache", async () => {
+    mockDetail({ data: null, error: { code: "57014", message: "read exceeded 3000ms" } })
+    stubFetch([])
+    const { GET } = await import("@/app/api/og/edition/route")
+    await GET(new NextRequest("https://www.rippackscity.com/api/og/edition?collection=nba-top-shot&slug=x"))
+    expect(ccOf(capture.c!)).toBe(OG_DEGRADED_CACHE_HEADERS["Cache-Control"])
+  })
+
+  it("NO-CHANGE CONTROL: a CLEAN 'no such edition' keeps the long cache", async () => {
+    mockDetail({ data: [], error: null })
+    stubFetch([])
+    const { GET } = await import("@/app/api/og/edition/route")
+    await GET(new NextRequest("https://www.rippackscity.com/api/og/edition?collection=nba-top-shot&slug=x"))
+    expect(ccOf(capture.c!)).toBe(OG_CACHE_HEADERS["Cache-Control"])
+  })
+})

@@ -17,7 +17,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { ogImageDataUri } from "@/lib/og/img-data"
 import { isMarketClosed } from "@/lib/market-closed"
 import { urlSlugForCollection } from "@/lib/moment-detail-format"
-import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { brandFonts, brandFamilies, OG_CACHE_HEADERS, ogCacheHeaders } from "@/lib/og/brand-fonts"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks"
 import { withOfficialArt } from "@/lib/og/official-mark-art"
@@ -107,21 +107,25 @@ export async function GET(
   const { id } = await params
 
   let detail: MomentDetail | null = null
+  // A failed read is not "no such moment": its default card must not be cached for a day.
+  let readFailed = false
   try {
     const { data, error } = await boundedRead(
       (supabaseAdmin as any).rpc("get_moment_detail", { p_id: id }),
       "og/moment/get_moment_detail",
       OG_FETCH_TIMEOUT_MS,
     )
+    if (error) readFailed = true
     if (!error && data && data.ok !== false) {
       detail = data as MomentDetail
     }
   } catch {
     // Fall through to default card below.
+    readFailed = true
   }
 
   if (!detail || !detail.edition) {
-    return new ImageResponse(<DefaultCard family={fam.display} />, { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: OG_CACHE_HEADERS })
+    return new ImageResponse(<DefaultCard family={fam.display} />, { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: ogCacheHeaders(readFailed) })
   }
 
   const e = detail.edition

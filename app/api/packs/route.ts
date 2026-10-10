@@ -283,7 +283,12 @@ export async function GET(req: NextRequest) {
     {
       // Global pack catalog (pack_table_rows by collection_slug) — not
       // user-specific, safe to share at the edge. Warms cold pack-page loads.
-      headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=240" },
+      // ...except when the Pinnacle EV read failed this request: rows carrying
+      // ev_unavailable must not be served from the CDN for ~6 minutes (2026-10-09).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      headers: { "Cache-Control": (rows as any[]).some((r) => r?.ev_unavailable === true)
+        ? "no-store"
+        : "public, s-maxage=120, stale-while-revalidate=240" },
     },
   )
 }

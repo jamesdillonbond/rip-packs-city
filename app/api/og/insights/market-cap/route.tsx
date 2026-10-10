@@ -9,7 +9,7 @@
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
-import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts"
 import { ogFetch } from "@/lib/og/og-fetch"
 import { collectionDisplayName, fmtCount, fmtUsdCompact } from "@/lib/insights/market-cap-board"
 
@@ -125,6 +125,6 @@ export async function GET(req: NextRequest) {
         </div>
       </div>
     ),
-    { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: OG_CACHE_HEADERS }
+    { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: ogCacheHeaders(!fetched) }
   )
 }

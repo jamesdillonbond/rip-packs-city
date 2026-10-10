@@ -48,16 +48,19 @@ export async function GET(req: NextRequest) {
   const sb = supabaseAdmin as any
   let detail: Record<string, any> | null = null
   let thumbs: Array<string | null> = []
+  // A failed detail read is not "no such player": its placeholder must not be cached for a day.
+  let readFailed = false
   try {
     const [d, eds] = await Promise.all([
       boundedRead(sb.rpc("get_player_detail", { p_collection_id: coll.id, p_player_slug: slug }), "og/player/get_player_detail", OG_FETCH_TIMEOUT_MS),
       boundedRead(sb.rpc("get_player_editions", { p_collection_id: coll.id, p_player_slug: slug, p_limit: ART_CANDIDATES, p_offset: 0 }), "og/player/get_player_editions", OG_FETCH_TIMEOUT_MS),
     ])
+    if (d.error) readFailed = true
     detail = Array.isArray(d.data) ? (d.data[0] ?? null) : (d.data ?? null)
     if (Array.isArray(eds.data)) thumbs = eds.data.map((r: Record<string, any> | null) => r?.thumbnail_url ?? null)
-  } catch { /* fall through */ }
+  } catch { readFailed = true }
 
-  if (!detail) return renderEntityOg({ eyebrow: label.toUpperCase(), title: "Player", images: [], accent })
+  if (!detail) return renderEntityOg({ eyebrow: label.toUpperCase(), title: "Player", images: [], accent, readFailed })
 
   const isCharacter = detail.is_character === true
   // The headshot first when there ever is one, then editions in FMV order.

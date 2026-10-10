@@ -113,7 +113,9 @@ afterEach(() => { vi.unstubAllGlobals(); delete process.env.ALLDAY_MARKETPLACE_G
 
 describe("GET /api/sniper-feed — a failed source is never rendered as a quiet floor", () => {
   it("healthy build: degraded false and sourcesFailed empty (no-change control)", async () => {
-    const body = await (await GET(get(ADQS))).json()
+    const healthy = await GET(get(ADQS))
+    expect(healthy.headers.get("Cache-Control")).toContain("s-maxage=90")
+    const body = await healthy.json()
     expect(body.degraded).toBe(false)
     expect(body.sourcesFailed).toEqual([])
     expect(body.deals).toEqual([])
@@ -141,6 +143,8 @@ describe("GET /api/sniper-feed — a failed source is never rendered as a quiet 
     gqlStatus = 403
     const res = await GET(get(ADQS))
     expect(res.status).toBe(200) // still a usable envelope
+    // 2026-10-09: a degraded feed is not held at the CDN (it already leaves the lambda cache)
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
     const body = await res.json()
     expect(body.sourcesFailed).toContain("allday-marketplace")
     expect(body.degraded).toBe(true)

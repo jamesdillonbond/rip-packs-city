@@ -291,7 +291,10 @@ describe("GET /api/market-analytics — degraded panels are named, not silently 
 
   it("names a failed panel in `degraded` while keeping its array empty", async () => {
     install({ ...base, "rpc:get_top_sales": { data: null, error: { message: "boom" } } })
-    const body = await (await GET(req(url))).json()
+    const res = await GET(req(url))
+    // 2026-10-09: a failed panel is not cached at the CDN for ~7 minutes
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+    const body = await res.json()
     expect(body.degraded).toContain("topSales")
     // Shape unchanged — an existing consumer still gets an array.
     expect(body.topSales).toEqual([])
@@ -302,7 +305,9 @@ describe("GET /api/market-analytics — degraded panels are named, not silently 
     // `degraded.length === 0` is a positive statement that every panel we
     // attempted was read — not merely the absence of a key.
     install(base)
-    const body = await (await GET(req(url))).json()
+    const res = await GET(req(url))
+    expect(res.headers.get("Cache-Control")).toContain("s-maxage=300")
+    const body = await res.json()
     expect(body.degraded).toEqual([])
     expect(Array.isArray(body.topSales)).toBe(true)
   })

@@ -29,6 +29,13 @@ export interface EntityOgOpts {
    * `ogImageDataUriFirst`), so by the time it gets here the failure is invisible.
    */
   artFailed?: boolean
+  /**
+   * Set when the card's DETAIL read failed (error, timeout or throw), so the
+   * generic "Edition" / "Player" placeholder is cached briefly instead of for an
+   * hour plus a day of stale reuse (2026-10-09). A clean "no such entity" stays
+   * on the long cache.
+   */
+  readFailed?: boolean
 }
 
 export async function renderEntityOg(opts: EntityOgOpts): Promise<ImageResponse> {
@@ -49,7 +56,7 @@ export async function renderEntityOg(opts: EntityOgOpts): Promise<ImageResponse>
   // ⚠ "ASKED AND GOT NOTHING", not "has no art". A card with no art to draw is
   // in a stable, correct state and keeps the long cache; a card whose every
   // upstream failed is a blank that must not outlive the outage that caused it.
-  const degraded = opts.artFailed === true || (wanted.length > 0 && imgs.length === 0)
+  const degraded = opts.artFailed === true || opts.readFailed === true || (wanted.length > 0 && imgs.length === 0)
 
   const MediaPane = (
     <div

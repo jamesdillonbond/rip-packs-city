@@ -27,7 +27,7 @@
 
 import { ImageResponse } from "next/og"
 import { supabaseAdmin } from "@/lib/supabase"
-import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 
@@ -189,6 +189,6 @@ export async function GET() {
         </div>
       </div>
     ),
-    { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: OG_CACHE_HEADERS }
+    { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: ogCacheHeaders(!fetched) }
   )
 }

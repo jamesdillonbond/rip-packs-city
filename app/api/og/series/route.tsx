@@ -36,16 +36,19 @@ export async function GET(req: NextRequest) {
   const sb = supabaseAdmin as any
   let detail: Record<string, any> | null = null
   let images: string[] = []
+  // A failed detail read is not "no such series": its placeholder must not be cached for a day.
+  let readFailed = false
   try {
     const [d, eds] = await Promise.all([
       boundedRead(sb.rpc("get_series_detail", { p_collection_id: coll.id, p_series_slug: slug }), "og/series/get_series_detail", OG_FETCH_TIMEOUT_MS),
       boundedRead(sb.rpc("get_series_editions", { p_collection_id: coll.id, p_series_slug: slug, p_limit: 4, p_offset: 0 }), "og/series/get_series_editions", OG_FETCH_TIMEOUT_MS),
     ])
+    if (d.error) readFailed = true
     detail = Array.isArray(d.data) ? (d.data[0] ?? null) : (d.data ?? null)
     images = thumbs(eds.data)
-  } catch { /* fall through */ }
+  } catch { readFailed = true }
 
-  if (!detail) return renderEntityOg({ eyebrow: label.toUpperCase(), title: "Series", images, accent })
+  if (!detail) return renderEntityOg({ eyebrow: label.toUpperCase(), title: "Series", images, accent, readFailed })
 
   const edCount = detail.edition_count != null ? Number(detail.edition_count) : null
   const fmvTotal = detail.fmv_total_usd != null ? Number(detail.fmv_total_usd) : null
