@@ -74,6 +74,7 @@ export type BoardCacheKey =
   | "candy-mlb"
   | "panini-squeeze"
   | "panini-boards"
+  | "pack-drops"
 
 /** The hot boards the cron proactively warms. `label` feeds the cron's per-board
  *  telemetry; `key` is the snapshot row + the value each page passes to the cache. */
@@ -88,6 +89,9 @@ export const WARM_BOARDS: { key: BoardCacheKey; label: string; warmEveryMs?: num
   // Panini's ~4-hourly walk, and at the 5-minute cadence that is ~290 GB/day of
   // buffer traffic for no fresher answer. See lib/insights/panini-more-boards.ts.
   { key: "panini-boards", label: "Panini boards (deals, packs, serials, players)", warmEveryMs: 60 * 60 * 1000 },
+  // 2026-10-10 (#33): every tick, not hourly. Drop sale-state moves fast during a
+  // live drop, and one warm is ~6 drops × 3 Vaultopolis GETs plus one pricing RPC each.
+  { key: "pack-drops", label: "Pack drops" },
 ]
 
 /**

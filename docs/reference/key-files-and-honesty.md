@@ -462,7 +462,7 @@ served under a 200**, FIXED as register #28). The rule — a paged read that `br
 partial list no caller can distinguish from a complete one, the tell is the control-flow keyword rather
 than any copy, and the fix is to throw or carry `complete:false` — stays in CLAUDE.md.
 
-⚠ The status of the ISR item itself is register **#33** (open, Trevor's call), not this file.
+⚠ The status of the ISR item itself is register **#33**, not this file. Resolved 2026-10-10: `/insights/pack-drops` reads through the board-cache ladder (`readBoardOrLive`), so a failed regeneration serves the last complete snapshot. ⭐ **The remedy for this class on any board is that ladder, not a bigger budget.** Register the board in `WARM_BOARDS` with a builder that returns `ok:false` on an incomplete read.
 
 ## ⭐ 2026-09-03/04 — THE NINTH SHAPE: a SWEEP's `ok` means it COMPLETED, not that its LANES worked
 

@@ -243,10 +243,20 @@ describe("the WIRING, which a component test cannot see", () => {
   })
 
 
-  it("both pages still destructure `ok` from the fetch, so the derivation has a source", () => {
+  it("both pages still derive `ok` from the read, so the derivation has a source", () => {
     // Guards the other half: `{!ok}` is only honest while `ok` comes from the read.
+    // 2026-10-10 (#33, RE-PINNED: the premise changed). pack-drops now reads through
+    // the board-cache ladder, so its `ok` comes from readBoardOrLive's `source`: only
+    // "live-degraded" (no live read and no snapshot) is a failed seed. A served
+    // last-good snapshot is a complete board under its own fetchedAt.
+    const packDrops = read("app", "insights", "pack-drops", "page.tsx")
+    expect(packDrops, "pack-drops must read `source` from readBoardOrLive").toMatch(
+      /const \{[\s\S]*?\bsource\b[\s\S]*?\} = await readBoardOrLive/,
+    )
+    expect(packDrops, "pack-drops' ok must be derived from that source").toMatch(
+      /const ok = source !== "live-degraded"/,
+    )
     for (const page of [
-      ["app", "insights", "pack-drops", "page.tsx"],
       ["app", "insights", "new-collectors", "page.tsx"],
     ]) {
       // ⚠ No `s` flag — the tsconfig target rejects it. `[\s\S]` is the portable

@@ -43,6 +43,11 @@ vi.mock("@/lib/insights/panini-more-boards", () => ({
   fetchPaniniMoreBoards: vi.fn(async () => ({ payload: { deals: [] }, ok: true, rowCount: 0 })),
 }))
 
+// 2026-10-10 (#33): the seventh board, pack-drops (every tick).
+vi.mock("@/lib/insights/pack-drops-default", () => ({
+  fetchPackDropsDefault: vi.fn(async () => ({ payload: { drops: [], fetchedAt: "2026-10-10T00:00:00Z" }, ok: true, rowCount: 0 })),
+}))
+
 import { POST, GET } from "@/app/api/cron/refresh-insights-cache/route"
 
 const req = (auth?: string) =>
@@ -80,15 +85,16 @@ describe("POST /api/cron/refresh-insights-cache", () => {
   it("warms the ok boards, skips the failing one, and logs a partial-but-ok run", async () => {
     const res = await POST(req("Bearer test-token"))
     const body = await res.json()
-    // deals + rookies + candy-mlb + panini-squeeze + panini-boards are ok (written); first-mint ok:false.
-    expect(body.warmed).toBe(5)
-    expect(body.total).toBe(6)
+    // deals + rookies + candy-mlb + panini-squeeze + panini-boards + pack-drops are ok (written); first-mint ok:false.
+    expect(body.warmed).toBe(6)
+    expect(body.total).toBe(7)
     // A partial warm is still ok=true (>=1 board warmed) so a single saturated
     // board doesn't read as a red pipeline; the failure is recorded in p_error/extra.
     expect(body.ok).toBe(true)
     expect(rec.upserts.map((u) => u.board_key).sort()).toEqual([
       "candy-mlb",
       "deals",
+      "pack-drops",
       "panini-boards",
       "panini-squeeze",
       "rookies",
@@ -96,10 +102,10 @@ describe("POST /api/cron/refresh-insights-cache", () => {
     expect(rec.rpcCalls).toHaveLength(1)
     expect(rec.rpcCalls[0].name).toBe("log_pipeline_run")
     expect(rec.rpcCalls[0].args.p_pipeline).toBe("refresh-insights-cache")
-    expect(rec.rpcCalls[0].args.p_rows_written).toBe(5)
+    expect(rec.rpcCalls[0].args.p_rows_written).toBe(6)
     expect(rec.rpcCalls[0].args.p_ok).toBe(true)
     expect(rec.rpcCalls[0].args.p_error).toContain("first-mint")
-    expect(rec.rpcCalls[0].args.p_extra.warmed).toBe(5)
+    expect(rec.rpcCalls[0].args.p_extra.warmed).toBe(6)
   })
 
   it("GET works the same as POST (both auth-gated)", async () => {

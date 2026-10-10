@@ -41,6 +41,7 @@ vi.mock("@/lib/insights/boards", () => ({ fetchDealsDefault: ok, fetchRookiesDef
 vi.mock("@/lib/insights/candy-board", () => ({ fetchCandyMlbDefault: ok }))
 vi.mock("@/lib/insights/panini-board", () => ({ fetchPaniniSqueezeDefault: ok }))
 vi.mock("@/lib/insights/panini-more-boards", () => ({ fetchPaniniMoreBoards: () => paniniBoards() }))
+vi.mock("@/lib/insights/pack-drops-default", () => ({ fetchPackDropsDefault: ok }))
 
 import { POST } from "@/app/api/cron/refresh-insights-cache/route"
 import { freshMsFor, BOARD_CACHE_FRESH_MS, WARM_BOARDS } from "@/lib/insights/board-cache"
@@ -63,7 +64,8 @@ describe("the hourly panini-boards warm", () => {
     expect(upserts.map((u) => u.board_key)).not.toContain("panini-boards")
     expect(rpcCalls[0].args.p_extra.skipped_not_due).toEqual(["panini-boards"])
     // The other boards still warm every tick.
-    expect(body.warmed).toBe(5)
+    // Derived from the registry, not a literal, so a new every-tick board is not a re-pin (2026-10-10).
+    expect(body.warmed).toBe(WARM_BOARDS.filter((b) => !b.warmEveryMs).length)
   })
 
   it("is WARMED once the interval has passed", async () => {

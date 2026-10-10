@@ -12,8 +12,9 @@
 import PackDropsBoardClient from "./PackDropsBoardClient"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
-import { fetchBoardForPage } from "@/lib/insights/board-page-fetch"
-import { fetchScoredDrops, type ScoredDrop } from "@/lib/pack-drops-board"
+import { readBoardOrLive } from "@/lib/insights/board-cache"
+import { fetchPackDropsDefault } from "@/lib/insights/pack-drops-default"
+import type { ScoredDrop } from "@/lib/pack-drops-board"
 
 // Vaultopolis composition/odds are fixed at publication; 15-min ISR matches the
 // route's edge cache.
@@ -21,11 +22,14 @@ export const revalidate = 900
 
 
 export default async function PackDropsPage() {
-  const { data: drops, fetchedAt, ok } = await fetchBoardForPage<ScoredDrop[]>(
-    "Pack drops",
-    [],
-    (db) => fetchScoredDrops(db),
-  )
+  // Fresh snapshot → live → last-good snapshot (#33, 2026-10-10). A timed-out
+  // composition read used to fail the whole board for the 15-minute ISR window;
+  // now it serves the last COMPLETE board under that board's own fetchedAt. Only
+  // "live-degraded" (no live read AND no snapshot at all) is a failed board.
+  const { payload, source } = await readBoardOrLive("pack-drops", () => fetchPackDropsDefault())
+  const ok = source !== "live-degraded"
+  const drops: ScoredDrop[] = ok ? ((payload.drops as ScoredDrop[] | undefined) ?? []) : []
+  const fetchedAt = ok ? ((payload.fetchedAt as string | null | undefined) ?? null) : null
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Pack drops", ok)])} />
