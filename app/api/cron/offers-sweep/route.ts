@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
+import { fetchTopShotEditionAliases, canonicalTopShotExternalId, type TopShotEditionAliasMap } from "@/lib/topshot/edition-aliases"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { apiErrorResponse } from "@/lib/api-error"
 import { checkUpstreamBreaker, UPSTREAM_OUTAGE_SKIP } from "@/lib/pipeline/upstream-breaker"
@@ -313,7 +314,24 @@ export async function POST(req: NextRequest) {
   }
 
   const setMap = await fetchSetOnchainMap()
-  const subMap = await fetchSubeditionMap()
+  let subMap = await fetchSubeditionMap()
+  // #175 (2026-10-10): Top Shot's API names some printings by an ALIAS of the
+  // chain's key — the Diced parallel is (play, parallelID 8) on set 149 in GQL
+  // and `152:<play>` on chain — so a key the maps resolve to may itself be an
+  // alias. Resolve every key through the one alias table (lib/topshot/
+  // edition-aliases.ts) before it becomes a row. A failed alias read empties the
+  // subedition map for this tick: every parallel is SKIPPED (counted in
+  // skippedNoKey), never written to a key that may be an alias — the same
+  // "unmapped is skipped, never blended" posture the map already has.
+  let aliases: TopShotEditionAliasMap = new Map()
+  let aliasReadError: string | null = null
+  try {
+    aliases = await fetchTopShotEditionAliases()
+  } catch (e) {
+    aliasReadError = e instanceof Error ? e.message : String(e)
+    console.log("[offers-sweep] alias read error — parallels skipped this tick:", aliasReadError)
+    subMap = new Map()
+  }
 
   // key -> { offer, ask, setUuid, playUuid } across the tick. Each printing keys
   // to its OWN row (Standard -> base pair, named parallels -> ::subID) since
@@ -341,8 +359,9 @@ export async function POST(req: NextRequest) {
       pages++
 
       for (const e of editions) {
-        const key = editionKey(e, setMap, subMap)
-        if (!key) { skippedNoKey++; continue }
+        const rawKey = editionKey(e, setMap, subMap)
+        if (!rawKey) { skippedNoKey++; continue }
+        const key = canonicalTopShotExternalId(rawKey, aliases)
         const offer = typeof e.highestOffer === "number" && e.highestOffer > 0 ? e.highestOffer : null
         const ask = typeof e.lowAsk === "number" && e.lowAsk > 0 ? e.lowAsk : null
         // GQL UUIDs (not the integer flowIds) — set.id / play.id.
@@ -443,6 +462,10 @@ export async function POST(req: NextRequest) {
         wrapped,
         upsert_errors: upsertErrors,
         offers_raised_from_chain: offersRaised,
+        // #175: a failed alias read is NOT ok=false (the Standard rows still
+        // landed) but it is a parallels-skipped tick, and it is named here so the
+        // watch can see it rather than reading a quiet skippedNoKey climb.
+        alias_read_error: aliasReadError,
         duration_ms: Date.now() - startTime,
       },
     })

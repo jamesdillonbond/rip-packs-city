@@ -29,6 +29,7 @@ import {
 } from "@/lib/entity/edition-market-fetchers"
 import { fetchPackProvenance, fetchOwnerUsernames, type PackProvenanceRow } from "@/lib/edition/fetchers"
 import { lookupTopShotFossilRedirect } from "@/lib/edition/fossil-redirect"
+import { lookupTopShotEditionAliasRedirect } from "@/lib/edition/alias-redirect"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -428,6 +429,13 @@ export async function generateMetadata(
     if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
     return NOT_FOUND_METADATA
   }
+  if (collection === "nba-top-shot") {
+    // #175 (2026-10-10): an ALIAS key (the API's `149:<play>::8` for the chain's
+    // `152:<play>`) 308s to the canonical page that holds the sales and market.
+    // A failed lookup renders the alias as before, never a guessed redirect.
+    const canonical = await lookupTopShotEditionAliasRedirect(slug)
+    if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
+  }
   // ⚠ BOUNDED (deep-audit R19). Measured over 7 days to 2026-08-23:
   // "edition detail unavailable: rpc get_edition_detail timed out after 45000ms"
   // threw 15,388 times across 2,963 DISTINCT USERS, and a large share of the
@@ -467,6 +475,11 @@ export default async function EditionPage(
     const canonical = await lookupTopShotFossilRedirect(slug)
     if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
     notFound()
+  }
+  if (collection === "nba-top-shot") {
+    // #175: alias key -> canonical page (see generateMetadata above).
+    const canonical = await lookupTopShotEditionAliasRedirect(slug)
+    if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
   }
 
   // ⚠ BOUNDED (R19). Same read, same timeout. `!detail` means the RPC answered

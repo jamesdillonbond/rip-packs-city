@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { parseOfferCompletedFill, buildOfferFillSales, insertOfferFillSales, type OfferFillEvent } from "@/lib/chains/flow/topshot-offer-fill"
+import { fetchTopShotEditionAliases, canonicalTopShotExternalId } from "@/lib/topshot/edition-aliases"
 
 // ── On-chain Top Shot offers indexer ─────────────────────────────────────────
 //
@@ -211,6 +212,7 @@ export async function POST(req: NextRequest) {
   let offersFilled = 0
   let offersCancelled = 0
   let unresolved = 0
+  let aliased = 0 // #175: offers whose API key resolved through topshot_edition_aliases
   let salesWritten = 0
   let salesDuped = 0
   let salesUnresolved = 0
@@ -295,6 +297,18 @@ export async function POST(req: NextRequest) {
     // 2. resolve edition_id (uuid) for edition/subedition (setId:playId) and
     //    moment for serial (nftId). Batch the lookups.
     const avail = Array.from(availById.values())
+    // 2a. (#175, 2026-10-10) Top Shot's offer contract names some printings by an
+    //     API key that is an ALIAS of the chain's key (Diced: (149, play, 8) is
+    //     `152:<play>`). Resolve through the one alias table BEFORE the editions
+    //     lookup, or the offer lands on a phantom edition with its own market.
+    //     A failed alias read THROWS like a failed editions read: the cursor
+    //     stays put and the run logs ok=false, never "keyed to the alias".
+    const aliases = await fetchTopShotEditionAliases()
+    for (const o of avail) {
+      if (!o.externalId) continue
+      const canonical = canonicalTopShotExternalId(o.externalId, aliases)
+      if (canonical !== o.externalId) { o.externalId = canonical; aliased++ }
+    }
     // Include the base pair alongside every "::" subedition key so the row
     // build can fall back when the :: edition isn't cataloged.
     const extKeys = Array.from(new Set(avail.filter((o) => o.externalId).flatMap((o) => {
@@ -478,6 +492,7 @@ export async function POST(req: NextRequest) {
     offers_filled: offersFilled,
     offers_cancelled: offersCancelled,
     unresolved,
+    aliased_to_canonical: aliased,
     fills_seen: fillsSeen,
     sales_written: salesWritten,
     sales_duped: salesDuped,

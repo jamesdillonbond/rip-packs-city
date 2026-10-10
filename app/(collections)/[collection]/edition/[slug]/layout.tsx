@@ -21,6 +21,7 @@ import { notFound, permanentRedirect } from "next/navigation"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { entityResolves, decodeSlugOrNull } from "@/lib/entity-detail-gate"
 import { lookupTopShotFossilRedirect } from "@/lib/edition/fossil-redirect"
+import { lookupTopShotEditionAliasRedirect } from "@/lib/edition/alias-redirect"
 
 interface LayoutProps {
   children: React.ReactNode
@@ -54,6 +55,17 @@ export default async function EditionSegmentLayout({ children, params }: LayoutP
     const canonical = await lookupTopShotFossilRedirect(slug)
     if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
     notFound()
+  }
+
+  // #175 (2026-10-10): a Top Shot ALIAS key — the API's `149:<play>::8` for
+  // the chain's `152:<play>` — 308s to the canonical page that holds the sales,
+  // owners and market (topshot_edition_aliases, 25 rows). It happens HERE for
+  // the same reason the fossil 308 does: a redirect thrown after the shell
+  // flushed is a 200 with a client hop. A miss, an error or a timeout renders
+  // the alias page as before — never a guessed redirect, never a 404.
+  if (collection === "nba-top-shot") {
+    const canonical = await lookupTopShotEditionAliasRedirect(slug)
+    if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
   }
 
   if (!(await entityResolves("edition", coll.id, slug))) notFound()
