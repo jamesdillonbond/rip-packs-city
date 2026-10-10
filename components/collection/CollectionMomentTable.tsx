@@ -331,7 +331,7 @@ export default function CollectionMomentTable(props: {
                     ) : row.editionLowAsk != null ? (
                       <span className="text-xs text-[color:var(--rpc-text-secondary)]" title="The edition's lowest live listing">Floor ${row.editionLowAsk.toFixed(2)}</span>
                     ) : row.recentLow30d != null ? (
-                      <span className="text-xs text-[color:var(--rpc-text-muted)]" title="Lowest sale in the FMV window — not a listing">30d low ${row.recentLow30d.toFixed(2)}</span>
+                      <span className="text-xs text-[color:var(--rpc-text-muted)]" title="Lowest sale in the FMV window (30 days, widened to 90 for thin editions; older for a stale one) — not a listing">Recent low ${row.recentLow30d.toFixed(2)}</span>
                     ) : null}
                     {cb ? (function() {
                       const label = cb.costBasisLabel
@@ -733,9 +733,9 @@ export default function CollectionMomentTable(props: {
                             <span className="ml-1 text-[10px] text-[color:var(--rpc-text-muted)]">floor</span>
                           </span>
                         ) : row.recentLow30d != null ? (
-                          <span className="text-[color:var(--rpc-text-muted)]" title="Lowest sale in the FMV window — not a listing">
+                          <span className="text-[color:var(--rpc-text-muted)]" title="Lowest sale in the FMV window (30 days, widened to 90 for thin editions; older for a stale one) — not a listing">
                             ${row.recentLow30d.toFixed(2)}
-                            <span className="ml-1 text-[10px] text-[color:var(--rpc-text-muted)]">30d low</span>
+                            <span className="ml-1 text-[10px] text-[color:var(--rpc-text-muted)]">recent low</span>
                           </span>
                         ) : (
                           <span className="text-[color:var(--rpc-text-muted)]">—</span>
