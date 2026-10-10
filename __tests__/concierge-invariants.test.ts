@@ -111,8 +111,8 @@ describe("(c) unified get_fmv reads editions + fmv (current/snapshots)", () => {
 
   it("editionKey path reads editions (external_id) then fmv_snapshots", async () => {
     const { client, calls } = makeRecorder({
-      "editions:single": {
-        data: { id: "e9", external_id: "73:2785", player_name: "Dame", set_name: "Base", tier: "RARE" },
+      editions: {
+        data: [{ id: "e9", external_id: "73:2785", player_name: "Dame", set_name: "Base", tier: "RARE" }],
         error: null,
       },
       "fmv_snapshots:single": {
@@ -125,6 +125,7 @@ describe("(c) unified get_fmv reads editions + fmv (current/snapshots)", () => {
       editionKey: "73:2785",
     })
     expect(has(calls, "editions", "eq", (a) => a[0] === "external_id" && a[1] === "73:2785")).toBe(true)
+    expect(has(calls, "editions", "eq", (a) => a[0] === "collection_id" && a[1] === "uuid-ts")).toBe(true)
     expect(has(calls, "fmv_snapshots", "eq", (a) => a[0] === "edition_id")).toBe(true)
     expect(res.status).toBe("ok")
     expect((res as any).mode).toBe("single")

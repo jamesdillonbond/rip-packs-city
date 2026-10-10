@@ -20,6 +20,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
+import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
 
 const ALERT_TYPES = ["price_below", "fmv_below", "fmv_above", "discount_above"] as const;
 type AlertType = (typeof ALERT_TYPES)[number];
@@ -30,6 +31,7 @@ const CHANNELS = ["email", "telegram"] as const;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TS_COLLECTION = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+const KNOWN_COLLECTION_UUIDS = new Set(Object.values(COLLECTION_UUID_BY_SLUG).map((u) => u.toLowerCase()));
 
 // ── Live market data for the preview ──────────────────────────────────────────
 // FMV legs (fmv_below/fmv_above) read the same latest-per-edition fmv_snapshots
@@ -198,7 +200,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "threshold must be a positive number" }, { status: 400 });
   }
   const ch = CHANNELS.includes(channel) ? channel : "email";
-  const collId = typeof collection_id === "string" && UUID_RE.test(collection_id) ? collection_id : TS_COLLECTION;
+  // An ABSENT collection_id keeps the historical Top Shot default. A PRESENT one
+  // that is not a known collection is refused: substituting Top Shot put the
+  // alert on a different collection's edition that shares the key (2026-10-09).
+  let collId = TS_COLLECTION;
+  if (collection_id != null) {
+    if (typeof collection_id !== "string" || !UUID_RE.test(collection_id) || !KNOWN_COLLECTION_UUIDS.has(collection_id.toLowerCase())) {
+      return NextResponse.json({ error: "collection_id is not a known collection" }, { status: 400 });
+    }
+    collId = collection_id.toLowerCase();
+  }
 
   // Email channel needs a delivery target: an explicit address, else the
   // session email. The dispatcher also accepts a linked verified email channel.

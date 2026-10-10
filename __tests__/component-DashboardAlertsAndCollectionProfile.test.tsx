@@ -54,7 +54,7 @@ describe("DashboardAlertsClient", () => {
   const ALERT = (over: Record<string, unknown> = {}) => ({
     id: 1, owner_key: "0xowner", edition_key: "48:1652",
     player_name: "Damian Lillard", set_name: "Archive Set",
-    alert_type: "below_price" as const, threshold: 5, channel: "email" as const,
+    alert_type: "price_below" as const, threshold: 5, channel: "email" as const,
     notification_email: "t@example.test", active: true, last_triggered_at: null,
     created_at: new Date().toISOString(),
     fmv: 20, low_ask: 8, current_discount_pct: 60, currently_triggered: false, ...over,
@@ -162,20 +162,28 @@ describe("DashboardAlertsClient", () => {
   })
 
   // ── Row rendering: the two alert TYPES read completely differently ─────────
-  // ⚠ `below_price` and `below_fmv_pct` are the same column showing different units. A
+  // ⚠ `price_below` and `discount_above` are the same column showing different units. A
   // discount alert rendered as a dollar figure (or vice versa) is a wrong number wearing a
   // right one's clothes — the collector reads "$20" and thinks it fires at twenty dollars.
   it("describes a price alert in dollars", async () => {
-    mount({ list: () => json(200, [ALERT({ alert_type: "below_price", threshold: 1500 })]) })
+    mount({ list: () => json(200, [ALERT({ alert_type: "price_below", threshold: 1500 })]) })
     await waitFor(() => expect(document.body.textContent).toMatch(/Lowest ask ≤/))
     // fmtUsd rounds and thousands-separates at >= 1000.
     expect(document.body.textContent).toMatch(/\$1,500/)
   })
 
   it("describes a discount alert as a percentage", async () => {
-    mount({ list: () => json(200, [ALERT({ alert_type: "below_fmv_pct", threshold: 25, current_discount_pct: 12 })]) })
+    mount({ list: () => json(200, [ALERT({ alert_type: "discount_above", threshold: 25, current_discount_pct: 12 })]) })
     await waitFor(() => expect(document.body.textContent).toMatch(/Discount vs FMV ≥ 25%/))
     expect(document.body.textContent).toMatch(/12%/)
+  })
+
+  // 2026-10-09: an FMV alert (created on /alerts) is a DOLLAR threshold — it
+  // rendered as "fmv_below @ 40" and "40%" before this page learned the vocabulary.
+  it("describes an FMV alert in dollars, never as a percentage", async () => {
+    mount({ list: () => json(200, [ALERT({ alert_type: "fmv_below" as never, threshold: 40, fmv: 52 })]) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/FMV ≤ \$40/))
+    expect(document.body.textContent).not.toMatch(/40%|fmv_below @/)
   })
 
   // ⚠ An em-dash, never $0. "Current: $0.00" on a price alert says the moment is listed for
@@ -433,8 +441,11 @@ describe("DashboardAlertsClient", () => {
     )
     const post = f.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")!
     expect(JSON.parse(String((post[1] as RequestInit).body))).toMatchObject({
-      edition_key: "48:1652", alert_type: "below_price", threshold: 5, notification_email: "t@example.test",
+      edition_key: "48:1652", alert_type: "price_below", threshold: 5, notification_email: "t@example.test",
     })
+    // INVERTED 2026-10-09 — this asserted alert_type "below_price", which
+    // /api/alerts rejects with a 400: the pinned body was the failing request.
+    // (alerts-post-vocabulary-matches-the-route.test.ts holds the vocabulary.)
   })
 
   // ⚠ A 402 is a PAYWALL, not an error. Rendering it as "HTTP 402" tells a collector
@@ -458,7 +469,7 @@ describe("DashboardAlertsClient", () => {
   })
 
   // ⚠ The channel decides WHERE the alert is delivered, and the email field only exists for
-  // the email/both channels. Picking telegram must send `notification_email: null` rather
+  // the email channel ("both" was removed 2026-10-09 — the dispatcher never delivered it). Picking telegram must send `notification_email: null` rather
   // than carrying a stale address — the alert would otherwise mail somebody who asked for
   // Telegram.
   it("sends no notification email when the channel is telegram", async () => {
@@ -496,7 +507,8 @@ describe("DashboardAlertsClient", () => {
       )
       const post = f.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")!
       expect(JSON.parse(String((post[1] as RequestInit).body))).toMatchObject({
-        alert_type: "below_fmv_pct", threshold: 25,
+        // INVERTED 2026-10-09 (was "below_fmv_pct", a 400 at /api/alerts).
+        alert_type: "discount_above", threshold: 25,
       })
     }
   })

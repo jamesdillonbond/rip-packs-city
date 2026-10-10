@@ -22,10 +22,13 @@ export const revalidate = 300
 const ALLOWED_COLLECTIONS = new Set(["topshot", "allday", "golazos", "pinnacle", "ufc", "all"])
 const DAY_MS = 24 * 60 * 60 * 1000
 
-function parseCollection(raw: string | null): string {
-  if (!raw) return "all"
+// An ABSENT collection means all collections. A PRESENT unknown one returns
+// null and is refused: answering "?collection=candy" with every collection's
+// wallets is substitution, the honesty face where nothing fails (2026-10-09).
+function parseCollection(raw: string | null): string | null {
+  if (raw == null || raw.trim() === "") return "all"
   const lower = raw.trim().toLowerCase()
-  return ALLOWED_COLLECTIONS.has(lower) ? lower : "all"
+  return ALLOWED_COLLECTIONS.has(lower) ? lower : null
 }
 
 function parseInt1(raw: string | null, def: number, min: number, max: number): number {
@@ -39,6 +42,9 @@ export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url)
     const collection = parseCollection(url.searchParams.get("collection"))
+    if (collection == null) {
+      return NextResponse.json({ error: "unsupported_collection" }, { status: 400 })
+    }
     const days = parseInt1(url.searchParams.get("days"), 30, 1, 365)
     const limit = parseInt1(url.searchParams.get("limit"), 15, 1, 50)
 

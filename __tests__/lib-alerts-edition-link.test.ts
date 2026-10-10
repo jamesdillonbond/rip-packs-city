@@ -40,9 +40,19 @@ describe("editionHref", () => {
       "/laliga-golazos/edition/a%20b%2Fc"
     )
   })
-  it("falls back to nba-top-shot for an unmapped or null collection", () => {
-    expect(editionHref({ collection_id: "unknown-uuid", edition_key: "k" })).toBe("/nba-top-shot/edition/k")
+  // INVERTED 2026-10-09 — this pinned an UNMAPPED collection falling back to
+  // nba-top-shot: "View" on a Pinnacle (or any unmapped) alert opened the Top
+  // Shot edition sharing the key. Absent still defaults; unmapped gets no link.
+  it("gives NO link for an unmapped collection, never another collection's edition", () => {
+    expect(editionHref({ collection_id: "unknown-uuid", edition_key: "k" })).toBeNull()
+    expect(editionHref({ collection_id: "7dd9dd11-e8b6-45c4-ac99-71331f959714", edition_key: "k" })).toBeNull()
+    expect(editionHref({ collection_id: "constructor", edition_key: "k" })).toBeNull()
+  })
+  it("an absent collection keeps the Top Shot default the route stores", () => {
     expect(editionHref({ collection_id: null, edition_key: "k" })).toBe("/nba-top-shot/edition/k")
+  })
+  it("Candy MLB alerts link to the shared edition page", () => {
+    expect(editionHref({ collection_id: "209ade70-32c5-4470-bc7c-4793d660f713", edition_key: "e1" })).toBe("/candy-mlb/edition/e1")
   })
   it("COLLECTION_URL_SLUG has no Pinnacle entry (watch button not offered there)", () => {
     expect(COLLECTION_URL_SLUG["7dd9dd11-e8b6-45c4-ac99-71331f959714"]).toBeUndefined()

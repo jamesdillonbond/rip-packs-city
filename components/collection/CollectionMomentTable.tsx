@@ -14,7 +14,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { momentSubjectHref, setEntityHref, pinnacleRenderHref } from "@/lib/entity-href"
-import { getCollection, marketplaceMomentUrl, collectionHasLocking } from "@/lib/collections"
+import { getCollection, marketplaceMomentUrl, collectionHasLocking, getCollectionUuid } from "@/lib/collections"
 import { normalizeSetName, buildEditionScopeKey } from "@/lib/wallet-normalize"
 import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
@@ -823,9 +823,15 @@ export default function CollectionMomentTable(props: {
                                       edition_key: row.editionKey || "",
                                       player_name: row.playerName,
                                       set_name: row.setName,
-                                      alert_type: "below_price",
+                                      // "price_below" is /api/alerts' spelling; the legacy
+                                      // "below_price" 400'd every save until 2026-10-09.
+                                      alert_type: "price_below",
                                       threshold: parseFloat(alertTargetPrice) || 0,
                                       channel: alertNotifType,
+                                      // Without it the route defaults to Top Shot, putting an All
+                                      // Day (or Golazos, UFC) alert on the Top Shot edition that
+                                      // shares the key.
+                                      collection_id: getCollectionUuid(collectionSlug),
                                     }),
                                   })
                                     .then(function(r) {

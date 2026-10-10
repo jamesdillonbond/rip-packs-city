@@ -69,7 +69,7 @@ function ilikeArgs(client: any, table: string): Array<[string, string]> {
 describe("fetchUnifiedFmvDistribution — editionKey path", () => {
   it("returns single-edition shape when the key + snapshot resolve", async () => {
     const client = makeClient({
-      editions: { single: { data: { id: "e1", external_id: "8:133", player_name: "LeBron", set_name: "Base", tier: "COMMON" }, error: null } },
+      editions: { list: { data: [{ id: "e1", external_id: "8:133", player_name: "LeBron", set_name: "Base", tier: "COMMON" }], error: null } },
       fmv_snapshots: { single: { data: { fmv_usd: 42.5, confidence: "HIGH", computed_at: "2026-07-01T00:00:00Z" }, error: null } },
     })
     const out = await fetchUnifiedFmvDistribution(client, { collectionUuid: null, editionKey: "8:133" })
@@ -90,18 +90,57 @@ describe("fetchUnifiedFmvDistribution — editionKey path", () => {
   })
 
   it("returns no_results when the key does not resolve to an edition", async () => {
-    const client = makeClient({ editions: { single: { data: null, error: null } } })
+    const client = makeClient({ editions: { list: { data: [], error: null } } })
     const out = await fetchUnifiedFmvDistribution(client, { collectionUuid: null, editionKey: "ghost" })
     expect(out).toEqual({ status: "no_results", message: "No edition found for key 'ghost'." })
   })
 
   it("returns no_results when the edition has no FMV snapshot", async () => {
     const client = makeClient({
-      editions: { single: { data: { id: "e1", external_id: "8:133" }, error: null } },
+      editions: { list: { data: [{ id: "e1", external_id: "8:133" }], error: null } },
       fmv_snapshots: { single: { data: null, error: null } },
     })
     const out = await fetchUnifiedFmvDistribution(client, { collectionUuid: null, editionKey: "8:133" })
     expect(out).toEqual({ status: "no_results", message: "Edition '8:133' has no FMV snapshot yet." })
+  })
+
+  // Substitution audit 2026-10-09: an external_id repeats across collections.
+  it("scopes the edition read by collection when one is known", async () => {
+    const client = makeClient({
+      editions: { list: { data: [{ id: "e1", external_id: "8:133" }], error: null } },
+      fmv_snapshots: { single: { data: { fmv_usd: 3, confidence: "HIGH", computed_at: null }, error: null } },
+    })
+    await fetchUnifiedFmvDistribution(client, { collectionUuid: "coll-ts", editionKey: "8:133" })
+    const chain = client.calls.find((c: any) => c.table === "editions").chain
+    expect(chain).toContainEqual(["eq", "collection_id", "coll-ts"])
+  })
+
+  it("an unscoped key matching two collections is AMBIGUOUS, never one of them priced", async () => {
+    const client = makeClient({
+      editions: { list: { data: [{ id: "e-ts", external_id: "8:133" }, { id: "e-ad", external_id: "8:133" }], error: null } },
+      fmv_snapshots: { single: { data: { fmv_usd: 99, confidence: "HIGH", computed_at: null }, error: null } },
+    })
+    const out: any = await fetchUnifiedFmvDistribution(client, { collectionUuid: null, editionKey: "8:133" })
+    expect(out.status).toBe("no_results")
+    expect(out.message).toMatch(/more than one collection/)
+    expect(client.calls.some((c: any) => c.table === "fmv_snapshots")).toBe(false)
+  })
+
+  it("a FAILED edition read is not 'no edition found'", async () => {
+    const client = makeClient({ editions: { list: { data: null, error: { message: "timeout" } } } })
+    const out: any = await fetchUnifiedFmvDistribution(client, { collectionUuid: "c", editionKey: "8:133" })
+    expect(out.message).toMatch(/LOOKUP FAILED/)
+    expect(out.message).not.toMatch(/No edition found/)
+  })
+
+  it("a FAILED snapshot read is not 'no FMV snapshot yet'", async () => {
+    const client = makeClient({
+      editions: { list: { data: [{ id: "e1", external_id: "8:133" }], error: null } },
+      fmv_snapshots: { single: { data: null, error: { message: "timeout" } } },
+    })
+    const out: any = await fetchUnifiedFmvDistribution(client, { collectionUuid: "c", editionKey: "8:133" })
+    expect(out.message).toMatch(/FMV LOOKUP FAILED/)
+    expect(out.message).not.toMatch(/no FMV snapshot yet/)
   })
 })
 

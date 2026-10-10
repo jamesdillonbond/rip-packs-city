@@ -20,7 +20,7 @@ import { headers } from "next/headers";
 import { fitTelegramText } from "@/lib/telegram-message";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
-import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG, marketplaceMomentUrl } from "@/lib/collections";
+import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG, marketplaceMomentUrl, fromDbSlug, getCollectionUuid } from "@/lib/collections";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
 import {
   isPinnacle,
@@ -1702,6 +1702,16 @@ async function executeTool(toolName: string, toolInput: any, ctx: ToolCtx): Prom
   return scope.identity ? attachPlayerIdentity(out, scope.identity) : out;
 }
 
+// Tools in which a null collection UUID means "every collection" — so a present
+// but unknown slug must be refused, not widened (see executeToolInner).
+const UNSCOPED_WHEN_NULL_TOOLS = new Set([
+  "search_live_deals",
+  "search_catalog_deals",
+  "get_fmv",
+  "explain_fmv",
+  "get_top_sales",
+]);
+
 async function executeToolInner(
   toolName: string,
   toolInput: any,
@@ -1709,10 +1719,28 @@ async function executeToolInner(
   playerScope: PlayerScope,
 ): Promise<string> {
   const base = siteUrl();
-  const effectiveCollectionId: string | undefined = toolInput.collectionId ?? ctx.collectionId ?? undefined;
+  const rawCollectionId: string | undefined = toolInput.collectionId ?? ctx.collectionId ?? undefined;
+  // The model sometimes passes the DB vocabulary ("nba_top_shot"); read it as the
+  // registry slug it names rather than as an unknown collection.
+  const effectiveCollectionId: string | undefined = rawCollectionId
+    ? (getCollectionUuid(rawCollectionId) ? rawCollectionId : (fromDbSlug(rawCollectionId) ?? rawCollectionId))
+    : undefined;
+  // Own-property lookup: a bracket read answers "constructor" with a function.
   const effectiveCollectionUuid: string | null = effectiveCollectionId
-    ? (COLLECTION_UUID_BY_SLUG[effectiveCollectionId] ?? null)
+    ? getCollectionUuid(effectiveCollectionId)
     : null;
+
+  // ⛔ SUBSTITUTION GUARD (2026-10-09). In these tools a null collection UUID
+  // means "no filter", so a PRESENT but unknown slug (an invented "topshot", a
+  // direct API call) was answered with every collection's data under the
+  // requested label. Refuse it: no rows, no subject name. An ABSENT slug still
+  // means all collections.
+  if (effectiveCollectionId && !effectiveCollectionUuid && UNSCOPED_WHEN_NULL_TOOLS.has(toolName)) {
+    return JSON.stringify({
+      status: "unsupported_collection",
+      message: "That isn't a collection RPC covers. Ask which collection they mean (Top Shot, All Day, Golazos, Disney Pinnacle, UFC Strike or Candy MLB).",
+    });
+  }
 
   if (toolInput && typeof toolInput === "object") {
     if (toolInput.character && !toolInput.player) toolInput.player = toolInput.character;
@@ -1873,7 +1901,13 @@ async function executeToolInner(
           "disney-pinnacle": "disney_pinnacle",
           "laliga-golazos": "laliga_golazos",
           "ufc": "ufc_strike",
+          "candy-mlb": "candy_mlb",
         };
+        // null means ALL collections to concierge_market_deals: a named but unmapped
+        // collection (Panini) would match another league's team (2026-10-09).
+        if (effectiveCollectionId && !APP_ID_TO_LONG_SLUG[effectiveCollectionId]) {
+          return JSON.stringify({ status: "unsupported_collection", message: "Team deal search doesn't cover this collection yet." });
+        }
         const { data: board, error: boardErr } = await (supabase as any).rpc("concierge_market_deals", {
           p_collection_slug: effectiveCollectionId ? (APP_ID_TO_LONG_SLUG[effectiveCollectionId] ?? null) : null,
           p_team: toolInput.team,
@@ -4070,9 +4104,15 @@ async function executeToolInner(
       "laliga-golazos": "laliga_golazos",
       "disney-pinnacle": "disney_pinnacle",
       "ufc": "ufc_strike",
+      "candy-mlb": "candy_mlb",
     };
     const params = new URLSearchParams();
     const coll = effectiveCollectionId ? collMap[effectiveCollectionId] : null;
+    // A named collection the board does not cover (Panini) must not widen to the
+    // cross-collection board inside that collection's conversation (2026-10-09).
+    if (effectiveCollectionId && !coll) {
+      return JSON.stringify({ status: "unsupported_collection", message: "The top-sales board doesn't cover this collection yet." });
+    }
     if (coll) params.set("collection", coll);
     params.set("window", toolInput.window === "30d" ? "30d" : "7d");
     const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 10)) || 10, 1), 50);

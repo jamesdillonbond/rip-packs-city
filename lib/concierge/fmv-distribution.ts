@@ -230,21 +230,47 @@ export async function fetchUnifiedFmvDistribution(
 
   // EditionKey path: deterministic single lookup against external_id.
   if (input.editionKey) {
-    const { data: edition } = await supabase
+    // ⛔ An external_id is unique only WITHIN a collection (a Top Shot "8:133"
+    // and an All Day "8:133" are different editions). Unscoped, this read
+    // either errored on 2 rows (maybeSingle) — swallowed as "no edition found" —
+    // or priced the OTHER collection's edition. Scope it, read two rows, and
+    // keep failed / ambiguous / absent apart. (Substitution audit, 2026-10-09.)
+    let edQ = supabase
       .from("editions")
       .select("id, external_id, player_name, set_name, tier")
       .eq("external_id", input.editionKey)
-      .maybeSingle()
+    if (input.collectionUuid) edQ = edQ.eq("collection_id", input.collectionUuid)
+    const { data: edRows, error: edKeyErr } = await edQ.limit(2)
+    if (edKeyErr) {
+      return {
+        status: "no_results",
+        message: `EDITION LOOKUP FAILED (not an empty result): ${edKeyErr.message}. Tell the user the price check failed; do NOT say the edition does not exist.`,
+      }
+    }
+    const edMatches = Array.isArray(edRows) ? edRows : []
+    if (edMatches.length > 1) {
+      return {
+        status: "no_results",
+        message: `Edition key '${input.editionKey}' matches editions in more than one collection. Ask the user which collection they mean; do NOT guess.`,
+      }
+    }
+    const edition = edMatches[0]
     if (!edition?.id) {
       return { status: "no_results", message: `No edition found for key '${input.editionKey}'.` }
     }
-    const { data: snap } = await supabase
+    const { data: snap, error: snapErr } = await supabase
       .from("fmv_snapshots")
       .select("fmv_usd, confidence, computed_at")
       .eq("edition_id", edition.id)
       .order("computed_at", { ascending: false })
       .limit(1)
       .maybeSingle()
+    if (snapErr) {
+      return {
+        status: "no_results",
+        message: `FMV LOOKUP FAILED (not an empty result): ${snapErr.message}. Tell the user the price check failed; do NOT say there is no FMV for this.`,
+      }
+    }
     if (!snap || snap.fmv_usd == null) {
       return { status: "no_results", message: `Edition '${input.editionKey}' has no FMV snapshot yet.` }
     }

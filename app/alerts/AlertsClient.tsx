@@ -615,7 +615,10 @@ export default function AlertsClient() {
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <Link href={editionHref(a)} style={{ ...btnGhost, textDecoration: "none" }}>View</Link>
+                      {(() => {
+                        const href = editionHref(a);
+                        return href ? <Link href={href} style={{ ...btnGhost, textDecoration: "none" }}>View</Link> : null;
+                      })()}
                       <button onClick={() => removeFmvAlert(a)} style={{ ...btnGhost, color: RED }}>Delete</button>
                     </div>
                   </div>

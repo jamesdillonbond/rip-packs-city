@@ -23,7 +23,11 @@ interface Alert {
   edition_key: string;
   player_name: string | null;
   set_name: string | null;
-  alert_type: "below_price" | "below_fmv_pct";
+  // /api/alerts' vocabulary (ALERT_TYPES there). Until 2026-10-09 this page sent
+  // and matched the legacy "below_price" / "below_fmv_pct", which that route
+  // rejects with a 400 — every alert created here failed, and rows created
+  // elsewhere rendered as "price_below @ 5".
+  alert_type: "price_below" | "fmv_below" | "fmv_above" | "discount_above";
   threshold: number;
   channel: "email" | "telegram" | "both";
   notification_email: string | null;
@@ -45,8 +49,10 @@ function fmtUsd(n: number | null | undefined): string {
 }
 
 function describeAlert(type: Alert["alert_type"], threshold: number): string {
-  if (type === "below_price") return `Lowest ask ≤ ${fmtUsd(threshold)}`;
-  if (type === "below_fmv_pct") return `Discount vs FMV ≥ ${threshold}%`;
+  if (type === "price_below") return `Lowest ask ≤ ${fmtUsd(threshold)}`;
+  if (type === "discount_above") return `Discount vs FMV ≥ ${threshold}%`;
+  if (type === "fmv_below") return `FMV ≤ ${fmtUsd(threshold)}`;
+  if (type === "fmv_above") return `FMV ≥ ${fmtUsd(threshold)}`;
   return `${type} @ ${threshold}`;
 }
 
@@ -256,8 +262,10 @@ export default function DashboardAlertsClient() {
               {alerts.map((a) => {
                 const triggered = a.currently_triggered === true;
                 const currentDisplay =
-                  a.alert_type === "below_price"
+                  a.alert_type === "price_below"
                     ? fmtUsd(a.low_ask)
+                    : a.alert_type === "fmv_below" || a.alert_type === "fmv_above"
+                    ? fmtUsd(a.fmv)
                     : a.current_discount_pct != null
                     ? `${a.current_discount_pct}%`
                     : "—";
@@ -269,7 +277,7 @@ export default function DashboardAlertsClient() {
                     </td>
                     <td>{describeAlert(a.alert_type, Number(a.threshold))}</td>
                     <td style={{ textAlign: "right" }}>
-                      {a.alert_type === "below_price" ? fmtUsd(a.threshold) : `${a.threshold}%`}
+                      {a.alert_type === "discount_above" ? `${a.threshold}%` : fmtUsd(a.threshold)}
                     </td>
                     <td style={{ textAlign: "right" }}>{currentDisplay}</td>
                     <td>
@@ -346,9 +354,11 @@ function CreateAlertModal({
   const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState<EditionMatch | null>(null);
 
-  const [alertType, setAlertType] = useState<"below_price" | "below_fmv_pct">("below_price");
+  const [alertType, setAlertType] = useState<"price_below" | "discount_above">("price_below");
   const [threshold, setThreshold] = useState<string>("");
-  const [channel, setChannel] = useState<"email" | "telegram" | "both">("email");
+  // No "both": /api/alerts accepts email | telegram only (it stored "both" as
+  // email) and the dispatcher delivers one channel per alert.
+  const [channel, setChannel] = useState<"email" | "telegram">("email");
   const [email, setEmail] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -379,16 +389,16 @@ function CreateAlertModal({
   };
 
   // Inline per-field threshold validation. Bounds match Round 8 Item 4 spec:
-  //   below_price: 0 < threshold < 1,000,000
-  //   below_fmv_pct: 0 < threshold < 100
+  //   price_below: 0 < threshold < 1,000,000
+  //   discount_above: 0 < threshold < 100
   // Returns null when valid, otherwise an error string for inline display.
   const thresholdError: string | null = (() => {
     if (threshold === "") return null;
     const thr = Number(threshold);
     if (!Number.isFinite(thr)) return "Threshold must be a number";
     if (thr <= 0) return "Threshold must be greater than 0";
-    if (alertType === "below_price" && thr >= 1_000_000) return "Price threshold must be under $1,000,000";
-    if (alertType === "below_fmv_pct" && thr >= 100) return "Discount % must be under 100";
+    if (alertType === "price_below" && thr >= 1_000_000) return "Price threshold must be under $1,000,000";
+    if (alertType === "discount_above" && thr >= 100) return "Discount % must be under 100";
     return null;
   })();
 
@@ -399,15 +409,15 @@ function CreateAlertModal({
       setErr("Threshold must be a positive number");
       return;
     }
-    if (alertType === "below_price" && thr >= 1_000_000) {
+    if (alertType === "price_below" && thr >= 1_000_000) {
       setErr("Price threshold must be under $1,000,000");
       return;
     }
-    if (alertType === "below_fmv_pct" && thr >= 100) {
+    if (alertType === "discount_above" && thr >= 100) {
       setErr("Discount % must be under 100");
       return;
     }
-    if ((channel === "email" || channel === "both") && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (channel === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setErr("Enter a valid notification email");
       return;
     }
@@ -528,16 +538,16 @@ function CreateAlertModal({
               <label className="rpc-al-radio">
                 <input
                   type="radio"
-                  checked={alertType === "below_price"}
-                  onChange={() => setAlertType("below_price")}
+                  checked={alertType === "price_below"}
+                  onChange={() => setAlertType("price_below")}
                 />
                 Lowest ask drops to or below
               </label>
               <label className="rpc-al-radio">
                 <input
                   type="radio"
-                  checked={alertType === "below_fmv_pct"}
-                  onChange={() => setAlertType("below_fmv_pct")}
+                  checked={alertType === "discount_above"}
+                  onChange={() => setAlertType("discount_above")}
                 />
                 Discount vs FMV reaches
               </label>
@@ -549,16 +559,16 @@ function CreateAlertModal({
                 type="number"
                 step="0.01"
                 min={0}
-                max={alertType === "below_price" ? 999999 : 99.99}
+                max={alertType === "price_below" ? 999999 : 99.99}
                 value={threshold}
                 onChange={(e) => setThreshold(e.target.value)}
-                placeholder={alertType === "below_price" ? "10.00" : "20"}
+                placeholder={alertType === "price_below" ? "10.00" : "20"}
                 className={`rpc-al-input${thresholdError ? " rpc-al-input-invalid" : ""}`}
                 style={{ flex: 1 }}
                 aria-invalid={!!thresholdError}
               />
               <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", fontSize: 12 }}>
-                {alertType === "below_price" ? "USD" : "%"}
+                {alertType === "price_below" ? "USD" : "%"}
               </span>
             </div>
             {thresholdError && (
@@ -567,7 +577,7 @@ function CreateAlertModal({
 
             <div className="rpc-al-label" style={{ marginTop: 14 }}>Channel</div>
             <div className="rpc-al-radio-row">
-              {(["email", "telegram", "both"] as const).map((c) => (
+              {(["email", "telegram"] as const).map((c) => (
                 <label key={c} className="rpc-al-radio">
                   <input
                     type="radio"
@@ -579,7 +589,7 @@ function CreateAlertModal({
               ))}
             </div>
 
-            {(channel === "email" || channel === "both") && (
+            {channel === "email" && (
               <>
                 <div className="rpc-al-label" style={{ marginTop: 12 }}>Notification email</div>
                 <input

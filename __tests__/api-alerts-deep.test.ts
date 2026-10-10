@@ -291,6 +291,19 @@ describe("POST /api/alerts — channel / collection / email / error branches", (
     })
   })
 
+  // Substitution audit 2026-10-09: a PRESENT collection_id that is not a known
+  // collection used to be swapped for Top Shot — the alert landed on a
+  // different collection's edition sharing the key.
+  for (const collection_id of ["not-a-uuid", "00000000-0000-4000-8000-000000000000", 42]) {
+    it(`refuses a present but unknown collection_id (${String(collection_id)}) instead of defaulting to Top Shot`, async () => {
+      state.user = { id: "u1", email: "me@x.com" }
+      install({ fmv_alerts: { data: { id: "alx" }, error: null } })
+      const res = await POST(bodyReq({ edition_key: "9:9", alert_type: "fmv_below", threshold: 5, collection_id }))
+      expect(res.status).toBe(400)
+      expect(state.writes["fmv_alerts"]?.length ?? 0).toBe(0)
+    })
+  }
+
   it("uses an explicit valid notification_email over the session email", async () => {
     state.user = { id: "u1", email: "me@x.com" }
     install({ fmv_alerts: { data: { id: "al3" }, error: null } })

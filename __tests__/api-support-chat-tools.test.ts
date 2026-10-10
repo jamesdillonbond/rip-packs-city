@@ -448,6 +448,44 @@ describe("concierge tools — market & ecosystem intelligence", () => {
     expect(call?.url).toContain("limit=5")
   })
 
+  // Substitution audit 2026-10-09: a named collection must never widen to the
+  // cross-collection board under its own label.
+  it("get_top_sales maps Candy MLB to its board slug", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/top-sales", { meta: {}, rows: [{ x: 1 }] })])
+    script("get_top_sales", { collectionId: "candy-mlb" })
+    await POST(post("biggest candy sales"))
+    expect(toolResult().status).toBe("ok")
+    expect(f.calls.find((c) => c.url.includes("/api/public/insights/top-sales"))?.url).toContain("collection=candy_mlb")
+  })
+
+  it("get_top_sales reads the DB vocabulary as the collection it names", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/top-sales", { meta: {}, rows: [{ x: 1 }] })])
+    script("get_top_sales", { collectionId: "nfl_all_day" })
+    await POST(post("biggest all day sales"))
+    expect(f.calls.find((c) => c.url.includes("/api/public/insights/top-sales"))?.url).toContain("collection=nfl_all_day")
+  })
+
+  for (const collectionId of ["topshot", "constructor", "panini-blockchain"]) {
+    it(`get_top_sales REFUSES "${collectionId}" instead of answering with every collection`, async () => {
+      const f = stubFetch([jsonRoute("/api/public/insights/top-sales", { meta: {}, rows: [{ player_name: "Dame" }] })])
+      script("get_top_sales", { collectionId })
+      await POST(post("biggest sales"))
+      const r = toolResult()
+      expect(r.status).toBe("unsupported_collection")
+      expect(r.rows).toBeUndefined()
+      expect(f.calls.some((c) => c.url.includes("/api/public/insights/top-sales"))).toBe(false)
+    })
+  }
+
+  it("an unknown slug is refused by get_fmv too — no unscoped catalog read", async () => {
+    const spy = install({})
+    script("get_fmv", { collectionId: "topshot", playerName: "LeBron James" })
+    await POST(post("lebron fmv"))
+    expect(toolResult().status).toBe("unsupported_collection")
+    expect(toolResult().mode).toBeUndefined()
+    expect(spy.rpcCalls.some((c) => c.name === "get_editions_latest_fmv")).toBe(false)
+  })
+
   it("get_market_movers reads the market-pulse board", async () => {
     stubFetch([jsonRoute("/api/public/insights/market-pulse", { meta: {}, rows: [{ edition: "3:45", trend: "up" }] })])
     script("get_market_movers", { limit: 10 })
