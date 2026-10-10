@@ -67,7 +67,7 @@ describe("GET /api/send-digest", () => {
     const res = await GET(req(`Bearer ${TOKEN}`))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body).toEqual({ subscribers: 0, sent: 0, errors: 0 })
+    expect(body).toEqual({ subscribers: 0, sent: 0, errors: 0 , market_reads_failed: [] })
   })
 
   it("500s on a subscriber-query error", async () => {
@@ -84,7 +84,7 @@ describe("GET /api/send-digest", () => {
     vi.stubGlobal("fetch", fetchSpy as any)
     const res = await GET(req(`Bearer ${TOKEN}`))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ subscribers: 1, sent: 1, errors: 0 })
+    expect(await res.json()).toEqual({ subscribers: 1, sent: 1, errors: 0 , market_reads_failed: [] })
     // the Resend call carried the composed HTML
     const firstCall = fetchSpy.mock.calls[0] as any[]
     const callBody = JSON.parse(firstCall[1].body)
@@ -99,7 +99,7 @@ describe("GET /api/send-digest", () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal("fetch", fetchSpy as any)
     const res = await GET(req(`Bearer ${TOKEN}`))
-    expect(await res.json()).toEqual({ subscribers: 1, sent: 0, errors: 1 })
+    expect(await res.json()).toEqual({ subscribers: 1, sent: 0, errors: 1 , market_reads_failed: [] })
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
@@ -108,7 +108,7 @@ describe("GET /api/send-digest", () => {
     process.env.RESEND_API_KEY = "re_test"
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 422, text: async () => "bad" })) as any)
     const res = await GET(req(`Bearer ${TOKEN}`))
-    expect(await res.json()).toEqual({ subscribers: 1, sent: 0, errors: 1 })
+    expect(await res.json()).toEqual({ subscribers: 1, sent: 0, errors: 1 , market_reads_failed: [] })
   })
 
   it("counts an error when the Resend fetch throws", async () => {
@@ -116,7 +116,7 @@ describe("GET /api/send-digest", () => {
     process.env.RESEND_API_KEY = "re_test"
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network") }) as any)
     const res = await GET(req(`Bearer ${TOKEN}`))
-    expect(await res.json()).toEqual({ subscribers: 1, sent: 0, errors: 1 })
+    expect(await res.json()).toEqual({ subscribers: 1, sent: 0, errors: 1 , market_reads_failed: [] })
   })
 
   it("handles a subscriber with no wallet (skips the portfolio RPC) and still sends", async () => {
@@ -126,7 +126,7 @@ describe("GET /api/send-digest", () => {
     process.env.RESEND_API_KEY = "re_test"
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, text: async () => "ok" })) as any)
     const res = await GET(req(`Bearer ${TOKEN}`))
-    expect(await res.json()).toEqual({ subscribers: 1, sent: 1, errors: 0 })
+    expect(await res.json()).toEqual({ subscribers: 1, sent: 1, errors: 0 , market_reads_failed: [] })
   })
 })
 
@@ -154,5 +154,33 @@ describe("send-digest — a Candy subscriber's wallet is not folded", () => {
     await GET(req(`Bearer ${TOKEN}`))
     const call = state.rpcCalls.find((c) => c.name === "get_cross_collection_portfolio")
     expect(call?.args?.p_wallet).toBe("0xabcdef1234567890")
+  })
+})
+
+// 2026-10-10: every read discarded its error, so a failed read silently dropped
+// its block — a holder got a digest without their portfolio, and with every read
+// failing, every subscriber got an empty digest.
+describe("GET /api/send-digest — a failed read never ships as an emptier email", () => {
+  it("both market reads failing aborts the run before any send (503)", async () => {
+    seedOneSubscriber()
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    state.rpc.get_market_pulse_all = { data: null, error: { message: "timeout" } }
+    state.rpc.get_cross_collection_deals = { data: null, error: { message: "timeout" } }
+    const res = await GET(req(`Bearer ${TOKEN}`))
+    expect(res.status).toBe(503)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("a subscriber whose portfolio read fails is skipped, not mailed a digest without it", async () => {
+    seedOneSubscriber()
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    state.rpc.get_cross_collection_portfolio = { data: null, error: { message: "timeout" } }
+    const res = await GET(req(`Bearer ${TOKEN}`))
+    expect(await res.json()).toMatchObject({ subscribers: 1, sent: 0, errors: 1 })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

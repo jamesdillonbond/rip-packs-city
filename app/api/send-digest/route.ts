@@ -24,7 +24,28 @@ type Subscriber = {
   verification_token: string | null
 }
 
-async function buildEmail(origin: string, sub: Subscriber): Promise<{ subject: string; html: string } | null> {
+// The market blocks are the same for every subscriber, so they are read ONCE per
+// run. 2026-10-10: each read discarded its error, so a failed read silently
+// dropped its block — a failed portfolio read mailed a holder a digest without
+// their portfolio, and with every read failing the run mailed every subscriber
+// an empty digest. Now: both market reads failing aborts the run before any
+// send, and a subscriber whose portfolio read fails is skipped (retried by the
+// next run), never mailed a digest that omits it.
+type MarketBlocks = { pulse: any; deals: any }
+
+async function readMarket(): Promise<{ market: MarketBlocks; failed: string[] }> {
+  const failed: string[] = []
+  const { data: pulse, error: pulseErr } = await (supabaseAdmin as any).rpc("get_market_pulse_all")
+  if (pulseErr) failed.push("get_market_pulse_all")
+  const { data: deals, error: dealsErr } = await (supabaseAdmin as any).rpc("get_cross_collection_deals", {
+    p_limit: 5,
+    p_min_discount: 15,
+  })
+  if (dealsErr) failed.push("get_cross_collection_deals")
+  return { market: { pulse: pulseErr ? null : pulse, deals: dealsErr ? null : deals }, failed }
+}
+
+async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks): Promise<{ subject: string; html: string } | null> {
   let portfolio: any = null
   if (sub.wallet_address) {
     // ⛔ 2026-09-19 — was `.toLowerCase()`. A folded base58 wallet returns a
@@ -32,17 +53,14 @@ async function buildEmail(origin: string, sub: Subscriber): Promise<{ subject: s
     // `collections?.length`, so a Candy holder's weekly email silently dropped
     // their whole portfolio block. An outbound email is the highest-reach
     // surface this class can reach. `normalizeAddress` leaves hex unchanged.
-    const { data } = await (supabaseAdmin as any).rpc("get_cross_collection_portfolio", {
+    const { data, error } = await (supabaseAdmin as any).rpc("get_cross_collection_portfolio", {
       p_wallet: normalizeAddress(sub.wallet_address),
     })
+    if (error) return null // skipped: a digest without the holder's portfolio is not this email
     portfolio = data ?? null
   }
 
-  const { data: pulse } = await (supabaseAdmin as any).rpc("get_market_pulse_all")
-  const { data: deals } = await (supabaseAdmin as any).rpc("get_cross_collection_deals", {
-    p_limit: 5,
-    p_min_discount: 15,
-  })
+  const { pulse, deals } = market
 
   const unsubUrl = sub.verification_token
     ? `${origin}/api/subscribe/unsubscribe?token=${sub.verification_token}`
@@ -105,9 +123,17 @@ export async function GET(req: NextRequest) {
   let sent = 0
   let errors = 0
 
+  const { market, failed: marketFailed } = await readMarket()
+  if (marketFailed.length === 2) {
+    return NextResponse.json(
+      { error: "market_reads_failed", failed: marketFailed, subscribers: subscribers.length, sent: 0 },
+      { status: 503 },
+    )
+  }
+
   for (const sub of subscribers) {
     try {
-      const composed = await buildEmail(origin, sub)
+      const composed = await buildEmail(origin, sub, market)
       if (!composed) { errors += 1; continue }
       if (!process.env.RESEND_API_KEY) { errors += 1; continue }
 
@@ -131,5 +157,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ subscribers: subscribers.length, sent, errors })
+  return NextResponse.json({ subscribers: subscribers.length, sent, errors, market_reads_failed: marketFailed })
 }
