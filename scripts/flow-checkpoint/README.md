@@ -21,8 +21,12 @@ records (Flowty Funding / storefront listings, NFT collections) are fully recove
 | `decode_allday_meta.py` | All Day moment id → editionID/serial; join `editions.external_id` (611/625 agree with known names; rest are suffix spellings). |
 | `ckpt_find.py <url> <ids.json> <out> <start> <end>` | which ACCOUNT holds given Top Shot / All Day ids in a checkpoint part (any owner): matches `"id": UInt64(n)`, walks back to the payload's owner, keeps payloads naming the contract. |
 | `match_purchases.py [out.csv]` | moments that entered a wallet between snapshots × purchased Flowty listings (expects `w{spork}_{owner}.json` and `L{spork}/` in cwd) |
+| `decode_issuer_sharded.py <dir> <owner_hex> <out.json>` | Top Shot's issuer `0xe1f2a091f7bb5245` (= unopened pack inventory) in PRE-atree roots: ids from its `TopShotShardedCollection2/collections/v/<shard>/ownedNFTs/v/<id>` registers (empty value = tombstone). ~3.0M ids at mainnet-11. For atree roots (15+) `decode_wallet.py` reads the issuer fine (6.86M at mainnet-16). |
+| `classify_pair.py <wallet_k> <issuer_k> <wallet_k1> <out>` | moments that entered a wallet between roots k and k+1, by who held them at k: issuer / another account / minted after k. ⚠ **Bounds pack pulls, does not count them** (2026-10-10 pilot, `docs/reference/packs.md`). |
 
 Atree field order inside a composite VARIES (e.g. `data` before `id`) — search both sides of an anchor field, never one.
 Run a full checkpoint as 16 parallel processes (one per part, or 16 byte ranges of a single file):
 ~20 min for mainnet-24 (334 GB) from a cloud sandbox. Validations and the leaf-payload layout:
 `docs/reference/apis-and-cadence.md` ("STATE below the floor is free and public").
+
+⚠ **Memory (2026-10-10):** extracting the ISSUER keeps its millions of registers in each stream's `seen` set (~700 MB a stream). 16 streams at once were OOM-killed in this sandbox with NO traceback: the log simply stops short of `DONE`. Check every log for `DONE`, run ≤ 8 streams, and re-run a dead stream from its last logged offset minus the 4 MB overlap into a separate `pNb.jsonl`.
