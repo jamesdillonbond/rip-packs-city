@@ -30,7 +30,8 @@ type Subscriber = {
 // their portfolio, and with every read failing the run mailed every subscriber
 // an empty digest. Now: both market reads failing aborts the run before any
 // send, and a subscriber whose portfolio read fails is skipped (retried by the
-// next run), never mailed a digest that omits it.
+// next run), never mailed a digest that omits it. (Either market read failing
+// aborts too — tightened the same night after review.)
 type MarketBlocks = { pulse: any; deals: any }
 
 async function readMarket(): Promise<{ market: MarketBlocks; failed: string[] }> {
@@ -124,7 +125,9 @@ export async function GET(req: NextRequest) {
   let errors = 0
 
   const { market, failed: marketFailed } = await readMarket()
-  if (marketFailed.length === 2) {
+  // Either market read failing aborts: a digest silently missing a block is the
+  // omission this guard exists to stop, and the next weekly run retries it.
+  if (marketFailed.length > 0) {
     return NextResponse.json(
       { error: "market_reads_failed", failed: marketFailed, subscribers: subscribers.length, sent: 0 },
       { status: 503 },

@@ -72,10 +72,14 @@ export async function POST(req: NextRequest) {
   }
 
   const ip = anonIpKey(req.headers)
+  // Order matters: bumpAnonRates stops at the first refusal, so the wallet cap
+  // goes LAST. Checked first, an IP/global refusal or a counter failure spent
+  // the wallet's one dispatch per 6 h with nothing sent, and every retry was
+  // then told "queued, deduped" (2026-10-10 review).
   const verdict = await bumpAnonRates([
-    { bucket: "queue_wallet:wallet", key: wallet, limit: 1, windowSecs: 6 * 3600 },
-    ...(ip ? [{ bucket: "queue_wallet:ip", key: ip, limit: 20, windowSecs: 3600 }] : []),
     { bucket: "queue_wallet:global", key: "*", limit: 300, windowSecs: 3600 },
+    ...(ip ? [{ bucket: "queue_wallet:ip", key: ip, limit: 20, windowSecs: 3600 }] : []),
+    { bucket: "queue_wallet:wallet", key: wallet, limit: 1, windowSecs: 6 * 3600 },
   ])
   if (!verdict.allowed) {
     if (verdict.refusedBucket === "queue_wallet:wallet" && !verdict.failed) {

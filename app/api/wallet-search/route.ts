@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { z } from "zod"
 import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
@@ -1177,15 +1177,22 @@ async function triggerGolazosBackfill(req: NextRequest, wallet: string): Promise
   // Golazos rows (any random address — it never fills) re-triggered the backfill
   // on EVERY search. One dispatch per wallet per 6 h and 300/h globally; a
   // counter that cannot be read skips the dispatch (fail closed).
+  // The wallet cap is bumped LAST: bumpAnonRates stops at the first refusal, so
+  // a global refusal (or a counter failure) no longer spends the wallet's one
+  // dispatch per 6 h with nothing sent.
   const verdict = await bumpAnonRates([
-    { bucket: "golazos_backfill:wallet", key: wallet, limit: 1, windowSecs: 6 * 3600 },
     { bucket: "golazos_backfill:global", key: "*", limit: 300, windowSecs: 3600 },
+    { bucket: "golazos_backfill:wallet", key: wallet, limit: 1, windowSecs: 6 * 3600 },
   ])
   if (!verdict.allowed) return
-  void fetch(`${origin}/api/wallet-backfill-golazos`, {
+  // Runs inside after() (the caller), so it is awaited to completion rather than
+  // left pending past the response, where Vercel may freeze the lambda before
+  // the fetch ever starts. 10 s bound: the peer keeps running server-side.
+  await fetch(`${origin}/api/wallet-backfill-golazos`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ wallet }),
+    signal: AbortSignal.timeout(10_000),
   }).catch(() => {})
 }
 
@@ -1379,7 +1386,9 @@ export async function POST(req: NextRequest) {
 
       // Genuine miss → warm wmc for next time. Never on a populated wallet, so a
       // repeated lookup of a real wallet doesn't re-trigger the walk each call.
-      if (gTotal === 0) void triggerGolazosBackfill(req, gWallet)
+      // after(): the cap check is two DB round-trips; work left pending past the
+      // response is not guaranteed to run on Vercel (2026-10-10 review).
+      if (gTotal === 0) after(() => triggerGolazosBackfill(req, gWallet))
 
       return NextResponse.json(
         {

@@ -121,6 +121,26 @@ describe("POST /api/public/queue-wallet", () => {
     expect(A.dispatched).toBe(1)
   })
 
+  // 2026-10-10 review: the wallet cap was bumped FIRST, so a global/IP refusal
+  // spent the wallet's one dispatch per 6 h with nothing sent, and every retry
+  // was then told "queued, deduped". The wallet cap now goes last.
+  it("a global refusal does NOT spend the wallet's 6-hour dispatch", async () => {
+    process.env.INGEST_SECRET_TOKEN = "test-token"
+    A.rate["queue_wallet:global|*"] = 300 // global cap already full
+    const wallet = "0x2222333344445555"
+    const res = await POST(req({ wallet }))
+    expect(res.status).toBe(429)
+    expect(A.dispatched).toBe(0)
+    const { hashKey } = await import("@/lib/abuse/anon-rate")
+    expect(A.rate[`queue_wallet:wallet|${hashKey(wallet)}`]).toBeUndefined()
+    // once the global window frees up, the same wallet still dispatches
+    A.rate["queue_wallet:global|*"] = 0
+    const again = await (await POST(req({ wallet }))).json()
+    expect(again.queued).toBe(true)
+    expect(again.deduped).toBeUndefined()
+    expect(A.dispatched).toBe(1)
+  })
+
   it("FAILS CLOSED when the counter is unavailable — no dispatch", async () => {
     process.env.INGEST_SECRET_TOKEN = "test-token"
     A.rateError = { message: "timeout" }

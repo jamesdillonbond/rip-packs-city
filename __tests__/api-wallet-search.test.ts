@@ -10,6 +10,12 @@ import { describe, it, expect, vi } from "vitest"
 // uncovered. Mocks the FCL shim, TopShot GQL, supabaseAdmin, auth + rewards so
 // the import + happy path are pure.
 
+// wallet-search defers the Golazos backfill trigger with after() (2026-10-10);
+// outside a request scope the real one throws, so run it on a microtask.
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: (fn: () => unknown) => { void Promise.resolve().then(fn).catch(() => {}) } }
+})
 vi.mock("@/lib/chains/flow/flow", () => ({ default: { query: async () => [] } }))
 vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { from: () => ({}), rpc: async () => ({ data: null, error: null }) } }))

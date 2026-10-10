@@ -15,6 +15,18 @@ const state = vi.hoisted(() => ({
   resolveFound: false,
 }))
 
+// wallet-search defers the Golazos backfill trigger with after() (2026-10-10);
+// outside a request scope the real one throws, so run it on a microtask.
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return {
+    ...actual,
+    after: (fn: () => unknown) => {
+      if ((globalThis as any).__afterOff) return // models a lambda frozen after the response
+      void Promise.resolve().then(fn).catch(() => {})
+    },
+  }
+})
 vi.mock("@/lib/cache", () => ({ getOrSetCache: (_k: string, _t: number, fn: () => unknown) => fn() }))
 vi.mock("@/lib/chains/flow/flow", () => ({ default: { query: async () => [] } }))
 vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
@@ -213,6 +225,29 @@ describe("POST /api/wallet-search — Golazos backfill trigger is deduped", () =
     const dispatches = fetchSpy.mock.calls.filter((c: any[]) => String(c[0]).includes("/api/wallet-backfill-golazos"))
     expect(dispatches).toHaveLength(1)
     vi.unstubAllGlobals()
+  })
+
+  // 2026-10-10 review: the trigger awaited two counter RPCs before its fetch and
+  // was left pending past the response (no after()), so Vercel could freeze the
+  // lambda first. It now runs inside after(): with after() never running, no
+  // dispatch may leak out of the request itself.
+  it("the dispatch runs inside after(), never as work left pending past the response", async () => {
+    process.env.INGEST_SECRET_TOKEN = "t"
+    ;(globalThis as any).__rate = {}
+    ;(globalThis as any).__rateError = false
+    ;(globalThis as any).__afterOff = true
+    const fetchSpy = vi.fn(async () => new Response("{}"))
+    vi.stubGlobal("fetch", fetchSpy)
+    state.rpc = { data: [{ moments: [], total_count: 0 }], error: null }
+    try {
+      await POST(req({ input: "0x00000000000000ab", collection: "laliga-golazos" }))
+      await flush()
+      await flush()
+      expect(fetchSpy.mock.calls.filter((c: any[]) => String(c[0]).includes("/api/wallet-backfill-golazos"))).toHaveLength(0)
+    } finally {
+      ;(globalThis as any).__afterOff = false
+      vi.unstubAllGlobals()
+    }
   })
 
   it("an unreadable counter dispatches NOTHING (fail closed)", async () => {

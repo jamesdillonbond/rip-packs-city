@@ -173,6 +173,17 @@ describe("GET /api/send-digest — a failed read never ships as an emptier email
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it("ONE market read failing also aborts — no digest silently missing a block", async () => {
+    seedOneSubscriber()
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    state.rpc.get_cross_collection_deals = { data: null, error: { message: "timeout" } }
+    const res = await GET(req(`Bearer ${TOKEN}`))
+    expect(res.status).toBe(503)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it("a subscriber whose portfolio read fails is skipped, not mailed a digest without it", async () => {
     seedOneSubscriber()
     process.env.RESEND_API_KEY = "re_test"

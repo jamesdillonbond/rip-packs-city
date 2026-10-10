@@ -30,6 +30,12 @@ const state = vi.hoisted(() => ({
   ownedIdsError: null as Error | null,
 }))
 
+// wallet-search defers the Golazos backfill trigger with after() (2026-10-10);
+// outside a request scope the real one throws, so run it on a microtask.
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: (fn: () => unknown) => { void Promise.resolve().then(fn).catch(() => {}) } }
+})
 vi.mock("@/lib/cache", () => ({
   getOrSetCache: (_key: string, _ttl: number, fn: () => unknown) => fn(),
 }))
