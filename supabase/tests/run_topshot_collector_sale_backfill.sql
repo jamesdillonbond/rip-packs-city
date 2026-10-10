@@ -21,7 +21,7 @@
 --      unschedules itself.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261004152000_topshot_collector_sale_backfill_recovers_absent_2025_collector_sales.sql).
+-- (supabase/migrations/20261010161620_audit_20261010_collector_sale_backfill_drops_the_walk_margin_once_the_walk_is_gone.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 
 BEGIN;
@@ -279,7 +279,10 @@ BEGIN
         FROM public.topshot_sellback_walk_purchases p
        WHERE p.promote_outcome IS NULL
          AND p.block_height IS NOT NULL AND p.sold_at IS NOT NULL
-         AND p.block_height < v_frontier - 250
+         -- 2026-10-10 (#167): the 250-block margin guards pages still being WALKED;
+         -- once the walk is unscheduled nothing below the frontier can change, and
+         -- the margin stranded the last two purchases (1,440 empty ticks a day).
+         AND p.block_height < v_frontier - CASE WHEN EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'rpc-topshot-sellback-walk') THEN 250 ELSE 0 END
          AND NOT EXISTS (SELECT 1 FROM public.topshot_sellback_walk_deposits d WHERE d.tx = p.tx AND d.nft_id = p.nft_id)
        ORDER BY p.block_height
        LIMIT p_claim
@@ -569,10 +572,17 @@ BEGIN
   DELETE FROM cron.job WHERE jobname = 'rpc-topshot-sellback-walk';
   UPDATE public.topshot_sellback_walk_pages SET done_at = now() WHERE done_at IS NULL;
   UPDATE public.topshot_sellback_walk_purchases SET promote_outcome = 'inserted', promoted_at = now() WHERE nft_id = '205';
+  -- 2026-10-10 (#167): a purchase INSIDE the old 250-block margin of the final frontier
+  -- (130,302,000), with the walk gone, must still be classified, or the lane never ends.
+  INSERT INTO public.topshot_sellback_walk_purchases (tx, nft_id, price_usd, seller, block_height, sold_at)
+  VALUES ('c210', '210', 2, '0xs10', 130301900, '2025-10-22 14:00:00+00');
+  INSERT INTO public.sales (edition_id, collection_id, collection, price_usd, transaction_hash, sold_at, nft_id, source)
+  VALUES ('00000000-0000-0000-0000-0000000000e1', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'nba_top_shot', 2, 'c210', '2025-10-22 14:00:00+00', '210', 'onchain');
   INSERT INTO public.sales (edition_id, collection_id, collection, price_usd, transaction_hash, sold_at, nft_id, source)
   VALUES ('00000000-0000-0000-0000-0000000000e1', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'nba_top_shot', 1, 'c206', '2025-10-22 13:00:00+00', '206', 'onchain');
   r := public.run_topshot_collector_sale_backfill(3, 200);
   PERFORM _assert_eq((SELECT promote_outcome FROM public.topshot_sellback_walk_purchases WHERE nft_id = '206'), 'collector_in_sales', 'the frontier row is classified once the walk has passed it');
+  PERFORM _assert_eq((SELECT promote_outcome FROM public.topshot_sellback_walk_purchases WHERE nft_id = '210'), 'collector_in_sales', 'with the walk gone, a row inside the old 250-block margin is classified too (#167)');
   PERFORM _assert_eq((SELECT count(*)::text FROM cron.job WHERE jobname = 'rpc-topshot-collector-sale-backfill'), '0', 'lane unschedules itself when nothing is left (claim 5)');
 END
 $do$;

@@ -2940,7 +2940,8 @@ const PINS = [
     // the buyer's collection at the purchase block; never a guessed edition, never a re-walk.
     fn: "run_topshot_collector_sale_backfill",
     test: "supabase/tests/run_topshot_collector_sale_backfill.sql",
-    migration: "supabase/migrations/20261004152000_topshot_collector_sale_backfill_recovers_absent_2025_collector_sales.sql",
+    // 2026-10-10 (#167): the walk margin applies only while the walk is scheduled.
+    migration: "supabase/migrations/20261010161620_audit_20261010_collector_sale_backfill_drops_the_walk_margin_once_the_walk_is_gone.sql",
   },
   {
     // Added 2026-10-03 (#169). The buyer board excludes registry buy-back wallets (unless contracts
