@@ -11,6 +11,25 @@ should point here for these facts rather than duplicating them, because they dri
 > drift vs CLAUDE.md to `docs/overnight/ledger.md` (Queued). A dropped/renamed table that
 > CLAUDE.md still names = HIGH-priority footgun.
 
+✅ **FULL REGENERATION 2026-10-09 (PT, ~11:15 PM; Claude Code, Supabase MCP `execute_sql`) — every query in "Regeneration SQL" below re-run against live. ZERO drift in any fact this file asserts; only the growth counts moved.**
+
+| fact | 09-08 | **10-09** | note |
+|---|---|---|---|
+| `public` base tables | 423 | **602** | informational |
+| `public` views | 137 | **158** | |
+| `public` materialized views | — | **36** | |
+| `public` functions | 731 | **963** | |
+| active `cron.job` rows | 133 | **221** | |
+| `editions` columns | 36 | **36** | unchanged |
+| `sales` partitions | 2020–2027 | **2020–2027** | unchanged; `fmv_snapshots` = 2025, 2026, 2027 |
+| `public.collections` | 7 (6 active) | **7 (6 active)** | only `panini_blockchain` inactive; table below matches |
+| tables with `rowsecurity = false` | 0 | **0** | invariant HOLDS |
+| `check_public_security_invariants()` | 0 rows | **0 rows** | clean |
+| `check_anon_write_surface()` | 0 rows | **0 rows** | clean |
+| `check_secdef_anon_exec_drift()` | — | **array length 0** | clean |
+
+Enums byte-identical to the table below. FMV homes unchanged: `pinnacle_fmv_snapshots` absent, its `_backup_20260608` present, `pinnacle_catalog` carries the same 9 `fmv_*` columns. Every table named in the existence sweep exists with the same kind; `analytics_sales`, `sales_market` and `fmv_current` are VIEWS, `edition_fmv_current` is a base table, and `sales` / `fmv_snapshots` are partitioned parents. ⚠ The 09-08 note below said the column inventories were 08-22 vintage. This file carries no per-table column inventory beyond the ones the SQL re-reads, so this run covers everything it generates; the dated sections further down (Pinnacle grain, trophy case, …) are prose, not generated.
+
 🔁 **RE-READ 2026-09-08 (PT) — and this one found REAL DRIFT, in the row this file exists to protect.**
 
 🚨 **`public.collections` is no longer 5 active / 2 inactive — it is 6 / 1.** `candy_mlb` (`solana`,
@@ -64,7 +83,7 @@ Security invariants re-run the same minute: `check_public_security_invariants()`
 enum tables, partition lists and column inventories below still date from 2026-08-22, and the precedence rule
 ("this file wins") is only as good as THAT date. **Six facts being right does not make the other two hundred fresh.**
 
-**Last generated:** 2026-08-22 (Claude Code, interactive — re-run via Supabase MCP `execute_sql`; prior: 2026-07-28, 2026-07-16, 2026-06-30).
+**Last generated:** 2026-10-09 (Claude Code, interactive — re-run via Supabase MCP `execute_sql`; prior: 2026-08-22, 2026-07-28, 2026-07-16, 2026-06-30).
 
 ⚠ **THIS FILE HAS NO GENERATOR SCRIPT.** `grep -rn schema-truth scripts/ package.json .github/workflows/` returns **nothing** — "generated" means someone ran the SQL at the bottom by hand. So its authority ("this file wins") is only as good as the stamp above, and it went **25 days** without a regeneration while holding that authority. ⚠ **It was WRONG in that window and the prose was right:** it said `editions` has 32 columns; `database.md` had carried the live figure of **36** since 2026-08-14. **Read the stamp before invoking the precedence rule.**
 
@@ -169,7 +188,7 @@ conflation is exactly what this file's header warns about.
   call. ⛔ `information_schema.role_table_grants` returns **0 rows for all 34 MVs** while they demonstrably
   hold grants, so any guard reading MV grants through it passes **vacuously**.
 
-## Collections registry (live `public.collections`) — ⭐ CANONICAL, re-verified 2026-08-24
+## Collections registry (live `public.collections`) — ⭐ CANONICAL, re-verified 2026-10-09
 
 ⚠ **CLAUDE.md no longer carries a prose copy of these UUIDs** (displaced 2026-08-24 to pay for a new
 honesty rule, exactly as this file's header prescribes) — **so this table is now the only in-repo copy
