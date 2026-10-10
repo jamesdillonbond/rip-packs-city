@@ -110,7 +110,11 @@ export async function fetchPaniniMoreBoards(
     // modeled"; here they would be EV rows with no EV. Filter on the view's own discriminator.
     // ⚠ AND on the product (2026-09-30): ev_modeled alone stopped meaning "WC" when the 2026 Prizm
     // WNBA Hobby pack (2420) got a model — on this WC board it would be a WNBA pack posing as WC.
-    read(db.from("panini_pack_ev_board").select(PACK_COLS).eq("ev_modeled", true).eq("product_set_id", 2332).order("pack_type", { ascending: true }), "panini_pack_ev_board"),
+    // ⚠ AND on the pack TYPE (2026-10-10): secondary packs priced from Panini's guaranteed contents
+    // (panini_pack_ev_guaranteed) are ev_modeled too, and one of them (1043, White Sparkle /8) is a WC
+    // pack. This tab is the Hobby/FOTL model with its Silver/base/insert legs; `hobby`/`fotl` are
+    // claimed only by the modeled standard packs, so the type keeps a one-slot pack off it.
+    read(db.from("panini_pack_ev_board").select(PACK_COLS).eq("ev_modeled", true).eq("product_set_id", 2332).in("pack_type", ["hobby", "fotl"]).order("pack_type", { ascending: true }), "panini_pack_ev_board"),
     read(
       db.from("panini_special_serials_board").select(SPECIAL_COLS)
         .eq("is_listed", true)

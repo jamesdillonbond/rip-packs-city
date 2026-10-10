@@ -204,6 +204,34 @@ describe("PaniniPackMarket — unmodeled products", () => {
     expect(wc.textContent).toContain("Typical pull")
   })
 
+  it("a pack priced from its guaranteed contents shows EV but no Hobby/FOTL legs (no '—' legs that read as worthless)", async () => {
+    const g = product({
+      id: "6", packType: "pack", label: "Pack", name: "Silver Pack", productName: "2021 Panini Blockchain NBA Packs Entertainment", sport: "BASKETBALL",
+      typicalEvUsd: 4, actualEvUsd: 18.12, netRipEdgeUsd: -67, costUsd: 85, floorUsd: 85,
+      legs: { silver: null, baseParallel: null, insert: null, fotlExclusive: null },
+      modelNote: "modeled from Panini's guaranteed contents · each slot valued at … · 1664 sales", evModeled: true,
+    })
+    mockFetch(200, payload({ products: [g] }))
+    const c = await mount()
+    const t = c.querySelector('[data-testid="panini-pack-6"]')!.textContent ?? ""
+    expect(t).toContain("Typical pull")
+    expect(t).toContain("$18.12")
+    expect(t).not.toContain("EV legs")
+    expect(t).toContain("model modeled from Panini's guaranteed contents")
+  })
+
+  it("the not-modeled reason comes from the board's note — never 'doesn't price this product' for a priced product", async () => {
+    const choice = product({ id: "77", packType: "pack", name: "Kaboom Pack", evModeled: false, modelNote: "not modeled · this pack's guaranteed contents include a choice, a range or a mixed pool, which is not a fixed slot; EV is withheld, not zero" })
+    const thin = product({ id: "78", packType: "pack", name: "Gold Pack", evModeled: false, modelNote: "not modeled · not enough recorded sales (or catalogued editions) for every guaranteed slot of this pack; EV is withheld, not zero" })
+    mockFetch(200, payload({ products: [choice, thin] }))
+    const c = await mount()
+    const a = c.querySelector('[data-testid="panini-pack-77"]')!.textContent ?? ""
+    const b = c.querySelector('[data-testid="panini-pack-78"]')!.textContent ?? ""
+    expect(a).toContain("its contents aren't fixed slots")
+    expect(b).toContain("not enough card sales for every slot yet")
+    for (const t of [a, b]) expect(t).not.toContain("doesn't price this product")
+  })
+
   it("names the product in the price trail when two products' packs share a type", async () => {
     mockFetch(200, payload({
       products: [product({ id: "1039", packType: "fotl", label: "FOTL" }), wnba],

@@ -923,7 +923,7 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
     // crawl-budget burn + a "Crawled, currently not indexed" signal). Adding
     // the slug here is NOT a separate go-live step; it rides the launch flag.
     ...(CANDY_MLB_PUBLIC ? ['candy-mlb'] : []),
-    ...(PANINI_PUBLIC ? ['panini-squeeze'] : []),
+    ...(PANINI_PUBLIC ? ['panini-squeeze', 'panini-premiums'] : []),
   ]
   const insightsPages: MetadataRoute.Sitemap = [
     { url: `${BASE_URL}/insights`, changeFrequency: 'daily', priority: 0.9 },

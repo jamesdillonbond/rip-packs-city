@@ -125,6 +125,9 @@ const td: React.CSSProperties = { padding: "6px 8px", fontFamily: mono, fontSize
 function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterHours: number }) {
   const costLabel = p.costBasis === "avg_sale" ? "Cost (avg sale — no floor)" : p.costBasis === "primary" ? "Panini drop price" : "Floor"
   const modeled = p.evModeled === true
+  // Hobby/FOTL models carry Silver / base / insert legs; a pack priced from Panini's guaranteed
+  // contents (2026-10-10) has none, and three "—" rows would read as legs worth nothing.
+  const hasLegs = modeled && (p.legs.silver !== null || p.legs.baseParallel !== null || p.legs.insert !== null)
   // A typed pack (Hobby, FOTL, Blaster…) heads with its type; an un-typed secondary-market pack
   // ("pack", 2026-10-03) heads with its own published name — "Pack pack" says nothing, and one product
   // can carry a dozen distinct packs (Red Mosaic, Gold Vinyl, Base Wave 3…).
@@ -165,7 +168,7 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
             <Tile label="EV (mean)" value={usd(p.actualEvUsd)} sub={p.netRipEdgeUsd !== null ? `${signedUsd(p.netRipEdgeUsd)} vs cost` : undefined} />
           </>
         ) : (
-          <Tile label="Pack EV" value="Not modeled" sub="RPC doesn't price this product's cards yet" />
+          <Tile label="Pack EV" value="Not modeled" sub={notModeledReason(p.modelNote)} />
         )}
         <Tile
           label="Sealed"
@@ -180,14 +183,14 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
             <tr><td style={td}>Average sale</td><td style={td}>{usd(p.avgSaleUsd)}</td></tr>
             <tr><td style={td}>Top sale</td><td style={td}>{usd(p.topSaleUsd)}</td></tr>
             <tr><td style={td}>Market listings (Panini&apos;s count)</td><td style={td}>{count(p.listedCount)}</td></tr>
-            {modeled ? (
+            {hasLegs ? (
               <>
                 <tr><td style={td}>EV legs — Base Silver</td><td style={td}>{usd(p.legs.silver)}</td></tr>
                 <tr><td style={td}>EV legs — Base non-Silver parallel</td><td style={td}>{usd(p.legs.baseParallel)}</td></tr>
                 <tr><td style={td}>EV legs — Insert</td><td style={td}>{usd(p.legs.insert)}</td></tr>
               </>
             ) : null}
-            {modeled && p.packType === "fotl" ? (
+            {hasLegs && p.packType === "fotl" ? (
               <tr><td style={td}>EV legs — FOTL-exclusive parallel</td><td style={td}>{usd(p.legs.fotlExclusive)}</td></tr>
             ) : null}
           </tbody>
@@ -214,6 +217,20 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
       </div>
     </section>
   )
+}
+
+/**
+ * The short reason under "Not modeled", from the board's own model_note — never a blanket claim.
+ * Since 2026-10-10 most Panini products ARE priced, so "RPC doesn't price this product's cards" is
+ * false for a pack whose guaranteed contents are a choice/range, or whose slots lack sales.
+ */
+export function notModeledReason(note: string | null | undefined): string {
+  const n = (note ?? "").toLowerCase()
+  if (n.includes("choice, a range or a mixed pool")) return "its contents aren't fixed slots"
+  if (n.includes("not enough recorded sales")) return "not enough card sales for every slot yet"
+  if (n.includes("sales model for this product needs")) return "not enough card sales yet"
+  if (n.includes("standard hobby and fotl packs only")) return "this pack's contents differ from the modeled packs"
+  return "RPC doesn't price this product's cards yet"
 }
 
 /** "FOTL" alone is ambiguous once two products each have a FOTL pack — name the product when it isn't WC. */
@@ -294,8 +311,9 @@ export default function PaniniPackMarket() {
       </h1>
       <Note>
         Sealed Panini NFT packs, bought and sold on Panini&apos;s own marketplace. Prices and supply are Panini&apos;s market
-        stats as of RPC&apos;s last walk. Pack EV is modeled per product, and only once every card family in the pack is priced mostly from real
-        sales, not asks; other packs show market stats and say so. Read the typical pull first: it adds up the median card for each slot in the pack — a stand-in for an ordinary pack, not a simulated median pack. The mean is dragged up by chase cards most
+        stats as of RPC&apos;s last walk. Pack EV is modeled only once every card slot in the pack is priced from real sales, not asks — the
+        standard Hobby and FOTL packs from their odds, and other packs from the contents Panini guarantees on the pack page; packs with a
+        choice or range of contents, or too few card sales, show market stats and say so. Read the typical pull first: it adds up the median card for each slot in the pack — a stand-in for an ordinary pack, not a simulated median pack. The mean is dragged up by chase cards most
         packs never contain, and it is priced off FMV on a listing-fed index, so it is indicative pull value, not what the cards would sell for.
       </Note>
 

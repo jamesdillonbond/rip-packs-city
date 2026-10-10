@@ -200,7 +200,7 @@ describe("flipping PANINI_PUBLIC moves EXACTLY the panini entries and nothing el
     return (s as any[]).map((x) => x.url)
   }
 
-  it("the symmetric difference is exactly /insights/panini-squeeze", async () => {
+  it("the symmetric difference is exactly the PANINI_PUBLIC boards (/insights/panini-squeeze + panini-premiums)", async () => {
     const on = await sitemapUnder(true)
     const off = await sitemapUnder(false)
 
@@ -213,13 +213,15 @@ describe("flipping PANINI_PUBLIC moves EXACTLY the panini entries and nothing el
     const onlyOn = on.filter((u) => !off.includes(u))
     const onlyOff = off.filter((u) => !on.includes(u))
 
-    expect(onlyOn, "turning the flag ON added something other than panini-squeeze").toEqual([
+    // 2026-10-10: /insights/panini-premiums rides the same flag (proxy.ts gates /insights/panini*).
+    expect(onlyOn, "turning the flag ON added something other than the Panini boards").toEqual([
       `${BASE}/insights/panini-squeeze`,
+      `${BASE}/insights/panini-premiums`,
     ])
     expect(onlyOff, "turning the flag OFF removed something it should not have").toEqual([])
-    // "Both directions move by the same 1", stated as the counts rather than
-    // as two absolute totals that drift apart on every unrelated change.
-    expect(on.length - off.length).toBe(1)
+    // "Both directions move by the same N" (N = the flag's boards: 2 since 2026-10-10), stated as
+    // the counts rather than as two absolute totals that drift apart on every unrelated change.
+    expect(on.length - off.length).toBe(2)
   })
 
   it("POSITIVE CONTROL — the comparison can SEE a difference", async () => {

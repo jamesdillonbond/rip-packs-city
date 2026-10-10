@@ -106,6 +106,7 @@ const PAGES: PageCheck[] = [
   { path: "/insights/trophies", name: "insights · trophies" },
   { path: "/insights/underpriced-serials", name: "insights · underpriced serials" },
   { path: "/insights/panini-squeeze", name: "insights · panini squeeze" },
+  { path: "/insights/panini-premiums", name: "insights · panini premiums" },
   { path: "/insights/candy-mlb", name: "insights · candy mlb" },
 
   // ⚠ DO NOT ADD the top-level /analytics dashboards here (2026-08-02).

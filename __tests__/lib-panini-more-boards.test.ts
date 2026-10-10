@@ -36,6 +36,10 @@ function db(over: Record<string, Res> = {}) {
           ;(eqs[table] ??= []).push(`${col}=${String(v)}`)
           return b
         },
+        in: (col: string, v: unknown[]) => {
+          ;(eqs[table] ??= []).push(`${col} in ${v.join("|")}`)
+          return b
+        },
         order: (col: string) => {
           ;(orders[table] ??= []).push(col)
           return b
@@ -117,10 +121,12 @@ describe("fetchPaniniMoreBoards — pack EV rows are the modeled product's only"
     expect(r.ok).toBe(false)
   })
 
-  it("filters the pack board on ev_modeled=true AND the WC product", async () => {
+  it("filters the pack board on ev_modeled=true AND the WC product AND the Hobby/FOTL types", async () => {
     const d = db()
     await fetchPaniniMoreBoards(d as any)
-    expect(d.eqs.panini_pack_ev_board).toEqual(["ev_modeled=true", "product_set_id=2332"])
+    // 2026-10-10: a WC secondary pack priced from its guaranteed contents (1043) is ev_modeled too;
+    // the type keeps it off this Hobby/FOTL-legs tab.
+    expect(d.eqs.panini_pack_ev_board).toEqual(["ev_modeled=true", "product_set_id=2332", "pack_type in hobby|fotl"])
   })
 })
 
