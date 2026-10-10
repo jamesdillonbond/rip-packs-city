@@ -116,7 +116,7 @@ const ERRORS_SAMPLE_CAP = 12
 const FETCH_CONCURRENCY = 3
 const MAX_1015_RETRIES = 3
 const RETRY_BACKOFF_MS = 2000
-const FUNCTION_VERSION = 23
+const FUNCTION_VERSION = 24
 
 // v21 (2026-06-07) — per-pack fetch timeout (PACKEV-BUDGET-2). The 06-06 pool
 //   remap roughly doubled priced editions/pack, so a single slow pack's
@@ -1232,6 +1232,9 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     const dbStart = Date.now()
     const externalIdList = Array.from(seenExternalIds)
     const editionByExternalId = new Map<string, { id: string; tier: string | null }>()
+    // Set when the post-seed re-resolve failed: the pool then lacks editions it
+    // could not name, so the stale-prune below must not remove their old rows.
+    let postSeedResolveFailed = false
     if (externalIdList.length > 0) {
       const { data: edRows, error: edErr } = await supabase.rpc(
         "get_topshot_editions_by_setplay",
@@ -1269,6 +1272,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       )
       if (postSeedErr) {
         console.log(`[compute-topshot-pack-ev] re-resolve err: ${postSeedErr.message}`)
+        postSeedResolveFailed = true
       } else {
         // deno-lint-ignore no-explicit-any
         for (const r of (postSeedRows ?? []) as any[]) {
@@ -1339,17 +1343,32 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         })
       }
 
-      await supabase.from("pack_drop_pool")
-        .delete()
-        .eq("collection_id", TOPSHOT_COLLECTION_ID)
-        .eq("dist_id", distId)
-
+      // ⛔ WRITE FIRST, PRUNE LAST (2026-10-10). This used to DELETE the dist's
+      // pool (error unread) and then insert: a failed insert chunk, or a fetch
+      // that resolved no editions, left the distribution with NO pool and the
+      // pack page with no odds. Now the rows are upserted on the PK, and only
+      // when every chunk landed (and nothing went unresolved) are the rows this
+      // run did not refresh removed — the AllDay / Golazos order.
       if (poolRows.length === 0) continue
+      let poolWriteFailed = false
       for (let i = 0; i < poolRows.length; i += 500) {
         const chunk = poolRows.slice(i, i + 500)
-        const { error: ie } = await supabase.from("pack_drop_pool").insert(chunk)
+        const { error: ie } = await supabase
+          .from("pack_drop_pool")
+          .upsert(chunk, { onConflict: "collection_id,dist_id,edition_id,slot_name" })
         if (!ie) counters.pool_rows_written += chunk.length
-        else console.log(`[compute-topshot-pack-ev] pool insert err dist=${distId}: ${ie.message}`)
+        else {
+          poolWriteFailed = true
+          console.log(`[compute-topshot-pack-ev] pool upsert err dist=${distId}: ${ie.message}`)
+        }
+      }
+      if (!poolWriteFailed && !postSeedResolveFailed) {
+        const { error: pruneErr } = await supabase.from("pack_drop_pool")
+          .delete()
+          .eq("collection_id", TOPSHOT_COLLECTION_ID)
+          .eq("dist_id", distId)
+          .lt("last_refreshed_at", nowIso)
+        if (pruneErr) console.log(`[compute-topshot-pack-ev] pool prune err dist=${distId}: ${pruneErr.message}`)
       }
 
       // v20: persist per-tier remaining/original counts for the tier-odds UI.
