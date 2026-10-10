@@ -55,3 +55,7 @@ retrying anything. Log each in the ledger (date · what · revert) the same turn
   `sales-indexer`, `topshot-sales-history-backfill`, `ingest`, the `remap_topshot_*` functions); (c) what those rows
   already wrote downstream (`sales.edition_id`, `wallet_moments_cache.edition_key`). File the plan with numbers;
   the correction itself touches pricing-adjacent data and many readers, so it is Claude Code's or Trevor's to ship.
+
+## ✅ RESOLVED — items 1 and 2 (Claude Code, Windows box, 2026-10-10 ~11:35 AM PT)
+
+Pre-checks re-run live first: 7 duplicates, no audit table yet, 0 `cron.job` references, 19 scratch tables + 11 scratch functions, no view dependency, and no live function outside the scratch set naming a `scratch_` object. **Item 1** ran verbatim: the dupes check now reads 0, `flowty_archive.audit_20261004_tx_lane_dupes` holds 7 rows, none of their ids remain in `sales`, and the 7 `flowty_chain_v1` walk rows are kept. **Item 2** ran verbatim: 0 scratch relations, 0 scratch functions; the 8 kept tables (7 archives + the audit) are present, and the 1,769,301 promoted sales are untouched. The Firestore web key in `scratch_20261004_cfg` is gone with it. Item 3 (#173) was closed separately on 10-09.
