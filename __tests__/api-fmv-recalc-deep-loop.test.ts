@@ -527,6 +527,50 @@ function fallbackFixtures(qs: ReturnType<typeof QS>) {
   }
 }
 
+describe("fmv-recalc page edition with no in-window MARKET sale (#169, 2026-10-10)", () => {
+  // The page selector reads `sales`, so an edition whose only 30d sales are
+  // buy-backs is IN the page, but Step 1b reads `sales_market` and returns
+  // nothing for it. Before the fix it never entered the work map and kept its
+  // pre-exclusion FMV for up to 7 days; now it is seeded empty and the 90d
+  // widening prices it off its market sales (gated to MEDIUM: 30d count is 0).
+  it("prices a buy-back-only page edition off its 90d market sales instead of skipping it", async () => {
+    const mkt = (edition: string, price: number, serial: number, ageDays: number) =>
+      ({ edition_id: edition, price_usd: price, sold_at: daysAgo(ageDays), serial_number: serial })
+    const { inserted, rpcCalls } = instrument({
+      pipeline_runs: { data: null, error: null },
+      "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-main" }, { edition_id: "ed-bb" }], error: null },
+      "rpc:fmv_recalc_90d_catchup_editions": { data: [], error: null },
+      sales_market: [
+        // call 0 — Step 1b (30d): rows for ed-main only; ed-bb's 30d sales were all buy-backs.
+        { data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15), sale(10, 800, 20)].map((s) => ({ ...s, edition_id: "ed-main" })), error: null },
+        // call 1 — the 90d widening: ed-bb's real (non-buy-back) sales, all older than 30d.
+        { data: [mkt("ed-bb", 18, 300, 35), mkt("ed-bb", 18, 400, 44), mkt("ed-bb", 18, 500, 52), mkt("ed-bb", 18, 600, 61), mkt("ed-bb", 18, 700, 75)], error: null },
+      ],
+      editions: {
+        data: [
+          { id: "ed-main", collection_id: TOPSHOT, tier: "COMMON", circulation_count: 1000, external_id: "1:100", jersey_number: null },
+          { id: "ed-bb", collection_id: TOPSHOT, tier: "COMMON", circulation_count: 1000, external_id: "1:300", jersey_number: null },
+        ],
+        error: null,
+      },
+      edition_offers: { data: [], error: null },
+      allday_edition_floor_ask: { data: [], error: null },
+      fmv_snapshots: { data: [], error: null },
+      ...QUIET_TAIL,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const bb = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-bb")
+    expect(bb).toHaveLength(1)
+    expect(Number(bb[0].fmv_usd)).toBeCloseTo(18, 1)
+    expect(bb[0].confidence).toBe("MEDIUM")
+    expect(bb[0].collection_id).toBe(TOPSHOT)
+    expect(terminalLog(rpcCalls)).toMatchObject({ p_pipeline: "fmv-recalc", p_ok: true })
+  })
+})
+
 describe("fmv-recalc 90d catch-up seed (offset 0)", () => {
   // A Top Shot edition that traded within 90d but NOT in the recent 30d is never
   // enumerated by fmv_recalc_edition_page (a 30d GROUP BY). The catch-up RPC

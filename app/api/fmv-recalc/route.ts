@@ -504,6 +504,43 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Step 2-bis: page editions whose ONLY in-window sales are buy-backs ───
+    // 2026-10-10 (known-issues #169 re-measure). The page selector reads `sales`
+    // on purpose so a buy-back-only edition stays in the work list and is
+    // re-priced WITHOUT its buy-backs. But Step 2 groups only the rows Step 1b
+    // read from `sales_market`, so such an edition never entered
+    // editionSalesMap, was never written, and kept its pre-exclusion FMV (50
+    // Top Shot editions still on a 10-03 1.7.0 MEDIUM/LOW snapshot, 10-10).
+    // Seed them EMPTY, exactly like the 90d catch-up seed below: Step 2a-quater
+    // widens them to their 90d market sales, and one with none still skips at
+    // the main loop's `sales.length === 0` guard and keeps its prior snapshot.
+    // A failed collection lookup seeds nothing (the status quo), never a guess.
+    {
+      const unsoldPageIds = pageEditionIds.filter((id) => !editionSalesMap.has(id))
+      if (unsoldPageIds.length > 0) {
+        let seededBuybackOnly = 0
+        for (let i = 0; i < unsoldPageIds.length; i += IN_CHUNK) {
+          const slice = unsoldPageIds.slice(i, i + IN_CHUNK)
+          const { data: edRows, error: edErr } = await supabaseAdmin
+            .from("editions")
+            .select("id, collection_id")
+            .in("id", slice)
+          if (edErr) {
+            console.warn(`[FMV-RECALC] buy-back-only seed: editions lookup failed (non-fatal): ${edErr.message}`)
+            continue
+          }
+          for (const r of (edRows as { id: string; collection_id: string | null }[] | null) ?? []) {
+            if (!r.collection_id || r.collection_id === PINNACLE_COLLECTION_ID || editionSalesMap.has(r.id)) continue
+            editionSalesMap.set(r.id, { sales: [], collectionId: r.collection_id, latestSoldAt: new Date(0) })
+            seededBuybackOnly++
+          }
+        }
+        if (seededBuybackOnly > 0) {
+          console.log(`[FMV-RECALC] seeded ${seededBuybackOnly} page editions with no in-window market sale for 90d pricing`)
+        }
+      }
+    }
+
     // ── Step 2a: Wash-trade filter ─────────────────────────────────────────
     // Exclude suspicious sale clusters: if 3+ sales for the same edition occur
     // within a 10-minute window, remove all sales in that cluster from WAP.
