@@ -74,7 +74,14 @@ interface FlowEventBlock {
 
 async function fetchEventRange(type: string, start: number, end: number): Promise<FlowEventBlock[]> {
   const url = `${FLOW_REST}/v1/events?type=${encodeURIComponent(type)}&start_height=${start}&end_height=${end}`
-  const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+  // Flow's access node answers 429 under this walk's parallel reads (seen
+  // 2026-10-10 at block 163.13M). Back off and retry a 429 only; any other
+  // non-2xx, or a 429 that outlasts the retries, still THROWS below.
+  let res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+  for (let attempt = 1; res.status === 429 && attempt <= 4; attempt++) {
+    await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt))
+    res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+  }
   // ⚠ THROW, DO NOT `return []` — an HTTP error read as an empty range would let
   // the cursor advance past blocks nothing fetched, and this walk never revisits.
   if (!res.ok) {
@@ -126,6 +133,8 @@ export async function POST(req: NextRequest) {
   let completedSeen = 0
   let matched = 0
   let unresolved = 0
+  const unresolvedByType: Record<string, number> = { edition: 0, subedition: 0, serial: 0 }
+  let resolvedViaSale = 0
   let alreadyPresent = 0
   let inserted = 0
   let aliased = 0
@@ -244,10 +253,37 @@ export async function POST(req: NextRequest) {
       // 4. resolve + build.
       const resolved = await resolveOfferTargets(missing)
       aliased = resolved.aliased
+      // 4b. a FILLED offer the catalog cannot place (most often a serial offer
+      //     on an nft absent from `moments`) takes its edition + serial from its
+      //     own fill sale — the same fill tx, already resolved by the sale builder.
+      const fillTxs = missing
+        .filter((o) => !resolved.byOfferId.has(o.offerId) && completions.get(o.offerId)?.fillTx)
+        .map((o) => completions.get(o.offerId)!.fillTx!)
+      const saleByTx = new Map<string, { editionId: string; serial: number | null }>()
+      for (let i = 0; i < fillTxs.length; i += 200) {
+        const { data, error } = await (supabaseAdmin as any)
+          .from("sales")
+          .select("transaction_hash, edition_id, serial_number")
+          .eq("collection_id", TS_COLLECTION_ID)
+          .eq("source", "offer_fill")
+          .in("transaction_hash", fillTxs.slice(i, i + 200))
+        if (error) throw new Error(`fill-sale lookup: ${error.message}`)
+        for (const r of (data as Array<{ transaction_hash: string; edition_id: string; serial_number: number | null }> | null) ?? [])
+          if (r.edition_id) saleByTx.set(r.transaction_hash, { editionId: r.edition_id, serial: r.serial_number })
+      }
+
       const rows: Array<Record<string, unknown>> = []
       for (const o of missing) {
-        const t = resolved.byOfferId.get(o.offerId)
-        if (!t) { unresolved++; continue }
+        let t = resolved.byOfferId.get(o.offerId)
+        if (!t) {
+          const tx = completions.get(o.offerId)?.fillTx
+          const sale = tx ? saleByTx.get(tx) : undefined
+          if (sale) {
+            t = { editionId: sale.editionId, momentId: null, serial: o.offerType === "serial" ? sale.serial : null }
+            resolvedViaSale++
+          }
+        }
+        if (!t) { unresolved++; unresolvedByType[o.offerType]++; continue }
         const c = completions.get(o.offerId)!
         rows.push({
           offer_id: o.offerId,
@@ -304,6 +340,8 @@ export async function POST(req: NextRequest) {
     matched_available: matched,
     already_present: alreadyPresent,
     unresolved,
+    unresolved_by_type: unresolvedByType,
+    resolved_via_fill_sale: resolvedViaSale,
     aliased_to_canonical: aliased,
     inserted,
     inserted_filled: insertedByStatus.filled,

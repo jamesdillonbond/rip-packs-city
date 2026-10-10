@@ -20,6 +20,7 @@ type Op = { table: string; method: string; rows?: unknown; options?: unknown; fi
 const state = vi.hoisted(() => ({
   ops: [] as Op[],
   present: [] as string[],
+  sales: [] as Array<Record<string, unknown>>,
   rpc: [] as Array<{ name: string; args: Record<string, unknown> }>,
 }))
 
@@ -31,6 +32,7 @@ function builder(table: string) {
     if (table === "topshot_edition_aliases") return { data: [], error: null }
     if (table === "editions") return { data: [{ external_id: "8:133", id: "uuid-8133" }], error: null }
     if (table === "moments") return { data: [], error: null }
+    if (table === "sales") return { data: state.sales, error: null }
     if (table === "offers" && op.method === "select") return { data: state.present.map((offer_id) => ({ offer_id })), error: null }
     if (table === "offers" && op.method === "upsert") return { data: op.rows, error: null }
     return { data: null, error: null }
@@ -130,6 +132,7 @@ let fetchMock: ReturnType<typeof installFetchMock> | null = null
 beforeEach(() => {
   state.ops = []
   state.present = []
+  state.sales = []
   state.rpc = []
 })
 afterEach(() => {
@@ -194,6 +197,52 @@ describe("backfill-topshot-offers", () => {
     const log = state.rpc.find((r) => r.name === "log_pipeline_run")
     expect(log?.args).toMatchObject({ p_pipeline: "backfill-topshot-offers", p_ok: false })
   })
+
+  it("a filled offer the catalog cannot place takes its edition from its own fill sale; an unplaceable cancel stays out", async () => {
+    // 801: serial offer on an nft absent from `moments`, FILLED  → edition from the sale
+    // 802: serial offer on an nft absent from `moments`, CANCELLED → unresolved (serial)
+    const serialAvail = (id: string, h: number) => {
+      const b = avail(id, h)
+      const payload = cdcEvent(OFFER_AVAILABLE, {
+        offerAddress: { type: "Address", value: OFFERER },
+        offerId: cdc.uint64(id),
+        nftType: cdc.nftType(TS_NFT),
+        offerAmount: cdc.ufix64("9.00000000"),
+        offerParamsString: paramsDict({ _type: "NFT", nftId: "555" + id }),
+      })
+      b.events[0].payload = Buffer.from(JSON.stringify(payload)).toString("base64")
+      return b
+    }
+    fetchMock = installFetchMock([
+      jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
+      jsonRoute("OfferAvailable", [serialAvail("801", 1100), serialAvail("802", 1101)]),
+      jsonRoute("OfferCompleted", [completed("801", 1200, true), completed("802", 1201, false)]),
+    ])
+    state.sales = [{ transaction_hash: "f801".padEnd(64, "0"), edition_id: "uuid-from-sale", serial_number: 42 }]
+
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true, inserted: 1, resolved_via_fill_sale: 1, unresolved: 1, unresolved_by_type: { serial: 1 } })
+    const rows = offerUpserts()[0].rows as Array<Record<string, unknown>>
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ offer_id: "801", edition_id: "uuid-from-sale", serial_number: 42, offer_type: "serial", status: "filled" })
+    const salesRead = state.ops.find((o) => o.table === "sales")
+    expect(salesRead?.filters).toContainEqual(["eq", ["collection_id", TS]])
+  })
+
+  it("retries a Flow 429 and completes the range", async () => {
+    let availCalls = 0
+    fetchMock = installFetchMock([
+      jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
+      {
+        match: (url: string) => url.includes("OfferAvailable"),
+        respond: () => (++availCalls === 1 ? { json: [], status: 429 } : { json: [] }),
+      },
+      jsonRoute("OfferCompleted", []),
+    ])
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true, cursor_after: "1250" })
+    expect(availCalls).toBeGreaterThan(1)
+  }, 15_000)
 
   it("rejects a missing token", async () => {
     const res = await POST(new NextRequest("https://t/api/admin/backfill-topshot-offers", { method: "POST" }))
