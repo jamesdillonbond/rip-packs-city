@@ -9,10 +9,11 @@
 // rendering it as "Ask $X" and left sales-priced rows honest but ask-less. This
 // supplies the real ask.
 //
-// THE RULE IS get_team_checklist's, verbatim in intent (its 2026-10-03 "floor_usd
-// is the LIVE low ask" comment):
+// THE RULE IS get_team_checklist's (its 2026-10-03 "floor_usd is the LIVE low
+// ask" comment) with ONE deliberate difference: edition_offers freshness reads
+// low_ask_confirmed_at, where the checklist reads updated_at (see the loop below):
 //   1. All Day: allday_edition_floor_ask (ghost listings already excluded);
-//   2. edition_offers.low_ask, updated in the last 7 days;
+//   2. edition_offers.low_ask, last SEEN (low_ask_confirmed_at) in the last 7 days;
 //   3. badge_editions.low_ask, updated in the last 7 days;
 //   Candy: candy_listing_floor.confirmed_floor_usd (lib/fmv-candy-ceiling.ts);
 // and an ask is used ONLY when the edition has an FMV and the ask is <= 3x it
@@ -125,9 +126,16 @@ export async function resolveLiveAsks(
     }
   }
 
-  for (const [table, source, pri] of [
-    ["edition_offers", "edition_offers", 2],
-    ["badge_editions", "badge_editions", 3],
+  // Freshness is judged on when the ASK was last SEEN, not when the row last
+  // changed. edition_offers.updated_at moves only on a CHANGE, and also when the
+  // row's highest_offer changes (sync_edition_offers_from_atlas), so it both
+  // drops an ask re-observed unchanged and passes one nobody has seen for days
+  // (10-10: 31 Top Shot editions showed a 10-day-unseen ask below the fresh
+  // badge ask). low_ask_confirmed_at is the re-confirmed observation time.
+  // badge_editions is rewritten on every GQL refresh, so its updated_at is it.
+  for (const [table, source, pri, seenCol] of [
+    ["edition_offers", "edition_offers", 2, "low_ask_confirmed_at"],
+    ["badge_editions", "badge_editions", 3, "updated_at"],
   ] as const) {
     for (let i = 0; i < keys.length; i += CHUNK) {
       const slice = keys.slice(i, i + CHUNK)
@@ -137,7 +145,7 @@ export async function resolveLiveAsks(
         .eq("collection_id", collectionId)
         .in("external_id", slice)
         .gt("low_ask", 0)
-        .gt("updated_at", sinceIso)
+        .gt(seenCol, sinceIso)
       if (error) {
         errors.push(`${table}: ${error.message}`)
         continue

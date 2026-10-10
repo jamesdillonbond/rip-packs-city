@@ -84,6 +84,26 @@ describe("resolveLiveAsks", () => {
   })
 })
 
+describe("resolveLiveAsks freshness column", () => {
+  it("judges edition_offers by low_ask_confirmed_at (when the ask was SEEN) and badge_editions by updated_at", async () => {
+    const gts: Array<[string, string]> = []
+    const rec = {
+      from(table: string) {
+        const b: Record<string, unknown> = {}
+        for (const m of ["select", "eq", "in", "lt", "order", "limit"]) b[m] = () => b
+        b.gt = (col: string) => { gts.push([table, col]); return b }
+        b.then = (ok: (v: unknown) => unknown) =>
+          Promise.resolve({ data: table === "editions" ? [EDS[0]] : [], error: null }).then(ok)
+        return b
+      },
+    }
+    await resolveLiveAsks(rec, TS, ["1:1"])
+    expect(gts).toContainEqual(["edition_offers", "low_ask_confirmed_at"])
+    expect(gts).not.toContainEqual(["edition_offers", "updated_at"])
+    expect(gts).toContainEqual(["badge_editions", "updated_at"])
+  })
+})
+
 describe("POST /api/best-asks", () => {
   it("refuses an unknown collection (no substitution) and a bad body", async () => {
     vi.resetModules()
