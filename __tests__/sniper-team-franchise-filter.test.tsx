@@ -82,9 +82,12 @@ describe("SniperFilterBar — Character / Franchise on Pinnacle, Player / Team e
 import { serialCellText } from "@/app/(collections)/[collection]/sniper/SniperClient"
 describe("serialCellText — serial 0 is never printed as '#0'", () => {
   it("Top Shot floor rows say Floor; unserialised Pinnacle pins say —; real serials keep #N", () => {
-    expect(serialCellText(0, false)).toBe("Floor")
-    expect(serialCellText(0, true)).toBe("—")
-    expect(serialCellText(12, true)).toBe("#12")
-    expect(serialCellText(12, false)).toBe("#12")
+    expect(serialCellText(0, "nba-top-shot")).toBe("Floor")
+    expect(serialCellText(0, "disney-pinnacle")).toBe("—")
+    expect(serialCellText(12, "disney-pinnacle")).toBe("#12")
+    expect(serialCellText(12, "nba-top-shot")).toBe("#12")
+    // 2026-10-10: an All Day listing with an unknown serial is NOT the floor
+    expect(serialCellText(0, "nfl-all-day")).toBe("—")
+    expect(serialCellText(0, "laliga-golazos")).toBe("—")
   })
 })
