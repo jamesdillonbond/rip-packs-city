@@ -52,25 +52,23 @@
 --      load-bearing, not defensive noise.
 --   9. Scoped to `pool_source = 'atlas'` and to the Top Shot collection_id.
 --
--- ⚠ RECORDED, NOT FIXED — A FAILED SWEEP IS INVISIBLE. The `EXCEPTION WHEN
--- OTHERS` handler returns `{ok:false}` without re-raising and without logging;
--- `log_pipeline_run` is only reached on the success path, and the cron discards
--- the return value. So a failure leaves NO pipeline_runs row, indistinguishable
--- from "never scheduled" — the same defect as the AllDay/Golazos badge
--- refreshers and the trust-precompute legs. And since PostgreSQL excludes
--- QUERY_CANCELED from OTHERS, a `statement_timeout = 120s` kill never even
--- reaches the handler. The test pins the SUCCESS-path logging so that, if the
--- handler is ever reworked, the working half is protected.
---
+-- ⚠ FIXED 2026-10-10 — A FAILED SWEEP USED TO BE INVISIBLE. The handler returned
+-- `{ok:false}` without logging, so a failure left NO pipeline_runs row. It now logs
+-- ok=false with the error (pinned below). The same day, the pool widening of
+-- known-issues #65 (57 -> ~820 Atlas dists) made three latent aborts reachable, each
+-- of which took the WHOLE sweep down: a NULL flag on an ask-less dist (the live column
+-- is NOT NULL), a NULL listing uuid (pack_listing_id is NOT NULL), and a $1,000,000
+-- troll ask driving pack_ev past the CHECK range. All three are pinned below, and the
+-- fixture now mirrors prod's NOT NULL / CHECK so it cannot accept them again.
+
 -- ⚠ `compute_pack_ev_per_edition_weighted` below is a TEST STAND-IN, not the
 -- real function — that one has its own pin. It returns whatever the fixture
 -- table tells it to, so the failure branch and the smallint clamp are reachable,
 -- and it RECORDS the slots/ask it was handed so the input guards are assertable.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260908003056_audit_20260907_refresh_atlas_pack_ev_writes_real_supply_not_a_fabricated_zero.sql),
--- re-read from live prod after that migration applied, 2026-09-07
--- (md5 of pg_proc.prosrc = 4d65a354e86c60df8885ea17358f78f5).
+-- (supabase/migrations/20261010164507_audit_20261010_refresh_atlas_pack_ev_survives_a_wider_pool.sql;
+-- built from this pin after proving pin == live, normalised-prosrc md5 90590db2123d2aa9f51105c38f9e0be1).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- ⚠ The md5 above is over `pg_proc.prosrc` (the BODY). The previous header
@@ -113,8 +111,10 @@ CREATE TABLE public.pack_ask_state (
   lowest_ask      numeric
 );
 
+-- ⚠ NOT NULL / CHECK mirror prod (added 2026-10-10): without them this fixture accepted the
+-- NULL flag, the NULL listing id and the out-of-range margin that each aborted the live sweep.
 CREATE TABLE public.pack_ev_history (
-  pack_listing_id      text,
+  pack_listing_id      text NOT NULL,
   collection_id        uuid,
   dist_id              text,
   pack_name            text,
@@ -124,10 +124,10 @@ CREATE TABLE public.pack_ev_history (
   price_source         text,
   primary_available    boolean,
   secondary_available  boolean,
-  gross_ev             numeric,
+  gross_ev             numeric NOT NULL,
   typical_ev           numeric,
-  pack_ev              numeric,
-  is_positive_ev       boolean,
+  pack_ev              numeric NOT NULL CHECK (pack_ev >= -10000 AND pack_ev <= 1000000),
+  is_positive_ev       boolean NOT NULL DEFAULT false,
   value_ratio          numeric,
   fmv_coverage_pct     smallint,
   edition_count        smallint,
@@ -192,8 +192,16 @@ DECLARE
   v_gross numeric;
   v_typical numeric;
   v_written int := 0;
+  v_unkeyed int := 0;
   v_now timestamptz := now();
 BEGIN
+  -- a dist with no listing uuid cannot be written (pack_listing_id is NOT NULL, and
+  -- pack_ev_latest is keyed on it): counted, not swept, so it cannot abort the sweep
+  SELECT count(DISTINCT p.dist_id) INTO v_unkeyed
+    FROM pack_drop_pool p
+    JOIN pack_distributions pd ON pd.collection_id = v_cid AND pd.dist_id = p.dist_id
+   WHERE p.collection_id = v_cid AND p.pool_source = 'atlas' AND pd.metadata->>'uuid' IS NULL;
+
   FOR r IN
     SELECT DISTINCT p.dist_id,
            pd.metadata->>'uuid' AS listing_uuid,
@@ -207,6 +215,7 @@ BEGIN
     LEFT JOIN pack_ask_state pas ON pas.collection_slug = 'nba-top-shot' AND pas.dist_id = p.dist_id
                                  AND pas.is_listed IS TRUE AND pas.lowest_ask > 0
     WHERE p.collection_id = v_cid AND p.pool_source = 'atlas'
+      AND pd.metadata->>'uuid' IS NOT NULL
   LOOP
     ev := public.compute_pack_ev_per_edition_weighted(v_cid, r.dist_id, COALESCE(r.lowest_ask, 0), r.slots);
     IF (ev->>'ok')::boolean IS NOT TRUE THEN
@@ -229,18 +238,26 @@ BEGIN
       NULL, r.lowest_ask, CASE WHEN r.lowest_ask > 0 THEN 'secondary' ELSE 'none' END,
       false, r.lowest_ask > 0,
       v_gross, v_typical,
-      round(v_gross - COALESCE(r.lowest_ask, 0), 2),
-      (r.lowest_ask > 0 AND (v_gross - r.lowest_ask) > 0),
+      -- clamped to the column's sane range (as compute_pack_ev_per_edition_weighted clamps
+      -- its own): a troll ask ($1,000,000 on two live dists) is otherwise a CHECK violation
+      -- that aborts the whole sweep. The flag is computed from the unclamped margin.
+      GREATEST(LEAST(round(v_gross - COALESCE(r.lowest_ask, 0), 2), 1000000), -10000),
+      -- no ask -> FALSE, never NULL: the live column is NOT NULL (a NULL aborted the sweep)
+      COALESCE(r.lowest_ask > 0 AND (v_gross - r.lowest_ask) > 0, false),
       CASE WHEN r.lowest_ask > 0 THEN round(v_gross / r.lowest_ask, 3) ELSE NULL END,
       (ev->>'fmv_coverage_pct')::smallint, LEAST((ev->>'edition_count')::int, 32767), r.total_sealed, r.depletion_pct, v_now);
     v_written := v_written + 1;
   END LOOP;
 
-  PERFORM public.log_pipeline_run('topshot-atlas-pack-ev', v_now, v_written, v_written, 0, true, NULL,
-    'nba-top-shot', NULL, NULL, jsonb_build_object('rows', v_written));
-  RETURN jsonb_build_object('ok', true, 'written', v_written, 'finished_at', now());
+  PERFORM public.log_pipeline_run('topshot-atlas-pack-ev', v_now, v_written + v_unkeyed, v_written, v_unkeyed, true, NULL,
+    'nba-top-shot', NULL, NULL, jsonb_build_object('rows', v_written, 'unkeyed', v_unkeyed));
+  RETURN jsonb_build_object('ok', true, 'written', v_written, 'unkeyed', v_unkeyed, 'finished_at', now());
 EXCEPTION WHEN query_canceled OR OTHERS THEN
-  RETURN jsonb_build_object('ok', false, 'error', SQLERRM, 'written', v_written);
+  -- a failed sweep LOGS (it used to return silently, leaving no pipeline_runs row); the
+  -- rows it wrote roll back with it, so rows_written is 0
+  PERFORM public.log_pipeline_run('topshot-atlas-pack-ev', v_now, v_written, 0, 0, false, left(SQLERRM, 300),
+    'nba-top-shot', NULL, NULL, jsonb_build_object('rows', 0, 'reached', v_written));
+  RETURN jsonb_build_object('ok', false, 'error', SQLERRM, 'written', 0);
 END;
 $function$;
 -- <<< END verbatim refresh_atlas_pack_ev <<<
@@ -280,6 +297,9 @@ INSERT INTO public.pack_drop_pool (collection_id, dist_id, pool_source) VALUES
   -- defect straight back.
   (:TS::uuid, 'D-SOLDOUT',  'atlas'),
   (:TS::uuid, 'D-NOSUPPLY', 'atlas'),
+  -- 2026-10-10: a troll ask, and a dist with no listing uuid -- each aborted the live sweep
+  (:TS::uuid, 'D-TROLL',    'atlas'),
+  (:TS::uuid, 'D-NOUUID',   'atlas'),
   (:AD::uuid, 'D-WRONGC',   'atlas'),
   -- ⚠ D-CROSSPOOL: an atlas pool row under ALL DAY for a dist_id that is
   -- DISTRIBUTED under Top Shot, with no Top Shot pool row. This is the ONLY
@@ -325,6 +345,8 @@ INSERT INTO public.pack_distributions (collection_id, dist_id, title, metadata, 
   (:TS::uuid, 'D-SOLDOUT',  'Sold Out Pack', '{"uuid":"u-soldout","number_of_pack_slots":5}',   0, 100),
   -- supply genuinely UNKNOWN. Must stay NULL all the way to pack_ev_history.
   (:TS::uuid, 'D-NOSUPPLY', 'No Supply Pack','{"uuid":"u-nosupply","number_of_pack_slots":5}',NULL,NULL),
+  (:TS::uuid, 'D-TROLL',    'Troll Pack',    '{"uuid":"u-troll","number_of_pack_slots":5}',   500,  55),
+  (:TS::uuid, 'D-NOUUID',   'Keyless Pack',  '{"number_of_pack_slots":5}',                     500,  55),
   (:TS::uuid, 'D-NOTATLAS', 'Live Pack',     '{"uuid":"u-live","number_of_pack_slots":5}',    500,  55),
   (:AD::uuid, 'D-WRONGC',   'AllDay Pack',   '{"uuid":"u-ad","number_of_pack_slots":5}',      500,  55),
   (:TS::uuid, 'D-CROSSPOOL','Cross Pool',    '{"uuid":"u-cross","number_of_pack_slots":5}',   500,  55);
@@ -342,6 +364,8 @@ INSERT INTO public.pack_ask_state (collection_slug, dist_id, is_listed, lowest_a
   -- be +EV on every OTHER property — supply is the only thing separating them.
   ('nba-top-shot', 'D-SOLDOUT',  true,  20.00),
   ('nba-top-shot', 'D-NOSUPPLY', true,  20.00),
+  ('nba-top-shot', 'D-TROLL',    true,  1000000),
+  ('nba-top-shot', 'D-NOUUID',   true,  20.00),
   -- ⚠ the ask table is keyed by SLUG, and this row is All Day's. It exists so
   -- dropping the `collection_slug` predicate is observable: D-ASK would then
   -- join two ask rows and be swept twice.
@@ -359,6 +383,8 @@ INSERT INTO public.__ev_fixture (dist_id, payload) VALUES
   ('D-NOSLOTS',  '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
   ('D-SOLDOUT',  '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
   ('D-NOSUPPLY', '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
+  ('D-TROLL',    '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
+  ('D-NOUUID',   '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
   ('D-NOTATLAS', '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
   ('D-WRONGC',   '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
   ('D-CROSSPOOL','{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}');
@@ -388,21 +414,18 @@ SELECT _assert_eq(
 -- SIGN of pack_ev instead of the flag would publish a buy signal for a pack
 -- whose price is unknown.
 --
--- ⚠ AND THE FLAG IS **NULL**, NOT FALSE. `lowest_ask > 0` is NULL when the ask
--- is NULL, and `NULL AND NULL` is NULL. That is SAFE for the +EV badge — three-
--- valued logic means `WHERE is_positive_ev`, `NOT is_positive_ev` and a JS
--- truthiness check all treat it as not-positive — but it is a live trap in the
--- other direction: a consumer looking for NEGATIVE-EV packs with
--- `is_positive_ev = false` silently MISSES every ask-less pack. Pinned to the
--- exact value so the distinction is a known property rather than a discovery
--- during an incident.
+-- ⚠ THE FLAG IS **FALSE**, NOT NULL (inverted 2026-10-10). It used to be NULL
+-- (`lowest_ask > 0` is NULL when the ask is NULL) — and the live column is
+-- NOT NULL, so the first ask-less Atlas dist aborted the WHOLE hourly sweep; this
+-- fixture had no NOT NULL and pinned the NULL as a property. COALESCE(..., false)
+-- now: "no known price" is not +EV, and `= false` finds ask-less packs too.
 SELECT _assert_eq(
   (SELECT coalesce(is_positive_ev::text,'NULL') || '/' || pack_ev::text || '/' ||
           coalesce(value_ratio::text,'NULL') || '/' || price_source || '/' ||
           coalesce(secondary_available::text,'NULL')
      FROM public.pack_ev_history WHERE dist_id = 'D-NOASK'),
-  'NULL/50.00/NULL/none/NULL',
-  'NO ASK: never +EV, ratio withheld rather than fabricated — though pack_ev still reads +50'
+  'false/50.00/NULL/none/NULL',
+  'NO ASK: never +EV (false, not NULL), ratio withheld rather than fabricated — though pack_ev still reads +50'
 );
 
 SELECT _assert_eq(
@@ -554,12 +577,34 @@ SELECT _assert_eq(
   'a distribution with several drop-pool rows is swept ONCE (SELECT DISTINCT)'
 );
 
+-- ── The three shapes that each aborted the live sweep (2026-10-10) ───────────
+SELECT _assert_eq(
+  (SELECT pack_ev::text || '/' || is_positive_ev::text FROM public.pack_ev_history WHERE dist_id = 'D-TROLL'),
+  '-10000/false',
+  'a troll ask is clamped to the sane range (never a CHECK abort), and is never +EV'
+);
+SELECT _assert_eq(
+  (SELECT count(*)::text FROM public.pack_ev_history WHERE dist_id = 'D-NOUUID'),
+  '0',
+  'a dist with no listing uuid is not swept (pack_listing_id is NOT NULL)'
+);
+
 -- ── Its own telemetry ───────────────────────────────────────────────────────
 SELECT _assert_eq(
-  (SELECT ok::text || '/' || rows_written::text || '/' || collection_slug || '/' || (extra->>'rows')
+  (SELECT ok::text || '/' || rows_written::text || '/' || collection_slug || '/' || (extra->>'rows') || '/' || (extra->>'unkeyed')
      FROM public.pipeline_runs WHERE pipeline = 'topshot-atlas-pack-ev'),
-  'true/11/nba-top-shot/11',
-  'the success path logs its own pipeline_runs row — the ONLY path that logs at all'
+  'true/12/nba-top-shot/12/1',
+  'the success path logs its own pipeline_runs row, with the unkeyed dists counted'
+);
+
+-- ⚠ A FAILED SWEEP LOGS (2026-10-10; it used to return {ok:false} and log nothing)
+ALTER TABLE public.pack_ev_history RENAME TO pack_ev_history_x;
+SELECT _assert_eq((public.refresh_atlas_pack_ev() ->> 'ok'), 'false', 'a failing sweep reports ok:false');
+SELECT _assert_eq(
+  (SELECT ok::text || '/' || rows_written::text || '/' || (error IS NOT NULL)::text
+     FROM public.pipeline_runs WHERE pipeline = 'topshot-atlas-pack-ev' ORDER BY ctid DESC LIMIT 1),
+  'false/0/true',
+  'a failing sweep writes an ok=false pipeline_runs row with its error and 0 rows written'
 );
 
 ROLLBACK;

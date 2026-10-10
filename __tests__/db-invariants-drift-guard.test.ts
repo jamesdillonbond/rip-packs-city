@@ -632,8 +632,9 @@ const PINS = [
     // v16 (same night): the wallet's own index date outranks the mint -- some
     // All Day drops are pre-minted days before they open. v17: and a mint
     // BEFORE the window is ignored (the sale / open bound decides).
+    // v20 (2026-10-10): a bought pack the confirmed index says this wallet opened is ripped.
     migration:
-      "supabase/migrations/20260929134500_audit_20260929_box_packs_yield_packs_not_moments.sql",
+      "supabase/migrations/20261010170411_audit_20261010_wallet_pack_history_a_bought_pack_the_index_says_was_opened_is_not_held.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
@@ -2466,8 +2467,9 @@ const PINS = [
     // resolve to something instead of passing vacuously on NULL.
     fn: "refresh_atlas_pack_ev",
     test: "supabase/tests/refresh_atlas_pack_ev.sql",
+    // 2026-10-10 (#65 follow-up): clamp, NOT NULL flag, unkeyed dists skipped, failures logged.
     migration:
-      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+      "supabase/migrations/20261010164507_audit_20261010_refresh_atlas_pack_ev_survives_a_wider_pool.sql",
   },
   {
     // pg_cron `13 * * * *` — one of the three heavy jobs CLAUDE.md names as
@@ -2949,6 +2951,14 @@ const PINS = [
     fn: "analytics_sales_leaderboard",
     test: "supabase/tests/analytics_sales_leaderboard.sql",
     migration: "supabase/migrations/20261004165000_audit_20261004_sales_leaderboard_buyback_check_stays_index_only.sql",
+  },
+  {
+    // Added 2026-10-10 (#65). Writes the latest Atlas edition list of a Top Shot dist into
+    // pack_drop_pool (fill / upgrade a frozen GraphQL pool / refresh); gated, zeroes, never deletes.
+    fn: "sync_topshot_pools_from_atlas",
+    test: "supabase/tests/sync_topshot_pools_from_atlas.sql",
+    // 2026-10-10 follow-ups: the zeroing arm keeps orig_drop_weight; the size gate counts drawable rows.
+    migration: "supabase/migrations/20261010164143_audit_20261010_topshot_atlas_pool_sync_compares_drawable_editions.sql",
   },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is

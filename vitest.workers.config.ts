@@ -57,11 +57,15 @@ export default defineConfig({
       ],
       // Seeded ~0.5pt under the 2026-08-15 measured baseline, matching the band
       // ⤵ 75 lines of history displaced VERBATIM (2026-09-02) to docs/reference/vitest-config-notes.md §17 — read them before changing the next key.
+      // 2026-10-10: RE-SEEDED, not softened — the POPULATION changed. Retiring
+      // workers/topshot-moments-hydrator (#65; superseded by the pg_net chain lane)
+      // removed a well-covered worker, so the remaining tree measured 87.96 / 75.80 /
+      // 88.71 / 91.13 with no test changed elsewhere. Re-seeded ~0.5pt under that.
       thresholds: {
-        statements: 88.15,
-        branches: 76.15,
-        functions: 89.6,
-        lines: 91.1,
+        statements: 87.45,
+        branches: 75.3,
+        functions: 88.2,
+        lines: 90.6,
       },
     },
   },

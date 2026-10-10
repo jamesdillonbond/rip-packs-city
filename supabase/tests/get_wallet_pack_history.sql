@@ -58,9 +58,12 @@
 --      All Day drops are pre-minted days before they open (P76).
 --  11. (v17, same night) A mint BEFORE the window is ignored: a pre-minted pack
 --      sold inside its window is judged by the sale, as before the mint arm (P77).
+--  12. (v20, 2026-10-10) A BOUGHT pack the index -- confirmed by the wallet's clean walk --
+--      says this wallet OPENED is ripped, never held (box openings write no rip row);
+--      a stale Opened row is still a departure (BX1-BX3).
 --
--- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929134500_audit_20260929_box_packs_yield_packs_not_moments.sql).
+-- The get_wallet_pack_history DDL below is VERBATIM from the committed migration
+-- (supabase/migrations/20261010170411_audit_20261010_wallet_pack_history_a_bought_pack_the_index_says_was_opened_is_not_held.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -590,6 +593,12 @@ BEGIN
         WHEN has_buy AND ((current_owner IS NOT NULL AND current_owner <> v_wallet)
                           OR coalesce(index_departed, false))
                                                                 THEN 'transferred'
+        -- bought, and Dapper's index -- confirmed by this wallet's own clean walk
+        -- (has_idx_open carries that floor) -- says THIS wallet opened it, with no
+        -- rip row of ours: a box opening, or an open the rip lanes never saw.
+        -- Opened, never HELD (2026-10-10: 22 WNBA boxes on one wallet, ~90 packs
+        -- across 8 of 33 saved wallets, read held while the index said Opened).
+        WHEN has_buy AND has_idx_open                           THEN 'ripped'
         WHEN has_buy                                            THEN 'held'
         -- the index alone: opened by this wallet (no rip row of ours) or held
         WHEN has_idx_open                                       THEN 'ripped'
@@ -1551,6 +1560,30 @@ BEGIN
   PERFORM _assert_eq(row_->>'box_packs', '2', 'R1a yielded two packs');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'R1c';
   PERFORM _assert_eq(row_->>'box_packs', '0', 'R1c: another opener''s box contents are not this wallet''s');
+END $$;
+
+-- v20 (2026-10-10): a BOUGHT pack the index (fresh clean walk) says this wallet OPENED is
+-- ripped, not held -- box openings write no rip row. Its own wallet, so no count above moves.
+INSERT INTO public.pack_wallet_sync VALUES ('0xboxw', '2026-09-18 00:00', '2026-09-18 00:05', 1, 2, NULL, '2026-09-18 00:00');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX1', '0xboxw', '0xseller', 374, '2026-09-10', false, 'secondary_sale'),
+       ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX2', '0xboxw', '0xseller', 359, '2026-09-11', false, 'secondary_sale'),
+       ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX3', '0xboxw', '0xseller', 300, '2026-09-12', false, 'secondary_sale');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX1', 'D1', 'Opened', '0xboxw', '2026-09-18 01:00', '2026-09-10');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX2', 'D1', 'Sealed', '0xboxw', '2026-09-18 01:00', '2026-09-11');
+-- BX3: an OPENED row older than the clean walk -- departed, so it is NOT this wallet's open
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX3', 'D1', 'Opened', '0xboxw', '2026-09-01', '2026-09-12');
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xboxw', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'BX1';
+  PERFORM _assert_eq(row_->>'status', 'ripped', 'BX1 bought + opened per the confirmed index -> ripped, never held');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'BX2';
+  PERFORM _assert_eq(row_->>'status', 'held', 'BX2 bought + sealed per the index -> held');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'BX3';
+  PERFORM _assert_eq(row_->>'status', 'transferred', 'BX3 a stale Opened row is a departure, not an open');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xboxw', NULL, 'held', 50, 0))->>'total_count', '1', 'held counts BX2 only');
 END $$;
 
 ROLLBACK;

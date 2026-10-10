@@ -21,7 +21,7 @@ declare global {
     scheduledTime: number
     cron: string
   }
-  // topshot-moments-hydrator's Env.TOPSHOT_PROXY service binding type.
+  // Service-binding type (was topshot-moments-hydrator's Env.TOPSHOT_PROXY; worker retired 2026-10-10, #65).
   interface Fetcher {
     fetch(input: Request | string, init?: RequestInit): Promise<Response>
   }

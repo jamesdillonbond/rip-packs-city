@@ -203,8 +203,10 @@ const UNBOUNDED = POPULATION.filter((r) => !r.bounded)
  * ⛔ It was also RED ON `main` for some hours before this correction (43 vs 42),
  * which is the ratchet behaving exactly as designed: a new route cannot join the
  * exclusion set silently.
+ *
+ * 2026-10-10: 43 -> 42 — app/api/cron/topshot-deal-floor-serials deleted (#65).
  */
-const BUDGET = 43
+const BUDGET = 42
 
 describe("an API route that degrades honestly also bounds the read it degrades on", () => {
   it("is not vacuous — and the check is SATISFIABLE AT A POPULATION OF ZERO", () => {

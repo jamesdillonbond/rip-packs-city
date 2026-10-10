@@ -67,6 +67,7 @@ import {
 } from "@/lib/og/brand-fonts";
 import { OgMark, type MarkName } from "@/lib/og/marks";
 import { ogFetch } from "@/lib/og/og-fetch";
+import { normalizeAddress } from "@/lib/address";
 
 export const runtime = "edge";
 
@@ -180,9 +181,87 @@ function achTierColor(tier: string): string {
  * width would have shipped either a gap or a wrapped orphan for almost everyone.
  */
 export function statTileWidth(count: number): number {
-  const n = Math.min(4, Math.max(1, count));
+  const n = Math.min(5, Math.max(1, count));
   // 4 wraps: 2×300 + 16 = 616 fits, a third would need 916 and does not.
-  return [0, 300, 300, 222, 300][n];
+  // 5 (TEAMS + the four, since PACKS UNOPENED joined 2026-10-10) wraps 3 + 2 at
+  // 222: the same two rows as four, so the card's height does not move.
+  return [0, 300, 300, 222, 300, 222][n];
+}
+
+/** Wallet sync older than this is not a confirmation of what the wallet holds. */
+export const HELD_PACKS_SYNC_MAX_AGE_MS = 48 * 3600 * 1000;
+/** Each wallet costs one get_wallet_pack_history call (683 ms for the largest). */
+export const HELD_PACKS_MAX_WALLETS = 6;
+
+type PackSyncRow = {
+  wallet: string;
+  last_clean_sync_at: string | null;
+  completed_at: string | null;
+  last_error: string | null;
+};
+
+/**
+ * PACKS UNOPENED (known-issues #88) — the sealed packs a profile's wallets hold,
+ * or `null` whenever that is not KNOWN.
+ *
+ * The number is `get_wallet_pack_history(wallet, NULL, 'held')`'s total_count — the
+ * same figure the wallet's pack-history Held tab shows — summed over the wallets.
+ * It is trusted only when EVERY wallet's per-wallet Dapper-index walk
+ * (`pack_wallet_sync`) finished CLEAN within 48 h: the function trusts an
+ * ownership claim only at or after that walk, and without one its held list is
+ * "what we have seen so far", not what the wallet holds. Any wallet unsynced,
+ * stale, errored or mid-walk, any failed read, or more wallets than the budget
+ * → `null`, and the tile says "—". Never a partial sum: a profile with one
+ * unconfirmed wallet would otherwise publish a confident undercount.
+ *
+ * ⛔ Not `pack_purchases − pack_rips` — wrong in both directions (the issue's
+ * own measurement: 503 rips against 133 purchase rows, packs leaving sealed).
+ */
+export async function fetchHeldSealedPacks(
+  addrs: string[],
+  now: number = Date.now(),
+): Promise<number | null> {
+  const wallets = Array.from(new Set(addrs.map((a) => normalizeAddress(a)))).filter(Boolean);
+  if (wallets.length === 0 || wallets.length > HELD_PACKS_MAX_WALLETS) return null;
+  const sync = await fetchJson<PackSyncRow>(
+    `${SUPABASE_URL}/rest/v1/pack_wallet_sync?wallet=in.(${wallets
+      .map((w) => encodeURIComponent(w))
+      .join(",")})&select=wallet,last_clean_sync_at,completed_at,last_error`,
+  );
+  if (!sync.ok) return null;
+  for (const w of wallets) {
+    const row = sync.rows.find((r) => r.wallet === w);
+    if (!row || !row.last_clean_sync_at || !row.completed_at || row.last_error) return null;
+    const clean = Date.parse(row.last_clean_sync_at);
+    const done = Date.parse(row.completed_at);
+    if (!Number.isFinite(clean) || !Number.isFinite(done) || done < clean) return null;
+    if (now - clean > HELD_PACKS_SYNC_MAX_AGE_MS) return null;
+  }
+  const totals = await Promise.all(
+    wallets.map(async (w) => {
+      try {
+        const r = await ogFetch(`${SUPABASE_URL}/rest/v1/rpc/get_wallet_pack_history`, {
+          method: "POST",
+          headers: {
+            apikey: SERVICE_KEY,
+            Authorization: "Bearer " + SERVICE_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ p_wallet: w, p_collection_slug: null, p_status: "held", p_limit: 1, p_offset: 0 }),
+          cache: "no-store",
+        });
+        if (!r.ok) return null;
+        const data = (await r.json()) as { total_count?: unknown; error?: unknown } | null;
+        if (!data || data.error != null) return null;
+        const n = data.total_count;
+        return typeof n === "number" && Number.isInteger(n) && n >= 0 ? n : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  if (totals.some((n) => n == null)) return null;
+  return (totals as number[]).reduce((a, b) => a + b, 0);
 }
 
 /**
@@ -448,7 +527,7 @@ export async function GET(
     const trophyExtIds = Array.from(
       new Set(trophies.map((t) => (t.edition_id ?? "").trim()).filter(Boolean)),
     ).slice(0, 12);
-    const [ripsRes, jerseyRes] = await Promise.all([
+    const [ripsRes, jerseyRes, heldPacks] = await Promise.all([
       walletsOk && walletAddrs.length > 0
         ? fetchCount(
             `${SUPABASE_URL}/rest/v1/pack_rips?opener_address=in.(${walletAddrs
@@ -463,6 +542,10 @@ export async function GET(
               .join(",")})&select=external_id,collection_id,jersey_number&limit=200`,
           )
         : Promise.resolve({ rows: [] as JerseyRow[], ok: true }),
+      // PACKS UNOPENED — null unless every wallet's holdings are confirmed (#88).
+      walletsOk && walletAddrs.length > 0
+        ? fetchHeldSealedPacks(walletAddrs)
+        : Promise.resolve(null as number | null),
     ]);
 
     // ⚠ Keyed on (collection_id, external_id), never external_id alone — that
@@ -684,18 +767,15 @@ export async function GET(
     // ⭐ PACKS STAND ALONE. Trevor: "Packs should standalone. This is on brand
     // for Rip Packs City." Not a sub-line of the Moments tile.
     //
-    // ⛔ THE FIFTH TILE TREVOR ASKED FOR — PACKS UNOPENED — IS DELIBERATELY NOT
-    // HERE, and it is not an oversight. Nothing in this database answers it:
-    // `pack_purchases` is not an acquisition ledger (Trevor has 503 rips against
-    // 133 purchase rows), packs LEAVE a wallet sealed (5 of those 133 were
-    // opened by a different address), so `purchases − rips` is wrong in both
-    // directions at once; and every `total_unopened` / `total_sealed` column in
-    // the schema is distribution-level SUPPLY, not per-wallet holdings. It needs
-    // a Flow chain read for sealed pack NFTs per wallet, cached like
-    // `cached_moment_count` — an ingest, not a card change. A "close enough"
-    // number on the most-shared surface in the product is precisely what the
-    // accuracy gate exists to stop, and this is the one surface where nobody
-    // looking at it can check.
+    // ⭐ PACKS UNOPENED (2026-10-10, known-issues #88). Held off on 09-12 because
+    // nothing answered it (`purchases − rips` is wrong in both directions). What
+    // answers it now is the per-wallet Dapper-index walk (`pack_wallet_sync`, hourly
+    // for every saved wallet) read through get_wallet_pack_history('held') — the
+    // pack-history page's own Held count. A bought box the index said was OPENED
+    // read held until 20261010170411; the residue is the index's "Revealed" status
+    // (9 packs of 5,644 on 33 wallets). fetchHeldSealedPacks withholds the figure
+    // ("—") unless every wallet's walk is clean and < 48 h old: the most-shared
+    // surface gets a confirmed number or none.
     const statTiles: Array<{ label: string; value: string; small?: boolean }> = [
       // TEAMS is SUPPRESSED rather than drawn empty. 4 of 25 accounts have a
       // pick today, so an always-present tile would ship 21 empty boxes — which
@@ -714,6 +794,11 @@ export async function GET(
         // address to ask about — both are "we do not know", never "zero".
         value: ripsRes.ok && ripsRes.count != null ? ripsRes.count.toLocaleString() : "—",
       },
+      // Only for a profile with a wallet to ask about — like TEAMS, an
+      // always-present tile would be an empty box for everyone else.
+      ...(walletsOk && walletAddrs.length > 0
+        ? [{ label: "PACKS UNOPENED", value: heldPacks != null ? heldPacks.toLocaleString() : "—" }]
+        : []),
       {
         label: "TROPHY CASE",
         value: trophiesOk ? filledTrophyCount + " / 6" : "—",

@@ -467,7 +467,9 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   15:35 PT tick was killed at the 300 s wall under saturation — Vercel logged
 //   `Task timed out after 300 seconds`, pipeline_runs recorded NOTHING, and the
 //   only instrument that saw it was the 30 h silence arm, a day later.
-const BUDGET = 34
+//   2026-10-10: app/api/cron/topshot-deal-floor-serials DELETED (34 -> 33; #65 —
+//   superseded by sync_edition_offers_from_atlas, no run in retention).
+const BUDGET = 33
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

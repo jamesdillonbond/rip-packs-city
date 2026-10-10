@@ -36,8 +36,9 @@ import { join, relative, sep } from "node:path"
  *  Tracker), analytics, wallet-sales-history, wallet-cost-basis,
  *  wallet-hold-time, wallet-packs and collection-moments moved their username
  *  lookups onto the shared ladder. 12 → 10 on 2026-10-03: moment-market and
- *  allday-wallet-search deleted outright (#163 — no caller, dead host). */
-const BASELINE = 10
+ *  allday-wallet-search deleted outright (#163 — no caller, dead host).
+ *  10 → 9 on 2026-10-10: topshot-deal-floor-serials deleted (#65). */
+const BASELINE = 9
 
 const ROOTS = ["app", "lib", "scripts", "workers", "supabase"]
 /** The module that legitimately OWNS the dead endpoint. */
