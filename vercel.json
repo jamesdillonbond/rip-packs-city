@@ -142,6 +142,10 @@
       "schedule": "35 */3 * * *"
     },
     {
+      "path": "/api/candy-opensea-listings-indexer",
+      "schedule": "55 */3 * * *"
+    },
+    {
       "path": "/api/cron/evm-transfers-ingest",
       "schedule": "4,14,24,34,44,54 * * * *"
     }

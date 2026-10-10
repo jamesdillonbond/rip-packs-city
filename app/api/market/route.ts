@@ -562,7 +562,7 @@ async function fetchCandyMarketListings(
   let q = (supabaseAdmin as any)
     .from("candy_market_board")
     .select(
-      "token_mint, edition_id, external_id, player_name, edition_name, set_name, team_name, tier, circulation_count, thumbnail_url, serial_number, ask_usd, fmv_usd, confidence, discount_pct, seller, first_seen_at, last_seen_at"
+      "token_mint, edition_id, external_id, player_name, edition_name, set_name, team_name, tier, circulation_count, thumbnail_url, serial_number, ask_usd, fmv_usd, confidence, discount_pct, seller, first_seen_at, last_seen_at, venue"
     )
   if (filters.tier && filters.tier !== "all") q = q.eq("tier", filters.tier.toUpperCase())
   if (filters.maxPrice > 0) q = q.lte("ask_usd", filters.maxPrice)
@@ -640,8 +640,16 @@ async function fetchCandyMarketListings(
     adjusted_fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
     discount: r.discount_pct != null ? Number(r.discount_pct) : null,
     confidence: r.confidence ?? null,
-    source: "magic_eden",
-    buy_url: r.token_mint ? `https://magiceden.io/item-details/${r.token_mint}` : null,
+    // Per-row venue (2026-10-10). Anything not reported by the OpenSea feed —
+    // including every row from before the column existed — is a Magic Eden ask,
+    // which is what the column defaults to.
+    // ⚠ An OpenSea ask gets NO buy_url (the CTA is omitted), not a Magic Eden link
+    // it is not listed at and not a guessed OpenSea URL: OpenSea's Solana item-page
+    // format was unverifiable when this shipped. The OpenSea indexer logs a real
+    // `opensea_url` sample (pipeline_runs.extra.sample_opensea_url) — wire the link
+    // from that once read.
+    source: r.venue === "opensea" ? "opensea" : "magic_eden",
+    buy_url: r.token_mint && r.venue !== "opensea" ? `https://magiceden.io/item-details/${r.token_mint}` : null,
     thumbnail_url: r.thumbnail_url ?? null,
     badge_slugs: badgesByEdition.get(r.edition_id) ?? null,
     listing_resource_id: null,

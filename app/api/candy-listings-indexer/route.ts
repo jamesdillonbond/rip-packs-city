@@ -611,9 +611,14 @@ async function handleSweep(req: NextRequest) {
         // deactivate", published as `deactivated: 0` on an ok=true run row, and
         // the dead listing stayed on the board. Same shape as the `?? 0` count
         // above; this was its un-swept twin.
+        // venue-scoped (2026-10-10): a Magic Eden delist/fill activity is
+        // evidence about the Magic Eden listing only. OpenSea-reported rows
+        // (/api/candy-opensea-listings-indexer) are retired by that route's own
+        // per-order status check, by the supersede pass below, or by a recorded sale.
         const { data: gone, error: goneErr } = await (supabaseAdmin as any)
           .from("candy_listings")
           .update({ is_active: false })
+          .eq("venue", "magic_eden")
           .eq("is_active", true)
           .in("token_mint", slice)
           .lt("last_seen_at", startedAtIso)
