@@ -268,6 +268,27 @@ describe("concierge tools — watchlist/alerts self-API bridge", () => {
     expect(deletes.map((u) => new URL(u, "https://t").searchParams.get("id"))).toEqual(["a1", "a3"])
     expect(toolResult()).toMatchObject({ status: "ok", removed: 2 })
   })
+
+  // 2026-10-10: an edition key repeats across collections; matching the key alone
+  // deleted the user's alert in ANOTHER collection. A NULL collection_id is Top Shot.
+  it("a scoped alerts remove never deletes the same key's alert in another collection", async () => {
+    signIn()
+    const ALL_DAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
+    const f = stubFetch([
+      {
+        match: (url, init) => url.includes("/api/alerts") && (init?.method ?? "GET") === "GET",
+        respond: () => ({ json: [
+          { id: "ts1", edition_key: "3:45", collection_id: null }, // Top Shot (NULL reads as TS)
+          { id: "ad1", edition_key: "3:45", collection_id: ALL_DAY },
+        ] }),
+      },
+      jsonRoute("/api/alerts?id=", { ok: true, deleted: 1 }),
+    ])
+    script("manage_alerts", { action: "remove", edition_key: "3:45", collectionId: "nfl-all-day" })
+    await POST(post("stop alerting me on that all day moment"))
+    const deletes = f.calls.filter((c) => c.init?.method === "DELETE").map((c) => new URL(c.url, "https://t").searchParams.get("id"))
+    expect(deletes).toEqual(["ad1"])
+  })
 })
 
 describe("concierge tools — data reads", () => {

@@ -2754,9 +2754,14 @@ async function executeToolInner(
         // The route deletes by alert id (?id=), so find this edition's alerts first.
         const listed = await listAlerts();
         if (!listed.ok) return selfApiFailure("Removing the alert", listed.status, true);
-        const rows = (await listed.json()) as Array<{ id?: string; edition_key?: string }>;
+        const rows = (await listed.json()) as Array<{ id?: string; edition_key?: string; collection_id?: string | null }>;
+        // An edition key repeats across collections, so a scoped remove matches the
+        // collection too (a NULL collection_id is Top Shot, as /api/alerts reads it);
+        // matching the key alone deleted the user's alert in ANOTHER collection.
+        const tsUuid = COLLECTION_UUID_BY_SLUG["nba-top-shot"];
         const ids = (Array.isArray(rows) ? rows : [])
           .filter((a) => a.edition_key === toolInput.edition_key && a.id)
+          .filter((a) => !effectiveCollectionUuid || (a.collection_id ?? tsUuid) === effectiveCollectionUuid)
           .map((a) => String(a.id));
         if (ids.length === 0) {
           return JSON.stringify({ status: "ok", message: "You have no alert on that moment, so there was nothing to remove.", removed: 0 });
