@@ -1,5 +1,5 @@
 // app/api/subscribe/verify/route.ts
-// GET ?token=... — flips verified=true and redirects to /dashboard?verified=true.
+// GET ?token=... — flips verified=true (and re-subscribes) and redirects to /dashboard?verified=true.
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -15,7 +15,10 @@ export async function GET(req: NextRequest) {
   try {
     const { error } = await (supabaseAdmin as any)
       .from("email_subscribers")
-      .update({ verified: true, updated_at: new Date().toISOString() })
+      // Clicking the link proves control of the inbox, so it is the ONLY place an
+      // opt-out is reversed (the anonymous POST /api/subscribe never touches an
+      // existing row since 2026-10-09).
+      .update({ verified: true, unsubscribed_at: null, updated_at: new Date().toISOString() })
       .eq("verification_token", token)
 
     if (error) {

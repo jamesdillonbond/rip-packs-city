@@ -165,6 +165,17 @@ export async function requireOwnedKey(ownerKey: string): Promise<OwnedKeyGate> {
     return { user }
   }
 
+  // ── A UUID is only ever authorised by Bridge 1 ──────────────────────────
+  // An auth-user UUID is the caller's own key or somebody else's; there is no
+  // "unclaimed" UUID. Before 2026-10-09 a UUID that was not the caller's fell
+  // through to the first-write exception below, so any account without a
+  // username could read and overwrite another user's `portfolio_snapshots`
+  // (keyed entirely by auth UUIDs) — and a followee's user_id is returned by
+  // GET /api/profile/follows.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) {
+    return deny(403, "Forbidden")
+  }
+
   // ── Unclaimed key ───────────────────────────────────────────────────────
   // Nobody owns this key (no profile_bio row matches it). Default is STILL a
   // 403: an unclaimed key is not evidence that it is the caller's, and letting

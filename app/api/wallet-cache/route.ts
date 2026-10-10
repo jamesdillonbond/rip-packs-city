@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-// Canonical slug↔DB-slug bridge — a hand-rolled local copy drifted here too
-// (it mapped "ufc" → "ufc" but the collections row is "ufc_strike"), so a UFC
-// POST resolved collection_id = null. Currently unreachable (the collection
-// page guards collectionSlug !== "ufc" before POSTing), but corrected so a
-// future caller can't silently no-op the write.
-import { SLUG_TO_DB_SLUG } from "@/lib/collections"
 
 // wallet_moments_cache is keyed by the 3-col unique (wallet_address,
 // collection_id, moment_id) since 2026-05-06 — there is NO plain
@@ -16,24 +10,6 @@ import { SLUG_TO_DB_SLUG } from "@/lib/collections"
 // only — never clobbers the metadata / fmv that other writers own) and
 // requires the caller to send the collection it belongs to.
 
-const POST_COLLECTION_ID_CACHE = new Map<string, string | null>()
-async function resolveCollectionId(slug?: string): Promise<string | null> {
-  if (!slug) return null
-  const dbSlug = SLUG_TO_DB_SLUG[slug] ?? slug
-  if (POST_COLLECTION_ID_CACHE.has(dbSlug)) return POST_COLLECTION_ID_CACHE.get(dbSlug) ?? null
-  try {
-    const { data } = await (supabaseAdmin as any)
-      .from("collections")
-      .select("id")
-      .eq("slug", dbSlug)
-      .single()
-    const id = data?.id ?? null
-    POST_COLLECTION_ID_CACHE.set(dbSlug, id)
-    return id
-  } catch {
-    return null
-  }
-}
 
 // GET /api/wallet-cache?wallet=0x... — returns cached moments for fallback
 export async function GET(req: NextRequest) {
@@ -83,74 +59,15 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json()
-    const wallet = body.wallet as string | undefined
-    const collection = body.collection as string | undefined
-    const moments = body.moments as Array<{
-      momentId?: string
-      editionKey?: string | null
-      serial?: number | null
-    }> | undefined
-
-    if (!wallet || !Array.isArray(moments) || !moments.length) {
-      return NextResponse.json({ ok: true, written: 0 })
-    }
-
-    // Without a collection we can't build the 3-col key — skip rather than
-    // write a NULL-collection row that can't dedupe.
-    const collectionId = await resolveCollectionId(collection)
-    if (!collectionId) {
-      return NextResponse.json({ ok: true, written: 0, skipped: "unresolved_collection" })
-    }
-
-    const now = new Date().toISOString()
-    // ⛔ A row with no edition key carries nothing this cache can use. The collection page posts
-    // /api/wallet-search's live rows here, and a degraded row (Top Shot GraphQL 530, or any All Day
-    // row from that route) has no key and no serial. Inserted, it lands as a nameless NULL-key
-    // holding; on conflict it used to WIPE the cached key and serial (upsert_wmc_batch now keeps
-    // them, 2026-09-29). Holdings are recorded by each collection's own walker, not by this echo.
-    const rows = moments
-      .filter(function(m) { return m.momentId && m.editionKey })
-      .map(function(m) {
-        return {
-          wallet_address: wallet,
-          collection_id: collectionId,
-          moment_id: m.momentId!,
-          edition_key: m.editionKey ?? null,
-          serial_number: m.serial ?? null,
-          last_seen_at: now,
-        }
-      })
-
-    if (!rows.length) {
-      return NextResponse.json({ ok: true, written: 0 })
-    }
-
-    const CHUNK = 200
-    let written = 0
-    // ok is DERIVED from whether every chunk landed (2026-09-26): it was a
-    // hardcoded `true` beside a count, so a failed write read as success.
-    let writeErrors = 0
-    let writeError: string | null = null
-    for (let i = 0; i < rows.length; i += CHUNK) {
-      const chunk = rows.slice(i, i + CHUNK)
-      const { data, error } = await (supabaseAdmin as any)
-        .rpc("upsert_wmc_batch", { p_rows: chunk })
-      if (error) {
-        console.warn("[wallet-cache] upsert_wmc_batch err:", error.message)
-        writeErrors++
-        writeError = writeError ?? error.message
-      } else {
-        written += Number(data?.written ?? 0)
-      }
-    }
-
-    return NextResponse.json({ ok: writeErrors === 0, written, write_errors: writeErrors, write_error: writeError })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.warn("[wallet-cache] Error:", message)
-    return NextResponse.json({ ok: false, written: 0, error: "wallet cache write failed" }, { status: 500 })
-  }
+// POST is RETIRED (2026-10-09). It upserted client-supplied holdings — wallet,
+// moment id, edition key, serial, all from the request body — into any
+// wallet's cache through the service role, behind nothing but a session (any
+// email can sign up). A caller could plant phantom moments in, or re-key the
+// edition/serial of, someone else's portfolio. It was also redundant: the only
+// caller echoed /api/wallet-search's rows, which that route already persists
+// server-side, and it sent the raw search input (possibly a username) as the
+// wallet key. Holdings are written by server-side walkers only. A stale client
+// bundle that still POSTs gets a harmless 200 and nothing is written.
+export async function POST() {
+  return NextResponse.json({ ok: true, written: 0, skipped: "retired_server_side_writers_only" })
 }

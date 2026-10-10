@@ -2,12 +2,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route integration test for /api/wallet-cache. GET requires ?wallet= → 400,
 // degrades to { ok:false, moments:[] } on a read error, else returns the cache.
-// POST is lenient (never a hard error): missing wallet/moments, an unresolved
-// collection, or an empty-after-filter row set all short-circuit to written:0;
-// a resolved collection drives the chunked upsert_wmc_batch RPC. The mock is
-// state-driven so both the GET read and the collection-resolve single() + the
-// RPC can be steered per test. resolveCollectionId caches by db-slug at module
-// scope, so tests that need distinct resolve outcomes use distinct slugs.
+// POST is retired (2026-10-09) and must never write. The mock is state-driven so
+// the GET read and any (forbidden) RPC call can be observed per test.
 
 const state: {
   getData: any
@@ -92,91 +88,30 @@ describe("GET /api/wallet-cache", () => {
   })
 })
 
-describe("POST /api/wallet-cache", () => {
-  it("short-circuits to written:0 without wallet/moments", async () => {
-    const res = await POST(postReq({}))
-    expect(res.status).toBe(200)
-    expect((await res.json()).written).toBe(0)
-  })
-
-  it("short-circuits to written:0 with an empty moments array", async () => {
-    const res = await POST(postReq({ wallet: "0xabc", moments: [] }))
-    expect((await res.json()).written).toBe(0)
-  })
-
-  it("skips with unresolved_collection when the collection can't resolve", async () => {
-    state.collectionId = null // single() returns no row
-    const res = await POST(
-      postReq({ wallet: "0xabc", collection: "coll-unresolved-a", moments: [{ momentId: "m1" }] }),
-    )
-    expect(res.status).toBe(200)
-    const j = await res.json()
-    expect(j.written).toBe(0)
-    expect(j.skipped).toBe("unresolved_collection")
-  })
-
-  it("returns written:0 when every moment lacks a momentId (nothing to key)", async () => {
-    state.collectionId = "cid-b"
-    const res = await POST(
-      postReq({ wallet: "0xabc", collection: "coll-resolved-b", moments: [{ editionKey: "1:2" }, { serial: 3 }] }),
-    )
-    expect(res.status).toBe(200)
-    expect((await res.json()).written).toBe(0)
-  })
-
-  it("resolves the collection and writes via the chunked RPC", async () => {
+// INVERTED 2026-10-09: POST used to upsert client-supplied holdings (wallet,
+// moment, edition key, serial — all from the body) into ANY wallet's cache via
+// the service role, behind only a session. It is retired: it never writes.
+describe("POST /api/wallet-cache — retired, never writes", () => {
+  it("a well-formed body that used to write is accepted with 200 and writes NOTHING", async () => {
     state.collectionId = "cid-c"
     state.rpcWritten = 2
-    const res = await POST(
-      postReq({
-        wallet: "0xabc",
-        collection: "coll-resolved-c",
-        moments: [{ momentId: "m1", editionKey: "1:2", serial: 5 }, { momentId: "m2" }],
-      }),
-    )
-    expect(res.status).toBe(200)
-    expect((await res.json()).written).toBe(2)
-  })
-
-  // INVERTED 2026-09-26: "still ok" was the defect — a hardcoded ok:true beside a
-  // count that did not land. It still never throws past the chunk (200), but ok is false.
-  it("an RPC error per chunk counts 0 and reports ok:false with the error", async () => {
-    state.collectionId = "cid-d"
-    state.rpcError = { message: "rpc boom" }
-    const res = await POST(
-      postReq({ wallet: "0xabc", collection: "coll-resolved-d", moments: [{ momentId: "m1", editionKey: "1:2" }] }),
-    )
+    // The route no longer even reads the body; a stale client still sends one.
+    void postReq({
+      wallet: "0xvictim000000000",
+      collection: "nba-top-shot",
+      moments: [{ momentId: "m1", editionKey: "1:2", serial: 5 }, { momentId: "m2", editionKey: "3:4", serial: 1 }],
+    })
+    const res = await POST()
     expect(res.status).toBe(200)
     const j = await res.json()
     expect(j.written).toBe(0)
-    expect(j.ok).toBe(false)
-    expect(j.write_errors).toBe(1)
-    expect(j.write_error).toBe("rpc boom")
+    expect(j.skipped).toBe("retired_server_side_writers_only")
+    expect(state.rpcCalls).toEqual([])
   })
 
-  // 2026-09-29. A degraded page row (no key, no serial) posted back here landed as a nameless
-  // NULL-key holding and, on conflict, wiped the cached key + serial. It is not sent at all now.
-  it("never sends a row without an edition key to the writer", async () => {
-    state.collectionId = "cid-e"
-    state.rpcWritten = 1
-    const res = await POST(
-      postReq({
-        wallet: "0xabc",
-        collection: "coll-resolved-e",
-        moments: [{ momentId: "m1", editionKey: "1:2", serial: 5 }, { momentId: "m2" }, { momentId: "m3", editionKey: null }],
-      }),
-    )
+  it("an empty body is the same harmless no-op", async () => {
+    const res = await POST()
     expect(res.status).toBe(200)
-    const sent = state.rpcCalls.flatMap((a) => a.p_rows)
-    expect(sent.map((r: any) => r.moment_id)).toEqual(["m1"])
-    expect(sent.every((r: any) => r.edition_key)).toBe(true)
-  })
-
-  it("a batch of only key-less rows writes nothing and calls no writer", async () => {
-    state.collectionId = "cid-f"
-    const res = await POST(
-      postReq({ wallet: "0xabc", collection: "coll-resolved-f", moments: [{ momentId: "m1" }, { momentId: "m2", serial: 4 }] }),
-    )
     expect((await res.json()).written).toBe(0)
     expect(state.rpcCalls).toEqual([])
   })

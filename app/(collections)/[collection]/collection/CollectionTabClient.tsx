@@ -854,21 +854,9 @@ function WalletMomentsBody() {
           .then(function(json: WalletSearchResponse | null) {
             if (!json) return
             setSummary(json.summary)
-            // Also update the wallet cache from live data for future loads
-            const liveRows = Array.isArray(json.rows) ? json.rows : []
-            if (liveRows.length > 0) {
-              fetch("/api/wallet-cache", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  wallet: trimmed,
-                  collection: collectionSlug,
-                  moments: liveRows.map(function(r) {
-                    return { momentId: r.momentId, editionKey: r.editionKey, serial: r.serialNumber ?? r.serial }
-                  }),
-                }),
-              }).catch(function() {})
-            }
+            // (The client no longer echoes these rows to /api/wallet-cache:
+            // /api/wallet-search persists them server-side, and the echo let a
+            // client write arbitrary holdings into any wallet's cache.)
             // Note: cached_fmv_usd / cached_moment_count on saved_wallets are
             // deprecated — /profile reads live per-collection numbers from
             // get_wallet_collection_stats instead, so no patch is needed here.

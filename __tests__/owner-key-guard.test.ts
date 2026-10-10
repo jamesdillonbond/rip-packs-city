@@ -341,6 +341,23 @@ describe("requireOwnedKey — unclaimed keys", () => {
     expect(res).not.toBeInstanceOf(Response)
   })
 
+  // 2026-10-09: a username-less caller passed ANOTHER user's auth UUID through
+  // this branch and read/overwrote their portfolio_snapshots (UUID-keyed).
+  it("returns 403 for another user's UUID even for a brand-new caller with no username", async () => {
+    state.user = { id: "3f6d1c2e-9b40-4a11-8c77-2e5b0d9a1f33" }
+    state.claimant = { data: null, error: null }
+    state.self = { data: null, error: null }
+    const res = await requireOwnedKey("a1b2c3d4-0000-4a11-8c77-2e5b0d9a1f99")
+    expect(res).toBeInstanceOf(Response)
+    expect((res as Response).status).toBe(403)
+  })
+
+  it("still allows the caller's OWN UUID (Bridge 1) — the UUID rule only closes other users' ids", async () => {
+    state.user = { id: "3f6d1c2e-9b40-4a11-8c77-2e5b0d9a1f33" }
+    const res = await requireOwnedKey("3F6D1C2E-9B40-4A11-8C77-2E5B0D9A1F33")
+    expect(res).not.toBeInstanceOf(Response)
+  })
+
   it("returns 403 when the caller ALREADY has a username of their own", async () => {
     state.claimant = { data: null, error: null }
     state.self = { data: { username: "trevor" }, error: null }

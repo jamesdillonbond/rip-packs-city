@@ -1,18 +1,40 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { NextRequest } from "next/server"
 
-// Route integration test for POST /api/subscribe.
+// Route integration test for POST /api/subscribe — an ANONYMOUS route, so the
+// email in the body is unproven.
 // Pre-DB guards, in order:
 //   1. req.json() throws → 400 "Invalid JSON"
 //   2. missing email / no "@" → 400 "Invalid email"
-// Then it upserts email_subscribers (supabaseAdmin, mocked) and — only when
-// RESEND_API_KEY is set — fires a Resend email. We delete RESEND_API_KEY so the
-// happy path stays network-free and returns { success: true }.
+// Then: a NEW address gets a row + a verification mail; an EXISTING row is never
+// rewritten (2026-10-09 — the old upsert let anyone reset another subscriber's
+// opt-out, preferences, wallet and unsubscribe token), only re-sent its
+// verification mail with its existing token when unverified/unsubscribed and
+// past the cooldown.
 
-const upsert: { error: any } = { error: null }
+const db = vi.hoisted(() => ({
+  existing: { data: null as any, error: null as any },
+  insertError: null as any,
+  updateError: null as any,
+  inserts: [] as any[],
+  updates: [] as any[],
+}))
 
 vi.mock("@/lib/supabase", () => {
-  const b: any = { from: () => b, upsert: async () => ({ error: upsert.error }) }
+  const b: any = {
+    from: () => b,
+    select: () => b,
+    eq: () => b,
+    maybeSingle: async () => db.existing,
+    insert: async (row: any) => {
+      db.inserts.push(row)
+      return { error: db.insertError }
+    },
+    update: (patch: any) => {
+      db.updates.push(patch)
+      return { eq: async () => ({ error: db.updateError }) }
+    },
+  }
   return { supabaseAdmin: b }
 })
 
@@ -26,15 +48,26 @@ function post(body: string): NextRequest {
   })
 }
 
+let fetchSpy: ReturnType<typeof vi.fn>
 beforeEach(() => {
-  upsert.error = null
-  delete process.env.RESEND_API_KEY
+  db.existing = { data: null, error: null }
+  db.insertError = null
+  db.updateError = null
+  db.inserts = []
+  db.updates = []
+  process.env.RESEND_API_KEY = "test-key"
+  fetchSpy = vi.fn(async () => new Response("{}"))
+  vi.stubGlobal("fetch", fetchSpy)
 })
 afterEach(() => {
   delete process.env.RESEND_API_KEY
+  vi.unstubAllGlobals()
 })
 
-describe("POST /api/subscribe", () => {
+const mailedTokens = () =>
+  fetchSpy.mock.calls.map((c: any[]) => String(JSON.parse(c[1].body).html).match(/token=([^"&]+)/)?.[1])
+
+describe("POST /api/subscribe — guards", () => {
   it("400s on invalid JSON", async () => {
     const res = await POST(post("not-json"))
     expect(res.status).toBe(400)
@@ -46,20 +79,70 @@ describe("POST /api/subscribe", () => {
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe("Invalid email")
   })
+})
 
-  it("returns success on a valid subscription (Resend disabled)", async () => {
-    const res = await POST(post(JSON.stringify({ email: "A@B.com" })))
+describe("POST /api/subscribe — a new address", () => {
+  it("inserts a row with the body's preferences and mails a verification link", async () => {
+    const res = await POST(post(JSON.stringify({ email: "A@B.com", digestWeekly: false, dealAlerts: true })))
     expect(res.status).toBe(200)
     expect((await res.json()).success).toBe(true)
+    expect(db.inserts).toHaveLength(1)
+    expect(db.inserts[0]).toMatchObject({ email: "a@b.com", digest_weekly: false, deal_alerts: true, verified: false })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(mailedTokens()[0]).toBe(db.inserts[0].verification_token)
   })
 
-  it("500s with the message when the upsert errors", async () => {
-    upsert.error = { message: "dup key" }
+  it("a concurrent create (23505) leaves the winner's row alone and still answers success", async () => {
+    db.insertError = { code: "23505", message: "duplicate key" }
+    const res = await POST(post(JSON.stringify({ email: "a@b.com" })))
+    expect(res.status).toBe(200)
+    expect(db.updates).toEqual([])
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it("500s without publishing the driver message when the insert errors", async () => {
+    db.insertError = { code: "57014", message: "canceling statement due to statement timeout" }
     const res = await POST(post(JSON.stringify({ email: "a@b.com" })))
     expect(res.status).toBe(500)
     const body = await res.json()
     expect(body.success).toBe(false)
-    // The driver message must NOT be published — lib/api-error.ts classifies it.
-    expect(body.error).not.toContain("dup key")
+    expect(body.error).not.toContain("canceling statement")
+  })
+
+  it("500s when the existence lookup fails — never treats a failed read as 'new'", async () => {
+    db.existing = { data: null, error: { message: "timeout" } }
+    const res = await POST(post(JSON.stringify({ email: "a@b.com" })))
+    expect(res.status).toBe(500)
+    expect(db.inserts).toEqual([])
+  })
+})
+
+describe("POST /api/subscribe — an EXISTING row is never rewritten", () => {
+  const OLD = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+
+  it("an UNSUBSCRIBED subscriber is not re-opted-in: no field but the cooldown clock moves, and the mail carries the EXISTING token", async () => {
+    db.existing = { data: { verified: true, unsubscribed_at: OLD, verification_token: "tok-old", updated_at: OLD }, error: null }
+    const res = await POST(post(JSON.stringify({ email: "victim@x.com", digestWeekly: true, walletAddress: "0xattacker00000000" })))
+    expect(res.status).toBe(200)
+    expect(db.inserts).toEqual([])
+    expect(db.updates).toHaveLength(1)
+    expect(Object.keys(db.updates[0])).toEqual(["updated_at"])
+    expect(mailedTokens()).toEqual(["tok-old"])
+  })
+
+  it("an unverified row inside the cooldown gets no second mail and no write", async () => {
+    db.existing = { data: { verified: false, unsubscribed_at: null, verification_token: "tok", updated_at: new Date().toISOString() }, error: null }
+    await POST(post(JSON.stringify({ email: "a@b.com" })))
+    expect(db.updates).toEqual([])
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it("a verified, subscribed row gets nothing at all — and the response does not reveal it", async () => {
+    db.existing = { data: { verified: true, unsubscribed_at: null, verification_token: "tok", updated_at: OLD }, error: null }
+    const res = await POST(post(JSON.stringify({ email: "a@b.com", digestWeekly: false })))
+    expect(await res.json()).toEqual({ success: true })
+    expect(db.updates).toEqual([])
+    expect(db.inserts).toEqual([])
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
