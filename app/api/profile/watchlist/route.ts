@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     const { data: items, error } = await supabase
       .from("watchlist_items")
       .select("*")
-      .eq("owner_key", ownerKey)
+      .eq("owner_key", gate.user.id) // session-keyed (#176)
       .order("created_at", { ascending: false })
     if (error) {
       return apiErrorResponse(error, "api/profile/watchlist");
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
       .from("watchlist_items")
       .upsert(
         {
-          owner_key: ownerKey,
+          owner_key: gate.user.id, // session-keyed (#176), never the body's ownerKey
           edition_id: editionId,
           collection_id: collectionId ?? null,
           target_price: targetPrice ?? null,
@@ -185,7 +185,7 @@ export async function DELETE(req: NextRequest) {
       .from("watchlist_items")
       .delete()
       .eq("id", itemId)
-      .eq("owner_key", ownerKey)
+      .eq("owner_key", gate.user.id) // session-keyed (#176)
     if (error) {
       return apiErrorResponse(error, "api/profile/watchlist");
     }

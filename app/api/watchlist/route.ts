@@ -30,13 +30,19 @@ export async function GET(req: NextRequest) {
   // user's watchlist + active alerts by supplying their (public) username.
   const gate = await requireOwnedKey(owner_key);
   if (gate instanceof Response) return gate;
+  // 2026-10-10 (known-issues #176): rows are keyed by the SESSION user, never by
+  // the client's owner_key. An address-shaped key can be squatted (anyone can
+  // save any address first), so it may authenticate the caller's claim but must
+  // not select private rows. /api/alerts already keys fmv_alerts on user.id, so
+  // this also makes the "alert active" flag below read the alerts it writes.
+  const rowKey = gate.user.id;
 
   try {
     // Fetch all watchlist rows for this owner
     const { data: rows, error } = await supabase
       .from("watchlist")
       .select("*")
-      .eq("owner_key", owner_key)
+      .eq("owner_key", rowKey)
       .order("added_at", { ascending: false });
 
     if (error) throw new Error(error.message);
@@ -90,7 +96,7 @@ export async function GET(req: NextRequest) {
     const { data: alertRows } = await supabase
       .from("fmv_alerts")
       .select("edition_key")
-      .eq("owner_key", owner_key)
+      .eq("owner_key", rowKey)
       .eq("active", true);
 
     const alertSet = new Set<string>();
@@ -141,7 +147,7 @@ export async function POST(req: NextRequest) {
       .from("watchlist")
       .upsert(
         {
-          owner_key,
+          owner_key: gate.user.id, // session-keyed (#176), never the body's owner_key
           edition_key,
           player_name,
           set_name,
@@ -193,7 +199,7 @@ export async function DELETE(req: NextRequest) {
     const { error } = await supabase
       .from("watchlist")
       .delete()
-      .eq("owner_key", owner_key)
+      .eq("owner_key", gate.user.id)
       .eq("edition_key", edition_key);
 
     if (error) throw new Error(error.message);

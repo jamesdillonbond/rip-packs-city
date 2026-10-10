@@ -19,6 +19,9 @@ const state: { user: any | null; tables: Record<string, any>; single: { data: an
   single: { data: null, error: null },
 }
 
+// Every owner_key the route filters or writes with, per table (2026-10-10, #176).
+const rowCalls: Array<{ table: string; op: string; col: string; v: unknown }> = []
+
 // ── requireOwnedKey fixtures ────────────────────────────────────────────────
 // `ownership.claimantId` is who claims the requested key (null = unclaimed); the
 // claimed username echoes back whatever key the route asked about, so any
@@ -64,8 +67,9 @@ function profileBioBuilder() {
 vi.mock("@supabase/supabase-js", () => {
   const makeBuilder = (table: string) => {
     const b: any = {
-      select: () => b, eq: () => b, in: () => b, order: () => b,
-      upsert: () => b, delete: () => b,
+      select: () => b, in: () => b, order: () => b, delete: () => b,
+      eq: (col: string, v: unknown) => { rowCalls.push({ table, op: "eq", col, v }); return b },
+      upsert: (row: any) => { rowCalls.push({ table, op: "upsert", col: "owner_key", v: row?.owner_key }); return b },
       single: async () => state.single,
       then: (resolve: any) => resolve(state.tables[table] ?? { data: [], error: null }),
     }
@@ -102,6 +106,23 @@ beforeEach(() => {
   ownership.selfUsername = null
   ownership.selfErr = null
   awardCalls.length = 0
+  rowCalls.length = 0
+})
+
+// 2026-10-10 (known-issues #176): private rows are keyed by the SESSION user,
+// never by the client's owner_key — an address key can be squatted, so it may
+// pass the guard but must not select or write rows.
+describe("/api/watchlist keys rows by the session user", () => {
+  it("GET, POST and DELETE select/write owner_key = the session user id, not the request's key", async () => {
+    state.tables.watchlist = { data: [], error: null }
+    await get("owner_key=trevor")
+    state.single = { data: { edition_key: "73:2785" }, error: null }
+    await post({ owner_key: "trevor", edition_key: "73:2785" })
+    await del({ owner_key: "trevor", edition_key: "73:2785" })
+    const ownerKeys = rowCalls.filter((c) => c.col === "owner_key" && (c.table === "watchlist" || c.table === "fmv_alerts"))
+    expect(ownerKeys.length).toBeGreaterThanOrEqual(3)
+    expect(ownerKeys.every((c) => c.v === "u1")).toBe(true)
+  })
 })
 
 describe("/api/watchlist guards", () => {
