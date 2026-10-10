@@ -27,11 +27,18 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 
-/** How long a snapshot counts as "fresh" for the fast path. Comfortably above the
- *  cron interval (every 5 min) so a page read almost always hits a fresh row, while
- *  a few dropped cron ticks still fall back to a live re-warm rather than serving
- *  wildly stale data. */
-export const BOARD_CACHE_FRESH_MS = 10 * 60 * 1000
+/** How long a snapshot counts as "fresh" for the fast path. MUST stay above the
+ *  warm cron's interval (vercel.json `/api/cron/refresh-insights-cache`), so a page
+ *  read almost always hits a fresh row, while a few dropped cron ticks still fall
+ *  back to a live re-warm rather than serving wildly stale data.
+ *
+ *  ⚠ 2026-10-10: 10 → 20 min. The cron went from every 5 to every 15 minutes on
+ *  08-30 (`235e1d55e`, vercel.json only) and this window stayed at 10. For ~5 of
+ *  every 15 minutes each cached board then read as stale, and the next render ran
+ *  the heavy live query this cache exists to keep off the render path.
+ *  `__tests__/board-cache-fresh-window-exceeds-the-warm-interval.test.ts` now
+ *  derives the interval from vercel.json and fails if the two drift apart again. */
+export const BOARD_CACHE_FRESH_MS = 20 * 60 * 1000
 
 /**
  * Ceiling on the LIVE query inside readBoardOrLive's ladder.
@@ -89,7 +96,7 @@ export const WARM_BOARDS: { key: BoardCacheKey; label: string; warmEveryMs?: num
   // Panini's ~4-hourly walk, and at the 5-minute cadence that is ~290 GB/day of
   // buffer traffic for no fresher answer. See lib/insights/panini-more-boards.ts.
   { key: "panini-boards", label: "Panini boards (deals, packs, serials, players)", warmEveryMs: 60 * 60 * 1000 },
-  // 2026-10-10 (#33): every tick, not hourly. Drop sale-state moves fast during a
+  // 2026-10-10 (#33): every tick (15 min), not hourly. Drop sale-state moves during a
   // live drop, and one warm is ~6 drops × 3 Vaultopolis GETs plus one pricing RPC each.
   { key: "pack-drops", label: "Pack drops" },
 ]

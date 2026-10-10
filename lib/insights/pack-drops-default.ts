@@ -8,7 +8,7 @@
 // board incomplete, so `fetchScoredDrops` throws (correctly: a shorter list must not
 // pass as the whole market). Without a snapshot that throw became a degraded page,
 // and ISR served it for the full 15-minute window: 12 times in the two weeks to
-// 10-09. Now the cron warms the board every 5 minutes. A failed live read serves the
+// 10-09. Now the cron warms the board every 15 minutes. A failed live read serves the
 // last COMPLETE board under its own `fetchedAt`, never a partial one.
 
 import { supabaseAdmin } from "@/lib/supabase"
