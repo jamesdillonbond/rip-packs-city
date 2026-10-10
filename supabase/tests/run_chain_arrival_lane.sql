@@ -24,6 +24,9 @@
 --   U2. No HTTP answer at all (a handshake that never completed: zero request
 --       time; or DNS / connect failure) is a free retry too; a call that
 --       connected and THEN timed out still counts an attempt.
+--   U3. That handshake failure also parks the NODE for an hour
+--       (chain_arrival_dark_nodes): dispatch sends it nothing while dark, ONE
+--       canary call once the hour is up, and any HTTP answer clears it.
 --   G1. An interval straddling 86,031,700 (the first height mainnet25 runs a
 --       script at) splits AT it, never reading a script below it.
 --   G2. An interval wholly inside that gap, wider than 250 blocks, is WALKED:
@@ -42,7 +45,7 @@
 -- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
 -- seed_saved_wallet_chain_arrivals from
 -- 20260930190000_audit_20260930_chain_arrivals_seed_sold_moments.sql;
--- run_chain_arrival_lane from 20261010104104_audit_20261010_chain_arrival_transport_outage_is_a_free_retry.sql).
+-- run_chain_arrival_lane from 20261010142634_audit_20261010_chain_arrival_lane_parks_a_dark_node.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -78,6 +81,9 @@ CREATE TABLE public.chain_arrival_probes (
   request_id bigint, attempts int NOT NULL DEFAULT 0, arrived_height bigint, arrived_at timestamptz, tx_id text,
   from_address text, last_error text, created_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz,
   PRIMARY KEY (wallet, nft_id));
+CREATE TABLE public.chain_arrival_dark_nodes (
+  node text PRIMARY KEY, dark_until timestamptz NOT NULL, last_error text,
+  marked_at timestamptz NOT NULL DEFAULT now(), cleared_at timestamptz);
 
 -- >>> BEGIN verbatim enqueue_chain_arrivals (body byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.enqueue_chain_arrivals(p_wallet text, p_ids bigint[], p_lo bigint, p_hi bigint)
@@ -152,6 +158,11 @@ BEGIN
   LOOP
     v_collected := v_collected + 1;
     v_body := NULL;
+    -- 2026-10-10: any HTTP answer means the node is reachable (U3)
+    IF r.h_status IS NOT NULL THEN
+      UPDATE public.chain_arrival_dark_nodes SET cleared_at = now()
+       WHERE node = r.node AND cleared_at IS NULL;
+    END IF;
     IF r.h_status = 200 AND pg_input_is_valid(r.h_content, 'jsonb') THEN
       BEGIN
         v_body := CASE WHEN r.kind IN ('owned', 'floor')
@@ -187,6 +198,15 @@ BEGIN
         UPDATE public.chain_arrival_probes SET request_id = NULL, last_error = left(r.h_error, 300)
          WHERE request_id = r.request_id;
         v_unavailable := v_unavailable + 1;
+        -- 2026-10-10 (known-issues #181): and park the NODE for an hour. The
+        -- mainnet24/25/26 nodes stopped completing a handshake on 10-08/09;
+        -- re-dispatching every tick spent ~790 pg_net calls an hour (36 % of
+        -- all) on 30 s timeouts. After the hour one canary call re-tests it.
+        INSERT INTO public.chain_arrival_dark_nodes (node, dark_until, last_error)
+        VALUES (r.node, now() + interval '1 hour', left(r.h_error, 300))
+        ON CONFLICT (node) DO UPDATE
+          SET dark_until = EXCLUDED.dark_until, last_error = EXCLUDED.last_error,
+              marked_at = now(), cleared_at = NULL;
       ELSE
         v_last_error := left(coalesce(r.h_error, 'http ' || coalesce(r.h_status::text, 'null') || ': ' || r.h_content), 300);
         UPDATE public.chain_arrival_probes
@@ -375,7 +395,13 @@ BEGIN
       SELECT pw.*, row_number() OVER (PARTITION BY pw.node ORDER BY (pw.status <> 'floor'), pw.wrn, pw.width, pw.lo) AS rn
         FROM per_wallet pw
     )
-    SELECT * FROM ranked WHERE rn <= v_per_node
+    -- 2026-10-10: a dark node gets nothing; one past its hour gets one
+    -- canary call; a cleared or never-dark node gets its full cap (U3)
+    SELECT rk.* FROM ranked rk
+      LEFT JOIN public.chain_arrival_dark_nodes dn ON dn.node = rk.node
+     WHERE rk.rn <= CASE WHEN dn.node IS NULL OR dn.cleared_at IS NOT NULL THEN v_per_node
+                         WHEN dn.dark_until > now() THEN 0
+                         ELSE 1 END
   LOOP
     IF r.status IN ('bisect', 'floor') THEN
       SELECT net.http_post(
@@ -422,7 +448,8 @@ BEGIN
                        'not_found', v_not_found, 'failed', v_failed, 'throttled', v_throttled,
                        'expired', v_expired, 'dispatched', v_dispatched,
                        'floor_held', v_floor_held, 'floor_passed', v_floor_passed,
-                       'unavailable', v_unavailable, 'walked', v_walked)
+                       'unavailable', v_unavailable, 'walked', v_walked,
+                       'dark_nodes', (SELECT count(*) FROM public.chain_arrival_dark_nodes WHERE cleared_at IS NULL))
   );
 
   RETURN jsonb_build_object('ok', v_failed = 0, 'collected', v_collected, 'bisected', v_bisected,
@@ -653,13 +680,40 @@ DO $$
 DECLARE v jsonb;
 BEGIN
   v := public.run_chain_arrival_lane();
-  PERFORM _assert((SELECT attempts = 0 AND last_error LIKE 'Timeout of 30000 ms%' AND status <> 'failed' AND request_id IS NOT NULL
+  PERFORM _assert((SELECT attempts = 0 AND last_error LIKE 'Timeout of 30000 ms%' AND status <> 'failed'
                      FROM public.chain_arrival_probes WHERE nft_id = 1),
-                  'U2: a connection that never completed costs no attempt and is re-dispatched');
+                  'U2: a connection that never completed costs no attempt and stays pending');
   PERFORM _assert((SELECT attempts = 2 FROM public.chain_arrival_probes WHERE nft_id = 3),
                   'U2: a call that connected and then timed out still counts an attempt');
   PERFORM _assert((v->>'unavailable')::int = 1 AND (v->>'failed')::int = 1,
                   'U2: one outage, one failed read');
+END $$;
+
+-- U3: the node that never completed a handshake is parked for an hour
+DO $$
+DECLARE v jsonb; v_node text; v_before int;
+BEGIN
+  SELECT node INTO v_node FROM public.chain_arrival_dark_nodes WHERE cleared_at IS NULL;
+  PERFORM _assert(v_node IS NOT NULL AND (SELECT dark_until > now() + interval '50 minutes' FROM public.chain_arrival_dark_nodes WHERE node = v_node),
+                  'U3: the handshake failure parked its node for an hour');
+  PERFORM _assert((SELECT request_id IS NULL FROM public.chain_arrival_probes WHERE nft_id = 1),
+                  'U3: nothing was re-dispatched to the dark node in the same run');
+  SELECT count(*) INTO v_before FROM net.calls WHERE url LIKE v_node || '%';
+  v := public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT count(*) FROM net.calls WHERE url LIKE v_node || '%') = v_before,
+                  'U3: a dark node gets no call');
+  PERFORM _assert_eq(v->>'ok', 'true', 'U3: a parked node is not a failed run');
+  UPDATE public.chain_arrival_dark_nodes SET dark_until = now() - interval '1 second' WHERE node = v_node;
+  v := public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT count(*) FROM net.calls WHERE url LIKE v_node || '%') = v_before + 1,
+                  'U3: past its hour the node gets exactly ONE canary call');
+  INSERT INTO net._http_response (id, status_code, content)
+  SELECT max(id), 429, 'Too Many Requests' FROM net.calls WHERE url LIKE v_node || '%';
+  v := public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT cleared_at IS NOT NULL FROM public.chain_arrival_dark_nodes WHERE node = v_node),
+                  'U3: any HTTP answer clears the node');
+  PERFORM _assert((SELECT count(*) FROM net.calls WHERE url LIKE v_node || '%') > v_before + 1,
+                  'U3: a cleared node gets its full dispatch again');
 END $$;
 
 -- F1 / F2: a floor probe on mainnet26's node beside a pending bisection there

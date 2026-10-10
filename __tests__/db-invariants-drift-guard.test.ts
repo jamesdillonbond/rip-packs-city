@@ -211,8 +211,9 @@ const PINS = [
     // then round-robin dispatch across wallets; 24 per node; 2026-09-30: a 503
     // is a free retry and mainnet25's script gap (<86,031,700) is walked by events;
     // then ALIGNED bisection + holdings calls grouped by (wallet, height);
-    // 2026-10-10: no HTTP answer at all (a connect that never completed) is a free retry too.
-    migration: "supabase/migrations/20261010104104_audit_20261010_chain_arrival_transport_outage_is_a_free_retry.sql",
+    // 2026-10-10: no HTTP answer at all (a connect that never completed) is a free retry too;
+    // then that failure parks the NODE for an hour (one canary after), known-issues #181.
+    migration: "supabase/migrations/20261010142634_audit_20261010_chain_arrival_lane_parks_a_dark_node.sql",
   },
   {
     // Seeds every saved wallet's unexplained held Top Shot moment at the floor;
