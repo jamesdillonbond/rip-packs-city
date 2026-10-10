@@ -42,7 +42,13 @@ const ITEM_RE = /^([0-9]+[a-z]?)\.\s+(.*)$/
  * because "PARTLY RESOLVED" contains "RESOLVED".
  */
 export function deriveStatus(head) {
-  const t = head.slice(0, 260).toUpperCase()
+  // 2026-10-10 (#150): only the CURRENT status counts. Items keep their history
+  // after a marker ("ⓘ Opening follows. — PARTLY RESOLVED …"), and the old
+  // words there were read as the status: #150 led with "✅ RESOLVED" and was
+  // indexed partial. Judge only the text before the first such marker.
+  const markerAt = head.search(/ⓘ|original opening follows|opening follows/i)
+  const current = markerAt > 0 ? head.slice(0, markerAt) : head
+  const t = current.slice(0, 260).toUpperCase()
   if (/PARTLY|PARTIALLY|PARTIAL/.test(t)) return "partial"
   if (/RE-?OPENED|REGRESSED/.test(t)) return "open"
   if (/RESOLVED|CLOSED|RETIRED|SHELVED|\bDELETED\b|SUPERSEDED/.test(t)) return "closed"

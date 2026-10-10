@@ -82,6 +82,9 @@ describe("known-issues STATUS INDEX", () => {
     // A re-opened item names its own resolution history and is still open.
     expect(deriveStatus("**NBA stats — REGRESSED, re-opened 2026-08-16.** Filed under Resolved until…")).toBe("open")
     expect(deriveStatus("✅ **RESOLVED 2026-08-22 — all 6 closed.**")).toBe("closed")
+    // 2026-10-10 (#150): history after the marker is not the status.
+    expect(deriveStatus("**✅ RESOLVED 2026-09-26 — residue closed. ⓘ Opening follows. — PARTLY RESOLVED 2026-09-26 — …**")).toBe("closed")
+    expect(deriveStatus("🟠 **PARTLY RESOLVED 2026-10-10 — half done. Original opening follows. — OPENED 2026-10-09 …**")).toBe("partial")
     expect(deriveStatus("**Cart execution — SHELVED 2026-05-24, FRONTEND + API DELETED**")).toBe("closed")
     expect(deriveStatus("🔴 **OPEN, NEW 2026-08-27 — unbounded fetch() in an after() route**")).toBe("open")
   })
