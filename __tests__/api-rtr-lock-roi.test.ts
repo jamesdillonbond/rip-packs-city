@@ -284,6 +284,26 @@ describe("POST /api/rtr/lock-roi — cache + failure + FMV join", () => {
     expect(b.rowCount).toBe(b.moments.length)
   })
 
+  it("a failed fmv_current read flags the payload degraded and is NOT cached", async () => {
+    state.tables.wallet_moments_cache = [
+      { moment_id: "a", edition_key: "E1", player_name: "P", set_name: "S", tier: "RARE", is_locked: true, fmv_usd: 10, serial_number: 1 },
+      { moment_id: "b", edition_key: "E1", player_name: "P", set_name: "S", tier: "RARE", is_locked: true, fmv_usd: null, serial_number: 2 },
+    ]
+    state.tables.editions = [{ id: "ed1", external_id: "E1" }]
+    state.tables.fmv_current = [{ edition_id: "ed1", fmv_usd: 50 }]
+    state.errs = { fmv_current: { message: "statement timeout" } }
+    const first = await (await POST(body("0x00000000000000c9"))).json()
+    expect(first.degraded).toBe(true)
+    expect(first.moments.map((m: any) => m.momentId)).toEqual(["a"]) // b fell out: no fresh FMV
+    // the read recovers: the next request re-reads instead of serving the partial list
+    state.errs = {}
+    const second = await POST(body("0x00000000000000c9"))
+    expect(second.headers.get("X-RPC-Cache")).not.toBe("hit")
+    const b2 = await second.json()
+    expect(b2.degraded).toBeUndefined()
+    expect(b2.moments.map((m: any) => m.momentId).sort()).toEqual(["a", "b"])
+  })
+
   it("lower-cases the submitted wallet in the payload", async () => {
     state.tables.wallet_moments_cache = []
     const b = await (await POST(post(JSON.stringify({ walletAddr: "0x00000000000000C8" })))).json()

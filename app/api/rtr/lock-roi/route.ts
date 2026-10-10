@@ -60,6 +60,11 @@ interface LockRoiPayload {
   rowCount: number
   totalAvailable: number
   moments: LockRoiRow[]
+  /**
+   * true when the edition or FMV read failed: moments with no cached FMV fell
+   * out of the ranking, so the list is a partial one. Never cached.
+   */
+  degraded?: boolean
 }
 
 interface CacheEntry {
@@ -150,14 +155,22 @@ export async function POST(req: NextRequest) {
 
     const editionKeys = Array.from(new Set(rows.map(r => r.edition_key).filter(Boolean))) as string[]
 
+    // A failed read here is NOT "no fresh FMV": moments without a cached FMV
+    // would silently drop out of the ranking, and the partial list was then
+    // cached for 5 minutes. Record it, flag the payload, and skip the cache.
+    let degraded = false
     const editionByExt = new Map<string, string>()
     for (let i = 0; i < editionKeys.length; i += CHUNK) {
       const slice = editionKeys.slice(i, i + CHUNK)
-      const { data: editionRows } = await supabase
+      const { data: editionRows, error: editionErr } = await supabase
         .from("editions")
         .select("id, external_id")
         .in("external_id", slice)
         .eq("collection_id", NBA_TOP_SHOT_UUID)
+      if (editionErr) {
+        console.error("[rtr-lock-roi] editions:", editionErr.message)
+        degraded = true
+      }
       for (const e of editionRows ?? []) {
         if (e.external_id && e.id) editionByExt.set(String(e.external_id), String(e.id))
       }
@@ -173,10 +186,14 @@ export async function POST(req: NextRequest) {
       // for a ~50-edition chunk that can exceed PostgREST's 1000-row cap, which
       // silently drops the editions sorted last — losing their FMV, and with it
       // their moments (they fall out with fmv == null).
-      const { data: fmvRows } = await supabase
+      const { data: fmvRows, error: fmvErr } = await supabase
         .from("fmv_current")
         .select("edition_id, fmv_usd")
         .in("edition_id", slice)
+      if (fmvErr) {
+        console.error("[rtr-lock-roi] fmv_current:", fmvErr.message)
+        degraded = true
+      }
       for (const s of fmvRows ?? []) {
         const eid = String(s.edition_id)
         if (s.fmv_usd != null) {
@@ -233,9 +250,10 @@ export async function POST(req: NextRequest) {
       rowCount: top.length,
       totalAvailable: moments.length,
       moments: top,
+      ...(degraded ? { degraded: true } : {}),
     }
 
-    cache.set(walletAddr, { expiresAt: now + CACHE_TTL_MS, payload })
+    if (!degraded) cache.set(walletAddr, { expiresAt: now + CACHE_TTL_MS, payload })
     return NextResponse.json(payload, { headers: ROUTE_HEADERS })
   } catch (err: any) {
     console.error("[rtr-lock-roi]", err?.message ?? err)

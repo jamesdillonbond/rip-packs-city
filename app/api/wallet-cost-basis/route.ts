@@ -12,13 +12,18 @@ import {apiErrorResponse, isUnresolvedIdentifierError, unresolvedIdentifierRespo
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+import { isCadenceAddress, isSolanaAddress, normalizeAddress } from "@/lib/address"
 import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve"
 
 const TOPSHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
 async function resolveWallet(input: string): Promise<string> {
   const t = input.trim()
-  if (t.startsWith("0x") && t.length === 18) return t
+  // On-chain addresses pass through, normalised per chain (Flow hex folds, a
+  // Candy base58 key stays verbatim), so a Candy wallet reaches the honest
+  // "unavailable for this collection" answer below instead of failing in the
+  // Top Shot username lookup.
+  if (isCadenceAddress(t) || isSolanaAddress(t)) return normalizeAddress(t)
   // 2026-09-29: the shared ladder (cache → live Atlas → Top Shot GQL). The local
   // copy went cache → the dead Top Shot host only, so a username not already
   // cached could never resolve here. A miss throws "Could not resolve …"; a

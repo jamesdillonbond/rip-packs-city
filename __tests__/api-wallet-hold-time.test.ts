@@ -88,6 +88,15 @@ describe("GET /api/wallet-hold-time — guards", () => {
     expect(body.reason).toBe("acquisition_data_unavailable")
   })
 
+  it("a Candy (Solana) wallet gets the graceful reason too, echoed VERBATIM — never a username-lookup error", async () => {
+    const sol = "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2"
+    const res = await GET(req(`?wallet=${sol}&collection=candy-mlb`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.wallet).toBe(sol)
+    expect(body.reason).toBe("acquisition_data_unavailable")
+  })
+
   it("500s when the acquisitions query errors", async () => {
     state.error = { message: "db down" }
     const res = await GET(req(`?wallet=${WALLET}&collection=nba-top-shot`))

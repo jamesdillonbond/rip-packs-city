@@ -14,7 +14,8 @@ import {apiErrorResponse, isUnresolvedIdentifierError, unresolvedIdentifierRespo
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
-import { isFlowAddress } from "@/lib/postgrest-safe"
+import { isOnChainAddress } from "@/lib/postgrest-safe"
+import { normalizeAddress } from "@/lib/address"
 import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve"
 
 const TOPSHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -27,7 +28,11 @@ async function resolveWallet(input: string): Promise<string> {
   // filter STRING below, so a length-only check let 16 arbitrary chars (commas,
   // parens) through into the filter grammar. A non-matching value falls through
   // to username resolution (server/API-sourced, safe).
-  if (isFlowAddress(t)) return t
+  // isOnChainAddress admits only 0x+16 hex or base58 (no filter-grammar chars).
+  // normalizeAddress folds Flow hex (sales store it lowercase; a mixed-case
+  // input used to miss) and keeps a Candy (Solana) key verbatim — before
+  // 2026-10-09 a base58 key went to the Top Shot username lookup and failed.
+  if (isOnChainAddress(t)) return normalizeAddress(t)
   // 2026-09-29: the shared ladder (cache → live Atlas → Top Shot GQL). The local
   // copy went cache → the dead Top Shot host only, so a username not already
   // cached could never resolve here. A miss throws "Could not resolve …"; a
@@ -61,7 +66,7 @@ export async function GET(req: NextRequest) {
     const limit = Math.max(1, Math.min(50, Number.isFinite(limitRaw) ? limitRaw : 10))
 
     const wallet = await resolveWallet(walletInput)
-    const walletLower = wallet.toLowerCase()
+    const walletKey = normalizeAddress(wallet)
 
     let rows: SaleRow[] = []
 
@@ -76,7 +81,7 @@ export async function GET(req: NextRequest) {
       if (error) throw new Error(error.message)
       rows = (data ?? []).map((r: any) => {
         const edition = Array.isArray(r.pinnacle_editions) ? r.pinnacle_editions[0] : r.pinnacle_editions
-        const isBuyer = (r.buyer_address ?? "").toLowerCase() === walletLower
+        const isBuyer = normalizeAddress(r.buyer_address ?? "") === walletKey
         return {
           player_name: edition?.character_name ?? null,
           set_name: edition?.set_name ?? null,
@@ -100,7 +105,7 @@ export async function GET(req: NextRequest) {
       if (error) throw new Error(error.message)
       rows = (data ?? []).map((r: any) => {
         const edition = Array.isArray(r.editions) ? r.editions[0] : r.editions
-        const isBuyer = (r.buyer_address ?? "").toLowerCase() === walletLower
+        const isBuyer = normalizeAddress(r.buyer_address ?? "") === walletKey
         return {
           player_name: edition?.player_name ?? null,
           set_name: edition?.set_name ?? null,

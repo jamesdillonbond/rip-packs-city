@@ -7,11 +7,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // limit clamping, buy-side attribution, the TopShot "only sells" note, the
 // editions-as-array shape, and both the sales-error and pinnacle-error 500s.
 
-const state: { rows: any; gql: any } = { rows: { data: [], error: null }, gql: {} }
+const state: { rows: any; gql: any; orArgs: string[] } = { rows: { data: [], error: null }, gql: {}, orArgs: [] }
 
 vi.mock("@/lib/supabase", () => {
   const b: any = {
-    select: () => b, eq: () => b, or: () => b, order: () => b, limit: () => b,
+    select: () => b, eq: () => b, or: (f: string) => { state.orArgs.push(f); return b }, order: () => b, limit: () => b,
     then: (resolve: any) => resolve(state.rows),
   }
   return { supabaseAdmin: { from: () => b } }
@@ -38,6 +38,7 @@ const req = (u: string) => ({ nextUrl: new URL(u) }) as any
 beforeEach(() => {
   state.rows = { data: [], error: null }
   state.gql = {}
+  state.orArgs = []
 })
 
 describe("GET /api/wallet-sales-history — pre-DB guards", () => {
@@ -47,6 +48,26 @@ describe("GET /api/wallet-sales-history — pre-DB guards", () => {
   it("400s on an unknown collection", async () => {
     const res = await GET(req("https://t/api/wallet-sales-history?wallet=0xabc&collection=not-real"))
     expect(res.status).toBe(400)
+  })
+})
+
+describe("GET /api/wallet-sales-history — address normalisation", () => {
+  it("reads a Candy (Solana) base58 wallet VERBATIM and attributes its buys", async () => {
+    const sol = "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2"
+    state.rows = {
+      data: [{ price_usd: 3, sold_at: "2026-10-09T00:00:00Z", marketplace: null, serial_number: 7, buyer_address: sol, seller_address: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU", editions: { player_name: "P", set_name: "S", tier: "COMMON" } }],
+      error: null,
+    }
+    const res = await GET(req(`https://t/api/wallet-sales-history?wallet=${sol}&collection=candy-mlb`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.wallet).toBe(sol)
+    expect(body.rows[0].side).toBe("buy")
+    expect(state.orArgs[0]).toBe(`buyer_address.eq.${sol},seller_address.eq.${sol}`)
+  })
+  it("folds a mixed-case Flow address before the exact-match filter", async () => {
+    await GET(req("https://t/api/wallet-sales-history?wallet=0xBD94CADE097E50AC&collection=nba-top-shot"))
+    expect(state.orArgs[0]).toBe("buyer_address.eq.0xbd94cade097e50ac,seller_address.eq.0xbd94cade097e50ac")
   })
 })
 
