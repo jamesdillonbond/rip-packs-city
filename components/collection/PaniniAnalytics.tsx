@@ -202,10 +202,14 @@ export default function PaniniAnalytics({ data }: { data: PaniniSalesAnalytics |
         <Note>
           <b>How complete this is.</b> Since Sep 28 RPC keeps every Panini sale it reads — each card&apos;s top 20 and most recent 20 sales, re-read as the walk
           visits it. A day counts as complete once {COMPLETE_PCT}% of the editions that traded in the last 90 days have every sale of that day on record;
-          until then it shows no bar and its counts read &ldquo;at least&rdquo;. {int(cov.editions_read)} of {int(cov.active_editions)} traded editions read so far
+          until then it shows no bar and its counts read &ldquo;at least&rdquo;. {int(cov.editions_read)} editions read so far
           {cov.editions_whole_history > 0 ? ` (${int(cov.editions_whole_history)} with their whole sales history)` : ""}
-          {cov.last_read_at ? `, last ${ptWhen(cov.last_read_at, true)}` : ""}. Panini&apos;s World Cup set is the product RPC prices; sales of other products
-          are counted where the walk reads them.
+          {cov.last_read_at ? `, last ${ptWhen(cov.last_read_at, true)}` : ""}; {int(cov.active_editions)} editions traded in the last 90 days.
+          Sales are counted for every Panini product the walk reads.
+          {/* 2026-10-10: this read "{editions_read} of {active_editions} traded editions read so far", but the
+              two counts are different populations (every edition ever read vs the editions that traded in
+              90 days), so production showed "21,655 of 11,534". It also said "Panini's World Cup set is the
+              product RPC prices", untrue since the 09-28 multi-product walk. */}
         </Note>
       </div>
 

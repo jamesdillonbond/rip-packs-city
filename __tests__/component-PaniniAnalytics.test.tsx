@@ -50,6 +50,18 @@ describe("PaniniAnalytics", () => {
     expect((slots[2].firstElementChild as HTMLElement).style.height).toBe("2px")
   })
 
+  it("never states editions read as an 'X of Y' share of the traded editions, nor a World-Cup-only scope", () => {
+    // Production 2026-10-10: every edition ever read (21,655) outnumbers the editions traded in 90 days
+    // (11,534) — they are different populations, so "21,655 of 11,534 traded editions" was a false share.
+    const cov = { ...payload().coverage, editions_read: 21655, active_editions: 11534 }
+    const text = render(<PaniniAnalytics data={payload({ coverage: cov })} />).container.textContent ?? ""
+    expect(text).not.toMatch(/21,655 of 11,534/)
+    expect(text).not.toMatch(/of [\d,]+ traded editions read/)
+    expect(text).toContain("21,655 editions read so far")
+    expect(text).toContain("11,534 editions traded in the last 90 days")
+    expect(text).not.toMatch(/World Cup set is the product RPC prices/)
+  })
+
   it("a partial window reads 'at least' — never a total", () => {
     const c = render(<PaniniAnalytics data={payload()} />).container
     expect(c.textContent).toContain("≥ 562")
