@@ -72,6 +72,8 @@ $fix$;
 
 ## 6. Still Trevor's (unchanged)
 
+- **NEW 10-09 ~10:30 PM PT (night session): `supabase/migrations/20261010053000_audit_20261009_atlas_sale_twins_retired_when_the_onchain_row_lands_late.sql` is HELD, not applied.** 485 Top Shot sales are stored twice: an `atlas` row (no tx hash) plus the on-chain indexer's row for the same sale, written later by the 09-10 and 09-18 catch-ups. Both count in `sales_market`, so these sales count twice in FMV inputs until ~10-18. The #68 detector cannot see this shape because it groups by tx hash. The file archives each Atlas twin whole to `flowty_archive`, deletes it, re-points references, and schedules a 6-hourly 7-day sweep so a future catch-up is cleaned up too. It was tested on a local PG16 (only true twins retired; idempotent; the revert restores the rows). **To apply:** paste the whole file into the SQL editor. Expect `{"twins_found": 485, "retired": 485, "error": null}`. The revert is in the file header.
+
 - The 10-04 dedupe + scratch-table drop (`dedupe_tx_lane_20261004.sql`, `drop_scratch_20261004.sql`): destructive, needs his confirmation in Supabase.
 - §2 above.
 - #172 (giveaway "Deliver all" stalls with the desktop Flow Wallet extension): needs his desktop browser.
