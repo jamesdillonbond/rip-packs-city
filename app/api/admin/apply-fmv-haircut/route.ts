@@ -103,7 +103,10 @@ export async function POST(req: NextRequest) {
   let collectionId: string | null = null;
   if (collectionParam) {
     const key = collectionParam.toLowerCase();
-    if (!(key in COLLECTION_UUID)) {
+    // Own keys only: `"constructor" in obj` is true, and a function value
+    // drops out of the RPC body, so p_collection_id fell to its NULL default
+    // and a live run haircut EVERY collection (2026-10-10 audit).
+    if (!Object.prototype.hasOwnProperty.call(COLLECTION_UUID, key)) {
       return NextResponse.json(
         {
           error: `unknown collection '${collectionParam}'. Valid: ${Object.keys(

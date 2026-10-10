@@ -45,10 +45,31 @@ describe("GET /api/market/hot-editions", () => {
     expect(body.editions).toEqual([{ edition_id: "e1" }])
   })
 
-  it("nulls an invalid slug rather than 400ing", async () => {
+  // INVERTED 2026-10-10 — this pinned "nulls an invalid slug rather than
+  // 400ing": null is ALL collections to get_hot_editions_24h, so ?slug=bogus
+  // was answered with every collection's hot editions. Refuse it.
+  for (const slug of ["bogus", "constructor", "candy_mlb"]) {
+    it(`refuses a present but unsupported slug (${slug}) — never widens to all`, async () => {
+      auth.user = { id: "u1" }
+      rpc.data = [{ edition_key: "1:1" }]
+      const res = await GET(req(`https://t/api/market/hot-editions?slug=${slug}`))
+      expect(res.status).toBe(400)
+      const body = await res.json()
+      expect(body.editions ?? body.rows ?? body.data).toBeUndefined()
+    })
+  }
+
+  it("reads the registry's hyphen slug as its DB slug", async () => {
     auth.user = { id: "u1" }
     rpc.data = []
-    const body = await (await GET(req("https://t/api/market/hot-editions?slug=bogus"))).json()
+    const body = await (await GET(req("https://t/api/market/hot-editions?slug=nba-top-shot"))).json()
+    expect(body.slug).toBe("nba_top_shot")
+  })
+
+  it("an absent slug still means all collections", async () => {
+    auth.user = { id: "u1" }
+    rpc.data = []
+    const body = await (await GET(req("https://t/api/market/hot-editions"))).json()
     expect(body.slug).toBeNull()
   })
 

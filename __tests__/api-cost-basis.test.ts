@@ -88,10 +88,16 @@ describe("GET /api/cost-basis", () => {
     expect(state.rpcCalls[0].params.p_collection_id).toBe("col-allday")
   })
 
-  it("does not pass p_collection_id for an unknown collection slug", async () => {
-    await GET(req("https://t/api/cost-basis?wallet=0xabc0000000000000&collection=not-a-collection"))
-    expect(state.rpcCalls[0].params.p_collection_id).toBeUndefined()
-  })
+  // INVERTED 2026-10-10 — this pinned "does not pass p_collection_id for an
+  // unknown collection slug": the RPC then ran UNSCOPED and every collection's
+  // acquisitions came back under the requested label. Refuse instead.
+  for (const slug of ["not-a-collection", "constructor"]) {
+    it(`refuses an unknown collection slug (${slug}) instead of running unscoped`, async () => {
+      const res = await GET(req(`https://t/api/cost-basis?wallet=0xabc0000000000000&collection=${slug}`))
+      expect(res.status).toBe(400)
+      expect(state.rpcCalls).toHaveLength(0)
+    })
+  }
 
   it("does NOT silently widen the scope when the collection lookup fails", async () => {
     // The defect this pins is not an empty answer, it is a DIFFERENT one.

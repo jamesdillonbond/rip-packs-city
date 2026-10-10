@@ -14,6 +14,7 @@ import CollectionSwitcher from "@/components/CollectionSwitcher"
 import CollectionHeading from "@/components/CollectionHeading"
 import AnonSignInPill from "@/components/AnonSignInPill"
 import { tickerItems, tickerStatusLabel } from "@/lib/collection/closed-market-chrome"
+import { ownLookup } from "@/lib/safe-lookup"
 
 // ── Ticker ─────────────────────────────────────────────────────────────────────
 const TICKER_ITEMS: Record<string, string[]> = {
@@ -79,7 +80,9 @@ export function CollectionTicker({ collection }: { collection: Collection }) {
   // above are written for a venue that is trading. On a closed market both the
   // pill and the items are replaced — see lib/collection/closed-market-chrome.ts
   // for the production measurement that prompted it.
-  const liveItems = TICKER_ITEMS[collection.id] ?? TICKER_ITEMS["nba-top-shot"] ?? [`⚡ ${collection.label.toUpperCase()} — COLLECTOR INTELLIGENCE`]
+  // No Top Shot fallback: a collection without its own list (e.g. "rwa")
+  // rendered Top Shot's badge-filter copy under its own name (2026-10-10).
+  const liveItems = ownLookup(TICKER_ITEMS, collection.id) ?? [`⚡ ${collection.label.toUpperCase()} — COLLECTOR INTELLIGENCE`]
   const items = tickerItems(collection.id, liveItems)
   const statusLabel = tickerStatusLabel(collection.id)
   const doubled = [...items, ...items]

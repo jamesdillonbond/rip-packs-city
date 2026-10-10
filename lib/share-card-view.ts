@@ -7,6 +7,7 @@
 // excluded from Total FMV, and the copy must say so correctly.
 
 import { DB_SLUG_TO_SLUG, getCollection, collectionHasWalletTab } from "@/lib/collections"
+import { ownLookup } from "@/lib/safe-lookup"
 export const NO_SERIES_LABEL = "No series"
 
 /**
@@ -142,7 +143,7 @@ export function fullCollectionHref(
   const dominant = (perCollection ?? [])
     .slice()
     .sort((a, b) => (b.moments ?? 0) - (a.moments ?? 0))[0]
-  const urlSlug = dominant ? DB_SLUG_TO_SLUG[dominant.slug] : undefined
+  const urlSlug = dominant ? ownLookup(DB_SLUG_TO_SLUG, dominant.slug) : undefined
   if (!urlSlug) return `/nba-top-shot/collection?wallet=${enc}`
   const coll = getCollection(urlSlug)
   // A WALLET-keyed Collection tab only (Panini's is by username — 2026-09-27).

@@ -24,6 +24,7 @@ import {
   VERIFIED_WALLETS_UNAVAILABLE,
   type VerifiedWallet as SavedWallet,
 } from "@/lib/wallet/verified-wallets"
+import { ownLookup } from "@/lib/safe-lookup"
 
 const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
@@ -97,7 +98,7 @@ const METHOD_LABEL: Record<string, string> = {
 // fmtUsd / relativeTime / truncAddr extracted to @/lib/dashboard/format (unit-tested there).
 
 function urlSlug(dbSlug: string): string {
-  return DB_SLUG_TO_SLUG[dbSlug] ?? dbSlug
+  return ownLookup(DB_SLUG_TO_SLUG, dbSlug) ?? dbSlug
 }
 
 function eventHref(e: TxEvent): string | null {

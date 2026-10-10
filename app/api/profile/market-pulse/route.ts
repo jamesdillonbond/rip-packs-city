@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
+import { ownLookup } from "@/lib/safe-lookup";
 
 // In-memory cache keyed by collectionId — 60s TTL.
 const cache = new Map<string, { data: any; ts: number }>();
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
   const collectionId = req.nextUrl.searchParams.get("collectionId") ?? "nba-top-shot";
   const collection = getCollection(collectionId);
   const collectionUuid =
-    collection?.supabaseCollectionId ?? COLLECTION_UUID_BY_SLUG[collectionId] ?? null;
+    collection?.supabaseCollectionId ?? ownLookup(COLLECTION_UUID_BY_SLUG, collectionId) ?? null;
 
   // ⛔ A named collection that does not resolve is REFUSED (2026-09-26). The
   // unscoped branches below used to answer it with the GLOBAL counts and

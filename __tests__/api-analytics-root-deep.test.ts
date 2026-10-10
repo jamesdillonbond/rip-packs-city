@@ -111,6 +111,16 @@ describe("GET /api/analytics — guards + wallet resolution", () => {
     expect((await bad.json()).error).toContain("collection_id required")
   })
 
+  // 2026-10-10: a bracket lookup answered "constructor" with a function; it
+  // passed the guard, JSON dropped it from the RPC body, and the RPC's Top Shot
+  // default answered. Prototype keys must miss like any unknown slug.
+  for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+    it(`400s on the prototype key ${key} — never a default-scoped read`, async () => {
+      const res = await GET(req(`?wallet=${WALLET}&collection_id=${key}`))
+      expect(res.status).toBe(400)
+    })
+  }
+
   it("accepts either a slug or a canonical UUID", async () => {
     expect((await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()).collection_id).toBe(TS)
     expect((await (await GET(req(`?wallet=${WALLET}&collection_id=${TS}`))).json()).collection_id).toBe(TS)

@@ -9,6 +9,7 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
+import { toDbSlug } from "@/lib/collections";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,14 @@ export async function GET(req: NextRequest) {
 
   const url = req.nextUrl;
   const rawSlug = url.searchParams.get("slug");
-  const slug = rawSlug && VALID_SLUGS.has(rawSlug) ? rawSlug : null;
+  // An ABSENT slug means all collections. A PRESENT one must name a collection
+  // this board covers (the registry's hyphen slug is read as its DB slug); an
+  // unknown one used to become null — every collection under its label.
+  const dbSlug = rawSlug ? (VALID_SLUGS.has(rawSlug) ? rawSlug : toDbSlug(rawSlug)) : null;
+  if (rawSlug && !(dbSlug && VALID_SLUGS.has(dbSlug))) {
+    return NextResponse.json({ error: "unsupported_collection" }, { status: 400 });
+  }
+  const slug = dbSlug;
   const limitRaw = Number(url.searchParams.get("limit") ?? 10);
   const limit = Math.max(1, Math.min(50, isNaN(limitRaw) ? 10 : Math.floor(limitRaw)));
 

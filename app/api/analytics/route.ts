@@ -6,6 +6,7 @@ import { apiErrorResponse } from "@/lib/api-error"
 import { isCadenceAddress, isSolanaAddress, normalizeAddress } from "@/lib/address"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve"
+import { ownLookup } from "@/lib/safe-lookup"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
@@ -105,7 +106,7 @@ function resolveCollectionId(raw: string | null): string | null {
   // UUID passed directly — accept if it's one of ours.
   if (VALID_UUIDS.has(trimmed)) return trimmed
   // Slug (hyphen-style: nba-top-shot, nfl-all-day, etc).
-  const uuid = COLLECTION_UUID_BY_SLUG[trimmed]
+  const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, trimmed)
   return uuid ?? null
 }
 

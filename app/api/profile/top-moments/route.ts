@@ -24,6 +24,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { isSupportedAddress, normalizeAddress } from "@/lib/address";
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
+import { ownLookup } from "@/lib/safe-lookup";
 
 // ⚠ HONESTY CANON, and this is the sub-class CLAUDE.md names as WORST: a false
 // claim about the reader's own account. Both lookups below used to destructure
@@ -97,7 +98,7 @@ export async function GET(req: NextRequest) {
   const leagueRaw = req.nextUrl.searchParams.get("league");
   const league = leagueRaw === "NBA" || leagueRaw === "WNBA" ? leagueRaw : null;
   const collectionSlug = req.nextUrl.searchParams.get("collection");
-  const collectionUuid = collectionSlug ? COLLECTION_UUID_BY_SLUG[collectionSlug] ?? null : null;
+  const collectionUuid = collectionSlug ? ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null : null;
   // ⛔ SUBSTITUTION: an unrecognised slug used to fall through to `null` —
   // "every collection" — so a picker filtered to a collection this map does not
   // know answered with the collector's Top Shot Moments under that label. A

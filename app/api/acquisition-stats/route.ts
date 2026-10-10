@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { SLUG_TO_DB_SLUG } from "@/lib/collections"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { detectAddressChain } from "@/lib/address"
+import { ownLookup } from "@/lib/safe-lookup"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
@@ -21,7 +22,7 @@ async function resolveCollectionId(input?: string | null): Promise<Resolved> {
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input)) {
     return { ok: true, id: input }
   }
-  const dbSlug = SLUG_TO_DB_SLUG[input] ?? input
+  const dbSlug = ownLookup(SLUG_TO_DB_SLUG, input) ?? input
   try {
     const { data, error } = await boundedRead(
       (supabaseAdmin as any).from("collections").select("id").eq("slug", dbSlug).maybeSingle(),

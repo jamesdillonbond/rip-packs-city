@@ -14,6 +14,7 @@ import { tierColor, fmtUsd, fmtPct, buildCdf, sampleEdition, stddev } from "@/li
 import Link from "next/link"
 import { COLLECTION_UUID_BY_SLUG, getCollection } from "@/lib/collections"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
+import { ownLookup } from "@/lib/safe-lookup"
 
 interface PackInfo {
   dist_id: string
@@ -124,7 +125,7 @@ interface Props {
 
 export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
   const collectionObj = getCollection(collectionSlug)
-  const collectionUuid = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? null
+  const collectionUuid = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null
   const accent = collectionObj?.accent ?? "var(--rpc-red)"
 
   const [payload, setPayload] = useState<SimulatorPayload | null>(null)

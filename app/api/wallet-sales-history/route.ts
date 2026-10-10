@@ -17,6 +17,7 @@ import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { isOnChainAddress } from "@/lib/postgrest-safe"
 import { normalizeAddress } from "@/lib/address"
 import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve"
+import { ownLookup } from "@/lib/safe-lookup"
 
 const TOPSHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const PINNACLE_UUID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
     if (!walletInput) return NextResponse.json({ error: "wallet required" }, { status: 400 })
 
     const collectionSlug = req.nextUrl.searchParams.get("collection")?.trim() || ""
-    const collectionUuid = COLLECTION_UUID_BY_SLUG[collectionSlug]
+    const collectionUuid = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug)
     if (!collectionUuid) {
       return NextResponse.json({ error: `unknown collection: ${collectionSlug}` }, { status: 400 })
     }

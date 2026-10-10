@@ -10,6 +10,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
+import { ownLookup } from "@/lib/safe-lookup";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
   const collectionId = collectionIdParam ?? "nba-top-shot";
   const collection = getCollection(collectionId);
   const collectionUuid =
-    collection?.supabaseCollectionId ?? COLLECTION_UUID_BY_SLUG[collectionId] ?? null;
+    collection?.supabaseCollectionId ?? ownLookup(COLLECTION_UUID_BY_SLUG, collectionId) ?? null;
 
   // An unrecognised slug must NOT fall through to an unscoped query. Both lookups miss,
   // collectionUuid goes null, the .eq("collection_id", …) below is skipped, and the route

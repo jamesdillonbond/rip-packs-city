@@ -5,11 +5,12 @@
 // when the collection slug doesn't have a Supabase UUID mapped.
 
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
+import { ownLookup } from "@/lib/safe-lookup";
 
 export async function fetchSavedWalletForCollection(
   collectionSlug: string
 ): Promise<string | null> {
-  const uuid = COLLECTION_UUID_BY_SLUG[collectionSlug];
+  const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug);
   if (!uuid) return null;
   try {
     const res = await fetch(

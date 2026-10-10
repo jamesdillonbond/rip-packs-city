@@ -21,6 +21,7 @@ import {
   type VerifiedWallet as SavedWallet,
 } from "@/lib/wallet/verified-wallets"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
+import { ownLookup } from "@/lib/safe-lookup"
 
 const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
@@ -351,7 +352,7 @@ function statusColor(s: HistoryRow["status"]): string {
 }
 
 function urlSlug(dbSlug: string): string {
-  return DB_SLUG_TO_SLUG[dbSlug] ?? dbSlug
+  return ownLookup(DB_SLUG_TO_SLUG, dbSlug) ?? dbSlug
 }
 
 export default function PackHistoryClient() {

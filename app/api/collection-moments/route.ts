@@ -214,6 +214,18 @@ export async function GET(req: NextRequest) {
           .single()
         if (config?.collection_id) collectionId = config.collection_id
       }
+      // ⛔ SUBSTITUTION (2026-10-10 audit). A PRESENT slug that resolves to no
+      // collection left collectionId null, so p_collection_id was never sent:
+      // the moments came from get_wallet_moments_with_fmv's Top Shot default,
+      // total FMV covered every collection and the acquisition stats were Top
+      // Shot — three scopes under one label. Refuse; an ABSENT slug still means
+      // the RPC defaults.
+      if (!collectionId) {
+        return NextResponse.json(
+          { error: "unsupported_collection", collection: collectionSlug },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        )
+      }
     }
 
     // ⛔ 2026-09-25 — a Flow address against Candy MLB answered 200 with

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { COLLECTION_UUID_BY_SLUG, COLLECTIONS } from "@/lib/collections"
+import { ownLookup } from "@/lib/safe-lookup"
 
 // ── wallet_moments_cache FMV + image populate ────────────────────────────────
 //
@@ -211,7 +212,7 @@ async function handle(req: NextRequest): Promise<Response> {
 
   let targets: Array<{ slug: string; collection_id: string }> = []
   if (slugParam) {
-    const uuid = COLLECTION_UUID_BY_SLUG[slugParam]
+    const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, slugParam)
     if (!uuid) {
       return NextResponse.json(
         { error: `Unknown collection slug: ${slugParam}` },

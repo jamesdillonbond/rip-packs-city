@@ -69,6 +69,7 @@ import {
   countHiddenByFeeGate,
 } from "@/lib/sniper/helpers";
 import { sniperTierTabs } from "@/lib/collection-tiers";
+import { ownLookup } from "@/lib/safe-lookup";
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -140,7 +141,7 @@ function SniperMomentsBody() {
   const feedCollection = isPinnacle ? "disney-pinnacle" : collectionSlug;
   // Collection UUID for collection-scoped badge art (BadgeIcon → badge_taxonomy
   // RPC). Badges are hidden for Pinnacle, so keying off the route slug is safe.
-  const badgeCollectionId = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? null;
+  const badgeCollectionId = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null;
   const brandLabel = isPinnacle ? "Pinnacle" : collectionObj?.shortLabel ?? "Top Shot";
 
   const isMobile = useMobile();

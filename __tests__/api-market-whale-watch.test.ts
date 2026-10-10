@@ -44,6 +44,18 @@ describe("GET /api/market/whale-watch", () => {
     expect(body.whales).toEqual([{ wallet: "0xabc" }])
   })
 
+  // 2026-10-10: null is ALL collections to get_whale_watch_7d — a present but
+  // unknown slug must be refused, not widened.
+  for (const slug of ["bogus", "constructor"]) {
+    it(`refuses a present but unknown slug (${slug})`, async () => {
+      auth.user = { id: "u1" }
+      rpc.data = [{ wallet: "0xabc" }]
+      const res = await GET(req(`https://t/api/market/whale-watch?slug=${slug}`))
+      expect(res.status).toBe(400)
+      expect((await res.json()).whales).toBeUndefined()
+    })
+  }
+
   it("500s on an rpc error for an authed user", async () => {
     auth.user = { id: "u1" }
     rpc.error = { message: "db down" }

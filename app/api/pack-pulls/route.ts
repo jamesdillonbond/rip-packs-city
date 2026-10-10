@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
 import { createClient } from "@supabase/supabase-js"
 import { createHash } from "crypto"
+import { ownLookup } from "@/lib/safe-lookup"
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -63,7 +64,9 @@ export async function POST(req: NextRequest) {
   if (!packListingId) return NextResponse.json({ error: "packListingId is required" }, { status: 400 })
   if (!ALLOWED_TIERS.has(tierRaw)) return NextResponse.json({ error: "Invalid tier" }, { status: 400 })
 
-  const collectionId = COLLECTION_IDS[collectionSlug]
+  // Own keys only: "constructor" resolved to a function, passed this check, and
+  // JSON.stringify dropped it from the anonymous insert (2026-10-10 audit).
+  const collectionId = ownLookup(COLLECTION_IDS, collectionSlug)
   if (!collectionId) return NextResponse.json({ error: "Unknown collection" }, { status: 400 })
 
   const ipHash = hashIp(req)

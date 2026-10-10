@@ -92,6 +92,7 @@ import {
 } from "@/lib/concierge/request-guards";
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins";
 import { lookupUiField } from "@/lib/concierge/ui-field-dictionary";
+import { ownLookup } from "@/lib/safe-lookup";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -1240,7 +1241,7 @@ function formatDistributionForModel(
   // null = not counted (read failed, or badges are not tracked here) — never 0.
   badgedCount: number | null = null,
 ): string {
-  const collectionUuid = collectionId ? (COLLECTION_UUID_BY_SLUG[collectionId] ?? null) : null;
+  const collectionUuid = collectionId ? (ownLookup(COLLECTION_UUID_BY_SLUG, collectionId) ?? null) : null;
   const metaFor = (externalId: string | null | undefined) =>
     metadataFieldsFor(meta ?? { status: "skipped", byKey: new Map() }, externalId, collectionUuid);
   if (result.status === "no_results") {
@@ -1689,7 +1690,7 @@ async function executeTool(toolName: string, toolInput: any, ctx: ToolCtx): Prom
     if (typed && !isPinnacle(collectionId)) {
       const uuid = TOP_SHOT_ONLY_TOOLS.has(toolName)
         ? COLLECTION_UUID_BY_SLUG["nba-top-shot"]
-        : (collectionId ? (COLLECTION_UUID_BY_SLUG[collectionId] ?? null) : null);
+        : (collectionId ? (ownLookup(COLLECTION_UUID_BY_SLUG, collectionId) ?? null) : null);
       const who = await resolvePlayerForDistribution(uuid, typed);
       if (who.ambiguous) return who.ambiguous;
       scope.typed = typed;
@@ -2487,7 +2488,7 @@ async function executeToolInner(
         typeof toolInput.collectionId === "string" && toolInput.collectionId
           ? toolInput.collectionId
           : effectiveCollectionId ?? "nba-top-shot";
-      const collectionUuid = COLLECTION_UUID_BY_SLUG[requestedCollection ?? "nba-top-shot"] ?? null;
+      const collectionUuid = ownLookup(COLLECTION_UUID_BY_SLUG, requestedCollection ?? "nba-top-shot") ?? null;
       if (!collectionUuid) {
         return JSON.stringify({
           status: "error",
@@ -2959,7 +2960,7 @@ async function executeToolInner(
           base,
         );
       }
-      const collUuid = COLLECTION_UUID_BY_SLUG[slug] ?? null;
+      const collUuid = ownLookup(COLLECTION_UUID_BY_SLUG, slug) ?? null;
       let editionKey = String(toolInput.editionKey ?? "").trim() || null;
 
       // ── Resolve the edition when the caller gave names instead of a key ────
@@ -4495,7 +4496,7 @@ async function executeToolInner(
         (typeof toolInput.collectionId === "string" && toolInput.collectionId) ||
         effectiveCollectionId ||
         "nba-top-shot";
-      const collectionUuid = COLLECTION_UUID_BY_SLUG[requestedCollection] ?? null;
+      const collectionUuid = ownLookup(COLLECTION_UUID_BY_SLUG, requestedCollection) ?? null;
       if (!collectionUuid) {
         return JSON.stringify({
           status: "error",
@@ -4772,7 +4773,7 @@ async function executeToolInner(
       if (isPinnacle(slug)) {
         return JSON.stringify({ status: "error", message: "Disney Pinnacle has characters, not players — use get_fmv with characterName, or get_edition_listings with characterName + setName." });
       }
-      const uuid = COLLECTION_UUID_BY_SLUG[slug] ?? null;
+      const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, slug) ?? null;
       if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
       // 2026-09-25 (batch 55): the name goes through the identity resolver
       // first, so an alias, the league's spelling, a dropped suffix or a
@@ -4870,7 +4871,7 @@ async function executeToolInner(
     if (isPinnacle(slug)) {
       return JSON.stringify({ status: "error", message: "Disney Pinnacle has characters, not players — there is no identity crosswalk to resolve against; use get_fmv with characterName." });
     }
-    const uuid = COLLECTION_UUID_BY_SLUG[slug] ?? null;
+    const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, slug) ?? null;
     if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
     const resolution = await resolvePlayerName(supabase, uuid, playerName);
     if (resolution.status === "unavailable") {
@@ -4947,7 +4948,7 @@ async function executeToolInner(
       if (!teamIn) return JSON.stringify({ status: "error", message: "team is required." });
       const slug = effectiveCollectionId ?? "nba-top-shot";
       if (isPinnacle(slug)) return JSON.stringify({ status: "error", message: "Disney Pinnacle has no teams." });
-      const uuid = COLLECTION_UUID_BY_SLUG[slug] ?? null;
+      const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, slug) ?? null;
       if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
       const resolved = await resolveTeamName(uuid, teamIn);
       if (resolved.status === "error") return JSON.stringify({ status: "error", message: resolved.safeCopy });
@@ -5028,7 +5029,7 @@ async function executeToolInner(
       if (!teamIn) return JSON.stringify({ status: "error", message: "team is required." });
       const slug = effectiveCollectionId ?? "nba-top-shot";
       if (isPinnacle(slug)) return JSON.stringify({ status: "error", message: "Disney Pinnacle has no teams." });
-      const uuid = COLLECTION_UUID_BY_SLUG[slug] ?? null;
+      const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, slug) ?? null;
       if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
       const partIn = String(toolInput.part ?? "roster");
       const part = ["roster", "squeeze", "activity"].includes(partIn) ? partIn : "roster";

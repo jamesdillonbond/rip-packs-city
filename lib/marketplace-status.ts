@@ -12,6 +12,7 @@
 import { unstable_cache } from "next/cache"
 import { supabaseAdmin } from "@/lib/supabase"
 import { SLUG_TO_DB_SLUG } from "@/lib/collections"
+import { ownLookup } from "@/lib/safe-lookup"
 
 export type MarketplaceStatusValue =
   | "healthy"
@@ -57,7 +58,8 @@ const UNKNOWN_FALLBACK: MarketplaceStatus = {
 /** Map a frontend hyphen-slug ("nba-top-shot", "ufc") to its DB slug. */
 function normaliseSlug(input: string): string {
   if (!input) return ""
-  if (SLUG_TO_DB_SLUG[input]) return SLUG_TO_DB_SLUG[input]
+  const mapped = ownLookup(SLUG_TO_DB_SLUG, input)
+  if (mapped) return mapped
   // If caller already passed an underscore-slug, accept it as-is.
   return input.replace(/-/g, "_")
 }

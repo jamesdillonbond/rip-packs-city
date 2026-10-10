@@ -18,6 +18,7 @@ import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireUser } from "@/lib/auth/supabase-server"
 import { SLUG_TO_DB_SLUG } from "@/lib/collections"
+import { ownLookup } from "@/lib/safe-lookup"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const sb: any = supabaseAdmin
@@ -58,8 +59,8 @@ export async function GET(req: NextRequest) {
   // Normalize collection slug: accept hyphen-form, pass DB-form to RPC.
   let collectionSlug: string | null = null
   if (collectionRaw) {
-    if (SLUG_TO_DB_SLUG[collectionRaw]) {
-      collectionSlug = SLUG_TO_DB_SLUG[collectionRaw]
+    if (ownLookup(SLUG_TO_DB_SLUG, collectionRaw)) {
+      collectionSlug = ownLookup(SLUG_TO_DB_SLUG, collectionRaw) ?? null
     } else if (Object.values(SLUG_TO_DB_SLUG).includes(collectionRaw)) {
       collectionSlug = collectionRaw
     } else {

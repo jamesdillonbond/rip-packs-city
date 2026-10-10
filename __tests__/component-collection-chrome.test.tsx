@@ -6,8 +6,8 @@ import { render, cleanup, within } from "@testing-library/react"
 // breadcrumb/header/tabs banner) mounted by BOTH the generic [collection]/layout
 // and the bespoke Pinnacle layout. The visible output is otherwise pure
 // presentation, but it carries three real branches that only a test can pin:
-//   1. CollectionTicker's items fall back to nba-top-shot for any unknown
-//      collection id (an unmapped collection must never render an empty ticker),
+//   1. CollectionTicker's items fall back to a generic line for an unknown
+//      collection id (never empty, and never Top Shot's items — 2026-10-10),
 //      and every item is DOUBLED so the marquee loops seamlessly.
 //   2. CollectionBanner's release-stage badge styles ALPHA red but every other
 //      badge in the collection accent — and renders nothing when badge is unset.
@@ -65,14 +65,17 @@ describe("CollectionTicker — items + marquee doubling", () => {
     expect(container.textContent).toContain("100x-floor")
   })
 
-  it("falls back to the nba-top-shot item set for an unmapped collection id", () => {
-    // A collection with no TICKER_ITEMS entry must not render an empty marquee.
-    const unknown = { ...TOPSHOT, id: "totally-unmapped-collection" } as Collection
+  // INVERTED 2026-10-10 — this pinned the fallback to Top Shot's item set, so
+  // an unmapped collection (the registry's "rwa") rendered Top Shot's
+  // badge-filter copy under its own name. It now gets the honest generic line —
+  // still never an empty marquee.
+  it("an unmapped collection id gets the generic line, never Top Shot's items", () => {
+    const unknown = { ...TOPSHOT, id: "totally-unmapped-collection", label: "Mystery" } as Collection
     const { container } = render(<CollectionTicker collection={unknown} />)
     const spans = container.querySelectorAll("span")
-    // Falls through to the 5-item nba-top-shot set (→ 10 doubled spans), NOT empty.
-    expect(spans.length).toBe(10)
-    expect(container.textContent).toContain("COLLECTION ANALYZER")
+    expect(spans.length).toBe(2) // one generic item, doubled
+    expect(container.textContent).toContain("MYSTERY — COLLECTOR INTELLIGENCE")
+    expect(container.textContent).not.toContain("COLLECTION ANALYZER")
   })
 })
 

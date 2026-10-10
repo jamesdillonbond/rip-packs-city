@@ -70,6 +70,7 @@ import {
   sortKeyToServerSort,
   computeDuplicateEditionKeys,
 } from "@/lib/collection/helpers"
+import { ownLookup } from "@/lib/safe-lookup"
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -90,7 +91,9 @@ function WalletMomentsBody() {
   const accent = collectionObj?.accent ?? "var(--rpc-red)"
   // Collection UUID for collection-aware badge art — NFL All Day badges resolve
   // their own SVGs instead of inheriting the Top Shot title-collision. (2026-06-29)
-  const badgeCollectionId = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? null
+  // Typed as the table's string prop, as the bracket read was; a miss is null
+  // at runtime exactly as before (the segment layout 404s an unknown slug).
+  const badgeCollectionId = (ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null) as string
   const lastSearchedRef = useRef("")
   const ownedFlowIdsRef: React.MutableRefObject<Set<string>> = useRef(new Set<string>())
   const [rows, setRows] = useState<MomentRow[]>([])
@@ -417,7 +420,7 @@ function WalletMomentsBody() {
       if (!playerNames.length) return rowsIn
       const CHUNK = 50
       const allEditions: any[] = []
-      const collectionIdParam = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? COLLECTION_UUID_BY_SLUG["nba-top-shot"]
+      const collectionIdParam = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? COLLECTION_UUID_BY_SLUG["nba-top-shot"]
       for (let i = 0; i < playerNames.length; i += CHUNK) {
         const chunk = playerNames.slice(i, i + CHUNK)
         const params = new URLSearchParams({
@@ -535,7 +538,7 @@ function WalletMomentsBody() {
       // serial-grain offer that targets exactly this serial (can exceed the
       // edition offer).
       const serials = chunk.map(function(r) { return r.serial ?? null })
-      const collectionId = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? ""
+      const collectionId = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? ""
       fetch("/api/best-offers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -803,7 +806,7 @@ function WalletMomentsBody() {
       // Fetch accurate wallet-wide totals (FMV, locked/unlocked, cost basis, pnl)
       // via get_wallet_summary RPC — covers ALL moments, not just the loaded page.
       setWalletSummaryLoading(true)
-      const summaryCollectionId = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? ""
+      const summaryCollectionId = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? ""
       fetch("/api/wallet-summary?wallet=" + encodeURIComponent(trimmed) + "&collection=" + encodeURIComponent(collectionSlug) + (summaryCollectionId ? "&collection_id=" + encodeURIComponent(summaryCollectionId) : ""))
         .then(function(r) { return r.ok ? r.json() : null })
         .then(function(json) {

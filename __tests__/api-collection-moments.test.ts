@@ -136,6 +136,17 @@ describe("GET /api/collection-moments", () => {
       .toBe("95f28a17-224a-4025-96ad-adf8a4c63bfd")
   })
 
+  // 2026-10-10 audit: a present but unknown slug sent no p_collection_id, so
+  // the moments were Top Shot (the RPC default) and total FMV every collection.
+  for (const slug of ["bogus", "constructor"]) {
+    it(`refuses a present but unknown collection (${slug}) — no default-scoped read`, async () => {
+      const res = await GET(req(`https://t/api/collection-moments?wallet=${WALLET}&collection=${slug}`))
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toBe("unsupported_collection")
+      expect(state.rpcArgs["get_wallet_moments_with_fmv"]).toBeUndefined()
+    })
+  }
+
   it("500s when the moments RPC returns an error", async () => {
     state.momentsError = { message: "rpc boom" }
     const res = await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))

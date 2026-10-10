@@ -22,6 +22,7 @@ import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { COLLECTION_UUID_BY_SLUG, SLUG_TO_DB_SLUG } from "@/lib/collections"
 import { EV_SNAPSHOT_MAX_AGE_HOURS } from "@/lib/pack-dist-verdict"
+import { ownLookup } from "@/lib/safe-lookup"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const sb: any = supabaseAdmin
@@ -89,11 +90,11 @@ export async function GET(req: NextRequest) {
 
   // Accept both hyphen-form (nba-top-shot) and DB underscore form (nba_top_shot).
   let collectionUuid: string | null = null
-  if (COLLECTION_UUID_BY_SLUG[collectionRaw]) {
-    collectionUuid = COLLECTION_UUID_BY_SLUG[collectionRaw]
+  if (ownLookup(COLLECTION_UUID_BY_SLUG, collectionRaw)) {
+    collectionUuid = ownLookup(COLLECTION_UUID_BY_SLUG, collectionRaw) ?? null
   } else {
     const hyphen = Object.entries(SLUG_TO_DB_SLUG).find(([, db]) => db === collectionRaw)?.[0]
-    if (hyphen) collectionUuid = COLLECTION_UUID_BY_SLUG[hyphen]
+    if (hyphen) collectionUuid = ownLookup(COLLECTION_UUID_BY_SLUG, hyphen) ?? null
   }
   if (!collectionUuid) {
     return NextResponse.json({ error: "unknown collection: " + collectionRaw }, { status: 400 })

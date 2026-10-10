@@ -16,6 +16,7 @@ import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { awardPoints } from "@/lib/rewards"
 import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
 import { bucketAcquisitionCounts, acquisitionMethodLabel } from "@/lib/analytics/shape"
+import { ownLookup } from "@/lib/safe-lookup"
 
 type WalletRow = {
   momentId: string
@@ -624,7 +625,7 @@ const SLUG_TO_DB_SLUG: Record<string, string> = {
 
 const COLLECTION_ID_CACHE = new Map<string, string | null>()
 async function getCollectionIdForSlug(slug?: string): Promise<string | null> {
-  const dbSlug = SLUG_TO_DB_SLUG[slug ?? ""] ?? "nba_top_shot"
+  const dbSlug = ownLookup(SLUG_TO_DB_SLUG, slug ?? "") ?? "nba_top_shot"
   if (COLLECTION_ID_CACHE.has(dbSlug)) return COLLECTION_ID_CACHE.get(dbSlug) ?? null
   try {
     const { data } = await supabaseAdmin
@@ -1257,7 +1258,7 @@ export async function POST(req: NextRequest) {
       "ufc": "ufc", "ufc-strike": "ufc", "ufc_strike": "ufc",
     }
     const collection = rawCollection
-      ? COLLECTION_SLUG_ALIASES[rawCollection.toLowerCase().trim()]
+      ? ownLookup(COLLECTION_SLUG_ALIASES, rawCollection.toLowerCase().trim())
       : undefined
     if (rawCollection && !collection) {
       return NextResponse.json(

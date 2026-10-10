@@ -77,7 +77,16 @@ export async function GET(req: NextRequest) {
   // collection it cannot price. Not-applicable is not an error.
   if (collectionSlug) {
     const obj = getCollection(collectionSlug)
-    if (obj && !obj.flowContractName) {
+    // An unknown slug is refused, not run unscoped: resolveCollectionId answers
+    // { id: null, ok: true } for it, so every collection's acquisitions came
+    // back under the requested label (2026-10-10 audit).
+    if (!obj) {
+      return NextResponse.json(
+        { error: "unsupported_collection", collection: collectionSlug },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      )
+    }
+    if (!obj.flowContractName) {
       return NextResponse.json(
         { acquisitions: [], reason: "cost_basis_unavailable", collection: collectionSlug },
         { headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=600" } }
