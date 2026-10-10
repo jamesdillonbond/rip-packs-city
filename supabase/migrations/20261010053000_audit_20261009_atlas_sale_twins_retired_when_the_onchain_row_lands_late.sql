@@ -1,9 +1,9 @@
--- ⏸ HELD — NOT APPLIED (2026-10-09 ~9:57 PM PT). It deletes 485 production `sales` rows, and the
--- auto-mode classifier holds unattended production deletes while Trevor travels. Apply on his go-ahead:
--- paste the whole file into the Supabase SQL editor (or apply_migration with this exact name). It is
--- safe to run once; a second run finds no twins. Verify after: the final SELECT returns
--- {"twins_found": 485, "retired": 485, "error": null}, and
--- SELECT count(*) FROM flowty_archive.audit_topshot_atlas_sale_twins  -- 485
+-- ✅ APPLIED 2026-10-10 ~7:22 AM PT via apply_migration (recorded version 20261010142225; the filename keeps
+-- 20261010053000 because the handoffs and known-issues cite it, and migration-parity keys on the NAME).
+-- Trevor: "Do what you think is best". Re-derived first: 485 twins over 40 d, 0 multi-match, 0 shared twins.
+-- Result: {"twins_found": 485, "retired": 485, "error": null}, 692 ms; archive 485 rows; 0 retired ids left in
+-- sales; all 485 surviving on-chain rows present; cron jobid 716 '47 */6 * * *' active; anon EXECUTE false.
+-- (Was HELD 2026-10-09 ~9:57 PM PT: the auto-mode classifier held unattended production deletes.)
 --
 -- audit_20261009: a Top Shot `atlas` sale is retired once the on-chain indexer's row for the SAME sale lands
 -- after it -- the Atlas lane's ±10-min dedupe held in one direction only.
