@@ -257,8 +257,12 @@ function ProfileBody({ username, profile }: { username: string; profile: PaniniP
           {complete
             ? "Every card on the profile was read."
             : `Partial read — ${count(w.cardsCollected)} of ${w.reportedTotal != null ? count(w.reportedTotal) : "an unknown number of"} cards; cards missing from this read are not shown.`}
+          {/* 2026-10-10: this used to say "RPC prices Panini's soccer cards; other
+              sports aren't covered" — false since the 09-28 multi-product walk:
+              a live profile showed NBA cards at $28 FMV beside that sentence. The
+              honest reason a card is unpriced is per-edition, not per-sport. */}
           {unpriced > 0
-            ? ` ${count(unpriced)} card${unpriced === 1 ? "" : "s"} ${unpriced === 1 ? "has" : "have"} no RPC price yet — RPC prices Panini’s soccer cards; other sports aren’t covered, so they are left unpriced rather than counted as $0.`
+            ? ` ${count(unpriced)} card${unpriced === 1 ? "" : "s"} ${unpriced === 1 ? "has" : "have"} no RPC price yet — a card is priced once RPC has walked its edition and seen a sale or a live ask; until then it is left unpriced rather than counted as $0.`
             : ""}
           {shown < profile.cardsHeld ? ` Showing the ${count(shown)} highest-FMV cards of ${count(profile.cardsHeld)}.` : ""}
         </Note>

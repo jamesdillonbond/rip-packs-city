@@ -97,6 +97,12 @@ describe("PaniniCollection", () => {
     // The uncatalogued NBA card is unpriced — never $0 — and links nowhere.
     expect(c.textContent).toContain("Basketball · not priced by RPC")
     expect(c.textContent).not.toMatch(/FMV \$0|\$0\.00/)
+    // 2026-10-10: the note's reason for an unpriced card is per-EDITION (not yet
+    // walked / no sale or ask), never per-sport — a live profile showed NBA cards
+    // at $28 FMV beside "RPC prices Panini's soccer cards; other sports aren't
+    // covered". A planted sport-based claim reds this.
+    expect(c.textContent).toContain("has no RPC price yet — a card is priced once RPC has walked its edition")
+    expect(c.textContent).not.toMatch(/other sports aren.t covered|soccer cards/)
     expect(c.querySelector('a[href="/panini-blockchain/edition/packcard-9"]')).toBeNull()
     expect(c.querySelector('a[href="/panini-blockchain/edition/packcard-1"]')).not.toBeNull()
   })
