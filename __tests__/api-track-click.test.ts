@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from "vitest"
 
+// 2026-10-10 (#180 item 4): the anonymous-beacon budget. Allowed unless a test
+// says otherwise; the refusal case asserts the event is dropped.
+const beacon = vi.hoisted(() => ({ allowed: true, calls: [] as string[] }))
+vi.mock("@/lib/abuse/anon-rate", () => ({
+  anonTelemetryAllowed: async (_h: unknown, route: string) => { beacon.calls.push(route); return beacon.allowed },
+}))
+
 // Route integration test for POST /api/track-click. Public outbound-click sink
 // that clamps/awaits a single service-role insert into outbound_clicks. A valid
 // beacon → { ok: true }; a malformed body (json throws) → 500. Mocks

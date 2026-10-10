@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
+// 2026-10-10 (#180 item 4): the anonymous-beacon budget. Allowed unless a test
+// says otherwise; the refusal case asserts the event is dropped.
+const beacon = vi.hoisted(() => ({ allowed: true, calls: [] as string[] }))
+vi.mock("@/lib/abuse/anon-rate", () => ({
+  anonTelemetryAllowed: async (_h: unknown, route: string) => { beacon.calls.push(route); return beacon.allowed },
+}))
+
 // Route integration test for POST /api/telemetry — the usage_events beacon.
 // It NEVER returns a non-204 (telemetry must not surface as a UI error), so the
 // interesting behavior is all in what it WRITES: the feature normalization
@@ -152,6 +159,32 @@ describe("POST /api/telemetry", () => {
     state.user = null
     await post(req({ feature: "view" }))
     expect(state.insert.wallet_address).toBe("anon")
+  })
+
+  it("drops an anonymous beacon over its durable budget: 204, no insert (#180)", async () => {
+    state.user = null
+    state.insert = null
+    beacon.allowed = false
+    try {
+      const res = await post(req({ feature: "view" }))
+      expect(res.status).toBe(204)
+      expect(state.insert).toBeNull()
+    } finally {
+      beacon.allowed = true
+    }
+  })
+
+  it("never charges a SIGNED-IN beacon to the anonymous budget", async () => {
+    state.user = { id: "11111111-1111-4111-8111-111111111111", email: null }
+    beacon.calls.length = 0
+    beacon.allowed = false
+    try {
+      await post(req({ feature: "view" }))
+      expect(beacon.calls).toEqual([])
+      expect(state.insert).not.toBeNull()
+    } finally {
+      beacon.allowed = true
+    }
   })
 
   it("uses 'anon' when identity resolution throws", async () => {

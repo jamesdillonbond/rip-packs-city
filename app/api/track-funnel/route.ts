@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { anonTelemetryAllowed } from "@/lib/abuse/anon-rate";
 import { createClient } from "@supabase/supabase-js";
 import { safeApiError } from "@/lib/api-error"
 import { isBotUserAgent } from "@/lib/bot-ua"
@@ -70,6 +71,13 @@ export async function POST(req: NextRequest) {
     if (!eventType || !ALLOWED_EVENT_TYPES.has(eventType)) {
       // Reject unknown event types quietly — never throw into a beacon caller.
       return NextResponse.json({ ok: false, error: "invalid event_type" }, { status: 200 });
+    }
+
+    // #180 item 4: every beacon spends a durable per-IP / global budget (this
+    // route has no session lookup; 600/h per IP is far above a real visitor);
+    // over it, the event is dropped silently.
+    if (!(await anonTelemetryAllowed(req.headers, "track-funnel"))) {
+      return NextResponse.json({ ok: false, error: "rate_limited" }, { status: 200 });
     }
 
     const supabase = createClient(

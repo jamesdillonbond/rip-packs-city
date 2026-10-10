@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { safeApiError } from "@/lib/api-error"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
+import { anonTelemetryAllowed } from "@/lib/abuse/anon-rate"
 import { buildOutboundClickRow } from "@/lib/outbound-click-row"
 
 type TrackClickBody = {
@@ -52,6 +53,10 @@ export async function POST(req: NextRequest) {
     );
 
     const user = await getCurrentUser();
+    // #180 item 4: anonymous clicks spend a durable budget; over it, dropped silently.
+    if (!user && !(await anonTelemetryAllowed(req.headers, "track-click"))) {
+      return NextResponse.json({ ok: false, error: "rate_limited" }, { status: 200 });
+    }
     // ⛔ The attribution fields are SERVER-SET (2026-10-10). The body used to be
     // spread AFTER `source: "site"`, so an anonymous POST could write
     // `source: "alert"` with any alertDeliveryId / channel and forge

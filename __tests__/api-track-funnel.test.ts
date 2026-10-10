@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from "vitest"
 
+// 2026-10-10 (#180 item 4): the anonymous-beacon budget. Allowed unless a test
+// says otherwise; the refusal case asserts the event is dropped.
+const beacon = vi.hoisted(() => ({ allowed: true, calls: [] as string[] }))
+vi.mock("@/lib/abuse/anon-rate", () => ({
+  anonTelemetryAllowed: async (_h: unknown, route: string) => { beacon.calls.push(route); return beacon.allowed },
+}))
+
 // Route integration test for POST /api/track-funnel. Public funnel-event sink
 // with an event_type allowlist. An unknown/blank event_type is rejected quietly
 // (200 { ok: false }); an allowed type awaits a service-role insert → { ok: true }.

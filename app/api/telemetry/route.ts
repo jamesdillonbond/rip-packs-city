@@ -18,6 +18,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
+import { anonTelemetryAllowed } from "@/lib/abuse/anon-rate"
 import { supabaseAdmin } from "@/lib/supabase"
 import { automatedReason } from "@/lib/telemetry/automated"
 
@@ -85,6 +86,12 @@ export async function POST(req: NextRequest) {
     }
   } catch {
     // Fall through with walletAddress = "anon".
+  }
+
+  // #180 item 4: an anonymous beacon spends a durable per-IP / global budget;
+  // over it, the event is dropped silently (204, no insert).
+  if (!userId && !(await anonTelemetryAllowed(req.headers, "telemetry"))) {
+    return new NextResponse(null, { status: 204 })
   }
 
   let metadata = safeMetadata(body.metadata)

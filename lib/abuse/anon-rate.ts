@@ -78,3 +78,28 @@ export async function bumpAnonRates(caps: AnonCap[], db?: RpcClient): Promise<An
 export function anonIpKey(headers: { get(name: string): string | null }): string | null {
   return clientKeyFrom(headers)
 }
+
+// 2026-10-10 (known-issues #180 item 4): the anonymous analytics beacons
+// (/api/telemetry, /api/track-funnel, /api/track-click) inserted one row per
+// request with no durable cap (usage_events ~8.5k/day, funnel_events ~7.5k/day;
+// pollution and table growth, not data loss). Per-IP 600/h plus a global
+// 20,000/h; an IP-less request meets the global cap only. A refusal means the
+// caller should DROP the event silently (a beacon never surfaces an error).
+// Fails closed like every cap here: if the counter cannot be read, the insert
+// would most likely fail too.
+export const TELEMETRY_IP_LIMIT_PER_HOUR = 600
+export const TELEMETRY_GLOBAL_LIMIT_PER_HOUR = 20_000
+
+export async function anonTelemetryAllowed(
+  headers: { get(name: string): string | null },
+  route: "telemetry" | "track-funnel" | "track-click",
+  db?: RpcClient,
+): Promise<boolean> {
+  const ip = anonIpKey(headers)
+  const caps: AnonCap[] = []
+  if (ip) caps.push({ bucket: `beacon:${route}:ip`, key: ip, limit: TELEMETRY_IP_LIMIT_PER_HOUR, windowSecs: 3600 })
+  caps.push({ bucket: `beacon:${route}:global`, key: "*", limit: TELEMETRY_GLOBAL_LIMIT_PER_HOUR, windowSecs: 3600 })
+  const v = await bumpAnonRates(caps, db)
+  return v.allowed
+}
+
