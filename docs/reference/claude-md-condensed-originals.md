@@ -694,3 +694,9 @@ CLAUDE.md's Measurement discipline gained *"A DEFAULT UI LIST IS A SAMPLE; a UI 
   Now: `Narrating instead of shipping angered Trevor ("lazy antics"). Ship first, summarize second, keep talk minimal.`
 - Original: `**Open items** — dated snapshot moved to [roadmap-status.md](docs/reference/roadmap-status.md) 2026-09-19 (status data; goes stale by nature).`
   Now: `**Open items** — dated snapshot in roadmap-status.md (linked below; goes stale by nature).`
+
+## 2026-10-10 — one trim to pay for the hidden-tab pointer (verbatim original)
+
+- Original (Development workflow, rendered-DOM bullet): `- Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200. ⚠ **And platform STATE by a REQUEST, never a status field** — `get_project.live:false` reads IDENTICALLY on a healthy estate; a false P0 and a false "still down" in one night (#76, verbatim: claude-md-condensed-originals.md).`
+  Now: `- Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200, and a HIDDEN tab never reveals one (tooling-gotchas.md). ⚠ **And platform STATE by a REQUEST, never a status field** — `get_project.live:false` reads IDENTICALLY on a healthy estate (#76; verbatim: claude-md-condensed-originals.md).`
+  The displaced clause ("a false P0 and a false "still down" in one night") is the #76 story at the top of this file. The added pointer: React 19 reveals a streamed Suspense boundary and hydrates it through `requestAnimationFrame`, which Chrome never fires in a background tab — tooling-gotchas.md "RUN TO GROUND 2026-10-10".

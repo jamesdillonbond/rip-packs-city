@@ -37,7 +37,7 @@ Any time you ship something that changes `main` or production DB/data state — 
 - If a branch must be created for a risky refactor, delete it locally after merge (remote delete-ref 403 trap: tooling-gotchas.md).
 - Run the smoke test after deploying; verify Supabase row counts and Vercel deploy status before calling a task done.
 - **Commit the ledger BEFORE the code** so the code commit is the tip and auto-deploys (a docs-only tip suppresses the Vercel deploy — this trap has bitten twice).
-- Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200. ⚠ **And platform STATE by a REQUEST, never a status field** — `get_project.live:false` reads IDENTICALLY on a healthy estate; a false P0 and a false "still down" in one night (#76, verbatim: claude-md-condensed-originals.md).
+- Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200, and a HIDDEN tab never reveals one (tooling-gotchas.md). ⚠ **And platform STATE by a REQUEST, never a status field** — `get_project.live:false` reads IDENTICALLY on a healthy estate (#76; verbatim: claude-md-condensed-originals.md).
 - **Before gating a route, enumerate EVERY caller AND every inbound link** — cron-job.org, GHA, vercel.json, pg_cron, in-repo fetches, each `href` builder (2 cases: known-issues.md). ⚠ **`/api/entity/*` is anon-public for GET only — a POST there works signed-in, 401s signed-out** (09-25).
 
 ### Pushing from a sandbox — test it, do not assume it
