@@ -32,8 +32,9 @@
 //
 //   1. requires a real session (401 otherwise);
 //   2. `ownerKey` IS the caller's own user id            -> allow (no query);
-//   3. `ownerKey` is a wallet address in `saved_wallets` -> allow iff that row's
-//      user_id is the caller, else 403 (all 94 rows carry a user_id);
+//   3. `ownerKey` is a wallet address in `saved_wallets` -> allow iff the caller
+//      is its OWNER: a user who verified it, else its FIRST saver (2026-10-10,
+//      #176 — not "any user who saved it"), else 403;
 //   4. `ownerKey` is claimed as a `profile_bio.username` -> allow iff the
 //      claimant is the caller, else 403;
 //   5. otherwise the key is unclaimed in every namespace -> 403, with one
@@ -104,7 +105,7 @@ export async function requireOwnedKey(ownerKey: string): Promise<OwnedKeyGate> {
     const addr = key.toLowerCase()
     const { data: walletRows, error: walletErr } = await (supabaseAdmin as any)
       .from("saved_wallets")
-      .select("user_id")
+      .select("id, user_id, verified_at")
       .eq("wallet_addr", addr)
 
     if (walletErr) {
@@ -113,14 +114,29 @@ export async function requireOwnedKey(ownerKey: string): Promise<OwnedKeyGate> {
       return deny(403, "Forbidden")
     }
 
-    const owners = (walletRows ?? [])
-      .map((r: any) => r?.user_id)
-      .filter((id: unknown): id is string => typeof id === "string")
+    const rows = ((walletRows ?? []) as Array<{ id?: unknown; user_id?: unknown; verified_at?: unknown }>)
+      .filter((r) => typeof r?.user_id === "string")
 
-    if (owners.length > 0) {
-      // The address is claimed. Allow only if the caller is one of its owners.
-      // (A wallet may legitimately be saved by several users — pinning someone
-      // else's wallet is a supported read — so membership, not equality.)
+    if (rows.length > 0) {
+      // The address is claimed. ⛔ NOT by every user who saved it (2026-10-10,
+      // known-issues #176): anyone can save any address, so "the caller saved
+      // it too" let any signed-in user read and rewrite another user's
+      // watchlist, alerts, snapshots and wallet profile keyed by it. Every
+      // caller of this guard serves PRIVATE rows, so the address has ONE owner:
+      // a user who VERIFIED it, else the user who saved it FIRST (lowest id).
+      // Nobody can become the first saver after the fact. Wallet verification
+      // has had no live source since ~08-28 (#59), which is why "verified"
+      // alone would lock every user out of their own data.
+      const verified = rows.filter((r) => r.verified_at != null).map((r) => r.user_id as string)
+      let owners: string[] = verified
+      if (owners.length === 0) {
+        const idOf = (r: { id?: unknown }) => {
+          const n = Number(r.id)
+          return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY
+        }
+        const first = rows.reduce((a, b) => (idOf(b) < idOf(a) ? b : a))
+        owners = [first.user_id as string]
+      }
       return owners.includes(user.id) ? { user } : deny(403, "Forbidden")
     }
     // Unclaimed address: fall through to the unclaimed branch below, which

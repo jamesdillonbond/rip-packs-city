@@ -18,7 +18,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 //   key IS the caller's own user id         -> allowed  (Bridge 1, NO query)
 //   address owned by the caller             -> allowed  (Bridge 2)
 //   address owned by SOMEONE ELSE           -> 403      (Bridge 2 IDOR case)
-//   address owned by several incl. caller   -> allowed  (membership, not equality)
+//   address saved by several incl. caller   -> allowed ONLY for its first (or a verified) saver (#176)
 //   address unclaimed                       -> falls through to the username rules
 //   NON-address-shaped key                  -> never probes saved_wallets
 //   key claimed by ANOTHER user             -> 403
@@ -197,11 +197,21 @@ describe("requireOwnedKey — Bridge 2: the key is a Flow wallet address", () =>
     expect(tablesTouched()).not.toContain("profile_bio")
   })
 
-  it("allows when several users saved the address and the caller is one of them", async () => {
-    // Membership, not equality — pinning someone else's wallet is supported, so
-    // more than one saved_wallets row per address is legitimate.
+  // 2026-10-10 (#176): INVERTED. This used to pin "several users saved it and
+  // the caller is one of them -> allowed", which let anyone save any address
+  // and then read and rewrite the private rows keyed by it. The address now has
+  // ONE owner: a verified saver, else the FIRST saver (lowest id).
+  it("refuses a LATER saver of an address someone else saved first (the #176 case)", async () => {
     state.savedWallets = {
-      data: [{ user_id: "user-9" }, { user_id: "user-1" }, { user_id: "user-7" }],
+      data: [{ id: 9, user_id: "user-1" }, { id: 3, user_id: "user-9" }, { id: 12, user_id: "user-7" }],
+      error: null,
+    }
+    expect(((await requireOwnedKey(ADDR)) as Response).status).toBe(403)
+  })
+
+  it("allows the FIRST saver of an address several users saved", async () => {
+    state.savedWallets = {
+      data: [{ id: 9, user_id: "user-9" }, { id: 2, user_id: "user-1" }, { id: 12, user_id: "user-7" }],
       error: null,
     }
     const res = await requireOwnedKey(ADDR)
@@ -209,9 +219,23 @@ describe("requireOwnedKey — Bridge 2: the key is a Flow wallet address", () =>
     expect((res as { user: { id: string } }).user.id).toBe("user-1")
   })
 
+  it("a VERIFIED saver owns the address even if someone saved it earlier", async () => {
+    state.savedWallets = {
+      data: [{ id: 1, user_id: "user-9", verified_at: null }, { id: 5, user_id: "user-1", verified_at: "2026-08-01T00:00:00Z" }],
+      error: null,
+    }
+    const res = await requireOwnedKey(ADDR)
+    expect(res).not.toBeInstanceOf(Response)
+    state.savedWallets = {
+      data: [{ id: 1, user_id: "user-1", verified_at: null }, { id: 5, user_id: "user-9", verified_at: "2026-08-01T00:00:00Z" }],
+      error: null,
+    }
+    expect(((await requireOwnedKey(ADDR)) as Response).status).toBe(403)
+  })
+
   it("returns 403 when several users saved the address and the caller is NOT one", async () => {
     state.savedWallets = {
-      data: [{ user_id: "user-9" }, { user_id: "user-7" }],
+      data: [{ id: 1, user_id: "user-9" }, { id: 2, user_id: "user-7" }],
       error: null,
     }
     expect(((await requireOwnedKey(ADDR)) as Response).status).toBe(403)
