@@ -105,6 +105,13 @@ interface Props {
   showSetLink?: boolean
   showSort?: boolean
   /**
+   * The order `fetchUrl` pages by, when it is one of the sort keys. Loaded rows are
+   * then the true head of that order, so choosing it needs no "partial" note. Any
+   * other sort, or no declared order, runs over loaded rows only and says so while
+   * pages remain (Set B7).
+   */
+  pageOrder?: EditionSortKey
+  /**
    * Pack-distribution mode: split loaded rows into pullable (drop_weight > 0
    * or absent) and exhausted (drop_weight === 0). Pullable render in the main
    * grid; exhausted move to a collapsed "pulled out" section. Off for every
@@ -293,7 +300,7 @@ function useEditionLiveAsks(enabled: boolean, collectionUrlSlug: string, slugs: 
   return map
 }
 
-export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, initial, initialFailed = false, pageSize, showSetLink = true, showSort = false, packMode = false, exhaustedTotal = 0, showFilters = false, showOwnership = false }: Props) {
+export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, initial, initialFailed = false, pageSize, showSetLink = true, showSort = false, pageOrder, packMode = false, exhaustedTotal = 0, showFilters = false, showOwnership = false }: Props) {
   const [rows, setRows] = useState<EditionTile[]>(initial)
   const [offset, setOffset] = useState<number>(initial.length)
   const [loading, setLoading] = useState(false)
@@ -437,6 +444,16 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
               }}
             >{l}</button>
           ))}
+        </div>
+      )}
+      {/* Set B7 (2026-10-10): the sort runs over LOADED rows only. A reader who picks
+          A → Z with more pages unloaded saw a partial order presented as the whole
+          list. Only the endpoint's own page order (pageOrder) is exact on a prefix;
+          the set and pack endpoints page by tier / pull weight, so even FMV ↓ is
+          partial there. */}
+      {showSort && !exhausted && sortKey !== pageOrder && (
+        <div data-testid="edition-sort-partial" className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10 }}>
+          Sorted among the {rows.length} loaded edition{rows.length === 1 ? "" : "s"} &middot; load more to sort the rest
         </div>
       )}
       {filtersActive && gridRows.length === 0 ? (

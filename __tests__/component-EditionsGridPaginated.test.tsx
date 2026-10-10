@@ -169,6 +169,38 @@ describe("EditionsGridPaginated", () => {
     expect(screen.getByRole("button", { name: "A → Z" })).toBeTruthy()
   })
 
+  // Set B7 (2026-10-10): the sort runs over LOADED rows. With pages left, any order
+  // other than the endpoint's own page order is a partial order and must say so.
+  it("says a sort covers only the loaded editions while more pages remain (Set B7)", () => {
+    render(
+      <EditionsGridPaginated collectionUrlSlug="nba-top-shot" fetchUrl="/api/x"
+        initial={[tile("a"), tile("b")]} pageSize={2} showSort pageOrder="fmv_desc" />,
+    )
+    // the endpoint pages by FMV, so its default order is the true head: no note
+    expect(screen.queryByTestId("edition-sort-partial")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "A → Z" }))
+    expect(screen.getByTestId("edition-sort-partial").textContent).toMatch(/among the 2 loaded editions/)
+    fireEvent.click(screen.getByRole("button", { name: "FMV ↓" }))
+    expect(screen.queryByTestId("edition-sort-partial")).toBeNull()
+  })
+
+  it("an endpoint with no declared page order gets the note even on the default sort (set / pack grids)", () => {
+    render(
+      <EditionsGridPaginated collectionUrlSlug="nba-top-shot" fetchUrl="/api/x"
+        initial={[tile("a"), tile("b")]} pageSize={2} showSort />,
+    )
+    expect(screen.getByTestId("edition-sort-partial")).toBeTruthy()
+  })
+
+  it("no note once the list is complete: a short first page is the whole list", () => {
+    render(
+      <EditionsGridPaginated collectionUrlSlug="nba-top-shot" fetchUrl="/api/x"
+        initial={[tile("a")]} pageSize={2} showSort />,
+    )
+    fireEvent.click(screen.getByRole("button", { name: "A → Z" }))
+    expect(screen.queryByTestId("edition-sort-partial")).toBeNull()
+  })
+
   it("renders a rich tile's footer branches (set link, series label, Mint count, Hit%/Wt) and a video on hover", () => {
     // matchMedia present + not reduced -> usePrefersReducedMotion returns false,
     // so a videoUrl-bearing Top Shot tile can hover-mount its clip.

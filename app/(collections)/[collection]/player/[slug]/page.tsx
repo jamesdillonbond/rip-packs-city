@@ -519,6 +519,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
             pageSize={PAGE_SIZE}
             showSetLink
             showSort
+            pageOrder="fmv_desc"
             showFilters
             showOwnership
           />

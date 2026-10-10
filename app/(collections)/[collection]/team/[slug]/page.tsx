@@ -333,6 +333,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
             pageSize={TOP_EDITIONS_PAGE_SIZE}
             showSetLink
             showSort
+            pageOrder="fmv_desc"
           />
           )}
         </Section>
