@@ -1,4 +1,4 @@
--- ⏸ HELD — NOT APPLIED (2026-10-09 ~10:30 PM PT). It deletes 485 production `sales` rows, and the
+-- ⏸ HELD — NOT APPLIED (2026-10-09 ~9:57 PM PT). It deletes 485 production `sales` rows, and the
 -- auto-mode classifier holds unattended production deletes while Trevor travels. Apply on his go-ahead:
 -- paste the whole file into the Supabase SQL editor (or apply_migration with this exact name). It is
 -- safe to run once; a second run finds no twins. Verify after: the final SELECT returns
@@ -8,7 +8,7 @@
 -- audit_20261009: a Top Shot `atlas` sale is retired once the on-chain indexer's row for the SAME sale lands
 -- after it -- the Atlas lane's ±10-min dedupe held in one direction only.
 --
--- MEASURED 2026-10-09 ~10:15 PM PT. `sync_sales_from_atlas` (20260907233444) writes an Atlas listing sale
+-- MEASURED 2026-10-09 ~9:55 PM PT. `sync_sales_from_atlas` (20260907233444) writes an Atlas listing sale
 -- (source 'atlas', NO transaction_hash -- Atlas does not carry one) only when no `sales` row for the same
 -- nft exists within ±10 min, and it waits 2 h so the on-chain indexer's row is normally there first. But
 -- when the indexer is down longer than 2 h, its CATCH-UP inserts the on-chain row AFTER the Atlas row, and
