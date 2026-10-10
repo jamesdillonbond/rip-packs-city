@@ -74,6 +74,21 @@ describe("GET /api/fmv", () => {
     expect(body.serialMult).not.toBeNull()
     expect(body.adjustedFmv).toBeGreaterThan(0)
   })
+  // 2026-10-10 (#18): the multiplier reads the edition's REAL print run. Both
+  // routes passed a hardcoded 1000, so "last mint = 3x" fired only on editions
+  // minted at exactly 1,000 (serial 500 of 500 read ~1.04x).
+  it("uses the edition's circulation: the last mint of a 500-run edition gets the 3x premium", async () => {
+    st.editions = { data: [{ id: "E1", external_id: "1:2", circulation_count: 500 }], error: null }
+    const get = await (await GET(getReq("?edition=1:2&serial=500"))).json()
+    expect(get.serialMult).toBe(3)
+    const post = await (await POST(postReq({ editions: [{ edition: "1:2", serial: 500 }] }))).json()
+    expect(post.results[0].serialMult).toBe(3)
+  })
+  it("falls back to 1000 when the catalog circulation is below the serial (a catalog-wrong row)", async () => {
+    st.editions = { data: [{ id: "E1", external_id: "1:2", circulation_count: 40 }], error: null }
+    const get = await (await GET(getReq("?edition=1:2&serial=500"))).json()
+    expect(get.serialMult).toBeCloseTo(1.04, 5)
+  })
   it("history=true attaches a priceHistory series", async () => {
     // Query returns DESC (newest first); the route reverses to ascending.
     st.history = { data: [{ fmv_usd: 100, computed_at: "2026-07-01T00:00:00Z", sales_count_30d: 6 }, { fmv_usd: 90, computed_at: "2026-06-30T00:00:00Z", sales_count_30d: 5 }], error: null }

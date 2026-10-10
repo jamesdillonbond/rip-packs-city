@@ -8,6 +8,16 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 // Per-serial weighting lives in a tested lib module (constants pinned there).
 import { fmvSerialMultiplier as serialMultiplier } from "@/lib/fmv/serial-multiplier";
+
+// 2026-10-10 (known-issues #18): the serial multiplier needs the edition's print
+// run — "last mint = 3x" and the position curve both read it. Both call sites
+// passed a hardcoded 1000 ("circ unknown"), but editions.circulation_count is
+// filled for every row, so the last-mint premium fired only on editions minted
+// at exactly 1,000. Use the real run; fall back to 1000 only when it is missing,
+// non-positive, or below the serial (a catalog-wrong row: 62 known).
+function circulationFor(circ: number | null | undefined, serial: number): number {
+  return circ != null && circ > 0 && circ >= serial ? circ : 1000;
+}
 import { apiErrorResponse } from "@/lib/api-error";
 
 const SERIES_NAMES: Record<number, string> = {
@@ -48,16 +58,18 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
   // Step 1: resolve external_id → internal UUID (editions table only has id + external_id)
   const { data: editionRows, error: edErr } = await supabase
     .from("editions")
-    .select("id, external_id")
+    .select("id, external_id, circulation_count")
     .in("external_id", editionKeys);
 
   if (edErr) throw new Error(`editions lookup: ${edErr.message}`);
 
   const extToId = new Map<string, string>();
   const idToExt = new Map<string, string>();
+  const circById = new Map<string, number | null>();
   for (const row of (editionRows ?? [])) {
     extToId.set(row.external_id, row.id);
     idToExt.set(row.id, row.external_id);
+    circById.set(row.id, row.circulation_count ?? null);
   }
 
   const internalIds = Array.from(extToId.values());
@@ -125,7 +137,7 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
     }
 
     const baseFmv = fmv.fmv_usd;
-    const mult = serial != null ? serialMultiplier(serial, 1000) : null; // circ unknown without metadata
+    const mult = serial != null ? serialMultiplier(serial, circulationFor(circById.get(internalId), serial)) : null;
     const adjustedFmv = mult != null ? baseFmv * mult : baseFmv;
     const confidence = (fmv.confidence ?? "low").toLowerCase();
 
@@ -261,13 +273,15 @@ export async function POST(req: Request) {
     // whose second element was a dead `Promise.resolve(null)` placeholder — the
     // FMV lookup genuinely can't start until the IDs resolve, so there was
     // nothing to parallelize.
-    const editionRes = await supabase.from("editions").select("id, external_id").in("external_id", editionKeys);
+    const editionRes = await supabase.from("editions").select("id, external_id, circulation_count").in("external_id", editionKeys);
 
     if (editionRes.error) throw new Error(`editions lookup: ${editionRes.error.message}`);
 
     const extToId = new Map<string, string>();
+    const circById = new Map<string, number | null>();
     for (const row of (editionRes.data ?? [])) {
       extToId.set(row.external_id, row.id);
+      circById.set(row.id, row.circulation_count ?? null);
     }
 
     const internalIds = Array.from(extToId.values());
@@ -322,7 +336,7 @@ export async function POST(req: Request) {
 
       const baseFmv = fmv.fmv_usd;
       const serial = serialOverrides.get(externalId) ?? globalSerial;
-      const mult = serial != null ? serialMultiplier(serial, 1000) : null;
+      const mult = serial != null ? serialMultiplier(serial, circulationFor(circById.get(internalId), serial)) : null;
       const adjustedFmv = mult != null ? baseFmv * mult : baseFmv;
       const confidence = (fmv.confidence ?? "low").toLowerCase();
 
