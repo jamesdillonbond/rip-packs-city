@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { newRowInsertFailureTally, recordRowInsertFailure, rowInsertFailureExtra } from "@/lib/pipeline/row-insert-failures"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 
@@ -354,6 +355,14 @@ async function runIndexer(req: NextRequest) {
 
     let inserted = 0
     let duped = 0
+    // ⛔ THE CURSOR WAS ALREADY WRITTEN PER CHUNK ABOVE, BEFORE THESE INSERTS. A
+    // failed row used to count as `duped` and the run logged ok:true, so the sale
+    // sat below a cursor nothing revisits. Only a 23505 is a duplicate now; on a
+    // transient failure the cursor is REWOUND to just below the earliest failed
+    // sale's block (the upsert ignores duplicates, so the re-scan is idempotent),
+    // and a permanent one fails the run without a rewind (2026-10-09).
+    const insertFailures = newRowInsertFailureTally()
+    let earliestTransientBlock: number | null = null
     for (let i = 0; i < rows.length; i += 100) {
       const batch = rows.slice(i, i + 100)
       const { error } = await (supabaseAdmin as any)
@@ -364,18 +373,38 @@ async function runIndexer(req: NextRequest) {
           duped += batch.length
         } else {
           console.log("[pinnacle-sales-indexer] batch insert err:", error.message)
-          for (const row of batch) {
+          for (let j = 0; j < batch.length; j++) {
             const { error: se } = await (supabaseAdmin as any)
               .from("pinnacle_sales")
-              .upsert(row, { onConflict: "id", ignoreDuplicates: true })
-            if (se) duped++
-            else inserted++
+              .upsert(batch[j], { onConflict: "id", ignoreDuplicates: true })
+            if (!se) {
+              inserted++
+              continue
+            }
+            const kind = recordRowInsertFailure(insertFailures, se)
+            if (kind === "duplicate") duped++
+            else if (kind === "transient") {
+              const bh = sales[i + j].blockHeight
+              earliestTransientBlock = earliestTransientBlock == null ? bh : Math.min(earliestTransientBlock, bh)
+            }
           }
         }
       } else {
         inserted += batch.length
       }
     }
+
+    let cursorAfterFinal = lastChunkEnd
+    if (earliestTransientBlock != null) {
+      const rewindTo = Math.max(lastBlock, earliestTransientBlock - 1)
+      const { error: rewindErr } = await (supabaseAdmin as any)
+        .from("event_cursor")
+        .update({ last_processed_block: rewindTo, updated_at: new Date().toISOString() })
+        .eq("id", "pinnacle_sales")
+      if (rewindErr) throw new Error(`cursor rewind after failed inserts failed: ${rewindErr.message}`)
+      cursorAfterFinal = rewindTo
+    }
+    const insertFailed = insertFailures.transient + insertFailures.permanent
 
     const finalUnresolved = sales.filter((s) => !nftToEditionId.has(s.nftID)).length
 
@@ -385,14 +414,19 @@ async function runIndexer(req: NextRequest) {
     // indexed), which is normal on a re-scan and must not read as loss.
     await logPipelineRun({
       startedAtIso,
-      ok: true,
+      ok: insertFailed === 0,
+      errorMsg: insertFailed > 0
+        ? `${insertFailed} sale insert(s) failed (first: ${insertFailures.firstError})` +
+          (earliestTransientBlock != null ? ` — cursor rewound to ${cursorAfterFinal}` : "")
+        : null,
       rowsFound: sales.length,
       rowsWritten: inserted,
-      rowsSkipped: duped,
+      rowsSkipped: duped + insertFailures.permanent,
       cursorBefore: lastBlock,
-      cursorAfter: lastChunkEnd,
+      cursorAfter: cursorAfterFinal,
       extra: {
         phase: "complete",
+        ...rowInsertFailureExtra(insertFailures),
         blocks_scanned: lastChunkEnd - lastBlock,
         chain_height: currentHeight,
         ...partialScanExtra,
@@ -404,13 +438,13 @@ async function runIndexer(req: NextRequest) {
     })
 
     return NextResponse.json({
-      ok: true,
+      ok: insertFailed === 0,
       blocksScanned: targetHeight - lastBlock,
       eventsFound: sales.length,
       salesInserted: inserted,
       salesDuped: duped,
       salesUnresolved: finalUnresolved,
-      cursor: lastChunkEnd,
+      cursor: cursorAfterFinal,
       elapsed: Date.now() - started,
     })
   } catch (err) {

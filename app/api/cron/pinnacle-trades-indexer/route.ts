@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { newRowInsertFailureTally, recordRowInsertFailure, rowInsertFailureExtra } from "@/lib/pipeline/row-insert-failures"
 import { supabaseAdmin } from "@/lib/supabase"
 import { classifyPinnacleTradeTxs, type PinnacleMoveEvent } from "@/lib/pinnacle/trade-classifier"
 
@@ -544,6 +545,14 @@ async function runIndexer(req: NextRequest) {
 
     let inserted = 0
     let duped = 0
+    // ⛔ The cursor was already moved per wave above, BEFORE these writes. A failed
+    // row used to count as `duped` under a hardcoded ok:true, leaving the trade
+    // below (or, in backfill, above) a cursor nothing revisits. Only a 23505 is a
+    // duplicate now. A transient failure resets the cursor to where this tick
+    // STARTED (direction-agnostic: forward and backfill both re-read this tick's
+    // range next time; the upsert ignores duplicates); a permanent one fails the
+    // run without a reset (2026-10-09).
+    const insertFailures = newRowInsertFailureTally()
     for (let i = 0; i < rows.length; i += 100) {
       const batch = rows.slice(i, i + 100)
       const { error } = await (supabaseAdmin as any)
@@ -558,26 +567,42 @@ async function runIndexer(req: NextRequest) {
           const { error: se } = await (supabaseAdmin as any)
             .from("pinnacle_trade_events")
             .upsert(row, { onConflict: "id", ignoreDuplicates: true })
-          if (se) duped++
-          else inserted++
+          if (!se) inserted++
+          else if (recordRowInsertFailure(insertFailures, se) === "duplicate") duped++
         }
       } else {
         inserted += batch.length
       }
     }
 
+    let cursorAfterFinal = frontier
+    if (insertFailures.transient > 0 && frontier !== lastBlock) {
+      const { error: resetErr } = await (supabaseAdmin as any)
+        .from("event_cursor")
+        .update({ last_processed_block: lastBlock, updated_at: new Date().toISOString() })
+        .eq("id", cursorId)
+      if (resetErr) throw new Error(`cursor reset after failed inserts failed: ${resetErr.message}`)
+      cursorAfterFinal = lastBlock
+    }
+    const insertFailed = insertFailures.transient + insertFailures.permanent
+
     const unresolved = trades.filter((t) => !nftToEditionId.has(t.nftId)).length
 
     await logPipelineRun({
       startedAtIso,
-      ok: true,
+      ok: insertFailed === 0,
+      errorMsg: insertFailed > 0
+        ? `${insertFailed} trade insert(s) failed (first: ${insertFailures.firstError})` +
+          (cursorAfterFinal !== frontier ? ` — cursor reset to ${cursorAfterFinal}` : "")
+        : null,
       rowsFound: trades.length,
       rowsWritten: inserted,
-      rowsSkipped: duped,
+      rowsSkipped: duped + insertFailures.permanent,
       cursorBefore: lastBlock,
-      cursorAfter: frontier,
+      cursorAfter: cursorAfterFinal,
       extra: {
         phase: "complete",
+        ...rowInsertFailureExtra(insertFailures),
         blocks_scanned: blocksRead,
         chain_height: currentHeight,
         ...shapeExtra,
@@ -590,7 +615,7 @@ async function runIndexer(req: NextRequest) {
     })
 
     return NextResponse.json({
-      ok: true,
+      ok: insertFailed === 0,
       blocksScanned: blocksRead,
       tradeTxs: classified.shapeCounts.trade,
       pinsTraded: trades.length,

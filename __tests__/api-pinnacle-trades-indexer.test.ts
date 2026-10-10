@@ -201,6 +201,25 @@ describe("pinnacle-trades-indexer — what it writes", () => {
     expect(written.every((r: any) => r.edition_id === null)).toBe(true)
   })
 
+  // 2026-10-09: a failed row used to count as a dupe under a hardcoded ok:true,
+  // after the cursor had already moved past the trade's block.
+  it("a TRANSIENT row failure is not a dupe: the run is ok:false and the cursor is reset to where the tick started", async () => {
+    fetchMock = installFetchMock(flowStubs(tradeBlocks()))
+    const spy = install({
+      event_cursor: cursorFixture,
+      pinnacle_nft_map: { data: [], error: null },
+      pinnacle_trade_events: { data: null, error: { code: "57014", message: "statement timeout" } },
+    })
+    const res = await POST(req())
+    const body = await res.json()
+    expect(body).toMatchObject({ ok: false, pinsInserted: 0, pinsDuped: 0 })
+    const cursorWrites = (spy.writes.event_cursor ?? []).filter((w: any) => w.method === "update")
+    expect(cursorWrites.length).toBeGreaterThan(1) // the per-wave advance, then the reset
+    expect(cursorWrites.at(-1)?.rows[0]?.last_processed_block).toBe(CURSOR_START)
+    const log = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run").at(-1)?.args as Record<string, unknown>
+    expect(log).toMatchObject({ p_ok: false, p_cursor_after: String(CURSOR_START) })
+  })
+
   it("does NOT write a storefront-shaped move (one sender, one receiver, one Pin)", async () => {
     fetchMock = installFetchMock(
       flowStubs({

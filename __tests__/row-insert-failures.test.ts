@@ -69,6 +69,15 @@ describe("forward sales indexers record every failed row-retry", () => {
     "app/api/allday-sales-indexer/route.ts",
     "app/api/golazos-sales-indexer/route.ts",
   ]
+  // The two Pinnacle lanes write their cursor BEFORE inserting, so they rewind /
+  // reset it on a transient failure instead of holding it.
+  for (const f of ["app/api/pinnacle-sales-indexer/route.ts", "app/api/cron/pinnacle-trades-indexer/route.ts"]) {
+    it(`${f} tallies row failures (no failed row is a silent dupe)`, () => {
+      const src = readFileSync(f, "utf8")
+      expect(src).toContain("recordRowInsertFailure(insertFailures")
+      expect(src).not.toMatch(/if \(se\) duped\+\+/)
+    })
+  }
   for (const f of FILES) {
     it(`${f} tallies row failures and holds its cursor on a transient one`, () => {
       const src = readFileSync(f, "utf8")

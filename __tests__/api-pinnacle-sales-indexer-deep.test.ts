@@ -246,7 +246,9 @@ describe("pinnacle-sales-indexer — scan + write", () => {
     expect(state.chained).toEqual([{ path: "/api/pinnacle/resolve-buyers", chain: true }])
   })
 
-  it("a non-23505 batch error falls back to per-row upserts (each dupe accounted)", async () => {
+  // INVERTED 2026-10-09: this pinned a 40001 serialization failure being counted
+  // as a DUPLICATE (ok:true) after the cursor had already moved past its block.
+  it("a non-23505 batch error falls back to per-row upserts; a transient row failure is NOT a dupe and REWINDS the cursor", async () => {
     fetchMock = installFetchMock(
       flowStubs({ events: [pinnacleSale("555", "5.00000000", "5".repeat(64), CURSOR_START + 20)] }),
     )
@@ -258,7 +260,12 @@ describe("pinnacle-sales-indexer — scan + write", () => {
     const res = await POST(req())
     // batch upsert (1) + per-row retry (1) both recorded as writes.
     expect((spy.writes.pinnacle_sales ?? []).length).toBe(2)
-    expect(await res.json()).toMatchObject({ ok: true, salesInserted: 0, salesDuped: 1 })
+    const body = await res.json()
+    expect(body).toMatchObject({ ok: false, salesInserted: 0, salesDuped: 0 })
+    // the LAST cursor write rewinds to just below the failed sale's block
+    const cursorWrites = (spy.writes.event_cursor ?? []).filter((w) => w.method === "update")
+    expect(cursorWrites.at(-1)?.rows[0]?.last_processed_block).toBe(CURSOR_START + 19)
+    expect(body.cursor).toBe(CURSOR_START + 19)
   })
 
   it("GET delegates to the same handler (401 without auth)", async () => {
