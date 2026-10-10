@@ -52,6 +52,10 @@ export type MomentRow = {
   topshotAsk?: number | null
   flowtyAsk?: number | null
   bestMarket?: "Top Shot" | "Flowty" | null
+  /** The edition's lowest sale in the FMV window (fmv_snapshots.floor_price_usd on a
+   *  sales-priced row). NOT an ask -- 2026-10-10 (#143 class): the binder had been
+   *  rendering it as "Ask $X" for every collection. */
+  recentLow30d?: number | null
   bestOffer?: number | null
   lastPurchasePrice?: number | null
   acquiredAt?: string | null

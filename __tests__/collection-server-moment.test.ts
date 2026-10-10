@@ -44,13 +44,35 @@ describe("serverMomentToRow", () => {
     expect(serverMomentToRow(sm({ fmv_usd: "8.5" as any })).fmv).toBe(8.5)
     expect(serverMomentToRow(sm({ fmv_usd: 0 })).fmv).toBeNull()
     expect(serverMomentToRow(sm({ fmv_usd: -3 })).fmv).toBeNull()
-    expect(serverMomentToRow(sm({ low_ask: "0" as any })).lowAsk).toBeNull()
-    // low_ask mirrors onto topshotAsk/bestAsk and drives bestMarket
-    const r = serverMomentToRow(sm({ low_ask: 15 }))
+    expect(serverMomentToRow(sm({ low_ask: "0" as any, confidence: "ASK_ONLY" })).lowAsk).toBeNull()
+    expect(serverMomentToRow(sm({ low_ask: "0" as any })).recentLow30d).toBeNull()
+    // On an ASK_ONLY row low_ask IS the ask: it mirrors onto topshotAsk/bestAsk
+    // and drives bestMarket.
+    const r = serverMomentToRow(sm({ low_ask: 15, confidence: "ASK_ONLY" }))
+    expect(r.lowAsk).toBe(15)
     expect(r.topshotAsk).toBe(15)
     expect(r.bestAsk).toBe(15)
     expect(r.bestMarket).toBe("Top Shot")
-    expect(serverMomentToRow(sm({ low_ask: null })).bestMarket).toBeNull()
+    expect(r.recentLow30d).toBeNull()
+    expect(serverMomentToRow(sm({ low_ask: null, confidence: "ASK_ONLY" })).bestMarket).toBeNull()
+  })
+
+  // INVERTED 2026-10-10. The previous pin asserted that a HIGH row's low_ask
+  // "mirrors onto topshotAsk/bestAsk and drives bestMarket" -- the defect.
+  // get_wallet_moments_with_fmv's `low_ask` is fmv_snapshots.floor_price_usd,
+  // which fmv-recalc writes as Math.min(...sales) on every sales-priced row; the
+  // binder then told a Candy collector "Ask $35.92" beside FMV $296.56 off a
+  // week-old sale, and the LISTED filter matched every edition that had ever
+  // sold. A sales-priced row's low_ask is the window's recent low, never an ask.
+  it("a sales-priced row's low_ask is the 30d low, not an ask (HIGH/MEDIUM/LOW/SALES_ONLY/STALE)", () => {
+    for (const confidence of ["HIGH", "MEDIUM", "LOW", "SALES_ONLY", "STALE", "high", null]) {
+      const r = serverMomentToRow(sm({ low_ask: 35.92, fmv_usd: 296.56, confidence: confidence as any }))
+      expect(r.lowAsk, String(confidence)).toBeNull()
+      expect(r.topshotAsk, String(confidence)).toBeNull()
+      expect(r.bestAsk, String(confidence)).toBeNull()
+      expect(r.bestMarket, String(confidence)).toBeNull()
+      expect(r.recentLow30d, String(confidence)).toBe(35.92)
+    }
   })
 
   it("derives cost basis only for marketplace(buy_price) and loan_default(principal)", () => {

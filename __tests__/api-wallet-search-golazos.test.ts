@@ -118,7 +118,10 @@ describe("POST /api/wallet-search — Golazos wmc path", () => {
     expect(body.rows[0].tier).toBe("RARE")
     expect(body.rows[0].fmv).toBe(5)
     expect(body.rows[0].serialNumber).toBe(1)
-    expect(body.rows[0].lowAsk).toBe(2)
+    // 2026-10-10: a STALE row's low_ask is the window's lowest SALE, not an ask
+    // (fmv_snapshots.floor_price_usd); it surfaces as recentLow30d, never lowAsk.
+    expect(body.rows[0].lowAsk).toBeNull()
+    expect(body.rows[0].recentLow30d).toBe(2)
     expect(body.rows[0].editionKey).toBe("505")
     expect(body.rows[0].thumbnailUrl).toBe("https://assets.laligagolazos.com/x.png")
     expect(body.rows[1].playerName).toBe("Willian José")

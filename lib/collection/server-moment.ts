@@ -102,8 +102,21 @@ export function serverMomentToRow(m: ServerMoment, sport?: string | null): Momen
         ? "best-offer-only"
         : "none"
 
-  // Determine best market from low_ask (Top Shot floor)
-  const bestMarketVal: MomentRow["bestMarket"] = lowAskVal ? "Top Shot" : null
+  // ⛔ `low_ask` is get_wallet_moments_with_fmv's name for
+  // fmv_snapshots.floor_price_usd, and that column is an ASK only on an ASK_ONLY
+  // row (the one listing the price was derived from). On every sales-priced row
+  // fmv-recalc writes `Math.min(...prices)` of the window's SALES into it -- a
+  // historical low, not a listing (schema-truth: "NOT a live ask"; #143 renamed
+  // the entity-surface label to "Recent Low"; the 10-03 team checklist fix was
+  // the same defect). Until 2026-10-10 this mapper published it as lowAsk /
+  // topshotAsk / bestAsk / bestMarket, so the binder told a Candy collector
+  // "Ask $35.92" on an edition whose FMV was $296.56 -- a sale from a week
+  // earlier dressed as a live listing -- and the LISTED filter matched every
+  // edition that had ever sold. Ask semantics only where the row IS an ask.
+  const isAskOnly = conf === "ASK_ONLY"
+  const askVal = isAskOnly ? lowAskVal : null
+  const recentLowVal = isAskOnly ? null : lowAskVal
+  const bestMarketVal: MomentRow["bestMarket"] = askVal ? "Top Shot" : null
 
   return {
     momentId: m.moment_id,
@@ -129,8 +142,9 @@ export function serverMomentToRow(m: ServerMoment, sport?: string | null): Momen
     marketConfidence: (m.confidence?.toLowerCase() ?? "none") as MomentRow["marketConfidence"],
     fmvUsd: fmvVal,
     fmvMethod: fmvMethodLabel,
-    lowAsk: lowAskVal,
-    topshotAsk: lowAskVal,
+    lowAsk: askVal,
+    topshotAsk: askVal,
+    recentLow30d: recentLowVal,
     bestMarket: bestMarketVal,
     officialBadges: [],
     specialSerialTraits: [],
@@ -140,7 +154,7 @@ export function serverMomentToRow(m: ServerMoment, sport?: string | null): Momen
     // re-publishes the false claim the route stopped making.
     isLocked: m.is_locked == null ? undefined : m.is_locked === true,
     lockKnown: m.lock_known === true,
-    bestAsk: lowAskVal,
+    bestAsk: askVal,
     bestOffer: null,
     lastPurchasePrice: null,
     parallel: null,

@@ -326,9 +326,11 @@ export default function CollectionMomentTable(props: {
                       {row.serialFmv ? <SerialFmvBadge data={row.serialFmv} /> : null}
                       {row.priceBand30d ? <PriceBand30dBadge data={row.priceBand30d} /> : null}
                     </span>
-                    {row.lowAsk != null && (
+                    {row.lowAsk != null ? (
                       <span className="text-xs text-[color:var(--rpc-text-secondary)]">Ask ${row.lowAsk.toFixed(2)}</span>
-                    )}
+                    ) : row.recentLow30d != null ? (
+                      <span className="text-xs text-[color:var(--rpc-text-muted)]" title="Lowest sale in the FMV window — not a listing">30d low ${row.recentLow30d.toFixed(2)}</span>
+                    ) : null}
                     {cb ? (function() {
                       const label = cb.costBasisLabel
                       if (label === "Pack") return <span className="inline-block rounded border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 font-mono text-[10px] text-[color:var(--rpc-text-muted)]">PACK</span>
@@ -727,6 +729,11 @@ export default function CollectionMomentTable(props: {
                           <span style={{ color: row.fmv && row.editionLowAsk < row.fmv ? "#22c55e" : "#9ca3af" }}>
                             ${row.editionLowAsk.toFixed(2)}
                             <span className="ml-1 text-[10px] text-[color:var(--rpc-text-muted)]">floor</span>
+                          </span>
+                        ) : row.recentLow30d != null ? (
+                          <span className="text-[color:var(--rpc-text-muted)]" title="Lowest sale in the FMV window — not a listing">
+                            ${row.recentLow30d.toFixed(2)}
+                            <span className="ml-1 text-[10px] text-[color:var(--rpc-text-muted)]">30d low</span>
                           </span>
                         ) : (
                           <span className="text-[color:var(--rpc-text-muted)]">—</span>
