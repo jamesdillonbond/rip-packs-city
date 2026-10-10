@@ -1155,7 +1155,8 @@ const PINS = [
   {
     fn: "fmv_recalc_edition_page",
     test: "supabase/tests/fmv_recalc_edition_page.sql",
-    migration: "supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql",
+    // Re-pinned 2026-10-10: ties on MAX(sold_at) break on edition_id (#177 part 1).
+    migration: "supabase/migrations/20261010101713_audit_20261010_fmv_recalc_edition_page_tiebreaks_on_edition_id.sql",
   },
   {
     fn: "recalc_ultimate_fmv",

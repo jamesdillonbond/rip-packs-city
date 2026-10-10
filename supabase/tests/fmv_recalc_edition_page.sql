@@ -11,8 +11,11 @@
 --     freshest-traded editions get repriced first;
 --   * LIMIT/OFFSET paginate deterministically over that ordering.
 --
+--   * ties on MAX(sold_at) break on edition_id ASC (2026-10-10, #177 part 1), so a tie
+--     group straddling a page boundary pages the same way on every tick.
+--
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql);
+-- (supabase/migrations/20261010101713_audit_20261010_fmv_recalc_edition_page_tiebreaks_on_edition_id.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -38,7 +41,7 @@ AS $function$
     AND s.collection_id <> p_pinnacle_collection_id
     AND s.edition_id IS NOT NULL
   GROUP BY s.edition_id
-  ORDER BY MAX(s.sold_at) DESC NULLS LAST
+  ORDER BY MAX(s.sold_at) DESC NULLS LAST, s.edition_id
   LIMIT p_limit OFFSET p_offset
 $function$;
 -- <<< END verbatim fmv_recalc_edition_page <<<
@@ -92,6 +95,21 @@ SELECT _assert_eq(
 SELECT _assert_eq(
   (SELECT count(*)::text FROM public.fmv_recalc_edition_page(now() - interval '2 days', :pin::uuid, 100, 0)),
   '1', 'a 2-day window keeps only edA');
+
+-- ── 6. ties on MAX(sold_at) page deterministically: edition_id ASC inside a tie ─
+-- edF and edE both sold at exactly the same instant (fresher than edA); the lower
+-- uuid (edE) must come first on every call, and OFFSET 1 must then be edF.
+\set edE  '''eeeeeeee-0000-0000-0000-eeeeeeeeeeee'''
+\set edF  '''ffffffff-0000-0000-0000-ffffffffffff'''
+INSERT INTO public.sales (edition_id, sold_at, price_usd, collection_id) VALUES
+  (:edF::uuid, now() - interval '1 hour', 12, :flow::uuid),
+  (:edE::uuid, now() - interval '1 hour', 13, :flow::uuid);
+SELECT _assert_eq(
+  (SELECT edition_id::text FROM public.fmv_recalc_edition_page(now() - interval '30 days', :pin::uuid, 1, 0)),
+  'eeeeeeee-0000-0000-0000-eeeeeeeeeeee', 'inside a MAX(sold_at) tie the lower edition_id pages first');
+SELECT _assert_eq(
+  (SELECT edition_id::text FROM public.fmv_recalc_edition_page(now() - interval '30 days', :pin::uuid, 1, 1)),
+  'ffffffff-0000-0000-0000-ffffffffffff', 'OFFSET 1 lands on the other tied edition, never a repeat');
 
 SELECT '✓ fmv_recalc_edition_page: all assertions passed' AS result;
 
