@@ -191,6 +191,8 @@ describe("topshot-offers-indexer — OfferAvailable keying", () => {
       source: "onchain",
       status: "open",
       created_at: "2026-07-17T12:00:00Z",
+      resolved_at: null,
+      fill_tx_hash: null,
     })
 
     const cursorUpdate = spy.writes.event_cursor?.find((w) => w.method === "update")
@@ -401,7 +403,7 @@ describe("topshot-offers-indexer — OfferAvailable keying", () => {
     expect(offerUpserts(spy)).toHaveLength(0)
   })
 
-  it("same-tick create+cancel is never written as open; the cancel flip still runs", async () => {
+  it("same-tick create+cancel is written with its FINAL status (never open, never dropped)", async () => {
     const tx1 = "e".repeat(64)
     fetchMock = installFetchMock(
       flowRestStubs({
@@ -435,12 +437,17 @@ describe("topshot-offers-indexer — OfferAvailable keying", () => {
 
     const res = await POST(req())
     const body = await res.json()
-    expect(body).toMatchObject({ ok: true, offersWritten: 0, offersCancelled: 0 })
+    // ⚠ INVERTED 2026-10-10. This test used to assert the same-tick offer was
+    // NOT upserted at all — it pinned the gap that left ~25 % of offer_fill sales
+    // with no offers row. The promise it keeps now: the row exists, carries its
+    // terminal status and the COMPLETION block ts, and is never "open".
+    expect(body).toMatchObject({ ok: true, offersWritten: 1, offersCompletedSameTick: 1 })
 
-    expect(offerUpserts(spy)).toHaveLength(0)
-    const updates = (spy.writes.offers ?? []).filter((w) => w.method === "update")
-    expect(updates).toHaveLength(1)
-    expect(updates[0]?.rows[0]).toMatchObject({ status: "cancelled" })
+    const ups = offerUpserts(spy)
+    expect(ups).toHaveLength(1)
+    expect(ups[0]).toMatchObject({ offer_id: "901", status: "cancelled", fill_tx_hash: null })
+    expect(ups[0].resolved_at).toBeTruthy()
+    expect(ups.some((r) => r.status === "open")).toBe(false)
   })
 })
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { parseOfferCompletedFill, buildOfferFillSales, insertOfferFillSales, type OfferFillEvent } from "@/lib/chains/flow/topshot-offer-fill"
 import { fetchTopShotEditionAliases, canonicalTopShotExternalId } from "@/lib/topshot/edition-aliases"
+import { unwrapCdc, parseOfferAvailable as parseAvailable, type AvailOffer } from "@/lib/chains/flow/topshot-offer-available"
 
 // ── On-chain Top Shot offers indexer ─────────────────────────────────────────
 //
@@ -59,44 +60,6 @@ function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-// Minimal JSON-CDC unwrapper (mirror of the AllDay sales/offers indexers).
-function unwrapCdc(node: unknown): unknown {
-  if (node === null || node === undefined) return node
-  if (Array.isArray(node)) return node.map(unwrapCdc)
-  if (typeof node !== "object") return node
-  const { type, value } = node as { type?: string; value?: unknown }
-  if (type !== undefined && value !== undefined) {
-    switch (type) {
-      case "Optional":
-        return value === null ? null : unwrapCdc(value)
-      case "Array":
-        return (value as unknown[]).map(unwrapCdc)
-      case "Dictionary": {
-        const out: Record<string, unknown> = {}
-        for (const kv of value as Array<{ key: unknown; value: unknown }>) {
-          out[String(unwrapCdc(kv.key))] = unwrapCdc(kv.value)
-        }
-        return out
-      }
-      case "Struct":
-      case "Resource":
-      case "Event":
-      case "Contract":
-      case "Enum": {
-        const out: Record<string, unknown> = {}
-        const fields = (value as { fields?: Array<{ name: string; value: unknown }> }).fields ?? []
-        for (const f of fields) out[f.name] = unwrapCdc(f.value)
-        return out
-      }
-      case "Type":
-        return { staticType: (value as { staticType?: unknown }).staticType }
-      default:
-        return value
-    }
-  }
-  return node
-}
-
 function extractNftTypeId(field: unknown): string | undefined {
   if (typeof field === "string") return field
   if (field && typeof field === "object") {
@@ -150,50 +113,6 @@ async function getLatestSealedHeight(): Promise<number> {
   return Number(json[0]?.header?.height ?? 0)
 }
 
-type AvailOffer = {
-  offerId: string
-  txHash: string
-  blockTs: string
-  amount: number
-  offerer: string | null
-  offerType: "edition" | "subedition" | "serial"
-  externalId: string | null // setId:playId (edition/subedition)
-  nftId: string | null // serial
-}
-
-function parseAvailable(payload: Record<string, any>): Omit<AvailOffer, "txHash" | "blockTs"> | null {
-  const offerId = payload?.offerId != null ? String(payload.offerId) : null
-  if (!offerId) return null
-  const amount = payload?.offerAmount != null ? Number(payload.offerAmount) : NaN
-  if (!Number.isFinite(amount) || amount <= 0) return null
-  const offerer = payload?.offerAddress != null ? String(payload.offerAddress) : null
-  const ps = (payload?.offerParamsString ?? {}) as Record<string, unknown>
-  const t = String(ps._type ?? ps["_type"] ?? "")
-  if (t === "TopShotEdition") {
-    if (ps.setId == null || ps.playId == null) return null
-    return { offerId, amount, offerer, offerType: "edition", externalId: `${ps.setId}:${ps.playId}`, nftId: null }
-  }
-  if (t === "TopShotSubedition") {
-    if (ps.setId == null || ps.playId == null) return null
-    // Since Stage B (2026-06-20) each named parallel is its OWN editions row
-    // keyed "setId:playId::subeditionId" — key the offer there so parallel
-    // pages surface their own subedition offers. Resolution falls back to the
-    // base pair when no :: edition is cataloged (yet). Pre-2026-07-07 rows
-    // dropped the subeditionId and rolled up to base (re-keyed by the
-    // audit_20260707 backfill where recoverable).
-    const subId = ps.subeditionId != null ? String(ps.subeditionId) : null
-    const externalId = subId && /^\d+$/.test(subId) && subId !== "0"
-      ? `${ps.setId}:${ps.playId}::${subId}`
-      : `${ps.setId}:${ps.playId}`
-    return { offerId, amount, offerer, offerType: "subedition", externalId, nftId: null }
-  }
-  if (t === "NFT") {
-    if (ps.nftId == null) return null
-    return { offerId, amount, offerer, offerType: "serial", externalId: null, nftId: String(ps.nftId) }
-  }
-  return null // unknown TS offer type
-}
-
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
@@ -212,6 +131,7 @@ export async function POST(req: NextRequest) {
   let offersFilled = 0
   let offersCancelled = 0
   let unresolved = 0
+  let completedSameTick = 0 // offers created AND completed inside this tick, written with their final status
   let aliased = 0 // #175: offers whose API key resolved through topshot_edition_aliases
   let salesWritten = 0
   let salesDuped = 0
@@ -253,6 +173,9 @@ export async function POST(req: NextRequest) {
     // the exact nftId — enough to write a sale with no tx decode.
     const fills: OfferFillEvent[] = []
     const fillTxByOfferId = new Map<string, string>()
+    // Completion block ts per offer, so a same-tick create+complete row (step 3)
+    // carries WHEN it resolved rather than when this tick happened to run.
+    const completedAtById = new Map<string, string>()
 
     for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
       const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
@@ -280,6 +203,7 @@ export async function POST(req: NextRequest) {
             if (!extractNftTypeId(payload?.nftType)?.endsWith(TOPSHOT_NFT_TYPE_SUFFIX)) continue
             const offerId = payload?.offerId != null ? String(payload.offerId) : null
             if (!offerId) continue
+            completedAtById.set(offerId, blk.block_timestamp)
             if (payload?.purchased === true) {
               filledIds.add(offerId)
               const fill = parseOfferCompletedFill(payload, evt.transaction_id, blk.block_timestamp, Number(blk.block_height) || null)
@@ -349,11 +273,16 @@ export async function POST(req: NextRequest) {
         momentByNft.set(r.nft_id, { momentId: r.id, editionId: r.edition_id, serial: r.serial_number })
     }
 
-    // 3. build offer rows (skip same-tick create+complete — they're not "open";
-    //    completion below would no-op on an absent row otherwise).
+    // 3. build offer rows. A same-tick create+complete is written with its FINAL
+    //    status — never as "open", and never dropped. ⚠ It used to be skipped
+    //    ("not open"), and the step-4 flip then no-op'd on the absent row, so an
+    //    offer accepted or cancelled within one ~20-min tick was NEVER recorded:
+    //    ~25 % of every Top Shot offer_fill sale since June had no offers row
+    //    (24k fills; 20 of 369 on the founder's wallet). The fill SALE still
+    //    landed via 4b, which is why nothing reported it.
     const rows: Array<Record<string, unknown>> = []
     for (const o of avail) {
-      if (filledIds.has(o.offerId) || cancelledIds.has(o.offerId)) continue
+      const finalStatus = filledIds.has(o.offerId) ? "filled" : cancelledIds.has(o.offerId) ? "cancelled" : null
       let editionId: string | null = null
       let momentId: string | null = null
       let serial: number | null = null
@@ -369,6 +298,7 @@ export async function POST(req: NextRequest) {
       }
       if (!editionId) { unresolved++; continue }
       byType[o.offerType]++
+      if (finalStatus) completedSameTick++
       rows.push({
         offer_id: o.offerId,
         tx_hash: o.txHash,
@@ -380,8 +310,12 @@ export async function POST(req: NextRequest) {
         buyer_address: o.offerer,
         offer_type: o.offerType,
         source: "onchain",
-        status: "open",
+        status: finalStatus ?? "open",
         created_at: o.blockTs,
+        // Explicit on EVERY row (null for open) so one bulk upsert never mixes
+        // column sets across its rows.
+        resolved_at: finalStatus ? completedAtById.get(o.offerId) ?? new Date().toISOString() : null,
+        fill_tx_hash: finalStatus === "filled" ? fillTxByOfferId.get(o.offerId) ?? null : null,
       })
     }
     offersSeen = rows.length
@@ -491,6 +425,7 @@ export async function POST(req: NextRequest) {
     by_type: byType,
     offers_filled: offersFilled,
     offers_cancelled: offersCancelled,
+    offers_completed_same_tick: completedSameTick,
     unresolved,
     aliased_to_canonical: aliased,
     fills_seen: fillsSeen,
@@ -508,6 +443,7 @@ export async function POST(req: NextRequest) {
     byType,
     offersFilled,
     offersCancelled,
+    offersCompletedSameTick: completedSameTick,
     unresolved,
     fillsSeen,
     salesWritten,

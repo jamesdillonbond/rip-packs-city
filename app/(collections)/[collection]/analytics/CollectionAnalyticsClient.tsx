@@ -27,6 +27,7 @@ import TopBuyers from "@/components/analytics/TopBuyers"
 import HeldTimeDistributionCard from "@/components/analytics/HeldTimeDistributionCard"
 import CostBasisCard from "@/components/analytics/CostBasisCard"
 import SalesHistoryCard from "@/components/analytics/SalesHistoryCard"
+import OffersHistoryCard from "@/components/analytics/OffersHistoryCard"
 import { getEntityLabels } from "@/lib/entity-labels"
 import CrossCollectionHoldingsCard from "@/components/analytics/CrossCollectionHoldingsCard"
 import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
@@ -2005,6 +2006,9 @@ function AnalyticsInner() {
 
               {/* Sales History (hidden silently if route doesn't exist) */}
               <SalesHistoryCard wallet={activeWallet} urlSlug={collection} />
+
+              {/* Offers Made — renders only where offer tracking exists (Top Shot) */}
+              <OffersHistoryCard wallet={activeWallet} urlSlug={collection} />
 
               {/* Cross-Collection Holdings (only renders when input is a username) */}
               <CrossCollectionHoldingsCard usernameInput={input || urlWallet} />

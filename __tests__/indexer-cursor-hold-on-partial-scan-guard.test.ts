@@ -197,6 +197,8 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
       "app/api/pinnacle-sales-indexer/route.ts",
       "app/api/allday-listings-indexer/route.ts",
       "app/api/topshot-offers-indexer/route.ts",
+      // 2026-10-10: the one-shot history walk that recovers same-tick offers.
+      "app/api/admin/backfill-topshot-offers/route.ts",
     ]
 
     /**
@@ -259,7 +261,7 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
     it("discovered every route that fetches an event range itself", () => {
       // A no-slack count. `toBeGreaterThanOrEqual` would let a route that lost
       // its fetcher to a rename drop out of the population unnoticed.
-      expect(fetchers.length, "the event-range fetcher family is exactly 18").toBe(18)
+      expect(fetchers.length, "the event-range fetcher family is exactly 19").toBe(19)
       // sales-indexer is absent by construction rather than by exemption: it
       // reaches Flow through fcl, which THROWS, so it never had the swallow.
       expect(fetchers).not.toContain("app/api/sales-indexer/route.ts")

@@ -1,0 +1,90 @@
+name: Top Shot Offers History Backfill — recover same-tick offers
+
+# One-shot walk (2026-10-10). The live topshot-offers-indexer used to DROP any
+# offer created and completed inside one tick, so ~25 % of offer_fill sales since
+# 2026-06-03 had no `offers` row. The forward fix shipped the same day; this walk
+# recovers the history: /api/admin/backfill-topshot-offers drains behind its own
+# event_cursor (topshot_offers_history_backfill) and ENDS at a fixed block, after
+# which every call answers done=true. Insert-only — never writes an open row and
+# never overwrites one, so a re-run is safe.
+#
+# Dispatch-only: there is nothing to do once the walk is done.
+on:
+  workflow_dispatch:
+    inputs:
+      range:
+        description: "max blocks per call (default 150000, cap 200000)"
+        type: string
+        default: ""
+      start_block:
+        description: "one-time cursor start override (first call only)"
+        type: string
+        default: ""
+      max_iters:
+        description: "max bounded calls this run (default 150)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: topshot-offers-history-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - name: Drain loop
+        env:
+          RANGE: ${{ github.event.inputs.range }}
+          START_BLOCK: ${{ github.event.inputs.start_block }}
+          MAX_ITERS: ${{ github.event.inputs.max_iters }}
+          TOKEN: ${{ secrets.INGEST_SECRET_TOKEN }}
+        run: |
+          BASE="https://www.rippackscity.com/api/admin/backfill-topshot-offers"
+          if [ -z "$MAX_ITERS" ]; then MAX_ITERS=150; fi
+          if [ -z "$RANGE" ]; then RANGE=150000; fi
+          OVERALL=0
+          TOTAL_INSERTED=0
+          for i in $(seq 1 "$MAX_ITERS"); do
+            URL="$BASE?range=$RANGE"
+            if [ "$i" = "1" ] && [ -n "$START_BLOCK" ]; then URL="$URL&start_block=$START_BLOCK"; fi
+            echo "── call $i/$MAX_ITERS  url=$URL"
+            STATUS=$(curl -s -o /tmp/bf.json -w "%{http_code}" -X POST \
+              -H "Authorization: Bearer $TOKEN" \
+              --max-time 290 \
+              "$URL") || STATUS=""
+            echo "HTTP $STATUS"
+            cat /tmp/bf.json 2>/dev/null || echo "<no body>"; echo ""
+            if [ "$STATUS" != "200" ]; then
+              echo "::warning::call $i returned HTTP '$STATUS'"
+              OVERALL=1
+              break
+            fi
+            # Every `run:` is bash -e: a fallible assignment must carry its own
+            # fallback, then be checked explicitly (never `|| X="0"`).
+            OK=$(jq -r '.ok // false' /tmp/bf.json 2>/dev/null) || OK=""
+            DONE=$(jq -r '.done // false' /tmp/bf.json 2>/dev/null) || DONE=""
+            CB=$(jq -r '.cursor_before // empty' /tmp/bf.json 2>/dev/null) || CB=""
+            CA=$(jq -r '.cursor_after // empty' /tmp/bf.json 2>/dev/null) || CA=""
+            INS=$(jq -r '.inserted // 0' /tmp/bf.json 2>/dev/null) || INS=""
+            if [ -z "$OK" ] && [ -z "$DONE" ]; then
+              echo "::warning::call $i: HTTP 200 with a body jq could not parse"
+              OVERALL=1
+              break
+            fi
+            if [ "$OK" != "true" ]; then
+              echo "::warning::call $i logged ok=$OK"
+              OVERALL=1
+              break
+            fi
+            if [ -n "$INS" ]; then TOTAL_INSERTED=$((TOTAL_INSERTED + INS)); fi
+            if [ "$DONE" = "true" ]; then echo "walk complete (done=true)"; break; fi
+            if [ -n "$CB" ] && [ "$CB" = "$CA" ]; then echo "no cursor progress ($CB) — stopping"; OVERALL=1; break; fi
+            sleep 2
+          done
+          echo "inserted this run: $TOTAL_INSERTED"
+          exit $OVERALL
