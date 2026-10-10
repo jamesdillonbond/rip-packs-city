@@ -352,6 +352,37 @@ export function isComplete(distinct, total, error) {
   return error == null && total != null && distinct >= total
 }
 
+/** The receiver's per-call holdings limit (lib/chains/panini/collector-walk.ts MAX_HOLDINGS; a test pins the two equal). */
+export const INGEST_MAX_HOLDINGS = 5000
+
+/**
+ * The ingest body or bodies one walk posts. At or under the limit: ONE body, exactly as read. Over
+ * it: chunks of at most `max`, EVERY one `complete: false`, with the reason in `error`.
+ *
+ * ⚠ 2026-10-10: spinotron's capped walk read 6,568 cards in 10 min and the receiver 400'd the one
+ * over-limit call ("at most 5000 holdings per walk"), so the WHOLE read was discarded and no run row
+ * landed. Chunking is safe only because nothing in a chunk can retire: panini_collector_walk_ingest
+ * retires by set, and only when it judges the walk complete, which needs `complete: true` AND at
+ * least `reported_total` distinct keys IN THAT ONE PAYLOAD. A complete walk past the limit is
+ * therefore posted as incomplete too: every card lands, and retiring the departed ones waits for a
+ * walk that fits one call.
+ */
+export function ingestPayloads(base, holdings, max = INGEST_MAX_HOLDINGS) {
+  if (holdings.length <= max) return [{ ...base, holdings }]
+  const n = Math.ceil(holdings.length / max)
+  const note = `${holdings.length} cards posted in ${n} chunks of at most ${max} (over the per-call limit), so this walk retires nothing`
+  const out = []
+  for (let i = 0; i < n; i++) {
+    out.push({
+      ...base,
+      complete: false,
+      error: [base.error, `${note}; chunk ${i + 1}/${n}`].filter(Boolean).join("; "),
+      holdings: holdings.slice(i * max, (i + 1) * max),
+    })
+  }
+  return out
+}
+
 async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
   const walkStartedMs = Date.now()
   const capped = () => pastWalkCap(walkStartedMs, Date.now(), capMin)
@@ -641,7 +672,7 @@ async function main() {
         product_fields: res.sampleKeys,
       }
       if (!dry) {
-        const r = await post(url, token, {
+        const bodies = ingestPayloads({
           op: "ingest",
           username: nickname,
           walk_started_at: walkStartedAt,
@@ -650,15 +681,20 @@ async function main() {
           reported_total: res.total,
           unopened_packs: res.unopenedPacks,
           error: res.error,
-          holdings: res.holdings,
           extra: { answers: res.answers, source: res.source, ignored_foreign_answers: res.foreign },
-        })
-        if (!r.ok || typeof r.data?.written !== "number") {
-          line.write_error = `ingest http ${r.status}: ${r.data?.error ?? r.data?.message ?? "no write count"}`
-          anyFailed = true
-        } else {
-          Object.assign(line, { written: r.data.written, retired: r.data.retired, db_complete: r.data.complete })
+        }, res.holdings)
+        let written = 0
+        for (const [bi, body] of bodies.entries()) {
+          const r = await post(url, token, body)
+          if (!r.ok || typeof r.data?.written !== "number") {
+            line.write_error = `ingest http ${r.status}${bodies.length > 1 ? ` (chunk ${bi + 1}/${bodies.length})` : ""}: ${r.data?.error ?? r.data?.message ?? "no write count"}`
+            anyFailed = true
+            break
+          }
+          written += r.data.written
+          Object.assign(line, { written, retired: r.data.retired, db_complete: r.data.complete })
         }
+        if (bodies.length > 1) line.chunks = bodies.length
       } else {
         line.sample = res.holdings.slice(0, 3)
       }

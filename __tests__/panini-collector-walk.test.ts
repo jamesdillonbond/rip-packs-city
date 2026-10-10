@@ -21,6 +21,8 @@ import {
   signedInNickname,
   findKey,
   isComplete,
+  INGEST_MAX_HOLDINGS,
+  ingestPayloads,
   mayStartWalk,
   pastWalkCap,
   walkOrder,
@@ -32,6 +34,7 @@ import {
   readCollected,
   toHolding,
 } from "../scripts/panini-collector-walk.mjs"
+import { MAX_HOLDINGS } from "@/lib/chains/panini/collector-walk"
 
 describe("profileUrl", () => {
   it("opens the collected tab of the public profile (the tab the page pages on scroll)", () => {
@@ -245,5 +248,43 @@ describe("answerIsFor — never file one account's cards under another username"
     expect(answerIsFor(body('userCollectedNftsV2(p:1,l:30,applied_filters:"",nickname:"adlcards")'), "jamesdillonbond")).toBe(false)
     expect(answerIsFor(body('userCollectedNftsV2(p:1,l:30,applied_filters:"",nickname:"jamesdillonbond2")'), "jamesdillonbond")).toBe(false)
     expect(answerIsFor("not json", "jamesdillonbond")).toBe(false)
+  })
+})
+
+// 2026-10-10: a capped walk that read 6,568 cards posted them in ONE call, the receiver 400'd it
+// ("at most 5000 holdings per walk"), and the whole read was lost. Chunking is safe only if no
+// chunk can retire, i.e. no chunk claims complete.
+describe("ingestPayloads", () => {
+  const hs = (n: number) => Array.from({ length: n }, (_, i) => ({ url_key: "k" + i }))
+  const base = { op: "ingest", username: "spinotron", complete: false, error: "per-walk cap of 10 min reached" }
+
+  it("uses the receiver's own limit", () => {
+    expect(INGEST_MAX_HOLDINGS).toBe(MAX_HOLDINGS)
+  })
+
+  it("posts a walk at the limit as ONE body, exactly as read", () => {
+    const one = ingestPayloads({ ...base, complete: true, error: null }, hs(5000))
+    expect(one).toHaveLength(1)
+    expect(one[0]).toMatchObject({ complete: true, error: null })
+    expect(one[0].holdings).toHaveLength(5000)
+  })
+
+  it("splits an over-limit walk into chunks that cover every card once, none over the limit", () => {
+    const parts = ingestPayloads(base, hs(6568))
+    expect(parts).toHaveLength(2)
+    for (const p of parts) expect(p.holdings.length).toBeLessThanOrEqual(MAX_HOLDINGS)
+    const keys = parts.flatMap((p) => p.holdings.map((h: { url_key: string }) => h.url_key))
+    expect(keys).toHaveLength(6568)
+    expect(new Set(keys).size).toBe(6568)
+    // The walk's own error survives, with the reason this walk retires nothing.
+    expect(parts[1].error).toContain("per-walk cap of 10 min reached")
+    expect(parts[1].error).toContain("chunk 2/2")
+  })
+
+  it("never lets a chunk claim complete, even when the walk read the whole profile", () => {
+    const parts = ingestPayloads({ ...base, complete: true, error: null }, hs(12001))
+    expect(parts).toHaveLength(3)
+    expect(parts.map((p) => p.complete)).toEqual([false, false, false])
+    for (const p of parts) expect(p.error).toMatch(/retires nothing/)
   })
 })
