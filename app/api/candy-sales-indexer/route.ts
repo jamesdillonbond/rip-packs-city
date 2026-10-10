@@ -358,6 +358,9 @@ async function handleIndex(req: NextRequest) {
                 price_usd: priceUsd,
                 buyer: buyer ?? null,
                 seller: seller ?? null,
+                // Pinned, not defaulted: /api/candy-opensea-sales-indexer writes
+                // this table too (marketplace 'opensea').
+                marketplace: "magic_eden",
                 sold_at: new Date(tMs).toISOString(),
               },
               { onConflict: "transaction_hash,token_mint" }

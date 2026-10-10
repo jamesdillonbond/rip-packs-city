@@ -525,7 +525,7 @@ const COLLECTION_LAYOUT_META: Record<string, PageMeta> = {
   'candy-mlb': {
     title: 'Candy MLB Analytics — Rip Packs City',
     description:
-      'FMV pricing from real Magic Eden sales, floor and ask tracking, team and player pages, and market intelligence for Candy MLB collectors on Solana.',
+      'FMV pricing from real secondary sales, floor and ask tracking, team and player pages, and market intelligence for Candy MLB collectors on Solana.',
   },
   'panini-blockchain': {
     title: 'Panini Prizm World Cup Analytics — Rip Packs City',

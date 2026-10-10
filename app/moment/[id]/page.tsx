@@ -114,9 +114,11 @@ const ASK_LABEL: Record<string, string> = {
   // the same map in lib/edition-detail-format.ts).
   "ufc": "UFC ask",
   "ufc-strike": "UFC ask",
-  // Candy MLB's ask is its OWN plane (Magic Eden, confirmed in the last 12 h —
-  // fetchCandyAsks), not the Flow high-offer / cross-market fields.
-  "candy-mlb": "Magic Eden ask",
+  // Candy MLB's ask is its OWN plane (candy_listings, confirmed in the last 12 h
+  // — fetchCandyAsks), not the Flow high-offer / cross-market fields. Venue-
+  // neutral since 2026-10-10: the book holds Magic Eden AND OpenSea asks, so
+  // naming one venue would mislabel the floor whenever the other sets it.
+  "candy-mlb": "Lowest ask",
 }
 
 export const dynamic = "force-dynamic"

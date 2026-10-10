@@ -2,7 +2,7 @@
 // said "Candy MLB is a board-only surface on RPC (the /insights/candy-mlb board)"
 // and sent the user to "Candy Digital" for live listings. Both were stale prompt
 // text: Candy MLB is a PUBLISHED collection with full tabs, and its secondary
-// market is Magic Eden (Candy Digital is the issuer). Only Panini is board-only.
+// venues are Magic Eden and OpenSea (Candy Digital is the issuer). Only Panini is board-only.
 
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
@@ -69,7 +69,11 @@ describe("the concierge prompt does not call a published collection board-only",
     }
   })
 
-  it("names Magic Eden as Candy's secondary market", () => {
-    expect(ROUTE).toMatch(/Candy[^.]*secondary market is Magic Eden/)
+  // Re-pinned 2026-10-10 (premise changed, not inverted): Candy trades on
+  // Magic Eden AND, since 2026-08-31, OpenSea (Solana). The property held is
+  // the same — the prompt names the real secondary venues, never the issuer.
+  it("names Magic Eden and OpenSea as Candy's secondary venues", () => {
+    expect(ROUTE).toMatch(/Candy[^.]*trades secondary on Magic Eden and[^.]*OpenSea/)
+    expect(ROUTE).not.toMatch(/secondary market is Magic Eden/)
   })
 })

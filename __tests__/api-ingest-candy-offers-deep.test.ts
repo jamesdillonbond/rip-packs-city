@@ -727,4 +727,30 @@ describe("candy-offers-indexer — the ratio guard fails CLOSED on an unreadable
     // BOTH updates ran — stale and expiry.
     expect((spy.writes.candy_offers ?? []).filter((w) => w.method === "update")).toHaveLength(2)
   })
+
+  // R123 (2026-10-10): the upsert error was only logged and the two
+  // deactivations destructured `{ data }` alone, so a rejected write read as
+  // "nothing to deactivate" on an ok=true run row.
+  it.each([
+    ["upsert", 1, "candy_offers upsert: boom"],
+    ["stale deactivate", 3, "candy_offers deactivate: boom"],
+    ["expiry deactivate", 4, "candy_offers expire: boom"],
+  ])("R123: a rejected %s fails the run row and names the write", async (_label, idx, msg) => {
+    fetchMock = oneOffer()
+    const seq: Array<Record<string, unknown>> = [
+      { data: [{ buyer: "bidder1" }], error: null },
+      { error: null },
+      { data: null, error: null, count: 1 },
+      { data: [] },
+      { data: [] },
+    ]
+    seq[idx as number] = { data: null, error: { message: "boom" } }
+    const spy = install({ candy_offers: seq, ...resolvable })
+    await POST(req())
+    await runDeferred()
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain(msg as string)
+    expect((log?.p_extra as Record<string, unknown>).write_errors).toBe(1)
+  })
 })

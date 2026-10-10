@@ -98,6 +98,25 @@ describe("get_edition_listings — Candy MLB reads RPC's Magic Eden book", () =>
     expect(r.fmv).toBe(22.29)
   })
 
+  // 2026-10-10: the Candy book holds OpenSea asks too. An OpenSea floor links
+  // only to the URL OpenSea returned (or nowhere) and the note names OpenSea —
+  // never a Magic Eden link for an ask that is not listed there.
+  it.each([
+    ["with a stored OpenSea URL", "https://opensea.io/item/solana/MintOS", "https://opensea.io/item/solana/MintOS"],
+    ["without one", null, null],
+  ])("an OpenSea floor, %s, never links to Magic Eden", async (_l, venueUrl, expected) => {
+    install(
+      { data: [{ price_usd: 15, token_mint: "MintOS", last_seen_at: ago(1), venue: "opensea", venue_url: venueUrl }], error: null },
+      { data: [{ last_seen_at: ago(1) }], error: null },
+    )
+    await POST(post())
+    const r = toolResult()
+    expect(r.floor_ask).toBe(15)
+    expect(r.floor_buy_url).toBe(expected)
+    expect(String(r.listings_note)).toContain("OpenSea")
+    expect(JSON.stringify(r)).not.toContain("magiceden.io/item-details/MintOS")
+  })
+
   it("none_listed: a fresh book with no ask for this edition is a real answer", async () => {
     install({ data: [], error: null }, { data: [{ last_seen_at: ago(1) }], error: null })
     await POST(post())

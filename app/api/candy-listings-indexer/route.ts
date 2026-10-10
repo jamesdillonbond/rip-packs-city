@@ -485,6 +485,8 @@ async function handleSweep(req: NextRequest) {
               expiry: l.expiry && l.expiry > 0 ? new Date(l.expiry * 1000).toISOString() : null,
               last_seen_at: new Date().toISOString(),
               is_active: true,
+              // Pinned: the OpenSea listings feed writes pack asks too.
+              venue: "magic_eden",
             })
             continue
           }
@@ -631,6 +633,7 @@ async function handleSweep(req: NextRequest) {
         const { data: packGone, error: packGoneErr } = await (supabaseAdmin as any)
           .from("candy_pack_listings")
           .update({ is_active: false })
+          .eq("venue", "magic_eden")
           .eq("is_active", true)
           .in("token_mint", slice)
           .lt("last_seen_at", startedAtIso)

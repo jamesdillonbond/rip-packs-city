@@ -45,6 +45,12 @@
 // `candy_retire_listings_sold_since_seen` RPC also retire these rows on their
 // own positive evidence (a newer live listing for the mint; a recorded sale).
 //
+// ── PACKS AND LINKS (added 2026-10-10, same day) ─────────────────────────────
+// Sealed-PACK asks (mints in candy_packs) are written to candy_pack_listings with
+// venue='opensea', deduped against Magic Eden pack asks the same way. Each new
+// OpenSea ask stores the item URL OpenSea itself returns (venue_url), fetched
+// once and bounded per tick; RPC never builds a Solana OpenSea URL.
+//
 // ── HONESTY ─────────────────────────────────────────────────────────────────────
 // A listing is an ASK, never FMV (same constraint as the Magic Eden route).
 // A missing OPENSEA_API_KEY is OUR misconfiguration: it is logged ok=false with
@@ -59,6 +65,7 @@ import {
   OS_PAGE_LIMIT,
   OS_TERMINAL_STATUSES,
   discoverCandyOpenSeaSlug,
+  fetchOpenSeaItemUrl,
   fetchOrderStatus,
   openSeaApiKey,
   orderMint,
@@ -80,6 +87,8 @@ const SWEEP_BUDGET_MS = 240_000
 // Bound on per-order status lookups per tick (the retirement pass). The rest
 // wait for the next tick — no evidence means no retirement, never the reverse.
 const MAX_STATUS_CHECKS = 150
+// Bound on OpenSea item-URL lookups per tick (only asks with no stored URL).
+const MAX_URL_FETCHES = 60
 
 type OsListing = OsOrder & { price?: { current?: OsPrice } }
 
@@ -163,6 +172,8 @@ async function handleSweep(req: NextRequest) {
     let written = 0
     let skipped = 0
     let retired = 0
+    let packWritten = 0
+    let packRetired = 0
     let sweepComplete = false
     let budgetExhausted = false
     let pages = 0
@@ -255,44 +266,61 @@ async function handleSweep(req: NextRequest) {
         }
       }
 
-      // ── 3. Dedup against the Magic Eden book ──────────────────────────────
-      const cardMints = mints.filter((m) => keyByMint.has(m))
-      const meActive = new Set<string>()
-      for (let i = 0; i < cardMints.length; i += 200) {
+      // ── 3. Mints that are not cards may be sealed PACKS (candy_packs) ────
+      const notCardMints = mints.filter((m) => !keyByMint.has(m))
+      const packMints = new Set<string>()
+      for (let i = 0; i < notCardMints.length; i += 200) {
         const { data, error } = await (supabaseAdmin as any)
-          .from("candy_listings")
+          .from("candy_packs")
           .select("token_mint")
-          .eq("venue", "magic_eden")
-          .eq("is_active", true)
-          .in("token_mint", cardMints.slice(i, i + 200))
-        if (error) throw new Error(`ME active-ask read failed: ${error.message}`)
-        for (const r of (data ?? []) as Array<{ token_mint: string }>) meActive.add(r.token_mint)
-      }
-      const states = [...new Set(reported.map((r) => r.state))]
-      const mePdas = new Set<string>()
-      for (let i = 0; i < states.length; i += 200) {
-        const { data, error } = await (supabaseAdmin as any)
-          .from("candy_listings")
-          .select("pda_address")
-          .eq("venue", "magic_eden")
-          .in("pda_address", states.slice(i, i + 200))
-        if (error) throw new Error(`ME pda read failed: ${error.message}`)
-        for (const r of (data ?? []) as Array<{ pda_address: string }>) mePdas.add(r.pda_address)
+          .in("token_mint", notCardMints.slice(i, i + 200))
+        if (error) throw new Error(`candy_packs batch lookup failed: ${error.message}`)
+        for (const r of (data ?? []) as Array<{ token_mint: string }>) packMints.add(r.token_mint)
       }
 
-      // ── 4. Build rows ─────────────────────────────────────────────────────
+      // ── 4. Dedup against the Magic Eden book (cards AND packs) ────────────
+      const states = [...new Set(reported.map((r) => r.state))]
+      const meActive = new Set<string>()
+      const mePdas = new Set<string>()
+      for (const [table, tableMints] of [
+        ["candy_listings", mints.filter((m) => keyByMint.has(m))],
+        ["candy_pack_listings", [...packMints]],
+      ] as const) {
+        for (let i = 0; i < tableMints.length; i += 200) {
+          const { data, error } = await (supabaseAdmin as any)
+            .from(table)
+            .select("token_mint")
+            .eq("venue", "magic_eden")
+            .eq("is_active", true)
+            .in("token_mint", tableMints.slice(i, i + 200))
+          if (error) throw new Error(`ME active-ask read failed (${table}): ${error.message}`)
+          for (const r of (data ?? []) as Array<{ token_mint: string }>) meActive.add(r.token_mint)
+        }
+        for (let i = 0; i < states.length; i += 200) {
+          const { data, error } = await (supabaseAdmin as any)
+            .from(table)
+            .select("pda_address")
+            .eq("venue", "magic_eden")
+            .in("pda_address", states.slice(i, i + 200))
+          if (error) throw new Error(`ME pda read failed (${table}): ${error.message}`)
+          for (const r of (data ?? []) as Array<{ pda_address: string }>) mePdas.add(r.pda_address)
+        }
+      }
+
+      // ── 5. Build rows ─────────────────────────────────────────────────────
       let notCandy = 0
       let skippedMeActive = 0
       let matchedMePda = 0
       const rows: Record<string, unknown>[] = []
+      const packRows: Record<string, unknown>[] = []
+      const contractByState = new Map<string, string>()
       const seenStates = new Set<string>()
       const nowIso = new Date().toISOString()
       for (const { l, mint, state } of reported) {
         if (mePdas.has(state)) matchedMePda++
         const key = keyByMint.get(mint)
-        if (!key) {
-          // Not a Candy CARD. Sealed packs are left to the Magic Eden route's
-          // candy_pack_listings (no venue column there yet) — counted, not written.
+        const isPackAsk = !key && packMints.has(mint)
+        if (!key && !isPackAsk) {
           notCandy++
           continue
         }
@@ -307,60 +335,109 @@ async function handleSweep(req: NextRequest) {
           continue
         }
         seenStates.add(state)
-        found++
-        rows.push({
+        if (l.asset?.contract) contractByState.set(state, l.asset.contract)
+        const common = {
           pda_address: state,
           token_mint: mint,
-          edition_id: idByKey.get(key) ?? null,
           collection_id: CANDY_MLB_UUID,
           seller: l.svm_order?.maker ?? null,
           // The settling program, so the protocol vocabulary is measurable.
           auction_house: l.protocol_address ?? null,
           price_sol: price.sol,
           price_usd: price.usd,
-          token_size: 1,
           expiry: null,
           last_seen_at: nowIso,
           is_active: true,
           venue: "opensea",
           venue_order_id: l.svm_order?.id ?? null,
-        })
+        }
+        if (isPackAsk) {
+          packRows.push(common)
+        } else {
+          found++
+          rows.push({ ...common, edition_id: idByKey.get(key as string) ?? null, token_size: 1 })
+        }
       }
 
-      for (let i = 0; i < rows.length; i += 100) {
-        const batch = rows.slice(i, i + 100)
-        const { error } = await (supabaseAdmin as any)
-          .from("candy_listings")
-          .upsert(batch, { onConflict: "pda_address" })
-        if (error) {
-          writeErrors.push(`candy_listings upsert: ${error.message}`)
-          skipped += batch.length
-        } else written += batch.length
+      // ── 6. OpenSea's own item link, fetched once per ask ──────────────────
+      // A row that already holds a verified URL keeps it; a new one is asked of
+      // OpenSea (bounded). A failed fetch leaves NULL, which the market arm
+      // renders as no buy link rather than a guessed one.
+      let urlsFetched = 0
+      let urlsMissing = 0
+      for (const [table, list] of [
+        ["candy_listings", rows],
+        ["candy_pack_listings", packRows],
+      ] as const) {
+        const have = new Map<string, string>()
+        const ids = list.map((r) => r.pda_address as string)
+        for (let i = 0; i < ids.length; i += 200) {
+          const { data, error } = await (supabaseAdmin as any)
+            .from(table)
+            .select("pda_address, venue_url")
+            .eq("venue", "opensea")
+            .in("pda_address", ids.slice(i, i + 200))
+          if (error) throw new Error(`venue_url read failed (${table}): ${error.message}`)
+          for (const r of (data ?? []) as Array<{ pda_address: string; venue_url: string | null }>) {
+            if (r.venue_url) have.set(r.pda_address, r.venue_url)
+          }
+        }
+        for (const r of list) {
+          const state = r.pda_address as string
+          let url = have.get(state) ?? null
+          const contract = contractByState.get(state)
+          if (!url && contract && urlsFetched < MAX_URL_FETCHES && Date.now() - startedMs <= SWEEP_BUDGET_MS) {
+            urlsFetched++
+            url = await fetchOpenSeaItemUrl(contract, r.token_mint as string, apiKey)
+          }
+          if (!url) urlsMissing++
+          r.venue_url = url
+        }
       }
 
-      // ── 5. Evidence-based retirement of OpenSea rows this sweep did not see ─
+      for (const [table, list] of [
+        ["candy_listings", rows],
+        ["candy_pack_listings", packRows],
+      ] as const) {
+        for (let i = 0; i < list.length; i += 100) {
+          const batch = list.slice(i, i + 100)
+          const { error } = await (supabaseAdmin as any)
+            .from(table)
+            .upsert(batch, { onConflict: "pda_address" })
+          if (error) {
+            writeErrors.push(`${table} upsert: ${error.message}`)
+            skipped += batch.length
+          } else if (table === "candy_listings") written += batch.length
+          else packWritten += batch.length
+        }
+      }
+
+      // ── 7. Evidence-based retirement of OpenSea rows this sweep did not see ─
       // ⚠ Reads only rows last seen BEFORE this sweep, so nothing written above
       // can be retired by its own tick.
       let statusChecked = 0
       let statusUnknown = 0
       let statusTerminal = 0
-      let retireCandidates: number | null = null
-      const { data: stale, error: staleErr } = await (supabaseAdmin as any)
-        .from("candy_listings")
-        .select("pda_address, venue_order_id, auction_house")
-        .eq("venue", "opensea")
-        .eq("is_active", true)
-        .lt("last_seen_at", startedAtIso)
-        // ⚠ Oldest-first, so a row whose status lookup keeps failing stays at the
-        // head. It cannot starve the pass until MORE than MAX_STATUS_CHECKS such
-        // rows pile up; `status_unknown` in the run row is the watch for that.
-        .order("last_seen_at", { ascending: true })
-        .order("pda_address", { ascending: true })
-        .limit(MAX_STATUS_CHECKS)
-      if (staleErr) {
-        writeErrors.push(`stale opensea read: ${staleErr.message}`)
-      } else {
-        retireCandidates = (stale ?? []).length
+      let retireCandidates: number | null = 0
+      for (const table of ["candy_listings", "candy_pack_listings"] as const) {
+        const { data: stale, error: staleErr } = await (supabaseAdmin as any)
+          .from(table)
+          .select("pda_address, venue_order_id, auction_house")
+          .eq("venue", "opensea")
+          .eq("is_active", true)
+          .lt("last_seen_at", startedAtIso)
+          // ⚠ Oldest-first, so a row whose status lookup keeps failing stays at the
+          // head. It cannot starve the pass until MORE than MAX_STATUS_CHECKS such
+          // rows pile up; `status_unknown` in the run row is the watch for that.
+          .order("last_seen_at", { ascending: true })
+          .order("pda_address", { ascending: true })
+          .limit(MAX_STATUS_CHECKS)
+        if (staleErr) {
+          writeErrors.push(`stale opensea read (${table}): ${staleErr.message}`)
+          retireCandidates = null
+          continue
+        }
+        if (retireCandidates != null) retireCandidates += (stale ?? []).length
         const dead: string[] = []
         for (const r of (stale ?? []) as Array<{ pda_address: string; venue_order_id: string | null; auction_house: string | null }>) {
           if (Date.now() - startedMs > SWEEP_BUDGET_MS) break
@@ -377,18 +454,19 @@ async function handleSweep(req: NextRequest) {
           statusChecked++
           if (OS_TERMINAL_STATUSES.has(status)) dead.push(r.pda_address)
         }
-        statusTerminal = dead.length
+        statusTerminal += dead.length
         for (let i = 0; i < dead.length; i += 200) {
           const { data: gone, error: goneErr } = await (supabaseAdmin as any)
-            .from("candy_listings")
+            .from(table)
             .update({ is_active: false })
             .eq("venue", "opensea")
             .eq("is_active", true)
             .in("pda_address", dead.slice(i, i + 200))
             .lt("last_seen_at", startedAtIso)
             .select("pda_address")
-          if (goneErr) writeErrors.push(`candy_listings retire: ${goneErr.message}`)
-          else retired += (gone ?? []).length
+          if (goneErr) writeErrors.push(`${table} retire: ${goneErr.message}`)
+          else if (table === "candy_listings") retired += (gone ?? []).length
+          else packRetired += (gone ?? []).length
         }
       }
 
@@ -414,6 +492,10 @@ async function handleSweep(req: NextRequest) {
           skipped_me_active: skippedMeActive,
           matched_me_pda: matchedMePda,
           protocols,
+          pack_asks_upserted: packWritten,
+          pack_asks_retired: packRetired,
+          urls_fetched: urlsFetched,
+          urls_missing: urlsMissing,
           retire_candidates: retireCandidates,
           status_checked: statusChecked,
           status_unknown: statusUnknown,

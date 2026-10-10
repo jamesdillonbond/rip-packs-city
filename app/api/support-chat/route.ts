@@ -729,7 +729,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_insight_board",
-    description: `Read any of RPC's other public insight boards by name — the shareable /insights/* surfaces not covered by a more specific tool. Use for board/ecosystem questions about supply, scarcity, set completion, trophies, or the pack market. board options: 'squeeze' (Top Shot supply locked + burned, ecosystem-wide), 'set_squeeze' (set-level squeeze), 'set_completers' (wallets closest to completing sets), 'trophies' (#1 / first-mint trophy room — who holds the grails), 'pinnacle_scarcity' (Disney Pinnacle scarcity), 'allday_scarcity' (NFL All Day scarcity), 'topshot_pack_market' (Top Shot pack prices / market), 'allday_pack_market' (All Day pack market), 'pack_reality' (Top Shot pack REALIZED EV — what packs actually returned vs cost), 'allday_pack_reality' (All Day pack realized EV), 'market' (Top Shot daily market index), 'rookie_board' (the Top Shot rookie EDITION board — a different source from get_rookies' 2025 rookie index, so use this one for per-edition rookie supply/burn questions), 'panini_squeeze' (Panini Prizm World Cup squeeze board; Panini ALSO has collection tabs at ${PANINI_TAB_PATHS} — its index is listing-fed because Panini publishes no checklist, so call every Panini count a floor, never a census), 'candy_mlb' (the Candy MLB board; Candy MLB, on Solana, ALSO has collection tabs at ${CANDY_TAB_PATHS} — Candy Digital issues it and its secondary market is Magic Eden, so point listing questions at Magic Eden, not at Candy Digital) and 'pack_drops' (upcoming / recent pack drops). Read-only; report the rows factually, no buy/sell calls, and any figure you cite must come from this tool call this turn.`,
+    description: `Read any of RPC's other public insight boards by name — the shareable /insights/* surfaces not covered by a more specific tool. Use for board/ecosystem questions about supply, scarcity, set completion, trophies, or the pack market. board options: 'squeeze' (Top Shot supply locked + burned, ecosystem-wide), 'set_squeeze' (set-level squeeze), 'set_completers' (wallets closest to completing sets), 'trophies' (#1 / first-mint trophy room — who holds the grails), 'pinnacle_scarcity' (Disney Pinnacle scarcity), 'allday_scarcity' (NFL All Day scarcity), 'topshot_pack_market' (Top Shot pack prices / market), 'allday_pack_market' (All Day pack market), 'pack_reality' (Top Shot pack REALIZED EV — what packs actually returned vs cost), 'allday_pack_reality' (All Day pack realized EV), 'market' (Top Shot daily market index), 'rookie_board' (the Top Shot rookie EDITION board — a different source from get_rookies' 2025 rookie index, so use this one for per-edition rookie supply/burn questions), 'panini_squeeze' (Panini Prizm World Cup squeeze board; Panini ALSO has collection tabs at ${PANINI_TAB_PATHS} — its index is listing-fed because Panini publishes no checklist, so call every Panini count a floor, never a census), 'candy_mlb' (the Candy MLB board; Candy MLB, on Solana, ALSO has collection tabs at ${CANDY_TAB_PATHS} — Candy Digital issues it and it trades secondary on Magic Eden and, since 2026-08-31, OpenSea (Solana), so point listing questions at those marketplaces, not at Candy Digital) and 'pack_drops' (upcoming / recent pack drops). Read-only; report the rows factually, no buy/sell calls, and any figure you cite must come from this tool call this turn.`,
     input_schema: {
       type: "object" as const,
       properties: {
@@ -1099,7 +1099,7 @@ Any tool can come back as \`{ "status": "error", "message": ... }\`. That means 
 ## What RPC Is
 Rip Packs City (rippackscity.com) is a collector intelligence platform built by and for the Flow digital collectibles community. It covers these currently published collections: ${publishedLabels}. Every collection without a chain named there is on Flow; never describe a collection marked with another chain as a Flow collection. UFC Strike is published with a BETA badge — on-chain volume is thin post-Aptos migration, so read its FMV coverage from the "Live FMV coverage" section below, never from memory. Tell users explicitly that UFC coverage is limited when they ask.
 
-Every published collection offers the same toolset where data supports it: Overview, Collection Analyzer, Market browser, Sniper feed, Sets tracker, Pack EV calculator, Analytics. The read-only feature tabs and the /insights boards are PUBLIC — anyone can browse them without signing in; signing in with an email magic link adds saved wallets, cost-basis / P&L, watchlists, alerts, trophy pins, and a public profile at /profile/[username]. Market is edition-level (one row per edition, best floor) and Sniper is serial-level (individual listings) — point users to Market for "what's an edition worth / cheapest floor" and Sniper for specific listings to buy. Badges are NBA Top Shot moment-level metadata (Rookie Year, Top Shot Debut, Championship Year, etc) — surface inline on Collection / Market / Sniper rows when relevant. Candy MLB (Solana) is a published collection with these tabs: ${candyTabs} (no Sniper tab — its deals are on /insights/deals and the Deals tab of /insights/candy-mlb) plus its /insights/candy-mlb board; its secondary market is Magic Eden. Panini (Prizm World Cup 2026 on Panini's own digital platform — owners are usernames, not wallets) is a published collection with these tabs: ${PANINI_TAB_PATHS} (no Collection analyzer, no Sniper), plus its /insights/panini-squeeze board, which also carries Deals, Pack EV, Special serials and Players tabs. Everything Panini is over a listing-fed index (Panini publishes no checklist), so call it a floor, never a census, and send listing questions to Panini's own marketplace.
+Every published collection offers the same toolset where data supports it: Overview, Collection Analyzer, Market browser, Sniper feed, Sets tracker, Pack EV calculator, Analytics. The read-only feature tabs and the /insights boards are PUBLIC — anyone can browse them without signing in; signing in with an email magic link adds saved wallets, cost-basis / P&L, watchlists, alerts, trophy pins, and a public profile at /profile/[username]. Market is edition-level (one row per edition, best floor) and Sniper is serial-level (individual listings) — point users to Market for "what's an edition worth / cheapest floor" and Sniper for specific listings to buy. Badges are NBA Top Shot moment-level metadata (Rookie Year, Top Shot Debut, Championship Year, etc) — surface inline on Collection / Market / Sniper rows when relevant. Candy MLB (Solana) is a published collection with these tabs: ${candyTabs} (no Sniper tab — its deals are on /insights/deals and the Deals tab of /insights/candy-mlb) plus its /insights/candy-mlb board; it trades secondary on Magic Eden and, since 2026-08-31, OpenSea (Solana). Panini (Prizm World Cup 2026 on Panini's own digital platform — owners are usernames, not wallets) is a published collection with these tabs: ${PANINI_TAB_PATHS} (no Collection analyzer, no Sniper), plus its /insights/panini-squeeze board, which also carries Deals, Pack EV, Special serials and Players tabs. Everything Panini is over a listing-fed index (Panini publishes no checklist), so call it a floor, never a census, and send listing questions to Panini's own marketplace.
 
 ${FMV_METHODOLOGY_BLOCK}
 ## Pinnacle Routing (invariant)
@@ -3094,6 +3094,8 @@ async function executeToolInner(
       let listingsCount = 0;
       let fetchedAt: string | null = null;
       let floorBuyUrl: string | null = null;
+      // Venue of the Candy floor ask (Magic Eden or OpenSea); null off the Candy arm.
+      let candyFloorVenue: string | null = null;
       let listedAt: string | null = null;
       const closed = closedMarket(slug);
       const floorView = editionFloorViewFor(slug);
@@ -3166,7 +3168,7 @@ async function executeToolInner(
         const [asks, head] = await Promise.all([
           supabase
             .from("candy_listings")
-            .select("price_usd, token_mint, last_seen_at")
+            .select("price_usd, token_mint, last_seen_at, venue, venue_url")
             .eq("edition_id", edition.id)
             .eq("is_active", true)
             .gt("price_usd", 0)
@@ -3184,10 +3186,18 @@ async function executeToolInner(
         const bookFresh = !!newest && Date.parse(newest) >= Date.parse(since);
         floorOk = !asks.error && !head.error && bookFresh;
         if (floorOk) {
-          const rows = (asks.data ?? []) as Array<{ price_usd: number | string; token_mint: string }>;
+          const rows = (asks.data ?? []) as Array<{ price_usd: number | string; token_mint: string; venue?: string | null; venue_url?: string | null }>;
           listingsCount = rows.length;
           floorAsk = rows.length ? Number(rows[0].price_usd) : null;
-          floorBuyUrl = rows.length ? marketplaceMomentUrl(slug, String(rows[0].token_mint)) : null;
+          // 2026-10-10: the floor may be an OpenSea ask. It links only to the URL
+          // OpenSea itself returned (or nowhere), never to Magic Eden's page.
+          const floorRow = rows[0];
+          candyFloorVenue = floorRow ? (floorRow.venue === "opensea" ? "OpenSea" : "Magic Eden") : null;
+          floorBuyUrl = !floorRow
+            ? null
+            : floorRow.venue === "opensea"
+              ? (floorRow.venue_url || null)
+              : marketplaceMomentUrl(slug, String(floorRow.token_mint));
           fetchedAt = newest ?? null;
         }
       }
@@ -3238,7 +3248,7 @@ async function executeToolInner(
                 : floorView
                   ? "RPC's on-chain listing index"
                   : slug === "candy-mlb"
-                    ? "Magic Eden (RPC's Candy listing index, re-checked every 3 hours; fetched_at is the last sweep)"
+                    ? `${candyFloorVenue ?? "Magic Eden"} (RPC's Candy listing index, re-checked every 3 hours; fetched_at is the last sweep)`
                     : "a live marketplace",
             ),
         market_closed: closed ? { closed_on: closed.closedOn, venue: closed.venue } : null,

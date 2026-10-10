@@ -147,9 +147,16 @@ describe("candy-opensea-listings-indexer — sweep", () => {
       osListing({ mint: "mintOS2", state: "stateDone", status: "FULFILLED" }), // not active
       osListing({ mint: "mintJunk", state: "stateJunk" }), // not a Candy card
       osListing({ mint: "mintBonk", state: "stateBonk", currency: "BONK" }), // unknown currency
+      osListing({ mint: "mintPack", state: "statePack", lamports: 300_000_000 }), // sealed pack -> pack table
     ]
     fetchMock = installFetchMock([
       jsonRoute("/listings/collection/candy-mlb-os/all", { listings, next: null }),
+      // OpenSea's own item URL for the new card ask; the pack's lookup fails.
+      {
+        match: (url) => url.includes("/chain/solana/contract/") && url.endsWith("/nfts/mintOS"),
+        respond: () => ({ json: { nft: { opensea_url: "https://opensea.io/item/solana/mintOS" } } }),
+      },
+      { match: (url) => url.includes("/chain/solana/contract/"), respond: () => ({ status: 500, json: {} }) },
       orderRoute({}),
     ])
     const spy = install({
@@ -169,12 +176,17 @@ describe("candy-opensea-listings-indexer — sweep", () => {
         error: null,
       },
       // ME active-ask read -> ME pda read -> upsert -> stale opensea read.
+      // ME active-ask read -> ME pda read -> stored venue_url read -> upsert -> stale read.
       candy_listings: [
         { data: [{ token_mint: "mintME" }], error: null },
+        { data: [], error: null },
         { data: [], error: null },
         { error: null },
         { data: [], error: null },
       ],
+      // "mintPack" is a sealed pack, not a card.
+      candy_packs: { data: [{ token_mint: "mintPack" }], error: null },
+      candy_pack_listings: { data: [], error: null },
     })
 
     const res = await POST(req())
@@ -198,8 +210,17 @@ describe("candy-opensea-listings-indexer — sweep", () => {
         is_active: true,
         venue: "opensea",
         venue_order_id: "sig-stateOS:stateOS",
+        venue_url: "https://opensea.io/item/solana/mintOS",
       }),
     ])
+    // The pack ask lands in the PACK table, with no URL since its lookup failed
+    // (null, never a built one) — and never in candy_listings.
+    const packUps = (spy.writes.candy_pack_listings ?? []).filter((w) => w.method === "upsert")
+    expect(packUps).toHaveLength(1)
+    expect(packUps[0].rows).toEqual([
+      expect.objectContaining({ pda_address: "statePack", token_mint: "mintPack", venue: "opensea", venue_url: null, price_sol: 0.3 }),
+    ])
+    expect(packUps[0].rows[0]).not.toHaveProperty("edition_id")
     // The ME-held mint must not appear in ANY write.
     expect(JSON.stringify(spy.writes.candy_listings)).not.toContain("mintME")
 
@@ -209,7 +230,10 @@ describe("candy-opensea-listings-indexer — sweep", () => {
     expect(extra).toMatchObject({
       slug: "candy-mlb-os",
       slug_discovery: "env",
-      raw_listings_seen: 5,
+      raw_listings_seen: 6,
+      pack_asks_upserted: 1,
+      urls_fetched: 2,
+      urls_missing: 1,
       not_active: 1,
       not_candy_card: 1,
       unpriced: 1,
@@ -276,6 +300,7 @@ describe("candy-opensea-listings-indexer — sweep", () => {
       wallet_moments_cache: { data: [{ moment_id: "m1", edition_key: "k1" }], error: null },
       editions: { data: [{ id: "e1", external_id: "k1" }], error: null },
       candy_listings: [
+        { data: [], error: null },
         { data: [], error: null },
         { data: [], error: null },
         { data: null, error: { message: "upsert boom" } },

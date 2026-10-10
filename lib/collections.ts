@@ -425,7 +425,7 @@ export const COLLECTIONS: Collection[] = [
     pages: ["overview", "market", "collection", "packs", "sets", "analytics"],
     published: true,
     supabaseCollectionId: "209ade70-32c5-4470-bc7c-4793d660f713",
-    pitch: "Wallet analytics, FMV, and pack/edition intelligence for Candy MLB on Solana — Metaplex Core, secondary on Magic Eden.",
+    pitch: "Wallet analytics, FMV, and pack/edition intelligence for Candy MLB on Solana — Metaplex Core, secondary on Magic Eden and OpenSea.",
   },
   {
     id: "rwa",

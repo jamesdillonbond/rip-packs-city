@@ -540,12 +540,12 @@ function exactSetMatch<T extends Record<string, unknown>>(
 // deals filter would publish "the Candy market" about 13% of it with the
 // expensive 87% silently gone, and nothing on the page would say so.
 //
-// ⚠ CANDY IS MAGIC EDEN ONLY, and `source` says so literally rather than
-// implying a venue set. Census of the 1,821 active listings on 2026-09-12:
-// ALL of them sit at one auction house (E8cU1WiRW…fkgUWe, Magic Eden v2). Candy
-// became an OpenSea Solana launch partner on 2026-08-31, but nothing in the
-// ingest can currently detect a second venue, so the honest label is the one
-// venue we can actually observe. See docs/reference/chain-strategy.md.
+// ⚠ `source` IS PER ROW, from `candy_listings.venue` (2026-10-10). Until then
+// every Candy ask came from the Magic Eden sweep (census 2026-09-12: all 1,821
+// active at one auction house, Magic Eden v2). Candy became an OpenSea Solana
+// launch partner on 2026-08-31, and /api/candy-opensea-listings-indexer now
+// writes venue='opensea' rows; each row names and links the venue that
+// reported it. See docs/reference/chain-strategy.md.
 async function fetchCandyMarketListings(
   filters: {
     tier: string; maxPrice: number; sortBy: string; limit: number
@@ -562,7 +562,7 @@ async function fetchCandyMarketListings(
   let q = (supabaseAdmin as any)
     .from("candy_market_board")
     .select(
-      "token_mint, edition_id, external_id, player_name, edition_name, set_name, team_name, tier, circulation_count, thumbnail_url, serial_number, ask_usd, fmv_usd, confidence, discount_pct, seller, first_seen_at, last_seen_at, venue"
+      "token_mint, edition_id, external_id, player_name, edition_name, set_name, team_name, tier, circulation_count, thumbnail_url, serial_number, ask_usd, fmv_usd, confidence, discount_pct, seller, first_seen_at, last_seen_at, venue, venue_url"
     )
   if (filters.tier && filters.tier !== "all") q = q.eq("tier", filters.tier.toUpperCase())
   if (filters.maxPrice > 0) q = q.lte("ask_usd", filters.maxPrice)
@@ -643,13 +643,17 @@ async function fetchCandyMarketListings(
     // Per-row venue (2026-10-10). Anything not reported by the OpenSea feed —
     // including every row from before the column existed — is a Magic Eden ask,
     // which is what the column defaults to.
-    // ⚠ An OpenSea ask gets NO buy_url (the CTA is omitted), not a Magic Eden link
-    // it is not listed at and not a guessed OpenSea URL: OpenSea's Solana item-page
-    // format was unverifiable when this shipped. The OpenSea indexer logs a real
-    // `opensea_url` sample (pipeline_runs.extra.sample_opensea_url) — wire the link
-    // from that once read.
+    // ⚠ An OpenSea ask links ONLY to the item URL OpenSea itself returned
+    // (`venue_url`, stored by the OpenSea indexer). With none stored the CTA is
+    // omitted — never a Magic Eden link it is not listed at, never a built
+    // OpenSea URL (RPC could not verify the Solana item-page format).
     source: r.venue === "opensea" ? "opensea" : "magic_eden",
-    buy_url: r.token_mint && r.venue !== "opensea" ? `https://magiceden.io/item-details/${r.token_mint}` : null,
+    buy_url:
+      r.venue === "opensea"
+        ? (typeof r.venue_url === "string" && r.venue_url ? r.venue_url : null)
+        : r.token_mint
+          ? `https://magiceden.io/item-details/${r.token_mint}`
+          : null,
     thumbnail_url: r.thumbnail_url ?? null,
     badge_slugs: badgesByEdition.get(r.edition_id) ?? null,
     listing_resource_id: null,

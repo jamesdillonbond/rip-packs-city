@@ -55,6 +55,17 @@ describe("Magic Eden Candy passes stay in their venue", () => {
     expect(hw).toContain('.eq("marketplace", "magic_eden")')
   })
 
+  it("pack asks and pack sales: ME pack retirement scoped, every writer pins its venue", () => {
+    const listings = src("app/api/candy-listings-indexer/route.ts")
+    // The pack-ask retirement is the candy_pack_listings update keyed on ended mints.
+    const packGone = listings.slice(listings.indexOf('.from("candy_pack_listings")\n          .update'))
+    expect(packGone.slice(0, 300)).toContain('.eq("venue", "magic_eden")')
+    expect(listings).toMatch(/is_active: true,\s*venue: "magic_eden",\s*\}\)\s*continue/)
+    // candy_pack_sales.marketplace DEFAULTS to 'magic_eden': both writers pin it.
+    expect(src("app/api/candy-sales-indexer/route.ts")).toMatch(/seller: seller \?\? null,\s*marketplace: "magic_eden"/)
+    expect(src("app/api/candy-opensea-sales-indexer/route.ts")).toMatch(/seller: c\.e\.seller \?\? null,\s*marketplace: "opensea"/)
+  })
+
   it("candy-listings: the delist/fill retirement is venue='magic_eden'", () => {
     const code = src("app/api/candy-listings-indexer/route.ts")
     const ended = chainAround(code, '.in("token_mint", slice)')

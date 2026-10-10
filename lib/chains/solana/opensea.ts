@@ -175,3 +175,22 @@ export async function discoverCandyOpenSeaSlug(db: any, apiKey: string): Promise
   }
   return { slug: null, how: "no_match", sampleUrl: null }
 }
+
+/**
+ * The item-page URL OpenSea itself returns for one NFT (`nft.opensea_url` from
+ * GET /chain/solana/contract/{contract}/nfts/{identifier}), or null when it
+ * could not be read or is not an https opensea.io URL. RPC stores this rather
+ * than BUILDING a Solana item URL, whose format it could not verify.
+ */
+export async function fetchOpenSeaItemUrl(contract: string, identifier: string, apiKey: string): Promise<string | null> {
+  try {
+    const { json } = await osGet(
+      `/chain/solana/contract/${encodeURIComponent(contract)}/nfts/${encodeURIComponent(identifier)}`,
+      apiKey,
+    )
+    const url = json?.nft?.opensea_url
+    return typeof url === "string" && /^https:\/\/([a-z0-9-]+\.)?opensea\.io\//i.test(url) ? url : null
+  } catch {
+    return null
+  }
+}

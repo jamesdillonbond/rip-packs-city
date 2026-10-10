@@ -192,7 +192,7 @@ export default function CandyPackMarket() {
             Candy MLB — Pack Market
           </h1>
           <Note>
-            {product.name} · {usd(product.retailUsd)} retail · {count(product.declaredSupply)} packs · sealed packs trade on Magic Eden (Solana)
+            {product.name} · {usd(product.retailUsd)} retail · {count(product.declaredSupply)} packs · sealed packs trade on Solana marketplaces
           </Note>
         </div>
       </div>
@@ -341,7 +341,7 @@ export default function CandyPackMarket() {
             {data.owned.count === 0
               ? "This wallet holds no sealed Candy packs."
               : `This wallet holds ${count(data.owned.count)} sealed pack${data.owned.count === 1 ? "" : "s"}${
-                  data.owned.listed ? ` (${count(data.owned.listed)} listed on Magic Eden)` : ""
+                  data.owned.listed ? ` (${count(data.owned.listed)} listed for sale)` : ""
                 }${
                   data.owned.serials.length ? `: ${data.owned.serials.slice(0, 30).map((n) => `#${n}`).join(", ")}${data.owned.serials.length > 30 ? "…" : ""}` : ""
                 }.`}

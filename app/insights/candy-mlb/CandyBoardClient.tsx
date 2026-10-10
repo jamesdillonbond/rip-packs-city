@@ -823,7 +823,7 @@ export default function CandyBoardClient({
                 Showing all <b>{num(matched)}</b> matching editions.
               </>
             )}{" "}
-            FMV auto-computes from live Magic Eden sales; the cold tail with no sales shows &ldquo;—&rdquo;. Floor ask
+            FMV auto-computes from live secondary sales; the cold tail with no sales shows &ldquo;—&rdquo;. Floor ask
             is a listing-derived floor and best offer a standing-bid floor — neither is FMV.
             {hiddenOutliers > 0 ? (
               <>
@@ -840,7 +840,7 @@ export default function CandyBoardClient({
       {tab === "deals" && (
         <>
           <div className="cdy-blurb">
-            <b>Underpriced listings</b> — active Magic Eden asks that sit below the auto-computed FMV{" "}
+            <b>Underpriced listings</b> — active secondary-market asks that sit below the auto-computed FMV{" "}
             <b>and</b> below what the edition actually trades at. FMV is fitted off a handful of sales, so a single
             high print can lift it above every other trade; a listing only appears here if it also beats the{" "}
             <b>median sale</b>, and both numbers are shown so you can judge which one to believe. The book is thin —

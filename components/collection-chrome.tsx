@@ -57,7 +57,7 @@ const TICKER_ITEMS: Record<string, string[]> = {
   // coming" sat on every tab after both tabs had shipped. The list now names
   // tools that exist and makes no comparative a later reading can falsify.
   "candy-mlb": [
-    "⚾ CANDY MLB ON SOLANA — every edition priced from Magic Eden sales",
+    "⚾ CANDY MLB ON SOLANA — every edition priced from real secondary sales",
     "⚾ COLLECTION ANALYZER — paste a Solana wallet for FMV on every card",
     "⚾ SET TRACKER — 100-player checklist + cost to finish from live asks",
     "⚾ PACK MARKET — confirmed floor, recent pack sales and pull value",

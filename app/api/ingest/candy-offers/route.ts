@@ -306,6 +306,7 @@ async function handleSweep(req: NextRequest) {
     let found = 0
     let written = 0
     let skipped = 0
+    const writeErrors: string[] = []
     let deactivated = 0
     let bidderFetchErrors = 0
     let packOffersSeen = 0
@@ -609,6 +610,7 @@ async function handleSweep(req: NextRequest) {
           .upsert(batch, { onConflict: "pda_address" })
         if (error) {
           console.log(`[${PIPELINE_NAME}] upsert err: ${error.message}`)
+          writeErrors.push(`candy_offers upsert: ${error.message}`)
           skipped += batch.length
         } else {
           written += batch.length
@@ -664,23 +666,25 @@ async function handleSweep(req: NextRequest) {
         // ⛔ venue-scoped (2026-10-10). This retirement is ABSENCE-based: "the
         // Magic Eden sweep did not see it". That is evidence about Magic Eden bids
         // only — unscoped, every tick would kill every OpenSea bid.
-        const { data: gone } = await (supabaseAdmin as any)
+        const { data: gone, error: goneErr } = await (supabaseAdmin as any)
           .from("candy_offers")
           .update({ is_active: false })
           .eq("venue", "magic_eden")
           .eq("is_active", true)
           .lt("last_seen_at", startedAtIso)
           .select("pda_address")
-        deactivated += (gone ?? []).length
+        if (goneErr) writeErrors.push(`candy_offers deactivate: ${goneErr.message}`)
+        else deactivated += (gone ?? []).length
       }
       // Expired offers are dead regardless of sweep completeness.
-      const { data: expired } = await (supabaseAdmin as any)
+      const { data: expired, error: expiredErr } = await (supabaseAdmin as any)
         .from("candy_offers")
         .update({ is_active: false })
         .eq("is_active", true)
         .lt("expiry", nowIso)
         .select("pda_address")
-      deactivated += (expired ?? []).length
+      if (expiredErr) writeErrors.push(`candy_offers expire: ${expiredErr.message}`)
+      else deactivated += (expired ?? []).length
 
       // A truncated sweep is a DEGRADED run, not a clean one: deactivation is
       // skipped above, so `is_active` silently drifts toward stale-live. Report
@@ -704,8 +708,16 @@ async function handleSweep(req: NextRequest) {
               ? `offer sweep returned ${found} offers against ${offersBefore} active (<${Math.round(MIN_SWEEP_RATIO * 100)}%) — deactivation suppressed, feed looks degraded`
               : null
 
-      await reportOnce(truncErr === null, truncErr, {
+      // R123 (2026-10-10): a rejected write fails the run. These three writes
+      // used to be logged or discarded with the run row still ok=true, so a
+      // failed deactivation read as "nothing to deactivate".
+      const writeErr = writeErrors.length
+        ? `${writeErrors.length} rejected write(s): ${writeErrors.slice(0, 3).join(" | ")}`
+        : null
+      const runErr = [truncErr, writeErr].filter(Boolean).join(" · ") || null
+      await reportOnce(runErr === null, runErr ? runErr.slice(0, 500) : null, {
         phase: "complete",
+        write_errors: writeErrors.length,
         bidders_discovered: allBidders.length,
         // ACTUAL count walked, which is < sweepBidders.length on a deadline
         // cut. Reporting the intended count here would hide the shortfall.

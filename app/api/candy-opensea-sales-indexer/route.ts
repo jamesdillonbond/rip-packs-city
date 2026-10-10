@@ -407,6 +407,8 @@ async function handleIndex(req: NextRequest) {
                     price_usd: price.usd,
                     buyer: c.e.buyer ?? null,
                     seller: c.e.seller ?? null,
+                    // ⛔ Explicit: the column DEFAULTS to 'magic_eden'.
+                    marketplace: "opensea",
                     sold_at: new Date(tMs).toISOString(),
                   },
                   { onConflict: "transaction_hash,token_mint" },

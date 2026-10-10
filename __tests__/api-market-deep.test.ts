@@ -470,6 +470,33 @@ describe("GET /api/market — Candy MLB (Solana) arm", () => {
     expect(raw).not.toContain('"flow_id":"mintA"')
   })
 
+  // 2026-10-10 — an ask reported by the OpenSea feed links ONLY to the URL
+  // OpenSea itself returned (venue_url). Without one there is no link at all:
+  // never the Magic Eden page (the ask is not listed there) and never a built
+  // OpenSea URL (RPC could not verify the Solana item-page format).
+  it("an OpenSea ask links to OpenSea's own URL, or to nothing — never to Magic Eden", async () => {
+    const base = { edition_id: "e1", external_id: "x1", player_name: "Aaron Judge", edition_name: "ICON", set_name: "Series 1", team_name: "NYY", tier: "LEGENDARY", circulation_count: 25, thumbnail_url: null, serial_number: 7, ask_usd: 120, fmv_usd: 200, confidence: "HIGH", discount_pct: 40, seller: "s", first_seen_at: "2026-09-10T00:00:00Z", last_seen_at: "2026-09-12T00:00:00Z" }
+    install({
+      candy_market_board: {
+        data: [
+          { ...base, token_mint: "mintOS1", venue: "opensea", venue_url: "https://opensea.io/item/solana/mintOS1" },
+          { ...base, token_mint: "mintOS2", venue: "opensea", venue_url: null },
+          { ...base, token_mint: "mintME", venue: "magic_eden", venue_url: null },
+        ],
+        error: null,
+      },
+      editions: { data: [], error: null },
+    })
+    const body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    const raw = JSON.stringify(body)
+    expect(raw).toContain("https://opensea.io/item/solana/mintOS1")
+    expect(raw).toContain("https://magiceden.io/item-details/mintME")
+    expect(raw).not.toContain("magiceden.io/item-details/mintOS1")
+    expect(raw).not.toContain("magiceden.io/item-details/mintOS2")
+    expect(raw).not.toMatch(/opensea\.io[^"]*mintOS2/)
+    expect(raw).toContain('"opensea"')
+  })
+
   // ⛔ 2026-09-25 — every Candy printing of a player shares player_name AND
   // set_name, so the shared player+set lookup resolves a Rainbow listing to the
   // BASE card (it keeps the first row, and "mike-trout" sorts first). A PINK
