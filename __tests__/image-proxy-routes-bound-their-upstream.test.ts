@@ -82,9 +82,12 @@ const UNBOUNDED = ROWS.filter((r) => !r.bound)
  * `fetch` with no bound anywhere in the file. `badge-image` and
  * `moment-thumbnail` were converted in the same commit, taking it to 26.
  * 26 → 25 on 2026-10-03: `moment-market` / `market-feed` deleted (#163).
+ * 25 → 24 on 2026-10-10: `wallet-search` bounded its Golazos-trigger fetch
+ * (`5f6e80084`, AbortSignal.timeout(10_000)) without lowering this; CI was red
+ * on three tips (3919afa9a, 0c9fa9236, 6fa0f9e9c) until the ratchet caught up.
  * Lower this when you convert one. NEVER raise it.
  */
-const BUDGET = 25
+const BUDGET = 24
 
 describe("image proxies bound their upstream, and the wider class only shrinks", () => {
   it("is not vacuous — the walk found API routes, and found some that ARE bound", () => {
