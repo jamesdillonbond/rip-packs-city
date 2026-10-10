@@ -37,7 +37,12 @@ export const dynamic = "force-dynamic"
 // MAX_RUN_MS bound the actual runtime well under it; this is insurance only.
 export const maxDuration = 800
 
-const BATCH = 120
+// 480 (was 120, 2026-10-10). Sized from the backlog, not the runtime: 82,984 All Day null-buyer
+// rows sat below the cursor, and at 120 rows × 8 runs/day (vercel.json `15 */3`) that drain was
+// ~86 days, while each run used ~29 s of its budget (~0.25 s/row, every row resolving via
+// Deposit.to). 480 ≈ 2 min a run, ~3,840 rows/day, ~22 days; MAX_RUN_MS still bounds a run
+// if per-row latency drifts, and the cursor only advances past rows actually processed.
+const BATCH = 480
 // Forward lane owns 2025+ only; pre-current-spork rows can't be decoded via
 // current-spork REST and just churn the cursor at rows_written≈0. Bounding the
 // select here also lets the planner partition-prune to sales_2025/sales_2026.
