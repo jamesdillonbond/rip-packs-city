@@ -1,3 +1,4 @@
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -128,7 +129,7 @@ async function runPinnacleSync(startedAtIso: string) {
 
 export async function GET(request: NextRequest) {
   const auth = request.headers.get("authorization");
-  if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
+  if (!bearerMatches(auth, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

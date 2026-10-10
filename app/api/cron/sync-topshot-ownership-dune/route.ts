@@ -35,6 +35,7 @@
 // Auth: Bearer ${INGEST_SECRET_TOKEN} or ${CRON_SECRET}. Method: POST or GET.
 // Cron-job.org: daily, off the :00 rush, www domain.
 
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
@@ -80,8 +81,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function authed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization");
   return (
-    auth === `Bearer ${process.env.INGEST_SECRET_TOKEN}` ||
-    auth === `Bearer ${process.env.CRON_SECRET}`
+    bearerMatches(auth, "INGEST_SECRET_TOKEN", "CRON_SECRET")
   );
 }
 

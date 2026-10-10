@@ -18,6 +18,7 @@
 //   editions: [{ externalId:'setID:playID', playIdOnchain?:int, required?:bool }]  // required-moment list
 // }
 
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
@@ -26,7 +27,7 @@ export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization")
-  if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
+  if (!bearerMatches(auth, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

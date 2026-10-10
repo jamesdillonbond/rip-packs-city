@@ -13,6 +13,7 @@
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { dispatchDueDealAlerts, dispatchTriggeredFmvAlerts } from "@/lib/alerts";
@@ -41,8 +42,7 @@ const DEAL_VERDICT_KEYS: ReadonlyArray<readonly [string, string]> = [
 function authed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization");
   return (
-    auth === `Bearer ${process.env.INGEST_SECRET_TOKEN}` ||
-    auth === `Bearer ${process.env.CRON_SECRET}`
+    bearerMatches(auth, "INGEST_SECRET_TOKEN", "CRON_SECRET")
   );
 }
 

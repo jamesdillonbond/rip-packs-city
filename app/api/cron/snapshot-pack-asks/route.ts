@@ -1,3 +1,4 @@
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
@@ -25,7 +26,7 @@ const PIPELINE_NAME = "snapshot-pack-asks"
 
 async function run(request: NextRequest) {
   const auth = request.headers.get("authorization")
-  if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
+  if (!bearerMatches(auth, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

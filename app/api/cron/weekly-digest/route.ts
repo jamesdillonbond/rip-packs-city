@@ -26,6 +26,7 @@
 //
 // Auth: Bearer ${INGEST_SECRET_TOKEN} or ${CRON_SECRET}. Method: POST or GET.
 
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
 import { randomUUID } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -55,8 +56,7 @@ type Mover = {
 function authed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization");
   return (
-    auth === `Bearer ${process.env.INGEST_SECRET_TOKEN}` ||
-    auth === `Bearer ${process.env.CRON_SECRET}`
+    bearerMatches(auth, "INGEST_SECRET_TOKEN", "CRON_SECRET")
   );
 }
 

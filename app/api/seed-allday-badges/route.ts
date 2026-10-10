@@ -4,6 +4,7 @@
 // badge-sync. Left in place as an emergency fallback only; do NOT re-wire it
 // into badge-sync — it would clobber the real per-moment badges with a per-set
 // guess (badges vary per-moment within a set).
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { classifyAlldayBadges, ALLDAY_BADGE_RULES } from "@/lib/allday-badges"
@@ -40,7 +41,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
-  if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
+  if (!bearerMatches(auth, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

@@ -14,6 +14,7 @@
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
 import { fitTelegramText } from "@/lib/telegram-message";
 import { createClient } from "@supabase/supabase-js";
@@ -38,8 +39,7 @@ const PIPELINE_NAME = "alerts-send";
 function authed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization");
   return (
-    auth === `Bearer ${process.env.INGEST_SECRET_TOKEN}` ||
-    auth === `Bearer ${process.env.CRON_SECRET}`
+    bearerMatches(auth, "INGEST_SECRET_TOKEN", "CRON_SECRET")
   );
 }
 

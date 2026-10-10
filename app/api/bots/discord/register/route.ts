@@ -22,12 +22,13 @@
 
 export const dynamic = "force-dynamic";
 
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse } from "next/server";
 import { COMMANDS } from "@/lib/alerts/discord-commands";
 
 function authed(req: NextRequest): boolean {
   const a = req.headers.get("authorization");
-  return a === `Bearer ${process.env.INGEST_SECRET_TOKEN}` || a === `Bearer ${process.env.CRON_SECRET}`;
+  return bearerMatches(a, "INGEST_SECRET_TOKEN", "CRON_SECRET");
 }
 
 // GET — read back what Discord ACTUALLY has registered, without ever handling

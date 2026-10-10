@@ -1,3 +1,4 @@
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse } from "next/server"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -585,7 +586,7 @@ async function logRun(
 
 async function run(req: NextRequest): Promise<NextResponse> {
   const auth = req.headers.get("authorization")
-  if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
+  if (!bearerMatches(auth, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

@@ -1,3 +1,4 @@
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { ingestPinnacleSalesEvents } from "@/lib/pinnacle/flow-events"
@@ -12,7 +13,7 @@ export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   const auth = request.headers.get("authorization")
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!bearerMatches(auth, "CRON_SECRET")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

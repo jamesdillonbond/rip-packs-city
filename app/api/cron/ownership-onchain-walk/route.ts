@@ -21,6 +21,7 @@
 // Auth: Bearer INGEST_SECRET_TOKEN | CRON_SECRET. after()-wrapped, budgeted,
 // logs pipeline_runs('ownership-onchain-walk'). Cron: daily (operator-wired).
 
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server"
 import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
@@ -74,8 +75,7 @@ type OwnershipRow = {
 function authed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization");
   return (
-    auth === `Bearer ${process.env.INGEST_SECRET_TOKEN}` ||
-    auth === `Bearer ${process.env.CRON_SECRET}`
+    bearerMatches(auth, "INGEST_SECRET_TOKEN", "CRON_SECRET")
   );
 }
 
