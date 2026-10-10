@@ -70,25 +70,58 @@ export async function POST(req: NextRequest) {
   }
 
   const email = user.email.toLowerCase()
-  const prefs: Record<string, unknown> = {
+
+  // ⛔ MERGE, never REPLACE (2026-10-10). This used to upsert a FULL row, so
+  // every field the caller left out was reset to its default — the settings
+  // page never sends wallet_address, so each save wiped the digest wallet that
+  // /api/send-digest reads, and a save after a failed settings load wrote the
+  // form's defaults over every real preference. An EXISTING row now gets only
+  // the fields present in the body; a NEW row gets the defaults.
+  const provided: Record<string, unknown> = {}
+  if (typeof body.digest_weekly === "boolean") provided.digest_weekly = body.digest_weekly
+  if (typeof body.deal_alerts === "boolean") provided.deal_alerts = body.deal_alerts
+  if (typeof body.badge_alerts === "boolean") provided.badge_alerts = body.badge_alerts
+  if (typeof body.portfolio_alerts === "boolean") provided.portfolio_alerts = body.portfolio_alerts
+  if ("wallet_address" in body) provided.wallet_address = body.wallet_address ?? null
+  if (typeof body.deal_min_discount === "number") provided.deal_min_discount = body.deal_min_discount
+  if ("deal_max_price" in body) provided.deal_max_price = typeof body.deal_max_price === "number" ? body.deal_max_price : null
+  if ("deal_tiers" in body) provided.deal_tiers = Array.isArray(body.deal_tiers) ? body.deal_tiers : null
+  if ("collection_ids" in body) provided.collection_ids = Array.isArray(body.collection_ids) ? body.collection_ids : null
+  // Saving preferences while signed in is the owner's explicit opt-in.
+  provided.unsubscribed_at = null
+
+  const defaults: Record<string, unknown> = {
     email,
-    digest_weekly: body.digest_weekly ?? true,
-    deal_alerts: body.deal_alerts ?? false,
-    badge_alerts: body.badge_alerts ?? false,
-    portfolio_alerts: body.portfolio_alerts ?? false,
-    wallet_address: body.wallet_address ?? null,
-    deal_min_discount: typeof body.deal_min_discount === "number" ? body.deal_min_discount : 20,
-    deal_max_price: typeof body.deal_max_price === "number" ? body.deal_max_price : null,
-    deal_tiers: Array.isArray(body.deal_tiers) ? body.deal_tiers : null,
-    collection_ids: Array.isArray(body.collection_ids) ? body.collection_ids : null,
-    unsubscribed_at: null,
+    digest_weekly: true,
+    deal_alerts: false,
+    badge_alerts: false,
+    portfolio_alerts: false,
+    wallet_address: null,
+    deal_min_discount: 20,
+    deal_max_price: null,
+    deal_tiers: null,
+    collection_ids: null,
   }
 
-  const { data: upserted, error } = await (supabaseAdmin as any)
-    .from("email_subscribers")
-    .upsert(prefs, { onConflict: "email" })
-    .select("id, email, verified, verification_token")
-    .maybeSingle()
+  const SELECT = "id, email, verified, verification_token"
+  const updateExisting = () =>
+    (supabaseAdmin as any).from("email_subscribers").update(provided).eq("email", email).select(SELECT).maybeSingle()
+
+  let { data: upserted, error } = await updateExisting()
+  if (!error && !upserted) {
+    const ins = await (supabaseAdmin as any)
+      .from("email_subscribers")
+      .insert({ ...defaults, ...provided })
+      .select(SELECT)
+      .maybeSingle()
+    if (ins.error?.code === "23505") {
+      // A concurrent save created the row first: merge into it instead.
+      ;({ data: upserted, error } = await updateExisting())
+    } else {
+      upserted = ins.data
+      error = ins.error
+    }
+  }
 
   if (error) {
     return apiErrorResponse(error, "api/email/subscribe");

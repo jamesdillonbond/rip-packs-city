@@ -53,29 +53,52 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { username, displayName, tagline, bio, favoriteTeam, twitter, discord, avatarUrl, accentColor } = body;
 
-  const resolvedUsername = (username ?? defaultUsernameFromEmail(user.email)) || null;
+  // ⛔ MERGE, never REPLACE (2026-10-10). This used to upsert the WHOLE row with
+  // every omitted field as null: /profile/edit never sends favoriteTeam, so each
+  // save wiped the legacy favorite_team still shown on the public profile, and
+  // the collection-profile avatar/bio editors (which send one or two fields)
+  // would have nulled display name, socials and accent and rewritten the
+  // username. An existing row now gets only the keys present in the body; the
+  // email-derived username and the red accent are NEW-ROW defaults only.
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(body ?? {}, k);
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  // A null/empty username means "not choosing one", never "clear my handle".
+  if (typeof body.username === "string" && body.username) updates.username = body.username;
+  if (has("displayName")) updates.display_name = body.displayName ?? null;
+  if (has("bio") || has("tagline")) updates.tagline = body.bio ?? body.tagline ?? null;
+  if (has("favoriteTeam")) updates.favorite_team = body.favoriteTeam ?? null;
+  if (has("twitter")) updates.twitter = body.twitter ?? null;
+  if (has("discord")) updates.discord = body.discord ?? null;
+  if (has("avatarUrl")) updates.avatar_url = body.avatarUrl ?? null;
+  if (has("accentColor")) updates.accent_color = body.accentColor ?? "#E03A2F";
 
-  const { data, error } = await supabase
-    .from("profile_bio")
-    .upsert(
-      {
+  const SELECT = "username, display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color";
+  const updateExisting = () =>
+    supabase.from("profile_bio").update(updates).eq("user_id", user.id).select(SELECT).maybeSingle();
+
+  let { data, error } = await updateExisting();
+  if (!error && !data) {
+    const ins = await supabase
+      .from("profile_bio")
+      .insert({
         user_id: user.id,
-        username: resolvedUsername,
-        display_name: displayName ?? null,
-        tagline: bio ?? tagline ?? null,
-        favorite_team: favoriteTeam ?? null,
-        twitter: twitter ?? null,
-        discord: discord ?? null,
-        avatar_url: avatarUrl ?? null,
-        accent_color: accentColor ?? "#E03A2F",
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id" }
-    )
-    .select("username, display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color")
-    .single();
+        username: defaultUsernameFromEmail(user.email) || null,
+        accent_color: "#E03A2F",
+        ...updates,
+      })
+      .select(SELECT)
+      .maybeSingle();
+    if (ins.error?.code === "23505") {
+      // A concurrent save created the row first (user_id, or a username already
+      // taken by the email default): merge into the user's row if it exists now.
+      ({ data, error } = await updateExisting());
+      if (!error && !data) error = ins.error;
+    } else {
+      data = ins.data;
+      error = ins.error;
+    }
+  }
 
   if (error) {
     console.error("[profile/bio POST]", error);

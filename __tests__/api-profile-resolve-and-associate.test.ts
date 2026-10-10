@@ -16,13 +16,20 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...actual, after: (fn: any) => { captured.fn = fn } }
 })
 
-const state: { user: any; resolved: any; resolveThrows: boolean; upsertErr: any; rpc: any; userRetry: boolean } = {
-  user: null, resolved: null, resolveThrows: false, upsertErr: null, rpc: { data: 3, error: null }, userRetry: false,
+const state: { user: any; resolved: any; resolveThrows: boolean; upsertErr: any; rpc: any; userRetry: boolean; swUpserts: any[]; swUpdates: any[] } = {
+  user: null, resolved: null, resolveThrows: false, upsertErr: null, rpc: { data: 3, error: null }, userRetry: false, swUpserts: [], swUpdates: [],
 }
 
 vi.mock("@/lib/supabase", () => {
   const build = () => {
-    const b: any = { select: () => b, upsert: () => b, eq: () => b, then: (resolve: any) => resolve({ data: null, error: state.upsertErr }) }
+    const b: any = {
+      select: () => b,
+      upsert: (rows: any, opts: any) => { state.swUpserts.push({ rows, opts }); return b },
+      update: (row: any) => { state.swUpdates.push(row); return b },
+      eq: () => b,
+      in: () => b,
+      then: (resolve: any) => resolve({ data: null, error: state.upsertErr }),
+    }
     return b
   }
   const client: any = { from: () => build(), rpc: async () => { if (state.rpc?.throws) throw new Error("rpc boom"); return state.rpc } }
@@ -64,7 +71,7 @@ const req = (body?: any, throws = false) => ({ url: "https://t/api/profile/resol
 
 let fetchMock: any
 beforeEach(() => {
-  state.user = null; state.resolved = null; state.resolveThrows = false; state.upsertErr = null; state.rpc = { data: 3, error: null }; state.userRetry = false
+  state.user = null; state.resolved = null; state.resolveThrows = false; state.upsertErr = null; state.rpc = { data: 3, error: null }; state.userRetry = false; state.swUpserts = []; state.swUpdates = []
   userCalls = 0; captured.fn = null
   delete process.env.INGEST_SECRET_TOKEN
   fetchMock = vi.fn(async (url: string) => ({ ok: true, status: 200 }))
@@ -182,6 +189,16 @@ describe("POST /api/profile/resolve-and-associate — success + after() fan-out"
     expect(body.username).toBe("trevor")
     expect(body.associatedCollections.length).toBeGreaterThan(0)
     expect(captured.fn).toBeTypeOf("function")
+  })
+
+  // 2026-10-10: a full upsert reset existing rows' nickname / display name /
+  // accent on every re-association. Rows are now insert-if-absent, and an
+  // existing row only has its username refreshed.
+  it("never overwrites an existing saved wallet's nickname / display name / accent", async () => {
+    await run()
+    expect(state.swUpserts).toHaveLength(1)
+    expect(state.swUpserts[0].opts).toMatchObject({ ignoreDuplicates: true })
+    expect(state.swUpdates).toEqual([{ username: "trevor" }])
   })
 
   it("after(): dispatches the DEEP multicollection backfill and calls the aggregate RPC (INGEST set)", async () => {

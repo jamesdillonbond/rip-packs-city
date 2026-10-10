@@ -17,20 +17,32 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 const state = vi.hoisted(() => ({
   user: null as { email?: string } | null,
   row: { data: null as unknown, error: null as unknown },
+  // Every write, in order. 2026-10-10: the route MERGES — an existing row gets
+  // .update(only the provided fields).eq("email", session); a missing one gets
+  // .insert(defaults + provided).
   upserted: [] as Record<string, unknown>[],
+  writes: [] as Array<{ method: "update" | "insert"; row: Record<string, unknown> }>,
+  eqs: [] as Array<[string, unknown]>,
+  insertRow: { data: null as unknown, error: null as unknown },
   resend: { ok: true, status: 200, text: "sent", throws: null as string | null },
   resendCalls: [] as Array<{ headers: Record<string, string>; body: Record<string, unknown> }>,
 }))
 
 vi.mock("@/lib/auth/supabase-server", () => ({ getCurrentUser: async () => state.user }))
 vi.mock("@/lib/supabase", () => {
-  const b: Record<string, unknown> = {}
-  const self = () => b
-  b.upsert = (row: Record<string, unknown>) => { state.upserted.push(row); return self() }
-  b.select = () => self()
-  b.ilike = () => self()
-  b.maybeSingle = async () => state.row
-  return { supabaseAdmin: { from: () => b } }
+  const make = () => {
+    const b: Record<string, unknown> = {}
+    let mode: "read" | "update" | "insert" = "read"
+    const self = () => b
+    b.update = (row: Record<string, unknown>) => { mode = "update"; state.upserted.push(row); state.writes.push({ method: "update", row }); return self() }
+    b.insert = (row: Record<string, unknown>) => { mode = "insert"; state.upserted.push(row); state.writes.push({ method: "insert", row }); return self() }
+    b.eq = (c: string, v: unknown) => { state.eqs.push([c, v]); return self() }
+    b.select = () => self()
+    b.ilike = () => self()
+    b.maybeSingle = async () => (mode === "insert" ? state.insertRow : state.row)
+    return b
+  }
+  return { supabaseAdmin: { from: () => make() } }
 })
 
 process.env.NEXT_PUBLIC_SITE_URL = "https://site.test"
@@ -64,6 +76,9 @@ beforeEach(() => {
   state.user = { email: "Trevor@Example.COM" }
   state.row = { data: { id: 1, email: "trevor@example.com", verified: true, verification_token: "tok" }, error: null }
   state.upserted = []
+  state.writes = []
+  state.eqs = []
+  state.insertRow = { data: { id: 2, email: "trevor@example.com", verified: false, verification_token: "tok" }, error: null }
   state.resend = { ok: true, status: 200, text: "sent", throws: null }
   state.resendCalls = []
   process.env.RESEND_API_KEY = "re_test"
@@ -73,8 +88,14 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe("POST /api/email/subscribe — the email is the SESSION's, never the body's", () => {
   it("ignores a body-supplied email and writes the lower-cased account email", async () => {
+    // existing row: the update is keyed on the SESSION email and carries no email field
     await POST(postReq({ email: "victim@elsewhere.test", digest_weekly: true }))
-    // The account email wins, normalized; the attacker-supplied one never lands.
+    expect(state.eqs).toContainEqual(["email", "trevor@example.com"])
+    expect(JSON.stringify(state.eqs)).not.toContain("victim")
+    expect(lastUpsert().email).toBeUndefined()
+    // new row: the insert carries the account email, normalized
+    state.row = { data: null, error: null }
+    await POST(postReq({ email: "victim@elsewhere.test" }))
     expect(lastUpsert().email).toBe("trevor@example.com")
   })
 
@@ -99,8 +120,10 @@ describe("POST /api/email/subscribe — the email is the SESSION's, never the bo
 })
 
 describe("POST /api/email/subscribe — preference defaults + type guards", () => {
-  it("defaults an empty body to digest-only with the standard discount floor", async () => {
+  it("a NEW subscriber with an empty body gets digest-only with the standard discount floor", async () => {
+    state.row = { data: null, error: null } // no existing row → insert
     await POST(postReq({}))
+    expect(state.writes.at(-1)?.method).toBe("insert")
     expect(lastUpsert()).toMatchObject({
       digest_weekly: true,
       deal_alerts: false,
@@ -129,6 +152,7 @@ describe("POST /api/email/subscribe — preference defaults + type guards", () =
   })
 
   it("rejects wrong-typed values back to their defaults rather than storing them", async () => {
+    state.row = { data: null, error: null } // new row, so the defaults apply
     await POST(postReq({
       deal_min_discount: "20", deal_max_price: "cheap", deal_tiers: "RARE", collection_ids: "c1",
     }))
@@ -144,9 +168,42 @@ describe("POST /api/email/subscribe — preference defaults + type guards", () =
     expect((await err.json()).error).not.toContain("subscribers table down")
 
     state.row = { data: null, error: null }
+    state.insertRow = { data: null, error: null } // the insert fallback returns nothing either
     const none = await POST(postReq({}))
     expect(none.status).toBe(500)
     expect((await none.json()).error).toBe("upsert returned no row")
+  })
+})
+
+// 2026-10-10 — INVERTED. The route used to upsert a FULL row, so any field the
+// caller omitted was reset: the settings page never sends wallet_address, so
+// every save wiped the digest wallet, and a save after a failed settings load
+// wrote the form's defaults over every real preference. An existing row now
+// gets ONLY the provided fields.
+describe("POST /api/email/subscribe — an existing row is MERGED, never reset", () => {
+  it("does not touch fields the caller omitted (wallet_address, filters, tiers)", async () => {
+    await POST(postReq({ deal_alerts: true }))
+    const w = state.writes.at(-1)!
+    expect(w.method).toBe("update")
+    expect(w.row).toEqual({ deal_alerts: true, unsubscribed_at: null })
+    for (const k of ["wallet_address", "deal_tiers", "collection_ids", "deal_min_discount", "digest_weekly"]) {
+      expect(k in w.row).toBe(false)
+    }
+  })
+
+  it("an explicit null still clears a field", async () => {
+    await POST(postReq({ wallet_address: null, deal_tiers: null }))
+    expect(state.writes.at(-1)!.row).toMatchObject({ wallet_address: null, deal_tiers: null })
+  })
+
+  it("a concurrent insert (23505) merges into the row that won", async () => {
+    state.row = { data: null, error: null }
+    state.insertRow = { data: null, error: { code: "23505", message: "duplicate key" } }
+    const res = await POST(postReq({ deal_alerts: true }))
+    // the retry update also finds nothing in this stub → no row → 500, but the
+    // sequence must be update → insert → update, never a full overwrite
+    expect(state.writes.map((w) => w.method)).toEqual(["update", "insert", "update"])
+    expect(res.status).toBe(500)
   })
 })
 

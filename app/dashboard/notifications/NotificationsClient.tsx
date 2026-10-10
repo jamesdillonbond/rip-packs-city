@@ -68,6 +68,11 @@ export default function NotificationsClient() {
   const [maxPrice, setMaxPrice] = useState<string>("")
   const [collectionIds, setCollectionIds] = useState<string[]>([])
   const [dealTiers, setDealTiers] = useState<string[]>([])
+  // ⛔ A failed LOAD leaves the form on its defaults. Saving it then wrote those
+  // defaults over the real row (deal filters, tiers, collections, toggles) — a
+  // failed read turned into a delete (2026-10-10). Save is refused until a load
+  // has succeeded.
+  const [loadFailed, setLoadFailed] = useState(false)
 
   useEffect(() => {
     // ⚠ Was `.then(r => r.json())` with no status check. It degraded correctly
@@ -97,7 +102,10 @@ export default function NotificationsClient() {
           setDealTiers(s.deal_tiers ?? [])
         }
       })
-      .catch(e => setError(e instanceof Error ? e.message : String(e)))
+      .catch(e => {
+        setLoadFailed(true)
+        setError(e instanceof Error ? e.message : String(e))
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -106,6 +114,7 @@ export default function NotificationsClient() {
   }
 
   async function onSave() {
+    if (loadFailed) return
     setSaving(true)
     setError(null)
     setSavedNote(null)
@@ -234,7 +243,12 @@ export default function NotificationsClient() {
         {savedNote && <div style={{ background: "#064e3b", color: "#a7f3d0", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>{savedNote}</div>}
         {error && <div style={{ background: "#7f1d1d", color: "#fecaca", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>{error}</div>}
 
-        <button onClick={onSave} disabled={saving} style={{ padding: "12px 24px", background: "var(--rpc-red, #E03A2F)", color: "#0a0a0a", border: 0, borderRadius: 8, fontWeight: 700, cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>
+        {loadFailed && (
+          <div style={{ color: "#fecaca", fontSize: 14, marginBottom: 12 }}>
+            Your saved settings couldn&apos;t be loaded, so saving is turned off — saving now would overwrite them with the defaults shown above. Reload the page to try again.
+          </div>
+        )}
+        <button onClick={onSave} disabled={saving || loadFailed} style={{ padding: "12px 24px", background: "var(--rpc-red, #E03A2F)", color: "#0a0a0a", border: 0, borderRadius: 8, fontWeight: 700, cursor: saving || loadFailed ? "default" : "pointer", opacity: saving || loadFailed ? 0.6 : 1 }}>
           {saving ? "Saving…" : "Save preferences"}
         </button>
       </div>

@@ -295,7 +295,13 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await supabase
+    // ⛔ INSERT-IF-ABSENT, then MERGE (2026-10-10). A full upsert reset an
+    // existing row's nickname / display name / accent to null and red whenever
+    // a caller re-saved the wallet without them — the share-page CTA does that
+    // on purpose after a failed "already saved?" read, believing a re-save was
+    // harmless, and so does re-adding a wallet from the dashboard. Defaults
+    // apply only to a NEW row; an existing one gets only the fields sent.
+    const ins = await supabase
       .from("saved_wallets")
       .upsert(
         {
@@ -307,10 +313,33 @@ export async function POST(req: NextRequest) {
           nickname: nickname ?? null,
           accent_color: accentColor ?? "#E03A2F",
         },
-        { onConflict: "user_id,wallet_addr,collection_id" }
+        { onConflict: "user_id,wallet_addr,collection_id", ignoreDuplicates: true }
       )
-      .select()
-      .single();
+      .select();
+    let data: unknown = Array.isArray(ins.data) ? ins.data[0] ?? null : ins.data ?? null;
+    let error = ins.error;
+    if (!error && !data) {
+      // On a RE-save only a real value overrides: the dashboard's add form posts
+      // `nickname: null` when its box is blank, which is "no nickname typed",
+      // not "clear mine". Clearing goes through PATCH.
+      const provided: Record<string, unknown> = {};
+      const val = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
+      if (val(username)) provided.username = username;
+      if (val(displayName)) provided.display_name = displayName;
+      if (val(nickname)) provided.nickname = nickname;
+      if (val(accentColor)) provided.accent_color = accentColor;
+      const base = Object.keys(provided).length > 0
+        ? (supabase as any).from("saved_wallets").update(provided)
+        : (supabase as any).from("saved_wallets").select();
+      const res = await base
+        .eq("user_id", user.id)
+        .eq("wallet_addr", walletAddr)
+        .eq("collection_id", resolvedCollectionId)
+        .select()
+        .maybeSingle();
+      data = res.data;
+      error = res.error;
+    }
 
     if (error) {
       console.error("[saved-wallets POST]", error.message);

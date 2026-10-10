@@ -13,9 +13,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // coverage, which is how the route hardening landed while this file still
 // asserted "no session gate" and reddened CI for every concurrent session.
 
-const state: { single: any; result: any } = {
+const state: { single: any; result: any; ops: string[]; upsertErr: any } = {
   single: { data: null, error: null },
   result: { data: [], error: null },
+  ops: [],
+  upsertErr: null,
 }
 
 // requireUser() returns the user or THROWS a 401 Response; the route catches it
@@ -36,12 +38,18 @@ vi.mock("@/lib/auth/supabase-server", () => ({
 
 vi.mock("@/lib/supabase", () => {
   const build = () => {
+    let op = "read"
     const b: any = {
-      select: () => b, insert: () => b, delete: () => b, eq: () => b,
+      select: () => b, eq: () => b, not: () => b,
+      insert: () => { op = "insert"; state.ops.push(op); return b },
+      delete: () => { op = "delete"; state.ops.push(op); return b },
+      update: () => { op = "update"; state.ops.push(op); return b },
+      upsert: () => { op = "upsert"; state.ops.push(op); return b },
       ilike: () => b, order: () => b,
       maybeSingle: async () => state.single,
       single: async () => state.single,
-      then: (resolve: any) => resolve(state.result),
+      then: (resolve: any) =>
+        resolve(op === "upsert" && state.upsertErr ? { data: null, error: state.upsertErr } : state.result),
     }
     return b
   }
@@ -225,6 +233,25 @@ describe("/api/profile/teams", () => {
     const { teams } = await res.json()
     expect(teams[0]).toMatchObject({ team_name: "Trail Blazers" })
     expect(awardPoints).toHaveBeenCalledWith("u1", "set_favorite_team")
+  })
+
+  // 2026-10-10: this used to DELETE every row and then insert, so a failed
+  // insert left the user with no teams. The new set is written first and only
+  // the dropped leagues are deleted afterwards.
+  it("POST writes the new set BEFORE deleting, and a failed write deletes nothing", async () => {
+    state.single = { data: { user_id: "u1" }, error: null }
+    state.result = { data: [teamRow], error: null }
+    state.ops = []
+    await POST(req("https://t/api/profile/teams", { ownerKey: "trevor", teams: [{ league: "NBA", team_slug: "portland-trail-blazers", is_primary: true }] }))
+    expect(state.ops.indexOf("upsert")).toBeGreaterThan(-1)
+    expect(state.ops.indexOf("upsert")).toBeLessThan(state.ops.indexOf("delete"))
+
+    state.ops = []
+    state.upsertErr = { message: "insert or update violates foreign key constraint" }
+    const res = await POST(req("https://t/api/profile/teams", { ownerKey: "trevor", teams: [{ league: "NBA", team_slug: "retired-team", is_primary: true }] }))
+    expect(res.status).toBe(500)
+    expect(state.ops).not.toContain("delete")
+    state.upsertErr = null
   })
 
   it("POST with an all-empty selection deletes-all and does NOT award points", async () => {

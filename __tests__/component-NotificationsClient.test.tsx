@@ -86,6 +86,20 @@ describe("NotificationsClient — hydrate", () => {
     expect(screen.queryByText("collector@example.com")).toBeNull()
   })
 
+  // 2026-10-10: the comment above named the hazard but nothing enforced it —
+  // Save stayed live over the defaults. After a failed load it is disabled, and
+  // a click posts nothing.
+  it("a failed hydrate DISABLES Save, so the defaults can never overwrite the real settings", async () => {
+    const f = vi.fn(async () => fail() as any)
+    vi.stubGlobal("fetch", f)
+    render(<NotificationsClient />)
+    await waitFor(() => expect(screen.getByText(/Couldn't load your notification settings/)).toBeTruthy())
+    const save = screen.getByRole("button", { name: /Save preferences/ }) as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    fireEvent.click(save)
+    expect(f.mock.calls.some((c: any[]) => (c[1] as RequestInit | undefined)?.method === "POST")).toBe(false)
+  })
+
   it("surfaces the server's own message when the body carries one", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ok({ error: "Sign in to manage alerts" }) as any))
     render(<NotificationsClient />)

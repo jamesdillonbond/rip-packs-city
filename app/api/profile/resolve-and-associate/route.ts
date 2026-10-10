@@ -231,9 +231,21 @@ export async function POST(req: NextRequest) {
     accent_color: c.accent,
   }));
 
-  const { error } = await supabase
+  // ⛔ INSERT-IF-ABSENT (2026-10-10). A full upsert reset every existing row's
+  // nickname and display name to null and its accent to the collection default
+  // each time the user re-associated a wallet. New rows get the defaults; an
+  // existing row only has its Dapper username refreshed.
+  let { error } = await supabase
     .from("saved_wallets")
-    .upsert(rows, { onConflict: "user_id,wallet_addr,collection_id" });
+    .upsert(rows, { onConflict: "user_id,wallet_addr,collection_id", ignoreDuplicates: true });
+  if (!error && username) {
+    ({ error } = await (supabase as any)
+      .from("saved_wallets")
+      .update({ username })
+      .eq("user_id", user.id)
+      .eq("wallet_addr", walletAddress)
+      .in("collection_id", targets.map((c) => c.supabaseCollectionId!)));
+  }
 
   if (error) {
     console.error("[resolve-and-associate] upsert error:", error.message);

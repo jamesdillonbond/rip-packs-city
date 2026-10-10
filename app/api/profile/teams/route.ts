@@ -174,33 +174,51 @@ export async function POST(req: NextRequest) {
   }
   const userId = sessionUser.id;
 
-  // Replace-all semantics: delete every existing row for this user, then
-  // insert the new set. The user_favorite_teams partial unique index
-  // enforces "one primary per user" at the DB level too, so the in-memory
-  // primaryCount check is belt-and-suspenders.
-  const { error: delErr } = await supabase
-    .from("user_favorite_teams")
-    .delete()
-    .eq("user_id", userId);
-  if (delErr) {
-    console.error("[profile/teams POST delete]", delErr);
-    return apiErrorResponse(delErr, "api/profile/teams");
+  // Replace-all semantics, written in the order that cannot lose the set
+  // (2026-10-10). It used to DELETE every row and then insert: an insert that
+  // failed (a retired team's FK, a timeout) left the user with NO teams and only
+  // an error to show for it. Now: write the new set first, then delete only the
+  // leagues the user dropped. A failure before the delete leaves the previous
+  // picks in place. PK is (user_id, league); a partial unique index allows one
+  // primary per user, so the old primary is cleared first when a new one is set.
+  if (rows.some((r) => r.is_primary)) {
+    const { error: demoteErr } = await supabase
+      .from("user_favorite_teams")
+      .update({ is_primary: false })
+      .eq("user_id", userId)
+      .eq("is_primary", true);
+    if (demoteErr) {
+      console.error("[profile/teams POST demote]", demoteErr);
+      return apiErrorResponse(demoteErr, "api/profile/teams");
+    }
   }
 
   if (rows.length > 0) {
-    const insertRows = rows.map((r) => ({
+    const upsertRows = rows.map((r) => ({
       user_id: userId,
       league: r.league,
       team_slug: r.team_slug,
       is_primary: r.is_primary,
     }));
-    const { error: insErr } = await supabase
+    const { error: upErr } = await supabase
       .from("user_favorite_teams")
-      .insert(insertRows);
-    if (insErr) {
-      console.error("[profile/teams POST insert]", insErr);
-      return apiErrorResponse(insErr, "api/profile/teams");
+      .upsert(upsertRows, { onConflict: "user_id,league" });
+    if (upErr) {
+      console.error("[profile/teams POST upsert]", upErr);
+      return apiErrorResponse(upErr, "api/profile/teams");
     }
+  }
+
+  // Only now remove the leagues that are no longer picked.
+  let del = supabase.from("user_favorite_teams").delete().eq("user_id", userId);
+  if (rows.length > 0) {
+    const kept = rows.map((r) => `"${String(r.league).replace(/"/g, "")}"`).join(",");
+    del = del.not("league", "in", `(${kept})`);
+  }
+  const { error: delErr } = await del;
+  if (delErr) {
+    console.error("[profile/teams POST delete]", delErr);
+    return apiErrorResponse(delErr, "api/profile/teams");
   }
 
   // Return the saved set in the same shape as GET so callers can drop the

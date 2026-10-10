@@ -22,7 +22,7 @@ const state = vi.hoisted(() => ({
   sb: null as unknown,
   user: null as null | { id: string; email?: string },
   quota: { daily_limit: null as number | null, plan: "pro_paid" },
-  writes: {} as Record<string, { method: string; rows: Record<string, unknown>[] }[]>,
+  writes: {} as Record<string, { method: string; rows: Record<string, unknown>[]; options?: Record<string, unknown> }[]>,
 }))
 
 vi.mock("@/lib/supabase", () => {
@@ -279,6 +279,45 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
       nickname: "main",
       accent_color: "#E03A2F",
     })
+  })
+})
+
+// 2026-10-10: a full upsert reset an existing row's nickname / display name /
+// accent whenever a caller re-saved without them (the share-page CTA does so on
+// purpose after a failed "already saved?" read). Insert-if-absent, then merge.
+describe("POST /api/profile/saved-wallets — a re-save never resets the row", () => {
+  const oneWalletFiveRows = Array.from({ length: 5 }, () => ({ wallet_addr: "0x1111111111111111" }))
+  it("an existing wallet re-saved with no names touches nothing (no update payload)", async () => {
+    state.user = { id: "u1" }
+    install({
+      saved_wallets: [
+        { data: oneWalletFiveRows, error: null },
+        { count: 5, error: null }, // already held
+        { data: [], error: null }, // insert-if-absent: duplicate ignored
+        { data: { id: "w1", wallet_addr: "0x1111111111111111", nickname: "main" }, error: null }, // read-back
+      ],
+    })
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0x1111111111111111", nickname: null }))
+    expect(res.status).toBe(200)
+    expect((await res.json()).wallet.nickname).toBe("main")
+    const up = state.writes["saved_wallets"]?.find((w) => w.method === "upsert")
+    expect(up?.options).toMatchObject({ ignoreDuplicates: true })
+    expect(state.writes["saved_wallets"]?.some((w) => w.method === "update")).toBeFalsy()
+  })
+
+  it("a re-save WITH a new nickname updates only that field", async () => {
+    state.user = { id: "u1" }
+    install({
+      saved_wallets: [
+        { data: oneWalletFiveRows, error: null },
+        { count: 5, error: null },
+        { data: [], error: null },
+        { data: { id: "w1", nickname: "vault" }, error: null },
+      ],
+    })
+    await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0x1111111111111111", nickname: "vault" }))
+    const upd = state.writes["saved_wallets"]?.find((w) => w.method === "update")
+    expect(upd?.rows[0]).toEqual({ nickname: "vault" })
   })
 })
 
