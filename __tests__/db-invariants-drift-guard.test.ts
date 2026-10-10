@@ -1750,13 +1750,19 @@ const PINS = [
     fn: "check_triggered_fmv_alerts",
     test: "supabase/tests/check_triggered_fmv_alerts.sql",
     migration:
-      "supabase/migrations/20260801230700_audit_20260801_snapshot_check_triggered_fmv_alerts.sql",
+      "supabase/migrations/20261010142824_audit_20261010_fmv_alerts_read_the_editions_own_live_ask.sql",
   },
   {
     fn: "dispatch_triggered_fmv_alerts",
     test: "supabase/tests/dispatch_triggered_fmv_alerts.sql",
     migration:
-      "supabase/migrations/20260801230800_audit_20260801_snapshot_dispatch_triggered_fmv_alerts.sql",
+      "supabase/migrations/20261010142824_audit_20261010_fmv_alerts_read_the_editions_own_live_ask.sql",
+  },
+  {
+    fn: "edition_live_ask",
+    test: "supabase/tests/edition_live_ask.sql",
+    migration:
+      "supabase/migrations/20261010142824_audit_20261010_fmv_alerts_read_the_editions_own_live_ask.sql",
   },
   {
     fn: "get_special_serial_owners_board",

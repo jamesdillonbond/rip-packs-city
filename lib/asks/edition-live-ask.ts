@@ -20,6 +20,10 @@
 // (the estate's disconnected-ask multiple): a lone ask on an unpriced edition is
 // the troll shape. Pinnacle and UFC have no source here and get none.
 //
+// ⚠ SQL TWIN: public.edition_live_ask(collection_id, edition_key) applies this
+// same rule for the FMV-alert functions (20261010142824, known-issues #183).
+// Change one, change both; supabase/tests/edition_live_ask.sql pins the SQL side.
+//
 // HONESTY. Every read binds its error. A failed read leaves the affected keys
 // WITHOUT an ask (the caller renders no ask, which claims nothing) and is
 // reported in `errors`, never as "no ask exists".

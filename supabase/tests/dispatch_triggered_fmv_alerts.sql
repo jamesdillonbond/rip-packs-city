@@ -8,7 +8,7 @@
 -- enqueued accounting, and the last_triggered 6h re-scan dedup.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260801230800_audit_20260801_snapshot_dispatch_triggered_fmv_alerts.sql);
+-- (supabase/migrations/20261010142824_audit_20261010_fmv_alerts_read_the_editions_own_live_ask.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts, and the
 -- md5 of pg_get_functiondef was confirmed byte-identical to LIVE prod on 2026-08-01
 -- (2b37a1f183501a84545f4c7b16745012).
@@ -20,7 +20,12 @@ BEGIN;
 CREATE TABLE fmv_alerts (id bigint GENERATED ALWAYS AS IDENTITY, owner_key text, edition_key text, player_name text, set_name text, alert_type text, threshold numeric, channel text, notification_email text, last_triggered_at timestamptz, collection_id uuid, active boolean);
 CREATE TABLE editions (id uuid, external_id text, collection_id uuid, player_name text, set_name text);
 CREATE TABLE fmv_snapshots (edition_id uuid, fmv_usd numeric, confidence text, computed_at timestamptz);
-CREATE TABLE cached_listings (collection_id uuid, player_name text, set_name text, ask_price numeric);
+CREATE TABLE live_ask_stub (collection_id uuid, edition_key text, ask numeric);
+-- edition_live_ask is pinned on its own (supabase/tests/edition_live_ask.sql); this stub lets
+-- the test set each edition's live ask directly.
+CREATE FUNCTION public.edition_live_ask(p_collection_id uuid, p_edition_key text)
+RETURNS TABLE(ask numeric, source text) LANGUAGE sql STABLE AS
+$$ SELECT s.ask, 'stub'::text FROM live_ask_stub s WHERE s.collection_id = p_collection_id AND s.edition_key = p_edition_key $$;
 CREATE TABLE notification_channels (owner_key text, channel text, channel_user_id text, verified boolean);
 CREATE TABLE alert_deliveries (owner_key text, channel text, channel_user_id text, alert_kind text, subject_key text, dedup_bucket text, payload jsonb, UNIQUE(owner_key, channel, alert_kind, subject_key, dedup_bucket));
 
@@ -61,13 +66,12 @@ BEGIN
     WHERE e.external_id = v_alert.edition_key AND e.collection_id = v_alert.collection_id
     LIMIT 1;
 
-    SELECT min(cl.ask_price) INTO v_ask
-    FROM public.cached_listings cl
-    JOIN public.editions e ON e.collection_id = cl.collection_id
-      AND lower(e.player_name) = lower(cl.player_name)
-      AND lower(e.set_name) = lower(cl.set_name)
-    WHERE e.external_id = v_alert.edition_key AND e.collection_id = v_alert.collection_id
-      AND cl.ask_price > 0;
+    -- 2026-10-10 (#183): the edition's own live ask (edition_live_ask), not
+    -- min(cached_listings) matched on player + set NAME. That mixed in other
+    -- parallels of the same player and set, and held almost nothing outside Top Shot.
+    v_ask := NULL;
+    SELECT la.ask INTO v_ask
+    FROM public.edition_live_ask(v_alert.collection_id, v_alert.edition_key) la;
 
     v_triggered := CASE
       WHEN v_alert.alert_type = 'price_below'    AND v_ask IS NOT NULL AND v_ask <= v_alert.threshold THEN true
@@ -124,8 +128,8 @@ INSERT INTO editions (id, external_id, collection_id, player_name, set_name) VAL
 INSERT INTO fmv_snapshots (edition_id, fmv_usd, confidence, computed_at) VALUES
   ('00000000-0000-0000-0000-0000000000e1', 50,'HIGH', now()),
   ('00000000-0000-0000-0000-0000000000e2',100,'HIGH', now());
-INSERT INTO cached_listings (collection_id, player_name, set_name, ask_price) VALUES
-  ('00000000-0000-0000-0000-00000000cccc','Pb','Sb', 40);
+INSERT INTO live_ask_stub (collection_id, edition_key, ask) VALUES
+  ('00000000-0000-0000-0000-00000000cccc','ek2', 40);
 INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified) VALUES
   ('u1','telegram','tg1', true);
 
@@ -146,6 +150,7 @@ SELECT _assert_eq((SELECT (j->>'enqueued') FROM d1), '2', 'first run enqueues 2 
 SELECT _assert_eq((SELECT count(*)::text FROM alert_deliveries), '2', 'exactly 2 delivery rows written');
 SELECT _assert_eq((SELECT channel_user_id FROM alert_deliveries WHERE owner_key='u1'), 'tg1', 'A1 delivered to the verified channel target');
 SELECT _assert_eq((SELECT channel_user_id FROM alert_deliveries WHERE owner_key='u2'), 'b@x', 'A3 delivered via the email fallback (no verified channel)');
+SELECT _assert_eq((SELECT payload->>'lowest_ask' FROM alert_deliveries WHERE owner_key='u2'), '40', 'A3 carries its edition''s live ask (edition_live_ask), 40');
 -- A2 not triggered -> untouched (last_triggered still NULL).
 SELECT _assert_eq((SELECT (last_triggered_at IS NULL)::text FROM fmv_alerts WHERE id=2), 'true', 'a non-triggered alert is left untouched');
 -- A4 triggered-but-targetless -> stamped (so it dedups) but NOT enqueued.
