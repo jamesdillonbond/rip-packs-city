@@ -46,6 +46,8 @@ type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 function greenFixtures(): Fixtures {
   return {
     sentinel_threshold_config: { data: [], error: null },
+    // Chain Arrival Nodes (#181): no probe parked on a dead spork node.
+    chain_arrival_probes: { count: 0, error: null } as unknown as { data?: unknown; error?: unknown },
     sales: { count: 1500, error: null } as unknown as { data?: unknown; error?: unknown },
     fmv_snapshots: { data: [{ computed_at: new Date().toISOString() }], error: null },
     // Panini Ingest (2026-09-24): walked 1 h ago, tail 90 h, paging live (259), sale 20 h ago.
@@ -898,6 +900,36 @@ describe("POST /api/sentinel — full battery", () => {
       const c = check(await (await POST(post())).json(), "Pack Sales Ingest (All Day)")
       expect(c.status).toBe("warn")
       expect(c.detail).toContain("INCONCLUSIVE")
+    })
+  })
+
+  // Chain Arrival Nodes (2026-10-10, #181). A connect that never completes became
+  // a FREE retry, so a dead spork node parks probes while the lane logs ok:true.
+  // This arm is the alarm that free retry removed.
+  describe("Chain Arrival Nodes", () => {
+    const withProbes = (payload: { count?: number | null; error?: unknown }) => {
+      const g = greenFixtures()
+      return { ...g, chain_arrival_probes: payload as never } as typeof g
+    }
+    it("is ok with no parked probe", async () => {
+      install(withProbes({ count: 0, error: null }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Chain Arrival Nodes").status).toBe("ok")
+    })
+    it("warns, with the count, when probes are parked on a dead node", async () => {
+      install(withProbes({ count: 526, error: null }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Chain Arrival Nodes")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("526")
+    })
+    it("a failed read or a missing count is unmeasured (warn), never ok", async () => {
+      install(withProbes({ count: null, error: { message: "boom" } }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Chain Arrival Nodes").status).toBe("warn")
+      install(withProbes({ count: null, error: null }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Chain Arrival Nodes").status).toBe("warn")
     })
   })
 

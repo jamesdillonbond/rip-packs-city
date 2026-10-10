@@ -1758,6 +1758,52 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     });
   }
 
+  // ── Chain Arrival Nodes (2026-10-10, known-issues #181) ─────────────────────
+  // run_chain_arrival_lane reads Flow's historical spork nodes. Since
+  // 20261010104104 a call that never connects is a FREE retry (like a 503), so
+  // a node that stays dark no longer kills probes -- it parks them, the lane
+  // keeps logging ok:true, and nothing else alarms. On 10-09/10 the mainnet24,
+  // 25 and 26 nodes all stopped completing a TCP handshake. This check is the
+  // alarm that free retry removed: probes still waiting on a transport failure
+  // after 6 h mean a node is down, not blipping.
+  try {
+    const sixHoursAgo = new Date(now.getTime() - 6 * 3_600_000).toISOString();
+    const { count: parked, error: parkedErr } = await supabase
+      .from("chain_arrival_probes")
+      .select("nft_id", { count: "exact", head: true })
+      .in("status", ["floor", "bisect", "window", "walk"])
+      .like("last_error", "Timeout of % ms reached.%HTTP Request/Response time: 0.0%")
+      .lt("created_at", sixHoursAgo);
+    if (parkedErr) {
+      checks.push({
+        name: "Chain Arrival Nodes",
+        status: "warn",
+        detail: `${isSaturationError(parkedErr.message) ? INCONCLUSIVE : ""}probe read failed: ${parkedErr.message}`,
+      });
+    } else if (parked == null) {
+      checks.push({
+        name: "Chain Arrival Nodes",
+        status: "warn",
+        detail: "probe count came back without a count -- unmeasured, not zero",
+      });
+    } else {
+      checks.push({
+        name: "Chain Arrival Nodes",
+        status: parked > 0 ? "warn" : "ok",
+        detail: parked > 0
+          ? `${parked} chain-arrival probe(s) older than 6 h are parked on a connect that never completes -- a historical spork node is down (known-issues #181)`
+          : "no probe parked on a dead spork node",
+        value: parked,
+      });
+    }
+  } catch (e: any) {
+    checks.push({
+      name: "Chain Arrival Nodes",
+      status: "warn",
+      detail: exceptionDetail(e),
+    });
+  }
+
   // TS edition-writer leak tripwire — inert UUID-keyed Top Shot edition rows
   // created in the last 48h. Canonical TS external_id is the integer pair
   // "set:play" (never contains '-'); UUID-keyed rows always do, so '%-%' is an
