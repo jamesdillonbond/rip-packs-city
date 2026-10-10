@@ -19,9 +19,17 @@ describe("originalImageUrl", () => {
     expect(originalImageUrl(gcs)).toBe(gcs)
     expect(originalImageUrl(ORIGINAL_8825)).toBe(ORIGINAL_8825)
   })
+  it("strips the resize segment on the assets. host too (challenge-reward packs, observed live 2026-10-09)", () => {
+    const redirect =
+      "https://assets.nbatopshot.com/cdn-cgi/image/width=256,format=jpeg,quality=85/misc/rib-origins-challenge-reward-pack.png"
+    expect(originalImageUrl(redirect)).toBe("https://assets.nbatopshot.com/misc/rib-origins-challenge-reward-pack.png")
+  })
   it("refuses anything that is not Top Shot's own asset host — never store a URL we do not recognise", () => {
     expect(originalImageUrl("https://evil.example/x.png")).toBeNull()
     expect(originalImageUrl("http://asset-preview.nbatopshot.com/x.png")).toBeNull()
+    expect(originalImageUrl("http://assets.nbatopshot.com/x.png")).toBeNull()
+    expect(originalImageUrl("https://assets.nbatopshot.com.evil.example/x.png")).toBeNull()
+    expect(originalImageUrl("https://evil.example/cdn-cgi/image/w=1/https://assets.nbatopshot.com/x.png")).toBeNull()
     expect(originalImageUrl("https://storage.googleapis.com/other-bucket/x.png")).toBeNull()
     expect(originalImageUrl(null)).toBeNull()
     expect(originalImageUrl("")).toBeNull()

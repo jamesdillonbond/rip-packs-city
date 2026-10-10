@@ -26,7 +26,12 @@
 export const PACKNFT_MEDIA_BASE = "https://media.nbatopshot.com/packnfts"
 const FETCH_TIMEOUT_MS = 10_000
 
-const CDN_RESIZE = /^(https:\/\/asset-preview\.nbatopshot\.com)\/cdn-cgi\/image\/[^/]+\//
+// Both of Top Shot's image hosts sit behind Cloudflare's resizer. Since 10-09
+// the challenge-reward packs (dists 8892–8895) redirect to `assets.` rather
+// than `asset-preview.`, e.g.
+//   https://assets.nbatopshot.com/cdn-cgi/image/width=256,…/misc/rib-origins-challenge-reward-pack.png
+// and the stripped original answers 200 image/png (read through pg_net 10-09).
+const CDN_RESIZE = /^(https:\/\/(?:asset-preview|assets)\.nbatopshot\.com)\/cdn-cgi\/image\/[^/]+\//
 
 /**
  * The original image URL behind a pack-media redirect target, or null when the
@@ -37,6 +42,7 @@ export function originalImageUrl(location: string | null | undefined): string | 
   if (!location) return null
   const url = location.trim().replace(CDN_RESIZE, "$1/")
   if (url.startsWith("https://asset-preview.nbatopshot.com/")) return url
+  if (url.startsWith("https://assets.nbatopshot.com/")) return url
   if (url.startsWith("https://storage.googleapis.com/assets-nbatopshot/")) return url
   return null
 }
