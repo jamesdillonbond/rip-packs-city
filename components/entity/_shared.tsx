@@ -21,6 +21,12 @@ export const EM_DASH = "—"
 export const RECENT_LOW_LABEL = "Recent Low"
 export const RECENT_LOW_TOTAL_LABEL = "Recent-Low Total"
 export const RECENT_LOW_HINT = "Lowest recent sale or ask — not a live floor"
+// #143 option (b) (2026-10-10): the REAL ask, when the edition has one — from
+// /api/best-asks (lib/asks/edition-live-ask.ts: per-collection floor sources,
+// seen within 7 days, <= 3x FMV, FMV required). Only a tile that HOLDS one may
+// use these labels; a tile without one keeps "Recent Low".
+export const LIVE_ASK_LABEL = "Floor"
+export const LIVE_ASK_HINT = "Lowest live ask — what a copy costs now"
 
 // ── Disney Pinnacle header totals (#24, 2026-09-28) ─────────────────────────
 // Pinnacle's entity RPCs return `listed_count` (pins with a live ask) and

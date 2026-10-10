@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
-import { EM_DASH, RECENT_LOW_HINT, RECENT_LOW_LABEL, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
+import { EM_DASH, LIVE_ASK_HINT, LIVE_ASK_LABEL, RECENT_LOW_HINT, RECENT_LOW_LABEL, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { tileSeriesLabel } from "@/lib/series-label"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
@@ -29,7 +29,8 @@ import {
   filterEditions,
   isEditionFilterActive,
 } from "@/lib/entity-editions-grid-format"
-import { getCollection, collectionHasLocking } from "@/lib/collections"
+import { getCollection, collectionHasLocking, COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+import { ownLookup } from "@/lib/safe-lookup"
 import { getOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import { editionRouteHref } from "@/lib/entity-href"
 
@@ -237,6 +238,61 @@ function useEditionBadges(enabled: boolean, collectionUrlSlug: string, slugs: st
   return { map, failed: failedSlugs.size > 0, retry }
 }
 
+// #143 option (b) (2026-10-10): the tile's price cell. `floor_usd` is
+// fmv_snapshots.floor_price_usd — on a sales-priced edition the window's LOWEST
+// SALE, never a listing — so the tile labels it "Recent Low". A REAL ask comes
+// from /api/best-asks (the team checklist's source chain, lib/asks/
+// edition-live-ask.ts: per-collection floor sources, <= 3x FMV, FMV required),
+// batched per page the way the binder enriches its rows (#182). When one
+// exists the cell says "Floor" with the live ask; when none does, the cell stays
+// "Recent Low" — a failed read fills nothing and claims nothing. POST, so it is
+// a signed-out-safe route of its own (not under /api/entity/*).
+// Pinnacle is excluded: its route_slug is not an editions key.
+const ASK_BATCH = 500 // half the route's MAX_KEYS
+function useEditionLiveAsks(enabled: boolean, collectionUrlSlug: string, slugs: string[]): Map<string, number> {
+  const [map, setMap] = useState<Map<string, number>>(() => new Map())
+  const requested = useRef<Set<string>>(new Set())
+  const slugsKey = slugs.join("\u0000")
+  useEffect(() => {
+    if (!enabled) return
+    const collectionId = ownLookup(COLLECTION_UUID_BY_SLUG, collectionUrlSlug)
+    if (!collectionId) return
+    const need = (slugsKey ? slugsKey.split("\u0000") : []).filter((sl) => sl.length > 0 && !requested.current.has(sl))
+    for (let i = 0; i < need.length; i += ASK_BATCH) {
+      const batch = need.slice(i, i + ASK_BATCH)
+      batch.forEach((sl) => requested.current.add(sl))
+      // Promise-wrapped so a fetch that throws synchronously (or a test stub
+      // that returns nothing) lands in the catch instead of breaking the effect.
+      Promise.resolve()
+        .then(() => fetch("/api/best-asks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ collectionId, editionKeys: batch }),
+          signal: AbortSignal.timeout(15000),
+        }))
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return (await r.json()) as { results?: Array<{ editionKey?: unknown; ask?: unknown }> }
+        })
+        .then((j) => {
+          const results = Array.isArray(j.results) ? j.results : []
+          if (results.length === 0) return
+          setMap((prev) => {
+            const next = new Map(prev)
+            for (const res of results) {
+              if (typeof res.editionKey === "string" && typeof res.ask === "number" && res.ask > 0) next.set(res.editionKey, res.ask)
+            }
+            return next
+          })
+        })
+        // A failed batch is retried on the next slug change (removed from
+        // `requested`); meanwhile its tiles show the recent low, not a guess.
+        .catch(() => batch.forEach((sl) => requested.current.delete(sl)))
+    }
+  }, [enabled, collectionUrlSlug, slugsKey])
+  return map
+}
+
 export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, initial, initialFailed = false, pageSize, showSetLink = true, showSort = false, packMode = false, exhaustedTotal = 0, showFilters = false, showOwnership = false }: Props) {
   const [rows, setRows] = useState<EditionTile[]>(initial)
   const [offset, setOffset] = useState<number>(initial.length)
@@ -263,6 +319,7 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
   const badgesEnabled = showFilters && collectionUrlSlug !== "disney-pinnacle"
   const rowSlugs = useMemo(() => rows.map((r) => r.route_slug), [rows])
   const badges = useEditionBadges(badgesEnabled, collectionUrlSlug, rowSlugs)
+  const liveAsks = useEditionLiveAsks(collectionUrlSlug !== "disney-pinnacle", collectionUrlSlug, rowSlugs)
   const badgeOptions = useMemo(() => editionBadgeOptions(rows, badges.map), [rows, badges.map])
   const badgesUnknown = badgesEnabled ? rows.filter((r) => !badges.map.has(r.route_slug)).length : 0
   const filtersActive = showFilters && isEditionFilterActive(filters)
@@ -390,7 +447,7 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
           {gridRows.map((e, idx) => (
-            <EditionTileCard key={e.route_slug} e={e} idx={idx} collectionUrlSlug={collectionUrlSlug} showSetLink={showSetLink} videoEnabled={videoEnabled} ownership={ownershipMap ? (ownershipMap.get(e.route_slug) ?? { owned: 0, locked: 0 }) : null} />
+            <EditionTileCard key={e.route_slug} e={e} idx={idx} collectionUrlSlug={collectionUrlSlug} showSetLink={showSetLink} videoEnabled={videoEnabled} ownership={ownershipMap ? (ownershipMap.get(e.route_slug) ?? { owned: 0, locked: 0 }) : null} liveAsk={liveAsks.get(e.route_slug) ?? null} />
           ))}
         </div>
       )}
@@ -445,7 +502,7 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
             ) : (
               <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10, opacity: 0.6 }}>
                 {exhaustedRows.map((e, idx) => (
-                  <EditionTileCard key={e.route_slug} e={e} idx={idx} collectionUrlSlug={collectionUrlSlug} showSetLink={showSetLink} videoEnabled={videoEnabled} ownership={ownershipMap ? (ownershipMap.get(e.route_slug) ?? { owned: 0, locked: 0 }) : null} />
+                  <EditionTileCard key={e.route_slug} e={e} idx={idx} collectionUrlSlug={collectionUrlSlug} showSetLink={showSetLink} videoEnabled={videoEnabled} ownership={ownershipMap ? (ownershipMap.get(e.route_slug) ?? { owned: 0, locked: 0 }) : null} liveAsk={liveAsks.get(e.route_slug) ?? null} />
                 ))}
               </div>
             )
@@ -465,6 +522,7 @@ function EditionTileCard({
   showSetLink,
   videoEnabled,
   ownership,
+  liveAsk,
 }: {
   e: EditionTile
   idx: number
@@ -473,6 +531,8 @@ function EditionTileCard({
   videoEnabled: boolean
   /** null = counts not KNOWN (no wallet / loading / failed) — render nothing, never a zero. */
   ownership: EditionOwnership | null
+  /** The edition's LIVE low ask from /api/best-asks; null = none known (the cell shows the recent low). */
+  liveAsk: number | null
 }) {
   return (
     <Link
@@ -513,8 +573,17 @@ function EditionTileCard({
           <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 16, color: "var(--rpc-text-primary)" }}>{fmtUsd(e.fmv_usd)}</div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }} title={RECENT_LOW_HINT}>{RECENT_LOW_LABEL}</div>
-          <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{fmtUsd(e.floor_usd ?? null)}</div>
+          {liveAsk != null && liveAsk > 0 ? (
+            <>
+              <div className="rpc-mono" data-testid="tile-live-ask-label" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }} title={LIVE_ASK_HINT}>{LIVE_ASK_LABEL}</div>
+              <div className="rpc-mono" data-testid="tile-live-ask" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{fmtUsd(liveAsk)}</div>
+            </>
+          ) : (
+            <>
+              <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }} title={RECENT_LOW_HINT}>{RECENT_LOW_LABEL}</div>
+              <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{fmtUsd(e.floor_usd ?? null)}</div>
+            </>
+          )}
         </div>
       </div>
       {/* ConfidencePill removed 2026-07-11 — confidence is build-time signal. */}

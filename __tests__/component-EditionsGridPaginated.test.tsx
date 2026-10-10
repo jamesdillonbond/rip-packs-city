@@ -302,3 +302,67 @@ describe("EditionsGridPaginated", () => {
     expect(getByText(/Load more above to reveal the exhausted editions/)).toBeTruthy()
   })
 })
+
+// #143 option (b) (2026-10-10): the tile's price cell says "Floor" ONLY when
+// /api/best-asks returns a live ask for that edition; otherwise it stays
+// "Recent Low" (fmv_snapshots.floor_price_usd — a past sale on a sales-priced
+// edition). A failed read fills nothing: no tile claims a floor it cannot show.
+describe("EditionsGridPaginated — live ask vs recent low (#143)", () => {
+  const liveAskReply = (results: Array<{ editionKey: string; ask: number }>) =>
+    Promise.resolve({ ok: true, json: async () => ({ results, partial: false }) })
+
+  it("a tile with a live ask reads 'Floor $ask'; a tile without one keeps 'Recent Low $floor_usd'", async () => {
+    fetchMock.mockImplementation((url: string) => (String(url) === "/api/best-asks" ? liveAskReply([{ editionKey: "273:9048", ask: 4.84 }]) : Promise.resolve({ ok: false })))
+    render(
+      <EditionsGridPaginated
+        collectionUrlSlug="nba-top-shot"
+        fetchUrl="/api/x"
+        initial={[tile("273:9048", { floor_usd: 2.5 }), tile("273:9049", { floor_usd: 3 })]}
+        pageSize={10}
+      />,
+    )
+    await waitFor(() => expect(screen.getAllByTestId("tile-live-ask")).toHaveLength(1))
+    expect(screen.getByTestId("tile-live-ask").textContent).toContain("4.84")
+    expect(screen.getByTestId("tile-live-ask-label").textContent).toBe("Floor")
+    // the other tile still shows the recent low, labelled as such
+    expect(screen.getAllByText("Recent Low")).toHaveLength(1)
+    expect(screen.getByText("$3.00")).toBeTruthy()
+    // the request carried the collection UUID and the tiles' keys
+    const call = fetchMock.mock.calls.find((c) => String(c[0]) === "/api/best-asks")
+    expect(call).toBeTruthy()
+    const body = JSON.parse((call![1] as RequestInit).body as string)
+    expect(body.collectionId).toBe("95f28a17-224a-4025-96ad-adf8a4c63bfd")
+    expect(body.editionKeys).toEqual(["273:9048", "273:9049"])
+  })
+
+  it("a failed best-asks read claims nothing: every tile keeps 'Recent Low' and no 'Floor' label renders", async () => {
+    fetchMock.mockImplementation(() => Promise.resolve({ ok: false, status: 503 }))
+    render(
+      <EditionsGridPaginated
+        collectionUrlSlug="nba-top-shot"
+        fetchUrl="/api/x"
+        initial={[tile("273:9048", { floor_usd: 2.5 })]}
+        pageSize={10}
+      />,
+    )
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.queryByTestId("tile-live-ask")).toBeNull()
+    expect(screen.queryByText("Floor")).toBeNull()
+    expect(screen.getAllByText("Recent Low")).toHaveLength(1)
+  })
+
+  it("Pinnacle never asks: its route_slug is not an editions key", async () => {
+    fetchMock.mockImplementation(() => Promise.resolve({ ok: true, json: async () => ({ results: [], partial: false }) }))
+    render(
+      <EditionsGridPaginated
+        collectionUrlSlug="disney-pinnacle"
+        fetchUrl="/api/x"
+        initial={[tile("pin-1", { floor_usd: 2.5 })]}
+        pageSize={10}
+      />,
+    )
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]) === "/api/best-asks")).toHaveLength(0)
+  })
+})
