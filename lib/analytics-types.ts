@@ -730,7 +730,8 @@ export interface LiquidityDistributionResponse {
 // ── Net Marketplace activity RPC response ─────────────────────────────────
 // flowty_top_net_marketplace(p_collection, p_start, p_end, p_limit).
 // Wallets ranked by combined buy + sell activity on Flowty's NFTStorefrontV2
-// fork. net_position_usd = buy_volume - sell_volume (negative = net seller).
+// fork. net_position_usd = sell_volume - buy_volume (positive = net seller;
+// the SQL computes COALESCE(sells) - COALESCE(buys) -- corrected 2026-10-10, #178).
 
 export interface NetMarketplaceRow {
   rank: number
@@ -747,6 +748,10 @@ export interface NetMarketplaceRow {
 export interface NetMarketplaceResponse {
   collection: string
   days: number
+  /** ISO date the window ends on (Flowty's last marketplace sale) -- 2026-10-10, #178. */
+  as_of?: string
+  /** True when the window is anchored to a closed venue rather than now(). */
+  archived?: boolean
   rows: NetMarketplaceRow[]
 }
 

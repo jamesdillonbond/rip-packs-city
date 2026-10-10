@@ -5,11 +5,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // coerces the numeric columns. Pins the happy path (collection/days echoed,
 // numeric coercion) and the rpc-error 500.
 
-const rpc: { data: any; error: any; throws?: boolean } = { data: null, error: null }
+const rpc: { data: any; error: any; throws?: boolean; lastArgs?: any } = { data: null, error: null }
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
-    rpc: async () => {
+    rpc: async (_fn: string, args: any) => {
+      rpc.lastArgs = args
       if (rpc.throws) throw new Error("connection reset")
       return { data: rpc.data, error: rpc.error }
     },
@@ -44,6 +45,20 @@ describe("GET /api/analytics/wallets/net-marketplace", () => {
     const body = await res.json()
     expect(body.error).toBe("unsupported_collection")
     expect(body.rows).toBeUndefined()
+  })
+
+  // 2026-10-10 (#178): Flowty went dormant 2026-05-14, so a window measured from
+  // now() is empty by construction. The window ends on the close date and the
+  // response says so; a planted now()-anchored window reds this.
+  it("anchors the window to Flowty's last marketplace sale, not now(), and says so", async () => {
+    rpc.data = []
+    const res = await GET(req("https://t/api/analytics/wallets/net-marketplace?days=7"))
+    const body = await res.json()
+    expect(body.as_of).toBe("2026-05-14")
+    expect(body.archived).toBe(true)
+    expect(rpc.lastArgs.p_end).toBe("2026-05-14T23:59:59.999Z")
+    expect(rpc.lastArgs.p_start).toBe("2026-05-07T23:59:59.999Z")
+    expect(new Date(rpc.lastArgs.p_end).getTime()).toBeLessThan(Date.now())
   })
 
   it("an absent collection still means all", async () => {

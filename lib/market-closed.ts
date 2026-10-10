@@ -64,6 +64,19 @@ export const CLOSED_MARKETS: Record<string, ClosedMarket> = {
 }
 CLOSED_MARKETS["ufc-strike"] = CLOSED_MARKETS["ufc"]
 
+/**
+ * Flowty's NFT marketplace (the NFTStorefrontV2 fork) went dormant on
+ * 2026-05-14 -- the last `sales.marketplace = 'flowty'` row carries that date
+ * (measured 2026-10-10, known-issues #178; `collection_config` records the same
+ * fact as `dormant_may14_2026`). Surfaces that describe Flowty marketplace
+ * activity anchor their windows HERE, not at now(): a "last 30 days" window
+ * measured from today is empty by construction and will stay empty. This is
+ * a closed-venue date, separate from CLOSED_MARKETS (which is per collection).
+ * ⚠ Do NOT derive it at request time -- `max(sold_at) WHERE marketplace='flowty'`
+ * has no index and walked 512k buffers / 10.6 s on 2026-10-10.
+ */
+export const FLOWTY_MARKETPLACE_CLOSED_ON = "2026-05-14"
+
 /** True when the collection's market is closed and prices must not read as current. */
 export function isMarketClosed(collectionUrlSlug: string | null | undefined): boolean {
   if (!collectionUrlSlug) return false

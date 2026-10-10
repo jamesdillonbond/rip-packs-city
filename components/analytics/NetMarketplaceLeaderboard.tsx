@@ -2,8 +2,16 @@
 
 // Net Marketplace activity leaderboard — wallets ranked by combined Flowty
 // buy + sell volume in the selected window. Net position is colored:
-//   green = net seller (sold more than they bought)
-//   red   = net buyer  (bought more than they sold)
+//   green = net seller (sold more than they bought)  — net_position_usd > 0
+//   red   = net buyer  (bought more than they sold)  — net_position_usd < 0
+// net_position_usd = sell_volume - buy_volume, as the SQL computes it. Until
+// 2026-10-10 (#178) this file read it the other way round and coloured every
+// net seller red; the sign is pinned by the component test now.
+//
+// 2026-10-10 (#178): Flowty's marketplace went dormant on 2026-05-14, so the
+// API anchors the window to that date and answers `as_of` + `archived`. The
+// copy here says which window it is showing ("Flowty's final 30 days, to
+// 14 May 2026") instead of implying a live feed.
 
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
@@ -12,6 +20,7 @@ import WalletIdenticon from "@/components/analytics/WalletIdenticon"
 import { useResolveUsernames } from "@/lib/analytics/username-resolver"
 import type { NetMarketplaceResponse, NetMarketplaceRow } from "@/lib/analytics-types"
 import { fetchJson } from "@/lib/analytics/fetch-json"
+import { formatClosedOn } from "@/lib/market-closed"
 
 const COLLECTION_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "all", label: "All" },
@@ -64,6 +73,9 @@ export default function NetMarketplaceLeaderboard() {
   }, [collection, days])
 
   const rows: NetMarketplaceRow[] = resp?.rows ?? []
+  // The window the API actually answered for. Only claim an archive window off
+  // a response we received.
+  const asOf = resp?.archived && resp.as_of ? formatClosedOn(resp.as_of) : null
   const addrs = useMemo(() => rows.map((r) => r.address).filter(Boolean), [rows])
   const names = useResolveUsernames(addrs)
 
@@ -76,7 +88,7 @@ export default function NetMarketplaceLeaderboard() {
             <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Net Marketplace Activity</h2>
           </div>
           <p className="mt-1 text-sm text-[color:var(--rpc-text-secondary)]">
-            Wallets ranked by combined buy + sell activity on Flowty. Net position in green = net seller, red = net buyer.
+            Wallets ranked by combined buy + sell activity on Flowty{asOf ? ` in its final ${days} days of trading (to ${asOf})` : ""}. Net position in green = sold more than bought, red = bought more than sold.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -150,8 +162,8 @@ export default function NetMarketplaceLeaderboard() {
               </thead>
               <tbody>
                 {rows.map((row) => {
-                  const isNetSeller = row.net_position_usd < 0
-                  // net_position_usd = buy - sell. Negative net = net seller (green).
+                  // net_position_usd = sell - buy. Positive net = net seller (green).
+                  const isNetSeller = row.net_position_usd > 0
                   const netColor = row.net_position_usd === 0
                     ? "var(--rpc-text-muted)"
                     : isNetSeller

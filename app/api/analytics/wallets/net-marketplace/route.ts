@@ -2,19 +2,30 @@
 //
 // Thin wrapper over flowty_top_net_marketplace(p_collection, p_start, p_end,
 // p_limit). Wallets ranked by combined buy + sell activity on Flowty's
-// NFTStorefrontV2 fork. net_position_usd = buy_volume - sell_volume; the
-// dashboard renders negative net = net seller (green) and positive net =
-// net buyer (red).
+// NFTStorefrontV2 fork. net_position_usd = sell_volume - buy_volume (that is
+// what the SQL computes: COALESCE(sells) - COALESCE(buys)); the dashboard
+// renders positive net = net seller (green) and negative net = net buyer (red).
+// ⚠ Until 2026-10-10 this header and the component had the sign backwards
+// (#178): a net seller was coloured red with a leading "+".
+//
+// 2026-10-10 (#178): the window is anchored to Flowty's LAST marketplace sale
+// (lib/market-closed.ts FLOWTY_MARKETPLACE_CLOSED_ON), not to now(). Flowty went
+// dormant on 2026-05-14, so a window measured from today was empty by
+// construction; the panel lives on a page that calls itself a frozen archive,
+// and "Flowty's final N days" is the honest reading of that archive. The
+// response carries `as_of` (the anchor) and `archived: true` so the client can
+// say so.
 //
 // Query params:
 //   collection  topshot|allday|golazos|pinnacle|ufc|all  (default 'all')
-//   days        1..365                                    (default 30)
+//   days        1..365 (ending at the close date)         (default 30)
 //   limit       1..50                                     (default 15)
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { NetMarketplaceRow, NetMarketplaceResponse } from "@/lib/analytics-types"
+import { FLOWTY_MARKETPLACE_CLOSED_ON } from "@/lib/market-closed"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 300
@@ -48,8 +59,10 @@ export async function GET(req: NextRequest) {
     const days = parseInt1(url.searchParams.get("days"), 30, 1, 365)
     const limit = parseInt1(url.searchParams.get("limit"), 15, 1, 50)
 
-    const now = new Date()
-    const start = new Date(now.getTime() - days * DAY_MS)
+    // The archive's last day, inclusive: windows run back from the end of the
+    // day Flowty's marketplace went dormant.
+    const end = new Date(`${FLOWTY_MARKETPLACE_CLOSED_ON}T23:59:59.999Z`)
+    const start = new Date(end.getTime() - days * DAY_MS)
 
     console.log(
       `[analytics/wallets/net-marketplace] start collection=${collection} days=${days} limit=${limit}`
@@ -61,7 +74,7 @@ export async function GET(req: NextRequest) {
       {
         p_collection: collection,
         p_start: start.toISOString(),
-        p_end: now.toISOString(),
+        p_end: end.toISOString(),
         p_limit: limit,
       }
     )
@@ -82,7 +95,7 @@ export async function GET(req: NextRequest) {
       total_tx_count: Number(r.total_tx_count) || 0,
     }))
 
-    const payload: NetMarketplaceResponse = { collection, days, rows }
+    const payload: NetMarketplaceResponse = { collection, days, as_of: FLOWTY_MARKETPLACE_CLOSED_ON, archived: true, rows }
     console.log(
       `[analytics/wallets/net-marketplace] ok elapsed=${Date.now() - t0}ms rows=${rows.length}`
     )
