@@ -23,7 +23,7 @@ const datasetJsonLd = {
     {
       "@type": "DataDownload",
       encodingFormat: "application/json",
-      contentUrl: `${ANALYTICS_BASE_URL}/api/fmv?edition=27:1648`,
+      contentUrl: `${ANALYTICS_BASE_URL}/api/fmv?edition=219:7421`,
       description: "GET /api/fmv — single-edition FMV lookup",
     },
     {
@@ -35,24 +35,32 @@ const datasetJsonLd = {
   ],
 }
 
+// 2026-10-10: every example below is a REAL response captured from production that afternoon
+// (values drift; the SHAPE is the contract). The previous examples documented fields the API has
+// never returned (fmv_usd, serial, a string liquidity_rating, series, computed_at) and an example
+// edition (27:1648) that does not exist -- the curl a developer copied answered "Edition not found".
 const SAMPLE_RESPONSE = `{
-  "edition": "27:1648",
-  "fmv_usd": 3.42,
-  "serial": null,
-  "confidence": "HIGH",
-  "liquidity_rating": "high",
-  "computed_at": "2026-05-07T01:14:22.318Z",
-  "series": 4,
-  "sales_count_30d": 41,
-  "days_since_sale": 0
+  "edition": "219:7421",
+  "fmv": 77,
+  "serialMult": 7.6,
+  "serialBasis": "first",
+  "adjustedFmv": 585.3,
+  "confidence": "high",
+  "updatedAt": "2026-10-10T19:15:51.049029+00:00",
+  "fallbackTier": "rpc_fmv",
+  "liquidityRating": 2,
+  "aspUsd": 80.55,
+  "aspClean": 80.55,
+  "salesCount30d": 10,
+  "daysSinceSale": 6
 }`
 
 const BATCH_REQUEST = `curl -X POST https://www.rippackscity.com/api/fmv \\
   -H "Content-Type: application/json" \\
   -d '{
     "editions": [
-      "1234:5678",
-      { "edition": "9876:5432", "serial": 7 }
+      "219:7421",
+      { "edition": "219:7404", "serial": 7 }
     ]
   }'`
 
@@ -62,31 +70,39 @@ const BATCH_RESPONSE = `{
   "errorCount": 0,
   "results": [
     {
-      "edition": "1234:5678",
-      "serial": null,
-      "fmv_usd": 12.55,
-      "confidence": "HIGH",
-      "liquidity_rating": "high",
-      "computed_at": "2026-05-07T01:14:22Z",
-      "series": 7,
-      "sales_count_30d": 28,
-      "days_since_sale": 0
+      "edition": "219:7421",
+      "fmv": 77,
+      "serialMult": null,
+      "serialBasis": null,
+      "adjustedFmv": 77,
+      "confidence": "high",
+      "updatedAt": "2026-10-10T19:15:51.049029+00:00",
+      "fallbackTier": "rpc_fmv",
+      "liquidityRating": 2,
+      "aspUsd": 80.55,
+      "aspClean": 80.55,
+      "salesCount30d": 10,
+      "daysSinceSale": 6
     },
     {
-      "edition": "9876:5432",
-      "serial": 7,
-      "fmv_usd": 184.20,
-      "confidence": "MEDIUM",
-      "liquidity_rating": "medium",
-      "computed_at": "2026-05-07T01:14:22Z",
-      "series": 4,
-      "sales_count_30d": 6,
-      "days_since_sale": 2
+      "edition": "219:7404",
+      "fmv": 64,
+      "serialMult": 1.83,
+      "serialBasis": "jersey",
+      "adjustedFmv": 116.82,
+      "confidence": "high",
+      "updatedAt": "2026-10-10T17:48:13.645186+00:00",
+      "fallbackTier": "rpc_fmv",
+      "liquidityRating": 2,
+      "aspUsd": 63.42,
+      "aspClean": 63.42,
+      "salesCount30d": 7,
+      "daysSinceSale": 1
     }
   ]
 }`
 
-const GET_EXAMPLE = `curl https://www.rippackscity.com/api/fmv?edition=27:1648`
+const GET_EXAMPLE = `curl "https://www.rippackscity.com/api/fmv?edition=219:7421&serial=1"`
 
 export default function ApiPage() {
   return (
@@ -126,11 +142,14 @@ export default function ApiPage() {
           description="Single-edition FMV lookup. The edition parameter is required and uses the setID:playID convention. The serial parameter is optional and applies a per-serial premium multiplier when supplied."
         >
           <ParamRow name="edition" required>
-            <code>setID:playID</code> — e.g. <code>27:1648</code>. Required.
+            <code>setID:playID</code> — e.g. <code>219:7421</code>. Required.
           </ParamRow>
           <ParamRow name="serial">
-            Integer serial number. Optional. When supplied, the response includes a
-            serial-aware FMV adjustment.
+            Integer serial number. Optional. When supplied, the response carries the
+            serial premium from our fitted model: <code>serialMult</code>,{" "}
+            <code>serialBasis</code> (<code>first</code>, <code>jersey</code>,{" "}
+            <code>perfect</code> or <code>no_premium</code>) and{" "}
+            <code>adjustedFmv</code>.
           </ParamRow>
         </Endpoint>
 
@@ -152,10 +171,15 @@ export default function ApiPage() {
         </p>
         <CodeBlock>{SAMPLE_RESPONSE}</CodeBlock>
         <p className="mt-2 text-xs text-[color:var(--rpc-text-muted)]">
-          Per-result fields: <code>edition</code>, <code>serial</code>, <code>fmv_usd</code>
-          , <code>confidence</code> (HIGH | MEDIUM | LOW | ASK_ONLY),{" "}
-          <code>liquidity_rating</code>, <code>computed_at</code>, <code>series</code>,{" "}
-          <code>sales_count_30d</code>, <code>days_since_sale</code>. Batch wrapper adds{" "}
+          Per-result fields: <code>edition</code>, <code>fmv</code>,{" "}
+          <code>serialMult</code>, <code>serialBasis</code>, <code>adjustedFmv</code>,{" "}
+          <code>confidence</code> (lower-case: high | medium | low | ask_only | sales_only |
+          stale | no_data), <code>updatedAt</code>, <code>fallbackTier</code>,{" "}
+          <code>liquidityRating</code>, <code>aspUsd</code>, <code>aspClean</code>,{" "}
+          <code>salesCount30d</code>, <code>daysSinceSale</code>; an unknown edition or one
+          with no FMV yet carries <code>error</code>. <code>serialMult</code> is null when no
+          serial was asked for, or when the edition&apos;s circulation cannot place the serial
+          (<code>serialBasis: &quot;circulation_unknown&quot;</code>). Batch wrapper adds{" "}
           <code>count</code>, <code>successCount</code>, <code>errorCount</code>, and{" "}
           <code>results[]</code>.
         </p>

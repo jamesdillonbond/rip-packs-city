@@ -661,7 +661,8 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // /api/fmv/demo — GET-only public FMV demo (5 real samples + API usage docs,
   // 1hr CDN cache, service-role read, no user data). Documented as a public
   // no-auth endpoint; linking it (pricing page, docs, social) must not bounce
-  // to /login. The authenticated single/batch /api/fmv stays gated. (2026-06-13)
+  // to /login. (2026-10-10: /api/fmv itself is public too -- it is in the read-only GET/POST
+  // allowlist further down; the "stays gated" note that stood here was stale.) (2026-06-13)
   if (pathname === "/api/fmv/demo") return true
   // /api/collection-snapshot — GET-only, wallet-keyed read backing the public
   // /share/<wallet> card (Total FMV + top moments). The /share server
