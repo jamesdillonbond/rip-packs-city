@@ -2960,6 +2960,14 @@ const PINS = [
     // 2026-10-10 follow-ups: the zeroing arm keeps orig_drop_weight; the size gate counts drawable rows.
     migration: "supabase/migrations/20261010164143_audit_20261010_topshot_atlas_pool_sync_compares_drawable_editions.sql",
   },
+  {
+    // Added 2026-10-10 (#85). Picks the editions whose Atlas snapshot is re-fetched next; an
+    // edition whose last snapshot was incomplete (> one 200-row page) waits 30 days, not 24 h
+    // (7 days was a no-op: shorter than the ~11-day rotation).
+    fn: "atlas_edition_verify_dispatch",
+    test: "supabase/tests/atlas_edition_verify_dispatch.sql",
+    migration: "supabase/migrations/20261010181823_audit_20261010_edition_verify_incomplete_wait_exceeds_the_rotation.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version
