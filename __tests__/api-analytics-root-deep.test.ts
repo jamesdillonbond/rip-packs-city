@@ -128,6 +128,20 @@ describe("GET /api/analytics — guards + wallet resolution", () => {
     expect(body.wallet).toBe("0xaaaabbbbccccdddd")
   })
 
+  it("passes a Candy (Solana) base58 wallet straight through VERBATIM — never to the username lookup", async () => {
+    const sol = "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2"
+    state.resolvedAddress = null // a lookup would be a confirmed miss → 4xx
+    const res = await GET(req(`?wallet=${sol}&collection_id=candy-mlb`))
+    expect(res.status).toBe(200)
+    const call = state.rpcCalls.find((c) => c.name === "get_wallet_moments_with_fmv")
+    expect(call?.args.p_wallet).toBe(sol)
+  })
+
+  it("folds a mixed-case Flow address before the exact-match read", async () => {
+    await GET(req(`?wallet=0xBD94CADE097E50AC&collection_id=nba-top-shot`))
+    expect(state.rpcCalls.find((c) => c.name === "get_wallet_moments_with_fmv")?.args.p_wallet).toBe(WALLET)
+  })
+
   it("500s and KEEPS our own domain message when the username cannot be resolved", async () => {
     state.resolvedAddress = null
     const res = await GET(req("?wallet=ghost&collection_id=nba-top-shot"))

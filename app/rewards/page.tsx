@@ -157,7 +157,9 @@ export default function RewardsPage() {
       setCosmetics(data.cosmetics ?? []);
       setEquipped(data.equipped ?? { border: null, banner: null });
       setResolvedTsUsername(data.resolvedTsUsername ?? null);
-      setHasVerifiedWallet(data.hasVerifiedWallet ?? false);
+      // Only an explicit `false` shows the verify nudge; `null` means the server
+      // could not read the user's wallets, and an unknown is not "unverified".
+      setHasVerifiedWallet(data.hasVerifiedWallet !== false);
     } catch {
       setLoadFailed(true);
       setFlash({ kind: "err", msg: "Couldn't load rewards. Try again." });

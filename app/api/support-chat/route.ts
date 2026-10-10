@@ -2578,13 +2578,16 @@ async function executeToolInner(
         }
         const uuid = col.supabaseCollectionId;
         if (!uuid) return { collection: col.label, collectionId: col.id, results: [] };
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("cached_listings")
           .select("player_name, set_name, tier, serial_number, ask_price, fmv, discount, buy_url")
           .eq("collection_id", uuid)
           .ilike("player_name", `%${name}%`)
           .order("discount", { ascending: false })
           .limit(perCollection);
+        // A failed read is UNKNOWN, not "no listings": flag it so the model is
+        // never handed an empty group it would repeat as a fact.
+        if (error) return { collection: col.label, collectionId: col.id, results: [], failed: true };
         return {
           collection: col.label,
           collectionId: col.id,
@@ -2600,8 +2603,22 @@ async function executeToolInner(
           })),
         };
       });
-      const grouped = await Promise.all(queries);
+      const grouped: Array<{ collection: string; collectionId: string; results: unknown[]; failed?: boolean }> =
+        await Promise.all(queries);
       const total = grouped.reduce((sum, g) => sum + g.results.length, 0);
+      const failedCollections = grouped.filter((g) => g.failed).map((g) => g.collection);
+      if (failedCollections.length === grouped.length) {
+        return JSON.stringify({ status: "error", message: "Couldn't search listings right now — please try again." });
+      }
+      if (failedCollections.length > 0) {
+        return JSON.stringify({
+          status: "partial",
+          total,
+          groups: grouped.filter((g) => !g.failed),
+          failedCollections,
+          note: `Listings for ${failedCollections.join(", ")} couldn't be read just now; say so rather than implying there are none there.`,
+        });
+      }
       return JSON.stringify({ status: "ok", total, groups: grouped });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: safeApiError(err, "search_across_collections failed").error });
@@ -2755,24 +2772,39 @@ async function executeToolInner(
       const editionKey = toolInput.editionKey;
       if (!editionKey) return JSON.stringify({ status: "error", message: "editionKey is required" });
 
-      const { data: edition } = await supabase
+      // An external_id is unique only WITHIN a collection: 575 keys ("1", "10", …)
+      // exist in both All Day and Golazos, so an unscoped .single() errored on
+      // them and the dropped error read as "Edition not found". Scope to the
+      // active collection, and keep failed / ambiguous / absent apart.
+      let editionQuery = supabase
         .from("editions")
         .select("id, player_name, set_name, tier")
-        .eq("external_id", editionKey)
-        .single();
+        .eq("external_id", editionKey);
+      if (effectiveCollectionUuid) editionQuery = editionQuery.eq("collection_id", effectiveCollectionUuid);
+      const { data: editionRows, error: editionErr } = await editionQuery.limit(2);
 
+      if (editionErr) {
+        return JSON.stringify({ status: "error", message: "Couldn't read that edition right now — please try again." });
+      }
+      if ((editionRows ?? []).length > 1) {
+        return JSON.stringify({ status: "ambiguous", message: "That edition key exists in more than one collection — say which collection you mean." });
+      }
+      const edition = (editionRows ?? [])[0];
       if (!edition?.id) {
         return JSON.stringify({ status: "not_found", message: "Edition not found for that key." });
       }
 
-      const { data: snapshot } = await supabase
+      const { data: snapshotRows, error: snapshotErr } = await supabase
         .from("fmv_snapshots")
         .select("fmv_usd, confidence, wap_usd:asp_usd, floor_price_usd, computed_at, sales_count_30d, days_since_sale, ask_proxy_fmv, algo_version")
         .eq("edition_id", edition.id)
         .order("computed_at", { ascending: false })
-        .limit(1)
-        .single();
+        .limit(1);
 
+      if (snapshotErr) {
+        return JSON.stringify({ status: "error", message: "Couldn't read this edition's FMV right now — please try again." });
+      }
+      const snapshot = (snapshotRows ?? [])[0];
       if (!snapshot) return JSON.stringify({ status: "no_data", message: "No FMV snapshot yet." });
 
       const computedAgo = snapshot.computed_at
@@ -3574,11 +3606,19 @@ async function executeToolInner(
         if (ctx.pageContext === "bot_dm" && ctx.sessionId.startsWith("tg:")) channels = ["telegram"];
         else if (ctx.pageContext === "bot_dm" && ctx.sessionId.startsWith("dc:")) channels = ["discord"];
         else {
-          const { data: chans } = await (supabase as any)
+          const { data: chans, error: chansErr } = await (supabase as any)
             .from("notification_channels")
             .select("channel")
             .eq("owner_key", ctx.userId)
             .eq("verified", true);
+          // A failed read is not "no verified channels": falling through to email
+          // would SAVE an email-only alert for someone verified on Telegram/Discord.
+          if (chansErr) {
+            return JSON.stringify({
+              status: "error",
+              message: "Couldn't read your notification channels just now — say which channel (email, Telegram or Discord) and I'll set the alert up on that.",
+            });
+          }
           channels = [...new Set((chans ?? []).map((c2: any) => String(c2.channel)))] as string[];
           if (!channels.length) channels = ["email"];
         }

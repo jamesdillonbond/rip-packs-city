@@ -17,6 +17,7 @@
 // only where its count equals the rip's moments_pulled; otherwise pulls are
 // [] with pulls_source NULL — "not identified", never a guess.
 
+import { normalizeAddress } from "@/lib/address"
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
@@ -34,7 +35,10 @@ export async function GET(req: NextRequest) {
     return res as Response
   }
 
-  const wallet = (req.nextUrl.searchParams.get("wallet") ?? "").toLowerCase().trim()
+  // normalizeAddress, never a bare fold: a saved Candy (Solana) key is base58 and
+  // case-sensitive, so a folded copy matches no saved_wallets row and reads as
+  // "wallet not saved on this account". Hex is folded exactly as before.
+  const wallet = normalizeAddress(req.nextUrl.searchParams.get("wallet") ?? "")
   const packNftId = (req.nextUrl.searchParams.get("packNftId") ?? "").trim()
   const collection = (req.nextUrl.searchParams.get("collection") ?? "").trim()
   if (!wallet || !packNftId) {

@@ -21,6 +21,7 @@
 // (20260925143056) — the SELLS tab used to list 42 moment sells and none of
 // the 502 packs the wallet sold.
 
+import { normalizeAddress } from "@/lib/address"
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
@@ -41,7 +42,10 @@ export async function GET(req: NextRequest) {
   }
 
   const url = req.nextUrl
-  const wallet = (url.searchParams.get("wallet") ?? "").toLowerCase().trim()
+  // normalizeAddress, never a bare fold: a saved Candy (Solana) key is base58 and
+  // case-sensitive, so a folded copy matches no saved_wallets row and reads as
+  // "wallet not saved on this account". Hex is folded exactly as before.
+  const wallet = normalizeAddress(url.searchParams.get("wallet") ?? "")
   const kindRaw = (url.searchParams.get("kind") ?? "").trim().toLowerCase()
   const limitRaw = parseInt(url.searchParams.get("limit") ?? "50", 10)
   const offsetRaw = parseInt(url.searchParams.get("offset") ?? "0", 10)

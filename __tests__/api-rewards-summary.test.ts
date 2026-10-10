@@ -46,7 +46,10 @@ vi.mock("@/lib/supabase", () => {
       not: () => c,
       order: () => c,
       limit: () => c,
-      maybeSingle: async () => ({ data: null }),
+      maybeSingle: async () =>
+        state.errorOnTable && table === state.errorOnTable
+          ? { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } }
+          : { data: null, error: null },
       then: (resolve: any) => {
         if (state.errorOnTable && table === state.errorOnTable) {
           // ⚠ supabase-js RETURNS this shape — it does not throw. `count` is
@@ -105,6 +108,14 @@ describe("GET /api/rewards/summary", () => {
     const res = await GET()
     expect(res.status).toBe(200)
     expect((await res.json()).referralCount).toBe(0)
+  })
+
+  it("reports hasVerifiedWallet as null when the saved_wallets read FAILS, never as false", async () => {
+    // false shows an already-verified user the "Verify by listing a Moment" nudge.
+    state.errorOnTable = "saved_wallets"
+    const res = await GET()
+    expect(res.status).toBe(200)
+    expect((await res.json()).hasVerifiedWallet).toBeNull()
   })
 
   it("returns the authed summary payload", async () => {

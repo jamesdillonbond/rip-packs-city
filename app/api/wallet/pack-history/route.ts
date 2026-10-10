@@ -11,6 +11,7 @@
 // underscore-form DB slug (nba_top_shot, …) or the hyphen-form URL slug
 // (nba-top-shot, …); both are normalized via SLUG_TO_DB_SLUG.
 
+import { normalizeAddress } from "@/lib/address"
 import { NextRequest, NextResponse, after } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
@@ -38,7 +39,10 @@ export async function GET(req: NextRequest) {
   }
 
   const url = req.nextUrl
-  const wallet = (url.searchParams.get("wallet") ?? "").toLowerCase().trim()
+  // normalizeAddress, never a bare fold: a saved Candy (Solana) key is base58 and
+  // case-sensitive, so a folded copy matches no saved_wallets row and reads as
+  // "wallet not saved on this account". Hex is folded exactly as before.
+  const wallet = normalizeAddress(url.searchParams.get("wallet") ?? "")
   const collectionRaw = (url.searchParams.get("collection") ?? "").trim()
   const statusRaw = (url.searchParams.get("status") ?? "").trim().toLowerCase()
   const limitRaw = parseInt(url.searchParams.get("limit") ?? "50", 10)

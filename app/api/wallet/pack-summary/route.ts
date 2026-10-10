@@ -8,6 +8,7 @@
 // Wraps get_wallet_pack_summary(p_wallet text) which returns jsonb with
 // { totals, by_currency, by_collection, note, wallet, computed_at }.
 
+import { normalizeAddress } from "@/lib/address"
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
@@ -25,7 +26,10 @@ export async function GET(req: NextRequest) {
     return res as Response
   }
 
-  const wallet = (req.nextUrl.searchParams.get("wallet") ?? "").toLowerCase().trim()
+  // normalizeAddress, never a bare fold: a saved Candy (Solana) key is base58 and
+  // case-sensitive, so a folded copy matches no saved_wallets row and reads as
+  // "wallet not saved on this account". Hex is folded exactly as before.
+  const wallet = normalizeAddress(req.nextUrl.searchParams.get("wallet") ?? "")
   if (!wallet) {
     return NextResponse.json({ error: "wallet required" }, { status: 400 })
   }

@@ -12,12 +12,14 @@ const state = vi.hoisted(() => ({
   savedWallets: { data: [{ wallet_addr: "0xabc", verified_at: "2026-07-01" }], error: null } as any,
   rpcResult: { data: { totals: { primary_drops: 2 } }, error: null } as any,
   rpcThrows: false,
+  eqCalls: [] as unknown[][],
 }))
 
 vi.mock("@/lib/supabase", () => {
   const makeBuilder = () => {
     const b: any = {}
     for (const m of ["select", "eq", "not", "is", "limit", "order"]) b[m] = () => b
+    b.eq = (...a: unknown[]) => { state.eqCalls.push(a); return b }
     b.then = (resolve: any) => resolve(state.savedWallets)
     return b
   }
@@ -50,6 +52,7 @@ beforeEach(() => {
   state.savedWallets = { data: [{ wallet_addr: "0xabc", verified_at: "2026-07-01" }], error: null }
   state.rpcResult = { data: { totals: { primary_drops: 2 } }, error: null }
   state.rpcThrows = false
+  state.eqCalls = []
 })
 
 describe("wallet/pack-summary — guards + error legs", () => {
@@ -97,5 +100,15 @@ describe("wallet/pack-summary — guards + error legs", () => {
     // Whitespace/upper wallet must still match the lowercased saved wallet.
     const res = await GET(req("https://t/api/wallet/pack-summary?wallet=%20%200xABC%20"))
     expect(res.status).toBe(200)
+    expect(state.eqCalls).toContainEqual(["wallet_addr", "0xabc"])
+  })
+
+  it("keeps a Solana (Candy) wallet verbatim — a folded base58 key matches no saved row", async () => {
+    const sol = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+    state.savedWallets = { data: [{ wallet_addr: sol, verified_at: null }], error: null }
+    const res = await GET(req(`https://t/api/wallet/pack-summary?wallet=${sol}`))
+    expect(res.status).toBe(200)
+    expect(state.eqCalls).toContainEqual(["wallet_addr", sol])
+    expect(state.eqCalls).not.toContainEqual(["wallet_addr", sol.toLowerCase()])
   })
 })

@@ -437,6 +437,19 @@ describe("manage_deal_subscriptions", () => {
     expect(written.min_discount).toBe(0)
   })
 
+  it("a failed channel read refuses to save, never falls through to an email-only alert", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s12", label: "L", channels: ["email"] }, error: null },
+      notification_channels: { data: null, error: { message: "statement timeout" } },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"] })
+    await POST(post("alert me on good Base Set deals"))
+    expect(toolResult().status).toBe("error")
+    expect(spy.writes["alert_subscriptions"] ?? []).toEqual([])
+  })
+
   it("still applies the 25% default when NO price was given", async () => {
     // The default earns its place on an open-ended request, where a threshold
     // is the only thing between an alert and a firehose.

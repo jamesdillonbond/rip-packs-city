@@ -218,12 +218,14 @@ describe("wallet-cost-basis — error + edge legs (the 54%->branch gap)", () => 
     expect((await res.json()).error).not.toContain("fmv boom")
   })
 
-  it("counts fmv==buy as neither win nor loss, and unpriced/uncached moments as fmv 0", async () => {
+  // INVERTED 2026-10-09: this case used to pin the defect — a moment with no cache
+  // row (sold, unmapped or unpriced) scored at fmv 0 and published as a -100% loser.
+  it("counts fmv==buy as neither win nor loss, and EXCLUDES an unpriced/uncached moment (never a fabricated -100%)", async () => {
     install({
       moment_acquisitions: [
         { data: [
           { nft_id: "111", buy_price: 25 }, // fmv 25 -> pnl 0 (flat, no win/no loss)
-          { nft_id: "999", buy_price: 30 }, // no cache row -> fmv 0 -> loss
+          { nft_id: "999", buy_price: 30 }, // no cache row -> no FMV -> excluded, counted as unpriced
         ], error: null },
         { count: 2, error: null } as never,
       ],
@@ -237,11 +239,14 @@ describe("wallet-cost-basis — error + edge legs (the 54%->branch gap)", () => 
     const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
     const body = await res.json()
     expect(body.summary.win_count).toBe(0)
-    expect(body.summary.loss_count).toBe(1) // the unpriced #999
-    expect(body.summary.tracked_count).toBe(2)
-    // no gainers, one loser
+    expect(body.summary.loss_count).toBe(0) // #999 is NOT a loss: its value is unknown
+    expect(body.summary.tracked_count).toBe(1)
+    expect(body.summary.unpriced_count).toBe(1)
+    expect(body.summary.total_current_fmv).toBe(25) // no $0 folded in for #999
+    expect(body.summary.total_cost_basis).toBe(25)
     expect(body.top_movers.gainers).toEqual([])
-    expect(body.top_movers.losers.length).toBe(1)
+    expect(body.top_movers.losers).toEqual([])
+    expect(body.sample_size_note).toContain("1 with a purchase price but no current FMV")
   })
 
   it("skips buy_price<=0 rows in the fold and yields total_pnl_pct 0 when cost basis is 0", async () => {
@@ -268,13 +273,14 @@ describe("wallet-cost-basis — error + edge legs (the 54%->branch gap)", () => 
         { data: [{ nft_id: "extra", buy_price: 5 }], error: null }, // page 1 short -> break
         { count: 1001, error: null } as never,
       ],
-      wallet_moments_cache: { data: [], error: null }, // all unpriced -> fmv 0
+      wallet_moments_cache: { data: [], error: null }, // all unpriced -> excluded, counted
       editions: { data: [], error: null },
     })
     const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
     const body = await res.json()
     expect(res.status).toBe(200)
-    expect(body.summary.tracked_count).toBe(1001) // both pages folded
+    expect(body.summary.unpriced_count).toBe(1001) // both pages walked
+    expect(body.summary.tracked_count).toBe(0)
   })
 })
 

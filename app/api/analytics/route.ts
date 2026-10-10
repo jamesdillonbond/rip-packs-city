@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
 import { apiErrorResponse } from "@/lib/api-error"
+import { isCadenceAddress, isSolanaAddress, normalizeAddress } from "@/lib/address"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve"
 
@@ -25,7 +26,11 @@ const SERIES_MAP: Record<number, string> = {
 
 async function resolveWallet(input: string): Promise<string> {
   const t = input.trim()
-  if (t.startsWith("0x") && t.length === 18) return t
+  // An on-chain address passes through, normalised per chain: Flow hex folds,
+  // a Candy (Solana) base58 key stays verbatim. Before 2026-10-09 only a 0x/18
+  // shape passed, so a Candy wallet on the analytics Portfolio tab went to the
+  // Top Shot username lookup and failed ("Could not resolve username").
+  if (isCadenceAddress(t) || isSolanaAddress(t)) return normalizeAddress(t)
   // 2026-09-29: the shared ladder (cache → live Atlas → Top Shot GQL). The local
   // copy went cache → the dead Top Shot host only, so a username not already
   // cached could never resolve here. A miss throws "Could not resolve …"; a

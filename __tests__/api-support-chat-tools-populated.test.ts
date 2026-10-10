@@ -229,9 +229,9 @@ describe("concierge tools — analyze_wallet_holdings breakdown", () => {
 describe("concierge tools — explain_fmv", () => {
   it("shapes the plain-English explanation from the edition + latest snapshot", async () => {
     install({
-      editions: { data: { id: "ed-1", player_name: "Dame", set_name: "Base", tier: "RARE" }, error: null },
+      editions: { data: [{ id: "ed-1", player_name: "Dame", set_name: "Base", tier: "RARE" }], error: null },
       fmv_snapshots: {
-        data: {
+        data: [{
           fmv_usd: 120,
           confidence: "HIGH",
           wap_usd: 110,
@@ -241,7 +241,7 @@ describe("concierge tools — explain_fmv", () => {
           days_since_sale: 1,
           ask_proxy_fmv: 130,
           algo_version: "1.7.0",
-        },
+        }],
         error: null,
       },
     })
@@ -266,12 +266,61 @@ describe("concierge tools — explain_fmv", () => {
 
   it("returns no_data when the edition exists but has no snapshot", async () => {
     install({
-      editions: { data: { id: "ed-2", player_name: "Scoot" }, error: null },
-      fmv_snapshots: { data: null, error: null },
+      editions: { data: [{ id: "ed-2", player_name: "Scoot" }], error: null },
+      fmv_snapshots: { data: [], error: null },
     })
     script("explain_fmv", { editionKey: "3:46" })
     await POST(post("explain 3:46"))
     expect(toolResult()).toMatchObject({ status: "no_data" })
+  })
+
+  // An external_id is unique only within a collection (575 keys exist in both All
+  // Day and Golazos). An unscoped read hit both rows, its error was dropped, and the
+  // concierge told the user the edition did not exist.
+  it("scopes the edition read to the active collection", async () => {
+    const spy = install({
+      editions: { data: [{ id: "ed-9", player_name: "Pedri" }], error: null },
+      fmv_snapshots: { data: [{ fmv_usd: 3, computed_at: new Date().toISOString() }], error: null },
+    })
+    const eqCalls: unknown[][] = []
+    const f = spy.fixture as { from: (t: string) => Record<string, unknown> }
+    const baseFrom = f.from.bind(f)
+    f.from = (t: string) => {
+      const b = baseFrom(t)
+      if (t === "editions") {
+        const eq = b.eq as (...a: unknown[]) => unknown
+        b.eq = (...a: unknown[]) => { eqCalls.push(a); return eq(...a) }
+      }
+      return b
+    }
+    script("explain_fmv", { editionKey: "10", collectionId: "laliga-golazos" })
+    await POST(post("why is edition 10 priced like that"))
+    expect(toolResult().status).toBe("ok")
+    expect(eqCalls).toContainEqual(["collection_id", "06248cc4-b85f-47cd-af67-1855d14acd75"])
+  })
+
+  it("an unscoped key that matches two collections is ambiguous, never not_found", async () => {
+    install({ editions: { data: [{ id: "a" }, { id: "b" }], error: null } })
+    script("explain_fmv", { editionKey: "10" })
+    await POST(post("explain edition 10"))
+    expect(toolResult().status).toBe("ambiguous")
+  })
+
+  it("a failed edition read is an error, never not_found", async () => {
+    install({ editions: { data: null, error: { message: "statement timeout" } } })
+    script("explain_fmv", { editionKey: "3:45" })
+    await POST(post("explain 3:45"))
+    expect(toolResult().status).toBe("error")
+  })
+
+  it("a failed snapshot read is an error, never no_data", async () => {
+    install({
+      editions: { data: [{ id: "ed-3", player_name: "Dame" }], error: null },
+      fmv_snapshots: { data: null, error: { message: "statement timeout" } },
+    })
+    script("explain_fmv", { editionKey: "3:45" })
+    await POST(post("explain 3:45"))
+    expect(toolResult().status).toBe("error")
   })
 })
 

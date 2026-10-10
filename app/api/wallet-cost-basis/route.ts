@@ -140,7 +140,8 @@ export async function GET(req: NextRequest) {
       }), "api/wallet-cost-basis/get_fmv_for_editions")
       if (error) throw new Error(error.message)
       for (const row of (data ?? []) as Array<{ edition_id: string; fmv_usd: number | string }>) {
-        fmvByEdition.set(row.edition_id, Number(row.fmv_usd) || 0)
+        const v = Number(row.fmv_usd)
+        if (Number.isFinite(v) && v > 0) fmvByEdition.set(row.edition_id, v)
       }
     }
 
@@ -151,14 +152,23 @@ export async function GET(req: NextRequest) {
     let totalFmv = 0
     let wins = 0
     let losses = 0
+    // Acquisitions with a real buy price but NO current FMV: the moment has left
+    // the wallet (no cache row), its edition is unmapped, or the edition is
+    // unpriced. Scoring them at $0 published a fabricated -100% "loser" and
+    // dragged the totals down; they are excluded and counted instead.
+    let unpriced = 0
 
     for (const acq of acqRows) {
       const cache = cacheByMoment.get(acq.nft_id)
       const editionKey = cache?.edition_key ?? null
       const ed = editionKey ? editionMeta.get(editionKey) : undefined
-      const fmv = ed ? (fmvByEdition.get(ed.id) ?? 0) : 0
       const buy = Number(acq.buy_price) || 0
       if (buy <= 0) continue
+      const fmv = ed ? fmvByEdition.get(ed.id) : undefined
+      if (fmv == null) {
+        unpriced++
+        continue
+      }
       const pnl = fmv - buy
       const pnlPct = (pnl / buy) * 100
       totalCost += buy
@@ -192,9 +202,12 @@ export async function GET(req: NextRequest) {
       .reverse()
       .map(({ pnl_usd, ...rest }) => rest)
 
+    const unpricedNote = unpriced > 0
+      ? `; ${unpriced} with a purchase price but no current FMV (sold, unmapped or unpriced) are left out`
+      : ""
     const sampleNote = totalAcq == null
-      ? `Cost basis tracked on ${trackedCount} moments — the wallet's total acquisition count could not be read, so coverage is unknown; only acquisitions with confirmed purchase prices are included`
-      : `Cost basis tracked on ${trackedCount} of ${totalAcq} moments — only acquisitions with confirmed purchase prices are included`
+      ? `Cost basis tracked on ${trackedCount} moments — the wallet's total acquisition count could not be read, so coverage is unknown; only acquisitions with confirmed purchase prices and a current FMV are included${unpricedNote}`
+      : `Cost basis tracked on ${trackedCount} of ${totalAcq} moments — only acquisitions with confirmed purchase prices and a current FMV are included${unpricedNote}`
 
     console.log("[wallet-cost-basis]", wallet, collectionSlug, trackedCount)
 
@@ -210,6 +223,7 @@ export async function GET(req: NextRequest) {
           total_pnl_pct: Math.round(totalPnlPct * 10) / 10,
           win_count: wins,
           loss_count: losses,
+          unpriced_count: unpriced,
         },
         top_movers: { gainers, losers },
         sample_size_note: sampleNote,

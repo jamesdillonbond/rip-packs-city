@@ -170,6 +170,8 @@ export async function GET() {
     // Drives the verify-wallet onboarding nudge (the verified-wallet redeem gate
     // is the sybil guard — surfaced as a next step, not a failure). Reuses the
     // most-recent-verified-wallet lookup above; no extra query.
-    hasVerifiedWallet: !!verifiedWallet.data,
+    // NULL = the read failed (unknown), never `false`: a false here shows an
+    // already-verified user the "Verify by listing a Moment" nudge.
+    hasVerifiedWallet: verifiedWallet.error ? null : !!verifiedWallet.data,
   });
 }

@@ -323,17 +323,20 @@ export async function searchPinnacleByName(
     discount_pct: number | null
     buy_url: string
   }>
+  /** true when the read FAILED: `results: []` is then unknown, not "no listings". */
+  failed?: boolean
 }> {
   // Per-render spine (pinnacle_catalog), same rationale as searchPinnacleDeals:
   // floor_ask + fmv_usd live on the same render row, so no cross-pin leak and
   // no dependency on the frozen dead-Flowty pinnacle_cached_listings table.
-  const { data: rows } = await supabase
+  const { data: rows, error } = await supabase
     .from("pinnacle_catalog")
     .select(CATALOG_DEAL_COLUMNS)
     .not("floor_ask", "is", null)
     .ilike("character_name", `%${name}%`)
     .order("floor_ask", { ascending: true })
     .limit(perCollection)
+  if (error) return { collection: "Disney Pinnacle", collectionId: PINNACLE_COLLECTION_ID, results: [], failed: true }
   return {
     collection: "Disney Pinnacle",
     collectionId: PINNACLE_COLLECTION_ID,

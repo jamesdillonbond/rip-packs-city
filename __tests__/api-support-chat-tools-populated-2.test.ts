@@ -259,6 +259,36 @@ describe("concierge tools — search_across_collections", () => {
     expect(Number(r.total)).toBeGreaterThan(0)
   })
 
+  // A failed listings read is UNKNOWN, not "none": an empty group handed to the
+  // model as status ok was repeated to the user as "no listings anywhere".
+  it("a failed read in EVERY collection is an error, never ok with 0 results", async () => {
+    install({
+      cached_listings: { data: null, error: { message: "statement timeout" } },
+      pinnacle_catalog: { data: null, error: { message: "statement timeout" } },
+    })
+    script("search_across_collections", { name: "Dame", limit: 3 })
+    await POST(post("find Dame everywhere"))
+    const r = toolResult()
+    expect(r.status).toBe("error")
+    expect(r.total).toBeUndefined()
+  })
+
+  it("a failed read in SOME collections is partial and names them", async () => {
+    install({
+      cached_listings: {
+        data: [{ player_name: "Dame", set_name: "Base", tier: "RARE", serial_number: 3, ask_price: 40, fmv: 70, discount: 43, buy_url: "https://z" }],
+        error: null,
+      },
+      pinnacle_catalog: { data: null, error: { message: "statement timeout" } },
+    })
+    script("search_across_collections", { name: "Dame", limit: 3 })
+    await POST(post("find Dame everywhere"))
+    const r = toolResult()
+    expect(r.status).toBe("partial")
+    expect(r.failedCollections).toEqual(["Disney Pinnacle"])
+    expect((r.groups as Array<{ collection: string }>).some((g) => g.collection === "Disney Pinnacle")).toBe(false)
+  })
+
   it("errors when no name is supplied", async () => {
     install({})
     script("search_across_collections", {})
