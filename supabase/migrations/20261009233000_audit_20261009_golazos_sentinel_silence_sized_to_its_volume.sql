@@ -1,5 +1,6 @@
 -- audit_20261009_golazos_sentinel_silence_sized_to_its_volume
 --
+-- ✅ APPLIED 2026-10-09 ~11:04 PM PT via the dashboard SQL editor (Cowork cloud; schema_migrations row 20261009233000 inserted by hand; verified by read: silence_hours 504). Earlier status kept below.
 -- ⏸ STATUS 2026-10-09 ~4:25 PM PT: NOT YET APPLIED. apply_migration was HELD by the Supabase MCP's
 -- human-confirmation gate (60 s timeout; re-read: silence_hours still 168). Paste this whole file into
 -- the Supabase SQL editor. The UPDATE is guarded (AND silence_hours = 168), so a re-paste is a no-op.

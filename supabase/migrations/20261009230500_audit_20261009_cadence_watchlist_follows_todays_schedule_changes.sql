@@ -1,5 +1,6 @@
 -- audit_20261009_cadence_watchlist_follows_todays_schedule_changes
 --
+-- ✅ APPLIED 2026-10-09 ~11:02 PM PT via the dashboard SQL editor (Cowork cloud; schema_migrations row 20261009230500 inserted by hand; verified by read: false/60 and true/400). Earlier status kept below.
 -- ⏸ STATUS 2026-10-09 ~4:00 PM PT: NOT YET APPLIED. apply_migration was HELD by the Supabase MCP's
 -- human-confirmation gate (60 s timeout, nothing landed: re-read after). Per tooling-gotchas.md the
 -- file is committed and the statements go to Trevor: paste this whole file into the Supabase SQL
