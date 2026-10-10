@@ -340,4 +340,4 @@ number rather than quote it. A `Shipped:` line is a number of that kind.
 `npm run ops:ready-queue` (and the night pass that reads it) marks a queued item "likely closed" only when a later
 ledger HEADING contains the item's first backticked token plus a closing status word. On 10-09 one heading closed three
 queue items but named only `chain-arrival-pack-pulls`, so the 10-10 night pass carried `topshot-sellback-walk` and
-`topshot-pack-supply-backfill` as open for another night. **Put each closed item's own token in the heading.**
+`topshot-pack-supply-backfill` as open for another night. **Put each closed item's own token in the heading, AND one of the closing words the matcher accepts (APPLIED / SHIPPED / FIXED / DONE / CLOSED / RESOLVED / VERIFIED).** A same-day heading that named `2026-10-05T0410Z` but said only `DATA` and `DROPPED` left that item reading open.
