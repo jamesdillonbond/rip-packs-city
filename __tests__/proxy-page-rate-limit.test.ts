@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterAll } from "vitest"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // proxy.ts — which PAGE routes are metered by the anonymous burst cap.
@@ -80,17 +80,61 @@ describe("isRateLimitedPageRoute — anonymous page burst-cap scope", () => {
 })
 
 // Minimal NextRequest-shaped stub — we only touch `.cookies.getAll()`.
-function reqWithCookies(names: string[]): any {
-  return { cookies: { getAll: () => names.map((name) => ({ name, value: "x" })) } }
+function reqWithCookies(names: string[], value = "x"): any {
+  return { cookies: { getAll: () => names.map((name) => ({ name, value })) } }
+}
+function reqWith(pairs: Array<[string, string]>): any {
+  return { cookies: { getAll: () => pairs.map(([name, value]) => ({ name, value })) } }
 }
 
+const REF = "bxcqstmqfzmuolpuynti"
+const b64u = (s: string) => Buffer.from(s).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+function jwt(claims: Record<string, unknown>): string {
+  return `${b64u(JSON.stringify({ alg: "ES256", typ: "JWT" }))}.${b64u(JSON.stringify(claims))}.sig`
+}
+function session(claims: Record<string, unknown>, extra: Record<string, unknown> = {}): string {
+  return "base64-" + b64u(JSON.stringify({ access_token: jwt(claims), refresh_token: "r", ...extra }))
+}
+const LIVE = { role: "authenticated", iss: `https://${REF}.supabase.co/auth/v1`, exp: Math.floor(Date.now() / 1000) + 3600 }
+
 describe("hasAuthCookie — signed-in exemption from the anonymous cap", () => {
-  it("true for the Supabase SSR auth cookie", () => {
-    expect(hasAuthCookie(reqWithCookies(["sb-bxcqstmqfzmuolpuynti-auth-token"]))).toBe(true)
+  const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  beforeAll(() => { process.env.NEXT_PUBLIC_SUPABASE_URL = `https://${REF}.supabase.co` })
+  afterAll(() => { process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl })
+
+  it("true for this project's Supabase SSR session cookie", () => {
+    expect(hasAuthCookie(reqWith([[`sb-${REF}-auth-token`, session(LIVE)]]))).toBe(true)
   })
 
-  it("true for the chunked variant Supabase writes on large sessions", () => {
-    expect(hasAuthCookie(reqWithCookies(["sb-bxcqstmqfzmuolpuynti-auth-token.0"]))).toBe(true)
+  it("true for the chunked variant Supabase writes on large sessions, joined in order", () => {
+    const v = session(LIVE)
+    const cut = Math.floor(v.length / 2)
+    expect(hasAuthCookie(reqWith([[`sb-${REF}-auth-token.1`, v.slice(cut)], [`sb-${REF}-auth-token.0`, v.slice(0, cut)]]))).toBe(true)
+  })
+
+  it("true for an access token expired an hour ago (a returning user; refreshed downstream)", () => {
+    expect(hasAuthCookie(reqWith([[`sb-${REF}-auth-token`, session({ ...LIVE, exp: Math.floor(Date.now() / 1000) - 3600 })]]))).toBe(true)
+  })
+
+  // 2026-10-10 (#180 item 2): INVERTED. A cookie NAME used to be enough, so any
+  // value — `sb-x-auth-token=1` — bought unmetered pages and 4x the API budget.
+  it("false for the right cookie NAME with a junk value (the #180 bypass)", () => {
+    expect(hasAuthCookie(reqWithCookies([`sb-${REF}-auth-token`]))).toBe(false)
+    expect(hasAuthCookie(reqWithCookies([`sb-${REF}-auth-token.0`]))).toBe(false)
+  })
+
+  it("false for another project's cookie, even with a well-formed session", () => {
+    expect(hasAuthCookie(reqWith([["sb-otherproject-auth-token", session({ ...LIVE, iss: "https://otherproject.supabase.co/auth/v1" })]]))).toBe(false)
+  })
+
+  it("false for a token that is not role=authenticated, from another issuer, or long expired", () => {
+    expect(hasAuthCookie(reqWith([[`sb-${REF}-auth-token`, session({ ...LIVE, role: "anon" })]]))).toBe(false)
+    expect(hasAuthCookie(reqWith([[`sb-${REF}-auth-token`, session({ ...LIVE, iss: "https://evil.example/auth/v1" })]]))).toBe(false)
+    expect(hasAuthCookie(reqWith([[`sb-${REF}-auth-token`, session({ ...LIVE, exp: Math.floor(Date.now() / 1000) - 8 * 86400 })]]))).toBe(false)
+  })
+
+  it("false when the session has no refresh token", () => {
+    expect(hasAuthCookie(reqWith([[`sb-${REF}-auth-token`, "base64-" + b64u(JSON.stringify({ access_token: jwt(LIVE) }))]]))).toBe(false)
   })
 
   it("false when no cookies at all — the anonymous crawler case", () => {

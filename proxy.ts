@@ -219,15 +219,68 @@ export function isRateLimitedPageRoute(pathname: string): boolean {
   return segments.length >= 2 && RATE_LIMITED_COLLECTION_PAGES.has(segments[1])
 }
 
-// Cheap, cookie-only signed-in heuristic — deliberately NOT a session lookup.
-// Supabase SSR writes `sb-<project-ref>-auth-token[.N]`. We only need to know
-// whether to EXEMPT this request from the anonymous page cap; the real auth
-// gate still runs downstream, so a false positive here costs nothing more than
-// a skipped rate-limit check for someone holding a stale auth cookie.
+// Cheap, cookie-only signed-in check — deliberately NOT a session lookup (no
+// network on the hot path). Supabase SSR writes `sb-<project-ref>-auth-token`,
+// chunked as `.0`, `.1`, … on a large session, valued `base64-<base64url JSON>`
+// (older clients: raw JSON). It decides whether this request is EXEMPT from the
+// anonymous page cap and gets the larger signed-in API budget; the real auth
+// gate still runs downstream.
+//
+// ⛔ 2026-10-10 (known-issues #180 item 2): this used to accept ANY cookie whose
+// name started with `sb-` and contained `auth-token`, with any value, so a
+// scraper adding `sb-x-auth-token=1` went unmetered on every page and got 4x
+// the API budget. It now requires THIS project's cookie, decoding to a session
+// whose access token is a JWT for role `authenticated` issued by this project,
+// not expired by more than 7 days (an expired access token with a live refresh
+// token is a real returning user; the SSR client refreshes it downstream). The
+// signature is NOT verified (no key on this path), so a forger who builds that
+// shape still passes, but an arbitrary cookie no longer does. Anything that
+// does not parse is treated as anonymous: rate-limited, never blocked.
+const AUTH_COOKIE_MAX_EXPIRED_S = 7 * 24 * 3600
+
+function supabaseProjectRef(): string | null {
+  try {
+    const host = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname
+    const ref = host.split(".")[0]
+    return ref && /^[a-z0-9]+$/.test(ref) ? ref : null
+  } catch {
+    return null
+  }
+}
+
+function decodeBase64Url(s: string): string {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/")
+  return atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4))
+}
+
 export function hasAuthCookie(request: NextRequest): boolean {
-  return request.cookies
-    .getAll()
-    .some((c) => c.name.startsWith("sb-") && c.name.includes("auth-token"))
+  const ref = supabaseProjectRef()
+  if (!ref) return false
+  const base = `sb-${ref}-auth-token`
+  const cookies = request.cookies.getAll()
+  let raw = cookies.find((c) => c.name === base)?.value ?? ""
+  if (!raw) {
+    const chunks = cookies
+      .map((c) => ({ c, m: c.name.startsWith(base + ".") ? /^\d+$/.exec(c.name.slice(base.length + 1)) : null }))
+      .filter((x) => x.m)
+      .sort((a, b) => Number(a.m![0]) - Number(b.m![0]))
+    raw = chunks.map((x) => x.c.value).join("")
+  }
+  if (!raw) return false
+  try {
+    const json = raw.startsWith("base64-") ? decodeBase64Url(raw.slice(7)) : decodeURIComponent(raw)
+    const session = JSON.parse(json) as { access_token?: unknown; refresh_token?: unknown }
+    if (typeof session?.access_token !== "string" || typeof session?.refresh_token !== "string") return false
+    const parts = session.access_token.split(".")
+    if (parts.length !== 3) return false
+    const claims = JSON.parse(decodeBase64Url(parts[1])) as { role?: unknown; iss?: unknown; exp?: unknown }
+    if (claims.role !== "authenticated") return false
+    if (typeof claims.iss !== "string" || !claims.iss.includes(ref)) return false
+    if (typeof claims.exp !== "number" || claims.exp * 1000 < Date.now() - AUTH_COOKIE_MAX_EXPIRED_S * 1000) return false
+    return true
+  } catch {
+    return false
+  }
 }
 
 function getRateLimitKey(request: NextRequest): string {

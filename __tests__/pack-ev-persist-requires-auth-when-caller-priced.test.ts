@@ -55,9 +55,13 @@ describe("R24 — the caller-influenced-price predicate", () => {
 describe("R24 — the route actually applies the gate", () => {
   const src = readFileSync("app/api/pack-ev/route.ts", "utf8")
 
-  it("gates the pack_ev_history insert on authorisation when the price is caller-influenced", () => {
-    expect(src).toContain("priceIsCallerInfluenced(dual.priceSource)")
-    expect(src).toContain("callerInfluencedPrice && !persistAuthorized(req)")
+  // 2026-10-10 (#180 item 3): widened. The gate used to apply only to a
+  // caller-influenced price; a "secondary" price is looked up by the caller's
+  // distId and pack_name / dist_id are written verbatim, so EVERY anonymous
+  // insert was caller-shaped. Now no unauthorised request persists.
+  it("gates EVERY pack_ev_history insert on authorisation, not only caller-priced ones", () => {
+    expect(src).toContain("if (!persistAuthorized(req)) {")
+    expect(src).not.toContain("callerInfluencedPrice && !persistAuthorized(req)")
   })
 
   it("fails CLOSED when neither secret is configured", () => {
@@ -71,7 +75,7 @@ describe("R24 — the route actually applies the gate", () => {
   it("leaves the READ/compute path anonymous — this gates the WRITE only", () => {
     // The gate must sit inside the history-snapshot block, not around the
     // response. Anyone may still compute pack EV.
-    const gateAt = src.indexOf("callerInfluencedPrice && !persistAuthorized(req)")
+    const gateAt = src.indexOf("if (!persistAuthorized(req)) {")
     const insertAt = src.indexOf('from("pack_ev_history").insert(')
     expect(gateAt).toBeGreaterThan(0)
     expect(insertAt).toBeGreaterThan(gateAt)

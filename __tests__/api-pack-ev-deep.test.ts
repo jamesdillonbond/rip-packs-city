@@ -290,6 +290,19 @@ describe("pack-ev — cache + history tail", () => {
     vi.unstubAllEnvs()
   })
 
+  it("#180: an ANONYMOUS caller cannot persist a SECONDARY-priced row either (its distId picks the ask)", async () => {
+    vi.stubEnv("CRON_SECRET", "test-cron-secret")
+    const spy = install({ pack_ev_history: { data: [], error: null } })
+    harness = installFetchMock(
+      stubs(jsonRoute("pack-listings", { listings: [{ distId: "other-pack", lowestAsk: 2, listingCount: 4 }] })),
+    )
+    const body = await (await POST(post({ packListingId: "anon-sec", packPrice: 15, collectionId: "nba-top-shot", distId: "other-pack", packName: "Forged" }))).json()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(body.priceSource).toBe("secondary") // the compute path still answers
+    expect((spy.writes.pack_ev_history ?? []).filter((w) => w.method === "insert")).toHaveLength(0)
+    vi.unstubAllEnvs()
+  })
+
   it("R24: the gate FAILS CLOSED when no secret is configured", async () => {
     // An unset CRON_SECRET/INGEST_SECRET_TOKEN must not authorise everyone. A
     // `auth === \`Bearer \${undefined}\`` style comparison would do exactly that.

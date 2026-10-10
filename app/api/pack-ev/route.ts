@@ -738,10 +738,19 @@ export async function POST(req: NextRequest) {
         // derived from data we hold. Only the former is caller-controlled, so
         // only the former needs authorisation — a secondary-priced pack keeps
         // recording history anonymously exactly as before.
+        //
+        // ⛔ 2026-10-10 (known-issues #180 item 3): "secondary" was NOT safe either.
+        // The secondary ask is looked up by the caller's `distId`, and `packName`
+        // / `distId` are written verbatim, so an anonymous caller could pair pack
+        // X with pack Y's ask (or any name) and have it recorded as history that
+        // feeds pack_ev_latest. The canonical writer is the compute-topshot-pack-ev
+        // edge function; nothing in the repo persists through this route
+        // anonymously. So ONLY an authorised caller persists, whatever the price
+        // source; anyone may still COMPUTE pack EV (the response is unchanged).
         const callerInfluencedPrice = priceIsCallerInfluenced(dual.priceSource)
-        if (callerInfluencedPrice && !persistAuthorized(req)) {
+        if (!persistAuthorized(req)) {
           console.log(
-            `[pack-ev] history insert SKIPPED for ${packListingId}: priceSource=${dual.priceSource} is caller-influenced and the request is unauthorised (R24)`
+            `[pack-ev] history insert SKIPPED for ${packListingId}: unauthorised request (priceSource=${dual.priceSource}${callerInfluencedPrice ? ", caller-influenced" : ""}; R24/#180)`
           )
           return
         }

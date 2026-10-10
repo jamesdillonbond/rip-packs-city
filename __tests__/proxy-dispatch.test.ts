@@ -104,6 +104,14 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
+// A cookie shaped like the one @supabase/ssr writes for project "proj".
+function realSession(): string {
+  const b64u = (x: string) => Buffer.from(x).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+  const claims = { role: "authenticated", iss: "https://proj.supabase.co/auth/v1", exp: Math.floor(Date.now() / 1000) + 3600 }
+  const access = `${b64u('{"alg":"ES256"}')}.${b64u(JSON.stringify(claims))}.sig`
+  return "base64-" + b64u(JSON.stringify({ access_token: access, refresh_token: "r" }))
+}
+
 describe("proxy() — security headers", () => {
   it("stamps the hardening headers on a public-path passthrough", async () => {
     const res = await proxy(req("/"))
@@ -245,13 +253,24 @@ describe("proxy() — rate limiting", () => {
       last = await proxy(
         req("/nba-top-shot/collection", {
           ip,
-          cookies: { "sb-proj-auth-token": "tok" },
+          cookies: { "sb-proj-auth-token": realSession() },
         })
       )
     }
     // /collection is a public page, so it never reaches the auth gate; the point
     // is only that the signed-in-cookie exemption keeps it off the 429 path.
     expect(last!.status).not.toBe(429)
+  })
+
+  // 2026-10-10 (#180 item 2): the cookie NAME alone no longer exempts.
+  it("DOES meter a page request whose auth cookie is junk (a forged name buys nothing)", async () => {
+    const ip = "203.0.113.13"
+    st.user = null
+    let last: Response | null = null
+    for (let i = 0; i < 130; i++) {
+      last = await proxy(req("/nba-top-shot/collection", { ip, cookies: { "sb-proj-auth-token": "tok" } }))
+    }
+    expect(last!.status).toBe(429)
   })
 })
 
