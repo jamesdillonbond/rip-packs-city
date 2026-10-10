@@ -1,4 +1,6 @@
 -- audit_20261010_pack_table_rows_reads_topshot_supply_from_atlas
+-- definer-view: intentional — pack_table_rows was already a definer view (reloptions NULL) and is listed in
+--   security_definer_view_allowlist; CREATE OR REPLACE keeps that unchanged (read back 10-10).
 --
 -- 2026-10-10 (known-issues #74). Top Shot's pack supply (opened / sealed / depletion) on the pack table
 -- came from `pack_distributions` + `topshot_pack_supply`, frozen since ~08-28 when
