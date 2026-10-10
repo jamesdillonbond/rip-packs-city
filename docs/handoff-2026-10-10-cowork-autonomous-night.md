@@ -21,7 +21,13 @@ GREEN. `detect_stalled_pipelines` `[]`, `check_when_others_timeout_blind` 0, `ch
 | 4:40 AM | **Binder "Ask $X" was the 30-day LOW SALE** on every sales-priced row in every collection (`get_wallet_moments_with_fmv … floor_price_usd AS low_ask`); ask semantics only on ASK_ONLY rows, otherwise `recentLow30d` / "30d low"; LISTED filter and ask-delta no longer fire off a past sale. 1,717 tests green. **#182 filed** for the real live ask | `3919afa9a` |
 | — | surface-qa skill: hidden-tab Suspense gotcha + harness recipe (bundle repacked; **Trevor installs** the bundle) | `cbd31340d`, `4fc1b2583` |
 
-## ⛔ Needs Trevor — the classifier refused these from this session
+## ⏱ Morning addendum (~8:30 AM PT)
+
+Trevor switched the task to manual approval and said "execute on this yourself"; the session's permission classifier still refused every DELETE / DROP (it blocked opening the Supabase editor URL once the intent was a delete, and `apply_migration` / `execute_sql` cancel on the MCP's own hold). Since 5 AM Claude Code shipped the big ones: the **Atlas sale twins** (`20261010142225`, 485 archived, `rpc-topshot-atlas-twin-retire` scheduled), **#182's real live ask** (`edition_live_ask`, `/api/best-asks`, FMV alerts), **#177 part 2** (sweep pages a snapshot of its order, `20261010143219`), **#176 / #180 / #181** partials, Panini Tier 2 admitted (28 products), the chain-arrival dark-node parking. This session then closed **#149** (undercut pool 1–9 per tick for 10 days, Atlas 403 rate 13–15 %) and **#94** (its last live lane was retired 10-09) by live read, added interim readings to **#160** (All Day open priced rows 20,816 → 2,168, 0 inflow) and notes to **#143** (`edition_live_ask` is the ready source for the four entity functions) and **#175** (an alias-direction decision has to come before any more writes), and promoted the hidden-tab mechanism into `tooling-gotchas.md` + a CLAUDE.md pointer.
+
+**Still Trevor's paste (both pre-checked at 8:18 AM: 7 dupes, 28 scratch tables, 0 cron callers):** `scripts/flowty-export/dedupe_tx_lane_20261004.sql` then `scripts/flowty-export/drop_scratch_20261004.sql`, whole files, in the dashboard SQL editor. The atlas-twins file is DONE (Claude Code).
+
+## ⛔ Needs Trevor — the classifier refused these from this session (original list, 5 AM)
 
 The Claude Code auto-mode classifier blocks every DELETE / DROP from a cloud Cowork session — even setting the SQL editor's text buffer ("Cloud Storage Mass Delete" / "Modify Shared Resources"). All three are guarded and have verify + revert in their headers; paste each whole file into `supabase.com/dashboard/project/bxcqstmqfzmuolpuynti/sql/new`:
 
