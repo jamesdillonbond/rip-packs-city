@@ -187,8 +187,13 @@ export async function POST(req: NextRequest) {
       p_rows_found: rows.length,
       p_rows_written: resolved + preSpork,
       p_rows_skipped: fetchErrors + regexMisses,
-      p_ok: true,
-      p_error: null,
+      // ⛔ Was a hardcoded true: a tick whose every claimed item failed (fetch or
+      // finish-write) read as a healthy run with rows_written 0 (2026-10-09). Some
+      // per-item failures beside successes stay ok — those items are re-claimed.
+      p_ok: !(rows.length > 0 && resolved + preSpork === 0 && fetchErrors > 0),
+      p_error: rows.length > 0 && resolved + preSpork === 0 && fetchErrors > 0
+        ? `all ${rows.length} claimed item(s) failed (${fetchErrors} fetch/write error(s))`
+        : null,
       p_collection_slug: "disney_pinnacle",
       p_cursor_before: null,
       p_cursor_after: null,

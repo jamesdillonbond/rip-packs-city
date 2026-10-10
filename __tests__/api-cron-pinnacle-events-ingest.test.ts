@@ -273,7 +273,9 @@ describe("POST /api/cron/pinnacle-events-ingest — deferred ingest body", () =>
     })
   })
 
-  it("logs (does not throw) when the pinnacle_listing_events upsert errors", async () => {
+  // INVERTED 2026-10-09: "the tick still succeeds and advances" was the defect —
+  // the route's own comment said "advance cursor only after successful upserts".
+  it("logs (does not throw) when the upsert errors — ok:false and the cursor HOLDS", async () => {
     fetchMock = installFetchMock([
       blocksStub(200),
       proxyStub({ events: [proxyEvt({ height: 150, txId: "tx-duc", fields: ducPinnacle("9001") })] }),
@@ -287,9 +289,23 @@ describe("POST /api/cron/pinnacle-events-ingest — deferred ingest body", () =>
     await runDeferred()
 
     const log = terminalLog(spy)
-    // Upsert errored -> nothing counted written, but the tick still succeeds and advances.
-    expect(log).toMatchObject({ p_ok: true, p_rows_found: 1, p_rows_written: 0, p_cursor_after: "200" })
+    // Upsert errored -> nothing written, the run fails and the cursor does not move.
+    expect(log).toMatchObject({ p_ok: false, p_rows_found: 1, p_rows_written: 0, p_cursor_before: "100", p_cursor_after: null })
+    expect(String(log?.p_error)).toContain("holding the cursor")
     expect(log?.p_extra).toMatchObject({ pinnacle_matched: 1 })
+    const advances = (spy.writes.pinnacle_event_cursors ?? []).filter((w: any) => w.rows.some((r: any) => r.last_processed_height === 200))
+    expect(advances).toEqual([])
+  })
+
+  it("a FAILED cursor read is not a first run — it never re-anchors to the tip", async () => {
+    fetchMock = installFetchMock([blocksStub(200)])
+    const spy = install({ pinnacle_event_cursors: { data: null, error: { message: "statement timeout" } } })
+    await POST(makeReq({ url, auth: "Bearer test-ingest-secret" }))
+    await runDeferred()
+    const log = terminalLog(spy)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("cursor read failed")
+    expect(spy.writes.pinnacle_event_cursors ?? []).toEqual([])
   })
 
   it("fails ok=false with the 404-HTML worker-unrouted error", async () => {

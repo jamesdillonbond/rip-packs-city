@@ -142,18 +142,22 @@ export async function POST(req: NextRequest) {
 
     try {
       // Read cursor. First-run init = anchor at sealed tip, exit clean.
-      const { data: cursorRow } = await (supabaseAdmin as any)
+      // ⛔ A FAILED cursor read is not "first run": treating it as one re-anchored the
+      // cursor at the sealed tip and skipped every unprocessed block (2026-10-09).
+      const { data: cursorRow, error: cursorReadErr } = await (supabaseAdmin as any)
         .from("pinnacle_event_cursors")
         .select("last_processed_height")
         .eq("event_type", EVENT_TYPE)
         .maybeSingle()
+      if (cursorReadErr) throw new Error(`cursor read failed: ${cursorReadErr.message}`)
 
       const sealedHeight = await getLatestSealedHeight()
 
       if (!cursorRow) {
-        await (supabaseAdmin as any)
+        const { error: anchorErr } = await (supabaseAdmin as any)
           .from("pinnacle_event_cursors")
           .upsert({ event_type: EVENT_TYPE, last_processed_height: sealedHeight, updated_at: new Date().toISOString() })
+        if (anchorErr) throw new Error(`cursor anchor failed: ${anchorErr.message}`)
         cursorBefore = "0"
         cursorAfter = String(sealedHeight)
         extra.message = "first run, cursor anchored to sealed tip"
@@ -258,6 +262,8 @@ export async function POST(req: NextRequest) {
       extra.undecodeable = undecodeable
 
       // Upsert by (transaction_hash, listing_resource_id).
+      let upsertFailedChunks = 0
+      let firstUpsertError: string | null = null
       for (let i = 0; i < insertRows.length; i += 100) {
         const batch = insertRows.slice(i, i + 100)
         const { error } = await (supabaseAdmin as any)
@@ -265,15 +271,26 @@ export async function POST(req: NextRequest) {
           .upsert(batch, { onConflict: "transaction_hash,listing_resource_id", ignoreDuplicates: true })
         if (error) {
           console.log(`[${PIPELINE}] upsert err chunk=${i}: ${error.message}`)
+          upsertFailedChunks++
+          firstUpsertError = firstUpsertError ?? error.message
         } else {
           rowsWritten += batch.length
         }
       }
 
-      // Advance cursor only after successful upserts.
-      await (supabaseAdmin as any)
+      // Advance cursor only after successful upserts. (The comment always said so;
+      // the advance ran unconditionally and its own error was never read. A
+      // failed chunk now holds the cursor — the upsert ignores duplicates, so the
+      // re-read is idempotent — and the run fails.)
+      if (upsertFailedChunks > 0) {
+        throw new Error(
+          `${upsertFailedChunks} upsert chunk(s) failed (first: ${firstUpsertError}) — holding the cursor at ${lastBlock}`,
+        )
+      }
+      const { error: advanceErr } = await (supabaseAdmin as any)
         .from("pinnacle_event_cursors")
         .upsert({ event_type: EVENT_TYPE, last_processed_height: endHeight, updated_at: new Date().toISOString() })
+      if (advanceErr) throw new Error(`cursor advance failed: ${advanceErr.message}`)
       cursorAfter = String(endHeight)
       extra.cursor_advanced_by_blocks = endHeight - lastBlock
     } catch (err) {

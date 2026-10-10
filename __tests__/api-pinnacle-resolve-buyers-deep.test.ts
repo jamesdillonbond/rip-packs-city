@@ -185,5 +185,8 @@ describe("pinnacle-resolve-buyers — outcome accounting", () => {
     expect(body).toMatchObject({ status: "ok", resolved: 0, errors: 1, total_claimed: 1 })
     const log = logRun(spy.rpcCalls)
     expect(log?.p_extra).toMatchObject({ resolved: 0, fetch_errors: 1 })
+    // 2026-10-09: every claimed item failed, so the run is not ok (was a hardcoded true)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("all 1 claimed item(s) failed")
   })
 })

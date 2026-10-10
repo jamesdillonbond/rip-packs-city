@@ -610,19 +610,26 @@ async function runCatalogSweep(): Promise<NextResponse> {
 
   // Persist cursor (wrap to "" at feed end so the sweep restarts next run).
   const nextCursor = sweepComplete ? "" : cursor
+  // ⛔ The write's error used to be unreadable (a bare await in a try/catch that
+  // supabase-js never throws into), while cursor_after below reported the new
+  // cursor as a movement. A failed persist now fails the run and logs the cursor
+  // where it IS (2026-10-09).
+  let cursorWriteError: string | null = null
   try {
-    await supabase
+    const { error: cursorErr } = await supabase
       .from("backfill_state")
       .upsert(
         { id: CATALOG_SWEEP_ID, cursor: nextCursor, status: sweepComplete ? "complete" : "pending", last_run_at: new Date().toISOString() },
         { onConflict: "id" },
       )
+    if (cursorErr) cursorWriteError = cursorErr.message
   } catch (e) {
-    console.log(`[badge-sync] catalog cursor update failed: ${e instanceof Error ? e.message : e}`)
+    cursorWriteError = e instanceof Error ? e.message : String(e)
   }
+  if (cursorWriteError) console.log(`[badge-sync] catalog cursor update failed: ${cursorWriteError}`)
 
   const durationMs = Date.now() - startedAt
-  const ok = gqlError === null && upsertErrors === 0
+  const ok = gqlError === null && upsertErrors === 0 && cursorWriteError === null
   try {
     await supabase.from("pipeline_runs").insert({
       pipeline: CATALOG_PIPELINE,
@@ -633,9 +640,9 @@ async function runCatalogSweep(): Promise<NextResponse> {
       rows_written: upserted,
       rows_skipped: skippedNoKey,
       ok,
-      error: gqlError,
+      error: gqlError ?? (cursorWriteError ? `catalog cursor persist failed: ${cursorWriteError}` : null),
       cursor_before: cursorBefore || null,
-      cursor_after: nextCursor || null,
+      cursor_after: cursorWriteError ? (cursorBefore || null) : (nextCursor || null),
       extra: {
         pages_fetched: pagesFetched,
         nodes_fetched: nodesFetched,

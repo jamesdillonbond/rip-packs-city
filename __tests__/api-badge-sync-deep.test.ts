@@ -373,6 +373,23 @@ describe("badge-sync — catalog mode", () => {
     expect(row.badge_score).toBe(3) // ROTY alone
   })
 
+  // 2026-10-09: the cursor persist's error was unreadable, and cursor_after reported
+  // the new cursor as a movement anyway.
+  it("a FAILED cursor persist fails the run and logs the cursor where it IS", async () => {
+    state.gqlPages.catalog = [gqlPage([edition({ id: "e1", playTagIds: [ROTY] })], null)]
+    const spy = install({
+      backfill_state: [
+        { data: { cursor: "resume-here" }, error: null }, // the resume read
+        { data: null, error: { message: "statement timeout" } }, // the persist
+      ] as never,
+    })
+    await POST(post("?mode=catalog"))
+    const run = (spy.writes.pipeline_runs ?? []).flatMap((w) => w.rows).find((r) => r.pipeline === "topshot-badge-catalog")
+    expect(run?.ok).toBe(false)
+    expect(String(run?.error)).toContain("cursor persist failed")
+    expect(run?.cursor_after).toBe(run?.cursor_before ?? null)
+  })
+
   it("a GQL failure mid-walk keeps the resume cursor and logs ok=false", async () => {
     state.gqlPages.catalog = [
       gqlPage([edition({ id: "e1" })], "cursor-page-2"),
