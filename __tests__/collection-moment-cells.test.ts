@@ -167,3 +167,20 @@ describe("shouldShowAskBadge", () => {
     expect(shouldShowAskBadge(95, 100)).toBe(true)
   })
 })
+
+describe("fmtSignedFixed — the sign is chosen after rounding", () => {
+  it("never renders -0 / -0.00 for a value that rounds to zero", async () => {
+    const { fmtSignedFixed } = await import("@/lib/collection-moment-cells")
+    expect(fmtSignedFixed(-0.2, 0)).toBe("0")
+    expect(fmtSignedFixed(-0.004, 2)).toBe("0.00")
+    expect(fmtSignedFixed(0, 0)).toBe("0")
+    expect(fmtSignedFixed(0.004, 2)).toBe("0.00")
+  })
+  it("keeps + on gains and - on losses", async () => {
+    const { fmtSignedFixed } = await import("@/lib/collection-moment-cells")
+    expect(fmtSignedFixed(12.4, 0)).toBe("+12")
+    expect(fmtSignedFixed(-12.6, 0)).toBe("-13")
+    expect(fmtSignedFixed(1.005, 2)).toBe("+1.00")
+    expect(fmtSignedFixed(-3.5, 2)).toBe("-3.50")
+  })
+})

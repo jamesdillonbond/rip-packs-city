@@ -69,7 +69,7 @@ import {
   urlSlugForCollection,
   slugifyTeam,
 } from "@/lib/moment-detail-format"
-import { resolveUsernames } from "@/lib/flowty-username"
+import { resolveUsernames, nameKey } from "@/lib/flowty-username"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import { marketplaceMomentUrl, dapperMarketMomentUrl, dapperMarketEditionUrl, fromDbSlug } from "@/lib/collections"
 import { editionHref } from "@/lib/entity-href"
@@ -653,7 +653,9 @@ export default async function MomentPage(
     ].filter((a): a is string => !!a),
   )
   const nameFor = (addr: string | null | undefined) =>
-    addr ? ownerNameMap.get(addr.toLowerCase()) ?? null : null
+    // nameKey, the map's own key, not a bare fold: resolveUsernames keys a Candy
+    // (Solana) base58 address verbatim, so a lowercased lookup always missed it.
+    addr ? ownerNameMap.get(nameKey(addr)) ?? null : null
 
   // Best-offer cell source: for a concrete serial, show the eligible-max
   // (edition ∪ this-serial); for an edition-level page, the edition-grain value.

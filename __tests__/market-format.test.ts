@@ -106,3 +106,12 @@ describe("ownLockLabel", () => {
     expect(ownLockLabel({ owned: 3, locked: 0 })).toBe("3 / 0")
   })
 })
+
+describe("fmtDiscount — never a signed zero", () => {
+  it("a discount that rounds to 0 reads a neutral 0%, never -0% or a red +0%", () => {
+    expect(fmtDiscount(0.3)).toEqual({ text: "0%", color: "var(--rpc-text-muted)" })
+    expect(fmtDiscount(-0.3)).toEqual({ text: "0%", color: "var(--rpc-text-muted)" })
+    expect(fmtDiscount(0.6).text).toBe("-1%")
+    expect(fmtDiscount(-0.6).text).toBe("+1%")
+  })
+})

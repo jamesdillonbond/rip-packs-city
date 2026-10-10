@@ -71,6 +71,17 @@ export function computeMomentPnl(
   return { pl, plPct, positive: pl >= 0 }
 }
 
+/**
+ * A signed number at `digits` decimals that never renders "-0" / "-0.00":
+ * the sign is chosen AFTER rounding, so -0.2 % reads "0", not "-0" (a moment
+ * held at its cost basis is not a loss). Positive values carry "+".
+ */
+export function fmtSignedFixed(v: number, digits: number): string {
+  const r = Number(v.toFixed(digits))
+  if (r === 0) return (0).toFixed(digits)
+  return (r > 0 ? "+" : "") + r.toFixed(digits)
+}
+
 export function pnlColorClass(positive: boolean): string {
   return positive ? "text-emerald-400" : "text-red-400"
 }

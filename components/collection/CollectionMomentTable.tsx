@@ -59,6 +59,7 @@ import {
   resolveMomentBestOffer,
   computeAskFmvDelta,
   shouldShowAskBadge,
+  fmtSignedFixed,
 } from "@/lib/collection-moment-cells"
 import { fmvBasis } from "@/lib/fmv-basis"
 import { trackOutboundClick } from "@/lib/track-click"
@@ -360,7 +361,7 @@ export default function CollectionMomentTable(props: {
                         return (
                           <div className="text-right">
                             <div className="text-xs font-mono text-[color:var(--rpc-text-secondary)]" title={label === "Loan" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>{label === "Loan" ? <span className="text-red-400">Loan Default </span> : null}${basis.toFixed(2)}</div>
-                            <div className={"text-[10px] font-mono " + color}>{pl >= 0 ? "+" : ""}{pl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</div>
+                            <div className={"text-[10px] font-mono " + color}>{fmtSignedFixed(pl, 2)} ({fmtSignedFixed(plPct, 0)}%)</div>
                           </div>
                         )
                       }
@@ -711,8 +712,8 @@ export default function CollectionMomentTable(props: {
                           const color = pnlColorClass(positive)
                           return (
                             <div className={"font-mono " + color}>
-                              <div>{pl >= 0 ? "+" : ""}{pl.toFixed(2)}</div>
-                              <div className="text-[10px]">{pl >= 0 ? "+" : ""}{plPct.toFixed(0)}%</div>
+                              <div>{fmtSignedFixed(pl, 2)}</div>
+                              <div className="text-[10px]">{fmtSignedFixed(plPct, 0)}%</div>
                             </div>
                           )
                         })()}

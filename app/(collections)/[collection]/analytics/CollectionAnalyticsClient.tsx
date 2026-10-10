@@ -10,6 +10,7 @@ import {
   AreaChart, Area, BarChart, Bar,
 } from "recharts"
 import { getCollection, toDbSlug, collectionHasLocking } from "@/lib/collections"
+import { isCadenceAddress } from "@/lib/address"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { analyticsSeriesLabel } from "@/lib/series-label"
 import { pivotDailyTier, pivotDailySeries } from "@/lib/analytics-pivot"
@@ -841,7 +842,7 @@ function LiquidityHeatmapCard({ short, countNoun }: { short: string; countNoun: 
   )
 }
 
-function WhaleLeaderboard({ short }: { short: string }) {
+function WhaleLeaderboard({ short, urlSlug }: { short: string; urlSlug: string }) {
   const [buyers, setBuyers] = useState<LeaderboardRow[] | null>(null)
   const [sellers, setSellers] = useState<LeaderboardRow[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -894,7 +895,12 @@ function WhaleLeaderboard({ short }: { short: string }) {
                 <td className="py-1.5 pr-2 text-[color:var(--rpc-text-muted)]">{r.rank}</td>
                 <td className="py-1.5 pr-2 text-[color:var(--rpc-text-primary)]">
                   <Link
-                    href={`/analytics/wallets/${encodeURIComponent(r.addr)}`}
+                    // /analytics/wallets/<addr> is the Flow (Flowty loan) wallet page and
+                    // 404s any other key, so a Candy (Solana) whale links to this
+                    // collection's own wallet view instead.
+                    href={isCadenceAddress(r.addr)
+                      ? `/analytics/wallets/${encodeURIComponent(r.addr)}`
+                      : `/${urlSlug}/collection?wallet=${encodeURIComponent(r.addr)}`}
                     className="hover:underline"
                     style={{ color: "var(--rpc-text-primary)" }}
                   >
@@ -1276,7 +1282,7 @@ function AnalyticsInner() {
 
           {/* Whale leaderboard */}
           <div className="mb-6">
-            <WhaleLeaderboard short={short} />
+            <WhaleLeaderboard short={short} urlSlug={collection} />
           </div>
 
           {/* Buyer-side accumulation — who is sweeping what.
