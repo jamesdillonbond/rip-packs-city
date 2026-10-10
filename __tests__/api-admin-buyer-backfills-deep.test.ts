@@ -278,6 +278,7 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
       pipeline_runs: { data: null, error: null },
       sales: [
         { data: [], error: null }, // buyer lane: nothing null-buyer
+        { data: null, error: null, count: 0 }, // exhausted count (the empty batch wraps)
         {
           data: [
             { id: "e1", nft_id: "901", transaction_hash: "txe1", sold_at: "2026-10-09T12:00:00Z" },
@@ -324,6 +325,7 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
       pipeline_runs: { data: null, error: null },
       sales: [
         { data: [], error: null },
+        { data: null, error: null, count: 0 }, // exhausted count (wrap)
         { data: null, error: { message: "exec boom" } },
         { data: null, error: null, count: 0 },
       ],
@@ -344,6 +346,7 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
       pipeline_runs: { data: null, error: null },
       sales: [
         { data: [], error: null },
+        { data: null, error: null, count: 0 }, // exhausted count (wrap)
         { data: [], error: null },
         { data: null, error: { message: "count boom" } },
       ],

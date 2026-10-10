@@ -355,6 +355,10 @@ export async function POST(req: NextRequest) {
     // -1 = the count itself failed (never published as a measured 0).
     let execFillBacklog = -1
     let execFillError: string | null = null
+    // Rows the payer filter skips (decoded, no buyer recoverable). Counted only on
+    // the run that WRAPS (≈ once a day): the count measured 9.8 s / 18k buffers,
+    // too dear for every run. null = not counted this run; -1 = the count failed.
+    let exhaustedInWindow: number | null = null
 
     try {
       // Resume cursor from the last run.
@@ -381,6 +385,17 @@ export async function POST(req: NextRequest) {
         // source='onchain' rows are already 100% resolved, so re-including them is
         // a near-empty idempotent no-op (every UPDATE is gated on buyer IS NULL).
         .is("buyer_address", null)
+        // ⚠ `payer_address IS NULL` — the historical lane's treadmill fix, which
+        // this lane lacked until 2026-10-10. Measured: 4,987 `topshot_marketplace`
+        // rows (2025-12-29 → 2026-04-14) already carried a payer and no
+        // recoverable buyer, and every daily pass re-decoded and re-UPDATEd all
+        // of them: ~4,770 decodes + ~4,770 identical row versions a day, 0 buyers
+        // (the only buyers in 3 days, 179 on 10-08, came from payer-null rows).
+        // A decoded tx is immutable, and payer is only ever written by a decode,
+        // so `payer set AND buyer null` is terminal for the same decoder. They
+        // are counted once per pass as `exhausted` (below), not hidden. A CHANGED
+        // decoder un-skips them: run a one-off pass with this filter removed.
+        .is("payer_address", null)
         .not("transaction_hash", "is", null)
         // Forward lane owns 2025+ only; the pre-current-spork rows below this bound
         // can't be decoded via current-spork REST (that's the historical lane's job)
@@ -444,6 +459,18 @@ export async function POST(req: NextRequest) {
       // Short batch ⇒ reached the bottom of the null-buyer set for this pass;
       // wrap the cursor so the next run starts a fresh top-down sweep.
       cursorAfter = rows.length < BATCH ? null : minSoldAt
+
+      if (cursorAfter === null) {
+        const { count: exhaustedCount, error: exhaustedErr } = await (supabaseAdmin as any)
+          .from("sales")
+          .select("id", { count: "exact", head: true })
+          .eq("collection", "nba_top_shot")
+          .is("buyer_address", null)
+          .not("payer_address", "is", null)
+          .not("transaction_hash", "is", null)
+          .gte("sold_at", HIST_WINDOW_END)
+        exhaustedInWindow = exhaustedErr ? -1 : (exhaustedCount ?? -1)
+      }
 
       // Exec-account fill (see EXEC_FILL_BATCH). Skipped when the buyer loop
       // already spent the run budget; its rows stay in the window for next run.
@@ -541,6 +568,7 @@ export async function POST(req: NextRequest) {
             exec_fill_failed: execFillFailed,
             exec_fill_backlog: execFillBacklog,
             exec_fill_error: execFillError,
+            exhausted_in_window: exhaustedInWindow,
             duration_ms: Date.now() - startedAt,
           },
         })

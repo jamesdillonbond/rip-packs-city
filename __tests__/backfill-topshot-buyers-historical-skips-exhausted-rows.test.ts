@@ -178,3 +178,50 @@ describe("topshot-buyer-backfill-historical does not re-decode rows it has alrea
     expect(run.extra.exhausted_in_window).toBe(-1)
   })
 })
+
+// 2026-10-10: the FORWARD lane ran the same treadmill. 4,987 `topshot_marketplace`
+// rows (2025-12-29 → 2026-04-14) carried a payer and no recoverable buyer, and every
+// daily pass re-decoded and re-UPDATEd all of them: ~4,770 decodes a day, 0 buyers.
+// Same property, same mock: claim only never-attempted rows, and report the skipped
+// ones. The forward lane counts them on the run that WRAPS (the count is ~10 s), so
+// these cases use a short batch, which wraps.
+function fwdRow(id: number, payer: string | null): Row {
+  return { ...row(id, payer), sold_at: "2026-02-01T00:00:00.000Z" }
+}
+
+async function runForward(): Promise<any> {
+  const res = await POST(adminReq(
+    "https://t/api/admin/backfill-topshot-buyers",
+    { authorization: `Bearer ${TOKEN}` },
+  ))
+  expect(res.status).toBe(200)
+  for (const cb of [...state.afterCbs]) await cb()
+  const run = state.runs.find((r) => r.pipeline === "topshot-buyer-backfill")
+  expect(run, "forward lane logged no pipeline_runs row").toBeTruthy()
+  return run
+}
+
+describe("topshot-buyer-backfill (forward lane) does not re-decode rows it has already exhausted", () => {
+  it("claims ONLY the never-attempted row and reports the two it skipped", async () => {
+    state.sales = [fwdRow(1, null), fwdRow(2, "0xpayer2"), fwdRow(3, "0xpayer3")]
+    const run = await runForward()
+    expect(run.rows_found, "an exhausted row must not be claimed again").toBe(1)
+    expect(run.extra.wrapped).toBe(true)
+    expect(run.extra.exhausted_in_window, "the excluded rows must be visible, not merely absent").toBe(2)
+  })
+
+  it("CONTROL — when nothing is exhausted the lane still claims everything", async () => {
+    state.sales = [fwdRow(1, null), fwdRow(2, null), fwdRow(3, null)]
+    const run = await runForward()
+    expect(run.rows_found).toBe(3)
+    expect(run.extra.exhausted_in_window).toBe(0)
+  })
+
+  it("a FAILED count reports -1, never 0", async () => {
+    state.sales = [fwdRow(1, null), fwdRow(2, "0xpayer2")]
+    state.countErr = true
+    const run = await runForward()
+    expect(run.rows_found).toBe(1)
+    expect(run.extra.exhausted_in_window).toBe(-1)
+  })
+})
