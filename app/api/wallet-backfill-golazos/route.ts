@@ -20,6 +20,7 @@ import {
   runAllDayDetailsBackfill,
   resolveWalletInput,
   CADENCE_GOLAZOS,
+  GET_GOLAZOS_IDS,
   GET_GOLAZOS_MOMENT_DETAILS,
   GOLAZOS_COLLECTION_UUID,
 } from "@/lib/chains/flow/wallet-backfill-helpers"
@@ -83,6 +84,10 @@ const CONFIG = {
   // so it is never masked as 'no_more_moments'. See the empty-scan honesty guard
   // in runAllDayDetailsBackfill (2026-08-04).
   flagEmptyWithCachedHoldings: true,
+  // No paginated path exists for Golazos; on a computation-limit failure this
+  // probe tells "getIDs() itself is over the limit" (a wallet property, logged
+  // ok:true) from "the details loop is" (a real gap, still ok:false).
+  idProbeCadence: GET_GOLAZOS_IDS,
 } as const
 
 export async function POST(req: NextRequest) {

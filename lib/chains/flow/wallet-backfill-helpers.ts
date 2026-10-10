@@ -177,6 +177,16 @@ export interface BackfillCollectionConfig {
    * lib/chains/flow/allday-studio-holdings.ts.
    */
   studioCustodyHoldings?: boolean
+  /**
+   * For a collection with NO paginated details path (Golazos): an ID-only
+   * script (Address -> [UInt64]) run once when the details script hits the
+   * computation limit. If getIDs() ITSELF is over the limit, no script can
+   * enumerate the wallet, so the run is logged as the wallet property
+   * `unenumerable_getids_over_script_limit` (ok:true, nothing written, no
+   * clean-walk stamp), the same reason the AllDay paginated path logs. If the
+   * probe succeeds, the gap is the details loop and the run stays ok:false.
+   */
+  idProbeCadence?: string
 }
 
 interface BackfillArgs {
@@ -1150,6 +1160,44 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
     const canPaginate = detailsMode === "details_allday"
     if (isComputationLimitError(err)) {
       if (!canPaginate) {
+        // Is it the details loop, or getIDs() itself? 0xb6f2481eba4df97b (Top
+        // Shot's pack-distribution account) spent 138,344 of 100,000 units on
+        // Golazos getLength() on 2026-10-09 and logged ok:false here on every
+        // multi-collection refresh, while its AllDay twin already logged the
+        // same wallet property ok:true. Only a probe that fails on the limit
+        // licenses that reading; a probe that succeeds or fails otherwise
+        // leaves the run red.
+        let probeIds: number | null = null
+        let probeError: string | null = null
+        let unenumerable = false
+        if (config.idProbeCadence && totalUpserted === 0) {
+          try {
+            probeIds = (await fetchOnChainIds(config.idProbeCadence, wallet)).length
+          } catch (pe) {
+            const pm = pe instanceof Error ? pe.message : String(pe)
+            if (isComputationLimitError(pe)) unenumerable = true
+            else probeError = pm.slice(0, 300)
+          }
+        }
+        if (unenumerable) {
+          await logRun({
+            pipelineName: config.pipelineName,
+            collectionSlug: config.slug,
+            startedAt: startedAtIso, wallet,
+            rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+            ok: true,
+            extra: {
+              terminated_reason: "unenumerable_getids_over_script_limit",
+              flagged_unenumerable: true,
+              recovered_from: "computation_limit_exceeded",
+              error_excerpt: msg.slice(0, 600),
+              skip_cached: skipCached, force: !!force, elapsed_ms: Date.now() - startedMs,
+              mode: detailsMode,
+            },
+          })
+          console.warn(`[${config.pipelineName}] unenumerable wallet=${wallet}: getIDs() exceeds the Flow script limit`)
+          return { rowsFound: 0, complete: true, nextStartIndex: null }
+        }
         await logRun({
           pipelineName: config.pipelineName,
           collectionSlug: config.slug,
@@ -1160,6 +1208,8 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
             terminated_reason: "computation_limit_no_paginated_path",
             skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
             mode: detailsMode,
+            id_probe_count: probeIds,
+            id_probe_error: probeError,
           },
         })
         console.warn(`[${config.pipelineName}] computation_limit wallet=${wallet} — no paginated path for ${detailsMode}; not misrouting to AllDay scripts`)
@@ -2139,6 +2189,24 @@ access(all) fun main(addr: Address): [[UInt64]] {
     r.append([id, g.editionID, g.serialNumber])
   }
   return r
+}
+`.trim()
+
+// ID-only probe for the Golazos no-pagination branch (idProbeCadence). Tries
+// the same two public paths as GET_GOLAZOS_MOMENT_DETAILS, because the legacy
+// CADENCE_GOLAZOS borrows only /public/GolazoNFTCollection and returns [] for a
+// wallet that linked only the canonical path, which would read as "enumerable,
+// empty" instead of failing. Verified 2026-10-09 through Flow REST: the
+// canonical path resolves for 0xb6f2481eba4df97b and its getLength() reports
+// [Error Code: 1110] computation limit exceeded inside Golazos.cdc.
+export const GET_GOLAZOS_IDS = `
+import NonFungibleToken from 0x1d7e57aa55817448
+access(all) fun main(addr: Address): [UInt64] {
+  let acct = getAccount(addr)
+  let ref = acct.capabilities.borrow<&{NonFungibleToken.CollectionPublic}>(/public/GolazosNFTCollection)
+    ?? acct.capabilities.borrow<&{NonFungibleToken.CollectionPublic}>(/public/GolazoNFTCollection)
+  if ref == nil { return [] }
+  return ref!.getIDs()
 }
 `.trim()
 

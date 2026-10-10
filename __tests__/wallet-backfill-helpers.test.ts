@@ -176,6 +176,7 @@ import {
   CADENCE_PINNACLE,
   CADENCE_GOLAZOS,
   GET_GOLAZOS_MOMENT_DETAILS,
+  GET_GOLAZOS_IDS,
   CADENCE_UFC,
   ALLDAY_COLLECTION_UUID,
   PINNACLE_COLLECTION_UUID,
@@ -722,6 +723,7 @@ describe("runAllDayDetailsBackfill", () => {
     detailsMode: "details_golazos",
     pipelineName: "wallet-backfill-golazos",
     flagEmptyWithCachedHoldings: true,
+    idProbeCadence: GET_GOLAZOS_IDS,
   }
 
   it("flags a non-array fcl result as ok:false (never a silent empty)", async () => {
@@ -772,6 +774,7 @@ describe("runAllDayDetailsBackfill", () => {
 
   it("does NOT misroute a Golazos computation-limit into the AllDay paginated path", async () => {
     H.state.fclQuery = async () => { throw new Error("computation exceeds limit (100000)") }
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([1, 2, 3])) // getIDs() fits: the details loop is the gap
     const out = await runAllDayDetailsBackfill(baseArgs({ config: GOLAZOS_CFG }))
     expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null })
     const log = lastLog()
@@ -780,6 +783,45 @@ describe("runAllDayDetailsBackfill", () => {
     expect(log.p_extra.mode).toBe("details_golazos")
     // terminated_reason proves the gate blocked the paginated path — had it
     // routed, the reason would be pagination_failed / no_more_moments (paginated).
+    expect(log.p_extra.id_probe_count).toBe(3)
+    expect(log.p_extra.id_probe_error).toBeNull()
+  })
+
+  it("a Golazos wallet whose getIDs() ITSELF is over the limit is the unenumerable wallet property, not a failed run", async () => {
+    // 0xb6f2481eba4df97b, 2026-10-09: the details script AND the ID-only probe both hit 1110.
+    H.state.fclQuery = async () => { throw new Error("[Error Code: 1110] computation limit exceeded (used: 138344, limit: 100000)") }
+    ;(fetch as any).mockResolvedValue({ ok: false, status: 400, text: async () => FLOW_1110_BODY })
+    const out = await runAllDayDetailsBackfill(baseArgs({ config: GOLAZOS_CFG }))
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    const log = lastLog()
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra.terminated_reason).toBe("unenumerable_getids_over_script_limit")
+    expect(log.p_extra.flagged_unenumerable).toBe(true)
+    expect(log.p_extra.mode).toBe("details_golazos")
+    // probed with the ID-only script, not the details script
+    const body = JSON.parse((fetch as any).mock.calls[0][1].body)
+    expect(Buffer.from(body.script, "base64").toString("utf8")).toBe(GET_GOLAZOS_IDS)
+    // nothing written, and no clean refresh stamped: an unread wallet must never read as "not held"
+    expect(H.state.rpcCalls.some((c: any) => c.name === "upsert_wmc_batch")).toBe(false)
+    expect(H.state.rpcCalls.some((c: any) => c.name === "refresh_seeded_wallet_stats")).toBe(false)
+  })
+
+  it("a probe that fails for any OTHER reason leaves the Golazos run red (a surprise is not a wallet property)", async () => {
+    H.state.fclQuery = async () => { throw new Error("computation exceeds limit (100000)") }
+    ;(fetch as any).mockResolvedValue({ ok: false, status: 500, text: async () => "boom" })
+    const out = await runAllDayDetailsBackfill(baseArgs({ config: GOLAZOS_CFG }))
+    expect(out.complete).toBe(false)
+    const log = lastLog()
+    expect(log.p_ok).toBe(false)
+    expect(log.p_extra.terminated_reason).toBe("computation_limit_no_paginated_path")
+    expect(log.p_extra.id_probe_count).toBeNull()
+    expect(String(log.p_extra.id_probe_error)).toContain("HTTP 500")
+  })
+
+  it("GET_GOLAZOS_IDS tries the canonical public path, then the legacy one", () => {
+    expect(GET_GOLAZOS_IDS.indexOf("/public/GolazosNFTCollection")).toBeGreaterThan(-1)
+    expect(GET_GOLAZOS_IDS.indexOf("/public/GolazoNFTCollection")).toBeGreaterThan(GET_GOLAZOS_IDS.indexOf("/public/GolazosNFTCollection"))
+    expect(GET_GOLAZOS_IDS).toContain("getIDs()")
   })
 
   it("does NOT misroute a Golazos access-api 500 into the AllDay paginated path", async () => {
