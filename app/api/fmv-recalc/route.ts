@@ -23,7 +23,7 @@ import { topShotAskObservedAt } from "@/lib/market/ask-freshness"
 //   diagnostics, no longer the published price.
 // Window: 30 days
 // Confidence: HIGH = >=7 sales/30d AND price dispersion <40%; MEDIUM >=5 sales/30d; else LOW
-// algo_version: "1.8.0"
+// algo_version: "1.8.1"
 //
 // Populates: fmv_usd, floor_price_usd, asp_usd, confidence,
 //            sales_count_7d (30d window), sales_count_30d, days_since_sale

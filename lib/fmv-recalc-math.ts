@@ -94,13 +94,31 @@ export function wapWithoutOutliers(sales: DatedSale[], now: Date): number {
 // `asp_without_outliers` still publish the two averages so `fmv / asp` stays a
 // readable diagnostic of what the change did.
 export const FMV_RECENT_SALES_N = 7
+// ── 1.8.1 (2026-10-10): the N most recent sales, but only those within
+// FMV_RECENT_SPAN_DAYS of the NEWEST one, never fewer than FMV_RECENT_MIN_N.
+// On a liquid edition the last seven sales already sit inside a few days, so
+// nothing changes there (identical in every backtest cell). On a THIN edition
+// the last seven could span months, and the median kept quoting a market that
+// had moved: Candy's Murakami Green /15 read $296.56 after prints of 732 → 724
+// → 296 → 203 → 194 → 36 over ten weeks. Backtest 2026-10-10 (sales_market, 45 d,
+// predicting each sale from the edition's prior sales; editions with < 7 sales
+// in the prior 30 d): Top Shot n=1,788 MdAPE 26.9 % → 24.1 %, median
+// estimate/price 1.167 → 1.100, within ±25 % 45.9 % → 51.4 %; All Day n=821
+// 33.3 % → 32.4 %; liquid editions and Candy unchanged. A plain last-3 median
+// scored better still on Top Shot thin (20.0 %) but tolerates one bad print
+// where this keeps up to seven, so the time bound was chosen.
+export const FMV_RECENT_SPAN_DAYS = 30
+export const FMV_RECENT_MIN_N = 3
 // The algo_version every fmv-recalc snapshot is stamped with; the OG cards print it.
-export const FMV_ALGO_VERSION = "1.8.0"
+export const FMV_ALGO_VERSION = "1.8.1"
 
 export function medianOfMostRecent(sales: DatedSale[], n: number): number {
   if (sales.length === 0 || n <= 0) return 0
   const recent = [...sales].sort((a, b) => b.soldAt.getTime() - a.soldAt.getTime()).slice(0, n)
-  return medianOf(recent.map(s => s.price))
+  const newest = recent[0].soldAt.getTime()
+  const spanFloor = newest - FMV_RECENT_SPAN_DAYS * 24 * 60 * 60 * 1000
+  const bounded = recent.filter((s, i) => i < FMV_RECENT_MIN_N || s.soldAt.getTime() >= spanFloor)
+  return medianOf(bounded.map(s => s.price))
 }
 
 // Plain median of a price array (no trimming). Returns 0 for an empty array.

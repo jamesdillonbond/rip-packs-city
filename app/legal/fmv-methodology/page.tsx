@@ -5,7 +5,7 @@
 // the inline FmvDisclaimer "How is FMV calculated?" link.
 
 import Link from "next/link"
-import { FMV_RECENT_SALES_N } from "@/lib/fmv-recalc-math"
+import { FMV_RECENT_SALES_N, FMV_RECENT_SPAN_DAYS, FMV_RECENT_MIN_N } from "@/lib/fmv-recalc-math"
 import {
   ASK_CORROBORATION_BAND,
   MIN_SALES_30D_HIGH,
@@ -122,8 +122,12 @@ export default function FmvMethodologyPage() {
         on an actively traded edition and is not moved by a single unusual print;
         we measured it against every realized sale each week and it beat the
         recency-weighted average we used before, which lagged a falling market.
-        With fewer than {FMV_RECENT_SALES_N} typical sales we take the median of
-        what there is, and the confidence grade below says how thin that was.
+        On a thinly traded edition we drop any of those sales that is more than{" "}
+        {FMV_RECENT_SPAN_DAYS} days older than its newest one (always keeping at least
+        its {FMV_RECENT_MIN_N} most recent), so a price is not anchored to a market
+        that has since moved. With fewer than {FMV_RECENT_SALES_N} typical sales we
+        take the median of what there is, and the confidence grade below says how
+        thin that was.
       </p>
 
       <h3 style={H3}>Active asks (secondary signal)</h3>

@@ -134,13 +134,28 @@ describe("medianOfMostRecent", () => {
     const sales = [sale(10, 1), sale(10, 2), sale(400, 3), sale(10, 4), sale(10, 5), sale(10, 6), sale(10, 7)]
     expect(medianOfMostRecent(sales, 7)).toBe(10)
   })
+  // 1.8.1 (2026-10-10): the last N, but only within 30 days of the newest, never
+  // fewer than 3. The Murakami Green /15 shape: one sale in a month, older prints
+  // weeks apart, so the last seven spanned ten weeks and lagged the crash.
+  it("on a THIN edition ignores prints more than 30 days older than the newest (keeping at least 3)", () => {
+    const sales = [sale(36, 1), sale(194, 20), sale(203, 40), sale(296, 50), sale(724, 60), sale(732, 70)]
+    // 1.8.0 took all six (median 249.5); 1.8.1 keeps 36/194 (within 30 d) + the 3-sale floor → 36, 194, 203
+    expect(medianOfMostRecent(sales, FMV_RECENT_SALES_N)).toBe(194)
+  })
+  it("on a LIQUID edition is unchanged: seven sales inside a few days are all kept", () => {
+    const sales = [sale(10, 1), sale(11, 1), sale(12, 2), sale(9, 2), sale(10, 3), sale(13, 3), sale(8, 4), sale(50, 40)]
+    expect(medianOfMostRecent(sales, 7)).toBe(10)
+  })
+  it("never drops below the 3 most recent sales, however old", () => {
+    expect(medianOfMostRecent([sale(5, 1), sale(50, 200), sale(60, 300), sale(70, 400)], 7)).toBe(50)
+  })
   it("with fewer than N sales prices from what there is", () => {
     expect(medianOfMostRecent([sale(4, 1), sale(8, 2)], 7)).toBe(6)
     expect(medianOfMostRecent([sale(3, 1)], 7)).toBe(3)
   })
   it("N is the HIGH-confidence sales floor and the version was bumped with the model", () => {
     expect(FMV_RECENT_SALES_N).toBe(MIN_SALES_30D_HIGH)
-    expect(FMV_ALGO_VERSION).toBe("1.8.0")
+    expect(FMV_ALGO_VERSION).toBe("1.8.1")
   })
 })
 
