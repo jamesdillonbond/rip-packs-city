@@ -122,6 +122,35 @@ describe("PaniniSniper", () => {
     expect(rows[0].textContent).toContain("number 1")
   })
 
+  it("all-product board: a chip per sport present, the sport filter narrows, and each row names its product", () => {
+    const d = data({
+      scope: "all",
+      deals: [
+        deal({ product_set_id: 2332, product_name: "2026 Panini NFT Prizm World Cup Soccer", sport: "Soccer" }),
+        deal({ sku: "packcard-1940_1_1_1__2_25", player_name: "Patrick Mahomes", parallel: "Base Prizms Gold", product_set_id: 1940, product_name: "2023 Panini NFT Prizm Football", sport: "Football" }),
+        deal({ sku: "packcard-1972_1_1_1__3_25", player_name: "Victor Wembanyama", product_set_id: 1972, product_name: null, sport: "Basketball" }),
+      ],
+    })
+    const c = render(<PaniniSniper data={d} degraded={null} />).container
+    const chips = [...c.querySelectorAll('[role="group"][aria-label="Sport"] button')].map((b) => b.textContent)
+    expect(chips).toEqual(["All sports", "Basketball", "Football", "Soccer"])
+    expect(c.textContent).toContain("2023 Panini NFT Prizm Football · Football")
+    // An unnamed product is named by its id — never a made-up title.
+    expect(c.textContent).toContain("Panini product 1972 · Basketball")
+    fireEvent.click([...c.querySelectorAll("button")].find((b) => b.textContent === "Football")!)
+    const rows = [...c.querySelectorAll("tbody tr")].map((r) => r.textContent ?? "")
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toContain("Patrick Mahomes")
+    expect(c.textContent).toContain("Showing 1 of 3")
+  })
+
+  it("a World-Cup-only snapshot says so — never presented as every product", () => {
+    const c = render(<PaniniSniper data={data({ scope: "wc" })} degraded={null} />).container
+    expect(c.textContent).toContain("Panini Prizm World Cup serials")
+    expect(c.textContent).not.toContain("across every product")
+    expect(c.querySelector('[role="group"][aria-label="Sport"]')).toBeNull()
+  })
+
   it("paniniEditionKeyOfSku takes the edition key only from a serial sku", () => {
     expect(paniniEditionKeyOfSku("packcard-1_2_3_4__5_49")).toBe("packcard-1_2_3_4")
     expect(paniniEditionKeyOfSku("packcard-1_2_3_4")).toBeNull()

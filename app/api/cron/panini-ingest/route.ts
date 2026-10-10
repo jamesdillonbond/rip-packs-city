@@ -107,7 +107,13 @@ const PANINI_AGED_PRIORITY_CAP = 300;
 // "Womens Basketball" added 2026-09-29 PT: Panini's own packDetails tags the WNBA packs (1055/1056)
 // sport "WOMENS BASKETBALL", the way the WC packs are "SOCCER" ↔ the verified "Soccer" filter. If
 // its grid serves the Basketball setIds too (~55+), the value is not recognised either — remove it.
-const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Womens Basketball", "Football", "Baseball"];
+// "Racing" added 2026-10-10 PT: the linked founder holds a card of set 2263 (racing), which no
+// grid has ever served, so the registry had no row for it. The value is UNVERIFIED from any
+// sandbox (Panini 403s data-center traffic). Read the next FULL run's enum marker
+// (extra.enum.sports[] / the runner's per-sport set_ids): if the "Racing" grid serves the same
+// setIds as the unfiltered (Basketball) grid, the value is not recognised — remove it, as
+// "WNBA" was. It is LAST so a tie on grid_items keeps a product's earlier, verified sport.
+const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Womens Basketball", "Football", "Baseball", "Racing"];
 function discoverySports(): string[] {
   const env = (process.env.PANINI_DISCOVERY_SPORTS || "").split(",").map((s) => s.trim()).filter(Boolean);
   return env.length ? env : PANINI_DISCOVERY_SPORTS;

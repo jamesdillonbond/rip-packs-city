@@ -7,13 +7,17 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // the view read (empty / error) and the buyer/seller @handle enrichment via a
 // mocked @/lib/flowty-username seam.
 
-const state: { query: { data: any; error: any }; calls: string[] } = {
+// `query` answers v_insights_top_sales; `panini` answers v_panini_top_sales (2026-10-10).
+const state: { query: { data: any; error: any }; panini: { data: any; error: any }; calls: string[]; views: string[] } = {
   query: { data: [], error: null },
+  panini: { data: [], error: null },
   calls: [],
+  views: [],
 }
 
 vi.mock("@/lib/supabase", () => {
-  const build = () => {
+  const build = (view: string) => {
+    state.views.push(view)
     const b: any = {}
     for (const m of ["select", "eq", "in", "order", "limit", "is", "gte", "lt", "not", "ilike"]) {
       b[m] = (...args: any[]) => {
@@ -21,10 +25,10 @@ vi.mock("@/lib/supabase", () => {
         return b
       }
     }
-    b.then = (resolve: any) => resolve(state.query)
+    b.then = (resolve: any) => resolve(view === "v_panini_top_sales" ? state.panini : state.query)
     return b
   }
-  const client: any = { from: () => build() }
+  const client: any = { from: (view: string) => build(view) }
   return { supabase: client, supabaseAdmin: client }
 })
 
@@ -45,7 +49,9 @@ import {
 
 beforeEach(() => {
   state.query = { data: [], error: null }
+  state.panini = { data: [], error: null }
   state.calls = []
+  state.views = []
 })
 
 describe("parseWindow", () => {
@@ -77,7 +83,7 @@ describe("TOP_SALES_VALID_COLLECTIONS", () => {
   // collection=all, while ?collection=candy_mlb answered "collection must be one
   // of …". A filter that rejects data the endpoint already returns is a bug in
   // the filter. Verified against the deployed API after the fix: 200 with 7 rows.
-  it("whitelists exactly the 6 collections the board can serve, in DB-slug form", () => {
+  it("whitelists exactly the 7 collections the board can serve, in DB-slug form", () => {
     expect([...TOP_SALES_VALID_COLLECTIONS].sort()).toEqual(
       [
         "nba_top_shot",
@@ -86,6 +92,8 @@ describe("TOP_SALES_VALID_COLLECTIONS", () => {
         "disney_pinnacle",
         "ufc_strike",
         "candy_mlb",
+        // 2026-10-10 — served from v_panini_top_sales, merged server-side.
+        "panini_blockchain",
       ].sort()
     )
   })
@@ -161,5 +169,45 @@ describe("fetchTopSales", () => {
     state.calls = []
     await fetchTopSales({ window: "30d" })
     expect(state.calls.some((c) => c.startsWith("gte:"))).toBe(false)
+  })
+})
+
+describe("fetchTopSales — Panini merge (2026-10-10)", () => {
+  const flowRow = { sale_id: "f1", collection: "nba_top_shot", price_usd: 500, sold_at: "2026-10-09T10:00:00Z", buyer_address: "0xbuyer", seller_address: "0xseller" }
+  const paniniRow = { sale_id: "p1", collection: "panini_blockchain", price_usd: 900, sold_at: "2026-10-08T10:00:00Z", buyer_address: "EZGOLF", seller_address: "Adlcards" }
+
+  it("collection=all merges both views by price, and shows Panini usernames as-is (never resolved as addresses)", async () => {
+    state.query = { data: [flowRow], error: null }
+    state.panini = { data: [paniniRow], error: null }
+    const { rows } = await fetchTopSales({ window: "30d" })
+    expect(state.views.sort()).toEqual(["v_insights_top_sales", "v_panini_top_sales"])
+    expect(rows.map((r) => r.sale_id)).toEqual(["p1", "f1"])
+    expect(rows[0].buyer_name).toBe("EZGOLF")
+    expect(rows[0].seller_name).toBe("Adlcards")
+    expect(rows[1].buyer_name).toBe("whale_al")
+  })
+
+  it("collection=panini_blockchain reads only the Panini view", async () => {
+    state.panini = { data: [paniniRow], error: null }
+    await fetchTopSales({ collection: "panini_blockchain" })
+    expect(state.views).toEqual(["v_panini_top_sales"])
+  })
+
+  it("another collection does not read the Panini view", async () => {
+    await fetchTopSales({ collection: "nba_top_shot" })
+    expect(state.views).toEqual(["v_insights_top_sales"])
+  })
+
+  it("a failed Panini read fails the board — never a 'top sales' list with Panini silently missing", async () => {
+    state.query = { data: [flowRow], error: null }
+    state.panini = { data: null, error: { message: "boom" } }
+    await expect(fetchTopSales({})).rejects.toThrow(/v_panini_top_sales/)
+  })
+
+  it("the merged list is cut to the limit after sorting", async () => {
+    state.query = { data: [flowRow, { ...flowRow, sale_id: "f2", price_usd: 50 }], error: null }
+    state.panini = { data: [paniniRow], error: null }
+    const { rows } = await fetchTopSales({ limit: 2 })
+    expect(rows.map((r) => r.sale_id)).toEqual(["p1", "f1"])
   })
 })

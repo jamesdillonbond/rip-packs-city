@@ -15,6 +15,7 @@ function db(over: Record<string, Res> = {}) {
   const eqs: Record<string, string[]> = {}
   const base: Record<string, Res> = {
     panini_deal_board: { data: [{ sku: "a", deal_basis: "fmv_and_recent_sales" }] },
+    panini_deal_board_all: { data: [{ sku: "a", deal_basis: "fmv_and_recent_sales", sport: "Soccer" }, { sku: "b", deal_basis: "fmv_and_recent_sales", sport: "Football" }] },
     panini_pack_ev_board: { data: [{ pack_type: "hobby" }] },
     panini_special_serials_board: { data: [{ sku: "s" }], count: 10 },
     panini_player_board: { data: [{ player_name: "P" }] },
@@ -96,6 +97,26 @@ describe("fetchPaniniMoreBoards", () => {
 // discriminator — AND on the WC product since 2026-09-30, when a second product (2420, 2026 Prizm
 // WNBA) got a model: ev_modeled=true alone would put a WNBA pack on this WC board.
 describe("fetchPaniniMoreBoards — pack EV rows are the modeled product's only", () => {
+  it("carries the all-product deal board (with product + sport) beside the WC one, sale-backed first", async () => {
+    const d = db() as any
+    const r = await fetchPaniniMoreBoards(d)
+    const p = r.payload as any
+    expect(p.deals).toHaveLength(1)
+    expect(p.deals_all.map((x: any) => x.sport)).toEqual(["Soccer", "Football"])
+    expect(p.deals_all_error).toBe(false)
+    expect(d.selects.panini_deal_board_all[0]).toContain("product_name")
+    expect(d.selects.panini_deal_board_all[0]).toContain("sport")
+    expect(d.orders.panini_deal_board_all?.[0]).toBe("deal_basis")
+  })
+
+  it("a failed all-product deal read is flagged (not 'no deals') and the payload is not cached", async () => {
+    const d = db({ panini_deal_board_all: { data: null, error: { message: "timeout" } } }) as any
+    const r = await fetchPaniniMoreBoards(d)
+    expect((r.payload as any).deals_all).toBeNull()
+    expect((r.payload as any).deals_all_error).toBe(true)
+    expect(r.ok).toBe(false)
+  })
+
   it("filters the pack board on ev_modeled=true AND the WC product", async () => {
     const d = db()
     await fetchPaniniMoreBoards(d as any)

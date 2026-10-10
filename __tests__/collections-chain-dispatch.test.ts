@@ -232,7 +232,9 @@ describe("dbChain registry invariant", () => {
     expect(page).toContain("<PaniniSetProgress />")
     expect(read("components/collection/PaniniSetProgress.tsx")).toContain('"/api/panini-set-progress"')
     const route = read("app/api/panini-set-progress/route.ts")
-    expect(route).toContain('rpc("panini_set_progress"')
+    // 2026-10-10: every product, one per read (panini_set_progress_all + the product picker).
+    expect(route).toContain('rpc("panini_set_progress_all"')
+    expect(route).toContain('rpc("panini_set_progress_products"')
     expect(route).toContain("normalizePaniniUsername(raw)")
   })
 

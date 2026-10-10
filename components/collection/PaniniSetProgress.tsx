@@ -1,8 +1,10 @@
 "use client"
 
 // PaniniSetProgress — the Panini Sets tab body (/panini-blockchain/sets,
-// 2026-09-27). Reads /api/panini-set-progress (panini_set_progress): Panini's 62
-// WC Prizm sets, with an optional Panini USERNAME (Panini has no wallets).
+// 2026-09-27). Reads /api/panini-set-progress: since 2026-10-10 every Panini product
+// RPC walks, one product at a time (a picker grouped by sport, ?product=<setId>), with an
+// optional Panini USERNAME (Panini has no wallets). With a username the picker says how
+// many editions RPC has seen them hold in each product.
 //
 // Honesty rules this component keeps (see the route header for the why):
 //   · every count is editions RPC has SEEN — the listing-gated coverage note
@@ -18,12 +20,16 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import type { PaniniCoverage } from "@/lib/panini/coverage"
-import type { PaniniSetRow } from "@/lib/panini/set-progress"
+import { paniniProductLabel, type PaniniProductRow, type PaniniSetRow } from "@/lib/panini/set-progress"
 
 export interface PaniniSetProgressResponse {
   username: string | null
   userSeen: boolean | null
   userLastSeenAt: string | null
+  /** Every product RPC has catalogued; absent on a pre-2026-10-10 response. */
+  products?: PaniniProductRow[]
+  /** The product these sets belong to; null when RPC has catalogued none. */
+  product?: PaniniProductRow | null
   sets: PaniniSetRow[]
   coverage: PaniniCoverage | null
   coverage_error: boolean
@@ -73,12 +79,31 @@ function initialUsername(): string {
   return (p.get("username") || "").trim()
 }
 
+function initialProduct(): string {
+  if (typeof window === "undefined") return ""
+  const v = (new URLSearchParams(window.location.search).get("product") || "").trim()
+  return /^[0-9]{1,6}$/.test(v) ? v : ""
+}
+
+function syncUrl(key: string, value: string) {
+  try {
+    const u = new URL(window.location.href)
+    if (value) u.searchParams.set(key, value)
+    else u.searchParams.delete(key)
+    window.history.replaceState(null, "", u.toString())
+  } catch {
+    // URL sync is a convenience; the read does not depend on it.
+  }
+}
+
 export default function PaniniSetProgress() {
   // The input is uncontrolled: ?username= is read on mount and written into the
   // field directly, so no state is set synchronously inside an effect.
   const inputRef = useRef<HTMLInputElement>(null)
   // null = not submitted yet → the URL's ?username= (read inside the effect).
   const [username, setUsername] = useState<string | null>(null)
+  // null = not chosen yet → the URL's ?product= (read inside the effect), else the route's default.
+  const [product, setProduct] = useState<string | null>(null)
   const [state, setState] = useState<LoadState>({ kind: "loading" })
 
   useEffect(() => {
@@ -87,8 +112,12 @@ export default function PaniniSetProgress() {
       u = initialUsername()
       if (inputRef.current) inputRef.current.value = u
     }
+    const prod = product === null ? initialProduct() : product
     let cancelled = false
-    const url = "/api/panini-set-progress" + (u ? "?username=" + encodeURIComponent(u) : "")
+    const qs = new URLSearchParams()
+    if (u) qs.set("username", u)
+    if (prod) qs.set("product", prod)
+    const url = "/api/panini-set-progress" + (qs.toString() ? "?" + qs.toString() : "")
     const fail = "Set progress is unavailable right now."
     fetch(url)
       .then(async (res) => {
@@ -99,8 +128,8 @@ export default function PaniniSetProgress() {
           body = undefined
         }
         if (cancelled) return
-        if (res.status === 400 && u) {
-          // The username was malformed — say so; this is not a failed read of the sets.
+        if (res.status === 400 && (u || prod)) {
+          // The username (or product) was malformed — say so; this is not a failed read of the sets.
           const e = body && typeof body === "object" ? (body as { error?: unknown }).error : undefined
           setState({ kind: "failed", message: typeof e === "string" ? e : fail })
           return
@@ -118,7 +147,7 @@ export default function PaniniSetProgress() {
     return () => {
       cancelled = true
     }
-  }, [username])
+  }, [username, product])
 
   const submit = useCallback(
     (e: React.FormEvent) => {
@@ -126,17 +155,19 @@ export default function PaniniSetProgress() {
       const next = (inputRef.current?.value ?? "").trim().replace(/^@/, "")
       setState({ kind: "loading" })
       setUsername(next)
-      try {
-        const u = new URL(window.location.href)
-        if (next) u.searchParams.set("username", next)
-        else u.searchParams.delete("username")
-        window.history.replaceState(null, "", u.toString())
-      } catch {
-        // URL sync is a convenience; the read does not depend on it.
-      }
+      // A new collector gets their own default product (the one RPC has seen them hold most of).
+      setProduct("")
+      syncUrl("username", next)
+      syncUrl("product", "")
     },
     [],
   )
+
+  const pickProduct = useCallback((next: string) => {
+    setState({ kind: "loading" })
+    setProduct(next)
+    syncUrl("product", next)
+  }, [])
 
   return (
     <div>
@@ -144,8 +175,8 @@ export default function PaniniSetProgress() {
         Panini — Set Tracker
       </h1>
       <Note>
-        Every 2026 Panini NFT Prizm World Cup set RPC has seen, with the cost to finish it at today&apos;s lowest confirmed asks. Enter a Panini
-        username to see which editions RPC has seen that collector holding.
+        Every set RPC has seen in each Panini product it walks — soccer, NBA, NFL, WNBA and MLB — with the cost to finish it at today&apos;s lowest
+        confirmed asks. Pick a product, and enter a Panini username to see which editions RPC has seen that collector holding.
       </Note>
 
       <form onSubmit={submit} style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
@@ -178,23 +209,60 @@ export default function PaniniSetProgress() {
           <Note>{state.message}</Note>
         </div>
       ) : (
-        <SetsBody data={state.data} />
+        <SetsBody data={state.data} onPickProduct={pickProduct} />
       )}
     </div>
   )
 }
 
-function SetsBody({ data }: { data: PaniniSetProgressResponse }) {
+function ProductPicker({ data, onPick }: { data: PaniniSetProgressResponse; onPick: (setId: string) => void }) {
+  const products = data.products ?? []
+  if (products.length === 0) return null
+  const showHeld = data.username !== null && data.userSeen === true
+  const groups = new Map<string, PaniniProductRow[]>()
+  for (const p of products) {
+    const k = p.sport ?? "Other"
+    if (!groups.has(k)) groups.set(k, [])
+    groups.get(k)!.push(p)
+  }
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", margin: "12px 0" }}>
+      <label htmlFor="panini-product" style={{ fontFamily: mono, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+        Product
+      </label>
+      <select
+        id="panini-product"
+        value={data.product ? String(data.product.setId) : ""}
+        onChange={(e) => onPick(e.target.value)}
+        style={{ flex: "1 1 260px", minWidth: 0, maxWidth: "100%", padding: "8px 10px", fontFamily: mono, fontSize: 13, background: "var(--rpc-surface)", color: "var(--rpc-text-primary)", border: "1px solid var(--rpc-border)", borderRadius: 6 }}
+      >
+        {[...groups.entries()].map(([sport, rows]) => (
+          <optgroup key={sport} label={sport}>
+            {rows.map((p) => (
+              <option key={p.setId} value={String(p.setId)}>
+                {paniniProductLabel(p)} · {count(p.sets)} sets{showHeld && p.owned > 0 ? ` · ${count(p.owned)} seen held` : ""}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+function SetsBody({ data, onPickProduct }: { data: PaniniSetProgressResponse; onPickProduct: (setId: string) => void }) {
   const tracking = data.username !== null
   return (
     <>
       <PaniniCoverageNote coverage={data.coverage} failed={data.coverage_error} />
+      <ProductPicker data={data} onPick={onPickProduct} />
 
       {tracking ? (
         <div data-testid="panini-user-status" style={{ margin: "12px 0" }}>
           {data.userSeen ? (
             <Note>
-              Showing editions RPC has seen <b>{data.username}</b> holding — last seen {ptDate(data.userLastSeenAt)}. RPC reads a card&apos;s holder
+              Showing editions RPC has seen <b>{data.username}</b> holding — last seen {ptDate(data.userLastSeenAt)}
+              {data.product && data.product.owned === 0 ? <> (none in this product — pick another above)</> : null}. RPC reads a card&apos;s holder
               when it checks that card, so a card sold since can still show here, and a card that has never been listed is never seen.
             </Note>
           ) : (
@@ -225,7 +293,7 @@ function SetsBody({ data }: { data: PaniniSetProgressResponse }) {
             </thead>
             <tbody>
               {data.sets.map((s) => (
-                <tr key={s.setName}>
+                <tr key={`${data.product?.setId ?? ""}:${s.setName}`}>
                   <td style={{ ...td, color: "var(--rpc-text-primary)" }}>{s.setName}</td>
                   <td style={td}>{count(s.editionsSeen)}</td>
                   <td style={td}>{capLabel(s.minMintCap, s.maxMintCap)}</td>

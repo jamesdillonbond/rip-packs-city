@@ -1,9 +1,10 @@
 "use client"
 
 // PaniniSniper — the Panini Sniper tab body (/panini-blockchain/sniper, 2026-09-28).
-// Server-seeded from the hourly `panini-boards` snapshot (lib/insights/panini-more-boards.ts)
-// — the same deal rows the /insights/panini-squeeze Deals tab shows, so the tab costs no
-// extra DB read. The shared Sniper client is a Flow feed (wallet ownership, badges,
+// Server-seeded from the hourly `panini-boards` snapshot (lib/insights/panini-more-boards.ts),
+// so the tab costs no extra DB read. Since 2026-10-10 it shows deals across EVERY walked
+// Panini product (`deals_all`: soccer, NBA, NFL, WNBA, MLB) with a sport filter and the
+// product named per row; the WC squeeze page's Deals tab keeps the World Cup subset. The shared Sniper client is a Flow feed (wallet ownership, badges,
 // watchlist, per-listing buy flows) and none of it applies to Panini.
 //
 // Honesty rules this component keeps:
@@ -44,9 +45,16 @@ export interface PaniniSniperDeal {
   recent_sales_median_usd: Num
   recent_sales_n: Num
   deal_basis: string | null
+  /** Card product (psku setId) — present on all-product rows (2026-10-10). */
+  product_set_id?: Num
+  /** Panini's product name; null until RPC's registry names the product. */
+  product_name?: string | null
+  sport?: string | null
 }
 
 export interface PaniniSniperData {
+  /** "all" = every walked product; "wc" = a pre-2026-10-10 snapshot holding World Cup deals only. */
+  scope?: "all" | "wc"
   deals: PaniniSniperDeal[] | null
   dealsError: boolean
   dealsCapped: boolean
@@ -101,8 +109,17 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
   const [specialOnly, setSpecialOnly] = useState(false)
   const [minDiscount, setMinDiscount] = useState<number>(MIN_DISCOUNTS[0])
   const [query, setQuery] = useState("")
+  const [sport, setSport] = useState<string>("")
 
   const all = data?.deals ?? null
+  const wcOnly = data?.scope === "wc"
+  // Sports present on the board, most deals first — a filter chip per sport, none invented.
+  const sports = useMemo(() => {
+    if (!all || wcOnly) return []
+    const n = new Map<string, number>()
+    for (const r of all) if (r.sport) n.set(r.sport, (n.get(r.sport) ?? 0) + 1)
+    return [...n.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([s]) => s)
+  }, [all, wcOnly])
   const counts = useMemo(() => {
     if (!all) return null
     const backed = all.filter((r) => r.deal_basis === BACKED).length
@@ -116,8 +133,12 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
       (r) =>
         (!backedOnly || r.deal_basis === BACKED) &&
         (!specialOnly || !!r.special_flag) &&
+        (!sport || r.sport === sport) &&
         (r.discount_pct ?? 0) >= minDiscount &&
-        (!q || (r.player_name ?? "").toLowerCase().includes(q) || (r.parallel ?? "").toLowerCase().includes(q)),
+        (!q ||
+          (r.player_name ?? "").toLowerCase().includes(q) ||
+          (r.parallel ?? "").toLowerCase().includes(q) ||
+          (r.product_name ?? "").toLowerCase().includes(q)),
     )
     // Sale-backed first, then by estimated edge — the board's own order, restated so a
     // filter can never reorder it.
@@ -127,10 +148,10 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
         (b.est_profit_usd ?? -Infinity) - (a.est_profit_usd ?? -Infinity) ||
         a.sku.localeCompare(b.sku),
     )
-  }, [all, backedOnly, specialOnly, minDiscount, query])
+  }, [all, backedOnly, specialOnly, minDiscount, query, sport])
 
   const cov = data?.coverage ?? null
-  const filtering = backedOnly || specialOnly || minDiscount !== MIN_DISCOUNTS[0] || query.trim() !== ""
+  const filtering = backedOnly || specialOnly || sport !== "" || minDiscount !== MIN_DISCOUNTS[0] || query.trim() !== ""
 
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: "16px 16px 40px" }}>
@@ -138,7 +159,10 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
         Panini — Sniper
       </h1>
       <Note>
-        Listed Panini Prizm World Cup serials asking at least 15% under FMV (with #1 / jersey-number / perfect-mint premiums applied), each ask re-read
+        {wcOnly
+          ? "Listed Panini Prizm World Cup serials (this snapshot predates the all-product board; it refreshes within the hour)"
+          : "Listed Panini serials across every product RPC walks — soccer, NBA, NFL, WNBA and MLB —"}{" "}
+        asking at least 15% under FMV (with #1 / jersey-number / perfect-mint premiums applied), each ask re-read
         in the last 7 days, on editions with an FMV of $25 or more. Cards whose edition FMV rests on asks alone are left out.
       </Note>
       <div role="note" style={{ padding: "10px 14px", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", borderRadius: 6, margin: "12px 0" }}>
@@ -164,6 +188,18 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
         </div>
       ) : (
         <>
+          {sports.length > 1 ? (
+            <div role="group" aria-label="Sport" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "8px 0 0" }}>
+              <button type="button" aria-pressed={sport === ""} onClick={() => setSport("")} style={chip(sport === "")}>
+                All sports
+              </button>
+              {sports.map((sp) => (
+                <button key={sp} type="button" aria-pressed={sport === sp} onClick={() => setSport(sp)} style={chip(sport === sp)}>
+                  {sp}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "8px 0 10px" }}>
             <button type="button" aria-pressed={backedOnly} onClick={() => setBackedOnly((v) => !v)} style={chip(backedOnly)}>
               Sale-backed only
@@ -177,13 +213,13 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
               </button>
             ))}
             <label htmlFor="panini-sniper-q" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
-              Filter by player or parallel
+              Filter by player, parallel or product
             </label>
             <input
               id="panini-sniper-q"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Player or parallel"
+              placeholder="Player, parallel or product"
               autoComplete="off"
               spellCheck={false}
               maxLength={60}
@@ -205,7 +241,7 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    {["Player", "Parallel", "Serial", "Ask", "FMV", "Under FMV", "Est. edge", "Recent sales", "Ask seen", ""].map((h, i) => (
+                    {["Player", ...(wcOnly ? [] : ["Product"]), "Parallel", "Serial", "Ask", "FMV", "Under FMV", "Est. edge", "Recent sales", "Ask seen", ""].map((h, i) => (
                       <th key={i} style={th}>{h}</th>
                     ))}
                   </tr>
@@ -225,6 +261,12 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
                             r.player_name ?? "—"
                           )}
                         </td>
+                        {wcOnly ? null : (
+                          <td style={td}>
+                            {r.product_name ?? (r.product_set_id != null ? `Panini product ${r.product_set_id}` : "—")}
+                            {r.sport ? <span style={{ color: "var(--rpc-text-muted)" }}> · {r.sport}</span> : null}
+                          </td>
+                        )}
                         <td style={td}>{r.parallel ?? "—"}</td>
                         <td style={td}>
                           {r.serial_number != null ? `#${r.serial_number}${r.mint_cap != null ? `/${r.mint_cap}` : ""}` : "—"}

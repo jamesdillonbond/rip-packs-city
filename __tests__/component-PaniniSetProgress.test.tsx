@@ -107,4 +107,33 @@ describe("PaniniSetProgress", () => {
     fireEvent.submit(c.querySelector("form")!)
     await waitFor(() => expect(calls.some((u) => u.includes("username=AdlCards"))).toBe(true))
   })
+
+  const PRODUCTS = [
+    { setId: 2332, name: "2026 Panini NFT Prizm World Cup Soccer", sport: "Soccer", sets: 62, editionsSeen: 5217, owned: 0, ownerLastSeenAt: null },
+    { setId: 1940, name: "2023 Panini NFT Prizm Football", sport: "Football", sets: 90, editionsSeen: 1016, owned: 4, ownerLastSeenAt: null },
+    { setId: 2161, name: null, sport: "Basketball", sets: 3, editionsSeen: 40, owned: 0, ownerLastSeenAt: null },
+  ]
+
+  it("the product picker groups products by sport and names an unnamed one honestly", async () => {
+    mockFetch(200, payload({ products: PRODUCTS, product: PRODUCTS[0] }))
+    const c = await mount()
+    const sel = c.querySelector("#panini-product") as HTMLSelectElement
+    expect(sel.value).toBe("2332")
+    const groups = [...sel.querySelectorAll("optgroup")].map((g) => g.label)
+    expect(groups).toEqual(["Soccer", "Football", "Basketball"])
+    expect(sel.textContent).toContain("Panini product 2161 (name not yet known)")
+  })
+
+  it("picking a product re-reads that product", async () => {
+    mockFetch(200, payload({ products: PRODUCTS, product: PRODUCTS[0] }))
+    const c = await mount()
+    fireEvent.change(c.querySelector("#panini-product")!, { target: { value: "1940" } })
+    await waitFor(() => expect(calls.some((u) => u.includes("product=1940"))).toBe(true))
+  })
+
+  it("a tracked collector holding nothing in this product is told so — not '0 of 62' as if they collect it", async () => {
+    mockFetch(200, payload({ username: "adlcards", userSeen: true, userLastSeenAt: "2026-09-27T14:24:49Z", products: PRODUCTS, product: PRODUCTS[0] }))
+    const c = await mount()
+    expect(c.querySelector('[data-testid="panini-user-status"]')!.textContent).toContain("none in this product")
+  })
 })

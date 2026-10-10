@@ -29,6 +29,13 @@
 //     a person's handle.
 //   · A capped board says it is capped (`*_capped`) so "top 200" never reads as
 //     "all of them".
+//
+// ── DEALS ACROSS EVERY PRODUCT (2026-10-10) ───────────────────────────────────
+// `deals` stays World Cup only (panini_deal_board = panini_deal_board_all filtered to
+// 2332) for the WC squeeze page's Deals tab. `deals_all` is the same deal rules over
+// EVERY walked product (soccer, NBA, NFL, WNBA, MLB), with product name + sport, and
+// is what the collection's Sniper tab shows. Measured at apply: 798 deals across 5
+// sports vs 211 WC; the view resolves FMV once per edition (138k buffers, 0.46 s).
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { summarizeDegraded, type BoardStatus } from "@/lib/insights/board-status"
@@ -38,10 +45,13 @@ import type { BoardLiveResult } from "@/lib/insights/board-cache"
 type Db = any
 
 export const PANINI_BOARD_LIMIT = 200
+/** The all-product deal board's cap — it is ~4× the WC board (798 vs 211 on 2026-10-10). */
+export const PANINI_ALL_DEALS_LIMIT = 600
 
 const DEAL_COLS =
   "sku,player_name,parallel,tier,serial_number,mint_cap,ask_usd,best_offer_usd,last_sale_usd,fmv_usd," +
   "discount_pct,est_profit_usd,special_flag,ask_confirmed_at,recent_sales_median_usd,recent_sales_n,deal_basis"
+const DEAL_ALL_COLS = DEAL_COLS + ",product_set_id,product_name,sport"
 const PACK_COLS =
   "pack_type,pack_cost_usd,floor_usd,avg_sale_usd,recent_sale_usd,cards_per_pack,packs_total,packs_remaining," +
   "packs_ripped_pct,actual_ev_usd,typical_ev_usd,net_rip_edge_usd,model_note,updated_at"
@@ -74,7 +84,7 @@ async function read<T>(q: PromiseLike<{ data: T[] | null; error: { message: stri
 export async function fetchPaniniMoreBoards(
   db: Db = supabaseAdmin,
 ): Promise<BoardLiveResult<Record<string, unknown>>> {
-  const [deals, packs, specials, players, coverage, specialCount] = await Promise.all([
+  const [deals, dealsAll, packs, specials, players, coverage, specialCount] = await Promise.all([
     read(
       db.from("panini_deal_board").select(DEAL_COLS)
         // Sale-corroborated deals FIRST ('fmv_and_recent_sales' sorts before
@@ -86,6 +96,14 @@ export async function fetchPaniniMoreBoards(
         .order("sku", { ascending: true })
         .limit(PANINI_BOARD_LIMIT),
       "panini_deal_board",
+    ),
+    read(
+      db.from("panini_deal_board_all").select(DEAL_ALL_COLS)
+        .order("deal_basis", { ascending: true })
+        .order("est_profit_usd", { ascending: false })
+        .order("sku", { ascending: true })
+        .limit(PANINI_ALL_DEALS_LIMIT),
+      "panini_deal_board_all",
     ),
     // WC-only board: since 2026-09-28 panini_pack_ev_board also carries packs of products the model
     // does not price (NULL EV, ev_modeled=false). They belong on the Packs tab, which says "not
@@ -136,11 +154,12 @@ export async function fetchPaniniMoreBoards(
 
   const statuses: BoardStatus[] = [
     { label: "Deals", ok: deals.error === null, partial: false },
+    { label: "Deals (all products)", ok: dealsAll.error === null, partial: false },
     { label: "Pack EV", ok: packs.error === null, partial: false },
     { label: "Special serials", ok: specials.error === null, partial: false },
     { label: "Players", ok: players.error === null, partial: false },
   ]
-  const errors = [deals, packs, specials, players, coverage].map((r) => r.error).filter(Boolean) as string[]
+  const errors = [deals, dealsAll, packs, specials, players, coverage].map((r) => r.error).filter(Boolean) as string[]
   if (specialCount.error) errors.push(`special serial counts: ${specialCount.error}`)
 
   return {
@@ -148,6 +167,9 @@ export async function fetchPaniniMoreBoards(
       deals: deals.rows,
       deals_error: deals.error !== null,
       deals_capped: (deals.rows?.length ?? 0) >= PANINI_BOARD_LIMIT,
+      deals_all: dealsAll.rows,
+      deals_all_error: dealsAll.error !== null,
+      deals_all_capped: (dealsAll.rows?.length ?? 0) >= PANINI_ALL_DEALS_LIMIT,
       packs: packs.rows,
       packs_error: packs.error !== null,
       specials: specials.rows,

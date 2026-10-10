@@ -1,8 +1,15 @@
 // app/api/panini-set-progress/route.ts
 //
-// Panini Sets tab backend (2026-09-27). Panini's 62 WC Prizm sets, one row each,
-// from `panini_set_progress(p_username)` (migrations 20260927163619 +
-// 20260927163719). The generic /api/sets-db cannot serve Panini: it keys on a
+// Panini Sets tab backend (2026-09-27). Since 2026-10-10 it covers EVERY walked
+// Panini product, ONE PRODUCT PER READ (?product=<setId>): the sets of that product
+// from `panini_set_progress_all(p_username)` filtered on product_set_id, plus the
+// product picker from `panini_set_progress_products(p_username)` (migrations
+// 20261010223402 + 20261010223446). The all-product list is ~1,900 rows — past
+// PostgREST's 1,000-row clamp — so it is never read whole: a clamped read would be a
+// silently PARTIAL list. Each read here is asserted to sit under the clamp.
+// Default product: with a username, the product RPC has seen them hold most of;
+// otherwise 2026 Prizm World Cup (2332). An unknown ?product= is a 400, never
+// another product's sets (a fallback that swaps the SUBJECT). The generic /api/sets-db cannot serve Panini: it keys on a
 // wallet ADDRESS and on `editions` set membership, while a Panini owner is a
 // USERNAME and Panini's set catalogue lives in `panini_editions`.
 //
@@ -29,51 +36,97 @@ import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { readPaniniCoverage } from "@/lib/panini/coverage"
 import { normalizePaniniUsername } from "@/lib/profile/collector-identities"
-import { parsePaniniSetRow } from "@/lib/panini/set-progress"
+import { parsePaniniSetRow, parsePaniniProductRow, PANINI_WC_SET_ID } from "@/lib/panini/set-progress"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 30
+
+/** PostgREST clamps a read at 1,000 rows; a read that reaches it may be partial. */
+const ROW_CLAMP = 1000
+const FAIL = "Set progress is unavailable right now."
+
+function bad(error: string) {
+  return NextResponse.json({ error, code: "bad_request", retryable: false }, { status: 400 })
+}
 
 export async function GET(req: NextRequest) {
   const raw = (req.nextUrl.searchParams.get("username") ?? "").trim()
   let username: string | null = null
   if (raw) {
     username = normalizePaniniUsername(raw)
-    if (!username) {
-      return NextResponse.json(
-        { error: "That doesn't look like a Panini username (2–16 letters, numbers, . _ -).", code: "bad_request", retryable: false },
-        { status: 400 },
-      )
-    }
+    if (!username) return bad("That doesn't look like a Panini username (2–16 letters, numbers, . _ -).")
+  }
+  const productRaw = (req.nextUrl.searchParams.get("product") ?? "").trim()
+  let requested: number | null = null
+  if (productRaw) {
+    if (!/^[0-9]{1,6}$/.test(productRaw)) return bad("That isn't a Panini product id.")
+    requested = Number(productRaw)
   }
   try {
     const db = supabaseAdmin as any
-    const [res, coverage] = await Promise.all([
-      boundedRead(db.rpc("panini_set_progress", { p_username: username }), "panini-set-progress"),
+    const [prodRes, coverage] = await Promise.all([
+      boundedRead(db.rpc("panini_set_progress_products", { p_username: username }), "panini-set-progress-products"),
       readPaniniCoverage(db, "api/panini-set-progress"),
     ])
-    if (res.error) return apiErrorResponse(res.error, "api/panini-set-progress", "Set progress is unavailable right now.")
-    if (!Array.isArray(res.data)) {
-      return apiErrorResponse(new Error("panini_set_progress returned a non-array"), "api/panini-set-progress", "Set progress is unavailable right now.")
+    if (prodRes.error) return apiErrorResponse(prodRes.error, "api/panini-set-progress", FAIL)
+    if (!Array.isArray(prodRes.data) || prodRes.data.length >= ROW_CLAMP) {
+      return apiErrorResponse(new Error("panini_set_progress_products returned a non-array or a clamped list"), "api/panini-set-progress", FAIL)
     }
-    const sets = (res.data as unknown[]).map(parsePaniniSetRow).filter((s): s is NonNullable<typeof s> => s !== null)
-    // A malformed row is dropped by the parser; if ANY was, the list is not the
-    // complete set list and must not be served as one.
-    if (sets.length !== res.data.length) {
+    const products = (prodRes.data as unknown[]).map(parsePaniniProductRow).filter((p): p is NonNullable<typeof p> => p !== null)
+    if (products.length !== prodRes.data.length) {
       return apiErrorResponse(
-        new Error(`panini_set_progress: ${res.data.length - sets.length} malformed row(s)`),
+        new Error(`panini_set_progress_products: ${prodRes.data.length - products.length} malformed row(s)`),
         "api/panini-set-progress",
-        "Set progress is unavailable right now.",
+        FAIL,
       )
     }
-    const ownedTotal = sets.reduce((n, s) => n + s.owned, 0)
-    const lastSeen = sets.reduce<string | null>((m, s) => (s.ownerLastSeenAt && (!m || s.ownerLastSeenAt > m) ? s.ownerLastSeenAt : m), null)
+    const ownedTotal = products.reduce((n, p) => n + p.owned, 0)
+    let selected = requested
+    if (selected === null) {
+      const mostHeld = username ? [...products].filter((p) => p.owned > 0).sort((a, b) => b.owned - a.owned || a.setId - b.setId)[0] : undefined
+      selected = mostHeld?.setId ?? (products.some((p) => p.setId === PANINI_WC_SET_ID) ? PANINI_WC_SET_ID : products[0]?.setId ?? null)
+    }
+    const product = selected === null ? null : products.find((p) => p.setId === selected) ?? null
+    if (requested !== null && !product) return bad("RPC hasn't seen any card of that Panini product.")
+
+    let sets: NonNullable<ReturnType<typeof parsePaniniSetRow>>[] = []
+    if (product) {
+      const res = await boundedRead(
+        db.rpc("panini_set_progress_all", { p_username: username }).eq("product_set_id", product.setId),
+        "panini-set-progress",
+      )
+      if (res.error) return apiErrorResponse(res.error, "api/panini-set-progress", FAIL)
+      if (!Array.isArray(res.data) || res.data.length >= ROW_CLAMP) {
+        return apiErrorResponse(new Error("panini_set_progress_all returned a non-array or a clamped list"), "api/panini-set-progress", FAIL)
+      }
+      sets = (res.data as unknown[]).map(parsePaniniSetRow).filter((s): s is NonNullable<typeof s> => s !== null)
+      // A malformed row is dropped by the parser; if ANY was, the list is not the
+      // complete set list and must not be served as one.
+      if (sets.length !== res.data.length) {
+        return apiErrorResponse(
+          new Error(`panini_set_progress_all: ${res.data.length - sets.length} malformed row(s)`),
+          "api/panini-set-progress",
+          FAIL,
+        )
+      }
+      // The picker and the table come from the same function; a disagreement means one read is stale or partial.
+      if (sets.length !== product.sets) {
+        return apiErrorResponse(
+          new Error(`panini_set_progress_all: ${sets.length} sets vs ${product.sets} in the product summary`),
+          "api/panini-set-progress",
+          FAIL,
+        )
+      }
+    }
+    const lastSeen = products.reduce<string | null>((m, p) => (p.ownerLastSeenAt && (!m || p.ownerLastSeenAt > m) ? p.ownerLastSeenAt : m), null)
     return NextResponse.json(
       {
         username,
-        // Only meaningful with a username: did RPC ever see a card under it?
+        // Only meaningful with a username: did RPC ever see a card under it, in ANY product?
         userSeen: username ? ownedTotal > 0 : null,
         userLastSeenAt: username ? lastSeen : null,
+        products,
+        product,
         sets,
         coverage: coverage.ok ? coverage.coverage : null,
         coverage_error: !coverage.ok,
@@ -82,6 +135,6 @@ export async function GET(req: NextRequest) {
       { headers: { "Cache-Control": username ? "private, no-store" : "public, s-maxage=300, stale-while-revalidate=600" } },
     )
   } catch (err) {
-    return apiErrorResponse(err, "api/panini-set-progress", "Set progress is unavailable right now.")
+    return apiErrorResponse(err, "api/panini-set-progress", FAIL)
   }
 }

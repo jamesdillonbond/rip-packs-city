@@ -153,7 +153,7 @@ export default function PaniniCollection() {
       </h1>
       <Note>
         Enter a Panini username. For a username linked to an RPC profile, RPC reads the collector&apos;s public Panini profile daily and
-        shows the whole collection. For any other username it shows the Prizm World Cup cards RPC has read under that name — the only Panini set RPC tracks.
+        shows the whole collection. For any other username it shows the cards RPC has read under that name across the Panini products it walks — soccer, NBA, NFL, WNBA and MLB.
       </Note>
 
       <form onSubmit={submit} style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
@@ -277,9 +277,9 @@ function SeenBody({ data }: { data: PaniniCollectionResponse }) {
     return (
       <div data-testid="panini-collection-unseen" style={{ padding: "14px 16px", border: "1px dashed var(--rpc-border)", borderRadius: 8 }}>
         <Note>
-          RPC hasn&apos;t seen a card under <b>{data.username}</b>. RPC reads who holds every serial of the Prizm World Cup editions it tracks,
-          and nothing else — so this does not mean the collector holds nothing: cards from Panini&apos;s other sets (NBA, NFL and the rest), and
-          editions RPC has not indexed yet, are not covered.{linkNote()}
+          RPC hasn&apos;t seen a card under <b>{data.username}</b>. RPC reads who holds every serial of the editions it tracks in the Panini
+          products it walks, and nothing else — so this does not mean the collector holds nothing: cards from Panini products RPC doesn&apos;t walk
+          yet, and editions RPC has not indexed yet, are not covered.{linkNote()}
         </Note>
       </div>
     )
@@ -300,8 +300,8 @@ function SeenBody({ data }: { data: PaniniCollectionResponse }) {
       </div>
       <div style={{ marginTop: 8 }}>
         <Note>
-          Last read {ptDate(data.lastSeenAt)}. These are the Prizm World Cup cards RPC read under this username, not the whole collection —
-          Panini&apos;s other sets aren&apos;t covered. A card sold since RPC last read its edition can still appear here.
+          Last read {ptDate(data.lastSeenAt)}. These are the cards RPC read under this username in the Panini products it walks, not the whole
+          collection — products RPC doesn&apos;t walk yet aren&apos;t covered. A card sold since RPC last read its edition can still appear here.
           {shown < data.cardsSeen ? ` Showing the ${count(shown)} highest-FMV cards of ${count(data.cardsSeen)}.` : ""}
           {linkNote()}
         </Note>

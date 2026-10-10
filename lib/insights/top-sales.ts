@@ -63,7 +63,14 @@ export const TOP_SALES_VALID_COLLECTIONS = new Set([
   // collection=all. A filter that rejects data the endpoint returns is a bug in
   // the filter, not a policy.
   "candy_mlb",
+  // panini_blockchain added 2026-10-10. Its rows come from a SECOND view,
+  // v_panini_top_sales (service-role only: panini_sales is not anon-readable, so it
+  // cannot join the anon-granted v_insights_top_sales), merged below with the same
+  // filters and order. Its buyer/seller are Panini USERNAMES, shown as-is.
+  "panini_blockchain",
 ])
+
+export const PANINI_TOP_SALES_COLLECTION = "panini_blockchain"
 
 // moment_id intentionally omitted — it is NULL in the view (see header note).
 const SELECT_COLS =
@@ -95,45 +102,61 @@ export async function fetchTopSales(
   const sort = opts.sort ?? "price"
   const limit = Math.max(1, Math.min(200, opts.limit ?? 100))
 
+  const since = window === "7d" ? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() : null
+  // One query shape for both views, so the merge below compares like with like.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabaseAdmin as any).from("v_insights_top_sales").select(SELECT_COLS)
-
-  if (collection && TOP_SALES_VALID_COLLECTIONS.has(collection)) {
-    q = q.eq("collection", collection)
+  const build = (view: string, eqCollection: string | null): PromiseLike<{ data: any[] | null; error: { message: string } | null }> => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q = (supabaseAdmin as any).from(view).select(SELECT_COLS)
+    if (eqCollection) q = q.eq("collection", eqCollection)
+    // Default board window is 7d (fresher, the "this week's whales" framing); the
+    // views themselves are already bounded to 30d so the 30d branch needs no filter.
+    if (since) q = q.gte("sold_at", since)
+    if (sort === "recent") {
+      q = q.order("sold_at", { ascending: false, nullsFirst: false })
+    } else {
+      q = q
+        .order("price_usd", { ascending: false, nullsFirst: false })
+        .order("sold_at", { ascending: false, nullsFirst: false })
+    }
+    return q.limit(limit)
   }
 
-  // Default board window is 7d (fresher, the "this week's whales" framing); the
-  // view itself is already bounded to 30d so the 30d branch needs no filter.
-  if (window === "7d") {
-    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-    q = q.gte("sold_at", since)
+  const known = collection && TOP_SALES_VALID_COLLECTIONS.has(collection) ? collection : null
+  const wantFlow = known !== PANINI_TOP_SALES_COLLECTION
+  const wantPanini = known === null || known === PANINI_TOP_SALES_COLLECTION
+  const [flow, panini] = await Promise.all([
+    wantFlow ? build("v_insights_top_sales", known) : Promise.resolve({ data: [], error: null }),
+    wantPanini ? build("v_panini_top_sales", null) : Promise.resolve({ data: [], error: null }),
+  ])
+  // Either read failing fails the board: a merged list missing one source would
+  // publish "the top sales" with a collection silently absent.
+  if (flow.error) throw new Error(flow.error.message)
+  if (panini.error) throw new Error(`v_panini_top_sales: ${panini.error.message}`)
+
+  const byOrder = (a: { price_usd: number | null; sold_at: string | null }, b: { price_usd: number | null; sold_at: string | null }) => {
+    const t = (x: string | null) => (x ? Date.parse(x) : -Infinity)
+    if (sort === "recent") return t(b.sold_at) - t(a.sold_at)
+    return (Number(b.price_usd ?? -Infinity) - Number(a.price_usd ?? -Infinity)) || t(b.sold_at) - t(a.sold_at)
   }
+  const flowRaw = (flow.data ?? []) as Omit<TopSaleRow, "buyer_name" | "seller_name">[]
+  const paniniRaw = (panini.data ?? []) as Omit<TopSaleRow, "buyer_name" | "seller_name">[]
+  const raw = [...flowRaw, ...paniniRaw].sort(byOrder).slice(0, limit)
 
-  if (sort === "recent") {
-    q = q.order("sold_at", { ascending: false, nullsFirst: false })
-  } else {
-    q = q
-      .order("price_usd", { ascending: false, nullsFirst: false })
-      .order("sold_at", { ascending: false, nullsFirst: false })
-  }
-
-  q = q.limit(limit)
-
-  const { data, error } = await q
-  if (error) {
-    throw new Error(error.message)
-  }
-
-  const raw = (data ?? []) as Omit<TopSaleRow, "buyer_name" | "seller_name">[]
-
+  // Only chain addresses go to the resolver; a Panini username is already a name.
   const names = await resolveUsernames(
-    raw.flatMap((r) => [r.buyer_address, r.seller_address]).filter(Boolean) as string[]
+    raw
+      .filter((r) => r.collection !== PANINI_TOP_SALES_COLLECTION)
+      .flatMap((r) => [r.buyer_address, r.seller_address])
+      .filter(Boolean) as string[]
   )
 
+  const nameOf = (r: Omit<TopSaleRow, "buyer_name" | "seller_name">, a: string | null) =>
+    !a ? null : r.collection === PANINI_TOP_SALES_COLLECTION ? a : displayName(a, names)
   const rows: TopSaleRow[] = raw.map((r) => ({
     ...r,
-    buyer_name: r.buyer_address ? displayName(r.buyer_address, names) : null,
-    seller_name: r.seller_address ? displayName(r.seller_address, names) : null,
+    buyer_name: nameOf(r, r.buyer_address),
+    seller_name: nameOf(r, r.seller_address),
   }))
 
   return { rows, fetchedAt: new Date().toISOString() }

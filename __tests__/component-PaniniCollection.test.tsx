@@ -66,7 +66,8 @@ describe("PaniniCollection", () => {
     // ⚠ 2026-09-28: the old copy claimed RPC learns a holder only from a LISTING — false (the walk
     // reads every serial's holder); it must not come back. The true gap is set coverage.
     expect(c.textContent).not.toMatch(/only learns a card.s holder when the card is listed/)
-    expect(c.textContent).toContain("Panini’s other sets".replace("’", "'"))
+    // 2026-10-10: RPC walks ~90 products now, so the gap is products it doesn't walk, not "other sets".
+    expect(c.textContent).toContain("Panini products RPC doesn't walk")
     expect(c.textContent).not.toContain("Cards seen")
   })
 

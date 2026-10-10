@@ -14,6 +14,9 @@
 // ownership, badges, watchlist); Panini's deals are the hourly `panini-boards`
 // snapshot the /insights/panini-squeeze Deals tab already serves, so the tab is
 // server-seeded from it — no extra read per render.
+// 2026-10-10: the tab shows `deals_all` (every walked product: soccer, NBA, NFL, WNBA,
+// MLB). A snapshot written before that field existed carries only the WC `deals`; then
+// the tab shows those AND says they are World Cup only (scope "wc"), never as all products.
 
 import { Suspense } from "react"
 import SniperClient from "./SniperClient"
@@ -36,9 +39,19 @@ export default async function SniperPage(props: { params: Promise<{ collection: 
     const data: PaniniSniperData | null =
       p && Object.keys(p).length > 0
         ? {
-            deals: Array.isArray(p.deals) ? (p.deals as PaniniSniperData["deals"]) : null,
-            dealsError: p.deals_error === true,
-            dealsCapped: p.deals_capped === true,
+            ...("deals_all" in p
+              ? {
+                  scope: "all" as const,
+                  deals: Array.isArray(p.deals_all) ? (p.deals_all as PaniniSniperData["deals"]) : null,
+                  dealsError: p.deals_all_error === true,
+                  dealsCapped: p.deals_all_capped === true,
+                }
+              : {
+                  scope: "wc" as const,
+                  deals: Array.isArray(p.deals) ? (p.deals as PaniniSniperData["deals"]) : null,
+                  dealsError: p.deals_error === true,
+                  dealsCapped: p.deals_capped === true,
+                }),
             coverage: (p.coverage as PaniniSniperData["coverage"]) ?? null,
             computedAt: typeof p.fetchedAt === "string" ? p.fetchedAt : null,
           }

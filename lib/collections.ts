@@ -237,7 +237,10 @@ export const COLLECTIONS: Collection[] = [
     id: "panini-blockchain",
     label: "Panini Blockchain",
     shortLabel: "Panini",
-    sport: "Soccer",
+    // 2026-10-10 — "Soccer" → "Multi-Sport": since the 09-28 multi-product admission the
+    // walk covers Soccer, Basketball, Football, Womens Basketball and Baseball
+    // (panini_products.last_grid_sport), and Soccer is under 40 % of the catalogue.
+    sport: "Multi-Sport",
     chain: "panini",
     // 2026-09-20 — dbChain "ethereum" → null. This is a CORRECTION, and the
     // reason is measured, not stylistic.
@@ -315,7 +318,7 @@ export const COLLECTIONS: Collection[] = [
     published: true,
     openSeaSlug: "paniniblockchain",
     supabaseCollectionId: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",
-    pitch: "Panini's digital cards on Panini's own platform — 2026 Prizm World Cup in full, other Panini products as RPC walks them. Every edition RPC has seen, priced, with live asks. Listing-based coverage: a floor, not a census.",
+    pitch: "Panini's digital cards on Panini's own platform — soccer, NBA, NFL, WNBA and MLB products, from 2026 Prizm World Cup back through Panini's earlier releases. Every edition RPC has seen, priced, with live asks. Listing-based coverage: a floor, not a census.",
   },
   {
     id: "candy-mlb",

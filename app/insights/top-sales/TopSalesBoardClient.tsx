@@ -62,7 +62,7 @@ type ApiResponse = {
   rows: Row[]
 }
 
-type CollectionFilter = "all" | "nba_top_shot" | "nfl_all_day" | "candy_mlb"
+type CollectionFilter = "all" | "nba_top_shot" | "nfl_all_day" | "candy_mlb" | "panini_blockchain"
 type WindowFilter = "7d" | "30d"
 type SortKey = "price" | "recent"
 
@@ -78,6 +78,9 @@ const COLLECTIONS: { val: CollectionFilter; label: string }[] = [
   // filter to them. Thin by design: Candy ran 7 sales over $100 in the trailing
   // 30 days on 2026-09-19, comparable to All Day's 2 in 7 days.
   { val: "candy_mlb", label: "Candy MLB" },
+  // Panini (2026-10-10): from v_panini_top_sales, merged server-side. Its buyer and
+  // seller are Panini usernames; its rows link the edition page (no Flow moment page).
+  { val: "panini_blockchain", label: "Panini" },
 ]
 const WINDOWS: { val: WindowFilter; label: string }[] = [
   { val: "7d", label: "7 days" },
