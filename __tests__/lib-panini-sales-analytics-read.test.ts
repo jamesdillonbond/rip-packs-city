@@ -18,7 +18,8 @@ describe("fetchPaniniSalesAnalytics", () => {
     const calls: unknown[] = []
     const db = { rpc: async (fn: string, args: unknown) => { calls.push([fn, args]); return { data: good, error: null } } }
     expect((await fetchPaniniSalesAnalytics(db))?.coverage.sales_held).toBe(1)
-    expect(calls).toEqual([["panini_sales_analytics", { p_days: 30 }]])
+    // The snapshot-or-live wrapper (20261010171045), never the 3.8 s function directly.
+    expect(calls).toEqual([["panini_sales_analytics_cached", { p_days: 30 }]])
   })
   it("an RPC error or a malformed answer is null", async () => {
     expect(await fetchPaniniSalesAnalytics({ rpc: async () => ({ data: null, error: { message: "57014" } }) })).toBeNull()

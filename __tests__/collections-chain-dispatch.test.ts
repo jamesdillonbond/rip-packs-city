@@ -212,7 +212,7 @@ describe("dbChain registry invariant", () => {
     const page = read("app/(collections)/[collection]/analytics/page.tsx")
     expect(page).toContain('collection === "panini-blockchain"')
     expect(page).toContain("fetchPaniniSalesAnalytics()")
-    expect(read("lib/panini/sales-analytics-read.ts")).toContain('db.rpc("panini_sales_analytics"')
+    expect(read("lib/panini/sales-analytics-read.ts")).toContain('db.rpc("panini_sales_analytics_cached"')
     expect(page).toContain("<PaniniAnalytics")
   })
 

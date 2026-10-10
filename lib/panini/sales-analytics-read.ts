@@ -6,6 +6,12 @@
 // and ISR caches a failed read for its whole window (#33), so the bound sits well inside a page
 // function's own budget. Re-measure as panini_sales grows. Any failure is null — the tab renders
 // "couldn't load", never zeros.
+//
+// ⚠ 2026-10-10: it reads panini_sales_analytics_cached (20261010171045), not the function itself. The
+// live payload measured 3.8 s warm / 285k buffers with a temp spill, and a cold read on a fresh
+// deploy passed the 10 s budget (prod log 10:04 AM PT), so ISR served "couldn't load" for 300 s.
+// The cached wrapper returns the 30-min snapshot (1.4 ms / 209 buffers) only while it is younger
+// than 75 min, and otherwise computes live, so a dead refresher degrades to the old slow read.
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
@@ -20,7 +26,7 @@ export async function fetchPaniniSalesAnalytics(
 ): Promise<PaniniSalesAnalytics | null> {
   try {
     const { data, error } = await withBoardBudget<{ data: unknown; error: unknown }>(
-      Promise.resolve(db.rpc("panini_sales_analytics", { p_days: days })),
+      Promise.resolve(db.rpc("panini_sales_analytics_cached", { p_days: days })),
       "sales-analytics",
       PANINI_ANALYTICS_BUDGET_MS,
       "panini/",
