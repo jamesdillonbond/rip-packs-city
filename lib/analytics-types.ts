@@ -432,6 +432,8 @@ export interface FmvTopMoverRow {
   change_pct: number
   current_confidence: FmvConfidence
   prior_confidence: FmvConfidence | null
+  /** ⚠ Despite the name, a 30-DAY count: fmv-recalc writes the true 30d count into
+   *  fmv_snapshots.sales_count_7d (schema compat since 1.7.0). Label it 30d. */
   sales_count_7d: number
 }
 

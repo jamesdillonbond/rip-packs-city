@@ -169,7 +169,11 @@ function TopMoversTable({
               <th className="py-2.5 px-3 text-right">Change</th>
               <th className="py-2.5 px-3 text-right">% Change</th>
               <th className="py-2.5 px-3">Confidence</th>
-              <th className="py-2.5 px-3 text-right">Sales 7d</th>
+              {/* 2026-10-10: was "Sales 7d". The column is fmv_snapshots.sales_count_7d,
+                  which fmv-recalc has filled with the TRUE 30-day count since 1.7.0
+                  (27,055 of 27,468 Top Shot/All Day rows in a day had 7d == 30d), so
+                  every row published a 30-day volume as a 7-day one. */}
+              <th className="py-2.5 px-3 text-right">Sales 30d</th>
             </tr>
           </thead>
           <tbody>

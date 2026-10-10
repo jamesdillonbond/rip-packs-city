@@ -126,6 +126,15 @@ describe("FmvDashboard — with data", () => {
     expect(screen.getByText("Josh Allen").closest("a")).toBeNull()
   })
 
+  // 2026-10-10: the column is sales_count_7d, which fmv-recalc fills with the
+  // 30-DAY count; the header said "Sales 7d", publishing a 30d volume as 7d.
+  it("labels the sales column by the window it actually holds (30d, never 7d)", async () => {
+    render(<FmvDashboard />)
+    await screen.findByText("Dame Lillard")
+    expect(screen.getByText("Sales 30d")).toBeTruthy()
+    expect(screen.queryByText("Sales 7d")).toBeNull()
+  })
+
   it("flags the thin-data mover with its warning title", async () => {
     render(<FmvDashboard />)
     await screen.findByText("Dame Lillard")
