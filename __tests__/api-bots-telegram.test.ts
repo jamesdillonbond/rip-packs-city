@@ -16,12 +16,13 @@ const st = vi.hoisted(() => ({
   owner: { linked: false, owner_key: null as string | null },
   ownerUsername: null as string | null,
   deleted: [] as any[],
+  deleteError: null as null | { message: string },
 }))
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     from() {
-      const b: any = { delete: () => b, eq: () => b, then: (r: any) => { st.deleted.push(1); return r({ error: null }) } }
+      const b: any = { delete: () => b, eq: () => b, then: (r: any) => { st.deleted.push(1); return r({ error: st.deleteError }) } }
       return b
     },
   },
@@ -57,7 +58,7 @@ beforeEach(() => {
   process.env.TELEGRAM_WEBHOOK_SECRET = SECRET
   delete process.env.TELEGRAM_USER_BOT_TOKEN
   st.claim = { ok: true }; st.wallet = null; st.report = "PACK REPORT"
-  st.conciergeOn = false; st.conciergeReply = ""; st.owner = { linked: false, owner_key: null }; st.ownerUsername = null; st.deleted = []
+  st.conciergeOn = false; st.conciergeReply = ""; st.owner = { linked: false, owner_key: null }; st.ownerUsername = null; st.deleted = []; st.deleteError = null
   fetchMock = vi.fn(async () => ({ ok: true }))
   vi.stubGlobal("fetch", fetchMock)
 })
@@ -93,6 +94,17 @@ describe("POST /api/bots/telegram — commands", () => {
   it("/unlink deletes the telegram channel", async () => {
     await POST(post(message("/unlink")))
     expect(st.deleted.length).toBe(1)
+  })
+  // 2026-10-10: the delete's error was discarded, so a failed unlink was answered
+  // "Unlinked. You won't get alerts here anymore." while the alerts kept coming.
+  it("/unlink whose delete FAILS never tells the user they are unlinked", async () => {
+    process.env.TELEGRAM_USER_BOT_TOKEN = "bot-token"
+    st.deleteError = { message: "delete failed" }
+    const body = await (await POST(post(message("/unlink")))).json()
+    expect(body.ok).toBe(false)
+    const sent = fetchMock.mock.calls.map((c: any[]) => String(c[1]?.body ?? "")).join("\n")
+    expect(sent).not.toContain("Unlinked")
+    expect(sent).toContain("try /unlink again")
   })
   it("/soldpacks without a resolvable wallet prompts", async () => {
     st.wallet = null

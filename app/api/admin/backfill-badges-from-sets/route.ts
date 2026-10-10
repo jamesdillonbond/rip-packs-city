@@ -543,6 +543,7 @@ async function runBackfill(req: NextRequest) {
 
   if (!dryRun) {
     try {
+      // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
       await supabase.from("pipeline_runs").insert({
         pipeline: PIPELINE,
         collection_slug: COLLECTION_SLUG,

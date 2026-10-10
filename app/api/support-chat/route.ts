@@ -5325,6 +5325,7 @@ async function updateSession(
     const currentTopics: string[] = existing?.last_topics ?? [];
     const newTopics = [...new Set([category, ...currentTopics])].slice(0, 5);
 
+    // write-discarded: conversation-memory telemetry; a failure only loses topic context for the next turn.
     await supabase.from("chat_sessions").upsert(
       {
         session_id: sessionId,
@@ -5980,6 +5981,7 @@ export async function POST(req: NextRequest) {
         // numbers are real rather than defaulted.
         if (cacheRead > 0 || cacheWrite > 0) {
           try {
+            // write-discarded: usage telemetry; a lost row undercounts a metric and changes nothing a user sees.
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await (supabase as any).from("usage_events").insert({
               // Same keys /api/telemetry writes (2026-09-29): a signed-in user with no

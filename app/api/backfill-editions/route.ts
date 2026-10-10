@@ -124,7 +124,7 @@ export async function POST(req: Request) {
       const totalRows = rows?.length ?? 0
       if (totalRows === 0) {
         // Reset offset — we've covered all moments
-        await supabaseAdmin
+        const { error: doneErr } = await supabaseAdmin
           .from("backfill_state")
           .upsert({
             id: STATE_KEY,
@@ -132,6 +132,7 @@ export async function POST(req: Request) {
             status: "complete",
             last_run_at: new Date().toISOString(),
           }, { onConflict: "id" })
+        if (doneErr) throw new Error(`state_write: ${doneErr.message}`)
 
         return NextResponse.json({
           ok: true,
@@ -145,7 +146,7 @@ export async function POST(req: Request) {
       }
 
       // There were rows but all already have integer keys — advance offset
-      await supabaseAdmin
+      const { error: skipErr } = await supabaseAdmin
         .from("backfill_state")
         .upsert({
           id: STATE_KEY,
@@ -153,6 +154,7 @@ export async function POST(req: Request) {
           status: "running",
           last_run_at: new Date().toISOString(),
         }, { onConflict: "id" })
+      if (skipErr) throw new Error(`state_write: ${skipErr.message}`)
 
       return NextResponse.json({
         ok: true,
@@ -201,7 +203,9 @@ export async function POST(req: Request) {
     }
 
     // ── Step 5: Persist offset in backfill_state ──────────────────────────
-    await supabaseAdmin
+    // ⛔ Bound (2026-10-10): a failed advance used to answer ok:true with the
+    // NEW offset, so the next run silently re-did this batch.
+    const { error: offsetErr } = await supabaseAdmin
       .from("backfill_state")
       .upsert({
         id: STATE_KEY,
@@ -210,6 +214,7 @@ export async function POST(req: Request) {
         total_ingested: (stateRow?.total_ingested ?? 0) + processed,
         last_run_at: new Date().toISOString(),
       }, { onConflict: "id" })
+    if (offsetErr) throw new Error(`state_write: ${offsetErr.message}`)
 
     const durationMs = Date.now() - startTime
     console.log(

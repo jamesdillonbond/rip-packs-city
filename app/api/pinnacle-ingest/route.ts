@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
 
     let editionsUpserted = 0
     let editionErrors = 0
+    let mapErrors = 0
     const seenEditions = new Set<string>()
 
     for (const nft of batch) {
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
       const editionData = flowtyTraitsToPinnacleEdition(traits)
       if (!editionData.editionKey || !editionData.royaltyCode) continue
 
-      await (supabaseAdmin as any)
+      const { error: mapErr } = await (supabaseAdmin as any)
         .from("pinnacle_nft_map")
         .upsert(
           {
@@ -74,6 +75,10 @@ export async function POST(req: NextRequest) {
           },
           { onConflict: "nft_id", ignoreDuplicates: true }
         )
+      if (mapErr) {
+        mapErrors++
+        if (mapErrors <= 3) log.push(`nft_map upsert failed (${nft.id}): ${mapErr.message}`)
+      }
 
       if (seenEditions.has(editionData.editionKey)) continue
       seenEditions.add(editionData.editionKey)
@@ -173,6 +178,7 @@ export async function POST(req: NextRequest) {
       done,
       editionsUpserted,
       editionErrors,
+      mapErrors,
       salesInserted,
       recalcRan: recalc,
       elapsed: `${elapsed}s`,

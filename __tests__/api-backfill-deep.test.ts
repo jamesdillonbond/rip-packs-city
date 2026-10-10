@@ -138,6 +138,43 @@ describe("backfill — cursor page loop + write contract", () => {
     expect(body.duplicates).toBe(1)
   })
 
+  // 2026-10-10: a non-duplicate insert failure was dropped like a duplicate and
+  // the cursor advanced past the sale — lost for good, at ok:true.
+  it("a NON-duplicate sale insert failure fails the run and never advances the cursor past it", async () => {
+    const spy = install({
+      backfill_state: { data: { status: "running", cursor: "c-prev", total_ingested: 0 }, error: null },
+      editions: { data: [{ id: "ed-1" }], error: null },
+      sales: { error: { code: "57014", message: "statement timeout" } },
+    })
+    fetchMock = installFetchMock([
+      { match: (u: string) => u.includes("nbatopshot.com"), respond: () => ({ json: feed([tx()], "c-next") }) },
+    ])
+    const body = await (await POST(req())).json()
+    expect(body.ok).toBe(false)
+    const st = (spy.writes.backfill_state ?? []).flatMap((w) => w.rows)
+    expect(st.some((r) => r.cursor === "c-next")).toBe(false)
+  })
+
+  it("a FAILED cursor write fails the run and reports the cursor where it IS", async () => {
+    const spy = install({
+      backfill_state: [
+        { data: { status: "running", cursor: "c-prev", total_ingested: 0 }, error: null }, // read
+        { data: null, error: { message: "cursor write failed" } }, // per-page advance
+        { data: null, error: null }, // the error stamp
+      ],
+      editions: { data: [{ id: "ed-1" }], error: null },
+      sales: { error: null },
+    })
+    fetchMock = installFetchMock([
+      { match: (u: string) => u.includes("nbatopshot.com"), respond: () => ({ json: feed([tx()], "c-next") }) },
+    ])
+    const body = await (await POST(req())).json()
+    expect(body.ok).toBe(false)
+    expect(String(body.error)).toContain("cursor_write")
+    const stamp = (spy.writes.backfill_state ?? []).flatMap((w) => w.rows).at(-1)
+    expect(stamp).toMatchObject({ status: "error", cursor: "c-prev" })
+  })
+
   it("parks backfill_state status=error and returns ok:false on a GQL failure", async () => {
     const spy = install({
       backfill_state: { data: { status: "running", total_ingested: 0 }, error: null },

@@ -157,6 +157,7 @@ export async function GET(req: Request) {
       updated++
       // Denorm to sets table
       if (edition.set_id) {
+        // write-discarded: a NULL-only denorm fill (`.is(null)`); the next edition of the same set retries it.
         await supabase.from("sets")
           .update({ set_id_onchain: ids.setIdOnchain })
           .eq("id", edition.set_id)

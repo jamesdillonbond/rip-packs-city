@@ -270,10 +270,11 @@ describe("/api/cron/signup-reminder", () => {
 
   it("enabled: mints + persists a token for an existing subscriber with none", async () => {
     process.env.SIGNUP_REMINDER_ENABLED = "1"
-    h.fixtures.email_subscribers = {
-      data: { verification_token: null, unsubscribed_at: null },
-      error: null,
-    }
+    // read → the row has no token; the conditional update → lands one row
+    h.fixtures.email_subscribers = [
+      { data: { verification_token: null, unsubscribed_at: null }, error: null },
+      { data: [{ verification_token: "minted" }], error: null },
+    ]
     const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }) as any)
     vi.stubGlobal("fetch", fetchMock)
 
@@ -282,9 +283,63 @@ describe("/api/cron/signup-reminder", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  // 2026-10-10 — the recipient guards FAIL CLOSED (lib/email/recipient-guards.ts).
+  // A skipped send is retried next run; a send to an unsubscribed person, or a
+  // link to a token that was never stored, cannot be taken back.
+  describe("recipient guards fail closed", () => {
+    const run = async () => {
+      process.env.SIGNUP_REMINDER_ENABLED = "1"
+      const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }) as any)
+      vi.stubGlobal("fetch", fetchMock)
+      await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
+      await h.afterFns[0]()
+      return fetchMock
+    }
+
+    it("a failed subscriber read sends NOTHING (it used to read as 'no row' and skip the unsubscribe check)", async () => {
+      h.fixtures.email_subscribers = { data: null, error: { message: "read timeout" } }
+      expect(await run()).not.toHaveBeenCalled()
+    })
+
+    it("a failed token write sends NOTHING (the link would name a token no row holds)", async () => {
+      h.fixtures.email_subscribers = [
+        { data: { verification_token: null, unsubscribed_at: null }, error: null },
+        { data: null, error: { message: "update failed" } },
+      ]
+      expect(await run()).not.toHaveBeenCalled()
+    })
+
+    it("a lost insert race whose re-read shows an unsubscribe sends NOTHING", async () => {
+      h.fixtures.email_subscribers = [
+        { data: null, error: null }, // no row yet
+        { data: null, error: { code: "23505", message: "duplicate key" } }, // insert lost the race
+        { data: { verification_token: "t", unsubscribed_at: "2026-10-01T00:00:00Z" }, error: null },
+      ]
+      expect(await run()).not.toHaveBeenCalled()
+    })
+
+    it("a failed insert whose re-read also fails sends NOTHING (it used to send a random, unstored token)", async () => {
+      h.fixtures.email_subscribers = [
+        { data: null, error: null },
+        { data: null, error: { message: "insert failed" } },
+        { data: null, error: { message: "reread failed" } },
+      ]
+      expect(await run()).not.toHaveBeenCalled()
+    })
+
+    it("a failed dedup read sends NOTHING (it used to answer 'not sent yet' and send twice)", async () => {
+      h.fixtures.alert_deliveries = { data: null, error: { message: "dedup read failed" } }
+      expect(await run()).not.toHaveBeenCalled()
+    })
+  })
+
   it("enabled: a delivery-record insert error is logged, not fatal (still sends)", async () => {
     process.env.SIGNUP_REMINDER_ENABLED = "1"
-    h.fixtures.alert_deliveries = { data: null, error: { message: "delivery ins boom" } }
+    // dedup read → nothing sent yet; the delivery-record insert → fails
+    h.fixtures.alert_deliveries = [
+      { data: null, error: null },
+      { data: null, error: { message: "delivery ins boom" } },
+    ]
     const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }) as any)
     vi.stubGlobal("fetch", fetchMock)
 

@@ -177,6 +177,7 @@ export async function POST(req: NextRequest) {
       console.log(`[username-resolver] fatal: ${errMsg}`)
     } finally {
       try {
+        // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
         await (supabaseAdmin as any).from("pipeline_runs").insert({
           pipeline: PIPELINE_NAME,
           collection_slug: "nba-top-shot",

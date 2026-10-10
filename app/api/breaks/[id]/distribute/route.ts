@@ -154,6 +154,11 @@ export async function POST(
   let sealedCount = 0
   let failedCount = 0
   let resultsTransferred = 0
+  // ⛔ Every state write after a broadcast is BOUND (2026-10-10). A failed one
+  // used to vanish: a chunk that sealed on-chain could stay "pending" in the DB
+  // while the response said ok:true and counted it transferred. Each unrecorded
+  // state lands here WITH its tx hash, so an operator can reconcile by hand.
+  const recordErrors: Array<{ chunk: number; step: string; tx_hash: string | null; error: string }> = []
 
   const chunks: ResultRow[][] = []
   for (let i = 0; i < pending.length; i += CHUNK_SIZE) {
@@ -202,19 +207,21 @@ export async function POST(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.log(`[breaks/distribute] mutate failed chunk=${chunkIndex}: ${msg}`)
-      await supabaseAdmin
+      const { error: failMarkErr } = await supabaseAdmin
         .from("break_distributions")
         .update({ status: "failed", error_message: `mutate: ${msg}` })
         .eq("id", distributionId)
+      if (failMarkErr) recordErrors.push({ chunk: chunkIndex, step: "mark_failed_mutate", tx_hash: null, error: failMarkErr.message })
       failedCount++
       continue
     }
 
     const broadcastIso = new Date().toISOString()
-    await supabaseAdmin
+    const { error: broadcastErr } = await supabaseAdmin
       .from("break_distributions")
       .update({ status: "broadcast", broadcast_at: broadcastIso, tx_hash: txId })
       .eq("id", distributionId)
+    if (broadcastErr) recordErrors.push({ chunk: chunkIndex, step: "mark_broadcast", tx_hash: txId, error: broadcastErr.message })
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -222,10 +229,11 @@ export async function POST(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.log(`[breaks/distribute] seal failed chunk=${chunkIndex} tx=${txId}: ${msg}`)
-      await supabaseAdmin
+      const { error: sealFailMarkErr } = await supabaseAdmin
         .from("break_distributions")
         .update({ status: "failed", error_message: `seal: ${msg}` })
         .eq("id", distributionId)
+      if (sealFailMarkErr) recordErrors.push({ chunk: chunkIndex, step: "mark_failed_seal", tx_hash: txId, error: sealFailMarkErr.message })
       failedCount++
       continue
     }
@@ -237,6 +245,7 @@ export async function POST(
       .eq("id", distributionId)
     if (distSealErr) {
       console.log(`[breaks/distribute] dist seal-update failed chunk=${chunkIndex}: ${distSealErr.message}`)
+      recordErrors.push({ chunk: chunkIndex, step: "mark_sealed", tx_hash: txId, error: distSealErr.message })
     }
 
     const ids = chunk.map((r) => r.id)
@@ -249,12 +258,15 @@ export async function POST(
         distribution_id: distributionId,
       })
       .in("id", ids)
-    if (resUpdErr) {
-      console.log(`[breaks/distribute] result update failed chunk=${chunkIndex}: ${resUpdErr.message}`)
-    }
-
     sealedCount++
-    resultsTransferred += chunk.length
+    if (resUpdErr) {
+      // Sealed on-chain, NOT recorded: these rows still read pending, so they are
+      // not counted as transferred, and the tx hash goes back to the operator.
+      console.log(`[breaks/distribute] result update failed chunk=${chunkIndex}: ${resUpdErr.message}`)
+      recordErrors.push({ chunk: chunkIndex, step: "record_results", tx_hash: txId, error: resUpdErr.message })
+    } else {
+      resultsTransferred += chunk.length
+    }
     console.log(
       `[breaks/distribute] sealed chunk=${chunkIndex} tx=${txId} moments=${chunk.length} recipients=${uniqueRecipients}`
     )
@@ -267,7 +279,8 @@ export async function POST(
   )
 
   return NextResponse.json({
-    ok: true,
+    ok: recordErrors.length === 0,
+    record_errors: recordErrors,
     chunks_total: chunks.length,
     sealed: sealedCount,
     failed: failedCount,
@@ -289,12 +302,17 @@ async function maybeMarkComplete(breakId: string): Promise<boolean> {
   }
   const nowIso = new Date().toISOString()
   if ((stillPending ?? 0) === 0) {
-    await supabaseAdmin
+    const { error: completeErr } = await supabaseAdmin
       .from("breaks")
       .update({ status: "complete", completed_at: nowIso })
       .eq("id", breakId)
+    if (completeErr) {
+      console.log(`[breaks/distribute] mark complete failed: ${completeErr.message}`)
+      return false
+    }
     return true
   }
+  // write-discarded: a ripping→distributing status nicety; the next distribute call re-derives completion from break_results.
   await supabaseAdmin
     .from("breaks")
     .update({ status: "distributing" })

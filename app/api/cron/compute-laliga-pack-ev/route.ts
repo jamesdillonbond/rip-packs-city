@@ -125,6 +125,7 @@ export async function POST(req: NextRequest) {
       ev_rows_written: 0,
       sentinels_written: 0,
       sentinels_skipped_existing_fmv: 0,
+      sentinels_delete_failed: 0,
       rpc_errors: 0,
     }
 
@@ -320,17 +321,25 @@ export async function POST(req: NextRequest) {
         todayStart.setUTCHours(0, 0, 0, 0)
 
         // Delete-then-insert (fmv_snapshots is partitioned, never upsert).
+        // Bound (2026-10-10): an edition whose delete failed is NOT re-inserted,
+        // or the failure would leave two same-day sentinels behind.
         const DEL_CHUNK = 500
+        const deleteFailed = new Set<string>()
         for (let i = 0; i < sentinelEditions.length; i += DEL_CHUNK) {
           const slice = sentinelEditions.slice(i, i + DEL_CHUNK)
-          await sb
+          const { error: delErr } = await sb
             .from("fmv_snapshots")
             .delete()
             .in("edition_id", slice)
             .gte("computed_at", todayStart.toISOString())
+          if (delErr) {
+            for (const id of slice) deleteFailed.add(id)
+            console.log("[compute-laliga-pack-ev] sentinel delete err:", delErr.message)
+          }
         }
 
-        const sentinelRows = sentinelEditions.map((edId) => ({
+        counters.sentinels_delete_failed = deleteFailed.size
+        const sentinelRows = sentinelEditions.filter((edId) => !deleteFailed.has(edId)).map((edId) => ({
           edition_id: edId,
           collection_id: GOLAZOS_COLLECTION_ID,
           fmv_usd: SENTINEL_FMV_USD,

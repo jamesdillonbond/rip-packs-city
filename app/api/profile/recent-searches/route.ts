@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
   }
   const resolvedType = VALID_TYPES.includes(queryType) ? queryType : inferType(query);
 
+  // write-discarded: de-dupes the list before re-adding the query; a failure leaves one extra history row, never a wrong one.
   await supabase
     .from("recent_searches")
     .delete()

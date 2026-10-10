@@ -305,6 +305,30 @@ describe("breaks/distribute", () => {
     expect(spy.writes.breaks?.some((w) => w.method === "update" && (w.rows[0] as Record<string, unknown>).status === "complete")).toBe(true)
   })
 
+  // 2026-10-10: a result write that failed AFTER the chunk sealed on-chain was
+  // only logged — the response said ok:true and counted the moments transferred.
+  it("a chunk that SEALS but whose result write fails is ok:false, not counted, and hands back the tx hash", async () => {
+    const spy = install({
+      breaks: { data: { id: "b1", status: "ripping" }, error: null },
+      break_results: [
+        { data: [result("r1", 0, "0x1111111111111111", "100"), result("r2", 1, "0x2222222222222222", "101")], error: null },
+        { data: null, error: { message: "results update failed" } }, // the transferred flip
+        { count: 2, error: null } as never, // both still read pending
+      ],
+      break_distributions: [
+        { data: null, error: null },
+        { data: { id: "dist-1" }, error: null },
+      ],
+    })
+    const body = await (await distribute.POST(...distReq("b1"))).json()
+    expect(body.ok).toBe(false)
+    expect(body).toMatchObject({ sealed: 1, results_transferred: 0, break_complete: false })
+    expect(body.record_errors).toEqual([
+      expect.objectContaining({ step: "record_results", tx_hash: state.mutateTxId }),
+    ])
+    void spy
+  })
+
   it("a mutate failure marks the chunk failed, leaves results pending, and does NOT complete the break", async () => {
     state.mutateThrows = true
     const spy = install({

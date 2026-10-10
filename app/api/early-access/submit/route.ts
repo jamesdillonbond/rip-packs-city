@@ -50,6 +50,9 @@ interface AutoApprovalOutcome {
   reasons: string[]
   blocked_by: string[]
   action: AutoApprovalAction
+  // The decision's UPDATE failed: the row is unchanged, so the outcome reports
+  // "pending" rather than a status the row does not hold.
+  write_failed?: true
 }
 
 // Lenient policy (adopted 2026-06-10): an unknown-to-RPC real collector tops
@@ -81,13 +84,17 @@ async function applyAutoApprovalDecision(
 ): Promise<AutoApprovalOutcome> {
   const action = decideAutoApprovalAction(score, reasons, blockedBy)
   const nowIso = new Date().toISOString()
+  // ⛔ Each UPDATE binds its error (2026-10-10). It used to be discarded, so a
+  // failed write still returned eligible:true / status "active" to a user whose
+  // row stayed pending: told they were in, unable to sign in.
+  let writeError: { message: string } | null = null
   if (action === "rejected") {
-    await supabaseAdmin
+    ;({ error: writeError } = await supabaseAdmin
       .from("allow_list")
       .update({ status: "rejected", reject_reason: blockedBy[0], auto_approval_score: score })
-      .eq("id", rowId)
+      .eq("id", rowId))
   } else if (action === "auto_approved") {
-    await supabaseAdmin
+    ;({ error: writeError } = await supabaseAdmin
       .from("allow_list")
       .update({
         status: "active",
@@ -96,12 +103,16 @@ async function applyAutoApprovalDecision(
         approved_by: "auto",
         approved_at: nowIso,
       })
-      .eq("id", rowId)
+      .eq("id", rowId))
   } else if (action === "pending_with_score") {
-    await supabaseAdmin
+    ;({ error: writeError } = await supabaseAdmin
       .from("allow_list")
       .update({ auto_approval_score: score })
-      .eq("id", rowId)
+      .eq("id", rowId))
+  }
+  if (writeError) {
+    console.log(`[early-access/submit] auto-approval write failed row=${rowId} action=${action}: ${writeError.message}`)
+    return { eligible: false, score, reasons, blocked_by: blockedBy, action: "pending", write_failed: true }
   }
   return {
     eligible: action === "auto_approved",
@@ -460,13 +471,17 @@ export async function POST(req: NextRequest) {
       // still pending — never clobbers a fast-path auto_approved/rejected.
       if (wallet && autoApprovalRowId) {
         try {
-          const { data: cur } = await supabaseAdmin
+          const { data: cur, error: curErr } = await supabaseAdmin
             .from("allow_list")
             .select("status")
             .eq("id", autoApprovalRowId)
             .maybeSingle()
           const curStatus = (cur as { status?: string } | null)?.status
-          if (curStatus !== "active" && curStatus !== "rejected") {
+          // A failed read is not "still pending": acting on it could overwrite
+          // the fast pass's decision, which this pass promises never to do.
+          if (curErr) {
+            console.log(`[early-access/submit] slow auto-approval skipped, status read failed: ${curErr.message}`)
+          } else if (curStatus !== "active" && curStatus !== "rejected") {
             let totalMoments: number | null = null
             const controller = new AbortController()
             const timer = setTimeout(() => controller.abort(), 20_000)

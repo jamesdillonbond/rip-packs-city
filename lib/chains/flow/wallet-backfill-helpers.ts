@@ -551,6 +551,7 @@ async function stampLastRefreshed(wallet: string, slug: string, changedRows?: nu
     } catch { /* swallow */ }
   }
   try {
+    // write-discarded: a "we checked" stamp; its one reader (seed-wallet-refresh lastWalkMs) takes the max, so a failure only walks the wallet sooner.
     // deno-lint-ignore no-explicit-any
     await (supabaseAdmin as any)
       .from("seeded_wallets")

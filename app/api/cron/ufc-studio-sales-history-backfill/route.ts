@@ -388,7 +388,10 @@ async function run(req: NextRequest): Promise<NextResponse> {
     insertedThisTick += flushed.inserted
     dupesThisTick += flushed.dupes
     candidates = new Map()
-    await supabaseAdmin
+    // ⛔ Bound (2026-10-10): a failed advance THROWS into the tick's catch, so the
+    // run reads ok=false instead of logging progress the state row never got.
+    // The sales already flushed are re-found as dupes on the next tick.
+    const { error: stateErr } = await supabaseAdmin
       .from(STATE_TABLE)
       .update({
         after_cursor: cursor,
@@ -403,6 +406,7 @@ async function run(req: NextRequest): Promise<NextResponse> {
         updated_at: new Date().toISOString(),
       })
       .eq("id", 1)
+    if (stateErr) throw new Error(`state_write: ${stateErr.message.slice(0, 160)}`)
     pagesSinceCheckpoint = 0
   }
 
@@ -468,14 +472,11 @@ async function run(req: NextRequest): Promise<NextResponse> {
     runError = e instanceof Error ? e.message.slice(0, 200) : String(e)
     // Best-effort: persist progress up to the last successfully-fetched page so we
     // don't lose the whole tick. Candidates not yet flushed are re-found next tick.
-    try {
-      await supabaseAdmin
-        .from(STATE_TABLE)
-        .update({ pages_walked: totalPagesWalked0 + pagesThisTick, rows_scanned: totalScanned0 + scannedThisTick, error: runError, updated_at: new Date().toISOString() })
-        .eq("id", 1)
-    } catch {
-      /* non-fatal */
-    }
+    // write-discarded: best-effort error stamp inside the failure path; the run is already ok=false with runError.
+    await supabaseAdmin
+      .from(STATE_TABLE)
+      .update({ pages_walked: totalPagesWalked0 + pagesThisTick, rows_scanned: totalScanned0 + scannedThisTick, error: runError, updated_at: new Date().toISOString() })
+      .eq("id", 1)
   }
 
   const ok = runError === null

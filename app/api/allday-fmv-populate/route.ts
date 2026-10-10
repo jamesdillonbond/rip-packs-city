@@ -201,6 +201,7 @@ export async function GET(req: NextRequest) {
   }
   if (stallReset) {
     cursorBefore = null
+    // write-discarded: the walk restarts from the in-memory null either way; the end-of-run cursor write is the durable one.
     await supabaseAdmin
       .from("backfill_state")
       .update({ cursor: null, status: "pending" })

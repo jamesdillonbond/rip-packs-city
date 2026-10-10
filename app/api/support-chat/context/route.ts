@@ -120,11 +120,13 @@ export async function GET(req: NextRequest) {
       if (userWallet) update.user_wallet = userWallet;
       if (userEmail) update.user_email = userEmail;
 
+      // write-discarded: conversation-memory telemetry; a failure only loses topic context for the next turn.
       await supabase
         .from("chat_sessions")
         .update(update)
         .eq("session_id", sessionId);
     } else {
+      // write-discarded: conversation-memory telemetry; a failure only loses topic context for the next turn.
       await supabase.from("chat_sessions").upsert(
         {
           session_id: sessionId,

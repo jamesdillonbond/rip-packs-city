@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
         // Stripe's "your endpoint is broken" alarm; 503 is the documented
         // try-again signal.
         try {
+          // write-discarded: audit row inside the handler-error path; the 503 below is what makes Stripe retry.
           await supabaseAdmin.from("stripe_payment_log").insert({
             user_id: userId,
             wallet_address: walletAddress,

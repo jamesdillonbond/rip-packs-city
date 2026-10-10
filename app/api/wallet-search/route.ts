@@ -572,6 +572,7 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
       // catalog, the chain fills and the linker had written. A second source's
       // fill must survive the first source's next write (#137 d). The seed's job
       // is to make an edition EXIST; it is not an authority on one that does.
+      // write-discarded: insert-only seed (ignoreDuplicates); a failure leaves the edition to the catalog and linker lanes.
       await supabaseAdmin
         .from("editions")
         .upsert(
@@ -972,6 +973,7 @@ async function progressivelyClassify(rows: WalletRow[], wallet: string) {
     // 3. Propagate acquiredAt to wallet_moments_cache where missing
     const toCacheFill = rows.filter((r) => r.acquiredAt && r.momentId)
     for (const row of toCacheFill) {
+      // write-discarded: fills a NULL acquired_at only (`.is(null)` guard); a failure leaves it NULL for the next search to fill.
       await (supabaseAdmin as any)
         .from("wallet_moments_cache")
         .update({ acquired_at: row.acquiredAt })
@@ -1108,20 +1110,31 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
       .filter(r => r.momentId && !r.editionKey)
       .map(r => baseRow(r))
 
+    // Best-effort fill (the backfill walks are authoritative), but the log line
+    // is the only record it leaves, so it counts rows WRITTEN, not rows offered
+    // (2026-10-10: it said "Cached N" whether or not any chunk landed).
     const CHUNK = 200
-    for (let i = 0; i < resolvedRows.length; i += CHUNK) {
-      const chunk = resolvedRows.slice(i, i + CHUNK)
-      await (supabaseAdmin as any)
-        .from("wallet_moments_cache")
-        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
+    let written = 0
+    let failedChunks = 0
+    let firstError: string | null = null
+    for (const set of [resolvedRows, unresolvedRows]) {
+      for (let i = 0; i < set.length; i += CHUNK) {
+        const chunk = set.slice(i, i + CHUNK)
+        const { error } = await (supabaseAdmin as any)
+          .from("wallet_moments_cache")
+          .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
+        if (error) {
+          failedChunks++
+          firstError ??= error.message
+        } else {
+          written += chunk.length
+        }
+      }
     }
-    for (let i = 0; i < unresolvedRows.length; i += CHUNK) {
-      const chunk = unresolvedRows.slice(i, i + CHUNK)
-      await (supabaseAdmin as any)
-        .from("wallet_moments_cache")
-        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
-    }
-    console.log(`[wallet-search] Cached ${resolvedRows.length + unresolvedRows.length} moments for ${resolvedAddress} (${resolvedRows.length} with edition_key)`)
+    console.log(
+      `[wallet-search] Cached ${written}/${resolvedRows.length + unresolvedRows.length} moments for ${resolvedAddress} (${resolvedRows.length} with edition_key)` +
+        (failedChunks ? ` — ${failedChunks} chunk(s) failed: ${firstError}` : ""),
+    )
   } catch (err) {
     console.warn("[wallet-search] Cache upsert failed:", err instanceof Error ? err.message : String(err))
   }

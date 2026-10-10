@@ -157,6 +157,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     stepT = Date.now();
     if (runId == null) return;
     try {
+      // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
       await sb
         .from("pipeline_runs")
         .update({ extra: { phase: "started", last_step: k, step_ms: { ...stepMs } } })
@@ -493,8 +494,10 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     // Update the marker when we have one; fall back to an insert if the marker
     // write failed, so a telemetry hiccup cannot lose the run entirely.
     if (runId != null) {
+      // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
       await sb.from("pipeline_runs").update(finishedRow).eq("id", runId);
     } else {
+      // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
       await sb.from("pipeline_runs").insert(finishedRow);
     }
   } catch { /* best-effort */ }

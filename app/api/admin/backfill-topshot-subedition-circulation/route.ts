@@ -412,6 +412,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const ok = errors.length === 0 && !readNothing;
 
   try {
+    // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
     await supabase.from("pipeline_runs").insert({
       pipeline: PIPELINE_NAME,
       collection_slug: COLLECTION_SLUG,

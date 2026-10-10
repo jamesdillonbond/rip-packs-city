@@ -286,6 +286,7 @@ async function handleIndex(req: NextRequest) {
       }
 
       const closeParked = async (signature: string, tokenMint: string, resolution: string) => {
+        // write-discarded: a row left open is re-drained next tick, and the sale insert it resolves to is deduped, so a failure only repeats work.
         await (supabaseAdmin as any)
           .from("candy_sales_unresolved")
           .update({ resolved_at: new Date().toISOString(), resolution })

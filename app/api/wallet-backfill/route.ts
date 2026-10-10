@@ -221,6 +221,7 @@ async function stampLastRefreshed(wallet: string, changedRows?: number) {
     } catch { /* swallow */ }
   }
   try {
+    // write-discarded: a "we checked" stamp; its one reader (seed-wallet-refresh lastWalkMs) takes the max, so a failure only walks the wallet sooner.
     await (supabaseAdmin as any)
       .from("seeded_wallets")
       .update({ last_refreshed_per_collection: { [COLLECTION_SLUG]: new Date().toISOString() } })

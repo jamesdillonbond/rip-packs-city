@@ -343,13 +343,18 @@ export async function POST(req: NextRequest) {
   }
 
   // Cancel any prior unresolved challenges for the same wallet so each
-  // physical wallet only has one open puzzle at a time.
-  await supabase
+  // physical wallet only has one open puzzle at a time. A failed supersede
+  // refuses the new challenge rather than opening a second one (2026-10-10).
+  const { error: supersedeErr } = await supabase
     .from("wallet_verification_challenges")
     .update({ resolved_at: new Date().toISOString(), resolved_via: "superseded" })
     .eq("user_id", user.id)
     .eq("wallet_addr", wallet)
     .is("resolved_at", null);
+  if (supersedeErr) {
+    console.error("[verify-challenge POST] supersede", supersedeErr.message);
+    return apiErrorResponse(supersedeErr, "api/profile/verify-challenge");
+  }
 
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MIN * 60 * 1000).toISOString();
   const amount = computeChallengeAmount(target.fmv_usd);

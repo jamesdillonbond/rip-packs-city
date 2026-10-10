@@ -197,6 +197,29 @@ describe("topshot-fmv-populate — sweep happy path", () => {
     })
   })
 
+  // 2026-10-10: both cursor writes sat in a try/catch, but supabase-js RETURNS
+  // its error — the catch could never fire, and a failed advance logged ok:true
+  // with the new cursor in cursor_after.
+  it("a FAILED final cursor write fails the run and reports no advance", async () => {
+    fetchMock = installFetchMock([
+      gqlRoute("TopshotMarketplaceFmv", [page([node(SET_A)], "c2"), page([node(SET_B)], null)]),
+    ])
+    const spy = install({
+      backfill_state: [
+        { data: { cursor: "" }, error: null }, // resume read
+        { data: null, error: { message: "page write failed" } }, // per-page persist
+        { data: null, error: { message: "final write failed" } }, // end-of-run persist
+      ],
+    })
+    await POST(req())
+    await runDeferred()
+    const run = pipelineInsert(spy)
+    expect(run?.ok).toBe(false)
+    expect(String(run?.error)).toContain("cursor_write")
+    expect(run?.cursor_after).toBeNull()
+    expect(run?.extra).toMatchObject({ page_cursor_write_errors: 1 })
+  })
+
   it("detects an upstream cursor stall (repeated rightCursor) as end-of-feed", async () => {
     fetchMock = installFetchMock([
       gqlRoute("TopshotMarketplaceFmv", [

@@ -292,6 +292,28 @@ describe("ufc-studio-sales-history-backfill — cursor walk + write", () => {
     })
   })
 
+  // 2026-10-10: the checkpoint's state write was discarded, so a failed cursor
+  // advance still logged ok=true and the walk could stall at "success" forever.
+  it("a FAILED checkpoint state write fails the run (ok=false, state_write error)", async () => {
+    fetchMock = installFetchMock([
+      studioStub([histPage([node()], { total: 860_000, endCursor: "cursor-end", hasNextPage: false })]),
+    ])
+    const spy = install({
+      pipeline_runs: { data: [], error: null, count: 0 } as never,
+      [STATE_TABLE]: [
+        { data: { after_cursor: "c-prev", pages_walked: 10, rows_scanned: 2000, rows_matched: 40, sales_inserted: 5, done: false }, error: null },
+        { data: null, error: { message: "state row locked" } }, // the checkpoint
+        { data: null, error: null }, // the best-effort error stamp
+      ],
+      editions: { data: EDITION_ROWS, error: null },
+      sales: [{ data: [], error: null }, { data: null, error: null }],
+    })
+    await POST(req())
+    const log = terminalLog(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("state_write")
+  })
+
   it("a fatal GQL error persists best-effort progress with the error, logs ok=false, and 500s", async () => {
     fetchMock = installFetchMock([studioStub([], { status: 500 })])
     const spy = install({

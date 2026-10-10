@@ -131,6 +131,24 @@ describe("POST /api/early-access/submit — auto-approval decision", () => {
     expect(upd?.rows[0]).toMatchObject({ status: "active", approved_by: "auto", auto_approval_score: 95 })
   })
 
+  // 2026-10-10: the decision's UPDATE error was discarded, so a failed write
+  // still answered status "active" / eligible:true for a row that stayed pending.
+  it("a FAILED approval write never reports active: the row is unchanged, so the answer is pending", async () => {
+    install({
+      "rpc:submit_allow_list_request": { data: { ok: true, duplicate: false, status: "pending" }, error: null },
+      "rpc:auto_approve_eligible": { data: { score: 95, reasons: [], blocked_by: [] }, error: null },
+      allow_list: [
+        { data: { id: "row-1" }, error: null }, // the row lookup
+        { data: null, error: { message: "update failed" } }, // the approval UPDATE
+      ],
+    })
+
+    const body = await (await POST(req({ email: "a@b.com", username: "collector" }))).json()
+    expect(body.status).not.toBe("active")
+    expect(body.status).toBe("pending")
+    expect(body.auto_approval).toMatchObject({ eligible: false, action: "pending", write_failed: true })
+  })
+
   it("rejects when a blocker is present: writes status=rejected with the reason", async () => {
     install({
       "rpc:submit_allow_list_request": { data: { ok: true, duplicate: false, status: "pending" }, error: null },
@@ -210,6 +228,27 @@ describe("POST /api/early-access/submit — deferred on-chain re-score + Telegra
     install({
       allow_list: { data: { id: "row-1", status: "active", collections: [] }, error: null },
       "rpc:submit_allow_list_request": { data: { ok: true, status: "pending" }, error: null },
+    })
+    const calls = stubFetch(okFetch(500))
+    await POST(req(VALID))
+    const before = state.rpcCalls.length
+    await cap.fn!()
+    expect(calls.some((u) => u.includes("/api/wallet-search"))).toBe(false)
+    expect(state.rpcCalls.slice(before).find((c) => c.name === "auto_approve_eligible")).toBeUndefined()
+  })
+
+  // 2026-10-10: a failed status read used to read as "still pending", so the slow
+  // pass could re-decide a row the fast pass had already decided.
+  it("skips the re-score when the status read FAILS (unknown is not pending)", async () => {
+    install({
+      allow_list: [
+        { data: [], error: null }, // wallet+username duplicate check
+        { data: { id: "row-1" }, error: null }, // sync row lookup
+        { data: null, error: { message: "status read failed" } }, // slow pass status read
+        { data: { id: "row-1", collections: [] }, error: null },
+      ],
+      "rpc:submit_allow_list_request": { data: { ok: true, status: "pending" }, error: null },
+      "rpc:auto_approve_eligible": { data: { score: 0, reasons: [], blocked_by: [] }, error: null },
     })
     const calls = stubFetch(okFetch(500))
     await POST(req(VALID))

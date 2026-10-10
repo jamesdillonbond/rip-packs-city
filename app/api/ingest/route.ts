@@ -828,6 +828,7 @@ export async function POST(req: NextRequest) {
           // Observability: a single pipeline_runs row per call site so we can
           // monitor silent hydrate-failure rates without scraping logs.
           try {
+            // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
             await (supabaseAdmin as any).from("pipeline_runs").insert({
               pipeline: "editions-hydrate-at-insert",
               collection_slug: "nba-top-shot",
@@ -955,6 +956,7 @@ export async function POST(req: NextRequest) {
     // means txs were held back rather than written onto UUID-dupe editions.
     if (uuidResolvedOnchain > 0 || uuidSkipped > 0) {
       try {
+        // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
         await (supabaseAdmin as any).from("pipeline_runs").insert({
           pipeline: "ingest-canonical-guard",
           collection_slug: "nba-top-shot",

@@ -525,6 +525,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       // and starve every set behind it.
       setsProcessed++;
       lastSetId = setRow.id;
+      // write-discarded: a rotation stamp so a faulting set stops starving the walk; a failure only re-picks it next run.
       await supabase
         .from("sets")
         .update({ updated_at: new Date().toISOString() })
@@ -575,8 +576,15 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     if (!setRow.asset_path_prefix && sampleAssetPrefix) {
       setUpdate.asset_path_prefix = sampleAssetPrefix;
     }
-    await supabase.from("sets").update(setUpdate).eq("id", setRow.id);
-    if (coverChanged) setsWithCoverSet++;
+    // Bound (2026-10-10): sets_with_cover_set counted a cover the failed
+    // UPDATE never wrote. A failed set write is an upsert-class error (ok=false).
+    const { error: setErr } = await supabase.from("sets").update(setUpdate).eq("id", setRow.id);
+    if (setErr) {
+      upsertErrors++;
+      errors.push({ set_id: setRow.id, reason: `set_update: ${setErr.message}` });
+    } else if (coverChanged) {
+      setsWithCoverSet++;
+    }
 
     setsProcessed++;
     lastSetId = setRow.id;
@@ -597,6 +605,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const ok = upsertErrors === 0 && !totalFault;
 
   try {
+    // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
     await supabase.from("pipeline_runs").insert({
       pipeline: PIPELINE_NAME,
       collection_slug: COLLECTION_SLUG,

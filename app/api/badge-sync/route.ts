@@ -631,6 +631,7 @@ async function runCatalogSweep(): Promise<NextResponse> {
   const durationMs = Date.now() - startedAt
   const ok = gqlError === null && upsertErrors === 0 && cursorWriteError === null
   try {
+    // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
     await supabase.from("pipeline_runs").insert({
       pipeline: CATALOG_PIPELINE,
       collection_slug: "nba_top_shot",
@@ -837,6 +838,7 @@ export async function POST(req: NextRequest) {
   // and did it write?" — which is the precondition for anyone noticing.
   // In a try/catch so telemetry can never break the sweep it measures.
   try {
+    // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
     await (supabaseAdmin as any).from("pipeline_runs").insert({
       pipeline: "topshot-badge-sync",
       collection_slug: "nba_top_shot",

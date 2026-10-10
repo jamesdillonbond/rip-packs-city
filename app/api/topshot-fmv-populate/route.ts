@@ -324,6 +324,7 @@ async function runSweep(): Promise<void> {
   let firstGqlError: string | null = null
   let sweepComplete = false
   let terminatedReason = "time_budget_exceeded"
+  let pageCursorErrors = 0
   let pending: FmvRow[] = []
   const seenCursors = new Set<string>()
 
@@ -402,14 +403,15 @@ async function runSweep(): Promise<void> {
     cursor = rightCursor
 
     // Persist the cursor each page so a timeout resumes cleanly next run.
-    try {
-      await supabase
-        .from("backfill_state")
-        .update({ cursor, status: "pending", last_run_at: new Date().toISOString() })
-        .eq("id", SWEEP_ID)
-    } catch {
-      /* non-fatal — the end-of-run write below is the durable one */
-    }
+    // ⛔ supabase-js RETURNS its error, it does not throw: the try/catch that
+    // wrapped this write could never fire, so a failed advance was invisible.
+    // A per-page failure is non-fatal (the end-of-run write is the durable one)
+    // but it is RECORDED, and the end-of-run write's own failure fails the run.
+    const { error: pageCursorErr } = await supabase
+      .from("backfill_state")
+      .update({ cursor, status: "pending", last_run_at: new Date().toISOString() })
+      .eq("id", SWEEP_ID)
+    if (pageCursorErr) pageCursorErrors++
 
     await sleep(PAGE_DELAY_MS)
   }
@@ -421,52 +423,51 @@ async function runSweep(): Promise<void> {
 
   // Wrap the cursor back to the start of the feed when the sweep completed.
   const nextCursor = sweepComplete ? "" : cursor
-  try {
-    await supabase
-      .from("backfill_state")
-      .update({
-        cursor: nextCursor,
-        status: sweepComplete ? "complete" : "pending",
-        last_run_at: new Date().toISOString(),
-      })
-      .eq("id", SWEEP_ID)
-  } catch (e) {
-    console.log(`[topshot-fmv-populate] cursor update failed: ${e instanceof Error ? e.message : e}`)
-  }
+  const { error: finalCursorErr } = await supabase
+    .from("backfill_state")
+    .update({
+      cursor: nextCursor,
+      status: sweepComplete ? "complete" : "pending",
+      last_run_at: new Date().toISOString(),
+    })
+    .eq("id", SWEEP_ID)
+  // A failed final write leaves the cursor wherever the last landed page write
+  // put it — unknown here — so the run fails and reports no advance.
+  const cursorWriteError = finalCursorErr ? `cursor_write: ${finalCursorErr.message}` : null
+  if (cursorWriteError) console.log(`[topshot-fmv-populate] ${cursorWriteError}`)
 
   const durationMs = Date.now() - startedAt
-  const ok = rpcError === null && firstGqlError === null
+  const ok = rpcError === null && firstGqlError === null && cursorWriteError === null
 
-  try {
-    await supabase.from("pipeline_runs").insert({
-      pipeline: PIPELINE_NAME,
-      collection_slug: COLLECTION_SLUG,
-      started_at: startedAtIso,
-      finished_at: new Date().toISOString(),
-      rows_found: nodesFetched,
-      rows_written: upserted,
-      rows_skipped: skipped,
-      ok,
-      error: rpcError ?? firstGqlError,
-      cursor_before: cursorBefore || null,
-      cursor_after: nextCursor || null,
-      extra: {
-        pages_fetched: pagesFetched,
-        nodes_fetched: nodesFetched,
-        upserted,
-        skipped,
-        no_edition: noEdition,
-        unresolved_set: unresolvedSet,
-        sweep_complete: sweepComplete,
-        terminated_reason: terminatedReason,
-        gql_error: firstGqlError,
-        sets_mapped: setOnchainByUuid.size,
-        duration_ms: durationMs,
-      },
-    })
-  } catch (e) {
-    console.log(`[topshot-fmv-populate] pipeline_runs insert failed: ${e instanceof Error ? e.message : e}`)
-  }
+  const { error: runLogErr } = await supabase.from("pipeline_runs").insert({
+    pipeline: PIPELINE_NAME,
+    collection_slug: COLLECTION_SLUG,
+    started_at: startedAtIso,
+    finished_at: new Date().toISOString(),
+    rows_found: nodesFetched,
+    rows_written: upserted,
+    rows_skipped: skipped,
+    ok,
+    error: rpcError ?? firstGqlError ?? cursorWriteError,
+    cursor_before: cursorBefore || null,
+    cursor_after: cursorWriteError ? null : nextCursor || null,
+    extra: {
+      pages_fetched: pagesFetched,
+      nodes_fetched: nodesFetched,
+      upserted,
+      skipped,
+      no_edition: noEdition,
+      unresolved_set: unresolvedSet,
+      sweep_complete: sweepComplete,
+      terminated_reason: terminatedReason,
+      gql_error: firstGqlError,
+      sets_mapped: setOnchainByUuid.size,
+      duration_ms: durationMs,
+      page_cursor_write_errors: pageCursorErrors,
+      cursor_write_error: cursorWriteError,
+    },
+  })
+  if (runLogErr) console.log(`[topshot-fmv-populate] pipeline_runs insert failed: ${runLogErr.message}`)
 
   console.log(
     `[topshot-fmv-populate] done ok=${ok} pages=${pagesFetched} nodes=${nodesFetched} upserted=${upserted} reason=${terminatedReason} ms=${durationMs}`

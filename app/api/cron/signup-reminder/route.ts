@@ -30,7 +30,7 @@
 
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
-import { randomUUID } from "crypto";
+import { alreadySentEmail, ensureUnsubToken } from "@/lib/email/recipient-guards";
 import { supabaseAdmin } from "@/lib/supabase";
 import {
   buildSignupReminderSubject,
@@ -75,70 +75,21 @@ async function loadEligible(minHours: number, maxDays: number): Promise<ColdSign
   return ((data ?? []) as ColdSignup[]).filter((r) => r.email && r.email.includes("@"));
 }
 
-// Ensure an email_subscribers row exists so the unsubscribe link works, WITHOUT
-// clobbering a real subscriber's prefs. Returns the unsubscribe token, or
-// { skip: true } if the recipient has unsubscribed.
-async function ensureUnsubToken(
-  email: string
-): Promise<{ token: string } | { skip: true }> {
-  const sb = supabaseAdmin as any;
-  const { data: existing } = await sb
-    .from("email_subscribers")
-    .select("verification_token, unsubscribed_at")
-    .eq("email", email)
-    .maybeSingle();
-
-  if (existing) {
-    if (existing.unsubscribed_at) return { skip: true };
-    if (existing.verification_token) return { token: existing.verification_token as string };
-    const token = randomUUID();
-    await sb
-      .from("email_subscribers")
-      .update({ verification_token: token, updated_at: new Date().toISOString() })
-      .eq("email", email);
-    return { token };
-  }
-
-  const token = randomUUID();
-  const { error } = await sb.from("email_subscribers").insert({
-    email,
-    verified: false, // approved users we're re-engaging; NOT opted-in subscribers
-    verification_token: token,
-    unsubscribed_at: null,
-  });
-  if (error) {
-    const { data: r2 } = await sb
-      .from("email_subscribers")
-      .select("verification_token, unsubscribed_at")
-      .eq("email", email)
-      .maybeSingle();
-    if (r2?.unsubscribed_at) return { skip: true };
-    return { token: (r2?.verification_token as string) ?? token };
-  }
-  return { token };
-}
-
-async function ensureUnsubTokenPreview(email: string): Promise<"ok" | "unsubscribed"> {
-  const { data } = await (supabaseAdmin as any)
+async function ensureUnsubTokenPreview(email: string): Promise<"ok" | "unsubscribed" | "unverified"> {
+  const { data, error } = await (supabaseAdmin as any)
     .from("email_subscribers")
     .select("unsubscribed_at")
     .eq("email", email)
     .maybeSingle();
+  // A failed read is not "not unsubscribed" — the live run skips it, so must the preview.
+  if (error) return "unverified";
   return data?.unsubscribed_at ? "unsubscribed" : "ok";
 }
 
-async function alreadySent(ownerKey: string, stage: string): Promise<boolean> {
-  const { data } = await (supabaseAdmin as any)
-    .from("alert_deliveries")
-    .select("id")
-    .eq("owner_key", ownerKey)
-    .eq("channel", "email")
-    .eq("alert_kind", ALERT_KIND)
-    .eq("subject_key", SUBJECT_KEY)
-    .eq("dedup_bucket", stage)
-    .eq("status", "sent")
-    .maybeSingle();
-  return !!data;
+// ensureUnsubToken / alreadySentEmail live in lib/email/recipient-guards.ts and
+// FAIL CLOSED: a read or write they cannot confirm skips the recipient.
+async function alreadySent(ownerKey: string, stage: string): Promise<boolean | null> {
+  return alreadySentEmail({ ownerKey, alertKind: ALERT_KIND, subjectKey: SUBJECT_KEY, bucket: stage })
 }
 
 // Per-request cap on the outbound transactional call below.
@@ -201,6 +152,7 @@ async function run(req: NextRequest) {
       const would: Array<{ email: string; stage: string | null; wallet_addr: string | null }> = [];
       let unsub = 0;
       let dedup = 0;
+      let unverified = 0; // a guard read failed: the live run would skip these too
       for (const r of rows) {
         const email = (r.email as string).toLowerCase();
         const stage = r.stage ?? "nudge1";
@@ -209,7 +161,10 @@ async function run(req: NextRequest) {
         seen.add(key);
         const tok = await ensureUnsubTokenPreview(email);
         if (tok === "unsubscribed") { unsub++; continue; }
-        if (await alreadySent(email, stage)) { dedup++; continue; }
+        if (tok === "unverified") { unverified++; continue; }
+        const sentBefore = await alreadySent(email, stage);
+        if (sentBefore === null) { unverified++; continue; }
+        if (sentBefore) { dedup++; continue; }
         would.push({ email, stage, wallet_addr: r.wallet_addr });
       }
       return NextResponse.json({
@@ -222,6 +177,7 @@ async function run(req: NextRequest) {
         would_send: would.length,
         skipped_unsubscribed: unsub,
         skipped_already_sent: dedup,
+        skipped_unverified: unverified,
         recipients: would,
       });
     } catch (e) {
@@ -261,6 +217,7 @@ async function run(req: NextRequest) {
     let found = 0;
     let sent = 0;
     let skipped = 0;
+    let guardErrors = 0;
 
     try {
       const rows = await loadEligible(minHours, maxDays);
@@ -276,9 +233,23 @@ async function run(req: NextRequest) {
         seen.add(key);
 
         const tok = await ensureUnsubToken(email);
-        if ("skip" in tok) { skipped++; continue; }
+        if ("skip" in tok) {
+          skipped++;
+          if (tok.reason === "error") {
+            guardErrors++;
+            errMsg = `${errMsg ? errMsg + "; " : ""}guard ${email.slice(-8)}: ${tok.error}`;
+          }
+          continue;
+        }
 
-        if (await alreadySent(email, stage)) { skipped++; continue; }
+        const sentBefore = await alreadySent(email, stage);
+        if (sentBefore === null) {
+          skipped++;
+          guardErrors++;
+          errMsg = `${errMsg ? errMsg + "; " : ""}guard ${email.slice(-8)}: dedup_read_failed`;
+          continue;
+        }
+        if (sentBefore) { skipped++; continue; }
 
         const unsubscribeUrl = `${ORIGIN}/api/subscribe/unsubscribe?token=${tok.token}`;
         const opts = {
@@ -337,7 +308,7 @@ async function run(req: NextRequest) {
         p_rows_skipped: skipped,
         p_ok: ok,
         p_error: errMsg,
-        p_extra: { sent, skipped, min_hours: minHours, max_days: maxDays, duration_ms: Date.now() - startedMs },
+        p_extra: { sent, skipped, guard_errors: guardErrors, min_hours: minHours, max_days: maxDays, duration_ms: Date.now() - startedMs },
       });
     } catch (logErr) {
       console.log(`[${PIPELINE_NAME}] log err: ${logErr instanceof Error ? logErr.message : String(logErr)}`);

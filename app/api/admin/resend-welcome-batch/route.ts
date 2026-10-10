@@ -149,8 +149,10 @@ export async function POST(req: NextRequest) {
     processed++
     try {
       // Reset welcome + prewarm stamps so processSinglePrewarmRow has a clean
-      // slate, matching the single-user route's flow.
-      await supabaseAdmin
+      // slate, matching the single-user route's flow. Bound (2026-10-10): a
+      // failed reset leaves the old stamps in place, so the row is reported as
+      // a failure instead of being processed (and counted) on a dirty slate.
+      const { error: resetErr } = await supabaseAdmin
         .from("allow_list")
         .update({
           welcome_email_sent_at: null,
@@ -162,6 +164,10 @@ export async function POST(req: NextRequest) {
           prewarm_attempts: (row.prewarm_attempts ?? 0) + 1,
         })
         .eq("id", row.id as unknown as string)
+      if (resetErr) {
+        failures.push({ email: String(row.email), reason: `reset: ${resetErr.message}` })
+        continue
+      }
 
       const outcome = await processSinglePrewarmRow(row as AllowListRow, origin)
       const ok = (outcome as { ok?: boolean } | null)?.ok ?? true

@@ -273,7 +273,7 @@ export async function POST(req: NextRequest) {
       const { transactions, nextCursor } = await fetchSalesPage(batchSize, cursor);
 
       if (transactions.length === 0) {
-        await supabase
+        const { error: completeErr } = await supabase
           .from("backfill_state")
           .update({
             status: "complete",
@@ -281,6 +281,7 @@ export async function POST(req: NextRequest) {
             notes: `Completed after ${(state?.total_ingested ?? 0) + totalThisRun} total sales`,
           })
           .eq("id", "topshot_sales");
+        if (completeErr) throw new Error(`state_write: ${completeErr.message}`);
 
         await logTerminalRun({
           pipeline: PIPELINE,
@@ -327,17 +328,19 @@ export async function POST(req: NextRequest) {
         });
 
         if (error) {
-          if (error.code === "23505") {
-            duplicates++;
-          }
+          // ⛔ Only a duplicate is skippable. Any other insert failure used to be
+          // dropped too, and the cursor then advanced past the sale for good.
+          if (error.code !== "23505") throw new Error(`sales_insert: ${error.message}`);
+          duplicates++;
         } else {
           totalThisRun++;
         }
       }
 
+      const prevCursor = cursor;
       cursor = nextCursor;
 
-      await supabase
+      const { error: cursorErr } = await supabase
         .from("backfill_state")
         .update({
           cursor,
@@ -346,10 +349,16 @@ export async function POST(req: NextRequest) {
           status: "running",
         })
         .eq("id", "topshot_sales");
+      if (cursorErr) {
+        // Report the cursor where it IS, not where this tick wanted it.
+        cursor = prevCursor;
+        throw new Error(`cursor_write: ${cursorErr.message}`);
+      }
 
       if (!nextCursor) break;
     }
   } catch (e: any) {
+    // write-discarded: best-effort error stamp; the run is logged ok=false below either way.
     await supabase
       .from("backfill_state")
       .update({

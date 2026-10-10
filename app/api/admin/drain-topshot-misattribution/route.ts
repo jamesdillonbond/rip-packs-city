@@ -204,6 +204,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     const msg = String((err as any)?.stack || err).slice(0, 800);
     console.log(`[misattrib-drain] FATAL uncaught: ${msg}`);
     try {
+      // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
       await (supabaseAdmin as any).from("pipeline_runs").insert({
         pipeline: PIPELINE_NAME,
         collection_slug: COLLECTION_SLUG,
@@ -256,6 +257,7 @@ async function handleInner(req: NextRequest): Promise<NextResponse> {
     // with NO pipeline_runs row - a targets-RPC error (timeout/schema drift)
     // produces exactly the "instant 500, zero output" silent class seen 07-07..07-10.
     try {
+      // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
       await sb.from("pipeline_runs").insert({
         pipeline: pipelineName,
         collection_slug: COLLECTION_SLUG,
@@ -336,6 +338,7 @@ async function handleInner(req: NextRequest): Promise<NextResponse> {
   const ok = upsertErrs.length === 0 && errs.length === 0;
 
   try {
+    // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
     await sb.from("pipeline_runs").insert({
       pipeline: pipelineName,
       collection_slug: COLLECTION_SLUG,

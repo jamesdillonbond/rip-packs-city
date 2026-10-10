@@ -994,12 +994,18 @@ export async function GET(req: NextRequest) {
             return
           }
 
-          await supabase
+          // Bound (2026-10-10): `resolved` counted a username whose address
+          // was never stored, so the next run re-resolved it while the log
+          // said done. The walk below still runs on the resolved address.
+          const { error: storeErr } = await supabase
             .from("seeded_wallets")
             .update({ wallet_address: resolved })
             .eq("id", row.id)
-
-          usernameResolved++
+          if (storeErr) {
+            errors.push(`store resolved address failed for ${row.username}: ${storeErr.message}`)
+          } else {
+            usernameResolved++
+          }
           console.log(
             `[seed-wallet-refresh] resolved ${row.username} → ${resolved}`
           )

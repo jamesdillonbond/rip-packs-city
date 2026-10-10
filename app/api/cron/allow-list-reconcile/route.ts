@@ -39,6 +39,7 @@ async function logRun(opts: {
   error?: string
 }) {
   try {
+    // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
     await supabaseAdmin.from("pipeline_runs").insert({
       pipeline: PIPELINE_NAME,
       started_at: opts.startedAt,

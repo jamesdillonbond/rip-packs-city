@@ -308,6 +308,7 @@ export async function POST(req: NextRequest) {
       // alert traced back to this insert. We use startedAt (the run-begin
       // marker captured at the top of POST handler) so the row is
       // chronologically correct rather than now()-only.
+      // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
       await (supabaseAdmin as any).from("pipeline_runs").insert({
         pipeline: "drain-fmv-cold-tail",
         started_at: new Date(startedAt).toISOString(),

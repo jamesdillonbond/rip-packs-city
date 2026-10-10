@@ -113,6 +113,7 @@ export async function POST(req: NextRequest) {
 
   // Visibility in pipeline_runs (pruned daily; ~1 row per newly pinned pin).
   try {
+    // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
     await sb.from("pipeline_runs").insert({
       pipeline: PIPELINE,
       collection_slug: "disney_pinnacle",

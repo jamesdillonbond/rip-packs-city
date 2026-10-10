@@ -151,11 +151,18 @@ export async function POST(req: NextRequest) {
     }
 
     if (cmd === "/unlink") {
-      await supabase
+      // A failed delete must not be answered "Unlinked": the alerts would keep
+      // arriving after we told the user they had stopped.
+      const { error: unlinkErr } = await supabase
         .from("notification_channels")
         .delete()
         .eq("channel", "telegram")
         .eq("channel_user_id", fromId);
+      if (unlinkErr) {
+        console.log(`[telegram] unlink failed: ${unlinkErr.message}`);
+        await send(chatId, "Couldn't unlink right now — please try /unlink again in a minute. You can also unlink at rippackscity.com/alerts");
+        return NextResponse.json({ ok: false, error: "unlink_failed" });
+      }
       await send(chatId, "Unlinked. You won't get alerts here anymore. Re-link any time at rippackscity.com/alerts");
       return NextResponse.json({ ok: true });
     }

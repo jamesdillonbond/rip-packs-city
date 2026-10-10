@@ -28,7 +28,7 @@
 
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
-import { randomUUID } from "crypto";
+import { alreadySentEmail, ensureUnsubToken } from "@/lib/email/recipient-guards";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -80,64 +80,10 @@ function pctLabel(p: number | null): string {
   return `${sign}${p}%`;
 }
 
-// Ensure an email_subscribers row exists so the unsubscribe link works, WITHOUT
-// clobbering a real subscriber's prefs. Returns the unsubscribe token, or
-// { skip: true } if the recipient has unsubscribed.
-async function ensureUnsubToken(
-  email: string
-): Promise<{ token: string } | { skip: true }> {
-  const sb = supabaseAdmin as any;
-  const { data: existing } = await sb
-    .from("email_subscribers")
-    .select("verification_token, unsubscribed_at, digest_weekly")
-    .eq("email", email)
-    .maybeSingle();
-
-  if (existing) {
-    // Respect an explicit opt-out: unsubscribed from everything, or weekly off.
-    if (existing.unsubscribed_at || existing.digest_weekly === false) return { skip: true };
-    if (existing.verification_token) return { token: existing.verification_token as string };
-    const token = randomUUID();
-    await sb
-      .from("email_subscribers")
-      .update({ verification_token: token, updated_at: new Date().toISOString() })
-      .eq("email", email);
-    return { token };
-  }
-
-  const token = randomUUID();
-  const { error } = await sb.from("email_subscribers").insert({
-    email,
-    digest_weekly: true,
-    verified: false, // authed users we're re-engaging; NOT opted-in email subscribers
-    verification_token: token,
-    unsubscribed_at: null,
-  });
-  if (error) {
-    // Lost an insert race — re-read the winning row.
-    const { data: r2 } = await sb
-      .from("email_subscribers")
-      .select("verification_token, unsubscribed_at")
-      .eq("email", email)
-      .maybeSingle();
-    if (r2?.unsubscribed_at) return { skip: true };
-    return { token: (r2?.verification_token as string) ?? token };
-  }
-  return { token };
-}
-
-async function alreadySent(ownerKey: string, bucket: string): Promise<boolean> {
-  const { data } = await (supabaseAdmin as any)
-    .from("alert_deliveries")
-    .select("id")
-    .eq("owner_key", ownerKey)
-    .eq("channel", "email")
-    .eq("alert_kind", "weekly_digest")
-    .eq("subject_key", SUBJECT_KEY)
-    .eq("dedup_bucket", bucket)
-    .eq("status", "sent")
-    .maybeSingle();
-  return !!data;
+// ensureUnsubToken / alreadySentEmail live in lib/email/recipient-guards.ts and
+// FAIL CLOSED: a read or write they cannot confirm skips the recipient.
+async function alreadySent(ownerKey: string, bucket: string): Promise<boolean | null> {
+  return alreadySentEmail({ ownerKey, alertKind: "weekly_digest", subjectKey: SUBJECT_KEY, bucket })
 }
 
 function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: string } {
@@ -244,13 +190,17 @@ async function run(req: NextRequest) {
       const would: Array<{ email: string; delta_pct: number | null; latest_fmv: number | null }> = [];
       let unsub = 0;
       let dedup = 0;
+      let unverified = 0; // dedup read failed: the live run would skip these too
       for (const m of movers) {
         const email = (m.email as string).toLowerCase();
         if (seen.has(email)) continue;
         seen.add(email);
         const tok = await ensureUnsubTokenPreview(email);
         if (tok === "unsubscribed") { unsub++; continue; }
-        if (await alreadySent(m.user_id, bucket)) { dedup++; continue; }
+        if (tok === "unverified") { unverified++; continue; }
+        const sentBefore = await alreadySent(m.user_id, bucket);
+        if (sentBefore === null) { unverified++; continue; }
+        if (sentBefore) { dedup++; continue; }
         would.push({ email, delta_pct: m.delta_pct, latest_fmv: m.latest_fmv });
       }
       return NextResponse.json({
@@ -264,6 +214,7 @@ async function run(req: NextRequest) {
         would_send: would.length,
         skipped_unsubscribed: unsub,
         skipped_already_sent: dedup,
+        skipped_unverified: unverified,
         recipients: would,
       });
     } catch (e) {
@@ -300,6 +251,7 @@ async function run(req: NextRequest) {
     let found = 0;
     let sent = 0;
     let skipped = 0;
+    let guardErrors = 0;
 
     try {
       const movers = await loadMovers(minAbsPct, days);
@@ -312,10 +264,24 @@ async function run(req: NextRequest) {
         if (seen.has(email)) { skipped++; continue; }
         seen.add(email);
 
-        const tok = await ensureUnsubToken(email);
-        if ("skip" in tok) { skipped++; continue; }
+        const tok = await ensureUnsubToken(email, { respectDigestOff: true });
+        if ("skip" in tok) {
+          skipped++;
+          if (tok.reason === "error") {
+            guardErrors++;
+            errMsg = `${errMsg ? errMsg + "; " : ""}guard ${email.slice(-8)}: ${tok.error}`;
+          }
+          continue;
+        }
 
-        if (await alreadySent(m.user_id, bucket)) { skipped++; continue; }
+        const sentBefore = await alreadySent(m.user_id, bucket);
+        if (sentBefore === null) {
+          skipped++;
+          guardErrors++;
+          errMsg = `${errMsg ? errMsg + "; " : ""}guard ${email.slice(-8)}: dedup_read_failed`;
+          continue;
+        }
+        if (sentBefore) { skipped++; continue; }
 
         const unsubscribeUrl = `${ORIGIN}/api/subscribe/unsubscribe?token=${tok.token}`;
         const { subject, html } = buildEmail(m, unsubscribeUrl);
@@ -368,7 +334,7 @@ async function run(req: NextRequest) {
         p_rows_skipped: skipped,
         p_ok: ok,
         p_error: errMsg,
-        p_extra: { sent, skipped, bucket, min_abs_pct: minAbsPct, days, duration_ms: Date.now() - startedMs },
+        p_extra: { sent, skipped, guard_errors: guardErrors, bucket, min_abs_pct: minAbsPct, days, duration_ms: Date.now() - startedMs },
       });
     } catch (logErr) {
       console.log(`[${PIPELINE_NAME}] log err: ${logErr instanceof Error ? logErr.message : String(logErr)}`);
@@ -380,11 +346,13 @@ async function run(req: NextRequest) {
 
 // Dry-run variant of ensureUnsubToken that never writes: reports whether the
 // recipient has opted out (unsubscribed, or weekly digest turned off).
-async function ensureUnsubTokenPreview(email: string): Promise<"ok" | "unsubscribed"> {
-  const { data } = await (supabaseAdmin as any)
+async function ensureUnsubTokenPreview(email: string): Promise<"ok" | "unsubscribed" | "unverified"> {
+  const { data, error } = await (supabaseAdmin as any)
     .from("email_subscribers")
     .select("unsubscribed_at, digest_weekly")
     .eq("email", email)
     .maybeSingle();
+  // A failed read is not "not unsubscribed" — the live run skips it, so must the preview.
+  if (error) return "unverified";
   return data?.unsubscribed_at || data?.digest_weekly === false ? "unsubscribed" : "ok";
 }
