@@ -442,3 +442,37 @@ run), aged/held alternating in `priority_pskus`, `panini_pack_ev_board` models o
    needs admin) and correlate with a logoff, a Windows Update restart or an interactive console close at that minute.
 6. **Not doable from the cloud:** anything about the live site (Panini 403s data-center traffic incl. `pg_net`) — instrument
    the runner and read its marker.
+
+## 2026-10-10 (~4:30 PM PT) — "Do it all": every surface goes all-product (Claude Code cloud)
+
+Trevor asked what Panini could gain from Top Shot's toolset and whether every Panini sport is covered, then: "Do it all."
+Measured first (live, ~3:00 PM PT): 149 products seen (Basketball 69, Football 52, Soccer 16, Womens Basketball 8,
+Baseball 4), 79 admitted, 24,353 catalogued editions, **> 6 d 0 / > 7 d 0**, 5,854 refreshed in 24 h, 444k sales since
+2021-06; HIGH/MEDIUM FMV share by sport: WNBA 44 %, Soccer 35 %, Basketball 23 %, Baseball 17 %, Football 12 %.
+
+Shipped (each in the ledger with its revert):
+- **Tier 2 admitted:** the 13 unadmitted products with ≥ 10 grid items (12 Basketball incl. 2023-24/24-25 Best of the
+  NBA and 2023-24 Prizm, 1 WNBA) + **2263** (racing; held by the founder, never grid-sighted, inserted). Bootstrap narrows
+  the next runs to them. **Read:** `> 7 d` must stay 0; re-check `> 6 d` after two days.
+- **"Racing" discovery sport** (unverified value). **Read the next FULL run's per-sport `set_ids`**: if "Racing" serves
+  the Basketball setIds, remove it (as "WNBA" was). Other categories Panini may have run (WWE, UFC, college) are NOT
+  added — no evidence in RPC's data that they exist on this platform.
+- **Sniper = every product** (`panini_deal_board_all`, 798 deals vs 211 WC); WC squeeze board unchanged (same 211, md5).
+- **Sets = every product** (`panini_set_progress_all` + `_products`; picker by sport; 1,928 sets, never read past the
+  1,000-row clamp).
+- **Top Sales board** carries Panini (`v_panini_top_sales`, service-role; merged in `lib/insights/top-sales.ts`).
+- **/insights/panini-premiums** — parallel premiums (`panini_parallel_premiums`: base parallel vs the player's most
+  common base parallel, HIGH/MEDIUM both sides) + #1 / perfect-mint serial premiums (`panini_serial_premiums`, real
+  sales, ≥ 2× the edition median). Jersey-mint left out (a per-sale serial probe cost 400k buffers / 31 s).
+- **Pack EV from guaranteed contents** (`panini_pack_ev_guaranteed_slots` → `_guaranteed` → `panini_pack_ev_board`):
+  strict parser (count / player / unparsed); slot value = candidates' 90-day median SALE, equal weight, **unsold
+  candidates at the slot's lowest sold median** (the first cut averaged only sold editions and showed a +$116 "edge" on
+  the WC White Sparkle pack — survivorship). Gate: one print run, ≥ half the candidates sold, ≥ 10 sales over ≥ 3 priced
+  editions (single named card: ≥ 5). **23 of 344 packs modeled (was 4); 0 positive rip edges.** The rest say why
+  (a choice/range/mixed pool, or too few sales / uncatalogued editions — e.g. NFL Instant's 156 player packs: 10
+  catalogued editions).
+
+**Open, in order:** (1) the Racing read above; (2) tier-2 freshness read; (3) per-product Hobby/FOTL odds models for
+products with standard packs (the WNBA sales model generalised — config, not a copy); (4) a parser arm for "Either A or
+B (#/N)" lines (equal-weight union over both families) once (3) shows the per-family values are stable; (5) 50 products
+still unnamed — the collector walk names held ones automatically.
