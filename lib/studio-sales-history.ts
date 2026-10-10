@@ -514,7 +514,13 @@ export async function runStudioHistoryDrain(req: NextRequest, cfg: StudioHistory
     /* non-fatal */
   }
 
-  await logRun(cfg, startedAt, startedMs, true, totalFound, totalInserted, totalDupes, null, {
+  // ⛔ ok is DERIVED (2026-10-09). An edition reaching status='error' has exhausted
+  // its attempts and is retired from the queue for good; a run that retired one
+  // is not a clean run, though it used to log a hardcoded ok:true with the count
+  // tucked into extra.editions_error.
+  const runOk = editionsError === 0
+  const runErr = runOk ? null : `${editionsError} edition(s) retired to status=error this run (attempts exhausted)`
+  await logRun(cfg, startedAt, startedMs, runOk, totalFound, totalInserted, totalDupes, runErr, {
     editions_processed: processed,
     editions_drained: editionsDone,
     editions_empty: editionsEmpty,
@@ -526,7 +532,7 @@ export async function runStudioHistoryDrain(req: NextRequest, cfg: StudioHistory
 
   return NextResponse.json(
     {
-      ok: true,
+      ok: runOk,
       pipeline: cfg.pipelineName,
       editions_processed: processed,
       sales_inserted: totalInserted,

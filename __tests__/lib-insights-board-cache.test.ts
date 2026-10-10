@@ -10,8 +10,10 @@ const state: {
    *  was not, and only the hang can blow a build's per-page export budget. */
   hangOnRead: boolean
   throwOnUpsert: boolean
+  /** A RETURNED supabase-js error — what a failed write actually produces. */
+  upsertError: any
   upserts: any[]
-} = { read: null, throwOnRead: false, hangOnRead: false, throwOnUpsert: false, upserts: [] }
+} = { read: null, throwOnRead: false, hangOnRead: false, throwOnUpsert: false, upsertError: null, upserts: [] }
 
 vi.mock("@/lib/supabase", () => {
   const admin: any = {
@@ -25,6 +27,7 @@ vi.mock("@/lib/supabase", () => {
     },
     upsert: async (row: any) => {
       if (state.throwOnUpsert) throw new Error("upsert boom")
+      if (state.upsertError) return { data: null, error: state.upsertError }
       state.upserts.push(row)
       return { data: null, error: null }
     },
@@ -54,6 +57,7 @@ beforeEach(() => {
   state.throwOnRead = false
   state.hangOnRead = false
   state.throwOnUpsert = false
+  state.upsertError = null
   state.upserts = []
 })
 
@@ -199,11 +203,21 @@ describe("warmBoard", () => {
     expect(state.upserts).toHaveLength(0)
   })
 
-  it("is fail-open: a write error still resolves ok (best-effort)", async () => {
+  // INVERTED 2026-10-09: "a write error still resolves ok" was the defect — the
+  // snapshot never landed while the cron's telemetry said it did. warmBoard still
+  // NEVER THROWS (the cron keeps going), but ok is false and the reason is carried.
+  it("never throws on a write error, but reports ok:false with the reason (thrown)", async () => {
     state.throwOnUpsert = true
-    const live = liveOk()
-    const res = await warmBoard("deals", live)
-    expect(res.ok).toBe(true) // write swallowed, warm still reports success
+    const res = await warmBoard("deals", liveOk())
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain("upsert boom")
+  })
+
+  it("a RETURNED write error (what supabase-js actually does) is ok:false too", async () => {
+    state.upsertError = { code: "57014", message: "statement timeout" }
+    const res = await warmBoard("deals", liveOk())
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain("statement timeout")
   })
 })
 

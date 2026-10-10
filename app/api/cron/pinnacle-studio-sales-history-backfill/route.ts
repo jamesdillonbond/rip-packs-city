@@ -514,7 +514,11 @@ async function run(req: NextRequest): Promise<NextResponse> {
     /* non-fatal */
   }
 
-  await logRun(startedAt, startedMs, true, totalFound, totalInserted, totalDupes, null, {
+  // ⛔ ok is DERIVED (2026-10-09): a render retired to status='error' has exhausted
+  // its attempts; that run used to log a hardcoded ok:true.
+  const runOk = rendersError === 0
+  const runErr = runOk ? null : `${rendersError} render(s) retired to status=error this run (attempts exhausted)`
+  await logRun(startedAt, startedMs, runOk, totalFound, totalInserted, totalDupes, runErr, {
     renders_processed: processed,
     renders_drained: rendersDone,
     renders_empty: rendersEmpty,
@@ -526,7 +530,7 @@ async function run(req: NextRequest): Promise<NextResponse> {
 
   return NextResponse.json(
     {
-      ok: true,
+      ok: runOk,
       pipeline: PIPELINE_NAME,
       renders_processed: processed,
       sales_inserted: totalInserted,

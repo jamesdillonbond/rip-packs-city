@@ -360,6 +360,16 @@ describe("runStudioHistoryDrain — drain paths", () => {
     const body = await (await runStudioHistoryDrain(req(BASE, AUTH), CFG as any)).json()
     expect(body.editions_error).toBe(1)
     expect(body.editions_processed).toBe(1)
+    // 2026-10-09: a run that retires an edition is not a clean run (was a hardcoded ok:true)
+    expect(body.ok).toBe(false)
+  })
+
+  it("a run that retires nothing stays ok:true", async () => {
+    H.state.targets = { data: [{ edition_id: "ed-9", external_id: "123", attempts: 0 }], error: null }
+    ;(fetch as any).mockResolvedValue(onePage([saleNode()]))
+    const body = await (await runStudioHistoryDrain(req(BASE, AUTH), CFG as any)).json()
+    expect(body.editions_error).toBe(0)
+    expect(body.ok).toBe(true)
   })
 
   it("counts a gql_error when the fetch returns a non-ok status", async () => {

@@ -274,16 +274,21 @@ export function stalestBoards(
 }
 
 /**
- * Write (upsert) a board's payload. Best-effort — swallows every error so a cache
- * write can never fail the caller. Only the cron calls this (single-writer model).
+ * Write (upsert) a board's payload. Never throws, so a cache write can never fail
+ * the caller. Only the cron calls this (single-writer model).
+ *
+ * Returns the write's error text, or null when it landed. Before 2026-10-09 it
+ * returned nothing and the upsert's `error` was never read (supabase-js RETURNS
+ * errors, so the catch could not see one), and `warmBoard` reported ok:true for a
+ * snapshot that never landed.
  */
 export async function writeBoardSnapshot(
   key: BoardCacheKey,
   payload: Record<string, unknown>,
   rowCount: number | null
-): Promise<void> {
+): Promise<string | null> {
   try {
-    await (supabaseAdmin as any).from("public_board_snapshots").upsert(
+    const { error } = await (supabaseAdmin as any).from("public_board_snapshots").upsert(
       {
         board_key: key,
         payload,
@@ -292,8 +297,9 @@ export async function writeBoardSnapshot(
       },
       { onConflict: "board_key" }
     )
-  } catch {
-    /* fail-open: a cache write must never break the caller */
+    return error ? `snapshot write failed: ${error.message ?? "unknown"}` : null
+  } catch (e) {
+    return `snapshot write threw: ${e instanceof Error ? e.message : String(e)}`
   }
 }
 
@@ -444,6 +450,7 @@ export async function warmBoard<T extends Record<string, unknown>>(
     // board failing 84% of the time produced telemetry that said only that it failed.
     return { key, ok: false, rowCount: res.rowCount, error: res.error }
   }
-  await writeBoardSnapshot(key, res.payload, res.rowCount)
+  const writeError = await writeBoardSnapshot(key, res.payload, res.rowCount)
+  if (writeError) return { key, ok: false, rowCount: res.rowCount, error: writeError }
   return { key, ok: true, rowCount: res.rowCount }
 }
