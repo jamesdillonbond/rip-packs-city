@@ -1,4 +1,4 @@
-# Inbox index — 567 live filings
+# Inbox index — 573 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,12 +32,24 @@ failure it documents.
 
 ---
 
-## 2026-10-06 — 1 filing
+## 2026-10-09 — 1 filing
 
+- [**✅ FIXED 10-09 ~8:25 AM PT (`20261009150720`)** 🟡 **`panini-bridge-sync` fail-closed every tick on a 1-player slug collision**](2026-10-09T1504Z-panini-bridge-sync-fail-closed-on-a-1-player-slug-collision.md) — *(daytime monitor, ~8:04 AM PT 10-09, left untracked on the box; indexed by Claude Code 10-09 ~11:00 PM PT.)* A case variant ("In-Beom" vs "In-beom" Hwang); the sync now collides on `lower(btrim(name))` and upserts one spelling per slug.
+
+## 2026-10-08 — 1 filing
+
+- [**✅ FIXED 10-09 ~10:00 AM PT (`20261009162222` / `…165544`)** 🔴 **`rpc-chain-arrival-pack-pulls` re-wedged, 16 h apply stall, 4th consecutive night: ship the durable bound, not a 5th hand-drain**](2026-10-08T0010Z-chain-arrival-pack-pulls-re-wedged-16h-stale-4th-consecutive-night-prioritize-durable-bound.md) — *(daytime monitor, ~5:10 PM PT 10-07, left untracked on the box; indexed by Claude Code 10-09 ~11:00 PM PT.)* The durable bound shipped 10-09; backlog drained in one 18.7 s run.
+
+## 2026-10-06 — 2 filings
+
+- [**✅ RESOLVED: (1) burst self-resolved 10-06 15:45Z, re-queue guard `20261009162520`; (2) FIXED 10-09** 🔴 **`topshot-sellback-walk` nft_id-null regression (322 ticks failed) + `rpc-chain-arrival-pack-pulls` re-wedged within ~3 h of the hand-drain**](2026-10-06T1510Z-sellback-nft_id-null-regression-and-chain-arrival-redrain-held-3-ticks.md) — *(daytime monitor, ~8:10 AM PT 10-06, left untracked on the box despite its "committed" line; indexed by Claude Code 10-09 ~11:00 PM PT.)* The sellback walk finished and unscheduled itself 10-08; the guard covers a future re-run.
 - [**✅ FIXED 10-09 ~10:00 AM PT (`20261009162222` / `…165544` / `…162520`); hourly ticks 0.07–0.10 s since** 🔴 **`rpc-chain-arrival-pack-pulls` wedged: 13 consecutive 120 s statement timeouts, backlog growing, no self-heal (the 10-04 recurrence)**](2026-10-06T0013Z-chain-arrival-pack-pulls-wedged-13-consecutive-120s-timeouts-the-10-04-recurrence.md) — *(daytime monitor, ~5:13 PM PT 10-05, read-only.)* `apply_chain_arrival_pack_pulls()` inserts + rebuilds every touched wallet in ONE transaction and exceeds pg_cron’s 120 s on a large pending set. Hand-drained 10-06 and 10-07; drain declined 10-08/10-09; the durable bound is still QUEUED (P1) — see the ledger.
 
-## 2026-10-05 — 2 filings
+## 2026-10-05 — 5 filings
 
+- [**✅ FIXED 10-09 ~10:00 AM PT (`20261009162222` / `…165544`)** 🔴 **`rpc-chain-arrival-pack-pulls` WEDGED: 10 consecutive hourly timeouts, 0 deliveries applied in 11 h**](2026-10-05T2106Z-chain-arrival-pack-pulls-wedged-10-consecutive-timeouts-unbounded-run-recurrence.md) — *(daytime monitor, ~2:06 PM PT 10-05, left untracked on the box; indexed by Claude Code 10-09 ~11:00 PM PT.)* The recurrence the 10-04 entry predicted; root cause was two costs (re-checking every done probe + generic-plan rebuilds), both fixed.
+- [**✅ RESOLVED 10-09 ~10:00 AM PT: jobid 15 deactivated (`cron.alter_job(active := false)`)** 🟡 **`topshot-pack-supply-backfill` 100 % failed (HTTP 530) on every run since 10-03**](2026-10-05T1809Z-daytime-monitor-topshot-pack-supply-backfill-100pct-http-530-3-days.md) — *(daytime monitor, ~11:09 AM PT 10-05, left untracked on the box; indexed by Claude Code 10-09 ~11:00 PM PT.)* `public-api.nbatopshot.com` answers 530 / Cloudflare 1033 (origin tunnel gone); `pack_distributions` stays current from other writers + `rpc-topshot-pack-supply-atlas`.
+- [**✅ FIXED 10-09 ~10:00 AM PT (`20261009162222` / `…165544`)** 🟠 **`rpc-chain-arrival-pack-pulls` stuck since the 11:13Z seed: 4 hourly statement timeouts, the apply lane does not self-recover**](2026-10-05T1512Z-pack-pulls-apply-self-stuck-after-11-13z-seed.md) — *(daytime monitor, ~8:12 AM PT 10-05, left untracked on the box; indexed by Claude Code 10-09 ~11:00 PM PT.)* First sighting of the 10-05 recurrence; closed by the 10-09 unwedge (ledger).
 - [🟠 **Handoff from Claude Code (Trevor: "Hand that off to cowork"): run `dedupe_tx_lane_20261004.sql` then `drop_scratch_20261004.sql` (both guarded, AUTHORIZED by Trevor) + investigate #173 (conflated `topshot_moment_subeditions` bases, do not ship)**](2026-10-05T0410Z-flowty-thread-handoff-dedupe-drop-and-173.md) — *(Claude Code cloud, Flowty thread, ~9:10 PM PT 10-04.)* Pre/post checks and reverts in the filing.
 - [🟢 **Daytime monitor repeat: chain-arrivals seed timeout (already fixed, `20261004160000`, catch-up drained) + Candy bid book empty (benign, as in 2112Z)**](2026-10-05T031053Z.md) — *(daytime monitor, ~8:10 PM PT 10-04, left untracked on the box; disposition by Claude Code ~8:45 PM PT.)* No action; the 10-05 7:45 AM PT routine reads the 4:13 AM seed tick.
 

@@ -186,7 +186,7 @@ identical to the table below — zero drift.**
 | `laliga_golazos` | `06248cc4-b85f-47cd-af67-1855d14acd75` | flow | true |
 | `disney_pinnacle` | `7dd9dd11-e8b6-45c4-ac99-71331f959714` | flow | true |
 | `ufc_strike` | `9b4824a8-736d-4a96-b450-8dcc0c46b023` | flow | true |
-| `candy_mlb` | `209ade70-32c5-4470-bc7c-4793d660f713` | **solana** | **false** |
+| `candy_mlb` | `209ade70-32c5-4470-bc7c-4793d660f713` | **solana** | **true** (live re-read 2026-10-09; flipped 2026-09-06, #63) |
 | `panini_blockchain` | `d1a0a7f5-609a-49f4-a1a7-4eaac55b020b` | **ethereum** | **false** |
 
 - The `collections` table now carries non-Flow rows (`candy_mlb`, `panini_blockchain`).
