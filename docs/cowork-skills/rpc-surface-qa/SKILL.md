@@ -106,6 +106,16 @@ reproduces on **no** normal-browser axis, and is almost certainly a Cowork-brows
 artifact, **not a shippable defect**. If you see it, note it and move on — verify the same URL in a
 normal browser before ever escalating.
 
+⭐ **2026-10-10 — that artifact was run to ground: it is a HIDDEN TAB.** React 19 reveals a streamed
+Suspense boundary through `$RC` → `$RB` → `requestAnimationFrame($RV)`, and Chrome never fires rAF in a
+background tab, so a Claude-in-Chrome tab whose window is not in front sits on the fallback forever with
+`$RB` full, `$RT` undefined and zero errors — while a JS-free curl of the same URL carries the full
+`<div hidden id="S:0">`. **Before calling any streamed page stuck, read `document.visibilityState`.** If
+it is `hidden`, the read is VOID: force `if(window.$RB&&$RB.length)$RV($RB)` via `javascript_tool` and
+wait, or bring the window to the front. Nested `fallback={null}` readers (`AutoSearchReader`, the
+`?wallet=` reader) need the same forcing before their effects fire, so "the URL wallet did nothing" in a
+hidden tab is void too. Playwright and the E2E DOM Smoke render visible pages and never see this.
+
 ## Output contract — the digest
 
 Close every run with a digest in this shape (prose, tight — the reader has not been watching):
