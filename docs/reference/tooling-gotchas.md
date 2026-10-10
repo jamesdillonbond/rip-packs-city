@@ -916,6 +916,23 @@ of them. Do not read a status count as an invocation count.
 
 `/nba-top-shot/sniper`, `/nba-top-shot/market` and `/nba-top-shot/collection` sat on *"Loading sniper…" / "Loading market…" / "Loading…"* for 2+ minutes in **Claude in Chrome (the extension driving Trevor's real Chrome, signed in)** AND in **Cowork's built-in browser (anonymous)** — no console error, no failed chunk, no `/api/sniper-feed` request, the client-error beacon empty for 30 h, and `/nba-top-shot/packs` (a server page) fine beside them. The common factor is the pattern: a client component calling `useSearchParams` under a `<Suspense>` boundary. **A real headless Chromium from the VM** (`PLAYWRIGHT_BROWSERS_PATH=$HOME/pw`, `LD_LIBRARY_PATH=$HOME/extralib/usr/lib/x86_64-linux-gnu` — `scripts/qa/README.md`) rendered the sniper in one pass: 104 serials, 416 prices, the feed request fired, zero errors. So the CDP-attached browsers are the artefact, the same class as the `SCANNING THE MARKETPLACE…` note in the surface-QA skill, now on a second surface family. **Before filing any "tab stuck on its loading fallback" finding, run the VM Playwright probe** (`$HOME/sniperprobe.mjs` shape: goto, wait, count `$` and `#serial` in `main`). The scheduled E2E smoke cannot see this class either way — its 200-char floor is met by nav + footer while `main` holds 50 chars.
 
+### ⭐ RUN TO GROUND 2026-10-10 — it is a HIDDEN TAB, and the fix is one line of JS
+
+React 19 reveals a streamed Suspense boundary through `$RC` → `$RB` → `requestAnimationFrame($RV)`, and
+hydrates the revealed subtree through `_reactRetry`, also scheduled with `requestAnimationFrame`. Chrome
+fires **no** rAF in a tab whose window is not in front, so a Claude-in-Chrome (or built-in-browser) tab
+opened behind the Claude app sits on the fallback forever: `$RB == [{},{}]` (the pair queued), `$RT`
+undefined (`$RV` never ran), `document.visibilityState == "hidden"`, zero errors — while a JS-free curl of
+the same URL carries the full `<div hidden id="S:0">` with the real content. Measured on
+`/nba-top-shot/collection` and `/candy-mlb/collection` at ~4:20 AM PT.
+
+**Rule:** before calling any streamed page stuck, read `document.visibilityState`. If `hidden`, the read is
+VOID. Harness recipe via `javascript_tool`: force `if(window.$RB&&$RB.length)$RV($RB)` a few times, then
+walk `document.createTreeWalker(document.body, NodeFilter.SHOW_COMMENT)` and call every node's
+`_reactRetry()`, wait 10–15 s, then read the DOM — the `?wallet=` reader fires and rows render. Playwright
+and the E2E DOM Smoke render visible pages and never see this, which is why CI stays green while a
+hidden-tab QA pass sees "everything broken". The surface-qa skill carries the same recipe.
+
 ## Driving Chromium from a Claude Code web sandbox (2026-08-22)
 
 * Playwright's own browser build is **absent** — the repo pins a newer revision than `/opt/pw-browsers`
