@@ -29,6 +29,7 @@
 
 import { cache } from "react"
 import { supabaseAdmin } from "@/lib/supabase"
+import { getCollectionUuid } from "@/lib/collections"
 import { mapNotableTagsToSpecialSerials } from "@/lib/moment-special-serials"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 
@@ -372,16 +373,46 @@ export async function fetchActiveListingAsk(
   if (!Number.isFinite(flowId)) return { data: null, ok: true }
   if (!collectionId) return { data: null, ok: true }
   try {
+    // ⛔ GHOST LISTINGS (2026-10-10). cached_listings_v2 closes a row only on its
+    // own ListingCompleted event (or expiry). A moment that sold through a
+    // DIFFERENT listing leaves the original "open" forever — 3,522 of 32,129 open
+    // All Day rows on 10-10 — and this page rendered "Listed $X" for a moment
+    // that had already changed hands. Two corrections:
+    //   - Pinnacle reads pinnacle_live_listings, the complete-sweep replacement
+    //     table the Sniper already moved to (its sales are not in `sales`, so the
+    //     check below cannot see a Pinnacle resale);
+    //   - every other collection drops a listing older than the NFT's latest
+    //     sale. A failed sales read is a failed read, never "still listed".
+    if (collectionId === getCollectionUuid("disney-pinnacle")) {
+      const { data, error } = await bounded(
+        Promise.resolve(
+          db
+            .from("pinnacle_live_listings")
+            .select("price_usd")
+            .eq("nft_id", String(nftId))
+            .order("price_usd", { ascending: true })
+            .limit(1),
+        ),
+        "active-listing-ask-pinnacle",
+      )
+      if (error) {
+        console.warn(`[moment-page] pinnacle live listing: ${error.message}`)
+        return { data: null, ok: false }
+      }
+      const p = Array.isArray(data) && data.length > 0 ? Number(data[0]?.price_usd) : NaN
+      return { data: Number.isFinite(p) && p > 0 ? p : null, ok: true }
+    }
+
     const { data, error } = await bounded(
       Promise.resolve(
         db
           .from("cached_listings_v2")
-          .select("price_usd")
+          .select("price_usd, listed_at")
           .eq("flow_id", flowId)
           .eq("collection_id", collectionId)
           .is("completed_at", null)
           .order("price_usd", { ascending: true })
-          .limit(1),
+          .limit(5),
       ),
       "active-listing-ask",
     )
@@ -389,9 +420,32 @@ export async function fetchActiveListingAsk(
       console.warn(`[moment-page] active_listing: ${error.message}`)
       return { data: null, ok: false }
     }
-    if (Array.isArray(data) && data.length > 0) {
-      const p = Number(data[0]?.price_usd)
-      return { data: Number.isFinite(p) && p > 0 ? p : null, ok: true }
+    const open = Array.isArray(data) ? (data as Array<{ price_usd: unknown; listed_at: string | null }>) : []
+    if (open.length === 0) return { data: null, ok: true }
+
+    const { data: lastSale, error: saleErr } = await bounded(
+      Promise.resolve(
+        db
+          .from("sales")
+          .select("sold_at")
+          .eq("collection_id", collectionId)
+          .eq("nft_id", String(nftId))
+          .order("sold_at", { ascending: false })
+          .limit(1),
+      ),
+      "active-listing-last-sale",
+    )
+    if (saleErr) {
+      console.warn(`[moment-page] active_listing last-sale check: ${saleErr.message}`)
+      return { data: null, ok: false }
+    }
+    const soldAt = Array.isArray(lastSale) && lastSale[0]?.sold_at ? Date.parse(String(lastSale[0].sold_at)) : NaN
+    for (const row of open) {
+      const listedAt = row.listed_at ? Date.parse(row.listed_at) : NaN
+      // A listing created before the latest sale belonged to a previous owner.
+      if (Number.isFinite(soldAt) && (!Number.isFinite(listedAt) || listedAt < soldAt)) continue
+      const p = Number(row.price_usd)
+      if (Number.isFinite(p) && p > 0) return { data: p, ok: true }
     }
     return { data: null, ok: true }
   } catch (err) {

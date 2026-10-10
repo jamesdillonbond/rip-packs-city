@@ -262,6 +262,48 @@ describe("fetchActiveListingAsk", () => {
     expect(await fetchActiveListingAsk("123", "coll-1", db)).toEqual({ data: null, ok: false })
   })
 
+  // 2026-10-10 — GHOST LISTINGS. A moment that sold through a different listing
+  // leaves the original row open forever (3,522 of 32,129 open All Day rows).
+  it("drops a listing created BEFORE the NFT's latest sale (a previous owner's ghost)", async () => {
+    const { db } = makeDb({
+      cached_listings_v2: { data: [{ price_usd: 5, listed_at: "2026-09-01T00:00:00Z" }], error: null },
+      sales: { data: [{ sold_at: "2026-09-20T00:00:00Z" }], error: null },
+    })
+    expect(await fetchActiveListingAsk("123", "coll-1", db)).toEqual({ data: null, ok: true })
+  })
+
+  it("keeps the new owner's relisting, skipping the cheaper ghost", async () => {
+    const { db } = makeDb({
+      cached_listings_v2: {
+        data: [
+          { price_usd: 5, listed_at: "2026-09-01T00:00:00Z" }, // ghost
+          { price_usd: 40, listed_at: "2026-09-25T00:00:00Z" }, // relisted after the sale
+        ],
+        error: null,
+      },
+      sales: { data: [{ sold_at: "2026-09-20T00:00:00Z" }], error: null },
+    })
+    expect(await fetchActiveListingAsk("123", "coll-1", db)).toEqual({ data: 40, ok: true })
+  })
+
+  it("a FAILED last-sale check is ok:false, never 'still listed'", async () => {
+    const { db } = makeDb({
+      cached_listings_v2: { data: [{ price_usd: 5, listed_at: "2026-09-01T00:00:00Z" }], error: null },
+      sales: { data: null, error: DB_ERR },
+    })
+    expect(await fetchActiveListingAsk("123", "coll-1", db)).toEqual({ data: null, ok: false })
+  })
+
+  it("Pinnacle reads the complete-sweep live table, not cached_listings_v2", async () => {
+    const PIN = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+    const { db, calls } = makeDb({
+      pinnacle_live_listings: { data: [{ price_usd: 12 }], error: null },
+      cached_listings_v2: { data: [{ price_usd: 1, listed_at: null }], error: null },
+    })
+    expect(await fetchActiveListingAsk("123", PIN, db)).toEqual({ data: 12, ok: true })
+    expect(calls).toEqual(["pinnacle_live_listings"])
+  })
+
   // ⚠ The refusal cases. These are ok:TRUE — we chose not to answer, which is a
   // different thing from failing to, and marking them degraded would put a
   // notice on every Top Shot moment page (Top Shot has no rows in this table).
