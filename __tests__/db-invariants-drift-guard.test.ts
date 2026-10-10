@@ -1158,8 +1158,9 @@ const PINS = [
   {
     fn: "fmv_recalc_edition_page",
     test: "supabase/tests/fmv_recalc_edition_page.sql",
-    // Re-pinned 2026-10-10: ties on MAX(sold_at) break on edition_id (#177 part 1).
-    migration: "supabase/migrations/20261010101713_audit_20261010_fmv_recalc_edition_page_tiebreaks_on_edition_id.sql",
+    // Re-pinned 2026-10-10: ties on MAX(sold_at) break on edition_id (#177 part 1);
+    // then the order is snapshotted at offset 0 and later pages slice it (#177 part 2).
+    migration: "supabase/migrations/20261010143219_audit_20261010_fmv_recalc_sweep_pages_a_snapshot_of_its_order.sql",
   },
   {
     fn: "recalc_ultimate_fmv",
