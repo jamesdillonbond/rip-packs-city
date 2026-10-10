@@ -58,7 +58,9 @@ const PINS = [
     // edition pass lands under its summary and closes on the page reaching totalCount.
     fn: "topshot_pack_supply_tick",
     test: "supabase/tests/topshot_pack_supply_tick.sql",
-    migration: "supabase/migrations/20261003224608_audit_20261003_topshot_pack_supply_from_atlas_distribution_service.sql",
+    // 2026-10-10: an unchanged summary carries its reconciled pass forward (40 h re-read);
+    // the market-403 back-off counts every drained market request.
+    migration: "supabase/migrations/20261010213401_audit_20261010_topshot_pack_supply_carries_unchanged_passes_and_counts_tagged_market_rows.sql",
   },
   {
     // Added 2026-10-03. Per-edition issuer-held split (in sealed packs vs reserve):

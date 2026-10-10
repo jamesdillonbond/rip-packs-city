@@ -2,6 +2,8 @@
 -- (topshot_issuer_held_split_editions, get_topshot_issuer_held_split). Pins:
 --   · a summary 200 writes the counts and opens an edition pass only when Moments are
 --     left; a fully-opened, closed drop is re-checked in 30 days, an open one in 20 h;
+--   · a summary UNCHANGED since a pass that reconciled exactly keeps that pass (no
+--     edition pages) and is re-read in 40 h; a changed one opens a new pass;
 --   · edition pages land under their pass; a page from a superseded pass is recorded,
 --     not written; the pass closes on the page that reaches totalCount and records
 --     its row count + remaining sum;
@@ -9,14 +11,16 @@
 --     edition page drops the pass; a request with no response after 15 min fails;
 --     the run is not ok when any request failed;
 --   · dispatch sends at most p_budget requests, edition pages before summaries, and
---     NOTHING while the market lane's last 10 minutes are mostly 403s;
+--     NOTHING while the market lane's last 10 minutes are mostly 403s, counted over
+--     every drained market request (a tagged row is a success, not noise);
 --   · the readers publish NULL (never 0) until the list is complete, every drop has a
 --     summary and every drop with packs left is settled; then reserve = hidden − in
 --     packs per edition and per tier; stale issuer-held rows are excluded AND
 --     disclosed; more in packs than issuer-held is "contradicted", not a negative.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261003224608_audit_20261003_topshot_pack_supply_from_atlas_distribution_service.sql);
+-- (topshot_pack_supply_tick: supabase/migrations/20261010213401_audit_20261010_topshot_pack_supply_carries_unchanged_passes_and_counts_tagged_market_rows.sql;
+-- the two readers: supabase/migrations/20261003224608_audit_20261003_topshot_pack_supply_from_atlas_distribution_service.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if a copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -35,7 +39,7 @@ CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestampt
   p_rows_skipped integer, p_ok boolean, p_error text, p_collection_slug text, p_cursor_before text, p_cursor_after text, p_extra jsonb)
 RETURNS bigint LANGUAGE sql AS $$ INSERT INTO public.pipeline_log VALUES (p_pipeline, p_rows_found, p_rows_written, p_ok, p_error, p_extra) RETURNING 1::bigint $$;
 
-CREATE TABLE public.topshot_atlas_market_requests (request_id bigint, dispatched_at timestamptz, error text);
+CREATE TABLE public.topshot_atlas_market_requests (request_id bigint, dispatched_at timestamptz, error text, drained_at timestamptz);
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
 INSERT INTO public.collections VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'nba_top_shot');
 CREATE TABLE public.editions (collection_id uuid, subedition_id integer, subedition_name text);
@@ -146,6 +150,7 @@ DECLARE
   v_market    integer;
   v_held      boolean := false;
   v_errors    jsonb := '[]'::jsonb;
+  v_same      boolean;
 BEGIN
   DELETE FROM public.topshot_atlas_pack_requests WHERE drained_at < now() - interval '7 days';
 
@@ -218,6 +223,16 @@ BEGIN
     ELSIF r.kind = 'summary' THEN
       SELECT sum(nullif(v.value, '')::bigint) INTO v_n
         FROM jsonb_each_text(v_body -> 'remainingByTier') v;
+      -- Unchanged since a pass that reconciled exactly: carry that pass forward instead
+      -- of re-reading every edition page (2026-10-10). Opens only lower a tier's count,
+      -- so equal per-tier counts mean nothing in this drop was opened. Re-read in 40 h:
+      -- re-reading 3,270 open drops every 20 h plus their pages needed ~2x what a
+      -- 2-request tick can send, so the 48 h settle gate could never pass.
+      SELECT t.remaining_by_tier = (v_body -> 'remainingByTier') AND t.editions_pass IS NOT NULL
+             AND t.editions_done_at IS NOT NULL AND t.remaining_total = v_n AND t.edition_remaining_sum = v_n
+        INTO v_same
+        FROM public.topshot_atlas_dists t WHERE t.dist_id = r.dist_id;
+      v_same := coalesce(v_same, false) AND coalesce(v_n, 0) > 0;
       UPDATE public.topshot_atlas_dists t
          SET summary_pass = r.request_id, summary_fetched_at = clock_timestamp(),
              unopened_count = nullif(v_body ->> 'unopenedCount', '')::bigint,
@@ -227,17 +242,20 @@ BEGIN
              remaining_by_tier = v_body -> 'remainingByTier',
              original_by_tier = v_body -> 'originalCountsByTier',
              remaining_total = v_n, attempts = 0, last_error = NULL,
-             editions_pass = r.request_id,
-             editions_next_offset = CASE WHEN v_n > 0 THEN 0 END,
-             editions_total = CASE WHEN v_n > 0 THEN NULL ELSE 0 END,
-             editions_done_at = CASE WHEN v_n > 0 THEN NULL ELSE clock_timestamp() END,
-             edition_rows = CASE WHEN v_n > 0 THEN NULL ELSE 0 END,
-             edition_remaining_sum = CASE WHEN v_n > 0 THEN NULL ELSE 0 END,
-             -- Nothing left in a closed drop: re-check monthly. Anything else: daily.
+             editions_pass = CASE WHEN v_same THEN t.editions_pass ELSE r.request_id END,
+             editions_next_offset = CASE WHEN v_same THEN t.editions_next_offset WHEN v_n > 0 THEN 0 END,
+             editions_total = CASE WHEN v_same THEN t.editions_total WHEN v_n > 0 THEN NULL ELSE 0 END,
+             editions_done_at = CASE WHEN v_same THEN t.editions_done_at WHEN v_n > 0 THEN NULL ELSE clock_timestamp() END,
+             edition_rows = CASE WHEN v_same THEN t.edition_rows WHEN v_n > 0 THEN NULL ELSE 0 END,
+             edition_remaining_sum = CASE WHEN v_same THEN t.edition_remaining_sum WHEN v_n > 0 THEN NULL ELSE 0 END,
+             -- Nothing left in a closed drop: re-check monthly. Unchanged: in 40 h.
+             -- Anything else: daily.
              next_due_at = now() + CASE WHEN v_n = 0 AND coalesce(t.available_supply, 0) = 0
                                              AND coalesce(t.for_sale_supply, 0) = 0
                                              AND (t.end_time IS NULL OR t.end_time < now())
-                                        THEN interval '30 days' ELSE interval '20 hours' END
+                                        THEN interval '30 days'
+                                        WHEN v_same THEN interval '40 hours'
+                                        ELSE interval '20 hours' END
        WHERE t.dist_id = r.dist_id;
       v_rows := v_rows + 1;
 
@@ -300,11 +318,14 @@ BEGIN
   -- ── dispatch ─────────────────────────────────────────────────────────────
   SELECT count(*) INTO v_inflight FROM public.topshot_atlas_pack_requests WHERE drained_at IS NULL;
   -- Back off while the market lane is being challenged: this lane is optional, the
-  -- market lane is not.
+  -- market lane is not. Every DRAINED market request counts (2026-10-10): a tagged row
+  -- ('__edition__…', '__verify__…') is a market request that succeeded, since a failure
+  -- overwrites the tag with 'atlas 403'. Leaving tagged rows out of the denominator
+  -- held this lane on ~half of all minutes while the market's real 403 rate was 13 %.
   SELECT count(*), count(*) FILTER (WHERE error LIKE 'atlas 403%')
     INTO v_market, v_market403
     FROM public.topshot_atlas_market_requests
-   WHERE dispatched_at > now() - interval '10 minutes' AND coalesce(error, '') NOT LIKE '\_\_%';
+   WHERE dispatched_at > now() - interval '10 minutes' AND drained_at IS NOT NULL;
   v_held := v_market >= 4 AND v_market403 * 2 > v_market;
 
   IF NOT v_held THEN
@@ -661,11 +682,60 @@ UPDATE topshot_atlas_dists SET summary_fetched_at = now() WHERE dist_id = '8617'
 -- ── back-off ─────────────────────────────────────────────────────────────────
 UPDATE topshot_atlas_dists SET next_due_at = now() - interval '1 minute' WHERE dist_id = '3092';
 INSERT INTO public.topshot_atlas_market_requests
-SELECT g, now() - interval '1 minute', CASE WHEN g % 4 = 0 THEN NULL ELSE 'atlas 403 (): <!DOCTYPE html>' END FROM generate_series(1, 8) g;
+SELECT g, now() - interval '1 minute', CASE WHEN g % 4 = 0 THEN NULL ELSE 'atlas 403 (): <!DOCTYPE html>' END, now() FROM generate_series(1, 8) g;
 SELECT _assert_eq((SELECT (r ->> 'sent') || '/' || (r ->> 'held_for_market_403') FROM (SELECT topshot_pack_supply_tick(2) r) x), '0/true',
   'nothing is sent while the market lane is mostly 403s');
 TRUNCATE public.topshot_atlas_market_requests;
+-- The market lane's successes carry a tag ('__edition__…'); a failure overwrites it with
+-- 'atlas 403'. 4 failures in 12 drained requests is not a challenge (counting only the
+-- untagged rows read it as 4 of 6 and held).
+INSERT INTO public.topshot_atlas_market_requests
+SELECT g, now() - interval '1 minute',
+       CASE WHEN g <= 4 THEN 'atlas 403 (): <!DOCTYPE html>' WHEN g <= 6 THEN NULL ELSE '__edition__' || g END,
+       now()
+  FROM generate_series(1, 12) g;
+SELECT _assert_eq((SELECT (r ->> 'held_for_market_403') FROM (SELECT topshot_pack_supply_tick(0) r) x), 'false',
+  'tagged market rows are successes: 4 of 12 drained is no challenge');
+TRUNCATE public.topshot_atlas_market_requests;
+-- In-flight rows have no outcome yet: 4 failures among 4 drained IS a challenge.
+INSERT INTO public.topshot_atlas_market_requests
+SELECT g, now() - interval '1 minute', CASE WHEN g <= 4 THEN 'atlas 403 (): <!DOCTYPE html>' END,
+       CASE WHEN g <= 4 THEN now() END
+  FROM generate_series(1, 8) g;
+SELECT _assert_eq((SELECT (r ->> 'held_for_market_403') FROM (SELECT topshot_pack_supply_tick(0) r) x), 'true',
+  'in-flight market rows count on neither side');
+TRUNCATE public.topshot_atlas_market_requests;
 SELECT _assert_eq((SELECT topshot_pack_supply_tick(2) ->> 'sent'), '1', 'once it clears, the due summary goes out');
+
+-- ── an unchanged summary keeps its reconciled pass ─────────────────────────
+-- 8617 is settled under pass 9001 (remaining {"common":"5","rare":"1"}, 3 rows, sum 6).
+INSERT INTO topshot_atlas_pack_requests (request_id, kind, dist_id, dispatched_at) VALUES (7, 'summary', '8617', now());
+INSERT INTO net._http_response VALUES (7, 200, NULL,
+  '{"distributionId":"8617","unopenedCount":"2","remainingByTier":{"rare":"1","common":"5"},"originalCountsByTier":{"common":"1395","rare":"84"},"totalPackCount":"500","ownedCount":"2","unavailableCount":"0"}');
+SELECT topshot_pack_supply_tick(0);
+SELECT _assert_eq((SELECT summary_pass || '/' || editions_pass || '/' || (editions_done_at IS NOT NULL) || '/' || edition_rows || '/' || edition_remaining_sum
+                          || '/' || coalesce(editions_next_offset::text, 'null')
+                     FROM topshot_atlas_dists WHERE dist_id = '8617'), '7/9001/true/3/6/null',
+  'unchanged counts: the new summary is recorded and the reconciled pass is carried forward');
+SELECT _assert((SELECT next_due_at BETWEEN now() + interval '39 hours' AND now() + interval '41 hours'
+                  FROM topshot_atlas_dists WHERE dist_id = '8617'),
+  'an unchanged drop is re-read in 40 h');
+SELECT _assert_eq((SELECT in_packs || '/' || split_status FROM topshot_issuer_held_split_editions() WHERE edition_external_id = '261:8705'),
+  '4/ok', 'the carried pass still settles the per-edition split');
+
+-- A changed summary opens a new pass.
+INSERT INTO topshot_atlas_pack_requests (request_id, kind, dist_id, dispatched_at) VALUES (8, 'summary', '8617', now());
+INSERT INTO net._http_response VALUES (8, 200, NULL,
+  '{"distributionId":"8617","unopenedCount":"2","remainingByTier":{"common":"4","rare":"1"},"originalCountsByTier":{"common":"1395","rare":"84"},"totalPackCount":"500","ownedCount":"2","unavailableCount":"0"}');
+SELECT topshot_pack_supply_tick(0);
+SELECT _assert_eq((SELECT editions_pass || '/' || (editions_done_at IS NULL) || '/' || editions_next_offset || '/' || remaining_total
+                     FROM topshot_atlas_dists WHERE dist_id = '8617'), '8/true/0/5',
+  'changed counts: a new pass opens');
+SELECT _assert((SELECT next_due_at BETWEEN now() + interval '19 hours' AND now() + interval '21 hours'
+                  FROM topshot_atlas_dists WHERE dist_id = '8617'),
+  'a changed drop is re-read daily');
+SELECT _assert_eq((SELECT split_status FROM topshot_issuer_held_split_editions() WHERE edition_external_id = '261:8705'),
+  'pending: 1 distribution(s) with packs left not settled', 'the new pass must settle before the split publishes');
 
 SELECT '✓ topshot_pack_supply_tick + issuer-held split readers: all assertions passed' AS result;
 
