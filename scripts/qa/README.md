@@ -74,6 +74,13 @@ Every counter in a record is a hypothesis; the screenshot is the evidence.
   and `/<c>/sets` page is the signed-in probe (`lib/profile/saved-wallet-for-collection.ts`;
   no client session hook exists), not a failure. A `404 media.nflallday.com/editions/<id>`
   is All Day's CDN missing that edition's art (`DeadImageGuard` handles it).
+  **Added 2026-10-10 (390 + 320 px sweeps, 154 paths):** `/<c>/pack/dist/<id>` "PACK PRICE $0.00" on
+  a reward pack (the page says "Reward pack — free" beside it; the detector counts `$0.00` too);
+  `/laliga-golazos/overview` "24H SALES VOLUME $0" is true while Golazos has no sales in 24 h
+  (the sentinel's 504 h silence limit, 10-09, exists for exactly that); a `302
+  /api/public/pinnacle-image/…` or `/api/public/ipfs-thumb/…` is the image proxy's redirect to the
+  art, not a failure. ⚠ Read a `$0` hit with the SAME regex as the detector (`/\$0(\.00)?(?![\d.,])/`):
+  a context check that skipped `$0.00` reported "no $0" on these pages twice.
 
 ## What it does not do
 
