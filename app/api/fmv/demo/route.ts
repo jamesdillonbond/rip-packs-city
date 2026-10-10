@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
-import { fmvSerialMultiplier as sm } from "@/lib/fmv/serial-multiplier";
 
 // ⚠ This route used to carry its OWN COPY of the serial multiplier, and the copy
 // had DRIFTED from the real one — its ordinary-serial tail was
@@ -15,11 +14,11 @@ import { fmvSerialMultiplier as sm } from "@/lib/fmv/serial-multiplier";
 // premium by 77% and published a formula string to match.
 //
 // A demo that does not call the real code path is a second implementation, and
-// it will drift again. It now imports the shared module (which exists so "the
-// pure multiplier can be unit-tested and its constants pinned"), and
-// `__tests__/api-fmv-demo-docs-match-implementation.test.ts` derives the
-// documented breakpoints FROM that module so the published spec cannot diverge
-// from the code again.
+// it will drift again. Since 2026-10-10 (known-issues #18) /api/fmv prices the
+// serial premium with the FITTED model (serial_fmv_multiplier_batch ->
+// serial_fmv_estimate), so the examples below are computed by the SAME batch call
+// for the sample editions -- no constants live here, and
+// `__tests__/api-fmv-demo-docs-match-implementation.test.ts` pins that.
 function r2(n: number) { return Math.round(n * 100) / 100; }
 
 export async function GET() {
@@ -76,29 +75,49 @@ export async function GET() {
 
   // Build samples
   const seen = new Set<string>();
-  const samples: unknown[] = [];
-  const defaultCirc = 1000; // circ unknown at this layer
-
+  const picked: Array<{ id: string; externalId: string; base: number; confidence: string; computedAt: unknown }> = [];
   for (const row of fmvRows) {
     const externalId = idToExt.get(row.edition_id as string);
     if (!externalId || seen.has(externalId)) continue;
     seen.add(externalId);
-
-    const base = row.fmv_usd as number;
-    samples.push({
-      edition: externalId,
-      fmv: r2(base),
-      confidence: ((row.confidence as string) ?? "low").toLowerCase(),
-      updatedAt: row.computed_at,
-      note: "Serial-adjusted examples use default circ=1000; pass ?serial=N to the single endpoint for precise adjustment",
-      exampleAdjustments: {
-        serial1:   { serial: 1,   serialMult: r2(sm(1, defaultCirc)),   adjustedFmv: r2(base * sm(1, defaultCirc)) },
-        serial23:  { serial: 23,  serialMult: r2(sm(23, defaultCirc)),  adjustedFmv: r2(base * sm(23, defaultCirc)) },
-        serial100: { serial: 100, serialMult: r2(sm(100, defaultCirc)), adjustedFmv: r2(base * sm(100, defaultCirc)) },
-      },
-    });
-    if (samples.length >= 5) break;
+    picked.push({ id: row.edition_id as string, externalId, base: row.fmv_usd as number,
+                  confidence: (row.confidence as string) ?? "LOW", computedAt: row.computed_at });
+    if (picked.length >= 5) break;
   }
+
+  // The example serial premiums come from the SAME call /api/fmv makes (the fitted model).
+  // A failed read is a failure: the demo must not publish premiums it could not compute.
+  const EXAMPLE_SERIALS = [1, 23, 100];
+  const { data: multRows, error: multErr } = await supabase.rpc("serial_fmv_multiplier_batch", {
+    p_items: picked.flatMap(p => EXAMPLE_SERIALS.map(serial => ({ edition_id: p.id, serial, fmv: p.base, confidence: p.confidence }))),
+  });
+  if (multErr) {
+    console.log(`[fmv/demo] serial multipliers error elapsedMs=${Date.now() - startedAt} message=${multErr.message}`);
+    return apiErrorResponse(multErr, "api/fmv/demo");
+  }
+  const multBy = new Map<string, { multiplier: number | null; basis: string }>();
+  for (const r of (Array.isArray(multRows) ? multRows : []) as Array<{ edition_id: string; serial: number; multiplier: number | null; basis: string }>) {
+    multBy.set(`${r.edition_id}:${r.serial}`, { multiplier: r.multiplier == null ? null : Number(r.multiplier), basis: r.basis });
+  }
+  const example = (p: { id: string; base: number }, serial: number) => {
+    const m = multBy.get(`${p.id}:${serial}`);
+    const mult = m?.multiplier ?? null;
+    return { serial, serialMult: mult != null ? r2(mult) : null, serialBasis: m?.basis ?? null,
+             adjustedFmv: r2(mult != null ? p.base * mult : p.base) };
+  };
+
+  const samples: unknown[] = picked.map(p => ({
+    edition: p.externalId,
+    fmv: r2(p.base),
+    confidence: p.confidence.toLowerCase(),
+    updatedAt: p.computedAt,
+    note: "Serial-adjusted examples are computed by the same fitted model /api/fmv uses; pass ?serial=N to the single endpoint for any serial",
+    exampleAdjustments: {
+      serial1: example(p, 1),
+      serial23: example(p, 23),
+      serial100: example(p, 100),
+    },
+  }));
 
   console.log(`[fmv/demo] done elapsedMs=${Date.now() - startedAt} samples=${samples.length}`);
   return NextResponse.json({
@@ -111,16 +130,14 @@ export async function GET() {
     },
     editionKeyFormat: "setUUID:playUUID — from Top Shot's edition system",
     confidenceLevels: { high: "5+ sales/7d", medium: "2–4 sales/7d", low: "0–1 sales/7d" },
-    // Derived from lib/fmv/serial-multiplier so this published spec cannot
-    // drift from the code again (circ=2000 is a probe value picked only so the
-    // banded branches, not the `serial === circ` one, decide each entry).
+    // The fitted model, described rather than tabulated: its multiplier depends on the edition's
+    // FMV, tier and circulation band, so any fixed table here would misstate it.
     serialMultipliers: {
-      "1": `${sm(1, 2000)}x`,
-      "2–10": `${sm(10, 2000)}x`,
-      "11–23": `${sm(23, 2000)}x`,
-      lastMint: `${sm(2000, 2000)}x (applies only when serial === circulation)`,
-      other: "1 + 0.08 * max(0, 1 - serial/circ)",
-      note: "The single endpoint currently evaluates the curve at a default circ=1000 because it does not read circulation; the banded entries above (serial 1, <=10, <=23) are unaffected by that, the others are approximate.",
+      model: "fitted per collection x tier x circulation band (serial_fmv_estimate): a power law in the edition's FMV, fitted on sales",
+      buckets: "#1 serial, jersey-match serial and perfect (last) mint; any other serial carries no premium (serialMult 1)",
+      response: "serialMult = estimate / fmv; serialBasis names the bucket: 'first', 'jersey', 'perfect' or 'no_premium'",
+      unknown: "serialMult null with serialBasis 'circulation_unknown' when the edition's catalog circulation is missing or below the serial",
+      note: "Cheap editions carry larger multiples than expensive ones for the same serial, because the fitted premium grows slower than FMV.",
     },
     sampleCount: samples.length,
     samples,

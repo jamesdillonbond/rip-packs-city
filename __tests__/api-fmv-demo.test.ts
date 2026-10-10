@@ -18,7 +18,11 @@ vi.mock("@supabase/supabase-js", () => {
     }
     return b
   }
-  return { createClient: () => ({ from: (t: string) => builder(t) }) }
+  // 2026-10-10 (#18): the example premiums come from the same fitted batch call /api/fmv makes.
+  return { createClient: () => ({
+    from: (t: string) => builder(t),
+    rpc: async (name: string) => (name === "serial_fmv_multiplier_batch" ? (tables.__serial ?? { data: [], error: null }) : { data: [], error: null }),
+  }) }
 })
 
 import { GET } from "@/app/api/fmv/demo/route"
@@ -44,19 +48,35 @@ describe("GET /api/fmv/demo", () => {
     expect((await res.json()).error).not.toContain("db down")
   })
 
-  it("builds samples with serial-adjustment examples (serial1 = 12x)", async () => {
+  it("builds samples whose serial examples come from the fitted batch call (re-pinned 2026-10-10, #18)", async () => {
     tables.fmv_snapshots = {
       data: [{ edition_id: "u1", fmv_usd: 100, confidence: "HIGH", computed_at: "2026-07-12T00:00:00Z" }],
     }
     tables.editions = { data: [{ id: "u1", external_id: "73:2785" }] }
+    tables.__serial = { data: [
+      { edition_id: "u1", serial: 1, multiplier: 7.66, basis: "first" },
+      { edition_id: "u1", serial: 23, multiplier: 1, basis: "no_premium" },
+      { edition_id: "u1", serial: 100, multiplier: 1, basis: "no_premium" },
+    ], error: null }
     const body = await (await GET()).json()
     expect(body.sampleCount).toBe(1)
     const s = body.samples[0]
     expect(s.edition).toBe("73:2785")
     expect(s.fmv).toBe(100)
     expect(s.confidence).toBe("high") // lower-cased
-    expect(s.exampleAdjustments.serial1.adjustedFmv).toBe(1200) // 100 * 12
-    expect(s.exampleAdjustments.serial23.adjustedFmv).toBe(280) // 100 * 2.8
+    expect(s.exampleAdjustments.serial1).toMatchObject({ serialMult: 7.66, serialBasis: "first", adjustedFmv: 766 })
+    expect(s.exampleAdjustments.serial23).toMatchObject({ serialMult: 1, adjustedFmv: 100 })
+  })
+
+  it("does not publish premiums it could not compute: a failed fitted read is a failure", async () => {
+    tables.fmv_snapshots = {
+      data: [{ edition_id: "u1", fmv_usd: 100, confidence: "HIGH", computed_at: "2026-07-12T00:00:00Z" }],
+    }
+    tables.editions = { data: [{ id: "u1", external_id: "73:2785" }] }
+    tables.__serial = { data: null, error: { message: "estimator down" } }
+    const res = await GET()
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(JSON.stringify(await res.json())).not.toContain("exampleAdjustments")
   })
 
   // HONESTY CANON. The `editions` read builds the id→external_id map every

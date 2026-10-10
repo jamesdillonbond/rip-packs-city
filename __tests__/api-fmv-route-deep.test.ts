@@ -11,12 +11,19 @@ const st = vi.hoisted(() => ({
   editions: { data: [] as any[] | null, error: null as any },
   fmv: { data: [] as any[] | null, error: null as any },
   history: { data: [] as any[] | null, error: null as any },
+  // 2026-10-10 (#18): the fitted serial premium, one batch call per request
+  serial: { data: [] as any[] | null, error: null as any },
+  serialCalls: [] as any[],
 }))
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     // The FMV lookup is get_editions_latest_fmv_wide since 2026-09-20 — same payload the
     // fmv_current table key served, so st.fmv drives both the RPC and the history read.
-    rpc: async (name: string) => (name === "get_editions_latest_fmv_wide" ? st.fmv : { data: [], error: null }),
+    rpc: async (name: string, args: any) => {
+      if (name === "get_editions_latest_fmv_wide") return st.fmv
+      if (name === "serial_fmv_multiplier_batch") { st.serialCalls.push(args); return st.serial }
+      return { data: [], error: null }
+    },
     from(table: string) {
       let limitUsed = false
       const b: any = {
@@ -40,6 +47,8 @@ beforeEach(() => {
   st.editions = { data: [{ id: "E1", external_id: "1:2" }], error: null }
   st.fmv = { data: [fmvRow()], error: null }
   st.history = { data: [], error: null }
+  st.serial = { data: [{ edition_id: "E1", serial: 1, multiplier: 7.66, basis: "first" }], error: null }
+  st.serialCalls = []
 })
 
 describe("GET /api/fmv", () => {
@@ -69,25 +78,39 @@ describe("GET /api/fmv", () => {
     const body = await (await GET(getReq("?edition=1:2"))).json()
     expect(body.error).toBe("No FMV data yet")
   })
-  it("applies a serial multiplier when ?serial= is given", async () => {
+  // 2026-10-10 (#18, RE-PINNED: the premise changed). The serial premium is the FITTED
+  // model (serial_fmv_multiplier_batch -> serial_fmv_estimate), not lib/fmv/serial-multiplier's
+  // flat bands, which a 4,477-sale backtest put at roughly twice the error.
+  it("applies the fitted serial multiplier when ?serial= is given", async () => {
     const body = await (await GET(getReq("?edition=1:2&serial=1"))).json()
-    expect(body.serialMult).not.toBeNull()
-    expect(body.adjustedFmv).toBeGreaterThan(0)
+    expect(body.serialMult).toBe(7.66)
+    expect(body.serialBasis).toBe("first")
+    expect(body.adjustedFmv).toBe(766)
+    // one batch call, carrying the edition uuid, the serial and the base FMV
+    expect(st.serialCalls).toEqual([{ p_items: [{ edition_id: "E1", serial: 1, fmv: 100, confidence: "HIGH" }] }])
   })
-  // 2026-10-10 (#18): the multiplier reads the edition's REAL print run. Both
-  // routes passed a hardcoded 1000, so "last mint = 3x" fired only on editions
-  // minted at exactly 1,000 (serial 500 of 500 read ~1.04x).
-  it("uses the edition's circulation: the last mint of a 500-run edition gets the 3x premium", async () => {
-    st.editions = { data: [{ id: "E1", external_id: "1:2", circulation_count: 500 }], error: null }
-    const get = await (await GET(getReq("?edition=1:2&serial=500"))).json()
-    expect(get.serialMult).toBe(3)
-    const post = await (await POST(postReq({ editions: [{ edition: "1:2", serial: 500 }] }))).json()
-    expect(post.results[0].serialMult).toBe(3)
+  it("no serial asked for -> no premium read at all, and adjustedFmv = fmv", async () => {
+    const body = await (await GET(getReq("?edition=1:2"))).json()
+    expect(st.serialCalls).toEqual([])
+    expect(body.serialMult).toBeNull()
+    expect(body.adjustedFmv).toBe(100)
   })
-  it("falls back to 1000 when the catalog circulation is below the serial (a catalog-wrong row)", async () => {
-    st.editions = { data: [{ id: "E1", external_id: "1:2", circulation_count: 40 }], error: null }
-    const get = await (await GET(getReq("?edition=1:2&serial=500"))).json()
-    expect(get.serialMult).toBeCloseTo(1.04, 5)
+  it("the model's 'no premium' is 1x; an unplaceable circulation is null, never a guessed 1x", async () => {
+    st.serial = { data: [{ edition_id: "E1", serial: 7, multiplier: 1, basis: "no_premium" }], error: null }
+    const a = await (await GET(getReq("?edition=1:2&serial=7"))).json()
+    expect(a.serialMult).toBe(1)
+    st.serial = { data: [{ edition_id: "E1", serial: 500, multiplier: null, basis: "circulation_unknown" }], error: null }
+    const b = await (await GET(getReq("?edition=1:2&serial=500"))).json()
+    expect(b.serialMult).toBeNull()
+    expect(b.serialBasis).toBe("circulation_unknown")
+    expect(b.adjustedFmv).toBe(100)
+  })
+  it("a FAILED premium read is a failure, never the unadjusted FMV presented as premium-free", async () => {
+    st.serial = { data: null, error: { message: "estimator down" } }
+    const get = await GET(getReq("?edition=1:2&serial=1"))
+    expect(get.status).toBe(500)
+    const post = await POST(postReq({ editions: [{ edition: "1:2", serial: 1 }] }))
+    expect(post.status).toBe(500)
   })
   it("history=true attaches a priceHistory series", async () => {
     // Query returns DESC (newest first); the route reverses to ascending.
@@ -125,7 +148,9 @@ describe("POST /api/fmv", () => {
   })
   it("honors a per-edition serial override object", async () => {
     const body = await (await POST(postReq({ editions: [{ edition: "1:2", serial: 1 }] }))).json()
-    expect(body.results[0].serialMult).not.toBeNull()
+    expect(body.results[0].serialMult).toBe(7.66)
+    expect(body.results[0].serialBasis).toBe("first")
+    expect(st.serialCalls).toEqual([{ p_items: [{ edition_id: "E1", serial: 1, fmv: 100, confidence: "HIGH" }] }])
   })
   it("editions lookup error → 500", async () => {
     st.editions = { data: null, error: { message: "ed down" } }

@@ -6,19 +6,40 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-// Per-serial weighting lives in a tested lib module (constants pinned there).
-import { fmvSerialMultiplier as serialMultiplier } from "@/lib/fmv/serial-multiplier";
-
-// 2026-10-10 (known-issues #18): the serial multiplier needs the edition's print
-// run — "last mint = 3x" and the position curve both read it. Both call sites
-// passed a hardcoded 1000 ("circ unknown"), but editions.circulation_count is
-// filled for every row, so the last-mint premium fired only on editions minted
-// at exactly 1,000. Use the real run; fall back to 1000 only when it is missing,
-// non-positive, or below the serial (a catalog-wrong row: 62 known).
-function circulationFor(circ: number | null | undefined, serial: number): number {
-  return circ != null && circ > 0 && circ >= serial ? circ : 1000;
-}
 import { apiErrorResponse } from "@/lib/api-error";
+
+// ── Serial premium: the FITTED model (2026-10-10, known-issues #18) ─────────
+// This route used to apply lib/fmv/serial-multiplier's flat bands (#1 12x, 2-10
+// 4.5x, 11-23 2.8x, last mint 3x) while portfolios priced the same serials with
+// serial_fmv_estimate — two models ~3x apart under one name. Backtested on 4,477
+// Top Shot special-serial sales (90 d, HIGH/MEDIUM editions), median |ln(price /
+// estimate)|: #1 1.03 -> 0.45, last mint 0.81 -> 0.53, serials 2-10 1.22 -> 0.40
+// (the market prices 2-10 at a median 1.38x, not 4.5x). So the public API now
+// reads the fitted estimator, in ONE call per request
+// (serial_fmv_multiplier_batch). A failed read throws -> apiErrorResponse:
+// publishing the unadjusted FMV as if it carried no premium would be a false
+// claim. `serialBasis` says which bucket priced it; an edition whose catalog
+// circulation is missing or below the serial gets serialMult null
+// ('circulation_unknown') and adjustedFmv = fmv.
+type SerialMult = { multiplier: number | null; basis: string };
+
+async function fetchSerialMultipliers(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  items: Array<{ edition_id: string; serial: number; fmv: number; confidence: string }>,
+): Promise<Map<string, SerialMult>> {
+  const out = new Map<string, SerialMult>();
+  if (!items.length) return out;
+  const { data, error } = await supabase.rpc("serial_fmv_multiplier_batch", { p_items: items });
+  if (error) throw new Error(`serial_fmv_multiplier_batch: ${error.message}`);
+  for (const r of (Array.isArray(data) ? data : []) as Array<{ edition_id: string; serial: number; multiplier: number | null; basis: string }>) {
+    out.set(`${r.edition_id}:${r.serial}`, {
+      multiplier: r.multiplier == null ? null : Number(r.multiplier),
+      basis: r.basis,
+    });
+  }
+  return out;
+}
 
 const SERIES_NAMES: Record<number, string> = {
   0: "S1", 2: "S2", 3: "Sum 21",
@@ -65,11 +86,9 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
 
   const extToId = new Map<string, string>();
   const idToExt = new Map<string, string>();
-  const circById = new Map<string, number | null>();
   for (const row of (editionRows ?? [])) {
     extToId.set(row.external_id, row.id);
     idToExt.set(row.id, row.external_id);
-    circById.set(row.id, row.circulation_count ?? null);
   }
 
   const internalIds = Array.from(extToId.values());
@@ -124,6 +143,14 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
 
   // Badge premiums are market-priced and excluded from FMV by design.
 
+  const serialMults = serial != null
+    ? await fetchSerialMultipliers(supabase, editionKeys.flatMap(ext => {
+        const id = extToId.get(ext);
+        const f = id ? fmvMap.get(id) : undefined;
+        return id && f ? [{ edition_id: id, serial, fmv: f.fmv_usd, confidence: f.confidence ?? "LOW" }] : [];
+      }))
+    : new Map<string, SerialMult>();
+
   const results = editionKeys.map(externalId => {
     const internalId = extToId.get(externalId);
 
@@ -137,7 +164,8 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
     }
 
     const baseFmv = fmv.fmv_usd;
-    const mult = serial != null ? serialMultiplier(serial, circulationFor(circById.get(internalId), serial)) : null;
+    const sm = serial != null ? serialMults.get(`${internalId}:${serial}`) : undefined;
+    const mult = sm?.multiplier ?? null;
     const adjustedFmv = mult != null ? baseFmv * mult : baseFmv;
     const confidence = (fmv.confidence ?? "low").toLowerCase();
 
@@ -152,6 +180,7 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
       edition: externalId,
       fmv: r2(baseFmv),
       serialMult: mult != null ? r2(mult) : null,
+      serialBasis: sm?.basis ?? null,
       adjustedFmv: r2(adjustedFmv),
       confidence,
       updatedAt: fmv.computed_at,
@@ -278,10 +307,8 @@ export async function POST(req: Request) {
     if (editionRes.error) throw new Error(`editions lookup: ${editionRes.error.message}`);
 
     const extToId = new Map<string, string>();
-    const circById = new Map<string, number | null>();
     for (const row of (editionRes.data ?? [])) {
       extToId.set(row.external_id, row.id);
-      circById.set(row.id, row.circulation_count ?? null);
     }
 
     const internalIds = Array.from(extToId.values());
@@ -318,6 +345,14 @@ export async function POST(req: Request) {
       }
     }
 
+    // One fitted serial premium per (edition, serial) actually asked for.
+    const serialMults = await fetchSerialMultipliers(supabase, editionKeys.flatMap(ext => {
+      const id = extToId.get(ext);
+      const f = id ? fmvMap.get(id) : undefined;
+      const sr = serialOverrides.get(ext) ?? globalSerial;
+      return id && f && sr != null ? [{ edition_id: id, serial: sr, fmv: f.fmv_usd, confidence: f.confidence ?? "LOW" }] : [];
+    }));
+
     // Build results with per-edition serial support
     let successCount = 0;
     let errorCount = 0;
@@ -336,7 +371,8 @@ export async function POST(req: Request) {
 
       const baseFmv = fmv.fmv_usd;
       const serial = serialOverrides.get(externalId) ?? globalSerial;
-      const mult = serial != null ? serialMultiplier(serial, circulationFor(circById.get(internalId), serial)) : null;
+      const sm = serial != null ? serialMults.get(`${internalId}:${serial}`) : undefined;
+      const mult = sm?.multiplier ?? null;
       const adjustedFmv = mult != null ? baseFmv * mult : baseFmv;
       const confidence = (fmv.confidence ?? "low").toLowerCase();
 
@@ -352,6 +388,7 @@ export async function POST(req: Request) {
         edition: externalId,
         fmv: r2(baseFmv),
         serialMult: mult != null ? r2(mult) : null,
+        serialBasis: sm?.basis ?? null,
         adjustedFmv: r2(adjustedFmv),
         confidence,
         updatedAt: fmv.computed_at,

@@ -1,3 +1,10 @@
+// ⚠ 2026-10-10 (known-issues #18): NO LONGER THE /api/fmv MODEL. The public FMV API (and its
+// /api/fmv/demo spec) now price the serial premium with the fitted serial_fmv_estimate through
+// serial_fmv_multiplier_batch — a 4,477-sale backtest put these flat bands at roughly twice its
+// error (serials 2-10: 4.5x here vs a market median of 1.38x). This module is kept only because
+// lib/sniper/serial-multiplier mirrors its ordinary-serial tail and its test pins that; do not
+// wire it back into a pricing surface without re-running that backtest.
+//
 // FMV API per-serial weighting. Extracted from app/api/fmv/route.ts so the
 // pure multiplier can be unit-tested and its constants pinned. Pure math.
 //

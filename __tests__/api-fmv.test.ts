@@ -114,20 +114,27 @@ describe("GET /api/fmv — lookup outcomes", () => {
     })
   })
 
-  it("applies the serial multiplier: #1 serial → 12× the base FMV", async () => {
-    setMock({ editions: { data: [EDITION] }, "rpc:get_editions_latest_fmv_wide": { data: [snapshot()] } })
+  // RE-PINNED 2026-10-10 (known-issues #18): the premise changed. The serial premium is the
+  // fitted model read through one batch call, not the flat 12x / 4.5x bands (backtest: the
+  // market prices serials 2-10 at a median 1.38x; the flat 4.5x had ~3x the error).
+  it("applies the fitted #1 premium the batch call returns", async () => {
+    setMock({ editions: { data: [EDITION] }, "rpc:get_editions_latest_fmv_wide": { data: [snapshot()] },
+               "rpc:serial_fmv_multiplier_batch": { data: [{ edition_id: "uuid-1", serial: 1, multiplier: 7.66, basis: "first" }] } })
     const res = await GET(new Request("http://t/api/fmv?edition=73:2785&serial=1"))
     const body = await res.json()
-    expect(body.serialMult).toBe(12)
-    expect(body.adjustedFmv).toBe(1200)
+    expect(body.serialMult).toBe(7.66)
+    expect(body.serialBasis).toBe("first")
+    expect(body.adjustedFmv).toBe(766)
   })
 
-  it("applies the low-serial tier: serial ≤ 10 → 4.5×", async () => {
-    setMock({ editions: { data: [EDITION] }, "rpc:get_editions_latest_fmv_wide": { data: [snapshot()] } })
+  it("a low serial the model prices without a premium is 1x, not the old flat 4.5x", async () => {
+    setMock({ editions: { data: [EDITION] }, "rpc:get_editions_latest_fmv_wide": { data: [snapshot()] },
+               "rpc:serial_fmv_multiplier_batch": { data: [{ edition_id: "uuid-1", serial: 5, multiplier: 1, basis: "no_premium" }] } })
     const res = await GET(new Request("http://t/api/fmv?edition=73:2785&serial=5"))
     const body = await res.json()
-    expect(body.serialMult).toBe(4.5)
-    expect(body.adjustedFmv).toBe(450)
+    expect(body.serialMult).toBe(1)
+    expect(body.serialMult).not.toBe(4.5)
+    expect(body.adjustedFmv).toBe(100)
   })
 })
 

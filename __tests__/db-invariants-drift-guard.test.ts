@@ -2976,6 +2976,20 @@ const PINS = [
     // 2026-10-10 (#171): held unknown parallels are queued for the chain lane.
     migration: "supabase/migrations/20261010183509_audit_20261010_misattrib_resolver_queues_unknown_parallels_for_the_chain.sql",
   },
+  {
+    // Added 2026-10-10 (#18). The public /api/fmv's serial premium: the fitted estimator, one batch
+    // call; no-premium is 1.0, an unplaceable circulation is NULL (never a guessed 1.0).
+    fn: "serial_fmv_multiplier_batch",
+    test: "supabase/tests/serial_fmv_multiplier_batch.sql",
+    migration: "supabase/migrations/20261010185326_audit_20261010_public_fmv_api_prices_serials_with_the_fitted_model.sql",
+  },
+  {
+    // Added 2026-10-10 (#102 (c)). Suppression count/freshness predicates as CODE (never by
+    // executing the reason text); ban at zero; only live suppressions; unmeasurable does not hold.
+    fn: "check_suppression_count_predicate_drift",
+    test: "supabase/tests/check_suppression_count_predicate_drift.sql",
+    migration: "supabase/migrations/20261010185858_audit_20261010_suppression_count_predicates_are_code.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version

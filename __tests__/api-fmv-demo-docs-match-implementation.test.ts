@@ -23,96 +23,47 @@
 // deliberately so: this file must keep passing when a multiplier is
 // legitimately re-fitted, and fail when the demo stops describing it.
 
+// ── RE-PINNED 2026-10-10 (known-issues #18): the premise changed. /api/fmv no longer
+// uses lib/fmv/serial-multiplier's flat bands; it prices the serial premium with the
+// FITTED model through ONE batch call (serial_fmv_multiplier_batch -> serial_fmv_estimate).
+// The property this file protects is unchanged — the demo documents what the API does,
+// with no second implementation — so the demo now computes its examples through that
+// same call and publishes no constants at all. The flat-band assertions that lived here
+// (derived banded entries, the 0.08 tail formula, the circ=1000 disclosure) pinned a
+// model the API no longer runs, so they are replaced, not loosened.
+
 import { describe, expect, it } from "vitest"
-import { fmvSerialMultiplier } from "@/lib/fmv/serial-multiplier"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
-const routeSrc = () =>
-  require("fs").readFileSync(
-    require("path").join(process.cwd(), "app/api/fmv/demo/route.ts"),
-    "utf8"
-  ) as string
+const src = (rel: string) =>
+  require("fs").readFileSync(require("path").join(process.cwd(), rel), "utf8") as string
+const routeSrc = () => src("app/api/fmv/demo/route.ts")
+const apiSrc = () => src("app/api/fmv/route.ts")
 
-/** Comments legitimately quote the OLD formula to explain the fix. */
-
-describe("/api/fmv/demo documents the multiplier it actually uses", () => {
+describe("/api/fmv/demo documents the multiplier /api/fmv actually uses", () => {
   it("does not re-declare a local serial multiplier", () => {
     const code = stripComments(routeSrc())
-    // The fork was `function sm(serial: number, circ: number)`. Any local
-    // redefinition is the defect returning, whatever it is named.
     expect(code).not.toMatch(/function\s+\w*[sS]erial\w*\s*\(/)
     expect(code).not.toMatch(/function\s+sm\s*\(/)
   })
 
-  it("imports the shared multiplier module", () => {
-    expect(stripComments(routeSrc())).toMatch(
-      /import\s*\{[^}]*fmvSerialMultiplier[^}]*\}\s*from\s*["']@\/lib\/fmv\/serial-multiplier["']/
-    )
-  })
-
-  it("publishes no formula string the implementation does not compute", () => {
-    const code = stripComments(routeSrc())
-    // The drifted tail, in the spelling the route published.
-    expect(code).not.toContain("circ / 2 / serial")
-    expect(code).not.toContain("circ/2/serial")
-    // The real tail, as documented to callers.
-    expect(code).toContain("1 + 0.08 * max(0, 1 - serial/circ)")
-  })
-
-  it("the documented tail formula reproduces the implementation", () => {
-    // Evaluate the published expression and compare against the module across
-    // the ordinary-serial range. This is the assertion the old docs failed.
-    const documented = (serial: number, circ: number) =>
-      1 + 0.08 * Math.max(0, 1 - serial / circ)
-
-    const cases: Array<[number, number]> = [
-      [24, 1000],
-      [50, 1000],
-      [100, 1000],
-      [250, 500],
-      [999, 1000],
-      [2000, 5000],
-      [7000, 5000], // position > 1 -> clamped to 1.0
-    ]
-    for (const [serial, circ] of cases) {
-      expect(documented(serial, circ)).toBeCloseTo(fmvSerialMultiplier(serial, circ), 10)
+  it("the demo and the API make the SAME fitted call", () => {
+    for (const code of [stripComments(routeSrc()), stripComments(apiSrc())]) {
+      expect(code).toMatch(/rpc\(\s*["']serial_fmv_multiplier_batch["']/)
     }
   })
 
-  it("the drifted formula would NOT have satisfied that check", () => {
-    // Guards the guard: proves the assertion above has teeth rather than being
-    // trivially true for any curve.
-    const drifted = (serial: number, circ: number) =>
-      Math.max(1.0, Math.pow(circ / 2 / serial, 0.4))
-    expect(drifted(100, 1000)).not.toBeCloseTo(fmvSerialMultiplier(100, 1000), 2)
-    // and the size of the error is what made it worth fixing
-    expect(drifted(100, 1000) / fmvSerialMultiplier(100, 1000)).toBeGreaterThan(1.7)
+  it("neither imports the flat-band module the API no longer runs", () => {
+    for (const code of [stripComments(routeSrc()), stripComments(apiSrc())]) {
+      expect(code).not.toMatch(/from\s*["']@\/lib\/fmv\/serial-multiplier["']/)
+    }
   })
 
-  it("documented banded multipliers are derived, not literals", () => {
+  it("the demo publishes no flat-band constant or formula", () => {
     const code = stripComments(routeSrc())
-    // Each banded entry must be produced by a call, not typed as "12x"/"4.5x".
-    expect(code).toMatch(/"1":\s*`\$\{sm\(1,/)
-    expect(code).toMatch(/"2–10":\s*`\$\{sm\(10,/)
-    expect(code).toMatch(/"11–23":\s*`\$\{sm\(23,/)
-    expect(code).not.toMatch(/"1":\s*"12x"/)
-    expect(code).not.toMatch(/"2–10":\s*"4\.5x"/)
-  })
-
-  it("the banded probe values land on the intended branches", () => {
-    // circ=2000 is chosen so `serial === circ` cannot capture 1/10/23; if a
-    // future edit picks a probe that collides, these numbers change silently.
-    expect(fmvSerialMultiplier(1, 2000)).toBe(12.0)
-    expect(fmvSerialMultiplier(10, 2000)).toBe(4.5)
-    expect(fmvSerialMultiplier(23, 2000)).toBe(2.8)
-    expect(fmvSerialMultiplier(2000, 2000)).toBe(3.0)
-  })
-
-  it("discloses that the single endpoint evaluates the curve at a default circ", () => {
-    // /api/fmv calls serialMultiplier(serial, 1000) and never reads
-    // circulation_count, so every non-banded multiplier it returns is computed
-    // against a fabricated denominator. Publishing the curve without saying so
-    // would be a precise-looking claim the endpoint cannot honour.
-    expect(routeSrc()).toMatch(/default circ=1000/)
+    expect(code).not.toContain("1 + 0.08")
+    expect(code).not.toMatch(/["'`]12(\.0)?x/)
+    expect(code).not.toMatch(/["'`]4\.5x/)
+    expect(code).not.toMatch(/default circ=1000/)
   })
 })
