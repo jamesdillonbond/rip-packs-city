@@ -175,3 +175,18 @@ First fit: 1,315 sales → **Hobby 22 / typical 9 vs 30 (edge −8); FOTL 55 / t
 The FMV-based `panini_pack_ev_model_wnba_2026` (v0.2) stays as a diagnostic and is no longer read by the board.
 "Typical" is the sum of family medians (same convention as WC); the Monte-Carlo pack median is higher
 (FOTL ~$26), so treat the board's typical as conservative.
+
+## 2026-10-10 (~5:30 PM PT) — 📏 DECIDED: no confidence promotion for 31–90-day sales (measured)
+
+Question (from the 10-10 "do it all" thread): Football and Basketball sit at 12 % / 23 % HIGH+MEDIUM against Soccer's
+35 % — is the engine leaving recorded sales unused? Measured on the latest snapshot per edition:
+- LOW is mostly an **empty market, not unused data**: of LOW editions, **81 % (Basketball 4,112 of 5,630) and 81 %
+  (Football 3,940 of 4,876) have no sale in 90 days**; only 62 / 14 have ≥ 3 sales in the last 30 days.
+- The one lever was "0 sales in 30 d but ≥ 3 in 31–90 d" (Basketball 299, Football 133, Soccer 790 editions at LOW).
+  **Backtest** (12,000 random non-#1 sales in the last 45 d; predictor = median of the edition's last ≤ 3 sales in the
+  window, sales strictly before the target): HIGH (3+ in 30 d) n=7,610 MdAPE 0.0 % / 65.9 % within ±25 % · MEDIUM (1–2 in
+  30 d) n=2,453 25.0 % / 55.1 % · **candidate (0 in 30 d, 3+ in 31–90 d) n=540 33.3 % / 45.0 %** · LOW (1–2 in 31–90 d)
+  n=390 20.0 % / 54.1 % (small, many $1–3 cards). Median ratio 1.00 in every tier.
+- **Decision: leave `panini-1.2.0` as is.** The candidate tier misses by more than MEDIUM, so promoting it would print a
+  confidence the prices don't earn. The path to more HIGH/MEDIUM in Football/Basketball is more recent sales captured
+  (walk coverage), not a looser label. Re-run this read if the walk's sale capture changes.
