@@ -520,7 +520,12 @@ export function requirePublishedCollection(id: string): Collection {
 // equivalent panic on the force-unwrap of `lockedTokens[nftType]`, an entry
 // created on first lock and never removed. Control: the AllDay type returns
 // normally. Re-check that probe before ever removing them from this set.
-const COLLECTIONS_WITHOUT_LOCKING: ReadonlySet<string> = new Set(["disney-pinnacle", "pinnacle", "laliga-golazos", "ufc"])
+//
+// Candy MLB (2026-10-10, Trevor): Candy cards cannot be locked. Not provable
+// from chain the same way — Solana's token-account "frozen" state is how many
+// NFTs are held by design, not a collector lock — so this is a product fact,
+// and every wmc Candy row (25,375) had never been lock-checked anyway.
+const COLLECTIONS_WITHOUT_LOCKING: ReadonlySet<string> = new Set(["disney-pinnacle", "pinnacle", "laliga-golazos", "ufc", "candy-mlb"])
 
 /** False for a collection whose NFTs cannot be locked — render no lock UI at all. */
 export function collectionHasLocking(id: string): boolean {

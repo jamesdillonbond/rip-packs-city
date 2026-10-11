@@ -194,13 +194,14 @@ import { ownLockLabel } from "@/lib/market-format"
 afterEach(() => cleanup())
 
 describe("Disney Pinnacle shows no lock state anywhere", () => {
-  it("the registry says Pinnacle, Golazos and UFC have no lock UI and the rest do", () => {
+  it("the registry says Pinnacle, Golazos, UFC and Candy have no lock UI and the rest do", () => {
     // Re-pinned 2026-10-10 (premise changed, not inverted): Golazos and UFC
     // were verified on mainnet to have no locking at all — see the comment on
     // COLLECTIONS_WITHOUT_LOCKING in lib/collections.ts. Top Shot and All Day
-    // still exercise the `true` side.
-    for (const c of ["disney-pinnacle", "laliga-golazos", "ufc"]) expect(collectionHasLocking(c)).toBe(false)
-    for (const c of ["nba-top-shot", "nfl-all-day", "candy-mlb"]) expect(collectionHasLocking(c)).toBe(true)
+    // still exercise the `true` side. Candy MLB joined the same day (Trevor:
+    // Candy cards cannot be locked).
+    for (const c of ["disney-pinnacle", "laliga-golazos", "ufc", "candy-mlb"]) expect(collectionHasLocking(c)).toBe(false)
+    for (const c of ["nba-top-shot", "nfl-all-day"]) expect(collectionHasLocking(c)).toBe(true)
   })
 
   const statRow = (slug: string) =>

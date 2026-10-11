@@ -104,8 +104,8 @@ describe("mobile binder card — a source that SAYS it never checked", () => {
     expect(pill(container)?.getAttribute("data-rpc-lock-state")).toBe("unlocked")
   })
 
-  it("Golazos and UFC (no locking on-chain) get no pill at all", () => {
-    for (const slug of ["laliga-golazos", "ufc"]) {
+  it("Golazos, UFC and Candy (no locking) get no pill at all", () => {
+    for (const slug of ["laliga-golazos", "ufc", "candy-mlb"]) {
       const { container, unmount } = render(<CollectionMomentTable {...props(row({ isLocked: false, lockKnown: false }), slug)} />)
       expect(pill(container)).toBeNull()
       unmount()
