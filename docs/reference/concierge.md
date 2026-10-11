@@ -168,3 +168,14 @@ Trevor wanted us to spend less of the Anthropic balance on our own checks. `/api
 `smoke-tests.yml` runs alive daily, and the full battery on Sundays (UTC) and on manual dispatch. **The 09:00–09:24 UTC fallback window is removed.** It armed the full battery for any caller that ticked inside it, on top of the scheduled run, so the paid probes ran about twice a day (16 runs of each in the 7 days to 10-02). The free synthetic graceful-degradation probe still runs every tick.
 
 ⚠ **That synthetic probe throws a `credit_balance` 403 that looks exactly like Anthropic's.** Its `[sc_err]` log lines now say "synthetic smoke probe", and `concierge-billing-error` telemetry skips it (`err.synthetic`). A Cowork pass misread it as a ~10 h billing outage on 10-02. Read `is_smoke_test` / `smoke-degradation-*` before calling a concierge outage. Pinned in `__tests__/api-smoke-test-deep.test.ts`, `__tests__/api-smoke-test-probes.test.ts` and `__tests__/api-support-chat-billing-error-telemetry.test.ts`.
+
+## 2026-10-11 pass — `check_wallet` stops publishing zeros it never measured; "trophy case" disambiguated
+
+**Input was real traffic (support_conversations, 21 days) plus a read of the wallet tool.** Feedback queue was empty (every row shipped/duplicate); the defects were in the tool output, not the transcripts.
+
+- **`collection_detail` used a hardcoded `APP_ID_TO_DB_SLUG` copy that lacked `panini-blockchain`** — its totals read as `total_moments: 0, portfolio_fmv: 0` (a fabricated zero). Now resolved through `toDbSlug` (the registry); an unmapped collection is `null` + `totals_note`, never 0.
+- **The top-5 `wallet_moments_cache` read discarded its error** — a timeout rendered as an empty list ("nothing priced"). Now `top_moments_status: "unavailable"` + a note telling the bot not to conclude.
+- **Live-walk fallback:** `m.fmv ?? 0` summed unpriced moments as $0 and `res.json()` ran without `res.ok`. Now the page sum covers priced moments only (`priced_moments_on_page`), null when none, per-moment `fmv` null-not-zero, and a non-OK response is `status: "error"`.
+- **Prompt:** "trophy case" was answered with `/insights/trophies` (the public #1-serial room, row 10090) when the user meant their own pinned case at `/profile/[username]/trophy-case`. The prompt now names both and says which to give first.
+
+Tests: 5 new cases in `__tests__/api-support-chat-check-wallet-fallback.test.ts`, each asserting the ABSENCE of the false zero.
