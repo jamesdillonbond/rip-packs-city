@@ -627,6 +627,15 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
         </label>
       </section>
 
+      {/* Panini sales reach RPC only when its walk re-reads each card (~every 5 days), so the most
+          recent days are incomplete — measured 2026-10-10: 98% of 10-03's sales on record, 24-42%
+          of 10-05..10-08's, 0% of the current day's. Said whenever Panini can be on the board. */}
+      {collection === "all" || collection === "panini_blockchain" ? (
+        <p className="rpc-ts-meta" data-testid="top-sales-panini-lag" style={{ margin: "8px 0 0" }}>
+          Panini sales arrive as RPC re-reads each card, about every five days, so the last few days of Panini sales are incomplete.
+        </p>
+      ) : null}
+
       {/* ── Ranked list ───────────────────────────────────────────────── */}
       <section className="rpc-ts-list-wrap" aria-label="Top sales">
         {error ? (

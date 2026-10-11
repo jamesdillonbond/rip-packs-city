@@ -160,6 +160,25 @@ describe("TopSalesBoardClient", () => {
     expect(getByText(/No sales match those filters\./)).toBeTruthy()
   })
 
+  it("a Panini row (no nft_id) links its edition page and shows the Panini username as-is (2026-10-10)", () => {
+    const panini: Row = {
+      ...nullRow, sale_id: "p1", edition_id: "e9", external_id: "packcard-1551_284633_7102079_32", collection: "panini_blockchain",
+      player_name: "Luka Doncic", price_usd: 88877, buyer_address: "MetaverseLuka", buyer_name: "MetaverseLuka", marketplace: "panini",
+    }
+    const { container } = render(<TopSalesBoardClient initialRows={[panini]} initialFetchedAt="2026-10-10T23:00:00Z" />)
+    expect(container.querySelector('a[href="/panini-blockchain/edition/packcard-1551_284633_7102079_32"]')).not.toBeNull()
+    expect(container.textContent).toContain("MetaverseLuka")
+  })
+
+  it("says Panini's recent days are incomplete whenever Panini can be on the board — and not on a Flow-only filter", () => {
+    const { container, getAllByRole } = render(<TopSalesBoardClient initialRows={[fullRow]} initialFetchedAt="2026-07-31T00:00:00Z" />)
+    expect(container.querySelector('[data-testid="top-sales-panini-lag"]')).not.toBeNull()
+    fireEvent.click(getAllByRole("tab").find((b) => b.textContent === "Top Shot")!)
+    expect(container.querySelector('[data-testid="top-sales-panini-lag"]')).toBeNull()
+    fireEvent.click(getAllByRole("tab").find((b) => b.textContent === "Panini")!)
+    expect(container.querySelector('[data-testid="top-sales-panini-lag"]')).not.toBeNull()
+  })
+
   it("changing the sort control re-fetches the public board", () => {
     const { container } = render(
       <TopSalesBoardClient initialRows={[fullRow]} initialFetchedAt="2026-07-31T00:00:00Z" />,
