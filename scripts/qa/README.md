@@ -79,7 +79,12 @@ Every counter in a record is a hypothesis; the screenshot is the evidence.
   `/laliga-golazos/overview` "24H SALES VOLUME $0" is true while Golazos has no sales in 24 h
   (the sentinel's 504 h silence limit, 10-09, exists for exactly that); a `302
   /api/public/pinnacle-image/…` or `/api/public/ipfs-thumb/…` is the image proxy's redirect to the
-  art, not a failure. ⚠ Read a `$0` hit with the SAME regex as the detector (`/\$0(\.00)?(?![\d.,])/`):
+  art, not a failure.
+  **Added 2026-10-11 (390 px sweep, 220 paths, 0 overflow / 0 non-200 / 0 broken images):**
+  `/insights/market-pulse` "LaLiga Golazos VOLUME $0.00 SALES 0" and "UFC Strike VOLUME $0.00" are true
+  while those markets have no sales in the window; `/insights/allday-pack-market` "$0" is methodology
+  copy ("reward/airdrop packs with $0 retail have no ratio"); `/ufc/overview` "24H SALES VOLUME $0" is
+  true (dormant). ⚠ Read a `$0` hit with the SAME regex as the detector (`/\$0(\.00)?(?![\d.,])/`):
   a context check that skipped `$0.00` reported "no $0" on these pages twice.
 
 ## What it does not do
