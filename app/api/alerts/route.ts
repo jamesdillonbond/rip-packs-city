@@ -21,6 +21,7 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
+import { resolveLiveAsks } from "@/lib/asks/edition-live-ask";
 
 const ALERT_TYPES = ["price_below", "fmv_below", "fmv_above", "discount_above"] as const;
 type AlertType = (typeof ALERT_TYPES)[number];
@@ -36,25 +37,36 @@ const KNOWN_COLLECTION_UUIDS = new Set(Object.values(COLLECTION_UUID_BY_SLUG).ma
 // ── Live market data for the preview ──────────────────────────────────────────
 // FMV legs (fmv_below/fmv_above) read the same latest-per-edition fmv_snapshots
 // the dispatcher uses, so they're exact. Ask legs (price_below/discount_above)
-// use badge_editions.low_ask as a best-effort indicator — the authoritative
-// trigger is the cron, which reads cached_listings.
+// use resolveLiveAsks — the TS twin of public.edition_live_ask, which is what
+// dispatch_triggered_fmv_alerts reads (#183) — so preview and cron agree.
+//
+// ⛔ Until 2026-10-10 the ask leg read `badge_editions.edition_key`, a column
+// that does not exist. The 42703 was discarded (`{ data }` only), so every ask
+// came back null and no price_below / discount_above alert could ever preview
+// as triggered. Its tests passed because the fixture invented the column.
+//
+// HONESTY. A failed read is reported per leg (`fmvFailed`, `askFailedFor`) so
+// the caller can say "unknown" instead of publishing "not triggered".
 async function fetchMarketData(
   alerts: Array<{ edition_key: string; collection_id: string | null }>
 ) {
   const fmvByKey = new Map<string, number>();
   const askByKey = new Map<string, number>();
-  if (!alerts.length) return { fmvByKey, askByKey };
+  const askFailedFor = new Set<string>(); // collection ids whose ask read failed
+  let fmvFailed = false;
+  if (!alerts.length) return { fmvByKey, askByKey, fmvFailed, askFailedFor };
 
   const key = (collectionId: string | null, ext: string) => `${collectionId ?? TS_COLLECTION}:${ext}`;
   const editionKeys = [...new Set(alerts.map((a) => a.edition_key))];
 
   // Resolve edition internal ids (scoped to the collections in play).
   const collectionIds = [...new Set(alerts.map((a) => a.collection_id ?? TS_COLLECTION))];
-  const { data: editionRows } = await supabase
+  const { data: editionRows, error: editionErr } = await supabase
     .from("editions")
     .select("id, external_id, collection_id")
     .in("external_id", editionKeys)
     .in("collection_id", collectionIds);
+  if (editionErr) fmvFailed = true;
 
   const idToKey = new Map<string, string>();
   const internalIds: string[] = [];
@@ -78,34 +90,49 @@ async function fetchMarketData(
   const FMV_CHUNK = 500;
   for (let i = 0; i < internalIds.length; i += FMV_CHUNK) {
     const chunk = internalIds.slice(i, i + FMV_CHUNK);
-    const { data: fmvRows } = await supabase
+    const { data: fmvRows, error: fmvErr } = await supabase
       .from("fmv_current")
       .select("edition_id, fmv_usd")
       .in("edition_id", chunk);
+    if (fmvErr) fmvFailed = true;
     for (const row of fmvRows ?? []) {
       const k = idToKey.get(row.edition_id);
       if (k && !fmvByKey.has(k) && row.fmv_usd != null) fmvByKey.set(k, Number(row.fmv_usd));
     }
   }
 
-  // badge_editions.low_ask is Top Shot keyed by external_id; only meaningful for
-  // TS alerts. Map back onto each alert's collection-scoped key.
-  const { data: badgeRows } = await supabase
-    .from("badge_editions")
-    .select("edition_key, low_ask")
-    .in("edition_key", editionKeys);
-  const lowAskByExt = new Map<string, number>();
-  for (const row of badgeRows ?? []) {
-    if (row.low_ask == null) continue;
-    const prev = lowAskByExt.get(row.edition_key);
-    if (prev == null || row.low_ask < prev) lowAskByExt.set(row.edition_key, Number(row.low_ask));
-  }
-  for (const a of alerts) {
-    const ask = lowAskByExt.get(a.edition_key);
-    if (ask != null) askByKey.set(key(a.collection_id, a.edition_key), ask);
+  for (const collectionId of collectionIds) {
+    const keysHere = [...new Set(alerts.filter((a) => (a.collection_id ?? TS_COLLECTION) === collectionId).map((a) => a.edition_key))];
+    try {
+      const { asks, errors } = await resolveLiveAsks(supabase, collectionId, keysHere);
+      if (errors.length) askFailedFor.add(collectionId);
+      for (const [ext, la] of asks) askByKey.set(key(collectionId, ext), la.ask);
+    } catch {
+      askFailedFor.add(collectionId);
+    }
   }
 
-  return { fmvByKey, askByKey };
+  return { fmvByKey, askByKey, fmvFailed, askFailedFor };
+}
+
+const ASK_LEG = new Set(["price_below", "discount_above"]);
+const FMV_LEG = new Set(["fmv_below", "fmv_above", "discount_above"]);
+
+/**
+ * null = UNKNOWN: a leg this alert depends on failed to read and produced no
+ * value. Never `false` — "not triggered" is a claim about the market.
+ */
+function previewTriggered(
+  alertType: string,
+  threshold: number,
+  fmv: number | null,
+  ask: number | null,
+  fmvFailed: boolean,
+  askFailed: boolean,
+): boolean | null {
+  if (ASK_LEG.has(alertType) && ask == null && askFailed) return null;
+  if (FMV_LEG.has(alertType) && fmv == null && fmvFailed) return null;
+  return evalTriggered(alertType, threshold, fmv, ask);
 }
 
 function evalTriggered(alertType: string, threshold: number, fmv: number | null, ask: number | null): boolean {
@@ -146,7 +173,7 @@ export async function GET(req: NextRequest) {
     if (error) throw new Error(error.message);
     if (!alerts || alerts.length === 0) return NextResponse.json([]);
 
-    const { fmvByKey, askByKey } = await fetchMarketData(alerts);
+    const { fmvByKey, askByKey, fmvFailed, askFailedFor } = await fetchMarketData(alerts);
     const enriched = alerts.map((alert: any) => {
       const k = `${alert.collection_id ?? TS_COLLECTION}:${alert.edition_key}`;
       const fmv = fmvByKey.get(k) ?? null;
@@ -158,7 +185,14 @@ export async function GET(req: NextRequest) {
         fmv,
         low_ask: ask,
         current_discount_pct,
-        currently_triggered: evalTriggered(alert.alert_type, Number(alert.threshold), fmv, ask),
+        currently_triggered: previewTriggered(
+          alert.alert_type,
+          Number(alert.threshold),
+          fmv,
+          ask,
+          fmvFailed,
+          askFailedFor.has(alert.collection_id ?? TS_COLLECTION),
+        ),
       };
     });
     return NextResponse.json(enriched);

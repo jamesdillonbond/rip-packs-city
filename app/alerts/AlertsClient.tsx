@@ -100,7 +100,8 @@ interface FmvAlert {
   active: boolean;
   fmv: number | null;
   low_ask: number | null;
-  currently_triggered: boolean;
+  // null = a leg it depends on failed to read (unknown, not "not triggered").
+  currently_triggered: boolean | null;
 }
 
 

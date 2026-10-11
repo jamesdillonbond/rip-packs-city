@@ -77,7 +77,14 @@ describe("GET /api/alerts — market-data enrichment", () => {
         ],
         error: null,
       },
-      badge_editions: { data: [{ edition_key: "9:99", low_ask: 70 }], error: null },
+      // ⚠ Was `{ edition_key: "9:99", low_ask: 70 }` — a column badge_editions
+      // does not have. Production 42703'd on every call and the route discarded
+      // the error, so no ask ever arrived; this fixture invented the column and
+      // passed. The ask now comes from resolveLiveAsks (the dispatcher's rule),
+      // whose real shape is external_id + low_ask, gated on an FMV <= 3x.
+      edition_fmv_current: { data: [{ edition_id: "ed1", fmv_usd: 100 }, { edition_id: "ed2", fmv_usd: 100 }], error: null },
+      edition_offers: { data: [], error: null },
+      badge_editions: { data: [{ external_id: "9:99", low_ask: 70 }], error: null },
     })
 
     const res = await GET(getReq())
@@ -212,7 +219,9 @@ describe("GET /api/alerts — remaining branches", () => {
         ],
         error: null,
       },
-      badge_editions: { data: [{ edition_key: "1:1", low_ask: 70 }], error: null },
+      edition_fmv_current: { data: [{ edition_id: "e1", fmv_usd: 100 }, { edition_id: "e2", fmv_usd: 100 }, { edition_id: "e3", fmv_usd: 100 }], error: null },
+      edition_offers: { data: [], error: null },
+      badge_editions: { data: [{ external_id: "1:1", low_ask: 70 }], error: null },
     })
 
     const res = await GET(getReq())
@@ -237,6 +246,8 @@ describe("GET /api/alerts — remaining branches", () => {
       },
       editions: { data: [], error: null },
       fmv_current: { data: [], error: null },
+      edition_fmv_current: { data: [], error: null },
+      edition_offers: { data: [], error: null },
       badge_editions: { data: [], error: null },
     })
     const res = await GET(getReq("https://t/api/alerts?include_inactive=1"))
@@ -358,5 +369,53 @@ describe("PATCH /api/alerts — remaining branches", () => {
     const res = await PATCH(bodyReq({ id: "al1", active: true }))
     expect(res.status).toBe(500)
     expect((await res.json()).error).not.toContain("patch boom")
+  })
+})
+
+describe("GET /api/alerts — a failed read is UNKNOWN, never \"not triggered\"", () => {
+  const alerts = [
+    { id: "p1", owner_key: "u1", edition_key: "1:1", collection_id: TS, alert_type: "price_below", threshold: 80 },
+    { id: "f1", owner_key: "u1", edition_key: "1:1", collection_id: TS, alert_type: "fmv_below", threshold: 200 },
+  ]
+  const base = {
+    fmv_alerts: { data: alerts, error: null },
+    editions: { data: [{ id: "e1", external_id: "1:1", collection_id: TS }], error: null },
+    fmv_current: { data: [{ edition_id: "e1", fmv_usd: 100 }], error: null },
+    edition_fmv_current: { data: [{ edition_id: "e1", fmv_usd: 100 }], error: null },
+    edition_offers: { data: [], error: null },
+    badge_editions: { data: [], error: null },
+  }
+
+  it("an ask read that fails leaves price_below at null, while the FMV leg still answers", async () => {
+    state.user = { id: "u1", email: "a@b.co" }
+    install({ ...base, badge_editions: { data: null, error: { message: "boom" } } })
+    const body = await (await GET(getReq())).json()
+    const p1 = body.find((r: { id: string }) => r.id === "p1")
+    expect(p1.low_ask).toBeNull()
+    expect(p1.currently_triggered).toBeNull() // unknown — NOT false
+    const f1 = body.find((r: { id: string }) => r.id === "f1")
+    expect(f1.currently_triggered).toBe(true) // fmv 100 <= 200, independent leg
+  })
+
+  it("asks that genuinely do not exist (reads ok, no rows) are a real false", async () => {
+    state.user = { id: "u1", email: "a@b.co" }
+    install(base)
+    const body = await (await GET(getReq())).json()
+    expect(body.find((r: { id: string }) => r.id === "p1").currently_triggered).toBe(false)
+  })
+
+  it("an FMV read that fails leaves fmv_below at null", async () => {
+    state.user = { id: "u1", email: "a@b.co" }
+    install({ ...base, fmv_current: { data: null, error: { message: "boom" } } })
+    const body = await (await GET(getReq())).json()
+    expect(body.find((r: { id: string }) => r.id === "f1").currently_triggered).toBeNull()
+  })
+
+  it("the route no longer reads badge_editions itself (the nonexistent-column query is gone)", async () => {
+    const { readFileSync } = await import("node:fs")
+    const { stripComments } = await import("../scripts/lib/strip-comments.mjs")
+    const src = stripComments(readFileSync("app/api/alerts/route.ts", "utf8"))
+    expect(src).not.toMatch(/from\(\s*["']badge_editions["']\s*\)/)
+    expect(src).toMatch(/resolveLiveAsks\(/)
   })
 })
