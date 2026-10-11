@@ -28,19 +28,38 @@ import { pathToFileURL } from "node:url"
 
 export const STALE_NIGHTS = 3
 
-/** Extract numbered items from the "## Queued for Trevor…" section. */
+/**
+ * Index of the queue section's `## ` heading, or -1. The heading has drifted
+ * (10-11: "## Needs your decision / QUEUED", earlier "## 5. Needs Trevor /
+ * queued", "## Queued / needs Trevor …"), and an exact "## Queued for Trevor"
+ * match read every drifted handoff as an EMPTY queue, so the 10-11 pass's items
+ * were never cross-checked. Any `## ` heading that says "queued", except one
+ * that reports queued items RESOLVED.
+ */
+export function findQueueSection(lines) {
+  return lines.findIndex((l) => /^## /.test(l) && /queued/i.test(l) && !/\bRESOLVED\b/.test(l))
+}
+
+/**
+ * Extract the items in the queue section: numbered lines AND top-level `- `
+ * bullets (the 10-11 handoff wrote its carried P1/P2/P3 as bullets). Indented
+ * lines are continuation, not items.
+ */
 export function parseQueued(markdown) {
   const lines = markdown.split(/\r?\n/)
-  const start = lines.findIndex((l) => /^## Queued for Trevor/.test(l))
+  const start = findQueueSection(lines)
   if (start < 0) return []
   const items = []
+  let next = 1
   for (const line of lines.slice(start + 1)) {
     if (/^## /.test(line)) break
-    const m = line.match(/^(\d+)\.\s+(.*)$/)
+    const m = line.match(/^(\d+)\.\s+(.*)$/) ?? line.match(/^[-*]()\s+(.*)$/)
     if (!m) continue
+    const n = m[1] ? Number(m[1]) : next
+    next = n + 1
     const nights = line.match(/(\d+)\s+nights?\b/i)
     items.push({
-      n: Number(m[1]),
+      n,
       text: m[2],
       nights: nights ? Number(nights[1]) : null,
     })
@@ -53,9 +72,18 @@ const CLOSING = /\b(APPLIED|SHIPPED|FIXED|DONE|CLOSED|RESOLVED|VERIFIED)\b/
 /** The item's match keys: its first backticked token and any #NNN ids. */
 export function itemKeys(text) {
   const keys = []
-  const tick = text.match(/`([^`]{4,})`/)
+  // ≥ 5 chars: a 4-char token (`main`) matched "mainnet24" in an unrelated heading.
+  const tick = text.match(/`([^`]{5,})`/)
   if (tick) keys.push(tick[1])
-  for (const m of text.matchAll(/#\d{2,4}\b/g)) keys.push(m[0])
+  // A carried bullet often names its lane in bold with no backticks
+  // ("**chain-arrival-pack-pulls durable BOUND**"): take the first lane-shaped
+  // identifier (three or more kebab/snake segments) as a key too.
+  const lane = text.match(/[a-z0-9]+(?:[-_][a-z0-9]+){2,}/)
+  if (lane && !keys.includes(lane[0])) keys.push(lane[0])
+  // #NNN ids from the item's bold TITLE only: an item that mentions "#187" in
+  // passing is not #187, and was marked closed by #187's fix on 10-11.
+  const title = text.startsWith("**") ? text.slice(0, Math.max(text.indexOf("**", 2), 2)) : text
+  for (const m of title.matchAll(/#\d{2,4}\b/g)) keys.push(m[0])
   return keys
 }
 
@@ -92,11 +120,55 @@ export function headingsAfterNightPass(ledger, date) {
   return out
 }
 
-/** First later heading that names one of the item's keys with a closing status. */
+/**
+ * Ledger headings dated from `date` back `days` days, BELOW that date's night
+ * pass: the window where an item can be closed BEFORE the pass yet re-carried
+ * by it (the 10-10 and 10-11 passes both carried P1/P2/P3 closed on 10-09).
+ */
+export function headingsBeforeNightPass(ledger, date, days = 14) {
+  const floor = new Date(Date.parse(`${date}T00:00:00Z`) - days * 86400000).toISOString().slice(0, 10)
+  const out = []
+  const lines = ledger.split(/\r?\n/)
+  let below = false
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^### (\d{4}-\d{2}-\d{2})\b/)
+    if (!m) continue
+    if (m[1] < floor) break
+    if (!below) {
+      if (m[1] === date && isNightPassHeading(lines[i])) { below = true; continue }
+      if (m[1] < date) below = true
+      else continue
+    }
+    // Older headings run body text on with no bold claim, and a night pass's
+    // "VERIFIED" is about health, not a closure: neither can close an item here.
+    if (!lines[i].includes("**") || isNightPassHeading(lines[i])) continue
+    out.push({ line: i + 1, text: lines[i] })
+  }
+  return out
+}
+
+/**
+ * What a heading CLAIMS: its status prefix plus its first **bold** summary.
+ * Ledger headings run on into a long body on the same line, and the body names
+ * lanes in passing ("`get_wallet_pack_summary` …" inside a #187 fix): matching
+ * the whole line marked 6 of 10 items closed on 10-11, 4 of them wrongly.
+ * A heading with no bold is matched whole.
+ */
+export function headingClaim(text) {
+  const open = text.indexOf("**")
+  if (open < 0) return text
+  const close = text.indexOf("**", open + 2)
+  return close < 0 ? text : text.slice(0, close)
+}
+
+/** First later heading whose claim names one of the item's keys with a closing status. */
 export function likelyClosedBy(item, headings) {
   const keys = itemKeys(item.text)
   if (!keys.length) return null
-  return headings.find((h) => CLOSING.test(h.text) && keys.some((k) => h.text.includes(k))) ?? null
+  return headings.find((h) => {
+    const claim = headingClaim(h.text)
+    return CLOSING.test(claim) && keys.some((k) => claim.includes(k))
+  }) ?? null
 }
 
 export function newestOvernightHandoff(docsDir) {
@@ -112,27 +184,43 @@ function main() {
     console.log("[ready-queue] no overnight handoff found")
     return
   }
-  const items = parseQueued(readFileSync(file, "utf8"))
+  const md = readFileSync(file, "utf8")
+  const items = parseQueued(md)
   const rel = path.relative(process.cwd(), file)
   const date = path.basename(file).match(/\d{4}-\d{2}-\d{2}/)?.[0]
   let headings = []
+  let earlier = []
   try {
-    headings = headingsAfterNightPass(readFileSync(path.join(process.cwd(), "docs/overnight/ledger.md"), "utf8"), date)
+    const ledger = readFileSync(path.join(process.cwd(), "docs/overnight/ledger.md"), "utf8")
+    headings = headingsAfterNightPass(ledger, date)
+    earlier = headingsBeforeNightPass(ledger, date)
   } catch {
     console.log("[ready-queue] ledger unreadable — items shown without the closed-check")
   }
   if (!items.length) {
-    console.log(`[ready-queue] ${rel}: nothing queued for Trevor / Claude Code`)
+    // An absent section is NOT an empty queue: say which, so a drifted heading
+    // cannot read as "nothing to do" again (it did for the 10-11 handoff).
+    if (findQueueSection(md.split(/\r?\n/)) < 0) {
+      console.log(`[ready-queue] ⚠ ${rel}: no "## … queued" section found — the heading may have drifted; read the handoff`)
+    } else {
+      console.log(`[ready-queue] ${rel}: nothing queued for Trevor / Claude Code`)
+    }
     return
   }
-  const rows = items.map((it) => ({ it, closed: likelyClosedBy(it, headings) }))
-  const open = rows.filter((r) => !r.closed).length
+  const rows = items.map((it) => ({
+    it,
+    closed: likelyClosedBy(it, headings),
+    before: likelyClosedBy(it, earlier),
+  }))
+  const open = rows.filter((r) => !r.closed && !r.before).length
   console.log(`[ready-queue] ${items.length} item(s) from ${rel}, ${open} still open by the ledger (hints — read the entry before acting):`)
-  for (const { it, closed } of rows) {
+  for (const { it, closed, before } of rows) {
     const flag = closed
       ? ` ✓ likely closed (ledger.md:${closed.line})`
-      : it.nights != null && it.nights >= STALE_NIGHTS ? " ⚠ STALE" : ""
-    console.log(`  ${it.n}.${flag} ${it.text.slice(0, closed ? 110 : 200)}`)
+      : before
+        ? ` ✓ likely closed BEFORE this pass — re-carried (ledger.md:${before.line})`
+        : it.nights != null && it.nights >= STALE_NIGHTS ? " ⚠ STALE" : ""
+    console.log(`  ${it.n}.${flag} ${it.text.slice(0, closed || before ? 110 : 200)}`)
   }
 }
 

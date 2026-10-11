@@ -8,6 +8,9 @@ import {
   headingsAfterNightPass,
   likelyClosedBy,
   isNightPassHeading,
+  headingsBeforeNightPass,
+  findQueueSection,
+  itemKeys,
 } from "../scripts/report-ready-queue.mjs"
 
 describe("isNightPassHeading", () => {
@@ -101,5 +104,82 @@ describe("report-ready-queue", () => {
       expect(likelyClosedBy(measuredOnly, h)).toBeNull()
       expect(likelyClosedBy(beforePass, h)).toBeNull()
     })
+  })
+})
+
+// 2026-10-11: the 10-11 handoff titled its section "## Needs your decision /
+// QUEUED" and wrote its carried P1/P2/P3 as `- ` bullets. The exact-heading
+// parser read that as an EMPTY queue ("nothing queued"), so three items closed
+// on 10-09 were carried a second night with nothing flagging them.
+describe("report-ready-queue — drifted handoffs and re-carried items", () => {
+  it("finds every queue heading the handoffs have used, but not a RESOLVED recap", () => {
+    for (const h of [
+      "## Queued for Trevor / Claude Code (not auto-shipped)",
+      "## Needs your decision / QUEUED",
+      "## 5. Needs Trevor / queued",
+      "## Queued / needs Trevor (carried forward, unchanged)",
+    ]) expect(findQueueSection(["# x", h]), h).toBe(1)
+    expect(findQueueSection(["## Previous night pass — both queued items now RESOLVED"])).toBe(-1)
+  })
+
+  it("reads top-level bullets as items, and not indented continuation bullets", () => {
+    const md = [
+      "## Needs your decision / QUEUED",
+      "1. **`lane_one` thing**",
+      "**Still queued from prior nights:**",
+      "- **chain-arrival-pack-pulls durable BOUND (P1, ~7 nights)** — spec",
+      "  - indented detail, not an item",
+      "- **#173 conflated bases** — Claude Code",
+      "## Failed",
+      "- after the section",
+    ].join("\n")
+    const items = parseQueued(md)
+    expect(items.map((i) => i.n)).toEqual([1, 2, 3])
+    expect(items[1].nights).toBe(7)
+    expect(itemKeys(items[1].text)).toContain("chain-arrival-pack-pulls")
+  })
+
+  it("an absent section is distinguishable from an empty one", () => {
+    expect(findQueueSection("## Shipped\n1. x".split("\n"))).toBe(-1)
+    expect(parseQueued("## Queued for Trevor\n\nnothing\n")).toEqual([])
+    expect(findQueueSection("## Queued for Trevor\n\nnothing\n".split("\n"))).toBe(0)
+  })
+
+  it("takes #NNN keys from the item TITLE only, and ignores 4-char backtick tokens", () => {
+    const k = itemKeys("**`get_wallet_pack_summary` 8 s timeout** — carries `#187` box-model edits; on `main`")
+    expect(k).toContain("get_wallet_pack_summary")
+    expect(k).not.toContain("#187")
+    expect(itemKeys("**#23 / #25** — not on `main`")).toEqual(["#23", "#25"])
+  })
+
+  describe("closed BEFORE the pass, then re-carried", () => {
+    const ledger = [
+      "# ledger",
+      "### 2026-10-11 · 🔧 FIXED — **`after-lane` fixed after the pass**",
+      "### 2026-10-11 · 🟢 GREEN NIGHT — 0 shipped (nightly autonomous pass) — carried `old-lane-p1` VERIFIED",
+      "### 2026-10-10 · ✅ CLOSED (verified live) — **`old-lane-p1` was fixed on 10-09 but carried**",
+      "### 2026-10-10 · 🔧 SHIPPED — **#187 closed** — body mentions `get_wallet_pack_summary` in passing",
+      "### 2026-10-09 · 🗄 APPLIED — no bold, body names `another-old-lane` in passing",
+      "### 2026-09-20 · ✅ CLOSED — **`ancient-lane-x` closed** (outside the 14-day window)",
+    ].join("\n")
+    const before = headingsBeforeNightPass(ledger, "2026-10-11")
+
+    it("keeps headings below the pass, inside the window, with a bold claim, and never the pass itself", () => {
+      expect(before.map((x: { line: number }) => x.line)).toEqual([4, 5])
+    })
+
+    it("closes a re-carried item; does not close one a heading only mentions in its body", () => {
+      expect(likelyClosedBy({ n: 1, nights: 7, text: "**old-lane-p1 bound (P1, ~7 nights)**" }, before)?.line).toBe(4)
+      expect(likelyClosedBy({ n: 2, nights: null, text: "**`get_wallet_pack_summary` timeout**" }, before)).toBeNull()
+      expect(likelyClosedBy({ n: 3, nights: null, text: "**`another-old-lane` x**" }, before)).toBeNull()
+      expect(likelyClosedBy({ n: 4, nights: null, text: "**`ancient-lane-x` x**" }, before)).toBeNull()
+    })
+  })
+
+  it("positive control on the real 10-11 handoff: its queue is NOT read as empty", () => {
+    const file = path.join(process.cwd(), "docs/handoff-2026-10-11-overnight-pass.md")
+    const items = parseQueued(readFileSync(file, "utf8"))
+    expect(items.length).toBeGreaterThanOrEqual(8)
+    expect(items.some((i) => i.text.includes("chain-arrival-pack-pulls"))).toBe(true)
   })
 })
