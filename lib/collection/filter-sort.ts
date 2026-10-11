@@ -12,6 +12,7 @@ import { normalizeSetName, buildEditionScopeKey } from "@/lib/wallet-normalize"
 import {
   seriesFilterLabel,
   getLocked,
+  isLockKnown,
   duplicateGroupKey,
   getParallel,
   getTraits,
@@ -42,8 +43,11 @@ export function computeFilteredSortedRows(
     if (view.setFilter !== "all" && normalizeSetName(r.setName) !== view.setFilter) return false
     if (view.seriesFilter !== "all" && seriesFilterLabel(r.series, collectionSeriesMap) !== view.seriesFilter) return false
     if (view.rarityFilter !== "all" && r.tier !== view.rarityFilter) return false
-    if (view.lockedFilter === "locked" && !getLocked(r)) return false
-    if (view.lockedFilter === "unlocked" && getLocked(r)) return false
+    // ⛔ Both arms require a lock that was READ. `getLocked` is false for an
+    // unchecked row (null → false), so "unlocked" used to list every moment
+    // nobody had checked as sellable (2026-10-10). An unknown matches neither.
+    if (view.lockedFilter === "locked" && !(isLockKnown(r) && getLocked(r))) return false
+    if (view.lockedFilter === "unlocked" && !(isLockKnown(r) && !getLocked(r))) return false
     if (view.badgeFilter && !r.badgeInfo?.badge_score) return false
     if (view.filterBadges && !(r.officialBadges?.length || (r as any).badgeScore > 0)) return false
     if (view.filterHasOffer && !(typeof r.bestOffer === "number" && r.bestOffer > 0)) return false

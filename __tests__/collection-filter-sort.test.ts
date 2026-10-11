@@ -64,6 +64,20 @@ describe("computeFilteredSortedRows", () => {
     expect(computeFilteredSortedRows(rows, view({ lockedFilter: "unlocked" }), ctx()).map((r) => r.momentId)).toEqual(["b"])
   })
 
+  it("an UNCHECKED lock matches neither Locked nor Unlocked", () => {
+    // collection-moments sends is_locked: null + lock_known: false for a row
+    // nobody checked; getLocked() reads that as false, so the Unlocked filter
+    // used to list it as sellable.
+    const rows = [
+      row({ momentId: "known-unlocked", isLocked: false, lockKnown: true }),
+      row({ momentId: "unchecked", isLocked: undefined, lockKnown: false }),
+      row({ momentId: "known-locked", isLocked: true, lockKnown: true }),
+    ]
+    expect(computeFilteredSortedRows(rows, view({ lockedFilter: "unlocked" }), ctx()).map((r) => r.momentId)).toEqual(["known-unlocked"])
+    expect(computeFilteredSortedRows(rows, view({ lockedFilter: "locked" }), ctx()).map((r) => r.momentId)).toEqual(["known-locked"])
+    expect(computeFilteredSortedRows(rows, view({ lockedFilter: "all" }), ctx())).toHaveLength(3)
+  })
+
   it("filterHasOffer keeps only rows with a positive best offer; filterListed needs a low ask", () => {
     const rows = [row({ momentId: "a", bestOffer: 5, lowAsk: null }), row({ momentId: "b", bestOffer: 0, lowAsk: 3 })]
     expect(computeFilteredSortedRows(rows, view({ filterHasOffer: true }), ctx()).map((r) => r.momentId)).toEqual(["a"])
