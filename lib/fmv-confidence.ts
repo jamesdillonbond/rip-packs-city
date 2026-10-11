@@ -38,7 +38,10 @@ export const MIN_SALES_30D_MEDIUM = 5
 export const HIGH_MAX_DISPERSION = 0.2
 // Max dispersion that confirms a MEDIUM rating on the same residual scale.
 // Editions with count >= 7 and residual between HIGH and MEDIUM bounds land
-// at MEDIUM. Above this bound, MEDIUM is held only by the volume floor.
+// at MEDIUM. Above this bound the edition is DEMOTED to LOW despite its volume
+// (escalateConfidence; pinned in fmv-confidence-boundaries.test.ts). Its way back
+// to MEDIUM is ask-corroboration below. (Corrected 2026-10-11: this line used to
+// say "MEDIUM is held only by the volume floor", the opposite of the code.)
 export const MEDIUM_MAX_DISPERSION = 0.35
 
 // Ask-corroboration (A2, 2026-06-05). When an edition's sales central price
