@@ -476,3 +476,14 @@ Shipped (each in the ledger with its revert):
 products with standard packs (the WNBA sales model generalised — config, not a copy); (4) a parser arm for "Either A or
 B (#/N)" lines (equal-weight union over both families) once (3) shows the per-family values are stable; (5) 50 products
 still unnamed — the collector walk names held ones automatically.
+
+### 2026-10-10 (~5:45 PM PT) — NASCAR verified; Market Pulse deliberately NOT given a Panini row
+
+- **Racing = NASCAR, verified** by the 4:49 PM PT full run (4 setIds no other grid serves: 2263 1,765 listed, 2226 521,
+  2237 9, 987789987 "NFT Car" 15). 2226 + 2237 admitted; the NFT Car set skipped (non-card psku `packcard-987789987_<n>`).
+- **Market Pulse (24 h / 7 d / 30 d volume per collection) gets NO Panini row — measured:** `panini_sales` reaches RPC
+  only as the walk re-reads each card (~5-day cycle), so recent days are incomplete: `panini_sales_analytics` per-day
+  coverage on 10-10 read **98.4 % for 10-03, 77 % 10-04, 42 % 10-05, 24–29 % 10-06..10-08, 8 % 10-09, 0 % 10-10**. A
+  24 h / 7 d Panini total would be an undercount presented as a fact. Revisit only if the walk's sale lag drops to < 1 day.
+- Same lag on the Top Sales board (Panini merged since 10-10): it now says, whenever Panini can be on the board, that the
+  last few days of Panini sales are incomplete.
