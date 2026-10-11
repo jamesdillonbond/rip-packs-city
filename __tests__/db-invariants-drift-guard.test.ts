@@ -661,8 +661,9 @@ const PINS = [
     fn: "get_wallet_pack_summary",
     test: "supabase/tests/get_wallet_pack_summary.sql",
     // 2026-09-28: inferred_primary_* take the same All Day mint rule.
+    // 2026-10-10 (#187): a pack out of this wallet's own box is never an inferred buy.
     migration:
-      "supabase/migrations/20260929070600_audit_20260928_wallet_pack_summary_allday_mint_only_inside_the_window.sql",
+      "supabase/migrations/20261011022500_audit_20261010_wallet_pack_summary_a_pack_out_of_a_box_is_not_an_inferred_buy.sql",
   },
   {
     // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists

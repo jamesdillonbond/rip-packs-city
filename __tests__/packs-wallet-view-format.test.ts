@@ -208,6 +208,13 @@ describe("packBuyLabel (2026-09-18)", () => {
   })
   it("falls back to buy_price when buy_usd is absent (older payloads)", () => {
     expect(packBuyLabel({ has_buy: true, buy_price: 8, buy_currency: "DUC" })).toBe("$8.00")
+  })  // 2026-10-10 (#187): a pack out of a box this wallet opened was never bought on its own.
+  it("says a pack came from a box -- never a $0 or retail buy", () => {
+    expect(packBuyLabel({ has_buy: false, buy_usd: null, buy_price_source: "box" })).toBe("From a box")
+    expect(packInferredAcquisitionLine({ has_buy: false, buy_price_source: "box" }))
+      .toBe("Came out of a box you opened · its cost is part of the box's price")
+    // a pack the wallet DID buy says nothing extra, whatever the source
+    expect(packInferredAcquisitionLine({ has_buy: true, buy_price_source: "box" })).toBeNull()
   })
 })
 

@@ -113,7 +113,10 @@ export function relativePackTime(iso: string | null | undefined, now: number = D
 // "retail_inferred" (2026-09-26): no buy row, but the pack was acquired inside
 // its drop's sale window where our marketplace history is complete, so it
 // came from Dapper at the drop's retail -- shown as an inference, never a record.
-export type BuyPriceSource = "onchain" | "marketplace" | "retail" | "retail_inferred" | null
+// "box" (2026-10-10, #187): the pack came out of a box / case this wallet opened. It was
+// never bought on its own -- its cost is part of the box's price -- so it has no buy price
+// and no P/L of its own (a sold topper used to read "$0 (reward, inferred)" + the whole sale).
+export type BuyPriceSource = "onchain" | "marketplace" | "retail" | "retail_inferred" | "box" | null
 
 /** Second line under the pack name. `null` when nothing needs saying. */
 export function packIdentityNote(
@@ -153,6 +156,7 @@ export function packBuyLabel(row: {
 }): string {
   const usd = row.buy_usd ?? row.buy_price
   if (!row.has_buy) {
+    if (row.buy_price_source === "box") return "From a box"
     if (row.buy_price_source === "retail_inferred" && row.buy_usd != null) {
       return row.buy_usd === 0 ? "$0 (reward, inferred)" : fmtPackUsd(row.buy_usd) + " retail (inferred)"
     }
@@ -364,6 +368,7 @@ export function packInferredAcquisitionLine(row: {
     const d = day(row.primary_minted_at)
     if (d) return `Bought at the drop · minted ${d}, no marketplace sale before yours`
   }
+  if (row.buy_price_source === "box") return "Came out of a box you opened · its cost is part of the box's price"
   if (row.buy_price_source === "retail_inferred") return "No purchase on record · acquired inside the drop's sale window"
   return null
 }
