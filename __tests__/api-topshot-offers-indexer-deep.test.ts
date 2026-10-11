@@ -361,6 +361,50 @@ describe("topshot-offers-indexer — OfferAvailable keying", () => {
     })
   })
 
+  it("NFT (serial) offer on an nft `moments` lacks resolves via wallet_moments_cache instead of being dropped", async () => {
+    // 2026-10-10: this offer used to be counted `unresolved` and never written —
+    // 415 of ~2,360 offers in one day were lost this way.
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        avail: [
+          eventBlock({
+            height: 1100,
+            txId: "9".repeat(64),
+            eventType: OFFER_AVAILABLE,
+            payload: offerAvailPayload({
+              offerId: "702",
+              amount: "12.00000000",
+              params: { _type: "NFT", nftId: "55001122" },
+            }),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      moments: { data: [], error: null },
+      wallet_moments_cache: {
+        data: [{ moment_id: "55001122", edition_key: "8:133", serial_number: 42 }],
+        error: null,
+      },
+      editions: { data: [{ external_id: "8:133", id: "uuid-8133" }], error: null },
+      offers: { data: [], error: null },
+    })
+
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true, offersWritten: 1, unresolved: 0, byType: { serial: 1 } })
+    expect(offerUpserts(spy)[0]).toMatchObject({
+      offer_id: "702",
+      edition_id: "uuid-8133",
+      moment_id: null,
+      serial_number: 42,
+      offer_type: "serial",
+      status: "open",
+    })
+    const log = terminalLog(spy.rpcCalls)
+    expect(log?.p_extra).toMatchObject({ resolved_via_wallet_cache: 1, unresolved_by_type: { serial: 0 } })
+  })
+
   it("unresolvable edition offer is counted unresolved and NOT written; non-TopShot offers are filtered", async () => {
     const tx1 = "d".repeat(64)
     fetchMock = installFetchMock(

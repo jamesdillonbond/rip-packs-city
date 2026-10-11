@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { parseOfferCompletedFill, buildOfferFillSales, insertOfferFillSales, type OfferFillEvent } from "@/lib/chains/flow/topshot-offer-fill"
-import { fetchTopShotEditionAliases, canonicalTopShotExternalId } from "@/lib/topshot/edition-aliases"
-import { unwrapCdc, parseOfferAvailable as parseAvailable, type AvailOffer } from "@/lib/chains/flow/topshot-offer-available"
+import { unwrapCdc, parseOfferAvailable as parseAvailable, resolveOfferTargets, type AvailOffer } from "@/lib/chains/flow/topshot-offer-available"
 
 // ── On-chain Top Shot offers indexer ─────────────────────────────────────────
 //
@@ -132,6 +131,8 @@ export async function POST(req: NextRequest) {
   let offersCancelled = 0
   let unresolved = 0
   let completedSameTick = 0 // offers created AND completed inside this tick, written with their final status
+  let viaWalletCache = 0 // serial offers placed through wallet_moments_cache (moments lacked the nft)
+  const unresolvedByType: Record<string, number> = { edition: 0, subedition: 0, serial: 0 }
   let aliased = 0 // #175: offers whose API key resolved through topshot_edition_aliases
   let salesWritten = 0
   let salesDuped = 0
@@ -221,57 +222,18 @@ export async function POST(req: NextRequest) {
     // 2. resolve edition_id (uuid) for edition/subedition (setId:playId) and
     //    moment for serial (nftId). Batch the lookups.
     const avail = Array.from(availById.values())
-    // 2a. (#175, 2026-10-10) Top Shot's offer contract names some printings by an
-    //     API key that is an ALIAS of the chain's key (Diced: (149, play, 8) is
-    //     `152:<play>`). Resolve through the one alias table BEFORE the editions
-    //     lookup, or the offer lands on a phantom edition with its own market.
-    //     A failed alias read THROWS like a failed editions read: the cursor
-    //     stays put and the run logs ok=false, never "keyed to the alias".
-    const aliases = await fetchTopShotEditionAliases()
-    for (const o of avail) {
-      if (!o.externalId) continue
-      const canonical = canonicalTopShotExternalId(o.externalId, aliases)
-      if (canonical !== o.externalId) { o.externalId = canonical; aliased++ }
-    }
-    // Include the base pair alongside every "::" subedition key so the row
-    // build can fall back when the :: edition isn't cataloged.
-    const extKeys = Array.from(new Set(avail.filter((o) => o.externalId).flatMap((o) => {
-      const k = o.externalId!
-      return k.includes("::") ? [k, k.split("::")[0]] : [k]
-    })))
-    const nftIds = Array.from(new Set(avail.filter((o) => o.nftId).map((o) => o.nftId!)))
-
-    const editionIdByExt = new Map<string, string>()
-    for (let i = 0; i < extKeys.length; i += DB_IN_CHUNK) {
-      const chunk = extKeys.slice(i, i + DB_IN_CHUNK)
-      // ⚠ THROW — DO NOT `?? []` THIS. supabase-js RETURNS errors, so discarding
-      // `error` made a failed read look like "none of these editions are
-      // cataloged", every offer fell into `if (!editionId) { unresolved++;
-      // continue }`, and the cursor at step 5 advanced anyway. Nothing revisits a
-      // block below the cursor, so those offers would be PERMANENTLY lost while
-      // the run logged ok:true with a plausible `unresolved` count. The abort path
-      // this file already documents at the top is the correct one: it leaves the
-      // cursor where it was and logs ok=false.
-      const { data, error } = await (supabaseAdmin as any)
-        .from("editions")
-        .select("external_id, id")
-        .eq("collection_id", TS_COLLECTION_ID)
-        .in("external_id", chunk)
-      if (error) throw new Error(`editions lookup: ${error.message}`)
-      for (const r of (data as Array<{ external_id: string; id: string }> | null) ?? []) editionIdByExt.set(r.external_id, r.id)
-    }
-
-    const momentByNft = new Map<string, { momentId: string; editionId: string; serial: number | null }>()
-    for (let i = 0; i < nftIds.length; i += DB_IN_CHUNK) {
-      const chunk = nftIds.slice(i, i + DB_IN_CHUNK)
-      const { data, error } = await (supabaseAdmin as any)
-        .from("moments")
-        .select("nft_id, id, edition_id, serial_number")
-        .in("nft_id", chunk)
-      if (error) throw new Error(`moments lookup: ${error.message}`)
-      for (const r of (data as Array<{ nft_id: string; id: string; edition_id: string; serial_number: number | null }> | null) ?? [])
-        momentByNft.set(r.nft_id, { momentId: r.id, editionId: r.edition_id, serial: r.serial_number })
-    }
+    // 2a. (#175) Top Shot's offer contract names some printings by an API key that
+    //     is an ALIAS of the chain's key; 2b. editions by external_id (subedition
+    //     "::" keys fall back to their base pair); 2c. serial offers via `moments`,
+    //     then (2026-10-10) via wallet_moments_cache — a serial offer on an nft
+    //     `moments` lacks used to be DROPPED here: 415 of ~2,360 offers in one day.
+    //     All of it lives in resolveOfferTargets, shared with the history backfill.
+    //     ⚠ Every read there THROWS on error: a swallowed read made every offer
+    //     look uncataloged, fell into `unresolved++`, and the cursor advanced past
+    //     them for good. The throw aborts the tick before the cursor moves.
+    const resolved = await resolveOfferTargets(avail)
+    aliased = resolved.aliased
+    viaWalletCache = resolved.viaWalletCache
 
     // 3. build offer rows. A same-tick create+complete is written with its FINAL
     //    status — never as "open", and never dropped. ⚠ It used to be skipped
@@ -283,20 +245,9 @@ export async function POST(req: NextRequest) {
     const rows: Array<Record<string, unknown>> = []
     for (const o of avail) {
       const finalStatus = filledIds.has(o.offerId) ? "filled" : cancelledIds.has(o.offerId) ? "cancelled" : null
-      let editionId: string | null = null
-      let momentId: string | null = null
-      let serial: number | null = null
-      if (o.externalId) {
-        editionId = editionIdByExt.get(o.externalId) ?? null
-        // Subedition offer whose :: edition isn't cataloged -> base edition.
-        if (!editionId && o.externalId.includes("::")) {
-          editionId = editionIdByExt.get(o.externalId.split("::")[0]) ?? null
-        }
-      } else if (o.nftId) {
-        const m = momentByNft.get(o.nftId)
-        if (m) { editionId = m.editionId; momentId = m.momentId; serial = m.serial }
-      }
-      if (!editionId) { unresolved++; continue }
+      const target = resolved.byOfferId.get(o.offerId)
+      if (!target) { unresolved++; unresolvedByType[o.offerType]++; continue }
+      const { editionId, momentId, serial } = target
       byType[o.offerType]++
       if (finalStatus) completedSameTick++
       rows.push({
@@ -428,6 +379,8 @@ export async function POST(req: NextRequest) {
     offers_completed_same_tick: completedSameTick,
     unresolved,
     aliased_to_canonical: aliased,
+    unresolved_by_type: unresolvedByType,
+    resolved_via_wallet_cache: viaWalletCache,
     fills_seen: fillsSeen,
     sales_written: salesWritten,
     sales_duped: salesDuped,

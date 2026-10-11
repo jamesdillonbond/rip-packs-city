@@ -112,8 +112,9 @@ export interface ResolvedOfferTarget {
 
 export async function resolveOfferTargets(
   avail: AvailOffer[],
-): Promise<{ byOfferId: Map<string, ResolvedOfferTarget>; aliased: number }> {
+): Promise<{ byOfferId: Map<string, ResolvedOfferTarget>; aliased: number; viaWalletCache: number }> {
   let aliased = 0
+  let viaWalletCache = 0
   const aliases = await fetchTopShotEditionAliases()
   for (const o of avail) {
     if (!o.externalId) continue
@@ -149,6 +150,38 @@ export async function resolveOfferTargets(
       momentByNft.set(r.nft_id, { editionId: r.edition_id, momentId: r.id, serial: r.serial_number })
   }
 
+  // Serial-offer fallback (2026-10-10). `moments` is sparse, and a serial offer on
+  // an nft it lacks was DROPPED — ~18 % of all offers the live indexer saw in a
+  // day. wallet_moments_cache knows far more nfts: moment_id IS the nft id for
+  // Top Shot, edition_key IS editions.external_id (both verified live). Several
+  // wallets can hold a row for one nft (stale holders); they agree on edition and
+  // serial, so the first row with an edition_key wins.
+  const missingNfts = nftIds.filter((id) => !momentByNft.has(id))
+  const wmcByNft = new Map<string, { editionKey: string; serial: number | null }>()
+  for (let i = 0; i < missingNfts.length; i += IN_CHUNK) {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("wallet_moments_cache")
+      .select("moment_id, edition_key, serial_number")
+      .eq("collection_id", TS_COLLECTION)
+      .in("moment_id", missingNfts.slice(i, i + IN_CHUNK))
+    if (error) throw new Error(`wallet_moments_cache lookup: ${error.message}`)
+    for (const r of (data as Array<{ moment_id: string; edition_key: string | null; serial_number: number | null }> | null) ?? []) {
+      if (r.edition_key && !wmcByNft.has(r.moment_id)) {
+        wmcByNft.set(r.moment_id, { editionKey: canonicalTopShotExternalId(r.edition_key, aliases), serial: r.serial_number })
+      }
+    }
+  }
+  const wmcKeys = Array.from(new Set(Array.from(wmcByNft.values()).map((w) => w.editionKey))).filter((k) => !editionIdByExt.has(k))
+  for (let i = 0; i < wmcKeys.length; i += IN_CHUNK) {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("editions")
+      .select("external_id, id")
+      .eq("collection_id", TS_COLLECTION)
+      .in("external_id", wmcKeys.slice(i, i + IN_CHUNK))
+    if (error) throw new Error(`editions lookup (wallet cache keys): ${error.message}`)
+    for (const r of (data as Array<{ external_id: string; id: string }> | null) ?? []) editionIdByExt.set(r.external_id, r.id)
+  }
+
   const byOfferId = new Map<string, ResolvedOfferTarget>()
   for (const o of avail) {
     if (o.externalId) {
@@ -157,8 +190,14 @@ export async function resolveOfferTargets(
       if (editionId) byOfferId.set(o.offerId, { editionId, momentId: null, serial: null })
     } else if (o.nftId) {
       const m = momentByNft.get(o.nftId)
-      if (m) byOfferId.set(o.offerId, m)
+      if (m) { byOfferId.set(o.offerId, m); continue }
+      const w = wmcByNft.get(o.nftId)
+      const editionId = w ? editionIdByExt.get(w.editionKey) : undefined
+      if (w && editionId) {
+        byOfferId.set(o.offerId, { editionId, momentId: null, serial: w.serial })
+        viaWalletCache++
+      }
     }
   }
-  return { byOfferId, aliased }
+  return { byOfferId, aliased, viaWalletCache }
 }
