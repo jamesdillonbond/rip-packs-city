@@ -3059,6 +3059,9 @@ the rest read; `filled` / `cancelled` are terminal. Rows from the history walks 
   `offers` row, `20261011044422`) drives `/api/admin/backfill-topshot-missing-fill-offers` (OfferAvailable
   only, from the mainnet28 root 137,390,146). `audit_20261010_offers_open_rows_that_filled` holds the 45 open
   rows a fill proved filled (`20261011015351`).
+  Result (10-10 ~11:15 PM PT): 17,257 of 21,372 recovered; **13,621 of them were created before the
+  indexer began (06-03), median 58 days open** — most "fill with no offer row" was a long-lived bid that
+  predates the indexer. The 4,115 left predate the 2025-12-29 spork.
 - **OffersV2 offerIds are 10–15 digits** — not a time-ordered counter; do not split "before / after" by
   numeric offerId.
 - **Old open bids are real.** Top Shot offers do not appear to expire: 500/500 open edition bids > 30 days
