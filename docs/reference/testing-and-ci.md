@@ -1173,6 +1173,24 @@ debounce fires, and the branch is blocked over a component nobody touched.
   same expression it later compared to**, so a persisted no-op that had not landed inside 40ms
   satisfied the assertion. **Assert the absolute value when the fixture makes one available.**
 
+### ⚠ A coverage gate reds on the NEXT pusher, not the one who added the untested code (2026-10-11)
+
+`Component coverage (vitest jsdom)` read **90.74 % against 90.85 %** on **seven consecutive code
+pushes to `main`** (`54baa4c23` → `83bc3cf5d`, three sessions). Every one of those pushes was green on
+`tsc`, eslint, both vitest shards and the render smoke, so each session saw its own work pass, read the
+red X as somebody else's, and moved on. The deficit was **18 statements**: the honesty fixes from that
+day's UI pass (`writeOrSay` in `AlertsClient`, the bio and avatar save errors in
+`CollectionProfileClient`) shipped their new failure branches without tests. A SQL-only push
+(`c1f6fa5a8`) inherited the red.
+**Fixed by testing those branches, not by lowering the floor:** nine tests, each proved with a planted
+defect (silence the failure message and 7 of the 9 go red). The two that stay green under that plant
+target branches it doesn't touch: the network-throw bio test and the link-refusal test. Gate 90.74 → 90.86.
+⭐ **Read the failing JOB of the run you inherit, not the badge:** "CI failure" on a docs push is the
+`Inherited main status` job. The real job is in the last CODE run. ⚠ The margin after the fix is
+**0.01 pt**, inside the run-to-run spread recorded below. The next UI push that adds an untested
+branch will red it again. **Ship a failure branch WITH its test**, and run `npm run
+test:coverage:components` (~5 min) before pushing a `*Client.tsx` or `components/**` change.
+
 ### ⚠ A coverage gate can red on an unchanged tree — check the distribution before believing a margin
 
 Repeated runs of `component-tests` on an **identical** tree measured **3484 / 3485 / 3488 covered of
