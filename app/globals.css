@@ -35,15 +35,7 @@ select optgroup {
   }
 }
 
-/* Keyboard focus ring (2026-10-11). Many controls set outline-none (Tailwind) or
-   an inline outline:none with no replacement, so keyboard focus was invisible on
-   the market, pack-board and sniper filters. :focus-visible paints only for
-   keyboard navigation, never on a mouse click or tap. !important is required to
-   outrank those inline styles - same reason as the iOS rule above. */
-:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid var(--rpc-red) !important;
-  outline-offset: 2px !important;
-}
+/* The keyboard focus ring lives in app/layout.tsx (FOCUS_RING_CSS), not here. */
 
 /* Tap targets in the nav and footer link columns. Measured 2026-09-20 at
    390x844: 16 nav links and 22 footer links per page at 17px tall, and the

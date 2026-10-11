@@ -15,6 +15,16 @@ import ClientErrorBeacon from "@/components/telemetry/ClientErrorBeacon"
 
 export const metadata: Metadata = rootMetadata
 
+// Keyboard focus ring (2026-10-11). Many controls set outline-none (Tailwind) or
+// an inline outline:none with no replacement, so keyboard focus was invisible on
+// the market, pack-board and sniper filters. :focus-visible paints only for
+// keyboard navigation, never on a click or tap; !important outranks the inline
+// styles. Shipped as a hoisted <style> rather than in globals.css: the first
+// deploy served a stylesheet without it (the cache trap in scripts/qa/README.md),
+// and this route lands in the SSR HTML where one fetch verifies it.
+const FOCUS_RING_CSS =
+  ":where(a,button,input,select,textarea,summary,[tabindex]):focus-visible{outline:2px solid var(--rpc-red)!important;outline-offset:2px!important}"
+
 // Brand fonts, self-hosted by next/font (no external request, no CSP dependency,
 // no layout shift). The `variable` CSS vars are consumed by --font-display /
 // --font-body / --font-mono in app/rpc-tokens.css. Barlow Condensed is a static
@@ -78,6 +88,7 @@ export default function RootLayout({
         <RefCapture />
         <DeadImageGuard />
         <ClientErrorBeacon />
+        <style href="rpc-focus-ring" precedence="default">{FOCUS_RING_CSS}</style>
         {/* ⭐ THE ONE MOUNT (2026-09-12). It used to be mounted AD HOC in ELEVEN
             places, and the consequence was not theoretical: measured that day,
             there was no bottom nav at all on /dashboard/packs, /dashboard/history,
