@@ -249,6 +249,61 @@ describe("allday-offers-indexer — open-set ingest + highest-offer recompute", 
     expect((terminalLog(spy.rpcCalls)?.p_extra as Record<string, unknown>).editions_cleared).toBe(1)
   })
 
+  it("#70: an ACCEPTED offer becomes an offer_fill sale (edition from the offer, serial from the nft), counted from rows the DB returned", async () => {
+    const fillTx = "f".repeat(64)
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        compl: [
+          eventBlock({
+            height: 1100,
+            txId: fillTx,
+            eventType: OFFER_COMPLETED,
+            payload: cdcEvent(OFFER_COMPLETED, {
+              purchased: cdc.bool(true),
+              acceptingAddress: { type: "Optional", value: address("0xSSSSSSSSSSSSSSSS") },
+              offerAddress: address("0xBBBBBBBBBBBBBBBB"),
+              offerId: cdc.uint64("31"),
+              nftType: cdc.nftType(ALLDAY_NFT),
+              offerAmount: cdc.ufix64("12.00000000"),
+              offerParamsString: paramsDict({ _type: "EDITION", editionId: "777" }),
+              nftId: { type: "Optional", value: cdc.uint64("555") },
+            }),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      allday_open_offers: [
+        { data: [{ edition_id: "777" }], error: null },
+        { data: null, error: null },
+        { data: [], error: null },
+      ],
+      edition_offers: { data: null, error: null },
+      editions: { data: [{ external_id: "777", id: "uuid-777" }], error: null },
+      moments: { data: [{ nft_id: "555", edition_id: "uuid-777", serial_number: 12 }], error: null },
+      sales: { data: [{ id: "new-sale" }], error: null },
+    })
+
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true, fillsSeen: 1, fillSales: { written: 1, suppressed: 0, duped: 0, unresolved: 0 } })
+    const sale = (spy.writes.sales ?? []).find((w) => w.method === "insert")?.rows[0]
+    expect(sale).toMatchObject({
+      edition_id: "uuid-777",
+      collection: "nfl_all_day",
+      nft_id: "555",
+      price_usd: 12,
+      serial_number: 12,
+      marketplace: "nflallday",
+      source: "offer_fill",
+      transaction_hash: fillTx,
+      offer_id: "31",
+      buyer_address: "0xbbbbbbbbbbbbbbbb",
+      seller_address: "0xssssssssssssssss",
+    })
+    expect(terminalLog(spy.rpcCalls)?.p_extra).toMatchObject({ fills_seen: 1, fill_sales_written: 1 })
+  })
+
   it("same-tick create+complete nets to 'not open': the insert is skipped entirely", async () => {
     const tx1 = "c".repeat(64)
     fetchMock = installFetchMock(

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { parseAllDayOfferFill, writeAllDayOfferFillSales, type AllDayOfferFill } from "@/lib/chains/flow/allday-offer-fill"
 
 // ── On-chain NFL All Day offers indexer ──────────────────────────────────────
 //
@@ -194,6 +195,9 @@ export async function POST(req: NextRequest) {
   let offersCompleted = 0
   let editionsWritten = 0
   let editionsCleared = 0
+  // #70: accepted offers written as offer_fill sales (counted from rows the DB returned).
+  let fillsSeen = 0
+  let fillSales = { written: 0, suppressed: 0, duped: 0, unresolved: 0 }
   let fetchError: string | null = null
 
   try {
@@ -228,6 +232,7 @@ export async function POST(req: NextRequest) {
     const availById = new Map<string, OpenOffer>()
     const completedIds = new Set<string>()
     const touched = new Set<string>()
+    const fills: AllDayOfferFill[] = []
 
     for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
       const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
@@ -261,6 +266,8 @@ export async function POST(req: NextRequest) {
             offersCompleted++
             completedIds.add(o.offerId)
             if (o.editionId) touched.add(o.editionId)
+            const fill = parseAllDayOfferFill(payload, evt.transaction_id, blk.block_timestamp, Number(blk.block_height) || null)
+            if (fill) fills.push(fill)
           } catch { /* skip malformed payload */ }
         }
       }
@@ -362,6 +369,11 @@ export async function POST(req: NextRequest) {
       editionsCleared += chunk.length
     }
 
+    // 3d. (#70) accepted offers → offer_fill sales. Throws on any failed read or
+    //     non-duplicate insert, so the cursor below never passes an unwritten fill.
+    fillsSeen = fills.length
+    fillSales = await writeAllDayOfferFillSales(fills)
+
     // 4. advance cursor.
     const { error: cursorWriteErr } = await (supabaseAdmin as any)
       .from("event_cursor")
@@ -386,6 +398,11 @@ export async function POST(req: NextRequest) {
     offers_completed: offersCompleted,
     editions_written: editionsWritten,
     editions_cleared: editionsCleared,
+    fills_seen: fillsSeen,
+    fill_sales_written: fillSales.written,
+    fill_sales_suppressed_by_dedup: fillSales.suppressed,
+    fill_sales_duped: fillSales.duped,
+    fill_sales_unresolved: fillSales.unresolved,
     duration_ms: Date.now() - startTime,
   })
 
@@ -396,6 +413,8 @@ export async function POST(req: NextRequest) {
     offersCompleted,
     editionsWritten,
     editionsCleared,
+    fillsSeen,
+    fillSales,
     cursorBefore,
     cursorAfter,
     error: fetchError,
