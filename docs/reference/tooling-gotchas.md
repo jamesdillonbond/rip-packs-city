@@ -2,6 +2,30 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ Apply a migration FROM THE COMMITTED FILE — pg_net fetches it, nothing is transcribed (2026-10-10)
+
+`apply_migration` takes the SQL as a tool argument, so a 40 KB pinned-function migration has to be
+retyped into the call — and a retyped body drifts from its file (see the md5 section below). The
+database can fetch the file itself: the repo is public and `net.http_get` reaches GitHub.
+
+1. Commit + push the migration (ledger first, code as the tip), and note `git rev-parse HEAD` and the
+   file's `md5sum`.
+2. `select net.http_get('https://raw.githubusercontent.com/jamesdillonbond/rip-packs-city/<sha>/supabase/migrations/<file>', timeout_milliseconds := 20000);`
+   — pin the SHA, never `main`.
+3. One `execute_sql` DO block: read `net._http_response.content` for that id, `RAISE` unless
+   `md5(content)` equals the local `md5sum`, `EXECUTE content`, then
+   `INSERT INTO supabase_migrations.schema_migrations (version, statements, name, created_by) VALUES
+   ('<filename version>', ARRAY[content], '<name>', '<the account email>')` — the shape
+   `apply_migration` itself writes (one statement element), so `recover-fileless-migrations.mjs`'s
+   md5 check and `migration-parity` agree. The DO block is one transaction: a failed guard or
+   statement records nothing.
+4. Read back `md5(prosrc)` against the file's `$function$` body and `has_function_privilege('anon', …)`.
+
+Bonus: the version is YOURS (the filename's), so the drift in the next section cannot happen. Used for
+the six #187/#188 migrations on 2026-10-10, every body md5-equal to its file on read-back. ⚠ Other
+sessions apply migrations within minutes: if one lands with a LATER version before you push, rename
+yours past it (replay order must match apply order).
+
 ## ⚠ Supabase MCP `apply_migration` ASSIGNS ITS OWN VERSION — your filename timestamp is not what prod records (2026-09-19)
 
 The `name` you pass becomes the migration's name. **The version is the APPLY time, chosen by the
