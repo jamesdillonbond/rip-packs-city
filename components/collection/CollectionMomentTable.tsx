@@ -139,6 +139,35 @@ function NotSerialised() {
   )
 }
 
+// Mobile card lock state — THREE states, never two. `getLocked` alone collapses
+// an unread lock into `false`, which would print "Unlocked" about a moment we
+// never checked (a false claim about whether the user can sell it). Unknown
+// gets its own muted pill. Callers render this only where the collection has
+// locking at all (collectionHasLocking).
+function MobileLockPill({ row }: { row: MomentRow }) {
+  const known = isLockKnown(row)
+  const locked = known && getLocked(row)
+  const label = !known ? "Lock ?" : locked ? "Locked" : "Unlocked"
+  const title = !known ? "Lock state not checked yet" : locked ? "This moment is locked — it can't be listed or sold until it unlocks" : "This moment is unlocked"
+  const style = locked
+    ? { color: "var(--rpc-warning)", borderColor: "var(--rpc-warning)", background: "color-mix(in srgb, var(--rpc-warning) 12%, transparent)" }
+    : { color: "var(--rpc-text-muted)", borderColor: "var(--rpc-border-hover)", background: "transparent" }
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide shrink-0"
+      style={style}
+      title={title}
+      data-rpc-lock-state={!known ? "unknown" : locked ? "locked" : "unlocked"}
+    >
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="4" y="11" width="16" height="10" rx="2" />
+        {locked || !known ? <path d="M8 11V7a4 4 0 0 1 8 0v4" /> : <path d="M8 11V7a4 4 0 0 1 7.5-1.9" />}
+      </svg>
+      {label}
+    </span>
+  )
+}
+
 export default function CollectionMomentTable(props: {
   isMobile: boolean
   filteredRows: MomentRow[]
@@ -234,50 +263,73 @@ export default function CollectionMomentTable(props: {
               const cbMap = costBasis.get(row.flowId ?? "")
               const cb = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, acquiredDate: row.acquiredAt ?? "", fmvAtAcquisition: null, acquisitionMethod: row.acquisitionMethod ?? null, costBasisLabel: row.costBasisLabel ?? null } : undefined)
               return (
-                <div key={row.momentId} className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 flex flex-col gap-1.5 cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }} role="button" tabIndex={0} aria-expanded={expanded} onKeyDown={function(e) { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleExpanded(row.momentId) } }}>
-                  {/* Row 1: Thumbnail + Player + Tier + Chevron */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0 mr-2">
-                      {(function() {
-                        const mThumb = getThumbnailUrl(row, collectionSlug)
-                        if (!mThumb) return null
-                        return (
+                <div key={row.momentId} className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden flex flex-col cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }} role="button" tabIndex={0} aria-expanded={expanded} onKeyDown={function(e) { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleExpanded(row.momentId) } }}>
+                  <div className="flex items-stretch" data-rpc-mobile-card-body="">
+                  {/* Left column: the art alone, full card height. The fallback
+                      (initials on the collection accent) holds the column when a
+                      row has no art or the image fails, so the text column never
+                      jumps left on one card and not the next. */}
+                  {(function() {
+                    const mThumb = getThumbnailUrl(row, collectionSlug)
+                    const initials = (row.playerName ?? "")
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map(function(s) { return s[0]?.toUpperCase() ?? "" })
+                      .join("")
+                    return (
+                      <div
+                        className="relative shrink-0 self-stretch flex items-center justify-center border-r border-[color:var(--rpc-border)]"
+                        style={{ /* brand-exception: white initials on the collection accent */ width: 104, minHeight: 120, background: mThumb ? "var(--rpc-surface-raised)" : accent, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, letterSpacing: "0.04em" }}
+                        onClick={function(e) { e.stopPropagation(); router.push(momentRowHref(collectionSlug, row)) }}
+                        data-rpc-mobile-thumb=""
+                      >
+                        {mThumb ? (
                           <img
                             src={mThumb}
                             alt={row.playerName ?? ""}
-                            width={36}
-                            height={48}
                             loading="lazy"
-                            className="rounded object-cover shrink-0"
-                            style={{ width: 36, height: 48, background: "var(--rpc-surface)" }}
-                            onClick={function(e) { e.stopPropagation(); router.push(momentRowHref(collectionSlug, row)) }}
-                            onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }}
+                            className="absolute inset-0 h-full w-full object-cover text-transparent"
+                            onError={function(e) {
+                              const img = e.target as HTMLImageElement
+                              img.style.display = "none"
+                              if (img.parentElement) img.parentElement.style.background = accent
+                            }}
                           />
-                        )
-                      })()}
-                      {row.playerName ? (
-                        <Link
-                          href={subjectHref(row)}
-                          prefetch={false}
-                          onClick={function(e) { e.stopPropagation() }}
-                          className="font-semibold text-[color:var(--rpc-text-primary)] text-sm truncate"
-                          style={{ textDecoration: "none" }}
-                        >
-                          {row.playerName}
-                        </Link>
-                      ) : (
-                        <span className="font-semibold text-[color:var(--rpc-text-primary)] text-sm truncate">{row.playerName}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5">
+                        ) : null}
+                        <span aria-hidden="true">{initials || "—"}</span>
+                      </div>
+                    )
+                  })()}
+                  <div className="flex-1 min-w-0 p-3 flex flex-col justify-center gap-1.5">
+                  {/* Row 1: Player + Chevron */}
+                  <div className="flex items-start justify-between gap-2">
+                    {row.playerName ? (
+                      <Link
+                        href={subjectHref(row)}
+                        prefetch={false}
+                        onClick={function(e) { e.stopPropagation() }}
+                        className="font-semibold text-[color:var(--rpc-text-primary)] text-sm leading-snug min-w-0 line-clamp-2"
+                        style={{ textDecoration: "none" }}
+                      >
+                        {row.playerName}
+                      </Link>
+                    ) : (
+                      <span className="font-semibold text-[color:var(--rpc-text-primary)] text-sm leading-snug min-w-0 line-clamp-2">{row.playerName}</span>
+                    )}
+                    <span className="text-[color:var(--rpc-text-muted)] text-xs shrink-0 pt-0.5">{expanded ? "▾" : "›"}</span>
+                  </div>
+                  {/* Row 2: Tier + Lock state */}
+                  {(row.tier || hasLocking) && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       {row.tier && (
                         <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + momentTierBgClass(row.tier)} style={{ color: momentTierColor(row.tier) }}>
                           {row.tier}
                         </span>
                       )}
-                      <span className="text-[color:var(--rpc-text-muted)] text-xs shrink-0">{expanded ? "▾" : "›"}</span>
+                      {hasLocking && <MobileLockPill row={row} />}
                     </div>
-                  </div>
+                  )}
                   {/* Row 2: Set + Series */}
                   <div className="text-xs text-[color:var(--rpc-text-secondary)]">
                     {setEntityHref(collectionSlug, row.setName) ? (
@@ -382,9 +434,11 @@ export default function CollectionMomentTable(props: {
                       return null
                     })() : null}
                   </div>
+                  </div>
+                  </div>
                   {/* Expanded content */}
                   {expanded && (
-                    <div className="rpc-expand-panel mt-2">
+                    <div className="rpc-expand-panel mx-3 mb-3">
                       <div className="rpc-expand-section">
                         <div className="rpc-expand-section-eyebrow">Details</div>
                         <div className="rpc-expand-grid">
