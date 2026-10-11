@@ -131,6 +131,7 @@ export async function POST(req: NextRequest) {
   let offersCancelled = 0
   let unresolved = 0
   let completedSameTick = 0 // offers created AND completed inside this tick, written with their final status
+  let viaCheckpoint = 0 // serial offers placed through checkpoint_nft_meta (subedition known)
   let viaWalletCache = 0 // serial offers placed through wallet_moments_cache (moments lacked the nft)
   const unresolvedByType: Record<string, number> = { edition: 0, subedition: 0, serial: 0 }
   let aliased = 0 // #175: offers whose API key resolved through topshot_edition_aliases
@@ -234,6 +235,7 @@ export async function POST(req: NextRequest) {
     const resolved = await resolveOfferTargets(avail)
     aliased = resolved.aliased
     viaWalletCache = resolved.viaWalletCache
+    viaCheckpoint = resolved.viaCheckpoint
 
     // 3. build offer rows. A same-tick create+complete is written with its FINAL
     //    status — never as "open", and never dropped. ⚠ It used to be skipped
@@ -381,6 +383,7 @@ export async function POST(req: NextRequest) {
     aliased_to_canonical: aliased,
     unresolved_by_type: unresolvedByType,
     resolved_via_wallet_cache: viaWalletCache,
+    resolved_via_checkpoint: viaCheckpoint,
     fills_seen: fillsSeen,
     sales_written: salesWritten,
     sales_duped: salesDuped,

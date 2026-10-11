@@ -405,6 +405,55 @@ describe("topshot-offers-indexer — OfferAvailable keying", () => {
     expect(log?.p_extra).toMatchObject({ resolved_via_wallet_cache: 1, unresolved_by_type: { serial: 0 } })
   })
 
+  function serialOffer(offerId: string, nftId: string) {
+    return eventBlock({
+      height: 1100,
+      txId: offerId.padEnd(64, "a"),
+      eventType: OFFER_AVAILABLE,
+      payload: offerAvailPayload({ offerId, amount: "7.00000000", params: { _type: "NFT", nftId } }),
+    })
+  }
+
+  it("checkpoint fallback: a parallel nft (tssub known) lands on its OWN parallel edition, latest spork wins", async () => {
+    fetchMock = installFetchMock(flowRestStubs({ avail: [serialOffer("703", "66001122")] }))
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      moments: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      checkpoint_nft_meta: {
+        data: [
+          { c: "ts", nft_id: 66001122, a: 8, b: 133, serial: 5, spork: 25 },
+          { c: "ts", nft_id: 66001122, a: 8, b: 133, serial: 9, spork: 28 },
+          { c: "tssub", nft_id: 66001122, a: 3, b: null, serial: null, spork: 28 },
+        ],
+        error: null,
+      },
+      editions: { data: [{ external_id: "8:133::3", id: "uuid-parallel" }, { external_id: "8:133", id: "uuid-base" }], error: null },
+      offers: { data: [], error: null },
+    })
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true, offersWritten: 1, unresolved: 0 })
+    expect(offerUpserts(spy)[0]).toMatchObject({ offer_id: "703", edition_id: "uuid-parallel", serial_number: 9 })
+    expect(terminalLog(spy.rpcCalls)?.p_extra).toMatchObject({ resolved_via_checkpoint: 1 })
+  })
+
+  it("checkpoint fallback NEVER guesses Standard: no subedition anywhere -> unresolved, not written", async () => {
+    fetchMock = installFetchMock(flowRestStubs({ avail: [serialOffer("704", "66001133")] }))
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      moments: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      checkpoint_nft_meta: { data: [{ c: "ts", nft_id: 66001133, a: 8, b: 133, serial: 5, spork: 28 }], error: null },
+      topshot_moment_subeditions: { data: [], error: null },
+      editions: { data: [{ external_id: "8:133", id: "uuid-base" }], error: null },
+      offers: { data: [], error: null },
+    })
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true, offersWritten: 0, unresolved: 1 })
+    expect(offerUpserts(spy)).toHaveLength(0)
+    expect(terminalLog(spy.rpcCalls)?.p_extra).toMatchObject({ unresolved_by_type: { serial: 1 }, resolved_via_checkpoint: 0 })
+  })
+
   it("unresolvable edition offer is counted unresolved and NOT written; non-TopShot offers are filtered", async () => {
     const tx1 = "d".repeat(64)
     fetchMock = installFetchMock(

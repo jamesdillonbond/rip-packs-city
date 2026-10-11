@@ -112,9 +112,10 @@ export interface ResolvedOfferTarget {
 
 export async function resolveOfferTargets(
   avail: AvailOffer[],
-): Promise<{ byOfferId: Map<string, ResolvedOfferTarget>; aliased: number; viaWalletCache: number }> {
+): Promise<{ byOfferId: Map<string, ResolvedOfferTarget>; aliased: number; viaWalletCache: number; viaCheckpoint: number }> {
   let aliased = 0
   let viaWalletCache = 0
+  let viaCheckpoint = 0
   const aliases = await fetchTopShotEditionAliases()
   for (const o of avail) {
     if (!o.externalId) continue
@@ -171,7 +172,58 @@ export async function resolveOfferTargets(
       }
     }
   }
-  const wmcKeys = Array.from(new Set(Array.from(wmcByNft.values()).map((w) => w.editionKey))).filter((k) => !editionIdByExt.has(k))
+  // Second fallback: the chain checkpoint map (`checkpoint_nft_meta`, decoded from
+  // spork-root state; c='ts' → a=setID, b=playID, serial; c='tssub' → a=subedition;
+  // verified live 2026-10-10). Latest spork wins. ⛔ A parallel must never fold onto
+  // its base: the key is built only when the SUBEDITION is known — a 'tssub' row or a
+  // topshot_moment_subeditions row — and a parallel whose "::" edition is not
+  // cataloged stays unresolved (no base fallback here).
+  const stillMissing = missingNfts.filter((id) => !wmcByNft.has(id) && /^\d+$/.test(id))
+  const ckptByNft = new Map<string, { editionKey: string; serial: number | null }>()
+  if (stillMissing.length > 0) {
+    const ts = new Map<string, { set: number; play: number; serial: number | null; spork: number }>()
+    const sub = new Map<string, { sub: number; spork: number }>()
+    for (let i = 0; i < stillMissing.length; i += IN_CHUNK) {
+      const { data, error } = await (supabaseAdmin as any)
+        .from("checkpoint_nft_meta")
+        .select("c, nft_id, a, b, serial, spork")
+        .in("c", ["ts", "tssub"])
+        .in("nft_id", stillMissing.slice(i, i + IN_CHUNK).map(Number))
+      if (error) throw new Error(`checkpoint_nft_meta lookup: ${error.message}`)
+      for (const r of (data as Array<{ c: string; nft_id: number | string; a: number | null; b: number | null; serial: number | null; spork: number }> | null) ?? []) {
+        const id = String(r.nft_id)
+        if (r.c === "ts" && r.a != null && r.b != null) {
+          const prev = ts.get(id)
+          if (!prev || r.spork > prev.spork) ts.set(id, { set: Number(r.a), play: Number(r.b), serial: r.serial != null ? Number(r.serial) : null, spork: r.spork })
+        } else if (r.c === "tssub" && r.a != null) {
+          const prev = sub.get(id)
+          if (!prev || r.spork > prev.spork) sub.set(id, { sub: Number(r.a), spork: r.spork })
+        }
+      }
+    }
+    const needSub = Array.from(ts.keys()).filter((id) => !sub.has(id))
+    for (let i = 0; i < needSub.length; i += IN_CHUNK) {
+      const { data, error } = await (supabaseAdmin as any)
+        .from("topshot_moment_subeditions")
+        .select("nft_id, subedition_id")
+        .in("nft_id", needSub.slice(i, i + IN_CHUNK))
+        .not("subedition_id", "is", null)
+      if (error) throw new Error(`topshot_moment_subeditions lookup: ${error.message}`)
+      for (const r of (data as Array<{ nft_id: string | number; subedition_id: number }> | null) ?? [])
+        sub.set(String(r.nft_id), { sub: Number(r.subedition_id), spork: -1 })
+    }
+    for (const [id, t] of ts) {
+      const sd = sub.get(id)
+      if (!sd) continue // subedition unknown → never guess Standard
+      const base = canonicalTopShotExternalId(`${t.set}:${t.play}`, aliases)
+      ckptByNft.set(id, { editionKey: sd.sub > 0 ? `${base}::${sd.sub}` : base, serial: t.serial })
+    }
+  }
+
+  const wmcKeys = Array.from(new Set([
+    ...Array.from(wmcByNft.values()).map((w) => w.editionKey),
+    ...Array.from(ckptByNft.values()).map((w) => w.editionKey),
+  ])).filter((k) => !editionIdByExt.has(k))
   for (let i = 0; i < wmcKeys.length; i += IN_CHUNK) {
     const { data, error } = await (supabaseAdmin as any)
       .from("editions")
@@ -196,8 +248,15 @@ export async function resolveOfferTargets(
       if (w && editionId) {
         byOfferId.set(o.offerId, { editionId, momentId: null, serial: w.serial })
         viaWalletCache++
+        continue
+      }
+      const k = ckptByNft.get(o.nftId)
+      const kEditionId = k ? editionIdByExt.get(k.editionKey) : undefined
+      if (k && kEditionId) {
+        byOfferId.set(o.offerId, { editionId: kEditionId, momentId: null, serial: k.serial })
+        viaCheckpoint++
       }
     }
   }
-  return { byOfferId, aliased, viaWalletCache }
+  return { byOfferId, aliased, viaWalletCache, viaCheckpoint }
 }
