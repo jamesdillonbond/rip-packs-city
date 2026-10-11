@@ -92,6 +92,12 @@ type LastFmvRpc = {
 // this route has always written) and the run reports `products_error` — never "admit everything".
 const PANINI_LEGACY_SET_ID = 2332;
 const PANINI_BOOTSTRAP_HOURS = 12;
+// A bootstrap run walks ONLY the new products' cards (the runner filters priority_pskus by
+// walk_set_ids), so it skips the aged list. Once any admitted catalogue edition is this old the
+// bootstrap yields (2026-10-10): the new products' cards still arrive as interleaved grid discoveries,
+// and the editions about to cross the 7-day line are refreshed first. Measured that evening: two
+// bootstrap runs in one afternoon while > 6 d rose 690 -> 846 with the oldest edition 6.1 days old.
+const PANINI_BOOTSTRAP_YIELD_DAYS = 6.5;
 // AGED PRIORITY (2026-10-03): catalogue editions not walked for this long are served in
 // `priority_pskus` (stalest first, at most PANINI_AGED_PRIORITY_CAP per run). See the GET below.
 const PANINI_AGED_PRIORITY_DAYS = 5;
@@ -677,13 +683,21 @@ export async function GET(req: NextRequest) {
   const catCount = new Map<number, number>();
   for (const r of paged.rows) { const sid = pskuSetId(r.external_id); if (sid !== null) catCount.set(sid, (catCount.get(sid) ?? 0) + 1); }
   const nowMs = Date.now();
-  const bootstrapIds = prod.error || paged.truncated ? [] : prod.rows
+  // paged.rows is stalest-first (NULL first), so the first admitted row is the oldest the walk owns.
+  const admittedSet = new Set(admittedIds);
+  const oldestAdmitted = paged.rows.find((r) => { const sid = pskuSetId(r.external_id); return sid !== null && admittedSet.has(sid); });
+  const oldestMs = oldestAdmitted ? (oldestAdmitted.last_seen_at ? Date.parse(oldestAdmitted.last_seen_at) : -Infinity) : NaN;
+  const bootstrapYields = Number.isFinite(oldestMs) || oldestMs === -Infinity
+    ? nowMs - oldestMs >= PANINI_BOOTSTRAP_YIELD_DAYS * 86_400_000
+    : false;
+  const bootstrapCandidates = prod.error || paged.truncated ? [] : prod.rows
     .filter((r) => {
       if (!r.walk_cards || !((r.last_grid_items ?? 0) > 0) || (catCount.get(Number(r.set_id)) ?? 0) > 0) return false;
       const since = r.walk_cards_since ? Date.parse(r.walk_cards_since) : NaN;
       return Number.isFinite(since) && nowMs - since < PANINI_BOOTSTRAP_HOURS * 3_600_000;
     })
     .map((r) => Number(r.set_id)).sort((a, b) => a - b);
+  const bootstrapIds = bootstrapYields ? [] : bootstrapCandidates;
   const walkSetIds = bootstrapIds.length ? bootstrapIds : admittedIds;
   const walkSet = new Set(walkSetIds);
   // A catalogue row of a product that has since been switched off leaves the walk list; the row
@@ -758,6 +772,8 @@ export async function GET(req: NextRequest) {
     walk_set_ids: walkSetIds,
     // Non-empty = this run is narrowed to newly admitted products with no catalogue yet (above).
     bootstrap_set_ids: bootstrapIds,
+    // Products that WOULD bootstrap but yielded to the aged list (oldest edition >= the yield line).
+    bootstrap_yielded_set_ids: bootstrapYields ? bootstrapCandidates : [],
     products_error: prod.error,
     // "full" | "walk" (2026-10-03, lib/chains/panini/run-mode.ts). A bootstrap run is always full: it
     // exists to DISCOVER a just-admitted product's cards, which only the grids can do. A runner older

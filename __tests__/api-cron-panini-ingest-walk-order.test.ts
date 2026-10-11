@@ -205,6 +205,28 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     }
   })
 
+  it("YIELDS to the aged list once an admitted edition is >= 6.5 days old — the 7-day line beats a bootstrap (2026-10-10)", async () => {
+    const products = { data: [
+      { set_id: 2332, name: "WC", walk_cards: true },
+      { set_id: 2420, name: "WNBA", walk_cards: true, last_grid_items: 1580, walk_cards_since: hoursAgo(3) },
+    ], error: null }
+    // Oldest WC edition 6.6 days old: no bootstrap, full scope, the candidate reported as yielded.
+    st.total = 4
+    st.setIdAt = () => 2332
+    st.baseMs = Date.now() - 6.6 * 86_400_000
+    st.products = products
+    let j = await (await GET(req())).json()
+    expect(j.bootstrap_set_ids).toEqual([])
+    expect(j.bootstrap_yielded_set_ids).toEqual([2420])
+    expect(j.walk_set_ids).toEqual([2332, 2420])
+    // Control: 6.0 days old -> the bootstrap still runs.
+    st.baseMs = Date.now() - 6.0 * 86_400_000
+    st.products = products
+    j = await (await GET(req())).json()
+    expect(j.bootstrap_set_ids).toEqual([2420])
+    expect(j.bootstrap_yielded_set_ids).toEqual([])
+  })
+
   it("never bootstraps off a TRUNCATED catalogue — it cannot prove a count of zero", async () => {
     st.total = 105_000 // past the route's 100-page ceiling
     st.products = { data: [
