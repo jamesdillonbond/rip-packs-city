@@ -32,3 +32,11 @@
 3. Do NOT raise the route budget or the function's `statement_timeout` as the fix: the cold time (15.4 s) already exceeds the function's own 15 s.
 
 Verify by BUFFERS on `0x6407…` and `0xe068…` (cold), and diff the `held` object before and after for all six wallets (it must be byte-identical).
+
+---
+
+## ✅ RESOLVED 2026-10-11 ~9:20 AM PT (Claude Code) — lever 1 shipped (`20261011161254`), plus a CORRECTION to the section above
+
+**Shipped:** `get_wallet_pack_history` v23 decides `status` before enrichment, so a status-filtered read enriches only its own rows (plus any pack out of a box, which the box's P/L needs). Output is unchanged. Proven before apply on a scratch copy: 282 calls, 36 wallets, 8 filters, **0 mismatches**. The fixture got case FLT1, run in a rolled-back scratch schema: control PASS, new PASS, two planted defects FAIL. Read-back (`EXPLAIN ANALYZE`, one call each): `get_wallet_pack_summary` takes **2.75 s** on `0x6407…` (657k buffer hits), 1.64 s on `0xe068…`, 4.45 s on `0x7e38…` and 1.67 s on `0xbd94…`, all under the 8 s budget. `wallet_held_pack_value(0x6407…)` dropped from 3.5 s to **0.66 s**.
+
+⛔ **CORRECTION: the "15.4 s / 10.3 s cold" figures above (and in the ledger + the migration header) are an INSTRUMENT ARTIFACT, not cold-cache times.** They came from `SELECT w, (SELECT … clock_timestamp() - t0 FROM (SELECT clock_timestamp() t0) a, LATERAL (SELECT f(w)) b) FROM top`. After the fix that same form still read 15.4 s while `EXPLAIN ANALYZE` read 2.75 s, so it was not measuring one call. The trustworthy pre-fix figure is the DO-block measurement: **5.7 s warm**, of which the held value was 3.5 s. Whether a cold call really crossed 8 s is not established. The original filing's evidence was 3 real `RPC_READ_TIMEOUT`s in production. Time a function with `EXPLAIN (ANALYZE, BUFFERS)` or a DO block, never with that correlated-subquery form.

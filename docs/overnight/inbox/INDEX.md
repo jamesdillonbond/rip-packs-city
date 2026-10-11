@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-10-11 — 4 filings
 
-- [🟡 **Daytime monitor candidate — `get_wallet_pack_summary` occasionally exceeds the 8 s RPC read budget (3 requests in 22 min, 10-10 ~8:46–9:08 PM PT); pre-existing, not a regression of the 10-10 ships**](2026-10-11T0609Z-daytime-monitor-get-wallet-pack-summary-8s-rpc-read-timeout.md)
+- [**✅ RESOLVED 10-11 ~9:20 AM PT (`20261011161254`, history v23: status before enrichment)** 🟡 **Daytime monitor candidate — `get_wallet_pack_summary` occasionally exceeds the 8 s RPC read budget (3 requests in 22 min, 10-10 ~8:46–9:08 PM PT); pre-existing, not a regression of the 10-10 ships**](2026-10-11T0609Z-daytime-monitor-get-wallet-pack-summary-8s-rpc-read-timeout.md)
 - [**✅ DISPOSITIONED 10-11 (night pass): known #58, Trevor-only env var** 🟡 **Daytime monitor candidate — the three candy-opensea indexers fail every tick on `OPENSEA_API_KEY not set`**](2026-10-11T0307Z-daytime-monitor-candy-opensea-indexers-missing-OPENSEA_API_KEY.md)
 - [**✅ FIXED 10-10 ~9:39 PM PT (`20261011043919`, window 30 → 365 d)** 🟡 **The chain hydrator's backlog leg re-probes moved Moments at a 0.2 % yield — 20,896 scripts a week for 51 rows**](2026-10-11T0200Z-chain-hydrator-backlog-leg-reprobes-moved-moments-at-0-2pct-yield.md) — *(Cowork cloud, 10-10 ~7:00 PM PT; read-only; the `no_nft` 30-day re-probe window is the lever, owner's call)*
 - [**✅ DISPOSITIONED 10-11 (night pass + 0307Z tick): 401 aged out; misattrib draining (#101); allday-reconcile chronic** 🟡 **Daytime monitor candidates — unattributed pg_net 401, misattrib-drain suppression drift, allday-storefront-reconcile failure_rate**](2026-10-11T0008Z-daytime-monitor-unattributed-pg_net-401-and-misattrib-drain-drift.md)
