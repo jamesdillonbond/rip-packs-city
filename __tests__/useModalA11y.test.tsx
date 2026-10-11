@@ -100,3 +100,51 @@ describe("useModalA11y", () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 })
+
+// ── 2026-10-10: the opener is captured BEFORE the modal's own autoFocus commits ─
+// Found live on /dashboard/alerts "New Alert": the search input carries `autoFocus`,
+// which React applies at commit — ahead of the hook's effect — so the effect recorded
+// the modal's own input as "previously focused", and closing the modal dropped
+// keyboard focus to <body>. Two properties, each red on the old hook:
+//   (1) focus RETURNS to the opener even when a child autoFocuses;
+//   (2) the hook does not fight the child's autoFocus with its first-focusable rule.
+function AutoFocusModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const ref = useModalA11y<HTMLDivElement>(isOpen, onClose)
+  if (!isOpen) return null
+  return (
+    <div role="dialog" aria-modal="true">
+      <div ref={ref}>
+        <button data-testid="close">×</button>
+        <input data-testid="search" autoFocus />
+        <button data-testid="go">go</button>
+      </div>
+    </div>
+  )
+}
+
+describe("useModalA11y with an autoFocus child", () => {
+  it("restores focus to the opener on close, not to the modal's own autoFocus input", () => {
+    withSyncRaf()
+    const opener = document.createElement("button")
+    document.body.appendChild(opener)
+    opener.focus()
+    expect(document.activeElement).toBe(opener)
+
+    const { rerender, getByTestId } = render(<AutoFocusModal isOpen onClose={() => {}} />)
+    // The child's autoFocus took focus at commit; the hook must not have recorded it as the opener.
+    expect(document.activeElement).toBe(getByTestId("search"))
+    act(() => {
+      rerender(<AutoFocusModal isOpen={false} onClose={() => {}} />)
+    })
+    expect(document.activeElement).toBe(opener)
+    document.body.removeChild(opener)
+  })
+
+  it("leaves a child's autoFocus in place instead of moving focus to the first focusable", () => {
+    withSyncRaf()
+    const { getByTestId } = render(<AutoFocusModal isOpen onClose={() => {}} />)
+    // Old behaviour: rAF focusFirst moved focus to the × button, overriding autoFocus.
+    expect(document.activeElement).toBe(getByTestId("search"))
+    expect(document.activeElement).not.toBe(getByTestId("close"))
+  })
+})

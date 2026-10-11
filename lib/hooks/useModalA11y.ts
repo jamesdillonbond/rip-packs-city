@@ -23,7 +23,7 @@
 // Attach the returned ref to the modal's CONTENT container (the element that
 // holds the focusable children), not the backdrop.
 
-import { useEffect, useRef, type RefObject } from "react"
+import { useEffect, useMemo, useRef, type RefObject } from "react"
 
 // Elements considered tabbable for the focus trap + initial-focus target.
 const FOCUSABLE_SELECTOR =
@@ -42,15 +42,35 @@ export function useModalA11y<T extends HTMLElement = HTMLElement>(
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
 
+  // Read the OPENER during the render that opens the modal, not in the effect.
+  // React applies a child's `autoFocus` at commit, which runs BEFORE this hook's
+  // effect — so an effect-time read of document.activeElement saw the modal's
+  // own input, the "restore" on close focused a detached node, and keyboard
+  // focus fell to <body> (found live on the New Alert modal, 2026-10-10).
+  // useMemo keyed on isOpen runs at the open transition and before any commit
+  // of the open subtree; it is a read of DOM state, not a write.
+  const openerAtOpen = useMemo<HTMLElement | null>(() => {
+    if (!isOpen || typeof document === "undefined") return null
+    const active = document.activeElement as HTMLElement | null
+    return active && active !== document.body ? active : null
+  }, [isOpen])
+
   useEffect(() => {
     if (!isOpen) return
     if (typeof document === "undefined") return
 
-    lastFocusedRef.current = (document.activeElement as HTMLElement | null) ?? null
+    // Never record something inside the modal as the opener.
+    const root = containerRef.current
+    const candidate = openerAtOpen ?? ((document.activeElement as HTMLElement | null) ?? null)
+    lastFocusedRef.current =
+      candidate && candidate !== document.body && !(root && root.contains(candidate)) ? candidate : null
 
     const focusFirst = () => {
       const root = containerRef.current
       if (!root) return
+      // A child that already took focus (`autoFocus`, or the modal's own effect)
+      // wins — the first-focusable rule is the fallback, not an override.
+      if (document.activeElement && root.contains(document.activeElement)) return
       const focusables = root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
       ;(focusables[0] ?? root).focus()
     }
@@ -84,9 +104,11 @@ export function useModalA11y<T extends HTMLElement = HTMLElement>(
     return () => {
       window.removeEventListener("keydown", onKey)
       cancelAnimationFrame(raf)
-      lastFocusedRef.current?.focus?.()
+      const opener = lastFocusedRef.current
+      lastFocusedRef.current = null
+      if (opener && opener.isConnected) opener.focus?.()
     }
-  }, [isOpen])
+  }, [isOpen, openerAtOpen])
 
   return containerRef
 }
