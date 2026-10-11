@@ -112,8 +112,11 @@ function GameChip({ game, dark }: { game: TeamNextGame; dark: boolean }) {
         fontSize: 11,
         letterSpacing: "0.04em",
         color: dark ? "#fff" : "var(--rpc-text-primary)",
-        background: dark ? "rgba(0,0,0,0.30)" : "rgba(255,255,255,0.04)",
-        border: `1px solid ${dark ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.12)"}`,
+        // The non-dark arm sits on an .rpc-card (theme-aware): tokens, not white
+        // alphas that vanish in light mode (2026-10-11). The dark arm is on the
+        // team-colour gradient and stays white by design.
+        background: dark ? "rgba(0,0,0,0.30)" : "var(--rpc-bg-elev)",
+        border: `1px solid ${dark ? "rgba(255,255,255,0.25)" : "var(--rpc-border)"}`,
       }}
     >
       {game.is_playoff ? "🏀 Playoffs · " : "🏀 "}{gameLabel(game)}
