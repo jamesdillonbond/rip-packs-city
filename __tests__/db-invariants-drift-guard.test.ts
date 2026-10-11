@@ -15,6 +15,12 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-10-11. The rip re-key lane also moves the rip's topshot_pack_rip_attribution copy (realized EV reads it alone).
+    fn: "rekey_pack_rips_to_chain_identity",
+    test: "supabase/tests/rekey_pack_rips_to_chain_identity.sql",
+    migration: "supabase/migrations/20261011083816_audit_20261011_rip_rekey_keeps_attribution_in_step.sql",
+  },
+  {
     // Added 2026-10-10 (#181). While mainnet24's node is parked dark, a chain-arrival floor probe is re-floored on mainnet27's live root.
     fn: "run_chain_arrival_refloor",
     test: "supabase/tests/run_chain_arrival_refloor.sql",
