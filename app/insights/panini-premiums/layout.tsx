@@ -14,7 +14,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 
 const TITLE = "Panini Premiums — What Parallels and #1 Serials Really Sell For"
 const DESCRIPTION =
-  "Panini digital cards across soccer, NBA, NFL, WNBA and MLB: what each numbered parallel's FMV commands over the player's common base, and what #1 and perfect-mint serials actually sold for against their edition's typical sale. Free. No signup."
+  "Panini digital cards across soccer, NBA, NFL, WNBA, MLB and NASCAR: what each numbered parallel's FMV commands over the player's common base, and what #1 and perfect-mint serials actually sold for against their edition's typical sale. Free. No signup."
 const OG_IMAGE = `${SITE_URL}/api/og/collection?id=panini-blockchain`
 
 export const metadata: Metadata = {

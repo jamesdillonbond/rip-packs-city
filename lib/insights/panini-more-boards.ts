@@ -33,7 +33,7 @@
 // ── DEALS ACROSS EVERY PRODUCT (2026-10-10) ───────────────────────────────────
 // `deals` stays World Cup only (panini_deal_board = panini_deal_board_all filtered to
 // 2332) for the WC squeeze page's Deals tab. `deals_all` is the same deal rules over
-// EVERY walked product (soccer, NBA, NFL, WNBA, MLB), with product name + sport, and
+// EVERY walked product (soccer, NBA, NFL, WNBA, MLB, NASCAR), with product name + sport, and
 // is what the collection's Sniper tab shows. Measured at apply: 798 deals across 5
 // sports vs 211 WC; the view resolves FMV once per edition (138k buffers, 0.46 s).
 

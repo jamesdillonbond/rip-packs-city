@@ -237,22 +237,22 @@ const PAGE_META_OVERRIDES: Record<string, PageMeta> = {
   [`sniper:${PANINI_ID}`]: {
     title: 'Sniper — {label} Cards Below FMV',
     description:
-      'Panini serials listed at least 15% under FMV across soccer, NBA, NFL, WNBA and MLB products, with #1, jersey-number and perfect-mint premiums applied and recent sales alongside — from every card RPC has seen listed on Panini.',
+      'Panini serials listed at least 15% under FMV across soccer, NBA, NFL, WNBA, MLB and NASCAR products, with #1, jersey-number and perfect-mint premiums applied and recent sales alongside — from every card RPC has seen listed on Panini.',
   },
   [`analytics:${PANINI_ID}`]: {
     title: 'Sales Analytics — {label} Sales, Volume & Top Sales',
     description:
-      'Panini sales analytics across every product RPC walks — soccer, NBA, NFL, WNBA and MLB: sales and volume per day, top sales, most-traded editions and prices by rarity and parallel — with how completely each day is on record.',
+      'Panini sales analytics across every product RPC walks — soccer, NBA, NFL, WNBA, MLB and NASCAR: sales and volume per day, top sales, most-traded editions and prices by rarity and parallel — with how completely each day is on record.',
   },
   [`packs:${PANINI_ID}`]: {
     title: 'Pack Market — {label} Pack Asks & EV',
     description:
-      'Panini packs across soccer, NBA, NFL, WNBA and MLB: listed asks, recent sales and remaining supply, with expected value where RPC models the pack — typical pull and mean EV side by side.',
+      'Panini packs across soccer, NBA, NFL, WNBA, MLB and NASCAR: listed asks, recent sales and remaining supply, with expected value where RPC models the pack — typical pull and mean EV side by side.',
   },
   [`sets:${PANINI_ID}`]: {
     title: 'Set Progress — {label} Sets & Cost to Finish',
     description:
-      'Panini sets for every product RPC walks — soccer, NBA, NFL, WNBA and MLB: editions seen per set and the cost to finish at confirmed asks, with unpriced editions counted apart — add a Panini username to see what that collector holds.',
+      'Panini sets for every product RPC walks — soccer, NBA, NFL, WNBA, MLB and NASCAR: editions seen per set and the cost to finish at confirmed asks, with unpriced editions counted apart — add a Panini username to see what that collector holds.',
   },
   [`collection:${PANINI_ID}`]: {
     title: 'Collection — {label} Cards by Panini Username',

@@ -377,7 +377,7 @@ const CARDS: Card[] = [
           eyebrow: "Physical · Live",
           title: "Panini Premiums",
           blurb:
-            "What Panini's numbered parallels command over each player's common base, and what #1 and perfect-mint serials actually sold for against their edition's typical sale — across soccer, NBA, NFL, WNBA and MLB products.",
+            "What Panini's numbered parallels command over each player's common base, and what #1 and perfect-mint serials actually sold for against their edition's typical sale — across soccer, NBA, NFL, WNBA, MLB and NASCAR products.",
           cta: "Open Panini premiums",
           available: true,
         },

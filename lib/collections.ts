@@ -318,7 +318,7 @@ export const COLLECTIONS: Collection[] = [
     published: true,
     openSeaSlug: "paniniblockchain",
     supabaseCollectionId: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",
-    pitch: "Panini's digital cards on Panini's own platform — soccer, NBA, NFL, WNBA and MLB products, from 2026 Prizm World Cup back through Panini's earlier releases. Every edition RPC has seen, priced, with live asks. Listing-based coverage: a floor, not a census.",
+    pitch: "Panini's digital cards on Panini's own platform — soccer, NBA, NFL, WNBA, MLB and NASCAR products, from 2026 Prizm World Cup back through Panini's earlier releases. Every edition RPC has seen, priced, with live asks. Listing-based coverage: a floor, not a census.",
   },
   {
     id: "candy-mlb",

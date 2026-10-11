@@ -113,7 +113,7 @@ export default function PaniniPremiumsClient({
         Panini Premiums
       </h1>
       <Note>
-        What Panini&apos;s numbered parallels and headline serials are really worth, across soccer, NBA, NFL, WNBA and MLB products.
+        What Panini&apos;s numbered parallels and headline serials are really worth, across soccer, NBA, NFL, WNBA, MLB and NASCAR products.
         {fetchedAt ? ` Read ${ptWhen(fetchedAt, true)}.` : ""}
       </Note>
 

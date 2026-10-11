@@ -153,7 +153,7 @@ export default function PaniniCollection() {
       </h1>
       <Note>
         Enter a Panini username. For a username linked to an RPC profile, RPC reads the collector&apos;s public Panini profile daily and
-        shows the whole collection. For any other username it shows the cards RPC has read under that name across the Panini products it walks — soccer, NBA, NFL, WNBA and MLB.
+        shows the whole collection. For any other username it shows the cards RPC has read under that name across the Panini products it walks — soccer, NBA, NFL, WNBA, MLB and NASCAR.
       </Note>
 
       <form onSubmit={submit} style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>

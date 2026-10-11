@@ -175,7 +175,7 @@ export default function PaniniSetProgress() {
         Panini — Set Tracker
       </h1>
       <Note>
-        Every set RPC has seen in each Panini product it walks — soccer, NBA, NFL, WNBA and MLB — with the cost to finish it at today&apos;s lowest
+        Every set RPC has seen in each Panini product it walks — soccer, NBA, NFL, WNBA, MLB and NASCAR — with the cost to finish it at today&apos;s lowest
         confirmed asks. Pick a product, and enter a Panini username to see which editions RPC has seen that collector holding.
       </Note>
 

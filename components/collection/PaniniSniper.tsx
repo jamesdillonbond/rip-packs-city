@@ -3,7 +3,7 @@
 // PaniniSniper — the Panini Sniper tab body (/panini-blockchain/sniper, 2026-09-28).
 // Server-seeded from the hourly `panini-boards` snapshot (lib/insights/panini-more-boards.ts),
 // so the tab costs no extra DB read. Since 2026-10-10 it shows deals across EVERY walked
-// Panini product (`deals_all`: soccer, NBA, NFL, WNBA, MLB) with a sport filter and the
+// Panini product (`deals_all`: soccer, NBA, NFL, WNBA, MLB, NASCAR) with a sport filter and the
 // product named per row; the WC squeeze page's Deals tab keeps the World Cup subset. The shared Sniper client is a Flow feed (wallet ownership, badges,
 // watchlist, per-listing buy flows) and none of it applies to Panini.
 //
@@ -161,7 +161,7 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
       <Note>
         {wcOnly
           ? "Listed Panini Prizm World Cup serials (this snapshot predates the all-product board; it refreshes within the hour)"
-          : "Listed Panini serials across every product RPC walks — soccer, NBA, NFL, WNBA and MLB —"}{" "}
+          : "Listed Panini serials across every product RPC walks — soccer, NBA, NFL, WNBA, MLB and NASCAR —"}{" "}
         asking at least 15% under FMV (with #1 / jersey-number / perfect-mint premiums applied), each ask re-read
         in the last 7 days, on editions with an FMV of $25 or more. Cards whose edition FMV rests on asks alone are left out.
       </Note>
