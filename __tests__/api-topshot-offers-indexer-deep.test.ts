@@ -451,7 +451,11 @@ describe("topshot-offers-indexer — OfferAvailable keying", () => {
     const body = await (await POST(req())).json()
     expect(body).toMatchObject({ ok: true, offersWritten: 0, unresolved: 1 })
     expect(offerUpserts(spy)).toHaveLength(0)
-    expect(terminalLog(spy.rpcCalls)?.p_extra).toMatchObject({ unresolved_by_type: { serial: 1 }, resolved_via_checkpoint: 0 })
+    expect(terminalLog(spy.rpcCalls)?.p_extra).toMatchObject({
+      unresolved_by_type: { serial: 1 },
+      resolved_via_checkpoint: 0,
+      unresolved_serial_nft_sample: ["66001133"],
+    })
   })
 
   it("unresolvable edition offer is counted unresolved and NOT written; non-TopShot offers are filtered", async () => {

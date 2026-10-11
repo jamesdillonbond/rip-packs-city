@@ -134,6 +134,9 @@ export async function POST(req: NextRequest) {
   let viaCheckpoint = 0 // serial offers placed through checkpoint_nft_meta (subedition known)
   let viaWalletCache = 0 // serial offers placed through wallet_moments_cache (moments lacked the nft)
   const unresolvedByType: Record<string, number> = { edition: 0, subedition: 0, serial: 0 }
+  // Up to 10 nft ids no source could place — so the next fallback is chosen from
+  // evidence (new mints? a set nothing catalogs?), not guessed.
+  const unresolvedSerialSample: string[] = []
   let aliased = 0 // #175: offers whose API key resolved through topshot_edition_aliases
   let salesWritten = 0
   let salesDuped = 0
@@ -248,7 +251,12 @@ export async function POST(req: NextRequest) {
     for (const o of avail) {
       const finalStatus = filledIds.has(o.offerId) ? "filled" : cancelledIds.has(o.offerId) ? "cancelled" : null
       const target = resolved.byOfferId.get(o.offerId)
-      if (!target) { unresolved++; unresolvedByType[o.offerType]++; continue }
+      if (!target) {
+        unresolved++
+        unresolvedByType[o.offerType]++
+        if (o.nftId && unresolvedSerialSample.length < 10) unresolvedSerialSample.push(o.nftId)
+        continue
+      }
       const { editionId, momentId, serial } = target
       byType[o.offerType]++
       if (finalStatus) completedSameTick++
@@ -384,6 +392,7 @@ export async function POST(req: NextRequest) {
     unresolved_by_type: unresolvedByType,
     resolved_via_wallet_cache: viaWalletCache,
     resolved_via_checkpoint: viaCheckpoint,
+    unresolved_serial_nft_sample: unresolvedSerialSample,
     fills_seen: fillsSeen,
     sales_written: salesWritten,
     sales_duped: salesDuped,
