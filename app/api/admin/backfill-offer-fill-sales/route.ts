@@ -4,6 +4,7 @@ import {
   buildOfferFillSales,
   insertOfferFillSales,
   stampOfferFillTxHashes,
+  stampSaleOfferIds,
   type OfferFillEvent,
 } from "@/lib/chains/flow/topshot-offer-fill"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -179,6 +180,7 @@ async function drain(maxRange: number, startBlockOverride: string | null) {
   let salesUnresolved = 0
   let salesParallelRedirects = 0
   let offersStamped = 0
+  let salesOfferIdsStamped = 0
   let fetchError: string | null = null
   let done = false
 
@@ -251,6 +253,10 @@ async function drain(maxRange: number, startBlockOverride: string | null) {
       // close the provenance gap: stamp fill_tx_hash on the matching offer rows
       const stamp = await stampOfferFillTxHashes(fills)
       offersStamped = stamp.stamped
+      // 2026-10-10: carry the offerId onto fill sales written before
+      // sales.offer_id existed. Throws on failure → cursor holds.
+      const idStamp = await stampSaleOfferIds(fills)
+      salesOfferIdsStamped = idStamp.stamped
     }
 
     const { error: cursorWriteErr } = await (supabaseAdmin as any)
@@ -278,6 +284,7 @@ async function drain(maxRange: number, startBlockOverride: string | null) {
     sales_unresolved: salesUnresolved,
     sales_parallel_redirects: salesParallelRedirects,
     offers_stamped: offersStamped,
+    sales_offer_ids_stamped: salesOfferIdsStamped,
     done,
     duration_ms: Date.now() - startTime,
   }

@@ -19,12 +19,18 @@ const H = vi.hoisted(() => {
     salesInsertThrows: false,
     stampError: null as any,
     stampCount: 1,
+    salesStampError: null as any,
+    salesUpdates: [] as any[], // { values, eqs, is }
   }
 
   function resolve(ctx: any) {
     if (ctx.table === "sales" && ctx.op === "insert") {
       if (state.salesInsertThrows) throw new Error("insert blew up")
       return { data: null, error: state.salesInsertError }
+    }
+    if (ctx.table === "sales" && ctx.op === "update") {
+      state.salesUpdates.push({ values: ctx.values, eqs: ctx.eqs, is: ctx.is })
+      return { data: null, error: state.salesStampError, count: state.salesStampError ? null : 1 }
     }
     if (ctx.table === "offers" && ctx.op === "update") {
       return { data: null, error: state.stampError, count: state.stampError ? null : state.stampCount }
@@ -43,12 +49,14 @@ const H = vi.hoisted(() => {
   function makeClient() {
     return {
       from(table: string) {
-        const ctx: any = { table, op: "select", select: undefined, inField: undefined }
+        const ctx: any = { table, op: "select", select: undefined, inField: undefined, eqs: [] as any[], is: [] as any[] }
         const b: any = {}
         const chain = (m: string) => (...args: any[]) => {
           if (m === "select") ctx.select = args[0]
           if (m === "insert") ctx.op = "insert"
-          if (m === "update") ctx.op = "update"
+          if (m === "update") { ctx.op = "update"; ctx.values = args[0] }
+          if (m === "eq") ctx.eqs.push(args)
+          if (m === "is") ctx.is.push(args)
           if (m === "in") ctx.inField = args[0]
           return b
         }
@@ -80,6 +88,7 @@ import {
   parseOfferCompletedFill,
   buildOfferFillSales,
   stampOfferFillTxHashes,
+  stampSaleOfferIds,
   insertOfferFillSales,
   TS_COLLECTION_ID,
   type OfferFillEvent,
@@ -217,6 +226,8 @@ beforeEach(() => {
   H.state.salesInsertThrows = false
   H.state.stampError = null
   H.state.stampCount = 1
+  H.state.salesStampError = null
+  H.state.salesUpdates = []
 })
 
 describe("buildOfferFillSales", () => {
@@ -240,6 +251,8 @@ describe("buildOfferFillSales", () => {
     expect(r.transaction_hash).toBe("0xtx1")
     expect(r.buyer_address).toBe("0xbbbbbbbbbbbbbbbb")
     expect(r.seller_address).toBe("0xssssssssssssssss")
+    // 2026-10-10: the sale carries the offer it filled.
+    expect(r.offer_id).toBe("1")
   })
 
   it("falls back to editions-by-external_id when the moment is absent (path 2)", async () => {
@@ -308,6 +321,29 @@ describe("stampOfferFillTxHashes", () => {
     H.state.stampError = { message: "update boom" }
     const out = await stampOfferFillTxHashes([fill({ offerId: "a", fillTx: "0xta" })])
     expect(out.stamped).toBe(0)
+  })
+})
+
+describe("stampSaleOfferIds", () => {
+  it("stamps one offer_id per fill tx, scoped to Top Shot offer_fill rows still NULL", async () => {
+    const out = await stampSaleOfferIds([
+      fill({ offerId: "a", fillTx: "0xta" }),
+      fill({ offerId: "b", fillTx: "0xtb" }),
+      fill({ offerId: "a2", fillTx: "0xta" }), // same tx: first wins
+    ])
+    expect(out.stamped).toBe(2)
+    expect(H.state.salesUpdates).toHaveLength(2)
+    const u = H.state.salesUpdates[0]
+    expect(u.values).toEqual({ offer_id: "a" })
+    expect(u.eqs).toContainEqual(["collection_id", TS_COLLECTION_ID])
+    expect(u.eqs).toContainEqual(["source", "offer_fill"])
+    expect(u.eqs).toContainEqual(["transaction_hash", "0xta"])
+    expect(u.is).toContainEqual(["offer_id", null])
+  })
+
+  it("THROWS on a failed update so the caller holds its cursor (never a silent 0)", async () => {
+    H.state.salesStampError = { message: "boom" }
+    await expect(stampSaleOfferIds([fill({ offerId: "a", fillTx: "0xta" })])).rejects.toThrow(/offer_id stamp failed/)
   })
 })
 

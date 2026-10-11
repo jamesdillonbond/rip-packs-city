@@ -337,6 +337,10 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
       source: "offer_fill",
       block_height: f.blockHeight,
       transaction_hash: f.fillTx,
+      // The offer this sale filled (2026-10-10). Without it a fill joins its
+      // `offers` row only through offers.fill_tx_hash, which exists only where
+      // the indexer saw the offer's creation.
+      offer_id: f.offerId,
       buyer_address: buyer,
       seller_address: f.seller,
       payer_address: null,
@@ -373,6 +377,36 @@ export async function stampOfferFillTxHashes(fills: OfferFillEvent[]): Promise<{
       continue
     }
     stamped += count ?? 0
+  }
+  return { stamped }
+}
+
+// Stamp sales.offer_id on offer_fill sales written before the column existed
+// (2026-10-10). Keyed on the fill tx (sales.transaction_hash is unique), scoped to
+// Top Shot offer_fill rows, and only where still NULL — so a re-walk is a no-op.
+// ⚠ THROWS on a failed update: the caller holds its cursor, never advancing past
+// fills whose stamp did not land.
+export async function stampSaleOfferIds(fills: OfferFillEvent[]): Promise<{ stamped: number }> {
+  const offerIdByTx = new Map<string, string>()
+  for (const f of fills) if (f.fillTx && f.offerId && !offerIdByTx.has(f.fillTx)) offerIdByTx.set(f.fillTx, f.offerId)
+  const entries = Array.from(offerIdByTx.entries())
+  let stamped = 0
+  for (let i = 0; i < entries.length; i += 10) {
+    const results = await Promise.all(
+      entries.slice(i, i + 10).map(([tx, offerId]) =>
+        (supabaseAdmin as any)
+          .from("sales")
+          .update({ offer_id: offerId }, { count: "exact" })
+          .eq("collection_id", TS_COLLECTION_ID)
+          .eq("source", "offer_fill")
+          .eq("transaction_hash", tx)
+          .is("offer_id", null),
+      ),
+    )
+    for (const r of results as Array<{ error: { message: string } | null; count: number | null }>) {
+      if (r.error) throw new Error(`sales offer_id stamp failed: ${r.error.message}`)
+      stamped += r.count ?? 0
+    }
   }
   return { stamped }
 }
