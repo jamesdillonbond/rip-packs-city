@@ -295,10 +295,10 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
           * 503 or a thrown fetch told a collector their pack is un-indexed and sold out,
           * manufactured entirely from our own outage. It is also a dead end — it says
           * the simulator will never work here, so they go away rather than retry. */}
-        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 12 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, color: "var(--rpc-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 12 }}>
           {readFailed ? "Couldn\u2019t load this pack" : "Drop pool not indexed"}
         </div>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6, color: "rgba(255,255,255,0.65)" }}>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6, color: "var(--rpc-text-secondary)" }}>
           {readFailed ? (
             <>We couldn&apos;t reach the drop pool for this pack just now. This is on us, not the pack — try again in a moment.</>
           ) : (
@@ -349,7 +349,7 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
           <div className="rpc-sim-stat" style={{ fontSize: 10, color: accent, letterSpacing: "0.14em", marginBottom: 4 }}>
             PACK RIP SIMULATOR · {collectionObj?.label ?? collectionSlug}
           </div>
-          <h1 className="rpc-sim-header" style={{ fontSize: 30, fontWeight: 900, color: "#fff", margin: 0, lineHeight: 1.05 }}>
+          <h1 className="rpc-sim-header" style={{ fontSize: 30, fontWeight: 900, color: "var(--rpc-text-primary)", margin: 0, lineHeight: 1.05 }}>
             {pack.title ?? `Pack #${pack.dist_id}`}
           </h1>
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 10 }}>
@@ -365,11 +365,11 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
               {metrics.max_pull_thumbnail && <img src={proxyIpfsImageUrl(metrics.max_pull_thumbnail, 160) ?? undefined} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, border: `1px solid ${tierColor(metrics.max_pull_tier)}` }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="rpc-sim-stat" style={{ fontSize: 10, color: accent, letterSpacing: "0.12em" }}>CHASE</div>
-                <div className="rpc-sim-header" style={{ fontSize: 14, fontWeight: 800, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div className="rpc-sim-header" style={{ fontSize: 14, fontWeight: 800, color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {metrics.max_pull_player ?? "—"} · {(metrics.max_pull_tier ?? "").replace(/_/g, " ")}
                 </div>
               </div>
-              <div className="rpc-sim-stat" style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>{fmtUsd(metrics.max_pull_fmv)}</div>
+              <div className="rpc-sim-stat" style={{ fontSize: 18, fontWeight: 700, color: "var(--rpc-text-primary)" }}>{fmtUsd(metrics.max_pull_fmv)}</div>
             </div>
           )}
         </div>

@@ -254,7 +254,15 @@ export default function PaniniSqueezeClient({
   );
 
   const th = (k: keyof Row, label: string, n = false) => (
-    <th className={n ? "n" : ""} onClick={() => (k === sortK ? setAsc(!asc) : (setSortK(k), setAsc(false)))}>
+    <th
+      className={n ? "n" : ""}
+      onClick={() => (k === sortK ? setAsc(!asc) : (setSortK(k), setAsc(false)))}
+      tabIndex={0}
+      aria-sort={k === sortK ? (asc ? "ascending" : "descending") : "none"}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (k === sortK) setAsc(!asc); else { setSortK(k); setAsc(false); } }
+      }}
+    >
       {label}{k === sortK ? (asc ? " ▲" : " ▼") : ""}
     </th>
   );

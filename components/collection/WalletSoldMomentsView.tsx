@@ -174,13 +174,13 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
         <div className="rpc-card" style={{ padding: "12px 14px" }}>
           <div style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>Moments sold</div>
           <div style={{ fontFamily: display, fontWeight: 800, fontSize: 26, lineHeight: 1.1, color: "var(--rpc-text-primary)", marginTop: 4 }}>
-            {loading ? "—" : rows.length.toLocaleString("en-US")}
+            {loading || error ? "—" : rows.length.toLocaleString("en-US")}
           </div>
         </div>
         <div className="rpc-card" style={{ padding: "12px 14px" }}>
           <div style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>Total proceeds</div>
           <div style={{ fontFamily: display, fontWeight: 800, fontSize: 26, lineHeight: 1.1, color: "#34D399", marginTop: 4 }}>
-            {loading ? "—" : fmtSoldUsd(totalProceeds)}
+            {loading || error ? "—" : fmtSoldUsd(totalProceeds)}
           </div>
         </div>
       </section>

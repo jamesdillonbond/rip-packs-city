@@ -91,4 +91,17 @@ describe("WalletSoldMomentsView", () => {
     const { getByText } = render(<WalletSoldMomentsView collection="nba-top-shot" />)
     await waitFor(() => expect(getByText("history down")).toBeTruthy())
   })
+
+  // 2026-10-11: a failed read must not publish "0 sold / $0.00 proceeds" in the
+  // KPI cards above the error — assert the ABSENCE of the false claim.
+  it("does not render a measured zero in the KPI cards when the read failed", async () => {
+    ownerKey = "0xowner"
+    fetchMock = vi.fn(() => res(500, { error: "history down" }))
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByText, getAllByText } = render(<WalletSoldMomentsView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("history down")).toBeTruthy())
+    expect(queryByText("0")).toBeNull()
+    expect(queryByText("$0.00")).toBeNull()
+    expect(getAllByText("—").length).toBeGreaterThanOrEqual(2)
+  })
 })

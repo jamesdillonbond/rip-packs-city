@@ -686,6 +686,7 @@ function SniperMomentsBody() {
       if (e.key === "Escape") {
         setExpandedEditionKey(null);
         setExpandedFlowId(null);
+        setShowSuggestions(false);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -1536,8 +1537,17 @@ function SniperMomentsBody() {
                     className={`${holoClass(deal.tier)}${deal.flowId === highlightedId ? " ring-2" : ""}${deal.discount >= 40 ? " rpc-hot-deal" : ""}`}
                     style={{ borderBottom: expandedFlowId === deal.flowId ? "none" : "1px solid var(--rpc-border)", transition: "background var(--transition-fast)", cursor: "pointer", ...(deal.flowId === highlightedId ? { boxShadow: `0 0 0 2px ${accent}80`, background: `${accent}12` } : {}) }}
                     onClick={() => toggleEditionDepth(deal)}
+                    // 2026-10-11: the depth panel (where the real floor lives) was mouse-only.
+                    tabIndex={0}
+                    aria-expanded={expandedFlowId === deal.flowId}
+                    aria-label={`${deal.playerName} — show edition depth`}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleEditionDepth(deal); }
+                    }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.discount >= 40 ? "rgba(224,58,47,0.08)" : "transparent"; }}
+                    // Restore the row's own tint — resetting to transparent wiped the highlighted row's.
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.flowId === highlightedId ? `${accent}12` : deal.discount >= 40 ? "rgba(224,58,47,0.08)" : "transparent"; }}
                   >
                     {/* Moment info */}
                     <td style={{ padding: "8px 4px 8px 10px", maxWidth: 360 }}>
@@ -1965,15 +1975,15 @@ function SniperMomentsBody() {
 
       {/* Task 7: Listing Suggestions slide-in panel */}
       {showSuggestions && (
-        <div style={{
-          position: "fixed", top: 0, right: 0, bottom: 0, width: 340,
+        <div role="dialog" aria-label="Listing suggestions" style={{
+          position: "fixed", top: 0, right: 0, bottom: 0, width: "min(340px, 100vw)",
           background: "var(--rpc-bg, #080808)", borderLeft: "1px solid var(--rpc-border)",
           zIndex: 200, overflowY: "auto", padding: 20,
           boxShadow: "-4px 0 20px rgba(0,0,0,0.5)",
         }}>
           <div className="flex items-center justify-between mb-4">
             <span className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>Listing Suggestions</span>
-            <button onClick={() => setShowSuggestions(false)} className="rpc-chip" style={{ padding: "4px 10px" }}>✕</button>
+            <button type="button" aria-label="Close listing suggestions" onClick={() => setShowSuggestions(false)} className="rpc-chip" style={{ padding: "4px 10px" }}>✕</button>
           </div>
           {!ownerKey ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>

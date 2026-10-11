@@ -255,7 +255,17 @@ function DataTable({
         <thead>
           <tr>
             {cols.map((c) => (
-              <th key={c.k} className={c.n ? "n" : ""} title={c.title} onClick={() => onTh(c.k, c.sortable !== false)}>
+              <th
+                key={c.k}
+                className={c.n ? "n" : ""}
+                title={c.title}
+                onClick={() => onTh(c.k, c.sortable !== false)}
+                tabIndex={c.sortable !== false ? 0 : undefined}
+                aria-sort={c.sortable === false ? undefined : c.k === sortK ? (asc ? "ascending" : "descending") : "none"}
+                onKeyDown={(e) => {
+                  if (c.sortable !== false && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onTh(c.k, true); }
+                }}
+              >
                 {c.label}
                 {c.k === sortK ? (asc ? " ▲" : " ▼") : ""}
               </th>
@@ -447,7 +457,15 @@ export default function CandyBoardClient({
   const withAsk = useMemo(() => initialRows.filter((r) => r.floor_ask_usd != null).length, [initialRows]);
 
   const th = (k: keyof Row, label: string, n = false) => (
-    <th className={n ? "n" : ""} onClick={() => (k === sortK ? setAsc(!asc) : (setSortK(k), setAsc(false)))}>
+    <th
+      className={n ? "n" : ""}
+      onClick={() => (k === sortK ? setAsc(!asc) : (setSortK(k), setAsc(false)))}
+      tabIndex={0}
+      aria-sort={k === sortK ? (asc ? "ascending" : "descending") : "none"}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (k === sortK) setAsc(!asc); else { setSortK(k); setAsc(false); } }
+      }}
+    >
       {label}
       {k === sortK ? (asc ? " ▲" : " ▼") : ""}
     </th>

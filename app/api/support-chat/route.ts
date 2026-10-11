@@ -20,7 +20,7 @@ import { headers } from "next/headers";
 import { fitTelegramText } from "@/lib/telegram-message";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
-import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG, marketplaceMomentUrl, fromDbSlug, getCollectionUuid } from "@/lib/collections";
+import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG, marketplaceMomentUrl, fromDbSlug, toDbSlug, getCollectionUuid } from "@/lib/collections";
 import { bumpAnonRate } from "@/lib/abuse/anon-rate";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
 import {
@@ -1099,7 +1099,7 @@ Any tool can come back as \`{ "status": "error", "message": ... }\`. That means 
 ## What RPC Is
 Rip Packs City (rippackscity.com) is a collector intelligence platform built by and for the Flow digital collectibles community. It covers these currently published collections: ${publishedLabels}. Every collection without a chain named there is on Flow; never describe a collection marked with another chain as a Flow collection. UFC Strike is published with a BETA badge — on-chain volume is thin post-Aptos migration, so read its FMV coverage from the "Live FMV coverage" section below, never from memory. Tell users explicitly that UFC coverage is limited when they ask.
 
-Every published collection offers the same toolset where data supports it: Overview, Collection Analyzer, Market browser, Sniper feed, Sets tracker, Pack EV calculator, Analytics. The read-only feature tabs and the /insights boards are PUBLIC — anyone can browse them without signing in; signing in with an email magic link adds saved wallets, cost-basis / P&L, watchlists, alerts, trophy pins, and a public profile at /profile/[username]. Market is edition-level (one row per edition, best floor) and Sniper is serial-level (individual listings) — point users to Market for "what's an edition worth / cheapest floor" and Sniper for specific listings to buy. Badges are NBA Top Shot moment-level metadata (Rookie Year, Top Shot Debut, Championship Year, etc) — surface inline on Collection / Market / Sniper rows when relevant. Candy MLB (Solana) is a published collection with these tabs: ${candyTabs} (no Sniper tab — its deals are on /insights/deals and the Deals tab of /insights/candy-mlb) plus its /insights/candy-mlb board; it trades secondary on Magic Eden and, since 2026-08-31, OpenSea (Solana). Panini (Prizm World Cup 2026 on Panini's own digital platform — owners are usernames, not wallets) is a published collection with these tabs: ${PANINI_TAB_PATHS} (no Collection analyzer, no Sniper), plus its /insights/panini-squeeze board, which also carries Deals, Pack EV, Special serials and Players tabs. Everything Panini is over a listing-fed index (Panini publishes no checklist), so call it a floor, never a census, and send listing questions to Panini's own marketplace.
+Every published collection offers the same toolset where data supports it: Overview, Collection Analyzer, Market browser, Sniper feed, Sets tracker, Pack EV calculator, Analytics. The read-only feature tabs and the /insights boards are PUBLIC — anyone can browse them without signing in; signing in with an email magic link adds saved wallets, cost-basis / P&L, watchlists, alerts, trophy pins, and a public profile at /profile/[username]. "Trophy case" means two different things — keep them apart: a signed-in user's OWN trophy case (the moments they pinned from their dashboard) is at /profile/[username]/trophy-case; /insights/trophies is the public trophy ROOM of who holds the #1 / first-mint grails across the catalog. When someone asks where "the trophy case" is, give the profile path first. Market is edition-level (one row per edition, best floor) and Sniper is serial-level (individual listings) — point users to Market for "what's an edition worth / cheapest floor" and Sniper for specific listings to buy. Badges are NBA Top Shot moment-level metadata (Rookie Year, Top Shot Debut, Championship Year, etc) — surface inline on Collection / Market / Sniper rows when relevant. Candy MLB (Solana) is a published collection with these tabs: ${candyTabs} (no Sniper tab — its deals are on /insights/deals and the Deals tab of /insights/candy-mlb) plus its /insights/candy-mlb board; it trades secondary on Magic Eden and, since 2026-08-31, OpenSea (Solana). Panini (Prizm World Cup 2026 on Panini's own digital platform — owners are usernames, not wallets) is a published collection with these tabs: ${PANINI_TAB_PATHS} (no Collection analyzer, no Sniper), plus its /insights/panini-squeeze board, which also carries Deals, Pack EV, Special serials and Players tabs. Everything Panini is over a listing-fed index (Panini publishes no checklist), so call it a floor, never a census, and send listing questions to Panini's own marketplace.
 
 ${FMV_METHODOLOGY_BLOCK}
 ## Pinnacle Routing (invariant)
@@ -2331,15 +2331,7 @@ async function executeToolInner(
         const perCollection = Array.isArray(snap.perCollection) ? snap.perCollection : [];
         let collectionDetail: any = null;
         if (effectiveCollectionUuid) {
-          const APP_ID_TO_DB_SLUG: Record<string, string> = {
-            "nba-top-shot": "nba_top_shot",
-            "nfl-all-day": "nfl_all_day",
-            "disney-pinnacle": "disney_pinnacle",
-            "laliga-golazos": "laliga_golazos",
-            "ufc": "ufc_strike",
-            "candy-mlb": "candy_mlb",
-          };
-          const { data: top } = await (supabase as any)
+          const { data: top, error: topErr } = await (supabase as any)
             .from("wallet_moments_cache")
             .select("player_name, character_name, set_name, edition_name, tier, serial_number, mint_count, fmv_usd, edition_key")
             .eq("wallet_address", walletKey)
@@ -2347,16 +2339,24 @@ async function executeToolInner(
             .not("fmv_usd", "is", null)
             .order("fmv_usd", { ascending: false })
             .limit(5);
-          const dbSlug = APP_ID_TO_DB_SLUG[effectiveCollectionId ?? ""] ?? null;
-          const totals = perCollection.find((c: any) => c?.slug === dbSlug) ?? null;
+          // Resolve through the registry, not a local copy (the copy lacked
+          // panini-blockchain, so its totals read as a fabricated 0 / $0).
+          const dbSlug = effectiveCollectionId ? toDbSlug(effectiveCollectionId) : null;
+          const totals = dbSlug ? perCollection.find((c: any) => c?.slug === dbSlug) ?? null : null;
           // Badges + supply on the top-5 — "what's my best moment and why" is
           // half metadata. Fail-soft: a failed read shows as badges_status
           // "unavailable", never as an empty list.
           const topMeta = await fetchEditionMetadata(supabase, effectiveCollectionUuid, (top ?? []).map((m: any) => m.edition_key));
           collectionDetail = {
             collection: effectiveCollectionId,
-            total_moments: totals?.moments ?? 0,
-            portfolio_fmv: totals?.fmv ?? 0,
+            // 2026-10-11: three states. Snapshot read ok + collection absent
+            // from perCollection = genuinely 0; an unmapped collection is
+            // UNKNOWN (null), never a measured zero.
+            total_moments: dbSlug ? Number(totals?.moments ?? 0) : null,
+            portfolio_fmv: dbSlug ? Number(totals?.fmv ?? 0) : null,
+            ...(dbSlug ? {} : { totals_note: "This collection is not in the indexed portfolio snapshot — its totals are UNKNOWN. Do not say the wallet holds none." }),
+            top_moments_status: topErr ? "unavailable" : "ok",
+            ...(topErr ? { top_moments_note: "The top-moments read FAILED — say it could not be loaded; do NOT say the wallet has no priced moments." } : {}),
             top_moments: (top ?? []).map((m: any) => ({
               editionKey: m.edition_key ?? null,
               player: m.player_name ?? m.character_name,
@@ -2424,12 +2424,15 @@ async function executeToolInner(
         }),
         signal: AbortSignal.timeout(25000),
       });
-      const data = await res.json();
-      if (data?.error) {
-        return JSON.stringify({ status: "error", wallet: walletKey, message: String(data.error) });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data || data?.error) {
+        return JSON.stringify({ status: "error", wallet: walletKey, message: data?.error ? String(data.error) : `The wallet lookup failed (HTTP ${res.status}). Say the check failed; do NOT say the wallet is empty.` });
       }
       const moments = data.moments || data.rows || [];
-      const pageFmv = moments.reduce((s: number, m: any) => s + (m.fmv ?? 0), 0);
+      // Sum only the moments that carry an FMV and say how many did — an
+      // unpriced moment is unknown, not $0.
+      const priced = moments.filter((m: any) => Number(m.fmv) > 0);
+      const pageFmv = priced.reduce((s: number, m: any) => s + Number(m.fmv), 0);
       return JSON.stringify({
         status: "ok",
         source: "live_walk_first_page",
@@ -2438,10 +2441,11 @@ async function executeToolInner(
         collection: effectiveCollectionId ?? "nba-top-shot",
         total_moments: data.summary?.totalMoments ?? moments.length,
         returned_moments: moments.length,
-        fmv_of_returned_page: pageFmv.toFixed(2),
-        note: "This wallet isn't in the index yet — fmv_of_returned_page covers ONLY the returned page, NOT the whole wallet. total_moments is the true owned count. Say so if you cite values.",
+        fmv_of_returned_page: priced.length > 0 ? pageFmv.toFixed(2) : null,
+        priced_moments_on_page: priced.length,
+        note: "This wallet isn't in the index yet — fmv_of_returned_page covers ONLY the returned page — and only its priced_moments_on_page priced moments — NOT the whole wallet. total_moments is the true owned count. A null fmv means no FMV, not $0. Say so if you cite values.",
         top_moments: moments.slice(0, 5).map((m: any) => ({
-          player: m.playerName, set: m.setName, tier: m.tier, serial: m.serialNumber, fmv: m.fmv,
+          player: m.playerName, set: m.setName, tier: m.tier, serial: m.serialNumber, fmv: Number(m.fmv) > 0 ? Number(m.fmv) : null,
         })),
       });
     } catch (err: any) {

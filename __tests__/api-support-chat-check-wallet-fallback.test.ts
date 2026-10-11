@@ -213,3 +213,90 @@ describe("concierge check_wallet — username recovered via the live resolver", 
     })
   })
 })
+
+// 2026-10-11 — the fabricated-zero shapes in check_wallet. Each case asserts the
+// ABSENCE of the false claim (a $0 / 0-moments figure, a "no priced moments"
+// empty list), not merely the presence of a note.
+describe("concierge check_wallet — failed or unknown reads never render as zero", () => {
+  it("live walk: an unpriced moment is null, not $0, and the page sum covers priced moments only", async () => {
+    install({
+      "rpc:get_wallet_collection_snapshot": { data: { totalMoments: 0, totalFmv: 0, perCollection: [] }, error: null },
+    })
+    stubFetch([
+      jsonRoute("/api/wallet-search", {
+        summary: { totalMoments: 3 },
+        moments: [
+          { playerName: "A", setName: "S", tier: "COMMON", serialNumber: 1, fmv: 10 },
+          { playerName: "B", setName: "S", tier: "COMMON", serialNumber: 2, fmv: null },
+          { playerName: "C", setName: "S", tier: "COMMON", serialNumber: 3 },
+        ],
+      }),
+    ])
+    script("check_wallet", { walletAddress: WALLET })
+    await POST(post("check my wallet"))
+    const tr = toolResult()
+    expect(tr.fmv_of_returned_page).toBe("10.00")
+    expect(tr.priced_moments_on_page).toBe(1)
+    const fmvs = (tr.top_moments as Array<{ fmv: unknown }>).map((m) => m.fmv)
+    expect(fmvs).toEqual([10, null, null])
+  })
+
+  it("live walk: no priced moment at all reports a null page FMV, never \"0.00\"", async () => {
+    install({
+      "rpc:get_wallet_collection_snapshot": { data: { totalMoments: 0, totalFmv: 0, perCollection: [] }, error: null },
+    })
+    stubFetch([
+      jsonRoute("/api/wallet-search", {
+        summary: { totalMoments: 1 },
+        moments: [{ playerName: "B", setName: "S", tier: "COMMON", serialNumber: 2 }],
+      }),
+    ])
+    script("check_wallet", { walletAddress: WALLET })
+    await POST(post("check my wallet"))
+    const tr = toolResult()
+    expect(tr.fmv_of_returned_page).toBeNull()
+    expect(tr.fmv_of_returned_page).not.toBe("0.00")
+  })
+
+  it("live walk: a non-OK HTTP response is an error, not an empty wallet", async () => {
+    install({
+      "rpc:get_wallet_collection_snapshot": { data: { totalMoments: 0, totalFmv: 0, perCollection: [] }, error: null },
+    })
+    stubFetch([jsonRoute("/api/wallet-search", { moments: [] }, { status: 503, ok: false })])
+    script("check_wallet", { walletAddress: WALLET })
+    await POST(post("check my wallet"))
+    const tr = toolResult()
+    expect(tr.status).toBe("error")
+    expect(tr).not.toHaveProperty("total_moments")
+    expect(String(tr.message)).toContain("do NOT say the wallet is empty")
+  })
+
+  it("indexed path: a failed top-moments read is flagged unavailable, not an empty list that reads as 'nothing priced'", async () => {
+    install({
+      "rpc:get_wallet_collection_snapshot": {
+        data: { totalMoments: 5, totalFmv: 100, perCollection: [{ slug: "nba_top_shot", moments: 5, fmv: 100 }], topMoments: [] },
+        error: null,
+      },
+      wallet_moments_cache: { data: null, error: { message: "canceling statement due to statement timeout" } },
+    })
+    script("check_wallet", { walletAddress: WALLET, collectionId: "nba-top-shot" })
+    await POST(post("check my wallet"))
+    const cd = toolResult().collection_detail as Record<string, unknown>
+    expect(cd.top_moments_status).toBe("unavailable")
+    expect(String(cd.top_moments_note)).toContain("FAILED")
+    expect(cd.total_moments).toBe(5)
+  })
+
+  it("indexed path: a collection resolved through the registry (panini) is not a hardcoded-map miss", async () => {
+    install({
+      "rpc:get_wallet_collection_snapshot": {
+        data: { totalMoments: 7, totalFmv: 70, perCollection: [{ slug: "panini_blockchain", moments: 7, fmv: 70 }], topMoments: [] },
+        error: null,
+      },
+    })
+    script("check_wallet", { walletAddress: WALLET, collectionId: "panini-blockchain" })
+    await POST(post("check my wallet"))
+    const cd = toolResult().collection_detail as Record<string, unknown>
+    expect(cd).toMatchObject({ total_moments: 7, portfolio_fmv: 70, top_moments_status: "ok" })
+  })
+})

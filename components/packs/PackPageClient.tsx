@@ -515,6 +515,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search packs by name…"
+            aria-label="Search packs"
             className="rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-3 py-1.5 text-sm text-[color:var(--rpc-text-primary)] outline-none placeholder:text-[color:var(--rpc-text-muted)] flex-1 min-w-[200px]"
           />
           <div className="flex items-center gap-2 ml-auto">
@@ -522,6 +523,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
+              aria-label="Sort packs"
               className="rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-1.5 text-xs text-[color:var(--rpc-text-primary)] outline-none"
             >
               {SORT_OPTIONS.map(({ key, label }) => (
@@ -648,6 +650,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
               value={priceMinInput}
               onChange={(e) => setPriceMinInput(e.target.value)}
               placeholder="Min"
+              aria-label="Minimum pack price"
               inputMode="decimal"
               className="rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-1.5 text-xs text-[color:var(--rpc-text-primary)] outline-none placeholder:text-[color:var(--rpc-text-muted)] w-20"
             />
@@ -656,6 +659,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
               value={priceMaxInput}
               onChange={(e) => setPriceMaxInput(e.target.value)}
               placeholder="Max"
+              aria-label="Maximum pack price"
               inputMode="decimal"
               className="rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-1.5 text-xs text-[color:var(--rpc-text-primary)] outline-none placeholder:text-[color:var(--rpc-text-muted)] w-20"
             />

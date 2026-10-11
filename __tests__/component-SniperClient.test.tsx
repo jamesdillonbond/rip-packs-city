@@ -527,7 +527,7 @@ describe("SniperClient — Listing Suggestions never CONCLUDE from a failed read
     openSuggestions()
     await screen.findByText(conclusion)
 
-    fireEvent.click(screen.getByRole("button", { name: "✕" }))
+    fireEvent.click(screen.getByRole("button", { name: "Close listing suggestions" }))
     await waitFor(() => expect(screen.queryByText(conclusion)).toBeNull())
   })
 })

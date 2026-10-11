@@ -211,7 +211,7 @@ export default function HomePageMarketing() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
+    <div className="rpc-home-root" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteJsonLd) }}
@@ -227,7 +227,11 @@ export default function HomePageMarketing() {
         .rpc-home-h1-accent{color:var(--rpc-red);}
         .rpc-home-h2{font-family:var(--font-display);font-weight:900;font-size:40px;letter-spacing:0.04em;text-transform:uppercase;line-height:1.05;color:var(--rpc-text-primary);}
         .rpc-home-eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:var(--rpc-red);}
-        .rpc-home-sub{font-family:var(--font-mono);font-size:14px;line-height:1.65;color:rgba(255,255,255,0.7);max-width:640px;margin-inline:auto;}
+        /* 2026-10-11: body copy was hardcoded white — invisible on the light theme's white canvas.
+           Dark keeps its brighter-than-secondary alpha; light falls back to the theme token. */
+        .rpc-home-root{--rpc-home-body:rgba(255,255,255,0.75);}
+        [data-theme="light"] .rpc-home-root{--rpc-home-body:var(--rpc-text-secondary);}
+        .rpc-home-sub{font-family:var(--font-mono);font-size:14px;line-height:1.65;color:var(--rpc-home-body);max-width:640px;margin-inline:auto;}
         .rpc-home-section{padding:96px 24px;}
         .rpc-home-stats-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;}
         .rpc-home-collection-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
@@ -560,7 +564,7 @@ export default function HomePageMarketing() {
                     fontFamily: "var(--font-mono)",
                     fontSize: 13,
                     lineHeight: 1.6,
-                    color: "rgba(255,255,255,0.75)",
+                    color: "var(--rpc-home-body)",
                   }}
                 >
                   {step.copy}
@@ -615,7 +619,7 @@ export default function HomePageMarketing() {
                       fontFamily: "var(--font-mono)",
                       fontSize: 12,
                       lineHeight: 1.55,
-                      color: "rgba(255,255,255,0.78)",
+                      color: "var(--rpc-home-body)",
                     }}
                   >
                     {b.copy}
@@ -647,7 +651,7 @@ export default function HomePageMarketing() {
                   fontFamily: "var(--font-mono)",
                   fontSize: 13,
                   lineHeight: 1.7,
-                  color: "rgba(255,255,255,0.78)",
+                  color: "var(--rpc-home-body)",
                   margin: 0,
                   maxWidth: 460,
                 }}

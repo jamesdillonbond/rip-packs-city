@@ -632,6 +632,7 @@ function MarketInner() {
             <select
               value={effectiveSort}
               onChange={(e) => setSort(e.target.value as SortKey)}
+              aria-label="Sort editions"
               className="rpc-mono"
               style={{
                 padding: "5px 10px",
@@ -652,6 +653,7 @@ function MarketInner() {
                 <button
                   key={v}
                   type="button"
+                  aria-pressed={view === v}
                   onClick={() => setView(v)}
                   style={{
                     padding: "5px 12px",
@@ -679,6 +681,7 @@ function MarketInner() {
             type="number"
             inputMode="decimal"
             placeholder="Min"
+            aria-label="Minimum price"
             value={minPrice}
             onChange={(e) => setMinPrice(e.target.value)}
             style={inputStyle}
@@ -688,6 +691,7 @@ function MarketInner() {
             type="number"
             inputMode="decimal"
             placeholder="Max"
+            aria-label="Maximum price"
             value={maxPrice}
             onChange={(e) => setMaxPrice(e.target.value)}
             style={inputStyle}
@@ -698,6 +702,7 @@ function MarketInner() {
             type="number"
             inputMode="decimal"
             placeholder="e.g. 20"
+            aria-label="Minimum discount percent"
             value={minDiscount}
             onChange={(e) => setMinDiscount(e.target.value)}
             style={inputStyle}
@@ -707,6 +712,7 @@ function MarketInner() {
           <input
             type="text"
             placeholder="Search…"
+            aria-label={`Search by ${getEntityLabels(collectionId).player.toLowerCase()}`}
             value={playerQuery}
             onChange={(e) => setPlayerQuery(e.target.value)}
             style={{ ...inputStyle, width: 180 }}

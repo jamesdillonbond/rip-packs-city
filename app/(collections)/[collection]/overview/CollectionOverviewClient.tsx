@@ -381,7 +381,7 @@ export default function CollectionOverviewClient({
              Measured 2026-09-02 — LaLiga Golazos 87.3% vs a true 0.3%, UFC
              Strike 73.6% vs a true 0.0%. A failed read of the HIGH/MEDIUM share
              would have published a 291× overstatement under the label
-             "Priced from Sales". Null renders the skeleton, which says nothing
+             "Priced from Sales". Null renders an em dash, which says nothing
              rather than something false. Zero is a real value here and still
              renders as "0%". */
           value={
@@ -837,11 +837,13 @@ function KpiCard({
     <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: accent, opacity: 0.7 }} />
       <div className="rpc-label" style={{ marginBottom: 4 }}>{label}</div>
-      {loading || value == null ? (
+      {/* 2026-10-11: a null value is UNKNOWN, not loading — a skeleton that never
+          resolves reads as "still loading" forever after a failed read. */}
+      {loading ? (
         <div className="rpc-skeleton" style={{ width: "50%", height: 20 }} />
       ) : (
-        <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: valueColor }}>
-          {value}
+        <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: value == null ? "var(--rpc-text-muted)" : valueColor }}>
+          {value ?? "\u2014"}
         </div>
       )}
     </section>

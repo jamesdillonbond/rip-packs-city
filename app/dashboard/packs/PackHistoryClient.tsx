@@ -885,7 +885,18 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
   const showLink = row.dist_id != null
   return (
     <>
-      <tr className="rpc-pack-row" onClick={onClick} style={{ borderBottom: "1px solid #1a1a1d" }}>
+      <tr
+        className="rpc-pack-row"
+        onClick={onClick}
+        // 2026-10-11: the lifecycle detail was mouse-only.
+        tabIndex={0}
+        aria-expanded={isOpen}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick() }
+        }}
+        style={{ borderBottom: "1px solid #1a1a1d" }}
+      >
         <td style={{ padding: "10px 12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 40, height: 40, borderRadius: 4, background: "#1a1a1d", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", fontFamily: monoFont, fontSize: 18 }}>

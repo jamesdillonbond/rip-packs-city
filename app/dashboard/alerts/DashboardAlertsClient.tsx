@@ -466,7 +466,7 @@ function CreateAlertModal({
       <div ref={contentRef} className="rpc-al-modal" onClick={(e) => e.stopPropagation()}>
         <div className="rpc-al-modal-header">
           <div className="rpc-al-modal-title">New Alert</div>
-          <button className="rpc-al-iconbtn" onClick={() => onClose(null, null)}>✕</button>
+          <button type="button" className="rpc-al-iconbtn" aria-label="Close new alert" onClick={() => onClose(null, null)}>✕</button>
         </div>
 
         {step === "search" && (
