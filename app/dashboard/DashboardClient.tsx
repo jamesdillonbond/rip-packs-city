@@ -768,23 +768,41 @@ function ProfilePageInner() {
     }
   }, [walletForm, refresh, pushToast]);
 
+  // 2026-10-11: both writes read their result. A failed DELETE used to do
+  // nothing visible, and a network throw skipped the refresh entirely.
   const removeWallet = useCallback(async (w: SavedWallet) => {
-    await fetch("/api/profile/saved-wallets", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ walletAddr: w.wallet_addr }),
-    });
+    try {
+      const res = await fetch("/api/profile/saved-wallets", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddr: w.wallet_addr }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(apiErrorMessage(data, res.status));
+      }
+    } catch (err) {
+      pushToast(`Couldn't remove wallet: ${err instanceof Error ? err.message : "request failed"}`, "info");
+    }
     await refresh();
-  }, [refresh]);
+  }, [refresh, pushToast]);
 
   const toggleFavorite = useCallback(async (collectionUuid: string, currentlyFav: boolean) => {
-    await fetch("/api/profile/favorites", {
-      method: currentlyFav ? "DELETE" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ collectionId: collectionUuid }),
-    });
+    try {
+      const res = await fetch("/api/profile/favorites", {
+        method: currentlyFav ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collectionId: collectionUuid }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(apiErrorMessage(data, res.status));
+      }
+    } catch (err) {
+      pushToast(`Couldn't update favorites: ${err instanceof Error ? err.message : "request failed"}`, "info");
+    }
     await refresh();
-  }, [refresh]);
+  }, [refresh, pushToast]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -2520,11 +2538,17 @@ function HeroEditModal({
     setSaving(true);
     setPickError(null);
     try {
-      await fetch("/api/profile/bio", {
+      // 2026-10-11: read the result — onPicked() toasts "Hero updated", which
+      // a failed PATCH used to earn too.
+      const res = await fetch("/api/profile/bio", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ heroMomentId: null, heroMomentCollectionId: null }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(apiErrorMessage(data, res.status));
+      }
       onPicked();
     } catch (err: any) {
       setPickError(err?.message ?? "Failed to clear");

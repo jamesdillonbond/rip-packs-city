@@ -172,6 +172,7 @@ export default function WatchEditionButton({
           <button
             key={c}
             type="button"
+            aria-pressed={channel === c}
             onClick={() => setChannel(c)}
             className="rpc-mono"
             style={{

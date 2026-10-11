@@ -360,7 +360,7 @@ export default function CollectionOverviewClient({
           accent={accent}
           loading={loading}
           valueColor="var(--rpc-text-primary)"
-          value={stats ? (stats.edition_count ?? 0).toLocaleString() : null}
+          value={stats && stats.edition_count != null ? stats.edition_count.toLocaleString() : null}
         />
         {/* Relabelled 2026-08-01 (was "FMV Confidence" / "62% HIGH/MED"). The tile
             printed the internal confidence enum on a public, unauthenticated page —

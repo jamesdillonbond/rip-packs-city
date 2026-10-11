@@ -251,9 +251,26 @@ export default function AlertsClient() {
     }
   }
 
+  // 2026-10-11: every write below reads its result. A failed Delete / Pause /
+  // Unlink used to do nothing visible (and a network throw skipped the reload).
+  async function writeOrSay(input: string, init: RequestInit, what: string): Promise<boolean> {
+    try {
+      const res = await fetch(input, init);
+      if (res.ok) return true;
+      const data = await res.json().catch(() => ({}));
+      setMsg(`Couldn't ${what}: ${typeof data?.error === "string" ? data.error : `HTTP ${res.status}`}`);
+    } catch {
+      setMsg(`Couldn't ${what}: network error`);
+    }
+    // The banner renders at the top of the page; the buttons sit far below it.
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+    return false;
+  }
+
   async function unlink(channel: ChannelName) {
-    await fetch(`/api/alerts/channels?channel=${channel}`, { method: "DELETE" });
-    setLinkInfo((p) => ({ ...p, [channel]: "" }));
+    if (await writeOrSay(`/api/alerts/channels?channel=${channel}`, { method: "DELETE" }, `unlink ${channel}`)) {
+      setLinkInfo((p) => ({ ...p, [channel]: "" }));
+    }
     load();
   }
 
@@ -318,24 +335,25 @@ export default function AlertsClient() {
   }
 
   async function toggleActive(s: Subscription) {
-    await fetch("/api/alerts/subscriptions", {
+    await writeOrSay("/api/alerts/subscriptions", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: s.id, active: !s.active }),
-    });
+    }, s.active ? "pause the alert" : "resume the alert");
     load();
   }
 
   async function removeSub(s: Subscription) {
     if (!confirm(`Delete "${s.label}"?`)) return;
-    await fetch(`/api/alerts/subscriptions?id=${s.id}`, { method: "DELETE" });
-    if (form.id === s.id) setForm(EMPTY_FORM);
+    if (await writeOrSay(`/api/alerts/subscriptions?id=${s.id}`, { method: "DELETE" }, "delete the alert")) {
+      if (form.id === s.id) setForm(EMPTY_FORM);
+    }
     load();
   }
 
   async function removeFmvAlert(a: FmvAlert) {
     if (!confirm(`Stop watching ${a.player_name ?? a.edition_key}?`)) return;
-    await fetch(`/api/alerts?id=${a.id}`, { method: "DELETE" });
+    await writeOrSay(`/api/alerts?id=${a.id}`, { method: "DELETE" }, "stop watching");
     load();
   }
 
@@ -350,17 +368,17 @@ export default function AlertsClient() {
   );
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "#fafafa" }}>
+    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       <main style={{ maxWidth: 880, margin: "0 auto", padding: "24px 16px 96px" }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <h1 style={{ fontFamily: DISPLAY, fontSize: 30, letterSpacing: "0.04em", textTransform: "uppercase", margin: 0 }}>
             Alerts
           </h1>
-          <Link href="/dashboard" style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, textDecoration: "none" }}>
+          <Link href="/dashboard" style={{ color: "var(--rpc-text-secondary)", fontSize: 13, textDecoration: "none" }}>
             ← Dashboard
           </Link>
         </div>
-        <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, marginTop: 4, lineHeight: 1.5 }}>
+        <p style={{ color: "var(--rpc-text-secondary)", fontSize: 14, marginTop: 4, lineHeight: 1.5 }}>
           Get notified when a listing drops below FMV. Match by player, set, team, tier, price, and discount —
           delivered to email, Telegram, or Discord.
         </p>
@@ -545,7 +563,7 @@ export default function AlertsClient() {
         <section style={{ marginTop: 24 }}>
           <h2 style={h2Style}>Your alerts</h2>
           {loading ? (
-            <p style={{ color: "rgba(255,255,255,0.5)" }}>Loading…</p>
+            <p style={{ color: "var(--rpc-text-muted)" }}>Loading…</p>
           ) : failed.subs ? (
             // Ordering is what makes this non-inert: the failure branch must
             // precede the empty branch, or a failed read still renders "No
@@ -555,7 +573,7 @@ export default function AlertsClient() {
               Reload before creating a new one.
             </p>
           ) : subs.length === 0 ? (
-            <p style={{ color: "rgba(255,255,255,0.5)" }}>No alerts yet. Create one above.</p>
+            <p style={{ color: "var(--rpc-text-muted)" }}>No alerts yet. Create one above.</p>
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
               {subs.map((s) => (
@@ -583,19 +601,19 @@ export default function AlertsClient() {
         {/* ── Watched editions (per-edition FMV alerts) ─────────────────── */}
         <section style={{ marginTop: 24 }}>
           <h2 style={h2Style}>Watched editions</h2>
-          <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 13, marginTop: -6, marginBottom: 12, lineHeight: 1.5 }}>
+          <p style={{ color: "var(--rpc-text-secondary)", fontSize: 13, marginTop: -6, marginBottom: 12, lineHeight: 1.5 }}>
             Watch a specific edition for a target price or FMV. Add one from any moment or edition page
             with the “Watch this edition” button.
           </p>
           {loading ? (
-            <p style={{ color: "rgba(255,255,255,0.5)" }}>Loading…</p>
+            <p style={{ color: "var(--rpc-text-muted)" }}>Loading…</p>
           ) : failed.fmv ? (
             <p style={{ color: "#d6a13a" }}>
               Couldn&apos;t load your watched editions just now — this says nothing about what you are
               watching. Reload to try again.
             </p>
           ) : fmvAlerts.length === 0 ? (
-            <p style={{ color: "rgba(255,255,255,0.5)" }}>No watched editions yet.</p>
+            <p style={{ color: "var(--rpc-text-muted)" }}>No watched editions yet.</p>
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
               {fmvAlerts.map((a) => (
@@ -641,6 +659,9 @@ const cardStyle: React.CSSProperties = {
   background: "#18181b",
   border: "1px solid #27272a",
   borderRadius: 14,
+  // Always-dark card: pin its text light so it does not inherit the page's
+  // theme-aware colour (dark on light theme) — 2026-10-11.
+  color: "#fafafa",
 };
 const h2Style: React.CSSProperties = {
   fontFamily: DISPLAY,

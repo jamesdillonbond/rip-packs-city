@@ -17,6 +17,8 @@ let fetchMock: ReturnType<typeof vi.fn>
 // A chat response with NO x-rpc-stream header → the component takes the JSON path.
 const chatRes = (body: unknown, status = 200) =>
   Promise.resolve({
+    // A real Response always carries `ok`; the component now reads it (2026-10-11).
+    ok: status >= 200 && status < 300,
     status,
     headers: { get: () => null },
     body: null,
@@ -101,6 +103,37 @@ describe("SupportChat", () => {
     fireEvent.change(input, { target: { value: "spam" } })
     fireEvent.click(getByLabelText("Send"))
     await waitFor(() => expect(getByText(/I need a short break/)).toBeTruthy())
+  })
+
+  // 2026-10-11: a refused request (403 Origin / 413 too long) carries `{ error }`.
+  // It used to render as an assistant bubble "Sorry, try again?" WITH rating
+  // buttons, the typed text was lost, and the error was replayed to the model as
+  // an earlier answer. Assert the absence of each false claim.
+  it("renders a refused send as an error, not an answer — no rating buttons, text restored", async () => {
+    const posted: any[] = []
+    fetchMock = routeFetch((body) => {
+      posted.push(body)
+      return posted.length === 1
+        ? chatRes({ error: "Message too long (max 2000 characters)" }, 413)
+        : chatRes({ response: "second answer", escalated: false })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByLabelText, getByPlaceholderText, getByText, queryByText, queryAllByLabelText } = render(<SupportChat />)
+    fireEvent.click(getByLabelText("Open RPC concierge"))
+    const input = (await waitFor(() => getByPlaceholderText(/Ask a question/))) as HTMLInputElement
+    fireEvent.change(input, { target: { value: "my long question" } })
+    fireEvent.click(getByLabelText("Send"))
+
+    await waitFor(() => expect(getByText(/didn’t go through: Message too long/)).toBeTruthy())
+    expect(queryByText("Sorry, try again?")).toBeNull()
+    expect(queryAllByLabelText(/helpful/i).length).toBe(0)
+    expect(input.value).toBe("my long question")
+
+    // The next send does not replay the error string as an assistant turn.
+    fireEvent.click(getByLabelText("Send"))
+    await waitFor(() => expect(getByText("second answer")).toBeTruthy())
+    const history = posted[1].conversationHistory as Array<{ role: string; content: string }>
+    expect(history.some((h) => /didn’t go through/.test(h.content))).toBe(false)
   })
 
   it("does not send an empty message (Send stays disabled)", async () => {

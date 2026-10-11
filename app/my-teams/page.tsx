@@ -148,7 +148,7 @@ export default async function MyTeamsPage() {
           >
             {LEAGUE_LABEL[group.league] ?? group.league}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gap: 14 }}>
             {group.rows.map(({ team, detail, progress, hasWallet }) => (
               <TeamCard key={`${team.league}:${team.route_slug}`} team={team} detail={detail} progress={progress} hasWallet={hasWallet} />
             ))}
@@ -232,7 +232,9 @@ function TeamCard({
 
   const pct = progress?.completion_pct
   const owned = progress?.owned ?? 0
-  const total = progress?.total ?? 0
+  // 2026-10-11: null when the card read failed (progress null) — `?? 0` printed
+  // "0 editions in the all-time checklist" for an outage.
+  const total = progress?.total ?? null
   const locked = progress?.locked_owned ?? 0
   const cost = progress?.cost_to_complete_usd
 
@@ -313,7 +315,7 @@ function TeamCard({
           </>
         ) : (
           <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>
-            {fmtCount(total)} editions in the all-time checklist
+            {total != null ? `${fmtCount(total)} editions in the all-time checklist` : "Checklist count unavailable right now"}
           </div>
         )}
 

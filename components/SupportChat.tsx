@@ -23,7 +23,18 @@ interface ChatMessage {
   text: string; escalated?: boolean;
   momentCards?: MomentCard[];
   feedback?: "up" | "down" | null;
+  // 2026-10-11: a failed send. Not an answer — no rating buttons, and never
+  // replayed to the model as an earlier assistant turn.
+  isError?: boolean;
   timestamp: Date;
+}
+
+// One constructor for every failed-send bubble (rate limit, refused request,
+// network error): marked isError, so it gets no rating buttons and is never
+// replayed to the model as an earlier assistant turn.
+function errorBubble(text: string): ChatMessage {
+  const now = new Date();
+  return { id: `e_${now.getTime()}`, role: "assistant", text, isError: true, timestamp: now };
 }
 
 function getOrCreateSessionId(): string {
@@ -563,7 +574,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
     setMessages((prev) => [...prev, { id: `u_${Date.now()}`, role: "user", text: trimmed, timestamp: new Date() }]);
     setInput(""); setIsLoading(true);
     const history = messages
-      .filter((m) => m.id !== "typing" && m.text !== "...")
+      .filter((m) => m.id !== "typing" && m.text !== "..." && !m.isError)
       .map((m) => ({
         role: (m.role === "system" ? "user" : m.role) as "user" | "assistant",
         content: m.role === "system" ? `[system] ${m.text}` : m.text,
@@ -592,7 +603,18 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
       });
       if (res.status === 429) {
         setMessages((prev) => prev.filter((m) => m.id !== "typing"));
-        setMessages((prev) => [...prev, { id: `e_${Date.now()}`, role: "assistant", text: "You’ve sent a lot of messages — I need a short break. Come back in an hour and I’ll be ready to help again.", timestamp: new Date() }]);
+        setMessages((prev) => [...prev, errorBubble("You’ve sent a lot of messages — I need a short break. Come back in an hour and I’ll be ready to help again.")]);
+        return;
+      }
+      // A refused request (400 / 403 / 413) carries `{ error }`, not an answer.
+      // Say what happened and hand the user's text back instead of rendering
+      // "Sorry, try again?" as if the concierge had replied.
+      if (!res.ok) {
+        const errBody: { error?: unknown } = await res.json().catch(() => ({}));
+        const reason = typeof errBody.error === "string" && errBody.error.length < 200 ? errBody.error : `the request failed (HTTP ${res.status})`;
+        setMessages((prev) => prev.filter((m) => m.id !== "typing"));
+        setMessages((prev) => [...prev, errorBubble(`That message didn’t go through: ${reason}. Your text is back in the box — edit it and try again.`)]);
+        setInput((cur) => cur || trimmed);
         return;
       }
 
@@ -604,7 +626,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
         // (server emits escalate=true, escalated=false) reuses the existing
         // "Flagged for Trevor" banner and suppresses thumbs-up/down on a
         // message the bot didn't actually answer.
-        setMessages((prev) => [...prev, { id: `b_${Date.now()}`, dbId: data.messageId, role: "assistant", text: data.response || "Sorry, try again?", escalated: !!(data.escalated || data.escalate), momentCards: data.momentCards, feedback: null, timestamp: new Date() }]);
+        setMessages((prev) => [...prev, { id: `b_${Date.now()}`, dbId: data.messageId, role: "assistant", text: data.response || "Sorry, try again?", isError: !data.response, escalated: !!(data.escalated || data.escalate), momentCards: data.momentCards, feedback: null, timestamp: new Date() }]);
         if (!isOpen) setHasNewMessage(true);
         return;
       }
@@ -648,8 +670,14 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
       if (!isOpen) setHasNewMessage(true);
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== "typing"));
-      setMessages((prev) => [...prev, { id: `e_${Date.now()}`, role: "assistant", text: "Connection issue. Try again in a moment.", timestamp: new Date() }]);
-    } finally { setIsLoading(false); }
+      setMessages((prev) => [...prev, errorBubble("Connection issue — your message may not have sent. Your text is back in the box; try again in a moment.")]);
+      setInput((cur) => cur || trimmed);
+    } finally {
+      setIsLoading(false);
+      // The input is readOnly (not disabled) while loading so it keeps focus;
+      // restore it explicitly for the suggestion-pill path, which moves focus.
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
   }, [input, isLoading, sessionId, ownerKey, userWallet, pageContext, pageEntity, collectionId, walletConnected, isOpen, messages]);
 
   useEffect(() => {
@@ -763,7 +791,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
                     {msg.momentCards.map((card, i) => (<MomentCardUI key={`${msg.id}_c${i}`} card={card} />))}
                   </div>
                 )}
-                {msg.role === "assistant" && !msg.escalated && (
+                {msg.role === "assistant" && !msg.escalated && !msg.isError && (
                   <FeedbackButtons messageId={msg.id} sessionId={sessionId} dbId={msg.dbId} feedback={msg.feedback} />
                 )}
               </div>
@@ -788,7 +816,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
               <input ref={inputRef} className="rpc-chat-input" type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
                 aria-label="Message the RPC concierge"
                 placeholder={ownerKey ? "Report a bug, ask a question, or look up a moment…" : "Ask a question, report a bug, or hunt deals…"}
-                maxLength={2000} disabled={isLoading}
+                maxLength={2000} readOnly={isLoading} aria-busy={isLoading}
                 style={{ flex: 1, padding: "10px 14px", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: 10, color: "var(--rpc-text-primary)", fontSize: 13.5, transition: "box-shadow 0.15s" }} />
               <button onClick={() => sendMessage()} disabled={!input.trim() || isLoading} aria-label="Send"
                 style={{ width: 38, height: 38, borderRadius: 10, border: "none", background: input.trim() && !isLoading ? "linear-gradient(135deg, var(--rpc-red) 0%, #c43028 100%)" : "var(--rpc-surface-hover)", color: input.trim() && !isLoading ? "#fff" : "var(--rpc-text-ghost)", cursor: input.trim() && !isLoading ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>↑</button>

@@ -355,7 +355,18 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 10 }}>
             <Stat label="Retail" value={fmtUsd(retail)} accent={accent} />
             <Stat label="Slots / Pack" value={slots != null ? String(slots) + (slotsApprox ? " ~" : "") : "—"} accent={accent} />
-            <Stat label="EV / Slot" value={fmtUsd(metrics.ev_per_slot)} accent={accent} />
+            {/* 2026-10-11: ev_per_slot (pack_grail_metrics) counts an edition with no
+                FMV as $0, so below 100% FMV coverage it is a LOWER BOUND — 441 packs
+                measured that day, 274 of them under 80%. Say so instead of
+                presenting a floor as the expected value. */}
+            <Stat
+              label="EV / Slot"
+              value={metrics.fmv_coverage_pct != null && metrics.fmv_coverage_pct < 100 ? `\u2265 ${fmtUsd(metrics.ev_per_slot)}` : fmtUsd(metrics.ev_per_slot)}
+              title={metrics.fmv_coverage_pct != null && metrics.fmv_coverage_pct < 100
+                ? `At least this much: ${metrics.edition_count_pullable - (metrics.editions_with_fmv ?? 0)} of ${metrics.edition_count_pullable} pullable editions have no FMV and count as $0.`
+                : "Expected FMV per slot, weighted by drop odds."}
+              accent={accent}
+            />
             <Stat label="Pool" value={`${metrics.edition_count_pullable} editions`} accent={accent} />
             <Stat label="FMV cov." value={metrics.fmv_coverage_pct != null ? metrics.fmv_coverage_pct + "%" : "—"} accent={accent} />
             <Stat label="Depletion" value={pack.depletion_pct != null ? pack.depletion_pct + "%" : "—"} accent={accent} />
@@ -419,11 +430,11 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
 
 // ── Subcomponents ───────────────────────────────────────────────────────────
 
-function Stat({ label, value, accent }: { label: string; value: string; accent: string }) {
+function Stat({ label, value, accent, title }: { label: string; value: string; accent: string; title?: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }} title={title}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: accent, letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700, color: "#fff" }}>{value}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700, color: "var(--rpc-text-primary)" }}>{value}</div>
     </div>
   )
 }

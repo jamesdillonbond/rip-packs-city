@@ -342,6 +342,7 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial,
           <button
             key={r.days}
             type="button"
+            aria-pressed={days === r.days}
             onClick={() => setDays(r.days)}
             className="rpc-chip"
             style={{

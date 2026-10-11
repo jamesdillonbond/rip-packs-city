@@ -182,6 +182,21 @@ describe("PackSimulatorClient — the simulation", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/0 \/ 2 pulls had FMV/))
   })
 
+  // 2026-10-11: the header EV / Slot comes from pack_grail_metrics, which counts an
+  // unpriced edition as $0 — below 100% coverage it is a FLOOR and must say so.
+  it("marks the header EV / Slot as a lower bound when FMV coverage is under 100%", async () => {
+    await mount(SIM({ metrics: { ...SIM().metrics, fmv_coverage_pct: 50, editions_with_fmv: 1 } }))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    expect(document.body.textContent).toMatch(/\u2265 \$302\.50/)
+    expect(document.querySelector('[title^="At least this much: 1 of 2"]')).not.toBeNull()
+  })
+
+  it("does not mark the header EV / Slot when every pullable edition is priced", async () => {
+    await mount()
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    expect(document.body.textContent).not.toMatch(/\u2265/)
+  })
+
   it("does not print the coverage caveat when every pull was priced", async () => {
     await mount()
     fireEvent.click(screen.getAllByRole("button").find((b) => /rip 1 pack/i.test(b.textContent ?? ""))!)

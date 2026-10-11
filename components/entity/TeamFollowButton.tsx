@@ -26,6 +26,9 @@ type State = "loading" | "anon" | "following" | "not-following" | "unknown"
 export default function TeamFollowButton({ league, teamShortSlug, teamPath, dark }: Props) {
   const [state, setState] = useState<State>("loading")
   const [busy, setBusy] = useState(false)
+  // 2026-10-11: a failed write used to leave the button exactly as it was, so
+  // the click read as "nothing happened". Say so for a few seconds instead.
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -45,6 +48,8 @@ export default function TeamFollowButton({ league, teamShortSlug, teamPath, dark
   async function setFollow(on: boolean) {
     if (busy) return
     setBusy(true)
+    setFailed(false)
+    let ok = false
     try {
       const res = on
         ? await fetch("/api/teams/follow", {
@@ -53,13 +58,18 @@ export default function TeamFollowButton({ league, teamShortSlug, teamPath, dark
             body: JSON.stringify({ league, team_slug: teamShortSlug }),
           })
         : await fetch(`/api/teams/follow?${new URLSearchParams({ league, slug: teamShortSlug }).toString()}`, { method: "DELETE" })
-      if (res.status === 401) { setState("anon"); return }
+      if (res.status === 401) { ok = true; setState("anon"); return }
       if (!res.ok) return
+      ok = true
       setState(on ? "following" : "not-following")
     } catch {
-      /* leave state unchanged on error */
+      /* leave state unchanged on error — the failed flag below says so */
     } finally {
       setBusy(false)
+      if (!ok) {
+        setFailed(true)
+        setTimeout(() => setFailed(false), 4000)
+      }
     }
   }
 
@@ -105,6 +115,7 @@ export default function TeamFollowButton({ league, teamShortSlug, teamPath, dark
     <button
       type="button"
       disabled={busy}
+      aria-pressed={following}
       onClick={() => setFollow(!following)}
       style={{
         ...baseStyle,
@@ -115,7 +126,7 @@ export default function TeamFollowButton({ league, teamShortSlug, teamPath, dark
       }}
       title={following ? `Remove as your ${league} team` : `Set as your ${league} team (replaces any current ${league} pick)`}
     >
-      {following ? `★ Your ${league} team` : `☆ Set as my ${league} team`}
+      {failed ? "Couldn’t update — try again" : following ? `★ Your ${league} team` : `☆ Set as my ${league} team`}
     </button>
   )
 }

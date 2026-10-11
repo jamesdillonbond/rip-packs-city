@@ -62,7 +62,11 @@ describe("apiErrorMessage", () => {
     // sites, and fixing only the reported one is how a class survives a fix.
     const src = readFileSync(join(process.cwd(), "app/dashboard/DashboardClient.tsx"), "utf8")
     const used = src.split("apiErrorMessage(data, res.status)").length - 1
-    expect(used).toBe(5)
+    // 5 → 8 on 2026-10-11: the hero Clear, remove-wallet and favorite writes
+    // gained a result check (they ignored the response before) — same helper.
+    expect(used).toBe(8)
+    // No throw builds its own "HTTP <status>" string around the helper.
+    expect(src).not.toMatch(/throw new Error\(`[^`]*\$\{res\.status\}/)
     expect(src).not.toMatch(/data\.error \|\| `HTTP/)
   })
 })

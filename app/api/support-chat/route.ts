@@ -535,12 +535,12 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "escalate_to_human",
-    description: "Page the team live for genuine account emergencies — money lost, NFT missing after a confirmed purchase, sign-in fully broken, anything that needs human-in-the-loop within an hour. Do NOT use this for bugs, feature requests, confusion, or general feedback — those go through log_bug / log_feature_request / log_feedback, which queue silently for batch triage. Set urgency='high' only for true emergencies; that is the threshold that fires Telegram. Lower urgencies are stored but do not page.",
+    description: "Page the team live for genuine RPC emergencies — a giveaway pack RPC delivered that never arrived, sign-in fully broken, private account data exposed, anything that needs human-in-the-loop within an hour. RPC sells nothing and has no paid plan: a marketplace purchase that did not arrive is that marketplace's support case, never an escalation here. Do NOT use this for bugs, feature requests, confusion, or general feedback — those go through log_bug / log_feature_request / log_feedback, which queue silently for batch triage. Set urgency='high' only for true emergencies; that is the threshold that fires Telegram. Lower urgencies are stored but do not page.",
     input_schema: {
       type: "object" as const,
       properties: {
         reason: { type: "string" },
-        category: { type: "string", enum: ["account", "billing", "missing_nft", "auth_blocked", "other"] },
+        category: { type: "string", enum: ["account", "giveaway_delivery", "auth_blocked", "data_exposure", "other"] },
         urgency: { type: "string", enum: ["low", "medium", "high"] },
       },
       required: ["reason", "category"],
@@ -1061,7 +1061,7 @@ When a user asks what RPC *already* does before requesting it (e.g. "does FMV ac
 After logging anything, confirm what you captured in one line. If the conversation is clearly done, "Anything else?" is fine once — not after every log. Do NOT pivot to deals or FMV. Do not over-promise a response time; just say it's in the queue. A signed-in user asking "what happened to my request" → call get_my_feedback_status.
 
 ## Escalation vs Logging
-**escalate_to_human** is reserved for live emergencies — money lost, NFT missing after a confirmed purchase, sign-in fully broken for a paying user, anything the team needs to resolve within the hour. Bugs, feature requests, and confusion go through log_bug / log_feature_request / log_feedback — those queue silently for batch triage. If you're unsure, log it; do not escalate. Escalation pages the team live only when urgency='high', so do not casually reach for it.
+**escalate_to_human** is reserved for live emergencies RPC itself can act on — a giveaway pack RPC said it delivered that never arrived, sign-in fully broken, private account data visible to someone else, anything the team needs to resolve within the hour. RPC sells nothing and has no paid plan, so there is no RPC purchase, payment or billing to go wrong: a moment or pack bought on Top Shot, All Day, Disney Pinnacle, Golazos, Magic Eden, OpenSea or Panini that did not arrive is THAT marketplace's support case — say so plainly and point them there, and never offer to escalate a purchase or billing issue. When someone asks how to reach the team, the answer is this chat (you log it for the team) — do not list purchase or billing problems as things you can escalate. Bugs, feature requests, and confusion go through log_bug / log_feature_request / log_feedback — those queue silently for batch triage. If you're unsure, log it; do not escalate. Escalation pages the team live only when urgency='high', so do not casually reach for it.
 
 ## CRITICAL — Not Financial Advice
 Nothing you say is financial advice. FMV values, deal scores, set valuations, pack EVs, etc. are model outputs with uncertainty. Surface the data they need to make their own decision rather than telling them what to do. The following phrases (and any close paraphrase) are banned:

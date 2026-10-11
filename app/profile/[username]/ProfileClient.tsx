@@ -97,8 +97,8 @@ function scoreColor(score: number): string {
 
 // ── Card style ────────────────────────────────────────────────────
 const cardStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.02)",
-  border: "1px solid rgba(255,255,255,0.07)",
+  background: "var(--rpc-bg-elev)",
+  border: "1px solid var(--rpc-border-subtle)",
   borderRadius: 10,
   padding: "16px 20px",
 };
@@ -107,7 +107,7 @@ const labelStyle: React.CSSProperties = {
   fontSize: 9,
   fontFamily: monoFont,
   letterSpacing: "0.2em",
-  color: "rgba(255,255,255,0.4)",
+  color: "var(--rpc-text-muted)",
   textTransform: "uppercase" as const,
 };
 
@@ -420,7 +420,7 @@ export default function ProfileClient(props: {
       : sparkData.length >= 2 && sparkData[sparkData.length - 1] >= sparkData[0];
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "#fff" }}>
+    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       {/* Brand fonts are loaded once app-wide from the root layout <head>
           (app/layout.tsx), so no per-page font <link>/@import is needed here. */}
       <style>{`
@@ -825,7 +825,7 @@ export default function ProfileClient(props: {
                           {rowClosed ? "market closed" : fmtDollars(rowFmv)}
                         </div>
                         <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)" }}>
-                          {(w.cached_moment_count ?? 0).toLocaleString("en-US")} MOMENTS
+                          {w.cached_moment_count != null ? `${w.cached_moment_count.toLocaleString("en-US")} MOMENTS` : "— MOMENTS"}
                           <CacheAgeCaption iso={w.cache_updated_at} />
                         </div>
                       </div>

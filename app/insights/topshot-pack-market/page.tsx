@@ -157,20 +157,20 @@ export default async function TopShotPackMarketPage() {
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--rpc-red)" }}>
           RPC Insights · Public
         </span>
-        <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 38, letterSpacing: "0.02em", color: "#fff", textTransform: "uppercase", lineHeight: 1.05 }}>
+        <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 38, letterSpacing: "0.02em", color: "var(--rpc-text-primary)", textTransform: "uppercase", lineHeight: 1.05 }}>
           Top Shot Pack Market
         </h1>
-        <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 13, color: "rgba(255,255,255,0.65)", lineHeight: 1.55, maxWidth: 720 }}>
+        <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--rpc-text-secondary)", lineHeight: 1.55, maxWidth: 720 }}>
           What a <strong>sealed</strong> NBA Top Shot pack actually trades for — and whether it resells above or below the
           price it dropped at. We roll up the complete on-chain secondary sale history of unopened packs and rank them by
           discount-to-retail, resale premium, and trading volume. Only packs with 5+ secondary sales qualify.
         </p>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 999, padding: "3px 10px" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--rpc-text-muted)", border: "1px solid var(--rpc-border)", borderRadius: 999, padding: "3px 10px" }}>
             ● Last sale {freshnessLabel(lastSaleAt)}
           </span>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-            {qualifying} qualifying dist{qualifying === 1 ? "" : "s"}
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
+            {ok ? `${qualifying} qualifying dist${qualifying === 1 ? "" : "s"}` : "qualifying dists unavailable"}
           </span>
         </div>
       </header>
@@ -218,7 +218,7 @@ export default async function TopShotPackMarketPage() {
       ) : null}
 
       {/* ── Methodology / footer ──────────────────────────────────────────── */}
-      <footer style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)", lineHeight: 1.7 }}>
+      <footer style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", lineHeight: 1.7 }}>
         <p style={{ margin: 0 }}>
           Method: secondary resale of <strong>sealed</strong> (unopened) packs only, from the complete on-chain sale
           history via <code>v_topshot_pack_market</code>. Median 90d is the trailing-90-day median secondary price; vs
@@ -227,14 +227,14 @@ export default async function TopShotPackMarketPage() {
           on-chain supply.
         </p>
         <div style={{ marginTop: 12, display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <Link href="/insights" style={{ color: "rgba(255,255,255,0.6)", textDecoration: "none" }}>
+          <Link href="/insights" style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}>
             ← All insights
           </Link>
           <a
             href={`https://twitter.com/intent/tweet?text=${encodeURIComponent("NBA Top Shot Pack Market — what sealed packs actually resell for, above or below retail.")}&url=${encodeURIComponent(`${SITE_URL}/insights/topshot-pack-market`)}`}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: "rgba(255,255,255,0.6)", textDecoration: "none" }}
+            style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}
           >
             Share on X
           </a>

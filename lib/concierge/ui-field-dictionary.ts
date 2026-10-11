@@ -96,6 +96,33 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
       "Badges are the moment's Top Shot tags (Debut, Rookie Year, Rookie Debut, …) read from the catalog. Special-serial badges (#1, perfect mint, jersey match) are a separate class computed from the serial; if they are absent on a card where the serial qualifies, that is a known report (2026-09-30, trophy case), not a missing tag.",
     source: "beta-feedback queue 2026-09-30 + app/api/support-chat/route.ts (badges guidance)",
   },
+  {
+    id: "pack-simulator.ev-per-slot",
+    surface: "pack rip simulator (/[collection]/packs/simulator/[distId])",
+    field: "EV / Slot (shown as \"≥ $X\" when coverage is under 100%)",
+    aliases: ["ev / slot", "ev per slot", "ev slot", "expected value", "≥", "greater than", "at least", "pack ev", "ev"],
+    meaning:
+      "The expected FMV of ONE slot: every pullable edition's latest FMV weighted by its drop weight. An edition with no FMV counts as $0, so when FMV cov. is under 100% the figure is a LOWER BOUND and is shown with \"≥\" (hover says how many pullable editions are unpriced). Multiply by Slots / Pack for a whole pack. It may differ from the trimmed-mean pack EV on the pack listing page, which is computed separately.",
+    source: "public.pack_grail_metrics (ev_per_slot = sum(drop_weight × coalesce(fmv,0)) / sum(drop_weight)) via get_pack_for_simulator + PackSimulatorClient.tsx",
+  },
+  {
+    id: "pack-simulator.header-stats",
+    surface: "pack rip simulator header",
+    field: "Slots / Pack, Pool, FMV cov., Depletion, Chase",
+    aliases: ["slots", "slots / pack", "~", "pool", "editions", "fmv cov", "fmv coverage", "coverage", "depletion", "chase", "max pull"],
+    meaning:
+      "Slots / Pack: moments per pack; a trailing \"~\" means the pack does not publish it and the simulator assumed 5. Pool: how many editions can still be pulled (drop weight > 0). FMV cov.: the share of those pullable editions that have an FMV. Depletion: the share of the drop's minted packs already opened, from the pack's distribution record (\"—\" when unknown). Chase: the single highest-FMV edition in the pool.",
+    source: "PackSimulatorClient.tsx (Stat row) + public.pack_grail_metrics (edition_count_pullable, fmv_coverage_pct, max_pull_*) + pack_distributions.depletion_pct",
+  },
+  {
+    id: "overview.priced-from-sales",
+    surface: "collection overview (/[collection]/overview)",
+    field: "Priced from Sales",
+    aliases: ["priced from sales", "priced", "coverage", "how much is priced", "overview percentage"],
+    meaning:
+      "The share of this collection's editions whose FMV rests on corroborated recent sales (HIGH or MEDIUM confidence) rather than an ask or nothing. It is NOT the share of editions that have any FMV at all, which is much larger. \"—\" means the figure could not be read, not 0%.",
+    source: "app/(collections)/[collection]/overview/CollectionOverviewClient.tsx (fmv_high_medium_pct; no fallback to fmv_pct)",
+  },
 ];
 
 function norm(s: string): string {

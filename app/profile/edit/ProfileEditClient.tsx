@@ -320,19 +320,19 @@ export default function ProfileEditClient() {
            in @layer base; this keeps the declaration where it was, in the layer it must be in. */
         @layer base{*{box-sizing:border-box;margin:0;padding:0;}}
         .field { display:flex; flex-direction:column; gap:6px; }
-        .field label { font-family:${monoFont}; font-size:11px; color:rgba(255,255,255,0.7); letter-spacing:0.04em; text-transform:uppercase; }
+        .field label { font-family:${monoFont}; font-size:11px; color:var(--rpc-text-secondary); letter-spacing:0.04em; text-transform:uppercase; }
         /* Section heading for a field that has more than one input path (the
            avatar: pick a Moment, or paste a URL). Matches .field label so the
            form still reads as one consistent ladder. */
-        .field-heading { font-family:${monoFont}; font-size:11px; color:rgba(255,255,255,0.7); letter-spacing:0.04em; text-transform:uppercase; }
-        .field input, .field textarea, .field select { background:#0d0d0d; border:1px solid var(--rpc-border); color:var(--rpc-text-primary); padding:10px 12px; border-radius:6px; font-family:${monoFont}; font-size:13px; }
+        .field-heading { font-family:${monoFont}; font-size:11px; color:var(--rpc-text-secondary); letter-spacing:0.04em; text-transform:uppercase; }
+        .field input, .field textarea, .field select { background:var(--rpc-surface-raised); border:1px solid var(--rpc-border); color:var(--rpc-text-primary); padding:10px 12px; border-radius:6px; font-family:${monoFont}; font-size:13px; }
         .field input:focus, .field textarea:focus, .field select:focus { outline:none; border-color:var(--rpc-red); }
-        .hint { font-family:${monoFont}; font-size:10px; color:rgba(255,255,255,0.4); }
+        .hint { font-family:${monoFont}; font-size:10px; color:var(--rpc-text-muted); }
         .team-row { display:grid; grid-template-columns: 28px 80px 1fr auto; gap:10px; align-items:center; }
         .team-row select { width:100%; }
         .team-row .league-emoji { font-size:18px; text-align:center; }
-        .team-row .league-label { font-family:${monoFont}; font-size:11px; color:rgba(255,255,255,0.7); letter-spacing:0.06em; }
-        .primary-radio { display:flex; align-items:center; gap:6px; font-family:${monoFont}; font-size:10px; color:rgba(255,255,255,0.6); letter-spacing:0.05em; cursor:pointer; }
+        .team-row .league-label { font-family:${monoFont}; font-size:11px; color:var(--rpc-text-secondary); letter-spacing:0.06em; }
+        .primary-radio { display:flex; align-items:center; gap:6px; font-family:${monoFont}; font-size:10px; color:var(--rpc-text-secondary); letter-spacing:0.05em; cursor:pointer; }
         .primary-radio input { accent-color: var(--rpc-red); }
       `}</style>
 
@@ -341,13 +341,13 @@ export default function ProfileEditClient() {
           <h1 style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, letterSpacing: "0.04em", textTransform: "uppercase" }}>
             Edit Profile
           </h1>
-          <Link href="/dashboard" style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.6)", textDecoration: "none" }}>
+          <Link href="/dashboard" style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)", textDecoration: "none" }}>
             ← Back to dashboard
           </Link>
         </header>
 
         {loading ? (
-          <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Loading…</div>
+          <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)" }}>Loading…</div>
         ) : loadFailed ? (
           /* ⚠ The form is WITHHELD, not merely annotated. A banner over an
              editable blank form still lets a save go out, and this page's save
@@ -360,7 +360,7 @@ export default function ProfileEditClient() {
             <div style={{ fontFamily: condensedFont, fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
               Couldn&rsquo;t load your profile
             </div>
-            <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.6)", lineHeight: 1.6 }}>
+            <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
               This is a problem on our side and says nothing about what&rsquo;s saved — your profile is untouched.
               The editor stays hidden until it loads, so nothing can be overwritten with a blank form. Reload in a moment.
             </div>
@@ -535,7 +535,7 @@ export default function ProfileEditClient() {
                         fontSize: 10,
                         letterSpacing: "0.08em",
                         color: "var(--rpc-text-primary)",
-                        background: "rgba(255,255,255,0.04)",
+                        background: "var(--rpc-bg-elev)",
                         border: c.is_primary ? `1px solid ${c.primary_color}` : "1px solid var(--rpc-border)",
                       }}
                     >
@@ -616,9 +616,9 @@ export default function ProfileEditClient() {
                   type="color"
                   value={form.accent_color}
                   onChange={(e) => update("accent_color", e.target.value)}
-                  style={{ width: 60, height: 32, padding: 0, border: "1px solid var(--rpc-border)", borderRadius: 4, background: "#0d0d0d" }}
+                  style={{ width: 60, height: 32, padding: 0, border: "1px solid var(--rpc-border)", borderRadius: 4, background: "var(--rpc-surface-raised)" }}
                 />
-                <code style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.6)" }}>{form.accent_color}</code>
+                <code style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)" }}>{form.accent_color}</code>
               </div>
             </div>
 

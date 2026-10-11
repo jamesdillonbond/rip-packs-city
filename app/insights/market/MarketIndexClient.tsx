@@ -227,7 +227,7 @@ function IndexChart({
             x2={W - padR}
             y1={y(v)}
             y2={y(v)}
-            stroke={v === 100 ? "rgba(224,58,47,0.45)" : "rgba(255,255,255,0.08)"}
+            style={{ stroke: v === 100 ? "rgba(224,58,47,0.45)" : "var(--rpc-border-subtle)" }}
             strokeWidth={v === 100 ? 1.5 : 1}
             strokeDasharray={v === 100 ? "4 3" : undefined}
           />
@@ -235,7 +235,7 @@ function IndexChart({
             x={padL - 8}
             y={y(v) + 4}
             textAnchor="end"
-            fill="rgba(255,255,255,0.45)"
+            style={{ fill: "var(--rpc-text-muted)" }}
             fontSize={13}
             fontFamily="monospace"
           >
@@ -251,7 +251,7 @@ function IndexChart({
           x={x(xi)}
           y={H - 10}
           textAnchor="middle"
-          fill="rgba(255,255,255,0.45)"
+          style={{ fill: "var(--rpc-text-muted)" }}
           fontSize={13}
           fontFamily="monospace"
         >
@@ -305,8 +305,8 @@ function VolumeBars({ volume }: { volume: { d: string; v: number }[] }) {
     >
       {yTicks.map((v, i) => (
         <g key={i}>
-          <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="rgba(255,255,255,0.08)" strokeWidth={1} />
-          <text x={padL - 8} y={y(v) + 4} textAnchor="end" fill="rgba(255,255,255,0.45)" fontSize={12} fontFamily="monospace">
+          <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} style={{ stroke: "var(--rpc-border-subtle)" }} strokeWidth={1} />
+          <text x={padL - 8} y={y(v) + 4} textAnchor="end" style={{ fill: "var(--rpc-text-muted)" }} fontSize={12} fontFamily="monospace">
             {fmtUsd(v)}
           </text>
         </g>

@@ -27,3 +27,18 @@ describe("lookupUiField", () => {
     expect(new Set(UI_FIELD_DICTIONARY.map((e) => e.id)).size).toBe(UI_FIELD_DICTIONARY.length)
   })
 })
+
+// 2026-10-11 — the pack simulator and overview fields resolve to their entries.
+describe("ui field dictionary — 2026-10-11 entries", () => {
+  it("answers 'what is EV per slot' on the simulator with the lower-bound entry", () => {
+    const hit = lookupUiField("what does EV / slot mean, why is there a ≥", "pack rip simulator")[0]
+    expect(hit?.id).toBe("pack-simulator.ev-per-slot")
+    expect(hit?.meaning).toMatch(/LOWER BOUND/)
+  })
+  it("answers 'what is Priced from Sales' on the overview", () => {
+    expect(lookupUiField("what does priced from sales mean", "collection overview")[0]?.id).toBe("overview.priced-from-sales")
+  })
+  it("answers 'what does the ~ after slots mean'", () => {
+    expect(lookupUiField("what does the ~ next to slots / pack mean", "pack rip simulator header")[0]?.id).toBe("pack-simulator.header-stats")
+  })
+})
