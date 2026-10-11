@@ -1,4 +1,4 @@
-# Inbox index — 574 live filings
+# Inbox index — 575 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,8 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-10-11 — 1 filing
+## 2026-10-11 — 2 filings
 
+- [🟡 **Daytime monitor candidate — `get_wallet_pack_summary` occasionally exceeds the 8 s RPC read budget (3 requests in 22 min, 10-10 ~8:46–9:08 PM PT); pre-existing, not a regression of the 10-10 ships**](2026-10-11T0609Z-daytime-monitor-get-wallet-pack-summary-8s-rpc-read-timeout.md)
 - [**✅ FIXED 10-10 ~9:39 PM PT (`20261011043919`, window 30 → 365 d)** 🟡 **The chain hydrator's backlog leg re-probes moved Moments at a 0.2 % yield — 20,896 scripts a week for 51 rows**](2026-10-11T0200Z-chain-hydrator-backlog-leg-reprobes-moved-moments-at-0-2pct-yield.md) — *(Cowork cloud, 10-10 ~7:00 PM PT; read-only; the `no_nft` 30-day re-probe window is the lever, owner's call)*
 
 ## 2026-10-09 — 1 filing
