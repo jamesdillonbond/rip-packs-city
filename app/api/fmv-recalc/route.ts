@@ -691,7 +691,10 @@ export async function POST(req: NextRequest) {
     // four collections have "no ask feed at all" and that was WRONG on two of them.
     // What is absent is an EDITION-KEYED feed, which is not the same thing (measured
     // live 2026-09-09):
-    //   UFC, Candy      — no `cached_listings_v2` rows at all. Genuinely no feed.
+    //   UFC             — no `cached_listings_v2` rows at all. Genuinely no feed.
+    //   Candy           — no `cached_listings_v2` rows, but since 2026-09-25 it HAS an
+    //                     edition-keyed confirmed ask (candy_listing_floor), and since
+    //                     2026-10-11 that ask also corroborates (Step 2a-ter(b'), below).
     //   Pinnacle        — 13,945 OPEN asks, ingesting live, but `edition_id` is NULL
     //                     on every row: its grain is the (character_name, set_name,
     //                     variant_type) triple, so it cannot be joined by edition_id
@@ -828,6 +831,26 @@ export async function POST(req: NextRequest) {
     let candyCeilingError: string | null = candyCeiling.error
     if (candyCeilingError) console.warn("[FMV-RECALC] Candy confirmed-ask ceiling fetch error (non-fatal):", candyCeilingError)
     let candyCeilingCaps = 0
+    // 2026-10-11: the same confirmed Candy ask CORROBORATES as well as caps. It was
+    // trusted to LOWER a Candy FMV (the ceiling, above) while corroboration stayed
+    // TS/All-Day-only, so no Candy edition could be lifted LOW -> MEDIUM by an ask
+    // that agrees with its sales: the All Day inconsistency of 2026-09-09 again
+    // (__tests__/fmv-allday-ask-corroboration.test.ts). Measured out of sample before
+    // shipping: the Candy LOW editions this lifts (sales median within +/-25 % of the
+    // confirmed ask, >= 3 sales) priced at MdAPE 19.2 % / 67.5 % within 25 % over the
+    // next 7 days, against 20.0 % / 54.3 % for Candy MEDIUM and 27.3 % / 46.5 % for the
+    // LOW that stays LOW. The ask's AGE is when its listing was last SEEN; written as a
+    // PAIR with the ask, so an undatable one withholds (null) instead of passing.
+    // editionCeilingAskById is a separate map, so nothing here can move a price.
+    let candyCorroborationAsks = 0
+    for (const [edId, ask] of candyCeiling.floors) {
+      if (editionAskById.has(edId)) continue
+      const seen = candyCeiling.seenAt.get(edId) ?? null
+      const seenMs = seen ? Date.parse(seen) : NaN
+      editionAskById.set(edId, ask)
+      editionAskAgeHoursById.set(edId, Number.isNaN(seenMs) ? null : (Date.now() - seenMs) / 3_600_000)
+      candyCorroborationAsks++
+    }
 
     // ── Step 2a-ter(c): All Day ask-CORROBORATION (M2, 2026-09-09) ────────────
     // Ask-corroboration (lib/fmv-confidence.ts, A2) lifts LOW -> MEDIUM when an
@@ -2757,6 +2780,7 @@ export async function POST(req: NextRequest) {
           // Step 2a-ter(b'): Candy editions whose Step-4 FMV the confirmed ask
           // LOWERED this run, paired with its read error (null = the read ran).
           candy_ask_ceiling_caps: candyCeilingCaps,
+          candy_corroboration_asks: candyCorroborationAsks,
           candy_ask_ceiling_sweep_caps: candyCeilingSweepCaps,
           candy_ask_ceiling_error: candyCeilingError,
         },

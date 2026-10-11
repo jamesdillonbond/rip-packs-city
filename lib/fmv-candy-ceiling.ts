@@ -30,6 +30,13 @@ type SupabaseLike = {
 
 export type CandyCeilingResult = {
   floors: Map<string, number>
+  /**
+   * When each floor's listing was last SEEN (candy_listing_floor.last_seen_at), for
+   * the callers that need the ask's age (fmv-recalc's ask-corroboration, 2026-10-11).
+   * null = the row carried no parseable stamp: an undatable ask, which must NOT
+   * corroborate (lib/fmv-confidence.ts, escalateConfidence's three age states).
+   */
+  seenAt: Map<string, string | null>
   error: string | null
 }
 
@@ -39,29 +46,31 @@ export async function fetchCandyConfirmedFloors(
   chunkSize = 500,
 ): Promise<CandyCeilingResult> {
   const floors = new Map<string, number>()
+  const seenAt = new Map<string, string | null>()
   let error: string | null = null
   for (let i = 0; i < editionIds.length; i += chunkSize) {
     const slice = editionIds.slice(i, i + chunkSize)
     try {
       const { data, error: err } = await supabase
         .from("candy_listing_floor")
-        .select("edition_id, confirmed_floor_usd")
+        .select("edition_id, confirmed_floor_usd, last_seen_at")
         .in("edition_id", slice)
         .gt("confirmed_floor_usd", 0)
       if (err) {
         error = `chunk ${i}: ${err.message ?? String(err)}`
         continue
       }
-      for (const row of (data ?? []) as Array<{ edition_id: unknown; confirmed_floor_usd: unknown }>) {
+      for (const row of (data ?? []) as Array<{ edition_id: unknown; confirmed_floor_usd: unknown; last_seen_at?: unknown }>) {
         const ask = Number(row.confirmed_floor_usd)
         if (!(ask > 0) || !Number.isFinite(ask)) continue
         floors.set(String(row.edition_id), ask)
+        seenAt.set(String(row.edition_id), row.last_seen_at == null ? null : String(row.last_seen_at))
       }
     } catch (e) {
       error = `chunk ${i}: ${e instanceof Error ? e.message : String(e)}`
     }
   }
-  return { floors, error }
+  return { floors, seenAt, error }
 }
 
 /** Merge asks into a ceiling map, keeping the LOWER ask on a collision. */

@@ -65,7 +65,7 @@ describe("fetchCandyConfirmedFloors", () => {
     const sb = fakeSupabase([])
     const r = await fetchCandyConfirmedFloors(sb, [])
     expect(sb.calls).toHaveLength(0)
-    expect(r).toEqual({ floors: new Map(), error: null })
+    expect(r).toEqual({ floors: new Map(), seenAt: new Map(), error: null })
   })
 })
 
