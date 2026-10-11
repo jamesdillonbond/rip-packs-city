@@ -21,9 +21,11 @@
 --      market event -- only when every source that answers agrees, never from an
 --      Atlas parallel, never across collections (an All Day pull is not named by
 --      a Top Shot sale; an 'nfl' Atlas event never names a Top Shot pull).
+--   7. (2026-10-10, #188) Each NEW inner pack a box yields is queued for the pack-nft-identity
+--      lane unless the index already names it; a re-collected box queues nothing again.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929134500_audit_20260929_box_packs_yield_packs_not_moments.sql).
+-- (supabase/migrations/20261011020700_audit_20261010_collect_wallet_pack_pulls_queues_inner_packs_for_identity.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -71,6 +73,10 @@ CREATE TABLE public.pack_open_pull_values (
   CONSTRAINT pack_open_pull_values_whole_pack CHECK (pull_value_usd IS NULL OR n_priced = n_pulls));
 CREATE TABLE public.pack_box_contents (collection_id uuid NOT NULL, box_pack_nft_id text NOT NULL, pack_nft_id text NOT NULL,
   opener_address text NOT NULL, first_seen_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (collection_id, box_pack_nft_id, pack_nft_id));
+-- 2026-10-10 (#188): new inner packs the index does not name are queued for the identity lane
+CREATE TABLE public.pack_nft_identity (collection_id uuid, pack_nft_id text, dist_id text, PRIMARY KEY (collection_id, pack_nft_id));
+CREATE TABLE public.pack_nft_identity_queue (collection_id uuid, pack_nft_id text, last_seen_at timestamptz,
+  enqueued_at timestamptz DEFAULT now(), attempts int DEFAULT 0, PRIMARY KEY (collection_id, pack_nft_id));
 CREATE TABLE public.pack_pull_wallet_state (
   wallet text PRIMARY KEY, requested_at timestamptz, completed_at timestamptz,
   pages int NOT NULL DEFAULT 0, packs int NOT NULL DEFAULT 0, pulls int NOT NULL DEFAULT 0, last_error text);
@@ -165,6 +171,10 @@ BEGIN
       -- e.g. "2026 NBA Finals Box" -> 8 PackNFTs). Those go to
       -- pack_box_contents; before, each was stored as an unnamed moment and the
       -- box read "0 of 8 priced" for ever (430 Top Shot boxes, 12 wallets).
+      -- 2026-10-10 (#188): ... and each NEW inner pack the index does not name yet is queued for
+      -- the pack-nft-identity lane. The per-owner sync cannot see one the opener sold or sent on
+      -- sealed (1,516 of 3,404 had no identity row), so its dist was never learned.
+      WITH box_ins AS (
       INSERT INTO public.pack_box_contents (collection_id, box_pack_nft_id, pack_nft_id, opener_address)
       SELECT DISTINCT
              CASE e->'node'->>'type_name'
@@ -181,7 +191,16 @@ BEGIN
         AND e->'node'->>'id' IS NOT NULL
         AND e->'node'->>'type_name' IN ('A.0b2a3299cc857e29.PackNFT.NFT', 'A.e4cf4bdc1751c65d.PackNFT.NFT', 'A.87ca73a41bb50ad5.PackNFT.NFT')
         AND t.tok ~ '^A\.[0-9a-f]+\.PackNFT\.[0-9]+$'
-      ON CONFLICT (collection_id, box_pack_nft_id, pack_nft_id) DO NOTHING;
+      ON CONFLICT (collection_id, box_pack_nft_id, pack_nft_id) DO NOTHING
+      RETURNING collection_id, pack_nft_id
+      )
+      INSERT INTO public.pack_nft_identity_queue (collection_id, pack_nft_id, last_seen_at)
+      SELECT DISTINCT bi.collection_id, bi.pack_nft_id, now()
+      FROM box_ins bi
+      WHERE bi.collection_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM public.pack_nft_identity pi
+                         WHERE pi.collection_id = bi.collection_id AND pi.pack_nft_id = bi.pack_nft_id)
+      ON CONFLICT (collection_id, pack_nft_id) DO NOTHING;
 
       -- "A.<addr>.<Contract>.<id>" per pulled moment; the collection is the
       -- PACK's contract (a pack only ever yields its own collection's moments).
@@ -686,6 +705,7 @@ END $$;
 -- never pack_open_pulls; a mixed pack keeps its moments as pulls.
 INSERT INTO public.pack_pull_wallet_state (wallet, requested_at) VALUES ('0xboxer', now());
 INSERT INTO public.pack_pull_requests (request_id, kind, wallet, page) VALUES (77, 'wallet', '0xboxer', 1);
+INSERT INTO public.pack_nft_identity VALUES ((SELECT id FROM public.collections WHERE slug = 'nba_top_shot'), '15393165469487', '8547');
 INSERT INTO net._http_response VALUES (77, 200, $j${"data":{"searchPackNft":{"totalCount":2,"pageInfo":{"endCursor":"b1","hasNextPage":false},"edges":[
   {"node":{"id":"BOX1","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Opened","nfts":"A.0b2a3299cc857e29.PackNFT.14293653849969,A.0b2a3299cc857e29.PackNFT.15393165469487"}},
   {"node":{"id":"MIX1","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Opened","nfts":"A.0b2a3299cc857e29.PackNFT.48378514315134,A.0b2a3299cc857e29.TopShot.101"}}
@@ -697,6 +717,22 @@ BEGIN
   PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_open_pulls WHERE pack_nft_id = 'BOX1'), 'a box''s inner packs are never moment pulls');
   PERFORM _assert_eq((SELECT string_agg(nft_id, ',') FROM public.pack_open_pulls WHERE pack_nft_id = 'MIX1'), '101', 'a mixed pack keeps its moment, drops its pack');
   PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_open_pull_values WHERE pack_nft_id = 'BOX1'), 'a box gets no moment pull value (never "0 of 2 priced", never $0)');
+  -- #188: the two inner packs the index does not name are queued; the named one is not
+  PERFORM _assert_eq((SELECT string_agg(pack_nft_id, ',' ORDER BY pack_nft_id) FROM public.pack_nft_identity_queue),
+                     '14293653849969,48378514315134', 'unnamed inner packs queued for identity, the named one not');
+END $$;
+-- a second page carrying the same box adds no contents and queues nothing again
+DELETE FROM public.pack_nft_identity_queue;
+UPDATE public.pack_pull_wallet_state SET completed_at = NULL WHERE wallet = '0xboxer';
+INSERT INTO public.pack_pull_requests (request_id, kind, wallet, page) VALUES (78, 'wallet', '0xboxer', 1);
+INSERT INTO net._http_response VALUES (78, 200, $j${"data":{"searchPackNft":{"totalCount":1,"pageInfo":{"endCursor":"b2","hasNextPage":false},"edges":[
+  {"node":{"id":"BOX1","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Opened","nfts":"A.0b2a3299cc857e29.PackNFT.14293653849969,A.0b2a3299cc857e29.PackNFT.15393165469487"}}
+]}}}$j$, NULL);
+DO $$
+BEGIN
+  PERFORM public.collect_wallet_pack_pulls();
+  PERFORM _assert_eq((SELECT count(*)::text FROM public.pack_box_contents WHERE opener_address = '0xboxer'), '3', 'a re-collected box adds no contents');
+  PERFORM _assert_eq((SELECT count(*)::text FROM public.pack_nft_identity_queue), '0', 'a re-collected box queues nothing again');
 END $$;
 
 ROLLBACK;

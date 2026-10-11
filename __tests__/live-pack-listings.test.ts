@@ -24,6 +24,7 @@ function node(over: {
   title?: string | null
   tier?: string | null
   slots?: string | null
+  packType?: string | null
   price?: number | null
   startTime?: string | null
   image?: string[] | null
@@ -36,7 +37,7 @@ function node(over: {
       uuid: { value: over.uuid === undefined ? `uuid-${over.distId}` : over.uuid },
       image_urls: { value: over.image === undefined ? ["http://img/a.png"] : over.image },
       number_of_pack_slots: { value: over.slots === undefined ? "5" : over.slots },
-      pack_type: { value: "standard" },
+      pack_type: { value: over.packType === undefined ? "standard" : over.packType },
       price: { value: over.price === undefined ? 9 : over.price },
       start_time: { value: over.startTime === undefined ? "2024-09-08T00:00:00Z" : over.startTime },
       tier: { value: over.tier === undefined ? "common" : over.tier },
@@ -156,6 +157,21 @@ describe("fetchLivePackListings — packType", () => {
     expect(await classify({ distId: "fb", slots: "2", price: 5, title: "Fast Break Reward" })).toBe("reward")
     expect(await classify({ distId: "prem", slots: "3", price: 5, title: "Premium Chase" })).toBe("chance_hit")
     expect(await classify({ distId: "std", slots: "5", price: 9, title: "Base Set Pack" })).toBe("standard")
+  })
+
+  // 2026-10-10 (#188): a box / case yields PACKS. A 7-8-slot box read "standard" and an
+  // 8-slot case too; Dapper's pack_type decides, the title where Dapper is silent.
+  it("classifies boxes and cases from Dapper's pack_type, then the title -- never by slot count", async () => {
+    expect(await classify({ distId: "bx", slots: "8", price: 250, title: "2026 NBA Finals Box", packType: "box" })).toBe("box")
+    expect(await classify({ distId: "cs", slots: "13", price: 2500, title: "Metallic Gold LE Case", packType: "case" })).toBe("case")
+    // the newest drops carry pack_type null: the title decides
+    expect(await classify({ distId: "rb", slots: "7", price: 0, title: "Run It Back: Origins Box", packType: null })).toBe("box")
+    expect(await classify({ distId: "rc", slots: "8", price: 0, title: "Run It Back: Origins Case", packType: null })).toBe("case")
+    // a topper or a case BREAK is not a container
+    expect(await classify({ distId: "ct", slots: "1", price: 0, title: "Run It Back: Origins Case Topper", packType: null })).toBe("topper")
+    expect(await classify({ distId: "br", slots: "1", price: 0, title: "NBA Top Shot: Holo Icon Case Break", packType: null })).toBe("reward")
+    // Dapper's "pack" on a premium pack stays a pack
+    expect(await classify({ distId: "pp", slots: "10", price: 0, title: "Run It Back: Origins Premium Pack", packType: "pack" })).toBe("bundle")
   })
 })
 

@@ -600,6 +600,14 @@ const PINS = [
       "supabase/migrations/20260926200000_audit_20260926_pack_nft_mints_name_packs_dapper_minted_straight_into_a_wallet.sql",
   },
   {
+    // Added 2026-10-10 (#188). A Top Shot box / case is valued as the sum of what it yields:
+    // observed recipes (a partly-named box never shapes one), container-only inner packs priced
+    // here, never a partial sum, untyped containers typed.
+    fn: "refresh_container_pack_ev",
+    test: "supabase/tests/refresh_container_pack_ev.sql",
+    migration: "supabase/migrations/20261011020800_audit_20261010_box_and_case_pack_ev_from_their_recipes.sql",
+  },
+  {
     // Added 2026-09-26. Pins the lane that prices every pack a saved wallet
     // OPENED from Dapper's own list of what it yielded (searchPackNft.nfts):
     // collection-scoped edition resolution, whole-pack all-or-nothing pricing
@@ -607,8 +615,9 @@ const PINS = [
     // that a page with a next page is not a finished walk.
     fn: "collect_wallet_pack_pulls",
     test: "supabase/tests/collect_wallet_pack_pulls.sql",
+    // 2026-09-29: box packs yield packs. 2026-10-10 (#188): new inner packs queued for identity.
     migration:
-      "supabase/migrations/20260929134500_audit_20260929_box_packs_yield_packs_not_moments.sql",  // 2026-09-29: box packs yield packs
+      "supabase/migrations/20261011020700_audit_20261010_collect_wallet_pack_pulls_queues_inner_packs_for_identity.sql",
   },
   {
     // Added 2026-09-18. Pins the FIX for "my wallet shows 0 sold packs when I have
@@ -641,8 +650,9 @@ const PINS = [
     // All Day drops are pre-minted days before they open. v17: and a mint
     // BEFORE the window is ignored (the sale / open bound decides).
     // v20 (2026-10-10): a bought pack the confirmed index says this wallet opened is ripped.
+    // v21 (2026-10-10, #187): a pack out of a box this wallet opened was not bought -- no buy, no P/L.
     migration:
-      "supabase/migrations/20261010170411_audit_20261010_wallet_pack_history_a_bought_pack_the_index_says_was_opened_is_not_held.sql",
+      "supabase/migrations/20261011020600_audit_20261010_wallet_pack_history_a_pack_out_of_a_box_was_not_bought.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

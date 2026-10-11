@@ -150,7 +150,11 @@ type GraphQLResponse = {
   errors?: { message: string }[]
 }
 
-export type PackType = "standard" | "topper" | "chance_hit" | "reward" | "bundle"
+// "box" / "case" (2026-10-10, #188): a Top Shot box or case is a PackNFT that yields sealed
+// PackNFTs, never moments -- its slot count is a count of PACKS. Dapper types it on the
+// distribution (pack_type "box" | "case" | "pack"); a 7-8-slot box used to fall through to
+// "standard" and an 8-slot case too.
+export type PackType = "standard" | "topper" | "chance_hit" | "reward" | "bundle" | "box" | "case"
 
 export type PackListing = {
   packListingId: string
@@ -205,8 +209,21 @@ function tierOrder(tier: string): number {
   return 4
 }
 
-function classifyPackType(title: string | null | undefined, slots: number, retailPrice: number): PackType {
+function classifyPackType(
+  title: string | null | undefined,
+  slots: number,
+  retailPrice: number,
+  dapperPackType?: string | null,
+): PackType {
   const t = (title ?? "").toLowerCase()
+  // Dapper's own type first; it is null on the newest PDS-era drops, so the title decides
+  // there -- never a topper ("Case Topper") or a live-stream "Case Break".
+  const dt = (dapperPackType ?? "").toLowerCase()
+  if (dt === "box" || dt === "case") return dt
+  if (!t.includes("topper") && !t.includes("break")) {
+    if (/\bcase\b/.test(t)) return "case"
+    if (/\bbox\b/.test(t)) return "box"
+  }
   if (slots >= 10) return "bundle"
   if (t.includes("topper")) return "topper"
   if (t.includes("chance hit") || t.includes("chance-hit")) return "chance_hit"
@@ -306,7 +323,7 @@ export async function fetchLivePackListings(
       const retailPrice = normalizePackRetailPrice(d?.price?.value ?? 0)
       const slots = parseInt(d?.number_of_pack_slots?.value ?? "1", 10) || 1
       const title = d?.title?.value ?? `Pack #${distId}`
-      const packType = classifyPackType(title, slots, retailPrice)
+      const packType = classifyPackType(title, slots, retailPrice, d?.pack_type?.value ?? null)
       const startTime = d?.start_time?.value ?? ""
       return {
         packListingId: d?.uuid?.value ?? distId,
@@ -326,8 +343,9 @@ export async function fetchLivePackListings(
   )
 
   listings.sort((a, b) => {
-    const aIsBundle = a.packType === "bundle" ? 1 : 0
-    const bIsBundle = b.packType === "bundle" ? 1 : 0
+    // multi-pack products (bundles, boxes, cases) sort after single packs
+    const aIsBundle = a.packType === "bundle" || a.packType === "box" || a.packType === "case" ? 1 : 0
+    const bIsBundle = b.packType === "bundle" || b.packType === "box" || b.packType === "case" ? 1 : 0
     if (aIsBundle !== bIsBundle) return aIsBundle - bIsBundle
     const tierDiff = tierOrder(a.tier) - tierOrder(b.tier)
     if (tierDiff !== 0) return tierDiff

@@ -61,9 +61,13 @@
 --  12. (v20, 2026-10-10) A BOUGHT pack the index -- confirmed by the wallet's clean walk --
 --      says this wallet OPENED is ripped, never held (box openings write no rip row);
 --      a stale Opened row is still a departure (BX1-BX3).
+--  13. (v21, 2026-10-10, #187) A pack that came out of a box THIS wallet opened was not bought:
+--      no buy price (source 'box'), never inferred at its own retail, so no P/L of its own --
+--      a sold topper (retail 0) read "buy $0" and its whole sale as profit. Opener-scoped:
+--      another wallet's box contents change nothing here (IB1-IB4).
 --
 -- The get_wallet_pack_history DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261010170411_audit_20261010_wallet_pack_history_a_bought_pack_the_index_says_was_opened_is_not_held.sql).
+-- (supabase/migrations/20261011020600_audit_20261010_wallet_pack_history_a_pack_out_of_a_box_was_not_bought.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -425,7 +429,10 @@ BEGIN
         WHEN hx.dist_id IS NOT NULL THEN 'peer_sale'
         WHEN NULLIF(pi.dist_id, '0') IS NOT NULL THEN 'dapper_index'
         ELSE NULL
-      END AS dist_source
+      END AS dist_source,
+      -- 2026-10-10 (v21, #187): the BOX this wallet opened that yielded this pack, or NULL.
+      -- Such a pack was never bought: its cost is part of the box's price.
+      bxp.box_pack_nft_id AS from_box
     FROM dedup d
     JOIN public.collections c ON c.id = d.collection_id
     LEFT JOIN latest_buys  lb ON lb.collection_id = d.collection_id AND lb.pack_nft_id = d.pack_nft_id
@@ -453,6 +460,12 @@ BEGIN
         AND h.pack_nft_id = d.pack_nft_id AND h.dist_id IS NOT NULL
       LIMIT 1
     ) hx ON true
+    LEFT JOIN LATERAL (
+      SELECT bx.box_pack_nft_id FROM public.pack_box_contents bx
+      WHERE bx.collection_id = d.collection_id AND bx.pack_nft_id = d.pack_nft_id
+        AND bx.opener_address = v_wallet
+      LIMIT 1
+    ) bxp ON true
   ),
   enriched AS (
     SELECT
@@ -474,6 +487,8 @@ BEGIN
            WHEN NOT r.has_buy AND inf.inferable THEN rt.retail_usd
            ELSE r.buy_price END AS buy_usd,
       CASE
+        -- v21 (#187): out of a box this wallet opened -- no price of its own (the box carries it)
+        WHEN NOT r.has_buy AND r.from_box IS NOT NULL THEN 'box'
         WHEN NOT r.has_buy AND inf.inferable AND rt.retail_usd IS NOT NULL THEN 'retail_inferred'
         WHEN NOT r.has_buy THEN NULL
         WHEN r.bought_primary AND rt.retail_usd IS NOT NULL THEN 'retail'
@@ -561,6 +576,9 @@ BEGIN
     CROSS JOIN LATERAL (
       SELECT coalesce(r.dist_id IS NOT NULL
               AND r.rip_source IS DISTINCT FROM 'reconstructed'
+              -- v21 (#187): a pack a box yielded was not bought at its own retail. A topper or
+              -- premium pack (retail 0, never sold alone) read "buy $0" and its whole sale as P/L.
+              AND r.from_box IS NULL
               AND ((ds.drop_start IS NOT NULL
                     AND (r.collection_id = v_ts
                          OR (r.collection_id = v_ad AND ds.drop_start >= timestamptz '2022-12-16'))
@@ -751,7 +769,9 @@ BEGIN
            -- v18: how many of the pack's pulls are named by inference (id neighbours)
            'pulls_inferred', pulls_inferred,
            -- v19: packs this BOX yielded (0 = not a box)
-           'box_packs', box_packs)
+           'box_packs', box_packs,
+           -- v21 (#187): the box this wallet opened that yielded this pack (NULL = not from a box)
+           'from_box_pack_nft_id', from_box)
       ORDER BY latest_event_at DESC NULLS LAST, collection_id, pack_nft_id
     ), '[]'::jsonb)
   INTO v_total, v_packs
@@ -772,6 +792,7 @@ BEGIN
       'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = Dapper''s index date while the index names this wallet, else -- All Day -- the pack''s mint in Dapper''s index (primary_minted_at) when no one else sold it on the marketplace before this wallet''s sale / open, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16, dates from Dapper''s distribution record), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack''s price is in tickets, not dollars: NULL. An All Day distribution Dapper types REWARD is $0 (reward); any other All Day price of 0 is unknown. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
       'reconstructed', 'wallet_reconstructed_rips: Top Shot packs opened with NO pack NFT (custodial packs, 2021 on), rebuilt from the wallet''s pack-pull moment deliveries (a gap > 3 s starts a new reveal; 114 of 115 bursts overlapping a known pack matched its moment list exactly). rip_source = reconstructed; no distribution, no price paid; covers deliveries seeded into moment_acquisitions (through 2026-03)',
       'pulls', 'pack_open_pull_values: every pack this wallet opened, priced from the moments Dapper''s searchPackNft.nfts says it yielded (current FMV, whole-pack: NULL unless every moment is priced; pulls_priced / pulls_total say how close; pulls_inferred of them are Top Shot pulls no record names, named from the moment ids minted beside them -- both neighbours the same edition within 50 ids, 99 % right when measured). Refreshed by the wallet-pack-pulls lane; pull_value_source = rip_record where only the rip row''s value is held',
+      'box', 'buy_price_source = box: a pack that came out of a box or case this wallet opened (pack_box_contents). It was not bought, so it has no buy price and no P/L of its own; its cost is part of the box''s price',
       'marketplace', 'topshot_pack_sales_history / allday_pack_sales_history / golazos_pack_sales_history: Dapper marketplace secondary sales (seller = storefront_address), Top Shot from 2023-09, All Day from 2022-12; ingest is bursty and can lag days',
       'identity', 'pack_nft_identity: Dapper searchPackNft index (dist_id, Sealed/Opened, current owner, acquired_at) filled by the pack-nft-identity lane and the per-wallet sync; identity_sync says when this wallet''s holdings were last confirmed (NULL completed_at = not yet, the list is what we hold so far). An ownership claim is trusted only at or after identity_sync.last_clean_sync_at, the start of the last clean full walk: a row older than that names a pack the wallet no longer holds, is excluded from the held/ripped counts, and carries identity_departed = true'
     ),
@@ -1586,4 +1607,47 @@ BEGIN
   PERFORM _assert_eq((public.get_wallet_pack_history('0xboxw', NULL, 'held', 50, 0))->>'total_count', '1', 'held counts BX2 only');
 END $$;
 
+
+-- v21 (2026-10-10, #187): a pack out of a box THIS wallet opened was not bought -- no buy price,
+-- no P/L. DT0 = a topper (retail 0, never sold alone); DT25 = a standard pack ($25 alone).
+INSERT INTO public.pack_distributions VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DT0', 'Box Topper', NULL, '{"retail_price_usd":"0","start_time":"2026-06-01T00:00:00Z"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DT25', 'Standard Pack', NULL, '{"retail_price_usd":"25","start_time":"2026-06-01T00:00:00Z"}', 1, 1);
+INSERT INTO public.pack_box_contents (collection_id, box_pack_nft_id, pack_nft_id, opener_address) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX', 'IB1', '0xibw'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX', 'IB2', '0xibw'),
+  -- IB3 came out of SOMEONE ELSE's box: for this wallet it is an ordinary pack
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'OBOX', 'IB3', '0xsomeoneelse');
+-- IB1 topper and IB2 standard: sold sealed by the opener a week into the drop
+INSERT INTO public.topshot_pack_sales_history VALUES
+  ('tx-ib1', 'IB1', 120, true, '0xbuyer', '0xibw', 'DT0', '2026-06-08'),
+  ('tx-ib2', 'IB2', 40, true, '0xbuyer', '0xibw', 'DT25', '2026-06-08'),
+  ('tx-ib3', 'IB3', 40, true, '0xbuyer', '0xibw', 'DT25', '2026-06-08');
+-- IB4: a topper out of this wallet's box, opened here (index), its pulls priced
+INSERT INTO public.pack_wallet_sync VALUES ('0xibw', '2026-06-20 00:00', '2026-06-20 00:05', 1, 1, NULL, '2026-06-20 00:00');
+INSERT INTO public.pack_box_contents (collection_id, box_pack_nft_id, pack_nft_id, opener_address) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX', 'IB4', '0xibw');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IB4', 'DT0', 'Opened', '0xibw', '2026-06-20 01:00', '2026-06-08');
+INSERT INTO public.pack_open_pull_values (collection_id, pack_nft_id, opener_address, n_pulls, n_resolved, n_priced, pull_value_usd)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IB4', '0xibw', 1, 1, 1, 300);
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xibw', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB1';
+  PERFORM _assert(row_->>'status' = 'sold' AND row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' = 'box'
+                  AND row_->>'realized_pl_usd' IS NULL AND row_->>'from_box_pack_nft_id' = 'IBOX',
+                  'IB1 a topper out of this wallet''s box, sold: no buy, no P/L -- never "buy $0, P/L = the sale"');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB2';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' = 'box' AND row_->>'realized_pl_usd' IS NULL,
+                  'IB2 a standard pack out of the box is not a $25 purchase');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB3';
+  PERFORM _assert(row_->>'buy_usd' = '25.00' AND row_->>'buy_price_source' = 'retail_inferred'
+                  AND row_->>'realized_pl_usd' = '15.00' AND row_->>'from_box_pack_nft_id' IS NULL,
+                  'IB3 another opener''s box: unchanged, still inferred at retail (control)');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB4';
+  PERFORM _assert(row_->>'status' = 'ripped' AND row_->>'pull_value_usd' = '300.00' AND row_->>'buy_usd' IS NULL
+                  AND row_->>'realized_pl_usd' IS NULL,
+                  'IB4 a topper out of the box, opened: its pull value stands, no P/L against a $0 buy');
+END $$;
 ROLLBACK;
