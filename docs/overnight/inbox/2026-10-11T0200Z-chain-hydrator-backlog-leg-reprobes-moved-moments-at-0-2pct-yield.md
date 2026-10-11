@@ -27,3 +27,8 @@ In `topshot_moment_hydrate_dispatch` (`20260907214240`), `WHEN q.outcome IN ('no
 ## Why filed, not shipped
 
 The hydrator's dispatch logic is ingest route-logic owned by the Claude Code lanes (the 10-10 night handoff lists chain-arrival / hydrate as off-limits for the autonomous pass), the function may be pinned, and the retry window is a design value the 09-07 header chose on purpose — this filing carries the number that header did not have.
+
+
+## ✅ RESOLVED 2026-10-10 ~9:39 PM PT (`20261011043919`)
+
+Decided under Trevor's "work through anything still unresolved" delegation: the `no_nft` / `no_collection` re-probe window is **365 days**. First tick after the apply: backlog leg 3,000 examined / **0** dispatched, head leg 60 dispatched / 60 resolved. Watch and revert in the ledger entry.

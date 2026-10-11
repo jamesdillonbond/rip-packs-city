@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-10-11 — 1 filing
 
-- [🟡 **The chain hydrator's backlog leg re-probes moved Moments at a 0.2 % yield — 20,896 scripts a week for 51 rows**](2026-10-11T0200Z-chain-hydrator-backlog-leg-reprobes-moved-moments-at-0-2pct-yield.md) — *(Cowork cloud, 10-10 ~7:00 PM PT; read-only; the `no_nft` 30-day re-probe window is the lever, owner's call)*
+- [**✅ FIXED 10-10 ~9:39 PM PT (`20261011043919`, window 30 → 365 d)** 🟡 **The chain hydrator's backlog leg re-probes moved Moments at a 0.2 % yield — 20,896 scripts a week for 51 rows**](2026-10-11T0200Z-chain-hydrator-backlog-leg-reprobes-moved-moments-at-0-2pct-yield.md) — *(Cowork cloud, 10-10 ~7:00 PM PT; read-only; the `no_nft` 30-day re-probe window is the lever, owner's call)*
 
 ## 2026-10-09 — 1 filing
 
