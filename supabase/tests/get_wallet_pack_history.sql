@@ -68,9 +68,13 @@
 --  14. (v22, 2026-10-10) A BOX this wallet opened realizes what its packs became: realized P/L =
 --      sum(each pack's sale or pull value) - the box's buy, only when EVERY pack it yielded is
 --      sold-with-a-price or opened-with-a-value; one still sealed leaves it NULL (IBOX, IBOX2).
+--  15. (v23, 2026-10-11, performance only) A STATUS-FILTERED read returns exactly the rows of that
+--      status the unfiltered read returns, field for field -- the filter now drops rows BEFORE
+--      enrichment, so this is what keeps it honest. A pack out of a box is never dropped early:
+--      under the 'ripped' filter IBOX must still realize $460 from its SOLD packs (FLT1).
 --
 -- The get_wallet_pack_history DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261011050100_audit_20261010_wallet_pack_history_a_box_realizes_what_its_packs_became.sql).
+-- (supabase/migrations/20261011161254_audit_20261011_wallet_pack_history_status_filter_before_enrichment.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -470,6 +474,41 @@ BEGIN
       LIMIT 1
     ) bxp ON true
   ),
+  -- 2026-10-11: status is decided by resolved's columns alone, so it is computed
+  -- HERE and the rows a status filter will drop never reach enriched's per-row
+  -- pricing / inference laterals (a 'held' read of a 38k-row wallet holding 0
+  -- packs cost ~3.6 s, all of it enrichment). A pack out of a box is always kept:
+  -- box_realized sums its sale / pull value into the box's row.
+  pre_status AS (
+    SELECT *,
+      CASE
+        WHEN has_rip                                            THEN 'ripped'
+        WHEN has_sell AND has_buy AND sold_at >= bought_at      THEN 'flipped'
+        WHEN has_sell AND NOT has_buy                           THEN 'sold'
+        -- bought, never sold or opened by this wallet, and Dapper's index says a
+        -- DIFFERENT wallet holds it now: it left by transfer, or by a sale the
+        -- marketplace walker has not reached. Never HELD.
+        -- ... or the index no longer places it here at all. Same outcome, we
+        -- just cannot name who holds it now -- and this arm is the only one that
+        -- can catch it, because a stale row still says the owner IS us, which
+        -- made the test above pass it straight through to HELD.
+        WHEN has_buy AND ((current_owner IS NOT NULL AND current_owner <> v_wallet)
+                          OR coalesce(index_departed, false))
+                                                                THEN 'transferred'
+        -- bought, and Dapper's index -- confirmed by this wallet's own clean walk
+        -- (has_idx_open carries that floor) -- says THIS wallet opened it, with no
+        -- rip row of ours: a box opening, or an open the rip lanes never saw.
+        -- Opened, never HELD (2026-10-10: 22 WNBA boxes on one wallet, ~90 packs
+        -- across 8 of 33 saved wallets, read held while the index said Opened).
+        WHEN has_buy AND has_idx_open                           THEN 'ripped'
+        WHEN has_buy                                            THEN 'held'
+        -- the index alone: opened by this wallet (no rip row of ours) or held
+        WHEN has_idx_open                                       THEN 'ripped'
+        WHEN has_idx_hold                                       THEN 'held'
+        ELSE 'other'
+      END AS status
+    FROM resolved
+  ),
   enriched AS (
     SELECT
       r.*,
@@ -499,7 +538,7 @@ BEGIN
         WHEN r.buy_price IS NULL THEN NULL
         ELSE r.buy_src
       END AS buy_price_source
-    FROM resolved r
+    FROM pre_status r
     LEFT JOIN public.pack_distributions pd
       ON pd.dist_id = r.dist_id AND pd.collection_id = r.collection_id
     -- 2026-09-26: retail in DOLLARS. Top Shot's pack_distributions.metadata
@@ -597,36 +636,14 @@ BEGIN
                           BETWEEN ds.drop_start - interval '1 day' AND ds.drop_start + interval '30 days')
                    OR mt.minted_at IS NOT NULL), false) AS inferable
     ) inf
+    WHERE r.from_box IS NOT NULL
+       OR p_status IS NULL
+       OR p_status = 'all'
+       OR (p_status = 'sold_any' AND r.status IN ('flipped', 'sold'))
+       OR r.status = p_status
   ),
   classified AS (
-    SELECT *,
-      CASE
-        WHEN has_rip                                            THEN 'ripped'
-        WHEN has_sell AND has_buy AND sold_at >= bought_at      THEN 'flipped'
-        WHEN has_sell AND NOT has_buy                           THEN 'sold'
-        -- bought, never sold or opened by this wallet, and Dapper's index says a
-        -- DIFFERENT wallet holds it now: it left by transfer, or by a sale the
-        -- marketplace walker has not reached. Never HELD.
-        -- ... or the index no longer places it here at all. Same outcome, we
-        -- just cannot name who holds it now -- and this arm is the only one that
-        -- can catch it, because a stale row still says the owner IS us, which
-        -- made the test above pass it straight through to HELD.
-        WHEN has_buy AND ((current_owner IS NOT NULL AND current_owner <> v_wallet)
-                          OR coalesce(index_departed, false))
-                                                                THEN 'transferred'
-        -- bought, and Dapper's index -- confirmed by this wallet's own clean walk
-        -- (has_idx_open carries that floor) -- says THIS wallet opened it, with no
-        -- rip row of ours: a box opening, or an open the rip lanes never saw.
-        -- Opened, never HELD (2026-10-10: 22 WNBA boxes on one wallet, ~90 packs
-        -- across 8 of 33 saved wallets, read held while the index said Opened).
-        WHEN has_buy AND has_idx_open                           THEN 'ripped'
-        WHEN has_buy                                            THEN 'held'
-        -- the index alone: opened by this wallet (no rip row of ours) or held
-        WHEN has_idx_open                                       THEN 'ripped'
-        WHEN has_idx_hold                                       THEN 'held'
-        ELSE 'other'
-      END AS status
-    FROM enriched
+    SELECT * FROM enriched
   ),
   -- v22 (2026-10-10, #187 residue): a BOX this wallet opened yields packs, not moments, so its
   -- own pull value is NULL and it had no P/L. Its realized value is what its packs became:
@@ -1716,4 +1733,35 @@ BEGIN
   PERFORM _assert(row_->>'realized_pl_usd' IS NULL AND row_->>'box_realized_usd' IS NULL, 'IB1 still carries no P/L of its own');
 END $$;
 
+
+-- v23 (2026-10-11): a status filter must not change any row it keeps. For every wallet in this
+-- fixture and every status, the filtered read == the unfiltered read's rows of that status (same
+-- order, same fields) and the same total; IBOX under 'ripped' keeps its box P/L (+$260), which
+-- needs its SOLD packs IB1/IB2 -- rows the 'ripped' filter would otherwise drop before enrichment.
+DO $$
+DECLARE w text; st text; f jsonb; u jsonb; expect jsonb; n_checked int := 0; n_nonempty int := 0; row_ jsonb;
+BEGIN
+  FOR w IN SELECT DISTINCT x FROM (
+             SELECT buyer_address FROM public.pack_purchases UNION SELECT opener_address FROM public.pack_rips
+             UNION SELECT owner_address FROM public.pack_nft_identity UNION SELECT opener_address FROM public.pack_box_contents
+           ) t(x) WHERE x IS NOT NULL LOOP
+    u := public.get_wallet_pack_history(w, NULL, NULL, 200, 0);
+    FOREACH st IN ARRAY ARRAY['held', 'ripped', 'flipped', 'sold', 'transferred', 'other', 'sold_any'] LOOP
+      f := public.get_wallet_pack_history(w, NULL, st, 200, 0);
+      SELECT COALESCE(jsonb_agg(p ORDER BY o), '[]'::jsonb) INTO expect
+        FROM jsonb_array_elements(u->'packs') WITH ORDINALITY AS e(p, o)
+       WHERE p->>'status' = st OR (st = 'sold_any' AND p->>'status' IN ('flipped', 'sold'));
+      PERFORM _assert(f->'packs' = expect AND (f->>'total_count')::int = jsonb_array_length(expect),
+                      format('FLT1 %s / %s: filtered read == unfiltered rows of that status', w, st));
+      n_checked := n_checked + 1;
+      IF jsonb_array_length(expect) > 0 THEN n_nonempty := n_nonempty + 1; END IF;
+    END LOOP;
+  END LOOP;
+  -- not vacuous: the fixture exercises many (wallet, status) pairs with rows in them
+  PERFORM _assert(n_checked >= 30 AND n_nonempty >= 10, format('FLT1 covered %s pairs, %s non-empty', n_checked, n_nonempty));
+  f := public.get_wallet_pack_history('0xibw', NULL, 'ripped', 200, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(f->'packs') p WHERE p->>'pack_nft_id' = 'IBOX';
+  PERFORM _assert(row_->>'box_realized_usd' = '460.00' AND row_->>'box_packs_realized' = '3' AND row_->>'realized_pl_usd' = '260.00',
+                  'FLT1 IBOX under the ripped filter still realizes its SOLD packs: +$260');
+END $$;
 ROLLBACK;

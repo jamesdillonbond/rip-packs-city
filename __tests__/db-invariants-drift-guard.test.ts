@@ -659,8 +659,9 @@ const PINS = [
     // v20 (2026-10-10): a bought pack the confirmed index says this wallet opened is ripped.
     // v21 (2026-10-10, #187): a pack out of a box this wallet opened was not bought -- no buy, no P/L.
     // v22 (same night): the box realizes what its packs became (P/L only when all are realized).
+    // v23 (2026-10-11): status decided before enrichment; a filtered read enriches only its rows (perf only).
     migration:
-      "supabase/migrations/20261011050100_audit_20261010_wallet_pack_history_a_box_realizes_what_its_packs_became.sql",
+      "supabase/migrations/20261011161254_audit_20261011_wallet_pack_history_status_filter_before_enrichment.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
