@@ -3004,3 +3004,12 @@ changed nothing: a run refreshes ~450 editions (5,429/day over ~12 runs) and 624
 interleave reached ~225 aged editions whatever the cap. The fix that moved the 7-day line was ORDER, not size: editions
 ≥ 6 days lead the list ahead of the held cards (`PANINI_AGED_CRITICAL_DAYS`, response field `aged_critical`). Before
 raising any cap, compute what one run actually consumes and which list binds it.
+
+## ⚠ Matching two feeds with no shared id: count the bucket on BOTH sides before believing a match (2026-10-10)
+To test whether old open Top Shot bids were dead, `offers` was matched to Atlas's offer feed on buyer + price +
+set:play + time ± 10 min. "Any completed match" flagged 209 open offers as closed, but 205 of them were
+collisions: one buyer had placed several identical bids within minutes, and one of the twins was the one that
+completed. Requiring exactly one candidate on EACH side left 4. **When the join key is not an id, a match is
+evidence only if the bucket is one-to-one; report the ambiguous count instead of resolving it.** The same
+measurement showed the bids were live (500/500 > 30 days old open on Atlas), refuting the hypothesis that
+prompted it. Case: database.md "The Top Shot `offers` table", known-issues #189.

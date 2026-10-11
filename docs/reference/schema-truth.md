@@ -447,3 +447,7 @@ carry `sales.source = 'onchain_sellback_backfill_2025'`.
 claim returned a FULL batch. `apply_sales_counterparty` arms the barren-pass cooldown only after a SHORT
 claim, i.e. at the bottom of the walk.
 
+
+**`sales.offer_id`** (`20261011001215`, 2026-10-10): text, NULL except on `source='offer_fill'` sales, where it
+is the Dapper OffersV2 offerId the sale filled (Top Shot since 10-10, all 81,574 historical rows stamped; All Day
+from the #70 lane). Join to `offers.offer_id`. See database.md "The Top Shot `offers` table".

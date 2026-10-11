@@ -2670,3 +2670,12 @@ card (~5 days), so per-day coverage on 10-10 read 98 % for 10-03 but 24–42 % f
 A 24 h / 7 d Panini volume would be mostly missing yet render as a fact, so Market Pulse has no Panini row by decision,
 and the Top Sales board says Panini's last few days are incomplete whenever Panini can be on it. Same family as the
 change-only-feed window above: check a feed's ARRIVAL lag before summing a recent window of it.
+
+⚠ **AN ENTITY RECORDED ONLY IN ITS FIRST-SEEN STATE IS LOST WHEN ITS WHOLE LIFE FITS IN ONE TICK (2026-10-10).**
+`topshot-offers-indexer` wrote an offer when it saw OfferAvailable and flipped it on OfferCompleted, but skipped an
+offer created AND completed in the same tick as "not open" — and the flip then no-op'd on the row that was never
+written. ~25 % of accepted Top Shot offers since June had no `offers` row (24k), while the fill SALE still landed
+through another step, so no count went to zero and nothing alarmed. **Write the entity in its final state when
+creation and completion arrive together; never let "not in the live set" mean "not recorded".** Any create/complete
+state machine with a polling cursor has this shape (listings, loans, packs). The tell was a JOIN, not a count:
+fills whose offer had no row. Case: known-issues #189.

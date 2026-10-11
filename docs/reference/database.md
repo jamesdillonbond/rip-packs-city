@@ -3031,3 +3031,40 @@ The drift guard needs the migration FILE to hold literal `CREATE OR REPLACE` bod
 5. Read live `md5(prosrc)` and require it to equal the FILE's bodies. Then `git mv` the file to the version `apply_migration` actually recorded, and repoint the drift-guard registry.
 
 `migration-parity` matches by name, so the different apply text is invisible to it. The md5 in step 5 is what makes the two provably the same.
+
+## ⭐ The Top Shot `offers` table — what it holds, how it is kept complete, and how a fill joins its offer (2026-10-10)
+
+`offers` is written by `app/api/topshot-offers-indexer` (Dapper OffersV2 `0xb8ea91944fd51c43`, TopShot.NFT
+only, every ~20 min, cursor `event_cursor.topshot_offers`). `status='open'` rows ARE the live bid book that
+`raise_edition_offers_from_chain`, `get_edition_offers`, `get_moment_best_offer`, `topshot_offer_depth` and
+the rest read; `filled` / `cancelled` are terminal. Rows from the history walks carry
+`source='onchain_backfill'` (the live indexer writes `'onchain'`); no reader filters on `source`.
+
+- **A same-tick create+complete is written with its FINAL status** (since `70ea59110`). Before that it was
+  skipped as "not open" and never recorded — the flip in step 4 no-op'd on the absent row.
+- **Edition resolution is one shared function**, `resolveOfferTargets` in
+  `lib/chains/flow/topshot-offer-available.ts` (live indexer + both backfills): alias table → `editions` by
+  `setId:playId(::sub)` → serial offers via `moments`, then `wallet_moments_cache` (`moment_id` = nft id,
+  `edition_key` = `editions.external_id`, verified), then `checkpoint_nft_meta` (`c='ts'`: `a`=setID,
+  `b`=playID, `serial`; `c='tssub'`: `a`=subedition; latest spork wins). ⛔ The checkpoint path builds a key
+  ONLY when the subedition is known (a `tssub` row or a non-NULL `topshot_moment_subeditions` row), and a
+  parallel whose `::` edition is uncatalogued stays unresolved — no base fallback. Every read throws.
+  Per-run `extra`: `unresolved_by_type`, `resolved_via_wallet_cache`, `resolved_via_checkpoint`,
+  `unresolved_serial_nft_sample` (≤10 nft ids).
+- **`sales.offer_id`** (`20261011001215`) is the on-chain offerId on every `source='offer_fill'` sale (Top
+  Shot and, since #70, All Day). **Join a fill to its offer with `sales.offer_id = offers.offer_id`**;
+  `offers.fill_tx_hash` exists only where the indexer saw the creation, so a join on it undercounts.
+  `sales.offer_id` has no index; join from `sales` (filtered) into `uq_offers_offer_id`.
+- **Recovery tables:** `topshot_offer_fill_missing_offers` (snapshot of accepted offers whose offerId has no
+  `offers` row, `20261011044422`) drives `/api/admin/backfill-topshot-missing-fill-offers` (OfferAvailable
+  only, from the mainnet28 root 137,390,146). `audit_20261010_offers_open_rows_that_filled` holds the 45 open
+  rows a fill proved filled (`20261011015351`).
+- **OffersV2 offerIds are 10–15 digits** — not a time-ordered counter; do not split "before / after" by
+  numeric offerId.
+- **Old open bids are real.** Top Shot offers do not appear to expire: 500/500 open edition bids > 30 days
+  old are still open on Atlas's own feed (below). An old `created_at` on an open row is not a staleness signal.
+- **Atlas's offer feed** is `topshot_atlas_market_events` `kind='offer'` (`offer_type` EDITION / SERIAL /
+  PARALLEL, `completed`, `purchased`, from 2022-05). Its `uuid` is NOT the on-chain offerId. Match on buyer
+  (Atlas stores it without `0x`) + `price_cents` + `set_id_onchain:play_id_onchain` + `listed_at` ± 10 min,
+  and trust only ONE-TO-ONE buckets: one buyer routinely places identical bids minutes apart (205 of 209
+  "Atlas says completed" matches were such collisions).
