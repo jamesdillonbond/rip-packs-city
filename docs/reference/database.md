@@ -3038,7 +3038,8 @@ The drift guard needs the migration FILE to hold literal `CREATE OR REPLACE` bod
 only, every ~20 min, cursor `event_cursor.topshot_offers`). `status='open'` rows ARE the live bid book that
 `raise_edition_offers_from_chain`, `get_edition_offers`, `get_moment_best_offer`, `topshot_offer_depth` and
 the rest read; `filled` / `cancelled` are terminal. Rows from the history walks carry
-`source='onchain_backfill'` (the live indexer writes `'onchain'`); no reader filters on `source`.
+`source='onchain_backfill'` (chain walks) or `'atlas_backfill'` (Atlas-sourced, NULL `tx_hash`); the live
+indexer writes `'onchain'`; no reader filters on `source`.
 
 - **A same-tick create+complete is written with its FINAL status** (since `70ea59110`). Before that it was
   skipped as "not open" and never recorded — the flip in step 4 no-op'd on the absent row.
@@ -3046,7 +3047,9 @@ the rest read; `filled` / `cancelled` are terminal. Rows from the history walks 
   `lib/chains/flow/topshot-offer-available.ts` (live indexer + both backfills): alias table → `editions` by
   `setId:playId(::sub)` → serial offers via `moments`, then `wallet_moments_cache` (`moment_id` = nft id,
   `edition_key` = `editions.external_id`, verified), then `checkpoint_nft_meta` (`c='ts'`: `a`=setID,
-  `b`=playID, `serial`; `c='tssub'`: `a`=subedition; latest spork wins). ⛔ The checkpoint path builds a key
+  `b`=playID, `serial`; `c='tssub'`: `a`=subedition; latest spork wins), then (since 10-11) Top Shot's Atlas
+  feed (`atlas_edition_id` -> `topshot_atlas_edition_map`, only when ALL the nft's Atlas events name one
+  edition; `extra.resolved_via_atlas`). ⛔ The checkpoint path builds a key
   ONLY when the subedition is known (a `tssub` row or a non-NULL `topshot_moment_subeditions` row), and a
   parallel whose `::` edition is uncatalogued stays unresolved — no base fallback. Every read throws.
   Per-run `extra`: `unresolved_by_type`, `resolved_via_wallet_cache`, `resolved_via_checkpoint`,
@@ -3061,7 +3064,10 @@ the rest read; `filled` / `cancelled` are terminal. Rows from the history walks 
   rows a fill proved filled (`20261011015351`).
   Result (10-10 ~11:15 PM PT): 17,257 of 21,372 recovered; **13,621 of them were created before the
   indexer began (06-03), median 58 days open** — most "fill with no offer row" was a long-lived bid that
-  predates the indexer. The 4,115 left predate the 2025-12-29 spork.
+  predates the indexer. The 4,115 left predate the 2025-12-29 spork. On 10-11, 877 of those were recovered from Atlas
+  (`20261011141132`, `source='atlas_backfill'`: one purchased Atlas offer on the same nft + price within
+  15 min of the fill; `created_at` = Atlas `listed_at`; `tx_hash` NULL because the creation tx is unknown).
+  3,243 / 81,720 fills remain without an offer row.
 - **OffersV2 offerIds are 10–15 digits** — not a time-ordered counter; do not split "before / after" by
   numeric offerId.
 - **Old open bids are real.** Top Shot offers do not appear to expire: 500/500 open edition bids > 30 days
