@@ -166,7 +166,8 @@ const RAW_FMV_DESC_ALLOWLIST: ReadonlySet<string> = new Set([
   // multi-edition case this allowlist warns about: a raw fmv_snapshots DESC read
   // deduped first-wins in JS, against ~87 daily rows per edition and a 1000-row
   // cap, so the window covered ~11 editions. Now reads fmv_current, chunked.
-  "app/api/cron/compute-laliga-pack-ev/route.ts",
+  // "app/api/cron/compute-laliga-pack-ev/route.ts" — route RETIRED 2026-10-11
+  // (no caller since 2026-08-27; the compute-golazos-pack-ev edge fn replaced it).
   "app/api/cron/stale-fmv-monitor/route.ts",
   "app/api/edition-floor/route.ts",
   "app/api/edition-history/route.ts",
