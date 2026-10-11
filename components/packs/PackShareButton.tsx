@@ -31,20 +31,26 @@ export default function PackShareButton({ url }: { url: string }) {
   }
 
   return (
+    // Rendered only on the pack-dist hero, an always-dark card — so its idle
+    // colours are on-dark literals like its sibling "← All packs" link, not the
+    // theme tokens (which go dark in light mode and vanished there; 2026-10-11).
     <button
+      type="button"
       onClick={handleCopy}
       style={{
         display: "inline-block",
         padding: "8px 16px",
         background: "transparent",
-        color: copied ? "rgb(110,231,183)" : "var(--rpc-text-secondary)",
+        // brand-exception: on the always-dark pack-dist hero card (see comment above)
+        color: copied ? "rgb(110,231,183)" : "rgba(255,255,255,0.7)",
         fontFamily: "var(--font-display)",
         fontWeight: 700,
         letterSpacing: "0.06em",
         textTransform: "uppercase",
         fontSize: 12,
         borderRadius: 4,
-        border: copied ? "1px solid rgba(16,185,129,0.4)" : "1px solid var(--rpc-border)",
+        // brand-exception: on the always-dark pack-dist hero card
+        border: copied ? "1px solid rgba(16,185,129,0.4)" : "1px solid rgba(255,255,255,0.2)",
         cursor: "pointer",
       }}
     >

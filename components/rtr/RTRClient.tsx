@@ -700,6 +700,8 @@ function SortHeader({
   return (
     <th
       onClick={() => onClick(col)}
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(col) } }}
       style={{
         padding: "8px 10px",
         cursor: "pointer",

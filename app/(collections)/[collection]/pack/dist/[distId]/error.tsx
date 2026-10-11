@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { useParams } from "next/navigation"
 import { reportBoundaryError } from "@/components/telemetry/ClientErrorBeacon"
 
 export default function PackDistError({
@@ -22,6 +23,12 @@ export default function PackDistError({
     reportBoundaryError(error, "pack-dist-error")
   }, [error])
 
+  // 2026-10-11: the link was hardcoded to /nba-top-shot/packs, so an All Day or
+  // Golazos reader was sent to the wrong collection. Use the route's own slug;
+  // fall back to the site root rather than guess one.
+  const params = useParams<{ collection?: string }>()
+  const packsHref = typeof params?.collection === "string" ? `/${params.collection}/packs` : "/"
+
   return (
     <main
       style={{
@@ -40,7 +47,7 @@ export default function PackDistError({
           fontSize: 11,
           letterSpacing: "0.3em",
           textTransform: "uppercase",
-          color: "rgba(255,255,255,0.45)",
+          color: "var(--rpc-text-muted)",
         }}
       >
         Pack page error
@@ -52,7 +59,7 @@ export default function PackDistError({
           fontSize: "clamp(32px, 6vw, 56px)",
           letterSpacing: "0.04em",
           textTransform: "uppercase",
-          color: "#fff",
+          color: "var(--rpc-text-primary)",
           margin: 0,
           textAlign: "center",
         }}
@@ -61,7 +68,7 @@ export default function PackDistError({
       </h1>
       <p
         style={{
-          color: "rgba(255,255,255,0.65)",
+          color: "var(--rpc-text-secondary)",
           maxWidth: 480,
           textAlign: "center",
           margin: 0,
@@ -71,11 +78,12 @@ export default function PackDistError({
       </p>
       <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
         <button
+          type="button"
           onClick={() => reset()}
           style={{
             padding: "10px 18px",
-            border: "1px solid rgba(255,255,255,0.2)",
-            color: "#fff",
+            border: "1px solid var(--rpc-border)",
+            color: "var(--rpc-text-primary)",
             background: "transparent",
             fontFamily: "var(--font-mono)",
             letterSpacing: "0.2em",
@@ -87,7 +95,7 @@ export default function PackDistError({
           Reload
         </button>
         <a
-          href="/nba-top-shot/packs"
+          href={packsHref}
           style={{
             padding: "10px 18px",
             border: "1px solid var(--rpc-red)",

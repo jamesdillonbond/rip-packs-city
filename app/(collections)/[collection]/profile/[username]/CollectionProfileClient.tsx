@@ -129,9 +129,11 @@ function thumbnailSrc(url: string | null): string {
 }
 
 // ── Card style ────────────────────────────────────────────────────
+// Theme tokens (2026-10-11): these cards sit on the page body, which is white in
+// light mode, so white-alpha fills/labels rendered invisible there.
 const cardStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.02)",
-  border: "1px solid rgba(255,255,255,0.07)",
+  background: "var(--rpc-bg-elev)",
+  border: "1px solid var(--rpc-border-subtle)",
   borderRadius: 10,
   padding: "16px 20px",
 };
@@ -140,7 +142,7 @@ const labelStyle: React.CSSProperties = {
   fontSize: 9,
   fontFamily: monoFont,
   letterSpacing: "0.2em",
-  color: "rgba(255,255,255,0.4)",
+  color: "var(--rpc-text-muted)",
   textTransform: "uppercase" as const,
 };
 
@@ -181,9 +183,9 @@ function PublicTrophySlot(props: { slot: number; trophy: TrophyMoment | null }) 
 
   if (!t) {
     return (
-      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 10, aspectRatio: "3/4", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+      <div style={{ background: "var(--rpc-bg-elev)", border: "1px dashed var(--rpc-border)", borderRadius: 10, aspectRatio: "3/4", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
         <div style={{ fontSize: 24, opacity: 0.15 }}>{"\u{1F3C6}"}</div>
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em" }}>EMPTY SLOT</div>
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>EMPTY SLOT</div>
       </div>
     );
   }
@@ -310,6 +312,8 @@ function BioEditor(props: {
   const [bioText, setBioText] = useState(props.bio?.tagline ?? "");
   const [avatarUrl, setAvatarUrl] = useState(props.bio?.avatar_url ?? "");
   const [saving, setSaving] = useState(false);
+  // A failed save used to leave the editor open with no message (2026-10-11).
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(function() {
     setBioText(props.bio?.tagline ?? "");
@@ -318,6 +322,7 @@ function BioEditor(props: {
 
   async function handleSave() {
     setSaving(true);
+    setSaveError(null);
     try {
       const res = await fetch("/api/profile/bio", {
         method: "POST",
@@ -332,9 +337,13 @@ function BioEditor(props: {
         const data = await res.json();
         if (data.bio) props.onSaved(data.bio);
         setEditing(false);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setSaveError(typeof data?.error === "string" ? data.error : `Couldn't save (HTTP ${res.status}).`);
       }
     } catch (err) {
       console.error("[bio] save error:", err);
+      setSaveError("Couldn't save — network error. Try again.");
     } finally {
       setSaving(false);
     }
@@ -344,7 +353,7 @@ function BioEditor(props: {
     return (
       <button
         onClick={function() { setEditing(true); }}
-        style={{ background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "3px 10px", fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", cursor: "pointer", letterSpacing: "0.1em" }}
+        style={{ background: "none", border: "1px solid var(--rpc-border)", borderRadius: 4, padding: "3px 10px", fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", cursor: "pointer", letterSpacing: "0.1em" }}
       >
         EDIT BIO
       </button>
@@ -360,17 +369,20 @@ function BioEditor(props: {
           placeholder="Avatar URL"
           value={avatarUrl}
           onChange={function(e) { setAvatarUrl(e.target.value); }}
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "6px 10px", fontSize: 11, fontFamily: monoFont, color: "#fff", outline: "none" }}
+          style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: 4, padding: "6px 10px", fontSize: 11, fontFamily: monoFont, color: "var(--rpc-text-primary)", outline: "none" }}
         />
         <textarea
           placeholder="Write a short bio..."
           value={bioText}
           onChange={function(e) { setBioText(e.target.value); }}
           rows={3}
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "6px 10px", fontSize: 11, fontFamily: monoFont, color: "#fff", outline: "none", resize: "vertical" }}
+          style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: 4, padding: "6px 10px", fontSize: 11, fontFamily: monoFont, color: "var(--rpc-text-primary)", outline: "none", resize: "vertical" }}
         />
+        {saveError && (
+          <div role="alert" style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-red)" }}>{saveError}</div>
+        )}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button onClick={function() { setEditing(false); }} style={{ background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "4px 12px", fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", cursor: "pointer" }}>CANCEL</button>
+          <button onClick={function() { setEditing(false); }} style={{ background: "none", border: "1px solid var(--rpc-border)", borderRadius: 4, padding: "4px 12px", fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", cursor: "pointer" }}>CANCEL</button>
           <button onClick={handleSave} disabled={saving} className="rpc-btn-primary" style={{ padding: "4px 14px", fontSize: 9, fontFamily: monoFont }}>
             {saving ? "SAVING..." : "SAVE"}
           </button>
@@ -468,24 +480,25 @@ function PortfolioValueCard(props: { wallet: string; label?: string }) {
             <div style={{ width: "100%", height: 180 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={points} margin={{ top: 6, right: 10, bottom: 4, left: -10 }}>
-                  <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+                  <CartesianGrid stroke="var(--rpc-border-subtle)" vertical={false} />
                   <XAxis
                     dataKey="snapshot_date"
                     tickFormatter={formatDate}
-                    tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 9, fontFamily: monoFont }}
-                    axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
+                    tick={{ fill: "var(--rpc-text-muted)", fontSize: 9, fontFamily: monoFont }}
+                    axisLine={{ stroke: "var(--rpc-border)" }}
                     tickLine={false}
                     minTickGap={24}
                   />
                   <YAxis
                     tickFormatter={function(v: number) { return v >= 1000 ? "$" + (v / 1000).toFixed(1) + "K" : "$" + v.toFixed(0); }}
-                    tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 9, fontFamily: monoFont }}
-                    axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
+                    tick={{ fill: "var(--rpc-text-muted)", fontSize: 9, fontFamily: monoFont }}
+                    axisLine={{ stroke: "var(--rpc-border)" }}
                     tickLine={false}
                     width={50}
                   />
                   <Tooltip
                     contentStyle={{ background: "rgba(0,0,0,0.92)", border: "1px solid rgba(224,58,47,0.4)", borderRadius: 6, fontSize: 11, fontFamily: monoFont }}
+                    labelStyle={{ color: "#e4e4e7" }}
                     labelFormatter={function(v: unknown) { return formatDate(String(v ?? "")); }}
                     formatter={function(v: unknown): [string, string] { return ["$" + Number(v ?? 0).toFixed(2), "FMV"]; }}
                   />
@@ -647,15 +660,22 @@ export default function CollectionProfileClient({
   }, [collection]);
 
   // Avatar change handler
+  // A failed avatar save used to be swallowed (`r.ok ? r.json() : null` +
+  // an empty catch), so the owner saw nothing happen (2026-10-11).
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const handleAvatarChange = useCallback(function(url: string) {
+    setAvatarError(null);
     fetch("/api/profile/bio", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ownerKey: username, avatarUrl: url }),
     })
-      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(async function(r) {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then(function(data) { if (data?.bio) setBio(data.bio); })
-      .catch(function() {});
+      .catch(function() { setAvatarError("Couldn't update your avatar. Try again."); });
   }, [username]);
 
   // Derived stats
@@ -713,6 +733,9 @@ export default function CollectionProfileClient({
             onAvatarChange={handleAvatarChange}
           />
         </div>
+        {avatarError && (
+          <div role="alert" style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-red)", marginBottom: 8 }}>{avatarError}</div>
+        )}
         <h1 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 32, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase", lineHeight: 1, marginBottom: 6 }}>
           {bio?.display_name ?? username}
         </h1>

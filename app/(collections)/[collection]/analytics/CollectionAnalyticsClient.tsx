@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { editionRouteHref } from "@/lib/entity-href"
 import { ArrowUpRight } from "lucide-react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
@@ -443,7 +444,7 @@ function MarketplaceBreakdownCard({
                 <XAxis dataKey="label" tick={{ fill: "#a1a1aa", fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={50} />
                 <YAxis tick={{ fill: "#a1a1aa", fontSize: 10 }} tickFormatter={(v) => fmt(Number(v))} />
                 <ReTooltip
-                  contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }}
+                  contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} labelStyle={{ color: "#e4e4e7" }}
                   formatter={(v) => [fmtUsd(Number(v)), "Volume"] as [string, string]}
                 />
                 <Bar dataKey="volume" radius={[4, 4, 0, 0]}>
@@ -462,7 +463,7 @@ function MarketplaceBreakdownCard({
                 <XAxis dataKey="label" tick={{ fill: "#a1a1aa", fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={50} />
                 <YAxis tick={{ fill: "#a1a1aa", fontSize: 10 }} tickFormatter={(v) => Number(v).toLocaleString("en-US")} />
                 <ReTooltip
-                  contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }}
+                  contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} labelStyle={{ color: "#e4e4e7" }}
                   formatter={(v) => [Number(v).toLocaleString("en-US"), "Sales"] as [string, string]}
                 />
                 <Bar dataKey="transactions" radius={[4, 4, 0, 0]}>
@@ -1355,10 +1356,10 @@ function AnalyticsInner() {
                           <Cell key={i} fill={TIER_HEX[entry.name] ?? "#6B7280"} />
                         ))}
                       </Pie>
-                      <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]} />
+                      <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} labelStyle={{ color: "#e4e4e7" }} formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]} />
                       <Legend formatter={(value: string, entry: any) => {
                         const v = entry?.payload?.value ?? 0
-                        return <span style={{ color: "#e4e4e7" }}>{value} — {fmtUsd(v)}</span>
+                        return <span style={{ color: "var(--rpc-text-secondary)" }}>{value} — {fmtUsd(v)}</span>
                       }} />
                     </PieChart>
                   </ResponsiveContainer>
@@ -1484,7 +1485,7 @@ function AnalyticsInner() {
                       <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
                       <XAxis dataKey="date" stroke="#71717a" tick={{ fontSize: 10 }} />
                       <YAxis stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString("en-US")}`} />
-                      <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]} />
+                      <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} labelStyle={{ color: "#e4e4e7" }} formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]} />
                       <Legend />
                       {avgPricePivot.tiers.map((t) => (
                         <Line key={t} type="monotone" dataKey={t} stroke={TIER_HEX[t] ?? "#6B7280"} strokeWidth={2} dot={false} connectNulls />
@@ -1511,7 +1512,7 @@ function AnalyticsInner() {
                       <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
                       <XAxis dataKey="date" stroke="#71717a" tick={{ fontSize: 10 }} />
                       <YAxis stroke="#71717a" tick={{ fontSize: 10 }} />
-                      <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} />
+                      <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} labelStyle={{ color: "#e4e4e7" }} />
                       <Legend />
                       {saleCountPivot.tiers.map((t) => {
                         const hex = TIER_HEX[t] ?? "#6B7280"
@@ -1589,7 +1590,7 @@ function AnalyticsInner() {
                         <XAxis type="number" stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString("en-US")}`} />
                         <YAxis type="category" dataKey="name" stroke="#71717a" tick={{ fontSize: 10 }} width={100} />
                         <ReTooltip
-                          contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }}
+                          contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} labelStyle={{ color: "#e4e4e7" }}
                           formatter={(v, n, p: any) => {
                             const row = p?.payload ?? {}
                             return [
@@ -1626,7 +1627,7 @@ function AnalyticsInner() {
                         <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
                         <XAxis dataKey="date" stroke="#71717a" tick={{ fontSize: 10 }} />
                         <YAxis stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString("en-US")}`} />
-                        <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]} />
+                        <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} labelStyle={{ color: "#e4e4e7" }} formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]} />
                         <Legend />
                         {topSeriesKeys.map((s, i) => {
                           const color = SERIES_COLORS[i % SERIES_COLORS.length]
@@ -1687,15 +1688,19 @@ function AnalyticsInner() {
                       const dot = TIER_HEX[tier] ?? "#6B7280"
                       const clickable = !!p.edition_key
                       return (
+                        // 2026-10-11: the whole row was a mouse-only onClick that opened
+                        // raw JSON (/api/edition-history) in a new tab. The player name is
+                        // now a real link to the edition page — keyboard reachable, and a
+                        // page a collector can read.
                         <tr
                           key={i}
-                          className={`border-b border-[color:var(--rpc-border)] ${clickable ? "cursor-pointer hover:bg-[var(--rpc-surface)]/60" : ""}`}
-                          onClick={() => {
-                            if (!p.edition_key) return
-                            window.open(`/api/edition-history?edition=${encodeURIComponent(p.edition_key)}&days=90`, "_blank")
-                          }}
+                          className={`border-b border-[color:var(--rpc-border)] ${clickable ? "hover:bg-[var(--rpc-surface)]/60" : ""}`}
                         >
-                          <td className="py-1.5 pr-2 text-[color:var(--rpc-text-primary)]">{p.player_name ?? "—"}</td>
+                          <td className="py-1.5 pr-2 text-[color:var(--rpc-text-primary)]">
+                            {clickable && p.edition_key ? (
+                              <Link href={editionRouteHref(collection, p.edition_key)} className="hover:underline">{p.player_name ?? "—"}</Link>
+                            ) : (p.player_name ?? "—")}
+                          </td>
                           <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{p.set_name ?? "—"}</td>
                           <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">
                             <span className="inline-flex items-center gap-1.5">

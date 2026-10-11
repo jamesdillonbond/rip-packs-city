@@ -27,10 +27,10 @@ export default async function PacksLayout(props: { children: ReactNode; params: 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "80px 24px", gap: 14 }}>
       <div style={{ fontSize: 48 }}>{collection?.icon ?? "\u{1F4E6}"}</div>
-      <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 24, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase" }}>
+      <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 24, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
         Pack tools coming soon for {label}
       </div>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.5)", lineHeight: 1.7, maxWidth: 460 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.7, maxWidth: 460 }}>
         Pack EV is a core tool for collections with active pack drops. {label} either doesn&apos;t sell packs today or the pipeline isn&apos;t seeded yet. Use the Sniper and Overview tabs for live deals and market state.
       </div>
       <Link

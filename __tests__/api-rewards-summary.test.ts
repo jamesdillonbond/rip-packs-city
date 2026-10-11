@@ -10,10 +10,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // `errorOnTable` injects a supabase-js-shaped FAILURE for one table only.
 // Per-table rather than global on purpose: a mock that fails every read would
 // let the referralCount assertion below pass for the wrong reason.
-const state: { user: any; summary: any; errorOnTable: string | null } = {
+const state: { user: any; summary: any; errorOnTable: string | null; summaryThrows: boolean } = {
   user: { id: "u1" },
   summary: { spendable: 0 },
   errorOnTable: null,
+  summaryThrows: false,
 }
 
 vi.mock("@/lib/auth/supabase-server", () => ({
@@ -28,7 +29,10 @@ vi.mock("@/lib/auth/supabase-server", () => ({
 }))
 vi.mock("@/lib/rewards", () => ({
   awardPoints: async () => ({ awarded: false }),
-  getRewardsSummary: async () => state.summary,
+  getRewardsSummary: async () => {
+    if (state.summaryThrows) throw { code: "57014", message: "canceling statement due to statement timeout" }
+    return state.summary
+  },
 }))
 vi.mock("@/lib/pro", () => ({
   getProStatus: async () => ({ isPro: false, plan: null, expiresAt: null }),
@@ -74,9 +78,27 @@ beforeEach(() => {
   state.user = { id: "u1" }
   state.summary = { spendable: 0 }
   state.errorOnTable = null
+  state.summaryThrows = false
 })
 
 describe("GET /api/rewards/summary", () => {
+  // 2026-10-11: getRewardsSummary used to swallow its error and return null; the
+  // route sent `summary: null` at 200 and /rewards rendered "0 pts" / a 0
+  // balance. Assert the ABSENCE of a 200 carrying a summary that never loaded.
+  it("does not answer 200 when the summary read FAILS — the page would render 0 pts", async () => {
+    state.summaryThrows = true
+    const res = await GET()
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body).not.toHaveProperty("summary")
+  })
+
+  it("does not answer 200 with a null summary", async () => {
+    state.summary = null
+    const res = await GET()
+    expect(res.status).toBeGreaterThanOrEqual(500)
+  })
+
   it("401s when unauthenticated", async () => {
     state.user = null
     const res = await GET()

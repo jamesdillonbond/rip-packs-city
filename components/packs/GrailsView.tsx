@@ -127,7 +127,7 @@ export default function GrailsView({ collection, accent }: Props) {
   return (
     <div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 14 }}>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Sort</span>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: 'var(--rpc-text-secondary)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Sort</span>
         {SORT_OPTIONS.map((o) => (
           <button
             key={o.key}
@@ -168,7 +168,7 @@ export default function GrailsView({ collection, accent }: Props) {
         >
           Buyable only
         </button>
-        <span style={{ marginLeft: 'auto', fontFamily: "var(--font-mono)", fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
+        <span style={{ marginLeft: 'auto', fontFamily: "var(--font-mono)", fontSize: 10, color: 'var(--rpc-text-muted)' }}>
           {loading ? 'Loading…' : `${displayRows.length} packs · sorted by ${sortLabel}`}
         </span>
       </div>
@@ -184,7 +184,7 @@ export default function GrailsView({ collection, accent }: Props) {
           <GrailCard key={r.dist_id} row={r} accent={accent} collection={collection} />
         ))}
         {!loading && displayRows.length === 0 && !error && (
-          <div style={{ padding: 24, fontFamily: "var(--font-mono)", fontSize: 12, color: 'rgba(255,255,255,0.5)', textAlign: 'center', border: '1px dashed #27272a', borderRadius: 6, gridColumn: '1 / -1' }}>
+          <div style={{ padding: 24, fontFamily: "var(--font-mono)", fontSize: 12, color: 'var(--rpc-text-muted)', textAlign: 'center', border: '1px dashed #27272a', borderRadius: 6, gridColumn: '1 / -1' }}>
             {buyableOnly
               ? 'No buyable packs match these grail filters — try toggling Buyable only off to see sold-out chase packs too.'
               : 'No grail-bearing packs matched. Try lowering the filters.'}

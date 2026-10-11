@@ -83,7 +83,7 @@ export default function LoginClient() {
            rendered as 0 on every page under it. Tailwind preflight already carries the same reset
            in @layer base; this keeps the declaration where it was, in the layer it must be in. */
         @layer base{*{box-sizing:border-box;margin:0;padding:0;}}
-        input::placeholder{color:rgba(255,255,255,0.28);}
+        input::placeholder{color:var(--rpc-text-ghost);}
       `}</style>
 
       <div className="rpc-live-pill" style={{ marginBottom: 24 }}>RIP PACKS CITY · SIGN IN</div>

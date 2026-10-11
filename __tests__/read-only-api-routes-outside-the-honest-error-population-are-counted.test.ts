@@ -150,8 +150,13 @@ const UNBOUNDED = POPULATION.filter((r) => !r.bounded)
  * ⚠ DOWN ONLY, and ⛔ **only behind a per-route reading of what that route
  * answers on a failed read** — see the header. Raising it is a POPULATION
  * CORRECTION and must name the predicate change that caused it.
+ *
+ * 20 -> 19 on 2026-10-11: /api/rewards/summary joined the honest-error
+ * population — its summary read used to swallow its error and answer 200 with
+ * `summary: null` (rendered as "0 pts"); it now answers apiErrorResponse() and
+ * bounds that read with boundedRead().
  */
-const BUDGET = 20
+const BUDGET = 19
 
 describe("read-only API routes outside the honest-error population are counted", () => {
   it("is not vacuous — the walk found a real tree and a real complement", () => {

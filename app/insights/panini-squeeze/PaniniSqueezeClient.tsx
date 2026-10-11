@@ -140,10 +140,10 @@ const CSS = `
 .psq-seg button.on{background:var(--rpc-red,#E03A2F);color:#fff}
 .psq-scroll{overflow-x:auto}
 .psq-tbl{width:100%;border-collapse:collapse;border:1px solid var(--rpc-border,rgba(255,255,255,.10));border-radius:10px;overflow:hidden}
-.psq-tbl th,.psq-tbl td{text-align:left;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);white-space:nowrap}
+.psq-tbl th,.psq-tbl td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--rpc-border-subtle,rgba(255,255,255,.06));white-space:nowrap}
 .psq-tbl th{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--rpc-text-secondary,#9A968C);font-weight:700;cursor:pointer}
 .psq-tbl th.n,.psq-tbl td.n{text-align:right;font-family:var(--font-mono,ui-monospace),monospace}
-.psq-tbl tbody tr:hover td{background:rgba(255,255,255,.03)}
+.psq-tbl tbody tr:hover td{background:var(--rpc-bg-elev,rgba(255,255,255,.03))}
 .psq-nm{font-weight:600;color:var(--rpc-text-primary,#F2F0EA)}
 .psq-par{color:var(--rpc-text-secondary,#9A968C);font-size:11px}
 .psq-rc{font-size:9px;font-weight:800;padding:1px 4px;border-radius:3px;color:#0c0c0e;background:#5fd6a0;margin-left:5px}

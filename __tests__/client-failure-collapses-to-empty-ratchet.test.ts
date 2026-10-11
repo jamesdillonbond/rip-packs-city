@@ -176,8 +176,13 @@ const ROOTS = ["app", "components"]
  * these four — there is nothing to convert, and a null-render is not a defect.
  * The method that still works is sweeping the empty-state COPY of sites that DO
  * render one, not the fetch code.
+ *
+ * 64 -> 63 on 2026-10-11: CollectionProfileClient's avatar save
+ * (`r.ok ? r.json() : null` + an empty catch) now throws on !ok and shows
+ * "Couldn't update your avatar" — a conversion, re-derived from the failing
+ * no-slack assertion (63), not by subtracting.
  */
-const BUDGET = 64
+const BUDGET = 63
 
 /**
  * A failure funnelled into the success-with-nothing value.

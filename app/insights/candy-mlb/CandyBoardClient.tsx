@@ -95,10 +95,10 @@ const CSS = `
 .cdy-blurb b{color:var(--rpc-text-primary,#ECEAE3);font-weight:700}
 .cdy-scroll{overflow-x:auto}
 .cdy-tbl{width:100%;border-collapse:collapse;border:1px solid var(--rpc-border,rgba(255,255,255,.10));border-radius:10px;overflow:hidden}
-.cdy-tbl th,.cdy-tbl td{text-align:left;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);white-space:nowrap}
+.cdy-tbl th,.cdy-tbl td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--rpc-border-subtle,rgba(255,255,255,.06));white-space:nowrap}
 .cdy-tbl th{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--rpc-text-secondary,#9A968C);font-weight:700;cursor:pointer}
 .cdy-tbl th.n,.cdy-tbl td.n{text-align:right;font-family:var(--font-mono,ui-monospace),monospace}
-.cdy-tbl tbody tr:hover td{background:rgba(255,255,255,.03)}
+.cdy-tbl tbody tr:hover td{background:var(--rpc-bg-elev,rgba(255,255,255,.03))}
 .cdy-nm{font-weight:600;color:var(--rpc-text-primary,#F2F0EA)}
 .cdy-par{color:var(--rpc-text-secondary,#9A968C);font-size:11px}
 .cdy-trunc{margin:8px 2px 0;line-height:1.5}
@@ -108,10 +108,10 @@ const CSS = `
 .cdy-disc{color:#5fd6a0;font-weight:700}
 .cdy-kind{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.03em}
 .cdy-kind.first{color:#0c0c0e;background:#f2c879}
-.cdy-kind.last{color:#ECEAE3;background:rgba(255,255,255,.14)}
-.cdy-kind.low{color:#ECEAE3;background:rgba(96,165,250,.28)}
+.cdy-kind.last{color:var(--rpc-text-primary,#ECEAE3);background:var(--rpc-surface-hover,rgba(255,255,255,.14))}
+.cdy-kind.low{color:var(--rpc-text-primary,#ECEAE3);background:rgba(96,165,250,.28)}
 .cdy-kind.jersey{color:#0c0c0e;background:#7fd1a8}
-.cdy-seal{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;color:#9A968C;border:1px solid rgba(255,255,255,.14);margin-left:5px}
+.cdy-seal{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;color:var(--rpc-text-secondary,#9A968C);border:1px solid var(--rpc-border,rgba(255,255,255,.14));margin-left:5px}
 .cdy-note{color:var(--rpc-text-secondary,#9A968C);font-size:11.5px;margin:10px 2px 0}
 .cdy-note b{color:var(--rpc-text-primary,#ECEAE3);font-weight:700}
 .cdy-par2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:0 0 16px}

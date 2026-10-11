@@ -39,7 +39,7 @@ function ModelNote({ children }: { children: React.ReactNode }) {
         fontFamily: "var(--font-mono)",
         fontSize: 12,
         lineHeight: 1.6,
-        color: "rgba(255,255,255,0.75)",
+        color: "var(--rpc-text-secondary)",
       }}
     >
       {children}

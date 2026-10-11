@@ -429,6 +429,10 @@ export default function PackTable({
   const HeaderCell = ({ k, label, className: thClass = '' }: { k: SortKey; label: string; className?: string }) => (
     <th
       onClick={() => setSort(k)}
+      // Keyboard + screen-reader sortable (2026-10-11): was mouse-only.
+      tabIndex={0}
+      aria-sort={sortKey === k ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSort(k) } }}
       className={`rpc-label cursor-pointer select-none ${thClass}`}
       style={{ textAlign: 'left', padding: '10px 12px' }}
     >

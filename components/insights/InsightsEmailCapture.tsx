@@ -150,7 +150,7 @@ const CSS = `
 .rpc-ins-capture-input {
   flex: 1;
   min-width: 220px;
-  background: rgba(255,255,255,0.04);
+  background: var(--rpc-surface-raised);
   border: 1px solid var(--rpc-red-border);
   color: var(--rpc-text-primary);
   font-family: var(--font-mono);
@@ -159,7 +159,7 @@ const CSS = `
   border-radius: var(--radius-sm);
   outline: none;
 }
-.rpc-ins-capture-input::placeholder { color: rgba(255,255,255,0.28); }
+.rpc-ins-capture-input::placeholder { color: var(--rpc-text-ghost); }
 .rpc-ins-capture-btn {
   background: var(--rpc-red);
   border: none;

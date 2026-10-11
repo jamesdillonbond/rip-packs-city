@@ -10,6 +10,8 @@
 // (requireUser → auth.uid()), never from request input.
 
 import { NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { awardPoints, getRewardsSummary } from "@/lib/rewards";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
@@ -29,7 +31,7 @@ export async function GET() {
   await awardPoints(user.id, "daily_visit");
 
   const [
-    summary,
+    summaryRead,
     rules,
     shop,
     redemptions,
@@ -40,7 +42,16 @@ export async function GET() {
     tsProfile,
     bestWallet,
   ] = await Promise.all([
-    getRewardsSummary(user.id),
+    // A failed summary read rejects (see lib/rewards.ts); it is folded into the
+    // { data, error } envelope and BOUNDED, so a slow read also reaches the
+    // honest 503 below instead of the platform's 504.
+    boundedRead(
+      getRewardsSummary(user.id).then(
+        (data) => ({ data, error: null }),
+        (error: unknown) => ({ data: null, error }),
+      ),
+      "api/rewards/summary/get_rewards_summary",
+    ),
     supabase
       .from("points_rules")
       .select("action_key,label,points,daily_cap,per_user_limit")
@@ -108,6 +119,18 @@ export async function GET() {
       .limit(1)
       .maybeSingle(),
   ]);
+
+  // The summary IS the page — /rewards renders its numbers as the reader's own
+  // balance — so a failed read is a 503 the page shows as "Couldn't load your
+  // rewards", never a 200 carrying zeros.
+  const summary = summaryRead.data
+  if (summaryRead.error || summary == null) {
+    return apiErrorResponse(
+      summaryRead.error ?? new Error("rewards summary returned no row"),
+      "api/rewards/summary",
+      "Couldn't load your rewards.",
+    );
+  }
 
   // Resolve Pro status from the verified wallet (getProStatus lowercases).
   let pro: { isPro: boolean; plan: string | null; expiresAt: string | null } = {

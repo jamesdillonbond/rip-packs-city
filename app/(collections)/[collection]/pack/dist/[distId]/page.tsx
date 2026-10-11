@@ -1202,9 +1202,9 @@ export default async function PackDetailPage(
             lineHeight: 1.5,
             padding: "10px 12px",
             borderRadius: 8,
-            border: `1px solid ${correctedEv!.low_confidence_ev ? "rgba(251,191,36,0.35)" : "rgba(255,255,255,0.12)"}`,
-            background: correctedEv!.low_confidence_ev ? "rgba(251,191,36,0.07)" : "rgba(255,255,255,0.03)",
-            color: correctedEv!.low_confidence_ev ? "rgb(251,191,36)" : "rgba(255,255,255,0.6)",
+            border: `1px solid ${correctedEv!.low_confidence_ev ? "rgba(251,191,36,0.35)" : "var(--rpc-border)"}`,
+            background: correctedEv!.low_confidence_ev ? "rgba(251,191,36,0.07)" : "var(--rpc-surface)",
+            color: correctedEv!.low_confidence_ev ? "var(--rpc-warning)" : "var(--rpc-text-secondary)",
           }}
         >
           {correctedEv!.low_confidence_ev && <strong>⚠ Rough estimate. </strong>}
@@ -2075,13 +2075,16 @@ function PackContentsSection({
   }
   if (contents.length === 0) return null
 
+  // 2026-10-11: this section holds EditionsGridPaginated, whose tiles use the
+  // theme tokens (dark text in light mode). On the always-dark CARD_STYLE they
+  // rendered black on black, so this card is theme-aware like its contents.
   return (
-    <section style={CARD_STYLE}>
+    <section style={{ ...CARD_STYLE, background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
-        <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase" }}>
+        <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
           What&apos;s Inside
         </h2>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
           {fmvCoverage !== null && editionCount
             ? `FMV priced ${fmtCount(Math.round((fmvCoverage / 100) * editionCount))} of ${editionCount} (${fmvCoverage}%)`
             : editionCount ? `${editionCount} editions in pool` : "pullable editions"}
@@ -2193,7 +2196,7 @@ async function PackStreamedTop({
       <DegradedDataNotice summary={streamedTopDegraded} />
       {showLifecycle && (
         <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
             Observed pack lifecycle
           </span>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>

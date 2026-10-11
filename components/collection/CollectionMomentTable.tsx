@@ -838,9 +838,11 @@ export default function CollectionMomentTable(props: {
                             onClick={function(e) { e.stopPropagation(); if (alertOpenMomentId === row.momentId) { setAlertOpenMomentId(null) } else { setAlertOpenMomentId(row.momentId); setAlertTargetPrice(row.fmv ? (Math.round(row.fmv * 0.85 * 100) / 100).toString() : ""); setAlertNotifType("email"); setAlertStatus("idle"); setAlertError("") } }}
                             className="rounded-lg border border-[color:var(--rpc-border-hover)] px-2 py-1 text-xs hover:bg-[var(--rpc-surface)]"
                             title="Set FMV alert"
+                            aria-label="Set FMV alert"
+                            aria-expanded={alertOpenMomentId === row.momentId}
                             style={{ color: alertOpenMomentId === row.momentId ? accent : "#a1a1aa" }}
                           >
-                            {"\uD83D\uDD14"}
+                            <span aria-hidden="true">{"\uD83D\uDD14"}</span>
                           </button>
                           {alertOpenMomentId === row.momentId && (
                             <div onClick={function(e) { e.stopPropagation() }} style={{ position: "absolute", top: "100%", right: 0, zIndex: 50, background: "var(--rpc-surface)", border: "1px solid #3f3f46", borderRadius: 8, padding: 12, width: 240, marginTop: 4 }}>

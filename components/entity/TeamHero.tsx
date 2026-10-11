@@ -185,7 +185,11 @@ export default function TeamHero({
   // the NBA/WNBA CDNs directly with ERR_HTTP2_PROTOCOL_ERROR (2026-09-29).
   const logoUrl = teamLogoUrl({ league, external_id: externalId ?? null })
   const accent = secondaryColor || "var(--rpc-red)"
-  const gradient = `linear-gradient(105deg, ${primaryColor} 0%, var(--rpc-surface) 88%)`
+  // The banner's text is white by design, so the gradient must end DARK in both
+  // themes. It ended at var(--rpc-surface), which is #F7F7F5 in light mode — the
+  // right half of a long team name sat white-on-near-white (2026-10-11).
+  // #0D0D0D is the dark --rpc-surface value, so dark mode is unchanged.
+  const gradient = `linear-gradient(105deg, ${primaryColor} 0%, #0D0D0D 88%)`
 
   return (
     <section className="rpc-card" style={{ padding: 0, overflow: "hidden", borderTop: `3px solid ${accent}` }}>

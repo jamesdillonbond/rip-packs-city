@@ -64,9 +64,15 @@ export async function redeemItem(userId: string, itemId: number) {
 
 // Read the two-number summary for a user:
 // { spendable, status, tier, lifetime_earned, lifetime_spent }
+// ⚠ THROWS on a failed read (2026-10-11). It used to discard `error` and return
+// null, which /api/rewards/summary sent at HTTP 200 and /rewards rendered as
+// "0 pts", a 0 balance and "Lifetime earned 0" — a claim about the reader's own
+// account. get_rewards_summary is an aggregate: it returns an object (zeros
+// included) for every real user, so null is never a genuine answer.
 export async function getRewardsSummary(userId: string) {
   if (!userId) return null;
-  const { data } = await (supabase as any).rpc("get_rewards_summary", { p_user_id: userId });
+  const { data, error } = await (supabase as any).rpc("get_rewards_summary", { p_user_id: userId });
+  if (error) throw error;
   return data;
 }
 
