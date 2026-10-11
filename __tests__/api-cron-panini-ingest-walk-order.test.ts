@@ -31,6 +31,8 @@ const st = vi.hoisted(() => ({
   // Epoch ms of catalogue row 0's last_seen_at (rows ascend 1 s apart). Recent by default, so the
   // aged-priority rule (2026-10-03) stays out of tests about something else.
   baseMs: 0,
+  // Optional per-row last_seen_at (epoch ms); overrides baseMs + i s when set (2026-10-10).
+  seenAt: null as null | ((i: number) => number),
   pageOrder: [] as Array<[string, unknown]>,
 }))
 
@@ -67,7 +69,7 @@ vi.mock("@/lib/supabase", () => ({
             rows.push({
               external_id: `packcard-${st.setIdAt(i)}_1_${i}_1`,
               // Ascending age index doubles as the stalest-first assertion below.
-              last_seen_at: new Date(st.baseMs + i * 1000).toISOString(),
+              last_seen_at: new Date(st.seenAt ? st.seenAt(i) : st.baseMs + i * 1000).toISOString(),
             })
           }
           return { data: rows, error: null }
@@ -89,6 +91,7 @@ beforeEach(async () => {
   st.holdings = []
   st.holdingsError = null
   st.baseMs = Date.now() - 3_600_000
+  st.seenAt = null
   st.pageOrder = []
   process.env.INGEST_SECRET_TOKEN = "tok"
   ;({ GET } = await import("@/app/api/cron/panini-ingest/route"))
@@ -247,7 +250,8 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
   // aged list once the collector walk named 4,164 held pskus against ~300-370 refreshed per run.
   it("serves catalogue editions older than 5 days in priority_pskus, stalest first, alternating with the held", async () => {
     st.total = 6
-    st.baseMs = Date.now() - 6 * 86_400_000 // rows 0..5 are ~6 days old
+    // 5.5 days: past the aged line, short of the 6-day CRITICAL line (2026-10-10), so the interleave applies.
+    st.baseMs = Date.now() - 5.5 * 86_400_000
     st.products = { data: [{ set_id: 2332, name: "WC", walk_cards: true }, { set_id: 1941, name: null, walk_cards: true }], error: null }
     st.holdings = [{ psku: "packcard-1941_377959_9989801_273" }]
     const j = await (await GET(req())).json()
@@ -262,13 +266,32 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
 
   it("a FLOOD of held cards cannot starve the aged list: half of any run-sized prefix is aged", async () => {
     st.total = 400
-    st.baseMs = Date.now() - 10 * 86_400_000
+    st.baseMs = Date.now() - 5.5 * 86_400_000 // aged, not critical — the interleave case
     st.products = { data: [{ set_id: 2332, name: "WC", walk_cards: true }, { set_id: 1941, name: null, walk_cards: true }], error: null }
     st.holdings = Array.from({ length: 4000 }, (_, i) => ({ psku: `packcard-1941_9_${i}_9` }))
     const j = await (await GET(req())).json()
     const run = (j.priority_pskus as string[]).slice(0, 340) // ~one run's refreshes, measured 10-03
     expect(run.filter((p) => p.startsWith("packcard-2332_")).length).toBe(170)
     expect(run[0]).toBe("packcard-2332_1_0_1") // the stalest edition leads
+  })
+
+  it("CRITICAL editions (>= 6 days) lead the run ahead of held cards; the rest still alternate (2026-10-10)", async () => {
+    st.total = 4
+    st.products = { data: [{ set_id: 2332, name: "WC", walk_cards: true }, { set_id: 1941, name: null, walk_cards: true }], error: null }
+    st.holdings = Array.from({ length: 3 }, (_, i) => ({ psku: `packcard-1941_9_${i}_9` }))
+    // rows 0,1 are 6.4 days old (critical); rows 2,3 are ~5.5 days old (aged, not critical).
+    st.baseMs = Date.now() - 6.4 * 86_400_000
+    const ages = [6.4, 6.4, 5.5, 5.5]
+    st.seenAt = (i: number) => Date.now() - ages[i] * 86_400_000 + i * 1000
+    const j = await (await GET(req())).json()
+    expect(j.aged_priority).toBe(4)
+    expect(j.aged_critical).toBe(2)
+    expect(j.priority_pskus).toEqual([
+      "packcard-2332_1_0_1", "packcard-2332_1_1_1",            // critical first, no held card between them
+      "packcard-2332_1_2_1", "packcard-1941_9_0_9",            // then aged/held alternate
+      "packcard-2332_1_3_1", "packcard-1941_9_1_9",
+      "packcard-1941_9_2_9",
+    ])
   })
 
   it("serves NO aged priority while every edition is fresher than 5 days", async () => {

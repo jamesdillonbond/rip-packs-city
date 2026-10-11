@@ -102,6 +102,12 @@ const PANINI_BOOTSTRAP_YIELD_DAYS = 6.5;
 // `priority_pskus` (stalest first, at most PANINI_AGED_PRIORITY_CAP per run). See the GET below.
 const PANINI_AGED_PRIORITY_DAYS = 5;
 const PANINI_AGED_PRIORITY_CAP = 300;
+// CRITICAL AGE (2026-10-10 ~9:50 PM PT): aged editions at least this old go BEFORE the held/aged
+// interleave, not alternated with held cards. A run refreshes ~450 editions (5,429/day over ~12 runs),
+// and with 624 held-but-uncatalogued pskus queued the 1:1 interleave reached only ~225 aged editions a
+// run — so raising the aged CAP would have changed nothing. 1,714 editions were > 6 d old with the
+// oldest crossing 7 d the next afternoon; served first, they clear in ~4 runs.
+const PANINI_AGED_CRITICAL_DAYS = 6;
 
 // The marketplace grid is filtered by `?sport=<value>` and the runner enumerates each value below.
 // "Soccer" is the only value verified live (2026-07-16). The others are the marketplace's sport
@@ -760,9 +766,19 @@ export async function GET(req: NextRequest) {
   // refreshes ~300-370 editions, so not one aged edition was reached and editions > 6 days old rose
   // 1,113 -> 1,350 in two hours. Alternating keeps both moving — the stalest catalogue edition is
   // never more than one slot behind a held card, and held cards still enter at half the run.
-  const priority: string[] = [];
-  for (let i = 0; i < Math.max(agedPriority.length, heldNew.length); i++) {
-    if (i < agedPriority.length) priority.push(agedPriority[i]);
+  // agedPriority is stalest-first, so the critical editions are its prefix.
+  const criticalCutoff = Date.now() - PANINI_AGED_CRITICAL_DAYS * 86_400_000;
+  const seenAt = new Map(inScope.map((r) => [r.external_id, r.last_seen_at ? Date.parse(r.last_seen_at) : NaN]));
+  let nCritical = 0;
+  while (nCritical < agedPriority.length) {
+    const t = seenAt.get(agedPriority[nCritical]);
+    if (t !== undefined && Number.isFinite(t) && t >= criticalCutoff) break;
+    nCritical++;
+  }
+  const priority: string[] = agedPriority.slice(0, nCritical);
+  const agedRest = agedPriority.slice(nCritical);
+  for (let i = 0; i < Math.max(agedRest.length, heldNew.length); i++) {
+    if (i < agedRest.length) priority.push(agedRest[i]);
     if (i < heldNew.length) priority.push(heldNew[i]);
   }
 
@@ -795,6 +811,8 @@ export async function GET(req: NextRequest) {
     held_uncatalogued: heldNew.length,
     // Catalogue editions older than PANINI_AGED_PRIORITY_DAYS served in priority_pskus (after the held).
     aged_priority: agedPriority.length,
+    // Of those, editions >= PANINI_AGED_CRITICAL_DAYS old, served ahead of the held/aged interleave.
+    aged_critical: nCritical,
     // The same held pskus as their OWN list (2026-09-29). Being at the front of `pskus` was not
     // enough: the runner walks brand-new GRID discoveries before the known list (1,464–3,900 per
     // run vs ~660 walked), and it derives "new" as grid minus `pskus`, so it cannot tell the held
