@@ -112,10 +112,11 @@ export interface ResolvedOfferTarget {
 
 export async function resolveOfferTargets(
   avail: AvailOffer[],
-): Promise<{ byOfferId: Map<string, ResolvedOfferTarget>; aliased: number; viaWalletCache: number; viaCheckpoint: number }> {
+): Promise<{ byOfferId: Map<string, ResolvedOfferTarget>; aliased: number; viaWalletCache: number; viaCheckpoint: number; viaAtlas: number }> {
   let aliased = 0
   let viaWalletCache = 0
   let viaCheckpoint = 0
+  let viaAtlas = 0
   const aliases = await fetchTopShotEditionAliases()
   for (const o of avail) {
     if (!o.externalId) continue
@@ -220,9 +221,53 @@ export async function resolveOfferTargets(
     }
   }
 
+  // Last fallback (2026-10-11): Top Shot's own marketplace feed. Every nft a live
+  // indexer run could not place (53 sampled) has events in topshot_atlas_market_events
+  // with an atlas_edition_id; topshot_atlas_edition_map (alias-canonicalised) maps it
+  // to our external_id, parallels included — no label parsing. ⛔ Used only when ALL
+  // of the nft's Atlas events agree on ONE edition; any disagreement leaves it
+  // unresolved. Chain-derived sources (moments, cache, checkpoint) always win.
+  const atlasCandidates = missingNfts.filter((id) => !wmcByNft.has(id) && !ckptByNft.has(id))
+  const atlasByNft = new Map<string, { editionKey: string; serial: number | null }>()
+  if (atlasCandidates.length > 0) {
+    const edsByNft = new Map<string, Set<string>>()
+    const serialByNft = new Map<string, number | null>()
+    for (let i = 0; i < atlasCandidates.length; i += IN_CHUNK) {
+      const { data, error } = await (supabaseAdmin as any)
+        .from("topshot_atlas_market_events")
+        .select("nft_id, atlas_edition_id, serial_number")
+        .eq("product", "nba")
+        .in("nft_id", atlasCandidates.slice(i, i + IN_CHUNK))
+      if (error) throw new Error(`topshot_atlas_market_events lookup: ${error.message}`)
+      for (const r of (data as Array<{ nft_id: string; atlas_edition_id: string | null; serial_number: number | null }> | null) ?? []) {
+        if (!r.atlas_edition_id) continue
+        if (!edsByNft.has(r.nft_id)) edsByNft.set(r.nft_id, new Set())
+        edsByNft.get(r.nft_id)!.add(r.atlas_edition_id)
+        if (r.serial_number != null) serialByNft.set(r.nft_id, r.serial_number)
+      }
+    }
+    const single = Array.from(edsByNft.entries()).filter(([, eds]) => eds.size === 1).map(([nft, eds]) => [nft, Array.from(eds)[0]] as const)
+    const aeds = Array.from(new Set(single.map(([, aed]) => aed)))
+    const extByAed = new Map<string, string>()
+    for (let i = 0; i < aeds.length; i += IN_CHUNK) {
+      const { data, error } = await (supabaseAdmin as any)
+        .from("topshot_atlas_edition_map")
+        .select("atlas_edition_id, external_id")
+        .in("atlas_edition_id", aeds.slice(i, i + IN_CHUNK))
+      if (error) throw new Error(`topshot_atlas_edition_map lookup: ${error.message}`)
+      for (const r of (data as Array<{ atlas_edition_id: string; external_id: string | null }> | null) ?? [])
+        if (r.external_id) extByAed.set(r.atlas_edition_id, canonicalTopShotExternalId(r.external_id, aliases))
+    }
+    for (const [nft, aed] of single) {
+      const ext = extByAed.get(aed)
+      if (ext) atlasByNft.set(nft, { editionKey: ext, serial: serialByNft.get(nft) ?? null })
+    }
+  }
+
   const wmcKeys = Array.from(new Set([
     ...Array.from(wmcByNft.values()).map((w) => w.editionKey),
     ...Array.from(ckptByNft.values()).map((w) => w.editionKey),
+    ...Array.from(atlasByNft.values()).map((w) => w.editionKey),
   ])).filter((k) => !editionIdByExt.has(k))
   for (let i = 0; i < wmcKeys.length; i += IN_CHUNK) {
     const { data, error } = await (supabaseAdmin as any)
@@ -255,8 +300,15 @@ export async function resolveOfferTargets(
       if (k && kEditionId) {
         byOfferId.set(o.offerId, { editionId: kEditionId, momentId: null, serial: k.serial })
         viaCheckpoint++
+        continue
+      }
+      const a = atlasByNft.get(o.nftId)
+      const aEditionId = a ? editionIdByExt.get(a.editionKey) : undefined
+      if (a && aEditionId) {
+        byOfferId.set(o.offerId, { editionId: aEditionId, momentId: null, serial: a.serial })
+        viaAtlas++
       }
     }
   }
-  return { byOfferId, aliased, viaWalletCache, viaCheckpoint }
+  return { byOfferId, aliased, viaWalletCache, viaCheckpoint, viaAtlas }
 }

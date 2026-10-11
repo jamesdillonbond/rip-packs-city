@@ -458,6 +458,53 @@ describe("topshot-offers-indexer — OfferAvailable keying", () => {
     })
   })
 
+  it("Atlas fallback: an nft no chain source knows is placed through its ONE Atlas edition (map → external_id)", async () => {
+    fetchMock = installFetchMock(flowRestStubs({ avail: [serialOffer("705", "77001122")] }))
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      moments: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      checkpoint_nft_meta: { data: [], error: null },
+      topshot_atlas_market_events: {
+        data: [
+          { nft_id: "77001122", atlas_edition_id: "548", serial_number: 173 },
+          { nft_id: "77001122", atlas_edition_id: "548", serial_number: 173 },
+        ],
+        error: null,
+      },
+      topshot_atlas_edition_map: { data: [{ atlas_edition_id: "548", external_id: "5:110" }], error: null },
+      editions: { data: [{ external_id: "5:110", id: "uuid-5110" }], error: null },
+      offers: { data: [], error: null },
+    })
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true, offersWritten: 1, unresolved: 0 })
+    expect(offerUpserts(spy)[0]).toMatchObject({ offer_id: "705", edition_id: "uuid-5110", serial_number: 173, moment_id: null })
+    expect(terminalLog(spy.rpcCalls)?.p_extra).toMatchObject({ resolved_via_atlas: 1 })
+  })
+
+  it("Atlas fallback refuses an nft whose Atlas events disagree on the edition", async () => {
+    fetchMock = installFetchMock(flowRestStubs({ avail: [serialOffer("706", "77001133")] }))
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      moments: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      checkpoint_nft_meta: { data: [], error: null },
+      topshot_atlas_market_events: {
+        data: [
+          { nft_id: "77001133", atlas_edition_id: "548", serial_number: 1 },
+          { nft_id: "77001133", atlas_edition_id: "549", serial_number: 1 },
+        ],
+        error: null,
+      },
+      topshot_atlas_edition_map: { data: [{ atlas_edition_id: "548", external_id: "5:110" }, { atlas_edition_id: "549", external_id: "5:110::2" }], error: null },
+      editions: { data: [{ external_id: "5:110", id: "uuid-5110" }], error: null },
+      offers: { data: [], error: null },
+    })
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true, offersWritten: 0, unresolved: 1 })
+    expect(offerUpserts(spy)).toHaveLength(0)
+  })
+
   it("unresolvable edition offer is counted unresolved and NOT written; non-TopShot offers are filtered", async () => {
     const tx1 = "d".repeat(64)
     fetchMock = installFetchMock(
