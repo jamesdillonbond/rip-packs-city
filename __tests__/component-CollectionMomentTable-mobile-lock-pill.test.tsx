@@ -88,3 +88,27 @@ describe("mobile binder card — lock pill", () => {
     expect(container.querySelector("[data-rpc-mobile-thumb]")).not.toBeNull()
   })
 })
+
+describe("mobile binder card — a source that SAYS it never checked", () => {
+  // get_wallet_moments_with_fmv returns is_locked = false (the column DEFAULT)
+  // with lock_known = false for every never-checked row. Before 2026-10-10
+  // isLockKnown read the non-null `false` as a measurement, so these rendered
+  // "Unlocked".
+  it("lockKnown:false + isLocked:false renders Lock ?, never Unlocked", () => {
+    const { container } = render(<CollectionMomentTable {...props(row({ isLocked: false, lockKnown: false }))} />)
+    expect(pill(container)?.getAttribute("data-rpc-lock-state")).toBe("unknown")
+  })
+
+  it("lockKnown:true + isLocked:false is a real Unlocked", () => {
+    const { container } = render(<CollectionMomentTable {...props(row({ isLocked: false, lockKnown: true }))} />)
+    expect(pill(container)?.getAttribute("data-rpc-lock-state")).toBe("unlocked")
+  })
+
+  it("Golazos and UFC (no locking on-chain) get no pill at all", () => {
+    for (const slug of ["laliga-golazos", "ufc"]) {
+      const { container, unmount } = render(<CollectionMomentTable {...props(row({ isLocked: false, lockKnown: false }), slug)} />)
+      expect(pill(container)).toBeNull()
+      unmount()
+    }
+  })
+})

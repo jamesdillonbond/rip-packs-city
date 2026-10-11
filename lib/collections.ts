@@ -510,7 +510,17 @@ export function requirePublishedCollection(id: string): Collection {
 // (app/api/cron/lock-check-batch). Trevor chose, 09-27, to KEEP that data and
 // the daily check, and only hide it. Clearing the rows or dropping
 // disney_pinnacle from the lane would delete a true on-chain fact.
-const COLLECTIONS_WITHOUT_LOCKING: ReadonlySet<string> = new Set(["disney-pinnacle", "pinnacle"])
+//
+// LaLiga Golazos and UFC Strike (2026-10-10) cannot be locked at all, so a lock
+// figure there is never "unknown" — there is nothing to know. Verified on
+// mainnet, not inferred: neither contract has moment-level locking (Golazos'
+// only `lock` is SET locking — no new editions), and Dapper's generic
+// NFTLocker (0xb6f2481eba4df97b) has never held either type —
+// `getNFTLockerDetails(id:0, nftType: Type<@Golazos.NFT>())` and the UFC_NFT
+// equivalent panic on the force-unwrap of `lockedTokens[nftType]`, an entry
+// created on first lock and never removed. Control: the AllDay type returns
+// normally. Re-check that probe before ever removing them from this set.
+const COLLECTIONS_WITHOUT_LOCKING: ReadonlySet<string> = new Set(["disney-pinnacle", "pinnacle", "laliga-golazos", "ufc"])
 
 /** False for a collection whose NFTs cannot be locked — render no lock UI at all. */
 export function collectionHasLocking(id: string): boolean {

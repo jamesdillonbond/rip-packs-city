@@ -120,6 +120,14 @@ export function isLockKnown(row: MomentRow) {
   // producer that sets this without consulting `lock_checked_at` reintroduces
   // the exact defect the rest of this comment block exists to prevent.
   if (row.lockKnown === true) return true
+  // ⛔ An explicit `false` is the source SAYING it never checked
+  // (get_wallet_moments_with_fmv: lock_known = lock_checked_at IS NOT NULL).
+  // Its `is_locked` is then the column DEFAULT `false`, which is non-null, so
+  // the fallthrough below read every never-checked row as a measured
+  // "Unlocked" (2026-10-10: all 25,375 Candy rows, all Golazos/UFC rows, and
+  // any not-yet-checked Top Shot/All Day row). Only `undefined` (a producer
+  // that carries no provenance) falls through.
+  if (row.lockKnown === false) return false
   if (row.enrichFailed) return false
   return (row.isLocked ?? row.locked) != null
 }
