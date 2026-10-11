@@ -1503,7 +1503,8 @@ const PINS = [
     // sender is gated against is the 2026-08-16 defect one level up.
     fn: "build_deal_alerts_for_subscription",
     test: "supabase/tests/build_deal_alerts_for_subscription.sql",
-    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
+    // Re-pointed 2026-10-10: "perfect mints only" no longer matches a 1-of-1.
+    migration: "supabase/migrations/20261011022738_audit_20261010_perfect_mint_alerts_exclude_one_of_ones.sql",
   },
   {
     // The SENDING half of the same pipeline, pinned 2026-08-17. Its preview
@@ -1512,7 +1513,8 @@ const PINS = [
     // rule that `enqueued` counts writes rather than matches.
     fn: "dispatch_due_deal_alerts",
     test: "supabase/tests/dispatch_due_deal_alerts.sql",
-    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
+    // Re-pointed 2026-10-10: "perfect mints only" no longer matches a 1-of-1.
+    migration: "supabase/migrations/20261011022738_audit_20261010_perfect_mint_alerts_exclude_one_of_ones.sql",
   },
   {
     // ⚠ THREE ENTRIES, ONE FUNCTION, AND THAT IS THE POINT. `ask_is_alertable`

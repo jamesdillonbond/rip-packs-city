@@ -525,7 +525,7 @@ BEGIN
           ))
           AND (v_sub.min_serial IS NULL OR b.serial_number >= v_sub.min_serial)
           AND (v_sub.max_serial IS NULL OR b.serial_number <= v_sub.max_serial)
-          AND (NOT COALESCE(v_sub.require_last_mint, false) OR b.serial_number = b.circulation_count)
+          AND (NOT COALESCE(v_sub.require_last_mint, false) OR (b.circulation_count > 1 AND b.serial_number = b.circulation_count))
           AND (v_sub.team_names IS NULL OR EXISTS (
             SELECT 1 FROM public.editions e
             WHERE e.external_id = b.external_id
@@ -1013,6 +1013,46 @@ BEGIN
     'and ONLY that match -- the badge filter still excludes everything else');
 
   RAISE NOTICE '✓ dispatch_due_deal_alerts: filters run before any truncation';
+END $$;
+
+-- ── A 1-OF-1 IS NOT A PERFECT MINT (audit_20261010) ────────────────────────
+-- The sender's half of the same rule the preview pins: "perfect mints only"
+-- must not deliver a /1 edition's serial 1. The #50/50 row is the positive
+-- control — without it this passes against a filter that delivers nothing.
+INSERT INTO topshot_underpriced_serials_board
+  (edition_id, edition_key, external_id, player_name, set_name, tier,
+   circulation_count, thumbnail_url, nft_id, serial_number, ask_usd,
+   listing_resource_id, listing_url, listed_at, last_seen_at, edition_fmv_usd,
+   confidence, serial_bucket, serial_fmv_usd, serial_multiplier, discount_usd,
+   discount_pct, estimate_quality)
+VALUES
+  (gen_random_uuid(), '950:1', '950:1', 'Last Mint Test', 'LM Set', 'ULTIMATE',
+   1, NULL, 'nft-one-of-one', 1, 50.00, NULL, NULL, now(), now(), 40.00,
+   'HIGH', 'first', 100.00, 2.5, 50.00, 50.0, 'tight'),
+  (gen_random_uuid(), '950:2', '950:2', 'Last Mint Test', 'LM Set', 'RARE',
+   50, NULL, 'nft-perfect', 50, 50.00, NULL, NULL, now(), now(), 40.00,
+   'HIGH', 'perfect', 100.00, 2.5, 50.00, 50.0, 'tight');
+
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-lastmint', 'email', 'lastmint@example.test', true);
+
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, active, serial_only, player_names, require_last_mint)
+VALUES ('99999999-9999-9999-9999-999999999991', 'owner-lastmint', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false,
+        ARRAY['Last Mint Test'], true);
+
+DO $$
+BEGIN
+  PERFORM public.dispatch_due_deal_alerts();
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-lastmint' AND subject_key = 'nba-top-shot:950:2:#50'),
+    'perfect-mints-only delivers the real perfect mint (#50/50)');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-lastmint' AND subject_key = 'nba-top-shot:950:1:#1'),
+    'and never the 1-of-1 -- a /1 serial 1 is the #1, not a last mint');
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: a 1-of-1 is not a perfect mint';
 END $$;
 
 ROLLBACK;
