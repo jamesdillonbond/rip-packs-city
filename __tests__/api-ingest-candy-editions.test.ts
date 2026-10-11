@@ -50,7 +50,14 @@ vi.mock("@/lib/supabase", () => ({
         }
       }
       if (table === "candy_listings") {
-        const q: any = { select: () => q, in: () => q, eq: async () => st.listings }
+        // Chainable + thenable: the escrow lookup filters venue AND is_active
+        // (2026-10-10), so the query must resolve on await, not on the first eq.
+        const q: any = {
+          select: () => q,
+          in: () => q,
+          eq: () => q,
+          then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) => Promise.resolve(st.listings).then(onF, onR),
+        }
         return q
       }
       return {

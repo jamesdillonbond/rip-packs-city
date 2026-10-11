@@ -59,6 +59,9 @@ export async function attributeEscrowHeldToSellers<T extends { wallet_address: s
         .from(table)
         .select("token_mint, seller, last_seen_at")
         .in("token_mint", held.slice(i, i + chunkSize))
+        // Only a Magic Eden ask explains a card sitting in Magic Eden's escrow
+        // (candy_listings also holds OpenSea asks since 2026-10-10).
+        .eq("venue", "magic_eden")
         .eq("is_active", true)
       if (error) return { rows, remapped: 0, unmatched: held.length, error: error.message ?? String(error) }
       for (const r of (data ?? []) as Array<{ token_mint: string; seller: string | null; last_seen_at: string | null }>) {
@@ -110,6 +113,9 @@ export async function listedMintsInEscrowForSeller(
       .from(table)
       .select("token_mint")
       .eq("seller", seller)
+      // Magic Eden asks only: an OpenSea-listed card is not in this escrow, so
+      // re-reading it from DAS would only be counted stale (2026-10-10).
+      .eq("venue", "magic_eden")
       .eq("is_active", true)
       .order("token_mint", { ascending: true })
       .limit(ESCROW_LISTED_READ_CAP + 1)

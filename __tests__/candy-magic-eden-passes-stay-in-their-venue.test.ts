@@ -66,6 +66,13 @@ describe("Magic Eden Candy passes stay in their venue", () => {
     expect(src("app/api/candy-opensea-sales-indexer/route.ts")).toMatch(/seller: c\.e\.seller \?\? null,\s*marketplace: "opensea"/)
   })
 
+  it("support-chat: the Candy BOOK-FRESHNESS read is the Magic Eden book (a live OpenSea feed must not vouch for a dead ME sweep)", () => {
+    const code = src("app/api/support-chat/route.ts")
+    // The head read: newest active last_seen_at, ordered descending.
+    const at = code.indexOf('.select("last_seen_at")\n            .eq("venue", "magic_eden")')
+    expect(at, "the candy book-freshness head read must filter venue=magic_eden").toBeGreaterThan(-1)
+  })
+
   it("candy-listings: the delist/fill retirement is venue='magic_eden'", () => {
     const code = src("app/api/candy-listings-indexer/route.ts")
     const ended = chainAround(code, '.in("token_mint", slice)')

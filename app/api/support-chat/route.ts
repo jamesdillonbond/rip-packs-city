@@ -3175,9 +3175,14 @@ async function executeToolInner(
             .gte("last_seen_at", since)
             .order("price_usd", { ascending: true })
             .limit(200),
+          // Freshness of the MAGIC EDEN book (the bulk of Candy asks). Unscoped,
+          // a live OpenSea feed (2026-10-10) would keep this stamp fresh over a
+          // dead Magic Eden sweep, and "none listed" would then be a stalled
+          // indexer reported as an empty market.
           supabase
             .from("candy_listings")
             .select("last_seen_at")
+            .eq("venue", "magic_eden")
             .eq("is_active", true)
             .order("last_seen_at", { ascending: false })
             .limit(1),
