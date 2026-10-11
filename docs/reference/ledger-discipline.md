@@ -334,6 +334,7 @@ number rather than quote it. A `Shipped:` line is a number of that kind.
 - **Do:** `### 2026-10-04 · ↩ REVERTED (\`815c984\`) · <original prefix> — **<original bold title, unchanged>** …` and put the reason in the body, or add a NEW entry that says the earlier one was reverted.
 - **Once it is wrong, leave it:** the guard compares each push only to its parent, so the red is confined to that one commit; "fixing" the heading back removes the NEW key and reds the next push the same way. The 10-04 heading was left as is.
 - **Before pushing a ledger edit (not an add), run the guard locally:** `git show HEAD~1:docs/overnight/ledger.md > /tmp/b && node scripts/find-clobbered-ledger-headings.mjs /tmp/b docs/overnight/ledger.md` must print `0` (run it after committing, against the commit's parent).
+- **Recurred 2026-10-11 (`8673ed4`):** a correction that credited a concurrent fix was edited INTO the bold title (`… gate back to 90.86 %, and 90.98 % combined …`) instead of after it, so only that commit went red. Left as is, per the rule above. Most bold titles state a NUMBER, so a later correction is tempted to change that number; put the new figure in the body.
 
 ### ⚠ A closing heading must NAME every queue item it closes (2026-10-10)
 
