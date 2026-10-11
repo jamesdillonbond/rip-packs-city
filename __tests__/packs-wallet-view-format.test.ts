@@ -270,6 +270,11 @@ describe("packPullLabel (2026-09-26)", () => {
   it("a box says what it yielded instead of an unpriced moment count", () => {
     expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null, box_packs: 8 })).toBe("Box · 8 packs")
     expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null, box_packs: 1 })).toBe("Box · 1 pack")
+    // 2026-10-10 (v22): how far its packs are realized; the total only once all are
+    expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null, box_packs: 7, box_packs_realized: 3, box_realized_usd: 90 }))
+      .toBe("Box · 7 packs · 3 of 7 realized")
+    expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null, box_packs: 7, box_packs_realized: 7, box_realized_usd: 460 }))
+      .toBe("Box · 7 packs · $460.00 realized")
     expect(packPullLabel({ status: "ripped", has_rip: true, pull_value_usd: null, box_packs: 0, pulls_total: 3, pulls_priced: 2 })).toBe("— (2/3 priced)")
   })
   it("a value resting on inferred pull names reads as an estimate", () => {

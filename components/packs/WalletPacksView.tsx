@@ -75,6 +75,8 @@ interface HistoryRow {
   pulls_priced?: number | null
   pulls_inferred?: number | null
   box_packs?: number | null
+  box_packs_realized?: number | null
+  box_realized_usd?: number | null
   realized_pl_usd: number | null
   latest_event_at: string | null
   // 2026-09-18 (get_wallet_pack_history v4) — every one optional so an older

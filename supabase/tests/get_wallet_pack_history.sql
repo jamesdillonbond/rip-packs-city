@@ -65,9 +65,12 @@
 --      no buy price (source 'box'), never inferred at its own retail, so no P/L of its own --
 --      a sold topper (retail 0) read "buy $0" and its whole sale as profit. Opener-scoped:
 --      another wallet's box contents change nothing here (IB1-IB4).
+--  14. (v22, 2026-10-10) A BOX this wallet opened realizes what its packs became: realized P/L =
+--      sum(each pack's sale or pull value) - the box's buy, only when EVERY pack it yielded is
+--      sold-with-a-price or opened-with-a-value; one still sealed leaves it NULL (IBOX, IBOX2).
 --
 -- The get_wallet_pack_history DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261011020600_audit_20261010_wallet_pack_history_a_pack_out_of_a_box_was_not_bought.sql).
+-- (supabase/migrations/20261011050100_audit_20261010_wallet_pack_history_a_box_realizes_what_its_packs_became.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -625,17 +628,46 @@ BEGIN
       END AS status
     FROM enriched
   ),
+  -- v22 (2026-10-10, #187 residue): a BOX this wallet opened yields packs, not moments, so its
+  -- own pull value is NULL and it had no P/L. Its realized value is what its packs became:
+  -- each sold (its sale) or opened (its pull value). Only when EVERY pack it yielded is one of
+  -- those -- counted against pack_box_contents, so a pack with no row here (a sale not yet
+  -- ingested, a transfer) or one still sealed leaves the box's P/L NULL, never a partial sum.
+  box_realized AS (
+    SELECT c.collection_id, c.from_box,
+           count(*) FILTER (WHERE (c.status = 'sold' AND c.sell_price IS NOT NULL)
+                               OR (c.status = 'ripped' AND c.pull_value_usd IS NOT NULL)) AS n_realized,
+           sum(CASE WHEN c.status = 'sold' THEN c.sell_price
+                    WHEN c.status = 'ripped' THEN c.pull_value_usd END) AS realized_usd
+    FROM classified c
+    WHERE c.from_box IS NOT NULL
+    GROUP BY 1, 2
+  ),
+  box_yield AS (
+    SELECT bx.collection_id, bx.box_pack_nft_id, count(*) AS n_inner
+    FROM public.pack_box_contents bx
+    WHERE bx.opener_address = v_wallet
+    GROUP BY 1, 2
+  ),
   with_pl AS (
-    SELECT *,
+    SELECT cl.*,
       CASE
+        WHEN status = 'ripped' AND by_.n_inner > 0 AND br.n_realized = by_.n_inner AND buy_usd IS NOT NULL
+                                                                                 THEN br.realized_usd - buy_usd
         WHEN status = 'ripped'  AND pull_value_usd IS NOT NULL AND buy_usd IS NOT NULL THEN pull_value_usd - buy_usd
         WHEN status = 'flipped' AND sell_price     IS NOT NULL AND buy_usd IS NOT NULL THEN sell_price     - buy_usd
         -- 2026-09-26: a pack sold with no buy row, priced at its drop's retail
         WHEN status = 'sold'    AND sell_price     IS NOT NULL AND buy_usd IS NOT NULL
                                 AND buy_price_source = 'retail_inferred'           THEN sell_price     - buy_usd
         ELSE NULL
-      END AS realized_pl_usd
-    FROM classified
+      END AS realized_pl_usd,
+      -- v22: what the packs this box yielded became (sold + opened), and how many of them
+      -- have, beside how many it yielded -- the box's P/L stands only when they are equal
+      br.realized_usd AS box_realized_usd,
+      COALESCE(br.n_realized, 0)::int AS box_packs_realized
+    FROM classified cl
+    LEFT JOIN box_realized br ON br.collection_id = cl.collection_id AND br.from_box = cl.pack_nft_id
+    LEFT JOIN box_yield by_ ON by_.collection_id = cl.collection_id AND by_.box_pack_nft_id = cl.pack_nft_id
   ),
   filtered AS (
     SELECT * FROM with_pl
@@ -771,7 +803,10 @@ BEGIN
            -- v19: packs this BOX yielded (0 = not a box)
            'box_packs', box_packs,
            -- v21 (#187): the box this wallet opened that yielded this pack (NULL = not from a box)
-           'from_box_pack_nft_id', from_box)
+           'from_box_pack_nft_id', from_box,
+           -- v22: a box's packs, realized: their sales + pull values (NULL = none yet), and how many
+           'box_realized_usd', CASE WHEN box_realized_usd IS NULL THEN NULL ELSE ROUND(box_realized_usd::numeric, 2) END,
+           'box_packs_realized', box_packs_realized)
       ORDER BY latest_event_at DESC NULLS LAST, collection_id, pack_nft_id
     ), '[]'::jsonb)
   INTO v_total, v_packs
@@ -1650,4 +1685,35 @@ BEGIN
                   AND row_->>'realized_pl_usd' IS NULL,
                   'IB4 a topper out of the box, opened: its pull value stands, no P/L against a $0 buy');
 END $$;
+
+-- v22 (2026-10-10): the box itself. IBOX (bought $200, opened) yielded IB1 (sold $120), IB2 (sold
+-- $40) and IB4 (opened, $300): realized $460, P/L +$260. IBOX2 (bought $150, opened) yielded IB5
+-- (sold $60) and IB6 (still sealed in the wallet): not realized -> P/L NULL.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX', '0xibw', '0xseller', 200, '2026-06-05', false, 'secondary_sale'),
+       ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX2', '0xibw', '0xseller', 150, '2026-06-05', false, 'secondary_sale');
+INSERT INTO public.pack_nft_identity VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX',  'DTB', 'Opened', '0xibw', '2026-06-20 01:00', '2026-06-05'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX2', 'DTB', 'Opened', '0xibw', '2026-06-20 01:00', '2026-06-05'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IB6',   'DT25', 'Sealed', '0xibw', '2026-06-20 01:00', '2026-06-07');
+INSERT INTO public.pack_box_contents (collection_id, box_pack_nft_id, pack_nft_id, opener_address) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX2', 'IB5', '0xibw'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX2', 'IB6', '0xibw');
+INSERT INTO public.topshot_pack_sales_history VALUES ('tx-ib5', 'IB5', 60, true, '0xbuyer', '0xibw', 'DT25', '2026-06-09');
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xibw', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IBOX';
+  PERFORM _assert(row_->>'status' = 'ripped' AND row_->>'box_realized_usd' = '460.00' AND row_->>'box_packs_realized' = '3'
+                  AND row_->>'realized_pl_usd' = '260.00',
+                  'IBOX: every pack it yielded is sold or opened -> realized $460 - $200 = +$260');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IBOX2';
+  PERFORM _assert(row_->>'box_packs_realized' = '1' AND row_->>'box_realized_usd' = '60.00' AND row_->>'realized_pl_usd' IS NULL,
+                  'IBOX2: one pack still sealed -> no P/L (never $60 - $150)');
+  -- the packs themselves are unchanged: no P/L of their own
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB1';
+  PERFORM _assert(row_->>'realized_pl_usd' IS NULL AND row_->>'box_realized_usd' IS NULL, 'IB1 still carries no P/L of its own');
+END $$;
+
 ROLLBACK;

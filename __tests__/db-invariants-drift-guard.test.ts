@@ -605,7 +605,8 @@ const PINS = [
     // here, never a partial sum, untyped containers typed.
     fn: "refresh_container_pack_ev",
     test: "supabase/tests/refresh_container_pack_ev.sql",
-    migration: "supabase/migrations/20261011020800_audit_20261010_box_and_case_pack_ev_from_their_recipes.sql",
+    // 2026-10-10: a dist Dapper never indexed is keyed by its dist_id.
+    migration: "supabase/migrations/20261011050000_audit_20261010_pack_ev_keys_a_dist_dapper_never_indexed_by_its_dist_id.sql",
   },
   {
     // Added 2026-09-26. Pins the lane that prices every pack a saved wallet
@@ -651,8 +652,9 @@ const PINS = [
     // BEFORE the window is ignored (the sale / open bound decides).
     // v20 (2026-10-10): a bought pack the confirmed index says this wallet opened is ripped.
     // v21 (2026-10-10, #187): a pack out of a box this wallet opened was not bought -- no buy, no P/L.
+    // v22 (same night): the box realizes what its packs became (P/L only when all are realized).
     migration:
-      "supabase/migrations/20261011020600_audit_20261010_wallet_pack_history_a_pack_out_of_a_box_was_not_bought.sql",
+      "supabase/migrations/20261011050100_audit_20261010_wallet_pack_history_a_box_realizes_what_its_packs_became.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
@@ -2489,8 +2491,9 @@ const PINS = [
     fn: "refresh_atlas_pack_ev",
     test: "supabase/tests/refresh_atlas_pack_ev.sql",
     // 2026-10-10 (#65 follow-up): clamp, NOT NULL flag, unkeyed dists skipped, failures logged.
+    // 2026-10-10 (#188): a dist with no Dapper uuid is keyed by its dist_id.
     migration:
-      "supabase/migrations/20261010164507_audit_20261010_refresh_atlas_pack_ev_survives_a_wider_pool.sql",
+      "supabase/migrations/20261011050000_audit_20261010_pack_ev_keys_a_dist_dapper_never_indexed_by_its_dist_id.sql",
   },
   {
     // pg_cron `13 * * * *` — one of the three heavy jobs CLAUDE.md names as

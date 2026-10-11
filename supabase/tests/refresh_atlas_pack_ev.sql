@@ -67,7 +67,7 @@
 -- and it RECORDS the slots/ask it was handed so the input guards are assertable.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261010164507_audit_20261010_refresh_atlas_pack_ev_survives_a_wider_pool.sql;
+-- (supabase/migrations/20261011050000_audit_20261010_pack_ev_keys_a_dist_dapper_never_indexed_by_its_dist_id.sql;
 -- built from this pin after proving pin == live, normalised-prosrc md5 90590db2123d2aa9f51105c38f9e0be1).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -192,19 +192,19 @@ DECLARE
   v_gross numeric;
   v_typical numeric;
   v_written int := 0;
-  v_unkeyed int := 0;
+  v_keyed_by_dist int := 0;
   v_now timestamptz := now();
 BEGIN
-  -- a dist with no listing uuid cannot be written (pack_listing_id is NOT NULL, and
-  -- pack_ev_latest is keyed on it): counted, not swept, so it cannot abort the sweep
-  SELECT count(DISTINCT p.dist_id) INTO v_unkeyed
-    FROM pack_drop_pool p
-    JOIN pack_distributions pd ON pd.collection_id = v_cid AND pd.dist_id = p.dist_id
-   WHERE p.collection_id = v_cid AND p.pool_source = 'atlas' AND pd.metadata->>'uuid' IS NULL;
+  -- 2026-10-10 (#188): a dist with no Dapper listing uuid is keyed by its dist_id, the key
+  -- live-pack-listings already falls back to (so pack_ask_state carries the same one).
+  -- The 48 Atlas dists from 8734 on are absent from Dapper's distribution index altogether
+  -- (searchDistributions byIDs: 0 of 48), so no uuid will ever arrive for them; skipping
+  -- them left every PDS-era drop (Run It Back: Origins, WNBA Rookie Revelation) with no EV.
 
   FOR r IN
     SELECT DISTINCT p.dist_id,
-           pd.metadata->>'uuid' AS listing_uuid,
+           COALESCE(pd.metadata->>'uuid', p.dist_id) AS listing_uuid,
+           (pd.metadata->>'uuid' IS NULL) AS keyed_by_dist,
            COALESCE(pd.title, pd.metadata->>'name') AS title,
            GREATEST(COALESCE((pd.metadata->>'number_of_pack_slots')::int, 1), 1) AS slots,
            pas.lowest_ask,
@@ -215,7 +215,6 @@ BEGIN
     LEFT JOIN pack_ask_state pas ON pas.collection_slug = 'nba-top-shot' AND pas.dist_id = p.dist_id
                                  AND pas.is_listed IS TRUE AND pas.lowest_ask > 0
     WHERE p.collection_id = v_cid AND p.pool_source = 'atlas'
-      AND pd.metadata->>'uuid' IS NOT NULL
   LOOP
     ev := public.compute_pack_ev_per_edition_weighted(v_cid, r.dist_id, COALESCE(r.lowest_ask, 0), r.slots);
     IF (ev->>'ok')::boolean IS NOT TRUE THEN
@@ -226,6 +225,7 @@ BEGIN
         NULL, r.lowest_ask, CASE WHEN r.lowest_ask > 0 THEN 'secondary' ELSE 'none' END,
         false, r.lowest_ask > 0, 0, NULL, 0, false, NULL, NULL, 0, 0, 100, v_now);
       v_written := v_written + 1;
+      IF r.keyed_by_dist THEN v_keyed_by_dist := v_keyed_by_dist + 1; END IF;
       CONTINUE;
     END IF;
     v_gross := (ev->>'gross_ev')::numeric;
@@ -247,11 +247,12 @@ BEGIN
       CASE WHEN r.lowest_ask > 0 THEN round(v_gross / r.lowest_ask, 3) ELSE NULL END,
       (ev->>'fmv_coverage_pct')::smallint, LEAST((ev->>'edition_count')::int, 32767), r.total_sealed, r.depletion_pct, v_now);
     v_written := v_written + 1;
+    IF r.keyed_by_dist THEN v_keyed_by_dist := v_keyed_by_dist + 1; END IF;
   END LOOP;
 
-  PERFORM public.log_pipeline_run('topshot-atlas-pack-ev', v_now, v_written + v_unkeyed, v_written, v_unkeyed, true, NULL,
-    'nba-top-shot', NULL, NULL, jsonb_build_object('rows', v_written, 'unkeyed', v_unkeyed));
-  RETURN jsonb_build_object('ok', true, 'written', v_written, 'unkeyed', v_unkeyed, 'finished_at', now());
+  PERFORM public.log_pipeline_run('topshot-atlas-pack-ev', v_now, v_written, v_written, 0, true, NULL,
+    'nba-top-shot', NULL, NULL, jsonb_build_object('rows', v_written, 'keyed_by_dist_id', v_keyed_by_dist));
+  RETURN jsonb_build_object('ok', true, 'written', v_written, 'keyed_by_dist_id', v_keyed_by_dist, 'finished_at', now());
 EXCEPTION WHEN query_canceled OR OTHERS THEN
   -- a failed sweep LOGS (it used to return silently, leaving no pipeline_runs row); the
   -- rows it wrote roll back with it, so rows_written is 0
@@ -583,18 +584,20 @@ SELECT _assert_eq(
   '-10000/false',
   'a troll ask is clamped to the sane range (never a CHECK abort), and is never +EV'
 );
+-- 2026-10-10 (#188): Dapper never indexed the PDS-era dists (no uuid will arrive), so a dist
+-- with no listing uuid is keyed by its dist_id -- swept, never skipped, never a NULL key
 SELECT _assert_eq(
-  (SELECT count(*)::text FROM public.pack_ev_history WHERE dist_id = 'D-NOUUID'),
-  '0',
-  'a dist with no listing uuid is not swept (pack_listing_id is NOT NULL)'
+  (SELECT count(*)::text || '/' || min(pack_listing_id) FROM public.pack_ev_history WHERE dist_id = 'D-NOUUID'),
+  '1/D-NOUUID',
+  'a dist with no listing uuid is swept under its dist_id (pack_listing_id is NOT NULL)'
 );
 
 -- ── Its own telemetry ───────────────────────────────────────────────────────
 SELECT _assert_eq(
-  (SELECT ok::text || '/' || rows_written::text || '/' || collection_slug || '/' || (extra->>'rows') || '/' || (extra->>'unkeyed')
+  (SELECT ok::text || '/' || rows_written::text || '/' || collection_slug || '/' || (extra->>'rows') || '/' || (extra->>'keyed_by_dist_id')
      FROM public.pipeline_runs WHERE pipeline = 'topshot-atlas-pack-ev'),
-  'true/12/nba-top-shot/12/1',
-  'the success path logs its own pipeline_runs row, with the unkeyed dists counted'
+  'true/13/nba-top-shot/13/1',
+  'the success path logs its own pipeline_runs row, with the dist_id-keyed dists counted'
 );
 
 -- ⚠ A FAILED SWEEP LOGS (2026-10-10; it used to return {ok:false} and log nothing)

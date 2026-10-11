@@ -9,12 +9,13 @@
 --   3. Container gross EV = sum(count x inner gross EV), written only when EVERY inner dist has a
 --      real EV row from the last 26 h -- a stale row, the could-not-price sentinel
 --      (edition_count 0) or a failed inner price makes it 'incomplete': no row, never a partial sum.
---   4. A container with no listing uuid is counted 'unkeyed', not written.
+--   4. (2026-10-10) A dist with no Dapper listing uuid is keyed by its dist_id (Dapper never
+--      indexed the PDS-era dists), never skipped.
 --   5. An untyped container is typed 'case' / 'box' (by its title), an untyped inner dist 'pack';
 --      a pack_type Dapper set is never overwritten.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261011020800_audit_20261010_box_and_case_pack_ev_from_their_recipes.sql).
+-- (supabase/migrations/20261011050000_audit_20261010_pack_ev_keys_a_dist_dapper_never_indexed_by_its_dist_id.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -75,7 +76,6 @@ DECLARE
   v_inner_failed int := 0;
   v_written int := 0;
   v_incomplete int := 0;
-  v_unkeyed int := 0;
   v_pairs text[];
   v_containers text[];
   v_typed int := 0;
@@ -144,7 +144,8 @@ BEGIN
   --     and retail 0 / never sold alone (the edge function never targets them).
   FOR r IN
     SELECT DISTINCT pr.inner_dist_id AS dist_id,
-           pd.metadata->>'uuid' AS listing_uuid,
+           -- 2026-10-10: no Dapper uuid -> keyed by dist_id (as refresh_atlas_pack_ev, live-pack-listings)
+           COALESCE(pd.metadata->>'uuid', pr.inner_dist_id) AS listing_uuid,
            pd.title,
            GREATEST(COALESCE(NULLIF(pd.metadata->>'number_of_pack_slots', '')::int, 1), 1) AS slots,
            pas.lowest_ask, pd.total_sealed, pd.depletion_pct
@@ -153,7 +154,6 @@ BEGIN
     LEFT JOIN pack_ask_state pas ON pas.collection_slug = 'nba-top-shot' AND pas.dist_id = pr.inner_dist_id
                                  AND pas.is_listed IS TRUE AND pas.lowest_ask > 0
     WHERE pr.collection_id = v_cid
-      AND pd.metadata->>'uuid' IS NOT NULL
       AND COALESCE(public.pack_retail_usd(pd.metadata->>'retail_price_usd'), 0) = 0
       AND EXISTS (SELECT 1 FROM pack_drop_pool p WHERE p.collection_id = v_cid AND p.dist_id = pr.inner_dist_id)
       AND NOT EXISTS (SELECT 1 FROM pack_drop_pool p WHERE p.collection_id = v_cid AND p.dist_id = pr.inner_dist_id
@@ -203,13 +203,12 @@ BEGIN
       WHERE pr.collection_id = v_cid
       GROUP BY 1
     )
-    SELECT a.*, pd.metadata->>'uuid' AS listing_uuid, pd.title, pd.total_sealed, pd.depletion_pct, pas.lowest_ask
+    SELECT a.*, COALESCE(pd.metadata->>'uuid', a.container_dist_id) AS listing_uuid, pd.title, pd.total_sealed, pd.depletion_pct, pas.lowest_ask
     FROM agg a
     JOIN pack_distributions pd ON pd.collection_id = v_cid AND pd.dist_id = a.container_dist_id
     LEFT JOIN pack_ask_state pas ON pas.collection_slug = 'nba-top-shot' AND pas.dist_id = a.container_dist_id
                                  AND pas.is_listed IS TRUE AND pas.lowest_ask > 0
   LOOP
-    IF r.listing_uuid IS NULL THEN v_unkeyed := v_unkeyed + 1; CONTINUE; END IF;
     IF r.n_priced < r.n_inner THEN v_incomplete := v_incomplete + 1; CONTINUE; END IF;
     INSERT INTO pack_ev_history (pack_listing_id, collection_id, dist_id, pack_name, pack_price,
       primary_price, secondary_ask, price_source, primary_available, secondary_available,
@@ -225,12 +224,12 @@ BEGIN
     v_written := v_written + 1;
   END LOOP;
 
-  PERFORM public.log_pipeline_run('topshot-container-pack-ev', v_now, v_written + v_incomplete + v_unkeyed,
-    v_written + v_inner_written, v_incomplete + v_unkeyed, true, NULL, 'nba-top-shot', NULL, NULL,
-    jsonb_build_object('containers', v_written, 'incomplete', v_incomplete, 'unkeyed', v_unkeyed,
+  PERFORM public.log_pipeline_run('topshot-container-pack-ev', v_now, v_written + v_incomplete,
+    v_written + v_inner_written, v_incomplete, true, NULL, 'nba-top-shot', NULL, NULL,
+    jsonb_build_object('containers', v_written, 'incomplete', v_incomplete,
                        'inner_written', v_inner_written, 'inner_failed', v_inner_failed, 'recipe_rows', v_recipes,
                        'typed', v_typed));
-  RETURN jsonb_build_object('ok', true, 'containers', v_written, 'incomplete', v_incomplete, 'unkeyed', v_unkeyed,
+  RETURN jsonb_build_object('ok', true, 'containers', v_written, 'incomplete', v_incomplete,
                             'inner_written', v_inner_written, 'inner_failed', v_inner_failed, 'recipe_rows', v_recipes,
                             'typed', v_typed);
 EXCEPTION WHEN query_canceled OR OTHERS THEN
@@ -244,7 +243,7 @@ $function$;
 
 -- Fixtures. BOX (dist B): 5 x S (standard, sold alone at $25, Atlas pool) + 2 x T (topper, retail 0).
 -- CASE (dist C): 10 x P (premium, retail 0) + 3 x T2 (case topper, retail 0) -- P cannot be priced.
--- NOKEY (dist K): a container with no listing uuid. STALE (dist L): its inner pack's row is 30 h old.
+-- NOKEY (dist K): a container with no listing uuid (keyed by its dist_id). STALE (dist L): its inner pack's row is 30 h old.
 INSERT INTO public.pack_distributions VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'B',  'Test Box',      '{"uuid":"u-B","retail_price_usd":"250","pack_type":"box"}', 4, 96),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'S',  'Standard',      '{"uuid":"u-S","retail_price_usd":"25","number_of_pack_slots":"5"}', 300, 96),
@@ -323,9 +322,10 @@ BEGIN
                   'B: typical 5x2 + 2x7, -$90 vs the $200 ask, coverage = the weakest inner (97)');
   PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_ev_history WHERE dist_id = 'C'), 'C: P unpriced -> no row, never 3 x T2 alone');
   PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_ev_history WHERE dist_id = 'L'), 'L: its inner row is 30 h old -> incomplete');
-  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_ev_history WHERE dist_id = 'K'), 'K: no listing uuid -> unkeyed');
-  PERFORM _assert(v->>'containers' = '1' AND v->>'incomplete' = '2' AND v->>'unkeyed' = '1' AND v->>'inner_written' = '2'
-                  AND v->>'inner_failed' = '1', 'counts: 1 written, C + L incomplete, K unkeyed, T + T2 priced, P failed');
+  PERFORM _assert_eq((SELECT pack_listing_id || '=' || gross_ev FROM public.pack_ev_history WHERE dist_id = 'K'), 'K=60.00',
+                     'K: no listing uuid -> keyed by its dist_id, 2 x 30');
+  PERFORM _assert(v->>'containers' = '2' AND v->>'incomplete' = '2' AND v->>'inner_written' = '2'
+                  AND v->>'inner_failed' = '1', 'counts: B + K written, C + L incomplete, T + T2 priced, P failed');
   PERFORM _assert_eq((SELECT ok::text FROM public.pipeline_runs_stub WHERE pipeline = 'topshot-container-pack-ev'), 'true', 'logged');
   -- 5. typing
   PERFORM _assert_eq((SELECT string_agg(dist_id || '=' || (metadata->>'pack_type'), ',' ORDER BY dist_id) FROM public.pack_distributions

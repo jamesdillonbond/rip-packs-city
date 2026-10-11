@@ -183,10 +183,21 @@ export function packPullLabel(row: {
   pulls_inferred?: number | null
   /** 2026-09-29: packs a BOX yielded (a box yields packs, not moments). */
   box_packs?: number | null
+  /** 2026-10-10 (v22): how many of them are realized (sold, or opened with a value) and their total. */
+  box_packs_realized?: number | null
+  box_realized_usd?: number | null
 }): string {
   if (!row.has_rip && row.status !== "ripped") return "—"
   // A box has no moment pull value of its own: say what it yielded.
-  if ((row.box_packs ?? 0) > 0 && row.pull_value_usd == null) return `Box · ${row.box_packs} pack${row.box_packs === 1 ? "" : "s"}`
+  if ((row.box_packs ?? 0) > 0 && row.pull_value_usd == null) {
+    const n = row.box_packs as number
+    const base = `Box · ${n} pack${n === 1 ? "" : "s"}`
+    const r = row.box_packs_realized ?? 0
+    // v22: every pack realized -> what they became; some -> how far along (the P/L waits for all)
+    if (r >= n && row.box_realized_usd != null) return `${base} · ${fmtPackUsd(row.box_realized_usd)} realized`
+    if (r > 0) return `${base} · ${r} of ${n} realized`
+    return base
+  }
   // A value that rests on inferred pull names reads as an estimate ("≈").
   if (row.pull_value_usd != null) return (row.pulls_inferred ?? 0) > 0 ? `≈${fmtPackUsd(row.pull_value_usd)}` : fmtPackUsd(row.pull_value_usd)
   if (row.pulls_total != null && row.pulls_total > 0 && row.pulls_priced != null) {
