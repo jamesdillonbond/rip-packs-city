@@ -3019,3 +3019,15 @@ still reads every entry (270k buffers). **A status/summary row over a growing ta
 a schedule, with a freshness-gated LIVE fallback** (`20261010053847`: snapshot served only while < 75 min old, else
 computed live, and `status_source` says which). Staleness then degrades to slow-but-true, never fast-but-frozen, and a
 dead refresher resurfaces as the same slow-board alarm.
+
+### ⭐ A one-predicate change to a PINNED function: literal DDL in the file, a guarded replace for the apply, md5 to prove they match (2026-10-10, `20261011022738`)
+
+The drift guard needs the migration FILE to hold literal `CREATE OR REPLACE` bodies identical to the pins. That does not mean the APPLY has to re-transcribe ~29 KB through the MCP. The sequence that worked:
+
+1. Prove pin == live: `md5(trim(regexp_replace(prosrc,'\s+',' ','g')))` against the same normalisation of the pin's `$function$` body.
+2. Edit the pins and add the failing case. Run it locally (red on the old body), then fix it (green).
+3. Write the file from the pin blocks (literal DDL plus `anon-exec:` markers).
+4. Apply with a DO block that `EXECUTE`s `replace(pg_get_functiondef(fn), old, new)` and **RAISEs unless `old` occurs exactly once**. `pg_get_functiondef` keeps the SET clauses (`search_path`, `statement_timeout=90s`), the SECDEF flag and the ACL.
+5. Read live `md5(prosrc)` and require it to equal the FILE's bodies. Then `git mv` the file to the version `apply_migration` actually recorded, and repoint the drift-guard registry.
+
+`migration-parity` matches by name, so the different apply text is invisible to it. The md5 in step 5 is what makes the two provably the same.

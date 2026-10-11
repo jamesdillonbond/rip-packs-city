@@ -429,3 +429,18 @@ Learned shipping the giveaway claim page and Deliver all (`lib/giveaways/claim-p
 ## ⛔ A Cadence script that visits EVERY listing / NFT of an account fails once the account grows: page it, and pin later pages to the first page's block height (2026-10-09, PT)
 
 `allday-storefront-reconcile` read `ok=false` on every run from 10-09 2:13 AM PT. One seller's NFTStorefrontV2 held **4,080 listing ids** across all collections; the storefront id list is not per-collection. The single walk script failed with `[Error Code: 1110] computation limit exceeded (used: 100001, limit: 100000)` at `borrowNFT`. Around 65 computation units per listing put the ceiling near 1,500 listings, and the error string is truncated in `pipeline_runs.extra.walk_error_sample`. To read the full error, run the same script through `pg_net` (`net.http_post` to `rest-mainnet.onflow.org/v1/scripts`, then read `net._http_response`); the sandbox's direct egress to Flow is proxy-blocked. **Fix shape (`lib/golazos/storefront-reconcile.ts`, "PAGING"):** `main(seller, start, limit)` reads ids `[start, start+limit)` and returns a leading meta row `{meta:"1", total, height: getCurrentBlock().height}`. The caller reads page 0 at `sealed` and every later page at that height, so the id list cannot shift between calls. A failed page fails the whole seller, so a partial storefront is never planned as complete. Flow REST also caps `/v1/events` at **250 blocks** per request. **Audited the same day:** `/api/owned-flow-ids` borrows every Top Shot moment in one call (same shape), but a failure there falls back to the cached snapshot and says so, so a whale degrades honestly rather than failing.
+
+## Proving a Flow collection CANNOT lock: the NFTLocker type-table probe (2026-10-10, PT)
+
+`NFTLocker` (`0xb6f2481eba4df97b`, All Day's lock) is **generic**: any `NonFungibleToken` type could be deposited, so "this contract has no lock function" is not enough. Its contract-level `lockedTokens: {Type: {UInt64: LockedData}}` gains a type's entry on the FIRST lock and never removes it, and `getNFTLockerDetails(id:, nftType:)` force-unwraps that entry. So:
+
+```cadence
+import NFTLocker from 0xb6f2481eba4df97b
+import Golazos from 0x87ca73a41bb50ad5
+access(all) fun main(): Bool {
+  let d = NFTLocker.getNFTLockerDetails(id: 0, nftType: Type<@Golazos.NFT>())
+  return true
+}
+```
+
+**Returns `true` → that type has been locked at some point; panics `unexpectedly found nil while forcing an Optional value` at `NFTLocker:84` → never.** 10-10 results: AllDay `true` (positive control); Golazos, `UFC_NFT` (`0x329feb3ab062d289`) and TopShot panic. TopShot is expected, since it locks through `TopShotLocking`, not NFTLocker. Golazos' own contract has only SET locking (no new editions), and `UFC_NFT` has none. Run it through `pg_net` (`net.http_post` to `rest-mainnet.onflow.org/v1/scripts?block_height=sealed`, body `{"script": <base64>, "arguments": []}`, read `net._http_response`) because sandbox egress to Flow is blocked. ⚠ **A per-wallet probe of the locker COLLECTION does not work:** borrowing `&{NFTLocker.LockedCollection}` at `/public/NFTLockerCollection` returned nil even for an All Day wallet with 24k locked, so a "0 locked" from that shape is the probe failing, not the answer. Always include the AllDay control.
