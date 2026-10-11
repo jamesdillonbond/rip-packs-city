@@ -40,14 +40,17 @@ import { render, cleanup, screen, fireEvent } from "@testing-library/react"
 // (Sentry retired 2026-09-18, #34). `captureException` below is the spy on that
 // POST body so the assertions keep their shape: the error is REPORTED, and it is
 // the error itself (message + digest), not a re-wrapped copy.
-const captureException = vi.hoisted(() => vi.fn())
-vi.mock("@/components/telemetry/ClientErrorBeacon", () => ({
-  pageSessionId: () => "sid-test",
-  clientErrorPayload: (input: { message: unknown; source?: unknown }) => {
-    captureException(input)
-    return { feature: "client_error", metadata: { message: input.message, source: input.source } }
-  },
-}))
+// 2026-10-11: the boundary now reports through the shared
+// `reportBoundaryError` (components/telemetry/ClientErrorBeacon), which every
+// error boundary uses. The module is no longer mocked — a mock of its exports
+// cannot see the internal call — so the capture is read from what actually
+// LEAVES the page: the POST body sent to /api/telemetry.
+type Captured = { kind?: unknown; message: unknown; source?: unknown }
+function capturedFrom(fetchSpy: ReturnType<typeof vi.fn>): Captured[] {
+  return fetchSpy.mock.calls
+    .filter((c) => String(c[0]) === "/api/telemetry")
+    .map((c) => (JSON.parse(String((c[1] as RequestInit).body)) as { metadata: Captured }).metadata)
+}
 
 const GlobalError = (await import("@/app/global-error")).default
 
@@ -58,7 +61,6 @@ const GlobalError = (await import("@/app/global-error")).default
 // a finding for the next reader.
 let consoleError: ReturnType<typeof vi.spyOn>
 beforeEach(() => {
-  captureException.mockClear()
   consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 })
 afterEach(() => {
@@ -78,8 +80,8 @@ describe("app/global-error — the last-resort boundary", () => {
     vi.stubGlobal("fetch", fetchSpy)
     try {
       render(<GlobalError error={error} reset={() => {}} />)
-      expect(captureException).toHaveBeenCalledTimes(1)
-      expect(captureException.mock.calls[0][0]).toMatchObject({ kind: "error", message: "boom" })
+      expect(capturedFrom(fetchSpy)).toHaveLength(1)
+      expect(capturedFrom(fetchSpy)[0]).toMatchObject({ kind: "error", message: "boom" })
       // …and it actually leaves the page: jsdom has no sendBeacon, so the fetch
       // fallback must carry the client_error payload to the telemetry route.
       expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -132,10 +134,11 @@ describe("app/global-error — the last-resort boundary", () => {
     // Error(error.message)` would satisfy a call-count assertion and silently
     // drop it.
     const error = ERR()
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })))
+    const fetchSpy = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal("fetch", fetchSpy)
     try {
       render(<GlobalError error={error} reset={() => {}} />)
-      const captured = captureException.mock.calls[0][0] as { message: unknown; source?: unknown }
+      const captured = capturedFrom(fetchSpy)[0]
       expect(captured.message).toBe("boom")
       expect(captured.source).toBe("global-error:d1gest")
     } finally {

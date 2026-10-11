@@ -129,6 +129,37 @@ export function clientErrorPayload(input: {
 }
 
 /** Errors that carry no actionable detail; sending them only buries the real ones. */
+// Report an error that a React ERROR BOUNDARY caught (2026-10-11). React does
+// not re-raise a caught render error to window.onerror, so the listener in
+// ClientErrorBeacon below never sees it — before this, a page that crashed into
+// app/(collections)/[collection]/error.tsx was recorded NOWHERE but a
+// console.log. Every boundary (global, root, collection segment, pack dist)
+// posts the same client_error payload, tagged with the boundary's name and
+// Next's digest (the only link to the server log line). Best-effort and silent
+// on failure, like the beacon itself.
+export function reportBoundaryError(error: Error & { digest?: string }, boundary: string): void {
+  try {
+    const body = JSON.stringify(
+      clientErrorPayload({
+        kind: "error",
+        message: error.message,
+        source: error.digest ? `${boundary}:${error.digest}` : boundary,
+        stack: error.stack,
+        path: typeof location !== "undefined" ? location.pathname : "",
+        width: typeof window !== "undefined" ? window.innerWidth : 0,
+        ua: typeof navigator !== "undefined" ? navigator.userAgent : "",
+        sid: pageSessionId(),
+      }),
+    )
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      if (navigator.sendBeacon("/api/telemetry", new Blob([body], { type: "application/json" }))) return
+    }
+    void fetch("/api/telemetry", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {})
+  } catch {
+    // Reporting must never throw inside the boundary that reports.
+  }
+}
+
 export function isNoiseError(message: unknown, source: unknown): boolean {
   const m = typeof message === "string" ? message : ""
   if (/^Script error\.?$/i.test(m) && !source) return true

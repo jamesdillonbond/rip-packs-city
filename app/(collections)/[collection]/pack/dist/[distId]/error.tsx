@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { reportBoundaryError } from "@/components/telemetry/ClientErrorBeacon"
 
 export default function PackDistError({
   error,
@@ -16,6 +17,9 @@ export default function PackDistError({
       digest: error.digest,
       stack: error.stack,
     })
+    // Also RECORD it: a boundary-caught error never reaches window.onerror, so
+    // without this the beacon misses every crash this page shows (2026-10-11).
+    reportBoundaryError(error, "pack-dist-error")
   }, [error])
 
   return (

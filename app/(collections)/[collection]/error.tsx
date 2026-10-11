@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { reportBoundaryError } from "@/components/telemetry/ClientErrorBeacon"
 import { useParams } from "next/navigation"
 
 // Brand error boundary for EVERY page under /[collection]/** — set, team, player,
@@ -45,6 +46,9 @@ export default function CollectionSegmentError({
       digest: error.digest,
       stack: error.stack,
     })
+    // Also RECORD it: a boundary-caught error never reaches window.onerror, so
+    // without this the beacon misses every crash this page shows (2026-10-11).
+    reportBoundaryError(error, "collection-segment-error")
   }, [error])
 
   const params = useParams<{ collection?: string }>()

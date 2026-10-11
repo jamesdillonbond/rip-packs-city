@@ -229,11 +229,16 @@ function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback
 // honest discovery hint is "player name + a distinctive word", which lives in
 // the search empty-state copy and the concierge prompt instead. Re-add a
 // narrative pill only if a phrase query is verified against BOTH slugs.
+// ⚠ NO PILL MAY ASK FOR A BUY / SELL / INVEST CALL (2026-10-11). The prompt bans
+// them and answers "should I buy?" with "I don't make buy/sell calls" — so a pill
+// like "Best investment sets?" or "Skip or buy?" made a stranger's FIRST tap end
+// in a refusal. Every pill asks for data a tool can return. Pinned by
+// __tests__/concierge-pills-ask-for-data-not-a-call.test.ts.
 const PAGE_DEFAULTS: Record<string, string[]> = {
   "sniper (nba-top-shot)": ["Bug on this page?", "Confusing on this page?", "Best deals right now", "Find me a LeBron deal"],
   "badges (nba-top-shot)": ["Bug on this page?", "How does X work?", "Most valuable badges?", "Check badges for Wembanyama"],
   "collection (nba-top-shot)": ["Bug with my collection view?", "Suggest a feature", "Analyze my portfolio", "Sets I'm close to completing?"],
-  "sets (nba-top-shot)": ["Bug on this page?", "Confusing on this page?", "Cheapest set to complete?", "Best investment sets?"],
+  "sets (nba-top-shot)": ["Bug on this page?", "Confusing on this page?", "Cheapest set to complete?", "Which sets are most locked up?"],
   "packs (nba-top-shot)": ["Pack EV looks wrong?", "Suggest a feature", "Best value pack right now?", "How does Pack EV work?"],
   "overview (nba-top-shot)": ["Report a bug", "Suggest a feature", "Top sales today", "Where do I start?"],
   "market (nba-top-shot)": ["Bug on this page?", "Confusing filter?", "Show everything under $20", "Cheapest legendary right now"],
@@ -241,7 +246,7 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
 
   "sniper (nfl-all-day)": ["Bug on this page?", "Suggest a feature", "Best All Day deals", "Find me a Mahomes deal"],
   "collection (nfl-all-day)": ["Bug with my collection view?", "Suggest a feature", "Analyze my All Day wallet", "Set completion progress"],
-  "packs (nfl-all-day)": ["Pack EV looks wrong?", "Suggest a feature", "All Day pack EV", "Skip or buy?"],
+  "packs (nfl-all-day)": ["Pack EV looks wrong?", "Suggest a feature", "All Day pack EV", "What did All Day packs actually return?"],
   "sets (nfl-all-day)": ["Bug on this page?", "Confusing on this page?", "Cheapest All Day set", "Set bottlenecks"],
   "badges (nfl-all-day)": ["Bug on this page?", "How does X work?", "Rookie badges", "First Touchdown moments"],
   "overview (nfl-all-day)": ["Report a bug", "Suggest a feature", "Top All Day sales", "Where do I start?"],
@@ -250,7 +255,7 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
 
   "sniper (laliga-golazos)": ["Bug on this page?", "Suggest a feature", "Best Golazos deals", "Find me a Messi moment"],
   "collection (laliga-golazos)": ["Bug with my collection view?", "Suggest a feature", "Analyze my Golazos wallet", "Set completion"],
-  "packs (laliga-golazos)": ["Pack EV looks wrong?", "Suggest a feature", "Golazos pack EV", "Skip or buy?"],
+  "packs (laliga-golazos)": ["Pack EV looks wrong?", "Suggest a feature", "Golazos pack EV", "How does Pack EV work?"],
   "sets (laliga-golazos)": ["Bug on this page?", "Confusing on this page?", "Cheapest Golazos set", "Ídolos sets"],
   "overview (laliga-golazos)": ["Report a bug", "Suggest a feature", "Top Golazos sales", "Where do I start?"],
   "market (laliga-golazos)": ["Bug on this page?", "Confusing filter?", "Show everything under $20", "Cheapest legendary right now"],
@@ -269,7 +274,7 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
   sniper: ["Bug on this page?", "Suggest a feature", "Best deals right now", "Find me a deal"],
   badges: ["Bug on this page?", "How does X work?", "Most valuable badges?", "Badge premiums"],
   collection: ["Bug with my collection view?", "Suggest a feature", "Analyze my portfolio", "Set progress"],
-  sets: ["Bug on this page?", "Confusing on this page?", "Cheapest set to complete?", "Best investment sets?"],
+  sets: ["Bug on this page?", "Confusing on this page?", "Cheapest set to complete?", "How is cost-to-complete priced?"],
   packs: ["Pack EV looks wrong?", "Suggest a feature", "Best value pack right now?", "How does Pack EV work?"],
   overview: ["Report a bug", "Suggest a feature", "Top sales today", "Where do I start?"],
   market: ["Bug on this page?", "Confusing filter?", "Show everything under $20", "Cheapest legendary right now"],
@@ -307,8 +312,8 @@ const INSIGHTS_BOARD_DEFAULTS: Record<string, string[]> = {
   "underpriced-serials": ["What makes a serial special?", "Best value special serial right now", "How current is this feed?", "Find me a rookie special serial"],
   "top-sales": ["Biggest sales this week", "What drove that sale?", "Is that player heating up?", "How is FMV calculated?"],
   deals: ["How is a deal picked?", "Best deals right now", "Show me deals under $10", "How current is this feed?"],
-  "pack-sniper": ["How does pack EV work?", "Best value pack right now", "Is that pack worth ripping?", "What did packs actually return?"],
-  "pack-reality": ["What did packs actually return?", "How is realized EV different from EV?", "Best value pack right now", "Should I rip or buy singles?"],
+  "pack-sniper": ["How does pack EV work?", "Best value pack right now", "Which packs beat their retail price?", "What did packs actually return?"],
+  "pack-reality": ["What did packs actually return?", "How is realized EV different from EV?", "Best value pack right now", "Which packs returned more than they cost?"],
   rookies: ["How's the rookie market?", "Which rookies are moving?", "Cheapest rookie moments", "What is a Rookie Year badge?"],
   "account-value": ["What's my collection worth?", "How is FMV calculated?", "How do I check a wallet?", "What's liquid in my bag?"],
 };
