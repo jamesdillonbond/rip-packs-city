@@ -682,6 +682,7 @@ const CSS = `
   align-items: center;
   justify-content: center;
   background: var(--rpc-red);
+  /* brand-exception: white text on the --rpc-red share button */
   color: #fff;
   font-family: var(--font-mono);
   font-size: 12px;

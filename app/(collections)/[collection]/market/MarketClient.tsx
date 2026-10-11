@@ -615,8 +615,9 @@ function MarketInner() {
                 onClick={() => toggleTier(t)}
                 className="rpc-chip"
                 style={{
+                  // brand-exception: white text on the selected tier-colour fill
                   color: on ? "#fff" : color,
-                  borderColor: on ? color : "rgba(255,255,255,0.15)",
+                  borderColor: on ? color : "var(--rpc-border-hover)",
                   background: on ? color + "22" : "transparent",
                   fontWeight: on ? 700 : 500,
                 }}
@@ -662,6 +663,7 @@ function MarketInner() {
                     letterSpacing: "0.12em",
                     textTransform: "uppercase",
                     background: view === v ? accent : "transparent",
+                    // brand-exception: white text on the selected accent fill
                     color: view === v ? "#fff" : "var(--rpc-text-muted)",
                     border: "none",
                     cursor: "pointer",
@@ -749,8 +751,9 @@ function MarketInner() {
                   onClick={() => setOwnedFilter(v)}
                   className="rpc-chip"
                   style={{
+                    // brand-exception: white text on the selected accent fill
                     color: ownedFilter === v ? "#fff" : "var(--rpc-text-muted)",
-                    borderColor: ownedFilter === v ? accent : "rgba(255,255,255,0.15)",
+                    borderColor: ownedFilter === v ? accent : "var(--rpc-border-hover)",
                     background: ownedFilter === v ? accent + "22" : "transparent",
                     fontWeight: ownedFilter === v ? 700 : 500,
                   }}
@@ -882,7 +885,7 @@ function MultiSelectChip({
         className="rpc-chip"
         style={{
           minWidth: 110,
-          background: selected.length > 0 ? "rgba(255,255,255,0.05)" : "transparent",
+          background: selected.length > 0 ? "var(--rpc-surface-hover)" : "transparent",
           color: selected.length > 0 ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
           fontWeight: selected.length > 0 ? 700 : 500,
         }}

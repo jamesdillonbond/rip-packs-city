@@ -163,6 +163,7 @@ const CSS = `
 .rpc-ins-capture-btn {
   background: var(--rpc-red);
   border: none;
+  /* brand-exception: white text on the --rpc-red button */
   color: #fff;
   font-family: var(--font-display);
   font-weight: 800;

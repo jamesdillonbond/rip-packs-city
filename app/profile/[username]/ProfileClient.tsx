@@ -433,7 +433,7 @@ export default function ProfileClient(props: {
       `}</style>
 
       {/* NAV */}
-      <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid var(--rpc-border)", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(20px)" }}>
+      <header style={{ background: "var(--rpc-header-bg)", borderBottom: "1px solid var(--rpc-border)", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(20px)" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 24px", height: 56, display: "flex", alignItems: "center", gap: 20 }}>
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
             <RpcLogo size={32} />
@@ -465,7 +465,7 @@ export default function ProfileClient(props: {
               <div
                 aria-hidden
                 title={banner.label + " banner"}
-                style={{ height: 88, borderRadius: 12, background: banner.background, marginBottom: -40, border: "1px solid rgba(255,255,255,0.08)" }}
+                style={{ /* brand-exception: hairline over the banner image/gradient, not the page */ height: 88, borderRadius: 12, background: banner.background, marginBottom: -40, border: "1px solid rgba(255,255,255,0.08)" }}
               />
             );
           })()}

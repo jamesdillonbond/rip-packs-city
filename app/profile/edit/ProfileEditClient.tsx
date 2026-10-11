@@ -651,6 +651,7 @@ export default function ProfileEditClient() {
                   textTransform: "uppercase",
                   padding: "10px 22px",
                   background: "var(--rpc-red)",
+                  // brand-exception: white text on the --rpc-red save button
                   color: "#fff",
                   border: "none",
                   borderRadius: 6,

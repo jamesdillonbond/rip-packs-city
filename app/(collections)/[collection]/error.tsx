@@ -76,7 +76,7 @@ export default function CollectionSegmentError({
           letterSpacing: "0.3em",
           textTransform: "uppercase",
           // Tokens, not a hardcoded neutral: --rpc-text-* are THEME-AWARE, and a
-          // hardcoded rgba(255,255,255,…) renders invisible in light mode.
+          // hardcoded white-alpha neutral renders invisible in light mode.
           color: "var(--rpc-text-muted)",
         }}
       >

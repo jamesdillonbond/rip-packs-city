@@ -191,6 +191,31 @@ const NEUTRAL_PROTECTED = [
   "components/packs/PackTable.tsx",
   "components/profile/TrophyPickerModal.tsx",
   "app/early-access/EarlyAccessClient.tsx",
+  // Light-mode Batch 3 (2026-10-11) — files swept by the UI/UX passes of that day
+  // (white text on white / dark-on-dark found by a traced audit). Every remaining
+  // white literal in them is on an accent fill, an image or a team gradient and
+  // carries a brand-exception note saying which. NOT listed: files that keep
+  // always-dark cards by design (PackSimulatorClient, AlertsClient, the three
+  // pack-market/reality boards, GrailsView) — their on-dark literals were not
+  // each verified, and a bulk exception would be a claim nobody checked.
+  "app/error.tsx",
+  "app/(collections)/[collection]/error.tsx",
+  "app/(collections)/[collection]/pack/dist/[distId]/error.tsx",
+  "app/profile/edit/ProfileEditClient.tsx",
+  "app/profile/[username]/ProfileClient.tsx",
+  "components/ExplainButton.tsx",
+  "components/insights/InsightsEmailCapture.tsx",
+  "components/packs/PackMarketView.tsx",
+  "app/(collections)/[collection]/packs/layout.tsx",
+  "app/insights/market/MarketIndexClient.tsx",
+  "components/collection/WalletSoldMomentsView.tsx",
+  "app/(collections)/[collection]/overview/CollectionOverviewClient.tsx",
+  "app/my-teams/page.tsx",
+  "app/login/LoginClient.tsx",
+  "app/(collections)/[collection]/profile/[username]/CollectionProfileClient.tsx",
+  "components/HomePageMarketing.tsx",
+  "components/SupportChat.tsx",
+  "app/(collections)/[collection]/market/MarketClient.tsx",
 ];
 
 // white-alpha, near-black surface rgba (13,13,13 / 8,8,8), and neutral bg/text

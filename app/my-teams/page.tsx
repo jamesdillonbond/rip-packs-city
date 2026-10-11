@@ -253,6 +253,7 @@ function TeamCard({
               fontSize: 19,
               letterSpacing: "0.03em",
               textTransform: "uppercase",
+              // brand-exception: white over the team-colour gradient when one exists
               color: team.primary_color ? "#fff" : "var(--rpc-text-primary)",
               textShadow: team.primary_color ? "0 1px 6px rgba(0,0,0,0.45)" : "none",
               whiteSpace: "nowrap",
@@ -264,11 +265,11 @@ function TeamCard({
           </div>
           <div className="rpc-mono" style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
             {team.abbreviation && (
-              <span style={{ fontSize: 10, letterSpacing: "0.1em", color: team.primary_color ? "rgba(255,255,255,0.85)" : "var(--rpc-text-muted)" }}>
+              <span style={{ /* brand-exception: white over the team-colour gradient when one exists */ fontSize: 10, letterSpacing: "0.1em", color: team.primary_color ? "rgba(255,255,255,0.85)" : "var(--rpc-text-muted)" }}>
                 {team.abbreviation}
               </span>
             )}
-            <span style={{ fontSize: 10, letterSpacing: "0.1em", color: team.primary_color ? "rgba(255,255,255,0.7)" : "var(--rpc-text-muted)" }}>
+            <span style={{ /* brand-exception: white over the team-colour gradient when one exists */ fontSize: 10, letterSpacing: "0.1em", color: team.primary_color ? "rgba(255,255,255,0.7)" : "var(--rpc-text-muted)" }}>
               {LEAGUE_LABEL[team.league] ?? team.league}
             </span>
           </div>
@@ -286,6 +287,7 @@ function TeamCard({
               padding: "3px 7px",
               borderRadius: 4,
               background: "var(--rpc-red)",
+              // brand-exception: white text on the --rpc-red button
               color: "#fff",
             }}
           >

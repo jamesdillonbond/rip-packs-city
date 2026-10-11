@@ -772,6 +772,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
                   maxWidth: "88%", padding: "10px 14px",
                   borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
                   background: msg.role === "user" ? "linear-gradient(135deg, var(--rpc-red) 0%, #c43028 100%)" : msg.role === "system" ? "var(--rpc-success-bg, rgba(52,211,153,0.08))" : "var(--rpc-surface-raised)",
+                  // brand-exception: white text on the red user bubble
                   color: msg.role === "user" ? "#fff" : "var(--rpc-text-primary)", fontSize: 13.5, lineHeight: 1.5,
                   whiteSpace: "pre-wrap", wordBreak: "break-word",
                   border: msg.role === "system" ? "1px solid rgba(52,211,153,0.22)" : msg.role !== "user" ? "1px solid var(--rpc-border-subtle)" : "none",
@@ -824,7 +825,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
                 maxLength={2000} readOnly={isLoading} aria-busy={isLoading}
                 style={{ flex: 1, padding: "10px 14px", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: 10, color: "var(--rpc-text-primary)", fontSize: 13.5, transition: "box-shadow 0.15s" }} />
               <button onClick={() => sendMessage()} disabled={!input.trim() || isLoading} aria-label="Send"
-                style={{ width: 38, height: 38, borderRadius: 10, border: "none", background: input.trim() && !isLoading ? "linear-gradient(135deg, var(--rpc-red) 0%, #c43028 100%)" : "var(--rpc-surface-hover)", color: input.trim() && !isLoading ? "#fff" : "var(--rpc-text-ghost)", cursor: input.trim() && !isLoading ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>↑</button>
+                style={{ /* brand-exception: white arrow on the red send button */ width: 38, height: 38, borderRadius: 10, border: "none", background: input.trim() && !isLoading ? "linear-gradient(135deg, var(--rpc-red) 0%, #c43028 100%)" : "var(--rpc-surface-hover)", color: input.trim() && !isLoading ? "#fff" : "var(--rpc-text-ghost)", cursor: input.trim() && !isLoading ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>↑</button>
             </div>
             <div style={{ marginTop: 6, fontSize: 10, color: "var(--rpc-text-ghost)", textAlign: "center" }}>Free beta · Feedback goes to the team · Not financial advice</div>
           </div>
@@ -839,7 +840,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
         aria-expanded={isOpen}
         data-tour-anchor="chatbot-launcher"
         className={`rpc-chat-bubble${inputFocused ? " hidden" : ""}`}
-        style={{ position: "fixed", bottom: 20, right: 16, width: 52, height: 52, borderRadius: 14, border: "none", background: isOpen ? "var(--rpc-surface-hover)" : "linear-gradient(135deg, var(--rpc-red) 0%, #b82e25 100%)", color: isOpen ? "var(--rpc-text-primary)" : "#fff", cursor: "pointer", display: inputFocused ? "none" : "flex", alignItems: "center", justifyContent: "center", fontSize: 22, zIndex: 9999, boxShadow: isOpen ? "0 4px 20px rgba(0,0,0,0.3)" : "0 4px 24px rgba(224,58,47,0.35), 0 0 0 1px rgba(224,58,47,0.15)", transition: "transform 0.15s, background 0.2s, box-shadow 0.2s" }}
+        style={{ /* brand-exception: white glyph on the red launcher (surface token when open) */ position: "fixed", bottom: 20, right: 16, width: 52, height: 52, borderRadius: 14, border: "none", background: isOpen ? "var(--rpc-surface-hover)" : "linear-gradient(135deg, var(--rpc-red) 0%, #b82e25 100%)", color: isOpen ? "var(--rpc-text-primary)" : "#fff", cursor: "pointer", display: inputFocused ? "none" : "flex", alignItems: "center", justifyContent: "center", fontSize: 22, zIndex: 9999, boxShadow: isOpen ? "0 4px 20px rgba(0,0,0,0.3)" : "0 4px 24px rgba(224,58,47,0.35), 0 0 0 1px rgba(224,58,47,0.15)", transition: "transform 0.15s, background 0.2s, box-shadow 0.2s" }}
         onMouseEnter={(e) => { (e.target as HTMLElement).style.transform = "scale(1.06)"; }}
         onMouseLeave={(e) => { (e.target as HTMLElement).style.transform = "scale(1)"; }}>
         {isOpen ? "✕" : "💬"}

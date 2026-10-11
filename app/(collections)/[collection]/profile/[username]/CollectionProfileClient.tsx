@@ -197,7 +197,7 @@ function PublicTrophySlot(props: { slot: number; trophy: TrophyMoment | null }) 
       onMouseEnter={function() { setHovered(true); }}
       onMouseLeave={function() { setHovered(false); }}
     >
-      <div style={{ position: "absolute", inset: 0, background: "#111" }}>
+      <div style={{ /* brand-exception: image backdrop behind the moment media */ position: "absolute", inset: 0, background: "#111" }}>
         {t.video_url && !videoError && hovered ? (
           <video src={proxyIpfsUrl(t.video_url) ?? undefined} autoPlay muted loop playsInline onError={function() { setVideoError(true); }} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
@@ -212,8 +212,8 @@ function PublicTrophySlot(props: { slot: number; trophy: TrophyMoment | null }) 
         <span style={{ fontSize: 14 }}>{slotLabels[props.slot]}</span>
       </div>
       <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 12px 14px" }}>
-        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "#fff", letterSpacing: "0.04em", lineHeight: 1.1, marginBottom: 4 }}>{momentSubjectName(t.player_name, null, t.set_name)}</div>
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.player_name ? (t.set_name ?? "") : ""}</div>
+        <div style={{ /* brand-exception: text over the moment image + dark gradient */ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "#fff", letterSpacing: "0.04em", lineHeight: 1.1, marginBottom: 4 }}>{momentSubjectName(t.player_name, null, t.set_name)}</div>
+        <div style={{ /* brand-exception: text over the moment image + dark gradient */ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.player_name ? (t.set_name ?? "") : ""}</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: 11, fontFamily: condensedFont, fontWeight: 700, color: tc }}>
             {t.serial_number != null ? ("#" + t.serial_number + " / " + (t.circulation_count ?? "?")) : ""}
@@ -294,7 +294,7 @@ function Avatar(props: {
         </div>
       )}
       {editable && hovered && (
-        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontFamily: monoFont, color: "#fff", letterSpacing: "0.1em" }}>
+        <div style={{ /* brand-exception: scrim over the avatar image */ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontFamily: monoFont, color: "#fff", letterSpacing: "0.1em" }}>
           EDIT
         </div>
       )}

@@ -19,7 +19,9 @@ function HomeHeader() {
         position: "sticky",
         top: 0,
         zIndex: 100,
-        background: "rgba(8,8,8,0.85)",
+        // Theme-aware (2026-10-11): a hardcoded near-black left the header's
+        // token-coloured links dark-on-dark in light mode.
+        background: "var(--rpc-header-bg)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
         borderBottom: "1px solid var(--rpc-border)",
@@ -229,7 +231,7 @@ export default function HomePageMarketing() {
         .rpc-home-eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:var(--rpc-red);}
         /* 2026-10-11: body copy was hardcoded white — invisible on the light theme's white canvas.
            Dark keeps its brighter-than-secondary alpha; light falls back to the theme token. */
-        .rpc-home-root{--rpc-home-body:rgba(255,255,255,0.75);}
+        /* brand-exception: the DARK-theme value; light overrides it below */ .rpc-home-root{--rpc-home-body:rgba(255,255,255,0.75);}
         [data-theme="light"] .rpc-home-root{--rpc-home-body:var(--rpc-text-secondary);}
         .rpc-home-sub{font-family:var(--font-mono);font-size:14px;line-height:1.65;color:var(--rpc-home-body);max-width:640px;margin-inline:auto;}
         .rpc-home-section{padding:96px 24px;}
@@ -467,6 +469,7 @@ export default function HomePageMarketing() {
               background: "var(--rpc-red)",
               border: "none",
               borderRadius: 6,
+              // brand-exception: white text on the --rpc-red button
               color: "#fff",
               fontFamily: "var(--font-display)",
               fontWeight: 800,
@@ -507,6 +510,7 @@ export default function HomePageMarketing() {
               background: "var(--rpc-red)",
               border: "none",
               borderRadius: 6,
+              // brand-exception: white text on the --rpc-red button
               color: "#fff",
               fontFamily: "var(--font-display)",
               fontWeight: 800,
@@ -666,6 +670,7 @@ export default function HomePageMarketing() {
                   onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "home_trophy_case" })}
                   style={{
                     background: "var(--rpc-red)",
+                    // brand-exception: white text on the --rpc-red button
                     color: "#fff",
                     padding: "12px 22px",
                     borderRadius: 6,
@@ -761,6 +766,7 @@ export default function HomePageMarketing() {
             style={{
               marginTop: 8,
               background: "var(--rpc-red)",
+              // brand-exception: white text on the --rpc-red button
               color: "#fff",
               padding: "14px 28px",
               borderRadius: 6,

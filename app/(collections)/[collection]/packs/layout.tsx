@@ -35,7 +35,7 @@ export default async function PacksLayout(props: { children: ReactNode; params: 
       </div>
       <Link
         href={`/${id}/overview`}
-        style={{ display: "inline-block", padding: "10px 24px", background: "var(--rpc-accent, var(--rpc-red))", borderRadius: 6, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none", marginTop: 8 }}
+        style={{ /* brand-exception: white text on the accent button */ display: "inline-block", padding: "10px 24px", background: "var(--rpc-accent, var(--rpc-red))", borderRadius: 6, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none", marginTop: 8 }}
       >
         Back to Overview
       </Link>

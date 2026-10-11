@@ -245,7 +245,7 @@ export default function LoginClient() {
               disabled={status === "sending"}
               style={{
                 width: "100%",
-                background: "rgba(255,255,255,0.04)",
+                background: "var(--rpc-surface-raised)",
                 border: "1px solid var(--rpc-red-border)",
                 color: "var(--rpc-text-primary)",
                 fontFamily: "var(--font-mono)",
