@@ -1185,9 +1185,12 @@ day's UI pass (`writeOrSay` in `AlertsClient`, the bio and avatar save errors in
 **Fixed by testing those branches, not by lowering the floor:** nine tests, each proved with a planted
 defect (silence the failure message and 7 of the 9 go red). The two that stay green under that plant
 target branches it doesn't touch: the network-throw bio test and the link-refusal test. Gate 90.74 → 90.86.
+⚠ **A second session fixed the same red within five minutes** (`2b73302ea`, four other test files),
+neither knowing about the other. That's the cost of three writers and no claim on a shared red. The
+fixes didn't overlap, so both stay: **90.98 %** combined.
 ⭐ **Read the failing JOB of the run you inherit, not the badge:** "CI failure" on a docs push is the
-`Inherited main status` job. The real job is in the last CODE run. ⚠ The margin after the fix is
-**0.01 pt**, inside the run-to-run spread recorded below. The next UI push that adds an untested
+`Inherited main status` job. The real job is in the last CODE run. ⚠ Each fix alone left a margin
+of **0.01 pt**, inside the run-to-run spread recorded below; together they leave 0.13 pt. The next UI push that adds an untested
 branch will red it again. **Ship a failure branch WITH its test**, and run `npm run
 test:coverage:components` (~5 min) before pushing a `*Client.tsx` or `components/**` change.
 
