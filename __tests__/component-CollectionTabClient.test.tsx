@@ -45,6 +45,13 @@ vi.mock("@/components/collection/CollectionMomentTable", () => ({
           ? (p.filteredRows as Array<{ momentId?: string }>).map((r) => r.momentId).join(",")
           : ""
       }
+      data-badges={
+        Array.isArray(p.filteredRows)
+          ? (p.filteredRows as Array<{ badgeInfo?: { badge_titles?: string[] } | null }>)
+              .map((r) => (r.badgeInfo ? (r.badgeInfo.badge_titles ?? []).join("+") : "none"))
+              .join(",")
+          : ""
+      }
       data-has-searched={String(p.hasSearched)}
       data-loading={String(p.loading)}
       data-show-debug={String(p.showDebug)}
@@ -740,24 +747,42 @@ describe("CollectionTabClient — enrichment", () => {
     })
   }
 
-  it("attaches badge info to the matching player + series", async () => {
+  it("attaches badge info by EDITION, never another edition of the same player + series", async () => {
+    // ⛔ 2026-10-10: badges were keyed player::series and kept the highest
+    // badge_score, so a Donovan Clingan #1/1 Ultimate wore his Rookie Debut's
+    // "Top Shot Debut". The decoy below is the same player AND series with a
+    // higher score; under the old keying it wins. The row's own edition must.
     searchParams = new URLSearchParams("wallet=0xmine")
     withRoutes({
       "/api/badges": () =>
         json(200, {
           editions: [
-            {
-              player_name: "Damian Lillard",
-              series_number: 1,
-              badge_score: 7,
-              badge_titles: ["Rookie Year"],
-              circulation_count: 1000,
-            },
+            { external_id: "99:9999", player_name: "Damian Lillard", series_number: 0, badge_score: 9, badge_titles: ["Top Shot Debut"] },
+            { external_id: "48:1652", player_name: "Damian Lillard", series_number: 0, badge_score: 3, badge_titles: ["Rookie Premiere", "Rookie Year"] },
+          ],
+        }),
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-badges")).toBe("Rookie Premiere+Rookie Year"),
+    )
+  })
+
+  it("a moment whose edition has no badge row gets NO badges, not a sibling's", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({
+      "/api/badges": () =>
+        json(200, {
+          editions: [
+            { external_id: "99:9999", player_name: "Damian Lillard", series_number: 0, badge_score: 9, badge_titles: ["Top Shot Debut"] },
           ],
         }),
     })
     render(<CollectionTabClient />)
     await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    // Let the badge leg land, then assert the decoy never attached.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.getByTestId("moment-table").getAttribute("data-badges")).toBe("none")
   })
 
   it("survives a badges leg that 4xxs — the moments must still render", async () => {

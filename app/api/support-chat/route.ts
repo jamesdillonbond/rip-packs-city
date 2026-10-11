@@ -3420,7 +3420,7 @@ async function executeToolInner(
         if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
         let rows = (data ?? []);
         // 'perfect' (serial == circulation) isn't a SQL column on the board; filter in JS.
-        if (tag === "perfect") rows = rows.filter((r: any) => r.serial_number != null && r.serial_number === r.circulation_count);
+        if (tag === "perfect") rows = rows.filter((r: any) => r.serial_number != null && r.circulation_count > 1 && r.serial_number === r.circulation_count);
         rows = await teamBadgeFilter(rows, (r: any) => r.external_id ?? null);
         // tight estimates first, then deepest discount.
         rows.sort((a: any, b: any) =>
@@ -3449,7 +3449,7 @@ async function executeToolInner(
               serial: r.serial_number,
               circulation: r.circulation_count,
               is_first_mint: r.serial_number === 1,
-              is_perfect_mint: r.serial_number != null && r.serial_number === r.circulation_count,
+              is_perfect_mint: r.serial_number != null && r.circulation_count > 1 && r.serial_number === r.circulation_count,
               ask: r.ask_usd != null ? Number(r.ask_usd) : null,
               serial_fmv: r.serial_fmv_usd != null ? Number(r.serial_fmv_usd) : null,
               edition_fmv: r.edition_fmv_usd != null ? Number(r.edition_fmv_usd) : null,
@@ -3510,7 +3510,7 @@ async function executeToolInner(
           serial: row.serial_number,
           circulation: ed?.circulation_count ?? null,
           is_first_mint: row.serial_number === 1,
-          is_perfect_mint: row.serial_number != null && ed?.circulation_count != null && row.serial_number === ed.circulation_count,
+          is_perfect_mint: row.serial_number != null && ed?.circulation_count != null && ed.circulation_count > 1 && row.serial_number === ed.circulation_count,
           ask,
           serial_fmv: sfmv,
           discount_pct: discount,

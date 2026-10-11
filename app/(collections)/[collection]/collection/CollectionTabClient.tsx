@@ -31,7 +31,6 @@ import SaveWalletToProfileButton from "@/components/collection/SaveWalletToProfi
 import CollectionRecentSales from "@/components/collection/CollectionRecentSales"
 import { useMobile } from "@/components/collection/use-mobile"
 import {
-  type BadgeInfo,
   type MomentRow,
   type WalletSearchResponse,
   type CollectionSeriesEntry,
@@ -43,6 +42,7 @@ import {
 } from "@/lib/collection/view-reducer"
 import { buildCollectionCsv } from "@/lib/collection/export-csv"
 import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
+import { buildEditionBadgeMap, badgeInfoForRow } from "@/lib/collection/badge-match"
 import { computeCollectionTotals } from "@/lib/collection/totals"
 import { computeFilteredSortedRows } from "@/lib/collection/filter-sort"
 import { resolveSeriesParam } from "@/lib/collection/series-param"
@@ -60,7 +60,6 @@ import {
 } from "@/lib/collection/filter-options"
 import {
   ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR,
-  BADGE_PILL_TITLES,
   seriesIntToSeason,
   getParallel,
   getSerial,
@@ -419,53 +418,34 @@ function WalletMomentsBody() {
       )) as string[]
       if (!playerNames.length) return rowsIn
       const CHUNK = 50
+      // Paged: 50 players can own more than one page of editions, and a
+      // truncated page silently drops badges from whatever fell off the end.
+      const PAGE = 500
+      const MAX_PAGES = 10
       const allEditions: any[] = []
       const collectionIdParam = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? COLLECTION_UUID_BY_SLUG["nba-top-shot"]
       for (let i = 0; i < playerNames.length; i += CHUNK) {
         const chunk = playerNames.slice(i, i + CHUNK)
-        const params = new URLSearchParams({
-          mode: "all", sort: "badge_score", dir: "desc",
-          limit: "500", offset: "0", players: chunk.join(","),
-          collection_id: collectionIdParam,
-        })
-        const res = await fetch("/api/badges?" + params.toString())
-        if (!res.ok) continue
-        const json = await res.json()
-        allEditions.push(...(json.editions ?? []))
-      }
-      const badgeMap = new Map<string, BadgeInfo>()
-      for (const edition of allEditions) {
-        if (!edition.player_name || edition.series_number == null) continue
-        const key = edition.player_name.toLowerCase().trim() + "::" + edition.series_number
-        const existing = badgeMap.get(key)
-        if (!existing || edition.badge_score > existing.badge_score) {
-          badgeMap.set(key, {
-            badge_score: edition.badge_score,
-            badge_titles: (edition.badge_titles ?? []).filter((t: string) => BADGE_PILL_TITLES.has(t)),
-            is_three_star_rookie: edition.is_three_star_rookie,
-            has_rookie_mint: edition.has_rookie_mint,
-            burn_rate_pct: edition.burn_rate_pct,
-            lock_rate_pct: edition.lock_rate_pct,
-            low_ask: edition.low_ask,
-            circulation_count: edition.circulation_count,
-            effective_supply: edition.effective_supply ?? null,
-            burned: edition.burned ?? 0,
-            owned: edition.owned ?? 0,
-            hidden_in_packs: edition.hidden_in_packs ?? 0,
-            for_sale_by_collectors: edition.for_sale_by_collectors ?? null,
+        for (let page = 0; page < MAX_PAGES; page++) {
+          const params = new URLSearchParams({
+            mode: "all", sort: "badge_score", dir: "desc",
+            limit: String(PAGE), offset: String(page * PAGE), players: chunk.join(","),
+            collection_id: collectionIdParam,
           })
+          const res = await fetch("/api/badges?" + params.toString())
+          if (!res.ok) break
+          const json = await res.json()
+          const editions = json.editions ?? []
+          allEditions.push(...editions)
+          if (editions.length < PAGE) break
         }
       }
+      // ⛔ Keyed by EDITION (badge_editions.external_id = row.editionKey), never
+      // player + series — see lib/collection/badge-match.ts for the defect that
+      // keying caused (a 1/1 Ultimate wearing its player's Rookie Debut badges).
+      const badgeMap = buildEditionBadgeMap(allEditions)
       return rowsIn.map((row: MomentRow) => {
-        const seriesNum = typeof row.series === "string"
-          ? parseInt(row.series, 10)
-          : (row.series as number | undefined)
-        if (seriesNum == null || isNaN(seriesNum)) return { ...row, badgeInfo: null }
-        const playerKey = (row.playerName?.toLowerCase().trim() ?? "")
-        const key = playerKey + "::" + seriesNum
-        // On-chain series 0 = display Series 1 in badge_editions; try both
-        const badge = badgeMap.get(key) ?? (seriesNum === 0 ? badgeMap.get(playerKey + "::1") : null)
-        return { ...row, badgeInfo: badge ?? null }
+        return { ...row, badgeInfo: badgeInfoForRow(row, badgeMap) }
       })
     } catch {
       return rowsIn

@@ -166,7 +166,9 @@ function specialSerialTraits(
 ): string[] {
   const out: string[] = []
   if (serial === 1) out.push("#1 Serial")
-  if (serial !== null && mint !== null && mint > 0 && serial === mint) {
+  // `mint > 1`: a 1-of-1's serial 1 is the #1, not ALSO a perfect mint
+  // (canonical rule: specialCats in lib/badges/glyphs.ts).
+  if (serial !== null && mint !== null && mint > 1 && serial === mint) {
     out.push("Original Perfect Mint Serial")
   }
   for (const badgeType of graphqlBadgeTypes) {
