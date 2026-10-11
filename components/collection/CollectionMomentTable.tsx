@@ -139,12 +139,12 @@ function NotSerialised() {
   )
 }
 
-// Mobile card lock state — THREE states, never two. `getLocked` alone collapses
-// an unread lock into `false`, which would print "Unlocked" about a moment we
-// never checked (a false claim about whether the user can sell it). Unknown
-// gets its own muted pill. Callers render this only where the collection has
-// locking at all (collectionHasLocking).
-function MobileLockPill({ row }: { row: MomentRow }) {
+// Lock state pill (mobile cards + desktop rows) — THREE states, never two.
+// `getLocked` alone collapses an unread lock into `false`, which would print
+// "Unlocked" about a moment we never checked (a false claim about whether the
+// user can sell it). Unknown gets its own muted pill. Callers render this only
+// where the collection has locking at all (collectionHasLocking).
+function LockPill({ row }: { row: MomentRow }) {
   const known = isLockKnown(row)
   const locked = known && getLocked(row)
   const label = !known ? "Lock ?" : locked ? "Locked" : "Unlocked"
@@ -327,7 +327,7 @@ export default function CollectionMomentTable(props: {
                           {row.tier}
                         </span>
                       )}
-                      {hasLocking && <MobileLockPill row={row} />}
+                      {hasLocking && <LockPill row={row} />}
                     </div>
                   )}
                   {/* Row 2: Set + Series */}
@@ -615,6 +615,7 @@ export default function CollectionMomentTable(props: {
                               )}
                             </div>
                             <div className="mt-1 flex flex-wrap gap-1 items-center">
+                              {hasLocking && <LockPill row={row} />}
                               {officialBadges.map(function(title) { return <BadgeIcon key={"official-" + title} title={title} collectionId={badgeCollectionId} /> })}
                               {supaBadges.map(function(title) { return <BadgeIcon key={"supa-" + title} title={title} collectionId={badgeCollectionId} /> })}
                               {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (

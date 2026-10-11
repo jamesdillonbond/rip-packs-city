@@ -112,3 +112,17 @@ describe("mobile binder card — a source that SAYS it never checked", () => {
     }
   })
 })
+
+describe("desktop table row — lock pill", () => {
+  it("shows the same three-state pill in the player cell", () => {
+    const desk = (r: any, slug = "nba-top-shot") => ({ ...props(r, slug), isMobile: false })
+    const locked = render(<CollectionMomentTable {...desk(row({ isLocked: true, lockKnown: true }))} />)
+    expect(pill(locked.container)?.getAttribute("data-rpc-lock-state")).toBe("locked")
+    locked.unmount()
+    const unknown = render(<CollectionMomentTable {...desk(row({ isLocked: undefined, lockKnown: false }))} />)
+    expect(pill(unknown.container)?.getAttribute("data-rpc-lock-state")).toBe("unknown")
+    unknown.unmount()
+    const pin = render(<CollectionMomentTable {...desk(row({ isLocked: true, lockKnown: true }), "disney-pinnacle")} />)
+    expect(pill(pin.container)).toBeNull()
+  })
+})
