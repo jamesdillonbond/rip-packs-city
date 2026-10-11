@@ -222,7 +222,7 @@ export function buildWelcomeEmailHtml(opts: WelcomeEmailOpts): string {
                 <ul style="margin:0;padding:0 0 0 18px;color:${TEXT_MUTED};font-size:14px;line-height:1.7;">
                   <li>Hit the <strong style="color:${TEXT};">Sniper</strong> to spot listings priced under FMV in real time.</li>
                   <li>Look up <strong style="color:${TEXT};">any wallet</strong> to see its full collection, FMV, and pack ROI.</li>
-                  <li>Check <strong style="color:${TEXT};">Pack EV</strong> to see whether the next drop is worth ripping.</li>
+                  <li>Check <strong style="color:${TEXT};">Pack EV</strong> to see what the next drop's contents are worth against its price.</li>
                 </ul>
               </td>
             </tr>
@@ -272,7 +272,7 @@ export function buildWelcomeEmailText(opts: WelcomeEmailOpts): string {
     "What's next:",
     "  - Hit the Sniper to spot listings priced under FMV in real time.",
     "  - Look up any wallet to see its full collection, FMV, and pack ROI.",
-    "  - Check Pack EV to see whether the next drop is worth ripping.",
+    "  - Check Pack EV to see what the next drop's contents are worth against its price.",
     "",
     "— Rip Packs City · rippackscity.com"
   )

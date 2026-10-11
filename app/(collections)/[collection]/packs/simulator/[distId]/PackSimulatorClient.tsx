@@ -309,7 +309,7 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
           )}
         </div>
         <div style={{ marginTop: 18 }}>
-          <Link href={`/${collectionSlug}/packs`} style={{ display: "inline-block", padding: "8px 16px", background: accent, color: "#fff", borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
+          <Link href={`/${collectionSlug}/packs`} style={{ /* brand-exception: white text on the accent button */ display: "inline-block", padding: "8px 16px", background: accent, color: "#fff", borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
             Back to packs
           </Link>
         </div>
@@ -338,11 +338,11 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
 
       {/* Hero */}
       <div style={{ display: "flex", gap: 18, alignItems: "flex-start", flexWrap: "wrap", padding: "14px 0 18px", borderBottom: `1px solid ${accent}33` }}>
-        <div style={{ flexShrink: 0, width: 160, aspectRatio: "5 / 7", background: "#0d0d0d", border: `1px solid ${accent}55`, borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+        <div style={{ /* brand-exception: dark frame behind the pack art */ flexShrink: 0, width: 160, aspectRatio: "5 / 7", background: "#0d0d0d", border: `1px solid ${accent}55`, borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
           {pack.image_url ? (
             <img src={proxyIpfsImageUrl(pack.image_url, 640) ?? undefined} alt={pack.title ?? "Pack"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           ) : (
-            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", fontSize: 48 }}>?</div>
+            <div style={{ /* brand-exception: glyph on the dark pack-art frame */ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", fontSize: 48 }}>?</div>
           )}
         </div>
         <div style={{ flex: 1, minWidth: 260 }}>
@@ -402,7 +402,7 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
         <RipButton disabled={ripping || !slots} onClick={() => runRips(10)} accent={accent} label="Rip 10" />
         <RipButton disabled={ripping || !slots} onClick={() => runRips(100)} accent={accent} label="Rip 100" />
         {result && (
-          <button onClick={() => { setResult(null); setFlipIndex(0) }} className="rpc-sim-button" style={{ padding: "10px 16px", background: "transparent", color: "rgba(255,255,255,0.7)", border: "1px solid #444", borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+          <button onClick={() => { setResult(null); setFlipIndex(0) }} className="rpc-sim-button" style={{ padding: "10px 16px", background: "transparent", color: "var(--rpc-text-secondary)", border: "1px solid var(--rpc-border-hover)", borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase" }}>
             Reset
           </button>
         )}
@@ -419,7 +419,7 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
       )}
 
       {/* Disclaimer */}
-      <div style={{ marginTop: 32, padding: "12px 14px", borderTop: "1px solid #27272a", color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.7 }}>
+      <div style={{ marginTop: 32, padding: "12px 14px", borderTop: "1px solid var(--rpc-border)", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.7 }}>
         Simulation uses stored drop weights from when the pack was indexed; real pack odds shift slightly as packs are opened. EV per slot here uses weighted sampling (metrics.ev_per_slot); the canonical trimmed-mean pack EV shown on the pack listing page may differ.
         {payload.note && <div style={{ marginTop: 6, opacity: 0.8 }}>{payload.note}</div>}
         {payload.computed_at && <div style={{ marginTop: 4, opacity: 0.7 }}>Pool computed: {new Date(payload.computed_at).toLocaleString()}</div>}
@@ -441,9 +441,9 @@ function Stat({ label, value, accent, title }: { label: string; value: string; a
 
 function ProbCard({ label, prob, accent, count }: { label: string; prob: number | null | undefined; accent: string; count: number | null | undefined }) {
   return (
-    <div style={{ padding: "10px 12px", background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 6 }}>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.55)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, color: "#fff", marginTop: 2 }}>{fmtPct(prob)}</div>
+    <div style={{ padding: "10px 12px", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 6 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, color: "var(--rpc-text-primary)", marginTop: 2 }}>{fmtPct(prob)}</div>
       {count != null && <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: accent, marginTop: 1 }}>{count} editions</div>}
     </div>
   )
@@ -455,7 +455,7 @@ function RipButton({ onClick, label, accent, disabled }: { onClick: () => void; 
       onClick={onClick}
       disabled={disabled}
       className="rpc-sim-button"
-      style={{ padding: "12px 22px", background: accent, color: "#fff", border: "none", borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, letterSpacing: "0.12em", textTransform: "uppercase" }}
+      style={{ /* brand-exception: white text on the accent button */ padding: "12px 22px", background: accent, color: "#fff", border: "none", borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, letterSpacing: "0.12em", textTransform: "uppercase" }}
     >
       {label}
     </button>
@@ -472,7 +472,7 @@ function AggregateCard({ result, accent }: { result: RipResult; accent: string }
   const fmvCovPct = a.totalSlots > 0 ? (a.fmvCoveredSlots / a.totalSlots) * 100 : null
   const fmvCovPartial = fmvCovPct != null && fmvCovPct < 99.5
   return (
-    <div style={{ marginTop: 18, padding: 14, background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 8 }}>
+    <div style={{ marginTop: 18, padding: 14, background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 8 }}>
       <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800, color: accent, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 10 }}>
         Aggregate · {a.totalRips} rip{a.totalRips === 1 ? "" : "s"} · {a.totalSlots} slots
       </div>
@@ -484,7 +484,7 @@ function AggregateCard({ result, accent }: { result: RipResult; accent: string }
         <Metric label="Total pulled" value={fmtUsd(a.totalValue)} accent={accent} />
       </div>
       {fmvCovPartial && (
-        <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.55)", lineHeight: 1.5 }}>
+        <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.5 }}>
           {a.fmvCoveredSlots} / {a.totalSlots} pulls had FMV ({fmvCovPct?.toFixed(1)}%). Slots without FMV
           are counted as $0, so values above (incl. % beat retail) are a lower bound.
         </div>
@@ -507,7 +507,7 @@ function AggregateCard({ result, accent }: { result: RipResult; accent: string }
 function Metric({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
     <div>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
       <div style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 800, color: accent }}>{value}</div>
     </div>
   )
@@ -515,9 +515,9 @@ function Metric({ label, value, accent }: { label: string; value: string; accent
 
 function HitMetric({ label, hits, rate }: { label: string; hits: number; rate: number }) {
   return (
-    <div style={{ background: "#080808", border: "1px solid #1f1f22", padding: "6px 10px", borderRadius: 4 }}>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 700, color: "#fff" }}>{hits} <span style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>({rate.toFixed(2)}%)</span></div>
+    <div style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border-subtle)", padding: "6px 10px", borderRadius: 4 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 700, color: "var(--rpc-text-primary)" }}>{hits} <span style={{ fontSize: 10, color: "var(--rpc-text-secondary)" }}>({rate.toFixed(2)}%)</span></div>
     </div>
   )
 }
@@ -529,12 +529,12 @@ function PullsGrid({ result, accent, flipIndex, slots, collectionSlug }: { resul
       {result.rips.map((pulls, ri) => {
         const packValue = pulls.reduce((s, p) => s + (p.edition.fmv_usd != null ? Number(p.edition.fmv_usd) : 0), 0)
         return (
-          <div key={ri} style={{ background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 8, padding: 10 }}>
+          <div key={ri} style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 8, padding: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", color: accent, textTransform: "uppercase" }}>
                 Rip #{ri + 1}
               </div>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "#fff" }}>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--rpc-text-primary)" }}>
                 {fmtUsd(packValue)}
                 {result.aggregate.retail != null && (
                   <span style={{ marginLeft: 8, color: packValue >= result.aggregate.retail ? "#34D399" : "#F87171", fontSize: 11 }}>
@@ -549,27 +549,27 @@ function PullsGrid({ result, accent, flipIndex, slots, collectionSlug }: { resul
                 const visible = idx < flipIndex
                 if (!visible && flipIndex < result.aggregate.totalSlots) {
                   return (
-                    <div key={si} style={{ aspectRatio: "5 / 7", background: "#080808", border: "1px solid #27272a", borderRadius: 4 }} />
+                    <div key={si} style={{ aspectRatio: "5 / 7", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: 4 }} />
                   )
                 }
                 const tier = pull.edition.tier ?? "common"
                 const slug = pull.edition.edition_slug
-                const cardStyle = { background: "#080808", border: `2px solid ${tierColor(tier)}`, borderRadius: 4, overflow: "hidden", display: "flex", flexDirection: "column" as const }
+                const cardStyle = { background: "var(--rpc-surface)", border: `2px solid ${tierColor(tier)}`, borderRadius: 4, overflow: "hidden", display: "flex", flexDirection: "column" as const }
                 const cardInner = (
                   <>
                     {pull.edition.thumbnail_url ? (
                       <img src={proxyIpfsImageUrl(pull.edition.thumbnail_url, 320) ?? undefined} alt={pull.edition.player_name ?? "Pulled moment"} style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover" }} />
                     ) : (
-                      <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#0d0d0d" }} />
+                      <div style={{ /* brand-exception: dark placeholder where the moment image would be */ width: "100%", aspectRatio: "1 / 1", background: "#0d0d0d" }} />
                     )}
                     <div style={{ padding: "4px 5px" }}>
-                      <div style={{ fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div style={{ fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 700, color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {pull.edition.player_name ?? "—"}
                       </div>
                       <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: tierColor(tier), textTransform: "uppercase", letterSpacing: "0.06em" }}>
                         {(tier || "").replace(/_/g, " ")}
                       </div>
-                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#fff", marginTop: 1 }}>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-primary)", marginTop: 1 }}>
                         {fmtUsd(pull.edition.fmv_usd)}
                       </div>
                     </div>

@@ -409,7 +409,7 @@ export default function AlertsClient() {
                   <div>
                     <span style={{ fontWeight: 700 }}>{label}</span>{" "}
                     {!channelsKnown ? (
-                      <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 12 }}>
+                      <span style={{ color: "var(--rpc-text-muted)", fontSize: 12 }}>
                         {failed.channels ? "status unavailable" : "checking…"}
                       </span>
                     ) : st?.verified ? (
@@ -417,7 +417,7 @@ export default function AlertsClient() {
                         ✓ linked {st.target ? `(${st.target})` : ""}
                       </span>
                     ) : (
-                      <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 12 }}>not linked</span>
+                      <span style={{ color: "var(--rpc-text-muted)", fontSize: 12 }}>not linked</span>
                     )}
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
@@ -428,7 +428,7 @@ export default function AlertsClient() {
                     )}
                   </div>
                   {linkInfo[name] && (
-                    <div style={{ flexBasis: "100%", fontSize: 12, color: "rgba(255,255,255,0.7)", fontFamily: MONO, wordBreak: "break-all" }}>
+                    <div style={{ flexBasis: "100%", fontSize: 12, color: "var(--rpc-text-secondary)", fontFamily: MONO, wordBreak: "break-all" }}>
                       {linkInfo[name]}
                     </div>
                   )}
@@ -465,7 +465,7 @@ export default function AlertsClient() {
                   this screen would tell you. */}
               <label style={labelStyle}>Min discount % below FMV</label>
               <input type="number" min={0} value={form.min_discount} onChange={(e) => setForm({ ...form, min_discount: e.target.value })} style={inputStyle} />
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 4 }}>
                 Set 0 with a max price to alert on price alone, ignoring FMV.
               </div>
             </div>
@@ -513,8 +513,8 @@ export default function AlertsClient() {
           {/* Live-listing-only filters — enforced by the per-serial deal feed
               (topshot_serial_deal_alerts_for_subscription / dispatch_due_deal_alerts;
               re-verified 2026-09-28 — this comment used to say "enforced once it lands") */}
-          <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid #27272a" }}>
-            <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", fontWeight: 700 }}>
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--rpc-border)" }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--rpc-text-muted)", fontWeight: 700 }}>
               Serial & live-listing filters
             </div>
             <div style={grid2}>
@@ -541,7 +541,7 @@ export default function AlertsClient() {
               ))}
             </div>
             {anyLiveListingFilter && (
-              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 8, lineHeight: 1.5 }}>
+              <p style={{ fontSize: 12, color: "var(--rpc-text-secondary)", marginTop: 8, lineHeight: 1.5 }}>
                 Serial, jersey, last-mint, never-sold and badge filters apply to the per-serial underpriced-deals
                 feed. The jersey filter matches the number worn in that specific moment (Top Shot&apos;s own
                 jersey-match), indexed for ~6 in 10 editions today.
@@ -581,7 +581,7 @@ export default function AlertsClient() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                     <div>
                       <div style={{ fontWeight: 800, fontSize: 16 }}>{s.label}</div>
-                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", fontFamily: MONO, marginTop: 2 }}>
+                      <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)", fontFamily: MONO, marginTop: 2 }}>
                         {subscriptionFilterSummary(s)} · {s.channels.join(", ")} · {s.cadence}
                         {s.preview_count != null && ` · ${s.preview_count} match now`}
                       </div>
@@ -622,9 +622,9 @@ export default function AlertsClient() {
                     <div>
                       <div style={{ fontWeight: 800, fontSize: 15 }}>
                         {a.player_name ?? a.edition_key}
-                        {a.set_name ? <span style={{ color: "rgba(255,255,255,0.5)", fontWeight: 500 }}>{" "}· {a.set_name}</span> : null}
+                        {a.set_name ? <span style={{ color: "var(--rpc-text-muted)", fontWeight: 500 }}>{" "}· {a.set_name}</span> : null}
                       </div>
-                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", fontFamily: MONO, marginTop: 2 }}>
+                      <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)", fontFamily: MONO, marginTop: 2 }}>
                         {FMV_ALERT_LABEL[a.alert_type](a.threshold)} · {a.channel}
                         {a.fmv != null && <> · FMV ${a.fmv}</>}
                         {a.low_ask != null && <> · ask ${a.low_ask}</>}
@@ -656,12 +656,11 @@ export default function AlertsClient() {
 const cardStyle: React.CSSProperties = {
   marginTop: 20,
   padding: 20,
-  background: "#18181b",
-  border: "1px solid #27272a",
+  // Theme-aware card (2026-10-11): was an always-dark #18181b slab with its
+  // text pinned light; now it follows the theme like the rest of the site.
+  background: "var(--rpc-surface)",
+  border: "1px solid var(--rpc-border)",
   borderRadius: 14,
-  // Always-dark card: pin its text light so it does not inherit the page's
-  // theme-aware colour (dark on light theme) — 2026-10-11.
-  color: "#fafafa",
 };
 const h2Style: React.CSSProperties = {
   fontFamily: DISPLAY,
@@ -673,16 +672,16 @@ const h2Style: React.CSSProperties = {
 const labelStyle: React.CSSProperties = {
   display: "block",
   fontSize: 12,
-  color: "rgba(255,255,255,0.6)",
+  color: "var(--rpc-text-secondary)",
   margin: "12px 0 4px",
 };
 const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "10px 12px",
-  background: "#0a0a0a",
-  border: "1px solid #27272a",
+  background: "var(--rpc-surface-raised)",
+  border: "1px solid var(--rpc-border)",
   borderRadius: 8,
-  color: "#fafafa",
+  color: "var(--rpc-text-primary)",
   fontSize: 14,
   fontFamily: MONO,
   boxSizing: "border-box",
@@ -692,6 +691,7 @@ const chipRow: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 8
 const btnPrimary: React.CSSProperties = {
   padding: "11px 22px",
   background: RED,
+  // brand-exception: dark label on the solid --rpc-red button, by design
   color: "#0a0a0a",
   border: "none",
   borderRadius: 8,
@@ -704,8 +704,8 @@ const btnPrimary: React.CSSProperties = {
 const btnGhost: React.CSSProperties = {
   padding: "8px 14px",
   background: "transparent",
-  color: "rgba(255,255,255,0.8)",
-  border: "1px solid #3f3f46",
+  color: "var(--rpc-text-secondary)",
+  border: "1px solid var(--rpc-border-hover)",
   borderRadius: 8,
   fontSize: 13,
   cursor: "pointer",
@@ -719,9 +719,9 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
       style={{
         padding: "7px 14px",
         borderRadius: 999,
-        border: `1px solid ${on ? RED : "#3f3f46"}`,
+        border: `1px solid ${on ? RED : "var(--rpc-border-hover)"}`,
         background: on ? "rgba(224,58,47,0.15)" : "transparent",
-        color: on ? "#fafafa" : "rgba(255,255,255,0.7)",
+        color: on ? "var(--rpc-text-primary)" : "var(--rpc-text-secondary)",
         fontSize: 13,
         fontWeight: on ? 700 : 500,
         cursor: "pointer",
@@ -740,14 +740,14 @@ const removableChip: React.CSSProperties = {
   borderRadius: 999,
   border: `1px solid ${RED}`,
   background: "rgba(224,58,47,0.15)",
-  color: "#fafafa",
+  color: "var(--rpc-text-primary)",
   fontSize: 13,
   fontWeight: 700,
 };
 const chipX: React.CSSProperties = {
   background: "transparent",
   border: "none",
-  color: "rgba(255,255,255,0.7)",
+  color: "var(--rpc-text-secondary)",
   cursor: "pointer",
   fontSize: 16,
   lineHeight: 1,
@@ -760,8 +760,9 @@ const suggestBox: React.CSSProperties = {
   right: 0,
   top: "100%",
   marginTop: 4,
-  background: "#0a0a0a",
-  border: "1px solid #27272a",
+  // Opaque surface (not the translucent surface-raised): it overlays the form.
+  background: "var(--rpc-surface)",
+  border: "1px solid var(--rpc-border)",
   borderRadius: 8,
   maxHeight: 220,
   overflowY: "auto",
@@ -774,7 +775,7 @@ const suggestItem: React.CSSProperties = {
   padding: "9px 12px",
   background: "transparent",
   border: "none",
-  color: "#fafafa",
+  color: "var(--rpc-text-primary)",
   fontSize: 14,
   fontFamily: MONO,
   cursor: "pointer",

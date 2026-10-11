@@ -134,9 +134,10 @@ export default function GrailsView({ collection, accent }: Props) {
             onClick={() => setSort(o.key)}
             style={{
               padding: '6px 12px',
-              background: sort === o.key ? accent : '#0d0d0d',
-              color: sort === o.key ? '#fff' : 'rgba(255,255,255,0.75)',
-              border: `1px solid ${sort === o.key ? accent : '#27272a'}`,
+              background: sort === o.key ? accent : 'var(--rpc-surface-raised)',
+              // brand-exception: white text on the selected accent fill
+              color: sort === o.key ? '#fff' : 'var(--rpc-text-secondary)',
+              border: `1px solid ${sort === o.key ? accent : 'var(--rpc-border)'}`,
               borderRadius: 5,
               cursor: 'pointer',
               fontFamily: "var(--font-display)",
@@ -154,9 +155,10 @@ export default function GrailsView({ collection, accent }: Props) {
           aria-pressed={buyableOnly}
           style={{
             padding: '6px 12px',
-            background: buyableOnly ? 'var(--rpc-red)' : '#0d0d0d',
-            color: buyableOnly ? '#fff' : 'rgba(255,255,255,0.75)',
-            border: `1px solid ${buyableOnly ? 'var(--rpc-red)' : '#27272a'}`,
+            background: buyableOnly ? 'var(--rpc-red)' : 'var(--rpc-surface-raised)',
+            // brand-exception: white text on the selected --rpc-red fill
+            color: buyableOnly ? '#fff' : 'var(--rpc-text-secondary)',
+            border: `1px solid ${buyableOnly ? 'var(--rpc-red)' : 'var(--rpc-border)'}`,
             borderRadius: 5,
             cursor: 'pointer',
             fontFamily: "var(--font-display)",
@@ -184,7 +186,7 @@ export default function GrailsView({ collection, accent }: Props) {
           <GrailCard key={r.dist_id} row={r} accent={accent} collection={collection} />
         ))}
         {!loading && displayRows.length === 0 && !error && (
-          <div style={{ padding: 24, fontFamily: "var(--font-mono)", fontSize: 12, color: 'var(--rpc-text-muted)', textAlign: 'center', border: '1px dashed #27272a', borderRadius: 6, gridColumn: '1 / -1' }}>
+          <div style={{ padding: 24, fontFamily: "var(--font-mono)", fontSize: 12, color: 'var(--rpc-text-muted)', textAlign: 'center', border: '1px dashed var(--rpc-border)', borderRadius: 6, gridColumn: '1 / -1' }}>
             {buyableOnly
               ? 'No buyable packs match these grail filters — try toggling Buyable only off to see sold-out chase packs too.'
               : 'No grail-bearing packs matched. Try lowering the filters.'}
@@ -206,16 +208,16 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
   const { price, priceLabel } = selectPackPrice(row.meta?.primary_price, row.meta?.secondary_ask)
 
   return (
-    <article style={{ background: '#0d0d0d', border: '1px solid #27272a', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ position: 'relative', aspectRatio: '5 / 7', background: '#080808' }}>
+    <article style={{ background: 'var(--rpc-surface)', border: '1px solid var(--rpc-border)', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ /* brand-exception: dark frame behind the pack art (and its placeholder glyph) */ position: 'relative', aspectRatio: '5 / 7', background: '#080808' }}>
         {row.meta?.image_url ? (
           <img src={proxyIpfsImageUrl(row.meta.image_url, 640) ?? undefined} alt={row.meta?.title ?? row.dist_id} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.25)', fontFamily: "var(--font-mono)", fontSize: 28 }}>?</div>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', /* brand-exception: glyph on the dark art frame */ color: 'rgba(255,255,255,0.25)', fontFamily: "var(--font-mono)", fontSize: 28 }}>?</div>
         )}
         {/* Chase ribbon */}
         {row.max_pull_fmv != null && (
-          <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, background: 'var(--rpc-red)', color: '#fff', padding: '6px 9px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 14px rgba(0,0,0,0.5)' }}>
+          <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, /* brand-exception: white on the red chase ribbon */ background: 'var(--rpc-red)', color: '#fff', padding: '6px 9px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 14px rgba(0,0,0,0.5)' }}>
             {row.max_pull_thumbnail && (
               <img src={proxyIpfsImageUrl(row.max_pull_thumbnail, 160) ?? undefined} alt={row.max_pull_player ?? 'Chase moment'} style={{ width: 30, height: 30, objectFit: 'cover', borderRadius: 2, border: `2px solid ${tierBorder}`, flexShrink: 0 }} />
             )}
@@ -232,10 +234,10 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
 
       <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div>
-          <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, color: 'var(--rpc-text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {row.meta?.title ?? `Pack #${row.dist_id}`}
           </div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: 'var(--rpc-text-muted)', marginTop: 2 }}>
             {row.max_pull_set ?? '—'}
           </div>
         </div>
@@ -266,14 +268,15 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
         {/* Price + CTA */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
           <div>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>{priceLabel ?? 'PRICE'}</div>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color: '#fff' }}>{fmtUsd(price)}</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: 'var(--rpc-text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>{priceLabel ?? 'PRICE'}</div>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color: 'var(--rpc-text-primary)' }}>{fmtUsd(price)}</div>
           </div>
           <Link
             href={`/${collection}/packs/simulator/${encodeURIComponent(row.dist_id)}`}
             style={{
               padding: '8px 12px',
               background: accent,
+              // brand-exception: white text on the accent button
               color: '#fff',
               borderRadius: 5,
               fontFamily: "var(--font-display)",
@@ -308,11 +311,11 @@ function Pill({ label, accent }: { label: string; accent: string }) {
 
 function ProbCell({ label, value, approx }: { label: string; value: number | null; approx: boolean }) {
   return (
-    <div style={{ background: '#080808', border: '1px solid #1f1f22', borderRadius: 4, padding: '5px 6px', textAlign: 'center' }}>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 8, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+    <div style={{ background: 'var(--rpc-surface-raised)', border: '1px solid var(--rpc-border-subtle)', borderRadius: 4, padding: '5px 6px', textAlign: 'center' }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 8, color: 'var(--rpc-text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
         {label}{approx && <span style={{ marginLeft: 3, color: 'var(--rpc-warning)' }}>~</span>}
       </div>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 800, color: '#fff', marginTop: 1 }}>{fmtPct(value)}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 800, color: 'var(--rpc-text-primary)', marginTop: 1 }}>{fmtPct(value)}</div>
     </div>
   )
 }

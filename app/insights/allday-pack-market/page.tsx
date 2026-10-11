@@ -65,8 +65,8 @@ function freshnessLabel(iso: string | null): string {
 }
 
 const cardStyle: React.CSSProperties = {
-  background: "rgba(13,13,13,0.92)",
-  border: "1px solid rgba(255,255,255,0.06)",
+  background: "var(--rpc-surface)",
+  border: "1px solid var(--rpc-border-subtle)",
   borderRadius: 8,
   padding: 18,
 }
@@ -76,7 +76,7 @@ function MarketTable({ rows, accent, showRatio }: { rows: PackMarketRow[]; accen
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
         <thead>
-          <tr style={{ color: "rgba(255,255,255,0.45)", textAlign: "left" }}>
+          <tr style={{ color: "var(--rpc-text-muted)", textAlign: "left" }}>
             <th style={{ padding: "6px 10px", fontWeight: 600 }}>Pack</th>
             <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Retail</th>
             <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Median 90d</th>
@@ -92,23 +92,23 @@ function MarketTable({ rows, accent, showRatio }: { rows: PackMarketRow[]; accen
           {rows.map((r) => {
             const opened = num(r.opened_pct)
             return (
-              <tr key={r.dist_id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+              <tr key={r.dist_id} style={{ borderTop: "1px solid var(--rpc-border-subtle)" }}>
                 <td style={{ padding: "8px 10px" }}>
                   <Link
                     href={`/nfl-all-day/pack/dist/${encodeURIComponent(r.dist_id)}`}
-                    style={{ color: "rgba(255,255,255,0.9)", textDecoration: "none" }}
+                    style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}
                   >
                     {r.title ?? `Dist ${r.dist_id}`}
                   </Link>
                 </td>
-                <td style={{ padding: "8px 10px", textAlign: "right", color: "rgba(255,255,255,0.6)" }}>{fmtUsd(num(r.retail_price))}</td>
-                <td style={{ padding: "8px 10px", textAlign: "right", color: "rgba(255,255,255,0.85)", fontWeight: 700 }}>{fmtUsd(num(r.median_price_90d))}</td>
-                <td style={{ padding: "8px 10px", textAlign: "right", color: "rgba(255,255,255,0.6)" }}>{fmtUsd(num(r.last_sale_price))}</td>
+                <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{fmtUsd(num(r.retail_price))}</td>
+                <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>{fmtUsd(num(r.median_price_90d))}</td>
+                <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{fmtUsd(num(r.last_sale_price))}</td>
                 {showRatio ? (
                   <td style={{ padding: "8px 10px", textAlign: "right", color: accent, fontWeight: 700 }}>{fmtRatio(num(r.secondary_vs_retail_ratio))}</td>
                 ) : null}
-                <td style={{ padding: "8px 10px", textAlign: "right", color: "rgba(255,255,255,0.55)" }}>{fmtCount(num(r.n_sales))}</td>
-                <td style={{ padding: "8px 10px", textAlign: "right", color: "rgba(255,255,255,0.5)" }}>{opened != null ? `${opened.toFixed(opened >= 10 ? 0 : 1)}%` : "—"}</td>
+                <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{fmtCount(num(r.n_sales))}</td>
+                <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-muted)" }}>{opened != null ? `${opened.toFixed(opened >= 10 ? 0 : 1)}%` : "—"}</td>
               </tr>
             )
           })}
@@ -135,12 +135,12 @@ function Bucket({
   return (
     <section style={cardStyle}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
-        <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.05em", color: "#fff", textTransform: "uppercase" }}>
+        <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.05em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
           {title}
         </h2>
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: accent, display: "inline-block" }} aria-hidden="true" />
       </div>
-      <p style={{ margin: "0 0 12px", fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.5 }}>{blurb}</p>
+      <p style={{ margin: "0 0 12px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5 }}>{blurb}</p>
       <MarketTable rows={rows} accent={accent} showRatio={showRatio} />
     </section>
   )
@@ -197,17 +197,17 @@ export default async function AllDayPackMarketPage() {
             title="Most traded"
             blurb="The most liquid sealed-pack markets by total secondary sales — where the resale price is the most reliable read."
             rows={mostTraded}
-            accent="rgba(255,255,255,0.85)"
+            accent="var(--rpc-text-primary)"
             showRatio={false}
           />
         </>
       ) : ok ? (
         <section style={cardStyle}>
-          <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
+          <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
             Still gathering sales. The complete sealed-pack sale history is backfilling to NFL All Day&rsquo;s 2022 genesis —
             packs appear here once we&rsquo;ve recorded 5+ secondary sales. Check back shortly.
           </p>
-          <p style={{ margin: "12px 0 0", fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.45)", lineHeight: 1.6 }}>
+          <p style={{ margin: "12px 0 0", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
             In the meantime, see the{" "}
             <Link href="/insights/allday-pack-reality" style={{ color: "var(--rpc-red)", textDecoration: "none" }}>
               All Day Pack Reality board

@@ -194,10 +194,17 @@ const NEUTRAL_PROTECTED = [
   // Light-mode Batch 3 (2026-10-11) — files swept by the UI/UX passes of that day
   // (white text on white / dark-on-dark found by a traced audit). Every remaining
   // white literal in them is on an accent fill, an image or a team gradient and
-  // carries a brand-exception note saying which. NOT listed: files that keep
-  // always-dark cards by design (PackSimulatorClient, AlertsClient, the three
-  // pack-market/reality boards, GrailsView) — their on-dark literals were not
-  // each verified, and a bulk exception would be a claim nobody checked.
+  // carries a brand-exception note saying which. The six files that kept
+  // always-dark cards (PackSimulatorClient, AlertsClient, the three
+  // pack-market/reality boards, GrailsView) were converted to theme-aware cards
+  // the same day rather than bulk-excepted; only art frames and accent buttons
+  // keep a literal, each annotated.
+  "app/(collections)/[collection]/packs/simulator/[distId]/PackSimulatorClient.tsx",
+  "app/alerts/AlertsClient.tsx",
+  "app/insights/topshot-pack-market/page.tsx",
+  "app/insights/allday-pack-market/page.tsx",
+  "app/insights/allday-pack-reality/page.tsx",
+  "components/packs/GrailsView.tsx",
   "app/error.tsx",
   "app/(collections)/[collection]/error.tsx",
   "app/(collections)/[collection]/pack/dist/[distId]/error.tsx",
