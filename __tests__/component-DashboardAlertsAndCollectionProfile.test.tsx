@@ -932,6 +932,84 @@ describe("CollectionProfileClient", () => {
     expect(f.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === "POST")).toBe(false)
   })
 
+  // ⚠ A FAILED SAVE MUST SAY SO (2026-10-11). Before, a non-2xx left the editor open
+  // with no message and a thrown fetch only reached console.error — the owner could not
+  // tell a rejected bio from a slow one. Each exit gets its own message, and the editor
+  // stays open so the text they typed is not lost.
+  async function openBioEditorThenPost(post: () => Promise<Response> | Response) {
+    localStorage.setItem("rpc_owner_key", "trevor")
+    const reads = mount()
+    await waitFor(() => expect(document.body.textContent).toMatch(/EDIT BIO/))
+    const posts: RequestInit[] = []
+    vi.stubGlobal("fetch", vi.fn(async (input: unknown, init?: RequestInit) => {
+      if (init?.method === "POST" && String(input).includes("/api/profile/bio")) {
+        posts.push(init)
+        return post()
+      }
+      return reads(input, init)
+    }))
+    fireEvent.click(screen.getAllByRole("button").find((b) => /edit bio/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(document.body.textContent).toMatch(/CANCEL/))
+    fireEvent.click(screen.getAllByRole("button").find((b) => /^save$/i.test((b.textContent ?? "").trim()))!)
+    await waitFor(() => expect(posts.length).toBe(1))
+    return posts
+  }
+
+  it("states the server's reason when a bio save is rejected, and keeps the editor open", async () => {
+    await openBioEditorThenPost(() => json(400, { error: "Bio is too long." }, false))
+    const alert = await screen.findByRole("alert")
+    expect(alert.textContent).toBe("Bio is too long.")
+    expect(document.body.textContent).toMatch(/CANCEL/)
+    expect(document.body.textContent).not.toMatch(/SAVING\.\.\./)
+  })
+
+  it("names the HTTP status when a rejected bio save carries no readable reason", async () => {
+    await openBioEditorThenPost(() => ({ ok: false, status: 503, json: async () => { throw new Error("not json") } }) as unknown as Response)
+    const alert = await screen.findByRole("alert")
+    expect(alert.textContent).toMatch(/HTTP 503/)
+  })
+
+  it("states a network failure when the bio save throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    await openBioEditorThenPost(() => { throw new TypeError("fetch failed") })
+    const alert = await screen.findByRole("alert")
+    expect(alert.textContent).toMatch(/network error/i)
+    expect(document.body.textContent).toMatch(/CANCEL/)
+  })
+
+  it("clears a previous save error when the next save succeeds", async () => {
+    let fail = true
+    await openBioEditorThenPost(() => fail
+      ? json(500, { error: "Database unavailable." }, false)
+      : json(200, { bio: { display_name: "Trevor", tagline: "Rip City" } }))
+    expect((await screen.findByRole("alert")).textContent).toBe("Database unavailable.")
+    fail = false
+    fireEvent.click(screen.getAllByRole("button").find((b) => /^save$/i.test((b.textContent ?? "").trim()))!)
+    await waitFor(() => expect(document.body.textContent).toMatch(/EDIT BIO/))
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(document.body.textContent).toMatch(/Rip City/)
+  })
+
+  // Same defect on the avatar: `r.ok ? r.json() : null` + an empty catch swallowed a
+  // failed write, so the owner clicked, typed a URL, and saw nothing happen.
+  it("states a failed avatar save instead of silently doing nothing", async () => {
+    localStorage.setItem("rpc_owner_key", "trevor")
+    vi.stubGlobal("prompt", vi.fn(() => "https://example.test/new.png"))
+    const reads = mount()
+    await waitFor(() => expect(document.body.textContent).toMatch(/EDIT BIO/))
+    const posts: string[] = []
+    vi.stubGlobal("fetch", vi.fn(async (input: unknown, init?: RequestInit) => {
+      if (init?.method === "POST") { posts.push(String(init.body)); return json(500, {}, false) }
+      return reads(input, init)
+    }))
+    const avatar = document.querySelector("[style*='border-radius: 50%']") as HTMLElement
+    fireEvent.click(avatar)
+    await waitFor(() => expect(posts.length).toBe(1))
+    expect(posts[0]).toContain("https://example.test/new.png")
+    const alert = await screen.findByRole("alert")
+    expect(alert.textContent).toMatch(/Couldn't update your avatar/)
+  })
+
   // ── The per-wallet FMV chart (reached via "LOAD →") ────────────────────────
   const HISTORY = (n: number) =>
     Array.from({ length: n }, (_, i) => ({

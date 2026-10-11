@@ -341,6 +341,50 @@ describe("AlertsClient — delivery channels", () => {
   })
 })
 
+// ⚠ 2026-10-11: every write reads its result (`writeOrSay`). A failed Delete / Pause /
+// Unlink used to do nothing visible, and a thrown fetch skipped the reload, so the
+// collector saw an alert they had "deleted" still sitting there with no explanation.
+// Assert the STATED failure, and that nothing claims the write happened.
+describe("AlertsClient — a failed write says so", () => {
+  async function deleteSubscription(write: () => Response) {
+    vi.stubGlobal("confirm", vi.fn(() => true))
+    const scrollTo = vi.fn()
+    vi.stubGlobal("scrollTo", scrollTo)
+    const f = mount({ write })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Blazers under \$10/))
+    fireEvent.click(screen.getAllByRole("button").find((b) => (b.textContent ?? "").trim() === "Delete")!)
+    await waitFor(() =>
+      expect(f.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === "DELETE")).toBe(true),
+    )
+    return { f, scrollTo }
+  }
+
+  it("states the server's reason when a delete is refused, and scrolls to it", async () => {
+    const { scrollTo } = await deleteSubscription(() => json(403, { error: "not your alert" }, false))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Couldn't delete the alert: not your alert/))
+    expect(scrollTo).toHaveBeenCalled()
+    expect(document.body.textContent).toMatch(/Blazers under \$10/)
+  })
+
+  it("names the HTTP status when a refused delete carries no readable reason", async () => {
+    await deleteSubscription(() => ({ ok: false, status: 502, json: async () => { throw new Error("html") } }) as unknown as Response)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Couldn't delete the alert: HTTP 502/))
+  })
+
+  it("states a network error when the delete throws", async () => {
+    await deleteSubscription(() => { throw new TypeError("fetch failed") })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Couldn't delete the alert: network error/))
+  })
+
+  it("states a refused channel link instead of showing link instructions", async () => {
+    mount({ channels: () => json(200, { channels: [] }), write: () => json(429, { error: "Too many link attempts" }, false) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/telegram/i))
+    fireEvent.click(screen.getAllByRole("button").find((b) => /^link/i.test((b.textContent ?? "").trim()))!)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Too many link attempts/))
+    expect(document.body.textContent).not.toMatch(/Open: /)
+  })
+})
+
 describe("AlertsClient — the subscription form", () => {
   const labelInput = () => document.querySelectorAll("input")[0] as HTMLInputElement
   const saveBtn = () => screen.getAllByRole("button").find((b) => /^save|^create/i.test((b.textContent ?? "").trim()))!
