@@ -2657,3 +2657,16 @@ Two read-only audits (paged reads; load-then-write-back), each finding traced by
 - The edge functions (`supabase/functions/**`) are outside the guard; on 10-10 their 4 sites were all on dormant or minor lanes.
 
 ⭐ **Unblocking a path exposes the next defect on it (2026-10-10).** The dashboard alert modal's POST 400'd on a stale alert-type vocabulary, so nothing downstream of the 400 had ever run. Fixing the vocabulary made the save succeed, and the body had never carried `collection_id`, so a non-Top-Shot pick saved as a Top Shot alert. When a fix turns an always-failing request into a working one, re-read the whole request it now completes, and the callers of everything it now reaches.
+
+⚠ **AN EQUAL-WEIGHT MEAN OVER ONLY THE ITEMS THAT TRADED IS SURVIVORSHIP, AND IT FABRICATES AN EDGE (2026-10-10).** Panini's
+guaranteed-contents pack EV first valued a slot as the mean of its candidate editions' 90-day median sales over the
+editions that SOLD. The editions that sell skew to stars: the WC White Sparkle /8 pack read $366 EV against a $250 floor —
+a +$116 "rip edge" — on 113 of 186 editions. Every candidate now counts, with unsold ones at the slot's lowest sold median
+(`20261010230046`): $223 vs $250. When a published number is a mean over a population, ask what the MISSING members are
+worth before trusting it, and bias the imputation conservative where the number drives a buy/rip claim.
+
+⚠ **A WINDOW OVER A LAGGED FEED IS NOT A TOTAL (2026-10-10).** `panini_sales` reaches RPC only as the walk re-reads each
+card (~5 days), so per-day coverage on 10-10 read 98 % for 10-03 but 24–42 % for 10-05..10-08 and 0 % for the current day.
+A 24 h / 7 d Panini volume would be mostly missing yet render as a fact, so Market Pulse has no Panini row by decision,
+and the Top Sales board says Panini's last few days are incomplete whenever Panini can be on it. Same family as the
+change-only-feed window above: check a feed's ARRIVAL lag before summing a recent window of it.

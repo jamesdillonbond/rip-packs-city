@@ -2996,3 +2996,11 @@ The Panini collector walk posts a profile's cards in ONE ingest call (the RPC re
 
 ### ⚠ A SCHEDULE AND THE WINDOW THAT ASSUMES IT MOVE TOGETHER, OR THE WINDOW SILENTLY INVERTS (2026-10-10)
 `235e1d55e` (08-30) slowed `/api/cron/refresh-insights-cache` from every 5 to every 15 minutes, a vercel.json-only perf change. `BOARD_CACHE_FRESH_MS` stayed at 10 minutes, still commented "comfortably above the cron interval (every 5 min)". Every cached insights board then read as stale for ~5 of each 15 minutes, and the render ran the heavy live query the cache exists to avoid. Nothing failed and no alarm fired: the stale fallback is a correct path, just an expensive one. Fixed by a 20-minute window, plus `__tests__/board-cache-fresh-window-exceeds-the-warm-interval.test.ts`, which parses the cron's minute field from vercel.json. ⭐ **When you change a schedule, grep for the constants that encode its period** (fresh windows, staleness thresholds, `max_silent_minutes`, backoffs) **and move them in the same commit, or pin the relation with a test that reads both.**
+
+### ⚠ A CAP IS NOT THE LEVER WHEN AN INTERLEAVE BINDS — size the run first (2026-10-10)
+The Panini walk-order GET served aged editions in `priority_pskus` capped at 300, alternated 1:1 with held-but-uncatalogued
+cards. With 1,714 editions > 6 days old, the first draft raised the cap to 600. Measured against the RUN, it would have
+changed nothing: a run refreshes ~450 editions (5,429/day over ~12 runs) and 624 held cards were queued, so the 1:1
+interleave reached ~225 aged editions whatever the cap. The fix that moved the 7-day line was ORDER, not size: editions
+≥ 6 days lead the list ahead of the held cards (`PANINI_AGED_CRITICAL_DAYS`, response field `aged_critical`). Before
+raising any cap, compute what one run actually consumes and which list binds it.

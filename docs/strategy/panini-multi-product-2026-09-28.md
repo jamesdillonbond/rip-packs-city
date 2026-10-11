@@ -487,3 +487,24 @@ still unnamed — the collector walk names held ones automatically.
   24 h / 7 d Panini total would be an undercount presented as a fact. Revisit only if the walk's sale lag drops to < 1 day.
 - Same lag on the Top Sales board (Panini merged since 10-10): it now says, whenever Panini can be on the board, that the
   last few days of Panini sales are incomplete.
+
+## HANDOFF — 2026-10-10 ~9:50 PM PT (Claude Code cloud, session_013nJ4P7qh76uPaLUt2WVrEX; start here)
+
+**State (measured ~9:40 PM PT 10-10; dated samples, re-derive):** 153 products sighted across Soccer / Basketball / Football /
+Womens Basketball / Baseball / **Racing (NASCAR, verified)**; **106 admitted** (WC, the founder's 29, WNBA, 22 tier 1, 13 tier 2,
+9 pack-bearing, 2263/2226/2237 racing, and others admitted along the way); not admitted on purpose: 987789987 ("NFT Car", non-card psku) and everything with
+< 10 listings and no packs. Catalogue 25,539 editions; ~5,400 refreshed/day (~450 per 2-hourly run); > 7 d **0**, > 6 d 1,714.
+NASCAR: 306 editions, 305 priced, 185 HIGH/MEDIUM. Pack EV: 23 of 344 packs modeled, 0 positive rip edges.
+
+**Surfaces now all-product** (see `docs/reference/routes-and-surfaces.md`, "Panini covers every product"): Sniper, Sets,
+Top Sales, `/insights/panini-premiums`, guaranteed-contents pack EV. WC-only on purpose: `/insights/panini-squeeze` and its
+four tabs, the coverage disclosure (`panini_coverage_summary` is the WC bridge's freshness gate).
+
+**Walk-order safety rails shipped tonight (route-only):** a bootstrap yields once any admitted edition is ≥ 6.5 d old;
+editions ≥ 6 d lead `priority_pskus` ahead of held cards (`aged_critical`). Neither needs a box pull.
+
+**Open — each with its read:**
+1. **7-day line, 10-11 ~4 PM PT** (the 10-04 cohort): `select count(*) filter (where last_seen_at < now()-interval '7 days') from panini_editions` must be 0; the enum marker's `order_mode` should start with the critical editions. A check is scheduled into this (archived) session at 4:30 PM PT 10-11 and may not fire; read it by hand if not.
+2. **Run overlap:** the 4 PM PT run's last card batch landed 6:00:04 PM and the 6 PM run's marker came at 6:59 PM (late, not skipped). If a slot ever posts no marker at all, suspect Task Scheduler IgnoreNew + the 110-min budget; a shorter served budget would need a runner change and a box pull.
+3. **Unnamed products:** 52 (434 editions); the collector walk names held ones automatically — no action.
+4. **Decided, don't re-open without new data:** no Panini row on Market Pulse (sale lag); no "Either A or B" pack parser arm; no LOW→MEDIUM promotion for 31–90-day sales (backtest in `panini-fmv-packev-methodology.md`).
