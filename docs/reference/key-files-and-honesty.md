@@ -2679,3 +2679,12 @@ through another step, so no count went to zero and nothing alarmed. **Write the 
 creation and completion arrive together; never let "not in the live set" mean "not recorded".** Any create/complete
 state machine with a polling cursor has this shape (listings, loans, packs). The tell was a JOIN, not a count:
 fills whose offer had no row. Case: known-issues #189.
+
+### A crash an ERROR BOUNDARY shows is invisible to the beacon unless the boundary reports it (2026-10-11)
+
+React does not re-raise a boundary-caught render error to `window.onerror`, so `ClientErrorBeacon`'s listener never sees it. Until 10-11 only `global-error.tsx` posted anything; `app/(collections)/[collection]/error.tsx` and `pack/dist/[distId]/error.tsx` only `console.log`ged in the browser — every crash they rendered was recorded NOWHERE. **Every boundary now calls `reportBoundaryError(error, "<boundary>")`** (`components/telemetry/ClientErrorBeacon.tsx`), which posts the same `client_error` payload with `source = <boundary>:<digest>`. ⚠ **There was also no root `app/error.tsx`**: a render error on any non-`/[collection]` page fell through to `global-error.tsx`, which REPLACES the root layout (header, mobile nav and concierge gone). A new boundary at a new segment must call the reporter too — pinned in `__tests__/component-root-route-error-boundary.test.tsx`.
+
+### A failed read of the reader's OWN balance rendered as zeros — `/rewards` (2026-10-11)
+
+`getRewardsSummary` discarded `error`; the route sent `summary: null` at 200; the page coalesced `?? 0` into "0 pts", a 0 balance and "Lifetime earned 0". `get_rewards_summary` is an AGGREGATE — it returns an object (zeros included) for every real user — so null is never a genuine answer. The lib now throws, the route bounds the read (`boundedRead`) and answers `apiErrorResponse`, and the page's existing "Couldn't load your rewards" branch fires. ⭐ **When a function can only return null on failure, null IS the failure flag — check the function's shape before deciding a null is "empty".**
+

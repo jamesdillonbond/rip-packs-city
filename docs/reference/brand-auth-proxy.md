@@ -53,3 +53,14 @@ Order:
 - **Pins:** `__tests__/proxy-is-public-path.test.ts` rows (GET public, POST gated), a route test that no `POST` is exported, and a component test that the grid calls GET.
 - **The check that caught it:** Vercel runtime logs grouped by status for the new path (`get_runtime_logs`, `query: "<path>"`, `group_by: "statusCode"`). Your own session cannot see it — you are signed in.
 - ⚠ **Rule:** a client fetch from a PUBLIC page must use a method `isPublicPath` opens for that path. Read the proxy row before choosing POST for a read.
+
+## Light mode — Batch 3 and the shapes it found (2026-10-11)
+
+Three traced audits plus the guard extension. `NEUTRAL_PROTECTED` 63 → **87 files**; every white literal left in them carries a `brand-exception` note naming the fill it sits on (accent button, selected chip, team gradient, image scrim). Files that keep always-dark cards BY DESIGN — PackSimulatorClient, AlertsClient, the three pack-market/reality boards, GrailsView — are deliberately NOT listed: a bulk exception over unverified lines is a claim nobody checked. Shapes worth recognising:
+- ⚠ **THE INVERSE DEFECT: an always-dark card holding token-coloured children is BLACK ON BLACK in light mode.** The pack-dist "What's Inside" card (`rgba(13,13,13,.92)`) contained `EditionsGridPaginated`, whose tiles use `--rpc-text-primary` (#141414 in light). Tokenising the children is not enough — check what they sit ON. The same shape hid on `PackShareButton` (token text on the dark hero) and the analytics `ReTooltip`s (dark `contentStyle`, label inheriting a dark token — give it `labelStyle`).
+- **Sticky headers use `var(--rpc-header-bg)`**, never a hardcoded `rgba(8,8,8,…)` — the home and `/profile/[u]` headers had token-coloured links over a fixed near-black.
+- **SVG text/lines: theme tokens go in `style={{ fill / stroke }}`**, not the presentation attribute.
+- **Keeping a dark value exact while fixing light:** a scoped variable (`.rpc-home-root{--rpc-home-body:<dark value>}` + `[data-theme="light"] .rpc-home-root{--rpc-home-body:var(--rpc-text-secondary)}`) avoids dimming dark mode to the shared token.
+- **A banner with white text must END DARK in both themes** — TeamHero's gradient ended at `var(--rpc-surface)` (#F7F7F5 in light); it now ends at `#0D0D0D`, the dark token's own value, so dark is unchanged.
+- **Verify a guard extension with a planted literal** — one `rgba(255,255,255,0.6)` in `app/error.tsx` turned it red. And the guard's staleness test parses quoted strings out of the list, so a comment inside the array must not contain a double-quoted word.
+
