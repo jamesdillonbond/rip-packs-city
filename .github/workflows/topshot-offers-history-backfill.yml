@@ -12,6 +12,11 @@ name: Top Shot Offers History Backfill — recover same-tick offers
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: "offers = same-tick history walk; missing_fills = recover the offers row behind accepted offers that have none"
+        type: choice
+        options: [offers, missing_fills]
+        default: offers
       range:
         description: "max blocks per call (default 150000, cap 200000)"
         type: string
@@ -42,9 +47,11 @@ jobs:
           RANGE: ${{ github.event.inputs.range }}
           START_BLOCK: ${{ github.event.inputs.start_block }}
           MAX_ITERS: ${{ github.event.inputs.max_iters }}
+          TARGET: ${{ github.event.inputs.target }}
           TOKEN: ${{ secrets.INGEST_SECRET_TOKEN }}
         run: |
           BASE="https://www.rippackscity.com/api/admin/backfill-topshot-offers"
+          if [ "$TARGET" = "missing_fills" ]; then BASE="https://www.rippackscity.com/api/admin/backfill-topshot-missing-fill-offers"; fi
           if [ -z "$MAX_ITERS" ]; then MAX_ITERS=150; fi
           if [ -z "$RANGE" ]; then RANGE=150000; fi
           OVERALL=0
