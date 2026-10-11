@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
   ops: [] as Op[],
   present: [] as string[],
   sales: [] as Array<Record<string, unknown>>,
+  salesUpdateError: null as null | { message: string },
   rpc: [] as Array<{ name: string; args: Record<string, unknown> }>,
 }))
 
@@ -32,6 +33,7 @@ function builder(table: string) {
     if (table === "topshot_edition_aliases") return { data: [], error: null }
     if (table === "editions") return { data: [{ external_id: "8:133", id: "uuid-8133" }], error: null }
     if (table === "moments") return { data: [], error: null }
+    if (table === "sales" && op.method === "update") return { data: null, error: state.salesUpdateError, count: state.salesUpdateError ? null : 1 }
     if (table === "sales") return { data: state.sales, error: null }
     if (table === "offers" && op.method === "select") return { data: state.present.map((offer_id) => ({ offer_id })), error: null }
     if (table === "offers" && op.method === "upsert") return { data: op.rows, error: null }
@@ -44,6 +46,12 @@ function builder(table: string) {
       op.filters.push([m, a])
       return b
     }
+  }
+  b.update = (rows: unknown, options: unknown) => {
+    op.method = "update"
+    op.rows = rows
+    op.options = options
+    return b
   }
   b.upsert = (rows: unknown, options: unknown) => {
     op.method = "upsert"
@@ -133,6 +141,7 @@ beforeEach(() => {
   state.ops = []
   state.present = []
   state.sales = []
+  state.salesUpdateError = null
   state.rpc = []
 })
 afterEach(() => {
@@ -179,6 +188,29 @@ describe("backfill-topshot-offers", () => {
     })
     expect(rows.find((r) => r.offer_id === "702")).toMatchObject({ status: "cancelled", fill_tx_hash: null })
     expect(cursorWrites()[0]?.rows).toMatchObject({ last_processed_block: 1250 })
+
+    // Every PURCHASED completion in range stamps its offerId onto its fill sale
+    // (701 + 704 — including the already-present one), never a cancel (702).
+    const stamps = state.ops.filter((o) => o.table === "sales" && o.method === "update")
+    expect(stamps.map((o) => (o.rows as { offer_id: string }).offer_id).sort()).toEqual(["701", "704"])
+    for (const st of stamps) {
+      expect(st.filters).toContainEqual(["eq", ["source", "offer_fill"]])
+      expect(st.filters).toContainEqual(["is", ["offer_id", null]])
+    }
+    expect(body.sales_offer_ids_stamped).toBe(2)
+  })
+
+  it("a failed offer_id stamp holds the cursor and logs ok:false", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
+      jsonRoute("OfferAvailable", [avail("901", 1100)]),
+      jsonRoute("OfferCompleted", [completed("901", 1200, true)]),
+    ])
+    state.salesUpdateError = { message: "boom" }
+    const body = await (await POST(req())).json()
+    expect(body.ok).toBe(false)
+    expect(body.error).toMatch(/offer_id stamp failed/)
+    expect(cursorWrites()).toHaveLength(0)
   })
 
   it("an HTTP error on an event read holds the cursor, writes nothing, and logs ok:false", async () => {

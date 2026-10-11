@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
-import { extractNftTypeId } from "@/lib/chains/flow/topshot-offer-fill"
+import { extractNftTypeId, stampSaleOfferIds } from "@/lib/chains/flow/topshot-offer-fill"
 import {
   unwrapCdc,
   parseOfferAvailable,
@@ -135,6 +135,7 @@ export async function POST(req: NextRequest) {
   let unresolved = 0
   const unresolvedByType: Record<string, number> = { edition: 0, subedition: 0, serial: 0 }
   let resolvedViaSale = 0
+  let salesOfferIdsStamped = 0
   let alreadyPresent = 0
   let inserted = 0
   let aliased = 0
@@ -321,6 +322,14 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // 5b. (2026-10-10) carry each fill's offerId onto its offer_fill sale —
+      //     every purchased completion in range, not only the recovered ones.
+      //     Only-where-NULL, so a re-walk is a no-op; THROWS → cursor holds.
+      const fillPairs = Array.from(completions.entries())
+        .filter(([, c]) => c.status === "filled" && c.fillTx)
+        .map(([offerId, c]) => ({ offerId, fillTx: c.fillTx! }))
+      salesOfferIdsStamped = (await stampSaleOfferIds(fillPairs)).stamped
+
       // 6. advance — only after every write above landed.
       const { error: cursorWriteErr } = await (supabaseAdmin as any)
         .from("event_cursor")
@@ -342,6 +351,7 @@ export async function POST(req: NextRequest) {
     unresolved,
     unresolved_by_type: unresolvedByType,
     resolved_via_fill_sale: resolvedViaSale,
+    sales_offer_ids_stamped: salesOfferIdsStamped,
     aliased_to_canonical: aliased,
     inserted,
     inserted_filled: insertedByStatus.filled,

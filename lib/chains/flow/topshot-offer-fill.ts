@@ -386,7 +386,7 @@ export async function stampOfferFillTxHashes(fills: OfferFillEvent[]): Promise<{
 // Top Shot offer_fill rows, and only where still NULL — so a re-walk is a no-op.
 // ⚠ THROWS on a failed update: the caller holds its cursor, never advancing past
 // fills whose stamp did not land.
-export async function stampSaleOfferIds(fills: OfferFillEvent[]): Promise<{ stamped: number }> {
+export async function stampSaleOfferIds(fills: Array<Pick<OfferFillEvent, "offerId" | "fillTx">>): Promise<{ stamped: number }> {
   const offerIdByTx = new Map<string, string>()
   for (const f of fills) if (f.fillTx && f.offerId && !offerIdByTx.has(f.fillTx)) offerIdByTx.set(f.fillTx, f.offerId)
   const entries = Array.from(offerIdByTx.entries())
