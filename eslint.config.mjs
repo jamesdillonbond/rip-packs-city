@@ -1,10 +1,30 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import jsxA11y from "eslint-plugin-jsx-a11y";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  // Accessibility programme (platform review 2026-10-11, C10). eslint-config-next
+  // registers `jsx-a11y` but enables only six of its rules (alt-text, aria-props,
+  // aria-proptypes, aria-unsupported-elements, role-has-required-aria-props,
+  // role-supports-aria-props). This block turns on the plugin's full
+  // `recommended` set for the two trees that render UI. It is RATCHETED, not
+  // gated: every rule was baselined at its 2026-10-12 count in
+  // eslint-ratchet.json (scripts/check-eslint-ratchet.mjs --write), so each can
+  // only go down from here and a new violation reds the commit that adds it.
+  // ⚠ NO `plugins` KEY HERE, DELIBERATELY. The `jsx-a11y` namespace is already
+  // registered by eslint-config-next above, and flat config refuses a second
+  // registration whose object differs — which it does, because next loads the
+  // plugin through `_interop_require_wildcard` (a fresh namespace wrapper), so
+  // `plugins: { "jsx-a11y": jsxA11y }` dies with `Cannot redefine plugin
+  // "jsx-a11y"` (measured 2026-10-12). The import below is used only for the
+  // RULE LIST; the rule prefix resolves against next's registration.
+  {
+    files: ["app/**/*.{js,jsx,ts,tsx}", "components/**/*.{js,jsx,ts,tsx}"],
+    rules: { ...jsxA11y.flatConfigs.recommended.rules },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

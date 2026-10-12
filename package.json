@@ -70,6 +70,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@cloudflare/workers-types": "^4.20260702.1",
     "@deno/eszip": "^0.106.0",
     "@tailwindcss/postcss": "^4",
@@ -86,6 +87,7 @@
     "dotenv": "^17.4.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
     "jsdom": "^29.1.1",
     "playwright": "^1.61.1",
     "tailwindcss": "^4",

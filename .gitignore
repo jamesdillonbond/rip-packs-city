@@ -124,6 +124,7 @@ panini*capture*.jsonl*
 
 # Playwright smoke artifacts
 e2e-results.json
+a11y-summary.md
 playwright-report/
 test-results/
 

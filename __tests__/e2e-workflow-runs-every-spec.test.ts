@@ -30,10 +30,17 @@ export function specFiles(): string[] {
     .sort()
 }
 
+// ⚠ EVERY invocation, not the first. Since 2026-10-12 the workflow has two
+// jobs with their own `npx playwright test` lines (dom-smoke, and the
+// non-blocking a11y-audit that runs e2e/a11y.spec.ts); reading only the first
+// would have reported the a11y spec as unlisted — or, worse, let a spec listed
+// ONLY in a later job go unseen if the first job's line were the one checked.
 export function listedSpecs(yaml: string): Set<string> {
-  const run = yaml.match(/npx playwright test ([^\n]*)/)
-  if (!run) return new Set()
-  return new Set(run[1].split(/\s+/).filter((t) => t.endsWith(".spec.ts")))
+  const listed = new Set<string>()
+  for (const run of yaml.matchAll(/npx playwright test ([^\n]*)/g)) {
+    for (const t of run[1].split(/\s+/)) if (t.endsWith(".spec.ts")) listed.add(t)
+  }
+  return listed
 }
 
 describe("the e2e monitor workflow runs every spec that exists", () => {
@@ -60,5 +67,9 @@ describe("the e2e monitor workflow runs every spec that exists", () => {
     // than none (silent). Pinned in both directions.
     expect(listedSpecs("run: npx playwright test a.spec.ts b.spec.ts").size).toBe(2)
     expect(listedSpecs("run: npm test").size).toBe(0)
+    // Two jobs, two invocations: the union is what counts as "listed".
+    expect(
+      listedSpecs("run: npx playwright test a.spec.ts\n      run: npx playwright test c.spec.ts"),
+    ).toEqual(new Set(["a.spec.ts", "c.spec.ts"]))
   })
 })

@@ -12,6 +12,7 @@ import TelemetryPageView from "@/components/TelemetryPageView"
 import RefCapture from "@/components/RefCapture"
 import DeadImageGuard from "@/components/media/DeadImageGuard"
 import ClientErrorBeacon from "@/components/telemetry/ClientErrorBeacon"
+import SkipToContent, { MainContentAnchor } from "@/components/SkipToContent"
 
 export const metadata: Metadata = rootMetadata
 
@@ -79,6 +80,11 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://ipfs.dapperlabs.com" />
       </head>
       <body className="min-h-screen bg-black text-zinc-100 antialiased">
+        {/* FIRST focusable element on every page (C10, 2026-10-12): the
+            skip-to-content link. Keep it ahead of MobileNav and of every header
+            — its whole value is being reached on the first Tab. Its target is
+            <MainContentAnchor /> below, right before {children}. */}
+        <SkipToContent />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
@@ -105,6 +111,7 @@ export default function RootLayout({
         <MobileNav />
         <WarmupProvider>
             <WalletPreloader />
+            <MainContentAnchor />
             {children}
         </WarmupProvider>
         <SpeedInsights />

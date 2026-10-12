@@ -1117,13 +1117,13 @@ function SniperMomentsBody() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
                     <thead>
                       <tr style={{ color: "var(--rpc-text-muted)", textAlign: "left" }}>
-                        <th style={{ padding: "6px 8px" }}>{getEntityLabels(collectionSlug).player.toUpperCase()}</th>
-                        <th style={{ padding: "6px 8px" }}>SET</th>
-                        <th style={{ padding: "6px 8px" }}>TIER</th>
-                        <th style={{ padding: "6px 8px", textAlign: "right" }}>ASK</th>
-                        <th style={{ padding: "6px 8px", textAlign: "right" }}>TIER MED</th>
-                        <th style={{ padding: "6px 8px", textAlign: "right" }}>Δ</th>
-                        <th style={{ padding: "6px 8px" }}></th>
+                        <th scope="col" style={{ padding: "6px 8px" }}>{getEntityLabels(collectionSlug).player.toUpperCase()}</th>
+                        <th scope="col" style={{ padding: "6px 8px" }}>SET</th>
+                        <th scope="col" style={{ padding: "6px 8px" }}>TIER</th>
+                        <th scope="col" style={{ padding: "6px 8px", textAlign: "right" }}>ASK</th>
+                        <th scope="col" style={{ padding: "6px 8px", textAlign: "right" }}>TIER MED</th>
+                        <th scope="col" style={{ padding: "6px 8px", textAlign: "right" }}>Δ</th>
+                        <th scope="col" style={{ padding: "6px 8px" }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1191,10 +1191,10 @@ function SniperMomentsBody() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>
                     <thead>
                       <tr style={{ color: "var(--rpc-text-muted)" }}>
-                        <th style={{ padding: "4px 6px", textAlign: "left" }}>TIER</th>
-                        <th style={{ padding: "4px 6px", textAlign: "right" }}>N</th>
-                        <th style={{ padding: "4px 6px", textAlign: "right" }}>FLOOR</th>
-                        <th style={{ padding: "4px 6px", textAlign: "right" }}>MEDIAN</th>
+                        <th scope="col" style={{ padding: "4px 6px", textAlign: "left" }}>TIER</th>
+                        <th scope="col" style={{ padding: "4px 6px", textAlign: "right" }}>N</th>
+                        <th scope="col" style={{ padding: "4px 6px", textAlign: "right" }}>FLOOR</th>
+                        <th scope="col" style={{ padding: "4px 6px", textAlign: "right" }}>MEDIAN</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1487,16 +1487,16 @@ function SniperMomentsBody() {
             <table style={{ width: "100%", minWidth: 980, fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", borderCollapse: "collapse" }}>
               <thead>
                 <tr className="rpc-thead-scanline" style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
-                  <th className="rpc-label" style={{ textAlign: "left", padding: "10px 12px 10px 10px" }}>{isPinnacle ? "Pin" : "Moment"}</th>
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px 10px 4px" }}>Serial</th>
+                  <th scope="col" className="rpc-label" style={{ textAlign: "left", padding: "10px 12px 10px 10px" }}>{isPinnacle ? "Pin" : "Moment"}</th>
+                  <th scope="col" className="rpc-label" style={{ textAlign: "right", padding: "10px 12px 10px 4px" }}>Serial</th>
                   {/* Pinnacle's time is when the listing sweep last SAW it live (the source
                       carries no listing time), not when it was listed. */}
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }} title={isPinnacle ? "When our listing sweep last saw this listing live on Disney Pinnacle" : undefined}>{isPinnacle ? "Seen" : "Listed"}</th>
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>{collectionHasLocking(collectionSlug) ? "Own / Lock" : "Own"}</th>
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Ask</th>
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Adj. FMV</th>
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Discount</th>
-                  <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Action</th>
+                  <th scope="col" className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }} title={isPinnacle ? "When our listing sweep last saw this listing live on Disney Pinnacle" : undefined}>{isPinnacle ? "Seen" : "Listed"}</th>
+                  <th scope="col" className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>{collectionHasLocking(collectionSlug) ? "Own / Lock" : "Own"}</th>
+                  <th scope="col" className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Ask</th>
+                  <th scope="col" className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Adj. FMV</th>
+                  <th scope="col" className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Discount</th>
+                  <th scope="col" className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Action</th>
                 </tr>
               </thead>
               <tbody>

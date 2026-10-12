@@ -106,3 +106,65 @@ jobs:
             e2e-results.json
           if-no-files-found: error
           retention-days: 7
+
+  # ── Accessibility audit (platform review 2026-10-11, C10) ──────────────────
+  # Runs axe-core (e2e/a11y.spec.ts) over five anon-public routes and FAILS the
+  # spec only on `serious` / `critical` violations; everything milder is printed
+  # and attached. This job is NON-BLOCKING by construction: `continue-on-error`
+  # on the Playwright step keeps the job (and the workflow's conclusion, badge
+  # and scheduler-liveness count) green whatever axe finds, and the result is
+  # REPORTED three ways — the step's own log, the run's job summary
+  # (a11y-summary.md → $GITHUB_STEP_SUMMARY) and an always-uploaded artifact.
+  # ⚠ A brand-new red gate helps nobody: the first run is expected to find
+  # violations. Promote this to a blocking step only once a scheduled run has
+  # read ZERO serious/critical on all five routes — then drop
+  # `continue-on-error` and the summary becomes a gate. Until then a green
+  # badge here means "the audit ran", not "the site is clean": read the summary.
+  # Schedule + dispatch only (not per deploy): 4 runs/day is enough for a
+  # report nobody blocks on, and ~47 deploys/day would multiply runner minutes
+  # for a monitor whose output changes with the code, not the deploy count.
+  a11y-audit:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'deployment_status'
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Restore Playwright browsers
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run axe audit (non-blocking)
+        id: axe
+        continue-on-error: true
+        env:
+          SMOKE_BASE_URL: ${{ github.event.inputs.base_url || 'https://www.rippackscity.com' }}
+        run: npx playwright test a11y.spec.ts
+      - name: Report axe findings in the job summary
+        if: always()
+        run: |
+          echo "## Accessibility audit (axe-core) — outcome: ${{ steps.axe.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f a11y-summary.md ]; then
+            cat a11y-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "⚠ a11y-summary.md was not written — the spec did not run to completion; this is NOT a clean result." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload axe report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: a11y-report
+          path: |
+            a11y-summary.md
+            playwright-report/
+            test-results/
+            e2e-results.json
+          if-no-files-found: warn
+          retention-days: 14

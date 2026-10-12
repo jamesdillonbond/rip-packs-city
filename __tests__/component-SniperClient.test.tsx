@@ -1950,3 +1950,32 @@ describe("SniperClient — signed-in owner fallback", () => {
     expect(ownedCalls()).toEqual([])
   })
 })
+
+// ── Column headers are COLUMN headers (platform review 2026-10-11, C10) ──────
+// A <th> with no scope is announced by a screen reader as a bare cell; with
+// scope="col" every data cell is read with its column name ("Ask, $25"). Two
+// pins: the deals table jsdom renders here, and — because the relative-deals and
+// tier-benchmark tables only mount behind fetches this file does not drive —
+// every `<th` in the source, so a new table cannot ship without it.
+describe("SniperClient — every column header carries scope=\"col\"", () => {
+  it("in the rendered deals table", async () => {
+    warm = { data: feed(), loading: false, error: null, refresh: vi.fn() }
+    const { container } = render(<SniperClient />)
+    await screen.findAllByText(/Damian Lillard/i)
+    const ths = Array.from(container.querySelectorAll("th"))
+    expect(ths.length, "the deals table renders column headers").toBeGreaterThan(0)
+    const unscoped = ths.filter((th) => th.getAttribute("scope") !== "col").map((th) => th.textContent)
+    expect(unscoped, "these <th> lack scope=\"col\"").toEqual([])
+  })
+
+  it("in every <th> of the source, including the two tables this suite never mounts", async () => {
+    const { readFileSync } = await import("node:fs")
+    const { join } = await import("node:path")
+    const src = readFileSync(join(process.cwd(), "app/(collections)/[collection]/sniper/SniperClient.tsx"), "utf8")
+    const all = src.match(/<th\b[^>]*>/g) ?? []
+    // Three tables, 19 headers on 2026-10-12; the floor only guards against a
+    // vacuous pass if the regex stops matching.
+    expect(all.length).toBeGreaterThan(10)
+    expect(all.filter((t) => !/\bscope="col"/.test(t))).toEqual([])
+  })
+})
