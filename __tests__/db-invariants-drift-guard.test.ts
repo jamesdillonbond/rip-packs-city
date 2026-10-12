@@ -15,6 +15,18 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-10-11 (platform review M2). The once-per-account claim behind the transactional welcome email; idempotency IS the property.
+    fn: "claim_welcome_email",
+    test: "supabase/tests/claim_welcome_email.sql",
+    migration: "supabase/migrations/20261012054000_audit_20261011_user_profiles_welcome_email_claim_is_idempotent.sql",
+  },
+  {
+    // Added 2026-10-11 (platform review M2). Reverts a failed claim so the next sign-in can retry; bounded to 10 min and a 'sent' row.
+    fn: "record_welcome_email_failure",
+    test: "supabase/tests/claim_welcome_email.sql",
+    migration: "supabase/migrations/20261012054000_audit_20261011_user_profiles_welcome_email_claim_is_idempotent.sql",
+  },
+  {
     // Added 2026-10-11. The rip re-key lane also moves the rip's topshot_pack_rip_attribution copy (realized EV reads it alone).
     fn: "rekey_pack_rips_to_chain_identity",
     test: "supabase/tests/rekey_pack_rips_to_chain_identity.sql",
@@ -2852,6 +2864,16 @@ const PINS = [
     fn: "purge_old_funnel_events",
     test: "supabase/tests/purge_old_funnel_events.sql",
     migration: "supabase/migrations/20261012041115_audit_20261011_funnel_events_anon_telemetry_180d_retention.sql",
+  },
+  {
+    // Added 2026-10-11. The account-deletion purge. It walks the catalog, so
+    // the pin's job is the RULES: delete the user's rows in every key shape,
+    // anonymise aggregate facts, KEEP another user's objects (a shared wallet,
+    // a giveaway whose creator left), never touch a scratch table, and never
+    // delete auth.users itself. A miss in either direction is silent.
+    fn: "delete_user_account",
+    test: "supabase/tests/delete_user_account.sql",
+    migration: "supabase/migrations/20261012052403_audit_20261011_delete_user_account_catalog_walk.sql",
   },
   {
     // Added 2026-08-20. ⚠ The one whose cutoff is DATE arithmetic
