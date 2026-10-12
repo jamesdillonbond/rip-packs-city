@@ -1,39 +1,41 @@
 {
-  "generated_at_pt": "2026-10-11 ~1:2x AM PT (nightly autonomous pass, Cowork cloud, unattended, laptop VM linked)",
-  "generated_at_utc": "2026-10-11T08:22Z",
-  "pass": "Nightly overnight autonomous pass, PUSH-CAPABLE via device-VM clone + .rpc-git-cred (dry-run verified). 2 new inbox filings since 10-10 (hydrator 0.2%-yield reprobe ALREADY RESOLVED by Claude Code 20261011043919 + verified; get_wallet_pack_summary 8s timeout QUEUED, index hypothesis refuted). 0 shipped, 0 reverted. Handoff: docs/handoff-2026-10-11-overnight-pass.md",
+  "generated_at_pt": "2026-10-12 ~4:13 PM PT (nightly autonomous pass, Cowork cloud, OFF-HOURS monitor-mode — fired ~15h late on app launch; laptop VM linked, push-capable)",
+  "generated_at_utc": "2026-10-12T23:13Z",
+  "pass": "Nightly overnight autonomous pass ran OFF-HOURS / MONITOR-MODE (scheduled 08:05 UTC, fired 23:09 UTC = 4:09 PM PT). Full review + health sweep + post-ship watch; queued-only, docs committed. Inbox drained (only new filing 2026-10-12T0010Z candy-offers already FIXED by Claude Code 6071d18bd). 0 shipped, 0 reverted. Handoff: docs/handoff-2026-10-12-overnight-pass.md",
   "shipped": 0,
   "reverted": 0,
-  "verdict": "GREEN. idle: routed-to-claude-code (oldest routed chain-arrival-pack-pulls durable bound P1, ~7 nights). Security/structural clean; trust 0 breaches (public_board_slow_count cleared 1->0); 38 arms ok; precompute 5.39h; sentinel ts_uuid 0; stalled []; pgcron recent failures []. Post-ship watch CLEAN: ~20 Claude Code commits last 24h (offers #70/#188 box-&-case model, panini-ingest critical-age, hydrator 365d, perfect-mint alerts, NASCAR) all READY, last code commit 4213a2cff 23 CI checks 0 fail, no new Vercel runtime-error group traces to them. Hydrator 365d fix verified: since 04:45Z apply 276 hydrate reqs / 1 no_nft / 266 written (~96%), backlog-leg reprobe noise gone. Two live findings both Claude Code's hot offers/misattrib work: topshot_offers_history_backfill cursor_stalled HIGH is a FALSE POSITIVE (completed one-time backfill done=true 01:49Z, no cron, live offers lanes current) QUEUED; topshot-misattrib-drain 1485>500 is known #101 draining (1838->1485). candy-opensea indexers = known #58 OPENSEA_API_KEY gap (Trevor env var; Magic Eden covers candy). Nothing low-risk+novel to ship.",
+  "verdict": "GREEN. 0 shipped. idle: routed (all open items Trevor/Claude-Code/operator-gated; no neglected P1 — the chain-arrival P1 was closed 10-09). oldest routed: #58 OPENSEA_API_KEY (Trevor, shelved by his call 09-23) / #23+#25 edge-fn drift (operator-blocked since 08-22). Security/structural/trust all clean (0 breaches, 38 arms ok); sentinel ts_uuid 0; pg_cron failures none; timeout-blind 0; zero-yield 0/324. Post-ship watch on the 10-11 batch CLEAN: deploy 6071d18bd READY, candy-offers ticks ok, 5 new fns live + 0 welcome errors, 0 unexplained hard-fails, Vercel 24h all chronic/known. Only stalled lane = topshot-active-listings-ingest 1320min silent (Trevor's residential feeder box dark; known/visibility-only). Nothing novel+low-risk to ship.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
     "structural": "clean (function_search_path_drift [], procedure_txn_control_pins [], procedure_search_path_unpinned [], cross_collection_mat_staleness [], backward_cursor_rewinds [], wmc_null_edition_key [], suppression_parked_claim_drift [])",
     "trust_health_breaches": 0,
-    "trust_health_breach_detail": "0 breaches (down from 1 on 10-10; public_board_slow_count cleared to 0). 38 arms ok. unmapped_resolution_backlog_max value 1 (breach 100, ok).",
-    "trust_precompute_max_age_hours": 5.39,
-    "stalled_pipelines": "[]",
-    "pgcron_recent_failures": "[]",
-    "pipeline_alerts": "topshot_offers_history_backfill cursor_stalled HIGH = FALSE POSITIVE (completed one-time backfill, no pg_cron, cursor frozen at live block 167374370 since 01:49Z; live offers lanes current) QUEUED for Claude Code. atlas-editions/market/pack-supply-upstream-403 INFO by-design (do-not-reflag).",
-    "suppression_count_predicate_drift": "topshot-misattrib-drain 1485 > 500 (open misattribution candidates); known #101 backlog draining (1838->1485 since arm shipped 10-10 20261010185858). Not a new regression.",
-    "pipeline_fails_24h": "topshot-pack-supply-atlas 210 (CF-403 partials by design); pack-mint-probes 12 (EXPECTED mainnet24 backward walk per focus); sync-nba-projections 8 (muted 10-28); candy-opensea-sales/listings/offers-indexer 3/3/2 (= #58 OPENSEA_API_KEY gap, honest-degrading); panini-collector-walk 2 (per-walk cap by design); rest <=3 by-design/upstream.",
-    "sentry": "dark (connector needs re-auth this session; no spend since 08-18). Health from Vercel + DB + E2E beacon.",
-    "vercel_24h": "11 runtime-error groups, all chronic/by-design or one-off -- candy-opensea OPENSEA_API_KEY x3 (#58), wallet/pack-summary 8s x2 (QUEUED, chronic since 09-18), entity-section special-serials / pack-detail / relative-deals timeouts (chronic honest-degradation), panini/sales-analytics 1x, /api/admin/backfill-offer-fill-sales 300s 1x (Claude Code manual offers backfill, not a user route). NO new group traces to recent commits. Last code commit 4213a2cff: 23 CI checks 0 failing. Site serving (availability alarm success 07:52Z).",
-    "db_size_mb": 35701,
-    "db_size_note": "+99 vs 10-09 metrics (35602). Flat."
+    "trust_health_breach_detail": "0 breaches. 38 arms ok. unmapped_resolution_backlog_max value 5 (breach 100). public_board_slow_count 0, public_board_empty_count 0.",
+    "trust_precompute_max_age_hours": 5.42,
+    "stalled_pipelines": "topshot-active-listings-ingest silent 1320 min (max_silent 900) — Trevor's RESIDENTIAL Windows Task Scheduler feeder box dark; last run 2026-10-12T01:13Z. Known-class, medium/visibility-only, EXPECTED when the box is off. TS FMV fresh (topshot_fmv_stale_hours 0.1).",
+    "pgcron_recent_failures": "none (null)",
+    "timeout_blind_count": 0,
+    "zero_yield_lanes": "0 offenders / 324 inspected / 8 suppressed",
+    "pipeline_alerts": "candy-opensea listings/offers/sales 100% failing = #58 OPENSEA_API_KEY (Trevor env var). panini-collector-walk 6/20 = per-walk cap by design. atlas-editions/market/pack-supply-upstream-403 + flow-rest-moment-moved-400 all INFO by-design, fresh last-ok 23:11-23:13Z. topshot-active-listings-ingest cron_silent = box dark (above).",
+    "suppression_count_predicate_drift": "topshot-misattrib-drain observed 987 > 500 (open misattribution candidates); known #101 draining (1838 on 10-10 -> 1485 on 10-11 -> 987 now). Not a regression; falls below 500 in ~2-3 d at this rate.",
+    "pipeline_fails_24h": "topshot-pack-supply-atlas 182 (CF-403 partials by design); candy-opensea sales/listings/offers 8/8/4 (#58); sync-nba-projections 8 (muted 10-28); atlas-market-feed 5; gha-schedule-watchdog 4; refresh_wmc_fmv_drift_active 1. All known/by-design/upstream. 0 unexplained hard-fails.",
+    "sentry": "dark (quota off since 08-18, SDK removed #34). Health from Vercel + DB + E2E beacon.",
+    "vercel_24h": "8 runtime-error groups, all chronic/by-design: ipfs-media 12s timeout x10, candy-opensea OPENSEA_API_KEY x3 (#58), one Supabase-502 Cloudflare blip (market-cap tile 271:9039 + get_edition_detail error undefined, 09:58Z), collection-snapshot RPC_READ_TIMEOUT 8s x1 (chronic 09-11), entity-section special-serials degrade x1 (chronic 07-31). NO new group traces to the 10-11 batch. Latest prod deploy 6071d18bd READY.",
+    "db_size_mb": 36440,
+    "db_size_note": "+739 vs 10-11 (35701). Panini catalog walks (+1881 editions) + flowty_archive scratch growth. Not alarming (36.4 GB)."
   },
   "fmv_high_med": {
-    "nba_top_shot": 8245,
-    "panini_blockchain": 6470,
-    "disney_pinnacle": 850,
-    "nfl_all_day": 1650,
-    "candy_mlb": 31,
+    "nba_top_shot": 8207,
+    "panini_blockchain": 6424,
+    "disney_pinnacle": 868,
+    "nfl_all_day": 1663,
+    "candy_mlb": 68,
     "laliga_golazos": 7,
     "ufc_strike": 0
   },
-  "fmv_high_med_definition": "HIGH+MEDIUM confidence edition count per collection from rpc_ops_snapshot fmv_by_collection (computed 05:35Z 10-11).",
+  "fmv_high_med_definition": "HIGH+MEDIUM confidence edition count per collection from rpc_ops_snapshot fmv_by_collection (computed 13:35Z 10-12).",
   "editions_by_collection": {
     "nba_top_shot": 14521,
-    "panini_blockchain": 25631,
+    "panini_blockchain": 27512,
     "nfl_all_day": 6190,
     "laliga_golazos": 575,
     "ufc_strike": 518,
@@ -42,22 +44,21 @@
   "sentinels": {
     "ts_uuid_editions_48h": 0,
     "ts_uuid_dupes_created_24h": 0,
-    "zero_yield_offenders": "no new offender flagged this pass"
+    "zero_yield_offenders": "0 offenders / 324 inspected this pass"
   },
-  "deltas_vs_prev": "db_size 35602->35701 MB (+99, flat). FMV HIGH+MED: topshot 8283->8245 (-38), panini 6312->6470 (+158 walks), pinnacle 863->850 (-13), nfl_all_day 1649->1650, candy 26->31, golazos 6->7, ufc 0. Editions: panini 23071->25631 (+2560 catalog walks), topshot 14519->14521. Trust breaches 1->0 (public_board_slow_count cleared).",
+  "deltas_vs_prev": "db_size 35701->36440 MB (+739). FMV HIGH+MED: topshot 8245->8207 (-38), panini 6470->6424 (-46), pinnacle 850->868 (+18), nfl_all_day 1650->1663 (+13), candy 31->68 (+37, ask-corroboration lift), golazos 7, ufc 0. Editions: panini 25631->27512 (+1881 catalog walks), topshot 14521 flat. Trust breaches 0->0. misattrib #101 1485->987 draining.",
   "open_watches": [
-    "get_wallet_pack_summary 8s RPC_READ_TIMEOUT (inbox 0609Z): QUEUED to Claude Code; index hypothesis REFUTED (all per-wallet lanes indexed); cost is function body (hot #187 pack-EV, off-limits). Low-freq, 1 burst/24h.",
-    "topshot_offers_history_backfill cursor_stalled HIGH: false positive from completed manual backfill (done=true 01:49Z, no cron). Re-open path: retire the event_cursor row or exclude done backfills. Claude Code.",
-    "topshot-misattrib-drain 1485>500: #101 backlog draining (1838->1485). Watch it falls below 500; no action.",
-    "candy-opensea indexers OPENSEA_API_KEY = #58 (Trevor env var). candy green via Magic Eden; OpenSea additive.",
-    "chain-arrival-pack-pulls durable BOUND (P1, ~7 nights): lane ok=true but low/zero yield; off-limits ingest; fix spec in 10-10 handoff.",
-    "Claude Code 10-10 offers/box/hydrator/panini batch (~20 commits): all READY, no new error group, hydrator 365d verified -- watch for delayed regressions next pass."
+    "topshot-active-listings-ingest box-dark staleness: TS live listings/ask feed ~22h stale because Trevor's residential feeder box was off. Self-heals when the box is back. FMV itself fresh. Known-class, visibility-only.",
+    "candy-offers-indexer degrade fix (6071d18bd): happy path healthy (ok=true, rows 14); the degrade branch has not been exercised since the flaky ME page did not recur. Watch a future ok=false tick shows rows_written>0.",
+    "misattrib-drain #101: 987 open candidates, draining (1485->987). Watch it falls below 500; no action.",
+    "candy-opensea + Panini OPENSEA_API_KEY = #58 (Trevor env var). Candy green via Magic Eden; OpenSea additive.",
+    "#23/#25: 25 edge functions not on main; three daily drift detectors unsurfaced. Operator-blocked.",
+    "topshot_offers_history_backfill cursor_stalled HIGH: false positive from a completed one-time backfill (done=true). Retirement routed to Claude Code (owns offers lanes)."
   ],
   "needs_trevor": [
-    "candy-opensea + Panini OPENSEA_API_KEY (#58): one env var in Vercel (all envs) + redeploy closes both halves.",
-    "topshot-pack-supply-backfill 100% HTTP 530 (P3, ~7 nights): repoint-vs-retire decision (code).",
-    "0410Z dedupe_tx_lane + drop_scratch SQL (operator-gated, destructive, SQL-editor-only; ~185MB).",
-    "chain-arrival-pack-pulls durable BOUND (P1) + topshot-sellback-walk nft_id-null (P2) + #173 subeditions + offers cursor_stalled retirement: Claude Code (off-limits ingest/offers route-logic)."
+    "candy-opensea + Panini OPENSEA_API_KEY (#58): one env var in Vercel (all envs) + redeploy closes both halves. Shelved by Trevor 09-23.",
+    "topshot-active-listings-ingest feeder: the residential box being dark stalls the TS live-listings feed (medium/visibility-only). No code fix; box availability or a second feeder.",
+    "0410Z dedupe_tx_lane residue + drop_scratch SQL (operator-gated, destructive, SQL-editor-only; ~185MB flowty_archive) — items 1+2 already RUN 10-10; remainder is Trevor's call."
   ],
-  "housekeeping": "0 shipped, 0 reverted. Inbox left append-only (no archival per the citation rule + CI guard); 0200Z hydrator filing already carries its RESOLVED annotation from Claude Code; QUEUED get_wallet_pack_summary diagnosis recorded in handoff, not by editing the filing. Handoff committed + pushed (device-VM clone) + mirrored to the claude.ai Project. Session log prepended to docs/sessions/2026-10.md. Lock released."
+  "housekeeping": "0 shipped, 0 reverted (off-hours monitor-mode + nothing novel+low-risk). Inbox left append-only (only new filing already ✅ FIXED in its INDEX line; no edit needed). Handoff committed + pushed (device-VM clone + .rpc-git-cred) + mirrored to the claude.ai Project. Lock released."
 }
