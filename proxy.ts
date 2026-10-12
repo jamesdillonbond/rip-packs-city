@@ -31,6 +31,7 @@ import { createServerClient } from "@supabase/ssr"
 import { createClient } from "@supabase/supabase-js"
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags"
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins"
+import { bearerMatches, tokenMatches as secretTokenMatches } from "@/lib/auth/bearer-secret"
 
 const CORS_API_PATHS = ["/api/fmv", "/api/sniper-feed", "/api/health"]
 
@@ -331,12 +332,8 @@ let lastCleanup = Date.now()
 // routes still see the original Authorization header and ?token= query param
 // for their own re-validation.
 function tokenMatches(token: string): boolean {
-  if (!token) return false
-  const ingest = process.env.INGEST_SECRET_TOKEN
-  const cron = process.env.CRON_SECRET
-  if (ingest && token === ingest) return true
-  if (cron && token === cron) return true
-  return false
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
+  return secretTokenMatches(token, "INGEST_SECRET_TOKEN", "CRON_SECRET")
 }
 
 function hasValidBypassToken(request: NextRequest): boolean {
@@ -1506,12 +1503,16 @@ export async function proxy(request: NextRequest) {
   // already returned above, so this only constrains anonymous + user traffic.
   if (pathname.startsWith("/api/")) {
     const authHeader = request.headers.get("authorization") || ""
-    const isBotRequest = authHeader === `Bearer ${process.env.INGEST_SECRET_TOKEN}`
-    if (
-      !isBotRequest &&
-      !pathname.startsWith("/api/cron") &&
-      !pathname.startsWith("/api/ingest")
-    ) {
+    const isBotRequest = bearerMatches(authHeader, "INGEST_SECRET_TOKEN")
+    // ⛔ 2026-10-11 (review S4) — `/api/cron` and `/api/ingest` were exempt
+    // from the limiter even WITHOUT a valid token. Every legitimate caller of
+    // those lanes (Vercel cron with CRON_SECRET, cron-job.org and GHA with
+    // INGEST_SECRET_TOKEN, header or ?token=) has already returned through
+    // hasValidBypassToken above, so the exemption only ever applied to
+    // requests holding a WRONG token — an unmetered 401 oracle against the
+    // shared secret. They now count against the per-IP cap like any other
+    // anonymous /api/ hit.
+    if (!isBotRequest) {
       const clientKey = getRateLimitKey(request)
       const { max, bucket } = apiRateLimitFor(pathname, hasAuthCookie(request))
       if (isRateLimited(clientKey, bucket === "media" ? mediaRateLimitMap : rateLimitMap, max)) {

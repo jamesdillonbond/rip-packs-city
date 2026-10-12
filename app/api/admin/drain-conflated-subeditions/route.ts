@@ -38,6 +38,7 @@
 // Auth: Bearer RPC_ADMIN_TOKEN | INGEST_SECRET_TOKEN | CRON_SECRET, or ?token=.
 
 import { NextRequest, NextResponse } from "next/server";
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 
@@ -58,12 +59,10 @@ const SEED_EDITIONS_PER_ROUND = 60;
 
 function authed(req: NextRequest): boolean {
   if (verifyAdminRequest(req)) return true;
-  const hdr = req.headers.get("authorization") ?? "";
-  const q = req.nextUrl.searchParams.get("token") ?? "";
-  for (const t of [process.env.INGEST_SECRET_TOKEN, process.env.CRON_SECRET, process.env.RPC_ADMIN_TOKEN]) {
-    if (t && (hdr === `Bearer ${t}` || q === t)) return true;
-  }
-  return false;
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
+  const names = ["INGEST_SECRET_TOKEN", "CRON_SECRET", "RPC_ADMIN_TOKEN"];
+  if (bearerMatches(req.headers.get("authorization"), ...names)) return true;
+  return tokenMatches(req.nextUrl.searchParams.get("token"), ...names);
 }
 
 // Fire the on-chain subedition resolver (Supabase edge fn). Fire-and-forget: it

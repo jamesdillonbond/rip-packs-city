@@ -233,6 +233,20 @@ describe("proxy() — rate limiting", () => {
     expect(last!.status).not.toBe(429)
   })
 
+  // 2026-10-11 (review S4) — the cron/ingest lanes were exempt from the limiter
+  // even for a WRONG token: an unmetered 401 oracle against the shared secret.
+  // A valid token still passes through hasValidBypassToken above (the test
+  // before this one); a wrong one is metered like any anonymous /api/ hit.
+  it("DOES rate-limit /api/cron and /api/ingest when the token is WRONG", async () => {
+    const ip = "203.0.113.99"
+    let sawLimit = false
+    for (let i = 0; i < 300; i++) {
+      const res = await proxy(req("/api/cron/anything?token=not-the-secret", { ip }))
+      if (res.status === 429) { sawLimit = true; break }
+    }
+    expect(sawLimit, "a wrong-token cron probe must hit the per-IP cap").toBe(true)
+  })
+
   it("returns 429 once an anon IP exceeds the expensive-PAGE cap", async () => {
     const ip = "203.0.113.11"
     let last: Response | null = null

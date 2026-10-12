@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
 import {
   getChainId,
   getBlockNumber,
@@ -11,14 +12,9 @@ import {
 export const dynamic = "force-dynamic";
 
 function authorized(req: NextRequest): boolean {
-  const expected = process.env.RPC_ADMIN_TOKEN;
-  if (!expected) return false;
-  const bearer = req.headers.get("authorization");
-  if (bearer && bearer.startsWith("Bearer ") && bearer.slice(7) === expected) {
-    return true;
-  }
-  const qp = req.nextUrl.searchParams.get("token");
-  return qp === expected;
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
+  if (bearerMatches(req.headers.get("authorization"), "RPC_ADMIN_TOKEN")) return true;
+  return tokenMatches(req.nextUrl.searchParams.get("token"), "RPC_ADMIN_TOKEN");
 }
 
 function isSupportedChain(value: string): value is ChainSlug {

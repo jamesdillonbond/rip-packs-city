@@ -20,7 +20,10 @@ describe("GET /.well-known/security.txt", () => {
     const lines = body.trimEnd().split("\n")
     const field = (name: string) => lines.find((l) => l.startsWith(name + ": "))?.slice(name.length + 2)
 
-    expect(field("Contact")).toMatch(/^https:\/\//)
+    // Two Contact lines (RFC 9116 allows several): the mailbox first, then the X account.
+    const contacts = lines.filter((l) => l.startsWith("Contact: ")).map((l) => l.slice("Contact: ".length))
+    expect(contacts[0]).toBe("mailto:rippackscity@gmail.com")
+    expect(contacts[1]).toMatch(/^https:\/\//)
     expect(field("Canonical")).toBe("https://www.rippackscity.com/.well-known/security.txt")
     expect(field("Preferred-Languages")).toBe("en")
 

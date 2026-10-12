@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
@@ -117,10 +118,11 @@ function chunksOf(start: number, end: number): Array<[number, number]> {
 type Completion = { status: "filled" | "cancelled"; at: string; fillTx: string | null }
 
 export async function POST(req: NextRequest) {
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
+  if (!TOKEN || !(tokenMatches(bearer, "INGEST_SECRET_TOKEN") || tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   const rangeParam = Number(req.nextUrl.searchParams.get("range") ?? DEFAULT_RANGE)
   const maxRange = Math.min(Math.max(rangeParam || DEFAULT_RANGE, CHUNK_SIZE), RANGE_CAP)

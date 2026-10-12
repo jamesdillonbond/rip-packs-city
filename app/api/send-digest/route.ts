@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { normalizeAddress } from "@/lib/address"
 import { supabaseAdmin } from "@/lib/supabase"
 import { usdSignFirst } from "@/lib/usd-format"
+import { SENDER_LINE } from "@/lib/emails/sender-identity"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const FROM = "rpc-digest@rippackscity.com"
@@ -93,7 +94,8 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
       ${pulseBlock}
       <hr style="margin:32px 0;border:none;border-top:1px solid #eee">
       <p style="font-size:11px;color:#888">
-        <a href="${origin}/profile">Manage preferences</a> · <a href="${unsubUrl}">Unsubscribe</a>
+        <a href="${origin}/profile">Manage preferences</a> · <a href="${unsubUrl}">Unsubscribe</a><br/>
+        ${SENDER_LINE}
       </p>
     </div>
   `

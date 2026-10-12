@@ -1,3 +1,4 @@
+import { SENDER_LINE } from "@/lib/emails/sender-identity"
 // lib/emails/welcome-email.ts
 //
 // Welcome email rendered after an allow_list row is approved AND its prewarm
@@ -228,7 +229,8 @@ export function buildWelcomeEmailHtml(opts: WelcomeEmailOpts): string {
             </tr>
             <tr>
               <td align="center" style="padding:20px 12px 8px 12px;font-size:11px;line-height:1.6;color:${TEXT_SUBTLE};">
-                Sent by Rip Packs City · <a href="https://www.rippackscity.com" style="color:${TEXT_SUBTLE};text-decoration:underline;">rippackscity.com</a>
+                Sent by Rip Packs City · <a href="https://www.rippackscity.com" style="color:${TEXT_SUBTLE};text-decoration:underline;">rippackscity.com</a><br/>
+                ${SENDER_LINE}
               </td>
             </tr>
             <tr>

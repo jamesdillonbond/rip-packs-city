@@ -61,7 +61,7 @@ export default function PrivacyPage() {
           >
             This policy explains what Rip Packs City collects, why, where it&apos;s
             stored, and what choices you have. Plain English. If anything here is
-            unclear, reach out at{" "}
+            unclear, email <a href="mailto:rippackscity@gmail.com" style={{ color: "var(--rpc-text-primary)", textDecoration: "underline", textDecorationColor: "var(--rpc-red)" }}>rippackscity@gmail.com</a> or reach out at{" "}
             <a
               href="https://twitter.com/RipPacksCity"
               target="_blank"
@@ -148,9 +148,9 @@ export default function PrivacyPage() {
             page and the chat menu. You can also delete your account and
             everything stored against it from the Profile page (Edit profile →
             Delete account); it takes effect immediately. If you would rather
-            we do it, message us at @RipPacksCity on X or ask the concierge to
-            pass the request to the team; we complete those within 30 days and
-            confirm when done. Aggregate counts that no longer identify you
+            we do it, email rippackscity@gmail.com, message us at @RipPacksCity on X, or
+            ask the concierge to pass the request to the team; we complete
+            those within 30 days and confirm when done. Aggregate counts that no longer identify you
             may persist. You can opt out of product emails at any
             time via the unsubscribe link in any email we send. We honor Global
             Privacy Control and Do Not Track signals (see Cookies below). We do
@@ -188,7 +188,7 @@ export default function PrivacyPage() {
           </Section>
 
           <Section title="Contact">
-            Questions, access or deletion requests: reach out at{" "}
+            Questions, access or deletion requests: email <a href="mailto:rippackscity@gmail.com" style={{ color: "var(--rpc-text-primary)", textDecoration: "underline", textDecorationColor: "var(--rpc-red)" }}>rippackscity@gmail.com</a> or reach out at{" "}
             <a
               href="https://twitter.com/RipPacksCity"
               target="_blank"

@@ -1,7 +1,23 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
-import { bearerMatches, constantTimeEqual } from "@/lib/auth/bearer-secret"
+import { bearerMatches, constantTimeEqual, tokenMatches } from "@/lib/auth/bearer-secret"
+
+describe("tokenMatches — the bare ?token= form (review S4, 2026-10-11)", () => {
+  it("fails closed when the secret is unset, and never matches the literal 'undefined'", () => {
+    delete process.env.TEST_SECRET_A
+    expect(tokenMatches("undefined", "TEST_SECRET_A")).toBe(false)
+    expect(tokenMatches("", "TEST_SECRET_A")).toBe(false)
+    expect(tokenMatches(null, "TEST_SECRET_A")).toBe(false)
+  })
+  it("matches the bare secret, not a Bearer-prefixed one", () => {
+    process.env.TEST_SECRET_A = "s3cret"
+    expect(tokenMatches("s3cret", "TEST_SECRET_A")).toBe(true)
+    expect(tokenMatches("Bearer s3cret", "TEST_SECRET_A")).toBe(false)
+    expect(tokenMatches("s3cre", "TEST_SECRET_A")).toBe(false)
+    delete process.env.TEST_SECRET_A
+  })
+})
 
 describe("constantTimeEqual (review S4, 2026-10-11)", () => {
   it("is plain equality in outcome", () => {

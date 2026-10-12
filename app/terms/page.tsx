@@ -147,9 +147,9 @@ export default function TermsPage() {
             Collectible artwork, player imagery and league or team marks shown on
             the platform belong to their owners; we display them only to identify
             the items being described and remove them on request. If you believe
-            content on Rip Packs City infringes your rights, contact us (see
-            below) with the URL, a description of the work, and your contact
-            details, and we will respond promptly. The platform&apos;s own code,
+            content on Rip Packs City infringes your rights, email
+            <a href="mailto:rippackscity@gmail.com" style={{ color: "var(--rpc-text-primary)", textDecoration: "underline", textDecorationColor: "var(--rpc-red)" }}>rippackscity@gmail.com</a> with the URL, a description of the work, and your
+            contact details, and we will respond promptly. The platform&apos;s own code,
             copy, pricing models and data presentation are owned by Rip Packs
             City LLC.
           </Section>
@@ -203,7 +203,7 @@ export default function TermsPage() {
           </Section>
 
           <Section title="Contact">
-            Questions about these terms: reach out at{" "}
+            Questions about these terms: email <a href="mailto:rippackscity@gmail.com" style={{ color: "var(--rpc-text-primary)", textDecoration: "underline", textDecorationColor: "var(--rpc-red)" }}>rippackscity@gmail.com</a> or reach out at{" "}
             <a
               href="https://twitter.com/RipPacksCity"
               target="_blank"

@@ -9,14 +9,14 @@
 // can't easily set arbitrary headers).
 
 import { NextRequest, NextResponse } from "next/server";
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
 
 export function verifyAdminRequest(req: NextRequest): boolean {
-  const expected = process.env.RPC_ADMIN_TOKEN;
-  if (!expected) return false;
-  const header = req.headers.get("authorization") ?? "";
-  if (header === `Bearer ${expected}`) return true;
-  const queryToken = req.nextUrl.searchParams.get("token");
-  return queryToken === expected;
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
+  // The ?token= form stays ONLY because cron-job.org probes are configured with
+  // it; retiring it is a cron-job.org console change, not a code change.
+  if (bearerMatches(req.headers.get("authorization"), "RPC_ADMIN_TOKEN")) return true;
+  return tokenMatches(req.nextUrl.searchParams.get("token"), "RPC_ADMIN_TOKEN");
 }
 
 export function adminUnauthorizedResponse(): NextResponse {

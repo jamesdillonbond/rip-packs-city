@@ -1,3 +1,4 @@
+import { SENDER_LINE } from "@/lib/emails/sender-identity"
 // lib/emails/account-welcome-email.ts
 //
 // The ONE-TIME, TRANSACTIONAL welcome for a newly created account (platform
@@ -102,7 +103,8 @@ export function buildAccountWelcomeHtml(opts: AccountWelcomeOpts): string {
             </tr>
             <tr>
               <td align="center" style="padding:24px 12px 6px 12px;font-size:11px;line-height:1.6;color:${TEXT_SUBTLE};">
-                Sent by Rip Packs City · <a href="${SITE}" style="color:${TEXT_SUBTLE};text-decoration:underline;">rippackscity.com</a>
+                Sent by Rip Packs City · <a href="${SITE}" style="color:${TEXT_SUBTLE};text-decoration:underline;">rippackscity.com</a><br/>
+                ${SENDER_LINE}
               </td>
             </tr>
             <tr>

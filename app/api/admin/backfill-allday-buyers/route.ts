@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
 import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 
@@ -137,8 +138,10 @@ async function handle(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
   const okAuth =
-    (TOKEN && (bearer === TOKEN || urlToken === TOKEN)) || (CRON && bearer === CRON)
+    (TOKEN && (tokenMatches(bearer, "INGEST_SECRET_TOKEN") || tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) ||
+    (CRON && tokenMatches(bearer, "CRON_SECRET"))
   if (!okAuth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const cfgKey = (req.nextUrl.searchParams.get("collection") ?? "allday").toLowerCase()

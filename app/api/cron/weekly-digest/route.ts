@@ -30,6 +30,7 @@ import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
 import { alreadySentEmail, ensureUnsubToken } from "@/lib/email/recipient-guards";
 import { supabaseAdmin } from "@/lib/supabase";
+import { SENDER_LINE } from "@/lib/emails/sender-identity";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -114,7 +115,8 @@ function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: 
 
     <p style="color:rgba(255,255,255,0.35);font-size:11px;line-height:1.6;margin:28px 0 0">
       Estimated from indexed sales — not financial advice.<br/>
-      <a href="${unsubscribeUrl}" style="color:rgba(255,255,255,0.45)">Unsubscribe from weekly emails</a>
+      <a href="${unsubscribeUrl}" style="color:rgba(255,255,255,0.45)">Unsubscribe from weekly emails</a><br/>
+      ${SENDER_LINE}
     </p>
   </div></body></html>`;
   return { subject, html };

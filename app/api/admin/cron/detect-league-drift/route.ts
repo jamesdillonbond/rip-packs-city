@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fitTelegramText } from "@/lib/telegram-message"
 
@@ -44,8 +45,9 @@ function escapeHtml(s: string): string {
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const queryToken = req.nextUrl.searchParams.get("token")
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
   const isValid =
-    !!TOKEN && (auth === `Bearer ${TOKEN}` || queryToken === TOKEN)
+    !!TOKEN && (bearerMatches(auth, "INGEST_SECRET_TOKEN") || tokenMatches(queryToken, "INGEST_SECRET_TOKEN"))
   if (!isValid) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
   }

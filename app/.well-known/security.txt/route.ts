@@ -13,14 +13,14 @@
 // `Expires` is REQUIRED by the RFC and is the one field that goes stale on its
 // own; it is derived at request time as one year ahead so the file is never
 // served expired, and the Cache-Control keeps it to a daily recompute at the
-// edge. Contact is the X account that /privacy and /terms already name; swap in
-// a mailbox URI (`mailto:security@…`) once one exists — a dead mailbox here is
-// worse than a social handle that is read.
+// edge. Contacts: the mailbox /privacy, /terms and llms.txt name (confirmed
+// 2026-10-12), then the X account.
 
 import { NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
 
+const CONTACT_MAIL = "mailto:rippackscity@gmail.com"
 const CONTACT = "https://x.com/RipPacksCity"
 const CANONICAL = "https://www.rippackscity.com/.well-known/security.txt"
 
@@ -28,6 +28,7 @@ export function GET() {
   const expires = new Date()
   expires.setUTCFullYear(expires.getUTCFullYear() + 1)
   const body = [
+    `Contact: ${CONTACT_MAIL}`,
     `Contact: ${CONTACT}`,
     `Expires: ${expires.toISOString()}`,
     "Preferred-Languages: en",
