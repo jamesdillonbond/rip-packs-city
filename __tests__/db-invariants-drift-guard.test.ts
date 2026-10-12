@@ -2844,6 +2844,16 @@ const PINS = [
     migration: "supabase/migrations/20260821021000_audit_20260820_snapshot_retention_purges.sql",
   },
   {
+    // Added 2026-10-11. The 180-day sweep over ANONYMOUS funnel_events that
+    // the privacy policy now states. Its `user_id IS NULL` predicate is what
+    // keeps campaign attribution (trophy_pinned by user) and traction history
+    // alive; dropping it deletes evidence silently and the smaller number
+    // reads as "fewer users", the direction nobody questions.
+    fn: "purge_old_funnel_events",
+    test: "supabase/tests/purge_old_funnel_events.sql",
+    migration: "supabase/migrations/20261012041115_audit_20261011_funnel_events_anon_telemetry_180d_retention.sql",
+  },
+  {
     // Added 2026-08-20. ⚠ The one whose cutoff is DATE arithmetic
     // (`CURRENT_DATE - p_days_keep`) rather than `NOW() - interval` like every
     // sibling — correct, because `snapshot_at` is a `date`. Pinned so a
