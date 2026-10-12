@@ -66,7 +66,7 @@ export default function PrivacyPage() {
               href="https://twitter.com/RipPacksCity"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "var(--rpc-red)", textDecoration: "none" }}
+              style={{ color: "var(--rpc-text-primary)", textDecoration: "underline", textDecorationColor: "var(--rpc-red)" }}
             >
               @RipPacksCity
             </a>{" "}
@@ -82,11 +82,23 @@ export default function PrivacyPage() {
             read-only: there is no wallet connection anywhere on the site, and RPC
             never moves, sells or spends anything on your behalf.
             If you use the AI concierge, your messages and our responses
-            are processed by Anthropic&apos;s Claude API to generate replies. If
+            are processed by Anthropic&apos;s Claude API to generate replies, and
+            we store the conversation (your messages, our replies, the page you
+            were on, and your account email if you were signed in) for 90 days
+            so we can debug the assistant and act on feedback; feedback you
+            explicitly submit through it is kept until it has been addressed.
+            Our team reads those transcripts. You can delete your own chat
+            history from the chat menu at any time. If
             you save wallets, pin trophy moments, or fill out your bio, that
-            information is stored against your user account. Anonymous visitors
-            generate page-view telemetry that we use only to debug errors and
-            understand which features are used.
+            information is stored against your user account. If you redeem a
+            physical reward, we collect the shipping address you give us for
+            that delivery only. Page views, clicks on
+            marketplace links, and browser error reports (the error message,
+            a stack trace, the page path, and a truncated browser type) are
+            recorded with your browser&apos;s user agent and the referring page,
+            and are used only to debug errors and understand which features are
+            used. Where we rate-limit anonymous requests we keep a one-way hash
+            of the IP address, never the address itself.
           </Section>
 
           <Section title="What we do not collect">
@@ -103,13 +115,22 @@ export default function PrivacyPage() {
 
           <Section title="Where it's stored">
             User accounts and saved data live in Supabase (a managed Postgres
-            database hosted in US-East). The platform is served by Vercel. Error
+            database hosted in US-East). The platform is served by Vercel, whose
+            Analytics and Speed Insights measure page performance without
+            cookies or cross-site identifiers. Error
             telemetry is first-party: browser errors are posted to our own
             endpoint and stored in Supabase with the rest of your data, and no
             third-party error collector runs. AI concierge messages route through
-            Anthropic. Cloudflare Workers proxy a small number of public
+            Anthropic. Email (sign-in links, verification, alerts and digests you
+            opt into) is sent through Resend, which receives your address and the
+            message. Alerts you choose to receive on Telegram are delivered by
+            Telegram. Cloudflare Workers proxy a small number of public
             marketplace API calls. None of these vendors receive more than the
-            data necessary to perform their function.
+            data necessary to perform their function, and none sells it.
+            Retention: feature-usage events 31 days; concierge transcripts 90
+            days; anonymous page-view telemetry 180 days; daily holdings
+            snapshots 90 days; events and records tied to your account for as
+            long as the account exists.
           </Section>
 
           <Section title="How we use it">
@@ -122,15 +143,24 @@ export default function PrivacyPage() {
           </Section>
 
           <Section title="Your choices">
-            You can delete your account, your saved wallets, or your bio at any
-            time from the Profile page. Deleting your account removes your
-            records from our database within 24 hours; some derivative analytics
-            may persist anonymously. You can opt out of product emails at any
-            time via the unsubscribe link in any email we send.
+            You can remove your saved wallets, your bio, your pinned trophies and
+            your concierge chat history yourself at any time, from the Profile
+            page and the chat menu. To delete your account and everything stored
+            against it, message us at @RipPacksCity on X or ask the concierge to
+            pass the request to the team; we complete deletions within 30 days
+            and confirm when done. Aggregate counts that no longer identify you
+            may persist. You can opt out of product emails at any
+            time via the unsubscribe link in any email we send. We honor Global
+            Privacy Control and Do Not Track signals (see Cookies below). We do
+            not sell or share personal information for advertising, and we have
+            no financial incentive tied to your data.
           </Section>
 
           <Section title="Cookies and storage">
-            We use a Supabase auth cookie to keep you signed in. We use
+            We use a Supabase auth cookie to keep you signed in, and a short-lived
+            (60-second) cookie that caches the result of your sign-in check so we
+            don&apos;t re-run it on every request; it holds your email address and
+            an expiry and nothing else. We use
             localStorage on your device to remember UI preferences (like
             dismissing the welcome modal) &mdash; those never leave your browser.
             To understand how the site is used, we also keep two random,
@@ -156,12 +186,12 @@ export default function PrivacyPage() {
           </Section>
 
           <Section title="Contact">
-            Questions or data deletion requests: reach out at{" "}
+            Questions, access or deletion requests: reach out at{" "}
             <a
               href="https://twitter.com/RipPacksCity"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "var(--rpc-red)", textDecoration: "none" }}
+              style={{ color: "var(--rpc-text-primary)", textDecoration: "underline", textDecorationColor: "var(--rpc-red)" }}
             >
               @RipPacksCity
             </a>{" "}
@@ -234,12 +264,12 @@ function Breadcrumb({ current }: { current: string }) {
         fontSize: 11,
         letterSpacing: "0.12em",
         textTransform: "uppercase",
-        color: "var(--rpc-text-ghost)",
+        color: "var(--rpc-text-secondary)",
       }}
     >
       <Link
         href="/"
-        style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}
+        style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}
       >
         RPC
       </Link>
@@ -286,7 +316,7 @@ function LastUpdated({ text }: { text: string }) {
         marginTop: 48,
         fontFamily: "var(--font-mono)",
         fontSize: 11,
-        color: "var(--rpc-text-ghost)",
+        color: "var(--rpc-text-secondary)",
         letterSpacing: "0.06em",
       }}
     >

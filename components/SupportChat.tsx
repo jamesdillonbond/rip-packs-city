@@ -827,7 +827,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
               <button onClick={() => sendMessage()} disabled={!input.trim() || isLoading} aria-label="Send"
                 style={{ /* brand-exception: white arrow on the red send button */ width: 38, height: 38, borderRadius: 10, border: "none", background: input.trim() && !isLoading ? "linear-gradient(135deg, var(--rpc-red) 0%, #c43028 100%)" : "var(--rpc-surface-hover)", color: input.trim() && !isLoading ? "#fff" : "var(--rpc-text-ghost)", cursor: input.trim() && !isLoading ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>↑</button>
             </div>
-            <div style={{ marginTop: 6, fontSize: 10, color: "var(--rpc-text-ghost)", textAlign: "center" }}>Free beta · Feedback goes to the team · Not financial advice</div>
+            <div style={{ marginTop: 6, fontSize: 10, color: "var(--rpc-text-muted)", textAlign: "center" }}>Free beta · AI assistant, it can be wrong · Messages go to Anthropic and are kept 90 days · Not financial advice</div>
           </div>
         </div>
       )}

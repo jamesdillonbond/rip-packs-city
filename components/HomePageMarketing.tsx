@@ -76,7 +76,7 @@ function HomeHeader() {
             How it works
           </a>
           <a href="#pricing" style={navLinkStyle}>
-            Pricing
+            Free account
           </a>
           {/* /login, NOT /dashboard. /dashboard is gated, so an anonymous visitor
               clicking "Sign In" was bounced through proxy.ts to /login anyway —
@@ -755,8 +755,11 @@ export default function HomePageMarketing() {
       {/* PRICING */}
       <section id="pricing" className="rpc-home-section" style={{ textAlign: "center" }}>
         <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
-          <div className="rpc-home-eyebrow">◈ PRICING ◈</div>
-          <h2 className="rpc-home-h2">FREE DURING BETA.</h2>
+          {/* 2026-10-11 — was "PRICING / FREE DURING BETA", which reads as "a
+              paywall is coming". Trevor (09-25): no paid tier is mentioned or
+              considered anywhere until 100 WAU. The anchor id stays for links. */}
+          <div className="rpc-home-eyebrow">◈ FREE ◈</div>
+          <h2 className="rpc-home-h2">FREE. NO INVITE NEEDED.</h2>
           <p className="rpc-home-sub">
             Searching wallets and public insights are free with no signup. A free account — instant, no invite needed — adds saved wallets, FMV alerts, and portfolio tracking over time.
           </p>

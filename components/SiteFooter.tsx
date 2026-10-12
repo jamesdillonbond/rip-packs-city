@@ -186,20 +186,20 @@ export default function SiteFooter() {
           maxWidth: "var(--max-width)",
           margin: "0 auto",
           fontSize: "var(--text-xs)",
-          color: "var(--rpc-text-ghost)",
+          color: "var(--rpc-text-secondary)",
           letterSpacing: "0.1em",
         }}
       >
         <span>&copy; 2026 RIP PACKS CITY</span>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <Link href="/about" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>ABOUT</Link>
+          <Link href="/about" style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}>ABOUT</Link>
           {/* PRICING left the footer 2026-09-07 (Trevor): it was the site's #1
               internal-link target (27,566 links in Search Console) for a page
               that says the product is free. The page stays live for the
               upgrade_url paths that name it; it is just no longer advertised. */}
-          <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>FMV METHODOLOGY</Link>
-          <Link href="/terms" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>TERMS</Link>
-          <Link href="/privacy" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>PRIVACY</Link>
+          <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}>FMV METHODOLOGY</Link>
+          <Link href="/terms" style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}>TERMS</Link>
+          <Link href="/privacy" style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}>PRIVACY</Link>
         </div>
       </div>
 
@@ -215,7 +215,7 @@ export default function SiteFooter() {
           maxWidth: "var(--max-width)",
           margin: "0 auto",
           fontSize: "var(--text-xs)",
-          color: "var(--rpc-text-ghost)",
+          color: "var(--rpc-text-secondary)",
           letterSpacing: "0.06em",
           textAlign: "center",
         }}

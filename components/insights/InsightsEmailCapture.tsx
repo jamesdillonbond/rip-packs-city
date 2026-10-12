@@ -54,19 +54,24 @@ export default function InsightsEmailCapture() {
             <div className="rpc-ins-capture-done-title">Check your inbox ✉️</div>
             <div className="rpc-ins-capture-done-sub">
               We sent a confirmation link to <strong>{email.trim().toLowerCase()}</strong>. Click it
-              to start getting the weekly intelligence digest.
+              and you&apos;re on the list for the weekly digest when it launches.
             </div>
           </div>
         ) : (
           <>
             <div className="rpc-ins-capture-copy">
-              <div className="rpc-ins-capture-eyebrow">Get the weekly digest</div>
+              {/* 2026-10-11 — the weekly digest is NOT sending yet (the sender
+                  is on no schedule and the cron is flag-disabled). Until it
+                  launches, this copy promises a place on the list, not an
+                  inbox cadence nobody delivers. */}
+              <div className="rpc-ins-capture-eyebrow">Weekly digest — launching soon</div>
               <h2 className="rpc-ins-capture-title">
                 The numbers, in your inbox.
               </h2>
               <p className="rpc-ins-capture-lede">
-                Squeeze movers, fresh +EV packs, and rookie-cohort shifts — once a week. Free, no
-                account needed. Unsubscribe any time.
+                Squeeze movers, fresh +EV packs, and rookie-cohort shifts — once a week, once it
+                launches. Sign up now and you&apos;re first on the list. Free, no account needed.
+                Unsubscribe any time.
               </p>
             </div>
             <form className="rpc-ins-capture-form" onSubmit={handleSubmit}>

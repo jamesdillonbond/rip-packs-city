@@ -65,7 +65,7 @@ export default function TermsPage() {
               href="https://twitter.com/RipPacksCity"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "var(--rpc-red)", textDecoration: "none" }}
+              style={{ color: "var(--rpc-text-primary)", textDecoration: "underline", textDecorationColor: "var(--rpc-red)" }}
             >
               @RipPacksCity
             </a>{" "}
@@ -178,7 +178,7 @@ export default function TermsPage() {
               href="https://twitter.com/RipPacksCity"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "var(--rpc-red)", textDecoration: "none" }}
+              style={{ color: "var(--rpc-text-primary)", textDecoration: "underline", textDecorationColor: "var(--rpc-red)" }}
             >
               @RipPacksCity
             </a>{" "}
@@ -251,12 +251,12 @@ function Breadcrumb({ current }: { current: string }) {
         fontSize: 11,
         letterSpacing: "0.12em",
         textTransform: "uppercase",
-        color: "var(--rpc-text-ghost)",
+        color: "var(--rpc-text-secondary)",
       }}
     >
       <Link
         href="/"
-        style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}
+        style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}
       >
         RPC
       </Link>
@@ -303,7 +303,7 @@ function LastUpdated({ text }: { text: string }) {
         marginTop: 48,
         fontFamily: "var(--font-mono)",
         fontSize: 11,
-        color: "var(--rpc-text-ghost)",
+        color: "var(--rpc-text-secondary)",
         letterSpacing: "0.06em",
       }}
     >
