@@ -21,14 +21,10 @@
 export const MAIN_CONTENT_ID = "main-content"
 export const SKIP_LINK_CLASS = "rpc-skip-link"
 
-export const SKIP_LINK_CSS =
-  `.${SKIP_LINK_CLASS}{position:absolute;top:0;left:0;z-index:1000;padding:10px 16px;` +
-  `transform:translateY(-200%);background:var(--rpc-bg-elev);color:var(--rpc-text-primary);` +
-  `border:2px solid var(--rpc-red);border-top:0;border-radius:0 0 var(--radius-sm) 0;` +
-  `font-family:var(--font-display);font-weight:700;font-size:14px;letter-spacing:.08em;` +
-  `text-transform:uppercase;text-decoration:none}` +
-  `.${SKIP_LINK_CLASS}:focus{transform:none}` +
-  `#${MAIN_CONTENT_ID}:focus{outline:none!important}`
+// ONE template literal, not `+`-joined pieces: every interpolation here is a
+// compile-time constant, and turbopack constant-folds such a chain and has
+// dropped a quasi doing it (__tests__/no-constant-foldable-joined-templates).
+export const SKIP_LINK_CSS = `.${SKIP_LINK_CLASS}{position:absolute;top:0;left:0;z-index:1000;padding:10px 16px;transform:translateY(-200%);background:var(--rpc-bg-elev);color:var(--rpc-text-primary);border:2px solid var(--rpc-red);border-top:0;border-radius:0 0 var(--radius-sm) 0;font-family:var(--font-display);font-weight:700;font-size:14px;letter-spacing:.08em;text-transform:uppercase;text-decoration:none}.${SKIP_LINK_CLASS}:focus{transform:none}#${MAIN_CONTENT_ID}:focus{outline:none!important}`
 
 export default function SkipToContent() {
   return (
