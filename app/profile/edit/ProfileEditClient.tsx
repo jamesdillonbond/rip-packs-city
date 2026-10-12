@@ -6,6 +6,7 @@ import { LEAGUES, type League, type TeamMaster, type UserFavoriteTeam } from "@/
 import ProfileHeaderPreview from "@/components/profile/ProfileHeaderPreview";
 import { avatarUrlWarning } from "@/lib/profile/avatar-url";
 import AvatarMomentPicker from "@/components/profile/AvatarMomentPicker";
+import DeleteAccountSection from "@/components/profile/DeleteAccountSection";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -664,6 +665,11 @@ export default function ProfileEditClient() {
             </div>
           </section>
         )}
+        {/* 2026-10-11 — the privacy policy's "delete your account from the
+            Profile page" had no implementation (platform review C1). Rendered
+            whether or not the bio loaded: a failed bio read must not also take
+            away the right to leave. */}
+        {!loading && <DeleteAccountSection />}
       </main>
     </div>
   );

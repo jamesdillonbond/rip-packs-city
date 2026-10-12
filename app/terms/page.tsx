@@ -93,10 +93,15 @@ export default function TermsPage() {
           </Section>
 
           <Section title="No Affiliation">
-            Rip Packs City is independent. We are not affiliated with Dapper
-            Labs, NBA Top Shot, NFL All Day, LaLiga, Disney, the UFC, or any of
-            the collections, marketplaces, or platforms we reference. Trademarks
-            and team marks remain the property of their respective owners.
+            Rip Packs City is independent. We are not affiliated with, endorsed
+            by or sponsored by Dapper Labs, NBA Top Shot, NFL All Day, LaLiga
+            Golazos, Disney Pinnacle, UFC Strike, Candy Digital, Panini America,
+            the NBA, NBPA, NFL, NFLPA, MLB, MLBPA, LaLiga, Disney, Lucasfilm,
+            Marvel, the UFC, or any team, league, player or players&apos;
+            association, nor with any marketplace or platform we reference.
+            Trademarks, team marks, player names and likenesses, and moment
+            artwork remain the property of their respective owners and are
+            shown only to identify the collectibles being described.
           </Section>
 
           <Section title="Acceptable Use">
@@ -109,10 +114,11 @@ export default function TermsPage() {
           </Section>
 
           <Section title="Account">
-            If you create an account, you are responsible for activity that
-            happens under it. Use a real email so account recovery actually
-            works. We may suspend or delete accounts found violating these
-            terms.
+            You must be at least 18 years old to create an account. If you
+            create one, you are responsible for activity that happens under it.
+            Use a real email so account recovery actually works. You can delete
+            your account at any time from the Profile page; we may suspend or
+            delete accounts found violating these terms.
           </Section>
 
           <Section title="User Content">
@@ -122,6 +128,30 @@ export default function TermsPage() {
             retain ownership of anything you create. You agree not to upload
             content you don&apos;t have rights to, content that&apos;s defamatory
             or harassing, or anything that violates someone else&apos;s privacy.
+          </Section>
+
+          <Section title="Rewards and Giveaways">
+            Rewards points are a loyalty feature. They have no cash value, cannot
+            be sold or transferred, may be adjusted, expired or discontinued at
+            any time, and can only be redeemed for the items we list. If you
+            redeem a physical item, fulfilment uses the address you provide for
+            that order only. Community giveaways run through the platform have
+            their own Official Rules on the giveaway page; the named sponsor,
+            not Rip Packs City, awards the prizes. Entry is always free and no
+            purchase improves your chances. Giveaways are void where prohibited
+            and are not open to residents of any place where the sponsor would
+            have to register or bond the giveaway unless the sponsor has done so.
+          </Section>
+
+          <Section title="Intellectual Property and Takedowns">
+            Collectible artwork, player imagery and league or team marks shown on
+            the platform belong to their owners; we display them only to identify
+            the items being described and remove them on request. If you believe
+            content on Rip Packs City infringes your rights, contact us (see
+            below) with the URL, a description of the work, and your contact
+            details, and we will respond promptly. The platform&apos;s own code,
+            copy, pricing models and data presentation are owned by Rip Packs
+            City LLC.
           </Section>
 
           <Section title="Third-Party Marketplaces">
@@ -186,7 +216,7 @@ export default function TermsPage() {
             limited liability company.
           </Section>
 
-          <LastUpdated text="Last updated: May 2026." />
+          <LastUpdated text="Last updated: October 2026 (added: eligibility age, rewards and giveaway terms, IP takedowns, the full non-affiliation list)." />
         </div>
       </main>
 

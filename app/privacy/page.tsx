@@ -145,10 +145,12 @@ export default function PrivacyPage() {
           <Section title="Your choices">
             You can remove your saved wallets, your bio, your pinned trophies and
             your concierge chat history yourself at any time, from the Profile
-            page and the chat menu. To delete your account and everything stored
-            against it, message us at @RipPacksCity on X or ask the concierge to
-            pass the request to the team; we complete deletions within 30 days
-            and confirm when done. Aggregate counts that no longer identify you
+            page and the chat menu. You can also delete your account and
+            everything stored against it from the Profile page (Edit profile →
+            Delete account); it takes effect immediately. If you would rather
+            we do it, message us at @RipPacksCity on X or ask the concierge to
+            pass the request to the team; we complete those within 30 days and
+            confirm when done. Aggregate counts that no longer identify you
             may persist. You can opt out of product emails at any
             time via the unsubscribe link in any email we send. We honor Global
             Privacy Control and Do Not Track signals (see Cookies below). We do

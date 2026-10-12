@@ -410,8 +410,13 @@ export default function GiveawayClient({ slug }: { slug: string }) {
             the NBA, NBA Top Shot, Dapper Labs or any team.
           </li>
           <li>
-            <strong>Eligibility:</strong> 18 or older, with a Rip Packs City account and an NBA Top Shot account. Void where prohibited. The sponsor may not
+            <strong>Eligibility:</strong> 18 or older, with a Rip Packs City account and an NBA Top Shot account. Void where prohibited, and not open to
+            residents of any place where the sponsor would have to register or bond this giveaway unless the sponsor has done so. The sponsor may not
             claim.
+          </li>
+          <li>
+            <strong>Dates:</strong> entry opens when the packs are sealed{drop.sealed_at ? ` (${new Date(drop.sealed_at).toLocaleString("en-US", { timeZone: "America/Los_Angeles", dateStyle: "medium", timeStyle: "short" })} PT)` : ""} and
+            closes when every pack has been claimed or the sponsor ends it; the status line at the top of this page is the live state.
           </li>
           <li>
             <strong>How to enter:</strong> sign in, enter your Top Shot username and claim while the giveaway is open. One pack per person, per Rip Packs City
