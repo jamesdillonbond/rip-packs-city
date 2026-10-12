@@ -52,6 +52,7 @@ import {
   normalizeSerial,
 } from "@/lib/chains/solana/normalize"
 import { OS_PAGE_LIMIT, discoverCandyOpenSeaSlug, openSeaApiKey, osGet } from "@/lib/chains/solana/opensea"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -147,12 +148,8 @@ async function logRun(
 }
 
 function authed(req: NextRequest): boolean {
-  const header = req.headers.get("authorization") ?? ""
-  const ingest = process.env.INGEST_SECRET_TOKEN
-  const cron = process.env.CRON_SECRET
-  if (ingest && header === `Bearer ${ingest}`) return true
-  if (cron && header === `Bearer ${cron}`) return true
-  return false
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
+  return bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET")
 }
 
 export async function GET(req: NextRequest) {

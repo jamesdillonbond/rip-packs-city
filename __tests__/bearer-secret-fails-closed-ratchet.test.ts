@@ -1,7 +1,32 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
-import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { bearerMatches, constantTimeEqual } from "@/lib/auth/bearer-secret"
+
+describe("constantTimeEqual (review S4, 2026-10-11)", () => {
+  it("is plain equality in outcome", () => {
+    expect(constantTimeEqual("", "")).toBe(true)
+    expect(constantTimeEqual("Bearer abc", "Bearer abc")).toBe(true)
+    expect(constantTimeEqual("Bearer abc", "Bearer abd")).toBe(false)
+    expect(constantTimeEqual("Bearer abc", "Bearer ab")).toBe(false)
+    expect(constantTimeEqual("Bearer ab", "Bearer abc")).toBe(false)
+    expect(constantTimeEqual("a", "")).toBe(false)
+    // A longer input whose prefix matches is not "closer": still false.
+    expect(constantTimeEqual("Bearer abc!", "Bearer abc")).toBe(false)
+  })
+  it("compares every configured secret even after a match (no early return on the first hit)", () => {
+    // Pinned by shape: the helper must not short-circuit, so a match on the
+    // FIRST secret cannot be distinguished from a match on the SECOND by the
+    // number of comparisons. Both orders must agree.
+    process.env.TEST_SECRET_A = "a"
+    process.env.TEST_SECRET_B = "b"
+    expect(bearerMatches("Bearer a", "TEST_SECRET_A", "TEST_SECRET_B")).toBe(true)
+    expect(bearerMatches("Bearer a", "TEST_SECRET_B", "TEST_SECRET_A")).toBe(true)
+    expect(bearerMatches("Bearer c", "TEST_SECRET_A", "TEST_SECRET_B")).toBe(false)
+    delete process.env.TEST_SECRET_A
+    delete process.env.TEST_SECRET_B
+  })
+})
 
 // A secret compare written as `auth !== \`Bearer ${process.env.X}\`` FAILS OPEN:
 // with X unset, the literal header "Bearer undefined" passes. The OR form opens

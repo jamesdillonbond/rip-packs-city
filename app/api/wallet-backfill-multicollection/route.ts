@@ -42,6 +42,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 // 800s ceiling (Vercel Pro Lambda hard cap).
@@ -431,11 +432,13 @@ async function syncPoll(
 }
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization")
-  const ingestToken = process.env.INGEST_SECRET_TOKEN
-  if (!ingestToken || authHeader !== `Bearer ${ingestToken}`) {
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
+  if (!bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
+  // The gate above proved the env var is set and non-empty; the children are
+  // called with the same token.
+  const ingestToken = process.env.INGEST_SECRET_TOKEN as string
 
   let body: { wallet?: string; skip_cached?: boolean }
   try {

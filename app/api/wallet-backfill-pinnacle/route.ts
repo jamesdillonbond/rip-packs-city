@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import {
   runPinnacleDetailsBackfill,
   resolveWalletInput,
@@ -41,9 +42,8 @@ const CONFIG = {
 } as const
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization")
-  const expectedToken = process.env.INGEST_SECRET_TOKEN
-  if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
+  if (!bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

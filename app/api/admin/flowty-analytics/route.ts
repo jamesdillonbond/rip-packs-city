@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 // GET /api/admin/flowty-analytics?collection=<short>&period=<grain>[&start=&end=]
 // Authorization: Bearer <INGEST_SECRET_TOKEN | RPC_ADMIN_TOKEN>
@@ -32,12 +33,8 @@ type ResolvedRange = {
 };
 
 function isAuthorized(req: NextRequest): boolean {
-  const auth = req.headers.get("authorization") ?? "";
-  const ingest = process.env.INGEST_SECRET_TOKEN;
-  const admin = process.env.RPC_ADMIN_TOKEN;
-  if (ingest && auth === `Bearer ${ingest}`) return true;
-  if (admin && auth === `Bearer ${admin}`) return true;
-  return false;
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
+  return bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "RPC_ADMIN_TOKEN");
 }
 
 function resolveRange(period: string, startStr: string | null, endStr: string | null): ResolvedRange {

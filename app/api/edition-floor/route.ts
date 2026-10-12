@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { selectCrossMarketFloor } from "@/lib/cross-market-floor";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 // ⚠ Cloudflare blocks Vercel egress to public-api.nbatopshot.com, so this MUST
 // go through the topshot-proxy worker like every other server-side TS GQL
@@ -335,13 +336,8 @@ async function persistFloorToSnapshot(
 // work for an authenticated caller, and removing the capability is a product
 // call. The READ path is untouched and stays anonymous.
 function persistAuthorized(req: NextRequest): boolean {
-  const auth = req.headers.get("authorization") ?? "";
-  const cronSecret = process.env.CRON_SECRET;
-  const ingest = process.env.INGEST_SECRET_TOKEN;
-  return (
-    (!!cronSecret && auth === `Bearer ${cronSecret}`) ||
-    (!!ingest && auth === `Bearer ${ingest}`)
-  );
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
+  return bearerMatches(req.headers.get("authorization"), "CRON_SECRET", "INGEST_SECRET_TOKEN");
 }
 
 export async function GET(req: NextRequest) {
