@@ -21,7 +21,10 @@ import {
 //   - partial-sweep safety: any per-bidder offers_made failure SKIPS the
 //     stale-offer deactivation (an absence could be a fetch artifact) while the
 //     expiry-based deactivation still runs;
-//   - a fatal ME activities error logs ok=false.
+//   - a failed ME activities walk (after one retry) DEGRADES the run — ok=false
+//     with the leg named — but the stored bidders are still re-swept, upserted
+//     and the stale pass still runs (2026-10-11: it used to abort the whole run
+//     and write nothing).
 
 const state = vi.hoisted(() => ({
   afterCbs: [] as Array<() => unknown>,
@@ -185,6 +188,11 @@ describe("candy-offers — sweep ladder", () => {
     expect(extra.bidder_fetch_errors).toBe(0)
     expect(extra.deactivated).toBe(1) // pdaGone from the stale pass
     expect(extra.sol_usd).toBe(150)
+    // NO-CHANGE CONTROL for the activities-degrade path: a clean walk reports
+    // no discovery error and no retry, and read exactly one page.
+    expect(extra.activity_discovery_error).toBeNull()
+    expect(extra.activity_retries).toBe(0)
+    expect(extra.activity_pages_read).toBe(1)
   })
 
   it("re-sweeps a buyer known only from an ACTIVE stored offer (aged out of the activities window)", async () => {
@@ -264,18 +272,97 @@ describe("candy-offers — sweep ladder", () => {
     expect((log?.p_extra as Record<string, unknown>).active_book_read_error).toContain("statement timeout")
   })
 
-  it("a fatal ME activities error logs ok=false with the message", async () => {
+  // 2026-10-11: 2 of 7 ticks died in phase discovery_activities on a 15 s
+  // timeout and wrote NOTHING — the stored bidders were never re-swept. The
+  // activities walk only ADDS bidders (step 2 re-discovers every stored one),
+  // so its failure degrades the run instead of aborting it.
+  it("a failed ME activities walk DEGRADES the run: ok=false naming the leg, yet stored bidders are re-swept, upserted and the stale pass still runs", async () => {
     fetchMock = installFetchMock([
       jsonRoute("/activities", { error: "rate limited" }, { status: 429, ok: false }),
+      jsonRoute("/offers_made", [
+        { pdaAddress: "pdaS", tokenMint: "mintCandy", auctionHouse: "AH1", price: 0.01, tokenSize: 1, expiry: 1900000000 },
+      ]),
     ])
-    const spy = install({})
+    const spy = install({
+      candy_offers: [
+        { data: [{ buyer: "storedBidder", last_seen_at: "2026-10-01T00:00:00Z" }], error: null }, // active-buyer union
+        { data: null, error: null }, // upsert
+        { data: null, error: null, count: 1 }, // active-book count (ratio guard)
+        { data: [], error: null }, // stale deactivate — RUNS: no stored bidder went unswept
+        { data: [], error: null }, // expiry deactivate
+      ],
+      wallet_moments_cache: { data: [{ moment_id: "mintCandy", edition_key: "aaron-judge" }], error: null },
+      editions: { data: [{ id: "ed-judge", external_id: "aaron-judge" }], error: null },
+      candy_packs: { data: [], error: null },
+    })
 
     await POST(req())
     await runDeferred()
 
+    // One retry, then give up: exactly two activities calls, never a third.
+    const actCalls = fetchMock.calls.filter((c) => c.url.includes("/activities"))
+    expect(actCalls).toHaveLength(2)
+    // The stored bidder was still swept and its offer landed.
+    const offerCalls = fetchMock.calls.filter((c) => c.url.includes("/offers_made"))
+    expect(offerCalls.map((c) => c.url)).toEqual([expect.stringContaining("/wallets/storedBidder/offers_made")])
+    const upserts = (spy.writes.candy_offers ?? []).filter((w) => w.method === "upsert").flatMap((w) => w.rows)
+    expect(upserts).toHaveLength(1)
+    expect(upserts[0]).toMatchObject({ pda_address: "pdaS", buyer: "storedBidder", is_active: true })
+    // Both deactivation passes ran — the activities leg cannot make an absence
+    // a fetch artifact, so is_active does not freeze.
+    const updates = (spy.writes.candy_offers ?? []).filter((w) => w.method === "update")
+    expect(updates).toHaveLength(2)
+
     const log = logRun(spy.rpcCalls)
-    expect(log?.p_ok).toBe(false)
+    expect(log).toMatchObject({ p_ok: false, p_rows_found: 1, p_rows_written: 1 })
+    expect(String(log?.p_error)).toContain("bid-activity discovery failed")
     expect(String(log?.p_error)).toContain("HTTP 429")
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.phase).toBe("complete")
+    expect(extra.failed_at).toBeUndefined() // not the uncaught path any more
+    expect(String(extra.activity_discovery_error)).toContain("HTTP 429")
+    expect(extra.activity_retries).toBe(1)
+    expect(extra.activity_pages_read).toBe(0)
+    expect(extra.bidders_discovered).toBe(1)
+    expect(extra.bidders_swept).toBe(1)
+  })
+
+  it("one transient activities failure is retried and a clean second answer keeps the run ok=true", async () => {
+    let activityCalls = 0
+    fetchMock = installFetchMock([
+      {
+        match: (url) => url.includes("/activities"),
+        respond: () => {
+          activityCalls++
+          return activityCalls === 1
+            ? { json: { error: "upstream hiccup" }, status: 520, ok: false }
+            : { json: [{ signature: "s", type: "bid", buyer: "bidder1", blockTime: RECENT }] }
+        },
+      },
+      jsonRoute("/offers_made", []),
+    ])
+    const spy = install({
+      candy_offers: [
+        { data: [], error: null }, // active-buyer union
+        { data: null, error: null, count: 0 }, // active-book count (ratio guard)
+        { data: [], error: null }, // stale deactivate
+        { data: [], error: null }, // expiry deactivate
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect(activityCalls).toBe(2)
+    const offerCalls = fetchMock.calls.filter((c) => c.url.includes("/offers_made"))
+    expect(offerCalls.map((c) => c.url)).toEqual([expect.stringContaining("/wallets/bidder1/offers_made")])
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    expect(log?.p_error).toBeNull()
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.activity_discovery_error).toBeNull()
+    expect(extra.activity_retries).toBe(1)
+    expect(extra.activity_pages_read).toBe(1)
   })
 })
 

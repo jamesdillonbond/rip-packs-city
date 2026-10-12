@@ -7,6 +7,10 @@
 //
 //   1. Walk /v2/collections/<symbol>/activities for `bid` events → distinct
 //      bidder wallets (bidding is currently concentrated in a few sweepers).
+//      A failed page is retried once; a second failure DEGRADES the run (error
+//      recorded, ok=false) instead of aborting it, so steps 2–6 still run and
+//      the stored book is re-verified. Until 2026-10-11 a single 15 s timeout
+//      here threw out of the whole sweep: 2 of 7 ticks wrote nothing at all.
 //   2. Union with buyers of currently-active stored offers, so a standing offer
 //      whose bid event has aged out of the activities window is still re-swept
 //      (without this, step 4 would wrongly deactivate it).
@@ -345,16 +349,54 @@ async function handleSweep(req: NextRequest) {
 
     try {
       // 1. Bidder discovery from recent bid activity.
+      //
+      //    ⚠ A failure here must DEGRADE the run, not abort it. Until
+      //    2026-10-11 a thrown activities page went straight to the outer
+      //    catch: 2 of 7 ticks (10-10 18:50Z, 10-11 12:50Z) died on "The
+      //    operation was aborted due to timeout" with hung_phase
+      //    discovery_activities, rows_written 0 — the stored bidders were never
+      //    re-swept and the book sat 12 h without a verification. The activities
+      //    walk only ADDS bidders; every bidder with a stored active offer is
+      //    re-discovered by step 2 regardless. So a failed walk is retried once
+      //    (ME tarpits datacenter egress — slow, not broken), then recorded and
+      //    skipped: the run reports ok=false with the error, because bidders
+      //    known only from a recent bid may be missing this tick, and the
+      //    message says which leg failed.
       const bidders = new Set<string>()
       const floorMs = Date.now() - ACTIVITY_LOOKBACK_DAYS * 86400000
+      let activityDiscoveryError: string | null = null
+      let activityRetries = 0
+      let activityPagesRead = 0
+      const fetchActivitiesPage = async (page: number): Promise<MeActivity[]> => {
+        const path = `/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/activities?offset=${page * ME_LIMIT}&limit=${ME_LIMIT}`
+        try {
+          return await meGetArray<MeActivity>(path)
+        } catch (first) {
+          if (outOfTime()) throw first
+          activityRetries++
+          console.log(
+            `[${PIPELINE_NAME}] activities page ${page} failed, retrying once: ${first instanceof Error ? first.message : String(first)}`
+          )
+          await new Promise((r) => setTimeout(r, ME_THROTTLE_MS))
+          return await meGetArray<MeActivity>(path)
+        }
+      }
       for (let page = 0; page < MAX_ACTIVITY_PAGES; page++) {
         if (outOfTime()) {
           deadlineHit = true
           break
         }
-        const acts = await meGetArray<MeActivity>(
-          `/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/activities?offset=${page * ME_LIMIT}&limit=${ME_LIMIT}`
-        )
+        let acts: MeActivity[]
+        try {
+          acts = await fetchActivitiesPage(page)
+        } catch (e) {
+          activityDiscoveryError = e instanceof Error ? e.message : String(e)
+          console.log(
+            `[${PIPELINE_NAME}] activities discovery failed after ${activityPagesRead} page(s); continuing with stored bidders: ${activityDiscoveryError}`
+          )
+          break
+        }
+        activityPagesRead++
         if (acts.length === 0) break
         let pastFloor = false
         for (const a of acts) {
@@ -662,6 +704,12 @@ async function handleSweep(req: NextRequest) {
         (offersBefore >= SWEEP_GUARD_MIN_BOOK && found < offersBefore * MIN_SWEEP_RATIO)
 
       const nowIso = new Date().toISOString()
+      // `activityDiscoveryError` is deliberately NOT in this gate. The stale
+      // pass retires stored active offers whose bidder was swept and whose offer
+      // offers_made no longer returns; every such bidder comes from step 2, not
+      // from the activities walk, so a failed walk cannot turn an absence into a
+      // fetch artifact. It only means NEW bidders may be missing — which the run
+      // reports as ok=false below, not by freezing is_active.
       if (activeBookReadError == null && bidderFetchErrors === 0 && !biddersTruncated && !degradedSweep && !deadlineHit && !rawCapped) {
         // ⛔ venue-scoped (2026-10-10). This retirement is ABSENCE-based: "the
         // Magic Eden sweep did not see it". That is evidence about Magic Eden bids
@@ -692,6 +740,8 @@ async function handleSweep(req: NextRequest) {
       // healthy-looking `offers_upserted` count.
       const truncErr = activeBookReadError != null
         ? `standing-offer bidder read failed (${activeBookReadError}) — bidder set is partial, deactivation skipped`
+        : activityDiscoveryError != null
+        ? `bid-activity discovery failed after ${activityPagesRead} page(s) (${activityDiscoveryError}) — bidders known only from recent bids may be missing this tick; the ${allBidders.length} stored/known bidders were still swept`
         : rawCapped
         ? `raw offer collection hit MAX_RAW_OFFERS ${MAX_RAW_OFFERS} — sweep is partial, deactivation skipped`
         : biddersTruncated
@@ -730,6 +780,11 @@ async function handleSweep(req: NextRequest) {
         deadline_hit: deadlineHit,
         bidder_fetch_errors: bidderFetchErrors,
         active_book_read_error: activeBookReadError,
+        // The activities leg's own instrument: NULL error + 0 retries is a clean
+        // walk; a non-null error is the leg that used to kill the whole run.
+        activity_discovery_error: activityDiscoveryError,
+        activity_pages_read: activityPagesRead,
+        activity_retries: activityRetries,
         pack_offers_seen: packOffersSeen,
         // NULL, not 0, when the count could not be read. CLAUDE.md: fixing a
         // guard without fixing the field an observer keys on leaves the
