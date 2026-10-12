@@ -1,4 +1,4 @@
-# Inbox index — 577 live filings
+# Inbox index — 578 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -31,6 +31,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-10-12 — 1 filing
+
+- [**✅ FIXED 10-11 ~9:30 PM PT (code): the activities leg retries once, then DEGRADES instead of aborting** 🟡 **Daytime monitor — `candy-offers-indexer` 2/7 timeouts over 3 days (28.6 %), undispositioned; both hung in `discovery_activities`**](2026-10-12T0010Z-daytime-monitor-candy-offers-indexer-timeout-28pct-undispositioned.md) — *(read-only sweep 10-11 ~5:10 PM PT; platform otherwise healthy)*
 
 ## 2026-10-11 — 4 filings
 
