@@ -5,7 +5,7 @@
 // filtered URLs don't index as duplicates. Mirrors serial-premiums/layout.tsx.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -54,18 +54,7 @@ export const metadata: Metadata = {
 }
 
 export default function ParallelPremiumsLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "Parallel Premiums",
-    url: `${SITE_URL}/insights/parallel-premiums`,
-    description:
-      "Ranks NBA Top Shot parallel (subedition) editions by the premium their FMV commands over the Standard base edition of the same play.",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: { "@type": "Organization", name: "Rip Packs City", url: SITE_URL },
-  }
+  const jsonLd = insightsBoardJsonLd("parallel-premiums")
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />

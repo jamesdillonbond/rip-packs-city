@@ -7,10 +7,16 @@
 // not a live feed — which is the whole point of the post.
 
 import Link from "next/link"
-import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
+import { OG_INHERITED, TWITTER_INHERITED, articleJsonLd } from "@/lib/seo"
+import { getBlogPost, blogPostUrl, formatPostDate } from "@/lib/blog/posts"
 
 export const dynamic = "force-static"
 export const revalidate = 86400
+
+// Dates + share image come from the shared post record (lib/blog/posts.ts), so
+// the BlogPosting JSON-LD below, og:article and the RSS feed cannot disagree.
+const POST = getBlogPost("pinnacle-star-wars-day-2026")!
+const POST_URL = blogPostUrl(POST)
 
 export const metadata = {
   title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving",
@@ -24,6 +30,10 @@ export const metadata = {
       "Where Mandalorian peak buyers are underwater, the only edition trading below FMV with HIGH confidence, and what we don't know yet.",
     images: ["https://www.rippackscity.com/api/og/collection?id=disney-pinnacle"],
     type: "article",
+    url: POST_URL,
+    publishedTime: POST.date,
+    modifiedTime: POST.dateModified ?? POST.date,
+    authors: ["Rip Packs City"],
   },
   twitter: {
     ...TWITTER_INHERITED,
@@ -189,7 +199,22 @@ const FOOTNOTE: React.CSSProperties = {
 export default function PinnacleStarWarsDay2026() {
   return (
     <article style={PAGE}>
-      <p style={KICKER}>Disney Pinnacle · May 7, 2026</p>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(
+            articleJsonLd({
+              headline: POST.title,
+              description: POST.blurb,
+              datePublished: POST.date,
+              dateModified: POST.dateModified,
+              url: POST_URL,
+              image: POST.image,
+            }),
+          ),
+        }}
+      />
+      <p style={KICKER}>Disney Pinnacle · {formatPostDate(POST.date)}</p>
       <h1 style={H1}>Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving</h1>
       <p style={SUBTITLE}>
         53 editions, 14 sets, 408 historical sales. Here's where the Mandalorian

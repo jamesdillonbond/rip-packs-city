@@ -5,7 +5,7 @@
 // directly). Mirrors the pattern used by app/nba/fast-break/layout.tsx.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -55,22 +55,7 @@ export const metadata: Metadata = {
 }
 
 export default function SqueezeLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "Top Shot Lock-Rate Squeeze Board",
-    url: `${SITE_URL}/insights/squeeze`,
-    description:
-      "Ranks NBA Top Shot editions by effective supply (circulation minus locked minus burned). Refreshes hourly.",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: {
-      "@type": "Organization",
-      name: "Rip Packs City",
-      url: SITE_URL,
-    },
-  }
+  const jsonLd = insightsBoardJsonLd("squeeze")
   return (
     <>
       <script

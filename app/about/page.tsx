@@ -3,7 +3,7 @@ import SupportChatConnected from "@/components/SupportChatConnected";
 import type { Metadata } from "next";
 import RpcLogo from "@/components/RpcLogo";
 import SiteFooter from "@/components/SiteFooter";
-import { OG_INHERITED } from "@/lib/seo"
+import { OG_INHERITED, organizationEntityJsonLd } from "@/lib/seo"
 
 export function generateMetadata(): Metadata {
   return {
@@ -32,6 +32,15 @@ export default function AboutPage() {
       }}
     >
       <PageHeader />
+
+      {/* The one page ABOUT the organisation carries the one Organization node
+          with `logo` + `sameAs` (lib/seo.ts RPC_ORGANIZATION). The root layout's
+          node is a WebApplication whose creator is a bare {name,url}, so until
+          2026-10-11 nothing told a crawler which X account is ours. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationEntityJsonLd) }}
+      />
 
       <main style={{ flex: 1, padding: "64px 24px 96px" }}>
         <article style={{ maxWidth: 640, margin: "0 auto" }}>

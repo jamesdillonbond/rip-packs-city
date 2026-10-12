@@ -5,8 +5,34 @@
 // lives in EarlyAccessClient.tsx — which the component coverage gate measures
 // (`app/**/*Client.tsx`). A `page.tsx` matches NEITHER gate's include.
 
+import type { Metadata } from "next"
 import EarlyAccessClient from "./EarlyAccessClient"
 import SupportChatConnected from "@/components/SupportChatConnected"
+import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
+
+// 2026-10-11 (review §3 E8): this page inherited the ROOT title + description
+// verbatim and is anon-public, so Google saw a duplicate of the home page with
+// no inbound links. Own copy + self-canonical; noindex because the home page is
+// the page that should rank for this, and nothing links here. `follow` stays
+// true: the sign-in / insights links out are real pages.
+export const metadata: Metadata = {
+  title: "Early Access",
+  description:
+    "Join the Rip Packs City early-access list — collector intelligence for NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike on Flow. Free, no credit card.",
+  alternates: { canonical: "https://www.rippackscity.com/early-access" },
+  robots: { index: false, follow: true },
+  openGraph: {
+    ...OG_INHERITED,
+    title: "Early Access — Rip Packs City",
+    description: "Join the early-access list for free Flow collectibles intelligence.",
+    url: "https://www.rippackscity.com/early-access",
+  },
+  twitter: {
+    ...TWITTER_INHERITED,
+    title: "Early Access — Rip Packs City",
+    description: "Join the early-access list for free Flow collectibles intelligence.",
+  },
+}
 
 export default function EarlyAccessPage() {
   return (

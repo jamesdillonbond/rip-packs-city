@@ -42,6 +42,8 @@ const TABLE: Row[] = [
   ["/llms.txt", "GET", true, "AI-crawler descriptor, shipped in public/"],
   ["/foo/llms.txt", "GET", false, "exact path only — not any .txt anywhere"],
   ["/sitemap.xml", "GET", true],
+  ["/feed.xml", "GET", true, "blog RSS 2.0 (app/feed.xml/route.ts) — feed readers carry no session"],
+  ["/foo/feed.xml", "GET", false, "exact path only — not any feed.xml anywhere"],
   ["/sitemap/0.xml", "GET", true, "generateSitemaps child"],
   ["/sitemap/4.xml", "GET", true],
   ["/sitemap/x.xml", "GET", false, "non-numeric child is NOT the sitemap regex"],

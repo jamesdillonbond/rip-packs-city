@@ -70,6 +70,8 @@ const CARDS: Array<{ path: string; query?: string; params?: Record<string, strin
 
   // Insights board cards (self-fetch their public API)
   { path: "app/api/og/insights/route" },
+  // The text-only DEFAULT card behind any board without a bespoke route (2026-10-11).
+  { path: "app/api/og/insights/[slug]/route", params: { slug: "account-value" } },
   { path: "app/api/og/insights/allday-pack-market/route" },
   { path: "app/api/og/insights/allday-pack-reality/route" },
   { path: "app/api/og/insights/allday-scarcity/route" },

@@ -494,6 +494,10 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // license files by side effect rather than by decision.
   if (pathname === "/llms.txt") return true
   if (pathname === "/sitemap.xml") return true
+  // /feed.xml — the blog's RSS 2.0 feed (app/feed.xml/route.ts, 2026-10-11).
+  // Fetched by feed readers and crawlers with no session; a 307→/login here is
+  // an invalid feed, not a gated one. EXACT path, same reasoning as /llms.txt.
+  if (pathname === "/feed.xml") return true
   // Segment children of the sitemap index (generateSitemaps, 2026-07-11):
   // /sitemap/0.xml … /sitemap/4.xml must be anon-fetchable or Googlebot gets
   // 302→/login on every child the index advertises.

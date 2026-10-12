@@ -7,7 +7,7 @@
 // app/insights/serial-premiums/layout.tsx.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -58,22 +58,7 @@ export const metadata: Metadata = {
 }
 
 export default function NewCollectorsLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "New Collectors — Top Shot Acquisition Funnel",
-    url: `${SITE_URL}/insights/new-collectors`,
-    description:
-      "Tracks who is entering NBA Top Shot — new vs returning buyers, first-buy price, gateway sets and players, and monthly cohort retention and LTV — from buyer-resolved on-chain sales.",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: {
-      "@type": "Organization",
-      name: "Rip Packs City",
-      url: SITE_URL,
-    },
-  }
+  const jsonLd = insightsBoardJsonLd("new-collectors")
   return (
     <>
       <script

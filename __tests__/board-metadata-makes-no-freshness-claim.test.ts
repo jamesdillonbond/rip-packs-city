@@ -67,7 +67,11 @@ function descriptions(src: string): string[] {
   return out
 }
 
-const LAYOUTS = walk(path.join(ROOT, "app"))
+// 2026-10-11: the boards' JSON-LD descriptions moved OUT of the 32 layouts into
+// lib/insights/board-registry.ts (one Dataset helper instead of 32 inline nodes).
+// A walk of layout.tsx alone would stop seeing exactly the strings this guard was
+// written for, and pass — so the registry is part of the population by name.
+const LAYOUTS = [...walk(path.join(ROOT, "app")), path.join(ROOT, "lib", "insights", "board-registry.ts")]
 
 describe("board metadata and JSON-LD make no unconditional freshness claim", () => {
   it("is not vacuous: the walk finds layouts, and they carry descriptions", () => {

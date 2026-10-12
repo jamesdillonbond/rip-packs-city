@@ -4,10 +4,11 @@
 // squeeze-check/layout.tsx. Sets a self-referencing, param-stripped canonical
 // so the ?wallet= filtered URLs don't get indexed as duplicate content — the
 // bare /insights/tc-report path is the indexable tool landing. Uses the
-// generic /api/og/insights card (there is no tc-report-specific OG route).
+// text-only default card at /api/og/insights/tc-report (app/api/og/insights/[slug],
+// 2026-10-11) — it used to borrow the generic /insights HUB card.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -33,7 +34,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights`,
+        url: `${SITE_URL}/api/og/insights/tc-report`,
         width: 1200,
         height: 630,
         alt: "Top Collector Report — Rip Packs City",
@@ -48,11 +49,20 @@ export const metadata: Metadata = {
     title: "Top Collector Report",
     description:
       "Full bag analytics for any Flow wallet — squeeze, set completion, cross-collection footprint.",
-    images: [`${SITE_URL}/api/og/insights`],
+    images: [`${SITE_URL}/api/og/insights/tc-report`],
     creator: "@RipPacksCity",
   },
 }
 
 export default function TcReportLayout({ children }: { children: React.ReactNode }) {
-  return children
+  const jsonLd = insightsBoardJsonLd("tc-report")
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      {children}
+    </>
+  )
 }

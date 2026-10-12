@@ -6,46 +6,25 @@
 
 import Link from "next/link"
 import SupportChatConnected from "@/components/SupportChatConnected"
+import { BLOG_POSTS, formatPostDate } from "@/lib/blog/posts"
 
 export const dynamic = "force-static"
 export const revalidate = 86400
 
 export const metadata = {
   title: "Blog",
-  alternates: { canonical: "https://www.rippackscity.com/blog" },
+  alternates: {
+    canonical: "https://www.rippackscity.com/blog",
+    // RSS autodiscovery (<link rel="alternate" type="application/rss+xml">), 2026-10-11.
+    types: { "application/rss+xml": "https://www.rippackscity.com/feed.xml" },
+  },
   description:
     "Data-driven analysis of Flow blockchain collectibles: NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike.",
 }
 
-interface BlogPost {
-  slug: string
-  title: string
-  date: string
-  collection: string
-  blurb: string
-  readMin: number
-}
-
-const POSTS: BlogPost[] = [
-  {
-    slug: "permanent-moments-ipfs",
-    title: "Your Moments Just Became Permanent. Here's What That Actually Means.",
-    date: "June 9, 2026",
-    collection: "NBA Top Shot",
-    blurb:
-      "Top Shot just pinned every Moment's video to IPFS. What content-addressing actually guarantees, how to verify a Moment yourself in 30 seconds, and what we built with the data.",
-    readMin: 6,
-  },
-  {
-    slug: "pinnacle-star-wars-day-2026",
-    title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving",
-    date: "May 7, 2026",
-    collection: "Disney Pinnacle",
-    blurb:
-      "53 editions, 14 sets, 408 historical sales. Where the Mandalorian peak buyers are now underwater, the only edition trading below FMV with HIGH confidence, and what we still don't know.",
-    readMin: 8,
-  },
-]
+// POSTS lives in lib/blog/posts.ts since 2026-10-11 — shared with each post's
+// BlogPosting JSON-LD + og:article dates and with app/feed.xml/route.ts.
+const POSTS = BLOG_POSTS
 
 const PAGE: React.CSSProperties = {
   maxWidth: 760,
@@ -122,7 +101,7 @@ export default function BlogIndex() {
       {POSTS.map((p) => (
         <Link key={p.slug} href={`/blog/${p.slug}`} style={POST_CARD}>
           <div style={META}>
-            {p.collection} · {p.date} · {p.readMin} min read
+            {p.collection} · {formatPostDate(p.date)} · {p.readMin} min read
           </div>
           <h2 style={TITLE}>{p.title}</h2>
           <p style={BLURB}>{p.blurb}</p>

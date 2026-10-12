@@ -1,6 +1,6 @@
 // app/insights/market-pulse/layout.tsx — SEO surface for the public Market Pulse board.
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -39,17 +39,7 @@ export const metadata: Metadata = {
 }
 
 export default function MarketPulseLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "Market Pulse",
-    url: `${SITE_URL}/insights/market-pulse`,
-    description: "Per-collection Flow secondary-market volume, sales, buyers and sellers across 24h/7d/30d.",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: { "@type": "Organization", name: "Rip Packs City", url: SITE_URL },
-  }
+  const jsonLd = insightsBoardJsonLd("market-pulse")
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />

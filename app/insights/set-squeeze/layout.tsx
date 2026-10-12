@@ -1,7 +1,7 @@
 // app/insights/set-squeeze/layout.tsx
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -48,5 +48,14 @@ export const metadata: Metadata = {
 }
 
 export default function SetSqueezeLayout({ children }: { children: React.ReactNode }) {
-  return children
+  const jsonLd = insightsBoardJsonLd("set-squeeze")
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      {children}
+    </>
+  )
 }

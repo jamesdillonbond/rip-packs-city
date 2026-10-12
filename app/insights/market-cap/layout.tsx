@@ -6,7 +6,7 @@
 // app/insights/set-completers/layout.tsx.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -59,22 +59,7 @@ export const metadata: Metadata = {
 }
 
 export default function MarketCapLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "Market Cap — Flow digital collectibles",
-    url: `${SITE_URL}/insights/market-cap`,
-    description:
-      "Market cap for each Flow digital-collectible collection and for its players, teams, sets, series, tiers and badges: fair market value times collector-held supply (minted minus burned minus issuer-held).",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: {
-      "@type": "Organization",
-      name: "Rip Packs City",
-      url: SITE_URL,
-    },
-  }
+  const jsonLd = insightsBoardJsonLd("market-cap")
   return (
     <>
       <script

@@ -3,10 +3,11 @@ import type { Metadata } from 'next'
 import { proxyIpfsUrlAbsolute } from './ipfs-media'
 import { metaField } from './format'
 import { isMarketClosed, closedMarket, formatClosedOn } from "@/lib/market-closed"
-import { COLLECTIONS, collectionHasPage, type CollectionPage } from "@/lib/collections"
+import { COLLECTIONS, collectionHasPage, getCollection, type CollectionPage } from "@/lib/collections"
 import { ASK_STALE_HOURS } from "@/lib/market/ask-freshness"
 import { MAX_ASK_AGE_HOURS_CORROBORATION } from "@/lib/fmv-confidence"
 import { parallelLabelFromBadges } from "@/lib/edition-parallel"
+import { getInsightsBoard, type InsightsBoard } from "@/lib/insights/board-registry"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
@@ -123,6 +124,124 @@ export const organizationJsonLd = {
     name: 'Rip Packs City',
     url: BASE_URL,
   },
+}
+
+// ── The organisation, as an entity ───────────────────────────────────────────
+//
+// `organizationJsonLd` above is the ROOT node and is a WebApplication; its
+// `creator` is a bare {name,url}. Google's Organization guidance wants a
+// `logo` and `sameAs` so a brand can be reconciled with its social profile,
+// and until 2026-10-11 nothing on the site emitted them (review §3 E1).
+// Shared by /about (top-level node), every insights Dataset's `creator`/
+// `publisher` and the blog's BlogPosting `author`/`publisher`, so the brand is
+// described ONE way everywhere.
+export const RPC_ORGANIZATION = {
+  '@type': 'Organization',
+  name: 'Rip Packs City',
+  url: BASE_URL,
+  logo: `${BASE_URL}/rip-packs-city-logo.png`,
+  sameAs: ['https://x.com/RipPacksCity'],
+} as const
+
+/** Top-level Organization node — emitted by app/about/page.tsx. */
+export const organizationEntityJsonLd = {
+  '@context': 'https://schema.org',
+  ...RPC_ORGANIZATION,
+}
+
+// ── Public /insights boards → schema.org Dataset ─────────────────────────────
+//
+// Until 2026-10-11 the 14 Dataset nodes on the estate were all under the
+// auth-gated app/(analytics) tree, while the 32 anon-public boards emitted a
+// copy-pasted WebApplication + $0 Offer (see lib/insights/board-registry.ts).
+// `distribution` names the board's public JSON route ONLY when the registry
+// says one exists with no required params; `temporalCoverage` is deliberately
+// absent — the boards' windows ("last 60 days", "24h/7d/30d") are rolling and
+// schema.org wants an ISO 8601 date or interval, so any value here would be a
+// stale claim the day after it shipped.
+export function insightsDatasetJsonLd(board: InsightsBoard): Record<string, unknown> {
+  const url = `${BASE_URL}/insights/${board.slug}`
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Dataset',
+    name: board.name,
+    description: board.description,
+    url,
+    isAccessibleForFree: true,
+    creator: RPC_ORGANIZATION,
+    publisher: RPC_ORGANIZATION,
+    ...(board.publicApi
+      ? {
+          distribution: [
+            {
+              '@type': 'DataDownload',
+              encodingFormat: 'application/json',
+              contentUrl: `${BASE_URL}/api/public/insights/${board.slug}`,
+            },
+          ],
+        }
+      : {}),
+  }
+}
+
+// A wallet-paste TOOL is software, not data. Free is the truthful price and the
+// one place the `$0 Offer` the boards used to copy actually means something.
+export function insightsToolJsonLd(board: InsightsBoard): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: board.name,
+    description: board.description,
+    url: `${BASE_URL}/insights/${board.slug}`,
+    applicationCategory: 'FinanceApplication',
+    operatingSystem: 'Any',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    publisher: RPC_ORGANIZATION,
+  }
+}
+
+/**
+ * The JSON-LD node for an /insights board layout, by slug.
+ *
+ * ⚠ THROWS on a slug the registry does not know. Every caller passes a string
+ * literal that __tests__/insights-layouts-emit-dataset-json-ld.test.ts renders,
+ * so a typo fails the suite rather than quietly emitting nothing on a live page.
+ */
+export function insightsBoardJsonLd(slug: string): Record<string, unknown> {
+  const board = getInsightsBoard(slug)
+  if (!board) throw new Error(`insightsBoardJsonLd: "${slug}" is not in lib/insights/board-registry.ts`)
+  return board.kind === 'tool' ? insightsToolJsonLd(board) : insightsDatasetJsonLd(board)
+}
+
+// ── Blog → schema.org BlogPosting ────────────────────────────────────────────
+// The two posts set og:type=article but carried no Article schema and no date
+// (review §3 E3). Author is the ORGANISATION — the byline on both posts reads
+// "By Rip Packs City" and no person is named on the page, so a Person node
+// would be a claim the page does not make.
+export function articleJsonLd(opts: {
+  headline: string
+  description: string
+  /** ISO 8601 date (YYYY-MM-DD) or datetime. */
+  datePublished: string
+  dateModified?: string
+  /** Absolute canonical URL of the post. */
+  url: string
+  /** Absolute image URL. */
+  image?: string
+}): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: opts.headline,
+    description: opts.description,
+    datePublished: opts.datePublished,
+    dateModified: opts.dateModified ?? opts.datePublished,
+    url: opts.url,
+    mainEntityOfPage: { '@type': 'WebPage', '@id': opts.url },
+    ...(opts.image ? { image: [opts.image] } : {}),
+    author: RPC_ORGANIZATION,
+    publisher: RPC_ORGANIZATION,
+  }
 }
 
 type PageMeta = { title: string; description: string }
@@ -391,6 +510,7 @@ export function pageMetadata(page: string, collectionLabel: string, collectionId
     title,
     description,
     alternates: { canonical },
+    ...gatedTabRobots(page, collectionId),
     openGraph: {
       ...OG_INHERITED,
       title: `${title} | Rip Packs City`,
@@ -479,6 +599,25 @@ export function foldedTabCanonical(page: string, collectionId: string): string {
   const parent = ownMeta(FOLDED_TAB_PARENT, page)
   const target = parent && collectionHasPage(collectionId, parent as CollectionPage) ? parent : 'overview'
   return `${BASE_URL}/${collectionId}/${target}`
+}
+
+// ── Gated feature-tab shells are noindex (2026-10-11, review §3 E7) ─────────
+//
+// A direct URL to a tab a collection does not ship (/ufc/market, /disney-
+// pinnacle/hot-floors, …) renders `FeatureTabGate`'s "isn't available" shell —
+// or packs/layout.tsx's "coming soon" twin — at HTTP 200: a soft-404. The edge
+// 307s only the retired set (proxy.ts RETIRED_COLLECTION_TABS); the other ~19
+// shells were self-canonical and `index, follow`, so Google was being asked to
+// index 19 copies of one apology. `follow` stays true: the shell links the
+// Overview, which is a real page.
+//
+// Returns `{}` for a tab the collection DOES ship and for an unknown collection
+// (that case is `unknownCollectionMetadata`'s), so the sitemap'd tabs — derived
+// from the same `pages` array — are untouched by construction.
+export function gatedTabRobots(page: string, collectionId: string): Pick<Metadata, 'robots'> {
+  if (!getCollection(collectionId)) return {}
+  if (collectionHasPage(collectionId, page as CollectionPage)) return {}
+  return { robots: { index: false, follow: true } }
 }
 
 export function unknownCollectionMetadata(page: string, id: string): Metadata {

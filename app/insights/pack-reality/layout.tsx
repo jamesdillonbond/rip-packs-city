@@ -3,7 +3,7 @@
 // SEO surface for the public Top Shot pack-reality board.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -56,22 +56,7 @@ export const metadata: Metadata = {
 }
 
 export default function PackRealityLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "Top Shot Pack Reality",
-    url: `${SITE_URL}/insights/pack-reality`,
-    description:
-      "Audits every NBA Top Shot pack ripped in the last 60 days. Pull-value histogram, KPIs, and an honest +EV pack ranker that shows how many rips each verdict rests on.",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: {
-      "@type": "Organization",
-      name: "Rip Packs City",
-      url: SITE_URL,
-    },
-  }
+  const jsonLd = insightsBoardJsonLd("pack-reality")
   return (
     <>
       <script

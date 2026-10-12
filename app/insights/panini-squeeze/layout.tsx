@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { PANINI_PUBLIC } from "@/lib/launch-flags";
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com";
 
@@ -69,5 +69,14 @@ export const metadata: Metadata = {
 };
 
 export default function PaniniSqueezeLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  const jsonLd = insightsBoardJsonLd("panini-squeeze")
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      {children}
+    </>
+  )
 }

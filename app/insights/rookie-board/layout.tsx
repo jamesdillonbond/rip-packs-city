@@ -7,7 +7,7 @@
 // duplicate content. Mirrors app/insights/serial-premiums/layout.tsx.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -59,22 +59,7 @@ export const metadata: Metadata = {
 }
 
 export default function RookieBoardLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "Rookie Board — 2025 Class",
-    url: `${SITE_URL}/insights/rookie-board`,
-    description:
-      "Breaks every 2025 NBA Top Shot rookie edition out by parallel with per-parallel FMV, circulation, ask, burn and lock rates from real on-chain data.",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: {
-      "@type": "Organization",
-      name: "Rip Packs City",
-      url: SITE_URL,
-    },
-  }
+  const jsonLd = insightsBoardJsonLd("rookie-board")
   return (
     <>
       <script

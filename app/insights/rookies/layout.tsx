@@ -3,7 +3,7 @@
 // SEO surface for the public 2025 NBA Rookie Class Index.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -53,22 +53,7 @@ export const metadata: Metadata = {
 }
 
 export default function RookiesLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "2025 NBA Rookie Class Index",
-    url: `${SITE_URL}/insights/rookies`,
-    description:
-      "Per-player 30-day GMV, lock-rate, and first-mint trophy presence for the 2025 NBA rookie class on Top Shot. Refreshes hourly.",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: {
-      "@type": "Organization",
-      name: "Rip Packs City",
-      url: SITE_URL,
-    },
-  }
+  const jsonLd = insightsBoardJsonLd("rookies")
   return (
     <>
       <script

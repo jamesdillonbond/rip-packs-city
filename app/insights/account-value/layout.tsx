@@ -1,7 +1,7 @@
 // app/insights/account-value/layout.tsx
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights`,
+        url: `${SITE_URL}/api/og/insights/account-value`,
         width: 1200,
         height: 630,
         alt: "What's My Account Worth? — Rip Packs City",
@@ -48,11 +48,20 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "What's My Account Worth?",
     description: "See your Flow collectibles account's total value — live FMV, free.",
-    images: [`${SITE_URL}/api/og/insights`],
+    images: [`${SITE_URL}/api/og/insights/account-value`],
     creator: "@RipPacksCity",
   },
 }
 
 export default function AccountValueLayout({ children }: { children: React.ReactNode }) {
-  return children
+  const jsonLd = insightsBoardJsonLd("account-value")
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      {children}
+    </>
+  )
 }

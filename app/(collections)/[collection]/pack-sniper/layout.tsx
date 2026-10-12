@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import { getCollection } from "@/lib/collections"
-import { foldedTabCanonical, unknownCollectionMetadata } from "@/lib/seo"
+import { foldedTabCanonical, gatedTabRobots, unknownCollectionMetadata } from "@/lib/seo"
 import FeatureTabGate from "@/components/collection/FeatureTabGate"
 
 // Folded tab (2026-07-18 IA reorg) — deliberately has NO `PAGE_META` entry, so
@@ -23,7 +23,12 @@ export async function generateMetadata(
   const { collection: id } = await props.params
   const collection = getCollection(id)
   if (!collection) return unknownCollectionMetadata("pack-sniper", id)
-  return { alternates: { canonical: foldedTabCanonical("pack-sniper", collection.id) } }
+  return {
+    alternates: { canonical: foldedTabCanonical("pack-sniper", collection.id) },
+    // noindex when this collection does not ship the tab — the gate below then
+    // renders a soft-404 shell at 200 (lib/seo.ts gatedTabRobots).
+    ...gatedTabRobots("pack-sniper", collection.id),
+  }
 }
 
 // ⚠ The gate is the second half of the same omission. `FeatureTabGate` was

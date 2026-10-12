@@ -3,7 +3,7 @@
 // SEO surface for the public NBA Top Shot pack-market (sealed-pack resale) board.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -53,22 +53,7 @@ export const metadata: Metadata = {
 }
 
 export default function TopShotPackMarketLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "NBA Top Shot Pack Market",
-    url: `${SITE_URL}/insights/topshot-pack-market`,
-    description:
-      "Ranks NBA Top Shot sealed packs by what they actually resell for on the secondary market vs their original drop price, from the complete on-chain sale history. Packs with 5+ secondary sales qualify.",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: {
-      "@type": "Organization",
-      name: "Rip Packs City",
-      url: SITE_URL,
-    },
-  }
+  const jsonLd = insightsBoardJsonLd("topshot-pack-market")
   return (
     <>
       <script

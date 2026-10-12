@@ -7,7 +7,7 @@
 // don't index as duplicate content. Mirrors app/insights/top-sales/layout.tsx.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -58,22 +58,7 @@ export const metadata: Metadata = {
 }
 
 export default function SerialPremiumsLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "Serial Premiums — #1 Watch",
-    url: `${SITE_URL}/insights/serial-premiums`,
-    description:
-      "Ranks NBA Top Shot editions by how much more the #1 serial sold for than the edition's typical price, using real on-chain sales.",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: {
-      "@type": "Organization",
-      name: "Rip Packs City",
-      url: SITE_URL,
-    },
-  }
+  const jsonLd = insightsBoardJsonLd("serial-premiums")
   return (
     <>
       <script

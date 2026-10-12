@@ -1,7 +1,7 @@
 // app/insights/cross-collection/layout.tsx
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { readCrossCollectionCohortSize } from "@/lib/insights/cross-collection-cohort"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -75,5 +75,14 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function CrossCollectionLayout({ children }: { children: React.ReactNode }) {
-  return children
+  const jsonLd = insightsBoardJsonLd("cross-collection")
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      {children}
+    </>
+  )
 }

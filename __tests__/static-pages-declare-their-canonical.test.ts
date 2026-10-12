@@ -28,7 +28,9 @@ const STATIC: Array<[string, string]> = [
 describe("static pages declare their own self-canonical", () => {
   it.each(STATIC)("%s → %s", (file, canonical) => {
     const src = read(file)
-    expect(src).toMatch(new RegExp(`alternates:\\s*\\{\\s*canonical:\\s*["'\`]${canonical.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}["'\`]\\s*\\}`))
+    // `canonical` must be the FIRST key of `alternates`; further keys may follow it
+    // (2026-10-11: /blog adds `types: { "application/rss+xml": … }` for RSS autodiscovery).
+    expect(src).toMatch(new RegExp(`alternates:\\s*\\{\\s*canonical:\\s*["'\`]${canonical.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}["'\`]\\s*(?:,[\\s\\S]*?)?\\}`))
   })
 })
 

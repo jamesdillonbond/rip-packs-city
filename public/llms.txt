@@ -1,105 +1,129 @@
 # Rip Packs City
 
+> Regenerated 2026-10-11 from the PUBLIC surface (proxy.ts `isPublicPath` + the sitemap set in lib/sitemap-data.ts). Every path below is readable with no account. Pinned by __tests__/llms-txt-lists-only-the-public-surface.test.ts — a gated path here reds CI.
+
 ## Overview
-Rip Packs City (RPC) is a collector intelligence platform built for the Flow digital collectibles community. RPC covers NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike — the major collections across the Dapper and Top Shot ecosystem. Built to bring pro-grade analytics to anyone ripping packs and tracking moments on Flow.
+Rip Packs City (RPC) is independent, read-only collector intelligence for Flow blockchain digital collectibles — NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike — plus Candy MLB ICONs (Solana) and Panini Blockchain cards. Fair market value (FMV) from on-chain sales, deal-finding, pack analysis, scarcity and squeeze boards, wallet tools and public entity pages. Built in Portland, Oregon.
 
-Every collection exposes wallet analytics, FMV pricing, marketplace browser, and a sniper feed; pack EV, set completion, and analytics tabs scale across collections as data coverage allows.
+RPC is READ-ONLY: it never connects a wallet, holds funds or executes a purchase. Listing links open the collection's own marketplace. Nothing here is investment advice.
 
-## Supported Collections
+## Public insights boards (free, no signup)
+Each board is a schema.org Dataset (or WebApplication for the wallet tools); most expose their default JSON at /api/public/insights/<slug>.
+
+- /insights — the hub: every board below in one place.
+- /insights/account-value — Account Value Calculator. Paste a Top Shot username or Flow wallet and see the account's total value — live FMV across every moment it holds.
+- /insights/squeeze — Top Shot Lock-Rate Squeeze Board. Ranks NBA Top Shot editions by effective supply (circulation minus locked minus burned).
+- /insights/set-squeeze — Top Shot Set Squeeze Leaderboard. Sets ranked by average lock + burn squeeze across their editions.
+- /insights/squeeze-check — What's Liquid In Your Bag? Paste a Flow wallet and see how much of its Top Shot collection is liquid vs challenge-locked or burned.
+- /insights/market-cap — Market Cap. FMV times collector-held supply for each Flow collection and its players, teams, sets, series, tiers and badges.
+- /insights/market — The RPC Index. A tier-segmented daily market index for NBA Top Shot built from real secondary-market sales.
+- /insights/market-pulse — Market Pulse. Per-collection Flow secondary-market volume, sales, buyers and sellers across 24h/7d/30d.
+- /insights/deals — Below FMV. Top Shot, All Day and Pinnacle editions listed below a fair value priced from recent corroborated sales, ranked by discount.
+- /insights/offer-spread — Bid vs Floor. NBA Top Shot editions ranked by how tightly the top standing offer meets the floor ask.
+- /insights/underpriced-serials — Underpriced #1s & Perfect Mints. Headline Top Shot serials listed below their serial-FMV estimate.
+- /insights/serial-premiums — Serial Premiums — #1 Watch. How much more the #1 serial sold for than the edition's typical price.
+- /insights/parallel-premiums — Parallel Premiums. The premium NBA Top Shot parallel editions command over the Standard base edition of the same play.
+- /insights/trophies — The Trophy Room. The rarest Top Shot and All Day editions — every 1-of-1 and Ultimate-tier moment — ranked by FMV.
+- /insights/top-sales — Top Sales — Whale Watch. The biggest recent Top Shot and All Day sales, with buyer and seller resolved to Top Shot handles.
+- /insights/first-mint — Top Shot First-Mint Trophy Tracker. Every serial #1 sale of the last 90 days with its multiplier vs the average-serial price.
+- /insights/rookies — 2025 NBA Rookie Class Index. Per-player 30-day GMV, lock rate and first-mint trophy presence for the 2025 rookie class.
+- /insights/rookie-board — Rookie Board — 2025 Class. Every 2025 rookie edition broken out by parallel with FMV, circulation, ask, burn and lock rates.
+- /insights/set-completers — Set Completers. How many collectors have completed each 2025 Top Shot rookie set, from the on-chain ownership graph.
+- /insights/new-collectors — New Collectors. Who is entering NBA Top Shot — new vs returning buyers, first-buy price, gateway sets and players, cohort retention.
+- /insights/cross-collection — Cross-Collection Whale Map. Flow wallets that hold 3+ collections, their cohort distribution and the Top Shot sets they collect.
+- /insights/pack-reality — Top Shot Pack Reality. Every NBA Top Shot pack ripped in the last 60 days: pull-value histogram, KPIs and an honest +EV pack ranker.
+- /insights/allday-pack-reality — NFL All Day Pack Reality. Each pack's odds-corrected modeled EV vs the value its opened packs actually delivered on-chain.
+- /insights/topshot-pack-market — NBA Top Shot Pack Market. What sealed Top Shot packs actually resell for vs their original drop price.
+- /insights/allday-pack-market — NFL All Day Pack Market. What sealed All Day packs actually resell for vs their original drop price.
+- /insights/pack-sniper — Pack Sniper. Currently-listed sealed packs ranked by live secondary ask vs drop-weighted expected pull value.
+- /insights/pack-drops — Pack Drops. Vaultopolis re-pack drops of real Top Shot moments scored against RPC FMV.
+- /insights/pinnacle-scarcity — Disney Pinnacle Scarcity Board. Editions ranked by how far below their variant family's average mint they sit.
+- /insights/allday-scarcity — NFL All Day Scarcity Board. Editions ranked by how far below their set and tier family's average mint they sit.
+- /insights/tc-report — Top Collector Report. Full bag analytics for any Flow wallet — squeeze exposure, set completion, cross-collection footprint, rookie + WNBA coverage.
+- /insights/candy-mlb — Candy MLB ICONs. 2026 MLB Base Series ICONs (Candy Digital / Solana): secondary FMV, best offers, bid-ask spread, pack EV, holder concentration.
+- /insights/panini-squeeze — Panini WC Prizm Squeeze. Which 2026 Panini Prizm World Cup cards are still sealed — remaining supply, rip %, FMV and sealed-dollar exposure.
+- /insights/panini-premiums — Panini Premiums. What numbered Panini parallels command over the common base, and what #1 / perfect-mint serials sold for.
+
+## Cross-collection hubs
+- /sniper — every collection's live listings below FMV, in one feed.
+- /market — cross-collection market hub: edition lookup and leaderboards.
+- /teams — franchise directory by league; /teams/<league>/<slug> is one team across every collection that carries it.
+
+## Collections
+Every collection has a public overview; the feature tabs listed are the public ones for that collection.
 
 ### NBA Top Shot
 - Contract: 0x0b2a3299cc857e29 (TopShot)
-- Tiers: Common, Fandom, Rare, Legendary, Ultimate
-- Features: Wallet analytics, FMV, sniper deals, set completion, pack EV
-- Badge metadata (rendered inline on Collection / Market / Sniper rows): Rookie Year, Top Shot Debut, Rookie Premiere, Rookie of the Year, Rookie Mint, Championship Year, #1 Serial, Jersey Match, Perfect Mint
-- Series: Series 1, Series 2, Summer 2021, Series 3, Series 4, Series 2023-24, Series 2024-25, Series 2025-26
-- URLs: /nba-top-shot/collection, /nba-top-shot/sniper, /nba-top-shot/packs, /nba-top-shot/sets, /nba-top-shot/market, /nba-top-shot/analytics
+- /nba-top-shot/overview — FMV, floor prices, top sales and the daily market pulse
+- /nba-top-shot/market — edition-level market intelligence and leaderboards
+- /nba-top-shot/sets — set completion and the cheapest path to finishing a set
+- /nba-top-shot/packs — pack EV calculator and drop analysis
+- /nba-top-shot/sniper — live listings below FMV
 
 ### NFL All Day
 - Contract: 0xe4cf4bdc1751c65d (AllDay)
-- Tiers: Common, Uncommon, Rare, Legendary, Ultimate
-- Features: Wallet analytics, FMV, sniper deals, set completion, pack browser
-- URLs: /nfl-all-day/collection, /nfl-all-day/sniper, /nfl-all-day/packs, /nfl-all-day/sets
+- /nfl-all-day/overview, /nfl-all-day/market, /nfl-all-day/sets, /nfl-all-day/packs, /nfl-all-day/sniper
+
+### Disney Pinnacle
+- Pins by character, franchise and variant; marketplace is disneypinnacle.com
+- /disney-pinnacle/overview, /disney-pinnacle/market, /disney-pinnacle/sets, /disney-pinnacle/packs, /disney-pinnacle/sniper
+- /pinnacle/moment/<id> — one pin (a `pinnacle_catalog` render)
 
 ### LaLiga Golazos
 - Contract: 0x87ca73a41bb50ad5 (Golazos)
-- Tiers: Common, Fandom, Rare, Legendary
-- Features: Wallet analytics, FMV, sniper deals, set completion
-- URLs: /laliga-golazos/collection, /laliga-golazos/sniper, /laliga-golazos/sets
-
-### Disney Pinnacle
-- Contract: Pinnacle (Flow)
-- Tiers: Common, Uncommon, Rare, Legendary
-- Features: Wallet analytics, FMV, sniper deals
-- Marketplace: disneypinnacle.com (not Flowty)
-- URLs: /disney-pinnacle/collection, /disney-pinnacle/sniper
+- /laliga-golazos/overview, /laliga-golazos/market, /laliga-golazos/sets, /laliga-golazos/packs, /laliga-golazos/sniper
 
 ### UFC Strike
-- Contract: 0x329feb3ab062d289 (UFC_NFT)
-- Tiers: Challenger, Contender, Fandom
-- Features: Wallet analytics, FMV, sniper deals
-- Note: UFC Strike migrated to Aptos in July 2025; RPC supports the remaining Flow collector base
-- URLs: /ufc/collection, /ufc/sniper
+- Contract: 0x329feb3ab062d289 (UFC_NFT). UFC Strike migrated to Aptos in July 2025; RPC covers the historical Flow market.
+- /ufc/overview, /ufc/sets
 
-## Platform Features
-- **FMV Engine (v1.5.1)**: Outlier-filtered weighted average price, recency decay, liquidity rating (0–5), serial multiplier, deal rating (0–1), lowest ask flag. Refreshed every 20 minutes per collection.
-- **Sniper Feed**: Real-time listings below FMV from native marketplaces and Flowty. Deduped, sorted by recency. Per-collection data sources.
-- **Market Browser (Phase 3)**: Sortable / filterable marketplace listings per collection — tier, price, discount, player. URL-synced filter state.
-- **Analytics suite at /analytics**: live cross-collection intelligence. Surfaces:
-  - **/analytics** — homepage and Pulse dashboard (volume, growth, ecosystem health)
-  - **/analytics/sales** — sortable sales feed, leaderboards, marketplace mix, period-over-period deltas
-  - **/analytics/listings** — open marketplace listings, order-book depth, locked vs liquid
-  - **/analytics/loans** — Flowty loan offers, funded loans, lender performance
-  - **/analytics/wallets** — wallet hub overview, position transfers, biggest sales, retention cohorts
-  - **/analytics/fmv** — FMV index, top movers, tier pulse, pipeline health (5 collections)
-  - **/analytics/packs** — live pack EV dashboard with top-EV table and fresh drops
-  - **/analytics/sets** — set/edition counts, tier breakdown, series overview (5 collections)
-- **Per-collection analytics tab**: each collection has Market and Portfolio sub-tabs at /{collection-id}/analytics. Market shows order-book depth, FMV health, pack EV, loans book, whale leaderboard, plus ecosystem-wide breakdowns. Portfolio analyzes a wallet — origin story, liquid vs locked, marketplace breakdown, tier/series breakdown, clarity score.
-- **Wallet Analytics**: Any Flow wallet — moment inventory, FMV totals, cost basis, P&L, acquisition history, badge detection.
-- **Set Completion**: Track owned vs needed, bottleneck finder, cheapest completion path.
-- **Pack Tools**: Pack browser with EV calculator, tier breakdown, buy/skip signal.
-- **Email Sign-In**: Optional magic-link sign-in at /login adds a private dashboard, saved wallets and alerts. The collection pages, /insights and public /profile/[username] pages can be browsed without an account.
-- **Multi-Collection Profile (Phase 4)**: Hero Holo Moment card, saved wallets across collections, 6-slot trophy case, favorite collections (drives per-collection news feed), follows system, friend activity feed (last 20 sales over 7 days from followed users' wallets), recent searches.
-- **AI Concierge v2 (Phase 4)**: Claude Sonnet-powered, multi-collection aware. Knows which collection you're browsing from the URL and scopes queries accordingly. New search_across_collections tool handles cross-collection lookups (e.g. "does RPC have Messi?"). Tools: search_live_deals, search_catalog_deals, get_fmv, check_wallet, search_across_collections, plus watchlist/alerts/escalation.
-- **Public Profiles**: Shareable collector profiles at /profile/[username] with trophy case, bio, and privacy-stripped saved-wallet summaries. No auth required to view.
+### Candy MLB ICONs (Solana — chain two)
+- /candy-mlb/overview, plus /insights/candy-mlb above. Solana addresses are base58 and case-sensitive.
+
+### Panini Blockchain
+- /panini-blockchain/overview, plus /insights/panini-squeeze and /insights/panini-premiums above.
+
+## Entity pages (public, indexed, one per real-world thing)
+For <collection> in nba-top-shot, nfl-all-day, laliga-golazos, ufc, candy-mlb, panini-blockchain (and disney-pinnacle for set/series/pack):
+- /<collection>/edition/<slug> — one edition: FMV with confidence, floor, recent sales, serial premiums, badges
+- /<collection>/player/<slug> — one player across their editions
+- /<collection>/team/<slug> — one team's editions
+- /<collection>/set/<slug> — one set, its editions and completion data
+- /<collection>/series/<slug> — one series
+- /<collection>/pack/dist/<distId> — one pack distribution and its lifecycle
+- /moment/<id> — a single moment resolved by flow id, moment uuid or edition uuid
+- /pinnacle/moment/<id> — a single Disney Pinnacle pin
+
+## Collector pages
+- /profile/<username> — public collector profile: trophy case, bio, saved-wallet summaries
+- /share/<wallet> — a wallet's collection card: total FMV, moment count, badges
+
+## Reading
+- /blog — Field Notes: long-form analysis (RSS at /feed.xml)
+- /blog/permanent-moments-ipfs — what Top Shot's IPFS pinning actually guarantees
+- /blog/pinnacle-star-wars-day-2026 — what moved on Disney Pinnacle for Star Wars Day 2026
+- /legal/fmv-methodology — how FMV is computed and what each confidence tier means
+- /about — who builds this and why
+- /privacy, /terms
+
+## FMV, briefly
+FMV is a weighted average of recent on-chain sales with recency decay and outlier filtering. Confidence tiers: HIGH (multiple recent sales), MEDIUM (sparse data), LOW (single sale or stale). Serial premiums apply to #1, jersey-match and perfect-mint serials. Full method: /legal/fmv-methodology. Every price on an edition page carries its confidence and the age of the sales behind it.
 
 ## Quick answers
-- **"What is my Top Shot / All Day / Pinnacle collection worth?"** Paste any Flow wallet address into the search box on https://www.rippackscity.com — RPC builds a free collection card with total FMV, moment count and badges at /share/[wallet]. No account needed.
-- **"Is this moment underpriced?"** Each collection's Sniper tab (e.g. /nba-top-shot/sniper) lists live listings priced below FMV.
-- **"Which packs are +EV?"** /analytics/packs and each collection's Packs tab compare pack price with the FMV of what it can pull.
-- **Can I buy through RPC?** No. RPC is read-only intelligence; purchases happen on the marketplace a listing links to.
+- "What is my Top Shot / All Day / Pinnacle collection worth?" — /insights/account-value, or paste a wallet on the home page for a /share/<wallet> card. No account needed.
+- "Is this moment underpriced?" — /insights/deals and each collection's /sniper tab list live listings priced below FMV.
+- "Which packs are +EV?" — /insights/pack-sniper (sealed packs vs expected pull value) and /insights/pack-reality (what packs actually delivered).
+- "Can I buy through RPC?" — No. RPC is read-only intelligence; purchases happen on the marketplace a listing links to.
 
-## FMV Methodology
-Weighted average price from recent on-chain sales with recency decay. Confidence tiers: HIGH (multiple recent sales), MEDIUM (sparse data), LOW (single sale or stale). Serial premiums applied for #1, jersey match, and perfect mint serials. Badge premiums are market-baked and not applied as multipliers.
+## Public JSON
+- /api/public/insights/<slug> — the default view of most boards above (JSON; `meta.returned_rows` and `meta.truncated` tell you whether a page is a floor)
+- /api/fmv/demo — a documented FMV sample
+- /sitemap.xml — the complete public URL set (five segments)
 
-## Technical Stack
-- Next.js 16 App Router, React 19, TypeScript 5, Tailwind 4
-- Supabase (PostgreSQL) — editions, FMV snapshots, listings cache, wallet cache
-- Flow blockchain via FCL — read-only on-chain reads. RPC never connects a wallet, holds funds or executes a purchase; listing links open the collection's own marketplace.
-- Vercel Pro deployment
-- Data pipelines via cron-job.org (every 20 minutes)
-
-## URL Structure
-- Homepage: /
-- About: /about
-- Collection landing: /{collection-id}
-- Profiles: /profile/[username]
-- Collection sharing: /share/[wallet]
-- Cross-collection analytics: /analytics, /analytics/sales, /analytics/listings, /analytics/loans, /analytics/wallets, /analytics/fmv, /analytics/packs, /analytics/sets
-
-Per-collection routes (verified against publishedCollections() in lib/collections.ts):
-- NBA Top Shot: /nba-top-shot/{overview, collection, market, packs, fast-break, road-to-the-ring, sniper, sets, analytics}
-- NFL All Day: /nfl-all-day/{overview, collection, market, packs, sniper, sets, analytics}
-- Disney Pinnacle: /disney-pinnacle/{overview, collection, market, sniper, analytics}
-- LaLiga Golazos: /laliga-golazos/{overview, collection, market, packs, sniper, sets, analytics}
-- UFC Strike: /ufc/{overview, collection, sniper, analytics}
-
-- API: /api/sniper-feed, /api/wallet-search, /api/edition-history, /api/market-analytics
-
-## Live Site
-- Production: https://www.rippackscity.com (canonical surface for every page in this index)
+## Live site
+- https://www.rippackscity.com (canonical host for every path above)
 
 ## Contact
 - Site: https://www.rippackscity.com
 - Email: rippackscity@gmail.com
-- Twitter: @RipPacksCity
+- X: @RipPacksCity (https://x.com/RipPacksCity)

@@ -5,7 +5,7 @@
 // Mirrors app/insights/squeeze/layout.tsx.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -56,22 +56,7 @@ export const metadata: Metadata = {
 }
 
 export default function PackSniperLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "Pack Sniper — Sealed Pack Deals vs Expected Value",
-    url: `${SITE_URL}/insights/pack-sniper`,
-    description:
-      "Ranks currently-listed NBA Top Shot (and NFL All Day) sealed packs by live secondary ask versus drop-weighted expected pull value. Refreshes every few minutes.",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: {
-      "@type": "Organization",
-      name: "Rip Packs City",
-      url: SITE_URL,
-    },
-  }
+  const jsonLd = insightsBoardJsonLd("pack-sniper")
   return (
     <>
       <script

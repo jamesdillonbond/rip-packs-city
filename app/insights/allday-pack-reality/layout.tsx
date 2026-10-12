@@ -3,7 +3,7 @@
 // SEO surface for the public NFL All Day pack-reality (model-vs-reality) board.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -53,22 +53,7 @@ export const metadata: Metadata = {
 }
 
 export default function AllDayPackRealityLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "NFL All Day Pack Reality",
-    url: `${SITE_URL}/insights/allday-pack-reality`,
-    description:
-      "Compares each NFL All Day pack's odds-corrected modeled EV against the value its opened packs actually delivered, resolved on-chain. Sparse-data and stale-FMV dists are excluded.",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: {
-      "@type": "Organization",
-      name: "Rip Packs City",
-      url: SITE_URL,
-    },
-  }
+  const jsonLd = insightsBoardJsonLd("allday-pack-reality")
   return (
     <>
       <script

@@ -7,7 +7,7 @@
 // app/insights/new-collectors/layout.tsx.
 
 import type { Metadata } from "next"
-import { TWITTER_INHERITED } from "@/lib/seo"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -58,22 +58,7 @@ export const metadata: Metadata = {
 }
 
 export default function SetCompletersLayout({ children }: { children: React.ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "Set Completers — 2025 Rookie Set Completion",
-    url: `${SITE_URL}/insights/set-completers`,
-    description:
-      "Tracks how many collectors have completed each 2025 NBA Top Shot rookie set (base-play completion) from the indexed on-chain ownership graph — completers, holders, and completion rate per set.",
-    applicationCategory: "FinanceApplication",
-    operatingSystem: "Any",
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: {
-      "@type": "Organization",
-      name: "Rip Packs City",
-      url: SITE_URL,
-    },
-  }
+  const jsonLd = insightsBoardJsonLd("set-completers")
   return (
     <>
       <script

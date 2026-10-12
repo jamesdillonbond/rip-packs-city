@@ -703,6 +703,47 @@ function buildEditionPages(editions: EditionRow[]): MetadataRoute.Sitemap {
     .filter((x): x is NonNullable<typeof x> => x !== null)
 }
 
+// The /insights boards the sitemap advertises. Module-scope + exported (2026-10-11)
+// so public/llms.txt's test can demand every one of them is listed there too —
+// the AI-crawler index and the sitemap must name the same public boards.
+export const INSIGHT_ROUTES: readonly string[] = [
+  'squeeze',
+  'pack-reality',
+  'allday-pack-reality',
+  'allday-pack-market',
+  'topshot-pack-market',
+  'pack-sniper',
+  'rookies',
+  'rookie-board',
+  'first-mint',
+  'cross-collection',
+  'set-squeeze',
+  'pinnacle-scarcity',
+  'allday-scarcity',
+  'market',
+  'offer-spread',
+  'deals',
+  'trophies',
+  'top-sales',
+  'serial-premiums',
+  'parallel-premiums',
+  'market-pulse',
+  'new-collectors',
+  'set-completers',
+  'market-cap',
+  'underpriced-serials',
+  'pack-drops',
+  'squeeze-check',
+  'tc-report',
+  'account-value',
+  // STAGED surfaces — included only once their launch flag flips, so the
+  // sitemap never advertises a URL that proxy.ts 302s to /login (a
+  // crawl-budget burn + a "Crawled, currently not indexed" signal). Adding
+  // the slug here is NOT a separate go-live step; it rides the launch flag.
+  ...(CANDY_MLB_PUBLIC ? ['candy-mlb'] : []),
+  ...(PANINI_PUBLIC ? ['panini-squeeze', 'panini-premiums'] : []),
+]
+
 export const SITEMAP_SEGMENT_IDS = [0, 1, 2, 3, 4]
 
 export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sitemap> {
@@ -888,43 +929,6 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
     priority: e.priority,
   }))
 
-  const INSIGHT_ROUTES = [
-    'squeeze',
-    'pack-reality',
-    'allday-pack-reality',
-    'allday-pack-market',
-    'topshot-pack-market',
-    'pack-sniper',
-    'rookies',
-    'rookie-board',
-    'first-mint',
-    'cross-collection',
-    'set-squeeze',
-    'pinnacle-scarcity',
-    'allday-scarcity',
-    'market',
-    'offer-spread',
-    'deals',
-    'trophies',
-    'top-sales',
-    'serial-premiums',
-    'parallel-premiums',
-    'market-pulse',
-    'new-collectors',
-    'set-completers',
-    'market-cap',
-    'underpriced-serials',
-    'pack-drops',
-    'squeeze-check',
-    'tc-report',
-    'account-value',
-    // STAGED surfaces — included only once their launch flag flips, so the
-    // sitemap never advertises a URL that proxy.ts 302s to /login (a
-    // crawl-budget burn + a "Crawled, currently not indexed" signal). Adding
-    // the slug here is NOT a separate go-live step; it rides the launch flag.
-    ...(CANDY_MLB_PUBLIC ? ['candy-mlb'] : []),
-    ...(PANINI_PUBLIC ? ['panini-squeeze', 'panini-premiums'] : []),
-  ]
   const insightsPages: MetadataRoute.Sitemap = [
     { url: `${BASE_URL}/insights`, changeFrequency: 'daily', priority: 0.9 },
     ...INSIGHT_ROUTES.map((r) => ({
