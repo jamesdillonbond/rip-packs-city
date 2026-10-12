@@ -63,6 +63,29 @@ describe("GET /api/auth/callback — code (PKCE) flow", () => {
     const loc = new URL(res.headers.get("location")!)
     expect(loc.pathname).toBe("/")
   })
+  // ⛔ 2026-10-11 — the route used `startsWith("/")`, which admits a
+  // protocol-relative URL: `//evil.example` resolves against req.url to
+  // https://evil.example/ — an open redirect fired right after sign-in. The
+  // assertion is on the HOST the browser would land on, not on the pathname
+  // (the old check "passed" a pathname test while sending the user off-site).
+  it.each([
+    ["//evil.example/steal"],
+    ["/\\evil.example/steal"],
+    ["//evil.example"],
+  ])("never leaves the origin for a protocol-relative redirect (%s)", async (target) => {
+    const res = await GET(req("?code=abc&redirect=" + encodeURIComponent(target)))
+    expect(res.status).toBe(307)
+    const loc = new URL(res.headers.get("location")!)
+    expect(loc.host).toBe("t")
+    expect(loc.pathname).toBe("/")
+  })
+  it("no-change control: a rooted same-origin path with a hash still lands", async () => {
+    const res = await GET(req("?code=abc&redirect=" + encodeURIComponent("/dashboard#trophy")))
+    const loc = new URL(res.headers.get("location")!)
+    expect(loc.host).toBe("t")
+    expect(loc.pathname).toBe("/dashboard")
+    expect(loc.hash).toBe("#trophy")
+  })
   it("tolerates a user_profiles upsert error and still lands the session", async () => {
     st.upsertErr = { message: "profiles down" }
     expect((await GET(req("?code=abc"))).status).toBe(307)

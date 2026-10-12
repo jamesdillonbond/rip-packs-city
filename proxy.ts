@@ -536,6 +536,12 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // 302→/login. Read-only static content; same risk profile as /privacy + /terms.
   // (2026-06-08)
   if (pathname === "/legal" || pathname.startsWith("/legal/")) return true
+  // /.well-known/security.txt — RFC 9116 vulnerability-disclosure contact
+  // (app/.well-known/security.txt/route.ts). Read by scanners and researchers
+  // with no session; a 307→/login here is indistinguishable from "no policy".
+  // Exact path, not the prefix: nothing else under /.well-known/ exists, and a
+  // prefix would publish whatever lands there next. (2026-10-11)
+  if (pathname === "/.well-known/security.txt") return true
   // /auth + subpaths (covers /auth/confirm and similar)
   if (pathname === "/auth" || pathname.startsWith("/auth/")) return true
   // /admin pages — enforce their own RPC_ADMIN_TOKEN bearer auth at the page

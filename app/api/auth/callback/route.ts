@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import type { EmailOtpType } from "@supabase/supabase-js"
 import { supabaseAdmin } from "@/lib/supabase"
+import { safeRedirectPath } from "@/lib/auth/safe-redirect"
 
 const VALID_OTP_TYPES: ReadonlySet<EmailOtpType> = new Set([
   "signup",
@@ -43,10 +44,16 @@ export async function GET(req: NextRequest) {
   const errorDescription = url.searchParams.get("error_description")
   const redirectParam = url.searchParams.get("redirect")
 
-  const safeRedirect =
-    typeof redirectParam === "string" && redirectParam.startsWith("/")
-      ? redirectParam
-      : "/"
+  // ⛔ 2026-10-11 — was `redirectParam.startsWith("/")`, the exact test
+  // lib/auth/safe-redirect.ts exists to replace: `//evil.example` starts with
+  // "/" and `new URL("//evil.example", req.url)` resolves to
+  // https://evil.example/ — an open redirect fired AFTER a successful sign-in,
+  // on the one link the user has every reason to trust. Latent today only
+  // because request-magic-link sanitises `next` before building the link; a
+  // second producer (a dashboard email template, a future OAuth provider)
+  // would have re-opened it. The fallback stays "/" (this route's historical
+  // default), not DEFAULT_POST_AUTH_PATH, so nothing but the rejection changes.
+  const safeRedirect = safeRedirectPath(redirectParam) ?? "/"
 
   // Supabase-side failure surfaced in the redirect URL (expired link, denied, etc).
   if (!code && !tokenHash && errorDescription) {

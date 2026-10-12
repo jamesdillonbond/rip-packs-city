@@ -15,6 +15,7 @@ import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { isCadenceAddress, isSolanaAddress, normalizeAddress } from "@/lib/address"
 import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve"
 import { ownLookup } from "@/lib/safe-lookup"
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 
 const TOPSHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
@@ -54,6 +55,14 @@ export async function GET(req: NextRequest) {
     }
 
     const wallet = await resolveWallet(walletInput)
+
+    // ⛔ 2026-10-11 — per-moment P&L is OWNER-ONLY (see app/api/cost-basis).
+    // Gated on the RESOLVED address, after the username lookup, so a Top Shot
+    // username and its 0x address are judged by the same saved_wallets rows.
+    // Sits before the non-TopShot short-circuit on purpose: the gate decides
+    // who may ask, not what the answer is.
+    const gate = await requireOwnedKey(wallet)
+    if (gate instanceof Response) return gate
 
     if (collectionUuid !== TOPSHOT_UUID) {
       return NextResponse.json(

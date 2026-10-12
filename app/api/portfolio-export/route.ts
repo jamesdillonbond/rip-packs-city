@@ -8,6 +8,7 @@ import { getCollection, collectionHasWalletTab } from "@/lib/collections"
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 
 // ⛔ 2026-09-19 — THIS WAS A HARDCODED FOUR-COLLECTION MAP, and it is the
 // second defect in this route: the Export CSV control renders on every
@@ -52,6 +53,13 @@ export async function GET(req: NextRequest) {
       ? collection.supabaseCollectionId ?? null
       : null
   if (!collectionId) return NextResponse.json({ error: "Unknown collection" }, { status: 400 })
+
+  // ⛔ 2026-10-11 — the full-portfolio CSV (cost basis + P&L columns) is
+  // OWNER-ONLY, like app/api/cost-basis. The UI only renders the control for
+  // the caller's own wallet, but the route accepted any `?wallet=` from any
+  // signed-in session. Fails closed through saved_wallets ownership.
+  const gate = await requireOwnedKey(wallet)
+  if (gate instanceof Response) return gate
 
   try {
     const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_wallet_moments_with_fmv", {

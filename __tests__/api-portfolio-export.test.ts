@@ -11,6 +11,18 @@ vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { rpc: async (_n: string, args: any) => { rpc.lastArgs = args; return { data: rpc.data, error: rpc.error } } },
 }))
 
+// 2026-10-11 — the route is OWNER-ONLY through requireOwnedKey. The gate's own
+// resolution is pinned in lib-auth-owner-key-guard tests; here it is a switch so
+// the route's two obligations can be asserted separately: it RETURNS the gate's
+// denial untouched (no RPC call) and it only reads once the gate has passed.
+const gate = vi.hoisted(() => ({ deny: null as Response | null, calls: [] as string[] }))
+vi.mock("@/lib/auth/owner-key-guard", () => ({
+  requireOwnedKey: async (key: string) => {
+    gate.calls.push(key)
+    return gate.deny ?? { user: { id: "u1" } }
+  },
+}))
+
 import { GET } from "@/app/api/portfolio-export/route"
 
 const req = (url: string) => ({ nextUrl: new URL(url) }) as any
@@ -19,6 +31,27 @@ beforeEach(() => {
   rpc.data = { moments: [] }
   rpc.error = null
   rpc.lastArgs = null
+  gate.deny = null
+  gate.calls = []
+})
+
+describe("GET /api/portfolio-export — owner-only", () => {
+  it("returns the gate's denial verbatim and never reads the portfolio", async () => {
+    gate.deny = new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })
+    const res = await GET(req("https://t/api/portfolio-export?wallet=0xabc"))
+    expect(res.status).toBe(403)
+    expect(rpc.lastArgs).toBeNull()
+  })
+  it("gates on the NORMALISED wallet it is about to export (hex folded)", async () => {
+    await GET(req("https://t/api/portfolio-export?wallet=0xABC"))
+    expect(gate.calls).toEqual(["0xabc"])
+    expect(rpc.lastArgs?.p_wallet).toBe("0xabc")
+  })
+  it("the 400 guards fire BEFORE the gate (no identity needed to reject bad input)", async () => {
+    await GET(req("https://t/api/portfolio-export"))
+    await GET(req("https://t/api/portfolio-export?wallet=0xabc&collection=nope"))
+    expect(gate.calls).toEqual([])
+  })
 })
 
 describe("GET /api/portfolio-export", () => {

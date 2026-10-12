@@ -9,6 +9,7 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { createClient } from "@supabase/supabase-js"
 import { getCollection } from "@/lib/collections"
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 
 /**
  * Resolve a collection slug to its id.
@@ -48,6 +49,17 @@ export async function GET(req: NextRequest) {
   if (!wallet) {
     return NextResponse.json({ error: "wallet param required" }, { status: 400 })
   }
+
+  // ⛔ 2026-10-11 — spend / cost basis is OWNER-ONLY (proxy.ts classifies it so,
+  // and keeps cost-basis-summary off the anon carve-out for that reason), yet
+  // this route took `?wallet=` from any signed-in session with no ownership
+  // check: register, then read anyone's acquisition prices. The guard resolves
+  // the wallet through saved_wallets ownership (verified, else first saver) and
+  // fails CLOSED. The Collection tab's consumer already treats a non-OK answer
+  // as "no cost basis to show" (empty map → panel suppressed, em dashes), so a
+  // 403 on someone else's wallet understates rather than asserts.
+  const gate = await requireOwnedKey(wallet)
+  if (gate instanceof Response) return gate
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

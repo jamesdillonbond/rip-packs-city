@@ -103,6 +103,10 @@ const TABLE: Row[] = [
   ["/terms", "GET", true],
   ["/legal", "GET", true],
   ["/legal/fmv-methodology", "GET", true],
+  // RFC 9116 disclosure contact (2026-10-11): exact path only — a prefix would
+  // publish whatever lands under /.well-known/ next.
+  ["/.well-known/security.txt", "GET", true, "security.txt is read by scanners with no session"],
+  ["/.well-known/other.txt", "GET", false, "exact match, not the /.well-known/ prefix"],
   ["/auth", "GET", true],
   ["/auth/confirm", "GET", true],
   ["/admin", "GET", true, "self-gates via RPC_ADMIN_TOKEN"],

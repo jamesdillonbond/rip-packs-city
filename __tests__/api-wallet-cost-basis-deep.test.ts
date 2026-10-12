@@ -24,6 +24,17 @@ vi.mock("@/lib/supabase", () => ({
   ),
 }))
 vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => state.gql() }))
+// 2026-10-11 — owner-only through requireOwnedKey (its resolution is pinned in
+// the guard's own tests and in api-wallet-reads). Allowed here so the fold
+// contract below stays the subject; one case flips it to prove the route
+// returns the denial and reads nothing.
+const gate = vi.hoisted(() => ({ deny: null as Response | null, calls: [] as string[] }))
+vi.mock("@/lib/auth/owner-key-guard", () => ({
+  requireOwnedKey: async (key: string) => {
+    gate.calls.push(key)
+    return gate.deny ?? { user: { id: "u1" } }
+  },
+}))
 
 const { GET } = await import("@/app/api/wallet-cost-basis/route")
 
@@ -38,6 +49,25 @@ function install(fixtures: Parameters<typeof makeSupabaseFixture>[0]) {
 
 beforeEach(() => {
   state.gql = () => ({})
+  gate.deny = null
+  gate.calls = []
+})
+
+describe("wallet-cost-basis — owner-only", () => {
+  it("returns the gate's denial verbatim and reads NOTHING, even for the non-TopShot short-circuit", async () => {
+    // A thrower, so any read past the gate is a loud failure, not a quiet null.
+    state.sb = new Proxy({}, { get: () => { throw new Error("read past the gate") } })
+    gate.deny = new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })
+    const res = await GET(req(`wallet=${WALLET}&collection=nfl-all-day`))
+    expect(res.status).toBe(403)
+    expect(gate.calls).toEqual([WALLET])
+  })
+  it("gates on the RESOLVED address, so a username and its wallet are judged by the same rows", async () => {
+    state.gql = () => ({ getUserProfileByUsername: { publicInfo: { flowAddress: WALLET } } })
+    install({ moment_acquisitions: [{ data: [], error: null }, { count: 0, error: null } as never] })
+    await GET(req("wallet=dame&collection=nba-top-shot"))
+    expect(gate.calls).toEqual([WALLET])
+  })
 })
 
 describe("wallet-cost-basis — P&L fold", () => {

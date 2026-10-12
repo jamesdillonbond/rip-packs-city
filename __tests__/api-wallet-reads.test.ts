@@ -229,11 +229,30 @@ describe("wallet read routes — success paths", () => {
   })
 
   it("cost-basis 200s with cost_basis_unavailable for a non-TopShot collection", async () => {
+    // 2026-10-11 — owner-only: the caller must be signed in AND own the wallet.
+    authState.user = { id: "u1" }
+    db.tables.saved_wallets = { data: [{ id: 1, user_id: "u1", wallet_addr: "0xbd94cade097e50ac", verified_at: "2026-07-01" }], error: null }
     const res = await costBasis(req("https://t/api/wallet-cost-basis?wallet=0xbd94cade097e50ac&collection=nfl-all-day"))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.reason).toBe("cost_basis_unavailable")
     expect(body.wallet).toBe("0xbd94cade097e50ac")
+  })
+
+  // ⛔ 2026-10-11 — until today this route took `?wallet=` from ANY signed-in
+  // session with no ownership check: register, then read anyone's per-moment
+  // spend and P&L. proxy.ts classifies cost basis as owner-only and keeps it
+  // off the anon carve-out for exactly that reason; the route now agrees.
+  it("cost-basis 401s with no signed-in user", async () => {
+    const res = await costBasis(req("https://t/api/wallet-cost-basis?wallet=0xbd94cade097e50ac&collection=nba-top-shot"))
+    expect(res.status).toBe(401)
+  })
+  it("cost-basis 403s for a wallet VERIFIED by someone else — the non-TopShot short-circuit does not leak past the gate", async () => {
+    authState.user = { id: "u1" }
+    db.tables.saved_wallets = { data: [{ id: 1, user_id: "u2", wallet_addr: "0xbd94cade097e50ac", verified_at: "2026-07-01" }], error: null }
+    const res = await costBasis(req("https://t/api/wallet-cost-basis?wallet=0xbd94cade097e50ac&collection=nfl-all-day"))
+    expect(res.status).toBe(403)
+    expect(db.rpcCalls).toEqual([])
   })
 
   it("hold-time 200s with acquisition_data_unavailable for a non-TopShot collection", async () => {

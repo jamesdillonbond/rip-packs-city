@@ -35,28 +35,18 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "gateway.pinata.cloud", pathname: "/**" },
     ],
   },
-  async headers() {
-    return [
-      {
-        source: "/(.*)",
-        headers: [
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com",
-              "img-src 'self' data: blob: https:",
-              "connect-src 'self' https: wss:",
-              "frame-src 'self' https:",
-              "media-src 'self' https:",
-            ].join("; "),
-          },
-        ],
-      },
-    ]
-  },
+  // ⛔ 2026-10-11 — the `headers()` Content-Security-Policy that lived here was
+  // REMOVED. proxy.ts `applySecurityHeaders` sets the real one: path-aware
+  // (wallet-connect hosts only on the giveaway/admin surfaces), host-pinned
+  // img/media/connect lists, `frame-ancestors 'none'`, `base-uri`,
+  // `form-action`, pinned by __tests__/proxy-dispatch.test.ts. This file's copy
+  // was a SECOND, DIFFERENT policy on every document: browsers enforce the
+  // intersection of all CSP headers, so a host the proxy deliberately allowed
+  // (a wallet frame, a Supabase websocket) was reachable only where this blanket
+  // `https:` happened to cover it, and every tightening of the proxy's list was
+  // silently widened or narrowed by a header nobody re-read. One source of truth;
+  // the proxy runs on every document response (its matcher excludes only hashed
+  // static chunks, the image optimizer, the favicon and /img/).
   async redirects() {
     return [
       // Canonical-host redirect (2026-07-20): the bare production alias

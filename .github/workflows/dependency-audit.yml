@@ -12,6 +12,15 @@ name: Dependency audit (production tree)
 #
 # No `npm ci`: `npm audit` reads package-lock.json and posts it to the registry.
 on:
+  # 2026-10-11 — a daily run, because the advisory database moves without the
+  # lockfile. Path-filtered pushes alone meant a disclosure against an already
+  # installed package never ran this job: source-map-js GHSA-68fv-2mgg-jv7q
+  # (high) sat red locally for days while the badge showed the last green run
+  # — a check that did not run reading as a pass. A scheduled red lands on its
+  # own run, never on an unrelated push, so the original objection does not
+  # apply to it. Daily 14:17 UTC (06:17 PT) — the liveness detector scores daily shapes; a weekly day-of-week form is not parseable by it.
+  schedule:
+    - cron: "17 14 * * *"
   push:
     branches: [main]
     paths:

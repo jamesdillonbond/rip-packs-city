@@ -41,6 +41,18 @@ vi.mock("@supabase/supabase-js", () => {
   }
 })
 
+// 2026-10-11 — the route is OWNER-ONLY through requireOwnedKey (its resolution
+// is pinned in the guard's own tests and in api-wallet-reads). Allowed by
+// default so the read contract below stays the subject; the gate block flips it
+// to prove the route returns the denial and reads nothing.
+const gate = vi.hoisted(() => ({ deny: null as Response | null, calls: [] as string[] }))
+vi.mock("@/lib/auth/owner-key-guard", () => ({
+  requireOwnedKey: async (key: string) => {
+    gate.calls.push(key)
+    return gate.deny ?? { user: { id: "u1" } }
+  },
+}))
+
 import { GET } from "@/app/api/cost-basis/route"
 
 const req = (url: string) => ({ nextUrl: new URL(url) }) as any
@@ -51,6 +63,23 @@ beforeEach(() => {
   state.configRow = null
   state.configError = null
   state.rpcCalls = []
+  gate.deny = null
+  gate.calls = []
+})
+
+describe("GET /api/cost-basis — owner-only", () => {
+  it("returns the gate's denial verbatim and never reads the RPC", async () => {
+    gate.deny = new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })
+    const res = await GET(req("https://t/api/cost-basis?wallet=0xdeadbeef00000000&collection=nba-top-shot"))
+    expect(res.status).toBe(403)
+    expect(state.rpcCalls).toEqual([])
+  })
+  it("gates on the wallet as given, and the 400 guard fires before the gate", async () => {
+    await GET(req("https://t/api/cost-basis"))
+    expect(gate.calls).toEqual([])
+    await GET(req("https://t/api/cost-basis?wallet=0xdeadbeef00000000"))
+    expect(gate.calls).toEqual(["0xdeadbeef00000000"])
+  })
 })
 
 describe("GET /api/cost-basis", () => {
