@@ -4,6 +4,8 @@ Read-only review of `main` @ `61d776dbe` (Sat 2026-10-11, evening PT), requested
 
 **Method.** Four parallel code audits (security, SEO, marketing/growth, legal/responsibility) over the working tree, each with file:line evidence, then every sharp claim re-derived against the LIVE database (Supabase advisors + catalog queries) or the local toolchain. ⚠ The web sandbox could not reach `www.rippackscity.com` (connection reset on every request), so **header/route behaviour below is from code, not from a production response** — re-probe from a laptop before quoting any of it as live.
 
+**Status (2026-10-11, ~9:45 PM PT).** Steps 1 and 2 of §7 shipped the same evening (ledger entries dated 2026-10-11): C1 interim copy, C3, C4, C6 (incl. the funnel_events retention migration), M1, M5, S2, S5, S7, S8, security.txt. S9 was already closed live (the tree lagged production). Open from steps 1–2: **C2 (contact mailbox + postal address) — needs Trevor.** Steps 3–7 are untouched.
+
 **Verdict.** No critical defect. The platform's security posture is strong where it matters (RLS on all 617 tables, service-role key never in a client file, no secrets in the tree, SHA-pinned Actions, signed hot-wallet path fail-closed). The real gaps are (1) **four honesty defects on legal/marketing surfaces** — a privacy-policy promise with no implementation, a digest nobody sends, a transcript-storage practice the policy omits, no postal/contact address anywhere — (2) **a single shared secret that unlocks ~100 routes and the whole proxy wall**, (3) **ownership checks missing on five per-wallet financial routes**, and (4) SEO structured-data spent on auth-gated pages while the public ones carry boilerplate. Everything below is prioritised; §7 is the proposed execution order.
 
 ---
