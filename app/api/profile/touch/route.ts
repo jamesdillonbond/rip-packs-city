@@ -12,16 +12,19 @@
 // ON CONFLICT (id) only touches last_active_at + updated_at — user-set fields
 // like display_name, username, wallet_address are preserved.
 
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { safeApiError, statusForSafeError } from "@/lib/api-error"
+import { sendAccountWelcomeOnce } from "@/lib/welcome/send-account-welcome"
 
 export const dynamic = "force-dynamic"
 
-async function resolveUserId(req: NextRequest): Promise<string | null> {
+type TouchUser = { id: string; email?: string | null }
+
+async function resolveUser(req: NextRequest): Promise<TouchUser | null> {
   const cookieUser = await getCurrentUser()
-  if (cookieUser?.id) return cookieUser.id
+  if (cookieUser?.id) return { id: cookieUser.id, email: cookieUser.email }
 
   const auth = req.headers.get("authorization") ?? ""
   const m = auth.match(/^Bearer\s+(.+)$/i)
@@ -32,16 +35,30 @@ async function resolveUserId(req: NextRequest): Promise<string | null> {
       console.log("[profile/touch] bearer getUser failed:", error.message)
       return null
     }
-    return data?.user?.id ?? null
+    return data?.user?.id ? { id: data.user.id, email: data.user.email ?? null } : null
   } catch (err) {
     console.log("[profile/touch] bearer getUser threw:", err instanceof Error ? err.message : String(err))
     return null
   }
 }
 
+// 2026-10-11 (platform review M2) — the one-time welcome email; see
+// app/api/auth/callback/route.ts scheduleWelcome for why it is safe to call on
+// every touch (the DB claim is the idempotency point) and why it runs after
+// the response.
+function scheduleWelcome(user: TouchUser) {
+  const run = () => sendAccountWelcomeOnce({ userId: user.id, email: user.email })
+  try {
+    after(run)
+  } catch {
+    void run()
+  }
+}
+
 export async function POST(req: NextRequest) {
-  const userId = await resolveUserId(req)
-  if (!userId) {
+  const user = await resolveUser(req)
+  const userId = user?.id ?? null
+  if (!user || !userId) {
     return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 })
   }
 
@@ -62,5 +79,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, ...safe }, { status: statusForSafeError(safe) })
   }
 
+  scheduleWelcome(user)
   return NextResponse.json({ ok: true, last_active_at: now })
 }

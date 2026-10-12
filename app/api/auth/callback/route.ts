@@ -5,11 +5,12 @@
 // exchange/verify into a session (cookies set on the response) and redirect to
 // the ?redirect= target if it's a same-site path, else "/".
 
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import type { EmailOtpType } from "@supabase/supabase-js"
 import { supabaseAdmin } from "@/lib/supabase"
 import { safeRedirectPath } from "@/lib/auth/safe-redirect"
+import { sendAccountWelcomeOnce } from "@/lib/welcome/send-account-welcome"
 
 const VALID_OTP_TYPES: ReadonlySet<EmailOtpType> = new Set([
   "signup",
@@ -33,6 +34,21 @@ async function touchUserProfile(userId: string) {
     )
   if (error) {
     console.log("[auth/callback] user_profiles upsert failed:", error.message)
+  }
+}
+
+// 2026-10-11 (platform review M2) — the one-time welcome email. The DB claim
+// (claim_welcome_email) decides idempotently whether anything is sent, so this
+// may run on every sign-in from every creation path and no account is welcomed
+// twice; accounts that predate the feature are 'pre_existing' and never claim.
+// Scheduled AFTER the response so a slow Resend call never delays the redirect,
+// and wrapped so a scheduling failure never fails a sign-in.
+function scheduleWelcome(user: { id: string; email?: string | null }) {
+  const run = () => sendAccountWelcomeOnce({ userId: user.id, email: user.email })
+  try {
+    after(run)
+  } catch {
+    void run()
   }
 }
 
@@ -104,6 +120,7 @@ export async function GET(req: NextRequest) {
     }
     if (data?.user?.id) {
       await touchUserProfile(data.user.id)
+      scheduleWelcome(data.user)
     }
     return response
   }
@@ -130,6 +147,7 @@ export async function GET(req: NextRequest) {
 
   if (data?.user?.id) {
     await touchUserProfile(data.user.id)
+    scheduleWelcome(data.user)
   }
 
   return response

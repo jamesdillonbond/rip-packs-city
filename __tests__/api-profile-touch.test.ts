@@ -22,6 +22,14 @@ vi.mock("@/lib/supabase", () => {
   return { supabase: client, supabaseAdmin: client }
 })
 
+const welcome = vi.hoisted(() => ({ calls: [] as Array<{ userId: unknown; email: unknown }> }))
+vi.mock("@/lib/welcome/send-account-welcome", () => ({
+  sendAccountWelcomeOnce: async (input: { userId: unknown; email: unknown }) => {
+    welcome.calls.push(input)
+    return { status: "sent" }
+  },
+}))
+
 vi.mock("@/lib/auth/supabase-server", () => ({
   getCurrentUser: async () => state.user,
 }))
@@ -36,6 +44,7 @@ const req = (auth?: string) =>
 beforeEach(() => {
   state.user = null
   state.upsertError = null
+  welcome.calls = []
 })
 
 describe("POST /api/profile/touch", () => {
@@ -58,5 +67,20 @@ describe("POST /api/profile/touch", () => {
     state.user = { id: "u1" }
     state.upsertError = { message: "db down" }
     expect((await POST(req())).status).toBe(500)
+  })
+})
+
+describe("POST /api/profile/touch — the one-time welcome (review M2)", () => {
+  it("schedules the welcome after a successful touch, with the session user's id and email", async () => {
+    state.user = { id: "u1", email: "u1@example.com" }
+    await POST(req())
+    expect(welcome.calls).toEqual([{ userId: "u1", email: "u1@example.com" }])
+  })
+  it("does not schedule it on a 401 or a failed upsert", async () => {
+    await POST(req())
+    state.user = { id: "u1", email: "u1@example.com" }
+    state.upsertError = { message: "db down" }
+    await POST(req())
+    expect(welcome.calls).toEqual([])
   })
 })

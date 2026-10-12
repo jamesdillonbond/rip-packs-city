@@ -22,9 +22,15 @@ const LINKS: TopNavLink[] = [
     href: `/${c.id}/overview`,
     matchPrefix: `/${c.id}`,
   })),
-  { label: "Analytics", href: "/analytics", matchPrefix: "/analytics" },
   { label: "Blog", href: "/blog", matchPrefix: "/blog" },
 ]
+
+// "Analytics" (/analytics) is sign-in only — proxy.ts does not list it in
+// isPublicPath, so a signed-out visitor who clicked it got a 307 to /login
+// (platform review 2026-10-11, M7). It is shown to signed-in users only, like
+// My Teams and Alerts below; it is NOT pointed anywhere else — the public
+// per-collection analytics live under each collection's own tab.
+const ANALYTICS: TopNavLink = { label: "Analytics", href: "/analytics", matchPrefix: "/analytics" }
 
 // "My Teams" is the auth-gated fan hub (Team Hub Phase 5), so it is only shown
 // to signed-in users — a logged-out visitor would just bounce to /login.
@@ -54,7 +60,7 @@ export default function TopNav() {
     }
   }, [])
 
-  const links = signedIn ? [...LINKS, MY_TEAMS, ALERTS] : LINKS
+  const links = signedIn ? [...LINKS, ANALYTICS, MY_TEAMS, ALERTS] : LINKS
 
   return (
     // 2026-10-03: between 768 and ~1000 px the row squeezed this nav and the
@@ -84,8 +90,10 @@ export default function TopNav() {
             href={l.href}
             // 2026-10-04: /analytics is sign-in only, so for a signed-out visitor
             // Next's viewport prefetch fetched it on every page and got 307 → /login
-            // (seen in an anonymous Playwright crawl). The link stays — it is the way
-            // in — but it is not preloaded for someone who would only be redirected.
+            // (seen in an anonymous Playwright crawl). 2026-10-11: the link itself is
+            // now signed-in only (ANALYTICS above), so an anonymous page never renders
+            // it and nothing is left to suppress; the guard stays as belt-and-braces
+            // should the link ever be shown to anon again.
             prefetch={isAnalytics && !signedIn ? false : undefined}
             className={
               "rounded-md md:px-1 lg:px-2.5 py-1.5 whitespace-nowrap transition-colors font-medium md:tracking-normal lg:tracking-wide " +

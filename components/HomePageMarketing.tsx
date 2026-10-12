@@ -178,10 +178,19 @@ const DEPTH_BULLETS: Array<{ icon: string; copy: string }> = [
   { icon: "▣", copy: "Pack EV calculations, depletion-aware, led by the typical pull — not the average." },
 ];
 
-const TRUST: string[] = [
-  "Built in Portland, Oregon by an independent collector.",
-  "Live pipelines updated every 20 minutes.",
-  "Automated monitoring and alerting on every data pipeline.",
+// A TRUST entry is plain copy, optionally ending in one link. The fourth entry
+// (2026-10-11, platform review M4) points at the published accuracy gate — the
+// share of our prices backed by recent sales, per collection — on the
+// methodology page. ⚠ Copy rule (founder): it says what WE publish; it claims
+// nothing about anyone else's prices.
+const TRUST: Array<{ copy: string; link?: { label: string; href: string } }> = [
+  { copy: "Built in Portland, Oregon by an independent collector." },
+  { copy: "Live pipelines updated every 20 minutes." },
+  { copy: "Automated monitoring and alerting on every data pipeline." },
+  {
+    copy: "We publish how much of our pricing rests on recent sales, per collection.",
+    link: { label: "See the figures", href: "/legal/fmv-methodology#accuracy" },
+  },
 ];
 
 export default function HomePageMarketing() {
@@ -746,7 +755,15 @@ export default function HomePageMarketing() {
                 letterSpacing: "0.02em",
               }}
             >
-              {t}
+              {t.copy}
+              {t.link && (
+                <>
+                  {" "}
+                  <Link href={t.link.href} style={{ color: "var(--rpc-text-secondary)", textDecoration: "underline" }}>
+                    {t.link.label}
+                  </Link>
+                </>
+              )}
             </div>
           ))}
         </div>

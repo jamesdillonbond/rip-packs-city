@@ -9,9 +9,20 @@ import { NextRequest } from "next/server"
 // ?redirect=, falling back to "/" for an off-site value.
 
 const st = vi.hoisted(() => ({
-  exchange: { data: { user: { id: "u1" } } as { user: { id: string } } | null, error: null as any },
-  verify: { data: { user: { id: "u1" } } as { user: { id: string } } | null, error: null as any },
+  exchange: { data: { user: { id: "u1", email: "u1@example.com" } } as { user: { id: string; email?: string } } | null, error: null as any },
+  verify: { data: { user: { id: "u1", email: "u1@example.com" } } as { user: { id: string; email?: string } } | null, error: null as any },
   upsertErr: null as any,
+}))
+
+// 2026-10-11 — the one-time welcome (platform review M2) is scheduled from both
+// session flows. The helper is mocked: this test pins WHEN it is invoked (every
+// landed session, never a failed one), the DB claim inside it pins ONCE-ONLY.
+const welcome = vi.hoisted(() => ({ calls: [] as Array<{ userId: unknown; email: unknown }> }))
+vi.mock("@/lib/welcome/send-account-welcome", () => ({
+  sendAccountWelcomeOnce: async (input: { userId: unknown; email: unknown }) => {
+    welcome.calls.push(input)
+    return { status: "sent" }
+  },
 }))
 
 vi.mock("@/lib/supabase", () => ({
@@ -33,9 +44,10 @@ import { GET } from "@/app/api/auth/callback/route"
 const req = (qs = "") => new NextRequest("https://t/api/auth/callback" + qs)
 
 beforeEach(() => {
-  st.exchange = { data: { user: { id: "u1" } }, error: null }
-  st.verify = { data: { user: { id: "u1" } }, error: null }
+  st.exchange = { data: { user: { id: "u1", email: "u1@example.com" } }, error: null }
+  st.verify = { data: { user: { id: "u1", email: "u1@example.com" } }, error: null }
   st.upsertErr = null
+  welcome.calls = []
   process.env.NEXT_PUBLIC_SUPABASE_URL = "http://x"
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon"
 })
@@ -114,5 +126,28 @@ describe("GET /api/auth/callback — token_hash / OTP flow", () => {
     st.verify = { data: null, error: { message: "otp expired" } }
     const loc = (await GET(req("?token_hash=th&type=recovery"))).headers.get("location") ?? ""
     expect(loc).toContain("error=auth_failed")
+  })
+})
+
+describe("GET /api/auth/callback — the one-time welcome (review M2)", () => {
+  it("schedules the welcome after a landed PKCE session, with the user's id and email", async () => {
+    await GET(req("?code=abc&redirect=/dashboard"))
+    expect(welcome.calls).toEqual([{ userId: "u1", email: "u1@example.com" }])
+  })
+  it("schedules it after a landed OTP session too (both creation paths may call; the DB claim decides)", async () => {
+    await GET(req("?token_hash=th&type=magiclink"))
+    expect(welcome.calls).toEqual([{ userId: "u1", email: "u1@example.com" }])
+  })
+  it("never schedules it when the exchange or verify FAILS — no session, no welcome", async () => {
+    st.exchange = { data: null, error: { message: "bad code" } }
+    await GET(req("?code=abc"))
+    st.verify = { data: null, error: { message: "otp expired" } }
+    await GET(req("?token_hash=th&type=recovery"))
+    expect(welcome.calls).toEqual([])
+  })
+  it("a failed user_profiles upsert does not block the welcome (the claim is the only gate)", async () => {
+    st.upsertErr = { message: "profiles down" }
+    await GET(req("?code=abc"))
+    expect(welcome.calls.length).toBe(1)
   })
 })

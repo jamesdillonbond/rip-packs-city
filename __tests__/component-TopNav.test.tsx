@@ -5,10 +5,12 @@ import { join } from "node:path"
 import { render, cleanup, waitFor } from "@testing-library/react"
 
 // TopNav is the desktop primary nav. It carries two branches only a test can pin:
-//   1. Auth-gated links — a signed-out visitor sees the 7 public destinations;
-//      a signed-in user additionally gets "My Teams" and "Alerts" (both bounce
-//      anon to /login, so surfacing them logged-out would be a dead end). The
-//      signed-in state is read from the supabase browser client on mount and
+//   1. Auth-gated links — a signed-out visitor sees the public destinations
+//      (one per published collection + Blog); a signed-in user additionally gets
+//      "Analytics", "My Teams" and "Alerts" (all three bounce anon to /login, so
+//      surfacing them logged-out would be a dead end — /analytics did exactly
+//      that until 2026-10-11: shown to anon, 307 → /login on click, review M7).
+//      The signed-in state is read from the supabase browser client on mount and
 //      kept live via onAuthStateChange.
 //   2. Active-route detection — a link is active when the pathname equals its
 //      matchPrefix OR sits beneath it (prefix + "/"), so /nba-top-shot/sniper
@@ -52,27 +54,36 @@ describe("TopNav — auth-gated links", () => {
     await waitFor(() => {}) // let getUser resolve
     const ls = labels(container)
     expect(ls).toContain("Top Shot")
-    expect(ls).toContain("Analytics")
     expect(ls).toContain("Blog")
+    // /analytics is sign-in only (not in proxy.ts isPublicPath): an anonymous
+    // visitor must not be offered a link that only redirects them to /login.
+    expect(ls).not.toContain("Analytics")
     expect(ls).not.toContain("My Teams")
     expect(ls).not.toContain("Alerts")
     // 2026-09-06: the collection links are DERIVED from publishedCollections()
     // (the hand-written list omitted Candy MLB the day it published) — one link
-    // per published collection + Analytics + Blog. UFC keeps its nav label.
+    // per published collection + Blog. UFC keeps its nav label.
     expect(ls).toContain("Candy")
     expect(ls).toContain("UFC")
-    expect(ls.length).toBe(publishedCollections().length + 2)
+    expect(ls.length).toBe(publishedCollections().length + 1)
+    // And nothing anon sees points at /analytics under any label.
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(hrefs).not.toContain("/analytics")
   })
 
-  it("adds My Teams + Alerts once the user is signed in", async () => {
+  it("adds Analytics + My Teams + Alerts once the user is signed in", async () => {
     authState.user = { id: "u1" }
     const { container } = render(<TopNav />)
     await waitFor(() => {
       expect(labels(container)).toContain("My Teams")
     })
     const ls = labels(container)
+    expect(ls).toContain("Analytics")
     expect(ls).toContain("Alerts")
     expect(ls.length).toBe(publishedCollections().length + 4)
+    // Analytics still points at /analytics — hidden for anon, never re-pointed.
+    const analytics = Array.from(container.querySelectorAll("a")).find((a) => a.textContent === "Analytics")!
+    expect(analytics.getAttribute("href")).toBe("/analytics")
   })
 
   it("reacts to a later auth-state change (sign-in after mount)", async () => {
@@ -122,9 +133,13 @@ describe("TopNav — active-route detection", () => {
     expect(topShot.className).toContain("text-[color:var(--rpc-text-secondary)]")
   })
 
-  it("gives the active Analytics tab its distinct emerald styling", () => {
+  it("gives the active Analytics tab its distinct emerald styling (signed in — anon has no such tab)", async () => {
     pathname = "/analytics"
+    authState.user = { id: "u1" }
     const { container } = render(<TopNav />)
+    await waitFor(() => {
+      expect(labels(container)).toContain("Analytics")
+    })
     const analytics = Array.from(container.querySelectorAll("a")).find(
       (a) => a.textContent === "Analytics",
     )!

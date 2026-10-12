@@ -6,6 +6,8 @@
 
 import Link from "next/link"
 import { FMV_RECENT_SALES_N, FMV_RECENT_SPAN_DAYS, FMV_RECENT_MIN_N } from "@/lib/fmv-recalc-math"
+import { fetchFmvAccuracyGate } from "@/lib/fmv-accuracy/fetchers"
+import FmvAccuracyTable from "@/components/legal/FmvAccuracyTable"
 import {
   ASK_CORROBORATION_BAND,
   MIN_SALES_30D_HIGH,
@@ -14,7 +16,11 @@ import {
 } from "@/lib/fmv-confidence"
 
 export const dynamic = "force-static"
-export const revalidate = 86400
+// 2026-10-11: was 86400. The page now carries the live accuracy gate (below),
+// whose source refreshes ~6-hourly; and ISR caches a FAILED read for the whole
+// window (register #33), so a daily window could pin "unavailable" for a day
+// over a 10 s blip. One hour bounds that; the prose is unaffected.
+export const revalidate = 3600
 
 export const metadata = {
   title: "FMV Methodology",
@@ -89,7 +95,11 @@ const FOOTNOTE: React.CSSProperties = {
   textTransform: "uppercase",
 }
 
-export default function FmvMethodologyPage() {
+export default async function FmvMethodologyPage() {
+  // The accuracy gate, read from the trust-health precompute (one small table).
+  // Never throws; a failed read renders "unavailable", never a number.
+  const accuracy = await fetchFmvAccuracyGate()
+
   return (
     <article style={PAGE_STYLE}>
       <h1 style={H1}>How Rip Packs City Calculates Fair Market Value</h1>
@@ -209,6 +219,30 @@ export default function FmvMethodologyPage() {
           never carried forward past its latest market.
         </li>
       </ul>
+
+      <h2 id="accuracy" style={H2}>How Much of Our Pricing Rests on Sales</h2>
+      <p style={P}>
+        Our own gate for the whole platform is the share of priced editions whose
+        current FMV is graded <strong style={STRONG}>HIGH</strong> or{" "}
+        <strong style={STRONG}>MEDIUM</strong> — the two grades above that are
+        backed by recent sales rather than by a listing alone or by too few
+        prints. We publish it here, per collection, exactly as our monitoring
+        computes it, because a reader deciding how much weight to give a price
+        should see how much of the market it was priced from. A low figure is
+        the honest state of a thin or closed market, not a number we tune.
+      </p>
+      <FmvAccuracyTable result={accuracy} />
+      <p style={P}>
+        Each figure is the share of editions, not of dollar value, over every
+        edition that currently has a price in that collection, taken from the
+        latest snapshot per edition. Disney Pinnacle is measured per pin from its
+        own price history, so its share is on a different basis from the five
+        collections above it and the figures are not averaged together. Panini is
+        not yet included because our monitoring does not publish a figure for it.
+        The &ldquo;as of&rdquo; time is when the figure was computed; a reading
+        more than two days old is marked stale. When a figure cannot be read it
+        says <em>unavailable</em> — we do not show a number we did not measure.
+      </p>
 
       <h2 id="estimates" style={H2}>Estimated Value for Rarely-Traded Parallels</h2>
       <p style={P}>

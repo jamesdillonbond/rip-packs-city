@@ -123,6 +123,20 @@ describe("/api/og/share — a failed read must not publish a $0 portfolio", () =
     mockSnapshot("notok")
     expect(await renderShare()).toContain("0xbd94ca")
   })
+
+  // 2026-10-11 (platform review M8): the card used to end in the bare domain.
+  // One CTA line now sits above it, and it must be present in EVERY state —
+  // the failed-read card most of all, since that one shows no figure.
+  it.each([
+    ["real figures", "rows" as const],
+    ["an empty wallet", "empty" as const],
+    ["a failed read", "notok" as const],
+  ])("carries the CTA line above the domain on %s", async (_label, mode) => {
+    mockSnapshot(mode)
+    const text = await renderShare()
+    expect(text).toContain("See what your collection is worth")
+    expect(text).toContain("rippackscity.com")
+  })
 })
 
 // ── /api/og/profile/[username] ──────────────────────────────────────────────

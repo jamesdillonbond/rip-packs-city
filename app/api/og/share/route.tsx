@@ -130,8 +130,18 @@ export async function GET(req: NextRequest) {
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 16, color: "#444", fontFamily: fam.mono, letterSpacing: "0.1em", display: "flex" }}>
-            rippackscity.com
+          {/* 2026-10-11 (platform review M8): the card is the one a collector
+              posts, and it ended in the bare domain — a reader had no idea what
+              the site would do for THEM. One CTA line, true of every visitor
+              (any wallet can be looked up without an account), in the card's
+              own muted mono; no numbers, no superiority claim. */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <div style={{ fontSize: 18, color: "#666", fontFamily: fam.mono, display: "flex" }}>
+              See what your collection is worth
+            </div>
+            <div style={{ fontSize: 16, color: "#444", fontFamily: fam.mono, letterSpacing: "0.1em", display: "flex" }}>
+              rippackscity.com
+            </div>
           </div>
         </div>
       </div>

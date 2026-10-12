@@ -62,8 +62,31 @@ interface TradeHubBlock {
   users_with_wishlist?: number;
 }
 
+// 2026-10-11 (platform review M3): the traction snapshot from
+// get_rpc_traction_activity(), attached by the API as `traction`. Every field is
+// optional/nullable ON PURPOSE: a missing block is a failed read, rendered "—"
+// with `traction_error`, never a 0. The return rates are null over an empty
+// cohort (the function refuses to divide by nobody).
+export interface TractionBlock {
+  generated_at?: string;
+  basis?: string;
+  accounts_total?: number | null;
+  signups_7d?: number | null;
+  signups_30d?: number | null;
+  wau?: number | null;
+  mau?: number | null;
+  d7_cohort?: number | null;
+  d7_returned?: number | null;
+  d7_return_pct?: number | null;
+  d30_cohort?: number | null;
+  d30_returned?: number | null;
+  d30_return_pct?: number | null;
+}
+
 interface OverviewPayload {
   generated_at?: string;
+  traction?: TractionBlock | null;
+  traction_error?: string | null;
   users?: UsersBlock;
   monetization?: MonetizationBlock;
   pipelines?: PipelinesBlock;
@@ -297,6 +320,7 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
           </div>
         ) : data ? (
           <>
+            <TractionPanel traction={data.traction ?? null} error={data.traction_error ?? null} />
             <UsersPanel users={data.users ?? {}} />
             <MonetizationPanel monetization={data.monetization ?? {}} />
             <PipelinesPanel pipelines={data.pipelines ?? {}} />
@@ -331,6 +355,52 @@ function Tile({ label, value, accent }: { label: string; value: string; accent?:
         {value}
       </div>
     </div>
+  );
+}
+
+/**
+ * The roadmap's gate, as tiles: WAU / MAU / signups / D7 + D30 return, all
+ * excluding internal_accounts (the SQL does the exclusion; this only renders).
+ *
+ * ⚠ THREE STATES, not two. `traction === null` is a FAILED READ (or a not-yet-
+ * applied function): every tile reads "—" and the error is printed beside the
+ * header — this is an operator page behind a shared secret, so the driver
+ * message is the diagnostic, not a leak. A null RATE inside a good payload is an
+ * EMPTY COHORT and also "—"; a measured 0 renders as 0. `fmtInt`/`fmtPct` already
+ * map null → "—", so nothing here can turn an absence into a number.
+ */
+export function TractionPanel({ traction, error }: { traction: TractionBlock | null; error: string | null }) {
+  const t = traction ?? {};
+  const failed = traction === null;
+  const cohort = (n: number | null | undefined, r: number | null | undefined) =>
+    n == null ? "cohort unread" : `${fmtInt(r)} of ${fmtInt(n)}`;
+  return (
+    <section className="rpc-card" style={sectionStyle} data-testid="traction-panel" data-state={failed ? "read-failed" : "ok"}>
+      <PanelHeader title="Traction" subtitle="the 100-WAU gate · excludes internal accounts" />
+      {failed && (
+        <div
+          role="status"
+          style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-red)", marginBottom: 10 }}
+        >
+          Traction snapshot could not be read — tiles show a dash, not zero.{error ? ` ${error}` : ""}
+        </div>
+      )}
+      <div className="rpc-ao-tiles">
+        <Tile label="WAU (7d)" value={fmtInt(t.wau)} accent="#34D399" />
+        <Tile label="MAU (30d)" value={fmtInt(t.mau)} accent="#34D399" />
+        <Tile label="Accounts" value={fmtInt(t.accounts_total)} />
+        <Tile label="Signups 7d" value={fmtInt(t.signups_7d)} />
+        <Tile label="Signups 30d" value={fmtInt(t.signups_30d)} />
+        <Tile label="D7 return" value={fmtPct(t.d7_return_pct)} />
+        <Tile label="D30 return" value={fmtPct(t.d30_return_pct)} />
+      </div>
+      {!failed && (
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 8, lineHeight: 1.6 }}>
+          D7: {cohort(t.d7_cohort, t.d7_returned)} returned · D30: {cohort(t.d30_cohort, t.d30_returned)} returned
+          {t.basis ? <> · {t.basis}</> : null}
+        </div>
+      )}
+    </section>
   );
 }
 

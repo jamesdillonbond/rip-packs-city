@@ -1081,6 +1081,16 @@ function InviteBlock({
               )} credits`
             : "No referrals yet — be the first to share."}
       </div>
+      {/* 2026-10-11 (platform review M9): the count sat here with nothing saying
+          WHEN a referral counts. This states the server rule verbatim —
+          verify_wallet_by_signature / the listing path (migration 20260914160000)
+          credit the referrer only when v_first is true (the referred account's
+          FIRST verified wallet), never on sign-up, never for a later wallet, never
+          for a self-referral. Display-only; it widens nothing. */}
+      <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 11, color: "#9a9a9a", lineHeight: 1.5 }}>
+        How it counts: credit lands once per referred collector, at the moment they verify their
+        first wallet — not when they sign up, and not for any wallet they verify after that.
+      </div>
     </div>
   );
 }
