@@ -14,8 +14,15 @@
 --   4. Platform stats and the sets summary count PINS, coverage by the catalog's
 --      own confidence, FMV age by the catalog's own computed_at.
 --
--- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql).
+--   5. (2026-10-12, review item E4) get_edition_detail carries the edition's
+--      prose: the editions arm returns 'description' = editions.description
+--      (NULL when the column is NULL — never a stand-in string); both Pinnacle
+--      arms return the key as NULL so every arm has the same shape.
+--
+-- The function DDL below is VERBATIM from the committed migrations
+-- (supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql
+-- for seven of the eight; get_edition_detail from
+-- supabase/migrations/20261012232629_audit_20261012_get_edition_detail_carries_description.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -26,7 +33,8 @@ CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text, name text, is_a
 CREATE TABLE public.sets (id uuid PRIMARY KEY, collection_id uuid);
 CREATE TABLE public.editions (id uuid PRIMARY KEY, collection_id uuid, set_id uuid, tier text,
   external_id text, name text, player_name text, set_name text, series int, edition_kind text,
-  circulation_count int, thumbnail_url text, video_url text, team_name text, first_minted_at timestamptz);
+  circulation_count int, thumbnail_url text, video_url text, team_name text, first_minted_at timestamptz,
+  description text);
 CREATE TABLE public.fmv_snapshots (edition_id uuid, collection_id uuid, confidence text, computed_at timestamptz,
   fmv_usd numeric, floor_price_usd numeric, asp_usd numeric, sales_count_30d int, days_since_sale int, cross_market_ask numeric);
 CREATE TABLE public.sales_2026 (id bigserial, collection_id uuid, price_usd numeric, sold_at timestamptz);
@@ -55,6 +63,8 @@ CREATE FUNCTION public.get_pinnacle_edition_fmv_collapsed(p_id text)
  LANGUAGE sql STABLE AS $$ SELECT 3::numeric, 3::numeric, 2::numeric, 'LOW', now(), 1, 1, 1, 3::numeric, 3::numeric, 2 WHERE p_id IS NOT NULL $$;
 CREATE FUNCTION public.series_display_label(p_collection_id uuid, p_series int) RETURNS text
  LANGUAGE sql AS $$ SELECT p_series::text $$;
+CREATE FUNCTION public.get_edition_badges_unified(p_edition_id uuid) RETURNS jsonb
+ LANGUAGE sql STABLE AS $$ SELECT '[]'::jsonb $$;
 
 CREATE OR REPLACE FUNCTION public.pinnacle_top_editions(p_since timestamp with time zone DEFAULT (now() - '30 days'::interval), p_limit integer DEFAULT 10)
  RETURNS json
@@ -214,6 +224,7 @@ BEGIN
       'external_id',       NULL::text,
       'legacy_edition_key', pc.legacy_edition_key,
       'name',              btrim(pc.character_name) || ' - ' || btrim(pc.set_name) || ' (' || pc.variant || ')',
+      'description',       NULL::text,
       'player_name',       btrim(pc.characters[1]),
       'characters',        to_jsonb(pc.characters),
       'set_name',          btrim(pc.set_name),
@@ -274,6 +285,7 @@ BEGIN
       'route_slug',        pe.id,
       'external_id',       pe.external_id,
       'name',              pe.character_name || ' - ' || pe.set_name || ' (' || pe.variant_type || ')',
+      'description',       NULL::text,
       'player_name',       pe.character_name,
       'set_name',          pe.set_name,
       'set_slug',          regexp_replace(lower(pe.set_name), '[^a-z0-9]+', '-', 'g'),
@@ -352,6 +364,7 @@ BEGIN
       'route_slug',        COALESCE(e.external_id, e.id::text),
       'external_id',       e.external_id,
       'name',              e.name,
+      'description',       e.description,
       'player_name',       e.player_name,
       'set_name',          e.set_name,
       'set_slug',          CASE
@@ -710,6 +723,25 @@ SELECT _assert(((SELECT x->>'fmv_age_minutes' FROM jsonb_array_elements(public.g
 SELECT _assert_eq((public.get_platform_stats() ->> 'total_editions'), '4', 'platform total counts pins');
 SELECT _assert_eq((public.analytics_sets_summary(ARRAY['pinnacle']) -> 'collections' -> 'pinnacle' ->> 'edition_count'), '4', 'sets summary: 4 pins');
 SELECT _assert_eq((public.analytics_sets_summary(ARRAY['pinnacle']) -> 'collections' -> 'pinnacle' ->> 'set_count'), '2', 'sets summary: 2 sets by trimmed name');
+
+-- ── 5. edition detail carries the edition's prose (2026-10-12, E4) ───────────
+-- Fixtures land here, AFTER section 4, so the platform totals above still count
+-- exactly the 4 pins and 0 editions they assert.
+\set ts '''95f28a17-224a-4025-96ad-adf8a4c63bfd'''
+INSERT INTO public.collections (id, slug, name, is_active) VALUES (:ts::uuid, 'nba_top_shot', 'NBA Top Shot', true);
+-- e1 carries upstream prose; e2 has none (NULL) — the two states the page must tell apart.
+INSERT INTO public.editions (id, collection_id, external_id, name, player_name, set_name, tier, series, circulation_count, description) VALUES
+  ('11111111-1111-1111-1111-111111111111', :ts::uuid, '5:145', 'Damian Lillard — Base Set', 'Damian Lillard', 'Base Set', 'COMMON', 7, 15000, 'Lillard pulls up from the logo. The shot drops at the buzzer.'),
+  ('22222222-2222-2222-2222-222222222222', :ts::uuid, '5:146', 'CJ McCollum — Base Set',    'CJ McCollum',    'Base Set', 'COMMON', 7, 15000, NULL);
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:145') ->> 'description'), 'Lillard pulls up from the logo. The shot drops at the buzzer.', 'editions arm: description = editions.description');
+SELECT _assert(public.get_edition_detail(:ts::uuid, '5:145') ? 'description', 'editions arm: the key is present');
+SELECT _assert(public.get_edition_detail(:ts::uuid, '5:146') ? 'description', 'editions arm: the key is present when the column is NULL');
+SELECT _assert((public.get_edition_detail(:ts::uuid, '5:146') ->> 'description') IS NULL, 'editions arm: a NULL column is a NULL key, never a stand-in string');
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:145') ->> 'source'), 'editions', 'editions arm: still the editions row');
+SELECT _assert(public.get_edition_detail(:pin::uuid, 'r1') ? 'description', 'pinnacle catalog arm: same key set');
+SELECT _assert((public.get_edition_detail(:pin::uuid, 'r1') ->> 'description') IS NULL, 'pinnacle catalog arm: description is NULL');
+SELECT _assert(public.get_edition_detail(:pin::uuid, 'M') ? 'description', 'pinnacle legacy arm: same key set');
+SELECT _assert((public.get_edition_detail(:pin::uuid, 'M') ->> 'description') IS NULL, 'pinnacle legacy arm: description is NULL');
 
 SELECT '✓ pinnacle readers on the pin catalog: all assertions passed' AS result;
 

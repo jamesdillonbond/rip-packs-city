@@ -28,6 +28,7 @@ import {
   EMPTY_MARKET_BUNDLE,
 } from "@/lib/entity/edition-market-fetchers"
 import { fetchPackProvenance, fetchOwnerUsernames, type PackProvenanceRow } from "@/lib/edition/fetchers"
+import { editionDescriptionText } from "@/lib/edition/description"
 import { lookupTopShotFossilRedirect } from "@/lib/edition/fossil-redirect"
 import { lookupTopShotEditionAliasRedirect } from "@/lib/edition/alias-redirect"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
@@ -99,6 +100,12 @@ interface EditionDetail {
   route_slug: string
   external_id: string | null
   name: string | null
+  /**
+   * editions.description — the upstream prose for the play (Top Shot / All Day
+   * ingest). NULL where the ingest has none and on every Pinnacle arm; may be
+   * an empty string. Read it through editionDescriptionText(), never raw.
+   */
+  description: string | null
   player_name: string | null
   set_name: string | null
   set_slug: string | null
@@ -719,6 +726,12 @@ export default async function EditionPage(
   // The parallel printing this page IS, when the collection expresses it as a
   // badge (Candy Rainbow). Top Shot's ::subedition chip above is the other form.
   const parallelLabel = parallelLabelFromBadges(detail.badges)
+  // Upstream prose (review E4, 2026-10-12). THREE states collapse to two
+  // renders: content → the paragraph under the hero; NULL or a blank string →
+  // nothing at all. The gate is the HELPER'S result, never the raw column — an
+  // empty string is not a paragraph, and there is no stand-in copy, because a
+  // sentence about the edition manufactured from a gap in our ingest is a claim.
+  const editionDescription = editionDescriptionText(detail.description)
 
   // Ask cell (H2/H3): prefer the marketplace low_ask; fall back to the
   // V1-Dapper cross-market ask (populated for ~2.7K All Day editions where
@@ -866,6 +879,13 @@ export default async function EditionPage(
           </div>
         </div>
       </section>
+
+      {/* ── Upstream prose ──────────────────────────────────────────────── */}
+      {editionDescription && (
+        <p style={{ margin: "12px 2px 0", fontSize: 14, lineHeight: 1.65, color: "var(--rpc-text-secondary)", maxWidth: 760 }}>
+          {editionDescription}
+        </p>
+      )}
 
       {/* ── Parallel tier switcher (top of hero) ─────────────────────────── */}
       {/* Prominent quick-jump between parallel printings of the same play; the

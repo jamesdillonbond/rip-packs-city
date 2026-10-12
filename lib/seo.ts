@@ -7,6 +7,7 @@ import { COLLECTIONS, collectionHasPage, getCollection, type CollectionPage } fr
 import { ASK_STALE_HOURS } from "@/lib/market/ask-freshness"
 import { MAX_ASK_AGE_HOURS_CORROBORATION } from "@/lib/fmv-confidence"
 import { parallelLabelFromBadges } from "@/lib/edition-parallel"
+import { editionDescriptionSnippet } from "@/lib/edition/description"
 import { getInsightsBoard, type InsightsBoard } from "@/lib/insights/board-registry"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
@@ -979,7 +980,14 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
     : collectionUrlSlug === "panini-blockchain"
       ? `${subject} — ${context} · Value & Asks | ${collectionLabel} | Rip Packs City`
       : `${subject} — ${context} · Value, Floor & Sales | ${collectionLabel} | Rip Packs City`
+  // Review E4 (2026-10-12): when get_edition_detail carries the edition's
+  // upstream prose, its FIRST SENTENCE (≤ 160 chars) seeds the description, so
+  // a SERP reads what the play IS before the template's value sentence. Absent,
+  // empty or whitespace-only prose is null here and the description is exactly
+  // what it was — never an empty lead, never a stand-in.
+  const prose = editionDescriptionSnippet(payload.description)
   const descParts = [
+    prose,
     cm
       ? (fmvUsd
           ? `${subject} ${context} last traded around ${fmtUsd(fmvUsd)} on ${collectionLabel} before its ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}. Historical value, not a present-day price.`

@@ -346,8 +346,10 @@ const PINS = [
   {
     fn: "get_edition_detail",
     test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    // Re-pointed 2026-10-12 (review E4): the editions arm carries
+    // editions.description (Pinnacle arms NULL) for the edition page + its meta.
     migration:
-      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+      "supabase/migrations/20261012232629_audit_20261012_get_edition_detail_carries_description.sql",
   },
   {
     fn: "get_platform_stats",
