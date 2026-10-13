@@ -451,3 +451,72 @@ describe("wallet-backfill-golazos writes its marker first — the fleet's top wa
     expect(rec.events.some((e) => e.kind === "insert" && e.name === "pipeline_runs")).toBe(false)
   })
 })
+
+// ── 2026-10-13 batch (ratchet 33 -> 31), selected on measured margin ─────────
+// backfill-pack-rip-metadata: 44,021 ms of a 60,000 ms wall over 72 h (73%).
+// alerts-dispatch: its output is user alerts, so a killed tick enqueues nothing.
+// ⚠ Both build their OWN createClient, but these cases do NOT pin the explicit
+// `db` argument: `lib/supabase` builds its default client through the same mocked
+// `createClient`, so dropping the argument still lands the marker in `rec`
+// (mutation-checked 2026-10-13 — that mutant SURVIVES here). What they pin is
+// ORDER: moving the marker after the work reddens them (mutation-verified).
+
+describe("cron/backfill-pack-rip-metadata writes its marker first — through its OWN client", () => {
+  it("marker precedes the terminal row on the tightest wall margin left (73% of 60s)", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@supabase/supabase-js", () => ({ createClient: () => rec.db }))
+    const { POST } = await import("@/app/api/cron/backfill-pack-rip-metadata/route")
+
+    const res = await POST(authedNext("https://t/api/cron/backfill-pack-rip-metadata") as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    assertMarkerContract(rec, "backfill-pack-rip-metadata")
+  })
+
+  it("POSITIVE CONTROL — an unauthorized call writes NO marker", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@supabase/supabase-js", () => ({ createClient: () => rec.db }))
+    const { POST } = await import("@/app/api/cron/backfill-pack-rip-metadata/route")
+    const res = await POST(
+      new NextRequest("https://t/api/cron/backfill-pack-rip-metadata", { method: "POST" }) as never,
+    )
+    expect(res.status).toBe(401)
+    await runDeferred()
+    expect(rec.events).toEqual([])
+  })
+})
+
+describe("cron/alerts-dispatch writes its marker first — through its OWN client", () => {
+  it("🚨 the alert DISPATCHER — marker precedes the terminal row, and precedes the dispatch itself", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@supabase/supabase-js", () => ({ createClient: () => rec.db }))
+    // The dispatch helpers record into the SAME interleaved log, so the test can
+    // see that the marker lands before any alert work starts, not merely before
+    // the terminal row.
+    vi.doMock("@/lib/alerts", () => ({
+      dispatchDueDealAlerts: async () => {
+        rec.events.push({ kind: "rpc", name: "dispatch_deal" })
+        return { enqueued: 0 }
+      },
+      dispatchTriggeredFmvAlerts: async () => {
+        rec.events.push({ kind: "rpc", name: "dispatch_fmv" })
+        return { enqueued: 0 }
+      },
+    }))
+    const { POST } = await import("@/app/api/cron/alerts-dispatch/route")
+
+    const res = await POST(authedNext("https://t/api/cron/alerts-dispatch") as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    assertMarkerContract(rec, "alerts-dispatch")
+    const marker = rec.events.findIndex((e) => e.kind === "insert" && e.name === "pipeline_runs")
+    const dispatch = rec.events.findIndex((e) => e.name === "dispatch_deal")
+    expect(dispatch, "the dispatch never ran, so ordering proves nothing").toBeGreaterThanOrEqual(0)
+    expect(marker).toBeLessThan(dispatch)
+  })
+})

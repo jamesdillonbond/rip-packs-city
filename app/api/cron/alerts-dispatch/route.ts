@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { dispatchDueDealAlerts, dispatchTriggeredFmvAlerts } from "@/lib/alerts";
 
 const supabaseAdmin = createClient(
@@ -55,6 +56,15 @@ async function run(req: NextRequest) {
 
   after(async () => {
     const startedMs = Date.now();
+    // Invocation heartbeat, written BEFORE the work and awaited (E5, 2026-10-13).
+    // This pipeline's OUTPUT is user alerts, so a killed tick fails by
+    // ENQUEUEING NOTHING -- unfalsifiable from outside without this marker.
+    // Measured 72 h to 2026-10-13: max 12,315 ms of a 120,000 ms wall (10%),
+    // every 10 minutes. The db argument is explicit: this route builds its OWN client.
+    await writeInvocationHeartbeat(
+      { pipeline: PIPELINE_NAME, startedAtMs: Date.parse(startedAt) },
+      supabaseAdmin,
+    );
     let ok = true;
     let errMsg: string | null = null;
     let enqueuedDeal = 0;

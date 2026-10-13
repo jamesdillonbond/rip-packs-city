@@ -1,6 +1,7 @@
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,6 +27,16 @@ async function run(request: NextRequest) {
   // auto-disabled on a timeout. pipeline_runs is the real success signal.
   after(async () => {
     const startedMs = Date.now();
+    // Invocation heartbeat, written BEFORE the work and awaited (E5, 2026-10-13).
+    // SELECTED ON MEASURED MARGIN: over the 72 h to 2026-10-13 ~8:20 AM PT the
+    // max was 44,021 ms of this route's 60,000 ms wall (73%), p90 38,512 ms --
+    // the tightest margin left in the ratchet. A kill at the wall writes no
+    // terminal row; this marker is the only evidence one happened.
+    // The db argument is explicit: this route builds its OWN client.
+    await writeInvocationHeartbeat(
+      { pipeline: PIPELINE_NAME, startedAtMs: Date.parse(startedAt) },
+      supabaseAdmin,
+    );
     // 2026-06-11: the backfill RPC call previously sat OUTSIDE this try/catch, so
     // when it THREW (connection-pool timeout under DB saturation — not a returned
     // error) the after() rejected before log_pipeline_run and the run went silent
@@ -67,7 +78,9 @@ async function run(request: NextRequest) {
     }
 
     try {
-      await supabaseAdmin.rpc("log_pipeline_run", {
+      // R123: supabase-js RETURNS a rejected write as `error`; an await with no
+      // destructuring made a failed terminal row unreadable by construction.
+      const { error: logError } = await supabaseAdmin.rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
         p_started_at: startedAt,
         p_rows_found: Number(data?.processed ?? 0),
@@ -123,6 +136,9 @@ async function run(request: NextRequest) {
           duration_ms: Date.now() - startedMs,
         },
       });
+      if (logError) {
+        console.log(`[${PIPELINE_NAME}] log_pipeline_run error: ${logError.message}`);
+      }
     } catch (logErr) {
       console.log(
         `[${PIPELINE_NAME}] log_pipeline_run err: ${logErr instanceof Error ? logErr.message : String(logErr)}`

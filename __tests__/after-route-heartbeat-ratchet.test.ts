@@ -469,7 +469,10 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   only instrument that saw it was the 30 h silence arm, a day later.
 //   2026-10-10: app/api/cron/topshot-deal-floor-serials DELETED (34 -> 33; #65 —
 //   superseded by sync_edition_offers_from_atlas, no run in retention).
-const BUDGET = 33
+//   2026-10-13: app/api/cron/backfill-pack-rip-metadata (max 44,021 ms of a
+//   60,000 ms wall, 73% -- the tightest left) and app/api/cron/alerts-dispatch
+//   (output is user alerts; a kill sends nothing) converted (33 -> 31).
+const BUDGET = 31
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {
