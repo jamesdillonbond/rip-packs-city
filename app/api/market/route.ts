@@ -40,6 +40,7 @@ import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fm
 import { apiErrorResponse } from "@/lib/api-error"
 import { readPaniniCoverage } from "@/lib/panini/coverage"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { readCanonicalBadgeTitles, filterRowsByBadges } from "@/lib/market/canonical-badges"
 import { getCollectionUuid } from "@/lib/collections"
 
 export const dynamic = "force-dynamic"
@@ -1077,11 +1078,13 @@ export async function GET(req: NextRequest) {
 
       const isTopShot = collectionId === TS_COLLECTION_ID
 
-      const enriched = clamped.map((r: any) => {
-        const ask = r.ask_price != null ? Number(r.ask_price) : null
-        const rawFmv = r.fmv != null ? Number(r.fmv) : null
+      // ONE derivation of a row's edition key, used by the canonical-badge
+      // pre-pass AND the row mapping below, so the two cannot key differently.
+      const editionFor = (r: any) => {
         const lookupKey = normJoinKey(r.player_name, r.set_name)
-        const ed = lookupKey ? editionLookup.get(lookupKey) : null
+        return lookupKey ? editionLookup.get(lookupKey) : null
+      }
+      const editionKeyFor = (r: any, ed: any): string | null => {
         // Prefer the row's own edition key when the source carries one (AllDay
         // editions RPC → external_id; Pinnacle catalog → render_id); otherwise
         // derive it from the editions-table lookup (TS on-chain integer form).
@@ -1095,6 +1098,42 @@ export async function GET(req: NextRequest) {
             editionKey = ed.external_id
           }
         }
+        return editionKey
+      }
+
+      // Canonical edition badges (R104, 2026-10-13) — see lib/market/canonical-badges.ts.
+      // Both sources this branch used to read (`badge_slugs: null` → editions.badges
+      // for TS; `e.badges` via the All Day RPC) are the always-empty column, so every
+      // Top Shot and All Day row rendered "no badges". Read for the whole fetched
+      // window, because the badge FILTER below runs over the window, not the page.
+      const usesCanonicalBadges = isTopShot || collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH
+      const canonicalBadges = usesCanonicalBadges
+        ? await readCanonicalBadgeTitles(
+            supabaseAdmin as any,
+            collectionId,
+            clamped.map((r: any) => editionKeyFor(r, editionFor(r))),
+          )
+        : null
+      if (canonicalBadges && !canonicalBadges.ok) {
+        console.log(`[/api/market] canonical badges read err: ${canonicalBadges.error}`)
+        // A badge FILTER over a failed badge read can only answer falsely: an
+        // empty list ("nothing carries this badge") or the unfiltered list (the
+        // chip active over rows that do not match). Refuse like a failed market
+        // read. Without a badge filter, the listings are still true — degrade to
+        // no badges and say so in diagnostics.
+        if (hasBadges) {
+          return NextResponse.json(
+            { error: "market_unavailable", retry: true, collection_id: collectionId },
+            { status: 503, headers: { "Cache-Control": "no-store" } }
+          )
+        }
+      }
+
+      const enriched = clamped.map((r: any) => {
+        const ask = r.ask_price != null ? Number(r.ask_price) : null
+        const rawFmv = r.fmv != null ? Number(r.fmv) : null
+        const ed = editionFor(r)
+        const editionKey = editionKeyFor(r, ed)
         // P1a: clamp FMV to the 90d max sale when it overshoots, then compute
         // the discount off the honest figure so no fake bargain surfaces.
         const g = isTopShot
@@ -1102,11 +1141,15 @@ export async function GET(req: NextRequest) {
           : { effectiveFmv: rawFmv ?? 0, lowConfidenceFmv: false }
         const fmv = rawFmv == null ? null : g.effectiveFmv
         const discount = computeDiscount(ask, fmv)
-        // Edition-wide badges: prefer the row's own (AllDay editions RPC), else
-        // the editions-table lookup (TS). Market never shows special-serial badges.
+        // Edition-wide badges. Top Shot / All Day: the canonical titles read above
+        // (an edition absent from a CLEAN read genuinely has none). Otherwise, or
+        // when that read failed: the row's own, else the editions-table lookup —
+        // the pre-2026-10-13 behaviour. Market never shows special-serial badges.
         const rowBadges = Array.isArray(r.badge_slugs) ? r.badge_slugs : []
         const editionBadges = ed && Array.isArray(ed.badges) ? ed.badges : []
-        const badgeSlugs = rowBadges.length > 0 ? rowBadges : editionBadges
+        const badgeSlugs: string[] = canonicalBadges?.ok
+          ? (editionKey ? canonicalBadges.titles.get(editionKey) ?? [] : [])
+          : rowBadges.length > 0 ? rowBadges : editionBadges
         const listedCount = r.listed_count != null ? Number(r.listed_count) : null
         const serial = r.serial_number != null ? Number(r.serial_number) : null
         const circ = r.circulation_count != null ? Number(r.circulation_count) : null
@@ -1166,6 +1209,10 @@ export async function GET(req: NextRequest) {
         })
       }
       if (specialSerials) postFiltered = postFiltered.filter(r => r.isSpecialSerial)
+      // ?badges= / ?hasBadges= (R104, 2026-10-13). This branch IGNORED both — the
+      // chip showed as active over an unfiltered list. Applied over the fetched
+      // window, so `total` stays a floor whenever `windowTruncated` is true.
+      postFiltered = filterRowsByBadges(postFiltered, badges, hasBadges)
       // Authoritatively order the modern feed in-memory so the shown order ALWAYS
       // matches the selected sort — the upstream sniper RPCs don't reliably honor
       // every sort value (e.g. get_topshot_sniper_deals silently ignores
@@ -1212,7 +1259,7 @@ export async function GET(req: NextRequest) {
           matchedBeforeFilters: null,
         },
         clamp: { applied: true, ceilings: TIER_CEILING },
-        diagnostics: { rawCount: count, postClampCount: clamped.length, postFilterCount: total, source: "modern", windowTruncated: modernPageFull },
+        diagnostics: { rawCount: count, postClampCount: clamped.length, postFilterCount: total, source: "modern", windowTruncated: modernPageFull, ...(canonicalBadges && !canonicalBadges.ok ? { badgesUnavailable: true } : {}) },
         ...coverageField,
       }, {
         headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },
