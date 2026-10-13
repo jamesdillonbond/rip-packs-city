@@ -176,13 +176,23 @@ describe("the register integrity guard, against the real file", () => {
   })
 
   it("inspects BOTH id-keyed sections in bulk — neither may silently stop matching", () => {
-    // The count is deliberately a floor, not a pin: the register grows. What is
-    // pinned is that both roots CONTRIBUTE, which a shape regression would break
-    // while the total still looked plausible.
+    // ⚠ 2026-10-12: this was a FLOOR (`> 20`) and the register outgrew it in the
+    // wrong direction — a drain pass closed OPEN to 17 rows and reddened `main`,
+    // a guard punishing its own success. OPEN is MEANT to shrink, to zero. What
+    // is pinned now is that the parser counts EVERY table row in each section,
+    // against a raw count that never touches `parseRows`: a shape regression
+    // that stops matching rows makes the two disagree, at any population.
     const { sections } = parseRows(src)
     const byName = Object.fromEntries(sections.filter((s) => s.idKeyed).map((s) => [s.name, s.rows]))
-    expect(byName["OPEN"]).toBeGreaterThan(20)
-    expect(byName["RESOLVED"]).toBeGreaterThan(20)
+    const rawRows = (name: string) => {
+      const body = src.split(/^## /m).find((b) => b.startsWith(`${name}\n`))
+      expect(body, `register must still have a "## ${name}" section`).toBeTruthy()
+      // Every `|` line minus the header row and the |---| separator.
+      return body!.split("\n").filter((l) => l.trimStart().startsWith("|")).length - 2
+    }
+    expect(byName["OPEN"]).toBe(rawRows("OPEN"))
+    expect(byName["RESOLVED"]).toBe(rawRows("RESOLVED"))
+    expect(byName["RESOLVED"]).toBeGreaterThan(0)
   })
 
   it("really does exclude the two prose sections by their first column, not by name", () => {
