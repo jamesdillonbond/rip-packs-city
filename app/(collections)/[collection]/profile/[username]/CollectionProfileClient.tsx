@@ -272,13 +272,10 @@ function Avatar(props: {
     cursor: editable ? "pointer" : "default",
   };
 
-  return (
-    <div
-      style={wrapStyle}
-      onMouseEnter={function() { setHovered(true); }}
-      onMouseLeave={function() { setHovered(false); }}
-      onClick={handleClick}
-    >
+  // The editable avatar is a real <button> (keyboard-reachable, announced as
+  // "Change avatar"); a read-only avatar is plain content with no handler.
+  const inner = (
+    <>
       {!imgFailed ? (
         <img
           src={avatarUrl}
@@ -298,8 +295,25 @@ function Avatar(props: {
           EDIT
         </div>
       )}
-    </div>
+    </>
   );
+  if (editable) {
+    return (
+      <button
+        type="button"
+        aria-label="Change avatar"
+        style={{ ...wrapStyle, padding: 0, background: "transparent", font: "inherit", color: "inherit", display: "block" }}
+        onMouseEnter={function() { setHovered(true); }}
+        onMouseLeave={function() { setHovered(false); }}
+        onFocus={function() { setHovered(true); }}
+        onBlur={function() { setHovered(false); }}
+        onClick={handleClick}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return <div style={wrapStyle}>{inner}</div>;
 }
 
 // ── Bio Editor ───────────────────────────────────────────────────

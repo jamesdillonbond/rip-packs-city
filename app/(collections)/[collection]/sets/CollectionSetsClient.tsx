@@ -571,7 +571,8 @@ export default function CollectionSetsClient({ collection }: { collection: strin
         const openSetHref = setEntityHref(collectionSlug, openSet.setName);
         return (
         <div
-          onClick={() => setOpenSet(null)}
+          role="presentation"
+          onClick={(e) => { if (e.target === e.currentTarget) setOpenSet(null); }}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
         >
           <div
@@ -580,7 +581,6 @@ export default function CollectionSetsClient({ collection }: { collection: strin
             aria-modal="true"
             aria-labelledby="set-modal-title"
             tabIndex={-1}
-            onClick={(e) => e.stopPropagation()}
             style={{ background: colors.bg, border: "1px solid " + colors.cardBorder, borderRadius: 10, padding: "20px 24px", maxWidth: 720, maxHeight: "85vh", width: "100%", overflow: "auto", outline: "none" }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
@@ -881,6 +881,7 @@ function SetCard({
 
   return (
     <div
+      role="presentation"
       onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; if (setHref) router.push(setHref); }}
       style={{
         position: "relative",

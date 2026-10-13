@@ -278,10 +278,13 @@ export default function CollectionMomentTable(props: {
                       .map(function(s) { return s[0]?.toUpperCase() ?? "" })
                       .join("")
                     return (
-                      <div
+                      <Link
+                        href={momentRowHref(collectionSlug, row)}
+                        prefetch={false}
+                        aria-label={row.playerName ?? "Open moment"}
                         className="relative shrink-0 self-stretch flex items-center justify-center border-r border-[color:var(--rpc-border)]"
                         style={{ /* brand-exception: white initials on the collection accent */ width: 104, minHeight: 120, background: mThumb ? "var(--rpc-surface-raised)" : accent, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, letterSpacing: "0.04em" }}
-                        onClick={function(e) { e.stopPropagation(); router.push(momentRowHref(collectionSlug, row)) }}
+                        onClick={function(e) { e.stopPropagation() }}
                         data-rpc-mobile-thumb=""
                       >
                         {mThumb ? (
@@ -298,7 +301,7 @@ export default function CollectionMomentTable(props: {
                           />
                         ) : null}
                         <span aria-hidden="true">{initials || "—"}</span>
-                      </div>
+                      </Link>
                     )
                   })()}
                   <div className="flex-1 min-w-0 p-3 flex flex-col justify-center gap-1.5">
@@ -559,18 +562,22 @@ export default function CollectionMomentTable(props: {
                                     .map(function(s) { return s[0]?.toUpperCase() ?? "" })
                                     .join("")
                                   const fallback = (
-                                    <div
+                                    <Link
+                                      href={momentRowHref(collectionSlug, row)}
+                                      prefetch={false}
+                                      aria-label={row.playerName}
                                       className="rounded flex items-center justify-center cursor-pointer"
                                       style={{ /* brand-exception: white on tier-accent fill */ width: 48, height: 64, background: accent, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 16, letterSpacing: "0.04em" }}
-                                      onClick={function(e) { e.stopPropagation(); router.push(momentRowHref(collectionSlug, row)) }}
+                                      onClick={function(e) { e.stopPropagation() }}
                                       title={row.playerName}
                                     >
                                       {initials || "—"}
-                                    </div>
+                                    </Link>
                                   )
                                   if (!thumbUrl) return fallback
                                   return (
                                     <ThumbnailPreview thumbUrl={thumbUrl} playerName={row.playerName} tierColor={tierColorForPrev}>
+                                      <Link href={momentRowHref(collectionSlug, row)} prefetch={false} aria-label={row.playerName} onClick={function(e) { e.stopPropagation() }} style={{ display: "inline-block", lineHeight: 0 }}>
                                       <img
                                         src={thumbUrl}
                                         alt={row.playerName}
@@ -579,7 +586,6 @@ export default function CollectionMomentTable(props: {
                                         loading="lazy"
                                         className="rounded object-cover cursor-pointer"
                                         style={{ width: 48, height: 64, background: "var(--rpc-surface)" }}
-                                        onClick={function(e) { e.stopPropagation(); router.push(momentRowHref(collectionSlug, row)) }}
                                         onError={function(e) {
                                           const img = e.target as HTMLImageElement
                                           img.style.display = "none"
@@ -594,6 +600,7 @@ export default function CollectionMomentTable(props: {
                                           }
                                         }}
                                       />
+                                      </Link>
                                     </ThumbnailPreview>
                                   )
                                 })()}
@@ -845,15 +852,15 @@ export default function CollectionMomentTable(props: {
                             <span aria-hidden="true">{"\uD83D\uDD14"}</span>
                           </button>
                           {alertOpenMomentId === row.momentId && (
-                            <div onClick={function(e) { e.stopPropagation() }} style={{ position: "absolute", top: "100%", right: 0, zIndex: 50, background: "var(--rpc-surface)", border: "1px solid #3f3f46", borderRadius: 8, padding: 12, width: 240, marginTop: 4 }}>
+                            <div role="presentation" onClick={function(e) { e.stopPropagation() }} style={{ position: "absolute", top: "100%", right: 0, zIndex: 50, background: "var(--rpc-surface)", border: "1px solid #3f3f46", borderRadius: 8, padding: 12, width: 240, marginTop: 4 }}>
                               <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", marginBottom: 8 }}>SET FMV ALERT</div>
                               <div style={{ marginBottom: 8 }}>
-                                <label style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa", display: "block", marginBottom: 4 }}>Target Price ($)</label>
-                                <input type="number" min="0" step="0.01" value={alertTargetPrice} onChange={function(e) { setAlertTargetPrice(e.target.value) }} style={{ width: "100%", background: "var(--rpc-surface)", border: "1px solid #3f3f46", borderRadius: 6, padding: "6px 8px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: 12, outline: "none" }} />
+                                <label htmlFor="rpc-alert-target-price" style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa", display: "block", marginBottom: 4 }}>Target Price ($)</label>
+                                <input id="rpc-alert-target-price" type="number" min="0" step="0.01" value={alertTargetPrice} onChange={function(e) { setAlertTargetPrice(e.target.value) }} style={{ width: "100%", background: "var(--rpc-surface)", border: "1px solid #3f3f46", borderRadius: 6, padding: "6px 8px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: 12, outline: "none" }} />
                               </div>
                               <div style={{ marginBottom: 10 }}>
-                                <label style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa", display: "block", marginBottom: 4 }}>Notify via</label>
-                                <div style={{ display: "flex", gap: 8 }}>
+                                <span id="rpc-alert-notify-label" style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa", display: "block", marginBottom: 4 }}>Notify via</span>
+                                <div role="radiogroup" aria-labelledby="rpc-alert-notify-label" style={{ display: "flex", gap: 8 }}>
                                   {(["email", "telegram"] as const).map(function(t) {
                                     return <label key={t} style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "var(--font-mono)", fontSize: 11, color: alertNotifType === t ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)", cursor: "pointer" }}><input type="radio" name="alert-notif" checked={alertNotifType === t} onChange={function() { setAlertNotifType(t) }} style={{ accentColor: accent }} />{t === "email" ? "Email" : "Telegram"}</label>
                                   })}

@@ -1296,10 +1296,18 @@ describe("SniperClient — the desktop row's media and buy controls", () => {
     render(<SniperClient />)
     await screen.findAllByText(/Damian Lillard/i)
 
+    // 2026-10-13 (a11y): the thumbnail is a real LINK now, not a div with a
+    // router.push — keyboard-reachable and right-click-openable. The property
+    // is the same: it points at the asset, and clicking it does not ALSO fire
+    // the row's own navigation (stopPropagation).
     const img = document.querySelector('img[alt="Damian Lillard"]') as HTMLImageElement
+    const link = img.closest("a")
+    expect(link).not.toBeNull()
+    expect(link!.getAttribute("href")).toBe(`/nba-top-shot/edition/${encodeURIComponent("48:1652")}`)
     routerPush.mockClear()
     fireEvent.click(img)
-    expect(routerPush).toHaveBeenCalledWith(`/nba-top-shot/edition/${encodeURIComponent("48:1652")}`)
+    // The row handler would have pushed the deal href; the link's click must not reach it.
+    expect(routerPush).not.toHaveBeenCalled()
   })
 
   it("hovering a row and leaving it restores the resting background", async () => {

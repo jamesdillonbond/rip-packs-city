@@ -87,6 +87,14 @@ describe("mobile binder card — lock pill", () => {
     const { container } = render(<CollectionMomentTable {...props(row())} />)
     expect(container.querySelector("[data-rpc-mobile-thumb]")).not.toBeNull()
   })
+
+  it("the thumbnail is a real link to the moment (2026-10-13 a11y: keyboard-reachable, not a div with a router.push)", () => {
+    const { container } = render(<CollectionMomentTable {...props(row())} />)
+    const thumb = container.querySelector("[data-rpc-mobile-thumb]") as HTMLElement
+    expect(thumb.tagName).toBe("A")
+    expect(thumb.getAttribute("href")).toMatch(/\/moment\//)
+    expect(thumb.getAttribute("aria-label")).toBeTruthy()
+  })
 })
 
 describe("mobile binder card — a source that SAYS it never checked", () => {

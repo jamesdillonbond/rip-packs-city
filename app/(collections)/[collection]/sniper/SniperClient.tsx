@@ -1303,13 +1303,15 @@ function SniperMomentsBody() {
           <div className="flex flex-col gap-2">
             {shownDeals.map((deal) => {
               return (
-                <div key={`m-${deal.source}-${deal.flowId}`} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; router.push(dealHref(deal)); }} className="rpc-card p-3 flex flex-col gap-1.5 cursor-pointer">
+                <div key={`m-${deal.source}-${deal.flowId}`} role="presentation" onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; router.push(dealHref(deal)); }} className="rpc-card p-3 flex flex-col gap-1.5 cursor-pointer">
                   {/* Row 1: Thumbnail + Player + Tier + Source */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <div
+                      <Link
+                        href={dealHref(deal)}
+                        prefetch={false}
                         aria-label={deal.playerName}
-                        onClick={(e) => { e.stopPropagation(); router.push(dealHref(deal)); }}
+                        onClick={(e) => e.stopPropagation()}
                         className="rounded shrink-0 relative overflow-hidden"
                         style={{
                           width: 36,
@@ -1337,7 +1339,7 @@ function SniperMomentsBody() {
                             onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
                           />
                         ) : null}
-                      </div>
+                      </Link>
                       {deal.editionKey ? (
                         <Link
                           href={dealHref(deal)}
@@ -1554,6 +1556,7 @@ function SniperMomentsBody() {
                       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                         {deal.thumbnailUrl ? (
                           <SniperThumbnailPreview thumbUrl={deal.thumbnailUrl} playerName={deal.playerName} tierColor={resolveTierColor(deal.tier, isAllDay)} backgroundColor={isAllDay ? "var(--rpc-surface-raised)" : undefined}>
+                            <Link href={dealHref(deal)} prefetch={false} aria-label={deal.playerName} onClick={(e) => e.stopPropagation()} style={{ display: "inline-block", lineHeight: 0, flexShrink: 0 }}>
                             <img
                               src={proxyIpfsImageUrl(isAllDay ? deal.thumbnailUrl.replace("width=256", "width=512") : deal.thumbnailUrl, 640) ?? undefined}
                               alt={deal.playerName}
@@ -1562,7 +1565,6 @@ function SniperMomentsBody() {
                               style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, background: "var(--rpc-surface-raised)", cursor: "pointer", boxShadow: `0 0 0 1px ${resolveTierColor(deal.tier, isAllDay)}40`, transition: "box-shadow var(--transition-fast)" }}
                               loading="lazy"
                               decoding="async"
-                              onClick={(e) => { e.stopPropagation(); router.push(dealHref(deal)); }}
                               onMouseEnter={(e) => { (e.currentTarget as HTMLImageElement).style.boxShadow = `0 0 0 2px ${resolveTierColor(deal.tier, isAllDay)}` }}
                               onMouseLeave={(e) => { (e.currentTarget as HTMLImageElement).style.boxShadow = `0 0 0 1px ${resolveTierColor(deal.tier, isAllDay)}40` }}
                               onError={(e) => {
@@ -1571,6 +1573,7 @@ function SniperMomentsBody() {
                                 img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
                               }}
                             />
+                            </Link>
                           </SniperThumbnailPreview>
                         ) : (
                           <div

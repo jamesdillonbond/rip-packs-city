@@ -646,7 +646,7 @@ export default function PackTable({
       {/* Mobile + small tablet: card layout */}
       <div className={`md:hidden space-y-2 ${className}`}>
         {sorted.map((r) => (
-          <div key={r.id} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest('a,button')) return; if (r.detailHref) router.push(r.detailHref) }} className={'rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3' + (r.detailHref ? ' cursor-pointer' : '')}>
+          <div key={r.id} role="presentation" onClick={(e) => { const t = e.target as HTMLElement; if (t.closest('a,button')) return; if (r.detailHref) router.push(r.detailHref) }} className={'rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3' + (r.detailHref ? ' cursor-pointer' : '')}>
             <div className="flex items-start gap-3">
               {r.detailHref ? (
                 <Link href={r.detailHref} prefetch={false} aria-label={r.title} className="flex-shrink-0">
