@@ -242,11 +242,12 @@ export default function PackRealityClient({
     const s = data.meta?.ranker_staleness
     if (!s || !(s.stale_count > 0) || !s.newest_qualifying_snapshot) return null
     const stamped = new Date(data.meta?.fetched_at ?? NaN).getTime()
-    // The seeded body always carries the stamp (the lib's type requires it). A
-    // payload WITHOUT one can only have arrived by the mount fetch, after
-    // hydration, where the clock is safe to read — so that path keeps the
-    // pre-seed behaviour rather than letting a missing field silence a notice
-    // whose whole job is to stop "No +EV packs right now." being said falsely.
+    // The seeded body always carries the stamp (the lib's type requires it), so
+    // the clock fallback below keeps the pre-seed behaviour for an OLD payload
+    // shape rather than letting a missing field silence a notice whose whole
+    // job is to stop "No +EV packs right now." being said falsely.
+    // hydration-safe: a payload without fetched_at can only arrive by the mount
+    // fetch (the server seed is typed to carry it), so this branch runs post-mount only
     const anchor = Number.isFinite(stamped) ? stamped : Date.now()
     const ms = anchor - new Date(s.newest_qualifying_snapshot).getTime()
     if (!Number.isFinite(ms)) return null

@@ -191,7 +191,12 @@ const APP_DIR = join(process.cwd(), "app")
  * two independent error strings. A single helper returning one shape would
  * force those five policies into one, which is how the "Benchmark data may be
  * too thin" defect happened in the first place. Pinned per-leg instead. */
-const BUDGET = 4
+/* 4 -> 3 (2026-10-13, review E2): `app/insights/pack-reality` became a server
+ * shell over `PackRealityClient.tsx`. The client body still fetches directly —
+ * its per-leg `meta.errors` degradation and the #118 ranker-staleness branch
+ * need the raw payload, not a board-shaped `fetchJson` result — but the
+ * page.tsx that this ratchet walks no longer carries the fetch. */
+const BUDGET = 3
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
