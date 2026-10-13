@@ -9,10 +9,8 @@ import { describe, it, expect, vi } from "vitest"
 
 const read = vi.fn()
 vi.mock("@/lib/collection-stats/read", () => ({
-  readCollectionStats: (...a: unknown[]) => read(...a),
-  normalizeStatsSlug: (c: string) => c.replace(/-/g, "_"),
+  readCollectionStatsForPage: (...a: unknown[]) => read(...a),
 }))
-vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 const seen: unknown[] = []
 vi.mock("@/app/(collections)/[collection]/overview/CollectionOverviewClient", () => ({
   default: (props: { initialStats?: unknown; collection: string }) => {
@@ -31,10 +29,10 @@ async function renderPage(collection = "nba-top-shot") {
 }
 
 describe("overview page seeds the client from the shared reader", () => {
-  it("passes the payload through on ok, asking for the RPC's slug vocabulary", async () => {
+  it("passes the payload through on ok, handing the lib the URL slug (the lib owns the client and the slug vocabulary)", async () => {
     read.mockResolvedValueOnce({ ok: true, stats: { edition_count: 5, fmv_age_minutes: 3 } })
     expect(await renderPage("nba-top-shot")).toEqual({ edition_count: 5, fmv_age_minutes: 3 })
-    expect(read).toHaveBeenLastCalledWith({}, "nba_top_shot", "overview/page")
+    expect(read).toHaveBeenLastCalledWith("nba-top-shot")
   })
   it("seeds NULL when the read is unavailable — never the error, never a zero", async () => {
     read.mockResolvedValueOnce({ ok: false, kind: "unavailable", error: new Error("timeout") })

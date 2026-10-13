@@ -13,6 +13,7 @@
 // driver's message (lib/api-error.ts contract).
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { supabaseAdmin } from "@/lib/supabase"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { readPaniniCoverage } from "@/lib/panini/coverage"
 
@@ -83,4 +84,14 @@ export async function readCollectionStats(
   } catch (err) {
     return { ok: false, kind: "unavailable", error: err }
   }
+}
+
+/**
+ * The page-side entry: takes the URL slug, owns the client. A server PAGE must
+ * not touch `supabaseAdmin` itself — two ratchets count pages that do
+ * (`server-page-data-access-ratchet`, `insights-server-pages-bound-their-reads`),
+ * because a page-level client is a page-level read nobody's coverage sees.
+ */
+export function readCollectionStatsForPage(collectionUrlSlug: string, where = "overview/page"): Promise<CollectionStatsRead> {
+  return readCollectionStats(supabaseAdmin, normalizeStatsSlug(collectionUrlSlug), where)
 }

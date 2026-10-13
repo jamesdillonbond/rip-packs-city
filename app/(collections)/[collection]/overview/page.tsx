@@ -12,8 +12,7 @@ import CollectionOverviewClient from "./CollectionOverviewClient";
 import { Suspense } from "react";
 import { CollectionMarketCapTile } from "@/components/entity/MarketCapTile";
 import { getCollectionByUrlSlug } from "@/lib/collection-slug";
-import { supabaseAdmin } from "@/lib/supabase";
-import { normalizeStatsSlug, readCollectionStats } from "@/lib/collection-stats/read";
+import { readCollectionStatsForPage } from "@/lib/collection-stats/read";
 
 export default async function OverviewPage({
   params,
@@ -38,7 +37,7 @@ export default async function OverviewPage({
   // read, its own three-way honesty), and ISR never caches a claim out of a
   // failure (#33) because null IS the absence.
   let initialStats: Record<string, unknown> | null = null;
-  const seed = await readCollectionStats(supabaseAdmin, normalizeStatsSlug(collection), "overview/page");
+  const seed = await readCollectionStatsForPage(collection);
   if (seed.ok) initialStats = seed.stats;
   else if (seed.kind === "unavailable") console.log("[overview/page] stats seed unavailable; client will read live");
   return (
