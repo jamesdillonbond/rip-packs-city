@@ -416,3 +416,92 @@ describe("ops-monitor's CI watch uses the shared detector, not `workflow_runs[0]
     expect(OPS).toContain("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}")
   })
 })
+
+// ── 2026-10-12: a red is only reported once nothing newer can overturn it ────
+// A docs push landing while the FIX for a red was still running reported that
+// red (runs 38049689552 and be1f0bcc7's), because the walk reads COMPLETED runs
+// only. The wait below is what closes that race.
+import { inFlightNewerThan, waitForInFlight } from "@/scripts/check-last-code-ci-on-main.mjs"
+
+describe("a red verdict waits for newer in-flight runs", () => {
+  const RED_AT = "2026-10-12T23:41:40Z"
+  const runs = [
+    { id: 9, status: "in_progress", createdAt: "2026-10-12T23:50:00Z" }, // this run
+    { id: 8, status: "queued", createdAt: "2026-10-12T23:44:42Z" }, // the fix
+    { id: 7, status: "completed", createdAt: "2026-10-12T23:43:00Z" },
+    { id: 6, status: "in_progress", createdAt: "2026-10-12T23:30:00Z" }, // OLDER than the red
+  ]
+
+  it("keeps only runs newer than the red, not completed, and not this run", () => {
+    expect(inFlightNewerThan(runs, { since: RED_AT, currentRunId: "9" }).map((r) => r.id)).toEqual([8])
+  })
+
+  it("treats an unparseable red timestamp as nothing to wait for (never waits forever)", () => {
+    expect(inFlightNewerThan(runs, { since: "not a date" })).toEqual([])
+  })
+
+  it("polls until the newer run completes, then reports nothing pending", async () => {
+    let reads = 0
+    const sleeps: number[] = []
+    await withServer(
+      (url, res) => {
+        if (!url.includes("/workflows/ci.yml/runs")) return json(res, {}, 404)
+        reads++
+        // The fix is in flight for two reads, then completes.
+        const fix = { id: 8, run_number: 101, status: reads <= 2 ? "in_progress" : "completed", created_at: "2026-10-12T23:44:42Z" }
+        return json(res, { workflow_runs: [fix] })
+      },
+      async (base) => {
+        let t = 0
+        const w = await waitForInFlight({
+          repo: "o/r", token: "t", since: RED_AT, apiBase: base,
+          pollMs: 30_000, timeoutMs: 600_000,
+          sleep: async (ms) => { sleeps.push(ms); t += ms },
+          now: () => t,
+        })
+        expect(w.pending).toEqual([])
+        expect(w.slept).toBe(2)
+        expect(sleeps).toEqual([30_000, 30_000])
+      },
+    )
+  })
+
+  it("stops at the timeout and returns what is still pending — the red is not cleared", async () => {
+    await withServer(
+      (url, res) =>
+        json(res, { workflow_runs: [{ id: 8, run_number: 101, status: "in_progress", created_at: "2026-10-12T23:44:42Z" }] }),
+      async (base) => {
+        let t = 0
+        const w = await waitForInFlight({
+          repo: "o/r", token: "t", since: RED_AT, apiBase: base,
+          pollMs: 30_000, timeoutMs: 90_000,
+          sleep: async (ms) => { t += ms },
+          now: () => t,
+        })
+        expect(w.pending.map((r: { id: number }) => r.id)).toEqual([8])
+        expect(w.slept).toBe(3)
+      },
+    )
+  })
+
+  it("an API failure mid-wait does not clear the red", async () => {
+    await withServer(
+      (_url, res) => json(res, { message: "nope" }, 500),
+      async (base) => {
+        const w = await waitForInFlight({ repo: "o/r", token: "t", since: RED_AT, apiBase: base, sleep: async () => {} })
+        expect(w.readFailed).toBe(true)
+        expect(w.slept).toBe(0)
+      },
+    )
+  })
+
+  it("the job outlives the wait, so a kill cannot turn a red into a cancel", () => {
+    const yml = readFileSync(join(process.cwd(), ".github/workflows/ci.yml"), "utf8")
+    const block = yml.split(/^  inherited-status:$/m)[1]!.split(/^  [a-z][\w-]*:$/m)[0]
+    const minutes = Number(/timeout-minutes:\s*(\d+)/.exec(block)?.[1])
+    const src = readFileSync(join(process.cwd(), "scripts/check-last-code-ci-on-main.mjs"), "utf8")
+    const waitMin = Number(/timeoutMs = (\d+) \* 60_000/.exec(src)?.[1])
+    expect(waitMin).toBeGreaterThan(0)
+    expect(minutes).toBeGreaterThanOrEqual(waitMin + 5)
+  })
+})

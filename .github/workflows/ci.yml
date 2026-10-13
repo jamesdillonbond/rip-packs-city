@@ -161,7 +161,10 @@ jobs:
   inherited-status:
     name: Inherited main status (docs-only pushes)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 20, not 5: on a red verdict the script waits up to 12 min for a newer
+    # in-flight run (the fix) before reporting. The job must outlive that wait,
+    # or a kill turns a real red into an inconclusive cancel.
+    timeout-minutes: 20
     needs: changes
     if: needs.changes.outputs.code == 'false' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:

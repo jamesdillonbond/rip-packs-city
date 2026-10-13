@@ -242,11 +242,85 @@ export async function fetchCandidates({ repo, token, currentRunId, maxRuns = 15,
       headSha: r.head_sha,
       displayTitle: r.display_title,
       htmlUrl: r.html_url,
+      createdAt: r.created_at,
       ranFullSuite: full,
     })
     if (full) break // newest full-suite run found; nothing older can outrank it
   }
   return out
+}
+
+/**
+ * PURE. Runs on main that are still IN FLIGHT and were created AFTER `since`
+ * (the red run's `created_at`), excluding this run itself.
+ *
+ * 🚨 WHY (2026-10-12): `fetchCandidates` reads only COMPLETED runs, so a docs
+ * push that lands while the FIX for a red is still running reports the red it
+ * cannot see is being fixed. Measured: run 38049689552 (docs) went red while
+ * 38049671927 — the green fix — was still in progress, and `be1f0bcc7` did the
+ * same on 10-12. A red verdict is only worth reporting once nothing newer that
+ * could overturn it is still running.
+ *
+ * @param {Array<{id: string|number, status: string, createdAt?: string}>} runs
+ * @param {{ since: string, currentRunId?: string|number|null }} opts
+ */
+export function inFlightNewerThan(runs, { since, currentRunId = null }) {
+  const t0 = Date.parse(since)
+  if (Number.isNaN(t0)) return []
+  return runs.filter(
+    (r) =>
+      String(r.id) !== String(currentRunId) &&
+      r.status !== "completed" &&
+      Date.parse(r.createdAt ?? "") > t0,
+  )
+}
+
+/** Every recent push run on main, ANY status — the in-flight half of the picture. */
+export async function fetchRecentRuns({ repo, token, apiBase = DEFAULT_API_BASE, perPage = 20 }) {
+  const { workflow_runs: runs = [] } = await api(
+    `/repos/${repo}/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=${perPage}`,
+    token,
+    apiBase,
+  )
+  return runs.map((r) => ({ id: r.id, runNumber: r.run_number, status: r.status, createdAt: r.created_at, headSha: r.head_sha }))
+}
+
+/**
+ * Wait, BOUNDED, for runs newer than a red one to finish. Returns the runs
+ * still pending when it stopped (empty = nothing left that could overturn it).
+ *
+ * ⚠ Bounded on purpose: the job's `timeout-minutes` must exceed `timeoutMs`,
+ * or a kill would turn a real red into a cancelled (inconclusive) job.
+ * ⚠ An API failure mid-wait returns what it knows and does NOT clear the red —
+ * the red run is evidence; a failed read of newer runs is not.
+ */
+export async function waitForInFlight({
+  repo,
+  token,
+  since,
+  currentRunId = null,
+  apiBase = DEFAULT_API_BASE,
+  timeoutMs = 12 * 60_000,
+  pollMs = 30_000,
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  now = () => Date.now(),
+  log = () => {},
+}) {
+  const start = now()
+  let pending = []
+  let slept = 0
+  for (;;) {
+    try {
+      pending = inFlightNewerThan(await fetchRecentRuns({ repo, token, apiBase }), { since, currentRunId })
+    } catch (e) {
+      log(`⚠ could not read in-flight runs (${e.message}); the red stands.`)
+      return { pending, slept, waitedMs: now() - start, readFailed: true }
+    }
+    if (pending.length === 0 || now() - start >= timeoutMs) return { pending, slept, waitedMs: now() - start, readFailed: false }
+    log(`… ${pending.length} newer run(s) still in flight (${pending.map((r) => `#${r.runNumber}`).join(", ")}); waiting before calling main red.`)
+    await sleep(pollMs)
+    slept++
+  }
 }
 
 /** Best-effort: a summary that cannot be written must never change the verdict. */
@@ -280,7 +354,22 @@ async function main() {
     writeSummary(renderSummary({ verdict: "unknown", run: null, considered: 0 }))
     process.exit(0)
   }
-  const result = decideInheritedStatus(candidates, { currentRunId })
+  let result = decideInheritedStatus(candidates, { currentRunId })
+  if (result.verdict === "red" && result.run?.createdAt) {
+    // A red is only reported once nothing newer that could overturn it is running.
+    const w = await waitForInFlight({ repo, token, currentRunId, since: result.run.createdAt, log: console.log })
+    if (w.slept > 0) {
+      try {
+        candidates = await fetchCandidates({ repo, token, currentRunId })
+        result = decideInheritedStatus(candidates, { currentRunId })
+      } catch (e) {
+        console.log(`⚠ re-read after waiting failed (${e.message}); reporting the red as first read.`)
+      }
+    }
+    if (result.verdict === "red" && w.pending.length > 0) {
+      console.log(`⚠ ${w.pending.length} newer run(s) were still in flight when the wait ended; the red below may already be fixed.`)
+    }
+  }
   console.log(`verdict=${result.verdict} (examined ${candidates.length} run(s))`)
   console.log(renderVerdict(result))
   writeSummary(renderSummary({ ...result, considered: candidates.length }))
