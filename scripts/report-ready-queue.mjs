@@ -35,9 +35,22 @@ export const STALE_NIGHTS = 3
  * match read every drifted handoff as an EMPTY queue, so the 10-11 pass's items
  * were never cross-checked. Any `## ` heading that says "queued", except one
  * that reports queued items RESOLVED.
+ *
+ * ⚠ WIDENED 2026-10-13: "carried" too. The 10-13 handoff titled its section
+ * "## Carried queue (needs a non-night-pass owner)" and the 09-28 / 10-03 ones
+ * "## Needs Trevor (carried…)" — none says "queued", so all three read as an
+ * absent section and the next pass started with no carried queue. Replayed over
+ * all 17 overnight handoffs: those 3 go from NONE to their real section, no file
+ * that already matched changes, 0 remain unmatched.
+ * ⛔ NOT bare "queue": "## Mode — OFF-HOURS / QUEUE-ONLY" (10-02) sits ABOVE
+ * that handoff's real section and would be taken first. A recap heading that
+ * reports items RESOLVED or "closed" ("## Verified closed this pass (dropped
+ * from carry)", 10-13) is excluded.
  */
 export function findQueueSection(lines) {
-  return lines.findIndex((l) => /^## /.test(l) && /queued/i.test(l) && !/\bRESOLVED\b/.test(l))
+  return lines.findIndex(
+    (l) => /^## /.test(l) && /\b(queued|carried)\b/i.test(l) && !/\b(RESOLVED|closed)\b/i.test(l),
+  )
 }
 
 /**

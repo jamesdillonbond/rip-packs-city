@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 import {
   parseQueued,
@@ -181,5 +181,48 @@ describe("report-ready-queue — drifted handoffs and re-carried items", () => {
     const items = parseQueued(readFileSync(file, "utf8"))
     expect(items.length).toBeGreaterThanOrEqual(8)
     expect(items.some((i) => i.text.includes("chain-arrival-pack-pulls"))).toBe(true)
+  })
+})
+
+// 2026-10-13: the 10-13 handoff titled its section "## Carried queue (needs a
+// non-night-pass owner)" — no "queued" — so the reporter printed "no section
+// found" and the morning session started with no carried queue. 09-28 and 10-03
+// ("## Needs Trevor (carried…)") had been read as absent the same way.
+describe("report-ready-queue — 'carried' headings", () => {
+  it("finds a section titled with 'carried' in any of the three spellings used", () => {
+    for (const h of [
+      "## Carried queue (needs a non-night-pass owner)",
+      "## Needs Trevor (carried, unchanged)",
+      "## Needs Trevor (carried)",
+    ]) expect(findQueueSection(["# x", h]), h).toBe(1)
+  })
+
+  it("does not take a QUEUE-ONLY mode heading that sits above the real section", () => {
+    const lines = ["## Mode — OFF-HOURS / QUEUE-ONLY (nothing shipped, by design)", "x", "## Needs Trevor (all QUEUED — nothing here is a ship)"]
+    expect(findQueueSection(lines)).toBe(2)
+  })
+
+  it("does not take a 'closed … dropped from carry' recap for the queue", () => {
+    expect(findQueueSection(["## Verified closed this pass (dropped from carry)"])).toBe(-1)
+    const lines = ["## Carried queue (needs a non-night-pass owner)", "1. a", "## Verified closed this pass (dropped from carry)", "- b"]
+    expect(findQueueSection(lines)).toBe(0)
+  })
+
+  it("positive control on the real 10-13 handoff: its four carried items are read", () => {
+    const file = path.join(process.cwd(), "docs/handoff-2026-10-13-overnight-pass.md")
+    const items = parseQueued(readFileSync(file, "utf8"))
+    expect(items.map((i) => i.n)).toEqual([1, 2, 3, 4])
+    expect(items[0].text).toContain("OPENSEA_API_KEY")
+    // the "Verified closed" section below it is NOT swallowed into the queue
+    expect(items.some((i) => i.text.includes("topshot_offers_history_backfill"))).toBe(false)
+  })
+
+  it("every overnight handoff in docs/ resolves to a queue section (no silent absence)", () => {
+    const files = readdirSync(path.join(process.cwd(), "docs")).filter((f) => /^handoff-.*overnight.*\.md$/.test(f))
+    expect(files.length).toBeGreaterThanOrEqual(17)
+    const unmatched = files.filter(
+      (f) => findQueueSection(readFileSync(path.join(process.cwd(), "docs", f), "utf8").split(/\r?\n/)) < 0,
+    )
+    expect(unmatched).toEqual([])
   })
 })
