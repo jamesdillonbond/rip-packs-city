@@ -347,12 +347,14 @@ export default function ApiKeysClient() {
                 Issue a key
               </h2>
               <label
+                htmlFor="rpc-api-key-label"
                 className="rpc-label"
                 style={{ display: "block", marginBottom: "var(--space-xs)" }}
               >
                 Label (optional)
               </label>
               <input
+                id="rpc-api-key-label"
                 type="text"
                 value={labelInput}
                 onChange={(e) => setLabelInput(e.target.value)}
@@ -606,9 +608,8 @@ function ModalShell({
   const contentRef = useModalA11y<HTMLDivElement>(true, onBackdropClick);
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      onClick={onBackdropClick}
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onBackdropClick() }}
       style={{
         position: "fixed",
         inset: 0,
@@ -623,7 +624,8 @@ function ModalShell({
     >
       <div
         ref={contentRef}
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
         className="rpc-card"
         style={{
           maxWidth: 480,

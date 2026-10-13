@@ -92,9 +92,7 @@ export default function AvatarMomentPicker({
   return (
     <div
       data-testid="avatar-moment-picker"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Choose an avatar from your Moments"
+      role="presentation"
       style={{
         position: "fixed",
         inset: 0,
@@ -105,11 +103,13 @@ export default function AvatarMomentPicker({
         justifyContent: "center",
         padding: 16,
       }}
-      onClick={onClose}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
         ref={contentRef}
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose an avatar from your Moments"
         style={{
           background: "var(--rpc-surface)",
           border: "1px solid var(--rpc-border)",

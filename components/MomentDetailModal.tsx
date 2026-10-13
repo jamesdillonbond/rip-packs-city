@@ -209,7 +209,8 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
 
   return (
     <div
-      onClick={onClose}
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{
         position: "fixed",
         inset: 0,
@@ -228,7 +229,6 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
         aria-modal="true"
         aria-labelledby="moment-modal-title"
         tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
         style={{
           background: "var(--rpc-surface, #0f0f0f)",
           border: "1px solid var(--rpc-border, rgba(255,255,255,0.08))",

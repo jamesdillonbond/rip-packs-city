@@ -352,10 +352,8 @@ export default function TrophyPickerModal({
 
   return (
     <div
-      role="dialog"
-      aria-modal
-      aria-label={`Pin to slot ${slot}`}
-      onClick={onClose}
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{
         position: "fixed",
         inset: 0,
@@ -370,7 +368,9 @@ export default function TrophyPickerModal({
     >
       <div
         ref={contentRef}
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Pin to slot ${slot}`}
         className="bg-[var(--rpc-surface)] border border-[color:var(--rpc-border)] rounded-xl shadow-2xl"
         style={{
           width: "100%",

@@ -1172,10 +1172,8 @@ function ShippingModal({
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Shipping address"
-      onClick={onClose}
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{
         position: "fixed",
         inset: 0,
@@ -1189,7 +1187,9 @@ function ShippingModal({
     >
       <div
         ref={contentRef}
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Shipping address"
         style={{ width: 420, maxWidth: "94vw", ...cardStyle, maxHeight: "90vh", overflowY: "auto" }}
       >
         <h3 style={{ fontFamily: DISPLAY, textTransform: "uppercase", margin: "0 0 4px", fontSize: 22 }}>

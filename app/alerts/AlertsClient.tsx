@@ -442,10 +442,10 @@ export default function AlertsClient() {
         <section style={cardStyle}>
           <h2 style={h2Style}>{form.id ? "Edit alert" : "New alert"}</h2>
 
-          <label style={labelStyle}>Name</label>
-          <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} style={inputStyle} />
+          <label htmlFor="alert-name" style={labelStyle}>Name</label>
+          <input id="alert-name" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} style={inputStyle} />
 
-          <label style={labelStyle}>Deliver to</label>
+          <div style={labelStyle}>Deliver to</div>
           <div style={chipRow}>
             {CHANNEL_META.map(({ name, label }) => (
               <Chip key={name} on={form.channels.includes(name)} onClick={() => setForm({ ...form, channels: toggle(form.channels, name) })}>
@@ -454,7 +454,7 @@ export default function AlertsClient() {
             ))}
           </div>
 
-          <label style={labelStyle}>Collections (none = all)</label>
+          <div style={labelStyle}>Collections (none = all)</div>
           <OptionTypeahead value={form.collection_ids} onChange={(v) => setForm({ ...form, collection_ids: v })} options={COLLECTIONS.map((c) => ({ value: c.id, label: c.name }))} placeholder="Type a collection…" />
 
           <div style={grid2}>
@@ -463,15 +463,15 @@ export default function AlertsClient() {
                   max price set it means "ignore FMV, just watch the price"
                   (audit_20260816). The hint says so, because nothing else on
                   this screen would tell you. */}
-              <label style={labelStyle}>Min discount % below FMV</label>
-              <input type="number" min={0} value={form.min_discount} onChange={(e) => setForm({ ...form, min_discount: e.target.value })} style={inputStyle} />
+              <label htmlFor="alert-min-discount" style={labelStyle}>Min discount % below FMV</label>
+              <input type="number" min={0} id="alert-min-discount" value={form.min_discount} onChange={(e) => setForm({ ...form, min_discount: e.target.value })} style={inputStyle} />
               <div style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 4 }}>
                 Set 0 with a max price to alert on price alone, ignoring FMV.
               </div>
             </div>
             <div>
-              <label style={labelStyle}>Cadence</label>
-              <select value={form.cadence} onChange={(e) => setForm({ ...form, cadence: e.target.value as FormState["cadence"] })} style={inputStyle}>
+              <label htmlFor="alert-cadence" style={labelStyle}>Cadence</label>
+              <select id="alert-cadence" value={form.cadence} onChange={(e) => setForm({ ...form, cadence: e.target.value as FormState["cadence"] })} style={inputStyle}>
                 <option value="instant">Instant</option>
                 <option value="daily">Daily digest</option>
                 <option value="weekly">Weekly digest</option>
@@ -481,33 +481,33 @@ export default function AlertsClient() {
 
           <div style={grid2}>
             <div>
-              <label style={labelStyle}>Min price $</label>
-              <input type="number" min={0} value={form.min_price} onChange={(e) => setForm({ ...form, min_price: e.target.value })} style={inputStyle} />
+              <label htmlFor="alert-min-price" style={labelStyle}>Min price $</label>
+              <input type="number" min={0} id="alert-min-price" value={form.min_price} onChange={(e) => setForm({ ...form, min_price: e.target.value })} style={inputStyle} />
             </div>
             <div>
-              <label style={labelStyle}>Max price $</label>
-              <input type="number" min={0} value={form.max_price} onChange={(e) => setForm({ ...form, max_price: e.target.value })} style={inputStyle} />
+              <label htmlFor="alert-max-price" style={labelStyle}>Max price $</label>
+              <input type="number" min={0} id="alert-max-price" value={form.max_price} onChange={(e) => setForm({ ...form, max_price: e.target.value })} style={inputStyle} />
             </div>
           </div>
 
-          <label style={labelStyle}>Tiers (Top Shot)</label>
+          <div style={labelStyle}>Tiers (Top Shot)</div>
           <OptionTypeahead value={form.tiers} onChange={(v) => setForm({ ...form, tiers: v })} options={TS_TIERS.map((t) => ({ value: t, label: t }))} placeholder="Type a tier…" />
 
-          <label style={labelStyle}>Parallel / variant (Pinnacle variants · rare Top Shot parallels)</label>
+          <div style={labelStyle}>Parallel / variant (Pinnacle variants · rare Top Shot parallels)</div>
           <OptionTypeahead value={form.parallel_names} onChange={(v) => setForm({ ...form, parallel_names: v })} options={PARALLELS.map((p) => ({ value: p, label: p }))} placeholder="Type a parallel or variant…" />
 
           <div style={grid2}>
             <div>
-              <label style={labelStyle}>Players</label>
+              <div style={labelStyle}>Players</div>
               <ChipTypeahead value={form.player_names} onChange={(v) => setForm({ ...form, player_names: v })} kind="player" collectionId={form.collection_ids[0] ?? null} placeholder="Type a player…" />
             </div>
             <div>
-              <label style={labelStyle}>Sets</label>
+              <div style={labelStyle}>Sets</div>
               <ChipTypeahead value={form.set_names} onChange={(v) => setForm({ ...form, set_names: v })} kind="set" collectionId={form.collection_ids[0] ?? null} placeholder="Type a set…" />
             </div>
           </div>
 
-          <label style={labelStyle}>Teams</label>
+          <div style={labelStyle}>Teams</div>
           <ChipTypeahead value={form.team_names} onChange={(v) => setForm({ ...form, team_names: v })} kind="team" collectionId={form.collection_ids[0] ?? null} placeholder="Type a team…" />
 
           {/* Live-listing-only filters — enforced by the per-serial deal feed
@@ -519,12 +519,12 @@ export default function AlertsClient() {
             </div>
             <div style={grid2}>
               <div>
-                <label style={labelStyle}>Min serial</label>
-                <input type="number" min={0} value={form.min_serial} onChange={(e) => setForm({ ...form, min_serial: e.target.value })} style={inputStyle} />
+                <label htmlFor="alert-min-serial" style={labelStyle}>Min serial</label>
+                <input type="number" min={0} id="alert-min-serial" value={form.min_serial} onChange={(e) => setForm({ ...form, min_serial: e.target.value })} style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>Max serial</label>
-                <input type="number" min={0} value={form.max_serial} onChange={(e) => setForm({ ...form, max_serial: e.target.value })} style={inputStyle} />
+                <label htmlFor="alert-max-serial" style={labelStyle}>Max serial</label>
+                <input type="number" min={0} id="alert-max-serial" value={form.max_serial} onChange={(e) => setForm({ ...form, max_serial: e.target.value })} style={inputStyle} />
               </div>
             </div>
             <div style={chipRow}>
@@ -532,7 +532,7 @@ export default function AlertsClient() {
               <Chip on={form.require_last_mint} onClick={() => setForm({ ...form, require_last_mint: !form.require_last_mint })}>Last mint</Chip>
               <Chip on={form.require_never_sold} onClick={() => setForm({ ...form, require_never_sold: !form.require_never_sold })}>Never sold</Chip>
             </div>
-            <label style={labelStyle}>Badges</label>
+            <div style={labelStyle}>Badges</div>
             <div style={chipRow}>
               {BADGES.map((b) => (
                 <Chip key={b.slug} on={form.badges.includes(b.slug)} onClick={() => setForm({ ...form, badges: toggle(form.badges, b.slug) })}>

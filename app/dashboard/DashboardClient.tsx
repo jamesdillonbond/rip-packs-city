@@ -1946,10 +1946,11 @@ function TrophyCaseSection({
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           {!editMode && (
             <>
-              <label style={{ fontFamily: monoFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+              <label htmlFor="rpc-trophy-sort" style={{ fontFamily: monoFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
                 Sort
               </label>
               <select
+                id="rpc-trophy-sort"
                 value={sortKey}
                 onChange={(e) => setSortKey(e.target.value as TrophySortKey)}
                 disabled={busy}
@@ -2886,14 +2887,14 @@ function ModalShell({ onClose, title, children }: { onClose: () => void; title: 
 
   return (
     <div
-      role="dialog"
-      aria-modal
-      onClick={onClose}
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}
     >
       <div
         ref={contentRef}
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
         style={{ width: "100%", maxWidth: 720, maxHeight: "90vh", overflow: "auto", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 12, padding: 20, color: "var(--rpc-text-primary)", boxShadow: "0 30px 80px rgba(0,0,0,0.7)" }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>

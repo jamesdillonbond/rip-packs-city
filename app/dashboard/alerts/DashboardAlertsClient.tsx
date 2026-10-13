@@ -462,8 +462,8 @@ function CreateAlertModal({
   };
 
   return (
-    <div className="rpc-al-modal-backdrop" role="dialog" aria-modal="true" onClick={() => onClose(null, null)}>
-      <div ref={contentRef} className="rpc-al-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="rpc-al-modal-backdrop" role="presentation" onClick={(e) => { if (e.target === e.currentTarget) onClose(null, null) }}>
+      <div ref={contentRef} className="rpc-al-modal" role="dialog" aria-modal="true">
         <div className="rpc-al-modal-header">
           <div className="rpc-al-modal-title">New Alert</div>
           <button type="button" className="rpc-al-iconbtn" aria-label="Close new alert" onClick={() => onClose(null, null)}>✕</button>
