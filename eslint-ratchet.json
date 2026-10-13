@@ -18,17 +18,11 @@
     "no-var": 9,
     "react-hooks/purity": 6,
     "jsx-a11y/no-autofocus": 6,
-    "jsx-a11y/label-has-associated-control": 6,
-    "jsx-a11y/aria-role": 4,
     "@typescript-eslint/no-unused-expressions": 3,
-    "jsx-a11y/alt-text": 3,
     "react-hooks/preserve-manual-memoization": 3,
     "react-hooks/globals": 2,
-    "jsx-a11y/no-noninteractive-element-to-interactive-role": 2,
     "react-hooks/refs": 2,
     "react-hooks/error-boundaries": 1,
-    "jsx-a11y/click-events-have-key-events": 1,
-    "jsx-a11y/no-static-element-interactions": 1,
     "@typescript-eslint/no-empty-object-type": 1
   }
 }

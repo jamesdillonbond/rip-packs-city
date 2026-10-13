@@ -58,7 +58,6 @@ export function PackSubNav({
 
   return (
     <nav
-      role="tablist"
       aria-label="Moments or Packs"
       style={{
         display: "inline-flex",
@@ -69,6 +68,8 @@ export function PackSubNav({
         border: "1px solid var(--rpc-border)",
       }}
     >
+      {/* tablist on a wrapper, not the <nav> landmark (jsx-a11y); display:contents keeps the layout. */}
+      <div role="tablist" style={{ display: "contents" }}>
       {items.map(({ key, label }) => {
         const on = active === key
         return (
@@ -97,6 +98,7 @@ export function PackSubNav({
           </button>
         )
       })}
+      </div>
     </nav>
   )
 }

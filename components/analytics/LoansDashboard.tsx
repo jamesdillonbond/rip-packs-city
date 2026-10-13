@@ -498,7 +498,7 @@ export default function LoansDashboard({
           {lenderTab === "volume" ? (
             <LeaderboardTable
               rows={topLenders?.rows ?? []}
-              role="lender"
+              party="lender"
               window={windowLabel}
             />
           ) : (
@@ -507,7 +507,7 @@ export default function LoansDashboard({
         </div>
         <LeaderboardTable
           rows={topBorrowers?.rows ?? []}
-          role="borrower"
+          party="borrower"
           window={windowLabel}
         />
       </section>

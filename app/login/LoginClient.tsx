@@ -225,7 +225,7 @@ export default function LoginClient() {
                 </div>
               </div>
             )}
-            <label style={{
+            <label htmlFor="rpc-login-email" style={{
               display: "block",
               fontFamily: "var(--font-mono)", fontSize: 10,
               color: "var(--rpc-text-muted)",
@@ -235,6 +235,7 @@ export default function LoginClient() {
               Email address
             </label>
             <input
+              id="rpc-login-email"
               type="email"
               inputMode="email"
               autoComplete="email"

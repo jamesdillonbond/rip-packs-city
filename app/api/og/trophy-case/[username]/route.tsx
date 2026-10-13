@@ -399,7 +399,7 @@ export async function GET(
                     }}
                   >
                     {t.art ? (
-                      <img
+                      <img alt=""
                         src={t.art}
                         width={w}
                         height={h}

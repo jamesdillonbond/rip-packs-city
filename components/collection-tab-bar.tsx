@@ -11,8 +11,13 @@ export function CollectionTabBar({ collection }: { collection: Collection }) {
     <nav
       className="rpc-coll-tabs"
       style={{ display: "flex", gap: 2, marginTop: 8, overflowX: "auto" }}
-      role="tablist"
+      aria-label="Collection sections"
     >
+      {/* `tablist` is an interactive composite role and <nav> is a landmark:
+          jsx-a11y (no-noninteractive-element-to-interactive-role) rejects the
+          pair. The wrapper carries the role; display:contents keeps the links
+          as the nav's flex items, so layout is unchanged. */}
+      <div role="tablist" style={{ display: "contents" }}>
       {tabBarPages(collection).map((page: CollectionPage) => {
         const href = `/${collection.id}/${page}`
         const isActive =
@@ -65,6 +70,7 @@ export function CollectionTabBar({ collection }: { collection: Collection }) {
           </Link>
         )
       })}
+      </div>
     </nav>
   )
 }

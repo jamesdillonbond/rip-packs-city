@@ -926,7 +926,11 @@ function FeedbackRowCard({
     <div className="rpc-card">
       {/* Collapsed header row */}
       <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
         onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded((v) => !v) } }}
         style={{
           display: "flex",
           alignItems: "center",
@@ -1067,6 +1071,7 @@ function FeedbackRowCard({
             }}
           >
             <label
+              htmlFor="rpc-feedback-status"
               style={{
                 fontFamily: monoFont,
                 fontSize: 10,
@@ -1078,6 +1083,7 @@ function FeedbackRowCard({
               Status
             </label>
             <select
+              id="rpc-feedback-status"
               value={statusKey}
               disabled={statusSaving}
               onChange={(e) => onStatusChange(e.target.value as FeedbackStatus)}

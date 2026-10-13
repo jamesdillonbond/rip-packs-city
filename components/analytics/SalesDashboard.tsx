@@ -276,12 +276,12 @@ export default function SalesDashboard({
       <section className="grid gap-6 lg:grid-cols-2">
         <LeaderboardTable
           rows={topBuyers?.rows ?? []}
-          role="buyer"
+          party="buyer"
           window={windowLabel}
         />
         <LeaderboardTable
           rows={topSellers?.rows ?? []}
-          role="seller"
+          party="seller"
           window={windowLabel}
         />
       </section>

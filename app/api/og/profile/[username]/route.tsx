@@ -899,7 +899,7 @@ export async function GET(
             >
               <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
                 {hasAvatar ? (
-                  <img
+                  <img alt=""
                     // The prefetched data URI, NOT `bio.avatar_url`. It used to
                     // read the row after mutating it in place, which now would
                     // also dereference a null `bio` — the default renders an
@@ -1094,7 +1094,7 @@ export async function GET(
                     }}
                   >
                     {t.thumbnail_url ? (
-                      <img
+                      <img alt=""
                         src={t.thumbnail_url}
                         width={grid.w}
                         height={grid.h}

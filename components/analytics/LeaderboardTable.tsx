@@ -19,7 +19,8 @@ export type LeaderboardRole = "lender" | "borrower" | "buyer" | "seller"
 
 interface LeaderboardTableProps {
   rows: LeaderboardDisplayRow[]
-  role: LeaderboardRole
+  /** Which side of the market the table ranks. (Was `role` — a reserved ARIA attribute name on a JSX element, 2026-10-13.) */
+  party: LeaderboardRole
   window: string
 }
 
@@ -82,7 +83,7 @@ function volumeUsd(r: LeaderboardDisplayRow): number {
   return Number(principal ?? sales ?? 0)
 }
 
-export default function LeaderboardTable({ rows, role, window }: LeaderboardTableProps) {
+export default function LeaderboardTable({ rows, party: role, window }: LeaderboardTableProps) {
   const addrs = useMemo(() => rows.map((r) => r.addr), [rows])
   const resolved = useResolveUsernames(addrs)
 

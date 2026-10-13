@@ -321,7 +321,7 @@ export default function ProfileEditClient() {
            in @layer base; this keeps the declaration where it was, in the layer it must be in. */
         @layer base{*{box-sizing:border-box;margin:0;padding:0;}}
         .field { display:flex; flex-direction:column; gap:6px; }
-        .field label { font-family:${monoFont}; font-size:11px; color:var(--rpc-text-secondary); letter-spacing:0.04em; text-transform:uppercase; }
+        .field label, .field .field-label { font-family:${monoFont}; font-size:11px; color:var(--rpc-text-secondary); letter-spacing:0.04em; text-transform:uppercase; }
         /* Section heading for a field that has more than one input path (the
            avatar: pick a Moment, or paste a URL). Matches .field label so the
            form still reads as one consistent ladder. */
@@ -469,7 +469,7 @@ export default function ProfileEditClient() {
 
             {/* Fan Affinity — replaces the old free-text favorite_team field. */}
             <div className="field">
-              <label>Fan Affinity</label>
+              <div className="field-label">Fan Affinity</div>
               {/* ⚠ The teams POST sends the FULL list, so an empty picker is a
                   DELETE. When the existing picks could not be read, the pickers
                   show "— None —" for a user who has favourites, and saving

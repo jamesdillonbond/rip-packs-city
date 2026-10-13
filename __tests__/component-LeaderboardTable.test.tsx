@@ -19,7 +19,7 @@ afterEach(cleanup)
 describe("LeaderboardTable", () => {
   it("renders the role-specific title, badge and count-column label for sellers", () => {
     const { container } = render(
-      <LeaderboardTable rows={[]} role="seller" window="L30" />
+      <LeaderboardTable rows={[]} party="seller" window="L30" />
     )
     const txt = container.textContent!
     expect(txt).toContain("Top Sellers")
@@ -33,7 +33,7 @@ describe("LeaderboardTable", () => {
       { addr: "0x1111111111111111", rank: 1, username: "0x1111…1111", sale_count: 5, total_volume_usd: 2000 },
       { addr: "0x2222222222222222", rank: 2, username: "0x2222…2222", sale_count: 3, total_volume_usd: 900 },
     ] as any
-    const { container } = render(<LeaderboardTable rows={rows} role="buyer" window="L7" />)
+    const { container } = render(<LeaderboardTable rows={rows} party="buyer" window="L7" />)
     const txt = container.textContent!
     expect(txt).toContain("toptrader") // resolved
     expect(txt).toContain("0x2222…2222") // truncated fallback
@@ -43,7 +43,7 @@ describe("LeaderboardTable", () => {
     const rows = [
       { addr: "0x2222222222222222", rank: 1, username: "x", sale_count: 7, total_volume_usd: 1500 },
     ] as any
-    const { container } = render(<LeaderboardTable rows={rows} role="buyer" window="L7" />)
+    const { container } = render(<LeaderboardTable rows={rows} party="buyer" window="L7" />)
     const txt = container.textContent!
     expect(txt).toContain("7") // activity count
     expect(txt).toContain("$1.5k") // formatUsd thousands rule
@@ -53,7 +53,7 @@ describe("LeaderboardTable", () => {
     const rows = [
       { addr: "0x2222222222222222", rank: 1, username: "x", loan_count: 4, total_principal_usd: 3_200_000 },
     ] as any
-    const { container } = render(<LeaderboardTable rows={rows} role="lender" window="All time" />)
+    const { container } = render(<LeaderboardTable rows={rows} party="lender" window="All time" />)
     const txt = container.textContent!
     expect(txt).toContain("Top Lenders")
     expect(txt).toContain("Loans")
@@ -65,7 +65,7 @@ describe("LeaderboardTable", () => {
     const rows = [
       { addr: "0x2222222222222222", rank: 1, username: "x", sale_count: 1, total_volume_usd: 10, is_returning: true },
     ] as any
-    const { container } = render(<LeaderboardTable rows={rows} role="buyer" window="L7" />)
+    const { container } = render(<LeaderboardTable rows={rows} party="buyer" window="L7" />)
     expect(container.textContent).toContain("Repeat")
   })
 
@@ -74,7 +74,7 @@ describe("LeaderboardTable", () => {
     // jsdom has no layout; the pinned facts are the min table width and the
     // container scrolling on BOTH axes.
     const rows = [{ addr: "0x1111111111111111", rank: 1, username: "0x1111…1111", sale_count: 5, total_volume_usd: 2000 }] as any
-    const { container } = render(<LeaderboardTable rows={rows} role="buyer" window="L7" />)
+    const { container } = render(<LeaderboardTable rows={rows} party="buyer" window="L7" />)
     const table = container.querySelector("table")!
     expect(table.style.minWidth).toBe("640px")
     const scroller = table.parentElement!

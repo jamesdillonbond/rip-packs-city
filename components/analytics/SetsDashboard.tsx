@@ -591,10 +591,11 @@ export default function SetsDashboard() {
         {/* Filters */}
         <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4 mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:flex-wrap">
           <div className="flex items-center gap-2">
-            <label className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
+            <label htmlFor="sets-sort" className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
               Sort
             </label>
             <select
+              id="sets-sort"
               value={sort}
               onChange={(e) => setSort(e.target.value as SetsDirectorySort)}
               className="rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface-raised)] px-2 py-1 text-sm text-[color:var(--rpc-text-primary)] focus:outline-none focus:border-violet-500/50"
@@ -608,10 +609,11 @@ export default function SetsDashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
+            <label htmlFor="sets-min-coverage" className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
               Min coverage
             </label>
             <select
+              id="sets-min-coverage"
               value={minCoverage}
               onChange={(e) => setMinCoverage(Number(e.target.value))}
               className="rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface-raised)] px-2 py-1 text-sm text-[color:var(--rpc-text-primary)] focus:outline-none focus:border-violet-500/50"
@@ -625,10 +627,11 @@ export default function SetsDashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
+            <label htmlFor="sets-limit" className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
               Limit
             </label>
             <select
+              id="sets-limit"
               value={limit}
               onChange={(e) => setLimit(Number(e.target.value))}
               className="rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface-raised)] px-2 py-1 text-sm text-[color:var(--rpc-text-primary)] focus:outline-none focus:border-violet-500/50"
