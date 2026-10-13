@@ -184,15 +184,20 @@ describe("hybrid-custody-backfill carries the child-side probe", () => {
     expect(edge).not.toMatch(/if \(!r\.hasManager\) return;/)
   })
 
-  it("the pg_cron gate: ?key= is checked against Vault via cron_gate_key, and a failed read DENIES", () => {
-    const fn = edge.slice(edge.indexOf("async function authOk"), edge.indexOf("async function authOk") + 1200)
-    expect(fn).toMatch(/supabase\.rpc\("cron_gate_key", \{ p_fn: "hybrid-custody-backfill" \}\)/)
-    // fail closed: the error branch returns false, and there is no `return true`
-    // after the Vault read other than the constant-time comparison itself.
-    expect(fn).toMatch(/if \(error \|\| typeof data !== "string" \|\| !data\) \{[\s\S]*?return false;/)
-    expect(fn).toMatch(/return timingSafeEqual\(key, data\);/)
-    expect(fn.split("return true").length - 1).toBe(1) // only the Bearer arm
-    expect(edge).toMatch(/if \(!\(await authOk\(req, url\)\)\)/)
+  it("the pg_cron gate: the key is checked against Vault via the shared cron-gate, and a failed read is NEVER an allow", () => {
+    // Since 2026-10-13 the Vault comparison lives in ../_shared/cron-gate.ts
+    // (unit-tested in edge-cron-gate.test.ts: a failed read is "unavailable",
+    // never "ok"). What this function must still guarantee is pinned here.
+    const fn = edge.slice(edge.indexOf("async function authOk"), edge.indexOf("async function authOk") + 900)
+    expect(edge).toMatch(/from "\.\.\/_shared\/cron-gate\.ts"/)
+    // its OWN Vault secret, not another lane's
+    expect(fn).toMatch(/checkCronGate\(req, supabase, "hybrid-custody-backfill"\)/)
+    // the only short-circuit to "ok" is the constant-time Bearer arm
+    expect(fn.split('return "ok"').length - 1).toBe(1)
+    expect(fn).toMatch(/timingSafeEqual\(m\[1\]\.trim\(\), INGEST_TOKEN!\)\) return "ok"/)
+    // the handler: a failed Vault read answers 503; anything else not "ok" is a 401
+    expect(edge).toMatch(/if \(gate === "unavailable"\) return cronGateResponse\(gate\)!;/)
+    expect(edge).toMatch(/if \(gate !== "ok"\) \{\s*return new Response\(JSON\.stringify\(\{ error: "unauthorized" \}\)/)
   })
 
   it("the migration that schedules it GENERATES the key in-DB and sends scope=wallets", () => {

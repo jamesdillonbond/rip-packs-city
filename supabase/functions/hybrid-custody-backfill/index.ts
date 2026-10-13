@@ -41,6 +41,7 @@
 
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
+import { checkCronGate, cronGateResponse, timingSafeEqual, type CronGateResult } from "../_shared/cron-gate.ts";
 
 const INGEST_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN");
 if (!INGEST_TOKEN) throw new Error("INGEST_SECRET_TOKEN is required");
@@ -160,29 +161,15 @@ const SCRIPT_B64 = btoa(CADENCE_SCRIPT);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-// Bearer INGEST_SECRET_TOKEN (ad hoc), or ?key= equal to the Vault gate key the
-// pg_cron job sends. The Vault value was generated inside Postgres and is read
-// here through the service-role client, so no copy of it exists anywhere else.
-// A failed Vault read DENIES (fail closed), never falls through to allow.
-async function authOk(req: Request, url: URL): Promise<boolean> {
+// Bearer INGEST_SECRET_TOKEN (ad hoc), or the Vault gate key the pg_cron job
+// sends — x-rpc-gate-key header or ?key= — checked by ../_shared/cron-gate.ts
+// (2026-10-13; this function was the template for it). A failed Vault read is
+// "unavailable" (503), never an allow and never a misleading 401.
+async function authOk(req: Request): Promise<CronGateResult> {
   const h = req.headers.get("Authorization") ?? "";
   const m = h.match(/^Bearer\s+(.+)$/i);
-  if (m && timingSafeEqual(m[1].trim(), INGEST_TOKEN!)) return true;
-  const key = url.searchParams.get("key");
-  if (!key) return false;
-  const { data, error } = await supabase.rpc("cron_gate_key", { p_fn: "hybrid-custody-backfill" });
-  if (error || typeof data !== "string" || !data) {
-    console.log(`[hybrid-custody-backfill] gate key read failed: ${error?.message?.slice(0, 120) ?? "empty"}`);
-    return false;
-  }
-  return timingSafeEqual(key, data);
+  if (m && timingSafeEqual(m[1].trim(), INGEST_TOKEN!)) return "ok";
+  return await checkCronGate(req, supabase, "hybrid-custody-backfill");
 }
 
 function encodeAddressArg(addr: string): string {
@@ -533,7 +520,9 @@ async function run(startedAtIso: string, opts: RunOpts): Promise<void> {
 
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
-  if (!(await authOk(req, url))) {
+  const gate = await authOk(req);
+  if (gate === "unavailable") return cronGateResponse(gate)!;
+  if (gate !== "ok") {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
