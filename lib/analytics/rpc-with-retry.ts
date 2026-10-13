@@ -332,6 +332,46 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Guarantee the returned error carries a non-empty `message`.
+ *
+ * WHY (2026-10-12). The return type promises a PostgrestError, and every caller
+ * logs or rethrows `error.message` — `fetchEntityDetailRaw` even narrows it to
+ * `{ message: string }`. But supabase-js can hand back an error object with no
+ * message (an empty-bodied upstream 5xx, a gateway reply it could not parse), and
+ * then the ONLY record of the failure reads "undefined": production logged
+ * `[edition] get_edition_detail error undefined` on /nfl-all-day/edition/2527
+ * (10-12 7:24 AM PT), a call that answers cleanly on a re-run, so the cause was
+ * unrecoverable. Fill the message from whatever the object DOES carry — code,
+ * details, hint, else its JSON — and name the RPC, so the log keeps the evidence.
+ *
+ * ⚠ Leaves an error that already has a message UNTOUCHED (same object), so no
+ * classification, SQLSTATE or `RPC_TIMEOUT` shape changes. It only applies at
+ * the final exit, after `isTransient` has already judged the original.
+ */
+function withGuaranteedMessage(err: PostgrestError, label: string): PostgrestError {
+  const raw = (err as { message?: unknown }).message
+  if (typeof raw === "string" && raw.trim() !== "") return err
+  const e = err as unknown as Record<string, unknown>
+  const parts = (["code", "details", "hint", "status"] as const)
+    .map((k) => (e[k] == null || e[k] === "" ? null : `${k}=${String(e[k])}`))
+    .filter((p): p is string => p !== null)
+  let why = parts.join(" ")
+  if (!why) {
+    try {
+      why = JSON.stringify(err)?.slice(0, 300) ?? ""
+    } catch {
+      why = Object.prototype.toString.call(err)
+    }
+  }
+  // A copy, never a mutation of the caller's object. Keep the PROTOTYPE: a real
+  // PostgrestError is a class instance (its `toJSON` lives there), and a bare
+  // spread would hand back a plain object that only pretends to be one.
+  const copy = Object.assign(Object.create(Object.getPrototypeOf(err) ?? Object.prototype), err)
+  copy.message = `rpc ${label} failed with no error message (${why || "empty error object"})`
+  return copy as PostgrestError
+}
+
+/**
  * The shared retry loop behind BOTH `rpcWithRetry` and `queryWithRetry`.
  *
  * Extracted rather than copied, for the reason `withQueryDeadline` gives two
@@ -380,7 +420,7 @@ async function retryLoop<T>(
     )
     await sleep(delay)
   }
-  return { data: null, error: lastErr }
+  return { data: null, error: lastErr ? withGuaranteedMessage(lastErr, label) : lastErr }
 }
 
 export async function rpcWithRetry<T>(
