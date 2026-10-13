@@ -575,3 +575,33 @@ describe("CollectionOverviewClient — the three-way sales claim", () => {
     expect(document.body.textContent).not.toMatch(/OUTDATED/i)
   })
 })
+
+describe("CollectionOverviewClient — server-seeded first frame (review E2, 2026-10-13)", () => {
+  const STATS = (over: Record<string, unknown> = {}) => ({
+    edition_count: 19769, fmv_pct: 54.5, volume_24h: 4200, fmv_age_minutes: 12,
+    sniper_deals: [], top_sales: [], ...over,
+  })
+
+  it("paints the seeded KPIs before any client read resolves, then takes the live numbers", async () => {
+    let resolveLive!: (r: Response) => void
+    const pending = new Promise<Response>((res) => { resolveLive = res })
+    const f = vi.fn(async () => pending)
+    vi.stubGlobal("fetch", f)
+    render(<CollectionOverviewClient collection="nba-top-shot" initialStats={STATS() as never} />)
+    // Synchronously, with the live read still pending: the seed is on screen.
+    expect(document.body.textContent).toMatch(/19,769/)
+    expect(document.body.textContent).toMatch(/\$4,200/)
+    // The live refresh still runs — a seed is a head start, never the final word.
+    expect(f).toHaveBeenCalledTimes(1)
+    resolveLive(json(200, STATS({ edition_count: 19801, volume_24h: 5100 })))
+    await waitFor(() => expect(document.body.textContent).toMatch(/19,801/))
+    expect(document.body.textContent).toMatch(/\$5,100/)
+    expect(document.body.textContent).not.toMatch(/19,769/)
+  })
+
+  it("NO-CHANGE CONTROL: without a seed the band loads exactly as before (no numbers until the read)", () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Promise<Response>(() => {})))
+    render(<CollectionOverviewClient collection="nba-top-shot" />)
+    expect(document.body.textContent).not.toMatch(/19,769/)
+  })
+})

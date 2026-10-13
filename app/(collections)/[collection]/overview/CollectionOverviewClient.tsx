@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
 import { nameOrDash, fmtPrice, fmtAge, minutesSince, freshnessFromAge, EM_DASH, type Freshness } from "@/lib/collection-overview-format"
@@ -206,24 +206,37 @@ function tierColor(tier: string | null | undefined, collection: string) {
 export default function CollectionOverviewClient({
   collection,
   marketCapSlot = null,
+  initialStats = null,
 }: {
   collection: string
   /** Server-rendered market-cap tile (page.tsx), already wrapped in Suspense. */
   marketCapSlot?: React.ReactNode
+  /**
+   * Server-seeded stats for the FIRST frame (page.tsx, review E2 2026-10-13).
+   * Null when the server read failed or was skipped — then the band loads
+   * exactly as before. The live refresh below runs either way, so a seed can
+   * only ever be a head start, never the final word on freshness.
+   */
+  initialStats?: CollectionStats | null
 }) {
   const collectionObj = getCollection(collection)
   const accent = collectionObj?.accent ?? "var(--rpc-red)"
   const enabledPages = new Set(collectionObj?.pages ?? [])
   const basePath = "/" + collection
 
-  const [stats, setStats] = useState<CollectionStats | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<CollectionStats | null>(initialStats)
+  const [loading, setLoading] = useState(initialStats == null)
+  // True for the first effect run only when the server seeded the band: that
+  // run refreshes BEHIND the seeded numbers instead of blanking them. A later
+  // run (the collection prop changed) loads as before.
+  const seededFirstRun = useRef(initialStats != null)
   const [error, setError] = useState<string | null>(null)
   const [timedOut, setTimedOut] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    if (seededFirstRun.current) seededFirstRun.current = false
+    else setLoading(true)
     setError(null)
     setTimedOut(false)
     const timeoutId = setTimeout(() => {

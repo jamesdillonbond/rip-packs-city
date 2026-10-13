@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { safeApiError, statusForSafeError } from "@/lib/api-error"
-import { boundedRead } from "@/lib/api/bounded-read"
-import { readPaniniCoverage } from "@/lib/panini/coverage"
+import { normalizeStatsSlug, readCollectionStats } from "@/lib/collection-stats/read"
 
 // ── THE HIGH/MEDIUM SHARE COMES FROM get_collection_stats, NOT A SECOND SCAN ──
 //
@@ -73,66 +72,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "collection param required" }, { status: 400 })
   }
 
-  const normalized = collection.replace(/-/g, "_")
+  const normalized = normalizeStatsSlug(collection)
 
-  try {
-    const { data, error } = await boundedRead(
-      (supabaseAdmin as any).rpc("get_collection_stats", { p_slug: normalized }),
-      "api/collection-stats/get_collection_stats",
-    )
-
-    if (error) {
-      return statsUnavailable(error, "rpc_error")
-    }
-
-    if (data && typeof data === "object" && !Array.isArray(data) && (data as any).error) {
-      return NextResponse.json(data, { status: 404 })
-    }
-
-    // ⚠ The two keys are NORMALIZED TO null when the RPC does not carry them,
-    // never defaulted to 0 or to a different metric. An absent field would
-    // otherwise vanish from the JSON entirely and the consumer could not tell
-    // "not measured" from "measured as zero" — and zero here is a real value
-    // (UFC Strike is genuinely 0.0%).
-    const enriched =
-      data && typeof data === "object" && !Array.isArray(data)
-        ? {
-            ...data,
-            fmv_high_medium_count: (data as any).fmv_high_medium_count ?? null,
-            fmv_high_medium_pct: (data as any).fmv_high_medium_pct ?? null,
-          }
-        : data
-
-    // ── Panini (published 2026-09-25) ──────────────────────────────────────
-    // get_collection_stats' generic arm reads SALES and LISTINGS from the Flow
-    // feeds (`sales_*`, `cached_listings`), which hold ZERO Panini rows — so it
-    // returns volume 0 / no top sales / 0 listings for a market with ~17k live
-    // asks. Those zeros are a fact about OUR feeds, not about Panini's market:
-    // they are nulled here with `sales_tracked: false`, and the page says "not
-    // tracked" instead of "$0" / "No sales in the last 24h". The listing-gated
-    // coverage disclosure rides along (lib/panini/coverage.ts).
-    if (normalized === "panini_blockchain" && enriched && typeof enriched === "object" && !Array.isArray(enriched)) {
-      const cov = await readPaniniCoverage(supabaseAdmin, "api/collection-stats/panini_coverage")
-      Object.assign(enriched as Record<string, unknown>, {
-        volume_24h: null,
-        volume_7d: null,
-        sales_24h: null,
-        top_sales: null,
-        listing_count: null,
-        sniper_deals: null,
-        sales_tracked: false,
-        coverage: cov.ok ? cov.coverage : null,
-        coverage_failed: !cov.ok,
-      })
-    }
-
-    return NextResponse.json(enriched, {
-      headers: {
-        "Cache-Control": "s-maxage=300, stale-while-revalidate=60",
-        "Access-Control-Allow-Origin": "*",
-      },
-    })
-  } catch (err) {
-    return statsUnavailable(err, "exception")
+  // The read itself lives in lib/collection-stats/read.ts (2026-10-13, review
+  // E2) so the overview page can seed its first render from the same source;
+  // this route stays the client's live refresh with the same three outcomes.
+  const read = await readCollectionStats(supabaseAdmin, normalized, "api/collection-stats")
+  if (!read.ok) {
+    if (read.kind === "not_found") return NextResponse.json(read.body, { status: 404 })
+    return statsUnavailable(read.error, "rpc_error")
   }
+  return NextResponse.json(read.stats, {
+    headers: {
+      "Cache-Control": "s-maxage=300, stale-while-revalidate=60",
+      "Access-Control-Allow-Origin": "*",
+    },
+  })
 }

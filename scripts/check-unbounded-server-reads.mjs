@@ -179,6 +179,16 @@ const BOUNDED = [
   // fifth entry, check that every read in the modules it would clear actually
   // passes through it.
   /withQueryDeadline\s*(?:<[^>]*>)?\s*\(/,
+  // SIXTH (2026-10-13, review E2): `boundedRead` (lib/api/bounded-read.ts) is a
+  // Promise.race against a wall-clock timer that resolves the {data,error}
+  // envelope on expiry — the API routes' primitive, and now reachable from a
+  // page (`[collection]/overview` seeds its first frame through
+  // lib/collection-stats/read.ts). Audited per this file's own rule before
+  // adding, read-by-read in every module the entry would clear: edition-types
+  // 1 read / 1 wrapped, panini/coverage 1 / 1, collection-stats/read 1 / 1,
+  // market/canonical-badges 1 / 1 — no module routes one read through it and
+  // leaves another bare. Re-audit if a module gains a second read.
+  /boundedRead\s*(?:<[^>]*>)?\s*\(/,
 ]
 const MAX_DEPTH = 3
 
