@@ -14,7 +14,6 @@
 // and sweeps behind it; this file is the pack-sales row shape + wiring.
 
 import {
-  checkGate,
   type HeadSweepDeps,
   type HeadSweepResult,
   logHeadSweep,
@@ -24,6 +23,7 @@ import {
   shouldContinueHead,
   studioGql,
 } from "./head-sweep-walker.ts"
+import { cronGate } from "./cron-gate.ts"
 
 export { shouldContinueHead }
 
@@ -188,10 +188,10 @@ export async function handlePackSalesRequest(
   req: Request,
   sb: any,
   cfg: WalkerConfig & { packType: string; headers: Record<string, string>; defaultPages: number },
-  gate: { key: string; keyOld: string },
+  fnName: string,
 ): Promise<Response> {
   const url = new URL(req.url)
-  const denied = checkGate(url, gate)
+  const denied = await cronGate(req, sb, fnName)
   if (denied) return denied
   const reset = url.searchParams.get("reset") === "1"
   const totalPages = Math.min(60, Math.max(1, Number(url.searchParams.get("pages") || String(cfg.defaultPages))))

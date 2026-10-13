@@ -217,16 +217,6 @@ export async function logHeadSweep(
   return error ? error.message : null
 }
 
-/** Gate on ?key=, failing CLOSED when the secret is unset. Returns a Response to send, or null to proceed. */
-export function checkGate(url: URL, gate: { key: string; keyOld: string }): Response | null {
-  if (!gate.key) return new Response("gate not configured", { status: 500 })
-  const k = url.searchParams.get("key")
-  if (k !== gate.key && !(gate.keyOld && k === gate.keyOld)) {
-    return new Response(JSON.stringify({ error: "forbidden" }), { status: 403 })
-  }
-  return null
-}
-
 /** Dapper studio GraphQL POST with bounded retries on 429/5xx/network. */
 export async function studioGql(
   query: string,

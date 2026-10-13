@@ -6,24 +6,15 @@
 // why repointing cron jobid 26 to a fresh key 403'd with no way to paste a fix. It now reads its
 // key from a Supabase edge SECRET like every other gate-keyed function here.
 //
-// Cron gate key is a Supabase edge SECRET, never hardcoded (this repo is PUBLIC).
-// Fail CLOSED when unset: the guard below rejects every request rather than
-// accepting an empty ?key=. Rotate with:
-//   supabase secrets set ALLDAY_RIP_DIST_GATE_KEY=<new-random>
+// Gate (2026-10-13): ../_shared/cron-gate.ts — the key (x-rpc-gate-key header or ?key=) is
+// checked against the SAME Vault secret pg_cron sends, cron_gate_key('resolve-allday-rip-dist-api'). No env
+// secret is read; a rotation is one vault.update_secret (rpc-edge-fn-deploy §0).
 // Bare specifier through supabase/functions/deno.json (jsr:@supabase/supabase-js@2),
 // like the other functions. It was the one raw esm.sh URL in the fleet, which
 // left edge-fn-drift unable to classify it, so edge-fn-deploy.yml's read-back
 // could never pass for it (2026-10-02).
 import { createClient } from "@supabase/supabase-js"
-const GATE = Deno.env.get("ALLDAY_RIP_DIST_GATE_KEY") ?? ""
-// Transitional SECOND key, read from its own secret — never a literal (this repo is PUBLIC).
-// During a key rotation, set ALLDAY_RIP_DIST_GATE_KEY_OLD to the OUTGOING key: both are then accepted, so the
-// pg_cron ?key= values can be repointed one job at a time instead of atomically. Finish the
-// rotation by DELETING the _OLD secret — no redeploy needed. Both unset ⇒ still fails CLOSED.
-const GATE_OLD = Deno.env.get("ALLDAY_RIP_DIST_GATE_KEY_OLD") ?? ""
-function gateKeyOk(k: string | null): boolean {
-  return !!k && ((GATE !== "" && k === GATE) || (GATE_OLD !== "" && k === GATE_OLD))
-}
+import { cronGate } from "../_shared/cron-gate.ts"
 const EP="https://api.production.studio-platform.dapperlabs.com/graphql"
 const ALLDAY="dee28451-5d62-409e-a1ad-a83f763ac070"
 const sb=createClient(Deno.env.get("SUPABASE_URL")??"",Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")??"")
@@ -56,7 +47,8 @@ async function logRun(startedAt:number, ok:boolean, found:number|null, written:n
 
 Deno.serve(async(req)=>{
   const url=new URL(req.url)
-  if(!gateKeyOk(url.searchParams.get("key"))) return new Response(JSON.stringify({error:"forbidden"}),{status:403})
+  const gateDenied = await cronGate(req, sb, "resolve-allday-rip-dist-api")
+  if (gateDenied) return gateDenied
   const startedAt=Date.now()
   // Bounded at PostgREST's 1,000-row cap (was .limit(3000), a bound PostgREST
   // clamps to 1,000 anyway; folded down on 2026-10-02 with the read-error fix,

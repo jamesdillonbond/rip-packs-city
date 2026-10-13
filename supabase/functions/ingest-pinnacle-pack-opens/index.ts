@@ -10,10 +10,12 @@
 // are priced in SQL (price_pinnacle_pack_opens) from pinnacle_mint_events →
 // pinnacle_catalog, so this lane makes no per-NFT lookups.
 //
-// Gate: ?key= must equal PACK_SALES_GATE_KEY (or _OLD); pg_cron sends
-// public.cron_gate_key('ingest-pinnacle-pack-opens'), a Vault copy of that value.
+// Gate (2026-10-13): ../_shared/cron-gate.ts — the key (x-rpc-gate-key header or ?key=) is
+// checked against the SAME Vault secret pg_cron sends, cron_gate_key('ingest-pinnacle-pack-opens'). No env
+// secret is read; a rotation is one vault.update_secret (rpc-edge-fn-deploy §0).
 import { createClient } from "@supabase/supabase-js"
-import { checkGate, logHeadSweep, runHeadSweepWalk } from "../_shared/head-sweep-walker.ts"
+import { logHeadSweep, runHeadSweepWalk } from "../_shared/head-sweep-walker.ts"
+import { cronGate } from "../_shared/cron-gate.ts"
 import { makeOpensFetch, openKey, type PackOpenRow } from "../_shared/pack-opens-walker.ts"
 
 const sb = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "")
@@ -31,10 +33,7 @@ const HEADERS = {
 
 Deno.serve(async (req) => {
   const url = new URL(req.url)
-  const denied = checkGate(url, {
-    key: Deno.env.get("PACK_SALES_GATE_KEY") ?? "",
-    keyOld: Deno.env.get("PACK_SALES_GATE_KEY_OLD") ?? "",
-  })
+  const denied = await cronGate(req, sb, "ingest-pinnacle-pack-opens")
   if (denied) return denied
   const reset = url.searchParams.get("reset") === "1"
   const totalPages = Math.min(40, Math.max(1, Number(url.searchParams.get("pages") || "20")))

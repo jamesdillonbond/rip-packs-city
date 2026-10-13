@@ -170,7 +170,19 @@ describe("edge functions carry no hardcoded gate keys", () => {
     // 403 with no way to fix it. Committing its de-literalised v6 source is what raised
     // this count. Raise it again ONLY alongside a function that genuinely reads a
     // *_GATE_KEY secret; a DROP means extraction broke.
-    expect(executed).toBe(9)
+    //
+    // 9 -> 2 on 2026-10-13 (D2b): eleven cron-dispatched functions moved OFF env
+    // secrets onto the shared Vault gate (supabase/functions/_shared/cron-gate.ts),
+    // which checks the key against the same Vault secret pg_cron sends. That drop is
+    // NOT extraction breaking — the next assertion proves each of them now imports
+    // the Vault gate instead. The two left (backfill-allday-pack-supply,
+    // backfill-pack-opens-api) have no pg_cron job and no Vault secret, so they
+    // keep their env gate.
+    expect(executed).toBe(2)
+    const vaultGated = fns
+      .filter((f) => /from\s+"\.\.\/_shared\/cron-gate\.ts"/.test(f.src) || /handlePackSalesRequest\(req,\s*sb,\s*CFG,\s*"/.test(f.src))
+      .map((f) => f.name)
+    expect(vaultGated.length).toBeGreaterThanOrEqual(12)
   })
 
   it("accepts the outgoing key ONLY while its own _OLD secret is set", () => {
@@ -199,8 +211,10 @@ describe("edge functions carry no hardcoded gate keys", () => {
     expect(offenders).toEqual([])
   })
 
-  it("covers all eight de-hardcoded pack pipeline functions", () => {
+  it("covers all eight de-hardcoded pack pipeline functions — each gated by an env secret OR the Vault gate", () => {
     // Pins that the remediation actually reached every function the audit named.
+    // Since 2026-10-13 a function may be gated either by its own *_GATE_KEY env
+    // secret or by the shared Vault gate; what must never happen is NEITHER.
     const expected = [
       "backfill-allday-pack-supply",
       "backfill-pack-opens-api",
@@ -211,9 +225,35 @@ describe("edge functions carry no hardcoded gate keys", () => {
       "ingest-pinnacle-mints",
       "ingest-topshot-pack-opens-history",
     ]
-    const withSecret = fns
-      .filter((f) => /Deno\.env\.get\("[A-Za-z0-9_]*GATE_KEY"\)/.test(f.src))
+    const gated = fns
+      .filter(
+        (f) =>
+          /Deno\.env\.get\("[A-Za-z0-9_]*GATE_KEY"\)/.test(f.src) ||
+          /from\s+"\.\.\/_shared\/cron-gate\.ts"/.test(f.src) ||
+          // the pack-sales trio gate through the walker, which imports cron-gate
+          /handlePackSalesRequest\(req,\s*sb,\s*CFG,\s*"/.test(f.src),
+      )
       .map((f) => f.name)
-    for (const name of expected) expect(withSecret).toContain(name)
+    for (const name of expected) expect(gated, name).toContain(name)
+  })
+
+  it("every Vault-gated function checks ITS OWN secret (passes its own slug)", () => {
+    // cron_gate_key('<fn>') reads Vault secret cron_gate_key__<fn>. A function that
+    // passed another function's name (a copy-paste) would accept THAT lane's key —
+    // still gated, but the per-lane isolation a rotation relies on would be gone.
+    const offenders: string[] = []
+    let checked = 0
+    for (const { name, src } of fns) {
+      const code = src.split(/\r?\n/).filter((l) => !/^\s*\/\//.test(l)).join("\n")
+      const calls = [
+        ...code.matchAll(/(?:cronGate|checkCronGate)\(req,\s*[A-Za-z_]+,\s*"([a-z0-9-]+)"\)/g),
+        ...code.matchAll(/handlePackSalesRequest\(req,\s*sb,\s*CFG,\s*"([a-z0-9-]+)"\)/g),
+      ].map((m) => m[1])
+      if (calls.length === 0) continue
+      checked++
+      for (const c of calls) if (c !== name) offenders.push(`${name} checks the Vault secret of ${c}`)
+    }
+    expect(offenders).toEqual([])
+    expect(checked).toBeGreaterThanOrEqual(12)
   })
 })

@@ -6,9 +6,10 @@
 // page budget. Logs itself to pipeline_runs as "topshot-pack-sales-ingest". All logic
 // lives in ../_shared/pack-sales-walker.ts (unit-tested); this file is config.
 //
-// Gate: ?key= must equal PACK_SALES_GATE_KEY (or _OLD). pg_cron sends
-// public.cron_gate_key('backfill-topshot-pack-sales') — a Vault secret holding the
-// same value, so cron and the function cannot disagree. ?reset=1 restarts the
+// Gate (2026-10-13): ../_shared/cron-gate.ts — the key (x-rpc-gate-key header or ?key=) is
+// checked against the SAME Vault secret pg_cron sends, cron_gate_key('backfill-topshot-pack-sales'). No env
+// secret is read; a rotation is one vault.update_secret (rpc-edge-fn-deploy §0).
+// ?reset=1 restarts the
 // sweep; ?pages=N total page budget (≤60); ?head=N head-page cap (≤10).
 // Revert: redeploy the previous version (the pre-2026-09-23 body is in
 // docs/audits/pack-sales-walker-pre-head-first.md).
@@ -33,8 +34,5 @@ const CFG = {
 }
 
 Deno.serve((req) =>
-  handlePackSalesRequest(req, sb, CFG, {
-    key: Deno.env.get("PACK_SALES_GATE_KEY") ?? "",
-    keyOld: Deno.env.get("PACK_SALES_GATE_KEY_OLD") ?? "",
-  })
+  handlePackSalesRequest(req, sb, CFG, "backfill-topshot-pack-sales")
 )

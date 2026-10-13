@@ -23,23 +23,14 @@
 // Revert: DROP the compute-golazos-pack-ev function + its cron job.
 
 import { createClient } from "@supabase/supabase-js"
+import { checkCronGate, cronGateResponse } from "../_shared/cron-gate.ts"
 import { supplyWeightPool, computeDepletionPct } from "../_shared/pack-ev-supply-weighted.ts"
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
 if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required")
-// Cron gate key is a Supabase edge SECRET, never hardcoded (this repo is PUBLIC).
-// Fail CLOSED when unset: the guard below rejects every request rather than
-// accepting an empty ?key=. Rotate with:
-//   supabase secrets set GOLAZOS_PACK_EV_GATE_KEY=<new-random>
-const GOLAZOS_CRON_KEY = Deno.env.get("GOLAZOS_PACK_EV_GATE_KEY") ?? ""
-// Transitional SECOND key, read from its own secret — never a literal (this repo is PUBLIC).
-// During a key rotation, set GOLAZOS_PACK_EV_GATE_KEY_OLD to the OUTGOING key: both are then accepted, so the
-// pg_cron ?key= values can be repointed one job at a time instead of atomically. Finish the
-// rotation by DELETING the _OLD secret — no redeploy needed. Both unset ⇒ still fails CLOSED.
-const GOLAZOS_CRON_KEY_OLD = Deno.env.get("GOLAZOS_PACK_EV_GATE_KEY_OLD") ?? ""
-function gateKeyOk(k: string | null): boolean {
-  return !!k && ((GOLAZOS_CRON_KEY !== "" && k === GOLAZOS_CRON_KEY) || (GOLAZOS_CRON_KEY_OLD !== "" && k === GOLAZOS_CRON_KEY_OLD))
-}
+// Gate (2026-10-13): ../_shared/cron-gate.ts — the key (x-rpc-gate-key header or ?key=) is
+// checked against the SAME Vault secret pg_cron sends, cron_gate_key('compute-golazos-pack-ev'). No env
+// secret is read; a rotation is one vault.update_secret (rpc-edge-fn-deploy §0).
 
 const GOLAZOS_COLLECTION_ID = "06248cc4-b85f-47cd-af67-1855d14acd75"
 const GQL_ENDPOINT = "https://api.production.studio-platform.dapperlabs.com/graphql"
@@ -398,9 +389,10 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url)
   const auth = req.headers.get("Authorization") ?? ""
-  const keyParam = url.searchParams.get("key")
-  if (auth !== `Bearer ${INGEST_SECRET_TOKEN}` && !gateKeyOk(keyParam)) {
-    return new Response("Unauthorized", { status: 401 })
+  if (auth !== `Bearer ${INGEST_SECRET_TOKEN}`) {
+    const gate = await checkCronGate(req, supabase, "compute-golazos-pack-ev")
+    if (gate === "unavailable") return cronGateResponse(gate)!
+    if (gate !== "ok") return new Response("Unauthorized", { status: 401 })
   }
 
   const explicitCursor = url.searchParams.get("cursor")

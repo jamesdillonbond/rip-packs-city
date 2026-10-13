@@ -43,6 +43,7 @@
 // pack_distributions WHERE collection_id = the Pinnacle uuid.
 
 import { createClient } from "@supabase/supabase-js"
+import { checkCronGate, cronGateResponse } from "../_shared/cron-gate.ts"
 import { computeDepletionPct, weightedMeanEv } from "../_shared/pack-ev-supply-weighted.ts"
 import { dedupeByConflictKey } from "../_shared/upsert-dedupe.ts"
 
@@ -55,19 +56,9 @@ import { dedupeByConflictKey } from "../_shared/upsert-dedupe.ts"
 // The gate is the SOLE auth on a service-role writer, and this repo is public —
 // so it was a world-readable key to a prod write path. Reading it from an edge
 // secret keeps INGEST_SECRET_TOKEN out of cron.job AND keeps the gate out of git.
-// Cron gate key is a Supabase edge SECRET, never hardcoded (this repo is PUBLIC).
-// Fail CLOSED when unset: the guard below rejects every request rather than
-// accepting an empty ?key=. Rotate with:
-//   supabase secrets set PINNACLE_PACK_EV_GATE_KEY=<new-random>
-const GATE = Deno.env.get("PINNACLE_PACK_EV_GATE_KEY") ?? ""
-// Transitional SECOND key, read from its own secret — never a literal (this repo is PUBLIC).
-// During a key rotation, set PINNACLE_PACK_EV_GATE_KEY_OLD to the OUTGOING key: both are then accepted, so the
-// pg_cron ?key= values can be repointed one job at a time instead of atomically. Finish the
-// rotation by DELETING the _OLD secret — no redeploy needed. Both unset ⇒ still fails CLOSED.
-const GATE_OLD = Deno.env.get("PINNACLE_PACK_EV_GATE_KEY_OLD") ?? ""
-function gateKeyOk(k: string | null): boolean {
-  return !!k && ((GATE !== "" && k === GATE) || (GATE_OLD !== "" && k === GATE_OLD))
-}
+// Gate (2026-10-13): ../_shared/cron-gate.ts — the key (x-rpc-gate-key header or ?key=) is
+// checked against the SAME Vault secret pg_cron sends, cron_gate_key('compute-pinnacle-pack-ev'). No env
+// secret is read; a rotation is one vault.update_secret (rpc-edge-fn-deploy §0).
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN") ?? ""
 
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
@@ -388,15 +379,9 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
 
 Deno.serve(async (req: Request) => {
   const auth = req.headers.get("Authorization") ?? ""
-  const url = new URL(req.url)
-  const keyParam = url.searchParams.get("key")
-  const authed = gateKeyOk(keyParam) ||
-    (INGEST_SECRET_TOKEN !== "" && auth === `Bearer ${INGEST_SECRET_TOKEN}`)
-  if (!authed) {
-    return new Response(JSON.stringify({ error: "forbidden" }), {
-      status: 403, headers: { "content-type": "application/json" },
-    })
-  }
+  const bearerOk = INGEST_SECRET_TOKEN !== "" && auth === `Bearer ${INGEST_SECRET_TOKEN}`
+  const gate = bearerOk ? "ok" : await checkCronGate(req, supabase, "compute-pinnacle-pack-ev")
+  if (gate !== "ok") return cronGateResponse(gate)!
 
   const started = Date.now()
   const startedAtIso = new Date(started).toISOString()

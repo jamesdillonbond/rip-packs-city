@@ -37,20 +37,11 @@
 // unchanged (they only ever touch >= CURRENT_SPORK_MIN heights, which always
 // use rest-mainnet).
 import { createClient } from "@supabase/supabase-js"
+import { cronGate } from "../_shared/cron-gate.ts"
 
-// Cron gate key is a Supabase edge SECRET, never hardcoded (this repo is PUBLIC).
-// Fail CLOSED when unset: the guard below rejects every request rather than
-// accepting an empty ?key=. Rotate with:
-//   supabase secrets set ALLDAY_PACK_OPENS_GATE_KEY=<new-random>
-const GATE = Deno.env.get("ALLDAY_PACK_OPENS_GATE_KEY") ?? ""
-// Transitional SECOND key, read from its own secret — never a literal (this repo is PUBLIC).
-// During a key rotation, set ALLDAY_PACK_OPENS_GATE_KEY_OLD to the OUTGOING key: both are then accepted, so the
-// pg_cron ?key= values can be repointed one job at a time instead of atomically. Finish the
-// rotation by DELETING the _OLD secret — no redeploy needed. Both unset ⇒ still fails CLOSED.
-const GATE_OLD = Deno.env.get("ALLDAY_PACK_OPENS_GATE_KEY_OLD") ?? ""
-function gateKeyOk(k: string | null): boolean {
-  return !!k && ((GATE !== "" && k === GATE) || (GATE_OLD !== "" && k === GATE_OLD))
-}
+// Gate (2026-10-13): ../_shared/cron-gate.ts — the key (x-rpc-gate-key header or ?key=) is
+// checked against the SAME Vault secret pg_cron sends, cron_gate_key('ingest-allday-pack-opens'). No env
+// secret is read; a rotation is one vault.update_secret (rpc-edge-fn-deploy §0).
 const REST = "https://rest-mainnet.onflow.org"
 const COLL = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const OPENED = "A.e4cf4bdc1751c65d.PackNFT.Opened"
@@ -497,7 +488,8 @@ async function logRun(pipeline: string, startMs: number, ok: boolean, found: num
 
 Deno.serve(async (req) => {
   const url = new URL(req.url)
-  if (!gateKeyOk(url.searchParams.get("key"))) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
+  const gateDenied = await cronGate(req, supabase, "ingest-allday-pack-opens")
+  if (gateDenied) return gateDenied
   const mode = url.searchParams.get("mode") ?? "probe"
   // Requested floor defaults to AllDay genesis; reachableFloor() clamps it up to
   // whatever is actually reachable (SPORK_FLOOR if the proxy is wired, else the

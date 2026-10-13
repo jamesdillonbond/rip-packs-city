@@ -13,7 +13,8 @@ import {
 // either open the gate (a missing/blank key accepted) or make a database blip
 // indistinguishable from a wrong key (a failed Vault read answered as 403).
 
-const KEY = "rpc_pls_0123456789abcdef0123456789abcdef"
+// Deliberately NOT credential-shaped (no rpc_pls_ prefix): no-credential-literals-in-tracked-files.
+const KEY = "test-vault-gate-value"
 const vault = (data: unknown, error: { message?: string } | null = null) => {
   const rpc = vi.fn(async () => ({ data, error }))
   return { sb: { rpc }, rpc }
@@ -45,7 +46,7 @@ describe("checkCronGate — three outcomes", () => {
   })
   it("denied for a wrong key", async () => {
     const { sb } = vault(KEY)
-    expect(await checkCronGate(req("https://x/f?key=rpc_pls_wrong"), sb, "fn")).toBe("denied")
+    expect(await checkCronGate(req("https://x/f?key=test-wrong-value"), sb, "fn")).toBe("denied")
   })
   it("denied with NO key — and does not even read Vault", async () => {
     const { sb, rpc } = vault(KEY)
