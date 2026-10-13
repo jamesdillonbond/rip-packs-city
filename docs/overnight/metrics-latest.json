@@ -1,10 +1,10 @@
 {
-  "generated_at_pt": "2026-10-12 ~4:13 PM PT (nightly autonomous pass, Cowork cloud, OFF-HOURS monitor-mode — fired ~15h late on app launch; laptop VM linked, push-capable)",
-  "generated_at_utc": "2026-10-12T23:13Z",
-  "pass": "Nightly overnight autonomous pass ran OFF-HOURS / MONITOR-MODE (scheduled 08:05 UTC, fired 23:09 UTC = 4:09 PM PT). Full review + health sweep + post-ship watch; queued-only, docs committed. Inbox drained (only new filing 2026-10-12T0010Z candy-offers already FIXED by Claude Code 6071d18bd). 0 shipped, 0 reverted. Handoff: docs/handoff-2026-10-12-overnight-pass.md",
-  "shipped": 0,
+  "generated_at_pt": "2026-10-12 ~6:45 PM PT (daytime pass, Claude Code cloud, push-capable via add_repo)",
+  "generated_at_utc": "2026-10-13T01:45Z",
+  "pass": "Daytime pass on Trevor's 'Work on anything you can handle'. Full health sweep + 1 code fix (rpcWithRetry message guarantee, 14f793e). Corrected the 4:09 PM night pass's queue: item 3 (topshot_offers_history_backfill cursor_stalled) was already closed 10-11. Handoff: docs/handoff-2026-10-12-daytime-pass.md",
+  "shipped": 1,
   "reverted": 0,
-  "verdict": "GREEN. 0 shipped. idle: routed (all open items Trevor/Claude-Code/operator-gated; no neglected P1 — the chain-arrival P1 was closed 10-09). oldest routed: #58 OPENSEA_API_KEY (Trevor, shelved by his call 09-23) / #23+#25 edge-fn drift (operator-blocked since 08-22). Security/structural/trust all clean (0 breaches, 38 arms ok); sentinel ts_uuid 0; pg_cron failures none; timeout-blind 0; zero-yield 0/324. Post-ship watch on the 10-11 batch CLEAN: deploy 6071d18bd READY, candy-offers ticks ok, 5 new fns live + 0 welcome errors, 0 unexplained hard-fails, Vercel 24h all chronic/known. Only stalled lane = topshot-active-listings-ingest 1320min silent (Trevor's residential feeder box dark; known/visibility-only). Nothing novel+low-risk to ship.",
+  "verdict": "GREEN. 1 shipped (14f793e: rpcWithRetry/queryWithRetry never return a message-less error). oldest routed: #58 OPENSEA_API_KEY (Trevor, shelved 09-23) / #23+#25 edge-fn drift (operator-blocked since 08-22). Security 0/0, trust 38/38 ok, pg_cron 26,270 ok / 0 failed (24 h), timeout-blind 0, zero-yield 0/322, 0 human client errors.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
     "structural": "clean (function_search_path_drift [], procedure_txn_control_pins [], procedure_search_path_unpinned [], cross_collection_mat_staleness [], backward_cursor_rewinds [], wmc_null_edition_key [], suppression_parked_claim_drift [])",
@@ -12,16 +12,32 @@
     "trust_health_breach_detail": "0 breaches. 38 arms ok. unmapped_resolution_backlog_max value 5 (breach 100). public_board_slow_count 0, public_board_empty_count 0.",
     "trust_precompute_max_age_hours": 5.42,
     "stalled_pipelines": "topshot-active-listings-ingest silent 1320 min (max_silent 900) — Trevor's RESIDENTIAL Windows Task Scheduler feeder box dark; last run 2026-10-12T01:13Z. Known-class, medium/visibility-only, EXPECTED when the box is off. TS FMV fresh (topshot_fmv_stale_hours 0.1).",
-    "pgcron_recent_failures": "none (null)",
+    "pgcron_recent_failures": "none — 26,270 succeeded / 0 failed in 24 h to 6:00 PM PT",
     "timeout_blind_count": 0,
-    "zero_yield_lanes": "0 offenders / 324 inspected / 8 suppressed",
+    "zero_yield_lanes": "0 offenders / 322 inspected / 7 suppressed",
     "pipeline_alerts": "candy-opensea listings/offers/sales 100% failing = #58 OPENSEA_API_KEY (Trevor env var). panini-collector-walk 6/20 = per-walk cap by design. atlas-editions/market/pack-supply-upstream-403 + flow-rest-moment-moved-400 all INFO by-design, fresh last-ok 23:11-23:13Z. topshot-active-listings-ingest cron_silent = box dark (above).",
     "suppression_count_predicate_drift": "topshot-misattrib-drain observed 987 > 500 (open misattribution candidates); known #101 draining (1838 on 10-10 -> 1485 on 10-11 -> 987 now). Not a regression; falls below 500 in ~2-3 d at this rate.",
     "pipeline_fails_24h": "topshot-pack-supply-atlas 182 (CF-403 partials by design); candy-opensea sales/listings/offers 8/8/4 (#58); sync-nba-projections 8 (muted 10-28); atlas-market-feed 5; gha-schedule-watchdog 4; refresh_wmc_fmv_drift_active 1. All known/by-design/upstream. 0 unexplained hard-fails.",
     "sentry": "dark (quota off since 08-18, SDK removed #34). Health from Vercel + DB + E2E beacon.",
     "vercel_24h": "8 runtime-error groups, all chronic/by-design: ipfs-media 12s timeout x10, candy-opensea OPENSEA_API_KEY x3 (#58), one Supabase-502 Cloudflare blip (market-cap tile 271:9039 + get_edition_detail error undefined, 09:58Z), collection-snapshot RPC_READ_TIMEOUT 8s x1 (chronic 09-11), entity-section special-serials degrade x1 (chronic 07-31). NO new group traces to the 10-11 batch. Latest prod deploy 6071d18bd READY.",
     "db_size_mb": 36440,
-    "db_size_note": "+739 vs 10-11 (35701). Panini catalog walks (+1881 editions) + flowty_archive scratch growth. Not alarming (36.4 GB)."
+    "db_size_note": "+739 vs 10-11 (35701). Panini catalog walks (+1881 editions) + flowty_archive scratch growth. Not alarming (36.4 GB).",
+    "client_errors_24h": "0 human; 3 automated (Lightpanda crawler, 'failed to parse', /nba-top-shot/collection)",
+    "accuracy_backtest_7d": {
+      "nba_top_shot": {
+        "published_all_median_abs_err_pct": 12.9,
+        "last3_median_30d_all": 13.0,
+        "median_ratio": 1.0,
+        "n": 15921
+      },
+      "nfl_all_day": {
+        "published_all_median_abs_err_pct": 21.1,
+        "last3_median_30d_all": 25.0,
+        "median_ratio": 1.0,
+        "median_abs_err_usd": 0.05,
+        "n": 3986
+      }
+    }
   },
   "fmv_high_med": {
     "nba_top_shot": 8207,
