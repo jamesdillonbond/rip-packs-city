@@ -1,0 +1,6 @@
+#!/bin/sh
+# Quick preflight (ci:guards + vitest related). Full gate set: npm run preflight.
+# Bypass once: git push --no-verify, or RPC_SKIP_PREFLIGHT=1. See scripts/preflight.mjs.
+[ "${RPC_SKIP_PREFLIGHT:-}" = "1" ] && exit 0
+[ -d node_modules/vitest ] || { echo "pre-push: node_modules missing — run npm ci for the preflight; skipping"; exit 0; }
+exec node scripts/preflight.mjs --quick

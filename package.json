@@ -39,6 +39,8 @@
     "inbox:index:check": "node scripts/fix-inbox-index-counts.mjs --check",
     "docs:issues-index": "node scripts/gen-known-issues-index.mjs",
     "ci:guards": "node scripts/run-ci-guards.mjs",
+    "preflight": "node scripts/preflight.mjs",
+    "hooks:install": "git config core.hooksPath .githooks",
     "ops:ready-queue": "node scripts/report-ready-queue.mjs"
   },
   "dependencies": {

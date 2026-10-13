@@ -127,4 +127,14 @@ fi
 #    "Ready queue + idle labels". Never fails the hook.
 node scripts/report-ready-queue.mjs 2>/dev/null || true
 
+# 6) Activate the repo's git hooks (.githooks/: fast staged-tree checks on
+#    commit, quick preflight on push). 10-10 → 10-12, 7 of 17 non-inherited CI
+#    reds on main were conflict markers / stale indexes / a ledger heading edited
+#    in place — all decidable before the commit exists. Only when the hooks are
+#    in the tree (an older checkout must not point git at a missing dir).
+if [ -x .githooks/pre-commit ]; then
+  git config core.hooksPath .githooks 2>/dev/null \
+    && echo "[session-start] git hooks active (.githooks; bypass once with --no-verify)"
+fi
+
 exit 0
