@@ -378,11 +378,16 @@ jobs:
   # sees ~half the tests and reads 55–59% coverage, which is not a number about
   # the codebase. The ratchet lives in vitest.config.ts and is applied by
   # `test:coverage:merge` below; a shard is never allowed to pass or fail on it.
+  # ⚠ 2 → 3 SHARDS (2026-10-12): at 2, shard 1 ran a median 424 s vs 308 s for
+  # shard 2 (13 green runs 10-10→10-12) and set the wall clock. Vitest splits by
+  # file COUNT, not duration, and one file (component-DashboardClient, ~75 s)
+  # alone exceeds that gap. A 3rd shard costs one more `npm ci` (~30 s of
+  # runner time, free on a public repo) and takes ~2 min off every code push.
   # ⚠ A shard that dies (runner loss, timeout) writes no blob, and the merge job
-  # asserts BOTH blobs are present before merging — a merge over one shard would
+  # asserts EVERY blob is present before merging — a merge over one shard would
   # publish a coverage number for half the suite as if it were the whole.
   unit-tests-shard:
-    name: Unit tests (vitest) — shard ${{ matrix.shard }}/2
+    name: Unit tests (vitest) — shard ${{ matrix.shard }}/3
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -390,7 +395,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -398,15 +403,15 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run test:coverage:shard -- --shard=${{ matrix.shard }}/2
+      - run: npm run test:coverage:shard -- --shard=${{ matrix.shard }}/3
       - name: Assert the blob was written
         run: |
           ls -la .vitest-reports/
-          test -s ".vitest-reports/blob-${{ matrix.shard }}-2.json"
+          test -s ".vitest-reports/blob-${{ matrix.shard }}-3.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vitest-blob-${{ matrix.shard }}
-          path: .vitest-reports/blob-${{ matrix.shard }}-2.json
+          path: .vitest-reports/blob-${{ matrix.shard }}-3.json
           if-no-files-found: error
           retention-days: 1
 
@@ -431,10 +436,10 @@ jobs:
       - name: Assert every shard delivered a blob
         run: |
           ls -la .vitest-reports/
-          n=$(ls .vitest-reports/blob-*-2.json 2>/dev/null | wc -l | tr -d ' ')
+          n=$(ls .vitest-reports/blob-*-3.json 2>/dev/null | wc -l | tr -d ' ')
           echo "blobs: $n"
-          if [ "$n" -ne 2 ]; then
-            echo "::error::expected 2 shard blobs, found $n — a merge over a partial suite would publish a coverage number for half the tests."
+          if [ "$n" -ne 3 ]; then
+            echo "::error::expected 3 shard blobs, found $n — a merge over a partial suite would publish a coverage number for part of the tests."
             exit 1
           fi
       # Applies the thresholds in vitest.config.ts (the ratchet) to the MERGED
