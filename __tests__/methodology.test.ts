@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { METHODOLOGY, METHODOLOGY_LIST } from "@/lib/analytics/methodology"
 
 // Static methodology copy for the analytics dashboards. Pure data — verify each
@@ -87,5 +89,15 @@ describe("methodology does not pass a page cache off as a data cadence", () => {
       unbounded.join("\n---\n"),
       "the ask feed is described with no statement of how recently it was confirmed",
     ).toBe("")
+  })
+})
+
+describe("/legal/fmv-methodology landmark (axe `region`, 2026-10-12)", () => {
+  it("wraps the <article> in exactly one <main>", () => {
+    const src = readFileSync(join(__dirname, "..", "app", "legal", "fmv-methodology", "page.tsx"), "utf8")
+    expect(src.match(/<main>/g) ?? []).toHaveLength(1)
+    expect(src.match(/<\/main>/g) ?? []).toHaveLength(1)
+    expect(src.indexOf("<main>")).toBeLessThan(src.indexOf("<article"))
+    expect(src.indexOf("</article>")).toBeLessThan(src.indexOf("</main>"))
   })
 })

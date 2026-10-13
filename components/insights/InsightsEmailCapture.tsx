@@ -46,7 +46,7 @@ export default function InsightsEmailCapture() {
   }
 
   return (
-    <section className="rpc-ins-capture">
+    <aside className="rpc-ins-capture" aria-label="Weekly digest signup">
       <style>{CSS}</style>
       <div className="rpc-ins-capture-inner">
         {status === "sent" ? (
@@ -101,7 +101,7 @@ export default function InsightsEmailCapture() {
           </>
         )}
       </div>
-    </section>
+    </aside>
   )
 }
 

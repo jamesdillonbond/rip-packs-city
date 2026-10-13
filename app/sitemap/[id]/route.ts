@@ -12,6 +12,10 @@ import { NextResponse } from "next/server"
 import { buildSitemapSegment, SitemapReadIncomplete, SITEMAP_SEGMENT_IDS } from "@/lib/sitemap-data"
 
 export const dynamic = "force-dynamic"
+// ⚠ INERT under force-dynamic (review E10, 2026-10-11): a dynamic segment never
+// ISR-caches, so this does not throttle the ~27K-row walk. What does is the
+// CDN `s-maxage=21600` on the response below — keep that header; this export
+// stays only so the intent is visible if the segment is ever made static.
 export const revalidate = 21600 // 6h, matching the old app/sitemap.ts
 
 function esc(s: string): string {

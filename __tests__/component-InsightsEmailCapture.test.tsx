@@ -102,3 +102,12 @@ describe("InsightsEmailCapture — submit", () => {
     await waitFor(() => expect(screen.getByText(/Network error/i)).toBeTruthy())
   })
 })
+
+describe("landmark (axe `region` on /insights, 2026-10-12)", () => {
+  it("renders as a named complementary landmark, so the capture copy and input are inside a landmark", () => {
+    const { getByRole } = render(<InsightsEmailCapture />)
+    const aside = getByRole("complementary", { name: /digest/i })
+    expect(aside.tagName).toBe("ASIDE")
+    expect(aside.className).toContain("rpc-ins-capture")
+  })
+})

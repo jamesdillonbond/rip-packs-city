@@ -101,6 +101,7 @@ export default async function FmvMethodologyPage() {
   const accuracy = await fetchFmvAccuracyGate()
 
   return (
+    <main>
     <article style={PAGE_STYLE}>
       <h1 style={H1}>How Rip Packs City Calculates Fair Market Value</h1>
 
@@ -323,5 +324,6 @@ export default async function FmvMethodologyPage() {
         </Link>
       </div>
     </article>
+    </main>
   )
 }
