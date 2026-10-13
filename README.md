@@ -4,6 +4,8 @@ Collector intelligence platform for Flow-blockchain NFTs — FMV pricing, deal s
 
 Live: <https://www.rippackscity.com>
 
+License: none granted. The source is public so the platform can be audited, not for reuse — all rights reserved by Rip Packs City LLC.
+
 ## What it is
 
 RPC is a production-grade analytics platform competing with LiveToken. **It is read-only** — no cart, no in-app buying, no trading or gifting; every deal links out to the marketplace that owns the listing. It surfaces mispriced listings, edition depth, pack expected value, and badge-weighted FMV across five Flow collections, with a Claude-powered AI concierge on every page.
