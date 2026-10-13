@@ -17,7 +17,7 @@ import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/re
 
 import SqueezeCheckPage from "@/app/insights/squeeze-check/page"
 import TcReportPage from "@/app/insights/tc-report/page"
-import PackRealityPage from "@/app/insights/pack-reality/page"
+import PackRealityPage from "@/app/insights/pack-reality/PackRealityClient"
 
 const VALID_WALLET = "0xbd94cade097e50ac"
 
@@ -278,7 +278,7 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
   })
 })
 
-describe("PackRealityPage (app/insights/pack-reality/page.tsx)", () => {
+describe("PackRealityClient (app/insights/pack-reality/PackRealityClient.tsx)", () => {
   it("shows the loading state then renders KPIs + distribution + ranker on mount fetch", async () => {
     const payload = {
       meta: { fetched_at: "2026-08-01T00:00:00Z" },

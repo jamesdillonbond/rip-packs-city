@@ -1,6 +1,6 @@
 "use client"
 
-// app/insights/pack-reality/page.tsx
+// app/insights/pack-reality/PackRealityClient.tsx
 //
 // Public Top Shot pack-reality board. No auth. Per the 2026-05-29 launch
 // plan: "I ran the math on every Top Shot pack ripped in the last 60 days.
@@ -11,6 +11,12 @@
 // views (topshot_pack_reality_stats, _dist, _top_ev) shipped 2026-05-30 via
 // audit_20260530_topshot_pack_reality_views_for_surface_b.
 //
+// Review E2 (2026-10-13): this WAS page.tsx. The body moved here, unchanged
+// but for `initialData`, so page.tsx can be a server shell that seeds the
+// first frame from the same read the route makes (lib/insights/
+// topshot-pack-reality.ts). The seed is only ever the first frame: the mount
+// fetch below still runs, so every honesty branch keeps its live input.
+//
 // Anatomy:
 //   1. Hero band (display H1 + lede with the headline stat)
 //   2. KPI strip (rips, median, mean, % delivering $0, % over $100)
@@ -18,7 +24,7 @@
 //   4. Top-EV pack ranker with high-variance caveat flag
 //   5. Methodology + share button
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { usdSignFirst } from "@/lib/usd-format"
 
@@ -83,7 +89,7 @@ type ModelVsReality = {
 
 type SourceError = { source: string; message: string }
 
-type ApiResponse = {
+export type ApiResponse = {
   meta: {
     fetched_at: string
     errors?: SourceError[]
@@ -134,15 +140,31 @@ function fmtRatio(n: number | null | undefined, highVariance: boolean | null): s
   return `${v.toFixed(1)}×`
 }
 
-export default function PackRealityPage() {
-  const [data, setData] = useState<ApiResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+export default function PackRealityClient({
+  initialData = null,
+}: {
+  /**
+   * The server's read of the same route body, or null when that read failed
+   * or was partial (the page seeds NOTHING rather than a degraded payload, so
+   * ISR never caches a failure as a claim — #33). Null renders exactly what
+   * this board rendered before the seed existed: its own read, its own
+   * three-way honesty.
+   */
+  initialData?: ApiResponse | null
+}) {
+  const [data, setData] = useState<ApiResponse | null>(initialData)
+  const [loading, setLoading] = useState(initialData == null)
   const [error, setError] = useState<string | null>(null)
+
+  // A seeded first frame must not flash "Loading…" over real numbers while the
+  // live refresh is in flight: the first effect run leaves `loading` alone.
+  const seededFirstRun = useRef(initialData != null)
 
   useEffect(() => {
     const ctrl = new AbortController()
     async function run() {
-      setLoading(true)
+      if (seededFirstRun.current) seededFirstRun.current = false
+      else setLoading(true)
       setError(null)
       try {
         const r = await fetch("/api/public/insights/pack-reality?limit=10", {
@@ -208,23 +230,31 @@ export default function PackRealityPage() {
   // qualify but for freshness. Anything else falls back to the old copy, so a
   // genuinely empty market still reads as one.
   //
-  // ⚠ Safe from the hydration class: this is a "use client" page whose data
-  // arrives from a client fetch, so `data` is null during SSR and this branch
-  // cannot render on the server — the relative time is never computed twice in
-  // two zones. Do NOT lift this to a server component without re-checking that.
+  // ⚠ HYDRATION. `data` IS server-seeded now (review E2), so this branch CAN
+  // render on the server. The age is therefore anchored to `meta.fetched_at` —
+  // the stamp the read itself carries — never to `Date.now()`, which would be
+  // read once on the server and once in the browser and hydrate as two values.
+  // The stamp is at most one ISR window (5 min) behind the clock, and the label
+  // is in whole hours, so the anchor changes nothing a reader can see.
   const rankerStale = useMemo(() => {
     if (loadFailed || loading || data == null) return null
     if ((data.top_ev ?? []).length > 0) return null
     const s = data.meta?.ranker_staleness
     if (!s || !(s.stale_count > 0) || !s.newest_qualifying_snapshot) return null
-    // ⚠ This stops being true the moment `data` is server-seeded — if you ever add an
-    // initial prop, anchor the age to a server-stamped value instead of the clock.
-    // hydration-safe: unreachable during SSR — `data` is useState<ApiResponse|null>(null)
-    // filled by a client fetch, so the `data == null` guard above returns before this
-    // line on the server render; the clock is read only after mount, never in two zones.
-    const ms = Date.now() - new Date(s.newest_qualifying_snapshot).getTime()
-    if (!Number.isFinite(ms) || ms < 0) return null
-    const hours = Math.floor(ms / 3_600_000)
+    const stamped = new Date(data.meta?.fetched_at ?? NaN).getTime()
+    // The seeded body always carries the stamp (the lib's type requires it). A
+    // payload WITHOUT one can only have arrived by the mount fetch, after
+    // hydration, where the clock is safe to read — so that path keeps the
+    // pre-seed behaviour rather than letting a missing field silence a notice
+    // whose whole job is to stop "No +EV packs right now." being said falsely.
+    const anchor = Number.isFinite(stamped) ? stamped : Date.now()
+    const ms = anchor - new Date(s.newest_qualifying_snapshot).getTime()
+    if (!Number.isFinite(ms)) return null
+    // A snapshot stamped AFTER the read (clock skew between the DB and the app
+    // server, seconds either way) used to return null here — which fell through
+    // to "No +EV packs right now.", the exact false claim this notice exists to
+    // prevent. A negative age is "0 hours ago", not a reason to go silent.
+    const hours = Math.max(0, Math.floor(ms / 3_600_000))
     const agoLabel =
       hours < 48
         ? `${hours} hour${hours === 1 ? "" : "s"} ago`

@@ -67,9 +67,10 @@ describe("insights-gate include completeness (rot-guard)", () => {
   const clientPages = clientInsightsPages(INSIGHTS_DIR)
 
   it("finds real client insights pages (guard is not silently inert)", () => {
-    // There are at least the three known ones; if this hits zero the enumerator
-    // broke and the guard would pass vacuously.
-    expect(clientPages.length).toBeGreaterThanOrEqual(3)
+    // There are at least the two known ones (squeeze-check, tc-report; pack-reality
+    // became a server shell 2026-10-13 — review E2). If this hits zero the
+    // enumerator broke and the guard would pass vacuously.
+    expect(clientPages.length).toBeGreaterThanOrEqual(2)
   })
 
   it("every client insights page.tsx is measured by the component gate or allowlisted", () => {

@@ -293,7 +293,8 @@ const BUDGET = 1
 const GATED_BY_PATH = new Set([
   "app/insights/squeeze-check/page.tsx",
   "app/insights/tc-report/page.tsx",
-  "app/insights/pack-reality/page.tsx",
+  // pack-reality/page.tsx left 2026-10-13 (review E2): converted to a server shell
+  // over PackRealityClient.tsx, which the *Client.tsx glob measures.
 ])
 
 
@@ -340,7 +341,7 @@ describe("client-page gate ratchet", () => {
     }
   })
 
-  it("the three explicitly-gated insights pages are excluded, and really are gated", () => {
+  it("the explicitly-gated insights pages are excluded, and really are gated", () => {
     // If someone drops them from the component gate's include, this stops being
     // a legitimate exclusion — so verify against the config rather than trusting
     // the local list.

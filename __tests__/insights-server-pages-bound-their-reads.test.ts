@@ -256,10 +256,14 @@ describe("/insights server pages bound their reads", () => {
     // reads in the browser, and a synchronous server page has no read at all.
     // Asserted so the exclusion stays a property rather than becoming a place to
     // hide an unbounded page by adding "use client" to the top.
-    for (const clientPage of ["squeeze-check", "tc-report", "pack-reality"]) {
+    for (const clientPage of ["squeeze-check", "tc-report"]) {
       const src = readFileSync(join(INSIGHTS_DIR, clientPage, "page.tsx"), "utf8")
       expect(USE_CLIENT.test(src.split("\n").slice(0, 3).join("\n"))).toBe(true)
     }
+    // pack-reality was the third client page until 2026-10-13 (review E2); it is a
+    // server shell with a prerendered read now, so it must be IN scope — the
+    // conversion that removed it from this list is what put it under the bound.
+    expect(asyncServerPages()).toContain("pack-reality")
     const shell = readFileSync(join(INSIGHTS_DIR, "account-value", "page.tsx"), "utf8")
     expect(shell).not.toMatch(/export default async function/)
     expect(shell).not.toMatch(/supabaseAdmin/)

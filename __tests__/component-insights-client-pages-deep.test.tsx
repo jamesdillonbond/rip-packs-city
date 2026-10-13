@@ -20,7 +20,7 @@ import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/re
 // testable would change the shipped file for the test's convenience.
 
 import TcReportPage from "@/app/insights/tc-report/page"
-import PackRealityPage from "@/app/insights/pack-reality/page"
+import PackRealityPage from "@/app/insights/pack-reality/PackRealityClient"
 
 const VALID_WALLET = "0xbd94cade097e50ac"
 
@@ -459,11 +459,16 @@ describe("PackRealityPage — board formatting + degraded states", () => {
       "fetch",
       jsonOnce({
         meta: {
-          fetched_at: "2026-09-02T00:00:00Z",
+          // Re-pinned 2026-10-13 (review E2): the age is anchored to `fetched_at`
+          // — the read's own stamp — not the clock, so the server-seeded frame
+          // and the browser compute ONE value. The stamp is therefore "now" here,
+          // and the snapshot 130h before it; the property under test (the notice
+          // names OUR staleness, never the market) is unchanged.
+          fetched_at: new Date().toISOString(),
           errors: [],
           ranker_staleness: {
             stale_count: 3,
-            // Well outside the 48h window relative to any plausible test clock.
+            // Well outside the 48h window relative to the read's stamp.
             newest_qualifying_snapshot: new Date(Date.now() - 130 * 3600_000).toISOString(),
           },
         },

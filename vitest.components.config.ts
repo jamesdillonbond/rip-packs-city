@@ -101,7 +101,9 @@ export default defineConfig({
         "app/**/*Client.tsx",
         "app/insights/squeeze-check/page.tsx",
         "app/insights/tc-report/page.tsx",
-        "app/insights/pack-reality/page.tsx",
+        // pack-reality/page.tsx left this list 2026-10-13 (review E2): it is a server
+        // shell now and its body is app/insights/pack-reality/PackRealityClient.tsx,
+        // which the `app/**/*Client.tsx` glob above already measures.
       ],
       exclude: ["**/*.test.tsx", "**/*.d.ts"],
       // Component ratchet — set just below the live baseline so a DROP fails CI
