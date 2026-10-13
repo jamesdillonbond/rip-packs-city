@@ -276,6 +276,11 @@ export default function HomePageMarketing() {
 
       <HomeHeader />
 
+      {/* ONE <main> landmark (axe `landmark-one-main` + `region`, first scheduled
+          audit 2026-10-12: 46 content nodes sat outside any landmark). Every
+          section lives inside it; the header and footer stay their own
+          landmarks. Block element, no styles — no layout change. */}
+      <main>
       {/* HERO */}
       <section
         className="rpc-home-section rpc-home-hero"
@@ -822,6 +827,7 @@ export default function HomePageMarketing() {
           />
         </div>
       </section>
+      </main>
 
       <SiteFooter />
     </div>

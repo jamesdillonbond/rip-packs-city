@@ -711,7 +711,7 @@ export default function SqueezeBoardClient({
       {/* ── Footer ────────────────────────────────────────────────────── */}
       <section className="rpc-sq-footer">
         <div className="rpc-sq-method">
-          <h3 className="rpc-sq-h3">Methodology</h3>
+          <h2 className="rpc-sq-h3">Methodology</h2>
           <p>
             <strong>Squeeze %</strong> = (locked + burned) / circulation.
             Lock %, burn %, and effectively-buyable % all share the same

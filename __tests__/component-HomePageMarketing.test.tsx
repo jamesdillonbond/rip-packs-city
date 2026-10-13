@@ -85,3 +85,20 @@ describe("HomePageMarketing — the trophy-case block", () => {
     expect(cta?.getAttribute("href")).toBe("/login")
   })
 })
+
+describe("landmarks (axe landmark-one-main / region, 2026-10-12)", () => {
+  afterEach(cleanup)
+  it("renders exactly one <main> and every content section sits inside it", () => {
+    const { container } = render(<HomePageMarketing />)
+    const mains = container.querySelectorAll("main")
+    expect(mains).toHaveLength(1)
+    const sections = Array.from(container.querySelectorAll("section"))
+    expect(sections.length).toBeGreaterThan(5)
+    const outside = sections.filter((s) => !mains[0].contains(s))
+    expect(outside.map((s) => s.className)).toEqual([])
+    // The header is NOT inside main — it stays its own landmark.
+    const header = container.querySelector("header")
+    expect(header).not.toBeNull()
+    expect(mains[0].contains(header!)).toBe(false)
+  })
+})
