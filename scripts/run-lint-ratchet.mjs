@@ -48,7 +48,9 @@ import os from "node:os"
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, "..")
 const REPORT = process.env.ESLINT_REPORT || join(os.tmpdir(), "rpc-eslint-report.json")
-const ESLINT = join(ROOT, "node_modules", "eslint", "bin", "eslint.js")
+// ESLINT_BIN exists for the driver's own test (a stub that exits without
+// writing, or writes a fresh report); production never sets it.
+const ESLINT = process.env.ESLINT_BIN || join(ROOT, "node_modules", "eslint", "bin", "eslint.js")
 const CHECKER = join(HERE, "check-eslint-ratchet.mjs")
 
 if (!existsSync(ESLINT)) {
@@ -61,6 +63,15 @@ if (!existsSync(ESLINT)) {
 // steady), so its exit code is deliberately not a failure signal. What the
 // next step needs is that the report was WRITTEN — which is checked, rather
 // than assumed, because "the command ran" is not "the artifact exists".
+// ⚠ The report path is shared across runs (os.tmpdir()), so "a file exists
+// there" proves only that SOME run wrote it. When eslint itself crashes before
+// writing (a config error such as a duplicate plugin registration, exit 2),
+// the LEFTOVER from an earlier run is a complete, parseable report of a
+// different tree — and the 2026-10-12 jsx-a11y rollout showed exactly that:
+// the driver fell through to a stale file and only the checker's own
+// staleness refusal stopped the comparison. So the artifact must be NEWER
+// than this run's start, not merely present.
+const startedAtMs = Date.now()
 const generated = spawnSync(process.execPath, [ESLINT, ".", "--format", "json", "-o", REPORT], {
   cwd: ROOT,
   stdio: "inherit",
@@ -79,6 +90,18 @@ if (!existsSync(REPORT)) {
 }
 if (statSync(REPORT).size === 0) {
   console.error(`::error::eslint wrote an EMPTY report at ${REPORT}. Refusing to compare.`)
+  process.exit(2)
+}
+// Coarse filesystem mtimes (FAT/NTFS, some CI mounts) round to 1–2 s; the
+// slack is a tolerance for that, not a grace period for an old file.
+const MTIME_SLACK_MS = 5_000
+const reportMtimeMs = statSync(REPORT).mtimeMs
+if (reportMtimeMs < startedAtMs - MTIME_SLACK_MS) {
+  console.error(
+    `::error::eslint exited ${generated.status} and the report at ${REPORT} predates this run ` +
+      `(written ${Math.round((startedAtMs - reportMtimeMs) / 1000)}s before it started) — ` +
+      `a leftover from an earlier run, not this tree. Refusing to compare.`,
+  )
   process.exit(2)
 }
 

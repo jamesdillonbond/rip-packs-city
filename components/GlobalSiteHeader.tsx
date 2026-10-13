@@ -16,7 +16,7 @@ export default function GlobalSiteHeader() {
         <Link href="/" className="rpc-tap44" style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, textDecoration: "none" }}>
           <RpcLogo size={36} />
           <div className="rpc-gsh-label">
-            <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", letterSpacing: "0.2em", color: "var(--rpc-red-muted)" }}>@RIPPACKSCITY</div>
+            <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", letterSpacing: "0.2em", color: "var(--rpc-red-text)" }}>@RIPPACKSCITY</div>
           </div>
         </Link>
         <TopNav />

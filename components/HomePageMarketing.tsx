@@ -50,7 +50,7 @@ function HomeHeader() {
                 fontSize: 7,
                 fontFamily: "var(--font-mono)",
                 letterSpacing: "0.2em",
-                color: "rgba(224,58,47,0.5)",
+                color: "var(--rpc-red-text)",
               }}
             >
               @RIPPACKSCITY

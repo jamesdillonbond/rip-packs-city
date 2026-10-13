@@ -8,6 +8,11 @@
   --rpc-red: #E03A2F;
   --rpc-red-hover: #FF4D40;
   --rpc-red-muted: rgba(224, 58, 47, 0.5);
+  /* Red used AS SMALL TEXT (the @RIPPACKSCITY handle, 9 px mono). --rpc-red
+     reads 4.46:1 on the surface and --rpc-red-muted 1.9:1 — both under WCAG
+     AA's 4.5:1 (axe color-contrast, first scheduled audit 2026-10-12). This
+     is the red that clears it in each theme; fills and borders keep --rpc-red. */
+  --rpc-red-text: #FF4D40;
   --rpc-red-bg: rgba(224, 58, 47, 0.08);
   --rpc-red-border: rgba(224, 58, 47, 0.3);
   --rpc-red-glow: rgba(224, 58, 47, 0.25);
@@ -35,7 +40,9 @@
   /* ── Text ──────────────────────────────────────────────── */
   --rpc-text-primary: #F1F1F1;
   --rpc-text-secondary: rgba(255, 255, 255, 0.55);
-  --rpc-text-muted: rgba(255, 255, 255, 0.42);
+  /* 0.42 read 4.10:1 on --rpc-surface (axe serious on every audited route,
+     2026-10-12); 0.5 reads 5.34:1. Still visibly quieter than secondary (0.55). */
+  --rpc-text-muted: rgba(255, 255, 255, 0.5);
   --rpc-text-ghost: rgba(255, 255, 255, 0.2);
 
   /* ── Tier Colors ──────────────────────────────────────── */
@@ -169,12 +176,15 @@
 
   --rpc-text-primary: #141414;
   --rpc-text-secondary: rgba(0, 0, 0, 0.62);
-  --rpc-text-muted: rgba(0, 0, 0, 0.45);
+  /* 0.45 read 3.31:1 on #F7F7F5; 0.58 reads 5.20:1 (secondary 0.62 = 6.05:1). */
+  --rpc-text-muted: rgba(0, 0, 0, 0.58);
   --rpc-text-ghost: rgba(0, 0, 0, 0.28);
 
   /* The wordmark + rpc-red-muted borders read pale at the dark 0.5 alpha on a
      white canvas — nudge up for legible contrast in light only. */
   --rpc-red-muted: rgba(224, 58, 47, 0.65);
+  /* Small red text on the light canvas: #E03A2F is 4.07:1, this is 5.90:1. */
+  --rpc-red-text: #B52A21;
 
   /* The dark shadow presets assume a near-black canvas — soften for light. */
   --shadow-card: 0 1px 6px rgba(0, 0, 0, 0.08);

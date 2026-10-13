@@ -1,5 +1,8 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, afterAll } from "vitest"
 import { readFileSync } from "node:fs"
+import * as fsSync from "node:fs"
+import * as childProcess from "node:child_process"
+import os from "node:os"
 import { join } from "node:path"
 import {
   countByRule,
@@ -270,6 +273,55 @@ describe("the npm script regenerates the report it compares", () => {
     const cmd: string = pkg.scripts["lint:ratchet"]
     const driver = readFileSync(join(ROOT, cmd.match(/node\s+(scripts\/[\w.-]+\.mjs)/)![1]), "utf8")
     expect(driver).toMatch(/existsSync\(\s*REPORT\s*\)/)
+  })
+
+  // 2026-10-12: eslint CRASHED (a duplicate plugin registration, exit 2, no
+  // report written) and the driver fell through to the previous run's report
+  // at the shared tmp path — a complete, parseable report of a DIFFERENT tree.
+  // The checker's own staleness refusal caught it that day; this pins that the
+  // driver refuses first, by running the real driver against a stub eslint.
+  describe("the driver refuses a LEFTOVER report (functional, stub eslint)", () => {
+    const { mkdtempSync, writeFileSync, utimesSync, rmSync } = fsSync
+    const { spawnSync } = childProcess
+    const tmp = mkdtempSync(join(os.tmpdir(), "rpc-ratchet-driver-"))
+    const report = join(tmp, "report.json")
+    const stubCrash = join(tmp, "eslint-crash.mjs")
+    const stubWrite = join(tmp, "eslint-write.mjs")
+    writeFileSync(stubCrash, "process.exit(2)\n")
+    // Writes a syntactically valid but EMPTY-OF-FILES report at the -o path.
+    writeFileSync(
+      stubWrite,
+      'import { writeFileSync } from "node:fs"\nconst i = process.argv.indexOf("-o")\nwriteFileSync(process.argv[i + 1], "[]")\nprocess.exit(0)\n',
+    )
+    const driver = join(ROOT, "scripts", "run-lint-ratchet.mjs")
+    const run = (bin: string) =>
+      spawnSync(process.execPath, [driver], {
+        cwd: ROOT,
+        encoding: "utf8",
+        env: { ...process.env, ESLINT_BIN: bin, ESLINT_REPORT: report },
+      })
+    afterAll(() => rmSync(tmp, { recursive: true, force: true }))
+
+    it("exits 2 naming the stale report when eslint crashes and an OLD report is present", () => {
+      writeFileSync(report, "[]")
+      const old = (Date.now() - 60 * 60 * 1000) / 1000
+      utimesSync(report, old, old)
+      const r = run(stubCrash)
+      expect(r.status).toBe(2)
+      expect(r.stderr).toMatch(/predates this run/)
+    })
+
+    it("POSITIVE CONTROL: a report the stub eslint just wrote is accepted and handed to the checker", () => {
+      writeFileSync(report, "[]")
+      const old = (Date.now() - 60 * 60 * 1000) / 1000
+      utimesSync(report, old, old)
+      const r = run(stubWrite)
+      // The stub rewrote the file, so the freshness refusal must NOT fire; what
+      // happens next is the checker's verdict (an empty report reads as every
+      // rule reaching zero), which is not this test's subject.
+      expect(r.stderr).not.toMatch(/predates this run/)
+      expect(r.stderr + r.stdout).toMatch(/lists no files|eslint ratchet|baseline/)
+    })
   })
 
   it("CI generates the report in the same step as the comparison", () => {

@@ -626,7 +626,7 @@ const CSS = `
   text-transform: uppercase;
   color: var(--rpc-text-muted);
 }
-.rpc-ins-footer-link { color: var(--rpc-red); text-decoration: none; }
+.rpc-ins-footer-link { color: var(--rpc-red); text-decoration: underline; text-underline-offset: 3px; }
 .rpc-ins-footer-link:hover { color: var(--rpc-red-hover); }
 
 @media (max-width: 880px) {

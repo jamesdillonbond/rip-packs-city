@@ -134,7 +134,7 @@ export function MarketCapTileBody({
         {partial && group !== "edition" && (
           <> Covers {fmtCount(row.editions_supply_known)} of {fmtCount(row.editions)} editions; the rest have no published burn count.</>
         )}{" "}
-        <Link href="/insights/market-cap" style={{ color: "var(--rpc-text-secondary)" }}>All market caps →</Link>
+        <Link href="/insights/market-cap" style={{ color: "var(--rpc-text-secondary)", textDecoration: "underline", textUnderlineOffset: 3 }}>All market caps →</Link>
       </div>
     </>
   )
