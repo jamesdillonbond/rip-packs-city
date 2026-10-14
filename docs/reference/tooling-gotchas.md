@@ -1914,6 +1914,14 @@ npm ci                   # ⚠ RUN FIRST in a fresh sandbox — without it `npx 
                          # ⚠ ALSO in an agent worktree (.claude/worktrees/<name>/) — see
                          #   "An agent worktree's node_modules is EMPTY" below (2026-09-24).
 npm run dev
+npm run preflight        # ⭐ 2026-10-13: the CI gates THIS change can red, picked by changed path
+                         #   (tsc, ci:guards, lint:ratchet, vitest related, tests naming a changed
+                         #   file, tree-walking guards, component/worker coverage when selected).
+                         #   --quick = what the pre-push hook runs; --full adds the primary ratchet;
+                         #   --dry prints the plan. Detail: testing-and-ci.md, 2026-10-12/13.
+npm run hooks:install    # git config core.hooksPath .githooks (web sessions: SessionStart does it).
+                         #   pre-commit = staged-tree checks; pre-push = preflight --quick.
+                         #   Bypass once: --no-verify / RPC_SKIP_PREFLIGHT=1 / RPC_LEDGER_ROLL=1.
 npx tsc --noEmit         # before deploying, esp. when Vercel is rate-limited.
                          # ⭐ 2026-09-19: this DOES run in the laptop VM with
                          #   NODE_OPTIONS=--max-old-space-size=3072 (exit 0, clean). It OOMs at the
