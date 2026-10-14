@@ -2,6 +2,11 @@ import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import {
   DEFAULT_HOURS,
+  DEFAULT_DAY_SHIFTS,
+  parseSample,
+  sampleLabel,
+  offsetForSample,
+  defaultSamples,
   offsetForUtcHour,
   failingIds,
   totalTests,
@@ -141,7 +146,7 @@ describe("renderReport", () => {
   it("names the hours a finding failed at and the hours it passed at", () => {
     const out = renderReport(classify([run(0, []), run(5, ["t"])]))
     expect(out).toContain("::error::WALL-CLOCK DEPENDENT")
-    expect(out).toMatch(/failed at UTC hour\(s\) 5 and passed at 0/)
+    expect(out).toMatch(/failed at sample\(s\) 5 and passed at 0/)
   })
 
   it("says plainly that an always-failing test is not this instrument's finding", () => {
@@ -280,5 +285,40 @@ describe("the RPC_CLOCK_OFFSET_MS shim in vitest.setup.ts", () => {
     expect(src).toContain("RPC_CLOCK_OFFSET_MS")
     expect(src).toMatch(/if \(args\.length === 0\)/)
     expect(src).toMatch(/static now\(\)/)
+  })
+})
+
+// 2026-10-14: hours alone sit inside ONE day, so a test that expires after
+// DAYS (fmv-accuracy-gate, 48 h) was invisible to this sweep.
+describe("day-shift samples", () => {
+  it("parses an hour and an hour+days, and refuses anything else", () => {
+    expect(parseSample("13")).toEqual({ hour: 13, days: 0 })
+    expect(parseSample(" 13+3d ")).toEqual({ hour: 13, days: 3 })
+    for (const bad of ["24", "13+3", "x", "13+d", "-1"]) expect(() => parseSample(bad), bad).toThrow()
+  })
+
+  it("a day shift lands N whole days after its hour sample", () => {
+    const now = Date.parse("2026-10-14T13:45:00Z")
+    const base = offsetForSample(now, { hour: 13, days: 0 })
+    expect(offsetForSample(now, { hour: 13, days: 3 }) - base).toBe(3 * 86_400_000)
+    expect(new Date(now + offsetForSample(now, { hour: 13, days: 3 })).toISOString()).toBe("2026-10-18T13:30:00.000Z")
+  })
+
+  it("the defaults include every hour AND a shift past 48 h, each labelled distinctly", () => {
+    const samples = defaultSamples()
+    expect(samples.filter((s) => s.days === 0).map((s) => s.hour)).toEqual(DEFAULT_HOURS)
+    expect(Math.max(...DEFAULT_DAY_SHIFTS)).toBeGreaterThan(2)
+    const labels = samples.map(sampleLabel)
+    expect(new Set(labels).size).toBe(labels.length)
+    expect(labels).toContain("13+3d")
+  })
+
+  it("a test that expires after 48 h is classified clock-dependent from day-shift runs", () => {
+    const id = "/x/expiry.test.ts > stale:false on a fixed stamp"
+    const r = classify([
+      { hour: "13", failing: [], total: 10 },
+      { hour: "13+3d", failing: [id], total: 10 },
+    ] as never)
+    expect(r.clockDependent.map((f: { id: string }) => f.id)).toEqual([id])
   })
 })

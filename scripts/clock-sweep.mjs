@@ -42,6 +42,7 @@
  * Usage:
  *   node scripts/clock-sweep.mjs                       # full suite, default hours
  *   node scripts/clock-sweep.mjs --hours 0,5,13,20
+ *   node scripts/clock-sweep.mjs --hours 13,13+3d       # H = UTC hour; H+Nd = N days later
  *   node scripts/clock-sweep.mjs --files __tests__/a.test.ts __tests__/b.test.ts
  */
 
@@ -61,6 +62,44 @@ import { pathToFileURL } from "node:url"
  * two agree under mod 6 and no two share a mod-2 or mod-3 parity either.
  */
 export const DEFAULT_HOURS = [0, 5, 13, 20]
+
+/**
+ * Whole DAYS to push the clock forward, each sampled at 13:30 UTC.
+ *
+ * ⚠ ADDED 2026-10-14. Every hour above sits inside ONE day, so the sweep could
+ * not see a test that expires after DAYS: `fmv-accuracy-gate` asserted
+ * `stale: false` on a hardcoded 10-12 stamp through the function's default
+ * `Date.now()` and reddened main by itself 48 h later, on an unrelated push
+ * (CI run 38573637012). +3 d is past every 24/48/72 h staleness window in the
+ * tree; +30 d covers month-scale ones. Measured the same day: the whole suite
+ * at +3 d and +30 d had no clock-dependent failure, so these add coverage and
+ * no noise.
+ */
+export const DEFAULT_DAY_SHIFTS = [3, 30]
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Parse a sample: `13` (an hour) or `13+3d` (an hour, 3 days ahead). */
+export function parseSample(spec) {
+  const m = /^\s*(\d{1,2})(?:\+(\d+)d)?\s*$/.exec(String(spec))
+  if (!m || Number(m[1]) > 23) throw new Error(`bad sample "${spec}" — want H or H+Nd`)
+  return { hour: Number(m[1]), days: Number(m[2] ?? 0) }
+}
+
+/** The label a sample is reported under. */
+export function sampleLabel({ hour, days }) {
+  return days ? `${hour}+${days}d` : String(hour)
+}
+
+/** Milliseconds to add to now for a sample: its UTC hour, then whole days. */
+export function offsetForSample(nowMs, { hour, days }) {
+  return offsetForUtcHour(nowMs, hour) + days * DAY_MS
+}
+
+/** The default samples: every hour, then every day shift at 13:30 UTC. */
+export function defaultSamples() {
+  return [...DEFAULT_HOURS.map((hour) => ({ hour, days: 0 })), ...DEFAULT_DAY_SHIFTS.map((days) => ({ hour: 13, days }))]
+}
 
 /** Milliseconds to add to now so the process believes it is at `hour`:30 UTC. */
 export function offsetForUtcHour(nowMs, hour) {
@@ -164,7 +203,7 @@ export function sweepExitCode(result) {
 
 export function renderReport(result) {
   const lines = [
-    `clock sweep — ${result.runs} run(s) at different UTC hours`,
+    `clock sweep — ${result.runs} run(s) at different clock samples (UTC hour, or hour+days)`,
   ]
   if (result.alwaysFailing.length > 0) {
     lines.push(
@@ -178,14 +217,14 @@ export function renderReport(result) {
       `  UNMEASURED (not a finding, and not a clean bill either) — ${f.id}\n` +
         `    Its file spawns a CHILD PROCESS, which starts with the real clock and does not ` +
         `inherit RPC_CLOCK_OFFSET_MS, so parent and child disagree under this instrument in a way ` +
-        `they never do in CI. The difference at hour(s) ${f.failedAt.join(", ")} is an artifact of ` +
+        `they never do in CI. The difference at sample(s) ${f.failedAt.join(", ")} is an artifact of ` +
         `the sweep. This test's clock-dependence is UNKNOWN, not cleared.`,
     )
   }
   for (const f of result.clockDependent) {
     lines.push(
       `::error::WALL-CLOCK DEPENDENT — ${f.id}\n` +
-        `  failed at UTC hour(s) ${f.failedAt.join(", ")} and passed at ${f.passedAt.join(", ")}. ` +
+        `  failed at sample(s) ${f.failedAt.join(", ")} and passed at ${f.passedAt.join(", ")}. ` +
         `The assertion depends on when it ran, so a green run certifies nothing about the other hours ` +
         `— and it will red on someone else's commit. Fix by PINNING the clock (vi.setSystemTime) or by ` +
         `varying it inside the test, not by re-running.`,
@@ -229,19 +268,24 @@ function runSuiteAt(hour, offsetMs, files, dir) {
 }
 
 function main() {
-  const hours = (argList("--hours")?.[0] ?? "").trim()
-    ? argList("--hours")[0].split(",").map((h) => Number(h.trim()))
-    : DEFAULT_HOURS
+  const samples = (argList("--hours")?.[0] ?? "").trim()
+    ? argList("--hours")[0].split(",").map(parseSample)
+    : defaultSamples()
   const files = argList("--files") ?? []
 
   const dir = mkdtempSync(join(tmpdir(), "clock-sweep-"))
   try {
     const now = Date.now()
     const runs = []
-    for (const hour of hours) {
-      const offset = offsetForUtcHour(now, hour)
-      process.stdout.write(`running suite as if it were ${String(hour).padStart(2, "0")}:30 UTC … `)
-      const run = runSuiteAt(hour, offset, files, dir)
+    for (const sample of samples) {
+      const offset = offsetForSample(now, sample)
+      const label = sampleLabel(sample)
+      process.stdout.write(
+        `running suite as if it were ${String(sample.hour).padStart(2, "0")}:30 UTC` +
+          (sample.days ? ` + ${sample.days} day(s)` : "") +
+          " … ",
+      )
+      const run = runSuiteAt(label, offset, files, dir)
       if (run === null) {
         process.exitCode = 2
         return
