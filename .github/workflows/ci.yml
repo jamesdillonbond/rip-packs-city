@@ -455,12 +455,25 @@ jobs:
   # whose scoped `include` + own thresholds ratchet the logic-bearing component
   # subtrees so their coverage can only go UP (a drop fails CI). Kept a separate
   # job so a component-coverage dip doesn't muddy the primary ratchet's signal.
-  component-tests:
-    name: Component coverage (vitest jsdom)
+  # ── SHARDED 2026-10-14, the same shape as the unit gate ─────────────────────
+  # This job became the CI wall clock (~300 s) once the unit shards split and the
+  # render smoke went to concurrency 8. Measured before shipping, same tree: one
+  # run 301 s → shards 151 s + 145 s, merge 4 s; merged coverage 16136/17745
+  # statements vs 16134 single (90.93 vs 90.92 %) — inside this gate's documented
+  # run-to-run wobble (testing-and-ci.md), so the ratchet judges the same number.
+  # ⚠ The shards ZERO the thresholds; only the merge applies vitest.components.
+  # config.ts's ratchet, and the merge asserts BOTH blobs exist first.
+  # ⚠ Its own blob dir and artifact names: the unit merge downloads `vitest-blob-*`.
+  component-tests-shard:
+    name: Component coverage (vitest jsdom) — shard ${{ matrix.shard }}/2
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true'
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -468,7 +481,47 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run test:coverage:components
+      - run: npm run test:coverage:components:shard -- --shard=${{ matrix.shard }}/2 --outputFile.blob=.vitest-reports-components/blob-${{ matrix.shard }}-2.json
+      - name: Assert the blob was written
+        run: |
+          ls -la .vitest-reports-components/
+          test -s ".vitest-reports-components/blob-${{ matrix.shard }}-2.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: component-blob-${{ matrix.shard }}
+          path: .vitest-reports-components/blob-${{ matrix.shard }}-2.json
+          if-no-files-found: error
+          retention-days: 1
+
+  component-tests:
+    name: Component coverage (vitest jsdom) — merge + coverage ratchet
+    runs-on: ubuntu-latest
+    needs: [changes, component-tests-shard]
+    if: needs.changes.outputs.code == 'true'
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: component-blob-*
+          path: .vitest-reports-components
+          merge-multiple: true
+      - name: Assert every shard delivered a blob
+        run: |
+          ls -la .vitest-reports-components/
+          n=$(ls .vitest-reports-components/blob-*-2.json 2>/dev/null | wc -l | tr -d ' ')
+          echo "blobs: $n"
+          if [ "$n" -ne 2 ]; then
+            echo "::error::expected 2 component shard blobs, found $n — a merge over a partial suite would publish a coverage number for part of the tests."
+            exit 1
+          fi
+      # Applies vitest.components.config.ts's thresholds to the MERGED coverage.
+      - run: npm run test:coverage:components:merge
 
   # Workflow lint: actionlint (expressions, `needs`/`outputs` refs, cron syntax,
   # action inputs) + shellcheck on every `run:` block, at severity >= warning.

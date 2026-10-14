@@ -117,6 +117,8 @@ flowty-asset-inventory-doc.pdf
 # other's coverage/.tmp, so ignore any coverage-* sibling too.
 /coverage
 /coverage-*
+# vitest blob reports from local shard runs (CI uploads them as artifacts).
+/.vitest-reports*/
 
 # Panini runner local capture backups (residential box only)
 # Covers panini-capture* and panini-ops-capture*, incl. rotated .jsonl.1 backups

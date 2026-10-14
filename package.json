@@ -17,6 +17,8 @@
     "test:coverage:shard": "vitest run --coverage --reporter=blob --reporter=default --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0",
     "test:coverage:merge": "vitest run --merge-reports --coverage",
     "test:coverage:components": "vitest run --coverage --config vitest.components.config.ts",
+    "test:coverage:components:shard": "vitest run --coverage --config vitest.components.config.ts --reporter=blob --reporter=default --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0",
+    "test:coverage:components:merge": "vitest run --merge-reports=.vitest-reports-components --coverage --config vitest.components.config.ts",
     "test:coverage:workers": "vitest run --coverage --config vitest.workers.config.ts",
     "test:render-smoke": "node scripts/qa/built-render-smoke.mjs",
     "test:cadence:escrow": "bash scripts/fetch-cadence-escrow-test-deps.sh && flow test -f cadence/tests/flow.test.json cadence/tests/RPCTradeEscrow_test.cdc",

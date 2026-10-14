@@ -110,6 +110,32 @@ describe("coverage gates are wired to CI", () => {
       expect(ci).toMatch(/needs: \[changes, unit-tests-shard\]/)
       return
     }
+    if (gate.config === "vitest.components.config.ts") {
+      // 2026-10-14: the component gate is SHARDED the same way. ⚠ A plain
+      // `npm run test:coverage:components` match is now VACUOUS — it is a
+      // substring of the shard script's name, which zeroes the thresholds. Pin
+      // the shard, the merge (which alone applies the ratchet) and the needs edge.
+      const shard: string = pkg.scripts["test:coverage:components:shard"] ?? ""
+      const merge: string = pkg.scripts["test:coverage:components:merge"] ?? ""
+      expect(shard, "component shard script must emit a blob").toContain("--reporter=blob")
+      expect(shard).toContain(gate.config)
+      expect(shard, "component shard script must zero every threshold").toMatch(
+        /thresholds\.lines=0.*thresholds\.functions=0.*thresholds\.branches=0.*thresholds\.statements=0/,
+      )
+      expect(merge, "component merge must merge the blobs WITH coverage").toContain("--merge-reports")
+      expect(merge).toContain("--coverage")
+      expect(merge).toContain(gate.config)
+      expect(ci, "no CI job runs the component shards").toMatch(/npm run test:coverage:components:shard -- --shard=/)
+      expect(
+        ci,
+        `No CI job runs "npm run test:coverage:components:merge", so the ${gate.covers} ratchet is ORPHANED.`,
+      ).toContain("npm run test:coverage:components:merge")
+      expect(ci).toMatch(/needs: \[changes, component-tests-shard\]/)
+      // The two merges must not read each other's blobs.
+      expect(ci).toContain("pattern: component-blob-*")
+      expect(merge).toContain(".vitest-reports-components")
+      return
+    }
     expect(
       ci,
       `No CI job runs "npm run ${gate.script}", so the ${gate.covers} gate is ORPHANED — ` +
