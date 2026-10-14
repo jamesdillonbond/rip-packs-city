@@ -6,14 +6,17 @@
 // editions, 2 AllDay/Golazos/UFC editions, 3 entities+top-moments,
 // 4 packs+Pinnacle pins) — but Next emits NO index file for them. This
 // route keeps /sitemap.xml alive as a spec-compliant <sitemapindex> pointing
-// at the five children, so Google Search Console's registered sitemap URL and
+// at the children, so Google Search Console's registered sitemap URL and
 // robots.txt's single Sitemap: line both keep working with zero operator
 // action. proxy.ts opens /sitemap.xml and /sitemap/<id>.xml to anon.
+// 2026-10-14: segments 5-8 (Panini edition shards) added; the id list is now
+// IMPORTED from lib/sitemap-data, so the index cannot advertise a child the
+// child route does not serve, or omit one it does.
 
 import { NextResponse } from "next/server"
+import { SITEMAP_SEGMENT_IDS } from "@/lib/sitemap-data"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
-const SEGMENT_IDS = [0, 1, 2, 3, 4]
 
 export const dynamic = "force-static"
 export const revalidate = 21600 // match app/sitemap.ts
@@ -38,7 +41,7 @@ export async function GET(): Promise<NextResponse> {
   // real lastmod needs a max(updated_at) across each segment's data sources,
   // which this force-static route cannot afford; if that is ever wanted, it
   // belongs in the child routes that actually know their own inputs.
-  const entries = SEGMENT_IDS.map(
+  const entries = SITEMAP_SEGMENT_IDS.map(
     (id) => `  <sitemap>\n    <loc>${BASE_URL}/sitemap/${id}.xml</loc>\n  </sitemap>`,
   ).join("\n")
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries}\n</sitemapindex>\n`

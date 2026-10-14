@@ -1,7 +1,8 @@
 // app/sitemap/[id]/route.ts
 //
 // Serves the sitemap segment children the /sitemap.xml index advertises:
-// /sitemap/0.xml … /sitemap/4.xml. The URL data lives in lib/sitemap-data.ts
+// /sitemap/0.xml … /sitemap/8.xml (5-8 = Panini edition shards, 2026-10-14).
+// The URL data lives in lib/sitemap-data.ts
 // (buildSitemapSegment); this handler just renders spec-compliant <urlset>
 // XML. Hand-rolled because Next's metadata sitemap convention claims
 // /sitemap.xml even when generateSitemaps() is used, which conflicts with the

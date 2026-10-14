@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 
 // The two sitemap route handlers — /sitemap.xml (the <sitemapindex> at the
-// GSC-registered URL) and /sitemap/<id>.xml (its five segment children).
+// GSC-registered URL) and /sitemap/<id>.xml (its segment children).
 //
 // ⚠ These are `route.ts` files that live OUTSIDE app/api, so the primary
 // coverage gate's old `app/api/**/route.ts` glob missed both and neither had a
@@ -17,7 +17,8 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 // characters that actually appear in this app's URLs (query strings, slugs with
 // apostrophes).
 
-const REAL_SEGMENT_IDS = [0, 1, 2, 3, 4]
+// 0-4 plus the four Panini edition shards (5-8), added 2026-10-14.
+const REAL_SEGMENT_IDS = [0, 1, 2, 3, 4, 5, 6, 7, 8]
 
 // The real class, so `instanceof` in the handler behaves as it does in prod. A
 // hand-rolled stand-in would let the handler take its "unexpected" branch while
@@ -51,7 +52,7 @@ describe("/sitemap.xml — the sitemap index", () => {
     expect(xml.trimEnd().endsWith("</sitemapindex>")).toBe(true)
   })
 
-  it("advertises EXACTLY the five segment children, each an absolute URL", async () => {
+  it("advertises EXACTLY the nine segment children, each an absolute URL", async () => {
     const { xml } = await get()
     const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1])
     expect(locs).toHaveLength(REAL_SEGMENT_IDS.length)

@@ -54,9 +54,11 @@
 // (/sitemap/0.xml … /sitemap/4.xml) behind a hand-rolled sitemap INDEX at
 // /sitemap.xml (app/sitemap.xml/route.ts) so the GSC-registered URL keeps
 // working. Segments: 0 static+insights+overviews+series+profiles,
-// 1 Top Shot editions, 2 AllDay/Golazos/UFC editions,
-// 3 set/player/team entities + top moments, 4 packs + Pinnacle pins.
-// Each child stays far below Google's 50K-URL / 50MB caps.
+// 1 Top Shot editions, 2 AllDay/Golazos/UFC/Candy editions,
+// 3 set/player/team entities + top moments, 4 packs + Pinnacle pins,
+// 5-8 Panini editions in four id-range shards (2026-10-14, see PANINI_SHARDS).
+// Google rejects a WHOLE child over 50,000 URLs or 50MB, so
+// buildSitemapSegment refuses to emit one (MAX_URLS_PER_SITEMAP).
 // Served by app/sitemap/[id]/route.ts (children) + app/sitemap.xml/route.ts
 // (index) — Next's metadata sitemap convention claims /sitemap.xml even with
 // generateSitemaps (build error: 'Conflicting route and metadata'), so the
@@ -212,6 +214,39 @@ const PACK_COLLECTION_IDS = [
   '7dd9dd11-e8b6-45c4-ac99-71331f959714', // disney_pinnacle
 ]
 
+const PANINI_ID = 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b'
+
+/** Half-open range on a uuid primary key: [gte, lt). An absent end is open. */
+export interface IdRange {
+  gte?: string
+  lt?: string
+}
+
+/**
+ * Google's hard per-file limit. A child over it is rejected WHOLE — every URL in
+ * it, not the overflow — so a segment that would exceed it is refused (the route
+ * serves 503 and the crawler keeps its last good copy) rather than published.
+ */
+export const MAX_URLS_PER_SITEMAP = 50000
+
+/**
+ * Panini edition URLs, split across segments 5-8 by the first hex digit of
+ * `editions.id` (a random v4 uuid, so the quarters are even: 7,343 / 7,612 /
+ * 7,684 / 7,621 of 30,251 measured 2026-10-14).
+ *
+ * WHY: Panini lived in segment 2 and grew from 5,100 editions (09-26) to 30,251
+ * (10-14), ~1,400/day, taking segment 2 to 37,659 URLs — ~9 days from the
+ * 50,000 cap at which Google drops the whole file. An id-range shard keeps every
+ * URL in the same child forever (no reshuffle as rows arrive) and gives ~200K of
+ * headroom. If a shard nears the cap, split it — add segments, never truncate.
+ */
+export const PANINI_SHARDS: ReadonlyArray<{ segment: number; range: IdRange }> = [
+  { segment: 5, range: { lt: '40000000-0000-0000-0000-000000000000' } },
+  { segment: 6, range: { gte: '40000000-0000-0000-0000-000000000000', lt: '80000000-0000-0000-0000-000000000000' } },
+  { segment: 7, range: { gte: '80000000-0000-0000-0000-000000000000', lt: 'c0000000-0000-0000-0000-000000000000' } },
+  { segment: 8, range: { gte: 'c0000000-0000-0000-0000-000000000000' } },
+]
+
 /**
  * Thrown when a sitemap read could not be COMPLETED. Never swallow it into an
  * empty or partial list — see the header on `fetchAllByCollection`.
@@ -290,7 +325,15 @@ async function fetchAllByCollection(
   // live 2026-08-23: editions.id (uuid PK); pack_distributions.dist_id
   // (5,514/5,514 distinct). Do not pass a timestamp here.
   tiebreakColumn: string,
-  maxRows = 60000,
+  // ⚠ A SAFETY NET, NOT A BUDGET (2026-10-14). It was 60,000 while segment 3
+  // reads EVERY edition row: 52,187 on 10-14 with Panini adding ~1,400/day, so
+  // segment 3 — every set/player/team URL — was days from a permanent 503 from
+  // this ceiling alone. Each page re-sorts the filtered set (~86 ms at 52K,
+  // measured), so the walk's cost, not this number, is the real limit.
+  maxRows = 250000,
+  // Optional half-open range on the uuid PK, used to shard one collection's
+  // rows across several sitemap children ([gte, lt); either end may be open).
+  idRange?: IdRange,
 ): Promise<any[]> {
   // ⚠ CHECKED HERE BECAUSE THE VALUE ONLY EXISTS HERE. The static guard
   // (__tests__/paginated-range-requires-order-ratchet.test.ts) can see that a
@@ -302,10 +345,10 @@ async function fetchAllByCollection(
   const PAGE = 1000
   const out: any[] = []
   for (let from = 0; from < maxRows; from += PAGE) {
-    const { data, error } = await sb
-      .from(table)
-      .select(select)
-      .in('collection_id', collectionIds)
+    let q = sb.from(table).select(select).in('collection_id', collectionIds)
+    if (idRange?.gte) q = q.gte('id', idRange.gte)
+    if (idRange?.lt) q = q.lt('id', idRange.lt)
+    const { data, error } = await q
       .order(orderColumn, { ascending: orderAsc, nullsFirst: false })
       .order(tiebreakColumn, { ascending: true })
       .range(from, from + PAGE - 1)
@@ -333,7 +376,10 @@ interface EditionRow {
   last_updated_at: string | null
 }
 
-async function getEditionRows(collectionIds: string[] = EDITION_COLLECTION_IDS): Promise<EditionRow[]> {
+async function getEditionRows(
+  collectionIds: string[] = EDITION_COLLECTION_IDS,
+  idRange?: IdRange,
+): Promise<EditionRow[]> {
   // One sitemap entry per edition in a published collection (~23.5K rows
   // today). Service-role client bypasses RLS; paginated via fetchAllByCollection
   // to clear the 1000-row PostgREST cap. We also derive distinct
@@ -362,6 +408,8 @@ async function getEditionRows(collectionIds: string[] = EDITION_COLLECTION_IDS):
       // ⚠ `updated_at` is 68.4% ties with a largest group of 1,084 — WIDER than
       // the 1,000-row page. The uuid PK is what makes the paging deterministic.
       'id',
+      undefined,
+      idRange,
     )
     return ((data ?? []) as Array<{
       id: string
@@ -744,9 +792,19 @@ export const INSIGHT_ROUTES: readonly string[] = [
   ...(PANINI_PUBLIC ? ['panini-squeeze', 'panini-premiums'] : []),
 ]
 
-export const SITEMAP_SEGMENT_IDS = [0, 1, 2, 3, 4]
+export const SITEMAP_SEGMENT_IDS = [0, 1, 2, 3, 4, ...PANINI_SHARDS.map((s) => s.segment)]
 
 export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sitemap> {
+  const entries = await buildSitemapSegmentUncapped(id)
+  if (entries.length > MAX_URLS_PER_SITEMAP) {
+    throw new Error(
+      `sitemap segment ${id} has ${entries.length} URLs, over the ${MAX_URLS_PER_SITEMAP}-URL cap at which Google rejects the whole file — split it into more segments`,
+    )
+  }
+  return entries
+}
+
+async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Sitemap> {
 
   // ── Segment 1: Top Shot edition pages ─────────────────────────────────────
   if (id === 1) {
@@ -754,9 +812,16 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
     return buildEditionPages(rows)
   }
 
-  // ── Segment 2: AllDay / Golazos / UFC edition pages ───────────────────────
+  // ── Segment 2: AllDay / Golazos / UFC / Candy edition pages ───────────────
   if (id === 2) {
-    const rows = await getEditionRows(EDITION_COLLECTION_IDS.filter((c) => c !== TS_ID))
+    const rows = await getEditionRows(EDITION_COLLECTION_IDS.filter((c) => c !== TS_ID && c !== PANINI_ID))
+    return buildEditionPages(rows)
+  }
+
+  // ── Segments 5-8: Panini edition pages, one uuid-range quarter each ───────
+  const paniniShard = PANINI_SHARDS.find((s) => s.segment === id)
+  if (paniniShard) {
+    const rows = await getEditionRows([PANINI_ID], paniniShard.range)
     return buildEditionPages(rows)
   }
 

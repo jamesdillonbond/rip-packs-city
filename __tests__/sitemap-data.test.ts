@@ -22,14 +22,20 @@ const h = vi.hoisted(() => ({
   r: {} as Record<string, { data: any; error: any }> ,
   // Set by the tiebreaker test to record the ORDER KEYS a read actually used.
   orderSpy: undefined as undefined | ((col: string, table: string) => void),
+  // Records every .in/.gte/.lt FILTER a read applied (the mock does not apply
+  // them), so a test can assert which collections / id range a segment asked for.
+  filters: [] as Array<{ table: string; op: string; col: string; val: any }>,
 }))
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     from: (table: string) => {
       const b: any = { _t: table }
-      for (const m of ["select", "eq", "limit", "in", "is", "gte", "lt", "not", "ilike"]) {
+      for (const m of ["select", "eq", "limit", "is", "not", "ilike"]) {
         b[m] = () => b
+      }
+      for (const m of ["in", "gte", "lt"]) {
+        b[m] = (col: string, val: any) => { h.filters.push({ table, op: m, col, val }); return b }
       }
       b.order = (col: string) => { h.orderSpy?.(col, table); return b }
       // .range(from,to) records the window so the thenable can slice a paged read,
@@ -60,7 +66,7 @@ vi.mock("@supabase/supabase-js", () => ({
 }))
 
 // Imported AFTER the mock is registered (vi.mock is hoisted regardless).
-import { buildSitemapSegment, SITEMAP_SEGMENT_IDS } from "@/lib/sitemap-data"
+import { buildSitemapSegment, SITEMAP_SEGMENT_IDS, PANINI_SHARDS, MAX_URLS_PER_SITEMAP } from "@/lib/sitemap-data"
 
 const BASE = "https://www.rippackscity.com"
 const TS_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -75,6 +81,7 @@ function err(message: string) {
 }
 
 beforeEach(() => {
+  h.filters = []
   // Default: every table returns an empty success. Individual tests override.
   h.t = {
     editions: ok([]),
@@ -86,8 +93,72 @@ beforeEach(() => {
 })
 
 describe("SITEMAP_SEGMENT_IDS", () => {
-  it("declares the 5 segment children", () => {
-    expect(SITEMAP_SEGMENT_IDS).toEqual([0, 1, 2, 3, 4])
+  it("declares the 5 original children plus the four Panini edition shards (2026-10-14)", () => {
+    expect(SITEMAP_SEGMENT_IDS).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8])
+  })
+})
+
+const PANINI_ID = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
+
+describe("Panini edition shards (segments 5-8) — the 50,000-URL cap, 2026-10-14", () => {
+  it("segment 2 no longer reads Panini (it took segment 2 to 37,659 URLs and climbing)", async () => {
+    await buildSitemapSegment(2)
+    const ins = h.filters.filter((f) => f.table === "editions" && f.op === "in")
+    expect(ins).toHaveLength(1)
+    expect(ins[0].val).not.toContain(PANINI_ID)
+    expect(ins[0].val).not.toContain(TS_ID)
+    expect(ins[0].val).toContain(ALLDAY_ID)
+  })
+
+  it("each shard reads ONLY Panini, over its own id range", async () => {
+    for (const { segment, range } of PANINI_SHARDS) {
+      h.filters = []
+      await buildSitemapSegment(segment)
+      const ed = h.filters.filter((f) => f.table === "editions")
+      expect(ed.find((f) => f.op === "in")?.val).toEqual([PANINI_ID])
+      expect(ed.find((f) => f.op === "gte")?.val).toBe(range.gte)
+      expect(ed.find((f) => f.op === "lt")?.val).toBe(range.lt)
+    }
+  })
+
+  it("the shards tile the whole uuid space: contiguous, no gap, no overlap, both ends open", () => {
+    expect(PANINI_SHARDS[0].range.gte).toBeUndefined()
+    expect(PANINI_SHARDS[PANINI_SHARDS.length - 1].range.lt).toBeUndefined()
+    for (let i = 1; i < PANINI_SHARDS.length; i++) {
+      expect(PANINI_SHARDS[i].range.gte).toBe(PANINI_SHARDS[i - 1].range.lt)
+    }
+  })
+
+  it("a shard emits Panini edition URLs", async () => {
+    h.t.editions = ok([
+      { id: "0aa", external_id: "packcard-1_2_3_4", collection_id: PANINI_ID, updated_at: null, player_name: "P", set_name: "S", team_name: null },
+    ])
+    const s = await buildSitemapSegment(5)
+    expect(s.map((e) => e.url)).toEqual([`${BASE}/panini-blockchain/edition/packcard-1_2_3_4`])
+  })
+
+  it("REFUSES a segment over the cap instead of publishing a file Google rejects whole", async () => {
+    const rows = Array.from({ length: MAX_URLS_PER_SITEMAP + 1 }, (_, i) => ({
+      id: `id${i}`, external_id: `slug-${i}`, collection_id: ALLDAY_ID, updated_at: null, player_name: null, set_name: null, team_name: null,
+    }))
+    h.t.editions = ok(rows)
+    await expect(buildSitemapSegment(2)).rejects.toThrow(/over the 50000-URL cap/)
+  })
+
+  it("NO-CHANGE CONTROL: exactly the cap is still served", async () => {
+    const rows = Array.from({ length: MAX_URLS_PER_SITEMAP }, (_, i) => ({
+      id: `id${i}`, external_id: `slug-${i}`, collection_id: ALLDAY_ID, updated_at: null, player_name: null, set_name: null, team_name: null,
+    }))
+    h.t.editions = ok(rows)
+    await expect(buildSitemapSegment(2)).resolves.toHaveLength(MAX_URLS_PER_SITEMAP)
+  })
+
+  it("segment 3 reads past 60,000 editions (the old maxRows that would have 503'd it ~10-20)", async () => {
+    const rows = Array.from({ length: 61000 }, (_, i) => ({
+      id: `id${i}`, external_id: `slug-${i}`, collection_id: ALLDAY_ID, updated_at: null, player_name: null, set_name: null, team_name: null,
+    }))
+    h.t.editions = ok(rows)
+    await expect(buildSitemapSegment(3)).resolves.toBeDefined()
   })
 })
 
