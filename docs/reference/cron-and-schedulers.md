@@ -1168,6 +1168,13 @@ a dispatch record, not an outcome, and `return_message` is `"1 row"` on every su
 
 ### 🚨 Gate-key rotation — the order is load-bearing, and the filing that says it is CLOSED is wrong
 
+⭐ **SUPERSEDED 2026-10-13/14 for every pg_cron lane — read this first.** All 20 HTTP-dispatching pg_cron jobs now
+send `public.cron_gate_key('<fn>')` in the **`x-rpc-gate-key` header** (0 send `?key=`), and the 15 functions they
+call check the SAME Vault secret through `supabase/functions/_shared/cron-gate.ts`. There is no env secret to
+set first, so the order below no longer applies to them: a rotation is one in-database
+`vault.update_secret(...)` (migrations `20261013143723`, `20261013144028`, `20261014135331`; recipe in the
+`rpc-edge-fn-deploy` skill §0). The sequence below still binds any function that reads an env `*_GATE_KEY`.
+
 **Rotating a cron's `?key=` before the edge function's secret exists fails that pipeline's ticks
 CLOSED.** Six of the remaining gate-keyed crons point at secrets that are **not set yet**, so the only
 safe sequence is, in order:

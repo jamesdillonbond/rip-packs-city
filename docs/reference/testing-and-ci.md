@@ -2345,6 +2345,10 @@ tests**).
 **The rule: a targeted run is for the edit loop; the full suite is for the push.** `npm test` before
 pushing, or accept that CI is the first instrument that sees your change whole — on a repo where a
 guard's roots deliberately span the tree, that is a coin flip, not a verification.
+⚠ **2026-10-14, the same rule broken from the other side: a NEW FILE joins every walker's population.**
+Two recovered edge functions passed the targeted set (their own pin, the gate guards, `deno check`, the
+Deno harness) and red-CI'd `get-fmv-for-editions-is-chunked-under-max-rows` — a guard that names no file
+and could only see them once they existed. Adding a file is a population change for every tree walk.
 
 ⚠ **And a red CI run is not automatically yours.** The same night, four consecutive red runs had two
 different causes — one inherited from a concurrent session's commit, one my own guard correctly
