@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs"
 import path from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // RATCHET: an edge function must have SOME behaviour a test can actually reach.
 //
@@ -87,7 +88,7 @@ function edgeFunctions(): { name: string; src: string; lines: number }[] {
  * BRANCH beside real work (`sync-nba-projections`) imports and fetches, so it stays in.
  */
 export function isRetiredTombstone(src: string): boolean {
-  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+  const code = stripComments(src)
   return (
     /status:\s*410\b/.test(code) &&
     !/^\s*import\s/m.test(code) &&
