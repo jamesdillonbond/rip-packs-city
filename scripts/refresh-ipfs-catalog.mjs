@@ -15,13 +15,15 @@
 //   4. POSTs rows in chunks of 1000 to the ipfs-catalog-loader edge function
 //      (upsert on the unique key — safe to re-run any time).
 //
-// Usage:
-//   IPFS_LOADER_TOKEN=<token> node scripts/refresh-ipfs-catalog.mjs
+// Usage (from the repo root, with .env.local holding the usual Supabase vars):
+//   node scripts/refresh-ipfs-catalog.mjs
 //
-// The token is the deploy-time constant inside the ipfs-catalog-loader edge
-// function (Supabase project bxcqstmqfzmuolpuynti) — retrieve it via the
-// Supabase dashboard/MCP get_edge_function. It is deliberately NOT committed:
-// this repo is public.
+// Auth (2026-10-14, register R21 (c)): the loader is behind the shared Vault gate
+// (supabase/functions/_shared/cron-gate.ts). This script fetches the loader's key AT RUN
+// TIME through the SECURITY DEFINER rpc `cron_gate_key('ipfs-catalog-loader')`, using the
+// service-role key it reads from .env.local, and sends it in the `x-rpc-gate-key` header.
+// The key is never printed, never typed, never copied. ⛔ Do not go back to copying a token
+// out of the deployed source: that is how this repo's gate keys leaked (2026-08-18).
 //
 // When to run: whenever Dapper refreshes their bundle (e.g. WNBA sets appear
 // in the reference app, new series drop). The daily
@@ -32,11 +34,43 @@
 
 const APP_BASE = "https://dapperlabs.github.io/dapperlabs-ipfs-reference-app";
 const LOADER_URL = "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/ipfs-catalog-loader";
-const TOKEN = process.env.IPFS_LOADER_TOKEN;
+import { readFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
 
-if (!TOKEN) {
-  console.error("IPFS_LOADER_TOKEN env var is required (see header comment).");
+function loadEnv() {
+  const envPath = resolve(process.cwd(), ".env.local");
+  if (!existsSync(envPath)) return;
+  for (const line of readFileSync(envPath, "utf-8").split("\n")) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const eq = t.indexOf("=");
+    if (eq === -1) continue;
+    const key = t.slice(0, eq).trim();
+    let val = t.slice(eq + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) val = val.slice(1, -1);
+    if (!process.env[key]) process.env[key] = val;
+  }
+}
+loadEnv();
+
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!SUPABASE_URL || !SERVICE_KEY) {
+  console.error("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY are required (.env.local).");
   process.exit(1);
+}
+
+/** The loader's gate key, read from Vault at run time. Never logged. */
+async function loaderKey() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/cron_gate_key`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+    body: JSON.stringify({ p_fn: "ipfs-catalog-loader" }),
+  });
+  if (!res.ok) throw new Error(`cron_gate_key http_${res.status} — is the service-role key current?`);
+  const key = await res.json();
+  if (typeof key !== "string" || key === "") throw new Error("cron_gate_key returned no key");
+  return key;
 }
 
 const COL_FOR = {
@@ -125,12 +159,13 @@ const data = extractDataset(js);
 const rows = groupRows(data);
 console.log(`plays: ${data.length}, grouped rows: ${rows.length}`);
 
+const GATE_KEY = await loaderKey();
 let upserted = 0, failed = 0;
 for (let i = 0; i < rows.length; i += 1000) {
   const chunk = rows.slice(i, i + 1000).map((r) => ({ ...r, updated_at: new Date().toISOString() }));
   const res = await fetch(LOADER_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}` },
+    headers: { "Content-Type": "application/json", "x-rpc-gate-key": GATE_KEY },
     body: JSON.stringify({ rows: chunk }),
   });
   const j = await res.json().catch(() => ({}));
