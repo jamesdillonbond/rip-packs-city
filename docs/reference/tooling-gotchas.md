@@ -1498,6 +1498,8 @@ not:
   **13 of them active, 0 using a header.** That is the `rpc_pls_` prefix the probe greps for, sitting
   in `cron.job.command` — which lives only in the database and is outside `origin/main` by
   construction.
+  ⚠ **`edge-fn-deploy.yml` CANCELS an in-flight run when another is dispatched (concurrency group)** — six
+  back-to-back dispatches on 10-14 deployed two. Dispatch one, wait for `completed`, then the next.
   ✅ **FIXED 2026-10-13/14:** all 20 HTTP-dispatching jobs now send the key in the `x-rpc-gate-key` header, read
   at dispatch time from Vault (`cron_gate_key('<fn>')`), so `cron.job.command` carries no key at all; the
   keys were rotated in SQL. The corpus lesson below still holds for edge secrets, Vercel env and cron-job.org.
