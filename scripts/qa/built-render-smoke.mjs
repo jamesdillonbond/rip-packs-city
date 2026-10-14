@@ -49,7 +49,13 @@ const PORT = Number(process.env.PORT || 3137)
 const EXTERNAL = process.env.BASE_URL
 const BASE = (EXTERNAL || `http://127.0.0.1:${PORT}`).replace(/\/$/, "")
 const TIMEOUT_MS = Number(process.env.RENDER_SMOKE_TIMEOUT_MS || 45_000)
-const CONCURRENCY = Number(process.env.RENDER_SMOKE_CONCURRENCY || 4)
+// 8, not 4 (2026-10-14): the run is I/O-bound, not CPU-bound — most requests
+// wait on the deliberately dropped Supabase connections. Measured on a 4-core
+// box, same build, same 444 renders inspected each time: 4 → 187 s (twice),
+// 8 → 105 s, 12 → 77 s. 8 takes the bulk of the win and keeps headroom under the
+// 45 s per-request timeout on a noisier CI runner. This job (build + smoke) was
+// the CI wall-clock ceiling at ~373 s.
+const CONCURRENCY = Number(process.env.RENDER_SMOKE_CONCURRENCY || 8)
 // The earliest moment a page could have stamped from the clock: when this BUILD
 // began (ISR pages prerendered by `next build` under the same failed reads count
 // too). BUILD_ID is written during the build, so back off generously; a real
