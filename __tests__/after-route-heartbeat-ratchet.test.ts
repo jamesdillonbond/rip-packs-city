@@ -472,7 +472,11 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   2026-10-13: app/api/cron/backfill-pack-rip-metadata (max 44,021 ms of a
 //   60,000 ms wall, 73% -- the tightest left) and app/api/cron/alerts-dispatch
 //   (output is user alerts; a kill sends nothing) converted (33 -> 31).
-const BUDGET = 31
+//   2026-10-14: the four *-listing-cache routes (topshot / allday / golazos / ufc)
+//   converted together (31 -> 27) — one shape, one edit; margins were 3-14 % of a
+//   300 s wall, so this is coverage, not a measured emergency. Same commit read the
+//   error each one's terminal log_pipeline_run returns (R123).
+const BUDGET = 27
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

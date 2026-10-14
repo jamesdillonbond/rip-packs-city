@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 // ── NFL All Day listing cache ─────────────────────────────────────────────────
 //
@@ -156,6 +157,10 @@ const COLLECTION_SLUG = "nfl_all_day"
 async function runListingCache() {
   const startedAt = Date.now()
   const startedAtIso = new Date(startedAt).toISOString()
+  // Invocation heartbeat, written BEFORE the work (E5, 2026-10-14). This runs inside
+  // after() under maxDuration=300; a kill at the wall writes no terminal row, so this
+  // marker is the only evidence the tick started. Never throws (lib/pipeline/heartbeat).
+  await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: startedAt, collectionSlug: COLLECTION_SLUG })
   const stats = {
     ok: true,
     errorMsg: null as string | null,
@@ -482,7 +487,9 @@ async function runListingCache() {
           ? `${stats.upsertErrors} listing row(s) failed to upsert — stale purge skipped`
           : null)
     try {
-      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      // R123: supabase-js RETURNS a rejected write as `error`; read it, or a failed
+      // terminal row is unreadable by construction.
+      const { error: logError } = await (supabaseAdmin as any).rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
         p_started_at: startedAtIso,
         p_rows_found: stats.totalListed,
@@ -505,6 +512,7 @@ async function runListingCache() {
           duration_ms: Date.now() - startedAt,
         },
       })
+      if (logError) console.log(`[allday-listing-cache] log_pipeline_run error: ${logError.message}`)
     } catch (e) {
       console.log(
         `[allday-listing-cache] log_pipeline_run err: ${

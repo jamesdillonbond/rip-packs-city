@@ -520,3 +520,30 @@ describe("cron/alerts-dispatch writes its marker first — through its OWN clien
     expect(marker).toBeLessThan(dispatch)
   })
 })
+
+// ── 2026-10-14 batch (ratchet 31 -> 27): the four *-listing-cache routes ─────
+// One shape: GET authorises, after(runListingCache), and runListingCache logs a
+// terminal row through the SHARED `@/lib/supabase` client. Every upstream fetch is
+// made to fail here, so each run takes its failure path — the marker must still be
+// first, and the terminal row must still be written after it.
+for (const slug of ["topshot", "allday", "golazos", "ufc"] as const) {
+  describe(`${slug}-listing-cache writes its marker first`, () => {
+    it("marker precedes the terminal row, carrying the collection slug", async () => {
+      const rec = recorder()
+      mockAfter()
+      // Three of the four read this at MODULE LOAD and throw without it (test value).
+      process.env.FLOWTY_PROXY_TOKEN = "test-proxy-token"
+      vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db, getSupabaseAdmin: () => rec.db }))
+      vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("upstream down (test)") }))
+      const mod = await import(`@/app/api/${slug}-listing-cache/route`)
+
+      const res = await mod.GET(authedNext(`https://t/api/${slug}-listing-cache`, "GET") as never)
+      expect(res.status).toBe(200)
+      await runDeferred()
+
+      assertMarkerContract(rec, `${slug}-listing-cache`)
+      expect(rec.rows[0].collection_slug, "the marker should carry the lane's collection").toBeTruthy()
+      vi.unstubAllGlobals()
+    })
+  })
+}
