@@ -1936,6 +1936,9 @@ npx tsc --noEmit         # before deploying, esp. when Vercel is rate-limited.
 npm test                 # vitest run — route + lib suites (single file: npx vitest run <path>)
 npm run test:coverage    # primary gate (what CI ratchets on)
 npm run test:coverage:components   # component gate
+                         # ⚠ 2026-10-14: CI runs it SHARDED (`test:coverage:components:shard`
+                         #   ×2 + `:merge`, which alone applies the ratchet); this single-run
+                         #   script is for local use and `preflight`. Unit gate: 4 shards + merge.
 npm run test:coverage:workers      # workers gate
 npm run db:pins:check    # live DB-invariant pin drift (needs service-role key)
 git add -A && git commit -m "feat: ..." && git push origin main   # Git Bash (MINGW64) on Windows
