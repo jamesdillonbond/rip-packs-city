@@ -25,6 +25,7 @@ import { createClient } from "@supabase/supabase-js"
 import { cronGate } from "../_shared/cron-gate.ts"
 const REST="https://rest-mainnet.onflow.org"
 const ALLDAY="dee28451-5d62-409e-a1ad-a83f763ac070"
+const FMV_ID_CHUNK=500
 const sb=createClient(Deno.env.get("SUPABASE_URL")??"",Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")??"")
 const b64=(s:string)=>btoa(s)
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{"content-type":"application/json"}})
@@ -72,8 +73,10 @@ async function writeBatch(pairs:{moment:string,editionID:string}[]):Promise<Batc
   const byExt=new Map((eds??[]).map((e:any)=>[String(e.external_id),e.id]))
   const edUuids=Array.from(byExt.values())
   const fmvByEd=new Map<string,number>()
-  if(edUuids.length){
-    const { data:fr, error:fmvErr }=await sb.rpc("get_fmv_for_editions",{p_collection_id:ALLDAY,p_edition_ids:edUuids})
+  // Chunked under PostgREST's 1000-row cap (one row per id). A batch is <=50 pulls today, so
+  // this is one call; the slice keeps it true if the batch size ever grows.
+  for(let i=0;i<edUuids.length;i+=FMV_ID_CHUNK){
+    const { data:fr, error:fmvErr }=await sb.rpc("get_fmv_for_editions",{p_collection_id:ALLDAY,p_edition_ids:edUuids.slice(i,i+FMV_ID_CHUNK)})
     // ⛔ A failed FMV read is not "no FMV": writing fmv_usd:null from it would erase a price.
     if(fmvErr) return {ok:false,error:`fmv: ${fmvErr.message}`}
     // deno-lint-ignore no-explicit-any
