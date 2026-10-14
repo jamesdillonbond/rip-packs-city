@@ -137,7 +137,10 @@ describe("buildAccuracyRows — one row per listed collection, from the precompu
       { metric: "candy_fmv_high_med_share_pct", value: LEG_FAILED_SENTINEL, computed_at: AT },
       // noise: a sibling metric family must not be mistaken for the share
       { metric: "topshot_fmv_sweep_pct_24h", value: 3, computed_at: AT },
-    ])
+      // ⚠ The clock is INJECTED (an hour after AT). With the default Date.now()
+      // this asserted `stale: false` against the real clock and turned red on its
+      // own 48 h after AT was written (CI run 38573637012, 2026-10-14).
+    ], Date.parse(AT) + 3_600_000)
     expect(rows.map((r) => r.collectionId)).toEqual(ACCURACY_METRIC_COLLECTIONS.map((m) => m.collectionId))
     const by = Object.fromEntries(rows.map((r) => [r.collectionId, r]))
     expect(by["nba-top-shot"]).toMatchObject({ label: "NBA Top Shot", sharePct: 56.5, basis: "measured", computedAt: AT, stale: false })
