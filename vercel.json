@@ -1,5 +1,6 @@
 {
   "ignoreCommand": "bash scripts/vercel-ignore-build.sh",
+  "regions": ["pdx1"],
   "crons": [
     {
       "path": "/api/cron/pinnacle-trades-indexer",
