@@ -76,9 +76,30 @@ function edgeFunctions(): { name: string; src: string; lines: number }[] {
   return out.sort((a, b) => b.lines - a.lines)
 }
 
+/**
+ * A RETIRED TOMBSTONE has no behaviour for a test to reach, so it is outside this
+ * ratchet's population by definition — counting it is a population error, not debt
+ * (2026-10-14: six R21 retirements would otherwise have raised the budget 9 -> 15, and
+ * `sync-nba-games` had been sitting in the bucket since 05-06).
+ *
+ * ⚠ Derived from the PROPERTY, never a list: the code (comments stripped) imports
+ * nothing, builds no client, calls no `fetch`, and answers 410. A function with a 410
+ * BRANCH beside real work (`sync-nba-projections`) imports and fetches, so it stays in.
+ */
+export function isRetiredTombstone(src: string): boolean {
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+  return (
+    /status:\s*410\b/.test(code) &&
+    !/^\s*import\s/m.test(code) &&
+    !/\bcreateClient\s*\(/.test(code) &&
+    !/\bfetch\s*\(/.test(code) &&
+    !/Deno\.env\b/.test(code)
+  )
+}
+
 function unreachable() {
   const mirrored = mirroredEdgeFns(readFileSync(DRIFT_GUARD, "utf8"))
-  return edgeFunctions().filter((f) => !importsShared(f.src) && !mirrored.has(f.name))
+  return edgeFunctions().filter((f) => !importsShared(f.src) && !mirrored.has(f.name) && !isRetiredTombstone(f.src))
 }
 
 // ⚠ RATCHET, NOT A TARGET. Lower it in the SAME commit that extracts or mirrors
@@ -99,7 +120,10 @@ function unreachable() {
  * ⭐ It was only pinnable at all after the drift guard's extractor was fixed the
  * same day: `extractScriptResultB64` contains `startsWith("{")`, and the old
  * brace-counter unbalanced on that string literal. */
-const BUDGET = 9
+/* 9 -> 8 on 2026-10-14: a POPULATION correction, not a fix — `sync-nba-games` (a 410
+ * tombstone since 05-06) leaves the population via isRetiredTombstone; the six R21
+ * retirements of the same day never enter it. */
+const BUDGET = 8
 
 describe("edge functions have behaviour a test can reach", () => {
   it("the walk and the registry both found their populations (not vacuously passing)", () => {
@@ -129,6 +153,21 @@ describe("edge functions have behaviour a test can reach", () => {
   })
 
   // ── guards-the-guard ──────────────────────────────────────────────────────
+
+  it("a RETIRED TOMBSTONE is outside the population — and a function with a 410 branch is not", () => {
+    const fns = Object.fromEntries(edgeFunctions().map((f) => [f.name, f.src]))
+    // positive control: the long-standing tombstone and one of the 10-14 retirements
+    expect(isRetiredTombstone(fns["sync-nba-games"])).toBe(true)
+    expect(isRetiredTombstone(fns["scan-golazos-wallet"])).toBe(true)
+    // no-change control: a live function that HAS a 410 path but does real work
+    expect(/410/.test(fns["sync-nba-projections"])).toBe(true)
+    expect(isRetiredTombstone(fns["sync-nba-projections"])).toBe(false)
+    // and a live gated function is never a tombstone
+    expect(isRetiredTombstone(fns["backfill-allday-dist-opened"])).toBe(false)
+    // ⚠ the classifier must not be fooled by a 410 in a COMMENT on a function that works
+    expect(isRetiredTombstone(`// returns status: 410 when retired\nimport x from "y"\nDeno.serve(() => fetch("z"))`)).toBe(false)
+  })
+
 
   it("counts a MIRRORED function as reachable even though it imports nothing", () => {
     // The correction this file is built on. topshot-stub-resolver keeps inline

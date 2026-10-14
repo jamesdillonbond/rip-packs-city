@@ -1,0 +1,217 @@
+// ARCHIVED deployed source of `seed-golazos-editions` v51, recovered 2026-10-14 (register R21) by a redacted
+// subagent and kept ONLY as the revert artifact for its retirement. Credential literals are
+// replaced by __REDACTED_SECRET_n__ (they are burned). `.txt` on purpose: no walker, type-checker
+// or deploy picks this up. To revive: copy to supabase/functions/seed-golazos-editions/index.ts, replace the gate
+// with _shared/cron-gate.ts (rpc-edge-fn-deploy skill section 0), fix what the retirement note
+// names, then deploy via edge-fn-deploy.yml.
+// ─────────────────────────────────────────────────────────────
+// seed-golazos-editions — paginate edition IDs [start, end) and upsert into editions.
+// Auth: Bearer __REDACTED_SECRET_1__.
+// Query params:
+//   start (default 0), end (default nextEditionID), batch (default 40)
+//   discover=1 → return raw edition+play+set+series for editions[start..start+3] without upserting.
+// Runs in-process Cadence calls to Flow REST /v1/scripts.
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+
+const FLOW_REST = "https://rest-mainnet.onflow.org"
+const GOLAZOS_COLLECTION_ID = "06248cc4-b85f-47cd-af67-1855d14acd75"
+const CONTRACT = "0x87ca73a41bb50ad5"
+const MEDIA_BASE = "https://assets.laligagolazos.com/editions"
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("NEXT_PUBLIC_SUPABASE_URL")!
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SERVICE_ROLE_KEY")!
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
+
+function b64ToUtf8(b64: string): string {
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new TextDecoder("utf-8").decode(bytes)
+}
+
+function unwrap(node: any): any {
+  if (node === null || node === undefined) return node
+  if (Array.isArray(node)) return node.map(unwrap)
+  if (typeof node !== "object") return node
+  const { type, value } = node
+  if (type !== undefined && value !== undefined) {
+    switch (type) {
+      case "Optional": return value === null ? null : unwrap(value)
+      case "Array": return (value as any[]).map(unwrap)
+      case "Dictionary": {
+        const o: Record<string, any> = {}
+        for (const kv of value as any[]) o[String(unwrap(kv.key))] = unwrap(kv.value)
+        return o
+      }
+      case "Struct": case "Resource": case "Event": case "Contract": case "Enum": {
+        const o: Record<string, any> = {}
+        for (const f of (value.fields ?? [])) o[f.name] = unwrap(f.value)
+        return o
+      }
+      default: return value
+    }
+  }
+  return node
+}
+
+async function runCadence(code: string, args: Array<{ type: string; value: unknown }> = []): Promise<any> {
+  const body = {
+    script: btoa(code),
+    arguments: args.map(a => btoa(JSON.stringify(a))),
+  }
+  const res = await fetch(`${FLOW_REST}/v1/scripts?block_height=sealed`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  })
+  const text = await res.text()
+  if (!res.ok) throw new Error(`Flow HTTP ${res.status}: ${text.slice(0, 300)}`)
+  const b64 = JSON.parse(text)
+  const decoded = JSON.parse(b64ToUtf8(b64))
+  return unwrap(decoded)
+}
+
+const BATCH_SCRIPT = `
+import Golazos from 0x87ca73a41bb50ad5
+
+access(all) fun main(startID: UInt64, endID: UInt64): [{String: AnyStruct}] {
+  let out: [{String: AnyStruct}] = []
+  var i = startID
+  while i < endID {
+    if let ed = Golazos.getEditionData(id: i) {
+      let row: {String: AnyStruct} = {
+        "id": ed.id, "seriesID": ed.seriesID, "setID": ed.setID, "playID": ed.playID,
+        "tier": ed.tier, "maxMintSize": ed.maxMintSize, "numMinted": ed.numMinted
+      }
+      if let p = Golazos.getPlayData(id: ed.playID) {
+        row["playMetadata"] = p.metadata
+        row["classification"] = p.classification
+      }
+      if let s = Golazos.getSetData(id: ed.setID) { row["setName"] = s.name }
+      row["seriesName"] = Golazos.getSeriesData(id: ed.seriesID).name
+      out.append(row)
+    }
+    i = i + 1
+  }
+  return out
+}`
+
+function normalizeTier(raw: string | null | undefined): string {
+  if (!raw) return "COMMON"
+  const t = String(raw).toUpperCase()
+  if (t.includes("LEGENDARY")) return "LEGENDARY"
+  if (t.includes("RARE")) return "RARE"
+  if (t.includes("UNCOMMON")) return "UNCOMMON"
+  return "COMMON"
+}
+
+function buildPlayerName(md: Record<string, string>): string {
+  const known = (md?.PlayerKnownName ?? "").trim()
+  if (known) return known
+  const first = (md?.PlayerFirstName ?? "").trim()
+  const last = (md?.PlayerLastName ?? "").trim()
+  return `${first} ${last}`.trim()
+}
+
+function buildThumbUrl(md: Record<string, string>): string | null {
+  const playDataID = md?.PlayDataID
+  if (!playDataID) return null
+  return `${MEDIA_BASE}/${playDataID}/play_${playDataID}__capture_Hero_Black_2880_2880_default.png`
+}
+
+function parseGameDate(md: Record<string, string>): string | null {
+  const d = md?.MatchDate
+  if (!d) return null
+  const match = d.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (match) return match[1]
+  return null
+}
+
+Deno.serve(async (req: Request) => {
+  const auth = req.headers.get("Authorization")
+  if (auth !== "Bearer __REDACTED_SECRET_2__") {
+    return new Response("Unauthorized", { status: 401 })
+  }
+
+  const url = new URL(req.url)
+  const discover = url.searchParams.get("discover") === "1"
+  const start = Number(url.searchParams.get("start") ?? "0")
+  let end = Number(url.searchParams.get("end") ?? "0")
+  const batchSize = Math.min(Number(url.searchParams.get("batch") ?? "40"), 60)
+
+  try {
+    const maxID = Number(await runCadence(
+      `import Golazos from 0x87ca73a41bb50ad5\naccess(all) fun main(): UInt64 { return Golazos.nextEditionID }`
+    ))
+    if (!end || end > maxID) end = maxID
+
+    if (discover) {
+      const rows = await runCadence(BATCH_SCRIPT, [
+        { type: "UInt64", value: String(start) },
+        { type: "UInt64", value: String(Math.min(start + 3, maxID)) },
+      ])
+      return new Response(JSON.stringify({ nextEditionID: maxID, sample: rows }, null, 2), {
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      })
+    }
+
+    const startedAt = Date.now()
+    const allRows: any[] = []
+    for (let s = start; s < end; s += batchSize) {
+      const e = Math.min(s + batchSize, end)
+      const rows = await runCadence(BATCH_SCRIPT, [
+        { type: "UInt64", value: String(s) },
+        { type: "UInt64", value: String(e) },
+      ])
+      for (const r of rows) {
+        const md = (r.playMetadata ?? {}) as Record<string, string>
+        const circ = r.maxMintSize != null ? Number(r.maxMintSize) : Number(r.numMinted)
+        allRows.push({
+          external_id: String(r.id),
+          collection_id: GOLAZOS_COLLECTION_ID,
+          collection: "laliga_golazos",
+          name: `${md?.PlayType ?? ""} by ${buildPlayerName(md)}`.trim(),
+          player_name: buildPlayerName(md) || null,
+          set_name: r.setName ?? null,
+          team_name: md?.MatchHighlightedTeam ?? null,
+          tier: normalizeTier(r.tier),
+          series: r.seriesID != null ? Number(r.seriesID) - 1 : null,
+          circulation_count: Number.isFinite(circ) ? circ : null,
+          play_type: md?.PlayType ?? null,
+          game_date: parseGameDate(md),
+          home_team: md?.MatchHomeTeam ?? null,
+          away_team: md?.MatchAwayTeam ?? null,
+          thumbnail_url: buildThumbUrl(md),
+          set_id_onchain: r.setID != null ? Number(r.setID) : null,
+          play_id_onchain: r.playID != null ? Number(r.playID) : null,
+          updated_at: new Date().toISOString(),
+        })
+      }
+      if (Date.now() - startedAt > 45_000) break
+    }
+
+    let upserted = 0
+    let errors = 0
+    for (let i = 0; i < allRows.length; i += 100) {
+      const chunk = allRows.slice(i, i + 100)
+      const { error } = await supabase.from("editions").upsert(chunk, { onConflict: "external_id,collection_id" })
+      if (error) {
+        errors += chunk.length
+        console.log("[seed-golazos] upsert err:", error.message)
+      } else {
+        upserted += chunk.length
+      }
+    }
+
+    return new Response(JSON.stringify({
+      ok: true, nextEditionID: maxID, start, end,
+      scanned: end - start, found: allRows.length, upserted, errors,
+      elapsed: Date.now() - startedAt,
+      nextStart: end < maxID ? end : null,
+    }, null, 2), { headers: { "Content-Type": "application/json; charset=utf-8" } })
+  } catch (err: any) {
+    console.log("[seed-golazos] fatal:", err.message)
+    return new Response(JSON.stringify({ ok: false, error: err.message }), {
+      status: 500, headers: { "Content-Type": "application/json; charset=utf-8" },
+    })
+  }
+})

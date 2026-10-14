@@ -132,8 +132,17 @@ describe("edge-fn drift detector — tier 1 is a proof", () => {
     // the import map because a url-only function reads `unclassifiable`, and
     // edge-fn-deploy.yml's read-back (which needs `clean`) failed on it. The two
     // below will hit the same wall on their next deploy.
+    // 2026-10-14: six R21 retirements joined sync-nba-games as 410 tombstones. A
+    // tombstone imports nothing, so tier 1 is inapplicable by construction; tier 2
+    // (deployed body == repo) is what classifies them `clean` for edge-fn-deploy.yml.
     expect(res.inapplicable.sort()).toEqual([
+      "backfill-golazos-series",
       "flowty-proxy",
+      "resolve-allday-pack-dist",
+      "scan-allday-wallet",
+      "scan-golazos-wallet",
+      "seed-allday-editions",
+      "seed-golazos-editions",
       "sync-nba-games",
     ])
     expect(res.clean.sort()).toEqual([...WITH_MAP].sort())
