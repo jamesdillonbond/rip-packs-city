@@ -8,7 +8,7 @@ import {
   droppedLedgerHeadings,
   selectChecks,
 } from "@/scripts/pre-commit-check.mjs"
-import { isDocsPath, planFor } from "@/scripts/preflight.mjs"
+import { isDocsPath, planFor, isTreeWalkingTest, testsNamingPaths } from "@/scripts/preflight.mjs"
 
 // 2026-10-12. The local hooks exist because CI found these minutes AFTER the
 // push, on a branch other sessions were pushing to (pre-commit-check.mjs and
@@ -146,5 +146,28 @@ describe("the hooks are wired", () => {
 
   it("the web SessionStart hook activates them", () => {
     expect(readFileSync(join(ROOT, ".claude/hooks/session-start.sh"), "utf8")).toContain("git config core.hooksPath .githooks")
+  })
+})
+
+describe("preflight: the derived selections see what `vitest related` cannot", () => {
+  // 2026-10-13: both reds on main that morning were TREE-WALKING guards
+  // (no-credential-literals-in-tracked-files, insights-client-dates-are-
+  // hydration-safe-guard). They read files; they import nothing changed.
+  it("classifies both of those guards as tree-walking, from their real source", () => {
+    for (const f of ["no-credential-literals-in-tracked-files", "insights-client-dates-are-hydration-safe-guard"]) {
+      expect(isTreeWalkingTest(readFileSync(join(ROOT, "__tests__", `${f}.test.ts`), "utf8")), f).toBe(true)
+    }
+    expect(isTreeWalkingTest('import { x } from "@/lib/x"\nexpect(x(1)).toBe(2)')).toBe(false)
+  })
+
+  it("selects a test that NAMES a changed file even though it imports nothing", () => {
+    const tests = [
+      { file: "__tests__/a.test.ts", src: 'readFileSync("docs/audits/deep-audit-register.md")' },
+      { file: "__tests__/b.test.ts", src: 'import { y } from "@/lib/y"' },
+    ]
+    expect(testsNamingPaths(tests, ["docs/audits/deep-audit-register.md"])).toEqual([])
+    expect(testsNamingPaths(tests, ["lib/y.ts"])).toEqual([])
+    const withCode = [...tests, { file: "__tests__/c.test.ts", src: 'readFileSync("app/(collections)/layout.tsx")' }]
+    expect(testsNamingPaths(withCode, ["app/(collections)/layout.tsx"])).toEqual(["__tests__/c.test.ts"])
   })
 })

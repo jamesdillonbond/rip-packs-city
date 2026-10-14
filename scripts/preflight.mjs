@@ -31,11 +31,20 @@
  *   workers/** or a worker test → `test:coverage:workers`
  *   --full              → `test:coverage` (the primary ratchet)
  *
+ * Plus two DERIVED test selections (2026-10-13 — both reds on `main` that
+ * morning were tree-walking guards, `no-credential-literals-in-tracked-files`
+ * and `insights-client-dates-are-hydration-safe-guard`, which `vitest related`
+ * cannot see because they READ files instead of importing them):
+ *   - tests whose source NAMES a changed path   → quick AND full (cheap)
+ *   - every tree-walking guard (readdirSync / ls-files / walk(), ~140 files,
+ *     ~90 s)                                    → full only; quick names it
+ *
  * ⚠ It is a FIRST signal, not the gate. CI stays authoritative; `vitest related`
  * cannot see a test that reads a file through `readFileSync` rather than an
  * import (the guard tests do that a lot), which is why `--full` exists.
  */
 import { execFileSync, spawnSync } from "node:child_process"
+import { readdirSync, readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 
 /** PURE. CI's docs-only rule (`.github/workflows/ci.yml`, job `changes`). */
@@ -66,6 +75,24 @@ export function planFor(paths, { full = false, quick = false } = {}) {
     workers,
     full: isCode && full && !quick,
   }
+}
+
+/** PURE. Does a test file's source walk the tree (and so see files it never imports)? */
+export function isTreeWalkingTest(src) {
+  return /readdirSync|ls-files|\bwalk\(/.test(src)
+}
+
+/** PURE. Test files whose source names one of the changed (non-test) paths. */
+export function testsNamingPaths(tests, paths) {
+  const subjects = paths.filter((p) => !p.startsWith("__tests__/") && !isDocsPath(p))
+  if (!subjects.length) return []
+  return tests.filter(({ src }) => subjects.some((p) => src.includes(p))).map(({ file }) => file)
+}
+
+function readTests() {
+  return readdirSync("__tests__")
+    .filter((f) => /\.test\.tsx?$/.test(f))
+    .map((f) => ({ file: `__tests__/${f}`, src: readFileSync(`__tests__/${f}`, "utf8") }))
 }
 
 function git(args) {
@@ -115,7 +142,12 @@ function main() {
   steps.push(["ci:guards", npm, ["run", "-s", "ci:guards"]])
   if (plan.lint) steps.push(["lint:ratchet", npm, ["run", "-s", "lint:ratchet"]])
   if (plan.related.length) steps.push([`vitest related (${plan.related.length} path(s))`, npx, ["vitest", "related", "--run", "--passWithNoTests", ...plan.related]])
+  const tests = readTests()
+  const named = testsNamingPaths(tests, paths)
+  if (named.length) steps.push([`tests that name a changed path (${named.length})`, npx, ["vitest", "run", "--passWithNoTests", ...named]])
+  const walkers = tests.filter((t) => isTreeWalkingTest(t.src)).map((t) => t.file)
   const skippedSlow = []
+  ;(quick ? skippedSlow : steps).push([`tree-walking guards (${walkers.length})`, npx, ["vitest", "run", ...walkers]])
   if (plan.components) (quick ? skippedSlow : steps).push(["component coverage gate", npm, ["run", "-s", "test:coverage:components"]])
   if (plan.workers) (quick ? skippedSlow : steps).push(["worker coverage gate", npm, ["run", "-s", "test:coverage:workers"]])
   if (plan.full) steps.push(["primary coverage gate", npm, ["run", "-s", "test:coverage"]])
