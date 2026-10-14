@@ -42,7 +42,7 @@ permissions:
 
 jobs:
   clock-sweep:
-    name: Run the suite at four UTC hours and diff the failures
+    name: Run the suite at four UTC hours + two day shifts and diff the failures
     runs-on: ubuntu-latest
     # Six full suites (4 UTC hours + 2 day shifts, 2026-10-14) at ~8 min each in
     # CI, plus install.
