@@ -1,4 +1,4 @@
--- 2026-10-15 (Claude Code cloud, ~8:35 AM PT). RECORD-ONLY (precedent 20260919141500): the three
+-- 2026-10-15 (Claude Code cloud, ~8:24 AM PT). RECORD-ONLY (precedent 20260919141500): the three
 -- indexes below were built live with CREATE INDEX CONCURRENTLY via execute_sql (each well inside
 -- the 60 s client window; all indisvalid = true). The statements are no-ops against them and the
 -- correct non-concurrent form for a fresh database.

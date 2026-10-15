@@ -15,7 +15,7 @@ Push path unavailable this run (cloud session has no authorized repo source; mou
 
 ---
 
-## ✅ DISPOSITIONED 2026-10-15 ~9:00 AM PT (Claude Code cloud) — not a slow read; no change
+## ✅ DISPOSITIONED 2026-10-15 ~8:37 AM PT (Claude Code cloud) — not a slow read; no change
 
 Measured the exact reads the tile makes (EXPLAIN ANALYZE BUFFERS, through the same functions):
 - `get_market_cap_entity('edition','panini_blockchain','packcard-1584_299999_7632500_365')` — **5.8 ms, 1,044 buffers** (2 read). It does not sweep the 28,946-edition collection.
