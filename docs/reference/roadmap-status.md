@@ -218,6 +218,23 @@ now a row in the public `/legal/fmv-methodology` accuracy table.
   (p90 144 h) after `sold_at`, because they arrive with the walk. Point-in-time it is 55 % vs 56 % — no gain.
   ⛔ **Any Panini backtest must gate inputs on `first_seen_at`, not `sold_at`.** The real lever is
   ingest latency (the laptop walk's edition age, p50 ~89 h), not the estimator.
+- **A DISPERSION-based confidence rule — proposed, NOT shipped (pricing-engine change, Trevor's call).**
+  Measured 2026-10-14 ~10:30 PM PT, panini-1.2.0 snapshots vs the next real sale (14 d, inputs gated on
+  `first_seen_at` / `last_sale_at <= computed_at`), within ±25 % by the spread of the edition's last 3 sales
+  (panini_sales ∪ serial last sales):
+
+  | last-3 spread | HIGH | MEDIUM | LOW |
+  |---|---|---|---|
+  | ≤ 1.5× ("tight") | 74 % (n 1,939) | 65 % (954) | **74 % (1,372)** |
+  | 1.5–3× | 63 % (1,433) | 30 % (615) | 38 % (496) |
+  | > 3× | 29 % (102) | 27 % (200) | 31 % (204) |
+
+  Spread predicts accuracy within every current label; the current labels do not order it. Proposal:
+  **HIGH = tight; MEDIUM = ≥3 recent sales with a 1.5–3× spread; else LOW** (ASK_ONLY / NO_DATA unchanged)
+  → about 72 % / 63 % / ~35 % within ±25 % — monotone. Sized on a hash-sampled quarter of the catalogue
+  (7,608 editions): HIGH+MEDIUM share **23.1 % → ~42 %**. ⚠ Caveat before shipping: "tight" LOW editions
+  include old sales; the backtest only scores editions that went on to sell, so add a recency bound (or
+  re-measure on editions with a sale > 90 d old) before trusting the 74 % for the stale tail.
 
 ## ⭐ HEADLINE METRIC — re-read live 2026-10-10 ~3:05 PM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 09-18 block below)
 
