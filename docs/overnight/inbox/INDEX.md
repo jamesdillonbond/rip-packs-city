@@ -1,4 +1,4 @@
-# Inbox index — 582 live filings
+# Inbox index — 584 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,10 +32,12 @@ failure it documents.
 
 ---
 
-## 2026-10-15 — 2 filings
+## 2026-10-15 — 4 filings
 
 - [**🟢 Daytime health monitor — GREEN (10-15 ~06:00Z sweep); no candidate work**](2026-10-15T0009Z.md) — *(read-only sensing pass; filed from the mount by the 10-15 deep-audit drain, R132)*
-- [**🟡 OPEN (drop is in `docs/pending-sql/audit_20261015_drop_zz_probes.sql` — MCP holds DROPs; the R126 trigger half applied 10-15 as `20261015145336`) Daytime monitor — leftover `zz_probe_20261014` scratch function with no pinned `search_path` (advisor WARN)**](2026-10-15T0604Z-daytime-monitor-leftover-zz_probe-scratch-functions-search-path-drift.md)
+- [**✅ CLOSED 10-15 ~1:05 PM PT — Daytime monitor (08:05 AM PT): one `/api/sniper-feed` badge_editions page-8 "Project not specified"**](2026-10-15T1509Z-daytime-monitor-sniper-feed-badge-editions-page8-project-not-specified.md) — *(count 1 in 7 d, never recurred = a transient gateway answer; the walk now retries a failed page once instead of truncating the badge map — Claude Code, Windows box)*
+- [**✅ ALL THREE CLOSED 10-15 ~1:05 PM PT — Daytime monitor (11:10 AM PT, GREEN): zz_probe drop · golazos_sales_v1_backfill suppression · misattrib-drain bound**](2026-10-15T1810Z-daytime-monitor-green-zz-probe-cleanup-golazos-backfill-suppress-misattrib-bound.md) — *(zz_probes dropped + golazos row made permanent in `20261015195905`; misattrib-drain suppression DELETED in `20261015200020` (not re-bounded: the resolver is at its floor, so the backlog will not self-clear — ledger 10-14 NOTE); ops-snapshot predicate drift now `[]`)*
+- [**✅ RESOLVED 10-15 ~1:00 PM PT (both probes dropped in `20261015195905`; the R126 trigger half applied as `20261015145336`) Daytime monitor — leftover `zz_probe_20261014` scratch function with no pinned `search_path` (advisor WARN)**](2026-10-15T0604Z-daytime-monitor-leftover-zz_probe-scratch-functions-search-path-drift.md)
 
 ## 2026-10-14 — 1 filing
 

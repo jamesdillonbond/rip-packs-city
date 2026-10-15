@@ -495,5 +495,5 @@ Verified live 2026-10-15 (Claude Code cloud). Service-role only unless stated; R
 | `get_market_badge_options(uuid)` | jsonb array: every title in the latest run. |
 | `wallet_moments_cache.edition_key` | **= `editions.external_id` exactly** for Top Shot and All Day (20,000-row samples each, 100 % match; Top Shot parallels keep their `::N` suffix). The set:play form that `/api/market`'s `editionKey` uses is the **wallet-counts** key and does NOT name a parallel's edition. |
 
-Superseded, queued for a human DROP: `docs/pending-sql/audit_20261015_market_superseded_functions_drop.sql` (`get_market_team_options`, AD v1, both `_v2`).
+Superseded and DROPPED 2026-10-15 (`20261015195905`): `get_market_team_options`, AD v1, both `_v2`.
 
