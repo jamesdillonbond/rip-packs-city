@@ -884,7 +884,10 @@ function SniperMomentsBody() {
       {/* ── Header ── */}
       <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-black)", padding: "16px", width: "100%", boxSizing: "border-box", overflowX: "hidden" }}>
         <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
-          <div className="flex items-center justify-between mb-4">
+          {/* Both rows WRAP: unwrapped, the four actions squeezed the subtitle into
+              a ~90px column at 390px and the header's overflowX:hidden clipped
+              REFRESH off-screen — unreachable on a phone (sweep 2026-10-15). */}
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div>
               <h1 className="rpc-heading flex items-center gap-2" style={{ fontSize: "var(--text-xl)" }}>
                 <span style={{ fontSize: "var(--text-2xl)" }}>⚡</span> SNIPER
@@ -897,7 +900,7 @@ function SniperMomentsBody() {
                 {headerSubtitle}
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {/* Front door to the omni-channel alerts hub — turn a deal you're
                   eyeing into a standing alert. Auth-gated; anon bounces to login. */}
               <Link
