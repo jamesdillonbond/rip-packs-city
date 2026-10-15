@@ -504,3 +504,91 @@ describe("ownership-onchain-walk — flags what the walk did not find", () => {
     expect(log?.p_extra).toMatchObject({ marked_missed: 0, mark_error: "permission denied" })
   })
 })
+
+// 2026-10-15: the walk indexes holdings in sets past the Dune-era index (ids at or
+// above get_topshot_index_walk_id_floor) and stamps every wallet it read, so
+// candidate wallets (new pack openers / buyers) do not hold the rotation's head.
+describe("ownership-onchain-walk — indexes new-set holdings", () => {
+  function indexCalls(rpcCalls: RecordedRpcCall[]) {
+    return rpcCalls.filter((c) => c.name === "topshot_index_walk_holdings")
+  }
+
+  it("sends only ids at or above the floor, paired with their wallet, and stamps the walked wallets", async () => {
+    const W = "0xwallet00000000a1"
+    state.heldByWallet = { [W]: ["100", "52537846", "53000000"] }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
+      "rpc:get_topshot_index_walk_id_floor": { data: 52537846, error: null },
+      "rpc:topshot_index_walk_holdings": { data: { written: 2, candidates_stamped: 1 }, error: null },
+      topshot_ownership: [
+        { data: [{ nft_id: "100", edition_external_id: "219:1", serial_number: 1 }], error: null },
+        { data: null, error: null },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const calls = indexCalls(spy.rpcCalls)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].args).toMatchObject({ p_owners: [W, W], p_nft_ids: [52537846, 53000000], p_walked: [W] })
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    expect(log?.p_extra).toMatchObject({ id_floor: 52537846, index_ids_sent: 2, index_written: 2, candidates_stamped: 1, index_error: null })
+  })
+
+  it("a failed floor read sends NO ids, still stamps the walked wallets, and fails the run", async () => {
+    const W = "0xwallet00000000a2"
+    state.heldByWallet = { [W]: ["53000000"] }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
+      "rpc:get_topshot_index_walk_id_floor": { data: null, error: { message: "timeout" } },
+      "rpc:topshot_index_walk_holdings": { data: { written: 0, candidates_stamped: 1 }, error: null },
+      topshot_ownership: { data: [], error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const calls = indexCalls(spy.rpcCalls)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].args).toMatchObject({ p_owners: [], p_nft_ids: [], p_walked: [W] })
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("id floor")
+  })
+
+  it("an index-write error fails the run and names it", async () => {
+    const W = "0xwallet00000000a3"
+    state.heldByWallet = { [W]: ["53000000"] }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
+      "rpc:get_topshot_index_walk_id_floor": { data: 52537846, error: null },
+      "rpc:topshot_index_walk_holdings": { data: null, error: { message: "permission denied" } },
+      topshot_ownership: { data: [], error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("index-walk:")
+    expect(log?.p_extra).toMatchObject({ index_written: 0, index_error: "permission denied" })
+  })
+
+  it("a wallet whose id read FAILED is neither indexed nor stamped", async () => {
+    const W = "0xwallet00000000a4"
+    state.heldByWallet = { [W]: "throw" }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
+      "rpc:get_topshot_index_walk_id_floor": { data: 52537846, error: null },
+      topshot_ownership: { data: [], error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect(indexCalls(spy.rpcCalls)).toHaveLength(0)
+  })
+})

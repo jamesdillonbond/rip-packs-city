@@ -18,6 +18,17 @@
 // squeeze Top-5 hold). A DB trigger clears the flag when a later write re-confirms
 // or moves the row, so Pipeline A's re-discovery needs no change.
 //
+// INDEXING NEW SETS (2026-10-15). The Dune lane that discovered holdings died on
+// 2026-09-10, so no set minted after July (set_id_onchain > 265) entered the
+// index, and Series 2026-27 would never have. The walk already holds every
+// wallet's full ID set, so it now also sends the ids at or above
+// get_topshot_index_walk_id_floor() (the lowest mapped id past the Dune-era
+// sets; new mints only get higher ids) to topshot_index_walk_holdings, which
+// writes the ones that map to a post-265 edition as that wallet's holding. The
+// rotation (get_stale_ownership_wallets) also carries recent pack openers and
+// marketplace buyers with no row yet (topshot_ownership_walk_candidates); the
+// same call stamps each candidate walked so it does not block the rotation.
+//
 // Fail OPEN: a wallet whose ID read errored, whose row read was partial, or whose
 // read returned NO ids at all (a missing collection capability reads as [] —
 // indistinguishable from an emptied wallet) flags nothing.
@@ -46,6 +57,7 @@ const WALLETS_PER_RUN = 800; // stalest-verified holder wallets per run (cycles 
 const CONCURRENCY = 6; // parallel Flow REST reads — modest, to stay under public-node rate limits
 const UPSERT_CHUNK = 500;
 const MARK_CHUNK = 1000;
+const INDEX_CHUNK = 5000;
 const BUDGET_MS = 720_000; // stop before the 800s lambda ceiling
 
 // Retry budget for the ONE query that gates the whole run (get_stale_ownership_wallets).
@@ -170,6 +182,11 @@ async function run(req: NextRequest) {
     let budgetHit = false;
     let markedMissed = 0;
     let markError: string | null = null;
+    let idFloor: number | null = null;
+    let indexWritten = 0;
+    let candidatesStamped = 0;
+    let indexError: string | null = null;
+    let indexIdsSent = 0;
 
     try {
       const { data: walletRows, error: wErr } = await rpcWithRetry<
@@ -189,6 +206,19 @@ async function run(req: NextRequest) {
         (r) => r.owner_address
       );
 
+      // Lowest moment id worth sending to the new-set indexer. A failed read
+      // indexes nothing this run (and says so) — it never sends every id.
+      {
+        const { data: floorData, error: floorErr } = await (supabaseAdmin as any).rpc("get_topshot_index_walk_id_floor")
+        // Recorded here, folded into `ok` after the confirmations and flags
+        // (a floor failure must not stop the walk's own work).
+        if (floorErr) indexError = `id floor: ${floorErr.message}`
+        else if (floorData != null && Number.isFinite(Number(floorData))) idFloor = Number(floorData)
+      }
+      const indexOwners: string[] = [];
+      const indexIds: number[] = [];
+      const walkedOk: string[] = [];
+
       const upsertBuf: OwnershipRow[] = [];
       // (owner, nft_id) pairs a clean walk of that owner did not find.
       const missedOwners: string[] = [];
@@ -207,6 +237,16 @@ async function run(req: NextRequest) {
           return;
         }
         walletsWalked++;
+        walkedOk.push(wallet);
+        if (idFloor != null) {
+          for (const id of heldIds) {
+            const n = Number(id);
+            if (Number.isFinite(n) && n >= idFloor) {
+              indexOwners.push(wallet);
+              indexIds.push(n);
+            }
+          }
+        }
 
         // This wallet's Dune-attributed rookie rows.
         //
@@ -312,6 +352,38 @@ async function run(req: NextRequest) {
           markedMissed += typeof data === "number" ? data : 0;
         }
       }
+
+      // Index holdings in sets past the Dune-era index, and stamp the walked
+      // candidates. After the confirmations and flags, so a moment that moved
+      // here from a flagged row is re-owned (the DB trigger clears its flag).
+      indexIdsSent = indexIds.length;
+      // Called even when the floor read failed (no ids then): the walked
+      // candidates must still be stamped, or they would hold the head of the
+      // rotation every run.
+      if (ok && walkedOk.length > 0) {
+        const chunks = Math.max(1, Math.ceil(indexIds.length / INDEX_CHUNK));
+        for (let c = 0; c < chunks; c++) {
+          const { data, error } = await (supabaseAdmin as any).rpc("topshot_index_walk_holdings", {
+            p_owners: indexOwners.slice(c * INDEX_CHUNK, (c + 1) * INDEX_CHUNK),
+            p_nft_ids: indexIds.slice(c * INDEX_CHUNK, (c + 1) * INDEX_CHUNK),
+            p_walked: c === 0 ? walkedOk : [],
+            p_walk_at: nowIso,
+          });
+          if (error) {
+            ok = false;
+            indexError = indexError ?? error.message;
+            errMsg = errMsg ?? `index-walk: ${error.message}`;
+            break;
+          }
+          const d = (data ?? {}) as { written?: number; candidates_stamped?: number };
+          indexWritten += Number(d.written ?? 0);
+          candidatesStamped += Number(d.candidates_stamped ?? 0);
+        }
+      }
+      if (indexError != null && ok) {
+        ok = false;
+        errMsg = errMsg ?? `index-walk: ${indexError}`;
+      }
     } catch (e) {
       ok = false;
       errMsg = `${errMsg ? errMsg + "; " : ""}threw: ${e instanceof Error ? e.message : String(e)}`;
@@ -334,6 +406,11 @@ async function run(req: NextRequest) {
           // newly flagged this run (already-flagged rows are not re-counted)
           marked_missed: markedMissed,
           mark_error: markError,
+          id_floor: idFloor,
+          index_ids_sent: indexIdsSent,
+          index_written: indexWritten,
+          candidates_stamped: candidatesStamped,
+          index_error: indexError,
           wallet_errors: walletErrors,
           budget_hit: budgetHit,
           duration_ms: Date.now() - startedMs,
