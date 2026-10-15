@@ -72,3 +72,10 @@ Sitemap: one index, 5 segments, 34,125 discovered URLs, last read 2026-09-06, st
 - GSC "Blocked by robots.txt" should fall from 1,449 toward the `/api/public/ipfs-media` residue over the next two crawls; "Alternate page with proper canonical" and "Crawled – not indexed" should fall as the 301s are re-crawled (weeks, not days).
 - "Not found (404)" should stop growing on `/profile/0x…` immediately; the existing 302 age out.
 - Re-read the Performance report in 30 days; the number that matters is impressions, not clicks, until links exist.
+
+## 2026-10-14 pass — measured, and what is owed
+
+- **Live audits:** 42 stratified pages (structure) and 120 random sitemap URLs of 70,383 (health): all 200, self-canonical, `index, follow`, one title + one h1. 95% upper bound on a sitemap-URL defect rate ≈ 2.5%.
+- **Measured nulls (do not re-open without new evidence):** page weight (heaviest 443 KB raw / 37 KB gzip); edition-page DB reads per call on live editions — `get_edition_detail` ~29 ms, `get_edition_recent_sales` 25–62 ms, `get_edition_high_offer` ~109 ms. The large pg_stat_statements means (160 / 686 ms) are pooled over past IO spells and are not a current problem.
+- **Owed:** Search Console re-read on **Oct 28, 2026** (scheduled check-in): sitemap children all "Success"; "Crawled – not indexed" and "Duplicate" counts; 28-day clicks/impressions and the Premium Chance Hit query; Breadcrumbs / Product snippets enhancement counts.
+- **Still Trevor's, by decision:** external links (held by the accuracy gate, roadmap-2026-08-03); the GitHub repo "Website" field.
