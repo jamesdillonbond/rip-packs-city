@@ -228,9 +228,9 @@ export default function DashboardAlertsClient() {
           <div className="rpc-al-empty-title">No alerts yet</div>
           <div className="rpc-al-empty-body">
             Custom alerts let you skip the chart-watching. Pick a moment, set a
-            target price (or a % discount vs FMV), and we&apos;ll ping you the
-            instant a listing crosses your threshold — by email, Telegram, or
-            both.
+            target price (or a % discount vs FMV), and we&apos;ll ping you when
+            it crosses your threshold — once per crossing, and again only if the
+            price changes — by email, Telegram, or both.
           </div>
           <button
             type="button"

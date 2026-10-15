@@ -268,6 +268,10 @@ export async function POST(req: NextRequest) {
           channel: ch,
           notification_email: email,
           active: true,
+          // A (re)created alert is ARMED: the dispatcher fires it the next time its
+          // condition holds, even if an older alert with this key already fired
+          // and is still waiting for the condition to stop (2026-10-14).
+          armed: true,
         },
         { onConflict: "owner_key,edition_key,alert_type" }
       )
@@ -304,7 +308,9 @@ export async function PATCH(req: NextRequest) {
   }
   const { data, error } = await supabase
     .from("fmv_alerts")
-    .update({ active: body.active })
+    // Resuming re-arms, so a paused alert whose condition still holds tells the
+    // user once on resume rather than staying silent until it stops holding.
+    .update(body.active ? { active: true, armed: true } : { active: false })
     .eq("id", body.id)
     .eq("owner_key", user.id)
     .select()

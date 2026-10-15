@@ -2,8 +2,8 @@
 // Bearer-protected cron endpoint (INGEST_SECRET_TOKEN).
 // 1. Pipeline-health alerts: calls public.get_pipeline_alerts(), emails Trevor
 //    on any critical/high alert (60-min debounce via alert_notifications_sent).
-// 2. FMV alerts: calls check_triggered_fmv_alerts RPC, sends email notifications
-//    via Resend honoring a 6-hour cooldown per alert, stamps last_triggered_at.
+// 2. (retired 2026-10-14) User FMV alerts are delivered ONLY by the outbox:
+//    /api/cron/alerts-dispatch → alert_deliveries → /api/cron/alerts-send.
 
 import { OPS_ALERT_EMAIL } from "@/lib/ops-alert";
 import { NextRequest, NextResponse, after } from "next/server";
@@ -11,7 +11,6 @@ import { fitTelegramText } from "@/lib/telegram-message";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import crypto from "crypto";
-import { usdSignFirst } from "@/lib/usd-format"
 
 export const maxDuration = 60;
 
@@ -23,66 +22,7 @@ const FROM = process.env.RPC_ALERTS_FROM || "RPC Alerts <noreply@rippackscity.co
 const OPS_EMAIL = OPS_ALERT_EMAIL;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
-const COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const PIPELINE_ALERT_DEBOUNCE_MIN = 60;
-
-function fmtUsd(n: number | null | undefined): string {
-  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
-  if (n == null) return "—";
-  if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString();
-  return "$" + Number(n).toFixed(2);
-}
-
-// fmv_alerts.alert_type is price_below | discount_above | fmv_below | fmv_above
-// (the /api/alerts contract and check_triggered_fmv_alerts). This switch knew
-// only older names, so every real alert fell to the generic line and a
-// discount_above threshold was printed as dollars. The old names stay as aliases.
-function describeAlert(alert_type: string, threshold: number): string {
-  switch (alert_type) {
-    case "price_below":
-    case "below_price":
-      return `Lowest ask dropped to or below ${fmtUsd(threshold)}`;
-    case "discount_above":
-    case "below_fmv_pct":
-      return `Discount vs FMV reached ${threshold}% or more`;
-    case "fmv_below":
-    case "below_fmv":
-      return `FMV dropped below ${fmtUsd(threshold)}`;
-    case "fmv_above":
-    case "above_fmv":
-      return `FMV climbed above ${fmtUsd(threshold)}`;
-    default:
-      return `Threshold ${threshold} hit (${alert_type})`;
-  }
-}
-
-function buildHtml(a: any, sniperUrl: string): string {
-  const desc = describeAlert(a.alert_type, Number(a.threshold));
-  const current = a.lowest_ask != null ? fmtUsd(a.lowest_ask) : (a.current_fmv != null ? fmtUsd(a.current_fmv) : "—");
-  return `<!doctype html><html><body style="margin:0;padding:24px;background:#0b0b0d;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e8e8ea;">
-  <div style="max-width:520px;margin:0 auto;background:#15151a;border:1px solid #26262d;border-radius:12px;overflow:hidden;">
-    <div style="padding:20px 24px;border-bottom:1px solid #26262d;">
-      <div style="font-size:12px;letter-spacing:0.18em;color:#e03a2f;text-transform:uppercase;font-weight:700;">RPC Alert Triggered</div>
-      <h1 style="margin:8px 0 0;font-size:22px;font-weight:700;color:#fff;">${escapeHtml(a.player_name ?? "Moment")}</h1>
-      <div style="margin-top:4px;font-size:13px;color:#9ca3af;">${escapeHtml(a.set_name ?? "")}</div>
-    </div>
-    <div style="padding:20px 24px;">
-      <p style="margin:0 0 14px;font-size:14px;color:#cbd5e1;">${escapeHtml(desc)}.</p>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <tr><td style="padding:6px 0;color:#9ca3af;">Threshold</td><td style="padding:6px 0;text-align:right;font-family:ui-monospace,Menlo,monospace;color:#fff;">${escapeHtml(String(a.alert_type === "discount_above" || a.alert_type === "below_fmv_pct" ? a.threshold + "%" : fmtUsd(Number(a.threshold))))}</td></tr>
-        <tr><td style="padding:6px 0;color:#9ca3af;">Current price</td><td style="padding:6px 0;text-align:right;font-family:ui-monospace,Menlo,monospace;color:#22c55e;font-weight:700;">${escapeHtml(current)}</td></tr>
-        ${a.current_fmv != null ? `<tr><td style="padding:6px 0;color:#9ca3af;">Current FMV</td><td style="padding:6px 0;text-align:right;font-family:ui-monospace,Menlo,monospace;color:#fff;">${escapeHtml(fmtUsd(a.current_fmv))}</td></tr>` : ""}
-      </table>
-      <div style="margin-top:22px;text-align:center;">
-        <a href="${sniperUrl}" style="display:inline-block;background:#e03a2f;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:8px;font-size:13px;letter-spacing:0.06em;text-transform:uppercase;">View on Sniper</a>
-      </div>
-    </div>
-    <div style="padding:14px 24px;background:#0f0f13;border-top:1px solid #26262d;font-size:11px;color:#6b7280;text-align:center;">
-      Manage your alerts at <a href="https://www.rippackscity.com/dashboard" style="color:#9ca3af;">rippackscity.com/dashboard</a>
-    </div>
-  </div>
-</body></html>`;
-}
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -371,7 +311,7 @@ export async function GET(req: NextRequest) {
 
   const startedAt = new Date().toISOString();
 
-  // 202 + after(): the alert sweep does pipeline-alert + FMV-alert work plus
+  // 202 + after(): the alert sweep does pipeline-alert work plus
   // outbound email/Telegram and can exceed cron-job.org's 30s client cap under
   // DB saturation. Auth stays sync; the sweep + log_pipeline_run move into
   // after(). The email/Telegram sends and the pipeline_runs row are the real
@@ -399,74 +339,28 @@ export async function GET(req: NextRequest) {
    try {
     const pipelineAlerts = await processPipelineAlerts();
 
-    const { data, error } = await (supabaseAdmin as any).rpc("check_triggered_fmv_alerts", { p_limit: 100 });
-    if (error) {
-      console.error("[check-alerts] RPC error", error);
-      await (supabaseAdmin as any).rpc("log_pipeline_run", {
-        p_pipeline: "check-alerts",
-        p_started_at: startedAt,
-        p_rows_found: pipelineAlerts.alerts_active,
-        p_rows_written: pipelineAlerts.emails_sent,
-        p_ok: false,
-        p_error: `check_triggered_fmv_alerts: ${error.message}`,
-        p_extra: { pipeline_alerts: pipelineAlerts },
-      });
-      return;
-    }
-
-    const total_triggered = data?.total_triggered ?? 0;
-    const triggered: any[] = Array.isArray(data?.triggered_alerts) ? data.triggered_alerts : [];
-
-    let emailed = 0;
-    let skipped_cooldown = 0;
-    const errors: { alert_id: string; error: string }[] = [];
-    const now = Date.now();
-
-    for (const a of triggered) {
-      const last = a.last_triggered_at ? new Date(a.last_triggered_at).getTime() : 0;
-      if (last && now - last < COOLDOWN_MS) {
-        skipped_cooldown++;
-        continue;
-      }
-
-      const wantsEmail = a.notification_email && (a.channel === "email" || a.channel === "both");
-      if (wantsEmail) {
-        const sniperUrl = "https://www.rippackscity.com/nba-top-shot/sniper";
-        const subject = `🔔 RPC Alert: ${a.player_name ?? "Moment"} hit your target`;
-        const send = await sendEmail(a.notification_email, subject, buildHtml(a, sniperUrl));
-        if (send.ok) {
-          emailed++;
-        } else {
-          errors.push({ alert_id: a.alert_id, error: send.error ?? "unknown" });
-        }
-      }
-
-      const { error: upErr } = await (supabaseAdmin as any)
-        .from("fmv_alerts")
-        .update({ last_triggered_at: new Date().toISOString() })
-        .eq("id", a.alert_id);
-      if (upErr) {
-        errors.push({ alert_id: a.alert_id, error: `stamp: ${upErr.message}` });
-      } else {
-        console.log(`[check-alerts] triggered alert=${a.alert_id} player="${a.player_name}" type=${a.alert_type} threshold=${a.threshold}`);
-      }
-    }
-
+    // 2026-10-14: this route no longer delivers USER FMV alerts. It used to read
+    // check_triggered_fmv_alerts and email them itself with its own 6-hour
+    // cooldown, beside the canonical outbox (/api/cron/alerts-dispatch →
+    // dispatch_triggered_fmv_alerts → alert_deliveries → /api/cron/alerts-send).
+    // Two senders meant: (1) the outbox's fire-on-transition rule could not
+    // hold — this path re-sent every 6 h while a condition held; (2) a Top Shot
+    // Sniper link on every alert whatever the collection; (3) no verified-
+    // channel routing. The outbox is now the only sender; this route is the
+    // OPS pipeline-alert plane only.
     const pipelineNotifications = (pipelineAlerts.emails_sent ?? 0) + (pipelineAlerts.telegrams_sent ?? 0);
     await (supabaseAdmin as any).rpc("log_pipeline_run", {
       p_pipeline: "check-alerts",
       p_started_at: startedAt,
-      p_rows_found: (pipelineAlerts.alerts_active ?? 0) + total_triggered,
-      p_rows_written: pipelineNotifications + emailed,
-      p_rows_skipped: skipped_cooldown,
-      p_ok: errors.length === 0 && !pipelineAlerts.error,
-      p_error: pipelineAlerts.error ?? (errors.length ? `${errors.length} fmv errs` : null),
-      p_extra: { pipeline_alerts: pipelineAlerts, fmv_errors: errors.slice(0, 5) },
+      p_rows_found: pipelineAlerts.alerts_active ?? 0,
+      p_rows_written: pipelineNotifications,
+      p_ok: !pipelineAlerts.error,
+      p_error: pipelineAlerts.error ?? null,
+      p_extra: { pipeline_alerts: pipelineAlerts },
     });
    } catch (e) {
      // 2026-06-11: top-level fatal-catch — a throw anywhere in the after() body
-     // (processPipelineAlerts internals, a thrown check_triggered_fmv_alerts, a
-     // thrown fmv_alerts stamp) previously left NO pipeline_runs row, so a real
+     // (processPipelineAlerts internals) previously left NO pipeline_runs row, so a real
      // failure looked like silence while cron-job.org acked green. Always log.
      try {
        await (supabaseAdmin as any).rpc("log_pipeline_run", {

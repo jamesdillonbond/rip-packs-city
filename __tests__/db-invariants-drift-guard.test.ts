@@ -1804,7 +1804,7 @@ const PINS = [
     fn: "dispatch_triggered_fmv_alerts",
     test: "supabase/tests/dispatch_triggered_fmv_alerts.sql",
     migration:
-      "supabase/migrations/20261010142824_audit_20261010_fmv_alerts_read_the_editions_own_live_ask.sql",
+      "supabase/migrations/20261015053922_audit_20261014_fmv_alerts_fire_on_transition_and_both_channels.sql",
   },
   {
     fn: "edition_live_ask",

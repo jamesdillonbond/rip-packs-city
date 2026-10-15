@@ -180,7 +180,7 @@ export async function dispatchTriggeredFmvAlerts(max = 200) {
     p_max: max,
   });
   if (error) return { error: error.message };
-  return data as { scanned: number; enqueued: number };
+  return data as { scanned: number; enqueued: number; suppressed_unchanged?: number; rearmed?: number };
 }
 
 // Atomically claim a batch of pending deliveries for one channel (status ->

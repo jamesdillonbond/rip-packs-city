@@ -73,6 +73,8 @@ async function run(req: NextRequest) {
     let errMsg: string | null = null;
     let enqueuedDeal = 0;
     let enqueuedFmv = 0;
+    // FMV verdict keys, present only when the RPC answered (same rule as dealVerdict).
+    let fmvVerdict: Record<string, number> | null = null;
     // How many candidate rows the freshness gate held back this tick, and how
     // many were in each pool to begin with. Null until a successful deal
     // dispatch reports them — an absent count must not read as a measured zero
@@ -115,6 +117,11 @@ async function run(req: NextRequest) {
         errMsg = `${errMsg ? errMsg + "; " : ""}fmv: ${fmv.error}`;
       } else {
         enqueuedFmv = fmv.enqueued ?? 0;
+        fmvVerdict = {};
+        for (const k of ["scanned", "suppressed_unchanged", "rearmed"] as const) {
+          const v = (fmv as Record<string, unknown>)[k];
+          if (typeof v === "number") fmvVerdict[`fmv_${k}`] = v;
+        }
       }
     } catch (e) {
       ok = false;
@@ -138,6 +145,7 @@ async function run(req: NextRequest) {
           // Spread, so a run that never got a verdict carries NO key rather than
           // zeroes that read as "nothing was suppressed".
           ...(dealVerdict ?? {}),
+          ...(fmvVerdict ?? {}),
           duration_ms: Date.now() - startedMs,
         },
       });

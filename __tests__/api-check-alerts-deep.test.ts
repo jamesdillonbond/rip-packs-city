@@ -166,34 +166,22 @@ describe("GET /api/check-alerts — deferred sweep", () => {
     expect(String(log?.p_error)).toContain("all channels failed")
   })
 
-  it("FMV alerts: cooldown skips, fresh triggers email + stamp last_triggered_at", async () => {
-    const now = Date.now()
+  // 2026-10-14: this route was a SECOND sender of user FMV alerts (its own 6 h
+  // cooldown, a Top Shot Sniper link on every email) beside the canonical outbox
+  // (alerts-dispatch → alert_deliveries → alerts-send). The outbox now fires on
+  // TRANSITION, which a 6-hourly re-sender here would have defeated. Inverted
+  // from the old "cooldown skips, fresh triggers email + stamp" case: given the
+  // same triggered alert, this route must send no user email, never read the
+  // FMV-alert detector, and never stamp fmv_alerts.
+  it("user FMV alerts are NOT delivered here: no detector read, no user email, no fmv_alerts stamp", async () => {
     const { rpcCalls, writes } = install({
       "rpc:get_pipeline_alerts": { data: [], error: null },
       "rpc:check_triggered_fmv_alerts": {
         data: {
-          total_triggered: 2,
+          total_triggered: 1,
           triggered_alerts: [
-            {
-              alert_id: "a-cooling",
-              player_name: "Damian Lillard",
-              alert_type: "below_price",
-              threshold: 25,
-              notification_email: "user@example.com",
-              channel: "email",
-              last_triggered_at: new Date(now - 60 * 60 * 1000).toISOString(), // 1h ago < 6h cooldown
-            },
-            {
-              alert_id: "a-fresh",
-              player_name: "Scoot Henderson",
-              alert_type: "below_fmv_pct",
-              threshold: 25,
-              notification_email: "user@example.com",
-              channel: "both",
-              last_triggered_at: null,
-              lowest_ask: 12.5,
-              current_fmv: 20,
-            },
+            { alert_id: "a-fresh", player_name: "Scoot Henderson", alert_type: "discount_above", threshold: 25,
+              notification_email: "user@example.com", channel: "both", last_triggered_at: null, lowest_ask: 12.5, current_fmv: 20 },
           ],
         },
         error: null,
@@ -205,72 +193,17 @@ describe("GET /api/check-alerts — deferred sweep", () => {
     await GET(reqAuthed())
     await runDeferred()
 
-    // Exactly one email (the fresh alert); the cooling one is skipped.
-    const emails = f.calls.filter((c) => c.url.includes("api.resend.com"))
-    expect(emails).toHaveLength(1)
-    const emailBody = JSON.parse(String(emails[0].init?.body))
-    expect(emailBody.subject).toContain("Scoot Henderson")
-    expect(emailBody.html).toContain("Discount vs FMV reached 25% or more")
-
-    // The fresh alert's last_triggered_at is stamped.
-    expect(writes.fmv_alerts?.some((w) => w.method === "update")).toBe(true)
-
-    const log = terminalLog(rpcCalls)
-    expect(log).toMatchObject({ p_pipeline: "check-alerts", p_ok: true, p_rows_skipped: 1, p_rows_written: 1 })
-  })
-
-  // 2026-09-29: fmv_alerts stores discount_above (the /api/alerts contract and
-  // check_triggered_fmv_alerts); the email only knew "below_fmv_pct", so a real
-  // alert read "Threshold 25 hit (discount_above)" with the % shown as $25.00.
-  it("an fmv_alerts discount_above alert is described as a percentage, not dollars", async () => {
-    install({
-      "rpc:get_pipeline_alerts": { data: [], error: null },
-      "rpc:check_triggered_fmv_alerts": {
-        data: {
-          total_triggered: 1,
-          triggered_alerts: [{
-            alert_id: "a-disc", player_name: "Scoot Henderson", alert_type: "discount_above", threshold: 25,
-            notification_email: "user@example.com", channel: "email", last_triggered_at: null, lowest_ask: 12.5, current_fmv: 20,
-          }],
-        },
-        error: null,
-      },
-      fmv_alerts: { data: null, error: null },
-    })
-    const f = stubFetch([telegramOk, resendOk])
-    await GET(reqAuthed())
-    await runDeferred()
-    const html = String(JSON.parse(String(f.calls.find((c) => c.url.includes("api.resend.com"))?.init?.body)).html)
-    expect(html).toContain("Discount vs FMV reached 25% or more")
-    expect(html).toContain(">25%<")
-    expect(html).not.toContain("$25.00")
-    expect(html).not.toContain("hit (discount_above)")
+    expect(rpcCalls.some((c) => c.name === "check_triggered_fmv_alerts")).toBe(false)
+    expect(f.calls.filter((c) => c.url.includes("api.resend.com"))).toHaveLength(0)
+    expect(writes.fmv_alerts ?? []).toHaveLength(0)
+    expect(terminalLog(rpcCalls)).toMatchObject({ p_pipeline: "check-alerts", p_ok: true, p_rows_written: 0 })
   })
 
   it("a throw inside the sweep still writes a pipeline_runs row (2026-06-11 fatal-catch class)", async () => {
-    const { rpcCalls } = install(
-      {
-        "rpc:get_pipeline_alerts": { data: [], error: null },
-        "rpc:check_triggered_fmv_alerts": {
-          data: {
-            total_triggered: 1,
-            triggered_alerts: [
-              {
-                alert_id: "a-1",
-                player_name: "X",
-                alert_type: "below_price",
-                threshold: 5,
-                notification_email: null,
-                channel: "email",
-                last_triggered_at: null,
-              },
-            ],
-          },
-          error: null,
-        },
-      },
-      { failWrites: ["fmv_alerts"] },
-    )
+    // A null entry in the alert array throws inside the severity filter.
+    const { rpcCalls } = install({
+      "rpc:get_pipeline_alerts": { data: [null], error: null },
+    })
     stubFetch([telegramOk, resendOk])
 
     await GET(reqAuthed())
@@ -291,7 +224,7 @@ describe("GET /api/check-alerts — deferred sweep", () => {
 })
 
 describe("GET /api/check-alerts — pipeline-alert edge branches", () => {
-  it("get_pipeline_alerts error logs ok=false and still runs the FMV leg", async () => {
+  it("get_pipeline_alerts error logs ok=false", async () => {
     const { rpcCalls } = install({
       "rpc:get_pipeline_alerts": { data: null, error: { message: "gpa boom" } },
       ...NO_FMV_TRIGGERS,
@@ -433,129 +366,18 @@ describe("GET /api/check-alerts — pipeline-alert edge branches", () => {
   })
 })
 
-describe("GET /api/check-alerts — FMV leg edge branches", () => {
-  it("check_triggered_fmv_alerts error logs ok=false and skips the alert loop", async () => {
-    const { rpcCalls, writes } = install({
+describe("GET /api/check-alerts — the retired FMV leg stays retired", () => {
+  it("a broken FMV detector cannot fail this run: it is never called", async () => {
+    const { rpcCalls } = install({
       "rpc:get_pipeline_alerts": { data: [], error: null },
       "rpc:check_triggered_fmv_alerts": { data: null, error: { message: "fmv rpc boom" } },
     })
     stubFetch([telegramOk, resendOk])
-
     await GET(reqAuthed())
     await runDeferred()
-
-    expect(writes.fmv_alerts ?? []).toHaveLength(0)
     const log = terminalLog(rpcCalls)
-    expect(log?.p_ok).toBe(false)
-    expect(String(log?.p_error)).toContain("check_triggered_fmv_alerts")
-  })
-
-  it("a fresh alert with no email target sends nothing but still stamps last_triggered_at", async () => {
-    const { rpcCalls, writes } = install({
-      "rpc:get_pipeline_alerts": { data: [], error: null },
-      "rpc:check_triggered_fmv_alerts": {
-        data: {
-          total_triggered: 1,
-          triggered_alerts: [
-            { alert_id: "no-email", player_name: "X", alert_type: "below_price", threshold: 5, notification_email: null, channel: "email", last_triggered_at: null },
-          ],
-        },
-        error: null,
-      },
-      fmv_alerts: { data: null, error: null },
-    })
-    const f = stubFetch([telegramOk, resendOk])
-
-    await GET(reqAuthed())
-    await runDeferred()
-
-    expect(f.calls.filter((c) => c.url.includes("api.resend.com"))).toHaveLength(0)
-    expect(writes.fmv_alerts?.some((w) => w.method === "update")).toBe(true)
-    const log = terminalLog(rpcCalls)
-    expect(log).toMatchObject({ p_ok: true, p_rows_written: 0 })
-  })
-
-  it("a failed alert email is recorded as an fmv error → ok=false", async () => {
-    const { rpcCalls } = install({
-      "rpc:get_pipeline_alerts": { data: [], error: null },
-      "rpc:check_triggered_fmv_alerts": {
-        data: {
-          total_triggered: 1,
-          triggered_alerts: [
-            { alert_id: "send-fail", player_name: "X", alert_type: "below_price", threshold: 5, notification_email: "u@e.com", channel: "email", last_triggered_at: null },
-          ],
-        },
-        error: null,
-      },
-      fmv_alerts: { data: null, error: null },
-    })
-    stubFetch([telegramOk, jsonRoute("api.resend.com", { error: "boom" }, { status: 500 })])
-
-    await GET(reqAuthed())
-    await runDeferred()
-
-    const log = terminalLog(rpcCalls)
-    expect(log?.p_ok).toBe(false)
-    expect(String(log?.p_error)).toContain("fmv errs")
-  })
-
-  it("a failed last_triggered_at stamp (non-throwing db error) is recorded as an fmv error", async () => {
-    const { rpcCalls } = install({
-      "rpc:get_pipeline_alerts": { data: [], error: null },
-      "rpc:check_triggered_fmv_alerts": {
-        data: {
-          total_triggered: 1,
-          triggered_alerts: [
-            { alert_id: "stamp-fail", player_name: "X", alert_type: "below_price", threshold: 5, notification_email: null, channel: "email", last_triggered_at: null },
-          ],
-        },
-        error: null,
-      },
-      fmv_alerts: { data: null, error: { message: "stamp boom" } },
-    })
-    stubFetch([telegramOk, resendOk])
-
-    await GET(reqAuthed())
-    await runDeferred()
-
-    const log = terminalLog(rpcCalls)
-    expect(log?.p_ok).toBe(false)
-    expect(String(log?.p_error)).toContain("fmv errs")
-  })
-
-  it("renders the email body for above_fmv / below_fmv / unknown types and large + missing prices", async () => {
-    const { rpcCalls } = install({
-      "rpc:get_pipeline_alerts": { data: [], error: null },
-      "rpc:check_triggered_fmv_alerts": {
-        data: {
-          total_triggered: 3,
-          triggered_alerts: [
-            { alert_id: "big", player_name: "Big", set_name: "S", alert_type: "above_fmv", threshold: 1200, notification_email: "u@e.com", channel: "email", last_triggered_at: null, lowest_ask: null, current_fmv: 1500 },
-            { alert_id: "low", player_name: "Low", alert_type: "below_fmv", threshold: 500, notification_email: "u@e.com", channel: "email", last_triggered_at: null, lowest_ask: null, current_fmv: null },
-            { alert_id: "unk", player_name: "Unk", alert_type: "mystery", threshold: 9, notification_email: "u@e.com", channel: "email", last_triggered_at: null, lowest_ask: null, current_fmv: null },
-          ],
-        },
-        error: null,
-      },
-      fmv_alerts: { data: null, error: null },
-    })
-    const f = stubFetch([telegramOk, resendOk])
-
-    await GET(reqAuthed())
-    await runDeferred()
-
-    const emails = f.calls.filter((c) => c.url.includes("api.resend.com"))
-    expect(emails).toHaveLength(3)
-    const bodies = emails.map((e) => JSON.parse(String(e.init?.body)))
-    const big = bodies.find((b) => b.subject.includes("Big"))
-    expect(big.html).toContain("FMV climbed above")
-    expect(big.html).toContain("$1,500") // fmtUsd >= 1000 → localeString
-    const low = bodies.find((b) => b.subject.includes("Low"))
-    expect(low.html).toContain("FMV dropped below")
-    const unk = bodies.find((b) => b.subject.includes("Unk"))
-    expect(unk.html).toContain("Threshold 9 hit")
-    const log = terminalLog(rpcCalls)
-    expect(log).toMatchObject({ p_ok: true, p_rows_written: 3 })
+    expect(log?.p_ok).toBe(true)
+    expect(String(log?.p_error ?? "")).not.toContain("check_triggered_fmv_alerts")
   })
 })
 

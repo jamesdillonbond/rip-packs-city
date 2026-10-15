@@ -8,7 +8,7 @@
 -- enqueued accounting, and the last_triggered 6h re-scan dedup.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261010142824_audit_20261010_fmv_alerts_read_the_editions_own_live_ask.sql);
+-- (supabase/migrations/20261015053922_audit_20261014_fmv_alerts_fire_on_transition_and_both_channels.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts, and the
 -- md5 of pg_get_functiondef was confirmed byte-identical to LIVE prod on 2026-08-01
 -- (2b37a1f183501a84545f4c7b16745012).
@@ -17,7 +17,7 @@
 
 BEGIN;
 
-CREATE TABLE fmv_alerts (id bigint GENERATED ALWAYS AS IDENTITY, owner_key text, edition_key text, player_name text, set_name text, alert_type text, threshold numeric, channel text, notification_email text, last_triggered_at timestamptz, collection_id uuid, active boolean);
+CREATE TABLE fmv_alerts (id bigint GENERATED ALWAYS AS IDENTITY, owner_key text, edition_key text, player_name text, set_name text, alert_type text, threshold numeric, channel text, notification_email text, last_triggered_at timestamptz, collection_id uuid, active boolean, armed boolean NOT NULL DEFAULT true);
 CREATE TABLE editions (id uuid, external_id text, collection_id uuid, player_name text, set_name text);
 CREATE TABLE fmv_snapshots (edition_id uuid, fmv_usd numeric, confidence text, computed_at timestamptz);
 CREATE TABLE live_ask_stub (collection_id uuid, edition_key text, ask numeric);
@@ -27,7 +27,7 @@ CREATE FUNCTION public.edition_live_ask(p_collection_id uuid, p_edition_key text
 RETURNS TABLE(ask numeric, source text) LANGUAGE sql STABLE AS
 $$ SELECT s.ask, 'stub'::text FROM live_ask_stub s WHERE s.collection_id = p_collection_id AND s.edition_key = p_edition_key $$;
 CREATE TABLE notification_channels (owner_key text, channel text, channel_user_id text, verified boolean);
-CREATE TABLE alert_deliveries (owner_key text, channel text, channel_user_id text, alert_kind text, subject_key text, dedup_bucket text, payload jsonb, UNIQUE(owner_key, channel, alert_kind, subject_key, dedup_bucket));
+CREATE TABLE alert_deliveries (owner_key text, channel text, channel_user_id text, alert_kind text, subject_key text, dedup_bucket text, payload jsonb, status text DEFAULT 'pending', created_at timestamptz DEFAULT clock_timestamp(), UNIQUE(owner_key, channel, alert_kind, subject_key, dedup_bucket));
 
 -- >>> BEGIN verbatim dispatch_triggered_fmv_alerts (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.dispatch_triggered_fmv_alerts(p_max integer DEFAULT 200)
@@ -43,13 +43,22 @@ DECLARE
   v_conf text;
   v_triggered boolean;
   v_target text;
+  v_ch text;
+  v_channels text[];
+  v_fp text;
+  v_prev jsonb;
+  v_any_target boolean;
+  v_any_new boolean;
   v_enqueued int := 0;
   v_scanned int := 0;
+  v_suppressed int := 0;
+  v_rearmed int := 0;
   v_bucket text := to_char(date_trunc('hour', now()),'YYYYMMDDHH24');
 BEGIN
   FOR v_alert IN
     SELECT fa.id, fa.owner_key, fa.edition_key, fa.player_name, fa.set_name,
-           fa.alert_type, fa.threshold, fa.channel, fa.notification_email, fa.collection_id
+           fa.alert_type, fa.threshold, fa.channel, fa.notification_email, fa.collection_id,
+           fa.armed
     FROM public.fmv_alerts fa
     WHERE fa.active = true
       AND (fa.last_triggered_at IS NULL OR fa.last_triggered_at < now() - interval '6 hours')
@@ -82,42 +91,100 @@ BEGIN
       ELSE false
     END;
 
-    IF NOT v_triggered THEN CONTINUE; END IF;
-
-    SELECT channel_user_id INTO v_target
-    FROM public.notification_channels
-    WHERE owner_key = v_alert.owner_key AND channel = COALESCE(v_alert.channel,'email')
-      AND verified = true AND channel_user_id IS NOT NULL
-    LIMIT 1;
-
-    IF v_target IS NULL AND COALESCE(v_alert.channel,'email') = 'email' THEN
-      v_target := v_alert.notification_email;
-    END IF;
-
-    IF v_target IS NULL THEN
-      UPDATE public.fmv_alerts SET last_triggered_at = now() WHERE id = v_alert.id;
+    -- 2026-10-14: an alert fires when its condition BECOMES true, not every 6 h
+    -- while it stays true (the deal-alert complaint of 10-11, same shape here).
+    -- `armed` goes false on a delivery and back to true the first tick the
+    -- condition is observed NOT to hold. A read that could not decide (NULL
+    -- ask/FMV) evaluates false here too, so it re-arms; that costs at most one
+    -- repeat after a data gap, never a missed alert.
+    IF NOT v_triggered THEN
+      IF NOT v_alert.armed THEN
+        UPDATE public.fmv_alerts SET armed = true WHERE id = v_alert.id;
+        v_rearmed := v_rearmed + 1;
+      END IF;
       CONTINUE;
     END IF;
 
-    INSERT INTO public.alert_deliveries
-      (owner_key, channel, channel_user_id, alert_kind, subject_key, dedup_bucket, payload)
-    VALUES (
-      v_alert.owner_key, COALESCE(v_alert.channel,'email'), v_target, 'fmv',
-      v_alert.id::text, v_bucket,
-      jsonb_build_object(
-        'alert_id', v_alert.id, 'edition_key', v_alert.edition_key,
-        'player_name', v_alert.player_name, 'set_name', v_alert.set_name,
-        'alert_type', v_alert.alert_type, 'threshold', v_alert.threshold,
-        'current_fmv', v_fmv, 'lowest_ask', v_ask, 'confidence', v_conf
-      )
-    )
-    ON CONFLICT (owner_key, channel, alert_kind, subject_key, dedup_bucket) DO NOTHING;
+    -- Still holding since the last delivery. An FMV threshold has nothing new to
+    -- say; an ask alert does when the ask itself changed (a new listing / price).
+    IF NOT v_alert.armed AND v_alert.alert_type IN ('fmv_below','fmv_above') THEN
+      v_suppressed := v_suppressed + 1;
+      CONTINUE;
+    END IF;
+    v_fp := CASE WHEN v_alert.alert_type IN ('price_below','discount_above')
+                 THEN 'ask@' || COALESCE(round(v_ask, 2)::text, '')
+                 ELSE 'fmv@' || COALESCE(round(v_fmv, 2)::text, '') END;
 
-    IF FOUND THEN v_enqueued := v_enqueued + 1; END IF;
-    UPDATE public.fmv_alerts SET last_triggered_at = now() WHERE id = v_alert.id;
+    -- 'both' is a legal fmv_alerts.channel (the concierge offers it). It used to
+    -- resolve no target at all here and was stamped as delivered, silently.
+    v_channels := CASE COALESCE(v_alert.channel,'email')
+                    WHEN 'both' THEN ARRAY['telegram','email']
+                    ELSE ARRAY[COALESCE(v_alert.channel,'email')] END;
+    v_any_target := false;
+    v_any_new := false;
+
+    FOREACH v_ch IN ARRAY v_channels LOOP
+      v_target := NULL;
+      SELECT channel_user_id INTO v_target
+      FROM public.notification_channels
+      WHERE owner_key = v_alert.owner_key AND channel = v_ch
+        AND verified = true AND channel_user_id IS NOT NULL
+      LIMIT 1;
+
+      IF v_target IS NULL AND v_ch = 'email' THEN
+        v_target := v_alert.notification_email;
+      END IF;
+      IF v_target IS NULL THEN CONTINUE; END IF;
+      v_any_target := true;
+
+      IF NOT v_alert.armed THEN
+        v_prev := NULL;
+        SELECT d.payload INTO v_prev
+        FROM public.alert_deliveries d
+        WHERE d.owner_key = v_alert.owner_key AND d.channel = v_ch
+          AND d.alert_kind = 'fmv' AND d.subject_key = v_alert.id::text
+          AND d.status IS DISTINCT FROM 'failed'
+        ORDER BY d.created_at DESC
+        LIMIT 1;
+        IF v_prev IS NOT NULL
+           AND 'ask@' || COALESCE(round((v_prev->>'lowest_ask')::numeric, 2)::text, '') = v_fp THEN
+          v_suppressed := v_suppressed + 1;
+          CONTINUE;
+        END IF;
+      END IF;
+
+      INSERT INTO public.alert_deliveries
+        (owner_key, channel, channel_user_id, alert_kind, subject_key, dedup_bucket, payload)
+      VALUES (
+        v_alert.owner_key, v_ch, v_target, 'fmv',
+        v_alert.id::text, v_bucket || ':' || v_fp,
+        jsonb_build_object(
+          'alert_id', v_alert.id, 'edition_key', v_alert.edition_key,
+          'player_name', v_alert.player_name, 'set_name', v_alert.set_name,
+          'alert_type', v_alert.alert_type, 'threshold', v_alert.threshold,
+          'current_fmv', v_fmv, 'lowest_ask', v_ask, 'confidence', v_conf
+        )
+      )
+      ON CONFLICT (owner_key, channel, alert_kind, subject_key, dedup_bucket) DO NOTHING;
+
+      IF FOUND THEN
+        v_enqueued := v_enqueued + 1;
+        v_any_new := true;
+      END IF;
+    END LOOP;
+
+    IF v_any_new THEN
+      UPDATE public.fmv_alerts SET last_triggered_at = now(), armed = false WHERE id = v_alert.id;
+    ELSIF NOT v_any_target THEN
+      -- Nowhere to send it: stamped so it is retried in 6 h, but left ARMED, so
+      -- linking a channel later still gets the user this alert.
+      UPDATE public.fmv_alerts SET last_triggered_at = now() WHERE id = v_alert.id;
+    END IF;
   END LOOP;
 
-  RETURN jsonb_build_object('scanned', v_scanned, 'enqueued', v_enqueued, 'bucket', v_bucket, 'ran_at', now());
+  RETURN jsonb_build_object('scanned', v_scanned, 'enqueued', v_enqueued,
+    'suppressed_unchanged', v_suppressed, 'rearmed', v_rearmed,
+    'bucket', v_bucket, 'ran_at', now());
 END;
 $function$;
 -- <<< END verbatim dispatch_triggered_fmv_alerts <<<
@@ -170,6 +237,43 @@ UPDATE fmv_alerts SET last_triggered_at = NULL WHERE id = 1;
 CREATE TEMP TABLE d3 AS SELECT dispatch_triggered_fmv_alerts() AS j;
 SELECT _assert_eq((SELECT (j->>'enqueued') FROM d3), '0', 'same-hour re-eligible alert does NOT double-deliver (bucket ON CONFLICT)');
 SELECT _assert_eq((SELECT count(*)::text FROM alert_deliveries), '2', 'still exactly 2 deliveries (no duplicate row)');
+
+-- 2026-10-14 TRANSITION SEMANTICS. A1 (fmv_below 60, FMV 50) has been delivered,
+-- so it is DISARMED. Age every stamp past the 6 h gate: the condition still holds
+-- and nothing changed, so it must NOT re-fire (it used to, every 6 h).
+SELECT _assert_eq((SELECT armed::text FROM fmv_alerts WHERE id=1), 'false', 'a delivered alert is disarmed');
+SELECT _assert_eq((SELECT armed::text FROM fmv_alerts WHERE id=4), 'true', 'a targetless alert stays armed (the user was never told)');
+UPDATE fmv_alerts SET last_triggered_at = now() - interval '7 hours' WHERE last_triggered_at IS NOT NULL;
+-- Move the earlier deliveries into an old hour bucket too, so the hourly ON CONFLICT
+-- cannot mask a re-fire (the old body re-fired here and only the bucket hid it).
+UPDATE alert_deliveries SET created_at = now() - interval '7 hours', dedup_bucket = '2000010100' || substr(dedup_bucket, 11);
+CREATE TEMP TABLE d4 AS SELECT dispatch_triggered_fmv_alerts() AS j;
+SELECT _assert_eq((SELECT (j->>'enqueued') FROM d4), '0', 'a still-holding, unchanged alert does not re-fire after 6 h');
+SELECT _assert_eq((SELECT (j->>'suppressed_unchanged') FROM d4), '2', 'A1 (FMV still under) and A3 (same ask) are counted as suppressed');
+-- A3 (price_below 50, ask 40): a NEW ask while still under the threshold IS news.
+UPDATE live_ask_stub SET ask = 35 WHERE edition_key = 'ek2';
+UPDATE fmv_alerts SET last_triggered_at = now() - interval '7 hours' WHERE id = 3;
+CREATE TEMP TABLE d5 AS SELECT dispatch_triggered_fmv_alerts() AS j;
+SELECT _assert_eq((SELECT (j->>'enqueued') FROM d5), '1', 'a changed ask re-fires the price alert once');
+SELECT _assert_eq((SELECT payload->>'lowest_ask' FROM alert_deliveries WHERE owner_key='u2' ORDER BY created_at DESC LIMIT 1), '35', 'the new delivery carries the new ask');
+-- A1: FMV rises above the threshold (condition stops holding) -> re-armed;
+-- falls back under -> fires again.
+UPDATE fmv_snapshots SET fmv_usd = 70 WHERE edition_id = '00000000-0000-0000-0000-0000000000e1';
+UPDATE fmv_alerts SET last_triggered_at = now() - interval '7 hours' WHERE id = 1;
+CREATE TEMP TABLE d6 AS SELECT dispatch_triggered_fmv_alerts() AS j;
+SELECT _assert_eq((SELECT armed::text FROM fmv_alerts WHERE id=1), 'true', 'the condition stopping re-arms the alert');
+SELECT _assert_eq((SELECT (j->>'enqueued') FROM d6), '0', 'and sends nothing');
+UPDATE fmv_snapshots SET fmv_usd = 55 WHERE edition_id = '00000000-0000-0000-0000-0000000000e1';
+CREATE TEMP TABLE d7 AS SELECT dispatch_triggered_fmv_alerts() AS j;
+SELECT _assert_eq((SELECT (j->>'enqueued') FROM d7), '1', 'crossing back under fires once more');
+SELECT _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key='u1'), '2', 'A1 has exactly two deliveries: one per crossing');
+
+-- CHANNEL 'both': one delivery per channel. u1 has a verified telegram; the
+-- email goes to the notification_email fallback.
+INSERT INTO fmv_alerts (owner_key, edition_key, player_name, set_name, alert_type, threshold, channel, notification_email, last_triggered_at, collection_id, active) VALUES
+  ('u1','ek2','Pb','Sb','price_below', 50,'both', 'a@x', NULL, '00000000-0000-0000-0000-00000000cccc', true);
+CREATE TEMP TABLE d8 AS SELECT dispatch_triggered_fmv_alerts() AS j;
+SELECT _assert_eq((SELECT string_agg(channel || '=' || channel_user_id, ',' ORDER BY channel) FROM alert_deliveries WHERE subject_key = '5'), 'email=a@x,telegram=tg1', 'a both-channel alert is delivered to telegram AND email');
 
 SELECT '✓ dispatch_triggered_fmv_alerts invariants pass' AS result;
 ROLLBACK;

@@ -123,6 +123,7 @@ describe("POST /api/alerts — owner-scoped create", () => {
       channel: "email",
       notification_email: "me@x.com",
       active: true,
+      armed: true, // 2026-10-14: a (re)created alert fires on its next crossing
     })
   })
 
@@ -157,6 +158,20 @@ describe("PATCH /api/alerts — toggle", () => {
     const res = await PATCH(bodyReq({ id: "al1", active: false }))
     expect(res.status).toBe(200)
     expect((await res.json()).active).toBe(false)
+  })
+
+  // 2026-10-14: the dispatcher fires on TRANSITION; resuming re-arms so a
+  // condition that already holds tells the user once. Pausing leaves it alone.
+  it("resume re-arms; pause does not touch armed", async () => {
+    state.user = { id: "u1" }
+    install({ fmv_alerts: { data: { id: "al1", active: true }, error: null } })
+    await PATCH(bodyReq({ id: "al1", active: true }))
+    const resume = state.writes["fmv_alerts"]?.filter((w) => w.method === "update").at(-1)
+    expect(resume?.rows[0]).toEqual({ active: true, armed: true })
+    install({ fmv_alerts: { data: { id: "al1", active: false }, error: null } })
+    await PATCH(bodyReq({ id: "al1", active: false }))
+    const pause = state.writes["fmv_alerts"]?.filter((w) => w.method === "update").at(-1)
+    expect(pause?.rows[0]).toEqual({ active: false })
   })
 })
 

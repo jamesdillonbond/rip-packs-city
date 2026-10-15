@@ -504,7 +504,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "manage_alerts",
-    description: "Set, remove, or list SINGLE-EDITION FMV price alerts (one specific moment, one threshold). For any combo/filter alert — team, badge, special serials, discount threshold ('alert me when a Blazers rookie special serial lists 25% under FMV') — use manage_deal_subscriptions instead. Requires owner_key.",
+    description: "Set, remove, or list SINGLE-EDITION FMV price alerts (one specific moment, one threshold). An alert fires when its condition is first reached, then stays quiet while it holds; it fires again only after the condition stops holding and returns, or (price/discount alerts) when the ask itself changes. 'both' delivers to Telegram and email. For any combo/filter alert — team, badge, special serials, discount threshold ('alert me when a Blazers rookie special serial lists 25% under FMV') — use manage_deal_subscriptions instead. Requires owner_key.",
     input_schema: {
       type: "object" as const,
       properties: {

@@ -191,6 +191,22 @@ describe("/api/cron/alerts-dispatch — deferred dispatch body", () => {
     }
   })
 
+  // 2026-10-14: per-edition FMV alerts fire on transition; the run row carries
+  // the FMV verdict so "suppressed, unchanged" is distinguishable from "nothing due".
+  it("the FMV verdict (scanned / suppressed_unchanged / rearmed) reaches the run row; a failed FMV call carries none", async () => {
+    dealMock.mockResolvedValue({ enqueued: 0 })
+    fmvMock.mockResolvedValue({ scanned: 3, enqueued: 1, suppressed_unchanged: 2, rearmed: 1 })
+    const p = await drive()
+    expect(p.p_extra).toMatchObject({ fmv_scanned: 3, fmv_suppressed_unchanged: 2, fmv_rearmed: 1, enqueued_fmv: 1 })
+
+    rpcMock.mockClear()
+    fmvMock.mockResolvedValue({ error: "timeout" })
+    const q = await drive()
+    for (const k of ["fmv_scanned", "fmv_suppressed_unchanged", "fmv_rearmed"]) {
+      expect(q.p_extra).not.toHaveProperty(k)
+    }
+  })
+
   it("the RPC's no-subscriptions early return is labelled, so its zero pools read as NOT BUILT", async () => {
     dealMock.mockResolvedValue({
       subscriptions_scanned: 0, enqueued: 0, deal_pool_size: 0, price_pool_size: 0, serial_pool_size: 0,
