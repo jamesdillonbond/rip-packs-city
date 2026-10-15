@@ -793,6 +793,49 @@ describe("MarketClient — controls", () => {
     expect(note.textContent).toMatch(/current page only/)
     expect(screen.queryByText("No listings match these filters.")).toBeNull()
   })
+
+  // 2026-10-15: the Owned filter goes to the server, which checks the wallet over
+  // the whole market (Top Shot / All Day); the page no longer filters its 50 rows.
+  it("sends Owned / Not owned and the wallet to /api/market", async () => {
+    ownerKey = "0x1234567890abcdef"
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/ready")) return readyResponse()
+      if (url.startsWith("/api/wallet/edition-counts")) return json(200, { editions: {} })
+      if (url.startsWith("/api/market/filter-options")) return filterOptionsResponse()
+      return marketResponse()
+    })
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.click(await screen.findByRole("button", { name: "Owned" }))
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market?"))
+      expect(urls.some((u) => u.includes("owned=owned") && u.includes("wallet=0x1234567890abcdef"))).toBe(true)
+    })
+  })
+
+  it("does not re-filter rows the server already filtered (ownedApplied)", async () => {
+    ownerKey = "0x1234567890abcdef"
+    marketResponse = () => json(200, market({ ownedApplied: true }))
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/ready")) return readyResponse()
+      // The page's own counts say the row is OWNED (set:play key) — a page-side
+      // "Not owned" filter would hide it. The server said it is not owned.
+      if (url.startsWith("/api/wallet/edition-counts")) return json(200, { editions: { "48:1652": { owned: 2, locked: 0 } } })
+      if (url.startsWith("/api/market/filter-options")) return filterOptionsResponse()
+      return marketResponse()
+    })
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.click(await screen.findByRole("button", { name: "Not owned" }))
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market?"))
+      expect(urls.some((u) => u.includes("owned=not_owned"))).toBe(true)
+    })
+    expect(screen.getByText("Damian Lillard")).toBeTruthy()
+    expect(screen.queryByTestId("owned-filter-page-empty")).toBeNull()
+  })
 })
 
 // ─── Listing renderers ───────────────────────────────────────────────────────

@@ -42,6 +42,7 @@ import { readPaniniCoverage } from "@/lib/panini/coverage"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { readCanonicalBadgeTitles, filterRowsByBadges } from "@/lib/market/canonical-badges"
 import { getCollectionUuid } from "@/lib/collections"
+import { normalizeAddress } from "@/lib/address"
 import { collectMarketFacets } from "@/lib/market/facets"
 import { expandFranchiseLabels } from "@/lib/market/franchise-teams"
 
@@ -401,11 +402,13 @@ async function fetchPinnacleModernListings(
 // no modern arm"). The handler answers 503 no-store, like Candy/Panini/Pinnacle.
 class MarketModernReadFailed extends Error {}
 
+type OwnedParam = "owned" | "not_owned" | null
+
 async function fetchAllDayMarketEditions(
   filters: {
     tier: string; maxPrice: number; sortBy: string; limit: number
     sets: string[]; seriesList: string[]; player: string; minPrice: number
-    teams: string[]; badges: string[]; hasBadges: boolean
+    teams: string[]; badges: string[]; hasBadges: boolean; ownedWallet: string | null; owned: OwnedParam
   },
 ): Promise<any[]> {
   let rpcSort: string
@@ -420,7 +423,7 @@ async function fetchAllDayMarketEditions(
   else if (filters.sortBy === "discount_asc") rpcSort = "discount_asc"
   else rpcSort = "listed_desc"
 
-  const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_allday_market_editions_v2", {
+  const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_allday_market_editions_v3", {
     p_min_discount: 0,
     p_max_price: filters.maxPrice > 0 ? filters.maxPrice : 0,
     p_rarity: filters.tier && filters.tier !== "all" ? filters.tier : "all",
@@ -428,10 +431,10 @@ async function fetchAllDayMarketEditions(
     p_sort_by: rpcSort,
     p_limit: Math.max(filters.limit, 500),
     ...rpcBrowseFilterArgs(filters),
-  }), "api/market/get_allday_market_editions_v2")
+  }), "api/market/get_allday_market_editions_v3")
   if (error) {
     console.log("[/api/market] allday editions fetch err:", error.message)
-    throw new MarketModernReadFailed(`get_allday_market_editions_v2: ${error.message}`)
+    throw new MarketModernReadFailed(`get_allday_market_editions_v3: ${error.message}`)
   }
   return (data ?? []).map((r: any) => ({
     id: `allday-ed:${r.external_id ?? r.edition_id}`,
@@ -466,9 +469,10 @@ async function fetchAllDayMarketEditions(
 }
 
 /** The browse filters as RPC arguments, for the two arms served by an RPC
- *  (`get_topshot_sniper_deals_v2`, `get_allday_market_editions_v2`, migrations
- *  `audit_20260923_market_rpcs_take_the_browse_filters` and
- *  `audit_20261014_market_rpcs_v2_multi_team_and_badges`). The RPC applies them
+ *  (`get_topshot_sniper_deals_v3`, `get_allday_market_editions_v3`, migrations
+ *  `audit_20260923_market_rpcs_take_the_browse_filters`,
+ *  `audit_20261014_market_rpcs_v2_multi_team_and_badges` and
+ *  `audit_20261015_market_rpcs_v3_owned_filter`). The RPC applies them
  *  BEFORE its LIMIT, which is the only place they can be honest (register #129).
  *
  * ⚠ A key is sent ONLY when its filter is set, so an unfiltered request makes
@@ -483,7 +487,7 @@ async function fetchAllDayMarketEditions(
  * route still re-checks badges live on the rows it gets back. */
 function rpcBrowseFilterArgs(f: {
   sets: string[]; seriesList: string[]; player: string; minPrice: number
-  teams: string[]; badges: string[]; hasBadges: boolean
+  teams: string[]; badges: string[]; hasBadges: boolean; ownedWallet: string | null; owned: OwnedParam
 }): Record<string, unknown> {
   const args: Record<string, unknown> = {}
   const sets = f.sets.map((x) => x.trim()).filter(Boolean)
@@ -495,6 +499,12 @@ function rpcBrowseFilterArgs(f: {
   if (teams.length > 0) args.p_teams = teams
   if (f.badges.length > 0) args.p_badges = f.badges
   else if (f.hasBadges) args.p_has_badges = true
+  // Owned / Not owned (2026-10-15): checked against the wallet's moments in the
+  // RPC, over the whole market — it used to run in the browser over the page.
+  if (f.owned && f.ownedWallet) {
+    args.p_wallet = f.ownedWallet
+    args.p_owned = f.owned
+  }
   return args
 }
 
@@ -805,7 +815,7 @@ async function fetchModernListings(
     tier: string; maxPrice: number; minDiscount: number; sortBy: string; limit: number
     // Top Shot / All Day only (RPC arguments); the other arms have no team or
     // badge filter at the source.
-    teams: string[]; badges: string[]; hasBadges: boolean
+    teams: string[]; badges: string[]; hasBadges: boolean; ownedWallet: string | null; owned: OwnedParam
     // Every modern arm honours these AT THE SOURCE (register #129): Pinnacle and
     // Candy in their PostgREST query, Top Shot and All Day as RPC parameters
     // (`rpcBrowseFilterArgs`). ⛔ Never by filtering an RPC's rows in memory —
@@ -840,13 +850,14 @@ async function fetchModernListings(
       tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
       sets: filters.sets, seriesList: filters.seriesList, player: filters.player, minPrice: filters.minPrice,
       teams: filters.teams, badges: filters.badges, hasBadges: filters.hasBadges,
+      ownedWallet: filters.ownedWallet, owned: filters.owned,
     })
   }
   let rpcName: string | null = null
   // TS continues to use the FMV-required sniper RPC: its data source is
   // badge_editions, one row per edition (already edition-grain), which only has
   // rows with low_ask + a matching FMV snapshot, so gating on FMV drops nothing.
-  if (collectionId === TS_COLLECTION_ID_FOR_DISPATCH) rpcName = "get_topshot_sniper_deals_v2"
+  if (collectionId === TS_COLLECTION_ID_FOR_DISPATCH) rpcName = "get_topshot_sniper_deals_v3"
   if (!rpcName) return null
 
   // Map Market's SortKey to a value the dispatched RPC understands. The sort
@@ -976,6 +987,12 @@ export async function GET(req: NextRequest) {
     ? badgeRaw.split(",").map(b => b.trim()).filter(Boolean)
     : []
   const hasBadges = sp.get("hasBadges") === "true" || badges.length > 0
+  // ?owned=owned|not_owned&wallet=… — the Owned filter, applied at the source by
+  // the Top Shot / All Day RPCs (other arms leave it to the page; see ownedApplied).
+  const ownedRaw = sp.get("owned")
+  const owned: OwnedParam = ownedRaw === "owned" || ownedRaw === "not_owned" ? ownedRaw : null
+  const ownedWalletRaw = (sp.get("wallet") || "").trim()
+  const ownedWallet = owned && ownedWalletRaw ? normalizeAddress(ownedWalletRaw) : null
   const specialSerials = sp.get("specialSerials") === "true"
   const parallel = (sp.get("parallel") || "").trim()
 
@@ -1020,6 +1037,8 @@ export async function GET(req: NextRequest) {
         teams: franchise.labels,
         badges,
         hasBadges,
+        owned,
+        ownedWallet,
         maxPrice: Number.isFinite(maxPrice) ? maxPrice : 0,
         minDiscount: Number.isFinite(minDiscount) ? minDiscount : 0,
         sortBy: sort,
@@ -1135,7 +1154,7 @@ export async function GET(req: NextRequest) {
         return editionKey
       }
       // The key the canonical badge read is keyed by. Top Shot rows carry their
-      // EXACT edition in moment_id (get_topshot_sniper_deals_v2 returns
+      // EXACT edition in moment_id (get_topshot_sniper_deals_v3 returns
       // e.external_id, parallels included: "257:8869::17"). editionKeyFor's
       // set:play form is the WALLET join key and drops the "::17" — when no base
       // "257:8869" edition row exists, the badge read found nothing and the row
@@ -1306,6 +1325,9 @@ export async function GET(req: NextRequest) {
         diagnostics: { rawCount: count, postClampCount: clamped.length, postFilterCount: total, source: "modern", windowTruncated: modernPageFull, ...(canonicalBadges && !canonicalBadges.ok ? { badgesUnavailable: true } : {}) },
         ...coverageField,
         facets,
+        // true = the Owned / Not owned filter was applied by the RPC over the whole
+        // market, so the page must not re-filter its 50 rows.
+        ownedApplied: !!(owned && ownedWallet) && (isTopShot || collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH),
       }, {
         headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },
       })

@@ -155,6 +155,9 @@ type MarketResponse = {
   coverage_failed?: boolean
   // Options present across the route's whole fetched window (lib/market/facets.ts).
   facets?: MarketFacets
+  // true = /api/market applied Owned / Not owned over the whole market (Top Shot,
+  // All Day); the page must not re-filter its own 50 rows.
+  ownedApplied?: boolean
 }
 
 // ⛔ A collection with NO entity pages (Panini: no /edition, /player or /set
@@ -392,6 +395,7 @@ function MarketInner() {
   // wallet is the fallback — on a Flow collection only (it holds nothing elsewhere).
   const own = useOwnFlowWallet()
   const ownerKey = deviceOwnerKey || (ownerKeyChain === "flow" ? own.wallet : null)
+  const ownedWallet = ownerKey && ownerKeyMatchesChain(ownerKey, ownerKeyChain) ? ownerKey : null
   useEffect(() => {
     setOwnerKey(getOwnerKeyForChain(ownerKeyChain))
   }, [ownerKeyChain])
@@ -432,11 +436,17 @@ function MarketInner() {
     if (maxPrice) params.set("maxPrice", maxPrice)
     if (minDiscount) params.set("minDiscount", minDiscount)
     if (debouncedPlayer) params.set("player", debouncedPlayer)
+    // Owned / Not owned goes to the server, which checks the wallet's moments over
+    // the whole market (Top Shot, All Day) instead of the 50 rows on this page.
+    if (ownedFilter !== "all" && ownedWallet) {
+      params.set("owned", ownedFilter)
+      params.set("wallet", ownedWallet)
+    }
     params.set("sort", effectiveSort)
     params.set("page", String(page))
     params.set("limit", "50")
     return params.toString()
-  }, [resolvedCollectionUuid, tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, effectiveSort, page])
+  }, [resolvedCollectionUuid, tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, ownedWallet, effectiveSort, page])
 
   useEffect(() => {
     if (!resolvedCollectionUuid) { setLoading(false); return }
@@ -516,8 +526,8 @@ function MarketInner() {
   // Owned filter is applied client-side because the join lives on the
   // browser anyway (we already loaded /api/wallet/edition-counts above).
   const filteredListings = useMemo(
-    () => filterListingsByOwned(baseListings, ownedFilter, ownerKey, editionStats),
-    [baseListings, ownedFilter, ownerKey, editionStats],
+    () => data?.ownedApplied ? baseListings : filterListingsByOwned(baseListings, ownedFilter, ownerKey, editionStats),
+    [data?.ownedApplied, baseListings, ownedFilter, ownerKey, editionStats],
   )
 
   // ── Filter controls ──────────────────────────────────────────────────

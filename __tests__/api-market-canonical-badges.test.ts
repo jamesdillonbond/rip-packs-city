@@ -31,7 +31,7 @@ beforeEach(() => {
 // Three All Day editions; the RPC's own `badges` is EMPTY, as it is in
 // production (it reads editions.badges).
 const alldayRows = {
-  "rpc:get_allday_market_editions_v2": {
+  "rpc:get_allday_market_editions_v3": {
     data: [
       { external_id: "a", player_name: "A", set_name: "Rookie Debut", floor_ask: 1, fmv_usd: 2, tier: "COMMON", listed_count: 1, circulation_count: 10, badges: [], last_listed_at: "2026-10-03T00:00:00Z" },
       { external_id: "b", player_name: "B", set_name: "Base", floor_ask: 1, fmv_usd: 2, tier: "COMMON", listed_count: 1, circulation_count: 10, badges: [], last_listed_at: "2026-10-02T00:00:00Z" },
@@ -65,7 +65,7 @@ describe("GET /api/market — canonical badges (R104)", () => {
 
   it("Top Shot rows (mapped with badge_slugs: null) carry canonical titles keyed by set:play", async () => {
     install({
-      "rpc:get_topshot_sniper_deals_v2": {
+      "rpc:get_topshot_sniper_deals_v3": {
         data: [{ moment_id: "39:1269", ask_price: 4, fmv_usd: 5, tier: "COMMON", circulation_count: 100, player_name: "Dame", set_name: "Base Set" }],
         error: null,
       },
@@ -86,7 +86,7 @@ describe("GET /api/market — canonical badges (R104)", () => {
   // Rookie rows on production).
   it("a Top Shot parallel edition is badge-read by its exact key, not the set:play wallet key", async () => {
     install({
-      "rpc:get_topshot_sniper_deals_v2": {
+      "rpc:get_topshot_sniper_deals_v3": {
         data: [{ moment_id: "257:8869::17", ask_price: 4, fmv_usd: 5, tier: "COMMON", circulation_count: 100, player_name: "Antonia Delaere", set_name: "WNBA Rookie Debut" }],
         error: null,
       },
@@ -168,5 +168,19 @@ describe("GET /api/market — facets", () => {
     install({ ...alldayRows, ...failedCanonical })
     const body = (await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}`))).json()) as FacetBody
     expect(body.facets.badges).toEqual([])
+  })
+})
+
+// 2026-10-15: Owned / Not owned is applied by the RPC; the response says so, so
+// the page does not re-filter its 50 rows with its set:play-keyed counts.
+describe("GET /api/market — ownedApplied", () => {
+  it("is true when the Top Shot / All Day RPC got the owned filter, false otherwise", async () => {
+    install({ ...alldayRows, ...canonical })
+    const on = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&owned=owned&wallet=0x1234567890abcdef`))).json()
+    expect(on.ownedApplied).toBe(true)
+    const noWallet = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&owned=owned`))).json()
+    expect(noWallet.ownedApplied).toBe(false)
+    const off = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}`))).json()
+    expect(off.ownedApplied).toBe(false)
   })
 })

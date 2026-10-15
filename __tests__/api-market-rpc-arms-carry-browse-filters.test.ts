@@ -42,11 +42,11 @@ beforeEach(() => {
 
 const argsOf = (name: string) => rpcCalls.find((c) => c.name === name)?.args
 
-const FILTER_KEYS = ["p_sets", "p_series", "p_player", "p_min_price", "p_teams", "p_badges", "p_has_badges"]
+const FILTER_KEYS = ["p_sets", "p_series", "p_player", "p_min_price", "p_teams", "p_badges", "p_has_badges", "p_wallet", "p_owned"]
 
 describe.each([
-  ["Top Shot", TS, "get_topshot_sniper_deals_v2"],
-  ["All Day", ALLDAY, "get_allday_market_editions_v2"],
+  ["Top Shot", TS, "get_topshot_sniper_deals_v3"],
+  ["All Day", ALLDAY, "get_allday_market_editions_v3"],
 ])("GET /api/market — %s arm hands the browse filters to its RPC", (_label, collectionId, rpc) => {
   it("passes set / series / player / min price as RPC parameters (sets trimmed)", async () => {
     await GET(
@@ -102,6 +102,24 @@ describe.each([
     expect(argsOf(rpc)).not.toHaveProperty("p_badges")
   })
 
+  // 2026-10-15: Owned / Not owned ran in the browser over the 50 rows on the page.
+  it("sends Owned / Not owned with the wallet (normalized) so the RPC filters the whole market", async () => {
+    await GET(req(`https://t/api/market?collectionId=${collectionId}&owned=owned&wallet=0xABCDEF0123456789`))
+    expect(argsOf(rpc)).toMatchObject({ p_owned: "owned", p_wallet: "0xabcdef0123456789" })
+    rpcCalls.length = 0
+    await GET(req(`https://t/api/market?collectionId=${collectionId}&owned=not_owned&wallet=0xabcdef0123456789`))
+    expect(argsOf(rpc)).toMatchObject({ p_owned: "not_owned" })
+  })
+
+  it("sends no owned filter without a wallet, or with an unknown value", async () => {
+    await GET(req(`https://t/api/market?collectionId=${collectionId}&owned=owned`))
+    expect(argsOf(rpc)).not.toHaveProperty("p_owned")
+    rpcCalls.length = 0
+    await GET(req(`https://t/api/market?collectionId=${collectionId}&owned=maybe&wallet=0xabcdef0123456789`))
+    expect(argsOf(rpc)).not.toHaveProperty("p_owned")
+    expect(argsOf(rpc)).not.toHaveProperty("p_wallet")
+  })
+
   // Every arm takes one tier; a 2-tier pick used to filter by the first only.
   it("makes one call per selected tier, covering every tier picked", async () => {
     await GET(req(`https://t/api/market?collectionId=${collectionId}&tier=RARE,LEGENDARY`))
@@ -123,9 +141,9 @@ describe.each([
 describe("GET /api/market — Top Shot discount sort pulls a wider window", () => {
   it("discount_desc asks the RPC for 1,000 rows; other sorts keep 500", async () => {
     await GET(req(`https://t/api/market?collectionId=${TS}&sort=discount_desc`))
-    expect(argsOf("get_topshot_sniper_deals_v2")?.p_limit).toBe(1000)
+    expect(argsOf("get_topshot_sniper_deals_v3")?.p_limit).toBe(1000)
     rpcCalls.length = 0
     await GET(req(`https://t/api/market?collectionId=${TS}&sort=price_asc`))
-    expect(argsOf("get_topshot_sniper_deals_v2")?.p_limit).toBe(500)
+    expect(argsOf("get_topshot_sniper_deals_v3")?.p_limit).toBe(500)
   })
 })
