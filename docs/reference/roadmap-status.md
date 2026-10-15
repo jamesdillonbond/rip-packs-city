@@ -107,6 +107,15 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
+## ⭐ NEW 2026-10-15 — DEMAND READ, WEEK OF 10-08..10-14 PT (baseline for the next one)
+
+- **Human traffic:** ~61 browsers / 94 visits (`usage_events` minus `metadata.automated`; 29,580 of 29,914 beacons were automated). **6 external signed-in users** (notwhitelisted, mavhill (new 10-10), webz_80, awesemo, banana_boat, tomwagmi); 1 signup. Vercel Web Analytics said 5,710 visitors, almost all headless (schema-truth.md).
+- **Sources (first page of each visit):** direct 60 (all 25 signed-in visits), **Google 26** (all anon, long-tail: ~12 Panini pack cards, TS editions/packs/players, Pinnacle, rookie board; **19 of 26 saw one page**), **ChatGPT 4**, and ChatGPT produced the week's only signup (mavhill: ChatGPT → `/insights/account-value` → share card → collection → `/login` → account a minute later). No social referrers.
+- **Funnel:** 10 wallet pastes → 10 share views → **0 sign-in clicks**; email capture shown 16× to 7, 0 submitted; 16 anon views of 8 collectors' share links. `/login`: 7 visitors, the 2 real ones both succeeded, the rest bots, so the login page is not where people drop off.
+- **What people use:** alerts (all 4 signed-in outbound clicks; the one real concierge conversation, webz_80's repeat-alert bug, shipped 10-14).
+- **Shipped 10-14 against it:** Panini username band; share-card sign-up with `next=/share/<wallet>` + `signin_click share_cta`; share-card own-collection lookup; dashboard first-alert card; `/login` `magic-link-requested` beacon. No outreach, by Trevor's decision.
+- 🔜 **OWED: re-read 10-15..10-21 on or after 2026-10-22.** Same queries, discount the unflagged headless fingerprint, and report the new surfaces' counts against this baseline (Google one-page share 19/26; paste → sign-in click 10 → 0). A fresh-session scheduled task could not be armed from the 10-14 thread: it gets no Supabase connector from there, so it would run blind. Create it from the claude.ai routines UI with the Supabase connector attached, or run it by hand.
+
 ## ⭐ NEW 2026-10-03 — TOP SHOT FMV MEASURED OUT OF SAMPLE FOR THE FIRST TIME: the published price trails a naive last-3-sales median every week, and ran high in a falling market
 
 **The gate metric M1 is a confidence SHARE — a property of the population sampled. This is the first
