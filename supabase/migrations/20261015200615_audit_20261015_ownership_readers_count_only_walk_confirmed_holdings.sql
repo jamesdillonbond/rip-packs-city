@@ -10,9 +10,9 @@
 --   1. get_edition_top_owners — edition page "Top owners". Base = live prosrc md5
 --      dea55695d3e90f6c8160392fbca3eee6 (= 20260929235800 body). One predicate added.
 --   2. refresh_topshot_edition_concentration (squeeze "Top 5 hold") is in its own file,
---      docs/pending-sql/audit_20261015_edition_concentration_counts_held_live_supply.sql, NOT yet
---      applied: its body carries the R123 write-then-retire statement the cloud session's MCP write
---      gate holds. Until it runs, the squeeze "Top 5 hold" still counts walk-missed rows.
+--      20261015215728 (refresh_topshot_edition_concentration_v2): v1's body carries the R123
+--      write-then-retire statement the cloud session's MCP write gate holds, so the fix is a _v2
+--      that retires by UPDATE; pg_cron job 682 calls it.
 --   3. topshot_rookie_collector_leaderboard_mv — player-page "Top collectors". RENAME-aside + CREATE,
 --      body = 20260929235800 plus the predicate; same columns, same two indexes, same grants.
 --   4. topshot_set_completers_mv — RENAME-aside + CREATE, body = live viewdef plus the predicate; same unique

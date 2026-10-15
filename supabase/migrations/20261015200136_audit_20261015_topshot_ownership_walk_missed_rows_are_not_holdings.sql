@@ -36,14 +36,14 @@
 --      stamp (excluding rows the hourly sale re-attribution wrote, which carry sold_at -- 1,523 rows
 --      would otherwise be mis-flagged); a row observed more than 1 min before it is walk-missed.
 --      Every flagged row is recorded in flowty_archive.audit_20261015_ownership_walk_missed.
---   Readers are switched in the companion migrations 20261015200615 (boards) and docs/pending-sql/audit_20261015_edition_concentration_counts_held_live_supply.sql (squeeze concentration, awaiting the SQL editor).
+--   Readers are switched in the companion migrations 20261015200615 (boards) and 20261015215728 (squeeze concentration, refresh_topshot_edition_concentration_v2).
 --
 -- REVERT:
 --   UPDATE public.topshot_ownership SET walk_missed_at = NULL WHERE walk_missed_at IS NOT NULL;
 --   DROP TRIGGER trg_topshot_ownership_walk_missed_clear ON public.topshot_ownership;
 --   DROP FUNCTION public.topshot_ownership_walk_missed_clear();
 --   DROP FUNCTION public.mark_topshot_ownership_walk_missed(text[], text[], timestamptz);
---   ALTER TABLE public.topshot_ownership DROP COLUMN walk_missed_at;   -- after reverting 20261015200615 (and the concentration file once applied)
+--   ALTER TABLE public.topshot_ownership DROP COLUMN walk_missed_at;   -- after reverting 20261015200615 (and re-point job 682 to v1, see 20261015215728)
 
 ALTER TABLE public.topshot_ownership ADD COLUMN IF NOT EXISTS walk_missed_at timestamptz;
 

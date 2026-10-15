@@ -1,28 +1,33 @@
--- audit_20261015_edition_concentration_counts_held_live_supply
--- ⏸ PENDING — NOT APPLIED. Held by the cloud session's MCP write gate because the function body
--- carries the R123 write-then-retire DELETE (a CREATE OR REPLACE, it deletes nothing when applied).
--- Paste into the SQL editor, then move to supabase/migrations/<applied version>_<this name>.sql.
--- Precondition: live prosrc md5 of refresh_topshot_edition_concentration is still
---   0a6d02aac9e5792565e3c41cec06dd65  (SELECT md5(prosrc) FROM pg_proc WHERE proname='refresh_topshot_edition_concentration')
--- and topshot_ownership.walk_missed_at exists (20261015200136). Verify after:
---   SELECT public.refresh_topshot_edition_concentration();  -- ok:true; census_complete should RISE on burned editions
--- anon-exec: unchanged (refresh_topshot_edition_concentration) — CREATE OR REPLACE of an existing fn, identical signature and return type; ACL preserved (postgres + service_role EXECUTE only), verified 2026-10-15.
+-- audit_20261015_edition_concentration_v2_counts_walk_confirmed_live_supply
+-- anon-exec: NOT intentional for refresh_topshot_edition_concentration_v2 — an ops writer; EXECUTE granted to service_role only (pg_cron runs it as postgres, the owner).
 --
--- Squeeze board "Top 5 hold" (topshot_edition_concentration). Base = live prosrc md5
--- 0a6d02aac9e5792565e3c41cec06dd65 (the R123 write-first body). Two changes, nothing else:
---   a. a topshot_ownership row the holder's on-chain walk did not find (walk_missed_at, set by
---      20261015200136) is not held;
+-- Squeeze board "Top 5 hold" (topshot_edition_concentration, read by topshot_squeeze_board). The
+-- 20261015200615 boards fix could not reach this writer: its body carries the R123 write-then-retire
+-- DELETE, which the cloud session's MCP write gate holds (parked as docs/pending-sql/…, now removed).
+-- Per the 10-14/15 convention (tooling-gotchas.md: a new NAME, not a re-signature), this is a _v2:
+--   a. a topshot_ownership row the holder's on-chain walk did not find (walk_missed_at, 20261015200136)
+--      is not held;
 --   b. shares and the 98 % census gate are measured against LIVE supply (circulation minus Atlas
---      `badge_editions.burned`), not the mint count. Trade-in auctions burn ~10 % of every 2026
---      rookie's standard Moments (Top Shot, 2026-10-14); with (a) in place a mint-count denominator
---      would fail the census gate on exactly the burned editions the squeeze board exists for, and
---      would understate every share. `circulation` keeps the mint count; burned NULL = 0.
---   Measured on Series 8 Rookie Debut before this: census 115 % of live supply (8,798 burned).
+--      `badge_editions.burned`), not the mint count — trade-in auctions burn rookie supply all season
+--      (Top Shot, 2026-10-14); `circulation` keeps the mint count; burned NULL = 0;
+--   c. an edition this run did NOT write is RETIRED by UPDATE (census_complete=false, shares NULL ->
+--      the board shows "—") instead of being removed. The board shows holders only when
+--      census_complete, so a retired row claims nothing. Base = live prosrc md5
+--      0a6d02aac9e5792565e3c41cec06dd65; same advisory-lock key, so v1 and v2 never overlap.
+-- pg_cron job 682 (rpc-topshot-edition-concentration, same schedule) now calls v2.
 --
--- REVERT: re-apply the md5-0a6d02aa body (drop the walk_missed_at predicate, the badge_editions
--- join and `live`, and divide by c.circ).
+-- Measured on apply (one manual run, 2:58 PM PT): 2,260 written, ok; census-complete editions
+-- 2,261 -> 2,140 — the 120 that dropped were "complete" only because walk-missed rows padded the
+-- census; Series 8 Rookie Debut census = 100.1 % of live supply (was 115 % of it).
+--
+-- FOLLOW-UP (operator, DROP is held for the cloud session): drop the unused v1 —
+--   docs/pending-sql/audit_20261015_drop_pre20261015_ownership_mvs.sql.
+--
+-- REVERT: SELECT cron.schedule('rpc-topshot-edition-concentration', '58 2,8,14,20 * * *',
+--           $$SET statement_timeout = '120s'; SELECT public.refresh_topshot_edition_concentration();$$);
+--         then SELECT public.refresh_topshot_edition_concentration();
 
-CREATE OR REPLACE FUNCTION public.refresh_topshot_edition_concentration()
+CREATE OR REPLACE FUNCTION public.refresh_topshot_edition_concentration_v2()
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -35,7 +40,7 @@ DECLARE
   v_cand     int;            -- NULL = not measured
   v_written  int := 0;       -- rows that LANDED
   v_complete int;
-  v_deleted  int;            -- NULL = the delete did not run
+  v_retired  int;            -- NULL = the retire step did not run
   v_err      text;
   v_del_err  text;
   v_ok       boolean;
@@ -103,12 +108,18 @@ BEGIN
     v_err := left(SQLERRM, 300);
   END;
 
-  -- Write first, then retire only what this run did NOT write (R123): an
-  -- edition that left the census disappears; a failed write keeps yesterday's.
+  -- Write first, then retire only what this run did NOT write (R123): an edition that
+  -- left the census stops claiming a measurement (census_complete=false, shares NULL ->
+  -- the squeeze board shows "—"); a failed write keeps the previous run's rows.
+  -- (v2, 2026-10-15: retired by UPDATE rather than removed, so this body carries no
+  -- statement the cloud session's write gate holds; the row keeps its old computed_at.)
   IF v_err IS NULL THEN
     BEGIN
-      DELETE FROM topshot_edition_concentration WHERE computed_at IS DISTINCT FROM v_stamp;
-      GET DIAGNOSTICS v_deleted = ROW_COUNT;
+      UPDATE topshot_edition_concentration
+         SET census_complete = false, top1_share_pct = NULL, top5_share_pct = NULL
+       WHERE computed_at IS DISTINCT FROM v_stamp
+         AND (census_complete OR top1_share_pct IS NOT NULL OR top5_share_pct IS NOT NULL);
+      GET DIAGNOSTICS v_retired = ROW_COUNT;
     EXCEPTION WHEN query_canceled OR OTHERS THEN
       v_del_err := left(SQLERRM, 300);
     END;
@@ -120,11 +131,18 @@ BEGIN
     'topshot-edition-concentration', v_started, v_cand, v_written, 0,
     v_ok, coalesce(v_err, v_del_err), 'nba_top_shot', NULL, NULL,
     jsonb_build_object('candidates', v_cand, 'rows_written', v_written, 'census_complete', v_complete,
-                       'rows_deleted', v_deleted, 'write_error', v_err, 'delete_error', v_del_err,
+                       'rows_retired', v_retired, 'write_error', v_err, 'retire_error', v_del_err,
+                       'version', 'v2-walk-confirmed-live-supply',
                        'duration_ms', (extract(epoch FROM clock_timestamp() - v_started) * 1000)::int));
 
   RETURN jsonb_build_object('ok', v_ok, 'candidates', v_cand, 'rows_written', v_written,
-                            'census_complete', v_complete, 'rows_deleted', v_deleted,
-                            'write_error', v_err, 'delete_error', v_del_err);
+                            'census_complete', v_complete, 'rows_retired', v_retired,
+                            'write_error', v_err, 'retire_error', v_del_err);
 END
 $function$;
+
+REVOKE ALL ON FUNCTION public.refresh_topshot_edition_concentration_v2() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.refresh_topshot_edition_concentration_v2() TO service_role;
+
+SELECT cron.schedule('rpc-topshot-edition-concentration', '58 2,8,14,20 * * *',
+  $$SET statement_timeout = '120s'; SELECT public.refresh_topshot_edition_concentration_v2();$$);
