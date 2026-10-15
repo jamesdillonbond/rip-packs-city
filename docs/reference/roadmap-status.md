@@ -235,6 +235,10 @@ now a row in the public `/legal/fmv-methodology` accuracy table.
   (7,608 editions): HIGH+MEDIUM share **23.1 % → ~42 %**. ⚠ Caveat before shipping: "tight" LOW editions
   include old sales; the backtest only scores editions that went on to sell, so add a recency bound (or
   re-measure on editions with a sale > 90 d old) before trusting the 74 % for the stale tail.
+  ⤷ **Re-measured the same night (half-sample by sku hash, 2,125 tight-spread targets): the stale tail is
+  NOT worse — newest sale < 30 d: 68 %, 30–90 d: 73 %, > 90 d: 86 %.** Likely confound: old tight editions
+  are cheap commons at a stable floor. So no recency bound is needed for accuracy; the remaining caveat is
+  only selection (editions that never sell again are never scored).
 
 ## ⭐ HEADLINE METRIC — re-read live 2026-10-10 ~3:05 PM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 09-18 block below)
 
