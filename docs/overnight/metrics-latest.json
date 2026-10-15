@@ -1,86 +1,48 @@
 {
-  "generated_at_pt": "2026-10-14 ~5:30 PM PT (daytime health audit, Claude Code cloud, push-capable directly)",
-  "generated_at_utc": "2026-10-15T00:30Z",
-  "pass": "Daytime full health check + audit (Trevor: 'health check and audit of the entire platform … fix anything that needs it'). 4 shipped, all verified live. Handoff: docs/handoff-2026-10-14-claude-code-health-audit.md",
-  "shipped": 4,
+  "generated_at_pt": "2026-10-15 ~01:15 AM PT (overnight nightly, cloud, push via device-VM clone)",
+  "generated_at_utc": "2026-10-15T08:15Z",
+  "pass": "Overnight nightly. GREEN, 0 shipped (routed-to-trevor; app tree hot from the 10-14 audit). Handoff: docs/handoff-2026-10-15-overnight-pass.md",
+  "shipped": 0,
   "reverted": 0,
-  "verdict": "GREEN with one upstream RED · 4 shipped (Vercel functions iad1→pdx1; recharts SSR warning; issuer-held split list gate 20261015001336 → #185 closed; register/ledger) · oldest routed: #58 OPENSEA_API_KEY ~20 nights (Trevor-shelved; lanes parked 10-13). NEW for Trevor: Candy MLB market silent on Magic Eden since 10-12 7:24 AM PT (trust BREACH candy_sales_stale_hours 68.5).",
+  "verdict": "GREEN · 0 shipped · idle: routed-to-trevor · oldest routed: #58 OPENSEA_API_KEY ~20 nights (Trevor-shelved). Post-ship watch on 10-14 all GREEN; no regressions.",
   "health": {
-    "security_invariants": "clean (check_public_security_invariants [], check_anon_write_surface [], check_secdef_anon_execute_violations []); Supabase security advisors: 3 anon-secdef WARNs all allowlisted (serial_fmv_estimate, trophy slab), 2 search_path WARNs on procedures (known pin class)",
-    "structural": "clean (function_search_path_drift [], procedure_txn_control_pins [], procedure_search_path_unpinned [], cross_collection_mat_staleness [], backward_cursor_rewinds [], wmc_null_edition_key [], suppression_parked_claim_drift [])",
-    "trust_health_breaches": 1,
-    "trust_health_breach_detail": "candy_sales_stale_hours 68.5 (breach 30). UPSTREAM, not our indexer: Magic Eden's activity feed for 2026_mlb_base_series_icons_candy_digital has NO event of any type since 10-12 7:24 AM PT; all 98 buyNow in its newest 500 activities are in sales (100% by signature); positive control okay_bears had an event 1 min old. listedCount 1497 vs our 1498 active. Candy update-authority emits a failing tx every ~30 s (Custom 34). All other arms ok.",
-    "trust_precompute_max_age_hours": 5.37,
+    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
+    "structural": "function_search_path_drift: 1 = zz_probe_20261014() leftover (SECURITY INVOKER advisory, on Trevor 10-14 drop list); backward_cursor_rewinds [], wmc_null_edition_key [], cross_collection_mat_staleness [], procedure pins [], suppression_parked_claim_drift []",
+    "trust_health_breaches": 0,
+    "trust_health_note": "all 38 arms ok. candy_sales_stale_hours 76.8 ok (breach_at retuned 30->168 on 10-14; Candy silence is upstream, Trevor-aware).",
+    "trust_precompute_max_age_hours": 5.35,
     "stalled_pipelines": "none ([])",
-    "pgcron_recent_failures": "check_pgcron_failure_rate 6h: 6,556 runs, 0 fails, 0 startup/statement timeouts",
     "timeout_blind_count": 0,
-    "zero_yield_lanes": "0 offenders (326 inspected)",
-    "pipeline_alerts": "candy-opensea ×3 100% = parked 10-13 (#58), ages out of the 3-day window ~10-16; panini-collector-walk 10/31 = per-walk 10-min cap (all 10 errors the cap); Atlas editions/market/pack-supply 403 + flow-rest-moment-moved INFO (attributed, nothing lost). check_pipeline_cadence_collapse 'stopped' ×5 = finished backfills (sellback ×2, collector-sale, pinnacle-mints-backfill paused, offers backfill retired 10-11).",
-    "suppression_count_predicate_drift": "topshot-misattrib-drain observed 877 > 500 (#101 draining: 1485 -> 987 -> 877; falls below 500 in ~2 d). Not a regression.",
-    "sentry": "dark (quota off since 08-18, SDK removed #34). Health from Vercel + DB + E2E beacon.",
-    "vercel_24h": "Pre-pdx1: 18 low-count groups, all bounded-read timeouts (market-cap tile on edition pages ×4 all from non-US PoPs, pack-detail reads, insights boards). Post-pdx1 (since 4:55 PM PT): 1 group — pack_lifecycle on TS dist 5048 = cold-cache (2.8 s cold / 24 ms warm, 1,858 disk reads).",
-    "db_size_mb": 37217,
-    "db_size_note": "pg_database_size 10-14 5:25 PM PT (+89 MB vs 10-13 37,128).",
-    "client_errors_24h": "10 in 72 h, ALL Lightpanda bot (metadata.automated=true) 'failed to parse' on /nba-top-shot/collection; 0 real users.",
+    "zero_yield_lanes": "0 offenders (332 inspected, 6 suppressed)",
+    "pipeline_alerts": "candy-opensea listings/sales 100% = #58 parked; golazos_sales_v1_backfill cursor_stalled 14d = finished backfill, suppression pending in SQL editor; panini-collector-walk 32% = 10-min per-walk cap (by design); Atlas editions/market/supply/pack 403 + flow-rest-moment-moved + pack-pull 400 all INFO (attributed, nothing lost).",
+    "suppression_count_predicate_drift": "topshot-misattrib-drain observed 705 > 500 (#101 draining: 877 -> 705; <500 in ~2d). Not a regression.",
+    "sentry": "dark (quota off since 08-18, SDK removed #34).",
+    "vercel_24h": "16 error groups, all chronic low-count bounded-read timeouts. 1 NEW transient: /api/sniper-feed 'badge_editions @page 8: Project not specified' x1 07:04Z (pre-existing code, last touched 10-09 - not a 10-14 regression; watch).",
+    "latest_deploy": "dpl_3hiEUYmWvmM9hSpwRZFTgAdscQRH = 99b60a0e5 READY. 299b6a90a CANCELED = superseded rapid-push build, ancestor of tip, code live.",
+    "db_size_mb": 37952,
+    "db_size_note": "pg_database_size 10-15 ~01:15 AM PT (+735 MB vs 10-14 5:30 PM 37,217).",
     "accuracy_backtest_7d": {
-      "nba_top_shot": {
-        "published_all_median_abs_err_pct": 13.8,
-        "published_all_within_25_pct": 65.0,
-        "last3_median_30d_all": 13.6,
-        "median_ratio": 1.0,
-        "high_median_abs_err_pct": 9.5,
-        "n": 16273
-      },
-      "nfl_all_day": {
-        "published_all_median_abs_err_pct": 20.0,
-        "published_all_within_25_pct": 57.5,
-        "last3_median_30d_all": 23.8,
-        "median_ratio": 1.0,
-        "high_median_abs_err_pct": 13.3,
-        "median_abs_err_usd": 0.04,
-        "n": 3130,
-        "note": "STALE n=10 ratio 3.0, ASK_ONLY n=52 ratio 1.49 — the known tiny worst buckets."
-      }
+      "nba_top_shot": {"published_all_median_abs_err_pct": 14.1, "published_all_within_25_pct": 65.0, "last3_median_30d_all_err_pct": 13.9, "median_ratio": 1.0, "high_median_abs_err_pct": 9.5, "high_within_25_pct": 83.1, "n": 15889},
+      "nfl_all_day": {"published_all_median_abs_err_pct": 20.0, "published_all_within_25_pct": 57.8, "last3_median_30d_all_err_pct": 21.7, "median_ratio": 1.0, "high_median_abs_err_pct": 12.5, "n": 3166, "note": "STALE n=10 ratio 3.0, ASK_ONLY n=61 ratio 1.62 - known tiny worst buckets."}
     },
-    "function_region": "Vercel functions pdx1 since dpl_Gdb6szCb (4:55 PM PT); x-vercel-id pdx1::pdx1 on cache-miss renders. Same-query latency: profile resolve median ~118 ms → 25-47 ms; fmv/demo total 417 → 170 ms.",
-    "edge_functions_24h": "0 5xx; 403 ×3 (today's key rotation), 410 ×5 (R21 retirement probes)",
-    "postgres_errors_24h": "0 beyond this session's own probe typos"
+    "post_ship_watch_10_14": "GREEN. market-edition-badges topshot/allday jobs succeeded 07:21/07:25Z; rpc-thp-leg-panini-fmv-share succeeded 03:57Z (value 23.8%); search-catalog migrations live via tip; fmv_alerts 0 rows."
   },
-  "fmv_high_med": {
-    "nba_top_shot": 8090,
-    "panini_blockchain": 7052,
-    "nfl_all_day": 1622,
-    "candy_mlb": 73,
-    "laliga_golazos": 6,
-    "ufc_strike": 0,
-    "disney_pinnacle": "not in edition_fmv_current (pin grain = pinnacle_catalog); last rpc_ops_snapshot 892"
-  },
-  "fmv_high_med_definition": "HIGH+MEDIUM count per collection from edition_fmv_current (10-14 ~5:25 PM PT). ⚠ Different source from the 10-13 row (rpc_ops_snapshot) — do not diff the two as a trend.",
-  "editions_by_collection": {
-    "nba_top_shot": 14521,
-    "panini_blockchain": 27716,
-    "nfl_all_day": 6190,
-    "laliga_golazos": 575,
-    "ufc_strike": 518,
-    "candy_mlb": 125
-  },
-  "sentinels": {
-    "zero_yield_offenders": "0 offenders",
-    "wall_kills_24h": "wmc-fmv-populate 1 (0.3 %)",
-    "site_availability_2h": "23/23 ok"
-  },
-  "deltas_vs_prev": "db +89 MB; trust breaches 0 → 1 (Candy upstream silence); TS HIGH+MED not comparable (source changed); Vercel error groups 18 → 1 after pdx1.",
+  "fmv_high_med": {"nba_top_shot": 8082, "panini_blockchain": 7167, "nfl_all_day": 1622, "candy_mlb": 71, "laliga_golazos": 6, "ufc_strike": 0, "disney_pinnacle": 881},
+  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 10-15 05:35Z). Pinnacle 290 HIGH + 591 MEDIUM = 881.",
+  "editions_by_collection": {"nba_top_shot": 14528, "panini_blockchain": 30766, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 518, "candy_mlb": 125},
+  "deltas_vs_prev": "db +735 MB; trust breaches 1 -> 0 (candy arm retuned + silence is upstream); Vercel groups 1 -> 16 but all chronic bounded-read timeouts, nothing new except the 1 sniper-feed transient.",
   "open_watches": [
-    "pdx1: pack-detail / market-cap-tile 'read exceeded' groups should stay near zero; a recurrence on a warm dist is a DB-side read to measure.",
-    "#185: issuer-held split total row must stay 'ok' through the 10-15 ~4:17 PM PT list re-walk (the case 20261015001336 exists for).",
-    "Candy: candy_sales_stale_hours keeps rising until Magic Eden shows activity again; re-run the ME activities probe (pg_net) before calling it anything else.",
-    "#181: 10-24 review — mainnet24 DNS gone; 410 floor probes hold four chain-arrival lane gates open.",
-    "candy-opensea failure_rate rows age out of the 3-day window ~10-16."
+    "/api/sniper-feed 'Project not specified' @page: re-open if systematic (1x 07:04Z, pre-existing code).",
+    "Candy MLB: candy_sales_stale_hours rises while Magic Eden shows no activity (upstream; breach_at now 168).",
+    "golazos_sales_v1_backfill cursor_stalled pages HIGH until the suppression in docs/pending-sql/ runs in the SQL editor.",
+    "topshot-misattrib-drain suppression drift clears when it drains <500 (~2d)."
   ],
   "needs_trevor": [
-    "NEW — Candy MLB: is the 2026 MLB Base Series ICONs market still trading on candy.io? Magic Eden shows no activity of any kind since 10-12 7:24 AM PT; if trading moved (e.g. to OpenSea), #58's key becomes the way back to Candy prices.",
-    "#58 OPENSEA_API_KEY (~20 nights, shelved 09-23; lanes parked 10-13).",
-    "drop_scratch residue (~185 MB flowty_archive.scratch_*): SQL-editor-only, Trevor's data."
+    "#58 OPENSEA_API_KEY (~20 nights, shelved 09-23).",
+    "Golazos: run docs/pending-sql/audit_20261014_golazos_sales_v1_backfill_finished_suppression_made_permanent.sql in the SQL editor.",
+    "drop_scratch residue (~185 MB flowty_archive.scratch_*): SQL-editor-only, Trevor's data.",
+    "zz_probe_20261014() + 10-14 Market probe/fn residue: SQL-editor DROP.",
+    "#23/#25 edge-fn drift (operator since 08-22)."
   ],
-  "housekeeping": "4 shipped (vercel.json regions; FMV chart SSR; migration 20261015001336 + pins; register #185/#181), 0 reverted. CI green on each code commit checked. Ledger entries ×5 spliced at line-start ###. Local DB-invariant suite 265/265."
+  "housekeeping": "0 shipped, 0 reverted. 1 ledger entry spliced at first line-start ###. Inbox drained (newest 10-12). metrics overwritten. Lock released."
 }
