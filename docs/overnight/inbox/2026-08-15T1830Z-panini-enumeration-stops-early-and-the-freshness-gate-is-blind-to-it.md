@@ -132,3 +132,7 @@ Both new queries were executed against prod before shipping, not just written.
 ## 10. Why the runner fix was not shipped at filing time (kept for the record)
 
 The sandbox is down with the documented `/sessions` disk-full (failed identically twice, so I stopped retrying per its own guidance). No `node --check`, no test walk. Current state is degraded-but-working; a syntax error in `ingest-panini-runner.mjs` is total Panini ingest loss. Shipping an unmeasured fix for a mechanism I have not fully confirmed is the exact failure this repo keeps paying for. Next walk is 14:00 PT.
+
+## Drained 2026-10-14 — the §6 cardset filter is superseded, not owed
+
+Re-read live 2026-10-14 ~8:40 PM PT (Claude Code cloud). The "Still open: §6 preferred fix (cardset filter)" item assumed a **World-Cup-only** walk diluted by non-WC grid items. Since the 09-28 multi-product expansion the walk prices every Panini product, so non-WC items are the target, not dilution: `panini_editions` now spans **106** product set ids (`panini_products` 153 rows), and `panini_coverage_summary` reads **100 %** of editions walked in the last 7 days (5,238 / 5,238; 0 stale at 45 d). A WC cardset filter would now *narrow* coverage. Nothing to ship; retired in place (the inbox is append-only).
