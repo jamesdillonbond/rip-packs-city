@@ -4,6 +4,14 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-10-15 ~6:35 AM PT (Claude Code cloud; CX / UI / concierge thread of 10-14 archived)
+
+- **Deal-alert repeat fix — decisive read is 2026-10-15 ~5:14 PM PT** (the daily-mode subscription's UTC-midnight tick). Expect NO new `alert_deliveries` row for `nba_top_shot:51:1878` (ask 0.46) or `nba_top_shot:58:1975` (ask 0.25) unless the ask changed, and the `alerts-dispatch` run row's `suppressed_unchanged` ≥ 1. The 10-14 5:14 PM deliveries of those two (`dedup_bucket` with no `:` fingerprint) were the LAST run on the old body — not a failure of the fix. A new row carrying the SAME ask after 10-15 5:14 PM IS a regression (`20261015002500`, pin `supabase/tests/dispatch_due_deal_alerts.sql`).
+- **`fmv_alerts.armed` / `fmv_*` keys on the alerts-dispatch run are NEW (`20261015053922`).** `fmv_alerts` holds 0 rows, so `fmv_scanned 0` is the designed state. `/api/check-alerts` logging no `fmv_errors` key is by design: it no longer sends user FMV alerts.
+- **Candy shows "No sales indexed" / "None indexed" on purpose** while Magic Eden's Candy feed is silent (since 10-12) and OpenSea is unkeyed (#58). Not a broken page; do not "fix" it back to $0.
+- **SQL-editor residue for Trevor:** `docs/pending-sql/audit_20261015_drop_pack_reality_v1_mvs.sql` (v1 Pack Reality MVs, unread since `20261015015411`; 0 dependents checked).
+- **Watch, ~2 weeks (to ~10-28):** `concierge_opened` from the edition-page FMV "?" and the team-checklist "?" (R73's named fallback). Under ~1 real open/week on the fixed instrument means discoverability is still the problem, not the answers.
+
 ## STEER — added 2026-10-03 ~6:30 AM PT (Claude Code cloud; replaces the spent 09-18 → 09-20 steers, rolled verbatim to the archive)
 
 No live steer is owed by a clock. What a night pass needs to know that the ledger top does not say in one line:

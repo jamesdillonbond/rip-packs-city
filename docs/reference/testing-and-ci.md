@@ -3660,3 +3660,11 @@ Source: a failure taxonomy of the last 200 `ci.yml` runs on `main` (10-10 4:36 A
 
 ### ⚠ A mutation harness restores from a SAVED COPY, never by inverse replace (2026-10-14)
 Restoring a mutation by replacing the mutated text back fails whenever that text is not unique in the file, or is empty (a deleted line). Two such restores failed in one session, and the half-restored source only surfaced because the next suite run went red. Copy the file before mutating and copy it back after (`cp f f.orig; …; mv f.orig f`). Then `git diff --stat` should show only the intended edits.
+
+### ⚠ Changing user COPY silently disarms every NEGATIVE test that matched the old text (2026-10-14)
+
+"No sales in the last 24h" became "No sales indexed in the last 24h". Five `not.toMatch(/No sales in the last 24h/)` / `queryByText(...)).toBeNull()` assertions across three overview test files — the ones pinning that a FAILED read never renders the empty-market line — would have gone on passing forever against ANY render, because the new copy no longer matches their regex. The positive assertions red and get fixed; the negatives stay green and go vacuous. **When you change copy, grep the OLD string across `__tests__` and widen every match to both spellings (`/No sales (indexed )?in the last 24h/`) in the same commit** — then check a NEW negative written for the new copy is not itself matched by the widened regex (one was, and red until rewritten as a positive).
+
+### A pin whose fixture shares the dedup KEY with the defect cannot see the defect (2026-10-14)
+
+`dispatch_triggered_fmv_alerts`'s pin aged `last_triggered_at` past the 6 h gate to prove "no re-fire", and the OLD body passed: its hourly `dedup_bucket` collided with the first delivery (same test hour), so `ON CONFLICT DO NOTHING` hid the re-fire the gate would have produced an hour later in production. Moving the earlier deliveries into an old bucket made the old body red (`got [2], want [0]`). **When a fixture cannot move the clock, move every key derived FROM the clock.**
