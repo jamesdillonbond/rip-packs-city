@@ -1905,3 +1905,35 @@ describe("deleteUnseenWmcRows — emptyProven", () => {
     expect(out).toEqual({ deleted: 0, skippedReason: "suspiciously_large" })
   })
 })
+
+describe("deleteUnseenWmcRows — confirmCompleteness past the cap (2026-10-14)", () => {
+  const big = () => Array.from({ length: 200 }, (_, i) => ({ moment_id: "m" + i }))
+  const call = (confirm?: () => Promise<number | null>) =>
+    deleteUnseenWmcRows({ wallet: WALLET, collectionUuid: UFC_COLLECTION_UUID, observedIds: new Set(["m0", "m1"]), pipelineName: "test", confirmCompleteness: confirm })
+
+  it("an independent count equal to the observed size lets the delete through and says so", async () => {
+    H.state.cachedRows = big()
+    const out = await call(async () => 2)
+    expect(out.deleted).toBe(198)
+    expect(out.capConfirmed).toBe(true)
+    expect(unseenDeleteExtra(out)).toMatchObject({ unseen_deleted: 198, unseen_delete_cap_confirmed: true })
+  })
+
+  it("a different count, a null or a throw keeps the skip", async () => {
+    for (const c of [async () => 3, async () => null, async () => { throw new Error("down") }]) {
+      H.state.cachedRows = big()
+      H.state.wmcDeletes = []
+      expect(await call(c as () => Promise<number | null>)).toEqual({ deleted: 0, skippedReason: "suspiciously_large" })
+      expect(H.state.wmcDeletes).toHaveLength(0)
+    }
+  })
+
+  it("is never consulted when the cap does not trip", async () => {
+    H.state.cachedRows = [{ moment_id: "m0" }, { moment_id: "m1" }, { moment_id: "x" }]
+    let calls = 0
+    const out = await call(async () => { calls++; return 2 })
+    expect(out.deleted).toBe(1)
+    expect(calls).toBe(0)
+  })
+})
+

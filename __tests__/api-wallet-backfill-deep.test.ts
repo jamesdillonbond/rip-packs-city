@@ -33,6 +33,9 @@ const state = vi.hoisted(() => ({
   // proveCollectionEmpty's answer for the empty-wallet branch (wmc-empty-proof.ts).
   emptyProof: "no_collection" as string,
   emptyProofCalls: [] as string[],
+  // readCollectionCount's answer when the >90 % cap trips (null = no confirmation).
+  collectionCount: null as number | null,
+  countCalls: 0,
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -85,6 +88,10 @@ vi.mock("@/lib/chains/flow/wmc-empty-proof", () => ({
   proveCollectionEmpty: async (wallet: string, slug: string) => {
     state.emptyProofCalls.push(`${slug}:${wallet}`)
     return state.emptyProof
+  },
+  readCollectionCount: async () => {
+    state.countCalls++
+    return state.collectionCount
   },
 }))
 vi.mock("@/lib/wallet-backfill-lock", () => ({
@@ -175,6 +182,8 @@ beforeEach(() => {
   state.resolveCalls = []
   state.emptyProof = "no_collection"
   state.emptyProofCalls = []
+  state.collectionCount = null
+  state.countCalls = 0
 })
 
 describe("wallet-backfill — walk + upsert contract", () => {
@@ -730,6 +739,43 @@ describe("wallet-backfill — delete-not-seen", () => {
     ])
     expect(walkLog(spy.rpcCalls)).toMatchObject({ p_ok: true })
     expect(walkLog(spy.rpcCalls)?.p_extra).toMatchObject({ on_chain_count: 0, empty_proof: "proven_empty", unseen_deleted: 2 })
+  })
+
+  it("past the >90 % cap, an independent count EQUAL to the walk's licenses the delete (2026-10-14)", async () => {
+    // 0x0e4ba505d4482579: 1,199 cached, 74 held — cap-blocked forever; a separate
+    // getIDs().length returned exactly 74.
+    state.ownedIds = [1, 2]
+    state.metadataById = { "1": meta(), "2": meta() }
+    state.collectionCount = 2
+    const cached = Array.from({ length: 150 }, (_, i) => ({ moment_id: String(i + 1) }))
+    const spy = install({
+      wallet_moments_cache: { data: cached, error: null },
+      "rpc:upsert_wmc_batch": { data: { written: 2 }, error: null },
+    })
+    await POST(post({ wallet: WALLET, skip_cached: false }))
+    await runDeferred()
+    expect(state.countCalls).toBe(1)
+    const ids = (spy.deletes["wallet_moments_cache"] ?? []).flatMap((d) => (d.filters.find((f) => f.method === "in")?.args[1] as string[]) ?? [])
+    expect(ids).toHaveLength(148)
+    expect(ids).not.toContain("1")
+    expect(ids).not.toContain("2")
+    expect(walkLog(spy.rpcCalls)?.p_extra).toMatchObject({ unseen_deleted: 148, unseen_delete_cap_confirmed: true })
+  })
+
+  it("past the cap, a count that DIFFERS from the walk (or no count) keeps the skip", async () => {
+    for (const count of [3, null]) {
+      state.ownedIds = [1, 2]
+      state.metadataById = { "1": meta(), "2": meta() }
+      state.collectionCount = count
+      const spy = install({
+        wallet_moments_cache: { data: Array.from({ length: 150 }, (_, i) => ({ moment_id: String(i + 1) })), error: null },
+        "rpc:upsert_wmc_batch": { data: { written: 2 }, error: null },
+      })
+      await POST(post({ wallet: WALLET, skip_cached: false }))
+      await runDeferred()
+      expect(spy.deletes["wallet_moments_cache"]).toBeUndefined()
+      expect(walkLog(spy.rpcCalls)?.p_extra).toMatchObject({ unseen_deleted: 0, unseen_delete_skipped: "suspiciously_large" })
+    }
   })
 
   it("a non-empty walk never asks for the empty proof", async () => {

@@ -11,7 +11,7 @@ import { isStorageLimitError, isComputationLimitError, isNoCollectionCapabilityE
 // this route's suite stubs wallet-backfill-helpers wholesale, and a delete
 // routed through that stub would never run on the Top Shot path.
 import { deleteUnseenWmcRows, unseenDeleteExtra, type UnseenDeleteOutcome } from "@/lib/chains/flow/wmc-unseen-delete"
-import { proveCollectionEmpty } from "@/lib/chains/flow/wmc-empty-proof"
+import { proveCollectionEmpty, readCollectionCount } from "@/lib/chains/flow/wmc-empty-proof"
 // Imported from the writer module directly, not re-exported through
 // wallet-backfill-helpers: this route's test suite stubs that module wholesale,
 // and going through it would put the stub — not the real chunk writer — on the
@@ -498,6 +498,9 @@ async function runBackfill(
             pipelineName: "wallet-backfill",
             // Reuse the skip-filter's snapshot rather than paging the cache twice.
             cachedIds: skipCached ? cachedIds : undefined,
+            // Past the >90 % cap, an independent count equal to this walk's proves
+            // it complete (2026-10-14: six tracked wallets cap-blocked forever).
+            confirmCompleteness: () => readCollectionCount(wallet, "nba_top_shot"),
           })
         : { deleted: 0, skippedReason: `incomplete_pass_${terminatedReason}` }
 

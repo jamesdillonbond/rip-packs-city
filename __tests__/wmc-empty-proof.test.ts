@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { classifyProofResult, proveCollectionEmpty, EMPTY_PROOF_SCRIPTS } from "@/lib/chains/flow/wmc-empty-proof"
+import { classifyProofResult, proveCollectionEmpty, readCollectionCount, EMPTY_PROOF_SCRIPTS } from "@/lib/chains/flow/wmc-empty-proof"
 
 // The proof scripts were run against mainnet 2026-10-14 (pg_net, sealed block):
 // emptied wallets 0x8e655887a360cc3f (Top Shot) and 0x6d1f8c18412c6abc (UFC) → 0;
@@ -49,5 +49,17 @@ describe("proveCollectionEmpty", () => {
     expect(await proveCollectionEmpty("0x01", "ufc_strike")).toBe("read_failed")
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "not base64 json" }))
     expect(await proveCollectionEmpty("0x01", "ufc_strike")).toBe("read_failed")
+  })
+})
+
+describe("readCollectionCount", () => {
+  it("returns the count, and null for no collection / failed read / no script", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(cdc({ type: "Int", value: "74" })))
+    expect(await readCollectionCount("0x0e4ba505d4482579", "nba_top_shot")).toBe(74)
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(cdc({ type: "Int", value: "-1" })))
+    expect(await readCollectionCount("0x01", "nba_top_shot")).toBeNull()
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")))
+    expect(await readCollectionCount("0x01", "ufc_strike")).toBeNull()
+    expect(await readCollectionCount("0x01", "nfl_all_day")).toBeNull()
   })
 })

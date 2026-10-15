@@ -57,7 +57,29 @@ export function classifyProofResult(decoded: unknown): EmptyProof {
   return n === 0 ? "proven_empty" : "not_empty"
 }
 
+/**
+ * The collection's id count read on its own (independent of any walk), or null
+ * when there is no readable collection, no script for the collection, or the read
+ * failed. Used to CONFIRM a walk was complete before deleting past the >90 % cap
+ * (deleteUnseenWmcRows `confirmCompleteness`), measured 2026-10-14: six tracked
+ * Top Shot wallets were cap-blocked with 1,199/937/851/720/115 rows cached against
+ * 74/12/18/1/8 held — and this read returned exactly the walks' counts.
+ */
+export async function readCollectionCount(wallet: string, collectionSlug: string): Promise<number | null> {
+  const proof = await readProof(wallet, collectionSlug)
+  return typeof proof === "number" ? proof : null
+}
+
 export async function proveCollectionEmpty(wallet: string, collectionSlug: string): Promise<EmptyProof> {
+  const proof = await readProof(wallet, collectionSlug)
+  if (typeof proof === "number") return proof === 0 ? "proven_empty" : "not_empty"
+  return proof
+}
+
+async function readProof(
+  wallet: string,
+  collectionSlug: string,
+): Promise<number | "no_collection" | "read_failed" | "no_proof_script"> {
   const script = EMPTY_PROOF_SCRIPTS[collectionSlug]
   if (!script) return "no_proof_script"
   try {
@@ -72,7 +94,10 @@ export async function proveCollectionEmpty(wallet: string, collectionSlug: strin
     })
     if (!res.ok) return "read_failed"
     const raw = (await res.text()).trim().replace(/^"|"$/g, "")
-    return classifyProofResult(JSON.parse(atob(raw)))
+    const decoded = JSON.parse(atob(raw))
+    const cls = classifyProofResult(decoded)
+    if (cls === "read_failed" || cls === "no_collection") return cls
+    return Number((decoded as { value: string }).value)
   } catch {
     return "read_failed"
   }

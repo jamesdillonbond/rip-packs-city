@@ -41,7 +41,7 @@ import {
   unseenDeleteExtra,
   type UnseenDeleteOutcome,
 } from "@/lib/chains/flow/wmc-unseen-delete"
-import { proveCollectionEmpty } from "@/lib/chains/flow/wmc-empty-proof"
+import { proveCollectionEmpty, readCollectionCount } from "@/lib/chains/flow/wmc-empty-proof"
 import { claimPipelineLockDetailed, releasePipelineLock, skippedReasonFor, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 import {
   UPSERT_CHUNK,
@@ -673,6 +673,9 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
       pipelineName: config.pipelineName,
       // Reuse the skip-filter's snapshot rather than paging the cache twice.
       cachedIds: skipCached ? cachedIds : undefined,
+      // Past the >90 % cap, an independent count equal to this walk's proves it
+      // complete (2026-10-14). null for a collection with no proof script → skip stays.
+      confirmCompleteness: () => readCollectionCount(wallet, config.slug),
     })
 
     // runIdOnlyBackfill has no metadata post-pass, so upserts and the

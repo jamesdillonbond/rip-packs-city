@@ -55,6 +55,8 @@ export interface UnseenDeleteOutcome {
   error?: string
   /** The wmc_clean_walks stamp failed to write (the walk itself was fine). */
   cleanWalkStampError?: string
+  /** The >90 % cap tripped and an independent count of the collection equalled the walk's (confirmCompleteness). */
+  capConfirmed?: boolean
 }
 
 /**
@@ -163,6 +165,15 @@ export async function deleteUnseenWmcRows(args: {
    * does not apply (that cap guards a scan bug, and this is a second read).
    */
   emptyProven?: boolean
+  /**
+   * Called ONLY when the >90 % cap would trip: an independent read of the
+   * collection's id count (readCollectionCount in wmc-empty-proof.ts). If it
+   * EQUALS observedIds.size the walk was not truncated — the one thing the cap
+   * guards — and the delete proceeds; anything else (null, a different count, a
+   * throw) keeps the skip. Without it, a tracked wallet that sold most of its
+   * collection kept the sold rows forever (prune_stale_wmc skips seeded wallets).
+   */
+  confirmCompleteness?: () => Promise<number | null>
 }): Promise<UnseenDeleteOutcome> {
   const { wallet, collectionUuid, observedIds, pipelineName, cachedIds } = args
   const provenEmpty = observedIds.size === 0 && args.emptyProven === true
@@ -176,7 +187,17 @@ export async function deleteUnseenWmcRows(args: {
     return withStamp({ deleted: 0 }, await stampCleanWalk(wallet, collectionUuid, observedIds.size))
   }
 
-  if (!provenEmpty && cached.size > 100 && toDelete.length > cached.size * 0.9) {
+  let capConfirmed = false
+  if (!provenEmpty && cached.size > 100 && toDelete.length > cached.size * 0.9 && args.confirmCompleteness) {
+    let independent: number | null = null
+    try {
+      independent = await args.confirmCompleteness()
+    } catch {
+      independent = null
+    }
+    capConfirmed = independent === observedIds.size
+  }
+  if (!provenEmpty && !capConfirmed && cached.size > 100 && toDelete.length > cached.size * 0.9) {
     console.warn(
       `[${pipelineName}] unseen_delete_suspiciously_large wallet=${wallet} ` +
         `cached=${cached.size} would_delete=${toDelete.length} — skipping, leaving it to the 14-day prune`,
@@ -210,8 +231,8 @@ export async function deleteUnseenWmcRows(args: {
       `[${pipelineName}] unseen_deleted wallet=${wallet} deleted=${deleted}/${toDelete.length} cached=${cached.size}`,
     )
   }
-  if (firstError) return { deleted, error: firstError } // a failed chunk is NOT a clean walk
-  return withStamp({ deleted }, await stampCleanWalk(wallet, collectionUuid, observedIds.size))
+  if (firstError) return { deleted, error: firstError, ...(capConfirmed ? { capConfirmed } : {}) } // a failed chunk is NOT a clean walk
+  return withStamp({ deleted, ...(capConfirmed ? { capConfirmed } : {}) }, await stampCleanWalk(wallet, collectionUuid, observedIds.size))
 }
 
 /**
@@ -226,5 +247,6 @@ export function unseenDeleteExtra(outcome: UnseenDeleteOutcome): Record<string, 
     ...(outcome.skippedReason ? { unseen_delete_skipped: outcome.skippedReason } : {}),
     ...(outcome.error ? { unseen_delete_error: outcome.error.slice(0, 200) } : {}),
     ...(outcome.cleanWalkStampError ? { clean_walk_stamp_error: outcome.cleanWalkStampError.slice(0, 200) } : {}),
+    ...(outcome.capConfirmed ? { unseen_delete_cap_confirmed: true } : {}),
   }
 }
