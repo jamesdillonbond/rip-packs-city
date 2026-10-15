@@ -9,9 +9,18 @@
 // metadata, since we already hold the metadata from Dune) and re-stamps every
 // Dune-attributed rookie NFT the wallet STILL holds as source='onchain_walk' with
 // a fresh observed_at. NFTs attributed to the wallet but no longer on chain are
-// counted as `vanished` (stale Dune attribution — the wallet sold/moved them);
-// they are left untouched so their aging observed_at flags the staleness, and
-// Pipeline A's weekly re-execution re-discovers where they went.
+// counted as `vanished` (the wallet traded them in, sold or moved them). They are
+// NOT deleted — the Dune sync sizes its paid re-walk by count(source='dune') — but
+// since 2026-10-15 they are FLAGGED: `walk_missed_at` is set through
+// mark_topshot_ownership_walk_missed(), and every holdings reader counts only
+// `walk_missed_at IS NULL`. Before that, ~24.5k vanished rows per run stayed
+// credited to their old holder forever (the rookie collector boards, Top owners,
+// squeeze Top-5 hold). A DB trigger clears the flag when a later write re-confirms
+// or moves the row, so Pipeline A's re-discovery needs no change.
+//
+// Fail OPEN: a wallet whose ID read errored, whose row read was partial, or whose
+// read returned NO ids at all (a missing collection capability reads as [] —
+// indistinguishable from an emptied wallet) flags nothing.
 //
 // Reconciliation: both pipelines upsert on nft_id; on-chain confirmation wins
 // (fresher observed_at). Flow public REST is free, so this can run daily at no
@@ -36,6 +45,7 @@ const PIPELINE = "ownership-onchain-walk"
 const WALLETS_PER_RUN = 800; // stalest-verified holder wallets per run (cycles the herd over a few runs)
 const CONCURRENCY = 6; // parallel Flow REST reads — modest, to stay under public-node rate limits
 const UPSERT_CHUNK = 500;
+const MARK_CHUNK = 1000;
 const BUDGET_MS = 720_000; // stop before the 800s lambda ceiling
 
 // Retry budget for the ONE query that gates the whole run (get_stale_ownership_wallets).
@@ -158,6 +168,8 @@ async function run(req: NextRequest) {
     let vanished = 0;
     let walletErrors = 0;
     let budgetHit = false;
+    let markedMissed = 0;
+    let markError: string | null = null;
 
     try {
       const { data: walletRows, error: wErr } = await rpcWithRetry<
@@ -178,6 +190,9 @@ async function run(req: NextRequest) {
       );
 
       const upsertBuf: OwnershipRow[] = [];
+      // (owner, nft_id) pairs a clean walk of that owner did not find.
+      const missedOwners: string[] = [];
+      const missedNftIds: string[] = [];
 
       await mapWithConcurrency(wallets, CONCURRENCY, async (wallet) => {
         if (Date.now() - startedMs > BUDGET_MS) {
@@ -234,6 +249,8 @@ async function run(req: NextRequest) {
             return;
           }
         }
+        // An empty ID set cannot be told apart from a missing collection capability.
+        const canFlag = heldIds.size > 0;
         for (const r of rows as Array<{
           nft_id: string;
           edition_external_id: string;
@@ -251,6 +268,10 @@ async function run(req: NextRequest) {
             });
           } else {
             vanished++;
+            if (canFlag) {
+              missedOwners.push(wallet);
+              missedNftIds.push(String(r.nft_id));
+            }
           }
         }
       });
@@ -272,6 +293,25 @@ async function run(req: NextRequest) {
         }
         written += chunk.length;
       }
+
+      // Flag what the walk did not find — only after every confirmation landed, so
+      // a failed upsert can never leave a held row flagged without its re-stamp.
+      if (ok) {
+        for (let i = 0; i < missedOwners.length; i += MARK_CHUNK) {
+          const { data, error } = await (supabaseAdmin as any).rpc("mark_topshot_ownership_walk_missed", {
+            p_owners: missedOwners.slice(i, i + MARK_CHUNK),
+            p_nft_ids: missedNftIds.slice(i, i + MARK_CHUNK),
+            p_walk_at: nowIso,
+          });
+          if (error) {
+            ok = false;
+            markError = error.message;
+            errMsg = `mark-missed: ${error.message}`;
+            break;
+          }
+          markedMissed += typeof data === "number" ? data : 0;
+        }
+      }
     } catch (e) {
       ok = false;
       errMsg = `${errMsg ? errMsg + "; " : ""}threw: ${e instanceof Error ? e.message : String(e)}`;
@@ -291,6 +331,9 @@ async function run(req: NextRequest) {
           confirmed,
           written,
           vanished,
+          // newly flagged this run (already-flagged rows are not re-counted)
+          marked_missed: markedMissed,
+          mark_error: markError,
           wallet_errors: walletErrors,
           budget_hit: budgetHit,
           duration_ms: Date.now() - startedMs,

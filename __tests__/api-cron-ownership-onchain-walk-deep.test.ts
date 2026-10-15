@@ -393,3 +393,114 @@ describe("ownership-onchain-walk — a whale's rows page past PostgREST's 1000-r
     expect((log?.p_extra as Record<string, unknown>)?.wallet_errors).toBe(1)
   })
 })
+
+// 2026-10-15: a row the walk did NOT find is flagged (walk_missed_at) through
+// mark_topshot_ownership_walk_missed, so holdings boards stop crediting a moment
+// the holder traded in, sold or moved. Fail OPEN on every unclean read.
+describe("ownership-onchain-walk — flags what the walk did not find", () => {
+  function markCalls(rpcCalls: RecordedRpcCall[]) {
+    return rpcCalls.filter((c) => c.name === "mark_topshot_ownership_walk_missed")
+  }
+
+  it("flags exactly the vanished (owner, nft) pairs, stamped with the walk time, after the confirmations land", async () => {
+    const W = "0xwallet00000000f1"
+    state.heldByWallet = { [W]: ["100"] }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
+      "rpc:mark_topshot_ownership_walk_missed": { data: 2, error: null },
+      topshot_ownership: [
+        {
+          data: [
+            { nft_id: "100", edition_external_id: "3:45", serial_number: 1 },
+            { nft_id: "300", edition_external_id: "9:90", serial_number: 7 },
+            { nft_id: "301", edition_external_id: "9:90", serial_number: 8 },
+          ],
+          error: null,
+        },
+        { data: null, error: null },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const calls = markCalls(spy.rpcCalls)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].args).toMatchObject({ p_owners: [W, W], p_nft_ids: ["300", "301"] })
+    // the flag time is the same instant the confirmed rows were re-stamped with
+    const upserted = (spy.writes.topshot_ownership ?? []).flatMap((w) => w.rows)
+    expect(calls[0].args?.p_walk_at).toBe(upserted[0].observed_at)
+    // the call happens AFTER the confirmation log order: mark precedes the final log
+    const names = spy.rpcCalls.map((c) => c.name)
+    expect(names.indexOf("mark_topshot_ownership_walk_missed")).toBeLessThan(names.lastIndexOf("log_pipeline_run"))
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    expect(log?.p_extra).toMatchObject({ vanished: 2, marked_missed: 2, mark_error: null })
+  })
+
+  it("an EMPTY id set flags nothing (a missing collection capability also reads as [])", async () => {
+    const W = "0xwallet00000000f2"
+    state.heldByWallet = { [W]: [] }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
+      topshot_ownership: { data: [{ nft_id: "700", edition_external_id: "1:1", serial_number: 1 }], error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect(markCalls(spy.rpcCalls)).toHaveLength(0)
+    expect(logRun(spy.rpcCalls)?.p_extra).toMatchObject({ vanished: 1, marked_missed: 0 })
+  })
+
+  it("a failed confirmation upsert flags nothing (a held row must never be flagged without its re-stamp)", async () => {
+    const W = "0xwallet00000000f3"
+    state.heldByWallet = { [W]: ["600"] }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
+      topshot_ownership: [
+        {
+          data: [
+            { nft_id: "600", edition_external_id: "1:1", serial_number: 1 },
+            { nft_id: "601", edition_external_id: "1:1", serial_number: 2 },
+          ],
+          error: null,
+        },
+        { data: null, error: { message: "write refused" } },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect(markCalls(spy.rpcCalls)).toHaveLength(0)
+    expect(logRun(spy.rpcCalls)?.p_ok).toBe(false)
+  })
+
+  it("a flag-write error fails the run and names it", async () => {
+    const W = "0xwallet00000000f4"
+    state.heldByWallet = { [W]: ["100"] }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
+      "rpc:mark_topshot_ownership_walk_missed": { data: null, error: { message: "permission denied" } },
+      topshot_ownership: [
+        {
+          data: [
+            { nft_id: "100", edition_external_id: "3:45", serial_number: 1 },
+            { nft_id: "300", edition_external_id: "9:90", serial_number: 7 },
+          ],
+          error: null,
+        },
+        { data: null, error: null },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("mark-missed:")
+    expect(log?.p_extra).toMatchObject({ marked_missed: 0, mark_error: "permission denied" })
+  })
+})
