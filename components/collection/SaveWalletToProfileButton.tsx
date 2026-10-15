@@ -40,11 +40,25 @@ export default function SaveWalletToProfileButton({
   useEffect(() => {
     if (!valid) return
     let cancelled = false
-    void fetchJson<{ wallets?: { wallet_addr?: unknown }[] }>(
-      "/api/profile/saved-wallets?collectionId=" + encodeURIComponent(collectionUuid),
-      { cache: "no-store" },
-    ).then((r) => {
+    // 2026-10-14: ask who is signed in FIRST. The saved-wallets route is
+    // session-gated, so every anonymous wallet lookup logged a red 401 in the
+    // console. /api/profile/me never 401s; { user: null } means signed out, and
+    // a signed-out reader has nothing to save to, so the button stays hidden. A
+    // FAILED identity read falls through to the old call (unknown is not "no").
+    void fetchJson<{ user?: unknown }>("/api/profile/me", { cache: "no-store" })
+      .then((me) => {
+        if (me.ok && me.json && "user" in me.json && me.json.user == null) return null
+        return fetchJson<{ wallets?: { wallet_addr?: unknown }[] }>(
+          "/api/profile/saved-wallets?collectionId=" + encodeURIComponent(collectionUuid),
+          { cache: "no-store" },
+        )
+      })
+      .then((r) => {
       if (cancelled) return
+      if (r === null) {
+        setState("hidden")
+        return
+      }
       // Not ok = signed out (401) OR we could not tell. Hide both: a failed
       // read is not an invitation to save a wallet that may already be saved.
       if (!r.ok || !Array.isArray(r.json?.wallets)) {

@@ -82,3 +82,44 @@ describe("PackRealityClient seeded first frame", () => {
     expect(screen.queryByText(/10 days ago/)).toBeNull()
   })
 })
+
+// 2026-10-14 (20261015015411): "11% delivered nothing" was 7,012 UNPRICED rips
+// counted as $0 pulls, with 0 real zeros. The board now discloses the unpriced
+// rips, leaves them out of the figures, and never claims "delivered nothing"
+// from a zero share.
+describe("PackRealityClient — unpriced rips are not $0 pulls", () => {
+  const live = {
+    ...seedBody,
+    stats: {
+      rips_60d: 63212, zero_value_rips: 0, zero_value_pct: 0, mean_pull_value_usd: 14.51,
+      median_pull_value_usd: 1.4, p90_pull_value_usd: 19.3, p99_pull_value_usd: 171.96,
+      rips_over_100: 1276, rips_over_100_pct: 2.27, rips_over_1000: 64,
+      priced_rips: 56200, unpriced_rips: 7012, unpriced_pct: 11.1,
+    },
+    distribution: [{ bucket: "$0", rips: 0, pct: 0 }, { bucket: "$0–$10", rips: 44435, pct: 79.1 }],
+  }
+  it("shows the unpriced share as its own KPI and says they are left out", () => {
+    vi.stubGlobal("fetch", neverResolvingFetch())
+    const { container } = render(<PackRealityClient initialData={live as never} />)
+    const text = container.textContent ?? ""
+    expect(screen.getByText("Not priced")).toBeTruthy()
+    expect(text).toContain("11.1%")
+    expect(text).toMatch(/7,012 \(11\.1%\) could not be priced and are left out/)
+    expect(text).toMatch(/Share of the 56,200 priced rips/)
+  })
+  it("a 0% zero share is never headlined as 'delivered nothing', and no KPI says 'Delivered $0'", () => {
+    vi.stubGlobal("fetch", neverResolvingFetch())
+    const { container } = render(<PackRealityClient initialData={live as never} />)
+    const text = container.textContent ?? ""
+    expect(text).not.toMatch(/delivered nothing/i)
+    expect(text).not.toMatch(/Delivered \$0/)
+  })
+  it("the methodology no longer describes the retired 1.7.0 average-sales-price model", () => {
+    vi.stubGlobal("fetch", neverResolvingFetch())
+    const { container } = render(<PackRealityClient initialData={live as never} />)
+    const text = container.textContent ?? ""
+    expect(text).not.toMatch(/1\.7\.0/)
+    expect(text).not.toMatch(/average-sales-price model/)
+    expect(text).toMatch(/never as a \$0\s+pull/)
+  })
+})

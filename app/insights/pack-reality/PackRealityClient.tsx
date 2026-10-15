@@ -27,6 +27,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { usdSignFirst } from "@/lib/usd-format"
+import { FMV_ALGO_VERSION } from "@/lib/fmv-recalc-math"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -41,6 +42,12 @@ type Stats = {
   rips_over_100: number | null
   rips_over_100_pct: number | null
   rips_over_1000: number | null
+  // 2026-10-14 (20261015015411): rips the pricer could not value are counted
+  // here and LEFT OUT of every value statistic — they used to be counted as $0
+  // pulls ("11% delivered nothing" was 7,012 unpriced rips and 0 real zeros).
+  priced_rips?: number | null
+  unpriced_rips?: number | null
+  unpriced_pct?: number | null
 } | null
 
 type DistRow = { bucket: string; rips: number | null; pct: number | null }
@@ -279,7 +286,7 @@ export default function PackRealityClient({
     const facts: string[] = []
     if (st?.rips_60d != null) facts.push(`${fmtInt(st.rips_60d)} rips.`)
     if (st?.median_pull_value_usd != null) facts.push(`Median pull value ${fmtUsd(st.median_pull_value_usd)}.`)
-    if (st?.zero_value_pct != null) facts.push(`${Number(st.zero_value_pct).toFixed(0)}% deliver nothing.`)
+    if (st?.zero_value_pct != null && Number(st.zero_value_pct) > 0) facts.push(`${Number(st.zero_value_pct).toFixed(0)}% deliver nothing.`)
     const text =
       `I ran the math on every Top Shot pack ripped in the last 60 days.` +
       (facts.length ? `\n\n${facts.join(" ")}` : "") +
@@ -300,13 +307,21 @@ export default function PackRealityClient({
           <strong>{fmtInt(data?.stats?.rips_60d)} rips.</strong> Median pull
           value <strong>{fmtUsd(data?.stats?.median_pull_value_usd)}</strong>. Mean{" "}
           <strong>{fmtUsd(data?.stats?.mean_pull_value_usd)}</strong>.{" "}
-          {data?.stats?.zero_value_pct != null ? (
+          {data?.stats?.zero_value_pct != null && Number(data.stats.zero_value_pct) > 0 ? (
             <>
               <strong>{Number(data.stats.zero_value_pct).toFixed(0)}% delivered nothing.</strong>{" "}
             </>
           ) : null}
           {data?.stats?.rips_over_100_pct != null ? (
             <>{Number(data.stats.rips_over_100_pct).toFixed(2)}% delivered over $100.</>
+          ) : null}
+          {/* A rip we could not value is neither $0 nor anything else — it is
+              left out of every figure above and said so, never averaged in. */}
+          {data?.stats?.unpriced_rips != null && Number(data.stats.unpriced_rips) > 0 ? (
+            <>
+              {" "}Values cover the {fmtInt(data.stats.priced_rips ?? null)} rips we could price;{" "}
+              {fmtInt(data.stats.unpriced_rips)} ({fmtPct(data.stats.unpriced_pct ?? null)}) could not be priced and are left out.
+            </>
           ) : null}
         </p>
       </section>
@@ -332,8 +347,11 @@ export default function PackRealityClient({
           <div className="rpc-pr-kpi-value">{fmtInt(data?.stats?.rips_60d)}</div>
         </div>
         <div className="rpc-pr-kpi">
-          <div className="rpc-pr-kpi-label">Delivered $0</div>
-          <div className="rpc-pr-kpi-value">{fmtPct(data?.stats?.zero_value_pct)}</div>
+          {/* Was "Delivered $0", fed by unpriced rips counted as zero (0 real
+              $0 pulls in 63,212 rips, 2026-10-14). The unknown is the figure
+              worth showing. */}
+          <div className="rpc-pr-kpi-label" title="Rips whose pulled moments we could not value — left out of the mean, median and buckets, never counted as $0">Not priced</div>
+          <div className="rpc-pr-kpi-value">{fmtPct(data?.stats?.unpriced_pct ?? null)}</div>
         </div>
         <div className="rpc-pr-kpi">
           <div className="rpc-pr-kpi-label">Mean value</div>
@@ -355,6 +373,13 @@ export default function PackRealityClient({
 
       <section className="rpc-pr-dist" aria-label="Pull value distribution">
         <h2 className="rpc-pr-h2">Pull-value distribution</h2>
+        {/* The buckets are shares of PRICED rips (20261015015411); say so, or
+            a reader adds them up against the 60-day total and finds 11% gone. */}
+        {data?.stats?.priced_rips != null ? (
+          <p className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", margin: "-8px 0 12px" }}>
+            Share of the {fmtInt(data.stats.priced_rips)} priced rips.
+          </p>
+        ) : null}
         {error ? (
           <div className="rpc-pr-state">Failed to load: {error}</div>
         ) : loading ? (
@@ -483,9 +508,12 @@ export default function PackRealityClient({
           <p>
             <strong>Rip = a pack opened in the last 60 days</strong>, joined to
             the FMV of the moments it released, summed per pack. Pull value
-            uses the RPC 1.7.0 sales-based average-sales-price model
-            (recency-weighted). Editions without FMV are
-            counted as $0, so all values are honest lower bounds.
+            uses RPC&rsquo;s FMV (model {FMV_ALGO_VERSION}: the median of each
+            edition&rsquo;s most recent typical sales). Inside a priced rip, a
+            moment without an FMV adds $0, so a rip&rsquo;s value is a lower
+            bound. A rip we could not value at all is left out of the figures
+            and counted separately as &ldquo;not priced&rdquo; — never as a $0
+            pull.
           </p>
           <p>
             <strong>Pack EV</strong> uses the existing pack-EV pipeline (gross

@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   let rips = 0
   let cohort = 0
   let trophies = 0
-  let zeroPct = 0
+  let medianPull: number | null = null
 
   try {
     const origin = new URL(req.url).origin
@@ -41,7 +41,11 @@ export async function GET(req: NextRequest) {
     if (packR?.ok) {
       const j = await packR.json()
       rips = Number(j?.stats?.rips_60d ?? 0)
-      zeroPct = Number(j?.stats?.zero_value_pct ?? 0)
+      // 2026-10-14: the tile was "% delivering $0" off a stat that counted
+      // unpriced rips as zeros; after the fix it is genuinely ~0. The median
+      // pull is the honest headline. Absent → null → "—", never a default 0.
+      const med = j?.stats?.median_pull_value_usd
+      medianPull = med == null || !Number.isFinite(Number(med)) ? null : Number(med)
     }
     if (ccR?.ok) {
       const j = await ccR.json()
@@ -123,7 +127,7 @@ export async function GET(req: NextRequest) {
         >
           {[
             { label: "Pack rips, 60d", value: rips > 0 ? fmtInt(rips) : "—" },
-            { label: "% delivering $0", value: zeroPct > 0 ? `${zeroPct.toFixed(0)}%` : "—" },
+            { label: "Median pack pull", value: medianPull != null ? `$${medianPull.toFixed(2)}` : "—" },
             { label: "Cross-coll. cohort", value: cohort > 0 ? fmtInt(cohort) : "—" },
             { label: "First-mint trophies", value: trophies > 0 ? fmtInt(trophies) : "—" },
           ].map((k) => (

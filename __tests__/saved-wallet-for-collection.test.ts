@@ -9,8 +9,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function stubFetch(impl: (url: string) => any) {
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => impl(url)))
+// Signed in by default: /api/profile/me answers with a user, and every other
+// URL goes to `impl` (the saved-wallets call under test).
+function stubFetch(impl: (url: string) => any, me: () => any = () => ({ ok: true, json: async () => ({ user: { id: "u1" } }) })) {
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => (url.startsWith("/api/profile/me") ? me() : impl(url))))
 }
 
 describe("fetchSavedWalletForCollection", () => {
@@ -48,6 +50,26 @@ describe("fetchSavedWalletForCollection", () => {
   it("returns null when json parsing yields null", async () => {
     stubFetch(() => ({ ok: true, json: async () => null }))
     expect(await fetchSavedWalletForCollection("nba-top-shot")).toBeNull()
+  })
+
+  // 2026-10-14: an anonymous reader must not hit the session-gated route at
+  // all — it 401s and logs a console error on every anonymous visit.
+  it("signed out: returns null WITHOUT calling the gated saved-wallets route", async () => {
+    const seen: string[] = []
+    stubFetch(
+      (url) => { seen.push(url); return { ok: true, json: async () => ({ wallets: [{ wallet_addr: "0xabc" }] }) } },
+      () => ({ ok: true, json: async () => ({ user: null }) }),
+    )
+    expect(await fetchSavedWalletForCollection("nba-top-shot")).toBeNull()
+    expect(seen.filter((u) => u.includes("saved-wallets"))).toEqual([])
+  })
+
+  it("a FAILED identity read is unknown, not signed out: it still asks for the wallet", async () => {
+    stubFetch(
+      () => ({ ok: true, json: async () => ({ wallets: [{ wallet_addr: "0xdef" }] }) }),
+      () => ({ ok: false, json: async () => ({}) }),
+    )
+    expect(await fetchSavedWalletForCollection("nba-top-shot")).toBe("0xdef")
   })
 
   it("returns null when fetch throws", async () => {

@@ -34,6 +34,9 @@ describe("insights-hub-format · liveStat", () => {
   it("renders each known card's live sentence with thousands separators", () => {
     expect(liveStat("/insights/squeeze", S)).toBe("1,234 editions ≥50% squeezed")
     expect(liveStat("/insights/pack-reality", S)).toBe("61% of rips pull $0 · 9,800 rips/60d")
+    // 2026-10-14: a real 0% (unpriced rips are no longer counted as $0 pulls)
+    // names the audit size rather than headlining "0% of rips pull $0".
+    expect(liveStat("/insights/pack-reality", { ...S, packZeroPct: 0 })).toBe("9,800 rips audited/60d")
     expect(liveStat("/insights/rookies", S)).toBe("$2.5M GMV/30d · 18 rookies")
     expect(liveStat("/insights/first-mint", S)).toBe("avg 1.7× · max 9×")
     expect(liveStat("/insights/cross-collection", S)).toBe("305 wallets hold 3+ collections")

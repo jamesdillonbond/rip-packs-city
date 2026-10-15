@@ -35,7 +35,12 @@ export function liveStat(slug: string | null, s: HubInsightStats): string | null
     case "/insights/squeeze":
       return `${s.squeezeEditions.toLocaleString()} editions ≥50% squeezed`
     case "/insights/pack-reality":
-      return `${s.packZeroPct}% of rips pull $0 · ${s.packRips60d.toLocaleString()} rips/60d`
+      // 2026-10-14: "11% of rips pull $0" was 7,012 UNPRICED rips counted as
+      // zeros (0 real $0 pulls). The share is now real, and a 0 says nothing
+      // worth a card, so the card names the audit size instead.
+      return s.packZeroPct > 0
+        ? `${s.packZeroPct}% of rips pull $0 · ${s.packRips60d.toLocaleString()} rips/60d`
+        : `${s.packRips60d.toLocaleString()} rips audited/60d`
     case "/insights/rookies":
       return `${fmtUsd(s.rookieGmv30d)} GMV/30d · ${s.rookieCount} rookies`
     case "/insights/first-mint":

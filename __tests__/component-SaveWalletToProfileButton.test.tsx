@@ -42,6 +42,18 @@ describe("SaveWalletToProfileButton", () => {
     expect(container.textContent).toBe("")
   })
 
+  // 2026-10-14: signed-out is known from /api/profile/me (never 401s), so the
+  // session-gated route is not called at all — it logged a red 401 in the
+  // console on every anonymous wallet lookup.
+  it("signed out per /api/profile/me: renders nothing and never calls the gated route", async () => {
+    const calls = stubFetch((url) => (url.startsWith("/api/profile/me") ? json({ user: null }) : json({ wallets: [] })))
+    const { container } = mount()
+    await waitFor(() => expect(calls.length).toBe(1))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(calls.map((c) => c.url).filter((u) => u.includes("saved-wallets"))).toEqual([])
+    expect(container.textContent).toBe("")
+  })
+
   it("renders nothing and fetches nothing for an address of the wrong chain", () => {
     const calls = stubFetch(() => json({ wallets: [] }))
     const { container } = mount("0xbd94cade097e50ac", "solana")

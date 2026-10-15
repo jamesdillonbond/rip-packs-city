@@ -136,7 +136,9 @@ export async function GET(req: NextRequest) {
           }}
         >
           {[
-            { label: "DELIVERED $0", value: fmtPct(stats?.zero_value_pct ?? null) },
+            // 2026-10-14: "DELIVERED $0" read unpriced rips as zeros (0 real
+            // $0 pulls in 63,212). The median is the honest first number.
+            { label: "MEDIAN PULL", value: stats?.median_pull_value_usd != null && Number.isFinite(Number(stats.median_pull_value_usd)) ? fmtUsd(Number(stats.median_pull_value_usd)) : "—" },
             { label: "MEAN VALUE", value: fmtUsd(stats?.mean_pull_value_usd ?? null) },
             { label: "OVER $100", value: fmtPct2(stats?.rips_over_100_pct) },
           ].map((k) => (
