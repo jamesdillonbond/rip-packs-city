@@ -1127,6 +1127,15 @@ export async function GET(req: NextRequest) {
         }
         return editionKey
       }
+      // The key the canonical badge read is keyed by. Top Shot rows carry their
+      // EXACT edition in moment_id (get_topshot_sniper_deals_v2 returns
+      // e.external_id, parallels included: "257:8869::17"). editionKeyFor's
+      // set:play form is the WALLET join key and drops the "::17" — when no base
+      // "257:8869" edition row exists, the badge read found nothing and the row
+      // rendered (and was badge-filtered as) badgeless: 58 of 500 Three-Star
+      // Rookie rows, 2026-10-14. One derivation for the pre-pass AND the mapping.
+      const badgeKeyFor = (r: any, ed: any): string | null =>
+        isTopShot && typeof r.moment_id === "string" && r.moment_id ? r.moment_id : editionKeyFor(r, ed)
 
       // Canonical edition badges (R104, 2026-10-13) — see lib/market/canonical-badges.ts.
       // Both sources this branch used to read (`badge_slugs: null` → editions.badges
@@ -1138,7 +1147,7 @@ export async function GET(req: NextRequest) {
         ? await readCanonicalBadgeTitles(
             supabaseAdmin as any,
             collectionId,
-            clamped.map((r: any) => editionKeyFor(r, editionFor(r))),
+            clamped.map((r: any) => badgeKeyFor(r, editionFor(r))),
           )
         : null
       if (canonicalBadges && !canonicalBadges.ok) {
@@ -1175,7 +1184,7 @@ export async function GET(req: NextRequest) {
         const rowBadges = Array.isArray(r.badge_slugs) ? r.badge_slugs : []
         const editionBadges = ed && Array.isArray(ed.badges) ? ed.badges : []
         const badgeSlugs: string[] = canonicalBadges?.ok
-          ? (editionKey ? canonicalBadges.titles.get(editionKey) ?? [] : [])
+          ? (() => { const k = badgeKeyFor(r, ed); return k ? canonicalBadges.titles.get(k) ?? [] : [] })()
           : rowBadges.length > 0 ? rowBadges : editionBadges
         const listedCount = r.listed_count != null ? Number(r.listed_count) : null
         const serial = r.serial_number != null ? Number(r.serial_number) : null

@@ -80,6 +80,28 @@ describe("GET /api/market — canonical badges (R104)", () => {
     expect(body.listings[0].badgeSlugs).toEqual(["Championship Year"])
   })
 
+  // 2026-10-14: a PARALLEL edition ("257:8869::17") was looked up by its set:play
+  // form, which names no edition row when there is no base edition — so it
+  // rendered badgeless and the badge filter dropped it (58 of 500 Three-Star
+  // Rookie rows on production).
+  it("a Top Shot parallel edition is badge-read by its exact key, not the set:play wallet key", async () => {
+    install({
+      "rpc:get_topshot_sniper_deals_v2": {
+        data: [{ moment_id: "257:8869::17", ask_price: 4, fmv_usd: 5, tier: "COMMON", circulation_count: 100, player_name: "Antonia Delaere", set_name: "WNBA Rookie Debut" }],
+        error: null,
+      },
+      editions: {
+        data: [{ external_id: "257:8869::17", collection_id: TS, player_name: "Antonia Delaere", set_name: "WNBA Rookie Debut", set_id_onchain: 257, play_id_onchain: 8869, badges: [] }],
+        error: null,
+      },
+      "rpc:get_edition_badge_titles": { data: { "257:8869::17": ["Three-Star Rookie"] }, error: null },
+    })
+    const body = (await (await GET(req(`https://t/api/market?collectionId=${TS}&badges=Three-Star%20Rookie`))).json()) as Body
+    expect(body.listings).toHaveLength(1)
+    expect(body.listings[0].badgeSlugs).toEqual(["Three-Star Rookie"])
+    expect(body.listings[0].editionKey).toBe("257:8869")
+  })
+
   it("?badges= filters the modern list (it used to be ignored — the chip showed active over an unfiltered list)", async () => {
     install({ ...alldayRows, ...canonical })
     const body = (await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&badges=Championship%20Year`))).json()) as Body
