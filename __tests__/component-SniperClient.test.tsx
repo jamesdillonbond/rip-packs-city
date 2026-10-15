@@ -374,6 +374,21 @@ describe("SniperClient — the feed request carries the filters", () => {
     expect(key).not.toContain("sortBy=price_asc")
   })
 
+  // 2026-10-15 (R127 residual): the stats bar read "0 deals · avg 0.0% off"
+  // while the first feed read was still in flight (~30 s on Top Shot). The page
+  // must tell the bar no read has landed; counts appear only once one has.
+  it("states no deal count until the first feed read lands, and names a failed one", async () => {
+    warm = { data: null, loading: true, error: null, refresh: vi.fn() }
+    const { container, unmount } = render(<SniperClient />)
+    await waitFor(() => expect(container.textContent).toContain("Loading deals"))
+    expect(container.textContent).not.toMatch(/\b0\s*deals/)
+    unmount()
+    warm = { data: null, loading: false, error: new Error("HTTP 503"), refresh: vi.fn() }
+    const failed = render(<SniperClient />)
+    await waitFor(() => expect(failed.container.textContent).toContain("Deal feed unavailable"))
+    expect(failed.container.textContent).not.toMatch(/\b0\s*deals/)
+  })
+
   // 2026-09-29 — the Team pick is sent to the route (which filters the whole
   // pool franchise-wide) and kept in the address bar, so a team board is linkable.
   it("?team= seeds the pick and the feed URL carries it", async () => {

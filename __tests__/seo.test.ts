@@ -182,6 +182,24 @@ describe("collectionLayoutMetadata", () => {
       "https://www.rippackscity.com/api/og/collection?id=zzz"
     )
   })
+
+  // 2026-10-15: an unknown id only ever decorates the layout's notFound() 404.
+  // Live, that 404 read `robots: index, follow` with a canonical naming the bad
+  // URL. Pinned: noindex, and no canonical / og:url claiming the URL is a page.
+  it("an unknown collection's metadata is noindex and names no canonical", () => {
+    const m = collectionLayoutMetadata("zzz")
+    expect((m.robots as any)?.index).toBe(false)
+    expect(m.alternates?.canonical).toBeUndefined()
+    expect((m.openGraph as any).url).toBeUndefined()
+  })
+
+  it("every registry collection keeps its self-canonical and stays indexable", () => {
+    for (const c of COLLECTIONS) {
+      const m = collectionLayoutMetadata(c.id)
+      expect(m.alternates?.canonical).toBe(`https://www.rippackscity.com/${c.id}`)
+      expect(m.robots).toBeUndefined()
+    }
+  })
 })
 
 describe("collectionPageJsonLd", () => {

@@ -1038,6 +1038,7 @@ function SniperMomentsBody() {
         isAllDay={isAllDay}
         ownedCount={ownedIds.size}
         lastRefreshed={data?.lastRefreshed}
+        feedState={data ? "ok" : error ? "failed" : "loading"}
       />
 
       {/* Table */}

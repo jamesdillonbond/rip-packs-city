@@ -11,8 +11,27 @@ export default function SniperStatsBar(props: {
   isAllDay: boolean;
   ownedCount: number;
   lastRefreshed: string | null | undefined;
+  /**
+   * 2026-10-15: whether a feed read has ARRIVED. Before the first read lands the
+   * page computes `stats` from an empty list, so this bar read "0 deals · avg 0.0%
+   * off" for the ~30 s the Top Shot feed takes — a conclusion drawn from a read
+   * that had not happened. `loading` / `failed` render no counts at all.
+   * Defaults to `ok` so a caller that always has data is unchanged.
+   */
+  feedState?: "loading" | "failed" | "ok";
 }) {
-  const { stats, isPinnacle, isAllDay, ownedCount, lastRefreshed } = props;
+  const { stats, isPinnacle, isAllDay, ownedCount, lastRefreshed, feedState = "ok" } = props;
+  if (feedState !== "ok") {
+    return (
+      <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface-raised)", padding: "8px 16px" }}>
+        <div className="rpc-mono flex items-center gap-6 flex-wrap" style={{ maxWidth: "var(--max-width)", margin: "0 auto", color: "var(--rpc-text-muted)" }}>
+          <span role="status">
+            {feedState === "loading" ? "Loading deals…" : "Deal feed unavailable — no count to show"}
+          </span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface-raised)", padding: "8px 16px" }}>
       <div className="rpc-mono flex items-center gap-6 flex-wrap" style={{ maxWidth: "var(--max-width)", margin: "0 auto", color: "var(--rpc-text-muted)" }}>

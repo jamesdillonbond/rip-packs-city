@@ -794,7 +794,13 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
   // 1200×630 card branded with the collection's icon, label, accent
   // color, and chain pill. Returns the generic fallback for unknown ids.
   const ogImage = `${BASE_URL}/api/og/collection?id=${collectionId}`
+  // 2026-10-15: an id the registry does not know never renders a page — the
+  // layout calls notFound() — but this metadata still decorates that 404. Live it
+  // read `robots: index, follow` and a canonical + og:url naming the bad URL, so a
+  // 404 claimed to be its own indexable page. No canonical, no og:url, noindex.
+  const known = chainCol !== undefined
   return {
+    ...(known ? {} : { robots: { index: false, follow: true } }),
     // ⚠ BOTH HALVES ARE LOAD-BEARING and they fix two OPPOSITE live defects.
     //
     // `absolute` — these entries already end in " — Rip Packs City" (they are
@@ -810,7 +816,7 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
     // brand (R31). Re-declaring it puts the suffix back for the whole subtree.
     title: { absolute: meta.title, template: BRAND_TITLE_TEMPLATE },
     description: meta.description,
-    alternates: { canonical },
+    ...(known ? { alternates: { canonical } } : {}),
     // 'sniper deals' only where the collection HAS a Sniper tab (UFC's was retired
     // 2026-09-06; its keywords still advertised one — 2026-09-26).
     keywords: [label, 'FMV', 'moment value', 'collector tools', ...(collectionHasPage(collectionId, 'sniper') ? ['sniper deals'] : []), chainKeyword],
@@ -818,7 +824,7 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
       ...OG_INHERITED,
       title: meta.title,
       description: meta.description,
-      url: canonical,
+      ...(known ? { url: canonical } : {}),
       images: [{ url: ogImage, width: 1200, height: 630, alt: label }],
     },
     twitter: {

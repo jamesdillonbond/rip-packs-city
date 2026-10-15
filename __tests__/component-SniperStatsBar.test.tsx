@@ -69,4 +69,34 @@ describe("SniperStatsBar", () => {
     )
     expect(on.container.textContent).toContain("updated")
   })
+
+  // 2026-10-15 (R127 residual): before the first feed read lands the page computes
+  // stats from an empty list, and this bar read "0 deals · avg 0.0% off" for the
+  // ~30 s the Top Shot feed takes. Assert the ABSENCE of the false claim.
+  it("while the feed is loading, states no count at all", () => {
+    const { container } = render(
+      <SniperStatsBar stats={stats({ total: 0, hot: 0, avgDiscount: 0 })} isPinnacle={false} isAllDay={false} ownedCount={0} lastRefreshed={null} feedState="loading" />
+    )
+    const txt = container.textContent!
+    expect(txt).toContain("Loading deals")
+    expect(txt).not.toMatch(/\b0\s*deals/)
+    expect(txt).not.toContain("% off")
+  })
+
+  it("when the feed failed, says so and states no count", () => {
+    const { container } = render(
+      <SniperStatsBar stats={stats({ total: 0, hot: 0, avgDiscount: 0 })} isPinnacle={false} isAllDay={false} ownedCount={0} lastRefreshed={null} feedState="failed" />
+    )
+    const txt = container.textContent!
+    expect(txt).toContain("Deal feed unavailable")
+    expect(txt).not.toMatch(/\b0\s*deals/)
+    expect(txt).not.toContain("% off")
+  })
+
+  it("a loaded empty feed still reports its real zero", () => {
+    const { container } = render(
+      <SniperStatsBar stats={stats({ total: 0, hot: 0, avgDiscount: 0 })} isPinnacle={false} isAllDay={false} ownedCount={0} lastRefreshed={null} feedState="ok" />
+    )
+    expect(container.textContent!).toMatch(/0\s*deals/)
+  })
 })
