@@ -18,8 +18,37 @@ const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.c
 // describe the home surface. The %s template below still applies per-subpage.
 const ROOT_TITLE =
   'Rip Packs City \u2014 The Intelligence Layer for Flow Collectibles'
-const ROOT_DESCRIPTION =
-  'Real-time FMV, deal sniping, wallet analytics, badge tracking, pack tools, and set intelligence for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike collectors on Flow blockchain.'
+const CHAIN_NAMES: Record<string, string> = { flow: 'Flow', solana: 'Solana' }
+
+/**
+ * "NBA Top Shot, … and UFC Strike on Flow, Candy MLB on Solana, and Panini
+ * Blockchain" — every PUBLISHED collection, grouped by its registry `dbChain`.
+ *
+ * DERIVED, never hand-listed (2026-10-14). The hand-written root description
+ * and root JSON-LD stopped at UFC and said "on Flow blockchain", so every page
+ * on the site described a Solana collection and Panini as absent, and the
+ * whole catalogue as Flow. A collection with no established chain (Panini,
+ * dbChain null) is named with no chain claim — see chain-strategy.md.
+ */
+export function publishedCollectionsPhrase(): string {
+  const groups: Array<{ chain: string | null; labels: string[] }> = []
+  for (const c of COLLECTIONS.filter((x) => x.published)) {
+    const chain = c.dbChain && CHAIN_NAMES[c.dbChain] ? CHAIN_NAMES[c.dbChain] : null
+    const g = groups.find((x) => x.chain === chain && chain !== null)
+    if (g) g.labels.push(c.label)
+    else groups.push({ chain, labels: [c.label] })
+  }
+  // Chained groups first (Flow is the incumbent), unchained labels last.
+  groups.sort((a, b) => Number(a.chain === null) - Number(b.chain === null))
+  const parts = groups.map((g) => {
+    const names =
+      g.labels.length > 1 ? `${g.labels.slice(0, -1).join(', ')} and ${g.labels[g.labels.length - 1]}` : g.labels[0]
+    return g.chain ? `${names} on ${g.chain}` : names
+  })
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}` : parts[0]
+}
+
+const ROOT_DESCRIPTION = `Real-time FMV, deal sniping, wallet analytics, badge tracking, pack tools, and set intelligence for collectors of ${publishedCollectionsPhrase()}.`
 
 // The one place the brand suffix is spelled. Any segment that sets a plain
 // string `title` is formatted by the NEAREST ANCESTOR template and provides no
@@ -115,8 +144,7 @@ export const organizationJsonLd = {
   '@type': 'WebApplication',
   name: 'Rip Packs City',
   url: BASE_URL,
-  description:
-    'Collector intelligence platform for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike on Flow blockchain.',
+  description: `Collector intelligence platform for ${publishedCollectionsPhrase()}.`,
   applicationCategory: 'FinanceApplication',
   operatingSystem: 'Web',
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
@@ -668,9 +696,13 @@ const COLLECTION_LAYOUT_META: Record<string, PageMeta> = {
       'FMV pricing from real secondary sales, floor and ask tracking, team and player pages, and market intelligence for Candy MLB collectors on Solana.',
   },
   'panini-blockchain': {
-    title: 'Panini Prizm World Cup Analytics — Rip Packs City',
+    // 2026-10-14: was "Prizm World Cup Analytics" / "Prizm World Cup 2026
+    // cards" — true at launch, false since Panini went all-product (10-10:
+    // soccer, NBA, NFL, WNBA, MLB, NASCAR). It is the CollectionPage JSON-LD on
+    // every Panini page, so a WNBA card's page described itself as World Cup.
+    title: 'Panini Blockchain Analytics — Rip Packs City',
     description:
-      "FMV pricing and live asks for Panini's digital Prizm World Cup 2026 cards, from every edition RPC has seen listed on Panini's marketplace — a floor, not a census.",
+      "FMV pricing, live asks and last sales for Panini's digital cards — soccer, NBA, NFL, WNBA, MLB and NASCAR — from every edition RPC has seen listed on Panini's marketplace. A floor, not a census.",
   },
 }
 

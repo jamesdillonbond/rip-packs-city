@@ -8,7 +8,7 @@
 import type { Metadata } from "next"
 import EarlyAccessClient from "./EarlyAccessClient"
 import SupportChatConnected from "@/components/SupportChatConnected"
-import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
+import { OG_INHERITED, TWITTER_INHERITED, publishedCollectionsPhrase } from "@/lib/seo"
 
 // 2026-10-11 (review §3 E8): this page inherited the ROOT title + description
 // verbatim and is anon-public, so Google saw a duplicate of the home page with
@@ -18,7 +18,7 @@ import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 export const metadata: Metadata = {
   title: "Early Access",
   description:
-    "Join the Rip Packs City early-access list — collector intelligence for NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike on Flow. Free, no credit card.",
+    `Join the Rip Packs City early-access list — collector intelligence for ${publishedCollectionsPhrase()}. Free, no credit card.`,
   alternates: { canonical: "https://www.rippackscity.com/early-access" },
   robots: { index: false, follow: true },
   openGraph: {
