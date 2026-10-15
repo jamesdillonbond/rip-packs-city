@@ -104,11 +104,23 @@ describe("Panini overview", () => {
     expect(screen.queryByText(/last 24h/)).toBeNull()
   })
 
+  // 2026-10-14 live QA: "FMV Data Age just now" sat beside "Typical Price Checked 3d ago". For
+  // Panini the figure is the NEWEST price written, so it is labelled that, with the typical age.
+  it("labels the pipeline age as the newest price written, with the typical edition's age", async () => {
+    okFetch(WITH_LISTS)
+    render(<OverviewPage collection="panini-blockchain" />)
+    await waitFor(() => expect(screen.getByText("Newest Price Written")).toBeTruthy())
+    expect(screen.queryByText("FMV Data Age")).toBeNull()
+    expect(screen.getByTestId("panini-typical-price-age").textContent).toBe("typical edition checked 22h ago")
+  })
+
   it("no-change control: Top Shot still renders its 24h volume and its insider detectors", async () => {
     okFetch({ edition_count: 100, fmv_pct: 50, volume_24h: 1234, fmv_age_minutes: 5, top_sales: [], sniper_deals: [] })
     render(<OverviewPage collection="nba-top-shot" />)
     await waitFor(() => expect(screen.getByText("$1,234")).toBeTruthy())
     expect(screen.getByTestId("insider-signals")).toBeTruthy()
+    expect(screen.getByText("FMV Data Age")).toBeTruthy()
+    expect(screen.queryByTestId("panini-typical-price-age")).toBeNull()
     expect(screen.queryByTestId("panini-coverage-note")).toBeNull()
   })
 })

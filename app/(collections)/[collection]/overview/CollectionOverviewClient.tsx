@@ -595,12 +595,20 @@ export default function CollectionOverviewClient({
 
           <div className="rpc-card" style={{ padding: "12px 14px", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: freshness.color, opacity: 0.7 }} />
-            <div className="rpc-label" style={{ marginBottom: 4 }}>FMV Data Age</div>
+            {/* Panini (2026-10-14): fmv_age_minutes is the NEWEST price written — the walk reprices a
+                few editions every run, so it reads "just now" while the typical edition was checked
+                days ago (the KPI tile beside it). Labelled for what it is, with the typical age under it. */}
+            <div className="rpc-label" style={{ marginBottom: 4 }}>{isPanini ? "Newest Price Written" : "FMV Data Age"}</div>
             {showLoading ? (
               <div className="rpc-skeleton" style={{ width: "40%", height: 20 }} />
             ) : (
               <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: freshness.color }}>
                 {fmtAge(fmvAge)}
+              </div>
+            )}
+            {isPanini && !showLoading && stats?.coverage?.edition_age_p50_h != null && (
+              <div className="rpc-mono" data-testid="panini-typical-price-age" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", marginTop: 4 }}>
+                typical edition checked {fmtAge(Math.round(stats.coverage.edition_age_p50_h * 60))}
               </div>
             )}
           </div>
