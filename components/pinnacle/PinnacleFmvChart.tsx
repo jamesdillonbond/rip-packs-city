@@ -86,7 +86,9 @@ export default function PinnacleFmvChart({ points }: { points: PinnacleFmvPoint[
 
   return (
     <div style={{ width: "100%", height: 220 }}>
-      <ResponsiveContainer>
+      {/* Positive starting height silences recharts' server-render width(-1)/height(-1)
+          warning; see FmvHistoryChart for the measured reason. */}
+      <ResponsiveContainer initialDimension={{ width: -1, height: 220 }}>
         <LineChart data={series} margin={{ top: 8, right: 16, bottom: 8, left: 4 }}>
           <CartesianGrid stroke={grid} strokeDasharray="3 3" />
           <XAxis

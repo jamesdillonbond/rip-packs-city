@@ -423,10 +423,13 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial,
         </div>
       ) : (
         <div style={{ width: "100%", height: 220 }}>
-          {/* minWidth={0} suppresses recharts' SSR width(-1)/height(-1) console
-              warning (parent has 0 width during SSR before client measures) —
-              per recharts' own guidance. Cosmetic: quiets log noise only. */}
-          <ResponsiveContainer minWidth={0}>
+          {/* recharts warns "width(-1) and height(-1) …" on every SERVER render
+              when BOTH starting dimensions are <= 0 (its default initialDimension
+              is -1 x -1). `minWidth={0}` does not touch either, so it never
+              silenced it (prod logs 10-14: one warn per edition render). A
+              positive starting HEIGHT (the wrapper's fixed 220) does; width stays
+              -1, so the server still draws nothing until the client measures. */}
+          <ResponsiveContainer minWidth={0} initialDimension={{ width: -1, height: 220 }}>
             <ComposedChart data={series} margin={{ top: 8, right: showVolume ? 4 : 16, bottom: 8, left: 4 }}>
               <CartesianGrid stroke={grid} strokeDasharray="3 3" />
               <XAxis
