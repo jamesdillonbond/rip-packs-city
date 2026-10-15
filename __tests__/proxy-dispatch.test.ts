@@ -300,6 +300,31 @@ describe("proxy() — unauthenticated gate", () => {
   })
 })
 
+// 2026-10-15: a path no route serves used to redirect to /login (a sign-in wall in
+// front of a 404, and a soft 404 to crawlers). It now passes through so Next renders
+// its 404; every routed path keeps the gate. Mutation-checked: removing the
+// pass-through reds the first case; dropping the routable check reds the rest.
+describe("proxy() — an unroutable path gets Next's 404, not the sign-in wall", () => {
+  it("passes a signed-out navigation to an unknown first segment straight through", async () => {
+    st.user = null
+    const res = await proxy(req("/this-page-does-not-exist"))
+    expect(res.status).not.toBe(307)
+    expect(res.headers.get("location")).toBeNull()
+  })
+  it("still gates a routed page (static segment)", async () => {
+    st.user = null
+    const res = await proxy(req("/dashboard"))
+    expect(res.status).toBe(307)
+    expect(res.headers.get("location") ?? "").toContain("/login")
+  })
+  it("still gates an unknown sub-path under a real collection slug", async () => {
+    st.user = null
+    const res = await proxy(req("/nba-top-shot/not-a-tab"))
+    expect(res.status).toBe(307)
+    expect(res.headers.get("location") ?? "").toContain("/login")
+  })
+})
+
 describe("proxy() — an anonymous fetch() to a gated API path gets 401, a navigation still gets the redirect (2026-09-06)", () => {
   it("answers 401 JSON to a signed-out fetch (sec-fetch-dest: empty) on /api/*", async () => {
     st.user = null

@@ -128,6 +128,11 @@ export interface PaniniProfileHoldings {
   specialSerials: number
   fmvHeldUsd: number | null
   fmvPricedCards: number
+  /**
+   * Cards an earlier walk saw that the marketplace now shows under another owner (captured after
+   * the walk) — left out of every count above (2026-10-15). null = an older response without it.
+   */
+  cardsMovedSinceSeen: number | null
   cards: PaniniOwnerCard[]
 }
 
@@ -173,6 +178,7 @@ export function parsePaniniProfileHoldings(raw: unknown): PaniniProfileHoldings 
     specialSerials,
     fmvHeldUsd: num(o.fmv_held_usd),
     fmvPricedCards,
+    cardsMovedSinceSeen: num(o.cards_moved_since_seen),
     cards: parseCards(o.cards),
   }
 }

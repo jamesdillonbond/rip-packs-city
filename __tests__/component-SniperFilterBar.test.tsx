@@ -97,10 +97,12 @@ describe("SniperFilterBar — wiring (Top Shot desktop)", () => {
 })
 
 describe("SniperFilterBar — per-collection visibility", () => {
-  it("All Day hides MIN DISC. and BADGES ONLY", () => {
+  // INVERTED 2026-10-15 (R127): All Day now has real FMV and the feed applies
+  // minDiscount on its path, so MIN DISC. shows; it still has no badges.
+  it("All Day shows MIN DISC. and hides BADGES ONLY", () => {
     const { props } = makeProps({ isAllDay: true, collectionSlug: "nfl-all-day" })
     render(<SniperFilterBar {...props} />)
-    expect(screen.queryByText("MIN DISC.")).toBeNull()
+    expect(screen.getByText("MIN DISC.")).toBeTruthy()
     expect(screen.queryByText(/BADGES ONLY/i)).toBeNull()
   })
 

@@ -129,6 +129,13 @@ describe("GET /api/panini-collection", () => {
     expect(parsePaniniProfileHoldings(WALKED)?.walk?.unopenedPacks).toBe(12)
   })
 
+  // 2026-10-15: panini_profile_holdings reports cards the marketplace shows under another
+  // owner since the walk saw them. An older response lacks the key: unknown, never 0.
+  it("carries cards_moved_since_seen, and reads its absence as unknown (null), not 0", () => {
+    expect(parsePaniniProfileHoldings({ ...WALKED, cards_moved_since_seen: 61 })?.cardsMovedSinceSeen).toBe(61)
+    expect(parsePaniniProfileHoldings(WALKED)?.cardsMovedSinceSeen).toBeNull()
+  })
+
   it("an unread pack count stays null, never 0", () => {
     const p = parsePaniniProfileHoldings({ ...WALKED, walk: { ...WALKED.walk, unopened_packs: null } })
     expect(p?.walk?.unopenedPacks).toBeNull()

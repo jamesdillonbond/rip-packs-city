@@ -360,6 +360,20 @@ describe("SniperClient — the feed request carries the filters", () => {
     expect(key).not.toMatch(/nba-top-shot/)
   })
 
+  // 2026-10-15 (R127): All Day used to open on Cheapest First. The feed sorts
+  // before it caps, so that fetched the cheapest commons and the Verified-FMV
+  // filter left 1 deal (15 under Recently Listed, measured live). Pinned: All Day
+  // opens on the same default as Top Shot, and never asks the feed for price_asc.
+  it("All Day opens on Recently Listed, not Cheapest First", async () => {
+    routeCollection = "nfl-all-day"
+    warm = { data: feed(), loading: false, error: null, refresh: vi.fn() }
+    render(<SniperClient />)
+    await waitFor(() => expect(warmKeys.length).toBeGreaterThan(0))
+    const key = warmKeys[warmKeys.length - 1]
+    expect(key).toContain("sortBy=listed_desc")
+    expect(key).not.toContain("sortBy=price_asc")
+  })
+
   // 2026-09-29 — the Team pick is sent to the route (which filters the whole
   // pool franchise-wide) and kept in the address bar, so a team board is linkable.
   it("?team= seeds the pick and the feed URL carries it", async () => {

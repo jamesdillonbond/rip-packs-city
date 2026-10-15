@@ -32,6 +32,7 @@ import { createClient } from "@supabase/supabase-js"
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags"
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins"
 import { bearerMatches, tokenMatches as secretTokenMatches } from "@/lib/auth/bearer-secret"
+import { isRoutableFirstSegment } from "@/lib/routing/known-top-level"
 
 const CORS_API_PATHS = ["/api/fmv", "/api/sniper-feed", "/api/health"]
 
@@ -1594,6 +1595,15 @@ export async function proxy(request: NextRequest) {
       )
       carryCookies(unauth, response)
       return applySecurityHeaders(unauth, pathname)
+    }
+    // ── A path no route serves gets Next's 404, not a sign-in wall (2026-10-15) ──
+    // lib/routing/known-top-level.ts: an unknown first segment cannot reach a gated
+    // page, so redirecting it to /login only hid a 404 behind a login (and read to
+    // crawlers as a soft 404). Navigations only; known routes keep the gate below.
+    if ((request.method === "GET" || request.method === "HEAD") && !isRoutableFirstSegment(pathname)) {
+      const pass = NextResponse.next()
+      carryCookies(pass, response)
+      return applySecurityHeaders(pass, pathname)
     }
     const loginUrl = new URL("/login", request.url)
     loginUrl.searchParams.set("next", pathname + search)

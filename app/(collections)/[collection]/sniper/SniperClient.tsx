@@ -161,7 +161,11 @@ function SniperMomentsBody() {
 
   // Filters a shared link carries (see sniperShareUrl / the COPY LINK button).
   const tierTabs: readonly string[] = isPinnacle ? PINNACLE_VARIANT_TABS : sniperTierTabs(collectionSlug);
-  const defaultSort: SortOption = isAllDay ? "price_asc" : "listed_desc";
+  // 2026-10-15 (R127): All Day defaulted to Cheapest First (04-17, before it had
+  // real FMV). The feed sorts BEFORE it caps, so that default fetched the ~145
+  // cheapest commons and the default-on Verified-FMV filter left 1 below-FMV deal
+  // (measured live: Recently Listed / Best Discount leave 15). Same default as Top Shot.
+  const defaultSort: SortOption = "listed_desc";
   const urlFilters = readSniperUrlFilters(useSearchParams(), { tiers: tierTabs, sorts: SORT_OPTIONS.map((o) => o.value) });
   const [tierTab, setTierTab] = useState<TierTab>(urlFilters.tier ?? "all");
   const [sortBy, setSortBy] = useState<SortOption>((urlFilters.sort as SortOption | undefined) ?? defaultSort);

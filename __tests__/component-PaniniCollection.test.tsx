@@ -112,9 +112,21 @@ describe("PaniniCollection", () => {
     mockFetch(200, payload({ profile: walked({}, { lastCompleteAt: null, reportedTotal: 146, cardsCollected: 2 }) }))
     const c = await lookUp("jamesdillonbond")
     await waitFor(() => expect(c.querySelector('[data-testid="panini-collection-profile-note"]')).not.toBeNull())
-    expect(c.textContent).toContain("Partial read — 2 of 146 cards")
+    expect(c.textContent).toContain("Partial read — 2 of 146 cards so far")
     expect(c.textContent).toContain("of 146 on the profile")
     expect(c.textContent).not.toContain("Every card on the profile was read")
+    // RE-PINNED 2026-10-15: walks accumulate, so a partial read must never claim
+    // that unread cards are "not shown"; it says a sale can lag until a complete read.
+    expect(c.textContent).not.toContain("not shown")
+    expect(c.textContent).toContain("a card sold since RPC last saw it can still appear")
+    expect(c.textContent).toContain("none yet")
+  })
+
+  it("cards the marketplace shows under another owner are counted as left out", async () => {
+    mockFetch(200, payload({ profile: walked({ cardsMovedSinceSeen: 61 }, { lastCompleteAt: null, reportedTotal: 25220 }) }))
+    const c = await lookUp("scottyj111")
+    await waitFor(() => expect(c.querySelector('[data-testid="panini-collection-profile-note"]')).not.toBeNull())
+    expect(c.textContent).toContain("61 cards Panini's marketplace now shows under another owner are left out")
   })
 
   it("an unread pack count is 'not read yet', not 0", async () => {

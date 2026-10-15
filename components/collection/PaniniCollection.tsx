@@ -256,7 +256,14 @@ function ProfileBody({ username, profile }: { username: string; profile: PaniniP
           Read from <b>{username}</b>&apos;s public Panini profile {ptDateTime(w.lastWalkAt)}.{" "}
           {complete
             ? "Every card on the profile was read."
-            : `Partial read — ${count(w.cardsCollected)} of ${w.reportedTotal != null ? count(w.reportedTotal) : "an unknown number of"} cards; cards missing from this read are not shown.`}
+            : // 2026-10-15: this said "cards missing from this read are not shown" — false. A
+              // profile too big for one pass is read a part at a time and the walks ADD UP
+              // (spinotron read "7,543 of 7,542"), so the honest statements are: how many so far,
+              // when the last complete read was, and that a sale can lag until one.
+              `Partial read — ${count(profile.cardsHeld)} of ${w.reportedTotal != null ? count(w.reportedTotal) : "an unknown number of"} cards so far. The profile is read a part at a time and earlier reads are kept, so a card sold since RPC last saw it can still appear until a complete read (${w.lastCompleteAt ? `last one ${ptDateTime(w.lastCompleteAt)}` : "none yet"}).`}
+          {profile.cardsMovedSinceSeen != null && profile.cardsMovedSinceSeen > 0
+            ? ` ${count(profile.cardsMovedSinceSeen)} card${profile.cardsMovedSinceSeen === 1 ? "" : "s"} Panini's marketplace now shows under another owner ${profile.cardsMovedSinceSeen === 1 ? "is" : "are"} left out.`
+            : ""}
           {/* 2026-10-10: this used to say "RPC prices Panini's soccer cards; other
               sports aren't covered" — false since the 09-28 multi-product walk:
               a live profile showed NBA cards at $28 FMV beside that sentence. The

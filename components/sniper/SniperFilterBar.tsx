@@ -143,7 +143,8 @@ export default function SniperFilterBar(props: {
             <span>CHASERS ONLY</span>
           </label>
         )}
-        {!isAllDay && (
+        {/* 2026-10-15: shown on All Day again — hidden 04-17 when All Day had no
+            usable FMV; the feed applies minDiscount on every All Day path. */}
         <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
           <span>MIN DISC.</span>
           <input
@@ -156,7 +157,6 @@ export default function SniperFilterBar(props: {
           />
           <span>%</span>
         </label>
-        )}
         <LeagueFilter value={leagueFilter} onChange={onLeagueChange} visible={collectionSlug === "nba-top-shot"} />
       </div>
       )}
