@@ -38,6 +38,9 @@ vi.mock("next/link", () => ({
   ),
 }))
 
+const trackMock = vi.fn()
+vi.mock("@/lib/telemetry/track", () => ({ track: (...a: unknown[]) => trackMock(...a) }))
+
 import LoginClient from "@/app/login/LoginClient"
 
 /** Mount with a given query string, the only input this component takes. */
@@ -51,6 +54,7 @@ const submit = () => screen.getByRole("button", { name: /send magic link/i })
 
 beforeEach(() => {
   sendMagicLink.mockReset()
+  trackMock.mockReset()
   sendMagicLink.mockResolvedValue({ ok: true, error: null })
 })
 
@@ -346,5 +350,30 @@ describe("LoginClient — the anonymous escape hatches", () => {
     renderAt("")
     const form = screen.getByPlaceholderText("you@example.com").closest("form")!
     expect(within(form).getByText(/no invite needed/i)).toBeTruthy()
+  })
+})
+
+// 2026-10-14: one beacon per submit, outcome-tagged, so the funnel can tell a
+// visitor who never tried from one whose link was sent and never clicked.
+describe("LoginClient — magic-link request beacon", () => {
+  it.each([
+    [{ ok: true, error: null }, "sent"],
+    [{ ok: false, notOnAllowList: true, error: null }, "blocked"],
+    [{ ok: false, error: "boom" }, "error"],
+  ])("tags the outcome (%#)", async (result, outcome) => {
+    sendMagicLink.mockResolvedValue(result)
+    renderAt("next=/share/0xb4ce555fbc2ad619?x=1")
+    fireEvent.change(emailBox(), { target: { value: "a@b.com" } })
+    fireEvent.click(submit())
+    await waitFor(() => expect(trackMock).toHaveBeenCalled())
+    expect(trackMock).toHaveBeenCalledWith("magic-link-requested", { outcome, next: "/share/0xb4ce555fbc2ad619" })
+  })
+
+  it("never puts the email in the beacon", async () => {
+    renderAt("")
+    fireEvent.change(emailBox(), { target: { value: "someone@example.com" } })
+    fireEvent.click(submit())
+    await waitFor(() => expect(trackMock).toHaveBeenCalled())
+    expect(JSON.stringify(trackMock.mock.calls)).not.toContain("someone@example.com")
   })
 })

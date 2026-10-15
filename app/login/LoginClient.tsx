@@ -21,6 +21,7 @@ import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { sendMagicLink } from "@/lib/auth/supabase-client"
 import { publishedCollections } from "@/lib/collections"
+import { track } from "@/lib/telemetry/track"
 
 type Status = "idle" | "sending" | "sent" | "error" | "waitlist"
 
@@ -53,6 +54,15 @@ export default function LoginClient() {
     setStatus("sending")
     setError("")
     const result = await sendMagicLink(email.trim().toLowerCase(), redirect)
+    // 2026-10-14: the funnel could see a /login view and, much later, a new
+    // account — nothing between. One beacon per submit says whether the
+    // visitor tried at all and how it ended, so "left without trying" and
+    // "link sent, never clicked" stop reading the same. Never the email; the
+    // return path without its query.
+    track("magic-link-requested", {
+      outcome: result.ok ? "sent" : result.notOnAllowList ? "blocked" : "error",
+      next: redirect.split("?")[0],
+    })
     if (result.ok) {
       setStatus("sent")
       return
