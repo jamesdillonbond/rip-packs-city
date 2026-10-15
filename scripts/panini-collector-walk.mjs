@@ -534,7 +534,9 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
         let pages = 0
         // A collection that comes up short is loaded once more (a slow first answer missed the
         // 45 s wait on 2026-09-27 and answered on the next load).
-        for (let load = 1; load <= 2 && holdings.size - before < c.count; load++) {
+        // 2026-10-15: never start the second load once the cap has passed — it re-navigated and
+        // waited up to 45 s more on a walk that was already over its budget.
+        for (let load = 1; load <= 2 && holdings.size - before < c.count && (load === 1 || !capped()); load++) {
           lastLen = null
           const first = nextAnswer("cards", 45_000)
           await page.goto(collectionDetailsUrl(nickname, c), { waitUntil: "domcontentloaded", timeout: 60_000 }).catch((e) => {
@@ -552,6 +554,15 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
         const read = holdings.size - before
         tallyCollectionNames(names, [...holdings.values()].slice(before), c.cname)
         log(`  ${nickname}: ${c.cname} (${c.year} ${c.sport}): ${read}/${c.count} cards, ${pages} page(s)`)
+        // 2026-10-15 (R131): a collection the CAP cut short is the cap's partial read, not a
+        // shortfall — reported as a shortfall it made the receiver fail a run that only hit its
+        // designed cap (7 of 14 capped runs 10-12 → 10-15). Same message shape as the check above,
+        // counting only the collections read in full.
+        if (read < c.count && capped()) {
+          capHit = `per-walk cap of ${capMin} min reached after ${ci} of ${collections.length} collections`
+          log(`  ${nickname}: ${capHit} (${c.cname} cut at ${read}/${c.count}) — posting a partial read`)
+          break
+        }
         if (read < c.count) shortfalls.push(`${c.cname} ${read}/${c.count}`)
       }
       if (capHit) error = [error, capHit].filter(Boolean).join("; ")
