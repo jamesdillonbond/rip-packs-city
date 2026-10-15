@@ -38,6 +38,8 @@
 2. **[P2, Trevor, 1 night] Golazos market frozen?** Same ask as Candy — is it still trading? Evidence under "Continued" below.
 3. **[P-low, Trevor, ~20 nights] #58 `OPENSEA_API_KEY`** — see item 1. Way back is in ledger 10-13 6:35 AM PT.
 4. **[P-low, Trevor/operator, 3 nights] `drop_scratch` residue** (~185 MB `flowty_archive.scratch_*`, Trevor's data): SQL editor only.
+5. **[P-med, Trevor, SQL editor, 1 night] Run `docs/pending-sql/audit_20261014_golazos_sales_v1_backfill_finished_suppression_made_permanent.sql`.** `cursor_stalled · high · golazos_sales_v1_backfill` has paged since 5:00 PM PT 10-14, when its bounded suppression lapsed. The row's own lapse instruction says to make it permanent once the cursor sits at the floor 137,390,146, and it has since 09-30 (parent lane 8/8 ok daily). `apply_migration` timed out 3× without applying (held for confirmation). The file checks its own preconditions. After running it, `git mv` it to `supabase/migrations/<YYYYMMDDHHMMSS>_<stem>.sql` (any fresh UTC timestamp) and commit, so the repo records it. The SQL editor writes no `schema_migrations` row, which is fine: `migration-parity` only checks the other direction (every production row has a committed file).
+6. **[P-low, Trevor, SQL editor] Retire the `topshot-misattrib-drain` suppression:** `DELETE FROM public.pipeline_alert_suppression WHERE pipeline = 'topshot-misattrib-drain';` Its own predicate (≤ 500 open) is false at the Atlas resolver's measured floor (705), it silences nothing live (lane retired 09-08), and its text says "delete it, do not renew". It otherwise expires 12-05. See known-issues #101 datapoint.
 
 **Closed this session (not carried):** #23/#25 edge-function drift. The register has both ✅ (09-08, 09-25), and today's R21 work retired the remaining credential-literal functions. The topshot-active-listings feeder box has recovered (`stalled_pipelines []`).
 
@@ -70,7 +72,19 @@
   - wallet-backfill dispatch/UFC/Golazos: these are stats-only rows.
 - Vercel runtime errors, 3 h: 1 (the known cold dist-5048 read).
 
+## Continued (~6:40 → ~8:05 PM PT, Trevor: "Keep going", then "work through anything still unresolved")
+
+- **Shipped `003d8a4f8` (verified live): Top Shot pack pages read Dapper's live per-dist counts.** Packs remaining, depletion and pull odds had read compute-topshot-pack-ev's v20 metadata, frozen since 08-28, under a footer saying "live". They now prefer `topshot_atlas_dists` (3,169 dists, re-read every ~2 days) when valid and newer. The observed-opens floor refutes it the same way it refutes v20 (9 dists). A failed read keeps v20 with its old stamp. This was #74's missed half. Live: 5048 → "134 of 22,068 · as of 17h ago".
+- **Shipped `8c7756be3`:** (a) /ufc/overview's About card no longer promises a sniper on a closed market, and the closed-market guard gains an About-card trading-claim arm, proven red on the old copy; (b) the market-cap tile's "Unknown" now names its real cause ("no price for this edition yet" on 253:9148 instead of "no burn count published" beside "Burned 0").
+- **Found by a live rendered sweep of 15 pages** through the Vercel MCP fetch, which reaches the site where the sandbox proxy cannot (tooling-gotchas.md).
+- **Measured, no change:** the misattribution backlog is at the Atlas resolver's floor (705; 695 never traded on Dapper's marketplace), so the "<500 in ~2 d" forecast is withdrawn (#101 datapoint, queue item 6). The subedition chain queue is catching up daily. Pinnacle's wmc `fmv_confidence` column is unused (the RPC supplies catalog confidence). All 258 tracked wallets were refreshed within 17 h. FMV confidence is calibrated (TS HIGH 9.5 % / MEDIUM 15.0 % / LOW 25.0 % median error). 60/60 scheduled workflows are green. Pack 5048's cold read is 814 ms against a 5 s budget.
+- **Candy trust breach went quiet for a reason that is NOT recovery:** another session retuned the arm at ~6:4x PM PT (applied straight to prod, recovered by the bot in `1200a4dd1`). It now pages at once if the Candy indexer is unhealthy, otherwise after 168 h (~10-18 8 PM PT if still silent).
+- **Golazos v1 suppression:** see queue item 5 (pending SQL, 3 timeouts).
+
 ## Watch next pass
 - pdx1: pack-detail and market-cap-tile `read exceeded` groups should stay near zero. A recurrence on a **warm** dist means a DB-side read to measure.
 - #185: the total row must still read `ok` **during** the 10-15 ~4:17 PM PT re-walk. That's the case the fix exists for.
 - Candy: re-run the ME activities probe (`net.http_get` on `/v2/collections/<symbol>/activities`) before calling it anything else.
+- Top Shot pack pages: the as-of on Packs remaining / Pull odds should read hours to days, never weeks. A Top Shot pack showing weeks means its Atlas row went stale or was refuted. Check `topshot_atlas_dists.summary_fetched_at` for that dist.
+- `topshot-onchain-art-backfill` (`b4e2c723c`): each run should write `thumbs_filled`/`videos_filled` > 0 with an advancing `extra.next_cursor`, and the legacy-URL candidate count should fall from ~9,265 by ~300 a run (≈ 4 days a lap).
+- Phantom holdings (`f37db838e`, `2f97fe8f9`, `5e47b70a4`): tracked wallets' wmc counts should equal holdings after their next walk (`0x4ab8b294112f182c` → 0 is already verified); `unseen_delete_skipped = suspiciously_large` should reach 0.
