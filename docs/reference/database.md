@@ -3086,3 +3086,14 @@ indexer writes `'onchain'`; no reader filters on `source`.
   (Atlas stores it without `0x`) + `price_cents` + `set_id_onchain:play_id_onchain` + `listed_at` ± 10 min,
   and trust only ONE-TO-ONE buckets: one buyer routinely places identical bids minutes apart (205 of 209
   "Atlas says completed" matches were such collisions).
+
+## ⚠ Three plan lessons from the 10-15 IO pass (Claude Code cloud, 9:06 AM PT)
+
+### ⛔ `EXPLAIN ANALYZE` EXECUTES — read a function's body for writes BEFORE profiling it
+Profiling `run_all_insider_detectors` one detector at a time ran five VOLATILE functions that `INSERT INTO topshot_insider_alerts`. They happened to dedupe (no rows landed — checked against the hourly cron's 8:26 AM PT rows), but nothing in the method guaranteed it. Before `EXPLAIN ANALYZE SELECT fn(...)`: `SELECT provolatile, strpos(lower(prosrc),'insert into')>0 FROM pg_proc WHERE proname = ...`; for a writer, profile its read-only CTEs as a plain SELECT, or a `pg_temp` copy that ends in `SELECT count(*)` (same PL/pgSQL parameterisation, so the plan matches).
+
+### ⭐ A planner misestimate from CORRELATED predicates is fixed by a partial index whose predicate IS the query's
+`backfill-topshot-buyers`' exhausted-count (`buyer IS NULL AND payer IS NOT NULL AND tx IS NOT NULL AND collection = TS`) walked the `payer_address` indexes (36,278 blocks) because the planner priced the existing null-buyer partial index at ~125k rows when it held ~45 — the predicates are correlated and stats were fresh, so ANALYZE cannot help. A 16 kB index with exactly that predicate took it to 10 blocks (`20261015152521`). Mirror the sibling partitions too: `sales_2023` lacked the TS null-buyer index `sales_2024` had, and every run seq-scanned it.
+
+### ⭐ An EXPRESSION index cannot give an index-only scan on its own column — INCLUDE the base column
+`idx_panini_serials_owner_lower (lower(owner))` served `count(*) WHERE lower(owner) = x` only as a plain Index Scan (~1 heap block per card: 5,156 blocks for one owner): the planner needs `owner` itself. `(lower(owner)) INCLUDE (owner)` made it index-only on a 98 %-all-visible table; with a LATERAL per candidate username, `panini_collector_rotation_targets` went 593,854 → ~48k blocks, 36 s → 157 ms (`20261015151449`). An INCLUDE index cannot deduplicate: 39 MB → 114 MB.
