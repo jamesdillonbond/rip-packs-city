@@ -455,3 +455,28 @@ claim, i.e. at the bottom of the walk.
 **`sales.offer_id`** (`20261011001215`, 2026-10-10): text, NULL except on `source='offer_fill'` sales, where it
 is the Dapper OffersV2 offerId the sale filled (Top Shot since 10-10, all 81,574 historical rows stamped; All Day
 from the #70 lane). Join to `offers.offer_id`. See database.md "The Top Shot `offers` table".
+
+## Panini plane — facts that are not visible from a column list (2026-10-14/15, session_01BRKYCRAu7AqoyQaLFxMuX4)
+
+- **`panini_sales` arrives with the walk, ~2 days late.** `first_seen_at − sold_at`: median **53 h**, p90 144 h
+  (12 d sample, 2026-10-14). ⛔ **Any Panini backtest must gate its inputs on `first_seen_at` (and serial
+  `last_sale_at`) ≤ the snapshot time, never on `sold_at`** — a `sold_at` gate leaked the future and made a
+  between-walk repricer look like +15 pts; point-in-time it was 55 % vs 56 % (not shipped). A Panini 24 h
+  sales total is a fabricated low for the same reason (the overview leaves the 24 h KPIs null).
+- **`panini_coverage_summary` is 2026 Prizm World Cup ONLY** (it reads `panini_wc_editions`: 5,238 of ~30.5k
+  editions). Any all-product surface quoting it must say "World Cup" (PaniniCoverageNote and the Sniper do).
+- **Panini `sets` rows are named "product · parallel"; Panini set PAGES key on `editions.set_name` via
+  `sets_summary`** (whose `set_name` slugifies to the exact `set_slug`, 1,731/1,731). A `sets`-derived slug
+  404s. `rpc_search_catalog` reads Panini set hits from `sets_summary` (`20261015052846`).
+- **`collections.is_active` is `false` for Panini BY DECISION (#64)** — published status is the registry's.
+  Consumers that admit Panini anyway do it by slug: `rpc_search_catalog` (`20261015042434`).
+- **FMV engine `panini-1.3.0` (2026-10-15):** `confidence` means how closely the edition's last ≤3 sales agree
+  (`panini_sales_spread`): HIGH ≤ 1.5× · MEDIUM = ≥3 sales in 30 d within 3× · else LOW (ASK_ONLY / NO_DATA
+  unchanged; prices are 1.2.0's). ⚠ **HIGH/MEDIUM no longer mean "a sale in the last 30 days"** — the
+  `panini_squeeze_totals.pct_sealed_usd_recent_sale_backed*` column names predate that. Rows before 10-15 carry
+  1.2.0 labels until re-walked (~4 d). Kill switch: Vercel env `PANINI_FMV_ENGINE=1.2`.
+- **`panini_editions.burned_count` / `still_in_packs` / `pulled_count` are Panini's own counts**, not ours —
+  older products really burned ~half their supply (NFL 1584: 966k of 2.08M), and 72 editions' parts do not sum
+  to `mint_cap` upstream. Not a defect to fix.
+- **A NULL list from `/api/collection-stats` means "not measured", never "none"** — every Flow arm returns
+  arrays; only a failed Panini read nulls one (and flags `*_failed`). The overview renders it "Couldn't load".
