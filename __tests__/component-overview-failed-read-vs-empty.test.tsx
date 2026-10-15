@@ -71,7 +71,7 @@ describe("overview panels: a failed read must not render as a market fact", () =
     })
 
     // The exact false claims this defect produced.
-    expect(screen.queryByText(/No sales in the last 24h/i)).toBeNull()
+    expect(screen.queryByText(/No sales (indexed )?in the last 24h/i)).toBeNull()
     expect(screen.queryByText(/No deals/i)).toBeNull()
   })
 
@@ -84,7 +84,7 @@ describe("overview panels: a failed read must not render as a market fact", () =
     await waitFor(() => {
       expect(screen.getAllByText(/Couldn.t load this right now/i).length).toBeGreaterThanOrEqual(2)
     })
-    expect(screen.queryByText(/No sales in the last 24h/i)).toBeNull()
+    expect(screen.queryByText(/No sales (indexed )?in the last 24h/i)).toBeNull()
   })
 
   it("a SUCCESSFUL read with zero rows still renders the honest empty state", async () => {
@@ -92,7 +92,7 @@ describe("overview panels: a failed read must not render as a market fact", () =
     render(<OverviewPage collection="nba-top-shot" />)
 
     await waitFor(() => {
-      expect(screen.getByText(/No sales in the last 24h/i)).toBeTruthy()
+      expect(screen.getByText(/No sales (indexed )?in the last 24h/i)).toBeTruthy()
     })
     expect(screen.getByText(/No deals/i)).toBeTruthy()
     expect(screen.queryByText(/Couldn.t load this right now/i)).toBeNull()
@@ -135,7 +135,7 @@ describe("overview panels: a failed read must not render as a market fact", () =
     })
     // The two claims it must never make: that the market was quiet, and that
     // we had an outage. Neither is true — we read 5 sales and named none.
-    expect(screen.queryByText(/No sales in the last 24h/i)).toBeNull()
+    expect(screen.queryByText(/No sales (indexed )?in the last 24h/i)).toBeNull()
     expect(screen.queryByText(/Couldn.t load this right now/i)).toBeNull()
   })
 
@@ -171,7 +171,7 @@ describe("overview panels: a failed read must not render as a market fact", () =
     expect(screen.getByText(/2 more sales in this window not yet matched to a moment/i)).toBeTruthy()
     // Still a real board — the rows it CAN name must render, not be suppressed.
     expect(screen.getByText(/Moment 3/)).toBeTruthy()
-    expect(screen.queryByText(/No sales in the last 24h/i)).toBeNull()
+    expect(screen.queryByText(/No sales (indexed )?in the last 24h/i)).toBeNull()
   })
 
   it("a fully nameable top 5 stays silent — no disclosure when nothing was dropped", async () => {

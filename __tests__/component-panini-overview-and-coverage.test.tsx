@@ -47,7 +47,7 @@ describe("Panini overview", () => {
     const note = screen.getByTestId("panini-coverage-note").textContent ?? ""
     expect(note).toMatch(/a floor, not a census/i)
     expect(note).toContain("5,094")
-    expect(screen.queryByText(/No sales in the last 24h/i)).toBeNull()
+    expect(screen.queryByText(/No sales (indexed )?in the last 24h/i)).toBeNull()
     expect(screen.getByText(/Sales aren.t a tracked feed/i)).toBeTruthy()
     expect(screen.queryByText("24h Sales Volume")).toBeNull()
     expect(screen.getByText("Typical Price Checked")).toBeTruthy()
@@ -68,6 +68,19 @@ describe("Panini overview", () => {
     await waitFor(() => expect(screen.getByText("$1,234")).toBeTruthy())
     expect(screen.getByTestId("insider-signals")).toBeTruthy()
     expect(screen.queryByTestId("panini-coverage-note")).toBeNull()
+  })
+})
+
+// 2026-10-14: Candy MLB's overview read "24h Sales Volume $0" while its only
+// keyed sale feed had been quiet for three days and a second venue sat
+// unindexed. A zero-sale day is "None indexed", a fact about RPC's feeds.
+describe("overview 24h volume: a day with no indexed sales is not $0", () => {
+  it("renders 'None indexed', never '$0', and the list says 'indexed'", async () => {
+    okFetch({ edition_count: 125, fmv_pct: 100, volume_24h: 0, sales_24h: 0, volume_7d: 781.83, fmv_age_minutes: 5, top_sales: [], sniper_deals: [] })
+    render(<OverviewPage collection="candy-mlb" />)
+    await waitFor(() => expect(screen.getByText("None indexed")).toBeTruthy())
+    expect(screen.queryByText("$0")).toBeNull()
+    expect(screen.getByText("No sales indexed in the last 24h")).toBeTruthy()
   })
 })
 

@@ -463,7 +463,7 @@ describe("CollectionOverviewClient — the three-way sales claim", () => {
   // State 2: the read succeeded and the market genuinely did nothing. An honest claim.
   it("says 'no sales in the last 24h' when the read succeeded with none", async () => {
     mount(() => json(200, STATS({ top_sales: [] })))
-    await waitFor(() => expect(document.body.textContent).toMatch(/No sales in the last 24h/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/No sales (indexed )?in the last 24h/))
     expect(document.body.textContent).not.toMatch(/not yet matched to a moment/)
   })
 
@@ -479,7 +479,7 @@ describe("CollectionOverviewClient — the three-way sales claim", () => {
       ],
     })))
     await waitFor(() => expect(document.body.textContent).toMatch(/2 recent sales not yet matched to a moment/))
-    expect(document.body.textContent).not.toMatch(/No sales in the last 24h/)
+    expect(document.body.textContent).not.toMatch(/No sales (indexed )?in the last 24h/)
   })
 
   it("uses the singular for one unmatched sale", async () => {
@@ -541,7 +541,7 @@ describe("CollectionOverviewClient — the three-way sales claim", () => {
   it("treats a 200 carrying an error key as a failure, not as an empty collection", async () => {
     mount(() => json(200, { error: "statement timeout" }))
     await waitFor(() => expect(document.body.textContent).toMatch(/Couldn’t load/))
-    expect(document.body.textContent).not.toMatch(/No sales in the last 24h/)
+    expect(document.body.textContent).not.toMatch(/No sales (indexed )?in the last 24h/)
     // The KPI band must not publish a zero edition count out of the failure.
     expect(document.body.textContent).not.toMatch(/\b0 editions\b/)
   })
@@ -549,7 +549,7 @@ describe("CollectionOverviewClient — the three-way sales claim", () => {
   it("does not publish a market claim after a thrown fetch", async () => {
     mount(() => { throw new Error("network down") })
     await waitFor(() => expect(document.body.textContent).toMatch(/Couldn’t load/))
-    expect(document.body.textContent).not.toMatch(/No sales in the last 24h/)
+    expect(document.body.textContent).not.toMatch(/No sales (indexed )?in the last 24h/)
     expect(document.body.textContent).not.toMatch(/No deals/)
   })
 
@@ -564,7 +564,7 @@ describe("CollectionOverviewClient — the three-way sales claim", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
     cleanup()
     mount(() => json(200, STATS({ sniper_deals: [], top_sales: [] })))
-    await waitFor(() => expect(document.body.textContent).toMatch(/No sales in the last 24h/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/No sales (indexed )?in the last 24h/))
   })
 
   // UFC's Flow market is frozen by design, so a red OUTDATED pill would be permanently wrong

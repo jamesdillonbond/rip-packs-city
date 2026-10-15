@@ -696,7 +696,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_market_movers",
-    description: "The market-pulse board: COLLECTION-level activity per collection — sales, volume, buyers/sellers and top sale over 24h / 7d / 30d windows. THE tool for 'market pulse', 'how active is the market', 'which collection is busiest'. ⚠ It has NO per-edition or per-moment price movement: for 'which moments/editions are trending or heating up' say RPC has no per-edition price-trend board, offer get_hot_floors (editions being swept right now, Top Shot) instead, and never claim /insights/market-pulse shows edition-level movement. Read-only; report factually, no buy/sell calls.",
+    description: "The market-pulse board: COLLECTION-level activity per collection — sales, volume, buyers/sellers and top sale over 24h / 7d / 30d windows. THE tool for 'market pulse', 'how active is the market', 'which collection is busiest'. A window with zero sales means none INDEXED there — follow the result's note and quote last_sale_at. ⚠ It has NO per-edition or per-moment price movement: for 'which moments/editions are trending or heating up' say RPC has no per-edition price-trend board, offer get_hot_floors (editions being swept right now, Top Shot) instead, and never claim /insights/market-pulse shows edition-level movement. Read-only; report factually, no buy/sell calls.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -1205,7 +1205,7 @@ Relay each finding's \`why\` — "you have a palindrome" is unverifiable on its 
   const dynamic = `${collectionBlurb}${marketSection}${userSection}${pageSection}${fmvCoverage ?? ""}
 
 ## Product surfaces you must know (current)
-- **Public /insights boards** (shareable, anon-public URLs — hand these out freely; they're the most shareable thing RPC has). /insights is the index. Highlights: /insights/top-sales (biggest recent sales + who bought/sold), /insights/deals (below-FMV asks), /insights/market-pulse (movers), /insights/rookies and /insights/rookie-board, /insights/squeeze and /insights/set-squeeze (supply locked/burned), /insights/first-mint, /insights/serial-premiums and /insights/parallel-premiums, /insights/underpriced-serials, /insights/offer-spread, /insights/new-collectors, /insights/cross-collection, /insights/pack-reality + /insights/topshot-pack-market + /insights/allday-pack-market, /insights/pinnacle-scarcity, /insights/set-completers, /insights/trophies, /insights/candy-mlb (Candy / Solana MLB), /insights/panini-squeeze (Panini). If a question maps to one, link it.
+- **Public /insights boards** (shareable, anon-public URLs — hand these out freely; they're the most shareable thing RPC has). /insights is the index. Highlights: /insights/top-sales (biggest recent sales + who bought/sold), /insights/deals (below-FMV asks), /insights/market-pulse (collection-level volume, sales and buyers by window), /insights/rookies and /insights/rookie-board, /insights/squeeze and /insights/set-squeeze (supply locked/burned), /insights/first-mint, /insights/serial-premiums and /insights/parallel-premiums, /insights/underpriced-serials, /insights/offer-spread, /insights/new-collectors, /insights/cross-collection, /insights/pack-reality + /insights/topshot-pack-market + /insights/allday-pack-market, /insights/pinnacle-scarcity, /insights/set-completers, /insights/trophies, /insights/candy-mlb (Candy / Solana MLB), /insights/panini-squeeze (Panini). If a question maps to one, link it.
 - **Rewards / points**: NOT a live feature. RPC has no live Status, Credits, points, tiers, cosmetics shop or redemption today — never tell a user they earn, have, or will receive any of them, and never send anyone to /rewards (it 404s). If asked, say a rewards program isn't available right now.
 - **Wallet verification (listing challenge)** — the working path for Top Shot collectors: go to /dashboard. RPC picks one cheap Moment you own and asks you to list it at a unique ~100x / $10-floor price (it won't sell — the odd cents are just a uniqueness check), confirms the live listing. ⚠ **It needs a Top Shot wallet (a Flow 0x address holding Top Shot Moments) — there is NO verification path for a Solana / Candy MLB wallet, or for a wallet with no Top Shot Moments, today.** Never offer verification to those users; say it is Top Shot-only for now. **RPC never asks you to connect or sign a wallet to use the site** — there is no wallet sign-in for loading a collection, verifying, or anything else. The ONE exception is a giveaway claim page (/giveaways/<drop>): a winner may optionally tap "Claim with Flow Wallet" to choose whether their pack goes to that Flow Wallet or to an account it has linked (e.g. their Dapper account). Their wallet asks them to approve a sign-in (it proves the wallet is theirs; no transaction, no fee, nothing leaves their account), then RPC reads which accounts are linked. Typing a Top Shot username still works. Only Flow Wallet is offered there (not Dapper). To load a collection you paste a public identifier (a Dapper wallet address or a Top Shot username; for Candy MLB, a Solana wallet address) and RPC reads it view-only; the listing challenge is the only way to mark a wallet as verifiably yours. Never tell a user to look for a "Sign in with Dapper" / "connect wallet" button — none exists.
 - **Team Hub** (/my-teams): follow teams and track per-team checklists — owned vs missing + cost-to-complete — across collections.
@@ -1468,6 +1468,33 @@ async function logBetaFeedback(args: {
 // ── Public-insights fetch helper (read-only market/ecosystem intelligence tools)
 // Fetches an anon-public /api/public/insights/* board (no auth needed — proxy.ts
 // allowlists /api/public/*) and trims rows so the model gets a compact result.
+/**
+ * A market-pulse window with sales_X = 0 means no sale was INDEXED in it, not
+ * that nobody traded (2026-10-14: Candy's only keyed feed had been quiet three
+ * days while a second venue sat unindexed, and the board said "$0"). Each such
+ * row gets `no_sales_indexed` (the empty windows) beside the payload's own
+ * `last_sale_at`, plus one note telling the model how to say it. Anything that
+ * is not an ok rows payload passes through untouched.
+ */
+function annotateMarketPulse(raw: string): string {
+  let out: any
+  try { out = JSON.parse(raw) } catch { return raw }
+  if (!out || out.status !== "ok" || !Array.isArray(out.rows)) return raw
+  let any = false
+  out.rows = out.rows.map((r: any) => {
+    if (!r || typeof r !== "object") return r
+    const empty = (["24h", "7d", "30d"] as const).filter((w) => r[`sales_${w}`] === 0)
+    if (empty.length === 0) return r
+    any = true
+    return { ...r, no_sales_indexed: empty }
+  })
+  if (any) {
+    out.note =
+      "A window listed in a row's no_sales_indexed had NO SALES INDEXED by RPC — say exactly that, never 'nobody traded', '$0 volume' or 'the market is dead'. Quote last_sale_at as the last indexed sale (null = none in 30 days). A zero also says nothing about marketplaces RPC does not index."
+  }
+  return JSON.stringify(out)
+}
+
 async function fetchPublicInsight(
   base: string,
   path: string,
@@ -4200,7 +4227,7 @@ async function executeToolInner(
 
   if (toolName === "get_market_movers") {
     const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 15)) || 15, 1), 40);
-    return fetchPublicInsight(base, `/api/public/insights/market-pulse`, limit);
+    return annotateMarketPulse(await fetchPublicInsight(base, `/api/public/insights/market-pulse`, limit));
   }
 
   if (toolName === "get_rookies") {

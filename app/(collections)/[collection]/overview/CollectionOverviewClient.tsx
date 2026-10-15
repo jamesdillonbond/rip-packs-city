@@ -433,8 +433,15 @@ export default function CollectionOverviewClient({
             value={
               stats
                 ? stats.volume_24h != null
-                  ? // a real sub-$0.50 day is not "$0" (2026-09-28); a measured zero stays "$0"
-                    stats.volume_24h > 0 ? fmtPrice(stats.volume_24h) : "$0"
+                  ? // a real sub-$0.50 day is not "$0" (2026-09-28). A zero is "no sale
+                    // INDEXED", not "$0 traded" (2026-10-14): Candy read "$0" for three
+                    // days while its only keyed feed was quiet and a second venue sat
+                    // unindexed. "$0" survives only if the feed reported sales at $0.
+                    stats.volume_24h > 0
+                    ? fmtPrice(stats.volume_24h)
+                    : (stats.sales_24h ?? 0) > 0
+                      ? "$0"
+                      : "None indexed"
                   : EM_DASH
                 : null
             }
@@ -622,7 +629,7 @@ export default function CollectionOverviewClient({
             </div>
           ) : rawTopSales.length === 0 ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
-              No sales in the last 24h
+              No sales indexed in the last 24h
             </div>
           ) : topSales.length === 0 ? (
             // Read succeeded and the market traded — we just can't name any of

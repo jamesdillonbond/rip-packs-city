@@ -136,6 +136,26 @@ describe("concierge — market-pulse / rookies", () => {
   it("get_market_movers reads the market-pulse board", async () => {
     const r = await drive("get_market_movers", { limit: 5 }, [jsonRoute("/api/public/insights/market-pulse", { rows: [{ m: 1 }] })])
     expect(r).toMatchObject({ status: "ok", count: 1 })
+    // No empty window → no annotation, no note.
+    expect(r.note).toBeUndefined()
+    expect((r.rows as Array<Record<string, unknown>>)[0].no_sales_indexed).toBeUndefined()
+  })
+  // 2026-10-14: a zero-sales window is "none INDEXED", not "nobody traded".
+  it("get_market_movers marks windows with no indexed sales and says how to phrase them", async () => {
+    const candy = { slug: "candy_mlb", sales_24h: 0, volume_24h: 0, sales_7d: 464, volume_7d: 781.83, sales_30d: 1333, last_sale_at: "2026-10-12T03:21:04+00:00" }
+    const busy = { slug: "nba_top_shot", sales_24h: 2095, sales_7d: 17074, sales_30d: 75873, last_sale_at: "2026-10-15T02:20:48+00:00" }
+    const r = await drive("get_market_movers", {}, [jsonRoute("/api/public/insights/market-pulse", { rows: [busy, candy] })])
+    expect(r.status).toBe("ok")
+    expect((r.rows as Array<Record<string, unknown>>)[1].no_sales_indexed).toEqual(["24h"])
+    expect((r.rows as Array<Record<string, unknown>>)[1].last_sale_at).toBe("2026-10-12T03:21:04+00:00")
+    expect((r.rows as Array<Record<string, unknown>>)[0].no_sales_indexed).toBeUndefined()
+    expect(String(r.note)).toMatch(/NO SALES INDEXED/)
+    expect(String(r.note)).toMatch(/never 'nobody traded'/)
+  })
+  it("get_market_movers passes a failed board through untouched", async () => {
+    const r = await drive("get_market_movers", {}, [jsonRoute("/api/public/insights/market-pulse", { error: "Board unavailable" })])
+    expect(r).toMatchObject({ status: "error" })
+    expect(r.note).toBeUndefined()
   })
   it("get_rookies forwards the sort param", async () => {
     const f = stubFetch([jsonRoute("/api/public/insights/rookies", { rows: [] })])
