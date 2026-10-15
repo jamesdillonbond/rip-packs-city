@@ -28,6 +28,7 @@ import { editionRouteHref } from "@/lib/entity-href"
 import { fetchPaniniPlayerSales, type PaniniPlayerSale } from "@/lib/panini/player-sales"
 import { saleSerialLabel } from "@/lib/entity/sale-serial-label"
 import MarketCapTile from "@/components/entity/MarketCapTile"
+import { indexCoverageNote, type IndexCoverage } from "@/lib/entity/index-coverage-note"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -266,7 +267,11 @@ async function fetchTopCollectors(playerName: string, limit: number): Promise<{ 
 // rookie-scoped, so a non-rookie player returns zero rows and the whole section —
 // header included — renders nothing. Never blocks or fails the rest of the page.
 async function TopCollectorsSection({ playerName }: { playerName: string }) {
-  const { rows: collectors, ok } = await fetchTopCollectors(playerName, 10)
+  const [{ rows: collectors, ok }, coverage] = await Promise.all([
+    fetchTopCollectors(playerName, 10),
+    sectionRowResult<IndexCoverage>("player index coverage", "get_topshot_rookie_index_coverage", { p_player_name: playerName }),
+  ])
+  const coverageNote = indexCoverageNote(coverage.row, coverage.ok)
   // ⚠ Rendering nothing is CORRECT for a genuine zero — the index is
   // rookie-scoped, so most players legitimately have none and an empty block
   // would be noise. It is only wrong when we could not look.
@@ -285,6 +290,11 @@ async function TopCollectorsSection({ playerName }: { playerName: string }) {
       <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
         Based on the indexed on-chain ownership graph · ranked by estimated value of this player&apos;s moments held
       </div>
+      {coverageNote && (
+        <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
+          {coverageNote}
+        </div>
+      )}
       <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {collectors.map(c => {
           // Same fabrication as Top Sales above — latent here only because
