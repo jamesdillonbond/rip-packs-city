@@ -77,6 +77,12 @@ import {
   HIGH_MAX_DISPERSION,
   MEDIUM_MAX_DISPERSION,
 } from "@/lib/fmv-confidence";
+import {
+  FMV_ALGO_VERSION,
+  FMV_RECENT_SALES_N,
+  FMV_RECENT_SPAN_DAYS,
+  FMV_RECENT_MIN_N,
+} from "@/lib/fmv-recalc-math";
 import { slugifyName, slugifyPlayerName } from "@/lib/entity-labels";
 import { isExhibitionTeamSlug } from "@/lib/team-denylist";
 import { sanitizeVisitSessionId, sanitizeVisitReferrer, isInternalCheckSessionId } from "@/lib/concierge/visit-link";
@@ -872,8 +878,13 @@ const TOOLS: Anthropic.Tool[] = [
 // >=7 with a dispersion test and MEDIUM at >=5 — and quoted coverage figures
 // months stale. Module-level so it is byte-identical per deploy and can sit
 // ABOVE the prompt-cache breakpoint (the guard test allows exactly this name).
-const FMV_METHODOLOGY_BLOCK = `## FMV Methodology — stated from the pricing code (algo 1.7.0), never from memory
-- **Model**: per edition, the trimmed median of its real sales over the last 30 days (bottom and top 10% of prices dropped), recomputed from the full sales history rather than from ingest-time prices. The "Avg Sales Price" shown beside it is a recency-weighted average with a 7-day half-life. An edition too thin to price on 30 days widens its window to 90 days so it can be priced at all — a price built that way can earn MEDIUM but never HIGH.
+// ⚠ 2026-10-14: the Model line said "algo 1.7.0 … trimmed median of 30 days,
+// top and bottom 10% dropped" for eleven days after 1.8.0 replaced it, and the
+// concierge recited it to collectors (support_conversations 10141, 10227). The
+// model's shape now comes from lib/fmv-recalc-math.ts, the module the recalc
+// prices with, so a model change moves this text with it.
+const FMV_METHODOLOGY_BLOCK = `## FMV Methodology — stated from the pricing code (algo ${FMV_ALGO_VERSION}), never from memory
+- **Model**: per edition, the MEDIAN of its ${FMV_RECENT_SALES_N} most recent TYPICAL sales — sales within ${FMV_RECENT_SPAN_DAYS} days of the newest one, never fewer than ${FMV_RECENT_MIN_N} when it has them; with fewer sales, the median of what there is. "Typical" means low / special serials (#1, jersey match, perfect mint, the bottom of the print run) are set aside when enough ordinary serials traded, single grail-serial spikes are damped, and registry buy-backs are not counted as market sales. A median of the latest sales follows the market within hours on a liquid edition and shrugs off a few odd prints. It is recomputed from the full sales history, not from ingest-time prices. The "Avg Sales Price" shown beside it is a different number: a recency-weighted average of the last 30 days (sales in the last 7 days count 3×, 7–14 days 2×, older 1×) — a diagnostic, not the FMV. An edition too thin to price on 30 days widens its window to 90 days so it can be priced at all — a price built that way can earn MEDIUM but never HIGH. Do NOT describe FMV as a "trimmed median" or a "30-day average" — that was the old model.
 - **Confidence** (tell users the words, never the raw enum):
   - **HIGH** = at least ${MIN_SALES_30D_HIGH} sales in the last 30 days AND those sales agree once the serial-number effect is removed (residual spread under ${HIGH_MAX_DISPERSION}).
   - **MEDIUM** = at least ${MIN_SALES_30D_MEDIUM} sales in 30 days but not HIGH; or ${MIN_SALES_30D_HIGH}+ sales whose spread lands between ${HIGH_MAX_DISPERSION} and ${MEDIUM_MAX_DISPERSION}; or a LOW edition rescued by a live ask less than a week old that sits within ±${Math.round(ASK_CORROBORATION_BAND * 100)}% of its sales median (needs at least ${MIN_SALES_ASK_CORROBORATION} sales). An ask only ever RAISES confidence; it never lowers a sales-based price.
@@ -1176,7 +1187,7 @@ Relay each finding's \`why\` — "you have a palindrome" is unverifiable on its 
 
 ## Common Questions (no tools needed)
 - "What can you do / where do I start?" → one tight, human line, not a menu dump: you help with support and how-things-work Q&A, capture bugs / feature requests / feedback for the team, and — on request — pull deals, FMV, wallet analysis, and live market/ecosystem data (biggest sales, what's moving, rookies, premiums, squeeze/scarcity, set completion, pack value and pack-reality). Then offer 2-3 concrete example questions they could ask, tailored to the page they're on. Don't list every tool.
-- "How is FMV calculated?" → the FMV Methodology section above, in the user's words: trimmed median of 30 days of real sales, the confidence tiers by sales count and agreement, rolling recompute (quote the row's timestamp, never a fixed interval)
+- "How is FMV calculated?" → the FMV Methodology section above, in the user's words: the median of the edition's most recent typical sales, the confidence tiers by sales count and agreement, rolling recompute (quote the row's timestamp, never a fixed interval)
 - "What are badges?" → Top Shot moment tags (Rookie Year, Top Shot Debut, Championship Year, Rookie Premiere, MVP Year, Rookie of the Year, Challenge / Leaderboard Reward); AllDay / Golazos / Pinnacle have parallels or variants instead. For a specific badge's meaning or how many editions carry it, call get_badge_info rather than answering from memory.
 - "Why is the sniper feed empty?" → say the live feed has nothing right now or could not be reached (whichever the tool said) and point to /[collection]/sniper — never narrate proxies, Cloudflare, or any plumbing
 - "How do I buy a moment?" → Connect your Dapper wallet on the native marketplace (nbatopshot.com / nflallday.com / etc.); RPC deep-links directly. NOTE: Flowty wound down its NFT marketplace in May 2026 — never recommend Flowty (or "checking Flowty") for buying, listing, or recent-sold comps; always point to the native marketplace.

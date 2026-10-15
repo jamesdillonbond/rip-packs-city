@@ -60,6 +60,24 @@ describe("the concierge's FMV methodology is stated from lib/fmv-confidence, not
     expect(MIN_SALES_ASK_CORROBORATION).toBeLessThanOrEqual(MIN_SALES_30D_MEDIUM)
   })
 
+  // 2026-10-14: the MODEL line was the one part still typed by hand, and it
+  // described algo 1.7.0 ("trimmed median of 30 days, top and bottom 10%
+  // dropped") for eleven days after 1.8.0 shipped — the concierge recited it to
+  // collectors. The model's shape and version now come from the module the
+  // recalc prices with; a model change moves the prompt with it.
+  it("states the FMV model from lib/fmv-recalc-math, never the retired trimmed median", () => {
+    for (const name of ["FMV_ALGO_VERSION", "FMV_RECENT_SALES_N", "FMV_RECENT_SPAN_DAYS", "FMV_RECENT_MIN_N"]) {
+      expect(block, `${name} must be interpolated, not typed`).toContain(`\${${name}}`)
+    }
+    expect(block).not.toMatch(/algo 1\.\d+\.\d+/)
+    // The block may NAME the retired phrase to forbid it, so check the Model
+    // line itself, and every canned answer outside the block.
+    const modelLine = block.split("\n").find((l) => l.startsWith("- **Model**")) ?? ""
+    expect(modelLine).toContain("MEDIAN")
+    expect(modelLine).not.toMatch(/the trimmed median of its real sales|10% of prices dropped/)
+    expect(ROUTE.slice(end)).not.toMatch(/trimmed median of 30 days/)
+  })
+
   it("carries no literal per-collection coverage percentage anywhere in the prompt", () => {
     const cacheableStart = ROUTE.indexOf("const cacheable = `")
     const dynamicEnd = ROUTE.indexOf("return { cacheable, dynamic }")

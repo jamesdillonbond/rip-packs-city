@@ -5,6 +5,8 @@
 // from; an entry is only as current as that file. Add to it when a reader
 // asks about a field that is not here — the question itself is the signal.
 
+import { FMV_ALGO_VERSION, FMV_RECENT_SALES_N, FMV_RECENT_SPAN_DAYS } from "@/lib/fmv-recalc-math";
+
 export type UiFieldEntry = {
   id: string;
   surface: string;
@@ -48,8 +50,8 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
     field: "FMV",
     aliases: ["fmv", "fair market value", "value", "what is fmv"],
     meaning:
-      "Rip Packs City's modelled Fair Market Value for the edition: the trimmed median of its real sales over the last 30 days (top and bottom 10% dropped), widened to 90 days when 30 days is too thin. It is a value estimate, not a listing price; it is NOT the low ask and NOT the high offer. Each FMV carries a confidence word.",
-    source: "app/api/support-chat/route.ts FMV_METHODOLOGY_BLOCK (algo 1.7.0)",
+      `Rip Packs City's modelled Fair Market Value for the edition: the median of its ${FMV_RECENT_SALES_N} most recent typical sales (sales within ${FMV_RECENT_SPAN_DAYS} days of the newest, special serials and grail spikes set aside), widened to 90 days when the edition is too thin to price otherwise. It is a value estimate, not a listing price; it is NOT the low ask and NOT the high offer. Each FMV carries a confidence word.`,
+    source: `lib/fmv-recalc-math.ts medianOfMostRecent (algo ${FMV_ALGO_VERSION})`,
   },
   {
     id: "fmv.confidence",
