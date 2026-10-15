@@ -101,6 +101,7 @@ function market(over: Record<string, unknown> = {}) {
 
 let marketResponse: () => Response
 let readyResponse: () => Response
+let teamsResponse: () => Response
 let fetchMock: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
@@ -109,11 +110,13 @@ beforeEach(() => {
   replace.mockClear()
   trackOutbound.mockClear()
   marketResponse = () => json(200, market())
+  teamsResponse = () => json(200, { teams: [] })
   readyResponse = () => json(200, { per_collection: [{ slug: "nba-top-shot", name: "Top Shot", sales_24h: 900, fmv_coverage_pct: 80 }] })
   fetchMock = vi.fn(async (input: unknown) => {
     const url = String(input)
     if (url.startsWith("/api/ready")) return readyResponse()
     if (url.startsWith("/api/wallet/edition-counts")) return json(200, { counts: {} })
+    if (url.startsWith("/api/market/teams")) return teamsResponse()
     return marketResponse()
   })
   vi.stubGlobal("fetch", fetchMock)
@@ -311,6 +314,7 @@ describe("MarketClient — results", () => {
     fetchMock.mockImplementation((input: unknown) => {
       const url = String(input)
       if (url.startsWith("/api/ready")) return Promise.resolve(readyResponse())
+      if (url.startsWith("/api/market/teams")) return Promise.resolve(teamsResponse())
       return new Promise<Response>((res) => { release = res })
     })
     const { container } = render(<MarketClient />)
@@ -683,6 +687,29 @@ describe("MarketClient — controls", () => {
     const srcs = Array.from(document.querySelectorAll("img")).map((i) => i.getAttribute("src") ?? "")
     expect(srcs.some((s) => s.includes("/resize/editions/") && s.includes("width=160"))).toBe(true)
     expect(srcs).not.toContain(master)
+  })
+
+  // 2026-10-14: the Team list was built from the 50 listings on screen, so Portland
+  // Fire (70 editions with a live ask) could not be picked. Options now come from
+  // /api/market/teams, merged with the page's teams.
+  it("offers a team that has no listing on the current page", async () => {
+    teamsResponse = () => json(200, { teams: ["Portland Fire", "Seattle Storm"] })
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.click(within(screen.getByText(/^Team$/i).closest("div")!).getByRole("button"))
+    const box = await screen.findByRole("listbox")
+    await within(box).findByText("Portland Fire")
+    expect(within(box).getByText("Portland Trail Blazers")).toBeTruthy()
+  })
+
+  it("still offers the page's teams when the full team list cannot be read", async () => {
+    teamsResponse = () => json(503, {})
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.click(within(screen.getByText(/^Team$/i).closest("div")!).getByRole("button"))
+    const box = await screen.findByRole("listbox")
+    expect(within(box).getByText("Portland Trail Blazers")).toBeTruthy()
+    expect(within(box).queryByText("Portland Fire")).toBeNull()
   })
 
   it("disables a multi-select that has no options in the current results", async () => {

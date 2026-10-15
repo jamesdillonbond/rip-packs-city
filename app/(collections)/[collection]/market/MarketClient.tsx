@@ -28,6 +28,7 @@ import { seriesDisplay } from "@/lib/series-label"
 import { momentSubjectHref, pinnacleRenderHref, editionRouteHref, momentSubjectName } from "@/lib/entity-href"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { COLLECTION_TIERS } from "@/lib/collection-tiers"
+import { fetchJson } from "@/lib/analytics/fetch-json"
 import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
 import { filterListingsByOwned, collectBadgeOptions, countActiveFilters } from "@/lib/market/filters"
 import BadgeIcon from "@/components/BadgeIcon"
@@ -452,6 +453,16 @@ function MarketInner() {
     return () => { cancelled = true }
   }, [fetchKey, resolvedCollectionUuid])
 
+  const [allTeams, setAllTeams] = useState<string[] | null>(null)
+  useEffect(() => {
+    if (!resolvedCollectionUuid) return
+    let cancelled = false
+    setAllTeams(null)
+    fetchJson<{ teams?: string[] }>(`/api/market/teams?collectionId=${encodeURIComponent(resolvedCollectionUuid)}`)
+      .then(({ ok, json }) => { if (!cancelled && ok && Array.isArray(json?.teams)) setAllTeams(json!.teams!) })
+    return () => { cancelled = true }
+  }, [resolvedCollectionUuid])
+
   // Push filter/sort/page state into the URL so deep-links work + back/forward
   // navigation preserves filter state.
   useEffect(() => {
@@ -503,7 +514,14 @@ function MarketInner() {
   const baseListings = data?.listings ?? []
   const setOptions = useMemo(() => collectDistinct(baseListings, l => l.setName), [baseListings])
   const seriesOptions = useMemo(() => collectDistinct(baseListings, l => l.seriesName), [baseListings])
-  const teamOptions = useMemo(() => collectDistinct(baseListings, l => l.teamName), [baseListings])
+  // Team options = every team the collection's editions carry (/api/market/teams)
+  // ∪ teams on this page ∪ the current selection. Built from the page alone, the
+  // dropdown hid any team without a listing in the 50 on screen (Portland Fire,
+  // 2026-10-14). A failed read leaves allTeams null → page teams still offered.
+  const teamOptions = useMemo(() => {
+    const merged = new Set<string>([...(allTeams ?? []), ...collectDistinct(baseListings, l => l.teamName), ...teamsSel])
+    return Array.from(merged).sort((a, b) => a.localeCompare(b))
+  }, [allTeams, baseListings, teamsSel])
   const badgeOptions = useMemo(() => collectBadgeOptions(baseListings), [baseListings])
 
   // Owned filter is applied client-side because the join lives on the
