@@ -1,4 +1,4 @@
-# Inbox index — 578 live filings
+# Inbox index — 582 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -31,6 +31,19 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-10-15 — 2 filings
+
+- [**🟢 Daytime health monitor — GREEN (10-15 ~06:00Z sweep); no candidate work**](2026-10-15T0009Z.md) — *(read-only sensing pass; filed from the mount by the 10-15 deep-audit drain, R132)*
+- [**🟡 OPEN (drop is in `docs/pending-sql/audit_20261015_fmv_snapshots_touch_updated_at_and_drop_zz_probes.sql`, DENIED by the auto-mode classifier 10-15) Daytime monitor — leftover `zz_probe_20261014` scratch function with no pinned `search_path` (advisor WARN)**](2026-10-15T0604Z-daytime-monitor-leftover-zz_probe-scratch-functions-search-path-drift.md)
+
+## 2026-10-14 — 1 filing
+
+- [**🟡 Daytime monitor candidate — Panini edition market-cap tile hits its 8 s read timeout (status NOT re-verified by the 10-15 drain; open until dispositioned)**](2026-10-14T1505Z-daytime-monitor-panini-edition-market-cap-tile-8s-read-timeout.md) — *(read-only daytime pass 10-14 ~8:05 AM PT)*
+
+## 2026-10-13 — 1 filing
+
+- [**✅ DISPOSITIONED 10-14 (`20261014235448`: `candy_sales_stale_hours` made indexer-health-aware; the stall was a genuine market freeze, not a bug) 🟡 Daytime monitor — `candy_sales_stale_hours` breach, thin market**](2026-10-13T1509Z-daytime-monitor-candy_sales_stale-breach-thin-market.md) — *(read-only sweep 10-13 ~8:06 AM PT)*
 
 ## 2026-10-12 — 1 filing
 
