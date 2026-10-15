@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // all-four outage is still a loud 500.
 
 const tables: Record<string, { data: any; error: any }> = {}
+const queried: string[] = []
 
 vi.mock("@/lib/supabase", () => {
   const make = (table: string) => {
@@ -20,7 +21,7 @@ vi.mock("@/lib/supabase", () => {
     }
     return b
   }
-  const admin: any = { from: (t: string) => make(t), rpc: async () => ({ data: null, error: null }) }
+  const admin: any = { from: (t: string) => { queried.push(t); return make(t) }, rpc: async () => ({ data: null, error: null }) }
   return { supabaseAdmin: admin, supabase: admin }
 })
 
@@ -29,7 +30,7 @@ import { GET } from "@/app/api/public/insights/pack-reality/route"
 const req = (u: string) => ({ url: u, nextUrl: new URL(u) }) as any
 const base = "https://t/api/public/insights/pack-reality"
 
-beforeEach(() => { for (const k of Object.keys(tables)) delete tables[k] })
+beforeEach(() => { for (const k of Object.keys(tables)) delete tables[k]; queried.length = 0 })
 
 describe("GET /api/public/insights/pack-reality", () => {
   it("returns an empty-but-shaped payload when all views are empty", async () => {
@@ -104,12 +105,43 @@ describe("GET /api/public/insights/pack-reality", () => {
   })
 
   // A failed read must not become a zero: null, so the client keeps the old copy.
+  // 2026-10-15: the staleness view (~2.7 s, a ~52 MB on-disk sort) ran on EVERY read
+  // although the page uses it only when the ranker is empty. It is now read only then,
+  // and `ranker_staleness_status` keeps "not needed" apart from "failed".
+  // Mutation-checked: reading it unconditionally reds the first two cases.
+  it("does NOT read the staleness view when the ranker has rows", async () => {
+    tables.topshot_pack_reality_top_ev = { data: [{ pack_listing_id: "p1", pack_ev: 3 }], error: null }
+    const body = await (await GET(req(base))).json()
+    expect(queried).not.toContain("v_topshot_pack_reality_ranker_staleness")
+    expect(body.meta.ranker_staleness).toBeNull()
+    expect(body.meta.ranker_staleness_status).toBe("not_needed")
+  })
+
+  it("does NOT read it when the ranker itself failed (nothing to explain)", async () => {
+    tables.topshot_pack_reality_top_ev = { data: null, error: { message: "top_ev down" } }
+    const body = await (await GET(req(base))).json()
+    expect(queried).not.toContain("v_topshot_pack_reality_ranker_staleness")
+    expect(body.meta.ranker_staleness_status).toBe("not_needed")
+  })
+
+  it("reads it when the ranker loaded EMPTY, and says so", async () => {
+    tables.v_topshot_pack_reality_ranker_staleness = {
+      data: [{ qualifying_ignoring_freshness: 2, newest_qualifying_snapshot: "2026-10-10T00:00:00Z", candidates_considered: 3, candidates_adjudicated: 3 }],
+      error: null,
+    }
+    const body = await (await GET(req(base))).json()
+    expect(queried).toContain("v_topshot_pack_reality_ranker_staleness")
+    expect(body.meta.ranker_staleness.stale_count).toBe(2)
+    expect(body.meta.ranker_staleness_status).toBe("read")
+  })
+
   it("a failed staleness read leaves ranker_staleness null rather than a 0 count", async () => {
     tables.v_topshot_pack_reality_ranker_staleness = { data: null, error: { message: "boom" } }
     const res = await GET(req(base))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.meta.ranker_staleness).toBeNull()
+    expect(body.meta.ranker_staleness_status).toBe("failed")
   })
 
   it("classifies realized model-vs-reality buckets (non-fossil guard)", async () => {

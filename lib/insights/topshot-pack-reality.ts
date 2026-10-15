@@ -71,6 +71,8 @@ export type TopshotPackRealityBody = {
     filters: { limit: number }
     errors: PackRealityLegError[]
     ranker_staleness: RankerStaleness | null
+    /** Why `ranker_staleness` is what it is: `not_needed` = the ranker had rows (or failed to load), so nothing was read. */
+    ranker_staleness_status: "not_needed" | "read" | "failed"
   }
   stats: Record<string, unknown> | null
   distribution: Record<string, unknown>[]
@@ -102,7 +104,7 @@ export async function readTopshotPackReality(
   const startedAt = Date.now()
   const supabase = db
 
-  const [statsRes, distRes, topEvRes, realizedRes, rankerStaleRes] = await Promise.all([
+  const [statsRes, distRes, topEvRes, realizedRes] = await Promise.all([
     boundedRead(supabase.from("topshot_pack_reality_stats").select("*").limit(1), "api/public/insights/pack-reality/topshot_pack_reality_stats"),
     boundedRead(supabase.from("topshot_pack_reality_dist").select("*"), "api/public/insights/pack-reality/topshot_pack_reality_dist"),
     boundedRead(supabase
@@ -121,16 +123,27 @@ export async function readTopshotPackReality(
       )
       .gte("n_opens", 10)
       .limit(1000), "api/public/insights/pack-reality/v_topshot_pack_realized_ev"),
-    // Why the +EV ranker is empty, when it is empty. The board's own zero rows
-    // cannot distinguish "nothing qualifies" (an honest market answer) from
-    // "everything that qualifies is stale" (a claim about OUR pipeline) — and on
-    // 2026-09-01 it was the second: 3 packs passed every filter and were 107-130h
-    // old, so the 48h freshness clause emptied the board while the page said
-    // "No +EV packs right now." This view is that MV's filter minus the freshness
-    // clause. It is DELIBERATELY not fatal: if it fails we simply cannot explain
-    // an empty board, which is the status quo, not a regression.
-    boundedRead(supabase.from("v_topshot_pack_reality_ranker_staleness").select("*").limit(1), "api/public/insights/pack-reality/v_topshot_pack_reality_ranker_staleness"),
   ])
+
+  // Why the +EV ranker is empty, when it is empty. The board's own zero rows
+  // cannot distinguish "nothing qualifies" (an honest market answer) from
+  // "everything that qualifies is stale" (a claim about OUR pipeline) — and on
+  // 2026-09-01 it was the second: 3 packs passed every filter and were 107-130h
+  // old, so the 48h freshness clause emptied the board while the page said
+  // "No +EV packs right now." This view is that MV's filter minus the freshness
+  // clause. It is DELIBERATELY not fatal: if it fails we simply cannot explain
+  // an empty board, which is the status quo, not a regression.
+  //
+  // 2026-10-15: read ONLY when the ranker loaded and came back EMPTY — the one
+  // case its answer is used (the page ignores it otherwise). It ran on every
+  // read: ~290/day at ~2.7 s, ~20k blocks and a ~52 MB on-disk sort each (it
+  // re-derives the latest row per listing across every collection), while the
+  // ranker held rows and the answer was discarded. `ranker_staleness_status`
+  // keeps "not needed" apart from "failed", which both leave the object null.
+  const rankerNeedsExplaining = topEvRes.error == null && (topEvRes.data ?? []).length === 0
+  const rankerStaleRes = rankerNeedsExplaining
+    ? await boundedRead(supabase.from("v_topshot_pack_reality_ranker_staleness").select("*").limit(1), "api/public/insights/pack-reality/v_topshot_pack_reality_ranker_staleness")
+    : null
 
   // PARTIAL FAILURE IS NOT A 500. Until 2026-08-02 the first three legs were
   // each FATAL, so one slow view took the WHOLE board down: the page rendered
@@ -233,13 +246,13 @@ export async function readTopshotPackReality(
   // market's, and the client must not say "No +EV packs right now."
   // ⚠ null when this leg failed — the client then falls back to the old copy,
   // which is the status quo rather than a new false claim.
-  const staleRow = (rankerStaleRes.data?.[0] ?? null) as {
+  const staleRow = (rankerStaleRes?.data?.[0] ?? null) as {
     qualifying_ignoring_freshness?: number | null
     newest_qualifying_snapshot?: string | null
     candidates_considered?: number | null
     candidates_adjudicated?: number | null
   } | null
-  if (rankerStaleRes.error) {
+  if (rankerStaleRes?.error) {
     console.error("[public/insights/pack-reality] v_topshot_pack_reality_ranker_staleness", rankerStaleRes.error)
   }
   // 2026-09-20 (#118): `stale_count` is now ADJUDICATED, not assumed — the view
@@ -280,6 +293,7 @@ export async function readTopshotPackReality(
       filters: { limit },
       errors,
       ranker_staleness: rankerStaleness,
+      ranker_staleness_status: rankerStaleRes == null ? "not_needed" : rankerStaleRes.error ? "failed" : "read",
     },
     stats: statsRes.data?.[0] ?? null,
     distribution: distRes.data ?? [],
