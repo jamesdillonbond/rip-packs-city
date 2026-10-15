@@ -76,7 +76,7 @@ describe("/api/cron/backfill-pack-rip-metadata — deferred body", () => {
     backfillImpl.fn = async () => ({ data: { processed: 1 }, error: null })
     await drive()
     const call = rpc.mock.calls.find((c) => c[0] === "backfill_pack_rip_metadata")
-    expect(call?.[1]).toEqual({ p_limit: 2000 })
+    expect(call?.[1]).toEqual({ p_limit: 1500 }) // 10-15: 2000 → 1500, zero drain finished (route comment)
   })
 
   // ⚠ ADDED 2026-09-20 with the counters themselves. A count the route drops on

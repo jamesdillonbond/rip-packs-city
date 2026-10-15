@@ -62,8 +62,17 @@ async function run(request: NextRequest) {
       // therefore LOWER at 2000 (~42M blocks over ~11 days vs ~53M over ~45),
       // while the per-DAY cost is ~3.3x. ~750 MB/day extra disk reads against the
       // Large tier is negligible. Revert = restore 500; nothing else depends on it.
+      //
+      // 2026-10-15: 2000 -> 1500. The reason for 2000 is FINISHED: `pull_value_usd
+      // = 0` has 0 rows (measured 10-15), so the zero leg's 300 slots select nothing
+      // and every tick processes 1,700. Meanwhile the run grew from avg 33.8 s
+      // (10-12) to 40.6 s (10-15, max 50.1 s) against the function's own 50 s
+      // statement_timeout, which killed 2 runs on 10-15. Of the 1,700 rows a tick
+      // touches ~10 gain a value; the bulk is the null-drain leg (2.41 M never-
+      // stamped rows, mostly unpriceable) and the 7-day stale re-price. 1500 →
+      // ~1,275 rows/tick (~30 s at the measured rate). Cut ITEMS, not the timeout.
       const res = await supabaseAdmin.rpc("backfill_pack_rip_metadata", {
-        p_limit: 2000,
+        p_limit: 1500,
       });
       if (res.error) {
         ok = false;
