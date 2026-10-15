@@ -35,7 +35,7 @@ import SupportChatConnected from "@/components/SupportChatConnected"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 import { load, decodeId, type LegacyData } from "@/lib/pinnacle/moment-detail"
-import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
+import { OG_INHERITED, TWITTER_INHERITED, breadcrumbJsonLd } from "@/lib/seo"
 import { usdSignFirst } from "@/lib/usd-format"
 import { setEntityHref, pinnacleCharacterHref, pinnacleFranchiseHref, pinnacleSeriesHref } from "@/lib/entity-href"
 
@@ -78,7 +78,10 @@ export async function generateMetadata({
   const variant = metaField(ed.variant)
   // joinMetaParts drops absent segments, so a null `variant` can't leave a
   // dangling " · " on the title.
-  const title = joinMetaParts([charName ?? "Pinnacle edition", variant], " · ")
+  // 2026-10-14 (live SEO audit): the title named no collection — "Remember Me ·
+  // Golden | Rip Packs City" — on 2,812 sitemap pin pages. Every other entity
+  // title carries its collection; "Disney Pinnacle Pin" is also the query.
+  const title = `${joinMetaParts([charName ?? "Pinnacle edition", variant], " · ")} — Disney Pinnacle Pin`
   // Absent facts are omitted rather than rendered as em-dashes: "— from —, —
   // variant" is noise in a search snippet. The subject keeps a real fallback so
   // the sentence always reads.
@@ -183,9 +186,22 @@ export default async function PinnacleMomentPage({
   const floor = ed.floor_ask != null ? Number(ed.floor_ask) : null
   const fmvOverFloor = fmv != null && floor != null && floor > 0 && fmv > 1.3 * floor
 
-  const jsonLd = {
-    "@context": "https://schema.org",
+  // 2026-10-14 (live SEO audit): the only entity page with no BreadcrumbList and
+  // no Product url. Now a @graph like editionJsonLd: Product + Home → Disney
+  // Pinnacle → set → pin.
+  const pinUrl = `${SITE_URL}/pinnacle/moment/${encodeURIComponent(ed.render_id)}`
+  const pinName = joinMetaParts([metaField(ed.character_name) ?? "Pinnacle pin", metaField(ed.variant)], " · ")
+  const setHref = setEntityHref("disney-pinnacle", ed.set_name)
+  const crumbs = breadcrumbJsonLd([
+    { name: "Home", url: SITE_URL },
+    { name: "Disney Pinnacle", url: `${SITE_URL}/disney-pinnacle/overview` },
+    ...(setHref && metaField(ed.set_name) ? [{ name: metaField(ed.set_name) as string, url: `${SITE_URL}${setHref}` }] : []),
+    { name: pinName, url: pinUrl },
+  ])
+  const product = {
     "@type": "Product",
+    "@id": pinUrl,
+    url: pinUrl,
     // Same trim rule as generateMetadata — JSON-LD is a machine-read surface, so
     // a trailing space here ends up in rich-result output too.
     name: joinMetaParts([metaField(ed.character_name) ?? "Pinnacle pin", metaField(ed.set_name)], " — "),
@@ -202,6 +218,7 @@ export default async function PinnacleMomentPage({
         }
       : {}),
   }
+  const jsonLd = { "@context": "https://schema.org", "@graph": [product, crumbs] }
 
   return (
     <PinnacleShell>
