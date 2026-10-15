@@ -270,6 +270,8 @@ const TABLE: Row[] = [
   ["/api/wallet-cache", "GET", true],
   ["/api/wallet-cache", "POST", false, "POST=upsert_wmc_batch write, stays gated"],
   ["/api/market", "POST", false],
+  ["/api/market/teams", "GET", true, "the Market tab's Team list; anon got 307 → /login (2026-10-14)"],
+  ["/api/market/teams", "POST", false],
   ["/api/profile/me", "GET", true, "answers {user:null} for anon by design; was 307'd to /login (2026-09-04)"],
   ["/api/profile/me", "POST", false, "no write form is public"],
   ["/api/profile/bio", "GET", false, "the rest of /api/profile stays gated"],
