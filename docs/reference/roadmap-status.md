@@ -227,7 +227,7 @@ now a row in the public `/legal/fmv-methodology` accuracy table.
   (p90 144 h) after `sold_at`, because they arrive with the walk. Point-in-time it is 55 % vs 56 % — no gain.
   ⛔ **Any Panini backtest must gate inputs on `first_seen_at`, not `sold_at`.** The real lever is
   ingest latency (the laptop walk's edition age, p50 ~89 h), not the estimator.
-- **A DISPERSION-based confidence rule — proposed, NOT shipped (pricing-engine change, Trevor's call).**
+- **A DISPERSION-based confidence rule — ✅ SHIPPED 2026-10-15 as FMV engine `panini-1.3.0` (Trevor: "Do what makes sense on these"); `PANINI_FMV_ENGINE=1.2` is the kill switch. Prices unchanged; labels re-grade as editions are re-walked (~4 days). Measure it live in `panini_published_fmv_backtest` (algo_version `panini-1.3.0`).** Original proposal:
   Measured 2026-10-14 ~10:30 PM PT, panini-1.2.0 snapshots vs the next real sale (14 d, inputs gated on
   `first_seen_at` / `last_sale_at <= computed_at`), within ±25 % by the spread of the edition's last 3 sales
   (panini_sales ∪ serial last sales):
@@ -248,6 +248,13 @@ now a row in the public `/legal/fmv-methodology` accuracy table.
   NOT worse — newest sale < 30 d: 68 %, 30–90 d: 73 %, > 90 d: 86 %.** Likely confound: old tight editions
   are cheap commons at a stable floor. So no recency bound is needed for accuracy; the remaining caveat is
   only selection (editions that never sell again are never scored).
+- **ASK_ONLY pricing — measured, deliberately NOT changed (2026-10-15).** Over 662 ASK_ONLY targets (45 d) the
+  next sale was a median 0.33× the floor ask (p25 0.17×, p75 0.50×) — but re-scaling the 0.5 multiplier to fit
+  that median LOWERS accuracy (within ±25 %: 32 % today vs 23–24 % at 0.25–0.35), because the spread is wide.
+  Only 4 targets had a $1,000+ ask, too few to fit an outlier cap on (the $1M-ask Dembele /12 → $500K case).
+  The boards already label these "from asks" and call the total an upper bound. Revisit with ≥ 50 big-ask sales.
+- **Ingest latency (sales land ~53 h late) — left as is.** The fix is a faster/cloud walk: infra spend
+  (pre-revenue rule) or an untestable-from-here change to the laptop runner.
 
 ## ⭐ HEADLINE METRIC — re-read live 2026-10-10 ~3:05 PM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 09-18 block below)
 
