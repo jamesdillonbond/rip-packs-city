@@ -81,10 +81,12 @@
 - **Candy trust breach went quiet for a reason that is NOT recovery:** another session retuned the arm at ~6:4x PM PT (applied straight to prod, recovered by the bot in `1200a4dd1`). It now pages at once if the Candy indexer is unhealthy, otherwise after 168 h (~10-18 8 PM PT if still silent).
 - **Golazos v1 suppression:** see queue item 5 (pending SQL, 3 timeouts).
 
+- **Homepage FMV preview (`f7ee35e3a`, deployed):** the server HTML no longer renders a hardcoded $148.00 and invented ×12 / ×2.8 serial prices under "LOADING FMV…"; LIVE labels serials with the demo's fitted multiplier.
+
 ## Watch next pass
 - pdx1: pack-detail and market-cap-tile `read exceeded` groups should stay near zero. A recurrence on a **warm** dist means a DB-side read to measure.
 - #185: the total row must still read `ok` **during** the 10-15 ~4:17 PM PT re-walk. That's the case the fix exists for.
 - Candy: re-run the ME activities probe (`net.http_get` on `/v2/collections/<symbol>/activities`) before calling it anything else.
 - Top Shot pack pages: the as-of on Packs remaining / Pull odds should read hours to days, never weeks. A Top Shot pack showing weeks means its Atlas row went stale or was refuted. Check `topshot_atlas_dists.summary_fetched_at` for that dist.
-- `topshot-onchain-art-backfill` (`b4e2c723c`): each run should write `thumbs_filled`/`videos_filled` > 0 with an advancing `extra.next_cursor`, and the legacy-URL candidate count should fall from ~9,265 by ~300 a run (≈ 4 days a lap).
+- `topshot-onchain-art-backfill` (`b4e2c723c`) — ✅ first run verified 8:22 PM PT 10-14: 237 thumbnails + 263 videos, 0 errors, cursor set, 9,265 → 8,994, 6/6 new IPFS URLs serve. Each later run should write `thumbs_filled`/`videos_filled` > 0 with an advancing `extra.next_cursor`, and the legacy-URL candidate count should fall from ~9,265 by ~300 a run (≈ 4 days a lap).
 - Phantom holdings (`f37db838e`, `2f97fe8f9`, `5e47b70a4`): tracked wallets' wmc counts should equal holdings after their next walk (`0x4ab8b294112f182c` → 0 is already verified); `unseen_delete_skipped = suspiciously_large` should reach 0.
