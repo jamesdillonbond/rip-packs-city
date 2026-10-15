@@ -24,9 +24,10 @@
 //     another" rule in CLAUDE.md — the two populations differ (latest snapshot
 //     per edition vs the current-price table). So the table publishes the SHARE
 //     and its as-of, and not a denominator it cannot source from the same pass.
-//   * Panini has no `panini_fmv_high_med_share_pct` row (roadmap-status.md,
-//     2026-09-20: "no owner in the trust-health precompute"), so it is not listed
-//     rather than shown as "unavailable" forever — the component says so.
+//   * Panini had no `panini_fmv_high_med_share_pct` row until 2026-10-14
+//     (roadmap-status.md: "no owner in the trust-health precompute"). Its leg,
+//     rpc_thp_leg_panini_fmv_share, now writes one from panini_fmv_snapshots
+//     (latest row per edition) — the same basis note as Pinnacle's own history.
 //
 // THE SENTINELS, verbatim from the leg's contract (migration 20260910230812):
 //     0..100  a real percentage
@@ -62,7 +63,7 @@ export const ACCURACY_STALE_AFTER_MS = 48 * 60 * 60 * 1000
 
 /**
  * metric prefix in the precompute → registry collection id. Order is display
- * order. Panini is deliberately absent (no metric row exists — see header).
+ * order. Panini last: measured from its own snapshots (see header).
  */
 export const ACCURACY_METRIC_COLLECTIONS: ReadonlyArray<{ prefix: string; collectionId: string }> = [
   { prefix: "topshot", collectionId: "nba-top-shot" },
@@ -71,6 +72,7 @@ export const ACCURACY_METRIC_COLLECTIONS: ReadonlyArray<{ prefix: string; collec
   { prefix: "golazos", collectionId: "laliga-golazos" },
   { prefix: "ufc", collectionId: "ufc" },
   { prefix: "candy", collectionId: "candy-mlb" },
+  { prefix: "panini", collectionId: "panini-blockchain" },
 ]
 
 export const ACCURACY_METRICS: readonly string[] = ACCURACY_METRIC_COLLECTIONS.map(

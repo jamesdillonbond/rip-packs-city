@@ -2072,6 +2072,14 @@ const PINS = [
       "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
+  // Panini's half of the headline accuracy metric (2026-10-14). Latest row PER EDITION —
+  // panini_fmv_snapshots keeps daily history, so a per-row count would overweight liquid editions.
+    fn: "rpc_thp_leg_panini_fmv_share",
+    test: "supabase/tests/rpc_thp_leg_panini_fmv_share.sql",
+    migration:
+      "supabase/migrations/20261015025957_audit_20261014_panini_fmv_share_gets_a_trust_health_leg.sql",
+  },
+  {
   // ── Non-SECDEF scheduled writers (3) ──────────────────────────────────────
   //
   // ⚠ The other three of the eleven. They were missed because the sweep that produced the

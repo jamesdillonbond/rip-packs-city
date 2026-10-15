@@ -236,10 +236,10 @@ export default async function FmvMethodologyPage() {
       <p style={P}>
         Each figure is the share of editions, not of dollar value, over every
         edition that currently has a price in that collection, taken from the
-        latest snapshot per edition. Disney Pinnacle is measured per pin from its
-        own price history, so its share is on a different basis from the five
-        collections above it and the figures are not averaged together. Panini is
-        not yet included because our monitoring does not publish a figure for it.
+        latest snapshot per edition. Disney Pinnacle (per pin) and Panini (per
+        card edition) are each measured from their own price history, so their
+        shares are on a different basis from the other collections and the
+        figures are not averaged together.
         The &ldquo;as of&rdquo; time is when the figure was computed; a reading
         more than two days old is marked stale. When a figure cannot be read it
         says <em>unavailable</em> — we do not show a number we did not measure.
