@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
 import ShareButton from "./ShareButton"
 import SaveToCollectionCTA from "./SaveToCollectionCTA"
+import ShareSignUpLink from "./ShareSignUpLink"
+import WalletSearch from "@/components/WalletSearch"
 import ShareEmptyState from "./ShareEmptyState"
 import DealWatchCapture from "@/components/DealWatchCapture"
 import FunnelTracker from "@/components/FunnelTracker"
@@ -298,6 +300,26 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             without an account. Fires email_capture_submitted. */}
         <DealWatchCapture wallet={wallet} />
 
+        {/* Own-collection lookup (2026-10-14). Shared cards drew 16 anonymous
+            views across 8 collectors' links in 10-08..10-14 and none of those
+            visitors went on to look up their own — this card had no input. Same
+            canonical WalletSearch as the home and layout bands; distinct surface
+            so its pastes are attributable. */}
+        <div className="rpc-card" style={{ marginBottom: 32, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "var(--rpc-text-secondary)", textTransform: "uppercase" }}>
+            See your own collection like this
+          </div>
+          <WalletSearch
+            surface="share_own_lookup"
+            variant="inline"
+            destination="share"
+            placeholder="Top Shot username or 0x wallet…"
+            ariaLabel="Look up your own Top Shot username or Flow wallet address"
+            submitLabel="Go →"
+            pendingLabel="…"
+          />
+        </div>
+
         {/* Wallet-intel overlay — RPC's Top Shot intelligence lens (rookies /
             squeezed / trophies + ranked highlights) that Top Shot's own profile
             doesn't surface. TS-scoped, so framed explicitly as Top Shot (the
@@ -567,15 +589,9 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             Free preview
           </div>
           <div style={{ fontSize: 16, color: "var(--rpc-text-secondary)", lineHeight: 1.5, maxWidth: 540, margin: "0 auto 16px" }}>
-            This is a free snapshot. Sign up to track FMV over time, badges, set completion, and deal alerts for this wallet — free during beta.
+            This is a free snapshot. Sign up to save this wallet, track its FMV over time, badges and set completion, and get price alerts on the moments you watch — free during beta.
           </div>
-          <a
-            href="/login"
-            // brand-exception: white label on the red CTA button — theme-independent
-            style={{ display: "inline-block", padding: "12px 28px", background: "var(--rpc-red)", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.06em" }}
-          >
-            Create a free account →
-          </a>
+          <ShareSignUpLink wallet={wallet} />
         </div>
 
         {/* Action buttons */}

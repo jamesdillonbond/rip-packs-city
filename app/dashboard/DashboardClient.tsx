@@ -35,6 +35,7 @@ import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 import { momentSubjectName } from "@/lib/entity-href"
+import FirstAlertPrompt from "@/components/alerts/FirstAlertPrompt";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -1027,6 +1028,10 @@ function ProfilePageInner() {
         ) : bioLoaded && wallets.length > 0 ? (
           <ClaimHandleCard />
         ) : null}
+
+        {/* First alert (2026-10-14): renders only when both alert reads are
+            ok AND empty — see components/alerts/FirstAlertPrompt.tsx. */}
+        <FirstAlertPrompt />
 
         {/* ── Hero: onboarding CTA / HeroMoment / Trophy Case ── */}
         {/* ⚠ `walletsFailed` FIRST. An empty `wallets` is ambiguous — it means

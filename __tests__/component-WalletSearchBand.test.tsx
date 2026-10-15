@@ -108,10 +108,32 @@ describe("WalletSearchBand", () => {
   // 2026-09-25: Panini published with dbChain NULL (no chain, no wallets). The
   // old guard (`chain && chain !== "flow"`) let null through and would have put
   // a Flow wallet box on /panini-blockchain/*.
-  it("renders NOTHING on a collection with NO chain (Panini — owners are usernames)", () => {
+  // 2026-10-14: re-pinned, not inverted. The property — no FLOW wallet box on
+  // Panini — still holds; Panini now gets a USERNAME band routed to its own
+  // public collection tab, because its edition pages were half of Google's
+  // landings and had no next step at all.
+  it("puts NO Flow wallet box on Panini (owners are usernames) — a username band instead", () => {
     const { container } = render(<WalletSearchBand scope="collection" collectionId="panini-blockchain" />)
-    expect(container.querySelector("input")).toBeNull()
     expect(container.querySelector("[data-rpc-wallet-band]")).toBeNull()
+    expect(container.textContent).not.toMatch(/0x|wallet address/i)
+    const input = container.querySelector("[data-rpc-panini-band] input") as HTMLInputElement
+    expect(input.getAttribute("placeholder")).toBe("Panini username")
+  })
+
+  it("routes a Panini username to the PUBLIC Panini collection tab and logs the lookup", () => {
+    mockPath = "/panini-blockchain/edition/packcard-2420_538246_12857312_29"
+    const { container } = render(<WalletSearchBand scope="collection" collectionId="panini-blockchain" />)
+    const input = container.querySelector("[data-rpc-panini-band] input") as HTMLInputElement
+    fireEvent.change(input, { target: { value: " Pallo " } })
+    fireEvent.submit(container.querySelector("[data-rpc-panini-band] form") as HTMLFormElement)
+    expect(pushMock).toHaveBeenCalledWith("/panini-blockchain/collection?username=Pallo")
+    expect(trackMock).toHaveBeenCalledWith(expect.objectContaining({ eventType: "wallet_paste", surface: "panini_band" }))
+  })
+
+  it("renders no Panini band on the Panini collection tab — that page IS the lookup", () => {
+    mockPath = "/panini-blockchain/collection"
+    const { container } = render(<WalletSearchBand scope="collection" collectionId="panini-blockchain" />)
+    expect(container.querySelector("[data-rpc-panini-band]")).toBeNull()
   })
 
   it("is present on the FIRST render pass so it ships in the server HTML", () => {

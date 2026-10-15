@@ -58,10 +58,11 @@
 // read, so a Supabase hiccup leaves the anon entry point exactly where it is.
 
 import { useEffect, useState, type ReactNode } from "react"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import WalletSearch from "@/components/WalletSearch"
 import { getSupabaseBrowser } from "@/lib/auth/supabase-client"
 import { getCollection } from "@/lib/collections"
+import { trackFunnelEvent } from "@/lib/track-funnel"
 
 // Kill switch. Absent/anything-but-"off" = on, so no env var is required to
 // ship; setting NEXT_PUBLIC_WALLET_BAND=off in Vercel disables both placements
@@ -223,6 +224,16 @@ export default function WalletSearchBand({
   // when it is on Flow.
   if (scope === "collection" && collectionId) {
     const c = getCollection(collectionId)
+    // 2026-10-14 — Panini gets its OWN band: a username lookup routed to the
+    // public Panini collection tab (?username=, components/collection/
+    // PaniniCollection.tsx), never the Flow wallet box. Measured 10-08..10-14:
+    // Panini edition pages were about half of all Google landings (12 of 26
+    // visits), 19 of 26 Google visits saw one page, and these pages carried NO
+    // next step because this guard returned null for them.
+    if (c && c.chain === "panini") {
+      if (pathname === `/${collectionId}/collection`) return null // the tool itself
+      return <PaniniUsernameBand collectionId={collectionId} />
+    }
     if (c && c.dbChain !== "flow") return null
   }
 
@@ -268,6 +279,53 @@ export default function WalletSearchBand({
           }
         }}
       />
+    </section>
+  )
+}
+
+// Panini owners are USERNAMES, not addresses (lib/address.ts isPaniniUsername),
+// so the lookup is a plain text field that hands off to the Panini collection
+// tab, which reads ?username= on mount. The copy states what that tab shows —
+// cards RPC has seen under the username, mostly its listings — so the band
+// promises nothing the tab cannot deliver.
+function PaniniUsernameBand({ collectionId }: { collectionId: string }) {
+  const router = useRouter()
+  const [value, setValue] = useState("")
+  return (
+    <section className="rpc-card rpc-wsb" aria-label="Look up a Panini username" data-rpc-panini-band>
+      <style>{CSS}</style>
+      <div className="rpc-wsb-copy">
+        <span className="rpc-wsb-title">Collect Panini cards?</span>
+        <span className="rpc-wsb-hint">Free, no signup. See the cards RPC has seen under any Panini username.</span>
+      </div>
+      <form
+        className="rpc-wsb-input"
+        style={{ display: "flex", gap: 8, maxWidth: 420 }}
+        onSubmit={(e) => {
+          e.preventDefault()
+          const username = value.trim()
+          if (!username) return
+          trackFunnelEvent({ eventType: "wallet_paste", walletAddress: username, surface: "panini_band" })
+          router.push(`/${collectionId}/collection?username=${encodeURIComponent(username)}`)
+        }}
+      >
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Panini username"
+          aria-label="Panini username"
+          autoComplete="off"
+          spellCheck={false}
+          style={{ flex: 1, minWidth: 0, height: 52, padding: "0 14px", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 8, color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: 14 }}
+        />
+        <button
+          type="submit"
+          // brand-exception: white label on the red CTA button — theme-independent
+          style={{ height: 52, padding: "0 18px", background: "var(--rpc-red)", border: "none", borderRadius: 8, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 800, letterSpacing: "0.06em", cursor: "pointer" }}
+        >
+          Go →
+        </button>
+      </form>
     </section>
   )
 }
