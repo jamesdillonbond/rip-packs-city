@@ -920,9 +920,16 @@ interface BadgeRow {
 // and no short read to notice: the fetch succeeds and the map is simply wrong.
 // A count in a comment is a DATED SAMPLE, never a bound. Paged with .range()
 // over a stable unique sort so the size stops mattering.
+//
+// ⚠ 2026-10-15: returns `complete`. A page error `break`s with the rows read so
+// far, and a partial map is indistinguishable from a complete one (CLAUDE.md #28).
+// That is harmless as DECORATION, but with "Badges only" on, the map is the
+// FILTER: every deal it does not name is dropped, so a failed page silently
+// shrank the board while it read as complete. The caller notes the read on the
+// source-failure sink in that mode only.
 async function fetchBadgesByEditionKey(
   supabase: SupabaseClient
-): Promise<Map<string, Array<{ id: string; title: string }>>> {
+): Promise<{ map: Map<string, Array<{ id: string; title: string }>>; complete: boolean }> {
   // KEYSET, not OFFSET. external_id is unique within this collection (9,471 of
   // 9,471 distinct, verified live), so a `> cursor` walk is both deterministic
   // and O(n). Measured 2026-09-02 on the last page: keyset 1,935 buffers /
@@ -932,6 +939,7 @@ async function fetchBadgesByEditionKey(
   const PAGE = 1000;
   const MAX_PAGES = 200; // safety bound; the table is ~15k rows across collections
   let cursor = "";
+  let complete = false;
   for (let page = 0; page < MAX_PAGES; page++) {
     let q = (supabase as any)
       .from("badge_editions")
@@ -950,7 +958,7 @@ async function fetchBadgesByEditionKey(
     }
     const rowsPage = (data ?? []) as BadgeRow[];
     rows.push(...rowsPage);
-    if (rowsPage.length < PAGE) break;
+    if (rowsPage.length < PAGE) { complete = true; break; }
     const next = rowsPage[rowsPage.length - 1]?.external_id;
     // No cursor means no progress — stop rather than re-read page 0 forever.
     if (!next || next === cursor) break;
@@ -967,9 +975,9 @@ async function fetchBadgesByEditionKey(
   }
 
   console.log(
-    `[sniper-feed] badge_editions rows=${rows.length} badged_editions=${result.size}`
+    `[sniper-feed] badge_editions rows=${rows.length} badged_editions=${result.size} complete=${complete}`
   );
-  return result;
+  return { map: result, complete };
 }
 
 // ─── Supabase FMV lookup ──────────────────────────────────────────────────────
@@ -2087,16 +2095,21 @@ async function computeSniperFeed(opts: {
   ));
 
   // 4. Fire all Supabase lookups in parallel
-  const [fmvMap, badgeMap, jerseyMap, retiredIds, teamOptions] = await Promise.all([
+  const [fmvMap, badgeRead, jerseyMap, retiredIds, teamOptions] = await Promise.all([
     fetchFmvBatch(supabase, Array.from(tsEditionKeys)).catch(() => new Map<string, any>()),
-    fetchBadgesByEditionKey(supabase).catch(
-      () => new Map<string, Array<{ id: string; title: string }>>()
-    ),
+    fetchBadgesByEditionKey(supabase).catch(() => ({
+      map: new Map<string, Array<{ id: string; title: string }>>(),
+      complete: false,
+    })),
     fetchJerseyNumbers(supabase, allPlayerNames).catch(() => new Map<string, string>()),
     fetchRetiredMomentIds(supabase).catch(() => new Set<string>()),
     fetchLeagueTeamOptions(supabase, TOPSHOT_LEAGUES).catch(() => [] as string[]),
   ]);
   console.log(`[sniper-feed] retiredIds size=${retiredIds.size}`);
+  const badgeMap = badgeRead.map;
+  // With "Badges only" the badge map is the filter, so an incomplete read
+  // suppresses deals and must not read as a quiet board (see fetchBadgesByEditionKey).
+  if (badgeOnly && !badgeRead.complete) sink.note("badge_editions");
 
   // 4b. Enrich the RPC augment rows with REAL badges, then apply the
   // badge/serial predicates to them.

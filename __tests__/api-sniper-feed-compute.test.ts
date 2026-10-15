@@ -219,6 +219,32 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
     expect(body.deals[0].badgeSlugs).toEqual([])
   })
 
+  // 2026-10-15: with "Badges only" the badge map is the FILTER — a deal it does
+  // not name is dropped — so a failed badge read shrank the board while the
+  // response read as complete. It is now reported as a failed source in that
+  // mode, and only in that mode (elsewhere badges are decoration).
+  it("badgeOnly + a failed badge read reports badge_editions as a failed source", async () => {
+    fx.tables = enrichedTables({
+      badge_editions: { data: null, error: { message: "badges down" } },
+    })
+    const body = await (await GET(get("?collection=nba-top-shot&badgeOnly=true"))).json()
+    expect(body.sourcesFailed).toContain("badge_editions")
+  })
+
+  it("a failed badge read without badgeOnly is decoration only — no failed source", async () => {
+    fx.tables = enrichedTables({
+      badge_editions: { data: null, error: { message: "badges down" } },
+    })
+    const body = await (await GET(get("?collection=nba-top-shot"))).json()
+    expect(body.sourcesFailed ?? []).not.toContain("badge_editions")
+  })
+
+  it("badgeOnly with a complete badge read reports no badge failure", async () => {
+    fx.tables = enrichedTables()
+    const body = await (await GET(get("?collection=nba-top-shot&badgeOnly=true"))).json()
+    expect(body.sourcesFailed ?? []).not.toContain("badge_editions")
+  })
+
   it("survives a players read error (jersey lookup degrades)", async () => {
     fx.tables = enrichedTables({
       players: { data: null, error: { message: "players down" } },
