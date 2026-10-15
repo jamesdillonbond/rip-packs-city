@@ -59,11 +59,14 @@ export function buildSearchHref(
   return `/${collectionUrlSlug}/${segment}/${encodeURIComponent(slug)}`
 }
 
-/** Human label for a result kind, for the type chip in the results list. */
-export function searchKindLabel(kind: string, isPinnacle: boolean): string {
+/**
+ * Human label for a result kind, for the type chip in the results list.
+ * Panini (searchable since 2026-10-14) sells CARDS, not moments.
+ */
+export function searchKindLabel(kind: string, isPinnacle: boolean, isPanini = false): string {
   if (kind === "player") return isPinnacle ? "CHARACTER" : "PLAYER"
   if (kind === "team") return isPinnacle ? "FRANCHISE" : "TEAM"
   if (kind === "set") return "SET"
-  if (kind === "edition") return "MOMENT"
+  if (kind === "edition") return isPanini ? "CARD" : "MOMENT"
   return kind.toUpperCase()
 }

@@ -181,7 +181,7 @@ export default function GlobalSearch() {
                   {h.label}
                 </span>
                 <span style={{ display: "block", fontFamily: monoFont, fontSize: 9, letterSpacing: "0.08em", color: "var(--rpc-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {searchKindLabel(h.kind, h.collection === "disney-pinnacle")}
+                  {searchKindLabel(h.kind, h.collection === "disney-pinnacle", h.collection === "panini-blockchain")}
                   {" · "}
                   {h.collectionName}
                   {h.sublabel ? " · " + h.sublabel : ""}

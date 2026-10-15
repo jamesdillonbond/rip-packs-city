@@ -68,6 +68,13 @@ describe("searchKindLabel", () => {
     expect(searchKindLabel("set", false)).toBe("SET")
   })
 
+  // 2026-10-14: Panini joined search; its editions are cards, and a "MOMENT" chip on a
+  // Panini Prizm card is the Flow vocabulary leaking onto a non-Flow collection.
+  it("labels a Panini edition as CARD, and leaves its player chip alone", () => {
+    expect(searchKindLabel("edition", false, true)).toBe("CARD")
+    expect(searchKindLabel("player", false, true)).toBe("PLAYER")
+  })
+
   it("falls back to an uppercased kind for anything unrecognised", () => {
     expect(searchKindLabel("series", false)).toBe("SERIES")
   })
