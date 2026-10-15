@@ -10,7 +10,8 @@ import { isStorageLimitError, isComputationLimitError, isNoCollectionCapabilityE
 // Imported from its own module for the same reason as the chunk writer below:
 // this route's suite stubs wallet-backfill-helpers wholesale, and a delete
 // routed through that stub would never run on the Top Shot path.
-import { deleteUnseenWmcRows, unseenDeleteExtra } from "@/lib/chains/flow/wmc-unseen-delete"
+import { deleteUnseenWmcRows, unseenDeleteExtra, type UnseenDeleteOutcome } from "@/lib/chains/flow/wmc-unseen-delete"
+import { proveCollectionEmpty } from "@/lib/chains/flow/wmc-empty-proof"
 // Imported from the writer module directly, not re-exported through
 // wallet-backfill-helpers: this route's test suite stubs that module wholesale,
 // and going through it would put the stub — not the real chunk writer — on the
@@ -299,20 +300,40 @@ async function runBackfill(
   try {
     const onChainIds = await getOwnedMomentIds(wallet)
     if (onChainIds.length === 0) {
-      await stampLastRefreshed(wallet, 0)
+      // An empty list is NOT proof the wallet emptied (a nil capability reads the
+      // same). Ask the chain separately; only "collection present, 0 ids" retires
+      // the cached rows. prune_stale_wmc() skips seeded wallets, so without this a
+      // tracked wallet that sold out kept its moments forever (2026-10-14:
+      // 0x8e655887a360cc3f 137 rows, 0x4ab8b294112f182c 54). wmc-empty-proof.ts.
+      const emptyProof = await proveCollectionEmpty(wallet, "nba_top_shot")
+      const unseen: UnseenDeleteOutcome =
+        emptyProof === "proven_empty"
+          ? await deleteUnseenWmcRows({
+              wallet,
+              collectionUuid: NBA_TOP_SHOT_UUID,
+              observedIds: new Set<string>(),
+              pipelineName: "wallet-backfill",
+              emptyProven: true,
+            })
+          : { deleted: 0, skippedReason: `empty_${emptyProof}` }
+      await stampLastRefreshed(wallet, unseen.deleted)
       await logRun({
         startedAt: startedAtIso,
         wallet,
         rowsFound: 0,
         rowsWritten: 0,
         rowsSkipped: 0,
-        ok: true,
+        // A failed retire is a failed run: the rows it meant to remove are still there.
+        ok: !unseen.error,
+        error: unseen.error ? `unseen-delete: ${unseen.error}` : null,
         extra: {
           on_chain_count: 0,
           pages_fetched: 0,
           total_moments_seen: 0,
           terminated_reason: "no_more_moments",
           skip_cached: skipCached,
+          empty_proof: emptyProof,
+          ...unseenDeleteExtra(unseen),
           elapsed_ms: Date.now() - startedMs,
         },
       })

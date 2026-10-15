@@ -1816,3 +1816,92 @@ describe("runAllDayDetailsBackfill — studio custody union", () => {
     expect(lastLog().p_extra.unseen_delete_skipped).toBeUndefined()
   })
 })
+
+// ── emptied tracked wallets: positive proof retires the cache (2026-10-14) ───
+//
+// An empty getIDs() is never proof (a nil capability reads the same), and the
+// 14-day prune skips seeded wallets — so a TRACKED wallet that sold out kept its
+// rows forever (0x8e655887a360cc3f: 137 Top Shot rows; 0x6d1f8c18412c6abc's two
+// UFC rows kept the UFC enrichment drain failing every 15 min). Only a separate
+// read that finds the collection PRESENT with 0 ids may retire them.
+function flowIntResponse(n: number) {
+  const b64 = Buffer.from(JSON.stringify({ type: "Int", value: String(n) }), "utf8").toString("base64")
+  return { ok: true, status: 200, text: async () => b64 }
+}
+
+describe("runIdOnlyBackfill — an emptied wallet is retired only on positive proof", () => {
+  const UFC_CFG = { slug: "ufc_strike", collectionUuid: UFC_COLLECTION_UUID, cadenceScript: CADENCE_UFC, pipelineName: "wallet-backfill-ufc" }
+
+  it("collection present with 0 ids: every cached row is deleted, scoped to wallet + UFC + an explicit id list", async () => {
+    H.state.cachedRows = [{ moment_id: "516620" }, { moment_id: "225189" }]
+    ;(fetch as any).mockResolvedValueOnce(flowIdsResponse([])).mockResolvedValueOnce(flowIntResponse(0))
+    await runIdOnlyBackfill(baseArgs({ config: UFC_CFG }))
+    expect(H.state.wmcDeletes).toHaveLength(1)
+    expect(H.state.wmcDeletes[0].ids.sort()).toEqual(["225189", "516620"])
+    expect(H.state.wmcDeletes[0].filters.map((f: any) => [f.method, f.args[0], f.args[1]]).slice(0, 2)).toEqual([
+      ["eq", "wallet_address", WALLET],
+      ["eq", "collection_id", UFC_COLLECTION_UUID],
+    ])
+    expect(lastLog().p_ok).toBe(true)
+    expect(lastLog().p_extra).toMatchObject({ on_chain_count: 0, empty_proof: "proven_empty", unseen_deleted: 2 })
+  })
+
+  it("no readable collection (-1) is NOT proof: nothing is deleted and the run says why", async () => {
+    H.state.cachedRows = [{ moment_id: "1" }]
+    ;(fetch as any).mockResolvedValueOnce(flowIdsResponse([])).mockResolvedValueOnce(flowIntResponse(-1))
+    await runIdOnlyBackfill(baseArgs({ config: UFC_CFG }))
+    expect(H.state.wmcDeletes).toHaveLength(0)
+    expect(lastLog().p_extra).toMatchObject({ empty_proof: "no_collection", unseen_deleted: 0, unseen_delete_skipped: "empty_no_collection" })
+  })
+
+  it("a FAILED proof read deletes nothing — a failed read must not become an empty wallet", async () => {
+    H.state.cachedRows = [{ moment_id: "1" }]
+    ;(fetch as any).mockResolvedValueOnce(flowIdsResponse([])).mockRejectedValueOnce(new Error("network down"))
+    await runIdOnlyBackfill(baseArgs({ config: UFC_CFG }))
+    expect(H.state.wmcDeletes).toHaveLength(0)
+    expect(lastLog().p_extra).toMatchObject({ empty_proof: "read_failed", unseen_deleted: 0 })
+  })
+
+  it("a collection with no proof script (All Day: locked moments are invisible to getIDs) is never retired", async () => {
+    H.state.cachedRows = [{ moment_id: "1" }]
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([]))
+    await runIdOnlyBackfill(baseArgs()) // CFG = nfl_all_day
+    expect(H.state.wmcDeletes).toHaveLength(0)
+    expect((fetch as any).mock.calls).toHaveLength(1) // no proof read was even attempted
+    expect(lastLog().p_extra).toMatchObject({ empty_proof: "no_proof_script", unseen_deleted: 0 })
+  })
+
+  it("a failed retire fails the run — the rows it meant to remove are still there", async () => {
+    H.state.cachedRows = [{ moment_id: "1" }]
+    H.state.deleteError = { message: "boom" }
+    ;(fetch as any).mockResolvedValueOnce(flowIdsResponse([])).mockResolvedValueOnce(flowIntResponse(0))
+    await runIdOnlyBackfill(baseArgs({ config: UFC_CFG }))
+    expect(lastLog().p_ok).toBe(false)
+    expect(lastLog().p_error).toContain("unseen-delete: boom")
+  })
+})
+
+describe("deleteUnseenWmcRows — emptyProven", () => {
+  const call = (over: Partial<Parameters<typeof deleteUnseenWmcRows>[0]> = {}) =>
+    deleteUnseenWmcRows({ wallet: WALLET, collectionUuid: UFC_COLLECTION_UUID, observedIds: new Set<string>(), pipelineName: "test", ...over })
+
+  it("retires every cached row, past the >90 % cap (the cap guards a scan bug; this is a second read)", async () => {
+    H.state.cachedRows = Array.from({ length: 200 }, (_, i) => ({ moment_id: "m" + i }))
+    H.state.cleanWalkUpserts = []
+    const out = await call({ emptyProven: true })
+    expect(out.deleted).toBe(200)
+    expect(H.state.cleanWalkUpserts[0]).toMatchObject({ observed_count: 0 })
+  })
+
+  it("without the flag an empty set is still refused", async () => {
+    H.state.cachedRows = [{ moment_id: "1" }]
+    expect(await call()).toEqual({ deleted: 0, skippedReason: "empty_observed" })
+    expect(await call({ emptyProven: false })).toEqual({ deleted: 0, skippedReason: "empty_observed" })
+  })
+
+  it("the flag does not lift the cap on a NON-empty walk", async () => {
+    H.state.cachedRows = Array.from({ length: 200 }, (_, i) => ({ moment_id: "m" + i }))
+    const out = await call({ observedIds: new Set(["m0"]), emptyProven: true })
+    expect(out).toEqual({ deleted: 0, skippedReason: "suspiciously_large" })
+  })
+})

@@ -30,6 +30,9 @@ const state = vi.hoisted(() => ({
   lockReleases: [] as string[],
   resolveOutcome: { found: false } as { found: boolean; walletAddress?: string; reason?: string },
   resolveCalls: [] as string[],
+  // proveCollectionEmpty's answer for the empty-wallet branch (wmc-empty-proof.ts).
+  emptyProof: "no_collection" as string,
+  emptyProofCalls: [] as string[],
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -77,6 +80,12 @@ vi.mock("@/lib/chains/flow/wallet-backfill-helpers", () => ({
     String(err instanceof Error ? err.message : err).includes("1110"),
   isNoCollectionCapabilityError: (err: unknown) =>
     String(err instanceof Error ? err.message : err).includes("could not borrow a reference"),
+}))
+vi.mock("@/lib/chains/flow/wmc-empty-proof", () => ({
+  proveCollectionEmpty: async (wallet: string, slug: string) => {
+    state.emptyProofCalls.push(`${slug}:${wallet}`)
+    return state.emptyProof
+  },
 }))
 vi.mock("@/lib/wallet-backfill-lock", () => ({
   walletBackfillLockKey: (slug: string, wallet: string) => `${slug}:${wallet}`,
@@ -164,6 +173,8 @@ beforeEach(() => {
   state.lockReleases = []
   state.resolveOutcome = { found: false }
   state.resolveCalls = []
+  state.emptyProof = "no_collection"
+  state.emptyProofCalls = []
 })
 
 describe("wallet-backfill — walk + upsert contract", () => {
@@ -680,6 +691,27 @@ describe("wallet-backfill — delete-not-seen", () => {
   })
 
   it("an empty scan deletes nothing — a degraded read looks exactly like an emptied wallet", async () => {
+    // Premise made explicit 2026-10-14: the separate proof read could NOT show
+    // the collection (no_collection) — or failed — so the empty list stays inert.
+    for (const proof of ["no_collection", "read_failed"]) {
+      state.emptyProof = proof
+      state.ownedIds = []
+      const spy = install({
+        wallet_moments_cache: { data: [{ moment_id: "1" }, { moment_id: "2" }], error: null },
+      })
+
+      await POST(post({ wallet: WALLET, skip_cached: false }))
+      await runDeferred()
+
+      expect(spy.deletes["wallet_moments_cache"]).toBeUndefined()
+      expect(walkLog(spy.rpcCalls)?.p_extra).toMatchObject({ empty_proof: proof, unseen_deleted: 0, unseen_delete_skipped: `empty_${proof}` })
+    }
+  })
+
+  it("an emptied TRACKED wallet is retired on positive proof: collection present, 0 ids (2026-10-14)", async () => {
+    // 0x8e655887a360cc3f read `has_collection, 0` on chain with 137 rows cached;
+    // prune_stale_wmc() skips seeded wallets, so nothing else would remove them.
+    state.emptyProof = "proven_empty"
     state.ownedIds = []
     const spy = install({
       wallet_moments_cache: { data: [{ moment_id: "1" }, { moment_id: "2" }], error: null },
@@ -688,7 +720,29 @@ describe("wallet-backfill — delete-not-seen", () => {
     await POST(post({ wallet: WALLET, skip_cached: false }))
     await runDeferred()
 
-    expect(spy.deletes["wallet_moments_cache"]).toBeUndefined()
+    expect(state.emptyProofCalls).toEqual([`nba_top_shot:${WALLET}`])
+    const deletes = spy.deletes["wallet_moments_cache"] ?? []
+    expect(deletes).toHaveLength(1)
+    expect(deletes[0].filters.map((f) => [f.method, f.args[0], f.args[1]])).toEqual([
+      ["eq", "wallet_address", WALLET],
+      ["eq", "collection_id", TS_UUID],
+      ["in", "moment_id", ["1", "2"]],
+    ])
+    expect(walkLog(spy.rpcCalls)).toMatchObject({ p_ok: true })
+    expect(walkLog(spy.rpcCalls)?.p_extra).toMatchObject({ on_chain_count: 0, empty_proof: "proven_empty", unseen_deleted: 2 })
+  })
+
+  it("a non-empty walk never asks for the empty proof", async () => {
+    state.emptyProof = "proven_empty"
+    state.ownedIds = [1]
+    state.metadataById = { "1": meta() }
+    install({
+      wallet_moments_cache: { data: [{ moment_id: "1" }], error: null },
+      "rpc:upsert_wmc_batch": { data: { written: 1 }, error: null },
+    })
+    await POST(post({ wallet: WALLET, skip_cached: false }))
+    await runDeferred()
+    expect(state.emptyProofCalls).toEqual([])
   })
 
   it("a run that did NOT finish its walk (timeout) deletes nothing and says why", async () => {

@@ -123,8 +123,13 @@ function withStamp(outcome: UnseenDeleteOutcome, stampError: string | undefined)
  *      skip exit — those have seen only a prefix of the wallet.
  *   2. `observedIds` is NON-EMPTY. A zero-length scan is never a delete trigger:
  *      an empty result is indistinguishable from a degraded read (a nil
- *      capability borrow returns [] exactly like an empty wallet). Genuinely
- *      emptied wallets stay with the 14-day prune_stale_wmc() backstop.
+ *      capability borrow returns [] exactly like an empty wallet). ⚠ The 14-day
+ *      prune_stale_wmc() backstop this used to name EXCLUDES active seeded
+ *      wallets, so for a tracked wallet nothing retired them (2026-10-14). The
+ *      ONE exception: `emptyProven`, set only from proveCollectionEmpty()
+ *      (wmc-empty-proof.ts) returning `proven_empty` — an independent read that
+ *      found the collection PRESENT with 0 ids. It never comes from the walk's
+ *      own empty list.
  *   3. For All Day, `observedIds` INCLUDES the studio (locked) moment ids AND the
  *      studio walk succeeded. All Day has no on-chain locking contract, so a
  *      locked moment is legitimately absent from getIDs(); deleting on a degraded
@@ -151,9 +156,17 @@ export async function deleteUnseenWmcRows(args: {
    * anything this pass just wrote is by definition in observedIds.
    */
   cachedIds?: Iterable<string>
+  /**
+   * The wallet's collection was read separately and is PRESENT with 0 ids
+   * (proveCollectionEmpty → "proven_empty"). Only meaningful with an empty
+   * observedIds; it licenses retiring every cached row, and the >90 % cap below
+   * does not apply (that cap guards a scan bug, and this is a second read).
+   */
+  emptyProven?: boolean
 }): Promise<UnseenDeleteOutcome> {
   const { wallet, collectionUuid, observedIds, pipelineName, cachedIds } = args
-  if (observedIds.size === 0) return { deleted: 0, skippedReason: "empty_observed" }
+  const provenEmpty = observedIds.size === 0 && args.emptyProven === true
+  if (observedIds.size === 0 && !provenEmpty) return { deleted: 0, skippedReason: "empty_observed" }
 
   const cached = cachedIds ? new Set(cachedIds) : await loadCachedMomentIds(wallet, collectionUuid)
   const toDelete: string[] = []
@@ -163,7 +176,7 @@ export async function deleteUnseenWmcRows(args: {
     return withStamp({ deleted: 0 }, await stampCleanWalk(wallet, collectionUuid, observedIds.size))
   }
 
-  if (cached.size > 100 && toDelete.length > cached.size * 0.9) {
+  if (!provenEmpty && cached.size > 100 && toDelete.length > cached.size * 0.9) {
     console.warn(
       `[${pipelineName}] unseen_delete_suspiciously_large wallet=${wallet} ` +
         `cached=${cached.size} would_delete=${toDelete.length} — skipping, leaving it to the 14-day prune`,

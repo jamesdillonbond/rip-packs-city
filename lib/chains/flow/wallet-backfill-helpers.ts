@@ -39,7 +39,9 @@ import {
   loadCachedMomentIds,
   deleteUnseenWmcRows,
   unseenDeleteExtra,
+  type UnseenDeleteOutcome,
 } from "@/lib/chains/flow/wmc-unseen-delete"
+import { proveCollectionEmpty } from "@/lib/chains/flow/wmc-empty-proof"
 import { claimPipelineLockDetailed, releasePipelineLock, skippedReasonFor, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 import {
   UPSERT_CHUNK,
@@ -602,16 +604,35 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
   try {
     const onChainIds = await fetchOnChainIds(config.cadenceScript, wallet)
     if (onChainIds.length === 0) {
-      await stampLastRefreshed(wallet, config.slug, 0)
+      // An empty list is not proof (a nil capability reads the same); only a
+      // separate "collection present, 0 ids" read retires the cached rows —
+      // prune_stale_wmc() skips seeded wallets (2026-10-14, wmc-empty-proof.ts).
+      // A collection with no proof script ("no_proof_script") keeps its rows.
+      const emptyProof = await proveCollectionEmpty(wallet, config.slug)
+      const unseen: UnseenDeleteOutcome =
+        emptyProof === "proven_empty"
+          ? await deleteUnseenWmcRows({
+              wallet,
+              collectionUuid: config.collectionUuid,
+              observedIds: new Set<string>(),
+              pipelineName: config.pipelineName,
+              emptyProven: true,
+            })
+          : { deleted: 0, skippedReason: `empty_${emptyProof}` }
+      await stampLastRefreshed(wallet, config.slug, unseen.deleted)
       await logRun({
         pipelineName: config.pipelineName,
         collectionSlug: config.slug,
         startedAt: startedAtIso, wallet,
         rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
-        ok: true,
+        // A failed retire is a failed run: the rows it meant to remove are still there.
+        ok: !unseen.error,
+        error: unseen.error ? `unseen-delete: ${unseen.error}` : null,
         extra: {
           on_chain_count: 0, terminated_reason: "no_more_moments",
-          skip_cached: skipCached, force: !!force, elapsed_ms: Date.now() - startedMs,
+          skip_cached: skipCached, force: !!force,
+          empty_proof: emptyProof, ...unseenDeleteExtra(unseen),
+          elapsed_ms: Date.now() - startedMs,
         },
       })
       return { rowsFound: 0 }
