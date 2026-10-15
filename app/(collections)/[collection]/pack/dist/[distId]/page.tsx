@@ -32,6 +32,7 @@ import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { OG_INHERITED, TWITTER_INHERITED, packJsonLd } from "@/lib/seo"
+import { chanceHitExplainerHref } from "@/lib/blog/posts"
 import { humanizeLabel, joinMetaParts, metaField } from "@/lib/format"
 import {
   num,
@@ -818,6 +819,14 @@ export default async function PackDetailPage(
             >
               {title}
             </h1>
+            {(() => {
+              const explainer = chanceHitExplainerHref(collection, title)
+              return explainer ? (
+                <Link href={explainer} style={{ fontSize: 12, color: "var(--rpc-text-secondary)", textDecoration: "underline" }}>
+                  Premium Chance Hit vs Chance Hit: what these packs contain →
+                </Link>
+              ) : null
+            })()}
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <span

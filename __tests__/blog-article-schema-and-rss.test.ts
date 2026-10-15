@@ -103,7 +103,11 @@ describe("app/feed.xml/route.ts — RSS 2.0 with real bytes", () => {
     }
     // Newest first.
     const links = [...xml.matchAll(/<guid isPermaLink="true">([^<]+)<\/guid>/g)].map((m) => m[1])
-    expect(links[0]).toBe("https://www.rippackscity.com/blog/permanent-moments-ipfs")
+    // Derived from the dates (re-pinned 2026-10-14 when a newer post landed):
+    // the property is newest-first, not which post happens to be newest.
+    const newest = [...BLOG_POSTS].sort((a, b) => b.date.localeCompare(a.date))[0]
+    expect(links[0]).toBe(`https://www.rippackscity.com/blog/${newest.slug}`)
+    expect(links).toEqual([...BLOG_POSTS].sort((a, b) => b.date.localeCompare(a.date)).map((p) => `https://www.rippackscity.com/blog/${p.slug}`))
   })
 
   it("escapes XML-significant characters in titles (the apostrophe post survives a parser)", () => {

@@ -102,6 +102,7 @@ For <collection> in nba-top-shot, nfl-all-day, laliga-golazos, ufc, candy-mlb, p
 - /blog — Field Notes: long-form analysis (RSS at /feed.xml)
 - /blog/permanent-moments-ipfs — what Top Shot's IPFS pinning actually guarantees
 - /blog/pinnacle-star-wars-day-2026 — what moved on Disney Pinnacle for Star Wars Day 2026
+- /blog/premium-chance-hit-vs-chance-hit — what a Top Shot Premium Chance Hit pack contains vs a Chance Hit pack, per Top Shot's published pack contents
 - /legal/fmv-methodology — how FMV is computed and what each confidence tier means
 - /about — who builds this and why
 - /privacy, /terms

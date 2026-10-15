@@ -27,6 +27,16 @@ export type BlogPost = {
 
 export const BLOG_POSTS: readonly BlogPost[] = [
   {
+    slug: "premium-chance-hit-vs-chance-hit",
+    title: "Premium Chance Hit vs Chance Hit: What NBA Top Shot's Pack Contents Say",
+    date: "2026-10-14",
+    collection: "NBA Top Shot",
+    blurb:
+      "Rare-or-better Moments per pack across 10 paired Top Shot drops, from the contents Top Shot published. Premium was cheaper per hit in 8 of 10 releases; both Rookie Revelation drops went the other way.",
+    readMin: 4,
+    image: `${BASE_URL}/api/og/collection?id=nba-top-shot`,
+  },
+  {
     slug: "permanent-moments-ipfs",
     title: "Your Moments Just Became Permanent. Here's What That Actually Means.",
     date: "2026-06-09",
@@ -49,6 +59,16 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     image: `${BASE_URL}/api/og/collection?id=disney-pinnacle`,
   },
 ]
+
+/**
+ * The Premium Chance Hit explainer, for a Top Shot pack whose title names
+ * either pack type — the pages "premiumchance" searchers land on (GSC 09-06).
+ * Null for anything else, so no other pack page grows an irrelevant link.
+ */
+export function chanceHitExplainerHref(collectionUrlSlug: string, packTitle: string): string | null {
+  if (collectionUrlSlug !== "nba-top-shot") return null
+  return /chance\s*hit/i.test(packTitle) ? "/blog/premium-chance-hit-vs-chance-hit" : null
+}
 
 export function getBlogPost(slug: string): BlogPost | undefined {
   return BLOG_POSTS.find((p) => p.slug === slug)

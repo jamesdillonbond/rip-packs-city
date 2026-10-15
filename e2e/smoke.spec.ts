@@ -166,6 +166,7 @@ const PAGES: PageCheck[] = [
   { path: "/blog", name: "blog index" },
   { path: "/blog/permanent-moments-ipfs", name: "blog · permanent moments" },
   { path: "/blog/pinnacle-star-wars-day-2026", name: "blog · pinnacle star wars day" },
+  { path: "/blog/premium-chance-hit-vs-chance-hit", name: "blog · premium chance hit" },
   { path: "/nba/fast-break", name: "fast break optimizer" },
   // 2026-09-25: the team-hub directory — in the sitemap from the same commit.
   { path: "/teams", name: "team hubs directory" },

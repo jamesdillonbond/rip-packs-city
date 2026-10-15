@@ -243,7 +243,8 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 87 → 88 on 2026-09-28: /market, the cross-collection Market hub.
     // 88 → 89 on 2026-10-03: /insights/market-cap (market cap on collector-held supply).
     // 89 → 90 on 2026-10-10: /insights/panini-premiums (Panini parallel + serial premiums).
-    expect(s).toHaveLength(90)
+    // 90 → 91 on 2026-10-14: /blog/premium-chance-hit-vs-chance-hit.
+    expect(s).toHaveLength(91)
     expect(s.find((x) => x.url === `${BASE}/sniper`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/market`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/analytics`)).toBeTruthy()
@@ -435,6 +436,8 @@ describe("segment 3 — set/player/team entities + top moments", () => {
         // Exhibition roster → team page must be suppressed; no player/set here.
         player_name: null, set_name: null, team_name: "Team LeBron",
       },
+      // Second edition of "A Set": a one-edition set is not listed (2026-10-14).
+      { id: "m3", external_id: "1:2", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "A Set", team_name: null },
     ])
     h.t.sets_summary = ok([{ collection_id: TS_ID, set_slug: "a-set" }, { collection_id: TS_ID, set_slug: "shared-set" }])
     const s = await buildSitemapSegment(3)
@@ -466,6 +469,9 @@ describe("segment 3 — set/player/team entities + top moments", () => {
     h.t.editions = ok([
       { id: "s1", external_id: "1:1", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "Old Set", team_name: null },
       { id: "s2", external_id: "2:2", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "Brand New Set", team_name: null },
+      // Two editions each, so only routability (not the one-edition rule) decides.
+      { id: "s3", external_id: "1:2", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "Old Set", team_name: null },
+      { id: "s4", external_id: "2:3", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "Brand New Set", team_name: null },
     ])
     h.t.sets_summary = ok([{ collection_id: TS_ID, set_slug: "old-set" }])
     const sets = (await buildSitemapSegment(3)).filter((x) => x.url.includes("/set/")).map((x) => x.url)
@@ -482,9 +488,28 @@ describe("segment 3 — set/player/team entities + top moments", () => {
   it("pages sets_summary past PostgREST's 1,000-row cap — a set on the second page is still listed", async () => {
     const rows = Array.from({ length: 1200 }, (_, i) => ({ collection_id: TS_ID, set_slug: `s-${String(i).padStart(4, "0")}` }))
     h.t.sets_summary = ok(rows)
-    h.t.editions = ok([{ id: "p1", external_id: "1:1", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "S 1150", team_name: null }])
+    h.t.editions = ok([
+      { id: "p1", external_id: "1:1", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "S 1150", team_name: null },
+      { id: "p2", external_id: "1:2", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "S 1150", team_name: null },
+    ])
     const sets = (await buildSitemapSegment(3)).filter((x) => x.url.includes("/set/")).map((x) => x.url)
     expect(sets).toEqual([`${BASE}/nba-top-shot/set/s-1150`])
+  })
+
+  it("does NOT list a ONE-edition set (a near-duplicate of its edition page), with a two-edition control (2026-10-14)", async () => {
+    const UFC_ID = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
+    h.t.editions = ok([
+      { id: "u1", external_id: "aaaa-1", collection_id: UFC_ID, updated_at: null, player_name: "Fighter A", set_name: "UFC 237 KO/TKO", team_name: null },
+      { id: "u2", external_id: "bbbb-2", collection_id: UFC_ID, updated_at: null, player_name: "Fighter B", set_name: "UFC 300 Base", team_name: null },
+      { id: "u3", external_id: "cccc-3", collection_id: UFC_ID, updated_at: null, player_name: "Fighter C", set_name: "UFC 300 Base", team_name: null },
+    ])
+    h.t.sets_summary = ok([{ collection_id: UFC_ID, set_slug: "ufc-237-ko-tko" }, { collection_id: UFC_ID, set_slug: "ufc-300-base" }])
+    const s = await buildSitemapSegment(3)
+    const sets = s.filter((x) => x.url.includes("/set/")).map((x) => x.url)
+    expect(sets).not.toContain(`${BASE}/ufc/set/ufc-237-ko-tko`)
+    expect(sets).toEqual([`${BASE}/ufc/set/ufc-300-base`])
+    // The one-edition set's PLAYER is still listed — only the set URL is dropped.
+    expect(s.map((x) => x.url)).toContain(`${BASE}/ufc/player/fighter-a`)
   })
 
   it("routes a TEAM Moment (player_name === team_name) to /team/ only, never /player/ — and unaccents player slugs", async () => {

@@ -22,6 +22,7 @@ const STATIC: Array<[string, string]> = [
   ["app/blog/page.tsx", "https://www.rippackscity.com/blog"],
   ["app/blog/permanent-moments-ipfs/page.tsx", "https://www.rippackscity.com/blog/permanent-moments-ipfs"],
   ["app/blog/pinnacle-star-wars-day-2026/page.tsx", "https://www.rippackscity.com/blog/pinnacle-star-wars-day-2026"],
+  ["app/blog/premium-chance-hit-vs-chance-hit/page.tsx", "https://www.rippackscity.com/blog/premium-chance-hit-vs-chance-hit"],
   ["app/legal/fmv-methodology/page.tsx", "https://www.rippackscity.com/legal/fmv-methodology"],
 ]
 

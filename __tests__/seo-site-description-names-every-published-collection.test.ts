@@ -47,3 +47,18 @@ describe("Panini collection metadata is not World-Cup-only (all-product since 20
     expect(String(m.description)).not.toMatch(/World Cup/)
   })
 })
+
+import { chanceHitExplainerHref, getBlogPost } from "@/lib/blog/posts"
+
+describe("Chance Hit pack pages link the Premium Chance Hit explainer (2026-10-14)", () => {
+  it("links from Top Shot Chance Hit / Premium Chance Hit packs to a post that exists", () => {
+    const href = chanceHitExplainerHref("nba-top-shot", "2026 NBA Playoffs: Premium Chance Hit")
+    expect(href).toBe("/blog/premium-chance-hit-vs-chance-hit")
+    expect(getBlogPost(href!.replace("/blog/", ""))).toBeDefined()
+    expect(chanceHitExplainerHref("nba-top-shot", "Rookie Rush: Chance Hit")).toBe(href)
+  })
+  it("no link on other packs or other collections", () => {
+    expect(chanceHitExplainerHref("nba-top-shot", "WNBA Metallic Gold LE Premium Pack")).toBeNull()
+    expect(chanceHitExplainerHref("nfl-all-day", "Some Chance Hit Pack")).toBeNull()
+  })
+})

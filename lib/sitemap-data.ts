@@ -107,6 +107,7 @@ export const STATIC_SITEMAP_PAGES: ReadonlyArray<{
   { path: '/blog',                             changeFrequency: 'weekly',  priority: 0.5 },
   { path: '/blog/permanent-moments-ipfs',      changeFrequency: 'monthly', priority: 0.5 },
   { path: '/blog/pinnacle-star-wars-day-2026', changeFrequency: 'monthly', priority: 0.5 },
+  { path: '/blog/premium-chance-hit-vs-chance-hit', changeFrequency: 'monthly', priority: 0.5 },
   // 2026-09-25: the team-hub directory (app/teams/page.tsx). The hubs it links
   // stay OUT of the sitemap while hubIsIndexable() keeps them noindex (one
   // collection per league today) — a noindex URL in a sitemap is a
@@ -846,6 +847,8 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
     // An entity's lastModified is the newest KNOWN timestamp of its editions;
     // null when none is known (never "now" — see the header).
     const setMap = new Map<string, Date | null>()
+    // Editions per set key, so a ONE-edition set can be left out (below).
+    const setEditionCount = new Map<string, number>()
     const playerMap = new Map<string, Date | null>()
     const teamMap = new Map<string, Date | null>()
     const newer = (prev: Date | null | undefined, ts: Date | null): boolean =>
@@ -860,6 +863,7 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
         if (routableSets.has(k)) {
           const prev = setMap.get(k)
           if (newer(prev, ts)) setMap.set(k, ts)
+          setEditionCount.set(k, (setEditionCount.get(k) ?? 0) + 1)
         }
       }
       // ⚠ A TEAM Moment stores its franchise in player_name (Squad Goals, Season
@@ -910,6 +914,15 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
       }
       return out
     }
+
+    // ⚠ A ONE-EDITION SET IS NOT LISTED (2026-10-14, the 09-06 Search Console
+    // read's "fewer, stronger pages" item). Its page shows the same single
+    // edition the edition page already shows, so it is a near-duplicate the
+    // sitemap was asking Google to index: 677 such URLs measured live (UFC 257,
+    // Panini 413, All Day 5, Golazos 2; Top Shot 0). The PAGES stay up and stay
+    // linked — only the sitemap stops advertising them, the same rule as the
+    // 09-07 pack-dist pruning.
+    for (const [k, n] of setEditionCount) if (n < 2) setMap.delete(k)
 
     return [
       ...momentPages,
