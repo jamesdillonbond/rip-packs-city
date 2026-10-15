@@ -164,8 +164,12 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
       body: "UFC Strike's edition structure revolves around fighter- and fight-based scarcity, with Challenger and Contender tiers defining the hierarchy. RPC tracks every edition across every fighter so you can measure scarcity and price at the moment level, not just the fighter level.",
     },
     {
-      title: "Intelligence for Combat Collectibles",
-      body: "UFC FMV is driven by real sales data from the Flow marketplace, with deal-finding tuned for a niche but passionate collector base. The sniper catches fight moments priced below market so you can build your roster without overpaying on the secondary.",
+      // ⛔ 2026-10-14: this card used to promise a sniper "catching fight moments
+      // priced below market" on a market that closed 13 May 2026 — the About
+      // panel the 09-06 closed-market chrome fix did not reach. Guarded in
+      // __tests__/closed-market-chrome-makes-no-trading-claim.test.ts.
+      title: "A Closed Market, Kept on Record",
+      body: "UFC Strike's Flow marketplace closed on 13 May 2026. Every value here is a closing one, built from the sales recorded through the last of them, and the full sales history stays searchable so collectors can still document and value what they hold.",
     },
   ],
 }

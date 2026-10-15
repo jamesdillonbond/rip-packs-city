@@ -154,3 +154,46 @@ describe("the chrome surfaces render the derivation, not literals", () => {
     expect(src).not.toMatch(/Flowty asks/)
   })
 })
+
+describe("the overview About cards make no trading claim on a closed market", () => {
+  // 2026-10-14: the 09-06 fix covered the ticker and the Tools grid, but the
+  // About panel on /ufc/overview still promised "the sniper catches fight
+  // moments priced below market … without overpaying on the secondary". None of
+  // those words is a LIVENESS token, so this panel needs a trading-claim pattern
+  // of its own: a closed market has no deals, no secondary and nothing to buy.
+  const TRADING_CLAIM =
+    /\b(sniper|snipe\w*|below market|secondary|overpay\w*|deal[\s-]?finding|deals?|buy\w*|sell\w*|listings?)\b/i
+  const SRC = "app/(collections)/[collection]/overview/CollectionOverviewClient.tsx"
+
+  /** The `"<slug>": [ ... ],` About block for one slug, raw. */
+  function aboutBlock(src: string, slug: string): string | null {
+    const start = src.indexOf(`  "${slug}": [`)
+    if (start < 0) return null
+    const end = src.indexOf("\n  ],", start)
+    return end < 0 ? null : src.slice(start, end)
+  }
+
+  it("every closed market that has an About block carries no trading or liveness claim", async () => {
+    const src = (await import("node:fs")).readFileSync(SRC, "utf8")
+    let checked = 0
+    for (const slug of Object.keys(CLOSED_MARKETS)) {
+      const block = aboutBlock(src, slug)
+      if (!block) continue // aliases resolve to the canonical slug's block
+      const bodies = [...block.matchAll(/(?:title|body): "([^"]*)"/g)].map((m) => m[1])
+      expect(bodies.length, `${slug}: no About copy found`).toBeGreaterThan(0)
+      for (const text of bodies) {
+        expect(text, `${slug}: "${text}"`).not.toMatch(TRADING_CLAIM)
+        expect(text, `${slug}: "${text}"`).not.toMatch(LIVENESS)
+      }
+      checked += 1
+    }
+    // population control: the guard must actually inspect UFC's block
+    expect(checked).toBeGreaterThanOrEqual(1)
+  })
+
+  it("CONTROL — the pattern does see the copy it exists to stop", () => {
+    expect(
+      "The sniper catches fight moments priced below market so you can build your roster without overpaying on the secondary.",
+    ).toMatch(TRADING_CLAIM)
+  })
+})

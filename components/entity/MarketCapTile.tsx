@@ -20,7 +20,7 @@ import { fetchCollectionMarketCapTile, fetchIssuerSplitTileRow, fetchMarketCapTi
 // on an unbounded path to them (check-unbounded-server-reads, 2026-10-03). The
 // types come via the bounded fetcher module; the helpers from the pure one.
 import type { IssuerSplitEditionRow, MarketCapEntityGroup, MarketCapEntityRow } from "@/lib/entity/market-cap-fetchers"
-import { collectionDisplayName, fmtCount, fmtUsdCompact, sevenDayChange } from "@/lib/insights/market-cap-format"
+import { collectionDisplayName, fmtCount, fmtUsdCompact, sevenDayChange, unknownCapReason } from "@/lib/insights/market-cap-format"
 import { isSplitKnown, splitStatusShort } from "@/lib/insights/topshot-issuer-split-format"
 import { Section, SectionUnavailable, StatCell } from "@/components/entity/_shared"
 
@@ -92,7 +92,7 @@ export function MarketCapTileBody({
               ? `${fmtPct(hc)} priced from sales`
               : row.mcap_minted_usd != null
                 ? `≤ ${fmtUsdCompact(row.mcap_minted_usd)} on minted supply`
-                : "no burn count published"
+                : unknownCapReason(row, group === "edition")
           }
         />
         <StatCell

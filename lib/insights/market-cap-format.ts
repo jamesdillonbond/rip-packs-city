@@ -39,3 +39,25 @@ export function sevenDayChange(now: number | null, ago: number | null): number |
   if (now == null || ago == null || !Number.isFinite(now) || !Number.isFinite(ago) || ago <= 0) return null
   return now / ago - 1
 }
+
+/**
+ * Why an entity's market cap is Unknown, for the tile's sub-label. Each clause
+ * names a cause the row PROVES, in this order:
+ *   · a minted-supply bound exists  → the bound (the caller formats it)
+ *   · nothing in it has a price     → say so ("no price yet")
+ *   · burns unpublished somewhere   → "no burn count published"
+ *   · otherwise                     → a cause we cannot name, stated as such
+ *
+ * ⛔ 2026-10-14: this used to fall through to "no burn count published" for every
+ * Unknown without a bound. On a 1/1 Top Shot edition with no sale (253:9148) that
+ * printed "no burn count published" directly beside a rendered "Burned 0" — the
+ * burn count WAS published; the edition simply has no price.
+ */
+export function unknownCapReason(
+  row: { editions: number; editions_priced: number; editions_supply_known: number },
+  isEdition: boolean,
+): string {
+  if (row.editions_priced === 0) return isEdition ? "no price for this edition yet" : "none of its editions has a price yet"
+  if (row.editions_supply_known < row.editions) return "no burn count published"
+  return "price or supply incomplete"
+}

@@ -116,6 +116,23 @@ describe("MarketCapTileBody", () => {
     expect(t).toContain("none in UFC Strike has a known cap")
   })
 
+  it("an Unknown cap names the cause the row proves — never 'no burn count' beside a published burn count", () => {
+    // 253:9148 (Olivia Miles /1, 2026-10-14): supply fully known, burned 0, no price.
+    const oneOfOne = { ...ROW, editions: 1, editions_supply_known: 1, editions_priced: 0, minted: 1, burned: 0, issuer_held: 0, collector_held: 1, mcap_usd: null, mcap_high_conf_usd: null, mcap_minted_usd: null, mcap_rank: null }
+    const ed = render(<MarketCapTileBody group="edition" row={oneOfOne} />)
+    const t = ed.container.textContent ?? ""
+    expect(t).toContain("Unknown")
+    expect(t).toContain("no price for this edition yet")
+    expect(t).not.toContain("no burn count published")
+    cleanup()
+    // burns genuinely unpublished, prices present → the burn clause is the true one
+    const noBurns = render(<MarketCapTileBody group="player" row={{ ...oneOfOne, editions: 3, editions_supply_known: 1, editions_priced: 3, burned: null }} />)
+    expect(noBurns.container.textContent).toContain("no burn count published")
+    cleanup()
+    const groupNoPrice = render(<MarketCapTileBody group="set" row={{ ...oneOfOne, editions: 4, editions_supply_known: 4 }} />)
+    expect(groupNoPrice.container.textContent).toContain("none of its editions has a price yet")
+  })
+
   it("7-day change: shown when history exists, otherwise says when history began", () => {
     const withHistory = render(<MarketCapTileBody group="set" row={{ ...ROW, mcap_usd: 110, mcap_usd_7d_ago: 100 }} />)
     expect(withHistory.container.textContent).toContain("+10%")
