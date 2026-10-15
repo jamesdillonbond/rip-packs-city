@@ -25,12 +25,14 @@ export const metadata: Metadata = {
   // and was being formatted by the ROOT template, not by this one.
   title: { absolute: "Public Insights | Rip Packs City", template: BRAND_TITLE_TEMPLATE },
   description:
-    "Free, no-signup intelligence on Flow blockchain digital collectibles. Effective supply, pack reality, rookie cohort tracking, first-mint trophies, cross-collection whales, per-set scarcity, Pinnacle scarcity.",
+    "Free, no-signup intelligence on digital collectibles — NBA Top Shot, NFL All Day, Disney Pinnacle, Candy MLB, Panini and more. Effective supply, pack reality, rookie tracking, scarcity, premiums and top sales.",
   alternates: { canonical: `${SITE_URL}/insights` },
   openGraph: {
     title: "Public Insights — Rip Packs City",
     description:
-      "Seven free intelligence wedges for Flow collectors — effective supply, pack reality, scarcity, rookie tracking, and more — plus a wallet tool.",
+      // 2026-10-14: was "Seven free intelligence wedges for Flow collectors" — the
+      // hub links ~30 boards now, Candy MLB and Panini among them. No baked count.
+      "Free boards for collectors — effective supply, pack reality, scarcity, serial and parallel premiums, top sales, rookie tracking — plus wallet tools.",
     url: `${SITE_URL}/insights`,
     siteName: "Rip Packs City",
     images: [
@@ -49,7 +51,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Public Insights — Rip Packs City",
     description:
-      "Free, no-signup market intelligence for Flow collectors.",
+      "Free, no-signup market intelligence for digital collectors.",
     images: [`${SITE_URL}/api/og/insights`],
     creator: "@RipPacksCity",
   },

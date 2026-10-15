@@ -94,3 +94,21 @@ describe("collection tab metadata (live audit, 2026-10-14)", () => {
     expect(String(m.description)).toMatch(/top sales/i)
   })
 })
+
+import { insightsHubJsonLd, getInsightsBoard } from "@/lib/insights/board-registry"
+import { INSIGHT_ROUTES } from "@/lib/sitemap-data"
+
+describe("/insights hub JSON-LD (2026-10-14)", () => {
+  it("lists exactly the live boards the sitemap advertises, each by its registry name and URL", () => {
+    const ld = insightsHubJsonLd(INSIGHT_ROUTES, "https://www.rippackscity.com") as any
+    const items = ld.mainEntity.itemListElement
+    const expected = INSIGHT_ROUTES.filter((s) => getInsightsBoard(s))
+    expect(items.map((i: any) => i.url)).toEqual(expected.map((s) => `https://www.rippackscity.com/insights/${s}`))
+    expect(ld.mainEntity.numberOfItems).toBe(items.length)
+    expect(items.length).toBeGreaterThan(20)
+  })
+  it("a staged (not-live) or unknown slug is never advertised", () => {
+    const ld = insightsHubJsonLd(["squeeze", "not-a-board"], "https://x.test") as any
+    expect(ld.mainEntity.itemListElement.map((i: any) => i.url)).toEqual(["https://x.test/insights/squeeze"])
+  })
+})

@@ -12,6 +12,8 @@ import { createClient } from "@supabase/supabase-js"
 import InsightsWalletSearch from "@/components/insights/InsightsWalletSearch"
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags"
 import { fmtUsd, liveStat } from "@/lib/insights-hub-format"
+import { insightsHubJsonLd } from "@/lib/insights/board-registry"
+import { INSIGHT_ROUTES } from "@/lib/sitemap-data"
 
 export const revalidate = 1800
 
@@ -391,6 +393,10 @@ export default async function InsightsIndexPage() {
   return (
     <main className="rpc-ins-page">
       <style>{CSS}</style>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(insightsHubJsonLd(INSIGHT_ROUTES, process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com")) }}
+      />
 
       <section className="rpc-ins-hero">
         <div className="rpc-ins-eyebrow">Rip Packs City · Public Insights</div>

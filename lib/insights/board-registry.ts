@@ -315,3 +315,35 @@ const BY_SLUG: ReadonlyMap<string, InsightsBoard> = new Map(INSIGHTS_BOARDS.map(
 export function getInsightsBoard(slug: string): InsightsBoard | undefined {
   return BY_SLUG.get(slug)
 }
+
+/**
+ * The /insights hub as a schema.org CollectionPage whose mainEntity is an
+ * ItemList of the boards it links (2026-10-14: the hub was the one major page
+ * with no page-level JSON-LD). `liveSlugs` is the caller's list of boards that
+ * are PUBLIC right now — pass lib/sitemap-data `INSIGHT_ROUTES`, which already
+ * applies the launch flags — so a staged board is never advertised here.
+ * Slugs without a registry entry are skipped, never named by their slug.
+ */
+export function insightsHubJsonLd(liveSlugs: readonly string[], siteUrl: string): Record<string, unknown> {
+  const boards = liveSlugs.map((s) => BY_SLUG.get(s)).filter((b): b is InsightsBoard => !!b)
+  const hubUrl = `${siteUrl}/insights`
+  return {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    "@id": hubUrl,
+    url: hubUrl,
+    name: "Rip Packs City Public Insights",
+    description: "Free, no-signup boards on digital collectibles: supply, pack reality, scarcity, premiums, sales and wallet tools.",
+    isPartOf: { "@type": "WebSite", name: "Rip Packs City", url: siteUrl },
+    mainEntity: {
+      "@type": "ItemList",
+      numberOfItems: boards.length,
+      itemListElement: boards.map((b, i) => ({
+        "@type": "ListItem",
+        position: i + 1,
+        name: b.name,
+        url: `${siteUrl}/insights/${b.slug}`,
+      })),
+    },
+  }
+}
