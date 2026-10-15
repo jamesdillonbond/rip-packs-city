@@ -101,6 +101,17 @@ export function normalizeAddress(value: string): string {
   return detectAddressChain(trimmed) === "solana" ? trimmed : trimmed.toLowerCase();
 }
 
+// A Flow address as a CADENCE EVENT PAYLOAD carries it: lower-case, `0x`-prefixed
+// and left-padded to 16 hex digits (event fields can drop leading zeros). FLOW-ONLY:
+// call it on a value that is already known to be a Flow address from a Cadence
+// event or transaction — never on a chain-agnostic input, where fold-and-prefix
+// would fabricate (see normalizeAddress above). 2026-10-15: one copy, replacing
+// seven byte-identical local `normalizeAddress` helpers in the Flow indexers.
+export function normalizeFlowEventAddress(raw: string): string {
+  const hex = raw.trim().toLowerCase().replace(/^0x/, "");
+  return `0x${hex.padStart(16, "0")}`;
+}
+
 // Panini identity is a USERNAME, not an address — `panini_card_serials.owner` is
 // 100% populated, 2,762 distinct, and ZERO EVM-shaped (verified live 2026-08-08),
 // max observed length 16. The raw feed envelope's `my_public_wallet` key is NOT

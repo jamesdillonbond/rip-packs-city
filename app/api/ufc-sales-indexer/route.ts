@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import crypto from "crypto"
+import { normalizeFlowEventAddress } from "@/lib/address"
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 export const maxDuration = 120;
@@ -49,11 +50,6 @@ const EXCLUDED_ADDRESSES = new Set<string>([
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-}
-
-function normalizeAddress(raw: string): string {
-  const hex = raw.trim().toLowerCase().replace(/^0x/, "")
-  return `0x${hex.padStart(16, "0")}`
 }
 
 function slugifyUfcEdition(name: string, max: number | null): string {
@@ -165,9 +161,9 @@ async function fetchTxBuyers(txId: string): Promise<string[]> {
       payer?: string
     }
     const candidates = new Set<string>()
-    if (json.proposal_key?.address) candidates.add(normalizeAddress(json.proposal_key.address))
-    for (const a of json.authorizers ?? []) candidates.add(normalizeAddress(a))
-    if (json.payer) candidates.add(normalizeAddress(json.payer))
+    if (json.proposal_key?.address) candidates.add(normalizeFlowEventAddress(json.proposal_key.address))
+    for (const a of json.authorizers ?? []) candidates.add(normalizeFlowEventAddress(a))
+    if (json.payer) candidates.add(normalizeFlowEventAddress(json.payer))
     return Array.from(candidates).filter((a) => !EXCLUDED_ADDRESSES.has(a))
   } catch {
     return []
@@ -594,7 +590,7 @@ async function runIndexer(req: NextRequest) {
       seenNft.add(sale.nftID)
       try {
         const candidates: string[] = []
-        if (sale.buyer) candidates.push(normalizeAddress(sale.buyer))
+        if (sale.buyer) candidates.push(normalizeFlowEventAddress(sale.buyer))
         if (candidates.length === 0) {
           const txBuyers = await fetchTxBuyers(sale.transactionId)
           for (const b of txBuyers) candidates.push(b)

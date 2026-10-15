@@ -11,6 +11,7 @@ import {
   displayAddress,
   truncateAddressForDisplay,
   walletQueryKey,
+  normalizeFlowEventAddress,
 } from "@/lib/address"
 
 // Chain-aware address validation. The load-bearing footgun: Solana base58 is
@@ -182,5 +183,19 @@ describe("walletQueryKey", () => {
     expect(walletQueryKey("   ")).toBe("")
     expect(walletQueryKey(null)).toBe("")
     expect(walletQueryKey(undefined)).toBe("")
+  })
+})
+
+// 2026-10-15: one copy of the Flow-indexer helper, replacing seven byte-identical
+// local `normalizeAddress` functions. Pinned to the behaviour those copies had.
+describe("normalizeFlowEventAddress (Flow event payloads only)", () => {
+  it("left-pads a short event address to 16 hex digits and prefixes 0x", () => {
+    expect(normalizeFlowEventAddress("1d7e57aa55817448")).toBe("0x1d7e57aa55817448")
+    expect(normalizeFlowEventAddress("0x4eb8a10cb9f87357")).toBe("0x4eb8a10cb9f87357")
+    expect(normalizeFlowEventAddress("0xf919ee77447b7497".replace("0xf", "0x"))).toBe("0x0919ee77447b7497")
+    expect(normalizeFlowEventAddress("0xABC")).toBe("0x0000000000000abc")
+  })
+  it("trims and folds case (Flow hex is case-insensitive)", () => {
+    expect(normalizeFlowEventAddress("  0xBD94CADE097E50AC ")).toBe(FLOW)
   })
 })

@@ -16,6 +16,8 @@
 // These run on Vercel egress (Flow REST is reachable there, unlike the
 // AllDay GQL via worker), matching the healthy allday-fmv-populate path.
 
+import { normalizeFlowEventAddress } from "@/lib/address"
+
 export const FLOW_REST = "https://rest-mainnet.onflow.org"
 export const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 export const COLLECTION_SLUG = "nfl_all_day"
@@ -45,9 +47,9 @@ export const EXCLUDED_ADDRESSES = new Set<string>([
   "0xe4cf4bdc1751c65d", // NFL All Day contract account
 ])
 
+// The one copy lives in lib/address.ts (2026-10-15); kept under this name for its importers.
 export function normalizeAddress(raw: string): string {
-  const hex = raw.trim().toLowerCase().replace(/^0x/, "")
-  return `0x${hex.padStart(16, "0")}`
+  return normalizeFlowEventAddress(raw)
 }
 
 // Cadence JSON-CDC unwrapper (mirrors the indexer / dapper-v1-tx-decode copy).
