@@ -19,6 +19,7 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { slugifyPlayerName } from "@/lib/entity-labels"
+import { paniniEditionUrl } from "@/lib/panini/edition-url"
 
 type Num = number | null
 
@@ -136,7 +137,14 @@ function editionHref(key: string) {
 // /panini-blockchain/edition/packcard-2305_4544702_12015358_1 was a 404 linked from this
 // board (link crawl, 2026-09-29). Such a row shows its dash as plain text, not a dead link.
 function EditionLink({ edition, name }: { edition: string; name: string | null }) {
-  if (!name) return <>—</>
+  // A sale whose edition the walk has not catalogued yet (2026-10-14: 11 sales / $18.7k over 30 d,
+  // one of them the #1/1 $5,555 top row) has no name and no RPC page — every catalogued Panini
+  // edition carries a name. Say so and link the card's own Panini page, rather than a bare "— —".
+  if (!name) {
+    const ext = paniniEditionUrl(edition)
+    const label = "Card not yet in RPC's catalogue"
+    return ext ? <a href={ext} target="_blank" rel="noopener noreferrer" style={{ color: "inherit" }}>{label}</a> : <>{label}</>
+  }
   return <Link href={editionHref(edition)} style={{ color: "inherit" }}>{name}</Link>
 }
 const SERIAL_KIND_LABEL: Record<PaniniSerialKind, string> = {

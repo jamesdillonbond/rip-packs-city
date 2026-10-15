@@ -169,7 +169,10 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
         <Note>
           <b>A floor, not a census.</b> Panini publishes no checklist, so RPC only knows a card once it has been listed.
           {cov && cov.pct_trustworthy != null
-            ? ` Of the ${int(cov.total_editions ?? null)} editions indexed, ${cov.pct_trustworthy}% sit in sets with broad listing coverage.`
+            // panini_coverage_summary is 2026 Prizm World Cup ONLY (panini_wc_editions); this board covers
+            // every product, so the figure must say whose it is (2026-10-14: it read "Of the 5,238 editions
+            // indexed" beside ~30.5k).
+            ? ` Of the ${int(cov.total_editions ?? null)} 2026 Prizm World Cup editions indexed, ${cov.pct_trustworthy}% sit in sets with broad listing coverage.`
             : ""}{" "}
           This board refreshes about hourly{data?.computedAt ? ` — computed ${ptWhen(data.computedAt, true)}` : ""}; a card may have sold since its ask was
           last seen.

@@ -112,6 +112,14 @@ describe("PaniniSniper", () => {
     expect(c.textContent).toContain("has no sale in 30 days")
   })
 
+  // 2026-10-14: the coverage figure is World-Cup-only (panini_coverage_summary) on an
+  // all-product board; unlabelled it read as the whole catalogue ("Of the 5,238 editions").
+  it("names the coverage figure's World Cup scope", () => {
+    const c = render(<PaniniSniper data={data()} degraded={null} />).container
+    expect(c.textContent).toContain("Of the 5,094 2026 Prizm World Cup editions indexed")
+    expect(c.textContent).not.toMatch(/Of the [\d,]+ editions indexed/)
+  })
+
   it("the special-serials filter keeps only flagged cards", () => {
     const c = render(<PaniniSniper data={data()} degraded={null} />).container
     const btn = [...c.querySelectorAll("button")].find((b) => /special/i.test(b.textContent ?? ""))
