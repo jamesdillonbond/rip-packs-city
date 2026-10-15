@@ -118,3 +118,33 @@ describe("GET /api/market — canonical badges (R104)", () => {
     expect(body.diagnostics.badgesUnavailable).toBe(true)
   })
 })
+
+// 2026-10-14: the Market dropdowns were built from the 50 rows on the page. The
+// route now returns `facets` over its whole fetched window, before the badge /
+// discount post-filters, so a badge carried only by a row beyond the page — or
+// filtered out by the current badge pick — is still offered.
+describe("GET /api/market — facets", () => {
+  type FacetBody = { listings: unknown[]; facets: { sets: string[]; badges: string[]; players: string[] } }
+
+  it("offers every badge and set in the window, including rows beyond the page", async () => {
+    install({ ...alldayRows, ...canonical })
+    const body = (await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&limit=1`))).json()) as FacetBody
+    expect(body.listings).toHaveLength(1)
+    expect(body.facets.badges).toEqual(["ALL DAY Debut", "Championship Year", "Rookie Year"])
+    expect(body.facets.sets).toEqual(["Base", "Playoff", "Rookie Debut"])
+    expect(body.facets.players).toEqual(["A", "B", "C"])
+  })
+
+  it("keeps the other badges on offer while one badge is selected", async () => {
+    install({ ...alldayRows, ...canonical })
+    const body = (await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&badges=Championship%20Year`))).json()) as FacetBody
+    expect(body.listings).toHaveLength(1)
+    expect(body.facets.badges).toContain("Rookie Year")
+  })
+
+  it("offers no badges when the badge read failed", async () => {
+    install({ ...alldayRows, ...failedCanonical })
+    const body = (await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}`))).json()) as FacetBody
+    expect(body.facets.badges).toEqual([])
+  })
+})

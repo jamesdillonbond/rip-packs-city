@@ -101,7 +101,7 @@ function market(over: Record<string, unknown> = {}) {
 
 let marketResponse: () => Response
 let readyResponse: () => Response
-let teamsResponse: () => Response
+let filterOptionsResponse: () => Response
 let fetchMock: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
@@ -110,13 +110,13 @@ beforeEach(() => {
   replace.mockClear()
   trackOutbound.mockClear()
   marketResponse = () => json(200, market())
-  teamsResponse = () => json(200, { teams: [] })
+  filterOptionsResponse = () => json(200, { catalog: true, sets: [], series: [], teams: [], players: [] })
   readyResponse = () => json(200, { per_collection: [{ slug: "nba-top-shot", name: "Top Shot", sales_24h: 900, fmv_coverage_pct: 80 }] })
   fetchMock = vi.fn(async (input: unknown) => {
     const url = String(input)
     if (url.startsWith("/api/ready")) return readyResponse()
     if (url.startsWith("/api/wallet/edition-counts")) return json(200, { counts: {} })
-    if (url.startsWith("/api/market/teams")) return teamsResponse()
+    if (url.startsWith("/api/market/filter-options")) return filterOptionsResponse()
     return marketResponse()
   })
   vi.stubGlobal("fetch", fetchMock)
@@ -314,7 +314,7 @@ describe("MarketClient — results", () => {
     fetchMock.mockImplementation((input: unknown) => {
       const url = String(input)
       if (url.startsWith("/api/ready")) return Promise.resolve(readyResponse())
-      if (url.startsWith("/api/market/teams")) return Promise.resolve(teamsResponse())
+      if (url.startsWith("/api/market/filter-options")) return Promise.resolve(filterOptionsResponse())
       return new Promise<Response>((res) => { release = res })
     })
     const { container } = render(<MarketClient />)
@@ -562,7 +562,7 @@ describe("MarketClient — controls", () => {
   it("sends a chosen sort to the API", async () => {
     render(<MarketClient />)
     await screen.findByText("Damian Lillard")
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "fmv_desc" } })
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort editions" }), { target: { value: "fmv_desc" } })
     await waitFor(() => {
       const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
       expect(urls.some((u) => u.includes("sort=fmv_desc"))).toBe(true)
@@ -689,25 +689,65 @@ describe("MarketClient — controls", () => {
     expect(srcs).not.toContain(master)
   })
 
-  // 2026-10-14: the Team list was built from the 50 listings on screen, so Portland
-  // Fire (70 editions with a live ask) could not be picked. Options now come from
-  // /api/market/teams, merged with the page's teams.
+  // 2026-10-14: the Set / Series / Team / Badge lists were built from the 50 listings
+  // on screen, so Portland Fire (70 editions with a live ask) could not be picked.
+  // Options now merge /api/market/filter-options (the catalog), the facets of the
+  // route's whole fetched window, the page, and the selection.
+  const openChip = async (label: string) => {
+    const lab = Array.from(document.querySelectorAll("span.rpc-label")).find((e) => e.textContent === label)!
+    fireEvent.click(within(lab.parentElement as HTMLElement).getByRole("button"))
+    return screen.findByRole("listbox")
+  }
+  const CATALOG = { catalog: true, sets: ["Archive Set", "Metallic Gold LE"], series: ["0", "8"], teams: ["Portland Fire", "Seattle Storm"], players: ["Paige Bueckers"] }
+
   it("offers a team that has no listing on the current page", async () => {
-    teamsResponse = () => json(200, { teams: ["Portland Fire", "Seattle Storm"] })
+    filterOptionsResponse = () => json(200, CATALOG)
     render(<MarketClient />)
     await screen.findByText("Damian Lillard")
-    fireEvent.click(within(screen.getByText(/^Team$/i).closest("div")!).getByRole("button"))
-    const box = await screen.findByRole("listbox")
+    const box = await openChip("Team")
     await within(box).findByText("Portland Fire")
     expect(within(box).getByText("Portland Trail Blazers")).toBeTruthy()
   })
 
-  it("still offers the page's teams when the full team list cannot be read", async () => {
-    teamsResponse = () => json(503, {})
+  it("offers a set that has no listing on the current page", async () => {
+    filterOptionsResponse = () => json(200, CATALOG)
     render(<MarketClient />)
     await screen.findByText("Damian Lillard")
-    fireEvent.click(within(screen.getByText(/^Team$/i).closest("div")!).getByRole("button"))
-    const box = await screen.findByRole("listbox")
+    const box = await openChip("Set")
+    await within(box).findByText("Metallic Gold LE")
+  })
+
+  it("offers badges, sets and teams the fetched window carries beyond the page", async () => {
+    filterOptionsResponse = () => json(200, { catalog: false })
+    marketResponse = () => json(200, market({
+      facets: { sets: ["Deep Set"], series: [], teams: ["Phoenix Mercury"], players: ["Diana Taurasi"], badges: ["Rookie Year", "Top Shot Debut"] },
+    }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(within(await openChip("Badges")).getByText("Top Shot Debut")).toBeTruthy()
+    fireEvent.keyDown(document, { key: "Escape" })
+    cleanup()
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(within(await openChip("Team")).getByText("Phoenix Mercury")).toBeTruthy()
+  })
+
+  it("suggests every catalog player in the Player box", async () => {
+    filterOptionsResponse = () => json(200, CATALOG)
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    await waitFor(() => {
+      const values = Array.from(document.querySelectorAll("#market-player-suggestions option")).map((o) => o.getAttribute("value"))
+      expect(values).toContain("Paige Bueckers")
+      expect(values).toContain("Damian Lillard")
+    })
+  })
+
+  it("still offers the page's teams when the catalog cannot be read", async () => {
+    filterOptionsResponse = () => json(503, {})
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const box = await openChip("Team")
     expect(within(box).getByText("Portland Trail Blazers")).toBeTruthy()
     expect(within(box).queryByText("Portland Fire")).toBeNull()
   })

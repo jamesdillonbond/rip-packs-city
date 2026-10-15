@@ -42,6 +42,7 @@ import { readPaniniCoverage } from "@/lib/panini/coverage"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { readCanonicalBadgeTitles, filterRowsByBadges } from "@/lib/market/canonical-badges"
 import { getCollectionUuid } from "@/lib/collections"
+import { collectMarketFacets } from "@/lib/market/facets"
 
 export const dynamic = "force-dynamic"
 // AllDay's get_allday_market_listings was rewritten for LIMIT-pushdown (~62ms), but
@@ -1197,6 +1198,7 @@ export async function GET(req: NextRequest) {
         }
       })
 
+      const facets = collectMarketFacets(enriched, !canonicalBadges || canonicalBadges.ok)
       const hasMinDiscount = Number.isFinite(minDiscount)
       const hasMaxDiscount = Number.isFinite(maxDiscount)
       let postFiltered = enriched
@@ -1261,6 +1263,7 @@ export async function GET(req: NextRequest) {
         clamp: { applied: true, ceilings: TIER_CEILING },
         diagnostics: { rawCount: count, postClampCount: clamped.length, postFilterCount: total, source: "modern", windowTruncated: modernPageFull, ...(canonicalBadges && !canonicalBadges.ok ? { badgesUnavailable: true } : {}) },
         ...coverageField,
+        facets,
       }, {
         headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },
       })
@@ -1410,6 +1413,7 @@ export async function GET(req: NextRequest) {
     // Discount filter happens after computation.
     const hasMinDiscount = Number.isFinite(minDiscount)
     const hasMaxDiscount = Number.isFinite(maxDiscount)
+    const facets = collectMarketFacets(enriched)
     let postFiltered = collapseToEditions(enriched)
     if (hasMinDiscount || hasMaxDiscount) {
       postFiltered = postFiltered.filter(r => {
@@ -1499,6 +1503,7 @@ export async function GET(req: NextRequest) {
       },
       // Diagnostic: count before clamp vs after, so the Market page can
       // show a muted "N listings filtered as outliers" line when relevant.
+      facets,
       diagnostics: {
         rawCount: count ?? (data?.length ?? 0),
         postClampCount: clamped.length,

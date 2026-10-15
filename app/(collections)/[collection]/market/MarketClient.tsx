@@ -28,9 +28,10 @@ import { seriesDisplay } from "@/lib/series-label"
 import { momentSubjectHref, pinnacleRenderHref, editionRouteHref, momentSubjectName } from "@/lib/entity-href"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { COLLECTION_TIERS } from "@/lib/collection-tiers"
-import { fetchJson } from "@/lib/analytics/fetch-json"
-import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
-import { filterListingsByOwned, collectBadgeOptions, countActiveFilters } from "@/lib/market/filters"
+import { useMarketFilterOptions } from "@/lib/hooks/useMarketFilterOptions"
+import type { MarketFacets } from "@/lib/market/facets"
+import { parseList, fmtDiscount, resolveListingUrl, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
+import { filterListingsByOwned, countActiveFilters } from "@/lib/market/filters"
 import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid, collectionHasLocking, collectionHasBadges } from "@/lib/collections"
@@ -152,6 +153,8 @@ type MarketResponse = {
   // Panini only (published 2026-09-25): the listing-gated coverage disclosure.
   coverage?: PaniniCoverage | null
   coverage_failed?: boolean
+  // Options present across the route's whole fetched window (lib/market/facets.ts).
+  facets?: MarketFacets
 }
 
 // ⛔ A collection with NO entity pages (Panini: no /edition, /player or /set
@@ -453,15 +456,6 @@ function MarketInner() {
     return () => { cancelled = true }
   }, [fetchKey, resolvedCollectionUuid])
 
-  const [allTeams, setAllTeams] = useState<string[] | null>(null)
-  useEffect(() => {
-    if (!resolvedCollectionUuid) return
-    let cancelled = false
-    setAllTeams(null)
-    fetchJson<{ teams?: string[] }>(`/api/market/teams?collectionId=${encodeURIComponent(resolvedCollectionUuid)}`)
-      .then(({ ok, json }) => { if (!cancelled && ok && Array.isArray(json?.teams)) setAllTeams(json!.teams!) })
-    return () => { cancelled = true }
-  }, [resolvedCollectionUuid])
 
   // Push filter/sort/page state into the URL so deep-links work + back/forward
   // navigation preserves filter state.
@@ -509,20 +503,15 @@ function MarketInner() {
   // `=== true` is deliberate: null means UNKNOWN and must not claim thin.
   const thinVolume = healthRow?.thin_volume === true
 
-  // ── Filter dropdown options (derived from current results) ───────────
+  // ── Filter dropdown options (lib/hooks/useMarketFilterOptions.ts) ────
   const availableTiers = COLLECTION_TIERS[collectionId] ?? []
-  const baseListings = data?.listings ?? []
-  const setOptions = useMemo(() => collectDistinct(baseListings, l => l.setName), [baseListings])
-  const seriesOptions = useMemo(() => collectDistinct(baseListings, l => l.seriesName), [baseListings])
-  // Team options = every team the collection's editions carry (/api/market/teams)
-  // ∪ teams on this page ∪ the current selection. Built from the page alone, the
-  // dropdown hid any team without a listing in the 50 on screen (Portland Fire,
-  // 2026-10-14). A failed read leaves allTeams null → page teams still offered.
-  const teamOptions = useMemo(() => {
-    const merged = new Set<string>([...(allTeams ?? []), ...collectDistinct(baseListings, l => l.teamName), ...teamsSel])
-    return Array.from(merged).sort((a, b) => a.localeCompare(b))
-  }, [allTeams, baseListings, teamsSel])
-  const badgeOptions = useMemo(() => collectBadgeOptions(baseListings), [baseListings])
+  const baseListings = useMemo(() => data?.listings ?? [], [data])
+  const { setOptions, seriesOptions, teamOptions, badgeOptions, playerSuggestions } = useMarketFilterOptions({
+    collectionUuid: resolvedCollectionUuid,
+    facets: data?.facets,
+    listings: baseListings,
+    selected: { sets: setsSel, series: seriesSel, teams: teamsSel, badges: badgesSel },
+  })
 
   // Owned filter is applied client-side because the join lives on the
   // browser anyway (we already loaded /api/wallet/edition-counts above).
@@ -735,8 +724,13 @@ function MarketInner() {
             aria-label={`Search by ${getEntityLabels(collectionId).player.toLowerCase()}`}
             value={playerQuery}
             onChange={(e) => setPlayerQuery(e.target.value)}
+            list="market-player-suggestions"
+            autoComplete="off"
             style={{ ...inputStyle, width: 180 }}
           />
+          <datalist id="market-player-suggestions">
+            {playerSuggestions.map((p) => <option key={p} value={p} />)}
+          </datalist>
 
           {activeFilterCount > 0 && (
             <button

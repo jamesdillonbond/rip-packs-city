@@ -1177,10 +1177,11 @@ export function isPublicPath(pathname: string, method: string): boolean {
     // load downloaded the login HTML once and `.json()` threw. Session-derived
     // data only ever leaves for a signed-in caller (getCurrentUser gates it).
     "/api/profile/me",
-    // 2026-10-14: the Market tab's full Team list (distinct editions.team_name
-    // for a known collection). GET-only, no session, public catalog data — the
-    // same class as /api/market. Gated, anon visitors fell back to page teams.
-    "/api/market/teams",
+    // 2026-10-14: the Market tab's full Set / Series / Team / Player lists
+    // (distinct editions values for a known collection). GET-only, no session,
+    // public catalog data — the same class as /api/market. Replaced the same-day
+    // /api/market/teams, which anon visitors got 307'd to /login on.
+    "/api/market/filter-options",
   ])
   if ((method === "GET" || method === "HEAD") && PUBLIC_READ_APIS.has(pathname)) {
     return true
