@@ -63,3 +63,16 @@ describe("readCollectionCount", () => {
     expect(await readCollectionCount("0x01", "nfl_all_day")).toBeNull()
   })
 })
+
+describe("All Day: a COUNT, never an empty-proof (#191, 2026-10-14)", () => {
+  it("readCollectionCount reads All Day's on-chain count", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(cdc({ type: "Int", value: "0" })))
+    expect(await readCollectionCount("0x6d1f8c18412c6abc", "nfl_all_day")).toBe(0)
+  })
+  it("proveCollectionEmpty refuses All Day even when the chain reads 0 — locked moments are off chain", async () => {
+    const f = vi.fn().mockResolvedValue(cdc({ type: "Int", value: "0" }))
+    vi.stubGlobal("fetch", f)
+    expect(await proveCollectionEmpty("0x6d1f8c18412c6abc", "nfl_all_day")).toBe("no_proof_script")
+    expect(f).not.toHaveBeenCalled()
+  })
+})

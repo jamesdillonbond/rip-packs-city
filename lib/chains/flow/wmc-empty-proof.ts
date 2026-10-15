@@ -46,6 +46,22 @@ access(all) fun main(address: Address): Int {
 }`.trim(),
 }
 
+// COUNT-only scripts: the on-chain getIDs() length of a collection whose holdings
+// ALSO live off chain, so an empty result is never proof of an empty holding and
+// the collection must not appear in EMPTY_PROOF_SCRIPTS. All Day's locked moments
+// are Dapper-custodied (the studio walk is their authority); its on-chain count is
+// still a valid independent check of the on-chain HALF of a walk (2026-10-14:
+// 0x6d1f8c18412c6abc read 0 on chain with 2 studio holdings and 147 rows cached).
+export const COUNT_ONLY_SCRIPTS: Readonly<Record<string, string>> = {
+  nfl_all_day: `
+import NonFungibleToken from 0x1d7e57aa55817448
+access(all) fun main(address: Address): Int {
+  let col = getAccount(address).capabilities.borrow<&{NonFungibleToken.CollectionPublic}>(/public/AllDayNFTCollection)
+  if col == nil { return -1 }
+  return col!.getIDs().length
+}`.trim(),
+}
+
 export type EmptyProof = "proven_empty" | "not_empty" | "no_collection" | "read_failed" | "no_proof_script"
 
 /** Parse the JSON-Cadence `Int` a proof script returns. Anything else is a failed read. */
@@ -66,21 +82,22 @@ export function classifyProofResult(decoded: unknown): EmptyProof {
  * 74/12/18/1/8 held — and this read returned exactly the walks' counts.
  */
 export async function readCollectionCount(wallet: string, collectionSlug: string): Promise<number | null> {
-  const proof = await readProof(wallet, collectionSlug)
+  const proof = await readProof(wallet, collectionSlug, EMPTY_PROOF_SCRIPTS[collectionSlug] ?? COUNT_ONLY_SCRIPTS[collectionSlug])
   return typeof proof === "number" ? proof : null
 }
 
 export async function proveCollectionEmpty(wallet: string, collectionSlug: string): Promise<EmptyProof> {
-  const proof = await readProof(wallet, collectionSlug)
+  // Never COUNT_ONLY_SCRIPTS here: an empty on-chain count does not prove an empty holding there.
+  const proof = await readProof(wallet, collectionSlug, EMPTY_PROOF_SCRIPTS[collectionSlug])
   if (typeof proof === "number") return proof === 0 ? "proven_empty" : "not_empty"
   return proof
 }
 
 async function readProof(
   wallet: string,
-  collectionSlug: string,
+  _collectionSlug: string,
+  script: string | undefined,
 ): Promise<number | "no_collection" | "read_failed" | "no_proof_script"> {
-  const script = EMPTY_PROOF_SCRIPTS[collectionSlug]
   if (!script) return "no_proof_script"
   try {
     const res = await fetch(FLOW_REST, {

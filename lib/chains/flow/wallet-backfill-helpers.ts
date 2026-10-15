@@ -1063,6 +1063,16 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
     // and deleting on it would remove real holdings. Collections with no custody
     // source (Golazos) are unaffected — their locked moments stay on-chain.
     const studioHealthyForDelete = !config.studioCustodyHoldings || !!(studio && studio.ok)
+    // Past the >90 % cap (#191, 2026-10-14): the custody half is already complete
+    // here (this call only happens when studioHealthyForDelete, and studio.ok is
+    // `!truncated`), so the cap is confirmed when an independent on-chain getIDs()
+    // count equals this walk's on-chain half. Then the observed set is complete and
+    // its size is returned; anything else returns null and the skip stays.
+    const onChainDistinct = new Set(onChainTriples.filter((t) => Array.isArray(t) && t.length >= 2).map((t) => String(t[0]))).size
+    const confirmAllDayComplete = async (): Promise<number | null> => {
+      const independent = await readCollectionCount(wallet, config.slug)
+      return independent !== null && independent === onChainDistinct ? observedIds.size : null
+    }
     const unseen = studioHealthyForDelete
       ? await deleteUnseenWmcRows({
           wallet,
@@ -1070,6 +1080,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
           observedIds,
           pipelineName: config.pipelineName,
           cachedIds: skipCached ? cachedIds.keys() : undefined,
+          confirmCompleteness: confirmAllDayComplete,
         })
       : { deleted: 0, skippedReason: "studio_custody_walk_degraded" as const }
 

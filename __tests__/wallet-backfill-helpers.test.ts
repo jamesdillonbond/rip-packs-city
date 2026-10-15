@@ -1937,3 +1937,69 @@ describe("deleteUnseenWmcRows — confirmCompleteness past the cap (2026-10-14)"
   })
 })
 
+
+// ── #191: All Day partial sell-off on a tracked wallet (2026-10-14) ──────────
+// 0x6d1f8c18412c6abc: 147 All Day rows cached, 2 held (both studio-custodied),
+// skipped as suspiciously_large forever. Confirmed only when the custody walk is
+// complete AND an independent on-chain getIDs() count equals the walk's on-chain half.
+describe("runAllDayDetailsBackfill — cap confirmation (#191)", () => {
+  const STUDIO_CFG = { ...CFG, studioCustodyHoldings: true }
+  const studio = (nodes: Array<[string, string, string]>, totalCount = nodes.length) => ({
+    ok: true,
+    status: 200,
+    text: async () =>
+      JSON.stringify({ data: { searchAllDayNft: { totalCount, edges: nodes.map(([id, e, s]) => ({ cursor: `c_${id}`, node: { id, serial_number: s, edition: { id: e } } })) } } }),
+  })
+  const route = (onChainCount: number | Error, studioNodes: Array<[string, string, string]>, totalCount?: number) => {
+    let countCalls = 0
+    ;(fetch as any).mockImplementation(async (url: string) => {
+      if (String(url).includes("rest-mainnet.onflow.org/v1/scripts")) {
+        countCalls++
+        if (onChainCount instanceof Error) throw onChainCount
+        return flowIntResponse(onChainCount)
+      }
+      return studio(studioNodes, totalCount)
+    })
+    return () => countCalls
+  }
+  const cached150 = () => Array.from({ length: 150 }, (_, i) => ({ moment_id: String(1000 + i), edition_key: "e" }))
+
+  it("custody walk complete + independent on-chain count equal → the sold rows are retired", async () => {
+    H.state.fclQuery = async () => []
+    H.state.cachedRows = [...cached150(), { moment_id: "1", edition_key: "e" }, { moment_id: "2", edition_key: "e" }]
+    const calls = route(0, [["1", "10", "5"], ["2", "11", "6"]])
+    H.state.upsertResult = { data: { written: 2 }, error: null }
+    await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
+    expect(calls()).toBe(1)
+    const ids = H.state.wmcDeletes.flatMap((d: any) => d.ids)
+    expect(ids).toHaveLength(150)
+    expect(ids).not.toContain("1")
+    expect(lastLog().p_extra).toMatchObject({ unseen_deleted: 150, unseen_delete_cap_confirmed: true })
+  })
+
+  it("an on-chain count that differs from the walk keeps the skip", async () => {
+    H.state.fclQuery = async () => []
+    H.state.cachedRows = cached150()
+    route(3, [["1", "10", "5"]])
+    await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
+    expect(H.state.wmcDeletes).toHaveLength(0)
+    expect(lastLog().p_extra).toMatchObject({ unseen_deleted: 0, unseen_delete_skipped: "suspiciously_large" })
+  })
+
+  it("a TRUNCATED custody walk (studio.ok = false) deletes nothing and the chain is not even asked", async () => {
+    H.state.fclQuery = async () => []
+    H.state.cachedRows = cached150()
+    const calls = route(0, [["1", "10", "5"]], 5000) // totalCount far above what was returned
+    await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
+    expect(H.state.wmcDeletes).toHaveLength(0)
+    expect(calls()).toBe(0)
+  })
+
+  it("a failed count read keeps the skip", async () => {
+    H.state.fclQuery = async () => []
+    H.state.cachedRows = cached150()
+    route(new Error("down"), [["1", "10", "5"]])
+    await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
+    expect(H.state.wmcDeletes).toHaveLength(0)
+  })
+})
