@@ -30,6 +30,31 @@ function cnt(n: number | null): string {
   return v.toLocaleString("en-US")
 }
 
+const WINDOW_LABEL: Record<Win, string> = { "24h": "the last 24 hours", "7d": "the last 7 days", "30d": "the last 30 days" }
+
+/** "Oct 11, 8:21 PM ET" — same zone as the page's "Updated" stamp. */
+function whenEt(iso: string): string | null {
+  const t = Date.parse(iso)
+  if (!Number.isFinite(t)) return null
+  return `${new Date(t).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET`
+}
+
+/**
+ * A window with no indexed sales is NOT rendered as "Volume $0 · Sales 0". That
+ * reads as "nobody traded", and the board only knows what its feeds indexed — on
+ * 2026-10-14 Candy's feed had been quiet for three days while a second venue sat
+ * unindexed. Say what we know instead: nothing indexed in the window, and when
+ * the last indexed sale was (`last_sale_at`; NULL = none in the 30-day scan;
+ * absent = an older payload, so the date is simply not stated).
+ */
+function noSalesLine(r: MarketPulseRow, w: Win): string {
+  const head = `No sales indexed in ${WINDOW_LABEL[w]}.`
+  if (r.last_sale_at === undefined) return head
+  if (r.last_sale_at === null) return `${head} None in the last 30 days either.`
+  const when = whenEt(r.last_sale_at)
+  return when ? `${head} Last indexed sale: ${when}.` : head
+}
+
 function pick(r: MarketPulseRow, w: Win) {
   if (w === "24h") return { volume: r.volume_24h, sales: r.sales_24h, buyers: r.buyers_24h, sellers: null as number | null, top: r.top_sale_24h }
   if (w === "7d") return { volume: r.volume_7d, sales: r.sales_7d, buyers: r.buyers_7d, sellers: r.sellers_7d, top: r.top_sale_7d }
@@ -54,8 +79,8 @@ export default function MarketPulseClient({ initialRows, fetchedAt }: { initialR
         <div className="rpc-label" style={{ color: "var(--rpc-red)", letterSpacing: "0.12em", fontSize: 11 }}>SURFACE · LIVE</div>
         <h1 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px, 5vw, 44px)", margin: "6px 0 10px", lineHeight: 1.02 }}>Market Pulse</h1>
         <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 720, fontSize: 15, lineHeight: 1.5 }}>
-          Secondary-market health for every Flow collection in one view — volume, sales, buyers and sellers.
-          Top Shot and dapper.market show one league at a time; this shows all five.
+          Secondary-market health for every collection we track in one view — volume, sales, buyers and sellers.
+          Top Shot and dapper.market show one league at a time; this shows them side by side.
         </p>
       </header>
 
@@ -92,12 +117,18 @@ export default function MarketPulseClient({ initialRows, fetchedAt }: { initialR
                 </Link>
                 {d.top != null && <span style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>top {usd(d.top)}</span>}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: d.sellers != null ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 10 }}>
-                <Stat label="Volume" value={usd(d.volume)} big />
-                <Stat label="Sales" value={cnt(d.sales)} />
-                <Stat label="Buyers" value={cnt(d.buyers)} />
-                {d.sellers != null && <Stat label="Sellers" value={cnt(d.sellers)} />}
-              </div>
+              {Number(d.sales) > 0 ? (
+                <div style={{ display: "grid", gridTemplateColumns: d.sellers != null ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 10 }}>
+                  <Stat label="Volume" value={usd(d.volume)} big />
+                  <Stat label="Sales" value={cnt(d.sales)} />
+                  <Stat label="Buyers" value={cnt(d.buyers)} />
+                  {d.sellers != null && <Stat label="Sellers" value={cnt(d.sellers)} />}
+                </div>
+              ) : (
+                <p data-testid="pulse-no-sales" style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: "var(--rpc-text-secondary)" }}>
+                  {noSalesLine(r, win)}
+                </p>
+              )}
             </div>
           )
         })}

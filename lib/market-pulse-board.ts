@@ -22,6 +22,9 @@ export type MarketPulseRow = {
   volume_30d: number
   buyers_30d: number
   top_sale_30d: number | null
+  /** Newest priced sale in the 30-day scan; null = none in 30 days. Optional
+   *  because payloads from before migration 20261015022439 lack it. */
+  last_sale_at?: string | null
 }
 
 export async function fetchMarketPulse(supabase: any): Promise<MarketPulseRow[]> {
