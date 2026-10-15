@@ -16,6 +16,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { supabaseAdmin } from "@/lib/supabase"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { readPaniniCoverage } from "@/lib/panini/coverage"
+import { readPaniniOverviewDeals, readPaniniTopSales, PANINI_TOP_SALES_DAYS, PANINI_TOP_SALES_MIN_USD } from "@/lib/panini/overview-feeds"
 
 export type CollectionStatsRead =
   | { ok: true; stats: Record<string, unknown> }
@@ -65,16 +66,32 @@ export async function readCollectionStats(
     // they are nulled here with `sales_tracked: false`, and the page says "not
     // tracked" instead of "$0" / "No sales in the last 24h". The listing-gated
     // coverage disclosure rides along (lib/panini/coverage.ts).
+    //
+    // 2026-10-14: the two LIST panels now read Panini's own sources
+    // (lib/panini/overview-feeds.ts) — the Sniper tab's hourly deal snapshot and
+    // panini_sales' $100+ view — instead of being nulled. Nulling them published
+    // "No deals ≥15% off right now" beside a Sniper tab of ~600, and "Sales aren't
+    // a tracked feed" over ~588k recorded sales. A failed read nulls the field AND
+    // sets its `*_failed` flag, so the panel says "couldn't load", never "none".
+    // The 24h KPI fields stay null: Panini sales reach RPC ~2 days after they
+    // happen (median, 2026-10-14), so a 24h total would be a fabricated low.
     if (normalizedSlug === "panini_blockchain") {
-      const cov = await readPaniniCoverage(client, where + "/panini_coverage")
+      const [cov, deals, sales] = await Promise.all([
+        readPaniniCoverage(client, where + "/panini_coverage"),
+        readPaniniOverviewDeals(client, where + "/panini_overview_deals"),
+        readPaniniTopSales(client, where + "/panini_top_sales"),
+      ])
       Object.assign(enriched, {
         volume_24h: null,
         volume_7d: null,
         sales_24h: null,
-        top_sales: null,
+        top_sales: sales.ok ? sales.rows : null,
+        top_sales_failed: !sales.ok,
+        top_sales_scope: { days: PANINI_TOP_SALES_DAYS, min_usd: PANINI_TOP_SALES_MIN_USD },
         listing_count: null,
-        sniper_deals: null,
-        sales_tracked: false,
+        sniper_deals: deals.ok ? deals.rows : null,
+        sniper_deals_failed: !deals.ok,
+        sales_tracked: true,
         coverage: cov.ok ? cov.coverage : null,
         coverage_failed: !cov.ok,
       })

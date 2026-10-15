@@ -62,6 +62,48 @@ describe("Panini overview", () => {
     expect(screen.getByTestId("panini-coverage-note").textContent).toMatch(/listed for sale/)
   })
 
+  // 2026-10-14: the list panels read Panini's own sources. Before, the route
+  // nulled both lists, and `sniper_deals ?? []` published "No deals ≥15% off
+  // right now" beside a Sniper tab listing ~600 (live QA, same evening).
+  const WITH_LISTS = {
+    ...PANINI_STATS,
+    sales_tracked: true,
+    sniper_deals: [{ player_name: "Cristiano Ronaldo", tier: "LEGENDARY", set_name: "Base Prizms Old Glory", ask_price: 1250, discount: 31, fmv: 1800, buy_url: "https://nft.paniniamerica.net/marketplace-details/x.html", flow_id: "x" }],
+    top_sales: [{ edition_name: null, player_name: "Luka Doncic", tier: "LEGENDARY", set_name: "Green Ice", serial_number: 2, circulation_count: 2, price: 888.77, sold_at: new Date().toISOString() }],
+    top_sales_scope: { days: 7, min_usd: 100 },
+  }
+
+  it("renders Panini's own deals and $100+ sales, with the sales scope stated", async () => {
+    okFetch(WITH_LISTS)
+    render(<OverviewPage collection="panini-blockchain" />)
+    await waitFor(() => expect(screen.getByText("Cristiano Ronaldo")).toBeTruthy())
+    expect(screen.getByText("Luka Doncic")).toBeTruthy()
+    expect(screen.getByTestId("top-sales-scope").textContent).toBe("$100+ sales indexed in the last 7 days")
+    expect(screen.queryByText(/No deals/)).toBeNull()
+    expect(screen.queryByText(/tracked feed/i)).toBeNull()
+  })
+
+  it("a NULL deals list (failed snapshot read) says couldn't load — never 'No deals'", async () => {
+    okFetch({ ...WITH_LISTS, sniper_deals: null })
+    render(<OverviewPage collection="panini-blockchain" />)
+    await waitFor(() => expect(screen.getByText("Luka Doncic")).toBeTruthy())
+    expect(screen.queryByText(/No deals/)).toBeNull()
+    expect(screen.getAllByText(/Couldn.t load this right now/).length).toBeGreaterThan(0)
+  })
+
+  it("a NULL sales list on a tracked feed says couldn't load; an EMPTY one states the scope", async () => {
+    okFetch({ ...WITH_LISTS, top_sales: null })
+    render(<OverviewPage collection="panini-blockchain" />)
+    await waitFor(() => expect(screen.getByText("Cristiano Ronaldo")).toBeTruthy())
+    expect(screen.queryByText(/No \$100\+ sales/)).toBeNull()
+    expect(screen.getAllByText(/Couldn.t load this right now/).length).toBeGreaterThan(0)
+    cleanup()
+    okFetch({ ...WITH_LISTS, top_sales: [] })
+    render(<OverviewPage collection="panini-blockchain" />)
+    await waitFor(() => expect(screen.getByText("No $100+ sales indexed in the last 7 days")).toBeTruthy())
+    expect(screen.queryByText(/last 24h/)).toBeNull()
+  })
+
   it("no-change control: Top Shot still renders its 24h volume and its insider detectors", async () => {
     okFetch({ edition_count: 100, fmv_pct: 50, volume_24h: 1234, fmv_age_minutes: 5, top_sales: [], sniper_deals: [] })
     render(<OverviewPage collection="nba-top-shot" />)

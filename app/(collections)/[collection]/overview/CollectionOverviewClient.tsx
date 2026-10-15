@@ -60,6 +60,10 @@ interface CollectionStats {
   top_sales: TopSale[] | null
   sniper_deals: SniperDeal[] | null
   sales_tracked?: boolean
+  // Panini (2026-10-14): its list panels read Panini's own sources with their
+  // own scope — $100+ sales over the last N days — and a failed read nulls the
+  // list (a null list is "not measured", never "none").
+  top_sales_scope?: { days: number; min_usd: number } | null
   coverage?: PaniniCoverage | null
   coverage_failed?: boolean
   error?: string
@@ -292,9 +296,11 @@ export default function CollectionOverviewClient({
   // ⚠ Explicit "flow", not `?? "flow"`: Panini's dbChain is null (no chain
   // identity established), and the old default ran Flow detectors for it.
   const hasInsiderDetectors = collectionObj ? collectionObj.dbChain === "flow" : true
-  // Panini (published 2026-09-25): sales are not a tracked feed — the route
-  // nulls them with `sales_tracked: false` — and every surface carries the
-  // listing-gated coverage disclosure.
+  // Panini (published 2026-09-25): its 24h sales KPIs stay null (Panini sales
+  // reach RPC ~2 days late), its list panels read Panini's own deal snapshot and
+  // $100+ sales (2026-10-14, lib/panini/overview-feeds.ts), and every surface
+  // carries the listing-gated coverage disclosure. `sales_tracked: false` still
+  // means "no sale feed at all" for any collection that sets it.
   const isPanini = collection === "panini-blockchain"
   const salesUntracked = stats?.sales_tracked === false
   // Disney Pinnacle's FMV recomputes twice a day — a 12-hourly cadence, not a fault.
@@ -340,10 +346,22 @@ export default function CollectionOverviewClient({
   //   read failed        → statsUnavailable  ("couldn't load")
   //   read ok, 0 rows    → rawTopSales empty ("no sales") — an honest market claim
   //   read ok, 0 nameable→ every row dropped ("N not matched yet") — about US
+  // A NULL list is "not measured" — it must render as unavailable, never as
+  // "No deals". Every Flow arm of get_collection_stats returns an array; only a
+  // failed Panini snapshot read nulls it (2026-10-14: before then Panini's was
+  // ALWAYS null, and this `?? []` published "No deals ≥15% off right now" beside a
+  // Sniper tab listing ~600).
+  const sniperDealsUnmeasured = stats != null && stats.sniper_deals == null
   const sniperDeals = stats?.sniper_deals ?? []
   // `?? []` is safe here only because the `salesUntracked` branch below renders
   // BEFORE the empty-state one: a null top_sales never reaches "No sales".
   const rawTopSales = stats?.top_sales ?? []
+  // Same rule for sales once the feed IS tracked: a null list is a failed read.
+  const topSalesUnmeasured = stats != null && !salesUntracked && stats.top_sales == null
+  const topSalesScope = stats?.top_sales_scope ?? null
+  const topSalesScopeText = topSalesScope
+    ? `$${topSalesScope.min_usd}+ sales indexed in the last ${topSalesScope.days} days`
+    : null
   const topSales = rawTopSales.filter(
     (s) => nameOrDash(s.edition_name, s.player_name, s.character_name) !== EM_DASH,
   )
@@ -479,7 +497,7 @@ export default function CollectionOverviewClient({
           </div>
           {loading ? (
             <SkeletonRows />
-          ) : statsUnavailable ? (
+          ) : statsUnavailable || sniperDealsUnmeasured ? (
             <PanelUnavailable />
           ) : sniperDeals.length === 0 ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
@@ -613,7 +631,7 @@ export default function CollectionOverviewClient({
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--tier-legendary)" }} />
             <span className="rpc-label">Recent Top Sales</span>
-            <Link href={hasSniperTab ? basePath + "/sniper" : collection === "candy-mlb" ? "/insights/candy-mlb" : isPanini ? "/insights/panini-squeeze" : basePath + "/overview"} className="rpc-mono rpc-tap44" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
+            <Link href={isPanini ? basePath + "/analytics" : hasSniperTab ? basePath + "/sniper" : collection === "candy-mlb" ? "/insights/candy-mlb" : basePath + "/overview"} className="rpc-mono rpc-tap44" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
               View all {"\u2192"}
             </Link>
           </div>
@@ -627,9 +645,11 @@ export default function CollectionOverviewClient({
             <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
               Sales aren&rsquo;t a tracked feed for this collection yet
             </div>
+          ) : topSalesUnmeasured ? (
+            <PanelUnavailable />
           ) : rawTopSales.length === 0 ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
-              No sales indexed in the last 24h
+              {topSalesScopeText ? `No ${topSalesScopeText}` : "No sales indexed in the last 24h"}
             </div>
           ) : topSales.length === 0 ? (
             // Read succeeded and the market traded — we just can't name any of
@@ -665,6 +685,11 @@ export default function CollectionOverviewClient({
                   </div>
                 )
               })}
+              {topSalesScopeText && (
+                <div className="rpc-mono" data-testid="top-sales-scope" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", paddingTop: 2 }}>
+                  {topSalesScopeText}
+                </div>
+              )}
               {unnamedTopSales > 0 && (
                 <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", paddingTop: 2 }}>
                   {unnamedTopSales} more {unnamedTopSales === 1 ? "sale" : "sales"} in this window not yet matched to a moment
