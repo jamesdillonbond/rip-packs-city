@@ -313,7 +313,9 @@ describe("PaniniSqueezeClient — what the headline total is made of", () => {
   // ADDED 2026-09-24 (FMV engine panini-1.1.0). Confidence now means RECENT evidence, so "a real sale
   // stands behind" (any sale, HIGH+MEDIUM+LOW) is no longer the same as "priced from a recent sale"
   // (HIGH+MEDIUM). Both are stated, and the recent figure follows the same _hc/all-sets choice.
-  it("states how much of the sale-backed share rests on a sale in the last 30 days", () => {
+  // Re-pinned 2026-10-15 (panini-1.3.0): the column is the HIGH+MEDIUM share, and those labels now mean
+  // the latest sales agree closely — so it is worded as confidence, never as "a sale in the last 30 days".
+  it("states how much of the sale-backed share is HIGH or MEDIUM confidence", () => {
     const { container } = render(
       <PaniniSqueezeClient
         initialRows={[row()]}
@@ -322,14 +324,15 @@ describe("PaniniSqueezeClient — what the headline total is made of", () => {
       />,
     )
     const t = container.textContent ?? ""
-    expect(t).toMatch(/89\.4%[\s\S]*a real sale stands behind[\s\S]*16\.7%[\s\S]*last 30 days/i)
+    expect(t).toMatch(/89\.4%[\s\S]*a real sale stands behind[\s\S]*16\.7%[\s\S]*HIGH or MEDIUM confidence/i)
+    expect(t).not.toMatch(/last 30 days|average of older sales/i)
   })
 
   it("omits the recent-sale clause entirely when the column is absent (no measured zero)", () => {
     const { container } = render(
       <PaniniSqueezeClient initialRows={[row()]} totals={TOTALS} fetchedAt="2026-09-19T00:00:00Z" />,
     )
-    expect(container.textContent ?? "").not.toMatch(/last 30 days/i)
+    expect(container.textContent ?? "").not.toMatch(/HIGH or MEDIUM confidence/i)
   })
 
   // ⚠ ADDED 2026-09-20 — THE DENOMINATOR HAS TO BE THE ONE THE SENTENCE POINTS AT.

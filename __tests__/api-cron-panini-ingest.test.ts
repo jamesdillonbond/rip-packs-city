@@ -30,6 +30,9 @@ const st = vi.hoisted(() => ({
   // panini_last_sales_fmv (the 1.2.0 LOW-tier input, 2026-09-30).
   last: { data: [] as unknown[] | null, error: null as null | { message: string } },
   lastCalls: [] as unknown[],
+  // panini_sales_spread (the 1.3.0 LABEL input, 2026-10-15).
+  spread: { data: [] as unknown[] | null, error: null as null | { message: string } },
+  spreadCalls: [] as unknown[],
   // 2026-09-25: order of the fmv writes, so a test can pin insert-BEFORE-delete.
   fmvOps: [] as string[],
   fmvInserted: [] as any[][],
@@ -54,6 +57,7 @@ vi.mock("@/lib/supabase", () => ({
     rpc: async (n: string, args: unknown) => {
       if (n === "panini_recent_sales_fmv") { st.recentCalls.push(args); return st.recent }
       if (n === "panini_last_sales_fmv") { st.lastCalls.push(args); return st.last }
+      if (n === "panini_sales_spread") { st.spreadCalls.push(args); return st.spread }
       if (n === "panini_sales_ingest") { st.salesHistCalls.push(args); return st.salesHist }
       st.runs.push(args); return { data: null, error: null }
     },
@@ -93,6 +97,10 @@ vi.mock("@/lib/chains/panini/ingest-normalize", () => ({
   toFmvRowV11: (c: { sku: string; fmv?: number }, _n: string, r?: { fmv_usd: number } | null) => (c.fmv ? { edition_id: c.sku, fmv_usd: r?.fmv_usd ?? c.fmv, algo_version: "panini-1.1.0" } : null),
   toFmvRowV12: (c: { sku: string; fmv?: number }, _n: string, r?: { fmv_usd: number } | null, l?: { fmv_usd: number } | null) =>
     (c.fmv ? { edition_id: c.sku, fmv_usd: r?.fmv_usd ?? l?.fmv_usd ?? c.fmv, algo_version: "panini-1.2.0" } : null),
+  // The label rule itself is unit-tested for real in panini-ingest-normalize.test.ts; the stub
+  // only records which spread row the route handed it.
+  toFmvRowV13: (c: { sku: string; fmv?: number }, _n: string, r?: { fmv_usd: number } | null, l?: { fmv_usd: number } | null, sp?: { n_sales: number } | null) =>
+    (c.fmv ? { edition_id: c.sku, fmv_usd: r?.fmv_usd ?? l?.fmv_usd ?? c.fmv, algo_version: "panini-1.3.0", spread_n: sp?.n_sales ?? null } : null),
   toPackRow: (p: any, _n: string, sid: number | null = null) => { st.packRowsArgs.push([p, sid]); return { id: p.pack_sku, product_set_id: sid } },
   // The real parser, except that the fixtures' short skus ("c1", "a") stand for WC cards — the
   // product the route has always written — so every pre-existing case keeps its meaning.
@@ -119,6 +127,7 @@ beforeEach(() => {
   st.updates = []; st.runs = []; st.captured = null; st.throwInWalk = false; st.isFilters = []
   st.recent = { data: [], error: null }; st.recentCalls = []
   st.last = { data: [], error: null }; st.lastCalls = []
+  st.spread = { data: [], error: null }; st.spreadCalls = []
   st.fmvOps = []; st.fmvInserted = []; st.fmvDelete = { data: null, error: null }
   st.products = { data: [{ set_id: 2332, name: "2026 Panini NFT Prizm World Cup Soccer", walk_cards: true }], error: null }
   st.registryUpserts = []; st.packRowsArgs = []
@@ -417,7 +426,8 @@ describe("panini-ingest — the after() walk", () => {
     st.recent = { data: [{ edition_id: "c1", fmv_usd: 3, n_recent: 3 }], error: null }
     await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
     expect(st.recentCalls[0]).toEqual({ p_edition_ids: ["c1"] })
-    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.2.0")
+    // Re-pinned 2026-10-15: the default engine is panini-1.3.0 (1.2.0 prices, spread-graded labels).
+    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.3.0")
     expect(st.runs[0].p_extra.fmv_recent_hits).toBe(1)
     expect(st.runs[0].p_ok).toBe(true)
   })
@@ -438,8 +448,8 @@ describe("panini-ingest — the after() walk", () => {
     await accept({ cards: [{ sku: "c1", fmv: 5 }, { sku: "c2", fmv: 9 }] }); await st.captured!()
     expect(st.lastCalls).toEqual([{ p_edition_ids: ["c2"] }])
     const rows = st.fmvInserted.flat()
-    expect(rows.find((r) => r.edition_id === "c2")).toMatchObject({ fmv_usd: 1.5, algo_version: "panini-1.2.0" })
-    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.2.0")
+    expect(rows.find((r) => r.edition_id === "c2")).toMatchObject({ fmv_usd: 1.5, algo_version: "panini-1.3.0" })
+    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.3.0")
     expect(st.runs[0].p_extra.fmv_last_hits).toBe(1)
     expect(st.runs[0].p_extra.fmv_last_error).toBeNull()
     expect(st.runs[0].p_ok).toBe(true)
@@ -454,11 +464,46 @@ describe("panini-ingest — the after() walk", () => {
     expect(st.runs[0].p_ok).toBe(false)
   })
 
+  // FMV engine panini-1.3.0 (2026-10-15): the LABEL is re-graded from the spread of the last <=3 sales.
+  it("reads the sales spread for EVERY edition and hands each its own row", async () => {
+    st.recent = { data: [{ edition_id: "c1", fmv_usd: 3, n_recent: 3 }], error: null }
+    st.spread = { data: [{ edition_id: "c1", n_sales: 3, min_usd: 2, max_usd: 3 }, { edition_id: "c2", n_sales: 2, min_usd: 1, max_usd: 9 }], error: null }
+    st.fmvInsert = { data: [{ id: "f1" }, { id: "f2" }], error: null }
+    await accept({ cards: [{ sku: "c1", fmv: 5 }, { sku: "c2", fmv: 9 }] }); await st.captured!()
+    expect(st.spreadCalls).toEqual([{ p_edition_ids: ["c1", "c2"] }])
+    const rows = st.fmvInserted.flat()
+    expect(rows.find((r) => r.edition_id === "c1")).toMatchObject({ algo_version: "panini-1.3.0", spread_n: 3 })
+    expect(rows.find((r) => r.edition_id === "c2")).toMatchObject({ algo_version: "panini-1.3.0", spread_n: 2 })
+    expect(st.runs[0].p_extra.fmv_spread_hits).toBe(2)
+    expect(st.runs[0].p_extra.fmv_spread_error).toBeNull()
+    expect(st.runs[0].p_ok).toBe(true)
+  })
+
+  it("a failed spread read falls back to 1.2.0 rows AND fails the run (no silent downgrade)", async () => {
+    st.spread = { data: null, error: { message: "spread boom" } }
+    await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
+    expect(st.fmvInserted.flat()[0].algo_version).toBe("panini-1.2.0")
+    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.2.0")
+    expect(st.runs[0].p_extra.fmv_spread_error).toBe("spread boom")
+    expect(st.runs[0].p_ok).toBe(false)
+  })
+
+  it("PANINI_FMV_ENGINE=1.2 is the 1.3 kill switch: no spread read, 1.2.0 rows, healthy run", async () => {
+    process.env.PANINI_FMV_ENGINE = "1.2"
+    await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
+    expect(st.spreadCalls).toHaveLength(0)
+    expect(st.lastCalls).toHaveLength(1)
+    expect(st.fmvInserted.flat()[0].algo_version).toBe("panini-1.2.0")
+    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.2.0")
+    expect(st.runs[0].p_ok).toBe(true)
+  })
+
   it("PANINI_FMV_ENGINE=1.1 is the 1.2 kill switch: recent read only, no last-sales read, 1.1.0 rows", async () => {
     process.env.PANINI_FMV_ENGINE = "1.1"
     await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
     expect(st.recentCalls).toHaveLength(1)
     expect(st.lastCalls).toHaveLength(0)
+    expect(st.spreadCalls).toHaveLength(0)
     expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.1.0")
     expect(st.runs[0].p_ok).toBe(true)
   })

@@ -65,7 +65,8 @@ export type Totals = {
   sealed_fmv_exposure_usd_hc_ask_only?: number | null;
   pct_sealed_usd_from_asks_only_hc?: number | null;
   pct_sealed_usd_sale_backed_hc?: number | null;
-  // 2026-09-24 (panini-1.1.0): share priced from a sale in the LAST 30 DAYS (HIGH+MEDIUM).
+  // 2026-09-24 (panini-1.1.0): the HIGH+MEDIUM share. Since panini-1.3.0 (2026-10-15) those labels mean
+  // the latest sales agree closely, not "a sale in the last 30 days" — the column name predates that.
   pct_sealed_usd_recent_sale_backed?: number | null;
   pct_sealed_usd_recent_sale_backed_hc?: number | null;
 };
@@ -417,7 +418,11 @@ export default function PaniniSqueezeClient({
             <>
               , and <b>{num(salePct, 1)}%</b> from editions a real sale stands behind
               {recentPct != null ? (
-                <> (<b>{num(recentPct, 1)}%</b> from a sale in the last 30 days; the rest from the average of older sales)</>
+                // 2026-10-15 (panini-1.3.0): the column is the HIGH+MEDIUM share, and those labels now mean
+                // the edition's last sales AGREE (spread <= 1.5x, or <= 3x with 3+ sales in 30 days) — not
+                // "a sale in the last 30 days". The old clause's "average of older sales" was already
+                // wrong under 1.2.0 (LOW is the median of the last sales).
+                <> (<b>{num(recentPct, 1)}%</b> at HIGH or MEDIUM confidence, where the latest sales agree closely; the rest at LOW, where they are few or disagree)</>
               ) : null}
             </>
           ) : null}

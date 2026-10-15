@@ -118,6 +118,8 @@ async function fetchTotals(db: Db): Promise<any> {
         // itself - so the client prefers the _hc pair whenever it is rendering the _hc headline.
         "editions_hc_ask_only,sealed_fmv_exposure_usd_hc_ask_only," +
         "pct_sealed_usd_from_asks_only_hc,pct_sealed_usd_sale_backed_hc," +
+        // ⚠ 2026-10-15 (panini-1.3.0): HIGH/MEDIUM now mean the latest sales AGREE (spread), so the
+        // "recent" in these column names is historical — the client words it as HIGH or MEDIUM.
         // Added 2026-09-24 (FMV engine panini-1.1.0). HIGH/MEDIUM now mean a sale in the last 30
         // days and LOW the lifetime average of older sales, so the view redefined sale_backed as
         // HIGH+MEDIUM+LOW (any real sale) and added the recent-only share alongside it.

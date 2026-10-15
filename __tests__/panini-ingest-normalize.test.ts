@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parallelFamily, toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, PANINI_ASK_ONLY_MULT, toPackRow, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID, pskuSetId } from "@/lib/chains/panini/ingest-normalize"
+import { parallelFamily, toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toFmvRowV13, PANINI_ASK_ONLY_MULT, toPackRow, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID, pskuSetId } from "@/lib/chains/panini/ingest-normalize"
 
 const NOW = "2026-07-16T00:00:00.000Z"
 
@@ -141,6 +141,49 @@ describe("toFmvRowV12", () => {
     expect(r.fmv_usd).toBeNull()
     expect(toFmvRowV12(card({ volume_txns: 0, for_sale_count: 0 }), NOW, null, { fmv_usd: 0, n_sales: 2 })!.confidence).toBe("NO_DATA")
     expect(toFmvRowV12(card({ volume_txns: 0, for_sale_count: 0 }), NOW, null, { fmv_usd: 40, n_sales: 2 })).toMatchObject({ fmv_usd: 40, confidence: "LOW" })
+  })
+})
+
+// panini-1.3.0 (2026-10-15): 1.2.0's PRICE, the LABEL re-graded from the spread of the last <=3 sales.
+// Measured: spread predicted accuracy inside every 1.2.0 label, the labels did not (MEDIUM < LOW).
+describe("toFmvRowV13", () => {
+  const card = (ms: any) => ({ sku: "p__1_10", psku: "p", market_stats: ms })
+  const lifetime = { volume_txns: 40, recent_sale: 20, avg_sale: 60 }
+  const sp = (n: number, lo: number, hi: number) => ({ n_sales: n, min_usd: lo, max_usd: hi })
+  const recent3 = { fmv_usd: 21, n_recent: 3 }
+  const recent1 = { fmv_usd: 21, n_recent: 1 }
+
+  it("never changes the 1.2.0 price — only the label and the version", () => {
+    for (const s of [sp(3, 20, 22), sp(3, 10, 25), sp(3, 1, 50), null]) {
+      const v12 = toFmvRowV12(card(lifetime), NOW, recent3, null)!
+      const v13 = toFmvRowV13(card(lifetime), NOW, recent3, null, s)!
+      expect(v13.fmv_usd).toBe(v12.fmv_usd)
+      expect(v13.algo_version).toBe("panini-1.3.0")
+    }
+  })
+
+  it("tight sales (max/min <= 1.5) are HIGH whatever the 1.2.0 label — a stale LOW included", () => {
+    expect(toFmvRowV13(card(lifetime), NOW, recent3, null, sp(3, 20, 30))!.confidence).toBe("HIGH")
+    expect(toFmvRowV13(card(lifetime), NOW, recent1, null, sp(2, 20, 21))!.confidence).toBe("HIGH")
+    expect(toFmvRowV13(card(lifetime), NOW, null, { fmv_usd: 22, n_sales: 3 }, sp(3, 21, 23))).toMatchObject({ fmv_usd: 22, confidence: "HIGH" })
+  })
+
+  it("a 1.5–3x spread is MEDIUM only for a 1.2.0 HIGH (>= 3 sales in 30 d); otherwise LOW", () => {
+    expect(toFmvRowV13(card(lifetime), NOW, recent3, null, sp(3, 10, 25))!.confidence).toBe("MEDIUM")
+    expect(toFmvRowV13(card(lifetime), NOW, recent1, null, sp(3, 10, 25))!.confidence).toBe("LOW")
+    expect(toFmvRowV13(card(lifetime), NOW, null, { fmv_usd: 22, n_sales: 3 }, sp(3, 10, 25))!.confidence).toBe("LOW")
+  })
+
+  it("a wide spread, a single sale, a missing spread or a zero floor is LOW — never HIGH by default", () => {
+    expect(toFmvRowV13(card(lifetime), NOW, recent3, null, sp(3, 1, 50))!.confidence).toBe("LOW")
+    expect(toFmvRowV13(card(lifetime), NOW, recent3, null, sp(1, 20, 20))!.confidence).toBe("LOW")
+    expect(toFmvRowV13(card(lifetime), NOW, recent3, null, null)!.confidence).toBe("LOW")
+    expect(toFmvRowV13(card(lifetime), NOW, recent3, null, sp(3, 0, 20))!.confidence).toBe("LOW")
+  })
+
+  it("leaves ASK_ONLY and NO_DATA untouched, even with a tight spread", () => {
+    expect(toFmvRowV13(card({ volume_txns: 0, floor_price: 100 }), NOW, null, null, sp(3, 20, 21))).toMatchObject({ confidence: "ASK_ONLY", fmv_usd: 100 * PANINI_ASK_ONLY_MULT })
+    expect(toFmvRowV13(card({ volume_txns: 0, for_sale_count: 0 }), NOW, null, null, sp(3, 20, 21))!.confidence).toBe("NO_DATA")
   })
 })
 

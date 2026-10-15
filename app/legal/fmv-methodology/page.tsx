@@ -220,6 +220,16 @@ export default async function FmvMethodologyPage() {
           never carried forward past its latest market.
         </li>
       </ul>
+      <p style={P}>
+        <strong style={STRONG}>Panini cards</strong> are priced from their own
+        sales on Panini&rsquo;s marketplace, and graded on the same principle —
+        how closely the latest sales agree. HIGH: the last three sales (at least
+        two) sit within 1.5&times; of each other. MEDIUM: three or more sales in
+        the last 30 days within 3&times;. LOW: anything else backed by a sale —
+        a single sale, or sales that disagree. Measured against the next real
+        sale, those three grades land within &plusmn;25% about 72%, 63% and 35%
+        of the time.
+      </p>
 
       <h2 id="accuracy" style={H2}>How Much of Our Pricing Rests on Sales</h2>
       <p style={P}>

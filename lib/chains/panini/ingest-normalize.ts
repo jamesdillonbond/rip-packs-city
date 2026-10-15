@@ -127,6 +127,39 @@ export function toFmvRowV12(
   return { ...row, algo_version: "panini-1.2.0" };
 }
 
+// panini-1.3.0 (2026-10-15, Trevor: "Do what makes sense") — 1.2.0's PRICE, unchanged, with the LABEL
+// re-graded from how closely the edition's last <=3 sales agree (panini_sales_spread: the same input set
+// panini_last_sales_fmv takes its median from). Measured vs the next real sale, within ±25 %, the spread
+// ordered accuracy inside EVERY 1.2.0 label while the labels themselves did not (MEDIUM 46.8 % < LOW
+// 59.3 % over 45 d): spread <= 1.5x → 74 / 65 / 74 % (HIGH / MEDIUM / LOW), 1.5–3x → 63 / 30 / 38 %,
+// > 3x → ~29 %. So:
+//   HIGH   — >= 2 sales whose max/min <= 1.5 (tight), at any age (stale tight editions scored 86 %);
+//   MEDIUM — 1.2.0 HIGH (>= 3 sales in 30 d) with a 1.5–3x spread;
+//   LOW    — every other sale-backed row, including a single sale (no spread to judge).
+// ASK_ONLY and NO_DATA are untouched. This is the platform's own HIGH ("sales that agree closely",
+// /legal/fmv-methodology) applied to Panini's evidence. `spread` is panini_sales_spread(ids) for this edition.
+export const PANINI_TIGHT_SPREAD = 1.5
+export const PANINI_MID_SPREAD = 3
+export function toFmvRowV13(
+  c: PaniniCardStats,
+  nowIso: string,
+  recent?: { fmv_usd: number; n_recent: number } | null,
+  last?: { fmv_usd: number; n_sales: number } | null,
+  spread?: { n_sales: number; min_usd: number; max_usd: number } | null,
+) {
+  const row = toFmvRowV12(c, nowIso, recent, last)
+  if (!row) return null
+  if (row.confidence === "HIGH" || row.confidence === "MEDIUM" || row.confidence === "LOW") {
+    const lo = Number(spread?.min_usd), hi = Number(spread?.max_usd), n = Number(spread?.n_sales)
+    const ratio = spread && n >= 2 && Number.isFinite(lo) && Number.isFinite(hi) && lo > 0 ? hi / lo : null
+    row.confidence =
+      ratio != null && ratio <= PANINI_TIGHT_SPREAD ? "HIGH"
+      : ratio != null && ratio <= PANINI_MID_SPREAD && row.confidence === "HIGH" ? "MEDIUM"
+      : "LOW"
+  }
+  return { ...row, algo_version: "panini-1.3.0" }
+}
+
 // The card PRODUCT a psku belongs to: field 1 of packcard-<setId>_<parallelSetId>_<cardId>_<playerId>
 // (2332 = 2026 Panini NFT Prizm World Cup Soccer). Every edition id, serial sku and FMV edition_id
 // carries it as a prefix, so this is the one place product identity is parsed. null = not a card psku.
