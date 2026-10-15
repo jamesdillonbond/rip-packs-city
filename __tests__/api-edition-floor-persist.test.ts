@@ -69,7 +69,21 @@ vi.mock("@supabase/supabase-js", () => ({
       b.in = (_c: string, v: unknown) => { if (mode === "delete") del.ins = v; return self() }
       b.gte = (c: string, v: string) => { if (mode === "delete") del.gte = [c, v]; return self() }
       b.not = (_c: string, _op: string, v: string) => { if (mode === "delete") state.deleteNotIn = v; return self() }
-      b.order = () => self()
+      // Snapshot reads honour eq / in / order(desc) / limit like PostgREST, and
+      // CLAMP at 1000 rows — the clamp is what R128 is about.
+      const sel = { eq: null as string | null, ins: null as unknown[] | null, desc: false, limit: null as number | null }
+      const prevIn = b.in as (c: string, v: unknown) => unknown
+      b.in = (c: string, v: unknown) => { if (mode === "select" && c === "edition_id") sel.ins = v as unknown[]; return prevIn(c, v) }
+      b.eq = (c: string, v: string) => { if (c === "edition_id") sel.eq = v; return self() }
+      b.order = (_c: string, o?: { ascending?: boolean }) => { sel.desc = o?.ascending === false; return self() }
+      b.limit = (n: number) => { sel.limit = n; return self() }
+      const snapshotRead = () => {
+        let rows = state.existingSnapshots as Array<Record<string, unknown>>
+        if (sel.eq !== null) rows = rows.filter((r) => r.edition_id === sel.eq)
+        if (sel.ins !== null) rows = rows.filter((r) => (sel.ins as unknown[]).includes(r.edition_id))
+        if (sel.desc) rows = [...rows].sort((a, z) => String(z.computed_at).localeCompare(String(a.computed_at)))
+        return rows.slice(0, Math.min(sel.limit ?? 1000, 1000))
+      }
       ;(b as { then: unknown }).then = (res: (v: unknown) => unknown) =>
         Promise.resolve(
           mode === "delete"
@@ -78,7 +92,7 @@ vi.mock("@supabase/supabase-js", () => ({
               ? { data: state.editionRows, error: null }
               : state.existingReadError
                 ? { data: null, error: state.existingReadError }
-                : { data: state.existingSnapshots, error: null },
+                : { data: snapshotRead(), error: null },
         ).then(res)
       return b
     },
@@ -160,6 +174,39 @@ describe("edition-floor persist — the write path", () => {
     })
     // A carried-forward primary key would collide on insert.
     expect(row.id).toBeUndefined()
+  })
+
+  // R128 (2026-10-15): the latest-snapshot read used to fetch EVERY historical
+  // row for all editions in one `.in()` and dedupe in JS. PostgREST clamps that
+  // at 1000 rows, so an edition past the clamp got no base row, its insert row
+  // lacked `confidence`, and the batch insert (all-or-nothing) failed for all.
+  // Mutation-checked: restoring the single `.in()` read reds this case.
+  it("an edition with 1000+ older snapshots does not crowd another edition's prior row out of the read", async () => {
+    state.editionRows = [
+      { id: "ed-heavy", collection_id: "c", external_id: "1:2", tier: "COMMON" },
+      { id: "ed-light", collection_id: "c", external_id: "3:4", tier: "COMMON" },
+    ]
+    const heavy = Array.from({ length: 1000 }, (_, i) => ({
+      id: `h${i}`, edition_id: "ed-heavy", fmv_usd: 5, confidence: "LOW",
+      computed_at: `2026-09-${String((i % 28) + 1).padStart(2, "0")}`,
+    }))
+    state.existingSnapshots = [
+      ...heavy,
+      { id: "light-snap", edition_id: "ed-light", fmv_usd: 77, confidence: "MEDIUM", computed_at: "2026-08-01" },
+    ]
+    stubVenues(12)
+
+    const res = await POST(new NextRequest("https://t/api/edition-floor", {
+      method: "POST",
+      headers: { ...OPERATOR_HEADERS, "content-type": "application/json" },
+      body: JSON.stringify({ editionKeys: ["1:2", "3:4"], persist: true }),
+    }))
+    expect(res.status).toBe(200)
+    await flush()
+    await flush()
+
+    const light = insertedRows().find((r) => r.edition_id === "ed-light")
+    expect(light).toMatchObject({ fmv_usd: 77, confidence: "MEDIUM" })
   })
 
   it("SKIPS an ULTIMATE edition — those fmv_snapshots rows belong to recalc_ultimate_fmv", async () => {

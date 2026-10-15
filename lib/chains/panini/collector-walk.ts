@@ -46,6 +46,26 @@ export type CollectorWalkOp =
       extra: Record<string, unknown>
     }
 
+// 2026-10-15 (R131): the box's DESIGNED partial-read notes. A profile too big for the
+// per-username cap (scripts/panini-collector-walk.mjs pastWalkCap) posts what it read, and a
+// read over MAX_HOLDINGS is posted in chunks; both add holdings and retire nothing, by design.
+// Logged as ok=false they kept `panini-collector-walk` on the failure-rate alarm permanently
+// (10/31 runs, 3 days to 10-15 — every failure in retention was a capped walk), and an alarm
+// that never clears is read as broken. Only these exact clauses count: anything else the walker
+// reports ("short in N collection(s)", "no collection list", a DB disagreement) still fails.
+const DESIGNED_PARTIAL_CLAUSES = [
+  /^per-walk cap of \d+ min reached after \d+ of \d+ collections$/,
+  /^\d+ cards posted in \d+ chunks of at most \d+ \(over the per-call limit\), so this walk retires nothing$/,
+  /^chunk \d+\/\d+$/,
+]
+
+/** True when EVERY clause of the walker's error is a designed partial-read note. */
+export function isDesignedPartialRead(error: string | null): boolean {
+  if (error == null) return false
+  const clauses = error.split(";").map((c) => c.trim()).filter(Boolean)
+  return clauses.length > 0 && clauses.every((c) => DESIGNED_PARTIAL_CLAUSES.some((re) => re.test(c)))
+}
+
 const nonNegInt = (v: unknown): number | null =>
   typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 10_000_000 ? v : null
 const optStr = (v: unknown, max: number): string | null =>

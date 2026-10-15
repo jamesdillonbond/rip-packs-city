@@ -31,7 +31,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { apiErrorResponse } from "@/lib/api-error"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
-import { COLLECTOR_WALK_PIPELINE, parseCollectorWalkBody } from "@/lib/chains/panini/collector-walk"
+import { COLLECTOR_WALK_PIPELINE, isDesignedPartialRead, parseCollectorWalkBody } from "@/lib/chains/panini/collector-walk"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -124,9 +124,13 @@ export async function POST(req: NextRequest) {
   if (written == null) return NextResponse.json({ error: "ingest returned no write count" }, { status: 502 })
   const dbComplete = d.complete === true
 
-  // The run is ok only when the walker read the whole profile, the DB agreed, and nothing errored.
-  const ok = v.complete && dbComplete && v.error == null
-  const runError = v.error ?? (v.complete && !dbComplete ? "walker claimed complete; DB disagreed (fewer distinct cards than the profile reported, or profile not public)" : v.complete ? null : "incomplete walk")
+  // The run is ok when the walker read the whole profile, the DB agreed, and nothing errored —
+  // or (R131, 2026-10-15) when the walk stopped ONLY for a designed reason (the per-username
+  // cap, over-limit chunking) on a public profile. That run is `partial`: it added holdings and
+  // retired nothing, and `extra.complete` stays false so the profile's state is never overstated.
+  const partial = !v.complete && v.profileState === "public" && isDesignedPartialRead(v.error)
+  const ok = (v.complete && dbComplete && v.error == null) || partial
+  const runError = partial ? null : v.error ?? (v.complete && !dbComplete ? "walker claimed complete; DB disagreed (fewer distinct cards than the profile reported, or profile not public)" : v.complete ? null : "incomplete walk")
   const log = await boundedRpc(db, "log_pipeline_run", {
     p_pipeline: COLLECTOR_WALK_PIPELINE,
     p_started_at: v.walkStartedAt,
@@ -147,6 +151,7 @@ export async function POST(req: NextRequest) {
       retired: n("retired"),
       collected: n("collected"),
       complete: dbComplete,
+      ...(partial ? { partial: true, partial_reason: v.error } : {}),
     },
   })
   const result = { written, retired: n("retired"), collected: n("collected"), complete: dbComplete, logged: !log.error }

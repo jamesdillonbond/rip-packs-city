@@ -4,6 +4,13 @@ import type { Metadata } from "next";
 import RpcLogo from "@/components/RpcLogo";
 import SiteFooter from "@/components/SiteFooter";
 import { OG_INHERITED, organizationEntityJsonLd } from "@/lib/seo"
+import { publishedCollections } from "@/lib/collections"
+
+// 2026-10-15 (deep audit run 6, P2): this page named five collections while the
+// home page — which reads the registry — said seven. Read the registry here too.
+const TRACKED = new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format(
+  publishedCollections().map((c) => c.label),
+)
 
 export function generateMetadata(): Metadata {
   return {
@@ -15,7 +22,7 @@ export function generateMetadata(): Metadata {
       ...OG_INHERITED,
       title: "About — Rip Packs City",
       description:
-        "Born in Rip City. Built for every Flow blockchain digital collectible community — NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike.",
+        `Born in Rip City. Built for every collector community we track — ${TRACKED}.`,
       // 2026-10-14 (live audit): /about had twitter:image (inherited) but NO
       // og:image — this openGraph object replaces the root's, images included.
       images: [{ url: "https://www.rippackscity.com/api/og/default", width: 1200, height: 630, alt: "Rip Packs City" }],
@@ -71,11 +78,9 @@ export default function AboutPage() {
           <Section title="Built for every collection">
             <p>
               While the soul of the project is rooted in Rip City, the
-              platform serves every Flow blockchain digital collectible
-              community equally — NBA Top Shot, NFL All Day, LaLiga
-              Golazos, Disney Pinnacle, UFC Strike — with the same depth
-              of analytics, FMV pricing, and tooling regardless of which
-              fandom a collector calls home.
+              platform serves every collector community it tracks
+              equally — {TRACKED} — with analytics, FMV pricing, and
+              tooling regardless of which fandom a collector calls home.
             </p>
           </Section>
 

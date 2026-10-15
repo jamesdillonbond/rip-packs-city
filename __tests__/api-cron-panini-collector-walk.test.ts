@@ -165,6 +165,33 @@ describe("ingest", () => {
     await POST(req(ingest({ complete: false, error: "stopped at 1/2 cards" })))
     expect(calls[1].args).toMatchObject({ p_ok: false, p_error: "stopped at 1/2 cards" })
   })
+  // R131 (2026-10-15): the exact clause shapes production logged (pipeline_runs, 10-12 → 10-15).
+  const CAP = "per-walk cap of 10 min reached after 29 of 128 collections"
+  const CHUNKED = "per-walk cap of 10 min reached after 50 of 65 collections; 5721 cards posted in 2 chunks of at most 5000 (over the per-call limit), so this walk retires nothing; chunk 1/2"
+  it("a walk stopped ONLY by the designed cap is ok + partial, and never claims complete", async () => {
+    results.panini_collector_walk_ingest = { data: { written: 1025, retired: 0, collected: 7543, complete: false }, error: null }
+    await POST(req(ingest({ complete: false, error: CAP })))
+    expect(calls[1].args).toMatchObject({ p_ok: true, p_error: null })
+    expect(calls[1].args.p_extra).toMatchObject({ complete: false, partial: true, partial_reason: CAP })
+  })
+  it("cap + over-limit chunking is still a designed partial", async () => {
+    results.panini_collector_walk_ingest = { data: { written: 5000, retired: 0, collected: 5867, complete: false }, error: null }
+    await POST(req(ingest({ complete: false, error: CHUNKED })))
+    expect(calls[1].args).toMatchObject({ p_ok: true, p_error: null })
+  })
+  it("a cap PLUS any other clause (a short collection) still fails, with the walker's text", async () => {
+    const err = `${CAP}; short in 1 collection(s): 2021 Panini NFT Select Football 3/9`
+    results.panini_collector_walk_ingest = { data: { written: 3, retired: 0, collected: 3, complete: false }, error: null }
+    await POST(req(ingest({ complete: false, error: err })))
+    expect(calls[1].args).toMatchObject({ p_ok: false, p_error: err })
+    expect(calls[1].args.p_extra).not.toHaveProperty("partial")
+  })
+  it("a capped walk on a profile that is not public is not a designed partial", async () => {
+    results.panini_collector_walk_ingest = { data: { written: 0, retired: 0, collected: 0, complete: false }, error: null }
+    await POST(req(ingest({ complete: false, profile_state: "unknown", error: CAP })))
+    expect(calls[1].args).toMatchObject({ p_ok: false, p_error: CAP })
+  })
+
   it("an RPC error is a non-2xx and publishes no driver message", async () => {
     results.panini_collector_walk_ingest = { data: null, error: { message: 'relation "panini_user_holdings" does not exist', code: "42P01" } }
     const r = await POST(req(ingest()))

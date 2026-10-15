@@ -232,20 +232,36 @@ async function persistFloorToSnapshot(
     // through as "no prior row" — the re-insert was then built without `confidence`
     // (NOT NULL), rejected AFTER today's rows had been deleted, and the catch
     // below labelled it "non-fatal". Abort before any write instead.
-    const { data: existing, error: existingError } = await supabase
-      .from("fmv_snapshots")
-      .select("*")
-      .in("edition_id", editionIds)
-      .order("computed_at", { ascending: false });
-    if (existingError) {
-      console.error(`[edition-floor] persist aborted before any write: latest-snapshot read failed: ${existingError.message}`);
-      return;
-    }
-
+    //
+    // 2026-10-15 (R128): ONE read per edition, `limit(1)` on the newest
+    // `computed_at` (served by idx_fmv_edition_time). The old single read
+    // fetched EVERY historical snapshot for up to 50 editions and deduped in JS;
+    // PostgREST clamps that at 1000 rows (max 403 rows/edition, p50 13), so an
+    // edition past the clamp had no prior row, its replacement was built
+    // without `confidence`, and the all-or-nothing batch insert rejected every
+    // edition in the request.
     const latestByEdition = new Map<string, Record<string, unknown>>();
-    for (const row of (existing ?? []) as Record<string, unknown>[]) {
-      const eid = row.edition_id as string;
-      if (!latestByEdition.has(eid)) latestByEdition.set(eid, row);
+    const READ_CONCURRENCY = 10;
+    for (let i = 0; i < editionIds.length; i += READ_CONCURRENCY) {
+      const batch = editionIds.slice(i, i + READ_CONCURRENCY);
+      const reads = await Promise.all(
+        batch.map((eid) =>
+          supabase
+            .from("fmv_snapshots")
+            .select("*")
+            .eq("edition_id", eid)
+            .order("computed_at", { ascending: false })
+            .limit(1)
+        )
+      );
+      for (const { data, error } of reads) {
+        if (error) {
+          console.error(`[edition-floor] persist aborted before any write: latest-snapshot read failed: ${error.message}`);
+          return;
+        }
+        const row = ((data ?? []) as Record<string, unknown>[])[0];
+        if (row) latestByEdition.set(row.edition_id as string, row);
+      }
     }
 
     // Build the replacement rows FIRST — see the write order below.

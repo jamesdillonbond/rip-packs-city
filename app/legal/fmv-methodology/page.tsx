@@ -118,9 +118,10 @@ export default async function FmvMethodologyPage() {
 
       <h2 style={H2}>How We Compute It</h2>
       <p style={P}>
-        Our FMV pipeline runs on every collection (NBA Top Shot, NFL All Day, Disney
-        Pinnacle, LaLiga Golazos, UFC Strike) on a continuous cycle. For each unique
-        edition, we look at three signal sources:
+        Our FMV pipeline runs on NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga
+        Golazos, UFC Strike and Candy MLB on a continuous cycle (Panini cards have
+        their own engine, described below). For each unique edition, we look at
+        three signal sources:
       </p>
 
       <h3 style={H3}>Recent sales (primary signal)</h3>
