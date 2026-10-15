@@ -35,7 +35,7 @@ failure it documents.
 ## 2026-10-15 — 2 filings
 
 - [**🟢 Daytime health monitor — GREEN (10-15 ~06:00Z sweep); no candidate work**](2026-10-15T0009Z.md) — *(read-only sensing pass; filed from the mount by the 10-15 deep-audit drain, R132)*
-- [**🟡 OPEN (drop is in `docs/pending-sql/audit_20261015_fmv_snapshots_touch_updated_at_and_drop_zz_probes.sql`, DENIED by the auto-mode classifier 10-15) Daytime monitor — leftover `zz_probe_20261014` scratch function with no pinned `search_path` (advisor WARN)**](2026-10-15T0604Z-daytime-monitor-leftover-zz_probe-scratch-functions-search-path-drift.md)
+- [**🟡 OPEN (drop is in `docs/pending-sql/audit_20261015_drop_zz_probes.sql` — MCP holds DROPs; the R126 trigger half applied 10-15 as `20261015145336`) Daytime monitor — leftover `zz_probe_20261014` scratch function with no pinned `search_path` (advisor WARN)**](2026-10-15T0604Z-daytime-monitor-leftover-zz_probe-scratch-functions-search-path-drift.md)
 
 ## 2026-10-14 — 1 filing
 
