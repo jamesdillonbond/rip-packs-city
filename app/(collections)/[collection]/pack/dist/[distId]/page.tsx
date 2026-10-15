@@ -69,7 +69,7 @@ import {
   fetchDistFallback,
   fetchPackLifecycle,
   fetchPackRealizedEv,
-  fetchAllDayCorrectedEv, fetchPinnacleDropEv,
+  fetchAllDayCorrectedEv, fetchPinnacleDropEv, fetchTopshotAtlasDistCounts,
   fetchPackMarket,
   fetchEvContributors,
   fetchTopPulls,
@@ -84,7 +84,7 @@ import {
   fetchPackDetailBundle,
 } from "@/lib/pack-dist/fetchers"
 import { withAsOf, depletionTileAsOf, packsRemainingTileAsOf } from "@/lib/pack-dist/as-of"
-import { readTierCounts, observedOpensFloorLabel } from "@/lib/pack-dist/tier-counts"
+import { pickTierCounts, observedOpensFloorLabel } from "@/lib/pack-dist/tier-counts"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 
@@ -277,6 +277,9 @@ export default async function PackDetailPage(
   // Disney Pinnacle: the pack's EV at DROP grain (#157). A no-op for every
   // other collection (returns ok:true, null without a read).
   const pinDropRes = await fetchPinnacleDropEv(collection, distId)
+  // Top Shot only: Dapper's live per-dist tier counts (topshot_atlas_dists). A
+  // failed read leaves the v20 payload and its own, older as-of stamp in place.
+  const atlasCountsRes = await fetchTopshotAtlasDistCounts(collection, distId)
   const row = bundle.pack_row ?? null
   const fallback = bundle.dist_fallback ?? null
   if (!row && !fallback) {
@@ -525,19 +528,20 @@ export default async function PackDetailPage(
     .slice(0, 4)
 
   // ── Tier-count metadata (PACKVIZ) ──────────────────────────────────────────
-  // compute-topshot-pack-ev v20 persists per-pack remaining/original counts-by-tier
-  // + total_unopened/total_pack_count into pack_distributions.metadata as its EV
-  // sweep touches each pack. Present only on packs the v20 sweep has reached.
-  // Dropped whole when our observed on-chain opens contradict it
-  // (pack_table_rows.tier_counts_contradicted; lib/pack-dist/tier-counts.ts).
+  // Two sources, never mixed (lib/pack-dist/tier-counts.ts): Dapper's live
+  // DistributionService counts from the Atlas lane (topshot_atlas_dists, Top
+  // Shot, re-read every ~2 days) when valid and newer, else the frozen v20
+  // payload compute-topshot-pack-ev wrote into pack_distributions.metadata
+  // (newest 2026-08-28). Either is dropped whole when our observed on-chain
+  // opens contradict it (v20: pack_table_rows.tier_counts_contradicted).
   const tierCountsContradicted = merged.tier_counts_contradicted === true
-  const tierCounts = readTierCounts(distMetadata, tierCountsContradicted)
+  const tierCounts = pickTierCounts(distMetadata, tierCountsContradicted, atlasCountsRes.data, merged.observed_packs_opened)
   const tierCountsUpdatedAt = tierCounts.updatedAt
   const metaTotalUnopened = num((tierCounts.totalUnopened as string | number | null | undefined) ?? null)
   const metaTotalPackCount = num((tierCounts.totalPackCount as string | number | null | undefined) ?? null)
   const remainingByTier = tierCounts.remainingByTier
   const originalByTier = tierCounts.originalByTier
-  // Freshest packs-remaining figure: prefer the v20 metadata, else the cached view.
+  // Freshest packs-remaining figure: prefer the tier-count payload, else the cached view.
   const liveUnopened = metaTotalUnopened ?? totalUnopened
   const oddsSlots = merged.slots && merged.slots > 0 ? merged.slots : null
 
@@ -1783,7 +1787,7 @@ function TierOddsPanel({
         </table>
       </div>
       <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
-        Odds/pack ≈ chance of at least one card of that tier across {slots && slots > 0 ? slots : "the"} slots, from the live remaining pool. Approximate (assumes independent slots).
+        Odds/pack ≈ chance of at least one card of that tier across {slots && slots > 0 ? slots : "the"} slots, from the remaining pool. Approximate (assumes independent slots).
       </div>
     </section>
   )

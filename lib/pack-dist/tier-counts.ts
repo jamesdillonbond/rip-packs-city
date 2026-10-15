@@ -68,3 +68,89 @@ export function observedOpensFloorLabel(
   if (contradicted !== true || observed == null || !Number.isFinite(observed) || observed <= 0) return null
   return `${Math.trunc(observed).toLocaleString("en-US")}+ opened on-chain`
 }
+
+// ── Atlas (live) tier counts ─────────────────────────────────────────────────
+//
+// WHY (2026-10-14). The v20 payload above froze on 2026-08-28 (823 dists, the
+// newest 47 days old), so every Top Shot pack page published month-old
+// "packs remaining" and pull odds. The Atlas pack-supply lane
+// (topshot_pack_supply_tick → topshot_atlas_dists) has re-read Dapper's own
+// DistributionService for every Top Shot dist since 10-03: 3,169 dists, all
+// summarised within 3 days. Dist 5048 rendered "142 of 22,068 · as of 48d ago"
+// while Atlas read 134 that morning. The page now prefers the Atlas payload
+// whenever it is the newer of the two.
+//
+// The same floor guards it as guards v20: a payload claiming FEWER packs opened
+// than we had already watched open on chain (pack_rips, a lower bound) is
+// refuted and dropped WHOLE (measured: 9 of 3,169). Nothing is mixed — the
+// counts and the stamp always come from one source.
+
+export interface AtlasDistCountsInput {
+  summary_fetched_at: string | null
+  unopened_count: number | string | null
+  total_pack_count: number | string | null
+  remaining_by_tier: unknown
+  original_by_tier: unknown
+}
+
+function finiteNum(v: unknown): number | null {
+  if (v == null || v === "") return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+function numericTierMap(v: unknown): Record<string, number> | null {
+  const m = tierMap(v)
+  if (!m) return null
+  const out: Record<string, number> = {}
+  for (const [k, raw] of Object.entries(m)) {
+    const n = finiteNum(raw)
+    if (n == null) return null
+    out[k] = n
+  }
+  return out
+}
+
+/** The Atlas payload as TierCounts, or null when it is absent, incomplete, or
+ * contradicted by the opens we observed on chain. */
+export function atlasTierCounts(
+  atlas: AtlasDistCountsInput | null | undefined,
+  observedPacksOpened: number | string | null | undefined,
+): TierCounts | null {
+  if (!atlas || typeof atlas.summary_fetched_at !== "string" || !Number.isFinite(Date.parse(atlas.summary_fetched_at))) return null
+  const unopened = finiteNum(atlas.unopened_count)
+  const total = finiteNum(atlas.total_pack_count)
+  const remainingByTier = numericTierMap(atlas.remaining_by_tier)
+  const originalByTier = numericTierMap(atlas.original_by_tier)
+  // unopened > total needs no check of its own: it makes the opened count
+  // negative, which the floor below refutes.
+  if (unopened == null || total == null || total <= 0 || unopened < 0) return null
+  if (!remainingByTier || !originalByTier) return null
+  const observed = finiteNum(observedPacksOpened) ?? 0
+  if (total - unopened < observed) return null
+  return {
+    updatedAt: atlas.summary_fetched_at,
+    totalUnopened: unopened,
+    totalPackCount: total,
+    remainingByTier,
+    originalByTier,
+  }
+}
+
+/**
+ * Which tier-count payload the page renders: the Atlas one when it is valid and
+ * at least as new as the v20 one, else readTierCounts' answer (which may be the
+ * all-null NONE). `contradicted` is the v20 verdict and applies only to v20.
+ */
+export function pickTierCounts(
+  metadata: Record<string, unknown> | null | undefined,
+  contradicted: boolean | null | undefined,
+  atlas: AtlasDistCountsInput | null | undefined,
+  observedPacksOpened: number | string | null | undefined,
+): TierCounts {
+  const v20 = readTierCounts(metadata, contradicted)
+  const live = atlasTierCounts(atlas, observedPacksOpened)
+  if (!live) return v20
+  if (v20.updatedAt && Date.parse(v20.updatedAt) > Date.parse(live.updatedAt!)) return v20
+  return live
+}

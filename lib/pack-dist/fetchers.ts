@@ -608,6 +608,41 @@ export async function fetchPinnacleDropEv(
   return { data: (data as PinnacleDropEvRow | null) ?? null, ok: true }
 }
 
+/** Top Shot per-dist counts from Dapper's DistributionService (topshot_atlas_dists). */
+export interface TopshotAtlasDistCountsRow {
+  summary_fetched_at: string | null
+  unopened_count: number | string | null
+  total_pack_count: number | string | null
+  remaining_by_tier: unknown
+  original_by_tier: unknown
+}
+
+/**
+ * The live tier counts the Atlas pack-supply lane (topshot_pack_supply_tick)
+ * re-reads for every Top Shot dist every couple of days. ok:true + null for
+ * every other collection and for a dist the lane has not summarised.
+ */
+export async function fetchTopshotAtlasDistCounts(
+  collectionSlug: string,
+  distId: string,
+  db: Db = supabaseAdmin,
+): Promise<RowResult<TopshotAtlasDistCountsRow>> {
+  if (collectionSlug !== "nba-top-shot") return { data: null, ok: true }
+  const { data, error } = await bounded(
+    db
+      .from("topshot_atlas_dists")
+      .select("summary_fetched_at, unopened_count, total_pack_count, remaining_by_tier, original_by_tier")
+      .eq("dist_id", distId)
+      .maybeSingle(),
+    "atlas_dist_counts",
+  )
+  if (error) {
+    console.error("[pack-detail] atlas_dist_counts error", error.message)
+    return { data: null, ok: false }
+  }
+  return { data: (data as TopshotAtlasDistCountsRow | null) ?? null, ok: true }
+}
+
 const PACK_MARKET_VIEW: Record<string, string> = {
   "nfl-all-day": "v_allday_pack_market",
   "nba-top-shot": "v_topshot_pack_market",

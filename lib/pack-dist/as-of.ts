@@ -19,6 +19,12 @@
 //                            carry it, newest 2026-08-28, and ZERO are fresher
 //                            than 7 days.
 //
+// ⓘ 2026-10-14: the THIRD source is no longer the only one. Top Shot tier
+// counts now come from the live Atlas lane (topshot_atlas_dists, re-read every
+// ~2 days, 3,169 dists) whenever it is newer — lib/pack-dist/tier-counts.ts
+// pickTierCounts. The stamp still travels WITH its numbers, so the as-of on a
+// Top Shot pack now reads days, not months. The other two counters are unchanged.
+//
 // ⚠ THE THIRD ONE WAS NOT MERELY SILENT, IT WAS WRONG. The Depletion tile
 // rendered the sub-label "live pool" whenever tier_counts_updated_at existed,
 // with no age check anywhere in the branch — a positive freshness claim over

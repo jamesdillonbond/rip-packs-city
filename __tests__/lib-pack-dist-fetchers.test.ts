@@ -31,6 +31,7 @@ import {
   fetchPackRealizedEv,
   fetchAllDayCorrectedEv,
   fetchPinnacleDropEv,
+  fetchTopshotAtlasDistCounts,
   fetchPackMarket,
   fetchEvContributors,
   fetchTopPulls,
@@ -568,5 +569,26 @@ describe("fetchPinnacleDropEv", () => {
     const { db, calls } = makeDb({})
     expect(await fetchPinnacleDropEv("nba-top-shot", "1", db)).toEqual({ data: null, ok: true })
     expect(calls).toEqual([])
+  })
+})
+
+describe("fetchTopshotAtlasDistCounts", () => {
+  it("Top Shot: reads topshot_atlas_dists and returns the row", async () => {
+    const row = { summary_fetched_at: "2026-10-14T09:54:00Z", unopened_count: 134, total_pack_count: 22068, remaining_by_tier: { rare: "43" }, original_by_tier: { rare: "5275" } }
+    const { db, calls } = makeDb({ topshot_atlas_dists: { data: row, error: null } })
+    const res = await fetchTopshotAtlasDistCounts("nba-top-shot", "5048", db)
+    expect(res).toEqual({ data: row, ok: true })
+    expect(calls).toEqual(["topshot_atlas_dists"])
+  })
+
+  it("does not apply to other collections: ok:true, null, no read", async () => {
+    const { db, calls } = makeDb({})
+    expect(await fetchTopshotAtlasDistCounts("nfl-all-day", "1", db)).toEqual({ data: null, ok: true })
+    expect(calls).toEqual([])
+  })
+
+  it("error → ok:false (the page then keeps the older payload and its own stamp)", async () => {
+    const { db } = makeDb({ topshot_atlas_dists: { data: null, error: DB_ERR } })
+    expect(await fetchTopshotAtlasDistCounts("nba-top-shot", "5048", db)).toEqual({ data: null, ok: false })
   })
 })
