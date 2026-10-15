@@ -16,8 +16,8 @@ interface DemoSample {
   fmv: number;
   confidence: string;
   exampleAdjustments?: {
-    serial1?: { adjustedFmv: number };
-    serial23?: { adjustedFmv: number };
+    serial1?: { adjustedFmv: number; serialMult?: number | null };
+    serial23?: { adjustedFmv: number; serialMult?: number | null };
   };
 }
 
@@ -52,10 +52,25 @@ export default function HomeFmvPreview() {
   }, []);
 
   const live = sample !== null;
-  const edition = sample?.edition ?? "84:2892";
-  const fmv = sample?.fmv ?? 148.0;
-  const s1 = sample?.exampleAdjustments?.serial1?.adjustedFmv ?? fmv * 12;
-  const s23 = sample?.exampleAdjustments?.serial23?.adjustedFmv ?? fmv * 2.8;
+  // ⛔ 2026-10-14: these numbers used to render in EVERY state — the server HTML
+  // (all a crawler or no-JS reader ever sees) showed a hardcoded $148.00 and
+  // invented "×12 / ×2.8" serial prices under "LOADING FMV…", and a LIVE sample
+  // missing its adjustments showed fmv × 12 as if computed. Now: LOADING shows
+  // dashes; LIVE shows only what /api/fmv/demo returned (its fitted multiplier,
+  // or a dash); only the clearly-labelled SAMPLE card (fetch failed) carries the
+  // illustrative figures.
+  const sampleCard = failed && !live;
+  const edition = live ? sample!.edition : sampleCard ? "84:2892" : null;
+  const fmv: number | null = live ? sample!.fmv : sampleCard ? 148.0 : null;
+  const adj1 = sample?.exampleAdjustments?.serial1;
+  const adj23 = sample?.exampleAdjustments?.serial23;
+  const s1: number | null = live ? adj1?.adjustedFmv ?? null : sampleCard ? 148.0 * 12 : null;
+  const s23: number | null = live ? adj23?.adjustedFmv ?? null : sampleCard ? 148.0 * 2.8 : null;
+  const multLabel = (m: number | null | undefined, illustrative: number): string => {
+    if (sampleCard) return ` · ${illustrative}×`;
+    return live && typeof m === "number" && Number.isFinite(m) ? ` · ${m}×` : "";
+  };
+  const show = (n: number | null): string => (n == null ? "—" : money(n));
 
   return (
     <div
@@ -111,7 +126,7 @@ export default function HomeFmvPreview() {
         }}
       >
         <div>
-          <div style={{ color: "var(--rpc-text-secondary)" }}>EDITION {edition}</div>
+          <div style={{ color: "var(--rpc-text-secondary)" }}>EDITION {edition ?? "—"}</div>
           <div
             style={{
               fontFamily: "var(--font-display)",
@@ -121,7 +136,7 @@ export default function HomeFmvPreview() {
               lineHeight: 1.1,
             }}
           >
-            {money(fmv)}
+            {show(fmv)}
           </div>
           {/* Confidence line removed 2026-07-11 — build-time signal only. */}
         </div>
@@ -133,15 +148,15 @@ export default function HomeFmvPreview() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
             <div>
               <div style={{ color: "var(--rpc-text-ghost)" }}>BASE</div>
-              <div style={{ color: "var(--rpc-text-secondary)" }}>{money(fmv)}</div>
+              <div style={{ color: "var(--rpc-text-secondary)" }}>{show(fmv)}</div>
             </div>
             <div>
-              <div style={{ color: "var(--rpc-text-ghost)" }}>#1 · 12×</div>
-              <div style={{ color: "var(--rpc-text-secondary)" }}>{money(s1)}</div>
+              <div style={{ color: "var(--rpc-text-ghost)" }}>#1{multLabel(adj1?.serialMult, 12)}</div>
+              <div style={{ color: "var(--rpc-text-secondary)" }}>{show(s1)}</div>
             </div>
             <div>
-              <div style={{ color: "var(--rpc-text-ghost)" }}>#23 · 2.8×</div>
-              <div style={{ color: "var(--rpc-text-secondary)" }}>{money(s23)}</div>
+              <div style={{ color: "var(--rpc-text-ghost)" }}>#23{multLabel(adj23?.serialMult, 2.8)}</div>
+              <div style={{ color: "var(--rpc-text-secondary)" }}>{show(s23)}</div>
             </div>
           </div>
         </div>

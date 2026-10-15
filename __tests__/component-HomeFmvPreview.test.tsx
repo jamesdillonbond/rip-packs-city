@@ -24,10 +24,15 @@ afterEach(() => {
 })
 
 describe("HomeFmvPreview", () => {
-  it("shows the LOADING label before the demo fetch resolves", () => {
+  it("LOADING shows the label and NO numbers — the server HTML is all a crawler sees", () => {
     fetchMock.mockReturnValue(new Promise(() => {})) // never resolves
     const { container } = render(<HomeFmvPreview />)
-    expect(container.textContent).toContain("LOADING FMV")
+    const txt = container.textContent!
+    expect(txt).toContain("LOADING FMV")
+    // 2026-10-14: this state used to render a hardcoded $148.00 and invented serial prices.
+    expect(txt).not.toMatch(/\$\d/)
+    expect(txt).not.toContain("84:2892")
+    expect(txt).not.toMatch(/\d×/)
   })
 
   it("renders the LIVE card from a real sample with serial-adjusted examples", async () => {
@@ -55,7 +60,7 @@ describe("HomeFmvPreview", () => {
     expect(txt).toContain("$560.00") // serial #23 adjusted
   })
 
-  it("falls back to computed multipliers when exampleAdjustments are absent", async () => {
+  it("INVERTED 2026-10-14 — a LIVE sample without adjustments shows dashes, never fmv × 12 dressed as computed", async () => {
     fetchMock.mockReturnValue(
       demoResp({ samples: [{ edition: "1:1", fmv: 100, confidence: "MEDIUM" }] }),
     )
@@ -63,8 +68,22 @@ describe("HomeFmvPreview", () => {
     await waitFor(() => expect(container.textContent).toContain("LIVE FMV PREVIEW"))
     const txt = container.textContent!
     expect(txt).toContain("$100.00")
-    expect(txt).toContain("$1,200.00") // fmv * 12
-    expect(txt).toContain("$280.00") // fmv * 2.8
+    expect(txt).not.toContain("$1,200.00")
+    expect(txt).not.toContain("$280.00")
+    expect(txt).not.toMatch(/12×|2\.8×/)
+    expect(txt).toContain("—")
+  })
+
+  it("a LIVE card labels each serial with the demo's own fitted multiplier, not a constant", async () => {
+    fetchMock.mockReturnValue(
+      demoResp({ samples: [{ edition: "2:5", fmv: 10, confidence: "HIGH", exampleAdjustments: { serial1: { adjustedFmv: 47.5, serialMult: 4.75 }, serial23: { adjustedFmv: 13, serialMult: 1.3 } } }] }),
+    )
+    const { container } = render(<HomeFmvPreview />)
+    await waitFor(() => expect(container.textContent).toContain("LIVE FMV PREVIEW"))
+    const txt = container.textContent!
+    expect(txt).toContain("#1 · 4.75×")
+    expect(txt).toContain("#23 · 1.3×")
+    expect(txt).not.toMatch(/12×|2\.8×/)
   })
 
   it("falls back to the SAMPLE card when the fetch is not ok", async () => {
