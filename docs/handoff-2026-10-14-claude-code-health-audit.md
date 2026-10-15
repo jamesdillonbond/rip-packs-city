@@ -35,8 +35,9 @@
 ## Queued for Trevor / Claude Code
 
 1. **[P2, Trevor, 1 night] Candy MLB: is the market still trading?** Magic Eden's activity feed for `2026_mlb_base_series_icons_candy_digital` has **no event of any type (list, delist, bid, buy) since 10-12 7:24 AM PT**. Our indexer is complete: all 98 buys in ME's newest 500 activities are in `sales`, matched by signature. Positive control: another collection's ME feed had an event 1 minute old, so the API is fine. ME still shows 1,497 listings (we hold 1,498). Candy's update-authority account is sending a failing transaction every ~30 s (`Custom 34`). The 10-13 pass read this at 28.8 h as "low volume, not a stall"; that call is now refuted. **Ask:** check candy.io — paused, migrated, or season-locked? If trading moved to OpenSea, #58's key is the way back to Candy prices. The trust breach stays red until ME shows activity again or the lane changes source.
-2. **[P-low, Trevor, ~20 nights] #58 `OPENSEA_API_KEY`** — see item 1. Way back is in ledger 10-13 6:35 AM PT.
-3. **[P-low, Trevor/operator, 3 nights] `drop_scratch` residue** (~185 MB `flowty_archive.scratch_*`, Trevor's data): SQL editor only.
+2. **[P2, Trevor, 1 night] Golazos market frozen?** Same ask as Candy — is it still trading? Evidence under "Continued" below.
+3. **[P-low, Trevor, ~20 nights] #58 `OPENSEA_API_KEY`** — see item 1. Way back is in ledger 10-13 6:35 AM PT.
+4. **[P-low, Trevor/operator, 3 nights] `drop_scratch` residue** (~185 MB `flowty_archive.scratch_*`, Trevor's data): SQL editor only.
 
 **Closed this session (not carried):** #23/#25 edge-function drift. The register has both ✅ (09-08, 09-25), and today's R21 work retired the remaining credential-literal functions. The topshot-active-listings feeder box has recovered (`stalled_pipelines []`).
 
@@ -49,6 +50,14 @@
 - **Panini collector walk 32 % "failing":** all 10 failures are the by-design per-walk cap; the rotation resumes.
 - **20 stale `wallet_moments_cache` pairs:** all are ad-hoc lookups (not seeded, not saved); they refresh when someone looks them up again.
 - **Client errors:** bot-only.
+
+## Continued (~5:50 → ~6:15 PM PT, Trevor: "Keep going")
+
+- **Register triage:** the deep-audit register's P0/P1 rows are all closed or need you (R107); R123 closed 10-03. So this turn hunted new problems.
+- **Shipped `f37db838e`: emptied tracked wallets are retired on positive on-chain proof.** A tracked (seeded) wallet that sold out a collection kept its cached moments forever. An empty `getIDs()` is (correctly) never a delete trigger, and the 14-day `prune_stale_wmc()` named as the backstop skips seeded wallets. Verified on chain: `0x8e655887a360cc3f` (137 Top Shot rows) and `0x4ab8b294112f182c` (54) hold a collection with **0** ids; `0x6d1f8c18412c6abc`'s two UFC rows (seen 2026-05-13) kept `ufc-enrichment-drain` failing every 15 min. A separate read now distinguishes "collection present, 0" from "unreadable"; only the former retires rows (Top Shot + UFC). All Day is excluded on purpose → **#191** (cap-blocked partial sell-off on a seeded wallet).
+- **Golazos looks frozen (to you, with Candy):** newest sale **10-01**, newest pack open 10-06, and the storefront reconcile reads `live = 4,286` **exactly** across 37 runs over 4 days (0 inserted / closed / vanished from 230 sellers). The same reconciler on All Day churns hundreds a day, so the instrument works. Historically thin (several zero-sale weeks), but a perfectly flat book is new. No public notice found.
+- **DB load, measured fresh (two pgss snapshots):** ~90 % of statement time is the chain-arrival / opener lanes' deliberate `pg_sleep` staggers; the real top disk reader is `atlas_listing_verify_tick` (~19k blocks/call, avg 8.1 s, 0 timeouts; its 09-18 optimisation was reverted for fleet harm — left alone). `net._http_response` is 1.4 GB on disk but 411 MB live (6 h TTL; the rest is reusable space) — 602 MB raw/6 h is the Atlas market feed's deliberate ~50-min page overlap (resilience against 403 bursts). Not changed.
+- **Every pg_cron job ran on schedule** (the 20 not run in 26 h are all Sunday weeklies).
 
 ## Watch next pass
 - pdx1: pack-detail and market-cap-tile `read exceeded` groups should stay near zero. A recurrence on a **warm** dist means a DB-side read to measure.
