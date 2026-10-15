@@ -11,7 +11,7 @@
 --     unknown; more in packs than issuer-held is "contradicted", not negative.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261003232935_audit_20261003_topshot_issuer_held_split_one_edition.sql);
+-- (supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if a copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -67,7 +67,7 @@ AS $function$
   ),
   gate AS (
     SELECT
-      (SELECT list_done_at IS NOT NULL AND list_started_at > now() - interval '48 hours'
+      (SELECT list_done_at > now() - interval '48 hours'
          FROM public.topshot_atlas_pack_state WHERE id = 1)                                   AS list_ok,
       count(*) FILTER (WHERE d.summary_fetched_at IS NULL)                                     AS never_read,
       count(*) FILTER (WHERE d.remaining_total > 0
@@ -137,6 +137,16 @@ SELECT _assert_eq((SELECT in_packs || '/' || reserve || '/' || drops_with_packs 
   '3/3/1', 'the parallel counts only its own rows');
 SELECT _assert_eq((SELECT in_packs || '/' || reserve || '/' || drops_with_packs FROM get_topshot_issuer_held_split_edition('261:9999')),
   '0/20/0', 'an edition in no unopened pack is all reserve');
+
+-- 2026-10-14: a daily re-walk in progress (started now, last completed 23 h ago) keeps
+-- the split published; a last completed list over 48 h old does not.
+UPDATE public.topshot_atlas_pack_state SET list_started_at = now(), list_done_at = now() - interval '23 hours';
+SELECT _assert_eq((SELECT split_status FROM get_topshot_issuer_held_split_edition('261:8705')), 'ok',
+  'a walk in progress does not unpublish the split');
+UPDATE public.topshot_atlas_pack_state SET list_done_at = now() - interval '49 hours';
+SELECT _assert((SELECT in_packs IS NULL AND split_status = 'pending: distribution list incomplete or stale' FROM get_topshot_issuer_held_split_edition('261:8705')),
+  'last completed list > 48 h old: pending');
+UPDATE public.topshot_atlas_pack_state SET list_done_at = now();
 
 -- A drop with packs left that does not reconcile holds the split.
 UPDATE public.topshot_atlas_dists SET edition_remaining_sum = 6 WHERE dist_id = '8617';

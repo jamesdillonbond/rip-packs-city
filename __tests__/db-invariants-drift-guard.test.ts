@@ -74,7 +74,7 @@ const PINS = [
     // NULL + status until provable, an unkeyable parallel → unknown.
     fn: "get_topshot_issuer_held_split_edition",
     test: "supabase/tests/get_topshot_issuer_held_split_edition.sql",
-    migration: "supabase/migrations/20261003232935_audit_20261003_topshot_issuer_held_split_one_edition.sql",
+    migration: "supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql",
   },
   {
     // Added 2026-10-03. Atlas DistributionService walk for Top Shot pack supply: a
@@ -84,21 +84,22 @@ const PINS = [
     test: "supabase/tests/topshot_pack_supply_tick.sql",
     // 2026-10-10: an unchanged summary carries its reconciled pass forward (40 h re-read);
     // the market-403 back-off counts every drained market request.
-    migration: "supabase/migrations/20261010213401_audit_20261010_topshot_pack_supply_carries_unchanged_passes_and_counts_tagged_market_rows.sql",
+    // 2026-10-14: a new list pass keeps list_done_at; readers gate on its age.
+    migration: "supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql",
   },
   {
     // Added 2026-10-03. Per-edition issuer-held split (in sealed packs vs reserve):
     // NULL until every drop is read and every drop with packs left reconciles exactly.
     fn: "topshot_issuer_held_split_editions",
     test: "supabase/tests/topshot_pack_supply_tick.sql",
-    migration: "supabase/migrations/20261003224608_audit_20261003_topshot_pack_supply_from_atlas_distribution_service.sql",
+    migration: "supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql",
   },
   {
     // Added 2026-10-03. Per-tier issuer-held split from the drop summaries; stale
     // issuer-held rows are excluded AND disclosed; contradicted never goes negative.
     fn: "get_topshot_issuer_held_split",
     test: "supabase/tests/topshot_pack_supply_tick.sql",
-    migration: "supabase/migrations/20261003224608_audit_20261003_topshot_pack_supply_from_atlas_distribution_service.sql",
+    migration: "supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql",
   },
   {
     // Added 2026-10-03. Market cap = FMV x COLLECTOR-HELD supply at every grain.

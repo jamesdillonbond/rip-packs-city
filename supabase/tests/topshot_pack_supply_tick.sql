@@ -19,8 +19,7 @@
 --     disclosed; more in packs than issuer-held is "contradicted", not a negative.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (topshot_pack_supply_tick: supabase/migrations/20261010213401_audit_20261010_topshot_pack_supply_carries_unchanged_passes_and_counts_tagged_market_rows.sql;
--- the two readers: supabase/migrations/20261003224608_audit_20261003_topshot_pack_supply_from_atlas_distribution_service.sql);
+-- (all three: supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if a copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -330,17 +329,20 @@ BEGIN
 
   IF NOT v_held THEN
     SELECT * INTO v_state FROM public.topshot_atlas_pack_state WHERE id = 1;
-    -- A new list pass daily.
+    -- A new list pass daily. It keeps list_done_at: that stamp is the LAST COMPLETED
+    -- list, which the readers gate on, and a refresh in progress does not make it
+    -- wrong (2026-10-14: nulling it read "pending" for the ~75 min of every walk).
+    -- A walk is in progress while list_done_at < list_started_at.
     IF v_state.list_started_at IS NULL OR v_state.list_started_at < now() - interval '24 hours' THEN
       UPDATE public.topshot_atlas_pack_state
-         SET list_started_at = now(), list_next_offset = 0, list_done_at = NULL
+         SET list_started_at = now(), list_next_offset = 0
        WHERE id = 1
       RETURNING * INTO v_state;
     END IF;
 
     WHILE v_sent < p_budget AND v_inflight < 6 LOOP
       -- 1. the distribution list, one page at a time
-      IF v_state.list_done_at IS NULL
+      IF (v_state.list_done_at IS NULL OR v_state.list_done_at < v_state.list_started_at)
          AND v_state.list_next_offset < coalesce(v_state.list_total, 100000) + 100
          AND NOT EXISTS (SELECT 1 FROM public.topshot_atlas_pack_requests q WHERE q.kind = 'list' AND q.drained_at IS NULL) THEN
         v_req := net.http_post(url := v_url || 'SearchDistributions',
@@ -419,7 +421,7 @@ AS $function$
   WITH ts AS (SELECT id FROM public.collections WHERE slug = 'nba_top_shot'),
   gate AS (
     SELECT
-      (SELECT list_done_at IS NOT NULL AND list_started_at > now() - interval '48 hours'
+      (SELECT list_done_at > now() - interval '48 hours'
          FROM public.topshot_atlas_pack_state WHERE id = 1)                                   AS list_ok,
       count(*) FILTER (WHERE d.summary_fetched_at IS NULL)                                     AS never_read,
       count(*) FILTER (WHERE d.remaining_total > 0
@@ -486,7 +488,7 @@ AS $function$
   WITH ts AS (SELECT id FROM public.collections WHERE slug = 'nba_top_shot'),
   gate AS (
     SELECT
-      (SELECT list_done_at IS NOT NULL AND list_started_at > now() - interval '48 hours'
+      (SELECT list_done_at > now() - interval '48 hours'
          FROM public.topshot_atlas_pack_state WHERE id = 1)                                AS list_ok,
       count(*) FILTER (WHERE d.summary_fetched_at IS NULL)                                  AS never_read,
       count(*) FILTER (WHERE d.remaining_total > 0
@@ -736,6 +738,35 @@ SELECT _assert((SELECT next_due_at BETWEEN now() + interval '19 hours' AND now()
   'a changed drop is re-read daily');
 SELECT _assert_eq((SELECT split_status FROM topshot_issuer_held_split_editions() WHERE edition_external_id = '261:8705'),
   'pending: 1 distribution(s) with packs left not settled', 'the new pass must settle before the split publishes');
+
+-- ── the daily list re-walk does not unpublish the split (2026-10-14) ──────────
+-- The last walk completed 23 h ago and started 25 h ago: the next tick starts a new
+-- walk. It must keep list_done_at (the last COMPLETED list) and still send the walk's
+-- first page; the readers keep publishing meanwhile. (One transaction: now() is fixed,
+-- so the stamps are set explicitly rather than left to clock_timestamp().)
+UPDATE topshot_atlas_pack_state SET list_started_at = now() - interval '25 hours', list_done_at = now() - interval '23 hours';
+SELECT topshot_pack_supply_tick(1);
+SELECT _assert((SELECT list_started_at = now() AND list_done_at = now() - interval '23 hours' AND list_next_offset = 100
+                  FROM topshot_atlas_pack_state),
+  'a new walk keeps the last completed list stamp');
+SELECT _assert_eq((SELECT url || ' ' || (body ->> 'offset') FROM net.sent ORDER BY id DESC LIMIT 1),
+  'https://api.production.atlas.dapperlabs.com/public/atlas.v1.DistributionService/SearchDistributions 0',
+  'the walk still sends its first page while list_done_at < list_started_at');
+SELECT _assert((SELECT split_status <> 'pending: distribution list incomplete or stale' FROM get_topshot_issuer_held_split() WHERE tier IS NULL),
+  'tier split: a walk in progress is not "list incomplete"');
+SELECT _assert((SELECT bool_and(split_status <> 'pending: distribution list incomplete or stale') FROM topshot_issuer_held_split_editions()),
+  'per edition: a walk in progress is not "list incomplete"');
+-- No walk has completed in 48 h: everything is pending again (a stalled walk cannot
+-- hide behind a recent list_started_at).
+UPDATE topshot_atlas_pack_state SET list_done_at = now() - interval '49 hours';
+SELECT _assert_eq((SELECT split_status FROM get_topshot_issuer_held_split() WHERE tier IS NULL),
+  'pending: distribution list incomplete or stale', 'tier split: last completed list > 48 h old');
+SELECT _assert((SELECT bool_and(split_status = 'pending: distribution list incomplete or stale' AND in_packs IS NULL)
+                  FROM topshot_issuer_held_split_editions()),
+  'per edition: last completed list > 48 h old');
+UPDATE topshot_atlas_pack_state SET list_done_at = NULL;
+SELECT _assert_eq((SELECT split_status FROM get_topshot_issuer_held_split() WHERE tier IS NULL),
+  'pending: distribution list incomplete or stale', 'no list ever completed: pending');
 
 SELECT '✓ topshot_pack_supply_tick + issuer-held split readers: all assertions passed' AS result;
 
