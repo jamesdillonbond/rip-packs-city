@@ -59,7 +59,7 @@
 - **DB load, measured fresh (two pgss snapshots):** ~90 % of statement time is the chain-arrival / opener lanes' deliberate `pg_sleep` staggers; the real top disk reader is `atlas_listing_verify_tick` (~19k blocks/call, avg 8.1 s, 0 timeouts; its 09-18 optimisation was reverted for fleet harm — left alone). `net._http_response` is 1.4 GB on disk but 411 MB live (6 h TTL; the rest is reusable space) — 602 MB raw/6 h is the Atlas market feed's deliberate ~50-min page overlap (resilience against 403 bursts). Not changed.
 - **Every pg_cron job ran on schedule** (the 20 not run in 26 h are all Sunday weeklies).
 
-## Continued (~6:50 → ~7:15 PM PT, Trevor: "Don't stop until there's nothing left unresolved that you can handle")
+## Continued (~6:17 → ~6:40 PM PT, Trevor: "Don't stop until there's nothing left unresolved that you can handle")
 
 - **Shipped `5e47b70a4`: #191 closed.** All Day now gets the same cap confirmation as Top Shot/UFC. It runs only after a complete studio walk, and only when an independent on-chain count equals the walk's on-chain half (`0x6d1f8c18412c6abc`: 147 cached, 2 held).
 - **Shipped: `topshot-onchain-art-backfill` stops re-reading its own head.** 300 of 300 misses per run, while ~9,000 resolvable older editions were never reached. It now runs two legs: fresh NULL-art drops, plus a cursor walk over the legacy-URL editions. The legacy CDN is NOT dead (17/17 samples serve); the IPFS move is for durability. See the ledger.

@@ -1991,6 +1991,8 @@ From the **Ledger** section: 🚨 **`git revert <sha>` paths recorded BEFORE 202
 
 From **Timestamps**: ⚠ Git Bash lies BOTH ways and the **web sandbox is PDT, not UTC**, so "subtract 7h from `date -u`" lands a day early.
 
+⚠ **An ESTIMATED time is the fifth source of a wrong label (2026-10-14).** One cloud session wrote `~6:40` / `~6:55` / `~7:10 PM PT` into the ledger for commits whose own clock read 6:15 / 6:30 / 6:39; it drifted 25–35 min ahead over an hour of work, with no zone involved. Read `date` (or `TZ=America/Los_Angeles git log --date=format-local:%H:%M`) at the moment you write a label; never carry a running estimate forward.
+
 ---
 
 ## Stray agent worktrees, and the stale `index.lock` (2026-09-20)
