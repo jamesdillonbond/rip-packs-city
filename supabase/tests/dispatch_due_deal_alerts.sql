@@ -86,8 +86,9 @@
 --   • (2026-10-01) the 20260913061500 body, i.e. the pre-filter cap → case 8
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql
--- since 2026-10-01; originally 20260816161500_audit_20260816_price_only_alerts.sql);
+-- (supabase/migrations/20261015002500_audit_20261014_deal_alerts_fire_once_per_listing.sql
+-- since 2026-10-14; before it 20261011022738, 20261001030000; originally
+-- 20260816161500_audit_20260816_price_only_alerts.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from
 -- it. Verified 2026-08-17 that the migration's body is byte-identical to the
 -- LIVE prosrc (md5 24ab9e7953c0005b10e987cbea62307e, 13,203 chars). Re-verified
@@ -138,7 +139,9 @@ CREATE TABLE alert_subscriptions (
   require_low_ask        boolean,
   badges                 text[],
   parallel_names         text[],
-  serial_only            boolean
+  serial_only            boolean,
+  -- audit_20261014: the repeat policy the dispatcher reads (case 9).
+  notify_mode            text NOT NULL DEFAULT 'new_listing'
 );
 
 CREATE TABLE notification_channels (
@@ -290,6 +293,12 @@ DECLARE
   v_deal_pool_unconfirmed int := 0;
   v_price_pool_unconfirmed int := 0;
   v_serial_pool_unconfirmed int := 0;
+  -- audit_20261014: per-subscription repeat policy (alert_subscriptions.notify_mode).
+  v_mode text;
+  v_fp text;
+  v_dedup text;
+  v_prev jsonb;
+  v_suppressed int := 0;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.alert_subscriptions WHERE active = true) THEN
     RETURN jsonb_build_object(
@@ -302,6 +311,7 @@ BEGIN
       'deal_pool_unconfirmed', 0,
       'serial_pool_unconfirmed', 0,
       'price_pool_unconfirmed', 0,
+      'suppressed_unchanged', 0,
       'bucket', v_bucket,
       'ran_at', now(),
       'skipped', 'no_active_subscriptions'
@@ -360,6 +370,20 @@ BEGIN
 
   FOR v_sub IN SELECT * FROM public.alert_subscriptions WHERE active = true LOOP
     v_subs := v_subs + 1;
+    -- 🚨 audit_20261014 — THE REPEAT. dedup_bucket alone is the UTC calendar day,
+    -- so a listing that never changed was "new" every midnight: two subscribers
+    -- got the same edition 14 days running (nba_top_shot:58:1975 and
+    -- 236:7937::17, 09-30 → 10-13), and webz_80 reported it twice (beta 10792,
+    -- 10795). The alerts form offered "Daily / Weekly digest" and nothing read
+    -- it. notify_mode is now the honoured policy:
+    --   new_listing (default) — fire when the LISTING differs from the last one
+    --     sent for this subject on this channel: another moment (nft_id, or
+    --     serial when no id is on the row) or another ask price. Unchanged ⇒
+    --     suppressed and counted. Read from alert_deliveries, so the switch-over
+    --     did not re-send every standing listing once more.
+    --   once — first delivery per subject per channel, never again.
+    --   daily — the old behaviour, kept for whoever wants the reminder.
+    v_mode := COALESCE(v_sub.notify_mode, 'new_listing');
 
     IF v_sub.collection_ids IS NULL THEN
       v_slugs := ARRAY(SELECT slug FROM public.collections WHERE is_active = true);
@@ -472,11 +496,40 @@ BEGIN
 
         IF v_target IS NULL THEN CONTINUE; END IF;
 
+        -- The listing's identity: the moment on the ask (pass 2 always has
+        -- nft_id; pass 1 has low_ask_nft_id where the board carries one) and the
+        -- ask itself (low_ask in pass 1, ask_usd in pass 2), to the cent.
+        v_fp := COALESCE(v_deal->>'nft_id', '#' || COALESCE(v_deal->>'serial_number', ''))
+                || '@' || COALESCE(round(COALESCE(v_deal->>'low_ask', v_deal->>'ask_usd')::numeric, 2)::text, '');
+        IF v_mode = 'daily' THEN
+          v_dedup := v_bucket;
+        ELSE
+          SELECT d.payload->'deal' INTO v_prev
+          FROM public.alert_deliveries d
+          WHERE d.owner_key = v_sub.owner_key AND d.channel = v_channel
+            AND d.alert_kind = 'deal' AND d.subject_key = v_subject
+            AND d.status IS DISTINCT FROM 'failed'
+          ORDER BY d.created_at DESC
+          LIMIT 1;
+          IF v_prev IS NOT NULL AND (
+               v_mode = 'once'
+               OR (COALESCE(v_prev->>'nft_id', '#' || COALESCE(v_prev->>'serial_number', ''))
+                   || '@' || COALESCE(round(COALESCE(v_prev->>'low_ask', v_prev->>'ask_usd')::numeric, 2)::text, '')) = v_fp
+             ) THEN
+            v_suppressed := v_suppressed + 1;
+            CONTINUE;
+          END IF;
+          -- The day stays in the key so two overlapping ticks still collide on
+          -- the unique index; the fingerprint lets a CHANGED listing through the
+          -- same day.
+          v_dedup := CASE WHEN v_mode = 'once' THEN 'once' ELSE v_bucket || ':' || v_fp END;
+        END IF;
+
         INSERT INTO public.alert_deliveries
           (owner_key, channel, channel_user_id, alert_kind, subject_key, dedup_bucket, payload)
         VALUES (
           v_sub.owner_key, v_channel, v_target, 'deal',
-          v_subject, v_bucket,
+          v_subject, v_dedup,
           jsonb_build_object('subscription_id', v_sub.id, 'label', v_sub.label, 'deal', v_deal)
         )
         ON CONFLICT (owner_key, channel, alert_kind, subject_key, dedup_bucket) DO NOTHING;
@@ -563,11 +616,40 @@ BEGIN
 
           IF v_target IS NULL THEN CONTINUE; END IF;
 
+          -- The listing's identity: the moment on the ask (pass 2 always has
+          -- nft_id; pass 1 has low_ask_nft_id where the board carries one) and the
+          -- ask itself (low_ask in pass 1, ask_usd in pass 2), to the cent.
+          v_fp := COALESCE(v_deal->>'nft_id', '#' || COALESCE(v_deal->>'serial_number', ''))
+                  || '@' || COALESCE(round(COALESCE(v_deal->>'low_ask', v_deal->>'ask_usd')::numeric, 2)::text, '');
+          IF v_mode = 'daily' THEN
+            v_dedup := v_bucket;
+          ELSE
+            SELECT d.payload->'deal' INTO v_prev
+            FROM public.alert_deliveries d
+            WHERE d.owner_key = v_sub.owner_key AND d.channel = v_channel
+              AND d.alert_kind = 'deal' AND d.subject_key = v_subject
+              AND d.status IS DISTINCT FROM 'failed'
+            ORDER BY d.created_at DESC
+            LIMIT 1;
+            IF v_prev IS NOT NULL AND (
+                 v_mode = 'once'
+                 OR (COALESCE(v_prev->>'nft_id', '#' || COALESCE(v_prev->>'serial_number', ''))
+                     || '@' || COALESCE(round(COALESCE(v_prev->>'low_ask', v_prev->>'ask_usd')::numeric, 2)::text, '')) = v_fp
+               ) THEN
+              v_suppressed := v_suppressed + 1;
+              CONTINUE;
+            END IF;
+            -- The day stays in the key so two overlapping ticks still collide on
+            -- the unique index; the fingerprint lets a CHANGED listing through the
+            -- same day.
+            v_dedup := CASE WHEN v_mode = 'once' THEN 'once' ELSE v_bucket || ':' || v_fp END;
+          END IF;
+
           INSERT INTO public.alert_deliveries
             (owner_key, channel, channel_user_id, alert_kind, subject_key, dedup_bucket, payload)
           VALUES (
             v_sub.owner_key, v_channel, v_target, 'deal',
-            v_subject, v_bucket,
+            v_subject, v_dedup,
             jsonb_build_object('subscription_id', v_sub.id, 'label', v_sub.label, 'deal', v_deal)
           )
           ON CONFLICT (owner_key, channel, alert_kind, subject_key, dedup_bucket) DO NOTHING;
@@ -594,6 +676,7 @@ BEGIN
     'deal_pool_unconfirmed', v_deal_pool_unconfirmed,
     'serial_pool_unconfirmed', v_serial_pool_unconfirmed,
     'price_pool_unconfirmed', v_price_pool_unconfirmed,
+    'suppressed_unchanged', v_suppressed,
     'bucket', v_bucket,
     'ran_at', now()
   );
@@ -700,6 +783,66 @@ BEGIN
   PERFORM _assert_eq((SELECT count(*)::text FROM alert_deliveries), '2', 'and writes no further rows');
 
   RAISE NOTICE '✓ dispatch_due_deal_alerts: pool gating, exclusion and dedupe';
+END $$;
+
+-- ── (9) audit_20261014: ONCE PER LISTING, NOT ONCE PER DAY ────────────────
+--
+-- 🚨 THE DEFECT. dedup_bucket used to be the UTC day and nothing else, so an
+-- unchanged listing was new again every midnight: two subscribers received the
+-- same edition 14 days running (09-30 → 10-13) and webz_80 reported it. Case 4
+-- could never see it — both of its runs fall inside one day. This case moves the
+-- rows case 1 wrote into YESTERDAY, which is exactly what a real night does, and
+-- the old body re-sends both there (verified: enqueued 2, this case fails).
+--
+-- ⚠ AND THE OTHER DIRECTION, because the cheap wrong fix is "never repeat a
+-- subject": a CHANGED listing (here, a new ask) must still fire. Then the two
+-- other modes, so neither is a label over the default: 'once' stays silent
+-- through a price change, 'daily' keeps the old re-send.
+DO $$
+DECLARE r jsonb;
+BEGIN
+  UPDATE alert_deliveries
+     SET dedup_bucket = dedup_bucket || ':aged', created_at = now() - interval '1 day'
+   WHERE owner_key = 'owner-deals';
+
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '0',
+    'an UNCHANGED listing is not re-sent on a new day (the old body sends both again)');
+  PERFORM _assert_eq((r->>'suppressed_unchanged'), '2',
+    'and the skips are COUNTED, so a quiet night is distinguishable from nothing matching');
+
+  UPDATE cross_collection_deals_board SET low_ask = 19.00, discount_pct = 52.5
+   WHERE external_id = '73:2785';
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '1', 'a NEW ASK on the same edition does fire');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-deals' AND subject_key = 'nba_top_shot:73:2785'
+      AND (payload->'deal'->>'low_ask')::numeric = 19.00),
+    'and it carries the new price');
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '0', 'then the new listing is itself sent only once');
+
+  UPDATE alert_subscriptions SET notify_mode = 'once'
+   WHERE id = '22222222-2222-2222-2222-222222222222';
+  UPDATE cross_collection_deals_board SET low_ask = 18.00, discount_pct = 55.0
+   WHERE external_id = '73:2785';
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '0', 'notify once: a price change does NOT re-fire a subject already sent');
+
+  UPDATE alert_subscriptions SET notify_mode = 'daily'
+   WHERE id = '22222222-2222-2222-2222-222222222222';
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '2', 'daily: the old reminder behaviour is kept for whoever picks it');
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '0', 'and still at most once per day');
+
+  -- Restore what later cases read.
+  UPDATE alert_subscriptions SET notify_mode = 'new_listing'
+   WHERE id = '22222222-2222-2222-2222-222222222222';
+  UPDATE cross_collection_deals_board SET low_ask = 20.00, discount_pct = 50.0
+   WHERE external_id = '73:2785';
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: once per listing, and all three repeat modes';
 END $$;
 
 -- ── (2) a price-only subscription receives the raw ask ─────────────────────

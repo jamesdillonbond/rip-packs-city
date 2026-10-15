@@ -50,7 +50,7 @@ const SUB = (over: Record<string, unknown> = {}) => ({
   tiers: null, parallel_names: null, player_names: ["Damian Lillard"],
   set_names: null, team_names: null, min_serial: null, max_serial: null,
   require_jersey_serial: false, require_last_mint: false, require_never_sold: false,
-  require_low_ask: false, badges: null, cadence: "instant" as const,
+  require_low_ask: false, badges: null, notify_mode: "new_listing" as const,
   active: true, preview_count: 3, ...over,
 })
 // ⚠ `alert_type` is one of four literals and it INDEXES `FMV_ALERT_LABEL` — an invented
@@ -488,19 +488,26 @@ describe("AlertsClient — the subscription form", () => {
     expect(body.min_discount).toBe(0)
   })
 
-  it("changes the cadence", async () => {
+  // audit_20261014: this was "changes the cadence", behind `if (select)` — so it
+  // passed with no select at all, while the Cadence control it exercised was
+  // read by nothing. The Notify-me select drives the dispatcher; it must exist,
+  // offer exactly the three implemented modes, and save the one chosen.
+  it("saves the chosen repeat policy (Notify me)", async () => {
     const f = mount()
     await waitFor(() => expect(document.body.textContent).toMatch(/New alert/))
-    const select = document.querySelector("select") as HTMLSelectElement | null
-    if (select) {
-      fireEvent.change(select, { target: { value: "daily" } })
-      fireEvent.click(saveBtn())
-      await waitFor(() =>
-        expect(f.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === "POST")).toBe(true),
-      )
-      const post = f.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")!
-      expect(JSON.parse(String((post[1] as RequestInit).body)).cadence).toBe("daily")
-    }
+    const select = document.querySelector("#alert-notify-mode") as HTMLSelectElement | null
+    expect(select).not.toBeNull()
+    expect(Array.from(select!.options).map((o) => o.value)).toEqual(["new_listing", "once", "daily"])
+    expect(document.body.textContent).not.toMatch(/Weekly digest|Daily digest/)
+    fireEvent.change(select!, { target: { value: "once" } })
+    fireEvent.click(saveBtn())
+    await waitFor(() =>
+      expect(f.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === "POST")).toBe(true),
+    )
+    const post = f.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")!
+    const body = JSON.parse(String((post[1] as RequestInit).body))
+    expect(body.notify_mode).toBe("once")
+    expect(body).not.toHaveProperty("cadence")
   })
 
   // ⚠ Editing must LOAD the existing subscription into the form. A partially-populated edit

@@ -40,7 +40,7 @@ export interface AlertFormState {
   require_never_sold: boolean
   require_low_ask: boolean
   badges: string[]
-  cadence: string
+  notify_mode: string
 }
 
 /** Build the /api/alerts/subscriptions payload from the form. Empty numeric
@@ -67,7 +67,7 @@ export function alertPayloadFromForm(form: AlertFormState) {
     require_never_sold: form.require_never_sold,
     require_low_ask: form.require_low_ask,
     badges: form.badges.length ? form.badges : null,
-    cadence: form.cadence,
+    notify_mode: form.notify_mode,
   }
 }
 

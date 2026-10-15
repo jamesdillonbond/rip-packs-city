@@ -390,13 +390,13 @@ describe("manage_deal_subscriptions", () => {
     expect(String(r.message)).toMatch(/\/link/)
   })
 
-  it("lists the caller's subscriptions with the cadence caveat", async () => {
+  it("lists the caller's subscriptions with the repeat-policy note", async () => {
     A.authedEmail = "t@example.com"
     A.userId = "user-1"
     install({
       alert_subscriptions: {
         data: [
-          { id: "s1", label: "Dame deals", active: true, channels: ["email"], cadence: "daily", min_discount: 20 },
+          { id: "s1", label: "Dame deals", active: true, channels: ["email"], notify_mode: "new_listing", min_discount: 20 },
         ],
         error: null,
       },
@@ -406,7 +406,11 @@ describe("manage_deal_subscriptions", () => {
     const r = toolResult()
     expect(r.status).toBe("ok")
     expect(r.total).toBe(1)
-    expect(String(r.note)).toMatch(/once per day per channel/i)
+    // audit_20261014: the note used to promise "once per day per channel" —
+    // the daily repeat a collector reported as a bug. It must now explain the
+    // modes, and never state the old daily repeat as the rule.
+    expect(String(r.note)).toMatch(/new_listing = once per listing/)
+    expect(String(r.note)).not.toMatch(/once per day per channel/i)
   })
 
   // ⚠ A PRICE IS THE USER'S THRESHOLD — do not add an FMV one on top.
@@ -446,6 +450,63 @@ describe("manage_deal_subscriptions", () => {
     })
     script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"] })
     await POST(post("alert me on good Base Set deals"))
+    expect(toolResult().status).toBe("error")
+    expect(spy.writes["alert_subscriptions"] ?? []).toEqual([])
+  })
+
+  // audit_20261014: the repeat policy. A collector asked to be told ONCE; the
+  // concierge must be able to save that, state it back, and refuse a value the
+  // dispatcher does not implement rather than silently saving the default.
+  it("saves notify_mode on create and states the repeat policy back", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s20", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"], notify_mode: "once" })
+    await POST(post("alert me once on Base Set deals"))
+    const written = spy.writes["alert_subscriptions"]?.[0]?.rows?.[0] as Record<string, unknown>
+    expect(written.notify_mode).toBe("once")
+    expect(written).not.toHaveProperty("cadence")
+    const r = toolResult()
+    expect((r.repeat_policy as Record<string, unknown>).notify_mode).toBe("once")
+  })
+
+  it("refuses an unknown notify_mode on create instead of saving the default", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s21", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"], notify_mode: "hourly" })
+    await POST(post("alert me hourly on Base Set deals"))
+    expect(toolResult().status).toBe("error")
+    expect(spy.writes["alert_subscriptions"] ?? []).toEqual([])
+  })
+
+  it("set_notify_mode changes an existing alert's repeat policy, scoped to the caller", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: [{ id: "s1", label: "Dame deals", notify_mode: "once" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "set_notify_mode", subscription_id: "s1", notify_mode: "once" })
+    await POST(post("only tell me once about Dame deals"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(String(r.meaning)).toMatch(/first time/)
+    const w = spy.writes["alert_subscriptions"]?.[0]
+    expect((w?.rows?.[0] as Record<string, unknown>).notify_mode).toBe("once")
+  })
+
+  it("set_notify_mode refuses an unknown mode without writing", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({ alert_subscriptions: { data: [], error: null } })
+    script("manage_deal_subscriptions", { action: "set_notify_mode", subscription_id: "s1", notify_mode: "weekly" })
+    await POST(post("weekly digest please"))
     expect(toolResult().status).toBe("error")
     expect(spy.writes["alert_subscriptions"] ?? []).toEqual([])
   })

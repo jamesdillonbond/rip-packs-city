@@ -40,7 +40,7 @@ describe("alerts/form — alertPayloadFromForm", () => {
     require_never_sold: false,
     require_low_ask: false,
     badges: [],
-    cadence: "instant",
+    notify_mode: "new_listing",
   }
 
   it("applies the empty-input defaults: min_discount→25, prices/serials→null, empty arrays→null", () => {
@@ -77,7 +77,7 @@ describe("alerts/form — alertPayloadFromForm", () => {
       require_jersey_serial: true,
       require_never_sold: true,
       badges: ["rookie"],
-      cadence: "daily",
+      notify_mode: "daily",
     })
     expect(p.id).toBe("sub-1")
     expect(p.min_discount).toBe(40)
@@ -94,6 +94,7 @@ describe("alerts/form — alertPayloadFromForm", () => {
     expect(p.require_jersey_serial).toBe(true)
     expect(p.require_never_sold).toBe(true)
     expect(p.badges).toEqual(["rookie"])
-    expect(p.cadence).toBe("daily")
+    expect(p.notify_mode).toBe("daily")
+    expect(p).not.toHaveProperty("cadence")
   })
 })

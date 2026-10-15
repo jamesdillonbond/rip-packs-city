@@ -78,6 +78,13 @@ import {
   MEDIUM_MAX_DISPERSION,
 } from "@/lib/fmv-confidence";
 import {
+  NOTIFY_MODES,
+  NOTIFY_MODE_HINT,
+  isNotifyMode,
+  notifyModeOr,
+  type NotifyMode,
+} from "@/lib/alerts/notify-mode";
+import {
   FMV_ALGO_VERSION,
   FMV_RECENT_SALES_N,
   FMV_RECENT_SPAN_DAYS,
@@ -521,8 +528,8 @@ const TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["create", "list", "pause", "resume", "delete"] },
-        subscription_id: { type: "string", description: "Subscription id (from list) — required for pause/resume/delete." },
+        action: { type: "string", enum: ["create", "list", "pause", "resume", "delete", "set_notify_mode"] },
+        subscription_id: { type: "string", description: "Subscription id (from list) — required for pause/resume/delete/set_notify_mode." },
         label: { type: "string", description: "Human-readable name, e.g. 'Blazers rookie serials 25%+ under FMV'. Auto-generated if omitted." },
         teams: { type: "array", items: { type: "string" }, description: "Team names, partial ok ('Blazers' resolves to 'Portland Trail Blazers')." },
         badges: { type: "array", items: { type: "string" }, description: "Badge names, e.g. ['rookie'] (expands to Rookie Year/Mint/Premiere/of the Year), ['Top Shot Debut'], ['Rookie Mint']." },
@@ -535,6 +542,7 @@ const TOOLS: Anthropic.Tool[] = [
         require_jersey_serial: { type: "boolean", description: "Only serials matching the player's jersey number." },
         require_last_mint: { type: "boolean", description: "Only perfect mints (serial == circulation)." },
         channels: { type: "array", items: { type: "string" }, description: "Delivery channels: telegram, discord, email. Defaults to the chat's own channel on bot DMs, else every linked channel." },
+        notify_mode: { type: "string", enum: [...NOTIFY_MODES], description: "How often a match is re-sent. new_listing (default) = once per listing: an unchanged listing is sent once, and a different moment or a new ask on that edition is sent as new. once = only the first time an edition / special serial matches, never again. daily = re-sent every day while it still matches. Pass it only when the user says how often they want to hear about it ('just tell me once', 'remind me daily'); with action='set_notify_mode' plus subscription_id it changes an existing alert." },
       },
       required: ["action"],
     },
@@ -3584,7 +3592,7 @@ async function executeToolInner(
       if (action === "list") {
         const { data: subs, error } = await (supabase as any)
           .from("alert_subscriptions")
-          .select("id, label, active, channels, cadence, min_discount, max_price, tiers, player_names, set_names, team_names, badges, serial_only, require_jersey_serial, require_last_mint, created_at, last_run_at")
+          .select("id, label, active, channels, notify_mode, min_discount, max_price, tiers, player_names, set_names, team_names, badges, serial_only, require_jersey_serial, require_last_mint, created_at, last_run_at")
           .eq("owner_key", ctx.userId)
           .order("created_at", { ascending: false });
         if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
@@ -3592,7 +3600,10 @@ async function executeToolInner(
           status: "ok",
           total: (subs ?? []).length,
           subscriptions: subs ?? [],
-          note: "serial_only=true means the sub only fires on special-serial (#1/perfect mint) listings. The scanner runs every ~15 min; each match delivers once per day per channel.",
+          // ⚠ 2026-10-14: this said "each match delivers once per day per
+          // channel" — true of the old dispatcher, and exactly the repeat a
+          // collector complained about. notify_mode is now per subscription.
+          note: "serial_only=true means the sub only fires on special-serial (#1/perfect mint) listings. The scanner runs every ~15 min. notify_mode says how often a match repeats: new_listing = once per listing (an unchanged listing is not re-sent; a different moment or new ask is), once = first match per edition/serial only, daily = re-sent each day while it still matches. Change it with action='set_notify_mode'.",
         });
       }
 
@@ -3621,8 +3632,28 @@ async function executeToolInner(
         return JSON.stringify({ status: "ok", subscription: data[0] });
       }
 
+      if (action === "set_notify_mode") {
+        const id = String(toolInput.subscription_id ?? "").trim();
+        if (!id) return JSON.stringify({ status: "error", message: "subscription_id required — call action='list' first." });
+        // An unknown value is REFUSED, never defaulted: silently saving
+        // new_listing when the user asked for something else would confirm a
+        // setting they did not get.
+        if (!isNotifyMode(toolInput.notify_mode)) {
+          return JSON.stringify({ status: "error", message: `notify_mode must be one of: ${NOTIFY_MODES.join(", ")}.` });
+        }
+        const { data, error } = await (supabase as any)
+          .from("alert_subscriptions")
+          .update({ notify_mode: toolInput.notify_mode, updated_at: new Date().toISOString() })
+          .eq("id", id)
+          .eq("owner_key", ctx.userId)
+          .select("id, label, notify_mode");
+        if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
+        if (!data?.length) return JSON.stringify({ status: "not_found", message: "No subscription with that id on this account." });
+        return JSON.stringify({ status: "ok", subscription: data[0], meaning: NOTIFY_MODE_HINT[data[0].notify_mode as NotifyMode] ?? null });
+      }
+
       if (action !== "create") {
-        return JSON.stringify({ status: "error", message: "Invalid action — use create, list, pause, resume, or delete." });
+        return JSON.stringify({ status: "error", message: "Invalid action — use create, list, pause, resume, delete, or set_notify_mode." });
       }
 
       // ── create ────────────────────────────────────────────────────────────
@@ -3745,6 +3776,13 @@ async function executeToolInner(
           ? 0
           : 25;
       const serialOnly = toolInput.special_serials_only === true;
+      // An absent notify_mode takes the default; a PRESENT but unknown one is
+      // refused, so the confirmation can never describe a repeat policy the
+      // row does not carry.
+      if (toolInput.notify_mode != null && !isNotifyMode(toolInput.notify_mode)) {
+        return JSON.stringify({ status: "error", message: `notify_mode must be one of: ${NOTIFY_MODES.join(", ")}.` });
+      }
+      const notifyMode: NotifyMode = notifyModeOr(toolInput.notify_mode);
 
       const autoLabel = [
         teamNames?.join("/"),
@@ -3761,7 +3799,9 @@ async function executeToolInner(
         owner_key: ctx.userId,
         label: typeof toolInput.label === "string" && toolInput.label.trim() ? toolInput.label.trim().slice(0, 120) : autoLabel.slice(0, 120),
         channels,
-        cadence: "instant",
+        // The repeat policy the dispatcher reads; `cadence` is not read by
+        // anything and keeps its column default.
+        notify_mode: notifyMode,
         collection_ids: serialOnly || teamNames ? [tsUuid] : null,
         min_discount: minDiscount,
         max_price: explicitMaxPrice,
@@ -3845,6 +3885,7 @@ async function executeToolInner(
         subscription: created,
         matches_right_now: previewCount,
         applied_filters: appliedFilters,
+        repeat_policy: { notify_mode: notifyMode, meaning: NOTIFY_MODE_HINT[notifyMode] },
         applied_filters_note:
           "State EVERY entry in applied_filters back to the user in your confirmation. These are the conditions actually saved — an alert only fires when ALL of them hold. Do not describe the alert from their request; describe it from this list, so a filter they did not name is never invisible to them.",
         message: `Subscription live — the scanner checks every ~15 minutes and delivers to ${channels.join(" + ")}. ${previewCount === 0 ? "Nothing matches right now, which is normal for tight filters — it fires the moment something lists." : ""}`,

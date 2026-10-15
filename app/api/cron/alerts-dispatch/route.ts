@@ -38,6 +38,10 @@ const DEAL_VERDICT_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["deal_pool_unconfirmed", "unconfirmed_deal"],
   ["price_pool_unconfirmed", "unconfirmed_price"],
   ["serial_pool_unconfirmed", "unconfirmed_serial"],
+  // audit_20261014: matches held back because the listing is the SAME one this
+  // subscriber was already sent (notify_mode). Without it a quiet run after the
+  // once-per-listing change reads as "nothing matched".
+  ["suppressed_unchanged", "suppressed_unchanged"],
 ];
 
 function authed(req: NextRequest): boolean {

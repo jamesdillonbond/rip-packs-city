@@ -1537,8 +1537,9 @@ const PINS = [
     // rule that `enqueued` counts writes rather than matches.
     fn: "dispatch_due_deal_alerts",
     test: "supabase/tests/dispatch_due_deal_alerts.sql",
-    // Re-pointed 2026-10-10: "perfect mints only" no longer matches a 1-of-1.
-    migration: "supabase/migrations/20261011022738_audit_20261010_perfect_mint_alerts_exclude_one_of_ones.sql",
+    // Re-pointed 2026-10-14: deal alerts fire once per LISTING (notify_mode),
+    // not once per UTC day. Before it, 2026-10-10: perfect mints exclude 1-of-1s.
+    migration: "supabase/migrations/20261015002500_audit_20261014_deal_alerts_fire_once_per_listing.sql",
   },
   {
     // ⚠ THREE ENTRIES, ONE FUNCTION, AND THAT IS THE POINT. `ask_is_alertable`

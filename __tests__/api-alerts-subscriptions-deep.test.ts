@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // deal-feed subscription CRUD. Legs pinned: requireUser rejection on every verb,
 // the GET list+preview enrichment, POST create(201)/update(404/200)/sanitize-400,
 // PATCH toggle validation + 404, DELETE id-guard + 404, and the sanitize coercion
-// (channels/cadence/serial/uuid filters).
+// (channels/notify_mode/serial/uuid filters).
 
 const st = vi.hoisted(() => ({
   user: { id: "u1" } as any,
@@ -12,6 +12,7 @@ const st = vi.hoisted(() => ({
   list: { data: [] as any[] | null, error: null as any },
   updated: { data: null as any, error: null as any },
   inserted: { data: null as any, error: null as any },
+  insertedRow: null as any,
   deleted: { data: [] as any[] | null, error: null as any },
   preview: { deals_count: 3, deals: [{ a: 1 }, { b: 2 }] } as any,
 }))
@@ -27,7 +28,7 @@ vi.mock("@/lib/supabase", () => ({
     from() {
       let op: "select" | "update" | "insert" | "delete" = "select"
       const b: any = {
-        select: () => b, update: () => { op = "update"; return b }, insert: () => { op = "insert"; return b }, delete: () => { op = "delete"; return b },
+        select: () => b, update: () => { op = "update"; return b }, insert: (row: any) => { op = "insert"; st.insertedRow = row; return b }, delete: () => { op = "delete"; return b },
         eq: () => b, order: () => b,
         maybeSingle: async () => st.updated,
         single: async () => st.inserted,
@@ -49,6 +50,7 @@ beforeEach(() => {
   st.list = { data: [], error: null }
   st.updated = { data: null, error: null }
   st.inserted = { data: { id: "new1" }, error: null }
+  st.insertedRow = null
   st.deleted = { data: [], error: null }
   st.preview = { deals_count: 3, deals: [{ a: 1 }] }
 })
@@ -77,11 +79,23 @@ describe("POST /api/alerts/subscriptions", () => {
     expect((await POST(jreq({ channels: [] }))).status).toBe(400)
   })
   it("creates a subscription (201) with sanitized fields", async () => {
-    const res = await POST(jreq({ label: "  My Alert  ", cadence: "daily", tiers: ["RARE"], min_serial: "5.7", collection_ids: ["95f28a17-224a-4025-96ad-adf8a4c63bfd", "bad-uuid"] }))
+    const res = await POST(jreq({ label: "  My Alert  ", notify_mode: "once", tiers: ["RARE"], min_serial: "5.7", collection_ids: ["95f28a17-224a-4025-96ad-adf8a4c63bfd", "bad-uuid"] }))
     expect(res.status).toBe(201)
     const body = await res.json()
     expect(body.subscription.id).toBe("new1")
     expect(body.subscription.preview_count).toBe(3)
+    expect(st.insertedRow.notify_mode).toBe("once")
+  })
+  // audit_20261014: `cadence` (instant / daily / weekly digest) was accepted and
+  // stored while NOTHING read it. The route must no longer write it at all — a
+  // body still sending it (an old tab) changes nothing — and an absent or unknown
+  // notify_mode saves the default rather than an arbitrary string.
+  it("never writes the dead cadence column, and defaults notify_mode", async () => {
+    await POST(jreq({ cadence: "weekly" }))
+    expect(st.insertedRow).not.toHaveProperty("cadence")
+    expect(st.insertedRow.notify_mode).toBe("new_listing")
+    await POST(jreq({ notify_mode: "hourly" }))
+    expect(st.insertedRow.notify_mode).toBe("new_listing")
   })
   it("updates an existing subscription when body.id is present", async () => {
     st.updated = { data: { id: "s1" }, error: null }

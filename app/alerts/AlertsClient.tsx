@@ -12,6 +12,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { csvToArr, arrToCsv, toggle, alertPayloadFromForm, subscriptionFilterSummary } from "@/lib/alerts/form";
 import { FMV_ALERT_LABEL, editionHref } from "@/lib/alerts/edition-link";
+import {
+  DEFAULT_NOTIFY_MODE,
+  NOTIFY_MODES,
+  NOTIFY_MODE_HINT,
+  NOTIFY_MODE_LABEL,
+  NOTIFY_MODE_SHORT,
+  notifyModeOr,
+  type NotifyMode,
+} from "@/lib/alerts/notify-mode";
 import SupportChatConnected from "@/components/SupportChatConnected";
 
 const DISPLAY = "var(--font-display)";
@@ -81,7 +90,9 @@ interface Subscription {
   require_never_sold: boolean;
   require_low_ask: boolean;
   badges: string[] | null;
-  cadence: "instant" | "daily" | "weekly";
+  // The repeat policy the dispatcher honours. Absent on a row read before the
+  // column existed → treated as the default by notifyModeOr.
+  notify_mode?: NotifyMode | null;
   active: boolean;
   preview_count: number | null;
 }
@@ -125,7 +136,7 @@ interface FormState {
   require_never_sold: boolean;
   require_low_ask: boolean;
   badges: string[];
-  cadence: "instant" | "daily" | "weekly";
+  notify_mode: NotifyMode;
 }
 
 const EMPTY_FORM: FormState = {
@@ -148,7 +159,7 @@ const EMPTY_FORM: FormState = {
   require_never_sold: false,
   require_low_ask: false,
   badges: [],
-  cadence: "instant",
+  notify_mode: DEFAULT_NOTIFY_MODE,
 };
 
 // csvToArr / arrToCsv / toggle / alertPayloadFromForm extracted to
@@ -329,7 +340,7 @@ export default function AlertsClient() {
       require_never_sold: s.require_never_sold,
       require_low_ask: s.require_low_ask,
       badges: s.badges ?? [],
-      cadence: s.cadence,
+      notify_mode: notifyModeOr(s.notify_mode),
     });
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -470,12 +481,20 @@ export default function AlertsClient() {
               </div>
             </div>
             <div>
-              <label htmlFor="alert-cadence" style={labelStyle}>Cadence</label>
-              <select id="alert-cadence" value={form.cadence} onChange={(e) => setForm({ ...form, cadence: e.target.value as FormState["cadence"] })} style={inputStyle}>
-                <option value="instant">Instant</option>
-                <option value="daily">Daily digest</option>
-                <option value="weekly">Weekly digest</option>
+              {/* audit_20261014: this was "Cadence: Instant / Daily digest /
+                  Weekly digest", and nothing read it — every alert re-sent an
+                  unchanged listing each evening whatever it said (beta 10792,
+                  10795). These three options are exactly what the dispatcher
+                  implements (lib/alerts/notify-mode.ts). */}
+              <label htmlFor="alert-notify-mode" style={labelStyle}>Notify me</label>
+              <select id="alert-notify-mode" value={form.notify_mode} onChange={(e) => setForm({ ...form, notify_mode: notifyModeOr(e.target.value) })} style={inputStyle}>
+                {NOTIFY_MODES.map((m) => (
+                  <option key={m} value={m}>{NOTIFY_MODE_LABEL[m]}</option>
+                ))}
               </select>
+              <div style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 4 }}>
+                {NOTIFY_MODE_HINT[form.notify_mode]}
+              </div>
             </div>
           </div>
 
@@ -582,7 +601,7 @@ export default function AlertsClient() {
                     <div>
                       <div style={{ fontWeight: 800, fontSize: 16 }}>{s.label}</div>
                       <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)", fontFamily: MONO, marginTop: 2 }}>
-                        {subscriptionFilterSummary(s)} · {s.channels.join(", ")} · {s.cadence}
+                        {subscriptionFilterSummary(s)} · {s.channels.join(", ")} · {NOTIFY_MODE_SHORT[notifyModeOr(s.notify_mode)]}
                         {s.preview_count != null && ` · ${s.preview_count} match now`}
                       </div>
                     </div>

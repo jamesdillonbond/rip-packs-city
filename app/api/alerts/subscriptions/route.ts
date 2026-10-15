@@ -3,7 +3,7 @@
 // Session-authed CRUD for channel-agnostic deal-feed subscriptions
 // (alert_subscriptions). owner_key is ALWAYS the session user id — never a
 // body field. The subscription body carries only filter prefs + delivery
-// channels + cadence.
+// channels + notify_mode (the repeat policy the dispatcher honours).
 //
 //   GET    -> this user's subscriptions, each enriched with a live
 //             build_deal_alerts_for_subscription() preview count.
@@ -23,8 +23,13 @@ import {
   CHANNELS,
   type Channel,
 } from "@/lib/alerts";
+import { notifyModeOr } from "@/lib/alerts/notify-mode";
 
-const CADENCES = ["instant", "daily", "weekly"] as const;
+// ⚠ `cadence` (instant / daily / weekly) is NOT read by the dispatcher and is no
+// longer accepted from the body: "Daily digest" and "Weekly digest" were never
+// built, and every subscription behaved identically whatever it said. Rows keep
+// the column's default. `notify_mode` is the setting that changes delivery
+// (lib/alerts/notify-mode.ts, migration 20261015002500).
 
 // Coerce a raw body into a validated, owner-scoped column set. Returns null +
 // an error string on invalid input. Never reads owner_key from the body.
@@ -34,7 +39,7 @@ function sanitize(body: any): { row: Record<string, unknown> } | { error: string
     : ["email"];
   if (channels.length === 0) return { error: "At least one delivery channel is required" };
 
-  const cadence = CADENCES.includes(body.cadence) ? body.cadence : "instant";
+  const notify_mode = notifyModeOr(body.notify_mode);
 
   const numOrNull = (v: unknown, { min = 0 }: { min?: number } = {}): number | null => {
     if (v === null || v === undefined || v === "") return null;
@@ -65,7 +70,7 @@ function sanitize(body: any): { row: Record<string, unknown> } | { error: string
   const row: Record<string, unknown> = {
     label: typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 120) : "My deal alert",
     channels,
-    cadence,
+    notify_mode,
     collection_ids: uuidArrOrNull(body.collection_ids), // null = all active
     min_discount: minDiscount === null ? 25 : minDiscount,
     max_price: numOrNull(body.max_price),
