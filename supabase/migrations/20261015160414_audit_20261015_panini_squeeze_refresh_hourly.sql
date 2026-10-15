@@ -1,0 +1,23 @@
+-- 2026-10-15 (Claude Code cloud, 9:04 AM PT). rpc-refresh-panini-squeeze: 18,48 * * * * -> 18 * * * *.
+--
+-- RE-DERIVING A FILED DECISION (20261003015903, Trevor: "do what you think is best"). That migration
+-- kept the 30-minute cadence and added an input-change gate BECAUSE every input then landed on the
+-- residential box's 4-hourly walks, so most ticks skipped at ~1k buffers. The premise has inverted:
+-- since 10-03 the box runs every 2 h for up to ~110 min (plus collector walks and the Panini FMV
+-- engine's re-walk), and all four input timestamps (serials.captured_at, editions.updated_at /
+-- last_seen_at, panini_fmv_snapshots.computed_at) move together throughout a run. Measured 10-14
+-- 9 AM -> 10-15 9 AM PT: 48 ticks, 36 rebuilds, 12 skips; rebuilds 21-46 s and ~63k blocks each
+-- (pg_stat_statements 22 h delta: 2.77M blocks read over 44 calls). The gate still works; it just
+-- rarely sees an idle input any more.
+--
+-- WHY HOURLY IS SAFE: the board stamps the MV's real refresh time (lib/insights/mv-freshness.ts), so
+-- a later refresh reads as later, never as now; Panini prices arrive with a ~53 h sale lag and asks
+-- on the box's 2-hourly walks, so 30 extra minutes of MV age is inside the data's own staleness;
+-- pipeline_cadence_watchlist panini-squeeze-mv allows 100 min silent / 200 min without success; the
+-- gate and the 6 h forced refresh are unchanged. Saves ~18 rebuilds/day while the box is active.
+--
+-- cron.schedule with the SAME jobname keeps jobid 353 and its command.
+-- REVERT: SELECT cron.schedule('rpc-refresh-panini-squeeze', '18,48 * * * *',
+--   $$SET statement_timeout = '300s'; SELECT public.refresh_panini_squeeze();$$);
+SELECT cron.schedule('rpc-refresh-panini-squeeze', '18 * * * *',
+  $$SET statement_timeout = '300s'; SELECT public.refresh_panini_squeeze();$$);
