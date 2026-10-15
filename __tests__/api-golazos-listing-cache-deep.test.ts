@@ -255,6 +255,25 @@ describe("golazos-listing-cache — mapping + write contract", () => {
 })
 
 describe("golazos-listing-cache — degradation + fatal honesty", () => {
+  // 2026-10-15: Flowty said it will switch these endpoints off. An off switch that
+  // answers 200 [] must read as an outage — never "the market has no listings" —
+  // and must not delete the cached rows. Mutation-checked: dropping `!emptyBook`
+  // from okFinal reds this case.
+  it("an EMPTY book (200, no items on any page) fails the run and deletes nothing", async () => {
+    fetchMock = installFetchMock([proxyStub({ asc: [], desc: [] })])
+    const spy = install({
+      "rpc:fmv_from_cached_listings": { data: null, error: null },
+      "rpc:update_badge_low_ask_from_cached_listings": { data: 0, error: null },
+    })
+    await GET(req("GET"))
+    await runDeferred()
+    expect(spy.writes.cached_listings ?? []).toHaveLength(0)
+    expect(spy.deletes).toHaveLength(0)
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_ok: false, p_rows_found: 0, p_rows_written: 0 })
+    expect(String(log?.p_error)).toContain("empty book")
+  })
+
   it("a full Flowty outage writes nothing, PRESERVES the prior cache (no purge), and logs the run as FAILED — not ok", async () => {
     fetchMock = installFetchMock([proxyStub({}, { allFail: true })])
     const spy = install({

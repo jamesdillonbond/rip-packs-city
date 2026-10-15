@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { EMPTY_BOOK_ERROR, isEmptyBook } from "@/lib/pipeline/empty-book"
 
 // ── NFL All Day listing cache ─────────────────────────────────────────────────
 //
@@ -478,12 +479,16 @@ async function runListingCache() {
     // A real fatal error keeps precedence over the degradation message.
     const degradedSweep = stats.pageErrors > 0
     // A failed upsert batch is a failed WRITE: those listings were not refreshed.
-    const okFinal = stats.ok && !degradedSweep && stats.upsertErrors === 0
+    // An empty WHOLE sweep is an upstream outage, not an empty market (lib/pipeline/empty-book.ts).
+    const emptyBook = !degradedSweep && isEmptyBook(stats.totalFetched)
+    const okFinal = stats.ok && !degradedSweep && !emptyBook && stats.upsertErrors === 0
     const errorFinal =
       stats.errorMsg ??
       (degradedSweep
         ? `sweep incomplete: ${stats.pageErrors} page fetch error(s), last ${stats.sweepError ?? "unknown"} — stale purge skipped, cache may hold delisted rows`
-        : stats.upsertErrors > 0
+        : emptyBook
+          ? EMPTY_BOOK_ERROR
+          : stats.upsertErrors > 0
           ? `${stats.upsertErrors} listing row(s) failed to upsert — stale purge skipped`
           : null)
     try {

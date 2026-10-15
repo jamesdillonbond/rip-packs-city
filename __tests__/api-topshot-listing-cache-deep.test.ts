@@ -278,6 +278,26 @@ describe("topshot-listing-cache — row building + skip accounting", () => {
 })
 
 describe("topshot-listing-cache — degradation + fatal paths", () => {
+  // 2026-10-15: Flowty said it will switch these endpoints off. An off switch that
+  // answers 200 [] used to mark the sweep COMPLETE and log ok — "the market has no
+  // listings". It is now an outage, and nothing is deleted. Mutation-checked:
+  // dropping `!emptyBook` from okFinal reds this case.
+  it("an EMPTY book (200, no items on the first page) fails the run and deletes nothing", async () => {
+    fetchMock = installFetchMock([
+      flowtyStub([{ nfts: [] }]),
+      jsonRoute("/api/fmv-recalc", { ok: true }),
+    ])
+    const spy = install({
+      cached_listings: [{ count: 7, error: null } as never], // head count only
+    })
+    await GET(req())
+    await runDeferred()
+    expect(spy.writes.cached_listings ?? []).toHaveLength(0)
+    const log = terminalLog(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: false, p_rows_found: 0, p_rows_written: 0 })
+    expect(String(log?.p_error)).toContain("empty book")
+  })
+
   it("a Flowty 500 yields zero rows, SKIPS the stale purge (cache never wiped), tolerates a failed fmv-recalc, and logs the run as FAILED — not ok", async () => {
     fetchMock = installFetchMock([
       flowtyStub([{ status: 500 }]),

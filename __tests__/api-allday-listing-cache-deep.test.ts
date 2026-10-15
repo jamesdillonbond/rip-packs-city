@@ -451,10 +451,28 @@ describe("allday-listing-cache — auth + after() deferral", () => {
     expect(spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")).toHaveLength(0)
 
     for (const cb of state.afterCbs.splice(0)) await cb()
+    // RE-PINNED 2026-10-15: this stub answers an EMPTY book, which used to log
+    // p_ok: true. A sweep that read nothing is now an upstream outage
+    // (lib/pipeline/empty-book.ts); the deferral this case is about is unchanged.
     expect(terminalLog(spy)).toMatchObject({
       p_pipeline: "allday-listing-cache",
-      p_ok: true,
+      p_ok: false,
       p_rows_found: 0,
     })
+  })
+
+  // 2026-10-15: Flowty said it will switch these endpoints off. An off switch that
+  // answers 200 [] must read as an outage — never "the market has no listings" —
+  // and must not delete the cached rows. Mutation-checked: dropping `!emptyBook`
+  // from okFinal reds this case.
+  it("an EMPTY book (200, no items on any page) fails the run and deletes nothing", async () => {
+    fetchMock = installFetchMock([proxyStub({ asc: { 0: [] }, desc: { 0: [] } })])
+    const spy = install({})
+    await GET(req("GET"))
+    for (const cb of state.afterCbs.splice(0)) await cb()
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_ok: false, p_rows_found: 0, p_rows_written: 0 })
+    expect(String(log?.p_error)).toContain("empty book")
+    expect(spy.writes?.cached_listings ?? []).toHaveLength(0)
   })
 })
