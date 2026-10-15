@@ -39,7 +39,7 @@ failure it documents.
 
 ## 2026-10-14 — 1 filing
 
-- [**🟡 Daytime monitor candidate — Panini edition market-cap tile hits its 8 s read timeout (status NOT re-verified by the 10-15 drain; open until dispositioned)**](2026-10-14T1505Z-daytime-monitor-panini-edition-market-cap-tile-8s-read-timeout.md) — *(read-only daytime pass 10-14 ~8:05 AM PT)*
+- [**✅ DISPOSITIONED 10-15 (measured: the tile reads are 5.8 ms / 48 ms; the timeouts coincide with other routes' timeouts and a Supabase 502 — estate stalls, no change) 🟡 Daytime monitor candidate — Panini edition market-cap tile hits its 8 s read timeout**](2026-10-14T1505Z-daytime-monitor-panini-edition-market-cap-tile-8s-read-timeout.md) — *(read-only daytime pass 10-14 ~8:05 AM PT)*
 
 ## 2026-10-13 — 1 filing
 

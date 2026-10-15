@@ -12,3 +12,13 @@ One new, unlogged candidate:
 - **Suggested action (night pass):** `EXPLAIN (ANALYZE, BUFFERS)` the market-cap tile read path for a panini_blockchain edition (`get_market_cap_entity` / `refresh_market_cap_current` grain for edition, and `get_topshot_issuer_held_split_edition` for the sibling issuer-split timeout) against a sample edition above; check whether the per-edition read scans the full 28,946-row panini_blockchain edition set (a predicate without a supporting index on the largest collection is the likely cause). If confirmed, a partial/covering index on the edition lookup predicate, verified with an EXPLAIN that the read no longer sweeps the collection. Sensing only — no change shipped here.
 
 Push path unavailable this run (cloud session has no authorized repo source; mount `.git` is never touched). **Inbox written to mount, push unavailable** — night pass picks it up locally.
+
+---
+
+## ✅ DISPOSITIONED 2026-10-15 ~9:00 AM PT (Claude Code cloud) — not a slow read; no change
+
+Measured the exact reads the tile makes (EXPLAIN ANALYZE BUFFERS, through the same functions):
+- `get_market_cap_entity('edition','panini_blockchain','packcard-1584_299999_7632500_365')` — **5.8 ms, 1,044 buffers** (2 read). It does not sweep the 28,946-edition collection.
+- `get_topshot_issuer_held_split_edition('129:4528')` (the sibling) — **47.9 ms, 4,795 buffers**.
+
+Both are three orders of magnitude inside the 8 s budget. The timeouts cluster with OTHER routes' timeouts at the same instants — the last Panini tile error (10-14 20:24:21 UTC) sits two seconds from a `/pack/dist/[distId]` `allday_corrected_ev` 5 s timeout (20:24:23 UTC), and a 10-15 08:18 UTC tile error carried a Cloudflare `502: Bad gateway` page from Supabase — i.e. estate/gateway stalls, which the tile already degrades through ("couldn't load", page still renders). The filing's "not a spell" read was taken at a calm tick, not at the error instants. No index or code change is warranted; re-open only if a tile timeout appears with NO concurrent timeout on another route.
