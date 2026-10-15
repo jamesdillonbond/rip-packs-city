@@ -190,7 +190,10 @@ describe("collectionPageJsonLd", () => {
     expect(ld["@context"]).toBe("https://schema.org")
     const [page, crumb] = ld["@graph"]
     expect(page["@type"]).toBe("CollectionPage")
-    expect(page["@id"]).toBe("https://www.rippackscity.com/ufc")
+    // 2026-10-14: the public front door, not the auth-gated root that
+    // canonicalises to it (live audit: every collection page named /ufc).
+    expect(page["@id"]).toBe("https://www.rippackscity.com/ufc/overview")
+    expect(crumb.itemListElement[1].item).toBe("https://www.rippackscity.com/ufc/overview")
     expect(page.name).toBe("UFC Strike on Rip Packs City")
     // description sourced from COLLECTION_LAYOUT_META for known ids.
     expect(page.description).toContain("UFC Strike")

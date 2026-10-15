@@ -282,7 +282,9 @@ const PAGE_META: Record<string, PageMeta> = {
   overview: {
     title: '{label} Value — FMV, Floor Prices & Market Pulse',
     description:
-      'What {label} moments are worth: live FMV, floor prices, top sales, and the daily market pulse on Flow — for any moment or your whole account.',
+      // 2026-10-14: "…market pulse on Flow" removed — this template also served
+      // Candy MLB (Solana) and Panini; the chain lives in each collection's own copy.
+      'What {label} moments are worth: live FMV, floor prices, top sales, and the daily market pulse — for any moment or your whole account.',
   },
   collection: {
     title: 'Wallet Analytics — Track Your {label} Collection Value',
@@ -310,9 +312,14 @@ const PAGE_META: Record<string, PageMeta> = {
       'Set completion progress, bottleneck moments, and the cheapest path to finishing any {label} set across Flow blockchain collections.',
   },
   analytics: {
-    title: 'Portfolio Analytics — {label} Wallet Breakdown',
+    // 2026-10-14: was "Portfolio Analytics — Wallet Breakdown … acquisition
+    // origin, liquid vs locked FMV, portfolio clarity score": none of which the
+    // tab renders. Its sections (CollectionAnalyticsClient) are MARKET analytics:
+    // marketplace breakdown, volume / average price / daily sales by tier, top
+    // sales, hottest editions, top buyers and sellers (30d).
+    title: 'Market Analytics — {label} Sales, Volume & Top Buyers',
     description:
-      'Deep-dive wallet analytics across Top Shot, All Day, Pinnacle, Golazos, and UFC: acquisition origin, tier and series breakdown, liquid vs locked FMV, and portfolio clarity score for {label}.',
+      '{label} market analytics: marketplace breakdown, volume, average price and daily sales by tier, top sales, the hottest editions, and the top buyers and sellers of the last 30 days.',
   },
   market: {
     title: 'Market Intelligence — {label} Edition Lookup & Leaderboards',
@@ -376,9 +383,12 @@ const PAGE_META_OVERRIDES: Record<string, PageMeta> = {
       'Disney Pinnacle set completion: which pins you hold in each set, the ones you are missing, and what the rest cost at today\'s asks.',
   },
   [`analytics:${PINNACLE_ID}`]: {
-    title: 'Portfolio Analytics — {label} Wallet Breakdown',
+    // 2026-10-14: was "wallet analytics … acquisition history": the tab is the
+    // shared MARKET analytics view (no top buyers/sellers on Pinnacle — its
+    // sales live in pinnacle_sales, which that board does not read).
+    title: 'Market Analytics — {label} Sales, Volume & Top Sales',
     description:
-      'Disney Pinnacle wallet analytics: pin value by variant, series, franchise and character, acquisition history, and how much of the collection has a reliable price.',
+      'Disney Pinnacle market analytics: marketplace breakdown, volume, average price and daily sales by variant, top sales, and the hottest pins.',
   },
   // Panini (2026-09-28): its tabs inherited the Flow copy ("across Top Shot, All Day…",
   // "Flow wallet") — false on a Panini page. Stated from what each Panini arm reads.
@@ -406,6 +416,44 @@ const PAGE_META_OVERRIDES: Record<string, PageMeta> = {
     title: 'Collection — {label} Cards by Panini Username',
     description:
       'Look up a Panini username: the cards on its public Panini profile (for linked collectors), or the cards RPC has read under it across the Panini products it walks, with FMV where RPC prices the card.',
+  },
+  // Candy MLB (2026-10-14): all six of its public tabs fell through to the Flow
+  // templates ("Analyze any Flow blockchain wallet across Top Shot, All Day…") on
+  // a Solana collection. Stated from what each Candy arm renders.
+  [`overview:candy-mlb`]: {
+    title: '{label} Value — FMV, Floor Prices & Market Pulse',
+    description:
+      'What Candy MLB cards are worth: FMV from real secondary sales, floor prices, top sales and the market pulse on Solana — for any card or your whole wallet.',
+  },
+  [`collection:candy-mlb`]: {
+    title: 'Wallet Lookup — Value a {label} Collection',
+    description:
+      'Look up any Solana wallet or .sol name holding Candy MLB: every card it holds, valued at FMV from real secondary sales.',
+  },
+  [`market:candy-mlb`]: {
+    title: 'Market — {label} Listings vs FMV',
+    description:
+      'Candy MLB listings on Magic Eden and OpenSea beside FMV, with how recently each listing was seen, so a stale ask is not mistaken for a live one.',
+  },
+  [`packs:candy-mlb`]: {
+    title: 'Pack Market — {label} Pack Floor, Supply & Pull Value',
+    description:
+      'The Candy MLB sealed pack on Magic Eden: confirmed floor, asks, recent pack sales, collector-held and treasury supply, and pull value — typical pull first, chase-inclusive mean second.',
+  },
+  [`sets:candy-mlb`]: {
+    title: 'Set Progress — Track Your {label} Checklist',
+    description:
+      'Candy MLB checklist progress for any Solana wallet: which cards you hold, which you are missing, and the players on the published checklist.',
+  },
+  [`overview:${PANINI_ID}`]: {
+    title: '{label} Value — Card FMV, Floor Asks & Market Pulse',
+    description:
+      "What Panini Blockchain cards are worth across soccer, NBA, NFL, WNBA, MLB and NASCAR: FMV, floor asks on Panini's marketplace, top sales and the market pulse — a floor, not a census.",
+  },
+  [`market:${PANINI_ID}`]: {
+    title: 'Market Intelligence — {label} Card Lookup & Leaderboards',
+    description:
+      "Card-level market intelligence for Panini Blockchain: FMV, asks on Panini's marketplace, recent sales, and liquidity and discount leaderboards across every product RPC walks.",
   },
   [`market:${PINNACLE_ID}`]: {
     title: 'Market Intelligence — {label} Pin Lookup & Leaderboards',
@@ -535,6 +583,13 @@ export function pageMetadata(page: string, collectionLabel: string, collectionId
   const title = fill(meta.title)
   const description = fill(meta.description)
   const canonical = `${BASE_URL}/${collectionId}/${page}`
+  // 2026-10-14 (live audit): every tab page — all seven /overview pages, sitemap
+  // priority 0.9 — had NO og:image and NO twitter:image. Next merges metadata
+  // SHALLOWLY, so this openGraph object replaced the layout's (which carries the
+  // card) instead of extending it. The plain collection card, deliberately
+  // without `&page=`: its per-page taglines ("LIVE MARKET OVERVIEW",
+  // "REAL-TIME DEALS") would be false on a closed market.
+  const ogImage = `${BASE_URL}/api/og/collection?id=${encodeURIComponent(collectionId)}`
   return {
     title,
     description,
@@ -545,11 +600,13 @@ export function pageMetadata(page: string, collectionLabel: string, collectionId
       title: `${title} | Rip Packs City`,
       description,
       url: canonical,
+      images: [{ url: ogImage, width: 1200, height: 630, alt: collectionLabel }],
     },
     twitter: {
       ...TWITTER_INHERITED,
       title,
       description,
+      images: [ogImage],
     },
   }
 }
@@ -777,7 +834,11 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
 // minimal BreadcrumbList so Google can render the path-trail rich result.
 export function collectionPageJsonLd(collectionId: string): object {
   const label = ownMeta(COLLECTION_LABELS, collectionId) ?? collectionId
-  const url = `${BASE_URL}/${collectionId}`
+  // 2026-10-14 (live audit): was `/${collectionId}` — a URL that is auth-gated
+  // for anon and canonicalises to /overview, so on every collection-scoped page
+  // the CollectionPage @id/url and the breadcrumb's collection item named a
+  // non-canonical, non-sitemap URL. The collection's public front door is /overview.
+  const url = `${BASE_URL}/${collectionId}/overview`
   return {
     '@context': 'https://schema.org',
     '@graph': [

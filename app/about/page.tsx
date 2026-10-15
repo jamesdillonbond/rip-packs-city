@@ -16,6 +16,9 @@ export function generateMetadata(): Metadata {
       title: "About — Rip Packs City",
       description:
         "Born in Rip City. Built for every Flow blockchain digital collectible community — NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike.",
+      // 2026-10-14 (live audit): /about had twitter:image (inherited) but NO
+      // og:image — this openGraph object replaces the root's, images included.
+      images: [{ url: "https://www.rippackscity.com/api/og/default", width: 1200, height: 630, alt: "Rip Packs City" }],
     },
   };
 }

@@ -26,8 +26,13 @@ describe("pageMetadata — Disney Pinnacle copy makes no claim the page cannot b
     expect(String(m.description)).toMatch(/no per-tier pull odds are published/)
   })
   it("CONTROL: Top Shot keeps the shared template (the override is Pinnacle-only)", () => {
+    // Re-pinned 2026-10-14: the shared analytics template was rewritten to
+    // describe the market view the tab renders. The control is unchanged in
+    // kind — Top Shot keeps the shared copy (top buyers/sellers), Pinnacle does not.
     const m = pageMetadata("analytics", "NBA Top Shot", "nba-top-shot")
-    expect(String(m.description)).toMatch(/liquid vs locked FMV/)
+    expect(String(m.description)).toMatch(/top buyers and sellers/)
+    const p = pageMetadata("analytics", "Disney Pinnacle", "disney-pinnacle")
+    expect(String(p.description)).not.toMatch(/top buyers and sellers/)
   })
 })
 

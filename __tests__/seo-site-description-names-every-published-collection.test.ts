@@ -62,3 +62,35 @@ describe("Chance Hit pack pages link the Premium Chance Hit explainer (2026-10-1
     expect(chanceHitExplainerHref("nfl-all-day", "Some Chance Hit Pack")).toBeNull()
   })
 })
+
+import { pageMetadata, PUBLIC_TAB_PAGES } from "@/lib/seo"
+
+describe("collection tab metadata (live audit, 2026-10-14)", () => {
+  const published = COLLECTIONS.filter((c) => c.published)
+
+  it("every public tab of every published collection carries an og:image and a twitter:image", () => {
+    for (const c of published) {
+      for (const page of (c.pages ?? []).filter((p) => PUBLIC_TAB_PAGES.includes(p))) {
+        const m = pageMetadata(page, c.label, c.id) as any
+        expect(m.openGraph?.images?.length, `${c.id}/${page} og:image`).toBeGreaterThan(0)
+        expect(m.twitter?.images?.length, `${c.id}/${page} twitter:image`).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it("a non-Flow collection's tab copy never names Flow or the Flow collections", () => {
+    for (const c of published.filter((x) => x.dbChain !== "flow")) {
+      for (const page of (c.pages ?? []).filter((p) => PUBLIC_TAB_PAGES.includes(p))) {
+        const m = pageMetadata(page, c.label, c.id) as any
+        const text = `${m.title} ${m.description}`
+        expect(text, `${c.id}/${page}`).not.toMatch(/\bFlow\b|Top Shot|All Day|Golazos|UFC/)
+      }
+    }
+  })
+
+  it("the analytics tab is described as the MARKET analytics it renders, not a wallet breakdown", () => {
+    const m = pageMetadata("analytics", "NBA Top Shot", "nba-top-shot") as any
+    expect(`${m.title} ${m.description}`).not.toMatch(/portfolio clarity|liquid vs locked|acquisition origin/i)
+    expect(String(m.description)).toMatch(/top sales/i)
+  })
+})
