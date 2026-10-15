@@ -74,7 +74,8 @@ const PINS = [
     // NULL + status until provable, an unkeyable parallel → unknown.
     fn: "get_topshot_issuer_held_split_edition",
     test: "supabase/tests/get_topshot_issuer_held_split_edition.sql",
-    migration: "supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql",
+    // 2026-10-15: the parallel name -> subedition_id map is looked up per row (lateral), not built per call.
+    migration: "supabase/migrations/20261015225311_audit_20261015_issuer_split_maps_parallels_per_row_not_per_call.sql",
   },
   {
     // Added 2026-10-03. Atlas DistributionService walk for Top Shot pack supply: a

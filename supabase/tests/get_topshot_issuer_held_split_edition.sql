@@ -11,7 +11,7 @@
 --     unknown; more in packs than issuer-held is "contradicted", not negative.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql);
+-- (supabase/migrations/20261015225311_audit_20261015_issuer_split_maps_parallels_per_row_not_per_call.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if a copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -49,7 +49,7 @@ INSERT INTO public.topshot_atlas_dist_editions VALUES
 -- >>> BEGIN verbatim get_topshot_issuer_held_split_edition (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_topshot_issuer_held_split_edition(p_external_id text)
  RETURNS TABLE(edition_external_id text, hidden bigint, in_packs bigint, reserve bigint,
-               drops_with_packs integer, split_status text, as_of timestamptz)
+               drops_with_packs integer, split_status text, as_of timestamp with time zone)
  LANGUAGE sql
  STABLE
  SECURITY DEFINER
@@ -77,18 +77,22 @@ AS $function$
       min(d.summary_fetched_at) FILTER (WHERE d.remaining_total > 0)                           AS as_of
     FROM public.topshot_atlas_dists d
   ),
-  submap AS (
-    SELECT DISTINCT ON (e.subedition_name) e.subedition_name AS name, e.subedition_id AS id
-      FROM public.editions e, ts
-     WHERE e.collection_id = ts.id AND e.subedition_id IS NOT NULL AND e.subedition_name IS NOT NULL
-     ORDER BY e.subedition_name, e.subedition_id
-  ),
   rows_ AS (
     SELECT x.dist_id, x.remaining_count, x.parallel, sm.id AS sub_id
       FROM b
       JOIN public.topshot_atlas_dist_editions x ON x.set_id = b.set_id AND x.play_id = b.play_id
       JOIN public.topshot_atlas_dists d ON d.dist_id = x.dist_id AND d.editions_pass = x.pass
-      LEFT JOIN submap sm ON sm.name = x.parallel
+      -- 2026-10-15: the parallel name -> subedition_id map is looked up per row
+      -- (lowest id for the name, which is what the old DISTINCT ON map held)
+      -- instead of being built from every Top Shot edition on every call.
+      LEFT JOIN LATERAL (
+        SELECT e.subedition_id AS id
+          FROM public.editions e, ts
+         WHERE e.collection_id = ts.id AND e.subedition_name = x.parallel
+           AND e.subedition_id IS NOT NULL
+         ORDER BY e.subedition_id
+         LIMIT 1
+      ) sm ON true
      WHERE x.remaining_count > 0
   ),
   -- Only this printing's rows count; a packed parallel of the same play that cannot
