@@ -52,6 +52,7 @@ Moved to pay for the Disney Pinnacle grain rule in CLAUDE.md; CLAUDE.md keeps a 
 
 - `proxy.ts` is the correct Next.js 16 convention (renamed from middleware.ts). Supabase client typed `any` in API routes.
 - `generateMetadata` cannot be exported from a client component — it belongs in the server `layout.tsx`. ⚠ `openGraph`/`twitter` merge SHALLOWLY: claude-md-condensed-originals.md.
+  - ⚠ **Instance 2026-10-14 — a child's `openGraph` without `images` DELETES the parent's image.** `lib/seo.ts` `pageMetadata` (every collection tab, all seven `/overview` pages at sitemap priority 0.9) set `openGraph`/`twitter` with no `images`, replacing the collection layout's objects that carried the card: zero `og:image` / `twitter:image` on those pages, found only by a live audit. Same on `/about`. Any metadata that sets `openGraph` must set `images` itself; pinned by `__tests__/seo-site-description-names-every-published-collection.test.ts` (every published tab has both).
 - `useSearchParams` requires a Suspense wrapper.
 
 ## ⛔ A SERVER component cannot pass a FUNCTION prop to a CLIENT component — and only a real render says so (2026-09-29, PT)

@@ -183,3 +183,13 @@ curl -X POST 'https://www.rippackscity.com/api/wallet-backfill?force=true' \
 - Top Shot `::` edition pages may show an **Estimated value** card (schema-truth.md, end).
 - **Offers Made** card (`components/analytics/OffersHistoryCard.tsx`) on the collection analytics page's wallet section, under Sales History: open / accepted / cancelled totals + the wallet's last 25 on-chain offers, from `GET /api/wallet-offers?wallet=&collection=` (Top Shot only; any other collection answers `supported:false` and the card renders nothing; three states, a failed count is a 5xx, never 0). Sign-in-gated like the page (not in `PUBLIC_READ_APIS`).
 - Offer-capture admin walks (Bearer `INGEST_SECRET_TOKEN`, driven by `topshot-offers-history-backfill.yml`, `target` input): `/api/admin/backfill-topshot-offers` (same-tick history + `sales.offer_id` stamp, cursor `topshot_offers_history_backfill`) and `/api/admin/backfill-topshot-missing-fill-offers` (cursor `topshot_missing_fill_offers_walk`). Both insert-only, both end at block 167.4M. database.md "The Top Shot `offers` table".
+
+## Sitemap layout + adding a blog post (2026-10-14)
+
+**Sitemap** = `/sitemap.xml` (index, `app/sitemap.xml/route.ts`, lists `SITEMAP_SEGMENT_IDS` imported from `lib/sitemap-data.ts` — never a second list) → `/sitemap/<id>.xml` (`app/sitemap/[id]/route.ts`):
+0 static + insights + collection tabs + series + profiles · 1 Top Shot editions · 2 All Day / Golazos / UFC / Candy editions · 3 set / player / team · 4 packs + Pinnacle pins · **5–8 Panini editions, one uuid-range quarter each (`PANINI_SHARDS`)**. Re-derive counts; 10-14: ~70.4K URLs total.
+- ⛔ A segment over **50,000 URLs** is refused (503, crawler keeps its last copy) — Google rejects the WHOLE file. When a shard nears it, add segments; never truncate.
+- A **one-edition set** is not listed (near-duplicate of its edition page); its page stays up and linked. Sets must also resolve in `sets_summary`.
+- `<lastmod>` is the row's `updated_at` or omitted — never "now". `editions.updated_at` has touch semantics (database.md).
+
+**A new blog post touches SIX places, plus one count test**: `lib/blog/posts.ts` (the record: date, blurb, `image: …/api/og/blog/<slug>` — the post's own card from `app/api/og/blog/[slug]`), `app/blog/<slug>/page.tsx` (metadata from the record, `articleJsonLd`), `STATIC_SITEMAP_PAGES` in `lib/sitemap-data.ts`, `public/llms.txt` (Reading), `__tests__/static-pages-declare-their-canonical.test.ts`, and `e2e/smoke.spec.ts`. Index + RSS derive from the record. The segment-0 length test in `__tests__/sitemap-data.test.ts` counts it too.
