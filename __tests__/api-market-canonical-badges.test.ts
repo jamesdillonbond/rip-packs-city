@@ -31,7 +31,7 @@ beforeEach(() => {
 // Three All Day editions; the RPC's own `badges` is EMPTY, as it is in
 // production (it reads editions.badges).
 const alldayRows = {
-  "rpc:get_allday_market_editions": {
+  "rpc:get_allday_market_editions_v2": {
     data: [
       { external_id: "a", player_name: "A", set_name: "Rookie Debut", floor_ask: 1, fmv_usd: 2, tier: "COMMON", listed_count: 1, circulation_count: 10, badges: [], last_listed_at: "2026-10-03T00:00:00Z" },
       { external_id: "b", player_name: "B", set_name: "Base", floor_ask: 1, fmv_usd: 2, tier: "COMMON", listed_count: 1, circulation_count: 10, badges: [], last_listed_at: "2026-10-02T00:00:00Z" },
@@ -65,7 +65,7 @@ describe("GET /api/market — canonical badges (R104)", () => {
 
   it("Top Shot rows (mapped with badge_slugs: null) carry canonical titles keyed by set:play", async () => {
     install({
-      "rpc:get_topshot_sniper_deals": {
+      "rpc:get_topshot_sniper_deals_v2": {
         data: [{ moment_id: "39:1269", ask_price: 4, fmv_usd: 5, tier: "COMMON", circulation_count: 100, player_name: "Dame", set_name: "Base Set" }],
         error: null,
       },

@@ -1,7 +1,7 @@
 // app/api/market/filter-options/route.ts
 //
-// The full option lists behind the Market page's Set / Series / Team dropdowns
-// and the Player suggestions. The dropdowns used to be built from the 50 listings
+// The full option lists behind the Market page's Set / Series / Team / Badge
+// dropdowns and the Player suggestions. The dropdowns used to be built from the 50 listings
 // on screen, so a team, set or series with no listing on the current page
 // (Portland Fire, 2026-10-14) could not be picked.
 //
@@ -9,7 +9,9 @@
 // the database (Top Shot, All Day: get_topshot_sniper_deals /
 // get_allday_market_editions match btrim(set_name) IN, series::text = ANY,
 // team_name ILIKE, player_name ILIKE). Every value get_market_filter_options
-// returns is therefore matchable there. Other collections filter their own
+// returns is therefore matchable there. Badges come from
+// get_market_badge_options: every title in market_edition_badges' latest run,
+// the table the v2 RPCs filter `p_badges` against. Other collections filter their own
 // boards, so a catalog list could offer a value that matches nothing; they get
 // `{ catalog: false }` and the page uses the facets /api/market returns.
 //
@@ -29,6 +31,8 @@ const CATALOG_FILTERED = new Set(
 
 const KEYS = ["sets", "series", "teams", "players"] as const
 
+type Rpc = { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> }
+
 export async function GET(req: NextRequest) {
   const collectionId = req.nextUrl.searchParams.get("collectionId") ?? ""
   if (!getCollectionByUuid(collectionId)) {
@@ -39,13 +43,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ catalog: false }, { headers: cache })
   }
 
-  const { data, error } = await boundedRead(
-    (supabaseAdmin as unknown as { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> }).rpc("get_market_filter_options", { p_collection_id: collectionId }),
-    "api/market/filter-options/get_market_filter_options",
-  )
-  if (error) {
-    console.error("[api/market/filter-options]", error.message)
-    return apiErrorResponse(error, "api/market/filter-options")
+  const db = supabaseAdmin as unknown as Rpc
+  const [{ data, error }, badgeRead] = await Promise.all([
+    boundedRead(db.rpc("get_market_filter_options", { p_collection_id: collectionId }), "api/market/filter-options/get_market_filter_options"),
+    boundedRead(db.rpc("get_market_badge_options", { p_collection_id: collectionId }), "api/market/filter-options/get_market_badge_options"),
+  ])
+  const failed = error ?? badgeRead.error
+  if (failed) {
+    console.error("[api/market/filter-options]", failed.message)
+    return apiErrorResponse(failed, "api/market/filter-options")
+  }
+  if (!Array.isArray(badgeRead.data)) {
+    return apiErrorResponse(new Error("unexpected get_market_badge_options payload"), "api/market/filter-options")
   }
   // The function returns a jsonb OBJECT of four arrays; anything else is a
   // contract break, not "no options".
@@ -56,5 +65,6 @@ export async function GET(req: NextRequest) {
 
   const out: Record<string, string[]> = {}
   for (const k of KEYS) out[k] = (obj[k] as unknown[]).filter((v): v is string => typeof v === "string" && v !== "")
+  out.badges = (badgeRead.data as unknown[]).filter((v): v is string => typeof v === "string" && v !== "")
   return NextResponse.json({ catalog: true, ...out }, { headers: cache })
 }

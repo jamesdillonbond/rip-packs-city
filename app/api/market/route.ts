@@ -402,8 +402,9 @@ class MarketModernReadFailed extends Error {}
 
 async function fetchAllDayMarketEditions(
   filters: {
-    tier: string; team: string; maxPrice: number; sortBy: string; limit: number
+    tier: string; maxPrice: number; sortBy: string; limit: number
     sets: string[]; seriesList: string[]; player: string; minPrice: number
+    teams: string[]; badges: string[]; hasBadges: boolean
   },
 ): Promise<any[]> {
   let rpcSort: string
@@ -418,18 +419,18 @@ async function fetchAllDayMarketEditions(
   else if (filters.sortBy === "discount_asc") rpcSort = "discount_asc"
   else rpcSort = "listed_desc"
 
-  const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_allday_market_editions", {
+  const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_allday_market_editions_v2", {
     p_min_discount: 0,
     p_max_price: filters.maxPrice > 0 ? filters.maxPrice : 0,
     p_rarity: filters.tier && filters.tier !== "all" ? filters.tier : "all",
-    p_team: filters.team && filters.team !== "all" ? filters.team : "all",
+    p_team: "all",
     p_sort_by: rpcSort,
     p_limit: Math.max(filters.limit, 500),
     ...rpcBrowseFilterArgs(filters),
-  }), "api/market/get_allday_market_editions")
+  }), "api/market/get_allday_market_editions_v2")
   if (error) {
     console.log("[/api/market] allday editions fetch err:", error.message)
-    throw new MarketModernReadFailed(`get_allday_market_editions: ${error.message}`)
+    throw new MarketModernReadFailed(`get_allday_market_editions_v2: ${error.message}`)
   }
   return (data ?? []).map((r: any) => ({
     id: `allday-ed:${r.external_id ?? r.edition_id}`,
@@ -464,15 +465,24 @@ async function fetchAllDayMarketEditions(
 }
 
 /** The browse filters as RPC arguments, for the two arms served by an RPC
- *  (`get_topshot_sniper_deals`, `get_allday_market_editions`, migration
- *  `audit_20260923_market_rpcs_take_the_browse_filters`). The RPC applies them
+ *  (`get_topshot_sniper_deals_v2`, `get_allday_market_editions_v2`, migrations
+ *  `audit_20260923_market_rpcs_take_the_browse_filters` and
+ *  `audit_20261014_market_rpcs_v2_multi_team_and_badges`). The RPC applies them
  *  BEFORE its LIMIT, which is the only place they can be honest (register #129).
  *
  * ⚠ A key is sent ONLY when its filter is set, so an unfiltered request makes
  * exactly the call it always made — nothing new can fail on the default path.
- * Sets are sent trimmed; the RPC compares them to a trimmed `set_name`. */
+ * Sets are sent trimmed; the RPC compares them to a trimmed `set_name`.
+ *
+ * Teams (2026-10-14): ALL selected teams go as `p_teams` — the v1 RPCs took one
+ * `p_team`, so a 2-team pick filtered by the first only. Badges: `p_badges` /
+ * `p_has_badges` filter against market_edition_badges (the canonical rule,
+ * refreshed hourly) before the LIMIT; they used to run only in memory over the
+ * ≤500-row window, so a badge carried outside it answered "no listings". The
+ * route still re-checks badges live on the rows it gets back. */
 function rpcBrowseFilterArgs(f: {
   sets: string[]; seriesList: string[]; player: string; minPrice: number
+  teams: string[]; badges: string[]; hasBadges: boolean
 }): Record<string, unknown> {
   const args: Record<string, unknown> = {}
   const sets = f.sets.map((x) => x.trim()).filter(Boolean)
@@ -480,6 +490,10 @@ function rpcBrowseFilterArgs(f: {
   if (f.seriesList.length > 0) args.p_series = f.seriesList
   if (f.player) args.p_player = f.player
   if (f.minPrice > 0) args.p_min_price = f.minPrice
+  const teams = f.teams.map((x) => x.trim()).filter(Boolean)
+  if (teams.length > 0) args.p_teams = teams
+  if (f.badges.length > 0) args.p_badges = f.badges
+  else if (f.hasBadges) args.p_has_badges = true
   return args
 }
 
@@ -787,7 +801,10 @@ async function fetchPaniniMarketListings(
 async function fetchModernListings(
   collectionId: string,
   filters: {
-    tier: string; team: string; maxPrice: number; minDiscount: number; sortBy: string; limit: number
+    tier: string; maxPrice: number; minDiscount: number; sortBy: string; limit: number
+    // Top Shot / All Day only (RPC arguments); the other arms have no team or
+    // badge filter at the source.
+    teams: string[]; badges: string[]; hasBadges: boolean
     // Every modern arm honours these AT THE SOURCE (register #129): Pinnacle and
     // Candy in their PostgREST query, Top Shot and All Day as RPC parameters
     // (`rpcBrowseFilterArgs`). ⛔ Never by filtering an RPC's rows in memory —
@@ -819,15 +836,16 @@ async function fetchModernListings(
   // per-listing get_allday_market_listings feed.
   if (collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH) {
     return fetchAllDayMarketEditions({
-      tier: filters.tier, team: filters.team, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
+      tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
       sets: filters.sets, seriesList: filters.seriesList, player: filters.player, minPrice: filters.minPrice,
+      teams: filters.teams, badges: filters.badges, hasBadges: filters.hasBadges,
     })
   }
   let rpcName: string | null = null
   // TS continues to use the FMV-required sniper RPC: its data source is
   // badge_editions, one row per edition (already edition-grain), which only has
   // rows with low_ask + a matching FMV snapshot, so gating on FMV drops nothing.
-  if (collectionId === TS_COLLECTION_ID_FOR_DISPATCH) rpcName = "get_topshot_sniper_deals"
+  if (collectionId === TS_COLLECTION_ID_FOR_DISPATCH) rpcName = "get_topshot_sniper_deals_v2"
   if (!rpcName) return null
 
   // Map Market's SortKey to a value the dispatched RPC understands. The sort
@@ -851,7 +869,7 @@ async function fetchModernListings(
     p_min_discount: 0, // Market should NOT pre-filter by discount; that filter is applied later in-app
     p_max_price: filters.maxPrice > 0 ? filters.maxPrice : 0,
     p_rarity: filters.tier && filters.tier !== "all" ? filters.tier : "all",
-    p_team: filters.team && filters.team !== "all" ? filters.team : "all",
+    p_team: "all",
     p_sort_by: rpcSort,
     // Pull enough so downstream pagination has headroom. ⚠ DISCOUNT SORTS PULL
     // 1,000 (known-issues #146): the RPC ranks by RAW discount and this route
@@ -985,9 +1003,16 @@ export async function GET(req: NextRequest) {
     // collections fall through to the legacy cached_listings query below.
     let modernRows: any[] | null
     try {
-      modernRows = await fetchModernListings(collectionId, {
-        tier: tiers[0] ?? "all",
-        team: teams[0] ?? "all",
+      // Tier is a multi-select, but every arm takes ONE tier, so a 2-tier pick
+      // used to filter by the first only (as Team did until 2026-10-14). One
+      // call per selected tier, in parallel: tiers are disjoint, so the union of
+      // the per-tier windows holds every row the union's own window would.
+      const tierList = tiers.length > 1 ? tiers : [tiers[0] ?? "all"]
+      const parts = await Promise.all(tierList.map((tier) => fetchModernListings(collectionId, {
+        tier,
+        teams,
+        badges,
+        hasBadges,
         maxPrice: Number.isFinite(maxPrice) ? maxPrice : 0,
         minDiscount: Number.isFinite(minDiscount) ? minDiscount : 0,
         sortBy: sort,
@@ -1002,7 +1027,8 @@ export async function GET(req: NextRequest) {
         seriesList,
         player,
         minPrice: Number.isFinite(minPrice) ? minPrice : 0,
-      })
+      })))
+      modernRows = parts.some((p) => p === null) ? null : parts.flat() as any[]
     } catch (e) {
       if (!(e instanceof MarketModernReadFailed)) throw e
       return NextResponse.json(

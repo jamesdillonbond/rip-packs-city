@@ -9,9 +9,9 @@
 //
 // Each list = the catalog (/api/market/filter-options — Top Shot / All Day only:
 // every value the collection's editions carry, the columns their market RPCs
-// filter on) ∪ the facets of every window /api/market has fetched this session
-// ∪ the page ∪ the current selection. Badges have no catalog: the badge filter
-// runs over the fetched window, so only badges seen there can match.
+// filter on, and every badge in market_edition_badges, which their badge filter
+// reads) ∪ the facets of every window /api/market has fetched this session ∪ the
+// page ∪ the current selection.
 //
 // A failed or absent catalog leaves `catalog` null — the facets still apply, so
 // the lists degrade to what has been fetched, never to nothing.
@@ -22,7 +22,7 @@ import { collectDistinct } from '@/lib/market-format'
 import { collectBadgeOptions } from '@/lib/market/filters'
 import type { MarketFacets } from '@/lib/market/facets'
 
-type FilterCatalog = { sets: string[]; series: string[]; teams: string[]; players: string[] }
+type FilterCatalog = { sets: string[]; series: string[]; teams: string[]; players: string[]; badges: string[] }
 
 const NO_FACETS: MarketFacets = { sets: [], series: [], teams: [], players: [], badges: [] }
 
@@ -56,9 +56,9 @@ export function useMarketFilterOptions(args: {
     fetchJson<{ catalog?: boolean } & Partial<FilterCatalog>>(`/api/market/filter-options?collectionId=${encodeURIComponent(collectionUuid)}`)
       .then(({ ok, json }) => {
         if (cancelled || !ok || json?.catalog !== true) return
-        const { sets, series, teams, players } = json
-        if ([sets, series, teams, players].every(Array.isArray)) {
-          setLoaded({ uuid: collectionUuid, catalog: { sets: sets!, series: series!, teams: teams!, players: players! } })
+        const { sets, series, teams, players, badges } = json
+        if ([sets, series, teams, players, badges].every(Array.isArray)) {
+          setLoaded({ uuid: collectionUuid, catalog: { sets: sets!, series: series!, teams: teams!, players: players!, badges: badges! } })
         }
       })
     return () => { cancelled = true }
@@ -92,7 +92,7 @@ export function useMarketFilterOptions(args: {
     setOptions: mergeOptions(catalog?.sets, seen.facets.sets, collectDistinct(listings, (l) => l.setName), sets),
     seriesOptions: mergeOptions(catalog?.series, seen.facets.series, collectDistinct(listings, (l) => l.seriesName), series),
     teamOptions: mergeOptions(catalog?.teams, seen.facets.teams, collectDistinct(listings, (l) => l.teamName), teams),
-    badgeOptions: mergeOptions(seen.facets.badges, collectBadgeOptions(listings), badges).sort(),
+    badgeOptions: mergeOptions(catalog?.badges, seen.facets.badges, collectBadgeOptions(listings), badges).sort(),
     playerSuggestions: mergeOptions(catalog?.players, seen.facets.players, collectDistinct(listings, (l) => l.playerName)),
   }), [catalog, seen, listings, sets, series, teams, badges])
 }

@@ -110,7 +110,7 @@ beforeEach(() => {
   replace.mockClear()
   trackOutbound.mockClear()
   marketResponse = () => json(200, market())
-  filterOptionsResponse = () => json(200, { catalog: true, sets: [], series: [], teams: [], players: [] })
+  filterOptionsResponse = () => json(200, { catalog: true, sets: [], series: [], teams: [], players: [], badges: [] })
   readyResponse = () => json(200, { per_collection: [{ slug: "nba-top-shot", name: "Top Shot", sales_24h: 900, fmv_coverage_pct: 80 }] })
   fetchMock = vi.fn(async (input: unknown) => {
     const url = String(input)
@@ -698,7 +698,7 @@ describe("MarketClient — controls", () => {
     fireEvent.click(within(lab.parentElement as HTMLElement).getByRole("button"))
     return screen.findByRole("listbox")
   }
-  const CATALOG = { catalog: true, sets: ["Archive Set", "Metallic Gold LE"], series: ["0", "8"], teams: ["Portland Fire", "Seattle Storm"], players: ["Paige Bueckers"] }
+  const CATALOG = { catalog: true, sets: ["Archive Set", "Metallic Gold LE"], series: ["0", "8"], teams: ["Portland Fire", "Seattle Storm"], players: ["Paige Bueckers"], badges: ["Three-Star Rookie"] }
 
   it("offers a team that has no listing on the current page", async () => {
     filterOptionsResponse = () => json(200, CATALOG)
@@ -730,6 +730,14 @@ describe("MarketClient — controls", () => {
     render(<MarketClient />)
     await screen.findByText("Damian Lillard")
     expect(within(await openChip("Team")).getByText("Phoenix Mercury")).toBeTruthy()
+  })
+
+  it("offers every catalog badge, not only badges on the page", async () => {
+    filterOptionsResponse = () => json(200, CATALOG)
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const box = await openChip("Badges")
+    await within(box).findByText("Three-Star Rookie")
   })
 
   it("suggests every catalog player in the Player box", async () => {

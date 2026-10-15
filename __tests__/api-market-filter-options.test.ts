@@ -6,9 +6,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // `catalog: false`, never a list that could match nothing; a failed or malformed
 // read is an error, not empty lists.
 
-const rpc: { data: any; error: any; args: any } = { data: null, error: null, args: null }
+const rpc: { data: any; error: any; args: any; badges: any; badgesError: any } = { data: null, error: null, args: null, badges: [], badgesError: null }
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { rpc: async (_fn: string, args: any) => { rpc.args = args; return { data: rpc.data, error: rpc.error } } },
+  supabaseAdmin: {
+    rpc: async (fn: string, args: any) => {
+      rpc.args = args
+      return fn === "get_market_badge_options" ? { data: rpc.badges, error: rpc.badgesError } : { data: rpc.data, error: rpc.error }
+    },
+  },
 }))
 
 import { GET } from "@/app/api/market/filter-options/route"
@@ -18,7 +23,7 @@ const PINNACLE = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 const req = (u: string) => ({ nextUrl: new URL(u) }) as any
 const url = (id: string) => `https://t/api/market/filter-options?collectionId=${id}`
 
-beforeEach(() => { rpc.data = { sets: [], series: [], teams: [], players: [] }; rpc.error = null; rpc.args = null })
+beforeEach(() => { rpc.data = { sets: [], series: [], teams: [], players: [] }; rpc.error = null; rpc.args = null; rpc.badges = []; rpc.badgesError = null })
 
 describe("GET /api/market/filter-options", () => {
   it("refuses a missing or unknown collectionId without reading", async () => {
@@ -34,12 +39,20 @@ describe("GET /api/market/filter-options", () => {
     expect(rpc.args).toBeNull()
   })
 
-  it("returns every set, series, team and player for Top Shot", async () => {
+  it("returns every set, series, team, player and badge for Top Shot", async () => {
     rpc.data = { sets: ["Metallic Gold LE"], series: ["0", "8"], teams: ["Portland Fire", ""], players: ["Paige Bueckers"] }
+    rpc.badges = ["Rookie Year", "Top Shot Debut"]
     const res = await GET(req(url(TS)))
     expect(res.status).toBe(200)
     expect(rpc.args).toEqual({ p_collection_id: TS })
-    expect(await res.json()).toEqual({ catalog: true, sets: ["Metallic Gold LE"], series: ["0", "8"], teams: ["Portland Fire"], players: ["Paige Bueckers"] })
+    expect(await res.json()).toEqual({ catalog: true, sets: ["Metallic Gold LE"], series: ["0", "8"], teams: ["Portland Fire"], players: ["Paige Bueckers"], badges: ["Rookie Year", "Top Shot Debut"] })
+  })
+
+  it("answers a failed BADGE read as an error, not a catalog with no badges", async () => {
+    rpc.badgesError = { message: "db" }
+    const res = await GET(req(url(TS)))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect((await res.json()).badges).toBeUndefined()
   })
 
   it("answers a failed read as an error, not empty lists", async () => {

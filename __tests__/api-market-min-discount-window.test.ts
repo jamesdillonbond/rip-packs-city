@@ -34,15 +34,15 @@ beforeEach(() => {
 
 describe("Market Min-discount filter searches the full window (#146 (2))", () => {
   it("Top Shot: price sort + Min discount pulls 1,000", async () => {
-    expect(await limitSent(TS, "&sort=price_asc&minDiscount=30", "get_topshot_sniper_deals")).toBe(1000)
+    expect(await limitSent(TS, "&sort=price_asc&minDiscount=30", "get_topshot_sniper_deals_v2")).toBe(1000)
   })
 
   it("All Day: price sort + Min discount pulls 1,000", async () => {
-    expect(await limitSent(ALLDAY, "&sort=price_asc&minDiscount=30", "get_allday_market_editions")).toBe(1000)
+    expect(await limitSent(ALLDAY, "&sort=price_asc&minDiscount=30", "get_allday_market_editions_v2")).toBe(1000)
   })
 
   it("control: without the filter the price sort keeps its 500 window, and minDiscount=0 is no filter", async () => {
-    expect(await limitSent(TS, "&sort=price_asc", "get_topshot_sniper_deals")).toBe(500)
-    expect(await limitSent(ALLDAY, "&sort=price_asc&minDiscount=0", "get_allday_market_editions")).toBe(500)
+    expect(await limitSent(TS, "&sort=price_asc", "get_topshot_sniper_deals_v2")).toBe(500)
+    expect(await limitSent(ALLDAY, "&sort=price_asc&minDiscount=0", "get_allday_market_editions_v2")).toBe(500)
   })
 })

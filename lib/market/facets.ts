@@ -6,10 +6,11 @@
 // could not be picked (2026-10-14).
 //
 // Computed BEFORE the in-memory post-filters (discount, special serials,
-// badges), so selecting one badge does not hide the others. The badge filter
-// itself runs over this same window, so every badge offered here matches at
-// least one fetched listing. `badges` is [] when the badge read failed — the
-// route refuses a badge filter then, so offering one would only lead to a 503.
+// badges), so selecting one badge does not hide the others. These are what the
+// page can offer for collections with no catalog (/api/market/filter-options
+// serves Top Shot and All Day, whose RPCs filter at the source). `badges` is []
+// when the badge read failed — the route refuses a badge filter then, so
+// offering one would only lead to a 503.
 
 import { collectDistinct } from "@/lib/market-format"
 import { collectBadgeOptions } from "@/lib/market/filters"

@@ -32,7 +32,7 @@ const PINNACLE = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 //   c: ask 240, fmv 300 -> 20% off, listed 07-02
 function threeAllDayRows() {
   return {
-    "rpc:get_allday_market_editions": {
+    "rpc:get_allday_market_editions_v2": {
       data: [
         { external_id: "a", floor_ask: 100, fmv_usd: 200, tier: "COMMON", listed_count: 1, circulation_count: 10, last_listed_at: "2026-07-03T00:00:00Z" },
         { external_id: "b", floor_ask: 40, fmv_usd: 100, tier: "COMMON", listed_count: 1, circulation_count: 10, last_listed_at: "2026-07-01T00:00:00Z" },
@@ -58,7 +58,7 @@ beforeEach(() => {
 describe("GET /api/market — modern AllDay path (edition-level)", () => {
   it("reshapes get_allday_market_editions rows: strips MOMENT_TIER_, recomputes discount, carries editionKey + edition badges + listed count, drops serial", async () => {
     install({
-      "rpc:get_allday_market_editions": {
+      "rpc:get_allday_market_editions_v2": {
         data: [
           {
             edition_id: "uuid-1",
@@ -103,7 +103,7 @@ describe("GET /api/market — modern AllDay path (edition-level)", () => {
 
   it("drops editions above their tier ceiling and reports it in diagnostics", async () => {
     install({
-      "rpc:get_allday_market_editions": {
+      "rpc:get_allday_market_editions_v2": {
         data: [
           { external_id: "keep", floor_ask: 100, fmv_usd: 200, tier: "RARE", listed_count: 3, circulation_count: 50 },
           { external_id: "drop", floor_ask: 60000, fmv_usd: 90000, tier: "RARE", listed_count: 1, circulation_count: 50 }, // >= 50k ceiling
@@ -121,7 +121,7 @@ describe("GET /api/market — modern AllDay path (edition-level)", () => {
 
   it("applies the minDiscount post-filter to the computed discount", async () => {
     install({
-      "rpc:get_allday_market_editions": {
+      "rpc:get_allday_market_editions_v2": {
         data: [
           { external_id: "a", floor_ask: 100, fmv_usd: 200, tier: "RARE", listed_count: 1, circulation_count: 10 }, // 50% off
           { external_id: "b", floor_ask: 190, fmv_usd: 200, tier: "RARE", listed_count: 1, circulation_count: 10 }, // 5% off
@@ -137,7 +137,7 @@ describe("GET /api/market — modern AllDay path (edition-level)", () => {
 
   it("orders by discount descending when sort=discount_desc", async () => {
     install({
-      "rpc:get_allday_market_editions": {
+      "rpc:get_allday_market_editions_v2": {
         data: [
           { external_id: "small", floor_ask: 180, fmv_usd: 200, tier: "COMMON", listed_count: 1, circulation_count: 9 }, // 10%
           { external_id: "big", floor_ask: 100, fmv_usd: 200, tier: "COMMON", listed_count: 1, circulation_count: 9 }, // 50%
@@ -390,7 +390,7 @@ describe("GET /api/market — Top Shot FMV display guard", () => {
         ],
         error: null,
       },
-      "rpc:get_topshot_sniper_deals": {
+      "rpc:get_topshot_sniper_deals_v2": {
         data: [
           {
             moment_id: "3:45",
@@ -582,7 +582,7 @@ describe("GET /api/market — Candy MLB (Solana) arm", () => {
   // ~2-week-stale All Day rows) and shipped that with the 90 s success cache.
   it("503s no-store when the Top Shot modern read FAILS — never a cached legacy board", async () => {
     install({
-      "rpc:get_topshot_sniper_deals": { data: null, error: { message: "canceling statement due to statement timeout" } },
+      "rpc:get_topshot_sniper_deals_v2": { data: null, error: { message: "canceling statement due to statement timeout" } },
       cached_listings: { data: [{ id: "stale" }], error: null },
       editions: { data: [], error: null },
     })
@@ -594,7 +594,7 @@ describe("GET /api/market — Candy MLB (Solana) arm", () => {
 
   it("503s no-store when the All Day modern read FAILS", async () => {
     install({
-      "rpc:get_allday_market_editions": { data: null, error: { message: "read exceeded 8000ms" } },
+      "rpc:get_allday_market_editions_v2": { data: null, error: { message: "read exceeded 8000ms" } },
       cached_listings: { data: [{ id: "stale" }], error: null },
       editions: { data: [], error: null },
     })
@@ -628,10 +628,10 @@ describe("GET /api/market — Candy MLB (Solana) arm", () => {
 // display-guard test above.
 describe("GET /api/market — ascending sorts reach the edition RPCs", () => {
   it.each([
-    [ALLDAY, "get_allday_market_editions", "fmv_asc"],
-    [ALLDAY, "get_allday_market_editions", "discount_asc"],
-    [TS, "get_topshot_sniper_deals", "fmv_asc"],
-    [TS, "get_topshot_sniper_deals", "discount_asc"],
+    [ALLDAY, "get_allday_market_editions_v2", "fmv_asc"],
+    [ALLDAY, "get_allday_market_editions_v2", "discount_asc"],
+    [TS, "get_topshot_sniper_deals_v2", "fmv_asc"],
+    [TS, "get_topshot_sniper_deals_v2", "discount_asc"],
   ])("%s → %s receives p_sort_by=%s", async (collectionId, rpcName, sort) => {
     install({ [`rpc:${rpcName}`]: { data: [], error: null }, editions: { data: [], error: null } })
     const sb = state.sb as { rpc: (n: string, a?: Record<string, unknown>) => unknown }
@@ -643,7 +643,7 @@ describe("GET /api/market — ascending sorts reach the edition RPCs", () => {
     expect(call, `${rpcName} was not called`).toBeTruthy()
     expect(call?.args?.p_sort_by).toBe(sort)
     // Ascending discount is demoted in-app like descending, so it pulls the same 1,000.
-    if (sort === "discount_asc" && rpcName === "get_topshot_sniper_deals") expect(call?.args?.p_limit).toBe(1000)
+    if (sort === "discount_asc" && rpcName === "get_topshot_sniper_deals_v2") expect(call?.args?.p_limit).toBe(1000)
   })
 })
 

@@ -42,11 +42,11 @@ beforeEach(() => {
 
 const argsOf = (name: string) => rpcCalls.find((c) => c.name === name)?.args
 
-const FILTER_KEYS = ["p_sets", "p_series", "p_player", "p_min_price"]
+const FILTER_KEYS = ["p_sets", "p_series", "p_player", "p_min_price", "p_teams", "p_badges", "p_has_badges"]
 
 describe.each([
-  ["Top Shot", TS, "get_topshot_sniper_deals"],
-  ["All Day", ALLDAY, "get_allday_market_editions"],
+  ["Top Shot", TS, "get_topshot_sniper_deals_v2"],
+  ["All Day", ALLDAY, "get_allday_market_editions_v2"],
 ])("GET /api/market — %s arm hands the browse filters to its RPC", (_label, collectionId, rpc) => {
   it("passes set / series / player / min price as RPC parameters (sets trimmed)", async () => {
     await GET(
@@ -73,6 +73,32 @@ describe.each([
     for (const k of FILTER_KEYS) expect(args).not.toHaveProperty(k)
   })
 
+  // 2026-10-14: the v1 RPCs took ONE p_team, so the route sent teams[0] and a
+  // 2-team pick filtered by the first only.
+  it("sends EVERY selected team as p_teams, never just the first", async () => {
+    await GET(req(`https://t/api/market?collectionId=${collectionId}&team=${encodeURIComponent("Portland Fire, Seattle Storm")}`))
+    const args = argsOf(rpc)
+    expect(args).toMatchObject({ p_teams: ["Portland Fire", "Seattle Storm"], p_team: "all" })
+  })
+
+  // 2026-10-14: badges ran only in memory over the RPC's ≤500-row window.
+  it("sends selected badges as p_badges, and hasBadges as p_has_badges", async () => {
+    await GET(req(`https://t/api/market?collectionId=${collectionId}&badges=${encodeURIComponent("Rookie Year,Championship Year")}`))
+    expect(argsOf(rpc)).toMatchObject({ p_badges: ["Rookie Year", "Championship Year"] })
+    expect(argsOf(rpc)).not.toHaveProperty("p_has_badges")
+    rpcCalls.length = 0
+    await GET(req(`https://t/api/market?collectionId=${collectionId}&hasBadges=true`))
+    expect(argsOf(rpc)).toMatchObject({ p_has_badges: true })
+    expect(argsOf(rpc)).not.toHaveProperty("p_badges")
+  })
+
+  // Every arm takes one tier; a 2-tier pick used to filter by the first only.
+  it("makes one call per selected tier, covering every tier picked", async () => {
+    await GET(req(`https://t/api/market?collectionId=${collectionId}&tier=RARE,LEGENDARY`))
+    const tiers = rpcCalls.filter((c) => c.name === rpc).map((c) => c.args?.p_rarity).sort()
+    expect(tiers).toEqual(["LEGENDARY", "RARE"])
+  })
+
   it("a non-positive or unparseable min price is not sent as a filter", async () => {
     await GET(req(`https://t/api/market?collectionId=${collectionId}&minPrice=abc&set=Base%20Set`))
     const args = argsOf(rpc)
@@ -87,9 +113,9 @@ describe.each([
 describe("GET /api/market — Top Shot discount sort pulls a wider window", () => {
   it("discount_desc asks the RPC for 1,000 rows; other sorts keep 500", async () => {
     await GET(req(`https://t/api/market?collectionId=${TS}&sort=discount_desc`))
-    expect(argsOf("get_topshot_sniper_deals")?.p_limit).toBe(1000)
+    expect(argsOf("get_topshot_sniper_deals_v2")?.p_limit).toBe(1000)
     rpcCalls.length = 0
     await GET(req(`https://t/api/market?collectionId=${TS}&sort=price_asc`))
-    expect(argsOf("get_topshot_sniper_deals")?.p_limit).toBe(500)
+    expect(argsOf("get_topshot_sniper_deals_v2")?.p_limit).toBe(500)
   })
 })
