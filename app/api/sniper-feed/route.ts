@@ -940,7 +940,7 @@ async function fetchBadgesByEditionKey(
   const MAX_PAGES = 200; // safety bound; the table is ~15k rows across collections
   let cursor = "";
   let complete = false;
-  for (let page = 0; page < MAX_PAGES; page++) {
+  const readPage = () => {
     let q = (supabase as any)
       .from("badge_editions")
       .select("external_id, player_name, play_tags, set_play_tags")
@@ -948,7 +948,14 @@ async function fetchBadgesByEditionKey(
       .order("external_id", { ascending: true })
       .limit(PAGE);
     if (cursor) q = q.gt("external_id", cursor);
-    const { data, error } = await q;
+    return q;
+  };
+  for (let page = 0; page < MAX_PAGES; page++) {
+    let { data, error } = await readPage();
+    // One retry before giving up: the one live failure (2026-10-15, page 8,
+    // "Project not specified") was a single gateway answer that never recurred,
+    // and without a retry it left the map partial on every view of that build.
+    if (error) ({ data, error } = await readPage());
 
     if (error) {
       console.error(`[sniper-feed] badge_editions fetch error @page ${page}: ${error.message}`);

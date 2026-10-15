@@ -212,6 +212,23 @@ describe("sniper-feed — badge_editions joined by EDITION KEY, not player name"
     const only = await (await GET(get("?collection=nba-top-shot&badgeOnly=true"))).json()
     expect(only.deals).toHaveLength(0)
   })
+
+  it("a single transient badge page failure is retried, so the map is not left partial", async () => {
+    // Live 2026-10-15: one "Project not specified" on page 8, never recurring.
+    // Without the retry the walk broke there and every later edition rendered
+    // unbadged — a partial map indistinguishable from a complete one.
+    seed({
+      "rpc:get_topshot_sniper_deals": { data: [rpcDeal("1:100")], error: null },
+      badge_editions: [
+        { data: null, error: { message: "Project not specified." } },
+        { data: [badgeRow("1:100", [{ id: "rookie_mint", title: "Rookie Mint" }])], error: null },
+      ],
+    })
+
+    const body = await (await GET(get("?collection=nba-top-shot"))).json()
+    expect(body.deals[0].hasBadge).toBe(true)
+    expect(body.deals[0].badgeSlugs).toEqual(["rookie_mint"])
+  })
 })
 
 describe("sniper-feed — per-serial predicates at edition grain", () => {
