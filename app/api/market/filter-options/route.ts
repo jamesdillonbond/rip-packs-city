@@ -6,12 +6,12 @@
 // (Portland Fire, 2026-10-14) could not be picked.
 //
 // Served ONLY for collections whose market filters run against `editions` in
-// the database (Top Shot, All Day: get_topshot_sniper_deals /
-// get_allday_market_editions match btrim(set_name) IN, series::text = ANY,
+// the database (Top Shot, All Day: get_topshot_sniper_deals_v3 /
+// get_allday_market_editions_v3 match btrim(set_name) IN, series::text = ANY,
 // team_name ILIKE, player_name ILIKE). Every value get_market_filter_options
 // returns is therefore matchable there. Badges come from
 // get_market_badge_options: every title in market_edition_badges' latest run,
-// the table the v2 RPCs filter `p_badges` against. Other collections filter their own
+// the table the v3 RPCs filter `p_badges` against. Other collections filter their own
 // boards, so a catalog list could offer a value that matches nothing; they get
 // `{ catalog: false }` and the page uses the facets /api/market returns.
 //

@@ -480,3 +480,20 @@ from the #70 lane). Join to `offers.offer_id`. See database.md "The Top Shot `of
   to `mint_cap` upstream. Not a defect to fix.
 - **A NULL list from `/api/collection-stats` means "not measured", never "none"** — every Flow arm returns
   arrays; only a failed Panini read nulls one (and flags `*_failed`). The overview renders it "Couldn't load".
+
+## Market filter objects (2026-10-14/15)
+
+Verified live 2026-10-15 (Claude Code cloud). Service-role only unless stated; RLS on for both tables.
+
+| object | what it is |
+|---|---|
+| `market_edition_badges (collection_id, edition_id, title, refreshed_at)` PK `(edition_id, title)` | edition → canonical badge title, from `get_edition_badges_unified` (the edition page's rule). Top Shot + All Day only. **Rows are never deleted** (the MCP holds DELETE): a row counts only when `refreshed_at = market_edition_badges_runs.last_run_at` for its collection. |
+| `market_edition_badges_runs (collection_id PK, last_run_at, rows_written)` | the latest complete refresh per collection. A failed run rolls back its stamp, so readers keep the previous run. |
+| `refresh_market_edition_badges(uuid)` | the writer; pg_cron `rpc-market-edition-badges-topshot` :21 and `-allday` :25 hourly, 3–7 s, logs `market-edition-badges` to `pipeline_runs`. First fill: TS 14,528 editions → 7,346 rows; AD 6,190 → 5,334. |
+| `get_topshot_sniper_deals_v3` / `get_allday_market_editions_v3` | v1 + `p_teams text[]`, `p_badges text[]`, `p_has_badges bool`, `p_wallet text`, `p_owned text` (all defaulted). `/api/market` reads these. `_v2` (no owned args) is superseded, with no caller. |
+| `get_market_filter_options(uuid)` | jsonb `{sets, series, teams, players}`: distinct `editions` values per collection. |
+| `get_market_badge_options(uuid)` | jsonb array: every title in the latest run. |
+| `wallet_moments_cache.edition_key` | **= `editions.external_id` exactly** for Top Shot and All Day (20,000-row samples each, 100 % match; Top Shot parallels keep their `::N` suffix). The set:play form that `/api/market`'s `editionKey` uses is the **wallet-counts** key and does NOT name a parallel's edition. |
+
+Superseded, queued for a human DROP: `docs/pending-sql/audit_20261015_market_superseded_functions_drop.sql` (`get_market_team_options`, AD v1, both `_v2`).
+
