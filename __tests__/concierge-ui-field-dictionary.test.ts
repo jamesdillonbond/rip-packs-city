@@ -16,6 +16,14 @@ describe("lookupUiField", () => {
   it("answers 'DEALS AFTER FEES' with the sniper entry", () => {
     expect(lookupUiField("what is the DEALS AFTER FEES toggle", "sniper")[0]?.id).toBe("sniper.after-fees")
   })
+  // 2026-10-14: webz_80's question ("it is pinging me about a moment where
+  // nothing changed") and the setting that answers it.
+  it("answers 'why does my alert ping me every day' with the Notify me entry", () => {
+    const hit = lookupUiField("why does my alert ping me every day for the same moment", "alerts")[0]
+    expect(hit?.id).toBe("alerts.notify-mode")
+    expect(hit?.meaning).toMatch(/Once per listing/)
+    expect(hit?.meaning).toMatch(/no daily or weekly DIGEST/)
+  })
   it("returns nothing for a field that is not documented", () => {
     expect(lookupUiField("zxqv flibber wobble", null)).toEqual([])
   })

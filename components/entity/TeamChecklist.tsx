@@ -57,6 +57,7 @@ import { getCollection, collectionHasLocking } from "@/lib/collections"
 import { checklistWalletStorageKey, isSolanaChecklist, parseChecklistWallet } from "@/lib/entity/checklist-wallet"
 import { editionRouteHref } from "@/lib/entity-href"
 import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
+import ExplainButton from "@/components/ExplainButton"
 import {
   CHECKLIST_OWN_STATES,
   computeFullEditionProgress,
@@ -581,6 +582,16 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
             <div style={{ textAlign: "right" }}>
               <div className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
                 {hasWallet ? "Est. cost to complete" : "Est. cost to complete (all)"}
+                {/* 2026-10-14: collectors asked the concierge what the card's
+                    "+ $" figure and this total are (support_conversations 10227,
+                    10229, 10234). One "?" here, not on each card: a card is a
+                    link, and a button inside a link is invalid and confusing
+                    to keyboard users. The concierge answers from its UI field
+                    dictionary (team-checklist.add-cost-badge / cost-to-complete). */}
+                <ExplainButton
+                  question={'What do the "+ $" badges on the cards and the cost to complete mean?'}
+                  context={`Team checklist for ${teamSlug} (${collectionUrlSlug}); estimated cost to complete ${fmtUsd(header.cost_to_complete_usd)}${unpricedMissing > 0 ? `, ${unpricedMissing} unpriced editions not included` : ""}.`}
+                />
               </div>
               <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>
                 {fmtUsd(header.cost_to_complete_usd)}

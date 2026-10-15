@@ -6,6 +6,7 @@
 // asks about a field that is not here — the question itself is the signal.
 
 import { FMV_ALGO_VERSION, FMV_RECENT_SALES_N, FMV_RECENT_SPAN_DAYS } from "@/lib/fmv-recalc-math";
+import { NOTIFY_MODE_HINT, NOTIFY_MODE_LABEL } from "@/lib/alerts/notify-mode";
 
 export type UiFieldEntry = {
   id: string;
@@ -124,6 +125,17 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
     meaning:
       "The share of this collection's editions whose FMV rests on corroborated recent sales (HIGH or MEDIUM confidence) rather than an ask or nothing. It is NOT the share of editions that have any FMV at all, which is much larger. \"—\" means the figure could not be read, not 0%.",
     source: "app/(collections)/[collection]/overview/CollectionOverviewClient.tsx (fmv_high_medium_pct; no fallback to fmv_pct)",
+  },
+  {
+    id: "alerts.notify-mode",
+    surface: "alerts page (/alerts), deal alert form",
+    field: "Notify me (how often an alert repeats)",
+    aliases: ["notify me", "notify mode", "how often", "repeat", "every day", "my alert", "pinging me", "ping me", "alert again", "only once", "relisted", "cadence", "daily digest", "weekly digest"],
+    // Built from the same text the form shows under the select, so this answer
+    // cannot drift from the control (lib/alerts/notify-mode.ts).
+    meaning:
+      `How often one deal alert repeats for the same moment. ${NOTIFY_MODE_LABEL.new_listing} (the default): ${NOTIFY_MODE_HINT.new_listing} ${NOTIFY_MODE_LABEL.once}: ${NOTIFY_MODE_HINT.once} ${NOTIFY_MODE_LABEL.daily}: ${NOTIFY_MODE_HINT.daily} There is no daily or weekly DIGEST — before 2026-10-14 the form offered one and nothing implemented it; it was replaced by this setting.`,
+    source: "app/alerts/AlertsClient.tsx (alert-notify-mode) + lib/alerts/notify-mode.ts + dispatch_due_deal_alerts (20261015002500)",
   },
 ];
 

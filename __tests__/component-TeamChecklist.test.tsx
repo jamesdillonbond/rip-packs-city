@@ -80,6 +80,33 @@ describe("TeamChecklist", () => {
     expect(getByText("Track")).toBeTruthy()
   })
 
+  // 2026-10-14: collectors asked the concierge what the card's "+ $" figure and
+  // the cost-to-complete are (support_conversations 10227/10229/10234). The
+  // header carries ONE "?" that opens the concierge pre-asked — one, not per
+  // card, because each card is a link and a button inside a link is invalid.
+  it("the cost-to-complete header opens the concierge pre-asked about the badges", async () => {
+    fetchMock = routeFetch({ checklist: () => res(true, [tile]), progress: () => res(true, anonProgress) })
+    vi.stubGlobal("fetch", fetchMock)
+    const asked: string[] = []
+    const onAsk = (e: Event) => asked.push(String((e as CustomEvent).detail?.text ?? ""))
+    window.addEventListener("rpc-concierge-ask", onAsk)
+    try {
+      const { getByText, getAllByRole } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="portland-trail-blazers" />)
+      await waitFor(() => expect(getByText("100 editions")).toBeTruthy())
+      const explain = getAllByRole("button").filter((b) => (b.getAttribute("aria-label") ?? "").startsWith("Explain:"))
+      expect(explain).toHaveLength(1)
+      // Not inside any card link.
+      expect(explain[0].closest("a")).toBeNull()
+      fireEvent.click(explain[0])
+      expect(asked).toHaveLength(1)
+      expect(asked[0]).toMatch(/"\+ \$" badges/)
+      expect(asked[0]).toContain("portland-trail-blazers")
+      expect(asked[0]).toContain("$5,000")
+    } finally {
+      window.removeEventListener("rpc-concierge-ask", onAsk)
+    }
+  })
+
   it("shows the empty-scope state when the checklist is empty", async () => {
     fetchMock = routeFetch({ checklist: () => res(true, []), progress: () => res(true, { ...anonProgress, total: 0 }) })
     vi.stubGlobal("fetch", fetchMock)

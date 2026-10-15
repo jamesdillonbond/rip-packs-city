@@ -61,6 +61,7 @@ import {
 } from "@/components/entity/_shared"
 import { ASK_STALE_HOURS, askAgeHours, askAgeTitle, askStampKind, askVerifiedAt, fmtAskAge } from "@/lib/market/ask-freshness"
 import FmvHistoryChart from "@/components/entity/FmvHistoryChart"
+import ExplainButton from "@/components/ExplainButton"
 import EditionActivity from "@/components/entity/EditionActivity"
 import PaniniSalesChart from "@/components/entity/PaniniSalesChart"
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
@@ -922,6 +923,17 @@ export default async function EditionPage(
                 salesCount30d={fmv?.sales_count_30d ?? null}
                 ask={askValue}
               />
+              {/* 2026-10-14: "what does the confidence word mean", "does FMV
+                  take special serials into account", "how do you handle stale
+                  moments" were the most-asked FMV questions (support_conversations
+                  10134, 10141, 10422). The "?" asks the concierge about THIS
+                  edition's number, with the page's own figures as context. */}
+              {fmvAvailable && (
+                <ExplainButton
+                  question="What does this FMV mean, and how much should I trust it?"
+                  context={`${editionTitle}${detail.set_name ? ` — ${detail.set_name}` : ""}${parallelLabel ? ` · ${parallelLabel}` : ""} (${collection}, edition ${slug}): FMV ${fmtUsd(fmv?.fmv_usd ?? null)}, confidence ${fmv?.confidence ?? "unknown"}${fmv?.sales_count_30d != null ? `, ${fmv.sales_count_30d} sales in 30 days` : ""}${askValue ? `, lowest ask ${fmtUsd(askValue)}` : ""}.`}
+                />
+              )}
               {/* PIN-FMV-REKEY Wave 2: this is the most-liquid render; show the
                   per-render spread when the set-level key fans out. */}
               {isPinnacle &&
