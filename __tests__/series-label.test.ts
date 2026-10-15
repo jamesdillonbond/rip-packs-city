@@ -49,8 +49,9 @@ describe("the two encoders now AGREE on every mapped series (unified 2026-07-27)
     expect(seriesLabel(6)).toBe("Series 2023-24")
     expect(seriesDisplay(6, "nba_top_shot")).toBe("Series 2023-24")
   })
-  it("SERIES_DISPLAY covers 0,2-8 (no key 1)", () => {
-    expect(Object.keys(SERIES_DISPLAY).map(Number).sort((a, b) => a - b)).toEqual([0, 2, 3, 4, 5, 6, 7, 8])
+  // Re-pinned 2026-10-15 (premise change): Series 2026-27 (on-chain 9) added ahead of its mint.
+  it("SERIES_DISPLAY covers 0,2-9 (no key 1)", () => {
+    expect(Object.keys(SERIES_DISPLAY).map(Number).sort((a, b) => a - b)).toEqual([0, 2, 3, 4, 5, 6, 7, 8, 9])
   })
   it("fallbacks still legitimately differ: unmapped → Unknown (analytics) vs Series N (moment)", () => {
     expect(seriesLabel(99)).toBe("Unknown")

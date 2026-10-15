@@ -1016,6 +1016,7 @@ const TS_SERIES_DISPLAY: Record<string, string> = {
   "6": "Series 2023-24",
   "7": "Series 2024-25",
   "8": "Series 2025-26",
+  "9": "Series 2026-27",
 }
 
 // Render the series label as a readable phrase. For Top Shot a bare on-chain

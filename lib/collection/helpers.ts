@@ -19,6 +19,7 @@ export const BADGE_PILL_TITLES = new Set([
 export const SERIES_INT_TO_SEASON: Record<number, string> = {
   0: "2019-20", 2: "2020-21", 3: "2021",
   4: "2021-22", 5: "2022-23", 6: "2023-24", 7: "2024-25", 8: "2025-26",
+  9: "2026-27",
 }
 
 export const SERIES_DISPLAY_FALLBACK: Record<number, string> = {
@@ -30,12 +31,13 @@ export const SERIES_DISPLAY_FALLBACK: Record<number, string> = {
   6: "23-24 · 2023-24",
   7: "24-25 · 2024-25",
   8: "25-26 · 2025-26",
+  9: "26-27 · 2026-27",
 }
 
 export const SERIES_FILTER_LABEL_FALLBACK: Record<number, string> = {
   0: "Series 1", 2: "Series 2", 3: "Summer 2021",
   4: "Series 3", 5: "Series 4", 6: "Series 2023-24",
-  7: "Series 2024-25", 8: "Series 2025-26",
+  7: "Series 2024-25", 8: "Series 2025-26", 9: "Series 2026-27",
 }
 
 export function seriesDisplayLabel(seriesRaw: string | undefined | null, seriesMap?: Map<number, CollectionSeriesEntry>): string {

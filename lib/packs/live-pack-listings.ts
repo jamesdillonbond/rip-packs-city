@@ -192,6 +192,9 @@ function seriesLabelFromStartTime(startTime: string): string {
   if ((y === 2022 && m >= 6) || (y === 2023 && m < 6)) return "Series 3"
   if ((y === 2023 && m >= 6) || (y === 2024 && m < 6)) return "Series 2023-24"
   if ((y === 2024 && m >= 6) || (y === 2025 && m < 6)) return "Series 2024-25"
+  // 2026-10-15: Series 2025-26 ran past July 2026 (WNBA sets in Aug-Sep 2026 are on-chain series 8),
+  // so the new series starts at Top Shot's announced Series 2026-27 tip-off, Oct 20 2026.
+  if (d.getTime() >= Date.UTC(2026, 9, 20)) return "Series 2026-27"
   return "Series 2025-26"
 }
 

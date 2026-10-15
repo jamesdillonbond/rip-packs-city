@@ -18,6 +18,7 @@ const TOPSHOT_SERIES: Record<number, string> = {
   6: "Series 2023-24",
   7: "Series 2024-25",
   8: "Series 2025-26",
+  9: "Series 2026-27",
 }
 
 export const TOPSHOT_SERIES_ORDER: number[] = [0, 2, 3, 4, 5, 6, 7, 8]

@@ -385,6 +385,7 @@ const SERIES_DISPLAY: Record<number, string> = {
   6: "Series 2023-24",
   7: "Series 2024-25",
   8: "Series 2025-26",
+  9: "Series 2026-27",
 }
 
 function seriesDisplay(n: number, collectionUrlSlug: string): string {

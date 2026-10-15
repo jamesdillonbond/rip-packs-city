@@ -96,6 +96,7 @@ export const SERIES_RANK: Record<string, number> = {
   "Series 2023-24": 6,
   "Series 2024-25": 7,
   "Series 2025-26": 8,
+  "Series 2026-27": 9,
 }
 
 export function formatUsd(n: number | null | undefined): string {

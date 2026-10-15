@@ -21,6 +21,10 @@ export const SERIES_DISPLAY: Record<number, string> = {
   6: "Series 2023-24",
   7: "Series 2024-25",
   8: "Series 2025-26",
+  // 2026-10-15: anticipated. On-chain TopShot.currentSeries still read 8 that day; Top Shot
+  // announced "Series 2026-27" tipping off Oct 20, and startNewSeries increments by one.
+  // Re-verify against getSetSeries once the first new set mints.
+  9: "Series 2026-27",
 }
 
 /** Analytics-board series label (collection-agnostic). Unmapped/nullish → "Unknown". */

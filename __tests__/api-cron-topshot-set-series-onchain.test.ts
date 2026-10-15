@@ -28,18 +28,28 @@ const sb = vi.hoisted(() => {
     // The stranded-editions catch-up's two reads (editions still NULL; their sets
     // that already carry a series). Default: nothing stranded.
     strandedEds: { data: [], error: null } as any, seriesedSets: { data: [], error: null } as any,
+    // The new-series registration's reads (series present on sets; series already
+    // in collection_series) and its upsert. Default: no series reads at all.
+    seriesCensus: null as any, knownSeries: { data: [], error: null } as any,
+    upserts: [] as any[], upsertResult: { data: [], error: null } as any,
+    _sel: "", _pendingUpsert: false,
   }
-  s.from = (t: string) => { s._table = t; s._in = false; return s }
+  s.from = (t: string) => { s._table = t; s._in = false; s._sel = ""; return s }
   for (const m of ["eq", "is", "not", "order"]) s[m] = () => s
   s.in = () => { s._in = true; return s }
   s.limit = () => {
+    if (s._table === "sets" && s._sel === "series") return Promise.resolve(s.seriesCensus ?? { data: [], error: null })
+    if (s._table === "collection_series") return Promise.resolve(s.knownSeries)
     if (s._table === "editions") return Promise.resolve(s.strandedEds)
     if (s._table === "sets" && s._in) return Promise.resolve(s.seriesedSets)
     return Promise.resolve(s.readError ? { data: null, error: s.readError } : { data: s.rows, error: null })
   }
   s.update = (patch: any) => { s.updates.push({ table: s._table, patch }); s._pendingUpdate = true; return s }
-  s.select = () => {
+  s.upsert = (rows: any, opts: any) => { s.upserts.push({ table: s._table, rows, opts }); s._pendingUpsert = true; return s }
+  s.select = (cols?: string) => {
     if (s._pendingUpdate) { s._pendingUpdate = false; return Promise.resolve(s.updateResults[s._table]) }
+    if (s._pendingUpsert) { s._pendingUpsert = false; return Promise.resolve(s.upsertResult) }
+    s._sel = cols ?? ""
     return s
   }
   return s
@@ -73,6 +83,8 @@ beforeEach(() => {
   captured = null
   sb.rows = []; sb.readError = null; sb.updates = []; sb._pendingUpdate = false
   sb.strandedEds = { data: [], error: null }; sb.seriesedSets = { data: [], error: null }
+  sb.seriesCensus = null; sb.knownSeries = { data: [], error: null }; sb.upserts = []; sb.upsertResult = { data: [], error: null }
+  sb._pendingUpsert = false
   sb.updateResults = { sets: { data: [{ id: "x" }], error: null }, editions: { data: [{ id: "e1" }, { id: "e2" }], error: null } }
   heartbeat.mockClear(); terminal.mockClear()
 })
@@ -195,3 +207,59 @@ describe("stranded-editions catch-up", () => {
   })
 })
 
+
+
+// 2026-10-15: a new Top Shot series gets its collection_series row (series page,
+// Collection-tab filter, sitemap) — only under a label the canonical map knows.
+describe("topshot-set-series-onchain — registers a new series", () => {
+  async function runOnce() {
+    stubFlow([])
+    const res = await GET(req("Bearer cron-tok"))
+    expect(res.status).toBe(202)
+    await captured!()
+    return (terminal.mock.calls.at(-1)?.[0] ?? {}) as any
+  }
+
+  it("registers a labelled series the sets carry and the table lacks, with its label and season", async () => {
+    sb.seriesCensus = { data: [{ series: 8 }, { series: 9 }, { series: 9 }], error: null }
+    sb.knownSeries = { data: [{ series_number: 8 }], error: null }
+    sb.upsertResult = { data: [{ series_number: 9 }], error: null }
+    const t = await runOnce()
+    expect(sb.upserts).toHaveLength(1)
+    expect(sb.upserts[0].table).toBe("collection_series")
+    expect(sb.upserts[0].rows).toEqual([
+      { collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd", series_number: 9, display_label: "Series 2026-27", season: "2026-27" },
+    ])
+    expect(sb.upserts[0].opts).toMatchObject({ onConflict: "collection_id,series_number", ignoreDuplicates: true })
+    expect(t.ok).toBe(true)
+    expect(t.extra).toMatchObject({ series_registered: [9], unlabelled_series: [], register_error: null })
+  })
+
+  it("NO-CHANGE CONTROL: every present series already registered writes nothing", async () => {
+    sb.seriesCensus = { data: [{ series: 0 }, { series: 8 }], error: null }
+    sb.knownSeries = { data: [{ series_number: 0 }, { series_number: 8 }], error: null }
+    const t = await runOnce()
+    expect(sb.upserts).toHaveLength(0)
+    expect(t.ok).toBe(true)
+    expect(t.extra).toMatchObject({ series_registered: [], unlabelled_series: [] })
+  })
+
+  it("a series with NO known label is not guessed: nothing written, the run fails and names it", async () => {
+    sb.seriesCensus = { data: [{ series: 8 }, { series: 42 }], error: null }
+    sb.knownSeries = { data: [{ series_number: 8 }], error: null }
+    const t = await runOnce()
+    expect(sb.upserts).toHaveLength(0)
+    expect(t.ok).toBe(false)
+    expect(String(t.error)).toContain("42")
+    expect(t.extra).toMatchObject({ unlabelled_series: [42] })
+  })
+
+  it("a failed collection_series read fails the run without writing", async () => {
+    sb.seriesCensus = { data: [{ series: 9 }], error: null }
+    sb.knownSeries = { data: null, error: { message: "permission denied" } }
+    const t = await runOnce()
+    expect(sb.upserts).toHaveLength(0)
+    expect(t.ok).toBe(false)
+    expect(t.extra.register_error).toContain("collection_series read failed")
+  })
+})

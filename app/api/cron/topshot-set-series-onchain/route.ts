@@ -2,6 +2,8 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { logTerminalRun } from "@/lib/pipeline/terminal-run"
+import { SERIES_DISPLAY } from "@/lib/series-label"
+import { SERIES_INT_TO_SEASON } from "@/lib/collection/helpers"
 
 // Top Shot sets that have NO SERIES get one from the chain, and their editions
 // follow.
@@ -15,7 +17,9 @@ import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 // and the analytics split counted them as "No series". The chain has it:
 // `TopShot.getSetSeries(setID)` (verified through Flow REST: 253/275/278/279 →
 // 8, 140 → 6, 1 → 0, unknown → nil). The 09-25 migration filled the backlog;
-// this keeps every future discovery filled within a day.
+// this keeps every future discovery filled within an hour (vercel.json
+// `35 * * * *` since 2026-10-15 — was daily, so a set discovered on a launch day
+// carried "No series" until ~9:35 PM PT; an idle run is one bounded read, ~150 ms).
 //
 // HOW. Read the Top Shot sets with `series IS NULL AND set_id_onchain IS NOT
 // NULL` (bounded), one Cadence script for up to SETS_PER_SCRIPT ids (a single
@@ -156,6 +160,59 @@ async function fillStrandedEditions(): Promise<{ written: number; sets: number }
   return { written, sets: filledSets }
 }
 
+/**
+ * A NEW Top Shot series needs a `collection_series` row before the site can show
+ * it: the series page (`get_series_detail` resolves a slug from its label), the
+ * Collection tab's series filter (/api/collection-series) and the sitemap all
+ * read that table, and nothing else writes it. Added 2026-10-15 ahead of Series
+ * 2026-27: once a set on chain carries a series the table lacks, register it —
+ * but only with a label the repo's canonical map KNOWS (SERIES_DISPLAY). A series
+ * with no known label is reported (`unlabelled_series`) and left alone, so a
+ * surprise series number becomes an alarm, never a guessed page title.
+ */
+async function registerNewSeries(): Promise<{ registered: number[]; unlabelled: number[] }> {
+  const { data: setRows, error: setErr } = await (supabaseAdmin as any)
+    .from("sets")
+    .select("series")
+    .eq("collection_id", COLLECTION_ID)
+    .not("series", "is", null)
+    .limit(1000)
+  if (setErr) throw new Error(`series census read failed: ${setErr.message}`)
+  const present = [...new Set(((setRows ?? []) as { series: number | null }[])
+    .map((r) => r.series)
+    .filter((n): n is number => typeof n === "number" && Number.isFinite(n)))]
+  if (present.length === 0) return { registered: [], unlabelled: [] }
+
+  const { data: known, error: knownErr } = await (supabaseAdmin as any)
+    .from("collection_series")
+    .select("series_number")
+    .eq("collection_id", COLLECTION_ID)
+    .limit(1000)
+  if (knownErr) throw new Error(`collection_series read failed: ${knownErr.message}`)
+  const have = new Set(((known ?? []) as { series_number: number }[]).map((r) => Number(r.series_number)))
+
+  const missing = present.filter((n) => !have.has(n)).sort((a, b) => a - b)
+  const labelled = missing.filter((n) => SERIES_DISPLAY[n])
+  const unlabelled = missing.filter((n) => !SERIES_DISPLAY[n])
+  if (labelled.length === 0) return { registered: [], unlabelled }
+
+  const { data: ins, error: insErr } = await (supabaseAdmin as any)
+    .from("collection_series")
+    .upsert(
+      labelled.map((n) => ({
+        collection_id: COLLECTION_ID,
+        series_number: n,
+        display_label: SERIES_DISPLAY[n],
+        season: SERIES_INT_TO_SEASON[n] ?? null,
+      })),
+      { onConflict: "collection_id,series_number", ignoreDuplicates: true },
+    )
+    .select("series_number")
+  if (insErr) throw new Error(`collection_series write failed: ${insErr.message}`)
+  const registered = ((ins ?? []) as { series_number: number }[]).map((r) => Number(r.series_number))
+  return { registered, unlabelled }
+}
+
 function authorized(request: NextRequest): boolean {
   const auth = request.headers.get("authorization") ?? ""
   const cron = process.env.CRON_SECRET
@@ -185,6 +242,9 @@ async function run(request: NextRequest) {
     let writeErrors = 0
     let strandedWritten: number | null = null
     let strandedError: string | null = null
+    let seriesRegistered: number[] | null = null
+    let unlabelledSeries: number[] | null = null
+    let registerError: string | null = null
 
     try {
       const read = await readUnseriesedSets()
@@ -256,6 +316,21 @@ async function run(request: NextRequest) {
       errMsg = errMsg ?? strandedError
     }
 
+    // A new series becomes visible site-wide only once it has a collection_series row.
+    try {
+      const r = await registerNewSeries()
+      seriesRegistered = r.registered
+      unlabelledSeries = r.unlabelled
+      if (r.unlabelled.length > 0) {
+        ok = false
+        errMsg = errMsg ?? `series with no known label: ${r.unlabelled.join(", ")} — add it to SERIES_DISPLAY`
+      }
+    } catch (e) {
+      ok = false
+      registerError = e instanceof Error ? e.message : String(e)
+      errMsg = errMsg ?? registerError
+    }
+
     await logTerminalRun({
       pipeline: PIPELINE_NAME,
       startedAt: startedMs,
@@ -276,6 +351,9 @@ async function run(request: NextRequest) {
         write_errors: writeErrors,
         stranded_editions_filled: strandedWritten,
         stranded_editions_error: strandedError,
+        series_registered: seriesRegistered,
+        unlabelled_series: unlabelledSeries,
+        register_error: registerError,
         duration_ms: Date.now() - startedMs,
       },
     })

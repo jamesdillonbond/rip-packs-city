@@ -116,7 +116,7 @@
     },
     {
       "path": "/api/cron/topshot-set-series-onchain",
-      "schedule": "35 4 * * *"
+      "schedule": "35 * * * *"
     },
     {
       "path": "/api/admin/backfill-allday-buyers",

@@ -55,6 +55,7 @@ const TOPSHOT_SERIES_LABEL_TO_NUM: Record<string, string> = {
   "Series 2023-24": "6",
   "Series 2024-25": "7",
   "Series 2025-26": "8",
+  "Series 2026-27": "9",
   // collection_series.display_label spelling (the Collection tab's own filter).
   "Series 5": "6",
   "Series 6": "7",

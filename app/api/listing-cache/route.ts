@@ -47,6 +47,7 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
     seriesNames: {
       0: "Series 1", 2: "Series 2", 3: "Summer 2021", 4: "Series 3",
       5: "Series 4", 6: "Series 2023-24", 7: "Series 2024-25", 8: "Series 2025-26",
+      9: "Series 2026-27",
     },
     buyUrlBase: "https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/",
     pagesToFetch: 12,
