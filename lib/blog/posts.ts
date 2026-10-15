@@ -21,7 +21,7 @@ export type BlogPost = {
   collection: string
   blurb: string
   readMin: number
-  /** Absolute share image. */
+  /** Absolute share image: the post's own card (app/api/og/blog/[slug]), 2026-10-14. */
   image: string
 }
 
@@ -34,7 +34,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     blurb:
       "Rare-or-better Moments per pack across 10 paired Top Shot drops, from the contents Top Shot published. Premium was cheaper per hit in 8 of 10 releases; both Rookie Revelation drops went the other way.",
     readMin: 4,
-    image: `${BASE_URL}/api/og/collection?id=nba-top-shot`,
+    image: `${BASE_URL}/api/og/blog/premium-chance-hit-vs-chance-hit`,
   },
   {
     slug: "permanent-moments-ipfs",
@@ -46,7 +46,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     blurb:
       "Top Shot just pinned every Moment's video to IPFS. What content-addressing actually guarantees, how to verify a Moment yourself in 30 seconds, and what we built with the data.",
     readMin: 6,
-    image: `${BASE_URL}/api/og/collection?id=nba-top-shot`,
+    image: `${BASE_URL}/api/og/blog/permanent-moments-ipfs`,
   },
   {
     slug: "pinnacle-star-wars-day-2026",
@@ -56,7 +56,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     blurb:
       "53 editions, 14 sets, 408 historical sales. Where the Mandalorian peak buyers are now underwater, the only edition trading below FMV with HIGH confidence, and what we still don't know.",
     readMin: 8,
-    image: `${BASE_URL}/api/og/collection?id=disney-pinnacle`,
+    image: `${BASE_URL}/api/og/blog/pinnacle-star-wars-day-2026`,
   },
 ]
 

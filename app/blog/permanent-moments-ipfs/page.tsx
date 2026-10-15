@@ -28,7 +28,7 @@ export const metadata = {
     title: "Your Moments Just Became Permanent. Here's What That Actually Means.",
     description:
       "Top Shot just pinned every Moment's video to IPFS. What content-addressing guarantees, how to verify a Moment yourself, and what we built with the data.",
-    images: ["https://www.rippackscity.com/api/og/collection?id=nba-top-shot"],
+    images: [POST.image],
     type: "article",
     url: POST_URL,
     publishedTime: POST.date,
@@ -41,7 +41,7 @@ export const metadata = {
     title: "Your Moments Just Became Permanent. Here's What That Actually Means.",
     description:
       "Top Shot pinned every Moment's video to IPFS. What content-addressing guarantees, and how to verify a Moment yourself in 30 seconds.",
-    images: ["https://www.rippackscity.com/api/og/collection?id=nba-top-shot"],
+    images: [POST.image],
   },
 }
 
