@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
+import { repoRelative } from "./helpers/source-files"
 
 // Top Shot's series → label map is duplicated across ~10 files (routes, SEO,
 // analytics, filter params). When a new series mints, every copy must learn it
@@ -38,7 +39,7 @@ describe("Top Shot series maps carry the newest series together", () => {
     expect(withEntry.length).toBeGreaterThanOrEqual(8)
   })
 
-  it.each(withEntry.map((f) => [f.replace(process.cwd() + "/", "")]))("%s also labels Series 2026-27", (rel) => {
+  it.each(withEntry.map((f) => [repoRelative(f)]))("%s also labels Series 2026-27", (rel) => {
     const src = codeOnly(readFileSync(join(process.cwd(), rel), "utf8"))
     expect(src).toMatch(/2026-27/)
   })
