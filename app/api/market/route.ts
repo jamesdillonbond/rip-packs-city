@@ -43,6 +43,7 @@ import { boundedRead } from "@/lib/api/bounded-read"
 import { readCanonicalBadgeTitles, filterRowsByBadges } from "@/lib/market/canonical-badges"
 import { getCollectionUuid } from "@/lib/collections"
 import { collectMarketFacets } from "@/lib/market/facets"
+import { expandFranchiseLabels } from "@/lib/market/franchise-teams"
 
 export const dynamic = "force-dynamic"
 // AllDay's get_allday_market_listings was rewritten for LIMIT-pushdown (~62ms), but
@@ -1008,9 +1009,15 @@ export async function GET(req: NextRequest) {
       // call per selected tier, in parallel: tiers are disjoint, so the union of
       // the per-tier windows holds every row the union's own window would.
       const tierList = tiers.length > 1 ? tiers : [tiers[0] ?? "all"]
+      // A team pick covers its franchise's every label (lib/market/franchise-teams.ts).
+      // Only the two RPC arms filter by team at the source.
+      const franchise = teams.length > 0 && (collectionId === TS_COLLECTION_ID_FOR_DISPATCH || collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH)
+        ? await expandFranchiseLabels(supabaseAdmin, collectionId, teams)
+        : { labels: teams, degraded: false }
+      if (franchise.degraded) console.log("[/api/market] franchise labels unavailable — filtering by the picked labels only")
       const parts = await Promise.all(tierList.map((tier) => fetchModernListings(collectionId, {
         tier,
-        teams,
+        teams: franchise.labels,
         badges,
         hasBadges,
         maxPrice: Number.isFinite(maxPrice) ? maxPrice : 0,

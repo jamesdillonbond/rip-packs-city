@@ -81,6 +81,16 @@ describe.each([
     expect(args).toMatchObject({ p_teams: ["Portland Fire", "Seattle Storm"], p_team: "all" })
   })
 
+  it("expands a picked team to every label its franchise minted under", async () => {
+    const inst = makeInstrumentedSupabaseFixture({
+      "rpc:resolve_team_name": { data: { status: "one", names: [{ team_name: "Brooklyn Nets" }, { team_name: "New Jersey Nets" }] }, error: null },
+    })
+    state.sb = inst.fixture
+    rpcCalls = inst.rpcCalls
+    await GET(req(`https://t/api/market?collectionId=${collectionId}&team=${encodeURIComponent("Brooklyn Nets")}`))
+    expect((argsOf(rpc)?.p_teams as string[]).sort()).toEqual(["Brooklyn Nets", "New Jersey Nets"])
+  })
+
   // 2026-10-14: badges ran only in memory over the RPC's ≤500-row window.
   it("sends selected badges as p_badges, and hasBadges as p_has_badges", async () => {
     await GET(req(`https://t/api/market?collectionId=${collectionId}&badges=${encodeURIComponent("Rookie Year,Championship Year")}`))
