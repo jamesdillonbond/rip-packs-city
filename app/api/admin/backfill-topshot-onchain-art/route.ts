@@ -11,9 +11,13 @@
 // view returning a mediaType->CID map (HERO, VIDEO, ...). It is populated at
 // admin-write time and is FRESHER than both the GQL catalog and Dapper's
 // reference-app bundle. This route reads it for every canonical int-keyed TS
-// edition with no working art (thumbnail NULL, or either media stranded on the
-// dead legacy assets.nbatopshot.com/editions/ CDN path) and fills
-// HERO->thumbnail_url + VIDEO->video_url from the public IPFS gateway. Writes
+// edition with no art (thumbnail NULL) or either media on the legacy
+// assets.nbatopshot.com/editions/ CDN path, and fills
+// HERO->thumbnail_url + VIDEO->video_url from the public IPFS gateway.
+// ⓘ "Legacy" is not "dead" today: re-measured 2026-10-14, 10/10 sampled legacy
+// thumbnails returned 200 image/png and 7/7 legacy videos 206. The move to the
+// contract-advertised IPFS CIDs (already serving 2,368 TS editions) is for
+// durability, not a live outage. Writes
 // only when the resolver returns a CID, so it never clobbers a working URL.
 //
 // Auth: Bearer RPC_ADMIN_TOKEN (or ?token=), INGEST_SECRET_TOKEN, or CRON_SECRET
@@ -48,6 +52,9 @@ const IPFS_GATEWAY = "https://ipfs.dapperlabs.com/ipfs/";
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts";
 
 const DEFAULT_BATCH = 80;
+// The fresh-drop leg (thumbnail NULL, newest first) takes at most this many of
+// a run's slots; the rest walk the legacy-URL population behind a cursor.
+const FRESH_LEG_MAX = 50;
 const MAX_BATCH = 300;
 const TIME_BUDGET_OVERHEAD_MS = 30_000;
 const PER_REQUEST_TIMEOUT_MS = 20_000;
@@ -116,7 +123,7 @@ interface NullArtRow {
   video_url: string | null;
 }
 
-// A media URL is "dead" when it's null or still on the legacy editions/ CDN path.
+// A media URL is replaceable when it's null or still on the legacy editions/ CDN path.
 function isDeadMedia(url: string | null): boolean {
   return url == null || url.includes("assets.nbatopshot.com/editions/");
 }
@@ -149,27 +156,78 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const supabase: any = supabaseAdmin;
 
   // Canonical int-keyed TS editions with no working art: thumbnail_url NULL, or
-  // either media still stranded on the dead legacy assets.nbatopshot.com/editions/
-  // CDN path (404s — e.g. WNBA sets the GQL catalog never ingested). set_id_onchain
-  // / play_id_onchain are non-null only on canonical rows — the inert UUID dupes
-  // have them nulled by editions_block_topshot_uuid_dupe_trg, so this naturally
-  // excludes them. Newest first so fresh drops get art on the next tick. We only
-  // ever WRITE when getCIDs returns a CID, so genuinely-artless editions are
-  // re-scanned harmlessly (resolver_misses) and a working ipfs/CDN URL is never
-  // clobbered (it matches neither the NULL nor the dead-/editions/ class).
+  // either media still on the legacy assets.nbatopshot.com/editions/ CDN path.
+  // set_id_onchain / play_id_onchain are non-null only on canonical rows — the
+  // inert UUID dupes have them nulled by editions_block_topshot_uuid_dupe_trg, so
+  // this naturally excludes them. We only ever WRITE when getCIDs returns a CID,
+  // and a working ipfs/CDN URL is never clobbered (it matches neither class).
+  //
+  // ⚠ TWO LEGS, because one newest-first read never progressed (measured
+  // 2026-10-14): a miss writes nothing, so the 300 newest candidates — all of them
+  // resolver-nil — were re-read every run (300/300 misses, rows_written 0, logged
+  // `no_more_editions`) while ~9,000 OLDER legacy-URL editions, which getCIDs DOES
+  // resolve (sampled at ranks 1,000 / 3,000 / 6,000 / 9,000: HERO + VIDEO), were
+  // never reached. An order on an immutable key re-reads its own head forever.
+  //   (A) fresh drops: thumbnail NULL, newest first, at most FRESH_LEG_MAX — the
+  //       new-drop gap this route exists for, reached on the next tick;
+  //   (B) the legacy-URL population, keyset-paged by id after the cursor the
+  //       previous run recorded (pipeline_runs.extra.next_cursor), wrapping to
+  //       the start when a page comes back short. A failed cursor read starts
+  //       from the beginning: re-reading is safe, skipping is not.
   const DEAD_CDN = "*assets.nbatopshot.com/editions/*";
-  const { data: rowsRaw, error: selErr } = await supabase
+  const COLS = "id, external_id, set_id_onchain, play_id_onchain, thumbnail_url, video_url";
+
+  const { data: freshRaw, error: freshErr } = await supabase
     .from("editions")
-    .select("id, external_id, set_id_onchain, play_id_onchain, thumbnail_url, video_url")
+    .select(COLS)
     .eq("collection_id", COLLECTION_ID)
-    .or(`thumbnail_url.is.null,thumbnail_url.like.${DEAD_CDN},video_url.like.${DEAD_CDN}`)
+    .is("thumbnail_url", null)
     .not("set_id_onchain", "is", null)
     .not("play_id_onchain", "is", null)
     .order("created_at", { ascending: false })
-    .limit(batch);
-  if (selErr) {
-    return NextResponse.json({ error: selErr.message }, { status: 500 });
+    .limit(Math.min(FRESH_LEG_MAX, batch));
+  if (freshErr) {
+    return NextResponse.json({ error: freshErr.message }, { status: 500 });
   }
+  const fresh = (freshRaw ?? []) as NullArtRow[];
+
+  let cursor: string | null = null;
+  let cursorReadError: string | null = null;
+  try {
+    const { data: prev, error: prevErr } = await supabase
+      .from("pipeline_runs")
+      .select("extra")
+      .eq("pipeline", PIPELINE_NAME)
+      .order("started_at", { ascending: false })
+      .limit(1);
+    if (prevErr) cursorReadError = prevErr.message;
+    const c = prev?.[0]?.extra?.next_cursor;
+    if (typeof c === "string" && c.length > 0) cursor = c;
+  } catch (e) {
+    cursorReadError = e instanceof Error ? e.message : String(e);
+  }
+
+  const legacyWant = Math.max(0, batch - fresh.length);
+  let legacy: NullArtRow[] = [];
+  if (legacyWant > 0) {
+    let q = supabase
+      .from("editions")
+      .select(COLS)
+      .eq("collection_id", COLLECTION_ID)
+      .or(`thumbnail_url.like.${DEAD_CDN},video_url.like.${DEAD_CDN}`)
+      .not("set_id_onchain", "is", null)
+      .not("play_id_onchain", "is", null);
+    if (cursor) q = q.gt("id", cursor);
+    const { data: legacyRaw, error: legacyErr } = await q.order("id", { ascending: true }).limit(legacyWant);
+    if (legacyErr) {
+      return NextResponse.json({ error: legacyErr.message }, { status: 500 });
+    }
+    legacy = (legacyRaw ?? []) as NullArtRow[];
+  }
+  // A short page means the walk reached the end of the population: next run wraps.
+  const lapComplete = legacy.length < legacyWant;
+  const legacyIds = new Set(legacy.map((r) => r.id));
+  const rowsRaw = [...fresh.filter((r) => !legacyIds.has(r.id)), ...legacy];
   const rows = (rowsRaw ?? []) as NullArtRow[];
 
   const timeBudgetMs = maxDuration * 1000 - TIME_BUDGET_OVERHEAD_MS;
@@ -177,7 +235,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   let thumbsFilled = 0;
   let videosFilled = 0;
   let resolverMisses = 0;
-  let terminatedReason = "no_more_editions";
+  let terminatedReason = lapComplete ? "lap_complete" : "batch_full";
+  let lastLegacyScanned: string | null = null;
   const errors: Array<{ edition: string; reason: string }> = [];
 
   for (const row of rows) {
@@ -185,6 +244,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       terminatedReason = "time_budget_exceeded";
       break;
     }
+    if (legacyIds.has(row.id)) lastLegacyScanned = row.id;
     const setId = row.set_id_onchain;
     const playId = row.play_id_onchain;
     if (setId == null || playId == null) continue;
@@ -233,6 +293,14 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     await sleep(CALL_DELAY_MS);
   }
 
+  // Where the next run's legacy leg starts: after the last row this run SCANNED
+  // (a budget break resumes there), or the beginning once the lap is complete.
+  const nextCursor =
+    terminatedReason === "time_budget_exceeded"
+      ? (lastLegacyScanned ?? cursor)
+      : lapComplete
+        ? null
+        : (legacy.length > 0 ? legacy[legacy.length - 1].id : cursor);
   const durationMs = Date.now() - startedAt;
   const ok = errors.length === 0;
 
@@ -256,6 +324,11 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         batch,
         duration_ms: durationMs,
         terminated_reason: terminatedReason,
+        fresh_candidates: fresh.length,
+        legacy_candidates: legacy.length,
+        cursor,
+        next_cursor: nextCursor,
+        cursor_read_error: cursorReadError,
         errors_sample: errors.slice(0, 5),
       },
     });
@@ -274,6 +347,9 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     batch,
     duration_ms: durationMs,
     terminated_reason: terminatedReason,
+    fresh_candidates: fresh.length,
+    legacy_candidates: legacy.length,
+    next_cursor: nextCursor,
     errors_count: errors.length,
     errors_sample: errors.slice(0, 5),
   });
