@@ -204,6 +204,21 @@ invisible to every standing instrument and was found only by the `panini-freshne
 task. **Panini's confidence share has no owner in the trust-health precompute — that is the open
 item this block raises.** Nothing about M1/M2 changed; Panini never fed them.
 
+✅ **CLOSED 2026-10-14 ~8:00 PM PT:** `rpc_thp_leg_panini_fmv_share` (migration `20261015025957`, pinned) writes
+`panini_fmv_high_med_share_pct` six-hourly (`57 3,9,15,21` UTC, cron_heavy) over the latest
+`panini_fmv_snapshots` row per edition; first value **23.7 %** (HIGH 2,122 + MEDIUM 5,104 of ~30.5k). It is
+now a row in the public `/legal/fmv-methodology` accuracy table.
+
+⚠ **Panini FMV findings from the same review (2026-10-14, all point-in-time against the next real sale):**
+- **The labels are not monotone in accuracy.** panini-1.2.0, 45 d, within ±25 %: HIGH 67.7 %, **LOW 59.3 %,
+  MEDIUM 46.8 %**; under $5 MEDIUM 47 % vs LOW 63 %, and at $100+ HIGH is the WORST tier (37 %, median
+  ratio 0.88). Relabelling (e.g. 1-recent-sale → LOW) would cut the headline share — a Trevor call, not shipped.
+- **A between-walk "reprice from new panini_sales" refresher was tested and REFUTED.** It looked like
+  +15 pts until the sales were filtered by `first_seen_at`: Panini sales reach the DB a median **53 h**
+  (p90 144 h) after `sold_at`, because they arrive with the walk. Point-in-time it is 55 % vs 56 % — no gain.
+  ⛔ **Any Panini backtest must gate inputs on `first_seen_at`, not `sold_at`.** The real lever is
+  ingest latency (the laptop walk's edition age, p50 ~89 h), not the estimator.
+
 ## ⭐ HEADLINE METRIC — re-read live 2026-10-10 ~3:05 PM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 09-18 block below)
 
 Same instrument as 09-18 (the six-hourly precompute legs; never mixed with a hand-derivation). Weeks start Monday.
