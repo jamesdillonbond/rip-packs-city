@@ -19,12 +19,16 @@
 // or moves the row, so Pipeline A's re-discovery needs no change.
 //
 // INDEXING NEW SETS (2026-10-15). The Dune lane that discovered holdings died on
-// 2026-09-10, so no set minted after July (set_id_onchain > 265) entered the
-// index, and Series 2026-27 would never have. The walk already holds every
+// 2026-09-10, so no set it had not already covered (topshot_index_dune_sets,
+// 39 sets) entered the index, and Series 2026-27 would never have. The walk already holds every
 // wallet's full ID set, so it now also sends the ids at or above
 // get_topshot_index_walk_id_floor() (the lowest mapped id past the Dune-era
 // sets; new mints only get higher ids) to topshot_index_walk_holdings, which
-// writes the ones that map to a post-265 edition as that wallet's holding. The
+// writes the ones that map to an edition in a set from 219 up that Dune never
+// covered as that wallet's holding (2026-10-16: was "> 265", which skipped the
+// Series 8 sets Dune missed, e.g. WNBA Base Set). Ids that map to nothing yet are
+// queued (topshot_index_unmapped_ids) for the chain hydrator, and indexed on the
+// wallet's next walk once hydrated. The
 // rotation (get_stale_ownership_wallets) also carries recent pack openers and
 // marketplace buyers with no row yet (topshot_ownership_walk_candidates); the
 // same call stamps each candidate walked so it does not block the rotation.
@@ -185,6 +189,7 @@ async function run(req: NextRequest) {
     let idFloor: number | null = null;
     let indexWritten = 0;
     let candidatesStamped = 0;
+    let unmappedQueued = 0;
     let indexError: string | null = null;
     let indexIdsSent = 0;
 
@@ -375,7 +380,8 @@ async function run(req: NextRequest) {
             errMsg = errMsg ?? `index-walk: ${error.message}`;
             break;
           }
-          const d = (data ?? {}) as { written?: number; candidates_stamped?: number };
+          const d = (data ?? {}) as { written?: number; candidates_stamped?: number; unmapped_queued?: number };
+          unmappedQueued += Number(d.unmapped_queued ?? 0);
           indexWritten += Number(d.written ?? 0);
           candidatesStamped += Number(d.candidates_stamped ?? 0);
         }
@@ -410,6 +416,7 @@ async function run(req: NextRequest) {
           index_ids_sent: indexIdsSent,
           index_written: indexWritten,
           candidates_stamped: candidatesStamped,
+          unmapped_queued: unmappedQueued,
           index_error: indexError,
           wallet_errors: walletErrors,
           budget_hit: budgetHit,

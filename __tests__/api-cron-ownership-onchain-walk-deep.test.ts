@@ -519,7 +519,7 @@ describe("ownership-onchain-walk — indexes new-set holdings", () => {
     const spy = install({
       "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
       "rpc:get_topshot_index_walk_id_floor": { data: 52537846, error: null },
-      "rpc:topshot_index_walk_holdings": { data: { written: 2, candidates_stamped: 1 }, error: null },
+      "rpc:topshot_index_walk_holdings": { data: { written: 2, candidates_stamped: 1, unmapped_queued: 3 }, error: null },
       topshot_ownership: [
         { data: [{ nft_id: "100", edition_external_id: "219:1", serial_number: 1 }], error: null },
         { data: null, error: null },
@@ -534,7 +534,7 @@ describe("ownership-onchain-walk — indexes new-set holdings", () => {
     expect(calls[0].args).toMatchObject({ p_owners: [W, W], p_nft_ids: [52537846, 53000000], p_walked: [W] })
     const log = logRun(spy.rpcCalls)
     expect(log?.p_ok).toBe(true)
-    expect(log?.p_extra).toMatchObject({ id_floor: 52537846, index_ids_sent: 2, index_written: 2, candidates_stamped: 1, index_error: null })
+    expect(log?.p_extra).toMatchObject({ id_floor: 52537846, index_ids_sent: 2, index_written: 2, candidates_stamped: 1, unmapped_queued: 3, index_error: null })
   })
 
   it("a failed floor read sends NO ids, still stamps the walked wallets, and fails the run", async () => {
