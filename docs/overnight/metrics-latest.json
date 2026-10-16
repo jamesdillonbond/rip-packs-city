@@ -1,48 +1,45 @@
 {
-  "generated_at_pt": "2026-10-15 ~01:15 AM PT (overnight nightly, cloud, push via device-VM clone)",
-  "generated_at_utc": "2026-10-15T08:15Z",
-  "pass": "Overnight nightly. GREEN, 0 shipped (routed-to-trevor; app tree hot from the 10-14 audit). Handoff: docs/handoff-2026-10-15-overnight-pass.md",
+  "generated_at_pt": "2026-10-16 ~01:15 AM PT (overnight nightly, cloud, push via device-VM clone)",
+  "generated_at_utc": "2026-10-16T08:15Z",
+  "pass": "Overnight nightly. GREEN, 0 shipped (nothing clearly-safe + non-hot open; app/edition/ownership tree hot from the 10-15 drain). Handoff: docs/handoff-2026-10-16-overnight-pass.md",
   "shipped": 0,
   "reverted": 0,
-  "verdict": "GREEN · 0 shipped · idle: routed-to-trevor · oldest routed: #58 OPENSEA_API_KEY ~20 nights (Trevor-shelved). Post-ship watch on 10-14 all GREEN; no regressions.",
+  "verdict": "GREEN · 0 shipped · idle: no-clearly-safe-non-hot-work (inbox empty, health green) · carried routed to Trevor/Claude Code · oldest routed: #23/#25 edge-fn drift (operator, since 08-22). Post-ship watch on 10-15's ~18 ships: all holding, 0 regressions.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
-    "structural": "function_search_path_drift: 1 = zz_probe_20261014() leftover (SECURITY INVOKER advisory, on Trevor 10-14 drop list); backward_cursor_rewinds [], wmc_null_edition_key [], cross_collection_mat_staleness [], procedure pins [], suppression_parked_claim_drift []",
+    "structural": "timeout_blind [], zero_yield 0/333 (6 suppressed), backward_cursor_rewinds [], wmc_null_edition_key [], function_search_path_drift [], procedure pins [], suppression_count/parked_claim_drift []",
     "trust_health_breaches": 0,
-    "trust_health_note": "all 38 arms ok. candy_sales_stale_hours 76.8 ok (breach_at retuned 30->168 on 10-14; Candy silence is upstream, Trevor-aware).",
-    "trust_precompute_max_age_hours": 5.35,
+    "trust_health_note": "all 38 arms ok. candy_sales_stale_hours 100.8 ok (breach_at 168; Candy silence upstream). edition_integrity_flags 8 (breach 250). unmapped_resolution_backlog_max 8 (breach 100).",
+    "trust_precompute_max_age_hours": 5.38,
     "stalled_pipelines": "none ([])",
     "timeout_blind_count": 0,
-    "zero_yield_lanes": "0 offenders (332 inspected, 6 suppressed)",
-    "pipeline_alerts": "candy-opensea listings/sales 100% = #58 parked; golazos_sales_v1_backfill cursor_stalled 14d = finished backfill, suppression pending in SQL editor; panini-collector-walk 32% = 10-min per-walk cap (by design); Atlas editions/market/supply/pack 403 + flow-rest-moment-moved + pack-pull 400 all INFO (attributed, nothing lost).",
-    "suppression_count_predicate_drift": "topshot-misattrib-drain observed 705 > 500 (#101 draining: 877 -> 705; <500 in ~2d). Not a regression.",
-    "sentry": "dark (quota off since 08-18, SDK removed #34).",
-    "vercel_24h": "16 error groups, all chronic low-count bounded-read timeouts. 1 NEW transient: /api/sniper-feed 'badge_editions @page 8: Project not specified' x1 07:04Z (pre-existing code, last touched 10-09 - not a 10-14 regression; watch).",
-    "latest_deploy": "dpl_3hiEUYmWvmM9hSpwRZFTgAdscQRH = 99b60a0e5 READY. 299b6a90a CANCELED = superseded rapid-push build, ancestor of tip, code live.",
-    "db_size_mb": 37952,
-    "db_size_note": "pg_database_size 10-15 ~01:15 AM PT (+735 MB vs 10-14 5:30 PM 37,217).",
+    "zero_yield_lanes": "0 offenders (333 inspected, 6 suppressed)",
+    "pipeline_alerts": "panini-collector-walk 33.3% = R131 (RESOLVED 10-15); alert POOLS pre-fix runs (R124), decays after the ~05:27 PT 10-16 burst. Atlas editions/market/pack-supply 403 all INFO (attributed, nothing lost).",
+    "sentry": "dark (quota off 08-18, SDK removed #34).",
+    "vercel_24h": "11 error groups (down from 16), all chronic bounded-read timeouts (degrade-to-empty), known-dispositioned market-cap 8s tiles, transient Supabase 502s, ipfs-media abort. NEW: get_topshot_rookie_collectors lock-timeout x2 @20:03Z 10-15 = transient during the ownership-MV rebuild, no recurrence. get_edition_special_serials timeout last 19:13Z = PRE the 22:48Z index, none since (fix holding).",
+    "db_size_mb": 38887,
+    "db_size_note": "pg_database_size 10-16 ~01:15 AM PT (+935 MB vs 10-15 01:15 = 37,952).",
     "accuracy_backtest_7d": {
-      "nba_top_shot": {"published_all_median_abs_err_pct": 14.1, "published_all_within_25_pct": 65.0, "last3_median_30d_all_err_pct": 13.9, "median_ratio": 1.0, "high_median_abs_err_pct": 9.5, "high_within_25_pct": 83.1, "n": 15889},
-      "nfl_all_day": {"published_all_median_abs_err_pct": 20.0, "published_all_within_25_pct": 57.8, "last3_median_30d_all_err_pct": 21.7, "median_ratio": 1.0, "high_median_abs_err_pct": 12.5, "n": 3166, "note": "STALE n=10 ratio 3.0, ASK_ONLY n=61 ratio 1.62 - known tiny worst buckets."}
+      "nba_top_shot": {"published_all_median_abs_err_pct": 13.0, "published_all_within_25_pct": 66.2, "published_all_median_ratio": 1.000, "high_median_abs_err_pct": 9.5, "high_within_25_pct": 83.9, "last3_median_30d_all_err_pct": 13.8, "last3_median_30d_all_ratio": 1.000, "n": 15699},
+      "nfl_all_day": {"published_all_median_abs_err_pct": 20.0, "published_all_within_25_pct": 57.8, "published_all_median_ratio": 1.042, "high_median_abs_err_pct": 13.3, "high_within_25_pct": 71.9, "n": 3025, "note": "ASK_ONLY n=68 ratio 1.744, STALE n=10 ratio 2.167 = known tiny worst buckets; median_abs_err_usd ALL $0.04 (sub-dollar sales)."}
     },
-    "post_ship_watch_10_14": "GREEN. market-edition-badges topshot/allday jobs succeeded 07:21/07:25Z; rpc-thp-leg-panini-fmv-share succeeded 03:57Z (value 23.8%); search-catalog migrations live via tip; fmv_alerts 0 rows."
+    "post_ship_watch_10_15": "GREEN. ownership-onchain-walk 7/7 ok (marked_missed 710); topshot-edition-concentration v2-walk-confirmed-live-supply 5/5; pack-market-sales-cache-refresh dirty-then-20h 96/96; topshot-set-series-onchain hourly 11/11; special-serials statement-timeout ceased post-index. 0 regressions."
   },
-  "fmv_high_med": {"nba_top_shot": 8082, "panini_blockchain": 7167, "nfl_all_day": 1622, "candy_mlb": 71, "laliga_golazos": 6, "ufc_strike": 0, "disney_pinnacle": 881},
-  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 10-15 05:35Z). Pinnacle 290 HIGH + 591 MEDIUM = 881.",
-  "editions_by_collection": {"nba_top_shot": 14528, "panini_blockchain": 30766, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 518, "candy_mlb": 125},
-  "deltas_vs_prev": "db +735 MB; trust breaches 1 -> 0 (candy arm retuned + silence is upstream); Vercel groups 1 -> 16 but all chronic bounded-read timeouts, nothing new except the 1 sniper-feed transient.",
+  "fmv_high_med": {"nba_top_shot": 8044, "panini_blockchain": 7929, "nfl_all_day": 1616, "candy_mlb": 72, "laliga_golazos": 6, "ufc_strike": 0, "disney_pinnacle": 912},
+  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 10-16 05:35Z). Pinnacle 283 HIGH + 629 MEDIUM = 912.",
+  "editions_by_collection": {"nba_top_shot": 14528, "panini_blockchain": 32086, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 518, "candy_mlb": 125},
+  "deltas_vs_prev": "db +935 MB (37,952 -> 38,887); nba HIGH+MED 8,082 -> 8,044 (-38); panini 7,167 -> 7,929 (+762); panini editions 30,766 -> 32,086 (+1,320); Vercel groups 16 -> 11. trust breaches 0 -> 0.",
   "open_watches": [
-    "/api/sniper-feed 'Project not specified' @page: re-open if systematic (1x 07:04Z, pre-existing code).",
-    "Candy MLB: candy_sales_stale_hours rises while Magic Eden shows no activity (upstream; breach_at now 168).",
-    "golazos_sales_v1_backfill cursor_stalled pages HIGH until the suppression in docs/pending-sql/ runs in the SQL editor.",
-    "topshot-misattrib-drain suppression drift clears when it drains <500 (~2d)."
+    "panini-collector-walk: after the ~05:27 PT 10-16 burst, ok=false share drops + extra.partial=true on capped runs (R131 first post-deploy read).",
+    "edition market bundle / special-serials: take a pgss mark for a clean post-fix delta (pooled average still diluted by pre-fix calls).",
+    "get_topshot_rookie_collectors lock-timeout: re-open only if it recurs outside the 10-15 MV rebuild window.",
+    "Series 2026-27 mints ~Oct 20: topshot-set-series-onchain registers [9], atlas frontier dispatches the new set within ~10 min."
   ],
   "needs_trevor": [
-    "#58 OPENSEA_API_KEY (~20 nights, shelved 09-23).",
-    "Golazos: run docs/pending-sql/audit_20261014_golazos_sales_v1_backfill_finished_suppression_made_permanent.sql in the SQL editor.",
+    "#58 OPENSEA_API_KEY (~21 nights, shelved 09-23).",
+    "Windows mount behind origin (HEAD 7ba2d1e0f) + deep-audit uncommitted edits: git pull --ff-only.",
     "drop_scratch residue (~185 MB flowty_archive.scratch_*): SQL-editor-only, Trevor's data.",
-    "zz_probe_20261014() + 10-14 Market probe/fn residue: SQL-editor DROP.",
     "#23/#25 edge-fn drift (operator since 08-22)."
   ],
-  "housekeeping": "0 shipped, 0 reverted. 1 ledger entry spliced at first line-start ###. Inbox drained (newest 10-12). metrics overwritten. Lock released."
+  "housekeeping": "0 shipped, 0 reverted. 1 ledger entry spliced at first line-start ###. Inbox already drained (newest filing 10-15, all closed). metrics overwritten. Lock released."
 }
