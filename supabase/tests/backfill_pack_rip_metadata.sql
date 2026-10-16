@@ -128,9 +128,12 @@
 -- and concludes it is vacuous.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260920230950_audit_20260920_both_allday_pull_value_writers_gain_the_whole_pack_check_together.sql),
--- itself byte-identical to production: prosrc md5 10c43230629503ec4e846f4450c2d9c4,
--- length 12242, read back after the apply on 2026-09-20.
+-- (supabase/migrations/20261016162203_audit_20261016_rip_metadata_eligibility_read_once_as_sets.sql),
+-- itself byte-identical to production: prosrc md5 89c4d224259048322b652d0f76ace7e7,
+-- length 14274, read back after the apply on 2026-10-16. That body's allday_repair and
+-- unpriced_retry legs build their eligibility as sets; the three mutations that flip each
+-- set's predicate (NOT EXISTS -> EXISTS on allday_unresolved, `edition_id IS NULL` -> IS NOT
+-- NULL, and the unpriced leg's collection test) each fail this file (exit 3).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -186,6 +189,7 @@ CREATE OR REPLACE FUNCTION public.backfill_pack_rip_metadata(p_limit integer DEF
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_temp'
  SET statement_timeout TO '50s'
+ SET plan_cache_mode TO 'force_custom_plan'
 AS $function$
 DECLARE
   v_processed int := 0;
@@ -246,22 +250,34 @@ BEGIN
   -- `idx_pack_rips_unvalued_stamped (metadata_updated_at) WHERE pull_value_usd IS
   -- NULL AND metadata_updated_at IS NOT NULL` (2,720 kB). Never-stamped rows lose
   -- nothing: `null_drain` stamps them, and they enter this leg on the next pass.
-  allday_repair AS MATERIALIZED (
+  -- 2026-10-16: the two eligibility tests are read ONCE as sets instead of probed per row.
+  -- Walked in stamp order with per-row EXISTS / NOT EXISTS, this leg had to pass every
+  -- stamped-unvalued All Day rip that fails them -- they are never selected, so never
+  -- re-stamped, so they never leave the head: 615,744 rows walked and 3.2 M buffers / 11 s
+  -- per run to find 150 of the 535 that qualify (10-16). Same predicate, same ORDER BY and
+  -- LIMIT; the set is built by hash joins (3.6 s / 238 k buffers standalone).
+  -- Through the function (rolled-back EXPLAIN, p_limit 1500, 10-16): 4.28 M -> 453 k buffers,
+  -- 6.4 s -> 3.7 s warm. The 10-04 attempt (reverted, 20261004172500) ran slower INSIDE the
+  -- function; force_custom_plan has been set since, and this one was timed there first.
+  allday_unresolved AS MATERIALIZED (
+    SELECT DISTINCT ap.pack_nft_id
+    FROM public.allday_pack_pull ap
+    WHERE ap.edition_id IS NULL
+  ),
+  allday_unvalued AS MATERIALIZED (
     SELECT pr.id, pr.pack_nft_id, pr.collection_id, pr.dist_id AS cur_dist,
-           pr.pull_value_usd AS cur_value, pr.moments_pulled
+           pr.pull_value_usd AS cur_value, pr.moments_pulled, pr.metadata_updated_at
     FROM public.pack_rips pr
     WHERE pr.collection_id = v_allday
       AND pr.pull_value_usd IS NULL
       AND pr.metadata_updated_at IS NOT NULL
-      AND EXISTS (
-        SELECT 1 FROM public.allday_pack_pull ap
-        WHERE ap.pack_nft_id = pr.pack_nft_id
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM public.allday_pack_pull ap
-        WHERE ap.pack_nft_id = pr.pack_nft_id AND ap.edition_id IS NULL
-      )
-    ORDER BY pr.metadata_updated_at ASC
+      AND NOT EXISTS (SELECT 1 FROM allday_unresolved u WHERE u.pack_nft_id = pr.pack_nft_id)
+  ),
+  allday_repair AS MATERIALIZED (
+    SELECT c.id, c.pack_nft_id, c.collection_id, c.cur_dist, c.cur_value, c.moments_pulled
+    FROM allday_unvalued c
+    WHERE EXISTS (SELECT 1 FROM public.allday_pack_pull ap WHERE ap.pack_nft_id = c.pack_nft_id)
+    ORDER BY c.metadata_updated_at ASC
     LIMIT v_allday_share
   ),
   -- The stamped-but-unvalued population (#93). It is reachable ONLY here: the
@@ -271,18 +287,25 @@ BEGIN
   -- ⚠ `EXISTS (moment_acquisitions)` is what keeps the population bounded:
   -- 381,278 of the 385,102 stamped-NULL rows at filing have NO acquisition row
   -- at all and are unpriceable by construction, so they are never selected.
-  unpriced_retry AS MATERIALIZED (
+  -- 2026-10-16: same head-pile-up as allday_repair above. Rows with no acquisition are
+  -- never selected, so never re-stamped: the per-row EXISTS walk passed 167,274 of them
+  -- (977 k buffers / 14.4 s) for 75 picks. The eligible set is built from the acquisitions
+  -- side once (33 k rows, 168 k buffers / 1.7 s standalone); same predicate, ORDER BY, LIMIT.
+  unpriced_eligible AS MATERIALIZED (
     SELECT pr.id, pr.pack_nft_id, pr.collection_id, pr.dist_id AS cur_dist,
-           pr.pull_value_usd AS cur_value, pr.moments_pulled
-    FROM public.pack_rips pr
+           pr.pull_value_usd AS cur_value, pr.moments_pulled, pr.metadata_updated_at
+    FROM (SELECT DISTINCT ma.source_pack_rip_id AS rid
+            FROM public.moment_acquisitions ma
+           WHERE ma.source_pack_rip_id IS NOT NULL) r
+    JOIN public.pack_rips pr ON pr.id = r.rid
     WHERE pr.pull_value_usd IS NULL
       AND pr.metadata_updated_at IS NOT NULL
       AND pr.collection_id IS DISTINCT FROM v_allday
-      AND EXISTS (
-        SELECT 1 FROM public.moment_acquisitions ma
-        WHERE ma.source_pack_rip_id = pr.id
-      )
-    ORDER BY pr.metadata_updated_at ASC
+  ),
+  unpriced_retry AS MATERIALIZED (
+    SELECT e.id, e.pack_nft_id, e.collection_id, e.cur_dist, e.cur_value, e.moments_pulled
+    FROM unpriced_eligible e
+    ORDER BY e.metadata_updated_at ASC
     LIMIT v_unpriced_share
   ),
   null_drain AS MATERIALIZED (

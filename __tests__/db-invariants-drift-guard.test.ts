@@ -2771,10 +2771,13 @@ const PINS = [
     // ⚠ Re-pointed 2026-09-24 to 20260924123824: the dist vote FILLS a NULL and
     // never overwrites a stored dist (property 8) — the overwrite had relabelled
     // 6,274 rips to an old dist whose pool contained every pulled edition.
+    // ⚠ Re-pointed 2026-10-16 to 20261016162203: allday_repair and unpriced_retry read
+    // their eligibility once as sets (4.28 M -> 453 k buffers through the function).
+    // Restates plan_cache_mode, which 20261004173500 set by ALTER.
     fn: "backfill_pack_rip_metadata",
     test: "supabase/tests/backfill_pack_rip_metadata.sql",
     migration:
-      "supabase/migrations/20261004172500_audit_20261004_revert_rip_metadata_allday_leg_slower_inside_the_function.sql",
+      "supabase/migrations/20261016162203_audit_20261016_rip_metadata_eligibility_read_once_as_sets.sql",
   },
   {
     // pg_cron `40 9 * * *`. Sets players.team from the catalogue.
