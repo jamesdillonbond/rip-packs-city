@@ -12,6 +12,8 @@ import {
   truncateAddressForDisplay,
   walletQueryKey,
   normalizeFlowEventAddress,
+  normalizeFlowAddress,
+  normalizeFlowAddressStrict,
 } from "@/lib/address"
 
 // Chain-aware address validation. The load-bearing footgun: Solana base58 is
@@ -197,5 +199,34 @@ describe("normalizeFlowEventAddress (Flow event payloads only)", () => {
   })
   it("trims and folds case (Flow hex is case-insensitive)", () => {
     expect(normalizeFlowEventAddress("  0xBD94CADE097E50AC ")).toBe(FLOW)
+  })
+})
+
+// Two forms on purpose (2026-10-16): they DIFFER on an unprefixed hex string, and
+// before consolidation both were exported as `normalizeFlowAddress` from
+// different modules. The difference is the contract — pin it from both sides.
+describe("normalizeFlowAddress / normalizeFlowAddressStrict (user-input Flow addresses)", () => {
+  it("both accept a prefixed address in any case and return it lowercased", () => {
+    for (const fn of [normalizeFlowAddress, normalizeFlowAddressStrict]) {
+      expect(fn("0xBD94CADE097E50AC")).toBe(FLOW)
+      expect(fn("  0xbd94cade097e50ac  ")).toBe(FLOW)
+      expect(fn("0XBD94CADE097E50AC")).toBe(FLOW)
+    }
+  })
+  it("ONLY the lenient form accepts an unprefixed 16-hex string", () => {
+    expect(normalizeFlowAddress("BD94CADE097E50AC")).toBe(FLOW)
+    expect(normalizeFlowAddressStrict("BD94CADE097E50AC")).toBeNull()
+  })
+  it("both reject non-Flow shapes rather than folding them into one", () => {
+    for (const fn of [normalizeFlowAddress, normalizeFlowAddressStrict]) {
+      expect(fn(EVM)).toBeNull()
+      expect(fn(SOL)).toBeNull()
+      expect(fn("0x123")).toBeNull()
+      expect(fn("0xzz94cade097e50ac")).toBeNull()
+      expect(fn("0x0xbd94cade097e50ac")).toBeNull()
+      expect(fn("")).toBeNull()
+      expect(fn(null)).toBeNull()
+      expect(fn(undefined)).toBeNull()
+    }
   })
 })

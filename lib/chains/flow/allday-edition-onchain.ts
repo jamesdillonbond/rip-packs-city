@@ -48,9 +48,7 @@ export const EXCLUDED_ADDRESSES = new Set<string>([
 ])
 
 // The one copy lives in lib/address.ts (2026-10-15); kept under this name for its importers.
-export function normalizeAddress(raw: string): string {
-  return normalizeFlowEventAddress(raw)
-}
+export const normalizeAddress = normalizeFlowEventAddress
 
 // Cadence JSON-CDC unwrapper (mirrors the indexer / dapper-v1-tx-decode copy).
 function unwrapCdc(node: unknown): unknown {

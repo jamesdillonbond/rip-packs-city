@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
 import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
+import { normalizeFlowEventAddress } from "@/lib/address"
 
 // POST /api/admin/backfill-allday-buyers — Authorization: Bearer $INGEST_SECRET_TOKEN
 //   (or Bearer $CRON_SECRET for the Vercel cron, or ?token=$INGEST_SECRET_TOKEN)
@@ -100,10 +101,11 @@ function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-function normalizeAddress(raw: string): string {
-  const hex = raw.trim().toLowerCase().replace(/^0x/, "")
-  return `0x${hex}`
-}
+// Tx proposer/authorizers/payer and decoded event addresses: the indexers'
+// canonical form (left-padded to 16 hex), from the one copy in lib/address.ts.
+// 2026-10-16: replaces a local fold-and-prefix that did not pad, so an event
+// address that dropped its leading zeros was written short.
+const normalizeAddress = normalizeFlowEventAddress
 
 // V2 Flowty-fork fallback: the tx's proposer/authorizers/payer minus the known
 // intermediaries. Only unambiguous (exactly-one-candidate) results are used.

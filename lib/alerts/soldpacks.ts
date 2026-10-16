@@ -7,16 +7,12 @@
 
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { resolveChannelOwner, type Channel } from "@/lib/alerts";
-
-const FLOW_ADDR_RE = /^0x[0-9a-f]{16}$/;
+import { normalizeFlowAddress } from "@/lib/address";
 
 // Accepts "0x…16hex" with or without the prefix; returns the normalized
 // lowercase 0x-prefixed address, or null if it isn't a Flow address.
-export function normalizeFlowAddress(input: string): string | null {
-  const t = (input || "").trim().toLowerCase();
-  const withPrefix = t.startsWith("0x") ? t : `0x${t}`;
-  return FLOW_ADDR_RE.test(withPrefix) ? withPrefix : null;
-}
+// The one copy lives in lib/address.ts (2026-10-16); re-exported for importers.
+export { normalizeFlowAddress };
 
 export interface PackReport {
   wallet: string;

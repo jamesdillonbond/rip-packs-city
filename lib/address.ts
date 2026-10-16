@@ -112,6 +112,29 @@ export function normalizeFlowEventAddress(raw: string): string {
   return `0x${hex.padStart(16, "0")}`;
 }
 
+// A Flow (Cadence) address from USER INPUT, validated: lower-case, `0x`-prefixed,
+// exactly 16 hex digits, or null. FLOW-ONLY — never call it on a chain-agnostic
+// input (a Solana key is not a Flow key; see normalizeAddress). Two forms, and the
+// difference is load-bearing, so they have different names:
+//   normalizeFlowAddress       — the `0x` is OPTIONAL ("BD94CADE097E50AC" is accepted).
+//                                Signature verification, giveaway claims, Telegram /
+//                                Discord wallet args.
+//   normalizeFlowAddressStrict — the `0x` is REQUIRED (an unprefixed string is null).
+//                                Wallet capability + plan lookups, where a bare hex
+//                                string has never been accepted.
+// 2026-10-16: one copy each, replacing two byte-equivalent local copies of each —
+// two of which were BOTH exported as `normalizeFlowAddress` with opposite rules.
+export function normalizeFlowAddress(input: unknown): string | null {
+  const hex = String(input ?? "").trim().toLowerCase().replace(/^0x/, "");
+  return /^[0-9a-f]{16}$/.test(hex) ? `0x${hex}` : null;
+}
+
+export function normalizeFlowAddressStrict(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const addr = input.trim().toLowerCase();
+  return /^0x[0-9a-f]{16}$/.test(addr) ? addr : null;
+}
+
 // Panini identity is a USERNAME, not an address — `panini_card_serials.owner` is
 // 100% populated, 2,762 distinct, and ZERO EVM-shaped (verified live 2026-08-08),
 // max observed length 16. The raw feed envelope's `my_public_wallet` key is NOT

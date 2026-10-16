@@ -16,6 +16,7 @@
 // users get the row from `feature_quotas WHERE plan='free'`.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { normalizeFlowAddressStrict } from "@/lib/address"
 
 export type UserPlan =
   | "free"
@@ -44,12 +45,8 @@ export interface QuotaResult {
   reason: string
 }
 
-function normalizeWallet(walletAddress: string | null | undefined): string | null {
-  if (typeof walletAddress !== "string") return null
-  const trimmed = walletAddress.trim().toLowerCase()
-  if (!/^0x[a-f0-9]{16}$/.test(trimmed)) return null
-  return trimmed
-}
+// The `0x` is REQUIRED here, as it always was: lib/address.ts normalizeFlowAddressStrict.
+const normalizeWallet = normalizeFlowAddressStrict
 
 export async function getUserPlan(walletAddress: string | null | undefined): Promise<UserPlan> {
   const wallet = normalizeWallet(walletAddress)

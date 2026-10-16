@@ -39,6 +39,7 @@
 // deploy/cloudflare/auth.js (Apache-2.0, github.com/veerman/topshot-explorer).
 
 import { createHmac, timingSafeEqual as nodeTimingSafeEqual } from "node:crypto"
+import { normalizeFlowAddress } from "@/lib/address"
 
 // FCLCrypto on Flow mainnet. verifyUserSignatures is the canonical on-chain
 // check for an FCL user signature: it resolves the account's keys, weights and
@@ -71,11 +72,9 @@ export type FlowSignature = {
   signature?: string
 }
 
-/** Lowercased `0x` + 16 hex, or null. Flow addresses are 8 bytes. */
-export function normalizeFlowAddress(input: unknown): string | null {
-  const x = String(input ?? "").trim().toLowerCase().replace(/^0x/, "")
-  return /^[0-9a-f]{16}$/.test(x) ? `0x${x}` : null
-}
+/** Lowercased `0x` + 16 hex, or null (the `0x` is optional on input). Flow
+ *  addresses are 8 bytes. The one copy lives in lib/address.ts (2026-10-16). */
+export { normalizeFlowAddress }
 
 /**
  * The signing secret. Deliberately NOT its own env var: the nonce only needs

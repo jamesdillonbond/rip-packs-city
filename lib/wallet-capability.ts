@@ -21,6 +21,7 @@
 // this model assumes.
 
 import { supabaseAdmin } from "@/lib/supabase";
+import { normalizeFlowAddressStrict } from "@/lib/address";
 
 export type WalletCapabilityTier = "advanced" | "read_only" | "unknown";
 export type WalletRole = "parent" | "child" | "standalone" | "unknown";
@@ -46,13 +47,10 @@ export interface WalletCapability {
   lastLinkEventAt: string | null;
 }
 
-const ADDR_RE = /^0x[0-9a-f]{16}$/;
-
-export function normalizeFlowAddress(input: unknown): string | null {
-  if (typeof input !== "string") return null;
-  const addr = input.trim().toLowerCase();
-  return ADDR_RE.test(addr) ? addr : null;
-}
+// ⚠ The STRICT form: an unprefixed hex string is null here (pinned by
+// __tests__/wallet-capability.test.ts). Kept under this name for its importers;
+// the one copy is lib/address.ts normalizeFlowAddressStrict (2026-10-16).
+export const normalizeFlowAddress = normalizeFlowAddressStrict;
 
 function unknownCapability(address: string): WalletCapability {
   return {
