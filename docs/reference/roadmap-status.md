@@ -108,6 +108,20 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
+## ⭐ NEW 2026-10-17 — SERIES 2026-27 LAUNCH READINESS (Top Shot; tip-off 2026-10-20, Rookie Debut 2026-11-11)
+
+Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevor: "Dig into this" → "Keep going"). Mechanics and the cost model: [topshot-ownership-index.md](topshot-ownership-index.md).
+- **Ownership index made launch-ready:**
+  - It counts walk-confirmed holdings only (`walk_missed_at`).
+  - It indexes every non-Dune set from 219 up, finds new collectors hourly, and backfilled 7,455 never-walked Series 8-era collectors.
+  - It hydrates and predicts the ids it cannot place, with the stock counts sampled and 60 ids per run.
+  - It grew 280,837 → 527,228 rows; squeeze-board census-complete 2,260 → 2,272 after the first backfill run (~8 more runs to go).
+- **Series 9 labels and circulation are covered** (series maps + guard; Atlas cap). Do NOT extend `topshot_normalize_circulation` to series 9 (/500 Rookie Debut vs its 1,000 floor).
+- 🔜 **Owed 2026-10-20 ~7 PM PT:** a fresh-session scheduled task verifies series-9 ingest end to end (sets, `collection_series` 9, circulation vs Atlas, index rows, pack labels).
+- 🔜 **Owed on/after 2026-11-11:** build the 2026 rookie class from Series 9 rookie sets (the 2025 list is a VIEW over Series 8 set names) and point the rookie boards at it. Do not seed it from the draft or the four announced partners: 4 of ~60 would silently drop the rest.
+- ❓ **Needs Trevor:** how the 2026-27 Yearbook / Blue Chip / Squad Goals leaderboards are scored. RPC will not publish its own rank as Top Shot's. The board worth building is "cost to climb into the top N", and it needs the official scoring.
+- **Not tracked yet:** autograph / partnered-athlete status (no DB field). Constellations trade-ins burn older-season Rares that the index does not walk (Dune-era sets), so holder counts there lag.
+
 ## ⭐ NEW 2026-10-15 — DEMAND READ, WEEK OF 10-08..10-14 PT (baseline for the next one)
 
 - **Human traffic:** ~61 browsers / 94 visits (`usage_events` minus `metadata.automated`; 29,580 of 29,914 beacons were automated). **6 external signed-in users** (notwhitelisted, mavhill (new 10-10), webz_80, awesemo, banana_boat, tomwagmi); 1 signup. Vercel Web Analytics said 5,710 visitors, almost all headless (schema-truth.md).
