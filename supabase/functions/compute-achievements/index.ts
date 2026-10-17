@@ -84,6 +84,22 @@ async function allRows<T>(
   return { ok: false, error: `${table}: more than ${MAX_PAGES * PAGE} rows` };
 }
 
+// How many registered series the wallets hold at least one moment of. A series
+// number absent from collection_series is not counted.
+async function seriesHeld(wallets: string[]): Promise<Read<number>> {
+  const reg = await allRows<{ series_number: number }>('collection_series', 'series_number', (q) => q);
+  if (!reg.ok) return reg;
+  const series = [...new Set(reg.value.map((r) => r.series_number))];
+  let held = 0;
+  for (const s of series) {
+    const { data, error } = await supabase.from('wallet_moments_cache').select('id')
+      .in('wallet_address', wallets).eq('series_number', s).limit(1);
+    if (error) return { ok: false, error: `wallet_moments_cache series ${s}: ${error.message}` };
+    if ((data ?? []).length > 0) held++;
+  }
+  return { ok: true, value: held };
+}
+
 type Owner = { userId: string | null; wallets: Read<string[]> };
 
 // owner_key -> the wallets (and user id) behind it. A wallet list is only `ok`
@@ -235,16 +251,15 @@ async function computeForUser(ownerKey: string): Promise<{ computed: number; err
       : c, errors)) computed++;
   }
 
-  // 6. series_collector — distinct series held (every row, paged)
+  // 6. series_collector — distinct series held. One `limit 1` existence probe per
+  // series in the collection_series registry: streaming every held row by id
+  // (the first 10-17 shape) hit statement_timeout on a 7k-pack collector.
   if (!w.ok) await applyAchievement(ownerKey, 'series_collector', walletFail('wallets'), errors);
   else {
-    const rows = w.value.length === 0 ? { ok: true as const, value: [] as { series_number: number }[] }
-      : await allRows<{ series_number: number }>('wallet_moments_cache', 'series_number',
-        (q) => q.in('wallet_address', w.value).not('series_number', 'is', null));
-    const n = rows.ok ? new Set(rows.value.map((r) => r.series_number)).size : 0;
-    if (await applyAchievement(ownerKey, 'series_collector', rows.ok
-      ? { ok: true, tier: highestTier(SERIES_COLLECTOR, n), progress: { count: n } }
-      : rows, errors)) computed++;
+    const n = w.value.length === 0 ? { ok: true as const, value: 0 } : await seriesHeld(w.value);
+    if (await applyAchievement(ownerKey, 'series_collector', n.ok
+      ? { ok: true, tier: highestTier(SERIES_COLLECTOR, n.value), progress: { count: n.value } }
+      : n, errors)) computed++;
   }
 
   // 7. big_spender — marketplace spend (every row, paged)
