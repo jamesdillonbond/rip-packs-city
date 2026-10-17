@@ -55,3 +55,6 @@ moved to the import map (the deno lint ratchet bans url imports) and deployed fr
 `edge-fn-deploy.yml`. `pipeline-failure-alerts` also changed behaviour: its one-request `limit=1000`
 read saw only the newest ~27 min of a ~2,200-runs/hour table, so it now pages the whole hour by
 keyset. **Do not redeploy from the copies in this folder** — the repo files are the source.
+
+`compute-achievements/` landed the same day (weekly cron-job.org caller; invisible to a 24 h log
+window) and was REWRITTEN on landing — the staged April build turned a failed read into a delete.
