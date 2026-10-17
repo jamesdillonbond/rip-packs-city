@@ -1,0 +1,42 @@
+# Handoff — 2026-10-17 Cowork afternoon pass (cloud, linked to the laptop)
+
+> ⚠ **SCOPE:** the push notes here are specific to this Cowork **cloud** session (repo attached mid-session with `add_repo`, direct `git push`). Trevor's machine and Claude Code push normally via Git Credential Manager — **commit these files as usual.**
+
+**Run:** ~2:45 → ~5:45 PM PT 10-17, Trevor: "look through the project, recent audits, handoffs, known issues … tasks that you can take care of from here … work autonomously for the next 3 hours". A Claude Code session was committing concurrently all afternoon (last seen `b013712e2`, 2:59 PM).
+
+**Verdict: GREEN · 5 shipped (2 scheduled-task prompts, 1 code commit with 2 fixes, 2 docs) · 4 DB fixes parked for Trevor's SQL-editor go-ahead · oldest routed: none older than today.**
+
+## Health (2:48–3:05 PM PT)
+- Security drift 0, `check_when_others_timeout_blind` 0, stalled `[]`, pg_cron recent failures none, trust breaches none.
+- `check_zero_yield_lanes()`: the two Pinnacle lanes (already dispositioned benign, 10-17 overnight) + **`topshot-set-series-onchain`** (30-day baseline = 1 find; it only writes when a new series appears — due 10-20 with Series 2026-27; benign).
+- Alerts: the known Atlas/Cloudflare 403 info rows + `topshot-pack-supply-atlas` 26.4 % (chronic). Vercel 12 h: 1 chronic group. Client-error beacon 7 d: 13 rows, all `automated:true` (the headless crawler).
+- Accuracy gate (R125, 7 d, Top Shot): published ALL 14.3 % / ratio 1.000; HIGH 9.5 %. Holds.
+
+## Shipped
+1. **Panini freshness check prompt** (`trig_01K68ddYeWqUumNN2RavC4ht`, `ecc143d32`). The routine still ran the 10-01 text: the 10-04 mirror changes (FOURTH regime, `NO_DATA`, `absurd_24h` re-scope, walked-but-not-repriced split) had never reached it. Plus 10-17 edits from `claude/handoff-2026-10-17-panini-freshness-straggler-and-stale-gates.md`, re-measured live: FIFTH regime (`panini-1.3.0`, ~3 h walks, 34,696 editions); **Query 5 filters `extra ? 'enum'`** (registry/product_names rows share the pipeline name and were the newest row at 11:00 PT, a standing false trigger for Escalation 3); `pskus_per_min` only on `budget` rows; 3-h still-running test; two-day cohort gate; Query 6c; lone Escalation-5 straggler = NOTE. Read-back equal to the mirror. Watch: 10-18 11:00 AM run.
+2. **Daytime monitor prompt** (`trig_01H9peMNj7LWJndZRrrbuAFA`, `777d1b5b7`, mirrored to `docs/scheduled-tasks/rpc-daytime-monitor.prompt.md`): push via the mount's `.rpc-git-cred` (the `pushurl` harvest it described is dead since 08-16); INDEX.md line + `fix-inbox-index-counts.mjs` in the same commit (simulated: passes); Sentry marked dark. Watch: the 5:04 PM PT run.
+3. **Docs** (`2a404a15f`): device-bound routine prompts CAN be updated from a laptop-linked cloud session (`tooling-gotchas.md`, Panini mirror header).
+4. **Candy pack art + empty series page** (`3bcf40138`): `getImageUrl`/`getVideoUrl` in `components/MomentMedia.tsx` appended Top Shot's `Hero_2880…png` / `Animated_…mp4` to every extension-less URL; Candy's art is a bare Arweave tx id (all 125 Candy editions), so `/candy-mlb/packs` rendered dead art (stored URL 404, bare tx id 200). Now only the legacy `assets.nbatopshot.com/editions/` prefix (no query) gets the suffixes. 4 new tests (fail on the old code), 91 related tests green. Same commit: `seriesPageMetadata` is noindex,follow on a measured `edition_count === 0` (UFC Series 0) and the empty-state copy drops "yet" (3 new `seo.test.ts` cases; one re-pinned test). Preflight: 7 steps, 0 failed.
+5. **Timestamp correction** (`24e4b2b16`): three PT stamps I had estimated, corrected from commit times.
+
+## Queued for Trevor / Claude Code
+1. **[P2, Trevor — SQL editor go-ahead, 0 nights] Four parked statements in `docs/pending-sql/`**, each md5-guarded against its base, each blocked only because the MCP holds DROP/DELETE/TRUNCATE-bearing SQL:
+   - `2026-10-17-drop-superseded-tame-open-listing-index.sql` (184 MB; replacement took all 1,060 scans since 10-16 9:31 AM PT; re-verified 3:03 PM).
+   - `2026-10-17-atlas-market-drain-samples-open-listing-count.sql` (base md5 re-verified 3:03 PM).
+   - `2026-10-17-thin-fmv-guard-compute-before-truncate.sql` + pin — **root cause of Vercel's top 48 h error group** (9 edition-page `insight_links` timeouts in 4 s at 1:30 AM PT: job 63 truncates, then builds for ~12 s holding ACCESS EXCLUSIVE; `topshot_deals_vs_fmv` reads the table).
+   - `2026-10-17-fmv-display-guard-compute-before-truncate.sql` + pin — same class, job 68 (1:45 AM PT, 17–25 s); `lib/fmv-display-guard.ts` fails open on a cold timeout.
+   Landing steps are in each file's header (commit migration + pin together; update the `db-invariants-drift-guard` entry's `migration:`).
+
+## Recorded, not changed
+- **UFC Series 0**: page now noindex with honest copy (`3bcf40138`), but the URL is still in the sitemap (`lib/sitemap-data.ts` emits every `collection_series` row). 371 of 518 UFC editions have `series` NULL (ingested 05-10 → 06-22, after close), so they appear on no series page. Closed archive; recorded only.
+- **Two malformed UFC rows**: `KHABIB-TIME-901` (player "Khabib Time 901", set "901") and `YOU-SUCK-2-0-750` (set "2 0") — mint number parsed into the name. Literal UPDATE = held.
+- **Golazos packs**: 0 of 32 rows has a price, so "cheapest first" shows retired packs with "—". Honest, not a sort defect.
+- **Two transient 502s** in the mobile pass (a static chunk, a `/login` prefetch); both 200 on 3× re-probe — likely the container's egress proxy.
+
+## Rendered-DOM QA (anonymous Playwright from the cloud container)
+- Desktop: 85 pages (Candy, Panini, All Day, Golazos, UFC, Pinnacle tabs + 1–2 entity pages per type, insights boards, blog/static). All 200, 0 overflow, 0 console errors, 0 failed requests.
+- Mobile 390 px: 43 pages. All 200, 0 overflow.
+- ⚠ In this container (2 CPUs) the sweep's in-page measurement costs ~1 page/min at concurrency 3; size samples to ~80 pages.
+
+## Failed / blocked
+- `apply_migration` of the thin-FMV fix → `{"status":"cancelled"}` (expected hold). Not retried, not routed around.
