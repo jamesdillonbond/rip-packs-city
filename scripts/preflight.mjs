@@ -114,10 +114,14 @@ export function changedPaths() {
   return [...new Set(lines.filter(Boolean))]
 }
 
-function step(label, cmd, args, env = {}) {
+function step(label, cmd, args, env = {}, opts = {}) {
   const t = Date.now()
   console.log(`\n▶ ${label}`)
-  const r = spawnSync(cmd, args, { stdio: "inherit", env: { ...process.env, ...env }, shell: process.platform === "win32" })
+  const r = spawnSync(cmd, args, {
+    stdio: "inherit",
+    env: { ...process.env, ...env },
+    shell: process.platform === "win32" && !opts.noShell,
+  })
   const s = ((Date.now() - t) / 1000).toFixed(0)
   const ok = r.status === 0
   console.log(`${ok ? "✓" : "✗"} ${label} (${s}s, exit ${r.status})`)
@@ -137,17 +141,23 @@ function main() {
   }
   const npx = process.platform === "win32" ? "npx.cmd" : "npx"
   const npm = process.platform === "win32" ? "npm.cmd" : "npm"
+  // vitest steps run through `node <vitest CLI>` with no shell. On Windows,
+  // step()'s `shell: true` routes `npx.cmd` through cmd.exe, whose 8,191-char
+  // line cap the ~145 tree-walking test paths exceed: it printed "The syntax of
+  // the command is incorrect." and the step failed having run NOTHING
+  // (2026-10-17). A process command line allows 32,767 chars.
+  const vitest = (args) => [process.execPath, ["node_modules/vitest/vitest.mjs", ...args], {}, { noShell: true }]
   const steps = []
   if (plan.tsc) steps.push(["tsc --noEmit", npx, ["tsc", "--noEmit"], { NODE_OPTIONS: "--max-old-space-size=3072" }])
   steps.push(["ci:guards", npm, ["run", "-s", "ci:guards"]])
   if (plan.lint) steps.push(["lint:ratchet", npm, ["run", "-s", "lint:ratchet"]])
-  if (plan.related.length) steps.push([`vitest related (${plan.related.length} path(s))`, npx, ["vitest", "related", "--run", "--passWithNoTests", ...plan.related]])
+  if (plan.related.length) steps.push([`vitest related (${plan.related.length} path(s))`, ...vitest(["related", "--run", "--passWithNoTests", ...plan.related])])
   const tests = readTests()
   const named = testsNamingPaths(tests, paths)
-  if (named.length) steps.push([`tests that name a changed path (${named.length})`, npx, ["vitest", "run", "--passWithNoTests", ...named]])
+  if (named.length) steps.push([`tests that name a changed path (${named.length})`, ...vitest(["run", "--passWithNoTests", ...named])])
   const walkers = tests.filter((t) => isTreeWalkingTest(t.src)).map((t) => t.file)
   const skippedSlow = []
-  ;(quick ? skippedSlow : steps).push([`tree-walking guards (${walkers.length})`, npx, ["vitest", "run", ...walkers]])
+  ;(quick ? skippedSlow : steps).push([`tree-walking guards (${walkers.length})`, ...vitest(["run", ...walkers])])
   if (plan.components) (quick ? skippedSlow : steps).push(["component coverage gate", npm, ["run", "-s", "test:coverage:components"]])
   if (plan.workers) (quick ? skippedSlow : steps).push(["worker coverage gate", npm, ["run", "-s", "test:coverage:workers"]])
   if (plan.full) steps.push(["primary coverage gate", npm, ["run", "-s", "test:coverage"]])
@@ -161,7 +171,7 @@ function main() {
 
   // ⚠ Run EVERY step even after a failure: one red step hiding the next is how
   // the six guards behind `tsc` went unseen on CI (testing-and-ci.md).
-  const results = steps.map(([l, c, a, e]) => step(l, c, a, e))
+  const results = steps.map(([l, c, a, e, o]) => step(l, c, a, e, o))
   const bad = results.filter((r) => !r.ok)
   console.log(`\npreflight — ${results.length} step(s) ran, ${bad.length} failed`)
   for (const r of results) console.log(`  ${r.ok ? "✓" : "✗"} ${r.label} (${r.s}s)`)
