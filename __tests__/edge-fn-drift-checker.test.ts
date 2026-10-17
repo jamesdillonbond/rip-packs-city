@@ -135,9 +135,18 @@ describe("edge-fn drift detector — tier 1 is a proof", () => {
     // 2026-10-14: six R21 retirements joined sync-nba-games as 410 tombstones. A
     // tombstone imports nothing, so tier 1 is inapplicable by construction; tier 2
     // (deployed body == repo) is what classifies them `clean` for edge-fn-deploy.yml.
+    // 2026-10-17: backfill-player-names and pipeline-failure-alerts landed from the
+    // R21 staging copy (docs/audits/edge-fleet-staging-2026-08-28/) — both live
+    // (function_edge_logs: 7/day and every 30 min) with no committed source until
+    // now. Both were moved to the import map on landing (the deno lint ratchet bans
+    // url imports). backfill-player-names imports createClient by bare specifier,
+    // so tier 1 applies to it; pipeline-failure-alerts has NO runtime import (fetch
+    // only, plus the type-only edge-runtime.d.ts side-effect import), so tier 1 is
+    // inapplicable to it and tier 2 is its verdict.
     expect(res.inapplicable.sort()).toEqual([
       "backfill-golazos-series",
       "flowty-proxy",
+      "pipeline-failure-alerts",
       "resolve-allday-pack-dist",
       "scan-allday-wallet",
       "scan-golazos-wallet",
