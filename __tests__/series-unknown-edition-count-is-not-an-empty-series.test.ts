@@ -62,7 +62,8 @@ describe("an unrolled-up series is not an empty series", () => {
     // 2026-08-23: 1 of 26 series), so removing the branch entirely would be the
     // mirror-image defect — an empty series rendering an editions grid that
     // will always be blank, with no explanation.
-    expect(src).toContain("No editions in this series yet")
+    // Re-pinned 2026-10-17: the copy dropped "yet" (UFC is a closed market); the property is unchanged.
+    expect(src).toContain("No editions recorded in this series")
     expect(src).toMatch(/isEmpty\s*\?/)
   })
 })

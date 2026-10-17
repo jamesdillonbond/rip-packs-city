@@ -19,6 +19,13 @@ function isBareIpfsGatewayUrl(prefix: string): boolean {
   );
 }
 
+// True only for the legacy Top Shot per-edition asset PREFIX
+// (https://assets.nbatopshot.com/editions/<…>/, no query string) — the one
+// form the Hero_/Animated_ suffixes below were written for.
+function isTopShotAssetPrefix(prefix: string): boolean {
+  return prefix.startsWith("https://assets.nbatopshot.com/editions/") && !prefix.includes("?");
+}
+
 export function getImageUrl(prefix: string | null | undefined): string | null {
   if (!prefix) return null;
   // UFC / legacy / pre-2022 Top Shot art lives on a slow public IPFS gateway as
@@ -30,6 +37,16 @@ export function getImageUrl(prefix: string | null | undefined): string | null {
     return proxyIpfsImageUrl(prefix, 640);
   }
   if (prefix.endsWith(".png") || prefix.endsWith(".webp") || prefix.endsWith(".jpg")) {
+    return prefix;
+  }
+  // 2026-10-17: ONLY the legacy Top Shot per-edition asset PREFIX takes the
+  // Hero_ suffix. Every other extension-less URL is already a complete image
+  // URL and passes through unchanged — Candy's Arweave art
+  // (https://arweave.net/<43-char tx id>, all 125 Candy editions), All Day's
+  // and Top Shot's media endpoints (…/media/image?width=…, …/media/<id>?type=hero).
+  // Appending the suffix glued the filename onto the Arweave tx id and 404'd the
+  // Candy pack art on /candy-mlb/packs (DeadImageGuard fired; bare tx id = 200).
+  if (!isTopShotAssetPrefix(prefix)) {
     return prefix;
   }
   const resizePrefix = prefix.replace(
@@ -49,6 +66,11 @@ export function getVideoUrl(prefix: string | null | undefined): string | null {
   }
   if (prefix.endsWith(".mp4")) return prefix;
   if (prefix.endsWith(".png") || prefix.endsWith(".webp") || prefix.endsWith(".jpg")) {
+    return null;
+  }
+  // Only a legacy Top Shot asset prefix has a derivable Animated_ variant (see
+  // getImageUrl); any other complete URL has no video here.
+  if (!isTopShotAssetPrefix(prefix)) {
     return null;
   }
   return `${prefix}Animated_1080_1080_Black.mp4`;

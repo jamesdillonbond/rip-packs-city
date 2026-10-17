@@ -31,6 +31,25 @@ describe("getImageUrl", () => {
     expect(getImageUrl(null)).toBeNull()
     expect(getImageUrl(undefined)).toBeNull()
   })
+
+  // 2026-10-17: a complete extension-less URL is NOT a Top Shot prefix. Before
+  // the fix the Hero_ suffix was glued onto every one of these, and the Candy
+  // pack art 404'd (the Arweave tx id with a filename appended). Shapes copied
+  // from `editions.thumbnail_url` in prod.
+  it.each([
+    ["Candy Arweave art (bare tx id)", "https://arweave.net/wRxRV-zmlAN6gB8WaeFKfhkqqXv_NA2RVV9_J49u3e4"],
+    ["All Day media endpoint", "https://media.nflallday.com/editions/2577/media/image?width=512&format=webp&quality=90"],
+    ["Top Shot media endpoint", "https://assets.nbatopshot.com/media/52882112?type=hero"],
+  ])("passes %s through unchanged — no Hero_ suffix, no video", (_label, url) => {
+    expect(getImageUrl(url)).toBe(url)
+    expect(getImageUrl(url)).not.toContain("Hero_")
+    expect(getVideoUrl(url)).toBeNull()
+  })
+
+  it("a query-carrying assets.nbatopshot.com/editions URL is complete too, not a prefix", () => {
+    const url = "https://assets.nbatopshot.com/editions/abc/x?width=400"
+    expect(getImageUrl(url)).toBe(url)
+  })
 })
 
 describe("getVideoUrl", () => {

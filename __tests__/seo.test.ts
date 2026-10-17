@@ -752,3 +752,18 @@ describe("seriesPageMetadata — Top Shot label follows the site-wide series map
     expect(titleText(seriesPageMetadata({ series_number: 7, display_label: "Series 7", season: null }, "nfl-all-day", "series-7").title)).toContain("Series 7 — NFL All Day")
   })
 })
+
+describe("seriesPageMetadata — a genuinely empty series is noindex (2026-10-17)", () => {
+  it("edition_count 0 (UFC Series 0, measured) → noindex,follow", () => {
+    const m = seriesPageMetadata({ series_number: 0, display_label: "Series 0", season: "2022", edition_count: 0 }, "ufc", "series-0")
+    expect(m.robots).toEqual({ index: false, follow: true })
+  })
+  it("edition_count NULL is UNKNOWN (never rolled up), not empty → stays indexable", () => {
+    const m = seriesPageMetadata({ series_number: 1, display_label: "Series 1", season: "2022", edition_count: null }, "ufc", "series-1")
+    expect((m.robots as { index?: boolean } | undefined)?.index).not.toBe(false)
+  })
+  it("a populated series stays indexable", () => {
+    const m = seriesPageMetadata({ series_number: 1, display_label: "Series 1", season: "2022", edition_count: 115 }, "ufc", "series-1")
+    expect((m.robots as { index?: boolean } | undefined)?.index).not.toBe(false)
+  })
+})

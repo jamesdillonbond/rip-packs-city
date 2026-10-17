@@ -1261,6 +1261,13 @@ export function seriesPageMetadata(
   const description = descParts.join(" ")
   const canonical = `${BASE_URL}/${collectionUrlSlug}/series/${encodeURIComponent(seriesSlug)}`
   const og = seriesSlug ? `${BASE_URL}/api/og/series?collection=${collectionUrlSlug}&slug=${encodeURIComponent(seriesSlug)}` : null
+  // 2026-10-17: a series that GENUINELY holds 0 editions (UFC Series 0, measured)
+  // is a contentless page — noindex,follow, like the gated tab shells above.
+  // `=== 0` only: a NULL edition_count is an un-rolled-up series (UNKNOWN), and
+  // must stay indexable (see the page's isEmpty note).
+  if (editionCount === 0) {
+    return { ...buildMeta({ title, description, canonical, image: og }), robots: { index: false, follow: true } }
+  }
   return buildMeta({ title, description, canonical, image: og })
 }
 

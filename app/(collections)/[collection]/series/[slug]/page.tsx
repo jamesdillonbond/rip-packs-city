@@ -325,7 +325,9 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
 
       {isEmpty ? (
         <div className="rpc-card" style={{ marginTop: 14, padding: "22px 18px", textAlign: "center", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-          No editions in this series yet
+          {/* 2026-10-17: no "yet" — the one genuine zero is UFC Series 0, a closed
+              market, so "yet" promised editions that will never arrive. */}
+          No editions recorded in this series
         </div>
       ) : (
         <>
