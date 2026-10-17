@@ -2289,3 +2289,10 @@ Three tries (~6:58 and ~8:00 PM PT) of a migration whose body was one guarded `U
 
 ### ⚠ A scripted "add an import after the last import" matches CADENCE `import X from 0x…` lines inside template literals (2026-10-15, 9:06 AM PT)
 The Flow indexers embed Cadence scripts as template literals whose own lines start with `import`. Inserting a TS import after the file's last `^import` line put `import { … } from "@/lib/address"` INSIDE six Cadence scripts (and tsc stays green — it is just string content). Anchor on the TS header instead: the last line before the first backtick that ends in a quoted module specifier (`from "…"`), then diff the result for any `+` line inside a template. Caught before commit; verified the Cadence text byte-identical to HEAD.
+
+## 2026-10-17 — device-bound scheduled-task prompts CAN be updated from a laptop-linked cloud session
+
+- A device-bound routine (folders on the laptop) refuses a content update from Claude Code or an unlinked session (403 `routine_bind_update_proof_required`, 10-04). From a **Cowork cloud session linked to the laptop**, `mcp__claude-code-remote__update_trigger` with a new `prompt` applied at once and returned "prompt re-signed by Claude Desktop (Windows) — this scheduled task still requires that computer" — no approval card, no Claude Desktop paste. Done twice on 10-17 (Panini freshness check, daytime monitor).
+- The repo mirrors are the source of truth: `docs/scheduled-tasks/<task>.prompt.md`, everything below `<!-- paste everything below this line -->`. Edit there, push with `update_trigger`, then read back: a ~47 KB result is saved to a tool-results file, so `json.loads(...)['trigger']['derived_state']['prompt']` can be compared to the file in the shell (10-17: equal after `.strip()`; the file carries one trailing newline).
+- ⚠ Diff the mirror against the LIVE prompt before editing: on 10-17 the Panini mirror held 10-04 changes that had never reached the routine (13 days).
+

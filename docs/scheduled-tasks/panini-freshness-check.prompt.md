@@ -1,6 +1,6 @@
 # Panini freshness check — scheduled-task prompt (source of truth)
 
-Routine `trig_01K68ddYeWqUumNN2RavC4ht` ("Panini freshness check", 11:00 AM PT daily). It is **device-bound**: its prompt can only be edited from Claude Desktop on the bound laptop — the RemoteTrigger API returns 403 `routine_bind_update_proof_required` from any session. Edit here first, then paste everything below the line into the task's prompt field.
+Routine `trig_01K68ddYeWqUumNN2RavC4ht` ("Panini freshness check", 11:00 AM PT daily). It is **device-bound**: a content edit is refused (403 `routine_bind_update_proof_required`) from any session NOT linked to the bound laptop. ✅ **2026-10-17: `update_trigger` from a Cowork cloud session LINKED to the laptop applies it directly and re-signs it** ("prompt re-signed by Claude Desktop (Windows)"), no approval card. Edit here first, then push everything below the line with `update_trigger` from a linked session (or paste it in Claude Desktop), and read the stored prompt back.
 
 2026-09-27: added the 09-24/25 `panini-1.1.0` engine regime note, Query 6b (same-engine paired confidence drift) and Escalation 5; retired the `pct_hi_med_repeat` < ~68 gate, which fired a false alarm that morning.
 
