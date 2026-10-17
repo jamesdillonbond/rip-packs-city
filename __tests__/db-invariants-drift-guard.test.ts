@@ -2378,7 +2378,7 @@ const PINS = [
     // possible answer, produced by a broken instrument.
     fn: "refresh_topshot_thin_fmv_editions",
     test: "supabase/tests/refresh_topshot_thin_fmv_editions.sql",
-    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
+    migration: "supabase/migrations/20261017235000_audit_20261017_thin_fmv_guard_compute_before_truncate.sql",
   },
   {
     // pg_cron `34 * * * *`. Backstop for the offers indexer, feeding

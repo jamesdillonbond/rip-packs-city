@@ -30,10 +30,11 @@
 -- that cohort should be empty — but if the confidence model ever changes, a
 -- zero-sale edition with an inflated FMV would be invisible to this guard.
 --
--- The function DDL below is VERBATIM from the committed snapshot migration
--- (supabase/migrations/20260816010000_audit_20260816_snapshot_thin_fmv_and_edition_offers_backstop.sql),
--- pulled from live prod via pg_get_functiondef on 2026-08-16
--- (md5 3e0f8218dca4bbee1ecdbeb4ee219f2b).
+-- The function DDL below is VERBATIM from the newest defining migration
+-- (supabase/migrations/20261017235000_audit_20261017_thin_fmv_guard_compute_before_truncate.sql).
+-- First snapshot: 20260816010000 (md5 3e0f8218dca4bbee1ecdbeb4ee219f2b).
+--   5. (2026-10-17) The rows are COMPUTED before the TRUNCATE, so the ACCESS EXCLUSIVE lock
+--      covers only the insert, not the ~12 s median scan (asserted structurally below).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -91,11 +92,16 @@ CREATE OR REPLACE FUNCTION public.refresh_topshot_thin_fmv_editions()
 AS $function$
 DECLARE
   v_count integer;
+  v_rows  public.topshot_thin_fmv_editions[];
 BEGIN
-  TRUNCATE public.topshot_thin_fmv_editions;
-
-  INSERT INTO public.topshot_thin_fmv_editions (edition_id, fmv_usd, median_90d, n_90d, computed_at)
-  WITH cand AS (
+  -- 2026-10-17: COMPUTE FIRST, then swap. TRUNCATE takes ACCESS EXCLUSIVE and holds it to
+  -- COMMIT; with the ~12 s median scan below inside that window, every reader of this table
+  -- (topshot_deals_vs_fmv -> get_edition_insight_links on EVERY edition page, the deals boards)
+  -- blocked for the whole build: 9 edition-page statement timeouts in 4 s at 1:30 AM PT 10-17.
+  -- The rows are built into an array with no lock held; the lock now covers only the insert.
+  SELECT coalesce(array_agg(ROW(c.edition_id, c.fmv_usd, m.median_90d, m.n_90d, now())::public.topshot_thin_fmv_editions), '{}')
+    INTO v_rows
+  FROM (
     -- Cheap prefilter using the stored snapshot column: HIGH/MEDIUM editions that are already thin
     -- (sales_count_30d 1..14) -- narrows the median-scan set without touching the sales table.
     SELECT e.id AS edition_id, lf.fmv_usd
@@ -112,9 +118,7 @@ BEGIN
       AND lf.confidence IN ('HIGH','MEDIUM')
       AND lf.fmv_usd > 0
       AND lf.sales_count_30d BETWEEN 1 AND 14
-  )
-  SELECT c.edition_id, c.fmv_usd, m.median_90d, m.n_90d, now()
-  FROM cand c
+  ) c
   JOIN LATERAL (
     SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY s.price_usd)::numeric AS median_90d,
            count(*)::integer AS n_90d
@@ -127,6 +131,12 @@ BEGIN
   WHERE m.n_90d < 15
     AND m.median_90d > 0
     AND c.fmv_usd > 1.5 * m.median_90d;
+
+  TRUNCATE public.topshot_thin_fmv_editions;
+
+  INSERT INTO public.topshot_thin_fmv_editions (edition_id, fmv_usd, median_90d, n_90d, computed_at)
+  SELECT r.edition_id, r.fmv_usd, r.median_90d, r.n_90d, r.computed_at
+  FROM unnest(v_rows) AS r;
 
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN v_count;
@@ -223,6 +233,19 @@ SELECT _assert_eq(
   (SELECT count(*)::text FROM public.topshot_thin_fmv_editions WHERE edition_id = :thick::uuid),
   '0',
   'the stale row from a previous run did not survive the TRUNCATE'
+);
+
+-- ── 5. The lock window: compute BEFORE the TRUNCATE ─────────────────────────
+-- ⚠ TRUNCATE holds ACCESS EXCLUSIVE until COMMIT. If the median scan runs after it,
+-- every reader of topshot_deals_vs_fmv (edition pages, deals boards) waits out the whole
+-- build — 9 edition-page timeouts in 4 s on 2026-10-17. A single session cannot observe a
+-- lock wait, so the ORDER is pinned instead: the array is filled before the TRUNCATE.
+SELECT _assert_eq(
+  (SELECT (position('INTO v_rows' IN prosrc) > 0
+       AND position('INTO v_rows' IN prosrc) < position('TRUNCATE public.topshot_thin_fmv_editions' IN prosrc))::text
+     FROM pg_proc WHERE oid = 'public.refresh_topshot_thin_fmv_editions()'::regprocedure),
+  'true',
+  'the rows are computed before the TRUNCATE takes its exclusive lock'
 );
 
 -- ── Full rebuild: an edition that stops being inflated stops being listed ────
