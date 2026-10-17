@@ -118,6 +118,9 @@ type EvRow = {
   depletion_pct: number | null
   edition_count: number | null
   slots: number | null
+  title: string | null
+  tier: string | null
+  image_url: string | null
 }
 
 type AskStateRow = {
@@ -172,7 +175,7 @@ export async function getPackDeals(
     (supabaseAdmin as any)
       .from("pack_table_rows")
       .select(
-        "dist_id, gross_ev, fmv_coverage_pct, ev_snapshotted_at, is_rare_single_pack, depletion_pct, edition_count, slots",
+        "dist_id, gross_ev, fmv_coverage_pct, ev_snapshotted_at, is_rare_single_pack, depletion_pct, edition_count, slots, title, tier, image_url",
       )
       .eq("collection_slug", collection)
       .not("gross_ev", "is", null)
@@ -235,7 +238,18 @@ export async function getPackDeals(
 
     const coverage = ev.fmv_coverage_pct ?? 0
     const depletion = ev.depletion_pct ?? 0
-    const slots = lst.momentsPerPack ?? ev.slots ?? 1
+    // ⚠ A live node with no distribution reports placeholders, not facts:
+    // "Pack #<id>", tier "common", no image and ONE slot. The old
+    // `lst.momentsPerPack ?? ev.slots ?? 1` never reached ev.slots (the
+    // placeholder 1 is not null), so a 10-slot rare box ("Run It Back:
+    // Origins Premium Pack") was published as an untitled 1-slot common and
+    // flagged single_slot_chase (2026-10-17: 30 of 50 Top Shot rows). The
+    // stored row fills only the fields Dapper did not send; live still wins.
+    const live = lst.liveFields
+    const slots = live && !live.slots ? (ev.slots ?? lst.momentsPerPack ?? 1) : (lst.momentsPerPack ?? ev.slots ?? 1)
+    const title = live && !live.title ? (ev.title || lst.title) : lst.title
+    const tier = live && !live.tier ? (ev.tier || lst.tier) : lst.tier
+    const imageUrl = lst.imageUrl || ev.image_url || ""
 
     const reasons: string[] = []
     if (liveValueRatio > HIGH_VARIANCE_RATIO) reasons.push("ev_gt_3x_ask")
@@ -272,9 +286,9 @@ export async function getPackDeals(
 
     deals.push({
       distId: lst.distId,
-      title: lst.title,
-      tier: lst.tier,
-      imageUrl: lst.imageUrl,
+      title,
+      tier,
+      imageUrl,
       slots,
       lowestAsk: lst.lowestAsk,
       grossEV,

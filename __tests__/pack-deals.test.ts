@@ -115,6 +115,49 @@ describe("getPackDeals — join & value math", () => {
   })
 })
 
+describe("getPackDeals — a live node with no distribution", () => {
+  // 2026-10-17: Dapper sent no distribution for 30 of 50 Top Shot sniper rows.
+  // The listing then carries placeholders ("Pack #<id>", common, no image,
+  // ONE slot), and the board published a 10-slot rare box as an untitled
+  // 1-slot common flagged single_slot_chase.
+  const placeholders = { title: false, tier: false, image: false, slots: false }
+
+  it("takes title, tier, image and slots from the stored row, not the placeholders", async () => {
+    state.listings = [
+      listing({ distId: "8754", title: "Pack #8754", tier: "common", imageUrl: "", momentsPerPack: 1, liveFields: placeholders }),
+    ]
+    state.evRows = [
+      evRow({ dist_id: "8754", slots: 10, title: "Run It Back: Origins Premium Pack", tier: "rare", image_url: "http://img/ribo.png" }),
+    ]
+    const { deals } = await getPackDeals("nba-top-shot")
+    expect(deals[0].title).toBe("Run It Back: Origins Premium Pack")
+    expect(deals[0].title).not.toMatch(/^Pack #/)
+    expect(deals[0].tier).toBe("rare")
+    expect(deals[0].imageUrl).toBe("http://img/ribo.png")
+    expect(deals[0].slots).toBe(10)
+    expect(deals[0].highVarianceReasons).not.toContain("single_slot_chase")
+  })
+
+  it("keeps the placeholder only when the stored row has nothing either", async () => {
+    state.listings = [listing({ distId: "1", title: "Pack #1", tier: "common", imageUrl: "", momentsPerPack: 1, liveFields: placeholders })]
+    state.evRows = [evRow({ dist_id: "1", slots: null, title: null, tier: null, image_url: null })]
+    const { deals } = await getPackDeals("nba-top-shot")
+    expect(deals[0].title).toBe("Pack #1")
+    expect(deals[0].slots).toBe(1)
+    expect(deals[0].imageUrl).toBe("")
+  })
+
+  it("lets fields Dapper did send win over the stored row", async () => {
+    state.listings = [
+      listing({ distId: "100", title: "Live Title", tier: "legendary", imageUrl: "live.png", momentsPerPack: 3,
+        liveFields: { title: true, tier: true, image: true, slots: true } }),
+    ]
+    state.evRows = [evRow({ dist_id: "100", slots: 9, title: "Stored Title", tier: "common", image_url: "stored.png" })]
+    const { deals } = await getPackDeals("nba-top-shot")
+    expect(deals[0]).toMatchObject({ title: "Live Title", tier: "legendary", imageUrl: "live.png", slots: 3 })
+  })
+})
+
 describe("getPackDeals — high-variance gating", () => {
   it("flags reasons and can drop high-variance packs", async () => {
     // ratio 30/10 = 3 (not > 3), so trigger via depletion + coverage + slots.

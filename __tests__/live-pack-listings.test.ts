@@ -122,6 +122,15 @@ describe("fetchLivePackListings — mapping", () => {
     expect(l.imageUrl).toBe("")
     expect(l.momentsPerPack).toBe(1) // null slots → default 1
     expect(l.seriesLabel).toBe("Unknown") // empty start time
+    // ...and says so: every placeholder above is marked as not sent by Dapper,
+    // so a caller holding the stored row can replace it (pack-deals does).
+    expect(l.liveFields).toEqual({ title: false, tier: false, image: false, slots: false })
+  })
+
+  it("marks the fields Dapper did send as live", async () => {
+    ;(fetch as any).mockResolvedValue(gqlOk([node({ distId: "d3" })]))
+    const { listings } = await fetchLivePackListings("nba-top-shot", { force: true })
+    expect(listings[0].liveFields).toEqual({ title: true, tier: true, image: true, slots: true })
   })
 
   it("skips nodes with no dist_id value and aggregates duplicates onto one dist (count + lowest ask)", async () => {

@@ -178,6 +178,14 @@ export type PackListing = {
   listingCount: number
   packType: PackType
   seriesLabel: string
+  /**
+   * Which display fields Dapper actually sent. When a node carries no
+   * distribution (common for new Top Shot drops: 30 of 50 Pack Sniper rows on
+   * 2026-10-17), title / tier / image / slots above are placeholders
+   * ("Pack #<distId>", "common", "", 1), not facts. Callers that hold the
+   * stored row (pack_table_rows) should prefer it for any field marked false.
+   */
+  liveFields?: { title: boolean; tier: boolean; image: boolean; slots: boolean }
 }
 
 function seriesLabelFromStartTime(startTime: string): string {
@@ -341,6 +349,12 @@ export async function fetchLivePackListings(
         listingCount: count,
         packType,
         seriesLabel: seriesLabelFromStartTime(startTime),
+        liveFields: {
+          title: d?.title?.value != null,
+          tier: d?.tier?.value != null,
+          image: Boolean(d?.image_urls?.value?.[0]),
+          slots: d?.number_of_pack_slots?.value != null,
+        },
       }
     },
   )
