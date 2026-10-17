@@ -31,11 +31,14 @@
 - **UFC Series 0**: page now noindex with honest copy (`3bcf40138`), but the URL is still in the sitemap (`lib/sitemap-data.ts` emits every `collection_series` row). 371 of 518 UFC editions have `series` NULL (ingested 05-10 → 06-22, after close), so they appear on no series page. Closed archive; recorded only.
 - **Two malformed UFC rows**: `KHABIB-TIME-901` (player "Khabib Time 901", set "901") and `YOU-SUCK-2-0-750` (set "2 0") — mint number parsed into the name. Literal UPDATE = held.
 - **Golazos packs**: 0 of 32 rows has a price, so "cheapest first" shows retired packs with "—". Honest, not a sort defect.
+- **10-16 2:11 PM PT burst** (6 Vercel groups: pack-detail reads + market-cap tiles, each "read exceeded 5000/8000ms", 1 user): no Postgres timeout or lock message in 2:05–2:16 PM, no migration applied then, only the always-on lanes running. No attributable cause — one slow page load; not chased further.
 - **Two transient 502s** in the mobile pass (a static chunk, a `/login` prefetch); both 200 on 3× re-probe — likely the container's egress proxy.
 
 ## Rendered-DOM QA (anonymous Playwright from the cloud container)
 - Desktop: 85 pages (Candy, Panini, All Day, Golazos, UFC, Pinnacle tabs + 1–2 entity pages per type, insights boards, blog/static). All 200, 0 overflow, 0 console errors, 0 failed requests.
 - Mobile 390 px: 43 pages. All 200, 0 overflow.
+- Insights boards: the 25 not covered above (all 200, 0 overflow, 0 console errors). `/insights/offer-spread`'s 21 "$0.00" are the SPREAD column where bid = floor — correct; the board discloses "176 of 200 asks unconfirmed".
+- Post-ship (verified live): `/candy-mlb/packs` dead art 0 (was 1), ICONs pack image loads from the bare Arweave id; `/ufc/series/series-0` serves `noindex, follow`.
 - ⚠ In this container (2 CPUs) the sweep's in-page measurement costs ~1 page/min at concurrency 3; size samples to ~80 pages.
 
 ## Failed / blocked
