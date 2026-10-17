@@ -556,9 +556,32 @@ async function getCollectionSeries(): Promise<SeriesRow[]> {
     const sb: any = createClient(url, key)
     // collection_series carries no timestamp column — select only what exists
     // and carry no lastModified downstream (never "now" — see the header).
+    // 2026-10-17: a series MEASURED at 0 editions (series_detail_rollup.edition_count
+    // = 0 — today only UFC Series 0) is noindex on its page (seriesPageMetadata),
+    // and a noindex URL in a sitemap is a Search Console "Submitted URL marked
+    // noindex" error. Leave those out. A series with NO rollup row is UNKNOWN, not
+    // empty, and stays in; a failed rollup read filters nothing (it is a pruning
+    // hint, not the catalogue — the catalogue read below still throws on failure).
+    const emptySeries = new Set<string>()
+    try {
+      const { data: rollup, error: rollupError } = await sb
+        .from('series_detail_rollup')
+        .select('collection_id, series_number, edition_count')
+        .eq('edition_count', 0)
+        .limit(1000)
+      if (!rollupError && Array.isArray(rollup)) {
+        for (const r of rollup as Array<{ collection_id: string | null; series_number: number | null; edition_count: number | null }>) {
+          if (r.edition_count === 0 && r.collection_id && r.series_number != null) {
+            emptySeries.add(`${r.collection_id}:${r.series_number}`)
+          }
+        }
+      }
+    } catch {
+      // pruning hint only — see above
+    }
     const { data, error } = await sb
       .from('collection_series')
-      .select('display_label, collection_id')
+      .select('display_label, collection_id, series_number')
       // + Disney Pinnacle (2026-09-27): not an EDITIONS collection (0 rows in
       // `editions`), but its series pages resolve (4/4 measured live).
       .in('collection_id', [...EDITION_COLLECTION_IDS, PINNACLE_COLLECTION_ID])
@@ -573,8 +596,10 @@ async function getCollectionSeries(): Promise<SeriesRow[]> {
     return ((data ?? []) as Array<{
       display_label: string | null
       collection_id: string | null
+      series_number?: number | null
     }>)
       .filter((r) => typeof r.display_label === 'string' && r.display_label.length > 0)
+      .filter((r) => !(r.collection_id && r.series_number != null && emptySeries.has(`${r.collection_id}:${r.series_number}`)))
       .map((r) => ({
         collection_db_slug: getCollectionByUuid(r.collection_id ?? '')?.dbSlug ?? '',
         display_label: r.display_label as string,

@@ -306,6 +306,40 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     expect(series[0].changeFrequency).toBe("weekly")
   })
 
+  // 2026-10-17: a series MEASURED at 0 editions is noindex on its page, so it
+  // must not be advertised (Search Console: "Submitted URL marked noindex").
+  describe("series measured at 0 editions are left out", () => {
+    const UFC_ID = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
+    beforeEach(() => {
+      h.t.collection_series = ok([
+        { display_label: "Series 0", collection_id: UFC_ID, series_number: 0 },
+        { display_label: "Series 1", collection_id: UFC_ID, series_number: 1 },
+        { display_label: "Series 2", collection_id: UFC_ID, series_number: 2 },
+      ])
+    })
+    const seriesUrls = async () => (await buildSitemapSegment(0)).map((x) => x.url).filter((u) => u.includes("/series/"))
+
+    it("drops the series whose rollup edition_count is 0", async () => {
+      h.t.series_detail_rollup = ok([{ collection_id: UFC_ID, series_number: 0, edition_count: 0 }])
+      const urls = await seriesUrls()
+      expect(urls).not.toContain(`${BASE}/ufc/series/series-0`)
+      expect(urls).toContain(`${BASE}/ufc/series/series-1`)
+      expect(urls).toContain(`${BASE}/ufc/series/series-2`)
+    })
+
+    it("keeps a series with NO rollup row — unknown is not empty", async () => {
+      h.t.series_detail_rollup = ok([])
+      expect(await seriesUrls()).toContain(`${BASE}/ufc/series/series-0`)
+    })
+
+    it("a failed rollup read prunes nothing (a hint, not the catalogue)", async () => {
+      h.t.series_detail_rollup = err("boom")
+      const urls = await seriesUrls()
+      expect(urls).toContain(`${BASE}/ufc/series/series-0`)
+      expect(urls).toHaveLength(3)
+    })
+  })
+
   it("appends profile pages from profile_bio, encoding the username", async () => {
     h.t.profile_bio = ok([
       { username: "trevor", updated_at: "2026-05-01T00:00:00.000Z" },
