@@ -81,7 +81,13 @@ and ~390px (note the resize cap — see the browser doc).
     (updated 2026-07-06). Do NOT flag it as broken or "fix" it back to the old
     `/marketplace/packs/listing/<uuid>/<distId>` shape. A secondary `dapper.market` link must be present.
   - (d) `SELECT count(*) FROM outbound_clicks WHERE surface='pack-sniper'` — report the running total
-    (early rows from 2026-06-10 are Cowork verification clicks, not users).
+    (early rows from 2026-06-10 are Cowork verification clicks, not users). 2026-10-17: **7 total, latest
+    08-31**, while `alert`/`edition` clicks landed that week. Compare against another surface's recent rows
+    before calling a zero a broken beacon.
+  - (d2) **Placeholder rows** — in the TS leg's JSON, count deals whose `title` matches `^Pack #\d+$` or
+    whose `imageUrl` is empty. Both should be 0. When Dapper sends no `distribution`, the listing carries
+    placeholders and `getPackDeals` must fill them from `pack_table_rows` (`liveFields`). 2026-10-17 it was
+    30/50 before the fix and 0/50 after. A non-zero count means a stored row is missing or the merge regressed.
   - (e) **Served-HTML crawlability** — fetch the RAW response body (not the hydrated DOM) and count
     `/pack/dist/` drill-down markers. The DOM can show rows while the served HTML has 0 (Finding C: the
     server once hardcoded `includeHighVariance:false` and every matched TS pack was high-variance → an
@@ -112,8 +118,10 @@ Run from the connected repo. Flag only NEW violations.
 
 ## Part 4 — SEO sample
 
-- `app/sitemap.ts` / `/sitemap.xml` — an index of child sitemaps; sum `<loc>` across children ≈ **33K**
-  (33,423 on 2026-08-27; all children 200).
+- `app/sitemap.ts` / `/sitemap.xml` — an index of child sitemaps; sum `<loc>` across children. **Dated
+  samples, not a target:** 33,423 on 2026-08-27; **~75.2K on 2026-10-17** (9 children, 0–8, all 200;
+  children 1–8 = 75,078). The growth is catalogue growth (more collections and editions), not a defect. Flag a
+  child that is not 200, or a total that FALLS sharply, not a total above an old sample.
 - Spot-check 2–3 entity/insights pages (raw HTML): self-canonical + `application/ld+json` +
   `<meta name="robots" content="index, follow">`. **Home page** was the known gap (no canonical / no
   og:url as of 2026-08-23; canonical shipped by 2026-08-27). **CLOSED 2026-09-25:** the anon home now

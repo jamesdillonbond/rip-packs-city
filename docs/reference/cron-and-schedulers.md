@@ -3031,3 +3031,14 @@ completed. Requiring exactly one candidate on EACH side left 4. **When the join 
 evidence only if the bucket is one-to-one; report the ambiguous count instead of resolving it.** The same
 measurement showed the bids were live (500/500 > 30 days old open on Atlas), refuting the hypothesis that
 prompted it. Case: database.md "The Top Shot `offers` table", known-issues #189.
+
+## ⚠ Before changing a lane's CADENCE, read its pgss blocks/call, and re-read the backlog just before applying (2026-10-17)
+`topshot_index_unmapped_dispatch` was sped from 40 every 4 min to 60 every 2 min (`20261017161620`) on a capacity
+check that measured only the Flow node (0 × 429). Twenty-three seconds later another session's `20261017161643`
+cut the actionable backlog from 173,669 to 23,409 (about 1.6 days at the old rate), so the premise was already gone. The lane was
+also the estate's top block consumer by ~10×: 1.61 M blocks / ~3.5 s per call, from a backlog `count(*)` over the
+whole ~187 k queue on every call. Doubling the calls took it to ~1.15 billion blocks a day. Reverted 9:24 AM PT
+(`20261017162355`). **A cadence change multiplies the per-call DB cost of every call, so measure that cost (pgss
+`shared_blks_hit+read / calls`) as well as the upstream's headroom. List migrations in your window before
+applying: the backlog that justified the change can move under you in seconds.** The lever was the per-call count, not the
+rate; its owner sampled it the same day (unsampled runs 0.6–1.1 s).

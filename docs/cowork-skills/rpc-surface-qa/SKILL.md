@@ -69,7 +69,7 @@ for *what* to check.** This body is the *how* and *why*.
    *simulator*, email bodies, recharts strokes, `accent_color` data, `theme-color` meta, console
    art, annotated `brand-exception` literals) — flag only NEW violations.
 
-4. **SEO sample.** Confirm the sitemap emits ~33K URLs; spot-check entity/insights pages for
+4. **SEO sample.** Confirm every child sitemap is 200 and the total has not fallen (~75K on 2026-10-17; the checklist keeps the dated samples); spot-check entity/insights pages for
    self-canonical + JSON-LD + `index,follow`; verify the Pack Sniper is linked from the hub +
    footer and its OG returns a non-trivial `image/png`; for any board claiming crawlability, verify
    the **served HTML** (raw fetch, not the hydrated DOM) actually contains the drill-down markers.
