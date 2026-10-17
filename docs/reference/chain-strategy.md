@@ -131,6 +131,11 @@ machinery, not a second resolver.
 | "is this an address at all?" | `isSupportedAddress()` / `detectAddressChain()` |
 | "is it an address for THIS collection?" | `isValidAddressForChain(value, dbChain)` |
 | rendering one to a reader | `displayAddress()` / `truncateAddressForDisplay()` |
+| a FLOW address from user input, `0x` OPTIONAL (signature verify, giveaway claims, bot wallet args) | `normalizeFlowAddress()` — null unless 16 hex |
+| a FLOW address from user input, `0x` REQUIRED (wallet capability, plan lookups) | `normalizeFlowAddressStrict()` — an unprefixed string is null |
+| a Flow address from a CADENCE EVENT / tx payload (Flow-only, never chain-agnostic input) | `normalizeFlowEventAddress()` — left-pads to 16 hex |
+
+⚠ **The two user-input forms differ ON PURPOSE, and before 2026-10-16 both were exported as `normalizeFlowAddress` from different modules with OPPOSITE rules for unprefixed hex** (`lib/auth/flow-signature.ts` accepted it, `lib/wallet-capability.ts` rejected it, test-pinned). One copy of each now lives in `lib/address.ts`; the old names are re-exports/aliases so no call site changed behaviour. `__tests__/flow-address-normalizers-live-in-lib-address.test.ts` bans a fresh body for any of these names under app/components/lib/workers (aliases allowed; scripts/ and Deno functions are stated blind spots).
 | the per-device owner key | `getOwnerKeyForChain()` / `setOwnerKeyForChain()` / `ownerKeyMatchesChain()` in [lib/owner-key.ts](../../lib/owner-key.ts) |
 
 ### The instances, and what each one taught

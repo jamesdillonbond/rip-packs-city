@@ -2154,6 +2154,17 @@ SQL function name rather than the pipeline name, and the free discriminator is a
 wrapper in `pg_stat_statements`, which proves the call arrived over HTTP. ⚠ `pg_stat_statements`
 otherwise misleads BOTH ways ([database.md](database.md)).
 
+⛔ **`function_edge_logs` IS NOT A CALLER CENSUS EITHER (2026-10-17).** It omitted two scheduled
+calls to `pipeline-failure-alerts` (9:46 + 10:16 AM PT, each "Successful 200" on cron-job.org, and
+the 10:16 response body carried the new code's keys) while logging a direct call made in between.
+And a WEEKLY caller (`compute-achievements`, Mondays) is invisible to any 24 h window. Both errors
+point the same way: an absence reads as "dead". **Census an edge function's callers instead:**
+cron-job.org job URLs (read host + `/functions/v1/<slug>` ONLY, never the query string or headers;
+the rpc-cron-ops skill has the guard-safe sweep), `cron.job.command`, DB function bodies, and repo
+fetch sites (a Vercel route may proxy to it: `/api/backfill-player-names` does). Use the logs only
+as POSITIVE evidence. ⚠ `query_logs` answers "Backend error" to an explicit `timestamp` predicate
+in its SQL; bound the window with its `iso_timestamp_start` / `iso_timestamp_end` parameters.
+
 ### ⭐ The OUTPUT TABLE is a better liveness falsifier than the pipeline name
 
 `pipeline_runs` tells you a NAME stopped logging. It cannot tell you whether the WORK stopped —

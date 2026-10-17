@@ -178,6 +178,13 @@ was moved here rather than deleted in favour of a pointer at `.env.example`.
 Rotation surfaces and which worker carries which secret: see the three-rotation-surfaces section of
 [brand-auth-proxy.md](brand-auth-proxy.md) and `RPC_DESIGN_SYSTEM.md` §11.
 
+## ⛔ On the Windows box, `npm run preflight` is the gate — four facts about running it here (2026-10-17)
+
+- **Edge-only tests are not the gate.** On 10-17 two edge commits were pushed after `npx vitest run __tests__/*edge*` alone, and `main` went red on a guard OUTSIDE that glob: `addresses-are-never-folded-and-prefixed` (its "no edge function has a Solana surface" premise; `_shared/achievements.ts` keys base58 wallets). Run `npm run preflight`: it adds the ~145 tree-walking guards, which is where that one lives.
+- **Its tree-walking step could not run here until the 10-17 fix in `scripts/preflight.mjs`.** It spawned `npx.cmd vitest run <145 paths>` with `shell: true`, i.e. through cmd.exe, whose 8,191-char line cap the paths exceed: `The syntax of the command is incorrect.`, exit 255, and the step had run NOTHING. vitest steps now spawn `node node_modules/vitest/vitest.mjs …` with no shell (32,767-char process limit). ⚠ The tell was a step that took 0 s.
+- **A stale `node_modules` reads as "baseline" tsc errors.** The six `e2e/a11y.spec.ts` errors discounted all session as pre-existing were `@axe-core/playwright` missing locally (another session added the devDependency). After pulling a dependency change, run `npm ci` before reading `tsc`.
+- `pre-commit-and-preflight.test.ts`'s executable-bit arm fails on Windows by construction (no POSIX mode bits); git records `.githooks/*` as `100755` (`git ls-files -s .githooks`), so CI is unaffected.
+
 ## Windows / Git Bash patching rules (CRITICAL)
 
 ### 🚨 BEFORE INTERPRETING ANY BEFORE/AFTER ON THIS ESTATE, LIST THE MIGRATIONS INSIDE YOUR WINDOW — one query, and it would have caught THREE confounds in one evening (2026-09-19)
