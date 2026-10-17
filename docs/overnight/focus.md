@@ -4,6 +4,12 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-10-17 ~9:50 AM PT (Claude Code, Windows box) — three queue items the night pass keeps re-carrying are STALE; do not re-carry them
+
+- **"#23/#25 edge-fn drift (since 08-22)" is CLOSED** — #23 closed 09-08, #25 resolved 09-25; `edge-fn-drift` has been green daily (10-17 run: 52/52 repo bodies matched, `clean`). What was really left was R21's residue: deployed functions with NO repo source. On 10-17 the two of those still being CALLED (`pipeline-failure-alerts`, `backfill-player-names`) were landed and redeployed from git. The ~18 still deployed-only have no pg_cron job, no DB caller and no edge-log traffic in 24 h; deleting them is optional dashboard hygiene (R130), not drift.
+- **"#58: the three candy-opensea indexers fail every tick" is WRONG** — they were UNSCHEDULED 2026-10-13 6:35 AM PT (ledger; R129 refuted). They do not run, so they cannot fail. The only open part is Trevor setting `OPENSEA_API_KEY` if he ever wants them.
+- **"Windows mount is behind origin / holds uncommitted edits" is DONE** — synced 2026-10-15 (the mount's unique 10-13/10-14 content was spliced into origin, `ee6e2af80`); the mount has tracked origin since.
+
 ## STEER — added 2026-10-15 ~6:35 AM PT (Claude Code cloud; CX / UI / concierge thread of 10-14 archived)
 
 - **✅ DONE 2026-10-16 9:22 AM PT — held: the 5:14 PM tick logged `suppressed_unchanged` 2 and every later delivery names a different listing/ask (ledger 10-16).** ~~Deal-alert repeat fix — decisive read is 2026-10-15 ~5:14 PM PT~~ (the daily-mode subscription's UTC-midnight tick). Expect NO new `alert_deliveries` row for `nba_top_shot:51:1878` (ask 0.46) or `nba_top_shot:58:1975` (ask 0.25) unless the ask changed, and the `alerts-dispatch` run row's `suppressed_unchanged` ≥ 1. The 10-14 5:14 PM deliveries of those two (`dedup_bucket` with no `:` fingerprint) were the LAST run on the old body — not a failure of the fix. A new row carrying the SAME ask after 10-15 5:14 PM IS a regression (`20261015002500`, pin `supabase/tests/dispatch_due_deal_alerts.sql`).

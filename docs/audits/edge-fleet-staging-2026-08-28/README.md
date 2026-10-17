@@ -46,3 +46,12 @@ The AllDay walk was at July-2023 with ~135 k rows left at 16:45Z and finishes in
 after which both jobs early-return on `done:true` — so the waste is self-limiting until the next
 `?reset=1`. **When either is next deployed (the R21 de-literalisation), change `count:"exact"` to
 `count:"estimated"` on that line** — the headers in the staged copies say exactly where.
+
+## 2026-10-17 — two LANDED in supabase/functions/ (the staged copies below are now history)
+
+`pipeline-failure-alerts/` and `backfill-player-names/` were still LIVE with no committed source
+(function_edge_logs 24 h: every 30 min and 7×). Both are now in `supabase/functions/<slug>/index.ts`,
+moved to the import map (the deno lint ratchet bans url imports) and deployed from git by
+`edge-fn-deploy.yml`. `pipeline-failure-alerts` also changed behaviour: its one-request `limit=1000`
+read saw only the newest ~27 min of a ~2,200-runs/hour table, so it now pages the whole hour by
+keyset. **Do not redeploy from the copies in this folder** — the repo files are the source.
