@@ -77,6 +77,17 @@ const ROOTS = ["app", "components", "lib", "workers", "scripts"]
 //     guard's metric is not free.**
 const EDGE_ROOT = "supabase/functions"
 const SOLANA_SURFACE = /candy|solana|base58|magic_eden/i
+//
+// ⚠ 2026-10-17: reason 1 EXPIRED, as the arm below said it would.
+// `_shared/achievements.ts` (compute-achievements, landed 10-17) keys holdings
+// by a Solana base58 address, and the census arm went red on every CI run from
+// ~10:30 AM PT. Reason 2 still holds, so the edge tree does NOT go back into
+// ROOTS wholesale: that would force markers into the two Flow-only Cadence
+// sites and fake the drift instrument's decay signal. Instead the ban now
+// covers exactly the edge files the property is true of, every file with a
+// Solana surface, and the census arm asserts each one is scanned.
+const edgeSolanaFiles = (): string[] =>
+  walk(EDGE_ROOT).filter((f) => SOLANA_SURFACE.test(readFileSync(f, "utf8")))
 
 /** `"0x" + …toLowerCase()` in either order. */
 const FOLD_AND_PREFIX =
@@ -109,7 +120,7 @@ type Hit = { file: string; line: number; text: string }
 function scan(): { hits: Hit[]; filesInspected: number } {
   const hits: Hit[] = []
   let filesInspected = 0
-  for (const file of ROOTS.flatMap((r) => walk(r))) {
+  for (const file of [...ROOTS.flatMap((r) => walk(r)), ...edgeSolanaFiles()]) {
     filesInspected++
     const raw = readFileSync(file, "utf8")
     const rawLines = raw.split("\n")
@@ -142,26 +153,22 @@ describe("no address is fold-and-prefixed without saying why", () => {
     expect(Array.isArray(hits)).toBe(true)
   })
 
-  it("THE EXCLUSION'S PREMISE STILL HOLDS: no edge function has a Solana surface", () => {
-    // This is what makes skipping `supabase/functions` an exclusion rather than
-    // a blind spot. The day an edge function starts handling a Candy address,
-    // this arm reds and the root has to come back into ROOTS (and the two
-    // known fold-and-prefix sites there — the Cadence `owner` in
-    // _shared/pack-opens-rip-parse.ts and backfill-pack-opens-api/index.ts —
-    // have to be re-examined rather than marked).
+  it("EVERY edge function with a Solana surface is under the ban (the rest stay excluded)", () => {
+    // The exclusion of `supabase/functions` is sound only for files that cannot
+    // see a base58 key. The census is re-derived every run, so a new Candy-aware
+    // edge function is scanned the day it lands. The two known fold-and-prefix
+    // sites there (the Cadence `owner` in _shared/pack-opens-rip-parse.ts and
+    // backfill-pack-opens-api/index.ts) are Flow-only and stay outside it.
     const edgeFiles = walk(EDGE_ROOT)
     expect(edgeFiles.length).toBeGreaterThan(20) // the census ran
-    const withSolana = edgeFiles.filter((f) => SOLANA_SURFACE.test(readFileSync(f, "utf8")))
-    console.log("DEBUG cwd", process.cwd(), "files", edgeFiles.length, "withSolana", JSON.stringify(withSolana), "re", String(SOLANA_SURFACE))
-    expect(
-      withSolana,
-      withSolana.length === 0
-        ? ""
-        : "an edge function now has a Solana surface, so supabase/functions can no longer be " +
-          "excluded from the fold-and-prefix ban. Put it back in ROOTS and re-examine the two " +
-          "Cadence-by-construction sites there:\n" + withSolana.join("\n"),
-    ).toEqual([])
-    console.log(`[fold-and-prefix guard] ${edgeFiles.length} edge function file(s) censused, 0 with a Solana surface`)
+    const withSolana = edgeSolanaFiles()
+    // Pinned so the census cannot silently go vacuous: this file is the one that
+    // expired the old premise, and it must be in the scanned population.
+    expect(withSolana).toContain(join(EDGE_ROOT, "_shared", "achievements.ts"))
+    console.log(
+      `[fold-and-prefix guard] ${edgeFiles.length} edge function file(s) censused, ` +
+        `${withSolana.length} with a Solana surface, all under the ban`,
+    )
   })
 
   it("POSITIVE CONTROL: the matcher sees the real shape, and the marker hides it", () => {
