@@ -1,7 +1,7 @@
 -- PENDING (run in the Supabase SQL editor, then commit as supabase/migrations/<version>_audit_20261017_fmv_display_guard_compute_before_truncate.sql
 -- under the version the editor run is recorded with, and land the pin below in the SAME commit). Companion to
 -- 2026-10-17-thin-fmv-guard-compute-before-truncate.sql — same defect, same fix; not sent to apply_migration because the identical
--- TRUNCATE-bearing shape was held ({"status":"cancelled"}) 10-17 ~3:40 PM PT.
+-- TRUNCATE-bearing shape was held ({"status":"cancelled"}) 10-17 ~3:06 PM PT.
 --
 -- 2026-10-17 (Cowork cloud). refresh_topshot_fmv_display_guard: compute the rows BEFORE the TRUNCATE.
 --

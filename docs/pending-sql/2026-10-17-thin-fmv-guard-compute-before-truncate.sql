@@ -1,6 +1,6 @@
 -- PENDING (run in the Supabase SQL editor, then commit as supabase/migrations/<version>_audit_20261017_thin_fmv_guard_compute_before_truncate.sql
 -- under the version the editor run is recorded with, and land the pin below in the SAME commit).
--- apply_migration on 10-17 ~3:40 PM PT returned {"status":"cancelled"} (the body carries the existing TRUNCATE; tooling-gotchas.md:
+-- apply_migration on 10-17 ~3:06 PM PT returned {"status":"cancelled"} (the body carries the existing TRUNCATE; tooling-gotchas.md:
 -- such bodies are held for operator confirmation). Not retried.
 --
 -- 2026-10-17 (Cowork cloud). refresh_topshot_thin_fmv_editions: compute the rows BEFORE the TRUNCATE.
