@@ -4,7 +4,7 @@
 
 **Run:** ~2:45 → ~5:45 PM PT 10-17, Trevor: "look through the project, recent audits, handoffs, known issues … tasks that you can take care of from here … work autonomously for the next 3 hours". A Claude Code session was committing concurrently all afternoon (last seen `b013712e2`, 2:59 PM).
 
-**Verdict: GREEN · 5 shipped (2 scheduled-task prompts, 1 code commit with 2 fixes, 2 docs) · 4 DB fixes parked for Trevor's SQL-editor go-ahead · oldest routed: none older than today.**
+**Verdict: GREEN · 6 shipped (2 scheduled-task prompts, 2 code commits with 3 fixes, 2 docs) · 4 DB fixes parked for Trevor's SQL-editor go-ahead · oldest routed: none older than today.**
 
 ## Health (2:48–3:05 PM PT)
 - Security drift 0, `check_when_others_timeout_blind` 0, stalled `[]`, pg_cron recent failures none, trust breaches none.
@@ -18,6 +18,7 @@
 3. **Docs** (`2a404a15f`): device-bound routine prompts CAN be updated from a laptop-linked cloud session (`tooling-gotchas.md`, Panini mirror header).
 4. **Candy pack art + empty series page** (`3bcf40138`): `getImageUrl`/`getVideoUrl` in `components/MomentMedia.tsx` appended Top Shot's `Hero_2880…png` / `Animated_…mp4` to every extension-less URL; Candy's art is a bare Arweave tx id (all 125 Candy editions), so `/candy-mlb/packs` rendered dead art (stored URL 404, bare tx id 200). Now only the legacy `assets.nbatopshot.com/editions/` prefix (no query) gets the suffixes. 4 new tests (fail on the old code), 91 related tests green. Same commit: `seriesPageMetadata` is noindex,follow on a measured `edition_count === 0` (UFC Series 0) and the empty-state copy drops "yet" (3 new `seo.test.ts` cases; one re-pinned test). Preflight: 7 steps, 0 failed.
 5. **Timestamp correction** (`24e4b2b16`): three PT stamps I had estimated, corrected from commit times.
+6. **Sitemap leaves out series measured at 0 editions** (`f5a4aa06e`): `getCollectionSeries()` drops `collection_series` rows whose `series_detail_rollup` row says `edition_count = 0` (prod: only UFC Series 0). No rollup row = unknown, kept; a failed rollup read prunes nothing. 3 new tests (the drop case fails with the filter off). Preflight 6 steps, 0 failed; CI/Smoke/E2E green; deploy READY; live `/sitemap/0.xml` lists series-1 and series-2 only (4:10 PM PT).
 
 ## Queued for Trevor / Claude Code
 1. **[P2, Trevor — SQL editor go-ahead, 0 nights] Four parked statements in `docs/pending-sql/`**, each md5-guarded against its base, each blocked only because the MCP holds DROP/DELETE/TRUNCATE-bearing SQL:
@@ -28,7 +29,7 @@
    Landing steps are in each file's header (commit migration + pin together; update the `db-invariants-drift-guard` entry's `migration:`).
 
 ## Recorded, not changed
-- **UFC Series 0**: page now noindex with honest copy (`3bcf40138`), but the URL is still in the sitemap (`lib/sitemap-data.ts` emits every `collection_series` row). 371 of 518 UFC editions have `series` NULL (ingested 05-10 → 06-22, after close), so they appear on no series page. Closed archive; recorded only.
+- **UFC Series 0**: page now noindex with honest copy (`3bcf40138`), and since `f5a4aa06e` it is out of the sitemap (see Shipped 6). 371 of 518 UFC editions have `series` NULL (ingested 05-10 → 06-22, after close), so they appear on no series page. Closed archive; recorded only.
 - **Two malformed UFC rows**: `KHABIB-TIME-901` (player "Khabib Time 901", set "901") and `YOU-SUCK-2-0-750` (set "2 0") — mint number parsed into the name. Literal UPDATE = held.
 - **Golazos packs**: 0 of 32 rows has a price, so "cheapest first" shows retired packs with "—". Honest, not a sort defect.
 - **10-16 2:11 PM PT burst** (6 Vercel groups: pack-detail reads + market-cap tiles, each "read exceeded 5000/8000ms", 1 user): no Postgres timeout or lock message in 2:05–2:16 PM, no migration applied then, only the always-on lanes running. No attributable cause — one slow page load; not chased further.
