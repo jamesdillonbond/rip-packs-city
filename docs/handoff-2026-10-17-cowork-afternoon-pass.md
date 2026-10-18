@@ -4,7 +4,7 @@
 
 **Run:** ~2:45 → ~10 PM PT 10-17, Trevor: "look through the project, recent audits, handoffs, known issues … tasks that you can take care of from here … work autonomously for the next 3 hours". A Claude Code session was committing concurrently all afternoon (last seen `b013712e2`, 2:59 PM).
 
-**Verdict: GREEN · 16 shipped (incl. FMV 1.8.2 — read M1/M2 on the 10-18 legs expecting a by-decision drop) · nothing waiting on Trevor · oldest routed: none older than today.**
+**Verdict: GREEN · 18 shipped (incl. FMV 1.8.2 + its Panini fix — read M1/M2 on the 10-18 legs expecting a by-decision drop) · nothing waiting on Trevor · oldest routed: none older than today.**
 
 ## Health (2:48–3:05 PM PT)
 - Security drift 0, `check_when_others_timeout_blind` 0, stalled `[]`, pg_cron recent failures none, trust breaches none.
@@ -29,6 +29,8 @@
 14. **All Day ask-corroboration re-enabled** (`1bfc17c86`, ~7:25 PM PT): the fmv-recalc liveness probe read a NULL `listed_at` (4,913 `storefront_v2` rows, NULLs sort first under DESC) and withheld every All Day LOW→MEDIUM lift since ~09-25. The would-lift set prices like MEDIUM (14 d: 20.7 % vs 20.0 % median error, n 855). Verified live: lag 0.2 h, 14 of the first 216 recomputed editions LOW→MEDIUM, 0 down. **Read M2 on the 10-18 legs.**
 15. **Golazos is an idle market, not a blind venue** (`20261018041800`, applied ~9:15 PM PT after Trevor's "apply the Golazos status fix"): marketplace status row re-verified idle. **Trevor 9:27 PM PT: no dormancy label** ("Users can make their own judgement"); the label and relative-deals copy items are marked declined in `laliga-golazos.md`.
 16. **FMV 1.8.2 — MEDIUM needs a sale in the last 30 days** (`3b5d3cfa6`, ~9:50 PM PT; decided under Trevor's "Decide the rest of this yourself"). 90-day-only MEDIUM backtested at Top Shot 20.0 % median error / 59.0 % within ±25 % (n 483) vs 30-day MEDIUM 14.0 / 64.7; All Day 33.5 / 41.4 (n 145) vs 20.0 / 56.7. That fails the same tolerance used to admit ask-corroborated MEDIUM (item 14). `gateMediumToRecentSale` runs after the HIGH recency gate at all three confidence writes; labels only, prices unchanged. **Expected M1 ~55 % → ~44 %, All Day ~28 % → ~25 %, Golazos → 0 (an estimate; measure on the 10-18 legs).** Revert: `git revert` the commit titled "feat(fmv): 1.8.2 — MEDIUM needs a sale in the last 30 days".
+17. **1.8.2 regression on Panini, found in the production read-back and fixed** (`61797165d`, live ~10:25 PM PT). The stale re-stamp's "no sale in 30 days" reads `sales`, which holds no Panini sale (they live in `panini_sales`), so the first 1.8.2 run demoted 44 Panini editions MEDIUM → LOW and ~10k would have followed overnight. The gate is now three-state (`null` = unknown, no change); a route test fails with the null branch removed. The 44 rows wait for Panini's own ~3 h walk. Recorded, not changed: the older HIGH re-stamp gate has the same blind spot (Panini HIGH → MEDIUM since 08-07).
+18. **`main` CI unbroken** (`e7f8ae9bb`): the concurrent session's text-colour guard (`a816619a`) shelled out to `git ls-files`, which `guards-do-not-shell-out-to-grep` bans; it now walks the tree in-process. CI green on `61797165d`.
 
 ## Queued for Trevor / Claude Code
 - None. All four 10-17 `docs/pending-sql/` statements are applied and committed.
@@ -38,6 +40,7 @@
 - **Two malformed UFC rows**: `KHABIB-TIME-901` (player "Khabib Time 901", set "901") and `YOU-SUCK-2-0-750` (set "2 0") — mint number parsed into the name. Literal UPDATE = held.
 - **Golazos packs**: 0 of 32 rows has a price, so "cheapest first" shows retired packs with "—". Honest, not a sort defect.
 - **10-16 2:11 PM PT burst** (6 Vercel groups: pack-detail reads + market-cap tiles, each "read exceeded 5000/8000ms", 1 user): no Postgres timeout or lock message in 2:05–2:16 PM, no migration applied then, only the always-on lanes running. No attributable cause — one slow page load; not chased further.
+- **Candy sales capture is still dark (#58)**: `candy-sales-indexer` 24/24 ok, 0 written in 3 d; Magic Eden shows no Candy activity of any type since 10-12. The OpenSea lanes stay unscheduled until Trevor creates an `OPENSEA_API_KEY`. Unchanged.
 - **Two transient 502s** in the mobile pass (a static chunk, a `/login` prefetch); both 200 on 3× re-probe — likely the container's egress proxy.
 
 ## Rendered-DOM QA (anonymous Playwright from the cloud container)
