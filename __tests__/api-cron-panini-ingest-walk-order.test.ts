@@ -34,6 +34,9 @@ const st = vi.hoisted(() => ({
   // Optional per-row last_seen_at (epoch ms); overrides baseMs + i s when set (2026-10-10).
   seenAt: null as null | ((i: number) => number),
   pageOrder: [] as Array<[string, unknown]>,
+  // panini_pack_ev_board (ev_modeled) — products with a live pack-EV model (2026-10-18). Empty by
+  // default so the modeled slice stays out of tests about something else.
+  modeled: { data: [] as unknown[] | null, error: null as null | { message: string } },
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -52,6 +55,10 @@ vi.mock("@/lib/supabase", () => ({
             st.holdingsError ? { data: null, error: st.holdingsError } : { data: st.holdings.slice(from, to + 1), error: null },
         }
         return h
+      }
+      if (table === "panini_pack_ev_board") {
+        const r: any = { select: () => r, eq: () => r, then: (f: any, g: any) => Promise.resolve(st.modeled).then(f, g) }
+        return r
       }
       if (table === "panini_products" || table === "panini_pack_pages") {
         const res = table === "panini_products" ? st.products : st.pages
@@ -93,6 +100,7 @@ beforeEach(async () => {
   st.baseMs = Date.now() - 3_600_000
   st.seenAt = null
   st.pageOrder = []
+  st.modeled = { data: [], error: null }
   process.env.INGEST_SECRET_TOKEN = "tok"
   ;({ GET } = await import("@/app/api/cron/panini-ingest/route"))
 })
@@ -379,3 +387,80 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     expect(j.complete).toBe(true)
   })
 })
+
+// MODELED PRIORITY (2026-10-18). WC (2332, the collection, a modeled pack-EV product) got 5.6 % of its
+// editions walked per day against 16.6 % for the rest, p50 75 h, because it sat just under the 5-day
+// aged line. Modeled-product editions older than 36 h now go right after the critical list, capped.
+describe("GET /api/cron/panini-ingest — modeled products are walked ahead of the interleave", () => {
+  const H = 3_600_000
+
+  it("serves modeled editions older than 36 h, stalest first, capped at 150", async () => {
+    st.modeled = { data: [{ product_set_id: 2332 }], error: null }
+    st.total = 400
+    st.seenAt = (i) => Date.now() - 48 * H + i * 1000 // all 48 h old, ascending
+    const j = await (await GET(req())).json()
+    expect(j.modeled_set_ids).toEqual([2332])
+    expect(j.modeled_priority).toBe(150)
+    expect(j.priority_pskus).toHaveLength(150)
+    expect(j.priority_pskus[0]).toBe("packcard-2332_1_0_1")
+    expect(j.priority_pskus[149]).toBe("packcard-2332_1_149_1")
+    expect(j.modeled_error).toBeNull()
+  })
+
+  it("leaves modeled editions fresher than 36 h alone", async () => {
+    st.modeled = { data: [{ product_set_id: 2332 }], error: null }
+    st.seenAt = (i) => Date.now() - 20 * H + i * 1000
+    const j = await (await GET(req())).json()
+    expect(j.modeled_priority).toBe(0)
+    expect(j.priority_pskus).toEqual([])
+  })
+
+  it("CONTROL — an equally stale NON-modeled product gets no slice", async () => {
+    st.modeled = { data: [{ product_set_id: 2332 }], error: null }
+    st.products = { data: [{ set_id: 2332, name: "WC", walk_cards: true }, { set_id: 1941, name: "X", walk_cards: true }], error: null }
+    st.total = 4
+    st.setIdAt = (i) => (i < 2 ? 1941 : 2332)
+    st.seenAt = (i) => Date.now() - 48 * H + i * 1000
+    const j = await (await GET(req())).json()
+    expect(j.priority_pskus).toEqual(["packcard-2332_1_2_1", "packcard-2332_1_3_1"])
+  })
+
+  it("a modeled product that is not admitted gets no slice", async () => {
+    st.modeled = { data: [{ product_set_id: 2420 }], error: null }
+    st.seenAt = (i) => Date.now() - 48 * H + i * 1000
+    const j = await (await GET(req())).json()
+    expect(j.modeled_set_ids).toEqual([])
+    expect(j.modeled_priority).toBe(0)
+  })
+
+  it("a failed modeled read falls back to WC and says so — it must not drop WC's slice", async () => {
+    st.modeled = { data: null, error: { message: "timeout" } }
+    st.total = 3
+    st.seenAt = (i) => Date.now() - 48 * H + i * 1000
+    const j = await (await GET(req())).json()
+    expect(j.modeled_error).toBe("timeout")
+    expect(j.modeled_set_ids).toEqual([2332])
+    expect(j.modeled_priority).toBe(3)
+  })
+
+  it("an edition already in the critical list is not served twice", async () => {
+    st.modeled = { data: [{ product_set_id: 2332 }], error: null }
+    st.total = 3
+    st.seenAt = (i) => Date.now() - 7 * 24 * H + i * 1000 // past the 6-day critical line
+    const j = await (await GET(req())).json()
+    expect(j.aged_critical).toBe(3)
+    expect(j.modeled_priority).toBe(0)
+    expect(j.priority_pskus).toEqual(["packcard-2332_1_0_1", "packcard-2332_1_1_1", "packcard-2332_1_2_1"])
+  })
+
+  it("a 5-day aged (not critical) modeled edition is served once, in the modeled slice", async () => {
+    st.modeled = { data: [{ product_set_id: 2332 }], error: null }
+    st.total = 2
+    st.seenAt = (i) => Date.now() - 5.5 * 24 * H + i * 1000
+    const j = await (await GET(req())).json()
+    expect(j.aged_priority).toBe(2)
+    expect(j.modeled_priority).toBe(2)
+    expect(j.priority_pskus).toEqual(["packcard-2332_1_0_1", "packcard-2332_1_1_1"])
+  })
+})
+

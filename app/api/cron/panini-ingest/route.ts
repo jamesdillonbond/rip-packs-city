@@ -114,6 +114,16 @@ const PANINI_AGED_PRIORITY_CAP = 300;
 // run — so raising the aged CAP would have changed nothing. 1,714 editions were > 6 d old with the
 // oldest crossing 7 d the next afternoon; served first, they clear in ~4 runs.
 const PANINI_AGED_CRITICAL_DAYS = 6;
+// MODELED PRIORITY (2026-10-18). Products with a live pack-EV model (panini_pack_ev_board.ev_modeled)
+// publish a number built from these editions' FMV, so they cannot wait for the 5-day aged line.
+// Measured 10-18 ~11:40 AM PT: the walk refreshed ~5,400 editions/day across 35,808, stalest-first —
+// but WC (2332, the collection) got 295 of its 5,256 in 24 h (5.6 %) against 16.6 % for everything
+// else, p50 age 75 h, because WC sat just under the 5-day line (p90 107 h) and never qualified for
+// priority while held + aged editions of 70 other products did. 2,630 WC editions were still on the
+// old FMV engine for the same reason. Modeled editions older than this go right after the critical
+// list, stalest first, capped so the aged/held interleave keeps most of a run (~450 editions).
+const PANINI_MODELED_FRESH_HOURS = 36;
+const PANINI_MODELED_PRIORITY_CAP = 150;
 
 // The marketplace grid is filtered by `?sport=<value>` and the runner enumerates each value below.
 // "Soccer" is the only value verified live (2026-07-16). The others are the marketplace's sport
@@ -684,7 +694,7 @@ export async function GET(req: NextRequest) {
   // discovery, and which pack pages it opens. Both reads fail SOFT to the historical WC scope —
   // the runner keeps its old behaviour — and say so in *_error, so a registry outage can narrow a
   // walk but never widen one.
-  const [prod, pagesRes] = await Promise.all([
+  const [prod, pagesRes, modeledRes] = await Promise.all([
     readProducts(),
     (async () => {
       try {
@@ -695,6 +705,16 @@ export async function GET(req: NextRequest) {
           .order("last_walked_at", { ascending: true, nullsFirst: true }).order("url", { ascending: true });
         return error ? { urls: null as string[] | null, error: error.message as string } : { urls: ((data ?? []) as { url: string }[]).map((r) => r.url), error: null };
       } catch (e) { return { urls: null as string[] | null, error: e instanceof Error ? e.message : String(e) }; }
+    })(),
+    // Products with a live pack-EV model. Fails SOFT to the legacy WC product (the one modeled
+    // product this route has always served) and says so — a failed read must not drop WC's slice.
+    (async () => {
+      try {
+        const { data, error } = await (supabaseAdmin as any).from("panini_pack_ev_board").select("product_set_id").eq("ev_modeled", true);
+        if (error) return { ids: [PANINI_LEGACY_SET_ID], error: error.message as string };
+        const ids = [...new Set(((data ?? []) as { product_set_id: unknown }[]).map((r) => Number(r.product_set_id)).filter((n) => Number.isFinite(n)))];
+        return { ids, error: null as string | null };
+      } catch (e) { return { ids: [PANINI_LEGACY_SET_ID], error: e instanceof Error ? e.message : String(e) }; }
     })(),
   ]);
   const admittedIds = prod.error ? [PANINI_LEGACY_SET_ID] : prod.rows.filter((r) => r.walk_cards).map((r) => Number(r.set_id)).sort((a, b) => a - b);
@@ -798,7 +818,26 @@ export async function GET(req: NextRequest) {
     nCritical++;
   }
   const priority: string[] = agedPriority.slice(0, nCritical);
-  const agedRest = agedPriority.slice(nCritical);
+  // MODELED slice (constants above): right after the critical list. inScope is stalest-first across
+  // every product, so the first row fresher than the line ends the scan. Only admitted products
+  // (inScope), so a bootstrap run stays narrowed. Not duplicated into the interleave below.
+  const modeledSet = new Set(modeledRes.ids.filter((id) => walkSet.has(id)));
+  const modeledCutoff = Date.now() - PANINI_MODELED_FRESH_HOURS * 3_600_000;
+  const inPriority = new Set(priority);
+  const modeledPriority: string[] = [];
+  if (modeledSet.size) {
+    for (const r of inScope) {
+      if (modeledPriority.length >= PANINI_MODELED_PRIORITY_CAP) break;
+      const seen = r.last_seen_at ? Date.parse(r.last_seen_at) : NaN;
+      if (Number.isFinite(seen) && seen >= modeledCutoff) break;
+      const sid = pskuSetId(r.external_id);
+      if (sid === null || !modeledSet.has(sid) || inPriority.has(r.external_id)) continue;
+      modeledPriority.push(r.external_id);
+    }
+  }
+  const modeledTaken = new Set(modeledPriority);
+  priority.push(...modeledPriority);
+  const agedRest = agedPriority.slice(nCritical).filter((ps) => !modeledTaken.has(ps));
   for (let i = 0; i < Math.max(agedRest.length, heldNew.length); i++) {
     if (i < agedRest.length) priority.push(agedRest[i]);
     if (i < heldNew.length) priority.push(heldNew[i]);
@@ -835,6 +874,11 @@ export async function GET(req: NextRequest) {
     aged_priority: agedPriority.length,
     // Of those, editions >= PANINI_AGED_CRITICAL_DAYS old, served ahead of the held/aged interleave.
     aged_critical: nCritical,
+    // Products with a live pack-EV model, and how many of their editions older than
+    // PANINI_MODELED_FRESH_HOURS were served after the critical list (2026-10-18).
+    modeled_set_ids: [...modeledSet].sort((a, b) => a - b),
+    modeled_priority: modeledPriority.length,
+    modeled_error: modeledRes.error,
     // The same held pskus as their OWN list (2026-09-29). Being at the front of `pskus` was not
     // enough: the runner walks brand-new GRID discoveries before the known list (1,464–3,900 per
     // run vs ~660 walked), and it derives "new" as grid minus `pskus`, so it cannot tell the held
