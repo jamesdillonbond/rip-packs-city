@@ -33,7 +33,10 @@ vi.mock("@/lib/supabase", () => ({
 import { GET } from "@/app/api/market/route"
 
 const ALLDAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
-const GOLAZOS = "06248cc4-b85f-47cd-af67-1855d14acd75"
+// 2026-10-18 RE-PIN: Golazos now has an on-chain edition arm and never reaches
+// the legacy cached_listings path; UFC (no arm) still does, so it carries these
+// legacy-path cases. Named for the path, not the collection.
+const LEGACY_PATH_COLL = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
 
 const req = (u: string) => ({ nextUrl: new URL(u) }) as never
 
@@ -67,7 +70,7 @@ function listing(i: number, over: Record<string, unknown> = {}) {
     circulation_count: 500,
     badge_slugs: [],
     listed_at: `2026-07-${String(10 + (i % 18)).padStart(2, "0")}T00:00:00Z`,
-    collection_id: GOLAZOS,
+    collection_id: LEGACY_PATH_COLL,
     ...over,
   }
 }
@@ -82,7 +85,7 @@ describe("GET /api/market — legacy path, the three total cases", () => {
     const rows = [listing(0), listing(1), listing(2)]
     install({ cached_listings: { data: rows, error: null, count: 3 }, editions: { data: [], error: null } })
 
-    const body = await (await GET(req(`https://t/api/market?collectionId=${GOLAZOS}`))).json()
+    const body = await (await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}`))).json()
     expect(body.pagination.total).toBe(3)
     expect(body.pagination.totalIsExact).toBe(true)
     expect(body.pagination.matchedBeforeFilters).toBe(3)
@@ -96,7 +99,7 @@ describe("GET /api/market — legacy path, the three total cases", () => {
     const rows = [listing(0), listing(1), listing(2)]
     install({ cached_listings: { data: rows, error: null, count: 4812 }, editions: { data: [], error: null } })
 
-    const body = await (await GET(req(`https://t/api/market?collectionId=${GOLAZOS}`))).json()
+    const body = await (await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}`))).json()
     expect(body.pagination.total).toBe(4812)
     expect(body.pagination.totalIsExact).toBe(true)
     expect(body.pagination.matchedBeforeFilters).toBe(4812)
@@ -119,7 +122,7 @@ describe("GET /api/market — legacy path, the three total cases", () => {
     ]
     install({ cached_listings: { data: rows, error: null, count: 9000 }, editions: { data: [], error: null } })
 
-    const body = await (await GET(req(`https://t/api/market?collectionId=${GOLAZOS}`))).json()
+    const body = await (await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}`))).json()
     expect(body.pagination.totalIsExact).toBe(false)
     expect(body.pagination.total).toBe(2) // collapsed: "Same Guy" + Player 2
     expect(body.pagination.matchedBeforeFilters).toBe(9000)
@@ -131,7 +134,7 @@ describe("GET /api/market — legacy path, the three total cases", () => {
     // count omitted -> dbMatched null -> neither exactness proof is available.
     install({ cached_listings: { data: [listing(0), listing(1)], error: null }, editions: { data: [], error: null } })
 
-    const body = await (await GET(req(`https://t/api/market?collectionId=${GOLAZOS}`))).json()
+    const body = await (await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}`))).json()
     expect(body.pagination.matchedBeforeFilters).toBeNull()
     expect(body.pagination.totalIsExact).toBe(false)
     expect(body.pagination.total).toBe(2)
@@ -148,7 +151,7 @@ describe("GET /api/market — legacy path, the three total cases", () => {
     ]
     install({ cached_listings: { data: rows, error: null, count: 5000 }, editions: { data: [], error: null } })
 
-    const body = await (await GET(req(`https://t/api/market?collectionId=${GOLAZOS}&minDiscount=50`))).json()
+    const body = await (await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}&minDiscount=50`))).json()
     expect(body.listings).toHaveLength(1)
     expect(body.pagination.total).toBe(1)
     expect(body.pagination.totalIsExact).toBe(false)
@@ -173,7 +176,7 @@ describe("GET /api/market — legacy path, the three total cases", () => {
     ]
     install({ cached_listings: { data: rows, error: null, count: 5000 }, editions: { data: [], error: null } })
 
-    const body = await (await GET(req(`https://t/api/market?collectionId=${GOLAZOS}&specialSerials=true`))).json()
+    const body = await (await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}&specialSerials=true`))).json()
     expect(body.listings).toHaveLength(1)
     expect(body.pagination.total).toBe(1)
     // Rows WERE dropped in app code, so the DB count cannot stand in as a total.
@@ -191,7 +194,7 @@ describe("GET /api/market — legacy path, the three total cases", () => {
     ]
     install({ cached_listings: { data: rows, error: null, count: 3 }, editions: { data: [], error: null } })
 
-    const body = await (await GET(req(`https://t/api/market?collectionId=${GOLAZOS}&sort=discount_asc`))).json()
+    const body = await (await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}&sort=discount_asc`))).json()
     expect(body.listings.map((r: any) => r.playerName)).toEqual(["Player 1", "Player 0", "Player 2"])
     expect(body.listings[2].lowConfidenceFmv).toBe(true)
   })
@@ -199,7 +202,7 @@ describe("GET /api/market — legacy path, the three total cases", () => {
   it("500s without the error message when the whole query throws", async () => {
     state.throwOn = "cached_listings"
     install({ editions: { data: [], error: null } })
-    const res = await GET(req(`https://t/api/market?collectionId=${GOLAZOS}`))
+    const res = await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}`))
     expect(res.status).toBe(500)
     // The driver message must not be published — this route is anon-reachable,
     // so this used to answer a visitor with the database's own text. It is

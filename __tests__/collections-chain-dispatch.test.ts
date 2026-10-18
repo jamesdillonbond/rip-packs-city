@@ -145,7 +145,8 @@ describe("dbChain registry invariant", () => {
     // fall-through could only turn a failed read into "no listings".
     // Pinnacle joined the guard 2026-09-26 (cached_listings holds zero Pinnacle
     // rows too); the pin requires Panini to stay IN it, not the exact arm list.
-    expect(route).toMatch(/\(collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH \|\| isPanini(?: \|\| isPinnacle)?\) && \(modernRows === null \|\| modernRows\.length === 0\)/)
+    // All Day + Golazos joined 2026-10-18 (isIndexEditionArm: their v1 rows are Flowty's alone).
+    expect(route).toMatch(/\(collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH \|\| isPanini(?: \|\| isPinnacle)?(?: \|\| isIndexEditionArm)?\) && \(modernRows === null \|\| modernRows\.length === 0\)/)
   })
 
   it("⚠ the Solana `market` permission is backed by an actual arm in /api/market", () => {

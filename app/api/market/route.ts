@@ -240,6 +240,7 @@ async function loadEditionLookup(collectionId: string): Promise<Map<string, Edit
 const TS_COLLECTION_ID_FOR_DISPATCH = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const ALLDAY_COLLECTION_ID_FOR_DISPATCH = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const PINNACLE_COLLECTION_ID_FOR_DISPATCH = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+const GOLAZOS_COLLECTION_ID_FOR_DISPATCH = "06248cc4-b85f-47cd-af67-1855d14acd75"
 const CANDY_COLLECTION_ID_FOR_DISPATCH = "209ade70-32c5-4470-bc7c-4793d660f713"
 const PANINI_COLLECTION_ID_FOR_DISPATCH = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
 
@@ -406,12 +407,30 @@ class MarketModernReadFailed extends Error {}
 
 type OwnedParam = "owned" | "not_owned" | null
 
-async function fetchAllDayMarketEditions(
-  filters: {
-    tier: string; maxPrice: number; sortBy: string; limit: number
-    sets: string[]; seriesList: string[]; player: string; minPrice: number
-    teams: string[]; badges: string[]; hasBadges: boolean; ownedWallet: string | null; owned: OwnedParam
-  },
+type EditionMarketFilters = {
+  tier: string; maxPrice: number; sortBy: string; limit: number
+  sets: string[]; seriesList: string[]; player: string; minPrice: number
+  teams: string[]; badges: string[]; hasBadges: boolean; ownedWallet: string | null; owned: OwnedParam
+}
+
+// The edition-grain arms served by an RPC with get_allday_market_editions_v3's
+// signature and columns. 2026-10-18: LaLiga Golazos joined (migration
+// 20261018214307). It had NO arm, so /laliga-golazos/market fell through to v1
+// cached_listings — Flowty's 100 rows against ~4.3k open on-chain asks, and an
+// empty page on the day Flowty's API goes dark. One mapper for both, so the
+// two cannot drift.
+const EDITION_MARKET_ARMS = {
+  allday: { rpc: "get_allday_market_editions_v3", collectionId: ALLDAY_COLLECTION_ID_FOR_DISPATCH, source: "allday" },
+  golazos: { rpc: "get_golazos_market_editions", collectionId: GOLAZOS_COLLECTION_ID_FOR_DISPATCH, source: "golazos" },
+} as const
+
+async function fetchAllDayMarketEditions(filters: EditionMarketFilters): Promise<any[]> {
+  return fetchEditionMarketEditions(EDITION_MARKET_ARMS.allday, filters)
+}
+
+async function fetchEditionMarketEditions(
+  arm: (typeof EDITION_MARKET_ARMS)[keyof typeof EDITION_MARKET_ARMS],
+  filters: EditionMarketFilters,
 ): Promise<any[]> {
   let rpcSort: string
   if (filters.sortBy === "recent" || filters.sortBy === "listed_desc") rpcSort = "listed_desc"
@@ -425,7 +444,7 @@ async function fetchAllDayMarketEditions(
   else if (filters.sortBy === "discount_asc") rpcSort = "discount_asc"
   else rpcSort = "listed_desc"
 
-  const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_allday_market_editions_v3", {
+  const { data, error } = await boundedRead((supabaseAdmin as any).rpc(arm.rpc, {
     p_min_discount: 0,
     p_max_price: filters.maxPrice > 0 ? filters.maxPrice : 0,
     p_rarity: filters.tier && filters.tier !== "all" ? filters.tier : "all",
@@ -433,13 +452,13 @@ async function fetchAllDayMarketEditions(
     p_sort_by: rpcSort,
     p_limit: Math.max(filters.limit, 500),
     ...rpcBrowseFilterArgs(filters),
-  }), "api/market/get_allday_market_editions_v3")
+  }), `api/market/${arm.rpc}`)
   if (error) {
-    console.log("[/api/market] allday editions fetch err:", error.message)
-    throw new MarketModernReadFailed(`get_allday_market_editions_v3: ${error.message}`)
+    console.log(`[/api/market] ${arm.source} editions fetch err:`, error.message)
+    throw new MarketModernReadFailed(`${arm.rpc}: ${error.message}`)
   }
   return (data ?? []).map((r: any) => ({
-    id: `allday-ed:${r.external_id ?? r.edition_id}`,
+    id: `${arm.source}-ed:${r.external_id ?? r.edition_id}`,
     flow_id: null,                 // edition-grain — no single moment / per-serial listing
     moment_id: null,
     edition_key: r.external_id ?? null,
@@ -455,7 +474,7 @@ async function fetchAllDayMarketEditions(
     adjusted_fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
     discount: r.discount_pct != null ? Number(r.discount_pct) : null,
     confidence: r.confidence ?? null,
-    source: "allday",
+    source: arm.source,
     buy_url: null,
     thumbnail_url: r.thumbnail_url ?? null,
     badge_slugs: Array.isArray(r.badges) ? r.badges : null,   // edition-wide badges from the RPC
@@ -466,7 +485,7 @@ async function fetchAllDayMarketEditions(
     raw_data: null,
     listed_at: r.last_listed_at ?? null,
     cached_at: r.last_listed_at ?? null,
-    collection_id: ALLDAY_COLLECTION_ID_FOR_DISPATCH,
+    collection_id: arm.collectionId,
   }))
 }
 
@@ -855,6 +874,14 @@ async function fetchModernListings(
       ownedWallet: filters.ownedWallet, owned: filters.owned,
     })
   }
+  if (collectionId === GOLAZOS_COLLECTION_ID_FOR_DISPATCH) {
+    return fetchEditionMarketEditions(EDITION_MARKET_ARMS.golazos, {
+      tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
+      sets: filters.sets, seriesList: filters.seriesList, player: filters.player, minPrice: filters.minPrice,
+      teams: filters.teams, badges: filters.badges, hasBadges: filters.hasBadges,
+      ownedWallet: filters.ownedWallet, owned: filters.owned,
+    })
+  }
   let rpcName: string | null = null
   // TS continues to use the FMV-required sniper RPC: its data source is
   // badge_editions, one row per edition (already edition-grain), which only has
@@ -1065,9 +1092,8 @@ export async function GET(req: NextRequest) {
       )
     }
     // Fall through to the legacy cached_listings query when modern returns
-    // empty. The sniper RPCs inner-join FMV, so collections with sparse FMV
-    // (notably AllDay's ~341 priced rows vs ~34k v2 listings) come back 0;
-    // the legacy table is stale-but-non-empty for those cases.
+    // empty — now Top Shot only (and collections with no arm). All Day and
+    // Golazos are edition-grain index arms and never fall through (guard below).
     if (modernRows !== null && modernRows.length === 0) {
       console.log(`[/api/market] modern returned 0 rows for ${collectionId} — falling through to cached_listings`)
     }
@@ -1095,7 +1121,12 @@ export async function GET(req: NextRequest) {
     // ⛔ PINNACLE NEVER FALLS THROUGH either (2026-09-26): `cached_listings` holds
     // ZERO Pinnacle rows (measured), so a failed catalog read became "no listings".
     const isPinnacle = collectionId === PINNACLE_COLLECTION_ID_FOR_DISPATCH
-    if ((collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH || isPanini || isPinnacle) && (modernRows === null || modernRows.length === 0)) {
+    // ⛔ ALL DAY AND GOLAZOS NEVER FALL THROUGH either (2026-10-18): their v1
+    // `cached_listings` rows are Flowty's book alone (108 / 100 rows; All Day's
+    // held the $1M troll asks the ghost fix retired), so an empty on-chain answer
+    // — a filter matching nothing — would have been "answered" from Flowty.
+    const isIndexEditionArm = collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH || collectionId === GOLAZOS_COLLECTION_ID_FOR_DISPATCH
+    if ((collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH || isPanini || isPinnacle || isIndexEditionArm) && (modernRows === null || modernRows.length === 0)) {
       if (modernRows === null) {
         return NextResponse.json(
           { error: "market_unavailable", retry: true, collection_id: collectionId },
@@ -1110,7 +1141,7 @@ export async function GET(req: NextRequest) {
         listings: [],
         pagination: { total: 0, page, limit, hasMore: false, totalIsExact: true, matchedBeforeFilters: null },
         clamp: { applied: true, ceilings: TIER_CEILING },
-        diagnostics: { rawCount: 0, postClampCount: 0, postFilterCount: 0, source: isPanini ? "panini_market_board" : isPinnacle ? "pinnacle_catalog" : "candy_market_board", windowTruncated: false },
+        diagnostics: { rawCount: 0, postClampCount: 0, postFilterCount: 0, source: isPanini ? "panini_market_board" : isPinnacle ? "pinnacle_catalog" : isIndexEditionArm ? "onchain_market_editions" : "candy_market_board", windowTruncated: false },
         ...coverageField,
       }, {
         headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },

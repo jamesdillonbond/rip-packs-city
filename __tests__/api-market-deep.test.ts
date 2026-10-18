@@ -23,6 +23,9 @@ import { GET } from "@/app/api/market/route"
 const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const ALLDAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const GOLAZOS = "06248cc4-b85f-47cd-af67-1855d14acd75"
+// 2026-10-18: Golazos has an on-chain edition arm now and never reaches the
+// legacy cached_listings path; UFC (no arm) still does.
+const LEGACY_PATH_COLL = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
 const PINNACLE = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 
 // Three AllDay editions with DISTINCT ask / fmv / discount / listed-at so every
@@ -155,7 +158,7 @@ describe("GET /api/market — modern AllDay path (edition-level)", () => {
 describe("GET /api/market — legacy cached_listings path", () => {
   it("collapses cached_listings to one row per edition, prefers cached badge_slugs, and computes diagnostics without a modern source tag", async () => {
     install({
-      // Non-TS/AllDay collection → fetchModernListings returns null → legacy path.
+      // A collection with no arm (UFC) → fetchModernListings returns null → legacy path.
       cached_listings: {
         data: [
           {
@@ -191,7 +194,7 @@ describe("GET /api/market — legacy cached_listings path", () => {
       },
     })
 
-    const res = await GET(req(`https://t/api/market?collectionId=${GOLAZOS}`))
+    const res = await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}`))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.diagnostics.source).toBeUndefined() // legacy path has no source tag
@@ -216,7 +219,7 @@ describe("GET /api/market — legacy cached_listings path", () => {
       cached_listings: { data: null, error: { message: "listings scan timeout" }, count: null },
       editions: { data: [], error: null },
     })
-    const res = await GET(req(`https://t/api/market?collectionId=${GOLAZOS}`))
+    const res = await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}`))
     expect(res.status).toBe(500)
     // The driver message must NOT be published — lib/api-error.ts classifies it.
     expect((await res.json()).error).not.toContain("listings scan timeout")

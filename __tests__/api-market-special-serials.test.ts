@@ -33,7 +33,10 @@ vi.mock("@/lib/supabase", () => ({
 
 import { GET } from "@/app/api/market/route"
 
-const GOLAZOS = "06248cc4-b85f-47cd-af67-1855d14acd75"
+// 2026-10-18 RE-PIN: Golazos now has an on-chain edition arm and never reaches
+// the legacy cached_listings path; UFC (no arm) still does, so it carries these
+// legacy-path cases. Named for the path, not the collection.
+const LEGACY_PATH_COLL = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
 
 const req = (u: string) => ({ nextUrl: new URL(u) }) as never
 
@@ -59,13 +62,13 @@ function listing(i: number, over: Record<string, unknown> = {}) {
     circulation_count: 500,
     badge_slugs: [],
     listed_at: `2026-07-${String(10 + (i % 18)).padStart(2, "0")}T00:00:00Z`,
-    collection_id: GOLAZOS,
+    collection_id: LEGACY_PATH_COLL,
     ...over,
   }
 }
 
 const call = async (qs: string) => {
-  const res = await GET(req(`https://t/api/market?collectionId=${GOLAZOS}&${qs}`))
+  const res = await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}&${qs}`))
   return res.json()
 }
 
