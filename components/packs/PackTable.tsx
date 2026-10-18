@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import React, { useEffect, useMemo, useState } from 'react'
 import { derivePackAvailability } from '@/lib/pack-availability'
 import { trackOutboundClick } from '@/lib/track-click'
+import { asOfLabel } from '@/lib/pack-dist/as-of'
 
 // PackTable — unified pack listings/EV row renderer shared by Top Shot and
 // NFL All Day packs pages.
@@ -72,6 +73,10 @@ export interface PackRow {
   fmvCoverage: number | null
   /** 0..1 share of the distribution opened so far. */
   depletionPct: number | null
+  /** pack_table_rows.depletion_as_of — the age of the read behind depletionPct
+   *  (branch-matched in SQL). NULL = the source carries no stamp (Pinnacle today);
+   *  the cell then says the age is unknown rather than implying it is current. */
+  depletionAsOf?: string | null
   /** 0..1 share of the drop pool's editions that have remaining=0 — the
    *  "ghost pack" signal. Distinct from depletionPct (sealed packs sold).
    *  ≥0.7 surfaces a "🔥 X/N editions remain" warning chip on the EV cell. */
@@ -196,6 +201,13 @@ import {
   comparePackValues,
   defaultSortDir,
 } from '@/lib/pack-table-format'
+
+// pack-ev.md Next 4 (2026-10-18): a depletion figure is a supply-counter read,
+// and those counters differ in age by months (All Day's median stamp was 06-29
+// on 10-18). State the age with the number; a missing stamp says so.
+export function depletionAgeLabel(iso: string | null | undefined, now: number = Date.now()): string {
+  return asOfLabel(iso, now) ?? 'age unknown'
+}
 
 const RARE_SINGLE_TITLE =
   'EV represents one specific ultra-rare moment rather than a probabilistic pull across a pool.'
@@ -604,7 +616,14 @@ export default function PackTable({
                     {r.fmvCoverage == null ? '—' : fmtPct(r.fmvCoverage)}
                   </span>
                 </td>
-                <td className="p-3 text-[color:var(--rpc-text-secondary)] tabular-nums">{fmtPct(r.depletionPct)}</td>
+                <td className="p-3 text-[color:var(--rpc-text-secondary)] tabular-nums">
+                  {fmtPct(r.depletionPct)}
+                  {r.depletionPct != null && (
+                    <div className="text-[10px] text-[color:var(--rpc-text-muted)]" data-testid="depletion-as-of">
+                      {depletionAgeLabel(r.depletionAsOf)}
+                    </div>
+                  )}
+                </td>
                 <td className="p-3">
                   {r.onAction ? (
                     <button

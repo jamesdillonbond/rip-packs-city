@@ -94,6 +94,23 @@ describe("GrailsView", () => {
     expect(getByText(/4\.9\s*%/)).toBeTruthy()
   })
 
+  // 2026-10-18 COALESCE audit: the $-threshold probability counts an unpriced edition as "not a grail".
+  it("a $-threshold probability is exact at full FMV coverage, '≥' below it, and '—' with nothing priced", async () => {
+    stubGrailsApi({ rows: [
+      grailRow({ dist_id: "1", fmv_coverage_pct: 100, editions_with_fmv: 40, meta: { ...grailRow().meta, title: "Full Pack" } }),
+      grailRow({ dist_id: "2", fmv_coverage_pct: 60, editions_with_fmv: 24, meta: { ...grailRow().meta, title: "Partial Pack" } }),
+      grailRow({ dist_id: "3", fmv_coverage_pct: 0, editions_with_fmv: 0, prob_grail_100_per_slot: 0, prob_grail_1000_per_slot: 0, meta: { ...grailRow().meta, title: "Unpriced Pack" } }),
+    ] })
+    const { container, getByText } = render(<GrailsView collection="nba-top-shot" accent="#E03A2F" />)
+    await waitFor(() => expect(getByText("Full Pack")).toBeTruthy())
+    const card = (title: string) => (getByText(title).closest("article")?.textContent ?? "")
+    expect(card("Full Pack")).toMatch(/4\.9%/)
+    expect(card("Full Pack")).not.toContain("≥")
+    expect(card("Partial Pack")).toMatch(/≥ 4\.9%/)
+    expect(card("Unpriced Pack")).not.toMatch(/0\.00%/)
+    expect(container).toBeTruthy()
+  })
+
   it("surfaces the API's error message in the error state", async () => {
     stubGrailsApi({ error: "grail metrics unavailable" }, 500)
     const { getByText } = render(<GrailsView collection="nba-top-shot" accent="#E03A2F" />)

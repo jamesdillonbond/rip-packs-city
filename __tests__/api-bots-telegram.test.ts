@@ -10,6 +10,7 @@ import { NextRequest } from "next/server"
 const st = vi.hoisted(() => ({
   claim: { ok: true } as any,
   wallet: null as string | null,
+  reportFails: false,
   report: "PACK REPORT",
   conciergeOn: false,
   conciergeReply: "",
@@ -34,7 +35,10 @@ vi.mock("@/lib/alerts", () => ({
 }))
 vi.mock("@/lib/alerts/soldpacks", () => ({
   resolveWalletForChannel: async () => st.wallet,
-  getPackReport: async () => ({ any: true }),
+  getPackReport: async () => {
+    if (st.reportFails) throw new Error("get_wallet_pack_summary failed: timeout")
+    return { any: true }
+  },
   formatPackReportText: () => st.report,
 }))
 vi.mock("@/lib/alerts/concierge-bridge", () => ({
@@ -115,6 +119,19 @@ describe("POST /api/bots/telegram — commands", () => {
     process.env.TELEGRAM_USER_BOT_TOKEN = "bot:tok"
     await POST(post(message("/soldpacks 0x1111111111111111")))
     expect(fetchMock).toHaveBeenCalled() // send() ran with a token
+  })
+  it("/soldpacks whose report read fails answers 'Couldn't load', never silence or an empty history", async () => {
+    st.wallet = "0x1111111111111111"
+    st.reportFails = true
+    process.env.TELEGRAM_USER_BOT_TOKEN = "bot:tok"
+    try {
+      expect((await (await POST(post(message("/soldpacks 0x1111111111111111")))).json()).ok).toBe(true)
+      const sent = fetchMock.mock.calls.map((c: any[]) => String(c[1]?.body ?? "")).join("\n")
+      expect(sent).toContain("Couldn't load that pack report")
+      expect(sent).not.toContain("No pack history")
+    } finally {
+      st.reportFails = false
+    }
   })
   it("/help returns usage", async () => {
     expect((await (await POST(post(message("/help")))).json()).ok).toBe(true)

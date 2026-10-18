@@ -178,8 +178,14 @@ export async function POST(req: NextRequest) {
         );
         return NextResponse.json({ ok: true });
       }
-      const report = await getPackReport(wallet);
-      await send(chatId, formatPackReportText(report));
+      try {
+        const report = await getPackReport(wallet);
+        await send(chatId, formatPackReportText(report));
+      } catch (e) {
+        // A failed read gets an answer that says so — the outer catch would send nothing.
+        console.log("[bots/telegram] soldpacks err", e instanceof Error ? e.message : String(e));
+        await send(chatId, "Couldn't load that pack report. Try again shortly.");
+      }
       return NextResponse.json({ ok: true });
     }
 

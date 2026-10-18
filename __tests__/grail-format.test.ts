@@ -124,3 +124,22 @@ describe("selectPackPrice", () => {
     expect(selectPackPrice(undefined, undefined)).toEqual({ price: null, priceLabel: null })
   })
 })
+
+// Pack-EV COALESCE audit 2026-10-18: a $-threshold grail probability counts an unpriced edition as
+// "not a grail", so below full coverage it is a lower bound and at zero coverage it is unknown.
+import { fmvProbQualifier, fmtFmvProb } from "@/lib/grail-format"
+describe("fmvProbQualifier / fmtFmvProb", () => {
+  it("full coverage is exact; partial or unknown coverage is a lower bound; no priced edition is unknown", () => {
+    expect(fmvProbQualifier(100, 40)).toBe("exact")
+    expect(fmvProbQualifier(62.5, 25)).toBe("lower")
+    expect(fmvProbQualifier(null, 25)).toBe("lower")
+    expect(fmvProbQualifier(0, 0)).toBe("none")
+    expect(fmvProbQualifier(null, 0)).toBe("none")
+  })
+  it("never prints a measured 0% for a pool with nothing priced, and marks a floor with ≥", () => {
+    expect(fmtFmvProb(0, "none")).toBe("—")
+    expect(fmtFmvProb(0.0123, "lower")).toBe("≥ 1.2%")
+    expect(fmtFmvProb(0.0123, "exact")).toBe("1.2%")
+    expect(fmtFmvProb(null, "lower")).toBe("—")
+  })
+})

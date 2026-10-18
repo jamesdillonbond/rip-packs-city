@@ -35,6 +35,28 @@ export function fmtPct(p: number | null | undefined): string {
   return v.toFixed(v < 1 ? 2 : 1) + '%'
 }
 
+// An FMV-threshold probability (P($100+) etc.) from pack_grail_metrics counts an
+// edition with NO FMV as "not a grail", so it is a LOWER BOUND whenever pool FMV
+// coverage is under 100 %, and says nothing at all when no pullable edition is
+// priced (measured 2026-10-18: 435 of 5,478 dists partial, 267 at zero coverage).
+// Tier probabilities (Ultimate/Legendary) are unaffected — tier needs no FMV.
+export type FmvProbQualifier = 'exact' | 'lower' | 'none'
+export function fmvProbQualifier(
+  coveragePct: number | null | undefined,
+  editionsWithFmv: number | null | undefined,
+): FmvProbQualifier {
+  if (editionsWithFmv != null && Number(editionsWithFmv) === 0) return 'none'
+  if (coveragePct == null || !Number.isFinite(Number(coveragePct))) return 'lower'
+  return Number(coveragePct) < 100 ? 'lower' : 'exact'
+}
+
+/** fmtPct for an FMV-threshold probability: "≥ x%" below full coverage, "—" with none. */
+export function fmtFmvProb(p: number | null | undefined, q: FmvProbQualifier): string {
+  if (q === 'none') return '—'
+  const s = fmtPct(p)
+  return q === 'lower' && s !== '—' ? `≥ ${s}` : s
+}
+
 // P(at least one in N draws) = 1 - (1 - p)^N — independent slot assumption
 // matches the surface-level math in the simulator. Null/non-finite per-slot
 // probability → null (unknown); clamps p to [0,1] before the geometric math.

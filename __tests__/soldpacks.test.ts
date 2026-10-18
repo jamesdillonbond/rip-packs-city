@@ -36,6 +36,7 @@ vi.mock("@/lib/alerts", () => ({
 }))
 
 import {
+  packReportFigures,
   normalizeFlowAddress,
   resolveWalletForChannel,
   getPackReport,
@@ -157,6 +158,8 @@ describe("formatPackReportText", () => {
         sold_proceeds_usd: 40,
         ripped_value_usd: 95,
         net_pl_usd: 15,
+        ripped_value_known_count: 3,
+        primary_spend_unknown_count: 0,
       },
       recent: [
         {
@@ -201,6 +204,8 @@ describe("formatPackReportText", () => {
         sold_proceeds_usd: 0,
         ripped_value_usd: 0,
         net_pl_usd: -12.5,
+        ripped_value_known_count: 0,
+        primary_spend_unknown_count: 0,
       },
       recent: [],
     }
@@ -231,6 +236,8 @@ describe("formatPackReportDiscordEmbed", () => {
         sold_proceeds_usd: 30,
         ripped_value_usd: 40,
         net_pl_usd: -10,
+        ripped_value_known_count: 2,
+        primary_spend_unknown_count: 0,
       },
       recent: [
         { pack_name: "Sold One", status: "sold", buy_price: 5, sell_price: 30, pull_value_usd: null, realized_pl_usd: 25, collection_name: "NBA Top Shot" },
@@ -245,5 +252,47 @@ describe("formatPackReportDiscordEmbed", () => {
     const recentField = embed.fields.find((f: any) => f.name === "Recent packs")
     expect(recentField.value).toContain("Sold One")
     expect(recentField.value).toContain("Ripped One")
+  })
+})
+
+// Pack-EV audit 2026-10-18 (pack-ev.md Now 2): the summary RPC sums only what it can price, so an
+// unvalued rip adds $0 to "pulled" (P/L understated) and an unpriced primary drop adds $0 to "spent"
+// (P/L overstated). The digest must say which way each figure is partial, never print it as complete.
+describe("partial pack figures", () => {
+  const base = {
+    packs_purchased: 10, packs_ripped: 10, packs_sold: 0, primary_drops: 4, secondary_buys: 6,
+    spent_usd: 100, sold_proceeds_usd: 0, ripped_value_usd: 90, net_pl_usd: -10,
+    ripped_value_known_count: 10, primary_spend_unknown_count: 0,
+  }
+  it("complete figures print plainly", () => {
+    expect(packReportFigures(base)).toEqual({ spent: "$100.00", rippedValue: "$90.00", netPl: "-$10.00" })
+  })
+  it("unvalued rips make pulled value and P/L lower bounds, with the valued count", () => {
+    const f = packReportFigures({ ...base, ripped_value_known_count: 8 })
+    expect(f.rippedValue).toBe("≥ $90.00 (8 of 10 rips valued)")
+    expect(f.netPl).toBe("≥ -$10.00")
+  })
+  it("unpriced drops make spend a lower bound and P/L an upper bound", () => {
+    const f = packReportFigures({ ...base, primary_spend_unknown_count: 2 })
+    expect(f.spent).toBe("≥ $100.00 (2 drops unpriced)")
+    expect(f.netPl).toBe("≤ -$10.00")
+  })
+  it("partial in both directions publishes no P/L number at all", () => {
+    const f = packReportFigures({ ...base, ripped_value_known_count: 8, primary_spend_unknown_count: 1 })
+    expect(f.netPl).not.toMatch(/\$/)
+    expect(f.netPl).toContain("—")
+  })
+  it("the text digest and the Discord embed carry the partial figures, not the raw sums", () => {
+    const report: PackReport = { wallet: "0xbd94cade097e50ac", totals: { ...base, ripped_value_known_count: 8 }, recent: [] }
+    const text = formatPackReportText(report)
+    expect(text).toContain("Pulled value (ripped): ≥ $90.00 (8 of 10 rips valued)")
+    expect(text).toContain("Net P/L: ≥ -$10.00")
+    const embed = formatPackReportDiscordEmbed(report)
+    expect(embed.fields.find((x: any) => x.name === "Net P/L").value).toBe("≥ -$10.00")
+    expect(embed.fields.find((x: any) => x.name === "Pulled (ripped)").value).toContain("8 of 10 rips valued")
+  })
+  it("a failed summary read throws instead of reading as 'No pack history found'", async () => {
+    H.state.summary = { data: null, error: { message: "timeout" } }
+    await expect(getPackReport("0xbd94cade097e50ac")).rejects.toThrow(/get_wallet_pack_summary failed/)
   })
 })

@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { tierColor, fmtUsd, fmtPct, atLeastOnce, selectPackPrice } from '@/lib/grail-format'
+import { tierColor, fmtUsd, fmtPct, atLeastOnce, selectPackPrice, fmvProbQualifier, fmtFmvProb, type FmvProbQualifier } from '@/lib/grail-format'
 import { tierColorAlpha } from '@/lib/tier-color'
 import { proxyIpfsImageUrl } from '@/lib/ipfs-media'
 import { accentText } from "@/lib/accent-text"
@@ -19,6 +19,7 @@ interface GrailRow {
   dist_id: string
   edition_count_pullable: number
   fmv_coverage_pct: number | null
+  editions_with_fmv?: number | null
   max_pull_fmv: number | null
   max_pull_player: string | null
   max_pull_set: string | null
@@ -204,6 +205,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
   const pAtLeast100 = atLeastOnce(row.prob_grail_100_per_slot, slots)
   const pAtLeast1000 = atLeastOnce(row.prob_grail_1000_per_slot, slots)
   const pAtLeastUlt = atLeastOnce(row.prob_ultimate_per_slot, slots)
+  const fmvQ = fmvProbQualifier(row.fmv_coverage_pct, row.editions_with_fmv)
   const tierBorder = tierColor(row.max_pull_tier)
 
   const { price, priceLabel } = selectPackPrice(row.meta?.primary_price, row.meta?.secondary_ask)
@@ -261,8 +263,8 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
 
         {/* Probability strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
-          <ProbCell label="$100+/pack" value={pAtLeast100} approx={slotsApprox} />
-          <ProbCell label="$1K+/pack" value={pAtLeast1000} approx={slotsApprox} />
+          <ProbCell label="$100+/pack" value={pAtLeast100} approx={slotsApprox} fmvQ={fmvQ} />
+          <ProbCell label="$1K+/pack" value={pAtLeast1000} approx={slotsApprox} fmvQ={fmvQ} />
           <ProbCell label="Ult/pack" value={pAtLeastUlt} approx={slotsApprox} />
         </div>
 
@@ -310,13 +312,13 @@ function Pill({ label, accent }: { label: string; accent: string }) {
   )
 }
 
-function ProbCell({ label, value, approx }: { label: string; value: number | null; approx: boolean }) {
+function ProbCell({ label, value, approx, fmvQ }: { label: string; value: number | null; approx: boolean; fmvQ?: FmvProbQualifier }) {
   return (
     <div style={{ background: 'var(--rpc-surface-raised)', border: '1px solid var(--rpc-border-subtle)', borderRadius: 4, padding: '5px 6px', textAlign: 'center' }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 8, color: 'var(--rpc-text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
         {label}{approx && <span style={{ marginLeft: 3, color: 'var(--rpc-warning)' }}>~</span>}
       </div>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 800, color: 'var(--rpc-text-primary)', marginTop: 1 }}>{fmtPct(value)}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 800, color: 'var(--rpc-text-primary)', marginTop: 1 }}>{fmvQ ? fmtFmvProb(value, fmvQ) : fmtPct(value)}</div>
     </div>
   )
 }

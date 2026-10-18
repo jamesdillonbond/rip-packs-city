@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { animateFlips } from "@/lib/packs/animate-flips"
 import { tierColor, fmtUsd, fmtPct, buildCdf, sampleEdition, stddev } from "@/lib/pack-simulator-math"
+import { fmvProbQualifier, fmtFmvProb, type FmvProbQualifier } from "@/lib/grail-format"
 import Link from "next/link"
 import { COLLECTION_UUID_BY_SLUG, getCollection } from "@/lib/collections"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
@@ -320,6 +321,7 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
 
   const pack = payload.pack
   const metrics = payload.metrics
+  const fmvQ = fmvProbQualifier(metrics?.fmv_coverage_pct, metrics?.editions_with_fmv)
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 18px 80px" }}>
@@ -389,10 +391,12 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
 
       {/* Grail probabilities */}
       <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
-        <ProbCard label="P(any $25+) per slot" prob={metrics.prob_grail_25_per_slot} accent={accent} count={metrics.grails_25} />
-        <ProbCard label="P(any $100+) per slot" prob={metrics.prob_grail_100_per_slot} accent={accent} count={metrics.grails_100} />
-        <ProbCard label="P(any $500+) per slot" prob={metrics.prob_grail_500_per_slot} accent={accent} count={metrics.grails_500} />
-        <ProbCard label="P($1000+) per slot" prob={metrics.prob_grail_1000_per_slot} accent={accent} count={metrics.grails_1000} />
+        {/* 2026-10-18: like EV / Slot above, a $-threshold probability counts an unpriced
+            edition as "not a grail" — a lower bound below full FMV coverage, unknown at none. */}
+        <ProbCard label="P(any $25+) per slot" prob={metrics.prob_grail_25_per_slot} accent={accent} count={metrics.grails_25} fmvQ={fmvQ} />
+        <ProbCard label="P(any $100+) per slot" prob={metrics.prob_grail_100_per_slot} accent={accent} count={metrics.grails_100} fmvQ={fmvQ} />
+        <ProbCard label="P(any $500+) per slot" prob={metrics.prob_grail_500_per_slot} accent={accent} count={metrics.grails_500} fmvQ={fmvQ} />
+        <ProbCard label="P($1000+) per slot" prob={metrics.prob_grail_1000_per_slot} accent={accent} count={metrics.grails_1000} fmvQ={fmvQ} />
         <ProbCard label="P(Ultimate) per slot" prob={metrics.prob_ultimate_per_slot} accent={accent} count={metrics.ultimate_count} />
         <ProbCard label="P(Legendary) per slot" prob={metrics.prob_legendary_per_slot} accent={accent} count={metrics.legendary_count} />
       </div>
@@ -440,11 +444,11 @@ function Stat({ label, value, accent, title }: { label: string; value: string; a
   )
 }
 
-function ProbCard({ label, prob, accent, count }: { label: string; prob: number | null | undefined; accent: string; count: number | null | undefined }) {
+function ProbCard({ label, prob, accent, count, fmvQ }: { label: string; prob: number | null | undefined; accent: string; count: number | null | undefined; fmvQ?: FmvProbQualifier }) {
   return (
     <div style={{ padding: "10px 12px", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 6 }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, color: "var(--rpc-text-primary)", marginTop: 2 }}>{fmtPct(prob)}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, color: "var(--rpc-text-primary)", marginTop: 2 }}>{fmvQ ? fmtFmvProb(prob, fmvQ) : fmtPct(prob)}</div>
       {count != null && <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: accentText(accent), marginTop: 1 }}>{count} editions</div>}
     </div>
   )

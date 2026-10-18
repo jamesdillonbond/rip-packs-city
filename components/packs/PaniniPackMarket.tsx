@@ -242,6 +242,9 @@ export function notModeledReason(note: string | null | undefined): string {
   if (n.includes("not enough recorded sales")) return "not enough card sales for every slot yet"
   if (n.includes("sales model for this product needs")) return "not enough card sales yet"
   if (n.includes("standard hobby and fotl packs only")) return "this pack's contents differ from the modeled packs"
+  // 2026-10-18: the WC FOTL gate (panini_pack_ev_board) withholds EV while under 90 % of the
+  // exclusive cards still in packs are indexed. The cards ARE priced, so the fallback below would be false.
+  if (n.includes("fotl-exclusive cards still in these packs are indexed")) return "only part of its exclusive-card supply is indexed"
   return "RPC doesn't price this product's cards yet"
 }
 

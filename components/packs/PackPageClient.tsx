@@ -64,6 +64,8 @@ interface ApiRow {
   value_ratio: number | null
   fmv_coverage_pct: number | null
   depletion_pct: number | null
+  /** Age of the read behind depletion_pct (pack_table_rows, branch-matched). */
+  depletion_as_of?: string | null
   /** Pool-level depletion: % of editions in the drop pool with remaining=0.
    *  Distinct from depletion_pct (sealed packs sold). High values flag a
    *  "ghost pack" pool dominated by a few high-FMV survivors. */
@@ -224,6 +226,7 @@ function toPackRow(
     evMarginPct,
     fmvCoverage: pctFraction(r.fmv_coverage_pct),
     depletionPct: pctFraction(r.depletion_pct),
+    depletionAsOf: r.depletion_as_of ?? null,
     poolDepletionPct: pctFraction(r.ev_depletion_pct),
     editionCount: r.edition_count == null ? null : Number(r.edition_count),
     totalUnopened: r.total_unopened == null ? null : Number(r.total_unopened),

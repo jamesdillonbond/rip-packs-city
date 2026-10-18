@@ -92,6 +92,19 @@ describe("PaniniPackMarket", () => {
     expect(c.textContent ?? "").not.toContain("on the mean only")
   })
 
+  it("a FOTL pack withheld for under-indexed exclusive supply says why, never that its cards are unpriced", async () => {
+    mockFetch(200, payload({ products: [product({
+      id: "1039", packType: "fotl", label: "FOTL", evModeled: false, actualEvUsd: null, typicalEvUsd: null, netRipEdgeUsd: null,
+      modelNote: "not modeled · only 740 of the 1416 FOTL-exclusive cards still in these packs are indexed — Panini shows a card only once it has been listed for sale, so the exclusive slot would be priced from an unrepresentative part of its supply; EV is withheld, not zero",
+    })] }))
+    const c = await mount()
+    const text = c.textContent ?? ""
+    expect(text).toContain("Not modeled")
+    expect(text).toContain("only part of its exclusive-card supply is indexed")
+    expect(text).not.toContain("doesn't price this product's cards")
+    expect(text).not.toContain("vs cost")
+  })
+
   it("an un-typed secondary-market pack heads with its own name, never 'Pack pack', and says EV is not modeled", async () => {
     // 2026-10-03: the secondary pack grid brought in ~40 packs of ~15 products; one product can carry
     // a dozen distinct packs, so the pack's own published name is what tells them apart.

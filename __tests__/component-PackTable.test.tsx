@@ -17,7 +17,7 @@ vi.mock("next/link", () => ({
   ),
 }))
 
-import PackTable, { type PackRow } from "@/components/packs/PackTable"
+import PackTable, { type PackRow, depletionAgeLabel } from "@/components/packs/PackTable"
 
 afterEach(() => {
   cleanup()
@@ -403,5 +403,26 @@ describe("PackTable — row navigation + header sort", () => {
     fireEvent.click(evHeader)
     const firstTitleCell = container.querySelector("tbody tr td")?.textContent ?? ""
     expect(firstTitleCell).toContain("High") // 500 EV first
+  })
+
+  // pack-ev.md Next 4 (2026-10-18): a depletion figure carries the age of its read.
+  // All Day's supply stamps had a median of 06-29 on 10-18, so an undated
+  // percentage read as current when it was months old.
+  it("every rendered depletion figure states its age, and a missing stamp says 'age unknown', never 'just now'", () => {
+    const now = Date.now()
+    const old = new Date(now - 111 * 86_400_000).toISOString()
+    const { container } = render(
+      <PackTable collection="nfl-all-day" rows={[
+        row({ title: "Old Pack", depletionPct: 0.4, depletionAsOf: old }),
+        row({ title: "Unstamped Pack", depletionPct: 0.3, depletionAsOf: null }),
+        row({ title: "Empty Pack", depletionPct: null, depletionAsOf: old }),
+      ]} />,
+    )
+    const ages = Array.from(container.querySelectorAll('[data-testid="depletion-as-of"]')).map((e) => e.textContent)
+    expect(ages).toHaveLength(2)
+    expect(ages).toContain("age unknown")
+    expect(ages.some((a) => /^as of 11[01]d ago$/.test(a ?? ""))).toBe(true)
+    expect(depletionAgeLabel(null)).toBe("age unknown")
+    expect(depletionAgeLabel(undefined)).toBe("age unknown")
   })
 })
