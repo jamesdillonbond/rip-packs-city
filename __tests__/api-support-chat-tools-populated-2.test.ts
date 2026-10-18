@@ -239,6 +239,72 @@ describe("concierge tools — search_serial_deals team/badge post-filter", () =>
   })
 })
 
+// 2026-10-18: All Day / Golazos catalog deals read the on-chain index (v3 /
+// get_golazos_catalog_deals), not v1 cached_listings — Flowty's book alone there.
+describe("concierge tools — search_catalog_deals (on-chain index collections)", () => {
+  const V1_ROW = { player_name: "Flowty Only", set_name: "Base", tier: "COMMON", serial_number: 9, ask_price: 1, fmv: 5, discount: 80, buy_url: "https://flowty" }
+
+  it("All Day reads get_allday_market_editions_v3, not v1, at edition grain", async () => {
+    const spy = install({
+      cached_listings: { data: [V1_ROW], error: null },
+      "rpc:get_allday_market_editions_v3": {
+        data: [{ edition_id: "e1", external_id: "ad-9", player_name: "Patrick Mahomes II", set_name: "Base", tier: "RARE", floor_ask: 20, fmv_usd: 40, discount_pct: 50, confidence: "HIGH", badges: null }],
+        error: null,
+      },
+    })
+    script("search_catalog_deals", { collectionId: "nfl-all-day", player: "Mahomes", team: "Chiefs", hasBadge: true })
+    await POST(post("All Day Mahomes deals"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    const rows = r.results as Array<Record<string, unknown>>
+    expect(rows.map((x) => x.player)).toEqual(["Patrick Mahomes II"])
+    expect(rows[0]).toMatchObject({ price: 20, fmv: 40, discount_pct: 50, serial: null })
+    expect(String(rows[0].edition_url)).toContain("/nfl-all-day/edition/ad-9")
+    const call = spy.rpcCalls.find((c) => c.name === "get_allday_market_editions_v3")!
+    expect(call.args).toMatchObject({ p_player: "Mahomes", p_team: "%Chiefs%", p_has_badges: true, p_sort_by: "discount_desc" })
+  })
+
+  it("an unpriced edition is not given a fabricated FMV confidence or discount", async () => {
+    install({
+      "rpc:get_allday_market_editions_v3": {
+        data: [{ edition_id: "e1", external_id: "ad-9", player_name: "X", floor_ask: 3, fmv_usd: null, discount_pct: null, confidence: "ASK_ONLY" }],
+        error: null,
+      },
+    })
+    script("search_catalog_deals", { collectionId: "nfl-all-day" })
+    await POST(post("All Day deals"))
+    const row = (toolResult().results as Array<Record<string, unknown>>)[0]
+    expect(row).toMatchObject({ fmv: null, confidence: null, discount_pct: null })
+  })
+
+  it("a failed index read is an error, never 'no moments found'", async () => {
+    install({
+      cached_listings: { data: [V1_ROW], error: null },
+      "rpc:get_golazos_catalog_deals": { data: null, error: { message: "statement timeout" } },
+    })
+    script("search_catalog_deals", { collectionId: "laliga-golazos" })
+    await POST(post("Golazos deals"))
+    const r = toolResult()
+    expect(r.status).toBe("error")
+    expect(JSON.stringify(r)).not.toContain("Flowty Only")
+  })
+
+  it("Golazos reports a badge filter it cannot apply instead of dropping it", async () => {
+    install({
+      "rpc:get_golazos_catalog_deals": {
+        data: [{ edition_id: "g1", external_id: "gz-1", player_name: "Iago Aspas", tier: "COMMON", floor_ask: 0.79, fmv_usd: 1, discount_pct: 21, floor_flow_id: "77" }],
+        error: null,
+      },
+    })
+    script("search_catalog_deals", { collectionId: "laliga-golazos", hasBadge: true })
+    await POST(post("Golazos badged deals"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.filters_not_applied).toEqual(["hasBadge"])
+    expect(String(r.note)).toMatch(/could NOT be applied/)
+  })
+})
+
 describe("concierge tools — search_across_collections", () => {
   it("rolls up per-collection cached_listings matches for a player name", async () => {
     install({

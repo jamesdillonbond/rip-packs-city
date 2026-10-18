@@ -57,6 +57,7 @@ import {
 } from "@/lib/concierge/edition-listings";
 import { closedMarket } from "@/lib/market-closed";
 import { searchEditionFloorsByName } from "@/lib/concierge/search-edition-floors";
+import { readsCatalogDealsFromIndex, fetchIndexCatalogDeals } from "@/lib/concierge/catalog-deals-index";
 import { safeApiError } from "@/lib/api-error";
 import { runMarketCapTool } from "@/lib/concierge/market-cap-tool";
 import { EV_SNAPSHOT_MAX_AGE_HOURS } from "@/lib/pack-dist-verdict";
@@ -400,7 +401,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "search_catalog_deals",
-    description: "Search the RPC moment catalog via Supabase — player, tier, price, badges, FMV. Use as fallback when live feed is unavailable, or for badge-specific queries. CRITICAL: when the user names a specific person/character, you MUST pass `player` (sports) or `character` (Pinnacle) — never return unfiltered top-discount results.",
+    description: "Search the RPC moment catalog via Supabase — player, tier, price, badges, FMV. Use as fallback when live feed is unavailable, or for badge-specific queries. CRITICAL: when the user names a specific person/character, you MUST pass `player` (sports) or `character` (Pinnacle) — never return unfiltered top-discount results. For NFL All Day and LaLiga Golazos each row is an EDITION's lowest live ask from RPC's on-chain listing index (serial null — link edition_url); if filters_not_applied is present, tell the user those filters were not applied.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -2211,38 +2212,62 @@ async function executeToolInner(
       return formatDistributionForModel(dist, "disney-pinnacle");
     }
     try {
-      let query = supabase
-        .from("cached_listings")
-        .select("player_name, set_name, tier, serial_number, circulation_count, ask_price, fmv, discount, badge_slugs, buy_url, collection_id")
-        .order("discount", { ascending: false })
-        .limit(toolInput.limit || 8);
-      if (effectiveCollectionUuid) query = query.eq("collection_id", effectiveCollectionUuid);
-      if (toolInput.player) query = playerFilter(query, toolInput.player);
-      if (toolInput.team) query = query.ilike("team_name", `%${toolInput.team}%`);
-      if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
-      if (toolInput.maxPrice) query = query.lte("ask_price", toolInput.maxPrice);
-      if (toolInput.minDiscount) query = query.gte("discount", toolInput.minDiscount);
-      if (toolInput.hasBadge) query = query.not("badge_slugs", "is", null);
+      if (readsCatalogDealsFromIndex(effectiveCollectionId)) {
+        // All Day / Golazos asks live in the on-chain index; v1 cached_listings
+        // holds only Flowty's book there (lib/concierge/catalog-deals-index.ts).
+        const idx = await fetchIndexCatalogDeals(
+          supabase,
+          effectiveCollectionId as "nfl-all-day" | "laliga-golazos",
+          // Filter on the resolved PERSON's labels, as playerFilter does for v1.
+          { ...toolInput, labels: toolInput.player ? playerScope.labels ?? null : null },
+          base,
+        );
+        // A failed read is UNKNOWN — never fall through to "no moments found".
+        if (!idx.ok) return JSON.stringify({ status: "error", message: "Couldn't read live listings right now — please try again." });
+        if (idx.results.length > 0) {
+          return JSON.stringify({
+            status: "ok",
+            results: idx.results,
+            total: idx.results.length,
+            note: "Each row is an EDITION's lowest live ask from RPC's on-chain listing index (serial is null — link edition_url). Rows are ordered by discount to FMV; a negative discount_pct is listed ABOVE FMV, not a deal."
+              + (idx.filtersNotApplied.length ? ` These filters could NOT be applied for this collection and the rows are not filtered by them — say so: ${idx.filtersNotApplied.join(", ")}.` : ""),
+            ...(idx.filtersNotApplied.length ? { filters_not_applied: idx.filtersNotApplied } : {}),
+          });
+        }
+      } else {
+        let query = supabase
+          .from("cached_listings")
+          .select("player_name, set_name, tier, serial_number, circulation_count, ask_price, fmv, discount, badge_slugs, buy_url, collection_id")
+          .order("discount", { ascending: false })
+          .limit(toolInput.limit || 8);
+        if (effectiveCollectionUuid) query = query.eq("collection_id", effectiveCollectionUuid);
+        if (toolInput.player) query = playerFilter(query, toolInput.player);
+        if (toolInput.team) query = query.ilike("team_name", `%${toolInput.team}%`);
+        if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
+        if (toolInput.maxPrice) query = query.lte("ask_price", toolInput.maxPrice);
+        if (toolInput.minDiscount) query = query.gte("discount", toolInput.minDiscount);
+        if (toolInput.hasBadge) query = query.not("badge_slugs", "is", null);
 
-      const { data, error } = await query;
-      if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
-      if (data && data.length > 0) {
-        return JSON.stringify({
-          status: "ok",
-          results: data.map((d: any) => ({
-            player: d.player_name,
-            set: d.set_name,
-            tier: d.tier,
-            serial: d.serial_number,
-            price: Number(d.ask_price),
-            // Number(null) is 0 — a missing FMV stays null (2026-10-03).
-            fmv: d.fmv == null || !(Number(d.fmv) > 0) ? null : Number(d.fmv),
-            discount_pct: d.fmv == null || !(Number(d.fmv) > 0) ? null : Number(d.discount),
-            badges: d.badge_slugs,
-            buy_url: d.buy_url,
-          })),
-          total: data.length,
-        });
+        const { data, error } = await query;
+        if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
+        if (data && data.length > 0) {
+          return JSON.stringify({
+            status: "ok",
+            results: data.map((d: any) => ({
+              player: d.player_name,
+              set: d.set_name,
+              tier: d.tier,
+              serial: d.serial_number,
+              price: Number(d.ask_price),
+              // Number(null) is 0 — a missing FMV stays null (2026-10-03).
+              fmv: d.fmv == null || !(Number(d.fmv) > 0) ? null : Number(d.fmv),
+              discount_pct: d.fmv == null || !(Number(d.fmv) > 0) ? null : Number(d.discount),
+              badges: d.badge_slugs,
+              buy_url: d.buy_url,
+            })),
+            total: data.length,
+          });
+        }
       }
       if (toolInput.player || toolInput.tier || toolInput.setName) {
         const who = await resolvePlayerForDistribution(effectiveCollectionUuid, toolInput.player);

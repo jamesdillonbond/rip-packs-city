@@ -335,7 +335,10 @@ describe("the label-keyed tools are scoped to the PERSON (batch 59)", () => {
       return b
     }
     A.sb = inst.fixture
-    script("search_catalog_deals", { player: "Joseph Flacco", collectionId: "nfl-all-day" })
+    // 2026-10-18 RE-PIN: All Day catalog deals now read the on-chain index
+    // (covered below); v1 cached_listings is still Top Shot's source, so the
+    // label property is exercised there. The fixture ignores the collection.
+    script("search_catalog_deals", { player: "Joseph Flacco", collectionId: "nba-top-shot" })
     await POST(post({}))
     const r = toolResult() as { status: string; player_identity: { status: string } }
     expect(r.status).toBe("ok")
@@ -356,9 +359,33 @@ describe("the label-keyed tools are scoped to the PERSON (batch 59)", () => {
     const from = (inst.fixture as { from: (t: string) => Record<string, unknown> }).from
     ;(inst.fixture as { from: unknown }).from = (t: string) => { const b = from(t); const o = b.ilike as (...a: unknown[]) => unknown; b.ilike = (...a: unknown[]) => { seen.push(`${t}.ilike:${a[0]}=${a[1]}`); return o(...a) }; return b }
     A.sb = inst.fixture
-    script("search_catalog_deals", { player: "Flac", collectionId: "nfl-all-day" })
+    script("search_catalog_deals", { player: "Flac", collectionId: "nba-top-shot" })
     await POST(post({}))
     expect(seen).toContain("cached_listings.ilike:player_name=%Flac%")
+    expect((toolResult() as { player_identity: { status: string } }).player_identity.status).toBe("none")
+  })
+  it("All Day catalog deals (on-chain index) query once per LABEL and drop a namesake's rows", async () => {
+    const inst = install({
+      "rpc:resolve_player_name": { data: flaccoLabels, error: null },
+      "rpc:get_allday_market_editions_v3": { data: [
+        { edition_id: "e1", external_id: "ad-1", player_name: "Joseph Flacco", floor_ask: 3, fmv_usd: 4, discount_pct: 25 },
+        { edition_id: "e2", external_id: "ad-2", player_name: "Joe Flacco Jr.", floor_ask: 1, fmv_usd: 9, discount_pct: 88 },
+      ], error: null },
+    })
+    script("search_catalog_deals", { player: "Joseph Flacco", collectionId: "nfl-all-day" })
+    await POST(post({}))
+    const r = toolResult() as { status: string; results: Array<{ player: string }>; player_identity: { status: string } }
+    expect(r.status).toBe("ok")
+    expect(r.results.map((x) => x.player)).toEqual(["Joseph Flacco"])
+    expect(r.player_identity.status).toBe("one")
+    expect(inst.rpcCalls.filter((c) => c.name === "get_allday_market_editions_v3").map((c) => c.args?.p_player).sort())
+      .toEqual(["Joe Flacco", "Joseph Flacco"])
+  })
+  it("All Day: an UNRESOLVED name keeps the typed partial on the index read", async () => {
+    const inst = install({ "rpc:resolve_player_name": { data: { status: "none", query: "Flac" }, error: null }, "rpc:get_allday_market_editions_v3": { data: [], error: null } })
+    script("search_catalog_deals", { player: "Flac", collectionId: "nfl-all-day" })
+    await POST(post({}))
+    expect(inst.rpcCalls.filter((c) => c.name === "get_allday_market_editions_v3").map((c) => c.args?.p_player)).toEqual(["Flac"])
     expect((toolResult() as { player_identity: { status: string } }).player_identity.status).toBe("none")
   })
   it("get_special_serial_owners asks the board once per label and drops a namesake's rows", async () => {
