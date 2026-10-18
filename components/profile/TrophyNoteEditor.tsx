@@ -192,7 +192,7 @@ export default function TrophyNoteEditor({
             marginLeft: "auto",
             fontFamily: MONO,
             fontSize: 9,
-            color: remaining <= 10 ? "var(--rpc-warning)" : "var(--rpc-text-ghost)",
+            color: remaining <= 10 ? "var(--rpc-warning)" : "var(--rpc-text-muted)",
           }}
         >
           {remaining}

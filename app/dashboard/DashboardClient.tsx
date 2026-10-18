@@ -2464,12 +2464,12 @@ function WalletGroupCard({
               <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 6, marginTop: 6 }}>
                 <div>
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Moments</div>
-                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: unknown ? "var(--rpc-text-ghost)" : "var(--rpc-text-primary)" }}>{unknown ? "—" : moments.toLocaleString()}</div>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: unknown ? "var(--rpc-text-muted)" : "var(--rpc-text-primary)" }}>{unknown ? "—" : moments.toLocaleString()}</div>
                 </div>
                 <div>
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
                   {/* No priced editions (e.g. thin-market UFC) -> em dash, not a misleading "$0". */}
-                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: !unknown && fmv > 0 ? "var(--rpc-success)" : "var(--rpc-text-ghost)" }}>{!unknown && fmv > 0 ? fmtUsd(fmv) : "—"}</div>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: !unknown && fmv > 0 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}>{!unknown && fmv > 0 ? fmtUsd(fmv) : "—"}</div>
                 </div>
               </div>
               {!unknown && (fmvMax > 0 || locked > 0) && (

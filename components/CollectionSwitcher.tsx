@@ -70,7 +70,7 @@ export default function CollectionSwitcher({ activeCollectionId }: CollectionSwi
               ? col.accent
               : supportsPage
                 ? "var(--rpc-text-muted)"
-                : "var(--rpc-text-ghost)",
+                : "var(--rpc-text-muted)",
             fontFamily: "var(--font-display)",
             fontWeight: 700 as const,
             fontSize: 11,

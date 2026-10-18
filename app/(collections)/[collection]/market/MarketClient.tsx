@@ -101,7 +101,7 @@ function AskAge({ cachedAt, askPrice, collectionSlug }: {
       style={{
         fontSize: 9,
         letterSpacing: "0.04em",
-        color: stamp.stale ? "var(--rpc-warning)" : "var(--rpc-text-ghost)",
+        color: stamp.stale ? "var(--rpc-warning)" : "var(--rpc-text-muted)",
         fontWeight: stamp.stale ? 700 : 400,
         whiteSpace: "nowrap",
       }}
@@ -1287,7 +1287,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   {l.circulationCount != null ? l.circulationCount.toLocaleString() : "—"}
                 </td>
                 {showOwnedColumn && (
-                  <td style={{ ...td, textAlign: "right", color: stats && stats.owned > 0 ? "var(--rpc-success)" : "var(--rpc-text-ghost)" }}
+                  <td style={{ ...td, textAlign: "right", color: stats && stats.owned > 0 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}
                       title={stats && stats.owned > 0 ? (collectionHasLocking(collectionUrlSlug) ? `${stats.owned} owned · ${stats.locked} locked` : `${stats.owned} owned`) : undefined}>
                     {ownLockLabel(stats, collectionHasLocking(collectionUrlSlug))}
                   </td>
