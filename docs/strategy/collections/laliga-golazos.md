@@ -15,6 +15,8 @@
 
 ## Shipped recently (since mid-September)
 
+- **10-18 (Claude Code cloud, verified on production ~2:57 PM PT): the Market page and the Sniper's relative-deals board read the on-chain book.** `/laliga-golazos/market` had no arm in `/api/market` and showed Flowty's 100 v1 rows as the whole market; it now reads `get_golazos_market_editions` (496 editions, 4,286 asks) and never falls back to v1. `get_relative_deals` moved to `cached_listings_v2` too (its flowty.io links were dead). The concierge's Golazos deal and search tools moved the same day. Nothing Golazos users see now depends on Flowty.
+
 - **09-24:** The pack +EV board ranks on a live ask, not on retail. This extended #50 to All Day and Golazos (`20260925030613`/`…030943`); before it, all 12 Golazos +EV rows were bogus.
 - **09-25:** `golazos-storefront-reconcile` shipped (Vercel, every 2 h). It reads Dapper's NFTStorefrontV2 into `cached_listings_v2` and found 1,391 live listings across 442 editions, against 67 on Flowty. ASK_ONLY is priced from it by `refresh_golazos_ask_fmv_from_listings` (pg_cron 614). `fmv_from_cached_listings` prices no Golazos editions. ([roadmap-status](../../reference/roadmap-status.md), Flowty block.)
 - **10-03:** The last Flowty-fed write into a priced column was removed (`update_badge_low_ask_from_cached_listings` via `golazos-listing-cache`). **Golazos has no data dependency on Flowty.**
