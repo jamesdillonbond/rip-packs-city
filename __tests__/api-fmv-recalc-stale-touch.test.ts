@@ -240,6 +240,20 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     })
   })
 
+  it("⛔ the re-stamp candidate SQL excludes Panini (its bridged engine rows are backdated, so a re-stamp buries newer prices)", async () => {
+    // 2026-10-17: engine $1.00 at 12:46 PM PT 10-16, re-stamp $2.00 at 12:48 PM PT,
+    // carried forward daily — 42 Panini editions showed an older price than the engine's.
+    state.querySqlByMarker = { recent_traded: { data: [], error: null } }
+    instrument(baseFixtures())
+    await POST(req("?force_stale=true"))
+    await runDeferred()
+    const sql = state.querySqlSeen.find((q) => q.includes("recent_traded"))
+    expect(sql, "the stale-touch query did not run — fixture no longer exercises it").toBeDefined()
+    expect(sql!).toContain("e.collection_id <> 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b'")
+    // CONTROL: the Pinnacle exclusion this mirrors is still there.
+    expect(sql!).toContain("e.collection_id <> '7dd9dd11-e8b6-45c4-ac99-71331f959714'")
+  })
+
   it("⛔ keeps a re-stamped Panini MEDIUM — its sales are not in `sales`, so zero there is UNKNOWN, not measured", async () => {
     // 2026-10-17 9:48 PM PT: the first 1.8.2 run demoted 44 Panini editions to LOW
     // because `recent_traded` reads `sales`, which holds no Panini sale at all.

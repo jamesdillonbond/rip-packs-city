@@ -100,6 +100,7 @@ const STEP1B_BUDGET_MS = 120_000
 // main fmv_snapshots with LOW-confidence duplicates of pinnacle_fmv_snapshots
 // rows every 20-min tick. See docs/audits/pinnacle-editions-pollution-2026-05.md.
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+const PANINI_COLLECTION_ID = COLLECTION_UUID_BY_SLUG["panini-blockchain"]
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
@@ -2273,6 +2274,16 @@ export async function POST(req: NextRequest) {
                 FROM editions e
                 WHERE (e.tier IS NULL OR e.tier <> 'ULTIMATE')
                   AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
+                  -- 2026-10-17: Panini is priced by its own engine and bridged in
+                  -- (sync_panini_bridge) with the ENGINE's computed_at, which is
+                  -- earlier than the bridge time. A re-stamp landing in that gap
+                  -- became the "latest" row and buried the newer engine price
+                  -- (42 editions, e.g. engine $1.00 at 12:46 PM PT 10-16, re-stamp
+                  -- $2.00 at 12:48 PM PT, carried forward daily since). The engine
+                  -- rewrites every edition within ~4.6 days; nothing reads Panini
+                  -- fmv_snapshots on a 24 h cutoff that matters (tier-pulse excludes
+                  -- inactive collections). Excluded like Pinnacle.
+                  AND e.collection_id <> '${PANINI_COLLECTION_ID}'
               ),
               latest AS (
                 SELECT
