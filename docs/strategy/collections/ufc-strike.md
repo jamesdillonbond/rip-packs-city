@@ -20,7 +20,7 @@ Live reads, ~6:00 PM PT 10-17:
 ## Open issues
 No numbered register item is open for UFC. Recorded but not changed:
 - **371 of 518 editions have a NULL `series`.** They were ingested after the close, so they appear on no series page.
-- **Two malformed rows:** `KHABIB-TIME-901` and `YOU-SUCK-2-0-750` (the mint number was parsed into the name). The literal UPDATE is held ([afternoon handoff 10-17](../../handoff-2026-10-17-cowork-afternoon-pass.md)).
+- ✅ **FIXED 2026-10-18 ~8:22 AM PT from the chain:** `KHABIB-TIME-901` → Khabib Nurmagomedov / set "KHABIB TIME", `YOU-SUCK-2-0-750` → Matt Frevola / set "YOU SUCK 2.0" (on-chain Display + Editions, chain set ids 234 and 328). ~~**Two malformed rows:** `KHABIB-TIME-901` and `YOU-SUCK-2-0-750` (the mint number was parsed into the name). The literal UPDATE is held ([afternoon handoff 10-17](../../handoff-2026-10-17-cowork-afternoon-pass.md)).
 - **Sales the catalogue cannot name:** 47 on-chain sets map to editions RPC's catalogue lacks. That leaves 361 + 615 + 50 sales unpromoted, and they are never guessed (ledger 10-04).
 - **Zero-yield lanes are still scheduled** (see Now).
 - ✅ **Stale text — FIXED 2026-10-18 ~8:10 AM PT** (the registry header and `pitch` had already been corrected by another session; this pass fixed the rest: the `/analytics` methodology line, the UFC banner and moment-page copy ("is migrating" → "moved to Aptos; Flow trading closed in May 2026"), and the `collection_config` marketplace notes). Original list kept below:
