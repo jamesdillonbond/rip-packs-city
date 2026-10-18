@@ -16,8 +16,8 @@
   /* A collection ACCENT painted as TEXT goes through lib/accent-text.ts:
      color-mix(in srgb, <accent>, <mix> <amt>). Dark lifts every accent 12 %
      toward white (worst case 4.83:1 on the dark canvases and accent-tinted
-     chips; #A855F7 / #EF4444 read 4.12 / 4.33 raw); light darkens 45 %
-     (#F59E0B was 2.15:1 on white; worst case now 5.19:1). Measured 2026-10-18. */
+     chips; #A855F7 / #EF4444 read 4.12 / 4.33 raw); light darkens 55 %
+     (#F59E0B was 2.15:1 on white; the pastel rgb(253,224,71) sets the floor: worst 4.90:1). Measured 2026-10-18. */
   --rpc-accent-text-mix: #FFFFFF;
   --rpc-accent-text-amt: 12%;
   /* TEXT twins of the tier + semantic colours (#194, decided 2026-10-18 under
@@ -210,7 +210,7 @@
   /* Small red text on the light canvas: #E03A2F is 4.07:1, this is 5.90:1. */
   --rpc-red-text: #B52A21;
   --rpc-accent-text-mix: #000000;
-  --rpc-accent-text-amt: 45%;
+  --rpc-accent-text-amt: 55%; /* was 45 % (10-18 AM): the dark-chip PASTELS that also route here (tier-style, verdict greens) need 55 % — worst 4.90:1 */
   /* Light TEXT twins: the smallest black mix per colour that clears 4.6:1 on
      white, #F7F7F5, #EBEBEB and its own 12 % tint (computed 2026-10-18). */
   --tier-legendary-text: #7A6700;

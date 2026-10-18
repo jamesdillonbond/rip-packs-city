@@ -15,7 +15,7 @@
 //     shade in light, fills unchanged (#194, decided 2026-10-18);
 //   · any other CSS variable → unchanged (it is already a themed token);
 //   · any other colour → color-mix toward the theme's --rpc-accent-text-mix by
-//     --rpc-accent-text-amt (app/rpc-tokens.css: 12 % white dark, 45 % black
+//     --rpc-accent-text-amt (app/rpc-tokens.css: 12 % white dark, 55 % black
 //     light — the smallest amounts that clear 4.5:1 for every registry accent
 //     on every canvas axe named).
 //

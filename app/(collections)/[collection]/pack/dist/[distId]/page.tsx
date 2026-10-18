@@ -843,7 +843,7 @@ export default async function PackDetailPage(
                   letterSpacing: "0.08em",
                   textTransform: "uppercase",
                   fontWeight: 700,
-                  color: chip.color,
+                  color: accentText(chip.color),
                   background: chip.background,
                   border: chip.border,
                 }}
@@ -1622,7 +1622,7 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
                     letterSpacing: "0.06em",
                     textTransform: "uppercase",
                     fontWeight: 700,
-                    color: chip.color,
+                    color: accentText(chip.color),
                     background: chip.background,
                     border: chip.border,
                   }}
@@ -1764,7 +1764,7 @@ function TierOddsPanel({
                         letterSpacing: "0.06em",
                         textTransform: "uppercase",
                         fontWeight: 700,
-                        color: chip.color,
+                        color: accentText(chip.color),
                         background: chip.background,
                         border: chip.border,
                       }}
@@ -1918,7 +1918,7 @@ function PacksContentRemaining({
               return (
                 <div key={t}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: chip.color, letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: 700 }}>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: accentText(chip.color), letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: 700 }}>
                       {t.charAt(0).toUpperCase() + t.slice(1)}
                     </span>
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
@@ -2330,7 +2330,7 @@ async function PackStreamedTop({
                         )}
                         <span style={{ color: "var(--rpc-text-muted)" }}> · {c.set_name || "—"}</span>
                       </Td>
-                      <Td color={c.tier ? tierChip(String(c.tier)).color : undefined}>
+                      <Td color={c.tier ? accentText(tierChip(String(c.tier)).color) : undefined}>
                         {c.tier ? String(c.tier).charAt(0).toUpperCase() + String(c.tier).slice(1) : "—"}
                       </Td>
                       <Td align="right">{pull === null ? "—" : `${(pull * 100).toFixed(2)}%`}</Td>
@@ -2479,7 +2479,7 @@ async function PackStreamedBottom({
                       )}
                     </Td>
                     <Td color="var(--rpc-text-secondary)">{p.setName || "—"}</Td>
-                    <Td color={p.tier ? tierChip(String(p.tier)).color : undefined}>{p.tier ? String(p.tier).charAt(0).toUpperCase() + String(p.tier).slice(1) : "—"}</Td>
+                    <Td color={p.tier ? accentText(tierChip(String(p.tier)).color) : undefined}>{p.tier ? String(p.tier).charAt(0).toUpperCase() + String(p.tier).slice(1) : "—"}</Td>
                     <Td align="right">{p.probabilityPct === null ? "—" : `${p.probabilityPct.toFixed(2)}%`}</Td>
                     <Td align="right">{fmtUsd(p.fmvUsd)}</Td>
                     <Td align="right" color={p.editionEv !== null && p.editionEv > 0 ? accentText("rgb(110,231,183)") : undefined}>

@@ -34,3 +34,15 @@ export function tierChip(tier: string): ChipStyle {
   const t = tier.toUpperCase().replace('MOMENT_TIER_', '')
   return TIER_STYLE[t] ?? TIER_DEFAULT
 }
+
+/**
+ * The chip as a STYLE for an element whose text is the tier label (light-theme
+ * safe, #194, 2026-10-18). `tierChip().color` stays the raw pastel because
+ * callers also use it as a border/gradient colour (`${chip.color}33`, a
+ * conic-gradient) where a color-mix() string would be invalid CSS; only TEXT
+ * goes through accentText().
+ */
+export function tierChipStyle(tier: string): ChipStyle {
+  const chip = tierChip(tier)
+  return { ...chip, color: accentText(chip.color) }
+}

@@ -12,6 +12,7 @@
 
 import { useState } from "react"
 import { tierChip, TIER_DEFAULT } from "@/lib/tier-style"
+import { accentText } from "@/lib/accent-text"
 
 export default function PackHeroArt({
   url,
@@ -110,7 +111,7 @@ export default function PackHeroArt({
         fontFamily: "var(--font-display)",
         fontWeight: 900,
         fontSize: Math.round(size * 0.4),
-        color: chip.color,
+        color: accentText(chip.color),
       }}
       aria-label={title}
     >

@@ -184,7 +184,7 @@ export interface PackTableProps {
 // import it (calling client-module exports from a server component throws
 // at runtime). Re-exporting tierChip here so existing client callers keep
 // working unchanged.
-import { tierChip as _tierChip, type ChipStyle } from '@/lib/tier-style'
+import { tierChip as _tierChip, tierChipStyle, type ChipStyle } from '@/lib/tier-style'
 export const tierChip = _tierChip
 export type { ChipStyle }
 
@@ -201,6 +201,7 @@ import {
   comparePackValues,
   defaultSortDir,
 } from '@/lib/pack-table-format'
+import { accentText } from "@/lib/accent-text"
 
 // pack-ev.md Next 4 (2026-10-18): a depletion figure is a supply-counter read,
 // and those counters differ in age by months (All Day's median stamp was 06-29
@@ -344,7 +345,7 @@ export function PackThumb({ url, tier, title, size = 40 }: { url: string | null;
           height: size,
           background: chip.background,
           border: chip.border,
-          color: chip.color,
+          color: accentText(chip.color),
           fontSize: size >= 48 ? 16 : 13,
         }}
         aria-label={title}
@@ -522,7 +523,7 @@ export default function PackTable({
                 <td className="p-3">
                   <span
                     className="inline-block rounded px-2 py-0.5 text-[11px] font-semibold capitalize"
-                    style={tierChip(r.tier)}
+                    style={tierChipStyle(r.tier)}
                   >
                     {r.tier.replace('MOMENT_TIER_', '').replace(/_/g, ' ').toLowerCase()}
                   </span>
@@ -687,7 +688,7 @@ export default function PackTable({
                 <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
                   <span
                     className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold capitalize"
-                    style={tierChip(r.tier)}
+                    style={tierChipStyle(r.tier)}
                   >
                     {r.tier.replace('MOMENT_TIER_', '').replace(/_/g, ' ').toLowerCase()}
                   </span>
