@@ -7,7 +7,7 @@
 ## STEER — added 2026-10-18 ~12:47 PM PT (Claude Code cloud, 5-hour daytime block) — what the night pass must know before it acts
 
 - **`rows_written` / `rows_found` are a fabricated 0 for 91 of the 93 DB lanes that log via `log_pipeline_run(text, boolean, jsonb)` (#195).** Read DB-lane yield from `extra`, never from those columns. Do NOT "fix" the wrapper to NULL in passing: `check_zero_yield_lanes` keys on found = 0 and would silently drop lanes.
-- **Temporary probe `/api/cron/nba-upstream-probe` (hourly at :50, pipeline `nba-upstream-probe`).** It measures whether Vercel's egress reaches ESPN / cdn.nba.com (#8). Read its rows, record the verdict in #8, then remove the route, its test and its `vercel.json` entry. Do not leave it running past 10-21.
+- ✅ **NBA probe DONE + REMOVED 10-18 ~12:51 PM PT:** Vercel egress gets ESPN 403 and cdn.nba.com timeouts, so there is no free cloud path (#8). Nothing to do; do not re-probe.
 - **Fast Break is PARKED IN PLACE (decided 10-18).** Do not hand-insert `fast_break_runs` rows or turn on `NEXT_PUBLIC_SHOW_FAST_BREAK` while projections are dead. Re-look with #8 on 10-28.
 - **Cron cadence changed 10-18:** `topshot-set-series-onchain` every 10 min, `topshot-circulation-onchain` every 6 h, `topshot-pack-dist-names-onchain` every 3 h. More runs of these lanes are expected, not a regression.
 - **Parallel seeder idle on `queue_full` is BY DESIGN** (resolver once a day at ~1:30 PM PT; the 10k cap protects the newest series, `20260904133105`). Do not raise the cap around the Series 2026-27 launch.
