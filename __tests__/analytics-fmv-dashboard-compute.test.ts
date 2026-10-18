@@ -65,18 +65,21 @@ describe("constants", () => {
     expect(MIN_FMV_OPTIONS).toEqual([5, 25, 100, 500])
     expect(LIMIT_OPTIONS).toEqual([25, 50, 100])
     // Now derived from the canonical ladder, common-first. Uncommon (All Day,
-    // Golazos) and the three UFC tiers were missing before, so those
-    // collections had no tier breakdown at all.
+    // Golazos) and the UFC tiers were missing before, so those collections had no
+    // tier breakdown at all. Re-pinned 2026-10-18: UFC's chain ladder adds Epic and
+    // Champion; the legacy fabricated Contender / Challenger sit at the ranks of
+    // the edition sizes they were invented from (Common / Rare) until the data drops them.
     expect(TIER_ORDER).toEqual([
       "Common",
+      "Contender",
       "Fandom",
       "Uncommon",
       "Rare",
-      "Legendary",
-      "Ultimate",
-      "Contender",
       "Challenger",
+      "Epic",
+      "Legendary",
       "Champion",
+      "Ultimate",
     ])
     expect(TIER_COLOR.Other).toBe("#52525b")
     expect(COLLECTION_LABEL.ufc).toBe("UFC Strike")
@@ -310,14 +313,19 @@ describe("bucketCollectionTiers — production casing (deep-audit D23/D12)", () 
     expect(visible.map((v) => v.tier)).toEqual(["Common", "Uncommon"])
   })
 
-  it("keeps the UFC ladder instead of flattening it to Other", () => {
+  it("keeps the UFC chain ladder instead of flattening it to Other", () => {
     const rows = [
-      tierRow({ tier: "CONTENDER", edition_count: 460, total_fmv_usd: 10 }),
-      tierRow({ tier: "CHALLENGER", edition_count: 55, total_fmv_usd: 20 }),
-      tierRow({ tier: "CHAMPION", edition_count: 1, total_fmv_usd: 30 }),
+      tierRow({ tier: "COMMON", edition_count: 185, total_fmv_usd: 10 }),
+      tierRow({ tier: "EPIC", edition_count: 33, total_fmv_usd: 20 }),
+      tierRow({ tier: "CHAMPION", edition_count: 9, total_fmv_usd: 30 }),
     ]
     const { visible } = bucketCollectionTiers(rows)
-    expect(visible.map((v) => v.tier)).toEqual(["Contender", "Challenger", "Champion"])
+    expect(visible.map((v) => v.tier)).toEqual(["Common", "Epic", "Champion"])
+  })
+
+  it("a legacy fabricated UFC label still buckets (never to Other) until the data drops it", () => {
+    const { visible } = bucketCollectionTiers([tierRow({ tier: "CONTENDER", edition_count: 1, total_fmv_usd: 1 })])
+    expect(visible.map((v) => v.tier)).toEqual(["Contender"])
   })
 
   it("still sends a genuinely unknown tier to Other", () => {

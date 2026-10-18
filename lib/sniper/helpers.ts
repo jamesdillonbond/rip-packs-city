@@ -453,11 +453,13 @@ export function tierColor(tier: string): string {
   switch (tier.toUpperCase()) {
     case "COMMON":    return "var(--tier-common)";
     case "FANDOM":    return "var(--tier-fandom)";
+    case "EPIC":      return "var(--tier-epic)";
     case "RARE":      return "var(--tier-rare)";
     case "UNCOMMON":  return "var(--tier-uncommon)";
     case "LEGENDARY": return "var(--tier-legendary)";
     case "ULTIMATE":  return "var(--tier-ultimate)";
     case "CHAMPION":   return "var(--tier-champion)";
+    // Legacy RPC-fabricated UFC labels (the chain TIER trait replaced them 2026-10-18).
     case "CHALLENGER": return "var(--tier-challenger)";
     case "CONTENDER":  return "var(--tier-contender)";
     // An unrecognised tier is NOT a COMMON — dressing it up as one invents a

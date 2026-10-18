@@ -41,7 +41,8 @@ import path from "node:path"
 //     demand a wrong log prefix in one of them. Behaviour was compared by hand
 //     and is equivalent. `ingest-pinnacle-mints` keeps its pin: its copy IS
 //     verbatim, log prefix included.
-//   • ufc-wallet-enrich::inferTier / titleCase vs seed-ufc-editions — those are
+//   • ufc-wallet-enrich::titleCase (and the former inferTier, removed 2026-10-18 as a
+//     fabrication — tier now comes from editions) vs seed-ufc-editions — those are
 //     two INDEPENDENTLY-authored functions that merely share a name; they are
 //     not a maintained copy. NOTE a real latent discrepancy recorded for the
 //     operator: seed-ufc-editions.inferTier maps circulation 0 → "ULTIMATE"
@@ -251,7 +252,6 @@ const PINS: Array<[string, string, string, string]> = [
   // an approximation of them is a second, weaker implementation of the same question.
   ["topshot-subedition-parse", "decodeDict", "backfill-topshot-subeditions", "Cadence dict decode for subedition backfill; a mis-decode mis-keys parallels"],
   ["topshot-subedition-parse", "clampInt", "backfill-topshot-subeditions", "bounded integer clamp on subedition ids and serials"],
-  ["ufc-wallet-enrich", "inferTier", "enrich-ufc-wallet", "UFC tier inference; drives the tier shown on every UFC moment"],
   ["ufc-wallet-enrich", "makeEditionKey", "enrich-ufc-wallet", "UFC edition keying; a drift breaks the join to editions"],
   ["ufc-wallet-enrich", "parseResult", "enrich-ufc-wallet", "wallet scan result parse"],
   ["hybrid-custody-parse", "decodeBase64Json", "hybrid-custody-events", "base64 event payload decode for account-link ownership"],

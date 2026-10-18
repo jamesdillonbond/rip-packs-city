@@ -75,13 +75,13 @@ function toNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function inferTier(circulation: number | null): string {
-  if (circulation === null) return "FANDOM"
-  if (circulation <= 10) return "ULTIMATE"
-  if (circulation <= 99) return "CHAMPION"
-  if (circulation <= 999) return "CHALLENGER"
-  if (circulation <= 25000) return "CONTENDER"
-  return "FANDOM"
+// UFC Strike's tier is the NFT's own TIER trait (the same value as
+// UFC_NFT.getSetMetadata — public.ufc_chain_set_metadata, 2026-10-18). The old
+// inferTier() banded circulation into CHALLENGER (<=999) / CONTENDER (<=25,000),
+// tiers that do not exist on chain. No trait → NULL, never an invented tier.
+function chainTier(traits: Trait[] | undefined): string | null {
+  const t = traitValue(traits, "TIER")
+  return t ? t.trim().toUpperCase() : null
 }
 
 function slugify(name: string, max: number | null): string {
@@ -242,7 +242,7 @@ async function runListingCache() {
         toNumber(nft.card?.max) ??
         null
 
-      const tier = inferTier(circulation)
+      const tier = chainTier(traits)
       const externalId = slugify(editionName, circulation)
 
       const thumbnail = nft.card?.images?.[0]?.url ?? null

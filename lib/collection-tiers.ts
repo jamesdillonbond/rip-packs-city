@@ -10,7 +10,11 @@
 //   nba_top_shot    COMMON 9,637 · RARE 5,588 · LEGENDARY 2,205 · FANDOM 830 · ULTIMATE 256
 //   nfl_all_day     RARE 2,470 · COMMON 1,611 · LEGENDARY 1,056 · UNCOMMON 630 · ULTIMATE 423
 //   laliga_golazos  UNCOMMON 215 · RARE 195 · COMMON 125 · LEGENDARY 40
-//   ufc_strike      CONTENDER 460 · CHALLENGER 55 · FANDOM 2 · CHAMPION 1
+//   ufc_strike      (2026-10-18) the chain TIER trait — UFC_NFT.getSetMetadata, stored in
+//                   public.ufc_chain_set_metadata: Common 185 · Rare 139 · Uncommon 72 ·
+//                   Fandom 64 · Epic 33 · Champion 9 (+ Ultimate on chain). The old
+//                   CONTENDER/CHALLENGER vocabulary was FABRICATED by RPC from edition
+//                   size (≤25,000 / ≤999) and is gone from the UFC list.
 //   disney_pinnacle (none — Pinnacle bands are VARIANTS, not tiers)
 //
 // Defects this fixed (2026-08-01 rendered-DOM QA sweep):
@@ -30,7 +34,7 @@ export const COLLECTION_TIERS: Record<string, readonly string[]> = {
   "nba-top-shot": ["COMMON", "FANDOM", "RARE", "LEGENDARY", "ULTIMATE"],
   "nfl-all-day": ["COMMON", "UNCOMMON", "RARE", "LEGENDARY", "ULTIMATE"],
   "laliga-golazos": ["COMMON", "UNCOMMON", "RARE", "LEGENDARY"],
-  "ufc": ["CONTENDER", "CHALLENGER", "FANDOM", "CHAMPION"],
+  "ufc": ["COMMON", "UNCOMMON", "RARE", "EPIC", "CHAMPION", "ULTIMATE", "FANDOM"],
   // Panini WC Prizm (published 2026-09-25). Measured live that day over the
   // bridged editions: LEGENDARY 2,871 · RARE 1,367 · COMMON 499 · ULTIMATE 357.
   "panini-blockchain": ["COMMON", "RARE", "LEGENDARY", "ULTIMATE"],
@@ -45,8 +49,8 @@ export const COLLECTION_TIERS: Record<string, readonly string[]> = {
 // cosmetic wart, whereas showing the WRONG collection's list silently makes
 // rows unreachable (the UFC bug).
 const ALL_TIERS: readonly string[] = [
-  "COMMON", "UNCOMMON", "FANDOM", "RARE", "LEGENDARY", "ULTIMATE",
-  "CONTENDER", "CHALLENGER", "CHAMPION",
+  "COMMON", "UNCOMMON", "FANDOM", "RARE", "EPIC", "LEGENDARY", "ULTIMATE",
+  "CHAMPION",
 ]
 
 /** Tiers for a collection URL slug (UPPERCASE). Unknown slug → the union. */

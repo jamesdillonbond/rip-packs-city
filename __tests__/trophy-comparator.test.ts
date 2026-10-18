@@ -14,8 +14,8 @@ const sortBy = (rows: M[], key: Parameters<typeof trophyComparator>[0]) =>
 
 describe("tierRank — cross-collection rarity", () => {
   it("ranks the full enum, ULTIMATE highest", () => {
-    expect(tierRank("ULTIMATE")).toBe(9)
-    expect(tierRank("legendary")).toBe(8) // case-insensitive
+    expect(tierRank("ULTIMATE")).toBe(10)
+    expect(tierRank("legendary")).toBe(9) // case-insensitive
     expect(tierRank("CHALLENGER")).toBeGreaterThan(tierRank("CONTENDER"))
     expect(tierRank("COMMON")).toBe(1)
   })

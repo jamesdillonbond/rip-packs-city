@@ -19,8 +19,12 @@
 //   - image_url: existing wallet value wins (already populated by prior
 //     backfill / from on-chain Display.thumbnail.uri()), fall back to
 //     editions.thumbnail_url.
-//   - tier: keep inferTier() — wallet ingestion already populates tier
-//     correctly from the on-chain max-circulation value.
+//   - tier / series_number: the editions row's tier and series, NEVER derived
+//     here. Until 2026-10-18 this wrote inferTier(max), which banded edition size
+//     into "CHALLENGER" (<=999) / "CONTENDER" (<=25000) — tiers that do not exist
+//     on chain. The chain's TIER/SERIES traits (UFC_NFT.getSetMetadata) are in
+//     public.ufc_chain_set_metadata and editions carries them; an edition the
+//     catalogue lacks gets NULL (unknown), not a guess.
 //
 // Deploy: supabase functions deploy enrich-ufc-wallet --no-verify-jwt
 
@@ -86,14 +90,6 @@ access(all) fun main(addr: Address, id: UInt64): {String: String} {
 }
 `;
 
-function inferTier(max: number | null): string {
-  if (!max || max === 0) return "FANDOM";
-  if (max <= 10) return "ULTIMATE";
-  if (max <= 99) return "CHAMPION";
-  if (max <= 999) return "CHALLENGER";
-  if (max <= 25000) return "CONTENDER";
-  return "FANDOM";
-}
 function makeEditionKey(name: string, max: number | null): string {
   return name.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + (max ?? 0);
 }
@@ -115,6 +111,8 @@ type EditionEnrichment = {
   player_name: string | null;
   set_name: string | null;
   thumbnail_url: string | null;
+  tier: string | null;
+  series: number | null;
 };
 
 Deno.serve(async (req: Request) => {
@@ -165,9 +163,14 @@ Deno.serve(async (req: Request) => {
   const editionMap = new Map<string, EditionEnrichment>();
   const editionIdMap = new Map<string, string>(); // external_id → internal uuid
   const { data: edRows, error: edErr } = await supabase.from("editions")
-    .select("id, external_id, player_name, set_name, thumbnail_url")
+    .select("id, external_id, player_name, set_name, thumbnail_url, tier, series")
     .eq("collection_id", UFC_COLLECTION_ID);
-  if (edErr) console.warn(`[enrich-ufc-wallet] editions lookup error: ${edErr.message}`);
+  // A failed catalogue read used to warn and carry on, writing every row with
+  // set_name NULL (and, since 2026-10-18, tier NULL) — a failed READ persisted as
+  // a WRITE. Stop instead; the caller leaves the wallet for the next pass.
+  if (edErr) {
+    return new Response(JSON.stringify({ ok: false, error: `editions read: ${edErr.message.slice(0, 200)}` }), { status: 500 });
+  }
   for (const r of (edRows ?? []) as Array<Record<string, unknown>>) {
     const ext = r.external_id as string | null;
     if (!ext) continue;
@@ -175,6 +178,8 @@ Deno.serve(async (req: Request) => {
       player_name: (r.player_name as string | null) ?? null,
       set_name: (r.set_name as string | null) ?? null,
       thumbnail_url: (r.thumbnail_url as string | null) ?? null,
+      tier: (r.tier as string | null) ?? null,
+      series: (r.series as number | null) ?? null,
     });
     const uuid = r.id as string | null;
     if (uuid) editionIdMap.set(ext, uuid);
@@ -292,7 +297,8 @@ Deno.serve(async (req: Request) => {
             player_name,
             set_name,
             image_url,
-            tier: inferTier(max),
+            tier: ed?.tier ?? null,
+            series_number: ed?.series ?? null,
             is_locked: false,
             fmv_usd: fmvForRow,
             last_seen_at: new Date().toISOString(),
@@ -300,7 +306,7 @@ Deno.serve(async (req: Request) => {
           if (sampleData.length < 3) {
             sampleData.push({
               id, player_name, set_name, serial, max,
-              tier: inferTier(max),
+              tier: ed?.tier ?? null,
               image_url: image_url?.substring(0, 60),
               edSource: editionsPlayerOk ? "editions" : "wallet-titleCase",
             });

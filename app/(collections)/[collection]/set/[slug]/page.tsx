@@ -361,6 +361,8 @@ function tierBgFor(tier: string): string {
     case "ULTIMATE":   return "var(--tier-ultimate)"
     case "LEGENDARY":  return "var(--tier-legendary)"
     case "CHAMPION":   return "var(--tier-champion)"
+    case "EPIC":       return "var(--tier-epic)"
+    // Legacy RPC-fabricated UFC labels (chain TIER trait replaced them 2026-10-18).
     case "CHALLENGER": return "var(--tier-challenger)"
     case "CONTENDER":  return "var(--tier-contender)"
     case "RARE":       return "var(--tier-rare)"

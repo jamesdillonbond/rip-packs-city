@@ -119,6 +119,7 @@ export const TIER_ALIASES: Record<string, string> = {
   COMMON: "common",
   FANDOM: "fandom",
   RARE: "rare",
+  EPIC: "epic",
   LEGENDARY: "legendary",
   ULTIMATE: "ultimate",
   UNCOMMON: "uncommon",

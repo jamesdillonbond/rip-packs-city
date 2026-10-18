@@ -37,6 +37,10 @@ export const TIER_HEX_STR: Record<string, string> = {
   RARE: "#3B82F6",
   LEGENDARY: "#F59E0B",
   ULTIMATE: "#EF4444",
+  // UFC Strike on-chain tiers (UFC_NFT set metadata, 2026-10-18).
+  EPIC: "#C084FC",
+  CHAMPION: "#F59E0B",
+  // Legacy RPC-fabricated UFC labels, kept so an old row still colours.
   CONTENDER: "#9CA3AF",
   CHALLENGER: "#3B82F6",
   UNCOMMON: "#10B981",

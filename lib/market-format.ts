@@ -84,9 +84,11 @@ export const TIER_COLORS: Record<string, string> = {
   UNCOMMON:   "var(--tier-uncommon)",
   FANDOM:     "var(--tier-fandom)",
   RARE:       "var(--tier-rare)",
+  EPIC:       "var(--tier-epic)",
   LEGENDARY:  "var(--tier-legendary)",
   ULTIMATE:   "var(--tier-ultimate)",
   CHAMPION:   "var(--tier-champion)",
+  // Legacy RPC-fabricated UFC labels (chain TIER trait replaced them 2026-10-18).
   CHALLENGER: "var(--tier-challenger)",
   CONTENDER:  "var(--tier-contender)",
 }

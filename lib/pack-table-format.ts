@@ -9,7 +9,9 @@ import { usdSignFirst } from "@/lib/usd-format"
 
 // Tier rarity rank for the "Tier" column sort (rarity, not alphabetical —
 // Pack audit B6). common < fandom < rare < legendary < ultimate; UFC tiers
-// map by rough rarity equivalence.
+// map by rough rarity equivalence (UFC on-chain ladder, 2026-10-18: COMMON <
+// UNCOMMON < RARE < EPIC < CHAMPION < ULTIMATE; CONTENDER/CHALLENGER are legacy
+// RPC-fabricated labels kept only so an old row still sorts).
 export const TIER_RANK: Record<string, number> = {
   COMMON: 1,
   FANDOM: 2,
@@ -19,6 +21,7 @@ export const TIER_RANK: Record<string, number> = {
   EPIC: 5,
   CHALLENGER: 5,
   LEGENDARY: 6,
+  CHAMPION: 6,
   ULTIMATE: 7,
 }
 

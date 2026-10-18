@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import {
   b64ToUtf8,
-  inferTier,
   makeEditionKey,
   parseResult,
   titleCase,
@@ -32,25 +31,24 @@ describe("b64ToUtf8 — mojibake-safe base64 decode", () => {
   })
 })
 
-describe("inferTier — max-circulation banded UFC tier", () => {
-  it.each([
-    [null, "FANDOM"],
-    [0, "FANDOM"],
-    [1, "ULTIMATE"],
-    [10, "ULTIMATE"],
-    [11, "CHAMPION"],
-    [99, "CHAMPION"],
-    [100, "CHALLENGER"],
-    [999, "CHALLENGER"],
-    [1000, "CONTENDER"],
-    [25000, "CONTENDER"],
-    [25001, "FANDOM"],
-  ])("max=%s → %s", (max, tier) => {
-    expect(inferTier(max as number | null)).toBe(tier)
+describe("tier is never derived from edition size (2026-10-18)", () => {
+  // inferTier() banded max circulation into CHALLENGER / CONTENDER — tiers that do
+  // not exist on chain. Re-pinned (was: the band table) to the property that
+  // replaced it: the edge fn writes the CATALOGUE's tier and series, and an
+  // edition the catalogue lacks gets NULL, never a size-derived guess.
+  const src = readFileSync(path.join(process.cwd(), "supabase/functions/enrich-ufc-wallet/index.ts"), "utf8")
+  const code = src.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n")
+  it("carries no size-banding tier function and no fabricated tier literal", () => {
+    expect(code).not.toMatch(/inferTier\s*\(/)
+    expect(code).not.toMatch(/"CONTENDER"|"CHALLENGER"/)
   })
-  it("puts the band boundaries on the exact edges (a slip mis-scores scarcity)", () => {
-    expect(inferTier(10)).toBe("ULTIMATE")
-    expect(inferTier(11)).not.toBe("ULTIMATE")
+  it("writes tier and series_number from the editions row, NULL when absent", () => {
+    expect(code).toContain("tier: ed?.tier ?? null")
+    expect(code).toContain("series_number: ed?.series ?? null")
+    expect(code).toMatch(/select\("id, external_id, player_name, set_name, thumbnail_url, tier, series"\)/)
+  })
+  it("a failed catalogue read stops the run instead of writing NULL names", () => {
+    expect(code).toMatch(/if \(edErr\) \{\s*return new Response/)
   })
 })
 
@@ -98,14 +96,10 @@ describe("edge-fn source-drift guard — enrich-ufc-wallet inline copies", () =>
   const importsShared = /from\s+["'][^"']*_shared\/ufc-wallet-enrich/.test(edgeSrc)
 
   const DECODE = norm('new TextDecoder("utf-8").decode(bytes)')
-  const TIER_ULTIMATE = norm('if (max <= 10) return "ULTIMATE";')
-  const TIER_CONTENDER = norm('if (max <= 25000) return "CONTENDER";')
   const EDITION_KEY = norm('name.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + (max ?? 0)')
 
   it.each([
     ["utf-8 decode", DECODE],
-    ["ULTIMATE band", TIER_ULTIMATE],
-    ["CONTENDER band", TIER_CONTENDER],
     ["edition-key slug", EDITION_KEY],
   ])("edge fn imports _shared, or carries the inline %s verbatim", (_label, expr) => {
     expect(importsShared || edgeSrc.includes(expr)).toBe(true)

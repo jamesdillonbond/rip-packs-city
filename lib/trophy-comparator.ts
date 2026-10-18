@@ -7,10 +7,10 @@
 // lib/trophy-picker-format.ts's `tierRank`, and that is a considered decision, not
 // debt — the two encode GENUINELY DIFFERENT orderings for different surfaces:
 //   • this one (dashboard trophy case): cross-collection, descending score,
-//     ranks UNCOMMON(5) ABOVE FANDOM(2), and includes CHAMPION/CHALLENGER/
-//     CONTENDER (UFC).
+//     ranks UNCOMMON(5) ABOVE FANDOM(2), and includes UFC's EPIC/CHAMPION
+//     (plus the legacy CHALLENGER/CONTENDER).
 //   • trophy-picker-format (profile picker modal): Top-Shot-only NormalizedTier,
-//     ascending index, ranks FANDOM(3) ABOVE UNCOMMON(4), and has no UFC tiers.
+//     ascending index, ranks FANDOM ABOVE UNCOMMON.
 // Forcing one canonical rank would FLIP the FANDOM/UNCOMMON order on one surface
 // (a behavior change with no clear "correct" answer — the relationship is
 // collection-dependent), so they intentionally stay separate.
@@ -18,12 +18,16 @@
 /**
  * Cross-collection rarity ranking, highest first. Covers every tier in the
  * tier_type enum; unknown/null → 0 (lowest). (Top Shot: COMMON<FANDOM<RARE<
- * LEGENDARY<ULTIMATE; UFC: CONTENDER<CHALLENGER<FANDOM.)
+ * LEGENDARY<ULTIMATE; UFC Strike — the chain TIER trait, 2026-10-18:
+ * COMMON<UNCOMMON<RARE<EPIC<CHAMPION<ULTIMATE, plus FANDOM.) CHALLENGER /
+ * CONTENDER are LEGACY: RPC fabricated them from edition size; they stay ranked
+ * (mid-ladder, where the sizes they came from sat) only so an old row sorts.
  */
 export const TROPHY_TIER_RANK: Record<string, number> = {
-  ULTIMATE: 9,
-  LEGENDARY: 8,
-  CHAMPION: 7,
+  ULTIMATE: 10,
+  LEGENDARY: 9,
+  CHAMPION: 8,
+  EPIC: 7,
   RARE: 6,
   UNCOMMON: 5,
   CHALLENGER: 4,

@@ -9,7 +9,9 @@ import { usdSignFirst } from '@/lib/usd-format'
 export type TrophyTierFilter =
   | 'ALL'
   | 'ULTIMATE'
+  | 'CHAMPION'
   | 'LEGENDARY'
+  | 'EPIC'
   | 'RARE'
   | 'FANDOM'
   | 'UNCOMMON'
@@ -18,21 +20,25 @@ export type TrophyTierFilter =
 // The non-"ALL" tiers, in rarity order (rarest first).
 export type NormalizedTier = Exclude<TrophyTierFilter, 'ALL'>
 
-// UFC Strike's own ladder (CHAMPION rarest). Not a filter chip — the picker's
-// chip vocabulary is the Flow ladder above — but a UFC trophy still has to
-// SORT. Before 2026-09-18 normalizeTier returned null for these, so tierRank
-// gave every UFC moment the "unknown" rank 99 and the tier_rank sort shuffled
-// a CHAMPION among CONTENDERs by FMV (deep-audit D23 residual). The canonical
-// ladder in lib/tier-order says these are internally ordered and NOT comparable
-// to RARE/LEGENDARY/ULTIMATE, so they rank after the Flow tiers, in order.
-export type UfcTier = 'CHAMPION' | 'CHALLENGER' | 'CONTENDER'
-const UFC_RANK: Record<UfcTier, number> = { CHAMPION: 0, CHALLENGER: 1, CONTENDER: 2 }
+// UFC Strike's REAL ladder is the chain's TIER trait (UFC_NFT set metadata,
+// public.ufc_chain_set_metadata, 2026-10-18): COMMON < UNCOMMON < RARE < EPIC <
+// CHAMPION < ULTIMATE, plus FANDOM. Those are ordinary chips now (CHAMPION and
+// EPIC are UFC-only; a chip renders only when a moment carries it), so a UFC
+// trophy sorts on the same ladder as every other collection.
+// CONTENDER / CHALLENGER were FABRICATED by RPC from edition size and are being
+// removed from the data. They are LEGACY: still parsed so an old row does not
+// render as an unknown, never offered as a chip, and sorted after every real
+// tier (before 2026-09-18 they ranked 99 and shuffled by FMV — D23 residual).
+export type UfcTier = 'CHALLENGER' | 'CONTENDER'
+const UFC_RANK: Record<UfcTier, number> = { CHALLENGER: 0, CONTENDER: 1 }
 
 export type TrophySortKey = 'fmv_desc' | 'serial_asc' | 'tier_rank'
 
 export const TIER_ORDER: NormalizedTier[] = [
   'ULTIMATE',
+  'CHAMPION',
   'LEGENDARY',
+  'EPIC',
   'RARE',
   'FANDOM',
   'UNCOMMON',
@@ -61,6 +67,7 @@ export function normalizeTier(tier?: string | null): NormalizedTier | UfcTier | 
   const t = tier.toLowerCase()
   if (t.includes('ultimate')) return 'ULTIMATE'
   if (t.includes('legendary')) return 'LEGENDARY'
+  if (t.includes('epic')) return 'EPIC'
   if (t.includes('rare')) return 'RARE'
   if (t.includes('fandom')) return 'FANDOM'
   if (t.includes('uncommon')) return 'UNCOMMON'
@@ -81,6 +88,8 @@ export function tierColor(tier: NormalizedTier | UfcTier | null): string {
       return 'var(--tier-ultimate)'
     case 'LEGENDARY':
       return 'var(--tier-legendary)'
+    case 'EPIC':
+      return 'var(--tier-epic)'
     case 'RARE':
       return 'var(--tier-rare)'
     case 'FANDOM':

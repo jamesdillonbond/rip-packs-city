@@ -16,8 +16,18 @@
 // RANKS, not an array, is the source of truth: an array forces a total order on
 // tiers that are collection-DISJOINT and therefore have no meaningful relative
 // rank. FANDOM (Top Shot) and UNCOMMON (All Day / Golazos) never appear in the
-// same collection's breakdown, so they deliberately share a rank; likewise the
-// three UFC tiers sit above the Flow ladder rather than being interleaved.
+// same collection's breakdown, so they deliberately share a rank.
+//
+// UFC Strike (2026-10-18): the REAL UFC ladder is the chain's TIER trait
+// (UFC_NFT.getSetMetadata, stored in public.ufc_chain_set_metadata):
+// COMMON < UNCOMMON < RARE < EPIC < CHAMPION < ULTIMATE, plus FANDOM. EPIC is
+// UFC-only today; CHAMPION is UFC-only and sits between LEGENDARY (Flow-only)
+// and ULTIMATE — a collection-disjoint placement, not a cross-collection claim.
+// CONTENDER / CHALLENGER were FABRICATED by RPC from edition size (≤25,000 /
+// ≤999) and are being removed from the data; they stay here only as LEGACY
+// values so an old row still normalizes instead of crashing a render. Their
+// ranks mirror the sizes they were invented from (CONTENDER ~ COMMON,
+// CHALLENGER ~ RARE) and must not be read as tiers.
 //
 // Ranks ascend with rarity: COMMON is 0, the rarest is highest.
 
@@ -26,18 +36,18 @@ export const CANONICAL_TIER_RANKS: Record<string, number> = {
   COMMON: 0,
   // Collection-disjoint pair — same rank on purpose. Top Shot has FANDOM and no
   // UNCOMMON; All Day (630 editions) and Golazos (215) have UNCOMMON and no
-  // FANDOM. Verified live 2026-08-09.
+  // FANDOM. Verified live 2026-08-09. (UFC has both on chain; its FANDOM is a
+  // fan-vote tier, not a rarity step, so sharing UNCOMMON's rank is fine.)
   FANDOM: 1,
   UNCOMMON: 1,
   RARE: 2,
-  LEGENDARY: 3,
-  ULTIMATE: 4,
-  // UFC Strike's own ladder. Disjoint from the Flow tiers above (UFC uses
-  // CONTENDER / CHALLENGER / CHAMPION / FANDOM only), so these ranks are
-  // internally ordered and not comparable to RARE/LEGENDARY/ULTIMATE.
-  CONTENDER: 5,
-  CHALLENGER: 6,
-  CHAMPION: 7,
+  EPIC: 3,
+  LEGENDARY: 4,
+  CHAMPION: 5,
+  ULTIMATE: 6,
+  // LEGACY — fabricated UFC labels (see header). Kept normalizable only.
+  CONTENDER: 0,
+  CHALLENGER: 2,
 };
 
 /** Canonical tier names, UPPERCASE — exactly as the DB enum stores them. */

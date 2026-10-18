@@ -116,8 +116,8 @@ export function editionPriceSource(r: Pick<ChecklistEditionRow, "floor_usd" | "f
 }
 
 const TIER_RANK: Record<string, number> = {
-  ULTIMATE: 1, LEGENDARY: 2, CHAMPION: 3, CHALLENGER: 4, CONTENDER: 5,
-  RARE: 6, UNCOMMON: 7, FANDOM: 8, COMMON: 9,
+  ULTIMATE: 1, LEGENDARY: 2, CHAMPION: 3, EPIC: 4, CHALLENGER: 5, CONTENDER: 6,
+  RARE: 7, UNCOMMON: 8, FANDOM: 9, COMMON: 10,
 }
 
 // Same order as get_team_checklist: missing before owned (with a wallet), then

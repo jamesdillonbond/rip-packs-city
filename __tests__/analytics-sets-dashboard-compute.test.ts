@@ -61,15 +61,18 @@ describe("constants", () => {
     // from both the bar and its denominator (deep-audit D23).
     expect(TIER_ORDER).toEqual([
       "common",
+      "contender",
       "fandom",
       "uncommon",
       "rare",
-      "legendary",
-      "ultimate",
-      "contender",
       "challenger",
+      "epic",
+      "legendary",
       "champion",
+      "ultimate",
     ])
+    expect(TIER_LABEL.epic).toBe("Epic")
+    expect(TIER_COLOR.epic).toBe("#C084FC")
     expect(TIER_LABEL.legendary).toBe("Legendary")
     expect(TIER_COLOR.ultimate).toBe("#F43F5E")
     expect(COLLECTION_LABEL.ufc).toBe("UFC")

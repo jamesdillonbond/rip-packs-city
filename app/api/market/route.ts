@@ -65,6 +65,8 @@ const TIER_CEILING: Record<string, number> = {
   UNCOMMON:   500,
   CONTENDER:  500,
   RARE:       50_000,
+  EPIC:       50_000,
+  // CONTENDER / CHALLENGER: legacy RPC-fabricated UFC labels (2026-10-18).
   CHALLENGER: 50_000,
   LEGENDARY:  250_000,
   CHAMPION:   250_000,

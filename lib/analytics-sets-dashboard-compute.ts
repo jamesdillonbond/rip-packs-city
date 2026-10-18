@@ -57,6 +57,7 @@ export const TIER_LABEL: Record<string, string> = {
   fandom: "Fandom",
   uncommon: "Uncommon",
   rare: "Rare",
+  epic: "Epic",
   legendary: "Legendary",
   ultimate: "Ultimate",
   contender: "Contender",
@@ -69,8 +70,10 @@ export const TIER_COLOR: Record<string, string> = {
   // Same canonical rank as fandom (collection-disjoint), so same treatment.
   uncommon: "#60A5FA",
   rare: "#22D3EE",
+  epic: "#C084FC",
   legendary: "#F59E0B",
   ultimate: "#F43F5E",
+  // Legacy RPC-fabricated UFC labels (the chain TIER trait replaced them 2026-10-18).
   contender: "#a1a1aa",
   challenger: "#22D3EE",
   champion: "#F59E0B",

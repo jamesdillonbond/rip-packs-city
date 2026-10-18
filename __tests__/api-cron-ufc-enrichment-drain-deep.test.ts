@@ -9,7 +9,8 @@ import {
 
 // Deep-drive of POST /api/cron/ufc-enrichment-drain — the UFC wmc null-key drain.
 // Pins the on-chain enrichment contract:
-//   - null-key rows are read on-chain, keyed via makeEditionKey, tier inferred,
+//   - null-key rows are read on-chain, keyed via makeEditionKey, tier taken from
+//     the editions row (NEVER inferred from circulation — 2026-10-18),
 //     player/set/image joined from the editions map, upserted (3-col conflict);
 //   - a moment with no edition name is counted (no_edition_name), not written;
 //   - a Cadence read error is counted (cadence_errors), not fatal;
@@ -111,7 +112,7 @@ describe("ufc-enrichment-drain — enrichment", () => {
         { data: [{ wallet_address: "0xw1", moment_id: "100", image_url: null }], error: null }, // candidate scan
       ],
       editions: {
-        data: [{ external_id: "Conor-Mcgregor-Series-1-100", player_name: "Conor McGregor", set_name: "Series 1", thumbnail_url: "http://img/x.png" }],
+        data: [{ external_id: "Conor-Mcgregor-Series-1-100", player_name: "Conor McGregor", set_name: "Series 1", thumbnail_url: "http://img/x.png", tier: "EPIC" }],
         error: null,
       },
     })
@@ -134,12 +135,33 @@ describe("ufc-enrichment-drain — enrichment", () => {
       player_name: "Conor McGregor", // editions wins (valid name)
       set_name: "Series 1",
       image_url: "http://img/x.png",
-      tier: "CHALLENGER", // inferTier(100): <=999
+      // The catalogue's tier (the chain TIER trait), not a band of max=100 —
+      // the old inferTier() would have written the fabricated "CHALLENGER" here.
+      tier: "EPIC",
     })
+    expect(rows[0].tier).not.toBe("CHALLENGER")
 
     const log = terminalLog(spy.rpcCalls)
     expect(log).toMatchObject({ p_pipeline: "ufc-enrichment-drain", p_ok: true, p_rows_found: 1, p_rows_written: 1 })
     expect(log.p_extra).toMatchObject({ enriched: 1, upserted: 1, cadence_errors: 0 })
+  })
+
+  it("writes tier NULL (never an invented tier) when the catalogue has no row for the key", async () => {
+    const spy = install({
+      wallet_moments_cache: [
+        { data: [{ wallet_address: "0xw1", moment_id: "100", image_url: null }], error: null },
+      ],
+      editions: { data: [], error: null },
+    })
+    fetchMock = installFetchMock([
+      flowMeta({ "100": { body: metaResult({ editionName: "Conor Mcgregor | Series 1", serial: "5", max: "100" }) } }),
+    ])
+    const res = await POST(req())
+    expect(res.status).toBe(202)
+    await runDeferred()
+    const rows = (spy.writes.wallet_moments_cache ?? []).filter((w) => w.method === "upsert").flatMap((w) => w.rows)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].tier).toBeNull()
   })
 
   it("counts a moment with no on-chain edition name and writes nothing for it", async () => {

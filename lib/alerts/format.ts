@@ -71,7 +71,7 @@ function dealSerialTag(d: Deal): string {
   return `#${d.serial_number}`;
 }
 // Rarity tier — NBA/UFC tiers arrive as upper-case enums (RARE, LEGENDARY,
-// CHALLENGER); render title-cased ("Rare"). Pinnacle's "tier" column is actually
+// EPIC); render title-cased ("Rare"). Pinnacle's "tier" column is actually
 // its already-proper-cased variant (Colored Enamel, Golden) — leave mixed-case
 // strings untouched so they don't get mangled to "Colored enamel".
 function dealTier(d: Deal): string {

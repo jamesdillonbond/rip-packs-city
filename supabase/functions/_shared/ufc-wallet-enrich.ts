@@ -1,6 +1,6 @@
 // Shared pure logic for enrich-ufc-wallet — the edge fn that reads a UFC Strike
 // moment's on-chain Display/Editions metadata and writes the fighter name, tier,
-// and edition key into wallet_moments_cache. Its parse/decode core decides WHAT
+// and edition key into wallet_moments_cache (tier now comes from editions). Its parse/decode core decides WHAT
 // NAME and WHAT TIER land on a collector's moment, so a regression here either
 // (a) persists mojibake for any accented fighter (José Aldo / Michał class — the
 // same latin1-atob corruption that hit sibling paths on 2026-07-25/27) or
@@ -26,19 +26,10 @@ export function b64ToUtf8(b64: string): string {
   return new TextDecoder("utf-8").decode(bytes)
 }
 
-/**
- * UFC Strike tier from an edition's max circulation. The ladder is
- * max-circulation banded; a mis-band mis-scores scarcity, which flows into FMV
- * and pack-EV. NULL / 0 max (no edition info) → FANDOM (the safe base tier).
- */
-export function inferTier(max: number | null): string {
-  if (!max || max === 0) return "FANDOM"
-  if (max <= 10) return "ULTIMATE"
-  if (max <= 99) return "CHAMPION"
-  if (max <= 999) return "CHALLENGER"
-  if (max <= 25000) return "CONTENDER"
-  return "FANDOM"
-}
+// inferTier() was REMOVED 2026-10-18. It banded an edition's max circulation into
+// "CHALLENGER" (<=999) / "CONTENDER" (<=25000) — tiers that do not exist on chain
+// (the chain's TIER trait is COMMON/UNCOMMON/RARE/EPIC/CHAMPION/ULTIMATE/FANDOM;
+// public.ufc_chain_set_metadata). The edge fn now takes tier from the editions row.
 
 /** Slug-style edition key: name → dash-collapsed + "-" + max (0 when absent). */
 export function makeEditionKey(name: string, max: number | null): string {

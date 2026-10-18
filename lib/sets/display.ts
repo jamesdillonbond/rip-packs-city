@@ -8,7 +8,7 @@ export type SetFilterKey = "all" | "complete" | "in_progress" | "not_started"
 
 // Tier → accent stripe color for the set-progress cards. Covers both the NBA
 // Top Shot vocabulary (COMMON…ULTIMATE) and the UFC Strike additions
-// (CHALLENGER/CONTENDER/CHAMPION); anything unknown falls back to COMMON so a
+// (EPIC/CHAMPION, plus the legacy CHALLENGER/CONTENDER); anything unknown falls back to COMMON so a
 // new/mis-cased tier renders a neutral stripe rather than nothing.
 export const TIER_STRIPE: Record<string, string> = {
   COMMON: "#9ca3af",
@@ -17,7 +17,10 @@ export const TIER_STRIPE: Record<string, string> = {
   RARE: "#a855f7",
   LEGENDARY: "#fbbf24",
   ULTIMATE: "#ec4899",
-  // UFC Strike tier vocabulary
+  // UFC Strike on-chain tiers (chain TIER trait, 2026-10-18) — CHAMPION below;
+  // COMMON/UNCOMMON/RARE/ULTIMATE/FANDOM share the keys above.
+  EPIC: "var(--tier-epic)",
+  // Legacy RPC-fabricated UFC labels, kept so an old row still renders.
   CHALLENGER: "var(--tier-challenger)",
   CONTENDER: "var(--tier-contender)",
   CHAMPION: "var(--tier-champion)",

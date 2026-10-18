@@ -14,7 +14,9 @@ import { recordDeletes, findFilter } from "./helpers/delete-recorder"
 // Pins:
 //   - request contract (Origin: https://www.flowty.io, offset pagination) and
 //     the three stop conditions (short page, no-new-flow_ids, reportedTotal);
-//   - row contract: tier INFERRED from circulation (no tier trait upstream),
+//   - row contract: tier = the NFT's own TIER trait, upper-cased; NULL when the
+//     trait is absent — NEVER banded from circulation (re-pinned 2026-10-18: the
+//     old CHALLENGER/CONTENDER bands were tiers that do not exist on chain),
 //     slugified edition name + max as external/moment id, serial from
 //     editions.infoList, fmv always null (no LiveToken for UFC);
 //   - editions-enrichment merge: Flowty wins player_name (catchphrase moments),
@@ -55,6 +57,7 @@ function ufcNft(opts: {
   serial?: number | null
   max?: number | null
   fighter?: string | null
+  tier?: string | null
   salePrice?: string | number | null
   usdValue?: string | number | null
   image?: string | null
@@ -69,7 +72,10 @@ function ufcNft(opts: {
     },
     nftView: {
       traits: {
-        traits: opts.fighter ? [{ name: "ATHLETE 1", value: opts.fighter }] : [],
+        traits: [
+          ...(opts.fighter ? [{ name: "ATHLETE 1", value: opts.fighter }] : []),
+          ...(opts.tier ? [{ name: "TIER", value: opts.tier }] : []),
+        ],
       },
       editions: {
         infoList: [{ name: opts.name ?? "", number: opts.serial ?? null, max: opts.max ?? null }],
@@ -136,7 +142,7 @@ beforeEach(() => {
 })
 
 describe("ufc-listing-cache — mapping, enrichment, replace semantics", () => {
-  it("slugified external ids, inferred tiers, Flowty-wins player vs editions-wins set/series enrichment, delete-first wipe scoped to the UFC collection only, fmv rpc, ok log", async () => {
+  it("slugified external ids, trait-sourced tiers, Flowty-wins player vs editions-wins set/series enrichment, delete-first wipe scoped to the UFC collection only, fmv rpc, ok log", async () => {
     fetchMock = installFetchMock([
       flowtyStub({
         0: [
@@ -225,7 +231,7 @@ describe("ufc-listing-cache — mapping, enrichment, replace semantics", () => {
       set_name: "Fight Night", // editions wins
       team_name: null,
       series_name: "Series 1", // editions.series
-      tier: "CHALLENGER", // inferred: 100 <= 750 <= 999
+      tier: null, // no TIER trait on this NFT → unknown, not a band of circulation 750
       serial_number: 42,
       circulation_count: 750,
       ask_price: 12,
@@ -246,7 +252,7 @@ describe("ufc-listing-cache — mapping, enrichment, replace semantics", () => {
       set_name: "Main Event",
       team_name: "Middleweight",
       series_name: "Series 0",
-      tier: "ULTIMATE", // circ 5 <= 10
+      tier: null, // no TIER trait → unknown (circulation 5 no longer implies ULTIMATE)
       ask_price: 1000, // usdValue fallback
       thumbnail_url: "https://ed/2.png", // editions thumbnail fill
     })
@@ -271,15 +277,17 @@ describe("ufc-listing-cache — mapping, enrichment, replace semantics", () => {
     })
   })
 
-  it("infers the full tier ladder from circulation (ULTIMATE/CHAMPION/CHALLENGER/CONTENDER/FANDOM) and drops the max suffix when circulation is unknown", async () => {
+  it("takes tier from the NFT's TIER trait (EPIC included), NULL without one, and drops the max suffix when circulation is unknown", async () => {
     fetchMock = installFetchMock([
       flowtyStub({
         0: [
-          ufcNft({ flowId: "1", lrid: "T1", name: "A", max: 10, salePrice: 1 }),
-          ufcNft({ flowId: "2", lrid: "T2", name: "B", max: 99, salePrice: 1 }),
-          ufcNft({ flowId: "3", lrid: "T3", name: "C", max: 999, salePrice: 1 }),
-          ufcNft({ flowId: "4", lrid: "T4", name: "D", max: 25000, salePrice: 1 }),
+          ufcNft({ flowId: "1", lrid: "T1", name: "A", max: 10, salePrice: 1, tier: "Ultimate" }),
+          ufcNft({ flowId: "2", lrid: "T2", name: "B", max: 99, salePrice: 1, tier: "Champion" }),
+          ufcNft({ flowId: "3", lrid: "T3", name: "C", max: 300, salePrice: 1, tier: "Epic" }),
+          ufcNft({ flowId: "4", lrid: "T4", name: "D", max: 25000, salePrice: 1, tier: "Common" }),
           ufcNft({ flowId: "5", lrid: "T5", name: "E", max: null, salePrice: 1 }),
+          // The old bands would have called this CHALLENGER (<=999); the chain says Rare.
+          ufcNft({ flowId: "6", lrid: "T6", name: "F", max: 750, salePrice: 1, tier: "Rare" }),
         ],
       }),
     ])
@@ -298,10 +306,12 @@ describe("ufc-listing-cache — mapping, enrichment, replace semantics", () => {
     const byFlow = new Map(upserts.map((r) => [r.flow_id, r]))
     expect(byFlow.get("1")).toMatchObject({ tier: "ULTIMATE", moment_id: "A-10" })
     expect(byFlow.get("2")).toMatchObject({ tier: "CHAMPION", moment_id: "B-99" })
-    expect(byFlow.get("3")).toMatchObject({ tier: "CHALLENGER", moment_id: "C-999" })
-    expect(byFlow.get("4")).toMatchObject({ tier: "CONTENDER", moment_id: "D-25000" })
-    // Unknown circulation: FANDOM tier + slug WITHOUT the -max suffix.
-    expect(byFlow.get("5")).toMatchObject({ tier: "FANDOM", moment_id: "E", circulation_count: null })
+    expect(byFlow.get("3")).toMatchObject({ tier: "EPIC", moment_id: "C-300" })
+    expect(byFlow.get("4")).toMatchObject({ tier: "COMMON", moment_id: "D-25000" })
+    expect(byFlow.get("6")).toMatchObject({ tier: "RARE", moment_id: "F-750" })
+    // No trait and unknown circulation: tier NULL (not FANDOM) + slug WITHOUT the -max suffix.
+    expect(byFlow.get("5")).toMatchObject({ tier: null, moment_id: "E", circulation_count: null })
+    for (const r of upserts) expect(["CHALLENGER", "CONTENDER"]).not.toContain(r.tier)
   })
 
   it("paginates by PAGE_LIMIT and stops when a full page yields no NEW flow_ids (dedup guard)", async () => {

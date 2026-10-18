@@ -1785,7 +1785,7 @@ function EmptyHeroState({ wallets, indexing, onPickSlot }: { wallets: SavedWalle
 // Cross-collection rarity ranking for the Auto-Arrange "Rarity" sort. Highest
 // first. Covers every tier in the tier_type enum across all 5 collections;
 // unknown/null tiers rank lowest. (Top Shot: COMMON<FANDOM<RARE<LEGENDARY<
-// ULTIMATE; UFC: CONTENDER<CHALLENGER<FANDOM.)
+// ULTIMATE; UFC, the chain TIER trait: COMMON<UNCOMMON<RARE<EPIC<CHAMPION<ULTIMATE.)
 // TROPHY_TIER_RANK / tierRank / TrophySortKey / TROPHY_SORTS / trophyComparator
 // extracted to @/lib/trophy-comparator (imported below). NOTE: "Acquisition date"
 // sort is intentionally omitted — trophy slab data carries no acquisition

@@ -189,32 +189,48 @@ describe("filterSortMoments", () => {
 // among CONTENDERs by FMV. The canonical ladder says UFC tiers are internally
 // ordered and not comparable to the Flow tiers — so they rank after them.
 describe("UFC Strike tiers sort by their own ladder", () => {
-  it("normalizes the three UFC tiers and ranks them CHAMPION < CHALLENGER < CONTENDER, after the Flow ladder", () => {
+  // Re-pinned 2026-10-18. UFC's REAL tiers are the chain TIER trait (UFC_NFT set
+  // metadata): COMMON < UNCOMMON < RARE < EPIC < CHAMPION < ULTIMATE, plus FANDOM.
+  // CHALLENGER / CONTENDER were fabricated by RPC from edition size; they stay
+  // parseable as LEGACY values but sort after every real tier.
+  it("normalizes the chain's EPIC and CHAMPION and ranks them on the shared ladder", () => {
     expect(normalizeTier("Champion")).toBe("CHAMPION")
+    expect(normalizeTier("epic")).toBe("EPIC")
+    expect(tierRank("ULTIMATE")).toBeLessThan(tierRank("CHAMPION"))
+    expect(tierRank("CHAMPION")).toBeLessThan(tierRank("EPIC"))
+    expect(tierRank("EPIC")).toBeLessThan(tierRank("RARE"))
+    expect(tierRank("RARE")).toBeLessThan(tierRank("UNCOMMON"))
+    expect(tierRank("UNCOMMON")).toBeLessThan(tierRank("COMMON"))
+  })
+
+  it("legacy fabricated labels still parse, but sort after every real tier", () => {
     expect(normalizeTier("CHALLENGER")).toBe("CHALLENGER")
     expect(normalizeTier("contender")).toBe("CONTENDER")
-    const champion = tierRank("CHAMPION")
-    const challenger = tierRank("CHALLENGER")
-    const contender = tierRank("CONTENDER")
-    expect(champion).toBeLessThan(challenger)
-    expect(challenger).toBeLessThan(contender)
-    expect(champion).toBeGreaterThan(tierRank("COMMON"))
-    expect(contender).toBeLessThan(99)
+    expect(tierRank("CHALLENGER")).toBeGreaterThan(tierRank("COMMON"))
+    expect(tierRank("CONTENDER")).toBeGreaterThan(tierRank("CHALLENGER"))
+    expect(tierRank("CONTENDER")).toBeLessThan(99)
   })
 
-  it("tier_rank sorts a UFC trophy set by ladder, not by FMV", () => {
+  it("tier_rank sorts a UFC trophy set by the chain ladder, not by FMV", () => {
     const moments = [
-      { moment_id: "c1", tier: "CONTENDER", fmv_usd: 900 },
+      { moment_id: "c1", tier: "COMMON", fmv_usd: 900 },
       { moment_id: "ch", tier: "CHAMPION", fmv_usd: 10 },
-      { moment_id: "cl", tier: "CHALLENGER", fmv_usd: 500 },
+      { moment_id: "ep", tier: "EPIC", fmv_usd: 500 },
     ]
-    expect(filterSortMoments(moments, "tier_rank", "ALL", "").map((m) => m.moment_id)).toEqual(["ch", "cl", "c1"])
+    expect(filterSortMoments(moments, "tier_rank", "ALL", "").map((m) => m.moment_id)).toEqual(["ch", "ep", "c1"])
   })
 
-  it("NO-CHANGE CONTROL: UFC tiers are not filter chips, and the Flow ladder ranks unchanged", () => {
-    expect(presentTiers([{ moment_id: "x", tier: "CHAMPION" }, { moment_id: "y", tier: "RARE" }])).toEqual(["RARE"])
+  it("chips: the chain's UFC tiers are chips, the fabricated labels are not; unknown sinks", () => {
+    expect(presentTiers([{ moment_id: "x", tier: "CHAMPION" }, { moment_id: "y", tier: "RARE" }, { moment_id: "z", tier: "EPIC" }]))
+      .toEqual(["CHAMPION", "EPIC", "RARE"])
+    expect(presentTiers([{ moment_id: "x", tier: "CONTENDER" }, { moment_id: "y", tier: "CHALLENGER" }])).toEqual([])
     expect(tierRank("ULTIMATE")).toBe(0)
     expect(tierRank("COMMON")).toBe(TIER_ORDER.length - 1)
     expect(tierRank(null)).toBe(99)
+  })
+
+  it("EPIC has its own colour token, and a NULL tier never renders as a fabricated tier", () => {
+    expect(tierColor("EPIC")).toBe("var(--tier-epic)")
+    expect(tierColor(normalizeTier(null))).not.toMatch(/contender|challenger/)
   })
 })

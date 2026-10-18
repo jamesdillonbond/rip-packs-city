@@ -69,17 +69,23 @@ export function fmtAbsDate(iso: string | null | undefined): string {
   })
 }
 
-/** Tier → CSS colour var (with a text-muted fallback). Handles both the Top
- *  Shot vocabulary (ULTIMATE/LEGENDARY/RARE/FANDOM/COMMON) and the UFC Strike
- *  one (CHALLENGER/CONTENDER/FANDOM); unknown tiers fall back to muted. */
+/** Tier → CSS colour var (with a text-muted fallback). Handles the Flow
+ *  vocabulary (ULTIMATE/LEGENDARY/RARE/UNCOMMON/FANDOM/COMMON) and UFC Strike's
+ *  on-chain TIER trait (adds EPIC and CHAMPION, 2026-10-18). CHALLENGER /
+ *  CONTENDER are legacy RPC-fabricated labels, kept so an old row still colours.
+ *  Unknown or null tiers (e.g. UFC catchphrase moments, which carry no tier on
+ *  chain) fall back to muted — never to an invented tier. */
 export function tierColorVar(tier: string | null | undefined): string {
   const t = (tier ?? "").toUpperCase()
   if (t === "ULTIMATE") return "var(--rpc-ultimate, var(--rpc-red))"
   if (t === "LEGENDARY") return "var(--rpc-legendary, var(--rpc-red))"
+  if (t === "EPIC") return "var(--tier-epic, var(--rpc-text-primary))"
   if (t === "RARE") return "var(--rpc-rare, var(--rpc-text-primary))"
+  if (t === "UNCOMMON") return "var(--tier-uncommon, var(--rpc-text-muted))"
+  if (t === "CHAMPION") return "var(--tier-champion, var(--rpc-red))"
   if (t === "FANDOM") return "var(--rpc-fandom, var(--rpc-text-muted))"
   if (t === "COMMON") return "var(--rpc-common, var(--rpc-text-muted))"
-  // UFC Strike tier vocabulary (CHALLENGER / CONTENDER / FANDOM).
+  // Legacy RPC-fabricated UFC labels.
   if (t === "CHALLENGER") return "var(--tier-challenger, var(--rpc-red))"
   if (t === "CONTENDER") return "var(--tier-contender, var(--rpc-text-muted))"
   return "var(--rpc-text-muted)"

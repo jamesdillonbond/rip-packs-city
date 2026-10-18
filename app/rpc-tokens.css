@@ -82,6 +82,11 @@
   --tier-rare-bg: rgba(129, 140, 248, 0.10);
   --tier-rare-border: rgba(129, 140, 248, 0.30);
 
+  /* UFC Strike EPIC — a real on-chain TIER (UFC_NFT set metadata, 2026-10-18). */
+  --tier-epic: #C084FC;
+  --tier-epic-bg: rgba(192, 132, 252, 0.10);
+  --tier-epic-border: rgba(192, 132, 252, 0.30);
+
   --tier-fandom: #34D399;
   --tier-fandom-bg: rgba(52, 211, 153, 0.10);
   --tier-fandom-border: rgba(52, 211, 153, 0.30);
@@ -495,6 +500,7 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 .rpc-tier-stripe.legendary { background: var(--tier-legendary); }
 .rpc-tier-stripe.ultimate { background: var(--tier-ultimate); }
 .rpc-tier-stripe.rare { background: var(--tier-rare); }
+.rpc-tier-stripe.epic { background: var(--tier-epic); }
 .rpc-tier-stripe.fandom { background: var(--tier-fandom); }
 .rpc-tier-stripe.uncommon { background: var(--tier-uncommon); }
 .rpc-tier-stripe.common { background: var(--tier-common); }
@@ -536,6 +542,10 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 .rpc-tier-glow-rare {
   text-shadow: 0 0 8px rgba(129, 140, 248, 0.6);
   color: var(--tier-rare);
+}
+.rpc-tier-glow-epic {
+  text-shadow: 0 0 8px rgba(192, 132, 252, 0.6);
+  color: var(--tier-epic);
 }
 
 /* ── Arcade Button Style ─────────────────────────────────── */
@@ -710,6 +720,7 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 .rpc-tier-legendary { border-color: var(--tier-legendary-border); }
 .rpc-tier-ultimate  { border-color: var(--tier-ultimate-border); }
 .rpc-tier-rare      { border-color: var(--tier-rare-border); }
+.rpc-tier-epic      { border-color: var(--tier-epic-border); }
 .rpc-tier-fandom    { border-color: var(--tier-fandom-border); }
 .rpc-tier-common    { border-color: var(--tier-common-border); }
 

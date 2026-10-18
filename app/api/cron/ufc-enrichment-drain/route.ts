@@ -119,15 +119,12 @@ access(all) fun main(addr: Address, id: UInt64): {String: String} {
 }
 `.trim()
 
-// Mirror enrich-ufc-wallet's derivation exactly so keys/tiers stay consistent.
-function inferTier(max: number | null): string {
-  if (!max || max === 0) return "FANDOM"
-  if (max <= 10) return "ULTIMATE"
-  if (max <= 99) return "CHAMPION"
-  if (max <= 999) return "CHALLENGER"
-  if (max <= 25000) return "CONTENDER"
-  return "FANDOM"
-}
+// TIER is NOT derived here any more (2026-10-18). The old inferTier() banded the
+// edition's max circulation into CHALLENGER (<=999) / CONTENDER (<=25,000) — tiers
+// that do not exist on chain. UFC Strike's real tier is the TIER trait in
+// UFC_NFT.getSetMetadata (public.ufc_chain_set_metadata), which the editions
+// catalogue now carries; the drain takes editions.tier and writes NULL when the
+// catalogue has no row, rather than inventing one.
 function makeEditionKey(name: string, max: number | null): string {
   return name.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + (max ?? 0)
 }
@@ -167,7 +164,7 @@ async function getMeta(wallet: string, momentId: string): Promise<Record<string,
   return out
 }
 
-type EditionEnrichment = { player_name: string | null; set_name: string | null; thumbnail_url: string | null }
+type EditionEnrichment = { player_name: string | null; set_name: string | null; thumbnail_url: string | null; tier: string | null }
 
 interface NullRow {
   wallet_address: string
@@ -247,7 +244,7 @@ async function runDrain(startedAtIso: string): Promise<void> {
   const editionMap = new Map<string, EditionEnrichment>()
   const { data: edRows, error: edErr } = await (supabaseAdmin as any)
     .from("editions")
-    .select("external_id, player_name, set_name, thumbnail_url")
+    .select("external_id, player_name, set_name, thumbnail_url, tier")
     .eq("collection_id", UFC_COLLECTION_UUID)
   if (edErr) {
     await logRun(startedAtIso, started, {
@@ -263,6 +260,7 @@ async function runDrain(startedAtIso: string): Promise<void> {
       player_name: (r.player_name as string | null) ?? null,
       set_name: (r.set_name as string | null) ?? null,
       thumbnail_url: (r.thumbnail_url as string | null) ?? null,
+      tier: (r.tier as string | null) ?? null,
     })
   }
 
@@ -315,7 +313,7 @@ async function runDrain(startedAtIso: string): Promise<void> {
         player_name,
         set_name,
         image_url,
-        tier: inferTier(max),
+        tier: ed?.tier ?? null,
         last_seen_at: new Date().toISOString(),
       })
       enriched++

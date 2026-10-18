@@ -16,7 +16,11 @@ const LIVE_TIERS: Record<string, string[]> = {
   "nba-top-shot": ["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"],
   "nfl-all-day": ["RARE", "COMMON", "LEGENDARY", "UNCOMMON", "ULTIMATE"],
   "laliga-golazos": ["UNCOMMON", "RARE", "COMMON", "LEGENDARY"],
-  ufc: ["CONTENDER", "CHALLENGER", "FANDOM", "CHAMPION"],
+  // UFC Strike re-pinned 2026-10-18 to the CHAIN's TIER trait (UFC_NFT set
+  // metadata, public.ufc_chain_set_metadata). The old pin (CONTENDER / CHALLENGER /
+  // FANDOM / CHAMPION) matched the DB, but the DB tiers were fabricated by RPC from
+  // edition size — "live" must mean the chain, not our own invented copy.
+  ufc: ["COMMON", "UNCOMMON", "RARE", "EPIC", "CHAMPION", "ULTIMATE", "FANDOM"],
 }
 
 describe("collection tier vocabulary", () => {
@@ -29,13 +33,13 @@ describe("collection tier vocabulary", () => {
     })
   }
 
-  it("UFC uses its own vocabulary, never Top Shot's", () => {
+  it("UFC uses the chain's own vocabulary — EPIC included, no fabricated tier", () => {
     const ufc = collectionTiers("ufc")
-    expect(ufc).toEqual(["CONTENDER", "CHALLENGER", "FANDOM", "CHAMPION"])
-    // The exact chips that were dead before the fix.
-    for (const wrong of ["COMMON", "UNCOMMON", "RARE", "LEGENDARY", "ULTIMATE"]) {
-      expect(ufc).not.toContain(wrong)
-    }
+    expect(ufc).toEqual(["COMMON", "UNCOMMON", "RARE", "EPIC", "CHAMPION", "ULTIMATE", "FANDOM"])
+    // The RPC-invented labels (edition size <=25,000 / <=999) must never return as chips.
+    for (const fabricated of ["CONTENDER", "CHALLENGER"]) expect(ufc).not.toContain(fabricated)
+    // UFC has no LEGENDARY on chain — a LEGENDARY chip would be dead.
+    expect(ufc).not.toContain("LEGENDARY")
   })
 
   it("Pinnacle has no tiers — its scarcity bands are variants", () => {
@@ -45,7 +49,7 @@ describe("collection tier vocabulary", () => {
   })
 
   it("sniper tabs are 'all' + the collection's own tiers, lowercased", () => {
-    expect(sniperTierTabs("ufc")).toEqual(["all", "contender", "challenger", "fandom", "champion"])
+    expect(sniperTierTabs("ufc")).toEqual(["all", "common", "uncommon", "rare", "epic", "champion", "ultimate", "fandom"])
     expect(sniperTierTabs("nfl-all-day")).toEqual([
       "all", "common", "uncommon", "rare", "legendary", "ultimate",
     ])
@@ -53,7 +57,9 @@ describe("collection tier vocabulary", () => {
 
   it("an unknown slug falls back to the UNION, never to one collection's list", () => {
     const fallback = collectionTiers("some-future-collection")
-    for (const t of ["COMMON", "CONTENDER", "CHAMPION", "ULTIMATE"]) expect(fallback).toContain(t)
+    for (const t of ["COMMON", "EPIC", "CHAMPION", "ULTIMATE"]) expect(fallback).toContain(t)
+    // The fabricated legacy UFC labels are not in the union either.
+    for (const t of ["CONTENDER", "CHALLENGER"]) expect(fallback).not.toContain(t)
   })
 
   it("a prototype-key slug falls back to the UNION, not a prototype member (no crash)", () => {

@@ -72,9 +72,12 @@ export const TIER_COLOR: Record<string, string> = {
   // canonical rank, collection-disjoint), so they share its treatment.
   Uncommon: "#60A5FA",
   Rare: "#22D3EE",
+  // UFC Strike EPIC — a real on-chain tier (2026-10-18).
+  Epic: "#C084FC",
   Legendary: "#F59E0B",
   Ultimate: "#F43F5E",
-  // UFC Strike's ladder, ascending.
+  // UFC Strike CHAMPION (on chain). Contender / Challenger are LEGACY labels RPC
+  // fabricated from edition size; kept coloured so an old row never buckets to Other.
   Contender: "#a1a1aa",
   Challenger: "#22D3EE",
   Champion: "#F59E0B",
