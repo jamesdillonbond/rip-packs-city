@@ -92,6 +92,18 @@ describe("PaniniPackMarket", () => {
     expect(c.textContent ?? "").not.toContain("on the mean only")
   })
 
+  it("shows the simulated share of packs that beat the price beside the mean, and nothing when there is no sim", async () => {
+    mockFetch(200, payload({ products: [product({ sim: { medianPullUsd: 18, pBeatCost: 0.1237, costUsd: 135, computedAt: RECENT } })] }))
+    let c = await mount()
+    expect(c.textContent ?? "").toContain("Packs that beat the price")
+    expect(c.textContent ?? "").toContain("12%")
+    expect(c.textContent ?? "").toContain("median pack $18.00 vs $135")
+    cleanup()
+    mockFetch(200, payload({ products: [product({ sim: null })] }))
+    c = await mount()
+    expect(c.textContent ?? "").not.toContain("Packs that beat the price")
+  })
+
   it("a FOTL pack withheld for under-indexed exclusive supply says why, never that its cards are unpriced", async () => {
     mockFetch(200, payload({ products: [product({
       id: "1039", packType: "fotl", label: "FOTL", evModeled: false, actualEvUsd: null, typicalEvUsd: null, netRipEdgeUsd: null,

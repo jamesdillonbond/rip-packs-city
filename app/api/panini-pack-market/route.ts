@@ -61,7 +61,8 @@ const MAX_HISTORY_ROWS = 500
 const EV_COLS =
   "id,pack_type,pack_cost_usd,floor_usd,avg_sale_usd,recent_sale_usd,cards_per_pack,packs_total,packs_remaining," +
   "packs_ripped_pct,actual_ev_usd,typical_ev_usd,silver_ev,base_parallel_ev,insert_ev,fotl_exclusive_ev," +
-  "net_rip_edge_usd,model_note,updated_at,product_name,sport,product_set_id,ev_modeled"
+  "net_rip_edge_usd,model_note,updated_at,product_name,sport,product_set_id,ev_modeled," +
+  "sim_median_pull_usd,sim_p_beat_cost,sim_cost_usd,sim_computed_at"
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null
@@ -147,6 +148,13 @@ export async function GET() {
         typicalEvUsd: evModeled ? num(p.typical_ev_usd) : null,
         actualEvUsd: evModeled ? num(p.actual_ev_usd) : null,
         netRipEdgeUsd: evModeled ? num(p.net_rip_edge_usd) : null,
+        // Simulated pack outcome (panini_pack_ev_sim, hourly; 20261018162610): the median pack and the
+        // share of packs whose pull is worth at least the cost it was judged against. The view already
+        // NULLs it when the run failed, is > 3 h old, or the pack's EV is withheld.
+        sim: evModeled && num(p.sim_median_pull_usd) !== null && num(p.sim_p_beat_cost) !== null
+          ? { medianPullUsd: num(p.sim_median_pull_usd)!, pBeatCost: num(p.sim_p_beat_cost)!,
+              costUsd: num(p.sim_cost_usd), computedAt: str(p.sim_computed_at) }
+          : null,
         legs: {
           silver: evModeled ? num(p.silver_ev) : null,
           baseParallel: evModeled ? num(p.base_parallel_ev) : null,

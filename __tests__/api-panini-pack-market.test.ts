@@ -89,6 +89,26 @@ describe("GET /api/panini-pack-market", () => {
     expect(json.coverage_error).toBe(false)
   })
 
+  // 20261018162610: the view's sim columns become `sim` only when present on a modeled pack.
+  it("serves the simulated median pack and P(beat cost) when the view has them, and null otherwise", async () => {
+    state.panini_pack_ev_board = { data: [
+      { ...HOBBY, sim_median_pull_usd: 18, sim_p_beat_cost: 0.1237, sim_cost_usd: 135, sim_computed_at: FRESH },
+      { ...FOTL, sim_median_pull_usd: null, sim_p_beat_cost: null, sim_cost_usd: null, sim_computed_at: null },
+    ], error: null }
+    const { json } = await body()
+    const hobby = json.products.find((p: any) => p.packType === "hobby")
+    expect(hobby.sim).toEqual({ medianPullUsd: 18, pBeatCost: 0.1237, costUsd: 135, computedAt: FRESH })
+    expect(json.products.find((p: any) => p.packType === "fotl").sim).toBeNull()
+  })
+
+  it("a sim row on a NOT-modeled pack is never served (EV withheld means no simulated outcome either)", async () => {
+    state.panini_pack_ev_board = { data: [
+      { ...FOTL, ev_modeled: false, sim_median_pull_usd: 50, sim_p_beat_cost: 0.2, sim_cost_usd: 209, sim_computed_at: FRESH },
+    ], error: null }
+    const { json } = await body()
+    expect(json.products[0].sim).toBeNull()
+  })
+
   it("a failed EV read is a 503 — never an empty or zeroed board", async () => {
     state.panini_pack_ev_board = { data: null, error: { message: "canceling statement due to statement timeout", code: "57014" } }
     const { status, json } = await body()

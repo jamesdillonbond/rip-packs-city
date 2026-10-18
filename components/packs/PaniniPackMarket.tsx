@@ -53,6 +53,8 @@ export interface PaniniPackProduct {
   typicalEvUsd: number | null
   actualEvUsd: number | null
   netRipEdgeUsd: number | null
+  /** Simulated pack outcome; null when not simulated, failed, stale, or the EV is withheld. */
+  sim?: { medianPullUsd: number; pBeatCost: number; costUsd: number | null; computedAt: string | null } | null
   legs: { silver: number | null; baseParallel: number | null; insert: number | null; fotlExclusive: number | null }
   modelNote: string | null
   updatedAt: string | null
@@ -178,6 +180,13 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
           <>
             <Tile label="Typical pull" value={usd(p.typicalEvUsd)} sub="each card slot at its median card" />
             <Tile label="EV (mean)" value={usd(p.actualEvUsd)} sub={meanEdgeSub(p.netRipEdgeUsd, p.typicalEvUsd, p.costUsd)} />
+            {p.sim ? (
+              <Tile
+                label="Packs that beat the price"
+                value={`${(p.sim.pBeatCost * 100).toFixed(p.sim.pBeatCost < 0.1 ? 1 : 0)}%`}
+                sub={`simulated · median pack ${usd(p.sim.medianPullUsd)}${p.sim.costUsd !== null ? ` vs ${usd(p.sim.costUsd)}` : ""}`}
+              />
+            ) : null}
           </>
         ) : (
           <Tile label="Pack EV" value="Not modeled" sub={notModeledReason(p.modelNote)} />
