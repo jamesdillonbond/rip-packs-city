@@ -21,7 +21,7 @@ const TOPSHOT_SERIES: Record<number, string> = {
   9: "Series 2026-27",
 }
 
-export const TOPSHOT_SERIES_ORDER: number[] = [0, 2, 3, 4, 5, 6, 7, 8]
+export const TOPSHOT_SERIES_ORDER: number[] = [0, 2, 3, 4, 5, 6, 7, 8, 9]
 
 export function topshotSeriesLabel(series: number | null | undefined): string {
   if (series == null) return "Misc / Unmapped"

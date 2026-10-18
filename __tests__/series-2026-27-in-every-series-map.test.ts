@@ -31,9 +31,15 @@ function walk(dir: string, out: string[] = []): string[] {
   return out
 }
 
+// A key may be bare (8:) or quoted ("8":). 2026-10-18 widening: the first version saw only the bare-key
+// forward maps, and missed TOPSHOT_SERIES_ORDER = [0, 2, …, 7, 8] — TeamChecklist sorts by indexOf, so a
+// series-9 chip would have read -1 and sorted AHEAD of Series 1.
 const TS_RULES: Array<{ has: RegExp; needs: RegExp; name: string }> = [
-  { name: 'short "25-26"', has: /\b8\s*:\s*["'`]25-26["'`]/, needs: /\b9\s*:\s*["'`]26-27["'`]/ },
-  { name: 'long "Series 2025-26"', has: /\b8\s*:\s*["'`]Series 2025-26["'`]/, needs: /\b9\s*:\s*["'`]Series 2026-27["'`]/ },
+  { name: 'short "25-26"', has: /["']?\b8["']?\s*:\s*["'`]25-26["'`]/, needs: /["']?\b9["']?\s*:\s*["'`]26-27["'`]/ },
+  { name: 'season "2025-26"', has: /["']?\b8["']?\s*:\s*["'`]2025-26["'`]/, needs: /["']?\b9["']?\s*:\s*["'`]2026-27["'`]/ },
+  { name: 'long "Series 2025-26"', has: /["']?\b8["']?\s*:\s*["'`]Series 2025-26["'`]/, needs: /["']?\b9["']?\s*:\s*["'`]Series 2026-27["'`]/ },
+  { name: 'reverse "Series 2025-26" → 8', has: /["'`]Series 2025-26["'`]\s*:\s*["'`]?8\b/, needs: /["'`]Series 2026-27["'`]\s*:\s*["'`]?9\b/ },
+  { name: "order array ending 6, 7, 8]", has: /\b6,\s*7,\s*8\s*\]/, needs: /(?!)/ },
 ]
 
 const SQL_RULES: Array<{ has: RegExp; needs: RegExp; name: string }> = [
@@ -78,7 +84,8 @@ describe("Series 2026-27 is in every series map that has Series 2025-26", () => 
       }
     }
     // not vacuous: the copies fixed 2026-10-18 and the canonical label map are in the population
-    for (const f of ["app/api/sniper-feed/route.ts", "app/api/support-chat/search-deals/route.ts", "lib/analytics/series-labels.ts"]) {
+    for (const f of ["app/api/sniper-feed/route.ts", "app/api/support-chat/search-deals/route.ts", "lib/analytics/series-labels.ts",
+                     "lib/seo.ts", "lib/collection/helpers.ts", "lib/collection/series-param.ts", "lib/analytics-sets-dashboard-compute.ts"]) {
       expect(withMaps, f).toContain(f)
     }
     expect(bad).toEqual([])
@@ -107,6 +114,13 @@ describe("Series 2026-27 is in every series map that has Series 2025-26", () => 
   it("the rules catch a planted map that stops at 8", () => {
     const planted = 'const M = { 7: "24-25", 8: "25-26" }'
     expect(TS_RULES[0].has.test(planted) && !TS_RULES[0].needs.test(planted)).toBe(true)
+    const caught = (src: string) => TS_RULES.some((r) => r.has.test(src) && !r.needs.test(src))
+    expect(caught('const M = { "7": "Series 2024-25", "8": "Series 2025-26" }')).toBe(true)
+    expect(caught('const M = { 7: "2024-25", 8: "2025-26" }')).toBe(true)
+    expect(caught('const R = { "Series 2024-25": 7, "Series 2025-26": 8 }')).toBe(true)
+    expect(caught("const ORDER = [0, 2, 3, 4, 5, 6, 7, 8]")).toBe(true)
+    expect(caught('const M = { 8: "Series 2025-26", 9: "Series 2026-27" }')).toBe(false)
+    expect(caught("const ORDER = [0, 2, 3, 4, 5, 6, 7, 8, 9]")).toBe(false)
     const sql = "CASE e.series WHEN 7 THEN 2024 WHEN 8 THEN 2025 ELSE NULL END"
     expect(SQL_RULES[0].has.test(sql) && !SQL_RULES[0].needs.test(sql)).toBe(true)
   })
