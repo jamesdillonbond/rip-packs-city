@@ -78,7 +78,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Pack Sniper Ask Snapshot | /api/cron/snapshot-pack-asks | 3,8,13,…,58 (every 5m) ⟨exec-derived⟩ — NEW |
 | RPC TopShot ownership sync (Dune) | /api/cron/sync-topshot-ownership-dune | weekly Mon ~11:40 UTC ⟨exec-derived⟩ — NEW |
 | RPC TopShot Deal Floor Serials | /api/cron/topshot-deal-floor-serials | ~~hourly :37~~ **INACTIVE 2026-08-30 16:4xZ** — dead host public-api.nbatopshot.com (530/1033 since 08-28); every tick resolved 0 of 10 editions on 10 fetch errors. Disabled in the console (Common tab → Enable job off); re-enable there when the host returns. The `topshot-deal-floor-serials` alert suppression (20260830155543) can then be dropped. |
-| RPC UFC Enrichment Drain | /api/cron/ufc-enrichment-drain | 7,37 |
+| ~~RPC UFC Enrichment Drain~~ (DISABLED 2026-10-18, 0 rows/30 d) | /api/cron/ufc-enrichment-drain | 7,37 |
 | RPC FMV Recalc Force Stale | /api/fmv-recalc?force_stale=true | 8,28,48 |
 | RPC Golazos Listing Cache | /api/golazos-listing-cache | 6,26,46 |
 | RPC Golazos Listings Indexer | /api/golazos-listings-indexer | 7,22,37,52 |
@@ -123,7 +123,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Pinnacle Owner Discovery Forward | pinnacle-owner-discovery-forward | 27,57 |
 | RPC Pipeline Failure Alerts | pipeline-failure-alerts | 16,46 |
 | RPC Seed Topshot Pack Distribution | seed-topshot-pack-distributions | 13 every 4h |
-| RPC UFC Stub Thumbnail Resolver | ufc-stub-thumbnail-resolver | 12,42 |
+| ~~RPC UFC Stub Thumbnail Resolver~~ (DISABLED 2026-10-18, 0 rows/30 d) | ufc-stub-thumbnail-resolver | 12,42 |
 
 ## Active cron-job.org — workers  ·  3 active
 
@@ -250,7 +250,7 @@ Count at 2026-08-30 18:2xZ (console read): **69 active, 16 inactive, 85 rows** �
 
 ## Pending additions
 
-- **RPC UFC Enrichment Drain** → `POST https://www.rippackscity.com/api/cron/ufc-enrichment-drain` — schedule `7,37 * * * *`, `Authorization: Bearer <INGEST_SECRET_TOKEN>` header, expect **202**. Drains the UFC-WMC-NULLKEY backlog (shipped 2026-06-13 `fb2fbac`): enriches NULL-`edition_key` UFC wmc rows directly on-chain (250/tick), logs `pipeline_runs` pipeline=`ufc-enrichment-drain`. **(WIRED 2026-06-13, cron-job.org job 7804392 — now live at 7,37 in the Vercel-routes table above.)**
+- ⛔ **DISABLED 2026-10-18 ~7:15 AM PT (job 7804392, with its sibling `RPC UFC Stub Thumbnail Resolver` 7585607): 0 rows written in 30 days each; cadence arms deactivated the same morning. Revert: re-enable both jobs and set their `pipeline_cadence_watchlist` rows `is_active=true`.** **RPC UFC Enrichment Drain** → `POST https://www.rippackscity.com/api/cron/ufc-enrichment-drain` — schedule `7,37 * * * *`, `Authorization: Bearer <INGEST_SECRET_TOKEN>` header, expect **202**. Drains the UFC-WMC-NULLKEY backlog (shipped 2026-06-13 `fb2fbac`): enriches NULL-`edition_key` UFC wmc rows directly on-chain (250/tick), logs `pipeline_runs` pipeline=`ufc-enrichment-drain`. **(WIRED 2026-06-13, cron-job.org job 7804392 — now live at 7,37 in the Vercel-routes table above.)**
 
 - **RPC V1-Dapper Recovery** (ALLDAY-V1-UNMAPPED-DRIFT) → `POST https://www.rippackscity.com/api/admin/recover-v1-budget-exhausted` — `Authorization: Bearer <INGEST_SECRET_TOKEN>` header, expect **200** `{ok:true,queued:true}` (work runs in `after()`, result lands in Vercel runtime logs only — no `pipeline_runs` row). Re-decodes AllDay V1-Dapper sales parked in `unmapped_sales` with `resolution_hint->>'price_extraction' = 'v1_tx_decode_budget_exhausted'` (price_usd=0): patches the real DUC price, strips the marker so the next `promote_unmapped_sales` sweep promotes them, and fixes already-promoted price_usd=0 `sales` rows in place. Multi-NFT V1 txs (gross DUC unsplittable) are skipped by design and reported in the log summary (`multi_nft_tx_total_unsplittable`) — the genuinely-uncertain residual, not a bug. **(WIRED 2026-06-13 — cron-job.org job 7818270; MOVED daily→`43 */3` since 06-07, now live in the Vercel-routes table above. First run patched the price-uncertain backlog 236 → 34 = the multi-NFT unsplittable floor. Revert: delete cron-job.org job 7818270.)**
 

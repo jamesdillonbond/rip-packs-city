@@ -31,7 +31,7 @@ No numbered register item is open for UFC. Recorded but not changed:
 
 ## Next — prioritized
 **Now**
-1. **Retire `ufc-enrichment-drain` and `ufc-stub-thumbnail-resolver`.**
+1. ✅ **DONE 2026-10-18 ~7:15 AM PT (Cowork cloud, Trevor: "Yes do it") — both cron-job.org entries DISABLED, not deleted (7804392, 7585607), confirmed Inactive on the jobs list; their `pipeline_cadence_watchlist` arms deactivated with notes.** Caller census: no pg_cron, `vercel.json`, GHA or in-repo caller. Re-measured over 30 d from `pipeline_runs_daily`: drain 1,417 runs, 0 written; resolver 1,415 runs, 0 found. The falsifier is already watched: `check_wmc_null_edition_key()` is collection-agnostic, and UFC had 0 null-key rows at retirement. `wallet-backfill-ufc` was NOT slowed: it has no console entry of its own (fired per wallet by `wallet-backfill-multicollection`, plus an in-route 12 h gate), so slowing it is a code change, not a console edit. ~~Retire `ufc-enrichment-drain` and `ufc-stub-thumbnail-resolver`.~~
    - *Why:* over 30 days, each ran 48 times a day. The drain wrote **0** rows, and since 10-16 it has found nothing ("no null-edition_key UFC rows"). The resolver found and wrote **0**, every day since 09-18. #44's rule: retire by measured yield.
    - *Gate:* neither job is in pg_cron, `vercel.json` or GHA, so the trigger is probably cron-job.org, which a sandbox cannot see. Enumerate every caller first, and add a ledger revert path.
    - *Falsifier:* a new null-key row appears. The wallet walk can create one, so leave a cheap weekly check or the watchlist row.
