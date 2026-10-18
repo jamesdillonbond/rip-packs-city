@@ -82,7 +82,8 @@
   - Falsifier: the confirmed-deleted rows reappear on a later walk.
 
 **Next**
-- **Shrink ASK_ONLY honestly.**
+- ~~**Shrink ASK_ONLY honestly.**~~ ⛔ **Measured 10-17 ~7:20 PM PT: nothing to shrink.** Of 1,207 ASK_ONLY editions, 1 has a `sales_market` sale in 30 days and 308 in 90 days, none with ≥ 5; NO_DATA (700) has 0 in 90 days. The label is honest; the lever below would move ~1 edition. Re-open only if that 30-day count grows past ~50.
+- (original item, kept for the record) **Shrink ASK_ONLY honestly.**
   - What: a sales-backed price wherever `sales_market` has ≥ 1 recent sale. No relabelling.
   - Why: ASK_ONLY is the least accurate tier.
   - Gate: within ±25 % on the moved editions ≥ MEDIUM's in `fmv_sales_backtest`. Reverse it otherwise.
