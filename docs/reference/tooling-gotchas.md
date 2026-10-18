@@ -162,6 +162,12 @@ gating command in the FOREGROUND and capture `$?` immediately, or write the valu
 
 ⭐ **Step 3 is the one to reach for when the file genuinely holds both sessions' work and neither can wait.** Measured on a throwaway repo with two edits far apart in one file: after `git apply --cached`, `git diff --cached` showed **only** the author's hunk, `git diff` showed **only** the other session's, and the working tree still contained both. ⚠ **It emits the usual `LF will be replaced by CRLF` warnings on this box and works anyway** — do not read those as failure. ⛔ **An earlier draft of this section proposed `git checkout -- <file> && git apply …` instead. DO NOT USE IT: `git checkout --` destroys the working-tree copy, which on a shared tree means destroying the OTHER session's unstaged edit — the exact loss this whole section exists to prevent.** `--cached` never touches the working tree, which is why it is the right verb here. ⭐ **In practice step 1 plus step 2 is the whole fix: the sweeps were not subtle, and one `git diff` before `git add` would have shown a stranger's prose every time.** ⚠ **And if you do sweep one, say so in the message rather than re-committing over it** — the content is not lost, but the next reader needs to know the commit is not what its subject claims.
 
+### 🚨 `git commit` COMMITS THE WHOLE INDEX — a concurrent writer's `git rm` rides along (2026-10-18)
+
+The same trap with no `git add` at all. A fork agent working in the same tree had already `git rm`'d six route dirs and twelve tests (staged, not committed). I ran `git add <my two files> && git commit`, and the commit carried **5,232 deleted lines of the fork's work** under my resolver-fix message. Caught by reading `git diff --cached --stat` before pushing; undone with `git reset --soft HEAD~1`.
+
+⭐ **When anyone else may be writing this tree, commit with a PATHSPEC: `git commit -m … -- <path> <path>`.** That commits only those paths and leaves every other staged change staged, measured: the fork's 16 staged deletions survived intact. And read `git diff --cached --stat` before every commit, not after.
+
 ## Key env vars (displaced VERBATIM from CLAUDE.md 2026-08-25 to restore memory-file headroom)
 
 CLAUDE.md was at **39,996 of 40,000 characters — four characters of headroom** — which is one edit away from
@@ -937,6 +943,8 @@ daytime traffic (measured: 12 m, 45 m, 2 h and 3 h windows all *"did not finish 
 budget"*, while the same 6 h window with `statusCode: "200"` returned in one shot). Narrowing the WINDOW
 is the documented advice and it was the narrowing that did **not** help.
 
+⚠ **The `query` (full-text) filter does not match the request path either (2026-10-18).** `query: "/api/wallet-backfill-ufc"` with `group_by: requestPath` over 3 d returned ZERO groups for a route that logged 361 times in 24 h, so a "nothing called /api/ufc-*" read from it is worthless. And an ungrouped `group_by: requestPath` shows only the TOP 25 paths, so a rarely-called route cannot be seen there either. To prove a route has NO caller, use the route's own `pipeline_runs` heartbeat (inside its ~73 h retention) or a positive control that the instrument CAN see.
+
 ⚠ **And a 200 with no output lines is a CACHE HIT, not a silent success.** Grouping by `statusCode`
 counted 27 × 200 on a route whose successes all log two lines; the function was never invoked for most
 of them. Do not read a status count as an invocation count.
@@ -993,6 +1001,12 @@ granting `alter_job` would widen a privilege to buy a capability the role alread
 after one denial denies cron-schema SQL generally. **Two different boundaries — a harness refusal and a
 database refusal — produce the same "I could not do it", and the filing recorded the stronger claim.**
 Before writing "cannot", say WHICH layer said no. Operator recipe + the self-check are in known-issues #19.
+
+## 🚨 `git pull --rebase` with AUTOSTASH can commit CONFLICT MARKERS — and a preflight run before the pull cannot see them (2026-10-18)
+
+Commit `51b24282` (Cowork cloud, 12:40 PM PT) put `<<<<<<< Updated upstream` / `>>>>>>> Stashed changes` into `docs/overnight/ledger.md`. The ledger edit was uncommitted, so the pull autostashed it, the stash re-applied with a conflict, and the conflicted file went into the next commit. `npm run preflight` had passed, because it ran BEFORE the pull. CI went red on three commits (`no-conflict-markers-on-main`) until another session cleaned it 4 minutes later.
+
+⭐ **Fix the failure mode, not the detector: `git config rebase.autoStash false` in the clone.** A pull over a dirty tree then REFUSES instead of merging, and you commit first. Also: `git stash list` after any pull that printed "git stash pop", and `grep -cE '^(<<<<<<<|>>>>>>>)' <file>` before committing a file that was in flight during a pull.
 
 ## `git push | tail` reports `tail`'s exit code — and prints a success banner over a FAILED push (2026-08-22)
 

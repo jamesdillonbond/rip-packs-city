@@ -223,8 +223,10 @@ gating is safe:
 | **anchored** marker check | `/^(<<<<<<< \|=======$\|>>>>>>> )/m` — the seven-time bug |
 | **gate `git add`** on the resolver | exits non-zero on any failure |
 | heading delta | asserts `after - before === <entries carried>`, not a fixed +1 |
-| blank-line check as a **DELTA** | asserts `noblank(out) <= noblank(upstream)` |
+| blank-line check as a **DELTA** | asserts `noblank(out) - noblank(upstream) <= allowed`; `allowed` = entries carried in the STACKED layout, 0 in the blank-separated one (2026-10-18, below) |
 | no content-pinned title assertion | auto-derives the entries to carry; nothing is spelled literally |
+
+🚨 **2026-10-18: the resolver refused EVERY correct top splice once the newest entries became STACKED** (no blank line between headings, ~10-17 on). Splicing above upstream's first heading moves THAT heading off its blank line, so the delta read +1 and the script exited 1; the entry was spliced by hand. **Fixed:** it reads the layout from upstream's first two headings, emits the matching separator, and allows one stacked heading per spliced entry. A blank-separated ledger still gets zero allowance, so a block that butts its own entries together is still refused. Pinned by `__tests__/ledger-rebase-resolver-follows-the-separator-convention.test.ts`, which drives a REAL rebase conflict in a throwaway repo in both layouts; the stacked cases fail on the pre-fix script (planted-defect check run). ⚠ **A rule computed relative to a baseline can still be wrong when the CONVENTION it assumes changes under it.**
 
 ⚠ **The blank-line baseline is computed at RUN TIME, deliberately.** This file records **303** headings
 lacking a preceding blank line on 2026-08-16; the live measurement on **2026-09-01 is 80**. The number

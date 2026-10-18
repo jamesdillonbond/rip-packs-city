@@ -6,7 +6,7 @@
 
 Live reads, ~6:00 PM PT 10-17:
 - **846,344** UFC sales. **0** in the last 30 days and **0** in the last 90.
-- **518** editions. FMV is **517 STALE + 1 NO_DATA**, so HIGH/MED is **0.0%**. **That number is the honest label, not a regression.** The roadmap says "the only correct product answer is a label" ([roadmap-2026-08-03](../roadmap-2026-08-03.md) §141, §132).
+- **617** editions (re-read 10-18 ~1:00 PM PT, after 99 chain-only moments were added that morning; 518 on 10-17). FMV is **573 STALE + 44 NO_DATA**, so HIGH/MED is **0.0%**. **That number is the honest label, not a regression.** The roadmap says "the only correct product answer is a label" ([roadmap-2026-08-03](../roadmap-2026-08-03.md) §141, §132).
 - Holdings cache: 4,525 rows across 120 wallets, **0** with a null `edition_key`.
 - Tabs: overview, collection, sets and analytics. **There is no sniper tab** (Trevor, 09-06; `pages` in [lib/collections.ts](../../../lib/collections.ts)).
 - `MarketplaceStatusBanner` and the closed-market chrome label every surface.
@@ -63,6 +63,7 @@ No numbered register item is open for UFC. Recorded but not changed:
 
 ## Needs Trevor
 
+- 🟡 **OPEN 10-18 — delete the 7 empty UFC set rows (one line, held for you).** The Supabase MCP holds every DELETE for a human confirmation. The rows are the 3 tier words (Contender, Challenger, Fandom) and 4 leaked-fragment sets emptied by `20261018153214`. All are backed up (`audit_20261018_ufc_names_backup`, tbl `sets_empty_pending_delete`) and inert: their pages 404, they are absent from the sets index and the sitemap, and `get_ufc_set_progress` returns none. The guarded statement (it re-checks emptiness at delete time; expect `DELETE 7`) is in [the audit script](../../audits/2026-10-18-ufc-tier-word-sets-and-fighter-punctuation.sql).
 - ✅ **UFC set pages: DECIDED 10-18 (Trevor delegated: "Do what you think is best") — keep the event + fight-type groups as the catalogue's set label; do not move editions into the chain SET trait.** Why: `set_name` is where the event and fight type live for UFC. `editions.name` is filled on only 219 of 518, and every surface renders "fighter — set name" (edition title, holdings, trophies, search). Moving to the chain sets would turn "Sean O'Malley — UFC 260 KO TKO" into "Sean O'Malley — Base Series 2", and a fighter's several Base moments would be told apart only by tier. The chain SET trait stays available in `ufc_chain_set_metadata.set_trait` (Base by series, Maple Rush, Lights Out II, Collector's Choice, Dojo, Lights Out, Tapped, PRIDE FC, Icons, The 209, Starter Pack). If a chain-set completion view is ever wanted, build it as an ADDITIONAL grouping over that table, not a re-parent of editions.
 
 - ✅ **Zero-yield lanes: DECIDED 10-17 — retire them** at the next cron-job.org console session; slow `wallet-backfill-ufc` there too ([roadmap-status.md](../../reference/roadmap-status.md), "Decisions taken — the docs-refresh open list"). Not a Trevor decision any more, just console access.
