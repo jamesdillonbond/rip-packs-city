@@ -35,10 +35,6 @@
       "schedule": "18 8 * * *"
     },
     {
-      "path": "/api/cron/sync-sales-seller-recovery-dune",
-      "schedule": "47 * * * *"
-    },
-    {
       "path": "/api/cron/allday-lock-refresh-batch",
       "schedule": "23 * * * *"
     },
