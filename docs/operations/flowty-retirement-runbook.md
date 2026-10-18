@@ -79,6 +79,7 @@ All Day and Golazos v1 `cached_listings` rows are 100 % Flowty. Top Shot keeps i
 
 **Triage of the table (re-read 10-18 ~9:35 AM PT):**
 - `get_platform_stats` has **no in-repo caller**: only `app/api/platform-stats/route.ts`, which nothing in the repo fetches (an external caller can't be ruled out from a sandbox). It **already understates today**: `listing_count` reads All Day **108**, Golazos **100**, which is Flowty's v1 book. The verified-open `cached_listings_v2` storefront book is All Day ~15,236 (`direct_v2` 10,936 + `storefront_v2` 4,300, `verified_at` < 6 h) and Golazos 4,286. Its Top Shot and Pinnacle arms count EDITIONS with a live ask, not listings. A repoint should count `DISTINCT edition_id` over verified-open v2 rows, so all collections mean the same thing.
+- `get_collection_stats(p_slug)` (the collection overview's RPC) also returns `listing_count` from v1 — Golazos **100** on 10-18 — but no component renders `listing_count` (typed only in `CollectionOverviewClient.tsx`). Its overview deals read `allday_edition_floor_ask` for All Day; Golazos falls to the generic branch, which has no HIGH/MEDIUM editions, so its list is already honestly empty.
 - `app/api/market/route.ts` reads v1 only as a FALLBACK when its modern path returns 0 rows, so on the day it falls back to an honest empty book, not to a stale one.
 - `get_cross_collection_deals` is read by `/api/cross-collection-deals` (only `lib/insights/mv-freshness.ts` names it in-repo) and by `send-digest`. Digests are off (C2), so the user-facing loss is small.
 
