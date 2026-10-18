@@ -5,8 +5,9 @@
 -- honest clamp_target. A regression here either shows a fake deal (a disconnected
 -- FMV that should have been clamped) or hides a real one (a spurious clamp).
 --
--- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260702141000_audit_20260702_fmv_display_guard_p90_disconnected.sql);
+-- The function DDL below is a VERBATIM copy of the newest defining migration
+-- (supabase/migrations/20261018000700_audit_20261017_fmv_display_guard_compute_before_truncate.sql);
+-- 2026-10-17: rows are COMPUTED before the TRUNCATE (lock window = the insert), asserted below.
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -70,12 +71,13 @@ CREATE OR REPLACE FUNCTION public.refresh_topshot_fmv_display_guard()
 AS $function$
 DECLARE
   v_count integer;
+  v_rows  public.topshot_fmv_display_guard[];
 BEGIN
-  TRUNCATE public.topshot_fmv_display_guard;
-
-  INSERT INTO public.topshot_fmv_display_guard
-    (external_id, edition_id, fmv_usd, max_sale_90d, median_90d, n_90d,
-     is_thin, fmv_exceeds_max, computed_at, p90_90d, fmv_disconnected, clamp_target)
+  -- 2026-10-17: COMPUTE FIRST, then swap. TRUNCATE takes ACCESS EXCLUSIVE and holds it to
+  -- COMMIT; with the ~20-25 s build below inside that window, every reader of this table
+  -- (lib/fmv-display-guard.ts on /api/market, /api/sniper-feed, checklists) waited out the
+  -- build, and a cold instance whose read timed out served NO guard (fail-open = unclamped FMVs).
+  -- The rows are built into an array with no lock held; the lock now covers only the insert.
   WITH s90 AS (
     SELECT s.edition_id,
            count(*)::integer AS n_90d,
@@ -120,13 +122,23 @@ BEGIN
       AND e.external_id ~ '^[0-9]+:[0-9]+$'
       AND lf.fmv_usd > 0
   )
-  SELECT external_id, edition_id, fmv_usd, max_sale_90d, median_90d, n_90d,
+  SELECT coalesce(array_agg(ROW(external_id, edition_id, fmv_usd, max_sale_90d, median_90d, n_90d,
          is_thin, fmv_exceeds_max, now(), p90_real, fmv_disconnected,
          CASE WHEN fmv_disconnected
               THEN ROUND(GREATEST(p90_real * 1.5, med_real)::numeric, 2)
-              ELSE NULL END AS clamp_target
+              ELSE NULL END)::public.topshot_fmv_display_guard), '{}')
+    INTO v_rows
   FROM scored
   WHERE fmv_exceeds_max OR is_thin OR fmv_disconnected;
+
+  TRUNCATE public.topshot_fmv_display_guard;
+
+  INSERT INTO public.topshot_fmv_display_guard
+    (external_id, edition_id, fmv_usd, max_sale_90d, median_90d, n_90d,
+     is_thin, fmv_exceeds_max, computed_at, p90_90d, fmv_disconnected, clamp_target)
+  SELECT r.external_id, r.edition_id, r.fmv_usd, r.max_sale_90d, r.median_90d, r.n_90d,
+         r.is_thin, r.fmv_exceeds_max, r.computed_at, r.p90_90d, r.fmv_disconnected, r.clamp_target
+  FROM unnest(v_rows) AS r;
 
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN v_count;
@@ -197,6 +209,16 @@ SELECT _assert((SELECT clamp_target FROM public.topshot_fmv_display_guard WHERE 
 -- edition 3: thin true, exceeds-max false (25 < 100).
 SELECT _assert((SELECT is_thin FROM public.topshot_fmv_display_guard WHERE edition_id='33333333-3333-3333-3333-333333333333'), 'edition 3 flagged thin');
 SELECT _assert(NOT (SELECT fmv_exceeds_max FROM public.topshot_fmv_display_guard WHERE edition_id='33333333-3333-3333-3333-333333333333'), 'edition 3 does not exceed max');
+
+-- The lock window: TRUNCATE holds ACCESS EXCLUSIVE until COMMIT, so the build must run
+-- BEFORE it (a single session cannot observe the wait, so the ORDER is pinned).
+SELECT _assert_eq(
+  (SELECT (position('INTO v_rows' IN prosrc) > 0
+       AND position('INTO v_rows' IN prosrc) < position('TRUNCATE public.topshot_fmv_display_guard' IN prosrc))::text
+     FROM pg_proc WHERE oid = 'public.refresh_topshot_fmv_display_guard()'::regprocedure),
+  'true',
+  'the rows are computed before the TRUNCATE takes its exclusive lock'
+);
 
 SELECT '✓ refresh_topshot_fmv_display_guard invariants pass' AS result;
 ROLLBACK;

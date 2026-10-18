@@ -993,7 +993,7 @@ const PINS = [
   {
     fn: "refresh_topshot_fmv_display_guard",
     test: "supabase/tests/refresh_topshot_fmv_display_guard.sql",
-    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
+    migration: "supabase/migrations/20261018000700_audit_20261017_fmv_display_guard_compute_before_truncate.sql",
   },
   {
     fn: "check_email_allowed",
