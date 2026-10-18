@@ -9,7 +9,9 @@
 -- TIMING (all PT, 10-20): sets appear first; collection_series 9 lands at the next run of
 -- topshot-set-series-onchain (every 10 min at :x5 since 10-18; it was hourly at :35, so new sets read
 -- "No series" for up to ~70 min — now up to ~20); on-chain circulation
--- lands ~9:05 PM and pack-dist names ~9:25 PM — AFTER the 7 PM check. Re-run Q2 and Q5 after 9:30 PM.
+-- runs every 6 h since 10-18 (3:05 PM and 9:05 PM on 10-20) and pack-dist names every 3 h at :25
+-- (5:25 PM, 8:25 PM). Both were once a day (~9:05 / ~9:25 PM). The 7 PM check sees the 3:05 PM
+-- circulation and 5:25 PM names; re-run Q2 after 9:10 PM for the evening drop.
 
 -- Q1 sets + series row + unlabelled-series failures in the last 24 h
 select (select count(*) from sets s
