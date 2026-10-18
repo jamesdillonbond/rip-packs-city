@@ -18,7 +18,7 @@ export function bannerCopy(slug: string, status: string, notes: string | null): 
       return {
         title: "UFC Strike has no active Flow marketplace",
         body:
-          "UFC Strike is migrating to the Aptos blockchain; Flow trading has been frozen since May 2026. Everything below is historical Flow data — buy flows are disabled on Flow.",
+          "UFC Strike moved to the Aptos blockchain; Flow trading closed in May 2026. Everything below is historical Flow data — buy flows are disabled on Flow.",
         accent: "var(--rpc-red)",
         background: "rgba(224,58,47,0.08)",
         border: "rgba(224,58,47,0.35)",

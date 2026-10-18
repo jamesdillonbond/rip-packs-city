@@ -1260,8 +1260,8 @@ export default async function MomentPage(
                 maxWidth: 520,
               }}
             >
-              UFC Strike is migrating to the Aptos blockchain; Flow trading has
-              been frozen since May 2026. This Flow moment is no longer tradeable
+              UFC Strike moved to the Aptos blockchain; Flow trading closed in
+              May 2026. This Flow moment is no longer tradeable
               on UFC Strike or Dapper, so external marketplace links are
               unavailable.
             </div>
