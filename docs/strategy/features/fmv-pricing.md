@@ -50,6 +50,7 @@ FMV is the product's core claim and the accuracy gate's subject. One engine per 
 
 ## Open issues
 
+- **#193 (new 10-17): Pinnacle HIGH trails a naive last-5 median** in the first realised-sales read of Pinnacle FMV (since 10-11: within ±25 % 68.1 vs 74.2; 45 d: 53.9 vs 69.8), and MEDIUM beats HIGH. Cause: a 90-day recency-weighted median that lags falling liquid renders. Fix gated on ≥ 500 post-10-09 HIGH sales ([disney-pinnacle.md](../collections/disney-pinnacle.md)).
 - **M2 is not met.** All Day's LOW population is mostly a volume floor: of 1,661 LOW editions sized on 10-10, 1,307 had 1–4 sales in 30 d. Only the 269 dispersion-gated editions are code-shaped, and that gate stays by decision.
 - **R125 residuals:**
   - TS LOW is 23.7 % vs 21.4 % for last-3.

@@ -23,14 +23,14 @@
 ## Open issues
 
 - **No Pinnacle-specific register item is open** (STATUS INDEX: 1 open · 5 partial, none Pinnacle). Estate-wide items that touch it: #66 (SEO; Search Console re-read 10-28), #114 (Cowork dashboards), #22 (credential residue).
-- **Realised-sales accuracy is unmeasured.** `fmv_sales_backtest` reads `fmv_snapshots`, which holds 0 Pinnacle rows. So "accuracy against realised sales" (roadmap-status 10-10 block) covers Top Shot, All Day and Candy only. The 10-09 young-render backtest was a one-off.
+- **Realised-sales accuracy, first measured 10-17 ~7:30 PM PT ([#193](../../reference/known-issues.md)):** overall roughly level with a naive last-3 median (14 d, n 2,008: within ±25 % 62.5 vs 66.0; dollar-weighted error 26.9 vs 30.3). ⚠ **HIGH is the weak tier:** naive median of last 5 beats it (since 10-11, n 163: 68.1 vs 74.2 within ±25 %, WAPE 31.7 vs 22.9; 45 d n 3,495: 53.9 vs 69.8). MEDIUM (76.3) beats HIGH, so the tiers do not rank in order. Cause: the 90-day recency-weighted median lags falling liquid renders; HIGH has no dispersion gate. `fmv_sales_backtest` still covers no Pinnacle rows.
 - **The share leg's `rows_written 0` is the shared wrapper's convention, not a Pinnacle defect** (re-read ~7 PM PT 10-17). Every `thp-leg-*` pipeline logs 0 (18 of 18 in 24 h), because `run_thp_leg_logged` writes `0, 0, 0` for every leg (legs return void) and derives `ok` from an exception. A null instrument by construction (CLAUDE.md: `rows_written = 0` is a null instrument): judge a leg by its precompute row's `computed_at`.
 - **Pull-chain cadence exemption** lapses by itself on 10-28 (`20261011151215`). Re-check on 10-26 (sessions 10-11).
 
 ## Next — prioritized
 
 **Now**
-- **Build a Pinnacle realised-sales backtest** over `pinnacle_fmv_history` against the next sales per render: median absolute error vs a naive last-3 median, by confidence. *Why:* the gate has two halves and Pinnacle has only one. *Falsifier:* if MEDIUM error is no better than naive, the confidence labels are the problem, not the share.
+- **#193: price HIGH-eligible renders at the median of their last 5 sales** (the young-render rule, extended). *Why:* it beat the published HIGH in every price band over 45 d and since the 10-09 engine change. *Gate:* re-measure at ≥ 500 post-10-09 HIGH sales (~2 weeks); ship only if it still wins within-±25 % and WAPE without costing MEDIUM. Then make the measurement a standing `pinnacle_fmv_sales_backtest` view so the gate is re-readable.
 - ~~Confirm the share leg raises on a failed write~~ — **answered ~7:05 PM PT 10-17, no change needed.** Its `EXCEPTION WHEN query_canceled OR OTHERS` writes the documented failure sentinel `999` to `pinnacle_fmv_high_med_share_pct` and returns, so the wrapper logs `ok=true` on a failed leg by design (the same as `fmv_coverage` and the Panini leg). ⚠ **Key any watcher on `value = 999` (or a stale `computed_at`), never on the run's `ok`.**
 
 **Next**
